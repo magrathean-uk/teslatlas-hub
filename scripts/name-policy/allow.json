@@ -51,7 +51,7 @@
       ],
       "match_b64": "dGVzbGF0bGFzLWh1Yi90ZXNsYW1hdGUtZGlyZWN0LXNvdXJjZS1ldmlkZW5jZS1iaW5kaW5nL3Yx",
       "max_count": 1,
-      "expires": "G2-4",
+      "expires": "G2-4-M3",
       "review_by": "2027-01-31",
       "reason": "Exact historical format bytes are part of persisted verification.",
       "authority": "N1 v4 Step 2 and design 4.6.3; expiry placement subject to final coordinator review",
@@ -149,7 +149,7 @@
       ],
       "match_b64": "dGVzbGF0bGFzLWh1Yi90ZXNsYW1hdGUtc291cmNlLWV2aWRlbmNlL3Yx",
       "max_count": 1,
-      "expires": "G2-4",
+      "expires": "G2-4-M3",
       "review_by": "2027-01-31",
       "reason": "Exact historical format bytes are part of persisted verification.",
       "authority": "N1 v4 Step 2 and design 4.6.3; expiry placement subject to final coordinator review",
@@ -177,7 +177,7 @@
       ],
       "match_b64": "dGVzbGF0bGFzLWh1Yi90ZXNsYW1hdGUtc3RhZ2VkLXNvdXJjZS1ldmlkZW5jZS1iaW5kaW5nL3Yx",
       "max_count": 1,
-      "expires": "G2-4",
+      "expires": "G2-4-M3",
       "review_by": "2027-01-31",
       "reason": "Exact historical format bytes are part of persisted verification.",
       "authority": "N1 v4 Step 2 and design 4.6.3; expiry placement subject to final coordinator review",
@@ -191,7 +191,7 @@
       ],
       "match_b64": "dGVzbGF0bGFzLWh1Yi90ZXNsYW1hdGUtc3RhZ2UvbG9naWNhbC1jb250ZW50L3YxXDA=",
       "max_count": 1,
-      "expires": "G2-4",
+      "expires": "G2-4-M3",
       "review_by": "2027-01-31",
       "reason": "Exact historical format bytes are part of persisted verification.",
       "authority": "N1 v4 Step 2 and design 4.6.3; expiry placement subject to final coordinator review",
@@ -219,7 +219,7 @@
       ],
       "match_b64": "dGVzbGF0bGFzLXRlc2xhbWF0ZS12NC11cGRhdGVzLXJlY2VpcHQtdjE=",
       "max_count": 1,
-      "expires": "G2-4",
+      "expires": "G2-4-M3",
       "review_by": "2027-01-31",
       "reason": "Exact historical format bytes are part of persisted verification.",
       "authority": "N1 v4 Step 2 and design 4.6.3; expiry placement subject to final coordinator review",
@@ -233,7 +233,7 @@
       ],
       "match_b64": "YWxsVGVzbGFtYXRlRmllbGRzUHJlc2VydmVk",
       "max_count": 1,
-      "expires": "G2-4",
+      "expires": "G2-4-M5",
       "review_by": "2027-01-31",
       "reason": "Earlier serialized key is retained at the specified format boundary.",
       "authority": "N1 v4 SERDE-1 and design 4.6.3",
@@ -247,7 +247,7 @@
       ],
       "match_b64": "YWxsVGVzbGFtYXRlRmllbGRzUHJlc2VydmVk",
       "max_count": 1,
-      "expires": "G2-4",
+      "expires": "G2-4-M5",
       "review_by": "2027-01-31",
       "reason": "Earlier serialized key is retained at the specified format boundary.",
       "authority": "N1 v4 SERDE-1 and design 4.6.3",
@@ -281,118 +281,6 @@
       "reason": "Earlier serialized key is retained at the specified format boundary.",
       "authority": "N1 v4 SERDE-1 and design 4.6.3",
       "recorded_row": "2026-10-12 Independence: folds into G2-4; C10, as carried by v4",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "preceding-import-name-0",
-      "class": "frozen-history",
-      "paths": [
-        "src/storage/db/import_source_names_step.rs"
-      ],
-      "match_b64": "InRlc2xhbWF0ZSI=",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "review_by": "2027-01-31",
-      "reason": "Exact preceding-store spellings are confined to the forward-only schema step.",
-      "authority": "N1 v4 Step5 class2c; expiry G2-4-M1; draft data, not owner reclassification",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "preceding-import-name-1",
-      "class": "frozen-history",
-      "paths": [
-        "src/storage/db/import_source_names_step.rs"
-      ],
-      "match_b64": "InRlc2xhbWF0ZV9wb3NpdGlvbl92MSI=",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "review_by": "2027-01-31",
-      "reason": "Exact preceding-store spellings are confined to the forward-only schema step.",
-      "authority": "N1 v4 Step5 class2c; expiry G2-4-M1; draft data, not owner reclassification",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "preceding-import-name-2",
-      "class": "frozen-history",
-      "paths": [
-        "src/storage/db/import_source_names_step.rs"
-      ],
-      "match_b64": "InRlc2xhbWF0ZV9pbXBvcnRfcHJvamVjdGlvbl9oZWFkcyI=",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "review_by": "2027-01-31",
-      "reason": "Exact preceding-store spellings are confined to the forward-only schema step.",
-      "authority": "N1 v4 Step5 class2c; expiry G2-4-M1; draft data, not owner reclassification",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "preceding-import-name-3",
-      "class": "frozen-history",
-      "paths": [
-        "src/storage/db/import_source_names_step.rs"
-      ],
-      "match_b64": "InRlc2xhbWF0ZV9pbXBvcnRfcHJvamVjdGlvbl9yb3dzIg==",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "review_by": "2027-01-31",
-      "reason": "Exact preceding-store spellings are confined to the forward-only schema step.",
-      "authority": "N1 v4 Step5 class2c; expiry G2-4-M1; draft data, not owner reclassification",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "preceding-import-name-4",
-      "class": "frozen-history",
-      "paths": [
-        "src/storage/db/import_source_names_step.rs"
-      ],
-      "match_b64": "InRlc2xhbWF0ZV9pbXBvcnRfcHJvamVjdGlvbl9zdGF0ZV9oZWFkcyI=",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "review_by": "2027-01-31",
-      "reason": "Exact preceding-store spellings are confined to the forward-only schema step.",
-      "authority": "N1 v4 Step5 class2c; expiry G2-4-M1; draft data, not owner reclassification",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "preceding-import-name-5",
-      "class": "frozen-history",
-      "paths": [
-        "src/storage/db/import_source_names_step.rs"
-      ],
-      "match_b64": "InRlc2xhbWF0ZV9pbXBvcnRfcHJvamVjdGlvbl9zdGF0ZV9yb3dzIg==",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "review_by": "2027-01-31",
-      "reason": "Exact preceding-store spellings are confined to the forward-only schema step.",
-      "authority": "N1 v4 Step5 class2c; expiry G2-4-M1; draft data, not owner reclassification",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "preceding-import-name-6",
-      "class": "frozen-history",
-      "paths": [
-        "src/storage/db/import_source_names_step.rs"
-      ],
-      "match_b64": "InRlc2xhbWF0ZV9pbXBvcnRfcHJvamVjdGlvbl9zdGF0ZV9icmlkZ2VzIg==",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "review_by": "2027-01-31",
-      "reason": "Exact preceding-store spellings are confined to the forward-only schema step.",
-      "authority": "N1 v4 Step5 class2c; expiry G2-4-M1; draft data, not owner reclassification",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "preceding-import-name-7",
-      "class": "frozen-history",
-      "paths": [
-        "src/storage/db/import_source_names_step.rs"
-      ],
-      "match_b64": "InRlc2xhbWF0ZV9sZWdhY3lfdG9rZW5zIg==",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "review_by": "2027-01-31",
-      "reason": "Exact preceding-store spellings are confined to the forward-only schema step.",
-      "authority": "N1 v4 Step5 class2c; expiry G2-4-M1; draft data, not owner reclassification",
       "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
     },
     {
@@ -6666,441 +6554,6 @@
       "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
     },
     {
-      "id": "retained-662813daccaac0d1436b",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFJFRkVSRU5DRVNcIHRlc2xhbWF0ZV9pbXBvcnRfcHJvamVjdGlvbl9oZWFkc1wodmVoaWNsZV9pZFwpXCBPTlwgREVMRVRFXCBDQVNDQURFLCQ=",
-      "max_count": 2,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-348b2560b51f9c8cc8f0",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFJFRkVSRU5DRVNcIHRlc2xhbWF0ZV9pbXBvcnRfcHJvamVjdGlvbl9zdGF0ZV9oZWFkc1wodmVoaWNsZV9pZFwpXCBPTlwgREVMRVRFXCBDQVNDQURFLCQ=",
-      "max_count": 2,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-2b5f5b8f1334cbd8efa0",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCAndGVzbGFfc3RyZWFtX3VwZGF0ZV92MScsXCAndGVzbGFtYXRlX3Bvc2l0aW9uX3YxJ1wpXCksJA==",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-4364d65ca7e10c4cd7d1",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBSRU5BTUVcIFRPXCB0ZXNsYW1hdGVfaW1wb3J0X3Byb2plY3Rpb25fcm93czsk",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-c560feabd9edae5465a7",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBSRU5BTUVcIFRPXCB0ZXNsYW1hdGVfaW1wb3J0X3Byb2plY3Rpb25fc3RhdGVfcm93czsk",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-9e5687588da2cf139b0c",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBSRU5BTUVcIFRPXCB0ZXNsYW1hdGVfbGVnYWN5X3Rva2VuczsiJA==",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-291681dd89b4dd816a4e",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBTRUxFQ1RcIDFcIEZST01cIHByYWdtYV90YWJsZV9pbmZvXCgndGVzbGFtYXRlX2xlZ2FjeV90b2tlbnMnXCkk",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-d908c253723e519b67ee",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgRlJPTVwgdGVzbGFtYXRlX2xlZ2FjeV90b2tlbnM7JA==",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-4ee37b4dd11d85dd928c",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIEZST01cIHRlc2xhbWF0ZV9pbXBvcnRfcHJvamVjdGlvbl9yb3dzOyQ=",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-95797e3dab8f5b90cee4",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIEZST01cIHRlc2xhbWF0ZV9pbXBvcnRfcHJvamVjdGlvbl9zdGF0ZV9yb3dzOyQ=",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-89f23116bfca451067fe",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBBTFRFUlwgVEFCTEVcIHRlc2xhbWF0ZV9sZWdhY3lfdG9rZW5zX3Y1MiQ=",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-6176866457d097d2c724",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBEUk9QXCBUQUJMRVwgdGVzbGFtYXRlX2xlZ2FjeV90b2tlbnM7JA==",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-d2a29bc8ac5bc40f4500",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgIkNSRUFURVwgVEFCTEVcIHRlc2xhbWF0ZV9sZWdhY3lfdG9rZW5zX3Y1MlwgXCgk",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-b0638437ec3eb91c3d72",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgIklOU0VSVFwgSU5UT1wgdGVzbGFtYXRlX2xlZ2FjeV90b2tlbnNfdjUyXCgk",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-9bff120f25f0efd3792f",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXC1cLVwgRmlybXdhcmVcLXVwZGF0ZVwgaGlzdG9yeVwgaXNcIG5vd1wgcGFydFwgb2ZcIHRoZVwgVGVzbGFNYXRlXCBWMiQ=",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-e76416a0a11bc95fd57f",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgQUxURVJcIFRBQkxFXCB0ZXNsYW1hdGVfaW1wb3J0X3Byb2plY3Rpb25fcm93c192Mzkk",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-7cc7400fae67ac7dd312",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgQUxURVJcIFRBQkxFXCB0ZXNsYW1hdGVfaW1wb3J0X3Byb2plY3Rpb25fc3RhdGVfcm93c192Mzkk",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-d750da97069bb4f92346",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgQ1JFQVRFXCBUQUJMRVwgSUZcIE5PVFwgRVhJU1RTXCB0ZXNsYW1hdGVfaW1wb3J0X3Byb2plY3Rpb25faGVhZHNcIFwoJA==",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-33e16a0e838ce11de699",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgQ1JFQVRFXCBUQUJMRVwgSUZcIE5PVFwgRVhJU1RTXCB0ZXNsYW1hdGVfaW1wb3J0X3Byb2plY3Rpb25fcm93c1wgXCgk",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-1f7443cea653610c7ed8",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgQ1JFQVRFXCBUQUJMRVwgSUZcIE5PVFwgRVhJU1RTXCB0ZXNsYW1hdGVfaW1wb3J0X3Byb2plY3Rpb25fc3RhdGVfYnJpZGdlc1wgXCgk",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-11384a6863f2a83b7350",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgQ1JFQVRFXCBUQUJMRVwgSUZcIE5PVFwgRVhJU1RTXCB0ZXNsYW1hdGVfaW1wb3J0X3Byb2plY3Rpb25fc3RhdGVfaGVhZHNcIFwoJA==",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-77743b95bc452d8100c6",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgQ1JFQVRFXCBUQUJMRVwgSUZcIE5PVFwgRVhJU1RTXCB0ZXNsYW1hdGVfaW1wb3J0X3Byb2plY3Rpb25fc3RhdGVfcm93c1wgXCgk",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-44bffa7d5d314cb270ab",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgQ1JFQVRFXCBUQUJMRVwgSUZcIE5PVFwgRVhJU1RTXCB0ZXNsYW1hdGVfbGVnYWN5X3Rva2Vuc1wgXCgk",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-69385fd5ecd635283a8a",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgQ1JFQVRFXCBUQUJMRVwgdGVzbGFtYXRlX2ltcG9ydF9wcm9qZWN0aW9uX3Jvd3NfdjM5XCBcKCQ=",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-235e8fffd412eeb2ba62",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgQ1JFQVRFXCBUQUJMRVwgdGVzbGFtYXRlX2ltcG9ydF9wcm9qZWN0aW9uX3N0YXRlX3Jvd3NfdjM5XCBcKCQ=",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-3b67905f351282dc55bd",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgRFJPUFwgVEFCTEVcIHRlc2xhbWF0ZV9pbXBvcnRfcHJvamVjdGlvbl9yb3dzOyQ=",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-8eddd4ec608ef91bab4e",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgRFJPUFwgVEFCTEVcIHRlc2xhbWF0ZV9pbXBvcnRfcHJvamVjdGlvbl9zdGF0ZV9yb3dzOyQ=",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-b1350c715ac86eca3a49",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgSU5TRVJUXCBJTlRPXCB0ZXNsYW1hdGVfaW1wb3J0X3Byb2plY3Rpb25fcm93c192MzlcKCQ=",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-763fb7cb36a652c0a7ce",
-      "class": "frozen-history",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgSU5TRVJUXCBJTlRPXCB0ZXNsYW1hdGVfaW1wb3J0X3Byb2plY3Rpb25fc3RhdGVfcm93c192MzlcKCQ=",
-      "max_count": 1,
-      "expires": "G2-4-M1",
-      "reason": "Historical schema chain retained through the schema-collapse milestone.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
-      "paths": [
-        "src/storage/db/migrations.rs"
-      ],
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
       "id": "c10-postgres-password-artifact",
       "class": "g2-4-recorded",
       "paths": [
@@ -7140,7 +6593,7 @@
       "match_kind": "regex",
       "match": "^.*$",
       "max_count": 1,
-      "expires": "G2-4-M1",
+      "expires": "G2-5",
       "review_by": "2027-01-31",
       "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26",
       "reason": "clean-room protected file; owner-only edit",

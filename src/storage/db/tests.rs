@@ -74,8 +74,8 @@ mod b3_c9_cc;
 #[path = "tests/b3_c9_q.rs"]
 mod b3_c9_q;
 
-#[path = "tests/import_source_names_step.rs"]
-mod import_source_names_step;
+#[path = "tests/g2_4_m1.rs"]
+mod g2_4_m1;
 
 #[path = "tests/source_key_guards.rs"]
 mod source_key_guards;

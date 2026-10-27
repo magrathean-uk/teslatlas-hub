@@ -438,180 +438,6 @@ fn an_invalid_lookup_record_stores_nothing() {
     );
 }
 
-/// The v68 shape of `address_lookup_cache`: the six original columns only.
-const LEGACY_LOOKUP_ROWS_SQL: &str = "
-    SELECT lookup_key, latitude, longitude, osm_type, osm_id, looked_up_at_ms
-    FROM address_lookup_cache ORDER BY lookup_key";
-
-type LegacyLookupRow = (String, f64, f64, String, i64, i64);
-
-/// osm type, osm id, display name, raw JSON of a shared `address_cache` row.
-type SharedAddressRow = (String, i64, Option<String>, Option<String>);
-
-fn legacy_lookup_rows(connection: &Connection) -> Vec<LegacyLookupRow> {
-    connection
-        .prepare(LEGACY_LOOKUP_ROWS_SQL)
-        .unwrap()
-        .query_map([], |row| {
-            Ok((
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-                row.get(3)?,
-                row.get(4)?,
-                row.get(5)?,
-            ))
-        })
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap()
-}
-
-#[test]
-fn a_v68_store_migrates_and_its_old_lookup_rows_stay_readable_but_are_never_matched() {
-    let temporary = crate::private_tempdir().unwrap();
-    let store = HubStore::initialize(temporary.path()).unwrap();
-    let connection = store.open().unwrap();
-    // A v68 catalogue: the lookup table has its six original columns, and the
-    // rows written by the previous release use the version-1 key.
-    connection.execute_batch(REWIND_V69_SQL).unwrap();
-    connection
-        .execute_batch(
-            "INSERT INTO address_cache(osm_type, osm_id, display_name, name, latitude, longitude,
-                                       road, city, country, raw_json)
-                 VALUES ('way', 42, 'Old Name, Old City', 'Old Name', 51.5001, -0.1001,
-                         'Old Road', 'Old City', 'Testland', '{\"old\":true}'),
-                        ('node', 7, 'Corner Shop', NULL, NULL, NULL, NULL, NULL, NULL, NULL);
-             INSERT INTO address_lookup_cache(
-                 lookup_key, latitude, longitude, osm_type, osm_id, looked_up_at_ms)
-                 VALUES ('51.500000:-0.100000', 51.5, -0.1, 'way', 42, 111),
-                        ('51.500100:-0.100100', 51.5001, -0.1001, 'way', 42, 222),
-                        ('10.000000:20.000000', 10.0, 20.0, 'node', 7, 333);
-             PRAGMA user_version = 68;",
-        )
-        .unwrap();
-    let before_rows = legacy_lookup_rows(&connection);
-    assert_eq!(before_rows.len(), 3);
-    let before_shared: Vec<SharedAddressRow> = connection
-        .prepare(
-            "SELECT osm_type, osm_id, display_name, raw_json FROM address_cache ORDER BY osm_id",
-        )
-        .unwrap()
-        .query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-        })
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap();
-    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
-    drop(connection);
-    drop(store);
-
-    let migrated = HubStore::initialize(temporary.path()).unwrap();
-    let connection = migrated.open().unwrap();
-    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
-    connection
-        .execute_batch("PRAGMA foreign_key_check;")
-        .unwrap();
-
-    // The version-1 rows are present and unchanged, with NULL in every new
-    // column (the provider-unknown shape), and still read through the shared
-    // identity they point at.
-    assert_eq!(legacy_lookup_rows(&connection), before_rows);
-    let unknown_columns: i64 = connection
-        .query_row(
-            "SELECT COUNT(*) FROM address_lookup_cache
-             WHERE provider IS NULL AND endpoint IS NULL AND endpoint_host IS NULL
-               AND language IS NULL AND licence IS NULL AND display_name IS NULL
-               AND name IS NULL AND result_latitude IS NULL AND result_longitude IS NULL
-               AND house_number IS NULL AND road IS NULL AND neighbourhood IS NULL
-               AND city IS NULL AND county IS NULL AND postcode IS NULL
-               AND state IS NULL AND state_district IS NULL AND country IS NULL
-               AND raw_json IS NULL",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(unknown_columns, 3);
-    let readable: Vec<(String, String)> = connection
-        .prepare(
-            "SELECT l.lookup_key, a.display_name FROM address_lookup_cache l
-             JOIN address_cache a ON a.osm_type = l.osm_type AND a.osm_id = l.osm_id
-             ORDER BY l.lookup_key",
-        )
-        .unwrap()
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap();
-    assert_eq!(
-        readable,
-        vec![
-            ("10.000000:20.000000".to_owned(), "Corner Shop".to_owned()),
-            (
-                "51.500000:-0.100000".to_owned(),
-                "Old Name, Old City".to_owned()
-            ),
-            (
-                "51.500100:-0.100100".to_owned(),
-                "Old Name, Old City".to_owned()
-            ),
-        ]
-    );
-
-    // No new lookup is answered from them, whatever the binding.
-    for binding in [
-        lookup_binding("https://geocoder.example.net/", "en"),
-        lookup_binding("http://127.0.0.1:8080/", "de"),
-    ] {
-        for (latitude, longitude) in [(51.5, -0.1), (51.5001, -0.1001), (10.0, 20.0)] {
-            assert_eq!(
-                migrated
-                    .cached_address(&binding, lookup_point(latitude, longitude))
-                    .unwrap(),
-                None,
-                "{latitude},{longitude}"
-            );
-        }
-    }
-
-    // A fresh lookup at a legacy row's coordinates reaching the same identity
-    // is its own row; neither the old rows nor the shared identity change.
-    let binding = lookup_binding("https://geocoder.example.net/", "en");
-    let fresh = lookup_record(
-        &binding,
-        lookup_point(51.5, -0.1),
-        "New Name, New City",
-        999,
-    );
-    migrated.put_address_cache(&fresh).unwrap();
-    assert_eq!(
-        migrated
-            .cached_address(&binding, lookup_point(51.5, -0.1))
-            .unwrap(),
-        Some(fresh)
-    );
-    assert_eq!(lookup_row_count(&migrated), 4);
-    let connection = migrated.open().unwrap();
-    let v1_after: Vec<LegacyLookupRow> = legacy_lookup_rows(&connection)
-        .into_iter()
-        .filter(|row| !row.0.starts_with("v2:"))
-        .collect();
-    assert_eq!(v1_after, before_rows);
-    let after_shared: Vec<SharedAddressRow> = connection
-        .prepare(
-            "SELECT osm_type, osm_id, display_name, raw_json FROM address_cache ORDER BY osm_id",
-        )
-        .unwrap()
-        .query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-        })
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap();
-    assert_eq!(after_shared, before_shared);
-}
-
 #[test]
 fn the_v69_step_adds_only_nullable_columns_with_their_checks() {
     let temporary = crate::private_tempdir().unwrap();
@@ -716,4 +542,94 @@ fn the_v69_step_adds_only_nullable_columns_with_their_checks() {
         insert(column, value).unwrap_or_else(|error| panic!("{column}: {error}"));
     }
     assert_eq!(lookup_row_count(&store), 4);
+}
+
+// G2-4: provider-unbound rows never satisfy a current lookup.
+#[test]
+fn version_one_lookup_rows_remain_unmatched_on_the_floor_store() {
+    let test = "version_one_lookup_rows_remain_unmatched_on_the_floor_store";
+    let temporary = g2_4_m1::copied_store(include_bytes!(
+        "../../../../fixtures/g2-4/m1/store-f.sqlite.zst"
+    ));
+    let store = HubStore::open_existing(temporary.path()).unwrap();
+    let connection = store.open().unwrap();
+    connection.execute("INSERT INTO address_cache(osm_type, osm_id, display_name) VALUES ('way', 42, 'Version one place')", []).unwrap();
+    connection.execute("INSERT INTO address_lookup_cache(lookup_key,latitude,longitude,osm_type,osm_id,looked_up_at_ms) VALUES ('51.500000:-0.100000',51.5,-0.1,'way',42,17)", []).unwrap();
+    let legacy_rows = || {
+        let mut statement = connection
+            .prepare(
+                "SELECT * FROM address_lookup_cache WHERE provider IS NULL ORDER BY lookup_key",
+            )
+            .unwrap();
+        let columns = statement.column_count();
+        statement
+            .query_map([], |row| {
+                (0..columns)
+                    .map(|column| row.get::<_, rusqlite::types::Value>(column))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    };
+    let before = legacy_rows();
+    let shared_rows = || {
+        let mut statement = connection
+            .prepare("SELECT * FROM address_cache ORDER BY osm_type, osm_id")
+            .unwrap();
+        let columns = statement.column_count();
+        statement
+            .query_map([], |row| {
+                (0..columns)
+                    .map(|column| row.get::<_, rusqlite::types::Value>(column))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    };
+    let shared_before = shared_rows();
+    let count_before = lookup_row_count(&store);
+    let binding = lookup_binding("https://geocoder.example.net/", "en");
+    let point = lookup_point(51.5, -0.1);
+    assert!(
+        matches!(store.cached_address(&binding, point), Ok(None)),
+        "assertion failed: {test}: a version one provider-NULL row never matches a current lookup"
+    );
+    let current_key = address_lookup_key(&binding, point);
+    connection.execute("INSERT INTO address_lookup_cache(lookup_key,latitude,longitude,osm_type,osm_id,looked_up_at_ms,provider,endpoint,endpoint_host,language,display_name) VALUES (?1,51.5,-0.1,'way',42,19,NULL,?2,?3,?4,'Unbound lookup')", params![current_key,binding.endpoint,binding.endpoint_host,binding.language]).unwrap();
+    assert!(
+        matches!(store.cached_address(&binding, point), Ok(None)),
+        "assertion failed: {test}: a provider-NULL row under the real current key is excluded before decoding"
+    );
+    let removed = connection
+        .execute(
+            "DELETE FROM address_lookup_cache WHERE lookup_key=?1 AND provider IS NULL",
+            [&current_key],
+        )
+        .unwrap();
+    assert!(
+        removed == 1 && legacy_rows() == before,
+        "assertion failed: {test}: removing the current-key probe preserves every original row"
+    );
+    let fresh = lookup_record(&binding, point, "Fresh lookup", 23);
+    store
+        .put_address_cache(&fresh)
+        .labelled_ok(test, "a current lookup can coexist with version one rows");
+    assert!(
+        store.cached_address(&binding, point).unwrap() == Some(fresh),
+        "assertion failed: {test}: the fresh provider-bound lookup is returned"
+    );
+    assert!(
+        legacy_rows() == before,
+        "assertion failed: {test}: every provider-NULL row and value remains unchanged"
+    );
+    assert!(
+        shared_rows() == shared_before,
+        "assertion failed: {test}: existing shared identity rows remain unchanged"
+    );
+    assert!(
+        lookup_row_count(&store) == count_before + 1,
+        "assertion failed: {test}: the fresh lookup adds one distinct row"
+    );
 }

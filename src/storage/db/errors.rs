@@ -116,8 +116,6 @@ pub enum StoreError {
     BackupPackDigestMismatch { path: PathBuf },
     #[error("cannot migrate hub database: {0}")]
     Migrate(rusqlite::Error),
-    #[error("cannot migrate import source names: {0}")]
-    ImportSourceNameMigration(&'static str),
     #[error(
         "An import source already exists, but the requested key matches none; stored keys: {stored_keys}. Use --new-import-source to register another source."
     )]
@@ -441,7 +439,7 @@ pub enum StoreError {
     InvalidStoredCount,
     #[error("{0} lifecycle session(s) require reconstruction")]
     QuarantinedLifecycle(usize),
-    #[error("unsupported hub schema version {0}")]
+    #[error("{}", unsupported_schema_message(*.0))]
     UnsupportedSchema(i32),
     #[error("unexpected hub SQLite application id {0}")]
     InvalidApplicationId(i32),
@@ -631,7 +629,6 @@ mod n1_src_storage_db_errors_rs_display_tests {
                 StoreError::ReadBackupPack(..) => (),
                 StoreError::BackupPackDigestMismatch { .. } => (),
                 StoreError::Migrate(..) => (),
-                StoreError::ImportSourceNameMigration(..) => (),
                 StoreError::UnmatchedImportSource { .. } => (),
                 StoreError::UnmatchedCurrentImportSource { .. } => (),
                 StoreError::VehicleIdentityTidy(..) => (),
@@ -870,7 +867,6 @@ mod n1_src_storage_db_errors_rs_display_tests {
         check_store_error(StoreError::ReadBackupPack(example()));
         check_store_error(StoreError::BackupPackDigestMismatch { path: example() });
         check_store_error(StoreError::Migrate(example()));
-        check_store_error(StoreError::ImportSourceNameMigration(example()));
         check_store_error(StoreError::UnmatchedImportSource {
             stored_keys: example(),
         });

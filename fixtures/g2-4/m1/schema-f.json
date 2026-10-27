@@ -1,0 +1,1220 @@
+[
+  [
+    "table",
+    "hub_metadata",
+    "hub_metadata",
+    "CREATE TABLE hub_metadata (\n                    key TEXT PRIMARY KEY NOT NULL,\n                    value TEXT NOT NULL\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_hub_metadata_1",
+    "hub_metadata",
+    null
+  ],
+  [
+    "table",
+    "sources",
+    "sources",
+    "CREATE TABLE sources (\n                    source_id TEXT PRIMARY KEY NOT NULL,\n                    source_kind TEXT NOT NULL,\n                    generation INTEGER NOT NULL CHECK (generation >= 1),\n                    created_at_ms INTEGER NOT NULL\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sources_1",
+    "sources",
+    null
+  ],
+  [
+    "table",
+    "sync_ledger",
+    "sync_ledger",
+    "CREATE TABLE sync_ledger (\n                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE CASCADE,\n                    sequence INTEGER NOT NULL CHECK (sequence >= 1),\n                    entity_kind TEXT NOT NULL,\n                    entity_key TEXT NOT NULL,\n                    operation TEXT NOT NULL CHECK (operation IN ('upsert', 'delete')),\n                    committed_at_ms INTEGER NOT NULL,\n                    PRIMARY KEY (source_id, sequence, entity_kind, entity_key)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sync_ledger_1",
+    "sync_ledger",
+    null
+  ],
+  [
+    "table",
+    "sync_manifests",
+    "sync_manifests",
+    "CREATE TABLE sync_manifests (\n                    snapshot_id TEXT PRIMARY KEY NOT NULL,\n                    vehicle_id TEXT NOT NULL,\n                    head_sequence INTEGER NOT NULL CHECK (head_sequence >= 0),\n                    manifest_json BLOB NOT NULL\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sync_manifests_1",
+    "sync_manifests",
+    null
+  ],
+  [
+    "table",
+    "sync_packs",
+    "sync_packs",
+    "CREATE TABLE sync_packs (\n                    sha256 TEXT PRIMARY KEY NOT NULL,\n                    snapshot_id TEXT NOT NULL REFERENCES sync_manifests(snapshot_id) ON DELETE CASCADE,\n                    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),\n                    relative_path TEXT NOT NULL,\n                    compressed_bytes INTEGER NOT NULL CHECK (compressed_bytes > 0),\n                    uncompressed_bytes INTEGER NOT NULL CHECK (uncompressed_bytes >= 100),\n                    UNIQUE(snapshot_id, ordinal)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sync_packs_1",
+    "sync_packs",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sync_packs_2",
+    "sync_packs",
+    null
+  ],
+  [
+    "table",
+    "source_identities",
+    "source_identities",
+    "CREATE TABLE source_identities (\n                    source_id TEXT PRIMARY KEY NOT NULL REFERENCES sources(source_id) ON DELETE RESTRICT,\n                    source_kind TEXT NOT NULL,\n                    source_key TEXT NOT NULL,\n                    UNIQUE(source_kind, source_key),\n                    CHECK(length(CAST(source_kind AS BLOB)) BETWEEN 1 AND 64),\n                    CHECK(length(CAST(source_key AS BLOB)) BETWEEN 1 AND 256)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_source_identities_1",
+    "source_identities",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_source_identities_2",
+    "source_identities",
+    null
+  ],
+  [
+    "table",
+    "vehicles",
+    "vehicles",
+    "CREATE TABLE vehicles (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL,\n                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE RESTRICT,\n                    source_vehicle_key TEXT NOT NULL,\n                    vin TEXT,\n                    display_name TEXT,\n                    created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),\n                    last_seen_at_ms INTEGER NOT NULL CHECK(last_seen_at_ms >= created_at_ms), retired_at_ms INTEGER\n                    CHECK(retired_at_ms IS NULL OR retired_at_ms >= created_at_ms),\n                    UNIQUE(source_id, source_vehicle_key),\n                    CHECK(length(CAST(source_vehicle_key AS BLOB)) BETWEEN 1 AND 256),\n                    CHECK(vin IS NULL OR length(CAST(vin AS BLOB)) BETWEEN 1 AND 32),\n                    CHECK(display_name IS NULL OR length(CAST(display_name AS BLOB)) BETWEEN 1 AND 256)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_vehicles_1",
+    "vehicles",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_vehicles_2",
+    "vehicles",
+    null
+  ],
+  [
+    "table",
+    "raw_observations",
+    "raw_observations",
+    "CREATE TABLE raw_observations (\n                    observation_id INTEGER PRIMARY KEY,\n                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE RESTRICT,\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n                    observed_at_ms INTEGER NOT NULL CHECK(observed_at_ms >= 0),\n                    received_at_ms INTEGER NOT NULL CHECK(received_at_ms >= 0),\n                    payload_sha256 BLOB NOT NULL CHECK(length(payload_sha256) = 32),\n                    payload_json TEXT NOT NULL CHECK(json_valid(payload_json))\n                        CHECK(length(CAST(payload_json AS BLOB)) <= 262144),\n                    UNIQUE(source_id, vehicle_id, observed_at_ms, payload_sha256)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_raw_observations_1",
+    "raw_observations",
+    null
+  ],
+  [
+    "table",
+    "pairing_challenges",
+    "pairing_challenges",
+    "CREATE TABLE pairing_challenges (\n                    pairing_id TEXT PRIMARY KEY NOT NULL,\n                    label TEXT NOT NULL,\n                    secret_sha256 BLOB NOT NULL CHECK(length(secret_sha256) = 32),\n                    created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),\n                    expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms > created_at_ms), all_vehicles INTEGER NOT NULL DEFAULT 0\n                    CHECK(all_vehicles IN (0, 1)),\n                    CHECK(length(CAST(label AS BLOB)) BETWEEN 1 AND 128)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_pairing_challenges_1",
+    "pairing_challenges",
+    null
+  ],
+  [
+    "table",
+    "vehicle_lifecycle_state",
+    "vehicle_lifecycle_state",
+    "CREATE TABLE vehicle_lifecycle_state (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n                    car_id INTEGER NOT NULL CHECK(car_id > 0),\n                    last_observation_id INTEGER NOT NULL CHECK(last_observation_id >= 0),\n                    open_session_json BLOB NOT NULL\n                        CHECK(length(open_session_json) BETWEEN 2 AND 65536),\n                    quarantined INTEGER NOT NULL DEFAULT 0 CHECK(quarantined IN (0, 1)),\n                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_vehicle_lifecycle_state_1",
+    "vehicle_lifecycle_state",
+    null
+  ],
+  [
+    "table",
+    "materialised_drives",
+    "materialised_drives",
+    "CREATE TABLE materialised_drives (\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n                    drive_id INTEGER NOT NULL CHECK(drive_id > 0),\n                    car_id INTEGER NOT NULL CHECK(car_id > 0),\n                    drive_json TEXT NOT NULL CHECK(json_valid(drive_json)), inside_temp_avg REAL, power_max REAL, power_min REAL, start_ideal_range_km REAL, end_ideal_range_km REAL, ascent INTEGER, descent INTEGER,\n                    PRIMARY KEY (vehicle_id, drive_id)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_materialised_drives_1",
+    "materialised_drives",
+    null
+  ],
+  [
+    "table",
+    "materialised_charges",
+    "materialised_charges",
+    "CREATE TABLE materialised_charges (\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n                    charge_id INTEGER NOT NULL CHECK(charge_id > 0),\n                    car_id INTEGER NOT NULL CHECK(car_id > 0),\n                    charge_json TEXT NOT NULL CHECK(json_valid(charge_json)),\n                    PRIMARY KEY (vehicle_id, charge_id)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_materialised_charges_1",
+    "materialised_charges",
+    null
+  ],
+  [
+    "table",
+    "materialised_charge_samples",
+    "materialised_charge_samples",
+    "CREATE TABLE materialised_charge_samples (\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n                    sample_id INTEGER NOT NULL CHECK(sample_id > 0),\n                    charge_id INTEGER NOT NULL CHECK(charge_id > 0),\n                    sample_json TEXT NOT NULL CHECK(json_valid(sample_json)),\n                    PRIMARY KEY (vehicle_id, sample_id)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_materialised_charge_samples_1",
+    "materialised_charge_samples",
+    null
+  ],
+  [
+    "table",
+    "snapshot_fingerprints",
+    "snapshot_fingerprints",
+    "CREATE TABLE snapshot_fingerprints (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    fingerprint_sha256 BLOB NOT NULL CHECK(length(fingerprint_sha256) = 32)\n                , snapshot_id TEXT, head_sequence INTEGER) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_snapshot_fingerprints_1",
+    "snapshot_fingerprints",
+    null
+  ],
+  [
+    "table",
+    "vehicle_snapshot_sequences",
+    "vehicle_snapshot_sequences",
+    "CREATE TABLE vehicle_snapshot_sequences (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n                    next_sequence INTEGER NOT NULL CHECK(next_sequence >= 2)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_vehicle_snapshot_sequences_1",
+    "vehicle_snapshot_sequences",
+    null
+  ],
+  [
+    "table",
+    "materialised_positions",
+    "materialised_positions",
+    "CREATE TABLE materialised_positions (\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n                    position_id INTEGER NOT NULL CHECK(position_id > 0),\n                    drive_id INTEGER CHECK(drive_id IS NULL OR drive_id > 0),\n                    car_id INTEGER NOT NULL CHECK(car_id > 0),\n                    position_json TEXT NOT NULL CHECK(json_valid(position_json)), battery_heater INTEGER\n                    CHECK (battery_heater IN (0, 1)), battery_heater_on INTEGER\n                    CHECK (battery_heater_on IN (0, 1)), battery_heater_no_power INTEGER\n                    CHECK (battery_heater_no_power IN (0, 1)), speed INTEGER, power REAL, est_battery_range_km REAL, fan_status INTEGER, driver_temp_setting REAL, passenger_temp_setting REAL, is_climate_on INTEGER\n                    CHECK (is_climate_on IN (0, 1)), is_rear_defroster_on INTEGER\n                    CHECK (is_rear_defroster_on IN (0, 1)), is_front_defroster_on INTEGER\n                    CHECK (is_front_defroster_on IN (0, 1)), tpms_pressure_fl REAL, tpms_pressure_fr REAL, tpms_pressure_rl REAL, tpms_pressure_rr REAL,\n                    PRIMARY KEY (vehicle_id, position_id)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_materialised_positions_1",
+    "materialised_positions",
+    null
+  ],
+  [
+    "table",
+    "materialised_states",
+    "materialised_states",
+    "CREATE TABLE materialised_states (\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n                    state_id INTEGER NOT NULL CHECK(state_id > 0),\n                    car_id INTEGER NOT NULL CHECK(car_id > 0),\n                    state_json TEXT NOT NULL CHECK(json_valid(state_json)),\n                    PRIMARY KEY (vehicle_id, state_id)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_materialised_states_1",
+    "materialised_states",
+    null
+  ],
+  [
+    "table",
+    "materialised_updates",
+    "materialised_updates",
+    "CREATE TABLE materialised_updates (\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n                    update_id INTEGER NOT NULL CHECK(update_id > 0),\n                    car_id INTEGER NOT NULL CHECK(car_id > 0),\n                    update_json TEXT NOT NULL CHECK(json_valid(update_json)),\n                    PRIMARY KEY (vehicle_id, update_id)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_materialised_updates_1",
+    "materialised_updates",
+    null
+  ],
+  [
+    "table",
+    "materialised_cars",
+    "materialised_cars",
+    "CREATE TABLE materialised_cars (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n                    car_id INTEGER NOT NULL CHECK(car_id > 0),\n                    car_json TEXT NOT NULL CHECK(json_valid(car_json))\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_materialised_cars_1",
+    "materialised_cars",
+    null
+  ],
+  [
+    "table",
+    "address_cache",
+    "address_cache",
+    "CREATE TABLE address_cache (\n                    osm_type TEXT NOT NULL CHECK(length(CAST(osm_type AS BLOB)) BETWEEN 1 AND 32),\n                    osm_id INTEGER NOT NULL CHECK(osm_id > 0),\n                    display_name TEXT NOT NULL\n                        CHECK(length(CAST(display_name AS BLOB)) BETWEEN 1 AND 256),\n                    name TEXT CHECK(name IS NULL OR length(CAST(name AS BLOB)) <= 256), latitude REAL CHECK(latitude IS NULL OR (latitude >= -90.0 AND latitude <= 90.0)), longitude REAL CHECK(longitude IS NULL OR (longitude >= -180.0 AND longitude <= 180.0)), house_number TEXT, road TEXT, neighbourhood TEXT, city TEXT, county TEXT, postcode TEXT, state TEXT, state_district TEXT, country TEXT, raw_json TEXT CHECK(raw_json IS NULL OR json_valid(raw_json)),\n                    PRIMARY KEY(osm_type, osm_id)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_address_cache_1",
+    "address_cache",
+    null
+  ],
+  [
+    "table",
+    "address_lookup_cache",
+    "address_lookup_cache",
+    "CREATE TABLE address_lookup_cache (\n                    lookup_key TEXT PRIMARY KEY NOT NULL\n                        CHECK(length(CAST(lookup_key AS BLOB)) BETWEEN 1 AND 64),\n                    latitude REAL NOT NULL CHECK(latitude >= -90.0 AND latitude <= 90.0),\n                    longitude REAL NOT NULL CHECK(longitude >= -180.0 AND longitude <= 180.0),\n                    osm_type TEXT NOT NULL,\n                    osm_id INTEGER NOT NULL,\n                    looked_up_at_ms INTEGER NOT NULL CHECK(looked_up_at_ms >= 0), provider TEXT\n                    CHECK(provider IS NULL OR provider = 'nominatim'), endpoint TEXT\n                    CHECK(endpoint IS NULL OR length(CAST(endpoint AS BLOB)) BETWEEN 1 AND 2048), endpoint_host TEXT\n                    CHECK(endpoint_host IS NULL OR length(CAST(endpoint_host AS BLOB)) BETWEEN 1 AND 255), language TEXT\n                    CHECK(language IS NULL OR length(CAST(language AS BLOB)) BETWEEN 1 AND 64), licence TEXT\n                    CHECK(licence IS NULL OR length(CAST(licence AS BLOB)) BETWEEN 1 AND 512), display_name TEXT\n                    CHECK(display_name IS NULL OR length(CAST(display_name AS BLOB)) BETWEEN 1 AND 256), name TEXT\n                    CHECK(name IS NULL OR length(CAST(name AS BLOB)) <= 256), result_latitude REAL\n                    CHECK(result_latitude IS NULL OR (result_latitude >= -90.0 AND result_latitude <= 90.0)), result_longitude REAL\n                    CHECK(result_longitude IS NULL OR (result_longitude >= -180.0 AND result_longitude <= 180.0)), house_number TEXT, road TEXT, neighbourhood TEXT, city TEXT, county TEXT, postcode TEXT, state TEXT, state_district TEXT, country TEXT, raw_json TEXT\n                    CHECK(raw_json IS NULL OR json_valid(raw_json)),\n                    FOREIGN KEY(osm_type, osm_id)\n                        REFERENCES address_cache(osm_type, osm_id)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_address_lookup_cache_1",
+    "address_lookup_cache",
+    null
+  ],
+  [
+    "table",
+    "address_enrichment_jobs",
+    "address_enrichment_jobs",
+    "CREATE TABLE address_enrichment_jobs (\n                    job_key TEXT PRIMARY KEY NOT NULL\n                        CHECK(length(CAST(job_key AS BLOB)) BETWEEN 1 AND 256),\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n                    target_type TEXT NOT NULL CHECK(target_type IN ('drive', 'charge')),\n                    target_id INTEGER NOT NULL CHECK(target_id > 0),\n                    field TEXT NOT NULL CHECK(field IN ('start_address', 'end_address', 'address')),\n                    latitude REAL NOT NULL CHECK(latitude >= -90.0 AND latitude <= 90.0),\n                    longitude REAL NOT NULL CHECK(longitude >= -180.0 AND longitude <= 180.0),\n                    status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'retry', 'complete')),\n                    attempts INTEGER NOT NULL CHECK(attempts >= 0),\n                    next_attempt_ms INTEGER NOT NULL CHECK(next_attempt_ms >= 0),\n                    lease_until_ms INTEGER NOT NULL CHECK(lease_until_ms >= 0),\n                    completed_at_ms INTEGER,\n                    last_error TEXT\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_address_enrichment_jobs_1",
+    "address_enrichment_jobs",
+    null
+  ],
+  [
+    "table",
+    "car_settings",
+    "car_settings",
+    "CREATE TABLE car_settings (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL\n                        REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n                    car_id INTEGER NOT NULL CHECK(car_id > 0),\n                    enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),\n                    use_streaming_api INTEGER NOT NULL CHECK(use_streaming_api IN (0, 1)),\n                    suspend_after_idle_min INTEGER NOT NULL CHECK(suspend_after_idle_min > 0),\n                    suspend_min INTEGER NOT NULL CHECK(suspend_min > 0),\n                    req_not_unlocked INTEGER NOT NULL CHECK(req_not_unlocked IN (0, 1)),\n                    free_supercharging INTEGER NOT NULL CHECK(free_supercharging IN (0, 1)),\n                    lfp_battery INTEGER NOT NULL CHECK(lfp_battery IN (0, 1))\n                , suspend_min_resolved INTEGER NOT NULL DEFAULT 1\n                    CHECK(suspend_min_resolved IN (0, 1))) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_car_settings_1",
+    "car_settings",
+    null
+  ],
+  [
+    "table",
+    "stream_watermarks",
+    "stream_watermarks",
+    "CREATE TABLE stream_watermarks (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    last_timestamp_ms INTEGER NOT NULL CHECK(last_timestamp_ms >= 0)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_stream_watermarks_1",
+    "stream_watermarks",
+    null
+  ],
+  [
+    "table",
+    "lifecycle_source_watermarks",
+    "lifecycle_source_watermarks",
+    "CREATE TABLE lifecycle_source_watermarks (\n                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE CASCADE,\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    domain TEXT NOT NULL,\n                    max_source_row_id INTEGER,\n                    max_timestamp_ms INTEGER,\n                    PRIMARY KEY(source_id, vehicle_id, domain)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_lifecycle_source_watermarks_1",
+    "lifecycle_source_watermarks",
+    null
+  ],
+  [
+    "table",
+    "terrain_enrichment_state",
+    "terrain_enrichment_state",
+    "CREATE TABLE terrain_enrichment_state (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL\n                        REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    cursor_position_id INTEGER NOT NULL DEFAULT 0\n                        CHECK(cursor_position_id >= 0),\n                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0)\n                , import_position_id_max\n             INTEGER NOT NULL DEFAULT 0 CHECK(import_position_id_max >= 0), import_position_date_max_ms\n             INTEGER NOT NULL DEFAULT 0 CHECK(import_position_date_max_ms >= 0)) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_terrain_enrichment_state_1",
+    "terrain_enrichment_state",
+    null
+  ],
+  [
+    "table",
+    "terrain_elevation_provenance",
+    "terrain_elevation_provenance",
+    "CREATE TABLE terrain_elevation_provenance (\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    position_id INTEGER NOT NULL CHECK(position_id > 0),\n                    drive_id INTEGER NOT NULL CHECK(drive_id > 0),\n                    latitude REAL NOT NULL CHECK(latitude >= -90.0 AND latitude <= 90.0),\n                    longitude REAL NOT NULL CHECK(longitude >= -180.0 AND longitude <= 180.0),\n                    elevation_m INTEGER,\n                    tile_name TEXT,\n                    tile_hash TEXT,\n                    dataset_source TEXT,\n                    dataset_version TEXT,\n                    status TEXT NOT NULL CHECK(status IN ('success', 'void', 'failed')),\n                    error_code TEXT,\n                    attempts INTEGER NOT NULL CHECK(attempts >= 1),\n                    attempted_at_ms INTEGER NOT NULL CHECK(attempted_at_ms >= 0),\n                    retry_after_ms INTEGER NOT NULL CHECK(retry_after_ms >= 0),\n                    PRIMARY KEY(vehicle_id, position_id)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_terrain_elevation_provenance_1",
+    "terrain_elevation_provenance",
+    null
+  ],
+  [
+    "table",
+    "vehicle_identity_aliases",
+    "vehicle_identity_aliases",
+    "CREATE TABLE vehicle_identity_aliases (\n                    alias_kind TEXT NOT NULL CHECK(alias_kind IN ('source_key', 'tesla_eid', 'tesla_vid', 'vin')),\n                    alias_value TEXT NOT NULL,\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE RESTRICT,\n                    source_vehicle_key TEXT NOT NULL,\n                    PRIMARY KEY(alias_kind, alias_value),\n                    CHECK(length(CAST(alias_value AS BLOB)) BETWEEN 1 AND 256),\n                    CHECK(length(CAST(source_vehicle_key AS BLOB)) BETWEEN 1 AND 256)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_vehicle_identity_aliases_1",
+    "vehicle_identity_aliases",
+    null
+  ],
+  [
+    "table",
+    "sync_bases",
+    "sync_bases",
+    "CREATE TABLE sync_bases (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    snapshot_id TEXT NOT NULL UNIQUE,\n                    base_sequence INTEGER NOT NULL CHECK(base_sequence >= 0),\n                    base_digest TEXT NOT NULL CHECK(length(base_digest) = 64),\n                    packs_json BLOB NOT NULL\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sync_bases_1",
+    "sync_bases",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sync_bases_2",
+    "sync_bases",
+    null
+  ],
+  [
+    "table",
+    "sync_deltas",
+    "sync_deltas",
+    "CREATE TABLE sync_deltas (\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    from_sequence INTEGER NOT NULL CHECK(from_sequence >= 0),\n                    to_sequence INTEGER NOT NULL CHECK(to_sequence > from_sequence),\n                    parent_chain_digest TEXT NOT NULL CHECK(length(parent_chain_digest) = 64),\n                    chain_digest TEXT NOT NULL CHECK(length(chain_digest) = 64),\n                    pack_digest TEXT NOT NULL CHECK(length(pack_digest) = 64),\n                    pack_json BLOB NOT NULL,\n                    PRIMARY KEY(vehicle_id, from_sequence, to_sequence),\n                    UNIQUE(vehicle_id, chain_digest)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sync_deltas_1",
+    "sync_deltas",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sync_deltas_2",
+    "sync_deltas",
+    null
+  ],
+  [
+    "table",
+    "sync_heads",
+    "sync_heads",
+    "CREATE TABLE sync_heads (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    base_snapshot_id TEXT NOT NULL REFERENCES sync_bases(snapshot_id) ON DELETE RESTRICT,\n                    head_sequence INTEGER NOT NULL CHECK(head_sequence >= 0),\n                    head_digest TEXT NOT NULL CHECK(length(head_digest) = 64),\n                    terminal_cursor TEXT NOT NULL\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sync_heads_1",
+    "sync_heads",
+    null
+  ],
+  [
+    "table",
+    "import_generations",
+    "import_generations",
+    "CREATE TABLE import_generations (\n                    run_id TEXT PRIMARY KEY NOT NULL,\n                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE CASCADE,\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    car_id INTEGER NOT NULL CHECK(car_id > 0),\n                    status TEXT NOT NULL CHECK(status IN ('staging', 'promoting')),\n                    created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0)\n                , base_last_observation_id\n                    INTEGER NOT NULL DEFAULT 0 CHECK(base_last_observation_id >= 0), base_updated_at_ms\n                    INTEGER NOT NULL DEFAULT 0 CHECK(base_updated_at_ms >= 0)) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_import_generations_1",
+    "import_generations",
+    null
+  ],
+  [
+    "table",
+    "import_generation_sessions",
+    "import_generation_sessions",
+    "CREATE TABLE import_generation_sessions (\n                    run_id TEXT PRIMARY KEY NOT NULL\n                        REFERENCES import_generations(run_id) ON DELETE CASCADE,\n                    session_json TEXT NOT NULL CHECK(json_valid(session_json))\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_import_generation_sessions_1",
+    "import_generation_sessions",
+    null
+  ],
+  [
+    "table",
+    "export_outbox",
+    "export_outbox",
+    "CREATE TABLE export_outbox (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    dirty_revision INTEGER NOT NULL CHECK(dirty_revision > 0),\n                    attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),\n                    next_attempt_ms INTEGER NOT NULL DEFAULT 0 CHECK(next_attempt_ms >= 0),\n                    claimed_until_ms INTEGER NOT NULL DEFAULT 0 CHECK(claimed_until_ms >= 0),\n                    last_error TEXT\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_export_outbox_1",
+    "export_outbox",
+    null
+  ],
+  [
+    "table",
+    "sync_mutation_sequences",
+    "sync_mutation_sequences",
+    "CREATE TABLE sync_mutation_sequences (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    next_revision INTEGER NOT NULL CHECK(next_revision > 0)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sync_mutation_sequences_1",
+    "sync_mutation_sequences",
+    null
+  ],
+  [
+    "table",
+    "sync_mutations",
+    "sync_mutations",
+    "CREATE TABLE sync_mutations (\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    revision INTEGER NOT NULL CHECK(revision > 0),\n                    entity TEXT NOT NULL CHECK(entity IN\n                        ('car', 'car_setting', 'geofence', 'address', 'drive',\n                         'position', 'charge', 'charge_sample', 'state', 'update')),\n                    entity_id INTEGER NOT NULL CHECK(entity_id > 0),\n                    car_id INTEGER NOT NULL CHECK(car_id > 0),\n                    operation TEXT NOT NULL CHECK(operation IN ('upsert', 'tombstone')),\n                    payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),\n                    published INTEGER NOT NULL DEFAULT 0 CHECK(published IN (0, 1)),\n                    claimed_until_ms INTEGER NOT NULL DEFAULT 0 CHECK(claimed_until_ms >= 0),\n                    PRIMARY KEY(vehicle_id, revision)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sync_mutations_1",
+    "sync_mutations",
+    null
+  ],
+  [
+    "table",
+    "v2_base_bindings",
+    "v2_base_bindings",
+    "CREATE TABLE v2_base_bindings (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL\n                        REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    snapshot_id TEXT NOT NULL UNIQUE\n                        REFERENCES sync_bases(snapshot_id) ON DELETE CASCADE,\n                    installation_id TEXT NOT NULL CHECK(length(installation_id) = 36),\n                    account_id TEXT NOT NULL CHECK(length(account_id) = 36),\n                    generation INTEGER NOT NULL CHECK(generation >= 1),\n                    selected_car_id INTEGER NOT NULL CHECK(selected_car_id > 0)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_v2_base_bindings_1",
+    "v2_base_bindings",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_v2_base_bindings_2",
+    "v2_base_bindings",
+    null
+  ],
+  [
+    "table",
+    "import_projection_heads",
+    "import_projection_heads",
+    "CREATE TABLE \"import_projection_heads\" (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL\n                        REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE RESTRICT,\n                    base_snapshot_id TEXT NOT NULL UNIQUE\n                        REFERENCES sync_bases(snapshot_id) ON DELETE CASCADE,\n                    selected_car_id INTEGER NOT NULL CHECK(selected_car_id > 0),\n                    head_sequence INTEGER NOT NULL CHECK(head_sequence >= 0)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_import_projection_heads_1",
+    "import_projection_heads",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_import_projection_heads_2",
+    "import_projection_heads",
+    null
+  ],
+  [
+    "table",
+    "import_projection_state_heads",
+    "import_projection_state_heads",
+    "CREATE TABLE \"import_projection_state_heads\" (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL\n                        REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE RESTRICT,\n                    base_snapshot_id TEXT NOT NULL\n                        REFERENCES sync_bases(snapshot_id) ON DELETE CASCADE,\n                    selected_car_id INTEGER NOT NULL CHECK(selected_car_id > 0),\n                    head_sequence INTEGER NOT NULL CHECK(head_sequence >= 0)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_import_projection_state_heads_1",
+    "import_projection_state_heads",
+    null
+  ],
+  [
+    "table",
+    "import_projection_state_bridges",
+    "import_projection_state_bridges",
+    "CREATE TABLE \"import_projection_state_bridges\" (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL\n                        REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    base_snapshot_id TEXT NOT NULL\n                        REFERENCES sync_bases(snapshot_id) ON DELETE CASCADE,\n                    head_sequence INTEGER NOT NULL CHECK(head_sequence >= 0),\n                    algorithm TEXT NOT NULL CHECK(algorithm = 'logical_projection_v1'),\n                    legacy_fingerprint_sha256 BLOB NOT NULL\n                        CHECK(length(legacy_fingerprint_sha256) = 32),\n                    logical_fingerprint_sha256 BLOB NOT NULL\n                        CHECK(length(logical_fingerprint_sha256) = 32)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_import_projection_state_bridges_1",
+    "import_projection_state_bridges",
+    null
+  ],
+  [
+    "table",
+    "import_projection_rows",
+    "import_projection_rows",
+    "CREATE TABLE \"import_projection_rows\" (\n                    vehicle_id TEXT NOT NULL\n                        REFERENCES \"import_projection_heads\"(vehicle_id) ON DELETE CASCADE,\n                    entity TEXT NOT NULL CHECK(entity IN (\n                        'drive', 'position', 'charge', 'charge_sample', 'state', 'update'\n                    )),\n                    entity_id INTEGER NOT NULL CHECK(entity_id > 0),\n                    PRIMARY KEY(vehicle_id, entity, entity_id)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_import_projection_rows_1",
+    "import_projection_rows",
+    null
+  ],
+  [
+    "table",
+    "import_projection_state_rows",
+    "import_projection_state_rows",
+    "CREATE TABLE \"import_projection_state_rows\" (\n                    vehicle_id TEXT NOT NULL\n                        REFERENCES \"import_projection_state_heads\"(vehicle_id) ON DELETE CASCADE,\n                    entity TEXT NOT NULL CHECK(entity IN (\n                        'car', 'drive', 'position', 'charge', 'charge_sample', 'state', 'update'\n                    )),\n                    entity_ordinal INTEGER NOT NULL CHECK(entity_ordinal BETWEEN 0 AND 6),\n                    entity_id INTEGER NOT NULL CHECK(entity_id > 0),\n                    car_id INTEGER NOT NULL CHECK(car_id > 0),\n                    projection_sha256 BLOB NOT NULL CHECK(length(projection_sha256) = 32),\n                    CHECK(\n                        (entity = 'car' AND entity_ordinal = 0) OR\n                        (entity = 'drive' AND entity_ordinal = 1) OR\n                        (entity = 'position' AND entity_ordinal = 2) OR\n                        (entity = 'charge' AND entity_ordinal = 3) OR\n                        (entity = 'charge_sample' AND entity_ordinal = 4) OR\n                        (entity = 'state' AND entity_ordinal = 5) OR\n                        (entity = 'update' AND entity_ordinal = 6)\n                    ),\n                    PRIMARY KEY(vehicle_id, entity_ordinal, entity_id),\n                    UNIQUE(vehicle_id, entity, entity_id)\n                ) STRICT, WITHOUT ROWID"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_import_projection_state_rows_2",
+    "import_projection_state_rows",
+    null
+  ],
+  [
+    "table",
+    "sync_live_delta_spans",
+    "sync_live_delta_spans",
+    "CREATE TABLE sync_live_delta_spans (\n                    vehicle_id TEXT NOT NULL,\n                    from_sequence INTEGER NOT NULL CHECK(from_sequence >= 0),\n                    to_sequence INTEGER NOT NULL CHECK(to_sequence > from_sequence),\n                    from_revision INTEGER NOT NULL CHECK(from_revision > 0),\n                    to_revision INTEGER NOT NULL CHECK(to_revision >= from_revision),\n                    pack_digest TEXT NOT NULL CHECK(length(pack_digest) = 64),\n                    PRIMARY KEY(vehicle_id, from_sequence, to_sequence),\n                    FOREIGN KEY(vehicle_id, from_sequence, to_sequence)\n                        REFERENCES sync_deltas(vehicle_id, from_sequence, to_sequence)\n                        ON DELETE CASCADE,\n                    CHECK(to_sequence - from_sequence = to_revision - from_revision + 1)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sync_live_delta_spans_1",
+    "sync_live_delta_spans",
+    null
+  ],
+  [
+    "table",
+    "stream_session_receipts",
+    "stream_session_receipts",
+    "CREATE TABLE stream_session_receipts (\n                    id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    correlation_id TEXT NOT NULL CHECK(length(correlation_id) = 36),\n                    vehicle_tesla_id INTEGER NOT NULL CHECK(vehicle_tesla_id > 0),\n                    started_at_ms INTEGER NOT NULL CHECK(started_at_ms >= 0),\n                    completed_at_ms INTEGER,\n                    duration_ms INTEGER,\n                    outcome TEXT NOT NULL CHECK(outcome IN (\n                        'started', 'orderly_shutdown',\n                        'cancelled_before_subscription', 'transport_ended', 'failed'\n                    )),\n                    unsubscribe_receipt_id INTEGER,\n                    CHECK(\n                        (outcome = 'started'\n                         AND completed_at_ms IS NULL AND duration_ms IS NULL\n                         AND unsubscribe_receipt_id IS NULL)\n                        OR (outcome = 'orderly_shutdown'\n                            AND completed_at_ms IS NOT NULL AND duration_ms IS NOT NULL\n                            AND completed_at_ms >= started_at_ms AND duration_ms >= 0\n                            AND unsubscribe_receipt_id IS NOT NULL)\n                        OR (outcome IN (\n                                'cancelled_before_subscription', 'transport_ended', 'failed'\n                            )\n                            AND completed_at_ms IS NOT NULL AND duration_ms IS NOT NULL\n                            AND completed_at_ms >= started_at_ms AND duration_ms >= 0\n                            AND unsubscribe_receipt_id IS NULL)\n                    )\n                ) STRICT"
+  ],
+  [
+    "table",
+    "sqlite_sequence",
+    "sqlite_sequence",
+    "CREATE TABLE sqlite_sequence(name,seq)"
+  ],
+  [
+    "table",
+    "sync_retired_lineages",
+    "sync_retired_lineages",
+    "CREATE TABLE sync_retired_lineages (\n                    vehicle_id TEXT NOT NULL\n                        REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    head_digest TEXT NOT NULL CHECK(length(head_digest) = 64),\n                    manifest_json BLOB NOT NULL CHECK(length(manifest_json) > 0),\n                    retired_at_ms INTEGER NOT NULL CHECK(retired_at_ms >= 0),\n                    expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms > retired_at_ms),\n                    PRIMARY KEY(vehicle_id, head_digest)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sync_retired_lineages_1",
+    "sync_retired_lineages",
+    null
+  ],
+  [
+    "table",
+    "sync_retired_lineage_packs",
+    "sync_retired_lineage_packs",
+    "CREATE TABLE sync_retired_lineage_packs (\n                    vehicle_id TEXT NOT NULL,\n                    head_digest TEXT NOT NULL,\n                    pack_digest TEXT NOT NULL CHECK(length(pack_digest) = 64),\n                    relative_path TEXT NOT NULL,\n                    compressed_bytes INTEGER NOT NULL CHECK(compressed_bytes > 0),\n                    PRIMARY KEY(vehicle_id, head_digest, pack_digest),\n                    FOREIGN KEY(vehicle_id, head_digest)\n                        REFERENCES sync_retired_lineages(vehicle_id, head_digest)\n                        ON DELETE CASCADE\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_sync_retired_lineage_packs_1",
+    "sync_retired_lineage_packs",
+    null
+  ],
+  [
+    "table",
+    "supervised_collector_lease",
+    "supervised_collector_lease",
+    "CREATE TABLE supervised_collector_lease (\n                    singleton_id INTEGER PRIMARY KEY NOT NULL\n                        CHECK(singleton_id = 1),\n                    instance_id TEXT NOT NULL CHECK(length(instance_id) = 36),\n                    state TEXT NOT NULL CHECK(state IN ('active', 'auth_terminal')),\n                    started_at_ms INTEGER NOT NULL CHECK(started_at_ms >= 0),\n                    heartbeat_at_ms INTEGER NOT NULL\n                        CHECK(heartbeat_at_ms >= started_at_ms),\n                    lease_until_ms INTEGER NOT NULL\n                        CHECK(lease_until_ms > heartbeat_at_ms)\n                ) STRICT"
+  ],
+  [
+    "table",
+    "legacy_refresh_input_fences",
+    "legacy_refresh_input_fences",
+    "CREATE TABLE legacy_refresh_input_fences (\n                    input_credential_generation TEXT PRIMARY KEY COLLATE NOCASE\n                        CHECK(length(input_credential_generation) = 36)\n                ) STRICT, WITHOUT ROWID"
+  ],
+  [
+    "table",
+    "raw_observation_prune_guard",
+    "raw_observation_prune_guard",
+    "CREATE TABLE raw_observation_prune_guard (\n                    singleton INTEGER PRIMARY KEY CHECK(singleton = 1)\n                ) STRICT"
+  ],
+  [
+    "table",
+    "paired_devices",
+    "paired_devices",
+    "CREATE TABLE \"paired_devices\" (\n                    device_id TEXT PRIMARY KEY NOT NULL,\n                    display_name TEXT NOT NULL,\n                    token_sha256 BLOB NOT NULL UNIQUE CHECK(length(token_sha256) = 32),\n                    created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),\n                    expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms > created_at_ms),\n                    revoked_at_ms INTEGER,\n                    last_authenticated_at_ms INTEGER, max_expires_at_ms INTEGER\n                    CHECK(max_expires_at_ms IS NULL OR max_expires_at_ms >= created_at_ms),\n                    CHECK(revoked_at_ms IS NULL OR revoked_at_ms >= created_at_ms),\n                    CHECK(last_authenticated_at_ms IS NULL OR last_authenticated_at_ms >= created_at_ms),\n                    CHECK(length(CAST(display_name AS BLOB)) BETWEEN 1 AND 128)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_paired_devices_1",
+    "paired_devices",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_paired_devices_2",
+    "paired_devices",
+    null
+  ],
+  [
+    "table",
+    "legacy_owner_tokens",
+    "legacy_owner_tokens",
+    "CREATE TABLE \"legacy_owner_tokens\" (\n                    singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),\n                    access BLOB NOT NULL CHECK(length(access) > 0),\n                    refresh BLOB NOT NULL CHECK(length(refresh) > 0),\n                    expires_at INTEGER NOT NULL CHECK(expires_at >= 0),\n                    next_refresh_at INTEGER NOT NULL CHECK(next_refresh_at >= 0),\n                    credential_generation TEXT\n                        CHECK(credential_generation IS NULL\n                              OR length(credential_generation) = 36),\n                    CHECK(\n                        (expires_at = 0 AND next_refresh_at = 0)\n                        OR (expires_at > next_refresh_at AND next_refresh_at > 0)\n                    )\n                 ) STRICT"
+  ],
+  [
+    "table",
+    "lifecycle_open_rows",
+    "lifecycle_open_rows",
+    "CREATE TABLE \"lifecycle_open_rows\" (\n                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE CASCADE,\n                    source_table TEXT NOT NULL,\n                    source_row_id INTEGER NOT NULL CHECK(source_row_id > 0),\n                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    car_id INTEGER NOT NULL CHECK(car_id > 0),\n                    domain TEXT NOT NULL CHECK(domain IN (\n                        'drive', 'position', 'charge', 'charge_sample', 'state',\n                        'standalone_position'\n                    )),\n                    parent_source_row_id INTEGER,\n                    row_json TEXT NOT NULL CHECK(json_valid(row_json)),\n                    PRIMARY KEY(source_id, vehicle_id, source_table, source_row_id)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_lifecycle_open_rows_1",
+    "lifecycle_open_rows",
+    null
+  ],
+  [
+    "table",
+    "outbound_request_receipts",
+    "outbound_request_receipts",
+    "CREATE TABLE \"outbound_request_receipts\" (\n                    id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    correlation_id TEXT NOT NULL CHECK(length(correlation_id) = 36),\n                    started_at_ms INTEGER NOT NULL CHECK(started_at_ms >= 0),\n                    completed_at_ms INTEGER,\n                    duration_ms INTEGER,\n                    vehicle_tesla_id INTEGER CHECK(vehicle_tesla_id > 0),\n                    transport TEXT NOT NULL CHECK(transport IN (\n                        'owner_api', 'fleet_api', 'stream', 'legacy_auth'\n                    )),\n                    operation TEXT NOT NULL CHECK(operation IN (\n                        'products', 'vehicle_probe', 'vehicle_data',\n                        'vehicle_wake', 'vehicle_command', 'token_refresh',\n                        'stream_connect', 'stream_subscribe', 'stream_unsubscribe'\n                    )),\n                    safety_class TEXT NOT NULL CHECK(safety_class IN (\n                        'non_wake_endpoint', 'conditional_read',\n                        'direct_wake_command', 'explicit_vehicle_command'\n                    )),\n                    precondition TEXT NOT NULL CHECK(precondition IN (\n                        'not_required', 'stream_power_confirmed'\n                    )),\n                    outcome TEXT NOT NULL CHECK(outcome IN (\n                        'started', 'success', 'http_error', 'timeout',\n                        'transport_error', 'authentication_rejected',\n                        'protocol_error', 'response_too_large', 'cancelled'\n                    )),\n                    http_status INTEGER CHECK(http_status BETWEEN 100 AND 599),\n                    retry_after_seconds INTEGER CHECK(retry_after_seconds >= 0),\n                    CHECK(\n                        (outcome = 'started' AND completed_at_ms IS NULL\n                         AND duration_ms IS NULL AND http_status IS NULL\n                         AND retry_after_seconds IS NULL)\n                        OR\n                        (outcome <> 'started' AND completed_at_ms IS NOT NULL\n                         AND duration_ms IS NOT NULL\n                         AND completed_at_ms >= started_at_ms\n                         AND duration_ms >= 0)\n                    )\n                ) STRICT"
+  ],
+  [
+    "table",
+    "legacy_refresh_receipt_bindings",
+    "legacy_refresh_receipt_bindings",
+    "CREATE TABLE \"legacy_refresh_receipt_bindings\" (\n                    receipt_id INTEGER PRIMARY KEY NOT NULL\n                        REFERENCES \"outbound_request_receipts\"(id) ON DELETE CASCADE,\n                    attempt_id TEXT NOT NULL UNIQUE CHECK(length(attempt_id) = 36),\n                    input_credential_generation TEXT NOT NULL\n                        CHECK(length(input_credential_generation) = 36),\n                    output_credential_generation TEXT\n                        CHECK(output_credential_generation IS NULL\n                              OR length(output_credential_generation) = 36),\n                    CHECK(output_credential_generation IS NULL\n                          OR output_credential_generation <> input_credential_generation)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_legacy_refresh_receipt_bindings_1",
+    "legacy_refresh_receipt_bindings",
+    null
+  ],
+  [
+    "table",
+    "fleet_tokens",
+    "fleet_tokens",
+    "CREATE TABLE fleet_tokens (\n                    singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),\n                    access BLOB NOT NULL CHECK(length(access) BETWEEN 1 AND 16424),\n                    refresh BLOB NOT NULL CHECK(length(refresh) BETWEEN 1 AND 16424),\n                    client_id TEXT NOT NULL\n                        CHECK(length(CAST(client_id AS BLOB)) BETWEEN 1 AND 255),\n                    region TEXT NOT NULL CHECK(region IN ('na', 'eu', 'cn')),\n                    expires_at INTEGER NOT NULL CHECK(expires_at > 0),\n                    next_refresh_at INTEGER NOT NULL\n                        CHECK(next_refresh_at > 0 AND next_refresh_at < expires_at)\n                , credential_generation TEXT\n                    CHECK(credential_generation IS NULL\n                          OR length(credential_generation) = 36)) STRICT"
+  ],
+  [
+    "table",
+    "fleet_refresh_receipt_bindings",
+    "fleet_refresh_receipt_bindings",
+    "CREATE TABLE fleet_refresh_receipt_bindings (\n                    receipt_id INTEGER PRIMARY KEY NOT NULL\n                        REFERENCES outbound_request_receipts(id) ON DELETE CASCADE,\n                    attempt_id TEXT NOT NULL UNIQUE CHECK(length(attempt_id) = 36),\n                    input_credential_generation TEXT NOT NULL\n                        CHECK(length(input_credential_generation) = 36),\n                    output_credential_generation TEXT\n                        CHECK(output_credential_generation IS NULL\n                              OR length(output_credential_generation) = 36),\n                    CHECK(output_credential_generation IS NULL\n                          OR output_credential_generation <> input_credential_generation)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_fleet_refresh_receipt_bindings_1",
+    "fleet_refresh_receipt_bindings",
+    null
+  ],
+  [
+    "table",
+    "fleet_refresh_input_fences",
+    "fleet_refresh_input_fences",
+    "CREATE TABLE fleet_refresh_input_fences (\n                    input_credential_generation TEXT PRIMARY KEY COLLATE NOCASE\n                        CHECK(length(input_credential_generation) = 36)\n                ) STRICT, WITHOUT ROWID"
+  ],
+  [
+    "table",
+    "paired_device_token_grace",
+    "paired_device_token_grace",
+    "CREATE TABLE paired_device_token_grace (\n                    device_id TEXT PRIMARY KEY NOT NULL\n                        REFERENCES paired_devices(device_id) ON DELETE CASCADE,\n                    token_sha256 BLOB NOT NULL UNIQUE CHECK(length(token_sha256) = 32),\n                    valid_until_ms INTEGER NOT NULL CHECK(valid_until_ms >= 0)\n                , sealed_successor BLOB) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_paired_device_token_grace_1",
+    "paired_device_token_grace",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_paired_device_token_grace_2",
+    "paired_device_token_grace",
+    null
+  ],
+  [
+    "table",
+    "pending_physical_v3_admissions",
+    "pending_physical_v3_admissions",
+    "CREATE TABLE pending_physical_v3_admissions (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL,\n                    snapshot_id TEXT NOT NULL UNIQUE,\n                    installation_id TEXT NOT NULL,\n                    account_id TEXT NOT NULL,\n                    selected_car_id INTEGER NOT NULL\n                        CHECK(selected_car_id BETWEEN -32768 AND 32767),\n                    profile TEXT NOT NULL\n                        CHECK(profile = 'hub-sync-v1@1.3.0'),\n                    head_sequence INTEGER NOT NULL\n                        CHECK(head_sequence BETWEEN 0 AND 9007199254740991),\n                    chunk_count INTEGER NOT NULL\n                        CHECK(chunk_count BETWEEN 1 AND 1771),\n                    manifest_sha256 TEXT NOT NULL\n                        CHECK(length(manifest_sha256) = 64),\n                    ordered_chunks_sha256 TEXT NOT NULL\n                        CHECK(length(ordered_chunks_sha256) = 64),\n                    receipt_id TEXT NOT NULL UNIQUE\n                        CHECK(length(receipt_id) = 68),\n                    manifest_json BLOB NOT NULL\n                        CHECK(length(manifest_json) BETWEEN 2 AND 2097152), serve_state TEXT NOT NULL DEFAULT 'public_first'\n                    CHECK(serve_state IN ('public_first', 'blocked_rotation')),\n                    CHECK(length(vehicle_id) = 36),\n                    CHECK(length(snapshot_id) = 36),\n                    CHECK(length(installation_id) = 36),\n                    CHECK(length(account_id) = 36)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_pending_physical_v3_admissions_1",
+    "pending_physical_v3_admissions",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_pending_physical_v3_admissions_2",
+    "pending_physical_v3_admissions",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_pending_physical_v3_admissions_3",
+    "pending_physical_v3_admissions",
+    null
+  ],
+  [
+    "table",
+    "pending_physical_v3_packs",
+    "pending_physical_v3_packs",
+    "CREATE TABLE pending_physical_v3_packs (\n                    sha256 TEXT PRIMARY KEY NOT NULL CHECK(length(sha256) = 64),\n                    snapshot_id TEXT NOT NULL\n                        REFERENCES pending_physical_v3_admissions(snapshot_id)\n                        ON DELETE CASCADE,\n                    ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 0 AND 1770),\n                    relative_path TEXT NOT NULL,\n                    compressed_bytes INTEGER NOT NULL\n                        CHECK(compressed_bytes BETWEEN 1 AND 16777216),\n                    uncompressed_bytes INTEGER NOT NULL CHECK(uncompressed_bytes >= 100),\n                    UNIQUE(snapshot_id, ordinal)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_pending_physical_v3_packs_1",
+    "pending_physical_v3_packs",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_pending_physical_v3_packs_2",
+    "pending_physical_v3_packs",
+    null
+  ],
+  [
+    "table",
+    "retained_physical_v3_admissions",
+    "retained_physical_v3_admissions",
+    "CREATE TABLE \"retained_physical_v3_admissions\" (\n                    vehicle_id TEXT NOT NULL,\n                    snapshot_id TEXT NOT NULL,\n                    installation_id TEXT NOT NULL,\n                    account_id TEXT NOT NULL,\n                    generation INTEGER NOT NULL\n                        CHECK(generation BETWEEN 1 AND 9007199254740991),\n                    selected_car_id INTEGER NOT NULL\n                        CHECK(selected_car_id BETWEEN -32768 AND 32767),\n                    profile TEXT NOT NULL CHECK(profile = 'hub-sync-v1@1.3.0'),\n                    head_sequence INTEGER NOT NULL\n                        CHECK(head_sequence BETWEEN 1 AND 9007199254740991),\n                    chunk_count INTEGER NOT NULL CHECK(chunk_count BETWEEN 1 AND 1771),\n                    manifest_sha256 TEXT NOT NULL CHECK(length(manifest_sha256) = 64),\n                    ordered_chunks_sha256 TEXT NOT NULL\n                        CHECK(length(ordered_chunks_sha256) = 64),\n                    receipt_id TEXT PRIMARY KEY NOT NULL CHECK(length(receipt_id) = 68),\n                    retained_at_ms INTEGER NOT NULL\n                        CHECK(retained_at_ms BETWEEN 0 AND 9007199254740991),\n                    expires_at_ms INTEGER NOT NULL\n                        CHECK(expires_at_ms BETWEEN 1 AND 9007199254740991),\n                    manifest_json BLOB NOT NULL CHECK(length(manifest_json) BETWEEN 2 AND 2097152),\n                    UNIQUE(vehicle_id, head_sequence),\n                    CHECK(expires_at_ms > retained_at_ms),\n                    CHECK(length(vehicle_id) = 36),\n                    CHECK(length(snapshot_id) = 36),\n                    CHECK(length(installation_id) = 36),\n                    CHECK(length(account_id) = 36)\n                 ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_retained_physical_v3_admissions_1",
+    "retained_physical_v3_admissions",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_retained_physical_v3_admissions_2",
+    "retained_physical_v3_admissions",
+    null
+  ],
+  [
+    "table",
+    "retained_physical_v3_packs",
+    "retained_physical_v3_packs",
+    "CREATE TABLE \"retained_physical_v3_packs\" (\n                    receipt_id TEXT NOT NULL\n                        REFERENCES \"retained_physical_v3_admissions\"(receipt_id)\n                        ON DELETE CASCADE,\n                    ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 0 AND 1770),\n                    sha256 TEXT NOT NULL CHECK(length(sha256) = 64),\n                    relative_path TEXT NOT NULL,\n                    compressed_bytes INTEGER NOT NULL\n                        CHECK(compressed_bytes BETWEEN 1 AND 16777216),\n                    uncompressed_bytes INTEGER NOT NULL CHECK(uncompressed_bytes >= 100),\n                    PRIMARY KEY(receipt_id, ordinal),\n                    UNIQUE(receipt_id, sha256)\n                 ) STRICT, WITHOUT ROWID"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_retained_physical_v3_packs_2",
+    "retained_physical_v3_packs",
+    null
+  ],
+  [
+    "table",
+    "prepared_map_months",
+    "prepared_map_months",
+    "CREATE TABLE prepared_map_months (\n                    artifact_id TEXT PRIMARY KEY NOT NULL,\n                    vehicle_id TEXT NOT NULL,\n                    month TEXT NOT NULL,\n                    input_manifest_id TEXT NOT NULL,\n                    input_receipt_id TEXT NOT NULL,\n                    input_sequence INTEGER NOT NULL CHECK(input_sequence >= 1),\n                    source_digest TEXT NOT NULL CHECK(length(source_digest) = 64),\n                    pack_sha256 TEXT NOT NULL CHECK(length(pack_sha256) = 64),\n                    compressed_bytes INTEGER NOT NULL CHECK(compressed_bytes BETWEEN 1 AND 16777216),\n                    receipt_json BLOB NOT NULL CHECK(length(receipt_json) BETWEEN 2 AND 2097152),\n                    UNIQUE(vehicle_id, input_receipt_id, month)\n                 ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_prepared_map_months_1",
+    "prepared_map_months",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_prepared_map_months_2",
+    "prepared_map_months",
+    null
+  ],
+  [
+    "table",
+    "physical_v3_delta_transitions",
+    "physical_v3_delta_transitions",
+    "CREATE TABLE physical_v3_delta_transitions (\n                    target_receipt_id TEXT PRIMARY KEY NOT NULL\n                        REFERENCES pending_physical_v3_admissions(receipt_id) ON DELETE CASCADE,\n                    base_receipt_id TEXT NOT NULL\n                        REFERENCES retained_physical_v3_admissions(receipt_id) ON DELETE CASCADE,\n                    vehicle_id TEXT NOT NULL,\n                    base_manifest_signed_sha256 TEXT NOT NULL CHECK(length(base_manifest_signed_sha256)=64),\n                    target_manifest_signed_sha256 TEXT NOT NULL CHECK(length(target_manifest_signed_sha256)=64),\n                    receipt_json BLOB NOT NULL CHECK(length(receipt_json) BETWEEN 2 AND 2097152),\n                    chunk_count INTEGER NOT NULL CHECK(chunk_count BETWEEN 1 AND 64),\n                    total_compressed_bytes INTEGER NOT NULL CHECK(total_compressed_bytes BETWEEN 1 AND 268435456),\n                    total_uncompressed_bytes INTEGER NOT NULL CHECK(total_uncompressed_bytes BETWEEN 1 AND 2147483648),\n                    total_rows INTEGER NOT NULL CHECK(total_rows BETWEEN 1 AND 2000000),\n                    impacted_roots_count INTEGER NOT NULL CHECK(impacted_roots_count BETWEEN 0 AND 10000),\n                    UNIQUE(vehicle_id,base_receipt_id,target_receipt_id)\n                 ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_physical_v3_delta_transitions_1",
+    "physical_v3_delta_transitions",
+    null
+  ],
+  [
+    "index",
+    "sqlite_autoindex_physical_v3_delta_transitions_2",
+    "physical_v3_delta_transitions",
+    null
+  ],
+  [
+    "table",
+    "physical_v3_delta_packs",
+    "physical_v3_delta_packs",
+    "CREATE TABLE physical_v3_delta_packs (\n                    target_receipt_id TEXT NOT NULL\n                        REFERENCES physical_v3_delta_transitions(target_receipt_id) ON DELETE CASCADE,\n                    ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 0 AND 63),\n                    sha256 TEXT NOT NULL CHECK(length(sha256)=64),\n                    relative_path TEXT NOT NULL,\n                    compressed_bytes INTEGER NOT NULL CHECK(compressed_bytes BETWEEN 1 AND 16777216),\n                    uncompressed_bytes INTEGER NOT NULL CHECK(uncompressed_bytes BETWEEN 1 AND 268435456),\n                    PRIMARY KEY(target_receipt_id,ordinal)\n                 ) STRICT, WITHOUT ROWID"
+  ],
+  [
+    "table",
+    "device_vehicle_grants",
+    "device_vehicle_grants",
+    "CREATE TABLE device_vehicle_grants (\n                    device_id TEXT NOT NULL\n                        REFERENCES paired_devices(device_id) ON DELETE CASCADE,\n                    vehicle_id TEXT NOT NULL\n                        REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    granted_at_ms INTEGER NOT NULL CHECK(granted_at_ms >= 0),\n                    PRIMARY KEY (device_id, vehicle_id)\n                ) STRICT, WITHOUT ROWID"
+  ],
+  [
+    "table",
+    "pairing_challenge_vehicles",
+    "pairing_challenge_vehicles",
+    "CREATE TABLE pairing_challenge_vehicles (\n                    pairing_id TEXT NOT NULL\n                        REFERENCES pairing_challenges(pairing_id) ON DELETE CASCADE,\n                    vehicle_id TEXT NOT NULL\n                        REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    PRIMARY KEY (pairing_id, vehicle_id)\n                ) STRICT, WITHOUT ROWID"
+  ],
+  [
+    "table",
+    "terrain_tile_digests",
+    "terrain_tile_digests",
+    "CREATE TABLE terrain_tile_digests (\n                    tile_name TEXT PRIMARY KEY NOT NULL\n                        CHECK(tile_name GLOB '[NS][0-9][0-9][EW][0-9][0-9][0-9]'),\n                    sha256 TEXT NOT NULL\n                        CHECK(length(sha256) = 64 AND sha256 NOT GLOB '*[^0-9a-f]*'),\n                    recorded_at_ms INTEGER NOT NULL CHECK(recorded_at_ms >= 0)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_terrain_tile_digests_1",
+    "terrain_tile_digests",
+    null
+  ],
+  [
+    "table",
+    "collector_account_state",
+    "collector_account_state",
+    "CREATE TABLE collector_account_state (\n                    singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),\n                    mode TEXT NOT NULL CHECK(mode IN ('legacy', 'provider', 'fleet_polling')),\n                    config_fingerprint TEXT NOT NULL CHECK(length(config_fingerprint) = 64),\n                    state TEXT NOT NULL CHECK(state IN ('collecting', 'owner_api_refused',\n                        'provider_refused', 'fleet_access_refused', 'billing_suspended',\n                        'cap_reached', 'config_error', 'account_locked')),\n                    reason_code TEXT NOT NULL CHECK(length(reason_code) BETWEEN 1 AND 64),\n                    since_ms INTEGER NOT NULL CHECK(since_ms >= 0),\n                    rate_limited_until_ms INTEGER\n                        CHECK(rate_limited_until_ms IS NULL OR rate_limited_until_ms >= 0),\n                    next_probe_ms INTEGER CHECK(next_probe_ms IS NULL OR next_probe_ms >= 0),\n                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0)\n                ) STRICT"
+  ],
+  [
+    "table",
+    "collector_vehicle_state",
+    "collector_vehicle_state",
+    "CREATE TABLE collector_vehicle_state (\n                    vehicle_id TEXT PRIMARY KEY NOT NULL\n                        REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    phase TEXT NOT NULL CHECK(phase IN ('unknown', 'asleep', 'offline',\n                        'online', 'suspended', 'driving', 'charging', 'updating')),\n                    hold TEXT NOT NULL CHECK(hold IN ('none', 'disabled', 'service',\n                        'paused', 'removed')),\n                    reason_code TEXT NOT NULL CHECK(length(reason_code) BETWEEN 1 AND 64),\n                    phase_since_ms INTEGER NOT NULL CHECK(phase_since_ms >= 0),\n                    suspended_until_ms INTEGER\n                        CHECK(suspended_until_ms IS NULL OR suspended_until_ms >= 0),\n                    next_probe_ms INTEGER CHECK(next_probe_ms IS NULL OR next_probe_ms >= 0),\n                    last_wake_read_at_ms INTEGER\n                        CHECK(last_wake_read_at_ms IS NULL OR last_wake_read_at_ms >= 0),\n                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0)\n                ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_collector_vehicle_state_1",
+    "collector_vehicle_state",
+    null
+  ],
+  [
+    "table",
+    "collector_request_counters",
+    "collector_request_counters",
+    "CREATE TABLE collector_request_counters (\n                    month TEXT NOT NULL CHECK(length(month) = 7),\n                    mode TEXT NOT NULL CHECK(mode IN ('legacy', 'provider', 'fleet_polling')),\n                    category TEXT NOT NULL CHECK(category IN ('data', 'state', 'wake', 'command')),\n                    sent INTEGER NOT NULL CHECK(sent >= 0),\n                    billable INTEGER NOT NULL CHECK(billable >= 0 AND billable <= sent),\n                    reserved INTEGER NOT NULL CHECK(reserved >= billable),\n                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0),\n                    PRIMARY KEY(month, mode, category)\n                ) STRICT, WITHOUT ROWID"
+  ],
+  [
+    "table",
+    "collection_gaps",
+    "collection_gaps",
+    "CREATE TABLE collection_gaps (\n                    gap_id INTEGER PRIMARY KEY,\n                    vehicle_id TEXT REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    kind TEXT NOT NULL CHECK(kind IN ('hub_down', 'hub_stopped',\n                        'host_suspended', 'cap_reached', 'owner_api_refused',\n                        'provider_refused', 'fleet_access_refused', 'billing_suspended',\n                        'config_error', 'account_locked', 'auth_terminal', 'vehicle_paused',\n                        'rate_limited', 'tesla_unreachable')),\n                    started_at_ms INTEGER NOT NULL CHECK(started_at_ms >= 0),\n                    ended_at_ms INTEGER\n                        CHECK(ended_at_ms IS NULL OR ended_at_ms >= started_at_ms),\n                    alert INTEGER NOT NULL CHECK(alert IN (0, 1)),\n                    notified_at_ms INTEGER CHECK(notified_at_ms IS NULL OR notified_at_ms >= 0),\n                    created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0)\n                ) STRICT"
+  ],
+  [
+    "table",
+    "collector_owner_actions",
+    "collector_owner_actions",
+    "CREATE TABLE collector_owner_actions (\n                    action_id INTEGER PRIMARY KEY,\n                    action TEXT NOT NULL CHECK(action IN ('retry_collection', 'resume_vehicle')),\n                    vehicle_id TEXT REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                    requested_at_ms INTEGER NOT NULL CHECK(requested_at_ms >= 0),\n                    applied_at_ms INTEGER CHECK(applied_at_ms IS NULL OR applied_at_ms >= 0),\n                    CHECK((action = 'resume_vehicle') = (vehicle_id IS NOT NULL))\n                ) STRICT"
+  ],
+  [
+    "table",
+    "collector_auth_state",
+    "collector_auth_state",
+    "CREATE TABLE collector_auth_state (\n                    singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),\n                    state TEXT NOT NULL CHECK(state IN ('ready', 'refreshing', 'retrying',\n                        'persistence_pending', 'awaiting_confirmation', 'observer_waiting',\n                        'clock_invalid', 'configuration_error', 'sign_in_required',\n                        'signed_out', 'api_refused')),\n                    reason TEXT CHECK(reason IS NULL OR length(reason) BETWEEN 1 AND 64),\n                    collecting INTEGER NOT NULL CHECK(collecting IN (0, 1)),\n                    retry_at INTEGER CHECK(retry_at IS NULL OR retry_at >= 0),\n                    stopped_generation TEXT\n                        CHECK(stopped_generation IS NULL OR length(stopped_generation) = 36),\n                    stopped_mode TEXT\n                        CHECK(stopped_mode IS NULL OR stopped_mode IN ('legacy', 'provider')),\n                    fuse_consecutive INTEGER NOT NULL CHECK(fuse_consecutive BETWEEN 0 AND 3),\n                    fuse_generation TEXT\n                        CHECK(fuse_generation IS NULL OR length(fuse_generation) = 36),\n                    fuse_last_rejection_at INTEGER\n                        CHECK(fuse_last_rejection_at IS NULL OR fuse_last_rejection_at >= 0),\n                    fuse_pause_until INTEGER\n                        CHECK(fuse_pause_until IS NULL OR fuse_pause_until >= 0),\n                    clock_skew INTEGER NOT NULL CHECK(clock_skew IN (0, 1)),\n                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0), fuse_rejected_access_digest TEXT\n                    CHECK(fuse_rejected_access_digest IS NULL\n                          OR length(fuse_rejected_access_digest) = 36),\n                    CHECK((state IN ('sign_in_required', 'signed_out'))\n                          = (stopped_generation IS NOT NULL)),\n                    CHECK((state = 'api_refused') = (stopped_mode IS NOT NULL)),\n                    CHECK((fuse_consecutive = 0) = (fuse_generation IS NULL))\n                ) STRICT"
+  ],
+  [
+    "table",
+    "fleet_telemetry_accumulator_states",
+    "fleet_telemetry_accumulator_states",
+    "CREATE TABLE fleet_telemetry_accumulator_states (\n        vehicle_id TEXT PRIMARY KEY NOT NULL\n            REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n        state_version INTEGER NOT NULL CHECK(state_version = 2),\n        state_json BLOB NOT NULL\n            CHECK(length(state_json) BETWEEN 2 AND 262144),\n        updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0)\n    ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_fleet_telemetry_accumulator_states_1",
+    "fleet_telemetry_accumulator_states",
+    null
+  ],
+  [
+    "table",
+    "retired_delivery_gaps",
+    "retired_delivery_gaps",
+    "CREATE TABLE retired_delivery_gaps (\n        retired_gap_id INTEGER PRIMARY KEY,\n        installation_id TEXT NOT NULL,\n        lineage TEXT NOT NULL,\n        spool_seq INTEGER NOT NULL CHECK(spool_seq >= 1),\n        item_id TEXT NOT NULL CHECK(length(item_id) = 64),\n        reason TEXT NOT NULL,\n        occurred_at_ms INTEGER,\n        evidence_sha256 TEXT\n            CHECK(evidence_sha256 IS NULL OR length(evidence_sha256) = 64),\n        committed_at_ms INTEGER NOT NULL CHECK(committed_at_ms >= 0),\n        vehicle_id TEXT REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n        copied_at_ms INTEGER NOT NULL CHECK(copied_at_ms >= 0),\n        UNIQUE(installation_id, lineage, spool_seq)\n    ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_retired_delivery_gaps_1",
+    "retired_delivery_gaps",
+    null
+  ],
+  [
+    "table",
+    "store_data_steps",
+    "store_data_steps",
+    "CREATE TABLE store_data_steps (\n        step_key TEXT PRIMARY KEY NOT NULL,\n        completed_at_ms INTEGER NOT NULL,\n        summary_json TEXT NOT NULL CHECK(json_valid(summary_json))\n    ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_store_data_steps_1",
+    "store_data_steps",
+    null
+  ],
+  [
+    "table",
+    "geofences",
+    "geofences",
+    "CREATE TABLE \"geofences\" (\n            vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n            source_geofence_id INTEGER NOT NULL CHECK(source_geofence_id > 0),\n            name TEXT NOT NULL\n                CHECK(length(CAST(name AS BLOB)) BETWEEN 1 AND 1020),\n            latitude REAL NOT NULL CHECK(latitude >= -90.0 AND latitude <= 90.0),\n            longitude REAL NOT NULL CHECK(longitude >= -180.0 AND longitude <= 180.0),\n            radius_m REAL NOT NULL CHECK(radius_m > 0.0 AND radius_m <= 32767.0),\n            billing_type TEXT\n                CHECK(billing_type IS NULL OR billing_type IN ('per_kwh', 'per_minute')),\n            cost_per_unit REAL,\n            session_fee REAL,\n            source_owned INTEGER NOT NULL DEFAULT 0 CHECK(source_owned IN (0, 1)),\n            PRIMARY KEY(vehicle_id, source_geofence_id)\n        ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_geofences_1",
+    "geofences",
+    null
+  ],
+  [
+    "table",
+    "geofence_id_marks",
+    "geofence_id_marks",
+    "CREATE TABLE geofence_id_marks (\n            vehicle_id TEXT PRIMARY KEY NOT NULL\n                REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n            last_hub_id INTEGER NOT NULL CHECK(last_hub_id >= 2147483648)\n        ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_geofence_id_marks_1",
+    "geofence_id_marks",
+    null
+  ],
+  [
+    "table",
+    "deleted_imported_geofences",
+    "deleted_imported_geofences",
+    "CREATE TABLE deleted_imported_geofences (\n            vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,\n            source_geofence_id INTEGER NOT NULL\n                CHECK(source_geofence_id BETWEEN 1 AND 2147483647),\n            PRIMARY KEY(vehicle_id, source_geofence_id)\n        ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_deleted_imported_geofences_1",
+    "deleted_imported_geofences",
+    null
+  ],
+  [
+    "table",
+    "terrain_tidy_state",
+    "terrain_tidy_state",
+    "CREATE TABLE terrain_tidy_state (\n             step TEXT PRIMARY KEY NOT NULL CHECK(length(step) > 0),\n             resume_vehicle_id TEXT NOT NULL DEFAULT '',\n             resume_position_id INTEGER NOT NULL DEFAULT 0 CHECK(resume_position_id >= 0),\n             examined INTEGER NOT NULL DEFAULT 0 CHECK(examined >= 0),\n             cleared INTEGER NOT NULL DEFAULT 0 CHECK(cleared >= 0),\n             requeued INTEGER NOT NULL DEFAULT 0 CHECK(requeued >= 0),\n             removed INTEGER NOT NULL DEFAULT 0 CHECK(removed >= 0),\n             kept INTEGER NOT NULL DEFAULT 0 CHECK(kept >= 0),\n             drives_changed INTEGER NOT NULL DEFAULT 0 CHECK(drives_changed >= 0),\n             run INTEGER NOT NULL DEFAULT 1 CHECK(run >= 1),\n             armed_at_ms INTEGER CHECK(armed_at_ms IS NULL OR armed_at_ms >= 0),\n             completed_at_ms INTEGER CHECK(completed_at_ms IS NULL OR completed_at_ms >= 0)\n         ) STRICT"
+  ],
+  [
+    "index",
+    "sqlite_autoindex_terrain_tidy_state_1",
+    "terrain_tidy_state",
+    null
+  ],
+  [
+    "table",
+    "current_observations",
+    "current_observations",
+    "CREATE TABLE \"current_observations\"(\n                vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,\n                record_type TEXT NOT NULL CHECK(record_type IN (\n                    'owner_api_discovery_v1', 'owner_api_vehicle_data_v1',\n                    'fleet_api_discovery_v1', 'fleet_api_vehicle_data_v1',\n                    'tesla_stream_update_v1', 'source_db_position_v1')),\n                observation_id INTEGER NOT NULL CHECK(observation_id > 0),\n                source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE RESTRICT,\n                observed_at_ms INTEGER NOT NULL CHECK(observed_at_ms >= 0),\n                received_at_ms INTEGER NOT NULL CHECK(received_at_ms >= 0),\n                payload_sha256 BLOB NOT NULL CHECK(length(payload_sha256) = 32),\n                payload_json TEXT NOT NULL CHECK(json_valid(payload_json))\n                    CHECK(length(CAST(payload_json AS BLOB)) <= 262144),\n                PRIMARY KEY(vehicle_id, record_type)\n             ) STRICT, WITHOUT ROWID"
+  ],
+  [
+    "index",
+    "sync_ledger_source_sequence",
+    "sync_ledger",
+    "CREATE INDEX sync_ledger_source_sequence\n                    ON sync_ledger(source_id, sequence)"
+  ],
+  [
+    "index",
+    "sync_manifests_vehicle_head",
+    "sync_manifests",
+    "CREATE INDEX sync_manifests_vehicle_head\n                    ON sync_manifests(vehicle_id, head_sequence DESC)"
+  ],
+  [
+    "index",
+    "vehicles_source_id",
+    "vehicles",
+    "CREATE INDEX vehicles_source_id\n                    ON vehicles(source_id)"
+  ],
+  [
+    "index",
+    "raw_observations_vehicle_observed",
+    "raw_observations",
+    "CREATE INDEX raw_observations_vehicle_observed\n                    ON raw_observations(vehicle_id, observed_at_ms, observation_id)"
+  ],
+  [
+    "index",
+    "pairing_challenges_expiry",
+    "pairing_challenges",
+    "CREATE INDEX pairing_challenges_expiry\n                    ON pairing_challenges(expires_at_ms)"
+  ],
+  [
+    "index",
+    "materialised_charge_samples_charge",
+    "materialised_charge_samples",
+    "CREATE INDEX materialised_charge_samples_charge\n                    ON materialised_charge_samples(vehicle_id, charge_id)"
+  ],
+  [
+    "index",
+    "materialised_positions_drive",
+    "materialised_positions",
+    "CREATE INDEX materialised_positions_drive\n                    ON materialised_positions(vehicle_id, drive_id)"
+  ],
+  [
+    "index",
+    "address_lookup_cache_identity",
+    "address_lookup_cache",
+    "CREATE INDEX address_lookup_cache_identity\n                    ON address_lookup_cache(osm_type, osm_id)"
+  ],
+  [
+    "index",
+    "address_enrichment_target",
+    "address_enrichment_jobs",
+    "CREATE UNIQUE INDEX address_enrichment_target\n                    ON address_enrichment_jobs(vehicle_id, target_type, target_id, field)"
+  ],
+  [
+    "index",
+    "vehicle_identity_aliases_vehicle",
+    "vehicle_identity_aliases",
+    "CREATE INDEX vehicle_identity_aliases_vehicle\n                    ON vehicle_identity_aliases(vehicle_id)"
+  ],
+  [
+    "index",
+    "sync_deltas_vehicle_sequence",
+    "sync_deltas",
+    "CREATE INDEX sync_deltas_vehicle_sequence\n                    ON sync_deltas(vehicle_id, from_sequence, to_sequence)"
+  ],
+  [
+    "index",
+    "import_generations_vehicle",
+    "import_generations",
+    "CREATE INDEX import_generations_vehicle\n                    ON import_generations(vehicle_id, status)"
+  ],
+  [
+    "index",
+    "sync_mutations_pending",
+    "sync_mutations",
+    "CREATE INDEX sync_mutations_pending\n                    ON sync_mutations(vehicle_id, published, revision, claimed_until_ms)"
+  ],
+  [
+    "index",
+    "snapshot_fingerprints_manifest",
+    "snapshot_fingerprints",
+    "CREATE INDEX snapshot_fingerprints_manifest\n                    ON snapshot_fingerprints(snapshot_id, head_sequence)"
+  ],
+  [
+    "index",
+    "sync_live_delta_spans_revision_range",
+    "sync_live_delta_spans",
+    "CREATE UNIQUE INDEX sync_live_delta_spans_revision_range\n                    ON sync_live_delta_spans(vehicle_id, from_revision, to_revision)"
+  ],
+  [
+    "index",
+    "sync_mutations_compaction_latest",
+    "sync_mutations",
+    "CREATE INDEX sync_mutations_compaction_latest\n                    ON sync_mutations(vehicle_id, entity, entity_id, revision DESC)"
+  ],
+  [
+    "index",
+    "stream_session_receipts_proof",
+    "stream_session_receipts",
+    "CREATE INDEX stream_session_receipts_proof\n                    ON stream_session_receipts(correlation_id, outcome, id)"
+  ],
+  [
+    "index",
+    "stream_session_receipts_retention",
+    "stream_session_receipts",
+    "CREATE INDEX stream_session_receipts_retention\n                    ON stream_session_receipts(outcome, completed_at_ms, id)"
+  ],
+  [
+    "index",
+    "sync_retired_lineage_packs_authorization",
+    "sync_retired_lineage_packs",
+    "CREATE INDEX sync_retired_lineage_packs_authorization\n                    ON sync_retired_lineage_packs(pack_digest, vehicle_id, head_digest)"
+  ],
+  [
+    "index",
+    "sync_retired_lineages_expiry",
+    "sync_retired_lineages",
+    "CREATE INDEX sync_retired_lineages_expiry\n                    ON sync_retired_lineages(expires_at_ms, vehicle_id, head_digest)"
+  ],
+  [
+    "index",
+    "lifecycle_open_rows_vehicle_domain",
+    "lifecycle_open_rows",
+    "CREATE INDEX lifecycle_open_rows_vehicle_domain\n                    ON lifecycle_open_rows(vehicle_id, domain, source_row_id)"
+  ],
+  [
+    "index",
+    "outbound_request_receipts_proof",
+    "outbound_request_receipts",
+    "CREATE INDEX outbound_request_receipts_proof\n                    ON outbound_request_receipts(\n                        correlation_id, id, safety_class, outcome\n                    )"
+  ],
+  [
+    "index",
+    "outbound_request_receipts_retention",
+    "outbound_request_receipts",
+    "CREATE INDEX outbound_request_receipts_retention\n                    ON outbound_request_receipts(outcome, completed_at_ms, id)"
+  ],
+  [
+    "index",
+    "legacy_refresh_receipt_output_generation",
+    "legacy_refresh_receipt_bindings",
+    "CREATE UNIQUE INDEX legacy_refresh_receipt_output_generation\n                    ON legacy_refresh_receipt_bindings(output_credential_generation)\n                    WHERE output_credential_generation IS NOT NULL"
+  ],
+  [
+    "index",
+    "fleet_refresh_receipt_output_generation",
+    "fleet_refresh_receipt_bindings",
+    "CREATE UNIQUE INDEX fleet_refresh_receipt_output_generation\n                    ON fleet_refresh_receipt_bindings(output_credential_generation)\n                    WHERE output_credential_generation IS NOT NULL"
+  ],
+  [
+    "index",
+    "raw_observations_vehicle_cursor",
+    "raw_observations",
+    "CREATE INDEX raw_observations_vehicle_cursor\n                    ON raw_observations(vehicle_id, observation_id)"
+  ],
+  [
+    "index",
+    "materialised_drives_public_query",
+    "materialised_drives",
+    "CREATE INDEX materialised_drives_public_query\n                    ON materialised_drives(\n                        vehicle_id,\n                        CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER) DESC,\n                        drive_id DESC\n                    )"
+  ],
+  [
+    "index",
+    "retained_physical_v3_expiry",
+    "retained_physical_v3_admissions",
+    "CREATE INDEX retained_physical_v3_expiry\n                    ON retained_physical_v3_admissions(expires_at_ms, vehicle_id)"
+  ],
+  [
+    "index",
+    "retained_physical_v3_vehicle_sequence",
+    "retained_physical_v3_admissions",
+    "CREATE INDEX retained_physical_v3_vehicle_sequence\n                    ON retained_physical_v3_admissions(vehicle_id, head_sequence DESC)"
+  ],
+  [
+    "index",
+    "prepared_map_months_pack",
+    "prepared_map_months",
+    "CREATE INDEX prepared_map_months_pack ON prepared_map_months(pack_sha256)"
+  ],
+  [
+    "index",
+    "physical_v3_delta_packs_digest",
+    "physical_v3_delta_packs",
+    "CREATE INDEX physical_v3_delta_packs_digest ON physical_v3_delta_packs(sha256)"
+  ],
+  [
+    "index",
+    "device_vehicle_grants_vehicle",
+    "device_vehicle_grants",
+    "CREATE INDEX device_vehicle_grants_vehicle\n                    ON device_vehicle_grants(vehicle_id, device_id)"
+  ],
+  [
+    "index",
+    "collection_gaps_open",
+    "collection_gaps",
+    "CREATE INDEX collection_gaps_open ON collection_gaps(ended_at_ms, gap_id)"
+  ],
+  [
+    "index",
+    "collector_owner_actions_pending",
+    "collector_owner_actions",
+    "CREATE INDEX collector_owner_actions_pending\n                    ON collector_owner_actions(applied_at_ms, action_id)"
+  ],
+  [
+    "index",
+    "geofences_vehicle_location",
+    "geofences",
+    "CREATE INDEX geofences_vehicle_location\n                 ON geofences(vehicle_id, latitude, longitude)"
+  ],
+  [
+    "index",
+    "terrain_provenance_retry",
+    "terrain_elevation_provenance",
+    "CREATE INDEX terrain_provenance_retry\n             ON terrain_elevation_provenance(status, retry_after_ms, vehicle_id, position_id)"
+  ],
+  [
+    "index",
+    "terrain_provenance_vehicle_retry",
+    "terrain_elevation_provenance",
+    "CREATE INDEX terrain_provenance_vehicle_retry\n             ON terrain_elevation_provenance(vehicle_id, retry_after_ms) WHERE status = 'failed'"
+  ],
+  [
+    "trigger",
+    "raw_observations_append_only_update",
+    "raw_observations",
+    "CREATE TRIGGER raw_observations_append_only_update\n                BEFORE UPDATE ON raw_observations\n                FOR EACH ROW\n                BEGIN\n                    SELECT RAISE(ABORT, 'raw observations are append-only');\n                END"
+  ],
+  [
+    "trigger",
+    "raw_observations_match_vehicle_source",
+    "raw_observations",
+    "CREATE TRIGGER raw_observations_match_vehicle_source\n                BEFORE INSERT ON raw_observations\n                FOR EACH ROW\n                WHEN NOT EXISTS (\n                    SELECT 1 FROM vehicle_identity_aliases\n                    WHERE vehicle_id = NEW.vehicle_id AND source_id = NEW.source_id\n                )\n                BEGIN\n                    SELECT RAISE(ABORT, 'raw observation source and vehicle mismatch');\n                END"
+  ],
+  [
+    "trigger",
+    "raw_observations_append_only_delete",
+    "raw_observations",
+    "CREATE TRIGGER raw_observations_append_only_delete\n                BEFORE DELETE ON raw_observations\n                FOR EACH ROW\n                WHEN NOT EXISTS (\n                    SELECT 1 FROM raw_observation_prune_guard WHERE singleton = 1\n                )\n                BEGIN\n                    SELECT RAISE(ABORT, 'raw observations are append-only');\n                END"
+  ]
+]

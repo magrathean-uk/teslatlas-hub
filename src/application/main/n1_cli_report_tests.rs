@@ -296,22 +296,34 @@ fn mt4_3_unknown_key_is_refused_unless_new_import_source() {
     );
 }
 
-fn preceding_import_fixture() -> (tempfile::TempDir, HubStore) {
-    use std::os::unix::fs::PermissionsExt;
+fn current_import_fixture() -> (tempfile::TempDir, HubStore, uuid::Uuid, uuid::Uuid) {
     let temporary = tempfile::tempdir().unwrap();
-    let bytes = zstd::stream::decode_all(
-        include_bytes!("../../../fixtures/n1/v77-catalogue.sqlite.zst").as_slice(),
-    )
-    .unwrap();
-    let path = temporary.path().join("hub.sqlite");
-    fs::write(&path, bytes).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
     let store = HubStore::initialize(temporary.path()).unwrap();
-    (temporary, store)
+    let source = store
+        .register_import_source("default", 1000, false)
+        .unwrap();
+    let first = store
+        .register_vehicle(
+            &teslatlas_hub::db::VehicleDescriptor::new(source.source_id, "car-1"),
+            1000,
+        )
+        .unwrap();
+    for index in 2..=66 {
+        store
+            .register_vehicle(
+                &teslatlas_hub::db::VehicleDescriptor::new(
+                    source.source_id,
+                    format!("car-{index}"),
+                ),
+                1000,
+            )
+            .unwrap();
+    }
+    (temporary, store, source.source_id, first.vehicle_id)
 }
 
 fn assert_migration_argument_identity(arguments: Vec<String>) {
-    let (_temporary, store) = preceding_import_fixture();
+    let (_temporary, store, existing_source, existing_vehicle) = current_import_fixture();
     let cli = Cli::try_parse_from(arguments).unwrap();
     let Command::Migrate {
         source_key,
@@ -340,10 +352,7 @@ fn assert_migration_argument_identity(arguments: Vec<String>) {
     let source = store
         .register_import_source(key, 3000, new_import_source)
         .unwrap();
-    assert_eq!(
-        source.source_id.to_string(),
-        "10000000-0000-4000-8000-000000000001"
-    );
+    assert_eq!(source.source_id, existing_source);
     assert_eq!(source.kind, "source_db");
     let vehicle = store
         .register_vehicle(
@@ -351,10 +360,7 @@ fn assert_migration_argument_identity(arguments: Vec<String>) {
             3000,
         )
         .unwrap();
-    assert_eq!(
-        vehicle.vehicle_id.to_string(),
-        "20000000-0000-4000-8000-000000000001"
-    );
+    assert_eq!(vehicle.vehicle_id, existing_vehicle);
     assert_eq!(store.runtime_inventory().unwrap().vehicles, 66);
 }
 

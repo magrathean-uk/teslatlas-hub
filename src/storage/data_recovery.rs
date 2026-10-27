@@ -63,11 +63,12 @@ const COPY_BUFFER_BYTES: usize = 1024 * 1024;
 // allocate a second copy: the staged backup/restore remains one payload copy.
 const COPY_CAPACITY_HEADROOM_DIVISOR: u64 = 20;
 const COPY_CAPACITY_FIXED_HEADROOM_BYTES: u64 = 8 * 1024 * 1024;
-const MIN_RESTORABLE_SCHEMA_VERSION: i32 = 52;
+const MIN_RESTORABLE_SCHEMA_VERSION: i32 = crate::db::MIN_STORE_VERSION;
 /// The first schema whose catalogue always holds the per-device vehicle grant
 /// tables (and, with them, every pairing table). A backup of an older schema
 /// may lack the grant tables and the rotation grace table; a backup that
-/// declares this schema or a later one must hold all of them.
+/// declares this schema or a later one must hold all of them. The historical
+/// optional-table branches retire with the older backup formats in G2-4 M3.
 const FIRST_SCHEMA_WITH_GRANT_TABLES: i32 = 68;
 const EXCLUDED_HOST_STATE: [&str; 5] = [
     "collector_decryption_key",
@@ -866,9 +867,14 @@ fn validate_manifest(manifest: &BackupManifest) -> Result<(), DataRecoveryError>
         return Err(invalid("data-backup build identifier is invalid"));
     }
     if !(MIN_RESTORABLE_SCHEMA_VERSION..=SCHEMA_VERSION).contains(&manifest.hub_schema) {
+        let guidance = if manifest.hub_schema < MIN_RESTORABLE_SCHEMA_VERSION {
+            "; re-import from the source into a new store"
+        } else {
+            ""
+        };
         return Err(invalid(format!(
-            "data-backup schema {} is outside the supported restore range {} through {}",
-            manifest.hub_schema, MIN_RESTORABLE_SCHEMA_VERSION, SCHEMA_VERSION
+            "data-backup schema {} is outside the supported restore range {} through {}{}",
+            manifest.hub_schema, MIN_RESTORABLE_SCHEMA_VERSION, SCHEMA_VERSION, guidance
         )));
     }
     if manifest.protocol != expected_protocol() {

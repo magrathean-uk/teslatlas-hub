@@ -20,7 +20,7 @@ import urllib.parse
 
 DEFAULT_CLASSES = {'read-sql', 'frozen-history', 'g2-4-recorded'}
 OPTIONAL_CLASSES = {'deprecated-alias', 'n1-pending'}
-EXPIRIES = {'none', 'G2-4-M1', 'G2-4-M2', 'G2-4-M5', 'G2-4', 'G2-5',
+EXPIRIES = {'none', 'G2-4-M1', 'G2-4-M2', 'G2-4-M3', 'G2-4-M5', 'G2-4', 'G2-5',
             'G5-7', 'lineage-2.1', 'G2-9', 'C6-R52a', 'N1b', 'N1c'}
 DATA_PATHS = ['scripts/name-policy/' + name + '.json' for name in ('allow', 'pins', 'milestones')]
 SCRIPT_PATH = 'scripts/verify-name-policy.py'

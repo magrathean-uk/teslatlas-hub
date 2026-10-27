@@ -1692,8 +1692,12 @@
       "sha256": "f4d2e7257d48d57aed745df8778c8036e0a333dc325022348744f3781fd7e7c6"
     },
     {
-      "path": "fixtures/n1/v77-catalogue.sqlite.zst",
-      "sha256": "98824546b38144f899e7a9a47cbb859162bcec8b6b9ce7d15711c17a09d2cb4a"
+      "path": "fixtures/g2-4/m1/store-f-minus-one.sqlite.zst",
+      "sha256": "ef582f13f26f6bd9ae529141f3886af88ca2bfff4b4244c68b5844a6e9f1400a"
+    },
+    {
+      "path": "fixtures/g2-4/m1/store-f.sqlite.zst",
+      "sha256": "20f5caed077775716b4a3e61d4f4359c1bd6eda132d65413d286eb672008f86f"
     },
     {
       "path": "macos/TeslatlasHubApp/Artwork/AppIcon.iconset/icon_128x128.png",

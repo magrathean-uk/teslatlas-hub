@@ -1,5 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+pub const MIN_STORE_VERSION: i32 = 78;
+const _: () = assert!(MIN_STORE_VERSION <= SCHEMA_VERSION);
+
+fn admit_store_version(version: i32, maximum: i32) -> Result<(), StoreError> {
+    if version < MIN_STORE_VERSION || version > maximum {
+        return Err(StoreError::UnsupportedSchema(version));
+    }
+    Ok(())
+}
+
+fn unsupported_schema_message(version: i32) -> String {
+    if version < MIN_STORE_VERSION {
+        format!(
+            "hub schema version {version} is below minimum {MIN_STORE_VERSION}; \
+             re-import from the source into a new store, or upgrade first with an \
+             earlier release that supports schema {MIN_STORE_VERSION}"
+        )
+    } else {
+        format!("unsupported hub schema version {version}")
+    }
+}
+
 impl HubStore {
     pub fn initialize(data_dir: impl AsRef<Path>) -> Result<Self, StoreError> {
         let data_dir = data_dir.as_ref();
@@ -17,21 +39,14 @@ impl HubStore {
         validate_private_store_directory(data_dir)
             .map_err(|()| StoreError::UnsafeDataDir(data_dir.to_path_buf()))?;
         let packs_dir = data_dir.join("packs");
-        let packs_dir_was_absent = !packs_dir.exists();
-        fs::create_dir_all(&packs_dir).map_err(StoreError::CreatePacksDir)?;
-        if packs_dir_was_absent {
-            fs::set_permissions(
-                &packs_dir,
-                fs::Permissions::from_mode(SHARED_DATA_DIRECTORY_MODE),
-            )
-            .map_err(StoreError::ProtectPacksDir)?;
+        if packs_dir.exists() {
+            validate_private_store_directory(&packs_dir)
+                .map_err(|()| StoreError::UnsafePacksDir(packs_dir.clone()))?;
         }
-        validate_private_store_directory(&packs_dir)
-            .map_err(|()| StoreError::UnsafePacksDir(packs_dir.clone()))?;
 
         let store = Self {
             database_path: data_dir.join("hub.sqlite"),
-            packs_dir,
+            packs_dir: packs_dir.clone(),
             private_import_spool_dir: private_import_spool_root(data_dir),
             publication_lock_path: publication_lock_path(data_dir),
             immutable_snapshot: None,
@@ -51,6 +66,17 @@ impl HubStore {
         };
         ensure_shared_sqlite_catalogue_file_with_repair(&store.database_path, false)?;
         let mut connection = store.open()?;
+        let packs_dir_was_absent = !packs_dir.exists();
+        fs::create_dir_all(&packs_dir).map_err(StoreError::CreatePacksDir)?;
+        if packs_dir_was_absent {
+            fs::set_permissions(
+                &packs_dir,
+                fs::Permissions::from_mode(SHARED_DATA_DIRECTORY_MODE),
+            )
+            .map_err(StoreError::ProtectPacksDir)?;
+        }
+        validate_private_store_directory(&packs_dir)
+            .map_err(|()| StoreError::UnsafePacksDir(packs_dir.clone()))?;
         store.ensure_schema_22_noop_directory()?;
         migrate(&connection)?;
         // C6 R54, R57 (C6 section 7 item 11): the one-time identity tidy runs
@@ -366,24 +392,8 @@ impl HubStore {
         Self::open_read_only_with_mode(data_dir.as_ref(), true, false)
     }
 
-    /// Standalone Serve can migrate the known v66 current-cache shape, the v67
-    /// shape (before per-device vehicle grants), the v68 shape (before
-    /// geocoder lookups were bound to their provider and terrain tile digests
-    /// were recorded), the v69 shape (before the collector state tables), the v70
-    /// shape (before the credential status table), the v71 shape (before its
-    /// rejected-access digest), the v72 shape (before the receiver accumulator-state
-    /// table), the v73 shape (before the retired delivery objects were dropped), the
-    /// v74 shape (before the table of completed one-time data steps, C6 R63), the
-    /// v75 shape (before the geofence step) and the v76 shape (before the terrain
-    /// selection step), and the v77 shape (before import-name migration), to
-    /// the current schema. The geofence step (C8 R12) rebuilds the fence table
-    /// with a wider name, radius and session-fee rule and a source-ownership
-    /// column, and adds the fence id mark and imported-fence tombstone tables.
-    /// The terrain selection step (C9 R61) adds the import boundary columns,
-    /// resets each terrain cursor once, creates the pending terrain tidy row
-    /// extends the retry-order index and adds a per-vehicle index of failed
-    /// retries.
-    /// Return no store handle: consumers still require a fully migrated schema.
+    /// Admit a standalone catalogue within the supported schema range before
+    /// startup. Consumers still require a fully migrated schema.
     pub(crate) fn preflight_standalone_schema_read_only(data_dir: &Path) -> Result<(), StoreError> {
         Self::open_read_only_with_mode(data_dir, false, true).map(|_| ())
     }
@@ -427,10 +437,8 @@ impl HubStore {
             return Err(StoreError::InvalidApplicationId(application_id));
         }
         let version = schema_version(&connection)?;
-        let known_forward_upgrade = standalone_migration_candidate
-            && SCHEMA_VERSION == import_source_names_step::VERSION
-            && (66..import_source_names_step::VERSION).contains(&version);
-        if version != SCHEMA_VERSION && !known_forward_upgrade {
+        admit_store_version(version, SCHEMA_VERSION)?;
+        if version != SCHEMA_VERSION && !standalone_migration_candidate {
             return Err(StoreError::UnsupportedSchema(version));
         }
         Ok(store)

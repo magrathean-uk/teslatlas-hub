@@ -302,7 +302,11 @@
         "fixtures/delta-v2/SHA256SUMS",
         "fixtures/delta-v2/manifest.json",
         "fixtures/lineage_manifest_v2.json",
-        "fixtures/n1/v77-catalogue.sqlite.zst"
+        "fixtures/g2-4/m1/rows.sql",
+        "fixtures/g2-4/m1/schema-f.json",
+        "fixtures/g2-4/m1/table-counts.json",
+        "fixtures/g2-4/m1/store-f.sqlite.zst",
+        "fixtures/g2-4/m1/store-f-minus-one.sqlite.zst"
       ],
       "globs": [
         "fixtures/delta-v2/v1/packs/sha256/*.sqlite.zst",
@@ -688,6 +692,17 @@
       "rationale": "Teslatlas TypeScript client package imported with its full history on 2026-10-08 (Apache-2.0, own LICENSE and NOTICE). This treatment does not prove chain of title.",
       "globs": [
         "sdk-typescript/**"
+      ]
+    },
+    {
+      "id": "g2-4-m1-schema-and-test-support",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Hub schema baseline and synthetic test fixture builders maintained in this repository.",
+      "paths": [
+        "src/storage/db/schema_floor.sql",
+        "fixtures/g2-4/m1/README.md",
+        "fixtures/g2-4/m1/build.py",
+        "fixtures/g2-4/m1/builder.rs"
       ]
     }
   ]

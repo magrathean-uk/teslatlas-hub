@@ -1607,8 +1607,6 @@ include!("db/catalogue_models.rs");
 include!("db/domain_models.rs");
 include!("db/catalogue_helpers.rs");
 include!("db/receiver_state.rs");
-#[path = "db/import_source_names_step.rs"]
-mod import_source_names_step;
 #[path = "db/import_table_names.rs"]
 pub(crate) mod import_table_names;
 include!("db/migrations.rs");
@@ -1632,10 +1630,6 @@ include!("db/geofence_relabel.rs");
 include!("db/geocoder_provider_state.rs");
 
 #[cfg(test)]
-#[path = "db/import_names_test_support.rs"]
-pub(crate) mod import_names_test_support;
-
-#[cfg(test)]
 #[path = "db/tests.rs"]
 mod tests;
 
@@ -1646,9 +1640,3 @@ mod terrain_background_tests;
 #[cfg(test)]
 #[path = "db/observation_verification_tests.rs"]
 mod observation_verification_tests;
-
-#[cfg(test)]
-fn migrate_historical_fixture(connection: &Connection) -> Result<(), StoreError> {
-    import_names_test_support::prepare_historical_import_names(connection);
-    migrate(connection)
-}

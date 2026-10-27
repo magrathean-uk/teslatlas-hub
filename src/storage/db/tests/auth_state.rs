@@ -63,62 +63,6 @@ fn as_refresh(store: &HubStore, input: Uuid, output: Uuid) {
         .expect("complete");
 }
 
-fn as_exists(store: &HubStore, table: &str) -> bool {
-    store
-        .open()
-        .unwrap()
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
-            params![table],
-            |row| row.get(0),
-        )
-        .unwrap()
-}
-
-#[test]
-fn the_v71_step_adds_the_credential_status_table_and_a_v70_catalogue_migrates_to_it() {
-    // The v72 step (hub fix pass 2, F2-1) follows it; its own test is in `r3_fix_round.rs`.
-    // C6 R63 (b) 4: a ceiling pin fails at every later version, so the step only asserts
-    // that it lies below the current one.
-    const { assert!(SCHEMA_VERSION > 71) };
-    let (temporary, store) = as_store();
-    assert!(as_exists(&store, "collector_auth_state"));
-    assert_eq!(
-        store.load_collector_auth_row().unwrap(),
-        None,
-        "nothing is backfilled"
-    );
-    let connection = store.open().unwrap();
-    connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {REWIND_V71_SQL} PRAGMA user_version = 70; COMMIT;"
-        ))
-        .unwrap();
-    assert!(!as_exists(&store, "collector_auth_state"));
-    // The v70 collector tables are untouched by the rewind.
-    assert!(as_exists(&store, "collector_account_state"));
-    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
-    drop(connection);
-    drop(store);
-    let migrated = HubStore::initialize(temporary.path()).expect("migrated");
-    assert!(as_exists(&migrated, "collector_auth_state"));
-    assert_eq!(migrated.load_collector_auth_row().unwrap(), None);
-    let version: i32 = migrated
-        .open()
-        .unwrap()
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, SCHEMA_VERSION);
-    // Every older rewind also removes it, so migrating forward adds it once.
-    let connection = migrated.open().unwrap();
-    connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {REWIND_V70_SQL} PRAGMA user_version = 69; COMMIT;"
-        ))
-        .unwrap();
-    assert!(!as_exists(&migrated, "collector_auth_state"));
-}
-
 #[test]
 fn the_table_refuses_every_row_that_breaks_its_checks() {
     let (_temporary, store) = as_store();

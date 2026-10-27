@@ -9,9 +9,7 @@
 //! The neutral served-key half of C8 T46 (C6 Part C, C6-C1) is asserted in
 //! `c8_t46_served_names_tariff_snapshot` through the four item routes.
 
-use super::b3_c8_sa::{
-    Fence, c8_store, c8_vehicle, count, fence, imported, predecessor_radius_bound,
-};
+use super::b3_c8_sa::{Fence, c8_store, c8_vehicle, fence, imported};
 use super::b3_c8_sb::{
     Durable, H, drive_labels, drive_row, durable, end_label, export_revision,
     geofence_entity_mutations, imp, mutation_log, relabel_page_reads, save, seed_drive, with_cost,
@@ -1191,78 +1189,6 @@ fn c8_t31_current_summary() {
     assert_eq!(name_at(&store), None);
     // The summary is computed at read time: no stored row changed with it.
     assert_eq!(geofence_entity_mutations(&store, vehicle), 0);
-}
-
-#[test]
-fn c8_t32_no_upgrade_relabel() {
-    let predecessor = GEOFENCE_STEP_SCHEMA_VERSION - 1;
-    let (temporary, store) = c8_store();
-    let vehicle = c8_vehicle(&store, "t32");
-    {
-        let connection = store.open().expect("connection");
-        connection
-            .execute_batch(&format!(
-                "BEGIN IMMEDIATE; {REWIND_V76_SQL} PRAGMA user_version = {predecessor}; COMMIT;"
-            ))
-            .expect("rewind");
-        assert_eq!(schema_version(&connection).unwrap(), predecessor);
-        assert!(
-            predecessor_radius_bound(&connection) >= 100.0,
-            "the predecessor shape holds a 100 m fence"
-        );
-        // "Big" and "Small" as stored data of the predecessor shape.
-        for (id, name, latitude, radius) in [(1, "Big", 10.0, 100.0), (2, "Small", 10.0004, 20.0)] {
-            connection
-                .execute(
-                    "INSERT INTO geofences(vehicle_id, source_geofence_id, name, latitude,
-                        longitude, radius_m) VALUES (?1, ?2, ?3, ?4, 20.0, ?5)",
-                    params![vehicle.to_string(), id, name, latitude, radius],
-                )
-                .expect("fence");
-        }
-    }
-    // Drive 1 carries a label no fence has; drive 2 carries the answer of the
-    // earlier rule.
-    seed_drive(
-        &store,
-        vehicle,
-        &drive_row(1, None, Some((10.0004, 20.0)), None, Some("Old")),
-    );
-    seed_drive(
-        &store,
-        vehicle,
-        &drive_row(2, None, Some((10.0004, 20.0)), None, Some("Big")),
-    );
-    let rows = raw_rows(&store, vehicle, "materialised_drives");
-    let counts = |store: &HubStore| {
-        let connection = store.open().expect("connection");
-        (
-            count(&connection, "sync_mutations"),
-            count(&connection, "export_outbox"),
-        )
-    };
-    let recorded = counts(&store);
-    let reads = relabel_page_reads();
-    crate::db::import_names_test_support::prepare_historical_import_names(&store.open().unwrap());
-    drop(store);
-    let migrated = HubStore::initialize(temporary.path()).expect("migrated");
-    let connection = migrated.open().expect("connection");
-    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
-    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
-    drop(connection);
-    // The upgrade rewrote no label and recorded nothing (C8 R33).
-    assert_eq!(raw_rows(&migrated, vehicle, "materialised_drives"), rows);
-    assert_eq!(counts(&migrated), recorded);
-    assert_eq!(recorded, (0, 0));
-    assert_eq!(relabel_page_reads(), reads, "the upgrade read no page");
-    // A later change relabels by the rules: the name follows its fence (rule 3),
-    // the label no fence had stays.
-    let outcome = run_step_labelled("c8_t32_no_upgrade_relabel", &migrated, vehicle, || {
-        save(&migrated, vehicle, Some(1), fence("Large", 10.0, 20.0)).expect("rename");
-    });
-    assert_eq!(outcome.mutations, ["drive 2"]);
-    assert_eq!(end_label(&migrated, vehicle, 2).as_deref(), Some("Large"));
-    assert_eq!(end_label(&migrated, vehicle, 1).as_deref(), Some("Old"));
 }
 
 /// The four item routes of one vehicle through the real paired router: the

@@ -1,210 +1,44 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #[test]
-fn standalone_preflight_allows_only_known_v66_to_v73_forward_upgrades_without_writes() {
-    use crate::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
+fn standalone_preflight_enforces_the_store_floor_without_writes() {
+    let test = "standalone_preflight_enforces_the_store_floor_without_writes";
     let temporary = crate::private_tempdir().unwrap();
     let data_dir = temporary.path().join("state");
     let config = source_run_config(temporary.path(), &data_dir);
-    let store = HubStore::initialize(&data_dir).unwrap();
-    let source = store
-        .register_source(
-            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "preflight-fixture"),
-            1,
-        )
-        .unwrap();
-    let vehicle = store
-        .register_vehicle(&VehicleDescriptor::new(source.source_id, "eid:42"), 2)
-        .unwrap();
-    store.append_observation(&ObservationInput { source_id: source.source_id, vehicle_id: vehicle.vehicle_id,
-        observed_at_ms: 3, payload: serde_json::json!({"record_type":"owner_api_vehicle_data_v1","fixture":true}) },4).unwrap();
-    let before_records = store
-        .current_observations_for_vehicle(vehicle.vehicle_id)
-        .unwrap();
+    let store = crate::db::HubStore::initialize(&data_dir).unwrap();
+    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
     let connection = store.open().unwrap();
-    // Rewind the v74 retirement step first: a v73 store is the shape of the
-    // development catalogues before the retired delivery objects were dropped,
-    // and standalone Serve migrates it itself.
     connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {} PRAGMA user_version=73; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);",
-            crate::db::REWIND_V74_SQL
-        ))
+        .pragma_update(None, "user_version", crate::db::MIN_STORE_VERSION - 1)
         .unwrap();
-    let v73_bytes = fs::read(config.database_path()).unwrap();
-    assert!(matches!(
-        HubStore::open_read_only(&data_dir),
-        Err(crate::db::StoreError::UnsupportedSchema(73))
-    ));
-    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
-    assert_eq!(fs::read(config.database_path()).unwrap(), v73_bytes);
-    // Rewind the v73 receiver-state table next: a v72 store is the shape B2
-    // left, the most likely upgrade source, and standalone Serve migrates it
-    // itself.
-    connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {} PRAGMA user_version=72; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);",
-            crate::db::REWIND_V73_SQL
-        ))
-        .unwrap();
-    let v72_bytes = fs::read(config.database_path()).unwrap();
-    assert!(matches!(
-        HubStore::open_read_only(&data_dir),
-        Err(crate::db::StoreError::UnsupportedSchema(72))
-    ));
-    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
-    assert_eq!(fs::read(config.database_path()).unwrap(), v72_bytes);
-    // Rewind the v72 rejected-access-digest column next: a v71 store is the
-    // gap B2 left below its own step, and standalone Serve migrates it itself.
-    connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {} PRAGMA user_version=71; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);",
-            crate::db::REWIND_V72_SQL
-        ))
-        .unwrap();
-    let v71_bytes = fs::read(config.database_path()).unwrap();
-    assert!(matches!(
-        HubStore::open_read_only(&data_dir),
-        Err(crate::db::StoreError::UnsupportedSchema(71))
-    ));
-    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
-    assert_eq!(fs::read(config.database_path()).unwrap(), v71_bytes);
-    // Rewind the v71 credential status table next: a v70 store is the shape
-    // of the development catalogues before it, and standalone Serve migrates
-    // it itself.
-    connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {} PRAGMA user_version=70; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);",
-            crate::db::REWIND_V71_SQL
-        ))
-        .unwrap();
-    let v70_bytes = fs::read(config.database_path()).unwrap();
-    assert!(matches!(
-        HubStore::open_read_only(&data_dir),
-        Err(crate::db::StoreError::UnsupportedSchema(70))
-    ));
-    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
-    assert_eq!(fs::read(config.database_path()).unwrap(), v70_bytes);
-    // Rewind the v70 collector state tables next: a v69 store is the shape of
-    // the development catalogues before them, and standalone Serve migrates it
-    // itself.
-    connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {} PRAGMA user_version=69; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);",
-            crate::db::REWIND_V70_SQL
-        ))
-        .unwrap();
-    let v69_bytes = fs::read(config.database_path()).unwrap();
-    assert!(matches!(
-        HubStore::open_read_only(&data_dir),
-        Err(crate::db::StoreError::UnsupportedSchema(69))
-    ));
-    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
-    assert_eq!(fs::read(config.database_path()).unwrap(), v69_bytes);
-    // Rewind the v69 geocoder lookup columns next: a v68 store is the shape
-    // the previous release left, and standalone Serve migrates it itself.
-    connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {} PRAGMA user_version=68; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);",
-            crate::db::REWIND_V69_SQL
-        ))
-        .unwrap();
-    let v68_bytes = fs::read(config.database_path()).unwrap();
-    assert!(matches!(
-        HubStore::open_read_only(&data_dir),
-        Err(crate::db::StoreError::UnsupportedSchema(68))
-    ));
-    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
-    assert_eq!(fs::read(config.database_path()).unwrap(), v68_bytes);
-    // Then the v68 grant schema: a v67 store is the shape before that.
-    connection
-        .execute_batch(
-            "BEGIN IMMEDIATE;
-        DROP TABLE device_vehicle_grants; DROP TABLE pairing_challenge_vehicles;
-        ALTER TABLE pairing_challenges DROP COLUMN all_vehicles;
-        ALTER TABLE paired_devices DROP COLUMN max_expires_at_ms;
-        ALTER TABLE paired_device_token_grace DROP COLUMN sealed_successor;
-        PRAGMA user_version=67; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);",
-        )
-        .unwrap();
-    let v67_bytes = fs::read(config.database_path()).unwrap();
-    assert!(matches!(
-        HubStore::open_read_only(&data_dir),
-        Err(crate::db::StoreError::UnsupportedSchema(67))
-    ));
-    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
-    assert_eq!(fs::read(config.database_path()).unwrap(), v67_bytes);
-    let schema: String = connection
-        .query_row(
-            "SELECT sql FROM sqlite_master WHERE name='current_observations'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    let schema66 = schema
-        .replacen("current_observations", "current_v66", 1)
-        .replace(", 'source_db_position_v1'", "");
-    assert!(!schema66.contains("source_db_position_v1"));
-    connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {schema66};
-        INSERT INTO current_v66 SELECT * FROM current_observations;
-        DROP TABLE current_observations; ALTER TABLE current_v66 RENAME TO current_observations;
-        PRAGMA user_version=66; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);"
-        ))
-        .unwrap();
-    // The historical version must also carry its historical import names.
-    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     connection
         .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
         .unwrap();
     drop(connection);
-    let before_bytes = fs::read(config.database_path()).unwrap();
-    assert!(matches!(
-        HubStore::open_read_only(&data_dir),
-        Err(crate::db::StoreError::UnsupportedSchema(66))
-    ));
-    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
-    assert_eq!(fs::read(config.database_path()).unwrap(), before_bytes);
-    let connection = rusqlite::Connection::open(config.database_path()).unwrap();
-    assert_eq!(
-        connection
-            .query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))
-            .unwrap(),
-        66
+    let before = fs::read(config.database_path()).unwrap();
+    assert!(
+        matches!(
+            crate::db::HubStore::preflight_standalone_schema_read_only(&data_dir),
+            Err(crate::db::StoreError::UnsupportedSchema(77))
+        ),
+        "assertion failed: {test}: standalone schema admission reports UnsupportedSchema(77)"
     );
-    drop(connection);
-    // The same initialization used by ordinary Serve owns the actual migration.
-    let migrated = HubStore::initialize(&data_dir).unwrap();
-    assert_eq!(
-        migrated
-            .current_observations_for_vehicle(vehicle.vehicle_id)
-            .unwrap(),
-        before_records
+    assert!(
+        matches!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)), Err(error) if error.to_string().contains("hub schema version 77")),
+        "assertion failed: {test}: serve preflight preserves the below-floor schema refusal"
     );
-    let connection = migrated.open().unwrap();
-    assert_eq!(
-        connection
-            .query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))
-            .unwrap(),
-        crate::db::SCHEMA_VERSION
+    assert!(
+        matches!(
+            crate::db::HubStore::initialize(&data_dir),
+            Err(crate::db::StoreError::UnsupportedSchema(77))
+        ),
+        "assertion failed: {test}: writable opening reports UnsupportedSchema(77)"
     );
-    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
-    for unsupported in [65_i32, crate::db::SCHEMA_VERSION + 1] {
-        connection
-            .pragma_update(None, "user_version", unsupported)
-            .unwrap();
-        assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).is_err());
-        assert_eq!(
-            connection
-                .query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))
-                .unwrap(),
-            unsupported
-        );
-    }
-    connection.pragma_update(None, "user_version", 66).unwrap();
-    connection.pragma_update(None, "application_id", 0).unwrap();
-    assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).is_err());
+    assert!(
+        fs::read(config.database_path()).unwrap() == before,
+        "assertion failed: {test}: floor refusal leaves the catalogue bytes unchanged"
+    );
 }
 
 use super::*;

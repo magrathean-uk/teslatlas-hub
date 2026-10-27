@@ -633,11 +633,9 @@ fn admit_writable_catalogue(connection: &Connection) -> Result<(), StoreError> {
         if application_id != 0 || version != 0 || !empty {
             return Err(StoreError::InvalidApplicationId(application_id));
         }
+        return Ok(());
     }
-    if !(0..=SCHEMA_VERSION).contains(&version) {
-        return Err(StoreError::UnsupportedSchema(version));
-    }
-    Ok(())
+    admit_store_version(version, SCHEMA_VERSION)
 }
 
 fn configure_read_only(connection: &Connection) -> Result<(), StoreError> {

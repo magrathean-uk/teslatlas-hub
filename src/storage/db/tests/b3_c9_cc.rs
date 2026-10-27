@@ -1355,63 +1355,6 @@ fn c9_r55_standalone_and_non_success_rows() {
 }
 
 #[test]
-fn c9_r56_upgrade_pending_run_drives_first_tidy() {
-    let (dir, store, v, _source) = fixture();
-    commit_rows(&store, v, &[(1, 1, Some(100)), (2, 1, Some(120))]);
-    plant(&store, v, 1, 1, Some(100), "success", 40);
-    plant(&store, v, 2, 1, Some(120), "success", 2);
-    let connection = store.open().unwrap();
-    connection
-        .execute_batch(
-            "UPDATE materialised_drives SET ascent=20,descent=0,
-        drive_json=json_set(drive_json,'$.ascent',20,'$.descent',0);",
-        )
-        .unwrap();
-    let predecessor = TERRAIN_SELECTION_SCHEMA_VERSION - 1;
-    connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {REWIND_V77_SQL} PRAGMA user_version={predecessor}; COMMIT;"
-        ))
-        .unwrap();
-    connection
-        .execute(
-            "INSERT INTO terrain_enrichment_state VALUES (?1,99,?2)",
-            params![v.to_string(), T0],
-        )
-        .unwrap();
-    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
-    drop(connection);
-    drop(store);
-    let store = HubStore::initialize(dir.path()).unwrap();
-    let progress = store.terrain_tidy_progress().unwrap();
-    assert_eq!(progress.run, 1);
-    assert_eq!(progress.armed_at_ms, None);
-    assert_eq!(progress.completed_at_ms, None);
-    assert_eq!(counts(&progress), [0; 6]);
-    assert_eq!(marker(&store), (String::new(), 0));
-    assert_eq!(store.terrain_vehicles().unwrap()[0].cursor_position_id, 0);
-    assert_eq!(
-        store
-            .apply_terrain_tidy_chunk_for_run(250, T1, progress.identity())
-            .unwrap(),
-        TerrainTidyApplied {
-            examined: 2,
-            requeued: 1,
-            kept: 1,
-            drives_changed: 1,
-            complete: true,
-            ..Default::default()
-        }
-    );
-    assert_eq!(elevation(&store, v, 1), None);
-    assert_eq!(
-        provenance(&store, v, 1).unwrap()["error"],
-        "position_rewritten"
-    );
-    assert_eq!(store.terrain_tidy_progress().unwrap().run, 1);
-}
-
-#[test]
 fn c9_r58_multi_vehicle_rearm_precedes_all_actions() {
     let (_dir, store, v, source) = fixture();
     let other = b3_c8_sa::c8_vehicle(&store, "terrain-later");

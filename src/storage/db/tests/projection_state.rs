@@ -1871,7 +1871,7 @@ fn v2_base_requires_immutable_binding_at_generic_publication_boundaries() {
 }
 
 #[test]
-fn schema_35_upgrade_recovers_v2_binding_from_immutable_base_not_mutable_source() {
+fn retained_store_recovers_v2_binding_from_immutable_base_not_mutable_source() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
     let (vehicle, binding, manifest) = v2_base_manifest(&store);
@@ -1885,7 +1885,6 @@ fn schema_35_upgrade_recovers_v2_binding_from_immutable_base_not_mutable_source(
         .expect("catalogue historical V2 base");
 
     let connection = store.open().expect("historical catalogue");
-    remove_v50_current_observation_schema(&connection);
     connection
         .execute(
             "DELETE FROM v2_base_bindings WHERE vehicle_id = ?1",
@@ -1904,25 +1903,6 @@ fn schema_35_upgrade_recovers_v2_binding_from_immutable_base_not_mutable_source(
             params![vehicle.vehicle_id.to_string()],
         )
         .expect("mutate current source vehicle key");
-    connection
-        .execute_batch(concat!(
-            "DROP TABLE legacy_refresh_input_fences;
-                 DROP INDEX legacy_refresh_receipt_output_generation;
-                 DROP TABLE legacy_refresh_receipt_bindings;
-                 DROP TABLE supervised_collector_lease;
-                 DROP TABLE sync_retired_lineage_packs;
-                 DROP TABLE sync_retired_lineages;
-                 DROP TABLE ",
-            crate::db::import_table_names::import_projection_rows_table!(),
-            ";
-                 DROP TABLE ",
-            crate::db::import_table_names::import_projection_heads_table!(),
-            ";
-                 DROP TABLE v2_base_bindings;
-                 PRAGMA user_version = 35;"
-        ))
-        .expect("restore historical schema boundary");
-    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
 
     let upgraded = HubStore::initialize(temporary.path()).expect("recover immutable binding");

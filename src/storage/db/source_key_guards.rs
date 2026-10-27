@@ -39,9 +39,8 @@ fn require_import_source_key_from_stored(
 
 impl HubStore {
     /// Refuse a changed source key before startup recovery or profile preparation.
-    /// Known historical keys are previewed through the forward rename without
-    /// migrating or repairing the existing catalogue. SQLite may coordinate a WAL
-    /// reader, as for the ordinary read-only opening contract.
+    /// The existing catalogue is neither migrated nor repaired. SQLite may
+    /// coordinate a WAL reader, as for the ordinary read-only opening contract.
     pub fn preflight_import_source_key(
         data_dir: impl AsRef<Path>,
         key: &str,
@@ -83,29 +82,7 @@ impl HubStore {
         if version == 0 && empty {
             return Ok(());
         }
-        let historical = version < import_source_names_step::VERSION;
-        let kind = if historical {
-            import_source_names_step::OLD_KIND
-        } else {
-            IMPORT_SOURCE_KIND
-        };
-        let mut keys = connection
-            .prepare(
-                "SELECT source_key FROM source_identities WHERE source_kind=?1 ORDER BY source_key",
-            )
-            .map_err(StoreError::Query)?
-            .query_map([kind], |row| row.get::<_, String>(0))
-            .map_err(StoreError::Query)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(StoreError::Query)?;
-        if historical {
-            for stored in &mut keys {
-                if stored.as_str() == import_source_names_step::OLD_DEFAULT_KEY {
-                    *stored = DEFAULT_IMPORT_SOURCE_KEY.to_owned();
-                }
-            }
-            keys.sort();
-        }
+        let keys = stored_import_source_keys(&connection)?;
         require_import_source_key_from_stored(&keys, key, new_import_source)
     }
 

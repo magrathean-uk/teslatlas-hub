@@ -5,13 +5,17 @@
     "g2-4-recorded",
     "read-sql"
   ],
-  "closed": [],
+  "closed": [
+    "G2-4-M1"
+  ],
   "class_authorities": {},
   "review_dates": {
     "G2-5": "2027-01-31",
     "G2-4": "2027-01-31",
     "G2-4-M2": "2027-01-31",
-    "G2-4-M1": "2027-01-31"
+    "G2-4-M1": "2027-01-31",
+    "G2-4-M3": "2027-01-31",
+    "G2-4-M5": "2027-01-31"
   },
   "review_date_reason": "undated milestone, coordinator placeholder 2026-10-26"
 }

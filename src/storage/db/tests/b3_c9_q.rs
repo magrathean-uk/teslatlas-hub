@@ -738,142 +738,6 @@ fn c9_st42_retry_order_has_no_temp_sort() {
     );
 }
 
-fn c9_predecessor() -> (
-    tempfile::TempDir,
-    HubStore,
-    Uuid,
-    Vec<rusqlite::types::Value>,
-) {
-    let (directory, store, vehicle) = c9_store();
-    c9_commit(
-        &store,
-        vehicle,
-        vec![c9_drive(1)],
-        (1..=12)
-            .map(|id| c9_position(id, Some(1), (id == 4).then_some(50)))
-            .collect(),
-    );
-    let connection = store.open().unwrap();
-    c9_provenance(&connection, vehicle, 4, "success", 0);
-    let before = connection
-        .query_row("SELECT * FROM terrain_elevation_provenance", [], |row| {
-            (0..15).map(|i| row.get(i)).collect::<Result<Vec<_>, _>>()
-        })
-        .unwrap();
-    let predecessor = TERRAIN_SELECTION_SCHEMA_VERSION - 1;
-    connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {REWIND_V77_SQL} PRAGMA user_version = {predecessor}; COMMIT;"
-        ))
-        .unwrap();
-    connection.execute("INSERT INTO terrain_enrichment_state(vehicle_id, cursor_position_id, updated_at_ms) VALUES (?1, 10, ?2)", params![vehicle.to_string(), C9_T0]).unwrap();
-    assert_eq!(schema_version(&connection).unwrap(), predecessor);
-    assert!(!b3_c8_sa::table_exists(&connection, "terrain_tidy_state"));
-    let columns = connection
-        .prepare("PRAGMA index_info(terrain_provenance_retry)")
-        .unwrap()
-        .query_map([], |r| r.get::<_, String>(2))
-        .unwrap()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    assert_eq!(columns, vec!["status", "retry_after_ms"]);
-    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
-    (directory, store, vehicle, before)
-}
-
-fn c9_assert_upgrade(store: &HubStore, vehicle: Uuid, before: &[rusqlite::types::Value]) {
-    let connection = store.open().unwrap();
-    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
-    const { assert!(SCHEMA_VERSION >= TERRAIN_SELECTION_SCHEMA_VERSION) };
-    let v = c9_vehicle(store, vehicle);
-    assert_eq!(v.cursor_position_id, 0);
-    assert_eq!(v.stored_boundary, ImportBoundary::default());
-    assert_eq!(
-        c9_ids(store, &v),
-        (vec![1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12], 12)
-    );
-    let after: Vec<rusqlite::types::Value> = connection
-        .query_row("SELECT * FROM terrain_elevation_provenance", [], |row| {
-            (0..15).map(|i| row.get(i)).collect::<Result<Vec<_>, _>>()
-        })
-        .unwrap();
-    assert_eq!(after, before);
-    assert_eq!(
-        store.terrain_tidy_progress().unwrap(),
-        TerrainTidyProgress {
-            run: 1,
-            examined: 0,
-            cleared: 0,
-            requeued: 0,
-            removed: 0,
-            kept: 0,
-            drives_changed: 0,
-            armed_at_ms: None,
-            completed_at_ms: None
-        }
-    );
-    assert!(!store.terrain_tidy_complete().unwrap());
-    connection
-        .execute(
-            "UPDATE terrain_enrichment_state SET cursor_position_id = 7",
-            [],
-        )
-        .unwrap();
-}
-
-#[test]
-fn c9_st55_upgrade() {
-    let (directory, store, vehicle, before) = c9_predecessor();
-    drop(store);
-    let store = HubStore::initialize(directory.path()).unwrap();
-    c9_assert_upgrade(&store, vehicle, &before);
-    drop(store);
-    let store = HubStore::initialize(directory.path()).unwrap();
-    assert_eq!(c9_vehicle(&store, vehicle).cursor_position_id, 7);
-    store
-        .open()
-        .unwrap()
-        .execute("DELETE FROM terrain_tidy_state", [])
-        .unwrap();
-    assert!(store.terrain_tidy_complete().is_err());
-    assert!(store.terrain_tidy_progress().is_err());
-}
-
-#[test]
-fn c9_st55b_standalone_upgrade() {
-    assert!(
-        REWIND_V76_SQL.starts_with(REWIND_V77_SQL),
-        "assertion failed: c9_st55b_standalone_upgrade: older rewinds begin with the complete terrain-selection undo"
-    );
-    let (directory, store, vehicle, before) = c9_predecessor();
-    let connection = store.open().unwrap();
-    let data_version = connection
-        .query_row("PRAGMA data_version", [], |row| row.get::<_, i64>(0))
-        .unwrap();
-    drop(store);
-    let preflight = HubStore::preflight_standalone_schema_read_only(directory.path());
-    assert!(
-        preflight.is_ok(),
-        "assertion failed: c9_st55b_standalone_upgrade: standalone preflight accepts the terrain predecessor: {preflight:?}"
-    );
-    assert_eq!(
-        schema_version(&connection).unwrap(),
-        TERRAIN_SELECTION_SCHEMA_VERSION - 1
-    );
-    assert_eq!(
-        connection
-            .query_row("PRAGMA data_version", [], |row| row.get::<_, i64>(0))
-            .unwrap(),
-        data_version
-    );
-    assert!(!b3_c8_sa::table_exists(&connection, "terrain_tidy_state"));
-    assert!(HubStore::open_read_only(directory.path()).is_err());
-    drop(connection);
-    let store = HubStore::initialize(directory.path()).unwrap();
-    c9_assert_upgrade(&store, vehicle, &before);
-    HubStore::preflight_standalone_schema_read_only(directory.path()).unwrap();
-}
-
 #[test]
 fn c9_st11_zero_success_and_missing_elevation() {
     let (_directory, store, vehicle) = c9_store();
@@ -1109,47 +973,59 @@ fn c9_schema(connection: &Connection) -> Vec<(String, String, String)> {
         .unwrap()
 }
 
+// G2-4: a failed baseline create leaves no partial schema or rows.
 #[test]
 fn c9_st55_failed_step_is_atomic() {
-    let (_directory, store, vehicle, before) = c9_predecessor();
-    let connection = store.open().unwrap();
-    // C9 R61: fail the final DDL after both columns, the reset and index rebuild.
-    connection.execute_batch("CREATE INDEX terrain_provenance_vehicle_retry ON terrain_elevation_provenance(attempts);").unwrap();
-    let schema_before = c9_schema(&connection);
-    assert!(matches!(
-        migrate_historical_fixture(&connection),
-        Err(StoreError::Migrate(_))
-    ));
-    assert!(connection.is_autocommit());
-    assert_eq!(
-        schema_version(&connection).unwrap(),
-        TERRAIN_SELECTION_SCHEMA_VERSION - 1
+    use rusqlite::hooks::{AuthAction, Authorization};
+    let test = "c9_st55_failed_step_is_atomic";
+    let directory = crate::private_tempdir().unwrap();
+    let connection = Connection::open(directory.path().join("hub.sqlite")).unwrap();
+    let before = g2_4_m1::schema_snapshot(&connection);
+    connection
+        .authorizer(Some(|context: rusqlite::hooks::AuthContext<'_>| {
+            if matches!(
+                context.action,
+                AuthAction::CreateIndex {
+                    index_name: "terrain_provenance_vehicle_retry",
+                    ..
+                }
+            ) {
+                Authorization::Deny
+            } else {
+                Authorization::Allow
+            }
+        }))
+        .unwrap();
+    assert!(
+        matches!(migrate(&connection), Err(StoreError::Migrate(_))),
+        "assertion failed: {test}: a late baseline DDL failure is reported"
     );
     assert!(
-        c9_schema(&connection) == schema_before,
-        "assertion failed: c9_st55_failed_step_is_atomic: failed terrain migration leaves the schema unchanged"
+        connection.is_autocommit(),
+        "assertion failed: {test}: the failed create transaction is closed"
     );
-    assert_eq!(
-        connection
-            .query_row(
-                "SELECT cursor_position_id FROM terrain_enrichment_state WHERE vehicle_id = ?1",
-                [vehicle.to_string()],
-                |r| r.get::<_, i64>(0)
-            )
-            .unwrap(),
-        10
+    assert!(
+        g2_4_m1::schema_snapshot(&connection) == before,
+        "assertion failed: {test}: failed baseline creation leaves the schema and rows unchanged"
     );
-    let provenance: Vec<rusqlite::types::Value> = connection
-        .query_row("SELECT * FROM terrain_elevation_provenance", [], |r| {
-            (0..15).map(|i| r.get(i)).collect::<Result<Vec<_>, _>>()
-        })
+    let application_id: i32 = connection
+        .pragma_query_value(None, "application_id", |row| row.get(0))
         .unwrap();
-    assert_eq!(provenance, before);
+    assert!(
+        application_id == 0,
+        "assertion failed: {test}: failed creation does not mark the catalogue"
+    );
     connection
-        .execute_batch("DROP INDEX terrain_provenance_vehicle_retry;")
+        .authorizer(None::<fn(rusqlite::hooks::AuthContext<'_>) -> Authorization>)
         .unwrap();
-    migrate_historical_fixture(&connection).unwrap();
-    c9_assert_upgrade(&store, vehicle, &before);
+    migrate(&connection).labelled_ok(
+        test,
+        "baseline creation succeeds after removing the DDL fault",
+    );
+    assert!(
+        schema_version(&connection).unwrap() == SCHEMA_VERSION,
+        "assertion failed: {test}: retry reaches the supported schema"
+    );
 }
 
 #[test]
@@ -1342,8 +1218,10 @@ fn c9_st51_rearm_requires_current_imported_success() {
     assert_eq!(store.terrain_tidy_progress().unwrap().run, 2);
 }
 
+// G2-4: repeated openings preserve the baseline schema and rows.
 #[test]
 fn c9_st55_repeated_rewinds_restore_fresh_schema() {
+    let test = "c9_st55_repeated_rewinds_restore_fresh_schema";
     let (directory, store, vehicle) = c9_store();
     let connection = store.open().unwrap();
     let fresh_schema = c9_schema(&connection);
@@ -1354,49 +1232,30 @@ fn c9_st55_repeated_rewinds_restore_fresh_schema() {
             params![vehicle.to_string(), C9_T0],
         )
         .unwrap();
-    for rewind in [REWIND_V77_SQL, REWIND_V77_SQL, REWIND_V76_SQL] {
-        connection
-            .execute_batch(&format!("BEGIN IMMEDIATE; {rewind} COMMIT;"))
-            .labelled_ok(
-                "c9_st55_repeated_rewinds_restore_fresh_schema",
-                "terrain rewind succeeds when its optional index is already absent",
-            );
-        assert_eq!(
-            connection
-                .query_row(
-                    "SELECT cursor_position_id, updated_at_ms
-            FROM terrain_enrichment_state WHERE vehicle_id = ?1",
-                    [vehicle.to_string()],
-                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
-                )
-                .unwrap(),
-            (19, C9_T0)
-        );
-    }
-    let predecessor = GEOFENCE_STEP_SCHEMA_VERSION - 1;
-    connection
-        .execute_batch(&format!("PRAGMA user_version = {predecessor};"))
-        .unwrap();
-    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
+    let before = g2_4_m1::schema_snapshot(&connection);
     drop(connection);
     drop(store);
-    let migrated = HubStore::initialize(directory.path()).unwrap();
-    let connection = migrated.open().unwrap();
-    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
-    let strip = |schema: Vec<(String, String, String)>| {
-        schema
-            .into_iter()
-            .map(|(kind, name, sql)| {
-                (
-                    kind,
-                    name,
-                    sql.split_whitespace().collect::<Vec<_>>().join(" "),
-                )
-            })
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(strip(c9_schema(&connection)), strip(fresh_schema));
-    assert_eq!(c9_vehicle(&migrated, vehicle).cursor_position_id, 0);
+    for _ in 0..3 {
+        let reopened = HubStore::initialize(directory.path())
+            .labelled_ok(test, "repeated baseline opening succeeds");
+        let connection = reopened.open().unwrap();
+        assert!(
+            schema_version(&connection).unwrap() == SCHEMA_VERSION,
+            "assertion failed: {test}: repeated opening keeps the supported version"
+        );
+        assert!(
+            c9_schema(&connection) == fresh_schema,
+            "assertion failed: {test}: repeated opening preserves the fresh schema"
+        );
+        assert!(
+            g2_4_m1::schema_snapshot(&connection) == before,
+            "assertion failed: {test}: repeated opening preserves every row"
+        );
+        assert!(
+            c9_vehicle(&reopened, vehicle).cursor_position_id == 19,
+            "assertion failed: {test}: repeated opening preserves the terrain cursor"
+        );
+    }
 }
 
 #[test]
@@ -1459,4 +1318,25 @@ fn c9_r58_boundary_commit_reports_write_error() {
     ));
     assert_eq!(b3_c8_sa::count(&connection, "terrain_enrichment_state"), 0);
     assert_eq!(b3_c8_sa::count(&connection, "c9_boundary_commit_fault"), 0);
+}
+
+// G2-4: terrain tidy readers require the baseline marker.
+#[test]
+fn m1_terrain_tidy_readers_refuse_missing_baseline_marker() {
+    let test = "m1_terrain_tidy_readers_refuse_missing_baseline_marker";
+    let directory = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(directory.path()).unwrap();
+    store
+        .open()
+        .unwrap()
+        .execute("DELETE FROM terrain_tidy_state", [])
+        .unwrap();
+    assert!(
+        store.terrain_tidy_complete().is_err(),
+        "assertion failed: {test}: terrain_tidy_complete refuses a missing baseline marker"
+    );
+    assert!(
+        store.terrain_tidy_progress().is_err(),
+        "assertion failed: {test}: terrain_tidy_progress refuses a missing baseline marker"
+    );
 }

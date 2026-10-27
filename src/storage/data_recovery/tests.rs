@@ -272,59 +272,6 @@ fn grant_authority_rows(data: &Path) -> (i64, i64, i64) {
     )
 }
 
-/// Rewind a current catalogue to the v70 shape: the v71 credential status
-/// table goes; the collector tables and their rows stay.
-fn downgrade_catalogue_to_schema_70(connection: &Connection) {
-    connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {} PRAGMA user_version = 70; COMMIT;",
-            crate::db::REWIND_V71_SQL
-        ))
-        .expect("rewind catalogue to schema 70");
-}
-
-/// Rewind a current catalogue to the v69 shape: the v71 table and the five v70
-/// collector tables go (not the v69 lookup columns, which a v69 catalogue has).
-fn downgrade_catalogue_to_schema_69(connection: &Connection) {
-    connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {} PRAGMA user_version = 69; COMMIT;",
-            crate::db::REWIND_V70_SQL
-        ))
-        .expect("rewind catalogue to schema 69");
-}
-
-/// Rewind a current catalogue to the v68 shape: the v69 geocoder lookup
-/// columns go.
-fn downgrade_catalogue_to_schema_68(connection: &Connection) {
-    connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {} PRAGMA user_version = 68; COMMIT;",
-            crate::db::REWIND_V69_SQL
-        ))
-        .expect("rewind catalogue to schema 68");
-}
-
-/// Rewind a current catalogue to the v67 shape: the v69 columns and the v68
-/// tables and columns go.
-fn downgrade_catalogue_to_schema_67(connection: &Connection) {
-    connection
-        .execute_batch(crate::db::REWIND_V69_SQL)
-        .expect("remove v69 columns");
-    connection
-        .execute_batch(
-            "BEGIN IMMEDIATE;
-             DROP TABLE device_vehicle_grants;
-             DROP TABLE pairing_challenge_vehicles;
-             ALTER TABLE pairing_challenges DROP COLUMN all_vehicles;
-             ALTER TABLE paired_devices DROP COLUMN max_expires_at_ms;
-             ALTER TABLE paired_device_token_grace DROP COLUMN sealed_successor;
-             PRAGMA user_version = 67;
-             COMMIT;",
-        )
-        .expect("rewind catalogue to schema 67");
-}
-
 fn reseal_backup_as_legacy_v3_with_pairing(backup: &Path, bearer: &str) {
     let catalogue = backup.join(CATALOGUE_MEMBER);
     let connection = Connection::open_with_flags(
@@ -445,38 +392,10 @@ fn reseal_backup_as_legacy_v3(backup: &Path) {
     set_mode(&marker_path, PRIVATE_FILE_MODE, "legacy marker mode").unwrap();
 }
 
-fn reseal_backup_as_schema(backup: &Path, schema: i32) -> BackupManifest {
-    let catalogue = backup.join(CATALOGUE_MEMBER);
-    if (52..SCHEMA_VERSION).contains(&schema) {
-        let connection = Connection::open_with_flags(
-            &catalogue,
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )
-        .expect("open historical catalogue fixture");
-        if schema == 70 {
-            downgrade_catalogue_to_schema_70(&connection);
-        } else if schema == 69 {
-            downgrade_catalogue_to_schema_69(&connection);
-        } else if schema == 68 {
-            downgrade_catalogue_to_schema_68(&connection);
-        } else if schema == 67 {
-            downgrade_catalogue_to_schema_67(&connection);
-        } else {
-            downgrade_catalogue_fixture(&connection, schema);
-        }
-        drop(connection);
-    }
-    reseal_backup_manifest(backup, schema)
-}
-
 /// Re-seal the manifest, its catalogue member and the completion marker over
 /// the backup's catalogue as it is now, declaring `schema`.
 fn reseal_backup_manifest(backup: &Path, schema: i32) -> BackupManifest {
     let catalogue = backup.join(CATALOGUE_MEMBER);
-    if schema < 78 {
-        let connection = Connection::open(&catalogue).unwrap();
-        crate::db::import_names_test_support::prepare_historical_import_names(&connection);
-    }
     let manifest_path = backup.join(MANIFEST_NAME);
     let mut manifest: BackupManifest =
         parse_canonical_json(&fs::read(&manifest_path).expect("manifest bytes"))
@@ -507,219 +426,6 @@ fn reseal_backup_manifest(backup: &Path, schema: i32) -> BackupManifest {
     fs::write(&marker_path, canonical_json(&marker).unwrap()).expect("write historical marker");
     set_mode(&marker_path, PRIVATE_FILE_MODE, "historical marker mode").unwrap();
     manifest
-}
-
-fn downgrade_catalogue_fixture(connection: &Connection, schema: i32) {
-    assert!((52..=54).contains(&schema));
-    connection
-        .execute_batch(crate::db::REWIND_V69_SQL)
-        .expect("remove v69 columns");
-    connection
-        .execute_batch(
-            "BEGIN IMMEDIATE;
-             -- The v68 grant tables and columns go first, so that the
-             -- schema-68 migration would add them again.
-             DROP TABLE IF EXISTS device_vehicle_grants;
-             DROP TABLE IF EXISTS pairing_challenge_vehicles;
-             ALTER TABLE pairing_challenges DROP COLUMN all_vehicles;
-             ALTER TABLE paired_devices DROP COLUMN max_expires_at_ms;
-             -- PhysicalV3 admission state was introduced after schema 54. A
-             -- historical fixture must remove it before its user_version is
-             -- rewound, otherwise the later schema-62 migration would try to
-             -- add `serve_state` to an already-current table.
-             DROP TABLE IF EXISTS physical_v3_delta_packs;
-             DROP TABLE IF EXISTS physical_v3_delta_transitions;
-             DROP TABLE IF EXISTS prepared_map_months;
-             DROP TABLE IF EXISTS retained_physical_v3_packs;
-             DROP TABLE IF EXISTS retained_physical_v3_admissions;
-             DROP TABLE IF EXISTS pending_physical_v3_packs;
-             DROP TABLE IF EXISTS pending_physical_v3_admissions;
-             DROP TABLE paired_device_token_grace;
-             ALTER TABLE vehicles DROP COLUMN retired_at_ms;
-             DROP TABLE fleet_refresh_input_fences;
-             DROP TABLE fleet_refresh_receipt_bindings;
-             CREATE TABLE fleet_tokens_v54 (
-                singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
-                access BLOB NOT NULL CHECK(length(access) BETWEEN 1 AND 16424),
-                refresh BLOB NOT NULL CHECK(length(refresh) BETWEEN 1 AND 16424),
-                client_id TEXT NOT NULL
-                    CHECK(length(CAST(client_id AS BLOB)) BETWEEN 1 AND 255),
-                region TEXT NOT NULL CHECK(region IN ('na', 'eu', 'cn')),
-                expires_at INTEGER NOT NULL CHECK(expires_at > 0),
-                next_refresh_at INTEGER NOT NULL
-                    CHECK(next_refresh_at > 0 AND next_refresh_at < expires_at)
-             ) STRICT;
-             INSERT INTO fleet_tokens_v54(
-                singleton_id, access, refresh, client_id, region,
-                expires_at, next_refresh_at
-             )
-             SELECT singleton_id, access, refresh, client_id, region,
-                    expires_at, next_refresh_at
-               FROM fleet_tokens;
-             DROP TABLE fleet_tokens;
-             ALTER TABLE fleet_tokens_v54 RENAME TO fleet_tokens;
-             CREATE TABLE current_observations_v54 (
-                vehicle_id TEXT NOT NULL
-                    REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
-                record_type TEXT NOT NULL CHECK(record_type IN (
-                    'owner_api_discovery_v1',
-                    'owner_api_vehicle_data_v1',
-                    'tesla_stream_update_v1'
-                )),
-                observation_id INTEGER NOT NULL CHECK(observation_id > 0),
-                source_id TEXT NOT NULL
-                    REFERENCES sources(source_id) ON DELETE RESTRICT,
-                observed_at_ms INTEGER NOT NULL CHECK(observed_at_ms >= 0),
-                received_at_ms INTEGER NOT NULL CHECK(received_at_ms >= 0),
-                payload_sha256 BLOB NOT NULL CHECK(length(payload_sha256) = 32),
-                payload_json TEXT NOT NULL CHECK(json_valid(payload_json))
-                    CHECK(length(CAST(payload_json AS BLOB)) <= 262144),
-                PRIMARY KEY(vehicle_id, record_type)
-             ) STRICT, WITHOUT ROWID;
-             INSERT INTO current_observations_v54(
-                vehicle_id, record_type, observation_id, source_id,
-                observed_at_ms, received_at_ms, payload_sha256, payload_json
-             )
-             SELECT vehicle_id, record_type, observation_id, source_id,
-                    observed_at_ms, received_at_ms, payload_sha256, payload_json
-               FROM current_observations;
-             DROP TABLE current_observations;
-             ALTER TABLE current_observations_v54 RENAME TO current_observations;
-             PRAGMA user_version = 54;
-             COMMIT;",
-        )
-        .expect("recreate schema 54 fixture");
-    if schema == 54 {
-        return;
-    }
-
-    connection
-        .execute_batch(
-            "BEGIN IMMEDIATE;
-             CREATE TABLE outbound_request_receipts_v53 (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                correlation_id TEXT NOT NULL CHECK(length(correlation_id) = 36),
-                started_at_ms INTEGER NOT NULL CHECK(started_at_ms >= 0),
-                completed_at_ms INTEGER,
-                duration_ms INTEGER,
-                vehicle_tesla_id INTEGER CHECK(vehicle_tesla_id > 0),
-                transport TEXT NOT NULL CHECK(transport IN (
-                    'owner_api', 'stream', 'legacy_auth'
-                )),
-                operation TEXT NOT NULL CHECK(operation IN (
-                    'products', 'vehicle_probe', 'vehicle_data', 'token_refresh',
-                    'stream_connect', 'stream_subscribe', 'stream_unsubscribe'
-                )),
-                safety_class TEXT NOT NULL CHECK(safety_class IN (
-                    'non_wake_endpoint', 'conditional_read', 'direct_wake_command'
-                )),
-                precondition TEXT NOT NULL CHECK(precondition IN (
-                    'not_required', 'stream_power_confirmed'
-                )),
-                outcome TEXT NOT NULL CHECK(outcome IN (
-                    'started', 'success', 'http_error', 'timeout',
-                    'transport_error', 'authentication_rejected',
-                    'protocol_error', 'response_too_large', 'cancelled'
-                )),
-                http_status INTEGER CHECK(http_status BETWEEN 100 AND 599),
-                retry_after_seconds INTEGER CHECK(retry_after_seconds >= 0),
-                CHECK(
-                    (outcome = 'started' AND completed_at_ms IS NULL
-                     AND duration_ms IS NULL AND http_status IS NULL
-                     AND retry_after_seconds IS NULL)
-                    OR
-                    (outcome <> 'started' AND completed_at_ms IS NOT NULL
-                     AND duration_ms IS NOT NULL
-                     AND completed_at_ms >= started_at_ms
-                     AND duration_ms >= 0)
-                )
-             ) STRICT;
-             INSERT INTO outbound_request_receipts_v53(
-                id, correlation_id, started_at_ms, completed_at_ms,
-                duration_ms, vehicle_tesla_id, transport, operation,
-                safety_class, precondition, outcome, http_status,
-                retry_after_seconds
-             )
-             SELECT id, correlation_id, started_at_ms, completed_at_ms,
-                    duration_ms, vehicle_tesla_id, transport, operation,
-                    safety_class, precondition, outcome, http_status,
-                    retry_after_seconds
-               FROM outbound_request_receipts;
-             CREATE TABLE legacy_refresh_receipt_bindings_v53 (
-                receipt_id INTEGER PRIMARY KEY NOT NULL
-                    REFERENCES outbound_request_receipts_v53(id) ON DELETE CASCADE,
-                attempt_id TEXT NOT NULL UNIQUE CHECK(length(attempt_id) = 36),
-                input_credential_generation TEXT NOT NULL
-                    CHECK(length(input_credential_generation) = 36),
-                output_credential_generation TEXT
-                    CHECK(output_credential_generation IS NULL
-                          OR length(output_credential_generation) = 36),
-                CHECK(output_credential_generation IS NULL
-                      OR output_credential_generation <> input_credential_generation)
-             ) STRICT;
-             INSERT INTO legacy_refresh_receipt_bindings_v53(
-                receipt_id, attempt_id, input_credential_generation,
-                output_credential_generation
-             )
-             SELECT receipt_id, attempt_id, input_credential_generation,
-                    output_credential_generation
-               FROM legacy_refresh_receipt_bindings;
-             DROP TABLE legacy_refresh_receipt_bindings;
-             DROP TABLE outbound_request_receipts;
-             ALTER TABLE outbound_request_receipts_v53
-                RENAME TO outbound_request_receipts;
-             ALTER TABLE legacy_refresh_receipt_bindings_v53
-                RENAME TO legacy_refresh_receipt_bindings;
-             CREATE INDEX outbound_request_receipts_proof
-                ON outbound_request_receipts(
-                    correlation_id, id, safety_class, outcome
-                );
-             CREATE INDEX outbound_request_receipts_retention
-                ON outbound_request_receipts(outcome, completed_at_ms, id);
-             CREATE UNIQUE INDEX legacy_refresh_receipt_output_generation
-                ON legacy_refresh_receipt_bindings(output_credential_generation)
-                WHERE output_credential_generation IS NOT NULL;
-             DROP TABLE fleet_tokens;
-             PRAGMA user_version = 53;
-             COMMIT;",
-        )
-        .expect("recreate schema 53 fixture");
-    if schema == 53 {
-        return;
-    }
-
-    connection
-        .execute_batch(
-            "BEGIN IMMEDIATE;
-             CREATE TABLE lifecycle_open_rows_v52 (
-                source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE CASCADE,
-                source_table TEXT NOT NULL,
-                source_row_id INTEGER NOT NULL CHECK(source_row_id > 0),
-                vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
-                car_id INTEGER NOT NULL CHECK(car_id > 0),
-                domain TEXT NOT NULL CHECK(domain IN (
-                    'drive', 'position', 'charge', 'charge_sample', 'state',
-                    'standalone_position'
-                )),
-                parent_source_row_id INTEGER,
-                row_json TEXT NOT NULL CHECK(json_valid(row_json)),
-                PRIMARY KEY(source_id, source_table, source_row_id)
-             ) STRICT;
-             INSERT INTO lifecycle_open_rows_v52(
-                source_id, source_table, source_row_id, vehicle_id, car_id,
-                domain, parent_source_row_id, row_json
-             )
-             SELECT source_id, source_table, source_row_id, vehicle_id, car_id,
-                    domain, parent_source_row_id, row_json
-               FROM lifecycle_open_rows;
-             DROP TABLE lifecycle_open_rows;
-             ALTER TABLE lifecycle_open_rows_v52 RENAME TO lifecycle_open_rows;
-             CREATE INDEX lifecycle_open_rows_vehicle_domain
-                ON lifecycle_open_rows(vehicle_id, domain, source_row_id);
-             PRAGMA user_version = 52;
-             COMMIT;",
-        )
-        .expect("recreate schema 52 fixture");
 }
 
 #[test]
@@ -1297,7 +1003,7 @@ fn a_current_backup_that_retains_grant_authority_is_rejected() {
             .pragma_update(None, "journal_mode", "DELETE")
             .expect("sealed journal mode");
         drop(connection);
-        reseal_backup_as_schema(&backup, SCHEMA_VERSION);
+        reseal_backup_manifest(&backup, SCHEMA_VERSION);
         let error = verify_data_backup(&backup).expect_err("retained authority must be rejected");
         assert!(
             error.to_string().contains("retains pairing authority"),
@@ -1310,51 +1016,12 @@ fn a_current_backup_that_retains_grant_authority_is_rejected() {
 }
 
 #[test]
-fn a_historical_backup_missing_a_base_pairing_table_is_rejected() {
-    // The grant tables and the rotation grace may be absent from an older
-    // backup, but `pairing_challenges` and `paired_devices` exist in every
-    // schema: a resealed v67 backup without one is not verifiable, and so
-    // cannot restore.
-    for missing in ["pairing_challenges", "paired_devices"] {
-        let (temporary, store) = create_fixture();
-        let backup = temporary.path().join("missing-base-table");
-        create_data_backup(&store, &backup).expect("create backup fixture");
-        reseal_backup_as_schema(&backup, 67);
-        verify_data_backup(&backup).expect("the intact v67 backup verifies");
-        let connection = Connection::open_with_flags(
-            backup.join(CATALOGUE_MEMBER),
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )
-        .expect("backup catalogue");
-        // Only this table is missing (foreign keys off, so its dependants are
-        // left as they are); the catalogue is otherwise a valid v67 one.
-        connection
-            .execute_batch(&format!("PRAGMA foreign_keys = OFF; DROP TABLE {missing};"))
-            .unwrap_or_else(|error| panic!("drop {missing}: {error}"));
-        connection
-            .pragma_update(None, "journal_mode", "DELETE")
-            .expect("sealed journal mode");
-        drop(connection);
-        reseal_backup_manifest(&backup, 67);
-        let error = verify_data_backup(&backup)
-            .expect_err("a catalogue without a base pairing table must be rejected");
-        assert!(
-            error.to_string().contains(missing),
-            "{missing}: the rejection names the missing table: {error}"
-        );
-        let restored = temporary.path().join("never-restored");
-        assert!(restore_data_backup(&backup, &restored).is_err());
-        assert!(!restored.exists());
-    }
-}
-
-#[test]
 fn a_current_schema_backup_missing_a_pairing_table_is_rejected_at_verification() {
-    // From schema 68 on the grant tables and the rotation grace table are
-    // always present. A catalogue that declares the current schema (68 or a
-    // later one) without one is refused when the backup is verified (the optional-table rule is for older
-    // schemas only, as the v67 test below shows), and a restore never starts.
+    // G2-4: every supported catalogue holds all five pairing tables.
+    // A missing table is refused during verification, before restore staging.
     for missing in [
+        "pairing_challenges",
+        "paired_devices",
         "device_vehicle_grants",
         "pairing_challenge_vehicles",
         "paired_device_token_grace",
@@ -1406,11 +1073,11 @@ fn a_legacy_v3_current_schema_backup_missing_a_pairing_table_is_rejected_at_veri
     // cannot be emptied, so it must fail at verification and not when the
     // restore reaches the deletes.
     for missing in [
+        "pairing_challenges",
+        "paired_devices",
         "device_vehicle_grants",
         "pairing_challenge_vehicles",
         "paired_device_token_grace",
-        "pairing_challenges",
-        "paired_devices",
     ] {
         let (temporary, store) = create_fixture();
         let backup = temporary.path().join("legacy-missing-pairing-table");
@@ -1457,210 +1124,12 @@ fn a_legacy_v3_current_schema_backup_missing_a_pairing_table_is_rejected_at_veri
 }
 
 #[test]
-fn schema_67_backups_verify_and_restore_with_the_grant_tables_created_empty() {
-    // A clean v67 backup (no grant tables) verifies without counting them.
-    let (temporary, store) = create_fixture();
-    let source_data = store.database_path().parent().expect("source data root");
-    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(source_data)
-        .expect("source cursor key");
-    let lineage = publish_lineage_fixture(&store, &cursor_key);
-    let installation_id = store.installation_id().expect("installation");
-    let clean = temporary.path().join("schema-67-backup");
-    create_data_backup(&store, &clean).expect("create backup fixture");
-    let manifest = reseal_backup_as_schema(&clean, 67);
-    assert_eq!(manifest.hub_schema, 67);
-    assert!(!catalogue_has_table(
-        &open_immutable_catalogue(&clean.join(DATA_DIRECTORY)).unwrap(),
-        "device_vehicle_grants"
-    ));
-    verify_data_backup(&clean).expect("a v67 backup verifies");
-    let restored = temporary.path().join("schema-67-restored");
-    restore_data_backup(&clean, &restored).expect("a v67 backup restores");
-    assert_eq!(
-        immutable_database_identity(&restored).unwrap(),
-        installation_id
-    );
-    let restored_store = HubStore::open_immutable_read_only(&restored).expect("restored store");
-    restored_store
-        .catalogue_check()
-        .expect("restored catalogue");
-    assert_eq!(grant_authority_rows(&restored), (0, 0, 0));
-    assert_eq!(pairing_authority_counts(&restored), (0, 0));
-    assert!(
-        catalogue_has_table(
-            &open_immutable_catalogue(&restored).unwrap(),
-            "device_vehicle_grants"
-        ),
-        "the restore migrated the catalogue to the grant schema"
-    );
-    assert_eq!(
-        restored_store
-            .source_vehicle_key(lineage.vehicle_id)
-            .expect("restored vehicle"),
-        Some("recovery-vehicle".to_owned())
-    );
-
-    // A v67 legacy-v3 generation that still carries a device: the migration
-    // backfills grants for it, and the restore must remove them again.
-    let legacy = temporary.path().join("schema-67-legacy-backup");
-    create_data_backup(&store, &legacy).expect("create legacy fixture base");
-    reseal_backup_as_schema(&legacy, 67);
-    reseal_backup_as_legacy_v3_with_pairing(&legacy, "schema-67-bearer");
-    assert_eq!(
-        pairing_authority_counts(&legacy.join(DATA_DIRECTORY)),
-        (1, 1)
-    );
-    verify_data_backup(&legacy).expect("a v67 legacy backup verifies");
-    let legacy_restored = temporary.path().join("schema-67-legacy-restored");
-    restore_data_backup(&legacy, &legacy_restored).expect("a v67 legacy backup restores");
-    assert_eq!(grant_authority_rows(&legacy_restored), (0, 0, 0));
-    assert_eq!(pairing_authority_counts(&legacy_restored), (0, 0));
-}
-
-/// A restored `address_lookup_cache` row, joined to the display name its
-/// shared identity row holds: key, lookup coordinates, OSM identity, lookup
-/// time, provider and own display name (both NULL for an old row) and the
-/// shared display name.
-type RestoredLookupRow = (
-    String,
-    f64,
-    f64,
-    String,
-    i64,
-    i64,
-    Option<String>,
-    Option<String>,
-    String,
-);
-
-#[test]
-fn schema_68_backups_restore_to_the_current_schema_with_old_geocoder_lookups_unchanged() {
-    let (temporary, store) = create_fixture();
-    let backup = temporary.path().join("schema-68-backup");
-    create_data_backup(&store, &backup).expect("create backup fixture");
-    let manifest = reseal_backup_as_schema(&backup, 68);
-    assert_eq!(manifest.hub_schema, 68);
-    // A v68 catalogue as the previous release wrote it: version-1 lookup keys
-    // and no provider columns.
-    let connection = Connection::open_with_flags(
-        backup.join(CATALOGUE_MEMBER),
-        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .expect("v68 backup catalogue");
-    connection
-        .execute_batch(
-            "INSERT INTO address_cache(osm_type, osm_id, display_name, name)
-                 VALUES ('way', 42, 'Old Name, Old City', 'Old Name');
-             INSERT INTO address_lookup_cache(
-                 lookup_key, latitude, longitude, osm_type, osm_id, looked_up_at_ms)
-                 VALUES ('51.500000:-0.100000', 51.5, -0.1, 'way', 42, 111);",
-        )
-        .expect("plant a version-1 lookup");
-    connection
-        .pragma_update(None, "journal_mode", "DELETE")
-        .expect("sealed journal mode");
-    drop(connection);
-    reseal_backup_manifest(&backup, 68);
-    verify_data_backup(&backup).expect("a v68 backup verifies");
-
-    let restored = temporary.path().join("schema-68-restored");
-    restore_data_backup(&backup, &restored).expect("a v68 backup restores");
-    let connection = open_immutable_catalogue(&restored).expect("restored catalogue");
-    let schema: i32 = connection
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .unwrap();
-    assert_eq!(schema, SCHEMA_VERSION);
-    let old_rows: Vec<RestoredLookupRow> = connection
-        .prepare(
-            "SELECT l.lookup_key, l.latitude, l.longitude, l.osm_type, l.osm_id,
-                        l.looked_up_at_ms, l.provider, l.display_name, a.display_name
-                 FROM address_lookup_cache l
-                 JOIN address_cache a ON a.osm_type = l.osm_type AND a.osm_id = l.osm_id",
-        )
-        .unwrap()
-        .query_map([], |row| {
-            Ok((
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-                row.get(3)?,
-                row.get(4)?,
-                row.get(5)?,
-                row.get(6)?,
-                row.get(7)?,
-                row.get(8)?,
-            ))
-        })
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap();
-    assert_eq!(
-        old_rows,
-        vec![(
-            "51.500000:-0.100000".to_owned(),
-            51.5,
-            -0.1,
-            "way".to_owned(),
-            42,
-            111,
-            None,
-            None,
-            "Old Name, Old City".to_owned()
-        )]
-    );
-}
-
-#[test]
-fn historical_restore_migrates_schema_52_through_54_without_touching_source_or_pack_members() {
-    for schema in [52, 53, 54] {
-        let (temporary, store) = create_fixture();
-        publish_schema_22_fixture(&store);
-        let installation_id = store.installation_id().expect("installation ID");
-        let backup = temporary.path().join(format!("schema-{schema}-backup"));
-        create_data_backup(&store, &backup).expect("create current backup fixture");
-        let manifest = reseal_backup_as_schema(&backup, schema);
-        verify_data_backup(&backup).expect("verify historical backup");
-        let source_before = tree_snapshot(&backup);
-
-        let restored = temporary.path().join(format!("schema-{schema}-restored"));
-        restore_data_backup(&backup, &restored).expect("restore historical backup");
-
-        assert_eq!(tree_snapshot(&backup), source_before);
-        assert_eq!(
-            immutable_database_identity(&restored).expect("current restored identity"),
-            installation_id
-        );
-        let restored_store =
-            HubStore::open_immutable_read_only(&restored).expect("current restored store");
-        restored_store
-            .catalogue_check()
-            .expect("current restored catalogue");
-        restored_store
-            .verify_immutable_snapshot_unchanged()
-            .expect("restored catalogue remains immutable");
-
-        for member in manifest
-            .members
-            .iter()
-            .filter(|member| member.path != CATALOGUE_MEMBER)
-        {
-            let relative = member.path.strip_prefix("data/").unwrap();
-            let path = restored.join(relative);
-            let metadata = fs::metadata(&path).expect("restored member metadata");
-            assert_eq!(permission_mode(&metadata), member.mode);
-            assert_eq!(metadata.len(), member.size);
-            assert_eq!(sha256_file_hex(&path).unwrap(), member.sha256);
-        }
-    }
-}
-
-#[test]
 fn historical_restore_rejects_schema_outside_the_current_range() {
     for schema in [MIN_RESTORABLE_SCHEMA_VERSION - 1, SCHEMA_VERSION + 1] {
         let (temporary, store) = create_fixture();
         let backup = temporary.path().join(format!("schema-{schema}-backup"));
         create_data_backup(&store, &backup).expect("create backup fixture");
-        reseal_backup_as_schema(&backup, schema);
+        reseal_backup_manifest(&backup, schema);
         let source_before = tree_snapshot(&backup);
         let restored = temporary.path().join(format!("schema-{schema}-restored"));
 
@@ -1848,5 +1317,5 @@ fn noncanonical_or_scope_expanding_manifest_is_rejected() {
 #[path = "tests/b2.rs"]
 mod b2;
 
-#[path = "tests/import_names.rs"]
-mod import_names;
+#[path = "tests/g2_4_m1.rs"]
+mod g2_4_m1;

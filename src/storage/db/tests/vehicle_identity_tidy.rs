@@ -1928,40 +1928,12 @@ fn c6_st_i27_skip_whole_vehicle() {
     assert_skipped_whole(&ts, &before, &after, "oversized re-encode");
 }
 
-// ---- C6 ST-I28 ----
-
-fn table_exists(store: &HubStore, table: &str) -> bool {
-    store
-        .open()
-        .expect("catalogue")
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
-            params![table],
-            |row| row.get(0),
-        )
-        .expect("table lookup")
-}
-
 fn user_version(store: &HubStore) -> i32 {
     store
         .open()
         .expect("catalogue")
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("user_version")
-}
-
-/// Rewind a store with `rewind` to the version `steps_below` steps under C6
-/// Part I's predecessor, the version taken from the named constant (C6 R63 (b)
-/// 4), never from a bare number.
-fn rewind_store(store: &HubStore, rewind: &str, steps_below_predecessor: i32) {
-    let predecessor = STORE_DATA_STEPS_SCHEMA_VERSION - 1 - steps_below_predecessor;
-    let connection = store.open().expect("catalogue");
-    connection
-        .execute_batch(&format!(
-            "BEGIN IMMEDIATE; {rewind} PRAGMA user_version = {predecessor}; COMMIT;"
-        ))
-        .expect("rewind");
-    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
 }
 
 fn definition_count(text: &str, needle: &str) -> usize {
@@ -1987,7 +1959,6 @@ fn c6_st_i28_schema_constants() {
         source,
         vehicle,
     };
-    const { assert!(SCHEMA_VERSION >= STORE_DATA_STEPS_SCHEMA_VERSION) };
     assert_eq!(user_version(&ts.store), SCHEMA_VERSION);
     let connection = ts.store.open().expect("catalogue");
     let columns: Vec<(String, String, bool, i64)> = connection
@@ -2055,71 +2026,6 @@ fn c6_st_i28_schema_constants() {
     );
     drop(connection);
 
-    // (b) A store rewound through Part I's own rewind constant alone, with one
-    // live vehicle as in C6 ST-I23: before the step the table does not exist,
-    // the standalone preflight accepts the store, a read-write open migrates it
-    // to SCHEMA_VERSION, creates the table and gives C6 ST-I23's result.
-    let ts = Ts::fixture();
-    let before = ts.snap();
-    rewind_store(&ts.store, REWIND_V75_SQL, 0);
-    assert!(
-        !table_exists(&ts.store, "store_data_steps"),
-        "the rewound store has no table"
-    );
-    assert_eq!(user_version(&ts.store), STORE_DATA_STEPS_SCHEMA_VERSION - 1);
-    let preflight = HubStore::preflight_standalone_schema_read_only(ts.directory.path());
-    assert!(
-        preflight.is_ok(),
-        "assertion failed: c6_st_i28_schema_constants: standalone preflight accepts the Part I predecessor: {preflight:?}"
-    );
-    let store = ts.open_ok();
-    assert_eq!(user_version(&store), SCHEMA_VERSION);
-    assert!(table_exists(&store, "store_data_steps"));
-    assert_st_i23_result(&store, &ts.vid(), &before, &snap(&store, &ts.vid()));
-
-    // (b, R69) The older rewinds are cumulative: each starts with Part I's undo,
-    // so a store rewound through any of them has no `store_data_steps` and a
-    // read-write open migrates it forward without error, recreates the table
-    // and runs the tidy once. The distance is counted from Part I's version.
-    for (name, rewind, steps) in [
-        ("REWIND_V74_SQL", REWIND_V74_SQL, 1),
-        ("REWIND_V73_SQL", REWIND_V73_SQL, 2),
-        ("REWIND_V72_SQL", REWIND_V72_SQL, 3),
-        ("REWIND_V71_SQL", REWIND_V71_SQL, 4),
-        ("REWIND_V70_SQL", REWIND_V70_SQL, 5),
-        ("REWIND_V69_SQL", REWIND_V69_SQL, 6),
-    ] {
-        assert!(
-            rewind.starts_with(REWIND_V75_SQL),
-            "{name} starts with the undo of Part I's step"
-        );
-        let ts = Ts::fixture();
-        let before = ts.snap();
-        rewind_store(&ts.store, rewind, steps);
-        assert!(
-            !table_exists(&ts.store, "store_data_steps"),
-            "{name} removes the table"
-        );
-        let store = ts.open_ok();
-        assert_eq!(
-            user_version(&store),
-            SCHEMA_VERSION,
-            "{name}: migrated forward"
-        );
-        assert!(
-            table_exists(&store, "store_data_steps"),
-            "{name}: the table is recreated"
-        );
-        let after = snap(&store, &ts.vid());
-        assert_st_i23_result(&store, &ts.vid(), &before, &after);
-        // The tidy ran once: the marker is present and a further open changes nothing.
-        let again = ts.open_ok();
-        assert_eq!(
-            snap(&again, &ts.vid()),
-            after,
-            "{name}: the next open is a no-op"
-        );
-    }
     // A store from a later version than this build is refused, as before.
     let ts = Ts::new();
     ts.store
@@ -2168,7 +2074,6 @@ fn c6_st_i28_schema_constants() {
         "import/source_db/importer.rs",
         "storage/db/observation_persistence.rs",
         "storage/db/vehicle_identity_tidy.rs",
-        "storage/db/migrations/b3.rs",
         "collection/current_state.rs",
         "collection/current_state/summary_fields.rs",
     ] {
