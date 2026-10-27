@@ -12,7 +12,7 @@ import tempfile
 
 checkout = Path(sys.argv[1]).resolve()
 source = (checkout / 'scripts/test-docker-packaging.sh').read_text()
-begin = 'docker_context_target="${CARGO_TARGET_DIR:-$context_root/target}/docker-context-check"' 
+begin = 'docker_context_target="${CARGO_TARGET_DIR:-${CLEAN_DEV_BUILDS:-$context_root/target}}/docker-context-check"'
 end = '# Repository-selection variables'
 assert source.count(begin) == source.count(end) == 1, 'Production routing block is not unique'
 block = begin + source.split(begin, 1)[1].split(end, 1)[0]
@@ -30,13 +30,17 @@ with tempfile.TemporaryDirectory(prefix='source-packaging-routing-') as temporar
     root=Path(temporary)
     commands=root/'bin';commands.mkdir()
     cargo=commands/'cargo';cargo.write_text(fake);cargo.chmod(0o700)
-    for name in ['managed','fallback','checkout','dotdot','symlink']:
+    for name in ['managed','session-builds','fallback','checkout','dotdot','symlink']:
         case=root/name;case.mkdir()
         context=case/'context';context.mkdir();(context/'Cargo.toml').write_text('[workspace]\n')
         log=case/'cargo.json'
         environment={**os.environ,'PATH':str(commands)+os.pathsep+os.environ['PATH'],
             'root':str(checkout),'context_root':str(context),'FAKE_CARGO_LOG':str(log),'FAKE_CASE_ROOT':str(case)}
+        environment.pop('CLEAN_DEV_BUILDS',None)
         if name=='managed':environment['CARGO_TARGET_DIR']=str(case/'managed-target')
+        elif name=='session-builds':
+            environment.pop('CARGO_TARGET_DIR',None)
+            environment['CLEAN_DEV_BUILDS']=str(case/'session-builds')
         elif name=='fallback':environment.pop('CARGO_TARGET_DIR',None)
         elif name=='checkout':environment['CARGO_TARGET_DIR']=str(checkout/'target')
         elif name=='dotdot':environment['CARGO_TARGET_DIR']=str(checkout/'..'/checkout.name/'target')
@@ -44,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix='source-packaging-routing-') as temporar
             alias=case/'alias';alias.symlink_to(checkout,target_is_directory=True)
             environment['CARGO_TARGET_DIR']=str(alias/'target')
         result=subprocess.run(['/bin/sh','-eu','-c',block],cwd=case,env=environment,capture_output=True)
-        refused=name not in ['managed','fallback']
+        refused=name not in ['managed','session-builds','fallback']
         if refused:
             assert result.returncode!=0,(name,'unsafe target was accepted')
             assert not log.exists(),(name,'Cargo was invoked before refusal')
@@ -53,7 +57,8 @@ with tempfile.TemporaryDirectory(prefix='source-packaging-routing-') as temporar
         else:
             assert result.returncode==0,(name,result.stderr)
             record=json.loads(log.read_text())
-            expected=(case/'managed-target' if name=='managed' else context/'target')/'docker-context-check'
+            expected_root={'managed':case/'managed-target','session-builds':case/'session-builds','fallback':context/'target'}[name]
+            expected=expected_root/'docker-context-check'
             assert Path(record['target'])==expected.resolve(),(name,record)
             assert record['argv']==['check','--locked','--offline','--manifest-path',str(context/'Cargo.toml'),'--bin','teslatlas-hub','--quiet'],record
             assert record['source_commit']=='0123456789abcdef0123456789abcdef01234567',record

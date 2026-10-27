@@ -94,7 +94,7 @@ cp -R src examples tests "$context_root/"
 cp fixtures/source-corpus/v1/updates-lossless-selected-car.sql \
     "$context_root/fixtures/source-corpus/v1/"
 cp packaging/docker/initialize-volume.sh "$context_root/packaging/docker/"
-docker_context_target="${CARGO_TARGET_DIR:-$context_root/target}/docker-context-check"
+docker_context_target="${CARGO_TARGET_DIR:-${CLEAN_DEV_BUILDS:-$context_root/target}}/docker-context-check"
 docker_context_target=$(
     python3 - "$root" "$docker_context_target" <<'PY_GUARD'
 import os
