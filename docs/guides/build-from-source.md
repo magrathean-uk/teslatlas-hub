@@ -100,9 +100,11 @@ TESLATLAS_GO=/absolute/reviewed/path/to/go \
   ../scripts/dev/run.sh hub ./scripts/build-macos-app.sh
 ```
 
-The script prints one app path on success. Its output root follows
-the workspace's configured lab and managed build roots, so inspect the printed
-path instead of assuming a location under the source checkout. Mac builds are not
+The script prints one app path on success, under `$TESLATLAS_LAB/build/hub/dist`.
+Xcode staging goes under the runner's `$TESLATLAS_DERIVED_DATA` (from
+`$XCODE_DERIVED_DATA_PATH`); it is removed after a successful build and kept after
+a failure for diagnosis. Inspect the printed path instead of assuming a location
+under the source checkout. Mac builds are not
 automatically Developer ID signed or notarised. Do not disable macOS security
 controls to install one. Copy the validated app to `/Applications` or
 `~/Applications`, then follow
@@ -117,10 +119,13 @@ Rust 1.98.1, cargo-zigbuild 0.23.4 and Zig 0.16.0. Install the official Rust tar
 `aarch64-unknown-linux-gnu` on the build host; no guest toolchain is needed.
 The `.2.28` suffix below selects the glibc ABI baseline.
 
-Run from the workspace root after loading its Debian ARM64 tool and cache setup
-in `docs/development/ENVIRONMENT.md`. That parent-workspace document and its runners
-are not part of a standalone Hub clone. Keep Cargo output and Zig caches outside
-the source tree, and invoke Cargo directly through the managed runner:
+Run from the workspace root after loading the Debian ARM64 cross-build tool setup
+that the workspace's `docs/development/ENVIRONMENT.md` points to (cargo-zigbuild and
+Zig are not on the default PATH). That parent-workspace document, its runners and
+the recipe are not part of a standalone Hub clone. Cargo writes to the checkout's
+git-ignored `target/` directory, which is a declared build directory; do not set
+Cargo's target directory around the runner. Keep Zig caches outside the source
+tree, and invoke Cargo directly through the managed runner:
 
 ```sh
 source ~/dev/machine/env.zsh

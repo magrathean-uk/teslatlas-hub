@@ -10,7 +10,7 @@ TESLATLAS_HUB_DEVELOPMENT_BINARY=/absolute/path/to/teslatlas-hub
 TESLATLAS_HUB_DEVELOPMENT_CONFIG=/absolute/path/to/config.toml
 TESLATLAS_HUB_DEVELOPMENT_STATE_DIRECTORY=/absolute/path/to/private-state
 TESLATLAS_HUB_DEVELOPMENT_LOG_DIRECTORY=/absolute/path/to/private-logs
-TESLATLAS_HUB_DEVELOPMENT_CONTROL_DIRECTORY=/Users/owner/dev/runtime
+TESLATLAS_HUB_DEVELOPMENT_CONTROL_DIRECTORY=/Users/owner/dev/machine/runtime
 TESLATLAS_HUB_DEVELOPMENT_MODE=standalone
 ```
 

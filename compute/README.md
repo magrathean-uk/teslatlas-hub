@@ -112,7 +112,9 @@ scripts/dev/with-heavy-build-lock.sh \
   scripts/dev/run.sh hub cargo test --locked -p teslatlas-compute --all-targets
 ```
 
-Build output is routed outside the checkout by clean-development.
+Cargo output stays in the Hub checkout's git-ignored `target/`, declared in
+`../.clean-development.json`; caches and scratch are routed by
+`~/dev/machine/env.zsh`.
 
 ## Licence
 
