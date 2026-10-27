@@ -99,7 +99,7 @@ case "$check_go_toolchain" in
 esac
 
 [ -n "${TESLATLAS_DERIVED_DATA-}" ] && [ -n "${TESLATLAS_LAB-}" ] \
-    || die "run through ../scripts/dev/run.sh hub so build output stays outside the checkout"
+    || die "run through ../scripts/dev/run.sh hub so the app and Xcode staging go to the lab and routed DerivedData"
 for output_root in "$TESLATLAS_LAB" "$TESLATLAS_DERIVED_DATA"; do
     resolved_root=$(/usr/bin/python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$output_root")
     case "$resolved_root" in
@@ -109,17 +109,17 @@ done
 # Accept the checkout's git-ignored Cargo target directory or the legacy managed layout.
 TARGET_DIRECTORY=$(cargo metadata --locked --format-version 1 --no-deps | \
     /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])') \
-    || die "cannot find the managed Cargo target directory"
+    || die "cannot read the Cargo target directory from cargo metadata"
 CLEAN_DEVELOPMENT_COMMAND=${CLEAN_DEVELOPMENT:-$(command -v clean-development)} \
     || die "cannot find clean-development"
 MANAGED_BUILD_ROOT=$("$CLEAN_DEVELOPMENT_COMMAND" status --json | \
     /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("buildRoot", ""))') \
-    || die "cannot find the managed build root"
+    || die "cannot read clean-development status"
 case "$MANAGED_BUILD_ROOT" in
     '') [ "$TARGET_DIRECTORY" = "$ROOT/target" ] \
         || die "clean-development reports no buildRoot; the Cargo target must be $ROOT/target, not $TARGET_DIRECTORY (do not set CARGO_TARGET_DIR around the runner)" ;;
     /*) ;;
-    *) die "managed build root is not absolute" ;;
+    *) die "clean-development buildRoot is not absolute" ;;
 esac
 case "$TARGET_DIRECTORY" in
     "$ROOT/target"|"$MANAGED_BUILD_ROOT"/hub-*/cargo/target) ;;
