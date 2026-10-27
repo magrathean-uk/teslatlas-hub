@@ -2,6 +2,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 set -eu
 
+if [ "$(uname -s)" = Darwin ] &&
+    { ! command -v gstat >/dev/null 2>&1 || ! command -v gln >/dev/null 2>&1; }; then
+    printf '%s\n' 'GNU coreutils (gstat, gln) required on macOS: brew install coreutils' >&2
+    exit 69
+fi
+
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-volume-init-test.XXXXXX")
 trap 'find "$temporary" -depth -delete' EXIT HUP INT TERM

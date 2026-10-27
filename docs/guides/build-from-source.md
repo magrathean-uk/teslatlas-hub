@@ -24,6 +24,10 @@ change affects shared behaviour. The maintained Teslatlas workspace has its own
 runner and heavy-build coordination; use those existing controls when working
 there instead of these standalone commands. The workspace pins Rust 1.98.1.
 
+On macOS, the Docker packaging checks (`scripts/test-docker-packaging.sh` and
+`scripts/test-docker-volume-init.sh`) require GNU coreutils (`gstat`, `gln`):
+install it with `brew install coreutils`.
+
 ## Teslatlas Compute
 
 Hub uses the Teslatlas Compute library (`teslatlas-compute`, Apache-2.0) from
