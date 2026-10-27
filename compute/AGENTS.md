@@ -14,7 +14,11 @@ plan wins on process, model, scope and commit policy. Run commands through
 - No dependencies, no unsafe, no network code. Legal files are owner-controlled.
 - Short local commit per reviewed batch; push only on an owner request.
 
-<!-- clean-development-policy:v2 (canonical text: ~/dev/source/dev-bootstrap/snippets/clean-development-policy.md) -->
+<!-- clean-development-policy:v4 (clean-development 0.6.0; inherited from ../AGENTS.md) -->
 ## Clean development (mandatory)
 
-Follow the Clean Development rules in the workspace `../../AGENTS.md`: routed caches, builds and scratch outside the tree, `clean-development run --session session-only` for anything that writes output, and `dev-env-check`, `dev-projects-check` and `dev-audit` before finishing.
+Follow the [Hub clean-development policy](../AGENTS.md#clean-development-mandatory).
+The Hub root `../.clean-development.json` (schema v2) governs this package. Cargo
+output stays in the Hub's git-ignored `target/`; caches and scratch follow
+`~/dev/machine/env.zsh`. Use the Hub runner shown above; the Hub's macOS app goes under `$TESLATLAS_LAB/build/hub/dist` and its Xcode
+staging under `$TESLATLAS_DERIVED_DATA`.

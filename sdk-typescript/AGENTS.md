@@ -1,7 +1,7 @@
 # Teslatlas TypeScript client
 
-Node.js client for the Hub read API. Follow `../AGENTS.md` and
-`../docs/development/MASTER_PLAN.md`; the plan wins on process, model, scope and commit
+Node.js client for the Hub read API. Follow `../../AGENTS.md` and
+`../../docs/development/MASTER_PLAN.md`; the plan wins on process, model, scope and commit
 policy. Only the Hub client (`src/hub`) is retained; the rich client, SSE, vehicle
 commands, the vendored Protocol copy, the lock and sync scripts and the two
 bearer-serving browser helpers are deleted under plan group G2-2. Types are then
@@ -33,7 +33,12 @@ then `npm run typecheck`, `npm run test:unit`, `npm run protocol:check`, or
 checkout. From the workspace root, run everything through
 `scripts/dev/run.sh hub-sdk-typescript ...`.
 
-<!-- clean-development-policy:v2 (canonical text: ~/dev/source/dev-bootstrap/snippets/clean-development-policy.md) -->
+<!-- clean-development-policy:v4 (clean-development 0.6.0; inherited from ../AGENTS.md) -->
 ## Clean development (mandatory)
 
-Follow the Clean Development rules in the workspace `../AGENTS.md`: routed caches, builds and scratch outside the tree, `clean-development run --session session-only` for anything that writes output, and `dev-env-check`, `dev-projects-check` and `dev-audit` before finishing.
+Follow the [Hub clean-development policy](../AGENTS.md#clean-development-mandatory).
+The Hub root `../.clean-development.json` (schema v2) governs this package, including
+the git-ignored `dist/` and `node_modules/` directories. Cargo output stays in the
+Hub's git-ignored `target/`; caches and scratch follow `~/dev/machine/env.zsh`.
+Use the Hub runner shown above; the Hub's macOS app goes under `$TESLATLAS_LAB/build/hub/dist` and its Xcode
+staging under `$TESLATLAS_DERIVED_DATA`.
