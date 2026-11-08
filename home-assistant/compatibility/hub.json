@@ -10,7 +10,7 @@
   "required_capabilities": ["query.vehicles", "query.current"],
   "optional_capabilities": ["query.drives"],
   "test_receipt_paths": [
-    "hub/docs/development/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json",
-    "teslatlas-home-assistant/docs/development/ha-debian-arm64-container-lifecycle-acceptance-2026-09-19-r1.json"
+    "hub/docs/development/archive/2026-09-25-pre-programme/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json",
+    "teslatlas-home-assistant/docs/development/archive/ha-debian-arm64-container-lifecycle-acceptance-2026-09-19-r1.json"
   ]
 }
