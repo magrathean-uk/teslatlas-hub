@@ -1592,7 +1592,7 @@ def test_receipt_runtime_rejects_unadmitted_source(
     else:
         module = sys.modules["custom_components.teslatlas_hub.client"]
         cache = Path(module.__cached__)
-        cache.parent.mkdir()
+        cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_bytes(b"unadmitted-bytecode")
         message = "unadmitted cached bytecode"
 
