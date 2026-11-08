@@ -17,6 +17,7 @@
       "rationale": "Repository-maintained root manifests and project notice. This treatment does not prove chain of title.",
       "paths": [
         ".gitignore",
+        ".gitleaksignore",
         "CITATION.cff",
         "Cargo.toml",
         "NOTICE",
