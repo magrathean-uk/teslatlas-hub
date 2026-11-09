@@ -79,7 +79,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 time = { version = "0.3.55", features = ["formatting"] }
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4", "v5"] }
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+zip = { version = "9.4.2", default-features = false, features = ["deflate"] }
 zstd = { version = "0.14", features = ["zstdmt"] }
 zeroize = { version = "1", features = ["derive"] }
 
