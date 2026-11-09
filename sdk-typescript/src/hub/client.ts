@@ -1081,13 +1081,13 @@ const hubErrorStatuses = {
   service_unavailable: 503,
 } as const satisfies Record<HubErrorCode, number>;
 
-// hub-http-v1@1.2.0 lets any ^[a-z_]{1,64}$ token through as an error code, but this client only
+// hub-http-v1@1.3.0 lets any ^[a-z_]{1,64}$ token through as an error code, but this client only
 // maps the codes it knows to a status; anything else stays a validation failure.
 function isHubErrorCode(code: string): code is HubErrorCode {
   return Object.hasOwn(hubErrorStatuses, code);
 }
 
-// hub-http-v1@1.2.0: 1 to 128 UTF-8 bytes and no C0 or C1 control character. The Hub refuses
+// hub-http-v1@1.3.0: 1 to 128 UTF-8 bytes and no C0 or C1 control character. The Hub refuses
 // any other name with 422 before it consults the invitation, so refuse it before sending.
 function isValidDeviceName(deviceName: string): boolean {
   return (
