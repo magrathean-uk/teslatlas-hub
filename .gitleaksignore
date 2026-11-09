@@ -58,5 +58,3 @@ protocol/tools/build_hub_sync_profile.py:generic-api-key:1049
 scripts/test_finalize_container_runtime_evidence.py:private-key:207
 sdk-typescript/docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r7.json:generic-api-key:16
 sdk-typescript/tests/fixtures/tls/localhost-key.pem:private-key:1
-src/application/main/tests.rs:generic-api-key:2007
-src/application/main/tests.rs:generic-api-key:2013
