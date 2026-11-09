@@ -22,39 +22,19 @@ use crate::platform::file_attempts::note as attempt;
 
 const SECRETS_DIRECTORY_MODE: u32 = 0o700;
 const KEY_FILE_MODE: u32 = 0o600;
-const MAX_KEY_BYTES: usize = 16 * 1024;
 const CURSOR_KEY_BYTES: usize = 32;
-const PREVIOUS_KEY_FILE_NAME: &str = ".teslamate-encryption.previous.key";
 
-/// Generate a new local key for a user-supplied legacy token pair.
-pub fn random_encryption_key() -> Result<Zeroizing<Vec<u8>>, SourceDbCredentialError> {
-    let mut key = Zeroizing::new(vec![0_u8; 32]);
-    getrandom::fill(key.as_mut_slice()).map_err(|_| SourceDbCredentialError::EntropyUnavailable)?;
-    Ok(key)
-}
 
-/// Exact, non-text-normalized TeslaMate encryption-key bytes.
-pub struct SourceTokenKey(Zeroizing<Vec<u8>>);
 
-impl SourceTokenKey {
-    pub fn as_bytes(&self) -> &[u8] {
-        self.0.as_slice()
-    }
-}
 
-impl std::fmt::Debug for SourceTokenKey {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("SourceTokenKey([redacted])")
-    }
-}
 
-pub fn key_path(data_dir: &Path) -> PathBuf {
-    data_dir.join("secrets/teslamate-encryption.key")
-}
 
-fn previous_key_path(data_dir: &Path) -> PathBuf {
-    data_dir.join("secrets").join(PREVIOUS_KEY_FILE_NAME)
-}
+
+
+
+
+
+
 
 pub fn cursor_key_path(data_dir: &Path) -> PathBuf {
     data_dir.join("secrets/hub-cursor.key")
@@ -77,389 +57,45 @@ pub fn load_or_create_cursor_key(
     }
 }
 
-/// Test only: leave a previous key generation next to the current one, as an interrupted
-/// replacement does after its commit (B2 fix round, P3b fix 4, R-P3bF4-4).
-#[cfg(test)]
-pub(crate) fn leave_previous_key_for_test(
-    data_dir: &Path,
-    previous: &[u8],
-) -> Result<(), SourceDbCredentialError> {
-    write_private_key_file(&previous_key_path(data_dir), previous)
-}
 
-/// Test only: begin a key replacement and never commit it, as a crash before the commit
-/// leaves it: `key` is the current generation, the old one the previous.
-#[cfg(test)]
-pub(crate) fn begin_key_replacement_for_test(
-    data_dir: &Path,
-    key: &[u8],
-) -> Result<(), SourceDbCredentialError> {
-    begin_key_replacement(data_dir, key).map(drop)
-}
 
-/// Test helper for constructing an already-persisted key fixture. Production
-/// replacements must use `replace_key_and_tokens`.
-#[cfg(test)]
-pub(crate) fn replace_key(data_dir: &Path, key: &[u8]) -> Result<(), SourceDbCredentialError> {
-    validate_key(key)?;
-    let secrets_dir = data_dir.join("secrets");
-    ensure_secrets_directory(&secrets_dir)?;
-    let destination = key_path(data_dir);
-    validate_existing_key_file(&destination)?;
 
-    let temporary = secrets_dir.join(format!(".teslamate-encryption-{}.tmp", Uuid::new_v4()));
-    let write_result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(KEY_FILE_MODE)
-            .open(&temporary)
-            .map_err(SourceDbCredentialError::CreateTemporaryKey)?;
-        file.set_permissions(fs::Permissions::from_mode(KEY_FILE_MODE))
-            .map_err(SourceDbCredentialError::ProtectTemporaryKey)?;
-        file.write_all(key)
-            .map_err(SourceDbCredentialError::WriteTemporaryKey)?;
-        file.sync_all()
-            .map_err(SourceDbCredentialError::SyncTemporaryKey)?;
-        fs::rename(&temporary, &destination).map_err(SourceDbCredentialError::ReplaceKey)?;
-        sync_directory(&secrets_dir)
-    })();
-    if write_result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    write_result
-}
 
-/// Replace the key file and its ciphertext pair as one recoverable operation.
-///
-/// SQLite and the filesystem cannot share one transaction. The old key is
-/// therefore retained until the SQLite replacement commits. On interruption,
-/// startup tests both private key generations against the committed pair and
-/// deterministically keeps the matching generation.
-pub fn replace_key_and_tokens(
-    data_dir: &Path,
-    store: &crate::db::HubStore,
-    key: &[u8],
-    tokens: &crate::db::LegacyOwnerTokenStore,
-) -> Result<(), SourceDbCredentialImportError> {
-    recover_pending_key_replacement(data_dir, store)?;
-    let plaintext = crate::source_token_envelope::decrypt_legacy_owner_tokens(
-        key,
-        tokens.access(),
-        tokens.refresh(),
-    )
-    .map_err(SourceDbCredentialImportError::TokenCipher)?;
-    let generation = crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
-    let tokens = tokens
-        .with_credential_generation(generation)
-        .map_err(SourceDbCredentialImportError::TokenStore)?;
-    let replacement = begin_key_replacement(data_dir, key)?;
-    if let Err(store_error) = store.replace_legacy_owner_tokens(&tokens) {
-        return match replacement.rollback() {
-            Ok(()) => Err(SourceDbCredentialImportError::TokenStore(store_error)),
-            Err(rollback) => Err(SourceDbCredentialImportError::Rollback {
-                store: store_error.to_string(),
-                rollback,
-            }),
-        };
-    }
-    replacement.commit()?;
-    Ok(())
-}
 
-/// Remove source database collector authority after its process has been stopped.
-///
-/// The token row is deleted first. A leftover key by itself grants no access,
-/// while deleting the key first could leave a usable ciphertext pair with an
-/// already-loaded key generation after an interrupted operation.
-pub fn remove_key_and_tokens(
-    data_dir: &Path,
-    store: &crate::db::HubStore,
-) -> Result<(), SourceDbCredentialRemovalError> {
-    store
-        .clear_source_db_legacy_tokens()
-        .map_err(SourceDbCredentialRemovalError::TokenStore)?;
 
-    let secrets_dir = data_dir.join("secrets");
-    let current = key_path(data_dir);
-    let previous = previous_key_path(data_dir);
-    let current_exists = path_exists(&current)?;
-    let previous_exists = path_exists(&previous)?;
-    if current_exists {
-        remove_checked_key_file(&current)?;
-    }
-    if previous_exists {
-        remove_checked_key_file(&previous)?;
-    }
-    if current_exists || previous_exists {
-        sync_directory(&secrets_dir)?;
-    }
-    Ok(())
-}
 
-/// Load the key generation that decrypts the committed ciphertext pair.
-/// This also settles an interrupted cross-filesystem replacement.
-pub fn load_key_for_tokens(
-    data_dir: &Path,
-    tokens: &crate::db::LegacyOwnerTokenStore,
-) -> Result<SourceTokenKey, SourceDbCredentialError> {
-    load_key_for_tokens_with(data_dir, tokens, &|| true)
-}
 
-/// [`load_key_for_tokens`] for a supervised run (B2 fix round, P3b fix 4, R-P3bF4-4):
-/// `may_settle` is the run's guard, consulted immediately before every key-file mutation
-/// of the settlement (removing the previous generation, deleting the current one,
-/// restoring the previous over it), with nothing awaited in between. The key is selected
-/// without writing first; a refusal ends the call with
-/// [`SourceDbCredentialError::SettlementRefused`] and leaves both key files as they
-/// were, to be settled by the next admitted start.
-pub(crate) fn load_key_for_tokens_with(
-    data_dir: &Path,
-    tokens: &crate::db::LegacyOwnerTokenStore,
-    may_settle: &dyn Fn() -> bool,
-) -> Result<SourceTokenKey, SourceDbCredentialError> {
-    let previous = previous_key_path(data_dir);
-    let previous_exists = path_exists(&previous)?;
-    match load_key(data_dir) {
-        Ok(current) if key_matches_tokens(&current, tokens) => {
-            if previous_exists {
-                if !may_settle() {
-                    return Err(SourceDbCredentialError::SettlementRefused);
-                }
-                remove_checked_key_file(&previous)?;
-                sync_directory(&data_dir.join("secrets"))?;
-            }
-            Ok(current)
-        }
-        Ok(_) | Err(_) if previous_exists => {
-            let prior = load_key_file(&previous)?;
-            if !key_matches_tokens(&prior, tokens) {
-                return Err(SourceDbCredentialError::NoMatchingKeyGeneration);
-            }
-            restore_previous_key(data_dir, may_settle)?;
-            load_key(data_dir)
-        }
-        Ok(_) => Err(SourceDbCredentialError::NoMatchingKeyGeneration),
-        Err(error) => Err(error),
-    }
-}
 
-/// Prove that one admitted local key generation decrypts the committed legacy
-/// token pair without settling or deleting an interrupted replacement.
-pub fn validate_stored_legacy_credentials_read_only(
-    data_dir: &Path,
-    tokens: &crate::db::LegacyOwnerTokenStore,
-) -> Result<(), SourceDbCredentialError> {
-    select_stored_legacy_key_read_only(data_dir, tokens).map(drop)
-}
 
-/// Select, without writing, the existing current or previous key generation
-/// that opens the committed legacy pair, exactly as
-/// [`validate_stored_legacy_credentials_read_only`] proves it. An interrupted
-/// replacement is neither settled nor deleted; real key faults stay errors.
-pub(crate) fn select_stored_legacy_key_read_only(
-    data_dir: &Path,
-    tokens: &crate::db::LegacyOwnerTokenStore,
-) -> Result<SourceTokenKey, SourceDbCredentialError> {
-    let current_exists = path_exists(&key_path(data_dir))?;
-    let current = load_key(data_dir);
-    if current
-        .as_ref()
-        .is_ok_and(|key| key_matches_tokens(key, tokens))
-    {
-        return current;
-    }
-    let previous = previous_key_path(data_dir);
-    if path_exists(&previous)? {
-        let previous = load_key_file(&previous)?;
-        if key_matches_tokens(&previous, tokens) {
-            if current_exists && current.is_err() {
-                return current;
-            }
-            return Ok(previous);
-        }
-        return Err(SourceDbCredentialError::NoMatchingKeyGeneration);
-    }
-    match current {
-        Ok(_) => Err(SourceDbCredentialError::NoMatchingKeyGeneration),
-        Err(error) => Err(error),
-    }
-}
 
-fn recover_pending_key_replacement(
-    data_dir: &Path,
-    store: &crate::db::HubStore,
-) -> Result<(), SourceDbCredentialImportError> {
-    if !path_exists(&previous_key_path(data_dir))? {
-        return Ok(());
-    }
-    let stored = store
-        .load_legacy_owner_tokens()
-        .map_err(SourceDbCredentialImportError::TokenStore)?
-        .ok_or(SourceDbCredentialError::PendingKeyReplacementWithoutTokens)?;
-    load_key_for_tokens(data_dir, &stored)?;
-    Ok(())
-}
 
-fn key_matches_tokens(key: &SourceTokenKey, tokens: &crate::db::LegacyOwnerTokenStore) -> bool {
-    let Ok(plaintext) = crate::source_token_envelope::decrypt_legacy_owner_tokens(
-        key.as_bytes(),
-        tokens.access(),
-        tokens.refresh(),
-    ) else {
-        return false;
-    };
-    tokens.credential_generation().is_none_or(|expected| {
-        crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext) == expected
-    })
-}
 
-struct KeyReplacement {
-    data_dir: PathBuf,
-    had_previous: bool,
-}
 
-impl KeyReplacement {
-    fn commit(self) -> Result<(), SourceDbCredentialError> {
-        if self.had_previous {
-            remove_checked_key_file(&previous_key_path(&self.data_dir))?;
-            sync_directory(&self.data_dir.join("secrets"))?;
-        }
-        Ok(())
-    }
 
-    fn rollback(self) -> Result<(), SourceDbCredentialError> {
-        let current = key_path(&self.data_dir);
-        if path_exists(&current)? {
-            remove_checked_key_file(&current)?;
-        }
-        if self.had_previous {
-            attempt(&previous_key_path(&self.data_dir));
-            attempt(&current);
-            fs::rename(previous_key_path(&self.data_dir), &current)
-                .map_err(SourceDbCredentialError::RestoreKey)?;
-        }
-        sync_directory(&self.data_dir.join("secrets"))
-    }
-}
 
-fn begin_key_replacement(
-    data_dir: &Path,
-    key: &[u8],
-) -> Result<KeyReplacement, SourceDbCredentialError> {
-    validate_key(key)?;
-    let secrets_dir = data_dir.join("secrets");
-    ensure_secrets_directory(&secrets_dir)?;
-    let current = key_path(data_dir);
-    let previous = previous_key_path(data_dir);
-    if path_exists(&previous)? {
-        return Err(SourceDbCredentialError::PendingKeyReplacement);
-    }
-    let had_previous = path_exists(&current)?;
-    if had_previous {
-        validate_key_file(&current)?;
-    }
 
-    let temporary = secrets_dir.join(format!(".teslamate-encryption-{}.tmp", Uuid::new_v4()));
-    write_private_key_file(&temporary, key)?;
-    if had_previous {
-        attempt(&current);
-        attempt(&previous);
-        if let Err(error) = fs::rename(&current, &previous) {
-            attempt(&temporary);
-            let _ = fs::remove_file(&temporary);
-            return Err(SourceDbCredentialError::ReplaceKey(error));
-        }
-        sync_directory(&secrets_dir)?;
-    }
-    attempt(&temporary);
-    attempt(&current);
-    if let Err(error) = fs::rename(&temporary, &current) {
-        if had_previous {
-            attempt(&previous);
-            attempt(&current);
-            let _ = fs::rename(&previous, &current);
-            let _ = sync_directory(&secrets_dir);
-        }
-        attempt(&temporary);
-        let _ = fs::remove_file(&temporary);
-        return Err(SourceDbCredentialError::ReplaceKey(error));
-    }
-    sync_directory(&secrets_dir)?;
-    Ok(KeyReplacement {
-        data_dir: data_dir.to_path_buf(),
-        had_previous,
-    })
-}
 
-fn write_private_key_file(path: &Path, key: &[u8]) -> Result<(), SourceDbCredentialError> {
-    attempt(path);
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(KEY_FILE_MODE)
-        .open(path)
-        .map_err(SourceDbCredentialError::CreateTemporaryKey)?;
-    file.set_permissions(fs::Permissions::from_mode(KEY_FILE_MODE))
-        .map_err(SourceDbCredentialError::ProtectTemporaryKey)?;
-    attempt(path);
-    file.write_all(key)
-        .map_err(SourceDbCredentialError::WriteTemporaryKey)?;
-    attempt(path);
-    file.sync_all()
-        .map_err(SourceDbCredentialError::SyncTemporaryKey)
-}
 
-fn path_exists(path: &Path) -> Result<bool, SourceDbCredentialError> {
-    match fs::symlink_metadata(path) {
-        Ok(_) => Ok(true),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(SourceDbCredentialError::InspectKey(error)),
-    }
-}
 
-fn remove_checked_key_file(path: &Path) -> Result<(), SourceDbCredentialError> {
-    validate_key_file(path)?;
-    attempt(path);
-    fs::remove_file(path).map_err(SourceDbCredentialError::RemoveKey)
-}
 
-fn restore_previous_key(
-    data_dir: &Path,
-    may_settle: &dyn Fn() -> bool,
-) -> Result<(), SourceDbCredentialError> {
-    let current = key_path(data_dir);
-    let previous = previous_key_path(data_dir);
-    validate_key_file(&previous)?;
-    if path_exists(&current)? {
-        if !may_settle() {
-            return Err(SourceDbCredentialError::SettlementRefused);
-        }
-        remove_checked_key_file(&current)?;
-    }
-    if !may_settle() {
-        return Err(SourceDbCredentialError::SettlementRefused);
-    }
-    attempt(&previous);
-    attempt(&current);
-    fs::rename(&previous, &current).map_err(SourceDbCredentialError::RestoreKey)?;
-    sync_directory(&data_dir.join("secrets"))
-}
 
-/// Load the exact stored bytes without trimming, parsing, logging, or copying
-/// them into a string.
-pub(crate) fn load_key(data_dir: &Path) -> Result<SourceTokenKey, SourceDbCredentialError> {
-    let secrets_dir = data_dir.join("secrets");
-    validate_secrets_directory(&secrets_dir)?;
-    let path = key_path(data_dir);
-    load_key_file(&path)
-}
 
-fn load_key_file(path: &Path) -> Result<SourceTokenKey, SourceDbCredentialError> {
-    let key = read_checked_key_file(path, MAX_KEY_BYTES)?;
-    validate_key(&key)?;
-    Ok(SourceTokenKey(key))
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 fn create_cursor_key_once(
     secrets_dir: &Path,
@@ -550,33 +186,11 @@ fn validate_secrets_directory(path: &Path) -> Result<(), SourceDbCredentialError
     Ok(())
 }
 
-#[cfg(test)]
-fn validate_existing_key_file(path: &Path) -> Result<(), SourceDbCredentialError> {
-    match fs::symlink_metadata(path) {
-        Ok(_) => validate_key_file(path),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(SourceDbCredentialError::InspectKey(error)),
-    }
-}
 
-fn validate_key_file(path: &Path) -> Result<(), SourceDbCredentialError> {
-    let metadata = fs::symlink_metadata(path).map_err(SourceDbCredentialError::InspectKey)?;
-    if metadata.file_type().is_symlink()
-        || !metadata.file_type().is_file()
-        || metadata.permissions().mode() & 0o777 != KEY_FILE_MODE
-        || metadata.uid() != getuid().as_raw()
-    {
-        return Err(SourceDbCredentialError::UnsafeKeyFile);
-    }
-    Ok(())
-}
 
-fn read_checked_key_file(
-    path: &Path,
-    maximum: usize,
-) -> Result<Zeroizing<Vec<u8>>, SourceDbCredentialError> {
-    read_checked_secret_file(path, maximum, false)
-}
+
+
+
 
 fn read_checked_cursor_key_file(
     path: &Path,
@@ -706,15 +320,7 @@ fn read_checked_secret_file_after_open(
     Ok(bytes)
 }
 
-fn validate_key(key: &[u8]) -> Result<(), SourceDbCredentialError> {
-    if key.is_empty() {
-        return Err(SourceDbCredentialError::EmptyKey);
-    }
-    if key.len() > MAX_KEY_BYTES {
-        return Err(SourceDbCredentialError::KeyTooLarge);
-    }
-    Ok(())
-}
+
 
 fn sync_directory(path: &Path) -> Result<(), SourceDbCredentialError> {
     attempt(path);

@@ -21,7 +21,7 @@ use super::{
     http_date::parse_http_date,
 };
 use crate::db::{
-    CollectorAuthRow, HubStore, LegacyOwnerTokenStore, OutboundRequestReceiptId, StoreError,
+    CollectorAuthRow, HubStore,  OutboundRequestReceiptId, StoreError,
     StoredLegacyGeneration,
 };
 
@@ -920,12 +920,12 @@ pub(crate) struct PairImage {
 
 impl PairImage {
     /// The image of a row about to be written under `generation`.
-    pub(crate) fn of(row: &LegacyOwnerTokenStore, generation: Uuid) -> Self {
+    pub(crate) fn of(row: &(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), generation: Uuid) -> Self {
         Self {
-            access: row.access().to_vec(),
-            refresh: row.refresh().to_vec(),
-            expires_at: row.expires_at(),
-            next_refresh_at: row.next_refresh_at(),
+            access: row.0.as_slice().to_vec(),
+            refresh: row.1.as_slice().to_vec(),
+            expires_at: row.2,
+            next_refresh_at: row.3,
             generation,
         }
     }
@@ -939,30 +939,30 @@ impl PairImage {
         generation: Uuid,
         expires_at: i64,
         next_refresh_at: i64,
-    ) -> Option<LegacyOwnerTokenStore> {
+    ) -> Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)> {
         if self.generation != generation
             || self.expires_at != expires_at
             || self.next_refresh_at != next_refresh_at
         {
             return None;
         }
-        LegacyOwnerTokenStore::refreshed(
+        ({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
             self.access.clone(),
             self.refresh.clone(),
             self.expires_at,
             self.next_refresh_at,
         )
-        .and_then(|row| row.with_credential_generation(self.generation))
+        .and_then(|row| ({ let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), uuid::Uuid) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(&(row), self.generation))
         .ok()
     }
 
     /// Whether a stored row is exactly this image.
-    fn is_the_row(&self, row: &LegacyOwnerTokenStore) -> bool {
-        row.credential_generation() == Some(self.generation)
-            && row.access() == self.access.as_slice()
-            && row.refresh() == self.refresh.as_slice()
-            && row.expires_at() == self.expires_at
-            && row.next_refresh_at() == self.next_refresh_at
+    fn is_the_row(&self, row: &(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> bool {
+        row.4 == Some(self.generation)
+            && row.0.as_slice() == self.access.as_slice()
+            && row.1.as_slice() == self.refresh.as_slice()
+            && row.2 == self.expires_at
+            && row.3 == self.next_refresh_at
     }
 }
 
@@ -992,6 +992,22 @@ pub(crate) struct OwnWrite<'a> {
 /// proves the write (CL-14, R-P3b-12). A missing or unbound row, or one that
 /// differs from the image once the attempt is no longer open, outranks any receipt.
 /// Without `own` the generation alone decides, as for any other successor.
+struct RereadReceiptInput {
+    transport: String,
+    operation: String,
+    outcome: String,
+}
+impl RereadReceiptInput {
+    fn is_started(&self) -> bool {
+        self.outcome == "started"
+    }
+    fn is_token_refresh_success(&self) -> bool {
+        self.transport == "legacy_auth"
+            && self.operation == "token_refresh"
+            && self.outcome == "success"
+    }
+}
+
 pub(crate) fn persist_reread(
     store: &HubStore,
     input: Uuid,
@@ -999,17 +1015,17 @@ pub(crate) fn persist_reread(
     own: Option<OwnWrite<'_>>,
 ) -> Result<PersistReread, StoreError> {
     if let Some(own) = own.filter(|_| input == successor) {
-        let snapshot = store.legacy_pair_and_receipt_snapshot(own.receipt)?;
-        let Some(row) = snapshot.row else {
+        let (credential_row, credential_receipt) = ({ let _retained_snapshot_context = store; let snapshot_callee: fn(crate::db::OutboundRequestReceiptId) -> Result<(Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, Option<RereadReceiptInput>), StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); snapshot_callee(own.receipt) })?;
+        let Some(row) = credential_row else {
             return Ok(PersistReread::Missing);
         };
-        let Some(generation) = row.credential_generation() else {
+        let Some(generation) = row.4 else {
             return Ok(PersistReread::External);
         };
         if generation != successor {
             return Ok(PersistReread::External);
         }
-        let receipt = snapshot.receipt;
+        let receipt = credential_receipt;
         let is_the_write = own.image.is_the_row(&row);
         let still_open = receipt.as_ref().is_some_and(|facts| facts.is_started());
         return Ok(if is_the_write {
@@ -1115,7 +1131,7 @@ impl StartFacts {
     /// Read the facts from the store.
     pub(crate) fn read(store: &HubStore, current: Uuid) -> Result<Self, StoreError> {
         Ok(Self {
-            unresolved_attempt: store.has_unresolved_legacy_refresh()?,
+            unresolved_attempt: ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })()?,
             stored: store.load_collector_auth_row()?,
             current_is_refresh_output: store.legacy_generation_is_refresh_output(current)?,
             last_receipt_started_at_ms: store.latest_legacy_refresh_started_at_ms()?,

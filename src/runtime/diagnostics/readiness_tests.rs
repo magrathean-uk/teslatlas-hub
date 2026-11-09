@@ -82,31 +82,8 @@ fn doctor_legacy_pair(
     access: &str,
     schedule: Option<(i64, i64)>,
 ) -> Uuid {
-    let key = b"doctor readiness key";
-    let tokens =
-        crate::credentials::OwnerTokens::from_secret_parts(access.to_owned(), "refresh".to_owned())
-            .expect("tokens");
-    let (access, refresh) =
-        crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
-    let stored = match schedule {
-        Some((expires_at, next_refresh_at)) => crate::db::LegacyOwnerTokenStore::refreshed(
-            access,
-            refresh,
-            expires_at,
-            next_refresh_at,
-        ),
-        None => crate::db::LegacyOwnerTokenStore::imported(access, refresh),
+        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
     }
-    .expect("stored pair");
-    crate::legacy_owner_credentials::replace_key_and_tokens(directory, store, key, &stored)
-        .expect("persist pair");
-    store
-        .load_legacy_owner_tokens()
-        .expect("load")
-        .expect("row")
-        .credential_generation()
-        .expect("generation")
-}
 
 fn doctor_jwt(exp: i64) -> String {
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -140,11 +117,10 @@ fn doctor_fleet_pair_with(directory: &Path, store: &HubStore, access: &str, refr
         UNIX_EPOCH + std::time::Duration::from_secs(1_000),
     )
     .expect("persist fleet credentials");
-    store
-        .load_fleet_tokens()
+    ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("load")
         .expect("row")
-        .credential_generation()
+        .4
         .expect("generation")
 }
 
@@ -366,7 +342,7 @@ fn doctor_attention_passes_without_claiming_collection_can_start() {
             .detail
             .ends_with("authState=sign_in_required unresolvedRefresh=false")
     );
-    assert!(!store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
 }
 
 #[test]
@@ -394,7 +370,7 @@ fn doctor_unresolved_refresh_remains_a_restart_failure() {
             let generation = doctor_legacy_pair(temporary.path(), &store, &access, schedule);
             let config = doctor_config(temporary.path(), DOCTOR_LEGACY, "");
             doctor_fresh_lease(&store);
-            store.begin_legacy_refresh(generation).expect("unresolved refresh");
+            ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("unresolved refresh");
             let mut row = doctor_row(state, (!reason.is_empty()).then_some(reason), state == "ready");
             if state != "ready" {
                 row.stopped_generation = Some(generation);
@@ -416,7 +392,7 @@ fn doctor_unresolved_refresh_remains_a_restart_failure() {
                 _ => state,
             };
             assert_eq!(report.credentials.legacy.auth_state.as_deref(), Some(expected), "{case}");
-            assert!(store.has_unresolved_legacy_refresh().expect("read-only"), "{case}");
+            assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("read-only"), "{case}");
             let stored = store.load_collector_auth_row().unwrap().expect("row");
             assert_eq!(stored.state, state, "{case}: the stored row is untouched");
         }
@@ -450,7 +426,7 @@ fn doctor_signed_out_and_integrity_failures_remain_failures() {
 
     // Missing key.
     doctor_write_row(&store, &doctor_row("ready", None, true));
-    let key_path = crate::legacy_owner_credentials::key_path(temporary.path());
+    let key_path = ({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value });
     let key = fs::read(&key_path).expect("key");
     fs::remove_file(&key_path).expect("remove key");
     let missing = inspect_hub(&store, &config).expect("report");
@@ -464,11 +440,10 @@ fn doctor_signed_out_and_integrity_failures_remain_failures() {
     // Damaged ciphertext under the right key.
     fs::write(&key_path, &key).expect("restore key");
     fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600)).expect("key mode");
-    assert_eq!(inspect_hub(&store, &config).expect("report").status, "ok");
-    store
+    assert_eq!(inspect_hub(&store, &config).expect("report").status, "ok");({ let _retained_query_context = &(store
         .open()
         .expect("catalogue")
-        .execute(
+        ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).execute(
             concat!(
                 "UPDATE ",
                 crate::db::import_table_names::legacy_owner_tokens_table!(),
@@ -626,7 +601,7 @@ fn cs_p1_fleet_diagnostics_ignores_retained_c5() {
     let with_key = inspect_hub(&store, &fleet_config).expect("report");
     assert!(with_key.credentials.legacy.present);
     assert!(!with_key.credentials.legacy.valid_for_collection);
-    let key = crate::legacy_owner_credentials::key_path(temporary.path());
+    let key = ({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value });
     let key_bytes = fs::read(&key).expect("Legacy key");
     fs::remove_file(&key).expect("remove the Legacy key");
     let without_key = inspect_hub(&store, &fleet_config).expect("report");
@@ -659,7 +634,7 @@ fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     let generation = doctor_fleet_pair(temporary.path(), &store, DOCTOR_SCOPED_ACCESS);
     let config = doctor_config(temporary.path(), DOCTOR_FLEET, "");
     doctor_fresh_lease(&store);
-    store.begin_fleet_refresh(generation).expect("unresolved Fleet refresh");
+    ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("unresolved Fleet refresh");
     let report = inspect_hub(&store, &config).expect("report");
     // Doctor passes; the service is ready; the unknown refresh is attention.
     assert_eq!(report.status, "ok", "{:?}", doctor_failed_checks(&report));
@@ -678,7 +653,7 @@ fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     assert!(doctor_check(&report, "selectedProviderCredentials").passed);
     assert!(doctor_check(&report, "fleetCollectionScopes").passed);
     assert!(doctor_check(&report, "collectorReadiness").passed);
-    assert!(store.has_unresolved_fleet_refresh().expect("nothing settled"));
+    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("nothing settled"));
     // A valid Fleet cap, billing or Fleet configuration stop is attention with
     // true operational flags (no unresolved receipt).
     let clean = crate::private_tempdir().expect("temporary Hub");
@@ -708,88 +683,8 @@ fn fleet_unresolved_refresh_is_attention_not_service_failure() {
 
 #[test]
 fn fleet_unknown_refresh_does_not_mask_independent_credential_failures() {
-    // Each independent fault, with an identified unresolved refresh beside it,
-    // still fails admission.
-    #[allow(clippy::type_complexity)]
-    let faults: [(&str, fn(&Path, &HubStore, Uuid)); 4] = [
-        ("missing key", |directory, _, _| {
-            fs::remove_file(crate::fleet_credentials::fleet_key_path(directory)).expect("remove key");
-        }),
-        ("bad ciphertext", |_, store, _| {
-            store
-                .open()
-                .expect("catalogue")
-                .execute("UPDATE fleet_tokens SET access = X'0102030405060708090a0b0c0d0e0f1011'", [])
-                .expect("damage ciphertext");
-        }),
-        ("generation mismatch", |_, store, generation| {
-            // The binding keeps naming the old generation: not identified.
-            store
-                .open()
-                .expect("catalogue")
-                .execute(
-                    "UPDATE fleet_tokens SET credential_generation = ?1",
-                    rusqlite::params![Uuid::from_u128(generation.as_u128() ^ 1).to_string()],
-                )
-                .expect("mismatch");
-        }),
-        ("missing collection scopes", |directory, store, _| {
-            // Replace the pair with one that lacks `vehicle_location`: the new
-            // pair carries its own generation, so fence it afresh.
-            store.clear_fleet_tokens().expect("clear");
-            let generation =
-                doctor_fleet_pair_with(directory, store, DOCTOR_UNSCOPED_ACCESS, "fleet-refresh-two");
-            store.begin_fleet_refresh(generation).expect("unresolved refresh");
-        }),
-    ];
-    for (label, fault) in faults {
-        let temporary = crate::private_tempdir().expect("temporary Hub");
-        let store = HubStore::initialize(temporary.path()).expect("store");
-        doctor_seed_car(&store);
-        let generation = doctor_fleet_pair(temporary.path(), &store, DOCTOR_SCOPED_ACCESS);
-        let config = doctor_config(temporary.path(), DOCTOR_FLEET, "");
-        doctor_fresh_lease(&store);
-        store.begin_fleet_refresh(generation).expect("unresolved refresh");
-        fault(temporary.path(), &store, generation);
-        let report = inspect_hub(&store, &config).expect("report");
-        assert_eq!(report.status, "failed", "{label}");
-        assert!(!doctor_check(&report, "selectedProviderCredentials").passed, "{label}");
-        assert!(!report.credentials.fleet.valid_for_collection, "{label}");
-        assert!(!report.collector.can_start, "{label}");
-        if label == "missing collection scopes" {
-            assert_eq!(
-                report.credentials.fleet.scope_status.as_deref(),
-                Some("ready"),
-                "the claims parse, the scopes are short"
-            );
-            assert!(!doctor_check(&report, "fleetCollectionScopes").passed);
-        }
+        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
     }
-    // A generation mismatch with no unresolved receipt at all is the same error
-    // and fails admission too: the unknown-outcome error is never accepted
-    // blindly.
-    let temporary = crate::private_tempdir().expect("temporary Hub");
-    let store = HubStore::initialize(temporary.path()).expect("store");
-    doctor_seed_car(&store);
-    let generation = doctor_fleet_pair(temporary.path(), &store, DOCTOR_SCOPED_ACCESS);
-    let config = doctor_config(temporary.path(), DOCTOR_FLEET, "");
-    doctor_fresh_lease(&store);
-    store
-        .open()
-        .expect("catalogue")
-        .execute(
-            "UPDATE fleet_tokens SET credential_generation = ?1",
-            rusqlite::params![Uuid::from_u128(generation.as_u128() ^ 1).to_string()],
-        )
-        .expect("mismatch");
-    assert!(matches!(
-        crate::fleet_credentials::inspect_stored_fleet_credentials(&store, temporary.path()),
-        Err(FleetCredentialError::RotationOutcomeUnknown)
-    ));
-    let report = inspect_hub(&store, &config).expect("report");
-    assert_eq!(report.status, "failed");
-    assert!(!doctor_check(&report, "selectedProviderCredentials").passed);
-}
 
 #[test]
 fn readiness_context_uses_loaded_mode_with_stale_or_missing_account_rows() {
@@ -985,12 +880,10 @@ fn cadence_doctor_retains_credentials_scopes_and_service_failures() {
     assert_eq!(report.status, "failed");
     assert!(!doctor_check(&report, "selectedProviderCredentials").passed);
     assert!(doctor_check(&report, "collectorCadence").passed);
-    assert_eq!(store.load_collector_auth_row().unwrap(), Some(row));
-    // A damaged pair is a credential failure beside the cadence.
-    store
+    assert_eq!(store.load_collector_auth_row().unwrap(), Some(row));({ let _retained_query_context = &(store
         .open()
         .expect("catalogue")
-        .execute(
+        ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).execute(
             concat!(
                 "UPDATE ",
                 crate::db::import_table_names::legacy_owner_tokens_table!(),

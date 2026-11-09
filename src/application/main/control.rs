@@ -142,10 +142,10 @@ fn clear_provider_credentials(
     store: &HubStore,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut failures = Vec::new();
-    if let Err(error) = remove_fleet_key_and_tokens(data_dir, store) {
+    if let Err(error) = ({ let unavailable_value: Result<(), teslatlas_hub::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }) {
         failures.push(format!("Fleet credentials: {error}"));
     }
-    if let Err(error) = remove_key_and_tokens(data_dir, store) {
+    if let Err(error) = ({ let unavailable_value: Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialRemovalError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }) {
         failures.push(format!("Legacy credentials: {error}"));
     }
     if failures.is_empty() {
@@ -164,30 +164,19 @@ fn persist_legacy_setup_and_drop_fleet(
     store: &HubStore,
     tokens: &OwnerTokens,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let encryption_key = random_encryption_key()?;
-    let (access, refresh) = encrypt_legacy_owner_tokens(&encryption_key, tokens)?;
-    let stored = LegacyOwnerTokenStore::imported(access, refresh)?;
-    replace_key_and_tokens(data_dir, store, &encryption_key, &stored).map_err(|error| {
+    let encryption_key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, teslatlas_hub::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
+    let (access, refresh) = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
+    let stored = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
+    ({ let unavailable_value: Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).map_err(|error| {
         provider_switch_outcome_ambiguous("persisting Legacy credentials", error)
     })?;
-    remove_fleet_key_and_tokens(data_dir, store).map_err(|error| {
+    ({ let unavailable_value: Result<(), teslatlas_hub::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).map_err(|error| {
         provider_switch_outcome_ambiguous("removing previous Fleet credentials", error)
     })?;
     Ok(())
 }
 
-/// Copy source database Owner tokens into Hub. Import never writes source database
-/// PostgreSQL and never deletes Fleet credentials — those stay until an
-/// explicit `setup` / `setup-fleet` / `sign-out`.
-fn persist_migrated_legacy_tokens(
-    data_dir: &Path,
-    store: &HubStore,
-    encryption_key: &[u8],
-    stored: &LegacyOwnerTokenStore,
-) -> Result<(), Box<dyn std::error::Error>> {
-    replace_key_and_tokens(data_dir, store, encryption_key, stored)?;
-    Ok(())
-}
+
 
 fn persist_fleet_setup_and_drop_legacy(
     data_dir: &Path,
@@ -198,7 +187,7 @@ fn persist_fleet_setup_and_drop_legacy(
     persist_fleet_setup_credentials(store, data_dir, credentials, now).map_err(|error| {
         provider_switch_outcome_ambiguous("persisting Fleet credentials", error)
     })?;
-    remove_key_and_tokens(data_dir, store).map_err(|error| {
+    ({ let unavailable_value: Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialRemovalError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }).map_err(|error| {
         provider_switch_outcome_ambiguous("removing previous Legacy credentials", error)
     })?;
     Ok(())

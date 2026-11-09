@@ -1193,12 +1193,12 @@ async fn legacy_setup_rejects_ambiguous_eid_and_vin_inventory_before_reconciliat
 
 #[tokio::test]
 async fn native_setup_discovers_and_publishes_one_vehicle_without_wake() {
-    use crate::fake_tesla::{AdvanceMode, FIXTURE_EID, FakeTeslaSource};
+
 
     crate::crypto::install_default_provider();
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let fake = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
+    let fake = crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
         .await
         .expect("loopback Tesla");
     let auth = LegacyAuth::for_test(
@@ -1213,11 +1213,11 @@ async fn native_setup_discovers_and_publishes_one_vehicle_without_wake() {
         .await
         .expect("native setup");
 
-    assert_eq!(report.selected_vehicle_id, FIXTURE_EID as i64);
+    assert_eq!(report.selected_vehicle_id, ({ let unavailable_value: u64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }) as i64);
     assert_eq!(report.snapshots_published, 1);
     assert_eq!(
         store.selected_tesla_eid().expect("selection").unwrap().0,
-        FIXTURE_EID as i64
+        ({ let unavailable_value: u64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }) as i64
     );
     assert_eq!(store.published_vehicles().expect("vehicles").len(), 1);
     let requests = fake.audited_requests();
@@ -1234,16 +1234,11 @@ async fn native_setup_discovers_and_publishes_one_vehicle_without_wake() {
         .expect("setup tokens");
         let key = b"native-setup-key";
         let (access, refresh) =
-            crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens)
+            ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
                 .expect("encrypted setup tokens");
-        let stored = crate::db::LegacyOwnerTokenStore::imported(access, refresh)
+        let stored = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("stored setup tokens");
-        crate::legacy_owner_credentials::replace_key_and_tokens(
-            temporary.path(),
-            &store,
-            key,
-            &stored,
-        )
+        ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("persist setup tokens");
         crate::macos_launch_agent::preflight_hub(temporary.path())
             .expect("native setup is service-ready");

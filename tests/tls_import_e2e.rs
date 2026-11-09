@@ -343,9 +343,9 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
     use std::os::unix::fs::PermissionsExt;
     use teslatlas_hub::{
         credentials::OwnerTokens,
-        db::LegacyOwnerTokenStore,
-        legacy_owner_credentials::{load_or_create_cursor_key, replace_key_and_tokens},
-        source_token_envelope::encrypt_legacy_owner_tokens,
+        
+        legacy_owner_credentials::{load_or_create_cursor_key, },
+        
     };
 
     let root = tempfile::tempdir().expect("isolated smoke root");
@@ -362,9 +362,9 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
     .expect("synthetic tokens");
     let key = b"smoke-test-local-encryption-key";
     let (access, refresh) =
-        encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt synthetic pair");
-    let stored = LegacyOwnerTokenStore::imported(access, refresh).expect("synthetic pair");
-    replace_key_and_tokens(&data_dir, &store, key, &stored).expect("seed synthetic pair");
+        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("encrypt synthetic pair");
+    let stored = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("synthetic pair");
+    ({ let unavailable_value: Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("seed synthetic pair");
     let invitation = store
         .create_pairing("binary-smoke", 1_000, i64::MAX)
         .expect("pairing");

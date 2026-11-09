@@ -375,7 +375,8 @@
         "src/storage/db/tests/g24_m2_s/migration_addition/atomic.rs",
         "src/storage/db/tests/g24_m2_s/migration_addition/cleanup.rs",
         "src/storage/db/tests/g24_m2_s/migration_addition/readers.rs",
-        "src/storage/db/tests/g24_m2_s/migration_addition/snapshot_admission.rs"
+        "src/storage/db/tests/g24_m2_s/migration_addition/snapshot_admission.rs",
+        "src/test_unavailable_fixture.rs"
       ],
       "globs": [
         "src/api/*.rs",

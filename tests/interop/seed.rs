@@ -14,15 +14,14 @@ use std::{
 use teslatlas_hub::protocol::HUB_PROJECTION_SCHEMA_V3;
 use teslatlas_hub::{
     credentials::OwnerTokens,
-    db::{HubStore, LegacyOwnerTokenStore, ObservationInput, SourceDescriptor, VehicleDescriptor},
+    db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor},
     hub_pack::{
         ProjectionBinding, ProjectionCar, ProjectionCharge, ProjectionDrive, ProjectionPackRequest,
         ProjectionPackRequestV2_2, ProjectionPackWriter, ProjectionSnapshot,
         ProjectionSnapshotV2_2,
     },
-    legacy_owner_credentials::{load_or_create_cursor_key, replace_key_and_tokens},
+    legacy_owner_credentials::load_or_create_cursor_key,
     protocol::{SequenceRange, Sha256Digest},
-    source_token_envelope::encrypt_legacy_owner_tokens,
     updates_delivery::{
         publish_updates_schema_22, sign_updates_schema_22_manifest, sign_updates_schema_22_noop,
         updates_snapshot_v2_2,
@@ -471,18 +470,7 @@ fn prepare_with_vehicle_identities(
     // Native macOS preflight requires encrypted account material even with
     // collection disabled. These fixed test strings have no provider authority.
     if !matches!(scenario, FixtureScenario::PhysicalV3Public513) {
-        let tokens = OwnerTokens::from_file_bytes(
-            zeroize::Zeroizing::new(b"interop-not-a-tesla-access-token".to_vec()),
-            zeroize::Zeroizing::new(b"interop-not-a-tesla-refresh-token".to_vec()),
-        )?;
-        let encryption_key = b"interop-local-synthetic-cloak-key";
-        let (access, refresh) = encrypt_legacy_owner_tokens(encryption_key, &tokens)?;
-        replace_key_and_tokens(
-            &data_dir,
-            &store,
-            encryption_key,
-            &LegacyOwnerTokenStore::imported(access, refresh)?,
-        )?;
+        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
     }
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?

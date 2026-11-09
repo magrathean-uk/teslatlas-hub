@@ -1384,21 +1384,15 @@ fn cadence_views_use_their_loaded_configuration_snapshot() {
     let tokens = crate::credentials::OwnerTokens::from_secret_parts(access, "refresh".to_owned())
         .expect("tokens");
     let (access, refresh) =
-        crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
-    let stored = crate::db::LegacyOwnerTokenStore::refreshed(
-        access,
-        refresh,
-        usable_until + 1_000,
-        usable_until - 500,
-    )
+        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("encrypt");
+    let stored = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
     .expect("pair");
-    crate::legacy_owner_credentials::replace_key_and_tokens(temporary.path(), &store, key, &stored)
+    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("persist");
-    let generation = store
-        .load_legacy_owner_tokens()
+    let generation = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("load")
         .expect("row")
-        .credential_generation()
+        .4
         .expect("generation");
     store
         .write_collector_auth_row(

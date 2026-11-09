@@ -26,7 +26,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use crate::{
     credentials::OwnerTokens,
     db::{
-        FleetTokenStore, HubStore, OutboundRequestCompletion, OutboundRequestOutcome, StoreError,
+         HubStore, OutboundRequestCompletion, OutboundRequestOutcome, StoreError,
     },
     fleet_api::{
         FleetAccessToken, FleetApiConfigError, FleetApiError, FleetAuthApi, FleetClientId,
@@ -35,19 +35,13 @@ use crate::{
     legacy_owner_credentials::{SourceDbCredentialError, load_existing_cursor_key_bytes},
     protocol::CursorKey,
     source_token_envelope::{
-        SourceDbTokenError, decrypt_legacy_owner_tokens, encrypt_legacy_owner_tokens,
+        SourceDbTokenError, decrypt_legacy_owner_tokens, 
     },
 };
 
 const MIN_FLEET_TOKEN_LIFETIME_SECONDS: u64 = 60;
 const MAX_FLEET_TOKEN_LIFETIME_SECONDS: u64 = 365 * 24 * 60 * 60;
 const MAX_REFRESH_LEAD_SECONDS: u64 = 30 * 60;
-const FLEET_KEY_BYTES: usize = 32;
-const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
-const PRIVATE_FILE_MODE: u32 = 0o600;
-const FLEET_KEY_FILE_NAME: &str = "fleet-credentials.key";
-const FLEET_KEY_PENDING_FILE_NAME: &str = ".fleet-credentials.pending.key";
-const FLEET_KEY_MIGRATION_MARKER: &str = ".fleet-credentials-key-migration";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,17 +58,11 @@ impl FleetScopeSummary {
     }
 }
 
-pub fn fleet_key_path(data_dir: &Path) -> PathBuf {
-    data_dir.join("secrets").join(FLEET_KEY_FILE_NAME)
-}
 
-fn migration_marker_path(data_dir: &Path) -> PathBuf {
-    data_dir.join("secrets").join(FLEET_KEY_MIGRATION_MARKER)
-}
 
-fn pending_key_path(data_dir: &Path) -> PathBuf {
-    data_dir.join("secrets").join(FLEET_KEY_PENDING_FILE_NAME)
-}
+
+
+
 
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct FleetSetupCredentials {
@@ -152,34 +140,27 @@ pub fn persist_fleet_setup_credentials(
     credentials: &FleetSetupCredentials,
     now: SystemTime,
 ) -> Result<(), FleetCredentialError> {
-    let existing = store.load_fleet_tokens()?;
-    if checked_path_exists(&migration_marker_path(data_dir), true)? {
+    let existing = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
+    if ({ let unavailable_value: Result<bool, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })? {
         return Err(FleetCredentialError::MigrationRequired);
     }
-    let replacing_legacy = existing.is_some() && load_existing_fleet_key_bytes(data_dir)?.is_none();
+    let replacing_legacy = existing.is_some() && ({ let unavailable_value: Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })?.is_none();
     if replacing_legacy {
-        create_migration_marker(data_dir)?;
+        ({ let unavailable_value: Result<(), crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
     }
-    let key = load_or_create_fleet_key(data_dir)?;
+    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
     let schedule = refresh_schedule(now, credentials.expires_in_seconds)?;
-    let stored = encrypt_store(
-        &key,
-        &credentials.access_token,
-        &credentials.refresh_token,
-        &credentials.client_id,
-        credentials.region,
-        schedule,
-    )?;
+    let stored = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })?;
     let persisted = if existing.is_some() {
-        store.replace_fleet_tokens_and_scrub(&stored)
+        ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
     } else {
-        store.replace_fleet_tokens(&stored)
+        ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
     };
     if let Err(error) = persisted {
         return Err(error.into());
     }
     if replacing_legacy {
-        finish_key_migration(data_dir)?;
+        ({ let unavailable_value: Result<(), crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
     }
     Ok(())
 }
@@ -206,7 +187,7 @@ fn validate_stored_fleet_credentials_after(
     data_dir: &Path,
     after_first_check: impl FnOnce(),
 ) -> Result<(), FleetCredentialError> {
-    if store.has_unresolved_fleet_refresh()? {
+    if ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })()? {
         return Err(FleetCredentialError::RotationOutcomeUnknown);
     }
     after_first_check();
@@ -242,18 +223,17 @@ pub fn inspect_stored_fleet_credentials(
     store: &HubStore,
     data_dir: &Path,
 ) -> Result<FleetCredentialInspection, FleetCredentialError> {
-    let stored = store
-        .load_fleet_tokens()?
+    let stored = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })?
         .ok_or(FleetCredentialError::Missing)?;
-    if checked_path_exists(&migration_marker_path(data_dir), true)? {
+    if ({ let unavailable_value: Result<bool, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })? {
         return Err(FleetCredentialError::MigrationRequired);
     }
-    let (encryption_key, migration_required) = match load_existing_fleet_key_bytes(data_dir)? {
+    let (encryption_key, migration_required) = match ({ let unavailable_value: Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })? {
         Some(key) => (key, false),
         None => {
             let cursor = load_existing_cursor_key_bytes(data_dir)?
                 .ok_or(FleetCredentialError::KeyMissing)?;
-            let cursor: [u8; FLEET_KEY_BYTES] = cursor
+            let cursor: [u8; 32] = cursor
                 .as_slice()
                 .try_into()
                 .map_err(|_| FleetCredentialError::KeyMissing)?;
@@ -268,11 +248,11 @@ pub fn inspect_stored_fleet_credentials(
         }
     };
     let plaintext =
-        decrypt_legacy_owner_tokens(&encryption_key, stored.access(), stored.refresh())?;
+        decrypt_legacy_owner_tokens(&encryption_key, stored.0.as_slice(), stored.1.as_slice())?;
     let credential_generation =
         crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
     if stored
-        .credential_generation()
+        .4
         .is_some_and(|stored| stored != credential_generation)
     {
         return Err(FleetCredentialError::RotationOutcomeUnknown);
@@ -285,10 +265,10 @@ pub fn inspect_stored_fleet_credentials(
         return Err(FleetCredentialError::MissingCollectionScopes);
     }
     FleetRefreshToken::new(plaintext.refresh_token().to_owned())?;
-    FleetClientId::parse(stored.client_id())?;
-    FleetRegion::from_storage_code(stored.region())?;
+    FleetClientId::parse(stored.5.as_str())?;
+    FleetRegion::from_storage_code(stored.6.as_str())?;
     let unresolved_refresh = store.identified_unresolved_fleet_refresh()?;
-    if !unresolved_refresh && store.has_unresolved_fleet_refresh()? {
+    if !unresolved_refresh && ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })? {
         return Err(FleetCredentialError::RotationOutcomeUnknown);
     }
     Ok(FleetCredentialInspection { unresolved_refresh })
@@ -298,13 +278,13 @@ pub fn stored_fleet_scope_summary(
     store: &HubStore,
     data_dir: &Path,
 ) -> Result<Option<FleetScopeSummary>, FleetCredentialError> {
-    let Some(stored) = store.load_fleet_tokens()? else {
+    let Some(stored) = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })? else {
         return Ok(None);
     };
     let encryption_key =
-        load_existing_fleet_key_bytes(data_dir)?.ok_or(FleetCredentialError::MigrationRequired)?;
+        ({ let unavailable_value: Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })?.ok_or(FleetCredentialError::MigrationRequired)?;
     let plaintext =
-        decrypt_legacy_owner_tokens(&encryption_key, stored.access(), stored.refresh())?;
+        decrypt_legacy_owner_tokens(&encryption_key, stored.0.as_slice(), stored.1.as_slice())?;
     fleet_scope_summary(plaintext.access_token()).map(Some)
 }
 
@@ -476,25 +456,7 @@ impl FleetExchangeJob {
         Ok(())
     }
 
-    /// The encrypted row of a pair. A test counts the entries of this step.
-    fn encrypt(
-        &self,
-        refreshed: &crate::fleet_api::FleetRefreshedTokens,
-        schedule: FleetRefreshSchedule,
-    ) -> Result<FleetTokenStore, FleetCredentialError> {
-        #[cfg(test)]
-        if let Some(entries) = &self.encryption_entries {
-            entries.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        }
-        encrypt_store(
-            &self.encryption_key,
-            refreshed.access_token.expose(),
-            refreshed.refresh_token.expose(),
-            self.client_id.as_str(),
-            self.region,
-            schedule,
-        )
-    }
+
 
     /// The request, the schedule, the encrypted pair and its write: the part of a
     /// refresh that must finish once the request has gone out.
@@ -509,13 +471,7 @@ impl FleetExchangeJob {
                     if let Err(denied) = self.assert_sensitive_access() {
                         return failed(denied, true);
                     }
-                    if self
-                        .store
-                        .complete_retryable_fleet_refresh_failure(
-                            self.receipt_id,
-                            self.generation,
-                            &completion,
-                        )
+                    if ({ let completion: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); completion })
                         .is_err()
                     {
                         return failed(FleetCredentialError::RotationOutcomeUnknown, true);
@@ -536,19 +492,14 @@ impl FleetExchangeJob {
         if let Err(error) = self.assert_sensitive_access() {
             return failed(error, true);
         }
-        let stored = match self.encrypt(&refreshed, schedule) {
+        let stored = match ({ let encryption: Result<Option<uuid::Uuid>, FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); encryption }) {
             Ok(stored) => stored,
             Err(error) => return failed(error, true),
         };
-        let Some(output_generation) = stored.credential_generation() else {
+        let Some(output_generation) = stored else {
             return failed(FleetCredentialError::RotationOutcomeUnknown, true);
         };
-        if let Err(error) = self.store.complete_fleet_refresh(
-            self.receipt_id,
-            self.generation,
-            output_generation,
-            &stored,
-        ) {
+        if let Err(error) = ({ let completion: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); completion }) {
             return failed(FleetCredentialError::Store(error), true);
         }
         FleetExchange::Refreshed {
@@ -593,36 +544,36 @@ impl FleetAuthManager {
         fenced: bool,
         loss: Option<crate::credentials::LossObserver>,
     ) -> Result<Self, FleetCredentialError> {
-        if !fenced && store.has_unresolved_fleet_refresh()? {
+        if !fenced && ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })()? {
             return Err(FleetCredentialError::RotationOutcomeUnknown);
         }
-        let stored = store
-            .load_fleet_tokens()?
+        let stored = ({ let _retained_call_context = &(store
+            ); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })()?
             .ok_or(FleetCredentialError::Missing)?;
-        if checked_path_exists(&migration_marker_path(data_dir), true)? {
+        if ({ let replaced_callee: fn(&std::path::Path, bool) -> Result<bool, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(&({ let replaced_callee: fn(&std::path::Path) -> std::path::PathBuf = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(data_dir), true)? {
             return Err(FleetCredentialError::MigrationRequired);
         }
-        let encryption_key = load_existing_fleet_key_bytes(data_dir)?
+        let encryption_key = ({ let replaced_callee: fn(&std::path::Path) -> Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(data_dir)?
             .ok_or(FleetCredentialError::MigrationRequired)?;
         let plaintext =
-            decrypt_legacy_owner_tokens(&encryption_key, stored.access(), stored.refresh())?;
+            decrypt_legacy_owner_tokens(&encryption_key, stored.0.as_slice(), stored.1.as_slice())?;
         let credential_generation =
             crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
         if !fenced {
             if loss.as_ref().is_some_and(|lost| lost()) {
                 return Err(FleetCredentialError::SensitiveAccessUnavailable);
             }
-            store.bind_fleet_credential_generation(&stored, credential_generation)?;
+            ({ let _retained_call_context = &(store); let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), uuid::Uuid) -> Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(&stored, credential_generation)?;
         }
         Ok(Self {
             store,
             encryption_key,
             access_token: FleetAccessToken::new(plaintext.access_token().to_owned())?,
             refresh_token: FleetRefreshToken::new(plaintext.refresh_token().to_owned())?,
-            client_id: FleetClientId::parse(stored.client_id())?,
-            region: FleetRegion::from_storage_code(stored.region())?,
-            expires_at: stored.expires_at(),
-            next_refresh_at: stored.next_refresh_at(),
+            client_id: FleetClientId::parse(stored.5.as_str())?,
+            region: FleetRegion::from_storage_code(stored.6.as_str())?,
+            expires_at: stored.2,
+            next_refresh_at: stored.3,
             credential_generation,
             refresh_terminal: false,
             input_fenced: fenced,
@@ -803,9 +754,7 @@ impl FleetAuthManager {
         // admission are consulted immediately before it (B2 fix round, P3b fix 2,
         // R-P3bF2-1, Opus N2).
         self.assert_sensitive_access()?;
-        let receipt_id = self
-            .store
-            .begin_fleet_refresh(self.credential_generation)
+        let receipt_id = ({ let reservation: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); reservation })
             .map_err(|error| {
                 self.refresh_terminal = true;
                 FleetCredentialError::Store(error)
@@ -1001,390 +950,39 @@ fn epoch_seconds(now: SystemTime) -> Result<i64, FleetCredentialError> {
     .map_err(|_| FleetCredentialError::ClockOverflow)
 }
 
-pub(crate) fn load_or_migrate_fleet_key_for_tokens(
-    store: &HubStore,
-    data_dir: &Path,
-    stored: &FleetTokenStore,
-) -> Result<Zeroizing<Vec<u8>>, FleetCredentialError> {
-    let marker_exists = checked_path_exists(&migration_marker_path(data_dir), true)?;
-    let current = load_existing_fleet_key_bytes(data_dir)?;
-    if !marker_exists {
-        if let Some(current) = current {
-            return Ok(current);
-        }
-        let plaintext = decrypt_with_legacy_cursor_key(data_dir, stored)?;
-        create_migration_marker(data_dir)?;
-        let key = load_or_create_fleet_key(data_dir)?;
-        migrate_fleet_ciphertext(store, stored, &plaintext, &key)?;
-        finish_key_migration(data_dir)?;
-        return Ok(key);
-    }
 
-    let key = current.unwrap_or(load_or_create_fleet_key(data_dir)?);
-    let plaintext = decrypt_legacy_owner_tokens(&key, stored.access(), stored.refresh())
-        .or_else(|_| decrypt_with_legacy_cursor_key(data_dir, stored))?;
-    migrate_fleet_ciphertext(store, stored, &plaintext, &key)?;
-    finish_key_migration(data_dir)?;
-    Ok(key)
-}
 
-/// Complete the forward-only schema-55 Fleet key split during bootstrap.
-pub fn migrate_legacy_fleet_credentials(
-    store: &HubStore,
-    data_dir: &Path,
-) -> Result<bool, FleetCredentialError> {
-    let Some(stored) = store.load_fleet_tokens()? else {
-        return Ok(false);
-    };
-    let migration_required = checked_path_exists(&migration_marker_path(data_dir), true)?
-        || load_existing_fleet_key_bytes(data_dir)?.is_none();
-    if !migration_required {
-        let key =
-            load_existing_fleet_key_bytes(data_dir)?.ok_or(FleetCredentialError::KeyMissing)?;
-        drop(decrypt_legacy_owner_tokens(
-            &key,
-            stored.access(),
-            stored.refresh(),
-        )?);
-        return Ok(false);
-    }
-    let key = load_or_migrate_fleet_key_for_tokens(store, data_dir, &stored)?;
-    let migrated = store
-        .load_fleet_tokens()?
-        .ok_or(FleetCredentialError::Missing)?;
-    drop(decrypt_legacy_owner_tokens(
-        &key,
-        migrated.access(),
-        migrated.refresh(),
-    )?);
-    Ok(true)
-}
 
-fn decrypt_with_legacy_cursor_key(
-    data_dir: &Path,
-    stored: &FleetTokenStore,
-) -> Result<OwnerTokens, FleetCredentialError> {
-    let bytes =
-        load_existing_cursor_key_bytes(data_dir)?.ok_or(FleetCredentialError::KeyMissing)?;
-    let bytes: [u8; FLEET_KEY_BYTES] = bytes
-        .as_slice()
-        .try_into()
-        .map_err(|_| FleetCredentialError::KeyMissing)?;
-    let key = Zeroizing::new(
-        CursorKey::from_bytes(bytes)
-            .fleet_credential_encryption_key()
-            .to_vec(),
-    );
-    decrypt_legacy_owner_tokens(&key, stored.access(), stored.refresh()).map_err(Into::into)
-}
 
-fn migrate_fleet_ciphertext(
-    store: &HubStore,
-    stored: &FleetTokenStore,
-    plaintext: &OwnerTokens,
-    key: &[u8],
-) -> Result<(), FleetCredentialError> {
-    let replacement = encrypt_store(
-        key,
-        plaintext.access_token(),
-        plaintext.refresh_token(),
-        stored.client_id(),
-        FleetRegion::from_storage_code(stored.region())?,
-        FleetRefreshSchedule {
-            expires_at: stored.expires_at(),
-            next_refresh_at: stored.next_refresh_at(),
-        },
-    )?;
-    store.replace_fleet_tokens_and_scrub(&replacement)?;
-    Ok(())
-}
 
-fn load_or_create_fleet_key(data_dir: &Path) -> Result<Zeroizing<Vec<u8>>, FleetCredentialError> {
-    if let Some(key) = load_existing_fleet_key_bytes(data_dir)? {
-        return Ok(key);
-    }
-    let secrets = ensure_secrets_directory(data_dir)?;
-    let destination = fleet_key_path(data_dir);
-    let temporary = pending_key_path(data_dir);
-    if checked_path_exists(&temporary, false)? {
-        crate::platform::file_attempts::note(&temporary);
-        crate::platform::file_attempts::note(&destination);
-        renameat_with(CWD, &temporary, CWD, &destination, RenameFlags::NOREPLACE).map_err(
-            |source| {
-                fleet_key_io(
-                    "resuming Fleet credential key publication",
-                    &destination,
-                    source.into(),
-                )
-            },
-        )?;
-        sync_directory(&secrets)?;
-        return load_existing_fleet_key_bytes(data_dir)?.ok_or(FleetCredentialError::KeyMissing);
-    }
-    let mut key = Zeroizing::new(vec![0_u8; FLEET_KEY_BYTES]);
-    getrandom::fill(key.as_mut_slice()).map_err(|_| FleetCredentialError::EntropyUnavailable)?;
-    let result = (|| {
-        write_private_file(&temporary, &key)?;
-        crate::platform::file_attempts::note(&temporary);
-        crate::platform::file_attempts::note(&destination);
-        match renameat_with(CWD, &temporary, CWD, &destination, RenameFlags::NOREPLACE) {
-            Ok(()) => {
-                sync_directory(&secrets)?;
-                Ok(key)
-            }
-            Err(Errno::EXIST) => {
-                crate::platform::file_attempts::note(&temporary);
-                let _ = fs::remove_file(&temporary);
-                load_existing_fleet_key_bytes(data_dir)?.ok_or(FleetCredentialError::KeyMissing)
-            }
-            Err(source) => Err(fleet_key_io(
-                "publishing Fleet credential key",
-                &destination,
-                source.into(),
-            )),
-        }
-    })();
-    if result.is_err() {
-        crate::platform::file_attempts::note(&temporary);
-        let _ = fs::remove_file(&temporary);
-    }
-    result
-}
 
-pub(crate) fn load_existing_fleet_key_bytes(
-    data_dir: &Path,
-) -> Result<Option<Zeroizing<Vec<u8>>>, FleetCredentialError> {
-    let path = fleet_key_path(data_dir);
-    match fs::symlink_metadata(&path) {
-        Ok(_) => {
-            validate_secrets_directory(&data_dir.join("secrets"))?;
-            read_checked_private_file(&path, FLEET_KEY_BYTES, false).map(Some)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(source) => Err(fleet_key_io(
-            "inspecting Fleet credential key",
-            path,
-            source,
-        )),
-    }
-}
 
-pub fn remove_fleet_key_and_tokens(
-    data_dir: &Path,
-    store: &HubStore,
-) -> Result<(), FleetCredentialError> {
-    store.clear_fleet_tokens()?;
-    let secrets = data_dir.join("secrets");
-    let key = fleet_key_path(data_dir);
-    let pending = pending_key_path(data_dir);
-    let marker = migration_marker_path(data_dir);
-    let mut removed = false;
-    for (path, marker_file) in [(&key, false), (&pending, false), (&marker, true)] {
-        if checked_path_exists(path, marker_file)? {
-            crate::platform::file_attempts::note(path);
-            fs::remove_file(path)
-                .map_err(|source| fleet_key_io("removing Fleet credential key", path, source))?;
-            removed = true;
-        }
-    }
-    if removed {
-        sync_directory(&secrets)?;
-    }
-    Ok(())
-}
 
-fn create_migration_marker(data_dir: &Path) -> Result<(), FleetCredentialError> {
-    let secrets = ensure_secrets_directory(data_dir)?;
-    let marker = migration_marker_path(data_dir);
-    crate::platform::file_attempts::note(&marker);
-    match OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(PRIVATE_FILE_MODE)
-        .open(&marker)
-    {
-        Ok(file) => {
-            file.set_permissions(fs::Permissions::from_mode(PRIVATE_FILE_MODE))
-                .map_err(|source| {
-                    fleet_key_io("protecting Fleet migration marker", &marker, source)
-                })?;
-            file.sync_all().map_err(|source| {
-                fleet_key_io("syncing Fleet migration marker", &marker, source)
-            })?;
-            sync_directory(&secrets)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            read_checked_private_file(&marker, 0, true).map(drop)
-        }
-        Err(source) => Err(fleet_key_io(
-            "creating Fleet migration marker",
-            marker,
-            source,
-        )),
-    }
-}
 
-fn finish_key_migration(data_dir: &Path) -> Result<(), FleetCredentialError> {
-    let marker = migration_marker_path(data_dir);
-    read_checked_private_file(&marker, 0, true)?;
-    crate::platform::file_attempts::note(&marker);
-    fs::remove_file(&marker)
-        .map_err(|source| fleet_key_io("removing Fleet migration marker", &marker, source))?;
-    sync_directory(&data_dir.join("secrets"))
-}
 
-fn ensure_secrets_directory(data_dir: &Path) -> Result<PathBuf, FleetCredentialError> {
-    let path = data_dir.join("secrets");
-    match fs::symlink_metadata(&path) {
-        Ok(_) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            let mut builder = fs::DirBuilder::new();
-            builder.mode(PRIVATE_DIRECTORY_MODE);
-            crate::platform::file_attempts::note(&path);
-            match builder.create(&path) {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(source) => {
-                    return Err(fleet_key_io("creating secrets directory", &path, source));
-                }
-            }
-        }
-        Err(source) => return Err(fleet_key_io("inspecting secrets directory", &path, source)),
-    }
-    validate_secrets_directory(&path)?;
-    Ok(path)
-}
 
-fn validate_secrets_directory(path: &Path) -> Result<(), FleetCredentialError> {
-    let metadata = fs::symlink_metadata(path)
-        .map_err(|source| fleet_key_io("inspecting secrets directory", path, source))?;
-    if metadata.file_type().is_symlink()
-        || !metadata.is_dir()
-        || metadata.uid() != getuid().as_raw()
-        || metadata.permissions().mode() & 0o777 != PRIVATE_DIRECTORY_MODE
-    {
-        return Err(FleetCredentialError::UnsafeKeyMaterial);
-    }
-    Ok(())
-}
 
-fn checked_path_exists(path: &Path, marker: bool) -> Result<bool, FleetCredentialError> {
-    match fs::symlink_metadata(path) {
-        Ok(_) => {
-            if let Some(parent) = path.parent() {
-                validate_secrets_directory(parent)?;
-            }
-            read_checked_private_file(path, if marker { 0 } else { FLEET_KEY_BYTES }, marker)?;
-            Ok(true)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(source) => Err(fleet_key_io("inspecting Fleet key material", path, source)),
-    }
-}
 
-fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), FleetCredentialError> {
-    crate::platform::file_attempts::note(path);
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(PRIVATE_FILE_MODE)
-        .open(path)
-        .map_err(|source| fleet_key_io("creating Fleet credential key", path, source))?;
-    file.set_permissions(fs::Permissions::from_mode(PRIVATE_FILE_MODE))
-        .map_err(|source| fleet_key_io("protecting Fleet credential key", path, source))?;
-    crate::platform::file_attempts::note(path);
-    file.write_all(bytes)
-        .map_err(|source| fleet_key_io("writing Fleet credential key", path, source))?;
-    crate::platform::file_attempts::note(path);
-    file.sync_all()
-        .map_err(|source| fleet_key_io("syncing Fleet credential key", path, source))
-}
 
-fn read_checked_private_file(
-    path: &Path,
-    exact_bytes: usize,
-    marker: bool,
-) -> Result<Zeroizing<Vec<u8>>, FleetCredentialError> {
-    let descriptor = open(
-        path,
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
-        Mode::empty(),
-    )
-    .map_err(|_| FleetCredentialError::UnsafeKeyMaterial)?;
-    let held = fstat(&descriptor).map_err(|_| FleetCredentialError::UnsafeKeyMaterial)?;
-    if !FileType::from_raw_mode(held.st_mode).is_file()
-        || (held.st_mode as u32 & 0o777) != PRIVATE_FILE_MODE
-        || held.st_uid != getuid().as_raw()
-    {
-        return Err(FleetCredentialError::UnsafeKeyMaterial);
-    }
-    let file: File = descriptor.into();
-    let mut bytes = Zeroizing::new(Vec::with_capacity(exact_bytes));
-    file.take(u64::try_from(exact_bytes + 1).expect("Fleet key cap fits u64"))
-        .read_to_end(&mut bytes)
-        .map_err(|source| fleet_key_io("reading Fleet key material", path, source))?;
-    let current =
-        fs::symlink_metadata(path).map_err(|_| FleetCredentialError::UnsafeKeyMaterial)?;
-    if bytes.len() != exact_bytes
-        || current.file_type().is_symlink()
-        || !current.file_type().is_file()
-        || current.uid() != held.st_uid
-        || current.dev() != held.st_dev as u64
-        || current.ino() != held.st_ino
-        || current.permissions().mode() & 0o777 != PRIVATE_FILE_MODE
-    {
-        return Err(if marker {
-            FleetCredentialError::UnsafeMigrationState
-        } else {
-            FleetCredentialError::UnsafeKeyMaterial
-        });
-    }
-    Ok(bytes)
-}
 
-fn sync_directory(path: &Path) -> Result<(), FleetCredentialError> {
-    crate::platform::file_attempts::note(path);
-    File::open(path)
-        .map_err(|source| fleet_key_io("opening secrets directory", path, source))?
-        .sync_all()
-        .map_err(|source| fleet_key_io("syncing secrets directory", path, source))
-}
 
-fn fleet_key_io(
-    operation: &'static str,
-    path: impl AsRef<Path>,
-    source: std::io::Error,
-) -> FleetCredentialError {
-    FleetCredentialError::KeyIo {
-        operation,
-        path: path.as_ref().to_path_buf(),
-        source,
-    }
-}
 
-fn encrypt_store(
-    encryption_key: &[u8],
-    access_token: &str,
-    refresh_token: &str,
-    client_id: &str,
-    region: FleetRegion,
-    schedule: FleetRefreshSchedule,
-) -> Result<FleetTokenStore, FleetCredentialError> {
-    let plaintext =
-        OwnerTokens::from_secret_parts(access_token.to_owned(), refresh_token.to_owned())?;
-    let generation = crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
-    let (access, refresh) = encrypt_legacy_owner_tokens(encryption_key, &plaintext)?;
-    FleetTokenStore::new(
-        access,
-        refresh,
-        client_id.to_owned(),
-        region.storage_code().to_owned(),
-        schedule.expires_at,
-        schedule.next_refresh_at,
-        Some(generation),
-    )
-    .map_err(Into::into)
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #[derive(Debug, Error)]
 pub enum FleetCredentialError {

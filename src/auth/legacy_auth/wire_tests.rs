@@ -458,13 +458,13 @@ fn t53_invalid_tokens_in_a_2xx_are_unusable() {
         assert_eq!(failed.error, LegacyAuthError::InvalidResponse, "{body:?}");
     }
     // A token longer than the store keeps cannot be persisted before use.
-    let long = "a".repeat(crate::source_token_envelope::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES + 1);
+    let long = "a".repeat(crate::auth::credential_envelope::MAX_TOKEN_PLAINTEXT_BYTES + 1);
     let body = success_with(|body| body["access_token"] = json!(long));
     assert_eq!(
         failure(&raw(200, body)).error,
         LegacyAuthError::InvalidResponse
     );
-    let at_limit = "a".repeat(crate::source_token_envelope::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES);
+    let at_limit = "a".repeat(crate::auth::credential_envelope::MAX_TOKEN_PLAINTEXT_BYTES);
     let body = success_with(|body| body["access_token"] = json!(at_limit));
     assert!(classify(&raw(200, body), None).is_ok());
 }

@@ -59,7 +59,7 @@ use crate::{
         validate_observed_schema, validate_settings_relationship,
     },
     source_db_stage::{SourceDbStage, SourceDbStageError, SourceDbStageLimits, SourceDbStageTable},
-    source_token_envelope::MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
+    source_token_envelope::MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES,
 };
 
 /// After migration handoff, live collection must never re-open source database

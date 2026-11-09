@@ -6379,70 +6379,6 @@
       "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
     },
     {
-      "id": "retained-7739832d15bea35695d7",
-      "class": "g2-4-recorded",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgZGF0YV9kaXJcLmpvaW5cKCJzZWNyZXRzL3Rlc2xhbWF0ZVwtZW5jcnlwdGlvblwua2V5IlwpJA==",
-      "max_count": 1,
-      "expires": "G2-4-M2",
-      "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
-      "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
-      "paths": [
-        "src/auth/legacy_owner_credentials.rs"
-      ],
-      "review_by": "2027-01-31",
-      "recorded_row": "2026-10-12 Independence: folds into G2-4",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-957afcb2cd76b12c819b",
-      "class": "g2-4-recorded",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgbGV0XCB0ZW1wb3JhcnlcID1cIHNlY3JldHNfZGlyXC5qb2luXChmb3JtYXQhXCgiXC50ZXNsYW1hdGVcLWVuY3J5cHRpb25cLVx7XH1cLnRtcCIsXCBVdWlkOjpuZXdfdjRcKFwpXClcKTsk",
-      "max_count": 2,
-      "expires": "G2-4-M2",
-      "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
-      "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
-      "paths": [
-        "src/auth/legacy_owner_credentials.rs"
-      ],
-      "review_by": "2027-01-31",
-      "recorded_row": "2026-10-12 Independence: folds into G2-4",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-3e5836b7a5034e3557ca",
-      "class": "g2-4-recorded",
-      "match_kind": "regex",
-      "match_b64": "Xi8vL1wgRXhhY3QsXCBub25cLXRleHRcLW5vcm1hbGl6ZWRcIFRlc2xhTWF0ZVwgZW5jcnlwdGlvblwta2V5XCBieXRlc1wuJA==",
-      "max_count": 1,
-      "expires": "G2-4-M2",
-      "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
-      "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
-      "paths": [
-        "src/auth/legacy_owner_credentials.rs"
-      ],
-      "review_by": "2027-01-31",
-      "recorded_row": "2026-10-12 Independence: folds into G2-4",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-278b7a9eb3f3a040c21d",
-      "class": "g2-4-recorded",
-      "match_kind": "regex",
-      "match_b64": "XmNvbnN0XCBQUkVWSU9VU19LRVlfRklMRV9OQU1FOlwgXCZzdHJcID1cICJcLnRlc2xhbWF0ZVwtZW5jcnlwdGlvblwucHJldmlvdXNcLmtleSI7JA==",
-      "max_count": 1,
-      "expires": "G2-4-M2",
-      "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
-      "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
-      "paths": [
-        "src/auth/legacy_owner_credentials.rs"
-      ],
-      "review_by": "2027-01-31",
-      "recorded_row": "2026-10-12 Independence: folds into G2-4",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
       "id": "retained-2f01b647faa6d4ceec0e",
       "class": "g2-4-recorded",
       "match_kind": "regex",
@@ -6495,22 +6431,6 @@
       "class": "g2-4-recorded",
       "match_kind": "regex",
       "match_b64": "Xi8vL1wgRGVjcnlwdFwgdGhlXCBvbmVcIGxlZ2FjeVwgVGVzbGFNYXRlXCBhY2Nlc3MvcmVmcmVzaFwgcGFpclwuXCBCb3RoXCB2YWx1ZXNcIGFyZSQ=",
-      "max_count": 1,
-      "expires": "G2-4-M2",
-      "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
-      "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
-      "paths": [
-        "src/auth/source_token_envelope.rs"
-      ],
-      "review_by": "2027-01-31",
-      "recorded_row": "2026-10-12 Independence: folds into G2-4",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-126d3b8bb546bf72cdad",
-      "class": "g2-4-recorded",
-      "match_kind": "regex",
-      "match_b64": "Xi8vL1wgRW5jcnlwdFwgb25lXCBsZWdhY3lcIGFjY2Vzcy9yZWZyZXNoXCBwYWlyXCBpblwgdGhlXCBleGFjdFwgVGVzbGFNYXRlXCBDbG9hayQ=",
       "max_count": 1,
       "expires": "G2-4-M2",
       "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",

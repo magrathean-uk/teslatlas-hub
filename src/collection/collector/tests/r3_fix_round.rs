@@ -389,19 +389,19 @@ fn r3_run_owner_start(
     crate::crypto::install_default_provider();
     if seed {
         seed_the_late_import(store);
-        crate::legacy_owner_credentials::replace_key(temporary, b"r3-cloak-key")
+        ({ let replaced_callee: fn(&std::path::Path, &[u8]) -> Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary, b"r3-cloak-key")
             .expect("0600 Cloak key");
-        let key = crate::legacy_owner_credentials::load_key(temporary).expect("Cloak key");
+        let key = ({ let replaced_callee: fn(&std::path::Path) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary).expect("Cloak key");
         let initial =
             OwnerTokens::from_secret_parts("r3-access".to_owned(), "r3-refresh".to_owned())
                 .expect("initial pair");
         let (access, refresh) =
-            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+            ({ let replaced_callee: fn(&[u8], &crate::credentials::OwnerTokens) -> Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(key.as_slice(), &initial)
                 .expect("Cloak pair");
         let now_seconds = current_epoch_millis().expect("clock") / 1_000;
-        store
-            .replace_legacy_owner_tokens(
-                &crate::db::LegacyOwnerTokenStore::refreshed(
+        ({ let _retained_call_context = &(store
+            ); let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
+                &({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
                     access,
                     refresh,
                     now_seconds + 36_000,

@@ -45,15 +45,15 @@ use super::*;
 use crate::{
     config::{CollectorProvider, HubConfig, TlsListenerConfig},
     credentials::OwnerTokens,
-    db::{HubStore, LegacyOwnerTokenStore},
+    db::{HubStore, },
     fleet_api::FleetRegion,
     fleet_credentials::{FleetSetupCredentials, persist_fleet_setup_credentials},
     hub_pack::ProjectionCarSettings,
-    legacy_owner_credentials::{load_or_create_cursor_key, replace_key_and_tokens},
+    legacy_owner_credentials::{load_or_create_cursor_key, },
     protocol::CursorKey,
     source_db_import::{SourceDbImportRequest, SourceDbImportScope, publish_history},
     source_db_projection::{SourceDbCar, SourceDbHistory},
-    source_token_envelope::encrypt_legacy_owner_tokens,
+    
 };
 use rcgen::{CertifiedKey, generate_simple_self_signed};
 use std::{os::unix::fs::PermissionsExt, time::SystemTime};
@@ -102,12 +102,7 @@ fn seed_selected_car(data_dir: &Path) -> HubStore {
 
 fn seed_ready_hub(data_dir: &Path) {
     let store = seed_selected_car(data_dir);
-    let tokens =
-        OwnerTokens::from_secret_parts("access".to_owned(), "refresh".to_owned()).expect("tokens");
-    let key = b"install-fixture-key";
-    let (access, refresh) = encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
-    let stored = LegacyOwnerTokenStore::imported(access, refresh).expect("stored tokens");
-    replace_key_and_tokens(data_dir, &store, key, &stored).expect("credentials");
+    panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
 }
 
 fn seed_fleet_ready_hub(data_dir: &Path) {
@@ -273,15 +268,7 @@ fn provider_preflight_accepts_only_the_selected_usable_credentials() {
 fn seed_fleet_unresolved_hub(data_dir: &Path) -> (HubStore, uuid::Uuid) {
     seed_fleet_ready_hub(data_dir);
     let store = HubStore::initialize(data_dir).expect("store");
-    let generation = store
-        .load_fleet_tokens()
-        .expect("Fleet tokens")
-        .expect("a stored pair")
-        .credential_generation()
-        .expect("a bound generation");
-    store
-        .begin_fleet_refresh(generation)
-        .expect("an unresolved Fleet refresh");
+    let generation: uuid::Uuid = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
     (store, generation)
 }
 
@@ -296,20 +283,8 @@ fn preflight_snapshot(store: &HubStore, data_dir: &Path) -> String {
         .expect("receipt rows")
         .collect::<Result<_, _>>()
         .expect("receipt values");
-    let fences: i64 = connection
-        .query_row(
-            "SELECT COUNT(*) FROM fleet_refresh_input_fences",
-            [],
-            |row| row.get(0),
-        )
-        .expect("fences");
-    let pair = store.load_fleet_tokens().expect("tokens").map(|pair| {
-        (
-            pair.access().to_vec(),
-            pair.refresh().to_vec(),
-            pair.credential_generation(),
-        )
-    });
+    let fences: i64 = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
+    let pair: Option<(Vec<u8>, Vec<u8>, Option<uuid::Uuid>)> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
     let mut files: Vec<String> = fs::read_dir(data_dir)
         .expect("data directory")
         .flatten()
@@ -363,7 +338,7 @@ fn fleet_unresolved_refresh_passes_production_and_gui_start_preflight() {
         "nothing was written"
     );
     assert!(
-        store.has_unresolved_fleet_refresh().expect("receipts"),
+        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("receipts"),
         "nothing was settled"
     );
 }
@@ -374,24 +349,22 @@ fn fleet_unresolved_preflight_rejects_independent_credential_failures() {
     #[allow(clippy::type_complexity)]
     let faults: [(&str, fn(&Path, &HubStore, uuid::Uuid)); 4] = [
         ("missing key", |directory, _, _| {
-            fs::remove_file(crate::fleet_credentials::fleet_key_path(directory))
+            fs::remove_file(({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }))
                 .expect("remove key");
         }),
-        ("bad ciphertext", |_, store, _| {
-            store
+        ("bad ciphertext", |_, store, _| {({ let _retained_query_context = &(store
                 .open()
                 .expect("catalogue")
-                .execute(
+                ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).execute(
                     "UPDATE fleet_tokens SET access = X'0102030405060708090a0b0c0d0e0f1011'",
                     [],
                 )
                 .expect("damage ciphertext");
         }),
-        ("generation mismatch", |_, store, generation| {
-            store
+        ("generation mismatch", |_, store, generation| {({ let _retained_query_context = &(store
                 .open()
                 .expect("catalogue")
-                .execute(
+                ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).execute(
                     "UPDATE fleet_tokens SET credential_generation = ?1",
                     rusqlite::params![uuid::Uuid::from_u128(generation.as_u128() ^ 1).to_string()],
                 )
@@ -400,7 +373,7 @@ fn fleet_unresolved_preflight_rejects_independent_credential_failures() {
         ("missing collection scopes", |directory, store, _| {
             // A pair that lacks `vehicle_location` carries its own generation: fence it
             // afresh, so the refresh is unresolved and identified but the scopes fail.
-            store.clear_fleet_tokens().expect("clear");
+            ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("clear");
             persist_fleet_setup_credentials(
                 store,
                 directory,
@@ -415,14 +388,12 @@ fn fleet_unresolved_preflight_rejects_independent_credential_failures() {
                 SystemTime::now(),
             )
             .expect("replacement pair");
-            let generation = store
-                .load_fleet_tokens()
+            let generation = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
                 .expect("tokens")
                 .expect("a pair")
-                .credential_generation()
+                .4
                 .expect("generation");
-            store
-                .begin_fleet_refresh(generation)
+            ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
                 .expect("unresolved refresh");
         }),
     ];
@@ -454,21 +425,19 @@ fn fleet_unresolved_preflight_rejects_independent_credential_failures() {
     let data_dir = temporary.path().join("state");
     seed_fleet_ready_hub(&data_dir);
     let store = HubStore::initialize(&data_dir).expect("store");
-    let generation = store
-        .load_fleet_tokens()
+    let generation = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("tokens")
         .expect("a pair")
-        .credential_generation()
-        .expect("generation");
-    store
+        .4
+        .expect("generation");({ let _retained_query_context = &(store
         .open()
         .expect("catalogue")
-        .execute(
+        ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).execute(
             "UPDATE fleet_tokens SET credential_generation = ?1",
             rusqlite::params![uuid::Uuid::from_u128(generation.as_u128() ^ 1).to_string()],
         )
         .expect("mismatch");
-    assert!(!store.has_unresolved_fleet_refresh().expect("receipts"));
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("receipts"));
     let before = preflight_snapshot(&store, &data_dir);
     assert!(preflight_hub_for_provider(&data_dir, CollectorProvider::Fleet).is_err());
     assert!(preflight_hub(&data_dir).is_err());

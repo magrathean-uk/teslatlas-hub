@@ -62,9 +62,9 @@ fn seed_supervised_restart_import(store: &HubStore) {
     let history = SourceDbHistory {
         cars: vec![SourceDbCar {
             id: 1,
-            eid: crate::fake_tesla::FIXTURE_EID as i64,
-            vid: Some(crate::fake_tesla::FIXTURE_VID as i64),
-            vin: Some(crate::fake_tesla::FIXTURE_VIN.to_owned()),
+            eid: ({ let excluded_fixture_value: i64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); excluded_fixture_value }) as i64,
+            vid: Some(({ let excluded_fixture_value: i64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); excluded_fixture_value }) as i64),
+            vin: Some(({ let excluded_fixture_value: &str = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); excluded_fixture_value }).to_owned()),
             name: Some("Restart fixture".to_owned()),
             model: Some("3".to_owned()),
             trim_badging: Some("74d".to_owned()),
@@ -506,64 +506,35 @@ async fn b2_observed_admission_loss_fences_renewal_after_revalidation_recovers()
 /// timestamp is plausible (C4 R20a) and older than the next real clock reading.
 const SUPERVISED_RESTART_BASE_AGE_MS: i64 = 900_000;
 
-/// Gives the stream a session that receives frames, once the first Owner sample is in.
-///
-/// The collector starts a car's stream after its first collection, and the supervisor's
-/// first attempt then waits its start jitter (C4 R42) and takes the credential lock (R6),
-/// so the stream's first session always starts after the first Owner sample. The fake
-/// places a session's frames strictly between the last Owner sample it returned and the next
-/// one, and sends none when the two are the same, as they are after a no-op sample. A silent
-/// session is ended only by the data-silence rule (R30), which for a car that has never shown
-/// motion waits 300 s (`H_park`), far beyond these tests' wait. So, while the collector is
-/// held after its first collection, the scenario forgets the Owner sample (setting the base
-/// time again opens the gap, as it was before any sample) and withholds further Owner samples,
-/// which would close the gap again before the session starts. The caller restores them with
-/// [`restore_owner_samples_after_stream_proof`] once frames have been stored.
-fn open_stream_window_after_first_owner_sample(
-    fake: &crate::fake_tesla::FakeTeslaSource,
-    base_ts_ms: i64,
-) {
-    fake.set_owner_vehicle_data_available(false);
-    fake.set_base_ts_ms(base_ts_ms);
-}
 
-fn restore_owner_samples_after_stream_proof(fake: &crate::fake_tesla::FakeTeslaSource) {
-    fake.set_owner_vehicle_data_available(true);
-}
+
+
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn imported_legacy_pair_refreshes_then_collects_one_car_and_survives_reopen() {
-    use crate::{
-        credentials::{LegacyAuthManager, OwnerTokens},
-        fake_tesla::{AdvanceMode, FAKE_REFRESHED_ACCESS_TOKEN, FakeTeslaSource},
-        owner_api::OwnerApi,
-    };
+
 
     crate::crypto::install_default_provider();
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_supervised_restart_import(&store);
 
-    crate::legacy_owner_credentials::replace_key(temporary.path(), b"chain-cloak-key")
+    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("0600 Cloak key");
-    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Cloak key");
     let initial =
         OwnerTokens::from_secret_parts("initial-access".to_owned(), "initial-refresh".to_owned())
             .expect("initial pair");
     let (access, refresh) =
-        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("Cloak initial pair");
-    store
-        .replace_legacy_owner_tokens(
-            &crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, 2, 1)
-                .expect("due refresh schedule"),
-        )
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("store encrypted pair");
 
-    let fake = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
+    let fake = crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
         .await
         .expect("loopback Tesla");
-    fake.set_step(crate::fake_tesla::ScenarioStep::UnchangedNoOp);
+    fake.set_step(crate::test_unavailable_fixture::ScenarioStep::UnchangedNoOp);
     let base_ts_ms = current_epoch_millis().expect("clock") - SUPERVISED_RESTART_BASE_AGE_MS;
     fake.set_base_ts_ms(base_ts_ms);
     let manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
@@ -624,7 +595,7 @@ async fn imported_legacy_pair_refreshes_then_collects_one_car_and_survives_reope
         request.path
             == format!(
                 "/api/1/vehicles/{}/vehicle_data",
-                crate::fake_tesla::FIXTURE_EID
+                ({ let unavailable_value: u64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
             )
     }));
 
@@ -656,21 +627,20 @@ async fn imported_legacy_pair_refreshes_then_collects_one_car_and_survives_reope
     assert!(
         fake.audited_stream_events()
             .iter()
-            .any(|event| { event.event == crate::fake_tesla::StreamAuditEvent::Unsubscribe })
+            .any(|event| { event.event == crate::test_unavailable_fixture::StreamAuditEvent::Unsubscribe })
     );
 
-    let stored = store
-        .load_legacy_owner_tokens()
+    let stored = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("stored pair")
         .expect("stored pair exists");
     let successor = crate::source_token_envelope::decrypt_legacy_owner_tokens(
-        key.as_bytes(),
-        stored.access(),
-        stored.refresh(),
+        key.as_slice(),
+        stored.0.as_slice(),
+        stored.1.as_slice(),
     )
     .expect("decrypt Cloak successor");
-    assert_eq!(successor.access_token(), FAKE_REFRESHED_ACCESS_TOKEN);
-    assert!(stored.next_refresh_at() > 0 && stored.next_refresh_at() < stored.expires_at());
+    assert_eq!(successor.access_token(), ({ let unavailable_value: &str = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }));
+    assert!(stored.3 > 0 && stored.3 < stored.2);
 
     drop(store);
     let reopened_store = HubStore::initialize(temporary.path()).expect("reopen Hub");
@@ -686,21 +656,17 @@ async fn imported_legacy_pair_refreshes_then_collects_one_car_and_survives_reope
         fake.oauth_issuer_url(),
     )
     .expect("reopen latest pair");
-    assert_eq!(reopened.access_token(), FAKE_REFRESHED_ACCESS_TOKEN);
+    assert_eq!(reopened.access_token(), ({ let unavailable_value: &str = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn observer_collects_and_reconnects_without_refreshing() {
-    use crate::{
-        credentials::{LegacyAuthManager, OwnerTokens},
-        fake_tesla::{AdvanceMode, FakeTeslaSource},
-        owner_api::OwnerApi,
-    };
+
 
     crate::crypto::install_default_provider();
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let fake = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
+    let fake = crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
         .await
         .expect("loopback Tesla");
     let setup_auth = LegacyAuth::for_test(
@@ -714,23 +680,19 @@ async fn observer_collects_and_reconnects_without_refreshing() {
     setup_native_vehicle_with_client(&store, temporary.path(), &setup_client, &setup_auth, None)
         .await
         .expect("native setup");
-    crate::legacy_owner_credentials::replace_key(temporary.path(), b"observer-cloak-key")
+    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("0600 Cloak key");
-    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Cloak key");
     let initial =
         OwnerTokens::from_secret_parts("observer-access".to_owned(), "observer-refresh".to_owned())
             .expect("initial pair");
     let (access, refresh) =
-        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("Cloak initial pair");
-    store
-        .replace_legacy_owner_tokens(
-            &crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, 2, 1)
-                .expect("due refresh schedule"),
-        )
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("store encrypted pair");
 
-    fake.set_step(crate::fake_tesla::ScenarioStep::UnchangedNoOp);
+    fake.set_step(crate::test_unavailable_fixture::ScenarioStep::UnchangedNoOp);
     let base_ts_ms = current_epoch_millis().expect("clock") - SUPERVISED_RESTART_BASE_AGE_MS;
     fake.set_base_ts_ms(base_ts_ms);
     let manager = LegacyAuthManager::from_hub_source_db_store_observer_with_issuer(
@@ -786,7 +748,7 @@ async fn observer_collects_and_reconnects_without_refreshing() {
         request.path
             == format!(
                 "/api/1/vehicles/{}/vehicle_data",
-                crate::fake_tesla::FIXTURE_EID
+                ({ let unavailable_value: u64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
             )
     }));
 
@@ -916,23 +878,23 @@ fn p3_provider_config(directory: &std::path::Path, address: &std::net::SocketAdd
 /// A pair that no external writer gave a generation (NULL), in the refreshed form so
 /// no token request is due for a long while.
 fn p3_store_null_generation_pair(store: &HubStore, data_dir: &std::path::Path, due: bool) {
-    let key = crate::legacy_owner_credentials::load_key(data_dir).unwrap_or_else(|_| {
-        crate::legacy_owner_credentials::replace_key(data_dir, b"p3-cloak-key")
+    let key = ({ let replaced_callee: fn(&std::path::Path) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(data_dir).unwrap_or_else(|_| {
+        ({ let replaced_callee: fn(&std::path::Path, &[u8]) -> Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(data_dir, b"p3-cloak-key")
             .expect("0600 Cloak key");
-        crate::legacy_owner_credentials::load_key(data_dir).expect("Cloak key")
+        ({ let replaced_callee: fn(&std::path::Path) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(data_dir).expect("Cloak key")
     });
     let tokens = OwnerTokens::from_secret_parts("provider-access-0".to_owned(), "provider-refresh-0".to_owned())
         .expect("a pair");
     let (access, refresh) =
-        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
+        ({ let replaced_callee: fn(&[u8], &crate::credentials::OwnerTokens) -> Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(key.as_slice(), &tokens)
             .expect("cipher");
     let (expires, next) = not_due_schedule();
     // A due pair (its access token still usable) is where a managed unit would
     // refresh and an observer must not.
     let next = if due { epoch_seconds_of(SystemTime::now()) - 100 } else { next };
-    store
-        .replace_legacy_owner_tokens(
-            &crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, expires, next)
+    ({ let _retained_call_context = &(store
+        ); let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(
+            &({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(access, refresh, expires, next)
                 .expect("a schedule"),
         )
         .expect("store the pair");
@@ -1267,7 +1229,7 @@ async fn p3_null_generation_restarts(observer: bool) {
         run.stop().await.expect("an orderly stop");
         assert_eq!(wire.seen(), traffic, "restart {restart}: no new traffic");
         assert!(
-            store.legacy_token_receipts_for_test().expect("receipts").is_empty(),
+            ({ let unavailable_value: Result<Vec<(String, Option<i64>, Option<i64>, bool)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("receipts").is_empty(),
             "restart {restart}: no token request was ever made (observer: {observer})"
         );
         assert_eq!(store.owner_wire_credential_identity().expect("identity"), identity, "restart {restart}");
@@ -1445,4 +1407,29 @@ async fn cs_p3_cadence_wait_defers_refusal_lift_until_validated_start() {
             server.abort();
         }
     }
+}
+
+/// Gives the stream a session that receives frames, once the first Owner sample is in.
+///
+/// The collector starts a car's stream after its first collection, and the supervisor's
+/// first attempt then waits its start jitter (C4 R42) and takes the credential lock (R6),
+/// so the stream's first session always starts after the first Owner sample. The fake
+/// places a session's frames strictly between the last Owner sample it returned and the next
+/// one, and sends none when the two are the same, as they are after a no-op sample. A silent
+/// session is ended only by the data-silence rule (R30), which for a car that has never shown
+/// motion waits 300 s (`H_park`), far beyond these tests' wait. So, while the collector is
+/// held after its first collection, the scenario forgets the Owner sample (setting the base
+/// time again opens the gap, as it was before any sample) and withholds further Owner samples,
+/// which would close the gap again before the session starts. The caller restores them with
+/// [`restore_owner_samples_after_stream_proof`] once frames have been stored.
+fn open_stream_window_after_first_owner_sample(
+    fake: &crate::test_unavailable_fixture::FakeTeslaSource,
+    base_ts_ms: i64,
+) {
+    fake.set_owner_vehicle_data_available(false);
+    fake.set_base_ts_ms(base_ts_ms);
+}
+
+fn restore_owner_samples_after_stream_proof(fake: &crate::test_unavailable_fixture::FakeTeslaSource) {
+    fake.set_owner_vehicle_data_available(true);
 }

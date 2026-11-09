@@ -107,24 +107,17 @@ pub(crate) fn effective_auth_row(
         }
         "sign_in_required" | "signed_out" | "retrying" | "persistence_pending" => {
             let status = AuthStatus::from_row(&row)?;
-            let Some(tokens) = store.load_legacy_owner_tokens()? else {
+            let Some((expires_at, next_refresh_at)): Option<(i64, i64)> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency") else {
                 // No pair: nothing can match or expire, the stored word stands.
                 return unchanged(row);
             };
-            let key = crate::legacy_owner_credentials::select_stored_legacy_key_read_only(
-                data_dir, &tokens,
-            )?;
-            let plaintext = crate::source_token_envelope::decrypt_legacy_owner_tokens(
-                key.as_bytes(),
-                tokens.access(),
-                tokens.refresh(),
-            )?;
+            let plaintext: crate::credentials::OwnerTokens = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
             let generation =
                 crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
             let usable_until = stored_usable_until(
                 plaintext.access_token(),
-                tokens.expires_at(),
-                tokens.next_refresh_at(),
+                expires_at,
+                next_refresh_at,
             );
             if !super::stored_pair_passes_grammar(
                 plaintext.access_token(),

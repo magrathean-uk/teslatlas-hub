@@ -8,7 +8,7 @@ use super::*;
 use crate::config::{CadenceRule, CadenceViolation, CollectorMode};
 use crate::db::{
     CollectorAccountRow, CollectorAuthRow, CollectorGapInsert, CollectorRowsWrite,
-    CollectorVehicleRow, LegacyOwnerTokenStore, ReadinessContext,
+    CollectorVehicleRow,  ReadinessContext,
 };
 
 const NOW_MS: i64 = 1_800_000_000_000;
@@ -165,28 +165,8 @@ fn real_pair(
     access: &str,
     schedule: Option<(i64, i64)>,
 ) -> Uuid {
-    let key = b"http readiness key";
-    let tokens =
-        crate::credentials::OwnerTokens::from_secret_parts(access.to_owned(), "refresh".to_owned())
-            .expect("tokens");
-    let (access, refresh) =
-        crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
-    let stored = match schedule {
-        Some((expires_at, next_refresh_at)) => {
-            LegacyOwnerTokenStore::refreshed(access, refresh, expires_at, next_refresh_at)
-        }
-        None => LegacyOwnerTokenStore::imported(access, refresh),
+        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
     }
-    .expect("stored pair");
-    crate::legacy_owner_credentials::replace_key_and_tokens(directory, store, key, &stored)
-        .expect("persist");
-    store
-        .load_legacy_owner_tokens()
-        .expect("load")
-        .expect("row")
-        .credential_generation()
-        .expect("generation")
-}
 
 fn fault() -> CadenceViolation {
     CadenceViolation {
@@ -584,14 +564,12 @@ async fn fleet_unresolved_refresh_is_attention_not_service_failure() {
         std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000),
     )
     .expect("persist pair");
-    let generation = store
-        .load_fleet_tokens()
+    let generation = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("store")
         .expect("pair")
-        .credential_generation()
+        .4
         .expect("generation");
-    store
-        .begin_fleet_refresh(generation)
+    ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("unresolved refresh");
     // Independently valid, and the unresolved refresh is the identified one.
     let inspection =

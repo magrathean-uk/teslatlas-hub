@@ -24,8 +24,7 @@ pub use auth::{
     credential_recovery, credentials, crypto, fleet_credentials, legacy_auth,
     legacy_owner_credentials, source_token_envelope,
 };
-#[cfg(test)]
-pub use collection::fake_tesla;
+
 pub use collection::{collector, current_state, fleet_telemetry, tesla_stream};
 pub use geo::{geocoder, gpx, location, terrain, terrain_cache};
 pub use import::source_db::{
@@ -81,6 +80,9 @@ fn discovery_source_url_for(source_commit: &str) -> String {
 pub fn discovery_source_url() -> String {
     discovery_source_url_for(SOURCE_COMMIT_RAW)
 }
+
+#[cfg(test)]
+pub(crate) mod test_unavailable_fixture;
 
 #[cfg(test)]
 pub(crate) fn private_tempdir() -> std::io::Result<tempfile::TempDir> {

@@ -35,7 +35,7 @@ impl LegacyOwnerTokenCiphertexts {
     }
 }
 
-const MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64: i64 = MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES as i64;
+const MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64: i64 = MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES as i64;
 
 const PRIVATE_LEGACY_TOKENS_SQL: &str = "SELECT \"token\".\"access\" AS \"access\", \"token\".\"refresh\" AS \"refresh\" \
      FROM \"private\".\"tokens\" AS \"token\" ORDER BY \"token\".\"id\" ASC LIMIT 2";

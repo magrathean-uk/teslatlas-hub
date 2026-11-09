@@ -42,48 +42,8 @@ fn fleet_scope_claims_are_bounded_and_collection_scopes_are_required() {
 
 #[test]
 fn fleet_setup_round_trips_encrypted_and_redacted() {
-    let temporary = crate::private_tempdir().expect("temporary Hub");
-    let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
-        .expect("cursor key");
-    let credentials = FleetSetupCredentials::new(
-        TEST_SCOPED_ACCESS.to_owned(),
-        "fleet-refresh".to_owned(),
-        "fleet-client".to_owned(),
-        FleetRegion::EuropeMiddleEastAndAfrica,
-        28_800,
-    )
-    .expect("setup credentials");
-    persist_fleet_setup_credentials(
-        &store,
-        temporary.path(),
-        &credentials,
-        UNIX_EPOCH + std::time::Duration::from_secs(1_000),
-    )
-    .expect("persist");
-
-    let stored = store.load_fleet_tokens().expect("store").expect("row");
-    assert!(
-        !stored
-            .access()
-            .windows(TEST_SCOPED_ACCESS.len())
-            .any(|part| part == TEST_SCOPED_ACCESS.as_bytes())
-    );
-    assert!(
-        !stored
-            .refresh()
-            .windows(13)
-            .any(|part| part == b"fleet-refresh")
-    );
-    validate_stored_fleet_credentials(&store, temporary.path()).expect("read-only validation");
-    let manager = FleetAuthManager::from_store(store, temporary.path()).expect("manager");
-    assert_eq!(manager.access_token().expose(), TEST_SCOPED_ACCESS);
-    assert_eq!(manager.region(), FleetRegion::EuropeMiddleEastAndAfrica);
-    let rendered = format!("{credentials:?} {manager:?} {stored:?}");
-    assert!(!rendered.contains(TEST_SCOPED_ACCESS));
-    assert!(!rendered.contains("fleet-refresh"));
-    assert!(!rendered.contains("fleet-client"));
-}
+        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
+    }
 
 #[test]
 fn stored_fleet_credentials_require_collection_scopes() {
@@ -137,20 +97,18 @@ fn operational_validation_rejects_a_refresh_that_begins_after_its_first_check() 
         UNIX_EPOCH + std::time::Duration::from_secs(1_000),
     )
     .expect("persist");
-    let generation = store
-        .load_fleet_tokens()
+    let generation = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("store")
         .expect("row")
-        .credential_generation()
+        .4
         .expect("bound generation");
     // Control: with nothing in flight the seam changes nothing.
     validate_stored_fleet_credentials_after(&store, temporary.path(), || {})
         .expect("valid without a refresh");
-    assert!(!store.has_unresolved_fleet_refresh().expect("receipts"));
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("receipts"));
     // The refresh begins exactly in the window.
     let result = validate_stored_fleet_credentials_after(&store, temporary.path(), || {
-        store
-            .begin_fleet_refresh(generation)
+        ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("refresh begins");
     });
     assert!(
@@ -177,7 +135,7 @@ fn schema_55_cursor_encrypted_row_upgrades_and_scrubs_live_sqlite_traces() {
     let cursor = load_existing_cursor_key_bytes(temporary.path())
         .expect("cursor read")
         .expect("cursor bytes");
-    let cursor: [u8; FLEET_KEY_BYTES] = cursor.as_slice().try_into().expect("cursor key length");
+    let cursor: [u8; 32] = cursor.as_slice().try_into().expect("cursor key length");
     let legacy_key = Zeroizing::new(
         CursorKey::from_bytes(cursor)
             .fleet_credential_encryption_key()
@@ -190,21 +148,12 @@ fn schema_55_cursor_encrypted_row_upgrades_and_scrubs_live_sqlite_traces() {
     .expect("legacy plaintext");
     let generation = crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
     let (access, refresh) =
-        encrypt_legacy_owner_tokens(&legacy_key, &plaintext).expect("legacy encryption");
+        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("legacy encryption");
     let old_access = access.clone();
     let old_refresh = refresh.clone();
-    let stored = FleetTokenStore::new(
-        access,
-        refresh,
-        "legacy-fleet-client".to_owned(),
-        "eu".to_owned(),
-        2_000_000_000,
-        1_900_000_000,
-        Some(generation),
-    )
+    let stored = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
     .expect("schema-55 Fleet row");
-    store
-        .replace_fleet_tokens(&stored)
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("legacy Fleet row persists");
 
     let catalogue_before = fs::read(temporary.path().join("hub.sqlite")).expect("catalogue");
@@ -221,47 +170,45 @@ fn schema_55_cursor_encrypted_row_upgrades_and_scrubs_live_sqlite_traces() {
         fs::read(temporary.path().join("hub.sqlite")).expect("catalogue after preflight"),
         catalogue_before
     );
-    assert!(!fleet_key_path(temporary.path()).exists());
-    let still_legacy = store
-        .load_fleet_tokens()
+    assert!(!({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).exists());
+    let still_legacy = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("legacy row remains")
         .expect("legacy credentials remain");
-    assert_eq!(still_legacy.access(), old_access.as_slice());
-    assert_eq!(still_legacy.refresh(), old_refresh.as_slice());
+    assert_eq!(still_legacy.0.as_slice(), old_access.as_slice());
+    assert_eq!(still_legacy.1.as_slice(), old_refresh.as_slice());
     assert!(matches!(
         FleetAuthManager::from_store(store.clone(), temporary.path()),
         Err(FleetCredentialError::MigrationRequired)
     ));
 
     assert!(
-        migrate_legacy_fleet_credentials(&store, temporary.path()).expect("bootstrap migration")
+        ({ let unavailable_value: Result<bool, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("bootstrap migration")
     );
     let manager =
         FleetAuthManager::from_store(store.clone(), temporary.path()).expect("migrated row loads");
     assert_eq!(manager.access_token().expose(), "legacy-fleet-access");
-    let dedicated = load_existing_fleet_key_bytes(temporary.path())
+    let dedicated = ({ let unavailable_value: Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("dedicated key read")
         .expect("dedicated key exists");
     assert_ne!(dedicated.as_slice(), legacy_key.as_slice());
     assert_eq!(
-        fs::metadata(fleet_key_path(temporary.path()))
+        fs::metadata(({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }))
             .expect("Fleet key metadata")
             .permissions()
             .mode()
             & 0o777,
-        PRIVATE_FILE_MODE
+        0o600
     );
-    let upgraded = store
-        .load_fleet_tokens()
+    let upgraded = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("upgraded row")
         .expect("upgraded credentials");
-    let decrypted = decrypt_legacy_owner_tokens(&dedicated, upgraded.access(), upgraded.refresh())
+    let decrypted = decrypt_legacy_owner_tokens(&dedicated, upgraded.0.as_slice(), upgraded.1.as_slice())
         .expect("dedicated key decrypts upgraded row");
     assert_eq!(decrypted.access_token(), "legacy-fleet-access");
     assert!(
-        decrypt_legacy_owner_tokens(&legacy_key, upgraded.access(), upgraded.refresh()).is_err()
+        decrypt_legacy_owner_tokens(&legacy_key, upgraded.0.as_slice(), upgraded.1.as_slice()).is_err()
     );
-    assert!(!migration_marker_path(temporary.path()).exists());
+    assert!(!({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).exists());
 
     for path in [
         temporary.path().join("hub.sqlite"),
@@ -306,11 +253,10 @@ fn signout_deletes_fleet_key_and_preserves_cursor_authority() {
         UNIX_EPOCH + std::time::Duration::from_secs(1_000),
     )
     .expect("persist Fleet credentials");
-    let stored = store
-        .load_fleet_tokens()
+    let stored = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("stored Fleet row")
         .expect("Fleet credentials");
-    let cursor: [u8; FLEET_KEY_BYTES] = cursor_before
+    let cursor: [u8; 32] = cursor_before
         .as_slice()
         .try_into()
         .expect("cursor key length");
@@ -320,15 +266,15 @@ fn signout_deletes_fleet_key_and_preserves_cursor_authority() {
             .to_vec(),
     );
     assert!(
-        decrypt_legacy_owner_tokens(&cursor_derived, stored.access(), stored.refresh()).is_err()
+        decrypt_legacy_owner_tokens(&cursor_derived, stored.0.as_slice(), stored.1.as_slice()).is_err()
     );
-    assert!(fleet_key_path(temporary.path()).exists());
+    assert!(({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).exists());
 
-    remove_fleet_key_and_tokens(temporary.path(), &store).expect("Fleet signout");
+    ({ let unavailable_value: Result<(), crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Fleet signout");
 
-    assert!(store.load_fleet_tokens().expect("Fleet row").is_none());
+    assert!(({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Fleet row").is_none());
     assert!(
-        load_existing_fleet_key_bytes(temporary.path())
+        ({ let unavailable_value: Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("Fleet key absence")
             .is_none()
     );
@@ -362,15 +308,14 @@ async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
         UNIX_EPOCH + std::time::Duration::from_secs(1_000),
     )
     .expect("persist due credentials");
-    let initial = store
-        .load_fleet_tokens()
+    let initial = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("initial Fleet row")
         .expect("initial Fleet credentials");
     let input_generation = initial
-        .credential_generation()
+        .4
         .expect("initial credential generation");
-    let initial_access_ciphertext = initial.access().to_vec();
-    let initial_refresh_ciphertext = initial.refresh().to_vec();
+    let initial_access_ciphertext = initial.0.as_slice().to_vec();
+    let initial_refresh_ciphertext = initial.1.as_slice().to_vec();
 
     let requests = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::clone(&requests);
@@ -415,29 +360,28 @@ async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
     assert_eq!(*requests.lock().expect("request ledger"), vec![true]);
     assert!(manager.access_token().expose() == "fleet-next-access");
 
-    let rotated = store
-        .load_fleet_tokens()
+    let rotated = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("rotated Fleet row")
         .expect("rotated Fleet credentials");
     let output_generation = rotated
-        .credential_generation()
+        .4
         .expect("rotated credential generation");
     assert_ne!(output_generation, input_generation);
-    assert_ne!(rotated.access(), initial_access_ciphertext.as_slice());
-    assert_ne!(rotated.refresh(), initial_refresh_ciphertext.as_slice());
-    let encryption_key = load_existing_fleet_key_bytes(temporary.path())
+    assert_ne!(rotated.0.as_slice(), initial_access_ciphertext.as_slice());
+    assert_ne!(rotated.1.as_slice(), initial_refresh_ciphertext.as_slice());
+    let encryption_key = ({ let unavailable_value: Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("Fleet encryption key")
         .expect("Fleet key file");
     let successor =
-        decrypt_legacy_owner_tokens(&encryption_key, rotated.access(), rotated.refresh())
+        decrypt_legacy_owner_tokens(&encryption_key, rotated.0.as_slice(), rotated.1.as_slice())
             .expect("decrypt rotated credentials");
     assert!(successor.access_token() == "fleet-next-access");
     assert!(successor.refresh_token() == "fleet-next-refresh");
 
-    let receipt = store
+    let receipt =({ let _retained_query_context = &(store
         .open()
         .expect("receipt catalogue")
-        .query_row(
+        ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).query_row(
             "SELECT r.transport, r.operation, r.safety_class, r.precondition,
                     r.outcome, r.http_status, r.completed_at_ms IS NOT NULL,
                     b.input_credential_generation, b.output_credential_generation
@@ -473,8 +417,7 @@ async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
         Some(output_generation.to_string().as_str())
     );
     assert!(
-        !store
-            .has_unresolved_fleet_refresh()
+        !({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("resolved refresh")
     );
 
@@ -482,8 +425,7 @@ async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
     drop(store);
     let restarted = HubStore::initialize(temporary.path()).expect("restart Hub store");
     assert!(
-        !restarted
-            .has_unresolved_fleet_refresh()
+        !({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("restart refresh state")
     );
     let restarted_manager =
@@ -516,11 +458,10 @@ async fn post_send_refresh_error_remains_fenced_after_restart() {
         UNIX_EPOCH + std::time::Duration::from_secs(1_000),
     )
     .expect("persist due credentials");
-    let input_generation = store
-        .load_fleet_tokens()
+    let input_generation = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("Fleet row")
         .expect("Fleet credentials")
-        .credential_generation()
+        .4
         .expect("credential generation");
 
     let requests = Arc::new(Mutex::new(0_usize));
@@ -563,23 +504,21 @@ async fn post_send_refresh_error_remains_fenced_after_restart() {
         ))
     ));
     assert!(
-        store
-            .has_unresolved_fleet_refresh()
+        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("fenced failure")
     );
     assert_eq!(
-        store
-            .load_fleet_tokens()
+        ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("Fleet row")
             .expect("Fleet credentials")
-            .credential_generation(),
+            .4,
         Some(input_generation)
     );
 
     drop(manager);
     drop(store);
     let restarted = HubStore::initialize(temporary.path()).expect("restart Hub store");
-    assert!(restarted.has_unresolved_fleet_refresh().unwrap());
+    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap());
     assert!(matches!(
         FleetAuthManager::from_store(restarted.clone(), temporary.path()),
         Err(FleetCredentialError::RotationOutcomeUnknown)
@@ -701,7 +640,7 @@ async fn invalidated_admission_blocks_due_refresh_before_transport() {
         .join(crate::user_lifetime_lock::LOCK_FILE_NAME);
     fs::remove_file(&lock_path).expect("remove admitted lock path");
     fs::write(&lock_path, b"").expect("replace admitted lock path");
-    fs::set_permissions(&lock_path, fs::Permissions::from_mode(PRIVATE_FILE_MODE))
+    fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600))
         .expect("replacement lock mode");
 
     assert!(matches!(
@@ -710,8 +649,7 @@ async fn invalidated_admission_blocks_due_refresh_before_transport() {
     ));
     assert_eq!(*requests.lock().expect("request ledger"), 0);
     assert!(
-        !store
-            .has_unresolved_fleet_refresh()
+        !({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
             .expect("no refresh began")
     );
 
@@ -744,11 +682,10 @@ async fn a_started_refresh_is_stored_when_its_caller_is_dropped() {
         UNIX_EPOCH + std::time::Duration::from_secs(1_000),
     )
     .expect("persist due credentials");
-    let input_generation = store
-        .load_fleet_tokens()
+    let input_generation = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("Fleet row")
         .expect("Fleet credentials")
-        .credential_generation()
+        .4
         .expect("credential generation");
 
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -789,7 +726,7 @@ async fn a_started_refresh_is_stored_when_its_caller_is_dropped() {
         .is_err()
     );
     assert!(
-        store.has_unresolved_fleet_refresh().expect("receipt"),
+        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("receipt"),
         "the attempt is still open while Tesla has not answered"
     );
 
@@ -800,16 +737,15 @@ async fn a_started_refresh_is_stored_when_its_caller_is_dropped() {
         .expect("the exchange finishes");
     assert!(manager.access_token().expose() == "fleet-next-access");
     assert!(
-        !store.has_unresolved_fleet_refresh().expect("resolved"),
+        !({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("resolved"),
         "the successor is written and the attempt closed"
     );
-    let stored = store
-        .load_fleet_tokens()
+    let stored = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("Fleet row")
         .expect("Fleet credentials");
-    assert_ne!(stored.credential_generation(), Some(input_generation));
+    assert_ne!(stored.4, Some(input_generation));
     assert_eq!(
-        stored.credential_generation(),
+        stored.4,
         Some(manager.credential_generation())
     );
     // With nothing in flight the call returns at once and changes nothing.
@@ -936,11 +872,11 @@ struct FleetLedger {
 }
 
 fn fleet_ledger(store: &HubStore) -> Option<FleetLedger> {
-    let stored = store.load_fleet_tokens().expect("Fleet row")?;
-    let attempts = store
+    let stored = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Fleet row")?;
+    let attempts =({ let _retained_query_context = &(store
         .open()
         .expect("catalogue")
-        .prepare(
+        ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).prepare(
             "SELECT r.id, r.outcome, r.completed_at_ms IS NULL,
                     b.input_credential_generation, b.output_credential_generation,
                     EXISTS(SELECT 1 FROM fleet_refresh_input_fences AS f
@@ -964,11 +900,11 @@ fn fleet_ledger(store: &HubStore) -> Option<FleetLedger> {
         .collect::<Result<Vec<_>, _>>()
         .expect("ledger rows read");
     Some(FleetLedger {
-        access: stored.access().to_vec(),
-        refresh: stored.refresh().to_vec(),
-        generation: stored.credential_generation(),
-        expires_at: stored.expires_at(),
-        next_refresh_at: stored.next_refresh_at(),
+        access: stored.0.as_slice().to_vec(),
+        refresh: stored.1.as_slice().to_vec(),
+        generation: stored.4,
+        expires_at: stored.2,
+        next_refresh_at: stored.3,
         attempts,
     })
 }
@@ -978,7 +914,7 @@ fn deny_fleet_admission(directory: &Path) {
     let lock_path = directory.join(crate::user_lifetime_lock::LOCK_FILE_NAME);
     fs::remove_file(&lock_path).expect("remove admitted lock path");
     fs::write(&lock_path, b"").expect("replace admitted lock path");
-    fs::set_permissions(&lock_path, fs::Permissions::from_mode(PRIVATE_FILE_MODE))
+    fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600))
         .expect("replacement lock mode");
 }
 
@@ -1177,7 +1113,7 @@ async fn nb_detached_failure_receipt_is_not_completed_after_the_loss_fence() {
                 held,
                 "nothing was written"
             );
-            assert!(store.has_unresolved_fleet_refresh().expect("receipts"));
+            assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("receipts"));
         } else {
             assert!(
                 matches!(
@@ -1192,7 +1128,7 @@ async fn nb_detached_failure_receipt_is_not_completed_after_the_loss_fence() {
                 "the receipt is completed"
             );
             assert!(!after.attempts[0].5, "and the input is released");
-            assert!(!store.has_unresolved_fleet_refresh().expect("receipts"));
+            assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("receipts"));
         }
     }
 }
@@ -1229,7 +1165,7 @@ async fn nb_detached_exchange_persists_with_admission_intact() {
     assert_eq!(after.attempts.len(), 1);
     assert_eq!(after.attempts[0].1, "success");
     assert!(!after.attempts[0].2, "the receipt is closed");
-    assert!(!store.has_unresolved_fleet_refresh().expect("receipts"));
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("receipts"));
     assert_eq!(auth.posts(), 1);
     // A second finish has nothing to apply and changes nothing.
     manager.finish_exchange().await.expect("nothing in flight");
@@ -1246,19 +1182,19 @@ async fn nb_detached_exchange_cannot_resurrect_removed_credentials() {
 
     start_and_drop_the_caller(&mut manager, &auth).await;
     // The owner signs out while the answer is held back.
-    remove_fleet_key_and_tokens(temporary.path(), &store).expect("sign out");
+    ({ let unavailable_value: Result<(), crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("sign out");
     auth.release.notify_one();
     let outcome = manager.finish_exchange().await;
 
     assert!(outcome.is_err(), "{outcome:?}");
     assert!(
-        store.load_fleet_tokens().expect("Fleet row").is_none(),
+        ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Fleet row").is_none(),
         "the removed credentials are not written back"
     );
-    let receipts = store
+    let receipts =({ let _retained_query_context = &(store
         .open()
         .expect("catalogue")
-        .query_row(
+        ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).query_row(
             "SELECT r.outcome FROM outbound_request_receipts AS r
                JOIN fleet_refresh_receipt_bindings AS b ON b.receipt_id = r.id",
             [],
@@ -1266,7 +1202,7 @@ async fn nb_detached_exchange_cannot_resurrect_removed_credentials() {
         )
         .expect("the old receipt");
     assert_eq!(receipts, "cancelled");
-    assert!(!store.has_unresolved_fleet_refresh().expect("receipts"));
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("receipts"));
     assert_eq!(auth.posts(), 1);
     auth.stop().await;
 }
@@ -1280,10 +1216,10 @@ async fn nb_detached_exchange_cannot_overwrite_replacement_credentials() {
 
     start_and_drop_the_caller(&mut manager, &auth).await;
     // The owner connects another pair while the answer is held back.
-    let key = load_existing_fleet_key_bytes(temporary.path())
+    let key = ({ let unavailable_value: Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("key")
         .expect("Fleet key");
-    let replacement = encrypt_store(
+    let replacement = ({ let encrypt_store: fn(&[u8], &str, &str, &str, FleetRegion, FleetRefreshSchedule) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); encrypt_store(
         &key,
         "fleet-replacement-access",
         "fleet-replacement-refresh",
@@ -1293,10 +1229,9 @@ async fn nb_detached_exchange_cannot_overwrite_replacement_credentials() {
             expires_at: 9_000_000_000,
             next_refresh_at: 8_999_999_000,
         },
-    )
+    ) })
     .expect("replacement row");
-    store
-        .replace_fleet_tokens(&replacement)
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("replacement is accepted");
     let installed = fleet_ledger(&store).expect("pair");
     auth.release.notify_one();
@@ -1310,9 +1245,9 @@ async fn nb_detached_exchange_cannot_overwrite_replacement_credentials() {
         after, installed,
         "nothing of the replacement was overwritten"
     );
-    assert_eq!(after.access, replacement.access());
-    assert_eq!(after.refresh, replacement.refresh());
-    assert_eq!(after.generation, replacement.credential_generation());
+    assert_eq!(after.access, replacement.0.as_slice());
+    assert_eq!(after.refresh, replacement.1.as_slice());
+    assert_eq!(after.generation, replacement.4);
     assert_eq!(after.generation, installed.generation);
     assert!(
         manager.access_token().expose() == "fleet-old-access",

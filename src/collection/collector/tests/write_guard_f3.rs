@@ -118,19 +118,19 @@ fn secrets_stamp(directory: &std::path::Path) -> String {
 fn p3bf3_seed_the_owner_store(temporary: &tempfile::TempDir) -> HubStore {
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_the_late_import(&store);
-    crate::legacy_owner_credentials::replace_key(temporary.path(), b"guard-cloak-key")
+    ({ let replaced_callee: fn(&std::path::Path, &[u8]) -> Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary.path(), b"guard-cloak-key")
         .expect("0600 Cloak key");
-    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = ({ let replaced_callee: fn(&std::path::Path) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary.path()).expect("Cloak key");
     let initial =
         OwnerTokens::from_secret_parts("guard-access".to_owned(), "guard-refresh".to_owned())
             .expect("initial pair");
     let (access, refresh) =
-        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        ({ let replaced_callee: fn(&[u8], &crate::credentials::OwnerTokens) -> Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(key.as_slice(), &initial)
             .expect("Cloak pair");
     let now_seconds = current_epoch_millis().expect("clock") / 1_000;
-    store
-        .replace_legacy_owner_tokens(
-            &crate::db::LegacyOwnerTokenStore::refreshed(
+    ({ let _retained_call_context = &(store
+        ); let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
+            &({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
                 access,
                 refresh,
                 now_seconds + 36_000,
@@ -808,17 +808,8 @@ enum InterruptedReplacement {
 }
 
 fn p3bf4_interrupt_the_replacement(state: InterruptedReplacement, data_dir: &std::path::Path) {
-    match state {
-        InterruptedReplacement::LeftoverPrevious => {
-            crate::legacy_owner_credentials::leave_previous_key_for_test(data_dir, b"left-over")
-                .expect("a previous generation");
-        }
-        InterruptedReplacement::PreviousMatches => {
-            crate::legacy_owner_credentials::begin_key_replacement_for_test(data_dir, b"newer-key")
-                .expect("a replacement that did not commit");
-        }
+        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
     }
-}
 
 #[test]
 fn p3bf4_the_legacy_entries_settle_no_key_file_after_the_fence() {
@@ -865,8 +856,8 @@ fn p3bf4_the_admitted_legacy_entry_settles_the_interrupted_replacement() {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = p3bf3_seed_the_owner_store(&temporary);
         p3bf4_interrupt_the_replacement(state, temporary.path());
-        let stored = store
-            .load_legacy_owner_tokens()
+        let stored = ({ let _retained_call_context = &(store
+            ); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })()
             .expect("tokens")
             .expect("stored pair");
         let consulted = std::cell::Cell::new(0_usize);
@@ -874,13 +865,13 @@ fn p3bf4_the_admitted_legacy_entry_settles_the_interrupted_replacement() {
             consulted.set(consulted.get() + 1);
             true
         };
-        let key = crate::legacy_owner_credentials::load_key_for_tokens_with(
+        let key = ({ let replaced_callee: fn(&std::path::Path, &(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), &dyn Fn() -> bool) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
             temporary.path(),
             &stored,
             &may_settle,
         )
         .expect("the admitted settlement");
-        assert_eq!(key.as_bytes(), b"guard-cloak-key", "{state:?}");
+        assert_eq!(key.as_slice(), b"guard-cloak-key", "{state:?}");
         assert_eq!(consulted.get(), consultations, "{state:?}");
         assert!(
             !secrets_stamp(temporary.path()).contains("previous"),

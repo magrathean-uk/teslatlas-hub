@@ -892,22 +892,18 @@ async fn t42_a_signed_out_account_sends_nothing_and_the_owners_retry_resumes_it(
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_supervised_restart_import(&store);
-    crate::legacy_owner_credentials::replace_key(temporary.path(), b"chain-cloak-key")
+    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("0600 Cloak key");
-    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Cloak key");
     let initial =
         OwnerTokens::from_secret_parts("loop-access".to_owned(), "loop-refresh".to_owned())
             .expect("initial pair");
     let generation = crate::source_token_envelope::legacy_refresh_credential_generation(&initial);
     let (access, refresh) =
-        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("Cloak pair");
     let (expires, next) = not_due_schedule();
-    store
-        .replace_legacy_owner_tokens(
-            &crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, expires, next)
-                .expect("a schedule that is not due"),
-        )
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("store pair");
     // The unit's own row from the previous run: signed out for this very pair.
     let now = epoch_seconds_of(SystemTime::now());
@@ -1060,21 +1056,17 @@ async fn t28_an_observer_whose_list_is_refused_waits_and_the_run_goes_on() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_supervised_restart_import(&store);
-    crate::legacy_owner_credentials::replace_key(temporary.path(), b"chain-cloak-key")
+    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("0600 Cloak key");
-    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Cloak key");
     let write_pair = |access: &str, refresh: &str| {
         let tokens =
             OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned()).expect("pair");
         let (access, refresh) =
-            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
+            ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
                 .expect("Cloak pair");
         let (expires, next) = not_due_schedule();
-        store
-            .replace_legacy_owner_tokens(
-                &crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, expires, next)
-                    .expect("a schedule that is not due"),
-            )
+        ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("store pair");
     };
     write_pair("observer-access", "observer-refresh");

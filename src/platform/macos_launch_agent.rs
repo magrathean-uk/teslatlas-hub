@@ -399,8 +399,8 @@ fn provider_credentials_are_usable(
 ) -> io::Result<()> {
     match provider {
         crate::config::CollectorProvider::Legacy => {
-            let tokens = store
-                .load_legacy_owner_tokens()
+            let tokens = ({ let _retained_call_context = &(store
+                ); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()
                 .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
                 .ok_or_else(|| {
                     io::Error::new(
@@ -408,7 +408,7 @@ fn provider_credentials_are_usable(
                         "legacy Owner API credentials are required before install",
                     )
                 })?;
-            crate::legacy_owner_credentials::load_key_for_tokens(data_dir, &tokens).map_err(
+            ({ let replaced_callee: fn(&std::path::Path, &(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })(data_dir, &tokens).map_err(
                 |error| {
                     io::Error::new(
                         io::ErrorKind::InvalidData,

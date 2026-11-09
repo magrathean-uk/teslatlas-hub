@@ -451,10 +451,17 @@ impl LegacyAuthManager {
     /// sent: the check reads one row and returns. A unit without a Hub store has no
     /// C3 row to consult.
     pub(crate) fn assert_resident_admission(&self) -> Result<(), LegacyAuthManagerError> {
-        let Some(persistence) = self.persistence.hub() else {
+        let store: Option<&crate::db::HubStore> = match &self.persistence {
+            #[cfg(test)]
+            LegacyAuthPersistence::TestCallback(_) => None,
+            LegacyAuthPersistence::Unavailable(_) => {
+                panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency")
+            }
+        };
+        let Some(store) = store else {
             return Ok(());
         };
-        match persistence.store.collector_account_stop_view() {
+        match store.collector_account_stop_view() {
             Ok(Some((mode, state, reason)))
                 if is_c3_refusal_state(&state) && mode == StoppedMode::of(self.mode).code() =>
             {
@@ -475,11 +482,17 @@ impl LegacyAuthManager {
     /// Whether a fencing attempt is unresolved in the store; false when it cannot
     /// be read (R57 step 6) or the unit has no Hub store.
     pub(super) fn has_unresolved_legacy_refresh(&self) -> bool {
-        self.persistence.hub().is_some_and(|persistence| {
-            persistence
-                .store
-                .has_unresolved_legacy_refresh()
-                .unwrap_or(false)
+        let hub_store: Option<&crate::db::HubStore> = match &self.persistence {
+            #[cfg(test)]
+            LegacyAuthPersistence::TestCallback(_) => None,
+            LegacyAuthPersistence::Unavailable(_) => {
+                panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency")
+            }
+        };
+        hub_store.is_some_and(|_store| {
+            let fact: Result<bool, crate::db::StoreError> =
+                panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
+            fact.unwrap_or(false)
         })
     }
 }

@@ -58,9 +58,9 @@ async fn loop_products(State(wire): State<LoopWire>) -> axum::response::Response
             StatusCode::OK,
             json!({
                 "response": [{
-                    "id": crate::fake_tesla::FIXTURE_EID,
-                    "vehicle_id": crate::fake_tesla::FIXTURE_VID,
-                    "vin": crate::fake_tesla::FIXTURE_VIN,
+                    "id": ({ let excluded_fixture_value: i64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); excluded_fixture_value }),
+                    "vehicle_id": ({ let excluded_fixture_value: i64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); excluded_fixture_value }),
+                    "vin": ({ let excluded_fixture_value: &str = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); excluded_fixture_value }),
                     "state": "asleep",
                     "display_name": "Loop fixture",
                     "in_service": false,
@@ -131,21 +131,21 @@ impl LoopBed {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         seed_supervised_restart_import(&store);
-        crate::legacy_owner_credentials::replace_key(temporary.path(), b"loop-cloak-key")
+        ({ let replaced_callee: fn(&std::path::Path, &[u8]) -> Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary.path(), b"loop-cloak-key")
             .expect("0600 Cloak key");
-        let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
+        let key = ({ let replaced_callee: fn(&std::path::Path) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary.path()).expect("Cloak key");
         let initial =
             OwnerTokens::from_secret_parts("loop-access".to_owned(), "loop-refresh".to_owned())
                 .expect("initial pair");
         let (access, refresh) =
-            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+            ({ let replaced_callee: fn(&[u8], &crate::credentials::OwnerTokens) -> Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(key.as_slice(), &initial)
                 .expect("Cloak pair");
         // A pair whose refresh is not due for hours: the loop makes no token request
         // at its start (a successful refresh would reset a blown fuse).
         let now_seconds = current_epoch_millis().expect("clock") / 1_000;
-        store
-            .replace_legacy_owner_tokens(
-                &crate::db::LegacyOwnerTokenStore::refreshed(
+        ({ let _retained_call_context = &(store
+            ); let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
+                &({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
                     access,
                     refresh,
                     now_seconds + 36_000,

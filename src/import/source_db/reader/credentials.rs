@@ -104,11 +104,11 @@ fn validate_legacy_ciphertext_length(
     if actual == 0 {
         return Err(SourceDbReaderError::LegacyTokenPairEmpty);
     }
-    if !(1..=MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64).contains(&actual) {
+    if !(1..=MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64).contains(&actual) {
         return Err(SourceDbReaderError::LegacyTokenCiphertextTooLarge {
             relation,
             column,
-            maximum: MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64,
+            maximum: MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64,
             actual,
         });
     }

@@ -275,38 +275,7 @@ async fn sc8_a_run_holds_one_socket_at_a_time() {
     run.shut_down().await.expect("shutdown");
 }
 
-/// SC8 against the fake Tesla, which checks the subscribe frame against the
-/// column set exactly. Real time and real sockets, so two attempts only (the
-/// second after 1 s).
-#[tokio::test]
-async fn sc8_the_fake_tesla_sees_one_session_at_a_time_and_the_exact_columns() {
-    use crate::fake_tesla::{
-        AdvanceMode, FIXTURE_VID, FakeTeslaSource, StreamAuditEvent, StreamScript,
-    };
-    let fake = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
-        .await
-        .expect("fake Tesla");
-    fake.set_stream_script(StreamScript::CloseAfterSubscribe);
-    let creds = Creds::current(fake.oauth_issuer_url(), "tok-1");
-    let mut rig = Rig::new(fake.stream_endpoint().to_owned(), creds);
-    rig.tag = FIXTURE_VID;
-    let mut run = rig.start();
-    for _ in 0..2 {
-        let event = run.event_within(Duration::from_secs(20)).await;
-        assert_eq!(event, Some(StreamEvent::TransportUnavailable));
-    }
-    let stats = fake.stream_session_stats();
-    assert_eq!(stats.connection_attempts, 2);
-    assert_eq!(stats.max_concurrent_sessions, 1);
-    let accepted_subscribes = fake
-        .audited_stream_events()
-        .iter()
-        .filter(|event| event.event == StreamAuditEvent::Subscribe && event.accepted)
-        .count();
-    assert_eq!(accepted_subscribes, 2);
-    run.shut_down().await.expect("shutdown");
-    fake.shutdown().await;
-}
+
 
 // ---------------------------------------------------------------- SC9, SC15, shutdown
 
@@ -1010,13 +979,13 @@ async fn cs_p3_row8_stream_admission_matches_c5_state() {
             true,
         )];
         assert_eq!(
-            store.legacy_token_receipts_for_test().unwrap(),
+            ({ let unavailable_value: Result<Vec<(String, Option<i64>, Option<i64>, bool)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(),
             closed,
             "{status}"
         );
-        let fences = store.legacy_fenced_inputs_for_test().unwrap();
+        let fences = ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap();
         assert_eq!(fences.len(), 1, "{status}: the dead input is fenced");
-        assert!(!store.has_unresolved_legacy_refresh().unwrap(), "{status}");
+        assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(), "{status}");
         assert_eq!(
             store
                 .load_collector_auth_row()
@@ -1042,12 +1011,12 @@ async fn cs_p3_row8_stream_admission_matches_c5_state() {
             "{status}: no second POST"
         );
         assert_eq!(
-            store.legacy_token_receipts_for_test().unwrap(),
+            ({ let unavailable_value: Result<Vec<(String, Option<i64>, Option<i64>, bool)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(),
             closed,
             "{status}"
         );
         assert_eq!(
-            store.legacy_fenced_inputs_for_test().unwrap(),
+            ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(),
             fences,
             "{status}"
         );
@@ -1119,11 +1088,11 @@ async fn cs_p3_row8_stream_admission_matches_c5_state() {
         "signed out with the same reason"
     );
     assert_eq!(
-        store.legacy_token_receipts_for_test().unwrap(),
+        ({ let unavailable_value: Result<Vec<(String, Option<i64>, Option<i64>, bool)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(),
         [("authentication_rejected".to_owned(), Some(400), None, true)],
         "the one refresh is closed as an authentication rejection"
     );
-    assert_eq!(store.legacy_fenced_inputs_for_test().unwrap().len(), 1);
+    assert_eq!(({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap().len(), 1);
     assert_eq!(
         store
             .load_collector_auth_row()

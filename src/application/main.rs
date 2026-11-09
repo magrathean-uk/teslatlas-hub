@@ -31,20 +31,20 @@ use teslatlas_hub::{
     current_state::build_current_vehicle_summary,
     data_recovery::{create_data_backup, restore_data_backup, verify_data_backup},
     db::{
-        HubStore, LegacyOwnerTokenStore, ObservationVerificationError, ReadinessContext, StoreError,
+        HubStore,  ObservationVerificationError, ReadinessContext, StoreError,
     },
     diagnostics::{inspect_hub, log_runtime_inventory},
     fleet_api::FleetRegion,
     fleet_credentials::{
         FleetCredentialError, FleetSetupCredentials, inspect_stored_fleet_credentials,
-        migrate_legacy_fleet_credentials, persist_fleet_setup_credentials,
-        remove_fleet_key_and_tokens, stored_fleet_scope_summary,
+         persist_fleet_setup_credentials,
+         stored_fleet_scope_summary,
     },
     gpx::export_drive_gpx,
     hub_pack::GeofenceBillingType,
     legacy_owner_credentials::{
-        load_or_create_cursor_key, random_encryption_key, remove_key_and_tokens,
-        replace_key_and_tokens,
+        load_or_create_cursor_key,  
+        
     },
     owner_api::LegacyVehicleAction,
     server,
@@ -67,7 +67,7 @@ use teslatlas_hub::{
         SchemaCompatibilityError,
     },
     source_token_envelope::{
-        decrypt_legacy_owner_tokens, encrypt_legacy_owner_token_files, encrypt_legacy_owner_tokens,
+        decrypt_legacy_owner_tokens,  
     },
 };
 use tracing_subscriber::EnvFilter;

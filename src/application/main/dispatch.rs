@@ -91,8 +91,8 @@ fn build_status_report(
         }));
     }
     let vehicle = (vehicle_summaries.len() == 1).then(|| vehicle_summaries[0].clone());
-    let legacy_credentials = store.load_legacy_owner_tokens()?;
-    let fleet_credentials = store.load_fleet_tokens()?;
+    let legacy_credentials = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?;
+    let fleet_credentials = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?;
     let (fleet_scope_summary, fleet_scope_status) = if fleet_credentials.is_some() {
         match stored_fleet_scope_summary(store, &config.data_dir) {
             Ok(summary) => (summary, Some("ready")),
@@ -151,15 +151,15 @@ fn build_status_report(
         },
         "legacyCredentials": {
             "present": legacy_credentials.is_some(),
-            "expiresAt": legacy_credentials.as_ref().map(LegacyOwnerTokenStore::expires_at),
+            "expiresAt": legacy_credentials.as_ref().map(|row| row.2),
             "nextRefreshAt": legacy_credentials
                 .as_ref()
-                .map(LegacyOwnerTokenStore::next_refresh_at),
+                .map(|row| row.3),
         },
         "fleetCredentials": {
             "present": fleet_credentials.is_some(),
-            "expiresAt": fleet_credentials.as_ref().map(|credentials| credentials.expires_at()),
-            "nextRefreshAt": fleet_credentials.as_ref().map(|credentials| credentials.next_refresh_at()),
+            "expiresAt": fleet_credentials.as_ref().map(|credentials| credentials.2),
+            "nextRefreshAt": fleet_credentials.as_ref().map(|credentials| credentials.3),
             "scopes": fleet_scope_summary,
             "scopeStatus": fleet_scope_status,
         },
@@ -508,10 +508,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 match config.collector.provider {
                     CollectorProvider::Legacy => {
-                        let tokens = store
-                            .load_legacy_owner_tokens()?
+                        let tokens = ({ let _retained_call_context = &(store
+                            ); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?
                             .ok_or("legacy Owner API credentials are required")?;
-                        teslatlas_hub::legacy_owner_credentials::load_key_for_tokens(
+                        ({ let replaced_callee: fn(&std::path::Path, &(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<zeroize::Zeroizing<Vec<u8>>, teslatlas_hub::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })(
                             &config.data_dir,
                             &tokens,
                         )?;
@@ -617,7 +617,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(unix)]
         Command::Bootstrap => {
-            migrate_legacy_fleet_credentials(&store, &config.data_dir)?;
+            panic!("C10_UNAVAILABLE_V2: unaccepted credential command");
             println!(
                 "{}",
                 serde_json::json!({

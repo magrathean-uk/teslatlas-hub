@@ -175,14 +175,14 @@ fn ciphertext_lengths_allow_the_limit_and_reject_the_next_byte() {
         validate_legacy_ciphertext_length(
             "private.tokens",
             "access",
-            MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64
+            MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64
         )
         .is_ok()
     );
     match validate_legacy_ciphertext_length(
         "private.tokens",
         "access",
-        MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64 + 1,
+        MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64 + 1,
     ) {
         Err(SourceDbReaderError::LegacyTokenCiphertextTooLarge {
             relation,
@@ -192,8 +192,8 @@ fn ciphertext_lengths_allow_the_limit_and_reject_the_next_byte() {
         }) => {
             assert_eq!(relation, "private.tokens");
             assert_eq!(column, "access");
-            assert_eq!(maximum, MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64);
-            assert_eq!(actual, MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64 + 1);
+            assert_eq!(maximum, MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64);
+            assert_eq!(actual, MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64 + 1);
         }
         other => panic!("expected length error, got {other:?}"),
     }
@@ -215,12 +215,12 @@ fn compatibility_requires_one_nonempty_bounded_token_pair() {
     ));
     let valid = validate_legacy_token_pair_lengths(
         "private.tokens",
-        &[(MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64, 1)],
+        &[(MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64, 1)],
     )
     .expect("bounded pair");
     assert_eq!(
         valid.access_ciphertext_bytes,
-        u64::try_from(MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64).unwrap()
+        u64::try_from(MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64).unwrap()
     );
 }
 

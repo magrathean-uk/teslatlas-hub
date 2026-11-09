@@ -1909,34 +1909,26 @@ fn the_status_publication_carries_the_latest_value() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_loop_stores_a_sleeping_car_once_records_its_stop_and_stays_quiet_after_a_restart() {
-    use crate::{
-        credentials::{LegacyAuthManager, OwnerTokens},
-        fake_tesla::{AdvanceMode, FakeTeslaSource, ScenarioStep},
-        owner_api::OwnerApi,
-    };
+
 
     crate::crypto::install_default_provider();
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_supervised_restart_import(&store);
-    crate::legacy_owner_credentials::replace_key(temporary.path(), b"chain-cloak-key")
+    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("0600 Cloak key");
-    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Cloak key");
     let initial = OwnerTokens::from_secret_parts("k3-access".to_owned(), "k3-refresh".to_owned())
         .expect("initial pair");
     let (access, refresh) =
-        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("Cloak pair");
-    store
-        .replace_legacy_owner_tokens(
-            &crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, 2, 1)
-                .expect("due refresh schedule"),
-        )
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("store pair");
-    let fake = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
+    let fake = crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
         .await
         .expect("loopback Tesla");
-    fake.set_step(ScenarioStep::AsleepDiscovery);
+    fake.set_step(crate::test_unavailable_fixture::ScenarioStep::AsleepDiscovery);
     let config = supervised_restart_test_config(temporary.path());
 
     let run_once = |stopping_after_discovery: bool| {

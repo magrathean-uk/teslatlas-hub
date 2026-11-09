@@ -938,31 +938,18 @@ impl Creds {
         crate::crypto::install_default_provider();
         let directory = crate::private_tempdir().expect("temporary directory");
         let store = HubStore::initialize(directory.path()).expect("store");
-        crate::legacy_owner_credentials::replace_key(directory.path(), b"stream-test-cloak-key")
+        ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("private key");
-        let key = crate::legacy_owner_credentials::load_key(directory.path()).expect("key");
+        let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("key");
         let tokens = crate::credentials::OwnerTokens::from_secret_parts(
             access.to_owned(),
             "test-refresh".to_owned(),
         )
         .expect("a pair");
         let (cipher_access, cipher_refresh) =
-            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
+            ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
                 .expect("encrypted pair");
-        store
-            .replace_legacy_owner_tokens(
-                &crate::db::LegacyOwnerTokenStore::refreshed(
-                    cipher_access,
-                    cipher_refresh,
-                    schedule.0,
-                    schedule.1,
-                )
-                .expect("a schedule")
-                .with_credential_generation(
-                    crate::source_token_envelope::legacy_refresh_credential_generation(&tokens),
-                )
-                .expect("a generation"),
-            )
+        ({ let _retained_generation = crate::source_token_envelope::legacy_refresh_credential_generation(&tokens); let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("the stored pair");
         let token_url = issuer.join("oauth2/v3/token").expect("token endpoint");
         let manager = LegacyAuthManager::from_hub_source_db_store_for_test(

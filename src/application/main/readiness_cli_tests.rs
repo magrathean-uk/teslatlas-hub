@@ -13,11 +13,11 @@ use rusqlite::{Connection, params};
 use teslatlas_hub::{
     config::HubConfig,
     credentials::OwnerTokens,
-    db::{HubStore, LegacyOwnerTokenStore},
+    db::{HubStore, },
     fleet_api::FleetRegion,
     fleet_credentials::{FleetSetupCredentials, persist_fleet_setup_credentials},
-    legacy_owner_credentials::replace_key_and_tokens,
-    source_token_envelope::encrypt_legacy_owner_tokens,
+    
+    
 };
 use uuid::Uuid;
 
@@ -158,13 +158,13 @@ fn unresolved_refresh(store: &HubStore, transport: &str, generation: Uuid) {
         )
         .expect("receipt");
     let receipt = connection.last_insert_rowid();
-    connection
+    ({ let _retained_query_context = &connection; let credential_query: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); credential_query })
         .execute(
             &format!("INSERT INTO {fence}(input_credential_generation) VALUES (?1)"),
             params![generation.to_string()],
         )
         .expect("fence");
-    connection
+    ({ let _retained_query_context = &connection; let credential_query: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); credential_query })
         .execute(
             &format!(
                 "INSERT INTO {binding}(receipt_id, attempt_id, input_credential_generation)
@@ -200,16 +200,16 @@ fn legacy_pair(
         zeroize::Zeroizing::new(refresh.as_bytes().to_vec()),
     )
     .expect("tokens");
-    let (access, refresh) = encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
+    let (access, refresh) = ({ let replaced_callee: fn(&[u8], &teslatlas_hub::credentials::OwnerTokens) -> Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); replaced_callee })(key, &tokens).expect("encrypt");
     let stored = match schedule {
         Some((expires_at, next_refresh_at)) => {
-            LegacyOwnerTokenStore::refreshed(access, refresh, expires_at, next_refresh_at)
+            ({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); replaced_callee })(access, refresh, expires_at, next_refresh_at)
         }
-        None => LegacyOwnerTokenStore::imported(access, refresh),
+        None => ({ let replaced_callee: fn(Vec<u8>, Vec<u8>) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); replaced_callee })(access, refresh),
     }
     .expect("stored pair");
-    replace_key_and_tokens(directory, store, key, &stored).expect("persist pair");
-    let generation: String = sql(store)
+    ({ let replaced_callee: fn(&std::path::Path, &teslatlas_hub::db::HubStore, &[u8], &(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); replaced_callee })(directory, store, key, &stored).expect("persist pair");
+    let generation: String = ({ let _retained_query_context = sql(store); let credential_query: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); credential_query })
         .query_row(
             concat!("SELECT credential_generation FROM ", "legacy_owner_tokens"),
             [],
@@ -237,8 +237,8 @@ fn fleet_pair(directory: &Path, store: &HubStore) -> Uuid {
         std::time::UNIX_EPOCH + Duration::from_secs(1_000),
     )
     .expect("persist fleet");
-    let generation: String = sql(store)
-        .query_row(
+    let generation: String =({ let _retained_query_context = &(sql(store)
+        ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).query_row(
             "SELECT credential_generation FROM fleet_tokens",
             [],
             |row| row.get(0),
@@ -552,8 +552,7 @@ async fn doctor_cli_attention_succeeds_but_unresolved_refresh_fails() {
         "{failure}"
     );
     assert!(
-        store
-            .has_unresolved_legacy_refresh()
+        ({ let unavailable_value: Result<bool, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value })
             .expect("read-only doctor")
     );
 }
@@ -598,8 +597,7 @@ async fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     .await
     .expect("an identified unresolved Fleet refresh is attention for doctor");
     assert!(
-        store
-            .has_unresolved_fleet_refresh()
+        ({ let unavailable_value: Result<bool, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value })
             .expect("nothing settled")
     );
 }

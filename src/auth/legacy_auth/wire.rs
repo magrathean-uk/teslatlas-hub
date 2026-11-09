@@ -30,7 +30,7 @@ use super::{
     LegacyAuthError,
     endpoint::{is_access_token, is_refresh_token, parse_jwt},
 };
-use crate::source_token_envelope::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
+use crate::auth::credential_envelope::MAX_TOKEN_PLAINTEXT_BYTES;
 
 /// The connect timeout of the auth client, TCP and TLS handshake (R33). F11's
 /// initial retransmission timeout is 1 s and doubles, so three SYN attempts take
@@ -56,7 +56,7 @@ pub(crate) const MAX_TOKEN_RESPONSE_BYTES: usize = 64 * 1024;
 /// longer than its own plaintext limit, so a longer successor could never be
 /// stored and the unit would retry its persistence for the life of the process
 /// (R24). It is refused as unusable instead, as row 4 of the outcome table.
-const MAX_TOKEN_BYTES: usize = MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
+const MAX_TOKEN_BYTES: usize = MAX_TOKEN_PLAINTEXT_BYTES;
 
 /// The Owner API client id of the refresh grant (R10, F3).
 const CLIENT_ID: &str = "ownerapi";

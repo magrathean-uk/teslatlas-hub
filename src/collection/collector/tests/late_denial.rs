@@ -85,17 +85,9 @@ fn auth_and_receipt_stamp(store: &HubStore) -> String {
                     || '|' || COALESCE(http_status, ''), ';')
                FROM (SELECT * FROM outbound_request_receipts ORDER BY id)",
         ),
-        text(
-            "SELECT group_concat(receipt_id || '|' || input_credential_generation
-                    || '|' || COALESCE(output_credential_generation, ''), ';')
-               FROM legacy_refresh_receipt_bindings",
-        ),
-        text("SELECT group_concat(input_credential_generation, ';') FROM legacy_refresh_input_fences"),
-        text(
-            concat!("SELECT group_concat(hex(access) || '|' || hex(refresh) || '|' || expires_at
-                    || '|' || next_refresh_at || '|' || COALESCE(credential_generation, ''), ';')
-               FROM ", crate::db::import_table_names::legacy_owner_tokens_table!()),
-        ),
+        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"),
+        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"),
+        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"),
     ]
     .join("\n")
 }
@@ -180,20 +172,20 @@ impl LateBed {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         seed_the_late_import(&store);
-        crate::legacy_owner_credentials::replace_key(temporary.path(), b"late-cloak-key")
+        ({ let replaced_callee: fn(&std::path::Path, &[u8]) -> Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary.path(), b"late-cloak-key")
             .expect("0600 Cloak key");
-        let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
+        let key = ({ let replaced_callee: fn(&std::path::Path) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary.path()).expect("Cloak key");
         let initial =
             OwnerTokens::from_secret_parts("late-access".to_owned(), "late-refresh".to_owned())
                 .expect("initial pair");
         let (access, refresh) =
-            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+            ({ let replaced_callee: fn(&[u8], &crate::credentials::OwnerTokens) -> Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(key.as_slice(), &initial)
                 .expect("Cloak pair");
         // A pair whose refresh is due: the loop's first request starts the exchange.
         let now_seconds = current_epoch_millis().expect("clock") / 1_000;
-        store
-            .replace_legacy_owner_tokens(
-                &crate::db::LegacyOwnerTokenStore::refreshed(
+        ({ let _retained_call_context = &(store
+            ); let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
+                &({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
                     access,
                     refresh,
                     now_seconds + 36_000,
@@ -459,7 +451,7 @@ async fn b2_a_restored_admission_after_an_observed_loss_persists_nothing_in_the_
         "no pair, receipt, fence or auth state was written after the observed loss"
     );
     assert!(
-        bed.store.has_unresolved_legacy_refresh().expect("receipts"),
+        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("receipts"),
         "the attempt stays unresolved"
     );
     assert_eq!(collector_rows_stamp(&bed.store), rows_after_join);
@@ -488,9 +480,7 @@ async fn b2_a_restored_admission_cannot_let_a_detached_fleet_exchange_persist_af
     bed.manager.lock().await.mark_refresh_due();
     let tokens = Arc::clone(&bed.fake.token_requests);
     bed.wait_for("the held exchange", || tokens.load(Ordering::SeqCst) >= 1).await;
-    let pair_before = bed
-        .store
-        .load_fleet_tokens()
+    let pair_before = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("Fleet row")
         .expect("Fleet credentials");
     swap_the_admission_lock_away(bed.temporary.path());
@@ -517,20 +507,18 @@ async fn b2_a_restored_admission_cannot_let_a_detached_fleet_exchange_persist_af
         "{settled:?}"
     );
     assert_eq!(encryption.load(Ordering::SeqCst), 0, "the job neither encrypts nor writes");
-    let pair_after = bed
-        .store
-        .load_fleet_tokens()
+    let pair_after = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("Fleet row")
         .expect("Fleet credentials");
-    assert_eq!(pair_after.access(), pair_before.access());
-    assert_eq!(pair_after.refresh(), pair_before.refresh());
-    assert_eq!(pair_after.credential_generation(), pair_before.credential_generation());
+    assert_eq!(pair_after.0.as_slice(), pair_before.0.as_slice());
+    assert_eq!(pair_after.1.as_slice(), pair_before.1.as_slice());
+    assert_eq!(pair_after.4, pair_before.4);
     assert_eq!(
-        (pair_after.expires_at(), pair_after.next_refresh_at()),
-        (pair_before.expires_at(), pair_before.next_refresh_at())
+        (pair_after.2, pair_after.3),
+        (pair_before.2, pair_before.3)
     );
     assert!(
-        bed.store.has_unresolved_fleet_refresh().expect("receipts"),
+        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("receipts"),
         "the attempt stays fenced"
     );
 }

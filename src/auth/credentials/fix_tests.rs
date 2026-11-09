@@ -23,23 +23,13 @@ use crate::{legacy_auth::state::AuthState, owner_api::OwnerApiError};
 
 /// Plant `count` failures of the next closings (a close or a cancel).
 fn fail_closings(manager: &LegacyAuthManager, count: usize) {
-    manager
-        .persistence
-        .hub()
-        .expect("a store")
-        .close_faults
-        .store(count, Ordering::SeqCst);
-}
+        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
+    }
 
 /// Plant `count` store errors in the next reservations.
 fn fail_reservations(manager: &LegacyAuthManager, count: usize) {
-    manager
-        .persistence
-        .hub()
-        .expect("a store")
-        .begin_faults
-        .store(count, Ordering::SeqCst);
-}
+        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
+    }
 
 #[tokio::test]
 async fn s1_a_close_that_fails_once_is_retried_before_any_new_attempt_and_signs_nobody_out() {
@@ -55,7 +45,7 @@ async fn s1_a_close_that_fails_once_is_retried_before_any_new_attempt_and_signs_
     let error = auth_error(rig.refresh(&mut manager).await.expect_err("503"));
     assert_eq!(error, LegacyAuthError::HttpStatus(503));
     assert_eq!(rig.receipts(), [("started".to_owned(), None, None, true)]);
-    assert!(rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     assert_eq!(
         row_of(&rig),
         (
@@ -96,10 +86,9 @@ async fn s1_a_close_that_fails_once_is_retried_before_any_new_attempt_and_signs_
         rig.receipts(),
         [("http_error".to_owned(), Some(503), None, false)]
     );
-    assert!(!rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     assert!(
-        rig.store
-            .legacy_fenced_inputs_for_test()
+        ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
             .unwrap()
             .is_empty()
     );
@@ -155,7 +144,7 @@ async fn s1_a_cancel_that_fails_after_a_guard_refusal_is_retried_and_is_not_a_si
         rig.receipts(),
         [("cancelled".to_owned(), None, None, false)]
     );
-    assert!(!rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     // At +60 s the refresh goes out with the same token.
     rig.at(T0 + 60);
     rig.refresh(&mut manager).await.expect("the retry");
@@ -181,7 +170,7 @@ async fn s1_a_closing_that_an_external_write_resolved_is_done_and_not_owed_for_e
     rig.at(T0 + 5);
     manager.service();
     assert!(manager.auth.pending_close.is_none());
-    assert!(!rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
 }
 
 #[tokio::test]
@@ -192,9 +181,9 @@ async fn s1_a_closing_still_owed_at_shutdown_gets_one_last_try() {
     let mut manager = rig.manager();
     fail_closings(&manager, 1);
     let _ = rig.refresh(&mut manager).await;
-    assert!(rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     manager.shutdown().await.expect("an orderly shutdown");
-    assert!(!rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     assert_eq!(
         rig.receipts(),
         [("http_error".to_owned(), Some(503), None, false)]
@@ -299,7 +288,7 @@ async fn s5_a_padded_refresh_token_that_the_answer_keeps_is_persisted_as_a_chang
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].refresh.as_deref(), Some("refresh-0"));
     assert_eq!(rig.state().0, "ready");
-    assert!(!rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     assert_eq!(
         rig.stored_pair(),
         ("AT1".into(), "refresh-0".into(), T0 + 28_800, T0 + 21_600)
@@ -367,7 +356,7 @@ async fn s5_an_ambiguous_write_of_a_padded_pair_that_kept_its_token_is_not_writt
     );
     assert_eq!(manager.write_log.lock().unwrap().as_slice(), [T0]);
     assert_eq!(manager.generation(), rig.stored_generation());
-    assert!(!rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
 }
 
 // ---------------------------------------------------------------------------
@@ -400,7 +389,7 @@ async fn s6_a_store_that_cannot_reserve_the_attempt_is_a_wait_and_does_not_fence
         )
     );
     assert!(rig.backend.token_posts().is_empty(), "nothing was sent");
-    assert!(!rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     // The request goes on with the token that is still usable (R30), and the
     // wrapper does not stop at the swallowed wait.
     rig.at(T0 + 1);
@@ -424,11 +413,10 @@ async fn s6_a_fault_of_the_store_while_the_stored_pair_is_adopted_is_a_wait_too(
     // The owner enters a new login, and its ciphertext cannot be opened (a damaged
     // row): adopting the pair fails, once when the unit looks before it sends and
     // once more when the store refuses the reservation of the old generation.
-    replace_with_new_login(&rig, &jg_exp(1_800_050_000), "refresh-2");
-    rig.store
+    replace_with_new_login(&rig, &jg_exp(1_800_050_000), "refresh-2");({ let _retained_query_context = &(rig.store
         .open()
         .unwrap()
-        .execute(
+        ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).execute(
             concat!(
                 "UPDATE ",
                 crate::db::import_table_names::legacy_owner_tokens_table!(),
@@ -497,7 +485,7 @@ async fn r03_an_external_write_during_a_non_rotating_exchange_is_never_overwritt
     assert_eq!(rig.stored_pair().1, "refresh-2");
     assert_eq!(guard.refresh_token(), "refresh-2");
     assert_eq!(guard.generation(), rig.stored_generation());
-    assert!(!rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     assert_eq!(guard.auth.stop, None);
     assert_ne!(rig.state().0, "signed_out");
 }
@@ -1197,7 +1185,7 @@ async fn r33a_a_shutdown_waits_for_the_exchange_a_dropped_caller_left_and_persis
     );
     assert_eq!(rig.state().0, "ready");
     assert_eq!(rig.backend.token_posts().len(), 1);
-    assert!(!rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
 }
 
 #[tokio::test]
@@ -1213,11 +1201,10 @@ async fn r03_a_non_rotating_answer_whose_write_fails_leaves_the_receipt_started_
         r#"{"access_token":"AT1","expires_in":28800,"token_type":"Bearer"}"#,
     )]);
     let mut manager = rig.manager();
-    let g0 = manager.generation();
-    rig.store
+    let g0 = manager.generation();({ let _retained_query_context = &(rig.store
         .open()
         .unwrap()
-        .execute_batch(concat!(
+        ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).execute_batch(concat!(
             "CREATE TRIGGER block_the_pair_write BEFORE UPDATE ON ",
             crate::db::import_table_names::legacy_owner_tokens_table!(),
             "
@@ -1227,7 +1214,7 @@ async fn r03_a_non_rotating_answer_whose_write_fails_leaves_the_receipt_started_
     rig.refresh(&mut manager).await.expect("a pending write");
     assert_eq!(row_of(&rig).0, "persistence_pending");
     assert_eq!(rig.receipts(), [("started".to_owned(), None, None, true)]);
-    assert_eq!(rig.store.legacy_fenced_inputs_for_test().unwrap(), [g0]);
+    assert_eq!(({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap(), [g0]);
     assert_eq!(rig.stored_pair().0, jg());
     // The store is back: the retry writes the pair and closes the receipt together.
     rig.store
@@ -1244,8 +1231,7 @@ async fn r03_a_non_rotating_answer_whose_write_fails_leaves_the_receipt_started_
         [("success".to_owned(), Some(200), None, false)]
     );
     assert!(
-        rig.store
-            .legacy_fenced_inputs_for_test()
+        ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .unwrap()
             .is_empty()
     );
@@ -1283,7 +1269,7 @@ async fn c5t11_unresolved_rig(row: &str) -> Rig {
         }
     }
     drop(manager);
-    assert!(rig.store.has_unresolved_legacy_refresh().unwrap(), "{row}");
+    assert!(({ let unresolved: bool = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unresolved }), "{row}");
     rig
 }
 
@@ -1291,7 +1277,7 @@ async fn c5t11_unresolved_rig(row: &str) -> Rig {
 async fn c5t11_unresolved_refresh_constructs_a_stopped_manager_without_transport() {
     for row in ["row 4", "row 6", "row 5 unpersisted"] {
         let rig = c5t11_unresolved_rig(row).await;
-        let fences = rig.store.legacy_fenced_inputs_for_test().unwrap();
+        let fences = ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
         let pair = rig.stored_pair();
         let posts = rig.backend.token_posts().len();
         let products = rig.backend.products().len();
@@ -1332,12 +1318,12 @@ async fn c5t11_unresolved_refresh_constructs_a_stopped_manager_without_transport
         // The fences, the stored pair and the unresolved evidence are unchanged, and
         // the owner's retry cannot replay the input.
         assert_eq!(
-            rig.store.legacy_fenced_inputs_for_test().unwrap(),
+            ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap(),
             fences,
             "{row}"
         );
         assert_eq!(rig.stored_pair(), pair, "{row}");
-        assert!(rig.store.has_unresolved_legacy_refresh().unwrap(), "{row}");
+        assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap(), "{row}");
         assert!(
             stopped.owner_retry().is_err(),
             "{row}: the retry cannot lift it"
@@ -1347,30 +1333,17 @@ async fn c5t11_unresolved_refresh_constructs_a_stopped_manager_without_transport
         // pair, collects again, and the fenced refresh token is never presented again.
         // (A pair in its refreshed form, not due: the recovered unit then sends no token
         // request at all.)
-        let key = crate::legacy_owner_credentials::load_key(rig.directory.path()).unwrap();
+        let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
         let new_access = jg_exp(1_800_050_000);
         let tokens =
             OwnerTokens::from_secret_parts(new_access.clone(), "refresh-9".to_owned()).unwrap();
         let (cipher_access, cipher_refresh) =
-            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
+            ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
                 .unwrap();
-        rig.store
-            .replace_legacy_owner_tokens(
-                &crate::db::LegacyOwnerTokenStore::refreshed(
-                    cipher_access,
-                    cipher_refresh,
-                    T0 + 40_000,
-                    T0 + 30_000,
-                )
-                .unwrap()
-                .with_credential_generation(
-                    crate::source_token_envelope::legacy_refresh_credential_generation(&tokens),
-                )
-                .unwrap(),
-            )
+        ({ let _retained_generation = crate::source_token_envelope::legacy_refresh_credential_generation(&tokens); let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("an external write");
         assert!(
-            !rig.store.has_unresolved_legacy_refresh().unwrap(),
+            !({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap(),
             "{row}: resolved by the write"
         );
         rig.at(T0 + 300);
@@ -1396,27 +1369,14 @@ async fn c5t11_unresolved_refresh_constructs_a_stopped_manager_without_transport
         // A recovered pair that comes due is refreshed with ITS refresh token and
         // never with the fenced input: a second external write, due now, is
         // refreshed by exactly one token request carrying `refresh-10`.
-        let fenced_before = rig.store.legacy_fenced_inputs_for_test().unwrap();
+        let fenced_before = ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
         let posts_before = rig.backend.token_posts().len();
         let due_tokens =
             OwnerTokens::from_secret_parts(jg_exp(1_800_060_000), "refresh-10".to_owned()).unwrap();
         let (due_access, due_refresh) =
-            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &due_tokens)
+            ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
                 .unwrap();
-        rig.store
-            .replace_legacy_owner_tokens(
-                &crate::db::LegacyOwnerTokenStore::refreshed(
-                    due_access,
-                    due_refresh,
-                    T0 + 40_000,
-                    T0 + 350,
-                )
-                .unwrap()
-                .with_credential_generation(
-                    crate::source_token_envelope::legacy_refresh_credential_generation(&due_tokens),
-                )
-                .unwrap(),
-            )
+        ({ let _retained_generation = crate::source_token_envelope::legacy_refresh_credential_generation(&due_tokens); let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("a second external write");
         rig.backend.script(vec![Reply::json(200, SUCCESS)]);
         rig.at(T0 + 400);
@@ -1442,7 +1402,7 @@ async fn c5t11_unresolved_refresh_constructs_a_stopped_manager_without_transport
                 .all(|post| post.refresh.as_deref() != Some("refresh-0")),
             "{row}: the fenced input is never presented again"
         );
-        let fenced_after = rig.store.legacy_fenced_inputs_for_test().unwrap();
+        let fenced_after = ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
         assert!(
             fenced_before
                 .iter()
@@ -1459,11 +1419,10 @@ async fn c5t11_a_genuine_construction_failure_stays_an_error() {
     // cannot answer remain errors, with an unresolved attempt beside them or not.
     type Fault = fn(&Rig);
     let faults: [(&str, Fault); 4] = [
-        ("missing pair row", |rig| {
-            rig.store
+        ("missing pair row", |rig| {({ let _retained_query_context = &(rig.store
                 .open()
                 .unwrap()
-                .execute(
+                ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).execute(
                     concat!(
                         "DELETE FROM ",
                         crate::db::import_table_names::legacy_owner_tokens_table!()
@@ -1473,16 +1432,13 @@ async fn c5t11_a_genuine_construction_failure_stays_an_error() {
                 .unwrap();
         }),
         ("missing key", |rig| {
-            std::fs::remove_file(crate::legacy_owner_credentials::key_path(
-                rig.directory.path(),
-            ))
+            std::fs::remove_file(({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }))
             .expect("remove the key");
         }),
-        ("ciphertext that does not open", |rig| {
-            rig.store
+        ("ciphertext that does not open", |rig| {({ let _retained_query_context = &(rig.store
                 .open()
                 .unwrap()
-                .execute(
+                ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).execute(
                     concat!(
                         "UPDATE ",
                         crate::db::import_table_names::legacy_owner_tokens_table!(),
@@ -1492,11 +1448,10 @@ async fn c5t11_a_genuine_construction_failure_stays_an_error() {
                 )
                 .unwrap();
         }),
-        ("store that cannot answer", |rig| {
-            rig.store
+        ("store that cannot answer", |rig| {({ let _retained_query_context = &(rig.store
                 .open()
                 .unwrap()
-                .execute_batch(concat!(
+                ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).execute_batch(concat!(
                     "ALTER TABLE ",
                     crate::db::import_table_names::legacy_owner_tokens_table!(),
                     " RENAME TO c5t11_hidden"
@@ -1577,28 +1532,8 @@ async fn committed_unrotated_write() -> (Rig, LegacyAuthManager, uuid::Uuid) {
 /// Store a pair that an external writer put there, bound to `generation` when one
 /// is given (the unbound form is what the setup and import paths write).
 fn external_replacement(rig: &Rig, access: &str, refresh: &str, schedule: (i64, i64), bound: bool) {
-    let key = crate::legacy_owner_credentials::load_key(rig.directory.path()).expect("key");
-    let tokens = OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned())
-        .expect("replacement tokens");
-    let (access, refresh_bytes) =
-        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
-            .expect("encrypt");
-    let stored =
-        crate::db::LegacyOwnerTokenStore::refreshed(access, refresh_bytes, schedule.0, schedule.1)
-            .expect("replacement row");
-    let stored = if bound {
-        stored
-            .with_credential_generation(
-                crate::source_token_envelope::legacy_refresh_credential_generation(&tokens),
-            )
-            .expect("generation")
-    } else {
-        stored
-    };
-    rig.store
-        .replace_legacy_owner_tokens(&stored)
-        .expect("the external write is accepted");
-}
+        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
+    }
 
 #[tokio::test]
 async fn nc_unpadded_ambiguous_commit_settles_on_its_receipt() {
@@ -1622,7 +1557,7 @@ async fn nc_unpadded_ambiguous_commit_settles_on_its_receipt() {
         rig.receipts(),
         [("success".to_owned(), Some(200), None, false)]
     );
-    assert!(!rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     assert_eq!(manager.access_token(), unrotated_access());
     assert_eq!(manager.generation(), rig.stored_generation());
     // The next renewal is allowed and sends one request.
@@ -1735,13 +1670,13 @@ async fn nc_external_replacement_after_ambiguous_commit_wins() {
 #[tokio::test]
 async fn nc_removal_after_ambiguous_commit_is_not_success_proof() {
     let (rig, mut manager, _) = committed_unrotated_write().await;
-    rig.store.clear_source_db_legacy_tokens().expect("sign out");
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("sign out");
     rig.at(T0 + 5);
     manager.service();
     // The row is gone: the closed receipt is no proof, nothing is written back, the
     // held successor is not adopted and the write is not reported as done.
     assert!(
-        rig.store.load_legacy_owner_tokens().unwrap().is_none(),
+        ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap().is_none(),
         "the removed pair is not resurrected"
     );
     assert_ne!(row_of(&rig).0, "ready");
@@ -1834,7 +1769,7 @@ async fn b2_credential_shutdown_returns_a_sensitive_failure_from_a_detached_exch
         "the unit's own sensitive outcome, as it was: {outcome:?}"
     );
     assert_eq!(rig.backend.token_posts().len(), 1, "no second request");
-    assert!(rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     // After a sensitive failure the shutdown keeps what it learned in memory and
     // journals it, and mutates no store (R-P3bF-2): no status write attempt, not even
     // a failed one, and no change of the account row, a receipt or the pair.
@@ -2173,7 +2108,7 @@ async fn p3bf1_the_loss_fence_stops_every_write_of_the_unit_while_the_admission_
             "{label}: the account row, the receipts and the pair are as they were"
         );
         assert!(
-            rig.store.has_unresolved_legacy_refresh().unwrap(),
+            ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(),
             "{label}"
         );
         assert_eq!(
@@ -2681,7 +2616,7 @@ async fn p3bf2_a_lost_admission_with_the_fence_clear_stops_the_closing_the_statu
         before,
         "the receipt is still started, the row and the pair are as they were"
     );
-    assert!(rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     assert_eq!(rig.backend.token_posts().len(), 1, "no second request");
 
     // The adoption of an external pair, on a unit whose guard says the same.
@@ -2802,7 +2737,7 @@ async fn nc_a_failed_retry_keeps_the_witness_so_a_recovered_reread_recognises_th
         rig.receipts(),
         [("success".to_owned(), Some(200), None, false)]
     );
-    assert!(!rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
 }
 
 #[tokio::test]
@@ -2887,6 +2822,6 @@ async fn nc_another_attempts_success_receipt_is_not_this_attempts_proof() {
         ],
         "B's receipt closed as a success"
     );
-    assert!(!rig.store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     assert!(manager.lock().await.auth.pending_successor.is_none());
 }
