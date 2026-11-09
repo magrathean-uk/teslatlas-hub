@@ -12,7 +12,7 @@ def _read(relative: str) -> str:
 
 
 def test_current_docs_bind_the_checked_profile_and_pending_boundary() -> None:
-    corpus = "\n".join(
+    documents = [
         _read(path)
         for path in (
             "README.md",
@@ -20,9 +20,14 @@ def test_current_docs_bind_the_checked_profile_and_pending_boundary() -> None:
             "docs/reference/protocol-readiness.md",
             "docs/reference/product-versioning.md",
         )
-    )
+    ]
+    for document in documents:
+        assert "hub-http-v1@1.3.0" in document
+        for line in document.splitlines():
+            if "hub-http-v1@1.0.0" in line:
+                assert "retired" in line.casefold()
+    corpus = "\n".join(documents)
 
-    assert "hub-http-v1@1.0.0" in corpus
     assert "candidate" in corpus.casefold()
     assert "not been published through HACS" in corpus
     assert "uses only the released public current-Hub HTTP API" not in corpus

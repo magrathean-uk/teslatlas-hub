@@ -10,8 +10,8 @@ Keep these version identities distinct:
 | Home Assistant development | `2026.9.4` | Locked Python test environment |
 | Home Assistant minimum | `2026.8.3` | Minimum version declared in `hacs.json` |
 | Compose example | `2026.8.3` | Pinned isolated evaluation image |
-| Hub HTTP profile | `hub-http-v1@1.0.0` | Embedded protocol contract |
+| Hub HTTP profile | `hub-http-v1@1.3.0` | Embedded protocol contract |
 
-[compatibility/hub.json](../../compatibility/hub.json) accepts only the exact profile hash, tested Hub source fingerprint and named synthetic Debian 13 ARM64 Container receipts. A matching calendar version alone does not establish compatibility.
+[compatibility/hub.json](../../compatibility/hub.json) pins the exact bundled profile hash and points to the local verification receipt. Its `locally_verified` status covers synthetic HTTP fixtures and the locked Home Assistant suites. No Hub runtime version or source fingerprint is claimed as tested. A matching calendar version alone does not establish compatibility.
 
 The [development status record](../development/archive/STATUS.json) describes historical validation and removal of its runtime. It is not evidence that the latest source has passed installed testing. No HACS, production, real-data, replacement-upgrade or general platform-support claim follows from the version number.

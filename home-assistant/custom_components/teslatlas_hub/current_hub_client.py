@@ -1,4 +1,4 @@
-"""Bounded asynchronous client for ``hub-http-v1@1.0.0``."""
+"""Bounded asynchronous client for ``hub-http-v1@1.3.0``."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import math
+import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -45,8 +46,8 @@ from .models import (
     VehicleState,
 )
 
-PROFILE_ID = "hub-http-v1@1.0.0"
-PROFILE_SHA256 = "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+PROFILE_ID = "hub-http-v1@1.3.0"
+PROFILE_SHA256 = "28957c2dfcca9efeefc7d7fee230ef769ee3c73833e60e0b0769d93bcf8b7221"
 MAX_RESPONSE_BYTES = 1_048_576
 MAX_CURRENT_READS = 4
 MAX_VEHICLES = 10_000
@@ -286,7 +287,7 @@ class CurrentHubClient:
     ) -> dict[str, Any] | None:
         if 300 <= response.status < 400:
             raise HubContractError("Redirect responses are not accepted")
-        if pairing and response.status in {400, 401, 404, 415, 422}:
+        if pairing and response.status in {400, 401, 404, 413, 415, 422}:
             raise HubPairingError("Teslatlas Hub rejected the pairing invitation")
         if response.status == 401:
             error_type = HubPairingError if pairing else HubAuthenticationError
@@ -336,6 +337,15 @@ class CurrentHubClient:
             raise HubContractError("Unsupported discovery protocol")
         if payload.get("protocol_major") != 1 or payload.get("api_versions") != ["1.0"]:
             raise HubContractError("Unsupported current-Hub API version")
+        if "profile" in payload:
+            profile = payload["profile"]
+            match = (
+                re.fullmatch(r"hub-http-v1@1\.([0-9]+)\.[0-9]+", profile)
+                if isinstance(profile, str) and len(profile) <= 64
+                else None
+            )
+            if match is None or int(match[1]) < 3:
+                raise HubContractError("Unsupported Hub HTTP profile")
         capabilities = payload.get("capabilities")
         if not isinstance(capabilities, list) or not all(
             isinstance(value, str) for value in capabilities
@@ -508,6 +518,15 @@ class CurrentHubClient:
             )
         if _uuid(payload.get("vehicle_id"), "vehicle_id") != vehicle_id:
             raise HubContractError("Current observation vehicle identity changed")
+        # Prefer the 1.3.0 names, preserving explicit nulls over legacy aliases.
+        for canonical, alias in (
+            ("activity_state", "state"),
+            ("odometer_km", "odometer"),
+            ("software_version", "version"),
+            ("software_update_status", "update_status"),
+        ):
+            if canonical not in payload and alias in payload:
+                payload[canonical] = payload[alias]
         locked = payload.get("locked")
         if locked is not None and not isinstance(locked, bool):
             raise HubContractError("locked must be boolean or null")
@@ -520,15 +539,15 @@ class CurrentHubClient:
             charging_power_kw=_optional_number(payload, "charger_power"),
             charge_limit_percent=_optional_integer(payload, "charge_limit_soc"),
             estimated_range_km=_optional_number(payload, "est_battery_range_km"),
-            odometer_km=_optional_number(payload, "odometer"),
-            activity_state=_optional_string(payload, "state"),
+            odometer_km=_optional_number(payload, "odometer_km"),
+            activity_state=_optional_string(payload, "activity_state"),
             inside_temperature_c=_optional_number(payload, "inside_temp"),
             outside_temperature_c=_optional_number(payload, "outside_temp"),
             access_state=None
             if locked is None
             else ("locked" if locked else "unlocked"),
-            software_version=_optional_string(payload, "version"),
-            software_update_state=_optional_string(payload, "update_status"),
+            software_version=_optional_string(payload, "software_version"),
+            software_update_state=_optional_string(payload, "software_update_status"),
             telemetry_age_seconds=_telemetry_age(
                 payload.get("observed_at_ms"), self._now()
             ),

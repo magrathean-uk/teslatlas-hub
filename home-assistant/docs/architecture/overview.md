@@ -2,7 +2,7 @@
 
 ## Responsibility
 
-The integration maps `hub-http-v1@1.0.0` to vehicle devices and read-only sensors. It uses the public Hub API and holds a scoped device credential. It does not read Hub storage or hold Tesla account credentials.
+The integration maps `hub-http-v1@1.3.0` to vehicle devices and read-only sensors. It uses the public Hub API and holds a scoped device credential. It does not read Hub storage or hold Tesla account credentials.
 
 ## Requests and refresh
 

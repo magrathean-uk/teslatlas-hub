@@ -140,7 +140,7 @@
           "$ref": "#/$defs/sha256"
         },
         "installed_members": {
-          "const": 32
+          "const": 64
         },
         "home_assistant_version": {
           "const": "2026.8.3"

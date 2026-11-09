@@ -6,6 +6,11 @@ import hashlib
 import json
 from pathlib import Path
 
+from custom_components.teslatlas_hub.current_hub_client import (
+    PROFILE_ID,
+    PROFILE_SHA256,
+)
+
 ROOT = Path(__file__).parents[1]
 INTEGRATION = ROOT / "custom_components" / "teslatlas_hub"
 
@@ -50,7 +55,7 @@ def test_package_has_no_command_or_service_surface() -> None:
     assert not forbidden.intersection(path.name for path in INTEGRATION.glob("*"))
 
 
-def test_embedded_current_profile_matches_approved_bundle() -> None:
+def test_embedded_retired_profile_matches_approved_bundle() -> None:
     """Catch stale or partially copied public contract resources."""
     profile = INTEGRATION / "profile" / "hub-http-v1" / "1.0.0"
     sums = profile / "SHA256SUMS"
@@ -60,3 +65,29 @@ def test_embedded_current_profile_matches_approved_bundle() -> None:
     for line in sums.read_text(encoding="utf-8").splitlines():
         expected, relative = line.split("  ", maxsplit=1)
         assert hashlib.sha256((profile / relative).read_bytes()).hexdigest() == expected
+
+
+def test_current_profile_client_and_compatibility_match_bundled_checksums() -> None:
+    """Tie the advertised binding to every file in the served profile bundle."""
+    compatibility = _load_json(ROOT / "compatibility" / "hub.json")
+    binding = compatibility["profile"]
+    assert binding["id"] == "hub-http-v1"
+    assert binding["revision"] == "1.3.0"
+    assert f"{binding['id']}@{binding['revision']}" == PROFILE_ID
+    profile = INTEGRATION / "profile" / binding["id"] / binding["revision"]
+    sums = profile / "SHA256SUMS"
+    assert (
+        hashlib.sha256(sums.read_bytes()).hexdigest()
+        == PROFILE_SHA256
+        == binding["sha256"]
+    )
+    listed_files = set()
+    for line in sums.read_text(encoding="utf-8").splitlines():
+        expected, relative = line.split("  ", maxsplit=1)
+        assert hashlib.sha256((profile / relative).read_bytes()).hexdigest() == expected
+        listed_files.add(relative)
+    assert listed_files == {
+        path.relative_to(profile).as_posix()
+        for path in profile.rglob("*")
+        if path.is_file() and path != sums
+    }

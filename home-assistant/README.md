@@ -17,9 +17,9 @@ Read-only vehicle sensors for Home Assistant, using the public Teslatlas Hub HTT
 
 ## Status
 
-This checkout contains candidate version `2026.36.2`, bound to `hub-http-v1@1.0.0`. It has not been published through HACS. Do not install it on a production Home Assistant instance yet.
+This checkout contains candidate version `2026.36.2`, bound to `hub-http-v1@1.3.0`. It has not been published through HACS. Do not install it on a production Home Assistant instance yet.
 
-The [compatibility record](compatibility/hub.json) names one exact source-built, synthetic Debian 13 ARM64 Container lane. The later [development status](docs/development/archive/STATUS.json) records that the former runtime and external artifacts were removed. Historical results do not prove that a test installation is running or that this checkout works with a current real Hub. HA OS, real-data operation, replacement upgrades and broader platform acceptance are not established by that record.
+The [compatibility record](compatibility/hub.json) records local synthetic HTTP and Home Assistant checks for the served 1.3.0 contract, not a live-Hub acceptance result. The later [development status](docs/development/archive/STATUS.json) records that the former runtime and external artifacts were removed. Historical results do not prove that a test installation is running or that this checkout works with a current real Hub. HA OS, real-data operation, replacement upgrades and broader platform acceptance are not established by that record.
 
 ## What it provides
 

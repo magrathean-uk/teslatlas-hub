@@ -25,6 +25,7 @@ from custom_components.teslatlas_hub.client import (
     HubAuthenticationError,
     HubConnectionError,
     HubContractError,
+    HubPairingError,
 )
 from custom_components.teslatlas_hub.current_hub_client import (
     MAX_RESPONSE_BYTES,
@@ -173,6 +174,158 @@ def _current(
 
 def _endpoint(server: Any) -> HubEndpoint:
     return HubEndpoint(host=server.host, port=server.port, use_tls=False)
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        "hub-http-v1@1.3.0",
+        "hub-http-v1@1.3.1",
+        "hub-http-v1@1.4.0",
+        "hub-http-v1@1.10.23",
+    ],
+)
+async def test_probe_accepts_served_and_additive_profile_revisions(
+    hass: HomeAssistant, aiohttp_server, profile: str
+) -> None:
+    """Keep compatible additive minor and patch upgrades usable."""
+
+    async def discovery(request: web.Request) -> web.Response:
+        assert "Authorization" not in request.headers
+        return web.json_response({**_discovery(), "profile": profile})
+
+    app = web.Application()
+    app.router.add_get("/.well-known/teslatlas-hub", discovery)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(async_get_clientsession(hass), _endpoint(server))
+
+    info = await client.async_probe()
+
+    assert info.hub_id == HUB_ID
+    assert info.protocol_version == "hub-http-v1@1.3.0"
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        "hub-http-v1@1.0.0",
+        "hub-http-v1@1.2.999",
+        "hub-http-v1@0.3.0",
+        "hub-http-v1@2.3.0",
+        "hub-http-v2@1.3.0",
+        "hub-http-v1@1.3",
+        "hub-http-v1@1.3.0-rc1",
+        "hub-http-v1@1.3.0\n",
+        "hub-http-v1@1.٣.0",
+        "hub-http-v1@1." + "3" * 60 + ".0",
+        None,
+        130,
+        ["hub-http-v1@1.3.0"],
+    ],
+)
+async def test_incompatible_discovery_profile_blocks_authenticated_reads(
+    hass: HomeAssistant, aiohttp_server, profile: Any
+) -> None:
+    """Reject downgrades, other majors and malformed profiles before bearer use."""
+    paths: list[str] = []
+
+    async def handler(request: web.Request) -> web.Response:
+        paths.append(request.path)
+        assert "Authorization" not in request.headers
+        return web.json_response({**_discovery(), "profile": profile})
+
+    app = web.Application()
+    app.router.add_get("/{tail:.*}", handler)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(
+        async_get_clientsession(hass),
+        _endpoint(server),
+        bearer_token=TOKEN,
+        expected_hub_id=HUB_ID,
+    )
+
+    with pytest.raises(HubContractError, match="Unsupported Hub HTTP profile"):
+        await client.async_snapshot()
+
+    assert paths == ["/.well-known/teslatlas-hub"]
+
+
+@pytest.mark.parametrize("status", [400, 401, 404, 413, 415, 422])
+async def test_claim_rejections_are_pairing_errors(
+    hass: HomeAssistant, aiohttp_server, status: int
+) -> None:
+    """Classify the profile's claim error statuses as recoverable pairing errors."""
+
+    async def discovery(_request: web.Request) -> web.Response:
+        return web.json_response({**_discovery(), "profile": "hub-http-v1@1.3.0"})
+
+    async def claim(_request: web.Request) -> web.Response:
+        return web.json_response({"error": "invalid_request"}, status=status)
+
+    app = web.Application()
+    app.router.add_get("/.well-known/teslatlas-hub", discovery)
+    app.router.add_post("/v1/pairings/{pairing_id}/claim", claim)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(async_get_clientsession(hass), _endpoint(server))
+
+    with pytest.raises(HubPairingError):
+        await client.async_pair(PAIRING_ID, "b" * 64, "Home Assistant")
+
+
+@pytest.mark.parametrize("mode", ["legacy_only", "canonical", "canonical_null"])
+@pytest.mark.parametrize(
+    ("canonical", "alias", "attribute", "canonical_value", "legacy_value"),
+    [
+        ("activity_state", "state", "activity_state", "online", "asleep"),
+        ("odometer_km", "odometer", "odometer_km", 0, 12345.5),
+        ("software_version", "version", "software_version", "2026.40", "2026.26"),
+        (
+            "software_update_status",
+            "update_status",
+            "software_update_state",
+            "available",
+            "installed",
+        ),
+    ],
+)
+async def test_current_canonical_keys_win_over_legacy_aliases(
+    hass: HomeAssistant,
+    aiohttp_server,
+    mode: str,
+    canonical: str,
+    alias: str,
+    attribute: str,
+    canonical_value: Any,
+    legacy_value: Any,
+) -> None:
+    """Use aliases only for absent canonical keys, preserving null and zero."""
+    payload = _current(observed_at_ms=None)
+    payload[alias] = legacy_value
+    expected = legacy_value
+    if mode != "legacy_only":
+        expected = None if mode == "canonical_null" else canonical_value
+        payload[canonical] = expected
+
+    async def handler(request: web.Request) -> web.Response:
+        if request.path == "/.well-known/teslatlas-hub":
+            return web.json_response({**_discovery(), "profile": "hub-http-v1@1.3.0"})
+        if request.path == "/v1/vehicles":
+            return web.json_response({"vehicles": [{"vehicle_id": VEHICLE_ID}]})
+        return web.json_response(payload)
+
+    app = web.Application()
+    app.router.add_get("/{tail:.*}", handler)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(
+        async_get_clientsession(hass),
+        _endpoint(server),
+        bearer_token=TOKEN,
+        expected_hub_id=HUB_ID,
+    )
+
+    snapshot = await client.async_snapshot()
+
+    assert getattr(snapshot.vehicles[VEHICLE_ID], attribute) == expected
 
 
 async def test_probe_is_unauthenticated_and_wrong_identity_blocks_bearer(

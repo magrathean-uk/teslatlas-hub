@@ -578,6 +578,38 @@ INSTALLED_MEMBER_PATHS = (
     "profile/hub-http-v1/1.0.0/profile.json",
     "profile/hub-http-v1/1.0.0/resources.schema.json",
     "profile/hub-http-v1/1.0.0/sync-regression.json",
+    "profile/hub-http-v1/1.3.0/SHA256SUMS",
+    "profile/hub-http-v1/1.3.0/auth.schema.json",
+    "profile/hub-http-v1/1.3.0/cases.json",
+    "profile/hub-http-v1/1.3.0/cursor.schema.json",
+    "profile/hub-http-v1/1.3.0/discovery.schema.json",
+    "profile/hub-http-v1/1.3.0/errors.schema.json",
+    "profile/hub-http-v1/1.3.0/examples/charge-samples.json",
+    "profile/hub-http-v1/1.3.0/examples/charge.json",
+    "profile/hub-http-v1/1.3.0/examples/charges.json",
+    "profile/hub-http-v1/1.3.0/examples/claim.json",
+    "profile/hub-http-v1/1.3.0/examples/current.json",
+    "profile/hub-http-v1/1.3.0/examples/discovery-unsigned.json",
+    "profile/hub-http-v1/1.3.0/examples/discovery.json",
+    "profile/hub-http-v1/1.3.0/examples/drive.json",
+    "profile/hub-http-v1/1.3.0/examples/drives.json",
+    "profile/hub-http-v1/1.3.0/examples/error-charge-not-found.json",
+    "profile/hub-http-v1/1.3.0/examples/error-drive-not-found.json",
+    "profile/hub-http-v1/1.3.0/examples/health.json",
+    "profile/hub-http-v1/1.3.0/examples/invitation.json",
+    "profile/hub-http-v1/1.3.0/examples/positions.json",
+    "profile/hub-http-v1/1.3.0/examples/ready.json",
+    "profile/hub-http-v1/1.3.0/examples/rotate-max-lifetime.json",
+    "profile/hub-http-v1/1.3.0/examples/rotation-grace.json",
+    "profile/hub-http-v1/1.3.0/examples/sync-schema-2-2-noop-unavailable.json",
+    "profile/hub-http-v1/1.3.0/examples/vehicles.json",
+    "profile/hub-http-v1/1.3.0/field-semantics.json",
+    "profile/hub-http-v1/1.3.0/openapi.json",
+    "profile/hub-http-v1/1.3.0/profile.json",
+    "profile/hub-http-v1/1.3.0/resources.schema.json",
+    "profile/hub-http-v1/1.3.0/rotation-grace.schema.json",
+    "profile/hub-http-v1/1.3.0/sync-regression.json",
+    "profile/hub-http-v1/1.3.0/sync.schema.json",
     "sensor.py",
     "strings.json",
     "translations/en.json",
@@ -598,7 +630,7 @@ CASE_FACTS = {
         "archive_sha256": "d" * 64,
         "integration_version": "2026.36.2",
         "installed_manifest_sha256": "9" * 64,
-        "installed_members": 32,
+        "installed_members": 64,
     },
     "installed_service_runtime": {
         "service_mode": "installed-deb-systemd",
@@ -2047,12 +2079,12 @@ def test_current_package_inventory_matches_admission_and_closed_schema() -> None
         if path.is_file() and "__pycache__" not in path.parts
     )
     assert actual == INSTALLED_MEMBER_PATHS == CURRENT_MEMBER_PATHS
-    assert len(actual) == 32
+    assert len(actual) == 64
     schema = json.loads(
         (Path(__file__).parents[1] / "tools/ha-runtime-v1.schema.json").read_text()
     )
     facts = schema["$defs"]["facts"]["properties"]
-    assert facts["installed_members"] == {"const": 32}
+    assert facts["installed_members"] == {"const": 64}
     declared = facts["loaded_modules"]
     expected = OPERATION_FACTS["observe_installed_runtime"]["loaded_modules"]
     assert set(declared["required"]) == set(expected)
