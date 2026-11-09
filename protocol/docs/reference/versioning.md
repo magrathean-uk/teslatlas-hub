@@ -37,7 +37,9 @@ The protocol uses semantic versions `MAJOR.MINOR.PATCH`.
 - A patch version clarifies text or fixes a contract defect without changing a
   valid request or response.
 
-The current-Hub HTTP profile is `hub-http-v1@1.3.0`; `1.2.0` is its retained predecessor. Its additive policy is
+The served current-Hub HTTP profile is `hub-http-v1@1.3.0`. HTTP `1.2.0` is
+retired as an advertised revision; its frozen bytes and aliases are retained.
+Its additive policy is
 part of the profile: clients ignore unknown object fields and unknown
 capability tokens, and servers may add optional fields and tokens within 1.x.
 Adding an optional field, token or route is a new minor profile. Removing or
@@ -52,8 +54,8 @@ profile, never a silent edit of an existing one. Distribute and bind the
 complete directory.
 
 The Hub sync profiles follow the same rule and are each bound by their own
-`SHA256SUMS`: `hub-sync-v1@1.3.0` defines changes-since, no-op, key discovery
-and signed prepared map months, `hub-sync-v1@1.4.0` adds schema 2.2 PhysicalV3
+`SHA256SUMS`: served `hub-sync-v1@1.3.0` defines changes-since, no-op, key discovery
+and signed prepared map months, served `hub-sync-v1@1.4.0` adds schema 2.2 PhysicalV3
 changed sets and typed delta packs, and the candidate `hub-sync-v1@1.5.0` adds
 a live overlay. These are protocol profiles, not claims that a particular Hub
 or SDK release has shipped.

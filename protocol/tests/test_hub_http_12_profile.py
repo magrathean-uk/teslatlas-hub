@@ -250,7 +250,7 @@ class GeneratorTests(Scratch):
 
     def test_tools_check_runs_the_generator_check(self):
         lines = (ROOT / 'tools/check').read_text().splitlines()
-        self.assertIn('uv run python tools/build_hub_http_profile_12.py --check', lines)
+        self.assertIn('"$protocol_python" tools/build_hub_http_profile_12.py --check', lines)
 
 
 class BundleClosureTests(Scratch):
@@ -4037,8 +4037,9 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn('hub-http-v1@1.2.0', text)
         self.assertIn('profiles/hub-http-v1/1.2.0/', text)
         flat = ' '.join(text.split())
-        self.assertIn('A Hub built from the current source names `hub-http-v1@1.2.0` in its discovery document; '
-                      'the earlier `1.0.0` and `1.1.0` profiles were retired and are no longer in this package.', flat)
+        self.assertIn('`hub-http-v1@1.2.0` is retired as an advertised revision', flat)
+        self.assertIn('the minor a current Hub names in its discovery document', flat)
+        self.assertIn('The earlier `1.0.0` and `1.1.0` profiles were retired and are no longer in this package.', flat)
         self.assertNotIn('profiles/hub-http-v1/1.1.0', text)
         self.assertNotIn('serves `1.1.0`', flat)
         self.assertNotIn('a Hub that does not yet serves', flat)
@@ -4069,7 +4070,7 @@ class DocumentationTests(unittest.TestCase):
         for phrase in ('/v1/device/revoke', 'max_lifetime', 'tqp1', 'query.charges', 'query.positions', 'query.charge.samples', 'auth.revoke',
                        'conformance/run --profile hub-http-v1@1.2.0', 'number'):
             self.assertIn(phrase, text)
-        section = text[text.index('## hub-http-v1@1.2.0'):text.index('## Choose the profile')]
+        section = text[text.index('## Retained hub-http-v1@1.2.0 contract'):text.index('## Choose the profile')]
         for phrase in ('**Handler time budget.**', '15 second handler budget', 'empty body', '`/healthz` lists `503`', 'Only closed sessions are served',
                        '`404 drive_not_found`', '`404 charge_not_found`', 'Eighteen choices', 'to_ms', 'no schema `default`', 'is `not_run`, not a pass',
                        'attested by the descriptor', 'not a failure'):
@@ -4165,39 +4166,40 @@ class DocumentationTests(unittest.TestCase):
         self.assertNotIn('every one of the 49 cases', flat)
         self.assertNotIn('(the extractor\'s "Failed to buffer the request body")', flat)  # the text carries the inner error
 
-    def test_current_hub_walkthrough_targets_1_2_0(self):
+    def test_current_hub_walkthrough_targets_served_1_3_0(self):
         text = (ROOT / 'docs/reference/current-hub.md').read_text()
         flat = ' '.join(text.split())
         for phrase in (
                 # the introduction: the profile a Hub built from the current source names, its directory and its validator
-                'A Hub built from the current source names `hub-http-v1@1.2.0` in its discovery document',
-                'the contract in [`profiles/hub-http-v1/1.2.0/`](../../profiles/hub-http-v1/1.2.0/)',
-                'checked-in `conformance.hub_http_12` validator',
-                # the four predecessor references of the 1.2.0 section
-                'a Hub whose discovery has no `profile` field is not covered by this guide',
-                'The walkthrough after this section targets `1.2.0`; this section describes what `1.2.0` changes from its predecessor',
+                'A Hub built from the current source names `hub-http-v1@1.3.0` in its discovery document',
+                'the contract in [`profiles/hub-http-v1/1.3.0/`](../../profiles/hub-http-v1/1.3.0/)',
+                'checked-in `conformance.hub_http_13` validator',
+                # the frozen predecessor section and its retained rules
+                'including the historical `status: served` field, are frozen and unchanged.',
+                'the walkthrough targets the served 1.3 profile.',
                 'and the predecessor\'s "unobserved `413`" advice does not apply to `1.2.0`',
                 '(see the claim walkthrough below)',
                 # the profile choice, the discovery block and the profile identity
-                'target `hub-http-v1@1.2.0`: use them with a Hub whose discovery names `hub-http-v1@1.2.0`',
-                'The block below validates against `hub-http-v1@1.2.0`, so it exits on a Hub whose discovery does not match that profile',
-                'The profile identity is `hub-http-v1@1.2.0`.'):
+                'target `hub-http-v1@1.3.0`: use them with a Hub whose discovery names `hub-http-v1@1.3.0`',
+                'The block below validates against `hub-http-v1@1.3.0` and requires that exact advertised revision.',
+                'The profile identity is `hub-http-v1@1.3.0`.'):
             self.assertIn(phrase, flat)
         for phrase in ('a Hub whose discovery has no `profile` field serves', 'Everything below this section describes', 'the `1.1.0` text',
-                       'rejects the `profile` member and the token set', 'validate with `$PWD/profiles/hub-http-v1/1.2.0` instead',
+                       'rejects the `profile` member and the token set', 'validate with `$PWD/profiles/hub-http-v1/1.3.0` instead',
                        'The profile identity remains', 'there is no public revoke route', 'in `1.1.0`) charge-query route'):
             self.assertNotIn(phrase, flat)
-        # the walkthrough reads the retained profile through the 1.2.0 validator and no other directory or module
+        # the walkthrough reads the served profile through the 1.3.0 validator and no other directory or module
         walkthrough = text[text.index('## Choose the profile'):]
-        profile_variable = 'TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.2.0"'
+        profile_variable = 'TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0"'
         self.assertEqual(walkthrough.count('TESLATLAS_PROFILE='), walkthrough.count(profile_variable))
         self.assertEqual(walkthrough.count(profile_variable), 7)
-        self.assertEqual(walkthrough.count('from conformance import hub_http_12\n'), 7)
+        self.assertEqual(walkthrough.count('from conformance import hub_http_13\n'), 7)
         self.assertNotRegex(text, r'profiles/hub-http-v1/1\.[01]\.0')
         self.assertNotRegex(text, r'import hub_http\b(?!_)')
         self.assertNotRegex(text, r'\bhub_http\.')
-        self.assertIn('hub_http_12.validate_raw(', walkthrough)
-        self.assertIn('hub_http_12.strict_json(', walkthrough)
+        self.assertIn('if value.get("profile") != "hub-http-v1@1.3.0":', walkthrough)
+        self.assertIn('hub_http_13.validate_raw(', walkthrough)
+        self.assertIn('hub_http_13.strict_json(', walkthrough)
         for kind in ('"invitation"', '"claim"', '"drives"', '"rotate"'):
             self.assertIn(kind, walkthrough)
         self.assertNotIn('hub-http-v1@1.1.0', walkthrough)

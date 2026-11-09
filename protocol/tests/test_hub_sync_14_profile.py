@@ -93,9 +93,24 @@ class PhysicalChangedSetProfileTests(unittest.TestCase):
         check = subprocess.run([sys.executable, str(ROOT / "tools/build_hub_sync_14_profile.py"), "--check"], capture_output=True)
         self.assertEqual(check.returncode, 0, check.stderr.decode())
         self.assertEqual(self.contract.verify_bundle()["profile_id"], "hub-sync-v1@1.4.0")
+        self.assertEqual(self.contract.verify_bundle()["status"], "served")
         for name in ("changes-since-request.schema.json", "physical-changed-set-receipt.schema.json", "physical-rebase-hint.schema.json"):
             Draft202012Validator.check_schema(json.loads((PROFILE / name).read_text()))
         validate_openapi(json.loads((PROFILE / "openapi.json").read_text()), base_uri=PROFILE.as_uri() + "/")
+
+    def test_shared_signing_key_document_validates_for_both_served_revisions(self):
+        # The Hub returns this identity even after a 1.4 bootstrap. A strict
+        # 1.4 reader must accept the actual shared document, not expect 1.4.
+        document = json.loads((PROFILE.parent / "1.3.0/fixture-signing-keys.json").read_text())
+        document["vehicle_id"] = self.receipt["vehicle_id"]
+        self.assertEqual(document["profile_id"], "hub-sync-v1@1.3.0")
+        self.assertEqual(document, json.loads((PROFILE / "fixture-signing-keys.json").read_text()))
+        for revision in ("1.3.0", "1.4.0"):
+            schema = json.loads((PROFILE.parent / revision / "signing-keys.schema.json").read_text())
+            validator = Draft202012Validator({**schema, "$ref": "#/$defs/document"})
+            self.assertEqual(list(validator.iter_errors(document)), [], revision)
+            wrong_identity = {**document, "profile_id": "hub-sync-v1@1.4.0"}
+            self.assertTrue(list(validator.iter_errors(wrong_identity)), revision)
 
     def test_positive_signed_changed_set_and_complete_pack(self):
         self.contract.verify_receipt(self.request, self.receipt, self.receipt["vehicle_id"])
