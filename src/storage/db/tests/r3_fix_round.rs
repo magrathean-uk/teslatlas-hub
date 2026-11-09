@@ -25,24 +25,47 @@ fn c5_r3_03_the_credential_commit_connections_ask_for_a_full_flush_on_macos() {
     let f0 = Uuid::from_u128(201);
     let f1 = Uuid::from_u128(202);
     let pair = |generation: Uuid, expires: i64| {
-        FleetTokenStore::new(
-            b"fleet-access-envelope".to_vec(),
-            b"fleet-refresh-envelope".to_vec(),
-            "owner-client".to_owned(),
-            "eu".to_owned(),
-            expires,
-            expires - 250,
-            Some(generation),
-        )
+        s_test_with_credential_connection(&store, |connection| {
+            s_test_synthetic_pair(
+                connection,
+                CredentialSlot::FleetApi,
+                generation,
+                b"r3-fleet-access",
+                format!("r3-fleet-refresh-{generation}").as_bytes(),
+                expires,
+                expires - 1,
+            )
+        })
         .expect("Fleet tokens")
     };
-    store
-        .replace_fleet_tokens(&pair(f0, 2_000))
+    {
+        let input_pair = pair(f0, AS_T0 + 28_800);
+        s_test_with_credential_connection(&store, |connection| {
+            connection.replace_credential_pair(
+                &input_pair,
+                &EntryProvenance::Supplied,
+                &LegacyCandidates(Vec::new()),
+                ReplacePolicy::ReplaceAny,
+            )
+        })
+    }
         .expect("input pair");
     let _ = r3_take_credential_commit_pragmas();
-    let receipt = store.begin_fleet_refresh(f0).expect("begin");
-    store
-        .complete_fleet_refresh(receipt, f0, f1, &pair(f1, 3_000))
+    let receipt = s_test_with_credential_connection(&store, |connection| {
+        connection.begin_credential_refresh(CredentialSlot::FleetApi, f0)
+    })
+    .expect("begin");
+    {
+        let successor = pair(f1, AS_T0 + 57_600);
+        s_test_with_credential_connection(&store, |connection| {
+            connection.complete_credential_refresh(
+                receipt,
+                f0,
+                &successor,
+                &LegacyCandidates(Vec::new()),
+            )
+        })
+    }
         .expect("complete");
     let seen = r3_take_credential_commit_pragmas();
     assert_eq!(seen, vec![(1, 1), (1, 1)], "Fleet begin and complete");
@@ -151,9 +174,12 @@ fn f3_the_rejected_access_digest_is_stored_and_no_refresh_rewrites_it() {
     // The decision is derived from the stored pair, so no refresh writes the status row:
     // an answer that renewed nothing, a cancelled attempt, an unrotated completion and a
     // rotation leave the row exactly as it was.
-    let receipt = store.begin_legacy_refresh(lc_gen(1)).expect("begin");
-    store
-        .close_legacy_refresh_attempt(
+    let receipt = s_test_with_credential_connection(&store, |connection| {
+        connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))
+    })
+    .expect("begin");
+    s_test_with_credential_connection(&store, |connection| {
+        connection.close_credential_refresh_attempt(
             receipt,
             lc_gen(1),
             OutboundRequestOutcome::Success,
@@ -161,14 +187,18 @@ fn f3_the_rejected_access_digest_is_stored_and_no_refresh_rewrites_it() {
             None,
             true,
         )
+    })
         .expect("close as a success with release");
-    let receipt = store.begin_legacy_refresh(lc_gen(1)).expect("begin");
-    store
-        .cancel_unsent_legacy_refresh(receipt, lc_gen(1))
+    let receipt = s_test_with_credential_connection(&store, |connection| {
+        connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))
+    })
+    .expect("begin");
+    s_test_with_credential_connection(&store, |connection| {
+        connection.cancel_unsent_credential_refresh(receipt, lc_gen(1))
+    })
         .expect("cancel");
-    let receipt = store.begin_legacy_refresh(lc_gen(1)).expect("begin");
-    store
-        .complete_unrotated_legacy_refresh(receipt, lc_gen(1), &lc_unrotated(lc_gen(1)))
+    let receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: retained same-generation unrotated C5 completion needs R60 adaptation"); unavailable_value }).expect("begin");
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: retained same-generation unrotated C5 completion needs R60 adaptation"); unavailable_value })
         .expect("complete");
     assert_eq!(
         store.load_collector_auth_row().unwrap(),
@@ -203,35 +233,30 @@ fn f4_the_fill_of_a_missing_digest_is_conditional_on_the_row_the_fuse_and_the_pa
             .write_collector_auth_row(&missing, AS_T0 * 1_000)
             .unwrap()
     );
-    let pair = store
-        .load_legacy_owner_tokens()
+    let pair = s_test_with_credential_connection(&store, |connection| {
+        connection.load_credential_pair(CredentialSlot::OwnerApi)
+    })
         .unwrap()
         .expect("the pair row");
     let digest = as_gen(78);
 
     // Another fuse (count or generation), or another stored pair: nothing is written.
     assert!(
-        store
-            .fill_collector_auth_rejected_access_digest(&pair, 2, Some(lc_gen(1)), digest)
+        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
             .is_err()
     );
     assert!(
-        store
-            .fill_collector_auth_rejected_access_digest(&pair, 1, Some(lc_gen(2)), digest)
+        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
             .is_err()
     );
     assert!(
-        store
-            .fill_collector_auth_rejected_access_digest(&pair, 1, None, digest)
+        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
             .is_err()
     );
-    let other_pair = LegacyOwnerTokenStore::imported(vec![9; 8], vec![2; 8])
-        .unwrap()
-        .with_credential_generation(lc_gen(1))
+    let other_pair =({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
         .unwrap();
     assert!(
-        store
-            .fill_collector_auth_rejected_access_digest(&other_pair, 1, Some(lc_gen(1)), digest)
+        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
             .is_err()
     );
     assert_eq!(
@@ -240,8 +265,7 @@ fn f4_the_fill_of_a_missing_digest_is_conditional_on_the_row_the_fuse_and_the_pa
     );
 
     // The matching call fills the digest and nothing else.
-    store
-        .fill_collector_auth_rejected_access_digest(&pair, 1, Some(lc_gen(1)), digest)
+    ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
         .expect("the fill");
     assert_eq!(
         store.load_collector_auth_row().unwrap(),
@@ -252,8 +276,7 @@ fn f4_the_fill_of_a_missing_digest_is_conditional_on_the_row_the_fuse_and_the_pa
     );
     // A digest that is present is never replaced by a fill.
     assert!(
-        store
-            .fill_collector_auth_rejected_access_digest(&pair, 1, Some(lc_gen(1)), as_gen(79))
+        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
             .is_err()
     );
     assert_eq!(

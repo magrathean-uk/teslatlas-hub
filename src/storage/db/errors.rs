@@ -54,28 +54,34 @@ pub enum StoreError {
     CatalogueChangedDuringImmutableCheck,
     #[error("cannot configure hub database: {0}")]
     Configure(rusqlite::Error),
-    #[error("Legacy owner token pair is empty")]
-    SourceDbTokenPairEmpty,
-    #[error("Legacy owner token ciphertext exceeds the fixed size limit")]
-    SourceDbTokenCiphertextTooLarge,
-    #[error("Legacy owner token refresh schedule is invalid")]
-    InvalidSourceDbTokenSchedule,
-    #[error("cannot access legacy owner token store: {0}")]
-    LegacyOwnerTokenStore(rusqlite::Error),
-    #[error("Fleet token store is invalid")]
-    InvalidFleetTokenStore,
-    #[error("cannot access Fleet token store: {0}")]
-    FleetTokenStore(rusqlite::Error),
-    #[error("cannot access Fleet refresh receipt: {0}")]
-    FleetRefreshReceipt(rusqlite::Error),
-    #[error("Fleet refresh outcome is ambiguous; replace credentials before retrying")]
-    FleetRefreshOutcomeUnknown,
-    #[error("Fleet credential generation is invalid")]
-    InvalidFleetRefreshGeneration,
-    #[error("Fleet retryable refresh failure receipt is invalid")]
-    InvalidFleetRefreshFailure,
-    #[error("Fleet credential ciphertext WAL scrub did not complete")]
-    FleetCredentialScrubIncomplete,
+    #[error("credential pair is invalid")]
+    CredentialPairInvalid,
+    #[error("cannot access credential pair store")]
+    CredentialPairStore(#[source] rusqlite::Error),
+    #[error("cannot access credential refresh receipt")]
+    CredentialRefreshReceipt(#[source] rusqlite::Error),
+    #[error("credential refresh outcome is unresolved")]
+    RefreshOutcomeUnknown { reason: BeginRefusal },
+    #[error("refresh token has already been presented")]
+    RefreshTokenSpent,
+    #[error("a fresh Hub sign-in is required")]
+    FreshSignInRequired,
+    #[error("credential slot is occupied")]
+    SlotOccupied,
+    #[error("credential origin is invalid")]
+    InvalidOrigin,
+    #[error("sign-in binding is invalid")]
+    SignInBindingInvalid,
+    #[error("sign-in binding has expired")]
+    SignInExpired,
+    #[error("credential connection has already been taken")]
+    CredentialConnectionTaken,
+    #[error("credential envelope is invalid")]
+    #[allow(
+        private_interfaces,
+        reason = "M2P42 requires a typed internal envelope error in public StoreError."
+    )]
+    CredentialEnvelope(crate::auth::credential_envelope::EnvelopeError),
     #[error("invalid address cache record")]
     InvalidAddressCache,
     #[error("cannot write address cache: {0}")]
@@ -86,6 +92,8 @@ pub enum StoreError {
     InvalidTerrainTileDigest,
     #[error("cannot write address enrichment job: {0}")]
     AddressEnrichmentWrite(rusqlite::Error),
+    #[error("data backup waits for credential cleanup")]
+    BackupWaitsForCredentialCleanup,
     #[error("cannot create Hub SQLite backup: {0}")]
     Backup(rusqlite::Error),
     #[error("Hub SQLite backup destination already exists: {0}")]
@@ -200,12 +208,6 @@ pub enum StoreError {
     RevokePairing(rusqlite::Error),
     #[error("cannot claim pairing invitation: {0}")]
     ClaimPairing(rusqlite::Error),
-    #[error("cannot access legacy refresh receipt: {0}")]
-    LegacyRefreshReceipt(rusqlite::Error),
-    #[error("legacy refresh outcome is unresolved; explicit re-login is required")]
-    LegacyRefreshOutcomeUnknown,
-    #[error("legacy refresh generation is invalid")]
-    InvalidLegacyRefreshGeneration,
     #[error("stored credential status is invalid")]
     InvalidStoredAuthStatus,
     /// The read-only effective credential status could not be derived: the
@@ -477,7 +479,7 @@ pub enum StoreError {
     #[error("outbound request receipt is missing or already terminal")]
     OutboundRequestReceiptNotStarted,
     #[error("token refresh receipts require the dedicated refresh API")]
-    ReservedLegacyRefreshReceipt,
+    ReservedCredentialRefreshReceipt,
     #[error("outbound request correlation id must not be nil")]
     NilOutboundRequestCorrelationId,
     #[error("outbound request vehicle id must be positive")]
@@ -602,22 +604,24 @@ mod n1_src_storage_db_errors_rs_display_tests {
                 StoreError::ImmutableSnapshotRequired => (),
                 StoreError::CatalogueChangedDuringImmutableCheck => (),
                 StoreError::Configure(..) => (),
-                StoreError::SourceDbTokenPairEmpty => (),
-                StoreError::SourceDbTokenCiphertextTooLarge => (),
-                StoreError::InvalidSourceDbTokenSchedule => (),
-                StoreError::LegacyOwnerTokenStore(..) => (),
-                StoreError::InvalidFleetTokenStore => (),
-                StoreError::FleetTokenStore(..) => (),
-                StoreError::FleetRefreshReceipt(..) => (),
-                StoreError::FleetRefreshOutcomeUnknown => (),
-                StoreError::InvalidFleetRefreshGeneration => (),
-                StoreError::InvalidFleetRefreshFailure => (),
-                StoreError::FleetCredentialScrubIncomplete => (),
+                StoreError::CredentialPairInvalid => (),
+                StoreError::CredentialPairStore(..) => (),
+                StoreError::CredentialRefreshReceipt(..) => (),
+                StoreError::RefreshOutcomeUnknown { .. } => (),
+                StoreError::RefreshTokenSpent => (),
+                StoreError::FreshSignInRequired => (),
+                StoreError::SlotOccupied => (),
+                StoreError::InvalidOrigin => (),
+                StoreError::SignInBindingInvalid => (),
+                StoreError::SignInExpired => (),
+                StoreError::CredentialConnectionTaken => (),
+                StoreError::CredentialEnvelope(..) => (),
                 StoreError::InvalidAddressCache => (),
                 StoreError::AddressCacheWrite(..) => (),
                 StoreError::InvalidAddressEnrichment => (),
                 StoreError::InvalidTerrainTileDigest => (),
                 StoreError::AddressEnrichmentWrite(..) => (),
+                StoreError::BackupWaitsForCredentialCleanup => (),
                 StoreError::Backup(..) => (),
                 StoreError::BackupDestinationExists(..) => (),
                 StoreError::BackupDestinationIsLiveDatabase => (),
@@ -664,9 +668,6 @@ mod n1_src_storage_db_errors_rs_display_tests {
                 StoreError::CreatePairing(..) => (),
                 StoreError::RevokePairing(..) => (),
                 StoreError::ClaimPairing(..) => (),
-                StoreError::LegacyRefreshReceipt(..) => (),
-                StoreError::LegacyRefreshOutcomeUnknown => (),
-                StoreError::InvalidLegacyRefreshGeneration => (),
                 StoreError::InvalidStoredAuthStatus => (),
                 StoreError::EffectiveCollectorAuthUnavailable => (),
                 StoreError::RotateDevice(..) => (),
@@ -786,7 +787,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
                 StoreError::OutboundRequestReceipt(..) => (),
                 StoreError::InvalidOutboundRequestReceiptId => (),
                 StoreError::OutboundRequestReceiptNotStarted => (),
-                StoreError::ReservedLegacyRefreshReceipt => (),
+                StoreError::ReservedCredentialRefreshReceipt => (),
                 StoreError::NilOutboundRequestCorrelationId => (),
                 StoreError::InvalidOutboundRequestVehicleId => (),
                 StoreError::InvalidVehicleDataAuditPrecondition => (),
@@ -832,17 +833,22 @@ mod n1_src_storage_db_errors_rs_display_tests {
         check_store_error(StoreError::ImmutableSnapshotRequired);
         check_store_error(StoreError::CatalogueChangedDuringImmutableCheck);
         check_store_error(StoreError::Configure(example()));
-        check_store_error(StoreError::SourceDbTokenPairEmpty);
-        check_store_error(StoreError::SourceDbTokenCiphertextTooLarge);
-        check_store_error(StoreError::InvalidSourceDbTokenSchedule);
-        check_store_error(StoreError::LegacyOwnerTokenStore(example()));
-        check_store_error(StoreError::InvalidFleetTokenStore);
-        check_store_error(StoreError::FleetTokenStore(example()));
-        check_store_error(StoreError::FleetRefreshReceipt(example()));
-        check_store_error(StoreError::FleetRefreshOutcomeUnknown);
-        check_store_error(StoreError::InvalidFleetRefreshGeneration);
-        check_store_error(StoreError::InvalidFleetRefreshFailure);
-        check_store_error(StoreError::FleetCredentialScrubIncomplete);
+        check_store_error(StoreError::CredentialPairInvalid);
+        check_store_error(StoreError::CredentialPairStore(example()));
+        check_store_error(StoreError::CredentialRefreshReceipt(example()));
+        check_store_error(StoreError::RefreshOutcomeUnknown {
+            reason: BeginRefusal::RowChanged,
+        });
+        check_store_error(StoreError::RefreshTokenSpent);
+        check_store_error(StoreError::FreshSignInRequired);
+        check_store_error(StoreError::SlotOccupied);
+        check_store_error(StoreError::InvalidOrigin);
+        check_store_error(StoreError::SignInBindingInvalid);
+        check_store_error(StoreError::SignInExpired);
+        check_store_error(StoreError::CredentialConnectionTaken);
+        check_store_error(StoreError::CredentialEnvelope(
+            crate::auth::credential_envelope::EnvelopeError::Truncated,
+        ));
         check_store_error(StoreError::InvalidAddressCache);
         check_store_error(StoreError::AddressCacheWrite(example()));
         check_store_error(StoreError::InvalidAddressEnrichment);
@@ -912,9 +918,6 @@ mod n1_src_storage_db_errors_rs_display_tests {
         check_store_error(StoreError::CreatePairing(example()));
         check_store_error(StoreError::RevokePairing(example()));
         check_store_error(StoreError::ClaimPairing(example()));
-        check_store_error(StoreError::LegacyRefreshReceipt(example()));
-        check_store_error(StoreError::LegacyRefreshOutcomeUnknown);
-        check_store_error(StoreError::InvalidLegacyRefreshGeneration);
         check_store_error(StoreError::InvalidStoredAuthStatus);
         check_store_error(StoreError::EffectiveCollectorAuthUnavailable);
         check_store_error(StoreError::RotateDevice(example()));
@@ -1070,7 +1073,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
         check_store_error(StoreError::OutboundRequestReceipt(example()));
         check_store_error(StoreError::InvalidOutboundRequestReceiptId);
         check_store_error(StoreError::OutboundRequestReceiptNotStarted);
-        check_store_error(StoreError::ReservedLegacyRefreshReceipt);
+        check_store_error(StoreError::ReservedCredentialRefreshReceipt);
         check_store_error(StoreError::NilOutboundRequestCorrelationId);
         check_store_error(StoreError::InvalidOutboundRequestVehicleId);
         check_store_error(StoreError::InvalidVehicleDataAuditPrecondition);

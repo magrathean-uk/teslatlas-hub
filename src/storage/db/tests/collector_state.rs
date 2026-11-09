@@ -751,21 +751,28 @@ fn attention_is_suppressed_when_collection_is_disabled() {
         },
     );
     let generation = Uuid::from_u128(0xD15AB1ED);
-    store
-        .replace_fleet_tokens(
-            &FleetTokenStore::new(
-                b"a".to_vec(),
-                b"r".to_vec(),
-                "client".to_owned(),
-                "eu".to_owned(),
-                2_000,
-                1_750,
-                Some(generation),
-            )
-            .unwrap(),
+    s_test_with_credential_connection(&store, |connection| {
+        let pair = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::FleetApi,
+            generation,
+            b"disabled-collector-access",
+            b"disabled-collector-refresh",
+            AS_T0 + 28_800,
+            AS_T0 + 21_600,
+        )?;
+        connection.replace_credential_pair(
+            &pair,
+            &EntryProvenance::Supplied,
+            &LegacyCandidates(Vec::new()),
+            ReplacePolicy::ReplaceAny,
         )
+    })
         .unwrap();
-    store.begin_fleet_refresh(generation).unwrap();
+    s_test_with_credential_connection(&store, |connection| {
+        connection.begin_credential_refresh(CredentialSlot::FleetApi, generation)
+    })
+    .unwrap();
     store.set_stream_audit_failed_cars(2);
     for context in [
         ReadinessContext::context_free(false, CS_W0),

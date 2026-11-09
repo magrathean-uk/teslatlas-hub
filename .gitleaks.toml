@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic credential vectors verified against /Volumes/4TB/dev/lab/teslatlas-v7/mirrors/m2m/fixtures-provenance.json (synthetic_only: true; vectors/credential-pre-upgrade-vectors.json)."
+paths = ['''^tests/fixtures/credential-pre-upgrade-vectors\.json$''']

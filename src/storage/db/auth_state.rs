@@ -232,58 +232,7 @@ impl HubStore {
         Ok(changed > 0)
     }
 
-    /// Fill the missing rejected-access digest of the stored status row (hub fix pass 4,
-    /// F4-2): a row migrated from before the column counts a rejection and holds no digest.
-    /// One immediate transaction commits the fill only while the pair row still holds the
-    /// ciphertexts `pair` was read from and the status row still holds a NULL digest for
-    /// the fuse the caller restored (`consecutive`, `generation`). Anything else, or a
-    /// store fault, is an error: the caller does not go on to refresh on a row whose
-    /// obligation is not durable. It leaves the write time alone, as the fill changes no
-    /// status the owner sees.
-    pub(crate) fn fill_collector_auth_rejected_access_digest(
-        &self,
-        pair: &LegacyOwnerTokenStore,
-        consecutive: u8,
-        generation: Option<Uuid>,
-        digest: Uuid,
-    ) -> Result<(), StoreError> {
-        let mut connection = self.open()?;
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(StoreError::Begin)?;
-        let same_pair: bool = transaction
-            .query_row(
-                concat!(
-                    "SELECT EXISTS(SELECT 1 FROM ",
-                    crate::db::import_table_names::legacy_owner_tokens_table!(),
-                    "
-                  WHERE singleton_id = 1 AND access = ?1 AND refresh = ?2)"
-                ),
-                params![pair.access(), pair.refresh()],
-                |row| row.get(0),
-            )
-            .map_err(StoreError::LegacyOwnerTokenStore)?;
-        if !same_pair {
-            return Err(StoreError::LegacyRefreshOutcomeUnknown);
-        }
-        let changed = transaction
-            .execute(
-                "UPDATE collector_auth_state
-                    SET fuse_rejected_access_digest = ?1
-                  WHERE singleton_id = 1 AND fuse_rejected_access_digest IS NULL
-                    AND fuse_consecutive = ?2 AND fuse_generation IS ?3",
-                params![
-                    digest.to_string(),
-                    i64::from(consecutive),
-                    generation.map(|value| value.to_string()),
-                ],
-            )
-            .map_err(StoreError::Query)?;
-        if changed != 1 {
-            return Err(StoreError::LegacyRefreshOutcomeUnknown);
-        }
-        transaction.commit().map_err(StoreError::Query)
-    }
+
 
     /// C3 R7 (B2 clarification 3), inside the ordinary start's transaction: the
     /// stored C5 status is an `api_refused` stopped in a mode other than
@@ -334,27 +283,9 @@ impl HubStore {
     pub(crate) fn stored_legacy_credential_generation(
         &self,
     ) -> Result<StoredLegacyGeneration, StoreError> {
-        let connection = self.open_read_only_connection()?;
-        let row: Option<Option<String>> = connection
-            .query_row(
-                concat!(
-                    "SELECT credential_generation FROM ",
-                    crate::db::import_table_names::legacy_owner_tokens_table!(),
-                    "
-                  WHERE singleton_id = 1"
-                ),
-                [],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(StoreError::LegacyOwnerTokenStore)?;
-        Ok(match row {
-            None => StoredLegacyGeneration::NoRow,
-            Some(None) => StoredLegacyGeneration::Unbound,
-            Some(Some(value)) => StoredLegacyGeneration::Bound(
-                Uuid::parse_str(&value).map_err(|_| StoreError::InvalidLegacyRefreshGeneration)?,
-            ),
-        })
+        panic!(
+            "C10_UNAVAILABLE_V1: R56/R62 manager call needs the vault-owned CredentialConnection"
+        );
     }
 
     /// Whether `generation` is the output of a completed refresh binding, that
@@ -364,17 +295,9 @@ impl HubStore {
         &self,
         generation: Uuid,
     ) -> Result<bool, StoreError> {
-        let connection = self.open_read_only_connection()?;
-        connection
-            .query_row(
-                "SELECT EXISTS(
-                    SELECT 1 FROM legacy_refresh_receipt_bindings
-                     WHERE output_credential_generation = ?1
-                )",
-                params![generation.to_string()],
-                |row| row.get(0),
-            )
-            .map_err(StoreError::LegacyRefreshReceipt)
+        panic!(
+            "C10_UNAVAILABLE_V1: R56/R62 manager call needs the vault-owned CredentialConnection"
+        );
     }
 
     /// The start time of the most recent `legacy_auth` token receipt, whatever
@@ -390,7 +313,7 @@ impl HubStore {
                 [],
                 |row| row.get(0),
             )
-            .map_err(StoreError::LegacyRefreshReceipt)
+            .map_err(StoreError::CredentialRefreshReceipt)
     }
 
     /// The Owner-wire credential identity for C3's configuration fingerprint
@@ -403,47 +326,49 @@ impl HubStore {
     /// sensitive access and may be called before the unit starts.
     pub(crate) fn owner_wire_credential_identity(&self) -> Result<String, StoreError> {
         let connection = self.open_read_only_connection()?;
-        let current: Option<Option<String>> = connection
+        let version: i32 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .map_err(StoreError::CredentialPairStore)?;
+        if version < CREDENTIAL_FORMAT_SCHEMA_VERSION {
+            return Ok(String::new());
+        }
+        let transaction = connection
+            .unchecked_transaction()
+            .map_err(StoreError::CredentialPairStore)?;
+        let current: Option<String> = transaction
             .query_row(
-                concat!(
-                    "SELECT credential_generation FROM ",
-                    crate::db::import_table_names::legacy_owner_tokens_table!(),
-                    "
-                  WHERE singleton_id = 1"
-                ),
+                "SELECT generation FROM credential_pairs
+                  WHERE account_id = 1 AND slot = 'owner_api'",
                 [],
                 |row| row.get(0),
             )
             .optional()
-            .map_err(StoreError::LegacyOwnerTokenStore)?;
-        let Some(Some(current)) = current else {
+            .map_err(StoreError::CredentialPairStore)?;
+        let Some(mut current) = current else {
             return Ok(String::new());
         };
-        let mut generation = Uuid::parse_str(&current)
-            .map_err(|_| StoreError::InvalidLegacyRefreshGeneration)?;
-        let mut statement = connection
-            .prepare(
-                "SELECT input_credential_generation FROM legacy_refresh_receipt_bindings
-                  WHERE output_credential_generation = ?1",
-            )
-            .map_err(StoreError::LegacyRefreshReceipt)?;
-        // The output column is unique and never equals the input of its own
-        // binding, so a walk only repeats on a damaged table. A repeat would
-        // never end, so it is refused rather than guessed at.
         let mut visited = HashSet::new();
         loop {
+            let generation =
+                Uuid::parse_str(&current).map_err(|_| StoreError::CredentialPairInvalid)?;
             if !visited.insert(generation) {
-                return Err(StoreError::InvalidLegacyRefreshGeneration);
+                return Err(StoreError::CredentialPairInvalid);
             }
-            let input: Option<String> = statement
-                .query_row(params![generation.to_string()], |row| row.get(0))
+            let prior: Option<(String, String)> = transaction
+                .query_row(
+                    "SELECT a.input_generation, r.outcome
+                       FROM credential_refresh_attempts a
+                       JOIN outbound_request_receipts r ON r.id = a.receipt_id
+                      WHERE a.account_id = 1 AND a.slot = 'owner_api'
+                        AND a.output_generation = ?1 AND r.outcome = 'success'",
+                    params![current],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
                 .optional()
-                .map_err(StoreError::LegacyRefreshReceipt)?;
-            match input {
-                Some(input) => {
-                    generation = Uuid::parse_str(&input)
-                        .map_err(|_| StoreError::InvalidLegacyRefreshGeneration)?;
-                }
+                .map_err(StoreError::CredentialRefreshReceipt)?;
+            match prior {
+                Some((input, outcome)) if outcome == "success" => current = input,
+                Some(_) => return Err(StoreError::CredentialPairInvalid),
                 None => return Ok(generation.to_string()),
             }
         }

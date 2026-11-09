@@ -2,6 +2,8 @@
 
 //! Credential custody, recovery, and authentication flows.
 
+pub(crate) mod credential_envelope;
+pub(crate) mod credential_keys;
 pub mod credential_recovery;
 pub mod credentials;
 pub mod crypto;
@@ -9,3 +11,4 @@ pub mod fleet_credentials;
 pub mod legacy_auth;
 pub mod legacy_owner_credentials;
 pub mod source_token_envelope;
+pub(crate) mod credential_migration;

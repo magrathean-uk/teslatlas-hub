@@ -1777,19 +1777,13 @@ impl HubStore {
             .map_err(StoreError::Begin)?;
         let reserved_refresh: bool = transaction
             .query_row(
-                "SELECT EXISTS(
-                    SELECT 1 FROM legacy_refresh_receipt_bindings
-                     WHERE receipt_id = ?1
-                ) OR EXISTS(
-                    SELECT 1 FROM fleet_refresh_receipt_bindings
-                     WHERE receipt_id = ?1
-                )",
+                "SELECT EXISTS(SELECT 1 FROM credential_refresh_attempts WHERE receipt_id = ?1)",
                 params![receipt_id.0],
                 |row| row.get(0),
             )
             .map_err(StoreError::OutboundRequestReceipt)?;
         if reserved_refresh {
-            return Err(StoreError::ReservedLegacyRefreshReceipt);
+            return Err(StoreError::ReservedCredentialRefreshReceipt);
         }
         let started_at_ms: Option<i64> = transaction
             .query_row(

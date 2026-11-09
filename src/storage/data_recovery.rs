@@ -299,15 +299,28 @@ fn create_data_backup_with_member_limit(
     let source_installation_id = store.installation_id()?;
     store.catalogue_check()?;
     let backup_snapshot = store.begin_backup_snapshot()?;
+    check_backup_admission(&backup_snapshot)?;
     let (copy_bytes, members) = backup_snapshot.copy_admission()?;
     if members > member_limit {
         return Err(invalid("backup contains too many members"));
     }
+    remove_unpublished_leftovers(&parent)?;
     admit_staging_capacity(&parent, copy_bytes)?;
     let staging = StagingDirectory::create(&parent)?;
     let payload = staging.path.join(DATA_DIRECTORY);
-    backup_snapshot.copy_to(&payload)?;
-    seal_staged_catalogue(&payload)?;
+    let sealed = backup_snapshot
+        .copy_to(&payload)
+        .map_err(DataRecoveryError::from)
+        .and_then(|()| seal_backup_payload(&payload));
+    if let Err(error) = sealed {
+        #[cfg(test)]
+        if crate::auth::credential_migration::seam::take_crash() {
+            std::mem::forget(staging);
+            return Err(error);
+        }
+        remove_unpublished_payload(&payload);
+        return Err(error);
+    }
     protect_payload_tree(&payload)?;
 
     let copied_store = HubStore::open_immutable_read_only(&payload)?;
@@ -467,7 +480,7 @@ pub fn restore_data_backup(
     // Legacy v3 generations can contain live pairing challenges and bearer
     // digests. Sanitize every restored catalogue after its exact source copy
     // has been verified and before the staging directory can be published.
-    seal_staged_catalogue(&staging.path)?;
+    seal_restored_payload(&staging.path)?;
     // Sealed and, if need be, migrated: the staged catalogue is current.
     validate_pairing_tables(&staging.path, SCHEMA_VERSION, true)?;
 
@@ -1885,3 +1898,295 @@ fn io_error(
 #[cfg(test)]
 #[path = "data_recovery/tests.rs"]
 mod tests;
+
+/// What a data backup waits for (R53 step 1); the refusal itself is
+/// `StoreError::BackupWaitsForCredentialCleanup`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BackupWait {
+    Pending,
+    Blocked,
+    PurgePending { needed_bytes: Option<u64> },
+}
+
+pub(crate) const CAR_CONTROL_SECRET_TABLES: &[&str] = &["credential_pairs"];
+pub(crate) const PRE_UPGRADE_SECRET_TABLES: &[&str] = &["legacy_owner_tokens", "fleet_tokens"];
+pub(crate) const CAR_CONTROL_SECRET_FILES: &[&str] = &[
+    "credential-keys",
+    "fleet-command-key.pem",
+    "fleet-proxy-tls-key.pem",
+];
+
+pub(crate) fn credential_backup_wait(
+    admission: &crate::db::CredentialBackupAdmission,
+) -> Option<BackupWait> {
+    use crate::db::CredentialBackupAdmission as Admission;
+    match admission {
+        Admission::Clean => None,
+        Admission::Pending => Some(BackupWait::Pending),
+        Admission::Blocked { .. } => Some(BackupWait::Blocked),
+        Admission::CleanupPending { needed_bytes } => Some(BackupWait::PurgePending {
+            needed_bytes: *needed_bytes,
+        }),
+    }
+}
+
+/// R53 step 1: the cached admission, checked before any destination write.
+fn check_backup_admission(
+    snapshot: &crate::db::HubBackupSnapshot<'_>,
+) -> Result<(), DataRecoveryError> {
+    match credential_backup_wait(&snapshot.credential_backup_admission()) {
+        None => Ok(()),
+        Some(_) => Err(DataRecoveryError::Store(
+            StoreError::BackupWaitsForCredentialCleanup,
+        )),
+    }
+}
+
+/// The existing backup's own staging name: `.teslatlas-data-recovery-<UUID v4>.staging`.
+fn is_backup_staging_name(name: &str) -> bool {
+    let Some(inner) = name
+        .strip_prefix(".teslatlas-data-recovery-")
+        .and_then(|rest| rest.strip_suffix(".staging"))
+    else {
+        return false;
+    };
+    matches!(Uuid::parse_str(inner), Ok(uuid)
+        if uuid.get_version_num() == 4 && uuid.hyphenated().to_string() == inner)
+}
+
+fn remove_payload_files(payload: &Path) -> io::Result<()> {
+    const PAYLOAD_SQLITE_FILES: [&str; 4] = [
+        "hub.sqlite",
+        "hub.sqlite-wal",
+        "hub.sqlite-shm",
+        "hub.sqlite-journal",
+    ];
+    for name in PAYLOAD_SQLITE_FILES {
+        let file = payload.join(name);
+        // A link is never followed and never removed here (symlink metadata).
+        match fs::symlink_metadata(&file) {
+            Ok(metadata) if metadata.file_type().is_symlink() => continue,
+            Ok(_) => {}
+            Err(source) if source.kind() == io::ErrorKind::NotFound => continue,
+            Err(source) => return Err(source),
+        }
+        match fs::remove_file(&file) {
+            Ok(()) => {}
+            Err(source) if source.kind() == io::ErrorKind::NotFound => {}
+            Err(source) => return Err(source),
+        }
+    }
+    match fs::remove_dir(payload) {
+        Ok(()) => Ok(()),
+        Err(source)
+            if matches!(
+                source.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::DirectoryNotEmpty
+            ) =>
+        {
+            Ok(())
+        }
+        Err(source) => Err(source),
+    }
+}
+
+/// R53 step 4: before the next run writes anything, the unpublished payload
+/// and SQLite side files of an earlier run, found by the backup's own staging
+/// names in the destination parent (never a link, never a prefix match).
+fn remove_unpublished_leftovers(parent: &Path) -> Result<(), DataRecoveryError> {
+    let entries = fs::read_dir(parent)
+        .map_err(|source| io_error("listing the backup destination parent", parent, source))?;
+    for entry in entries {
+        let entry = entry
+            .map_err(|source| io_error("listing the backup destination parent", parent, source))?;
+        let file_name = entry.file_name();
+        let Some(name) = file_name.to_str() else {
+            continue;
+        };
+        if !is_backup_staging_name(name) {
+            continue;
+        }
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path).map_err(|source| {
+            io_error("inspecting an unpublished backup leftover", &path, source)
+        })?;
+        if !metadata.file_type().is_dir() {
+            continue;
+        }
+        // The data child is inspected without following links: a symbolic link
+        // (or anything that is not a directory) is skipped, never entered.
+        let payload = path.join(DATA_DIRECTORY);
+        match fs::symlink_metadata(&payload) {
+            Ok(child) if child.file_type().is_dir() => {
+                remove_payload_files(&payload).map_err(|source| {
+                    io_error("removing an unpublished backup payload", &path, source)
+                })?;
+            }
+            Ok(_) => continue,
+            Err(source) if source.kind() == io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(io_error(
+                    "inspecting an unpublished backup payload",
+                    &payload,
+                    source,
+                ));
+            }
+        }
+        // The staging directory goes only when nothing but empty directories is
+        // left in it; any other entry stays.
+        fn remove_empty_directories(directory: &Path) -> io::Result<()> {
+            for entry in fs::read_dir(directory)? {
+                let entry = entry?;
+                if entry.file_type()?.is_dir() {
+                    remove_empty_directories(&entry.path())?;
+                }
+            }
+            match fs::remove_dir(directory) {
+                Err(source) if source.kind() != io::ErrorKind::DirectoryNotEmpty => Err(source),
+                _ => Ok(()),
+            }
+        }
+        let _ = remove_empty_directories(&path);
+    }
+    Ok(())
+}
+
+/// R53 step 4: a failed run removes its payload and SQLite side files.
+fn remove_unpublished_payload(payload: &Path) {
+    let _ = remove_payload_files(payload);
+}
+
+/// R53 steps 3 and 4: the payload seal. The copy's own state row must be
+/// credential-clean and OLD-T1 and OLD-T2 absent; then, with `secure_delete`
+/// on and in one transaction, the credential rows go (fences, attempts and key
+/// usage stay) before the retained seal closes the connection and checks that
+/// no side file is left.
+fn seal_backup_payload(payload: &Path) -> Result<(), DataRecoveryError> {
+    #[cfg(test)]
+    {
+        use crate::auth::credential_migration::seam::{PayloadAction, payload_stage};
+        if !matches!(
+            payload_stage("after_copy", payload),
+            PayloadAction::Continue
+        ) {
+            return Err(invalid("backup stopped after the copy"));
+        }
+    }
+    let catalogue = payload.join("hub.sqlite");
+    require_regular_file(&catalogue, "staged backup catalogue")?;
+    let mut connection = Connection::open_with_flags(
+        &catalogue,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(DataRecoveryError::CatalogueIdentity)?;
+    let clean: bool = connection
+        .query_row(
+            "SELECT converted_at_ms IS NOT NULL AND purge_required = 0
+             FROM credential_format_state",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    if !clean {
+        return Err(invalid("staged backup catalogue is not credential-clean"));
+    }
+    let old_tables = PRE_UPGRADE_SECRET_TABLES
+        .iter()
+        .map(|name| format!("'{name}'"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let present: i64 = connection
+        .query_row(
+            &format!(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name IN ({old_tables})"
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    if present != 0 {
+        return Err(invalid(
+            "staged backup catalogue still holds a pre-upgrade credential table",
+        ));
+    }
+    #[cfg(test)]
+    {
+        use crate::auth::credential_migration::seam::{PayloadAction, payload_stage};
+        if !matches!(
+            payload_stage("seal_transaction", payload),
+            PayloadAction::Continue
+        ) {
+            return Err(invalid("backup seal transaction failed"));
+        }
+    }
+    connection
+        .execute_batch("PRAGMA secure_delete = ON;")
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    transaction
+        .execute_batch("DELETE FROM credential_pairs; DELETE FROM credential_sign_ins;")
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    transaction
+        .commit()
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    drop(connection);
+    seal_staged_catalogue(payload)
+}
+
+/// R53 step 5: the sanitising seal of a restored payload, before its first
+/// open: credential rows (and, in a generation written before this unit, the
+/// OLD-T1 and OLD-T2 rows) are deleted under `secure_delete`, every pending
+/// slot becomes discarded with no reason, fences and attempts stay.
+fn seal_restored_payload(payload: &Path) -> Result<(), DataRecoveryError> {
+    let catalogue = payload.join("hub.sqlite");
+    require_regular_file(&catalogue, "restored catalogue")?;
+    let mut connection = Connection::open_with_flags(
+        &catalogue,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(DataRecoveryError::CatalogueIdentity)?;
+    connection
+        .execute_batch("PRAGMA secure_delete = ON;")
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    let exists = |name: &str| -> Result<bool, DataRecoveryError> {
+        transaction
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = ?1",
+                [name],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|count| count == 1)
+            .map_err(DataRecoveryError::CatalogueIdentity)
+    };
+    let tables = CAR_CONTROL_SECRET_TABLES
+        .iter()
+        .chain(["credential_sign_ins"].iter())
+        .chain(PRE_UPGRADE_SECRET_TABLES.iter());
+    for table in tables {
+        if exists(table)? {
+            transaction
+                .execute_batch(&format!("DELETE FROM {table};"))
+                .map_err(DataRecoveryError::CatalogueIdentity)?;
+        }
+    }
+    if exists("credential_format_state")? {
+        transaction
+            .execute_batch(
+                "UPDATE credential_format_state SET owner_api_state = 'discarded',
+                   owner_api_blocked = NULL WHERE owner_api_state = 'pending';
+                 UPDATE credential_format_state SET fleet_api_state = 'discarded',
+                   fleet_api_blocked = NULL WHERE fleet_api_state = 'pending';",
+            )
+            .map_err(DataRecoveryError::CatalogueIdentity)?;
+    }
+    transaction
+        .commit()
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    drop(connection);
+    seal_staged_catalogue(payload)
+}

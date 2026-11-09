@@ -551,7 +551,29 @@ fn version_one_lookup_rows_remain_unmatched_on_the_floor_store() {
     let temporary = g2_4_m1::copied_store(include_bytes!(
         "../../../../fixtures/g2-4/m1/store-f.sqlite.zst"
     ));
+    let path = temporary.path().join("hub.sqlite");
+    let floor = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    assert_eq!(
+        schema_version(&floor).unwrap(),
+        MIN_STORE_VERSION,
+        "M2P-54 address-cache fixture starts at the retained floor"
+    );
+    let before_open = g2_4_m1::schema_snapshot(&floor);
+    drop(floor);
+    let catalogue_before_open = fs::read(&path).unwrap();
     let store = HubStore::open_existing(temporary.path()).unwrap();
+    let floor = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    assert_eq!(
+        g2_4_m1::schema_snapshot(&floor),
+        before_open,
+        "M2P-54 supported floor opens without changing version, schema or rows"
+    );
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        catalogue_before_open,
+        "M2P-54 read-only floor admission leaves catalogue bytes unchanged"
+    );
+    drop(floor);
     let connection = store.open().unwrap();
     connection.execute("INSERT INTO address_cache(osm_type, osm_id, display_name) VALUES ('way', 42, 'Version one place')", []).unwrap();
     connection.execute("INSERT INTO address_lookup_cache(lookup_key,latitude,longitude,osm_type,osm_id,looked_up_at_ms) VALUES ('51.500000:-0.100000',51.5,-0.1,'way',42,17)", []).unwrap();
@@ -631,5 +653,17 @@ fn version_one_lookup_rows_remain_unmatched_on_the_floor_store() {
     assert!(
         lookup_row_count(&store) == count_before + 1,
         "assertion failed: {test}: the fresh lookup adds one distinct row"
+    );
+    let c10_tables: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name IN ('credential_pairs','credential_refresh_fences','credential_legacy_fences','credential_refresh_attempts','credential_format_state','credential_key_usage','credential_sign_ins')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        (schema_version(&connection).unwrap(), c10_tables),
+        (MIN_STORE_VERSION, 0),
+        "M2P-54 generic address-cache CRUD stays on the supported pre-rung floor"
     );
 }

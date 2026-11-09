@@ -217,30 +217,33 @@ fn initializes_a_checked_wal_database() {
     assert_eq!(inventory.raw_observations, 0);
     assert_eq!(inventory.quarantined_sessions, 0);
     assert_eq!(inventory.referenced_packs, 0);
-    assert_eq!(inventory.legacy_owner_token_rows, 0);
-    assert_eq!(inventory.fleet_token_rows, 0);
+    assert_eq!(inventory.owner_api_credential_rows, 0);
+    assert_eq!(inventory.fleet_api_credential_rows, 0);
     assert_eq!(
         inventory.installation_id,
         store.installation_id().expect("id")
     );
     let before = store
-        .load_legacy_owner_tokens()
+        .credential_pair_presence(CredentialSlot::OwnerApi)
         .expect("legacy tokens")
         .is_some();
-    let fleet_before = store.load_fleet_tokens().expect("Fleet tokens").is_some();
+    let fleet_before = store
+        .credential_pair_presence(CredentialSlot::FleetApi)
+        .expect("Fleet tokens")
+        .is_some();
     let _ = store
         .catalogue_inventory()
         .expect("inventory is repeatable");
     assert_eq!(
         store
-            .load_legacy_owner_tokens()
+            .credential_pair_presence(CredentialSlot::OwnerApi)
             .expect("legacy tokens after inventory")
             .is_some(),
         before
     );
     assert_eq!(
         store
-            .load_fleet_tokens()
+            .credential_pair_presence(CredentialSlot::FleetApi)
             .expect("Fleet tokens after inventory")
             .is_some(),
         fleet_before
@@ -252,8 +255,8 @@ fn initializes_a_checked_wal_database() {
     assert_eq!(runtime.raw_observations, 0);
     assert_eq!(runtime.quarantined_sessions, 0);
     assert_eq!(runtime.referenced_packs, 0);
-    assert_eq!(runtime.legacy_owner_token_rows, 0);
-    assert_eq!(runtime.fleet_token_rows, 0);
+    assert_eq!(runtime.owner_api_credential_rows, 0);
+    assert_eq!(runtime.fleet_api_credential_rows, 0);
 }
 
 #[test]
@@ -282,103 +285,23 @@ fn inventory_counts_physical_pack_and_staging_bytes_once() {
 
 #[test]
 fn source_db_token_import_loads_and_reopens_as_one_row() {
-    let temporary = crate::private_tempdir().expect("temporary store");
-    let store = HubStore::initialize(temporary.path()).expect("store initializes");
-    let imported = LegacyOwnerTokenStore::imported(
-        b"access-ciphertext".to_vec(),
-        b"refresh-ciphertext".to_vec(),
-    )
-    .expect("imported pair is valid");
-
-    store
-        .replace_legacy_owner_tokens(&imported)
-        .expect("imported pair stores");
-    let reopened = HubStore::initialize(temporary.path()).expect("store reopens");
-    let loaded = reopened
-        .load_legacy_owner_tokens()
-        .expect("pair loads")
-        .expect("pair exists");
-
-    assert_eq!(loaded.access(), imported.access());
-    assert_eq!(loaded.refresh(), imported.refresh());
-    assert_eq!(loaded.expires_at(), 0);
-    assert_eq!(loaded.next_refresh_at(), 0);
-    let connection = reopened.open().expect("database opens");
-    let rows: i64 = connection
-        .query_row(
-            concat!(
-                "SELECT COUNT(*) FROM ",
-                crate::db::import_table_names::legacy_owner_tokens_table!()
-            ),
-            [],
-            |row| row.get(0),
-        )
-        .expect("row count");
-    assert_eq!(rows, 1);
+    panic!(
+        "C10_UNAVAILABLE_V2: R64 entry constructors and R66 source-project credential import require the vault"
+    );
 }
 
 #[test]
 fn source_db_legacy_token_store_zeroizes_ciphertext() {
-    use zeroize::Zeroize;
-
-    fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
-    assert_zeroize_on_drop::<LegacyOwnerTokenStore>();
-
-    let mut stored = LegacyOwnerTokenStore::refreshed(
-        b"access-secret-canary".to_vec(),
-        b"refresh-secret-canary".to_vec(),
-        2,
-        1,
-    )
-    .expect("stored pair");
-    stored.zeroize();
-    assert!(stored.access().iter().all(|byte| *byte == 0));
-    assert!(stored.refresh().iter().all(|byte| *byte == 0));
-    assert_eq!(stored.expires_at(), 0);
-    assert_eq!(stored.next_refresh_at(), 0);
+    panic!(
+        "C10_UNAVAILABLE_V2: R66 source-project token import and R76 token-buffer hygiene require the entry path"
+    );
 }
 
 #[test]
 fn source_db_token_replacement_is_atomic_and_refresh_schedule_is_strict() {
-    let temporary = crate::private_tempdir().expect("temporary store");
-    let store = HubStore::initialize(temporary.path()).expect("store initializes");
-    let imported = LegacyOwnerTokenStore::imported(
-        b"old-access-ciphertext".to_vec(),
-        b"old-refresh-ciphertext".to_vec(),
-    )
-    .expect("imported pair is valid");
-    store
-        .replace_legacy_owner_tokens(&imported)
-        .expect("imported pair stores");
-
-    assert!(matches!(
-        LegacyOwnerTokenStore::refreshed(
-            b"new-access-ciphertext".to_vec(),
-            b"new-refresh-ciphertext".to_vec(),
-            1_000,
-            1_000,
-        ),
-        Err(StoreError::InvalidSourceDbTokenSchedule)
-    ));
-
-    let refreshed = LegacyOwnerTokenStore::refreshed(
-        b"new-access-ciphertext".to_vec(),
-        b"new-refresh-ciphertext".to_vec(),
-        2_000,
-        1_000,
-    )
-    .expect("refreshed schedule is valid");
-    store
-        .replace_legacy_owner_tokens(&refreshed)
-        .expect("replacement commits");
-    let loaded = store
-        .load_legacy_owner_tokens()
-        .expect("pair loads")
-        .expect("pair exists");
-    assert_eq!(loaded.access(), refreshed.access());
-    assert_eq!(loaded.refresh(), refreshed.refresh());
-    assert_eq!(loaded.expires_at(), 2_000);
-    assert_eq!(loaded.next_refresh_at(), 1_000);
+    panic!(
+        "C10_UNAVAILABLE_V2: R64 entry constructors and R66 source-project credential import require the vault"
+    );
 }
 
 #[cfg(unix)]
@@ -758,10 +681,18 @@ fn read_only_catalogue_check_does_not_change_the_store_tree() {
 fn short_lived_writer_checkpoint_allows_immediate_immutable_preflight() {
     let temporary = crate::private_tempdir().expect("temporary database");
     let store = HubStore::initialize(temporary.path()).expect("store initializes");
-    let imported = LegacyOwnerTokenStore::imported(
-        b"access-ciphertext".to_vec(),
-        b"refresh-ciphertext".to_vec(),
-    )
+    let imported = s_test_with_credential_connection(&store, |connection| {
+        connection.set_test_now_ms(AS_T0 * 1_000);
+        s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            Uuid::new_v4(),
+            b"synthetic-access",
+            b"synthetic-refresh",
+            0,
+            0,
+        )
+    })
     .expect("test credentials");
     let reader = store
         .open_read_only_connection()
@@ -770,9 +701,16 @@ fn short_lived_writer_checkpoint_allows_immediate_immutable_preflight() {
     let _: i64 = reader
         .query_row("SELECT COUNT(*) FROM vehicles", [], |row| row.get(0))
         .expect("read snapshot");
-    store
-        .replace_legacy_owner_tokens(&imported)
-        .expect("short-lived write");
+    s_test_with_credential_connection(&store, |connection| {
+        connection.replace_credential_pair(
+            &imported,
+            &EntryProvenance::Supplied,
+            &LegacyCandidates(Vec::new()),
+            ReplacePolicy::ReplaceAny,
+        )?;
+        connection.credential_durability_barrier()
+    })
+    .expect("short-lived write");
     assert!(matches!(
         HubStore::open_immutable_read_only(temporary.path()),
         Err(StoreError::PendingCatalogueWal)
@@ -803,7 +741,7 @@ fn short_lived_writer_checkpoint_allows_immediate_immutable_preflight() {
     );
     assert!(
         store
-            .load_legacy_owner_tokens()
+            .credential_pair_presence(CredentialSlot::OwnerApi)
             .expect("legacy credentials")
             .is_some()
     );

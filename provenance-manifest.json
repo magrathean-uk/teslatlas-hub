@@ -17,6 +17,7 @@
       "rationale": "Repository-maintained root manifests and project notice. This treatment does not prove chain of title.",
       "paths": [
         ".gitignore",
+        ".gitleaks.toml",
         ".gitleaksignore",
         "CITATION.cff",
         "Cargo.toml",
@@ -307,7 +308,17 @@
         "fixtures/g2-4/m1/schema-f.json",
         "fixtures/g2-4/m1/table-counts.json",
         "fixtures/g2-4/m1/store-f.sqlite.zst",
-        "fixtures/g2-4/m1/store-f-minus-one.sqlite.zst"
+        "fixtures/g2-4/m1/store-f-minus-one.sqlite.zst",
+        "tests/fixtures/catalogue-floor.sqlite",
+        "tests/fixtures/catalogue-residue.sqlite",
+        "tests/fixtures/credential-pre-upgrade-vectors.json",
+        "tests/fixtures/data-backup/BACKUP_COMPLETE",
+        "tests/fixtures/data-backup/backup-v4.json",
+        "tests/fixtures/data-backup/data/hub.sqlite",
+        "tests/fixtures/recovery-flags-1.bin",
+        "tests/fixtures/recovery-flags-2.bin",
+        "tests/fixtures/recovery-flags-4.bin",
+        "tests/fixtures/recovery-flags-7.bin"
       ],
       "globs": [
         "fixtures/delta-v2/v1/packs/sha256/*.sqlite.zst",
@@ -351,7 +362,20 @@
         "src/collection/tesla_stream.rs",
         "src/import/mod.rs",
         "src/lib.rs",
-        "src/runtime/config/tests/n1.rs"
+        "src/runtime/config/tests/n1.rs",
+        "src/auth/credential_envelope.rs",
+        "src/auth/credential_envelope/tests.rs",
+        "src/auth/credential_keys.rs",
+        "src/auth/credential_keys/tests.rs",
+        "src/auth/credential_migration.rs",
+        "src/auth/credential_migration/tests.rs",
+        "src/auth/credential_migration/tests/cases_b.rs",
+        "src/auth/credential_recovery/tests/g24_m2_recovery.rs",
+        "src/storage/db/tests/g24_m2_s/migration_addition.rs",
+        "src/storage/db/tests/g24_m2_s/migration_addition/atomic.rs",
+        "src/storage/db/tests/g24_m2_s/migration_addition/cleanup.rs",
+        "src/storage/db/tests/g24_m2_s/migration_addition/readers.rs",
+        "src/storage/db/tests/g24_m2_s/migration_addition/snapshot_admission.rs"
       ],
       "globs": [
         "src/api/*.rs",

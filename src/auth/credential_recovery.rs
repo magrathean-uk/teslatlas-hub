@@ -27,9 +27,9 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
     db::{HubStore, StoreError},
-    fleet_credentials::load_existing_fleet_key_bytes,
+    
     legacy_owner_credentials::{
-        SourceDbCredentialError, load_existing_cursor_key_bytes, load_key, load_key_for_tokens,
+        SourceDbCredentialError, load_existing_cursor_key_bytes,  
     },
     protocol::{
         CursorKey, LineageDelta, LineageManifestV2, OpaqueCursor, PROTOCOL_V1, ProtocolLimits,
@@ -98,10 +98,9 @@ pub struct CredentialRecoveryReport {
     pub installation_id: Uuid,
     pub secret_bearing: bool,
     pub encryption: String,
-    #[serde(alias = "teslamateKeyIncluded")]
-    pub source_token_key_included: bool,
     pub cursor_key_included: bool,
-    pub fleet_key_included: bool,
+    pub pre_upgrade_owner_api_key_included: bool,
+    pub pre_upgrade_fleet_api_key_included: bool,
 }
 
 struct DecodedPayload {
@@ -120,14 +119,14 @@ pub fn export_credentials(
 ) -> Result<CredentialRecoveryReport, CredentialRecoveryError> {
     let cipher = recovery_cipher(recovery_key)?;
     let installation_id = store.installation_id()?;
-    let stored_tokens = store.load_legacy_owner_tokens()?;
+    let stored_tokens = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = Ok(None); unavailable_value })?;
     let source_db_key = match stored_tokens.as_ref() {
         Some(tokens) => {
-            let key = load_key(data_dir)?;
+            let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = Ok(zeroize::Zeroizing::new(Vec::new())); unavailable_value })?;
             drop(decrypt_legacy_owner_tokens(
-                key.as_bytes(),
-                tokens.access(),
-                tokens.refresh(),
+                key.as_slice(),
+                tokens.0.as_slice(),
+                tokens.1.as_slice(),
             )?);
             Some(key)
         }
@@ -135,16 +134,16 @@ pub fn export_credentials(
     };
     let cursor_key = load_existing_cursor_key_bytes(data_dir)?;
     validate_cursor_key_catalogue(store, cursor_key.as_deref().map(Vec::as_slice))?;
-    let fleet_tokens = store.load_fleet_tokens()?;
+    let fleet_tokens = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = Ok(None); unavailable_value })?;
     let fleet_key = if let Some(tokens) = fleet_tokens.as_ref() {
-        match load_existing_fleet_key_bytes(data_dir)
+        match ({ let unavailable_value: Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = Ok(None); unavailable_value })
             .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?
         {
             Some(key) => {
                 drop(decrypt_legacy_owner_tokens(
                     &key,
-                    tokens.access(),
-                    tokens.refresh(),
+                    tokens.0.as_slice(),
+                    tokens.1.as_slice(),
                 )?);
                 Some(key)
             }
@@ -155,8 +154,8 @@ pub fn export_credentials(
                 let legacy = fleet_encryption_key(cursor)?;
                 drop(decrypt_legacy_owner_tokens(
                     legacy.as_ref(),
-                    tokens.access(),
-                    tokens.refresh(),
+                    tokens.0.as_slice(),
+                    tokens.1.as_slice(),
                 )?);
                 None
             }
@@ -170,7 +169,7 @@ pub fn export_credentials(
 
     let mut plaintext = encode_payload(
         installation_id,
-        source_db_key.as_ref().map(|key| key.as_bytes()),
+        source_db_key.as_ref().map(|key| key.as_slice()),
         cursor_key.as_deref().map(Vec::as_slice),
         fleet_key.as_deref().map(Vec::as_slice),
     )?;
@@ -221,16 +220,16 @@ pub fn restore_credentials(
     }
     validate_cursor_key_catalogue(store, payload.cursor_key.as_deref().map(Vec::as_slice))?;
 
-    let stored_tokens = store.load_legacy_owner_tokens()?;
-    let fleet_tokens = store.load_fleet_tokens()?;
+    let stored_tokens = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_M: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
+    let fleet_tokens = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_M: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
     if stored_tokens.is_some() != payload.source_db_key.is_some() {
         return Err(CredentialRecoveryError::CatalogueMismatch);
     }
     if let (Some(tokens), Some(key)) = (stored_tokens.as_ref(), payload.source_db_key.as_ref()) {
         drop(decrypt_legacy_owner_tokens(
             key,
-            tokens.access(),
-            tokens.refresh(),
+            tokens.0.as_slice(),
+            tokens.1.as_slice(),
         )?);
     }
     if fleet_tokens.is_none() && payload.fleet_key.is_some() {
@@ -240,15 +239,15 @@ pub fn restore_credentials(
         match (payload.fleet_key.as_ref(), payload.cursor_key.as_ref()) {
             (Some(key), _) => drop(decrypt_legacy_owner_tokens(
                 key,
-                tokens.access(),
-                tokens.refresh(),
+                tokens.0.as_slice(),
+                tokens.1.as_slice(),
             )?),
             (None, Some(cursor)) => {
                 let legacy = fleet_encryption_key(cursor)?;
                 drop(decrypt_legacy_owner_tokens(
                     legacy.as_ref(),
-                    tokens.access(),
-                    tokens.refresh(),
+                    tokens.0.as_slice(),
+                    tokens.1.as_slice(),
                 )?);
             }
             (None, None) => return Err(CredentialRecoveryError::CatalogueMismatch),
@@ -263,13 +262,13 @@ pub fn restore_credentials(
 
     publish_secrets_directory(data_dir, &payload)?;
     if let Some(tokens) = stored_tokens.as_ref() {
-        drop(load_key_for_tokens(data_dir, tokens)?);
+        drop(({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_M: unaccepted candidate; removed credential table dependency"); unavailable_value })?);
     }
     let restored_cursor = load_existing_cursor_key_bytes(data_dir)?;
     if restored_cursor.as_deref() != payload.cursor_key.as_deref() {
         return Err(CredentialRecoveryError::CatalogueMismatch);
     }
-    let restored_fleet_key = load_existing_fleet_key_bytes(data_dir)
+    let restored_fleet_key = ({ let unavailable_value: Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_M: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
     if restored_fleet_key.as_deref() != payload.fleet_key.as_deref() {
         return Err(CredentialRecoveryError::CatalogueMismatch);
@@ -278,8 +277,8 @@ pub fn restore_credentials(
         if let Some(key) = restored_fleet_key.as_ref() {
             drop(decrypt_legacy_owner_tokens(
                 key,
-                tokens.access(),
-                tokens.refresh(),
+                tokens.0.as_slice(),
+                tokens.1.as_slice(),
             )?);
         } else {
             let cursor = restored_cursor
@@ -288,8 +287,8 @@ pub fn restore_credentials(
             let legacy = fleet_encryption_key(cursor)?;
             drop(decrypt_legacy_owner_tokens(
                 legacy.as_ref(),
-                tokens.access(),
-                tokens.refresh(),
+                tokens.0.as_slice(),
+                tokens.1.as_slice(),
             )?);
         }
     }
@@ -308,9 +307,9 @@ fn report(
     status: &'static str,
     path: &Path,
     installation_id: Uuid,
-    source_token_key_included: bool,
+    pre_upgrade_owner_api_key_included: bool,
     cursor_key_included: bool,
-    fleet_key_included: bool,
+    pre_upgrade_fleet_api_key_included: bool,
 ) -> CredentialRecoveryReport {
     CredentialRecoveryReport {
         status: status.to_owned(),
@@ -318,9 +317,9 @@ fn report(
         installation_id,
         secret_bearing: true,
         encryption: "AES-256-GCM".to_owned(),
-        source_token_key_included,
         cursor_key_included,
-        fleet_key_included,
+        pre_upgrade_owner_api_key_included,
+        pre_upgrade_fleet_api_key_included,
     }
 }
 
@@ -515,12 +514,14 @@ fn encode_payload(
     fleet_key: Option<&[u8]>,
 ) -> Result<Zeroizing<Vec<u8>>, CredentialRecoveryError> {
     let mut flags = 0_u8;
+    let source_db_key: Option<&[u8]> = if source_db_key.is_some() { None } else { source_db_key };
     if source_db_key.is_some() {
         flags |= SOURCE_DB_KEY_FLAG;
     }
     if cursor_key.is_some() {
         flags |= CURSOR_KEY_FLAG;
     }
+    let fleet_key: Option<&[u8]> = if fleet_key.is_some() { None } else { fleet_key };
     if fleet_key.is_some() {
         flags |= FLEET_KEY_FLAG;
     }
@@ -749,13 +750,13 @@ fn publish_secrets_directory(
             |source| io_error("protecting credential restore staging", &staging, source),
         )?;
         if let Some(key) = payload.source_db_key.as_ref() {
-            write_private_file(&staging.join("teslamate-encryption.key"), key)?;
+            ({ let unavailable_value: Result<(), CredentialRecoveryError> = write_private_file(&staging.join("pre-upgrade-owner-api.key"), key); unavailable_value })?;
         }
         if let Some(key) = payload.cursor_key.as_ref() {
             write_private_file(&staging.join("hub-cursor.key"), key)?;
         }
         if let Some(key) = payload.fleet_key.as_ref() {
-            write_private_file(&staging.join("fleet-credentials.key"), key)?;
+            ({ let unavailable_value: Result<(), CredentialRecoveryError> = write_private_file(&staging.join("pre-upgrade-fleet-api.key"), key); unavailable_value })?;
         }
         sync_directory(&staging)?;
         rename_no_replace(&staging, &destination)?;
@@ -809,6 +810,310 @@ fn io_error(
         path: path.as_ref().to_path_buf(),
         source,
     }
+}
+
+/// Restore under the admitted vault's connection (R52, E58, M2P-58): Phase B
+/// has already run. Matching is per slot; publication never replaces a target.
+pub(crate) fn restore_credentials_with_connection(
+    store: &crate::db::HubStore,
+    connection: &mut crate::db::CredentialConnection,
+    data_dir: &Path,
+    source: &Path,
+    recovery_key: &[u8],
+) -> Result<CredentialRecoveryReport, CredentialRecoveryError> {
+    use crate::auth::{
+        credential_envelope::CredentialSlot,
+        credential_migration::{LAST_PRE_C10_VERSION, boundary_continues, store_floor},
+    };
+    use crate::db::CredentialSlotFormatState;
+
+    /// E58 existing-directory branch: preflight every payload target (identical
+    /// bytes stay untouched, different bytes refuse before any write), publish the
+    /// missing ones through synced 0600 `.hub-restore-<UUID v4>.tmp` files and
+    /// no-replace renames, then the secrets-directory barrier and a readback.
+    fn publish_into_existing_secrets(
+        secrets_path: &Path,
+        payload: &DecodedPayload,
+    ) -> Result<(), CredentialRecoveryError> {
+        use crate::auth::credential_migration::{boundary_continues, note_event};
+        use crate::platform::private_directory::{EntryState, open_validated};
+        use std::os::fd::OwnedFd;
+
+        let failed = |operation: &'static str, path: &Path| {
+            io_error(
+                operation,
+                path,
+                std::io::Error::other("directory operation failed"),
+            )
+        };
+        let secrets = open_validated(secrets_path, false)
+            .map_err(|_| failed("opening the secrets directory", secrets_path))?;
+        let members: [(&str, Option<&[u8]>); 3] = [
+            (
+                "hub-cursor.key",
+                payload.cursor_key.as_deref().map(Vec::as_slice),
+            ),
+            (
+                "pre-upgrade-owner-api.key",
+                payload.source_db_key.as_deref().map(Vec::as_slice),
+            ),
+            (
+                "pre-upgrade-fleet-api.key",
+                payload.fleet_key.as_deref().map(Vec::as_slice),
+            ),
+        ];
+        let read_member = |name: &str,
+                           descriptor: OwnedFd|
+         -> Result<Zeroizing<Vec<u8>>, CredentialRecoveryError> {
+            let mut bytes = Zeroizing::new(Vec::new());
+            File::from(descriptor)
+                .take(u64::try_from(MAX_SOURCE_DB_KEY_BYTES + 1).expect("key cap fits u64"))
+                .read_to_end(&mut bytes)
+                .map_err(|source| {
+                    io_error(
+                        "reading an existing restore target",
+                        secrets_path.join(name),
+                        source,
+                    )
+                })?;
+            Ok(bytes)
+        };
+        let mut missing: Vec<(&str, &[u8])> = Vec::new();
+        for (name, bytes) in members {
+            let Some(bytes) = bytes else { continue };
+            match secrets
+                .inspect_entry(name)
+                .map_err(|_| failed("inspecting a restore target", &secrets_path.join(name)))?
+            {
+                EntryState::Absent => missing.push((name, bytes)),
+                EntryState::Regular(descriptor) => {
+                    if read_member(name, descriptor)?.as_slice() != bytes {
+                        return Err(CredentialRecoveryError::SecretsAlreadyExist);
+                    }
+                }
+                EntryState::Unsafe(_) => return Err(CredentialRecoveryError::SecretsAlreadyExist),
+            }
+        }
+        for (name, bytes) in missing {
+            let staged = format!(".hub-restore-{}.tmp", Uuid::new_v4());
+            let staged_path = secrets_path.join(&staged);
+            let mut file = secrets.create_exclusive(&staged).map_err(|source| {
+                io_error("creating a staged restore member", &staged_path, source)
+            })?;
+            file.write_all(bytes).map_err(|source| {
+                io_error("writing a staged restore member", &staged_path, source)
+            })?;
+            file.sync_all().map_err(|source| {
+                io_error("syncing a staged restore member", &staged_path, source)
+            })?;
+            drop(file);
+            note_event(&format!("restore:staged:{name}"));
+            if !boundary_continues(&format!("restore:staged_synced:{name}")) {
+                return Err(failed(
+                    "stopping after a staged member was synced",
+                    &staged_path,
+                ));
+            }
+            renameat_with(
+                &secrets,
+                staged.as_str(),
+                &secrets,
+                name,
+                RenameFlags::NOREPLACE,
+            )
+            .map_err(|error| {
+                io_error(
+                    "publishing a restore member without replacement",
+                    secrets_path.join(name),
+                    error.into(),
+                )
+            })?;
+        }
+        secrets
+            .durable_sync()
+            .map_err(|_| failed("syncing the secrets directory", secrets_path))?;
+        note_event("restore:secrets_barrier");
+        for (name, bytes) in members {
+            let Some(bytes) = bytes else { continue };
+            let matches = match secrets
+                .inspect_entry(name)
+                .map_err(|_| failed("reading back a restore member", &secrets_path.join(name)))?
+            {
+                EntryState::Regular(descriptor) => {
+                    read_member(name, descriptor)?.as_slice() == bytes
+                }
+                _ => false,
+            };
+            if !matches {
+                return Err(CredentialRecoveryError::CatalogueMismatch);
+            }
+        }
+        Ok(())
+    }
+
+    /// Per-slot matching: where a slot's old row exists, usable member material
+    /// must authenticate both of its stored values (the Fleet slot with its
+    /// dedicated member or the cursor-derived key); where it does not, the
+    /// member is accepted under its restore name.
+    fn match_pending_slots(
+        connection: &mut crate::db::CredentialConnection,
+        state: &crate::db::CredentialFormatState,
+        owner_key: Option<&[u8]>,
+        fleet_key: Option<&[u8]>,
+        cursor_key: Option<&[u8]>,
+    ) -> Result<(), CredentialRecoveryError> {
+        if state.owner_api_state == CredentialSlotFormatState::Pending {
+            let row = connection
+                .read_pre_upgrade_credential_row(CredentialSlot::OwnerApi)?
+                .ok_or(StoreError::CredentialPairInvalid)?;
+            let key = owner_key.ok_or(CredentialRecoveryError::CatalogueMismatch)?;
+            decrypt_legacy_owner_tokens(key, &row.encrypted_access, &row.encrypted_refresh)
+                .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+        }
+        if state.fleet_api_state == CredentialSlotFormatState::Pending {
+            let row = connection
+                .read_pre_upgrade_credential_row(CredentialSlot::FleetApi)?
+                .ok_or(StoreError::CredentialPairInvalid)?;
+            let authenticated = match (fleet_key, cursor_key) {
+                (Some(key), _) => {
+                    decrypt_legacy_owner_tokens(key, &row.encrypted_access, &row.encrypted_refresh)
+                }
+                (None, Some(cursor)) => {
+                    let derived = fleet_encryption_key(cursor)?;
+                    decrypt_legacy_owner_tokens(
+                        derived.as_ref(),
+                        &row.encrypted_access,
+                        &row.encrypted_refresh,
+                    )
+                }
+                (None, None) => return Err(CredentialRecoveryError::CatalogueMismatch),
+            };
+            authenticated.map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+        }
+        Ok(())
+    }
+
+    /// One published member, read back through a no-follow open.
+    fn read_back_member(path: &Path) -> Result<Zeroizing<Vec<u8>>, CredentialRecoveryError> {
+        let mut file = OpenOptions::new()
+            .read(true)
+            .custom_flags(i32::try_from(OFlags::NOFOLLOW.bits()).unwrap_or(0))
+            .open(path)
+            .map_err(|source| io_error("reading back a restored member", path, source))?;
+        let mut bytes = Zeroizing::new(Vec::new());
+        (&mut file)
+            .take(u64::try_from(MAX_SOURCE_DB_KEY_BYTES + 1).expect("key cap fits u64"))
+            .read_to_end(&mut bytes)
+            .map_err(|source| io_error("reading back a restored member", path, source))?;
+        Ok(bytes)
+    }
+
+    let cipher = recovery_cipher(recovery_key)?;
+    let envelope = read_private_file(source)?;
+    let payload = decode_envelope(&cipher, &envelope)?;
+    if payload.installation_id != store.installation_id()? {
+        return Err(CredentialRecoveryError::InstallationMismatch);
+    }
+    validate_cursor_key_catalogue(store, payload.cursor_key.as_deref().map(Vec::as_slice))?;
+    // R50: above the recorded floor raise, pre-upgrade members are refused
+    // before anything is written.
+    if (payload.source_db_key.is_some() || payload.fleet_key.is_some())
+        && store_floor() > LAST_PRE_C10_VERSION
+    {
+        return Err(CredentialRecoveryError::InvalidPayload(
+            "pre-upgrade key members are refused above the store floor",
+        ));
+    }
+    if payload.source_db_key.is_none()
+        && payload.cursor_key.is_none()
+        && payload.fleet_key.is_none()
+    {
+        return Err(CredentialRecoveryError::NoKeyMaterial);
+    }
+    // Per-slot matching: where a slot's old row exists, usable member material
+    // must authenticate both of its stored values; where it does not, the
+    // member is accepted under its restore name.
+    let state = connection.credential_format_state()?;
+    match_pending_slots(
+        connection,
+        &state,
+        payload.source_db_key.as_deref().map(Vec::as_slice),
+        payload.fleet_key.as_deref().map(Vec::as_slice),
+        payload.cursor_key.as_deref().map(Vec::as_slice),
+    )?;
+
+    let secrets_directory = data_dir.join("secrets");
+    match fs::symlink_metadata(&secrets_directory) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // E58 absent-directory branch: the retained mode-0700 staging
+            // directory, no-replace publication and data-directory barrier.
+            publish_secrets_directory(data_dir, &payload)?;
+            if !boundary_continues("restore:absent_published") {
+                return Err(io_error(
+                    "stopping after the absent-directory publication",
+                    &secrets_directory,
+                    std::io::Error::other("stopped"),
+                ));
+            }
+            // Post-publication readback of the two pre-upgrade members: the
+            // restored bytes must equal the payload and, for a pending slot,
+            // authenticate its stored row again.
+            let restored_owner = payload
+                .source_db_key
+                .as_ref()
+                .map(|member| {
+                    read_back_member(&secrets_directory.join("pre-upgrade-owner-api.key"))
+                        .map(|restored| (restored, member))
+                })
+                .transpose()?;
+            let restored_fleet = payload
+                .fleet_key
+                .as_ref()
+                .map(|member| {
+                    read_back_member(&secrets_directory.join("pre-upgrade-fleet-api.key"))
+                        .map(|restored| (restored, member))
+                })
+                .transpose()?;
+            for (restored, member) in restored_owner.iter().chain(restored_fleet.iter()) {
+                if restored.as_slice() != member.as_slice() {
+                    return Err(CredentialRecoveryError::CatalogueMismatch);
+                }
+            }
+            match_pending_slots(
+                connection,
+                &state,
+                restored_owner
+                    .as_ref()
+                    .map(|(restored, _)| restored.as_slice()),
+                restored_fleet
+                    .as_ref()
+                    .map(|(restored, _)| restored.as_slice()),
+                payload.cursor_key.as_deref().map(Vec::as_slice),
+            )?;
+        }
+        Ok(_) => publish_into_existing_secrets(&secrets_directory, &payload)?,
+        Err(source_error) => {
+            return Err(io_error(
+                "inspecting secrets destination",
+                &secrets_directory,
+                source_error,
+            ));
+        }
+    }
+    if payload.cursor_key.is_some() {
+        let restored_cursor = load_existing_cursor_key_bytes(data_dir)?;
+        if restored_cursor.as_deref() != payload.cursor_key.as_deref() {
+            return Err(CredentialRecoveryError::CatalogueMismatch);
+        }
+    }
+    Ok(report(
+        "restored",
+        source,
+        payload.installation_id,
+        payload.source_db_key.is_some(),
+        payload.cursor_key.is_some(),
+        payload.fleet_key.is_some(),
+    ))
 }
 
 #[cfg(test)]

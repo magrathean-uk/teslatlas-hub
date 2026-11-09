@@ -274,15 +274,24 @@ impl HubStore {
             return self.owner_wire_credential_identity();
         }
         let connection = self.open_read_only_connection()?;
-        let identity: Option<(String, String)> = connection
+        let version: i32 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .map_err(StoreError::CredentialPairStore)?;
+        if version < CREDENTIAL_FORMAT_SCHEMA_VERSION {
+            return Ok(String::new());
+        }
+        let fields: Option<(String, String)> = connection
             .query_row(
-                "SELECT client_id, region FROM fleet_tokens WHERE singleton_id = 1",
+                "SELECT client_id, region FROM credential_pairs
+                  WHERE account_id = 1 AND slot = 'fleet_api'",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
-            .map_err(StoreError::Query)?;
-        Ok(identity.map_or_else(String::new, |(client, region)| format!("{client}|{region}")))
+            .map_err(StoreError::CredentialPairStore)?;
+        Ok(fields.map_or_else(String::new, |(client_id, region)| {
+            format!("{client_id}|{region}")
+        }))
     }
 
     /// The account singleton's `(mode, state, reason_code)`, one indexed row read

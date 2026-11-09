@@ -459,24 +459,33 @@ fn prune_expired_outbound_request_receipts(
     let cutoff_ms = outbound_request_clock_ms()?.saturating_sub(OUTBOUND_REQUEST_RETENTION_MS);
     transaction
         .execute(
-            concat!(
-                "DELETE FROM outbound_request_receipts
+            &format!(
+                concat!(
+                    "DELETE FROM outbound_request_receipts
               WHERE outcome <> 'started'
                 AND completed_at_ms < ?1
                 AND id NOT IN (
-                    WITH RECURSIVE chain(generation) AS (
-                        SELECT credential_generation FROM ",
-                crate::db::import_table_names::legacy_owner_tokens_table!(),
-                "
-                         WHERE singleton_id = 1 AND credential_generation IS NOT NULL
-                        UNION
-                        SELECT b.input_credential_generation
-                          FROM legacy_refresh_receipt_bindings AS b
-                          JOIN chain ON b.output_credential_generation = chain.generation
-                    )
-                    SELECT b.receipt_id FROM legacy_refresh_receipt_bindings AS b
-                     WHERE b.output_credential_generation IN (SELECT generation FROM chain)
+",
+                    "{}",
+                    "
                 )"
+                ),
+                "WITH RECURSIVE credential_chain(slot, generation) AS (
+                    SELECT slot, generation FROM credential_pairs
+                     WHERE account_id = 1 AND slot = 'owner_api'
+                    UNION
+                    SELECT a.slot, a.input_generation
+                      FROM credential_refresh_attempts a
+                      JOIN credential_chain c
+                        ON c.slot = a.slot AND c.generation = a.output_generation
+                      JOIN outbound_request_receipts r ON r.id = a.receipt_id
+                     WHERE a.slot = 'owner_api' AND r.outcome = 'success'
+                )
+                SELECT a.receipt_id FROM credential_refresh_attempts a
+                  JOIN credential_chain c
+                    ON c.slot = a.slot AND c.generation = a.output_generation
+                  JOIN outbound_request_receipts r ON r.id = a.receipt_id
+                 WHERE a.slot = 'owner_api' AND r.outcome = 'success'"
             ),
             params![cutoff_ms],
         )

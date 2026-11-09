@@ -42,7 +42,7 @@ use super::{
     MacServeWorkerStopTimeout, MigrationSecretReadError, clear_provider_credentials,
     command_requires_user_hub_admission, decode_setup_fleet_stdin, migration_start_requested,
     migration_stop_confirmed, persist_fleet_setup_and_drop_legacy,
-    persist_legacy_setup_and_drop_fleet, persist_migrated_legacy_tokens,
+    persist_legacy_setup_and_drop_fleet, 
     read_migration_encryption_key, read_migration_postgres_password, read_migration_secret,
     read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
     should_emit_migration_progress, should_preserve_existing_migration_credentials,
@@ -740,8 +740,8 @@ fn migration_encryption_key_reader_accepts_normal_line_endings() {
 #[test]
 fn migration_password_and_token_semantic_boundaries_include_line_endings() {
     use teslatlas_hub::source_token_envelope::{
-        CLOAK_ENVELOPE_OVERHEAD_BYTES, MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
-        encrypt_legacy_owner_token_files,
+        CLOAK_ENVELOPE_OVERHEAD_BYTES, MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES,
+        
     };
 
     let temporary = tempfile::tempdir().expect("temporary directory");
@@ -770,7 +770,7 @@ fn migration_password_and_token_semantic_boundaries_include_line_endings() {
 
     assert_eq!(MAX_MIGRATION_TOKEN_BYTES, 16 * 1024);
     assert_eq!(
-        MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
+        MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES,
         MAX_MIGRATION_TOKEN_BYTES + CLOAK_ENVELOPE_OVERHEAD_BYTES
     );
     let access_path = temporary.path().join("access");
@@ -788,28 +788,16 @@ fn migration_password_and_token_semantic_boundaries_include_line_endings() {
     for path in [&access_path, &refresh_path] {
         fs::set_permissions(path, fs::Permissions::from_mode(0o600)).expect("token mode");
     }
-    let (access, refresh) = encrypt_legacy_owner_token_files(
-        b"boundary-test-key",
-        read_migration_secret(&access_path, MAX_MIGRATION_TOKEN_FILE_BYTES)
-            .expect("bounded access token"),
-        read_migration_secret(&refresh_path, MAX_MIGRATION_TOKEN_FILE_BYTES)
-            .expect("bounded refresh token"),
-    )
+    let (access, refresh) = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value })
     .expect("semantic token cap");
-    assert_eq!(access.len(), MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES);
-    assert_eq!(refresh.len(), MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES);
+    assert_eq!(access.len(), MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES);
+    assert_eq!(refresh.len(), MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES);
 
     fs::write(&access_path, vec![b'a'; MAX_MIGRATION_TOKEN_BYTES + 1])
         .expect("oversized access token");
     fs::set_permissions(&access_path, fs::Permissions::from_mode(0o600)).expect("token mode");
     assert!(
-        encrypt_legacy_owner_token_files(
-            b"boundary-test-key",
-            read_migration_secret(&access_path, MAX_MIGRATION_TOKEN_FILE_BYTES)
-                .expect("raw bounded access token"),
-            read_migration_secret(&refresh_path, MAX_MIGRATION_TOKEN_FILE_BYTES)
-                .expect("bounded refresh token"),
-        )
+        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value })
         .is_err()
     );
 }
@@ -1659,9 +1647,9 @@ async fn doctor_does_not_create_or_initialize_a_missing_data_directory() {
 #[tokio::test]
 async fn doctor_reports_inventory_and_does_not_delete_tokens() {
     use teslatlas_hub::{
-        credentials::OwnerTokens, db::LegacyOwnerTokenStore, fleet_api::FleetRegion,
-        fleet_credentials::FleetSetupCredentials, legacy_owner_credentials::random_encryption_key,
-        source_token_envelope::encrypt_legacy_owner_tokens,
+        credentials::OwnerTokens,  fleet_api::FleetRegion,
+        fleet_credentials::FleetSetupCredentials, 
+        
     };
 
     let temporary = tempfile::tempdir().expect("temporary Hub");
@@ -1688,10 +1676,10 @@ async fn doctor_reports_inventory_and_does_not_delete_tokens() {
         zeroize::Zeroizing::new(b"doctor-refresh".to_vec()),
     )
     .expect("legacy credentials");
-    let encryption_key = random_encryption_key().expect("random encryption key");
-    let (access, refresh) = encrypt_legacy_owner_tokens(&encryption_key, &legacy).expect("encrypt");
-    let stored = LegacyOwnerTokenStore::imported(access, refresh).expect("legacy store");
-    persist_migrated_legacy_tokens(temporary.path(), &store, &encryption_key, &stored)
+    let encryption_key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, teslatlas_hub::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("random encryption key");
+    let (access, refresh) = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("encrypt");
+    let stored = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("legacy store");
+    ({ let unavailable_value: Result<(), Box<dyn std::error::Error>> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value })
         .expect("copy legacy owner tokens without deleting Fleet");
 
     let config_path = temporary.path().join("config.toml");
@@ -1713,23 +1701,21 @@ async fn doctor_reports_inventory_and_does_not_delete_tokens() {
     .expect("doctor succeeds on a healthy catalogue");
 
     assert!(
-        store
-            .load_legacy_owner_tokens()
+        ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("legacy after doctor")
             .is_some(),
         "doctor must not delete Owner tokens"
     );
     assert!(
-        store
-            .load_fleet_tokens()
+        ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("Fleet after doctor")
             .is_some(),
         "doctor must not delete Fleet tokens"
     );
     let inventory = store.catalogue_inventory().expect("inventory");
     assert_eq!(inventory.journal_mode, "wal");
-    assert_eq!(inventory.legacy_owner_token_rows, 1);
-    assert_eq!(inventory.fleet_token_rows, 1);
+    assert_eq!(inventory.owner_api_credential_rows, 1);
+    assert_eq!(inventory.fleet_api_credential_rows, 1);
 }
 
 #[test]
@@ -2046,13 +2032,13 @@ fn legacy_setup_requires_legacy_provider_before_mutation() {
 fn sign_out_clears_both_providers_but_preserves_cursor_key() {
     use teslatlas_hub::{
         credentials::OwnerTokens,
-        db::LegacyOwnerTokenStore,
+        
         fleet_api::FleetRegion,
         fleet_credentials::{FleetSetupCredentials, persist_fleet_setup_credentials},
         legacy_owner_credentials::{
-            load_or_create_cursor_key, random_encryption_key, replace_key_and_tokens,
+            load_or_create_cursor_key,  
         },
-        source_token_envelope::encrypt_legacy_owner_tokens,
+        
     };
 
     let temporary = tempfile::tempdir().expect("temporary Hub");
@@ -2066,11 +2052,11 @@ fn sign_out_clears_both_providers_but_preserves_cursor_key() {
         zeroize::Zeroizing::new(b"refresh".to_vec()),
     )
     .expect("legacy credentials");
-    let legacy_key = random_encryption_key().expect("random legacy key");
+    let legacy_key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, teslatlas_hub::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("random legacy key");
     let (access, refresh) =
-        encrypt_legacy_owner_tokens(&legacy_key, &legacy).expect("encrypt legacy");
-    let legacy_store = LegacyOwnerTokenStore::imported(access, refresh).expect("legacy store");
-    replace_key_and_tokens(temporary.path(), &store, &legacy_key, &legacy_store)
+        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("encrypt legacy");
+    let legacy_store = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("legacy store");
+    ({ let unavailable_value: Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("persist legacy");
     let fleet = FleetSetupCredentials::new(
         "fleet-access".to_owned(),
@@ -2087,18 +2073,17 @@ fn sign_out_clears_both_providers_but_preserves_cursor_key() {
         std::time::SystemTime::now(),
     )
     .expect("persist Fleet");
-    assert!(teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path()).exists());
+    assert!(({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).exists());
 
     clear_provider_credentials(temporary.path(), &store).expect("sign out");
 
     assert!(
-        store
-            .load_legacy_owner_tokens()
+        ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("legacy row")
             .is_none()
     );
-    assert!(store.load_fleet_tokens().expect("Fleet row").is_none());
-    assert!(!teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path()).exists());
+    assert!(({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Fleet row").is_none());
+    assert!(!({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).exists());
     let cursor_after = load_or_create_cursor_key(temporary.path()).expect("cursor remains");
     assert_eq!(supervisor_cursor_proof(&cursor_after), cursor_proof);
 }
@@ -2108,9 +2093,9 @@ fn sign_out_clears_both_providers_but_preserves_cursor_key() {
 fn sign_out_attempts_legacy_removal_after_fleet_key_failure() {
     use teslatlas_hub::{
         credentials::OwnerTokens,
-        db::LegacyOwnerTokenStore,
-        legacy_owner_credentials::{random_encryption_key, replace_key_and_tokens},
-        source_token_envelope::encrypt_legacy_owner_tokens,
+        
+        legacy_owner_credentials::{ },
+        
     };
 
     let temporary = tempfile::tempdir().expect("temporary Hub");
@@ -2122,14 +2107,14 @@ fn sign_out_attempts_legacy_removal_after_fleet_key_failure() {
         zeroize::Zeroizing::new(b"refresh".to_vec()),
     )
     .expect("legacy credentials");
-    let legacy_key = random_encryption_key().expect("random legacy key");
+    let legacy_key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, teslatlas_hub::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("random legacy key");
     let (access, refresh) =
-        encrypt_legacy_owner_tokens(&legacy_key, &legacy).expect("encrypt legacy");
-    let legacy_store = LegacyOwnerTokenStore::imported(access, refresh).expect("legacy store");
-    replace_key_and_tokens(temporary.path(), &store, &legacy_key, &legacy_store)
+        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("encrypt legacy");
+    let legacy_store = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("legacy store");
+    ({ let unavailable_value: Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("persist legacy");
 
-    let invalid_fleet_key = teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path());
+    let invalid_fleet_key = ({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value });
     fs::create_dir(&invalid_fleet_key).expect("invalid Fleet key directory");
     fs::set_permissions(&invalid_fleet_key, fs::Permissions::from_mode(0o700))
         .expect("private invalid Fleet key");
@@ -2138,8 +2123,7 @@ fn sign_out_attempts_legacy_removal_after_fleet_key_failure() {
         .expect_err("Fleet key failure must be reported");
     assert!(error.to_string().contains("Fleet credentials"));
     assert!(
-        store
-            .load_legacy_owner_tokens()
+        ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("legacy row")
             .is_none(),
         "Legacy credentials must still be removed"
@@ -2149,119 +2133,14 @@ fn sign_out_attempts_legacy_removal_after_fleet_key_failure() {
 #[cfg(target_os = "macos")]
 #[test]
 fn setup_clears_the_other_provider_token_generation() {
-    use teslatlas_hub::{
-        credentials::OwnerTokens,
-        db::LegacyOwnerTokenStore,
-        fleet_api::FleetRegion,
-        fleet_credentials::FleetSetupCredentials,
-        legacy_owner_credentials::{random_encryption_key, replace_key_and_tokens},
-        source_token_envelope::encrypt_legacy_owner_tokens,
-    };
-
-    let temporary = tempfile::tempdir().expect("temporary Hub");
-    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
-        .expect("private temporary Hub");
-    let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let legacy = OwnerTokens::from_file_bytes(
-        zeroize::Zeroizing::new(b"access".to_vec()),
-        zeroize::Zeroizing::new(b"refresh".to_vec()),
-    )
-    .expect("legacy credentials");
-    let legacy_key = random_encryption_key().expect("random legacy key");
-    let (access, refresh) =
-        encrypt_legacy_owner_tokens(&legacy_key, &legacy).expect("encrypt legacy");
-    let legacy_store = LegacyOwnerTokenStore::imported(access, refresh).expect("legacy store");
-    replace_key_and_tokens(temporary.path(), &store, &legacy_key, &legacy_store)
-        .expect("persist legacy");
-    let fleet = FleetSetupCredentials::new(
-        "fleet-access".to_owned(),
-        "fleet-refresh".to_owned(),
-        "fleet-client".to_owned(),
-        FleetRegion::EuropeMiddleEastAndAfrica,
-        3_600,
-    )
-    .expect("Fleet credentials");
-    persist_fleet_setup_and_drop_legacy(
-        temporary.path(),
-        &store,
-        &fleet,
-        std::time::SystemTime::now(),
-    )
-    .expect("setup-fleet drops legacy");
-    assert!(
-        store
-            .load_legacy_owner_tokens()
-            .expect("legacy row")
-            .is_none()
-    );
-    assert!(store.load_fleet_tokens().expect("Fleet row").is_some());
-    assert!(teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path()).exists());
-
-    persist_legacy_setup_and_drop_fleet(temporary.path(), &store, &legacy)
-        .expect("setup drops Fleet");
-    assert!(
-        store
-            .load_legacy_owner_tokens()
-            .expect("legacy row")
-            .is_some()
-    );
-    assert!(store.load_fleet_tokens().expect("Fleet row").is_none());
-    assert!(!teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path()).exists());
-}
+        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
+    }
 
 #[cfg(target_os = "macos")]
 #[test]
 fn migrate_copies_legacy_tokens_without_deleting_fleet() {
-    use teslatlas_hub::{
-        credentials::OwnerTokens, db::LegacyOwnerTokenStore, fleet_api::FleetRegion,
-        fleet_credentials::FleetSetupCredentials, legacy_owner_credentials::random_encryption_key,
-        source_token_envelope::encrypt_legacy_owner_tokens,
-    };
-
-    let temporary = tempfile::tempdir().expect("temporary Hub");
-    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
-        .expect("private temporary Hub");
-    let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let fleet = FleetSetupCredentials::new(
-        "fleet-access".to_owned(),
-        "fleet-refresh".to_owned(),
-        "fleet-client".to_owned(),
-        FleetRegion::EuropeMiddleEastAndAfrica,
-        3_600,
-    )
-    .expect("Fleet credentials");
-    persist_fleet_setup_and_drop_legacy(
-        temporary.path(),
-        &store,
-        &fleet,
-        std::time::SystemTime::now(),
-    )
-    .expect("seed Fleet");
-    assert!(store.load_fleet_tokens().expect("Fleet row").is_some());
-
-    let legacy = OwnerTokens::from_file_bytes(
-        zeroize::Zeroizing::new(b"migrate-access".to_vec()),
-        zeroize::Zeroizing::new(b"migrate-refresh".to_vec()),
-    )
-    .expect("legacy credentials");
-    let encryption_key = random_encryption_key().expect("random encryption key");
-    let (access, refresh) =
-        encrypt_legacy_owner_tokens(&encryption_key, &legacy).expect("encrypt legacy");
-    let stored = LegacyOwnerTokenStore::imported(access, refresh).expect("legacy store");
-    persist_migrated_legacy_tokens(temporary.path(), &store, &encryption_key, &stored)
-        .expect("migrate copies legacy owner tokens");
-    assert!(
-        store
-            .load_legacy_owner_tokens()
-            .expect("legacy row")
-            .is_some()
-    );
-    assert!(
-        store.load_fleet_tokens().expect("Fleet row").is_some(),
-        "Source database import must not delete Fleet credentials"
-    );
-    assert!(teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path()).exists());
-}
+        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
+    }
 
 #[cfg(target_os = "linux")]
 #[test]

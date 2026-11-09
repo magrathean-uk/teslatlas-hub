@@ -480,24 +480,36 @@ impl HubStore {
     /// (C5 R47). A receipt of another generation, or without its fence, is not
     /// that condition. Columns only: no key, no decryption.
     pub fn identified_unresolved_fleet_refresh(&self) -> Result<bool, StoreError> {
-        self.open_read_only_connection()?
+        let connection = self.open_read_only_connection()?;
+        let version: i32 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .map_err(StoreError::CredentialPairStore)?;
+        if version < CREDENTIAL_FORMAT_SCHEMA_VERSION {
+            return Ok(false);
+        }
+        connection
             .query_row(
                 "SELECT EXISTS(
-                    SELECT 1
-                      FROM outbound_request_receipts AS r
-                      JOIN fleet_refresh_receipt_bindings AS b ON b.receipt_id = r.id
-                      JOIN fleet_tokens AS t
-                        ON t.singleton_id = 1
-                       AND t.credential_generation = b.input_credential_generation
-                     WHERE r.outcome = 'started'
-                       AND EXISTS(
-                            SELECT 1 FROM fleet_refresh_input_fences AS f
-                             WHERE f.input_credential_generation
-                                   = b.input_credential_generation))",
+                    SELECT 1 FROM credential_pairs p
+                    JOIN credential_refresh_attempts a
+                      ON a.account_id = p.account_id AND a.slot = p.slot
+                     AND a.input_generation = p.generation
+                    JOIN outbound_request_receipts r ON r.id = a.receipt_id
+                    WHERE p.account_id = 1 AND p.slot = 'fleet_api'
+                      AND r.outcome = 'started'
+                      AND (EXISTS(
+                          SELECT 1 FROM credential_refresh_fences f
+                           WHERE f.fence_id = a.fence_id AND f.kind = 'attempt'
+                             AND f.fingerprint = p.refresh_fingerprint
+                      ) OR (a.migrated = 1 AND EXISTS(
+                          SELECT 1 FROM credential_legacy_fences f
+                           WHERE f.legacy_generation = p.generation
+                      )))
+                )",
                 [],
                 |row| row.get(0),
             )
-            .map_err(StoreError::FleetRefreshReceipt)
+            .map_err(StoreError::CredentialRefreshReceipt)
     }
 
     /// The effective, read-only credential status the loaded `mode` applies to,

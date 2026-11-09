@@ -510,10 +510,7 @@ CREATE TABLE supervised_collector_lease (
                         CHECK(lease_until_ms > heartbeat_at_ms)
                 ) STRICT;
 
-CREATE TABLE legacy_refresh_input_fences (
-                    input_credential_generation TEXT PRIMARY KEY COLLATE NOCASE
-                        CHECK(length(input_credential_generation) = 36)
-                ) STRICT, WITHOUT ROWID;
+
 
 CREATE TABLE raw_observation_prune_guard (
                     singleton INTEGER PRIMARY KEY CHECK(singleton = 1)
@@ -533,20 +530,7 @@ CREATE TABLE "paired_devices" (
                     CHECK(length(CAST(display_name AS BLOB)) BETWEEN 1 AND 128)
                 ) STRICT;
 
-CREATE TABLE "legacy_owner_tokens" (
-                    singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
-                    access BLOB NOT NULL CHECK(length(access) > 0),
-                    refresh BLOB NOT NULL CHECK(length(refresh) > 0),
-                    expires_at INTEGER NOT NULL CHECK(expires_at >= 0),
-                    next_refresh_at INTEGER NOT NULL CHECK(next_refresh_at >= 0),
-                    credential_generation TEXT
-                        CHECK(credential_generation IS NULL
-                              OR length(credential_generation) = 36),
-                    CHECK(
-                        (expires_at = 0 AND next_refresh_at = 0)
-                        OR (expires_at > next_refresh_at AND next_refresh_at > 0)
-                    )
-                 ) STRICT;
+
 
 CREATE TABLE "lifecycle_open_rows" (
                     source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE CASCADE,
@@ -604,50 +588,13 @@ CREATE TABLE "outbound_request_receipts" (
                     )
                 ) STRICT;
 
-CREATE TABLE "legacy_refresh_receipt_bindings" (
-                    receipt_id INTEGER PRIMARY KEY NOT NULL
-                        REFERENCES "outbound_request_receipts"(id) ON DELETE CASCADE,
-                    attempt_id TEXT NOT NULL UNIQUE CHECK(length(attempt_id) = 36),
-                    input_credential_generation TEXT NOT NULL
-                        CHECK(length(input_credential_generation) = 36),
-                    output_credential_generation TEXT
-                        CHECK(output_credential_generation IS NULL
-                              OR length(output_credential_generation) = 36),
-                    CHECK(output_credential_generation IS NULL
-                          OR output_credential_generation <> input_credential_generation)
-                ) STRICT;
 
-CREATE TABLE fleet_tokens (
-                    singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
-                    access BLOB NOT NULL CHECK(length(access) BETWEEN 1 AND 16424),
-                    refresh BLOB NOT NULL CHECK(length(refresh) BETWEEN 1 AND 16424),
-                    client_id TEXT NOT NULL
-                        CHECK(length(CAST(client_id AS BLOB)) BETWEEN 1 AND 255),
-                    region TEXT NOT NULL CHECK(region IN ('na', 'eu', 'cn')),
-                    expires_at INTEGER NOT NULL CHECK(expires_at > 0),
-                    next_refresh_at INTEGER NOT NULL
-                        CHECK(next_refresh_at > 0 AND next_refresh_at < expires_at)
-                , credential_generation TEXT
-                    CHECK(credential_generation IS NULL
-                          OR length(credential_generation) = 36)) STRICT;
 
-CREATE TABLE fleet_refresh_receipt_bindings (
-                    receipt_id INTEGER PRIMARY KEY NOT NULL
-                        REFERENCES outbound_request_receipts(id) ON DELETE CASCADE,
-                    attempt_id TEXT NOT NULL UNIQUE CHECK(length(attempt_id) = 36),
-                    input_credential_generation TEXT NOT NULL
-                        CHECK(length(input_credential_generation) = 36),
-                    output_credential_generation TEXT
-                        CHECK(output_credential_generation IS NULL
-                              OR length(output_credential_generation) = 36),
-                    CHECK(output_credential_generation IS NULL
-                          OR output_credential_generation <> input_credential_generation)
-                ) STRICT;
 
-CREATE TABLE fleet_refresh_input_fences (
-                    input_credential_generation TEXT PRIMARY KEY COLLATE NOCASE
-                        CHECK(length(input_credential_generation) = 36)
-                ) STRICT, WITHOUT ROWID;
+
+
+
+
 
 CREATE TABLE paired_device_token_grace (
                     device_id TEXT PRIMARY KEY NOT NULL
@@ -1068,13 +1015,9 @@ CREATE INDEX outbound_request_receipts_proof
 CREATE INDEX outbound_request_receipts_retention
                     ON outbound_request_receipts(outcome, completed_at_ms, id);
 
-CREATE UNIQUE INDEX legacy_refresh_receipt_output_generation
-                    ON legacy_refresh_receipt_bindings(output_credential_generation)
-                    WHERE output_credential_generation IS NOT NULL;
 
-CREATE UNIQUE INDEX fleet_refresh_receipt_output_generation
-                    ON fleet_refresh_receipt_bindings(output_credential_generation)
-                    WHERE output_credential_generation IS NOT NULL;
+
+
 
 CREATE INDEX raw_observations_vehicle_cursor
                     ON raw_observations(vehicle_id, observation_id);
@@ -1142,3 +1085,107 @@ CREATE TRIGGER raw_observations_append_only_delete
                 END;
 
 INSERT INTO terrain_tidy_state(step, resume_vehicle_id, resume_position_id, examined, cleared, requeued, removed, kept, drives_changed, completed_at_ms) VALUES ('earlier_build_values_v1', '', 0, 0, 0, 0, 0, 0, 0, NULL);
+
+-- C10 credential schema
+CREATE TABLE credential_pairs (
+    account_id INTEGER NOT NULL CHECK(account_id = 1),
+    slot TEXT NOT NULL CHECK(slot IN ('owner_api', 'fleet_api')),
+    origin TEXT CHECK(origin IS NULL OR origin IN
+        ('hub_login', 'direct_entry', 'provider_entry', 'fleet_oauth', 'source_token')),
+    refresh_owner TEXT NOT NULL CHECK(refresh_owner IN ('hub', 'external')),
+    generation TEXT NOT NULL CHECK(length(generation) = 36),
+    access_envelope BLOB NOT NULL CHECK(length(access_envelope) BETWEEN 68 AND 16451),
+    refresh_envelope BLOB NOT NULL CHECK(length(refresh_envelope) BETWEEN 67 AND 16451),
+    refresh_present INTEGER NOT NULL CHECK(refresh_present IN (0, 1)),
+    refresh_fingerprint BLOB CHECK(refresh_fingerprint IS NULL OR length(refresh_fingerprint) = 32),
+    expires_at INTEGER NOT NULL CHECK(expires_at >= 0),
+    next_refresh_at INTEGER NOT NULL CHECK(next_refresh_at >= 0),
+    client_id TEXT CHECK(client_id IS NULL OR length(CAST(client_id AS BLOB)) BETWEEN 1 AND 255),
+    region TEXT CHECK(region IS NULL OR region IN ('na', 'eu', 'cn')),
+    migrated INTEGER NOT NULL CHECK(migrated IN (0, 1)),
+    written_at_ms INTEGER NOT NULL CHECK(written_at_ms >= 0),
+    PRIMARY KEY (account_id, slot),
+    CHECK((slot = 'fleet_api') = (origin IS NOT NULL AND origin = 'fleet_oauth')),
+    CHECK(origin IS NOT NULL OR (migrated = 1 AND slot = 'owner_api')),
+    CHECK((slot = 'fleet_api') = (client_id IS NOT NULL)),
+    CHECK((slot = 'fleet_api') = (region IS NOT NULL)),
+    CHECK(refresh_present = 1 OR (origin IS NOT NULL AND origin = 'provider_entry')),
+    CHECK((refresh_present = 1) = (refresh_fingerprint IS NOT NULL)),
+    CHECK((refresh_present = 1) = (length(refresh_envelope) > 67)),
+    CHECK((expires_at = 0 AND next_refresh_at = 0 AND slot = 'owner_api')
+          OR (expires_at > next_refresh_at AND next_refresh_at > 0))
+) STRICT;
+
+CREATE TABLE credential_refresh_fences (
+    fence_id INTEGER PRIMARY KEY,
+    fingerprint BLOB NOT NULL UNIQUE CHECK(length(fingerprint) = 32),
+    kind TEXT NOT NULL CHECK(kind IN ('attempt', 'migrated')),
+    fenced_at_ms INTEGER NOT NULL CHECK(fenced_at_ms >= 0)
+) STRICT;
+
+CREATE TABLE credential_legacy_fences (
+    legacy_generation TEXT PRIMARY KEY NOT NULL COLLATE NOCASE CHECK(length(legacy_generation) = 36),
+    identity TEXT NOT NULL CHECK(identity IN ('anchored', 'opaque')),
+    fenced_at_ms INTEGER NOT NULL CHECK(fenced_at_ms >= 0)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE credential_refresh_attempts (
+    receipt_id INTEGER PRIMARY KEY NOT NULL REFERENCES outbound_request_receipts(id) ON DELETE CASCADE,
+    attempt_id TEXT NOT NULL UNIQUE CHECK(length(attempt_id) = 36),
+    account_id INTEGER NOT NULL CHECK(account_id = 1),
+    slot TEXT NOT NULL CHECK(slot IN ('owner_api', 'fleet_api')),
+    input_generation TEXT NOT NULL CHECK(length(input_generation) = 36),
+    fence_id INTEGER UNIQUE REFERENCES credential_refresh_fences(fence_id),
+    output_generation TEXT CHECK(output_generation IS NULL OR length(output_generation) = 36),
+    migrated INTEGER NOT NULL CHECK(migrated IN (0, 1)),
+    CHECK(output_generation IS NULL OR output_generation <> input_generation),
+    CHECK(migrated = 0 OR fence_id IS NULL)
+) STRICT;
+CREATE UNIQUE INDEX credential_refresh_attempts_output
+    ON credential_refresh_attempts(slot, output_generation) WHERE output_generation IS NOT NULL;
+CREATE INDEX credential_refresh_attempts_slot ON credential_refresh_attempts(account_id, slot, receipt_id);
+
+CREATE TABLE credential_key_usage (
+    key_id BLOB PRIMARY KEY NOT NULL CHECK(length(key_id) = 8),
+    reserved_invocations INTEGER NOT NULL CHECK(reserved_invocations >= 0),
+    first_reserved_at_ms INTEGER NOT NULL CHECK(first_reserved_at_ms >= 0)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE credential_sign_ins (
+    sign_in_id TEXT PRIMARY KEY NOT NULL CHECK(length(sign_in_id) = 36),
+    slot TEXT NOT NULL CHECK(slot IN ('owner_api', 'fleet_api')),
+    binding BLOB NOT NULL UNIQUE CHECK(length(binding) = 32),
+    started_at_ms INTEGER NOT NULL CHECK(started_at_ms >= 0),
+    expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms > started_at_ms)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE credential_format_state (
+    singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
+    format_version INTEGER NOT NULL CHECK(format_version = 1),
+    owner_api_state TEXT NOT NULL CHECK(owner_api_state IN ('none', 'pending', 'migrated', 'discarded')),
+    fleet_api_state TEXT NOT NULL CHECK(fleet_api_state IN ('none', 'pending', 'migrated', 'discarded')),
+    owner_api_blocked TEXT CHECK(owner_api_blocked IS NULL OR owner_api_blocked IN ('old_key_unavailable', 'old_pair_invalid')),
+    fleet_api_blocked TEXT CHECK(fleet_api_blocked IS NULL OR fleet_api_blocked IN ('old_key_unavailable', 'old_pair_invalid')),
+    fences_pending INTEGER NOT NULL CHECK(fences_pending IN (0, 1)),
+    old_tables_dropped INTEGER NOT NULL CHECK(old_tables_dropped IN (0, 1)),
+    purge_required INTEGER NOT NULL CHECK(purge_required IN (0, 1)),
+    wal_scrubbed INTEGER NOT NULL CHECK(wal_scrubbed IN (0, 1)),
+    old_files_removed INTEGER NOT NULL CHECK(old_files_removed IN (0, 1)),
+    attempts_migrated INTEGER NOT NULL DEFAULT 0 CHECK(attempts_migrated >= 0),
+    fences_fingerprinted INTEGER NOT NULL DEFAULT 0 CHECK(fences_fingerprinted >= 0),
+    legacy_fences INTEGER NOT NULL DEFAULT 0 CHECK(legacy_fences >= 0),
+    purge_needed_bytes INTEGER CHECK(purge_needed_bytes IS NULL OR purge_needed_bytes >= 0),
+    secrets_exclusion TEXT CHECK(secrets_exclusion IS NULL OR secrets_exclusion IN ('verified', 'failed', 'not_applicable')),
+    durability TEXT CHECK(durability IS NULL OR durability IN ('ok', 'unavailable')),
+    durability_probed_at_ms INTEGER CHECK(durability_probed_at_ms IS NULL OR durability_probed_at_ms >= 0),
+    started_at_ms INTEGER CHECK(started_at_ms IS NULL OR started_at_ms >= 0),
+    converted_at_ms INTEGER CHECK(converted_at_ms IS NULL OR converted_at_ms >= 0),
+    completed_at_ms INTEGER CHECK(completed_at_ms IS NULL OR completed_at_ms >= 0),
+    CHECK(owner_api_blocked IS NULL OR owner_api_state = 'pending'),
+    CHECK(fleet_api_blocked IS NULL OR fleet_api_state = 'pending'),
+    CHECK((converted_at_ms IS NOT NULL) = (owner_api_state <> 'pending' AND fleet_api_state <> 'pending'
+                                           AND fences_pending = 0 AND old_tables_dropped = 1)),
+    CHECK(wal_scrubbed = 0 OR purge_required = 0),
+    CHECK(completed_at_ms IS NULL OR (converted_at_ms IS NOT NULL AND purge_required = 0
+                                      AND wal_scrubbed = 1 AND old_files_removed = 1))
+) STRICT;

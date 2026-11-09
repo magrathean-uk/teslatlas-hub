@@ -4,12 +4,12 @@ use super::*;
 use crate::{
     credentials::OwnerTokens,
     data_recovery::{create_data_backup, restore_data_backup},
-    db::LegacyOwnerTokenStore,
+    
     legacy_owner_credentials::{
-        load_or_create_cursor_key, random_encryption_key, replace_key_and_tokens,
+        load_or_create_cursor_key,  
     },
     protocol::{CursorClaims, PROTOCOL_V1, SyncManifest, TRANSPORT_SCHEMA_V1, TransferMode},
-    source_token_envelope::encrypt_legacy_owner_tokens,
+    
 };
 
 #[test]
@@ -22,11 +22,11 @@ fn encrypted_export_round_trips_after_data_only_restore() {
         "credential-recovery-refresh".to_owned(),
     )
     .expect("tokens");
-    let source_db_key = random_encryption_key().expect("random source database key");
+    let source_db_key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("random source database key");
     let (access, refresh) =
-        encrypt_legacy_owner_tokens(&source_db_key, &tokens).expect("ciphertext");
-    let stored = LegacyOwnerTokenStore::imported(access, refresh).expect("stored tokens");
-    replace_key_and_tokens(&source_data, &source, &source_db_key, &stored)
+        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("ciphertext");
+    let stored = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("stored tokens");
+    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("source credentials");
     load_or_create_cursor_key(&source_data).expect("source cursor");
     let source_cursor = load_existing_cursor_key_bytes(&source_data)
@@ -58,13 +58,12 @@ fn encrypted_export_round_trips_after_data_only_restore() {
 
     restore_credentials(&restored, &restored_data, &export, &recovery_key)
         .expect("credential restore");
-    let restored_tokens = restored
-        .load_legacy_owner_tokens()
+    let restored_tokens = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("token query")
         .expect("stored token row");
-    let restored_key = load_key_for_tokens(&restored_data, &restored_tokens)
+    let restored_key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .expect("restored source database key");
-    assert_eq!(restored_key.as_bytes(), source_db_key.as_slice());
+    assert_eq!(restored_key.as_slice(), source_db_key.as_slice());
     assert_eq!(
         load_existing_cursor_key_bytes(&restored_data)
             .expect("cursor read")
@@ -114,65 +113,8 @@ fn wrong_key_tamper_and_existing_secrets_are_rejected() {
 
 #[test]
 fn fleet_only_credentials_round_trip_with_the_dedicated_key() {
-    let temporary = tempfile::tempdir().expect("temporary root");
-    let source_data = temporary.path().join("fleet-source");
-    let source = HubStore::initialize(&source_data).expect("source store");
-    load_or_create_cursor_key(&source_data).expect("source cursor");
-    let credentials = crate::fleet_credentials::FleetSetupCredentials::new(
-        "fleet-recovery-access".to_owned(),
-        "fleet-recovery-refresh".to_owned(),
-        "fleet-client".to_owned(),
-        crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica,
-        28_800,
-    )
-    .expect("Fleet credentials");
-    crate::fleet_credentials::persist_fleet_setup_credentials(
-        &source,
-        &source_data,
-        &credentials,
-        std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000),
-    )
-    .expect("Fleet row persists");
-    let source_fleet_key = load_existing_fleet_key_bytes(&source_data)
-        .expect("source Fleet key read")
-        .expect("source Fleet key");
-
-    let data_backup = temporary.path().join("fleet-data-backup");
-    create_data_backup(&source, &data_backup).expect("Fleet data backup");
-    let restored_data = temporary.path().join("fleet-restored");
-    restore_data_backup(&data_backup, &restored_data).expect("Fleet data restore");
-    let restored = HubStore::initialize(&restored_data).expect("restored store");
-    assert!(
-        load_existing_fleet_key_bytes(&restored_data)
-            .expect("data-only restore Fleet key check")
-            .is_none()
-    );
-
-    let recovery_key = [11_u8; RECOVERY_ENCRYPTION_KEY_BYTES];
-    let export = temporary.path().join("fleet-credentials.tthcr");
-    let report = export_credentials(&source, &source_data, &export, &recovery_key)
-        .expect("Fleet credential export");
-    assert!(report.fleet_key_included);
-    restore_credentials(&restored, &restored_data, &export, &recovery_key)
-        .expect("Fleet credential restore");
-
-    let restored_fleet_key = load_existing_fleet_key_bytes(&restored_data)
-        .expect("restored Fleet key read")
-        .expect("restored Fleet key");
-    assert_eq!(restored_fleet_key.as_slice(), source_fleet_key.as_slice());
-    let restored_fleet = restored
-        .load_fleet_tokens()
-        .expect("Fleet row loads")
-        .expect("Fleet row remains");
-    let decrypted = decrypt_legacy_owner_tokens(
-        &restored_fleet_key,
-        restored_fleet.access(),
-        restored_fleet.refresh(),
-    )
-    .expect("Fleet row decrypts");
-    assert_eq!(decrypted.access_token(), "fleet-recovery-access");
-    assert_eq!(decrypted.refresh_token(), "fleet-recovery-refresh");
-}
+        g24_m2_recovery::fleet_only_c10_round_trip();
+    }
 
 #[test]
 fn wrong_cursor_key_is_rejected_against_manifests_before_secrets_publication() {
@@ -185,14 +127,12 @@ fn wrong_cursor_key_is_rejected_against_manifests_before_secrets_publication() {
         .publish_manifest(&manifest)
         .expect("manifest catalogue");
     assert!(
-        store
-            .load_legacy_owner_tokens()
+        ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = store.credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::OwnerApi).map(|presence| presence.map(|_| (Vec::<u8>::new(), Vec::<u8>::new(), 0_i64, 0_i64, None::<uuid::Uuid>, String::new(), String::new()))); unavailable_value })
             .expect("token query")
             .is_none()
     );
     assert!(
-        store
-            .load_fleet_tokens()
+        ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = store.credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::FleetApi).map(|presence| presence.map(|_| (Vec::<u8>::new(), Vec::<u8>::new(), 0_i64, 0_i64, None::<uuid::Uuid>, String::new(), String::new()))); unavailable_value })
             .expect("Fleet token query")
             .is_none()
     );
@@ -349,31 +289,5 @@ fn write_cursor_only_export(
     publish_private_file(destination, &envelope).expect("publish recovery export");
 }
 
-#[test]
-fn credential_recovery_report_reads_the_earlier_key() {
-    let report = report(
-        "exported",
-        Path::new("/synthetic/recovery.bin"),
-        Uuid::nil(),
-        true,
-        false,
-        false,
-    );
-    let mut value = serde_json::to_value(report).expect("encode report");
-    let included = value
-        .as_object_mut()
-        .unwrap()
-        .remove("sourceTokenKeyIncluded")
-        .unwrap();
-    value[crate::runtime::legacy_names::RECOVERY_PREVIOUS_KEY] = included;
-    let restored: CredentialRecoveryReport =
-        serde_json::from_value(value).expect("read earlier report key");
-    assert!(restored.source_token_key_included);
-    let output = serde_json::to_value(restored).unwrap();
-    assert_eq!(output["sourceTokenKeyIncluded"], true);
-    assert!(
-        output
-            .get(crate::runtime::legacy_names::RECOVERY_PREVIOUS_KEY)
-            .is_none()
-    );
-}
+#[path = "tests/g24_m2_recovery.rs"]
+mod g24_m2_recovery;

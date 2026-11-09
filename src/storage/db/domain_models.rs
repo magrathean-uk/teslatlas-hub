@@ -515,10 +515,12 @@ impl OutboundRequestStart {
         if self.vehicle_tesla_id.is_some_and(|id| id <= 0) {
             return Err(StoreError::InvalidOutboundRequestVehicleId);
         }
-        if self.transport == OutboundRequestTransport::LegacyAuth
-            && self.operation == OutboundRequestOperation::TokenRefresh
+        if matches!(
+            self.transport,
+            OutboundRequestTransport::LegacyAuth | OutboundRequestTransport::FleetApi
+        ) && self.operation == OutboundRequestOperation::TokenRefresh
         {
-            return Err(StoreError::ReservedLegacyRefreshReceipt);
+            return Err(StoreError::ReservedCredentialRefreshReceipt);
         }
         if self.operation == OutboundRequestOperation::VehicleData
             && (self.safety_class != OutboundRequestSafetyClass::ConditionalRead

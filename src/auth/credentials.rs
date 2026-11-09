@@ -21,7 +21,7 @@ use crate::legacy_auth::{
         clock_is_valid, persist_reread, restore_at_start, skew_after_answer, stored_pair_relation,
     },
 };
-use crate::source_token_envelope::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
+use crate::auth::credential_envelope::MAX_TOKEN_PLAINTEXT_BYTES;
 use reqwest::Client;
 use std::{
     path::Path,
@@ -34,7 +34,7 @@ use std::{
 use thiserror::Error;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-const MAX_TOKEN_BYTES: usize = MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
+const MAX_TOKEN_BYTES: usize = MAX_TOKEN_PLAINTEXT_BYTES;
 const MAX_POSTGRES_PASSWORD_BYTES: usize = 4 * 1024;
 
 type SensitiveAccessGuard = Arc<dyn Fn() -> Result<(), CredentialError> + Send + Sync>;
@@ -214,21 +214,13 @@ impl LegacyAuthManagerError {
 
 #[derive(Clone)]
 enum LegacyAuthPersistence {
-    HubSourceDb(Arc<HubSourceDbPersistence>),
+    Unavailable(std::convert::Infallible),
     #[cfg(test)]
     TestCallback(Arc<dyn Fn(&str, &str) -> Result<(), CredentialError> + Send + Sync>),
 }
 
 impl LegacyAuthPersistence {
-    /// The store-backed persistence, if this manager has one. A manager built
-    /// for a test with a callback has no store, no fences and no status row.
-    fn hub(&self) -> Option<&Arc<HubSourceDbPersistence>> {
-        match self {
-            Self::HubSourceDb(persistence) => Some(persistence),
-            #[cfg(test)]
-            Self::TestCallback(_) => None,
-        }
-    }
+
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -279,190 +271,8 @@ impl StatusSink for StatusStore {
     }
 }
 
-struct HubSourceDbPersistence {
-    store: crate::db::HubStore,
-    encryption_key: Arc<crate::legacy_owner_credentials::SourceTokenKey>,
-    credential_generation: Mutex<uuid::Uuid>,
-    /// The row of the unit's latest write of an equal-generation successor, kept
-    /// from before the write (CL-14, R-P3b-12): the recovery after a write that
-    /// reported an error compares the stored row with it. One image, replaced by
-    /// the next such write. It outlives the ports and the detached task, which are
-    /// recreated, because the persistence is shared.
-    own_write: Mutex<Option<(crate::db::OutboundRequestReceiptId, PairImage)>>,
-    #[cfg(test)]
-    faults: Mutex<std::collections::VecDeque<PersistFault>>,
-    /// Test only: how many of the next closings (a close or a cancel) fail before
-    /// anything is written (C5-S1).
-    #[cfg(test)]
-    close_faults: std::sync::atomic::AtomicUsize,
-    /// Test only: how many of the next reservations fail with a store error
-    /// before anything is written (C5-S6).
-    #[cfg(test)]
-    begin_faults: std::sync::atomic::AtomicUsize,
-}
-impl HubSourceDbPersistence {
-    /// Test only: take one planted fault from `counter`, if any is left.
-    #[cfg(test)]
-    fn take_fault(counter: &std::sync::atomic::AtomicUsize) -> bool {
-        counter
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
-                left.checked_sub(1)
-            })
-            .is_ok()
-    }
 
-    fn begin_refresh(
-        &self,
-    ) -> Result<(crate::db::OutboundRequestReceiptId, uuid::Uuid), CredentialError> {
-        #[cfg(test)]
-        if Self::take_fault(&self.begin_faults) {
-            return Err(CredentialError::LegacyOwnerTokenStore(
-                crate::db::StoreError::LegacyRefreshReceipt(rusqlite::Error::InvalidQuery),
-            ));
-        }
-        let input_generation = *self.credential_generation.lock().map_err(|_| {
-            CredentialError::LegacyOwnerTokenStore(
-                crate::db::StoreError::LegacyRefreshOutcomeUnknown,
-            )
-        })?;
-        let receipt_id = self
-            .store
-            .begin_legacy_refresh(input_generation)
-            .map_err(CredentialError::LegacyOwnerTokenStore)?;
-        Ok((receipt_id, input_generation))
-    }
 
-    fn cancel_refresh(
-        &self,
-        receipt_id: crate::db::OutboundRequestReceiptId,
-        input_generation: uuid::Uuid,
-    ) -> Result<(), CredentialError> {
-        #[cfg(test)]
-        if Self::take_fault(&self.close_faults) {
-            return Err(CredentialError::LegacyTokenStateWrite);
-        }
-        self.store
-            .cancel_unsent_legacy_refresh(receipt_id, input_generation)
-            .map_err(CredentialError::LegacyOwnerTokenStore)
-    }
-
-    /// The generation of the pair this manager holds.
-    fn current_generation(&self) -> uuid::Uuid {
-        *self
-            .credential_generation
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    /// The row the unit wrote for `receipt`, if it kept one.
-    fn own_write_for(
-        &self,
-        receipt: Option<crate::db::OutboundRequestReceiptId>,
-    ) -> Option<(crate::db::OutboundRequestReceiptId, PairImage)> {
-        let receipt = receipt?;
-        self.own_write
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
-            .filter(|(kept, _)| *kept == receipt)
-    }
-
-    fn set_generation(&self, generation: uuid::Uuid) {
-        *self
-            .credential_generation
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = generation;
-    }
-
-    fn persist_refreshed(
-        &self,
-        receipt_id: crate::db::OutboundRequestReceiptId,
-        input_generation: uuid::Uuid,
-        access: &str,
-        refresh: &str,
-        expires_at: i64,
-        next_refresh_at: i64,
-    ) -> Result<(), CredentialError> {
-        #[cfg(test)]
-        let fault = self
-            .faults
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .pop_front();
-        #[cfg(test)]
-        if fault == Some(PersistFault::Fail) {
-            return Err(CredentialError::LegacyTokenStateWrite);
-        }
-        let tokens = OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned())?;
-        let output_generation =
-            crate::source_token_envelope::legacy_refresh_credential_generation(&tokens);
-        // A retry of this attempt's equal-generation write puts the row it put before,
-        // not a new encryption of the same pair (R-P3bF-3): the witness then always
-        // names an image that was stored, whatever the retries met.
-        let kept = if output_generation == input_generation {
-            self.own_write_for(Some(receipt_id)).and_then(|(_, image)| {
-                image.row_for_a_retry(output_generation, expires_at, next_refresh_at)
-            })
-        } else {
-            None
-        };
-        let reused = kept.is_some();
-        let stored = match kept {
-            Some(row) => row,
-            None => {
-                let (access, refresh) = crate::source_token_envelope::encrypt_legacy_owner_tokens(
-                    self.encryption_key.as_bytes(),
-                    &tokens,
-                )
-                .map_err(CredentialError::SourceDbTokenCipher)?;
-                crate::db::LegacyOwnerTokenStore::refreshed(
-                    access,
-                    refresh,
-                    expires_at,
-                    next_refresh_at,
-                )
-                .map_err(CredentialError::LegacyOwnerTokenStore)?
-                .with_credential_generation(output_generation)
-                .map_err(CredentialError::LegacyOwnerTokenStore)?
-            }
-        };
-        if output_generation == input_generation {
-            // The row this write puts in the store, kept before the write can
-            // commit and report an error (CL-14).
-            if !reused {
-                *self
-                    .own_write
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
-                    Some((receipt_id, PairImage::of(&stored, output_generation)));
-            }
-            // C5 R45 row 3: the answer kept the refresh token, so the new pair
-            // has the generation of its input (the generation identifies the
-            // refresh token) and the kept `complete_legacy_refresh` cannot
-            // record it, because it requires a different output. The token was
-            // not consumed (F6). The new access token is written, the attempt is
-            // closed as a success and the input is released in ONE transaction,
-            // and only while the row still holds the input's generation: an
-            // external credential write that came between a separate close and a
-            // separate write would otherwise have been overwritten by this older
-            // refresh (R24, R44a). The new access token is used only after the
-            // write returns.
-            self.store
-                .complete_unrotated_legacy_refresh(receipt_id, input_generation, &stored)
-                .map_err(CredentialError::LegacyOwnerTokenStore)?;
-        } else {
-            self.store
-                .complete_legacy_refresh(receipt_id, input_generation, output_generation, &stored)
-                .map_err(CredentialError::LegacyOwnerTokenStore)?;
-        }
-        #[cfg(test)]
-        if fault == Some(PersistFault::Ambiguous) {
-            return Err(CredentialError::LegacyTokenStateWrite);
-        }
-        self.set_generation(output_generation);
-        Ok(())
-    }
-}
 
 /// The fencing and the guard as the exchange task sees them (C5 R15a): its own
 /// handles, so the task never takes the manager lock.
@@ -492,24 +302,21 @@ impl AttemptPorts for ManagerPorts {
             return Err(BeginFailure::Store);
         }
         match &self.persistence {
-            LegacyAuthPersistence::HubSourceDb(persistence) => {
-                match persistence.begin_refresh() {
+            LegacyAuthPersistence::Unavailable(_) => {
+                match ({ let reservation: Result<(crate::db::OutboundRequestReceiptId, uuid::Uuid), CredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); reservation }) {
                     Ok((receipt, input)) => Ok(Attempt {
                         receipt: Some(receipt),
                         input,
                     }),
                     Err(CredentialError::LegacyOwnerTokenStore(
-                        crate::db::StoreError::LegacyRefreshOutcomeUnknown,
+                        crate::db::StoreError::RefreshOutcomeUnknown { .. },
                     )) => {
                         // K1 refuses for three reasons that mean different things:
                         // the row changed (an external writer, or another manager
                         // of the unit), or an attempt is unresolved or the input
                         // is fenced. The generation column tells them apart (R44a,
                         // R62).
-                        match stored_pair_relation(
-                            &persistence.store,
-                            persistence.current_generation(),
-                        ) {
+                        match ({ let store: &crate::db::HubStore = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); let current_generation: uuid::Uuid = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); stored_pair_relation(store, current_generation) }) {
                             Ok(StoredPairRelation::External) => Err(BeginFailure::ExternalWrite),
                             Ok(StoredPairRelation::OwnOutput(_)) => Err(BeginFailure::OwnOutput),
                             Ok(StoredPairRelation::Current | StoredPairRelation::Missing) => {
@@ -534,8 +341,7 @@ impl AttemptPorts for ManagerPorts {
             return Err(PortError);
         }
         match (&self.persistence, attempt.receipt) {
-            (LegacyAuthPersistence::HubSourceDb(persistence), Some(receipt)) => persistence
-                .cancel_refresh(receipt, attempt.input)
+            (LegacyAuthPersistence::Unavailable(_), Some(receipt)) => ({ let replaced_callee: fn(crate::db::OutboundRequestReceiptId, uuid::Uuid) -> Result<(), CredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(receipt, attempt.input)
                 .map_err(|_| PortError),
             _ => Ok(()),
         }
@@ -546,15 +352,11 @@ impl AttemptPorts for ManagerPorts {
             return Err(PortError);
         }
         #[cfg(test)]
-        if let LegacyAuthPersistence::HubSourceDb(persistence) = &self.persistence
-            && HubSourceDbPersistence::take_fault(&persistence.close_faults)
-        {
+        if matches!(&self.persistence, LegacyAuthPersistence::Unavailable(_)) && { let fault: bool = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); fault } {
             return Err(PortError);
         }
         match (&self.persistence, attempt.receipt) {
-            (LegacyAuthPersistence::HubSourceDb(persistence), Some(receipt)) => persistence
-                .store
-                .close_legacy_refresh_attempt(
+            (LegacyAuthPersistence::Unavailable(_), Some(receipt)) => ({ let replaced_callee: fn(crate::db::OutboundRequestReceiptId, uuid::Uuid, crate::db::OutboundRequestOutcome, Option<u16>, Option<u64>, bool) -> Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
                     receipt,
                     attempt.input,
                     closing.outcome,
@@ -578,8 +380,8 @@ impl AttemptPorts for ManagerPorts {
             // is left unresolved the attempt was closed by an earlier try that
             // reported an error after it committed, or an external credential
             // write resolved it (K4): there is nothing left to close.
-            (Err(_), LegacyAuthPersistence::HubSourceDb(persistence)) => {
-                match persistence.store.has_unresolved_legacy_refresh() {
+            (Err(_), LegacyAuthPersistence::Unavailable(_)) => {
+                match ({ let unresolved: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unresolved }) {
                     Ok(false) => Ok(()),
                     _ => Err(PortError),
                 }
@@ -596,8 +398,7 @@ impl AttemptPorts for ManagerPorts {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(self.env.now());
         match (&self.persistence, attempt.receipt) {
-            (LegacyAuthPersistence::HubSourceDb(persistence), Some(receipt)) => persistence
-                .persist_refreshed(
+            (LegacyAuthPersistence::Unavailable(_), Some(receipt)) => ({ let replaced_callee: fn(crate::db::OutboundRequestReceiptId, uuid::Uuid, &str, &str, i64, i64) -> Result<(), CredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
                     receipt,
                     attempt.input,
                     successor.access_token(),
@@ -616,14 +417,16 @@ impl AttemptPorts for ManagerPorts {
 
     fn reread(&self, attempt: &Attempt, successor: uuid::Uuid) -> PersistReread {
         match &self.persistence {
-            LegacyAuthPersistence::HubSourceDb(persistence) => {
+            LegacyAuthPersistence::Unavailable(_) => {
                 // The attempt's receipt and the row it wrote reach the recovery, so
                 // an equal-generation successor is proved by its own row and
                 // receipt in one snapshot. A read that fails leaves the write to be
                 // tried again.
-                let own = persistence.own_write_for(attempt.receipt);
+                let witness: &std::sync::Mutex<Option<(crate::db::OutboundRequestReceiptId, PairImage)>> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
+                let own = own_write_for(attempt.receipt, witness);
+                let store: &crate::db::HubStore = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
                 persist_reread(
-                    &persistence.store,
+                    store,
                     attempt.input,
                     successor,
                     own.as_ref().map(|(receipt, image)| OwnWrite {
@@ -641,11 +444,19 @@ impl AttemptPorts for ManagerPorts {
 
 /// Rebuilds the in-memory pair from a stored row: at start, and when the row
 /// changes under the unit (R44a, R62).
-type Rebuild = Arc<
-    dyn Fn(&OwnerTokens, &crate::db::LegacyOwnerTokenStore) -> Result<LegacyAuth, LegacyAuthError>
-        + Send
-        + Sync,
->;
+fn own_write_for(
+    receipt: Option<crate::db::OutboundRequestReceiptId>,
+    own_write: &std::sync::Mutex<Option<(crate::db::OutboundRequestReceiptId, PairImage)>>,
+) -> Option<(crate::db::OutboundRequestReceiptId, PairImage)> {
+    let receipt = receipt?;
+    own_write
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+        .filter(|(kept, _)| *kept == receipt)
+}
+
+type Rebuild = Arc<dyn Fn(&OwnerTokens, &(i64, i64)) -> Result<LegacyAuth, LegacyAuthError> + Send + Sync>;
 
 fn endpoint_rebuild(endpoint: &AuthEndpointConfig) -> Rebuild {
     let endpoint = endpoint.clone();
@@ -653,8 +464,8 @@ fn endpoint_rebuild(endpoint: &AuthEndpointConfig) -> Rebuild {
         LegacyAuth::from_persisted_state(
             tokens.access_token(),
             tokens.refresh_token(),
-            stored.expires_at(),
-            stored.next_refresh_at(),
+            stored.0,
+            stored.1,
             &endpoint,
         )
     })
@@ -919,8 +730,7 @@ impl LegacyAuthManager {
         env: Arc<dyn AuthEnv>,
         loss: Option<LossObserver>,
     ) -> Result<Self, LegacyAuthManagerError> {
-        let stored = store
-            .load_legacy_owner_tokens()
+        let stored = ({ let stored_call: Result<Option<(i64, i64)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); stored_call })
             .map_err(CredentialError::LegacyOwnerTokenStore)?
             .ok_or(CredentialError::SourceDbTokenStoreMissing)?;
         // An interrupted key replacement is settled here, by removing or restoring a key
@@ -929,11 +739,7 @@ impl LegacyAuthManager {
         // P3b fix 4, R-P3bF4-4). Managed and observer constructions alike.
         let may_settle = || !loss.as_ref().is_some_and(|lost| lost());
         let encryption_key = Arc::new(
-            crate::legacy_owner_credentials::load_key_for_tokens_with(
-                data_dir,
-                &stored,
-                &may_settle,
-            )
+            ({ let load_key_for_tokens_with: fn(&std::path::Path, &(i64, i64), &dyn Fn() -> bool) -> Result<Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); load_key_for_tokens_with(data_dir, &stored, &may_settle) })
             .map_err(|error| match error {
                 crate::legacy_owner_credentials::SourceDbCredentialError::SettlementRefused => {
                     CredentialError::SensitiveAccessUnavailable
@@ -941,10 +747,11 @@ impl LegacyAuthManager {
                 other => CredentialError::SourceDbCredentialFile(other),
             })?,
         );
+        let (access_ciphertext, refresh_ciphertext): (&[u8], &[u8]) = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
         let tokens = crate::source_token_envelope::decrypt_legacy_owner_tokens(
-            encryption_key.as_bytes(),
-            stored.access(),
-            stored.refresh(),
+            encryption_key.as_slice(),
+            access_ciphertext,
+            refresh_ciphertext,
         )
         .map_err(CredentialError::SourceDbTokenCipher)?;
         let credential_generation =
@@ -1010,13 +817,7 @@ impl LegacyAuthManager {
             if loss.as_ref().is_some_and(|lost| lost()) {
                 return Err(CredentialError::SensitiveAccessUnavailable.into());
             }
-            store
-                .fill_collector_auth_rejected_access_digest(
-                    &stored,
-                    restored.status.fuse.consecutive,
-                    restored.status.fuse.generation,
-                    access_digest,
-                )
+            ({ let fill: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); fill })
                 .map_err(CredentialError::LegacyOwnerTokenStore)?;
             restored.status.fuse.rejected_access = Some(access_digest);
         }
@@ -1054,8 +855,7 @@ impl LegacyAuthManager {
         if loss.as_ref().is_some_and(|lost| lost()) {
             return Err(CredentialError::SensitiveAccessUnavailable.into());
         }
-        store
-            .bind_source_db_legacy_credential_generation(&stored, credential_generation)
+        ({ let bind: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); bind })
             .map_err(CredentialError::LegacyOwnerTokenStore)?;
         // A pair the configuration cannot use, or that fails the grammar, builds
         // no `LegacyAuth`: the manager holds an inert one, and the status the
@@ -1072,18 +872,7 @@ impl LegacyAuthManager {
         auth.stop = restored.status.stop();
         let mut manager = Self {
             auth,
-            persistence: LegacyAuthPersistence::HubSourceDb(Arc::new(HubSourceDbPersistence {
-                store,
-                encryption_key,
-                credential_generation: Mutex::new(credential_generation),
-                own_write: Mutex::new(None),
-                #[cfg(test)]
-                faults: Mutex::new(std::collections::VecDeque::new()),
-                #[cfg(test)]
-                close_faults: std::sync::atomic::AtomicUsize::new(0),
-                #[cfg(test)]
-                begin_faults: std::sync::atomic::AtomicUsize::new(0),
-            })),
+            persistence: panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"),
             refresh_policy,
             sensitive_access: permitted_sensitive_access(),
             // The run's guard is the unit's observer from its construction on, so the
@@ -1341,7 +1130,7 @@ impl LegacyAuthManager {
     /// manager has no store.
     pub(crate) fn generation(&self) -> uuid::Uuid {
         match &self.persistence {
-            LegacyAuthPersistence::HubSourceDb(persistence) => persistence.current_generation(),
+            LegacyAuthPersistence::Unavailable(_) => { panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency") },
             #[cfg(test)]
             LegacyAuthPersistence::TestCallback(_) => self.callback_generation(),
         }
@@ -1580,11 +1369,7 @@ impl LegacyAuthManager {
         let spread = self.env.spread_unit();
         match self.auth.apply_result(result, spread) {
             Applied::Done(error) => {
-                if let (Some(generation), Some(persistence)) =
-                    (new_generation, self.persistence.hub())
-                {
-                    persistence.set_generation(generation);
-                }
+                if new_generation.is_some() { match &self.persistence { LegacyAuthPersistence::Unavailable(_) => { panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed Hub persistence seam"); }, #[cfg(test)] LegacyAuthPersistence::TestCallback(_) => {} } }
                 error.map(LegacyAuthManagerError::Auth)
             }
             Applied::Adopt { external } => self
@@ -1644,9 +1429,7 @@ impl LegacyAuthManager {
         let ports = self.ports();
         match persist_step(ports.as_ref(), &successor, true) {
             PersistStep::Done => {
-                if let Some(persistence) = self.persistence.hub() {
-                    persistence.set_generation(successor.output);
-                }
+                match &self.persistence { LegacyAuthPersistence::Unavailable(_) => { panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed Hub persistence seam"); }, #[cfg(test)] LegacyAuthPersistence::TestCallback(_) => {} }
                 let spread = self.env.spread_unit();
                 self.auth.apply_persisted(&successor, now, spread);
             }
@@ -1669,7 +1452,12 @@ impl LegacyAuthManager {
     /// (R44, seam S3). It is false for a refresh another manager of the unit
     /// wrote, which changes nothing but the pair.
     fn adopt_stored_pair(&mut self, external: bool) -> Result<(), LegacyAuthManagerError> {
-        let Some(persistence) = self.persistence.hub() else {
+        let context: Option<&Arc<crate::db::HubStore>> = match &self.persistence {
+            #[cfg(test)]
+            LegacyAuthPersistence::TestCallback(_) => None,
+            LegacyAuthPersistence::Unavailable(_) => panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"),
+        };
+        let Some(persistence) = context else {
             return Ok(());
         };
         // Adopting binds the stored pair's generation, a store write: a unit that has
@@ -1678,25 +1466,24 @@ impl LegacyAuthManager {
             return Err(CredentialError::SensitiveAccessUnavailable.into());
         }
         let persistence = Arc::clone(persistence);
-        let stored = persistence
-            .store
-            .load_legacy_owner_tokens()
+        let stored = ({ let unavailable_value: Result<Option<(i64, i64)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
             .map_err(CredentialError::LegacyOwnerTokenStore)?
             .ok_or(CredentialError::SourceDbTokenStoreMissing)?;
+        let encryption_key: &[u8] = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
+        let (access_ciphertext, refresh_ciphertext): (&[u8], &[u8]) = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
         let tokens = crate::source_token_envelope::decrypt_legacy_owner_tokens(
-            persistence.encryption_key.as_bytes(),
-            stored.access(),
-            stored.refresh(),
+            encryption_key,
+            access_ciphertext,
+            refresh_ciphertext,
         )
         .map_err(CredentialError::SourceDbTokenCipher)?;
         let generation =
             crate::source_token_envelope::legacy_refresh_credential_generation(&tokens);
-        persistence
-            .store
-            .bind_source_db_legacy_credential_generation(&stored, generation)
+        ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
             .map_err(CredentialError::LegacyOwnerTokenStore)?;
-        let generation = stored.credential_generation().unwrap_or(generation);
-        persistence.set_generation(generation);
+        let stored_generation: Option<uuid::Uuid> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
+        let generation = stored_generation.unwrap_or(generation);
+        let _set_generation: () = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
         let now = self.env.now();
         match (self.rebuild)(&tokens, &stored) {
             Ok(mut fresh) => {
@@ -1764,10 +1551,14 @@ impl LegacyAuthManager {
     /// R44a: compare the stored generation with ours and adopt a pair written
     /// under us. Returns whether the pair was replaced.
     fn adopt_if_stored_pair_changed(&mut self) -> bool {
-        let Some(persistence) = self.persistence.hub() else {
-            return false;
+        let context: Option<&crate::db::HubStore> = match &self.persistence {
+            #[cfg(test)]
+            LegacyAuthPersistence::TestCallback(_) => None,
+            LegacyAuthPersistence::Unavailable(_) => panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"),
         };
-        let relation = stored_pair_relation(&persistence.store, persistence.current_generation());
+        let Some(store) = context else { return false; };
+        let current_generation: uuid::Uuid = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
+        let relation = stored_pair_relation(store, current_generation);
         match relation {
             Ok(StoredPairRelation::External) => self.adopt_stored_pair(true).is_ok(),
             Ok(StoredPairRelation::OwnOutput(_)) => self.adopt_stored_pair(false).is_ok(),
@@ -2085,9 +1876,7 @@ impl LegacyAuthManager {
             let ports = self.ports();
             match persist_step(ports.as_ref(), &successor, true) {
                 PersistStep::Done => {
-                    if let Some(persistence) = self.persistence.hub() {
-                        persistence.set_generation(successor.output);
-                    }
+                    match &self.persistence { LegacyAuthPersistence::Unavailable(_) => { panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed Hub persistence seam"); }, #[cfg(test)] LegacyAuthPersistence::TestCallback(_) => {} }
                     let spread = self.env.spread_unit();
                     self.auth.apply_persisted(&successor, now, spread);
                 }
@@ -2306,9 +2095,9 @@ impl LegacyAuthManager {
 #[cfg(test)]
 fn issuer_rebuild(issuer: url::Url) -> Rebuild {
     Arc::new(move |tokens, stored| {
-        if stored.expires_at() <= 0
-            || stored.next_refresh_at() <= 0
-            || stored.next_refresh_at() >= stored.expires_at()
+        if stored.0 <= 0
+            || stored.1 <= 0
+            || stored.1 >= stored.0
         {
             return Err(LegacyAuthError::InvalidPersistedSchedule);
         }
@@ -2317,7 +2106,7 @@ fn issuer_rebuild(issuer: url::Url) -> Rebuild {
             tokens.access_token(),
             tokens.refresh_token(),
         )
-        .with_test_schedule(stored.expires_at(), stored.next_refresh_at()))
+        .with_test_schedule(stored.0, stored.1))
     })
 }
 

@@ -106,9 +106,23 @@ fn m1_t1_create_schema_equals_stepwise_fixture() {
         serde_json::from_str(include_str!("../../../../fixtures/g2-4/m1/schema-f.json")).unwrap();
     let fixture_directory = copied_store(FLOOR_STORE);
     let fixture = self::connection(&fixture_directory);
+    let floor_creation = Connection::open_in_memory().unwrap();
+    // The frozen predecessor includes the six credential tables that the
+    // current creation DDL intentionally omits. Rebuild its complete schema.
+    for (_, name, _, sql) in &expected {
+        if name != "sqlite_sequence" {
+            if let Some(sql) = sql {
+                floor_creation.execute_batch(sql).unwrap();
+            }
+        }
+    }
     assert!(
-        schema(&connection) == expected && schema(&fixture) == expected,
+        schema(&floor_creation) == expected && schema(&fixture) == expected,
         "assertion failed: {test}: raw schema in creation order equals the shipped stepwise fixture"
+    );
+    assert!(
+        schema_version(&fixture).unwrap() == MIN_STORE_VERSION,
+        "assertion failed: {test}: the shipped stepwise fixture retains the floor version"
     );
     let application_id: i32 = connection
         .pragma_query_value(None, "application_id", |row| row.get(0))
@@ -118,8 +132,22 @@ fn m1_t1_create_schema_equals_stepwise_fixture() {
         "assertion failed: {test}: creation writes the Hub application id"
     );
     assert!(
-        schema_version(&connection).unwrap() == MIN_STORE_VERSION,
-        "assertion failed: {test}: creation writes the floor version"
+        schema_version(&connection).unwrap() == SCHEMA_VERSION,
+        "assertion failed: {test}: C10 creation writes the current head version"
+    );
+    // M1-T12 compares complete heads from an empty predecessor. A populated
+    // predecessor intentionally retains its old credential tables for Phase B.
+    floor_creation
+        .pragma_update(None, "application_id", APPLICATION_ID)
+        .unwrap();
+    floor_creation
+        .pragma_update(None, "user_version", MIN_STORE_VERSION)
+        .unwrap();
+    migrate(&floor_creation).labelled_ok(test, "the empty floor reaches C10 head");
+    assert!(
+        schema_version(&floor_creation).unwrap() == SCHEMA_VERSION
+            && schema(&floor_creation) == schema(&connection),
+        "assertion failed: {test}: fresh and upgraded empty-floor C10 head schemas agree in creation order"
     );
 }
 
@@ -172,6 +200,10 @@ fn m1_t3_floor_fixture_rows_survive_to_head() {
     let test = "m1_t3_floor_fixture_rows_survive_to_head";
     let directory = copied_store(FLOOR_STORE);
     let connection = connection(&directory);
+    assert!(
+        schema_version(&connection).unwrap() == MIN_STORE_VERSION,
+        "assertion failed: {test}: the populated predecessor starts at the floor"
+    );
     let before = rows(&connection);
     let expected: BTreeMap<String, usize> = serde_json::from_str(include_str!(
         "../../../../fixtures/g2-4/m1/table-counts.json"
@@ -189,9 +221,69 @@ fn m1_t3_floor_fixture_rows_survive_to_head() {
         schema_version(&connection).unwrap() == SCHEMA_VERSION,
         "assertion failed: {test}: the fixture reaches HEAD"
     );
+    let after = rows(&connection);
     assert!(
-        rows(&connection) == before,
+        before
+            .iter()
+            .all(|(table, values)| after.get(table) == Some(values)),
         "assertion failed: {test}: all row counts and values are preserved"
+    );
+    let added_tables: Vec<&str> = after
+        .keys()
+        .filter(|table| !before.contains_key(*table))
+        .map(String::as_str)
+        .collect();
+    assert!(
+        added_tables
+            == vec![
+                "credential_format_state",
+                "credential_key_usage",
+                "credential_legacy_fences",
+                "credential_pairs",
+                "credential_refresh_attempts",
+                "credential_refresh_fences",
+                "credential_sign_ins",
+            ]
+            && added_tables.iter().all(|table| {
+                after[*table].len() == usize::from(*table == "credential_format_state")
+            }),
+        "assertion failed: {test}: only the seven C10 tables are added with one state row and no converted credentials"
+    );
+    let state: (
+        i64,
+        String,
+        String,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        Option<i64>,
+        Option<i64>,
+        Option<String>,
+    ) = connection
+        .query_row(
+            "SELECT format_version,owner_api_state,fleet_api_state,fences_pending,old_tables_dropped,purge_required,wal_scrubbed,old_files_removed,converted_at_ms,completed_at_ms,durability FROM credential_format_state WHERE singleton_id=1",
+            [],
+            |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?,row.get(7)?,row.get(8)?,row.get(9)?,row.get(10)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        state,
+        (
+            1,
+            "pending".to_owned(),
+            "pending".to_owned(),
+            1,
+            0,
+            1,
+            0,
+            0,
+            None,
+            None,
+            None,
+        ),
+        "assertion failed: {test}: Phase A leaves populated predecessor credentials pending without Phase B or durability claims"
     );
     let violations: i64 = connection
         .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
@@ -230,12 +322,35 @@ fn m1_t4_import_readers_equal_stepwise_store() {
     let test = "m1_t4_import_readers_equal_stepwise_store";
     let baseline_directory = crate::private_tempdir().unwrap();
     let mut baseline = connection(&baseline_directory);
-    migrate(&baseline).unwrap();
+    let floor_schema: Schema =
+        serde_json::from_str(include_str!("../../../../fixtures/g2-4/m1/schema-f.json")).unwrap();
+    for (_, name, _, sql) in &floor_schema {
+        if name != "sqlite_sequence" {
+            if let Some(sql) = sql {
+                baseline.execute_batch(sql).unwrap();
+            }
+        }
+    }
+    assert!(
+        schema(&baseline) == floor_schema,
+        "assertion failed: {test}: the reconstructed predecessor matches the frozen full floor schema"
+    );
+    baseline
+        .pragma_update(None, "application_id", APPLICATION_ID)
+        .unwrap();
+    baseline
+        .pragma_update(None, "user_version", MIN_STORE_VERSION)
+        .unwrap();
     baseline
         .execute_batch(include_str!("../../../../fixtures/g2-4/m1/rows.sql"))
         .unwrap();
     let stepwise_directory = copied_store(FLOOR_STORE);
     let mut stepwise = connection(&stepwise_directory);
+    assert!(
+        schema_version(&baseline).unwrap() == MIN_STORE_VERSION
+            && schema_version(&stepwise).unwrap() == MIN_STORE_VERSION,
+        "assertion failed: {test}: identical readers first exercise the retained floor schemas"
+    );
     assert!(
         rows(&baseline) == rows(&stepwise),
         "assertion failed: {test}: identical fixture rows enter both schemas"
@@ -271,6 +386,28 @@ fn m1_t4_import_readers_equal_stepwise_store() {
     assert!(
         actual == classifications(&mut stepwise),
         "assertion failed: {test}: C2 C9 and C6 readers agree across the baseline"
+    );
+    let retained = rows(&baseline);
+    migrate(&baseline).labelled_ok(test, "the seeded baseline floor reaches C10 head");
+    migrate(&stepwise).labelled_ok(test, "the shipped stepwise floor reaches C10 head");
+    assert!(
+        schema_version(&baseline).unwrap() == SCHEMA_VERSION
+            && schema_version(&stepwise).unwrap() == SCHEMA_VERSION
+            && schema(&baseline) == schema(&stepwise),
+        "assertion failed: {test}: both populated C10 head schemas agree"
+    );
+    for upgraded in [&baseline, &stepwise] {
+        let upgraded_rows = rows(upgraded);
+        assert!(
+            retained
+                .iter()
+                .all(|(table, values)| upgraded_rows.get(table) == Some(values)),
+            "assertion failed: {test}: every seeded floor row and value survives the actual C10 rung"
+        );
+    }
+    assert!(
+        classifications(&mut baseline) == expected && classifications(&mut stepwise) == expected,
+        "assertion failed: {test}: C2 C9 and C6 readers preserve their exact floor boundaries at C10 head"
     );
     for connection in [&baseline, &stepwise] {
         let blob: Vec<u8> = connection
@@ -389,10 +526,13 @@ fn m1_t7_name_gate_data_retires_collapsed_entries() {
 #[test]
 fn m1_t8_older_schema_ceiling_refuses_baseline_store() {
     let test = "m1_t8_older_schema_ceiling_refuses_baseline_store";
-    let directory = crate::private_tempdir().unwrap();
+    let directory = copied_store(FLOOR_STORE);
     let connection = connection(&directory);
-    migrate(&connection).unwrap();
     let version = schema_version(&connection).unwrap();
+    assert!(
+        version == MIN_STORE_VERSION,
+        "assertion failed: {test}: the retained baseline fixture starts at the floor"
+    );
     let before = schema_snapshot(&connection);
     let error = admit_store_version(version, MIN_STORE_VERSION - 1)
         .labelled_err(test, "an older schema ceiling refuses the baseline store");
@@ -403,6 +543,25 @@ fn m1_t8_older_schema_ceiling_refuses_baseline_store() {
     assert!(
         schema_snapshot(&connection) == before,
         "assertion failed: {test}: the older-reader refusal changes no rows"
+    );
+    let head_directory = crate::private_tempdir().unwrap();
+    let head = self::connection(&head_directory);
+    migrate(&head).unwrap();
+    let head_version = schema_version(&head).unwrap();
+    assert!(
+        head_version == SCHEMA_VERSION,
+        "assertion failed: {test}: actual C10 creation reaches the current head"
+    );
+    let head_before = schema_snapshot(&head);
+    let error = admit_store_version(head_version, MIN_STORE_VERSION)
+        .labelled_err(test, "the former floor ceiling refuses the C10 head");
+    assert!(
+        matches!(error,StoreError::UnsupportedSchema(found) if found==SCHEMA_VERSION),
+        "assertion failed: {test}: the older floor reader reports the C10 head version"
+    );
+    assert!(
+        schema_snapshot(&head) == head_before,
+        "assertion failed: {test}: refusing the C10 head changes no rows or schema"
     );
 }
 

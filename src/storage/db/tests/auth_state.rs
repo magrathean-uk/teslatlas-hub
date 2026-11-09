@@ -34,33 +34,63 @@ fn as_row(state: &str, reason: Option<&str>, collecting: bool) -> CollectorAuthR
 }
 
 fn as_put_pair(store: &HubStore, generation: Option<Uuid>) {
-    let imported =
-        LegacyOwnerTokenStore::imported(vec![1; 8], vec![2; 8]).expect("placeholder pair");
-    let pair = match generation {
-        Some(generation) => imported
-            .with_credential_generation(generation)
-            .expect("generation"),
-        None => imported,
-    };
-    store
-        .replace_legacy_owner_tokens(&pair)
-        .expect("store pair");
+    let generation = generation.expect(
+        "C10_UNAVAILABLE_V1: R56/R62 must classify the pre-C10 Unbound generation through the vault",
+    );
+    s_test_with_credential_connection(store, |connection| {
+        connection.set_test_now_ms(AS_T0 * 1_000);
+        let refresh = format!("synthetic-refresh-{generation}");
+        let pair = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            generation,
+            b"synthetic-access",
+            refresh.as_bytes(),
+            0,
+            0,
+        )
+        .expect("synthetic C10 pair");
+        connection
+            .replace_credential_pair(
+                &pair,
+                &EntryProvenance::Supplied,
+                &LegacyCandidates(Vec::new()),
+                ReplacePolicy::ReplaceAny,
+            )
+            .expect("store synthetic C10 pair");
+        connection
+            .credential_durability_barrier()
+            .expect("pair durability barrier");
+    });
 }
 
 fn as_refresh(store: &HubStore, input: Uuid, output: Uuid) {
-    let receipt = store.begin_legacy_refresh(input).expect("begin");
-    let successor = LegacyOwnerTokenStore::refreshed(
-        vec![output.as_bytes()[0]; 8],
-        vec![3; 8],
-        AS_T0 + 28_800,
-        AS_T0 + 21_600,
-    )
-    .expect("refreshed pair")
-    .with_credential_generation(output)
-    .expect("generation");
-    store
-        .complete_legacy_refresh(receipt, input, output, &successor)
-        .expect("complete");
+    s_test_with_credential_connection(store, |connection| {
+        connection.set_test_now_ms(AS_T0 * 1_000);
+        let refresh = format!("synthetic-refresh-{output}");
+        let successor = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            output,
+            b"synthetic-successor-access",
+            refresh.as_bytes(),
+            AS_T0 + 28_800,
+            AS_T0 + 21_600,
+        )
+        .expect("synthetic successor");
+        let receipt = connection
+            .begin_credential_refresh(CredentialSlot::OwnerApi, input)
+            .expect("begin real C10 refresh");
+        connection
+            .credential_durability_barrier()
+            .expect("begin durability barrier");
+        connection
+            .complete_credential_refresh(receipt, input, &successor, &LegacyCandidates(Vec::new()))
+            .expect("complete real C10 refresh");
+        connection
+            .credential_durability_barrier()
+            .expect("completion durability barrier");
+    });
 }
 
 #[test]
@@ -391,27 +421,35 @@ fn as_real_pair(
     access: &str,
     schedule: Option<(i64, i64)>,
 ) -> Uuid {
-    let key = b"as readiness key";
-    let tokens =
-        crate::credentials::OwnerTokens::from_secret_parts(access.to_owned(), "refresh".to_owned())
-            .expect("tokens");
-    let (access, refresh) =
-        crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
-    let stored = match schedule {
-        Some((expires_at, next_refresh_at)) => {
-            LegacyOwnerTokenStore::refreshed(access, refresh, expires_at, next_refresh_at)
-        }
-        None => LegacyOwnerTokenStore::imported(access, refresh),
-    }
-    .expect("stored pair");
-    crate::legacy_owner_credentials::replace_key_and_tokens(temporary.path(), store, key, &stored)
-        .expect("persist pair");
-    store
-        .load_legacy_owner_tokens()
-        .expect("load")
-        .expect("row")
-        .credential_generation()
-        .expect("bound generation")
+    let _ = temporary;
+    s_test_with_credential_connection(store, |connection| {
+        connection.set_test_now_ms(AS_T0 * 1_000);
+        let generation = Uuid::new_v4();
+        let (expires_at, next_refresh_at) = schedule.unwrap_or((0, 0));
+        let refresh = format!("synthetic-refresh-{generation}");
+        let pair = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            generation,
+            access.as_bytes(),
+            refresh.as_bytes(),
+            expires_at,
+            next_refresh_at,
+        )
+        .expect("real encrypted synthetic C10 pair");
+        connection
+            .replace_credential_pair(
+                &pair,
+                &EntryProvenance::Supplied,
+                &LegacyCandidates(Vec::new()),
+                ReplacePolicy::ReplaceAny,
+            )
+            .expect("store encrypted synthetic pair");
+        connection
+            .credential_durability_barrier()
+            .expect("pair durability barrier");
+        generation
+    })
 }
 
 fn as_account(store: &HubStore, mode: &str, state: &str) {
@@ -431,22 +469,39 @@ fn as_account(store: &HubStore, mode: &str, state: &str) {
 /// A Fleet pair with an identified unresolved refresh (a started receipt bound
 /// to the stored generation, with its fence).
 fn as_unresolved_fleet(store: &HubStore) -> Uuid {
-    let generation = Uuid::from_u128(0xF1EE7);
-    let pair = FleetTokenStore::new(
-        b"access-envelope".to_vec(),
-        b"refresh-envelope".to_vec(),
-        "owner-client".to_owned(),
-        "eu".to_owned(),
-        2_000,
-        1_750,
-        Some(generation),
-    )
-    .expect("fleet pair");
-    store.replace_fleet_tokens(&pair).expect("store fleet pair");
-    store
-        .begin_fleet_refresh(generation)
-        .expect("unresolved refresh");
-    generation
+    s_test_with_credential_connection(store, |connection| {
+        connection.set_test_now_ms(AS_T0 * 1_000);
+        let generation = Uuid::new_v4();
+        let refresh = format!("synthetic-fleet-refresh-{generation}");
+        let pair = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::FleetApi,
+            generation,
+            b"synthetic-fleet-access",
+            refresh.as_bytes(),
+            AS_T0 + 28_800,
+            AS_T0 + 21_600,
+        )
+        .expect("synthetic Fleet pair");
+        connection
+            .replace_credential_pair(
+                &pair,
+                &EntryProvenance::Supplied,
+                &LegacyCandidates(Vec::new()),
+                ReplacePolicy::ReplaceAny,
+            )
+            .expect("store Fleet pair");
+        connection
+            .credential_durability_barrier()
+            .expect("pair durability barrier");
+        connection
+            .begin_credential_refresh(CredentialSlot::FleetApi, generation)
+            .expect("begin unresolved Fleet refresh");
+        connection
+            .credential_durability_barrier()
+            .expect("begin durability barrier");
+        generation
+    })
 }
 
 #[test]
@@ -1293,12 +1348,16 @@ fn fleet_unknown_refresh_attention_has_fixed_combination_precedence() {
         .open()
         .unwrap()
         .execute(
-            "UPDATE fleet_refresh_receipt_bindings SET input_credential_generation = ?1",
+            "UPDATE credential_refresh_attempts SET input_generation = ?1 WHERE slot = 'fleet_api'",
             params![other.to_string()],
         )
         .unwrap();
     assert!(!store.identified_unresolved_fleet_refresh().unwrap());
-    assert!(store.has_unresolved_fleet_refresh().unwrap());
+    assert!(
+        s_test_with_credential_connection(&store, |connection| connection
+            .has_unresolved_credential_refresh(CredentialSlot::FleetApi))
+        .unwrap()
+    );
     as_account(&store, "fleet_polling", "collecting");
     assert_eq!(fleet(None).attention, None);
 }
@@ -1415,23 +1474,80 @@ fn the_stored_generation_is_read_without_decrypting_the_row() {
 #[test]
 fn a_generation_is_a_refresh_output_only_when_a_completed_binding_produced_it() {
     let (_temporary, store) = as_store();
-    let (g0, g1, g2) = (as_gen(1), as_gen(2), as_gen(3));
+    let (g0, g1, unrelated) = (as_gen(1), as_gen(2), as_gen(3));
     as_put_pair(&store, Some(g0));
-    assert!(!store.legacy_generation_is_refresh_output(g0).unwrap());
-    let receipt = store.begin_legacy_refresh(g0).unwrap();
-    // A started attempt has produced nothing yet.
-    assert!(!store.legacy_generation_is_refresh_output(g1).unwrap());
-    let successor =
-        LegacyOwnerTokenStore::refreshed(vec![2; 8], vec![3; 8], AS_T0 + 28_800, AS_T0 + 21_600)
-            .unwrap()
-            .with_credential_generation(g1)
+    assert!(
+        !s_test_with_credential_connection(&store, |connection| connection
+            .generation_is_refresh_output(CredentialSlot::OwnerApi, g0))
+        .unwrap()
+    );
+    let receipt = s_test_with_credential_connection(&store, |connection| {
+        let receipt = connection
+            .begin_credential_refresh(CredentialSlot::OwnerApi, g0)
+            .expect("begin output classification control");
+        connection
+            .credential_durability_barrier()
+            .expect("output classification begin barrier");
+        receipt
+    });
+    let started = s_test_with_credential_connection(&store, |connection| {
+        let output: Option<String> = connection
+            .test_connection()
+            .query_row(
+                "SELECT output_generation FROM credential_refresh_attempts WHERE receipt_id=?1",
+                [receipt.0],
+                |row| row.get(0),
+            )
             .unwrap();
-    store
-        .complete_legacy_refresh(receipt, g0, g1, &successor)
-        .unwrap();
-    assert!(store.legacy_generation_is_refresh_output(g1).unwrap());
-    assert!(!store.legacy_generation_is_refresh_output(g0).unwrap());
-    assert!(!store.legacy_generation_is_refresh_output(g2).unwrap());
+        (
+            output,
+            [g0, g1, unrelated].map(|generation| {
+                connection
+                    .generation_is_refresh_output(CredentialSlot::OwnerApi, generation)
+                    .unwrap()
+            }),
+        )
+    });
+    assert_eq!(
+        started,
+        (None, [false, false, false]),
+        "INTENT-OUTPUT-01 started attempt has no output or classified generation"
+    );
+    s_test_with_credential_connection(&store, |connection| {
+        let refresh = format!("synthetic-refresh-{g1}");
+        let successor = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            g1,
+            b"synthetic-successor-access",
+            refresh.as_bytes(),
+            AS_T0 + 28_800,
+            AS_T0 + 21_600,
+        )
+        .expect("output classification successor");
+        connection
+            .complete_credential_refresh(receipt, g0, &successor, &LegacyCandidates(Vec::new()))
+            .expect("complete output classification control");
+        connection
+            .credential_durability_barrier()
+            .expect("output classification completion barrier");
+    });
+    assert!(
+        s_test_with_credential_connection(&store, |connection| connection
+            .generation_is_refresh_output(CredentialSlot::OwnerApi, g1))
+        .unwrap()
+    );
+    assert!(
+        !s_test_with_credential_connection(&store, |connection| connection
+            .generation_is_refresh_output(CredentialSlot::OwnerApi, g0))
+        .unwrap(),
+        "INTENT-OUTPUT-02 completed binding classifies its output and excludes its input"
+    );
+    assert!(
+        !s_test_with_credential_connection(&store, |connection| connection
+            .generation_is_refresh_output(CredentialSlot::OwnerApi, unrelated))
+        .unwrap()
+    );
 }
 
 #[test]
@@ -1488,62 +1604,179 @@ fn the_latest_token_receipt_start_is_read_whatever_its_outcome() {
 #[test]
 fn the_credential_identity_is_the_generation_of_the_last_external_write() {
     let (_temporary, store) = as_store();
-    let (g0, g1, g2, g9, g10) = (as_gen(1), as_gen(2), as_gen(3), as_gen(9), as_gen(10));
-    // No row, and a row without a generation, give the empty string.
-    assert_eq!(store.owner_wire_credential_identity().unwrap(), "");
-    as_put_pair(&store, None);
-    assert_eq!(store.owner_wire_credential_identity().unwrap(), "");
-    // An external write: its own generation.
-    as_put_pair(&store, Some(g0));
-    assert_eq!(
-        store.owner_wire_credential_identity().unwrap(),
-        g0.to_string()
-    );
-    // This unit's own refreshes never change it.
-    as_refresh(&store, g0, g1);
-    assert_eq!(
-        store.owner_wire_credential_identity().unwrap(),
-        g0.to_string()
-    );
-    as_refresh(&store, g1, g2);
-    assert_eq!(
-        store.owner_wire_credential_identity().unwrap(),
-        g0.to_string()
-    );
-    // A new external write does, and a later refresh keeps the new one.
-    as_put_pair(&store, Some(g9));
-    assert_eq!(
-        store.owner_wire_credential_identity().unwrap(),
-        g9.to_string()
-    );
-    as_refresh(&store, g9, g10);
-    assert_eq!(
-        store.owner_wire_credential_identity().unwrap(),
-        g9.to_string()
-    );
-    // The collector's fingerprint input is this value on the Owner wire and
-    // the Fleet store's own on Fleet polling, which this unit never touches.
-    assert_eq!(
-        store.collector_credential_identity(false).unwrap(),
-        g9.to_string()
-    );
-    assert_eq!(store.collector_credential_identity(true).unwrap(), "");
-    // It reads columns only: with the pair row's ciphertext unreadable it still answers.
-    store
-        .open()
-        .unwrap()
-        .execute(
-            concat!(
-                "UPDATE ",
-                crate::db::import_table_names::legacy_owner_tokens_table!(),
-                " SET access = x'00', refresh = x'00'"
-            ),
-            [],
+    let identity = || {
+        (
+            store.owner_wire_credential_identity().unwrap(),
+            store.collector_credential_identity(false).unwrap(),
+            store.collector_credential_identity(true).unwrap(),
         )
-        .unwrap();
+    };
+    assert_eq!(
+        identity(),
+        (String::new(), String::new(), String::new()),
+        "INTENT-IDENTITY-01 empty Owner and both collector modes have empty identities"
+    );
+    let put_fleet = |generation: Uuid, client: &str, region: &str| {
+        s_test_with_credential_connection(&store, |connection| {
+            let refresh = format!("synthetic-fleet-refresh-{generation}");
+            let mut pair = s_test_synthetic_pair(
+                connection,
+                CredentialSlot::FleetApi,
+                generation,
+                b"synthetic-fleet-access",
+                refresh.as_bytes(),
+                AS_T0 + 28_800,
+                AS_T0 + 21_600,
+            )
+            .expect("identity Fleet external pair");
+            pair.client_id = Some(client.to_string());
+            pair.region = Some(region.to_string());
+            connection
+                .replace_credential_pair(
+                    &pair,
+                    &EntryProvenance::Supplied,
+                    &LegacyCandidates(Vec::new()),
+                    ReplacePolicy::ReplaceAny,
+                )
+                .expect("identity Fleet external write");
+            connection
+                .credential_durability_barrier()
+                .expect("identity Fleet write barrier");
+        });
+    };
+    let refresh_fleet = |input: Uuid, output: Uuid| {
+        s_test_with_credential_connection(&store, |connection| {
+            let current = connection
+                .load_credential_pair(CredentialSlot::FleetApi)
+                .unwrap()
+                .unwrap();
+            let refresh = format!("synthetic-fleet-refresh-{output}");
+            let mut successor = s_test_synthetic_pair(
+                connection,
+                CredentialSlot::FleetApi,
+                output,
+                b"synthetic-fleet-successor-access",
+                refresh.as_bytes(),
+                AS_T0 + 57_600,
+                AS_T0 + 50_400,
+            )
+            .expect("identity Fleet successor");
+            successor.client_id = current.client_id;
+            successor.region = current.region;
+            let receipt = connection
+                .begin_credential_refresh(CredentialSlot::FleetApi, input)
+                .expect("identity Fleet begin");
+            connection
+                .credential_durability_barrier()
+                .expect("identity Fleet begin barrier");
+            connection
+                .complete_credential_refresh(
+                    receipt,
+                    input,
+                    &successor,
+                    &LegacyCandidates(Vec::new()),
+                )
+                .expect("identity Fleet complete");
+            connection
+                .credential_durability_barrier()
+                .expect("identity Fleet completion barrier");
+        });
+    };
+    let (g0, g1, g2, g9, g10) = (as_gen(1), as_gen(2), as_gen(3), as_gen(9), as_gen(10));
+    let (f0, f1, f2, f9, f10) = (as_gen(11), as_gen(12), as_gen(13), as_gen(19), as_gen(20));
+    as_put_pair(&store, Some(g0));
+    let (_owner_only_directory, owner_only) = as_store();
+    let owner_external = as_gen(21);
+    as_put_pair(&owner_only, Some(owner_external));
+    as_refresh(&owner_only, owner_external, as_gen(22));
+    assert_eq!(
+        (
+            owner_only.owner_wire_credential_identity().unwrap(),
+            owner_only.collector_credential_identity(false).unwrap(),
+            owner_only.collector_credential_identity(true).unwrap(),
+        ),
+        (
+            owner_external.to_string(),
+            owner_external.to_string(),
+            String::new(),
+        ),
+        "INTENT2-IDENTITY-01 Owner-only credentials keep Owner identity while Fleet collector identity is empty"
+    );
+    put_fleet(f0, "Stored-App-A", "eu");
+    assert_eq!(
+        store.owner_wire_credential_identity().unwrap(),
+        g0.to_string()
+    );
+    let mut snapshots = vec![("external", identity())];
+    as_refresh(&store, g0, g1);
+    refresh_fleet(f0, f1);
+    assert_eq!(
+        store.owner_wire_credential_identity().unwrap(),
+        g0.to_string()
+    );
+    snapshots.push(("first refresh", identity()));
+    as_refresh(&store, g1, g2);
+    refresh_fleet(f1, f2);
+    snapshots.push(("second refresh", identity()));
+    as_put_pair(&store, Some(g9));
+    put_fleet(f9, "Stored-App-B", "na");
     assert_eq!(
         store.owner_wire_credential_identity().unwrap(),
         g9.to_string()
+    );
+    snapshots.push(("later external", identity()));
+    as_refresh(&store, g9, g10);
+    refresh_fleet(f9, f10);
+    snapshots.push(("later refresh", identity()));
+    let unreadable = s_test_with_credential_connection(&store, |connection| {
+        [CredentialSlot::OwnerApi, CredentialSlot::FleetApi].map(|slot| {
+            let mut pair = connection.load_credential_pair(slot).unwrap().unwrap();
+            // Deliberately unreadable synthetic envelopes preserve the clear
+            // metadata and lengths; identity must not depend on their decoding.
+            pair.access_envelope.fill(0);
+            pair.refresh_envelope.fill(0);
+            connection
+                .test_connection()
+                .execute(
+                    "UPDATE credential_pairs SET access_envelope=?1,refresh_envelope=?2 WHERE slot=?3",
+                    params![pair.access_envelope, pair.refresh_envelope, slot.as_str()],
+                )
+                .unwrap();
+            crate::auth::credential_envelope::parse_header(
+                pair.access_envelope[..39].try_into().unwrap(),
+            )
+            .is_err()
+                && crate::auth::credential_envelope::parse_header(
+                    pair.refresh_envelope[..39].try_into().unwrap(),
+                )
+                .is_err()
+        })
+    });
+    snapshots.push(("unreadable ciphertext", identity()));
+    let first = (
+        g0.to_string(),
+        g0.to_string(),
+        "Stored-App-A|eu".to_string(),
+    );
+    let later = (
+        g9.to_string(),
+        g9.to_string(),
+        "Stored-App-B|na".to_string(),
+    );
+    assert_eq!(
+        (snapshots, unreadable),
+        (
+            vec![
+                ("external", first.clone()),
+                ("first refresh", first.clone()),
+                ("second refresh", first),
+                ("later external", later.clone()),
+                ("later refresh", later.clone()),
+                ("unreadable ciphertext", later),
+            ],
+            [true, true],
+        ),
+        "INTENT-IDENTITY-02 both modes preserve external identity through refresh chains and unreadable ciphertext"
     );
 }
 
@@ -1575,10 +1808,20 @@ fn as_age_receipts(store: &HubStore, days: i64) {
 /// token attempt prunes expired receipts first, and cancelling it frees the
 /// input again.
 fn as_run_retention(store: &HubStore, current: Uuid) {
-    let receipt = store.begin_legacy_refresh(current).expect("reserve");
-    store
-        .cancel_unsent_legacy_refresh(receipt, current)
-        .expect("cancel");
+    s_test_with_credential_connection(store, |connection| {
+        let receipt = connection
+            .begin_credential_refresh(CredentialSlot::OwnerApi, current)
+            .expect("begin refresh through real retention path");
+        connection
+            .credential_durability_barrier()
+            .expect("begin durability barrier");
+        connection
+            .cancel_unsent_credential_refresh(receipt, current)
+            .expect("cancel unsent retention control");
+        connection
+            .credential_durability_barrier()
+            .expect("cancellation durability barrier");
+    });
 }
 
 fn as_completed_token_receipts(store: &HubStore) -> i64 {
@@ -1586,8 +1829,8 @@ fn as_completed_token_receipts(store: &HubStore) -> i64 {
         .open()
         .unwrap()
         .query_row(
-            "SELECT COUNT(*) FROM legacy_refresh_receipt_bindings
-              WHERE output_credential_generation IS NOT NULL",
+            "SELECT COUNT(*) FROM credential_refresh_attempts
+              WHERE slot = 'owner_api' AND output_generation IS NOT NULL",
             [],
             |row| row.get(0),
         )
@@ -1690,40 +1933,21 @@ fn retention_still_removes_receipts_that_no_stored_pair_depends_on() {
 #[test]
 fn a_damaged_binding_chain_is_an_error_and_never_a_guess() {
     let (_temporary, store) = as_store();
-    let (a, b) = (as_gen(1), as_gen(2));
-    as_put_pair(&store, Some(a));
-    let connection = store.open().unwrap();
-    // Two bindings that make a loop (the table's own checks cannot see it):
-    // a produced b, and b produced a.
-    for (input, output) in [(a, b), (b, a)] {
-        connection
-            .execute(
-                "INSERT INTO outbound_request_receipts(
-                    correlation_id, started_at_ms, completed_at_ms, duration_ms, vehicle_tesla_id,
-                    transport, operation, safety_class, precondition, outcome, http_status)
-                 VALUES (?1, 1, 2, 1, NULL, 'legacy_auth', 'token_refresh',
-                         'non_wake_endpoint', 'not_required', 'success', 200)",
-                params![Uuid::new_v4().to_string()],
-            )
-            .unwrap();
-        let receipt = connection.last_insert_rowid();
-        connection
-            .execute(
-                "INSERT INTO legacy_refresh_receipt_bindings(
-                    receipt_id, attempt_id, input_credential_generation,
-                    output_credential_generation)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![
-                    receipt,
-                    Uuid::new_v4().to_string(),
-                    input.to_string(),
-                    output.to_string()
-                ],
-            )
-            .unwrap();
-    }
+    let (g0, g1, g2) = (as_gen(1), as_gen(2), as_gen(3));
+    as_put_pair(&store, Some(g0));
+    as_refresh(&store, g0, g1);
+    as_refresh(&store, g1, g2);
+    store
+        .open()
+        .unwrap()
+        .execute(
+            "UPDATE credential_refresh_attempts SET input_generation = ?1
+              WHERE slot = 'owner_api' AND input_generation = ?2",
+            params![g2.to_string(), g0.to_string()],
+        )
+        .unwrap();
     assert!(matches!(
         store.owner_wire_credential_identity(),
-        Err(StoreError::InvalidLegacyRefreshGeneration)
+        Err(StoreError::CredentialPairInvalid)
     ));
 }

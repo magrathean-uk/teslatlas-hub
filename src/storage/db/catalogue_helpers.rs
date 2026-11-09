@@ -648,7 +648,12 @@ fn configure_read_only(connection: &Connection) -> Result<(), StoreError> {
             PRAGMA busy_timeout = 5000;
             ",
         )
-        .map_err(StoreError::Configure)
+        .map_err(StoreError::Configure)?;
+    #[cfg(target_os = "macos")]
+    connection
+        .execute_batch("PRAGMA checkpoint_fullfsync = ON;")
+        .map_err(StoreError::Configure)?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

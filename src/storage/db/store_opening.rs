@@ -45,6 +45,9 @@ impl HubStore {
         }
 
         let store = Self {
+            credential_connection_taken: std::sync::Arc::default(),
+            #[cfg(test)]
+            credential_blob_bytes_read: std::sync::Arc::default(),
             database_path: data_dir.join("hub.sqlite"),
             packs_dir: packs_dir.clone(),
             private_import_spool_dir: private_import_spool_root(data_dir),
@@ -410,6 +413,11 @@ impl HubStore {
             None
         };
         let store = Self {
+            credential_connection_taken: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
+                true,
+            )),
+            #[cfg(test)]
+            credential_blob_bytes_read: std::sync::Arc::default(),
             database_path,
             packs_dir: data_dir.join("packs"),
             private_import_spool_dir: private_import_spool_root(data_dir),
@@ -438,7 +446,11 @@ impl HubStore {
         }
         let version = schema_version(&connection)?;
         admit_store_version(version, SCHEMA_VERSION)?;
-        if version != SCHEMA_VERSION && !standalone_migration_candidate {
+        // A newer head does not retire the supported floor on pre-rung opens.
+        if version != SCHEMA_VERSION
+            && version != MIN_STORE_VERSION
+            && !standalone_migration_candidate
+        {
             return Err(StoreError::UnsupportedSchema(version));
         }
         Ok(store)

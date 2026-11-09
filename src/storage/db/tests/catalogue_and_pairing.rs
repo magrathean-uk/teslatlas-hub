@@ -833,7 +833,7 @@ fn generic_receipt_api_rejects_reserved_legacy_refresh_start() {
             safety_class: OutboundRequestSafetyClass::NonWakeEndpoint,
             precondition: OutboundRequestPrecondition::NotRequired,
         }),
-        Err(StoreError::ReservedLegacyRefreshReceipt)
+        Err(StoreError::ReservedCredentialRefreshReceipt)
     ));
     assert_eq!(
         store
@@ -910,20 +910,11 @@ fn stream_audit_summary_reports_recovery_and_unresolved_sessions_without_payload
 
 #[test]
 fn generic_completion_cannot_close_bound_legacy_refresh_receipt() {
-    let temporary = crate::private_tempdir().expect("temporary database");
-    let store = HubStore::initialize(temporary.path()).expect("store initializes");
-    let input_generation = Uuid::from_u128(31);
-    let input = LegacyOwnerTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
-        .expect("input tokens")
-        .with_credential_generation(input_generation)
-        .expect("input generation");
-    store
-        .replace_legacy_owner_tokens(&input)
-        .expect("input persists");
-    let receipt = store
-        .begin_legacy_refresh(input_generation)
-        .expect("refresh begins");
-
+    let (_directory, store) = lc_store_with_pair();
+    let receipt = s_test_with_credential_connection(&store, |connection| {
+        connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))
+    })
+    .expect("begin bound refresh");
     assert!(matches!(
         store.complete_outbound_request(
             receipt,
@@ -933,16 +924,26 @@ fn generic_completion_cannot_close_bound_legacy_refresh_receipt() {
                 retry_after_seconds: None,
             },
         ),
-        Err(StoreError::ReservedLegacyRefreshReceipt)
+        Err(StoreError::ReservedCredentialRefreshReceipt)
     ));
     assert!(
-        store
-            .has_unresolved_legacy_refresh()
-            .expect("refresh remains unresolved")
+        s_test_with_credential_connection(&store, |connection| {
+            connection.has_unresolved_credential_refresh(CredentialSlot::OwnerApi)
+        })
+        .expect("reserved receipt stays started")
     );
-    store
-        .cancel_unsent_legacy_refresh(receipt, input_generation)
-        .expect("dedicated API can cancel unsent refresh");
+    let cancelled = s_test_with_credential_connection(&store, |connection| {
+        connection.cancel_unsent_credential_refresh(receipt, lc_gen(1))
+    });
+    let state: (String, Option<i64>, i64) = store.open().unwrap().query_row(
+        "SELECT outcome, http_status, (SELECT count(*) FROM credential_refresh_attempts WHERE receipt_id=?1) FROM outbound_request_receipts WHERE id=?1",
+        [receipt.0], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).unwrap();
+    assert_eq!(
+        (cancelled.is_ok(), state),
+        (true, ("cancelled".to_owned(), None, 0)),
+        "INTENT-GENERIC-01 reserved generic refusal leaves dedicated unsent cancellation usable"
+    );
 }
 
 #[test]
@@ -978,415 +979,868 @@ fn legacy_refresh_terminalization_clamps_backwards_clock() {
     let temporary = crate::private_tempdir().expect("temporary database");
     let store = HubStore::initialize(temporary.path()).expect("store initializes");
     let first_generation = Uuid::from_u128(51);
-    let first =
-        LegacyOwnerTokenStore::imported(b"first-access".to_vec(), b"first-refresh".to_vec())
-            .expect("first tokens")
-            .with_credential_generation(first_generation)
-            .expect("first generation");
-    store
-        .replace_legacy_owner_tokens(&first)
-        .expect("first tokens persist");
+    let first = s_test_with_credential_connection(&store, |connection| {
+        s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            first_generation,
+            b"clamp-first-access",
+            b"clamp-first-refresh",
+            0,
+            0,
+        )
+    })
+    .expect("first generation");
+    s_test_with_credential_connection(&store, |connection| {
+        connection.replace_credential_pair(
+            &first,
+            &EntryProvenance::Supplied,
+            &LegacyCandidates(Vec::new()),
+            ReplacePolicy::ReplaceAny,
+        )
+    })
+    .expect("first tokens persist");
 
-    let cancelled = store
-        .begin_legacy_refresh(first_generation)
-        .expect("cancelled refresh begins");
+    let cancelled = s_test_with_credential_connection(&store, |connection| {
+        connection.begin_credential_refresh(CredentialSlot::OwnerApi, first_generation)
+    })
+    .expect("cancelled refresh begins");
     let future = move_start_into_future(&store, cancelled);
-    store
-        .cancel_unsent_legacy_refresh(cancelled, first_generation)
-        .expect("cancel clamps clock");
+    s_test_with_credential_connection(&store, |connection| {
+        connection.cancel_unsent_credential_refresh(cancelled, first_generation)
+    })
+    .expect("cancel clamps clock");
     assert_clamped(&store, cancelled, future);
 
-    let replaced = store
-        .begin_legacy_refresh(first_generation)
-        .expect("replacement refresh begins");
+    let replaced = s_test_with_credential_connection(&store, |connection| {
+        connection.begin_credential_refresh(CredentialSlot::OwnerApi, first_generation)
+    })
+    .expect("replacement refresh begins");
     let future = move_start_into_future(&store, replaced);
     let second_generation = Uuid::from_u128(52);
-    let second =
-        LegacyOwnerTokenStore::imported(b"second-access".to_vec(), b"second-refresh".to_vec())
-            .expect("second tokens")
-            .with_credential_generation(second_generation)
-            .expect("second generation");
-    store
-        .replace_legacy_owner_tokens(&second)
-        .expect("replacement clamps clock");
+    let second = s_test_with_credential_connection(&store, |connection| {
+        s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            second_generation,
+            b"clamp-second-access",
+            b"clamp-second-refresh",
+            0,
+            0,
+        )
+    })
+    .expect("second generation");
+    s_test_with_credential_connection(&store, |connection| {
+        connection.replace_credential_pair(
+            &second,
+            &EntryProvenance::Supplied,
+            &LegacyCandidates(Vec::new()),
+            ReplacePolicy::ReplaceAny,
+        )
+    })
+    .expect("replacement clamps clock");
     assert_clamped(&store, replaced, future);
 
-    let signed_out = store
-        .begin_legacy_refresh(second_generation)
-        .expect("sign-out refresh begins");
+    let signed_out = s_test_with_credential_connection(&store, |connection| {
+        connection.begin_credential_refresh(CredentialSlot::OwnerApi, second_generation)
+    })
+    .expect("sign-out refresh begins");
     let future = move_start_into_future(&store, signed_out);
-    store
-        .clear_source_db_legacy_tokens()
-        .expect("sign out clamps clock");
+    s_test_with_credential_connection(&store, |connection| {
+        connection.clear_credential_pair(CredentialSlot::OwnerApi)
+    })
+    .expect("sign out clamps clock");
     assert_clamped(&store, signed_out, future);
 }
 
 #[test]
 fn legacy_refresh_intent_fences_restart_and_commits_atomically() {
-    let temporary = crate::private_tempdir().expect("temporary database");
-    let store = HubStore::initialize(temporary.path()).expect("store initializes");
-    let input = Uuid::from_u128(1);
-    let initial = LegacyOwnerTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
-        .expect("initial token pair")
-        .with_credential_generation(input)
-        .expect("initial generation");
-    store
-        .replace_legacy_owner_tokens(&initial)
-        .expect("initial pair persists");
-    assert!(matches!(
-        store.begin_legacy_refresh(Uuid::new_v4()),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
-    ));
+    let (directory, store) = lc_store_with_pair();
+    s_test_with_credential_connection(&store, |connection| {
+        let stale = connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(9));
+        let intents: i64 = connection
+            .connection
+            .query_row(
+                "SELECT count(*) FROM credential_refresh_attempts",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            (
+                matches!(
+                    stale,
+                    Err(StoreError::RefreshOutcomeUnknown {
+                        reason: BeginRefusal::RowChanged
+                    })
+                ),
+                intents
+            ),
+            (true, 0),
+            "INTENT-OWNER-01 stale input creates no intent"
+        );
+    });
+    let receipt = s_test_with_credential_connection(&store, |connection| {
+        let receipt = connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))?;
+        connection.credential_durability_barrier()?;
+        Ok::<_, StoreError>(receipt)
+    })
+    .expect("begin intent");
     assert!(
-        !store
-            .has_unresolved_legacy_refresh()
-            .expect("stale input creates no intent")
+        matches!(
+            s_test_with_credential_connection(&store, |connection| connection
+                .begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))),
+            Err(StoreError::RefreshOutcomeUnknown {
+                reason: BeginRefusal::AttemptInFlight
+            })
+        ),
+        "INTENT-OWNER-02 duplicate refused before restart"
     );
-    let receipt = store.begin_legacy_refresh(input).expect("intent persists");
-    assert!(
-        store
-            .has_unresolved_legacy_refresh()
-            .expect("intent lookup")
+    // Drop the actual once-held SQLite connection as well as the store handle.
+    let identity = std::sync::Arc::as_ptr(&store.credential_connection_taken) as usize;
+    drop(
+        S_TEST_CREDENTIAL_CONNECTIONS
+            .with(|connections| connections.borrow_mut().remove(&identity))
+            .unwrap(),
     );
-    assert!(matches!(
-        store.begin_legacy_refresh(input),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
-    ));
     drop(store);
-    let restarted = HubStore::open_existing(temporary.path()).expect("restart opens");
-    assert!(
-        restarted
-            .has_unresolved_legacy_refresh()
-            .expect("restart intent")
+    let reopened = HubStore::initialize(directory.path()).expect("restart store");
+    let completed_receipt = s_test_with_credential_connection(&reopened, |connection| {
+        assert!(
+            connection
+                .has_unresolved_credential_refresh(CredentialSlot::OwnerApi)
+                .expect("intent survives restart")
+        );
+        assert!(matches!(
+            connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1)),
+            Err(StoreError::RefreshOutcomeUnknown {
+                reason: BeginRefusal::AttemptInFlight,
+            })
+        ));
+        let cancelled = connection.cancel_unsent_credential_refresh(receipt, lc_gen(1));
+        let retry = connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1));
+        assert_eq!(
+            (cancelled.is_ok(), retry.is_ok()),
+            (true, true),
+            "INTENT-OWNER-03 unsent cancellation permits retry after restart"
+        );
+        let receipt = retry.unwrap();
+        let invalid = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            lc_gen(1),
+            b"invalid-owner-access",
+            b"invalid-owner-refresh",
+            0,
+            0,
+        )
+        .unwrap();
+        assert!(
+            matches!(
+                connection.complete_credential_refresh(
+                    receipt,
+                    lc_gen(1),
+                    &invalid,
+                    &LegacyCandidates(Vec::new())
+                ),
+                Err(StoreError::RefreshOutcomeUnknown {
+                    reason: BeginRefusal::RowChanged
+                })
+            ),
+            "INTENT-OWNER-04 C10 successor generation must differ from input"
+        );
+        let successor = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            lc_gen(2),
+            b"restart-successor-access",
+            b"restart-successor-refresh",
+            0,
+            0,
+        )
+        .expect("seal successor");
+        assert_eq!(
+            connection
+                .complete_credential_refresh(
+                    receipt,
+                    lc_gen(1),
+                    &successor,
+                    &LegacyCandidates(Vec::new())
+                )
+                .expect("complete intent"),
+            RefreshCompletion::Completed
+        );
+        connection
+            .credential_durability_barrier()
+            .expect("completion barrier");
+        assert_eq!(
+            connection
+                .load_credential_pair(CredentialSlot::OwnerApi)
+                .expect("load stored successor")
+                .expect("pair")
+                .generation,
+            lc_gen(2)
+        );
+        assert!(
+            !connection
+                .has_unresolved_credential_refresh(CredentialSlot::OwnerApi)
+                .expect("receipt closed with pair")
+        );
+        receipt
+    });
+    let identity = std::sync::Arc::as_ptr(&reopened.credential_connection_taken) as usize;
+    drop(
+        S_TEST_CREDENTIAL_CONNECTIONS
+            .with(|connections| connections.borrow_mut().remove(&identity))
+            .unwrap(),
     );
-    restarted
-        .cancel_unsent_legacy_refresh(receipt, input)
-        .expect("pre-send cancellation");
-    assert!(
-        !restarted
-            .has_unresolved_legacy_refresh()
-            .expect("cancelled intent")
-    );
-
-    let receipt = restarted
-        .begin_legacy_refresh(input)
-        .expect("second intent persists");
-    let output = Uuid::from_u128(2);
-    let successor = LegacyOwnerTokenStore::refreshed(
-        b"new-access".to_vec(),
-        b"new-refresh".to_vec(),
-        2_000,
-        1_750,
-    )
-    .expect("successor token pair")
-    .with_credential_generation(output)
-    .expect("successor generation");
-    assert!(matches!(
-        restarted.complete_legacy_refresh(receipt, input, Uuid::new_v4(), &successor),
-        Err(StoreError::InvalidLegacyRefreshGeneration)
-    ));
-    restarted
-        .complete_legacy_refresh(receipt, input, output, &successor)
-        .expect("atomic successor commit");
-    assert!(
-        !restarted
-            .has_unresolved_legacy_refresh()
-            .expect("completed intent")
-    );
-    assert_eq!(
-        restarted
-            .load_legacy_owner_tokens()
-            .expect("successor load")
-            .expect("successor")
-            .access(),
-        successor.access()
-    );
+    drop(reopened);
+    let persisted = HubStore::initialize(directory.path()).unwrap();
+    s_test_with_credential_connection(&persisted, |connection| {
+        let pair = connection
+            .load_credential_pair(CredentialSlot::OwnerApi)
+            .unwrap()
+            .unwrap();
+        let keys = crate::auth::credential_keys::KeyringHandle::new(
+            crate::auth::credential_keys::Keyring {
+                current: crate::auth::credential_keys::KeyMaterial {
+                    id: KeyId([0x53; 8]),
+                    created_at_s: 1_800_000_000,
+                    key: Zeroizing::new([0x53; 32]),
+                },
+                previous: None,
+            },
+        );
+        let tokens = pair
+            .open(&keys)
+            .map(|(access, refresh)| (access.to_vec(), refresh.to_vec()));
+        let state: (String, Option<i64>, Option<i64>, Option<String>) = connection.connection.query_row(
+            "SELECT r.outcome,r.http_status,r.retry_after_seconds,a.output_generation FROM outbound_request_receipts r JOIN credential_refresh_attempts a ON a.receipt_id=r.id WHERE r.id=?1",
+            [completed_receipt.0], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)),
+        ).unwrap();
+        assert_eq!(
+            (pair.generation, tokens, state),
+            (
+                lc_gen(2),
+                Ok((
+                    b"restart-successor-access".to_vec(),
+                    b"restart-successor-refresh".to_vec()
+                )),
+                (
+                    "success".to_owned(),
+                    Some(200),
+                    None,
+                    Some(lc_gen(2).to_string())
+                )
+            ),
+            "INTENT-OWNER-05 successor material and receipt closure persist together across actual reopen"
+        );
+    });
 }
 
 #[test]
 fn explicit_new_credentials_supersede_ambiguous_refresh_without_reusing_input() {
-    let temporary = crate::private_tempdir().expect("temporary database");
-    let store = HubStore::initialize(temporary.path()).expect("store initializes");
-    let old_generation = Uuid::from_u128(11);
-    let initial = LegacyOwnerTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
-        .expect("initial pair")
-        .with_credential_generation(old_generation)
-        .expect("initial generation");
-    store
-        .replace_legacy_owner_tokens(&initial)
-        .expect("initial pair persists");
-    store
-        .begin_legacy_refresh(old_generation)
-        .expect("ambiguous intent persists");
-    assert!(matches!(
-        store.replace_legacy_owner_tokens(&initial),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
-    ));
-    let same_refresh_reencrypted = LegacyOwnerTokenStore::imported(
-        b"different-random-access-envelope".to_vec(),
-        b"different-random-refresh-envelope".to_vec(),
-    )
-    .expect("re-encrypted pair")
-    .with_credential_generation(old_generation)
-    .expect("same plaintext generation");
-    assert!(matches!(
-        store.replace_legacy_owner_tokens(&same_refresh_reencrypted),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
-    ));
-
-    let replacement_generation = Uuid::from_u128(12);
-    let replacement =
-        LegacyOwnerTokenStore::imported(b"fresh-access".to_vec(), b"fresh-refresh".to_vec())
-            .expect("explicit replacement pair")
-            .with_credential_generation(replacement_generation)
-            .expect("replacement generation");
-    store
-        .replace_legacy_owner_tokens(&replacement)
-        .expect("new credential generation supersedes ambiguity");
-    assert!(
-        !store
-            .has_unresolved_legacy_refresh()
-            .expect("old attempt is terminal")
-    );
-    assert_eq!(
-        store
-            .load_legacy_owner_tokens()
-            .expect("replacement load")
-            .expect("replacement")
-            .credential_generation(),
-        Some(replacement_generation)
-    );
-    let new_receipt = store
-        .begin_legacy_refresh(replacement_generation)
-        .expect("replacement may refresh");
-    store
-        .cancel_unsent_legacy_refresh(new_receipt, replacement_generation)
-        .expect("pre-send cancellation remains available");
-    assert!(matches!(
-        store.begin_legacy_refresh(old_generation),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
-    ));
+    let (_directory, store) = lc_store_with_pair();
+    s_test_with_credential_connection(&store, |connection| {
+        let receipt = connection
+            .begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))
+            .expect("ambiguous input");
+        let original_envelope = connection
+            .load_credential_pair(CredentialSlot::OwnerApi)
+            .unwrap()
+            .unwrap()
+            .refresh_envelope;
+        for same_token_generation in [lc_gen(3), lc_gen(4)] {
+            let same_token = s_test_synthetic_pair(
+                connection,
+                CredentialSlot::OwnerApi,
+                same_token_generation,
+                b"same-token-new-access",
+                format!("synthetic-refresh-{}", lc_gen(1)).as_bytes(),
+                0,
+                0,
+            )
+            .unwrap();
+            let reencrypted = same_token.refresh_envelope != original_envelope;
+            let refused = connection.replace_credential_pair(
+                &same_token,
+                &EntryProvenance::Supplied,
+                &LegacyCandidates(Vec::new()),
+                ReplacePolicy::ReplaceAny,
+            );
+            assert_eq!(
+                (
+                    reencrypted,
+                    matches!(refused, Err(StoreError::RefreshTokenSpent))
+                ),
+                (true, true),
+                "INTENT-AMBIG-01 the ambiguous refresh token stays spent under fresh encryption and generation"
+            );
+        }
+        let replacement = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            lc_gen(2),
+            b"external-replacement-access",
+            b"external-replacement-refresh",
+            0,
+            0,
+        )
+        .expect("external pair");
+        connection
+            .replace_credential_pair(
+                &replacement,
+                &EntryProvenance::Supplied,
+                &LegacyCandidates(Vec::new()),
+                ReplacePolicy::ReplaceAny,
+            )
+            .expect("external replacement resolves ambiguity");
+        assert!(
+            !connection
+                .has_unresolved_credential_refresh(CredentialSlot::OwnerApi)
+                .expect("no unresolved attempt")
+        );
+        let outcome: String = connection
+            .connection
+            .query_row(
+                "SELECT outcome FROM outbound_request_receipts WHERE id = ?1",
+                [receipt.0],
+                |row| row.get(0),
+            )
+            .expect("retained terminal receipt");
+        assert_eq!(outcome, "cancelled");
+        let old_fence: bool = connection.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM credential_refresh_attempts WHERE receipt_id = ?1 AND fence_id IS NOT NULL)",
+            [receipt.0], |row| row.get(0),
+        ).expect("spent input remains fenced");
+        assert!(old_fence);
+        let stored = connection
+            .load_credential_pair(CredentialSlot::OwnerApi)
+            .unwrap()
+            .unwrap();
+        let keys = crate::auth::credential_keys::KeyringHandle::new(
+            crate::auth::credential_keys::Keyring {
+                current: crate::auth::credential_keys::KeyMaterial {
+                    id: KeyId([0x53; 8]),
+                    created_at_s: 1_800_000_000,
+                    key: Zeroizing::new([0x53; 32]),
+                },
+                previous: None,
+            },
+        );
+        assert_eq!(
+            (
+                stored.generation,
+                stored
+                    .open(&keys)
+                    .map(|(access, refresh)| (access.to_vec(), refresh.to_vec()))
+            ),
+            (
+                lc_gen(2),
+                Ok((
+                    b"external-replacement-access".to_vec(),
+                    b"external-replacement-refresh".to_vec()
+                ))
+            ),
+            "INTENT-AMBIG-02 the different external pair and both token values are stored"
+        );
+        let former = connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1));
+        let next = connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(2));
+        assert_eq!(
+            (
+                matches!(
+                    former,
+                    Err(StoreError::RefreshOutcomeUnknown {
+                        reason: BeginRefusal::RowChanged
+                    })
+                ),
+                next.is_ok()
+            ),
+            (true, true),
+            "INTENT-AMBIG-03 former input stays unusable while the new input can refresh"
+        );
+        let next = next.unwrap();
+        connection
+            .cancel_unsent_credential_refresh(next, lc_gen(2))
+            .expect("cleanup");
+    });
 }
 
 #[test]
 fn legacy_refresh_rejects_successor_generation_already_consumed() {
-    let temporary = crate::private_tempdir().expect("temporary database");
-    let store = HubStore::initialize(temporary.path()).expect("store initializes");
-    let first_generation = Uuid::from_u128(41);
-    let first =
-        LegacyOwnerTokenStore::imported(b"first-access".to_vec(), b"first-refresh".to_vec())
-            .expect("first tokens")
-            .with_credential_generation(first_generation)
-            .expect("first generation");
-    store
-        .replace_legacy_owner_tokens(&first)
-        .expect("first tokens persist");
-
-    let first_receipt = store
-        .begin_legacy_refresh(first_generation)
-        .expect("first refresh begins");
-    let second_generation = Uuid::from_u128(42);
-    let second = LegacyOwnerTokenStore::refreshed(
-        b"second-access".to_vec(),
-        b"second-refresh".to_vec(),
-        2_000,
-        1_750,
-    )
-    .expect("second tokens")
-    .with_credential_generation(second_generation)
-    .expect("second generation");
-    store
-        .complete_legacy_refresh(first_receipt, first_generation, second_generation, &second)
-        .expect("first refresh completes");
-
-    let second_receipt = store
-        .begin_legacy_refresh(second_generation)
-        .expect("second refresh begins");
-    let consumed_successor = LegacyOwnerTokenStore::refreshed(
-        b"cycled-access".to_vec(),
-        b"cycled-refresh".to_vec(),
-        3_000,
-        2_750,
-    )
-    .expect("cycled tokens")
-    .with_credential_generation(first_generation)
-    .expect("consumed generation");
-    assert!(matches!(
-        store.complete_legacy_refresh(
-            second_receipt,
-            second_generation,
-            first_generation,
-            &consumed_successor,
-        ),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
-    ));
-    assert_eq!(
-        store
-            .load_legacy_owner_tokens()
-            .expect("tokens load")
-            .expect("tokens remain")
-            .credential_generation(),
-        Some(second_generation)
-    );
-    assert!(
-        store
-            .has_unresolved_legacy_refresh()
-            .expect("rejected successor leaves receipt unresolved")
-    );
+    let (_directory, store) = lc_store_with_pair();
+    as_refresh(&store, lc_gen(1), lc_gen(2));
+    s_test_with_credential_connection(&store, |connection| {
+        let receipt = connection
+            .begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(2))
+            .unwrap();
+        // R31 step 3 follows the consumed token, independent of a fresh UUID.
+        let pair = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            lc_gen(3),
+            b"spent-successor-access",
+            format!("synthetic-refresh-{}", lc_gen(1)).as_bytes(),
+            AS_T0 + 57_600,
+            AS_T0 + 50_400,
+        )
+        .expect("successor candidate");
+        assert!(
+            matches!(
+                connection.complete_credential_refresh(
+                    receipt,
+                    lc_gen(2),
+                    &pair,
+                    &LegacyCandidates(Vec::new())
+                ),
+                Err(StoreError::RefreshTokenSpent)
+            ),
+            "INTENT-CONSUMED-01 a fresh successor generation cannot reuse an earlier consumed refresh token"
+        );
+        assert!(
+            connection
+                .has_unresolved_credential_refresh(CredentialSlot::OwnerApi)
+                .expect("refused completion leaves receipt started")
+        );
+        assert_eq!(
+            connection
+                .load_credential_pair(CredentialSlot::OwnerApi)
+                .expect("input row")
+                .expect("pair")
+                .generation,
+            lc_gen(2)
+        );
+        let stored = connection
+            .load_credential_pair(CredentialSlot::OwnerApi)
+            .unwrap()
+            .unwrap();
+        let keys = crate::auth::credential_keys::KeyringHandle::new(
+            crate::auth::credential_keys::Keyring {
+                current: crate::auth::credential_keys::KeyMaterial {
+                    id: KeyId([0x53; 8]),
+                    created_at_s: 1_800_000_000,
+                    key: Zeroizing::new([0x53; 32]),
+                },
+                previous: None,
+            },
+        );
+        let state: (String, Option<i64>, Option<i64>, bool) = connection.connection.query_row(
+            "SELECT r.outcome,r.http_status,r.retry_after_seconds,EXISTS(SELECT 1 FROM credential_refresh_attempts a JOIN credential_refresh_fences f ON f.fence_id=a.fence_id WHERE a.receipt_id=r.id) FROM outbound_request_receipts r WHERE r.id=?1",
+            [receipt.0], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        ).unwrap();
+        assert_eq!(
+            (
+                stored.generation,
+                stored
+                    .open(&keys)
+                    .map(|(access, refresh)| (access.to_vec(), refresh.to_vec())),
+                state
+            ),
+            (
+                lc_gen(2),
+                Ok((
+                    b"synthetic-successor-access".to_vec(),
+                    format!("synthetic-refresh-{}", lc_gen(2)).into_bytes()
+                )),
+                ("started".to_owned(), None, None, true)
+            ),
+            "INTENT-CONSUMED-02 spent-successor refusal preserves current material and the started fenced receipt"
+        );
+    });
 }
 
 #[test]
 fn explicit_replacement_rejects_previously_consumed_generation_after_successor_commit() {
-    let temporary = crate::private_tempdir().expect("temporary database");
-    let store = HubStore::initialize(temporary.path()).expect("store initializes");
-    let input_generation = Uuid::from_u128(21);
-    let input = LegacyOwnerTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
-        .expect("input tokens")
-        .with_credential_generation(input_generation)
-        .expect("input generation");
-    store
-        .replace_legacy_owner_tokens(&input)
-        .expect("input persists");
-    let receipt = store
-        .begin_legacy_refresh(input_generation)
-        .expect("refresh begins");
-
-    let output_generation = Uuid::from_u128(22);
-    let output = LegacyOwnerTokenStore::refreshed(
-        b"new-access".to_vec(),
-        b"new-refresh".to_vec(),
-        2_000,
-        1_750,
-    )
-    .expect("output tokens")
-    .with_credential_generation(output_generation)
-    .expect("output generation");
-    store
-        .complete_legacy_refresh(receipt, input_generation, output_generation, &output)
-        .expect("refresh completes");
-
-    assert!(matches!(
-        store.replace_legacy_owner_tokens(&input),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
-    ));
-    let current = store
-        .load_legacy_owner_tokens()
-        .expect("current tokens load")
-        .expect("current tokens remain");
-    assert_eq!(current.credential_generation(), Some(output_generation));
-    assert_eq!(current.access(), output.access());
+    let (_directory, store) = lc_store_with_pair();
+    as_refresh(&store, lc_gen(1), lc_gen(2));
+    s_test_with_credential_connection(&store, |connection| {
+        let replacement = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            lc_gen(3),
+            b"spent-replacement-access",
+            format!("synthetic-refresh-{}", lc_gen(1)).as_bytes(),
+            0,
+            0,
+        )
+        .expect("real envelope of the previously consumed input token");
+        assert!(matches!(
+            connection.replace_credential_pair(
+                &replacement,
+                &EntryProvenance::Supplied,
+                &LegacyCandidates(Vec::new()),
+                ReplacePolicy::ReplaceAny,
+            ),
+            Err(StoreError::RefreshTokenSpent)
+        ));
+        assert_eq!(
+            connection
+                .load_credential_pair(CredentialSlot::OwnerApi)
+                .expect("successor row")
+                .expect("pair")
+                .generation,
+            lc_gen(2)
+        );
+        let stored = connection
+            .load_credential_pair(CredentialSlot::OwnerApi)
+            .unwrap()
+            .unwrap();
+        let keys = crate::auth::credential_keys::KeyringHandle::new(
+            crate::auth::credential_keys::Keyring {
+                current: crate::auth::credential_keys::KeyMaterial {
+                    id: KeyId([0x53; 8]),
+                    created_at_s: 1_800_000_000,
+                    key: Zeroizing::new([0x53; 32]),
+                },
+                previous: None,
+            },
+        );
+        assert_eq!(
+            (
+                stored.generation,
+                stored
+                    .open(&keys)
+                    .map(|(access, refresh)| (access.to_vec(), refresh.to_vec()))
+            ),
+            (
+                lc_gen(2),
+                Ok((
+                    b"synthetic-successor-access".to_vec(),
+                    format!("synthetic-refresh-{}", lc_gen(2)).into_bytes()
+                ))
+            ),
+            "INTENT-REPLACE-01 spent-token replacement refusal preserves successor generation and token material"
+        );
+    });
 }
 
 #[test]
 fn fleet_refresh_intent_fences_restart_and_commits_successor_atomically() {
-    let temporary = crate::private_tempdir().expect("temporary database");
-    let store = HubStore::initialize(temporary.path()).expect("store initializes");
-    let input_generation = Uuid::from_u128(101);
-    let input = FleetTokenStore::new(
-        b"old-access-envelope".to_vec(),
-        b"old-refresh-envelope".to_vec(),
-        "owner-client".to_owned(),
-        "eu".to_owned(),
-        2_000,
-        1_750,
-        Some(input_generation),
-    )
-    .expect("input Fleet tokens");
-    store
-        .replace_fleet_tokens(&input)
-        .expect("input Fleet tokens persist");
-
-    assert!(matches!(
-        store.begin_fleet_refresh(Uuid::new_v4()),
-        Err(StoreError::FleetRefreshOutcomeUnknown)
-    ));
-    let first_receipt = store
-        .begin_fleet_refresh(input_generation)
-        .expect("Fleet refresh intent persists");
-    assert!(matches!(
-        store.complete_outbound_request(
-            first_receipt,
-            &OutboundRequestCompletion {
-                outcome: OutboundRequestOutcome::Cancelled,
-                http_status: None,
-                retry_after_seconds: None,
-            },
+    let (directory, store) = cs_store();
+    let input = Uuid::from_u128(0xF101);
+    let output = Uuid::from_u128(0xF102);
+    let receipt = s_test_with_credential_connection(&store, |connection| {
+        let pair = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::FleetApi,
+            input,
+            b"fleet-restart-access",
+            b"fleet-restart-refresh",
+            AS_T0 + 28_800,
+            AS_T0 + 21_600,
+        )?;
+        connection.replace_credential_pair(
+            &pair,
+            &EntryProvenance::Supplied,
+            &LegacyCandidates(Vec::new()),
+            ReplacePolicy::ReplaceAny,
+        )?;
+        let stale =
+            connection.begin_credential_refresh(CredentialSlot::FleetApi, Uuid::from_u128(0xF100));
+        let intents: i64 = connection
+            .connection
+            .query_row(
+                "SELECT count(*) FROM credential_refresh_attempts",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            (
+                matches!(
+                    stale,
+                    Err(StoreError::RefreshOutcomeUnknown {
+                        reason: BeginRefusal::RowChanged
+                    })
+                ),
+                intents
+            ),
+            (true, 0),
+            "INTENT-FLEET-01 stale input creates no Fleet intent"
+        );
+        let receipt = connection.begin_credential_refresh(CredentialSlot::FleetApi, input)?;
+        connection.credential_durability_barrier()?;
+        Ok::<_, StoreError>(receipt)
+    })
+    .expect("durable Fleet intent");
+    assert!(
+        matches!(
+            s_test_with_credential_connection(&store, |connection| connection
+                .begin_credential_refresh(CredentialSlot::FleetApi, input)),
+            Err(StoreError::RefreshOutcomeUnknown {
+                reason: BeginRefusal::AttemptInFlight
+            })
         ),
-        Err(StoreError::ReservedLegacyRefreshReceipt)
-    ));
+        "INTENT-FLEET-02 duplicate refused before restart"
+    );
+    assert!(
+        matches!(
+            store.complete_outbound_request(
+                receipt,
+                &OutboundRequestCompletion {
+                    outcome: OutboundRequestOutcome::Success,
+                    http_status: Some(200),
+                    retry_after_seconds: None
+                }
+            ),
+            Err(StoreError::ReservedCredentialRefreshReceipt)
+        ),
+        "INTENT-FLEET-03 generic completion cannot close the reserved Fleet receipt"
+    );
+    assert!(
+        matches!(
+            store.complete_outbound_request(
+                receipt,
+                &OutboundRequestCompletion {
+                    outcome: OutboundRequestOutcome::Cancelled,
+                    http_status: None,
+                    retry_after_seconds: None
+                }
+            ),
+            Err(StoreError::ReservedCredentialRefreshReceipt)
+        ),
+        "INTENT2-FLEET-01 generic cancellation without HTTP status refuses the bound Fleet receipt"
+    );
+    let identity = std::sync::Arc::as_ptr(&store.credential_connection_taken) as usize;
+    drop(
+        S_TEST_CREDENTIAL_CONNECTIONS
+            .with(|connections| connections.borrow_mut().remove(&identity))
+            .unwrap(),
+    );
     drop(store);
-
-    let restarted = HubStore::open_existing(temporary.path()).expect("restart opens");
-    assert!(
-        restarted
-            .has_unresolved_fleet_refresh()
-            .expect("restart retains Fleet refresh intent")
+    let reopened = HubStore::initialize(directory.path()).expect("restart Fleet store");
+    let completed_receipt = s_test_with_credential_connection(&reopened, |connection| {
+        let receipt_state: (String, Option<i64>, Option<i64>) = connection
+            .connection
+            .query_row(
+                "SELECT outcome,http_status,retry_after_seconds FROM outbound_request_receipts WHERE id=?1",
+                [receipt.0],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (
+                connection
+                    .has_unresolved_credential_refresh(CredentialSlot::FleetApi)
+                    .expect("Fleet intent survives restart"),
+                receipt_state,
+            ),
+            (true, ("started".to_owned(), None, None)),
+            "INTENT2-FLEET-02 refused generic cancellation leaves the Fleet attempt started without HTTP or retry across reopen"
+        );
+        assert!(matches!(
+            connection.begin_credential_refresh(CredentialSlot::FleetApi, input),
+            Err(StoreError::RefreshOutcomeUnknown {
+                reason: BeginRefusal::AttemptInFlight
+            })
+        ));
+        let cancelled = connection.cancel_unsent_credential_refresh(receipt, input);
+        let retry = connection.begin_credential_refresh(CredentialSlot::FleetApi, input);
+        assert_eq!(
+            (cancelled.is_ok(), retry.is_ok()),
+            (true, true),
+            "INTENT-FLEET-04 unsent Fleet cancellation permits retry after restart"
+        );
+        let receipt = retry.unwrap();
+        let successor = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::FleetApi,
+            output,
+            b"fleet-successor-access",
+            b"fleet-successor-refresh",
+            AS_T0 + 57_600,
+            AS_T0 + 50_400,
+        )
+        .expect("Fleet successor");
+        assert_eq!(
+            connection
+                .complete_credential_refresh(
+                    receipt,
+                    input,
+                    &successor,
+                    &LegacyCandidates(Vec::new()),
+                )
+                .expect("Fleet completion"),
+            RefreshCompletion::Completed
+        );
+        connection
+            .credential_durability_barrier()
+            .expect("Fleet completion barrier");
+        assert_eq!(
+            connection
+                .load_credential_pair(CredentialSlot::FleetApi)
+                .expect("Fleet row")
+                .expect("pair")
+                .generation,
+            output
+        );
+        assert!(
+            !connection
+                .has_unresolved_credential_refresh(CredentialSlot::FleetApi)
+                .expect("Fleet receipt closed atomically")
+        );
+        receipt
+    });
+    let identity = std::sync::Arc::as_ptr(&reopened.credential_connection_taken) as usize;
+    drop(
+        S_TEST_CREDENTIAL_CONNECTIONS
+            .with(|connections| connections.borrow_mut().remove(&identity))
+            .unwrap(),
     );
-    assert!(matches!(
-        restarted.begin_fleet_refresh(input_generation),
-        Err(StoreError::FleetRefreshOutcomeUnknown)
-    ));
-    restarted
-        .cancel_unsent_fleet_refresh(first_receipt, input_generation)
-        .expect("definitely-unsent Fleet refresh cancels");
-
-    let receipt = restarted
-        .begin_fleet_refresh(input_generation)
-        .expect("Fleet refresh restarts after pre-send cancellation");
-    let output_generation = Uuid::from_u128(102);
-    let output = FleetTokenStore::new(
-        b"new-access-envelope".to_vec(),
-        b"new-refresh-envelope".to_vec(),
-        "owner-client".to_owned(),
-        "eu".to_owned(),
-        3_000,
-        2_750,
-        Some(output_generation),
-    )
-    .expect("output Fleet tokens");
-    restarted
-        .complete_fleet_refresh(receipt, input_generation, output_generation, &output)
-        .expect("Fleet successor commits atomically");
-    assert!(
-        !restarted
-            .has_unresolved_fleet_refresh()
-            .expect("Fleet intent completed")
-    );
-    let persisted = restarted
-        .load_fleet_tokens()
-        .expect("Fleet tokens load")
-        .expect("Fleet tokens remain");
-    assert_eq!(persisted.access(), output.access());
-    assert_eq!(persisted.credential_generation(), Some(output_generation));
-    assert!(matches!(
-        restarted.replace_fleet_tokens(&input),
-        Err(StoreError::FleetRefreshOutcomeUnknown)
-    ));
-
-    restarted
-        .begin_fleet_refresh(output_generation)
-        .expect("next Fleet refresh intent persists");
-    assert!(matches!(
-        restarted.replace_fleet_tokens(&output),
-        Err(StoreError::FleetRefreshOutcomeUnknown)
-    ));
-    let replacement_generation = Uuid::from_u128(103);
-    let replacement = FleetTokenStore::new(
-        b"operator-access-envelope".to_vec(),
-        b"operator-refresh-envelope".to_vec(),
-        "owner-client".to_owned(),
-        "eu".to_owned(),
-        4_000,
-        3_750,
-        Some(replacement_generation),
-    )
-    .expect("operator replacement Fleet tokens");
-    restarted
-        .replace_fleet_tokens(&replacement)
-        .expect("different operator credentials recover ambiguity");
-    assert!(
-        !restarted
-            .has_unresolved_fleet_refresh()
-            .expect("operator replacement terminalizes old intent")
-    );
+    drop(reopened);
+    let persisted = HubStore::initialize(directory.path()).unwrap();
+    s_test_with_credential_connection(&persisted, |connection| {
+        let stored = connection
+            .load_credential_pair(CredentialSlot::FleetApi)
+            .unwrap()
+            .unwrap();
+        let keys = crate::auth::credential_keys::KeyringHandle::new(
+            crate::auth::credential_keys::Keyring {
+                current: crate::auth::credential_keys::KeyMaterial {
+                    id: KeyId([0x53; 8]),
+                    created_at_s: 1_800_000_000,
+                    key: Zeroizing::new([0x53; 32]),
+                },
+                previous: None,
+            },
+        );
+        let state: (String, Option<i64>, Option<i64>, Option<String>) = connection.connection.query_row(
+            "SELECT r.outcome,r.http_status,r.retry_after_seconds,a.output_generation FROM outbound_request_receipts r JOIN credential_refresh_attempts a ON a.receipt_id=r.id WHERE r.id=?1",
+            [completed_receipt.0], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)),
+        ).unwrap();
+        assert_eq!(
+            (
+                stored.generation,
+                stored
+                    .open(&keys)
+                    .map(|(access, refresh)| (access.to_vec(), refresh.to_vec())),
+                state
+            ),
+            (
+                output,
+                Ok((
+                    b"fleet-successor-access".to_vec(),
+                    b"fleet-successor-refresh".to_vec()
+                )),
+                (
+                    "success".to_owned(),
+                    Some(200),
+                    None,
+                    Some(output.to_string())
+                )
+            ),
+            "INTENT-FLEET-05 Fleet successor material and receipt closure persist together across actual reopen"
+        );
+        let consumed = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::FleetApi,
+            Uuid::from_u128(0xF103),
+            b"fleet-consumed-access",
+            b"fleet-restart-refresh",
+            AS_T0 + 57_600,
+            AS_T0 + 50_400,
+        )
+        .unwrap();
+        assert!(
+            matches!(
+                connection.replace_credential_pair(
+                    &consumed,
+                    &EntryProvenance::Supplied,
+                    &LegacyCandidates(Vec::new()),
+                    ReplacePolicy::ReplaceAny
+                ),
+                Err(StoreError::RefreshTokenSpent)
+            ),
+            "INTENT-FLEET-06 consumed Fleet token cannot be re-entered under a fresh generation"
+        );
+        let ambiguous = connection
+            .begin_credential_refresh(CredentialSlot::FleetApi, output)
+            .unwrap();
+        let same_token = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::FleetApi,
+            Uuid::from_u128(0xF104),
+            b"fleet-ambiguous-access",
+            b"fleet-successor-refresh",
+            AS_T0 + 57_600,
+            AS_T0 + 50_400,
+        )
+        .unwrap();
+        assert!(
+            matches!(
+                connection.replace_credential_pair(
+                    &same_token,
+                    &EntryProvenance::Supplied,
+                    &LegacyCandidates(Vec::new()),
+                    ReplacePolicy::ReplaceAny
+                ),
+                Err(StoreError::RefreshTokenSpent)
+            ),
+            "INTENT-FLEET-07 ambiguous Fleet token cannot be re-entered under fresh encryption"
+        );
+        let recovered_generation = Uuid::from_u128(0xF105);
+        let recovered = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::FleetApi,
+            recovered_generation,
+            b"fleet-operator-access",
+            b"fleet-operator-refresh",
+            AS_T0 + 57_600,
+            AS_T0 + 50_400,
+        )
+        .unwrap();
+        connection
+            .replace_credential_pair(
+                &recovered,
+                &EntryProvenance::Supplied,
+                &LegacyCandidates(Vec::new()),
+                ReplacePolicy::ReplaceAny,
+            )
+            .unwrap();
+        let recovered = connection
+            .load_credential_pair(CredentialSlot::FleetApi)
+            .unwrap()
+            .unwrap();
+        let cancelled: String = connection
+            .connection
+            .query_row(
+                "SELECT outcome FROM outbound_request_receipts WHERE id=?1",
+                [ambiguous.0],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let former = connection.begin_credential_refresh(CredentialSlot::FleetApi, output);
+        let next =
+            connection.begin_credential_refresh(CredentialSlot::FleetApi, recovered_generation);
+        assert_eq!(
+            (
+                recovered.generation,
+                recovered
+                    .open(&keys)
+                    .map(|(access, refresh)| (access.to_vec(), refresh.to_vec())),
+                cancelled,
+                matches!(
+                    former,
+                    Err(StoreError::RefreshOutcomeUnknown {
+                        reason: BeginRefusal::RowChanged
+                    })
+                ),
+                next.is_ok()
+            ),
+            (
+                recovered_generation,
+                Ok((
+                    b"fleet-operator-access".to_vec(),
+                    b"fleet-operator-refresh".to_vec()
+                )),
+                "cancelled".to_owned(),
+                true,
+                true
+            ),
+            "INTENT-FLEET-08 different operator credentials recover the Fleet slot and only the new input can refresh"
+        );
+        connection
+            .cancel_unsent_credential_refresh(next.unwrap(), recovered_generation)
+            .unwrap();
+    });
 }

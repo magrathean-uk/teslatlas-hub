@@ -506,8 +506,8 @@ enum Command {
         /// Import and publish history without reading or storing Tesla credentials.
         #[arg(long, requires = "online_snapshot", conflicts_with_all = ["encryption_key_file", "access_token_file", "refresh_token_file", "preserve_existing_credentials"])]
         history_only: bool,
-        /// Source application's ENCRYPTION_KEY file, or `-` for stdin. Omit only with both fresh-token files.
-        #[arg(long)]
+        /// Source application's token key file, or `-` for stdin. Omit only with both fresh-token files. The earlier spelling `--encryption-key-file` is deprecated and still accepted.
+        #[arg(long = "source-token-key-file", alias = "encryption-key-file")]
         encryption_key_file: Option<PathBuf>,
         /// Fresh legacy access-token file when the source application's encryption key is unavailable.
         #[arg(

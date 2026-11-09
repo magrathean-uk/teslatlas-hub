@@ -11,23 +11,24 @@ fn lc_gen(n: u8) -> Uuid {
 /// A store holding a pair of generation `lc_gen(1)`.
 fn lc_store_with_pair() -> (tempfile::TempDir, HubStore) {
     let (directory, store) = cs_store();
-    let pair = LegacyOwnerTokenStore::imported(vec![1; 8], vec![2; 8])
-        .expect("placeholder pair")
-        .with_credential_generation(lc_gen(1))
-        .expect("generation");
-    store
-        .replace_legacy_owner_tokens(&pair)
-        .expect("store pair");
+    as_put_pair(&store, Some(lc_gen(1)));
     (directory, store)
 }
 
 #[test]
 fn lc1_a_closed_attempt_with_release_records_the_answer_and_frees_the_input() {
     let (_directory, store) = lc_store_with_pair();
-    let receipt = store.begin_legacy_refresh(lc_gen(1)).expect("begin");
-    assert!(store.has_unresolved_legacy_refresh().expect("unresolved"));
-    store
-        .close_legacy_refresh_attempt(
+    let receipt = s_test_with_credential_connection(&store, |connection| {
+        connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))
+    })
+    .expect("begin");
+    assert!(
+        s_test_with_credential_connection(&store, |connection| connection
+            .has_unresolved_credential_refresh(CredentialSlot::OwnerApi))
+        .expect("unresolved")
+    );
+    s_test_with_credential_connection(&store, |connection| {
+        connection.close_credential_refresh_attempt(
             receipt,
             lc_gen(1),
             OutboundRequestOutcome::HttpError,
@@ -35,31 +36,87 @@ fn lc1_a_closed_attempt_with_release_records_the_answer_and_frees_the_input() {
             Some(7),
             true,
         )
-        .expect("close with release");
+    })
+    .expect("close with release");
     assert_eq!(
-        store.legacy_token_receipts_for_test().expect("receipts"),
+        s_test_with_credential_connection(&store, |connection| {
+            let mut statement = connection
+                .connection
+                .prepare(
+                    "SELECT r.outcome, r.http_status, r.retry_after_seconds,
+                        EXISTS(SELECT 1 FROM credential_refresh_attempts a
+                               WHERE a.receipt_id = r.id AND a.fence_id IS NOT NULL)
+                   FROM outbound_request_receipts r ORDER BY r.id",
+                )
+                .map_err(StoreError::CredentialRefreshReceipt)?;
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<i64>>(1)?,
+                        row.get::<_, Option<i64>>(2)?,
+                        row.get::<_, bool>(3)?,
+                    ))
+                })
+                .map_err(StoreError::CredentialRefreshReceipt)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(StoreError::CredentialRefreshReceipt)
+        })
+        .expect("receipts"),
         vec![("http_error".to_owned(), Some(400), Some(7), false)]
     );
     assert!(
-        store
-            .legacy_fenced_inputs_for_test()
-            .expect("fences")
-            .is_empty()
+        s_test_with_credential_connection(&store, |connection| {
+            let mut statement = connection
+                .connection
+                .prepare(
+                    "SELECT a.input_generation FROM credential_refresh_attempts a
+                   JOIN credential_refresh_fences f ON f.fence_id = a.fence_id
+                  WHERE a.slot = 'owner_api' ORDER BY a.receipt_id",
+                )
+                .map_err(StoreError::CredentialRefreshReceipt)?;
+            let generations = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(StoreError::CredentialRefreshReceipt)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(StoreError::CredentialRefreshReceipt)?;
+            Ok::<Vec<Uuid>, StoreError>(
+                generations
+                    .into_iter()
+                    .map(|value| {
+                        Uuid::parse_str(&value).expect("schema-checked synthetic generation")
+                    })
+                    .collect(),
+            )
+        })
+        .expect("fences")
+        .is_empty()
     );
-    assert!(!store.has_unresolved_legacy_refresh().expect("unresolved"));
+    assert!(
+        !s_test_with_credential_connection(&store, |connection| connection
+            .has_unresolved_credential_refresh(CredentialSlot::OwnerApi))
+        .expect("unresolved")
+    );
     // The input may be sent again: the kept reservation accepts it.
-    let again = store.begin_legacy_refresh(lc_gen(1)).expect("begin again");
-    store
-        .cancel_unsent_legacy_refresh(again, lc_gen(1))
-        .expect("cleanup");
+    let again = s_test_with_credential_connection(&store, |connection| {
+        connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))
+    })
+    .expect("begin again");
+    s_test_with_credential_connection(&store, |connection| {
+        connection.cancel_unsent_credential_refresh(again, lc_gen(1))
+    })
+    .expect("cleanup");
 }
 
 #[test]
 fn lc2_a_closed_attempt_without_release_keeps_the_input_fenced_for_ever() {
     let (_directory, store) = lc_store_with_pair();
-    let receipt = store.begin_legacy_refresh(lc_gen(1)).expect("begin");
-    store
-        .close_legacy_refresh_attempt(
+    let receipt = s_test_with_credential_connection(&store, |connection| {
+        connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))
+    })
+    .expect("begin");
+    s_test_with_credential_connection(&store, |connection| {
+        connection.close_credential_refresh_attempt(
             receipt,
             lc_gen(1),
             OutboundRequestOutcome::AuthenticationRejected,
@@ -67,37 +124,117 @@ fn lc2_a_closed_attempt_without_release_keeps_the_input_fenced_for_ever() {
             None,
             false,
         )
-        .expect("close without release");
+    })
+    .expect("close without release");
     assert_eq!(
-        store.legacy_token_receipts_for_test().expect("receipts"),
+        s_test_with_credential_connection(&store, |connection| {
+            let mut statement = connection
+                .connection
+                .prepare(
+                    "SELECT r.outcome, r.http_status, r.retry_after_seconds,
+                        EXISTS(SELECT 1 FROM credential_refresh_attempts a
+                               WHERE a.receipt_id = r.id AND a.fence_id IS NOT NULL)
+                   FROM outbound_request_receipts r ORDER BY r.id",
+                )
+                .map_err(StoreError::CredentialRefreshReceipt)?;
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<i64>>(1)?,
+                        row.get::<_, Option<i64>>(2)?,
+                        row.get::<_, bool>(3)?,
+                    ))
+                })
+                .map_err(StoreError::CredentialRefreshReceipt)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(StoreError::CredentialRefreshReceipt)
+        })
+        .expect("receipts"),
         vec![("authentication_rejected".to_owned(), Some(400), None, true)]
     );
     assert_eq!(
-        store.legacy_fenced_inputs_for_test().expect("fences"),
+        s_test_with_credential_connection(&store, |connection| {
+            let mut statement = connection
+                .connection
+                .prepare(
+                    "SELECT a.input_generation FROM credential_refresh_attempts a
+                   JOIN credential_refresh_fences f ON f.fence_id = a.fence_id
+                  WHERE a.slot = 'owner_api' ORDER BY a.receipt_id",
+                )
+                .map_err(StoreError::CredentialRefreshReceipt)?;
+            let generations = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(StoreError::CredentialRefreshReceipt)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(StoreError::CredentialRefreshReceipt)?;
+            Ok::<Vec<Uuid>, StoreError>(
+                generations
+                    .into_iter()
+                    .map(|value| {
+                        Uuid::parse_str(&value).expect("schema-checked synthetic generation")
+                    })
+                    .collect(),
+            )
+        })
+        .expect("fences"),
         vec![lc_gen(1)]
     );
     // The attempt is closed, so it is not unresolved; the input is still dead.
-    assert!(!store.has_unresolved_legacy_refresh().expect("unresolved"));
+    assert!(
+        !s_test_with_credential_connection(&store, |connection| connection
+            .has_unresolved_credential_refresh(CredentialSlot::OwnerApi))
+        .expect("unresolved")
+    );
     assert!(matches!(
-        store.begin_legacy_refresh(lc_gen(1)),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
+        s_test_with_credential_connection(&store, |connection| connection
+            .begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))),
+        Err(StoreError::RefreshOutcomeUnknown { .. })
     ));
     // K4: the same pair cannot be imported again, a different one can.
-    let same = LegacyOwnerTokenStore::imported(vec![1; 8], vec![2; 8])
-        .expect("same pair")
-        .with_credential_generation(lc_gen(1))
-        .expect("generation");
+    let same = s_test_with_credential_connection(&store, |connection| {
+        s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            lc_gen(1),
+            b"synthetic-access",
+            format!("synthetic-refresh-{}", lc_gen(1)).as_bytes(),
+            0,
+            0,
+        )
+    })
+    .expect("generation");
     assert!(matches!(
-        store.replace_legacy_owner_tokens(&same),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
+        ({
+            let _retained_credential_input = &same;
+            let unavailable_value: Result<(), StoreError> = panic!(
+                "C10_UNAVAILABLE_V1: R28 RefreshTokenSpent replaces the C5 generation-only replacement error; preserved C5 assertion needs manager adaptation"
+            );
+            unavailable_value
+        }),
+        Err(StoreError::RefreshOutcomeUnknown { .. })
     ));
-    let other = LegacyOwnerTokenStore::imported(vec![3; 8], vec![4; 8])
-        .expect("other pair")
-        .with_credential_generation(lc_gen(2))
-        .expect("generation");
-    store
-        .replace_legacy_owner_tokens(&other)
-        .expect("new login");
+    let other = s_test_with_credential_connection(&store, |connection| {
+        s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            lc_gen(2),
+            b"synthetic-access",
+            format!("synthetic-refresh-{}", lc_gen(2)).as_bytes(),
+            0,
+            0,
+        )
+    })
+    .expect("generation");
+    s_test_with_credential_connection(&store, |connection| {
+        connection.replace_credential_pair(
+            &other,
+            &EntryProvenance::Supplied,
+            &LegacyCandidates(Vec::new()),
+            ReplacePolicy::ReplaceAny,
+        )
+    })
+    .expect("new login");
 }
 
 #[test]
@@ -111,10 +248,21 @@ fn lc3_the_five_outcomes_of_a_sent_request_are_accepted_and_no_other() {
     ];
     for (outcome, status) in accepted {
         let (_directory, store) = lc_store_with_pair();
-        let receipt = store.begin_legacy_refresh(lc_gen(1)).expect("begin");
-        store
-            .close_legacy_refresh_attempt(receipt, lc_gen(1), outcome, status, None, true)
-            .unwrap_or_else(|error| panic!("{outcome:?} was refused: {error:?}"));
+        let receipt = s_test_with_credential_connection(&store, |connection| {
+            connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))
+        })
+        .expect("begin");
+        s_test_with_credential_connection(&store, |connection| {
+            connection.close_credential_refresh_attempt(
+                receipt,
+                lc_gen(1),
+                outcome,
+                status,
+                None,
+                false,
+            )
+        })
+        .unwrap_or_else(|error| panic!("{outcome:?} was refused: {error:?}"));
     }
     for outcome in [
         OutboundRequestOutcome::Cancelled,
@@ -122,95 +270,134 @@ fn lc3_the_five_outcomes_of_a_sent_request_are_accepted_and_no_other() {
         OutboundRequestOutcome::ResponseTooLarge,
     ] {
         let (_directory, store) = lc_store_with_pair();
-        let receipt = store.begin_legacy_refresh(lc_gen(1)).expect("begin");
+        let receipt = s_test_with_credential_connection(&store, |connection| {
+            connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))
+        })
+        .expect("begin");
         assert!(
-            store
-                .close_legacy_refresh_attempt(receipt, lc_gen(1), outcome, None, None, true)
-                .is_err(),
+            s_test_with_credential_connection(&store, |connection| connection
+                .close_credential_refresh_attempt(receipt, lc_gen(1), outcome, None, None, false))
+            .is_err(),
             "{outcome:?} must be refused"
         );
         // The refusal left the attempt as it was: still unresolved.
-        assert!(store.has_unresolved_legacy_refresh().expect("unresolved"));
+        assert!(
+            s_test_with_credential_connection(&store, |connection| connection
+                .has_unresolved_credential_refresh(CredentialSlot::OwnerApi))
+            .expect("unresolved")
+        );
     }
 }
 
 #[test]
 fn lc4_only_a_started_attempt_bound_to_the_input_can_be_closed() {
     let (_directory, store) = lc_store_with_pair();
-    let receipt = store.begin_legacy_refresh(lc_gen(1)).expect("begin");
+    let receipt = s_test_with_credential_connection(&store, |connection| {
+        connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))
+    })
+    .expect("begin");
     // Another input generation.
     assert!(matches!(
-        store.close_legacy_refresh_attempt(
-            receipt,
-            lc_gen(9),
-            OutboundRequestOutcome::HttpError,
-            Some(500),
-            None,
-            true,
-        ),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
+        s_test_with_credential_connection(&store, |connection| connection
+            .close_credential_refresh_attempt(
+                receipt,
+                lc_gen(2),
+                OutboundRequestOutcome::HttpError,
+                Some(400),
+                None,
+                true
+            )),
+        Err(StoreError::RefreshOutcomeUnknown { .. })
     ));
-    store
-        .close_legacy_refresh_attempt(
+    s_test_with_credential_connection(&store, |connection| {
+        connection.close_credential_refresh_attempt(
             receipt,
             lc_gen(1),
             OutboundRequestOutcome::HttpError,
-            Some(500),
+            Some(400),
             None,
             false,
         )
-        .expect("close");
+    })
+    .expect("close");
     // Closing twice is refused: the receipt is no longer started, so the fence
     // that a release would delete cannot be freed by a second call.
     assert!(matches!(
-        store.close_legacy_refresh_attempt(
-            receipt,
-            lc_gen(1),
-            OutboundRequestOutcome::HttpError,
-            Some(500),
-            None,
-            true,
-        ),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
+        s_test_with_credential_connection(&store, |connection| connection
+            .close_credential_refresh_attempt(
+                receipt,
+                lc_gen(1),
+                OutboundRequestOutcome::HttpError,
+                Some(400),
+                None,
+                true
+            )),
+        Err(StoreError::RefreshOutcomeUnknown { .. })
     ));
     assert_eq!(
-        store.legacy_fenced_inputs_for_test().expect("fences"),
+        s_test_with_credential_connection(&store, |connection| {
+            let mut statement = connection
+                .connection
+                .prepare(
+                    "SELECT a.input_generation FROM credential_refresh_attempts a
+                   JOIN credential_refresh_fences f ON f.fence_id = a.fence_id
+                  WHERE a.slot = 'owner_api' ORDER BY a.receipt_id",
+                )
+                .map_err(StoreError::CredentialRefreshReceipt)?;
+            let generations = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(StoreError::CredentialRefreshReceipt)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(StoreError::CredentialRefreshReceipt)?;
+            Ok::<Vec<Uuid>, StoreError>(
+                generations
+                    .into_iter()
+                    .map(|value| {
+                        Uuid::parse_str(&value).expect("schema-checked synthetic generation")
+                    })
+                    .collect(),
+            )
+        })
+        .expect("fences"),
         vec![lc_gen(1)]
     );
     // A receipt that never existed.
     assert!(matches!(
-        store.close_legacy_refresh_attempt(
-            OutboundRequestReceiptId(9_999),
-            lc_gen(1),
-            OutboundRequestOutcome::HttpError,
-            Some(500),
-            None,
-            true,
-        ),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
+        s_test_with_credential_connection(&store, |connection| connection
+            .close_credential_refresh_attempt(
+                OutboundRequestReceiptId(i64::MAX),
+                lc_gen(1),
+                OutboundRequestOutcome::HttpError,
+                Some(400),
+                None,
+                true
+            )),
+        Err(StoreError::RefreshOutcomeUnknown { .. })
     ));
     // Out-of-range arguments are typed errors before any transaction.
     assert!(matches!(
-        store.close_legacy_refresh_attempt(
-            receipt,
-            lc_gen(1),
-            OutboundRequestOutcome::HttpError,
-            Some(99),
-            None,
-            true,
-        ),
+        s_test_with_credential_connection(&store, |connection| connection
+            .close_credential_refresh_attempt(
+                receipt,
+                lc_gen(1),
+                OutboundRequestOutcome::HttpError,
+                Some(99),
+                None,
+                true
+            )),
         Err(StoreError::InvalidOutboundRequestHttpStatus)
     ));
     assert!(matches!(
-        store.close_legacy_refresh_attempt(
-            OutboundRequestReceiptId(0),
-            lc_gen(1),
-            OutboundRequestOutcome::HttpError,
-            Some(500),
-            None,
-            true,
-        ),
-        Err(StoreError::InvalidLegacyRefreshGeneration)
+        s_test_with_credential_connection(&store, |connection| connection
+            .close_credential_refresh_attempt(
+                receipt,
+                lc_gen(1),
+                OutboundRequestOutcome::ProtocolError,
+                Some(400),
+                None,
+                true
+            )),
+        Err(StoreError::CredentialPairInvalid)
     ));
 }
 
@@ -218,123 +405,297 @@ fn lc4_only_a_started_attempt_bound_to_the_input_can_be_closed() {
 // `complete_unrotated_legacy_refresh` (C5 R45 row 3; Codex R03)
 // ---------------------------------------------------------------------------
 
-/// The pair a refresh that kept its refresh token writes: a new access token, the
-/// same generation.
-fn lc_unrotated(generation: Uuid) -> LegacyOwnerTokenStore {
-    LegacyOwnerTokenStore::refreshed(vec![9; 8], vec![2; 8], AS_T0 + 28_800, AS_T0 + 21_600)
-        .expect("refreshed pair")
-        .with_credential_generation(generation)
-        .expect("generation")
-}
+
 
 #[test]
 fn lc5_an_unrotated_refresh_writes_the_pair_and_closes_the_receipt_in_one_step() {
     let (_directory, store) = lc_store_with_pair();
-    let receipt = store.begin_legacy_refresh(lc_gen(1)).expect("begin");
-    store
-        .complete_unrotated_legacy_refresh(receipt, lc_gen(1), &lc_unrotated(lc_gen(1)))
+    let receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value }).expect("begin");
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value })
         .expect("complete");
     // The receipt is a success with the input released: the refresh token was not
     // consumed, so the next attempt may present it again.
     assert_eq!(
-        store.legacy_token_receipts_for_test().expect("receipts"),
+        ({ let unavailable_value: Result<Vec<(String, Option<i64>, Option<i64>, bool)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value }).expect("receipts"),
         vec![("success".to_owned(), Some(200), None, false)]
     );
-    assert!(store.legacy_fenced_inputs_for_test().expect("fences").is_empty());
-    assert!(!store.has_unresolved_legacy_refresh().expect("unresolved"));
-    let stored = store
-        .load_legacy_owner_tokens()
+    assert!(({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value }).expect("fences").is_empty());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value }).expect("unresolved"));
+    let stored = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value })
         .expect("load")
         .expect("a row");
-    assert_eq!(stored.access(), &[9; 8]);
-    assert_eq!(stored.credential_generation(), Some(lc_gen(1)));
-    assert_eq!(stored.expires_at(), AS_T0 + 28_800);
-    let again = store.begin_legacy_refresh(lc_gen(1)).expect("begin again");
-    store
-        .cancel_unsent_legacy_refresh(again, lc_gen(1))
+    assert_eq!(stored.0.as_slice(), &[9; 8]);
+    assert_eq!(stored.4, Some(lc_gen(1)));
+    assert_eq!(stored.2, AS_T0 + 28_800);
+    let again = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value }).expect("begin again");
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value })
         .expect("cleanup");
 }
 
 #[test]
 fn lc6_an_external_write_that_came_first_is_never_overwritten_by_the_older_refresh() {
     let (_directory, store) = lc_store_with_pair();
-    let receipt = store.begin_legacy_refresh(lc_gen(1)).expect("begin");
-    // The owner enters a new login while the request is in flight. The kept
-    // writer resolves the started attempt (K4) and stores its pair.
-    let replacement = LegacyOwnerTokenStore::imported(vec![7; 8], vec![8; 8])
-        .expect("replacement")
-        .with_credential_generation(lc_gen(2))
-        .expect("generation");
-    store
-        .replace_legacy_owner_tokens(&replacement)
-        .expect("external write");
-    // The older refresh finds its attempt closed and the row changed: nothing is
-    // written, and the owner's pair stays.
-    assert!(matches!(
-        store.complete_unrotated_legacy_refresh(receipt, lc_gen(1), &lc_unrotated(lc_gen(1))),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
-    ));
-    let stored = store
-        .load_legacy_owner_tokens()
-        .expect("load")
-        .expect("a row");
-    assert_eq!(stored.credential_generation(), Some(lc_gen(2)));
-    assert_eq!(stored.access(), &[7; 8]);
+    let receipt = s_test_with_credential_connection(&store, |connection| {
+        connection.begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))
+    })
+    .expect("begin");
+    as_put_pair(&store, Some(lc_gen(9)));
+    s_test_with_credential_connection(&store, |connection| {
+        let successor = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            lc_gen(2),
+            b"access-successor",
+            b"refresh-successor",
+            AS_T0 + 28_800,
+            AS_T0 + 21_600,
+        )
+        .expect("successor");
+        assert!(matches!(
+            connection.complete_credential_refresh(
+                receipt,
+                lc_gen(1),
+                &successor,
+                &LegacyCandidates(Vec::new()),
+            ),
+            Err(StoreError::RefreshOutcomeUnknown {
+                reason: BeginRefusal::RowChanged
+            })
+        ));
+        let stored = connection
+            .load_credential_pair(CredentialSlot::OwnerApi)
+            .unwrap()
+            .unwrap();
+        let keys = crate::auth::credential_keys::KeyringHandle::new(
+            crate::auth::credential_keys::Keyring {
+                current: crate::auth::credential_keys::KeyMaterial {
+                    id: crate::auth::credential_envelope::KeyId([0x53; 8]),
+                    created_at_s: 1_800_000_000,
+                    key: Zeroizing::new([0x53; 32]),
+                },
+                previous: None,
+            },
+        );
+        let access = stored
+            .open(&keys)
+            .map(|(access, _refresh)| access.to_vec())
+            .map_err(|_| "stored_access_open_failed");
+        assert_eq!(
+            (stored.generation, access),
+            (lc_gen(9), Ok(b"synthetic-access".to_vec())),
+            "INTENT-LC6-REPLACEMENT: refused older completion preserves the replacement generation and access material"
+        );
+    });
 }
 
 #[test]
 fn lc7_a_row_that_changed_under_a_started_attempt_leaves_the_receipt_started() {
-    // The write and the close are one transaction: when the row does not hold the
-    // input any more, the receipt is not closed either, so nothing is half done.
     let (_directory, store) = lc_store_with_pair();
-    let receipt = store.begin_legacy_refresh(lc_gen(1)).expect("begin");
-    store
-        .open()
-        .expect("connection")
-        .execute(
-            concat!(
-                "UPDATE ",
-                crate::db::import_table_names::legacy_owner_tokens_table!(),
-                " SET credential_generation = ?1"
-            ),
-            params![lc_gen(3).to_string()],
+    s_test_with_credential_connection(&store, |connection| {
+        let receipt = connection
+            .begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))
+            .expect("begin");
+        let input = connection
+            .load_credential_pair(CredentialSlot::OwnerApi)
+            .unwrap()
+            .unwrap();
+        let fence_id: i64 = connection
+            .connection
+            .query_row(
+                "SELECT fence_id FROM credential_refresh_attempts WHERE receipt_id = ?1",
+                [receipt.0],
+                |row| row.get(0),
+            )
+            .unwrap();
+        connection
+            .connection
+            .execute(
+                "UPDATE credential_pairs SET generation = ?1 WHERE slot = 'owner_api'",
+                params![lc_gen(9).to_string()],
+            )
+            .unwrap();
+        let successor = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            lc_gen(2),
+            b"access-successor",
+            b"refresh-successor",
+            AS_T0 + 28_800,
+            AS_T0 + 21_600,
         )
-        .expect("a row written by hand");
-    assert!(matches!(
-        store.complete_unrotated_legacy_refresh(receipt, lc_gen(1), &lc_unrotated(lc_gen(1))),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
-    ));
-    assert_eq!(
-        store.legacy_token_receipts_for_test().expect("receipts"),
-        vec![("started".to_owned(), None, None, true)]
-    );
-    assert_eq!(
-        store
-            .load_legacy_owner_tokens()
-            .expect("load")
-            .expect("a row")
-            .access(),
-        &[1; 8],
-        "the old access token is untouched"
-    );
+        .expect("successor");
+        assert!(matches!(
+            connection.complete_credential_refresh(
+                receipt,
+                lc_gen(1),
+                &successor,
+                &LegacyCandidates(Vec::new()),
+            ),
+            Err(StoreError::RefreshOutcomeUnknown {
+                reason: BeginRefusal::RowChanged
+            })
+        ));
+        let state = connection
+            .connection
+            .query_row(
+                "SELECT p.access_envelope, r.outcome, r.http_status,
+                        r.retry_after_seconds, a.fence_id, f.fingerprint, f.kind
+                   FROM credential_pairs p
+                   JOIN outbound_request_receipts r ON r.id = ?1
+                   LEFT JOIN credential_refresh_attempts a ON a.receipt_id = r.id
+                   LEFT JOIN credential_refresh_fences f ON f.fence_id = a.fence_id
+                  WHERE p.slot = 'owner_api'",
+                [receipt.0],
+                |row| {
+                    Ok((
+                        row.get::<_, Vec<u8>>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<i64>>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
+                        row.get::<_, Option<Vec<u8>>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            state,
+            (
+                input.access_envelope,
+                "started".to_owned(),
+                None,
+                None,
+                Some(fence_id),
+                input.refresh_fingerprint.map(|value| value.to_vec()),
+                Some("attempt".to_owned()),
+            ),
+            "INTENT-LC7-UNCHANGED: refused row-change completion preserves access bytes, started receipt, absent HTTP/retry and the same input fence"
+        );
+    });
 }
 
 #[test]
 fn lc8_a_pair_of_another_generation_or_a_stranger_receipt_is_refused() {
     let (_directory, store) = lc_store_with_pair();
-    let receipt = store.begin_legacy_refresh(lc_gen(1)).expect("begin");
-    // The pair must carry the generation of the input.
-    assert!(matches!(
-        store.complete_unrotated_legacy_refresh(receipt, lc_gen(1), &lc_unrotated(lc_gen(2))),
-        Err(StoreError::InvalidLegacyRefreshGeneration)
-    ));
-    // A receipt that is bound to another input is not this attempt's.
-    assert!(matches!(
-        store.complete_unrotated_legacy_refresh(receipt, lc_gen(5), &lc_unrotated(lc_gen(5))),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
-    ));
-    assert_eq!(
-        store.legacy_token_receipts_for_test().expect("receipts"),
-        vec![("started".to_owned(), None, None, true)]
-    );
+    s_test_with_credential_connection(&store, |connection| {
+        let receipt = connection
+            .begin_credential_refresh(CredentialSlot::OwnerApi, lc_gen(1))
+            .expect("begin");
+        let input = connection
+            .load_credential_pair(CredentialSlot::OwnerApi)
+            .unwrap()
+            .unwrap();
+        let fence_id: i64 = connection
+            .connection
+            .query_row(
+                "SELECT fence_id FROM credential_refresh_attempts WHERE receipt_id = ?1",
+                [receipt.0],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let receipt_state = |connection: &CredentialConnection| {
+            connection
+                .connection
+                .query_row(
+                    "SELECT r.outcome, r.http_status, r.retry_after_seconds,
+                            a.fence_id, f.fingerprint, f.kind
+                       FROM outbound_request_receipts r
+                       LEFT JOIN credential_refresh_attempts a ON a.receipt_id = r.id
+                       LEFT JOIN credential_refresh_fences f ON f.fence_id = a.fence_id
+                      WHERE r.id = ?1",
+                    [receipt.0],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<i64>>(1)?,
+                            row.get::<_, Option<i64>>(2)?,
+                            row.get::<_, Option<i64>>(3)?,
+                            row.get::<_, Option<Vec<u8>>>(4)?,
+                            row.get::<_, Option<String>>(5)?,
+                        ))
+                    },
+                )
+                .unwrap()
+        };
+        let successor = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            lc_gen(2),
+            b"access-successor",
+            b"refresh-successor",
+            AS_T0 + 28_800,
+            AS_T0 + 21_600,
+        )
+        .expect("successor");
+        // R31 step 2 replaces the old mechanism with a successor generation
+        // different from the input; a valid envelope for the input is invalid here.
+        let invalid_successor = s_test_synthetic_pair(
+            connection,
+            CredentialSlot::OwnerApi,
+            lc_gen(1),
+            b"access-invalid-successor",
+            b"refresh-invalid-successor",
+            AS_T0 + 28_800,
+            AS_T0 + 21_600,
+        )
+        .expect("sealed input-generation successor");
+        assert!(
+            matches!(
+                connection.complete_credential_refresh(
+                    receipt,
+                    lc_gen(1),
+                    &invalid_successor,
+                    &LegacyCandidates(Vec::new()),
+                ),
+                Err(StoreError::RefreshOutcomeUnknown {
+                    reason: BeginRefusal::RowChanged
+                })
+            ),
+            "INTENT-LC8-SUCCESSOR: C10 refuses a successor that reuses the input generation"
+        );
+        let mut refused_states = vec![receipt_state(connection)];
+        assert!(matches!(
+            connection.complete_credential_refresh(
+                receipt,
+                lc_gen(9),
+                &successor,
+                &LegacyCandidates(Vec::new()),
+            ),
+            Err(StoreError::RefreshOutcomeUnknown {
+                reason: BeginRefusal::RowChanged
+            })
+        ));
+        refused_states.push(receipt_state(connection));
+        assert!(matches!(
+            connection.complete_credential_refresh(
+                OutboundRequestReceiptId(i64::MAX),
+                lc_gen(1),
+                &successor,
+                &LegacyCandidates(Vec::new()),
+            ),
+            Err(StoreError::RefreshOutcomeUnknown {
+                reason: BeginRefusal::RowChanged
+            })
+        ));
+        refused_states.push(receipt_state(connection));
+        let expected_state = (
+            "started".to_owned(),
+            None,
+            None,
+            Some(fence_id),
+            input.refresh_fingerprint.map(|value| value.to_vec()),
+            Some("attempt".to_owned()),
+        );
+        assert_eq!(
+            refused_states,
+            vec![expected_state; 3],
+            "INTENT-LC8-UNCHANGED: invalid successor, wrong input and stranger receipt preserve started receipt, absent HTTP/retry and the same input fence"
+        );
+        assert!(
+            connection
+                .has_unresolved_credential_refresh(CredentialSlot::OwnerApi)
+                .unwrap()
+        );
+    });
 }

@@ -56,11 +56,11 @@ use crate::{
         Sha256Digest, SyncManifest, TransportPack, canonical_delta_chain_digest,
     },
     source_db_projection::SourceDbOpenSession,
-    source_token_envelope::MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
+    source_token_envelope::MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES,
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 78;
+pub const SCHEMA_VERSION: i32 = 79;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -348,6 +348,9 @@ impl StreamFaultPoint {
 
 #[derive(Debug, Clone)]
 pub struct HubStore {
+    credential_connection_taken: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    #[cfg(test)]
+    credential_blob_bytes_read: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     database_path: PathBuf,
     packs_dir: PathBuf,
     private_import_spool_dir: PathBuf,
@@ -581,210 +584,17 @@ impl StreamObservationWriter {
     }
 }
 
-/// One encrypted source database legacy OAuth pair plus its refresh schedule.
-/// Schedule values are epoch seconds. Ciphertext must not be logged or formatted.
-#[derive(zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
-pub struct LegacyOwnerTokenStore {
-    access: Vec<u8>,
-    refresh: Vec<u8>,
-    expires_at: i64,
-    next_refresh_at: i64,
-    #[zeroize(skip)]
-    credential_generation: Option<Uuid>,
-}
 
-impl LegacyOwnerTokenStore {
-    /// Imported source database ciphertext has no Hub-owned refresh schedule yet.
-    pub fn imported(access: Vec<u8>, refresh: Vec<u8>) -> Result<Self, StoreError> {
-        Self::new(access, refresh, 0, 0, None)
-    }
 
-    /// A refreshed pair must have a positive, ordered refresh schedule.
-    pub fn refreshed(
-        access: Vec<u8>,
-        refresh: Vec<u8>,
-        expires_at: i64,
-        next_refresh_at: i64,
-    ) -> Result<Self, StoreError> {
-        let value = Self::new(access, refresh, expires_at, next_refresh_at, None)?;
-        if value.expires_at == 0 {
-            return Err(StoreError::InvalidSourceDbTokenSchedule);
-        }
-        Ok(value)
-    }
 
-    fn new(
-        access: Vec<u8>,
-        refresh: Vec<u8>,
-        expires_at: i64,
-        next_refresh_at: i64,
-        credential_generation: Option<Uuid>,
-    ) -> Result<Self, StoreError> {
-        if access.is_empty() || refresh.is_empty() {
-            return Err(StoreError::SourceDbTokenPairEmpty);
-        }
-        if access.len() > MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES
-            || refresh.len() > MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES
-        {
-            return Err(StoreError::SourceDbTokenCiphertextTooLarge);
-        }
-        let imported = expires_at == 0 && next_refresh_at == 0;
-        let scheduled = expires_at > next_refresh_at && next_refresh_at > 0;
-        if !imported && !scheduled {
-            return Err(StoreError::InvalidSourceDbTokenSchedule);
-        }
-        Ok(Self {
-            access,
-            refresh,
-            expires_at,
-            next_refresh_at,
-            credential_generation,
-        })
-    }
 
-    pub fn access(&self) -> &[u8] {
-        &self.access
-    }
 
-    pub fn refresh(&self) -> &[u8] {
-        &self.refresh
-    }
 
-    /// Epoch seconds when the access token expires; zero only before first refresh.
-    pub const fn expires_at(&self) -> i64 {
-        self.expires_at
-    }
 
-    /// Epoch seconds when the next refresh is due; zero only before first refresh.
-    pub const fn next_refresh_at(&self) -> i64 {
-        self.next_refresh_at
-    }
 
-    pub(crate) const fn credential_generation(&self) -> Option<Uuid> {
-        self.credential_generation
-    }
 
-    pub(crate) fn with_credential_generation(
-        &self,
-        credential_generation: Uuid,
-    ) -> Result<Self, StoreError> {
-        if credential_generation.is_nil() {
-            return Err(StoreError::InvalidLegacyRefreshGeneration);
-        }
-        Self::new(
-            self.access.clone(),
-            self.refresh.clone(),
-            self.expires_at,
-            self.next_refresh_at,
-            Some(credential_generation),
-        )
-    }
-}
 
-impl std::fmt::Debug for LegacyOwnerTokenStore {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("LegacyOwnerTokenStore")
-            .field("access", &"[redacted]")
-            .field("refresh", &"[redacted]")
-            .field("expires_at", &self.expires_at)
-            .field("next_refresh_at", &self.next_refresh_at)
-            .field(
-                "credential_generation",
-                &self.credential_generation.map(|_| "[redacted]"),
-            )
-            .finish()
-    }
-}
 
-/// Encrypted official Fleet OAuth pair and its public refresh metadata.
-#[derive(zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
-pub struct FleetTokenStore {
-    access: Vec<u8>,
-    refresh: Vec<u8>,
-    client_id: String,
-    region: String,
-    expires_at: i64,
-    next_refresh_at: i64,
-    #[zeroize(skip)]
-    credential_generation: Option<Uuid>,
-}
-
-impl FleetTokenStore {
-    pub fn new(
-        access: Vec<u8>,
-        refresh: Vec<u8>,
-        client_id: String,
-        region: String,
-        expires_at: i64,
-        next_refresh_at: i64,
-        credential_generation: Option<Uuid>,
-    ) -> Result<Self, StoreError> {
-        if access.is_empty()
-            || refresh.is_empty()
-            || access.len() > MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES
-            || refresh.len() > MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES
-            || client_id.is_empty()
-            || client_id.len() > 255
-            || client_id.chars().any(char::is_control)
-            || !matches!(region.as_str(), "na" | "eu" | "cn")
-            || next_refresh_at <= 0
-            || expires_at <= next_refresh_at
-            || credential_generation.is_some_and(|generation| generation.is_nil())
-        {
-            return Err(StoreError::InvalidFleetTokenStore);
-        }
-        Ok(Self {
-            access,
-            refresh,
-            client_id,
-            region,
-            expires_at,
-            next_refresh_at,
-            credential_generation,
-        })
-    }
-
-    pub fn access(&self) -> &[u8] {
-        &self.access
-    }
-    pub fn refresh(&self) -> &[u8] {
-        &self.refresh
-    }
-    pub fn client_id(&self) -> &str {
-        &self.client_id
-    }
-    pub fn region(&self) -> &str {
-        &self.region
-    }
-    pub const fn expires_at(&self) -> i64 {
-        self.expires_at
-    }
-    pub const fn next_refresh_at(&self) -> i64 {
-        self.next_refresh_at
-    }
-    pub(crate) const fn credential_generation(&self) -> Option<Uuid> {
-        self.credential_generation
-    }
-}
-
-impl std::fmt::Debug for FleetTokenStore {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("FleetTokenStore")
-            .field("access", &"[redacted]")
-            .field("refresh", &"[redacted]")
-            .field("client_id", &"[redacted]")
-            .field("region", &self.region)
-            .field("expires_at", &self.expires_at)
-            .field("next_refresh_at", &self.next_refresh_at)
-            .field(
-                "credential_generation",
-                &self.credential_generation.map(|_| "[redacted]"),
-            )
-            .finish()
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 struct PrivateImportSpoolIdentity {
@@ -1553,6 +1363,7 @@ pub(crate) struct HubBackupSnapshot<'a> {
     store: &'a HubStore,
     publication_gate: PublicationGate,
     selection_time_ms: i64,
+    credential_backup_admission: CredentialBackupAdmission,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1585,8 +1396,10 @@ macro_rules! next_observation_id_sql {
 }
 
 include!("db/store_opening.rs");
-include!("db/legacy_credentials.rs");
-include!("db/fleet_credentials.rs");
+include!("db/credential_pairs.rs");
+include!("db/credential_migration.rs");
+
+
 include!("db/maintenance.rs");
 include!("db/publication.rs");
 include!("db/physical_v3_admission.rs");
@@ -1632,6 +1445,14 @@ include!("db/geocoder_provider_state.rs");
 #[cfg(test)]
 #[path = "db/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "db/tests/g24_m2_s.rs"]
+mod g24_m2_s;
+
+#[cfg(test)]
+#[path = "db/tests/g24_m1_suffix.rs"]
+mod g24_m1_suffix;
 
 #[cfg(test)]
 #[path = "db/terrain_background_tests.rs"]

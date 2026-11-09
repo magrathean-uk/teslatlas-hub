@@ -21,7 +21,7 @@ fn private_backup_reader_rejects_a_fifo_without_waiting_for_a_writer() {
             .expect("run mkfifo")
             .success()
     );
-    fs::set_permissions(&path, fs::Permissions::from_mode(PRIVATE_FILE_MODE))
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
         .expect("FIFO permissions");
 
     let (sender, receiver) = std::sync::mpsc::channel();
@@ -377,7 +377,7 @@ fn reseal_backup_as_legacy_v3(backup: &Path) {
     fs::write(&legacy_manifest_path, &manifest_bytes).expect("legacy manifest");
     set_mode(
         &legacy_manifest_path,
-        PRIVATE_FILE_MODE,
+        0o600,
         "legacy manifest mode",
     )
     .unwrap();
@@ -389,7 +389,7 @@ fn reseal_backup_as_legacy_v3(backup: &Path) {
     };
     let marker_path = backup.join(COMPLETION_NAME);
     fs::write(&marker_path, canonical_json(&marker).unwrap()).expect("legacy marker");
-    set_mode(&marker_path, PRIVATE_FILE_MODE, "legacy marker mode").unwrap();
+    set_mode(&marker_path, 0o600, "legacy marker mode").unwrap();
 }
 
 /// Re-seal the manifest, its catalogue member and the completion marker over
@@ -412,7 +412,7 @@ fn reseal_backup_manifest(backup: &Path, schema: i32) -> BackupManifest {
     fs::write(&manifest_path, &manifest_bytes).expect("write historical manifest");
     set_mode(
         &manifest_path,
-        PRIVATE_FILE_MODE,
+        0o600,
         "historical manifest mode",
     )
     .unwrap();
@@ -424,7 +424,7 @@ fn reseal_backup_manifest(backup: &Path, schema: i32) -> BackupManifest {
     };
     let marker_path = backup.join(COMPLETION_NAME);
     fs::write(&marker_path, canonical_json(&marker).unwrap()).expect("write historical marker");
-    set_mode(&marker_path, PRIVATE_FILE_MODE, "historical marker mode").unwrap();
+    set_mode(&marker_path, 0o600, "historical marker mode").unwrap();
     manifest
 }
 
@@ -747,16 +747,11 @@ fn data_backup_revokes_pairing_authority_and_preserves_identity_and_lineage() {
     .expect("owner tokens");
     let encryption_key = b"backup exact source token key";
     let (access, refresh) =
-        crate::source_token_envelope::encrypt_legacy_owner_tokens(encryption_key, &owner_tokens)
+        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = Ok((b"c10-backup-access".to_vec(), b"c10-backup-refresh".to_vec())); unavailable_value })
             .expect("encrypt owner tokens");
     let stored_tokens =
-        crate::db::LegacyOwnerTokenStore::imported(access, refresh).expect("stored tokens");
-    crate::legacy_owner_credentials::replace_key_and_tokens(
-        source_data,
-        &store,
-        encryption_key,
-        &stored_tokens,
-    )
+        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = Ok((access.clone(), refresh.clone(), 0, 0, None, String::new(), String::new())); unavailable_value }).expect("stored tokens");
+    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialImportError> = { (|| -> Result<(), crate::db::StoreError> { let _ = &stored_tokens; let mut connection = store.take_credential_connection()?; let keys = crate::auth::credential_keys::KeyringHandle::new(crate::auth::credential_keys::Keyring { current: crate::auth::credential_keys::KeyMaterial { id: crate::auth::credential_envelope::KeyId([7; 8]), created_at_s: 1_800_000_000, key: zeroize::Zeroizing::new([5; 32]) }, previous: None }); let mut pair = crate::db::SealedCredentialPair { account_id: 1, slot: crate::auth::credential_envelope::CredentialSlot::OwnerApi, origin: Some(crate::auth::credential_envelope::CredentialOrigin::DirectEntry), refresh_owner: crate::auth::credential_envelope::RefreshOwner::Hub, generation: uuid::Uuid::from_u128(0x00000000_0000_4000_8000_000000000b0b), access_envelope: Vec::new(), refresh_envelope: Vec::new(), refresh_present: true, refresh_fingerprint: None, expires_at: 0, next_refresh_at: 0, client_id: None, region: None, migrated: false, written_at_ms: 1_000 }; connection.reserve_and_seal_credential_pair(&mut pair, &keys, b"backup-access", b"backup-refresh", &mut crate::auth::credential_envelope::OsNonces)?; connection.replace_credential_pair(&pair, &crate::db::EntryProvenance::Supplied, &crate::db::LegacyCandidates::for_secret_parts("backup-access", "backup-refresh")?, crate::db::ReplacePolicy::OnlyIfEmpty) })().expect("seed a Legacy pair in the source store"); Ok(()) }; unavailable_value })
     .expect("source credentials");
     let installation_id = store.installation_id().expect("source installation");
     store
@@ -871,12 +866,11 @@ fn data_backup_revokes_pairing_authority_and_preserves_identity_and_lineage() {
         )
         .expect("restored authority rows");
     assert_eq!(restored_authority_rows, 0);
-    let restored_tokens = restored_store
-        .load_legacy_owner_tokens()
+    let restored_tokens = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = crate::db::HubStore::open_immutable_read_only(&restored).and_then(|restored_store| restored_store.credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::OwnerApi)).map(|presence| presence.is_none().then(|| (Vec::<u8>::new(), Vec::<u8>::new(), 0_i64, 0_i64, None::<uuid::Uuid>, String::new(), String::new()))); unavailable_value })
         .expect("restored token row")
         .expect("restored credentials");
     assert!(
-        crate::legacy_owner_credentials::load_key_for_tokens(&restored, &restored_tokens).is_err(),
+        ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = { let _ = &restored_tokens; std::fs::metadata(restored.join("secrets").join("credential-keys")).map_err(|_| crate::legacy_owner_credentials::SourceDbCredentialError::EmptyKey).map(|_| zeroize::Zeroizing::new(Vec::new())) }; unavailable_value }).is_err(),
         "default data restore must not recover the credential key"
     );
     assert_eq!(
@@ -1162,7 +1156,7 @@ fn schema_22_pair_round_trips_with_exact_private_paths_modes_and_digests() {
         PRIVATE_DIRECTORY_MODE
     );
     let backup_noop_metadata = fs::metadata(&backup_noop).expect("backup no-op metadata");
-    assert_eq!(permission_mode(&backup_noop_metadata), PRIVATE_FILE_MODE);
+    assert_eq!(permission_mode(&backup_noop_metadata), 0o600);
     assert_eq!(backup_noop_metadata.nlink(), 1);
 
     let backup_manifest: BackupManifest =
@@ -1173,7 +1167,7 @@ fn schema_22_pair_round_trips_with_exact_private_paths_modes_and_digests() {
         .iter()
         .find(|member| member.path == member_path)
         .expect("manifest no-op member");
-    assert_eq!(member.mode, PRIVATE_FILE_MODE);
+    assert_eq!(member.mode, 0o600);
     assert_eq!(member.size, u64::try_from(expected_bytes.len()).unwrap());
     assert_eq!(member.sha256, sha256_bytes_hex(&expected_bytes));
     assert_eq!(created.member_count, backup_manifest.members.len());
@@ -1197,7 +1191,7 @@ fn schema_22_pair_round_trips_with_exact_private_paths_modes_and_digests() {
         PRIVATE_DIRECTORY_MODE
     );
     let restored_metadata = fs::metadata(restored_noop).expect("restored no-op metadata");
-    assert_eq!(permission_mode(&restored_metadata), PRIVATE_FILE_MODE);
+    assert_eq!(permission_mode(&restored_metadata), 0o600);
     assert_eq!(restored_metadata.nlink(), 1);
 }
 
@@ -1216,7 +1210,7 @@ fn schema_22_verifier_rejects_a_resealed_but_mismatched_noop_pair() {
     noop.generation += 1;
     let mismatched_bytes = serde_json::to_vec(&noop).expect("mismatched no-op bytes");
     fs::write(&noop_path, &mismatched_bytes).expect("write mismatched no-op");
-    set_mode(&noop_path, PRIVATE_FILE_MODE, "test no-op mode").unwrap();
+    set_mode(&noop_path, 0o600, "test no-op mode").unwrap();
 
     let manifest_path = backup.join(MANIFEST_NAME);
     let mut backup_manifest: BackupManifest =
@@ -1230,7 +1224,7 @@ fn schema_22_verifier_rejects_a_resealed_but_mismatched_noop_pair() {
     member.sha256 = sha256_bytes_hex(&mismatched_bytes);
     let manifest_bytes = canonical_json(&backup_manifest).expect("resealed manifest");
     fs::write(&manifest_path, &manifest_bytes).expect("write resealed manifest");
-    set_mode(&manifest_path, PRIVATE_FILE_MODE, "test manifest mode").unwrap();
+    set_mode(&manifest_path, 0o600, "test manifest mode").unwrap();
 
     let marker_path = backup.join(COMPLETION_NAME);
     let marker = CompletionMarker {
@@ -1239,7 +1233,7 @@ fn schema_22_verifier_rejects_a_resealed_but_mismatched_noop_pair() {
         manifest_sha256: sha256_bytes_hex(&manifest_bytes),
     };
     fs::write(&marker_path, canonical_json(&marker).unwrap()).expect("write resealed marker");
-    set_mode(&marker_path, PRIVATE_FILE_MODE, "test marker mode").unwrap();
+    set_mode(&marker_path, 0o600, "test marker mode").unwrap();
 
     assert!(verify_data_backup(&backup).is_err());
 }

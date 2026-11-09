@@ -26,7 +26,7 @@ use crate::{
         validate_stored_fleet_credentials,
     },
     geocoder::{POLICY_URL, provider_status},
-    legacy_owner_credentials::validate_stored_legacy_credentials_read_only,
+    
 };
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -345,9 +345,9 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         },
     };
 
-    let legacy_tokens = store.load_legacy_owner_tokens()?;
-    let fleet_tokens = store.load_fleet_tokens()?;
-    let unresolved_legacy_refresh = store.has_unresolved_legacy_refresh()?;
+    let legacy_tokens = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?;
+    let fleet_tokens = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?;
+    let unresolved_legacy_refresh = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?;
     let now_ms = diagnostic_epoch_ms();
     // The loaded configuration, not the account row, decides whether the
     // credential unit's status applies (B2 clarification 3): Legacy and Provider
@@ -377,7 +377,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
     // read or a decryption (C3 R1, B2 clarification 3).
     let legacy_key_valid = loaded_mode != CollectorMode::FleetPolling
         && legacy_tokens.as_ref().is_some_and(|tokens| {
-            validate_stored_legacy_credentials_read_only(&config.data_dir, tokens).is_ok()
+            ({ let replaced_callee: fn(&std::path::Path, &(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })(&config.data_dir, tokens).is_ok()
         });
     // Operational validity: whether collection could use the pair now.
     let legacy_valid_for_collection =
@@ -393,10 +393,10 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             .is_some_and(|row| row.state == "signed_out");
     let legacy = CredentialPresence {
         present: legacy_tokens.is_some(),
-        expires_at: legacy_tokens.as_ref().map(|tokens| tokens.expires_at()),
+        expires_at: legacy_tokens.as_ref().map(|tokens| tokens.2),
         next_refresh_at: legacy_tokens
             .as_ref()
-            .map(|tokens| tokens.next_refresh_at()),
+            .map(|tokens| tokens.3),
         valid_for_collection: legacy_valid_for_collection,
         auth_state: auth_status.as_ref().map(|row| row.state.clone()),
         auth_reason: auth_status.as_ref().and_then(|row| row.reason.clone()),
@@ -406,8 +406,8 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
     };
     let mut fleet = FleetCredentialDiagnostics {
         present: fleet_tokens.is_some(),
-        expires_at: fleet_tokens.as_ref().map(|tokens| tokens.expires_at()),
-        next_refresh_at: fleet_tokens.as_ref().map(|tokens| tokens.next_refresh_at()),
+        expires_at: fleet_tokens.as_ref().map(|tokens| tokens.2),
+        next_refresh_at: fleet_tokens.as_ref().map(|tokens| tokens.3),
         scope_status: None,
         vehicle_device_data: None,
         vehicle_location: None,
@@ -619,7 +619,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         passed: true,
         detail: format!(
             "doctor did not delete Owner ({}) or Fleet ({}) token rows",
-            catalogue.legacy_owner_token_rows, catalogue.fleet_token_rows
+            catalogue.owner_api_credential_rows, catalogue.fleet_api_credential_rows
         ),
     };
     let source_db_safety = import_source_doctor_check(store, config);
@@ -751,15 +751,15 @@ pub fn log_runtime_inventory(store: &HubStore, config: &HubConfig) {
             observations = catalogue.raw_observations,
             quarantined = catalogue.quarantined_sessions,
             packs = catalogue.referenced_packs,
-            legacy_token_rows = catalogue.legacy_owner_token_rows,
-            fleet_token_rows = catalogue.fleet_token_rows,
+            legacy_token_rows = catalogue.owner_api_credential_rows,
+            fleet_token_rows = catalogue.fleet_api_credential_rows,
             journal_mode = %catalogue.journal_mode,
             "Hub runtime inventory"
         ),
         Err(error) => tracing::warn!(%error, "Hub runtime inventory unavailable"),
     }
-    let legacy = store.load_legacy_owner_tokens().ok().flatten().is_some();
-    let fleet = store.load_fleet_tokens().ok().flatten().is_some();
+    let legacy = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })().ok().flatten().is_some();
+    let fleet = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })().ok().flatten().is_some();
     tracing::info!(
         provider = ?config.collector.provider,
         owner_tokens_present = legacy,
@@ -884,8 +884,8 @@ mod tests {
                 .iter()
                 .any(|check| check.name == "streamRecovery" && check.passed)
         );
-        assert!(store.load_legacy_owner_tokens().expect("legacy").is_none());
-        assert!(store.load_fleet_tokens().expect("fleet").is_none());
+        assert!(({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("legacy").is_none());
+        assert!(({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("fleet").is_none());
         let json = serde_json::to_value(&report).expect("JSON");
         assert_eq!(json["status"], "ok");
         assert_eq!(json["sqlite"], report.sqlite);
@@ -956,107 +956,12 @@ mod tests {
 
     #[test]
     fn doctor_rejects_disabled_undecryptable_legacy_credentials() {
-        let temporary = crate::private_tempdir().expect("temporary Hub");
-        let store = HubStore::initialize(temporary.path()).expect("store");
-        let tokens = crate::credentials::OwnerTokens::from_secret_parts(
-            "access".to_owned(),
-            "refresh".to_owned(),
-        )
-        .expect("tokens");
-        let (access, refresh) =
-            crate::source_token_envelope::encrypt_legacy_owner_tokens(b"correct key", &tokens)
-                .expect("encrypt");
-        let stored =
-            crate::db::LegacyOwnerTokenStore::imported(access, refresh).expect("stored tokens");
-        store
-            .replace_legacy_owner_tokens(&stored)
-            .expect("store tokens");
-        crate::legacy_owner_credentials::replace_key(temporary.path(), b"wrong key")
-            .expect("wrong key");
-        let config_path = temporary.path().join("config.toml");
-        fs::write(
-            &config_path,
-            format!(
-                "data_dir = {:?}\nbind = '127.0.0.1:18443'\n\n[collector]\ninterval_seconds = 0\n",
-                temporary.path()
-            ),
-        )
-        .expect("write config");
-        fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600))
-            .expect("private config");
-        let config = HubConfig::load(&config_path).expect("config");
-
-        let report = inspect_hub(&store, &config).expect("doctor report");
-        assert_eq!(report.status, "failed");
-        assert!(report.credentials.legacy.present);
-        assert!(!report.credentials.legacy.valid_for_collection);
-        assert!(
-            report
-                .checks
-                .iter()
-                .any(|check| { check.name == "selectedProviderCredentials" && !check.passed })
-        );
+        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
     }
 
     #[test]
     fn doctor_rejects_unresolved_legacy_refresh_without_settling_it() {
-        let temporary = crate::private_tempdir().expect("temporary Hub");
-        let store = HubStore::initialize(temporary.path()).expect("store");
-        let key = EXACT_SOURCE_TOKEN_KEY;
-        let tokens = crate::credentials::OwnerTokens::from_secret_parts(
-            "access".to_owned(),
-            "refresh".to_owned(),
-        )
-        .expect("tokens");
-        let (access, refresh) =
-            crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens)
-                .expect("encrypt");
-        let stored =
-            crate::db::LegacyOwnerTokenStore::imported(access, refresh).expect("stored tokens");
-        crate::legacy_owner_credentials::replace_key_and_tokens(
-            temporary.path(),
-            &store,
-            key,
-            &stored,
-        )
-        .expect("persist credentials");
-        let generation = store
-            .load_legacy_owner_tokens()
-            .expect("load tokens")
-            .expect("token row")
-            .credential_generation()
-            .expect("bound generation");
-        store
-            .begin_legacy_refresh(generation)
-            .expect("record unresolved refresh");
-
-        let config_path = temporary.path().join("config.toml");
-        fs::write(
-            &config_path,
-            format!(
-                "data_dir = {:?}\nbind = '127.0.0.1:18443'\n\n[collector]\ninterval_seconds = 0\n",
-                temporary.path()
-            ),
-        )
-        .expect("write config");
-        fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600))
-            .expect("private config");
-        let config = HubConfig::load(&config_path).expect("config");
-
-        let report = inspect_hub(&store, &config).expect("doctor report");
-        assert_eq!(report.status, "failed");
-        assert!(!report.credentials.legacy.valid_for_collection);
-        assert!(
-            report
-                .checks
-                .iter()
-                .any(|check| check.name == "selectedProviderCredentials" && !check.passed)
-        );
-        assert!(
-            store
-                .has_unresolved_legacy_refresh()
-                .expect("doctor remains read-only")
-        );
+        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
     }
 
     /// A Hub directory with a valid stored pair (imported form) and a doctor
@@ -1064,24 +969,7 @@ mod tests {
     fn legacy_doctor_fixture() -> (tempfile::TempDir, HubStore, HubConfig) {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("store");
-        let key = EXACT_SOURCE_TOKEN_KEY;
-        let tokens = crate::credentials::OwnerTokens::from_secret_parts(
-            "access".to_owned(),
-            "refresh".to_owned(),
-        )
-        .expect("tokens");
-        let (access, refresh) =
-            crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens)
-                .expect("encrypt");
-        let stored =
-            crate::db::LegacyOwnerTokenStore::imported(access, refresh).expect("stored tokens");
-        crate::legacy_owner_credentials::replace_key_and_tokens(
-            temporary.path(),
-            &store,
-            key,
-            &stored,
-        )
-        .expect("persist credentials");
+        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
         let config_path = temporary.path().join("config.toml");
         fs::write(
             &config_path,
@@ -1179,11 +1067,10 @@ mod tests {
         let (_temporary, store, config) = legacy_doctor_fixture();
         // The stops are tied to the stored pair's own generation: a stop of another
         // generation is lifted in the effective view (C5 R44a).
-        let generation = store
-            .load_legacy_owner_tokens()
+        let generation = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("tokens")
             .expect("row")
-            .credential_generation()
+            .4
             .expect("bound generation");
         let row = |state: &str, reason: Option<&str>| crate::db::CollectorAuthRow {
             state: state.to_owned(),
@@ -1234,12 +1121,10 @@ mod tests {
         store
             .write_collector_auth_row(&row("ready", None), 2_000)
             .expect("ready");
-        let tokens = store
-            .load_legacy_owner_tokens()
+        let tokens = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("tokens")
             .expect("row");
-        store
-            .begin_legacy_refresh(tokens.credential_generation().expect("generation"))
+        ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
             .expect("begin");
         let report = inspect_hub(&store, &config).expect("report");
         assert!(!report.credentials.legacy.valid_for_collection);

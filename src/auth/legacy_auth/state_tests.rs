@@ -17,7 +17,7 @@ use uuid::Uuid;
 use super::super::http_date::parse_http_date;
 use super::super::state::*;
 use super::{AuthMode, ConfigurationReason, RefusalReason, RetryReason, SignOutReason, T0};
-use crate::db::{CollectorAuthRow, HubStore, LegacyOwnerTokenStore, StoreError};
+use crate::db::{CollectorAuthRow, HubStore,  StoreError};
 
 /// A synthetic generation: sixteen equal bytes, never derived from a token.
 fn gen_id(n: u8) -> Uuid {
@@ -33,27 +33,10 @@ fn test_store() -> (tempfile::TempDir, HubStore) {
 /// Store a pair row whose ciphertext is a placeholder and whose generation is
 /// `generation`, through the path every external writer uses (K4).
 fn put_pair(store: &HubStore, generation: Uuid) {
-    let stored = LegacyOwnerTokenStore::imported(vec![generation.as_bytes()[0]; 8], vec![7; 8])
-        .expect("placeholder pair")
-        .with_credential_generation(generation)
-        .expect("generation");
-    store
-        .replace_legacy_owner_tokens(&stored)
-        .expect("store pair");
-}
+        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
+    }
 
-/// A refreshed-form pair for the output of a refresh (K2).
-fn refreshed_pair(generation: Uuid) -> LegacyOwnerTokenStore {
-    LegacyOwnerTokenStore::refreshed(
-        vec![generation.as_bytes()[0]; 8],
-        vec![8; 8],
-        T0 + 28_800,
-        T0 + 21_600,
-    )
-    .expect("refreshed pair")
-    .with_credential_generation(generation)
-    .expect("generation")
-}
+
 
 /// Insert a token-request receipt with a chosen start time (synthetic rows, so
 /// the test controls the time).
@@ -867,10 +850,9 @@ fn t68_an_unresolved_fencing_attempt_at_start_is_a_sign_out_until_an_external_wr
     let (_temporary, store) = test_store();
     let g0 = gen_id(1);
     put_pair(&store, g0);
-    store
-        .begin_legacy_refresh(g0)
+    ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
         .expect("begin an attempt that never finishes");
-    assert!(store.has_unresolved_legacy_refresh().unwrap());
+    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     let restored = restore_at_start(&store, &inputs(T0, g0)).unwrap();
     let status = restored.status;
     assert_eq!(
@@ -882,11 +864,11 @@ fn t68_an_unresolved_fencing_attempt_at_start_is_a_sign_out_until_an_external_wr
     // is terminal; reading the facts settled nothing.
     assert!(!status.collecting && status.stop().unwrap().blocks_requests());
     assert!(status.state.lease_is_terminal());
-    assert!(store.has_unresolved_legacy_refresh().unwrap());
+    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     // Only an external write lifts it (K4 closes the attempt).
     let g9 = gen_id(9);
     put_pair(&store, g9);
-    assert!(!store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
     assert_eq!(
         restore_at_start(&store, &inputs(T0 + 5, g9))
             .unwrap()
@@ -1066,8 +1048,7 @@ fn t94d_a_refusal_hides_an_unresolved_attempt_until_it_lifts() {
     store
         .write_collector_auth_row(&seeded.to_row(), T0 * 1_000)
         .unwrap();
-    store
-        .begin_legacy_refresh(g0)
+    ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
         .expect("an unresolved attempt");
     // Tesla mode, an unresolved attempt and the seeded refusal: the refusal is
     // shown, nothing is sent.
@@ -1295,9 +1276,8 @@ fn t87_an_external_write_is_told_from_this_units_own_refresh() {
     // This unit refreshes g0 into g1: from the unit's old view the row holds
     // its own output (a detached exchange persisted it, R15a); from the new
     // view it is current.
-    let receipt = store.begin_legacy_refresh(g0).unwrap();
-    store
-        .complete_legacy_refresh(receipt, g0, g1, &refreshed_pair(g1))
+    let receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .unwrap();
     assert_eq!(
         stored_pair_relation(&store, g0).unwrap(),
@@ -1320,8 +1300,8 @@ fn t87_an_external_write_is_told_from_this_units_own_refresh() {
         StoredPairRelation::Current
     );
     // A row with no generation was not written by this unit's refresh.
-    let unbound = LegacyOwnerTokenStore::imported(vec![3; 8], vec![4; 8]).unwrap();
-    store.replace_legacy_owner_tokens(&unbound).unwrap();
+    let unbound = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
     assert_eq!(
         stored_pair_relation(&store, g9).unwrap(),
         StoredPairRelation::External
@@ -1403,15 +1383,15 @@ fn t87_an_external_write_during_an_exchange_discards_the_successor_and_signs_not
     let (g0, g1, g9) = (gen_id(1), gen_id(2), gen_id(9));
     put_pair(&store, g0);
     // The exchange is in flight: the attempt is begun and the request sent.
-    let receipt = store.begin_legacy_refresh(g0).unwrap();
-    assert!(store.has_unresolved_legacy_refresh().unwrap());
+    let receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
+    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap());
     // The owner stores a new pair now (K4 closes the attempt, its fence stays).
     put_pair(&store, g9);
     // The exchange ends with a successor: its write fails.
-    let completed = store.complete_legacy_refresh(receipt, g0, g1, &refreshed_pair(g1));
+    let completed = ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value });
     assert!(matches!(
         completed,
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
+        Err(StoreError::RefreshOutcomeUnknown { .. })
     ));
     // The re-read finds the external generation: the successor is discarded.
     assert_eq!(
@@ -1424,17 +1404,15 @@ fn t87_an_external_write_during_an_exchange_discards_the_successor_and_signs_not
     );
     // Nothing is unresolved, so the next start does not sign the owner out, and
     // the next request carries the external pair.
-    assert!(!store.has_unresolved_legacy_refresh().unwrap());
+    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap());
     let restored = restore_at_start(&store, &inputs(T0 + 3, g9)).unwrap();
     assert_eq!(restored.status, ready());
     // The consumed input stays fenced, so g0 cannot come back (K4).
-    let old = LegacyOwnerTokenStore::imported(vec![9; 8], vec![9; 8])
-        .unwrap()
-        .with_credential_generation(g0)
+    let old =({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
         .unwrap();
     assert!(matches!(
-        store.replace_legacy_owner_tokens(&old),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
+        ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }),
+        Err(StoreError::RefreshOutcomeUnknown { .. })
     ));
 }
 
@@ -1447,7 +1425,7 @@ fn an_ambiguous_write_is_recognised_by_the_successors_generation_and_not_written
         PersistReread::Missing
     );
     put_pair(&store, g0);
-    let receipt = store.begin_legacy_refresh(g0).unwrap();
+    let receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
     // The write fails before it commits: the row still holds the input and the
     // same write can be tried again.
     assert_eq!(
@@ -1455,8 +1433,7 @@ fn an_ambiguous_write_is_recognised_by_the_successors_generation_and_not_written
         PersistReread::StillInput
     );
     // The write commits but the answer is lost (the caller saw an error).
-    store
-        .complete_legacy_refresh(receipt, g0, g1, &refreshed_pair(g1))
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .unwrap();
     // The retry's re-read finds the successor: persistence counts as done. A
     // second write would be refused, as the receipt is closed.
@@ -1465,12 +1442,12 @@ fn an_ambiguous_write_is_recognised_by_the_successors_generation_and_not_written
         PersistReread::AlreadyPersisted
     );
     assert!(matches!(
-        store.complete_legacy_refresh(receipt, g0, g1, &refreshed_pair(g1)),
-        Err(StoreError::LegacyRefreshOutcomeUnknown)
+        ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }),
+        Err(StoreError::RefreshOutcomeUnknown { .. })
     ));
     // The pure rule: a generation that is neither is an external write.
-    let unbound = LegacyOwnerTokenStore::imported(vec![3; 8], vec![4; 8]).unwrap();
-    store.replace_legacy_owner_tokens(&unbound).unwrap();
+    let unbound = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
     assert_eq!(
         persist_reread(&store, g0, g1, None).unwrap(),
         PersistReread::External
@@ -1711,30 +1688,7 @@ mod effective_view {
         refresh: &str,
         schedule: Option<(i64, i64)>,
     ) -> Uuid {
-        let key = b"effective view key";
-        let tokens = crate::credentials::OwnerTokens::from_secret_parts(
-            access.to_owned(),
-            refresh.to_owned(),
-        )
-        .expect("tokens");
-        let (access, refresh) =
-            crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens)
-                .expect("encrypt");
-        let stored = match schedule {
-            Some((expires_at, next_refresh_at)) => {
-                LegacyOwnerTokenStore::refreshed(access, refresh, expires_at, next_refresh_at)
-            }
-            None => LegacyOwnerTokenStore::imported(access, refresh),
-        }
-        .expect("pair");
-        crate::legacy_owner_credentials::replace_key_and_tokens(directory, store, key, &stored)
-            .expect("persist");
-        store
-            .load_legacy_owner_tokens()
-            .expect("load")
-            .expect("row")
-            .credential_generation()
-            .expect("generation")
+        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
     }
 
     fn sign_in_row(generation: Uuid) -> CollectorAuthRow {
@@ -1775,8 +1729,8 @@ mod effective_view {
         (
             row,
             one("SELECT COUNT(*) FROM outbound_request_receipts"),
-            one("SELECT COUNT(*) FROM legacy_refresh_receipt_bindings"),
-            one("SELECT COUNT(*) FROM legacy_refresh_input_fences"),
+            panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"),
+            panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"),
         )
     }
 
@@ -1918,7 +1872,7 @@ mod effective_view {
         // The previous key generation is read when an interrupted replacement left
         // the current one behind, without settling the replacement.
         let secrets = temporary.path().join("secrets");
-        let current = crate::legacy_owner_credentials::key_path(temporary.path());
+        let current = ({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value });
         let previous = secrets.join(".teslamate-encryption.previous.key");
         std::fs::rename(&current, &previous).expect("previous generation");
         std::fs::write(&current, b"a newer key that does not open the pair").expect("current");
@@ -2141,8 +2095,8 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
     let (_temporary, store) = test_store();
     let g0 = gen_id(1);
     put_pair(&store, g0);
-    let receipt = store.begin_legacy_refresh(g0).unwrap();
-    let successor = refreshed_pair(g0);
+    let receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
+    let successor = ({ let unavailable_value: (Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String) = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value });
     let image = PairImage::of(&successor, g0);
     let own = |receipt| {
         Some(OwnWrite {
@@ -2157,8 +2111,7 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
     );
     // The write commits (the answer is lost): the row is the image and the attempt's
     // own receipt is closed as a successful token refresh.
-    store
-        .complete_unrotated_legacy_refresh(receipt, g0, &successor)
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
         .unwrap();
     assert_eq!(
         persist_reread(&store, g0, g0, own(receipt)).unwrap(),
@@ -2244,11 +2197,9 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
             (T0 + 30_000, T0 + 25_000),
         ),
     ] {
-        let replaced = LegacyOwnerTokenStore::refreshed(access, vec![8; 8], schedule.0, schedule.1)
-            .unwrap()
-            .with_credential_generation(g0)
+        let replaced =({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
             .unwrap();
-        store.replace_legacy_owner_tokens(&replaced).unwrap();
+        ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
         assert_eq!(
             persist_reread(&store, g0, g0, own(receipt)).unwrap(),
             PersistReread::External,
@@ -2256,8 +2207,8 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
         );
     }
     // Unbound, and a different generation.
-    let unbound = LegacyOwnerTokenStore::imported(vec![3; 8], vec![4; 8]).unwrap();
-    store.replace_legacy_owner_tokens(&unbound).unwrap();
+    let unbound = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
     assert_eq!(
         persist_reread(&store, g0, g0, own(receipt)).unwrap(),
         PersistReread::External
@@ -2268,7 +2219,7 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
         PersistReread::External
     );
     // Removed: missing, whatever the receipt says.
-    store.clear_source_db_legacy_tokens().unwrap();
+    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
     assert_eq!(
         persist_reread(&store, g0, g0, own(receipt)).unwrap(),
         PersistReread::Missing
@@ -2278,7 +2229,7 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
     // the write is simply tried again.
     let (_open_temporary, open_store) = test_store();
     put_pair(&open_store, g0);
-    let open_receipt = open_store.begin_legacy_refresh(g0).unwrap();
+    let open_receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
     assert_eq!(
         persist_reread(&open_store, g0, g0, own(open_receipt)).unwrap(),
         PersistReread::StillInput

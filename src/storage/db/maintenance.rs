@@ -467,6 +467,10 @@ impl HubStore {
     /// Create one consistent SQLite catalogue backup through SQLite's online
     /// backup API. The destination must be a new Hub-owned file; packs are
     /// intentionally handled by a separate immutable-object backup step.
+    ///
+    /// This is a low-level, unsealed catalogue-copy helper. Its production
+    /// data-backup call is behind `HubBackupSnapshot::copy_to`'s admission;
+    /// direct use does not create a sealed R53 data backup.
     pub fn backup_catalogue_to(&self, destination: &Path) -> Result<(), StoreError> {
         if destination == self.database_path {
             return Err(StoreError::BackupDestinationIsLiveDatabase);
@@ -573,11 +577,35 @@ impl HubStore {
 
     pub(crate) fn begin_backup_snapshot(&self) -> Result<HubBackupSnapshot<'_>, StoreError> {
         let publication_gate = self.try_acquire_publication_gate()?;
+        let credential_backup_admission = match self.credential_format_state()? {
+            None => CredentialBackupAdmission::Pending,
+            Some(state) if state.converted_at_ms.is_some() && !state.purge_required => {
+                CredentialBackupAdmission::Clean
+            }
+            Some(state)
+                if state.owner_api_blocked.is_some() || state.fleet_api_blocked.is_some() =>
+            {
+                CredentialBackupAdmission::Blocked {
+                    owner_api: state.owner_api_blocked,
+                    fleet_api: state.fleet_api_blocked,
+                }
+            }
+            Some(state) if state.converted_at_ms.is_none() => CredentialBackupAdmission::Pending,
+            Some(state) => CredentialBackupAdmission::CleanupPending {
+                needed_bytes: state
+                    .purge_needed_bytes
+                    .map(|bytes| {
+                        u64::try_from(bytes).map_err(|_| StoreError::CredentialPairInvalid)
+                    })
+                    .transpose()?,
+            },
+        };
         let selection_time_ms = retired_lineage_clock_ms()?;
         Ok(HubBackupSnapshot {
             store: self,
             publication_gate,
             selection_time_ms,
+            credential_backup_admission,
         })
     }
 
@@ -701,6 +729,9 @@ impl HubStore {
             .collect::<Result<Vec<_>, _>>()
             .map_err(StoreError::Query)?;
         let backup_store = Self {
+            credential_connection_taken: std::sync::Arc::default(),
+            #[cfg(test)]
+            credential_blob_bytes_read: std::sync::Arc::default(),
             database_path: catalogue.to_path_buf(),
             packs_dir: destination.join("packs"),
             private_import_spool_dir: private_import_spool_root(destination),
@@ -1241,11 +1272,20 @@ impl HubStore {
             )?,
             referenced_packs: u64::try_from(referenced_packs)
                 .map_err(|_| StoreError::InvalidStoredCount)?,
-            legacy_owner_token_rows: read_only_count(
+            owner_api_credential_rows: read_only_count(
                 &connection,
-                concat!("SELECT COUNT(*) FROM ", crate::db::import_table_names::legacy_owner_tokens_table!()),
+                credential_inventory_count_sql(
+                    &connection,
+                    crate::auth::credential_envelope::CredentialSlot::OwnerApi,
+                )?,
             )?,
-            fleet_token_rows: read_only_count(&connection, "SELECT COUNT(*) FROM fleet_tokens")?,
+            fleet_api_credential_rows: read_only_count(
+                &connection,
+                credential_inventory_count_sql(
+                    &connection,
+                    crate::auth::credential_envelope::CredentialSlot::FleetApi,
+                )?,
+            )?,
         })
     }
 
@@ -1342,11 +1382,20 @@ impl HubStore {
             referenced_pack_bytes,
             physical_pack_files,
             physical_pack_bytes,
-            legacy_owner_token_rows: read_only_count(
+            owner_api_credential_rows: read_only_count(
                 &connection,
-                concat!("SELECT COUNT(*) FROM ", crate::db::import_table_names::legacy_owner_tokens_table!()),
+                credential_inventory_count_sql(
+                    &connection,
+                    crate::auth::credential_envelope::CredentialSlot::OwnerApi,
+                )?,
             )?,
-            fleet_token_rows: read_only_count(&connection, "SELECT COUNT(*) FROM fleet_tokens")?,
+            fleet_api_credential_rows: read_only_count(
+                &connection,
+                credential_inventory_count_sql(
+                    &connection,
+                    crate::auth::credential_envelope::CredentialSlot::FleetApi,
+                )?,
+            )?,
             paired_devices: read_only_count(&connection, "SELECT COUNT(*) FROM paired_devices")?,
             installation_id: self.installation_id()?,
         })

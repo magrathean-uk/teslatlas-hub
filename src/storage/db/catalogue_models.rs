@@ -19,7 +19,24 @@ fn catalogue_quick_check_label(connection: &Connection) -> Result<String, StoreE
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CredentialBackupAdmission {
+    Clean,
+    Pending,
+    Blocked {
+        owner_api: Option<CredentialMigrationBlockReason>,
+        fleet_api: Option<CredentialMigrationBlockReason>,
+    },
+    CleanupPending {
+        needed_bytes: Option<u64>,
+    },
+}
+
 impl HubBackupSnapshot<'_> {
+    pub(crate) fn credential_backup_admission(&self) -> CredentialBackupAdmission {
+        self.credential_backup_admission
+    }
+
     #[cfg(test)]
     pub(crate) fn copy_bytes(&self) -> Result<u64, StoreError> {
         self.copy_admission().map(|(bytes, _)| bytes)
@@ -31,6 +48,9 @@ impl HubBackupSnapshot<'_> {
     }
 
     pub(crate) fn copy_to(&self, destination: &Path) -> Result<(), StoreError> {
+        if self.credential_backup_admission() != CredentialBackupAdmission::Clean {
+            return Err(StoreError::BackupWaitsForCredentialCleanup);
+        }
         self.store
             .backup_to_with_gate(destination, &self.publication_gate, self.selection_time_ms)
     }
@@ -66,8 +86,8 @@ pub struct RuntimeInventory {
     pub raw_observations: u64,
     pub quarantined_sessions: u64,
     pub referenced_packs: u64,
-    pub legacy_owner_token_rows: u64,
-    pub fleet_token_rows: u64,
+    pub owner_api_credential_rows: u64,
+    pub fleet_api_credential_rows: u64,
 }
 
 /// Read-only catalogue facts used by `doctor`. Counts and PRAGMA values only;
@@ -94,8 +114,8 @@ pub struct CatalogueInventory {
     pub referenced_pack_bytes: u64,
     pub physical_pack_files: u64,
     pub physical_pack_bytes: u64,
-    pub legacy_owner_token_rows: u64,
-    pub fleet_token_rows: u64,
+    pub owner_api_credential_rows: u64,
+    pub fleet_api_credential_rows: u64,
     pub paired_devices: u64,
     pub installation_id: Uuid,
 }

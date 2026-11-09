@@ -193,6 +193,59 @@ fn walk(
     })
 }
 
+/// A single entry classified without following a symbolic link (C10 R16).
+#[derive(Debug)]
+pub(crate) enum EntryState {
+    Absent,
+    Regular(OwnedFd),
+    Unsafe(UnsafeEntry),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum UnsafeEntry {
+    Symlink,
+    NotRegular,
+}
+
+/// A credential barrier failed; callers must not treat the state as durable.
+#[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+#[error("credential durability operation {operation} failed (errno {errno})")]
+pub(crate) struct DurabilityError {
+    pub operation: &'static str,
+    pub errno: i32,
+}
+
+/// Drain the device queue on macOS, with no weaker fallback (C10 R72).
+pub(crate) fn durable_sync_fd(fd: BorrowedFd<'_>) -> Result<(), DurabilityError> {
+    #[cfg(target_os = "macos")]
+    let (operation, result) = ("F_FULLFSYNC", rustix::fs::fcntl_fullfsync(fd));
+    #[cfg(not(target_os = "macos"))]
+    let (operation, result) = ("fsync", fsync(fd));
+    result.map_err(|error| DurabilityError {
+        operation,
+        errno: error.raw_os_error(),
+    })
+}
+
+/// Thread-local syscall controls for CT93; production never consults them.
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct EntrySeam {
+    pub stat_types: std::collections::VecDeque<FileType>,
+    pub stat_error: Option<Errno>,
+    pub after_stat: Option<Box<dyn FnOnce()>>,
+    pub open_error: Option<Errno>,
+    pub opens: usize,
+    pub stats: usize,
+    pub closed_nonregular: usize,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static ENTRY_SEAM: std::cell::RefCell<Option<EntrySeam>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 impl PrivateDirectory {
     /// The resolved path the directory was validated at. For messages and
     /// tests only: operations use the descriptor, never this path.
@@ -341,6 +394,115 @@ impl PrivateDirectory {
     pub(crate) fn available_bytes(&self) -> io::Result<u64> {
         let stat = fstatvfs(&self.descriptor)?;
         Ok(stat.f_bavail.saturating_mul(stat.f_frsize))
+    }
+
+    /// Classify first, open regular files only, and validate what was opened.
+    pub(crate) fn inspect_entry(&self, name: &str) -> Result<EntryState, PrivateDirectoryError> {
+        // The test seam changes the classification, never the production flags.
+        fn classify(
+            directory: &PrivateDirectory,
+            name: &str,
+            path: &Path,
+        ) -> Result<Option<FileType>, PrivateDirectoryError> {
+            #[cfg(test)]
+            {
+                let injected = ENTRY_SEAM.with(|slot| {
+                    let mut slot = slot.borrow_mut();
+                    let seam = slot.as_mut()?;
+                    seam.stats += 1;
+                    if let Some(error) = seam.stat_error.take() {
+                        return Some(Err(io_error(path, error)));
+                    }
+                    seam.stat_types.pop_front().map(|kind| Ok(Some(kind)))
+                });
+                if let Some(result) = injected {
+                    return result;
+                }
+            }
+            match statat(&directory.descriptor, name, AtFlags::SYMLINK_NOFOLLOW) {
+                Ok(stat) => Ok(Some(FileType::from_raw_mode(stat.st_mode))),
+                Err(Errno::NOENT) => Ok(None),
+                Err(error) => Err(io_error(path, error)),
+            }
+        }
+
+        let path = self.path.join(name);
+        single_component(name).map_err(|error| io_error(&path, error))?;
+        match classify(self, name, &path)? {
+            None => return Ok(EntryState::Absent),
+            Some(FileType::Symlink) => return Ok(EntryState::Unsafe(UnsafeEntry::Symlink)),
+            Some(kind) if !kind.is_file() => {
+                return Ok(EntryState::Unsafe(UnsafeEntry::NotRegular));
+            }
+            Some(_) => {}
+        }
+
+        #[cfg(test)]
+        {
+            // Run a replacement callback outside the RefCell borrow.
+            let after_stat = ENTRY_SEAM.with(|slot| {
+                slot.borrow_mut()
+                    .as_mut()
+                    .and_then(|seam| seam.after_stat.take())
+            });
+            if let Some(after_stat) = after_stat {
+                after_stat();
+            }
+        }
+
+        #[cfg(test)]
+        let injected_error = ENTRY_SEAM.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            let seam = slot.as_mut()?;
+            seam.opens += 1;
+            seam.open_error.take()
+        });
+        #[cfg(not(test))]
+        let injected_error: Option<Errno> = None;
+        let opened = if let Some(error) = injected_error {
+            Err(error)
+        } else {
+            openat(
+                &self.descriptor,
+                name,
+                OFlags::RDONLY
+                    | OFlags::NOFOLLOW
+                    | OFlags::NONBLOCK
+                    | OFlags::NOCTTY
+                    | OFlags::CLOEXEC,
+                Mode::empty(),
+            )
+        };
+        match opened {
+            Ok(descriptor) => {
+                let stat = fstat(&descriptor).map_err(|error| io_error(&path, error))?;
+                if FileType::from_raw_mode(stat.st_mode).is_file() {
+                    Ok(EntryState::Regular(descriptor))
+                } else {
+                    drop(descriptor);
+                    #[cfg(test)]
+                    ENTRY_SEAM.with(|slot| {
+                        if let Some(seam) = slot.borrow_mut().as_mut() {
+                            seam.closed_nonregular += 1;
+                        }
+                    });
+                    Ok(EntryState::Unsafe(UnsafeEntry::NotRegular))
+                }
+            }
+            Err(Errno::NOENT) => Ok(EntryState::Absent),
+            Err(Errno::LOOP) => Ok(EntryState::Unsafe(UnsafeEntry::Symlink)),
+            Err(error) => match classify(self, name, &path)? {
+                None => Ok(EntryState::Absent),
+                Some(FileType::Symlink) => Ok(EntryState::Unsafe(UnsafeEntry::Symlink)),
+                Some(kind) if !kind.is_file() => Ok(EntryState::Unsafe(UnsafeEntry::NotRegular)),
+                Some(_) => Err(io_error(&path, error)),
+            },
+        }
+    }
+
+    /// Apply the credential durability barrier to the held directory.
+    pub(crate) fn durable_sync(&self) -> Result<(), DurabilityError> {
+        durable_sync_fd(self.descriptor.as_fd())
     }
 }
 
@@ -535,7 +697,10 @@ fn protect(directory: &OwnedFd, path: &Path) -> Result<(), PrivateDirectoryError
 /// cannot hold ACLs answers "Operation not supported", which means there is
 /// nothing to clear.
 #[cfg(target_os = "macos")]
-fn clear_extended_acl(directory: &OwnedFd, path: &Path) -> Result<(), PrivateDirectoryError> {
+pub(crate) fn clear_extended_acl(
+    directory: &OwnedFd,
+    path: &Path,
+) -> Result<(), PrivateDirectoryError> {
     clear_and_verify(directory, path, chmod_clear_acl)
 }
 
@@ -583,7 +748,10 @@ fn chmod_clear_acl(directory: &OwnedFd, path: &Path) -> Result<(), PrivateDirect
 /// directory's ACL or none, and the descriptor that was cleared stays the one
 /// every later operation uses.
 #[cfg(target_os = "macos")]
-fn verify_no_extended_acl(directory: &OwnedFd, path: &Path) -> Result<(), PrivateDirectoryError> {
+pub(crate) fn verify_no_extended_acl(
+    directory: &OwnedFd,
+    path: &Path,
+) -> Result<(), PrivateDirectoryError> {
     use std::{
         os::unix::ffi::OsStrExt,
         process::{Command, Stdio},
@@ -628,7 +796,10 @@ fn acl_entry_count(listing: &str) -> usize {
 /// Other platforms have no extended ACL on a directory that its mode bits do
 /// not show (a POSIX ACL's mask is the group bits, which `0700` clears).
 #[cfg(not(target_os = "macos"))]
-fn clear_extended_acl(_directory: &OwnedFd, _path: &Path) -> Result<(), PrivateDirectoryError> {
+pub(crate) fn clear_extended_acl(
+    _directory: &OwnedFd,
+    _path: &Path,
+) -> Result<(), PrivateDirectoryError> {
     Ok(())
 }
 
