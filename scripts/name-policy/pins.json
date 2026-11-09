@@ -2046,6 +2046,34 @@
     {
       "path": "sdk-typescript/docs/development/archive/task-4-report.md",
       "sha256": "c494b82b912bd976733c2e09457f1c15307a6dfc24ad7cae3ad422e4077b6cca"
+    },
+    {
+      "path": "tests/fixtures/catalogue-floor.sqlite",
+      "sha256": "501963bdeedd40be029bfeabbf62e543c6909bb262a44ce509494abdd3d68b9f"
+    },
+    {
+      "path": "tests/fixtures/catalogue-residue.sqlite",
+      "sha256": "41c26f4fc964e1254ad349a30ba7a367799a90e112a0471362faa37544388971"
+    },
+    {
+      "path": "tests/fixtures/data-backup/data/hub.sqlite",
+      "sha256": "6d33e642cb5c53c5ecebf8f0d130c20868303744e35b66ce53e69ecc7c7a4484"
+    },
+    {
+      "path": "tests/fixtures/recovery-flags-1.bin",
+      "sha256": "d562ea8071092d104f46b72aefd35f067162f80ca1fa7cf03e77cf0bcf57a5c5"
+    },
+    {
+      "path": "tests/fixtures/recovery-flags-2.bin",
+      "sha256": "0c2996b2009be2c1add33039639699b409327122ff65ab7c28de913388916973"
+    },
+    {
+      "path": "tests/fixtures/recovery-flags-4.bin",
+      "sha256": "1ac8c19e64b0cc3bfc3f8744efc534a4829b0c5d9dbd5c7b4d4af31724ab4237"
+    },
+    {
+      "path": "tests/fixtures/recovery-flags-7.bin",
+      "sha256": "d4ca21803b574af61cc22fa55a7b4d1ef0c1e2c7ede90f71c80a01449bcc543e"
     }
   ]
 }

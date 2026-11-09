@@ -269,21 +269,6 @@
       "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
     },
     {
-      "id": "serialized-recovery_previous_key-credential_recovery",
-      "class": "g2-4-recorded",
-      "paths": [
-        "src/auth/credential_recovery.rs"
-      ],
-      "match_b64": "dGVzbGFtYXRlS2V5SW5jbHVkZWQ=",
-      "max_count": 1,
-      "expires": "G2-4-M2",
-      "review_by": "2027-01-31",
-      "reason": "Earlier serialized key is retained at the specified format boundary.",
-      "authority": "N1 v4 SERDE-1 and design 4.6.3",
-      "recorded_row": "2026-10-12 Independence: folds into G2-4; C10, as carried by v4",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
       "id": "retained-e844633b6a4c96dd3995",
       "class": "frozen-history",
       "match_kind": "regex",
@@ -6346,22 +6331,6 @@
       ]
     },
     {
-      "id": "retained-3cd24661e5a965b5da67",
-      "class": "g2-4-recorded",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIHdyaXRlX3ByaXZhdGVfZmlsZVwoXCZzdGFnaW5nXC5qb2luXCgidGVzbGFtYXRlXC1lbmNyeXB0aW9uXC5rZXkiXCksXCBrZXlcKVw/OyQ=",
-      "max_count": 1,
-      "expires": "G2-4-M2",
-      "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
-      "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
-      "paths": [
-        "src/auth/credential_recovery.rs"
-      ],
-      "review_by": "2027-01-31",
-      "recorded_row": "2026-10-12 Independence: folds into G2-4",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
       "id": "retained-3cee8683e57f57da537f",
       "class": "g2-4-recorded",
       "match_kind": "regex",
@@ -6615,6 +6584,7 @@
         "scripts/name-policy/test_name_policy.py",
         "scripts/verify-name-policy.py",
         "src/auth/credential_recovery/tests.rs",
+        "src/auth/credential_recovery/tests/g24_m2_recovery.rs",
         "src/import/source_db/direct.rs",
         "src/import/source_db/fragments.rs",
         "src/import/source_db/importer.rs",
@@ -6624,7 +6594,8 @@
         "src/runtime/mod.rs",
         "src/storage/db/tests/observations_and_import_setup.rs",
         "src/sync/updates_delivery.rs"
-      ]
+      ],
+      "reason": "part M deprecated-alias compatibility test (DEC-023)"
     },
     "import_source_names_step::": {
       "paths": [
