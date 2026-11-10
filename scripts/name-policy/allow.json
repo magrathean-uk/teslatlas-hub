@@ -6585,20 +6585,19 @@
       "match_kind": "regex"
     },
     {
-      "id": "cleanroom-protected-owner-file",
+      "id": "tesla-auth-mit-attribution",
       "class": "g2-4-recorded",
       "paths": [
-        "src/collection/fake_tesla.rs"
+        "macos/TeslatlasHubApp/TeslatlasHubApp/TeslaAuthWindowController.swift"
       ],
-      "match_kind": "regex",
-      "match": "^.*$",
-      "max_count": 1,
-      "expires": "G2-5",
+      "match_b64": "Ly8gT0F1dGggcGFyYW1ldGVycyBhbmQgY2FsbGJhY2sgc2VtYW50aWNzIGFyZSBkZXJpdmVkIGZyb20gVGVzbGEgQXV0aCB2MC4xNS4w",
+      "max_count": 0,
+      "expires": "G2-4-M2",
       "review_by": "2027-01-31",
       "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26",
-      "reason": "clean-room protected file; owner-only edit",
-      "authority": "N1R-U and N1R-G, coordinator rulings 2026-10-26",
-      "recorded_row": "2026-10-26 N1R-U: clean-room protected file; owner-only edit"
+      "reason": "MIT-licensed Tesla Auth v0.15.0 attribution is kept in TeslaAuthWindowController.swift; the licence permits the use with attribution",
+      "authority": "DEC-072 item 1",
+      "recorded_row": "DEC-072 item 1: MIT-licensed Tesla Auth attribution"
     }
   ],
   "extra_patterns_b64": [
