@@ -748,3 +748,94 @@ async fn collection_window_operator_observation_is_supervised_for_its_whole_life
     assert_eq!(rig.controller.status().phase, crate::collection::window::Phase::Closed);
     assert!(!rig.controller.gate().is_open());
 }
+
+/// Finding 6: a client that trickles its request is cut off at the
+/// absolute deadline and never stands between the operator and `window
+/// close`; stopping the service interrupts it; the service never reads its
+/// standard input or a relative path for recovery.
+#[test]
+fn collection_window_operator_channel_has_a_deadline_and_stops_promptly() {
+    use std::io::{Read, Write};
+    use std::time::{Duration, Instant};
+
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data dir");
+    let server = ChannelServer::bind_with_deadline(
+        &rig.data(),
+        Arc::new(rig.service()),
+        Duration::from_millis(600),
+    )
+    .expect("channel bound");
+    rig.forward(&OperatorRequest::WindowTrust {
+        document: encoded(&rig.trust),
+    })
+    .expect("trust");
+    rig.forward(&OperatorRequest::WindowOpen {
+        grant: encoded(&rig.grant(600)),
+    })
+    .expect("open");
+
+    // A slow client sends one byte every 100 ms and never finishes.
+    let mut slow = channel::connect(&rig.data()).expect("slow client");
+    let trickle = {
+        let mut writer = slow.try_clone().expect("clone");
+        std::thread::spawn(move || {
+            for _ in 0..100 {
+                if writer.write_all(b" ").is_err() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        })
+    };
+    // The operator's close is answered while the slow request is pending.
+    let started = Instant::now();
+    let status = rig.forward(&OperatorRequest::WindowClose).expect("close");
+    assert_eq!(status["phase"], "closing");
+    assert!(started.elapsed() < Duration::from_millis(500), "{:?}", started.elapsed());
+    // The slow request is cut off at its deadline, not when it stops.
+    slow.set_read_timeout(Some(Duration::from_secs(5))).expect("timeout");
+    let mut answer = String::new();
+    let _ = slow.read_to_string(&mut answer);
+    assert!(answer.contains("in time"), "{answer}");
+    assert!(started.elapsed() < Duration::from_secs(3), "{:?}", started.elapsed());
+    trickle.join().expect("trickle");
+
+    // A stop interrupts a request in progress instead of waiting for it.
+    let mut pending = channel::connect(&rig.data()).expect("pending client");
+    pending.write_all(b"{").expect("partial");
+    std::thread::sleep(Duration::from_millis(100));
+    let stopping = Instant::now();
+    drop(server);
+    assert!(stopping.elapsed() < Duration::from_millis(500), "{:?}", stopping.elapsed());
+    pending.set_read_timeout(Some(Duration::from_secs(5))).expect("timeout");
+    let mut rest = Vec::new();
+    let _ = pending.read_to_end(&mut rest);
+
+    // Recovery never reads the service's standard input or a relative path.
+    rig.controller.finish_close().expect("handback");
+    let service = rig.service();
+    use super::channel::OperatorHandler;
+    for (source, key) in [
+        ("-", "/abs/recovery.key"),
+        ("/abs/export", "-"),
+        ("relative/export", "/abs/recovery.key"),
+        ("/abs/export", "recovery.key"),
+    ] {
+        let refused = service
+            .handle(OperatorRequest::RecoveryRestore {
+                source: source.into(),
+                recovery_key_file: key.into(),
+            })
+            .unwrap_err();
+        assert_eq!(refused.code, "request_invalid", "{source} {key}");
+        let refused = service
+            .handle(OperatorRequest::RecoveryExport {
+                destination: source.into(),
+                recovery_key_file: key.into(),
+            })
+            .unwrap_err();
+        assert_eq!(refused.code, "request_invalid", "{source} {key}");
+    }
+    assert!(rig.calls.all().is_empty(), "the backend was never asked");
+}

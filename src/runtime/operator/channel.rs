@@ -4,7 +4,8 @@
 //! service (ruling R5).
 //!
 //! The service binds one Unix socket inside a private directory of its data
-//! directory and answers one bounded JSON request per connection. A command
+//! directory and answers one bounded JSON request per connection, which must
+//! arrive whole within an absolute deadline. A command
 //! connects before it reads a secret path or standard input: no socket, or no
 //! listener behind it, is `service_not_running`, so a refused command has read
 //! nothing and opened no network connection. Requests carry bounded material
@@ -20,11 +21,11 @@ use std::{
     },
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     thread::JoinHandle,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use serde::{Deserialize, Serialize};
@@ -36,14 +37,22 @@ use super::admission::{OperatorRefusal, SERVICE_NOT_RUNNING};
 pub const REQUEST_MAX_BYTES: usize = 16 * 1024;
 /// Largest response a command reads.
 pub const RESPONSE_MAX_BYTES: usize = 256 * 1024;
-/// How long the service waits for a request to arrive.
-const REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long the service waits for a whole request to arrive, from accept:
+/// an absolute deadline, so a client that trickles bytes cannot hold a
+/// worker longer (review finding 6).
+pub const REQUEST_DEADLINE: Duration = Duration::from_secs(10);
+/// Requests the service handles at once; one more is refused busy, so a slow
+/// client never stands between the operator and `window close`.
+pub const MAX_ACTIVE_REQUESTS: usize = 4;
+/// How long a stopping service waits for active requests it has interrupted.
+const SHUTDOWN_WAIT: Duration = Duration::from_secs(2);
 /// Accept poll interval of the service thread.
 const ACCEPT_POLL: Duration = Duration::from_millis(50);
 /// Longest socket path macOS accepts, less its terminator.
 const SOCKET_PATH_MAX: usize = 103;
 
 pub const CHANNEL_UNSAFE: &str = "control_channel_unsafe";
+pub const CHANNEL_BUSY: &str = "control_channel_busy";
 pub const CHANNEL_FAILED: &str = "control_channel_failed";
 /// The listener on the socket is not the admitted resident service.
 pub const SERVICE_UNAUTHENTICATED: &str = "service_unauthenticated";
@@ -332,11 +341,15 @@ pub fn forward(
     exchange(connect(data_dir)?, request, timeout)
 }
 
-/// The listening side, served by one thread; requests are handled one at a
-/// time. Dropping it stops the thread and removes the socket.
+/// The listening side. One thread accepts; each request is served on a
+/// worker of its own, at most [`MAX_ACTIVE_REQUESTS`] at once, and must
+/// arrive whole within its deadline. Dropping it stops accepting, shuts
+/// down every active connection, waits briefly for the workers and removes
+/// the socket.
 pub struct ChannelServer {
     path: PathBuf,
     stop: Arc<AtomicBool>,
+    active: Arc<Active>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -346,39 +359,133 @@ impl fmt::Debug for ChannelServer {
     }
 }
 
-fn read_request(stream: &mut UnixStream) -> Result<OperatorRequest, OperatorRefusal> {
-    let _ = stream.set_read_timeout(Some(REQUEST_READ_TIMEOUT));
+/// The connections being served, so a stop can interrupt them.
+#[derive(Default)]
+struct Active {
+    streams: Mutex<Vec<(u64, UnixStream)>>,
+    idle: Condvar,
+    next: std::sync::atomic::AtomicU64,
+}
+
+impl Active {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<(u64, UnixStream)>> {
+        self.streams
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Registers a connection, or `None` when the service is at capacity.
+    fn enter(&self, stream: &UnixStream) -> Option<u64> {
+        let mut streams = self.lock();
+        if streams.len() >= MAX_ACTIVE_REQUESTS {
+            return None;
+        }
+        let clone = stream.try_clone().ok()?;
+        let id = self.next.fetch_add(1, Ordering::SeqCst);
+        streams.push((id, clone));
+        Some(id)
+    }
+
+    fn leave(&self, id: u64) {
+        let mut streams = self.lock();
+        streams.retain(|(other, _)| *other != id);
+        if streams.is_empty() {
+            self.idle.notify_all();
+        }
+    }
+
+    /// Shuts down every active connection, so blocked reads and writes end,
+    /// and waits up to `wait` for their workers to leave.
+    fn interrupt(&self, wait: Duration) {
+        let mut streams = self.lock();
+        for (_, stream) in streams.iter() {
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+        }
+        let deadline = Instant::now() + wait;
+        while !streams.is_empty() {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            streams = self
+                .idle
+                .wait_timeout(streams, left)
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .0;
+        }
+    }
+}
+
+/// Reads one request, refusing it once `deadline` passes however the bytes
+/// trickle in.
+fn read_request(stream: &mut UnixStream, deadline: Instant) -> Result<OperatorRequest, OperatorRefusal> {
     let mut bytes = Vec::new();
-    let read = stream
-        .take(REQUEST_MAX_BYTES as u64 + 1)
-        .read_to_end(&mut bytes);
-    let result = match read {
-        Err(_) => Err(failed("request did not arrive")),
-        Ok(_) if bytes.len() > REQUEST_MAX_BYTES => Err(failed("request is too large")),
-        Ok(_) => serde_json::from_slice::<OperatorRequest>(&bytes)
-            .map_err(|_| OperatorRefusal::new("request_invalid", "the request is not understood")),
+    let mut chunk = [0_u8; 1024];
+    let result = loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            break Err(failed("request did not arrive in time"));
+        }
+        if stream.set_read_timeout(Some(left)).is_err() {
+            break Err(failed("request did not arrive"));
+        }
+        match stream.read(&mut chunk) {
+            Ok(0) => {
+                break serde_json::from_slice::<OperatorRequest>(&bytes).map_err(|_| {
+                    OperatorRefusal::new("request_invalid", "the request is not understood")
+                });
+            }
+            Ok(read) => {
+                bytes.extend_from_slice(&chunk[..read]);
+                if bytes.len() > REQUEST_MAX_BYTES {
+                    break Err(failed("request is too large"));
+                }
+            }
+            Err(error) if error.kind() == ErrorKind::Interrupted => {}
+            Err(error)
+                if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) =>
+            {
+                break Err(failed("request did not arrive in time"));
+            }
+            Err(_) => break Err(failed("request did not arrive")),
+        }
     };
+    chunk.zeroize();
     bytes.zeroize();
     result
 }
 
-fn serve_one(mut stream: UnixStream, handler: &dyn OperatorHandler) {
-    if stream.set_nonblocking(false).is_err() {
-        return;
-    }
-    let result = read_request(&mut stream).and_then(|request| handler.handle(request));
+fn answer(stream: &mut UnixStream, result: Result<serde_json::Value, OperatorRefusal>) {
     let response = OperatorResponse::from_result(result);
     if let Ok(mut bytes) = serde_json::to_vec(&response) {
         bytes.push(b'\n');
-        let _ = stream.set_write_timeout(Some(REQUEST_READ_TIMEOUT));
+        let _ = stream.set_write_timeout(Some(REQUEST_DEADLINE));
         let _ = stream.write_all(&bytes);
     }
+}
+
+fn serve_one(mut stream: UnixStream, handler: &dyn OperatorHandler, deadline: Duration) {
+    let deadline = Instant::now() + deadline;
+    if stream.set_nonblocking(false).is_err() {
+        return;
+    }
+    let result = read_request(&mut stream, deadline).and_then(|request| handler.handle(request));
+    answer(&mut stream, result);
 }
 
 impl ChannelServer {
     /// Binds the socket for `data_dir`. The caller holds the data-directory
     /// lifetime lock, so a socket left by an earlier process is stale.
     pub fn bind(data_dir: &Path, handler: Arc<dyn OperatorHandler>) -> std::io::Result<Self> {
+        Self::bind_with_deadline(data_dir, handler, REQUEST_DEADLINE)
+    }
+
+    /// [`Self::bind`] with another request deadline (tests shorten it).
+    pub fn bind_with_deadline(
+        data_dir: &Path,
+        handler: Arc<dyn OperatorHandler>,
+        deadline: Duration,
+    ) -> std::io::Result<Self> {
         let dir = channel_dir(data_dir);
         let path = socket_path(data_dir);
         if path.as_os_str().len() > SOCKET_PATH_MAX {
@@ -410,14 +517,39 @@ impl ChannelServer {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
         listener.set_nonblocking(true)?;
         let stop = Arc::new(AtomicBool::new(false));
+        let active = Arc::new(Active::default());
         let thread = {
             let stop = stop.clone();
+            let active = active.clone();
             std::thread::Builder::new()
                 .name("hub-operator-channel".to_owned())
                 .spawn(move || {
                     while !stop.load(Ordering::SeqCst) {
                         match listener.accept() {
-                            Ok((stream, _)) => serve_one(stream, handler.as_ref()),
+                            Ok((mut stream, _)) => {
+                                let _ = stream.set_nonblocking(false);
+                                let Some(id) = active.enter(&stream) else {
+                                    answer(
+                                        &mut stream,
+                                        Err(OperatorRefusal::new(
+                                            CHANNEL_BUSY,
+                                            "the service is answering other requests; try again",
+                                        )),
+                                    );
+                                    continue;
+                                };
+                                let handler = handler.clone();
+                                let worker_active = active.clone();
+                                let spawned = std::thread::Builder::new()
+                                    .name("hub-operator-request".to_owned())
+                                    .spawn(move || {
+                                        serve_one(stream, handler.as_ref(), deadline);
+                                        worker_active.leave(id);
+                                    });
+                                if spawned.is_err() {
+                                    active.leave(id);
+                                }
+                            }
                             Err(error) if error.kind() == ErrorKind::WouldBlock => {
                                 std::thread::sleep(ACCEPT_POLL);
                             }
@@ -429,6 +561,7 @@ impl ChannelServer {
         Ok(Self {
             path,
             stop,
+            active,
             thread: Some(thread),
         })
     }
@@ -444,6 +577,9 @@ impl Drop for ChannelServer {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
+        // Active requests are interrupted, not awaited: a stop never waits
+        // on a client. A handler still running after the wait is detached.
+        self.active.interrupt(SHUTDOWN_WAIT);
         let _ = std::fs::remove_file(&self.path);
     }
 }

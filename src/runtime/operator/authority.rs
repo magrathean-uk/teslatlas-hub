@@ -224,6 +224,22 @@ impl OperatorService {
     fn status(&self) -> Value {
         status_json(&self.controller.status())
     }
+
+    /// The service reads recovery files only at absolute paths it is named:
+    /// never its own standard input (`-`) and never a path relative to its
+    /// working directory (review finding 6).
+    fn recovery_paths(paths: &[&Path]) -> Result<(), OperatorRefusal> {
+        for path in paths {
+            let text = path.as_os_str();
+            if text == "-" || text.is_empty() || !path.is_absolute() {
+                return Err(OperatorRefusal::new(
+                    "request_invalid",
+                    "recovery files are named by absolute paths; standard input is not read",
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 impl OperatorHandler for OperatorService {
@@ -269,6 +285,7 @@ impl OperatorHandler for OperatorService {
                 destination,
                 recovery_key_file,
             } => {
+                Self::recovery_paths(&[&destination, &recovery_key_file])?;
                 let _guard = self
                     .controller
                     .import_guard()
@@ -280,6 +297,7 @@ impl OperatorHandler for OperatorService {
                 source,
                 recovery_key_file,
             } => {
+                Self::recovery_paths(&[&source, &recovery_key_file])?;
                 let _guard = self
                     .controller
                     .import_guard()
