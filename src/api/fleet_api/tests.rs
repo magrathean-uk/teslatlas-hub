@@ -1327,3 +1327,159 @@ async fn r06_fleet_auth_client_caps_headers_and_body_at_60_seconds() {
         began.elapsed()
     );
 }
+
+// ------------------------------------------------- M02-T09: the window's egress gate
+
+mod collection_window_egress {
+    //! Every Fleet send asks the window's egress gate first. Fleet is parked, so
+    //! the gate refuses it before any connection both outside a window
+    //! (`window_closed`) and inside one (`provider_parked`); a send in flight
+    //! therefore never exists, and a retry after the deadline is refused too.
+    //! The double is a loopback server that counts connections and never answers,
+    //! so a send that the gate let through would connect and run into the
+    //! client's timeout.
+
+    use super::*;
+    use crate::{
+        collection::window::{EgressGate, GateRefusal, PermitKind, Provider},
+        fleet_api::egress::{
+            self,
+            test_support::{SilentServer, TestWindow, route},
+        },
+    };
+
+    const CLIENT_TIMEOUT: Duration = Duration::from_secs(2);
+
+    /// One Fleet token exchange and one Fleet read at `server`, each within
+    /// `CLIENT_TIMEOUT` plus a margin.
+    async fn fleet_sends(server: &SilentServer) -> (FleetApiError, FleetApiError) {
+        let base = Url::parse(&format!("{}/", server.url)).expect("base URL");
+        let auth = FleetAuthApi::for_fake_http(
+            base.join("oauth2/v3/token").expect("auth URL"),
+            CLIENT_TIMEOUT,
+        )
+        .expect("Fleet auth client");
+        let fleet = FleetApi::for_fake_http(base, CLIENT_TIMEOUT).expect("Fleet client");
+        let token = FleetAccessToken::new(TEST_TOKEN).expect("token");
+        let refresh = FleetRefreshToken::new(TEST_REFRESH_TOKEN).expect("refresh token");
+        let exchanged = auth
+            .refresh(
+                &FleetClientId::parse("client-id").expect("client id"),
+                &refresh,
+            )
+            .await
+            .expect_err("the exchange is refused");
+        let read = fleet
+            .list_vehicles(&token, &refresh)
+            .await
+            .expect_err("the read is refused");
+        (exchanged, read)
+    }
+
+    async fn assert_refused_before_connecting(server: &SilentServer) {
+        let started = std::time::Instant::now();
+        let (exchanged, read) = fleet_sends(server).await;
+        assert_eq!(exchanged, FleetApiError::RequestNotSent);
+        assert_eq!(read, FleetApiError::RequestNotSent);
+        assert!(
+            started.elapsed() < CLIENT_TIMEOUT,
+            "{:?}",
+            started.elapsed()
+        );
+        // Give a connection the gate had let through time to be accepted.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(server.connections(), 0);
+    }
+
+    #[tokio::test]
+    async fn collection_window_egress_fleet_closed_gate_refuses_before_connecting() {
+        let server = SilentServer::spawn("http").await;
+        let window = TestWindow::closed();
+        let _route = window.route(&server.url);
+        assert_refused_before_connecting(&server).await;
+        drop(_route);
+        // The process-wide gate is closed by default too.
+        let _route = route(&server.url, EgressGate::process_wide().clone());
+        assert_refused_before_connecting(&server).await;
+    }
+
+    #[tokio::test]
+    async fn collection_window_egress_fleet_is_parked_so_no_send_is_ever_in_flight() {
+        let server = SilentServer::spawn("http").await;
+        let window = TestWindow::open(3_600);
+        let _route = window.route(&server.url);
+        assert_eq!(
+            window
+                .gate()
+                .permit(Provider::Fleet, PermitKind::Request)
+                .unwrap_err(),
+            GateRefusal::ProviderParked
+        );
+        assert_refused_before_connecting(&server).await;
+        // The window itself stays open: a Legacy send would be permitted.
+        assert!(
+            window
+                .gate()
+                .permit(Provider::Legacy, PermitKind::Request)
+                .is_ok()
+        );
+    }
+
+    /// A Legacy request permit is held inside an open window; `lapse` then moves
+    /// the window's clock past its deadline without moving the runtime clock.
+    /// The held permit must refuse its send: no connection is opened.
+    async fn assert_held_permit_lapse_sends_nothing(lapse: impl FnOnce(&TestWindow)) {
+        let server = SilentServer::spawn("http").await;
+        let window = TestWindow::open(3_600);
+        let _route = window.route(&server.url);
+        let permit = egress::ask(&server.url, Provider::Legacy, PermitKind::Request)
+            .expect("permitted inside the window");
+        assert_eq!(permit.check(), Ok(()));
+        lapse(&window);
+        assert_eq!(permit.check(), Err(egress::Cut::Deadline));
+        let address = server.url.trim_start_matches("http://").to_owned();
+        let sent = permit
+            .bound(tokio::net::TcpStream::connect(address))
+            .await
+            .map(|_| ());
+        assert_eq!(sent, Err(egress::Cut::Deadline));
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(3), permit.ended())
+                .await
+                .expect("the held permit has ended"),
+            egress::Cut::Deadline
+        );
+        // Give a connection the permit had let through time to be accepted.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(server.connections(), 0);
+    }
+
+    #[tokio::test]
+    async fn collection_window_egress_held_permit_after_a_wall_clock_step_sends_nothing() {
+        assert_held_permit_lapse_sends_nothing(|window| window.step_wall(3_600)).await;
+    }
+
+    #[tokio::test]
+    async fn collection_window_egress_held_permit_after_a_sleep_across_expiry_sends_nothing() {
+        // A host sleep: the wall and the sleep-counting monotonic clock move on,
+        // the runtime timer does not.
+        assert_held_permit_lapse_sends_nothing(|window| window.advance(3_600)).await;
+    }
+
+    #[tokio::test]
+    async fn collection_window_egress_fleet_retry_after_the_deadline_is_refused() {
+        let server = SilentServer::spawn("http").await;
+        let window = TestWindow::open(600);
+        let _route = window.route(&server.url);
+        assert_refused_before_connecting(&server).await;
+        window.advance(600);
+        assert_refused_before_connecting(&server).await;
+        assert_eq!(
+            window
+                .gate()
+                .permit(Provider::Fleet, PermitKind::Request)
+                .unwrap_err(),
+            GateRefusal::WindowClosed
+        );
+    }
+}

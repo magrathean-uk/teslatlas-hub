@@ -31,6 +31,9 @@ use super::{
     endpoint::{is_access_token, is_refresh_token, parse_jwt},
 };
 use crate::auth::credential_envelope::MAX_TOKEN_PLAINTEXT_BYTES;
+use crate::fleet_api::egress::SendPermit;
+#[cfg(test)]
+use crate::fleet_api::egress::{self, PermitKind, Provider};
 
 /// The connect timeout of the auth client, TCP and TLS handshake (R33). F11's
 /// initial retransmission timeout is 1 s and doubles, so three SYN attempts take
@@ -244,8 +247,18 @@ impl PreparedRequest {
         }
     }
 
-    /// Send the request and read the whole answer within R34.
-    pub(crate) async fn send(self) -> Exchange {
+    /// Send the request and read the whole answer within R34, bounded by the
+    /// window's permit (M02-T09): the exchange ends when the time the gate left
+    /// it, the grace included, runs out. Whether the server rotated the token
+    /// is then unknown (R45 row 6), as at the total timeout.
+    pub(crate) async fn send(self, permit: &SendPermit) -> Exchange {
+        permit
+            .bound(self.send_unbounded())
+            .await
+            .unwrap_or(Exchange::Unknown)
+    }
+
+    async fn send_unbounded(self) -> Exchange {
         #[cfg(test)]
         crate::api::test_egress_guard::refuse_production_request(&self.request);
         let response = match self.request.send().await {
@@ -297,8 +310,15 @@ impl PreparedRequest {
 /// the one-call form the wire tests use.
 #[cfg(test)]
 pub(crate) async fn exchange(client: &Client, endpoint: Url, refresh_token: &str) -> Exchange {
+    let Ok(permit) = egress::ask(
+        endpoint.as_str(),
+        Provider::Legacy,
+        PermitKind::TokenExchange,
+    ) else {
+        return Exchange::NotSent;
+    };
     match PreparedRequest::new(client, endpoint, refresh_token) {
-        Some(prepared) => prepared.send().await,
+        Some(prepared) => prepared.send(&permit).await,
         None => Exchange::NotSent,
     }
 }

@@ -1164,9 +1164,15 @@ async fn t84_the_request_carries_the_trimmed_refresh_token() {
 #[tokio::test]
 async fn building_the_request_sends_nothing() {
     let (endpoint, script) = spawn(vec![Reply::new(200, SUCCESS_BODY)]).await;
+    let permit = crate::fleet_api::egress::ask(
+        endpoint.as_str(),
+        crate::fleet_api::egress::Provider::Legacy,
+        crate::fleet_api::egress::PermitKind::TokenExchange,
+    )
+    .unwrap();
     let prepared = PreparedRequest::new(&client(), endpoint, PRESENTED_REFRESH).unwrap();
     assert!(script.seen().is_empty());
-    complete(prepared.send().await);
+    complete(prepared.send(&permit).await);
     assert_eq!(script.seen().len(), 1);
 }
 
@@ -1232,5 +1238,191 @@ async fn t69_the_wire_path_logs_and_prints_no_secret() {
         for secret in secrets {
             assert!(!text.contains(secret), "{secret} appeared in {text}");
         }
+    }
+}
+
+// ------------------------------------------------- M02-T09: the window's egress gate
+
+mod collection_window_egress {
+    //! The Legacy token exchange asks the window's egress gate immediately before
+    //! it sends (`run_exchange`). A refusal cancels the reserved attempt with its
+    //! input reusable and opens no connection; a permitted exchange ends at the
+    //! window's deadline plus the exchange grace; a retry after the deadline is
+    //! refused. The double is a loopback server that counts connections and
+    //! never answers.
+
+    use std::sync::atomic::AtomicBool;
+
+    use uuid::Uuid;
+    use zeroize::Zeroizing;
+
+    use super::*;
+    use crate::{
+        collection::window::{EXCHANGE_GRACE_SECONDS, EgressGate},
+        fleet_api::egress::test_support::{SilentServer, TestWindow, eventually, route},
+        legacy_auth::{
+            attempt::{
+                Attempt, AttemptPorts, BeginFailure, Closing, ExchangeInput, ExchangeKind,
+                ExchangeResult, PendingClose, PortError, SuccessorPair, SystemEnv, run_exchange,
+            },
+            state::PersistReread,
+        },
+    };
+
+    #[derive(Default)]
+    struct Ports {
+        begun: AtomicUsize,
+        cancelled: AtomicUsize,
+    }
+
+    impl AttemptPorts for Ports {
+        fn sensitive_access(&self) -> Result<(), LegacyAuthError> {
+            Ok(())
+        }
+
+        fn begin(&self) -> Result<Attempt, BeginFailure> {
+            self.begun.fetch_add(1, Ordering::SeqCst);
+            Ok(Attempt {
+                receipt: None,
+                input: Uuid::nil(),
+            })
+        }
+
+        fn cancel_unsent(&self, _attempt: &Attempt) -> Result<(), PortError> {
+            self.cancelled.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+
+        fn close(&self, _attempt: &Attempt, _closing: &Closing) -> Result<(), PortError> {
+            Ok(())
+        }
+
+        fn finish(&self, _pending: &PendingClose) -> Result<(), PortError> {
+            Ok(())
+        }
+
+        fn persist(&self, _attempt: &Attempt, _successor: &SuccessorPair) -> Result<(), PortError> {
+            Ok(())
+        }
+
+        fn reread(&self, _attempt: &Attempt, _successor: Uuid) -> PersistReread {
+            PersistReread::Missing
+        }
+    }
+
+    fn input(
+        client: &Client,
+        server: &SilentServer,
+        ports: &Arc<Ports>,
+        injected: Option<Exchange>,
+    ) -> ExchangeInput {
+        ExchangeInput {
+            client: client.clone(),
+            endpoint: Url::parse(&format!("{}/oauth2/v3/token", server.url)).expect("URL"),
+            access_token: Zeroizing::new(PRESENTED_ACCESS.to_owned()),
+            refresh_token: Zeroizing::new(PRESENTED_REFRESH.to_owned()),
+            pinned_issuer: None,
+            ports: ports.clone(),
+            env: Arc::new(SystemEnv),
+            shutdown: Arc::new(AtomicBool::new(false)),
+            generation: Uuid::nil(),
+            injected,
+        }
+    }
+
+    /// One exchange the gate refuses: it ends at once, cancelled with nothing
+    /// sent, and the server sees no connection.
+    async fn assert_refused(client: &Client, server: &SilentServer, ports: &Arc<Ports>) {
+        let cancelled = ports.cancelled.load(Ordering::SeqCst);
+        let result: ExchangeResult = timeout(
+            Duration::from_secs(10),
+            run_exchange(input(client, server, ports, None)),
+        )
+        .await
+        .expect("a refused exchange ends at once");
+        assert!(
+            matches!(result.kind, ExchangeKind::Aborted),
+            "{:?}",
+            result.kind
+        );
+        assert_eq!(result.sent_at, None);
+        assert_eq!(ports.cancelled.load(Ordering::SeqCst), cancelled + 1);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(server.connections(), 0);
+    }
+
+    #[tokio::test]
+    async fn collection_window_egress_legacy_closed_gate_refuses_before_connecting() {
+        let server = SilentServer::spawn("http").await;
+        let ports = Arc::new(Ports::default());
+        let window = TestWindow::closed();
+        let _route = window.route(&server.url);
+        assert_refused(&client(), &server, &ports).await;
+        drop(_route);
+        // The process-wide gate is closed by default too.
+        let _route = route(&server.url, EgressGate::process_wide().clone());
+        assert_refused(&client(), &server, &ports).await;
+        assert_eq!(ports.begun.load(Ordering::SeqCst), 2);
+    }
+
+    /// The permit bounds the exchange: with a client whose own budgets are ten
+    /// minutes, an exchange sent ten seconds before the deadline ends at the
+    /// deadline plus the exchange grace, as an unknown outcome (R45 row 6).
+    #[tokio::test(start_paused = true)]
+    async fn collection_window_egress_legacy_exchange_in_flight_stops_at_the_deadline() {
+        let server = SilentServer::spawn("http").await;
+        let ports = Arc::new(Ports::default());
+        let window = TestWindow::open(600);
+        window.advance(590);
+        let _route = window.route(&server.url);
+        crate::crypto::install_default_provider();
+        let patient = wire::auth_client_builder_with_timeouts(
+            true,
+            Duration::from_secs(600),
+            Duration::from_secs(600),
+        )
+        .build()
+        .unwrap();
+        let began = tokio::time::Instant::now();
+        let task = tokio::spawn(run_exchange(input(&patient, &server, &ports, None)));
+        eventually(|| server.bytes_received() > 0).await;
+        assert!(window.hub.gate().exchange_in_flight());
+        let result = task.await.expect("exchange task");
+        let ended = began.elapsed();
+        assert!(
+            matches!(
+                result.kind,
+                ExchangeKind::Failed {
+                    class: AttemptClass::Unknown,
+                    ..
+                }
+            ),
+            "{:?}",
+            result.kind
+        );
+        let limit = Duration::from_secs(10 + EXCHANGE_GRACE_SECONDS as u64);
+        assert!(ended >= limit - Duration::from_secs(1), "{ended:?}");
+        assert!(ended <= limit + Duration::from_secs(1), "{ended:?}");
+        assert!(!window.hub.gate().exchange_in_flight());
+    }
+
+    /// A retry after the deadline asks again and is refused: nothing is sent.
+    #[tokio::test]
+    async fn collection_window_egress_legacy_retry_after_the_deadline_is_refused() {
+        let server = SilentServer::spawn("http").await;
+        let ports = Arc::new(Ports::default());
+        let window = TestWindow::open(600);
+        let _route = window.route(&server.url);
+        let client = client();
+        // Inside the window the attempt is permitted (its outcome is injected:
+        // nothing reached the server), so the unit would retry it later.
+        let first = run_exchange(input(&client, &server, &ports, Some(Exchange::NotSent))).await;
+        assert!(
+            matches!(first.kind, ExchangeKind::NotSent { .. }),
+            "{:?}",
+            first.kind
+        );
+        window.advance(600);
+        assert_refused(&client, &server, &ports).await;
     }
 }

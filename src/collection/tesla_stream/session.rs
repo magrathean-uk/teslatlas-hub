@@ -46,6 +46,7 @@ use crate::{
         OutboundRequestPrecondition, OutboundRequestReceiptId, OutboundRequestSafetyClass,
         OutboundRequestStart, OutboundRequestTransport, StoreError, StreamSessionReceiptId,
     },
+    fleet_api::egress::{self, PermitKind, Provider, SendPermit},
     owner_api::VehicleId,
 };
 
@@ -185,9 +186,19 @@ impl TestSeams {
 /// The shutdown signal (IF a2). Sending and dropping the sender both mean stop.
 /// Once it has fired it stays fired, so a later wait returns at once and the
 /// receiver is never polled after completion.
+///
+/// The end of the collection window is a stop too (M02-T09): the attempt holds
+/// the window's stream permit here, and when the window closes (which cancels
+/// the permit), the permit's time runs out or its absolute deadline is found
+/// passed, the signal fires, so every phase ends and the run does not retry.
+/// Unlike an ordinary shutdown, a window end leaves the Hub no authority to
+/// send: the socket is dropped with no further write (no unsubscribe, no Close).
 pub(super) struct Shutdown {
     receiver: oneshot::Receiver<()>,
     fired: bool,
+    window: Option<SendPermit>,
+    /// The window ended the attempt; nothing more may be written.
+    window_ended: bool,
 }
 
 impl Shutdown {
@@ -195,14 +206,76 @@ impl Shutdown {
         Self {
             receiver,
             fired: false,
+            window: None,
+            window_ended: false,
+        }
+    }
+
+    /// The stream permit of the current attempt; it replaces the last one.
+    fn hold_window(&mut self, permit: SendPermit) {
+        self.window = Some(permit);
+    }
+
+    /// Asked before every network transition (connect, subscribe, Ping,
+    /// unsubscribe, Close): whether the window still allows a send now. It
+    /// re-checks the permit's absolute deadlines, so a permit held across a host
+    /// sleep or a forward wall-clock step past the deadline allows nothing. A
+    /// refusal fires the signal as a window end.
+    fn may_send(&mut self) -> bool {
+        if self.window_ended {
+            return false;
+        }
+        match &self.window {
+            Some(permit) if permit.check().is_err() => {
+                self.window_ended = true;
+                self.fired = true;
+                false
+            }
+            _ => true,
+        }
+    }
+
+    /// Runs a teardown write (unsubscribe, Close) within the permit: `None`
+    /// when the window ends first. The ordinary shutdown signal does not cut it.
+    async fn within_window<T>(&mut self, write: impl Future<Output = T>) -> Option<T> {
+        if !self.may_send() {
+            return None;
+        }
+        let bounded = match &self.window {
+            Some(permit) => permit.bound(write).await,
+            None => Ok(write.await),
+        };
+        match bounded {
+            Ok(output) => Some(output),
+            Err(cut) => {
+                tracing::debug!(?cut, "the collection window ended a stream teardown write");
+                self.window_ended = true;
+                self.fired = true;
+                None
+            }
         }
     }
 
     async fn wait(&mut self) {
-        if !self.fired {
-            let _ = (&mut self.receiver).await;
-            self.fired = true;
+        if self.fired {
+            return;
         }
+        match &self.window {
+            None => {
+                let _ = (&mut self.receiver).await;
+            }
+            Some(permit) => {
+                tokio::select! {
+                    biased;
+                    _ = &mut self.receiver => {}
+                    cut = permit.ended() => {
+                        tracing::debug!(?cut, "the collection window ended the stream");
+                        self.window_ended = true;
+                    }
+                }
+            }
+        }
+        self.fired = true;
     }
 }
 
@@ -1136,6 +1209,21 @@ impl TeslaStreamSupervisor {
         audit: &RunAudit,
         run: &mut RunState,
     ) -> Outcome {
+        // M02-T09: the window's egress gate is asked first, before the credential
+        // check (which may exchange a token) and before any audit row. A refusal
+        // (`window_closed`) opens no connection and ends the run: it is never
+        // retried. The permit is held for the attempt's life; when the window
+        // closes or its deadline passes, the attempt ends as at shutdown.
+        match egress::ask(&self.endpoint, Provider::Legacy, PermitKind::Stream) {
+            Ok(permit) => shutdown.hold_window(permit),
+            Err(refusal) => {
+                tracing::debug!(
+                    code = refusal.code(),
+                    "stream attempt refused by the window gate"
+                );
+                return Outcome::Stop(Ok(()));
+            }
+        }
         // Step 2: credential before network. Any error here means no network use
         // and no audit row.
         match self.check_credentials(shutdown).await {
@@ -1145,6 +1233,13 @@ impl TeslaStreamSupervisor {
                 tracing::debug!(?failure, "stream credential check failed");
                 return Self::credential_outcome(failure);
             }
+        }
+
+        // M02-T09: the window is re-checked before the connect: the permit may
+        // have outlived it during the credential check (a host sleep or a wall
+        // clock step). A window end here leaves no audit row, as a refusal does.
+        if !shutdown.may_send() {
+            return Outcome::Stop(Ok(()));
         }
 
         // Step 3: the session row, then the connect receipt, both before the
@@ -1238,7 +1333,7 @@ impl TeslaStreamSupervisor {
                 // Dropping the admission wait here abandons only this attempt's
                 // lock request.
                 tracing::debug!(?class, "stream attempt ended while admitting");
-                close_handshake(&mut socket, close_code).await;
+                close_handshake(&mut socket, close_code, shutdown).await;
                 drop(socket);
                 return self.end_unsubscribed(
                     audit,
@@ -1253,7 +1348,7 @@ impl TeslaStreamSupervisor {
                 // Table 8.1: a lost authority drops the socket; a stopped
                 // credential or any other error closes it without a subscribe.
                 if failure != CredentialFailure::SensitiveAccess {
-                    close_handshake(&mut socket, CloseCode::Normal).await;
+                    close_handshake(&mut socket, CloseCode::Normal, shutdown).await;
                 }
                 drop(socket);
                 return self.end_unsubscribed(
@@ -1298,6 +1393,18 @@ impl TeslaStreamSupervisor {
                 Outcome::Failed(FailureClass::Transport),
             );
         };
+        // M02-T09: the window is re-checked before the subscribe; when it has
+        // ended, the open socket is dropped with no write.
+        if !shutdown.may_send() {
+            drop(socket);
+            return self.end_unsubscribed(
+                audit,
+                session,
+                None,
+                EndCause::Shutdown,
+                Outcome::Stop(Ok(())),
+            );
+        }
         let subscribe_receipt = match audit.begin_request(OutboundRequestOperation::StreamSubscribe)
         {
             Ok(receipt) => receipt,
@@ -1357,7 +1464,7 @@ impl TeslaStreamSupervisor {
             .read_loop(&mut socket, shutdown, audit, run, &mut state)
             .await;
         self.log_summary(&state.counts);
-        self.finish_subscribed(socket, end, audit, session, &state)
+        self.finish_subscribed(socket, end, shutdown, audit, session, &state)
             .await
     }
 
@@ -1635,6 +1742,11 @@ impl TeslaStreamSupervisor {
                 gate.revoke();
             }
         }
+        // M02-T09: the window is re-checked before the Ping; when it has ended,
+        // the session ends with no write.
+        if !shutdown.may_send() {
+            return Some(SessionEnd::shutdown());
+        }
         let sent = until(
             shutdown,
             timeout_at(
@@ -1890,10 +2002,14 @@ impl TeslaStreamSupervisor {
     /// Step 8 for a subscribed session (R9, R10, R13, R14): revoke the gate,
     /// complete the open subscribe receipt, unsubscribe and close when the Hub
     /// ends the session on a usable socket, then complete the session row.
+    /// M02-T09: when the collection window ended the session, or ends during the
+    /// teardown, the socket is dropped with no further write; the unsubscribe
+    /// and the Close ask the window first and are bounded by it.
     async fn finish_subscribed(
         &self,
         mut socket: StreamSocket,
         mut end: SessionEnd,
+        shutdown: &mut Shutdown,
         audit: &RunAudit,
         session: Option<StreamSessionReceiptId>,
         state: &SessionState,
@@ -1919,7 +2035,7 @@ impl TeslaStreamSupervisor {
         }
         let mut unsubscribe_receipt = None;
         let mut unsubscribe_ok = false;
-        if end.usable {
+        if end.usable && shutdown.may_send() {
             let mut writable = true;
             if end.unsubscribe {
                 let receipt = match audit.begin_request(OutboundRequestOperation::StreamUnsubscribe)
@@ -1932,11 +2048,13 @@ impl TeslaStreamSupervisor {
                 };
                 // The frame was validated with the tag at construction.
                 let written = match unsubscribe_frame(&self.tag) {
-                    Ok(frame) => {
-                        timeout(UNSUBSCRIBE_WRITE_LIMIT, socket.send(Message::text(frame)))
-                            .await
-                            .is_ok_and(|result| result.is_ok())
-                    }
+                    Ok(frame) => shutdown
+                        .within_window(timeout(
+                            UNSUBSCRIBE_WRITE_LIMIT,
+                            socket.send(Message::text(frame)),
+                        ))
+                        .await
+                        .is_some_and(|result| result.is_ok_and(|sent| sent.is_ok())),
                     Err(_) => false,
                 };
                 unsubscribe_ok = written;
@@ -1953,7 +2071,7 @@ impl TeslaStreamSupervisor {
                 }
             }
             if writable {
-                close_handshake(&mut socket, end.close_code).await;
+                close_handshake(&mut socket, end.close_code, shutdown).await;
             }
         }
         drop(socket);
@@ -1974,8 +2092,9 @@ impl TeslaStreamSupervisor {
 /// The closing handshake of RFC 6455 section 7.1.1 (R10): send a Close frame and
 /// wait for the server's, together at most 2 s, then the caller drops the
 /// socket. The server sends no acknowledgement of an unsubscribe that the unit
-/// could wait for, so this is the only wait.
-async fn close_handshake(socket: &mut StreamSocket, code: CloseCode) {
+/// could wait for, so this is the only wait. M02-T09: it asks the collection
+/// window first and is bounded by it; after the window's end nothing is sent.
+async fn close_handshake(socket: &mut StreamSocket, code: CloseCode, shutdown: &mut Shutdown) {
     let handshake = async {
         let frame = CloseFrame {
             code,
@@ -1990,7 +2109,7 @@ async fn close_handshake(socket: &mut StreamSocket, code: CloseCode) {
             }
         }
     };
-    let _ = timeout(CLOSE_WAIT, handshake).await;
+    let _ = shutdown.within_window(timeout(CLOSE_WAIT, handshake)).await;
 }
 
 #[cfg(test)]

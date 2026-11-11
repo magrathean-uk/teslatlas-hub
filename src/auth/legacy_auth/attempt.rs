@@ -43,6 +43,7 @@ use super::{
     },
 };
 use crate::db::{OutboundRequestOutcome, OutboundRequestReceiptId};
+use crate::fleet_api::egress::{self, PermitKind, Provider};
 
 /// The clock, the sleeper and the random source of the unit (R37, R19, R31).
 ///
@@ -220,8 +221,9 @@ impl fmt::Debug for SuccessorPair {
 pub(crate) enum ExchangeKind {
     /// Row 1: nothing reached the server; the input is reusable.
     NotSent { reason: RetryReason },
-    /// The collector's shutdown began before the request was sent; the attempt
-    /// was cancelled and nothing changes (R33a, row 1).
+    /// The collector's shutdown began, or the window's egress gate refused the
+    /// send (M02-T09), before the request was sent; the attempt was cancelled
+    /// and nothing changes (R33a, row 1).
     Aborted,
     /// The fencing refused to reserve an attempt.
     RowChanged(BeginFailure),
@@ -376,6 +378,8 @@ pub(crate) async fn run_exchange(input: ExchangeInput) -> ExchangeResult {
             .is_err()
             .then_some(PendingClose::Close(attempt, closing))
     };
+    // M02-T09: the window's gate is asked about this endpoint below.
+    let gate_endpoint = endpoint.clone();
     let Some(prepared) = PreparedRequest::new(&client, endpoint, &refresh_token) else {
         return cancel(ExchangeKind::NotSent {
             reason: RetryReason::Network,
@@ -390,16 +394,36 @@ pub(crate) async fn run_exchange(input: ExchangeInput) -> ExchangeResult {
     if shutdown.load(Ordering::Acquire) {
         return cancel(ExchangeKind::Aborted);
     }
+    // M02-T09: the window's egress gate is the last check before the send. A
+    // refusal (`window_closed`) sends nothing and opens no connection: the
+    // attempt is cancelled with its input reusable, as at shutdown, and nothing
+    // schedules a retry of it. A permit bounds the exchange to the window's
+    // deadline plus the exchange grace.
+    let permit = match egress::ask(
+        gate_endpoint.as_str(),
+        Provider::Legacy,
+        PermitKind::TokenExchange,
+    ) {
+        Ok(permit) => permit,
+        Err(refusal) => {
+            tracing::debug!(
+                code = refusal.code(),
+                "token exchange refused by the window gate"
+            );
+            return cancel(ExchangeKind::Aborted);
+        }
+    };
     // R18: the send time is read after the guard and immediately before the
     // request is handed to the client, so the lifetime never starts early.
     let sent_at = env.now();
     #[cfg(test)]
     let sent = match injected {
         Some(exchange) => exchange,
-        None => prepared.send().await,
+        None => prepared.send(&permit).await,
     };
     #[cfg(not(test))]
-    let sent = prepared.send().await;
+    let sent = prepared.send(&permit).await;
+    drop(permit);
     let answer = match sent {
         failed @ (Exchange::NotSent | Exchange::ConnectTimedOut) => {
             // Connection-phase failure: the body was never sent (R33), so the

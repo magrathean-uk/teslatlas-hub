@@ -22,6 +22,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use super::*;
+use crate::fleet_api::egress::{self, PermitKind, Provider};
 use crate::legacy_auth::{RejectionAction, RequestScope, authority::stop_error, state::AuthStop};
 
 /// What an answer said besides its body: the server's `Date` (R55) and whether
@@ -616,17 +617,45 @@ impl OwnerApi {
     {
         #[cfg(test)]
         crate::api::test_egress_guard::refuse_production_request(&request);
-        let response = request.send().await.map_err(classify_transport_error)?;
-        meta.date = response
-            .headers()
-            .get(DATE)
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_owned);
-        if !response.status().is_success() {
-            return Err(owner_error_for_response(response).await);
-        }
-        meta.success = true;
-        let bytes = read_limited_response(response).await?;
+        let (client, request) = request.build_split();
+        let request = request.map_err(classify_transport_error)?;
+        // M02-T09: the window's gate is asked immediately before the send. A
+        // refusal sends nothing and opens no connection, and is never retried
+        // here; a permitted read ends when the window closes or its time runs out.
+        let permit = egress::ask(
+            request.url().as_str(),
+            Provider::Legacy,
+            PermitKind::Request,
+        )
+        .map_err(|refusal| {
+            tracing::debug!(
+                code = refusal.code(),
+                "Owner API send refused by the window gate"
+            );
+            OwnerApiError::Transport
+        })?;
+        let bytes = permit
+            .bound(async {
+                let response = client
+                    .execute(request)
+                    .await
+                    .map_err(classify_transport_error)?;
+                meta.date = response
+                    .headers()
+                    .get(DATE)
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_owned);
+                if !response.status().is_success() {
+                    return Err(owner_error_for_response(response).await);
+                }
+                meta.success = true;
+                read_limited_response(response).await
+            })
+            .await
+            .map_err(|cut| match cut {
+                egress::Cut::Deadline => OwnerApiError::RequestTimeout,
+                egress::Cut::Closed => OwnerApiError::Transport,
+            })??;
         serde_json::from_slice(&bytes).map_err(|_| OwnerApiError::InvalidResponseEnvelope)
     }
 }
