@@ -89,8 +89,12 @@ fn ct092_power_cuts_refresh_rotation_migration() {
             _ => { let (root, generation) = seeded(); (root, Some(generation)) },
         };
         // A checkpoint makes the initial database and its image self-contained.
-        let db = rusqlite::Connection::open(root.path().join("hub.sqlite")).expect("initial image observer");
-        db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").expect("initial checkpoint"); drop(db);
+        // The entry root has no catalogue yet: opening without create leaves its
+        // creation to the store, so the process umask never sets the file mode.
+        if root.path().join("hub.sqlite").exists() {
+            let db = rusqlite::Connection::open_with_flags(root.path().join("hub.sqlite"), rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE).expect("initial image observer");
+            db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").expect("initial checkpoint"); drop(db);
+        }
         let durable = Rc::new(RefCell::new(CutImage::initial(root.path())));
         if input.is_some() {
             let directory=private_directory::open_validated(&root.path().join("secrets"),false).expect("initial keys");
