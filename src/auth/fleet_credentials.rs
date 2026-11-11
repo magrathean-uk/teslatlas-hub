@@ -136,16 +136,20 @@ impl std::fmt::Debug for FleetSetupCredentials {
     }
 }
 
-/// R58's public entry bridge keeps the vault and its admission opaque.
+/// R58's public entry bridge. Source credentials are disabled (M02-T02): a
+/// raw Fleet token pair is never stored, so this refuses before the vault is
+/// touched or a token is copied.
 pub fn persist_fleet_setup_credentials(
     entry: &crate::CredentialVaultEntry, _data_dir: &Path,
     credentials: &FleetSetupCredentials, now: SystemTime,
 ) -> Result<(), FleetCredentialError> {
-    entry.vault().store_supplied_entry(credentials.credential_entry(now)?, crate::db::ReplacePolicy::ReplaceAny)?;
-    Ok(())
+    let _ = (entry, credentials, now);
+    Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi).into())
 }
 
 impl FleetSetupCredentials {
+    /// Fixture seeding only: the supplied row an older Hub could hold.
+    #[cfg(any(test, debug_assertions))]
     pub(crate) fn credential_entry(&self, now: SystemTime) -> Result<crate::auth::credential_vault::CredentialEntry, FleetCredentialError> {
         let schedule = refresh_schedule(now, self.expires_in_seconds)?;
         let mut entry = crate::auth::credential_vault::CredentialEntry::fleet_supplied(

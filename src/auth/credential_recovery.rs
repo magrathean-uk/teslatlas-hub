@@ -554,6 +554,15 @@ fn decode_payload(bytes: Zeroizing<Vec<u8>>) -> Result<DecodedPayload, Credentia
     if flags == 0 || flags & !KNOWN_FLAGS != 0 {
         return Err(CredentialRecoveryError::InvalidPayload("flags are invalid"));
     }
+    // Source credentials are disabled (M02-T02): a bundle carrying a
+    // pre-upgrade Owner API or Fleet key member is a legacy format. It is
+    // refused here, straight after the bundle is authenticated and before any
+    // member is copied out, any credential is decrypted or any key published.
+    if flags & (SOURCE_DB_KEY_FLAG | FLEET_KEY_FLAG) != 0 {
+        return Err(CredentialRecoveryError::InvalidPayload(
+            "source_credential_disabled: pre-upgrade key members are refused",
+        ));
+    }
     let key_length = usize::from(u16::from_be_bytes([bytes[17], bytes[18]]));
     let expected = 19_usize
         .checked_add(key_length)
@@ -766,19 +775,16 @@ fn io_error(
 }
 
 /// Restore under the admitted vault's connection (R52, E58, M2P-58): Phase B
-/// has already run. Matching is per slot; publication never replaces a target.
+/// has already run. No pre-upgrade member is accepted (M02-T02), so no
+/// pending row is matched or decrypted; publication never replaces a target.
 pub(crate) fn restore_credentials_with_connection(
     store: &crate::db::HubStore,
-    connection: &mut crate::db::CredentialConnection,
+    _connection: &mut crate::db::CredentialConnection,
     data_dir: &Path,
     source: &Path,
     recovery_key: &[u8],
 ) -> Result<CredentialRecoveryReport, CredentialRecoveryError> {
-    use crate::auth::{
-        credential_envelope::CredentialSlot,
-        credential_migration::{LAST_PRE_C10_VERSION, boundary_continues},
-    };
-    use crate::db::CredentialSlotFormatState;
+    use crate::auth::credential_migration::{LAST_PRE_C10_VERSION, boundary_continues};
 
     /// E58 existing-directory branch: preflight every payload target (identical
     /// bytes stay untouched, different bytes refuse before any write), publish the
@@ -904,48 +910,6 @@ pub(crate) fn restore_credentials_with_connection(
         Ok(())
     }
 
-    /// Per-slot matching: where a slot's old row exists, usable member material
-    /// must authenticate both of its stored values (the Fleet slot with its
-    /// dedicated member or the cursor-derived key); where it does not, the
-    /// member is accepted under its restore name.
-    fn match_pending_slots(
-        connection: &mut crate::db::CredentialConnection,
-        state: &crate::db::CredentialFormatState,
-        owner_key: Option<&[u8]>,
-        fleet_key: Option<&[u8]>,
-        cursor_key: Option<&[u8]>,
-    ) -> Result<(), CredentialRecoveryError> {
-        if state.owner_api_state == CredentialSlotFormatState::Pending {
-            let row = connection
-                .read_pre_upgrade_credential_row(CredentialSlot::OwnerApi)?
-                .ok_or(StoreError::CredentialPairInvalid)?;
-            let key = owner_key.ok_or(CredentialRecoveryError::CatalogueMismatch)?;
-            decrypt_legacy_owner_tokens(key, &row.encrypted_access, &row.encrypted_refresh)
-                .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
-        }
-        if state.fleet_api_state == CredentialSlotFormatState::Pending {
-            let row = connection
-                .read_pre_upgrade_credential_row(CredentialSlot::FleetApi)?
-                .ok_or(StoreError::CredentialPairInvalid)?;
-            let authenticated = match (fleet_key, cursor_key) {
-                (Some(key), _) => {
-                    decrypt_legacy_owner_tokens(key, &row.encrypted_access, &row.encrypted_refresh)
-                }
-                (None, Some(cursor)) => {
-                    let derived = fleet_encryption_key(cursor)?;
-                    decrypt_legacy_owner_tokens(
-                        derived.as_ref(),
-                        &row.encrypted_access,
-                        &row.encrypted_refresh,
-                    )
-                }
-                (None, None) => return Err(CredentialRecoveryError::CatalogueMismatch),
-            };
-            authenticated.map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
-        }
-        Ok(())
-    }
-
     /// One published member, read back through a no-follow open.
     fn read_back_member(path: &Path) -> Result<Zeroizing<Vec<u8>>, CredentialRecoveryError> {
         let mut file = OpenOptions::new()
@@ -983,17 +947,8 @@ pub(crate) fn restore_credentials_with_connection(
     {
         return Err(CredentialRecoveryError::NoKeyMaterial);
     }
-    // Per-slot matching: where a slot's old row exists, usable member material
-    // must authenticate both of its stored values; where it does not, the
-    // member is accepted under its restore name.
-    let state = connection.credential_format_state()?;
-    match_pending_slots(
-        connection,
-        &state,
-        payload.source_db_key.as_deref().map(Vec::as_slice),
-        payload.fleet_key.as_deref().map(Vec::as_slice),
-        payload.cursor_key.as_deref().map(Vec::as_slice),
-    )?;
+    // No pending pre-upgrade row is matched or decrypted: the payload carries
+    // no pre-upgrade member, and the vault refuses that material unread.
 
     let secrets_directory = data_dir.join("secrets");
     match fs::symlink_metadata(&secrets_directory) {
@@ -1032,17 +987,6 @@ pub(crate) fn restore_credentials_with_connection(
                     return Err(CredentialRecoveryError::CatalogueMismatch);
                 }
             }
-            match_pending_slots(
-                connection,
-                &state,
-                restored_owner
-                    .as_ref()
-                    .map(|(restored, _)| restored.as_slice()),
-                restored_fleet
-                    .as_ref()
-                    .map(|(restored, _)| restored.as_slice()),
-                payload.cursor_key.as_deref().map(Vec::as_slice),
-            )?;
         }
         Ok(_) => publish_into_existing_secrets(&secrets_directory, &payload)?,
         Err(source_error) => {

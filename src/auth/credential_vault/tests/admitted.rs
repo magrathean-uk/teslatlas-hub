@@ -244,16 +244,6 @@ fn ct090_admitted_open() {
 }
 
 #[test]
-fn ct061_admitted_open() {
-    let _controls = controls(); credential_migration::seam::with(|s| { s.fake_pre_upgrade = false; s.fake_generation = false; });
-    let root = crate::auth::credential_recovery::tests::g24_m2_recovery::seed_admitted_restored_export();
-    let vault = open(root.path()); complete(root.path());
-    assert!(vault.load(OWNER).expect("restored Owner load").is_some() && vault.load(CredentialSlot::FleetApi).expect("restored Fleet load").is_some(), "CT61.restored pairs open through vault");
-    for name in ["pre-upgrade-owner-api.key", "pre-upgrade-fleet-api.key"] { assert!(!root.path().join("secrets").join(name).exists(), "CT61.restored candidates removed after proof"); }
-    assert!(root.path().join("secrets").join("hub-cursor.key").exists(), "CT61.cursor retained");
-}
-
-#[test]
 fn ct062_admitted_open() {
     let _controls = controls(); credential_migration::seam::with(|s| { s.fake_pre_upgrade = false; s.fake_generation = false; });
     let (root, values) = credential_migration::g24_m2_m::seed_admitted_catalogue();

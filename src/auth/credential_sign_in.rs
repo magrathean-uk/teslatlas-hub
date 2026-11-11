@@ -47,7 +47,12 @@ pub use service::{SignInCompletion, SignInServiceError, SignInWorkError, with_si
 pub use service::with_sign_in_scope_for_test;
 #[cfg(any(debug_assertions, feature = "interop-fixture"))]
 #[doc(hidden)]
-pub use manager_fixture::{record_provider_admission_for_test, refresh_owner_manager_for_test, seed_owner_pair_for_test, seed_fleet_pair_for_test, begin_refresh_for_test, pair_matches_for_test};
+pub use manager_fixture::{record_provider_admission_for_test, refresh_owner_manager_for_test, begin_refresh_for_test, pair_matches_for_test};
+// Pair seeding writes a pair without an exchange, so it exists only in debug
+// and test builds, never in a release build (with or without interop-fixture).
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub use manager_fixture::{seed_owner_pair_for_test, seed_fleet_pair_for_test};
 
 #[cfg(test)]
 #[path = "credential_sign_in/tests.rs"]

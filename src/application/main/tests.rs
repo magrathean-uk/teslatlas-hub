@@ -307,6 +307,37 @@ fn migration_progress_is_online_snapshot_only() {
     assert!(!should_emit_migration_progress(false));
 }
 
+/// Finding 6 (M02-T02 round 3): the dispatcher itself refuses the raw-token
+/// forms of `setup` and `setup-fleet` first. The configuration path is absent
+/// and the token file sits in a sealed directory, so any configuration read,
+/// admission, database initialisation or token read would surface a different
+/// error, and the data directory would come into existence.
+#[cfg(unix)]
+#[tokio::test]
+async fn source_credential_disabled_raw_token_setup_is_refused_by_the_dispatcher_first() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let sealed = temporary.path().join("sealed");
+    fs::create_dir(&sealed).expect("sealed directory");
+    let secret = sealed.join("unread");
+    fs::set_permissions(&sealed, fs::Permissions::from_mode(0o000)).expect("seal");
+    let config_path = temporary.path().join("absent-config.toml");
+    let commands = [
+        Command::Setup { access_token_file: Some(secret.clone()), refresh_token_file: Some(secret.clone()),
+            tokens_stdin: false, sign_in: false, vehicle_id: None, all_vehicles: false },
+        Command::Setup { access_token_file: None, refresh_token_file: None,
+            tokens_stdin: true, sign_in: false, vehicle_id: Some(7), all_vehicles: false },
+        Command::SetupFleet { sign_in: false, vehicle_id: None, all_vehicles: true },
+    ];
+    for command in commands {
+        let error = run(Cli { config: Some(config_path.clone()), command }).await
+            .expect_err("raw-token setup is refused").to_string();
+        assert!(error.starts_with("source_credential_disabled: "), "{error}");
+    }
+    fs::set_permissions(&sealed, fs::Permissions::from_mode(0o700)).expect("unseal");
+    let entries: Vec<_> = fs::read_dir(temporary.path()).expect("listing").map(|entry| entry.expect("entry").file_name()).collect();
+    assert_eq!(entries, vec![std::ffi::OsString::from("sealed")], "nothing was created or read");
+}
+
 /// Source credentials are disabled: every `migrate` key or token input and
 /// every `setup` token input is refused with the one stable code before any
 /// named path is opened, the configuration is read or a store is created.

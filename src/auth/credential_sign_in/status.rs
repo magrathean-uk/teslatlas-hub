@@ -51,10 +51,12 @@ pub struct CredentialStatus {
     pub credential_store: CredentialStoreStatus,
 }
 
+/// A blocked slot holds pre-upgrade source material, refused without being
+/// read since source credentials are disabled (M02-T02), whatever reason an
+/// earlier version recorded.
 fn block_code(reason: CredentialMigrationBlockReason) -> &'static str {
     match reason {
-        CredentialMigrationBlockReason::OldKeyUnavailable => "old_key_unavailable",
-        CredentialMigrationBlockReason::OldPairInvalid => "old_pair_invalid",
+        CredentialMigrationBlockReason::OldKeyUnavailable | CredentialMigrationBlockReason::OldPairInvalid => "source_credential_disabled",
     }
 }
 
@@ -75,7 +77,7 @@ fn slot_status(
     pending: bool,
     blocked: bool,
 ) -> SlotStatus {
-    let store_state = if blocked { "migration_blocked" } else if pending { "migration_pending" } else {
+    let store_state = if blocked { "source_credential_disabled" } else if pending { "migration_pending" } else {
         presence.as_ref().and_then(|row| row.header_check.as_ref().err()).map_or("ok", header_code)
     };
     // Source credentials are disabled: a pair the Hub did not get from its own

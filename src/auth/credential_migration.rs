@@ -3,51 +3,38 @@
 //! Phase B of the credential format migration (C10 R43 to R49, R75, R80).
 //!
 //! Phase B runs in an admitted process, under the data-directory lock, on the
-//! once-taken credential connection. It converts the pre-upgrade token rows
-//! into sealed pairs, maps fences and attempts, purges residue, scrubs the WAL,
-//! removes the neutral key files and records completion. Every step is
-//! idempotent and re-runnable at the next admitted open. Plaintext exists only
-//! between steps 4 and 5, for one slot at a time, in zeroising buffers.
+//! once-taken credential connection. Source credentials are disabled
+//! (M02-T02): it refuses every pending pre-upgrade token row without reading a
+//! key or decrypting it, then maps fences and attempts, purges residue, scrubs
+//! the WAL, removes the neutral key files and records completion. Every step is
+//! idempotent and re-runnable at the next admitted open.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::File,
-    io::Read,
     path::Path,
 };
 
-use rustix::{
-    fs::{fstat, statvfs},
-    process::geteuid,
-};
+use rustix::fs::statvfs;
 use uuid::Uuid;
-use zeroize::Zeroizing;
 
 use crate::{
     auth::{
         credential_envelope::{
-            CredentialOrigin, CredentialSlot, EnvelopeError, NonceSource, RefreshOwner,
-            canonical_token,
+            CredentialSlot, EnvelopeError,
         },
         credential_keys::{
             BackupExclusion, CredentialKeyError, ExclusionState, KeyringHandle, create_keyring,
             load_keyring,
         },
     },
-    credentials::OwnerTokens,
     db::{
         CredentialConnection, CredentialFormatState, CredentialMigrationAttempt,
         CredentialMigrationBlockReason, CredentialMigrationLegacyFence, CredentialMigrationPlan,
         CredentialMigrationRefreshFence, CredentialSecretsExclusion, CredentialSlotFormatState,
-        LegacyFenceIdentity, OutboundRequestOutcome, PreUpgradeReceiptState,
-        PreUpgradeRefreshBinding, SealedCredentialPair, StoreError,
+        LegacyFenceIdentity, PreUpgradeRefreshBinding, SealedCredentialPair, StoreError,
     },
     hub_user_process::AdmittedUserHub,
     platform::private_directory::{EntryState, PrivateDirectory},
-    protocol::CursorKey,
-    source_token_envelope::{
-        SourceDbTokenError, decrypt_legacy_owner_tokens, legacy_refresh_credential_generation,
-    },
 };
 
 /// The last store version before the credential-format rung (R50).
@@ -59,13 +46,8 @@ const RST_K2: &str = "pre-upgrade-fleet-api.key";
 const OLD_K4: &str = "fleet-credentials.key";
 const OLD_K5: &str = ".fleet-credentials.pending.key";
 const OLD_K6: &str = ".fleet-credentials-key-migration";
-/// R45's candidate order, neutral names only (R80).
-const OWNER_CANDIDATES: [&str; 3] = [REL_K1, RST_K1, REL_K2];
-const FLEET_CANDIDATES: [&str; 3] = [OLD_K4, RST_K2, OLD_K5];
 /// R49's removal list.
 const PRE_UPGRADE_FILES: [&str; 7] = [REL_K1, REL_K2, RST_K1, RST_K2, OLD_K4, OLD_K5, OLD_K6];
-const OWNER_KEY_MAX_BYTES: u64 = 16_384;
-const FLEET_KEY_BYTES: u64 = 32;
 const STAGING_PREFIX: &str = ".hub-restore-";
 const STAGING_SUFFIX: &str = ".tmp";
 
@@ -120,9 +102,7 @@ pub(crate) struct CredentialPhaseB<'a> {
     pub(crate) admission: &'a std::sync::Arc<AdmittedUserHub>,
     pub(crate) secrets: &'a PrivateDirectory,
     pub(crate) keys: &'a mut Option<KeyringHandle>,
-    pub(crate) cursor_key: Option<&'a CursorKey>,
     pub(crate) exclusion: &'a dyn BackupExclusion,
-    pub(crate) nonces: &'a mut dyn NonceSource,
     pub(crate) now_ms: i64,
 }
 
@@ -171,11 +151,6 @@ impl From<CredentialKeyError> for CredentialMigrationError {
 }
 
 type PhaseResult<T> = Result<T, CredentialMigrationError>;
-
-enum SlotOutcome {
-    Converted(Box<SealedCredentialPair>),
-    Blocked(CredentialMigrationBlockReason),
-}
 
 fn proceed(point: &str) -> PhaseResult<()> {
     if boundary_continues(point) {
@@ -261,261 +236,15 @@ fn ensure_keyring(
     }
 }
 
-/// One candidate key file (R45): inspected without following links, with the
-/// owner and size checks on the open descriptor, and read once.
-fn read_candidate(
-    secrets: &PrivateDirectory,
-    name: &'static str,
-    exact_size: bool,
-    unsafe_names: &mut Vec<&'static str>,
-) -> PhaseResult<Option<Zeroizing<Vec<u8>>>> {
-    note_event(&format!("inspect:{name}"));
-    let skip = |unsafe_names: &mut Vec<&'static str>| {
-        if !unsafe_names.contains(&name) {
-            unsafe_names.push(name);
-        }
-    };
-    let descriptor =
-        match secrets
-            .inspect_entry(name)
-            .map_err(|_| CredentialMigrationError::Io {
-                operation: "inspect_candidate",
-            })? {
-            EntryState::Absent => return Ok(None),
-            EntryState::Unsafe(_) => {
-                skip(unsafe_names);
-                return Ok(None);
-            }
-            EntryState::Regular(descriptor) => descriptor,
-        };
-    let facts = fstat(&descriptor).map_err(|_| CredentialMigrationError::Io {
-        operation: "stat_candidate",
-    })?;
-    let size = u64::try_from(facts.st_size).unwrap_or_default();
-    let size_ok = if exact_size {
-        size == FLEET_KEY_BYTES
-    } else {
-        (1..=OWNER_KEY_MAX_BYTES).contains(&size)
-    };
-    if facts.st_uid != geteuid().as_raw() || !size_ok {
-        skip(unsafe_names);
-        return Ok(None);
-    }
-    note_event(&format!("read:{name}"));
-    let mut bytes = Zeroizing::new(Vec::with_capacity(size as usize + 1));
-    File::from(descriptor)
-        .take(size + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| CredentialMigrationError::Io {
-            operation: "read_candidate",
-        })?;
-    if bytes.len() as u64 != size {
-        skip(unsafe_names);
-        return Ok(None);
-    }
-    Ok(Some(bytes))
-}
-
-/// R45: candidate keys in order, identical contents once.
-fn candidate_keys(
-    context: &CredentialPhaseB<'_>,
-    slot: CredentialSlot,
-    unsafe_names: &mut Vec<&'static str>,
-) -> PhaseResult<Vec<Zeroizing<Vec<u8>>>> {
-    let (names, exact) = match slot {
-        CredentialSlot::OwnerApi => (OWNER_CANDIDATES, false),
-        CredentialSlot::FleetApi => (FLEET_CANDIDATES, true),
-    };
-    let mut keys: Vec<Zeroizing<Vec<u8>>> = Vec::new();
-    for name in names {
-        if let Some(key) = read_candidate(context.secrets, name, exact, unsafe_names)?
-            && !keys.iter().any(|known| known.as_slice() == key.as_slice())
-        {
-            keys.push(key);
-        }
-    }
-    if slot == CredentialSlot::FleetApi
-        && let Some(cursor) = context.cursor_key
-    {
-        let derived = Zeroizing::new(cursor.fleet_credential_encryption_key());
-        let key = Zeroizing::new(derived.to_vec());
-        if !keys.iter().any(|known| known.as_slice() == key.as_slice()) {
-            keys.push(key);
-        }
-    }
-    Ok(keys)
-}
-
-/// What one candidate key did to a slot's old ciphertext.
-enum Decrypted {
-    /// OLD-D authenticated both values and the token pair was accepted.
-    Tokens(OwnerTokens),
-    /// OLD-D authenticated the values but the canonical token pair was refused:
-    /// the slot is `old_pair_invalid` and no further candidate is tried.
-    Refused,
-    /// The key does not authenticate: the next candidate is tried.
-    NoMatch,
-}
-
-/// OLD-D, called opaquely. `SourceDbTokenError::InvalidPlaintext` is the
-/// variant OLD-D returns when it authenticates the plaintext but
-/// `OwnerTokens` refuses the canonical token pair (coordinator fact,
-/// M2P-86 item 7); any other error means the candidate does not authenticate.
-fn decrypt_pre_upgrade(
-    slot: CredentialSlot,
-    key: &[u8],
-    access: &[u8],
-    refresh: &[u8],
-) -> Decrypted {
-    #[cfg(test)]
-    {
-        seam::with(|state| state.decrypt_log.push((slot, key.to_vec())));
-        if seam::with(|state| state.fake_pre_upgrade) {
-            let prefix = format!(
-                "OLD:{}:",
-                key.iter().map(|b| format!("{b:02x}")).collect::<String>()
-            );
-            let (Some(access), Some(refresh)) = (
-                access.strip_prefix(prefix.as_bytes()),
-                refresh.strip_prefix(prefix.as_bytes()),
-            ) else {
-                return Decrypted::NoMatch;
-            };
-            return match OwnerTokens::from_file_bytes(
-                Zeroizing::new(access.to_vec()),
-                Zeroizing::new(refresh.to_vec()),
-            ) {
-                Ok(tokens) => Decrypted::Tokens(tokens),
-                Err(_) => Decrypted::Refused,
-            };
-        }
-    }
-    let _ = slot;
-    classify_decryption(decrypt_legacy_owner_tokens(key, access, refresh))
-}
-
-/// The arm that maps OLD-D's verdict to the slot's fate (R44 steps 3 and 4,
-/// R48): `InvalidPlaintext` is authenticated but refused (a coordinator fact,
-/// M2P-86 item 7), every other error means the candidate does not
-/// authenticate.
-fn classify_decryption(result: Result<OwnerTokens, SourceDbTokenError>) -> Decrypted {
-    match result {
-        Ok(tokens) => Decrypted::Tokens(tokens),
-        Err(SourceDbTokenError::InvalidPlaintext) => Decrypted::Refused,
-        Err(_) => Decrypted::NoMatch,
-    }
-}
-
-/// OLD-G, called opaquely.
-fn generation_for(tokens: &OwnerTokens) -> Uuid {
-    #[cfg(test)]
-    if seam::with(|state| state.fake_generation) {
-        return Uuid::new_v5(
-            &Uuid::from_u128(0x00000000_0000_4000_8000_000000000003),
-            tokens.refresh_token().as_bytes(),
-        );
-    }
-    legacy_refresh_credential_generation(tokens)
-}
-
-/// R46's refresh owner: Hub for the Fleet slot unconditionally; Hub for the
-/// Legacy slot only when its generation is the output of a completed,
-/// successful binding (M2P-73(a)); a Started or failed binding never counts.
-fn refresh_owner(
-    slot: CredentialSlot,
-    generation: Uuid,
-    bindings: &[PreUpgradeRefreshBinding],
-) -> RefreshOwner {
-    if slot == CredentialSlot::FleetApi {
-        return RefreshOwner::Hub;
-    }
-    let evidence = bindings.iter().any(|binding| {
-        binding.output_generation == Some(generation)
-            && matches!(
-                binding.receipt_state,
-                PreUpgradeReceiptState::Completed(OutboundRequestOutcome::Success)
-            )
-    });
-    if evidence {
-        RefreshOwner::Hub
-    } else {
-        RefreshOwner::External
-    }
-}
-
-/// R44 steps 3 and 4 for one slot: select the key, decrypt, build and seal the
-/// migrated pair. The plaintext is dropped before this function returns.
-fn convert_slot(
-    connection: &mut CredentialConnection,
-    context: &mut CredentialPhaseB<'_>,
-    slot: CredentialSlot,
-    bindings: &[PreUpgradeRefreshBinding],
-    unsafe_names: &mut Vec<&'static str>,
-    before_commit: &mut dyn FnMut(),
-) -> PhaseResult<SlotOutcome> {
-    let row = connection
-        .read_pre_upgrade_credential_row(slot)?
-        .ok_or(StoreError::CredentialPairInvalid)?;
-    let candidates = candidate_keys(context, slot, unsafe_names)?;
-    let mut found = None;
-    for key in &candidates {
-        match decrypt_pre_upgrade(slot, key, &row.encrypted_access, &row.encrypted_refresh) {
-            Decrypted::Tokens(tokens) => {
-                found = Some(tokens);
-                break;
-            }
-            Decrypted::Refused => {
-                return Ok(SlotOutcome::Blocked(
-                    CredentialMigrationBlockReason::OldPairInvalid,
-                ));
-            }
-            Decrypted::NoMatch => {}
-        }
-    }
-    let Some(tokens) = found else {
-        return Ok(SlotOutcome::Blocked(
-            CredentialMigrationBlockReason::OldKeyUnavailable,
-        ));
-    };
-    let access = canonical_token(tokens.access_token().as_bytes());
-    let refresh = canonical_token(tokens.refresh_token().as_bytes());
-    if access.is_empty() || refresh.is_empty() {
-        return Ok(SlotOutcome::Blocked(
-            CredentialMigrationBlockReason::OldPairInvalid,
-        ));
-    }
-    let generation = row.generation.unwrap_or_else(|| generation_for(&tokens));
-    let fleet = slot == CredentialSlot::FleetApi;
-    let mut pair = SealedCredentialPair {
-        account_id: 1,
-        slot,
-        origin: fleet.then_some(CredentialOrigin::FleetOauth),
-        refresh_owner: refresh_owner(slot, generation, bindings),
-        generation,
-        access_envelope: Vec::new(),
-        refresh_envelope: Vec::new(),
-        refresh_present: true,
-        refresh_fingerprint: None,
-        expires_at: row.expires_at,
-        next_refresh_at: row.next_refresh_at,
-        client_id: row.client_id.clone(),
-        region: row.region.clone(),
-        migrated: true,
-        written_at_ms: context.now_ms,
-    };
-    let keys = context
-        .keys
-        .as_ref()
-        .ok_or(CredentialKeyError::KeyringMissing)?;
-    connection.reserve_and_seal_credential_pair_with_commit(
-        &mut pair,
-        keys,
-        access,
-        refresh,
-        &mut *context.nonces,
-        before_commit,
-    )?;
-    Ok(SlotOutcome::Converted(Box::new(pair)))
+/// Source credentials are disabled (M02-T02): a pending slot's pre-upgrade
+/// pair is source material. It is refused here, before any candidate key file
+/// is inspected or read, before any decryption and before anything is sealed
+/// or stored: the slot is recorded blocked, its old row stays sealed under the
+/// old key until the Hub's own login replaces it or the slot is cleared, and
+/// the load reports `source_credential_disabled`.
+fn refuse_pending_slot(slot: CredentialSlot) -> (CredentialSlot, CredentialMigrationBlockReason) {
+    note_event(&format!("refused:{}", slot.as_str()));
+    (slot, CredentialMigrationBlockReason::OldPairInvalid)
 }
 
 struct PlanParts {
@@ -761,16 +490,10 @@ pub(crate) fn run_phase_b(
                 refresh_fences: Vec::new(),
                 opaque_binding_outputs: 0,
             };
-            // Steps 3 and 4, one slot at a time.
+            // Steps 3 and 4: every pending slot is refused source material;
+            // no key is read and nothing is decrypted or converted.
             for slot in pending_slots {
-                let bindings = match slot {
-                    CredentialSlot::OwnerApi => &owner_bindings,
-                    CredentialSlot::FleetApi => &fleet_bindings,
-                };
-                match convert_slot(connection, context, slot, bindings, &mut unsafe_names, before_commit)? {
-                    SlotOutcome::Converted(pair) => parts.pairs.push(*pair),
-                    SlotOutcome::Blocked(reason) => parts.blocked.push((slot, reason)),
-                }
+                parts.blocked.push(refuse_pending_slot(slot));
             }
             if state.fences_pending {
                 initial_mapping(
@@ -878,6 +601,8 @@ pub(crate) mod seam {
 
     #[derive(Default)]
     pub(crate) struct State {
+        /// Retired with pre-upgrade decryption (M02-T02); older fixtures
+        /// still set them, and nothing reads them.
         pub(crate) fake_pre_upgrade: bool,
         pub(crate) fake_generation: bool,
         pub(crate) decrypt_log: Vec<(CredentialSlot, Vec<u8>)>,

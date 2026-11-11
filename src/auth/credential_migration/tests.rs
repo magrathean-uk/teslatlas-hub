@@ -5,7 +5,7 @@
 //! lives in a per-test private temporary directory.
 
 use super::*;
-use crate::auth::credential_envelope::{CredentialSlot, OsNonces, refresh_fingerprint};
+use crate::auth::credential_envelope::{CredentialSlot, refresh_fingerprint};
 use crate::auth::credential_keys::{
     BackupExclusion, CredentialKeyError, ExclusionState, KeyringHandle, check_keyring,
 };
@@ -323,9 +323,7 @@ impl Env {
             admission: &self.admission,
             secrets: &self.secrets,
             keys: &mut self.keys,
-            cursor_key: self.cursor.as_ref(),
             exclusion: &self.exclusion,
-            nonces: &mut OsNonces,
             now_ms: T0_MS,
         };
         run_phase_b(self.conn.as_mut().unwrap(), &mut context, before_commit)
@@ -1649,43 +1647,6 @@ fn ct053_blocked_slot() {
             env.count("SELECT COUNT(*) FROM legacy_owner_tokens"),
             1,
             "CT53.old_pair_invalid.{label} row kept"
-        );
-    }
-
-    // Case production_refused_arm (FR-6): the production classification of OLD-D's
-    // verdict. InvalidPlaintext (authenticated but refused) blocks the slot as
-    // old_pair_invalid and no further candidate is tried; every other error
-    // means the candidate does not authenticate. No approved vector carries an
-    // authenticated-but-refused ciphertext (the encryptors are absent), so the
-    // arm is exercised through its classification function.
-    {
-        use crate::source_token_envelope::SourceDbTokenError as E;
-        assert!(
-            matches!(
-                classify_decryption(Err(E::InvalidPlaintext)),
-                Decrypted::Refused
-            ),
-            "CT53.production_refused_arm InvalidPlaintext is a refused pair"
-        );
-        for other in [
-            E::AuthenticationFailed,
-            E::UnsupportedEnvelope,
-            E::InvalidEncryptionKey,
-            E::EmptyEncryptionKey,
-            E::EncryptionFailed,
-            E::EntropyUnavailable,
-        ] {
-            assert!(
-                matches!(classify_decryption(Err(other)), Decrypted::NoMatch),
-                "CT53.production_refused_arm every other error means no match"
-            );
-        }
-        let tokens =
-            crate::credentials::OwnerTokens::from_secret_parts("a".to_owned(), "r".to_owned())
-                .unwrap();
-        assert!(
-            matches!(classify_decryption(Ok(tokens)), Decrypted::Tokens(_)),
-            "CT53.production_refused_arm an accepted pair converts"
         );
     }
 

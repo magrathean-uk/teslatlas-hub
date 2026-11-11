@@ -74,8 +74,8 @@ fn ct049_admitted_open() {
 #[test]
 fn ct053_blocked_slot_vault() {
     let root = credential_migration::g24_m2_m::seed_admitted_blocked_owner(); let vault = open_fake_migration(root.path());
-    assert!(matches!(vault.load(OWNER), Err(CredentialStoreError::MigrationBlocked(CredentialSlot::OwnerApi))), "blocked Owner read");
-    assert!(vault.load(CredentialSlot::FleetApi).expect("Fleet read").is_some(), "independent slot migrated");
+    assert!(matches!(vault.load(OWNER), Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::OwnerApi))), "blocked Owner read");
+    assert!(matches!(vault.load(CredentialSlot::FleetApi), Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "pre-upgrade Fleet refused unread");
     let state = HubStore::initialize(root.path()).expect("status").credential_format_state().expect("format").expect("state");
     assert!(state.owner_api_state == CredentialSlotFormatState::Pending && state.owner_api_blocked.is_some() && !state.old_tables_dropped, "CT53.blocked_status_source");
     let session = vault.begin_sign_in(OWNER).expect("recovery sign-in session");
@@ -871,4 +871,109 @@ fn m01_t15_keyring_exposure_column_migrates_in_place() {
     assert!(!store.credential_format_state().expect("format").expect("state").keyring_exposure, "column added with no exposure");
     let raw = store.open().expect("raw connection");
     assert!(raw.execute("UPDATE credential_format_state SET keyring_exposure=2", []).is_err(), "column keeps its check");
+}
+
+/// Finding 1 (M02-T02 round 3): the raw-token Fleet bridge refuses before the
+/// vault stores anything, and a stored Fleet pair is refused at load. A
+/// supplied row and a row migrated by an older Hub carry the same header
+/// (`fleet_oauth`, Hub-refreshed), so both are refused until an authenticated
+/// own-exchange origin exists.
+#[test]
+fn source_credential_disabled_fleet_bridge_and_stored_fleet_rows_are_refused() {
+    let root = crate::private_tempdir().expect("root");
+    let input = crate::fleet_credentials::FleetSetupCredentials::new("fleet-access-0001".into(), "fleet-refresh-0001".into(),
+        "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet input");
+    let scope = crate::auth::credential_sign_in::SignInScope::open_for_test(root.path(), true).expect("scope");
+    let refused = crate::fleet_credentials::persist_fleet_setup_credentials(scope.entry(), root.path(), &input, std::time::SystemTime::now())
+        .expect_err("raw Fleet tokens are refused");
+    assert!(matches!(refused, crate::fleet_credentials::FleetCredentialError::Store(StoreError::WriteRefused("source_credential_disabled"))), "{refused:?}");
+    assert!(scope.entry().vault().stored_generation(CredentialSlot::FleetApi).expect("generation").is_none(), "the bridge stored nothing");
+    scope.release().expect("release");
+    for owner in [RefreshOwner::Hub, RefreshOwner::External] {
+        assert!(matches!(admit_stored_origin(CredentialSlot::FleetApi, Some(CredentialOrigin::FleetOauth), owner),
+            Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "supplied or migrated Fleet header refused");
+    }
+    seed_entry(root.path(), CredentialEntry::fleet_supplied(Zeroizing::new("fleet-access-0002".into()), Zeroizing::new("fleet-refresh-0002".into()),
+        "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet fixture"));
+    let vault = open(root.path());
+    assert!(matches!(vault.load(CredentialSlot::FleetApi), Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "stored Fleet pair refused at load");
+    drop(vault);
+    let store = HubStore::initialize(root.path()).expect("store");
+    let status = crate::auth::credential_sign_in::credential_status(&store, root.path(), 1_800_000_000_000).expect("status");
+    assert_eq!(status.fleet_credentials.store_state, "source_credential_disabled", "status reports the refusal");
+}
+
+/// Finding 2 (M02-T02 round 3): pair seeding writes a pair without an exchange,
+/// so the own-login fixture constructor, its seeding store path and the
+/// exported seeding helpers are compiled only into test and debug builds,
+/// never into a release build, with or without `interop-fixture`.
+#[test]
+fn source_credential_disabled_fixture_seeding_is_absent_from_release_builds() {
+    fn gate(source: &str, item: &str) -> String {
+        let at = source.find(item).unwrap_or_else(|| panic!("{item} present"));
+        let line_start = source[..at].rfind('\n').unwrap_or(0);
+        let mut gates = Vec::new();
+        for line in source[..line_start].lines().rev() {
+            let line = line.trim();
+            if line.starts_with("#[cfg(") { gates.push(line.to_owned()); }
+            else if !(line.starts_with("#[") || line.starts_with("///") || line.starts_with("//")) { break; }
+        }
+        assert_eq!(gates.len(), 1, "{item} has exactly one cfg gate: {gates:?}");
+        gates.remove(0)
+    }
+    let allowed = ["#[cfg(any(test, debug_assertions))]", "#[cfg(debug_assertions)]"];
+    for (source, items) in [
+        (include_str!("types.rs"), &["fn own_login_fixture", "fn own_login_grant_secret", "fn own_login_binding", "fn fleet_supplied"][..]),
+        (include_str!("../credential_vault.rs"), &["fn store_supplied_entry"][..]),
+        (include_str!("../credential_sign_in/manager_fixture.rs"), &["fn seed_owner_pair_for_test", "fn seed_fleet_pair_for_test"][..]),
+        (include_str!("../credential_sign_in.rs"), &["pub use manager_fixture::{seed_owner_pair_for_test"][..]),
+    ] {
+        for item in items {
+            let gate = gate(source, item);
+            assert!(allowed.contains(&gate.as_str()), "{item} is gated to test or debug builds only: {gate}");
+        }
+    }
+}
+
+/// Finding 3 (M02-T02 round 3): opening the vault over a pre-upgrade store
+/// refuses each pending slot before any candidate key file is inspected or
+/// read, before any decryption and before anything is sealed or stored, even
+/// with every key that would open the old pair present.
+#[test]
+fn source_credential_disabled_vault_open_refuses_pre_upgrade_pairs_unread() {
+    for fleet in [false, true] {
+        let root = admitted_migration_fixture(fleet, None, false, 0);
+        credential_migration::seam::reset();
+        credential_migration::seam::with(|state| { state.fake_pre_upgrade = true; state.fake_generation = true; });
+        let vault = open(root.path());
+        let (events, decrypted) = credential_migration::seam::with(|state| (state.events.clone(), state.decrypt_log.len()));
+        credential_migration::seam::reset();
+        let slot = if fleet { CredentialSlot::FleetApi } else { OWNER };
+        assert_eq!(decrypted, 0, "no pre-upgrade pair was decrypted");
+        assert!(!events.iter().any(|event| event.starts_with("read:") || event.starts_with("inspect:")), "no candidate key inspected or read: {events:?}");
+        assert!(events.iter().any(|event| *event == format!("refused:{}", slot.as_str())), "slot refused: {events:?}");
+        assert!(matches!(vault.load(slot), Err(CredentialStoreError::SourceCredentialDisabled(refused)) if refused == slot), "refused at load");
+        assert!(vault.credential_pair_presence(slot).expect("presence").is_none(), "nothing was sealed or stored");
+    }
+}
+
+/// Finding 4 (M02-T02 round 3): key rotation never decrypts or re-seals a row
+/// the load refuses; it carries the row unchanged and re-seals only the
+/// admitted own-login pair.
+#[test]
+fn source_credential_disabled_rotation_never_opens_refused_rows() {
+    let (root, owner) = seeded();
+    seed_entry(root.path(), CredentialEntry::fleet_supplied(Zeroizing::new("fleet-access-0001".into()), Zeroizing::new("fleet-refresh-0001".into()),
+        "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet fixture"));
+    let vault = open(root.path());
+    let raw = |slot: CredentialSlot| {
+        let mut state = vault.lock().expect("state");
+        let row = state.connection.load_credential_pair(slot).expect("row").expect("present");
+        (row.access_envelope.clone(), row.refresh_envelope.clone(), row.generation)
+    };
+    let (fleet_before, owner_before) = (raw(CredentialSlot::FleetApi), raw(OWNER));
+    vault.rotate().expect("rotation");
+    assert!(raw(CredentialSlot::FleetApi) == fleet_before, "refused Fleet row carried unopened");
+    assert!(raw(OWNER).0 != owner_before.0, "admitted Owner pair re-sealed under the new key");
+    unchanged(&vault, owner);
 }
