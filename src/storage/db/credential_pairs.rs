@@ -2461,7 +2461,7 @@ mod refresh_fence_tests {
         connection.cancel_unsent_credential_refresh(receipt, input).expect("cancel unsent");
         store.release_supervised_collector_lease(lease).expect("release");
         assert!(lease_lost(connection.begin_credential_refresh(CredentialSlot::OwnerApi, input)), "a released lease ends the right to refresh");
-        assert_eq!(attempts(&connection), 1);
+        assert_eq!(attempts(&connection), 0, "the one admitted attempt was cancelled unsent; the refused begin added none");
     }
 
     #[test]
@@ -2522,7 +2522,7 @@ mod refresh_fence_tests {
             Err(StoreError::RefreshOutcomeUnknown { reason: BeginRefusal::AttemptInFlight })
         ), "the own origin keeps its in-flight refusal");
         connection.cancel_unsent_credential_refresh(fleet_receipt, fleet).expect("Fleet resolved");
-        assert_eq!(attempts(&connection), 2);
+        assert_eq!(attempts(&connection), 0, "both admitted attempts were cancelled unsent; no refused begin added one");
         store.release_supervised_collector_lease(lease).expect("release");
     }
 
