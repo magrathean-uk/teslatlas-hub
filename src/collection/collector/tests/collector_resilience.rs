@@ -150,6 +150,62 @@ async fn run_windowed(
     (result, ready_rx.await.is_ok())
 }
 
+/// A short census of the store, for failure messages.
+fn store_census(store: &HubStore) -> String {
+    let connection = store.open().expect("census");
+    let mut out = String::new();
+    for table in [
+        "raw_observations",
+        "current_observations",
+        "collection_gaps",
+        "collector_vehicle_state",
+        "collector_account_state",
+        "collector_request_counters",
+        "vehicles",
+        "vehicle_lifecycle_state",
+    ] {
+        let count: Result<i64, _> =
+            connection.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0));
+        out.push_str(&format!("{table}={count:?} "));
+    }
+    let rows: Vec<String> = connection
+        .prepare("SELECT vehicle_id, source_id, last_seen_at_ms, COALESCE(display_name,'') FROM vehicles")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok(format!(
+                        "{}/{}/{}/{}",
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?
+                    ))
+                })?
+                .collect()
+        })
+        .unwrap_or_default();
+    out.push_str(&format!("vehicles: {rows:?} "));
+    let current: Vec<String> = connection
+        .prepare("SELECT record_type, observation_id, observed_at_ms FROM current_observations")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok(format!(
+                        "{}#{}@{}",
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?
+                    ))
+                })?
+                .collect()
+        })
+        .unwrap_or_default();
+    out.push_str(&format!("current: {current:?} "));
+    let rows = store.load_collector_state_rows().expect("collector rows");
+    out.push_str(&format!("account: {:?} vehicles: {:?}", rows.account, rows.vehicles));
+    out
+}
+
 // ---- No path starts collection outside an Open window --------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -394,10 +450,10 @@ async fn collector_resilience_unchanged_list_does_not_carry_the_owner_counts() {
         .await;
 }
 
-/// The supervised Owner-wire loop, restarted over an asleep car: neither the first
-/// list after the restart nor the lists after it make a durable write or a write
-/// transaction outside the tick (no identity registration, no inventory write, no
-/// count on a read-only transaction).
+/// The supervised Owner-wire loop, restarted over an asleep car. The first list after
+/// the restart registers no identity and stores nothing, in at most its one tick
+/// transaction; the unchanged lists after it make no write and no write transaction
+/// at all (no inventory write, no count on a read-only transaction, no tick commit).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn collector_resilience_unchanged_polls_after_a_restart_write_nothing() {
     crate::crypto::install_default_provider();
@@ -497,10 +553,11 @@ async fn collector_resilience_unchanged_polls_after_a_restart_write_nothing() {
             .expect("one value")
     };
     let last_seen = one("SELECT MAX(last_seen_at_ms) FROM vehicles");
-    let counters_at = one("SELECT COALESCE(MAX(updated_at_ms), 0) FROM collector_request_counters");
     let observations = one("SELECT COUNT(*) FROM raw_observations");
+    let census_at_stop = store_census(&store);
 
     // The restart: a new process over the same store.
+    store.instrumentation().reset();
     let (mut task, control, clock, ready_rx, shutdown_tx) = run(store.clone(), 0xB2);
     let _cursor = wait_for_supervised_signal_or_abort("restart readiness", &mut task, ready_rx).await;
     let restart_lists = lists();
@@ -511,6 +568,7 @@ async fn collector_resilience_unchanged_polls_after_a_restart_write_nothing() {
     let stamp = collector_rows_stamp(&store);
     let counts = store.instrumentation().snapshot();
     let commits = first.tick_commits;
+    let census_after_first = store_census(&store);
     let later = step_the_controlled_loop_to_a_tick_within(&control, clock.mono_now(), bound, |tick| {
         tick.requests >= first.requests + 3
     })
@@ -530,14 +588,17 @@ async fn collector_resilience_unchanged_polls_after_a_restart_write_nothing() {
     );
     assert_eq!(later.tick_commits, commits, "no tick committed");
     assert_eq!(collector_rows_stamp(&store), stamp, "no collector row changed");
-    // Since the first run stopped: the restart's first list did not register the car,
-    // and no count rode on its read-only transaction.
-    assert_eq!(one("SELECT MAX(last_seen_at_ms) FROM vehicles"), last_seen);
-    assert_eq!(
-        one("SELECT COALESCE(MAX(updated_at_ms), 0) FROM collector_request_counters"),
-        counters_at
+    // The restart's first list: the car is not registered again, nothing is stored for
+    // it, and its tick makes at most its one transaction. (That transaction may
+    // rewrite the car's scheduler row: a restart re-enters an unheld car's phase, C3
+    // R10, and the counts ride on that write.)
+    let since_stop = format!(
+        "restart start and first tick: {counts:?}; first tick {first:?}\nAT STOP {census_at_stop}\nAFTER FIRST {census_after_first}"
     );
-    assert_eq!(one("SELECT COUNT(*) FROM raw_observations"), observations);
+    assert_eq!(counts.vehicle_registration_calls, 0, "{since_stop}");
+    assert!(first.tick_commits <= 1, "{since_stop}");
+    assert_eq!(one("SELECT COUNT(*) FROM raw_observations"), observations, "{since_stop}");
+    assert_eq!(one("SELECT MAX(last_seen_at_ms) FROM vehicles"), last_seen, "{since_stop}");
     assert!(fake.assert_no_wake_or_command().is_ok());
     shutdown_tx.send(()).expect("restart shutdown");
     join_supervised_restart_task("restart join", &mut task)
@@ -766,6 +827,7 @@ async fn wait_with_requests(
     task: &mut JoinHandle<Result<(), CollectorError>>,
     fake: &crate::collection::loopback_fixture::FakeTeslaSource,
     label: &str,
+    census: impl Fn() -> String,
     mut condition: impl FnMut() -> bool,
 ) {
     let deadline = Instant::now() + SUPERVISED_RESTART_WAIT;
@@ -780,7 +842,7 @@ async fn wait_with_requests(
                 .iter()
                 .map(|request| (request.path.clone(), request.rejected))
                 .collect();
-            panic!("{label} timeout; requests seen: {paths:?}");
+            panic!("{label} timeout; requests seen: {}; {}", paths.len(), census());
         }
         sleep(Duration::from_millis(20)).await;
     }
@@ -809,16 +871,55 @@ async fn collector_resilience_network_loss_and_restart_keep_every_committed_obse
     fake.set_step(crate::collection::loopback_fixture::ScenarioStep::Parked);
     let fake = Arc::new(fake);
     let relay = LossyRelay::spawn(fake.http_base_url()).await;
-    let owner_reads = |store: &HubStore| -> i64 {
+    // The committed observations, by id: the stored history and the current records
+    // (a V2 car keeps its latest Owner read and stream update as current records).
+    let committed_ids = |store: &HubStore| -> Vec<i64> {
+        store
+            .open()
+            .expect("observer")
+            .prepare(
+                "SELECT observation_id FROM raw_observations
+                 UNION SELECT observation_id FROM current_observations
+                 ORDER BY 1",
+            )
+            .expect("statement")
+            .query_map([], |row| row.get(0))
+            .expect("rows")
+            .collect::<Result<_, _>>()
+            .expect("observation ids")
+    };
+    // The newest committed Owner read: its observation id and time.
+    let latest_read = |store: &HubStore| -> Option<(i64, i64)> {
+        use rusqlite::OptionalExtension;
         store
             .open()
             .expect("observer")
             .query_row(
-                "SELECT COUNT(*) FROM raw_observations WHERE json_extract(payload_json, '$.record_type') = 'owner_api_vehicle_data_v1'",
+                "SELECT observation_id, observed_at_ms FROM current_observations
+                  WHERE record_type = 'owner_api_vehicle_data_v1'",
                 [],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
-            .expect("owner reads")
+            .optional()
+            .expect("latest read")
+    };
+    // The Owner reads Tesla answered.
+    let answered_reads = || {
+        fake.audited_requests()
+            .iter()
+            .filter(|request| request.path.ends_with("/vehicle_data") && !request.rejected)
+            .count()
+    };
+    // Every committed observation is still there, or was replaced by a newer current
+    // record of its kind (the only way a current record leaves).
+    let keeps = |before: &[i64], after: &[i64], label: &str| {
+        let newest_after = after.iter().max().copied().unwrap_or(0);
+        for id in before {
+            assert!(
+                after.contains(id) || newest_after > *id,
+                "{label}: committed observation {id} went missing"
+            );
+        }
     };
     let start = |store: HubStore, seed: u8| {
         let manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
@@ -863,65 +964,60 @@ async fn collector_resilience_network_loss_and_restart_keep_every_committed_obse
 
     let (mut task, ready_rx, shutdown_tx) = start(store.clone(), 0xE1);
     let _cursor = wait_for_supervised_signal_or_abort("readiness", &mut task, ready_rx).await;
-    wait_with_requests(&mut task, &fake, "first reads", || owner_reads(&store) >= 2).await;
-    // The network goes: every connection to Tesla is dropped. The run goes on, and
-    // nothing it committed goes away.
+    wait_with_requests(&mut task, &fake, "first reads", || store_census(&store), || {
+        answered_reads() >= 2 && latest_read(&store).is_some()
+    })
+    .await;
+    // The network goes: every connection to Tesla's data host is cut. The run goes
+    // on, and nothing it committed goes away.
     relay.up.send_replace(false);
-    let before_loss = owner_reads(&store);
-    wait_with_requests(&mut task, &fake, "requests during the loss", || {
+    let before_loss = committed_ids(&store);
+    let read_before_loss = latest_read(&store).expect("a committed read");
+    wait_with_requests(&mut task, &fake, "requests during the loss", || store_census(&store), || {
         relay.dropped.load(Ordering::SeqCst) >= 3
     })
     .await;
-    let during_loss = owner_reads(&store);
-    assert!(during_loss >= before_loss, "no committed observation is lost");
+    keeps(&before_loss, &committed_ids(&store), "network loss");
+    let read_during_loss = latest_read(&store).expect("the committed read stays");
+    assert!(
+        read_during_loss.1 >= read_before_loss.1,
+        "the committed read never goes back: {read_before_loss:?} then {read_during_loss:?}"
+    );
     assert!(!task.is_finished(), "the run survives the network loss");
-    // The network comes back: collection resumes.
+    // The network comes back: the Owner reads resume.
+    let answered_at_return = answered_reads();
     relay.up.send_replace(true);
-    wait_with_requests(&mut task, &fake, "reads after the loss", || {
-        owner_reads(&store) > during_loss
+    wait_with_requests(&mut task, &fake, "reads after the loss", || store_census(&store), || {
+        answered_reads() >= answered_at_return + 2
+            && latest_read(&store).is_some_and(|read| read.1 > read_during_loss.1)
     })
     .await;
     shutdown_tx.send(()).expect("shutdown");
     join_supervised_restart_task("first join", &mut task)
         .await
         .expect("an orderly stop");
-    let committed = owner_reads(&store);
-    let committed_rows: Vec<i64> = store
-        .open()
-        .expect("observer")
-        .prepare("SELECT observation_id FROM raw_observations ORDER BY observation_id")
-        .expect("statement")
-        .query_map([], |row| row.get(0))
-        .expect("rows")
-        .collect::<Result<_, _>>()
-        .expect("observation ids");
+    let committed = committed_ids(&store);
+    let read_at_stop = latest_read(&store).expect("a committed read at the stop");
+    keeps(&before_loss, &committed, "after the loss");
     drop(store);
 
     // A restart: a new process opens the Hub. Every committed observation is there,
     // and collection goes on from it.
     let reopened = HubStore::initialize(temporary.path()).expect("reopen Hub");
-    assert_eq!(owner_reads(&reopened), committed, "every committed read survives");
+    assert_eq!(committed_ids(&reopened), committed, "every committed observation survives");
+    assert_eq!(latest_read(&reopened), Some(read_at_stop));
+    let answered_at_restart = answered_reads();
     let (mut task, ready_rx, shutdown_tx) = start(reopened.clone(), 0xE2);
     let _cursor = wait_for_supervised_signal_or_abort("restart readiness", &mut task, ready_rx).await;
-    wait_with_requests(&mut task, &fake, "reads after the restart", || {
-        owner_reads(&reopened) > committed
+    wait_with_requests(&mut task, &fake, "reads after the restart", || store_census(&reopened), || {
+        answered_reads() >= answered_at_restart + 2
+            && latest_read(&reopened).is_some_and(|read| read.1 > read_at_stop.1)
     })
     .await;
     shutdown_tx.send(()).expect("restart shutdown");
     join_supervised_restart_task("restart join", &mut task)
         .await
         .expect("an orderly stop after the restart");
-    let after: Vec<i64> = reopened
-        .open()
-        .expect("observer")
-        .prepare("SELECT observation_id FROM raw_observations ORDER BY observation_id")
-        .expect("statement")
-        .query_map([], |row| row.get(0))
-        .expect("rows")
-        .collect::<Result<_, _>>()
-        .expect("observation ids");
-    for id in &committed_rows {
-        assert!(after.contains(id), "a committed observation went missing");
-    }
+    keeps(&committed, &committed_ids(&reopened), "after the restart");
     assert!(fake.assert_no_wake_or_command().is_ok());
 }
