@@ -206,10 +206,18 @@ fn peer_identity(stream: &UnixStream) -> Result<(u32, i32), OperatorRefusal> {
     let clone = stream
         .try_clone()
         .map_err(|_| failed("could not be inspected"))?;
+    // Tokio registers only non-blocking sockets. The clone shares the
+    // stream's open file description, so blocking mode is restored after.
+    clone
+        .set_nonblocking(true)
+        .map_err(|_| failed("could not be inspected"))?;
     let credentials = with_reactor(|| {
         tokio::net::UnixStream::from_std(clone).and_then(|peer| peer.peer_cred())
-    })?
-    .map_err(|_| unauthenticated("cannot be identified"))?;
+    });
+    stream
+        .set_nonblocking(false)
+        .map_err(|_| failed("could not be inspected"))?;
+    let credentials = credentials?.map_err(|_| unauthenticated("cannot be identified"))?;
     let pid = credentials
         .pid()
         .filter(|pid| *pid > 0)
