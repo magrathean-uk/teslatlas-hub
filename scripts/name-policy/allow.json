@@ -6565,6 +6565,66 @@
       "reason": "Imported package text kept unchanged; names a legacy source or its import values.",
       "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26",
       "authority": "DEC-074 (REPO-01 import of the archived satellite repositories)"
+    },
+    {
+      "id": "deprecated-alias-verb-source-check",
+      "class": "deprecated-alias",
+      "paths": [
+        "src/runtime/legacy_names.rs"
+      ],
+      "max_count": 1,
+      "expires": "G2-9",
+      "review_by": "2027-01-31",
+      "reason": "Earlier verb kept as a hidden alias of source-check, with a stderr warning.",
+      "authority": "DEC-032 item 5; M05-T05",
+      "recorded_row": "2026-11-11 M05-T05: hidden deprecated alias, removal is a BACKLOG item for the next release",
+      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26",
+      "match_b64": "InRlc2xhbWF0ZS1jaGVjayI="
+    },
+    {
+      "id": "deprecated-alias-config-table-import-source",
+      "class": "deprecated-alias",
+      "paths": [
+        "src/runtime/legacy_names.rs"
+      ],
+      "max_count": 1,
+      "expires": "G2-9",
+      "review_by": "2027-01-31",
+      "reason": "Earlier configuration table kept as a hidden alias of [import_source], with a stderr warning.",
+      "authority": "DEC-032 item 5; M05-T05",
+      "recorded_row": "2026-11-11 M05-T05: hidden deprecated alias, removal is a BACKLOG item for the next release",
+      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26",
+      "match_b64": "PSAidGVzbGFtYXRlIjs="
+    },
+    {
+      "id": "deprecated-alias-verb-source-check-guide",
+      "class": "deprecated-alias",
+      "paths": [
+        "docs/guides/cli.md"
+      ],
+      "max_count": 1,
+      "expires": "G2-9",
+      "review_by": "2027-01-31",
+      "reason": "The CLI guide names the deprecated verb so operators can find its replacement.",
+      "authority": "DEC-032 item 5; M05-T05",
+      "recorded_row": "2026-11-11 M05-T05: hidden deprecated alias, removal is a BACKLOG item for the next release",
+      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26",
+      "match_b64": "ZWFybGllciB2ZXJiIGB0ZXNsYW1hdGUtY2hlY2tg"
+    },
+    {
+      "id": "deprecated-alias-config-table-guide",
+      "class": "deprecated-alias",
+      "paths": [
+        "docs/guides/configuration.md"
+      ],
+      "max_count": 1,
+      "expires": "G2-9",
+      "review_by": "2027-01-31",
+      "reason": "The configuration guide names the deprecated table so operators can find its replacement.",
+      "authority": "DEC-032 item 5; M05-T05",
+      "recorded_row": "2026-11-11 M05-T05: hidden deprecated alias, removal is a BACKLOG item for the next release",
+      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26",
+      "match_b64": "dGFibGUgbmFtZSBgW3Rlc2xhbWF0ZV1g"
     }
   ],
   "extra_patterns_b64": [
@@ -6580,6 +6640,7 @@
         "scripts/name-policy/allow.json",
         "scripts/name-policy/test_name_policy.py",
         "scripts/verify-name-policy.py",
+        "src/application/main/n1_cli_report_tests.rs",
         "src/auth/credential_recovery/tests.rs",
         "src/auth/credential_recovery/tests/g24_m2_recovery.rs",
         "src/import/source_db/direct.rs",
@@ -6588,7 +6649,11 @@
         "src/import/source_db/parity.rs",
         "src/import/source_db/projection_state.rs",
         "src/import/source_db/stage.rs",
+        "src/runtime/config.rs",
+        "src/runtime/config/tests/n1.rs",
         "src/runtime/mod.rs",
+        "src/runtime/operator/cli.rs",
+        "src/runtime/operator/tests.rs",
         "src/storage/db/tests/observations_and_import_setup.rs",
         "src/sync/updates_delivery.rs"
       ],

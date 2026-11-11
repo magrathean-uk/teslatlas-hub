@@ -403,7 +403,10 @@ pub enum Command {
     Status,
     /// Validate one source database, connection, and selected-car inventory without mutating source database or Hub.
     #[cfg(unix)]
-    #[command(name = "source-check")]
+    #[command(
+        name = "source-check",
+        alias = crate::runtime::legacy_names::DEPRECATED_VERB_SOURCE_CHECK
+    )]
     SourceCheck {
         /// Password-free PostgreSQL URL. Password is read from a file or stdin.
         #[arg(long)]
@@ -719,6 +722,28 @@ pub fn geofence_session_fee_help() -> String {
 pub const IMPORT_COMMAND_HINT: &str = "Import checks use source-check; see docs/guides/cli.md.";
 pub const SCHEMA_FLAG_DEPRECATION: &str = "--acknowledge-v4-2-compatible-schema is deprecated; use --accept-schema-evidence. The alias will be removed in a later version.";
 
+/// The one-line warning for the earlier name of `source-check`.
+pub fn verb_deprecation() -> String {
+    format!(
+        "{} is deprecated; use source-check. The alias will be removed in a later version.",
+        crate::runtime::legacy_names::DEPRECATED_VERB_SOURCE_CHECK
+    )
+}
+
+/// The subcommand word of an argument list: the first word after the program
+/// name that is neither an option nor the value of `--config`.
+fn subcommand_token(arguments: &[std::ffi::OsString]) -> Option<&std::ffi::OsStr> {
+    let mut words = arguments.iter().skip(1);
+    while let Some(word) = words.next() {
+        if word == "--config" {
+            words.next();
+        } else if !word.to_string_lossy().starts_with('-') {
+            return Some(word.as_os_str());
+        }
+    }
+    None
+}
+
 impl Cli {
     pub fn try_parse_from<I, T>(arguments: I) -> Result<Self, clap::Error>
     where
@@ -748,12 +773,22 @@ impl Cli {
             .into_iter()
             .map(Into::into)
             .collect::<Vec<std::ffi::OsString>>();
-        let deprecated = arguments
+        let schema_flag_used = arguments
             .iter()
             .any(|argument| argument == "--acknowledge-v4-2-compatible-schema");
+        let verb_used = subcommand_token(&arguments).is_some_and(|token| {
+            token == crate::runtime::legacy_names::DEPRECATED_VERB_SOURCE_CHECK
+        });
         let cli = Self::try_parse_from(arguments)?;
-        if deprecated {
-            writeln!(stderr, "{SCHEMA_FLAG_DEPRECATION}")
+        let mut warnings = Vec::new();
+        if verb_used {
+            warnings.push(verb_deprecation());
+        }
+        if schema_flag_used {
+            warnings.push(SCHEMA_FLAG_DEPRECATION.to_owned());
+        }
+        for warning in warnings {
+            writeln!(stderr, "{warning}")
                 .map_err(|error| clap::Error::raw(clap::error::ErrorKind::Io, error))?;
         }
         Ok(cli)

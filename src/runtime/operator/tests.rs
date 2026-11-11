@@ -1026,3 +1026,114 @@ fn refused_credential_purge_is_forwarded_lists_without_confirmation_and_waits_fo
         "the purge reached the backend once, after the window closed"
     );
 }
+
+// Deprecated aliases (M05-T05). Names carry `deprecated_alias` so the
+// milestone's filter runs them. An alias only maps an earlier name to a
+// command that still exists; inputs removed on purpose stay refused.
+
+const EARLIER_CHECK_VERB: &str = crate::runtime::legacy_names::DEPRECATED_VERB_SOURCE_CHECK;
+
+fn check_arguments(command: &str, flag: &str) -> Vec<String> {
+    let mut arguments = [
+        "teslatlas-hub",
+        command,
+        "--source",
+        "postgresql://reader@source.example/sourcedb",
+        "--car-id",
+        "42",
+        "--postgres-password-file",
+        "fictional-password",
+        flag,
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<Vec<_>>();
+    if command == "migrate" {
+        arguments.extend(["--history-only".to_owned(), "--online-snapshot".to_owned()]);
+    }
+    arguments
+}
+
+#[test]
+fn deprecated_alias_schema_flag_works_warns_and_is_hidden() {
+    for command in ["source-check", "migrate"] {
+        let mut warnings = Vec::new();
+        let cli = Cli::parse_with_schema_warning(
+            check_arguments(command, "--acknowledge-v4-2-compatible-schema"),
+            &mut warnings,
+        )
+        .expect("the earlier flag parses");
+        match cli.command {
+            Command::SourceCheck { accept_schema_evidence, .. }
+            | Command::Migrate { accept_schema_evidence, .. } => assert!(accept_schema_evidence),
+            _ => panic!("wrong command"),
+        }
+        let warnings = String::from_utf8(warnings).expect("utf8");
+        assert_eq!(warnings.lines().count(), 1, "{warnings}");
+        assert!(warnings.contains("--accept-schema-evidence"));
+        assert!(warnings.contains("a later version"));
+        let help = Cli::try_parse_from(["teslatlas-hub", command, "--help"])
+            .unwrap_err()
+            .to_string();
+        assert!(help.contains("--accept-schema-evidence"));
+        assert!(!help.contains("--acknowledge-v4-2-compatible-schema"));
+    }
+}
+
+#[test]
+fn deprecated_alias_check_verb_works_warns_once_and_is_hidden() {
+    let mut earlier = check_arguments("source-check", "--accept-schema-evidence");
+    earlier[1] = EARLIER_CHECK_VERB.to_owned();
+    for with_config in [false, true] {
+        let mut arguments = earlier.clone();
+        if with_config {
+            arguments.splice(1..1, ["--config".to_owned(), "fictional.toml".to_owned()]);
+        }
+        let mut warnings = Vec::new();
+        let cli = Cli::parse_with_schema_warning(arguments, &mut warnings)
+            .expect("the earlier verb parses");
+        assert!(matches!(
+            cli.command,
+            Command::SourceCheck { car_id: 42, accept_schema_evidence: true, .. }
+        ));
+        assert_eq!(cli.config.is_some(), with_config);
+        let warnings = String::from_utf8(warnings).expect("utf8");
+        assert_eq!(warnings.lines().count(), 1, "{warnings}");
+        assert!(warnings.contains(EARLIER_CHECK_VERB));
+        assert!(warnings.contains("use source-check"));
+        assert!(warnings.contains("a later version"));
+    }
+    // The verb and the earlier flag each warn once, together.
+    let mut warnings = Vec::new();
+    Cli::parse_with_schema_warning(
+        check_arguments(EARLIER_CHECK_VERB, "--acknowledge-v4-2-compatible-schema"),
+        &mut warnings,
+    )
+    .expect("both earlier names parse");
+    assert_eq!(String::from_utf8(warnings).expect("utf8").lines().count(), 2);
+    // The current name stays silent, and the earlier verb is not in help.
+    let mut warnings = Vec::new();
+    Cli::parse_with_schema_warning(
+        check_arguments("source-check", "--accept-schema-evidence"),
+        &mut warnings,
+    )
+    .expect("current name parses");
+    assert!(warnings.is_empty());
+    let help = Cli::try_parse_from(["teslatlas-hub", "--help"]).unwrap_err().to_string();
+    assert!(help.contains("source-check"));
+    assert!(!help.contains(EARLIER_CHECK_VERB), "{help}");
+    let command_help = Cli::try_parse_from(["teslatlas-hub", "source-check", "--help"])
+        .unwrap_err()
+        .to_string();
+    assert!(!command_help.contains(EARLIER_CHECK_VERB), "{command_help}");
+}
+
+#[test]
+fn deprecated_alias_check_verb_keeps_removed_inputs_refused() {
+    for removed in ["--access-token-file", "--refresh-token-file", "--encryption-key-file"] {
+        let mut arguments = check_arguments(EARLIER_CHECK_VERB, "--accept-schema-evidence");
+        arguments.extend([removed.to_owned(), "fictional-token".to_owned()]);
+        let error = Cli::try_parse_from(arguments).unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument, "{removed}");
+    }
+}

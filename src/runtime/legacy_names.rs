@@ -25,6 +25,15 @@ pub const STAGE_LOGICAL_CONTENT_V1: &str = "teslatlas-hub/teslamate-stage/logica
 pub const STATE_TEXT_EVIDENCE_V1: &str = "teslatlas-hub/teslamate-state-text-evidence/v1";
 pub const V4_UPDATES_RECEIPT_V1: &str = "teslatlas-teslamate-v4-updates-receipt-v1";
 
+/// Earlier operator-facing names that stay accepted as hidden, deprecated
+/// aliases until G2-9 (M05-T05). Each maps to a command or key that still
+/// exists; nothing here revives a removed input.
+///
+/// The earlier name of `source-check`.
+pub const DEPRECATED_VERB_SOURCE_CHECK: &str = "teslamate-check";
+/// The earlier name of the `[import_source]` configuration table.
+pub const DEPRECATED_CONFIG_TABLE_IMPORT_SOURCE: &str = "teslamate";
+
 pub const PARITY_PRESERVED_KEY: &str = "allTeslamateFieldsPreserved";
 pub const RECOVERY_PREVIOUS_KEY: &str = "teslamateKeyIncluded";
 
