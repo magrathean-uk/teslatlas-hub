@@ -4,8 +4,13 @@
 //!
 //! Issuance holds one exclusive lock from the overlap check through the
 //! reservation, signing and publication. A reservation is appended and synced
-//! before signing; if publication fails the reservation keeps blocking
-//! overlaps until an explicit void entry. After every append the ledger head
+//! before signing and keeps blocking overlaps. It can be voided only after an
+//! `unpublished` entry, which issuance appends when it has established that
+//! the signed grant never reached the output path and no staged copy of it
+//! remains. Once the grant is renamed into place it is published, whatever
+//! happens next (a failed directory sync, a crash before `issued` is
+//! appended): such a reservation is never voidable and blocks its interval
+//! until that interval has passed. After every append the ledger head
 //! is pinned in the login keychain (through `AnchorStore`); a ledger whose
 //! head neither matches nor extends the pin refuses issuance, which detects a
 //! copied older ledger. The private key stays in 1Password and is read from a
@@ -58,6 +63,11 @@ pub enum IssuerEntry {
         seq: u64,
         at: i64,
     },
+    /// The grant for `seq` was never published and no copy of it remains.
+    Unpublished {
+        seq: u64,
+        at: i64,
+    },
     Void {
         seq: u64,
         why: String,
@@ -80,6 +90,36 @@ pub struct Issuer {
     host_id: String,
     anchor: Arc<dyn AnchorStore>,
     clock: Arc<dyn WindowClock>,
+    #[cfg(test)]
+    fault: std::sync::Mutex<Option<PublishFault>>,
+}
+
+/// Failures the tests inject into publication.
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PublishFault {
+    /// The process dies after the rename, before `issued` is appended.
+    CrashAfterRename,
+    /// The directory sync after the rename fails.
+    DirSyncFails,
+}
+
+/// What publication established.
+enum Publication {
+    /// The grant is at the output path; `durable` is false when the
+    /// directory sync failed.
+    Published { durable: bool },
+    /// The grant never reached the output path and no staged copy remains.
+    NotPublished,
+    /// A staged copy may remain: treat it as published.
+    Unknown,
+}
+
+fn remove_staged(path: &Path) -> bool {
+    match fs::remove_file(path) {
+        Ok(()) => true,
+        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+    }
 }
 
 struct Opened {
@@ -102,7 +142,42 @@ impl Issuer {
             host_id: host_id.to_owned(),
             anchor,
             clock,
+            #[cfg(test)]
+            fault: std::sync::Mutex::new(None),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inject(&self, fault: PublishFault) {
+        *self.fault.lock().expect("fault lock") = Some(fault);
+    }
+
+    #[cfg(test)]
+    fn take_fault(&self, fault: PublishFault) -> bool {
+        let mut slot = self.fault.lock().expect("fault lock");
+        if *slot == Some(fault) {
+            *slot = None;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Stages, renames and syncs the grant file, and says what is known.
+    fn publish(&self, out_path: &Path, bytes: &[u8]) -> Publication {
+        let staged = ledger::temp_path(out_path);
+        if ledger::write_temp(out_path, bytes).is_err() || fs::rename(&staged, out_path).is_err() {
+            // A failed rename leaves the output path untouched.
+            return if remove_staged(&staged) {
+                Publication::NotPublished
+            } else {
+                Publication::Unknown
+            };
+        }
+        let synced = ledger::sync_parent(out_path).is_ok();
+        #[cfg(test)]
+        let synced = synced && !self.take_fault(PublishFault::DirSyncFails);
+        Publication::Published { durable: synced }
     }
 
     /// The one canonical ledger directory (ruling R2); the operator verb takes
@@ -350,26 +425,57 @@ impl Issuer {
         )
         .map_err(|_| Refusal::Io)?;
         self.pin(&opened.key_id, &reserved)?;
-        let grant = SignedGrant::sign(body, &opened.key)?;
-        let publish = grant.to_bytes().and_then(|bytes| {
-            ledger::write_atomic(out_path, &bytes).map_err(|_| Refusal::PublicationFailed)
-        });
-        publish?;
-        let issued = ledger::append(&self.ledger_path(), IssuerEntry::Issued { seq, at: now })
-            .map_err(|_| Refusal::PublicationFailed)?;
-        self.pin(&opened.key_id, &issued)?;
-        Ok(grant)
+        let signed = SignedGrant::sign(body, &opened.key)
+            .and_then(|grant| grant.to_bytes().map(|bytes| (grant, bytes)));
+        let (grant, publication) = match signed {
+            Ok((grant, bytes)) => {
+                let publication = self.publish(out_path, &bytes);
+                (Some(grant), publication)
+            }
+            Err(_) => (None, Publication::NotPublished),
+        };
+        match publication {
+            Publication::NotPublished => {
+                // Only now may the reservation be voided. If this append
+                // fails it stays non-voidable, which is safe.
+                if let Ok(line) = ledger::append(
+                    &self.ledger_path(),
+                    IssuerEntry::Unpublished { seq, at: now },
+                ) {
+                    let _ = self.pin(&opened.key_id, &line);
+                }
+                Err(Refusal::PublicationFailed)
+            }
+            Publication::Unknown => Err(Refusal::PublicationFailed),
+            Publication::Published { durable } => {
+                #[cfg(test)]
+                if self.take_fault(PublishFault::CrashAfterRename) {
+                    return Err(Refusal::PublicationFailed);
+                }
+                let issued =
+                    ledger::append(&self.ledger_path(), IssuerEntry::Issued { seq, at: now })
+                        .map_err(|_| Refusal::PublicationFailed)?;
+                self.pin(&opened.key_id, &issued)?;
+                match (durable, grant) {
+                    (true, Some(grant)) => Ok(grant),
+                    _ => Err(Refusal::PublicationFailed),
+                }
+            }
+        }
     }
 
-    /// Voids a reservation whose publication failed, releasing its interval.
-    /// A grant that was published cannot be voided.
+    /// Voids a reservation whose publication is known to have failed,
+    /// releasing its interval. A grant that was or may have been published
+    /// (no `unpublished` entry) cannot be voided.
     pub fn void(&self, key_path: &Path, seq: u64, why: &str) -> Result<(), Refusal> {
         let _lock = FileLock::acquire(&self.lock_path(), LockMode::Exclusive, true)?;
         let opened = self.open_ledger(key_path)?;
         let mut reserved = false;
+        let mut unpublished = false;
         for line in &opened.lines {
             match &line.entry {
                 IssuerEntry::Reserved { seq: s, .. } if *s == seq => reserved = true,
+                IssuerEntry::Unpublished { seq: s, .. } if *s == seq => unpublished = true,
                 IssuerEntry::Issued { seq: s, .. } | IssuerEntry::Void { seq: s, .. }
                     if *s == seq =>
                 {
@@ -380,6 +486,9 @@ impl Issuer {
         }
         if !reserved {
             return Err(Refusal::VoidTarget);
+        }
+        if !unpublished {
+            return Err(Refusal::PossiblyPublished);
         }
         let line = ledger::append(
             &self.ledger_path(),

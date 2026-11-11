@@ -91,6 +91,8 @@ pub enum Refusal {
     IssuerExists,
     #[error("void target is not a reservation")]
     VoidTarget,
+    #[error("the reservation's grant may have been published")]
+    PossiblyPublished,
 }
 
 impl Refusal {
@@ -138,6 +140,7 @@ impl Refusal {
             Self::PublicationFailed => "publication_failed",
             Self::IssuerExists => "issuer_exists",
             Self::VoidTarget => "void_target",
+            Self::PossiblyPublished => "possibly_published",
         }
     }
 }

@@ -17,17 +17,25 @@ use super::{CLOCK_FLOOR_EPOCH_SECONDS, DRIFT_TOLERANCE_SECONDS, refusal::Refusal
 pub trait WindowClock: Send + Sync + std::fmt::Debug {
     /// Wall time, whole seconds since the Unix epoch.
     fn wall(&self) -> i64;
-    /// Monotonic seconds from an arbitrary origin fixed per process. The
-    /// system clock uses the platform's monotonic clock, which does not count
-    /// sleep (inferred for macOS; confirmed only through the injected clock):
-    /// monotonic time then runs slower than real time, so rollback detection
-    /// still holds while the Mac is awake and the wall deadline still bounds a
-    /// window across sleep.
+    /// Monotonic seconds. Within one process it never runs back.
     fn mono(&self) -> u64;
+    /// Whether `mono` is boot-scoped and counts sleep: one origin for the
+    /// whole boot, so a reading taken before a process restart stays
+    /// comparable after it, and time asleep is counted. Only then can an Open
+    /// window keep its original monotonic deadline across a restart; when it
+    /// is false, an Open window closes `clock_invalid` at restart (fail
+    /// closed).
+    fn mono_boot_scoped(&self) -> bool;
     /// The boot time as Unix seconds; it differs after a reboot.
     fn boot_time(&self) -> Result<i64, Refusal>;
 }
 
+/// The system clock. Its monotonic reading is `std::time::Instant`, which is
+/// process-scoped and, on macOS, does not count sleep: within a process the
+/// wall deadline still bounds a window across sleep, but an Open window cannot
+/// survive a restart on it and closes `clock_invalid`. A boot-scoped,
+/// sleep-counting source (Darwin `CLOCK_MONOTONIC`, Linux `CLOCK_BOOTTIME`)
+/// needs a safe binding the crate does not enable yet.
 #[derive(Debug)]
 pub struct SystemClock {
     origin: Instant,
@@ -59,6 +67,10 @@ impl WindowClock for SystemClock {
         self.origin.elapsed().as_secs()
     }
 
+    fn mono_boot_scoped(&self) -> bool {
+        false
+    }
+
     fn boot_time(&self) -> Result<i64, Refusal> {
         let output = Command::new("/usr/sbin/sysctl")
             .args(["-n", "kern.boottime"])
@@ -79,7 +91,8 @@ pub(crate) fn parse_boot_time(text: &str) -> Option<i64> {
     digits.parse().ok()
 }
 
-/// A clock the tests step by hand.
+/// A clock the tests step by hand. Its monotonic reading models a
+/// boot-scoped, sleep-counting clock: a process restart does not move it.
 #[derive(Debug)]
 pub struct ManualClock {
     inner: Mutex<ManualClockState>,
@@ -90,6 +103,7 @@ struct ManualClockState {
     wall: i64,
     mono: u64,
     boot: i64,
+    boot_scoped: bool,
 }
 
 impl ManualClock {
@@ -99,6 +113,7 @@ impl ManualClock {
                 wall,
                 mono: 1_000,
                 boot: wall - 10_000,
+                boot_scoped: true,
             }),
         }
     }
@@ -119,9 +134,14 @@ impl ManualClock {
         self.inner.lock().expect("clock lock").boot = boot;
     }
 
-    /// A restart of the process: the monotonic origin changes, wall does not.
-    pub fn reset_mono(&self, mono: u64) {
+    /// Sets the monotonic reading, to model a source that runs back.
+    pub fn set_mono(&self, mono: u64) {
         self.inner.lock().expect("clock lock").mono = mono;
+    }
+
+    /// Models a process-scoped monotonic source (its origin is per process).
+    pub fn set_boot_scoped(&self, boot_scoped: bool) {
+        self.inner.lock().expect("clock lock").boot_scoped = boot_scoped;
     }
 }
 
@@ -132,6 +152,10 @@ impl WindowClock for ManualClock {
 
     fn mono(&self) -> u64 {
         self.inner.lock().expect("clock lock").mono
+    }
+
+    fn mono_boot_scoped(&self) -> bool {
+        self.inner.lock().expect("clock lock").boot_scoped
     }
 
     fn boot_time(&self) -> Result<i64, Refusal> {
@@ -149,13 +173,21 @@ pub enum ClockVerdict {
 /// The hard-expiry guard (design 2.6). The deadline is the wall `expires_at`
 /// and, equally, the open reading plus the authorised remainder on the
 /// monotonic clock, so stepping the wall clock back cannot extend a window.
-/// The watermark is the highest wall time seen.
+/// The monotonic deadline is fixed when the window opens and persisted; a
+/// restart restores it rather than computing a new one. The watermark is the
+/// highest wall time seen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClockGuard {
     pub anchor_wall: i64,
     pub anchor_mono: u64,
     pub deadline_wall: i64,
+    pub deadline_mono: u64,
     pub watermark: i64,
+}
+
+/// The monotonic deadline for a window anchored at (`wall`, `mono`).
+pub fn deadline_mono_for(wall: i64, mono: u64, deadline_wall: i64) -> u64 {
+    mono.saturating_add((deadline_wall - wall).max(0) as u64)
 }
 
 impl ClockGuard {
@@ -166,12 +198,13 @@ impl ClockGuard {
             anchor_wall: wall,
             anchor_mono: mono,
             deadline_wall,
+            deadline_mono: deadline_mono_for(wall, mono, deadline_wall),
             watermark: watermark.max(wall),
         }
     }
 
     pub fn deadline_mono(&self) -> u64 {
-        self.anchor_mono + (self.deadline_wall - self.anchor_wall).max(0) as u64
+        self.deadline_mono
     }
 
     /// Checks one reading and advances the watermark when it passes.
@@ -185,7 +218,7 @@ impl ClockGuard {
             return ClockVerdict::Invalid;
         }
         self.watermark = self.watermark.max(wall);
-        if wall >= self.deadline_wall || mono >= self.deadline_mono() {
+        if wall >= self.deadline_wall || mono >= self.deadline_mono {
             ClockVerdict::Expired
         } else {
             ClockVerdict::Ok

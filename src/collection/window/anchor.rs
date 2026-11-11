@@ -19,6 +19,7 @@ pub trait AnchorStore: Send + Sync {
 pub struct MemoryAnchor {
     values: Mutex<HashMap<String, String>>,
     fail_writes: Mutex<bool>,
+    fail_reads: Mutex<bool>,
 }
 
 impl MemoryAnchor {
@@ -30,10 +31,23 @@ impl MemoryAnchor {
     pub fn set_fail_writes(&self, fail: bool) {
         *self.fail_writes.lock().expect("anchor lock") = fail;
     }
+
+    /// Makes later reads fail, to test an unreadable anchor.
+    pub fn set_fail_reads(&self, fail: bool) {
+        *self.fail_reads.lock().expect("anchor lock") = fail;
+    }
+
+    /// Forgets a value, to test a missing anchor.
+    pub fn remove(&self, name: &str) {
+        self.values.lock().expect("anchor lock").remove(name);
+    }
 }
 
 impl AnchorStore for MemoryAnchor {
     fn read(&self, name: &str) -> Result<Option<String>, Refusal> {
+        if *self.fail_reads.lock().expect("anchor lock") {
+            return Err(Refusal::AnchorUnavailable);
+        }
         Ok(self.values.lock().expect("anchor lock").get(name).cloned())
     }
 

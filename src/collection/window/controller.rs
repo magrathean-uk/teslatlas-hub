@@ -19,7 +19,7 @@ use super::{
     NTP_MAX_OFFSET_SECONDS, NTP_RECHECK_SECONDS, SUPERVISOR_POLL_SECONDS,
     anchor::AnchorStore,
     claim::{FileLock, HostClaim, LockMode},
-    clock::{ClockGuard, ClockVerdict, OffsetProbe, WindowClock},
+    clock::{ClockGuard, ClockVerdict, OffsetProbe, WindowClock, deadline_mono_for},
     gate::EgressGate,
     grant::{SignedGrant, TrustDocument},
     ledger::Line,
@@ -201,10 +201,10 @@ impl WindowController {
             faulted: inner.fault,
             phase: state.phase,
             close_reason: state.close_reason,
-            seq: state.grant.as_ref().map(|grant| grant.seq),
+            seq: state.grant.as_ref().map(|grant| grant.body.seq),
             grant_digest: state.grant_digest.clone(),
-            starts_at: state.grant.as_ref().map(|grant| grant.starts_at),
-            deadline: state.grant.as_ref().map(|grant| grant.expires_at),
+            starts_at: state.grant.as_ref().map(|grant| grant.body.starts_at),
+            deadline: state.grant.as_ref().map(|grant| grant.body.expires_at),
             opened_at: state.opened_at,
             closing_at: state.closing_at,
             last_handback: inner.last_handback.clone(),
@@ -366,16 +366,19 @@ impl WindowController {
             self.seal_orphan(body.seq, &digest, None, wall);
             return Err(refusal);
         }
+        let guard = ClockGuard::anchored(wall, mono, body.expires_at, wall);
         inner.state = WindowState {
             phase: Phase::Pending,
-            grant: Some(body.clone()),
+            grant: Some(grant.clone()),
             grant_digest: Some(digest.clone()),
             boot_time,
             anchor_wall: wall,
+            anchor_mono: mono,
+            deadline_mono: guard.deadline_mono,
             watermark: wall,
             ..WindowState::closed()
         };
-        inner.guard = Some(ClockGuard::anchored(wall, mono, body.expires_at, wall));
+        inner.guard = Some(guard);
         inner.claim = Some(claim);
         inner.last_ntp_mono = Some(mono);
         if let Err(refusal) = self.store.write_state(&inner.state) {
@@ -397,21 +400,24 @@ impl WindowController {
         let grant = inner
             .state
             .grant
-            .clone()
+            .as_ref()
+            .map(|grant| grant.body.clone())
             .ok_or(Refusal::StateUnverifiable)?;
         self.store.append(HubEntry::Opened {
             seq: grant.seq,
             at: wall,
+            mono,
         })?;
         inner.state.phase = Phase::Open;
         inner.state.opened_at = Some(wall);
-        inner.state.anchor_wall = wall;
         inner.state.watermark = inner.state.watermark.max(wall);
         let guard = ClockGuard::anchored(wall, mono, grant.expires_at, inner.state.watermark);
-        let deadline_mono = guard.deadline_mono();
+        inner.state.anchor_wall = wall;
+        inner.state.anchor_mono = mono;
+        inner.state.deadline_mono = guard.deadline_mono;
         inner.guard = Some(guard);
         self.store.write_state(&inner.state)?;
-        self.gate.open(grant.expires_at, deadline_mono);
+        self.gate.open(grant.expires_at, guard.deadline_mono);
         Ok(())
     }
 
@@ -457,6 +463,13 @@ impl WindowController {
         }
         let wall = self.clock.wall();
         let mono = self.clock.mono();
+        // Expiry the gate has seen is final, whatever the clock reads now.
+        if phase == Phase::Open
+            && let Some(observed) = self.gate.expiry_observed()
+        {
+            self.begin_close(&mut inner, CloseReason::Expired, observed);
+            return Ok(inner.state.phase);
+        }
         let Some(mut guard) = inner.guard else {
             self.begin_close(&mut inner, CloseReason::StateUnverifiable, wall);
             return Ok(inner.state.phase);
@@ -488,7 +501,7 @@ impl WindowController {
             .state
             .grant
             .as_ref()
-            .map_or(i64::MAX, |grant| grant.starts_at);
+            .map_or(i64::MAX, |grant| grant.body.starts_at);
         if phase == Phase::Pending && wall >= starts_at {
             if self.enter_open(&mut inner, wall, mono).is_err() {
                 self.begin_close(&mut inner, CloseReason::StateUnverifiable, wall);
@@ -555,7 +568,8 @@ impl WindowController {
         let grant = inner
             .state
             .grant
-            .clone()
+            .as_ref()
+            .map(|grant| grant.body.clone())
             .ok_or(Refusal::StateUnverifiable)?;
         let reason = inner
             .state
@@ -619,14 +633,24 @@ impl WindowController {
 
     // ---- resume ----------------------------------------------------------
 
+    /// Marks the store unverifiable: the gate stays shut, nothing is written,
+    /// and every open is refused until `window trust` is rerun with a newer
+    /// epoch. The in-memory phase reads Closed so no collector starts.
+    fn fault_locked(&self, inner: &mut Inner) -> ResumeOutcome {
+        self.gate.close();
+        inner.fault = true;
+        inner.guard = None;
+        inner.claim = None;
+        let mut state = WindowState::closed();
+        state.close_reason = Some(CloseReason::StateUnverifiable);
+        inner.state = state;
+        ResumeOutcome::Faulted
+    }
+
     fn resume_locked(&self, inner: &mut Inner) -> ResumeOutcome {
         let loaded = match self.store.load() {
             Ok(loaded) => loaded,
-            Err(_) => {
-                inner.fault = true;
-                self.gate.close();
-                return ResumeOutcome::Faulted;
-            }
+            Err(_) => return self.fault_locked(inner),
         };
         if loaded.trust.is_none() {
             return ResumeOutcome::Fresh;
@@ -650,19 +674,137 @@ impl WindowController {
         match inner.state.phase {
             Phase::Closed => ResumeOutcome::Closed,
             Phase::Closing => {
+                if self.verify_persisted(inner, &loaded).is_err() {
+                    return self.fault_locked(inner);
+                }
                 let reason = inner
                     .state
                     .close_reason
                     .unwrap_or(CloseReason::StateUnverifiable);
                 match self.finish_close_locked(inner) {
                     Ok(_) => ResumeOutcome::ClosedAtStart(reason),
-                    Err(_) => {
-                        inner.fault = true;
-                        ResumeOutcome::Faulted
-                    }
+                    Err(_) => self.fault_locked(inner),
                 }
             }
-            Phase::Pending | Phase::Open => self.resume_active(inner, wall, mono),
+            Phase::Pending | Phase::Open => {
+                if self.verify_persisted(inner, &loaded).is_err() {
+                    return self.fault_locked(inner);
+                }
+                match self.verify_anchor(inner) {
+                    Ok(()) => self.resume_active(inner, wall, mono),
+                    // The authority cannot be checked now: close, keep the
+                    // store, and let a later open check the anchor again.
+                    Err(Refusal::AnchorUnavailable) => {
+                        self.close_at_start(inner, CloseReason::StateUnverifiable, wall)
+                    }
+                    // A restored or otherwise superseded window.
+                    Err(_) => self.fault_locked(inner),
+                }
+            }
+        }
+    }
+
+    /// Checks a persisted Pending, Open or Closing state against the trust
+    /// record and the Hub ledger. The signed grant must verify for this host
+    /// and trust epoch and match the recorded digest; the ledger's last
+    /// consumption must be this grant; Pending and Open must have no close
+    /// after it, a monotonic deadline that follows from the anchor and the
+    /// signed expiry, and, when Open, an `opened` line repeating the anchor.
+    /// A parseable but inconsistent state is refused.
+    fn verify_persisted(&self, inner: &Inner, loaded: &Loaded) -> Result<(), Refusal> {
+        let bad = Refusal::StateUnverifiable;
+        let trust = inner.trust.as_ref().ok_or(bad)?;
+        let state = &inner.state;
+        let grant = state.grant.as_ref().ok_or(bad)?;
+        let body = &grant.body;
+        if body.issuer_key_id != trust.document.issuer_key_id
+            || body.host_id != self.host_id
+            || body.trust_epoch != trust.document.trust_epoch
+        {
+            return Err(bad);
+        }
+        grant
+            .verify(&trust.document.verifying_key().map_err(|_| bad)?)
+            .map_err(|_| bad)?;
+        body.check_shape().map_err(|_| bad)?;
+        let digest = body.digest().map_err(|_| bad)?;
+        if state.grant_digest.as_deref() != Some(digest.as_str()) {
+            return Err(bad);
+        }
+        let index = loaded
+            .ledger
+            .iter()
+            .rposition(|line| matches!(line.entry, HubEntry::Consumed { .. }))
+            .ok_or(bad)?;
+        let HubEntry::Consumed {
+            seq,
+            grant_digest,
+            host_id,
+            starts_at,
+            expires_at,
+            ..
+        } = &loaded.ledger[index].entry
+        else {
+            return Err(bad);
+        };
+        if *seq != body.seq
+            || *grant_digest != digest
+            || *host_id != body.host_id
+            || *starts_at != body.starts_at
+            || *expires_at != body.expires_at
+        {
+            return Err(bad);
+        }
+        let after = &loaded.ledger[index + 1..];
+        let closed = after.iter().any(
+            |line| matches!(&line.entry, HubEntry::Closed { handback } if handback.seq == body.seq),
+        );
+        let opened = after.iter().rev().find_map(|line| match line.entry {
+            HubEntry::Opened { seq, at, mono } if seq == body.seq => Some((at, mono)),
+            _ => None,
+        });
+        let anchored = state.deadline_mono
+            == deadline_mono_for(state.anchor_wall, state.anchor_mono, body.expires_at);
+        let consistent = match state.phase {
+            Phase::Closed | Phase::Closing => true,
+            Phase::Pending => {
+                !closed && anchored && state.opened_at.is_none() && state.close_reason.is_none()
+            }
+            Phase::Open => {
+                !closed
+                    && anchored
+                    && state.close_reason.is_none()
+                    && state.opened_at == Some(state.anchor_wall)
+                    && opened == Some((state.anchor_wall, state.anchor_mono))
+            }
+        };
+        if consistent { Ok(()) } else { Err(bad) }
+    }
+
+    /// The consumption anchor outside the data directory must name this
+    /// trust epoch and this grant as the last one consumed. A newer epoch or
+    /// a later grant means the state was restored from before them; a
+    /// missing or unparseable anchor cannot vouch for it.
+    fn verify_anchor(&self, inner: &Inner) -> Result<(), Refusal> {
+        let trust = inner.trust.as_ref().ok_or(Refusal::StateUnverifiable)?;
+        let seq = inner
+            .state
+            .grant
+            .as_ref()
+            .map(|grant| grant.body.seq)
+            .ok_or(Refusal::StateUnverifiable)?;
+        let value = self
+            .anchor
+            .read(&self.anchor_name())?
+            .ok_or(Refusal::AnchorMissing)?;
+        let (epoch, anchored_seq) = parse_anchor(&value).ok_or(Refusal::AnchorMismatch)?;
+        if epoch != trust.document.trust_epoch {
+            return Err(Refusal::AnchorMismatch);
+        }
+        match anchored_seq.cmp(&seq) {
+            std::cmp::Ordering::Equal => Ok(()),
+            std::cmp::Ordering::Greater => Err(Refusal::GrantConsumed),
+            std::cmp::Ordering::Less => Err(Refusal::AnchorMismatch),
         }
     }
 
@@ -686,40 +828,73 @@ impl WindowController {
         }
     }
 
+    /// Resumes a verified Pending or Open window to its original deadlines.
+    /// Clock, boot, expiry, monotonic deadline, offset and claim are all
+    /// checked before the gate reopens; any failure closes the window.
     fn resume_active(&self, inner: &mut Inner, wall: i64, mono: u64) -> ResumeOutcome {
-        let Some(grant) = inner.state.grant.clone() else {
-            inner.fault = true;
-            return ResumeOutcome::Faulted;
+        let Some(grant) = inner.state.grant.as_ref().map(|grant| grant.body.clone()) else {
+            return self.fault_locked(inner);
         };
-        let reason = if wall < CLOCK_FLOOR_EPOCH_SECONDS
+        let phase = inner.state.phase;
+        if wall < CLOCK_FLOOR_EPOCH_SECONDS
             || wall + DRIFT_TOLERANCE_SECONDS < inner.state.watermark
         {
-            Some(CloseReason::ClockInvalid)
-        } else {
-            match self.clock.boot_time() {
-                Ok(boot) if (boot - inner.state.boot_time).abs() <= BOOT_TIME_TOLERANCE_SECONDS => {
-                }
-                Ok(_) => return self.close_at_start(inner, CloseReason::Reboot, wall),
-                Err(_) => return self.close_at_start(inner, CloseReason::ClockInvalid, wall),
+            return self.close_at_start(inner, CloseReason::ClockInvalid, wall);
+        }
+        match self.clock.boot_time() {
+            Ok(boot) if (boot - inner.state.boot_time).abs() <= BOOT_TIME_TOLERANCE_SECONDS => {}
+            Ok(_) => return self.close_at_start(inner, CloseReason::Reboot, wall),
+            Err(_) => return self.close_at_start(inner, CloseReason::ClockInvalid, wall),
+        }
+        if wall >= grant.expires_at {
+            return self.close_at_start(inner, CloseReason::Expired, wall);
+        }
+        let watermark = inner.state.watermark.max(wall);
+        let guard = if phase == Phase::Open {
+            // The original monotonic deadline holds only on a boot-scoped,
+            // sleep-counting clock that has not run back; otherwise the
+            // authorised remainder cannot be established and the window
+            // fails closed.
+            if !self.clock.mono_boot_scoped() || mono < inner.state.anchor_mono {
+                return self.close_at_start(inner, CloseReason::ClockInvalid, wall);
             }
-            (wall >= grant.expires_at).then_some(CloseReason::Expired)
+            let mut guard = ClockGuard {
+                anchor_wall: inner.state.anchor_wall,
+                anchor_mono: inner.state.anchor_mono,
+                deadline_wall: grant.expires_at,
+                deadline_mono: inner.state.deadline_mono,
+                watermark,
+            };
+            match guard.check(wall, mono) {
+                ClockVerdict::Ok => guard,
+                ClockVerdict::Expired => {
+                    return self.close_at_start(inner, CloseReason::Expired, wall);
+                }
+                ClockVerdict::Invalid => {
+                    return self.close_at_start(inner, CloseReason::ClockInvalid, wall);
+                }
+            }
+        } else {
+            // Pending: nothing was authorised yet; the guard is anchored now
+            // and again when the window opens.
+            let guard = ClockGuard::anchored(wall, mono, grant.expires_at, watermark);
+            inner.state.anchor_wall = wall;
+            inner.state.anchor_mono = mono;
+            inner.state.deadline_mono = guard.deadline_mono;
+            guard
         };
-        if let Some(reason) = reason {
-            return self.close_at_start(inner, reason, wall);
+        // The offset check completes before anything can reopen (R4).
+        if self.check_offset().is_err() {
+            return self.close_at_start(inner, CloseReason::ClockInvalid, wall);
         }
         match HostClaim::acquire(&self.claim_path) {
             Ok(claim) => inner.claim = Some(claim),
             Err(_) => return self.close_at_start(inner, CloseReason::ClaimLost, wall),
         }
-        // The deadline stays the original `expires_at`: the guard is anchored
-        // now with only what is left of the grant.
-        let watermark = inner.state.watermark.max(wall);
-        let guard = ClockGuard::anchored(wall, mono, grant.expires_at, watermark);
         inner.guard = Some(guard);
-        inner.last_ntp_mono = None;
-        inner.state.watermark = watermark;
-        inner.state.anchor_wall = wall;
-        if inner.state.phase == Phase::Open {
+        inner.last_ntp_mono = Some(mono);
+        inner.state.watermark = guard.watermark;
+        if phase == Phase::Open {
             let resumed = self.store.append(HubEntry::Resumed {
                 seq: grant.seq,
                 at: wall,
@@ -727,19 +902,18 @@ impl WindowController {
             if resumed.is_err() || self.store.write_state(&inner.state).is_err() {
                 return self.close_at_start(inner, CloseReason::StateUnverifiable, wall);
             }
-            self.gate.open(grant.expires_at, guard.deadline_mono());
+            self.gate.open(grant.expires_at, guard.deadline_mono);
+        } else if self.store.write_state(&inner.state).is_err() {
+            return self.close_at_start(inner, CloseReason::StateUnverifiable, wall);
         }
-        ResumeOutcome::Resumed(inner.state.phase)
+        ResumeOutcome::Resumed(phase)
     }
 
     fn close_at_start(&self, inner: &mut Inner, reason: CloseReason, wall: i64) -> ResumeOutcome {
         self.begin_close(inner, reason, wall);
         match self.finish_close_locked(inner) {
             Ok(_) => ResumeOutcome::ClosedAtStart(reason),
-            Err(_) => {
-                inner.fault = true;
-                ResumeOutcome::Faulted
-            }
+            Err(_) => self.fault_locked(inner),
         }
     }
 

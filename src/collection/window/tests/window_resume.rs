@@ -4,8 +4,9 @@ use std::{fs, sync::Arc};
 
 use super::support::*;
 use crate::collection::window::{
-    CloseReason, HandbackSource, HighWater, HostClaim, PermitKind, Phase, Provider, Refusal,
-    ResumeOutcome, Supervisor, WindowController,
+    AnchorStore, CloseReason, HandbackSource, HighWater, HostClaim, PermitKind, Phase, Provider,
+    Refusal, ResumeOutcome, SignedGrant, Supervisor, WindowController,
+    grant::GrantBody,
     state::{HubEntry, WindowStore},
 };
 
@@ -31,8 +32,7 @@ fn window_resume_carries_on_only_to_the_original_deadline() {
     let hub = open_hub(&rig, 0, 3600);
     rig.clock.advance(1000);
     drop(hub);
-    // A restart is a new process: the monotonic origin changes.
-    rig.clock.reset_mono(5);
+    // A restart is a new process on the same boot-scoped monotonic clock.
     let (hub, outcome) = rig.start_hub();
     assert_eq!(outcome, ResumeOutcome::Resumed(Phase::Open));
     assert_eq!(
@@ -231,7 +231,7 @@ impl Rig {
         state.phase = Phase::Closing;
         state.close_reason = Some(CloseReason::Expired);
         state.closing_at = Some(handback.closed_at);
-        state.grant = Some(crate::collection::window::GrantBody {
+        let body = crate::collection::window::GrantBody {
             format: crate::collection::window::grant::GRANT_FORMAT.to_owned(),
             issuer_key_id: self.trust.issuer_key_id.clone(),
             seq: handback.seq,
@@ -241,7 +241,8 @@ impl Rig {
             approver: "G".to_owned(),
             reason: "test window".to_owned(),
             trust_epoch: 1,
-        });
+        };
+        state.grant = Some(SignedGrant::sign(body, &self.signing_key()).unwrap());
         state.grant_digest = Some(handback.grant_digest.clone());
         state.opened_at = handback.opened_at;
         store.write_state(&state).unwrap();
@@ -418,4 +419,235 @@ fn window_resume_pending_window_stays_pending_and_opens_at_its_start() {
     rig.clock.advance(900);
     assert_eq!(hub.tick().unwrap(), Phase::Open);
     assert_eq!(hub.status().deadline, Some(T0 + 1200 + 3600));
+}
+
+fn permit_refused(hub: &WindowController) -> bool {
+    hub.gate()
+        .permit(Provider::Legacy, PermitKind::Request)
+        .is_err()
+}
+
+fn anchor_name() -> String {
+    format!("window-consumption-{HOST}")
+}
+
+/// Finding 1: an Open snapshot restored after the window was closed and a
+/// newer trust epoch recorded (or after a later grant was consumed) must not
+/// resume; nor may a window whose anchor is missing or unreadable.
+#[test]
+fn window_resume_restored_open_snapshot_after_trust_reset_is_refused() {
+    // Restored after a trust reset.
+    let rig = Rig::new();
+    let hub = open_hub(&rig, 0, 3600);
+    let snapshot = rig.tmp.path().join("snapshot");
+    copy_dir(&rig.window_dir(), &snapshot);
+    hub.close(CloseReason::OperatorClose);
+    hub.finish_close().unwrap();
+    let renewed = rig.issuer.bump_trust_epoch(&rig.key_path).unwrap();
+    hub.trust(&renewed).unwrap();
+    drop(hub);
+    fs::remove_dir_all(rig.window_dir()).unwrap();
+    copy_dir(&snapshot, &rig.window_dir());
+    rig.clock.advance(10);
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::Faulted);
+    assert!(hub.status().faulted);
+    assert_eq!(hub.status().phase, Phase::Closed);
+    assert!(permit_refused(&hub));
+    assert!(!hub.gate().is_open());
+    // Recovery is a trust with a newer epoch still.
+    let newer = rig.issuer.bump_trust_epoch(&rig.key_path).unwrap();
+    hub.trust(&newer).unwrap();
+    drop(hub);
+
+    // Restored after a later grant was consumed in the same epoch.
+    let rig = Rig::new();
+    let hub = open_hub(&rig, 0, 600);
+    let snapshot = rig.tmp.path().join("snapshot");
+    copy_dir(&rig.window_dir(), &snapshot);
+    hub.close(CloseReason::OperatorClose);
+    hub.finish_close().unwrap();
+    rig.clock.advance(600 + GRANT_GAP as u64);
+    hub.open(&rig.grant(0, 600)).unwrap();
+    hub.close(CloseReason::OperatorClose);
+    hub.finish_close().unwrap();
+    drop(hub);
+    fs::remove_dir_all(rig.window_dir()).unwrap();
+    copy_dir(&snapshot, &rig.window_dir());
+    rig.clock.set_mono(1_000);
+    rig.clock.shift_wall(-(600 + GRANT_GAP) + 10);
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::Faulted);
+    assert!(permit_refused(&hub));
+    drop(hub);
+
+    // A missing anchor cannot vouch for the window.
+    let rig = Rig::new();
+    drop(open_hub(&rig, 0, 3600));
+    rig.anchor.remove(&anchor_name());
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::Faulted);
+    assert!(permit_refused(&hub));
+    drop(hub);
+
+    // An unreadable anchor closes the window instead of resuming it.
+    let rig = Rig::new();
+    drop(open_hub(&rig, 0, 3600));
+    rig.anchor.set_fail_reads(true);
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(
+        outcome,
+        ResumeOutcome::ClosedAtStart(CloseReason::StateUnverifiable)
+    );
+    assert!(permit_refused(&hub));
+    rig.anchor.set_fail_reads(false);
+    assert!(rig.anchor.read(&anchor_name()).unwrap().is_some());
+}
+
+const GRANT_GAP: i64 = crate::collection::window::GRANT_GAP_SECONDS;
+
+fn edit_state(rig: &Rig, edit: impl FnOnce(&mut serde_json::Value)) {
+    let path = rig.window_dir().join("state.json");
+    let mut state: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    edit(&mut state);
+    fs::write(path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+}
+
+/// Finding 2: the persisted grant is verified on load and reconciled with the
+/// ledger; changing the persisted expiry, or swapping in another validly
+/// signed grant the ledger never consumed, is refused.
+#[test]
+fn window_resume_tampered_persisted_grant_is_refused() {
+    // The expiry is moved out without a new signature.
+    let rig = Rig::new();
+    drop(open_hub(&rig, 0, 3600));
+    edit_state(&rig, |state| {
+        state["grant"]["body"]["expires_at"] = (T0 + 7200).into();
+    });
+    rig.clock.advance(3700);
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::Faulted);
+    assert!(permit_refused(&hub));
+    drop(hub);
+
+    // A validly signed grant, but not the one the ledger consumed.
+    let rig = Rig::new();
+    drop(open_hub(&rig, 0, 3600));
+    let body = GrantBody {
+        format: crate::collection::window::grant::GRANT_FORMAT.to_owned(),
+        issuer_key_id: rig.trust.issuer_key_id.clone(),
+        seq: 1,
+        host_id: HOST.to_owned(),
+        starts_at: T0,
+        expires_at: T0 + 4 * 3600,
+        approver: "G".to_owned(),
+        reason: "test window".to_owned(),
+        trust_epoch: 1,
+    };
+    let digest = body.digest().unwrap();
+    let other = SignedGrant::sign(body, &rig.signing_key()).unwrap();
+    edit_state(&rig, |state| {
+        state["grant"] = serde_json::to_value(&other).unwrap();
+        state["grant_digest"] = digest.into();
+    });
+    rig.clock.advance(3700);
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::Faulted);
+    assert!(permit_refused(&hub));
+    drop(hub);
+
+    // The monotonic deadline is moved out while the anchor is kept.
+    let rig = Rig::new();
+    drop(open_hub(&rig, 0, 3600));
+    edit_state(&rig, |state| {
+        let deadline = state["deadline_mono"].as_u64().unwrap();
+        state["deadline_mono"] = (deadline + 3600).into();
+    });
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::Faulted);
+    assert!(permit_refused(&hub));
+}
+
+/// Finding 3: on restart the time offset is measured before the gate
+/// reopens; an unavailable or out-of-bound offset gives no permit at all.
+#[test]
+fn window_resume_offset_check_completes_before_the_gate_reopens() {
+    for result in [Err(Refusal::ClockOffset), Ok(31.0), Ok(f64::NAN)] {
+        let rig = Rig::new();
+        drop(open_hub(&rig, 0, 3600));
+        rig.clock.advance(60);
+        rig.probe.set(result);
+        let calls = rig.probe.calls();
+        let (hub, outcome) = rig.start_hub();
+        assert_eq!(rig.probe.calls(), calls + 1, "{result:?}");
+        assert_eq!(
+            outcome,
+            ResumeOutcome::ClosedAtStart(CloseReason::ClockInvalid),
+            "{result:?}"
+        );
+        assert!(permit_refused(&hub), "{result:?}");
+        assert!(!hub.gate().is_open(), "{result:?}");
+    }
+    // A good offset is measured once at restart, and the window resumes.
+    let rig = Rig::new();
+    drop(open_hub(&rig, 0, 3600));
+    let calls = rig.probe.calls();
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::Resumed(Phase::Open));
+    assert_eq!(rig.probe.calls(), calls + 1);
+    assert!(!permit_refused(&hub));
+}
+
+/// Finding 4: a tolerated rollback followed by a restart must not buy time;
+/// the original monotonic deadline survives the restart, and a clock that
+/// cannot carry it fails closed.
+#[test]
+fn window_resume_rollback_then_restart_keeps_the_original_monotonic_deadline() {
+    let rig = Rig::new();
+    let hub = open_hub(&rig, 0, 60);
+    rig.clock.advance(59);
+    rig.clock.shift_wall(-4);
+    assert_eq!(
+        hub.tick().unwrap(),
+        Phase::Open,
+        "the rollback is tolerated"
+    );
+    drop(hub);
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::Resumed(Phase::Open));
+    let permit = hub
+        .gate()
+        .permit(Provider::Legacy, PermitKind::Request)
+        .unwrap();
+    assert_eq!(permit.time_left().as_secs(), 1, "one second, not five");
+    rig.clock.advance(1);
+    assert!(permit_refused(&hub));
+    assert!(permit.is_cancelled());
+    assert_eq!(hub.tick().unwrap(), Phase::Closing);
+    drop(hub);
+
+    // A process-scoped monotonic clock cannot carry the deadline: fail closed.
+    let rig = Rig::new();
+    drop(open_hub(&rig, 0, 3600));
+    rig.clock.advance(100);
+    rig.clock.set_boot_scoped(false);
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(
+        outcome,
+        ResumeOutcome::ClosedAtStart(CloseReason::ClockInvalid)
+    );
+    assert!(permit_refused(&hub));
+    drop(hub);
+
+    // A monotonic reading behind the persisted anchor: fail closed.
+    let rig = Rig::new();
+    drop(open_hub(&rig, 0, 3600));
+    rig.clock.advance(100);
+    rig.clock.set_mono(5);
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(
+        outcome,
+        ResumeOutcome::ClosedAtStart(CloseReason::ClockInvalid)
+    );
+    assert!(permit_refused(&hub));
 }

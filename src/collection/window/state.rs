@@ -15,7 +15,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use super::{
-    grant::{GrantBody, TrustDocument},
+    grant::{SignedGrant, TrustDocument},
     ledger::{self, LedgerError, Line},
     refusal::Refusal,
 };
@@ -105,9 +105,12 @@ pub enum HubEntry {
         expires_at: i64,
         at: i64,
     },
+    /// `at` and `mono` are the wall and monotonic readings the window's
+    /// clock guard is anchored at; the state file must repeat them.
     Opened {
         seq: u64,
         at: i64,
+        mono: u64,
     },
     Resumed {
         seq: u64,
@@ -131,12 +134,17 @@ pub struct WindowState {
     pub format: String,
     pub phase: Phase,
     pub close_reason: Option<CloseReason>,
-    pub grant: Option<GrantBody>,
+    /// The signed grant as received; it is verified again on every load.
+    pub grant: Option<SignedGrant>,
     pub grant_digest: Option<String>,
     pub opened_at: Option<i64>,
     pub closing_at: Option<i64>,
     pub boot_time: i64,
+    /// The clock guard's anchor and its monotonic deadline (boot-scoped
+    /// monotonic seconds); a restart restores them, never recomputes them.
     pub anchor_wall: i64,
+    pub anchor_mono: u64,
+    pub deadline_mono: u64,
     pub watermark: i64,
     pub gaps: Vec<Gap>,
 }
@@ -153,6 +161,8 @@ impl WindowState {
             closing_at: None,
             boot_time: 0,
             anchor_wall: 0,
+            anchor_mono: 0,
+            deadline_mono: 0,
             watermark: 0,
             gaps: Vec::new(),
         }

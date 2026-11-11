@@ -4,8 +4,11 @@
 //!
 //! The gate is closed by default and opened only by the window controller with
 //! a verified grant. It also checks the clock itself, so it stops issuing
-//! permits at the deadline even when no supervisor tick has run. A refused
-//! request is never retried: each attempt needs a new permit.
+//! permits at the deadline even when no supervisor tick has run. Once it sees
+//! either deadline reached it latches closed and cancels every cancellable
+//! permit, so a later clock rollback cannot reopen it; only the controller
+//! opens it again, for a new window. A refused request is never retried: each
+//! attempt needs a new permit.
 
 use std::{
     sync::{
@@ -66,6 +69,18 @@ struct OpenWindow {
 struct GateState {
     open: Option<OpenWindow>,
     cancellable: Vec<CancellationToken>,
+    /// The wall time at which the gate saw a deadline reached; cleared only
+    /// by `open`.
+    expiry_observed: Option<i64>,
+}
+
+impl GateState {
+    fn shut(&mut self) {
+        self.open = None;
+        for token in self.cancellable.drain(..) {
+            token.cancel();
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -147,6 +162,8 @@ impl EgressGate {
         let wall = self.inner.clock.wall();
         let mono = self.inner.clock.mono();
         if wall >= window.deadline_wall || mono >= window.deadline_mono {
+            state.expiry_observed = Some(wall);
+            state.shut();
             return Err(GateRefusal::WindowClosed);
         }
         if provider == Provider::Fleet {
@@ -183,33 +200,37 @@ impl EgressGate {
         self.inner.state.lock().expect("gate lock").open.is_some()
     }
 
+    /// When (wall time) the gate saw a deadline reached since it was last
+    /// opened, if it has.
+    pub fn expiry_observed(&self) -> Option<i64> {
+        self.inner.state.lock().expect("gate lock").expiry_observed
+    }
+
     pub(super) fn open(&self, deadline_wall: i64, deadline_mono: u64) {
-        self.inner.state.lock().expect("gate lock").open = Some(OpenWindow {
+        let mut state = self.inner.state.lock().expect("gate lock");
+        state.open = Some(OpenWindow {
             deadline_wall,
             deadline_mono,
         });
+        state.expiry_observed = None;
     }
 
     /// Stops issuing permits and cancels every request and stream permit.
     pub(super) fn close(&self) {
-        let mut state = self.inner.state.lock().expect("gate lock");
-        state.open = None;
-        for token in state.cancellable.drain(..) {
-            token.cancel();
-        }
+        self.inner.state.lock().expect("gate lock").shut();
     }
 
-    /// Closes the gate if its deadline has passed (called each supervisor step).
+    /// Latches the gate closed if a deadline has passed (called each
+    /// supervisor step).
     pub(super) fn sweep(&self) {
-        let expired = {
-            let state = self.inner.state.lock().expect("gate lock");
-            state.open.is_some_and(|window| {
-                self.inner.clock.wall() >= window.deadline_wall
-                    || self.inner.clock.mono() >= window.deadline_mono
-            })
-        };
+        let mut state = self.inner.state.lock().expect("gate lock");
+        let wall = self.inner.clock.wall();
+        let expired = state.open.is_some_and(|window| {
+            wall >= window.deadline_wall || self.inner.clock.mono() >= window.deadline_mono
+        });
         if expired {
-            self.close();
+            state.expiry_observed = Some(wall);
+            state.shut();
         }
     }
 }

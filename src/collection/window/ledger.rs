@@ -11,7 +11,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::Write,
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -137,9 +137,14 @@ pub fn append<E: Serialize + DeserializeOwned + Clone>(
     Ok(line)
 }
 
-/// Replaces `path` atomically with `bytes` (0600), syncing file and directory.
-pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), LedgerError> {
-    let temporary = path.with_extension("tmp");
+/// The temporary sibling `write_atomic` stages `path` in.
+pub fn temp_path(path: &Path) -> PathBuf {
+    path.with_extension("tmp")
+}
+
+/// Writes `bytes` to the temporary sibling of `path` (0600) and syncs it.
+pub fn write_temp(path: &Path, bytes: &[u8]) -> Result<PathBuf, LedgerError> {
+    let temporary = temp_path(path);
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)
@@ -149,6 +154,12 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), LedgerError> {
         .map_err(|_| LedgerError::Io)?;
     file.write_all(bytes).map_err(|_| LedgerError::Io)?;
     file.sync_all().map_err(|_| LedgerError::Io)?;
+    Ok(temporary)
+}
+
+/// Replaces `path` atomically with `bytes` (0600), syncing file and directory.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), LedgerError> {
+    let temporary = write_temp(path, bytes)?;
     fs::rename(&temporary, path).map_err(|_| LedgerError::Io)?;
     sync_parent(path)
 }

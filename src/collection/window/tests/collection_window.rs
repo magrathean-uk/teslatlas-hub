@@ -565,11 +565,7 @@ fn collection_window_issuer_concurrent_issuers_never_overlap() {
         .map(|handle| handle.join().unwrap())
         .collect();
     assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
-    assert!(
-        results
-            .iter()
-            .any(|result| *result == Err(Refusal::Overlap))
-    );
+    assert!(results.contains(&Err(Refusal::Overlap)));
 }
 
 #[test]
@@ -752,5 +748,115 @@ fn collection_window_trust_document_round_trip() {
     assert_eq!(
         TrustDocument::parse(&bad.to_bytes().unwrap()).unwrap_err(),
         Refusal::TrustInvalid
+    );
+}
+
+/// Finding 5: a reservation whose grant may have been published (a crash
+/// after the rename and before `issued`, or a failed directory sync after the
+/// rename) cannot be voided, so no overlapping grant can follow it.
+#[test]
+fn collection_window_issuer_possibly_published_reservation_is_not_voidable() {
+    use crate::collection::window::issuer::PublishFault;
+
+    // A crash after the rename, before `issued` is appended.
+    let rig = Rig::new();
+    let request = rig.request(HOST, 0, 3600);
+    let out = rig.tmp.path().join("published.json");
+    rig.issuer.inject(PublishFault::CrashAfterRename);
+    assert_eq!(
+        rig.issuer.issue(&rig.key_path, &request, &out).unwrap_err(),
+        Refusal::PublicationFailed
+    );
+    let published = fs::read(&out).expect("the grant is in place");
+    assert_eq!(SignedGrant::parse(&published).unwrap().body.seq, 1);
+    assert_eq!(
+        rig.issuer.void(&rig.key_path, 1, "crash").unwrap_err(),
+        Refusal::PossiblyPublished
+    );
+    assert_eq!(
+        rig.try_grant(&rig.request("host-b", 0, 3600)).unwrap_err(),
+        Refusal::Overlap
+    );
+    // It is a valid grant for its host, so the interval had to stay blocked.
+    let hub = rig.trusted_hub();
+    assert_eq!(hub.open(&published).unwrap().phase, Phase::Open);
+
+    // A failed directory sync after the rename.
+    let rig = Rig::new();
+    let request = rig.request(HOST, 0, 3600);
+    let out = rig.tmp.path().join("published.json");
+    rig.issuer.inject(PublishFault::DirSyncFails);
+    assert_eq!(
+        rig.issuer.issue(&rig.key_path, &request, &out).unwrap_err(),
+        Refusal::PublicationFailed
+    );
+    assert!(out.exists());
+    assert!(rig.issuer.void(&rig.key_path, 1, "sync").is_err());
+    assert_eq!(
+        rig.try_grant(&rig.request("host-b", 0, 3600)).unwrap_err(),
+        Refusal::Overlap
+    );
+}
+
+/// Finding 6: once the gate sees a deadline reached it latches closed and
+/// cancels cancellable permits; stepping the clock back before any
+/// supervisor sweep cannot reopen it, and the next tick closes `expired`.
+#[test]
+fn collection_window_observed_expiry_latches_closed_against_rollback() {
+    let rig = Rig::new();
+    let hub = rig.trusted_hub();
+    hub.open(&rig.grant(0, 3600)).unwrap();
+    let gate = hub.gate().clone();
+    let stream = gate.permit(Provider::Legacy, PermitKind::Stream).unwrap();
+    let exchange = gate
+        .permit(Provider::Legacy, PermitKind::TokenExchange)
+        .unwrap();
+    // Wall time crosses the expiry while monotonic time does not.
+    rig.clock.shift_wall(3600);
+    assert_eq!(
+        gate.permit(Provider::Legacy, PermitKind::Request)
+            .unwrap_err(),
+        GateRefusal::WindowClosed
+    );
+    assert!(stream.is_cancelled(), "streams are cancelled at once");
+    assert!(!exchange.is_cancelled(), "an exchange keeps its grace");
+    assert!(!gate.is_open());
+    assert_eq!(gate.expiry_observed(), Some(T0 + 3600));
+    // The wall clock moves back before any supervisor sweep.
+    rig.clock.shift_wall(-3600);
+    for kind in [
+        PermitKind::Request,
+        PermitKind::Stream,
+        PermitKind::TokenExchange,
+    ] {
+        assert_eq!(
+            gate.permit(Provider::Legacy, kind).unwrap_err(),
+            GateRefusal::WindowClosed,
+            "{kind:?}"
+        );
+    }
+    assert_eq!(hub.tick().unwrap(), Phase::Closing);
+    assert_eq!(hub.status().close_reason, Some(CloseReason::Expired));
+    assert!(gate.permit(Provider::Legacy, PermitKind::Request).is_err());
+    drop((stream, exchange));
+    let handback = hub.finish_close().unwrap().unwrap();
+    assert_eq!(handback.closed_at, T0 + 3600, "closed when expiry was seen");
+
+    // The supervisor's sweep latches the same way.
+    let rig = Rig::new();
+    let hub = rig.trusted_hub();
+    hub.open(&rig.grant(0, 3600)).unwrap();
+    let stream = hub
+        .gate()
+        .permit(Provider::Legacy, PermitKind::Stream)
+        .unwrap();
+    rig.clock.shift_wall(3600);
+    assert_eq!(hub.tick().unwrap(), Phase::Closing);
+    assert!(stream.is_cancelled());
+    rig.clock.shift_wall(-3600);
+    assert!(
+        hub.gate()
+            .permit(Provider::Legacy, PermitKind::Request)
+            .is_err()
     );
 }
