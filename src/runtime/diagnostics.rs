@@ -1067,7 +1067,7 @@ mod tests {
         // Only codes, times and flags: every string value of the legacy block is a code.
         for value in legacy.as_object().expect("object").values() {
             if let Some(text) = value.as_str() {
-                assert!(matches!(text, "retrying" | "network" | "direct_entry" | "hub" | "ok"), "{text}");
+                assert!(matches!(text, "retrying" | "network" | "direct_entry" | "hub_login" | "hub" | "ok"), "{text}");
             }
         }
         assert!(

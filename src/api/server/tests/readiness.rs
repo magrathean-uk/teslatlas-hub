@@ -542,6 +542,7 @@ async fn cadence_readyz_does_not_cache_readiness_past_token_usability() {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");

@@ -146,7 +146,9 @@ fn ct092_power_cuts_refresh_rotation_migration() {
                 match vault.load(slot) {
                     Ok(Some(row)) => assert!(!row.access.is_empty(), "CT92.every occupied pair authenticates"),
                     Ok(None) => (),
-                    Err(CredentialStoreError::MigrationPending(_)) | Err(CredentialStoreError::SourceCredentialDisabled(_)) => assert!(recovered.path().join("secrets").join(REL).exists(), "CT92.pending candidate retained"),
+                    Err(CredentialStoreError::MigrationPending(_)) => assert!(recovered.path().join("secrets").join(REL).exists(), "CT92.pending candidate retained"),
+                    // M02-T02: a non-own or pre-upgrade pair is refused at load, unread.
+                    Err(CredentialStoreError::SourceCredentialDisabled(_)) => (),
                     Err(_) => panic!("CT92.row lacks its key"),
                 }
             }

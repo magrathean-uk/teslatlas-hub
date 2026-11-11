@@ -53,25 +53,6 @@ fn ct045_admitted_open() {
 }
 
 #[test]
-fn ct049_admitted_open() {
-    let root = credential_migration::g24_m2_m::seed_admitted_fence_mapping(); let vault = open_fake_migration(root.path());
-    let input = pair(&vault).generation; assert!(pair(&vault).refresh_owner == RefreshOwner::Hub, "successful binding owns refresh");
-    assert!(vault.has_unresolved_refresh(OWNER).expect("unresolved"), "started binding migrated");
-    let state = HubStore::initialize(root.path()).expect("status").credential_format_state().expect("format").expect("state");
-    assert!(state.attempts_migrated == 2 && state.fences_fingerprinted == 1 && state.legacy_fences == 2, "CT49.mapping_status_source");
-    let (receipt, before) = {
-        let state = vault.lock().expect("state"); let db = state.connection.test_connection();
-        let receipt = db.query_row("SELECT receipt_id FROM credential_refresh_attempts WHERE input_generation=?1 AND output_generation IS NULL AND migrated=1 AND fence_id IS NULL", [input.to_string()], |row| row.get(0)).expect("started migrated binding");
-        let before: (i64, i64) = db.query_row("SELECT (SELECT count(*) FROM credential_refresh_fences), (SELECT count(*) FROM credential_legacy_fences)", [], |row| Ok((row.get(0)?, row.get(1)?))).expect("fence counts");
-        (OutboundRequestReceiptId(receipt), before)
-    };
-    vault.cancel_refresh(receipt, input).expect("cancel migrated attempt");
-    let after: (i64, i64) = vault.lock().expect("state").connection.test_connection().query_row("SELECT (SELECT count(*) FROM credential_refresh_fences), (SELECT count(*) FROM credential_legacy_fences)", [], |row| Ok((row.get(0)?, row.get(1)?))).expect("retained fence counts");
-    assert!(after == before, "migrated fences never released");
-    assert!(matches!(vault.begin_refresh(OWNER, input), Err(CredentialStoreError::Store(StoreError::RefreshOutcomeUnknown { reason: crate::db::BeginRefusal::TokenSpent }))), "spent after cancellation");
-}
-
-#[test]
 fn ct053_blocked_slot_vault() {
     let root = credential_migration::g24_m2_m::seed_admitted_blocked_owner(); let vault = open_fake_migration(root.path());
     assert!(matches!(vault.load(OWNER), Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::OwnerApi))), "blocked Owner read");
@@ -85,7 +66,9 @@ fn ct053_blocked_slot_vault() {
     credential_migration::seam::with(|state| { state.fake_pre_upgrade = true; state.fake_generation = true; });
     vault.finish_hub_grant_aftercare(stored).expect("recovery aftercare"); credential_migration::seam::reset();
     let state = HubStore::initialize(root.path()).expect("status").credential_format_state().expect("format").expect("state");
-    assert!(state.owner_api_state == CredentialSlotFormatState::Discarded && state.completed_at_ms.is_some() && state.old_tables_dropped, "CT53.recovery_status_source");
+    // M02-T02: the pre-upgrade Fleet row stays refused unread, so the store does
+    // not complete; the Owner slot is discarded once the own login replaces it.
+    assert!(state.owner_api_state == CredentialSlotFormatState::Discarded && state.fleet_api_blocked.is_some() && state.completed_at_ms.is_none() && !state.old_tables_dropped, "CT53.recovery_status_source");
 }
 
 #[test]
@@ -104,59 +87,6 @@ fn ct055_admitted_cleanup() {
     let after = std::fs::metadata(&retained).expect("retained metadata");
     assert!(metadata.ino() == after.ino() && metadata.mtime() == after.mtime() && std::fs::read(&retained).expect("retained bytes") == b"synthetic-retained", "encoded name untouched");
     assert!(store.credential_format_state().expect("format").expect("state").completed_at_ms == completed, "CT55.completion_status_source");
-}
-
-#[test]
-fn ct046_admitted_open() {
-    let root = admitted_migration_fixture(false, None, false, 0); let vault = open_fake_migration(root.path());
-    let row = pair(&vault);
-    assert!(row.access.as_str() == "access-0001" && row.refresh.as_str() == "refresh-0001", "conversion plaintexts");
-    assert!(row.origin.is_none() && row.refresh_owner == RefreshOwner::External && row.generation == Uuid::from_u128(0x400080000000000000aa), "conversion identity");
-    assert!((row.expires_at, row.next_refresh_at) == (1_800_028_800, 1_800_021_600), "schedule verbatim");
-    let status = HubStore::initialize(root.path()).expect("status store"); let state = status.credential_format_state().expect("format").expect("state");
-    assert!(state.owner_api_state == CredentialSlotFormatState::Migrated && state.completed_at_ms.is_some() && !state.purge_required, "CT46.complete_status_source");
-    let db = status.open().expect("fixture observer");
-    let remaining: i64 = db.query_row("SELECT count(*) FROM sqlite_schema WHERE type='table' AND name IN ('legacy_owner_tokens','fleet_tokens','legacy_refresh_receipt_bindings','legacy_refresh_input_fences','fleet_refresh_receipt_bindings','fleet_refresh_input_fences')", [], |row| row.get(0)).expect("predecessor table count");
-    assert!(remaining == 0 && !root.path().join("secrets").join("pre-upgrade-owner-api.relocated.key").exists(), "predecessor cleanup");
-    assert!(vault.keys.read().expect("keys").is_some(), "keyring created");
-    assert!(vault.test_commit_counts() == (3, 3), "reservation conversion purge counted");
-    drop(vault); let vault = open(root.path());
-    assert!(vault.test_commit_counts() == (0, 0), "completed reopen no counted commit");
-}
-
-#[test]
-fn ct047_admitted_open() {
-    for (outcome, expected) in [("success", RefreshOwner::Hub), ("started", RefreshOwner::External), ("http_error", RefreshOwner::External), ("cancelled", RefreshOwner::External)] {
-        let root = admitted_migration_fixture(false, Some(outcome), false, 0); let vault = open_fake_migration(root.path());
-        assert!(pair(&vault).refresh_owner == expected, "ownership requires successful output evidence");
-    }
-}
-
-#[test]
-fn ct048_admitted_open() {
-    for candidate in 0..3 {
-        let root = admitted_migration_fixture(true, None, false, candidate); let vault = open_fake_migration(root.path());
-        let row = vault.load(CredentialSlot::FleetApi).expect("Fleet load").expect("pair");
-        assert!(row.origin == Some(CredentialOrigin::FleetOauth) && row.refresh_owner == RefreshOwner::Hub && row.client_id.as_deref() == Some("client-0001") && row.region.as_deref() == Some("eu"), "Fleet metadata");
-        assert!(row.access.as_str() == "access-0001" && row.refresh.as_str() == "refresh-0001", "Fleet plaintext");
-        assert!(row.generation == Uuid::new_v5(&Uuid::from_u128(0x40008000000000000003), b"refresh-0001"), "generation fixture");
-        assert!((row.expires_at, row.next_refresh_at) == (1_800_028_800, 1_800_021_600), "Fleet schedule");
-    }
-    let _controls=controls();credential_migration::seam::with(|s|{s.fake_pre_upgrade=false;s.fake_generation=false;});
-    let (root,access,refresh)=credential_migration::g24_m2_m::seed_admitted_cursor_fleet();
-    let vault=open(root.path());let row=vault.load(CredentialSlot::FleetApi).expect("cursor candidate load").expect("Fleet pair");
-    assert!(row.access.as_str()==access && row.refresh.as_str()==refresh,"CT48.cursor-only candidate authenticates");
-    assert!(root.path().join("secrets").join("hub-cursor.key").exists(),"CT48.cursor custody retained");
-    complete(root.path());
-}
-
-#[test]
-fn ct050_vault_refusal() {
-    let root = admitted_migration_fixture(false, None, true, 0); let vault = open_fake_migration(root.path());
-    let input = pair(&vault).generation;
-    assert!(matches!(vault.begin_refresh(OWNER, input), Err(CredentialStoreError::Store(StoreError::RefreshOutcomeUnknown { reason: crate::db::BeginRefusal::TokenSpent }))), "migrated spent begin");
-    assert!(matches!(vault.store_supplied_entry(entry("access-0001", "refresh-0001"), ReplacePolicy::ReplaceAny), Err(CredentialStoreError::RefreshTokenSpent)), "migrated spent replacement");
-    assert!(vault.test_commit_counts().0 == 3, "refusals uncounted");
 }
 
 #[test]
@@ -521,48 +451,6 @@ fn ct065_persistence_retry() {
 }
 
 #[test]
-fn ct066_fleet_policy() {
-    tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime").block_on(async {
-        use axum::{Router, extract::State, http::StatusCode, routing::post};
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        use crate::fleet_api::{FleetAuthApi, FleetApiError, FleetRegion};
-        use crate::fleet_credentials::{FleetAuthManager, FleetCredentialError};
-        crate::crypto::install_default_provider();
-        let root = crate::private_tempdir().expect("root");
-        let access = "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.sig";
-        let entry = CredentialEntry::fleet_supplied(Zeroizing::new(access.into()), Zeroizing::new("fleet-refresh-0001".into()), "client-0001".into(), FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("entry");
-        seed_entry(root.path(), entry);
-        let vault = open(root.path());
-        let mut manager = FleetAuthManager::from_vault(Arc::clone(&vault), false, None).expect("manager");
-        let refused = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("unused endpoint");
-        let refused_addr = refused.local_addr().expect("address"); drop(refused);
-        let refused_api = FleetAuthApi::for_fake_http(url::Url::parse(&format!("http://{refused_addr}/token")).expect("URL"), std::time::Duration::from_secs(2)).expect("unsent client");
-        assert!(matches!(manager.refresh_now(&refused_api, SystemTime::now()).await, Err(FleetCredentialError::Api(FleetApiError::RequestNotSent))), "unsent classifier");
-        assert!(!vault.has_unresolved_refresh(CredentialSlot::FleetApi).expect("unsent resolution"), "input released");
-        let posts = Arc::new(AtomicUsize::new(0)); let status = Arc::new(AtomicUsize::new(200));
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("listener"); let address = listener.local_addr().expect("address");
-        let router = Router::new().route("/token", post(|State((posts, status)): State<(Arc<AtomicUsize>, Arc<AtomicUsize>)>| async move {
-            posts.fetch_add(1, Ordering::SeqCst);
-            (StatusCode::from_u16(status.load(Ordering::SeqCst) as u16).expect("status"), [("content-type", "application/json")], r#"{"access_token":"fleet-access-0002","refresh_token":"fleet-refresh-0002","expires_in":28800,"token_type":"Bearer"}"#)
-        })).with_state((Arc::clone(&posts), Arc::clone(&status)));
-        let server = tokio::spawn(async move { let _ = axum::serve(listener, router).await; });
-        let api = FleetAuthApi::for_fake_http(url::Url::parse(&format!("http://{address}/token")).expect("URL"), std::time::Duration::from_secs(2)).expect("client");
-        manager.refresh_now(&api, SystemTime::now()).await.expect("successor persisted");
-        assert!(manager.access_token().expose() == "fleet-access-0002", "successor adopted");
-        let stored = vault.load(CredentialSlot::FleetApi).expect("proved pair").expect("pair");
-        assert!(stored.access.as_str() == "fleet-access-0002" && stored.generation == manager.credential_generation(), "stored before use");
-        status.store(503, Ordering::SeqCst);
-        let issued = vault.lock().expect("state").commits_issued;
-        assert!(manager.refresh_now(&api, SystemTime::now()).await.is_err(), "sent error");
-        assert!(vault.lock().expect("state").commits_issued == issued + 1, "no closing commit");
-        assert!(vault.inspect_fleet_refresh_receipt().expect("receipt"), "started and fenced");
-        assert!(manager.refresh_now(&api, SystemTime::now()).await.is_err(), "terminal manager");
-        assert!(posts.load(Ordering::SeqCst) == 2, "no replay");
-        server.abort(); let _ = server.await;
-    });
-}
-
-#[test]
 fn ct067_refresh_restart_non_reuse() {
     let (root, input) = seeded(); let vault = open(root.path()); vault.begin_refresh(OWNER, input).expect("begin"); drop(vault);
     let vault = open(root.path());
@@ -736,16 +624,7 @@ fn ct088_barriers_open_refresh_rotation_conversion() {
     assert!(fault.is_err(), "temporary key file barrier failure");
     assert!(vault.lock().expect("state").read_only, "failed key proof forbids mutation");
     drop(vault);
-    {
-        let _controls = controls(); let root = admitted_migration_fixture(false, None, false, 0);
-        OPEN_CONTROL.with(|control| *control.borrow_mut() = Some(Box::new(|connection| connection.set_test_barrier_failure_at(Some(2)))));
-        let vault = open(root.path());
-        assert!(matches!(vault.lock().expect("state").resume_error, Some(CredentialStoreError::DurabilityUnavailable)), "CT88.conversion barrier fails");
-        assert!(status(root.path()).converted_at_ms.is_some() && root.path().join("secrets").join(REL).exists(), "CT88.conversion committed with key retained before proof");
-        drop(vault); OPEN_CONTROL.with(|control| *control.borrow_mut() = None);
-        drop(open(root.path())); complete(root.path());
-        assert!(!root.path().join("secrets").join(REL).exists(), "CT88.proved conversion permits removal");
-    }
+    // M02-T02: no pre-upgrade pair is converted, so the conversion barrier case is gone.
     use std::os::unix::fs::MetadataExt;
     let (root, input) = seeded(); let catalogue = fs::metadata(root.path().join("hub.sqlite")).expect("catalogue identity");
     let (_, syncs) = private_directory::with_sync_observations(|| {

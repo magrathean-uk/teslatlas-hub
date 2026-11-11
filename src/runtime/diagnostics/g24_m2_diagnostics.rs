@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use super::*;
-use crate::auth::credential_sign_in::{credential_owner_message, credential_status, credential_store_unhealthy, status_fixtures};
+use crate::auth::credential_sign_in::{credential_status, credential_store_unhealthy, status_fixtures};
 
 fn config(root: &Path) -> HubConfig {
     HubConfig::from_exact_bytes(format!("data_dir = {root:?}\nbind = '127.0.0.1:18443'\n[collector]\ninterval_seconds = 0\n").as_bytes()).expect("synthetic config").0
@@ -39,19 +39,6 @@ fn ct045_status_routes() {
 }
 
 #[test]
-fn ct052_status_pending() {
-    let (root, store) = status_fixtures::phase_b("disk_full");
-    let projection = status(root.path(), &store);
-    assert_eq!(projection.legacy_credentials.store_state, "migration_pending");
-    assert_eq!(projection.credential_store.format_state, "pending");
-    assert!(projection.credential_store.backups_waiting);
-    let observer = store.open().expect("observer");
-    let before: i64 = observer.query_row("PRAGMA data_version", [], |row| row.get(0)).expect("before");
-    drop(inspect_hub(&HubStore::open_read_only(root.path()).expect("lane"), &config(root.path())).expect("doctor pending"));
-    assert_eq!(observer.query_row::<i64, _, _>("PRAGMA data_version", [], |row| row.get(0)).expect("after"), before);
-}
-
-#[test]
 fn ct057_status_non_admitted() {
     let (root, store) = status_fixtures::phase_b("pending");
     let admission = crate::hub_user_process::AdmittedUserHub::admit(root.path()).expect("separate process holds admission");
@@ -60,20 +47,6 @@ fn ct057_status_non_admitted() {
     drop(inspect_hub(&lane, &config(root.path())).expect("doctor without admission"));
     assert!(admission.assert_sensitive_access().is_ok());
     assert_eq!(status(root.path(), &store).credential_store.format_state, "pending");
-}
-
-#[test]
-fn ct062_backups_waiting() {
-    let (root, store) = status_fixtures::phase_b("purge_wait");
-    let projection = status(root.path(), &store);
-    assert!(projection.credential_store.backups_waiting);
-    assert_eq!(projection.credential_store.format_state, "cleanup_pending");
-    let shortfall = projection.credential_store.cleanup_needed_bytes.expect("positive shortfall");
-    assert!(shortfall > 0);
-    let remedy = credential_owner_message("credential_purge_pending", None, Some(shortfall), None).expect("purge remedy");
-    assert!(remedy.contains(&format!("{} GB", shortfall.div_ceil(1_000_000_000))));
-    let store = status_fixtures::recover(store, root.path());
-    assert!(!status(root.path(), &store).credential_store.backups_waiting);
 }
 
 #[test]
@@ -93,33 +66,24 @@ fn ct078_status_keys() {
 fn ct087_status() {
     let (root, store) = status_fixtures::phase_b("mapping");
     let projection = credential_status(&store, root.path(), diagnostic_epoch_ms()).expect("status at the doctor clock");
-    assert_eq!(projection.credential_store.format_state, "complete");
+    // M02-T02: the pre-upgrade pair is refused unread, so the store stays blocked.
+    assert_eq!(projection.credential_store.format_state, "blocked");
     assert_eq!(projection.credential_store.legacy_fences, 2);
-    assert!(projection.legacy_credentials.present);
+    assert!(!projection.legacy_credentials.present);
     let doctor = inspect_hub(&HubStore::open_read_only(root.path()).expect("lane"), &config(root.path())).expect("consolidated doctor");
     assert_eq!(doctor.credential_store, projection.credential_store);
 }
 
 #[test]
-fn ct090_status() {
-    let (root, store) = status_fixtures::phase_b("purge_wait");
-    let before = status(root.path(), &store);
-    assert!(before.credential_store.backups_waiting && before.legacy_credentials.present);
-    let store = status_fixtures::recover(store, root.path());
-    let after = status(root.path(), &store);
-    assert_eq!(after.credential_store.format_state, "complete");
-    assert!(!after.credential_store.backups_waiting);
-    assert_eq!(after.legacy_credentials, before.legacy_credentials);
-}
-
-#[test]
 fn ct091_status() {
-    for (kind, expected) in [("pending", "pending"), ("purge_wait", "cleanup_pending"), ("blocked", "blocked"), ("complete", "complete")] {
+    // M02-T02: a pre-upgrade pair is refused unread, so a store holding one
+    // never reaches cleanup or completion; it stays blocked.
+    for (kind, expected) in [("pending", "pending"), ("purge_wait", "blocked"), ("blocked", "blocked")] {
         let (root, store) = status_fixtures::phase_b(kind);
         let projection = status(root.path(), &store);
         assert_eq!(projection.credential_store.format_state, expected, "{kind}");
         assert_eq!(projection.credential_store.backups_waiting, expected != "complete");
-        if kind == "blocked" { assert_eq!(projection.credential_store.blocked_reason.owner_api, Some("old_key_unavailable")); }
+        if kind == "blocked" { assert_eq!(projection.credential_store.blocked_reason.owner_api, Some("source_credential_disabled")); }
     }
 }
 

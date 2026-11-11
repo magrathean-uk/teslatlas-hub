@@ -5,13 +5,13 @@
 //! lives in a per-test private temporary directory.
 
 use super::*;
-use crate::auth::credential_envelope::{CredentialSlot, refresh_fingerprint};
+use crate::auth::credential_envelope::CredentialSlot;
 use crate::auth::credential_keys::{
     BackupExclusion, CredentialKeyError, ExclusionState, KeyringHandle, check_keyring,
 };
 use crate::db::{
-    BeginRefusal, CredentialFormatState, CredentialMigrationBlockReason,
-    CredentialSecretsExclusion, CredentialSlotFormatState, HubStore, StoreError,
+    CredentialFormatState, CredentialMigrationBlockReason, CredentialSlotFormatState, HubStore,
+    StoreError,
 };
 use crate::hub_user_process::AdmittedUserHub;
 use crate::platform::private_directory::{PrivateDirectory, open_validated};
@@ -350,17 +350,6 @@ impl Env {
             .unwrap()
     }
 
-    fn plaintexts(&mut self, slot: CredentialSlot) -> (Vec<u8>, Vec<u8>) {
-        let pair = self.stored(slot).expect("migrated row present");
-        if self.keys.is_none() {
-            self.keys = crate::auth::credential_keys::load_keyring(&self.secrets).unwrap();
-        }
-        let (a, r) = pair
-            .open(self.keys.as_ref().expect("keyring handle"))
-            .unwrap();
-        (a.to_vec(), r.to_vec())
-    }
-
     fn table_exists(&self, name: &str) -> bool {
         self.db()
             .query_row(
@@ -541,10 +530,6 @@ fn events_matching(prefix: &str) -> Vec<String> {
             .cloned()
             .collect()
     })
-}
-
-fn event_index(events: &[String], needle: &str) -> Option<usize> {
-    events.iter().position(|e| e == needle)
 }
 
 // ---------------------------------------------------------------- CT45
@@ -728,26 +713,6 @@ pub(in crate::auth) fn seed_admitted_blocked_owner() -> tempfile::TempDir {
     let env = Env::hand_built(Some(&owner), Some(&fleet), false); env.put(FLEET_K4, &fleet_key); env._root
 }
 
-/// Previous-process inputs shared with the admitted-open proofs. No live
-/// credential handle or admission escapes this producer.
-pub(in crate::auth) fn seed_admitted_large() -> tempfile::TempDir {
-    let key = key32(1);
-    let token = "t".repeat(16_000);
-    let row = PriorRow::fake(&key, &token, &token, Some(uuid_n(0xaa)));
-    let env = Env::hand_built(Some(&row), None, false);
-    env.put(REL_K1, &key);
-    env._root
-}
-
-pub(in crate::auth) fn seed_admitted_catalogue() -> (tempfile::TempDir, Vec<Vec<u8>>) {
-    let vector = catalogue_vector("residue");
-    let env = Env::from_catalogue("catalogue-residue.sqlite");
-    env.put(REL_K1, &vector_bytes(&vector["legacy_current"], "key_hex"));
-    env.put(REL_K2, &vector_bytes(&vector["earlier_replaced_deleted"], "key_hex"));
-    env.put(FLEET_K4, &vector_bytes(&vector["fleet_current"], "key_hex"));
-    (env._root, earlier_values(&vector).into_iter().map(|(_, value)| value).collect())
-}
-
 pub(in crate::auth) fn seed_admitted_cursor_fleet() -> (tempfile::TempDir, String, String) {
     let all = vectors();
     let row = all["ciphertext_cases"].as_array().unwrap().iter().find(|row| row.get("cursor_key_hex").is_some()).unwrap();
@@ -757,786 +722,16 @@ pub(in crate::auth) fn seed_admitted_cursor_fleet() -> (tempfile::TempDir, Strin
     (env._root,row["access_plaintext"].as_str().unwrap().into(),row["refresh_plaintext"].as_str().unwrap().into())
 }
 
-pub(in crate::auth) fn seed_admitted_candidate_set(fleet: bool, mask: usize, authentic: usize, equal: bool) -> tempfile::TempDir {
-    let (mut row, key) = legacy_row("refresh-0001");
-    if fleet { row.generation = None; }
-    let env = Env::hand_built((!fleet).then_some(&row), fleet.then_some(&row), false);
-    let names = if fleet { [FLEET_K4, RST_K2, FLEET_K5] } else { [REL_K1, RST_K1, REL_K2] };
-    for (index, name) in names.into_iter().enumerate() {
-        let different = key32(17 + index as u8);
-        if mask & (1 << index) != 0 { env.put(name, if equal || index == authentic { &key } else { &different }); }
-    }
-    env._root
-}
-
-#[test]
-fn ct046_owner_api_conversion() {
-    seam::reset();
-    let (row, key) = legacy_row("refresh-0001");
-    let mut env = Env::hand_built(Some(&row), None, false);
-    env.put(REL_K1, &key);
-    let mut commits = 0usize;
-    let report = env.run_with(&mut || commits += 1)
-        .expect("CT46 Phase B converts the Legacy slot");
-    assert_eq!(commits, 3, "R55 counts reservation, conversion and purge COMMITs");
-    let report_on_replay = env.run_with(&mut || commits += 1)
-        .expect("CT46 completed Phase B replay");
-    assert!(is_complete(&report_on_replay.state));
-    assert_eq!(commits, 3, "completed Phase B replay issues no counted COMMIT");
-    assert_eq!(
-        report.unsafe_candidates.len(),
-        0,
-        "CT46 no unsafe candidate"
-    );
-    let pair = env
-        .stored(CredentialSlot::OwnerApi)
-        .expect("CT46 Legacy row present");
-    assert!(pair.origin.is_none(), "CT46 origin is NULL (not recorded)");
-    assert_eq!(
-        pair.refresh_owner,
-        crate::auth::credential_envelope::RefreshOwner::External,
-        "CT46 owner external without a completed binding"
-    );
-    assert_eq!(pair.generation, uuid_n(0xaa), "CT46 generation kept");
-    assert_eq!(
-        (pair.expires_at, pair.next_refresh_at),
-        SCHEDULE,
-        "CT46 schedule verbatim"
-    );
-    assert!(pair.migrated, "CT46 migrated = 1");
-    assert_eq!(
-        pair.refresh_fingerprint,
-        Some(refresh_fingerprint(b"refresh-0001")),
-        "CT46 fingerprint F(refresh-0001)"
-    );
-    let (access, refresh) = env.plaintexts(CredentialSlot::OwnerApi);
-    assert_eq!(access, b"access-0001", "CT46 access opens to its plaintext");
-    assert_eq!(
-        refresh, b"refresh-0001",
-        "CT46 refresh opens to its plaintext"
-    );
-    let state = env.state();
-    assert_eq!(
-        state.owner_api_state,
-        CredentialSlotFormatState::Migrated,
-        "CT46 slot migrated"
-    );
-    assert!(
-        is_complete(&state),
-        "CT46 converted, cleaned and complete: {state:?}"
-    );
-    assert_eq!(
-        env.predecessors_present(),
-        0,
-        "CT46 OLD-T1 to OLD-T6 absent"
-    );
-    assert!(
-        !env.listing().contains(&REL_K1.to_owned()),
-        "CT46 REL-K1 removed"
-    );
-    assert!(
-        check_keyring(&env.secrets).unwrap().is_some(),
-        "CT46 a keyring exists in the secrets directory"
-    );
-    assert_eq!(
-        env.user_version(),
-        RUNG,
-        "CT46 user_version equals the rung"
-    );
-}
-
-#[test]
-fn ct047_owner_by_evidence() {
-    // Cases: the refresh owner follows a completed, successful binding whose
-    // output is the row's generation (R46, M2P-73(a)); a Started or failed
-    // binding never makes it Hub-owned. The oracle is independent of S's.
-    use crate::auth::credential_envelope::RefreshOwner;
-    for (case, outcome, expected) in [
-        ("success", "success", RefreshOwner::Hub),
-        ("started", "started", RefreshOwner::External),
-        ("http_error", "http_error", RefreshOwner::External),
-        ("cancelled", "cancelled", RefreshOwner::External),
-    ] {
-        seam::reset();
-        let (row, key) = legacy_row("refresh-0001");
-        let mut env = Env::hand_built(Some(&row), None, true);
-        env.binding(
-            CredentialSlot::OwnerApi,
-            1,
-            uuid_n(0x1001),
-            &uuid_n(0xa9).to_string(),
-            Some(&uuid_n(0xaa).to_string()),
-            (1_799_999_000_000, outcome),
-        );
-        env.put(REL_K1, &key);
-        env.run()
-            .unwrap_or_else(|e| panic!("CT47.{case} Phase B failed: {e:?}"));
-        let pair = env.stored(CredentialSlot::OwnerApi).unwrap();
-        assert_eq!(pair.refresh_owner, expected, "CT47.{case} refresh owner");
-    }
-}
-
-#[test]
-fn ct048_fleet_conversion() {
-    use crate::auth::credential_envelope::{CredentialOrigin, RefreshOwner};
-    let cursor = crate::protocol::CursorKey::from_bytes([9; 32]);
-    let k7 = cursor.fleet_credential_encryption_key().to_vec();
-    // (case, key file, key content, cursor supplied, key used for the row)
-    let cases: [(&str, Option<&str>, Vec<u8>, bool, Vec<u8>); 3] = [
-        ("k4_file", Some(FLEET_K4), key32(7), false, key32(7)),
-        ("k5_file", Some(FLEET_K5), key32(8), false, key32(8)),
-        ("k7_only", None, Vec::new(), true, k7),
-    ];
-    for (case, name, content, with_cursor, row_key) in cases {
-        seam::reset();
-        let row = PriorRow::fake(&row_key, "access-0001", "refresh-0001", None);
-        let mut env = Env::hand_built(None, Some(&row), false);
-        if let Some(name) = name {
-            env.put(name, &content);
-        }
-        if with_cursor {
-            env.cursor = Some(cursor.clone());
-        }
-        env.run()
-            .unwrap_or_else(|e| panic!("CT48.{case} Phase B failed: {e:?}"));
-        let pair = env.stored(CredentialSlot::FleetApi).unwrap();
-        assert_eq!(
-            pair.origin,
-            Some(CredentialOrigin::FleetOauth),
-            "CT48.{case} origin"
-        );
-        assert_eq!(
-            pair.refresh_owner,
-            RefreshOwner::Hub,
-            "CT48.{case} owner hub"
-        );
-        assert_eq!(
-            pair.generation,
-            Uuid::new_v5(&uuid_n(3), b"refresh-0001"),
-            "CT48.{case} generation is FakeOldG over the decrypted pair"
-        );
-        assert_eq!(
-            pair.client_id.as_deref(),
-            Some("client-0001"),
-            "CT48.{case} client"
-        );
-        assert_eq!(pair.region.as_deref(), Some("eu"), "CT48.{case} region");
-        assert_eq!(
-            (pair.expires_at, pair.next_refresh_at),
-            SCHEDULE,
-            "CT48.{case} schedule"
-        );
-        let (access, refresh) = env.plaintexts(CredentialSlot::FleetApi);
-        assert_eq!(
-            (access, refresh),
-            (b"access-0001".to_vec(), b"refresh-0001".to_vec())
-        );
-        assert!(is_complete(&env.state()), "CT48.{case} complete");
-        assert!(
-            env.listing()
-                .iter()
-                .all(|n| !NEUTRAL_FILES.contains(&n.as_str())),
-            "CT48.{case} files removed"
-        );
-    }
-}
-
 // ---------------------------------------------------------------- CT49, CT50
 
-fn fenced_owner_env() -> (Env, Uuid, Uuid) {
-    let (ga, gcur) = (uuid_n(0xa1), uuid_n(0xaa));
-    let (row, key) = legacy_row("refresh-0001");
-    let env = Env::hand_built(Some(&row), None, true);
-    env.binding(
-        CredentialSlot::OwnerApi,
-        1,
-        uuid_n(0x2001),
-        &ga.to_string(),
-        Some(&gcur.to_string()),
-        (1_799_999_000_000, "success"),
-    );
-    env.binding(
-        CredentialSlot::OwnerApi,
-        2,
-        uuid_n(0x2002),
-        &gcur.to_string(),
-        None,
-        (1_799_999_500_000, "started"),
-    );
-    env.fence(CredentialSlot::OwnerApi, &ga.to_string());
-    env.fence(CredentialSlot::OwnerApi, &gcur.to_string());
-    env.put(REL_K1, &key);
-    (env, ga, gcur)
-}
-
-#[test]
-fn ct049_fence_mapping() {
-    seam::reset();
-    let (mut env, ga, gcur) = fenced_owner_env();
-    env.run().expect("CT49 Phase B maps the fences");
-    assert_eq!(
-        env.count(
-            "SELECT COUNT(*) FROM credential_refresh_attempts WHERE migrated=1 AND fence_id IS NULL"
-        ),
-        2,
-        "CT49 attempts b1 and b2 migrated with no fence link"
-    );
-    assert_eq!(
-        env.count("SELECT COUNT(*) FROM credential_refresh_attempts"),
-        2,
-        "CT49 two attempts"
-    );
-    let output: String = env
-        .db()
-        .query_row(
-            "SELECT output_generation FROM credential_refresh_attempts WHERE receipt_id=1",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(output, gcur.to_string(), "CT49 b1 output is Gcur");
-    let fences = env.legacy_fences();
-    assert_eq!(
-        fences.iter().map(|f| f.0.clone()).collect::<BTreeSet<_>>(),
-        BTreeSet::from([ga.to_string(), gcur.to_string()]),
-        "CT49 legacy fences Ga and Gcur"
-    );
-    let identity = |g: Uuid| {
-        fences
-            .iter()
-            .find(|f| f.0 == g.to_string())
-            .unwrap()
-            .1
-            .clone()
-    };
-    assert_eq!(
-        identity(gcur),
-        "anchored",
-        "CT49 the current generation is anchored"
-    );
-    assert_eq!(identity(ga), "opaque", "CT49 Ga is opaque");
-    assert_eq!(
-        env.count("SELECT COUNT(*) FROM credential_refresh_fences WHERE kind='migrated'"),
-        1,
-        "CT49 one migrated fingerprint fence"
-    );
-    let stored_fp: Vec<u8> = env
-        .db()
-        .query_row(
-            "SELECT fingerprint FROM credential_refresh_fences",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(
-        stored_fp,
-        refresh_fingerprint(b"refresh-0001").to_vec(),
-        "CT49 fingerprint F(current refresh)"
-    );
-    assert!(
-        env.conn
-            .as_mut()
-            .unwrap()
-            .has_unresolved_credential_refresh(CredentialSlot::OwnerApi)
-            .unwrap(),
-        "CT49 has_unresolved(owner_api)"
-    );
-    let pair = env.stored(CredentialSlot::OwnerApi).unwrap();
-    assert_eq!(
-        pair.refresh_owner,
-        crate::auth::credential_envelope::RefreshOwner::Hub,
-        "CT49 owner hub from b1's evidence"
-    );
-    let state = env.state();
-    assert_eq!(
-        (
-            state.attempts_migrated,
-            state.fences_fingerprinted,
-            state.legacy_fences
-        ),
-        (2, 1, 2),
-        "CT49 counts"
-    );
-    assert_eq!(
-        report_opaque_outputs(&mut env),
-        0,
-        "CT49 no opaque fence is a binding output: Ga is an input only and Gcur is anchored"
-    );
-    // cancel_unsent(b2) closes b2's receipt and deletes no fence; begin on the
-    // fenced current generation is refused as spent.
-    let conn = env.conn.as_mut().unwrap();
-    conn.cancel_unsent_credential_refresh(crate::db::OutboundRequestReceiptId(2), gcur)
-        .expect("CT49 cancel_unsent closes b2");
-    assert_eq!(
-        env.count("SELECT COUNT(*) FROM credential_legacy_fences"),
-        2,
-        "CT49 no legacy fence deleted"
-    );
-    let refusal = env
-        .conn
-        .as_mut()
-        .unwrap()
-        .begin_credential_refresh(CredentialSlot::OwnerApi, gcur);
-    assert!(
-        matches!(
-            refusal,
-            Err(StoreError::RefreshOutcomeUnknown {
-                reason: BeginRefusal::TokenSpent
-            })
-        ),
-        "CT49 begin(owner_api, Gcur) is TokenSpent: {refusal:?}"
-    );
-}
-
-/// The receipt's count of opaque fences that are binding outputs, recomputed
-/// from the stored tables (an oracle independent of the report field).
-fn report_opaque_outputs(env: &mut Env) -> i64 {
-    env.count(
-        "SELECT COUNT(*) FROM credential_legacy_fences f WHERE f.identity='opaque' AND EXISTS(
-           SELECT 1 FROM credential_refresh_attempts a
-           WHERE lower(a.output_generation)=lower(f.legacy_generation))",
-    )
-}
-
-#[test]
-fn ct050_dead_current_token() {
-    seam::reset();
-    let gcur = uuid_n(0xaa);
-    let (row, key) = legacy_row("refresh-0001");
-    let mut env = Env::hand_built(Some(&row), None, true);
-    env.fence(CredentialSlot::OwnerApi, &gcur.to_string());
-    env.put(REL_K1, &key);
-    env.run()
-        .expect("CT50 Phase B converts a slot whose current generation is fenced");
-    let refusal = env
-        .conn
-        .as_mut()
-        .unwrap()
-        .begin_credential_refresh(CredentialSlot::OwnerApi, gcur);
-    assert!(
-        matches!(
-            refusal,
-            Err(StoreError::RefreshOutcomeUnknown {
-                reason: BeginRefusal::TokenSpent
-            })
-        ),
-        "CT50 begin(owner_api, Gcur) gives TokenSpent: {refusal:?}"
-    );
-    assert_eq!(
-        env.count("SELECT COUNT(*) FROM credential_refresh_fences WHERE kind='migrated'"),
-        1,
-        "CT50 the fenced current token has a migrated fingerprint fence"
-    );
-    assert_eq!(
-        env.count("SELECT COUNT(*) FROM credential_refresh_attempts"),
-        0,
-        "CT50 no attempt"
-    );
-}
-
 // ---------------------------------------------------------------- CT51, CT52
-
-#[derive(Debug, PartialEq, Eq)]
-struct EndState {
-    plaintexts: Vec<(Vec<u8>, Vec<u8>)>,
-    metadata: Vec<String>,
-    fences: Vec<(String, String, i64)>,
-    files: Vec<String>,
-    counts: (i64, i64, i64),
-}
-
-fn end_state(env: &mut Env, slots: &[CredentialSlot]) -> EndState {
-    let plaintexts = slots.iter().map(|s| env.plaintexts(*s)).collect();
-    let metadata = {
-        let mut statement = env
-            .db()
-            .prepare(
-                "SELECT slot || '|' || coalesce(origin,'-') || '|' || refresh_owner || '|' ||
-                 generation || '|' || expires_at || '|' || next_refresh_at || '|' || migrated
-                 FROM credential_pairs ORDER BY slot",
-            )
-            .unwrap();
-        statement
-            .query_map([], |r| r.get(0))
-            .unwrap()
-            .collect::<Result<_, _>>()
-            .unwrap()
-    };
-    let state = env.state();
-    EndState {
-        plaintexts,
-        metadata,
-        fences: env.legacy_fences(),
-        files: env
-            .listing()
-            .into_iter()
-            .filter(|n| n != "credential-keys")
-            .collect(),
-        counts: (
-            state.attempts_migrated,
-            state.fences_fingerprinted,
-            state.legacy_fences,
-        ),
-    }
-}
-
-fn stop_at(point: &str) {
-    let point = point.to_owned();
-    seam::with(|s| {
-        s.boundary = Some(Box::new(move |name| name != point));
-    });
-}
-
-fn keyring_id(env: &Env) -> Vec<u8> {
-    let check = check_keyring(&env.secrets).unwrap().unwrap();
-    check.current.id.0.to_vec()
-}
-
-fn crash_fixture(fleet: bool) -> Env {
-    let (row, key) = legacy_row("refresh-0001");
-    let fleet_key = key32(7);
-    let fleet_row = PriorRow::fake(&fleet_key, "access-0002", "refresh-0002", None);
-    let env = Env::hand_built(Some(&row), fleet.then_some(&fleet_row), true);
-    env.binding(
-        CredentialSlot::OwnerApi,
-        1,
-        uuid_n(0x3001),
-        &uuid_n(0xa1).to_string(),
-        Some(&uuid_n(0xaa).to_string()),
-        (1_799_999_000_000, "success"),
-    );
-    env.fence(CredentialSlot::OwnerApi, &uuid_n(0xa1).to_string());
-    env.put(REL_K1, &key);
-    if fleet {
-        env.put(FLEET_K4, &fleet_key);
-    }
-    env
-}
-
-#[test]
-fn ct051_conversion_crash_points() {
-    let slots = [CredentialSlot::OwnerApi];
-    seam::reset();
-    let mut baseline = crash_fixture(false);
-    baseline.run().expect("CT51 uninterrupted baseline run");
-    let expected = end_state(&mut baseline, &slots);
-    assert!(is_complete(&baseline.state()), "CT51 baseline completes");
-
-    // Cases: the stop is a boundary of the run; the rerun is a restarted
-    // process. Neutral candidates stay until the conversion barrier passed.
-    let stops: [(&str, bool); 6] = [
-        ("after_keyring", true),
-        ("after_conversion", true),
-        ("after_purge_commit", false),
-        ("after_scrub_marker", false),
-        ("after_removal:pre-upgrade-owner-api.relocated.key", false),
-        ("after_files_marker", false),
-    ];
-    for (point, files_must_remain) in stops {
-        seam::reset();
-        let mut env = crash_fixture(false);
-        stop_at(point);
-        let stopped = env.run();
-        assert!(
-            stopped.is_err(),
-            "CT51.{point} the run stops at its boundary"
-        );
-        assert!(
-            env.state().completed_at_ms.is_none(),
-            "CT51.{point} only the run that finishes step 9 sets completed_at_ms"
-        );
-        if files_must_remain {
-            assert!(
-                env.listing().contains(&REL_K1.to_owned()),
-                "CT51.{point} no neutral candidate is removed before the conversion barrier"
-            );
-        }
-        let key_at_stop = env
-            .secrets_path()
-            .join("credential-keys")
-            .exists()
-            .then(|| keyring_id(&env));
-        seam::with(|s| s.boundary = None);
-        env.reopen();
-        env.run()
-            .unwrap_or_else(|e| panic!("CT51.{point} rerun failed: {e:?}"));
-        assert!(is_complete(&env.state()), "CT51.{point} rerun completes");
-        if let Some(id) = key_at_stop {
-            assert_eq!(
-                keyring_id(&env),
-                id,
-                "CT51.{point} the keyring created at the stop is reused"
-            );
-        }
-        assert_eq!(
-            end_state(&mut env, &slots),
-            expected,
-            "CT51.{point} same end state as an uninterrupted run"
-        );
-    }
-
-    // Case failed_conversion_barrier: the barrier after the step 5 commit fails
-    // (one slot: call 1 records the exclusion, call 2 is the invocation
-    // reservation, call 3 the conversion barrier). No file is removed, no purge runs, and the next open repeats
-    // the barrier before going on.
-    seam::reset();
-    let mut env = crash_fixture(false);
-    env.conn
-        .as_mut()
-        .unwrap()
-        .set_test_barrier_failure_at(Some(3));
-    let failed = env.run();
-    assert!(failed.is_err(), "CT51.failed_barrier Phase B stops");
-    assert!(
-        env.listing().contains(&REL_K1.to_owned()),
-        "CT51.failed_barrier REL-K1 stays"
-    );
-    assert!(
-        events_matching("remove:").is_empty(),
-        "CT51.failed_barrier no removal attempted"
-    );
-    assert!(
-        events_matching("vacuum").is_empty(),
-        "CT51.failed_barrier no purge attempted"
-    );
-    env.reopen();
-    seam::with(|s| s.events.clear());
-    env.run().expect("CT51.failed_barrier rerun completes");
-    {
-        let events = seam::with(|s| s.events.clone());
-        let repeat = event_index(&events, "conversion_barrier_repeat");
-        let first_later = events.iter().position(|e| {
-            matches!(e.as_str(), "vacuum" | "purge_commit" | "scrub_marker")
-                || e.starts_with("remove:")
-        });
-        assert!(
-            matches!((repeat, first_later), (Some(r), Some(l)) if r < l),
-            "CT51.failed_barrier the next open repeats the barrier before the purge, scrub or removal: {:?}",
-            alias_view(&events)
-        );
-    }
-    assert_eq!(
-        end_state(&mut env, &slots),
-        expected,
-        "CT51.failed_barrier end state"
-    );
-
-    // Case vacuum_interrupt: a VACUUM stopped by the interrupt seam leaves
-    // purge_required = 1; the rerun purges.
-    seam::reset();
-    let mut env = crash_fixture(false);
-    let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let handler_flag = flag.clone();
-    let _ = env.db().progress_handler(
-        1,
-        Some(move || handler_flag.load(std::sync::atomic::Ordering::SeqCst)),
-    );
-    let arm = flag.clone();
-    seam::with(|s| {
-        s.boundary = Some(Box::new(move |name| {
-            if name == "before_vacuum" {
-                arm.store(true, std::sync::atomic::Ordering::SeqCst);
-            }
-            true
-        }));
-    });
-    assert!(
-        env.run().is_err(),
-        "CT51.vacuum_interrupt the interrupted VACUUM is an error"
-    );
-    flag.store(false, std::sync::atomic::Ordering::SeqCst);
-    let _ = env.db().progress_handler(1, None::<fn() -> bool>);
-    let state = env.state();
-    assert!(
-        state.purge_required && state.converted_at_ms.is_some(),
-        "CT51.vacuum_interrupt purge still required"
-    );
-    seam::with(|s| s.boundary = None);
-    env.reopen();
-    env.run()
-        .expect("CT51.vacuum_interrupt rerun purges and completes");
-    assert_eq!(
-        end_state(&mut env, &slots),
-        expected,
-        "CT51.vacuum_interrupt end state"
-    );
-
-    // Case fleet_key_names: the Fleet slot runs the same stop with its key in
-    // OLD-K4, then in RST-K2, then in OLD-K5.
-    for name in [FLEET_K4, RST_K2, FLEET_K5] {
-        seam::reset();
-        let fleet_key = key32(7);
-        let row = PriorRow::fake(&fleet_key, "access-0002", "refresh-0002", None);
-        let mut env = Env::hand_built(None, Some(&row), false);
-        env.put(name, &fleet_key);
-        stop_at("after_conversion");
-        assert!(
-            env.run().is_err(),
-            "CT51.fleet.{name} stops after conversion"
-        );
-        assert!(
-            env.listing().contains(&name.to_owned()),
-            "CT51.fleet.{name} key file stays"
-        );
-        seam::with(|s| s.boundary = None);
-        env.reopen();
-        env.run()
-            .unwrap_or_else(|e| panic!("CT51.fleet.{name} rerun failed: {e:?}"));
-        assert!(is_complete(&env.state()), "CT51.fleet.{name} complete");
-        assert!(
-            !env.listing().contains(&name.to_owned()),
-            "CT51.fleet.{name} key file removed"
-        );
-        assert_eq!(
-            env.plaintexts(CredentialSlot::FleetApi).1,
-            b"refresh-0002",
-            "CT51.fleet.{name} plaintext"
-        );
-    }
-
-    // Case rerun_after_keyring (E56-PENDING): with a row in credential_pairs
-    // and no keyring, step 2 stops with KeyringMissing (R17), creates no
-    // keyring and leaves the pending slot pending. Once a keyring appears the
-    // same connection runs Phase B again and converts it; the sign-in
-    // orchestration itself is V1 and V2.
-    seam::reset();
-    let mut env = crash_fixture(false);
-    env.db()
-        .execute(
-            "INSERT INTO credential_pairs(account_id, slot, origin, refresh_owner, generation,
-              access_envelope, refresh_envelope, refresh_present, refresh_fingerprint, expires_at,
-              next_refresh_at, client_id, region, migrated, written_at_ms)
-             VALUES(1, 'fleet_api', 'fleet_oauth', 'hub', ?1, zeroblob(100), zeroblob(100), 1,
-              zeroblob(32), 1800028800, 1800021600, 'client-0001', 'eu', 0, 1)",
-            [uuid_n(0xee).to_string()],
-        )
-        .unwrap();
-    let missing = env.run();
-    assert!(
-        matches!(
-            missing,
-            Err(CredentialMigrationError::Key(
-                CredentialKeyError::KeyringMissing
-            ))
-        ),
-        "CT51.rerun_after_keyring first run stops with KeyringMissing: {missing:?}"
-    );
-    assert!(
-        !env.listing().contains(&"credential-keys".to_owned()),
-        "CT51.rerun_after_keyring no keyring created"
-    );
-    assert_eq!(
-        env.state().owner_api_state,
-        CredentialSlotFormatState::Pending,
-        "CT51.rerun_after_keyring slot pending"
-    );
-    assert!(
-        env.listing().contains(&REL_K1.to_owned()),
-        "CT51.rerun_after_keyring REL-K1 stays"
-    );
-    let created =
-        crate::auth::credential_keys::create_keyring(&env.secrets, &env.exclusion, 1_800_000_000);
-    assert!(
-        created.is_ok(),
-        "CT51.rerun_after_keyring a keyring appears"
-    );
-    env.run()
-        .expect("CT51.rerun_after_keyring the second run on the same connection converts");
-    assert_eq!(
-        env.state().owner_api_state,
-        CredentialSlotFormatState::Migrated,
-        "CT51.rerun_after_keyring migrated"
-    );
-
-    // Case keyring_exclusion_failed (R18, R44 step 2): the exclusion check
-    // fails, no keyring is created, the failure is recorded and Phase B stops.
-    seam::reset();
-    let mut env = crash_fixture(false);
-    env.exclusion = FakeExclusion(Err(CredentialKeyError::BackupExclusionFailed));
-    let failed = env.run();
-    assert!(
-        matches!(
-            failed,
-            Err(CredentialMigrationError::Key(
-                CredentialKeyError::BackupExclusionFailed
-            ))
-        ),
-        "CT51.keyring_exclusion_failed Phase B stops with the exclusion failure: {failed:?}"
-    );
-    assert!(
-        !env.listing().contains(&"credential-keys".to_owned()),
-        "CT51.keyring_exclusion_failed no keyring is created"
-    );
-    let recorded = env.state().secrets_exclusion;
-    assert_eq!(
-        recorded,
-        Some(CredentialSecretsExclusion::Failed),
-        "CT51.keyring_exclusion_failed the failure is recorded: {recorded:?}"
-    );
-    assert_eq!(
-        env.state().owner_api_state,
-        CredentialSlotFormatState::Pending,
-        "CT51.keyring_exclusion_failed the slot stays pending"
-    );
-}
-
-#[test]
-fn ct052_conversion_disk_full() {
-    seam::reset();
-    // Large tokens need new pages; with the page count pinned the commit of
-    // step 5 fails with SQLITE_FULL and rolls back.
-    let key = key32(1);
-    let big = "t".repeat(16_000);
-    let row = PriorRow::fake(&key, &big, &big, Some(uuid_n(0xaa)));
-    let mut env = Env::hand_built(Some(&row), None, false);
-    env.put(REL_K1, &key);
-    let prior_access: Vec<u8> = env
-        .db()
-        .query_row("SELECT access FROM legacy_owner_tokens", [], |r| r.get(0))
-        .unwrap();
-    let pages: i64 = env.count("PRAGMA page_count");
-    env.db()
-        .execute_batch(&format!("PRAGMA max_page_count={pages}"))
-        .unwrap();
-    let failed = env.run();
-    assert!(failed.is_err(), "CT52 step 5 fails with SQLITE_FULL");
-    let state = env.state();
-    assert_eq!(
-        state.owner_api_state,
-        CredentialSlotFormatState::Pending,
-        "CT52 slot stays pending"
-    );
-    assert!(state.converted_at_ms.is_none(), "CT52 not converted");
-    let still: Vec<u8> = env
-        .db()
-        .query_row("SELECT access FROM legacy_owner_tokens", [], |r| r.get(0))
-        .unwrap();
-    assert_eq!(still, prior_access, "CT52 OLD-T1 row byte-identical");
-    assert!(
-        env.listing().contains(&REL_K1.to_owned()),
-        "CT52 REL-K1 present"
-    );
-    assert_eq!(
-        env.count("SELECT COUNT(*) FROM credential_pairs"),
-        0,
-        "CT52 no new row"
-    );
-    env.db()
-        .execute_batch("PRAGMA max_page_count=1073741823")
-        .unwrap();
-    env.reopen();
-    env.run()
-        .expect("CT52 after raising the limit the next open completes");
-    assert!(is_complete(&env.state()), "CT52 complete");
-}
 
 // ---------------------------------------------------------------- CT53
 
 #[test]
 fn ct053_blocked_slot() {
-    use crate::auth::credential_envelope::RefreshOwner;
-    // Case no_candidate_authenticates: the Legacy candidates all fail while
-    // the Fleet slot migrates.
+    // Case no_candidate_authenticates (M02-T02): both pre-upgrade slots are
+    // refused unread and stay pending, whatever key files exist.
     seam::reset();
     let wrong = key32(99);
     let legacy = PriorRow::fake(&key32(1), "access-0001", "refresh-0001", Some(uuid_n(0xaa)));
@@ -1552,8 +747,8 @@ fn ct053_blocked_slot() {
     let state = env.state();
     assert_eq!(
         state.fleet_api_state,
-        CredentialSlotFormatState::Migrated,
-        "CT53 Fleet migrates"
+        CredentialSlotFormatState::Pending,
+        "CT53 Fleet is refused and stays pending"
     );
     assert_eq!(
         state.owner_api_state,
@@ -1562,8 +757,8 @@ fn ct053_blocked_slot() {
     );
     assert_eq!(
         state.owner_api_blocked,
-        Some(CredentialMigrationBlockReason::OldKeyUnavailable),
-        "CT53 blocked reason old_key_unavailable"
+        Some(CredentialMigrationBlockReason::OldPairInvalid),
+        "CT53 blocked reason for a refused pair"
     );
     assert!(!state.old_tables_dropped, "CT53 old_tables_dropped = 0");
     assert!(!state.fences_pending, "CT53 fences already mapped");
@@ -1590,35 +785,7 @@ fn ct053_blocked_slot() {
         "CT53 no Legacy row written"
     );
 
-    // Case late_key: a candidate that authenticates appears; the next open
-    // converts the slot, anchors its fence and removes the key.
-    env.put(REL_K1, &key32(1));
-    env.reopen();
-    env.run().expect("CT53.late_key next open converts");
-    assert_eq!(
-        env.state().owner_api_state,
-        CredentialSlotFormatState::Migrated,
-        "CT53.late_key migrated"
-    );
-    assert_eq!(
-        env.legacy_fences()[0].1,
-        "anchored",
-        "CT53.late_key identity becomes anchored"
-    );
-    assert_eq!(
-        env.count("SELECT COUNT(*) FROM credential_refresh_fences WHERE kind='migrated'"),
-        1,
-        "CT53.late_key migrated fingerprint fence"
-    );
-    assert!(is_complete(&env.state()), "CT53.late_key complete");
-    assert!(
-        !env.listing().contains(&REL_K1.to_owned()),
-        "CT53.late_key REL-K1 removed"
-    );
-    assert_eq!(
-        env.stored(CredentialSlot::OwnerApi).unwrap().refresh_owner,
-        RefreshOwner::External
-    );
+    // Case late_key is gone (M02-T02): no key makes a pre-upgrade pair usable.
 
     // Case old_pair_invalid: a decrypted refresh token with an empty canonical
     // form is blocked and the next candidate is not tried: the spec's CR LF
@@ -1640,8 +807,8 @@ fn ct053_blocked_slot() {
         );
         assert_eq!(
             decrypt_attempts(CredentialSlot::OwnerApi),
-            vec![key.clone()],
-            "CT53.old_pair_invalid.{label} the next candidate is not tried"
+            Vec::<Vec<u8>>::new(),
+            "CT53.old_pair_invalid.{label} no candidate is tried (M02-T02)"
         );
         assert_eq!(
             env.count("SELECT COUNT(*) FROM legacy_owner_tokens"),
@@ -1652,8 +819,8 @@ fn ct053_blocked_slot() {
 
     // Case key_only_under_an_old_name (R48, R80): no keyring and no
     // credential_pairs row, the Legacy key exists only under an old-name
-    // stand-in and the Fleet key is OLD-K4. Phase B creates the keyring,
-    // converts Fleet and leaves Legacy blocked; the stand-in is untouched.
+    // stand-in and the Fleet key is OLD-K4. Phase B creates the keyring and
+    // refuses both slots unread (M02-T02); the stand-in is untouched.
     seam::reset();
     let legacy = PriorRow::fake(&key32(1), "access-0001", "refresh-0001", Some(uuid_n(0xaa)));
     let mut env = Env::hand_built(Some(&legacy), Some(&fleet), true);
@@ -1676,9 +843,9 @@ fn ct053_blocked_slot() {
     let state = env.state();
     assert_eq!(
         state.owner_api_blocked,
-        Some(CredentialMigrationBlockReason::OldKeyUnavailable)
+        Some(CredentialMigrationBlockReason::OldPairInvalid)
     );
-    assert_eq!(state.fleet_api_state, CredentialSlotFormatState::Migrated);
+    assert_eq!(state.fleet_api_state, CredentialSlotFormatState::Pending);
     assert!(
         check_keyring(&env.secrets).unwrap().is_some(),
         "CT53.stand_in_name keyring created and usable"
@@ -1706,20 +873,6 @@ fn ct053_blocked_slot() {
         seam::with(|s| s.events.iter().all(|e| !e.contains(&stand_in))),
         "CT53.stand_in_name no operation names the stand-in"
     );
-    // Relocating the key to its relocated name lets the next open convert.
-    env.put(REL_K1, &key32(1));
-    env.reopen();
-    env.run()
-        .expect("CT53.stand_in_name relocated key converts");
-    assert!(
-        is_complete(&env.state()),
-        "CT53.stand_in_name complete after relocation"
-    );
-    assert!(
-        env.listing().contains(&stand_in),
-        "CT53.stand_in_name stand-in still present"
-    );
-
     // Case noncanonical_predecessor_refused (E-A2, M2P-73(b)): a populated
     // predecessor table under a non-canonical case is refused with
     // CredentialPairInvalid at version 78 with nothing dropped; the canonical
@@ -1775,165 +928,6 @@ fn removal_then_barrier(case: &str) {
         "{case}: the directory barrier is recorded after the removals: {:?}",
         alias_view(&events)
     );
-}
-
-#[test]
-fn ct054_candidate_matrix() {
-    // Legacy candidates in R45's order, each alone and in every pair and triple.
-    let owner_names = [REL_K1, RST_K1, REL_K2];
-    for mask in 1u8..8 {
-        let present: Vec<&str> = owner_names
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| mask & (1 << i) != 0)
-            .map(|(_, n)| *n)
-            .collect();
-        // Equal contents: one decryption attempt per distinct content.
-        {
-            seam::reset();
-            let key = key32(11);
-            let row = PriorRow::fake(&key, "access-0001", "refresh-0001", Some(uuid_n(0xaa)));
-            let mut env = Env::hand_built(Some(&row), None, false);
-            for name in &present {
-                env.put(name, &key);
-            }
-            env.run()
-                .unwrap_or_else(|e| panic!("CT54.owner.{present:?}.equal failed: {e:?}"));
-            assert_eq!(
-                decrypt_attempts(CredentialSlot::OwnerApi),
-                vec![key.clone()],
-                "CT54.owner.{present:?}.equal one attempt"
-            );
-            assert!(
-                is_complete(&env.state()),
-                "CT54.owner.{present:?}.equal complete"
-            );
-            assert!(
-                env.listing()
-                    .iter()
-                    .all(|n| !NEUTRAL_FILES.contains(&n.as_str())),
-                "CT54.owner.{present:?}.equal every candidate removed"
-            );
-            removal_then_barrier(&format!("CT54.owner.{present:?}.equal"));
-        }
-        // Different contents: each present candidate in turn is the one that authenticates.
-        for (position, winner) in present.iter().enumerate() {
-            seam::reset();
-            let keys: Vec<Vec<u8>> = (0..present.len()).map(|i| key32(20 + i as u8)).collect();
-            let row = PriorRow::fake(
-                &keys[position],
-                "access-0001",
-                "refresh-0001",
-                Some(uuid_n(0xaa)),
-            );
-            let mut env = Env::hand_built(Some(&row), None, false);
-            for (name, key) in present.iter().zip(&keys) {
-                env.put(name, key);
-            }
-            env.run()
-                .unwrap_or_else(|e| panic!("CT54.owner.{present:?}.winner={winner} failed: {e:?}"));
-            assert_eq!(
-                decrypt_attempts(CredentialSlot::OwnerApi),
-                keys[..=position].to_vec(),
-                "CT54.owner.{present:?}.winner={winner} attempts follow R45's order up to the winner"
-            );
-            assert_eq!(
-                env.plaintexts(CredentialSlot::OwnerApi).1,
-                b"refresh-0001",
-                "CT54.owner.{present:?}.winner={winner} converts"
-            );
-            assert!(
-                env.listing()
-                    .iter()
-                    .all(|n| !NEUTRAL_FILES.contains(&n.as_str())),
-                "CT54.owner.{present:?}.winner={winner} all removed"
-            );
-            removal_then_barrier(&format!("CT54.owner.{present:?}.winner={winner}"));
-        }
-    }
-    // Fleet candidates OLD-K4, RST-K2, OLD-K5 in the same matrix.
-    let fleet_names = [FLEET_K4, RST_K2, FLEET_K5];
-    for mask in 1u8..8 {
-        let present: Vec<&str> = fleet_names
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| mask & (1 << i) != 0)
-            .map(|(_, n)| *n)
-            .collect();
-        for (position, winner) in present.iter().enumerate() {
-            seam::reset();
-            let keys: Vec<Vec<u8>> = (0..present.len()).map(|i| key32(40 + i as u8)).collect();
-            let row = PriorRow::fake(&keys[position], "access-0002", "refresh-0002", None);
-            let mut env = Env::hand_built(None, Some(&row), false);
-            for (name, key) in present.iter().zip(&keys) {
-                env.put(name, key);
-            }
-            env.run()
-                .unwrap_or_else(|e| panic!("CT54.fleet.{present:?}.winner={winner} failed: {e:?}"));
-            assert_eq!(
-                decrypt_attempts(CredentialSlot::FleetApi),
-                keys[..=position].to_vec(),
-                "CT54.fleet.{present:?}.winner={winner} attempts"
-            );
-            assert!(
-                env.listing()
-                    .iter()
-                    .all(|n| !NEUTRAL_FILES.contains(&n.as_str())),
-                "CT54.fleet.{present:?}.winner={winner} all removed"
-            );
-        }
-    }
-    // OLD-K7 comes last: a wrong file candidate is tried first, then the
-    // cursor-derived key.
-    seam::reset();
-    let cursor = crate::protocol::CursorKey::from_bytes([5; 32]);
-    let k7 = cursor.fleet_credential_encryption_key().to_vec();
-    let row = PriorRow::fake(&k7, "access-0002", "refresh-0002", None);
-    let mut env = Env::hand_built(None, Some(&row), false);
-    env.cursor = Some(cursor);
-    env.put(FLEET_K4, &key32(77));
-    env.run()
-        .expect("CT54.fleet.k7 converts through the cursor-derived key");
-    assert_eq!(
-        decrypt_attempts(CredentialSlot::FleetApi),
-        vec![key32(77), k7],
-        "CT54.fleet.k7 order"
-    );
-    // With old names also present (stand-ins) every result is the same and no
-    // operation is recorded on them (R80).
-    seam::reset();
-    let key = key32(11);
-    let row = PriorRow::fake(&key, "access-0001", "refresh-0001", Some(uuid_n(0xaa)));
-    let mut env = Env::hand_built(Some(&row), None, false);
-    env.put(REL_K1, &key);
-    let stand_ins = [
-        stand_in_name("a.key"),
-        stand_in_name("b.key"),
-        stand_in_name("c.tmp"),
-    ];
-    for name in &stand_ins {
-        env.put(name, &key32(66));
-    }
-    env.run()
-        .expect("CT54.prior_names converts with stand-ins present");
-    assert_eq!(
-        decrypt_attempts(CredentialSlot::OwnerApi),
-        vec![key],
-        "CT54.prior_names attempts unchanged"
-    );
-    for (index, name) in stand_ins.iter().enumerate() {
-        assert!(
-            env.listing().contains(name),
-            "CT54.prior_names stand-in #{index} stays"
-        );
-        assert!(
-            seam::with(|s| s.events.iter().all(|e| !(e.starts_with("inspect:")
-                || e.starts_with("remove:")
-                || e.starts_with("read:"))
-                || !e.contains(name))),
-            "CT54.prior_names no operation on stand-in #{index} (alias set OLD-K1, OLD-K2, OLD-K3)"
-        );
-    }
 }
 
 #[test]
@@ -2076,20 +1070,21 @@ fn ct055_complete_store_leftovers() {
     }
     removal_then_barrier("CT55.exact_staging_pattern");
 
-    // Case failed_directory_barrier: the removals happened, the barrier fails;
-    // old_files_removed stays 0 on a converted store and is retried.
+    // Case failed_directory_barrier: the removals happened, the barrier fails
+    // and the open is retried. M02-T02: no store is converted any more, so the
+    // case runs on a complete store with a leftover key file.
     seam::reset();
-    let mut env = crash_fixture(false);
+    let mut env = Env::fresh();
+    env.put(RST_K2, &key32(5));
     seam::with(|s| s.directory_barrier_fail_at = Some(1));
     let failed = env.run();
     assert!(
         failed.is_err(),
         "CT55.failed_barrier Phase B reports the failed directory barrier"
     );
-    let state = env.state();
     assert!(
-        !state.old_files_removed && state.completed_at_ms.is_none(),
-        "CT55.failed_barrier marker not set: {state:?}"
+        env.listing().is_empty(),
+        "CT55.failed_barrier the removal happened before the barrier"
     );
     seam::with(|s| s.directory_barrier_fail_at = None);
     env.reopen();
