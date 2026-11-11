@@ -863,3 +863,203 @@ fn source_credential_disabled_rotation_never_opens_refused_rows() {
     assert!(raw(OWNER).0 != owner_before.0, "admitted Owner pair re-sealed under the new key");
     unchanged(&vault, owner);
 }
+
+// ---------------------------------------------------------------- M02-T11
+// The refused-credential purge (DEC-083): names carry `refused_credential_purge`.
+
+const FLEET_KEY_FILE: &str = "fleet-credentials.key";
+
+/// An upgraded store whose pre-upgrade Owner row the Hub's own login has
+/// replaced, while its pre-upgrade Fleet row stays refused, with the old Fleet
+/// key file and the old tables still on disk. Returns the own-login generation.
+fn refused_purge_blocked_fixture() -> (tempfile::TempDir, Uuid) {
+    credential_migration::seam::reset();
+    let root = credential_migration::g24_m2_m::seed_admitted_blocked_owner();
+    let vault = open(root.path());
+    let session = vault.begin_sign_in(OWNER).expect("own sign-in session");
+    let grant = RedeemedGrant::from_validated_redemption(session, Zeroizing::new("access-0003".into()),
+        Zeroizing::new("refresh-0003".into()), 28_800, None, None).expect("validated redemption");
+    let stored = vault.store_hub_grant(grant).expect("own-login pair");
+    let generation = stored.generation();
+    vault.finish_hub_grant_aftercare(stored).expect("aftercare");
+    (root, generation)
+}
+
+/// A current store holding the Hub's own login and a stored Fleet pair.
+fn refused_purge_stored_fleet_fixture() -> (tempfile::TempDir, Uuid) {
+    let root = crate::private_tempdir().expect("root");
+    let owner = seed_entry(root.path(), CredentialEntry::own_login_fixture(Zeroizing::new("access-0001".into()), Zeroizing::new("refresh-0001".into())).expect("own login"));
+    seed_entry(root.path(), CredentialEntry::fleet_supplied(Zeroizing::new("fleet-access-0002".into()), Zeroizing::new("fleet-refresh-0002".into()),
+        "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet fixture"));
+    (root, owner)
+}
+
+fn refused_purge_contains(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty() && haystack.windows(needle.len()).any(|window| window == needle)
+}
+
+fn refused_purge_table_present(data: &Path, table: &str) -> bool {
+    HubStore::initialize(data).expect("store").open().expect("raw").query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)", [table], |row| row.get(0)).expect("table query")
+}
+
+/// Acceptance 1: the listing names the refused slot, its origin, the old key
+/// file and the old tables, never the own-login pair or a secret value, and
+/// writes nothing.
+#[test]
+fn refused_credential_purge_listing_names_what_it_removes_and_deletes_nothing() {
+    let (root, _) = refused_purge_blocked_fixture();
+    let bytes = |name: &str| std::fs::read(root.path().join(name)).ok();
+    let store = HubStore::open_read_only(root.path()).expect("read-only store");
+    let before = (bytes("hub.sqlite"), bytes("hub.sqlite-wal"), format!("{:?}", store.credential_format_state().expect("format")));
+    let report = refused_credential_listing(&store, root.path()).expect("listing");
+    assert_eq!(report.mode, "list");
+    assert_eq!(report.refused_slots, vec![RefusedSlotView { slot: "fleet_api", origin: "pre_upgrade", table: "pre_upgrade_table", refusal: "source_credential_disabled" }],
+        "only the refused Fleet slot; the admitted own-login pair is not listed");
+    assert!(report.old_key_files.contains(&FLEET_KEY_FILE), "{:?}", report.old_key_files);
+    assert!(report.old_tables.contains(&"fleet_tokens") && report.old_tables.contains(&"legacy_owner_tokens"), "{:?}", report.old_tables);
+    assert_eq!(report.confirm_command.as_deref(), Some("teslatlas-hub purge-refused-credentials --confirm"));
+    let text = serde_json::to_string(&report).expect("json");
+    for secret in ["fleet-access-0001", "fleet-refresh-0001", "access-0003", "refresh-0003", "access-0001"] {
+        assert!(!text.contains(secret), "no secret value in the listing: {text}");
+    }
+    let after = (bytes("hub.sqlite"), bytes("hub.sqlite-wal"), format!("{:?}", store.credential_format_state().expect("format")));
+    assert!(before == after, "the listing wrote nothing");
+    assert!(root.path().join("secrets").join(FLEET_KEY_FILE).exists(), "the listing removed no key file");
+    assert!(refused_purge_table_present(root.path(), "fleet_tokens"), "the listing dropped no table");
+}
+
+/// Acceptance 1 and 2: the purge removes the refused pre-upgrade row, the old
+/// tables and the old key file and keeps the own-login pair; afterwards the
+/// store reports no refused slot, cleanup completes and backups are clean.
+#[test]
+fn refused_credential_purge_removes_refused_rows_tables_and_key_files_and_keeps_the_own_login_pair() {
+    let (root, generation) = refused_purge_blocked_fixture();
+    let vault = open(root.path());
+    let report = vault.purge_refused_credentials().expect("purge");
+    assert_eq!(report.mode, "purge");
+    assert_eq!(report.refused_slots.iter().map(|slot| (slot.slot, slot.origin)).collect::<Vec<_>>(), vec![("fleet_api", "pre_upgrade")]);
+    assert!(report.old_key_files.contains(&FLEET_KEY_FILE), "{report:?}");
+    assert!(report.old_tables.contains(&"fleet_tokens"), "{report:?}");
+    assert_eq!(report.old_key_files_remaining, Some(Vec::new()));
+    assert_eq!(report.cleanup_complete, Some(true));
+    let owner = pair(&vault);
+    assert!(owner.generation == generation && owner.origin == Some(CredentialOrigin::HubLogin) && owner.access.as_str() == "access-0003",
+        "the admitted own-login pair is untouched");
+    drop(vault);
+    assert!(!root.path().join("secrets").join(FLEET_KEY_FILE).exists(), "the old key file is removed");
+    for table in ["fleet_tokens", "legacy_owner_tokens", "fleet_refresh_receipt_bindings", "legacy_refresh_input_fences"] {
+        assert!(!refused_purge_table_present(root.path(), table), "{table} dropped");
+    }
+    let store = HubStore::initialize(root.path()).expect("store");
+    let state = store.credential_format_state().expect("format").expect("state");
+    assert!(state.fleet_api_state == CredentialSlotFormatState::Discarded && state.fleet_api_blocked.is_none()
+        && state.old_tables_dropped && state.completed_at_ms.is_some() && !state.purge_required && state.wal_scrubbed && state.old_files_removed,
+        "cleanup completes: {state:?}");
+    let status = crate::auth::credential_sign_in::credential_status(&store, root.path(), 1_800_000_000_000).expect("status");
+    assert_eq!(status.credential_store.format_state, "complete");
+    assert_eq!((status.legacy_credentials.store_state, status.fleet_credentials.store_state), ("ok", "ok"), "no refused slot");
+    assert!(status.credential_store.blocked_reason.owner_api.is_none() && status.credential_store.blocked_reason.fleet_api.is_none());
+    assert_eq!(store.begin_backup_snapshot().expect("snapshot").credential_backup_admission(), crate::db::CredentialBackupAdmission::Clean,
+        "backups are no longer blocked");
+    assert!(store.refused_credential_inventory().expect("inventory").rows.is_empty());
+    drop(store);
+    let vault = open(root.path());
+    let again = vault.purge_refused_credentials().expect("second purge");
+    assert!(again.refused_slots.is_empty() && again.cleanup_complete.is_none(), "a second purge removes nothing: {again:?}");
+    assert_eq!(pair(&vault).generation, generation);
+}
+
+/// Acceptance 1: a stored Fleet pair is refused, so the purge removes it with
+/// its ciphertext; the own-login pair stays.
+#[test]
+fn refused_credential_purge_removes_a_stored_fleet_pair_and_its_ciphertext() {
+    let (root, owner) = refused_purge_stored_fleet_fixture();
+    let vault = open(root.path());
+    let envelopes = {
+        let mut state = vault.lock().expect("state");
+        let row = state.connection.load_credential_pair(CredentialSlot::FleetApi).expect("row").expect("present");
+        (row.access_envelope.clone(), row.refresh_envelope.clone())
+    };
+    let report = vault.purge_refused_credentials().expect("purge");
+    assert_eq!(report.refused_slots, vec![RefusedSlotView { slot: "fleet_api", origin: "fleet_oauth", table: "credential_pairs", refusal: "source_credential_disabled" }]);
+    assert!(report.old_tables.is_empty(), "a current store has no old tables");
+    assert_eq!(report.cleanup_complete, Some(true));
+    assert!(vault.credential_pair_presence(CredentialSlot::FleetApi).expect("presence").is_none(), "the Fleet pair is gone");
+    assert_eq!(pair(&vault).generation, owner, "the own-login pair stays");
+    drop(vault);
+    for name in ["hub.sqlite", "hub.sqlite-wal"] {
+        if let Ok(bytes) = std::fs::read(root.path().join(name)) {
+            assert!(!refused_purge_contains(&bytes, &envelopes.0) && !refused_purge_contains(&bytes, &envelopes.1), "{name} keeps no Fleet ciphertext");
+        }
+    }
+}
+
+/// Acceptance 1: rows, ciphertext and old tables go in one counted commit,
+/// and no key file is removed until that commit is durable.
+#[test]
+fn refused_credential_purge_commits_once_and_removes_key_files_after_the_commit() {
+    let (root, _) = refused_purge_blocked_fixture();
+    let vault = open(root.path());
+    let key = root.path().join("secrets").join(FLEET_KEY_FILE);
+    let mut commits = 0;
+    {
+        let mut state = vault.lock().expect("state");
+        let removed = state.connection.purge_refused_credentials_with_commit(&mut || {
+            commits += 1;
+            assert!(key.exists(), "no key file is removed before the commit");
+        }).expect("purge commit");
+        assert_eq!(removed.rows.len(), 1);
+    }
+    assert_eq!(commits, 1, "the rows and the old tables go in one transaction");
+    assert!(!refused_purge_table_present(root.path(), "fleet_tokens"), "the commit dropped the old tables");
+    assert!(key.exists(), "the key file outlives the store commit");
+    vault.finish_clear_aftercare().expect("Phase B after the commit");
+    assert!(!key.exists(), "the key file is removed after the commit");
+}
+
+/// Acceptance 1: the purge is refused while a refresh of the own-login pair
+/// is unresolved or a collector holds its lease, and removes nothing then.
+#[test]
+fn refused_credential_purge_refuses_while_a_refresh_or_a_collector_is_active() {
+    let (root, owner) = refused_purge_stored_fleet_fixture();
+    let vault = open(root.path());
+    let present = |vault: &CredentialVault| vault.credential_pair_presence(CredentialSlot::FleetApi).expect("presence").is_some();
+    let receipt = vault.begin_refresh(OWNER, owner).expect("own-login refresh begins");
+    let refused = vault.purge_refused_credentials().expect_err("refresh active");
+    assert!(matches!(refused, CredentialStoreError::Store(StoreError::WriteRefused("refresh_active"))), "{refused:?}");
+    assert!(present(&vault), "nothing removed during a refresh");
+    vault.cancel_refresh(receipt, owner).expect("refresh resolved");
+    let raw = HubStore::initialize(root.path()).expect("store").open().expect("raw");
+    raw.execute("INSERT INTO supervised_collector_lease(singleton_id, instance_id, state, started_at_ms, heartbeat_at_ms, lease_until_ms)
+        VALUES (1, ?1, 'active', 0, 1, ?2)", rusqlite::params![Uuid::new_v4().to_string(), i64::MAX]).expect("live lease");
+    let refused = vault.purge_refused_credentials().expect_err("collector running");
+    assert!(matches!(refused, CredentialStoreError::Store(StoreError::WriteRefused("collector_running"))), "{refused:?}");
+    assert!(present(&vault), "nothing removed while a collector runs");
+    raw.execute("DELETE FROM supervised_collector_lease", []).expect("lease released");
+    vault.purge_refused_credentials().expect("purge once idle");
+    assert!(!present(&vault));
+    assert_eq!(pair(&vault).generation, owner);
+}
+
+/// Acceptance 2: before the purge, status and the doctor (one hint) and the
+/// backup refusal name the command; afterwards none does.
+#[test]
+fn refused_credential_purge_status_doctor_and_backup_name_the_command_until_the_purge() {
+    let (root, _) = refused_purge_blocked_fixture();
+    let store = HubStore::initialize(root.path()).expect("store");
+    let hint = crate::runtime::operator::purge::hint(&store).expect("hint").expect("refused credentials are kept");
+    assert_eq!(hint["command"], "teslatlas-hub purge-refused-credentials");
+    assert_eq!(hint["refusedSlots"], serde_json::json!(["fleet_api"]));
+    assert!(hint["message"].as_str().is_some_and(|text| text.contains("teslatlas-hub purge-refused-credentials --confirm")), "{hint}");
+    let destination = crate::private_tempdir().expect("destination");
+    let error = crate::data_recovery::create_data_backup(&store, &destination.path().join("backup")).expect_err("backup refused");
+    let message = crate::data_recovery::refused_credential_backup_message(&store, &error).expect("the blocked refusal names the command");
+    assert!(message.contains("teslatlas-hub purge-refused-credentials --confirm"), "{message}");
+    let vault = open(root.path());
+    vault.purge_refused_credentials().expect("purge");
+    drop(vault);
+    assert!(crate::runtime::operator::purge::hint(&store).expect("hint").is_none(), "nothing to name after the purge");
+    let waiting = crate::data_recovery::DataRecoveryError::Store(StoreError::BackupWaitsForCredentialCleanup);
+    assert!(crate::data_recovery::refused_credential_backup_message(&store, &waiting).is_none(), "no blocked refusal after the purge");
+}

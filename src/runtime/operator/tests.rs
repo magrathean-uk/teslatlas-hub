@@ -81,6 +81,16 @@ impl ServiceBackend for FakeBackend {
         self.0.push(&format!("restore:{}", source.display()));
         Ok(json!({ "status": "restored" }))
     }
+
+    fn refused_credentials(&self) -> Result<Value, OperatorRefusal> {
+        self.0.push("refused_list");
+        Ok(json!({ "mode": "list" }))
+    }
+
+    fn purge_refused_credentials(&self) -> Result<Value, OperatorRefusal> {
+        self.0.push("refused_purge");
+        Ok(json!({ "mode": "purge" }))
+    }
 }
 
 /// The owner at the Hub Mac: answers the trust confirmation as told and
@@ -874,6 +884,16 @@ impl ServiceBackend for RestoringBackend {
         std::io::Write::write_all(&mut file, &self.key).expect("key");
         Ok(json!({ "status": "restored", "cursorKeyIncluded": true }))
     }
+
+    fn refused_credentials(&self) -> Result<Value, OperatorRefusal> {
+        self.calls.push("refused_list");
+        Ok(json!({}))
+    }
+
+    fn purge_refused_credentials(&self) -> Result<Value, OperatorRefusal> {
+        self.calls.push("refused_purge");
+        Ok(json!({}))
+    }
 }
 
 /// Finding 2: after a data-only restore the service waits in its recovery
@@ -955,4 +975,54 @@ async fn collection_window_operator_recovery_state_restores_keys_before_any_is_c
     assert_eq!(status["credentialRecoveryPending"], false);
     rig.forward(&OperatorRequest::WindowTrust { document: encoded(&rig.trust) })
         .expect("window verbs answer again");
+}
+
+/// M02-T11 acceptance 1 and 3: the purge command parses with a listing mode
+/// and a confirmation flag, is forwarded to the running service, lists
+/// without the confirmation (deleting nothing) and purges only once the
+/// window is Closed, holding the import lock.
+#[test]
+fn refused_credential_purge_is_forwarded_lists_without_confirmation_and_waits_for_the_window() {
+    for (arguments, confirm) in [
+        (&["teslatlas-hub", "purge-refused-credentials"][..], false),
+        (&["teslatlas-hub", "purge-refused-credentials", "--confirm"][..], true),
+    ] {
+        let cli = Cli::try_parse_from(arguments.iter().copied()).expect("parses");
+        assert!(
+            matches!(cli.command, Command::PurgeRefusedCredentials { confirm: parsed } if parsed == confirm),
+            "{arguments:?}"
+        );
+        assert_eq!(admission::route(&cli.command), Route::Service, "forwarded to the service");
+        assert!(!admission::requires_user_hub_admission(&cli.command), "never takes the lifetime lock");
+    }
+    assert!(Cli::try_parse_from(["teslatlas-hub", "purge-refused-credentials", "--yes"]).is_err());
+
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data dir");
+    let _server = rig.serve();
+    let list = OperatorRequest::PurgeRefusedCredentials { confirm: false };
+    let purge = OperatorRequest::PurgeRefusedCredentials { confirm: true };
+    assert_eq!(rig.forward(&list).expect("listing")["mode"], "list");
+    assert_eq!(rig.calls.all(), vec!["refused_list".to_owned()], "without --confirm only the listing runs");
+
+    rig.forward(&OperatorRequest::WindowTrust {
+        document: encoded(&rig.trust),
+    })
+    .expect("trust");
+    rig.forward(&OperatorRequest::WindowOpen {
+        grant: encoded(&rig.grant(600)),
+    })
+    .expect("open");
+    let refused = rig.forward(&purge).unwrap_err();
+    assert_eq!(refused.code, "window_active", "no purge inside a window");
+    rig.forward(&list).expect("the listing is read-only, so it runs in a window");
+    rig.forward(&OperatorRequest::WindowClose).expect("close");
+    assert_eq!(rig.forward(&purge).unwrap_err().code, "window_active", "not while Closing");
+    rig.controller.finish_close().expect("handback");
+    assert_eq!(rig.forward(&purge).expect("purge")["mode"], "purge");
+    assert_eq!(
+        rig.calls.all(),
+        vec!["refused_list".to_owned(), "refused_list".to_owned(), "refused_purge".to_owned()],
+        "the purge reached the backend once, after the window closed"
+    );
 }

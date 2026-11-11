@@ -490,3 +490,40 @@ mod authority {
         assert_eq!(hub.endpoint.connections(), 0);
     }
 }
+
+/// M02-T11 acceptance 3: `purge-refused-credentials`, listing or confirmed,
+/// goes only through the running service. With no service it is refused
+/// `service_not_running` having created nothing; an impostor on the socket
+/// receives nothing; no network connection is made.
+#[test]
+fn refused_credential_purge_goes_through_the_service_and_makes_no_connection() {
+    let cases: [&[&str]; 2] = [
+        &["purge-refused-credentials"],
+        &["purge-refused-credentials", "--confirm"],
+    ];
+    let hub = Hub::new();
+    for prepare in [false, true] {
+        if prepare {
+            fs::create_dir(hub.data()).expect("data dir");
+            fs::set_permissions(hub.data(), fs::Permissions::from_mode(0o700)).expect("mode");
+        }
+        for case in &cases {
+            let output = hub.run(case, b"");
+            assert_refused(&output, "service_not_running", case);
+            assert!(stdout(&output).is_empty(), "{case:?}: nothing listed or removed");
+        }
+    }
+    let created: Vec<_> = fs::read_dir(hub.data()).expect("data").collect();
+    assert!(created.is_empty(), "nothing was created in the data directory");
+    assert_eq!(hub.endpoint.connections(), 0, "no network connection");
+
+    let hub = Hub::new();
+    let impostor = Impostor::bind(&hub.data());
+    for case in &cases {
+        let output = hub.run(case, b"");
+        assert_refused(&output, "service_unauthenticated", case);
+        assert!(stdout(&output).is_empty(), "{case:?}: nothing printed from the impostor");
+    }
+    assert_eq!(impostor.bytes_received(), 0, "the impostor received nothing");
+    assert_eq!(hub.endpoint.connections(), 0, "no network connection");
+}
