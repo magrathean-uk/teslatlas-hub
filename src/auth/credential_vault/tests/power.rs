@@ -81,11 +81,11 @@ fn ct092_power_cuts_refresh_rotation_migration() {
     struct Reset;
     impl Drop for Reset { fn drop(&mut self) { fixtures::power_observer(None); fixtures::power_seal_observer(None); credential_migration::seam::reset(); } }
     let _reset = Reset;
-    for operation in ["entry", "refresh", "rotation", "migration"] {
+    // M02-T02: no pre-upgrade pair converts, so the migration power cuts are gone.
+    for operation in ["entry", "refresh", "rotation"] {
         credential_migration::seam::reset();
         let (root, input) = match operation {
             "entry" => (crate::private_tempdir().expect("entry root"), None),
-            "migration" => { fake_on(); (admitted_migration_fixture(false, None, false, 0), None) },
             _ => { let (root, generation) = seeded(); (root, Some(generation)) },
         };
         // A checkpoint makes the initial database and its image self-contained.
@@ -133,14 +133,12 @@ fn ct092_power_cuts_refresh_rotation_migration() {
                 vault.persist_refreshed(OWNER, receipt, input, Uuid::new_v4(), "access-0002", "refresh-0002", 1_800_028_800, 1_800_027_000).expect("complete");
             }
             "rotation" => vault.rotate().expect("rotation"),
-            "migration" => complete(root.path()),
             _ => unreachable!(),
         }
         fixtures::power_observer(None); fixtures::power_seal_observer(None); drop(vault);
         assert!(cuts.borrow().len() >= 3, "CT92.multiple barrier cut points");
         for image in cuts.borrow().iter() {
             let recovered = image.reopen();
-            if operation == "migration" { fake_on(); }
             let vault = open(recovered.path());
             for slot in [OWNER, CredentialSlot::FleetApi] {
                 match vault.load(slot) {

@@ -362,7 +362,9 @@ async fn cadence_wait_renews_past_initial_lease_and_releases_ownership() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cadence_wait_has_no_collection_side_effects_and_requires_restart() {
     let _serial = WAIT_SERIAL.lock().await;
-    for mode in WAIT_MODES {
+    // M02-T02 parks Fleet: a Fleet restart is refused at load, so only the Owner
+    // modes are checked.
+    for mode in [WaitMode::Legacy, WaitMode::Provider] {
         let (temporary, store) = cadence_wait_hub();
         cadence_wait_prepare_state(&store);
         // Credentials the corrected restart can use, left alone by the wait: a usable

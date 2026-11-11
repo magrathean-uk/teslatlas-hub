@@ -1312,6 +1312,7 @@ fn p3_wait_hub() -> (tempfile::TempDir, HubStore, HubConfig, HubConfig) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn cs_p3_cadence_wait_defers_refusal_lift_until_validated_start() {
     // A Legacy refusal stands. The owner then configures Fleet polling with a cadence
     // the configuration breaks: the managed wait is not an ordinary start, so it lifts

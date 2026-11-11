@@ -360,6 +360,7 @@ fn p3bf3_the_observer_entry_writes_nothing_after_the_fence() {
 }
 
 #[test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 fn p3bf3_the_fleet_entry_binds_nothing_and_creates_no_cursor_key_after_the_fence() {
     let outcome = p3bf3_entry(P3bf3Entry::Fleet, ("credential", 1));
     p3bf3_assert_refused_at("fleet bind", "credential", &outcome);
@@ -379,7 +380,8 @@ fn p3bf3_every_entry_hands_its_guard_to_the_run() {
     // boundary (the lease), the audit the seam holds is tripped there, the entry ends with
     // the sensitive failure and neither a lease nor a row, a pack file or a mutation
     // attempt follows the refusal.
-    for kind in [P3bf3Entry::Owner, P3bf3Entry::Observer, P3bf3Entry::Fleet] {
+    // M02-T02 parks Fleet: its entry is refused at load before the run starts.
+    for kind in [P3bf3Entry::Owner, P3bf3Entry::Observer] {
         let outcome = p3bf3_entry(kind, ("start-lease", 1));
         // The entry created the cursor key before it handed the run its guard.
         p3bf3_assert_refused(&format!("{kind:?} run"), "start-lease", &outcome, true);

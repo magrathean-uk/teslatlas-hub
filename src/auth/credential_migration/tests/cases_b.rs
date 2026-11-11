@@ -281,14 +281,7 @@ fn ct101_old_names_never_touched_phase_b() {
             "CT101 no inspect, read or remove of old-name stand-in #{index} (alias set OLD-K1, OLD-K2, OLD-K3)"
         );
     }
-    // The listings that met a stand-in passed over it.
-    assert!(
-        seam::with(|s| s
-            .events
-            .iter()
-            .any(|e| e.starts_with("list_returned:") && e.contains(&secrets_names[0]))),
-        "CT101 the directory listing met the stand-in and nothing followed"
-    );
+    // M02-T02: a refused store never completes, so no cleanup listing runs.
 }
 
 // ---------------------------------------------------------------- CT87, CT90, CT91
