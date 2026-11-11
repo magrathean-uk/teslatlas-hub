@@ -56,16 +56,20 @@ use super::{
 pub(super) const CLAIMS_DIRECTORY: &str = ".teslatlas-hub-removals";
 
 /// Backup-owned live state: one row per run that has created its partial file
-/// and not yet published or discarded it. Created on first use; the seal
-/// drops it from every copied or restored catalogue (`DROP_PACK_PIN_TABLE`).
+/// and not yet published or discarded it. The schema migration creates the
+/// table, like the pin table; the seal empties it in every copied or restored
+/// catalogue (`clear_pack_pins`), so no row is ever exported.
 const RUN_TABLE: &str = "backup_runs";
-const CREATE_RUN_TABLE: &str = "CREATE TABLE IF NOT EXISTS backup_runs (
-    generation TEXT PRIMARY KEY CHECK(length(generation) = 36),
-    destination BLOB NOT NULL,
-    file_device TEXT NOT NULL,
-    file_inode TEXT NOT NULL,
-    started_at_ms INTEGER NOT NULL
-) STRICT, WITHOUT ROWID;";
+
+/// Whether `connection`'s catalogue has the run table (a catalogue the
+/// current schema migration has not reached has none).
+pub(super) fn run_table_present(connection: &rusqlite::Connection) -> Result<bool, rusqlite::Error> {
+    connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1)",
+        [RUN_TABLE],
+        |row| row.get(0),
+    )
+}
 
 /// Reported when the volume cannot protect a removal.
 const UNPROTECTED: &str = "older generations were kept: this destination does not enforce \
@@ -343,9 +347,6 @@ pub(super) fn record_run(
 ) -> Result<(), DataRecoveryError> {
     let connection = store.open()?;
     connection
-        .execute_batch(CREATE_RUN_TABLE)
-        .map_err(pin_error)?;
-    connection
         .execute(
             "INSERT INTO backup_runs(generation, destination, file_device, file_inode,
                  started_at_ms)
@@ -379,14 +380,7 @@ fn recorded_runs(
     destination: &AdmittedDirectory,
 ) -> Result<Vec<(Uuid, FileIdentity)>, DataRecoveryError> {
     let connection = store.open()?;
-    let present: bool = connection
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1)",
-            [RUN_TABLE],
-            |row| row.get(0),
-        )
-        .map_err(pin_error)?;
-    if !present {
+    if !run_table_present(&connection).map_err(pin_error)? {
         return Ok(Vec::new());
     }
     let mut statement = connection

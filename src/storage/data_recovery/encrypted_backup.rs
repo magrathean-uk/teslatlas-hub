@@ -20,7 +20,14 @@
 //!
 //! No plaintext is ever staged on disk. The catalogue copy is a `:memory:`
 //! database with in-memory journal and temporary storage, so it has no file
-//! and no side file; once sealed it is serialised and the database dropped; the no-op bodies stay in memory; packs are read from
+//! and no side file; once sealed it is serialised and the database dropped.
+//! A catalogue above the in-memory cap is copied instead into an encrypted
+//! scratch volume ([`super::encrypted_scratch`], M06-T07): SQLite works on
+//! plain pages through the attached volume while the disk holds only its
+//! encrypted blocks, the seal rebuilds the copy there with `VACUUM INTO`
+//! (no temporary database, no sort spill) and the sealed file streams from
+//! there; the volume is detached and its image removed once the catalogue
+//! has streamed. The no-op bodies stay in memory; packs are read from
 //! the live store, where the pins keep GC from removing them until the run
 //! ends. Compaction never deletes a pack file (it only retires catalogue
 //! references, which GC later acts on), so the pin protects a pack against
@@ -29,10 +36,13 @@
 //!
 //! Memory. The Hub's peak is 1 GiB. The key derivation (at most
 //! [`super::archive_crypto::MAX_KDF_MEMORY_KIB`]) finishes and frees its memory before the copy
-//! starts; the catalogue copy is capped at [`MAX_CATALOGUE_IMAGE_BYTES`] and
-//! counted twice (the copy and its serialised image overlap briefly); the
-//! rest is fixed buffers. See
-//! `memory_budget_fits_the_hub_peak` in the tests.
+//! starts; the in-memory catalogue copy is capped at
+//! [`MAX_CATALOGUE_IMAGE_BYTES`] and counted twice (the copy and its
+//! serialised image overlap briefly); the rest is fixed buffers. A larger
+//! catalogue takes the scratch path, where memory is the SQLite page caches
+//! ([`SCRATCH_CACHE_KIB`] each) and the stream buffers, whatever the
+//! catalogue's size. See `memory_budget_fits_the_hub_peak` and
+//! `backup_large_catalogue_*` in the tests.
 //!
 //! Failure rule. A generation becomes visible only by a no-replace rename of a
 //! fully written, synced partial file, so every failure before the rename
@@ -63,7 +73,7 @@
 
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
+    io::{self, Read, Seek, SeekFrom, Write},
     num::NonZeroUsize,
     os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
@@ -80,6 +90,7 @@ use super::{
     MAX_SCHEMA_22_NOOP_BYTES, PACK_DIRECTORY, PRIVATE_FILE_MODE, SCHEMA_22_NOOP_DIRECTORY,
     SCHEMA_VERSION, Sha256, StagingDirectory, StoreError, admit_staging_capacity,
     backup_admission::{self, AdmittedDirectory},
+    encrypted_scratch::EncryptedScratch,
     archive_crypto::{
         ArchiveReader, ArchiveWriter, DEFAULT_CHUNK_BYTES, DEFAULT_KDF, KdfParams, MAX_CHUNK_BYTES,
         MAX_KDF_MEMORY_KIB, SealingKey, TAG_BYTES, map_write_error,
@@ -94,7 +105,7 @@ use super::{
     validate_schema_22_noop_bytes,
 };
 use rusqlite::{
-    Connection, MAIN_DB, TransactionBehavior,
+    Connection, MAIN_DB, OpenFlags, TransactionBehavior,
     backup::{Backup, StepResult},
     params,
     serialize::Data,
@@ -135,27 +146,67 @@ const _: () = assert!(
             + (MAX_CHUNK_BYTES + TAG_BYTES) as u64
             <= HUB_PEAK_MEMORY_BYTES
 );
+/// A catalogue above this size is copied into the encrypted scratch volume.
+/// The volume is prepared before the publication gate, so the threshold
+/// leaves room for the catalogue to grow before the copy under the gate.
+pub(super) const SCRATCH_THRESHOLD_BYTES: u64 = MAX_CATALOGUE_IMAGE_BYTES / 4 * 3;
+/// The page cache of each scratch-path connection (copy, seal, rebuild).
+pub(super) const SCRATCH_CACHE_KIB: u64 = 8 * 1024;
+const _: () = assert!(
+    SERVICE_RESERVE_BYTES
+        + 3 * SCRATCH_CACHE_KIB * 1024
+        + MAX_BACKUP_MEMBERS as u64 * MAX_SCHEMA_22_NOOP_BYTES
+        + 2 * STREAM_BUFFER_BYTES as u64
+        + (MAX_CHUNK_BYTES + TAG_BYTES) as u64
+        <= HUB_PEAK_MEMORY_BYTES
+);
+const SCRATCH_COPY: &str = "catalogue.sqlite";
+const SCRATCH_SEALED: &str = "sealed.sqlite";
 const BACKUP_STEP_PAGES: i32 = 256;
 const BACKUP_BUSY_RETRIES: u32 = 2_000;
 const SQLITE_HEADER_BYTES: usize = 100;
 
-/// The pin rows of running encrypted backups. Backup-owned live state: it is
-/// created on first use, GC reads it when present, and the seal drops it from
-/// every copied or restored catalogue.
+/// The pin rows of running encrypted backups. Backup-owned live state in a
+/// table the schema migration creates (M06-T07); the seal empties it in every
+/// copied or restored catalogue.
 const PACK_PIN_TABLE: &str = "backup_pack_pins";
-const CREATE_PACK_PIN_TABLE: &str = "CREATE TABLE IF NOT EXISTS backup_pack_pins (
-    pin_id TEXT NOT NULL CHECK(length(pin_id) = 36),
-    sha256 TEXT NOT NULL CHECK(length(sha256) = 64),
-    expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms > 0),
-    PRIMARY KEY(pin_id, sha256)
-) STRICT, WITHOUT ROWID;";
-pub(super) const DROP_PACK_PIN_TABLE: &str =
-    "DROP TABLE IF EXISTS backup_pack_pins; DROP TABLE IF EXISTS backup_runs;";
+
+fn pack_pin_table_present(connection: &Connection) -> Result<bool, rusqlite::Error> {
+    connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1)",
+        [PACK_PIN_TABLE],
+        |row| row.get(0),
+    )
+}
+
+/// Remove every pin row and every recorded run (`backup_runs`, M06-T02) from
+/// a copied or restored catalogue. Both tables are live-host state that the
+/// schema migration creates: they stay, empty; a catalogue from before a
+/// table has none of its rows.
+pub(super) fn clear_pack_pins(connection: &Connection) -> Result<(), rusqlite::Error> {
+    if pack_pin_table_present(connection)? {
+        connection.execute("DELETE FROM backup_pack_pins", [])?;
+    }
+    if retention::run_table_present(connection)? {
+        connection.execute("DELETE FROM backup_runs", [])?;
+    }
+    Ok(())
+}
 /// A pin's lease; a running backup renews it once half has passed.
 pub(super) const PACK_PIN_LEASE_MS: i64 = 6 * 60 * 60 * 1000;
 
 #[cfg(test)]
-pub(super) use test_hooks::{Action as HookAction, clear_hook, set_hook};
+pub(super) use test_hooks::{Action as HookAction, clear_hook, force_scratch_above, set_hook};
+
+/// The size above which a run copies through the encrypted scratch volume;
+/// tests lower it to take that path with small catalogues.
+fn scratch_threshold() -> u64 {
+    #[cfg(test)]
+    if let Some(bytes) = test_hooks::SCRATCH_ABOVE.with(std::cell::Cell::get) {
+        return bytes;
+    }
+    SCRATCH_THRESHOLD_BYTES
+}
 
 /// Everything one backup run needs. The password is never logged or stored.
 pub struct EncryptedBackupRequest<'a> {
@@ -208,9 +259,9 @@ fn cancelled(cancel: Option<&AtomicBool>) -> Result<(), DataRecoveryError> {
     }
 }
 
-/// A test seam: stages are "catalogue_copied" (under the gate), "write",
-/// "record", "before_publish" and "rotate_remove". Production builds compile
-/// this to nothing.
+/// A test seam: stages are "scratch_copied" (the encrypted image, under the
+/// gate), "catalogue_copied" (under the gate), "catalogue_sealed", "write", "record", "before_publish" and
+/// "rotate_remove". Production builds compile this to nothing.
 #[cfg(test)]
 fn hook(stage: &str, path: &Path) -> Result<(), DataRecoveryError> {
     match test_hooks::call(stage, path) {
@@ -304,9 +355,6 @@ impl<'a> PackPins<'a> {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(pin_error)?;
         transaction
-            .execute_batch(CREATE_PACK_PIN_TABLE)
-            .map_err(pin_error)?;
-        transaction
             .execute(
                 "DELETE FROM backup_pack_pins WHERE expires_at_ms <= ?1",
                 params![now],
@@ -369,21 +417,14 @@ impl Drop for PackPins<'_> {
     }
 }
 
-/// The packs that live backups have pinned, for GC. A store that never ran an
-/// encrypted backup has no pin table and no pins; an expired pin protects
-/// nothing.
+/// The packs that live backups have pinned, for GC. An expired pin protects
+/// nothing. A catalogue the current schema migration has not reached has no
+/// pin table, and no backup can have pinned anything in it.
 pub(crate) fn live_backup_pack_pins(
     connection: &Connection,
     now_ms: i64,
 ) -> Result<Vec<String>, StoreError> {
-    let present: bool = connection
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1)",
-            [PACK_PIN_TABLE],
-            |row| row.get(0),
-        )
-        .map_err(StoreError::Query)?;
-    if !present {
+    if !pack_pin_table_present(connection).map_err(StoreError::Query)? {
         return Ok(Vec::new());
     }
     connection
@@ -395,15 +436,8 @@ pub(crate) fn live_backup_pack_pins(
         .map_err(StoreError::Query)
 }
 
-/// Copy the live catalogue with SQLite's online backup API into a private
-/// `:memory:` database. The copy has no file, so no journal, WAL or temporary
-/// side file can exist for it (temporary storage is in memory too). A source
-/// beyond [`MAX_CATALOGUE_IMAGE_BYTES`] is refused before anything is copied,
-/// and a source that grows past it during the copy stops the copy.
-pub(super) fn copy_catalogue_into_memory(
-    store: &HubStore,
-) -> Result<Connection, DataRecoveryError> {
-    let source = store.open()?;
+/// The page size and current image size of a catalogue.
+fn catalogue_geometry(source: &Connection) -> Result<(u64, u64), DataRecoveryError> {
     let pragma = |name: &str| -> Result<u64, DataRecoveryError> {
         let value: i64 = source
             .query_row(&format!("PRAGMA {name}"), [], |row| row.get(0))
@@ -414,6 +448,60 @@ pub(super) fn copy_catalogue_into_memory(
     let image_bytes = pragma("page_count")?
         .checked_mul(page_size)
         .ok_or(DataRecoveryError::CapacityOverflow)?;
+    Ok((page_size, image_bytes))
+}
+
+/// The live catalogue's current size, to choose the copy before the gate.
+fn live_catalogue_bytes(store: &HubStore) -> Result<u64, DataRecoveryError> {
+    Ok(catalogue_geometry(&store.open()?)?.1)
+}
+
+/// Copy `source` into `destination` with the online backup API, a few pages
+/// at a time; `too_large` stops a copy that grows past `limit_bytes`.
+fn step_backup(
+    source: &Connection,
+    destination: &mut Connection,
+    page_size: u64,
+    limit_bytes: u64,
+    too_large: impl Fn() -> DataRecoveryError,
+) -> Result<(), DataRecoveryError> {
+    let backup = Backup::new(source, destination).map_err(DataRecoveryError::CatalogueIdentity)?;
+    let mut busy = 0_u32;
+    loop {
+        match backup
+            .step(BACKUP_STEP_PAGES)
+            .map_err(DataRecoveryError::CatalogueIdentity)?
+        {
+            StepResult::Done => break,
+            StepResult::More => busy = 0,
+            _ => {
+                busy += 1;
+                if busy > BACKUP_BUSY_RETRIES {
+                    return Err(invalid(
+                        "the live catalogue stayed locked during the backup copy",
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+        let pages = u64::try_from(backup.progress().pagecount).unwrap_or(u64::MAX);
+        if pages.saturating_mul(page_size) > limit_bytes {
+            return Err(too_large());
+        }
+    }
+    Ok(())
+}
+
+/// Copy the live catalogue with SQLite's online backup API into a private
+/// `:memory:` database. The copy has no file, so no journal, WAL or temporary
+/// side file can exist for it (temporary storage is in memory too). A source
+/// beyond [`MAX_CATALOGUE_IMAGE_BYTES`] is refused before anything is copied,
+/// and a source that grows past it during the copy stops the copy.
+pub(super) fn copy_catalogue_into_memory(
+    store: &HubStore,
+) -> Result<Connection, DataRecoveryError> {
+    let source = store.open()?;
+    let (page_size, image_bytes) = catalogue_geometry(&source)?;
     let too_large = || {
         invalid(format!(
             "the Hub catalogue ({image_bytes} bytes) is larger than the {} MiB that an \
@@ -428,43 +516,193 @@ pub(super) fn copy_catalogue_into_memory(
     memory
         .execute_batch("PRAGMA temp_store = MEMORY;")
         .map_err(DataRecoveryError::CatalogueIdentity)?;
-    {
-        let backup =
-            Backup::new(&source, &mut memory).map_err(DataRecoveryError::CatalogueIdentity)?;
-        let mut busy = 0_u32;
-        loop {
-            match backup
-                .step(BACKUP_STEP_PAGES)
-                .map_err(DataRecoveryError::CatalogueIdentity)?
-            {
-                StepResult::Done => break,
-                StepResult::More => busy = 0,
-                _ => {
-                    busy += 1;
-                    if busy > BACKUP_BUSY_RETRIES {
-                        return Err(invalid(
-                            "the live catalogue stayed locked during the backup copy",
-                        ));
-                    }
-                    std::thread::sleep(Duration::from_millis(5));
-                }
-            }
-            let pages = u64::try_from(backup.progress().pagecount).unwrap_or(u64::MAX);
-            if pages.saturating_mul(page_size) > MAX_CATALOGUE_IMAGE_BYTES {
-                return Err(too_large());
-            }
+    step_backup(
+        &source,
+        &mut memory,
+        page_size,
+        MAX_CATALOGUE_IMAGE_BYTES,
+        too_large,
+    )?;
+    Ok(memory)
+}
+
+/// The size of the scratch volume for a catalogue of `image_bytes`: the copy
+/// and its rebuilt sealed file side by side, room to grow before the gate, and
+/// the copy's WAL.
+fn scratch_capacity(image_bytes: u64) -> Result<u64, DataRecoveryError> {
+    image_bytes
+        .checked_add(image_bytes / 4)
+        .and_then(|copy| copy.checked_mul(2))
+        .and_then(|both| both.checked_add(256 * 1024 * 1024))
+        .ok_or(DataRecoveryError::CapacityOverflow)
+}
+
+/// Open a file database on the scratch volume with bounded memory: a fixed
+/// page cache and in-memory statement journals (small: the seal's deletes).
+fn open_scratch_database(path: &Path) -> Result<Connection, DataRecoveryError> {
+    let connection = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE
+            | OpenFlags::SQLITE_OPEN_CREATE
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(DataRecoveryError::CatalogueIdentity)?;
+    connection
+        .execute_batch(&format!(
+            "PRAGMA temp_store = MEMORY; PRAGMA cache_size = -{SCRATCH_CACHE_KIB};"
+        ))
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    Ok(connection)
+}
+
+/// Copy the live catalogue with the online backup API into a file on the
+/// encrypted scratch volume (M06-T07). Its journal and WAL live there too.
+pub(super) fn copy_catalogue_into_scratch(
+    store: &HubStore,
+    scratch: &EncryptedScratch,
+) -> Result<Connection, DataRecoveryError> {
+    let source = store.open()?;
+    let (page_size, _) = catalogue_geometry(&source)?;
+    let mut copy = open_scratch_database(&scratch.path(SCRATCH_COPY))?;
+    step_backup(&source, &mut copy, page_size, u64::MAX, || {
+        DataRecoveryError::CapacityOverflow
+    })?;
+    Ok(copy)
+}
+
+/// The catalogue copy taken under the gate.
+enum CatalogueCopy {
+    Memory(Connection),
+    /// The copy on the encrypted scratch volume, and the volume.
+    Scratch(Connection, EncryptedScratch),
+}
+
+impl CatalogueCopy {
+    fn connection(&self) -> &Connection {
+        match self {
+            Self::Memory(connection) | Self::Scratch(connection, _) => connection,
         }
     }
-    Ok(memory)
 }
 
 /// The sealed catalogue image and its archive member. The image streams with
 /// its file-format version bytes set to the rollback journal (the copy of a
 /// WAL catalogue carries WAL's), exactly as a sealed staged file would be.
 struct SealedCatalogue {
-    image: Data<'static>,
+    image: SealedImage,
     header: [u8; SQLITE_HEADER_BYTES],
     member: BackupMember,
+}
+
+enum SealedImage {
+    /// The serialised in-memory copy.
+    Memory(Data<'static>),
+    /// The rebuilt sealed file on the scratch volume; the volume is detached
+    /// when this is dropped, after the file is closed.
+    Scratch {
+        file: File,
+        _scratch: EncryptedScratch,
+    },
+}
+
+/// The normalised header and digest of a sealed image: `header` is its first
+/// bytes, `rest` everything after them.
+fn sealed_member(
+    image: &[u8],
+    rest: impl Read,
+    size: u64,
+) -> Result<([u8; SQLITE_HEADER_BYTES], BackupMember), DataRecoveryError> {
+    if size <= SQLITE_HEADER_BYTES as u64
+        || image.len() < SQLITE_HEADER_BYTES
+        || !matches!((image[18], image[19]), (1 | 2, 1 | 2))
+    {
+        return Err(invalid(
+            "the sealed catalogue copy is not a database image",
+        ));
+    }
+    let mut header = [0_u8; SQLITE_HEADER_BYTES];
+    header.copy_from_slice(&image[..SQLITE_HEADER_BYTES]);
+    header[18] = 1;
+    header[19] = 1;
+    let mut digest = Sha256::new();
+    digest.update(header);
+    let mut rest = rest;
+    let mut buffer = vec![0_u8; STREAM_BUFFER_BYTES];
+    let mut total = SQLITE_HEADER_BYTES as u64;
+    loop {
+        let read = rest
+            .read(&mut buffer)
+            .map_err(|source| io_error("reading the sealed catalogue", Path::new(CATALOGUE_MEMBER), source))?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+        total += read as u64;
+    }
+    if total != size {
+        return Err(invalid("the sealed catalogue copy changed while it was read"));
+    }
+    let member = BackupMember {
+        path: CATALOGUE_MEMBER.to_owned(),
+        size,
+        mode: PRIVATE_FILE_MODE,
+        sha256: hex::encode(digest.finalize()),
+    };
+    Ok((header, member))
+}
+
+/// Seal the scratch copy and rebuild it with `VACUUM INTO` beside it on the
+/// scratch volume: a fresh file with no free page and no unused cell space
+/// from the live catalogue, written without a temporary database or a sort
+/// spill (indexes are created first and filled in order), so nothing of it
+/// leaves the encrypted volume and memory stays at the page caches.
+fn seal_scratch_catalogue(
+    mut connection: Connection,
+    scratch: EncryptedScratch,
+    installation_id: Uuid,
+) -> Result<SealedCatalogue, DataRecoveryError> {
+    seal_backup_credentials_checked(&connection)?;
+    seal_backup_credentials(&mut connection)?;
+    seal_host_authority(&mut connection, current_epoch_ms()?)?;
+    let sealed_path = scratch.path(SCRATCH_SEALED);
+    let target = sealed_path
+        .to_str()
+        .ok_or_else(|| invalid("the backup scratch path is not UTF-8"))?;
+    connection
+        .execute("VACUUM INTO ?1", [target])
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    drop(connection);
+    let sealed = open_scratch_database(&sealed_path)?;
+    let free_pages: i64 = sealed
+        .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    if free_pages != 0 {
+        return Err(invalid("the sealed catalogue still holds free pages"));
+    }
+    if catalogue_identity(&sealed, SCHEMA_VERSION)? != installation_id {
+        return Err(invalid(
+            "copied catalogue installation ID does not match the live source",
+        ));
+    }
+    drop(sealed);
+    let mut file = File::open(&sealed_path)
+        .map_err(|source| io_error("opening the sealed catalogue", &sealed_path, source))?;
+    let size = file
+        .metadata()
+        .map_err(|source| io_error("inspecting the sealed catalogue", &sealed_path, source))?
+        .len();
+    let mut first = [0_u8; SQLITE_HEADER_BYTES];
+    file.read_exact(&mut first)
+        .map_err(|source| io_error("reading the sealed catalogue", &sealed_path, source))?;
+    let (header, member) = sealed_member(&first, &mut file, size)?;
+    Ok(SealedCatalogue {
+        image: SealedImage::Scratch {
+            file,
+            _scratch: scratch,
+        },
+        header,
+        member,
+    })
 }
 
 /// Seal the copy, then serialise it into one in-memory image and drop the
@@ -490,26 +728,10 @@ fn seal_catalogue(
         Data::Shared(_) => return Err(invalid("the in-memory catalogue copy is not private")),
     };
     drop(connection);
-    if image.len() <= SQLITE_HEADER_BYTES || !matches!((image[18], image[19]), (1 | 2, 1 | 2)) {
-        return Err(invalid(
-            "the in-memory catalogue copy is not a database image",
-        ));
-    }
-    let mut header = [0_u8; SQLITE_HEADER_BYTES];
-    header.copy_from_slice(&image[..SQLITE_HEADER_BYTES]);
-    header[18] = 1;
-    header[19] = 1;
-    let mut digest = Sha256::new();
-    digest.update(header);
-    digest.update(&image[SQLITE_HEADER_BYTES..]);
-    let member = BackupMember {
-        path: CATALOGUE_MEMBER.to_owned(),
-        size: image.len() as u64,
-        mode: PRIVATE_FILE_MODE,
-        sha256: hex::encode(digest.finalize()),
-    };
+    let rest = image.get(SQLITE_HEADER_BYTES..).unwrap_or_default();
+    let (header, member) = sealed_member(&image, rest, image.len() as u64)?;
     Ok(SealedCatalogue {
-        image,
+        image: SealedImage::Memory(image),
         header,
         member,
     })
@@ -560,20 +782,31 @@ fn canonical_archive_name(manifest: &BackupManifest) -> Result<String, DataRecov
     ))
 }
 
-/// What the publication gate protects: the in-memory catalogue copy, the
-/// no-op bodies it selects, the pack list and the pins on those packs.
+/// What the publication gate protects: the catalogue copy, the no-op bodies
+/// it selects, the pack list and the pins on those packs.
 struct Snapshot<'a> {
-    catalogue: Connection,
+    catalogue: CatalogueCopy,
     noops: Vec<Planned>,
     packs: Vec<Planned>,
     pins: PackPins<'a>,
 }
 
-fn take_snapshot(store: &HubStore) -> Result<Snapshot<'_>, DataRecoveryError> {
+fn take_snapshot(
+    store: &HubStore,
+    scratch: Option<EncryptedScratch>,
+) -> Result<Snapshot<'_>, DataRecoveryError> {
     let gate = store.begin_backup_snapshot()?;
     check_backup_admission(&gate)?;
-    let catalogue = copy_catalogue_into_memory(store)?;
-    let noops = plan_noops(store, &catalogue)?;
+    let catalogue = match scratch {
+        Some(scratch) => {
+            let copy = copy_catalogue_into_scratch(store, &scratch)?;
+            #[cfg(test)]
+            hook("scratch_copied", &scratch.image())?;
+            CatalogueCopy::Scratch(copy, scratch)
+        }
+        None => CatalogueCopy::Memory(copy_catalogue_into_memory(store)?),
+    };
+    let noops = plan_noops(store, catalogue.connection())?;
     let packs = plan_packs(store)?;
     let pins = PackPins::take(store, packs.iter().map(|item| item.member.sha256.as_str()))?;
     hook("catalogue_copied", store.database_path())?;
@@ -625,19 +858,38 @@ pub fn create_encrypted_backup(
     retention::clear_abandoned_runs(store, &admitted, request.password, source_installation_id)?;
     cancelled(cancel)?;
     store.catalogue_check()?;
+    // A catalogue above the in-memory cap goes through the encrypted scratch
+    // volume, prepared before the gate (attaching takes a moment).
+    let image_bytes = live_catalogue_bytes(store)?;
+    let scratch = if image_bytes > scratch_threshold() {
+        let capacity = scratch_capacity(image_bytes)?;
+        admit_staging_capacity(&std::env::temp_dir(), capacity)?;
+        Some(EncryptedScratch::create(capacity)?)
+    } else {
+        None
+    };
+    cancelled(cancel)?;
     let Snapshot {
         catalogue,
         noops,
         packs,
         mut pins,
-    } = take_snapshot(store)?;
+    } = take_snapshot(store, scratch)?;
     let generation = Uuid::new_v4();
     let partial_name = format!("{PARTIAL_PREFIX}{generation}{PARTIAL_SUFFIX}");
     let partial = destination.join(&partial_name);
     let mut written: Option<retention::FileIdentity> = None;
     let run = (|| {
         cancelled(cancel)?;
-        let catalogue = seal_catalogue(catalogue, source_installation_id)?;
+        let catalogue = match catalogue {
+            CatalogueCopy::Memory(connection) => {
+                seal_catalogue(connection, source_installation_id)?
+            }
+            CatalogueCopy::Scratch(connection, scratch) => {
+                seal_scratch_catalogue(connection, scratch, source_installation_id)?
+            }
+        };
+        hook("catalogue_sealed", &destination)?;
         let mut planned = vec![Planned {
             member: catalogue.member.clone(),
             source: Source::Catalogue,
@@ -835,21 +1087,38 @@ fn write_partial(
         hook("record", partial)?;
         match &item.source {
             Source::Catalogue => {
-                let sealed = catalogue
+                let SealedCatalogue { image, header, .. } = catalogue
                     .take()
                     .ok_or_else(|| invalid("the catalogue member appears twice"))?;
-                stream_member(
-                    &mut writer,
-                    &item.member,
-                    sealed
-                        .header
-                        .as_slice()
-                        .chain(&sealed.image[SQLITE_HEADER_BYTES..]),
-                    &mut buffer,
-                    cancel,
-                )?;
-                // The copy's memory goes before the packs stream.
-                drop(sealed);
+                match image {
+                    SealedImage::Memory(image) => {
+                        stream_member(
+                            &mut writer,
+                            &item.member,
+                            header.as_slice().chain(&image[SQLITE_HEADER_BYTES..]),
+                            &mut buffer,
+                            cancel,
+                        )?;
+                        // The copy's memory goes before the packs stream.
+                        drop(image);
+                    }
+                    SealedImage::Scratch { mut file, _scratch } => {
+                        file.seek(SeekFrom::Start(SQLITE_HEADER_BYTES as u64))
+                            .map_err(|source| {
+                                io_error("reading the sealed catalogue", &item.member.path, source)
+                            })?;
+                        stream_member(
+                            &mut writer,
+                            &item.member,
+                            header.as_slice().chain(&mut file),
+                            &mut buffer,
+                            cancel,
+                        )?;
+                        // The scratch volume goes before the packs stream.
+                        drop(file);
+                        drop(_scratch);
+                    }
+                }
             }
             Source::Bytes(bytes) => {
                 stream_member(
@@ -1178,6 +1447,13 @@ pub(super) mod test_hooks {
     thread_local! {
         static HOOK: RefCell<Option<Hook>> = const { RefCell::new(None) };
         pub(super) static CRASHED: Cell<bool> = const { Cell::new(false) };
+        pub(super) static SCRATCH_ABOVE: Cell<Option<u64>> = const { Cell::new(None) };
+    }
+
+    /// Take the encrypted scratch path for catalogues above `bytes` on this
+    /// thread (`None` restores the production threshold).
+    pub fn force_scratch_above(bytes: Option<u64>) {
+        SCRATCH_ABOVE.with(|threshold| threshold.set(bytes));
     }
 
     pub fn set_hook(hook: impl FnMut(&str, &Path) -> Action + 'static) {
@@ -1187,6 +1463,7 @@ pub(super) mod test_hooks {
     pub fn clear_hook() {
         HOOK.with(|slot| *slot.borrow_mut() = None);
         CRASHED.with(|flag| flag.set(false));
+        SCRATCH_ABOVE.with(|threshold| threshold.set(None));
     }
 
     pub(super) fn call(stage: &str, path: &Path) -> Action {

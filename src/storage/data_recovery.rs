@@ -794,9 +794,9 @@ fn seal_host_authority(
     transaction
         .execute("DELETE FROM supervised_collector_lease", [])
         .map_err(DataRecoveryError::CatalogueIdentity)?;
-    // A running encrypted backup's pack pins are live-host state too.
-    transaction
-        .execute_batch(encrypted_backup::DROP_PACK_PIN_TABLE)
+    // A running encrypted backup's pack pins and recorded runs are live-host
+    // state too; both tables are part of the schema (M06-T07) and stay, empty.
+    encrypted_backup::clear_pack_pins(&transaction)
         .map_err(DataRecoveryError::CatalogueIdentity)?;
     transaction
         .commit()
@@ -822,6 +822,67 @@ fn vacuum_sealed_catalogue(connection: &Connection) -> Result<(), DataRecoveryEr
     Ok(())
 }
 
+/// M06-T07: the vacuum of a staged catalogue (a directory backup or a
+/// restore) writes the rebuilt file beside it with `VACUUM INTO` and then
+/// replaces it. An in-place `VACUUM` would build the whole catalogue a second
+/// time in a temporary database, in memory or in the system's temporary
+/// folder, outside the staging directory; `VACUUM INTO` needs neither, so a
+/// catalogue of any size stays within the Hub's memory peak and its plaintext
+/// stays where the staged data already is.
+fn rebuild_staged_catalogue(
+    catalogue: &Path,
+    connection: Connection,
+) -> Result<Connection, DataRecoveryError> {
+    let mut rebuilt_name = catalogue.as_os_str().to_os_string();
+    rebuilt_name.push(".rebuilt");
+    let rebuilt = PathBuf::from(rebuilt_name);
+    // VACUUM INTO accepts an empty file: created private, never replaced.
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(PRIVATE_FILE_MODE)
+        .open(&rebuilt)
+        .map_err(|source| io_error("creating the rebuilt staged catalogue", &rebuilt, source))?;
+    let target = rebuilt
+        .to_str()
+        .ok_or_else(|| invalid("staged backup catalogue path is not UTF-8"))?;
+    let result = connection
+        .execute("VACUUM INTO ?1", [target])
+        .map_err(DataRecoveryError::CatalogueIdentity);
+    drop(connection);
+    let replace = result.and_then(|_| {
+        // The staged file's own side files went with its last connection; one
+        // left behind would pair with the rebuilt file, so it stops the seal.
+        for suffix in ["-wal", "-shm", "-journal"] {
+            let mut transient = catalogue.as_os_str().to_os_string();
+            transient.push(suffix);
+            if fs::symlink_metadata(PathBuf::from(transient)).is_ok() {
+                return Err(invalid(
+                    "staged backup catalogue kept SQLite side files before its rebuild",
+                ));
+            }
+        }
+        fs::rename(&rebuilt, catalogue)
+            .map_err(|source| io_error("replacing the staged catalogue", catalogue, source))
+    });
+    if let Err(error) = replace {
+        let _ = fs::remove_file(&rebuilt);
+        return Err(error);
+    }
+    let connection = Connection::open_with_flags(
+        catalogue,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(DataRecoveryError::CatalogueIdentity)?;
+    let free_pages: i64 = connection
+        .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    if free_pages != 0 {
+        return Err(invalid("the sealed catalogue still holds free pages"));
+    }
+    Ok(connection)
+}
+
 fn seal_staged_catalogue_at(payload: &Path, sealed_at_ms: i64) -> Result<(), DataRecoveryError> {
     let catalogue = payload.join("hub.sqlite");
     require_regular_file(&catalogue, "staged backup catalogue")?;
@@ -831,7 +892,7 @@ fn seal_staged_catalogue_at(payload: &Path, sealed_at_ms: i64) -> Result<(), Dat
     )
     .map_err(DataRecoveryError::CatalogueIdentity)?;
     seal_host_authority(&mut connection, sealed_at_ms)?;
-    vacuum_sealed_catalogue(&connection)?;
+    let connection = rebuild_staged_catalogue(&catalogue, connection)?;
     let journal_mode: String = connection
         .query_row("PRAGMA journal_mode = DELETE", [], |row| row.get(0))
         .map_err(DataRecoveryError::CatalogueIdentity)?;
@@ -1985,6 +2046,7 @@ fn io_error(
 mod archive_crypto;
 mod backup_admission;
 mod encrypted_backup;
+mod encrypted_scratch;
 
 pub use archive_crypto::generate_recovery_password;
 pub(crate) use encrypted_backup::live_backup_pack_pins;
