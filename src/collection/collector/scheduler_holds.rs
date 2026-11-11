@@ -146,8 +146,10 @@ impl AccountState {
     const fn plain_words(self) -> &'static str {
         match self {
             Self::Collecting => "Collecting.",
+            // Its own state (M04-T01): the refusal starts no other source, so the
+            // text offers none; only the owner's retry or a mode change lifts it.
             Self::OwnerApiRefused => {
-                "Tesla has refused the Owner API. Collection is stopped; use a data provider or consented Fleet API polling."
+                "Tesla has refused the Owner API. Collection is stopped and no other source is started; retry collection once Tesla allows the Owner API again."
             }
             Self::ProviderRefused => {
                 "The data provider has refused the Hub (a subscription or authorisation matter at the provider). Collection is stopped until it is resolved there and collection is retried."
