@@ -832,6 +832,13 @@ async fn cadence_serve_wait_hands_over_cursor_before_server_start() {
     config.collector.legacy_auth.token_url = Some("https://127.0.0.1:9/oauth2/v3/token".to_owned());
     config.collector.stream_endpoint_override = Some("wss://127.0.0.1:9/streaming/".to_owned());
     let admission = AdmittedUserHub::admit(temporary.path()).expect("admission");
+    // M04-T01: no collector run, the configuration wait included, starts outside
+    // an Open collection window; the service starts this run only inside one.
+    // The binary links the library without `cfg(test)`, so the run asks the
+    // process-wide gate: a trusted window on it is opened here, as the service's
+    // authority opens it, and closed when the test ends.
+    let window_scratch = tempfile::tempdir().expect("window scratch");
+    let window = open_process_wide_window(window_scratch.path(), 600);
     let (cursor_tx, cursor_rx) = tokio::sync::oneshot::channel();
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
     let collector_store = store.clone();
@@ -932,6 +939,70 @@ async fn cadence_serve_wait_hands_over_cursor_before_server_start() {
         )
         .expect("stop gaps");
     assert_eq!(stops, 1);
+    window.close(teslatlas_hub::collection::window::CloseReason::OperatorClose);
+    window.finish_close().expect("the window closes");
+}
+
+/// A trusted window controller on the process-wide egress gate, with the
+/// service's dependencies, holding an Open grant for now plus `length` seconds.
+fn open_process_wide_window(
+    scratch: &Path,
+    length: i64,
+) -> teslatlas_hub::collection::window::WindowController {
+    use std::sync::Arc;
+    use teslatlas_hub::{
+        collection::window::{
+            IssueRequest, Issuer, ManualProbe, MemoryAnchor, NoHighWater, Phase, SystemClock,
+            WindowClock, WindowConfig, WindowController,
+        },
+        runtime::operator::authority::service_window_deps,
+    };
+    const HOST: &str = "host-readiness-binary";
+    let clock = Arc::new(SystemClock::new());
+    let anchor = Arc::new(MemoryAnchor::new());
+    let issuer = Issuer::new(
+        &scratch.join("issuer"),
+        "host-readiness-issuer",
+        anchor.clone(),
+        clock.clone(),
+    );
+    let key = scratch.join("issuer.key");
+    let trust = issuer.init(&key).expect("issuer init");
+    let deps = service_window_deps(
+        anchor,
+        Arc::new(ManualProbe::new(0.1)),
+        Arc::new(NoHighWater),
+    );
+    let (controller, _) = WindowController::start(
+        WindowConfig {
+            dir: scratch.join("window"),
+            claim_path: scratch.join("claim/host-claim.lock"),
+            host_id: HOST.to_owned(),
+        },
+        deps,
+    );
+    controller.trust(&trust).expect("trusted");
+    let now = clock.wall();
+    let out = scratch.join("grant.json");
+    issuer
+        .issue(
+            &key,
+            &IssueRequest {
+                host_id: HOST.to_owned(),
+                starts_at: now,
+                expires_at: now + length,
+                approver: "G".to_owned(),
+                reason: "readiness binary test".to_owned(),
+                approval_ref: "approval-readiness-binary".to_owned(),
+            },
+            &out,
+        )
+        .expect("grant issued");
+    let opened = controller
+        .open(&fs::read(out).expect("grant bytes"))
+        .expect("window opens");
+    assert_eq!(opened.phase, Phase::Open);
+    controller
 }
 
 #[tokio::test]
