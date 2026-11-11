@@ -555,11 +555,14 @@ async fn refresh_reuse_rejected_legacy_token_stops_refreshing_and_asks_for_sign_
 #[tokio::test]
 async fn refresh_reuse_spent_legacy_token_signs_out_without_a_request() {
     let rig = fence_rig(200, false).await;
-    // An earlier attempt consumed the stored token and was given up: the input is
-    // spent, so presenting it again would be a reuse.
+    // An earlier attempt sent the stored token and timed out with no successor: the
+    // input is spent, so presenting it again would be a reuse. (A cancelled unsent
+    // attempt is different: the token never left and is released.)
     let input = rig.generation(OWNER_SLOT);
     let receipt = rig.vault().begin_refresh(OWNER_SLOT, input).expect("earlier attempt");
-    rig.vault().cancel_refresh(receipt, input).expect("given up");
+    rig.vault()
+        .close_refresh(receipt, input, crate::db::OutboundRequestOutcome::Timeout, None, None, false)
+        .expect("sent and timed out");
     let manager = rig.manager();
     let auth = fence_collection_auth(manager);
     let CollectionAuth::Legacy { manager, .. } = &auth;
