@@ -20,6 +20,7 @@ use super::{
     authority::{OperatorService, ServiceBackend},
     channel::{self, ChannelServer, OperatorRequest, SetupMaterial},
     cli::{Cli, Command, WindowCommand},
+    trust::{OwnerConfirmation, TrustAuthority},
 };
 use crate::collection::window::{
     CloseReason, EgressGate, IssueRequest, Issuer, ManualClock, ManualProbe, MemoryAnchor,
@@ -82,7 +83,34 @@ impl ServiceBackend for FakeBackend {
     }
 }
 
+/// The owner at the Hub Mac: answers the trust confirmation as told and
+/// counts the questions.
+#[derive(Default)]
+struct Owner {
+    declines: std::sync::atomic::AtomicBool,
+    asked: std::sync::atomic::AtomicU32,
+}
+
+impl OwnerConfirmation for Owner {
+    fn confirm_issuer(&self, _: &str, _: u64, _: Option<&str>) -> bool {
+        self.asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        !self.declines.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Owner {
+    fn decline(&self, declines: bool) {
+        self.declines.store(declines, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn asked(&self) -> u32 {
+        self.asked.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
 struct Rig {
+    owner: Arc<Owner>,
+    pin: Arc<MemoryAnchor>,
     tmp: TempDir,
     clock: Arc<ManualClock>,
     issuer: Issuer,
@@ -121,6 +149,8 @@ impl Rig {
             },
         );
         Self {
+            owner: Arc::new(Owner::default()),
+            pin: Arc::new(MemoryAnchor::new()),
             tmp,
             clock,
             issuer,
@@ -142,6 +172,8 @@ impl Rig {
             self.controller.clone(),
             Arc::new(FakeBackend(self.calls.clone())),
             Box::new(move || *kicks.lock().expect("kicks") += 1),
+            TrustAuthority::new(self.pin.clone(), HOST, self.owner.clone()),
+            &self.data(),
         )
     }
 
@@ -480,4 +512,100 @@ fn collection_window_operator_host_id_and_times() {
     for bad in ["2027-01-15 08:00:00", "2027-13-01T00:00:00Z", "2027-01-15T08:00:00+01:00", "soon"] {
         assert_eq!(super::issuer::parse_time(bad).unwrap_err().code, "time_invalid", "{bad}");
     }
+}
+
+/// Finding 3: a process of the Hub's own user with an issuer key of its own
+/// cannot install that key through the socket, before or after the owner's
+/// bootstrap, so it cannot open a window; the pinned issuer's endorsed new
+/// epoch is accepted without asking the owner.
+#[test]
+fn collection_window_operator_trust_needs_the_owner_or_the_pinned_issuer() {
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data dir");
+    let _server = rig.serve();
+    let attacker = Issuer::new(
+        &rig.tmp.path().join("attacker"),
+        "host-attacker",
+        Arc::new(MemoryAnchor::new()),
+        rig.clock.clone(),
+    );
+    let attacker_key = rig.tmp.path().join("attacker.key");
+    attacker.init(&attacker_key).expect("attacker issuer");
+    let attacker_grant = || {
+        let out = rig.tmp.path().join(format!("attacker-grant-{}.json", rig.clock.wall()));
+        attacker
+            .issue(
+                &attacker_key,
+                &IssueRequest {
+                    host_id: HOST.to_owned(),
+                    starts_at: rig.clock.wall(),
+                    expires_at: rig.clock.wall() + 600,
+                    approver: "G".to_owned(),
+                    reason: "not approved".to_owned(),
+                    approval_ref: "none".to_owned(),
+                },
+                &out,
+            )
+            .expect("attacker grant");
+        encoded(&std::fs::read(out).expect("grant bytes"))
+    };
+    let trust = |bytes: &[u8]| {
+        rig.forward(&OperatorRequest::WindowTrust {
+            document: encoded(bytes),
+        })
+    };
+
+    // A fresh Hub: the attacker's bootstrap is not the owner's.
+    rig.owner.decline(true);
+    let own = attacker.bump_trust_epoch(&attacker_key).expect("epoch 2");
+    let refused = trust(&own.to_bytes().expect("bytes")).unwrap_err();
+    assert_eq!(refused.code, "owner_confirmation_refused");
+    assert_eq!(rig.controller.status().trusted, false);
+    let refused = rig
+        .forward(&OperatorRequest::WindowOpen { grant: attacker_grant() })
+        .unwrap_err();
+    assert_eq!(refused.code, "trust_missing");
+
+    // The owner bootstraps G's issuer.
+    rig.owner.decline(false);
+    trust(&rig.trust).expect("owner bootstrap");
+    assert_eq!(rig.owner.asked(), 2);
+
+    // After it, neither a plain nor a self-endorsed newer document of the
+    // attacker's key is accepted.
+    rig.owner.decline(true);
+    let newer = attacker.bump_trust_epoch(&attacker_key).expect("epoch 3");
+    let plain = trust(&newer.to_bytes().expect("bytes")).unwrap_err();
+    assert_eq!(plain.code, "owner_confirmation_refused");
+    let endorsed = super::trust::endorse(&newer, &attacker_key).expect("self-endorsed");
+    let refused = trust(&endorsed).unwrap_err();
+    assert_eq!(refused.code, "owner_confirmation_refused");
+    // A plain newer document of G's own key needs the owner as well.
+    let mut bumped = crate::collection::window::TrustDocument::parse(&rig.trust).expect("trust");
+    bumped.trust_epoch = 9;
+    assert_eq!(
+        trust(&bumped.to_bytes().expect("bytes")).unwrap_err().code,
+        "owner_confirmation_refused"
+    );
+    assert_eq!(rig.owner.asked(), 5);
+    // The attacker's issuer keeps its own gap between grants.
+    rig.clock.advance(2_000);
+    let refused = rig
+        .forward(&OperatorRequest::WindowOpen { grant: attacker_grant() })
+        .unwrap_err();
+    assert_eq!(refused.code, "key_id_mismatch");
+    assert!(!rig.controller.gate().is_open());
+
+    // G's rotation, endorsed by the pinned key, needs no confirmation.
+    let rotated = rig.issuer.bump_trust_epoch(&rig.key).expect("G's epoch 2");
+    let status = trust(&super::trust::endorse(&rotated, &rig.key).expect("endorsed"))
+        .expect("pinned issuer's rotation");
+    assert_eq!(status["trusted"], true);
+    assert_eq!(rig.owner.asked(), 5, "no confirmation asked");
+    let status = rig
+        .forward(&OperatorRequest::WindowOpen {
+            grant: encoded(&rig.grant(600)),
+        })
+        .expect("G's grant of the new epoch opens");
+    assert_eq!(status["phase"], "open");
 }

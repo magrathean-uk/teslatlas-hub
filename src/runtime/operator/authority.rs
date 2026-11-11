@@ -23,11 +23,12 @@ use serde_json::{Value, json};
 use super::{
     admission::OperatorRefusal,
     channel::{OperatorHandler, OperatorRequest, SetupMaterial},
+    trust::{DialogConfirmation, TrustAuthority},
 };
 use crate::collection::window::{
     AnchorStore, CloseReason, CollectorSlot, EgressGate, GRANT_MAX_BYTES, HandbackSource,
     HighWater, HostClaim, KeychainAnchor, OffsetProbe, Phase, ResumeOutcome, SntpProbe,
-    Supervisor, SystemClock, TrustDocument, WindowConfig, WindowController, WindowDeps,
+    Supervisor, SystemClock, WindowConfig, WindowController, WindowDeps,
     WindowStatus,
 };
 
@@ -169,24 +170,41 @@ pub trait ServiceBackend: Send + Sync {
     ) -> Result<Value, OperatorRefusal>;
 }
 
+/// The service's trust authority: the issuer pin in the login keychain and
+/// the owner's confirmation dialog (review finding 3).
+pub fn service_trust_authority(host_id: &str) -> TrustAuthority {
+    TrustAuthority::new(
+        Arc::new(KeychainAnchor::new(HUB_ANCHOR_SERVICE)),
+        host_id,
+        Arc::new(DialogConfirmation),
+    )
+}
+
 /// Answers the control channel inside the running service.
 pub struct OperatorService {
     controller: Arc<WindowController>,
     backend: Arc<dyn ServiceBackend>,
     kick: Box<dyn Fn() + Send + Sync>,
+    trust: TrustAuthority,
+    window_dir: PathBuf,
 }
 
 impl OperatorService {
-    /// `kick` wakes the supervisor after a window change.
+    /// `kick` wakes the supervisor after a window change; `trust` decides
+    /// who may change the trusted issuer of the window in `data_dir`.
     pub fn new(
         controller: Arc<WindowController>,
         backend: Arc<dyn ServiceBackend>,
         kick: Box<dyn Fn() + Send + Sync>,
+        trust: TrustAuthority,
+        data_dir: &Path,
     ) -> Self {
         Self {
             controller,
             backend,
             kick,
+            trust,
+            window_dir: super::window_dir(data_dir),
         }
     }
 
@@ -214,10 +232,8 @@ impl OperatorHandler for OperatorService {
             OperatorRequest::WindowStatus => Ok(self.status()),
             OperatorRequest::WindowTrust { document } => {
                 let bytes = Self::decode(&document, TRUST_DOCUMENT_MAX_BYTES, "trust document")?;
-                let document = TrustDocument::parse(&bytes).map_err(OperatorRefusal::window)?;
-                self.controller
-                    .trust(&document)
-                    .map_err(OperatorRefusal::window)?;
+                self.trust
+                    .trust(&self.controller, &self.window_dir, &bytes)?;
                 (self.kick)();
                 Ok(self.status())
             }

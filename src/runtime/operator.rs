@@ -19,6 +19,7 @@ pub mod channel;
 pub mod cli;
 pub mod host;
 pub mod issuer;
+pub mod trust;
 
 #[cfg(test)]
 mod tests;

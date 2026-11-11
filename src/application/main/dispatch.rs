@@ -1030,6 +1030,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             admission: std::sync::Arc::clone(&admission),
                         }),
                         supervisor.kicker(),
+                        operator::authority::service_trust_authority(authority.host_id()),
+                        &config.data_dir,
                     )),
                 )?;
                 let server_config = config;

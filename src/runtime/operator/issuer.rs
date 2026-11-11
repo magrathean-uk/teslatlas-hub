@@ -3,7 +3,8 @@
 //! The issuer verbs (design 2.2, ruling R2). They run on the issuer Mac only,
 //! against the one canonical ledger, with no Hub service involved: they send
 //! nothing to Tesla and open no network connection. The issuer key is read
-//! only by the window module, from the path the owner passes.
+//! from the path the owner passes, by the window module and, to endorse a
+//! trust document, by [`super::trust`].
 
 use std::{path::Path, sync::Arc};
 
@@ -58,8 +59,7 @@ pub fn parse_time(text: &str) -> Result<i64, OperatorRefusal> {
         .unix_timestamp())
 }
 
-fn write_trust(document: &TrustDocument, out: &Path) -> Result<(), OperatorRefusal> {
-    let bytes = document.to_bytes().map_err(OperatorRefusal::window)?;
+fn write_trust(bytes: &[u8], out: &Path) -> Result<(), OperatorRefusal> {
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -70,7 +70,7 @@ fn write_trust(document: &TrustDocument, out: &Path) -> Result<(), OperatorRefus
             }
             _ => OperatorRefusal::new("window_io", "the trust document could not be written"),
         })?;
-    std::io::Write::write_all(&mut file, &bytes)
+    std::io::Write::write_all(&mut file, bytes)
         .and_then(|()| file.sync_all())
         .map_err(|_| OperatorRefusal::new("window_io", "the trust document could not be written"))
 }
@@ -104,7 +104,8 @@ pub fn run_issuer_command(command: &WindowCommand, home: &Path) -> Result<Value,
             }
             let issuer = issuer();
             let document = issuer.init(key_out).map_err(OperatorRefusal::window)?;
-            write_trust(&document, trust_out)?;
+            // The first trust of a Hub is a bootstrap the owner confirms there.
+            write_trust(&document.to_bytes().map_err(OperatorRefusal::window)?, trust_out)?;
             let mut report = trust_json(&document);
             report["ledger"] = json!(issuer.ledger_path());
             Ok(report)
@@ -127,8 +128,12 @@ pub fn run_issuer_command(command: &WindowCommand, home: &Path) -> Result<Value,
                 issuer.trust_document(key_file)
             }
             .map_err(OperatorRefusal::window)?;
-            write_trust(&document, trust_out)?;
-            Ok(trust_json(&document))
+            // Endorsed by the issuer key, so a Hub that pins this issuer
+            // accepts the new epoch without asking its owner.
+            write_trust(&super::trust::endorse(&document, key_file)?, trust_out)?;
+            let mut report = trust_json(&document);
+            report["endorsed"] = json!(true);
+            Ok(report)
         }
         WindowCommand::Issue {
             key_file,
