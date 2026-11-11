@@ -234,6 +234,26 @@ final class CollectionStatusTests: XCTestCase {
         XCTAssertEqual(model(Self.status(), .failed(HubActionError.commandFailed("timeout"))).window, .unknown)
     }
 
+    // M02-T10 round 2: the service's recovery state and its authenticated control channel.
+
+    func testCredentialRecoveryPendingIsShownInsteadOfAPlainClosedWindow() {
+        let pending = #"{"phase":"closed","trusted":true,"faulted":false,"closeReason":null,"seq":null,"grantDigest":null,"startsAt":null,"deadline":null,"openedAt":null,"closingAt":null,"lastHandback":null,"credentialRecoveryPending":true}"#
+        let value = model(Self.status(), .report(pending))
+        XCTAssertEqual(value.window, .recoveryPending)
+        XCTAssertEqual(rows(value)["Collection window"],
+                       "Closed (waiting for credential recovery: run restore-recovery-credentials)")
+        let restored = pending.replacingOccurrences(of: #""credentialRecoveryPending":true"#,
+                                                    with: #""credentialRecoveryPending":false"#)
+        XCTAssertEqual(model(Self.status(), .report(restored)).window, .closed(reason: nil))
+    }
+
+    func testAnUnauthenticatedControlChannelIsNotTakenForTheHub() {
+        let value = model(Self.status(), .failed(HubActionError.commandExited(
+            1, "service_unauthenticated: the process on the control channel is not this Hub; nothing was sent")))
+        XCTAssertEqual(value.window, .serviceUnauthenticated)
+        XCTAssertEqual(rows(value)["Collection window"], "Unknown: the control channel is not this Hub")
+    }
+
     func testSignInUnavailableIsShownAndOtherRefusalsAreNotKept() {
         let value = model(Self.status(present: false), .report(Self.window("open")), signIn: "sign_in_unavailable")
         XCTAssertEqual(rows(value)["Sign-in"], "Sign-in unavailable on this Hub")

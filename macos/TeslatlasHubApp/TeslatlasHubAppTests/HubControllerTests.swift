@@ -2404,6 +2404,34 @@ final class HubControllerTests: XCTestCase {
         }
     }
 
+    func testOwnerSignInWaitsForCredentialRecoveryBeforeSetup() throws {
+        // M02-T10 round 2: a Hub restored without its keys answers only status, close and
+        // restore-recovery-credentials; the app says so and never runs setup.
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success("{}"))
+        runner.windowStatus = .success(#"{"phase":"closed","trusted":true,"faulted":false,"credentialRecoveryPending":true}"#)
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        let finished = expectation(description: "recovery pending")
+
+        controller.configureTeslaAccount(grant: Self.codeGrant) { result in
+            guard case let .failure(error) = result else { return XCTFail("signed in while recovery is pending") }
+            XCTAssertEqual(error.localizedDescription,
+                           "Hub is waiting for its credential recovery: this Hub's data was restored without its keys. "
+                           + "Run restore-recovery-credentials, then sign in. Nothing was changed.")
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(events.values, ["window"])
+        XCTAssertNil(runner.stdin)
+        XCTAssertEqual(HubController.signInError(HubActionError.commandExited(
+            1, "credential_recovery_pending: run restore-recovery-credentials first")).localizedDescription,
+                       "Hub is waiting for its credential recovery: this Hub's data was restored without its keys. "
+                       + "Run restore-recovery-credentials, then sign in. Nothing was changed.")
+    }
+
     func testOwnerSignInShowsUnavailableSignInPlainly() throws {
         // Until the owner decides the Owner API sign-in values the service answers
         // sign_in_unavailable; the app says so and invents nothing.
@@ -2431,7 +2459,12 @@ final class HubControllerTests: XCTestCase {
             ("service_not_running: the Hub service is not running; start Hub and try again",
              "Hub is not running. Start Hub, open a collection window, then sign in."),
             ("window_closed: sign-in and vehicle discovery need an open collection window",
-             "Sign-in needs an open collection window. Open a window, then sign in again.")
+             "Sign-in needs an open collection window. Open a window, then sign in again."),
+            ("service_unauthenticated: the process on the control channel is not this Hub; nothing was sent",
+             "The process answering on the Hub's control channel is not this Hub, so nothing was sent. "
+             + "Restart Hub, then sign in again."),
+            ("control_channel_busy: the service is answering other requests",
+             "Hub is busy with other requests. Nothing was changed; sign in again in a moment.")
         ]
         for (output, message) in cases {
             let events = EventRecorder()

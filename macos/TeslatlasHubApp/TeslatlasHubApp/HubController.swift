@@ -4070,6 +4070,8 @@ final class HubController {
         op.run(Self.windowStatusArguments(configPath: configPath)) { result in
             DispatchQueue.main.async {
                 switch result {
+                case let .success(output) where Self.credentialRecoveryIsPending(output):
+                    completion(.failure(Self.signInRefusal(code: "credential_recovery_pending")))
                 case let .success(output) where Self.collectionWindowIsOpen(output):
                     completion(.success(()))
                 case .success:
@@ -4158,6 +4160,19 @@ final class HubController {
         }
     }
 
+    /// Whether `window status` reports the service waiting for its credential recovery
+    /// (`credentialRecoveryPending`): it then answers only status, close and
+    /// restore-recovery-credentials, so sign-in cannot start.
+    static func credentialRecoveryIsPending(_ output: String) -> Bool {
+        output.split(whereSeparator: { $0.isNewline }).contains { line in
+            guard let data = String(line).data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return false
+            }
+            return (root["credentialRecoveryPending"] ?? root["credential_recovery_pending"]) as? Bool == true
+        }
+    }
+
     /// The sign-in input `setup` accepts: exactly the code, its PKCE verifier and the
     /// redirect URI. No token, source key or other credential is ever part of it.
     static func setupInvocation(configPath: URL,
@@ -4190,7 +4205,8 @@ final class HubController {
     /// reported as the command reported it.
     static func signInError(_ error: Error) -> Error {
         let text = error.localizedDescription
-        for code in ["sign_in_unavailable", "window_closed", "service_not_running"]
+        for code in ["sign_in_unavailable", "window_closed", "credential_recovery_pending",
+                     "service_unauthenticated", "control_channel_busy", "service_not_running"]
             where text.contains(code) {
             return signInRefusal(code: code)
         }
@@ -4207,6 +4223,17 @@ final class HubController {
             return HubActionError.commandFailed(HubL10n.text(
                 "hub.HubController.1591.587",
                 fallback: "Sign-in needs an open collection window. Open a window, then sign in again."))
+        case "credential_recovery_pending":
+            return HubActionError.commandFailed(
+                "Hub is waiting for its credential recovery: this Hub's data was restored without its keys. "
+                + "Run restore-recovery-credentials, then sign in. Nothing was changed.")
+        case "service_unauthenticated":
+            return HubActionError.commandFailed(
+                "The process answering on the Hub's control channel is not this Hub, so nothing was sent. "
+                + "Restart Hub, then sign in again.")
+        case "control_channel_busy":
+            return HubActionError.commandFailed(
+                "Hub is busy with other requests. Nothing was changed; sign in again in a moment.")
         default:
             return HubActionError.commandFailed(HubL10n.text(
                 "hub.ImportSheetController.73.1699",

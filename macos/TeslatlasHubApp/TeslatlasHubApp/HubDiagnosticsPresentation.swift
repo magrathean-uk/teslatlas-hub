@@ -137,6 +137,10 @@ struct HubCollectionStatus: Equatable {
         case closed(reason: String?)
         case untrusted
         case faulted
+        /// The service waits for `restore-recovery-credentials` (`credentialRecoveryPending`).
+        case recoveryPending
+        /// The process on the control channel is not the admitted Hub (`service_unauthenticated`).
+        case serviceUnauthenticated
         case serviceNotRunning
         case unknown
     }
@@ -162,7 +166,8 @@ struct HubCollectionStatus: Equatable {
         "credentialStore.exposureSuspected", "collectionAttention"
     ]
     /// The `window status` fields relied on; snake_case spellings are accepted too.
-    static let windowFields = ["phase", "closeReason", "deadline", "startsAt", "trusted", "faulted"]
+    static let windowFields = ["phase", "closeReason", "deadline", "startsAt", "trusted", "faulted",
+                               "credentialRecoveryPending"]
 
     /// Store states that mean the stored pair is not the Hub's own login.
     static let notOwnCodes: Set<String> = ["source_credential_disabled", "unknown_origin", "invalid_origin"]
@@ -245,13 +250,19 @@ struct HubCollectionStatus: Equatable {
         case .serviceNotLoaded:
             return .serviceNotRunning
         case let .failed(error):
-            return error.localizedDescription.contains("service_not_running") ? .serviceNotRunning : .unknown
+            let text = error.localizedDescription
+            if text.contains("service_not_running") { return .serviceNotRunning }
+            if text.contains("service_unauthenticated") { return .serviceUnauthenticated }
+            return .unknown
         case let .report(output):
             if output.contains("service_not_running"), jsonObject(output)?["phase"] == nil {
                 return .serviceNotRunning
             }
             guard let root = jsonObject(output) else { return .unknown }
             let value = { (camel: String, snake: String) -> Any? in root[camel] ?? root[snake] }
+            if value("credentialRecoveryPending", "credential_recovery_pending") as? Bool == true {
+                return .recoveryPending
+            }
             if value("faulted", "faulted") as? Bool == true { return .faulted }
             let deadline = date(value("deadline", "expires_at") ?? root["expiresAt"])
             switch root["phase"] as? String {
@@ -317,6 +328,9 @@ struct HubCollectionStatus: Equatable {
         case .closed(nil): return "Closed"
         case .untrusted: return "Closed (no trusted issuer)"
         case .faulted: return "Closed (window state needs a new trust document)"
+        case .recoveryPending:
+            return "Closed (waiting for credential recovery: run restore-recovery-credentials)"
+        case .serviceUnauthenticated: return "Unknown: the control channel is not this Hub"
         case .serviceNotRunning: return "Unknown: Hub is not running"
         case .unknown: return "Not reported"
         }
