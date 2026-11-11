@@ -46,6 +46,7 @@ use crate::{
         OutboundRequestPrecondition, OutboundRequestReceiptId, OutboundRequestSafetyClass,
         OutboundRequestStart, OutboundRequestTransport, StoreError, StreamSessionReceiptId,
     },
+    fleet_api::egress::{self, PermitKind, Provider, SendPermit},
     owner_api::VehicleId,
 };
 
@@ -185,9 +186,15 @@ impl TestSeams {
 /// The shutdown signal (IF a2). Sending and dropping the sender both mean stop.
 /// Once it has fired it stays fired, so a later wait returns at once and the
 /// receiver is never polled after completion.
+///
+/// The end of the collection window is a stop too (M02-T09): the attempt holds
+/// the window's stream permit here, and when the window closes (which cancels
+/// the permit) or the permit's time runs out the signal fires, so every phase
+/// ends exactly as at shutdown and the run does not retry.
 pub(super) struct Shutdown {
     receiver: oneshot::Receiver<()>,
     fired: bool,
+    window: Option<SendPermit>,
 }
 
 impl Shutdown {
@@ -195,14 +202,34 @@ impl Shutdown {
         Self {
             receiver,
             fired: false,
+            window: None,
         }
     }
 
+    /// The stream permit of the current attempt; it replaces the last one.
+    fn hold_window(&mut self, permit: SendPermit) {
+        self.window = Some(permit);
+    }
+
     async fn wait(&mut self) {
-        if !self.fired {
-            let _ = (&mut self.receiver).await;
-            self.fired = true;
+        if self.fired {
+            return;
         }
+        match &self.window {
+            None => {
+                let _ = (&mut self.receiver).await;
+            }
+            Some(permit) => {
+                tokio::select! {
+                    biased;
+                    _ = &mut self.receiver => {}
+                    cut = permit.ended() => {
+                        tracing::debug!(?cut, "the collection window ended the stream");
+                    }
+                }
+            }
+        }
+        self.fired = true;
     }
 }
 
@@ -1136,6 +1163,21 @@ impl TeslaStreamSupervisor {
         audit: &RunAudit,
         run: &mut RunState,
     ) -> Outcome {
+        // M02-T09: the window's egress gate is asked first, before the credential
+        // check (which may exchange a token) and before any audit row. A refusal
+        // (`window_closed`) opens no connection and ends the run: it is never
+        // retried. The permit is held for the attempt's life; when the window
+        // closes or its deadline passes, the attempt ends as at shutdown.
+        match egress::ask(&self.endpoint, Provider::Legacy, PermitKind::Stream) {
+            Ok(permit) => shutdown.hold_window(permit),
+            Err(refusal) => {
+                tracing::debug!(
+                    code = refusal.code(),
+                    "stream attempt refused by the window gate"
+                );
+                return Outcome::Stop(Ok(()));
+            }
+        }
         // Step 2: credential before network. Any error here means no network use
         // and no audit row.
         match self.check_credentials(shutdown).await {
