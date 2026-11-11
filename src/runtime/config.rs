@@ -1930,6 +1930,53 @@ impl ImportSourceConfig {
 }
 
 /// Import source keys are opaque non-secret labels, never URLs or credentials.
+/// Rewrites the earlier table name to `[import_source]` and warns once per
+/// process on stderr, which never mixes with command output. Returns the
+/// rewritten text, or `None` when the earlier name is absent. Both names in
+/// one file are refused rather than merged. The digest of the loaded bytes is
+/// unaffected: it is taken from the file as written.
+fn renamed_deprecated_tables(source: &str) -> Result<Option<String>, ConfigError> {
+    let Ok(mut root) = source.parse::<toml::Table>() else {
+        return Ok(None);
+    };
+    if !rename_deprecated_tables(&mut root)? {
+        return Ok(None);
+    }
+    static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        eprintln!("{}", deprecated_table_warning());
+    }
+    toml::to_string(&root)
+        .map(Some)
+        .map_err(|_| ConfigError::Invalid("configuration could not be rewritten"))
+}
+
+/// The one-line warning for the earlier name of `[import_source]`.
+pub fn deprecated_table_warning() -> String {
+    format!(
+        "configuration table [{}] is deprecated; use [import_source]. The alias will be removed in a later version.",
+        crate::runtime::legacy_names::DEPRECATED_CONFIG_TABLE_IMPORT_SOURCE
+    )
+}
+
+/// Moves the earlier table (and its `current` sub-table) to `import_source`.
+/// Returns whether anything moved.
+fn rename_deprecated_tables(root: &mut toml::Table) -> Result<bool, ConfigError> {
+    let earlier = crate::runtime::legacy_names::DEPRECATED_CONFIG_TABLE_IMPORT_SOURCE;
+    if !root.contains_key(earlier) {
+        return Ok(false);
+    }
+    if root.contains_key("import_source") {
+        return Err(ConfigError::Invalid(
+            "the earlier import table name and [import_source] are both set; keep only [import_source]",
+        ));
+    }
+    if let Some(table) = root.remove(earlier) {
+        root.insert("import_source".to_owned(), table);
+    }
+    Ok(true)
+}
+
 pub fn validate_import_source_key(key: &str) -> Result<(), ConfigError> {
     if key.trim().is_empty()
         || key.len() > 256
@@ -2030,6 +2077,9 @@ impl HubConfig {
         {
             return Err(ConfigError::EdgeDeliveryRetired);
         }
+        // An earlier table name is read as `[import_source]` (M05-T05).
+        let renamed = renamed_deprecated_tables(source)?;
+        let source = renamed.as_deref().unwrap_or(source);
         let unknown_top_level = source.parse::<toml::Table>().ok().is_some_and(|root| {
             root.keys().any(|key| {
                 !matches!(
