@@ -236,6 +236,8 @@ fn m1_t3_floor_fixture_rows_survive_to_head() {
     assert!(
         added_tables
             == vec![
+                "backup_pack_pins",
+                "backup_runs",
                 "credential_format_state",
                 "credential_key_usage",
                 "credential_legacy_fences",
@@ -247,7 +249,7 @@ fn m1_t3_floor_fixture_rows_survive_to_head() {
             && added_tables.iter().all(|table| {
                 after[*table].len() == usize::from(*table == "credential_format_state")
             }),
-        "assertion failed: {test}: only the seven C10 tables are added with one state row and no converted credentials"
+        "assertion failed: {test}: only the seven C10 tables and the two empty backup live-state tables (M06-T07, M06-T02) are added, with one state row and no converted credentials"
     );
     let state: (
         i64,
