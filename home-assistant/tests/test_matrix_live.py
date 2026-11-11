@@ -1461,9 +1461,12 @@ def test_manifest_binds_validator_schemas_actors_and_all_cases() -> None:
     bindings = [item["schema"] for item in manifest["raw_schemas"]] + [
         manifest["validator"]
     ]
+    package_root = tools_root.parent.resolve()
     for binding in bindings:
-        path = Path(binding["path"])
-        assert path.is_absolute() and path.is_file()
+        relative = Path(binding["path"])
+        assert not relative.is_absolute() and ".." not in relative.parts
+        path = (package_root / relative).resolve()
+        assert path.is_relative_to(package_root) and path.is_file()
         assert hashlib.sha256(path.read_bytes()).hexdigest() == binding["sha256"]
 
 

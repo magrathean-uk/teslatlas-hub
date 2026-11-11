@@ -1,7 +1,9 @@
 #!/bin/sh
-# Local gate for teslatlas-home-assistant. Usage: tools/gate.sh [--dry-run]
+# Local gate for the Home Assistant package (home-assistant/ in the hub).
+# Usage: tools/gate.sh [--dry-run]
 # Receipt paths in compatibility/hub.json are relative to the workspace root
-# (the parent of the main checkout); override with TESLATLAS_WORKSPACE.
+# (the parent of the hub's main checkout, found through the git common directory,
+# so it is the same from a git worktree); override with TESLATLAS_WORKSPACE.
 set -eu
 
 repo=$(cd "$(dirname "$0")/.." && pwd)

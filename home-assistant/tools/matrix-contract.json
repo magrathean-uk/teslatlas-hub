@@ -285,35 +285,35 @@
     {
       "id": "ha-runtime-v1",
       "schema": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-runtime-v1.schema.json",
-        "sha256": "24cd69d0de428fa23fe85ff33cbb3d81d3b3e813ddef5d8a8f98aafa4e302f13"
+        "path": "tools/ha-runtime-v1.schema.json",
+        "sha256": "e873f72e0eb21e7fc3624af61ef42523966fbf3c0ad8a6663b4ab4e7e00e4fe2"
       }
     },
     {
       "id": "ha-initial-v1",
       "schema": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-initial-v1.schema.json",
+        "path": "tools/ha-initial-v1.schema.json",
         "sha256": "5e3525d5523e4162320bfdc2cdd6fc13f0203187d3fe2e141b9cdfe33f37f8e6"
       }
     },
     {
       "id": "ha-client-v1",
       "schema": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-client-v1.schema.json",
+        "path": "tools/ha-client-v1.schema.json",
         "sha256": "dcf05f837e37fc6541d8d6d0e3c5ce068a0b0eb662d8e6b00cb723171b9b3b92"
       }
     },
     {
       "id": "ha-flow-v1",
       "schema": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-flow-v1.schema.json",
+        "path": "tools/ha-flow-v1.schema.json",
         "sha256": "72d0b795eef7fb554413c323309a8596dd583bb2b9b88e2d10df9c22d5c6bf2e"
       }
     }
   ],
   "phases": [],
   "validator": {
-    "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/matrix_contract.py",
-    "sha256": "ccd0ff198036d68dd6d6874e5f9957486d149fd9fb9a60d1b8d58e01c9fdeacb"
+    "path": "tools/matrix_contract.py",
+    "sha256": "216d5ad60d44cbf4b27fc923490e90c14338df38da8e5718a59851ab12c0255d"
   }
 }
