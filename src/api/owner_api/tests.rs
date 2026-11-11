@@ -1393,7 +1393,7 @@ async fn legacy_discovery_drops_vehicle_names_that_reflect_a_credential() {
         .iter()
         .map(|vehicle| vehicle.display_name.as_deref())
         .collect::<Vec<_>>();
-    assert_eq!(names, vec![None, None, Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME)]);
+    assert_eq!(names, vec![None, None, Some("Test Vehicle")]);
     assert_eq!(
         vehicles
             .iter()
@@ -1417,7 +1417,7 @@ async fn legacy_discovery_drops_vehicle_names_that_reflect_a_credential() {
         once.iter()
             .map(|vehicle| vehicle.display_name.as_deref())
             .collect::<Vec<_>>(),
-        vec![None, None, Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME)]
+        vec![None, None, Some("Test Vehicle")]
     );
 
     let log = log.contents();
@@ -1484,7 +1484,7 @@ async fn legacy_discovery_replaces_provider_states_that_reflect_a_credential() {
                 .iter()
                 .map(|vehicle| vehicle.display_name.as_deref())
                 .collect::<Vec<_>>(),
-            vec![Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME), Some("Hermes"), Some("Apollo")]
+            vec![Some("Test Vehicle"), Some("Hermes"), Some("Apollo")]
         );
         assert_eq!(
             listed
@@ -1587,21 +1587,21 @@ fn scrubbing_a_vehicle_list_names_only_the_paths_it_changed() {
     };
 
     let log = LogCapture::start();
-    let mut clean = vec![vehicle(1, "online", Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME))];
+    let mut clean = vec![vehicle(1, "online", Some("Test Vehicle"))];
     secrets.scrub_vehicle_list(&mut clean);
     assert_eq!(clean[0].state, "online");
-    assert_eq!(clean[0].display_name.as_deref(), Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME));
+    assert_eq!(clean[0].display_name.as_deref(), Some("Test Vehicle"));
     assert_eq!(log.contents(), "", "a clean list logs nothing");
     drop(log);
 
     let log = LogCapture::start();
     let mut states = vec![
-        vehicle(1, "list-secret-0123456789", Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME)),
+        vehicle(1, "list-secret-0123456789", Some("Test Vehicle")),
         vehicle(2, "asleep", None),
     ];
     secrets.scrub_vehicle_list(&mut states);
     assert_eq!(states[0].state, "unknown");
-    assert_eq!(states[0].display_name.as_deref(), Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME));
+    assert_eq!(states[0].display_name.as_deref(), Some("Test Vehicle"));
     assert_eq!(states[1].state, "asleep");
     let rendered = log.contents();
     assert!(rendered.contains("response[].state"), "{rendered}");

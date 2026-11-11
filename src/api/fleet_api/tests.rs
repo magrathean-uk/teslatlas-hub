@@ -1066,7 +1066,7 @@ async fn fleet_discovery_drops_vehicle_names_that_reflect_a_credential() {
             .iter()
             .map(|vehicle| vehicle.display_name.as_deref())
             .collect::<Vec<_>>(),
-        vec![None, None, Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME)]
+        vec![None, None, Some("Test Vehicle")]
     );
     assert_eq!(
         vehicles
@@ -1115,7 +1115,7 @@ async fn fleet_discovery_replaces_provider_states_that_reflect_a_credential() {
             .iter()
             .map(|vehicle| vehicle.display_name.as_deref())
             .collect::<Vec<_>>(),
-        vec![Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME), Some("Hermes"), Some("Apollo")]
+        vec![Some("Test Vehicle"), Some("Hermes"), Some("Apollo")]
     );
     assert_eq!(
         vehicles
