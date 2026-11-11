@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "Eindrægnipróf upprunaforritsins skilaði ekki gildri skýrslu.";
 "hub.HubController.1562.581" = "Ekki tókst að sannreyna upprunagagnagrunninn. Athugaðu tengingu við þjóninn og reyndu aftur.";
 "hub.HubController.1585.586" = "Staðfestu að upprunaforritið 4.2.0 eða nýrra sé uppsett áður en innflutningur hefst.";
-"hub.HubController.1591.587" = "Veldu ENCRYPTION_KEY-skrá upprunaforritsins.";
+"hub.HubController.1591.587" = "Innskráning krefst opins söfnunarglugga. Opnaðu glugga og skráðu þig svo inn aftur.";
 "hub.HubController.1718.615" = "Innflutningur úr upprunaforritinu skilaði ekki gildri lokaskýrslu. Hub er áfram stöðvaður.";
 "hub.HubController.1742.624" = "Innflutningi lauk, en Hub gat ekki skráð skilyrði öruggrar afhendingar: %1$@. Hub er áfram stöðvaður.";
 "hub.HubController.1846.655" = "Staðfestu að upprunaforritið 4.2.0 eða nýrra sé uppsett áður en flutt er inn úr beinum PostgreSQL-gagnagjafa.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Flytja inn";
 "hub.ImportSheetController.112.1706" = "Hætta við";
 "hub.ImportSheetController.148.1709" = "Fylltu út alla reiti";
-"hub.ImportSheetController.149.1710" = "Gagnagjafi, auðkenni bíls, lykilorðaskrá og ENCRYPTION_KEY-skrá eru nauðsynleg.";
+"hub.ImportSheetController.149.1710" = "Gagnagjafi, auðkenni bíls og lykilorðaskrá eru nauðsynleg.";
 "hub.ImportSheetController.156.1711" = "Staðfestu útgáfu upprunaforritsins";
 "hub.ImportSheetController.17.1690" = "Ég staðfesti að þessi gagnagrunnur sé úr útgáfu 4.2.0 eða nýrri af upprunaforritinu.";
 "hub.ImportSheetController.26.1691" = "Flytja inn feril";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "Auðkenni bíls";
 "hub.ImportSheetController.69.1697" = "Lykilorðaskrá";
 "hub.ImportSheetController.7.1687" = "Hub les upprunagagnagrunninn án þess að stöðva upprunaforritið eða breyta því. Eftir innflutning segir Hub þér hvenær þú átt að gera Tesla-aðgang óvirkan í upprunaforritinu.";
-"hub.ImportSheetController.73.1699" = "ENCRYPTION_KEY-skrá upprunaforritsins";
+"hub.ImportSheetController.73.1699" = "Hub er ekki í gangi. Ræstu Hub, opnaðu söfnunarglugga og skráðu þig svo inn.";
 "hub.ImportSheetController.9.1688" = "Fyrir innflutning skaltu taka öryggisafrit af upprunaforritinu, uppfæra það í útgáfu 4.2.0 eða nýrri, ræsa það einu sinni og bíða þar til gagnagrunnsuppfærslum þess lýkur. Ekki er hægt að staðfesta keyrandi útgáfu forritsins með beinni gagnagrunnstengingu.";
 "hub.LogsWindowController.113.1730" = "Fleiri aðgerðir fyrir annála";
 "hub.LogsWindowController.123.1732" = "Aðgangsupplýsingar og einkakenni eru afmáð úr birtum, afrituðum og vistuðum annálum. Yfirfarðu annálana áður en þeim er deilt.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Settu upp nýjan Hub eða færðu ferilinn þinn úr upprunaforritinu.";
 "hub.OnboardingWindowController.606.1928" = "Mælt er með Fleet Telemetry. Eldri aðgangslyklar virka með eldri uppsetningum.";
 "hub.OnboardingWindowController.608.1929" = "Búðu til Tesla Fleet-forrit og límdu síðan aðgangsupplýsingar þess hér að neðan.";
-"hub.OnboardingWindowController.610.1930" = "Skráðu þig inn hjá Tesla eða límdu inn fyrirliggjandi par aðgangslykla.";
+"hub.OnboardingWindowController.610.1930" = "Skráðu þig inn hjá Tesla á meðan söfnunargluggi er opinn. Hub tekur aldrei við aðgangslykli.";
 "hub.OnboardingWindowController.612.1931" = "Tengstu upprunaþjóninum þínum til að flytja inn feril ökutækisins.";
 "hub.OnboardingWindowController.614.1932" = "Athuga hvort allt sé rétt tengt.";
 "hub.OnboardingWindowController.617.1933" = "Ferill upprunaforritsins hefur verið fluttur inn í Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Opinbert streymisviðmót Tesla. Gerir rauntímaskipanir til ökutækis mögulegar.";
 "hub.OnboardingWindowController.752.1958" = "Eldri aðgangslykill";
-"hub.OnboardingWindowController.753.1959" = "Notaðu par af aðgangslykli og endurnýjunarlykli fyrir Tesla Owner API.";
+"hub.OnboardingWindowController.753.1959" = "Skráðu þig inn hjá Tesla. Hub heldur sinni eigin innskráningu.";
 "hub.OnboardingWindowController.760.1960" = "Búa til Tesla Fleet-forrit";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
 "hub.OnboardingWindowController.774.1967" = "Rennur út eftir";
 "hub.OnboardingWindowController.776.1968" = "Aðgangsupplýsingar eru dulkóðaðar á þessum Mac";
 "hub.OnboardingWindowController.788.1970" = "Skrá inn hjá Tesla";
-"hub.OnboardingWindowController.790.1972" = "eða notaðu fyrirliggjandi par aðgangs- og endurnýjunarlykla";
+"hub.OnboardingWindowController.790.1972" = "Innskráning er ekki tiltæk enn: þessi Hub er ekki með innskráningargildi fyrir Owner API. Engu var breytt.";
 "hub.OnboardingWindowController.798.1975" = "Aðgangslyklar eru dulkóðaðir á þessum Mac";
 "hub.OnboardingWindowController.822.1978" = "Gátt";
 "hub.OnboardingWindowController.832.1980" = "SSH-notandi";

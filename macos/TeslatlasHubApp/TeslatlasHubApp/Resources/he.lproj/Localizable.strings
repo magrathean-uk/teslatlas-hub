@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "בדיקת התאימות של יישום המקור לא החזירה דוח תקין.";
 "hub.HubController.1562.581" = "לא ניתן לאמת את מסד נתוני המקור. בדקו את החיבור לשרת ונסו שוב.";
 "hub.HubController.1585.586" = "אשרו שיישום המקור בגרסה 4.2.0 ואילך לפני הייבוא.";
-"hub.HubController.1591.587" = "בחרו את קובץ ENCRYPTION_KEY של יישום המקור.";
+"hub.HubController.1591.587" = "ההתחברות דורשת חלון איסוף פתוח. פתחו חלון ואז התחברו שוב.";
 "hub.HubController.1718.615" = "ייבוא מיישום המקור לא החזיר דוח השלמה תקין. שירות ה-Hub נשאר עצור.";
 "hub.HubController.1742.624" = "הייבוא הושלם, אך ה-Hub לא הצליח לרשום את תנאי הסף להעברה בטוחה: %1$@. שירות ה-Hub נשאר עצור.";
 "hub.HubController.1846.655" = "אשרו שיישום המקור בגרסה 4.2.0 ואילך לפני הייבוא ממקור PostgreSQL ישיר.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "ייבוא";
 "hub.ImportSheetController.112.1706" = "ביטול";
 "hub.ImportSheetController.148.1709" = "יש למלא את כל השדות";
-"hub.ImportSheetController.149.1710" = "נדרשים מקור, מזהה רכב, קובץ סיסמה וקובץ ENCRYPTION_KEY.";
+"hub.ImportSheetController.149.1710" = "נדרשים מקור, מזהה רכב וקובץ סיסמה.";
 "hub.ImportSheetController.156.1711" = "אישור גרסת יישום המקור";
 "hub.ImportSheetController.17.1690" = "אני מאשר שמסד הנתונים הזה שייך ליישום המקור בגרסה 4.2.0 ומעלה";
 "hub.ImportSheetController.26.1691" = "ייבוא היסטוריה";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "מזהה רכב";
 "hub.ImportSheetController.69.1697" = "קובץ סיסמה";
 "hub.ImportSheetController.7.1687" = "ה-Hub קורא את מסד נתוני המקור בלי לעצור את יישום המקור או לשנות אותו. לאחר הייבוא, ה-Hub ינחה אתכם מתי להשבית בעצמכם את הגישה של Tesla ביישום המקור.";
-"hub.ImportSheetController.73.1699" = "קובץ ENCRYPTION_KEY של יישום המקור";
+"hub.ImportSheetController.73.1699" = "Hub אינו פועל. הפעילו את Hub, פתחו חלון איסוף ואז התחברו.";
 "hub.ImportSheetController.9.1688" = "לפני הייבוא: גבו את יישום המקור, עדכנו אותו לגרסה 4.2.0 ומעלה, הפעילו אותו פעם אחת והמתינו לסיום עדכוני סכמת מסד הנתונים. חיבור ישיר למסד הנתונים אינו יכול לאמת את גרסת היישום הפועל.";
 "hub.LogsWindowController.113.1730" = "פעולות נוספות ביומן";
 "hub.LogsWindowController.123.1732" = "היומנים המוצגים, המועתקים והשמורים מסתירים פרטי התחברות ומזהים פרטיים. בדקו אותם לפני השיתוף.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "הגדירו Hub חדש או העבירו אליו את ההיסטוריה שלכם מיישום המקור.";
 "hub.OnboardingWindowController.606.1928" = "מומלץ להשתמש ב-Fleet Telemetry. אסימוני Legacy פועלים בהגדרות ישנות יותר.";
 "hub.OnboardingWindowController.608.1929" = "צרו יישום Tesla Fleet והדביקו את פרטי ההתחברות שלו למטה.";
-"hub.OnboardingWindowController.610.1930" = "התחברו ל-Tesla או הדביקו זוג אסימונים קיים.";
+"hub.OnboardingWindowController.610.1930" = "התחברו ל-Tesla כשחלון איסוף פתוח. Hub לעולם אינו מקבל אסימון.";
 "hub.OnboardingWindowController.612.1931" = "התחברו לשרת יישום המקור כדי לייבא את היסטוריית הרכב שלו.";
 "hub.OnboardingWindowController.614.1932" = "מוודא שכל החלקים מוגדרים כראוי.";
 "hub.OnboardingWindowController.617.1933" = "היסטוריית הרכב שלכם יובאה אל ה-Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "ממשק הזרמת הנתונים הרשמי של Tesla. מאפשר פקודות לרכב בזמן אמת.";
 "hub.OnboardingWindowController.752.1958" = "אסימון Legacy";
-"hub.OnboardingWindowController.753.1959" = "השתמשו בזוג אסימוני גישה ורענון של Owner API.";
+"hub.OnboardingWindowController.753.1959" = "התחברו ל-Tesla. Hub שומר על ההתחברות שלו.";
 "hub.OnboardingWindowController.760.1960" = "צרו יישום Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "מזהה לקוח";
 "hub.OnboardingWindowController.774.1967" = "תוקף";
 "hub.OnboardingWindowController.776.1968" = "פרטי ההתחברות מוצפנים ב-Mac הזה";
 "hub.OnboardingWindowController.788.1970" = "התחברות ל-Tesla";
-"hub.OnboardingWindowController.790.1972" = "או השתמשו בזוג אסימונים קיים";
+"hub.OnboardingWindowController.790.1972" = "ההתחברות עדיין אינה זמינה: ל-Hub זה אין ערכי התחברות של Owner API. דבר לא שונה.";
 "hub.OnboardingWindowController.798.1975" = "האסימונים מוצפנים ב-Mac הזה";
 "hub.OnboardingWindowController.822.1978" = "יציאה";
 "hub.OnboardingWindowController.832.1980" = "משתמש SSH";

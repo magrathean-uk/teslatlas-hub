@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "Проверката за съвместимост с изходното приложение не върна валиден отчет.";
 "hub.HubController.1562.581" = "Не можа да се потвърди изходната база данни. Провери връзката със сървъра и опитай отново.";
 "hub.HubController.1585.586" = "Потвърди, че използваш изходното приложение с версия 4.2.0 или по-нова, преди импортирането.";
-"hub.HubController.1591.587" = "Избери файла на изходното приложение, в който се намира ENCRYPTION_KEY.";
+"hub.HubController.1591.587" = "За вход е необходим отворен прозорец за събиране. Отвори прозорец и влез отново.";
 "hub.HubController.1718.615" = "Импортирането от изходното приложение не върна валиден отчет за завършване. Hub остава спрян.";
 "hub.HubController.1742.624" = "Импортирането завърши, но Hub не успя да запише условието за безопасно предаване: %1$@. Hub остава спрян.";
 "hub.HubController.1846.655" = "Потвърди, че използваш изходното приложение с версия 4.2.0 или по-нова, преди да импортираш от директен източник на PostgreSQL.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Импортирай";
 "hub.ImportSheetController.112.1706" = "Откажи";
 "hub.ImportSheetController.148.1709" = "Попълни всички полета";
-"hub.ImportSheetController.149.1710" = "Нужни са източник, ID на автомобила, файл с паролата и файлът ENCRYPTION_KEY.";
+"hub.ImportSheetController.149.1710" = "Необходими са източник, ID на автомобила и файл с паролата.";
 "hub.ImportSheetController.156.1711" = "Потвърди версията на изходното приложение";
 "hub.ImportSheetController.17.1690" = "Потвърждавам, че тази база данни принадлежи на изходното приложение с версия 4.2.0 или по-нова";
 "hub.ImportSheetController.26.1691" = "Импортиране на история";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "ID на автомобила";
 "hub.ImportSheetController.69.1697" = "Файл с паролата";
 "hub.ImportSheetController.7.1687" = "Hub чете данни от изходната база данни, без да спира или променя изходното приложение. След импортирането Hub ще ти каже кога сам да изключиш достъпа до Tesla в изходното приложение.";
-"hub.ImportSheetController.73.1699" = "Файлът ENCRYPTION_KEY на изходното приложение";
+"hub.ImportSheetController.73.1699" = "Hub не работи. Стартирай Hub, отвори прозорец за събиране и влез.";
 "hub.ImportSheetController.9.1688" = "Преди импортиране: направи резервно копие на изходното приложение, обнови го до версия 4.2.0 или по-нова, стартирай го веднъж и изчакай миграциите на базата данни да завършат. Директната връзка с базата данни не може да потвърди версията на работещото приложение.";
 "hub.LogsWindowController.113.1730" = "Още действия с журналите";
 "hub.LogsWindowController.123.1732" = "Показаните, копираните и запазените журнали заличават данните за достъп и личните идентификатори. Прегледай ги, преди да ги споделиш.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Настрой нов Hub или прехвърли съществуващата си история от изходното приложение.";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetry се препоръчва. Наследените токени работят с по-стари конфигурации.";
 "hub.OnboardingWindowController.608.1929" = "Създай приложение Tesla Fleet, после постави данните му за достъп по-долу.";
-"hub.OnboardingWindowController.610.1930" = "Влез в акаунта си в Tesla или постави съществуващата двойка токени.";
+"hub.OnboardingWindowController.610.1930" = "Влез в акаунта си в Tesla, докато е отворен прозорец за събиране. Hub никога не приема токен.";
 "hub.OnboardingWindowController.612.1931" = "Свържи се със сървъра на изходното приложение, за да импортираш историята на автомобилите.";
 "hub.OnboardingWindowController.614.1932" = "Проверяваме дали всичко е настроено правилно.";
 "hub.OnboardingWindowController.617.1933" = "Историята от изходното приложение е импортирана в Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Официалният API на Tesla за поточни данни. Дава възможност за команди към автомобила в реално време.";
 "hub.OnboardingWindowController.752.1958" = "Наследен токен";
-"hub.OnboardingWindowController.753.1959" = "Използвай двойка токени за достъп и обновяване от API за собственици.";
+"hub.OnboardingWindowController.753.1959" = "Влез в акаунта си в Tesla. Hub използва собствен вход.";
 "hub.OnboardingWindowController.760.1960" = "Създай приложение Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID на клиента";
 "hub.OnboardingWindowController.774.1967" = "Изтича след";
 "hub.OnboardingWindowController.776.1968" = "Данните за достъп се криптират на този Mac";
 "hub.OnboardingWindowController.788.1970" = "Влез в акаунта си в Tesla";
-"hub.OnboardingWindowController.790.1972" = "или използвай съществуваща двойка токени";
+"hub.OnboardingWindowController.790.1972" = "Входът още не е наличен: този Hub няма стойности за вход през Owner API. Нищо не е променено.";
 "hub.OnboardingWindowController.798.1975" = "Токените се криптират на този Mac";
 "hub.OnboardingWindowController.822.1978" = "Порт";
 "hub.OnboardingWindowController.832.1980" = "SSH потребител";

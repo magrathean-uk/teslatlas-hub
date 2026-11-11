@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "स्रोत अनुप्रयोग संगतता जाँच से कोई मान्य रिपोर्ट नहीं मिली।";
 "hub.HubController.1562.581" = "स्रोत डेटाबेस सत्यापित नहीं हो सका। सर्वर कनेक्शन जाँचें और फिर कोशिश करें।";
 "hub.HubController.1585.586" = "इंपोर्ट करने से पहले स्रोत अनुप्रयोग 4.2.0 या नया संस्करण होने की पुष्टि करें।";
-"hub.HubController.1591.587" = "स्रोत अनुप्रयोग की ENCRYPTION_KEY फ़ाइल चुनें।";
+"hub.HubController.1591.587" = "साइन इन के लिए खुली संग्रह विंडो ज़रूरी है। एक विंडो खोलें, फिर दोबारा साइन इन करें।";
 "hub.HubController.1718.615" = "स्रोत अनुप्रयोग इंपोर्ट से पूरा होने की कोई मान्य रिपोर्ट नहीं मिली। Hub बंद ही रहेगा।";
 "hub.HubController.1742.624" = "इंपोर्ट पूरा हुआ, लेकिन Hub सुरक्षित हैंडओवर गेट दर्ज नहीं कर सका: %1$@। Hub बंद ही रहेगा।";
 "hub.HubController.1846.655" = "सीधे PostgreSQL स्रोत से इंपोर्ट करने से पहले स्रोत अनुप्रयोग 4.2.0 या नया संस्करण होने की पुष्टि करें।";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "इंपोर्ट करें";
 "hub.ImportSheetController.112.1706" = "रद्द करें";
 "hub.ImportSheetController.148.1709" = "सभी फ़ील्ड भरें";
-"hub.ImportSheetController.149.1710" = "स्रोत, कार ID, पासवर्ड फ़ाइल और ENCRYPTION_KEY फ़ाइल आवश्यक हैं।";
+"hub.ImportSheetController.149.1710" = "स्रोत, कार ID और पासवर्ड फ़ाइल आवश्यक हैं।";
 "hub.ImportSheetController.156.1711" = "स्रोत अनुप्रयोग संस्करण की पुष्टि करें";
 "hub.ImportSheetController.17.1690" = "मेरी पुष्टि: यह डेटाबेस स्रोत अनुप्रयोग 4.2.0 या नए संस्करण का है";
 "hub.ImportSheetController.26.1691" = "इतिहास इंपोर्ट करें";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "कार ID";
 "hub.ImportSheetController.69.1697" = "पासवर्ड फ़ाइल";
 "hub.ImportSheetController.7.1687" = "Hub स्रोत डेटाबेस को पढ़ता है, लेकिन स्रोत अनुप्रयोग को रोकता या बदलता नहीं है। इंपोर्ट के बाद Hub बताएगा कि आपको स्रोत अनुप्रयोग में Tesla एक्सेस कब खुद बंद करना है।";
-"hub.ImportSheetController.73.1699" = "स्रोत अनुप्रयोग ENCRYPTION_KEY फ़ाइल";
+"hub.ImportSheetController.73.1699" = "Hub नहीं चल रहा है। Hub शुरू करें, संग्रह विंडो खोलें, फिर साइन इन करें।";
 "hub.ImportSheetController.9.1688" = "इंपोर्ट से पहले: स्रोत अनुप्रयोग का बैकअप लें, उसे 4.2.0 या नए संस्करण पर अपडेट करें, उसे एक बार शुरू करें और डेटाबेस माइग्रेशन पूरे होने तक प्रतीक्षा करें। सीधे डेटाबेस कनेक्शन से चल रहे ऐप के संस्करण की पुष्टि नहीं की जा सकती।";
 "hub.LogsWindowController.113.1730" = "लॉग की अन्य कार्रवाइयाँ";
 "hub.LogsWindowController.123.1732" = "दिखाए गए, कॉपी किए गए और सहेजे गए लॉग में क्रेडेंशियल और निजी पहचानकर्ता छिपाए जाते हैं। साझा करने से पहले समीक्षा करें।";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "नया Hub सेट अप करें या स्रोत अनुप्रयोग से अपना इतिहास लाएँ।";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetry अनुशंसित है। पुराने सेटअप में Legacy टोकन काम करते हैं।";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet ऐप्लिकेशन बनाएँ, फिर नीचे उसके क्रेडेंशियल चिपकाएँ।";
-"hub.OnboardingWindowController.610.1930" = "Tesla में साइन इन करें या टोकन की मौजूदा जोड़ी चिपकाएँ।";
+"hub.OnboardingWindowController.610.1930" = "संग्रह विंडो खुली होने पर Tesla में साइन इन करें। Hub कभी टोकन स्वीकार नहीं करता।";
 "hub.OnboardingWindowController.612.1931" = "वाहन इतिहास इंपोर्ट करने के लिए अपने स्रोत अनुप्रयोग सर्वर से कनेक्ट करें।";
 "hub.OnboardingWindowController.614.1932" = "सेटअप की सभी चीज़ें सही तरह काम कर रही हैं या नहीं, यह जाँचा जा रहा है।";
 "hub.OnboardingWindowController.617.1933" = "आपका स्रोत अनुप्रयोग इतिहास Hub में इंपोर्ट कर दिया गया है।";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla का आधिकारिक स्ट्रीमिंग API। इससे लाइव वाहन कमांड उपलब्ध होती हैं।";
 "hub.OnboardingWindowController.752.1958" = "Legacy टोकन";
-"hub.OnboardingWindowController.753.1959" = "Owner API access token और refresh token की जोड़ी इस्तेमाल करें।";
+"hub.OnboardingWindowController.753.1959" = "Tesla में साइन इन करें। Hub अपना अलग लॉगिन रखता है।";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet ऐप बनाएँ";
 "hub.OnboardingWindowController.771.1964" = "क्लाइंट ID";
 "hub.OnboardingWindowController.774.1967" = "समाप्ति अवधि";
 "hub.OnboardingWindowController.776.1968" = "क्रेडेंशियल इस Mac पर एन्क्रिप्टेड हैं";
 "hub.OnboardingWindowController.788.1970" = "Tesla में साइन इन करें";
-"hub.OnboardingWindowController.790.1972" = "या टोकन की मौजूदा जोड़ी इस्तेमाल करें";
+"hub.OnboardingWindowController.790.1972" = "साइन इन अभी उपलब्ध नहीं है: इस Hub में Owner API साइन-इन मान नहीं हैं। कुछ भी नहीं बदला गया।";
 "hub.OnboardingWindowController.798.1975" = "टोकन इस Mac पर एन्क्रिप्टेड हैं";
 "hub.OnboardingWindowController.822.1978" = "पोर्ट";
 "hub.OnboardingWindowController.832.1980" = "SSH उपयोगकर्ता";

@@ -98,3 +98,263 @@ enum HubDiagnosticsPresentation {
         }
     }
 }
+
+/// What Status shows about collection: the Hub's own login, its credential state and
+/// the collection window, as the running service reports them in `status` and
+/// `window status` (docs/guides/collection-paths.md, docs/operations/collection-windows.md).
+///
+/// Every field is read defensively: a missing, renamed or unknown value is shown as
+/// unknown or by its code, never guessed. The app only reads; it holds no token and
+/// offers no Fleet action (Fleet is parked).
+struct HubCollectionStatus: Equatable {
+    /// The Hub's own Tesla login, from `legacyCredentials`.
+    enum Login: Equatable {
+        case own
+        case signedOut
+        /// A stored pair the service refuses because it is not the Hub's own login.
+        case notOwn(code: String)
+        case unknown
+    }
+
+    /// The state of that login, from `legacyCredentials`, `credentialStore`,
+    /// `collectionAttention` and the window's close reason.
+    enum Credential: Equatable {
+        case valid(expiresAt: Date?)
+        case reloginNeeded
+        case ownerAPIRefused
+        case refused(code: String)
+        case exposureSuspected
+        case needsAttention(code: String)
+        case notSignedIn
+        case unknown
+    }
+
+    /// The collection window, from `window status`.
+    enum Window: Equatable {
+        case open(expiresAt: Date?)
+        case pending(startsAt: Date?, expiresAt: Date?)
+        case closing(expiresAt: Date?)
+        case closed(reason: String?)
+        case untrusted
+        case faulted
+        case serviceNotRunning
+        case unknown
+    }
+
+    /// How the app came by the `window status` answer.
+    enum WindowRead {
+        case report(String)
+        case failed(Error)
+        /// Not asked: the service is not loaded, so the command would only be refused.
+        case serviceNotLoaded
+    }
+
+    var login: Login
+    var credential: Credential
+    var window: Window
+    /// The last sign-in refusal the service gave, when it is one Status should keep
+    /// showing (`sign_in_unavailable`).
+    var signInRefusal: String?
+
+    /// The `status` fields relied on (listed so a renamed field is easy to find).
+    static let statusFields = [
+        "legacyCredentials.present", "legacyCredentials.storeState", "legacyCredentials.expiresAt",
+        "credentialStore.exposureSuspected", "collectionAttention"
+    ]
+    /// The `window status` fields relied on; snake_case spellings are accepted too.
+    static let windowFields = ["phase", "closeReason", "deadline", "startsAt", "trusted", "faulted"]
+
+    /// Store states that mean the stored pair is not the Hub's own login.
+    static let notOwnCodes: Set<String> = ["source_credential_disabled", "unknown_origin", "invalid_origin"]
+    /// Store states and attention codes that mean the Hub must sign in again.
+    static let reloginCodes: Set<String> = [
+        "fresh_sign_in_required", "refresh_token_spent", "relogin_needed",
+        "collector_auth_sign_in_required"
+    ]
+
+    init(login: Login, credential: Credential, window: Window, signInRefusal: String? = nil) {
+        self.login = login
+        self.credential = credential
+        self.window = window
+        self.signInRefusal = signInRefusal
+    }
+
+    init(statusOutput: String?, window read: WindowRead, signInRefusal: String? = nil) {
+        let root = statusOutput.flatMap(Self.jsonObject)
+        let window = Self.window(from: read)
+        let closeReason: String?
+        if case let .closed(reason) = window { closeReason = reason } else { closeReason = nil }
+        let legacy = root?["legacyCredentials"] as? [String: Any]
+        let store = root?["credentialStore"] as? [String: Any]
+        let attention = root?["collectionAttention"] as? String
+        let present = legacy?["present"] as? Bool
+        let storeState = legacy?["storeState"] as? String ?? legacy?["store_state"] as? String
+
+        let login: Login
+        switch (present, storeState) {
+        case (nil, _): login = .unknown
+        case (false?, _): login = .signedOut
+        case let (true?, code?) where Self.notOwnCodes.contains(code): login = .notOwn(code: code)
+        case (true?, _): login = .own
+        }
+
+        let credential: Credential
+        if root == nil || present == nil {
+            credential = .unknown
+        } else if attention == "collector_api_refused" || closeReason == "owner_api_refused"
+                    || storeState == "owner_api_refused" {
+            credential = .ownerAPIRefused
+        } else if (store?["exposureSuspected"] as? Bool ?? store?["exposure_suspected"] as? Bool) == true {
+            credential = .exposureSuspected
+        } else if closeReason == "relogin_needed" || attention.map(Self.reloginCodes.contains) == true
+                    || storeState.map(Self.reloginCodes.contains) == true {
+            credential = .reloginNeeded
+        } else if let storeState, Self.notOwnCodes.contains(storeState) {
+            credential = .refused(code: storeState)
+        } else if present == true, storeState == "ok" {
+            credential = .valid(expiresAt: Self.date(legacy?["expiresAt"] ?? legacy?["expires_at"]))
+        } else if present == true {
+            credential = .needsAttention(code: storeState ?? "unknown")
+        } else {
+            credential = .notSignedIn
+        }
+        self.init(login: login, credential: credential, window: window,
+                  signInRefusal: signInRefusal == "sign_in_unavailable" ? signInRefusal : nil)
+    }
+
+    // MARK: Reading
+
+    private static func jsonObject(_ output: String) -> [String: Any]? {
+        // The whole output first; then the last line that is a JSON object, since a
+        // command may print progress lines before its report.
+        if let data = output.data(using: .utf8),
+           let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return root
+        }
+        for line in output.split(whereSeparator: { $0.isNewline }).reversed() {
+            if let data = String(line).data(using: .utf8),
+               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                return root
+            }
+        }
+        return nil
+    }
+
+    static func window(from read: WindowRead) -> Window {
+        switch read {
+        case .serviceNotLoaded:
+            return .serviceNotRunning
+        case let .failed(error):
+            return error.localizedDescription.contains("service_not_running") ? .serviceNotRunning : .unknown
+        case let .report(output):
+            if output.contains("service_not_running"), jsonObject(output)?["phase"] == nil {
+                return .serviceNotRunning
+            }
+            guard let root = jsonObject(output) else { return .unknown }
+            let value = { (camel: String, snake: String) -> Any? in root[camel] ?? root[snake] }
+            if value("faulted", "faulted") as? Bool == true { return .faulted }
+            let deadline = date(value("deadline", "expires_at") ?? root["expiresAt"])
+            switch root["phase"] as? String {
+            case "open": return .open(expiresAt: deadline)
+            case "pending": return .pending(startsAt: date(value("startsAt", "starts_at")), expiresAt: deadline)
+            case "closing": return .closing(expiresAt: deadline)
+            case "closed":
+                if value("trusted", "trusted") as? Bool == false { return .untrusted }
+                return .closed(reason: value("closeReason", "close_reason") as? String)
+            default: return .unknown
+            }
+        }
+    }
+
+    /// Unix seconds, or milliseconds for a value too large to be seconds.
+    static func date(_ value: Any?) -> Date? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        let raw = number.doubleValue
+        guard raw > 0 else { return nil }
+        return Date(timeIntervalSince1970: raw > 100_000_000_000 ? raw / 1000 : raw)
+    }
+
+    // MARK: Words
+
+    static func defaultDateText(_ date: Date) -> String {
+        DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short)
+    }
+
+    func loginText() -> String {
+        switch login {
+        case .own: return "Signed in with the Hub's own login"
+        case .signedOut: return "Signed out"
+        case .notOwn: return "Stored login is not the Hub's own"
+        case .unknown: return "Not reported"
+        }
+    }
+
+    func credentialText(date: (Date) -> String = HubCollectionStatus.defaultDateText) -> String {
+        switch credential {
+        case let .valid(expiresAt?): return "Valid until \(date(expiresAt))"
+        case .valid(nil): return "Valid"
+        case .reloginNeeded: return "Re-login needed: sign in again in the next open window"
+        case .ownerAPIRefused: return "Owner API refused: Tesla refused this login"
+        case let .refused(code): return "Refused (\(code))"
+        case .exposureSuspected: return "Exposure suspected: sign in again in the next open window"
+        case let .needsAttention(code): return "Needs attention (\(code))"
+        case .notSignedIn: return "Not signed in"
+        case .unknown: return "Not reported"
+        }
+    }
+
+    func windowText(date: (Date) -> String = HubCollectionStatus.defaultDateText) -> String {
+        switch window {
+        case let .open(expiresAt?): return "Open until \(date(expiresAt))"
+        case .open(nil): return "Open"
+        case let .pending(startsAt, expiresAt):
+            let start = startsAt.map { " from \(date($0))" } ?? ""
+            let end = expiresAt.map { " until \(date($0))" } ?? ""
+            return "Pending\(start)\(end)"
+        case let .closing(expiresAt?): return "Closing (expiry \(date(expiresAt)))"
+        case .closing(nil): return "Closing"
+        case let .closed(reason?): return "Closed (\(Self.closeReasonText(reason)))"
+        case .closed(nil): return "Closed"
+        case .untrusted: return "Closed (no trusted issuer)"
+        case .faulted: return "Closed (window state needs a new trust document)"
+        case .serviceNotRunning: return "Unknown: Hub is not running"
+        case .unknown: return "Not reported"
+        }
+    }
+
+    static func closeReasonText(_ code: String) -> String {
+        switch code {
+        case "expired": return "expired"
+        case "operator_close": return "closed by the operator"
+        case "relogin_needed": return "re-login needed"
+        case "owner_api_refused": return "Owner API refused"
+        case "clock_invalid": return "clock check failed"
+        case "reboot": return "the Mac restarted"
+        case "state_unverifiable": return "state could not be verified"
+        case "claim_lost": return "collection claim lost"
+        default: return code
+        }
+    }
+
+    static let fleetText = "Parked: no Fleet action is available"
+    static let signInUnavailableText = "Sign-in unavailable on this Hub"
+
+    /// The labelled rows Status shows, in order.
+    func rows(date: (Date) -> String = HubCollectionStatus.defaultDateText) -> [(label: String, value: String)] {
+        var rows: [(label: String, value: String)] = [
+            ("Tesla login", loginText()),
+            ("Credential state", credentialText(date: date)),
+            ("Collection window", windowText(date: date)),
+            ("Fleet", Self.fleetText)
+        ]
+        if signInRefusal == "sign_in_unavailable" {
+            rows.insert(("Sign-in", Self.signInUnavailableText), at: 2)
+        }
+        return rows
+    }
+
+    /// The same rows as diagnostic lines.
+    func diagnosticLines(date: (Date) -> String = HubCollectionStatus.defaultDateText) -> [String] {
+        rows(date: date).map { "\($0.label): \($0.value)" }
+    }
+}

@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "Бастапқы қолданба үйлесімділігін тексеру жарамды есеп қайтармады.";
 "hub.HubController.1562.581" = "Бастапқы дерекқорды тексеру мүмкін болмады. Сервер қосылымын тексеріп, қайта көріңіз.";
 "hub.HubController.1585.586" = "Импорттамас бұрын бастапқы қолданба нұсқасы 4.2.0 немесе одан жаңарақ екенін растаңыз.";
-"hub.HubController.1591.587" = "Бастапқы қолданба ENCRYPTION_KEY файлын таңдаңыз.";
+"hub.HubController.1591.587" = "Кіру үшін ашық жинау терезесі қажет. Терезені ашып, қайта кіріңіз.";
 "hub.HubController.1718.615" = "Бастапқы қолданбадан импорттау жарамды аяқталу есебін қайтармады. Hub тоқтатылған күйде қалады.";
 "hub.HubController.1742.624" = "Импорт аяқталды, бірақ Hub қауіпсіз тапсыру қақпасын тіркей алмады: %1$@. Hub тоқтатылған күйде қалады.";
 "hub.HubController.1846.655" = "PostgreSQL тікелей дереккөзінен импорттамас бұрын бастапқы қолданба нұсқасы 4.2.0 немесе одан жаңарақ екенін растаңыз.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Импорттау";
 "hub.ImportSheetController.112.1706" = "Бас тарту";
 "hub.ImportSheetController.148.1709" = "Барлық өрісті толтырыңыз";
-"hub.ImportSheetController.149.1710" = "Дереккөз, көлік ID-і, құпиясөз файлы және ENCRYPTION_KEY файлы қажет.";
+"hub.ImportSheetController.149.1710" = "Дереккөз, көлік ID-і және құпиясөз файлы қажет.";
 "hub.ImportSheetController.156.1711" = "Бастапқы қолданба нұсқасын растаңыз";
 "hub.ImportSheetController.17.1690" = "Бұл дерекқор бастапқы қолданбаның 4.2.0 немесе одан жаңарақ нұсқасына тиесілі екенін растаймын";
 "hub.ImportSheetController.26.1691" = "Тарихты импорттау";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "Көлік ID-і";
 "hub.ImportSheetController.69.1697" = "Құпиясөз файлы";
 "hub.ImportSheetController.7.1687" = "Hub бастапқы қолданбаны тоқтатпай не өзгертпей, бастапқы дерекқордан деректерді оқиды. Импорттан кейін бастапқы қолданбада Tesla-ға қатынауды өзіңіз өшіру керегін Hub хабарлайды.";
-"hub.ImportSheetController.73.1699" = "Бастапқы қолданба ENCRYPTION_KEY файлы";
+"hub.ImportSheetController.73.1699" = "Hub жұмыс істеп тұрған жоқ. Hub-ты іске қосып, жинау терезесін ашыңыз да, кіріңіз.";
 "hub.ImportSheetController.9.1688" = "Импорт алдында бастапқы қолданба деректерінің сақтық көшірмесін жасаңыз, қолданбаны 4.2.0 немесе одан жаңарақ нұсқаға жаңартыңыз, оны бір рет іске қосып, дерекқор миграциялары аяқталғанша күтіңіз. Тікелей дерекқор қосылымы іске қосылған қолданба нұсқасын дәлелдей алмайды.";
 "hub.LogsWindowController.113.1730" = "Журналға қатысты қосымша әрекеттер";
 "hub.LogsWindowController.123.1732" = "Көрсетілетін, көшірілетін және сақталатын журналдардағы тіркелгі деректері мен жеке идентификаторлар бүркемеленеді. Бөлісер алдында қарап шығыңыз.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Жаңа Hub баптаңыз немесе бастапқы қолданбадағы тарихыңызды көшіріңіз.";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetry ұсынылады. Legacy токендері ескі конфигурациялармен жұмыс істейді.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet қолданбасын жасап, тіркелгі деректерін төмендегі өрістерге қойыңыз.";
-"hub.OnboardingWindowController.610.1930" = "Tesla тіркелгісімен кіріңіз немесе бар токендер жұбын қойыңыз.";
+"hub.OnboardingWindowController.610.1930" = "Жинау терезесі ашық кезде Tesla тіркелгісімен кіріңіз. Hub ешқашан токенді қабылдамайды.";
 "hub.OnboardingWindowController.612.1931" = "Көлік тарихын импорттау үшін бастапқы қолданба серверіне қосылыңыз.";
 "hub.OnboardingWindowController.614.1932" = "Барлығының дұрыс қосылғанын тексеру.";
 "hub.OnboardingWindowController.617.1933" = "Бастапқы қолданба тарихы Hub-ке импортталды.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla-ның ресми ағындық API-і. Көлікті нақты уақытта басқару пәрмендерін қосады.";
 "hub.OnboardingWindowController.752.1958" = "Legacy токені";
-"hub.OnboardingWindowController.753.1959" = "Иесінің API қатынау токені мен жаңарту токенінің жұбын пайдаланыңыз.";
+"hub.OnboardingWindowController.753.1959" = "Tesla тіркелгісімен кіріңіз. Hub өз кіру деректерін өзі сақтайды.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet қолданбасын жасау";
 "hub.OnboardingWindowController.771.1964" = "Клиент ID-і";
 "hub.OnboardingWindowController.774.1967" = "Жарамдылық мерзімі";
 "hub.OnboardingWindowController.776.1968" = "Тіркелгі деректері осы Mac-та шифрланады";
 "hub.OnboardingWindowController.788.1970" = "Tesla тіркелгісімен кіру";
-"hub.OnboardingWindowController.790.1972" = "немесе бар токендер жұбын пайдаланыңыз";
+"hub.OnboardingWindowController.790.1972" = "Кіру әлі қолжетімді емес: бұл Hub-та Owner API кіру мәндері жоқ. Ештеңе өзгертілген жоқ.";
 "hub.OnboardingWindowController.798.1975" = "Токендер осы Mac-та шифрланады";
 "hub.OnboardingWindowController.822.1978" = "Порт";
 "hub.OnboardingWindowController.832.1980" = "SSH пайдаланушысы";

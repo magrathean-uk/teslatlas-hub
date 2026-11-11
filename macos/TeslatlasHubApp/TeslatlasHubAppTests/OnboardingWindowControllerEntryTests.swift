@@ -100,9 +100,15 @@ extension OnboardingWindowControllerTests {
         press(try primaryButton("Set Up Fleet", in: onboarding))
     }
 
-    func submitLegacyToken(_ onboarding: OnboardingWindowController) throws {
-        try field(placeholder: "Access token", in: onboarding).stringValue = "access-token"
-        try field(placeholder: "Refresh token", in: onboarding).stringValue = "refresh-token"
+    /// Presses the legacy route's sign-in. The service reports a closed collection window, so
+    /// the sign-in stops at the window check: no Tesla login window opens and nothing reaches
+    /// the network. The route has no token field to fill.
+    func submitLegacySignIn(_ onboarding: OnboardingWindowController, _ harness: WindowOwnerRig) throws {
+        harness.runner.results["window"] = .success(OwnerRunner.windowClosed)
+        let placeholders = descendantViews(of: onboarding.window?.contentView)
+            .compactMap { ($0 as? NSTextField)?.placeholderString }
+        XCTAssertFalse(placeholders.contains("Access token") || placeholders.contains("Refresh token"),
+                       "the sign-in route has no token field")
         press(try primaryButton("Connect Tesla", in: onboarding))
     }
 
@@ -426,18 +432,18 @@ extension OnboardingWindowControllerTests {
 
     func testEntryAccountUseLegacyUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "AccountUseLegacy", family: .account, options: connectedOptions(),
-                              effect: { $0.runner.count("setup") >= 1 }) { test, h, _ in
+                              effect: { $0.runner.count("window") >= 1 }) { test, h, _ in
             try test.chooseMenuItem("Use Legacy token", h)
             let onboarding = try XCTUnwrap(test.currentOnboarding(h))
             XCTAssertEqual(onboarding.currentRoute, .legacy)
             XCTAssertEqual(h.rig.acquisitions(.account), 0)
-            try test.submitLegacyToken(onboarding)
+            try test.submitLegacySignIn(onboarding, h)
         })
     }
 
     func testEntryAccountMigrateUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "AccountMigrate", family: .migration, options: connectedOptions(),
-                              effect: { $0.runner.count("source-check:history") >= 1 }) { test, h, _ in
+                              effect: { $0.runner.count("source-check") >= 1 }) { test, h, _ in
             try test.chooseMenuItem("Import History…", h)
             let onboarding = try XCTUnwrap(test.currentOnboarding(h))
             XCTAssertEqual(onboarding.currentRoute, .migration)
@@ -472,19 +478,19 @@ extension OnboardingWindowControllerTests {
         })
     }
 
-    func testEntryLegacyTokenFirstRunUsesLifecycleOwner() throws {
-        try assertEntry(.init(name: "LegacyTokenFirstRun", family: .account, options: .init(installed: false),
-                              effect: { $0.runner.count("setup") >= 1 }) { test, h, _ in
+    func testEntryLegacySignInFirstRunUsesLifecycleOwner() throws {
+        try assertEntry(.init(name: "LegacySignInFirstRun", family: .account, options: .init(installed: false),
+                              effect: { $0.runner.count("window") >= 1 && $0.runner.count("setup") == 0 }) { test, h, _ in
             let onboarding = try test.openOnboarding(h, route: .legacy)
-            try test.submitLegacyToken(onboarding)
+            try test.submitLegacySignIn(onboarding, h)
         })
     }
 
-    func testEntryLegacyTokenReconfigurationUsesLifecycleOwner() throws {
-        try assertEntry(.init(name: "LegacyTokenReconfiguration", family: .account,
-                              effect: { $0.runner.count("setup") >= 1 && $0.service.calls.contains("run:pause") }) { test, h, _ in
+    func testEntryLegacySignInReconfigurationUsesLifecycleOwner() throws {
+        try assertEntry(.init(name: "LegacySignInReconfiguration", family: .account,
+                              effect: { $0.runner.count("window") >= 1 && !$0.service.calls.contains("run:pause") }) { test, h, _ in
             let onboarding = try test.openOnboarding(h, route: .legacy)
-            try test.submitLegacyToken(onboarding)
+            try test.submitLegacySignIn(onboarding, h)
         })
     }
 
@@ -495,15 +501,16 @@ extension OnboardingWindowControllerTests {
             // window uses is driven directly, from before authentication to its completion.
             guard case let .success(signIn) = h.controller.beginLegacySignIn() else { return }
             XCTAssertEqual(h.controller.lifecycleCapabilities.owner, .account)
-            signIn.configure(tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")) { _ in }
+            signIn.configure(grant: TeslaAuthCodeGrant(code: "code", codeVerifier: String(repeating: "v", count: 64), redirectURI: "tesla://auth/callback")) { _ in }
         })
     }
 
     func testEntryLegacyOAuthReconfigurationUsesLifecycleOwner() throws {
+        // The running service performs the exchange: it is never paused for the sign-in.
         try assertEntry(.init(name: "LegacyOAuthReconfiguration", family: .account,
-                              effect: { $0.runner.count("setup") >= 1 && $0.service.calls.contains("run:pause") }) { test, h, _ in
+                              effect: { $0.runner.count("setup") >= 1 && !$0.service.calls.contains("run:pause") }) { test, h, _ in
             guard case let .success(signIn) = h.controller.beginLegacySignIn() else { return }
-            signIn.configure(tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")) { _ in }
+            signIn.configure(grant: TeslaAuthCodeGrant(code: "code", codeVerifier: String(repeating: "v", count: 64), redirectURI: "tesla://auth/callback")) { _ in }
         })
     }
 
@@ -511,7 +518,7 @@ extension OnboardingWindowControllerTests {
 
     func testEntryFileImportUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "FileImport", family: .migration, options: .init(installed: false),
-                              effect: { $0.runner.count("source-check:history") >= 1 }) { test, h, _ in
+                              effect: { $0.runner.count("source-check") >= 1 }) { test, h, _ in
             // File > Import History… is the application delegate's selector.
             let menu = AppDelegate.makeMainMenu(actionTarget: nil)
             let item = try XCTUnwrap(menu.items.compactMap(\.submenu).flatMap(\.items)
@@ -526,7 +533,7 @@ extension OnboardingWindowControllerTests {
 
     func testEntrySettingsImportUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "SettingsImport", family: .migration, options: .init(installed: false),
-                              effect: { $0.runner.count("source-check:history") >= 1 }) { test, h, _ in
+                              effect: { $0.runner.count("source-check") >= 1 }) { test, h, _ in
             h.window.selectMainSection(.settings)
             let row = try XCTUnwrap(test.descendantViews(of: h.window.settingsPage)
                 .first { $0.identifier?.rawValue == "hub.settings.import-history" }, "the Settings import row")
@@ -545,7 +552,7 @@ extension OnboardingWindowControllerTests {
 
     func testEntryAccountImportUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "AccountImport", family: .migration, options: .init(installed: false),
-                              effect: { $0.runner.count("source-check:history") >= 1 }) { test, h, _ in
+                              effect: { $0.runner.count("source-check") >= 1 }) { test, h, _ in
             try test.chooseMenuItem("Import History…", h)
             let onboarding = try XCTUnwrap(test.currentOnboarding(h))
             XCTAssertEqual(h.rig.acquisitions(.migration), 0)
@@ -557,7 +564,7 @@ extension OnboardingWindowControllerTests {
 
     func testEntryLocalCompatibilityUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "LocalCompatibility", family: .migration, options: .init(installed: false),
-                              effect: { $0.runner.count("source-check:history") >= 1 }) { test, h, _ in
+                              effect: { $0.runner.count("source-check") >= 1 }) { test, h, _ in
             let onboarding = try test.openOnboarding(h, route: .migration)
             try test.submitLocalCompatibility(onboarding)
         })

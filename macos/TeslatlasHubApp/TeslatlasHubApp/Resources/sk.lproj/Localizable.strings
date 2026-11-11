@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "Kontrola kompatibility zdrojovej aplikácie nevrátila platnú správu.";
 "hub.HubController.1562.581" = "Nepodarilo sa overiť zdrojovú databázu. Skontrolujte pripojenie k serveru a skúste to znova.";
 "hub.HubController.1585.586" = "Pred importom potvrďte, že používate zdrojovú aplikáciu verzie 4.2.0 alebo novšej.";
-"hub.HubController.1591.587" = "Vyberte súbor s kľúčom ENCRYPTION_KEY zdrojovej aplikácie.";
+"hub.HubController.1591.587" = "Prihlásenie vyžaduje otvorené okno zberu. Otvorte okno a prihláste sa znova.";
 "hub.HubController.1718.615" = "Import zo zdrojovej aplikácie nevrátil platnú správu o dokončení. Hub zostáva zastavený.";
 "hub.HubController.1742.624" = "Import sa dokončil, ale Hubu sa nepodarilo zaznamenať bezpečnostnú podmienku odovzdania: %1$@. Hub zostáva zastavený.";
 "hub.HubController.1846.655" = "Pred importom z priameho zdroja PostgreSQL potvrďte, že používate zdrojovú aplikáciu verzie 4.2.0 alebo novšej.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Importovať";
 "hub.ImportSheetController.112.1706" = "Zrušiť";
 "hub.ImportSheetController.148.1709" = "Vyplňte všetky polia";
-"hub.ImportSheetController.149.1710" = "Vyplňte zdroj a ID vozidla a vyberte súbor s heslom aj súbor ENCRYPTION_KEY.";
+"hub.ImportSheetController.149.1710" = "Vyplňte zdroj a ID vozidla a vyberte súbor s heslom.";
 "hub.ImportSheetController.156.1711" = "Potvrďte verziu zdrojovej aplikácie";
 "hub.ImportSheetController.17.1690" = "Potvrdzujem, že táto databáza patrí k zdrojovej aplikácii verzie 4.2.0 alebo novšej";
 "hub.ImportSheetController.26.1691" = "Importovať históriu";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "ID vozidla";
 "hub.ImportSheetController.69.1697" = "Súbor s heslom";
 "hub.ImportSheetController.7.1687" = "Hub číta údaje zo zdrojovej databázy bez zastavenia alebo zmeny zdrojovej aplikácie. Po importe vám oznámi, kedy máte sami vypnúť prístup k Tesle v zdrojovej aplikácii.";
-"hub.ImportSheetController.73.1699" = "Súbor ENCRYPTION_KEY zdrojovej aplikácie";
+"hub.ImportSheetController.73.1699" = "Hub nebeží. Spustite Hub, otvorte okno zberu a potom sa prihláste.";
 "hub.ImportSheetController.9.1688" = "Pred importom zálohujte zdrojovú aplikáciu, aktualizujte ju na verziu 4.2.0 alebo novšiu, raz ju spustite a počkajte, kým sa dokončia migrácie jej databázy. Priame pripojenie k databáze nedokáže overiť verziu spustenej aplikácie.";
 "hub.LogsWindowController.113.1730" = "Ďalšie akcie so záznamami";
 "hub.LogsWindowController.123.1732" = "V zobrazených, skopírovaných a uložených záznamoch sú prihlasovacie údaje a súkromné identifikátory zakryté. Pred zdieľaním ich skontrolujte.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Nastavte nový Hub alebo preneste svoju históriu zo zdrojovej aplikácie.";
 "hub.OnboardingWindowController.606.1928" = "Odporúčame Fleet Telemetry. Staršie tokeny fungujú v starších konfiguráciách.";
 "hub.OnboardingWindowController.608.1929" = "Vytvorte aplikáciu Tesla Fleet a nižšie vložte jej prihlasovacie údaje.";
-"hub.OnboardingWindowController.610.1930" = "Prihláste sa cez Teslu alebo vložte existujúcu dvojicu tokenov.";
+"hub.OnboardingWindowController.610.1930" = "Prihláste sa cez Teslu, kým je otvorené okno zberu. Hub nikdy neprijíma token.";
 "hub.OnboardingWindowController.612.1931" = "Pripojte sa k serveru zdrojovej aplikácie a importujte históriu vozidla.";
 "hub.OnboardingWindowController.614.1932" = "Overuje sa, či je všetko správne nastavené.";
 "hub.OnboardingWindowController.617.1933" = "História zo zdrojovej aplikácie bola importovaná do Hubu.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Oficiálne streamovacie API Tesly. Umožňuje odosielať príkazy vozidlu v reálnom čase.";
 "hub.OnboardingWindowController.752.1958" = "Starší token";
-"hub.OnboardingWindowController.753.1959" = "Použite dvojicu prístupového a obnovovacieho tokenu pre Owner API.";
+"hub.OnboardingWindowController.753.1959" = "Prihláste sa cez Teslu. Hub si ponecháva vlastné prihlásenie.";
 "hub.OnboardingWindowController.760.1960" = "Vytvoriť aplikáciu Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID klienta";
 "hub.OnboardingWindowController.774.1967" = "Platnosť do";
 "hub.OnboardingWindowController.776.1968" = "Prihlasovacie údaje sú na tomto Macu šifrované.";
 "hub.OnboardingWindowController.788.1970" = "Prihlásiť sa cez Teslu";
-"hub.OnboardingWindowController.790.1972" = "alebo použiť existujúcu dvojicu tokenov";
+"hub.OnboardingWindowController.790.1972" = "Prihlásenie zatiaľ nie je dostupné: tento Hub nemá prihlasovacie hodnoty pre Owner API. Nič sa nezmenilo.";
 "hub.OnboardingWindowController.798.1975" = "Tokeny sú na tomto Macu šifrované.";
 "hub.OnboardingWindowController.822.1978" = "Port";
 "hub.OnboardingWindowController.832.1980" = "Používateľ SSH";

@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "來源應用程式相容性檢查未傳回有效報告。";
 "hub.HubController.1562.581" = "無法驗證來源資料庫。請檢查伺服器連線，然後再試一次。";
 "hub.HubController.1585.586" = "匯入前，請確認來源應用程式版本為 4.2.0 或更新版本。";
-"hub.HubController.1591.587" = "請選擇來源應用程式的 ENCRYPTION_KEY 檔案。";
+"hub.HubController.1591.587" = "登入需要一個已開啟的收集視窗。請開啟視窗，然後重新登入。";
 "hub.HubController.1718.615" = "來源應用程式匯入未傳回有效的完成報告。Hub 仍維持停止狀態。";
 "hub.HubController.1742.624" = "匯入已完成，但 Hub 無法記錄安全交接閘門：%1$@。Hub 仍維持停止狀態。";
 "hub.HubController.1846.655" = "從直接 PostgreSQL 資料來源匯入前，請確認來源應用程式版本為 4.2.0 或更新版本。";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "匯入";
 "hub.ImportSheetController.112.1706" = "取消";
 "hub.ImportSheetController.148.1709" = "請填妥所有欄位";
-"hub.ImportSheetController.149.1710" = "資料來源、車輛 ID、密碼檔案及 ENCRYPTION_KEY 檔案均為必填項目。";
+"hub.ImportSheetController.149.1710" = "資料來源、車輛 ID 及密碼檔案均為必填項目。";
 "hub.ImportSheetController.156.1711" = "確認來源應用程式版本";
 "hub.ImportSheetController.17.1690" = "本人確認此資料庫屬於來源應用程式 4.2.0 或更新版本";
 "hub.ImportSheetController.26.1691" = "匯入歷史記錄";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "車輛 ID";
 "hub.ImportSheetController.69.1697" = "密碼檔案";
 "hub.ImportSheetController.7.1687" = "Hub 只會讀取來源資料庫，不會停止來源應用程式或修改資料。匯入後，Hub 會告訴您何時要自行在來源應用程式中停用 Tesla 存取權。";
-"hub.ImportSheetController.73.1699" = "來源應用程式 ENCRYPTION_KEY 檔案";
+"hub.ImportSheetController.73.1699" = "Hub 未有執行。請啟動 Hub，開啟收集視窗，然後登入。";
 "hub.ImportSheetController.9.1688" = "匯入前：備份來源應用程式，將其更新至 4.2.0 或更新版本，啟動一次，並等候資料庫遷移完成。直接連接資料庫無法確認正在執行的應用程式版本。";
 "hub.LogsWindowController.113.1730" = "更多記錄操作";
 "hub.LogsWindowController.123.1732" = "畫面顯示、複製及儲存的記錄均會遮蓋憑證及私人識別資料。分享前請先檢查。";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "設定全新的 Hub，或將您的歷史記錄從來源應用程式匯入。";
 "hub.OnboardingWindowController.606.1928" = "建議使用 Fleet Telemetry。舊式 Token 可與較舊的設定搭配使用。";
 "hub.OnboardingWindowController.608.1929" = "建立 Tesla Fleet 應用程式，然後在下方貼上其憑證。";
-"hub.OnboardingWindowController.610.1930" = "使用 Tesla 帳戶登入，或貼上現有的 Token 組合。";
+"hub.OnboardingWindowController.610.1930" = "請在收集視窗開啟時使用 Tesla 帳戶登入。Hub 絕不接受 Token。";
 "hub.OnboardingWindowController.612.1931" = "連接來源應用程式伺服器以匯入其中的車輛歷史記錄。";
 "hub.OnboardingWindowController.614.1932" = "正在確認各項設定是否正確連接。";
 "hub.OnboardingWindowController.617.1933" = "您的車輛歷史記錄已匯入 Hub。";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla 官方串流 API，可啟用即時車輛指令。";
 "hub.OnboardingWindowController.752.1958" = "舊式 Token";
-"hub.OnboardingWindowController.753.1959" = "使用車主 API 的存取 Token 及重新整理 Token 組合。";
+"hub.OnboardingWindowController.753.1959" = "請使用 Tesla 帳戶登入。Hub 保留自己的登入。";
 "hub.OnboardingWindowController.760.1960" = "建立 Tesla Fleet 應用程式";
 "hub.OnboardingWindowController.771.1964" = "用戶端 ID";
 "hub.OnboardingWindowController.774.1967" = "有效期限";
 "hub.OnboardingWindowController.776.1968" = "憑證會在這部 Mac 上加密";
 "hub.OnboardingWindowController.788.1970" = "使用 Tesla 登入";
-"hub.OnboardingWindowController.790.1972" = "或使用現有的 Token 組合";
+"hub.OnboardingWindowController.790.1972" = "暫時無法登入：此 Hub 沒有 Owner API 登入值。未有更改任何內容。";
 "hub.OnboardingWindowController.798.1975" = "Token 會在這部 Mac 上加密";
 "hub.OnboardingWindowController.822.1978" = "通訊埠";
 "hub.OnboardingWindowController.832.1980" = "SSH 使用者";

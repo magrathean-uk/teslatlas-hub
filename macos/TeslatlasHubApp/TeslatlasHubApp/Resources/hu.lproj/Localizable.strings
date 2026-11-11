@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "A forrásalkalmazás kompatibilitási ellenőrzése nem adott érvényes jelentést.";
 "hub.HubController.1562.581" = "Nem sikerült ellenőrizni a forrásadatbázist. Ellenőrizd a kiszolgáló kapcsolatát, majd próbáld újra.";
 "hub.HubController.1585.586" = "Importálás előtt erősítsd meg, hogy a forrásalkalmazás 4.2.0-s vagy újabb verziója fut.";
-"hub.HubController.1591.587" = "Válaszd ki a forrásalkalmazás ENCRYPTION_KEY fájlját.";
+"hub.HubController.1591.587" = "A bejelentkezéshez nyitott gyűjtési ablak szükséges. Nyiss meg egy ablakot, majd jelentkezz be újra.";
 "hub.HubController.1718.615" = "A forrásalkalmazásból történő importálás nem adott érvényes befejezési jelentést. A Hub leállítva marad.";
 "hub.HubController.1742.624" = "Az importálás befejeződött, de a Hub nem tudta rögzíteni a biztonságos átadás-átvételi feltételt: %1$@. A Hub leállítva marad.";
 "hub.HubController.1846.655" = "A közvetlen PostgreSQL-forrásból történő importálás előtt erősítsd meg, hogy a forrásalkalmazás 4.2.0-s vagy újabb verziója fut.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Importálás";
 "hub.ImportSheetController.112.1706" = "Mégse";
 "hub.ImportSheetController.148.1709" = "Tölts ki minden mezőt.";
-"hub.ImportSheetController.149.1710" = "A forrás, az autóazonosító, a jelszófájl és az ENCRYPTION_KEY fájl megadása kötelező.";
+"hub.ImportSheetController.149.1710" = "A forrás, az autóazonosító és a jelszófájl megadása kötelező.";
 "hub.ImportSheetController.156.1711" = "Forrásalkalmazás-verzió megerősítése";
 "hub.ImportSheetController.17.1690" = "Megerősítem, hogy ez az adatbázis a forrásalkalmazás 4.2.0-s vagy újabb verziójához tartozik.";
 "hub.ImportSheetController.26.1691" = "Előzmények importálása";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "Autóazonosító";
 "hub.ImportSheetController.69.1697" = "Jelszófájl";
 "hub.ImportSheetController.7.1687" = "A Hub a forrásadatbázisból olvassa be az adatokat a forrásalkalmazás leállítása és módosítása nélkül. Az importálás után jelzi, mikor kell neked letiltanod a Tesla-hozzáférést a forrásalkalmazásban.";
-"hub.ImportSheetController.73.1699" = "A forrásalkalmazás ENCRYPTION_KEY-fájlja";
+"hub.ImportSheetController.73.1699" = "A Hub nem fut. Indítsd el a Hubot, nyiss meg egy gyűjtési ablakot, majd jelentkezz be.";
 "hub.ImportSheetController.9.1688" = "Importálás előtt készíts biztonsági másolatot a forrásalkalmazásról, frissítsd legalább a 4.2.0-s verzióra, indítsd el egyszer, és várd meg az adatbázis-migrációk befejeződését. A közvetlen adatbázis-kapcsolat nem tudja igazolni a futó alkalmazás verzióját.";
 "hub.LogsWindowController.113.1730" = "További naplóműveletek";
 "hub.LogsWindowController.123.1732" = "A megjelenített, kimásolt és mentett naplókban el vannak rejtve a hitelesítő adatok és a privát azonosítók. Megosztás előtt ellenőrizd őket.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Állíts be egy új Hubot, vagy hozd át a forrásalkalmazásból az előzményeket.";
 "hub.OnboardingWindowController.606.1928" = "A Fleet Telemetryt javasoljuk. A Legacy tokenek régebbi beállításokkal működnek.";
 "hub.OnboardingWindowController.608.1929" = "Hozz létre egy Tesla Fleet-alkalmazást, majd illeszd be alább a hitelesítő adatait.";
-"hub.OnboardingWindowController.610.1930" = "Jelentkezz be a Teslába, vagy illeszd be a meglévő tokenpárt.";
+"hub.OnboardingWindowController.610.1930" = "Jelentkezz be a Teslával, amíg egy gyűjtési ablak nyitva van. A Hub soha nem fogad el tokent.";
 "hub.OnboardingWindowController.612.1931" = "Csatlakozz a forrásalkalmazás-kiszolgálóhoz a járműelőzmények importálásához.";
 "hub.OnboardingWindowController.614.1932" = "Ellenőrizzük, hogy minden megfelelően működik-e.";
 "hub.OnboardingWindowController.617.1933" = "A forrásalkalmazás-előzményeid importálva a Hubba.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "A Tesla hivatalos adatfolyam-API-ja. Lehetővé teszi az élő járműparancsokat.";
 "hub.OnboardingWindowController.752.1958" = "Legacy Token";
-"hub.OnboardingWindowController.753.1959" = "Használj egy tulajdonosi API-hozzáférési és frissítési tokenpárt.";
+"hub.OnboardingWindowController.753.1959" = "Jelentkezz be a Teslával. A Hub megtartja a saját bejelentkezését.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet-alkalmazás létrehozása";
 "hub.OnboardingWindowController.771.1964" = "Ügyfélazonosító";
 "hub.OnboardingWindowController.774.1967" = "Lejárat";
 "hub.OnboardingWindowController.776.1968" = "A hitelesítő adatok ezen a Macen titkosítva vannak.";
 "hub.OnboardingWindowController.788.1970" = "Bejelentkezés a Teslával";
-"hub.OnboardingWindowController.790.1972" = "vagy használj meglévő tokenpárt";
+"hub.OnboardingWindowController.790.1972" = "A bejelentkezés még nem érhető el: ez a Hub nem rendelkezik Owner API bejelentkezési értékekkel. Semmi sem változott.";
 "hub.OnboardingWindowController.798.1975" = "A tokenek ezen a Macen titkosítva vannak.";
 "hub.OnboardingWindowController.822.1978" = "Port";
 "hub.OnboardingWindowController.832.1980" = "SSH-felhasználó";

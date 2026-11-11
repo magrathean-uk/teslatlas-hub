@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "The source application compatibility check returned no valid report.";
 "hub.HubController.1562.581" = "Could not verify the source database. Check the server connection and try again.";
 "hub.HubController.1585.586" = "Confirm the source application's release is 4.2.0 or later before importing.";
-"hub.HubController.1591.587" = "Choose the source application's ENCRYPTION_KEY file.";
+"hub.HubController.1591.587" = "Sign-in needs an open collection window. Open a window, then sign in again.";
 "hub.HubController.1718.615" = "Source application import returned no valid completion report. Hub remains stopped.";
 "hub.HubController.1742.624" = "Import completed, but Hub could not record the safe handover gate: %1$@. Hub remains stopped.";
 "hub.HubController.1846.655" = "Confirm the source application's release is 4.2.0 or later before importing from a direct PostgreSQL source.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Import";
 "hub.ImportSheetController.112.1706" = "Cancel";
 "hub.ImportSheetController.148.1709" = "Complete all fields";
-"hub.ImportSheetController.149.1710" = "Source, car ID, password file, and ENCRYPTION_KEY file are required.";
+"hub.ImportSheetController.149.1710" = "Source, car ID and password file are required.";
 "hub.ImportSheetController.156.1711" = "Confirm the source application version";
 "hub.ImportSheetController.17.1690" = "I confirm this database belongs to release 4.2.0 or later of the source application";
 "hub.ImportSheetController.26.1691" = "Import History";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "Car ID";
 "hub.ImportSheetController.69.1697" = "Password file";
 "hub.ImportSheetController.7.1687" = "Hub reads the source database without stopping or changing the source application. After import, Hub tells you when to disable Tesla access in the source application yourself.";
-"hub.ImportSheetController.73.1699" = "Source application's ENCRYPTION_KEY file";
+"hub.ImportSheetController.73.1699" = "Hub is not running. Start Hub, open a collection window, then sign in.";
 "hub.ImportSheetController.9.1688" = "Before import: back up the source application, update it to release 4.2.0 or later, start it once, and wait for its database migrations to finish. A direct database connection cannot prove the running app version.";
 "hub.LogsWindowController.113.1730" = "More log actions";
 "hub.LogsWindowController.123.1732" = "Displayed, copied, and saved logs redact known credentials and private identifiers. Review before sharing.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Set up a fresh Hub or bring your history over from the source application.";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetry is recommended. Legacy tokens work with older setups.";
 "hub.OnboardingWindowController.608.1929" = "Create a Tesla Fleet application, then paste its credentials below.";
-"hub.OnboardingWindowController.610.1930" = "Sign in with Tesla, or paste an existing token pair.";
+"hub.OnboardingWindowController.610.1930" = "Sign in with Tesla while a collection window is open. Hub never accepts a token.";
 "hub.OnboardingWindowController.612.1931" = "Connect to your source application server to import its vehicle history.";
 "hub.OnboardingWindowController.614.1932" = "Making sure everything is wired up correctly.";
 "hub.OnboardingWindowController.617.1933" = "Your vehicle history has been imported into Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla's official streaming API. Vehicle commands use the Tesla Fleet API.";
 "hub.OnboardingWindowController.752.1958" = "Legacy Token";
-"hub.OnboardingWindowController.753.1959" = "Use an owner-API access and refresh token pair.";
+"hub.OnboardingWindowController.753.1959" = "Sign in with Tesla. Hub keeps its own login.";
 "hub.OnboardingWindowController.760.1960" = "Create Tesla Fleet App";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
 "hub.OnboardingWindowController.774.1967" = "Expires in";
 "hub.OnboardingWindowController.776.1968" = "Credentials are encrypted on this Mac";
 "hub.OnboardingWindowController.788.1970" = "Sign in with Tesla";
-"hub.OnboardingWindowController.790.1972" = "or use an existing token pair";
+"hub.OnboardingWindowController.790.1972" = "Sign-in is not available yet: this Hub has no Owner API sign-in values. Nothing was changed.";
 "hub.OnboardingWindowController.798.1975" = "Tokens are encrypted on this Mac";
 "hub.OnboardingWindowController.822.1978" = "Port";
 "hub.OnboardingWindowController.832.1980" = "SSH user";

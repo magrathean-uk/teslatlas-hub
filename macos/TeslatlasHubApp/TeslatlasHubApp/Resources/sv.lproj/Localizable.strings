@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "Kontrollen av källprogramkompatibilitet returnerade ingen giltig rapport.";
 "hub.HubController.1562.581" = "Det gick inte att verifiera källdatabasen. Kontrollera serveranslutningen och försök igen.";
 "hub.HubController.1585.586" = "Bekräfta att källprogrammet är version 4.2.0 eller senare innan du importerar.";
-"hub.HubController.1591.587" = "Välj källprogrammets ENCRYPTION_KEY-fil.";
+"hub.HubController.1591.587" = "Inloggning kräver ett öppet insamlingsfönster. Öppna ett fönster och logga in igen.";
 "hub.HubController.1718.615" = "Källprogramimporten returnerade ingen giltig slutrapport. Hub-tjänsten förblir stoppad.";
 "hub.HubController.1742.624" = "Importen slutfördes, men Hub kunde inte registrera villkoret för säker överlämning: %1$@. Hub-tjänsten förblir stoppad.";
 "hub.HubController.1846.655" = "Bekräfta att källprogrammet är version 4.2.0 eller senare innan du importerar från en direkt PostgreSQL-källa.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Importera";
 "hub.ImportSheetController.112.1706" = "Avbryt";
 "hub.ImportSheetController.148.1709" = "Fyll i alla fält";
-"hub.ImportSheetController.149.1710" = "Källa, bil-ID, lösenordsfil och ENCRYPTION_KEY-fil krävs.";
+"hub.ImportSheetController.149.1710" = "Källa, bil-ID och lösenordsfil krävs.";
 "hub.ImportSheetController.156.1711" = "Bekräfta källprogramversion";
 "hub.ImportSheetController.17.1690" = "Jag bekräftar att den här databasen tillhör version 4.2.0 eller senare av källprogrammet";
 "hub.ImportSheetController.26.1691" = "Importera historik";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "Bil-ID";
 "hub.ImportSheetController.69.1697" = "Lösenordsfil";
 "hub.ImportSheetController.7.1687" = "Hub läser källdatabasen utan att stoppa eller ändra källprogrammet. Efter importen meddelar Hub när du själv ska inaktivera Tesla-åtkomsten i källprogrammet.";
-"hub.ImportSheetController.73.1699" = "Källprogrammets ENCRYPTION_KEY-fil";
+"hub.ImportSheetController.73.1699" = "Hub körs inte. Starta Hub, öppna ett insamlingsfönster och logga sedan in.";
 "hub.ImportSheetController.9.1688" = "Före importen: säkerhetskopiera källprogrammet, uppdatera det till version 4.2.0 eller senare, starta appen en gång och vänta tills databasmigreringarna är klara. En direkt databasanslutning kan inte bekräfta vilken appversion som körs.";
 "hub.LogsWindowController.113.1730" = "Fler loggåtgärder";
 "hub.LogsWindowController.123.1732" = "Loggar som visas, kopieras eller sparas maskerar autentiseringsuppgifter och privata identifierare. Granska dem innan du delar dem.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Konfigurera en ny Hub eller för över historiken från källprogrammet.";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetry rekommenderas. Äldre token fungerar med äldre konfigurationer.";
 "hub.OnboardingWindowController.608.1929" = "Skapa en Tesla Fleet-app och klistra sedan in autentiseringsuppgifterna nedan.";
-"hub.OnboardingWindowController.610.1930" = "Logga in med Tesla eller klistra in ett befintligt tokenpar.";
+"hub.OnboardingWindowController.610.1930" = "Logga in med Tesla medan ett insamlingsfönster är öppet. Hub accepterar aldrig en token.";
 "hub.OnboardingWindowController.612.1931" = "Anslut till källprogramservern för att importera dess fordonshistorik.";
 "hub.OnboardingWindowController.614.1932" = "Kontrollerar att allt är korrekt konfigurerat.";
 "hub.OnboardingWindowController.617.1933" = "Källprogramhistoriken har importerats till Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Teslas officiella strömnings-API. Aktiverar fordonskommandon i realtid.";
 "hub.OnboardingWindowController.752.1958" = "Äldre token";
-"hub.OnboardingWindowController.753.1959" = "Använd ett par åtkomst- och förnyelsetoken för ägar-API:t.";
+"hub.OnboardingWindowController.753.1959" = "Logga in med Tesla. Hub behåller sin egen inloggning.";
 "hub.OnboardingWindowController.760.1960" = "Skapa en Tesla Fleet-app";
 "hub.OnboardingWindowController.771.1964" = "Klient-ID";
 "hub.OnboardingWindowController.774.1967" = "Löper ut om";
 "hub.OnboardingWindowController.776.1968" = "Autentiseringsuppgifter krypteras på den här Macen";
 "hub.OnboardingWindowController.788.1970" = "Logga in med Tesla";
-"hub.OnboardingWindowController.790.1972" = "eller använd ett befintligt tokenpar";
+"hub.OnboardingWindowController.790.1972" = "Inloggning är inte tillgänglig än: den här Hub har inga inloggningsvärden för Owner API. Ingenting ändrades.";
 "hub.OnboardingWindowController.798.1975" = "Token krypteras på den här Macen";
 "hub.OnboardingWindowController.822.1978" = "Port";
 "hub.OnboardingWindowController.832.1980" = "SSH-användare";

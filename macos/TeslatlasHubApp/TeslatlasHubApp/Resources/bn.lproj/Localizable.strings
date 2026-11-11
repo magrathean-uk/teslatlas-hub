@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "উৎস অ্যাপ্লিকেশন সামঞ্জস্য যাচাই থেকে কোনো বৈধ রিপোর্ট ফেরত আসেনি।";
 "hub.HubController.1562.581" = "উৎস ডেটাবেস যাচাই করা যায়নি। সার্ভারের সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।";
 "hub.HubController.1585.586" = "ইমপোর্টের আগে উৎস অ্যাপ্লিকেশন 4.2.0 বা পরবর্তী সংস্করণ ব্যবহার হচ্ছে নিশ্চিত করুন।";
-"hub.HubController.1591.587" = "উৎস অ্যাপ্লিকেশনের ENCRYPTION_KEY ফাইলটি বেছে নিন।";
+"hub.HubController.1591.587" = "সাইন ইন করতে একটি খোলা সংগ্রহ উইন্ডো প্রয়োজন। একটি উইন্ডো খুলুন, তারপর আবার সাইন ইন করুন।";
 "hub.HubController.1718.615" = "উৎস অ্যাপ্লিকেশন ইমপোর্টের কোনো বৈধ সমাপ্তি রিপোর্ট ফেরত আসেনি। Hub বন্ধই থাকবে।";
 "hub.HubController.1742.624" = "ইমপোর্ট সম্পন্ন হয়েছে, কিন্তু নিরাপদ হস্তান্তর-গেট নথিভুক্ত করা যায়নি: %1$@। Hub বন্ধই থাকবে।";
 "hub.HubController.1846.655" = "সরাসরি PostgreSQL উৎস থেকে ইমপোর্টের আগে উৎস অ্যাপ্লিকেশন 4.2.0 বা পরবর্তী সংস্করণ নিশ্চিত করুন।";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "ইমপোর্ট";
 "hub.ImportSheetController.112.1706" = "বাতিল";
 "hub.ImportSheetController.148.1709" = "সব ঘর পূরণ করুন";
-"hub.ImportSheetController.149.1710" = "উৎস, গাড়ির ID, পাসওয়ার্ড ফাইল এবং ENCRYPTION_KEY ফাইল আবশ্যক।";
+"hub.ImportSheetController.149.1710" = "উৎস, গাড়ির ID এবং পাসওয়ার্ড ফাইল আবশ্যক।";
 "hub.ImportSheetController.156.1711" = "উৎস অ্যাপ্লিকেশন সংস্করণ নিশ্চিত করুন";
 "hub.ImportSheetController.17.1690" = "আমি নিশ্চিত করছি, এই ডেটাবেসটি উৎস অ্যাপ্লিকেশন 4.2.0 বা পরবর্তী সংস্করণের।";
 "hub.ImportSheetController.26.1691" = "ইতিহাস ইমপোর্ট করুন";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "গাড়ির ID";
 "hub.ImportSheetController.69.1697" = "পাসওয়ার্ড ফাইল";
 "hub.ImportSheetController.7.1687" = "Hub উৎস ডেটাবেস পড়ে, তবে উৎস অ্যাপ্লিকেশন বন্ধ বা পরিবর্তন করে না। ইমপোর্টের পরে, উৎস অ্যাপ্লিকেশন-এ Tesla অ্যাক্সেস নিজে কখন নিষ্ক্রিয় করবেন তা Hub আপনাকে জানায়।";
-"hub.ImportSheetController.73.1699" = "উৎস অ্যাপ্লিকেশনের ENCRYPTION_KEY ফাইল";
+"hub.ImportSheetController.73.1699" = "Hub চলছে না। Hub চালু করুন, একটি সংগ্রহ উইন্ডো খুলুন, তারপর সাইন ইন করুন।";
 "hub.ImportSheetController.9.1688" = "ইমপোর্টের আগে: উৎস অ্যাপ্লিকেশন-এর ব্যাকআপ নিন, 4.2.0 বা পরবর্তী সংস্করণে আপডেট করুন, একবার চালু করুন এবং ডেটাবেসের মাইগ্রেশন শেষ হওয়া পর্যন্ত অপেক্ষা করুন। সরাসরি ডেটাবেস সংযোগ থেকে চালু অ্যাপের সংস্করণ প্রমাণ করা যায় না।";
 "hub.LogsWindowController.113.1730" = "আরও লগের কাজ";
 "hub.LogsWindowController.123.1732" = "দেখানো, কপি করা ও সংরক্ষিত লগ থেকে প্রবেশতথ্য এবং ব্যক্তিগত শনাক্তকারী গোপন করা হয়। শেয়ার করার আগে পর্যালোচনা করুন।";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "নতুন Hub সেট আপ করুন অথবা উৎস অ্যাপ্লিকেশন থেকে আপনার ইতিহাস নিয়ে আসুন।";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetry ব্যবহারের পরামর্শ দেওয়া হয়। লেগ্যাসি টোকেন পুরোনো সেটআপে কাজ করে।";
 "hub.OnboardingWindowController.608.1929" = "একটি Tesla Fleet অ্যাপ্লিকেশন তৈরি করুন, তারপর নিচে এর পরিচয়পত্র পেস্ট করুন।";
-"hub.OnboardingWindowController.610.1930" = "Tesla দিয়ে সাইন ইন করুন, অথবা আগে থেকে থাকা টোকেনের জোড়া পেস্ট করুন।";
+"hub.OnboardingWindowController.610.1930" = "সংগ্রহ উইন্ডো খোলা থাকার সময় Tesla দিয়ে সাইন ইন করুন। Hub কখনও টোকেন গ্রহণ করে না।";
 "hub.OnboardingWindowController.612.1931" = "গাড়ির ইতিহাস ইমপোর্ট করতে আপনার উৎস অ্যাপ্লিকেশন সার্ভারে সংযুক্ত করুন।";
 "hub.OnboardingWindowController.614.1932" = "সবকিছু সঠিকভাবে সংযুক্ত হয়েছে কি না যাচাই করা হচ্ছে।";
 "hub.OnboardingWindowController.617.1933" = "আপনার উৎস অ্যাপ্লিকেশন ইতিহাস Hub-এ ইমপোর্ট করা হয়েছে।";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla-র অফিসিয়াল স্ট্রিমিং API। এতে লাইভ গাড়ির কমান্ড পাঠানো যায়।";
 "hub.OnboardingWindowController.752.1958" = "লেগ্যাসি টোকেন";
-"hub.OnboardingWindowController.753.1959" = "গাড়ির মালিকের API access ও refresh token-এর জোড়া ব্যবহার করুন।";
+"hub.OnboardingWindowController.753.1959" = "Tesla দিয়ে সাইন ইন করুন। Hub নিজস্ব লগইন রাখে।";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet অ্যাপ তৈরি করুন";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
 "hub.OnboardingWindowController.774.1967" = "মেয়াদ শেষ হবে";
 "hub.OnboardingWindowController.776.1968" = "প্রবেশতথ্য এই Mac-এ এনক্রিপ্ট করা হয়";
 "hub.OnboardingWindowController.788.1970" = "Tesla দিয়ে সাইন ইন করুন";
-"hub.OnboardingWindowController.790.1972" = "অথবা আগে থেকে থাকা টোকেনের জোড়া ব্যবহার করুন";
+"hub.OnboardingWindowController.790.1972" = "সাইন ইন এখনও উপলব্ধ নয়: এই Hub-এ Owner API সাইন-ইন মান নেই। কিছুই পরিবর্তন করা হয়নি।";
 "hub.OnboardingWindowController.798.1975" = "টোকেন এই Mac-এ এনক্রিপ্ট করা হয়";
 "hub.OnboardingWindowController.822.1978" = "পোর্ট";
 "hub.OnboardingWindowController.832.1980" = "SSH ব্যবহারকারী";

@@ -389,6 +389,9 @@ struct HubSnapshot {
     var dataDirectory: URL?
     var diagnosticLines: [String]
     var checkingStatus = false
+    /// The Hub's own login, credential state and collection window, when the
+    /// controller observes them (M04-T03); nil when not read.
+    var collection: HubCollectionStatus?
 
     var accountDisplay: String {
         guard accountState == .connected, let provider else { return account }
@@ -1998,7 +2001,7 @@ final class HubAccountSignIn {
 
     /// Completes the sign-in under its own context. A late callback after cancellation, or
     /// after the lifecycle ended, configures nothing.
-    func configure(tokens: TeslaAuthTokens, vehicleID: Int64? = nil,
+    func configure(grant: TeslaAuthCodeGrant, vehicleID: Int64? = nil,
                    completion: @escaping (Result<Void, Error>) -> Void) {
         guard let operation else { completion(.failure(HubActionError.preview)); return }
         guard operation.isLive, consume() else {
@@ -2006,9 +2009,21 @@ final class HubAccountSignIn {
                 HubL10n.text("hub.lifecycle.stale", fallback: "That Hub operation had already finished. Nothing was changed."))))
             return
         }
-        controller.performLegacyConfiguration(operation, tokens: tokens, vehicleID: vehicleID) { result in
+        controller.performOwnerSignIn(operation, grant: grant, vehicleID: vehicleID) { result in
             operation.finish(result, completion: completion)
         }
+    }
+
+    /// Checks, before the Tesla login window opens, that the running service has an Open
+    /// collection window. A refusal leaves the context held: the caller cancels it.
+    func requireOpenWindow(completion: @escaping (Result<Void, Error>) -> Void) {
+        guard let operation else { completion(.failure(HubActionError.preview)); return }
+        guard operation.isLive else {
+            completion(.failure(HubActionError.commandFailed(
+                HubL10n.text("hub.lifecycle.stale", fallback: "That Hub operation had already finished. Nothing was changed."))))
+            return
+        }
+        controller.requireOpenCollectionWindow(operation, completion: completion)
     }
 
     /// Authentication was cancelled or failed: the context is settled, nothing changed.
@@ -2924,6 +2939,11 @@ final class HubController {
     ) -> Void
     private(set) var snapshot: HubSnapshot
     private var lastStatusFailureCode: String?
+    /// Whether `refresh` also reads `window status` for Status (the application
+    /// controller does; test doubles opt in, so their command sequences stay as written).
+    private let observesCollectionWindow: Bool
+    /// The last sign-in refusal Status keeps showing (`sign_in_unavailable`); main thread.
+    private var lastSignInRefusalCode: String?
     private let refreshRequestLock = NSLock()
     private var newestRefreshRequest: UInt64 = 0
 
@@ -2954,6 +2974,7 @@ final class HubController {
              )
          },
          developmentConfiguration: DevelopmentHubConfiguration? = nil,
+         observesCollectionWindow: Bool = false,
          statusLifecycle: HubStatusProcessLifecycle = .shared,
          statusPauseBound: TimeInterval = 10,
          restorationBarrier: HubRestorationBarrier = HubWindowRestorationBarrier(),
@@ -2967,6 +2988,7 @@ final class HubController {
          }) {
         self.statusLifecycle = statusLifecycle
         self.statusPauseBound = statusPauseBound
+        self.observesCollectionWindow = observesCollectionWindow
         self.restorationBarrier = restorationBarrier
         self.staleImportCleaner = staleImportCleaner
         self.migrationConnector = migrationConnector
@@ -3043,7 +3065,7 @@ final class HubController {
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) throws -> HubController {
         guard let development = try DevelopmentHubConfiguration.from(environment: environment) else {
-            return HubController(environment: environment)
+            return HubController(environment: environment, observesCollectionWindow: true)
         }
         let runner = DevelopmentHubCommandRunner(configuration: development)
         return HubController(
@@ -3053,7 +3075,8 @@ final class HubController {
             launchAgent: nil,
             dataRemover: nil,
             serviceInstalledOverride: true,
-            developmentConfiguration: development
+            developmentConfiguration: development,
+            observesCollectionWindow: true
         )
     }
 
@@ -3114,6 +3137,7 @@ final class HubController {
             guard let self else { return }
             let installed = self.isServiceInstalled
             self.commandRunner.run(arguments: ["--config", self.configPath.path, "status"]) { result in
+                self.readCollectionWindow(after: result, loaded: loaded) { windowRead in
                 let settle: (Bool) -> Void = { liveReady in
                     DispatchQueue.main.async {
                         guard self.isNewestRefreshRequest(request) else {
@@ -3130,6 +3154,13 @@ final class HubController {
                                 self.lastStatusFailureCode = nil
                                 self.snapshot = self.statusSnapshot(status, installed: installed,
                                                                     loaded: loaded)
+                                if let windowRead {
+                                    let collection = HubCollectionStatus(
+                                        statusOutput: output, window: windowRead,
+                                        signInRefusal: self.lastSignInRefusalCode)
+                                    self.snapshot.collection = collection
+                                    self.snapshot.diagnosticLines += collection.diagnosticLines()
+                                }
                                 if !liveReady, case .loaded = loaded {
                                     self.snapshot.health = .degraded
                                     self.snapshot.service = "Development Hub · HTTPS readiness unavailable"
@@ -3150,6 +3181,24 @@ final class HubController {
                 if case .loaded = loaded, let live = self.serviceRunner as? HubLiveReadinessChecking {
                     live.checkLiveReadiness(completion: settle)
                 } else { settle(true) }
+                }
+            }
+        }
+    }
+
+    /// The collection window for Status: `window status` from the running service, asked
+    /// only when this controller observes it and `status` answered. A service that is not
+    /// loaded is not asked, since the command would only be refused `service_not_running`.
+    /// Read-only: nothing is opened, closed or signed in.
+    private func readCollectionWindow(after status: Result<String, Error>,
+                                      loaded: HubServiceLoadState,
+                                      completion: @escaping (HubCollectionStatus.WindowRead?) -> Void) {
+        guard observesCollectionWindow, case .success = status else { completion(nil); return }
+        guard case .loaded = loaded else { completion(.serviceNotLoaded); return }
+        commandRunner.run(arguments: Self.windowStatusArguments(configPath: configPath)) { result in
+            switch result {
+            case let .success(output): completion(.report(output))
+            case let .failure(error): completion(.failed(error))
             }
         }
     }
@@ -3458,11 +3507,11 @@ final class HubController {
             )
         }
         try Self.validateMigrationSource(source)
-        if historyOnly {
-            let host = URLComponents(string: source)?.host
-            guard host == "127.0.0.1" || host == "::1" else {
-                throw HubActionError.commandFailed(HubL10n.text("hub.HubController.1532.570", fallback: "Choose a local PostgreSQL source on 127.0.0.1 or ::1."))
-            }
+        // The source check reads a numeric loopback source only (a local database or the
+        // guided import's SSH tunnel).
+        let host = URLComponents(string: source)?.host
+        guard host == "127.0.0.1" || host == "::1" else {
+            throw HubActionError.commandFailed(HubL10n.text("hub.HubController.1532.570", fallback: "Choose a local PostgreSQL source on 127.0.0.1 or ::1."))
         }
         guard let selectedCarID = Int64(carID), selectedCarID > 0 else {
             throw HubActionError.commandFailed(HubL10n.text("hub.HubController.1536.571", fallback: "Source car ID must be a positive number."))
@@ -3470,11 +3519,11 @@ final class HubController {
         guard !passwordFile.isEmpty else {
             throw HubActionError.commandFailed(HubL10n.text("hub.HubController.1539.572", fallback: "Choose the protected PostgreSQL password file."))
         }
+        // The check never inspects a source credential, so it has no credential scope flag.
         return ["--config", configPath.path, "source-check",
                 "--source", source, "--car-id", String(selectedCarID),
                 "--postgres-password-file", passwordFile,
                 "--accept-schema-evidence"]
-            + (historyOnly ? ["--history-only"] : [])
     }
 
     private func runCompatibilityCheck(_ op: HubLifecycleOperation,
@@ -3508,7 +3557,6 @@ final class HubController {
     func importSourceOnline(source: String,
                                carID: String,
                                passwordFile: String,
-                               encryptionKeyFile: String,
                                acceptSchemaEvidence: Bool,
                                progress: @escaping (HubMigrationProgress) -> Void = { _ in },
                                completion: @escaping (Result<Void, Error>) -> Void) {
@@ -3518,12 +3566,6 @@ final class HubController {
         guard acceptSchemaEvidence else {
             completion(.failure(HubActionError.commandFailed(
                 HubL10n.text("hub.HubController.1585.586", fallback: "Confirm the source application's release is 4.2.0 or later before importing.")
-            )))
-            return
-        }
-        guard !encryptionKeyFile.isEmpty else {
-            completion(.failure(HubActionError.commandFailed(
-                HubL10n.text("hub.HubController.1591.587", fallback: "Choose the source application's ENCRYPTION_KEY file.")
             )))
             return
         }
@@ -3562,7 +3604,6 @@ final class HubController {
                                        source: source,
                                        carID: carID,
                                        passwordFile: passwordFile,
-                                       encryptionKeyFile: encryptionKeyFile,
                                        historyOnly: false,
                                        progress: progress,
                                        completion: { op.finish($0, completion: completion) })
@@ -3594,7 +3635,7 @@ final class HubController {
                 op.phase("import")
                 prepareOnlineMigration(op, source: source, carID: carID,
                                        passwordFile: passwordFile,
-                                       encryptionKeyFile: nil, historyOnly: true,
+                                       historyOnly: true,
                                        progress: progress,
                                        completion: { op.finish($0, completion: completion) })
             case let .success(report):
@@ -3648,7 +3689,6 @@ final class HubController {
                                         source: String,
                                         carID: String,
                                         passwordFile: String,
-                                        encryptionKeyFile: String?,
                                         historyOnly: Bool,
                                         progress: @escaping (HubMigrationProgress) -> Void,
                                         completion: @escaping (Result<Void, Error>) -> Void) {
@@ -3675,13 +3715,14 @@ final class HubController {
             completion(.failure(recoverFailedImport(error, originalConfig: originalConfig)))
             return
         }
+        // History only: no source key, token or credential flag exists or is passed. The
+        // Hub's own sign-in is left as it is.
         let arguments = ["--config", configPath.path, "migrate",
                          "--source", source, "--car-id", carID,
                          "--postgres-password-file", passwordFile,
                          "--online-snapshot",
                          "--accept-schema-evidence"]
-            + (historyOnly ? ["--history-only"] : ["--encryption-key-file", encryptionKeyFile ?? "",
-                                                  "--preserve-existing-credentials"])
+            + (historyOnly ? ["--history-only"] : [])
         let finish: (Result<Void, Error>) -> Void = { result in
             DispatchQueue.main.async { completion(result) }
         }
@@ -3817,7 +3858,6 @@ final class HubController {
     func importSource(source: String,
                          carID: String,
                          passwordFile: String,
-                         encryptionKeyFile: String,
                          acceptSchemaEvidence: Bool,
                          completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
@@ -3830,7 +3870,6 @@ final class HubController {
         importSourceOnline(source: source,
                               carID: carID,
                               passwordFile: passwordFile,
-                              encryptionKeyFile: encryptionKeyFile,
                               acceptSchemaEvidence: acceptSchemaEvidence,
                               completion: completion)
     }
@@ -4003,12 +4042,12 @@ final class HubController {
         )
     }
 
-    func configureTeslaAccount(tokens: TeslaAuthTokens,
+    func configureTeslaAccount(grant: TeslaAuthCodeGrant,
                                vehicleID: Int64? = nil,
                                completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard let op = admit(.account, phase: "validate", completion: completion) else { return }
-        performLegacyConfiguration(op, tokens: tokens, vehicleID: vehicleID) { op.finish($0, completion: completion) }
+        performOwnerSignIn(op, grant: grant, vehicleID: vehicleID) { op.finish($0, completion: completion) }
     }
 
     /// The Tesla sign-in's account context (R-E1F6-8): held before the authentication
@@ -4023,25 +4062,38 @@ final class HubController {
         return .success(HubAccountSignIn(operation: op, controller: self))
     }
 
-    fileprivate func performLegacyConfiguration(_ op: HubLifecycleOperation,
-                                                tokens: TeslaAuthTokens,
-                                                vehicleID: Int64?,
-                                                completion: @escaping (Result<Void, Error>) -> Void) {
-        let installed = isServiceInstalled
+    /// Sign-in needs the running service with an Open collection window: Tesla traffic,
+    /// including the code exchange, happens only there. Nothing else is checked or changed.
+    fileprivate func requireOpenCollectionWindow(_ op: HubLifecycleOperation,
+                                                 completion: @escaping (Result<Void, Error>) -> Void) {
+        op.phase("window")
+        op.run(Self.windowStatusArguments(configPath: configPath)) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case let .success(output) where Self.collectionWindowIsOpen(output):
+                    completion(.success(()))
+                case .success:
+                    completion(.failure(Self.signInRefusal(code: "window_closed")))
+                case let .failure(error):
+                    completion(.failure(Self.signInError(error)))
+                }
+            }
+        }
+    }
+
+    /// The Hub's own sign-in. The app never exchanges the code and never holds a token:
+    /// `setup` forwards the code, its verifier and the redirect URI to the running service,
+    /// which performs the exchange and vehicle discovery inside the Open window. The service
+    /// is neither paused nor reconfigured.
+    fileprivate func performOwnerSignIn(_ op: HubLifecycleOperation,
+                                        grant: TeslaAuthCodeGrant,
+                                        vehicleID: Int64?,
+                                        completion: @escaping (Result<Void, Error>) -> Void) {
         let setupStarted = Date()
-        HubAppLog.shared.record("setup.requested", category: "account", fields: [
-            "provider": "legacy",
-            "service_installed": installed ? "true" : "false"
-        ])
+        HubAppLog.shared.record("setup.requested", category: "account", fields: ["provider": "legacy"])
         let invocation: HubSetupInvocation
-        let installedInvocation: HubSetupInvocation
-        let originalConfig: String?
         do {
-            invocation = try Self.setupInvocation(configPath: configPath,
-                                                  tokens: tokens,
-                                                  vehicleID: vehicleID)
-            installedInvocation = Self.oldCompatibleSetupInvocation(invocation)
-            originalConfig = installed ? try readConfigIfPresent() : nil
+            invocation = try Self.setupInvocation(configPath: configPath, grant: grant, vehicleID: vehicleID)
         } catch {
             HubAppLog.shared.record("setup.rejected", category: "account", level: "WARN",
                                     fields: [
@@ -4071,93 +4123,58 @@ final class HubController {
                 }
             }
         }
-        let startService = { [self] in
-            op.phase("start")
-            op.service(["service", "start"]) { [self] result in
-                switch result {
-                case .success: finish(.success(()))
-                case let .failure(error): recoverThenFail(op, error, finish: finish)
-                }
-            }
-        }
-        guard installed else {
-            do {
-                op.phase("configuration")
-                try ensureConfig(provider: "legacy")
-            } catch {
-                finish(.failure(error))
-                return
-            }
+        requireOpenCollectionWindow(op) { windowResult in
+            if case let .failure(error) = windowResult { finish(.failure(error)); return }
             op.phase("setup")
             op.run(invocation.arguments, stdin: invocation.standardInput) { setupResult in
-                switch setupResult {
-                case .success:
-                    op.phase("start")
-                    op.service(["service", "start"]) { startResult in
-                        finish(startResult.map { _ in () })
-                    }
-                case let .failure(error):
-                    finish(.failure(error))
-                }
-            }
-            return
-        }
-
-        let restoreThenRecover = { [self] (action: String, actionError: Error) in
-            do {
-                try restoreConfig(originalConfig)
-                recoverThenFail(op, actionError, finish: finish)
-            } catch let recoveryError {
-                recoverThenFail(op, HubActionError.commandFailed(
-                    HubL10n.format("hub.HubController.2268.756", fallback: "%1$@: %2$@ Hub configuration recovery also failed: %3$@", arguments: [String(describing: action), String(describing: actionError.localizedDescription), String(describing: recoveryError.localizedDescription)])
-                ), finish: finish)
-            }
-        }
-        op.phase("pause")
-        op.service(["service", "pause"]) { [self] pauseResult in
-            if case let .failure(error) = pauseResult {
-                recoverThenFail(op, error, finish: finish)
-                return
-            }
-            do {
-                op.phase("configuration")
-                try ensureConfig(provider: "legacy")
-            } catch {
-                restoreThenRecover(HubL10n.text("hub.HubController.2292.760", fallback: "Tesla setup failed"), error)
-                return
-            }
-            // Configure with the embedded current binary; an older program that does not
-            // know --all-vehicles gets the compatible invocation (retained, C9).
-            op.phase("setup")
-            op.run(invocation.arguments, stdin: invocation.standardInput) { [self] setupResult in
-                let handleSetupResult: (Result<String, Error>) -> Void = { [self] result in
-                    switch result {
-                    case .success: startService()
-                    case let .failure(error):
-                        recoverThenFail(op, Self.providerSwitchUnverifiedError(error), finish: finish)
-                    }
-                }
-                if case let .failure(error) = setupResult, Self.isAllVehiclesUnsupported(error) {
-                    op.run(installedInvocation.arguments, stdin: installedInvocation.standardInput,
-                           completion: handleSetupResult)
+                let refusal: String?
+                if case let .failure(error) = setupResult,
+                   error.localizedDescription.contains("sign_in_unavailable") {
+                    refusal = "sign_in_unavailable"
                 } else {
-                    handleSetupResult(setupResult)
+                    refusal = nil
+                }
+                DispatchQueue.main.async { self.lastSignInRefusalCode = refusal }
+                switch setupResult {
+                case .success: finish(.success(()))
+                case let .failure(error): finish(.failure(Self.signInError(error)))
                 }
             }
         }
     }
 
+    static func windowStatusArguments(configPath: URL) -> [String] {
+        ["--config", configPath.path, "window", "status"]
+    }
+
+    /// Whether `window status` reports an Open collection window.
+    static func collectionWindowIsOpen(_ output: String) -> Bool {
+        output.split(whereSeparator: { $0.isNewline }).contains { line in
+            guard let data = String(line).data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return false
+            }
+            return root["phase"] as? String == "open"
+        }
+    }
+
+    /// The sign-in input `setup` accepts: exactly the code, its PKCE verifier and the
+    /// redirect URI. No token, source key or other credential is ever part of it.
     static func setupInvocation(configPath: URL,
-                                tokens: TeslaAuthTokens,
+                                grant: TeslaAuthCodeGrant,
                                 vehicleID: Int64?) throws -> HubSetupInvocation {
+        guard !grant.code.isEmpty, !grant.codeVerifier.isEmpty, !grant.redirectURI.isEmpty else {
+            throw HubActionError.commandFailed(TeslaAuthError.invalidCallback.localizedDescription)
+        }
         let payload = try JSONSerialization.data(withJSONObject: [
-            "accessToken": tokens.accessToken,
-            "refreshToken": tokens.refreshToken
-        ], options: [])
+            "code": grant.code,
+            "codeVerifier": grant.codeVerifier,
+            "redirectUri": grant.redirectURI
+        ], options: [.sortedKeys])
         guard let input = String(data: payload, encoding: .utf8) else {
             throw HubActionError.commandFailed(HubL10n.text("hub.HubController.2341.768", fallback: "Could not encode Tesla login credentials."))
         }
-        var arguments = ["--config", configPath.path, "setup", "--tokens-stdin"]
+        var arguments = ["--config", configPath.path, "setup"]
         if let vehicleID {
             guard vehicleID > 0 else {
                 throw HubActionError.commandFailed(HubL10n.text("hub.HubController.2346.772", fallback: "Tesla vehicle ID must be positive."))
@@ -4169,9 +4186,32 @@ final class HubController {
         return HubSetupInvocation(arguments: arguments, standardInput: input)
     }
 
-    static func oldCompatibleSetupInvocation(_ invocation: HubSetupInvocation) -> HubSetupInvocation {
-        HubSetupInvocation(arguments: invocation.arguments.filter { $0 != "--all-vehicles" },
-                           standardInput: invocation.standardInput)
+    /// The service's stable refusal codes for sign-in, in plain words. Anything else is
+    /// reported as the command reported it.
+    static func signInError(_ error: Error) -> Error {
+        let text = error.localizedDescription
+        for code in ["sign_in_unavailable", "window_closed", "service_not_running"]
+            where text.contains(code) {
+            return signInRefusal(code: code)
+        }
+        return error
+    }
+
+    static func signInRefusal(code: String) -> Error {
+        switch code {
+        case "sign_in_unavailable":
+            return HubActionError.commandFailed(HubL10n.text(
+                "hub.OnboardingWindowController.790.1972",
+                fallback: "Sign-in is not available yet: this Hub has no Owner API sign-in values. Nothing was changed."))
+        case "window_closed":
+            return HubActionError.commandFailed(HubL10n.text(
+                "hub.HubController.1591.587",
+                fallback: "Sign-in needs an open collection window. Open a window, then sign in again."))
+        default:
+            return HubActionError.commandFailed(HubL10n.text(
+                "hub.ImportSheetController.73.1699",
+                fallback: "Hub is not running. Start Hub, open a collection window, then sign in."))
+        }
     }
 
     static func isProviderSwitchOutcomeAmbiguous(_ error: Error) -> Bool {
@@ -4312,14 +4352,6 @@ final class HubController {
             return "sqlite_database"
         }
         return "generic"
-    }
-
-    static func isAllVehiclesUnsupported(_ error: Error) -> Bool {
-        let message = error.localizedDescription.lowercased()
-        return message.contains("--all-vehicles")
-            && (message.contains("unexpected argument")
-                || message.contains("unknown option")
-                || message.contains("unrecognized option"))
     }
 
     func startHub(completion: @escaping (Result<Void, Error>) -> Void) {

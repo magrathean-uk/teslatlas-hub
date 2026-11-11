@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "원본 애플리케이션 호환성 확인에서 유효한 보고서를 반환하지 않았습니다.";
 "hub.HubController.1562.581" = "원본 데이터베이스를 확인하지 못했습니다. 서버 연결을 확인하고 다시 시도하세요.";
 "hub.HubController.1585.586" = "가져오기 전에 원본 애플리케이션 버전이 4.2.0 이상인지 확인하세요.";
-"hub.HubController.1591.587" = "원본 애플리케이션 ENCRYPTION_KEY 파일을 선택하세요.";
+"hub.HubController.1591.587" = "로그인하려면 열려 있는 수집 창이 필요합니다. 창을 연 다음 다시 로그인하세요.";
 "hub.HubController.1718.615" = "원본 애플리케이션 가져오기에서 유효한 완료 보고서가 반환되지 않았습니다. Hub는 중지된 상태로 유지됩니다.";
 "hub.HubController.1742.624" = "가져오기는 완료되었지만 안전한 인계 조건을 기록하지 못했습니다: %1$@. Hub는 중지된 상태로 유지됩니다.";
 "hub.HubController.1846.655" = "직접 PostgreSQL 소스에서 가져오기 전에 원본 애플리케이션 버전이 4.2.0 이상인지 확인하세요.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "가져오기";
 "hub.ImportSheetController.112.1706" = "취소";
 "hub.ImportSheetController.148.1709" = "모든 항목을 입력하세요";
-"hub.ImportSheetController.149.1710" = "소스, 차량 ID, 암호 파일 및 ENCRYPTION_KEY 파일이 필요합니다.";
+"hub.ImportSheetController.149.1710" = "소스, 차량 ID, 암호 파일이 필요합니다.";
 "hub.ImportSheetController.156.1711" = "원본 애플리케이션 버전 확인";
 "hub.ImportSheetController.17.1690" = "이 데이터베이스가 원본 애플리케이션 4.2.0 이상에 속함을 확인합니다";
 "hub.ImportSheetController.26.1691" = "기록 가져오기";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "차량 ID";
 "hub.ImportSheetController.69.1697" = "암호 파일";
 "hub.ImportSheetController.7.1687" = "Hub는 원본 애플리케이션을 중지하거나 데이터를 변경하지 않고 원본 데이터베이스를 읽습니다. 가져온 뒤 원본 애플리케이션에서 Tesla 접근을 직접 비활성화할 시점을 Hub가 안내합니다.";
-"hub.ImportSheetController.73.1699" = "원본 애플리케이션 ENCRYPTION_KEY 파일";
+"hub.ImportSheetController.73.1699" = "Hub가 실행 중이 아닙니다. Hub를 시작하고 수집 창을 연 다음 로그인하세요.";
 "hub.ImportSheetController.9.1688" = "가져오기 전에 원본 애플리케이션을 백업하고 4.2.0 이상으로 업데이트하세요. 한 번 실행한 뒤 데이터베이스 마이그레이션이 끝날 때까지 기다리세요. 데이터베이스에 직접 연결하는 것만으로는 실행 중인 앱 버전을 확인할 수 없습니다.";
 "hub.LogsWindowController.113.1730" = "기타 로그 동작";
 "hub.LogsWindowController.123.1732" = "표시·복사·저장되는 로그에서는 자격 증명과 비공개 식별 정보를 가립니다. 공유하기 전에 검토하세요.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "새 Hub를 설정하거나 원본 애플리케이션의 기록을 가져오세요.";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetry를 권장합니다. 레거시 토큰은 기존 설정에서 사용할 수 있습니다.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet 애플리케이션을 만든 다음 자격 증명을 아래에 붙여넣으세요.";
-"hub.OnboardingWindowController.610.1930" = "Tesla로 로그인하거나 기존 토큰 쌍을 붙여넣으세요.";
+"hub.OnboardingWindowController.610.1930" = "수집 창이 열려 있는 동안 Tesla로 로그인하세요. Hub는 토큰을 절대 받지 않습니다.";
 "hub.OnboardingWindowController.612.1931" = "차량 기록을 가져오려면 원본 애플리케이션 서버에 연결하세요.";
 "hub.OnboardingWindowController.614.1932" = "모든 항목이 올바르게 연결되었는지 확인하는 중입니다.";
 "hub.OnboardingWindowController.617.1933" = "차량 기록을 Hub로 가져왔습니다.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla의 공식 스트리밍 API입니다. 실시간 차량 명령을 사용할 수 있습니다.";
 "hub.OnboardingWindowController.752.1958" = "레거시 토큰";
-"hub.OnboardingWindowController.753.1959" = "Owner API 액세스 토큰과 새로 고침 토큰 쌍을 사용합니다.";
+"hub.OnboardingWindowController.753.1959" = "Tesla로 로그인하세요. Hub는 자체 로그인을 유지합니다.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet 앱 만들기";
 "hub.OnboardingWindowController.771.1964" = "클라이언트 ID";
 "hub.OnboardingWindowController.774.1967" = "만료 기간";
 "hub.OnboardingWindowController.776.1968" = "자격 증명은 이 Mac에서 암호화됩니다";
 "hub.OnboardingWindowController.788.1970" = "Tesla로 로그인";
-"hub.OnboardingWindowController.790.1972" = "또는 기존 토큰 쌍 사용";
+"hub.OnboardingWindowController.790.1972" = "아직 로그인할 수 없습니다. 이 Hub에는 Owner API 로그인 값이 없습니다. 변경된 내용은 없습니다.";
 "hub.OnboardingWindowController.798.1975" = "토큰은 이 Mac에서 암호화됩니다";
 "hub.OnboardingWindowController.822.1978" = "포트";
 "hub.OnboardingWindowController.832.1980" = "SSH 사용자";

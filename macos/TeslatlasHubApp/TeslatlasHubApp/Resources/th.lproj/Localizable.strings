@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "การตรวจสอบความเข้ากันได้ของแอปพลิเคชันต้นทางไม่ได้ส่งคืนรายงานที่ถูกต้อง";
 "hub.HubController.1562.581" = "ตรวจสอบฐานข้อมูลต้นทางไม่ได้ โปรดตรวจสอบการเชื่อมต่อเซิร์ฟเวอร์แล้วลองอีกครั้ง";
 "hub.HubController.1585.586" = "โปรดยืนยันว่าแอปพลิเคชันต้นทางเป็นเวอร์ชัน 4.2.0 ขึ้นไปก่อนนำเข้า";
-"hub.HubController.1591.587" = "เลือกไฟล์ ENCRYPTION_KEY ของแอปพลิเคชันต้นทาง";
+"hub.HubController.1591.587" = "การลงชื่อเข้าใช้ต้องมีหน้าต่างการเก็บข้อมูลที่เปิดอยู่ เปิดหน้าต่าง แล้วลงชื่อเข้าใช้อีกครั้ง";
 "hub.HubController.1718.615" = "การนำเข้าแอปพลิเคชันต้นทางไม่ได้ส่งรายงานการเสร็จสิ้นที่ถูกต้อง Hub ยังคงหยุดทำงาน";
 "hub.HubController.1742.624" = "นำเข้าเสร็จแล้ว แต่ Hub บันทึกเงื่อนไขการส่งมอบอย่างปลอดภัยไม่ได้: %1$@ Hub ยังคงหยุดทำงาน";
 "hub.HubController.1846.655" = "โปรดยืนยันว่าแอปพลิเคชันต้นทางเป็นเวอร์ชัน 4.2.0 ขึ้นไปก่อนนำเข้าจากแหล่ง PostgreSQL โดยตรง";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "นำเข้า";
 "hub.ImportSheetController.112.1706" = "ยกเลิก";
 "hub.ImportSheetController.148.1709" = "กรอกข้อมูลให้ครบทุกช่อง";
-"hub.ImportSheetController.149.1710" = "ต้องระบุแหล่งข้อมูล รหัสรถ ไฟล์รหัสผ่าน และไฟล์ ENCRYPTION_KEY";
+"hub.ImportSheetController.149.1710" = "ต้องระบุแหล่งข้อมูล รหัสรถ และไฟล์รหัสผ่าน";
 "hub.ImportSheetController.156.1711" = "ยืนยันเวอร์ชันแอปพลิเคชันต้นทาง";
 "hub.ImportSheetController.17.1690" = "ฉันยืนยันว่าฐานข้อมูลนี้เป็นของแอปพลิเคชันต้นทางเวอร์ชัน 4.2.0 ขึ้นไป";
 "hub.ImportSheetController.26.1691" = "นำเข้าประวัติ";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "รหัสรถ";
 "hub.ImportSheetController.69.1697" = "ไฟล์รหัสผ่าน";
 "hub.ImportSheetController.7.1687" = "Hub จะอ่านฐานข้อมูลต้นทางโดยไม่หยุดแอปพลิเคชันต้นทางหรือแก้ไขข้อมูล หลังนำเข้า Hub จะแจ้งให้คุณปิดการเข้าถึง Tesla ในแอปพลิเคชันต้นทางด้วยตนเอง";
-"hub.ImportSheetController.73.1699" = "ไฟล์ ENCRYPTION_KEY ของแอปพลิเคชันต้นทาง";
+"hub.ImportSheetController.73.1699" = "Hub ไม่ได้ทำงานอยู่ เริ่ม Hub เปิดหน้าต่างการเก็บข้อมูล แล้วลงชื่อเข้าใช้";
 "hub.ImportSheetController.9.1688" = "ก่อนนำเข้า: สำรองข้อมูลแอปพลิเคชันต้นทาง อัปเดตเป็นเวอร์ชัน 4.2.0 ขึ้นไป เริ่มการทำงานหนึ่งครั้ง และรอให้การย้ายฐานข้อมูลเสร็จสิ้น การเชื่อมต่อฐานข้อมูลโดยตรงไม่สามารถยืนยันเวอร์ชันของแอปที่กำลังทำงานได้";
 "hub.LogsWindowController.113.1730" = "การดำเนินการเพิ่มเติมกับบันทึก";
 "hub.LogsWindowController.123.1732" = "ข้อมูลเข้าสู่ระบบและตัวระบุส่วนตัวจะถูกปกปิดในบันทึกที่แสดง คัดลอก หรือบันทึกไว้ โปรดตรวจสอบก่อนแชร์";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "ตั้งค่า Hub ใหม่หรือย้ายประวัติของคุณจากแอปพลิเคชันต้นทาง";
 "hub.OnboardingWindowController.606.1928" = "แนะนำ Fleet Telemetry ส่วน Legacy token ใช้ได้กับการตั้งค่าแบบเก่า";
 "hub.OnboardingWindowController.608.1929" = "สร้างแอป Tesla Fleet แล้ววางข้อมูลเข้าสู่ระบบด้านล่าง";
-"hub.OnboardingWindowController.610.1930" = "ลงชื่อเข้าใช้ด้วย Tesla หรือวางคู่โทเค็นที่มีอยู่";
+"hub.OnboardingWindowController.610.1930" = "ลงชื่อเข้าใช้ด้วย Tesla ขณะที่หน้าต่างการเก็บข้อมูลเปิดอยู่ Hub ไม่รับโทเค็นไม่ว่ากรณีใด";
 "hub.OnboardingWindowController.612.1931" = "เชื่อมต่อกับเซิร์ฟเวอร์แอปพลิเคชันต้นทางเพื่อนำเข้าประวัติรถ";
 "hub.OnboardingWindowController.614.1932" = "กำลังตรวจสอบว่าทุกอย่างเชื่อมต่อถูกต้อง";
 "hub.OnboardingWindowController.617.1933" = "นำเข้าประวัติรถของคุณไปยัง Hub แล้ว";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "API สตรีมมิงอย่างเป็นทางการของ Tesla ซึ่งเปิดใช้คำสั่งควบคุมรถแบบเรียลไทม์";
 "hub.OnboardingWindowController.752.1958" = "Legacy Token";
-"hub.OnboardingWindowController.753.1959" = "ใช้คู่โทเค็นการเข้าถึงและโทเค็นรีเฟรชของ Owner API";
+"hub.OnboardingWindowController.753.1959" = "ลงชื่อเข้าใช้ด้วย Tesla Hub เก็บการเข้าสู่ระบบของตัวเอง";
 "hub.OnboardingWindowController.760.1960" = "สร้าง Tesla Fleet App";
 "hub.OnboardingWindowController.771.1964" = "รหัสไคลเอ็นต์";
 "hub.OnboardingWindowController.774.1967" = "หมดอายุใน";
 "hub.OnboardingWindowController.776.1968" = "ข้อมูลเข้าสู่ระบบถูกเข้ารหัสบน Mac เครื่องนี้";
 "hub.OnboardingWindowController.788.1970" = "ลงชื่อเข้าใช้ด้วย Tesla";
-"hub.OnboardingWindowController.790.1972" = "หรือใช้คู่โทเค็นที่มีอยู่";
+"hub.OnboardingWindowController.790.1972" = "ยังลงชื่อเข้าใช้ไม่ได้: Hub นี้ไม่มีค่าสำหรับลงชื่อเข้าใช้ Owner API ไม่มีการเปลี่ยนแปลงใด ๆ";
 "hub.OnboardingWindowController.798.1975" = "โทเค็นถูกเข้ารหัสบน Mac เครื่องนี้";
 "hub.OnboardingWindowController.822.1978" = "พอร์ต";
 "hub.OnboardingWindowController.832.1980" = "ผู้ใช้ SSH";

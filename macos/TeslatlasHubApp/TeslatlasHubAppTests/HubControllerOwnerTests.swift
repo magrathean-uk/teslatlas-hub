@@ -952,7 +952,9 @@ extension HubControllerTests {
         let foreign = try acquireForeign(rig)
         var outcomes: [Result<Void, Error>] = []
         rig.controller.configureFleetAccount(credentials: fleetCredentials()) { outcomes.append($0) }
-        rig.controller.configureTeslaAccount(tokens: TeslaAuthTokens(accessToken: "a", refreshToken: "r")) { outcomes.append($0) }
+        rig.controller.configureTeslaAccount(grant: TeslaAuthCodeGrant(
+            code: "c", codeVerifier: String(repeating: "v", count: 64),
+            redirectURI: "tesla://auth/callback")) { outcomes.append($0) }
         XCTAssertEqual(outcomes.count, 2)
         XCTAssertTrue(outcomes.allSatisfy { if case .failure = $0 { return true } else { return false } })
         XCTAssertFalse(FileManager.default.fileExists(atPath: rig.configPath.path), "no configuration was created")
@@ -978,7 +980,7 @@ extension HubControllerTests {
         let before = rig.signature()
         var refused = 0
         let source = "postgresql://reader@127.0.0.1:55438/source_snapshot"
-        let online = "postgresql://reader@server.local/sourcedb"
+        let online = "postgresql://reader@127.0.0.1:55439/sourcedb"
         rig.controller.checkSourceCompatibility(source: source, carID: "1", passwordFile: "/p",
                                                    acceptSchemaEvidence: true, historyOnly: true) {
             if case .failure = $0 { refused += 1 }
@@ -987,7 +989,7 @@ extension HubControllerTests {
                                                         acceptSchemaEvidence: true) {
             if case .failure = $0 { refused += 1 }
         }
-        rig.controller.importSourceOnline(source: online, carID: "1", passwordFile: "/p", encryptionKeyFile: "/k",
+        rig.controller.importSourceOnline(source: online, carID: "1", passwordFile: "/p",
                                              acceptSchemaEvidence: true) {
             if case .failure = $0 { refused += 1 }
         }

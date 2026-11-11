@@ -25,21 +25,44 @@ final class SourceDiscoveryHarnessTests: XCTestCase {
         return ["uid": uid, "databases": databases, "containers": containers]
     }
     private func checked(_ scenario: [String: Any], sudo: Bool = false) throws -> SourceDiscoveryHarness.Observation {
-        let result = try SourceDiscoveryHarness.run(scenario: scenario, useSudo: sudo)
+        let result = try AllowListedDiscoveryHarness.run(scenario: scenario, useSudo: sudo)
         XCTAssertLessThanOrEqual(result.output.utf8.count, 64 * 1024)
-        for value in ["unselected-db-secret", "unselected-user-secret", "unselected-password-secret", "unselected-name-secret", "unselected-other-db-secret"] {
+        for value in ["unselected-db-secret", "unselected-user-secret", "unselected-password-secret", "unselected-name-secret", "unselected-other-db-secret", "chosen-key"] {
             XCTAssertFalse(result.output.contains(value))
             XCTAssertFalse(result.output.contains(Data(value.utf8).base64EncodedString()))
         }
+        // The source key is never selected, carried or returned.
+        XCTAssertNil(result.values?["key"])
         for call in result.calls {
             XCTAssertFalse(call.contains("{{.Config.Image}}"))
+            XCTAssertFalse(call.contains("{{range .Config.Env}}{{println .}}{{end}}"), "the whole environment is never read")
             XCTAssertFalse(call.contains { $0.contains("com.docker.compose.service") && $0 != "label=com.docker.compose.service=database" })
-            if call.contains("{{range .Config.Env}}{{println .}}{{end}}") {
+            if call.contains(SourceDiscovery.allowListedValuesTemplate) {
                 XCTAssertEqual(call.last, "chosen-last")
             }
         }
         return result
     }
+
+    func testDiscoverySelectsOnlyAllowListedDatabaseFields() throws {
+        XCTAssertEqual(SourceDiscovery.allowListedNames, ["DATABASE_USER", "DATABASE_PASS", "DATABASE_NAME"])
+        XCTAssertEqual(SourceDiscovery.allowListedValuesTemplate,
+                       #"{{range .Config.Env}}{{if eq (index (split . "=") 0) "DATABASE_USER" "DATABASE_PASS" "DATABASE_NAME"}}{{println .}}{{end}}{{end}}"#)
+        XCTAssertFalse(SourceDiscovery.script.contains("{{range .Config.Env}}{{println .}}{{end}}"))
+        XCTAssertFalse(SourceDiscovery.script.contains("encryption_key"))
+        XCTAssertFalse(SourceDiscovery.script.contains("printf 'key="))
+        let result = try checked(scenario())
+        XCTAssertEqual(result.status, 0)
+        XCTAssertEqual(Set(result.values?.keys.map { $0 } ?? []),
+                       ["user", "password", "database", "car", "address", "oci_version"])
+        XCTAssertEqual(result.calls.filter { $0.contains(SourceDiscovery.allowListedValuesTemplate) }.count, 1)
+        // An answer that still carried a key line is parsed with that line dropped.
+        let values = try SourceDiscovery.parse(["user", "password", "database", "car", "address", "key"]
+            .map { "\($0)=\(Data("x".utf8).base64EncodedString())" }.joined(separator: "\n"))
+        XCTAssertNil(values["key"])
+        XCTAssertEqual(Set(values.keys), ["user", "password", "database", "car", "address"])
+    }
+
     func testDiscoveryFindsOneCandidateByEnvironmentShape() throws {
         let result = try checked(scenario())
         XCTAssertEqual(result.status, 0)
@@ -102,4 +125,70 @@ final class SourceDiscoveryHarnessTests: XCTestCase {
         }
     }
 
+}
+
+/// The production discovery script against a fake Docker that answers only the allow-listed
+/// value template: a script that asked for the whole environment would be refused (exit 99).
+private enum AllowListedDiscoveryHarness {
+    static let wholeEnvironmentAnswer = #" if template=='{{range .Config.Env}}{{println .}}{{end}}':out('\n'.join(k+'='+v for k,v in c['env'].items()))"#
+
+    static var fakeCommand: String {
+        let allowed = SourceDiscovery.allowListedNames.map { "'\($0)'" }.joined(separator: ",")
+        let answer = #" if template==\#(pythonLiteral(SourceDiscovery.allowListedValuesTemplate)):out('\n'.join(k+'='+v for k,v in c['env'].items() if k in (\#(allowed))))"#
+        precondition(SourceDiscoveryHarness.fakeCommand.contains(wholeEnvironmentAnswer))
+        return SourceDiscoveryHarness.fakeCommand.replacingOccurrences(of: wholeEnvironmentAnswer, with: answer)
+    }
+
+    private static func pythonLiteral(_ text: String) -> String {
+        "'" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'") + "'"
+    }
+
+    static func run(scenario: [String: Any], useSudo: Bool = false) throws -> SourceDiscoveryHarness.Observation {
+        let root = HubTestScratch.fixtureRoot("source-discovery-allow-list")
+        let bin = root.appendingPathComponent("bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        var retainUntilQuiescent = false
+        defer { if !retainUntilQuiescent { try? FileManager.default.removeItem(at: root) } }
+        let temporary = root.appendingPathComponent("tmp")
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let scene = root.appendingPathComponent("scenario.json")
+        let calls = root.appendingPathComponent("calls.jsonl")
+        try JSONSerialization.data(withJSONObject: scenario).write(to: scene)
+        try Data().write(to: calls)
+        for name in ["docker", "sudo", "id"] {
+            let command = bin.appendingPathComponent(name)
+            try Data(fakeCommand.utf8).write(to: command)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: command.path)
+        }
+        let result = SourceDiscoveryHarness.execute(environment: [
+            "PATH": bin.path + ":" + (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"),
+            "SCENARIO": scene.path, "CALLS": calls.path, "TMPDIR": temporary.path,
+            "TESLATLAS_USE_SUDO": useSudo ? "1" : "0"
+        ])
+        let status: Int32, output: String
+        switch result {
+        case let .success(text): status = 0; output = text
+        case let .failure(HubActionError.commandExited(code, text)): status = code; output = text
+        case let .failure(error):
+            if case let HubActionError.commandNotQuiescent(_, pending) = error, !pending.isQuiescent {
+                retainUntilQuiescent = true
+                pending.whenQuiescent { try? FileManager.default.removeItem(at: root) }
+            }
+            throw error
+        }
+        let log = try String(contentsOf: calls, encoding: .utf8).split(whereSeparator: \.isNewline).map {
+            try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String]
+        }
+        let values = try? SourceServerImporter.parseForTests(output)
+        let classification = values.map { SourceServerImporter.classifyVersionForTests(ociVersion: $0["oci_version"]) }
+        let admitted: Bool, acknowledgement: Bool
+        if let values {
+            do { acknowledgement = try SourceDiscovery.admittedVersion(ociVersion: values["oci_version"]) == nil; admitted = true }
+            catch { acknowledgement = false; admitted = false }
+        } else { admitted = false; acknowledgement = false }
+        return SourceDiscoveryHarness.Observation(status: status, output: output, calls: log, values: values,
+            classification: classification, versionAdmitted: admitted, acknowledgementRequired: acknowledgement)
+    }
 }

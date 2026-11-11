@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "Kiểm tra tính tương thích ứng dụng nguồn không trả về báo cáo hợp lệ.";
 "hub.HubController.1562.581" = "Không thể xác minh cơ sở dữ liệu nguồn. Hãy kiểm tra kết nối máy chủ rồi thử lại.";
 "hub.HubController.1585.586" = "Xác nhận ứng dụng nguồn phiên bản 4.2.0 trở lên trước khi nhập dữ liệu.";
-"hub.HubController.1591.587" = "Chọn tệp ENCRYPTION_KEY của ứng dụng nguồn.";
+"hub.HubController.1591.587" = "Đăng nhập cần có cửa sổ thu thập đang mở. Hãy mở một cửa sổ, rồi đăng nhập lại.";
 "hub.HubController.1718.615" = "Quá trình nhập ứng dụng nguồn không trả về báo cáo hoàn tất hợp lệ. Hub vẫn ở trạng thái đã dừng.";
 "hub.HubController.1742.624" = "Đã nhập xong nhưng không ghi được điều kiện cho phép bàn giao an toàn: %1$@. Hub vẫn ở trạng thái đã dừng.";
 "hub.HubController.1846.655" = "Xác nhận ứng dụng nguồn phiên bản 4.2.0 trở lên trước khi nhập từ nguồn PostgreSQL trực tiếp.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Nhập";
 "hub.ImportSheetController.112.1706" = "Hủy";
 "hub.ImportSheetController.148.1709" = "Hãy điền đầy đủ các trường.";
-"hub.ImportSheetController.149.1710" = "Cần có nguồn, ID xe, tệp mật khẩu và tệp ENCRYPTION_KEY.";
+"hub.ImportSheetController.149.1710" = "Cần có nguồn, ID xe và tệp mật khẩu.";
 "hub.ImportSheetController.156.1711" = "Xác nhận phiên bản ứng dụng nguồn";
 "hub.ImportSheetController.17.1690" = "Tôi xác nhận cơ sở dữ liệu này thuộc về ứng dụng nguồn phiên bản 4.2.0 trở lên.";
 "hub.ImportSheetController.26.1691" = "Nhập lịch sử";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "ID xe";
 "hub.ImportSheetController.69.1697" = "Tệp mật khẩu";
 "hub.ImportSheetController.7.1687" = "Hub đọc cơ sở dữ liệu nguồn mà không dừng ứng dụng nguồn hoặc thay đổi dữ liệu. Sau khi nhập, Hub sẽ hướng dẫn bạn tự tắt quyền truy cập Tesla trong ứng dụng nguồn.";
-"hub.ImportSheetController.73.1699" = "Tệp ENCRYPTION_KEY của ứng dụng nguồn";
+"hub.ImportSheetController.73.1699" = "Hub chưa chạy. Hãy khởi động Hub, mở một cửa sổ thu thập, rồi đăng nhập.";
 "hub.ImportSheetController.9.1688" = "Trước khi nhập: hãy sao lưu ứng dụng nguồn, cập nhật lên phiên bản 4.2.0 trở lên, khởi động một lần và đợi quá trình di chuyển cơ sở dữ liệu hoàn tất. Kết nối trực tiếp với cơ sở dữ liệu không thể xác minh phiên bản ứng dụng đang chạy.";
 "hub.LogsWindowController.113.1730" = "Thao tác nhật ký khác";
 "hub.LogsWindowController.123.1732" = "Nhật ký được hiển thị, sao chép và lưu sẽ lược bỏ thông tin xác thực và mã định danh riêng tư. Hãy xem lại trước khi chia sẻ.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Thiết lập Hub mới hoặc chuyển lịch sử từ ứng dụng nguồn sang.";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetry được khuyến nghị. Token đời cũ hoạt động với các thiết lập cũ hơn.";
 "hub.OnboardingWindowController.608.1929" = "Tạo ứng dụng Tesla Fleet rồi dán thông tin xác thực vào bên dưới.";
-"hub.OnboardingWindowController.610.1930" = "Đăng nhập bằng tài khoản Tesla hoặc dán cặp token hiện có.";
+"hub.OnboardingWindowController.610.1930" = "Hãy đăng nhập bằng Tesla khi cửa sổ thu thập đang mở. Hub không bao giờ chấp nhận token.";
 "hub.OnboardingWindowController.612.1931" = "Kết nối với máy chủ ứng dụng nguồn để nhập lịch sử xe.";
 "hub.OnboardingWindowController.614.1932" = "Đang kiểm tra để bảo đảm mọi thứ được kết nối đúng cách.";
 "hub.OnboardingWindowController.617.1933" = "Lịch sử xe của bạn đã được nhập vào Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "API truyền phát chính thức của Tesla. Cho phép gửi lệnh điều khiển xe theo thời gian thực.";
 "hub.OnboardingWindowController.752.1958" = "Token đời cũ";
-"hub.OnboardingWindowController.753.1959" = "Dùng cặp mã truy cập và mã làm mới của Tesla Owner API.";
+"hub.OnboardingWindowController.753.1959" = "Hãy đăng nhập bằng Tesla. Hub giữ đăng nhập riêng của mình.";
 "hub.OnboardingWindowController.760.1960" = "Tạo ứng dụng Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
 "hub.OnboardingWindowController.774.1967" = "Hết hạn sau";
 "hub.OnboardingWindowController.776.1968" = "Thông tin xác thực được mã hóa trên máy Mac này";
 "hub.OnboardingWindowController.788.1970" = "Đăng nhập bằng Tesla";
-"hub.OnboardingWindowController.790.1972" = "hoặc dùng cặp token hiện có";
+"hub.OnboardingWindowController.790.1972" = "Chưa thể đăng nhập: Hub này không có giá trị đăng nhập Owner API. Không có gì bị thay đổi.";
 "hub.OnboardingWindowController.798.1975" = "Token được mã hóa trên máy Mac này";
 "hub.OnboardingWindowController.822.1978" = "Cổng";
 "hub.OnboardingWindowController.832.1980" = "Tên người dùng SSH";

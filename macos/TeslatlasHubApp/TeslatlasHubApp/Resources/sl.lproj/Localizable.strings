@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "Preverjanje združljivosti izvorne aplikacije ni vrnilo veljavnega poročila.";
 "hub.HubController.1562.581" = "Izvorne podatkovne zbirke ni bilo mogoče preveriti. Preverite povezavo s strežnikom in poskusite znova.";
 "hub.HubController.1585.586" = "Pred uvozom potrdite, da je različica izvorne aplikacije 4.2.0 ali novejša.";
-"hub.HubController.1591.587" = "Izberite datoteko ENCRYPTION_KEY izvorne aplikacije.";
+"hub.HubController.1591.587" = "Za prijavo je potrebno odprto okno zbiranja. Odprite okno in se znova prijavite.";
 "hub.HubController.1718.615" = "Uvoz iz izvorne aplikacije ni vrnil veljavnega poročila o dokončanju. Hub ostaja ustavljen.";
 "hub.HubController.1742.624" = "Uvoz je končan, vendar Hub ni mogel zabeležiti varnostnega pogoja predaje: %1$@. Hub ostaja ustavljen.";
 "hub.HubController.1846.655" = "Pred uvozom iz neposrednega vira PostgreSQL potrdite, da je različica izvorne aplikacije 4.2.0 ali novejša.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Uvozi";
 "hub.ImportSheetController.112.1706" = "Prekliči";
 "hub.ImportSheetController.148.1709" = "Izpolnite vsa polja";
-"hub.ImportSheetController.149.1710" = "Vir, ID vozila, datoteka z geslom in datoteka ENCRYPTION_KEY so obvezni.";
+"hub.ImportSheetController.149.1710" = "Vir, ID vozila in datoteka z geslom so obvezni.";
 "hub.ImportSheetController.156.1711" = "Potrdite različico izvorne aplikacije";
 "hub.ImportSheetController.17.1690" = "Potrjujem, da ta podatkovna zbirka pripada različici izvorne aplikacije 4.2.0 ali novejši.";
 "hub.ImportSheetController.26.1691" = "Uvozi zgodovino";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "ID vozila";
 "hub.ImportSheetController.69.1697" = "Datoteka z geslom";
 "hub.ImportSheetController.7.1687" = "Hub bere podatke iz izvorne podatkovne zbirke, ne da bi ustavil ali spreminjal izvorno aplikacijo. Po uvozu vam Hub pove, kdaj morate sami onemogočiti dostop Tesle v izvorni aplikaciji.";
-"hub.ImportSheetController.73.1699" = "Datoteka ENCRYPTION_KEY izvorne aplikacije";
+"hub.ImportSheetController.73.1699" = "Hub ne deluje. Zaženite Hub, odprite okno zbiranja in se nato prijavite.";
 "hub.ImportSheetController.9.1688" = "Pred uvozom varnostno kopirajte izvorno aplikacijo, jo posodobite na različico 4.2.0 ali novejšo, jo enkrat zaženite in počakajte, da se dokončajo migracije podatkovne zbirke. Neposredna povezava s podatkovno zbirko ne more potrditi različice zagnane aplikacije.";
 "hub.LogsWindowController.113.1730" = "Več dejanj dnevnika";
 "hub.LogsWindowController.123.1732" = "V prikazanih, kopiranih in shranjenih dnevnikih so poverilnice in zasebni identifikatorji zakriti. Pred deljenjem jih preglejte.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Nastavite nov Hub ali prenesite svojo zgodovino iz izvorne aplikacije.";
 "hub.OnboardingWindowController.606.1928" = "Priporočamo Tesla Fleet Telemetry. Podedovani žetoni delujejo v starejših nastavitvah.";
 "hub.OnboardingWindowController.608.1929" = "Ustvarite aplikacijo Tesla Fleet in spodaj prilepite njene poverilnice.";
-"hub.OnboardingWindowController.610.1930" = "Prijavite se s Teslo ali prilepite obstoječi par žetonov.";
+"hub.OnboardingWindowController.610.1930" = "Prijavite se s Teslo, medtem ko je okno zbiranja odprto. Hub nikoli ne sprejme žetona.";
 "hub.OnboardingWindowController.612.1931" = "Povežite se s strežnikom izvorne aplikacije, da uvozite njegovo zgodovino vozil.";
 "hub.OnboardingWindowController.614.1932" = "Preverjamo, ali je vse pravilno povezano.";
 "hub.OnboardingWindowController.617.1933" = "Vaša zgodovina izvorne aplikacije je bila uvožena v Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Tesla Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Uradni pretočni API podjetja Tesla. Omogoča pošiljanje ukazov vozilu v živo.";
 "hub.OnboardingWindowController.752.1958" = "Podedovani žeton";
-"hub.OnboardingWindowController.753.1959" = "Uporabite par žetonov za dostop in osvežitev za API Tesla za lastnike vozil.";
+"hub.OnboardingWindowController.753.1959" = "Prijavite se s Teslo. Hub ohrani lastno prijavo.";
 "hub.OnboardingWindowController.760.1960" = "Ustvarite aplikacijo Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID odjemalca";
 "hub.OnboardingWindowController.774.1967" = "Poteče čez";
 "hub.OnboardingWindowController.776.1968" = "Poverilnice so v tem Macu šifrirane";
 "hub.OnboardingWindowController.788.1970" = "Prijava s Teslo";
-"hub.OnboardingWindowController.790.1972" = "ali uporabite obstoječi par žetonov";
+"hub.OnboardingWindowController.790.1972" = "Prijava še ni na voljo: ta Hub nima vrednosti za prijavo prek Owner API. Nič ni bilo spremenjeno.";
 "hub.OnboardingWindowController.798.1975" = "Žetoni so v tem Macu šifrirani";
 "hub.OnboardingWindowController.822.1978" = "Vrata";
 "hub.OnboardingWindowController.832.1980" = "Uporabnik SSH";

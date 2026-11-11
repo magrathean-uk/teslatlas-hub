@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "La comprovació de compatibilitat de l’aplicació d’origen no ha retornat cap informe vàlid.";
 "hub.HubController.1562.581" = "No s’ha pogut verificar la base de dades d’origen. Comprova la connexió amb el servidor i torna-ho a provar.";
 "hub.HubController.1585.586" = "Confirma que l’aplicació d’origen té la versió 4.2.0 o una de posterior abans d’importar.";
-"hub.HubController.1591.587" = "Tria el fitxer de la clau ENCRYPTION_KEY de l’aplicació d’origen.";
+"hub.HubController.1591.587" = "L’inici de sessió necessita una finestra de recollida oberta. Obre una finestra i torna a iniciar la sessió.";
 "hub.HubController.1718.615" = "La importació de l’aplicació d’origen no ha retornat cap informe de finalització vàlid. El Hub continua aturat.";
 "hub.HubController.1742.624" = "La importació s’ha completat, però el Hub no ha pogut registrar el control de seguretat del traspàs: %1$@. El Hub continua aturat.";
 "hub.HubController.1846.655" = "Confirma que l’aplicació d’origen té la versió 4.2.0 o una de posterior abans d’importar des d’una font PostgreSQL directa.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Importa";
 "hub.ImportSheetController.112.1706" = "Cancel·la";
 "hub.ImportSheetController.148.1709" = "Completa tots els camps";
-"hub.ImportSheetController.149.1710" = "Cal indicar la font, l’identificador del vehicle, el fitxer de contrasenya i el fitxer ENCRYPTION_KEY.";
+"hub.ImportSheetController.149.1710" = "Cal indicar la font, l’ID del vehicle i el fitxer de contrasenya.";
 "hub.ImportSheetController.156.1711" = "Confirma la versió de l’aplicació d’origen";
 "hub.ImportSheetController.17.1690" = "Confirmo que aquesta base de dades pertany a l’aplicació d’origen 4.2.0 o una versió posterior";
 "hub.ImportSheetController.26.1691" = "Importa l’historial";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "ID del vehicle";
 "hub.ImportSheetController.69.1697" = "Fitxer de contrasenya";
 "hub.ImportSheetController.7.1687" = "El Hub llegeix la base de dades d’origen sense modificar-la ni aturar l’aplicació d’origen. Després de la importació, el Hub t’indicarà quan hagis de desactivar tu mateix l’accés a Tesla a l’aplicació d’origen.";
-"hub.ImportSheetController.73.1699" = "Fitxer ENCRYPTION_KEY de l’aplicació d’origen";
+"hub.ImportSheetController.73.1699" = "El Hub no s’està executant. Inicia el Hub, obre una finestra de recollida i inicia la sessió.";
 "hub.ImportSheetController.9.1688" = "Abans d’importar: fes una còpia de seguretat de l’aplicació d’origen, actualitza-la a la versió 4.2.0 o posterior, inicia-la una vegada i espera que acabin les migracions de la base de dades. Una connexió directa a la base de dades no pot confirmar la versió de l’aplicació en execució.";
 "hub.LogsWindowController.113.1730" = "Més accions de registre";
 "hub.LogsWindowController.123.1732" = "Els registres que es mostren, es copien o es desen oculten les credencials i els identificadors privats. Revisa’ls abans de compartir-los.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Configura un Hub nou o importa-hi l’historial de l’aplicació d’origen.";
 "hub.OnboardingWindowController.606.1928" = "Es recomana Fleet Telemetry. Els tokens heretats funcionen amb configuracions antigues.";
 "hub.OnboardingWindowController.608.1929" = "Crea una aplicació Tesla Fleet i, després, enganxa’n les credencials a continuació.";
-"hub.OnboardingWindowController.610.1930" = "Inicia la sessió amb Tesla o enganxa un parell de tokens existent.";
+"hub.OnboardingWindowController.610.1930" = "Inicia la sessió amb Tesla mentre hi hagi una finestra de recollida oberta. El Hub no accepta mai cap token.";
 "hub.OnboardingWindowController.612.1931" = "Connecta’t al servidor de l’aplicació d’origen per importar-ne l’historial dels vehicles.";
 "hub.OnboardingWindowController.614.1932" = "Comprovem que tot estigui ben configurat.";
 "hub.OnboardingWindowController.617.1933" = "L’historial de l’aplicació d’origen s’ha importat al Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "API oficial de transmissió en temps real de Tesla. Permet enviar ordres al vehicle en temps real.";
 "hub.OnboardingWindowController.752.1958" = "Token heretat";
-"hub.OnboardingWindowController.753.1959" = "Fes servir un parell de tokens d’accés i d’actualització de l’API Tesla Owner.";
+"hub.OnboardingWindowController.753.1959" = "Inicia la sessió amb Tesla. El Hub conserva el seu propi inici de sessió.";
 "hub.OnboardingWindowController.760.1960" = "Crea una aplicació Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "Identificador de client";
 "hub.OnboardingWindowController.774.1967" = "Caduca en";
 "hub.OnboardingWindowController.776.1968" = "Les credencials s’encripten en aquest Mac";
 "hub.OnboardingWindowController.788.1970" = "Inicia la sessió amb Tesla";
-"hub.OnboardingWindowController.790.1972" = "o fes servir un parell de tokens existent";
+"hub.OnboardingWindowController.790.1972" = "L’inici de sessió encara no està disponible: aquest Hub no té valors d’inici de sessió de l’Owner API. No s’ha canviat res.";
 "hub.OnboardingWindowController.798.1975" = "Els tokens s’encripten en aquest Mac";
 "hub.OnboardingWindowController.822.1978" = "Port";
 "hub.OnboardingWindowController.832.1980" = "Usuari SSH";
