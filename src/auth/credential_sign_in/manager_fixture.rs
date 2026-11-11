@@ -13,7 +13,7 @@ pub fn seed_owner_pair_for_test(data: &Path, access: &str, refresh: &str, schedu
     let scope = super::SignInScope::open_for_test(data, true)?;
     #[cfg(not(debug_assertions))]
     let scope = super::SignInScope::open(data)?;
-    let mut entry = super::super::credential_vault::CredentialEntry::direct_entry(zeroize::Zeroizing::new(access.to_owned()), zeroize::Zeroizing::new(refresh.to_owned())).map_err(super::CredentialCommandError::from)?;
+    let mut entry = super::super::credential_vault::CredentialEntry::own_login_fixture(zeroize::Zeroizing::new(access.to_owned()), zeroize::Zeroizing::new(refresh.to_owned())).map_err(super::CredentialCommandError::from)?;
     let (expiry, next) = schedule.unwrap_or((0, 0));
     entry.set_schedule(expiry, next);
     let generation = scope.entry().vault().store_supplied_entry(entry, crate::db::ReplacePolicy::ReplaceAny).map_err(super::CredentialCommandError::from)?;

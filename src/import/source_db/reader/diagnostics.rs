@@ -214,16 +214,9 @@ pub struct SourceDbSelectedCarCounts {
     pub updates: u64,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct SourceDbLegacyTokenPairDiagnostics {
-    pub relation: String,
-    pub access_ciphertext_bytes: u64,
-    pub refresh_ciphertext_bytes: u64,
-}
-
 /// Read-only source database diagnosis used by `source database-check`. This never writes
-/// the source and never reads token ciphertext.
+/// the source and never reads, counts or probes its credential relations: source
+/// credentials are disabled, so the snapshot has no credential field at all.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceDbCheckSnapshot {
@@ -233,8 +226,6 @@ pub struct SourceDbCheckSnapshot {
     pub open_sessions: SourceDbOpenSessionCounts,
     pub selected_car_counts: SourceDbSelectedCarCounts,
     pub source_totals: SourceDbTotals,
-    pub source_tokens_relation_present: Option<bool>,
-    pub legacy_token_pair: Option<SourceDbLegacyTokenPairDiagnostics>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -279,7 +270,6 @@ impl SourceDbCheckSnapshot {
             selected_positions = self.selected_car_counts.positions,
             selected_charges = self.selected_car_counts.charges,
             source_positions = self.source_totals.positions,
-            token_checks_performed = self.legacy_token_pair.is_some(),
             "Source database selected car (source is not mutated)"
         );
     }
@@ -305,35 +295,13 @@ SELECT
 /// Validate one selected source car against the exact pinned source
 /// contract without creating or opening any Hub target state. The schema,
 /// connection witness, selected-car probe, and table counts run in one
-/// read-only, repeatable-read source transaction. Token ciphertext is never
-/// read.
-pub async fn check_source_compatibility(
-    source: &ReadOnlySource,
-    password: &SourceDbPassword,
-    selected_car_id: i64,
-    limits: SourceDbReadLimits,
-) -> Result<SourceDbCheckSnapshot, SourceDbReaderError> {
-    check_source_db_compatibility_with_token_scope(source, password, selected_car_id, limits, true)
-        .await
-}
-
-/// Check public history without probing the private legacy owner token schema.
+/// read-only, repeatable-read source transaction. No credential relation of
+/// the source is named, counted or read.
 pub async fn check_source_history_compatibility(
     source: &ReadOnlySource,
     password: &SourceDbPassword,
     selected_car_id: i64,
     limits: SourceDbReadLimits,
-) -> Result<SourceDbCheckSnapshot, SourceDbReaderError> {
-    check_source_db_compatibility_with_token_scope(source, password, selected_car_id, limits, false)
-        .await
-}
-
-async fn check_source_db_compatibility_with_token_scope(
-    source: &ReadOnlySource,
-    password: &SourceDbPassword,
-    selected_car_id: i64,
-    limits: SourceDbReadLimits,
-    inspect_tokens: bool,
 ) -> Result<SourceDbCheckSnapshot, SourceDbReaderError> {
     tracing::info!(
         host = source.host(),
@@ -401,11 +369,6 @@ async fn check_source_db_compatibility_with_token_scope(
             .client()
             .query_one(SELECTED_CAR_COUNT_SQL, &[&selected_car_id_i16])
             .await?;
-        let (source_tokens_relation_present, legacy_token_pair) = if inspect_tokens {
-            (Some(true), Some(inspect_legacy_token_pair_in_client(session.client()).await?))
-        } else {
-            (None, None)
-        };
         Ok(SourceDbCheckSnapshot {
             schema,
             connection,
@@ -429,8 +392,6 @@ async fn check_source_db_compatibility_with_token_scope(
                 updates: source_witness_count(&count_row, "updates")?,
             },
             source_totals,
-            source_tokens_relation_present,
-            legacy_token_pair,
         })
     }
     .await;
@@ -447,7 +408,7 @@ async fn check_source_db_compatibility_with_token_scope(
 
 /// Non-secret identity and exact table counts witnessed from one validated,
 /// read-only, repeatable-read source database PostgreSQL transaction. This never
-/// reads `private.tokens` (or any private relation contents).
+/// reads any private relation contents.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceDbLiveSourceWitness {

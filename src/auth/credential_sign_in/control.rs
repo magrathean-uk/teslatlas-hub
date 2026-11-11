@@ -65,20 +65,20 @@ pub fn rotate_credential_key(entry: &CredentialVaultEntry) -> Result<RotationRes
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{auth::{credential_sign_in::entries::*, credential_vault::fixtures::open_fixture_vault}, db::HubStore};
+    use crate::{auth::credential_vault::{CredentialEntry, fixtures::open_fixture_vault}, db::{HubStore, ReplacePolicy}};
     use zeroize::Zeroizing;
 
+    // Both slots hold the Hub's own pairs: supplied entry refuses since M02-T02.
     fn fixture() -> (tempfile::TempDir, HubStore, CredentialVaultEntry) {
         let root = crate::private_tempdir().expect("fixture directory");
         let store = HubStore::initialize(root.path()).expect("store");
         let vault = open_fixture_vault(store.clone(), root.path());
         let entry = CredentialVaultEntry::for_test(vault);
-        let supplied = prepare_owner_entry(OwnerEntryKind::Direct,
-            Zeroizing::new("access-0001".into()), Some(Zeroizing::new("refresh-0001".into())), false).expect("Owner entry");
-        drop(persist_owner_entry(&entry, supplied, false).expect("Owner barrier"));
-        let supplied = prepare_fleet_entry(Zeroizing::new("access-0002".into()), Zeroizing::new("refresh-0002".into()),
+        let owner = CredentialEntry::own_login_fixture(Zeroizing::new("access-0001".into()), Zeroizing::new("refresh-0001".into())).expect("Owner entry");
+        entry.vault().store_supplied_entry(owner, ReplacePolicy::ReplaceAny).expect("Owner barrier");
+        let fleet = CredentialEntry::fleet_supplied(Zeroizing::new("access-0002".into()), Zeroizing::new("refresh-0002".into()),
             "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet entry");
-        persist_fleet_entry(&entry, supplied, false).expect("Fleet barrier");
+        entry.vault().store_supplied_entry(fleet, ReplacePolicy::ReplaceAny).expect("Fleet barrier");
         (root, store, entry)
     }
 

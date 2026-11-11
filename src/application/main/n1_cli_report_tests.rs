@@ -56,8 +56,6 @@ fn synthetic_source_check_snapshot() -> SourceDbCheckSnapshot {
             updates: 1,
             schema_migrations: 105,
         },
-        source_tokens_relation_present: None,
-        legacy_token_pair: None,
     }
 }
 
@@ -415,7 +413,6 @@ async fn mt4_3_cli_refusal_preserves_abandoned_generation_before_initialisation(
         let password_path = temp.path().join("password");
         fs::write(&password_path, "synthetic-password").unwrap();
         fs::set_permissions(&password_path, fs::Permissions::from_mode(0o600)).unwrap();
-        let key_path = temp.path().join("unread-source-key");
         let admission = AdmittedUserHub::admit(&data_dir).unwrap();
         let before = fs::read(store.database_path()).unwrap();
         let error = run_macos_migration(
@@ -428,7 +425,10 @@ async fn mt4_3_cli_refusal_preserves_abandoned_generation_before_initialisation(
                 new_import_source: false,
                 postgres_password_file: &password_path,
                 history_only,
-                encryption_key_file: if history_only { None } else { Some(&key_path) },
+                // Source credentials are disabled: no key file is given. (The
+                // earlier set-up placed one in the configuration folder, which
+                // the location check rightly treats as Hub-managed.)
+                encryption_key_file: None,
                 access_token_file: None,
                 refresh_token_file: None,
                 online_snapshot: true,

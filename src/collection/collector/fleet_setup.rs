@@ -216,6 +216,14 @@ fn configured_fleet_vehicle_for_vin(
     matched.ok_or(CollectorError::SelectedVehicleMissing)
 }
 
+/// Source credentials are disabled (M02-T02): a token pair handed to setup
+/// is never used for discovery, whatever its origin. Setup runs only from the
+/// Hub's own login; until the command is rewired to it, this entry refuses.
+fn native_setup_refuses_supplied_tokens(tokens: &OwnerTokens) -> Result<(), CollectorError> {
+    let _ = tokens;
+    Err(CollectorError::Credential(crate::credentials::CredentialError::SourceCredentialDisabled))
+}
+
 /// Configure one clean Hub directly from a bounded legacy token pair. This
 /// performs products discovery only: no vehicle-data read, wake, or command.
 pub async fn setup_native_vehicle(
@@ -230,6 +238,7 @@ pub async fn setup_native_vehicle(
     if !config.collector.legacy_auth.enabled {
         return Err(CollectorError::NativeSetupLegacyAuthRequired);
     }
+    native_setup_refuses_supplied_tokens(tokens)?;
 
     let auth = LegacyAuth::from_access_token(
         tokens.access_token().to_owned(),
@@ -264,6 +273,7 @@ pub async fn setup_native_vehicles(
     if !config.collector.legacy_auth.enabled {
         return Err(CollectorError::NativeSetupLegacyAuthRequired);
     }
+    native_setup_refuses_supplied_tokens(tokens)?;
     let auth = LegacyAuth::from_access_token(
         tokens.access_token().to_owned(),
         tokens.refresh_token().to_owned(),

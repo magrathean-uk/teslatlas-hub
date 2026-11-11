@@ -390,21 +390,6 @@ pub enum SourceDbReaderError {
     SettingsSingletonMissing,
     #[error("Source database has more than one settings singleton row")]
     SettingsSingletonAmbiguous,
-    #[error("Source database has no legacy OAuth token pair")]
-    LegacyTokenPairMissing,
-    #[error("Source database has more than one legacy OAuth token pair")]
-    LegacyTokenPairAmbiguous,
-    #[error("Source database legacy OAuth token pair is empty")]
-    LegacyTokenPairEmpty,
-    #[error(
-        "Source database {relation}.{column} ciphertext exceeds {maximum} bytes (actual {actual})"
-    )]
-    LegacyTokenCiphertextTooLarge {
-        relation: &'static str,
-        column: &'static str,
-        maximum: i64,
-        actual: i64,
-    },
     #[error("Source database role has USAGE on the private schema")]
     PrivateSchemaUsageGranted,
     #[error("Source database witness transaction is not read-only")]
@@ -575,10 +560,6 @@ mod n1_src_import_source_db_reader_decoding_rs_display_tests {
                 SourceDbReaderError::AmbiguousOpenSession { .. } => (),
                 SourceDbReaderError::SettingsSingletonMissing => (),
                 SourceDbReaderError::SettingsSingletonAmbiguous => (),
-                SourceDbReaderError::LegacyTokenPairMissing => (),
-                SourceDbReaderError::LegacyTokenPairAmbiguous => (),
-                SourceDbReaderError::LegacyTokenPairEmpty => (),
-                SourceDbReaderError::LegacyTokenCiphertextTooLarge { .. } => (),
                 SourceDbReaderError::PrivateSchemaUsageGranted => (),
                 SourceDbReaderError::WitnessTransactionWritable => (),
                 SourceDbReaderError::MissingServerAddress => (),
@@ -645,15 +626,6 @@ mod n1_src_import_source_db_reader_decoding_rs_display_tests {
         });
         check_source_db_reader_error(SourceDbReaderError::SettingsSingletonMissing);
         check_source_db_reader_error(SourceDbReaderError::SettingsSingletonAmbiguous);
-        check_source_db_reader_error(SourceDbReaderError::LegacyTokenPairMissing);
-        check_source_db_reader_error(SourceDbReaderError::LegacyTokenPairAmbiguous);
-        check_source_db_reader_error(SourceDbReaderError::LegacyTokenPairEmpty);
-        check_source_db_reader_error(SourceDbReaderError::LegacyTokenCiphertextTooLarge {
-            relation: example(),
-            column: example(),
-            maximum: example(),
-            actual: example(),
-        });
         check_source_db_reader_error(SourceDbReaderError::PrivateSchemaUsageGranted);
         check_source_db_reader_error(SourceDbReaderError::WitnessTransactionWritable);
         check_source_db_reader_error(SourceDbReaderError::MissingServerAddress);

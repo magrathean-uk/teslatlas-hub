@@ -89,7 +89,8 @@ pub(crate) fn effective_auth_row_admitted(
         return effective_auth_row(store,Path::new(""),mode,now_ms);
     }
     let status=AuthStatus::from_row(&row)?;
-    let plain=vault.load(crate::auth::credential_envelope::CredentialSlot::OwnerApi).map_err(|_|EffectiveAuthError::Store(StoreError::WriteRefused("credential_vault_unavailable")))?;
+    let plain=vault.load(crate::auth::credential_envelope::CredentialSlot::OwnerApi).map_err(|error|EffectiveAuthError::Store(StoreError::WriteRefused(
+        if matches!(error,crate::auth::credential_vault::CredentialStoreError::SourceCredentialDisabled(_)|crate::auth::credential_vault::CredentialStoreError::UnknownOrigin(_)) {"source_credential_disabled"} else {"credential_vault_unavailable"})))?;
     let Some(plain)=plain else{return finish(row,None)};
     if !super::stored_pair_passes_grammar(&plain.access,&plain.refresh,mode) {
         return finish(AuthStatus::stopped(AuthStop::SignedOut(SignOutReason::StoredPairInvalid),plain.generation,mode,false,FuseSnapshot::default(),status.clock_skew).to_row(),None);

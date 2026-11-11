@@ -78,6 +78,12 @@ fn slot_status(
     let store_state = if blocked { "migration_blocked" } else if pending { "migration_pending" } else {
         presence.as_ref().and_then(|row| row.header_check.as_ref().err()).map_or("ok", header_code)
     };
+    // Source credentials are disabled: a pair the Hub did not get from its own
+    // login is reported by its refusal code, so nothing treats it as usable.
+    let store_state = match presence.as_ref() {
+        Some(row) if store_state == "ok" => crate::auth::credential_vault::stored_origin_refusal(row.slot, row.origin, row.refresh_owner).unwrap_or("ok"),
+        _ => store_state,
+    };
     SlotStatus {
         present: presence.is_some(),
         expires_at: presence.as_ref().map(|row| row.expires_at),

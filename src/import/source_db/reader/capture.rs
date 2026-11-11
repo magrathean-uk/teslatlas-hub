@@ -46,10 +46,9 @@ pub async fn capture_history_to_stage(
         selected_car_id,
         limits,
         imports_dir,
-        false,
     )
     .await
-    .map(|(stage, _token, _session)| stage)
+    .map(|(stage, _session)| stage)
 }
 
 /// Capture history and the active open session from one source snapshot.
@@ -60,86 +59,15 @@ pub async fn capture_history_to_stage_with_session(
     limits: SourceDbReadLimits,
     imports_dir: &Path,
 ) -> Result<(SourceDbStage, SourceDbOpenSession), SourceDbReaderError> {
-    let (stage, _token, session) = capture_history_to_stage_internal(
+    let (stage, session) = capture_history_to_stage_internal(
         source,
         password,
         selected_car_id,
         limits,
         imports_dir,
-        false,
     )
     .await?;
     Ok((stage, session))
-}
-
-/// Capture history and the opaque legacy OAuth pair from one source snapshot.
-/// The returned ciphertexts are never decrypted or rewritten here. Callers
-/// that need cutover-consistent credentials should use this companion instead
-/// of opening a second PostgreSQL transaction after history capture.
-pub async fn capture_history_to_stage_with_legacy_token(
-    source: &ReadOnlySource,
-    password: &SourceDbPassword,
-    selected_car_id: i64,
-    limits: SourceDbReadLimits,
-    imports_dir: &Path,
-) -> Result<(SourceDbStage, LegacyOwnerTokenCiphertexts), SourceDbReaderError> {
-    let (stage, token, _session) = capture_history_to_stage_internal(
-        source,
-        password,
-        selected_car_id,
-        limits,
-        imports_dir,
-        true,
-    )
-    .await?;
-    let token = match token {
-        Some(token) => token,
-        None => {
-            return Err(discard_stage_after_error(
-                stage,
-                SourceDbReaderError::LegacyTokenPairMissing,
-            ));
-        }
-    };
-    Ok((stage, token))
-}
-
-/// Capture history, the active open session, and the opaque legacy OAuth pair
-/// from one repeatable-read source snapshot. The session is retained only as
-/// typed projection data for atomic Hub lifecycle publication.
-pub async fn capture_history_to_stage_with_legacy_token_and_session(
-    source: &ReadOnlySource,
-    password: &SourceDbPassword,
-    selected_car_id: i64,
-    limits: SourceDbReadLimits,
-    imports_dir: &Path,
-) -> Result<
-    (
-        SourceDbStage,
-        SourceDbOpenSession,
-        LegacyOwnerTokenCiphertexts,
-    ),
-    SourceDbReaderError,
-> {
-    let (stage, token, session) = capture_history_to_stage_internal(
-        source,
-        password,
-        selected_car_id,
-        limits,
-        imports_dir,
-        true,
-    )
-    .await?;
-    let token = match token {
-        Some(token) => token,
-        None => {
-            return Err(discard_stage_after_error(
-                stage,
-                SourceDbReaderError::LegacyTokenPairMissing,
-            ));
-        }
-    };
-    Ok((stage, session, token))
 }
 
 fn discard_stage_after_error(
@@ -200,27 +128,18 @@ async fn capture_history_to_stage_internal(
     selected_car_id: i64,
     limits: SourceDbReadLimits,
     imports_dir: &Path,
-    include_legacy_token: bool,
-) -> Result<
-    (
-        SourceDbStage,
-        Option<LegacyOwnerTokenCiphertexts>,
-        SourceDbOpenSession,
-    ),
-    SourceDbReaderError,
-> {
+) -> Result<(SourceDbStage, SourceDbOpenSession), SourceDbReaderError> {
     limits.validate()?;
     if selected_car_id <= 0 {
         return Err(SourceDbReaderError::InvalidSelectedCarId);
     }
     if limits.parallel_copy_lanes > 1 {
-        return capture_history_to_stage_parallel_with_legacy_token(
+        return capture_history_to_stage_parallel(
             source,
             password,
             selected_car_id,
             limits,
             imports_dir,
-            include_legacy_token,
         )
         .await;
     }
@@ -255,11 +174,6 @@ async fn capture_history_to_stage_internal(
     } else {
         None
     };
-    let token = if include_legacy_token && open_session.as_ref().is_some_and(Result::is_ok) {
-        Some(read_legacy_token_ciphertexts_in_client(session.client()).await)
-    } else {
-        None
-    };
     let rollback = session.finish().await;
     if let Err(error) = capture {
         return Err(discard_stage_after_error(stage, error));
@@ -271,13 +185,6 @@ async fn capture_history_to_stage_internal(
         }
         None => unreachable!("open session capture follows successful history capture"),
     };
-    let token = match token {
-        Some(Ok(token)) => Some(token),
-        Some(Err(error)) => {
-            return Err(discard_stage_after_error(stage, error));
-        }
-        None => None,
-    };
     if let Err(error) = rollback {
         return Err(discard_stage_after_error(stage, error));
     }
@@ -287,28 +194,20 @@ async fn capture_history_to_stage_internal(
             SourceDbReaderError::Stage(error),
         ));
     }
-    Ok((stage, token, open_session))
+    Ok((stage, open_session))
 }
 
 /// Capture the nine selected-car projections through bounded PostgreSQL
 /// lanes. One exported repeatable-read snapshot is held by `owner`; every
 /// lane imports that snapshot on its own connection. The channel is bounded
 /// to two pages per lane, and only this coordinator owns the SQLite stage.
-async fn capture_history_to_stage_parallel_with_legacy_token(
+async fn capture_history_to_stage_parallel(
     source: &ReadOnlySource,
     password: &SourceDbPassword,
     selected_car_id: i64,
     limits: SourceDbReadLimits,
     imports_dir: &Path,
-    include_legacy_token: bool,
-) -> Result<
-    (
-        SourceDbStage,
-        Option<LegacyOwnerTokenCiphertexts>,
-        SourceDbOpenSession,
-    ),
-    SourceDbReaderError,
-> {
+) -> Result<(SourceDbStage, SourceDbOpenSession), SourceDbReaderError> {
     let selected_car_id = selected_source_car_id(selected_car_id)?;
     let mut stage = SourceDbStage::create(
         imports_dir,
@@ -386,11 +285,6 @@ async fn capture_history_to_stage_parallel_with_legacy_token(
     } else {
         None
     };
-    let token = if include_legacy_token && open_session.as_ref().is_some_and(Result::is_ok) {
-        Some(read_legacy_token_ciphertexts_in_client(owner.session.client()).await)
-    } else {
-        None
-    };
     let owner_result = owner.finish().await;
     let selected_car_seen = match capture {
         Ok(selected_car_seen) => selected_car_seen,
@@ -408,13 +302,6 @@ async fn capture_history_to_stage_parallel_with_legacy_token(
     if let Err(error) = owner_result {
         return Err(discard_stage_after_error(stage, error));
     }
-    let token = match token {
-        Some(Ok(token)) => Some(token),
-        Some(Err(error)) => {
-            return Err(discard_stage_after_error(stage, error));
-        }
-        None => None,
-    };
     if !selected_car_seen {
         return Err(discard_stage_after_error(
             stage,
@@ -429,7 +316,7 @@ async fn capture_history_to_stage_parallel_with_legacy_token(
             SourceDbReaderError::Stage(error),
         ));
     }
-    Ok((stage, token, open_session))
+    Ok((stage, open_session))
 }
 
 async fn coordinate_parallel_capture(

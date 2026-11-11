@@ -421,30 +421,22 @@ fn ct022_forced_rotation_vault() {
     }
 }
 
+/// A source-imported pair (external refresh owner) and a pair migrated with no
+/// recorded origin are never loaded, never handed over and never refreshed.
 #[test]
-fn ct068_owner_and_collector() {
+fn source_credential_disabled_vault_refuses_source_and_unknown_origin() {
     let root = crate::private_tempdir().expect("root");
     let source = CredentialEntry::source_token(Zeroizing::new("access-0001".into()), Zeroizing::new("refresh-0001".into())).expect("source entry");
-    let input = seed_entry(root.path(), source); let vault = open(root.path());
-    assert!(pair(&vault).refresh_owner == RefreshOwner::External, "external owner");
-    { let state = vault.lock().expect("state"); state.connection.test_connection().execute("INSERT INTO credential_legacy_fences(legacy_generation, identity, fenced_at_ms) VALUES(?1, 'opaque', 1)", [Uuid::new_v4().to_string()]).expect("opaque fence fixture"); }
-    let issued = vault.test_commit_counts().0;
-    vault.handover_owner_api_refresh_to_hub().expect("handover with opaque fence");
-    let plain = pair(&vault); assert!(plain.generation == input && plain.refresh_owner == RefreshOwner::Hub && plain.origin == Some(CredentialOrigin::SourceToken), "metadata preserved");
-    assert!(vault.test_commit_counts().0 == issued + 2, "reservation and handover counted");
-    vault.handover_owner_api_refresh_to_hub().expect("handover no-op");
-    assert!(vault.test_commit_counts().0 == issued + 2, "no-op uncounted");
-    vault.begin_refresh(OWNER, input).expect("Hub owner can begin");
+    seed_entry(root.path(), source); let vault = open(root.path());
+    assert!(matches!(vault.load(OWNER), Err(CredentialStoreError::SourceCredentialDisabled(OWNER))), "source pair refused");
     drop(vault);
     tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime").block_on(crate::credentials::assert_external_refresh_owner_contract());
     let root = admitted_migration_fixture(false, None, false, 0);
-    let vault = open_fake_migration(root.path()); let before = pair(&vault);
-    assert!(before.origin.is_none() && before.refresh_owner == RefreshOwner::External, "CT68.NULL migrated origin fixture");
-    vault.handover_owner_api_refresh_to_hub().expect("handover migrated origin");
-    let after = pair(&vault);
-    assert!(after.origin.is_none() && after.generation == before.generation
-        && after.expires_at == before.expires_at && after.next_refresh_at == before.next_refresh_at
-        && after.refresh_owner == RefreshOwner::Hub, "CT68.NULL origin and metadata retained");
+    let vault = open_fake_migration(root.path());
+    let presence = vault.credential_pair_presence(OWNER).expect("presence").expect("migrated row");
+    assert!(presence.origin.is_none(), "CT68.NULL migrated origin fixture");
+    assert!(matches!(vault.load(OWNER), Err(CredentialStoreError::UnknownOrigin(OWNER))), "unknown origin refused");
+    assert_eq!(vault.load(OWNER).unwrap_err().code(), "unknown_origin");
 }
 
 #[test]
@@ -495,7 +487,6 @@ fn ct018_failed_exclusion_vault() {
     let (vault, calls) = private_directory::with_sync_faults(true, || open_exclusion(root.path(), true));
     assert!(calls.contains(&"regular"), "CT18.keyring proof runs despite failed exclusion");
     assert!(vault.lock().expect("state").read_only, "CT18.failed proof makes read only");
-    assert!(matches!(vault.handover_owner_api_refresh_to_hub(), Err(CredentialStoreError::DurabilityUnavailable)), "CT18.handover needs durable keyring");
     unchanged(&vault, generation);
 }
 
@@ -737,7 +728,6 @@ fn ct088_barriers_open_refresh_rotation_conversion() {
     let fault = credential_keys::with_key_faults(credential_keys::KeyFaults { file_barrier_fail: true, ..Default::default() }, || vault.rotate());
     assert!(fault.is_err(), "temporary key file barrier failure");
     assert!(vault.lock().expect("state").read_only, "failed key proof forbids mutation");
-    assert!(matches!(vault.handover_owner_api_refresh_to_hub(), Err(CredentialStoreError::DurabilityUnavailable)), "handover also blocked");
     drop(vault);
     {
         let _controls = controls(); let root = admitted_migration_fixture(false, None, false, 0);

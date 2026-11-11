@@ -1,33 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use zeroize::Zeroizing;
-use crate::{CredentialVaultEntry, credentials::{CredentialError, OwnerTokens}, db::{HubStore, ReplacePolicy}};
-use super::super::{credential_envelope::CredentialSlot, credential_vault::{CredentialEntry, CredentialStoreError}};
-use super::messages::CredentialCommandError;
+use crate::{CredentialVaultEntry, credentials::{CredentialError, OwnerTokens}};
+use super::super::credential_envelope::CredentialSlot;
+use super::messages::{CredentialCommandError, source_credential_disabled};
 
+/// The kinds of hand-supplied Owner API input older Hubs accepted. Every kind
+/// is refused since M02-T02: source credentials are disabled and the Hub stores
+/// a sign-in only from its own login.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OwnerEntryKind { Direct, Provider, SourceToken }
 
-impl OwnerEntryKind {
-    fn origin(self) -> &'static str {
-        match self { Self::Direct => "direct_entry", Self::Provider => "provider_entry", Self::SourceToken => "source_token" }
-    }
-}
-
-pub struct PreparedOwnerEntry {
-    entry: CredentialEntry,
-    canonical: CanonicalOwnerTokens,
-    kind: OwnerEntryKind,
-    replace_source: bool,
-}
+/// A supplied Owner API pair that could be stored. It cannot exist: supplied
+/// input is refused, so this type has no value and nothing can persist one.
+pub struct PreparedOwnerEntry { never: std::convert::Infallible }
 impl PreparedOwnerEntry {
-    pub fn with_explicit_replacement(mut self) -> Self { self.replace_source = true; self }
+    pub fn with_explicit_replacement(self) -> Self { match self.never {} }
 }
 
 impl std::fmt::Debug for PreparedOwnerEntry {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_struct("PreparedOwnerEntry").field("origin", &self.kind.origin()).field("tokens", &self.canonical).finish()
-    }
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { match self.never {} }
 }
 
 pub struct CanonicalOwnerTokens { access: Zeroizing<String>, refresh: Zeroizing<String> }
@@ -44,37 +36,24 @@ impl CanonicalOwnerTokens {
     }
 }
 
-fn canonical_copy(text: &str) -> Zeroizing<String> {
-    let text = text.trim_matches(|value| matches!(value, ' ' | '\t' | '\r' | '\n'));
-    let mut copy = Zeroizing::new(String::with_capacity(text.len()));
-    copy.push_str(text);
-    copy
-}
-
+/// Refused: source credentials are disabled, so no supplied token (of any
+/// kind, with or without an explicit replacement) is prepared for storage.
 pub fn prepare_owner_entry(
     kind: OwnerEntryKind,
     access: Zeroizing<String>,
     refresh: Option<Zeroizing<String>>,
     replace_source: bool,
 ) -> Result<PreparedOwnerEntry, CredentialCommandError> {
-    let canonical = CanonicalOwnerTokens {
-        access: canonical_copy(&access),
-        refresh: refresh.as_ref().map_or_else(Zeroizing::default, |value| canonical_copy(value)),
-    };
-    let entry = match kind {
-        OwnerEntryKind::Direct => CredentialEntry::direct_entry(access, refresh.unwrap_or_default()),
-        OwnerEntryKind::Provider => CredentialEntry::provider_entry(access, refresh),
-        OwnerEntryKind::SourceToken => CredentialEntry::source_token(access, refresh.unwrap_or_default()),
-    }?;
-    Ok(PreparedOwnerEntry { entry, canonical, kind, replace_source })
+    drop((access, refresh));
+    let _ = (kind, replace_source);
+    Err(source_credential_disabled())
 }
 
+/// Refused, as [`prepare_owner_entry`]: a decrypted or otherwise obtained
+/// pair is never prepared for storage.
 pub fn prepare_owner_tokens(kind: OwnerEntryKind, tokens: OwnerTokens, replace_source: bool) -> Result<PreparedOwnerEntry, CredentialCommandError> {
-    let mut access = Zeroizing::new(String::with_capacity(tokens.access_token().len()));
-    access.push_str(tokens.access_token());
-    let mut refresh = Zeroizing::new(String::with_capacity(tokens.refresh_token().len()));
-    refresh.push_str(tokens.refresh_token());
-    prepare_owner_entry(kind, access, Some(refresh), replace_source)
+    drop(tokens);
+    prepare_owner_entry(kind, Zeroizing::default(), None, replace_source)
 }
 
 #[cfg(debug_assertions)]
@@ -86,21 +65,13 @@ pub fn spend_refresh_for_test(entry: &CredentialVaultEntry, fleet: bool) -> Resu
     Ok(())
 }
 
-/// R77's import check runs before the caller opens any source ciphertext.
-pub fn check_token_import_continuity(store: &HubStore) -> Result<(), CredentialCommandError> {
-    if store.credential_opaque_fence_count().map_err(CredentialStoreError::from)? > 0 {
-        return Err(CredentialStoreError::FreshSignInRequired.into());
-    }
-    Ok(())
-}
-
-/// One bridge, one barrier, then the optional provider-switch clear.
+/// Unreachable by construction: no [`PreparedOwnerEntry`] value exists.
 pub fn persist_owner_entry(
     entry: &CredentialVaultEntry,
     prepared: PreparedOwnerEntry,
     clear_fleet: bool,
 ) -> Result<CanonicalOwnerTokens, CredentialCommandError> {
-    persist_owner_entry_with_notice(entry, prepared, clear_fleet, &mut std::io::stderr().lock())
+    persist_owner_entry_with_notice(entry, prepared, clear_fleet, &mut std::io::sink())
 }
 
 pub fn persist_owner_entry_with_notice(
@@ -109,55 +80,33 @@ pub fn persist_owner_entry_with_notice(
     clear_fleet: bool,
     notice: &mut impl std::io::Write,
 ) -> Result<CanonicalOwnerTokens, CredentialCommandError> {
-    let PreparedOwnerEntry { entry: supplied, canonical, kind, replace_source } = prepared;
-    let policy = if kind == OwnerEntryKind::SourceToken && !replace_source { ReplacePolicy::OnlyIfEmpty } else { ReplacePolicy::ReplaceAny };
-    if kind == OwnerEntryKind::SourceToken && replace_source {
-        writeln!(notice, "{}", super::REPLACE_IMPORT_WARNING).map_err(|_| CredentialCommandError::new("credential_store_unavailable"))?;
-    }
-    entry.vault().store_supplied_entry(supplied, policy)?;
-    tracing::info!(slot = "owner_api", origin = kind.origin(), refresh_owner = if kind == OwnerEntryKind::SourceToken { "external" } else { "hub" }, provenance = "supplied", "credential write");
-    if clear_fleet {
-        if let Err(error) = entry.vault().clear_credential_pair(CredentialSlot::FleetApi) {
-            let mut error = CredentialCommandError::from(error);
-            error.pair_stored = true;
-            error.operation = Some("clear_fleet_api");
-            tracing::error!(operation = "clear_fleet_api", outcome = "new_pair_retained", code = error.code(), "credential provider switch");
-            return Err(error);
-        }
-    }
-    Ok(canonical)
+    let _ = (entry, clear_fleet, notice);
+    match prepared.never {}
 }
 
-pub struct PreparedFleetEntry { entry: CredentialEntry }
+/// A supplied Fleet pair that could be stored. It cannot exist: Fleet token
+/// input is refused, so this type has no value.
+pub struct PreparedFleetEntry { never: std::convert::Infallible }
 
 impl std::fmt::Debug for PreparedFleetEntry {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_struct("PreparedFleetEntry").field("entry", &self.entry).finish()
-    }
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { match self.never {} }
 }
 
+/// Refused: Fleet tokens are never supplied to the Hub.
 pub fn prepare_fleet_entry(
     access: Zeroizing<String>, refresh: Zeroizing<String>, client_id: String,
     region: crate::fleet_api::FleetRegion, expires_in: u64,
 ) -> Result<PreparedFleetEntry, CredentialCommandError> {
-    Ok(PreparedFleetEntry { entry: CredentialEntry::fleet_supplied(access, refresh, client_id, region, expires_in)? })
+    drop((access, refresh));
+    let _ = (client_id, region, expires_in);
+    Err(source_credential_disabled())
 }
 
 pub fn persist_fleet_entry(
     entry: &CredentialVaultEntry, prepared: PreparedFleetEntry, clear_owner: bool,
 ) -> Result<(), CredentialCommandError> {
-    entry.vault().store_supplied_entry(prepared.entry, ReplacePolicy::ReplaceAny)?;
-    tracing::info!(slot = "fleet_api", origin = "fleet_oauth", refresh_owner = "hub", provenance = "supplied", "credential write");
-    if clear_owner {
-        if let Err(error) = entry.vault().clear_credential_pair(CredentialSlot::OwnerApi) {
-            let mut error = CredentialCommandError::from(error);
-            error.pair_stored = true;
-            error.operation = Some("clear_owner_api");
-            tracing::error!(operation = "clear_owner_api", outcome = "new_pair_retained", code = error.code(), "credential provider switch");
-            return Err(error);
-        }
-    }
-    Ok(())
+    let _ = (entry, clear_owner);
+    match prepared.never {}
 }
 
 pub fn clear_owner_after_fleet(entry: &CredentialVaultEntry) -> Result<(), CredentialCommandError> {

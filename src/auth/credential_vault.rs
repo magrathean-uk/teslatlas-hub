@@ -45,13 +45,15 @@ pub(crate) enum CredentialStoreError {
     InvalidOrigin, SuccessorNotCanonical, MigrationPending(CredentialSlot),
     MigrationBlocked(CredentialSlot), DurabilityUnavailable, BackupExclusionFailed,
     SensitiveAccessUnavailable, LockPoisoned, InvalidTokenBytes, SignIn(SignInError),
+    SourceCredentialDisabled(CredentialSlot), UnknownOrigin(CredentialSlot),
     Store(StoreError),
 }
 impl std::fmt::Debug for CredentialStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let slot = match self {
             Self::Envelope { slot, .. } | Self::FingerprintMismatch(slot)
-                | Self::MigrationPending(slot) | Self::MigrationBlocked(slot) => Some(slot),
+                | Self::MigrationPending(slot) | Self::MigrationBlocked(slot)
+                | Self::SourceCredentialDisabled(slot) | Self::UnknownOrigin(slot) => Some(slot),
             _ => None,
         };
         f.debug_struct("CredentialStoreError").field("code", &self.code()).field("slot", &slot).finish()
@@ -83,9 +85,31 @@ impl CredentialStoreError {
             Self::DurabilityUnavailable => "durability_unavailable", Self::BackupExclusionFailed => "secrets_backup_exclusion_failed",
             Self::SensitiveAccessUnavailable => "sensitive_access_unavailable", Self::LockPoisoned => "credential_lock_poisoned",
             Self::SignIn(error) => error.code(), Self::Store(StoreError::CredentialEnvelope(error)) => envelope(error),
+            Self::SourceCredentialDisabled(_) => "source_credential_disabled", Self::UnknownOrigin(_) => "unknown_origin",
             Self::Store(_) => "credential_store_unavailable",
         }
     }
+}
+/// Source credentials are disabled (M02-T02). Each slot admits exactly one
+/// origin: the Owner API slot a pair from the Hub's own login, the Fleet slot a
+/// pair from Fleet OAuth, both refreshed by the Hub. Every other origin (a
+/// source import, a hand-entered or provider token) is
+/// `source_credential_disabled`; a pair with no recorded origin (written
+/// before origins existed) is `unknown_origin`. This is a header check on the
+/// stored row: it runs before any key is selected or any envelope is opened,
+/// and no setting, flag, variable or acknowledgement changes it.
+pub(crate) fn admit_stored_origin(slot: CredentialSlot, origin: Option<CredentialOrigin>, owner: RefreshOwner) -> Result<(), CredentialStoreError> {
+    let own = match slot { CredentialSlot::OwnerApi => CredentialOrigin::HubLogin, CredentialSlot::FleetApi => CredentialOrigin::FleetOauth };
+    match origin {
+        Some(origin) if origin == own && owner == RefreshOwner::Hub => Ok(()),
+        Some(_) => Err(CredentialStoreError::SourceCredentialDisabled(slot)),
+        None => Err(CredentialStoreError::UnknownOrigin(slot)),
+    }
+}
+/// The stable refusal code of [`admit_stored_origin`], for projections that
+/// report a stored pair without opening it.
+pub(crate) fn stored_origin_refusal(slot: CredentialSlot, origin: Option<CredentialOrigin>, owner: RefreshOwner) -> Option<&'static str> {
+    admit_stored_origin(slot, origin, owner).err().map(|error| error.code())
 }
 impl From<StoreError> for CredentialStoreError {
     fn from(error: StoreError) -> Self {
@@ -429,6 +453,7 @@ impl CredentialVault {
             other => other.into(),
         })?;
         #[cfg(test)] self.pause_read("after_snapshot");
+        if let Some(row) = row.as_ref() { admit_stored_origin(row.slot, row.origin, row.refresh_owner)?; }
         let keys = self.keys.read().map_err(|_| CredentialStoreError::LockPoisoned)?;
         drop(state);
         row.map(|row| Self::decrypt(&row, keys.as_ref().ok_or(CredentialKeyError::KeyringMissing)?)).transpose()
@@ -653,9 +678,25 @@ impl CredentialVault {
         if matches!(result, Err(CredentialKeyError::DurabilityUnavailable)) { state.read_only = true; }
         result.map_err(Into::into)
     }
+    /// Fixture seeding only: production stores a pair solely from the Hub's
+    /// own login (`store_hub_grant`), because source credentials are disabled
+    /// and no supplied token is accepted. A fixture entry built with the own
+    /// login origin is written through a fresh sign-in binding, exactly as a
+    /// redeemed grant is; any other origin is written as the supplied row an
+    /// older Hub could hold, so the load refusal can be exercised.
+    #[cfg(any(test, debug_assertions, feature = "interop-fixture"))]
     pub(in crate::auth) fn store_supplied_entry(&self, entry: CredentialEntry, policy: ReplacePolicy) -> Result<Uuid, CredentialStoreError> {
         let mut state = self.lock()?; state.writable(true)?; Self::slot_writable(&mut state, entry.slot)?;
-        state.connection.check_supplied_credential_entry(entry.slot, entry.refresh.as_bytes(), &entry.legacy, policy)?;
+        let own_login = entry.origin == CredentialOrigin::HubLogin;
+        let binding = if own_login {
+            let secret = own_login_grant_secret()?;
+            let id = state.connection.insert_sign_in_binding(entry.slot, own_login_binding(&secret), self.now_ms()?)?;
+            state.barrier()?;
+            Some((id, secret))
+        } else {
+            state.connection.check_supplied_credential_entry(entry.slot, entry.refresh.as_bytes(), &entry.legacy, policy)?;
+            None
+        };
         let generation = Uuid::new_v4();
         let mut row = entry.row(generation);
         let mut keys = self.keys.write().map_err(|_| CredentialStoreError::LockPoisoned)?;
@@ -677,8 +718,12 @@ impl CredentialVault {
             row.seal(keys.as_ref().unwrap(), entry.access.as_bytes(), entry.refresh.as_bytes(), &mut OsNonces)?;
         }
         #[cfg(debug_assertions)] entry::test_boundary("entry_sealed")?;
+        let provenance = match &binding {
+            Some((sign_in_id, grant_secret)) => EntryProvenance::HubGrant { sign_in_id: *sign_in_id, grant_secret },
+            None => EntryProvenance::Supplied,
+        };
         let VaultState { connection, commits_issued, .. } = &mut *state;
-        connection.replace_credential_pair_with_commit(&row, &EntryProvenance::Supplied, &entry.legacy, policy, &mut || *commits_issued += 1)?;
+        connection.replace_credential_pair_with_commit(&row, &provenance, &entry.legacy, policy, &mut || *commits_issued += 1)?;
         #[cfg(debug_assertions)] entry::test_boundary("entry_committed")?;
         state.barrier()?; Ok(generation)
     }
@@ -781,27 +826,6 @@ impl CredentialVault {
         state.guard_read()?;
         let mut keys = self.keys.write().map_err(|_| CredentialStoreError::LockPoisoned)?;
         self.phase_b(&mut state, &mut keys)
-    }
-    /// TRANSITIONAL: V2's explicit handover changes the refresh owner.
-    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 refresh-owner handover."))]
-    pub(in crate::auth) fn handover_owner_api_refresh_to_hub(&self) -> Result<(), CredentialStoreError> {
-        let mut state = self.lock()?; state.writable(false)?; state.guard_read()?;
-        let slot = CredentialSlot::OwnerApi;
-        let Some(mut row) = state.connection.load_credential_pair(slot)? else { return Ok(()); };
-        let mut keys = self.keys.write().map_err(|_| CredentialStoreError::LockPoisoned)?;
-        let plain = Self::decrypt(&row, keys.as_ref().ok_or(CredentialKeyError::KeyringMissing)?)?;
-        if row.refresh_owner == RefreshOwner::Hub { return Ok(()); }
-        // R36 is exempt from exclusion unless its reservation requires rotation.
-        let id = keys.as_ref().unwrap().keyring().current.id;
-        if state.connection.credential_reserved_invocations(id)? + 2 > credential_keys::FORCED_ROTATION_INVOCATIONS { self.rotate_locked(&mut state, &mut keys)?; }
-        let VaultState { connection, commits_issued, .. } = &mut *state;
-        connection.reserve_credential_invocations_with_commit(keys.as_ref().unwrap().keyring().current.id, 2, &mut || *commits_issued += 1)?;
-        state.commits_proven = state.commits_issued;
-        row.refresh_owner = RefreshOwner::Hub;
-        row.seal(keys.as_ref().unwrap(), plain.access.as_bytes(), plain.refresh.as_bytes(), &mut OsNonces)?;
-        let VaultState { connection, commits_issued, .. } = &mut *state;
-        connection.set_credential_refresh_owner_with_commit(&row, row.generation, &mut || *commits_issued += 1)?;
-        state.barrier()
     }
 }
 

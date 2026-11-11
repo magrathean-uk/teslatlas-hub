@@ -95,9 +95,8 @@ fn source_check_success_report(
         "maximumValidatedMigrationVersion":snapshot.schema.maximum_validated_migration_version,
         "selectedCarId":car_id,"connection":snapshot.connection,"selectedCar":snapshot.selected_car,
         "openSessions":snapshot.open_sessions,"selectedCarCounts":snapshot.selected_car_counts,
-        "sourceTotals":snapshot.source_totals,"sourceTokensRelationPresent":snapshot.source_tokens_relation_present,
-        "legacyTokenPair":snapshot.legacy_token_pair,"sourceNeverMutated":true,
-        "credentialScope":if history_only {"history-only"} else {"credentials-and-history"},
+        "sourceTotals":snapshot.source_totals,"sourceNeverMutated":true,
+        "credentialScope":"history-only","credentialsInspected":false,
         "applicationVersionStatus":if history_only {"unknown"} else {"operator-acknowledged"},
         "versionEvidence":"database_schema_only","schemaEvidence":"v4_2_compatible_schema",
         "versionAcknowledged":accept_schema_evidence,"guidance":guidance,
@@ -198,15 +197,6 @@ fn source_check_failure_details(
             None,
             "The source database has more than one open drive, charging process, or state. Finish or repair those sessions, then retry.",
         ),
-        SourceDbReaderError::LegacyTokenPairMissing
-        | SourceDbReaderError::LegacyTokenPairAmbiguous
-        | SourceDbReaderError::LegacyTokenPairEmpty
-        | SourceDbReaderError::LegacyTokenCiphertextTooLarge { .. } => (
-            "incompatible",
-            "legacy_token_pair_invalid",
-            None,
-            "The source application must contain exactly one non-empty, bounded legacy OAuth token pair before migration. Repair or sign in to the source application again, then retry.",
-        ),
         SourceDbReaderError::SourceReadBudgetExceeded { .. } => (
             "incompatible",
             "source_read_budget_exceeded",
@@ -265,17 +255,11 @@ async fn run_source_check(
             .into());
         }
     };
-    let snapshot = if history_only {
-        check_source_history_compatibility(
-            &source,
-            &password,
-            car_id,
-            SourceDbReadLimits::default(),
-        )
-        .await
-    } else {
-        check_source_compatibility(&source, &password, car_id, SourceDbReadLimits::default()).await
-    };
+    // Source credentials are disabled: every check reads history only and
+    // never names, counts or probes the source's credential relation.
+    let snapshot =
+        check_source_history_compatibility(&source, &password, car_id, SourceDbReadLimits::default())
+            .await;
     match snapshot {
         Ok(snapshot) => {
             print_source_check_success(car_id, &snapshot, history_only, accept_schema_evidence);

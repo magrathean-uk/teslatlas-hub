@@ -41,10 +41,10 @@ use super::{
     MAX_MIGRATION_TOKEN_FILE_BYTES, MacCommandProxySpec, MacServeControl,
     MacServeWorkerStopTimeout, MigrationSecretReadError, clear_provider_credentials,
     command_requires_user_hub_admission, decode_setup_fleet_stdin, migration_start_requested,
-    migration_stop_confirmed, persist_fleet_setup_and_drop_legacy,
+    migration_stop_confirmed,
     read_migration_encryption_key, read_migration_postgres_password, read_migration_secret,
     read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
-    should_emit_migration_progress, should_preserve_existing_migration_credentials,
+    should_emit_migration_progress,
     source_check_failure_details, source_db_version_confirmation, validate_history_only_config,
     validate_legacy_setup_provider, validate_streaming_setting, write_migration_progress_event,
 };
@@ -307,12 +307,56 @@ fn migration_progress_is_online_snapshot_only() {
     assert!(!should_emit_migration_progress(false));
 }
 
+/// Source credentials are disabled: every `migrate` key or token input and
+/// every `setup` token input is refused with the one stable code before any
+/// named path is opened, the configuration is read or a store is created.
 #[cfg(target_os = "macos")]
-#[test]
-fn online_snapshot_preserves_existing_hub_credentials() {
-    assert!(should_preserve_existing_migration_credentials(true, true));
-    assert!(!should_preserve_existing_migration_credentials(true, false));
-    assert!(!should_preserve_existing_migration_credentials(false, true));
+#[tokio::test]
+async fn source_credential_disabled_cli_inputs_are_refused_before_any_read() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let sealed = temporary.path().join("sealed");
+    fs::create_dir(&sealed).expect("sealed directory");
+    let secret = sealed.join("unread");
+    fs::set_permissions(&sealed, fs::Permissions::from_mode(0o000)).expect("seal");
+    let data_dir = temporary.path().join("data");
+    fs::create_dir(&data_dir).expect("data directory");
+    let admission = super::AdmittedUserHub::admit(&data_dir).expect("admission");
+    let config_path = temporary.path().join("absent-config.toml");
+    for (key, access, refresh) in [(Some(&secret), None, None), (None, Some(&secret), Some(&secret)), (None, Some(&secret), None)] {
+        let error = super::run_macos_migration(&admission, super::MacMigrationInput {
+            config_path: &config_path,
+            source_url: "postgresql://reader@127.0.0.1:9/sourcedb",
+            car_id: 42,
+            source_key: None,
+            new_import_source: false,
+            postgres_password_file: &secret,
+            history_only: false,
+            encryption_key_file: key.map(PathBuf::as_path),
+            access_token_file: access.map(PathBuf::as_path),
+            refresh_token_file: refresh.map(PathBuf::as_path),
+            online_snapshot: true,
+            preserve_existing_credentials: false,
+        }).await.expect_err("source credential input").to_string();
+        assert!(error.starts_with("source_credential_disabled: "), "{error}");
+    }
+    for (primary, deprecated) in [(Some(secret.clone()), None), (None, Some(secret.clone())), (Some(PathBuf::from("-")), None)] {
+        let command = Command::Migrate {
+            source_key: None, new_import_source: false,
+            source: "postgresql://reader@127.0.0.1:9/sourcedb".to_owned(), car_id: 42,
+            postgres_password_file: secret.clone(), history_only: false,
+            source_token_key_file: primary, encryption_key_file: deprecated,
+            access_token_file: None, refresh_token_file: None, online_snapshot: true,
+            preserve_existing_credentials: false, replace_credentials: false, accept_schema_evidence: true,
+        };
+        let error = super::prepare_migration_key_input(&command, &config_path).expect_err("source key input").to_string();
+        assert!(error.starts_with("source_credential_disabled: "), "{error}");
+    }
+    let error = super::read_setup_token_file(&secret, MAX_MIGRATION_TOKEN_FILE_BYTES).expect_err("setup token file").to_string();
+    assert!(error.starts_with("source_credential_disabled: "), "{error}");
+    let error = super::read_setup_fleet_from_stdin().expect_err("Fleet tokens on standard input").to_string();
+    assert!(error.starts_with("source_credential_disabled: "), "{error}");
+    fs::set_permissions(&sealed, fs::Permissions::from_mode(0o700)).expect("unseal");
+    assert!(!config_path.exists() && !data_dir.join("hub.sqlite").exists(), "nothing was created");
 }
 
 #[cfg(target_os = "macos")]
@@ -619,7 +663,7 @@ async fn migration_without_version_confirmation_does_not_create_hub_target() {
             postgres_password_file: PathBuf::from("unused-password"),
             history_only: false,
             source_token_key_file: None,
-            encryption_key_file: Some(PathBuf::from("unused-key")),
+            encryption_key_file: None,
             access_token_file: None,
             refresh_token_file: None,
             online_snapshot: true,
@@ -782,28 +826,14 @@ fn migration_password_and_token_semantic_boundaries_include_line_endings() {
     for path in [&access_path, &refresh_path] {
         fs::set_permissions(path, fs::Permissions::from_mode(0o600)).expect("token mode");
     }
-    let prepare = || credentials::decode_owner_files(
+    // Source credentials are disabled: token bytes, however well bounded, are
+    // refused and never stored.
+    let refused = credentials::decode_owner_files(
         read_migration_secret(&access_path, MAX_MIGRATION_TOKEN_FILE_BYTES).expect("access custody"),
         read_migration_secret(&refresh_path, MAX_MIGRATION_TOKEN_FILE_BYTES).expect("refresh custody"),
         credentials::OwnerEntryKind::SourceToken,
-    );
-    let prepared = prepare().expect("semantic token cap");
-    let data = temporary.path().join("entry-data");
-    let scope = credentials::SignInScope::open_for_test(&data, true).expect("entry process");
-    drop(credentials::persist_owner_entry(scope.entry(), prepared, false).expect("entry barrier"));
-    scope.release().expect("release");
-    let connection = rusqlite::Connection::open_with_flags(data.join("hub.sqlite"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).expect("read-only observer");
-    let lengths: (i64, i64) = connection.query_row("SELECT length(access_envelope),length(refresh_envelope) FROM credential_pairs WHERE slot='owner_api'", [], |row| Ok((row.get(0)?,row.get(1)?))).expect("sealed lengths");
-    assert_eq!(lengths, (MAX_MIGRATION_TOKEN_BYTES as i64 + 39 + 12 + 16, MAX_MIGRATION_TOKEN_BYTES as i64 + 39 + 12 + 16));
-    let access = zeroize::Zeroizing::new("a".repeat(MAX_MIGRATION_TOKEN_BYTES));
-    let refresh = zeroize::Zeroizing::new("b".repeat(MAX_MIGRATION_TOKEN_BYTES));
-    assert!(credentials::pair_matches_for_test(&data, false, &access, &refresh).expect("canonical pair"));
-
-    fs::write(&access_path, vec![b'a'; MAX_MIGRATION_TOKEN_BYTES + 1])
-        .expect("oversized access token");
-    fs::set_permissions(&access_path, fs::Permissions::from_mode(0o600)).expect("token mode");
-    assert!(matches!(prepare().unwrap_err(), credentials::OwnerInputError::Credential(error) if error.code() == "token_too_large"));
-    assert!(credentials::pair_matches_for_test(&data, false, &access, &refresh).expect("oversize refusal changes no pair"));
+    ).unwrap_err();
+    assert!(matches!(refused, credentials::OwnerInputError::Credential(error) if error.code() == "source_credential_disabled"));
 }
 
 #[cfg(target_os = "macos")]
@@ -1943,7 +1973,8 @@ fn fleet_setup_is_stdin_only_and_decodes_bounded_fields() {
         decode_setup_fleet_stdin(
             br#"{"accessToken":"e30.eyJzY3AiOlsib3BlbmlkIiwidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iLCJ2ZWhpY2xlX2NtZHMiLCJ2ZWhpY2xlX2NoYXJnaW5nX2NtZHMiXX0.sig","refreshToken":"refresh","clientId":"client","region":"europe_middle_east_and_africa","expiresInSeconds":3600}"#,
         )
-        .is_ok()
+        .is_err_and(|error| error.to_string().starts_with("source_credential_disabled: ")),
+        "Fleet token input is refused, however well formed"
     );
     assert!(
         decode_setup_fleet_stdin(
@@ -2014,44 +2045,23 @@ fn sign_out_attempts_legacy_removal_after_fleet_key_failure() {
     assert!(status.fleet_credentials.present, "failed Fleet clear retains its row");
 }
 
+/// Setup and migration token inputs are refused and change no stored pair.
 #[cfg(target_os = "macos")]
 #[test]
-fn setup_clears_the_other_provider_token_generation() {
+fn source_credential_disabled_setup_and_migrate_token_inputs_change_nothing() {
     use teslatlas_hub::auth::credential_sign_in as credentials;
     let (temporary, store) = v2_credential_pair_fixture(false);
-    let scope = credentials::SignInScope::open_for_test(temporary.path(), true).expect("Owner setup process");
-    let prepared = credentials::decode_owner_entry(br#"{"accessToken":"access-0001","refreshToken":"refresh-0001"}"#, credentials::OwnerEntryKind::Direct, false).expect("Owner input");
-    drop(super::persist_legacy_setup_and_drop_fleet(scope.entry(), prepared).expect("Owner barrier and Fleet clear"));
-    scope.release().expect("release");
-    let first = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("status");
-    assert!(first.legacy_credentials.present && !first.fleet_credentials.present);
-    let claims = base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, br#"{"scp":["openid","offline_access","vehicle_device_data","vehicle_location"]}"#);
-    let access = zeroize::Zeroizing::new(format!("e30.{claims}.sig"));
-    let line = zeroize::Zeroizing::new(format!(r#"{{"accessToken":"{}","refreshToken":"refresh-0003","clientId":"client-0001","region":"europe_middle_east_and_africa","expiresInSeconds":3600}}"#, access.as_str()));
-    let prepared = credentials::decode_fleet_entry(line.as_bytes()).expect("Fleet input");
-    let scope = credentials::SignInScope::open_for_test(temporary.path(), true).expect("Fleet setup process");
-    drop(persist_fleet_setup_and_drop_legacy(scope.entry(), prepared).expect("Fleet barrier and Owner clear"));
-    scope.release().expect("release");
-    let second = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("status");
-    assert!(!second.legacy_credentials.present && second.fleet_credentials.present);
-    assert_eq!((second.fleet_credentials.origin, second.fleet_credentials.refresh_owner), (Some("fleet_oauth"), Some("hub")));
-}
-
-#[cfg(target_os = "macos")]
-#[test]
-fn migrate_copies_legacy_tokens_without_deleting_fleet() {
-    use teslatlas_hub::auth::credential_sign_in as credentials;
-    let (temporary, store) = v2_credential_pair_fixture(false);
-    let before = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("before").fleet_credentials;
-    credentials::check_token_import_continuity(&store).expect("continuity before source input");
-    let prepared = credentials::decode_owner_files(zeroize::Zeroizing::new(b" access-0001\r\n".to_vec()), zeroize::Zeroizing::new(b"refresh-0001\n".to_vec()), credentials::OwnerEntryKind::SourceToken).expect("source input");
-    let scope = credentials::SignInScope::open_for_test(temporary.path(), true).expect("migration scope");
-    drop(credentials::persist_owner_entry(scope.entry(), prepared, false).expect("migration credential barrier"));
-    scope.release().expect("release");
+    let before = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("before");
+    for kind in [credentials::OwnerEntryKind::Direct, credentials::OwnerEntryKind::Provider, credentials::OwnerEntryKind::SourceToken] {
+        let refused = credentials::decode_owner_entry(br#"{"accessToken":"access-0003","refreshToken":"refresh-0003"}"#, kind, false).unwrap_err();
+        assert!(matches!(refused, credentials::OwnerInputError::Credential(error) if error.code() == "source_credential_disabled"));
+        let refused = credentials::decode_owner_files(zeroize::Zeroizing::new(b" access-0003\r\n".to_vec()), zeroize::Zeroizing::new(b"refresh-0003\n".to_vec()), kind).unwrap_err();
+        assert!(matches!(refused, credentials::OwnerInputError::Credential(error) if error.code() == "source_credential_disabled"));
+    }
+    let refused = credentials::decode_fleet_entry(br#"{"accessToken":"e30.e30.sig","refreshToken":"refresh-0003","clientId":"client-0001","region":"europe_middle_east_and_africa","expiresInSeconds":3600}"#).unwrap_err();
+    assert!(refused.to_string().starts_with("source_credential_disabled: "));
     let after = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("after");
-    assert_eq!(after.fleet_credentials, before, "migration keeps Fleet metadata");
-    assert_eq!((after.legacy_credentials.origin, after.legacy_credentials.refresh_owner, after.legacy_credentials.expires_at, after.legacy_credentials.next_refresh_at), (Some("source_token"), Some("external"), Some(0), Some(0)));
-    assert!(credentials::pair_matches_for_test(temporary.path(), false, "access-0001", "refresh-0001").expect("canonical source pair"));
+    assert_eq!(after, before, "no stored pair changed");
     assert!(credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").expect("Fleet pair retained"));
 }
 
@@ -2108,7 +2118,7 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         postgres_password_file: PathBuf::from("password"),
         history_only: false,
         source_token_key_file: None,
-        encryption_key_file: Some(PathBuf::from("key")),
+        encryption_key_file: None,
         access_token_file: None,
         refresh_token_file: None,
         online_snapshot: false,

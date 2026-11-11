@@ -438,6 +438,10 @@ fn provider_credentials_are_usable(
                 .map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"credential presence unavailable"))?
                 .ok_or_else(||io::Error::new(io::ErrorKind::InvalidData,"legacy Owner API credentials are required before install"))?;
             presence.header_check.map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"credential header unreadable"))?;
+            // Source credentials are disabled: only the Hub's own login is usable.
+            if let Some(code)=crate::auth::credential_vault::stored_origin_refusal(presence.slot,presence.origin,presence.refresh_owner) {
+                return Err(io::Error::new(io::ErrorKind::InvalidData,format!("{code}: sign in with the Hub's own login before install")));
+            }
             let secrets=crate::platform::private_directory::open_validated_read_only(&data_dir.join("secrets"))
                 .map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"credential directory unavailable"))?
                 .ok_or_else(||io::Error::new(io::ErrorKind::InvalidData,"credential keyring missing"))?;

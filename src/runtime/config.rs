@@ -268,10 +268,13 @@ impl TlsListenerConfig {
 
 /// Explicit settings for a manual or supervised legacy owner-token read.
 ///
-/// The default is Tesla's legacy Owner API. A loopback endpoint may override it
-/// for local tests. The URL cannot contain credentials or query parameters.
-/// Supervised collection runs by default. Set `interval_seconds = 0` to
-/// disable it explicitly.
+/// The default is Tesla's legacy Owner API with the Hub's own login, which the
+/// Hub refreshes itself (`[collector.legacy_auth] enabled`, no provider URL).
+/// A loopback endpoint may override it for local tests. The URL cannot contain
+/// credentials or query parameters. Collection is off by default
+/// (`interval_seconds = 0`): a fresh configuration sends nothing to Tesla.
+/// No key of this table, or of any other, names a token, a token file or
+/// another application's key; source credentials are disabled.
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CollectorConfig {
@@ -281,7 +284,8 @@ pub struct CollectorConfig {
     pub owner_api_base_url: Option<String>,
     #[serde(default = "default_owner_api_timeout_seconds")]
     pub request_timeout_seconds: u64,
-    /// Positive interval for `collect-supervised`; explicit zero disables it.
+    /// Positive interval for `collect-supervised`; zero, the default, keeps
+    /// collection off.
     #[serde(default = "default_collector_interval_seconds")]
     pub interval_seconds: u64,
     #[serde(default = "default_collector_max_backoff_seconds")]
@@ -434,10 +438,11 @@ const MIN_REQUEST_TIMEOUT_SECONDS: u64 = 1;
 /// request slot for minutes.
 const MAX_REQUEST_TIMEOUT_SECONDS: u64 = 120;
 
-/// `interval_seconds` default, the Owner-wire inventory list interval (C3 R16,
-/// R20): a car added to or removed from the account is seen within five
-/// minutes. The list only runs when no state check is already due.
-const DEFAULT_INVENTORY_INTERVAL_SECONDS: u64 = 300;
+/// The recommended `interval_seconds`, the Owner-wire inventory list interval
+/// (C3 R16, R20): a car added to or removed from the account is seen within
+/// five minutes. The list only runs when no state check is already due. It is
+/// not the default: collection is off until configured.
+pub const DEFAULT_INVENTORY_INTERVAL_SECONDS: u64 = 300;
 
 /// `max_backoff_seconds` default (C3 R44): half of `T_gap`, so a vehicle in a
 /// session is retried at least twice in every `T_gap` window and a recovering
@@ -569,8 +574,12 @@ fn default_owner_api_base_url() -> Option<String> {
     Some(TESLA_OWNER_API_GLOBAL_URL.to_owned())
 }
 
+/// Collection is off unless configured (M02-T02): a fresh configuration
+/// selects the Hub's own login and collects nothing. A positive value is the
+/// inventory interval; [`DEFAULT_INVENTORY_INTERVAL_SECONDS`] is the
+/// recommended one.
 const fn default_collector_interval_seconds() -> u64 {
-    DEFAULT_INVENTORY_INTERVAL_SECONDS
+    0
 }
 
 const fn default_collector_max_backoff_seconds() -> u64 {

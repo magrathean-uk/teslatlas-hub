@@ -47,7 +47,6 @@ use teslatlas_hub::{
     source_db_connection::ReadOnlySource,
     source_db_import::{
         SourceDbImportReport, SourceDbImportRequest, SourceDbImportScope,
-        import_selected_from_postgres_with_schema_22_and_legacy_token_and_progress,
         import_selected_from_postgres_with_schema_22_and_progress,
         import_selected_history_snapshot_from_postgres_with_schema_22_and_progress,
     },
@@ -55,15 +54,12 @@ use teslatlas_hub::{
         SourceDbMigrationPhase, SourceDbMigrationProgressEvent, SourceDbMigrationProgressReporter,
     },
     source_db_reader::{
-        LegacyOwnerTokenCiphertexts, SourceDbCheckSnapshot, SourceDbReadLimits,
-        SourceDbReaderError, check_source_compatibility, check_source_history_compatibility,
+        SourceDbCheckSnapshot, SourceDbReadLimits, SourceDbReaderError,
+        check_source_history_compatibility,
     },
     source_db_schema::{
         MAX_VALIDATED_MIGRATION, SOURCE_DB_V4_MIGRATION_COUNT, SOURCE_DB_V4_SOURCE_REVISION,
         SchemaCompatibilityError,
-    },
-    source_token_envelope::{
-        decrypt_legacy_owner_tokens,  
     },
 };
 use tracing_subscriber::EnvFilter;

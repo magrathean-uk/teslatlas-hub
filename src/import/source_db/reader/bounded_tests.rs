@@ -520,13 +520,13 @@ fn a_refused_row_does_not_consume_any_budget() {
 #[test]
 fn budget_errors_name_the_table_and_the_limit_never_a_value() {
     let error = SourceDbReaderError::SourceReadBudgetExceeded {
-        table: "private.tokens",
+        table: "public.settings",
         limit: SourceBudgetLimit::RowBytes,
         maximum: MAX_SOURCE_ROW_BYTES,
     };
     assert_eq!(
         error.to_string(),
-        "source private.tokens read exceeded its per-row byte budget of 16777216"
+        "source public.settings read exceeded its per-row byte budget of 16777216"
     );
     assert_eq!(
         SourceDbReaderError::SourceReadBudgetExceeded {
@@ -548,7 +548,7 @@ fn budget_error_text_never_names_the_source_project() {
         SourceBudgetLimit::RowBytes,
         SourceBudgetLimit::PageBytes,
     ] {
-        for table in ["positions", "private.tokens", "states"] {
+        for table in ["positions", "public.settings", "states"] {
             let text = SourceDbReaderError::SourceReadBudgetExceeded {
                 table,
                 limit,
@@ -618,12 +618,10 @@ fn page_budget_derives_rows_and_row_cap_from_the_limits() {
     assert_eq!(invalid.page_budget().max_rows, 1);
 
     assert_eq!(defaults.budget_for_rows(2).max_rows, 2);
-    // LIMIT 1 reads keep one row; LIMIT 2 reads (settings singleton, token
-    // pair) keep a second, lookahead row so ambiguity stays a typed error.
+    // LIMIT 1 reads keep one row; LIMIT 2 reads (the settings singleton) keep
+    // a second, lookahead row so ambiguity stays a typed error.
     assert_eq!(defaults.singleton_budget().max_rows, 1);
     assert_eq!(defaults.ambiguity_budget().max_rows, 2);
-    assert_eq!(legacy_token_budget().max_rows, 2);
-    assert_eq!(legacy_token_budget().page_bytes, MAX_SOURCE_PAGE_BYTES);
     assert_eq!(defaults.copy_budget().max_rows, usize::MAX);
     assert_eq!(SourceReadBudget::fixed(7).page_bytes, MAX_SOURCE_PAGE_BYTES);
     assert_eq!(SourceReadBudget::fixed(7).row_bytes, MAX_SOURCE_ROW_BYTES);

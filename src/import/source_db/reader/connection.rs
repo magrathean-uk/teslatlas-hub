@@ -5,50 +5,6 @@ pub(crate) struct SourceDbSnapshotSession {
     connection_task: Option<tokio::task::JoinHandle<()>>,
 }
 
-/// The encrypted source database legacy OAuth pair. Ciphertext is sensitive even
-/// though it is not plaintext, so this type deliberately has no derived
-/// formatter or serializer.
-pub struct LegacyOwnerTokenCiphertexts {
-    pub access: Vec<u8>,
-    pub refresh: Vec<u8>,
-}
-
-impl Zeroize for LegacyOwnerTokenCiphertexts {
-    fn zeroize(&mut self) {
-        self.access.zeroize();
-        self.refresh.zeroize();
-    }
-}
-
-impl Drop for LegacyOwnerTokenCiphertexts {
-    fn drop(&mut self) {
-        self.zeroize();
-    }
-}
-
-impl LegacyOwnerTokenCiphertexts {
-    pub fn into_parts(mut self) -> (Vec<u8>, Vec<u8>) {
-        (
-            std::mem::take(&mut self.access),
-            std::mem::take(&mut self.refresh),
-        )
-    }
-}
-
-const MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64: i64 = MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES as i64;
-
-const PRIVATE_LEGACY_TOKENS_SQL: &str = "SELECT \"token\".\"access\" AS \"access\", \"token\".\"refresh\" AS \"refresh\" \
-     FROM \"private\".\"tokens\" AS \"token\" ORDER BY \"token\".\"id\" ASC LIMIT 2";
-const PRIVATE_LEGACY_TOKENS_EXISTS_SQL: &str =
-    "SELECT pg_catalog.to_regclass('private.tokens') IS NOT NULL AS \"private_tokens_exists\"";
-const PRIVATE_LEGACY_TOKEN_LENGTHS_SQL: &str = "SELECT pg_catalog.octet_length(\"token\".\"access\")::bigint AS \"access_length\", pg_catalog.octet_length(\"token\".\"refresh\")::bigint AS \"refresh_length\" FROM \"private\".\"tokens\" AS \"token\" ORDER BY \"token\".\"id\" ASC LIMIT 2";
-
-impl std::fmt::Debug for LegacyOwnerTokenCiphertexts {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("LegacyOwnerTokenCiphertexts([redacted])")
-    }
-}
-
 impl SourceDbSnapshotSession {
     fn new(client: Client, connection_task: tokio::task::JoinHandle<()>) -> Self {
         Self {

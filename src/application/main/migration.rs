@@ -25,10 +25,13 @@ fn collector_can_start(
     config: &HubConfig,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let credentials = teslatlas_hub::auth::credential_sign_in::credential_status(store, &config.data_dir, current_epoch_ms()?)?;
-    let credentials_present = match config.collector.provider {
-        CollectorProvider::Legacy => credentials.legacy_credentials.present,
-        CollectorProvider::Fleet => credentials.fleet_credentials.present,
+    // Only a pair admitted at load (the Hub's own login) can start collection.
+    let slot = match config.collector.provider {
+        CollectorProvider::Legacy => &credentials.legacy_credentials,
+        CollectorProvider::Fleet => &credentials.fleet_credentials,
     };
+    let credentials_present = slot.present
+        && !matches!(slot.store_state, "source_credential_disabled" | "unknown_origin");
     Ok(config.collector.interval_seconds > 0
         && !store.configured_tesla_vehicles()?.is_empty()
         && credentials_present)
@@ -89,9 +92,7 @@ const MAX_MIGRATION_TOKEN_BYTES: usize =
 const MAX_MIGRATION_TOKEN_FILE_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES + 2;
 #[cfg(unix)]
 const MAX_SETUP_TOKENS_STDIN_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES * 2 + 128;
-#[cfg(unix)]
-const MAX_SETUP_FLEET_STDIN_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES * 2 + 1_024;
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 const MAX_MIGRATION_ENCRYPTION_KEY_BYTES: usize = 16 * 1024;
 
 #[cfg(unix)]
@@ -168,34 +169,22 @@ async fn run_macos_migration_prepared(
     if car_id <= 0 {
         return Err("--car-id must be a positive source car id".into());
     }
-    if history_only
-        && (!online_snapshot
-            || encryption_key_file.is_some()
-            || access_token_file.is_some()
-            || refresh_token_file.is_some()
-            || preserve_existing_credentials)
+    // Source credentials are disabled: a source key or token input is refused
+    // before any path is opened, the configuration is read or the store is
+    // touched. Migration imports history only and never changes the Hub's
+    // own sign-in.
+    if encryption_key_file.is_some()
+        || access_token_file.is_some()
+        || refresh_token_file.is_some()
+        || prepared_key.take().is_some()
+        || replace_credentials
     {
+        return Err(teslatlas_hub::auth::credential_sign_in::source_credential_disabled().into());
+    }
+    if history_only && (!online_snapshot || preserve_existing_credentials) {
         return Err(
             "history-only import requires --online-snapshot and no Tesla credential flags".into(),
         );
-    }
-    if let Some(key_path) = encryption_key_file
-        && key_path != Path::new("-")
-    {
-        let managed = HubConfig::load(config_path)?;
-        check_source_key_directory(key_path, &managed.data_dir, config_path)?;
-    }
-    let secret_paths = std::iter::once(Some(postgres_password_file))
-        .chain([encryption_key_file, access_token_file, refresh_token_file])
-        .flatten()
-        .collect::<Vec<_>>();
-    if secret_paths
-        .iter()
-        .filter(|path| **path == Path::new("-"))
-        .count()
-        > 1
-    {
-        return Err("only one migration secret may be read from stdin".into());
     }
 
     let config = HubConfig::load(config_path)?;
@@ -228,7 +217,7 @@ async fn run_macos_migration_prepared(
         store.check_import_source_key(import_source_key, new_import_source)?;
         let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
         let progress = migration_progress_reporter(true);
-        let (report, captured_ciphertexts) = import_direct_migration_snapshot(
+        let report = import_direct_migration_snapshot(
             &store,
             &cursor_key,
             &source,
@@ -241,9 +230,6 @@ async fn run_macos_migration_prepared(
             progress.clone(),
         )
         .await?;
-        if captured_ciphertexts.is_some() {
-            return Err("history-only import unexpectedly captured credentials".into());
-        }
         catalogue_checkpoint.finish()?;
         progress.complete(SourceDbMigrationPhase::Complete);
         println!(
@@ -270,35 +256,16 @@ async fn run_macos_migration_prepared(
         );
         return Ok(false);
     }
-    let copy_source_ciphertext = match (encryption_key_file, access_token_file, refresh_token_file)
-    {
-        (Some(_), None, None) => true,
-        (None, Some(_), Some(_)) => false,
-        _ => {
-            return Err(
-                "provide --source-token-key-file, or both --access-token-file and --refresh-token-file"
-                    .into(),
-            );
-        }
-    };
-
     let store = HubStore::initialize(&config.data_dir)?;
-    let entry = teslatlas_hub::open_credential_vault_for_entry(store.clone(), std::sync::Arc::clone(admission), &config.data_dir)
+    let _entry = teslatlas_hub::open_credential_vault_for_entry(store.clone(), std::sync::Arc::clone(admission), &config.data_dir)
         .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)?;
-    let owner_status = teslatlas_hub::auth::credential_sign_in::credential_status(&store, &config.data_dir, current_epoch_ms()?)?;
-    let preserve_existing_credentials = should_preserve_existing_migration_credentials(
-        preserve_existing_credentials,
-        owner_status.legacy_credentials.present || owner_status.legacy_credentials.store_state != "ok",
-    );
-    if copy_source_ciphertext && !preserve_existing_credentials { teslatlas_hub::auth::credential_sign_in::check_token_import_continuity(&store)?; }
-    let capture_source_db_ciphertext = copy_source_ciphertext && !preserve_existing_credentials;
     let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
     store.check_import_source_key(import_source_key, new_import_source)?;
     let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
     if !online_snapshot {
         let initial_progress = migration_progress_reporter(online_snapshot);
         let initial_copy_started = Instant::now();
-        let (initial_report, _) = import_direct_migration_snapshot(
+        let initial_report = import_direct_migration_snapshot(
             &store,
             &cursor_key,
             &source,
@@ -343,11 +310,10 @@ async fn run_macos_migration_prepared(
     }
 
     // Cutover mode re-captures after the operator stops the source application.
-    // Online mode captures while it remains live. History and encrypted legacy
-    // owner tokens, when selected, share this exact database snapshot.
+    // Online mode captures while it remains live. Only history is captured.
     let progress = migration_progress_reporter(online_snapshot);
     let final_copy_started = Instant::now();
-    let (report, captured_ciphertexts) = import_direct_migration_snapshot(
+    let report = import_direct_migration_snapshot(
         &store,
         &cursor_key,
         &source,
@@ -356,11 +322,7 @@ async fn run_macos_migration_prepared(
         import_source_key,
         new_import_source,
         limits,
-        if capture_source_db_ciphertext {
-            MigrationCaptureScope::SettledWithCredentials
-        } else {
-            MigrationCaptureScope::SettledWithoutCredentials
-        },
+        MigrationCaptureScope::SettledWithoutCredentials,
         progress.clone(),
     )
     .await?;
@@ -371,49 +333,12 @@ async fn run_macos_migration_prepared(
     progress.advance_finalizing(1, 2);
 
     let fleet_still_present = teslatlas_hub::auth::credential_sign_in::credential_status(&store, &config.data_dir, current_epoch_ms()?)?.fleet_credentials.present;
-    let imported_ciphertext_bytes = if preserve_existing_credentials {
-        if captured_ciphertexts.is_some() {
-            return Err("history-only migration unexpectedly retained source credentials".into());
-        }
-        tracing::info!("preserved existing Hub credentials during source database history import");
-        None
-    } else {
-        // The encrypted source pair came from the same final snapshot as history.
-        let (prepared, ciphertext_bytes) = if copy_source_ciphertext {
-            let key_path = encryption_key_file.expect("validated encrypted-token input");
-            let key = match prepared_key.take() { Some(key) => key, None => read_source_token_key_checked(key_path, &config.data_dir, config_path)? };
-            if key.is_empty() {
-                return Err("the source application's ENCRYPTION_KEY is empty".into());
-            }
-            let ciphertexts = captured_ciphertexts
-                .ok_or("final migration snapshot did not retain legacy owner tokens")?;
-            let lengths = (ciphertexts.access.len(), ciphertexts.refresh.len());
-            let tokens = decrypt_legacy_owner_tokens(
-                &key,
-                &ciphertexts.access,
-                &ciphertexts.refresh,
-            )?;
-            (teslatlas_hub::auth::credential_sign_in::prepare_owner_tokens(teslatlas_hub::auth::credential_sign_in::OwnerEntryKind::SourceToken, tokens, false)?, lengths)
-        } else {
-            let access_path = access_token_file.expect("validated access-token input");
-            let refresh_path = refresh_token_file.expect("validated refresh-token input");
-            (teslatlas_hub::auth::credential_sign_in::decode_owner_files(
-                read_setup_token_file(access_path, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
-                read_setup_token_file(refresh_path, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
-                teslatlas_hub::auth::credential_sign_in::OwnerEntryKind::SourceToken,
-            )?, (0, 0))
-        };
-        let prepared = if replace_credentials { prepared.with_explicit_replacement() } else { prepared };
-        drop(teslatlas_hub::auth::credential_sign_in::persist_owner_entry(&entry, prepared, false)?);
-        Some(ciphertext_bytes)
-    };
     progress.advance_finalizing(3, 4);
     tracing::info!(
         selected_car_id = car_id,
         projected_rows = report.projected_rows,
         fleet_tokens_preserved = fleet_still_present,
-        existing_legacy_credentials_preserved = preserve_existing_credentials,
-        "Source database history imported; source PostgreSQL was not written; Fleet tokens were not deleted"
+        "Source database history imported; source PostgreSQL was not written; no credential was read or changed"
     );
 
     let checkpoint_started = Instant::now();
@@ -439,9 +364,9 @@ async fn run_macos_migration_prepared(
             "retryRecommended": report.cutover_unsettled,
             "sourceNeverMutated": true,
             "fleetTokensPreserved": fleet_still_present,
-            "existingCredentialsPreserved": preserve_existing_credentials,
-            "accessCiphertextBytes": imported_ciphertext_bytes.map_or(0, |value| value.0),
-            "refreshCiphertextBytes": imported_ciphertext_bytes.map_or(0, |value| value.1),
+            "existingCredentialsPreserved": true,
+            "credentialsInspected": false,
+            "credentialsImported": false,
             "profileVersion": profile.version,
             "parallelCopyLanes": profile.parallel_copy_lanes,
             "profileReason": profile.reason.as_str(),
@@ -466,7 +391,6 @@ async fn run_macos_migration_prepared(
 enum MigrationCaptureScope {
     HistorySnapshot,
     SettledWithoutCredentials,
-    SettledWithCredentials,
 }
 
 #[cfg(unix)]
@@ -482,15 +406,12 @@ async fn import_direct_migration_snapshot(
     limits: teslatlas_hub::source_db_reader::SourceDbReadLimits,
     scope: MigrationCaptureScope,
     progress: SourceDbMigrationProgressReporter,
-) -> Result<(SourceDbImportReport, Option<LegacyOwnerTokenCiphertexts>), Box<dyn std::error::Error>>
-{
-    let include_legacy_token = matches!(scope, MigrationCaptureScope::SettledWithCredentials);
+) -> Result<SourceDbImportReport, Box<dyn std::error::Error>> {
     tracing::info!(
         host = source.host(),
         port = source.port(),
         database = source.database_name(),
         car_id,
-        include_legacy_token,
         "starting source database read-only snapshot import"
     );
     let imported_at_ms = current_epoch_ms()?;
@@ -500,9 +421,9 @@ async fn import_direct_migration_snapshot(
         scope: SourceDbImportScope::Selected(car_id),
         imported_at_ms,
     };
-    if include_legacy_token {
-        let (selected, tokens) =
-            import_selected_from_postgres_with_schema_22_and_legacy_token_and_progress(
+    let selected = match scope {
+        MigrationCaptureScope::HistorySnapshot => {
+            import_selected_history_snapshot_from_postgres_with_schema_22_and_progress(
                 store,
                 source,
                 postgres_password,
@@ -511,53 +432,27 @@ async fn import_direct_migration_snapshot(
                 limits,
                 progress,
             )
-            .await?;
-        Ok((selected.import, Some(tokens)))
-    } else {
-        let selected = match scope {
-            MigrationCaptureScope::HistorySnapshot => {
-                import_selected_history_snapshot_from_postgres_with_schema_22_and_progress(
-                    store,
-                    source,
-                    postgres_password,
-                    cursor_key,
-                    &request,
-                    limits,
-                    progress,
-                )
-                .await?
-            }
-            MigrationCaptureScope::SettledWithoutCredentials => {
-                import_selected_from_postgres_with_schema_22_and_progress(
-                    store,
-                    source,
-                    postgres_password,
-                    cursor_key,
-                    &request,
-                    limits,
-                    progress,
-                )
-                .await?
-            }
-            MigrationCaptureScope::SettledWithCredentials => {
-                unreachable!("credential capture handled above")
-            }
-        };
-        Ok((selected.import, None))
-    }
+            .await?
+        }
+        MigrationCaptureScope::SettledWithoutCredentials => {
+            import_selected_from_postgres_with_schema_22_and_progress(
+                store,
+                source,
+                postgres_password,
+                cursor_key,
+                &request,
+                limits,
+                progress,
+            )
+            .await?
+        }
+    };
+    Ok(selected.import)
 }
 
 #[cfg(unix)]
 fn should_emit_migration_progress(online_snapshot: bool) -> bool {
     online_snapshot
-}
-
-#[cfg(unix)]
-fn should_preserve_existing_migration_credentials(
-    preserve_requested: bool,
-    existing_credentials_present: bool,
-) -> bool {
-    preserve_requested && existing_credentials_present
 }
 
 #[cfg(unix)]
@@ -625,12 +520,12 @@ fn read_migration_secret(
     read_migration_secret_file(path, maximum).map_err(Into::into)
 }
 
+/// Source credentials are disabled: a token file named to `setup` is refused
+/// before it is opened (refusal-only shim until the setup command is rewired).
 #[cfg(unix)]
 fn read_setup_token_file(path: &Path, maximum: usize) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
-    if path == Path::new("-") {
-        return read_bounded_migration_secret(std::io::stdin(), maximum).map_err(Into::into);
-    }
-    teslatlas_hub::auth::credential_sign_in::read_credential_file(path, maximum).map_err(Into::into)
+    let _ = (path, maximum);
+    Err(teslatlas_hub::auth::credential_sign_in::source_credential_disabled().into())
 }
 
 #[cfg(all(unix, test))]
@@ -640,10 +535,12 @@ fn decode_setup_fleet_stdin(
     Ok(teslatlas_hub::auth::credential_sign_in::decode_fleet_entry(bytes)?.into_credentials())
 }
 
+/// Source credentials are disabled: Fleet tokens on standard input are refused
+/// before standard input is read (refusal-only shim until `setup-fleet` is
+/// rewired to the Hub's own sign-in only).
 #[cfg(unix)]
 fn read_setup_fleet_from_stdin() -> Result<teslatlas_hub::auth::credential_sign_in::PreparedFleetSetup, Box<dyn std::error::Error>> {
-    let bytes = read_bounded_migration_secret(std::io::stdin(), MAX_SETUP_FLEET_STDIN_BYTES)?;
-    teslatlas_hub::auth::credential_sign_in::decode_fleet_entry(&bytes)
+    Err(teslatlas_hub::auth::credential_sign_in::source_credential_disabled().into())
 }
 
 #[cfg(unix)]
@@ -676,10 +573,12 @@ fn read_migration_encryption_key(
     Ok(key)
 }
 
-#[cfg(unix)]
+// TRANSITIONAL (M02-T02): the source-key file readers below are unreachable
+// from any command; they remain only for the entry tests that T10 retires.
+#[cfg(all(unix, test))]
 #[derive(Debug)]
 struct SourceKeyFileRefusal { spelling: &'static str, entry: bool }
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 impl std::fmt::Display for SourceKeyFileRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.entry {
@@ -689,45 +588,31 @@ impl std::fmt::Display for SourceKeyFileRefusal {
         }
     }
 }
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 impl std::error::Error for SourceKeyFileRefusal {}
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn source_key_location_refused() -> Box<dyn std::error::Error> {
     Box::new(SourceKeyFileRefusal { spelling: "--source-token-key-file", entry: false })
 }
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn source_key_entry_refused() -> Box<dyn std::error::Error> {
     Box::new(SourceKeyFileRefusal { spelling: "--source-token-key-file", entry: true })
 }
 
+/// Source credentials are disabled: a source key named to `migrate` (either
+/// spelling, a path or `-`) is refused before the path is opened, standard
+/// input is read or the configuration is loaded. No key is ever prepared.
 #[cfg(unix)]
 fn prepare_migration_key_input(command: &Command, config_path: &Path) -> Result<Option<zeroize::Zeroizing<Vec<u8>>>, Box<dyn std::error::Error>> {
-    let Command::Migrate { source_token_key_file, encryption_key_file, postgres_password_file, source_key, new_import_source, .. } = command else { return Ok(None); };
-    if source_token_key_file.is_none() && encryption_key_file.is_none() { return Ok(None); }
-    if postgres_password_file == Path::new("-") && [source_token_key_file, encryption_key_file].into_iter().any(|path| path.as_deref() == Some(Path::new("-"))) {
-        return Err("only one migration secret may be read from stdin".into());
+    let _ = config_path;
+    let Command::Migrate { source_token_key_file, encryption_key_file, .. } = command else { return Ok(None); };
+    if source_token_key_file.is_some() || encryption_key_file.is_some() {
+        return Err(teslatlas_hub::auth::credential_sign_in::source_credential_disabled().into());
     }
-    let config = HubConfig::load(config_path)?;
-    let import_source_key = migration_source_key(source_key.as_deref(), config.import_source.source_key.as_deref());
-    HubStore::preflight_import_source_key(&config.data_dir, import_source_key, *new_import_source)?;
-    prepare_source_key_files(source_token_key_file.as_deref(), encryption_key_file.as_deref(), &config.data_dir, config_path, &mut std::io::stderr())
+    Ok(None)
 }
 
-#[cfg(unix)]
-fn prepare_source_key_files(
-    primary: Option<&Path>, deprecated: Option<&Path>, data_dir: &Path, config_path: &Path,
-    notice: &mut impl Write,
-) -> Result<Option<zeroize::Zeroizing<Vec<u8>>>, Box<dyn std::error::Error>> {
-    prepare_source_key_files_with(primary, deprecated, notice, |path, spelling| {
-        read_source_token_key_raw_with(path, data_dir, config_path, || {}).map_err(|error| {
-            if let Some(refusal) = error.downcast_ref::<SourceKeyFileRefusal>() {
-                Box::new(SourceKeyFileRefusal { spelling, entry: refusal.entry }) as Box<dyn std::error::Error>
-            } else { error }
-        })
-    })
-}
-
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn prepare_source_key_files_with(
     primary: Option<&Path>, deprecated: Option<&Path>, notice: &mut impl Write,
     mut read: impl FnMut(&Path, &'static str) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>>,
@@ -753,7 +638,7 @@ fn prepare_source_key_files_with(
 /// R54: the device and inode of every Hub-managed directory (the data
 /// directory, its `secrets/` and the config file's parent), each opened and
 /// identified at its physical location.
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn managed_directory_identities(data_dir: &Path, config_path: &Path) -> Vec<(u64, u64)> {
     use rustix::fs::{Mode, OFlags, fstat, open};
     let config_parent = config_path
@@ -783,7 +668,7 @@ fn managed_directory_identities(data_dir: &Path, config_path: &Path) -> Vec<(u64
 /// links lead to the physical directory) and refuse it when it, or any
 /// directory above it reached through `..`, is Hub-managed. No I/O happens on
 /// the named entry.
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn open_checked_key_directory(
     path: &Path,
     data_dir: &Path,
@@ -796,7 +681,7 @@ fn open_checked_key_directory(
     open_checked_key_directory_with_session_root(path, data_dir, config_path, session_root)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn open_checked_key_directory_with_session_root(
     path: &Path,
     data_dir: &Path,
@@ -844,7 +729,7 @@ fn open_checked_key_directory_with_session_root(
 /// The landed GUI creates `th-<UUID>` directly under its physical temporary
 /// root. Identify that directory, including when the key is in a descendant,
 /// without inspecting the key entry or scanning other import sessions.
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn import_session_directory_identity(
     directory_path: &Path,
     directory: &std::os::fd::OwnedFd,
@@ -868,20 +753,11 @@ fn import_session_directory_identity(
     Ok(Some((facts.st_dev as u64, facts.st_ino as u64)))
 }
 
-#[cfg(unix)]
-fn check_source_key_directory(
-    path: &Path,
-    data_dir: &Path,
-    config_path: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    open_checked_key_directory(path, data_dir, config_path).map(|_| ())
-}
-
 /// R54: an explicit key file is admitted by its physical location. The entry is
 /// classified relative to the held directory without following a link, opened
 /// with `O_NOFOLLOW`, its device and inode must match the classification, the
 /// cap is checked on the descriptor before the read, and it is read once.
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn read_source_token_key_checked(
     path: &Path,
     data_dir: &Path,
@@ -892,7 +768,7 @@ fn read_source_token_key_checked(
     Ok(key)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn read_source_token_key_raw_with(
     path: &Path,
     data_dir: &Path,

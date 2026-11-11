@@ -562,11 +562,9 @@ pub(in crate::auth) async fn assert_external_refresh_owner_contract() {
         observer.refresh_if_due(&rig.client(), SystemTime::now()).await.expect("observer due check");
     }
     assert!(rig.backend.token_posts().is_empty(), "24 hours without token transport");
-    rig.vault().handover_owner_api_refresh_to_hub().expect("owner handover");
+    assert_eq!(rig.vault().load(CredentialSlot::OwnerApi).unwrap_err().code(), "source_credential_disabled", "a source pair is never loaded");
     drop(observer);
-    let mut managed = rig.manager(); assert!(managed.allows_refresh(), "Serve Hub owner selects managed");
-    managed.refresh_now(&rig.client(), SystemTime::now()).await.expect("first token need");
-    assert!(rig.backend.token_posts().len() == 1, "one Hub refresh");
+    assert!(rig.backend.token_posts().is_empty(), "no handover and no refresh of a source pair");
 }
 
 fn row_of(rig: &Rig) -> (String, Option<String>, Option<i64>, bool) {

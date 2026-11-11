@@ -185,6 +185,7 @@ pub struct FleetCredentialInspection { pub unresolved_refresh: bool }
 pub fn inspect_stored_fleet_credentials(store: &HubStore, data_dir: &Path) -> Result<FleetCredentialInspection, FleetCredentialError> {
     let presence = store.credential_pair_presence(CredentialSlot::FleetApi)?.ok_or(FleetCredentialError::Missing)?;
     presence.header_check.map_err(|error| FleetCredentialError::Store(StoreError::CredentialEnvelope(error)))?;
+    crate::auth::credential_vault::admit_stored_origin(presence.slot, presence.origin, presence.refresh_owner)?;
     let secrets = crate::platform::private_directory::open_validated_read_only(&data_dir.join("secrets"))
         .map_err(|_| FleetCredentialError::UnsafeKeyMaterial)?.ok_or(FleetCredentialError::KeyMissing)?;
     crate::auth::credential_keys::check_keyring(&secrets)
@@ -912,6 +913,7 @@ impl From<CredentialStoreError> for FleetCredentialError {
         match error {
             CredentialStoreError::Store(error) => Self::Store(error),
             CredentialStoreError::SensitiveAccessUnavailable | CredentialStoreError::LockPoisoned => Self::SensitiveAccessUnavailable,
+            CredentialStoreError::SourceCredentialDisabled(_) | CredentialStoreError::UnknownOrigin(_) => Self::Store(StoreError::WriteRefused("source_credential_disabled")),
             _ => Self::Store(StoreError::WriteRefused("credential_vault_unavailable")),
         }
     }

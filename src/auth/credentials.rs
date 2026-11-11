@@ -2107,6 +2107,10 @@ pub enum CredentialError {
     SourceDbTokenCipher(#[source] crate::source_token_envelope::SourceDbTokenError),
     #[error("Hub runtime admission is unavailable")]
     SensitiveAccessUnavailable,
+    /// Source credentials are disabled: the stored or offered pair is not the
+    /// Hub's own login, so it is never loaded, used or refreshed.
+    #[error("source_credential_disabled: {}", crate::auth::credential_sign_in::SOURCE_CREDENTIAL_DISABLED_TEXT)]
+    SourceCredentialDisabled,
     #[cfg(test)]
     #[error("test sensitive access check failed")]
     MacKeychainHelperInvalid,
@@ -2121,6 +2125,7 @@ impl From<CredentialStoreError> for CredentialError {
             CredentialStoreError::RefreshTokenSpent => Self::LegacyOwnerTokenStore(crate::db::StoreError::RefreshOutcomeUnknown { reason: crate::db::BeginRefusal::TokenSpent }),
             CredentialStoreError::Store(error) => Self::LegacyOwnerTokenStore(error),
             CredentialStoreError::SensitiveAccessUnavailable | CredentialStoreError::LockPoisoned => Self::SensitiveAccessUnavailable,
+            CredentialStoreError::SourceCredentialDisabled(_) | CredentialStoreError::UnknownOrigin(_) => Self::SourceCredentialDisabled,
             _ => Self::LegacyOwnerTokenStore(crate::db::StoreError::WriteRefused("credential_vault_unavailable")),
         }
     }
@@ -2194,6 +2199,7 @@ mod n1_src_auth_credentials_rs_display_tests {
                 CredentialError::SourceDbCredentialFile(..) => (),
                 CredentialError::SourceDbTokenCipher(..) => (),
                 CredentialError::SensitiveAccessUnavailable => (),
+                CredentialError::SourceCredentialDisabled => (),
                 #[cfg(test)]
                 CredentialError::MacKeychainHelperInvalid => (),
                 #[cfg(test)]
@@ -2213,6 +2219,7 @@ mod n1_src_auth_credentials_rs_display_tests {
         check_credential_error(CredentialError::SourceDbCredentialFile(example()));
         check_credential_error(CredentialError::SourceDbTokenCipher(example()));
         check_credential_error(CredentialError::SensitiveAccessUnavailable);
+        check_credential_error(CredentialError::SourceCredentialDisabled);
         #[cfg(test)]
         check_credential_error(CredentialError::MacKeychainHelperInvalid);
         #[cfg(test)]
