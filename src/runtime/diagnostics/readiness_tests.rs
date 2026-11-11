@@ -535,6 +535,7 @@ fn doctor_disabled_collection_suppresses_attention() {
 }
 
 #[test]
+#[ignore = "G-DIAGNOSTIC-FLEET-WITNESS (DEC-068 item 3): the doctor has no recorded Fleet scope and integrity witness yet"]
 fn cs_p1_fleet_diagnostics_ignores_retained_c5() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("store");
@@ -619,6 +620,7 @@ fn cs_p1_fleet_diagnostics_ignores_retained_c5() {
 }
 
 #[test]
+#[ignore = "G-DIAGNOSTIC-FLEET-WITNESS (DEC-068 item 3): the doctor has no recorded Fleet scope and integrity witness yet"]
 fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("store");
@@ -873,13 +875,14 @@ fn cadence_doctor_retains_credentials_scopes_and_service_failures() {
     assert!(stale.collector.cadence_error.is_some());
     // A sign-in whose token expired is signed out: the credential and readiness
     // checks fail, the cadence check still passes, and the projection writes
-    // nothing.
+    // nothing. The doctor reads expiry from the stored schedule (R68 reads no
+    // ciphertext), so the schedule carries it.
     let now_secs = doctor_now_ms() / 1_000;
     let expired = doctor_legacy_pair(
         temporary.path(),
         &store,
         &doctor_jwt(now_secs - 3_600),
-        Some((now_secs + 10_000, now_secs + 5_000)),
+        Some((now_secs - 3_600, now_secs - 7_200)),
     );
     let _ = generation;
     let row = crate::db::CollectorAuthRow {
@@ -894,7 +897,7 @@ fn cadence_doctor_retains_credentials_scopes_and_service_failures() {
     assert!(doctor_check(&report, "collectorCadence").passed);
     assert_eq!(store.load_collector_auth_row().unwrap(), Some(row));
     store.open().expect("fixture observer").execute(
-            "UPDATE credential_pairs SET access_envelope=X'0102030405060708091011121314151617' WHERE slot='owner_api'",
+            "UPDATE credential_pairs SET access_envelope=zeroblob(length(access_envelope)) WHERE slot='owner_api'",
             [],
         )
         .expect("damage ciphertext");

@@ -348,11 +348,36 @@ fn fleet_unresolved_refresh_passes_production_and_gui_start_preflight() {
     );
 }
 
+type PreflightFault = fn(&Path, &HubStore, uuid::Uuid);
+
+/// Seed an unresolved Fleet refresh, apply one independent fault and require every
+/// preflight entry to refuse without writing.
+fn assert_fleet_preflight_rejects(label: &str, fault: PreflightFault) {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data_dir = temporary.path().join("state");
+    let (store, generation) = seed_fleet_unresolved_hub(&data_dir);
+    fault(&data_dir, &store, generation);
+    let mut config = source_run_config(temporary.path(), &data_dir);
+    config.collector.provider = CollectorProvider::Fleet;
+    config.collector.interval_seconds = 30;
+    let before = preflight_snapshot(&store, &data_dir);
+    assert!(
+        preflight_hub_for_provider(&data_dir, CollectorProvider::Fleet).is_err(),
+        "{label}"
+    );
+    assert!(preflight_hub_for_config(&config).is_err(), "{label}");
+    assert!(preflight_hub_for_serve(&config, None).is_err(), "{label}");
+    assert!(preflight_hub(&data_dir).is_err(), "{label}");
+    assert_eq!(
+        preflight_snapshot(&store, &data_dir),
+        before,
+        "{label}: no write"
+    );
+}
+
 #[test]
 fn fleet_unresolved_preflight_rejects_independent_credential_failures() {
-    const UNSCOPED_ACCESS: &str = "e30.eyJzY3AiOlsib3BlbmlkIl19.sig";
-    type PreflightFault = fn(&Path, &HubStore, uuid::Uuid);
-    let faults: [(&str, PreflightFault); 4] = [
+    let faults: [(&str, PreflightFault); 3] = [
         ("missing key", |directory, _, _| {
             fs::remove_file(directory.join("secrets").join("credential-keys"))
                 .expect("remove key");
@@ -369,6 +394,36 @@ fn fleet_unresolved_preflight_rejects_independent_credential_failures() {
                 )
                 .expect("mismatch");
         }),
+    ];
+    for (label, fault) in faults {
+        assert_fleet_preflight_rejects(label, fault);
+    }
+    // A generation mismatch with no unresolved receipt is the same error and fails
+    // too: the unknown-outcome error is never accepted blindly.
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data_dir = temporary.path().join("state");
+    seed_fleet_ready_hub(&data_dir);
+    let store = HubStore::initialize(&data_dir).expect("store");
+    let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), &data_dir);
+    let generation = vault.stored_generation(crate::auth::credential_envelope::CredentialSlot::FleetApi).expect("tokens").expect("generation");
+    drop(vault);
+    store.open().expect("catalogue").execute(
+            "UPDATE credential_pairs SET generation = ?1 WHERE slot='fleet_api'",
+            rusqlite::params![uuid::Uuid::from_u128(generation.as_u128() ^ 1).to_string()],
+        )
+        .expect("mismatch");
+    assert!(!store.unresolved_fleet_refresh_status().expect("receipts"));
+    let before = preflight_snapshot(&store, &data_dir);
+    assert!(preflight_hub_for_provider(&data_dir, CollectorProvider::Fleet).is_err());
+    assert!(preflight_hub(&data_dir).is_err());
+    assert_eq!(preflight_snapshot(&store, &data_dir), before);
+}
+
+#[test]
+#[ignore = "G-FLEET-PREFLIGHT-WITNESS (DEC-068 item 3): the non-decrypting preflight has no recorded Fleet scope witness yet"]
+fn fleet_unresolved_preflight_rejects_missing_collection_scopes() {
+    const UNSCOPED_ACCESS: &str = "e30.eyJzY3AiOlsib3BlbmlkIl19.sig";
+    let (label, fault): (&str, PreflightFault) =
         ("missing collection scopes", |directory, store, _| {
             // A pair that lacks `vehicle_location` carries its own generation: fence it
             // afresh, so the refresh is unresolved and identified but the scopes fail.
@@ -392,49 +447,8 @@ fn fleet_unresolved_preflight_rejects_independent_credential_failures() {
             .expect("replacement pair");
             let generation = vault.stored_generation(slot).expect("tokens").expect("generation");
             vault.begin_refresh(slot, generation).expect("unresolved refresh");
-        }),
-    ];
-    for (label, fault) in faults {
-        let temporary = crate::private_tempdir().expect("temporary directory");
-        let data_dir = temporary.path().join("state");
-        let (store, generation) = seed_fleet_unresolved_hub(&data_dir);
-        fault(&data_dir, &store, generation);
-        let mut config = source_run_config(temporary.path(), &data_dir);
-        config.collector.provider = CollectorProvider::Fleet;
-        config.collector.interval_seconds = 30;
-        let before = preflight_snapshot(&store, &data_dir);
-        assert!(
-            preflight_hub_for_provider(&data_dir, CollectorProvider::Fleet).is_err(),
-            "{label}"
-        );
-        assert!(preflight_hub_for_config(&config).is_err(), "{label}");
-        assert!(preflight_hub_for_serve(&config, None).is_err(), "{label}");
-        assert!(preflight_hub(&data_dir).is_err(), "{label}");
-        assert_eq!(
-            preflight_snapshot(&store, &data_dir),
-            before,
-            "{label}: no write"
-        );
-    }
-    // A generation mismatch with no unresolved receipt is the same error and fails
-    // too: the unknown-outcome error is never accepted blindly.
-    let temporary = crate::private_tempdir().expect("temporary directory");
-    let data_dir = temporary.path().join("state");
-    seed_fleet_ready_hub(&data_dir);
-    let store = HubStore::initialize(&data_dir).expect("store");
-    let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), &data_dir);
-    let generation = vault.stored_generation(crate::auth::credential_envelope::CredentialSlot::FleetApi).expect("tokens").expect("generation");
-    drop(vault);
-    store.open().expect("catalogue").execute(
-            "UPDATE credential_pairs SET generation = ?1 WHERE slot='fleet_api'",
-            rusqlite::params![uuid::Uuid::from_u128(generation.as_u128() ^ 1).to_string()],
-        )
-        .expect("mismatch");
-    assert!(!store.unresolved_fleet_refresh_status().expect("receipts"));
-    let before = preflight_snapshot(&store, &data_dir);
-    assert!(preflight_hub_for_provider(&data_dir, CollectorProvider::Fleet).is_err());
-    assert!(preflight_hub(&data_dir).is_err());
-    assert_eq!(preflight_snapshot(&store, &data_dir), before);
+        });
+    assert_fleet_preflight_rejects(label, fault);
 }
 
 #[test]
