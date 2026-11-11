@@ -1115,20 +1115,31 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 provider = ?config.collector.provider,
                 "Hub bounded observation starting"
             );
-            let observe_result = run_observe_orchestration(
-                store,
-                config,
-                config_sha256,
-                admission,
-                async move {
-                    tokio::select! {
-                        error = control_admission.wait_until_invalid() => {
-                            MacServeControl::AdmissionInvalidated(std::io::Error::other(error))
-                        }
-                        _ = tokio::signal::ctrl_c() => MacServeControl::Shutdown,
-                        _ = sigterm.recv() => MacServeControl::Shutdown,
-                        _ = tokio::time::sleep(Duration::from_secs(duration_seconds)) => MacServeControl::Shutdown,
-                    }
+            // The window is supervised for the observation's whole life: its
+            // clock and time checks run throughout, a window that leaves Open
+            // stops the observation, and a close is handed back only after
+            // the observation has released its collector lease.
+            let (observe_result, handback) = operator::authority::supervise_observation(
+                std::sync::Arc::clone(&authority),
+                Duration::from_secs(teslatlas_hub::collection::window::SUPERVISOR_POLL_SECONDS as u64),
+                |window_left| {
+                    run_observe_orchestration(
+                        store,
+                        config,
+                        config_sha256,
+                        admission,
+                        async move {
+                            tokio::select! {
+                                error = control_admission.wait_until_invalid() => {
+                                    MacServeControl::AdmissionInvalidated(std::io::Error::other(error))
+                                }
+                                _ = tokio::signal::ctrl_c() => MacServeControl::Shutdown,
+                                _ = sigterm.recv() => MacServeControl::Shutdown,
+                                _ = tokio::time::sleep(Duration::from_secs(duration_seconds)) => MacServeControl::Shutdown,
+                                _ = window_left => MacServeControl::Shutdown,
+                            }
+                        },
+                    )
                 },
             )
             .await;
@@ -1138,7 +1149,11 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     tracing::error!(%error, "Hub bounded observation stopped unexpectedly")
                 }
             }
-            let _ = authority.tick();
+            match handback {
+                Ok(Some(handback)) => tracing::info!(reason = handback.reason.code(), "collection window closed"),
+                Ok(None) => {}
+                Err(refusal) => tracing::warn!(code = %refusal.code, "collection window handback failed"),
+            }
             drop(authority);
             observe_result?;
         }

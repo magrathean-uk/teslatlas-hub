@@ -26,7 +26,7 @@ use super::{
     trust::{DialogConfirmation, TrustAuthority},
 };
 use crate::collection::window::{
-    AnchorStore, CloseReason, CollectorSlot, EgressGate, GRANT_MAX_BYTES, HandbackSource,
+    AnchorStore, CloseReason, CollectorSlot, EgressGate, GRANT_MAX_BYTES, Handback, HandbackSource,
     HighWater, HostClaim, KeychainAnchor, OffsetProbe, Phase, ResumeOutcome, SntpProbe,
     Supervisor, SystemClock, WindowConfig, WindowController, WindowDeps,
     WindowStatus,
@@ -367,6 +367,60 @@ impl Drop for SupervisorThread {
     fn drop(&mut self) {
         self.shutdown();
     }
+}
+
+/// Runs a bounded observation under the window for its whole lifetime
+/// (review finding 5). The window is ticked at least every `max_poll` and at
+/// its deadline, so the periodic clock and time-offset checks run while the
+/// observation does; once the window leaves Open the observation is told to
+/// stop through the receiver it was given. Only after the observation has
+/// returned, and with it released its collector lease, is a Closing window
+/// handed back and Closed. Returns the observation's result and the
+/// handback, if this run closed the window.
+pub async fn supervise_observation<T, F, Fut>(
+    controller: Arc<WindowController>,
+    max_poll: Duration,
+    observation: F,
+) -> (T, Result<Option<Handback>, OperatorRefusal>)
+where
+    F: FnOnce(tokio::sync::oneshot::Receiver<()>) -> Fut,
+    Fut: std::future::Future<Output = T>,
+{
+    let (stop, stopped) = tokio::sync::oneshot::channel();
+    let mut stop = Some(stop);
+    let observation = observation(stopped);
+    tokio::pin!(observation);
+    let result = loop {
+        let wait = Duration::from_secs(controller.next_wakeup_seconds().max(1) as u64).min(max_poll);
+        tokio::select! {
+            result = &mut observation => break result,
+            () = tokio::time::sleep(wait) => {
+                let ticking = Arc::clone(&controller);
+                let phase = tokio::task::spawn_blocking(move || ticking.tick())
+                    .await
+                    .ok()
+                    .and_then(Result::ok);
+                if phase != Some(Phase::Open)
+                    && let Some(stop) = stop.take()
+                {
+                    tracing::info!("the collection window left Open; stopping the observation");
+                    let _ = stop.send(());
+                }
+            }
+        }
+    };
+    let closing = Arc::clone(&controller);
+    let closed = tokio::task::spawn_blocking(move || {
+        let _ = closing.tick();
+        if closing.status().phase == Phase::Closing {
+            closing.finish_close().map_err(OperatorRefusal::window)
+        } else {
+            Ok(None)
+        }
+    })
+    .await
+    .unwrap_or_else(|_| Err(OperatorRefusal::window(crate::collection::window::Refusal::Io)));
+    (result, closed)
 }
 
 /// Signals the collector to stop and waits for it to exit, up to `wait`.

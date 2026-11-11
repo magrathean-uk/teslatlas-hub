@@ -109,6 +109,7 @@ impl Owner {
 }
 
 struct Rig {
+    probe: Arc<ManualProbe>,
     owner: Arc<Owner>,
     pin: Arc<MemoryAnchor>,
     tmp: TempDir,
@@ -123,6 +124,10 @@ struct Rig {
 
 impl Rig {
     fn new() -> Self {
+        Self::with_handback(Arc::new(NoHighWater))
+    }
+
+    fn with_handback(handback: Arc<dyn crate::collection::window::HandbackSource>) -> Self {
         let tmp = short_tempdir();
         let clock = Arc::new(ManualClock::new(T0));
         let anchor = Arc::new(MemoryAnchor::new());
@@ -134,6 +139,7 @@ impl Rig {
         );
         let key = tmp.path().join("issuer.key");
         let trust = issuer.init(&key).expect("issuer init").to_bytes().expect("trust bytes");
+        let probe = Arc::new(ManualProbe::new(0.2));
         let (controller, _) = WindowController::start(
             WindowConfig {
                 dir: super::window_dir(&tmp.path().join("data")),
@@ -143,12 +149,13 @@ impl Rig {
             WindowDeps {
                 clock: clock.clone(),
                 anchor,
-                probe: Arc::new(ManualProbe::new(0.2)),
+                probe: probe.clone(),
                 gate: EgressGate::new(clock.clone()),
-                handback: Arc::new(NoHighWater),
+                handback,
             },
         );
         Self {
+            probe,
             owner: Arc::new(Owner::default()),
             pin: Arc::new(MemoryAnchor::new()),
             tmp,
@@ -689,4 +696,55 @@ fn collection_window_operator_restore_admission_follows_the_host_claim() {
     rig.clock.advance(2_000);
     assert_eq!(rig.controller.open(&rig.grant(600)).unwrap_err().code(), "collector_busy");
     drop(held);
+}
+
+/// Records when the handback reads the high-water marks.
+struct RecordingHandback(Arc<Calls>);
+
+impl crate::collection::window::HandbackSource for RecordingHandback {
+    fn high_water(&self) -> crate::collection::window::HighWater {
+        self.0.push("handback");
+        crate::collection::window::HighWater::default()
+    }
+}
+
+/// Finding 5: a long observation is supervised for its whole life. When
+/// the network time check fails mid-observation the window closes, the
+/// observation is told to stop, and the handback is written only after the
+/// observation has released its collector lease.
+#[tokio::test]
+async fn collection_window_operator_observation_is_supervised_for_its_whole_life() {
+    let calls = Arc::new(Calls::default());
+    let rig = Rig::with_handback(Arc::new(RecordingHandback(calls.clone())));
+    rig.controller
+        .trust(&crate::collection::window::TrustDocument::parse(&rig.trust).expect("trust"))
+        .expect("trusted");
+    rig.controller.open(&rig.grant(3_600)).expect("open");
+    let controller = rig.controller.clone();
+    let observed = calls.clone();
+    let supervised = tokio::spawn(super::authority::supervise_observation(
+        controller,
+        std::time::Duration::from_millis(10),
+        move |window_left| async move {
+            // An observation far longer than the test: it ends only when told.
+            let _ = window_left.await;
+            observed.push("lease_released");
+            "observed"
+        },
+    ));
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert_eq!(rig.controller.status().phase, crate::collection::window::Phase::Open);
+    // The time server stops answering; the next check is due.
+    rig.probe.set(Err(crate::collection::window::Refusal::ClockOffset));
+    rig.clock.advance(crate::collection::window::NTP_RECHECK_SECONDS + 1);
+    let (result, handback) = tokio::time::timeout(std::time::Duration::from_secs(10), supervised)
+        .await
+        .expect("the observation was stopped by the supervision")
+        .expect("joined");
+    assert_eq!(result, "observed");
+    let handback = handback.expect("handback").expect("this run closed the window");
+    assert_eq!(handback.reason, CloseReason::ClockInvalid);
+    assert_eq!(calls.all(), vec!["lease_released".to_owned(), "handback".to_owned()]);
+    assert_eq!(rig.controller.status().phase, crate::collection::window::Phase::Closed);
+    assert!(!rig.controller.gate().is_open());
 }
