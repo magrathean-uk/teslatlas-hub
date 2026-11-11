@@ -246,6 +246,13 @@ pub trait ServiceBackend: Send + Sync {
             "this service has no backup schedule",
         ))
     }
+    /// The backup schedule's state (M06-T04), read-only.
+    fn backup_status(&self) -> Result<Value, OperatorRefusal> {
+        Err(OperatorRefusal::new(
+            "backup_unavailable",
+            "this service has no backup schedule",
+        ))
+    }
 }
 
 /// The service's trust authority: the issuer pin in the login keychain and
@@ -436,6 +443,7 @@ impl OperatorHandler for OperatorService {
                 self.backend
                     .backup_now(destination.as_deref(), password_file.as_deref())
             }
+            OperatorRequest::BackupStatus => self.backend.backup_status(),
         }
     }
 }

@@ -602,6 +602,11 @@ pub enum Command {
         #[arg(long)]
         password_file: Option<PathBuf>,
     },
+    /// Show the backup schedule's state (forwarded to the running service,
+    /// read-only): last good generation, next run, whether a run is going and
+    /// what blocks backups.
+    #[command(name = "backup-status")]
+    BackupStatus,
     /// Collection windows: status, trust, open and close are forwarded to the
     /// running service; the issuer verbs run on the issuer Mac only.
     Window {

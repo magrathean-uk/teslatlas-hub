@@ -483,3 +483,42 @@ fn backup_schedule_real_runner_writes_a_verifiable_generation_and_leaks_no_passw
     let state_text = fs::read_to_string(state_dir.join(state::STATE_FILE)).unwrap();
     assert!(!state_text.contains(PASSWORD));
 }
+
+// M06-T04: the read-only status the Mac app shows.
+#[test]
+fn backup_schedule_status_reports_the_last_generation_next_run_and_a_block() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = Arc::new(Script::default());
+    let schedule = scheduler(settings(true), script.clone(), dir.path(), 0);
+    let before = schedule.status_at(0);
+    assert_eq!(before["enabled"], json!(true));
+    assert_eq!(before["configured"], json!(true));
+    assert_eq!(before["running"], json!(false));
+    assert_eq!(before["lastGeneration"], Value::Null);
+    assert_eq!(before["nextRunMs"], json!(2 * 60 * 1000));
+    assert_eq!(before["intervalHours"], json!(6));
+    assert_eq!(before["keep"], json!(3));
+    assert!(matches!(schedule.tick(2 * 60 * 1000), Tick::Ran(Ok(()))));
+    let after = schedule.status_at(2 * 60 * 1000 + 1);
+    assert_eq!(after["lastGeneration"], json!("generation-0"));
+    assert_eq!(after["lastSuccessMs"], json!(2 * 60 * 1000));
+    assert_eq!(after["nextRunMs"], json!(2 * 60 * 1000 + 6 * HOUR));
+    assert_eq!(after["blocked"], json!(false));
+    // A refused-credentials block carries the service's message, which names the purge.
+    script.next(Err(refusal_from(
+        &DataRecoveryError::Store(StoreError::BackupWaitsForCredentialCleanup),
+        Some(data_recovery::BACKUP_BLOCKED_BY_REFUSED_CREDENTIALS),
+    )));
+    assert!(schedule.run_now(None, None).is_err());
+    let blocked = schedule.status();
+    assert_eq!(blocked["blocked"], json!(true));
+    assert_eq!(blocked["lastFailureCode"], json!(BACKUP_BLOCKED));
+    assert!(blocked["lastFailureMessage"].as_str().unwrap().contains("purge-refused-credentials"));
+    assert_eq!(blocked["lastGeneration"], json!("generation-0"), "the last good generation stays");
+    // No path or password in the status.
+    let text = blocked.to_string();
+    assert!(!text.contains("/backup/") && !text.contains(PASSWORD));
+    // Off: no next run.
+    let off = scheduler(settings(false), Arc::new(Script::default()), dir.path(), 0);
+    assert_eq!(off.status_at(0)["nextRunMs"], Value::Null);
+}

@@ -99,7 +99,8 @@ pub fn route(command: &Command) -> Route {
         Command::ExportRecoveryCredentials { .. }
         | Command::RestoreRecoveryCredentials { .. }
         | Command::PurgeRefusedCredentials { .. }
-        | Command::BackupNow { .. } => Route::Service,
+        | Command::BackupNow { .. }
+        | Command::BackupStatus => Route::Service,
         Command::Window { command } => match command {
             WindowCommand::Status
             | WindowCommand::Trust { .. }

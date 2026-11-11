@@ -128,6 +128,9 @@ pub enum OperatorRequest {
         #[serde(default)]
         password_file: Option<PathBuf>,
     },
+    /// Reads the backup schedule's state (M06-T04): read-only, for the Mac
+    /// app's Backups section. It names no path and no password.
+    BackupStatus,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

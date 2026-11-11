@@ -189,6 +189,9 @@ struct Shared {
     running: AtomicBool,
     cancel: Arc<AtomicBool>,
     state: Mutex<ScheduleState>,
+    /// The latest failure's message, kept in memory only (the state file
+    /// holds codes, never text), so status can show the service's words.
+    last_failure_message: Mutex<Option<String>>,
     paused: Box<dyn Fn() -> bool + Send + Sync>,
     wake: Condvar,
     wake_lock: Mutex<()>,
@@ -241,6 +244,7 @@ impl Shared {
             }
             Err(refusal) => state.last_failure_code = Some(refusal.code.clone()),
         }
+        *lock(&self.last_failure_message) = result.as_ref().err().map(|refusal| refusal.message.clone());
         if let Err(error) = state::store(&self.state_path, &state) {
             tracing::warn!(kind = ?error.kind(), "the backup schedule state could not be written");
         }
@@ -350,6 +354,7 @@ impl BackupScheduler {
             running: AtomicBool::new(false),
             cancel: Arc::new(AtomicBool::new(false)),
             state: Mutex::new(loaded),
+            last_failure_message: Mutex::new(None),
             paused,
             wake: Condvar::new(),
             wake_lock: Mutex::new(()),
@@ -419,6 +424,40 @@ impl BackupScheduler {
     /// The remembered times, for status.
     pub fn last(&self) -> ScheduleState {
         lock(&self.shared.state).clone()
+    }
+
+    /// The schedule's state for `backup-status` (M06-T04): read-only, with no
+    /// path and no password. `nextRunMs` is absent when the schedule is off or
+    /// has no destination or password file; `blocked` is set while refused
+    /// credentials block backups, with the service's message naming the purge.
+    pub fn status(&self) -> Value {
+        self.status_at(wall_ms())
+    }
+
+    fn status_at(&self, now_ms: i64) -> Value {
+        let shared = &self.shared;
+        let settings = &shared.settings;
+        let state = self.last();
+        let configured = settings.destination.is_some() && settings.password_file.is_some();
+        let next_run_ms = (settings.enabled && configured)
+            .then(|| next_due_ms(settings, &state, shared.started_ms, now_ms));
+        let message = lock(&shared.last_failure_message).clone();
+        let blocked = state.last_failure_code.as_deref() == Some(BACKUP_BLOCKED);
+        serde_json::json!({
+            "enabled": settings.enabled,
+            "configured": configured,
+            "intervalHours": settings.interval_ms / MS_PER_HOUR,
+            "keep": settings.keep.map(NonZeroUsize::get),
+            "running": shared.running.load(Ordering::SeqCst),
+            "paused": (shared.paused)(),
+            "lastAttemptMs": state.last_attempt_ms,
+            "lastSuccessMs": state.last_success_ms,
+            "lastGeneration": state.last_generation,
+            "lastFailureCode": state.last_failure_code,
+            "lastFailureMessage": state.last_failure_code.as_ref().and(message),
+            "blocked": blocked,
+            "nextRunMs": next_run_ms,
+        })
     }
 
     /// Steps the timer once at `now_ms` (tests drive time through this).

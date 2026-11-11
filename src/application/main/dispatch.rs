@@ -405,6 +405,7 @@ fn run_forwarded(config_path: &Path, command: &Command) -> Result<(), Box<dyn st
             destination: destination.as_deref().map(absolute_path).transpose()?,
             password_file: password_file.as_deref().map(absolute_path).transpose()?,
         },
+        Command::BackupStatus => OperatorRequest::BackupStatus,
         _ => return Err("this command is not forwarded to the service".into()),
     };
     let result = operator::channel::exchange(stream, &request, FORWARD_TIMEOUT)?;
@@ -535,6 +536,10 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
         password_file: Option<&Path>,
     ) -> Result<serde_json::Value, OperatorRefusal> {
         self.backup.run_now(destination, password_file)
+    }
+
+    fn backup_status(&self) -> Result<serde_json::Value, OperatorRefusal> {
+        Ok(self.backup.status())
     }
 }
 
@@ -1279,8 +1284,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::ExportRecoveryCredentials { .. }
         | Command::RestoreRecoveryCredentials { .. }
         | Command::PurgeRefusedCredentials { .. }
-        | Command::BackupNow { .. } => {
-            unreachable!("credential recovery, the purge and backup-now are forwarded to the running service")
+        | Command::BackupNow { .. }
+        | Command::BackupStatus => {
+            unreachable!("credential recovery, the purge and the backup verbs are forwarded to the running service")
         }
         Command::VerifyBackup { .. } | Command::RestoreData { .. } => {
             unreachable!("immutable data-recovery commands return before writable Hub state")
