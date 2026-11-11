@@ -87,13 +87,6 @@ impl SendPermit {
             output = send => Ok(output),
         }
     }
-
-    /// The time left before the send must have ended.
-    #[cfg(test)]
-    pub(crate) fn time_left(&self) -> Option<std::time::Duration> {
-        self.deadline
-            .map(|deadline| deadline.saturating_duration_since(Instant::now()))
-    }
 }
 
 impl Drop for SendPermit {
