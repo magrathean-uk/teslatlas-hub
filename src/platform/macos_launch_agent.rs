@@ -473,7 +473,8 @@ fn configured_identity_from_plist(
     if fs::metadata(plist)?.len() > 1024 * 1024 {
         return Err(io::Error::other("installed plist is too large"));
     }
-    refuse_real_launchctl_in_unit_tests()?;
+    // A read-only conversion of the given file; no service is touched, so unit
+    // tests may decode a synthetic plist. Every launchctl call stays refused.
     let output = Command::new("/usr/bin/plutil")
         .args(["-convert", "json", "-o", "-", "--"])
         .arg(plist)

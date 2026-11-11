@@ -62,9 +62,9 @@ fn seed_supervised_restart_import(store: &HubStore) {
     let history = SourceDbHistory {
         cars: vec![SourceDbCar {
             id: 1,
-            eid: crate::test_unavailable_fixture::VEHICLE_ID as i64,
-            vid: Some(crate::test_unavailable_fixture::STREAM_ID as i64),
-            vin: Some(crate::test_unavailable_fixture::VIN.to_owned()),
+            eid: crate::collection::loopback_fixture::VEHICLE_ID as i64,
+            vid: Some(crate::collection::loopback_fixture::STREAM_ID as i64),
+            vin: Some(crate::collection::loopback_fixture::VIN.to_owned()),
             name: Some("Restart fixture".to_owned()),
             model: Some("3".to_owned()),
             trim_badging: Some("74d".to_owned()),
@@ -525,10 +525,10 @@ async fn imported_legacy_pair_refreshes_then_collects_one_car_and_survives_reope
     let fixture_now = current_epoch_millis().expect("clock").div_euclid(1_000);
     let _generation = crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,temporary.path(),initial.access_token(),initial.refresh_token(),Some((fixture_now + 28_800, fixture_now - 60))).expect("supplied fixture pair");
 
-    let fake = crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
+    let fake = crate::collection::loopback_fixture::FakeTeslaSource::spawn_canonical(crate::collection::loopback_fixture::AdvanceMode::Manual)
         .await
         .expect("loopback Tesla");
-    fake.set_step(crate::test_unavailable_fixture::ScenarioStep::UnchangedNoOp);
+    fake.set_step(crate::collection::loopback_fixture::ScenarioStep::UnchangedNoOp);
     let base_ts_ms = current_epoch_millis().expect("clock") - SUPERVISED_RESTART_BASE_AGE_MS;
     fake.set_base_ts_ms(base_ts_ms);
     let manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
@@ -589,7 +589,7 @@ async fn imported_legacy_pair_refreshes_then_collects_one_car_and_survives_reope
         request.path
             == format!(
                 "/api/1/vehicles/{}/vehicle_data",
-                crate::test_unavailable_fixture::VEHICLE_ID as u64
+                crate::collection::loopback_fixture::VEHICLE_ID as u64
             )
     }));
 
@@ -621,13 +621,13 @@ async fn imported_legacy_pair_refreshes_then_collects_one_car_and_survives_reope
     assert!(
         fake.audited_stream_events()
             .iter()
-            .any(|event| { event.event == crate::test_unavailable_fixture::StreamAuditEvent::Unsubscribe })
+            .any(|event| { event.event == crate::collection::loopback_fixture::StreamAuditEvent::Unsubscribe })
     );
 
     let stored = store.test_legacy_vault().load(crate::auth::credential_envelope::CredentialSlot::OwnerApi)
         .expect("stored pair")
         .expect("stored pair exists");
-    assert!(stored.access.as_str() == crate::test_unavailable_fixture::ACCESS_TOKEN, "proved successor");
+    assert!(stored.access.as_str() == crate::collection::loopback_fixture::ACCESS_TOKEN, "proved successor");
     assert!(stored.next_refresh_at > 0 && stored.next_refresh_at < stored.expires_at);
 
     drop(store);
@@ -644,7 +644,7 @@ async fn imported_legacy_pair_refreshes_then_collects_one_car_and_survives_reope
         fake.oauth_issuer_url(),
     )
     .expect("reopen latest pair");
-    assert_eq!(reopened.access_token(), crate::test_unavailable_fixture::ACCESS_TOKEN);
+    assert_eq!(reopened.access_token(), crate::collection::loopback_fixture::ACCESS_TOKEN);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -654,7 +654,7 @@ async fn observer_collects_and_reconnects_without_refreshing() {
     crate::crypto::install_default_provider();
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let fake = crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
+    let fake = crate::collection::loopback_fixture::FakeTeslaSource::spawn_canonical(crate::collection::loopback_fixture::AdvanceMode::Manual)
         .await
         .expect("loopback Tesla");
     let setup_auth = LegacyAuth::for_test(
@@ -674,7 +674,7 @@ async fn observer_collects_and_reconnects_without_refreshing() {
     let fixture_now = current_epoch_millis().expect("clock").div_euclid(1_000);
     let _generation = crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,temporary.path(),initial.access_token(),initial.refresh_token(),Some((fixture_now + 28_800, fixture_now + 21_600))).expect("supplied fixture pair");
 
-    fake.set_step(crate::test_unavailable_fixture::ScenarioStep::UnchangedNoOp);
+    fake.set_step(crate::collection::loopback_fixture::ScenarioStep::UnchangedNoOp);
     let base_ts_ms = current_epoch_millis().expect("clock") - SUPERVISED_RESTART_BASE_AGE_MS;
     fake.set_base_ts_ms(base_ts_ms);
     let manager = LegacyAuthManager::from_hub_source_db_store_observer_with_issuer(
@@ -730,7 +730,7 @@ async fn observer_collects_and_reconnects_without_refreshing() {
         request.path
             == format!(
                 "/api/1/vehicles/{}/vehicle_data",
-                crate::test_unavailable_fixture::VEHICLE_ID as u64
+                crate::collection::loopback_fixture::VEHICLE_ID as u64
             )
     }));
 
@@ -1389,13 +1389,13 @@ async fn cs_p3_cadence_wait_defers_refusal_lift_until_validated_start() {
 /// which would close the gap again before the session starts. The caller restores them with
 /// [`restore_owner_samples_after_stream_proof`] once frames have been stored.
 fn open_stream_window_after_first_owner_sample(
-    fake: &crate::test_unavailable_fixture::FakeTeslaSource,
+    fake: &crate::collection::loopback_fixture::FakeTeslaSource,
     base_ts_ms: i64,
 ) {
     fake.set_owner_vehicle_data_available(false);
     fake.set_base_ts_ms(base_ts_ms);
 }
 
-fn restore_owner_samples_after_stream_proof(fake: &crate::test_unavailable_fixture::FakeTeslaSource) {
+fn restore_owner_samples_after_stream_proof(fake: &crate::collection::loopback_fixture::FakeTeslaSource) {
     fake.set_owner_vehicle_data_available(true);
 }

@@ -83,9 +83,6 @@ pub fn discovery_source_url() -> String {
 }
 
 #[cfg(test)]
-pub(crate) mod test_unavailable_fixture;
-
-#[cfg(test)]
 pub(crate) fn private_tempdir() -> std::io::Result<tempfile::TempDir> {
     use std::os::unix::fs::PermissionsExt;
 

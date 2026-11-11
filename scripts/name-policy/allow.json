@@ -6347,38 +6347,6 @@
       "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
     },
     {
-      "id": "retained-1179fa0820677fd6f11c",
-      "class": "g2-4-recorded",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwuam9pblwoIlwudGVzbGFtYXRlXC1lbmNyeXB0aW9uXC5wcmV2aW91c1wua2V5IlwpOyQ=",
-      "max_count": 1,
-      "expires": "G2-4-M2",
-      "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
-      "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
-      "paths": [
-        "src/auth/credentials/tests.rs"
-      ],
-      "review_by": "2027-01-31",
-      "recorded_row": "2026-10-12 Independence: folds into G2-4",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "retained-9a4138fa1d6b1f8bd437",
-      "class": "g2-4-recorded",
-      "match_kind": "regex",
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBsZXRcIHByZXZpb3VzXCA9XCBzZWNyZXRzXC5qb2luXCgiXC50ZXNsYW1hdGVcLWVuY3J5cHRpb25cLnByZXZpb3VzXC5rZXkiXCk7JA==",
-      "max_count": 1,
-      "expires": "G2-4-M2",
-      "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
-      "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
-      "paths": [
-        "src/auth/legacy_auth/state_tests.rs"
-      ],
-      "review_by": "2027-01-31",
-      "recorded_row": "2026-10-12 Independence: folds into G2-4",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
       "id": "retained-2f01b647faa6d4ceec0e",
       "class": "g2-4-recorded",
       "match_kind": "regex",
@@ -6456,22 +6424,6 @@
       "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
       "recorded_row": "2026-10-12 Independence: folds into G2-4",
       "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
-    },
-    {
-      "id": "c10-previous-key-artifact-assertion",
-      "class": "g2-4-recorded",
-      "paths": [
-        "src/collection/collector/tests/write_guard_f3.rs"
-      ],
-      "match_b64": "XlwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgXCBcIFwgb3V0Y29tZVwuc2VjcmV0c19iZWZvcmVcLmNvbnRhaW5zXCgidGVzbGFtYXRlXC1lbmNyeXB0aW9uXC5wcmV2aW91c1wua2V5IlwpLCQ=",
-      "max_count": 1,
-      "expires": "G2-4-M2",
-      "review_by": "2027-01-31",
-      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26",
-      "reason": "C10 test asserts preservation of the existing interrupted credential-key artifact; its on-disk spelling stays frozen until the credential unit is replaced",
-      "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
-      "recorded_row": "2026-10-12 Independence: folds into G2-4",
-      "match_kind": "regex"
     },
     {
       "id": "cleanroom-protected-owner-file",
