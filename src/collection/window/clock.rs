@@ -9,8 +9,11 @@ use std::{
     net::{ToSocketAddrs, UdpSocket},
     process::Command,
     sync::Mutex,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+#[cfg(not(target_vendor = "apple"))]
+use std::time::Instant;
 
 use super::{CLOCK_FLOOR_EPOCH_SECONDS, DRIFT_TOLERANCE_SECONDS, refusal::Refusal};
 
@@ -30,20 +33,26 @@ pub trait WindowClock: Send + Sync + std::fmt::Debug {
     fn boot_time(&self) -> Result<i64, Refusal>;
 }
 
-/// The system clock. Its monotonic reading is `std::time::Instant`, which is
-/// process-scoped and, on macOS, does not count sleep: within a process the
-/// wall deadline still bounds a window across sleep, but an Open window cannot
-/// survive a restart on it and closes `clock_invalid`. A boot-scoped,
-/// sleep-counting source (Darwin `CLOCK_MONOTONIC`, Linux `CLOCK_BOOTTIME`)
-/// needs a safe binding the crate does not enable yet.
+/// The system clock.
+///
+/// On Darwin its monotonic reading is `CLOCK_MONOTONIC`, which has one origin
+/// for the whole boot and keeps counting while the machine sleeps, so a
+/// reading persisted by one service process stays comparable in the next and
+/// an Open window keeps its original monotonic deadline across a restart. A
+/// reboot starts a new origin; the boot identity (`kern.boottime`) changes
+/// with it and closes the window. Elsewhere the reading falls back to the
+/// process-scoped `std::time::Instant`, reported as not boot-scoped, so an
+/// Open window fails closed at restart there.
 #[derive(Debug)]
 pub struct SystemClock {
+    #[cfg(not(target_vendor = "apple"))]
     origin: Instant,
 }
 
 impl SystemClock {
     pub fn new() -> Self {
         Self {
+            #[cfg(not(target_vendor = "apple"))]
             origin: Instant::now(),
         }
     }
@@ -63,12 +72,21 @@ impl WindowClock for SystemClock {
         }
     }
 
+    #[cfg(target_vendor = "apple")]
+    fn mono(&self) -> u64 {
+        let now = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
+        // A negative reading cannot occur; mapping it to zero puts it behind
+        // any anchor, which fails closed.
+        u64::try_from(now.tv_sec).unwrap_or(0)
+    }
+
+    #[cfg(not(target_vendor = "apple"))]
     fn mono(&self) -> u64 {
         self.origin.elapsed().as_secs()
     }
 
     fn mono_boot_scoped(&self) -> bool {
-        false
+        cfg!(target_vendor = "apple")
     }
 
     fn boot_time(&self) -> Result<i64, Refusal> {
@@ -212,8 +230,13 @@ impl ClockGuard {
         if wall < CLOCK_FLOOR_EPOCH_SECONDS || wall + DRIFT_TOLERANCE_SECONDS < self.watermark {
             return ClockVerdict::Invalid;
         }
+        // A monotonic reading behind its anchor means the source ran back or
+        // restarted; the remainder can no longer be measured.
+        if mono < self.anchor_mono {
+            return ClockVerdict::Invalid;
+        }
         let wall_elapsed = wall - self.anchor_wall;
-        let mono_elapsed = mono.saturating_sub(self.anchor_mono) as i64;
+        let mono_elapsed = (mono - self.anchor_mono) as i64;
         if wall_elapsed + DRIFT_TOLERANCE_SECONDS < mono_elapsed {
             return ClockVerdict::Invalid;
         }
@@ -353,5 +376,116 @@ impl OffsetProbe for SntpProbe {
         let mut reply = [0u8; 128];
         let length = socket.recv(&mut reply).map_err(|_| Refusal::ClockOffset)?;
         sntp_offset(sent, &reply[..length], Self::now())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::process::Command;
+
+    use super::*;
+
+    const PROBE_ENV: &str = "TESLATLAS_WINDOW_CLOCK_PROBE";
+    /// Wall stepping by NTP since boot stays far inside this; a clock that
+    /// did not count sleep, or a process-scoped origin, misses it by the
+    /// whole time asleep or the whole uptime.
+    const BOOT_ORIGIN_TOLERANCE_SECONDS: i64 = 30;
+
+    /// Runs only inside the child process the restart test spawns: a fresh
+    /// process prints its own reading of the system clock.
+    #[test]
+    fn window_resume_system_clock_child_probe() {
+        if std::env::var_os(PROBE_ENV).is_none() {
+            return;
+        }
+        let clock = SystemClock::new();
+        println!(
+            "probe mono={} boot={}",
+            clock.mono(),
+            clock.boot_time().expect("boot time")
+        );
+    }
+
+    fn probe_in_new_process() -> (u64, i64) {
+        let module = module_path!().split_once("::").expect("crate path").1;
+        let output = Command::new(std::env::current_exe().expect("test binary"))
+            .args([
+                "--exact",
+                &format!("{module}::window_resume_system_clock_child_probe"),
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(PROBE_ENV, "1")
+            .output()
+            .expect("child process");
+        assert!(output.status.success(), "child probe failed");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let line = stdout
+            .lines()
+            .find_map(|line| line.split_once("probe mono="))
+            .map(|(_, rest)| rest)
+            .expect("probe line");
+        let mut mono = None;
+        let mut boot = None;
+        for field in format!("mono={line}").split_whitespace() {
+            match field.split_once('=') {
+                Some(("mono", value)) => mono = value.parse().ok(),
+                Some(("boot", value)) => boot = value.parse().ok(),
+                _ => {}
+            }
+        }
+        (mono.expect("mono"), boot.expect("boot"))
+    }
+
+    #[cfg(target_vendor = "apple")]
+    #[test]
+    fn window_resume_system_clock_reading_survives_a_process_restart() {
+        let clock = SystemClock::new();
+        assert!(clock.mono_boot_scoped());
+        let boot = clock.boot_time().expect("boot time");
+        let before = clock.mono();
+        let (child_mono, child_boot) = probe_in_new_process();
+        let after = SystemClock::new().mono();
+        assert_eq!(child_boot, boot, "same boot, same identity");
+        assert!(
+            before <= child_mono && child_mono <= after,
+            "a new process reads the same clock: {before} <= {child_mono} <= {after}"
+        );
+        // A deadline anchored before the restart still holds after it.
+        let wall = clock.wall();
+        let guard = ClockGuard::anchored(wall, before, wall + 3600, wall);
+        let mut resumed = guard;
+        assert_eq!(resumed.check(wall, child_mono), ClockVerdict::Ok);
+        assert_eq!(resumed.deadline_mono(), before + 3600);
+    }
+
+    #[cfg(target_vendor = "apple")]
+    #[test]
+    fn window_resume_system_clock_counts_from_boot_and_through_sleep() {
+        let clock = SystemClock::new();
+        let boot = clock.boot_time().expect("boot time");
+        let origin = clock.wall() - clock.mono() as i64;
+        assert!(
+            (origin - boot).abs() <= BOOT_ORIGIN_TOLERANCE_SECONDS,
+            "monotonic origin {origin} is the boot {boot}"
+        );
+    }
+
+    #[test]
+    fn window_resume_clock_guard_reading_behind_its_anchor_is_invalid() {
+        let wall = CLOCK_FLOOR_EPOCH_SECONDS + 1_000_000;
+        let mut guard = ClockGuard::anchored(wall, 5_000, wall + 3600, wall);
+        assert_eq!(guard.check(wall + 10, 5_010), ClockVerdict::Ok);
+        assert_eq!(guard.check(wall + 20, 4_999), ClockVerdict::Invalid);
+        assert_eq!(guard.check(wall + 3600, 8_600), ClockVerdict::Expired);
+    }
+
+    #[test]
+    fn window_resume_boot_time_parses_kern_boottime() {
+        assert_eq!(
+            parse_boot_time("{ sec = 1793974448, usec = 158203 } Fri Nov  6 14:14:08 2026"),
+            Some(1_793_974_448)
+        );
+        assert_eq!(parse_boot_time(""), None);
     }
 }
