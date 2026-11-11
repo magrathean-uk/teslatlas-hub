@@ -105,7 +105,7 @@ async fn c5_r3_01_a_managed_restart_before_the_forced_refresh_still_owes_it() {
 #[tokio::test]
 async fn c5_r3_01_k2_a_completed_unrotated_refresh_is_no_obligation_after_a_restart() {
     // t0: the list is refused (the first count), the forced refresh succeeds and keeps the
-    // refresh token (the generation is unchanged), and the resend meets a 503. The
+    // refresh token (R31 assigns a fresh output generation), and the resend meets a 503. The
     // collector stops. The fuse of the restart is a count 1 of the current generation, but
     // the refresh it owes has been made: the stored pair no longer holds the token the
     // count rejected, whatever the receipts say. The restart sends no further token
@@ -149,7 +149,7 @@ async fn c5_r3_01_k2_a_completed_unrotated_refresh_is_no_obligation_after_a_rest
     assert_eq!(
         manager.generation(),
         generation_stored,
-        "the refresh kept the refresh token: the generation is the one counted"
+        "the restart loads the persisted successor generation"
     );
     // Asked at once, later and after the floor: nothing is owed and nothing is held.
     let products_before = bed.fake.arrivals("products").len();
@@ -557,7 +557,7 @@ async fn c5_r3_01_f3_a_status_row_captured_before_the_completion_cannot_bring_th
 
 /// An observer over the stored pair with the region configured, for opaque stored tokens.
 fn observer_global(bed: &Bed) -> LegacyAuthManager {
-    LegacyAuthManager::from_hub_source_db_store_for_test(
+    bed.rig.register_manager(LegacyAuthManager::from_hub_source_db_store_for_test(
         bed.rig.store.clone(),
         bed.rig.directory.path(),
         &bed.rig
@@ -566,7 +566,7 @@ fn observer_global(bed: &Bed) -> LegacyAuthManager {
         true,
         bed.rig.env.clone(),
     )
-    .expect("observer")
+    .expect("observer"))
 }
 
 /// A bed at the end of a count 2: the list met a 401 at t0 (the first count) and the
@@ -987,6 +987,7 @@ fn try_manager_global(bed: &Bed) -> Result<LegacyAuthManager, LegacyAuthManagerE
         false,
         bed.rig.env.clone(),
     )
+    .map(|manager| bed.rig.register_manager(manager))
 }
 
 #[tokio::test]

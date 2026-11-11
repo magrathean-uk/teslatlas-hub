@@ -713,6 +713,7 @@ fn ct031_spent_successor() {
 
 #[test]
 fn ct032_idempotent_completion() {
+    counted_refresh_commit_boundaries();
     let mut f = Fixture::new();
     let first = f.pair(CredentialSlot::OwnerApi, 1, "refresh-0001");
     f.put(&first, ReplacePolicy::OnlyIfEmpty).unwrap();
@@ -741,6 +742,105 @@ fn ct032_idempotent_completion() {
     assert_eq!(f.count("credential_refresh_attempts"), 1);
     assert_eq!(f.count("credential_refresh_fences"), 1);
     assert_eq!(receipt(f.conn.test_connection(), id).0, "success");
+}
+
+// R55: keep statement failure, refusal and idempotence distinct from an
+// issued COMMIT. A real deferred foreign-key violation exercises COMMIT's
+// error path; the callback must run even though SQLite rolls that write back.
+fn counted_refresh_commit_boundaries() {
+    use std::cell::Cell;
+    let mut f = Fixture::new();
+    let first = f.pair(CredentialSlot::OwnerApi, 1, "refresh-0001");
+    f.put(&first, ReplacePolicy::OnlyIfEmpty).unwrap();
+    let calls = Cell::new(0usize);
+    let mut before_commit = || calls.set(calls.get() + 1);
+    assert_refusal(
+        f.conn.begin_credential_refresh_with_commit(
+            CredentialSlot::OwnerApi, generation(9), &mut before_commit,
+        ),
+        BeginRefusal::RowChanged,
+    );
+    assert_eq!(calls.get(), 0, "R30 refusal issues no COMMIT");
+    f.conn.test_connection().execute_batch(
+        "CREATE TEMP TRIGGER fail_begin_statement BEFORE INSERT ON outbound_request_receipts
+         BEGIN SELECT RAISE(ABORT, 'statement fault'); END;",
+    ).unwrap();
+    assert!(matches!(
+        f.conn.begin_credential_refresh_with_commit(
+            CredentialSlot::OwnerApi, generation(1), &mut before_commit,
+        ),
+        Err(StoreError::CredentialRefreshReceipt(_)),
+    ));
+    assert_eq!(calls.get(), 0, "R30 statement failure issues no COMMIT");
+    f.conn.test_connection().execute_batch("DROP TRIGGER fail_begin_statement").unwrap();
+    // Fixture-only tables and a deferred FK force SQLite itself to refuse
+    // COMMIT after all R30 statements and the callback have succeeded.
+    f.conn.test_connection().execute_batch(
+        "CREATE TABLE commit_boundary_parent(id INTEGER PRIMARY KEY);
+         CREATE TABLE commit_boundary_child(parent_id INTEGER REFERENCES
+             commit_boundary_parent(id) DEFERRABLE INITIALLY DEFERRED);
+         CREATE TEMP TRIGGER fail_begin_commit AFTER INSERT ON outbound_request_receipts
+         BEGIN INSERT INTO commit_boundary_child(parent_id) VALUES(1); END;",
+    ).unwrap();
+    assert!(matches!(
+        f.conn.begin_credential_refresh_with_commit(
+            CredentialSlot::OwnerApi, generation(1), &mut before_commit,
+        ),
+        Err(StoreError::CredentialCommit(_)),
+    ));
+    assert_eq!(calls.get(), 1, "R30 failed COMMIT is counted");
+    assert!(!f.conn.has_unresolved_credential_refresh(CredentialSlot::OwnerApi).unwrap());
+    assert_eq!(f.count("credential_refresh_fences"), 0, "failed transaction rolled back");
+    f.conn.test_connection().execute_batch("DROP TRIGGER fail_begin_commit").unwrap();
+    let receipt = f.conn.begin_credential_refresh_with_commit(
+        CredentialSlot::OwnerApi, generation(1), &mut before_commit,
+    ).unwrap();
+    assert_eq!(calls.get(), 2, "R30 successful COMMIT counted once");
+    let successor = f.pair(CredentialSlot::OwnerApi, 2, "refresh-0002");
+    let candidates = LegacyCandidates::for_successor("access-0001", "refresh-0002").unwrap();
+    f.conn.set_test_rollback_completion(true);
+    assert!(f.conn.complete_credential_refresh_with_commit(
+        receipt, generation(1), &successor, &candidates, &mut before_commit,
+    ).is_err());
+    assert_eq!(calls.get(), 2, "R31 rollback before COMMIT does not count");
+    f.conn.set_test_rollback_completion(false);
+    assert_eq!(f.conn.complete_credential_refresh_with_commit(
+        receipt, generation(1), &successor, &candidates, &mut before_commit,
+    ).unwrap(), RefreshCompletion::Completed);
+    assert_eq!(calls.get(), 3, "R31 successful COMMIT counted once");
+    assert_eq!(f.conn.complete_credential_refresh_with_commit(
+        receipt, generation(1), &successor, &candidates, &mut before_commit,
+    ).unwrap(), RefreshCompletion::AlreadyComplete);
+    assert_eq!(calls.get(), 3, "R31 replay issues no COMMIT");
+    let receipt = f.conn.begin_credential_refresh_with_commit(
+        CredentialSlot::OwnerApi, generation(2), &mut before_commit,
+    ).unwrap();
+    f.conn.cancel_unsent_credential_refresh_with_commit(
+        receipt, generation(2), &mut before_commit,
+    ).unwrap();
+    assert_eq!(calls.get(), 5, "R32 successful COMMIT counted once");
+    assert!(f.conn.cancel_unsent_credential_refresh_with_commit(
+        receipt, generation(2), &mut before_commit,
+    ).is_err());
+    assert_eq!(calls.get(), 5, "R32 refusal issues no COMMIT");
+    let receipt = f.conn.begin_credential_refresh_with_commit(
+        CredentialSlot::OwnerApi, generation(2), &mut before_commit,
+    ).unwrap();
+    assert!(f.conn.close_credential_refresh_attempt_with_commit(
+        receipt, generation(2), OutboundRequestOutcome::Cancelled,
+        None, None, true, &mut before_commit,
+    ).is_err());
+    assert_eq!(calls.get(), 6, "R33 invalid outcome issues no COMMIT");
+    f.conn.close_credential_refresh_attempt_with_commit(
+        receipt, generation(2), OutboundRequestOutcome::TransportError,
+        None, None, true, &mut before_commit,
+    ).unwrap();
+    assert_eq!(calls.get(), 7, "R33 successful COMMIT counted once");
+    f.conn.clear_credential_pair_with_commit(
+        CredentialSlot::OwnerApi, &mut before_commit,
+    ).unwrap();
+    assert_eq!(calls.get(), 8, "R35 successful COMMIT counted once");
+    assert!(f.conn.load_credential_pair(CredentialSlot::OwnerApi).unwrap().is_none());
 }
 
 #[test]

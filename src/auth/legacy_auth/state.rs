@@ -862,6 +862,7 @@ pub(crate) enum StoredPairRelation {
 
 /// Compare the stored pair row with `own`, the generation the unit holds
 /// (R44a). It reads the generation column only and needs no sensitive access.
+#[cfg(test)]
 pub(crate) fn stored_pair_relation(
     store: &HubStore,
     own: Uuid,
@@ -946,14 +947,7 @@ impl PairImage {
         {
             return None;
         }
-        ({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
-            self.access.clone(),
-            self.refresh.clone(),
-            self.expires_at,
-            self.next_refresh_at,
-        )
-        .and_then(|row| ({ let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), uuid::Uuid) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(&(row), self.generation))
-        .ok()
+        Some((self.access.clone(),self.refresh.clone(),self.expires_at,self.next_refresh_at,Some(self.generation),String::new(),String::new()))
     }
 
     /// Whether a stored row is exactly this image.
@@ -1008,6 +1002,7 @@ impl RereadReceiptInput {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn persist_reread(
     store: &HubStore,
     input: Uuid,
@@ -1015,7 +1010,18 @@ pub(crate) fn persist_reread(
     own: Option<OwnWrite<'_>>,
 ) -> Result<PersistReread, StoreError> {
     if let Some(own) = own.filter(|_| input == successor) {
-        let (credential_row, credential_receipt) = ({ let _retained_snapshot_context = store; let snapshot_callee: fn(crate::db::OutboundRequestReceiptId) -> Result<(Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, Option<RereadReceiptInput>), StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); snapshot_callee(own.receipt) })?;
+        // Retained CL-14 component oracle only. V1's manager uses its vault
+        // completion adapter and never recognises persistence from this image.
+        use rusqlite::OptionalExtension;
+        let predecessor = super::state_fixture::for_store(store)?;
+        let db = store.open()?;
+        let tx = db.unchecked_transaction().map_err(StoreError::Begin)?;
+        let sql = if predecessor { "SELECT access,refresh,expires_at,next_refresh_at,credential_generation FROM legacy_owner_tokens WHERE singleton_id=1" } else { "SELECT access_envelope,refresh_envelope,expires_at,next_refresh_at,generation FROM credential_pairs WHERE account_id=1 AND slot='owner_api'" };
+        let credential_row = tx.query_row(sql,[],|r| {
+            let generation: Option<String> = r.get(4)?;
+            Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,generation.and_then(|g|Uuid::parse_str(&g).ok()),String::new(),String::new()))
+        }).optional().map_err(StoreError::Query)?;
+        let credential_receipt = tx.query_row("SELECT transport,operation,outcome FROM outbound_request_receipts WHERE id=?1",[own.receipt.0],|r| Ok(RereadReceiptInput {transport:r.get(0)?,operation:r.get(1)?,outcome:r.get(2)?})).optional().map_err(StoreError::Query)?;
         let Some(row) = credential_row else {
             return Ok(PersistReread::Missing);
         };
@@ -1129,9 +1135,10 @@ pub(crate) struct StartFacts {
 
 impl StartFacts {
     /// Read the facts from the store.
+    #[cfg(test)]
     pub(crate) fn read(store: &HubStore, current: Uuid) -> Result<Self, StoreError> {
         Ok(Self {
-            unresolved_attempt: ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })()?,
+            unresolved_attempt: store.test_legacy_unresolved()?,
             stored: store.load_collector_auth_row()?,
             current_is_refresh_output: store.legacy_generation_is_refresh_output(current)?,
             last_receipt_started_at_ms: store.latest_legacy_refresh_started_at_ms()?,
@@ -1159,6 +1166,7 @@ pub(crate) struct RestoredAuth {
 /// Restore the unit's state at start (R57 steps 1 to 5 and 7 to 9). Step 6, the
 /// refusal that C3 detected, is part P4's and applies after this when step 5
 /// (b) restored nothing.
+#[cfg(test)]
 pub(crate) fn restore_at_start(
     store: &HubStore,
     inputs: &StartInputs,

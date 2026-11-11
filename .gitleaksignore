@@ -1,6 +1,8 @@
 # Reviewed fixtures, hashes and test keys (M00-T05); fingerprints only.
 src/application/main/tests.rs:generic-api-key:1993
 src/application/main/tests.rs:generic-api-key:1999
+src/auth/credential_recovery/tests/g24_m2_recovery.rs:generic-api-key:222
+src/auth/credential_vault/tests.rs:generic-api-key:534
 119752bbd41a0d5834db913efeacb480c418f456:protocol/docs/development/d1-component-manifest-handoff-2026-09-09.json:generic-api-key:131
 119752bbd41a0d5834db913efeacb480c418f456:protocol/docs/development/d1-component-manifest-handoff-2026-09-09.json:generic-api-key:55
 14c8dc20c6a9550beece90faedf42dbdd4b4f0d9:docs/development/edge-macos-one-event-certificate-profile-review-2026-09-12-r10.json:generic-api-key:1

@@ -383,8 +383,36 @@ pub struct CredentialConnection {
     rollback_completion: bool,
     #[cfg(test)]
     events: Vec<&'static str>,
+    // Fields drop in declaration order: close SQLite before releasing the take.
+    _lease: CredentialConnectionLease,
+}
+struct CredentialConnectionLease {
+    #[cfg(test)]
+    taken: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    admission: Option<crate::hub_user_process::CredentialVaultAdmission>,
+    #[cfg(test)]
+    fixture: std::sync::Arc<FixtureVault>,
+}
+impl Drop for CredentialConnectionLease {
+    fn drop(&mut self) {
+        // SQLite has already closed. Release admission before waking a reopen.
+        drop(self.admission.take());
+        #[cfg(test)]
+        let _guard = self.fixture.release.lock().unwrap_or_else(|error| error.into_inner());
+        #[cfg(test)]
+        self.taken.store(false, std::sync::atomic::Ordering::Release);
+        #[cfg(test)]
+        self.fixture.released.notify_all();
+    }
 }
 impl HubStore {
+    /// R68's slot-only fact contains neither an identity nor a generation.
+    pub(crate) fn unresolved_fleet_refresh_status(&self) -> Result<bool, StoreError> {
+        self.open_read_only_connection()?.query_row(
+            "SELECT EXISTS(SELECT 1 FROM credential_refresh_attempts a JOIN outbound_request_receipts r ON r.id=a.receipt_id WHERE a.account_id=1 AND a.slot='fleet_api' AND r.outcome='started')",
+            [], |r| r.get(0)
+        ).map_err(StoreError::CredentialRefreshReceipt)
+    }
     pub fn take_credential_connection(&self) -> Result<CredentialConnection, StoreError> {
         use std::sync::atomic::Ordering;
         self.credential_connection_taken
@@ -426,6 +454,13 @@ impl HubStore {
                 .execute_batch("PRAGMA fullfsync = ON; PRAGMA checkpoint_fullfsync = ON;")
                 .map_err(StoreError::Configure)?;
             Ok(CredentialConnection {
+                _lease: CredentialConnectionLease {
+                    #[cfg(test)]
+                    taken: self.credential_connection_taken.clone(),
+                    admission: None,
+                    #[cfg(test)]
+                    fixture: self.fixture_vault.clone(),
+                },
                 connection,
                 database_path: self.database_path.clone(),
                 barrier_directory,
@@ -587,6 +622,78 @@ impl HubStore {
     reason = "Part S handoff API; remaining callers land in M and V1."
 )]
 impl CredentialConnection {
+    pub(crate) fn bind_vault_admission(&mut self, admission: crate::hub_user_process::CredentialVaultAdmission) {
+        self._lease.admission = Some(admission);
+    }
+    /// R64 eligibility before any key publication, reservation or seal.
+    pub(crate) fn credential_clear_needed(&mut self, slot: CredentialSlot) -> Result<bool, StoreError> {
+        self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM credential_pairs WHERE account_id=1 AND slot=?1) OR EXISTS(SELECT 1 FROM credential_refresh_attempts a JOIN outbound_request_receipts r ON r.id=a.receipt_id WHERE a.account_id=1 AND a.slot=?1 AND r.outcome='started') OR EXISTS(SELECT 1 FROM credential_format_state WHERE singleton_id=1 AND CASE ?1 WHEN 'owner_api' THEN owner_api_state='pending' AND owner_api_blocked IS NOT NULL ELSE fleet_api_state='pending' AND fleet_api_blocked IS NOT NULL END)",
+            [slot.as_str()], |r| r.get(0)
+        ).map_err(StoreError::CredentialPairStore)
+    }
+    /// E-A9: identity and every link of its chain share one read snapshot.
+    pub(crate) fn guarded_collector_credential_identity(&mut self, fleet: bool) -> Result<String, StoreError> {
+        let tx = self.connection.transaction().map_err(StoreError::Begin)?;
+        if fleet {
+            let fields = tx.query_row("SELECT client_id, region FROM credential_pairs WHERE account_id=1 AND slot='fleet_api'", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .optional().map_err(StoreError::CredentialPairStore)?;
+            return Ok(fields.map_or_else(String::new, |(client, region)| format!("{client}|{region}")));
+        }
+        let current = tx.query_row("SELECT generation FROM credential_pairs WHERE account_id=1 AND slot='owner_api'", [], |r| r.get::<_, String>(0))
+            .optional().map_err(StoreError::CredentialPairStore)?;
+        let Some(mut current) = current else { return Ok(String::new()); };
+        let mut visited = std::collections::HashSet::new();
+        loop {
+            let generation = Uuid::parse_str(&current).map_err(|_| StoreError::CredentialPairInvalid)?;
+            if !visited.insert(generation) { return Err(StoreError::CredentialPairInvalid); }
+            let prior = tx.query_row("SELECT a.input_generation FROM credential_refresh_attempts a JOIN outbound_request_receipts r ON r.id=a.receipt_id WHERE a.account_id=1 AND a.slot='owner_api' AND a.output_generation=?1 AND r.outcome='success'", [&current], |r| r.get::<_, String>(0))
+                .optional().map_err(StoreError::CredentialRefreshReceipt)?;
+            match prior { Some(input) => current = input, None => return Ok(generation.to_string()) }
+        }
+    }
+    pub(crate) fn inspect_fleet_refresh_receipt(&mut self) -> Result<bool, StoreError> {
+        self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM credential_pairs p JOIN credential_refresh_attempts a ON a.account_id=p.account_id AND a.slot=p.slot AND a.input_generation=p.generation JOIN outbound_request_receipts r ON r.id=a.receipt_id WHERE p.account_id=1 AND p.slot='fleet_api' AND r.outcome='started' AND (EXISTS(SELECT 1 FROM credential_refresh_fences f WHERE f.fence_id=a.fence_id AND f.kind='attempt' AND f.fingerprint=p.refresh_fingerprint) OR (a.migrated=1 AND EXISTS(SELECT 1 FROM credential_legacy_fences f WHERE f.legacy_generation=p.generation))))",
+            [], |r| r.get(0)
+        ).map_err(StoreError::CredentialRefreshReceipt)
+    }
+    pub(crate) fn fill_credential_rejected_access_digest(&mut self, generation: Uuid, digest: Uuid, fuse_generation: Option<Uuid>, consecutive: u8) -> Result<(), StoreError> {
+        let changed=self.connection.execute(
+            "UPDATE collector_auth_state SET fuse_rejected_access_digest=?2 WHERE singleton_id=1 AND fuse_rejected_access_digest IS NULL AND fuse_consecutive=?4 AND fuse_consecutive>=1 AND fuse_generation IS ?3 AND EXISTS(SELECT 1 FROM credential_pairs WHERE account_id=1 AND slot='owner_api' AND generation=?1)",
+            params![generation.to_string(), digest.to_string(),fuse_generation.map(|g|g.to_string()),consecutive]
+        ).map_err(StoreError::Query)?;
+        if changed==1 {Ok(())}else{Err(StoreError::WriteRefused("credential_digest_snapshot_changed"))}
+    }
+    pub(crate) fn validate_credential_grant(&mut self, slot: CredentialSlot, id: Uuid, secret: &Zeroizing<[u8; 32]>) -> Result<(), StoreError> {
+        let now = self.now_ms()?;
+        let binding = self.connection.query_row("SELECT slot, binding, expires_at_ms FROM credential_sign_ins WHERE sign_in_id=?1", [id.to_string()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?, r.get::<_, i64>(2)?))).optional().map_err(StoreError::CredentialPairStore)?;
+        let Some((stored_slot, binding, expiry)) = binding else { return Err(StoreError::SignInBindingInvalid); };
+        if stored_slot != slot.as_str() || !crate::protocol::constant_time_eq(&binding, &credential_sign_in_binding(secret)) { return Err(StoreError::SignInBindingInvalid); }
+        if expiry <= now { return Err(StoreError::SignInExpired); }
+        Ok(())
+    }
+    pub(crate) fn check_supplied_credential_entry(&mut self, slot: CredentialSlot, refresh: &[u8], legacy: &LegacyCandidates, policy: ReplacePolicy) -> Result<(), StoreError> {
+        let tx = self.connection.transaction().map_err(StoreError::Begin)?;
+        if policy == ReplacePolicy::OnlyIfEmpty && tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM credential_pairs WHERE account_id=1 AND slot=?1)", [slot.as_str()], |r| r.get::<_, bool>(0)
+        ).map_err(StoreError::CredentialPairStore)? { return Err(StoreError::SlotOccupied); }
+        let fingerprint = (!refresh.is_empty()).then(|| crate::auth::credential_envelope::refresh_fingerprint(refresh));
+        if credential_token_spent(&tx, fingerprint.as_ref(), legacy)? { return Err(StoreError::RefreshTokenSpent); }
+        if !refresh.is_empty() && credential_has_opaque_fence(&tx).map_err(StoreError::CredentialPairStore)? { return Err(StoreError::FreshSignInRequired); }
+        Ok(())
+    }
+    pub(crate) fn credential_reserved_invocations(&mut self, key: KeyId) -> Result<u64, StoreError> {
+        let used = self.connection.query_row("SELECT reserved_invocations FROM credential_key_usage WHERE key_id=?1", [key.0.as_slice()], |r| r.get::<_, i64>(0))
+            .optional().map_err(StoreError::CredentialPairStore)?.unwrap_or(0);
+        u64::try_from(used).map_err(|_| StoreError::InvalidStoredCount)
+    }
+    pub(crate) fn credential_refresh_is_complete(&mut self, slot: CredentialSlot, receipt: OutboundRequestReceiptId, input: Uuid, output: Uuid) -> Result<bool, StoreError> {
+        self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM credential_refresh_attempts a JOIN outbound_request_receipts r ON r.id=a.receipt_id JOIN credential_pairs p ON p.account_id=a.account_id AND p.slot=a.slot WHERE a.account_id=1 AND a.slot=?1 AND a.receipt_id=?2 AND a.input_generation=?3 AND a.output_generation=?4 AND p.generation=?4 AND r.outcome='success')",
+            params![slot.as_str(), receipt.0, input.to_string(), output.to_string()], |r| r.get(0)
+        ).map_err(StoreError::CredentialRefreshReceipt)
+    }
     fn now_ms(&self) -> Result<i64, StoreError> {
         #[cfg(test)]
         if let Some(now) = self.now_ms {
@@ -610,6 +717,18 @@ impl CredentialConnection {
         provenance: &EntryProvenance<'_>,
         legacy: &LegacyCandidates,
         policy: ReplacePolicy,
+    ) -> Result<(), StoreError> {
+        self.replace_credential_pair_with_commit(pair, provenance, legacy, policy, &mut || {})
+    }
+
+    /// TRANSITIONAL: R55 accounting is supplied by the vault at the cut point.
+    pub(crate) fn replace_credential_pair_with_commit(
+        &mut self,
+        pair: &SealedCredentialPair,
+        provenance: &EntryProvenance<'_>,
+        legacy: &LegacyCandidates,
+        policy: ReplacePolicy,
+        before_commit: &mut dyn FnMut(),
     ) -> Result<(), StoreError> {
         if self.migration_state.barrier_failed {
             return Err(StoreError::CredentialPairInvalid);
@@ -697,7 +816,8 @@ impl CredentialConnection {
             )
             .map_err(StoreError::CredentialPairStore)?;
         }
-        tx.commit().map_err(StoreError::CredentialPairStore)?;
+        before_commit();
+        tx.commit().map_err(StoreError::CredentialCommit)?;
         self.migration_state.vacuum_succeeded = false;
         Ok(())
     }
@@ -741,6 +861,16 @@ impl CredentialConnection {
         &mut self,
         slot: CredentialSlot,
         input_generation: Uuid,
+    ) -> Result<OutboundRequestReceiptId, StoreError> {
+        self.begin_credential_refresh_with_commit(slot, input_generation, &mut || {})
+    }
+
+    /// R30: the hook observes only a COMMIT that is about to be issued.
+    pub(crate) fn begin_credential_refresh_with_commit(
+        &mut self,
+        slot: CredentialSlot,
+        input_generation: Uuid,
+        before_commit: &mut dyn FnMut(),
     ) -> Result<OutboundRequestReceiptId, StoreError> {
         let now = self.now_ms()?;
         let capacity = self.capacity();
@@ -845,7 +975,8 @@ impl CredentialConnection {
         .map_err(StoreError::CredentialRefreshReceipt)?;
         #[cfg(test)]
         record_credential_commit_pragmas(&tx)?;
-        tx.commit().map_err(StoreError::CredentialRefreshReceipt)?;
+        before_commit();
+        tx.commit().map_err(StoreError::CredentialCommit)?;
         Ok(OutboundRequestReceiptId(receipt))
     }
     pub(crate) fn complete_credential_refresh(
@@ -854,6 +985,20 @@ impl CredentialConnection {
         input_generation: Uuid,
         successor: &SealedCredentialPair,
         legacy: &LegacyCandidates,
+    ) -> Result<RefreshCompletion, StoreError> {
+        self.complete_credential_refresh_with_commit(
+            receipt, input_generation, successor, legacy, &mut || {},
+        )
+    }
+
+    /// R31: refusals and AlreadyComplete do not issue a counted COMMIT.
+    pub(crate) fn complete_credential_refresh_with_commit(
+        &mut self,
+        receipt: OutboundRequestReceiptId,
+        input_generation: Uuid,
+        successor: &SealedCredentialPair,
+        legacy: &LegacyCandidates,
+        before_commit: &mut dyn FnMut(),
     ) -> Result<RefreshCompletion, StoreError> {
         successor.validate()?;
         legacy.validate()?;
@@ -965,13 +1110,23 @@ impl CredentialConnection {
         }
         #[cfg(test)]
         record_credential_commit_pragmas(&tx)?;
-        tx.commit().map_err(StoreError::CredentialRefreshReceipt)?;
+        before_commit();
+        tx.commit().map_err(StoreError::CredentialCommit)?;
         Ok(RefreshCompletion::Completed)
     }
     pub(crate) fn cancel_unsent_credential_refresh(
         &mut self,
         receipt: OutboundRequestReceiptId,
         input_generation: Uuid,
+    ) -> Result<(), StoreError> {
+        self.cancel_unsent_credential_refresh_with_commit(receipt, input_generation, &mut || {})
+    }
+
+    pub(crate) fn cancel_unsent_credential_refresh_with_commit(
+        &mut self,
+        receipt: OutboundRequestReceiptId,
+        input_generation: Uuid,
+        before_commit: &mut dyn FnMut(),
     ) -> Result<(), StoreError> {
         self.close_credential_refresh_attempt_inner(
             receipt,
@@ -980,6 +1135,7 @@ impl CredentialConnection {
             None,
             None,
             true,
+            before_commit,
         )
     }
     pub(crate) fn close_credential_refresh_attempt(
@@ -990,6 +1146,22 @@ impl CredentialConnection {
         http_status: Option<u16>,
         retry_after_seconds: Option<u64>,
         release_input: bool,
+    ) -> Result<(), StoreError> {
+        self.close_credential_refresh_attempt_with_commit(
+            receipt, input_generation, outcome, http_status, retry_after_seconds,
+            release_input, &mut || {},
+        )
+    }
+
+    pub(crate) fn close_credential_refresh_attempt_with_commit(
+        &mut self,
+        receipt: OutboundRequestReceiptId,
+        input_generation: Uuid,
+        outcome: OutboundRequestOutcome,
+        http_status: Option<u16>,
+        retry_after_seconds: Option<u64>,
+        release_input: bool,
+        before_commit: &mut dyn FnMut(),
     ) -> Result<(), StoreError> {
         if !matches!(
             outcome,
@@ -1008,6 +1180,7 @@ impl CredentialConnection {
             http_status,
             retry_after_seconds,
             release_input,
+            before_commit,
         )
     }
     fn close_credential_refresh_attempt_inner(
@@ -1018,6 +1191,7 @@ impl CredentialConnection {
         http_status: Option<u16>,
         retry_after_seconds: Option<u64>,
         release_input: bool,
+        before_commit: &mut dyn FnMut(),
     ) -> Result<(), StoreError> {
         let completion = OutboundRequestCompletion {
             outcome,
@@ -1068,7 +1242,8 @@ impl CredentialConnection {
             }
         }
         credential_close_receipt(&tx, receipt, now, outcome, http_status, retry_after_seconds)?;
-        tx.commit().map_err(StoreError::CredentialRefreshReceipt)
+        before_commit();
+        tx.commit().map_err(StoreError::CredentialCommit)
     }
     pub(crate) fn has_unresolved_credential_refresh(
         &mut self,
@@ -1077,6 +1252,14 @@ impl CredentialConnection {
         credential_unresolved(&self.connection, slot).map_err(StoreError::CredentialRefreshReceipt)
     }
     pub(crate) fn clear_credential_pair(&mut self, slot: CredentialSlot) -> Result<(), StoreError> {
+        self.clear_credential_pair_with_commit(slot, &mut || {})
+    }
+
+    pub(crate) fn clear_credential_pair_with_commit(
+        &mut self,
+        slot: CredentialSlot,
+        before_commit: &mut dyn FnMut(),
+    ) -> Result<(), StoreError> {
         if self.migration_state.barrier_failed {
             return Err(StoreError::CredentialPairInvalid);
         }
@@ -1097,7 +1280,8 @@ impl CredentialConnection {
         .map_err(StoreError::CredentialPairStore)?;
         credential_cancel_slot(&tx, slot, now)?;
         credential_migration_discard_blocked_slot(&tx, slot, now)?;
-        tx.commit().map_err(StoreError::CredentialPairStore)?;
+        before_commit();
+        tx.commit().map_err(StoreError::CredentialCommit)?;
         self.migration_state.vacuum_succeeded = false;
         Ok(())
     }
@@ -1105,6 +1289,16 @@ impl CredentialConnection {
         &mut self,
         pair: &SealedCredentialPair,
         expected_generation: Uuid,
+    ) -> Result<(), StoreError> {
+        self.set_credential_refresh_owner_with_commit(pair, expected_generation, &mut || {})
+    }
+
+    /// TRANSITIONAL: R36's counted COMMIT is observed by the vault.
+    pub(crate) fn set_credential_refresh_owner_with_commit(
+        &mut self,
+        pair: &SealedCredentialPair,
+        expected_generation: Uuid,
+        before_commit: &mut dyn FnMut(),
     ) -> Result<(), StoreError> {
         pair.validate()?;
         if pair.generation != expected_generation {
@@ -1150,12 +1344,23 @@ impl CredentialConnection {
             ],
         )
         .map_err(StoreError::CredentialPairStore)?;
-        tx.commit().map_err(StoreError::CredentialPairStore)
+        before_commit();
+        tx.commit().map_err(StoreError::CredentialCommit)
     }
     pub(crate) fn reserve_credential_invocations(
         &mut self,
         key_id: KeyId,
         count: u64,
+    ) -> Result<(), StoreError> {
+        self.reserve_credential_invocations_with_commit(key_id, count, &mut || {})
+    }
+
+    /// TRANSITIONAL: R22's counted COMMIT is observed before its barrier.
+    pub(crate) fn reserve_credential_invocations_with_commit(
+        &mut self,
+        key_id: KeyId,
+        count: u64,
+        before_commit: &mut dyn FnMut(),
     ) -> Result<(), StoreError> {
         let now = self.now_ms()?;
         let tx = self
@@ -1185,7 +1390,8 @@ impl CredentialConnection {
             params![key_id.0.as_slice(), total, now],
         )
         .map_err(StoreError::CredentialPairStore)?;
-        tx.commit().map_err(StoreError::CredentialPairStore)?;
+        before_commit();
+        tx.commit().map_err(StoreError::CredentialCommit)?;
         #[cfg(test)]
         self.events.push("reservation_commit");
         self.credential_durability_barrier()?;
@@ -1207,7 +1413,9 @@ impl CredentialConnection {
         use std::os::fd::AsFd;
         crate::platform::private_directory::durable_sync_fd(self.barrier_directory.as_fd()).map_err(
             |error| StoreError::CatalogueDurability(std::io::Error::from_raw_os_error(error.errno)),
-        )
+        )?;
+        #[cfg(test)] crate::auth::credential_vault::fixtures::power_event("database_barrier", None);
+        Ok(())
     }
     pub(crate) fn insert_sign_in_binding(
         &mut self,
@@ -1248,6 +1456,7 @@ impl CredentialConnection {
         let mut wal = self.database_path.as_os_str().to_os_string();
         wal.push("-wal");
         for attempt in 0..5 {
+            #[cfg(test)] crate::auth::credential_vault::fixtures::power_event("wal_scrub_attempt", None);
             let (busy, _, _): (i64, i64, i64) = self
                 .connection
                 .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
@@ -1260,6 +1469,7 @@ impl CredentialConnection {
                 Err(error) => return Err(StoreError::InspectCatalogue(error)),
             };
             if busy == 0 && length == 0 {
+                #[cfg(test)] crate::auth::credential_vault::fixtures::power_event("wal_scrubbed", None);
                 return Ok(true);
             }
             if attempt < 4 {
@@ -1635,12 +1845,19 @@ impl CredentialConnection {
     /// Called only for an admitted writable vault, under its vault lock.
     /// Read-only/status/doctor/immutable opens never call this primitive.
     pub(crate) fn probe_credential_durability(&mut self) -> Result<(), StoreError> {
+        self.probe_credential_durability_inner(#[cfg(test)] &mut || {})
+    }
+    fn probe_credential_durability_inner(
+        &mut self,
+        #[cfg(test)] before_barrier: &mut dyn FnMut(),
+    ) -> Result<(), StoreError> {
         let (_, log_frames, checkpointed_frames): (i64, i64, i64) = self
             .connection
             .query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })
             .map_err(StoreError::CatalogueCheckpoint)?;
+        #[cfg(test)] crate::auth::credential_vault::fixtures::probe_event("after_probe_checkpoint");
         if log_frames != checkpointed_frames {
             // FULL synchronous commit syncs the complete WAL, including frames
             // readable from a predecessor process whose own sync did not run.
@@ -1663,12 +1880,14 @@ impl CredentialConnection {
             #[cfg(test)]
             self.events.push("probe_stamp_commit");
         }
+        #[cfg(test)] before_barrier();
         if let Err(error) = self.credential_durability_barrier() {
             self.record_unavailable_after_barrier_failure();
             return Err(error);
         }
         #[cfg(test)]
         self.events.push("probe_barrier");
+        #[cfg(test)] crate::auth::credential_vault::fixtures::probe_event("after_probe_barrier");
         let prior: Option<String> = self
             .connection
             .query_row(
@@ -1718,6 +1937,43 @@ impl CredentialConnection {
 }
 #[cfg(test)]
 impl CredentialConnection {
+    /// Canonical vector fixture only, on a previous-process connection.
+    /// TRANSITIONAL: CT19, CT20 and CT22 consume this fixture wrapper.
+    pub(crate) fn test_insert_credential_vector(
+        &mut self,
+        pair: &SealedCredentialPair,
+    ) -> Result<(), StoreError> {
+        pair.validate()?;
+        let tx = self.connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        credential_write_pair(&tx, pair, pair.written_at_ms)?;
+        tx.commit().map_err(StoreError::CredentialPairStore)
+    }
+
+    /// Returns SQLite's effective limit, which cannot be below its page count.
+    /// CT52 uses SQLite's allocation limit during conversion.
+    pub(crate) fn set_test_max_page_count(&mut self, pages: u32) -> Result<u32, StoreError> {
+        self.connection.pragma_update(None, "max_page_count", pages)
+            .map_err(StoreError::Configure)?;
+        self.connection.pragma_query_value(None, "max_page_count", |row| row.get(0))
+            .map_err(StoreError::Query)
+    }
+
+    /// CT21's connection-local SQLite refusal, lifted before recovery.
+    pub(crate) fn set_test_query_only(&mut self, enabled: bool) -> Result<(), StoreError> {
+        self.connection.pragma_update(None, "query_only", enabled)
+            .map_err(StoreError::Configure)
+    }
+
+    /// Accepted R73 probe with a cut point immediately before its first barrier.
+    /// TRANSITIONAL: CT103 consumes this cut point at the admitted open.
+    pub(crate) fn probe_credential_durability_with_cut_point(
+        &mut self, before_barrier: &mut dyn FnMut(),
+    ) -> Result<(), StoreError> {
+        self.probe_credential_durability_inner(before_barrier)
+    }
+
     pub(crate) fn set_test_barrier_failure_at(&mut self, call: Option<usize>) {
         self.barrier_failure_at = call;
         self.barrier_calls = 0;
@@ -1726,6 +1982,74 @@ impl CredentialConnection {
         self.barrier_calls
     }
 }
+impl CredentialConnection {
+    /// R21 changes only the envelopes of the complete occupied slot set.
+    /// TRANSITIONAL: the vault supplies its counted-COMMIT callback.
+    pub(crate) fn reseal_credential_pairs(
+        &mut self,
+        pairs: &[SealedCredentialPair],
+        before_commit: &mut dyn FnMut(),
+    ) -> Result<(), StoreError> {
+        if pairs.len() > 2 {
+            return Err(StoreError::CredentialPairInvalid);
+        }
+        for (index, pair) in pairs.iter().enumerate() {
+            pair.validate()?;
+            if pairs[..index].iter().any(|prior| prior.slot == pair.slot) {
+                return Err(StoreError::CredentialPairInvalid);
+            }
+        }
+        let tx = self.connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let query = format!("SELECT {CREDENTIAL_PAIR_COLUMNS} FROM credential_pairs ORDER BY slot");
+        let current = {
+            let mut statement = tx.prepare(&query).map_err(StoreError::CredentialPairStore)?;
+            statement.query_map([], credential_pair_from_row)
+                .map_err(StoreError::CredentialPairStore)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(StoreError::CredentialPairStore)?
+        };
+        if current.len() != pairs.len() {
+            return Err(StoreError::CredentialPairInvalid);
+        }
+        if current.is_empty() {
+            return Ok(());
+        }
+        for row in &current {
+            let pair = pairs.iter().find(|pair| pair.slot == row.slot)
+                .ok_or(StoreError::CredentialPairInvalid)?;
+            if row.generation != pair.generation {
+                return Err(credential_begin_refusal(BeginRefusal::RowChanged));
+            }
+            if row.account_id != pair.account_id || row.origin != pair.origin
+                || row.refresh_owner != pair.refresh_owner
+                || row.refresh_present != pair.refresh_present
+                || row.refresh_fingerprint != pair.refresh_fingerprint
+                || row.expires_at != pair.expires_at
+                || row.next_refresh_at != pair.next_refresh_at
+                || row.client_id != pair.client_id || row.region != pair.region
+                || row.migrated != pair.migrated || row.written_at_ms != pair.written_at_ms
+            {
+                return Err(StoreError::CredentialPairInvalid);
+            }
+        }
+        for pair in pairs {
+            let changed = tx.execute(
+                "UPDATE credential_pairs SET access_envelope=?3, refresh_envelope=?4
+                 WHERE account_id=?1 AND slot=?2 AND generation=?5",
+                params![pair.account_id, pair.slot.as_str(), pair.access_envelope,
+                    pair.refresh_envelope, pair.generation.to_string()],
+            ).map_err(StoreError::CredentialPairStore)?;
+            if changed != 1 {
+                return Err(credential_begin_refusal(BeginRefusal::RowChanged));
+            }
+        }
+        before_commit();
+        tx.commit().map_err(StoreError::CredentialCommit)
+    }
+}
+
 #[allow(
     dead_code,
     reason = "Part S reservation/sealing utility; consumed by V1."
@@ -1741,7 +2065,21 @@ impl CredentialConnection {
         refresh: &[u8],
         nonces: &mut dyn NonceSource,
     ) -> Result<(), StoreError> {
-        self.reserve_credential_invocations(keys.keyring().current.id, 2)?;
+        self.reserve_and_seal_credential_pair_with_commit(
+            pair, keys, access, refresh, nonces, &mut || {},
+        )
+    }
+
+    pub(crate) fn reserve_and_seal_credential_pair_with_commit(
+        &mut self,
+        pair: &mut SealedCredentialPair,
+        keys: &KeyringHandle,
+        access: &[u8],
+        refresh: &[u8],
+        nonces: &mut dyn NonceSource,
+        before_commit: &mut dyn FnMut(),
+    ) -> Result<(), StoreError> {
+        self.reserve_credential_invocations_with_commit(keys.keyring().current.id, 2, before_commit)?;
         #[cfg(test)]
         self.events.push("seal_start");
         pair.seal(keys, access, refresh, nonces)
@@ -1875,36 +2213,30 @@ fn credential_sql_length(value: i64) -> Result<usize, StoreError> {
 // These synthetic fixtures call the real S API on its once-taken connection.
 // They are compiled only for the retained store tests, never for a vault.
 #[cfg(test)]
-type STestCredentialConnections = HashMap<
-    usize,
-    (
-        std::sync::Arc<std::sync::atomic::AtomicBool>,
-        CredentialConnection,
-    ),
->;
+#[derive(Default)]
+pub(crate) struct STestCredentialConnection(Mutex<Option<CredentialConnection>>);
 #[cfg(test)]
-thread_local! {
-    static S_TEST_CREDENTIAL_CONNECTIONS: std::cell::RefCell<STestCredentialConnections> =
-        std::cell::RefCell::new(HashMap::new());
+impl std::fmt::Debug for STestCredentialConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("STestCredentialConnection").finish_non_exhaustive()
+    }
 }
 #[cfg(test)]
 fn s_test_with_credential_connection<T>(
     store: &HubStore,
     callback: impl FnOnce(&mut CredentialConnection) -> T,
 ) -> T {
-    S_TEST_CREDENTIAL_CONNECTIONS.with(|connections| {
-        let mut connections = connections.borrow_mut();
-        let identity = std::sync::Arc::as_ptr(&store.credential_connection_taken) as usize;
-        let (_, connection) = connections.entry(identity).or_insert_with(|| {
-            (
-                store.credential_connection_taken.clone(),
-                store
-                    .take_credential_connection()
-                    .expect("once-taken connection for synthetic retained store fixture"),
-            )
-        });
-        callback(connection)
-    })
+    let mut retained = store.test_retained_credential_connection.0.lock().expect("S fixture connection");
+    let connection = retained.get_or_insert_with(|| store.take_credential_connection()
+        .expect("once-taken connection for synthetic retained store fixture"));
+    callback(connection)
+}
+#[cfg(test)]
+impl HubStore {
+    pub(crate) fn test_retained_refresh_output(&self, generation: Uuid) -> Option<Result<bool, StoreError>> {
+        let mut retained = self.test_retained_credential_connection.0.lock().expect("S fixture connection");
+        retained.as_mut().map(|connection| connection.generation_is_refresh_output(CredentialSlot::OwnerApi, generation))
+    }
 }
 #[cfg(test)]
 #[allow(

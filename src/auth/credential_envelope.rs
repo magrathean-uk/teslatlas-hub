@@ -406,6 +406,7 @@ pub(crate) fn seal_value(
     let nonce = nonces
         .next()
         .map_err(|_| EnvelopeError::EntropyUnavailable)?;
+    #[cfg(test)] crate::auth::credential_vault::fixtures::power_seal(key_id);
     let header = encode_header(key_id, place);
     // Allocate once, at the final envelope size. The only plaintext copy goes
     // directly into its working region and becomes ciphertext in place.

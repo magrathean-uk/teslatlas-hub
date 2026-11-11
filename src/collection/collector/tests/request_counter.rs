@@ -1549,7 +1549,7 @@ impl FleetBed {
             28_800,
         )
         .expect("setup credentials");
-        crate::fleet_credentials::persist_fleet_setup_credentials(
+        crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
             &store,
             dir.path(),
             &credentials,
@@ -2488,16 +2488,7 @@ impl FleetBed {
     /// admission, which was valid, stops being so. The next request that needs the
     /// bearer meets `FleetCredentialError::SensitiveAccessUnavailable`.
     async fn lose_sensitive_access(&mut self) {
-        let admission = crate::hub_user_process::AdmittedUserHub::for_test(self._dir.path())
-            .expect("admit");
-        let manager = FleetAuthManager::from_store_for_admitted_user(
-            self.store.clone(),
-            self._dir.path(),
-            Arc::clone(&admission),
-            None,
-        )
-        .expect("manager");
-        self.manager = Arc::new(tokio::sync::Mutex::new(manager));
+        let admission = self.manager.lock().await.retain_fixture_admission();
         let lock = self._dir.path().join(crate::user_lifetime_lock::LOCK_FILE_NAME);
         std::fs::remove_file(&lock).expect("remove the lock file");
         {

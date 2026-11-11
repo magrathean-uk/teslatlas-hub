@@ -922,33 +922,8 @@ fn ct72_a_c5_outcome_enters_the_scheduler_by_its_row_of_the_table() {
 
 /// The owner stores credentials: a new pair with its own generation (the external
 /// write of C5 R62), encrypted with the data directory's key. Returns the generation.
-fn ct72_owner_stores_credentials(
-    store: &HubStore,
-    data_dir: &std::path::Path,
-    access: &str,
-    refresh: &str,
-) -> Uuid {
-    let key = ({ let replaced_callee: fn(&std::path::Path) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(data_dir).unwrap_or_else(|_| {
-        ({ let replaced_callee: fn(&std::path::Path, &[u8]) -> Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(data_dir, b"ct72-cloak-key")
-            .expect("0600 Cloak key");
-        ({ let replaced_callee: fn(&std::path::Path) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(data_dir).expect("Cloak key")
-    });
-    let tokens =
-        OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned()).expect("a pair");
-    let generation = crate::source_token_envelope::legacy_refresh_credential_generation(&tokens);
-    let (access, refresh) =
-        ({ let replaced_callee: fn(&[u8], &crate::credentials::OwnerTokens) -> Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(key.as_slice(), &tokens)
-            .expect("Cloak pair");
-    let (expires, next) = not_due_schedule();
-    ({ let _retained_call_context = &(store
-        ); let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(
-            &({ let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), uuid::Uuid) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(&(({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(access, refresh, expires, next)
-                .expect("a schedule")
-                ), generation)
-                .expect("generation"),
-        )
-        .expect("store pair");
-    generation
+fn ct72_owner_stores_credentials(_store: &HubStore, data_dir: &std::path::Path, access: &str, refresh: &str) -> Uuid {
+    crate::auth::credential_vault::fixtures::seed_legacy_supplied_pair(data_dir, access, refresh, Some(not_due_schedule()))
 }
 
 /// The credential unit built over the store, as the collector's start path builds
@@ -1107,11 +1082,10 @@ async fn ct72_g_a_refresh_between_two_starts_changes_no_fingerprint_and_keeps_a_
             assert!(!before.account_reset);
             // The unit's own refresh: a completed binding from g0 to a new generation.
             let g1 = Uuid::from_bytes([0x71; 16]);
-            let receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("begin");
-            let successor = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
-            .expect("generation");
-            ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
-                .expect("complete");
+            let vault=crate::auth::credential_vault::fixtures::legacy_vault(&bed.store,&dir);
+            let receipt=vault.begin_refresh(crate::auth::credential_envelope::CredentialSlot::OwnerApi,g0).expect("begin");
+            let now=epoch_seconds_of(SystemTime::now());
+            vault.persist_refreshed(crate::auth::credential_envelope::CredentialSlot::OwnerApi,receipt,g0,g1,"owner-access-1","owner-refresh-1",now+36_000,now+28_800).expect("complete");
             assert_eq!(
                 bed.store.collector_credential_identity(false).expect("identity"),
                 g0.to_string(),
@@ -1912,16 +1886,9 @@ async fn ct66_the_owner_loop_refuses_after_a_repeated_403_and_an_owner_retry_sen
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_supervised_restart_import(&store);
-    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("0600 Cloak key");
-    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Cloak key");
     let initial = OwnerTokens::from_secret_parts("k6-access".to_owned(), "k6-refresh".to_owned())
         .expect("initial pair");
-    let (access, refresh) =
-        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("Cloak pair");
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("store pair");
+    let _generation = crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,temporary.path(),initial.access_token(),initial.refresh_token(),None).expect("supplied fixture pair");
     // The Owner list answers a plain 403 every time; the token endpoint rotates the
     // pair at every refresh. Both are this test's own in-process fakes.
     let wire = K6ListWire {

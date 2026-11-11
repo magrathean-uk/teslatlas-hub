@@ -214,6 +214,16 @@ fn mode(path: &Path) -> u32 {
     fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
 
+pub(in crate::auth) fn seed_admitted_restored_export() -> tempfile::TempDir {
+    let mut rec = Rec::real_pair(true, true);
+    let (legacy, fleet) = real_keys();
+    let (_export_root, export) = write_export(&rec, &[0x33;32], Some(&legacy), Some(&[0x5a;32]), Some(&fleet));
+    let report = rec.restore(&export, &[0x33;32]).expect("CT61.fixture restore");
+    assert!(report.pre_upgrade_owner_api_key_included && report.pre_upgrade_fleet_api_key_included, "CT61.fixture member flags");
+    for name in [CURSOR, RST_K1, RST_K2] { assert!(mode(&rec.secrets_path().join(name)) == 0o600, "CT61.fixture member mode"); }
+    rec.root
+}
+
 /// Decrypts an export written by `export_credentials` and returns its flags
 /// and total plaintext length.
 fn export_facts(path: &Path, recovery_key: &[u8]) -> (u8, usize) {

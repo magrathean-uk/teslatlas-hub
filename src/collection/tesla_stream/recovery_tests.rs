@@ -1466,7 +1466,7 @@ async fn sc89_ten_sequential_runs_hold_one_socket_at_a_time_with_their_own_corre
     for run_number in 1..=10_usize {
         let creds = Creds::current(fake.oauth_issuer_url(), "tok-1");
         let mut rig = Rig::new(fake.stream_endpoint().to_owned(), creds);
-        rig.tag = ({ let unavailable_value: u64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value });
+        rig.tag = crate::test_unavailable_fixture::VEHICLE_ID as u64;
         rig.store = Some(store.clone());
         let mut run = rig.start();
         // Wait, in real time, until the fake has recorded this run's subscribe.

@@ -1,42 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! The effective credential status a reader without a manager derives (B2
-//! clarification 3, C5 R25, R29, R38, R44a, R52a; the "read-only effective
-//! auth" section).
-//!
-//! The stored `collector_auth_state` row is what the credential unit last wrote.
-//! It does not freeze usability: a `sign_in_required` row is written while the
-//! access token is usable, and the token stops being usable with no write if the
-//! unit is idle or gone. Status, doctor and service readiness therefore read the
-//! row through the current pair, with the unit's own predicates:
-//!
-//! - a sign-in or sign-out stop applies only while its stopped generation is the
-//!   generation of the stored pair; an external credential write lifts it, but
-//!   only in this view (R44a, the stored row is not touched);
-//! - a refusal applies only to the mode it was set for (R44 c);
-//! - `sign_in_required` is effectively `signed_out`, with the same reason and
-//!   generation, once the host clock reaches the pair's `usable_until`
-//!   (strictly `now < usable_until` while usable, R29);
-//! - `retrying` and `persistence_pending` stop collecting once the token is no
-//!   longer usable, and an unknown bound never makes them collect;
-//! - a pair that decrypts but fails the token grammar (R46) is `signed_out` with
-//!   `stored_pair_invalid`, as the unit that loads it would stop;
-//! - an invalid host clock (R38) never converts a stop: the stored word stands,
-//!   but a state that collects only while the token is usable does not collect.
-//!
-//! Nothing here writes, builds a manager, takes the refresh singleton, sends a
-//! request or hands a token out. It reads the existing current or previous key
-//! generation without settling an interrupted replacement. A real key, cipher or
-//! store fault is an error and is never turned into a guess.
+//! Read-only credential status from the admitted process's recorded state,
+//! the pair's clear schedule and its envelope headers (C10 R68, C5-X8.7).
+//! This surface never opens a key, decrypts, compares a generation, or lifts
+//! a recorded stop because of an external credential write.
 
 use std::path::Path;
 
 use thiserror::Error;
 
 use super::{
-    SignOutReason,
-    state::{AuthStatus, AuthStop, FuseSnapshot, StoppedMode, clock_is_valid},
-    stored_usable_until,
+    state::{AuthStatus, FuseSnapshot, StoppedMode, clock_is_valid},
 };
 use crate::db::{CollectorAuthRow, HubStore, StoreError};
 
@@ -76,13 +50,47 @@ pub(crate) fn stored_auth_view(row: CollectorAuthRow) -> CollectorAuthRow {
     row
 }
 
+/// C5-X8 section 7: the projection inside an admitted process uses the
+/// already-open vault. Non-admitted surfaces keep `effective_auth_row` below.
+pub(crate) fn effective_auth_row_admitted(
+    vault: &crate::auth::credential_vault::CredentialVault,
+    store: &HubStore,
+    mode: StoppedMode,
+    now_ms: i64,
+) -> Result<Option<EffectiveAuth>, EffectiveAuthError> {
+    use super::{state::{AuthStop,AuthState},SignOutReason};
+    let Some(row)=store.load_collector_auth_row()? else{return Ok(None)};
+    let finish=|row,usable_until|Ok(Some(EffectiveAuth {row,usable_until}));
+    if row.state=="api_refused" || !matches!(row.state.as_str(),"sign_in_required"|"signed_out"|"retrying"|"persistence_pending") {
+        return effective_auth_row(store,Path::new(""),mode,now_ms);
+    }
+    let status=AuthStatus::from_row(&row)?;
+    let plain=vault.load(crate::auth::credential_envelope::CredentialSlot::OwnerApi).map_err(|_|EffectiveAuthError::Store(StoreError::WriteRefused("credential_vault_unavailable")))?;
+    let Some(plain)=plain else{return finish(row,None)};
+    if !super::stored_pair_passes_grammar(&plain.access,&plain.refresh,mode) {
+        return finish(AuthStatus::stopped(AuthStop::SignedOut(SignOutReason::StoredPairInvalid),plain.generation,mode,false,FuseSnapshot::default(),status.clock_skew).to_row(),None);
+    }
+    if status.stopped_generation.is_some_and(|generation|generation!=plain.generation) {
+        return finish(AuthStatus::ready(FuseSnapshot::default(),status.clock_skew).to_row(),None);
+    }
+    let now=now_ms.div_euclid(1000);
+    if !clock_is_valid(now){return finish(status.with_usability(false).to_row(),None);}
+    let bound=super::stored_usable_until(&plain.access,plain.expires_at,plain.next_refresh_at);
+    let usable=bound.is_none_or(|until|now<until);
+    let status=if status.state==AuthState::SignInRequired {
+        if usable{status.with_usability(true)}else{status.with_sign_in_expired()}
+    }else{status.with_usability(status.collecting && usable)};
+    let bound=if status.state==AuthState::SignInRequired{bound}else{None};
+    finish(status.to_row(),bound)
+}
+
 /// The effective status for the loaded `mode` at `now_ms`, or `None` before the
 /// unit has ever written one. Only the four states that depend on the stored pair
 /// read it (`sign_in_required`, `signed_out`, `retrying`, `persistence_pending`),
 /// and a refusal compares its mode.
 pub(crate) fn effective_auth_row(
     store: &HubStore,
-    data_dir: &Path,
+    _data_dir: &Path,
     mode: StoppedMode,
     now_ms: i64,
 ) -> Result<Option<EffectiveAuth>, EffectiveAuthError> {
@@ -107,48 +115,14 @@ pub(crate) fn effective_auth_row(
         }
         "sign_in_required" | "signed_out" | "retrying" | "persistence_pending" => {
             let status = AuthStatus::from_row(&row)?;
-            let Some((expires_at, next_refresh_at)): Option<(i64, i64)> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency") else {
-                // No pair: nothing can match or expire, the stored word stands.
+            // R68 and C5-X8.7: status sees clear metadata and headers only.
+            // Only the admitted manager can compare generations, prove token
+            // grammar, or lift a stop after an external credential write.
+            let Some(presence) = store.credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::OwnerApi)? else {
                 return unchanged(row);
             };
-            let plaintext: crate::credentials::OwnerTokens = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
-            let generation =
-                crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
-            let usable_until = stored_usable_until(
-                plaintext.access_token(),
-                expires_at,
-                next_refresh_at,
-            );
-            if !super::stored_pair_passes_grammar(
-                plaintext.access_token(),
-                plaintext.refresh_token(),
-                mode,
-            ) {
-                // R46: a pair that fails the token grammar cannot be used under
-                // any configuration, and the unit that loads it stops signed out
-                // (`stored_pair_invalid`) whatever the row said. Decrypting is not
-                // enough to be usable.
-                return unchanged(
-                    AuthStatus::stopped(
-                        AuthStop::SignedOut(SignOutReason::StoredPairInvalid),
-                        generation,
-                        mode,
-                        false,
-                        FuseSnapshot::default(),
-                        status.clock_skew,
-                    )
-                    .to_row(),
-                );
-            }
-            if matches!(row.state.as_str(), "sign_in_required" | "signed_out")
-                && status.stopped_generation != Some(generation)
-            {
-                // R44a: an external write with another generation lifts a
-                // credential stop. Only the view changes.
-                return unchanged(
-                    AuthStatus::ready(FuseSnapshot::default(), status.clock_skew).to_row(),
-                );
-            }
+            presence.header_check.map_err(|error| EffectiveAuthError::Store(StoreError::CredentialEnvelope(error)))?;
+            let usable_until = (presence.expires_at > 0).then_some(presence.expires_at);
             let now = now_ms.div_euclid(1_000);
             if !clock_is_valid(now) {
                 // R38: with a wrong clock usability cannot be judged, so nothing
@@ -156,7 +130,7 @@ pub(crate) fn effective_auth_row(
                 // unit's own restore decides (usable only with a valid clock).
                 return unchanged(status.with_usability(false).to_row());
             }
-            let usable = usable_until.is_none_or(|until| now < until);
+            let usable = usable_until.map_or(status.collecting, |until| now < until);
             let status = if row.state == "sign_in_required" {
                 // The stored `collecting` was judged when the row was written,
                 // possibly with an invalid clock; the pair decides now.

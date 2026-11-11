@@ -1118,7 +1118,7 @@ pub(crate) fn restore_credentials_with_connection(
 
 #[cfg(test)]
 #[path = "credential_recovery/tests.rs"]
-mod tests;
+pub(in crate::auth) mod tests;
 
 #[cfg(test)]
 mod n1_src_auth_credential_recovery_rs_display_tests {

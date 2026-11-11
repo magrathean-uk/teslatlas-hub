@@ -451,12 +451,10 @@ impl LegacyAuthManager {
     /// sent: the check reads one row and returns. A unit without a Hub store has no
     /// C3 row to consult.
     pub(crate) fn assert_resident_admission(&self) -> Result<(), LegacyAuthManagerError> {
-        let store: Option<&crate::db::HubStore> = match &self.persistence {
+        let store: Option<&CredentialVault> = match &self.persistence {
             #[cfg(test)]
             LegacyAuthPersistence::TestCallback(_) => None,
-            LegacyAuthPersistence::Unavailable(_) => {
-                panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency")
-            }
+            LegacyAuthPersistence::Hub(persistence) => Some(&persistence.vault),
         };
         let Some(store) = store else {
             return Ok(());
@@ -482,17 +480,9 @@ impl LegacyAuthManager {
     /// Whether a fencing attempt is unresolved in the store; false when it cannot
     /// be read (R57 step 6) or the unit has no Hub store.
     pub(super) fn has_unresolved_legacy_refresh(&self) -> bool {
-        let hub_store: Option<&crate::db::HubStore> = match &self.persistence {
-            #[cfg(test)]
-            LegacyAuthPersistence::TestCallback(_) => None,
-            LegacyAuthPersistence::Unavailable(_) => {
-                panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency")
-            }
-        };
-        hub_store.is_some_and(|_store| {
-            let fact: Result<bool, crate::db::StoreError> =
-                panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
-            fact.unwrap_or(false)
-        })
+        match &self.persistence {
+            #[cfg(test)] LegacyAuthPersistence::TestCallback(_) => false,
+            LegacyAuthPersistence::Hub(persistence) => persistence.vault.has_unresolved_refresh(CredentialSlot::OwnerApi).unwrap_or(false),
+        }
     }
 }

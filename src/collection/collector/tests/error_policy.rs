@@ -1515,7 +1515,7 @@ async fn ct67_bed() -> Ct67Bed {
     )
     .expect("setup credentials");
     // Stored now, so no refresh is due until a 401 makes one so.
-    crate::fleet_credentials::persist_fleet_setup_credentials(
+    crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
         &store,
         dir.path(),
         &credentials,

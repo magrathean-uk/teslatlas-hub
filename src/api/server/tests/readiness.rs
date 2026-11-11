@@ -550,7 +550,7 @@ async fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     const SCOPED_ACCESS: &str = "e30.eyJzY3AiOlsib3BlbmlkIiwidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iLCJ2ZWhpY2xlX2NtZHMiLCJ2ZWhpY2xlX2NoYXJnaW5nX2NtZHMiXX0.sig";
     crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
         .expect("cursor key");
-    crate::fleet_credentials::persist_fleet_setup_credentials(
+    crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
         &store,
         temporary.path(),
         &crate::fleet_credentials::FleetSetupCredentials::new(

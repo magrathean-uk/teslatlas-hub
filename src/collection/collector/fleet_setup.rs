@@ -43,12 +43,17 @@ pub async fn configure_fleet_telemetry_for_admitted_user(
     config: &HubConfig,
     admission: Arc<crate::hub_user_process::AdmittedUserHub>,
 ) -> Result<FleetTelemetrySetupReport, CollectorError> {
-    let mut manager = FleetAuthManager::from_store_for_admitted_user(
-        store.clone(),
-        &config.data_dir,
-        Arc::clone(&admission),
-        None,
-    )?;
+    let mut manager = {
+    let runtime_store = store.clone();
+    let runtime_path = &config.data_dir;
+    let runtime_admission = Arc::clone(&admission);
+    let runtime_loss = None;
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+    )
+    .map_err(crate::fleet_credentials::FleetCredentialError::from)
+    .and_then(|vault| FleetAuthManager::from_store_for_admitted_user(vault, runtime_path, runtime_admission, runtime_loss))
+}?;
     let auth_api = FleetAuthApi::new(
         manager.region(),
         Duration::from_secs(config.collector.request_timeout_seconds),

@@ -349,6 +349,11 @@ impl StreamFaultPoint {
 #[derive(Debug, Clone)]
 pub struct HubStore {
     credential_connection_taken: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// One test process context, shared only by clones of this store.
+    #[cfg(test)]
+    pub(crate) fixture_vault: Arc<FixtureVault>,
+    #[cfg(test)]
+    test_retained_credential_connection: Arc<STestCredentialConnection>,
     #[cfg(test)]
     credential_blob_bytes_read: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     database_path: PathBuf,
@@ -384,6 +389,15 @@ pub struct HubStore {
     /// transactions this store and its clones performed.
     #[cfg(test)]
     instrumentation: Arc<StoreInstrumentation>,
+}
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+pub(crate) struct FixtureVault {
+    pub(crate) current: Mutex<std::sync::Weak<crate::auth::credential_vault::CredentialVault>>,
+    pub(crate) admission: Mutex<Option<Arc<crate::hub_user_process::AdmittedUserHub>>>,
+    pub(crate) release: Mutex<()>,
+    pub(crate) released: std::sync::Condvar,
 }
 
 /// Test only (G2-6 6A S4/S5): counters shared by a store and its clones. A test

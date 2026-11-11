@@ -37,8 +37,6 @@ use teslatlas_hub::{
     fleet_api::FleetRegion,
     fleet_credentials::{
         FleetCredentialError, FleetSetupCredentials, inspect_stored_fleet_credentials,
-         persist_fleet_setup_credentials,
-         stored_fleet_scope_summary,
     },
     gpx::export_drive_gpx,
     hub_pack::GeofenceBillingType,

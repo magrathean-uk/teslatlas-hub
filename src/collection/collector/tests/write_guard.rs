@@ -172,7 +172,7 @@ impl GuardBed {
     /// A bed over a store somebody else made.
     fn over(store: &HubStore, data_dir: &std::path::Path) -> Self {
         let admission =
-            crate::hub_user_process::AdmittedUserHub::for_test(data_dir).expect("admit");
+            crate::auth::credential_vault::fixtures::fixture_admission(store, data_dir);
         let guard = RunWriteGuard::new(AdmissionFence::default(), Some(Arc::clone(&admission)));
         Self {
             store: store.clone(),
@@ -1146,7 +1146,7 @@ fn p3bf2_resident_fleet(point: &'static str) {
     ))
     .expect("the selected car");
     let (hub_vehicle, _eid, _) = bed.store.configured_tesla_vehicles().expect("cars")[0].clone();
-    crate::fleet_credentials::persist_fleet_setup_credentials(
+    crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
         &bed.store,
         temporary.path(),
         &FleetSetupCredentials::new(
@@ -1235,30 +1235,11 @@ fn p3bf2_owner_start(trip: Option<(&'static str, usize)>, deny: bool) -> StartOu
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_the_late_import(&store);
-    ({ let replaced_callee: fn(&std::path::Path, &[u8]) -> Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary.path(), b"guard-cloak-key")
-        .expect("0600 Cloak key");
-    let key = ({ let replaced_callee: fn(&std::path::Path) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary.path()).expect("Cloak key");
-    let initial =
-        OwnerTokens::from_secret_parts("guard-access".to_owned(), "guard-refresh".to_owned())
-            .expect("initial pair");
-    let (access, refresh) =
-        ({ let replaced_callee: fn(&[u8], &crate::credentials::OwnerTokens) -> Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(key.as_slice(), &initial)
-            .expect("Cloak pair");
-    let now_seconds = current_epoch_millis().expect("clock") / 1_000;
-    ({ let _retained_call_context = &(store
-        ); let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
-            &({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
-                access,
-                refresh,
-                now_seconds + 36_000,
-                now_seconds + 30_000,
-            )
-            .expect("a schedule that is not due"),
-        )
-        .expect("store the pair");
+    let now_seconds=current_epoch_millis().expect("clock")/1000;
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,temporary.path(),"guard-access","guard-refresh",Some((now_seconds+36_000,now_seconds+30_000))).expect("supplied guard fixture");
     let base = url::Url::parse("http://127.0.0.1:9/").expect("unroutable");
     let admission =
-        crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admit");
+        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
     let manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store.clone(),
         temporary.path(),
@@ -1388,7 +1369,7 @@ fn p3bf2_fleet_start(trip: Option<(&'static str, usize)>, deny: bool) -> StartOu
         CollectorProvider::Fleet,
     ))
     .expect("configure the car");
-    crate::fleet_credentials::persist_fleet_setup_credentials(
+    crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
         &store,
         temporary.path(),
         &FleetSetupCredentials::new(
@@ -1403,14 +1384,19 @@ fn p3bf2_fleet_start(trip: Option<(&'static str, usize)>, deny: bool) -> StartOu
     )
     .expect("persist credentials");
     let admission =
-        crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admit");
+        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
     let manager = Arc::new(tokio::sync::Mutex::new(
-        FleetAuthManager::from_store_for_admitted_user(
-            store.clone(),
-            temporary.path(),
-            Arc::clone(&admission),
-            None,
-        )
+        {
+    let runtime_store = store.clone();
+    let runtime_path = temporary.path();
+    let runtime_admission = Arc::clone(&admission);
+    let runtime_loss = None;
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+    )
+    .map_err(crate::fleet_credentials::FleetCredentialError::from)
+    .and_then(|vault| FleetAuthManager::from_store_for_admitted_user(vault, runtime_path, runtime_admission, runtime_loss))
+}
         .expect("manager"),
     ));
     let unroutable = url::Url::parse("http://127.0.0.1:9/").expect("URL");
@@ -1526,8 +1512,7 @@ fn p3bf2_cadence_wait(point: &'static str) {
                 .execute("DROP TABLE collection_gaps", [])
                 .expect("break the gap record");
         }
-        let admission = crate::hub_user_process::AdmittedUserHub::for_test(temporary.path())
-            .expect("admission");
+        let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
         let (ready_tx, _ready_rx) = oneshot::channel();
         let (stop_tx, stop_rx) = oneshot::channel::<()>();
         let seam = Arc::new(SupervisedCollectorTestSeam::default());
@@ -1924,12 +1909,17 @@ fn p3bf2_the_telemetry_maintenance_loop_ends_at_the_fence_though_the_admission_h
         let (temporary, store, cursor_key, _generation) = p3_unresolved_fleet_hub();
         let config = supervised_restart_test_config(temporary.path());
         let bed = GuardBed::over(&store, temporary.path());
-        let manager = FleetAuthManager::from_store_for_supervised_start(
-            store.clone(),
-            temporary.path(),
-            Arc::clone(&bed.admission),
-            None,
-        )
+        let manager = {
+    let runtime_store = store.clone();
+    let runtime_path = temporary.path();
+    let runtime_admission = Arc::clone(&bed.admission);
+    let runtime_loss = None;
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+    )
+    .map_err(crate::fleet_credentials::FleetCredentialError::from)
+    .and_then(|vault| FleetAuthManager::from_store_for_supervised_start(vault, runtime_path, runtime_admission, runtime_loss))
+}
         .expect("the supervised start admits it");
         let manager = Arc::new(tokio::sync::Mutex::new(manager));
         let auth_api = FleetAuthApi::for_fake_http(
@@ -2077,18 +2067,11 @@ async fn p3bf2_the_maintenance_raises_the_sensitive_outcome_the_units_service_me
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_the_late_import(&store);
-    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("0600 Cloak key");
-    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Cloak key");
     let initial =
         OwnerTokens::from_secret_parts("guard-access".to_owned(), "guard-refresh".to_owned())
             .expect("initial pair");
-    let (access, refresh_bytes) =
-        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("Cloak pair");
     let now_seconds = current_epoch_millis().expect("clock") / 1_000;
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("store the pair");
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,temporary.path(),initial.access_token(),initial.refresh_token(),Some((now_seconds+36_000,now_seconds-100))).expect("supplied due pair");
     let wire = LateWire {
         posts: Arc::new(AtomicUsize::new(0)),
         arrived: Arc::new(tokio::sync::Notify::new()),

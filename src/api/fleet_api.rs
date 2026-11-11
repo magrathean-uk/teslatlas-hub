@@ -287,21 +287,27 @@ impl FleetAuthApi {
         client_id: &FleetClientId,
         refresh_token: &FleetRefreshToken,
     ) -> Result<FleetRefreshedTokens, FleetApiError> {
-        let body = url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("grant_type", "refresh_token")
-            .append_pair("client_id", client_id.as_str())
-            .append_pair("refresh_token", refresh_token.expose())
-            .finish();
+        let body = fleet_refresh_body(client_id.as_str(), refresh_token.expose());
         let request = self
             .client
             .post(self.endpoint.clone())
             .header(ACCEPT, ACCEPT_JSON.clone())
             .header(CONTENT_TYPE, CONTENT_TYPE_FORM.clone())
-            .body(body);
+            // KL7: the available request-body conversion owns a copy. The
+            // source allocation stays wiping-owned until the exchange ends.
+            .body(body.bytes.to_vec());
         #[cfg(test)]
-        let response: FleetTokenWire = execute_json_via(self.in_process.as_ref(), request).await?;
+        crate::api::test_egress_guard::refuse_production_request(&request);
+        #[cfg(test)]
+        let response = if let Some(transport) = self.in_process.as_ref() {
+            let request = request.build().map_err(|_| FleetApiError::InvalidEndpoint)?;
+            transport.call(request).await?
+        } else {
+            request.send().await.map_err(classify_transport_error)?
+        };
         #[cfg(not(test))]
-        let response: FleetTokenWire = execute_json(request).await?;
+        let response = request.send().await.map_err(classify_transport_error)?;
+        let mut response = decode_fleet_token_response(response).await?;
         if !response.token_type.eq_ignore_ascii_case("bearer")
             || !(MIN_TOKEN_LIFETIME_SECONDS..=MAX_TOKEN_LIFETIME_SECONDS)
                 .contains(&response.expires_in)
@@ -309,9 +315,9 @@ impl FleetAuthApi {
             return Err(FleetApiError::InvalidResponse);
         }
         Ok(FleetRefreshedTokens {
-            access_token: FleetAccessToken::new(response.access_token)
+            access_token: FleetAccessToken::new(std::mem::take(&mut *response.access_token.0))
                 .map_err(|_| FleetApiError::InvalidResponse)?,
-            refresh_token: FleetRefreshToken::new(response.refresh_token)
+            refresh_token: FleetRefreshToken::new(std::mem::take(&mut *response.refresh_token.0))
                 .map_err(|_| FleetApiError::InvalidResponse)?,
             expires_in_seconds: response.expires_in,
         })
@@ -1469,12 +1475,410 @@ impl FleetTelemetryConfigureWire {
     }
 }
 
-#[derive(Deserialize)]
+/// A decoded token owns its wiping allocation even before its containing
+/// response has been constructed. No token formatting or cloning is provided.
+pub(crate) struct WireSecret(Zeroizing<String>);
+
+impl Zeroize for WireSecret {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl Drop for WireSecret {
+    fn drop(&mut self) {
+        #[cfg(test)]
+        let length = self.0.len();
+        self.zeroize();
+        #[cfg(test)]
+        fleet_wire_drop("secret", length);
+    }
+}
+
+impl fmt::Debug for WireSecret {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("WireSecret([redacted])")
+    }
+}
+
+impl<'de> Deserialize<'de> for WireSecret {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct SecretVisitor;
+        impl<'de> serde::de::Visitor<'de> for SecretVisitor {
+            type Value = WireSecret;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a token string")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                let mut text = Zeroizing::new(String::with_capacity(value.len()));
+                text.push_str(value);
+                Ok(WireSecret(text))
+            }
+
+            fn visit_borrowed_str<E: serde::de::Error>(
+                self,
+                value: &'de str,
+            ) -> Result<Self::Value, E> {
+                self.visit_str(value)
+            }
+
+            fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+                Ok(WireSecret(Zeroizing::new(value)))
+            }
+        }
+        deserializer.deserialize_string(SecretVisitor)
+    }
+}
+
+#[derive(Zeroize)]
 struct FleetTokenWire {
-    access_token: String,
-    refresh_token: String,
+    access_token: WireSecret,
+    refresh_token: WireSecret,
     expires_in: u64,
     token_type: String,
+}
+
+impl ZeroizeOnDrop for FleetTokenWire {}
+
+impl Drop for FleetTokenWire {
+    fn drop(&mut self) {
+        // Let each token's own Drop wipe its allocation, retaining its length
+        // until that point for the test-only destruction observation.
+        self.expires_in.zeroize();
+        self.token_type.zeroize();
+        #[cfg(test)]
+        fleet_wire_drop("wire", 0);
+    }
+}
+
+impl FleetTokenWire {
+    fn empty() -> Self {
+        Self {
+            access_token: WireSecret(Zeroizing::new(String::new())),
+            refresh_token: WireSecret(Zeroizing::new(String::new())),
+            expires_in: 0,
+            token_type: String::new(),
+        }
+    }
+
+    fn decode(&mut self, bytes: &[u8]) -> Result<(), FleetApiError> {
+        struct TokenSeed<'a>(&'a mut FleetTokenWire);
+        impl<'de> serde::de::DeserializeSeed<'de> for TokenSeed<'_> {
+            type Value = ();
+
+            fn deserialize<D: serde::Deserializer<'de>>(
+                self,
+                deserializer: D,
+            ) -> Result<(), D::Error> {
+                struct TokenVisitor<'a>(&'a mut FleetTokenWire);
+                impl<'de> serde::de::Visitor<'de> for TokenVisitor<'_> {
+                    type Value = ();
+
+                    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                        formatter.write_str("a token response object")
+                    }
+
+                    fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                        self,
+                        mut sequence: A,
+                    ) -> Result<(), A::Error> {
+                        self.0.access_token = sequence.next_element()?.ok_or_else(|| {
+                            serde::de::Error::custom("missing token field")
+                        })?;
+                        self.0.refresh_token = sequence.next_element()?.ok_or_else(|| {
+                            serde::de::Error::custom("missing token field")
+                        })?;
+                        self.0.expires_in = sequence.next_element()?.ok_or_else(|| {
+                            serde::de::Error::custom("missing token field")
+                        })?;
+                        self.0.token_type = sequence.next_element()?.ok_or_else(|| {
+                            serde::de::Error::custom("missing token field")
+                        })?;
+                        Ok(())
+                    }
+
+                    fn visit_map<A: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: A,
+                    ) -> Result<(), A::Error> {
+                        let mut seen = [false; 4];
+                        while let Some(field) = map.next_key::<String>()? {
+                            let index = match field.as_str() {
+                                "access_token" => 0,
+                                "refresh_token" => 1,
+                                "expires_in" => 2,
+                                "token_type" => 3,
+                                _ => {
+                                    map.next_value::<serde::de::IgnoredAny>()?;
+                                    continue;
+                                }
+                            };
+                            if std::mem::replace(&mut seen[index], true) {
+                                return Err(serde::de::Error::custom("duplicate token field"));
+                            }
+                            match index {
+                                0 => self.0.access_token = map.next_value()?,
+                                1 => self.0.refresh_token = map.next_value()?,
+                                2 => self.0.expires_in = map.next_value()?,
+                                _ => self.0.token_type = map.next_value()?,
+                            }
+                        }
+                        if seen.iter().any(|present| !present) {
+                            return Err(serde::de::Error::custom("missing token field"));
+                        }
+                        Ok(())
+                    }
+                }
+                deserializer.deserialize_struct(
+                    "FleetTokenWire",
+                    &["access_token", "refresh_token", "expires_in", "token_type"],
+                    TokenVisitor(self.0),
+                )
+            }
+        }
+        use serde::de::DeserializeSeed;
+        let mut decoder = serde_json::Deserializer::from_slice(bytes);
+        TokenSeed(self)
+            .deserialize(&mut decoder)
+            .and_then(|()| decoder.end())
+            // Parser diagnostics can contain input. Retain only this fixed code.
+            .map_err(|_| FleetApiError::InvalidResponse)
+    }
+}
+
+struct FleetExchangeBuffer {
+    bytes: Zeroizing<Vec<u8>>,
+    #[cfg(test)]
+    kind: &'static str,
+}
+
+impl FleetExchangeBuffer {
+    fn new(capacity: usize, _kind: &'static str) -> Self {
+        Self {
+            bytes: Zeroizing::new(Vec::with_capacity(capacity)),
+            #[cfg(test)]
+            kind: _kind,
+        }
+    }
+}
+
+impl Drop for FleetExchangeBuffer {
+    fn drop(&mut self) {
+        #[cfg(test)]
+        let length = self.bytes.len();
+        self.bytes.as_mut_slice().zeroize();
+        #[cfg(test)]
+        {
+            assert!(self.bytes.iter().all(|byte| *byte == 0), "buffer wipe");
+            fleet_wire_drop(self.kind, length);
+        }
+    }
+}
+
+fn fleet_refresh_body(client_id: &str, refresh: &str) -> FleetExchangeBuffer {
+    const START: &[u8] = b"grant_type=refresh_token&client_id=";
+    const NEXT: &[u8] = b"&refresh_token=";
+    let encoded_length = |text: &str| {
+        url::form_urlencoded::byte_serialize(text.as_bytes())
+            .map(str::len)
+            .sum::<usize>()
+    };
+    let mut body = FleetExchangeBuffer::new(
+        START.len() + encoded_length(client_id) + NEXT.len() + encoded_length(refresh),
+        "request",
+    );
+    body.bytes.extend_from_slice(START);
+    for part in url::form_urlencoded::byte_serialize(client_id.as_bytes()) {
+        body.bytes.extend_from_slice(part.as_bytes());
+    }
+    body.bytes.extend_from_slice(NEXT);
+    for part in url::form_urlencoded::byte_serialize(refresh.as_bytes()) {
+        body.bytes.extend_from_slice(part.as_bytes());
+    }
+    body
+}
+
+async fn decode_fleet_token_response(
+    response: reqwest::Response,
+) -> Result<FleetTokenWire, FleetApiError> {
+    let mut wire = FleetTokenWire::empty();
+    let mut buffer = FleetExchangeBuffer::new(MAX_RESPONSE_BYTES, "response");
+    let status = response.status().as_u16();
+    let success = response.status().is_success();
+    if !success && status == 429 {
+        return Err(FleetApiError::RateLimited {
+            retry_after_seconds: parse_retry_after(response.headers()),
+        });
+    }
+    if !success && status == 403 {
+        return Err(FleetApiError::HttpStatus(status));
+    }
+    let maximum = if success { MAX_RESPONSE_BYTES } else { MAX_ERROR_RESPONSE_BYTES };
+    let read = async {
+        if response.content_length().is_some_and(|length| length > maximum as u64) {
+            return Err(FleetApiError::ResponseTooLarge);
+        }
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|_| FleetApiError::ResponseRead)?;
+            if buffer.bytes.len().saturating_add(chunk.len()) > maximum {
+                return Err(FleetApiError::ResponseTooLarge);
+            }
+            buffer.bytes.extend_from_slice(&chunk);
+        }
+        Ok(())
+    }.await;
+    if !success {
+        if read.is_ok() {
+            if status == 405 && is_vehicle_in_service_body(&buffer.bytes) {
+                return Err(FleetApiError::ProviderHttpStatus {
+                    status,
+                    error: VEHICLE_IN_SERVICE_CODE.to_owned(),
+                    description: None,
+                });
+            }
+            if let Some((error, description)) = parse_provider_error(&buffer.bytes)
+                && (status != 401 || error == MOBILE_ACCESS_DISABLED_CODE)
+            {
+                return Err(FleetApiError::ProviderHttpStatus { status, error, description });
+            }
+        }
+        return Err(FleetApiError::HttpStatus(status));
+    }
+    read?;
+    wire.decode(&buffer.bytes)?;
+    Ok(wire)
+}
+
+#[cfg(test)]
+thread_local! {
+    static FLEET_WIRE_DROPS: std::cell::RefCell<Vec<(&'static str, usize)>> = const {
+        std::cell::RefCell::new(Vec::new())
+    };
+}
+
+#[cfg(test)]
+fn fleet_wire_drop(kind: &'static str, length: usize) {
+    FLEET_WIRE_DROPS.with(|events| events.borrow_mut().push((kind, length)));
+}
+
+#[cfg(test)]
+pub(crate) async fn assert_fleet_wire_contract() {
+    fn wiping<T: ZeroizeOnDrop>() {}
+    fn token_field(_: &WireSecret) {}
+    fn buffer_type(_: &Zeroizing<Vec<u8>>) {}
+    trait AmbiguousIfClone<A> { fn marker() {} }
+    impl<T: ?Sized> AmbiguousIfClone<()> for T {}
+    impl<T: ?Sized + Clone> AmbiguousIfClone<u8> for T {}
+    let _ = <WireSecret as AmbiguousIfClone<_>>::marker;
+    let _ = <FleetTokenWire as AmbiguousIfClone<_>>::marker;
+    wiping::<FleetTokenWire>();
+    {
+        let wire = FleetTokenWire::empty();
+        token_field(&wire.access_token);
+        token_field(&wire.refresh_token);
+        let request = fleet_refresh_body("client", "input");
+        let response = FleetExchangeBuffer::new(MAX_RESPONSE_BYTES, "response");
+        buffer_type(&request.bytes);
+        buffer_type(&response.bytes);
+    }
+    let access = "A".repeat(64);
+    let refresh = "B".repeat(64);
+    let valid = format!(
+        "{{\"access_token\":\"{access}\",\"refresh_token\":\"{refresh}\",\"expires_in\":3600,\"token_type\":\"Bearer\"}}"
+    );
+    let bodies = vec![
+        (valid.as_bytes().to_vec(), 0, true, false),
+        (format!("[\"{access}\",\"{refresh}\",3600,\"Bearer\"]").into_bytes(), 0, true, false),
+        (format!("{{\"access_token\":\"{access}\",\"refresh_token\":\"{refresh}\",\"token_type\":\"Bearer\"}}").into_bytes(), 2, false, false),
+        (valid.replace("Bearer", "Other").into_bytes(), 2, false, false),
+        (vec![b'x'; MAX_RESPONSE_BYTES + 1], 0, false, true),
+        (format!("{{\"access_token\":\"{access}\",\"refresh_token\":\"{refresh}\",\"expires_in\":\"soon\",\"token_type\":\"Bearer\"}}").into_bytes(), 2, false, false),
+        (format!("{{\"access_token\":\"{access}\",\"access_token\":\"{refresh}\"}}").into_bytes(), 1, false, false),
+        (format!("{{\"access_token\":\"{access}\",\"refresh_token\":\"{refresh}\"").into_bytes(), 2, false, false),
+        (format!("{valid}x").into_bytes(), 2, false, false),
+        (format!("{{\"access_token\":\"{access}\",\"refresh_token\":\"{refresh}\",\"extra\":\"unterminated").into_bytes(), 2, false, false),
+        (valid.replace(&access, &format!("\\u0041{}", "A".repeat(63))).into_bytes(), 0, true, false),
+    ];
+    for (body, expected_secrets, succeeds, oversized) in bodies {
+        FLEET_WIRE_DROPS.with(|events| events.borrow_mut().clear());
+        let body = std::sync::Arc::new(std::sync::Mutex::new(Some(body)));
+        let server = in_process::InProcessTransport::new(move |request| {
+            let body = body.lock().expect("response gate").take().expect("one request");
+            async move {
+                assert!(request.method() == http::Method::POST, "request method");
+                assert!(request.uri().path() == "/token", "request path");
+                assert!(
+                    request.headers().get(CONTENT_TYPE).and_then(|value| value.to_str().ok())
+                        == Some("application/x-www-form-urlencoded"),
+                    "request content type"
+                );
+                assert!(
+                    request.body().as_slice()
+                        == b"grant_type=refresh_token&client_id=client&refresh_token=input",
+                    "request form"
+                );
+                Ok(http::Response::builder().status(200).body(body).expect("response"))
+            }
+        });
+        let api = FleetAuthApi::for_in_process_test(
+            Url::parse("http://127.0.0.1/token").expect("endpoint"),
+            server,
+        ).expect("client");
+        let client = FleetClientId::parse("client").expect("client id");
+        let input = FleetRefreshToken::new("input").expect("input");
+        let capture = crate::owner_api::provider_secrets::capture::LogCapture::start();
+        let result = api.refresh(&client, &input).await;
+        if succeeds {
+            let pair = result.expect("valid answer");
+            assert!(pair.access_token.expose() == access, "decoded access");
+            assert!(pair.refresh_token.expose() == refresh, "decoded refresh");
+            drop(pair);
+        } else {
+            let error = result.expect_err("refused answer");
+            assert!(
+                if oversized { matches!(error, FleetApiError::ResponseTooLarge) }
+                else { matches!(error, FleetApiError::InvalidResponse) },
+                "fixed error code"
+            );
+            let rendered = format!("{error} {error:?}");
+            assert!(!rendered.contains(&access) && !rendered.contains(&refresh), "error redaction");
+        }
+        let logs = capture.contents();
+        assert!(!logs.contains(&access) && !logs.contains(&refresh), "log redaction");
+        FLEET_WIRE_DROPS.with(|events| {
+            let events = events.borrow();
+            assert!(events.iter().filter(|(kind, _)| *kind == "wire").count() == 1, "wire drop");
+            assert!(events.iter().filter(|(kind, _)| *kind == "request").count() == 1, "request drop");
+            assert!(events.iter().filter(|(kind, _)| *kind == "response").count() == 1, "response drop");
+            assert!(events.iter().filter(|(kind, length)| *kind == "secret" && *length == 64).count() == expected_secrets, "decoded secret drops");
+        });
+    }
+    let encoded = fleet_refresh_body("a b&", "r+%");
+    assert!(
+        encoded.bytes.as_slice()
+            == b"grant_type=refresh_token&client_id=a+b%26&refresh_token=r%2B%25",
+        "request encoding"
+    );
+    for status in [400, 401, 403, 405, 429, 500] {
+        for error in ["invalid_grant", "mobile_access_disabled", "unrecognised"] {
+            let body = format!("{{\"error\":\"{error}\",\"error_description\":\"{access}\"}}");
+            let response = || {
+                reqwest::Response::from(http::Response::builder()
+                    .status(status)
+                    .header("retry-after", "27")
+                    .body(body.as_bytes().to_vec())
+                    .expect("status response"))
+            };
+            let expected = decode_json_response::<Value>(response())
+                .await.expect_err("retained error policy");
+            let actual = decode_fleet_token_response(response())
+                .await.err().expect("token error policy");
+            assert!(actual == expected, "retained HTTP error policy");
+        }
+    }
 }
 
 #[derive(Serialize)]

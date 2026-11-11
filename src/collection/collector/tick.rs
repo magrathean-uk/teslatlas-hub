@@ -1247,12 +1247,19 @@ impl CollectorStart {
 /// one transaction. The credential unit may already be built; it applies this
 /// outcome after the commit and before its first request, and binds an unbound
 /// pair's generation before the fingerprint is read (C3 R7, B2 clarification 3).
-fn start_collector_run(
+#[cfg(test)]
+fn start_collector_run(store: &HubStore, config: &HubConfig, cadence: &CollectorCadence, stream_endpoint: &str, previous_heartbeat_ms: Option<i64>) -> Result<CollectorStart, CollectorError> {
+    let fleet = crate::config::collector_mode(&config.collector) == crate::config::CollectorMode::FleetPolling;
+    start_collector_run_with_identity(store, config, cadence, stream_endpoint, previous_heartbeat_ms, &store.collector_credential_identity(fleet)?)
+}
+
+fn start_collector_run_with_identity(
     store: &HubStore,
     config: &HubConfig,
     cadence: &CollectorCadence,
     stream_endpoint: &str,
     previous_heartbeat_ms: Option<i64>,
+    credential_identity: &str,
 ) -> Result<CollectorStart, CollectorError> {
     let mode = crate::config::collector_mode(&config.collector);
     let fleet = mode == crate::config::CollectorMode::FleetPolling;
@@ -1260,7 +1267,7 @@ fn start_collector_run(
         mode,
         &crate::config::owner_api_origin_text(&config.collector),
         if fleet { "" } else { stream_endpoint },
-        &store.collector_credential_identity(fleet)?,
+        credential_identity,
     );
     let alert_ms = i64::try_from(cadence.offline_drive_timeout.as_millis()).unwrap_or(i64::MAX);
     let started = store.begin_collector_run(&crate::db::CollectorRunStartRequest {

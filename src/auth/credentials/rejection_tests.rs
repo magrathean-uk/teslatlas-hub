@@ -338,6 +338,7 @@ async fn new_bed() -> Bed {
             base: Url::parse(&format!("http://{address}/")).unwrap(),
             env,
             server,
+            vault: Mutex::new(None),
         },
         fake,
     }
@@ -363,7 +364,7 @@ impl Bed {
 
     /// The same, built as an observer.
     fn observer(&self) -> LegacyAuthManager {
-        LegacyAuthManager::from_hub_source_db_store_for_test(
+        self.rig.register_manager(LegacyAuthManager::from_hub_source_db_store_for_test(
             self.rig.store.clone(),
             self.rig.directory.path(),
             &self.rig.endpoint(None),
@@ -371,7 +372,7 @@ impl Bed {
             true,
             self.rig.env.clone(),
         )
-        .expect("observer")
+        .expect("observer"))
     }
 
     fn at(&self, now: i64) {
@@ -446,8 +447,8 @@ impl Bed {
     }
 
     /// Store a pair as the owner would: an external credential write.
-    fn external_write(&self, access: &str, refresh: &str) {
-        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
+fn external_write(&self, access: &str, refresh: &str) {
+        crate::auth::credential_vault::fixtures::seed_legacy_supplied_pair(self.rig.directory.path(), access, refresh, None);
     }
 }
 
@@ -1916,7 +1917,7 @@ async fn p3_signed_out_bed() -> (Bed, LegacyAuthManager) {
         bed.rig.state(),
         ("signed_out".into(), Some("refresh_token_rejected".into()))
     );
-    assert!(!({ let unresolved: bool = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unresolved }));
+    assert!(!bed.rig.unresolved().expect("fixture status"));
     (bed, manager)
 }
 
@@ -2002,7 +2003,7 @@ async fn p3_outcome_bed(row: u8) -> (Bed, LegacyAuthManager) {
     }
     assert_eq!(bed.rig.state().0, "sign_in_required", "row {row}");
     assert_eq!(
-        ({ let unresolved: bool = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unresolved }),
+        bed.rig.unresolved().expect("fixture status"),
         row != 8,
         "row {row}"
     );
@@ -2116,8 +2117,8 @@ async fn cs_p3_row8_overlay_lift_allows_usable_traffic_until_refresh_due() {
         .refresh_now(&bed.rig.client(), SystemTime::now())
         .await;
     assert_eq!(bed.rig.state().0, "sign_in_required");
-    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
-    let fences = ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap();
+    assert!(!bed.rig.unresolved().unwrap());
+    let fences = bed.rig.fenced_generations().unwrap();
     assert_eq!(fences.len(), 1, "the dead input is fenced");
     assert_eq!(bed.fake.posts().len(), 1, "the one forced refresh");
     drop(manager);
@@ -2176,7 +2177,7 @@ async fn cs_p3_row8_overlay_lift_allows_usable_traffic_until_refresh_due() {
         "no request after it"
     );
     assert_eq!(
-        ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(),
+        bed.rig.fenced_generations().unwrap(),
         fences
     );
 }
@@ -2191,18 +2192,16 @@ async fn cs_p3_signed_out_guard_uses_unresolved_fact() {
     let mut unit = bed.manager();
     let row = bed.rig.row();
     unit.apply_collector_start(&P3_REFUSED_VIEW);
-    assert_eq!(bed.rig.row(), row, "fact false: preserved");({ let _retained_query_context = &(bed.rig
+    assert_eq!(bed.rig.row(), row, "fact false: preserved");bed.rig
         .store
         .open()
-        .expect("catalogue")
-        ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).execute_batch("ALTER TABLE legacy_refresh_receipt_bindings RENAME TO p3_hidden_bindings")
+        .expect("catalogue").execute_batch("ALTER TABLE credential_refresh_attempts RENAME TO p3_hidden_bindings")
         .expect("hide the table");
-    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).is_err());
-    unit.apply_collector_start(&P3_REFUSED_VIEW);({ let _retained_query_context = &(bed.rig
+    assert!(bed.rig.unresolved().is_err());
+    unit.apply_collector_start(&P3_REFUSED_VIEW);bed.rig
         .store
         .open()
-        .expect("catalogue")
-        ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).execute_batch("ALTER TABLE p3_hidden_bindings RENAME TO legacy_refresh_receipt_bindings")
+        .expect("catalogue").execute_batch("ALTER TABLE p3_hidden_bindings RENAME TO credential_refresh_attempts")
         .expect("restore the table");
     assert_eq!(
         bed.rig.row(),
@@ -2212,12 +2211,12 @@ async fn cs_p3_signed_out_guard_uses_unresolved_fact() {
     assert_eq!(unit.status_now().state, AuthState::SignedOut);
     // True: the overlay is allowed (a real unresolved attempt: row 4).
     let (bed, mut unit) = p3_outcome_bed(4).await;
-    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap());
+    assert!(bed.rig.unresolved().unwrap());
     unit.apply_collector_start(&P3_REFUSED_VIEW);
     assert_eq!(bed.rig.state().0, "api_refused", "fact true: overlay");
     // The sign-in control: a sign-in stop with no unresolved attempt is overlaid.
     let (bed, mut unit) = p3_outcome_bed(8).await;
-    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap());
+    assert!(!bed.rig.unresolved().unwrap());
     unit.apply_collector_start(&P3_REFUSED_VIEW);
     assert_eq!(bed.rig.state().0, "api_refused", "sign-in: overlay");
 }
@@ -2295,9 +2294,9 @@ async fn cs_p3_own_refusal_precedence_with_unresolved_evidence_and_hidden_config
         let unit = bed.manager();
         unit.generation()
     };
-    ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+    bed.rig.vault().begin_refresh(crate::auth::credential_envelope::CredentialSlot::OwnerApi,generation)
         .expect("a started attempt");
-    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
+    assert!(bed.rig.unresolved().unwrap());
     let own = crate::db::CollectorAuthRow {
         state: "api_refused".to_owned(),
         reason: Some("owner_api".to_owned()),
@@ -2316,7 +2315,7 @@ async fn cs_p3_own_refusal_precedence_with_unresolved_evidence_and_hidden_config
         .store
         .write_collector_auth_row(&own, T0 * 1_000)
         .expect("own refusal");
-    let fences = ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap();
+    let fences = bed.rig.fenced_generations().unwrap();
     let unknown = LegacyAuthError::SignedOut {
         reason: SignOutReason::RefreshOutcomeUnknown,
     };
@@ -2359,7 +2358,7 @@ async fn cs_p3_own_refusal_precedence_with_unresolved_evidence_and_hidden_config
     // The stop does not lift the configuration beneath it: the owner's retry cannot
     // replay the fenced input, and nothing was sent.
     assert_eq!(
-        ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(),
+        bed.rig.fenced_generations().unwrap(),
         fences
     );
     assert!(bed.fake.posts().is_empty());
@@ -2432,7 +2431,7 @@ async fn cs_p3_external_write_with_a_configuration_error_lifts_the_unknown_outco
     let bed = new_bed().await;
     seed_quiet(&bed);
     let generation = bed.manager().generation();
-    ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
+    bed.rig.vault().begin_refresh(crate::auth::credential_envelope::CredentialSlot::OwnerApi,generation)
         .expect("a started attempt");
     let mut manager = bed.manager();
     assert!(matches!(
@@ -2442,17 +2441,11 @@ async fn cs_p3_external_write_with_a_configuration_error_lifts_the_unknown_outco
         })
     ));
     // The external write: a pair of its own generation, stored over the fenced one.
-    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
-    let tokens = OwnerTokens::from_secret_parts(
-        "opaque-token-no-issuer-2".to_owned(),
-        "refresh-1".to_owned(),
-    )
-    .unwrap();
-    let (cipher_access, cipher_refresh) =
-        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
-    ({ let _retained_generation = crate::source_token_envelope::legacy_refresh_credential_generation(&tokens); let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("an external write");
-    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap());
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(
+        &bed.rig.store,bed.rig.directory.path(),"opaque-token-no-issuer-2","refresh-1",
+        Some((T0+28_800,T0+21_600)),
+    ).expect("an external write");
+    assert!(!bed.rig.unresolved().unwrap());
     bed.at(T0 + 120);
     assert!(manager.recheck_external_write(), "the write is adopted");
     assert!(matches!(

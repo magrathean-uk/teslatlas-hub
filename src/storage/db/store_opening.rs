@@ -47,6 +47,10 @@ impl HubStore {
         let store = Self {
             credential_connection_taken: std::sync::Arc::default(),
             #[cfg(test)]
+            fixture_vault: Arc::default(),
+            #[cfg(test)]
+            test_retained_credential_connection: Arc::default(),
+            #[cfg(test)]
             credential_blob_bytes_read: std::sync::Arc::default(),
             database_path: data_dir.join("hub.sqlite"),
             packs_dir: packs_dir.clone(),
@@ -416,6 +420,10 @@ impl HubStore {
             credential_connection_taken: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
                 true,
             )),
+            #[cfg(test)]
+            fixture_vault: Arc::default(),
+            #[cfg(test)]
+            test_retained_credential_connection: Arc::default(),
             #[cfg(test)]
             credential_blob_bytes_read: std::sync::Arc::default(),
             database_path,

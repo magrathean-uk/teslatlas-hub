@@ -45,7 +45,6 @@ impl StopBed {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         seed_supervised_restart_import(&store);
-        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
         let (fake, base, client, server) = auth_fake().await;
         Self {
             temporary,
@@ -61,25 +60,7 @@ impl StopBed {
     /// Store a pair as the owner would (an external write), with its generation and
     /// a schedule that is not due. Returns the generation.
     fn store_pair(&self, access: &str, refresh: &str) -> Uuid {
-        let key =
-            ({ let replaced_callee: fn(&std::path::Path) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(self.temporary.path()).expect("Cloak key");
-        let tokens =
-            OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned()).expect("pair");
-        let generation =
-            crate::source_token_envelope::legacy_refresh_credential_generation(&tokens);
-        let (access, refresh) =
-            ({ let replaced_callee: fn(&[u8], &crate::credentials::OwnerTokens) -> Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(key.as_slice(), &tokens)
-                .expect("Cloak pair");
-        let (expires, next) = not_due_schedule();
-        ({ let _retained_call_context = &(self.store
-            ); let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(
-                &({ let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), uuid::Uuid) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(&(({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); replaced_callee })(access, refresh, expires, next)
-                    .expect("a schedule that is not due")
-                    ), generation)
-                    .expect("generation"),
-            )
-            .expect("store pair");
-        generation
+        crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&self.store,self.temporary.path(),access,refresh,Some(not_due_schedule())).expect("store supplied fixture")
     }
 
     /// The credential unit as the collector's start path builds it.
@@ -178,10 +159,10 @@ async fn t68_an_unresolved_attempt_at_start_does_not_stop_the_collector_from_sta
     let bed = StopBed::new().await;
     let generation = bed.store_pair("loop-access", "loop-refresh");
     // The previous run sent a refresh and never learned the outcome.
-    ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+    crate::auth::credential_vault::fixtures::legacy_vault(&bed.store,bed.temporary.path()).begin_refresh(crate::auth::credential_envelope::CredentialSlot::OwnerApi,generation)
         .expect("an attempt");
     assert!(
-        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+        collector_unresolved(&bed.store,false)
             .expect("unresolved")
     );
     let manager = bed.unit(Some(StreamRegion::Global));
@@ -327,7 +308,7 @@ async fn t94d_the_owner_retry_turns_a_restored_refusal_over_an_unresolved_attemp
 
     let bed = StopBed::new().await;
     let generation = bed.store_pair("loop-access", "loop-refresh");
-    ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+    crate::auth::credential_vault::fixtures::legacy_vault(&bed.store,bed.temporary.path()).begin_refresh(crate::auth::credential_envelope::CredentialSlot::OwnerApi,generation)
         .expect("an attempt");
     // The unit's own refusal from the previous run, with the Tesla mode.
     let now = epoch_seconds_of(SystemTime::now());
@@ -738,17 +719,7 @@ impl FleetBed {
     /// The credential manager is built with the process's retained admission, which
     /// stays valid: a Fleet credential condition then is not the admission's failure.
     fn admit_manager(&mut self) -> Arc<crate::hub_user_process::AdmittedUserHub> {
-        let admission = crate::hub_user_process::AdmittedUserHub::for_test(self._dir.path())
-            .expect("admit");
-        let manager = FleetAuthManager::from_store_for_admitted_user(
-            self.store.clone(),
-            self._dir.path(),
-            Arc::clone(&admission),
-            None,
-        )
-        .expect("manager");
-        self.manager = Arc::new(tokio::sync::Mutex::new(manager));
-        admission
+        self.manager.try_lock().expect("idle manager").retain_fixture_admission()
     }
 
     fn lease_state(&self) -> SupervisedCollectorState {
@@ -1075,7 +1046,7 @@ fn p3_unresolved_fleet_hub() -> (tempfile::TempDir, HubStore, CursorKey, Uuid) {
 /// Add a sound Fleet pair to `store` and begin a refresh that never completes.
 fn p3_add_unresolved_fleet_refresh(store: &HubStore, data_dir: &std::path::Path) -> Uuid {
     crate::legacy_owner_credentials::load_or_create_cursor_key(data_dir).expect("cursor key");
-    crate::fleet_credentials::persist_fleet_setup_credentials(
+    crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
         store,
         data_dir,
         &FleetSetupCredentials::new(
@@ -1089,12 +1060,9 @@ fn p3_add_unresolved_fleet_refresh(store: &HubStore, data_dir: &std::path::Path)
         SystemTime::now(),
     )
     .expect("persist the pair");
-    let generation = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("tokens")
-        .expect("a pair")
-        .4
-        .expect("a bound generation");
-    ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("an unresolved refresh");
+    let vault = crate::auth::credential_vault::fixtures::legacy_vault(store,data_dir);
+    let generation = vault.stored_generation(crate::auth::credential_envelope::CredentialSlot::FleetApi).expect("generation").expect("pair");
+    vault.begin_refresh(crate::auth::credential_envelope::CredentialSlot::FleetApi,generation).expect("an unresolved refresh");
     generation
 }
 
@@ -1114,8 +1082,9 @@ fn p3_fleet_evidence(store: &HubStore) -> String {
         .expect("receipt rows")
         .collect::<Result<_, _>>()
         .expect("receipt values");
-    let fences: i64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
-    let pair: (Vec<u8>, Vec<u8>, i64, i64, uuid::Uuid) = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
+    let fences: i64 = connection.query_row("SELECT count(*) FROM credential_refresh_fences",[],|r| r.get(0)).expect("fences");
+    let snapshot = collector_pair_snapshot(store,true).expect("pair");
+    let pair = (snapshot.0,snapshot.1,snapshot.3,snapshot.4,snapshot.2);
     format!(
         "{receipts:?}|{fences}|{:?}|{:?}|{}|{}|{:?}",
         pair.0,
@@ -1259,14 +1228,18 @@ async fn fleet_unresolved_refresh_starts_a_running_credential_stop() {
             Duration::from_secs(2),
         )
         .expect("auth client");
-        let admission = crate::hub_user_process::AdmittedUserHub::for_test(temporary.path())
-            .expect("admission");
-        let manager = FleetAuthManager::from_store_for_supervised_start(
-            store.clone(),
-            temporary.path(),
-            Arc::clone(&admission),
-            None,
-        )
+        let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
+        let manager = {
+    let runtime_store = store.clone();
+    let runtime_path = temporary.path();
+    let runtime_admission = Arc::clone(&admission);
+    let runtime_loss = None;
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+    )
+    .map_err(crate::fleet_credentials::FleetCredentialError::from)
+    .and_then(|vault| FleetAuthManager::from_store_for_supervised_start(vault, runtime_path, runtime_admission, runtime_loss))
+}
         .expect("the supervised start admits the identified unresolved refresh");
         assert!(manager.is_input_fenced());
         let manager = Arc::new(tokio::sync::Mutex::new(manager));
@@ -1472,13 +1445,18 @@ async fn fleet_telemetry_maintenance_keeps_running_over_an_identified_unresolved
     let (temporary, store, cursor_key, _generation) = p3_unresolved_fleet_hub();
     let config = supervised_restart_test_config(temporary.path());
     let admission =
-        crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admission");
-    let manager = FleetAuthManager::from_store_for_supervised_start(
-        store.clone(),
-        temporary.path(),
-        Arc::clone(&admission),
-        None,
+        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
+    let manager = {
+    let runtime_store = store.clone();
+    let runtime_path = temporary.path();
+    let runtime_admission = Arc::clone(&admission);
+    let runtime_loss = None;
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
     )
+    .map_err(crate::fleet_credentials::FleetCredentialError::from)
+    .and_then(|vault| FleetAuthManager::from_store_for_supervised_start(vault, runtime_path, runtime_admission, runtime_loss))
+}
     .expect("the supervised start admits it");
     assert!(manager.is_input_fenced());
     let manager = Arc::new(tokio::sync::Mutex::new(manager));
@@ -1573,7 +1551,7 @@ async fn assert_the_late_fleet_denial(case: Option<RenewalEndsFirst>, restored: 
     bed.manager.lock().await.mark_refresh_due();
     let tokens = Arc::clone(&bed.fake.token_requests);
     bed.wait_for("the held exchange", || tokens.load(Ordering::SeqCst) >= 1).await;
-    let pair_before: (Vec<u8>, Vec<u8>, Option<uuid::Uuid>, i64, i64) = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
+    let pair_before = collector_pair_snapshot(&bed.store,true).expect("pair before denial");
     let instance = bed
         .store
         .supervised_collector_lease_status()
@@ -1667,7 +1645,7 @@ async fn assert_the_late_fleet_denial(case: Option<RenewalEndsFirst>, restored: 
         ),
         "the settlement's sensitive failure is the run's result: {result:?}"
     );
-    let pair_after: (Vec<u8>, Vec<u8>, Option<uuid::Uuid>, i64, i64) = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
+    let pair_after = collector_pair_snapshot(&bed.store,true).expect("pair after denial");
     assert_eq!(pair_after.0, pair_before.0, "the pair is not replaced");
     assert_eq!(pair_after.1, pair_before.1);
     assert_eq!(pair_after.2, pair_before.2);
@@ -1681,7 +1659,7 @@ async fn assert_the_late_fleet_denial(case: Option<RenewalEndsFirst>, restored: 
         "the denied job neither encrypts nor writes"
     );
     assert!(
-        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"),
+        collector_unresolved(&bed.store,true).expect("unresolved refresh"),
         "the attempt stays fenced"
     );
     let retained = bed
@@ -1779,7 +1757,7 @@ async fn b2_an_ordinary_fleet_settlement_failure_reaches_the_result_without_bein
         "a recorded stop with the admission intact releases the lease"
     );
     assert!(
-        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("receipts"),
+        collector_unresolved(&bed.store,true).expect("receipts"),
         "the failed exchange stays fenced for the next start"
     );
 }
@@ -1995,16 +1973,14 @@ async fn b2_a_withheld_resend_then_a_second_forced_refresh_waits_on_no_spacing_a
         generation_before,
         "the pair was replaced"
     );
-    let stored = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("Fleet row")
-        .expect("Fleet credentials");
+    let stored = collector_pair_snapshot(&bed.store,true).expect("Fleet credentials");
     assert_eq!(
-        stored.4,
+        stored.2,
         Some(bed.manager.lock().await.credential_generation()),
         "the second successor is the stored pair"
     );
     assert!(
-        !({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("receipts"),
+        !collector_unresolved(&bed.store,true).expect("receipts"),
         "no attempt stays unresolved"
     );
     assert_eq!(open_auth_terminal_gaps(&bed.store), 1, "one stop, nothing failed on the way");

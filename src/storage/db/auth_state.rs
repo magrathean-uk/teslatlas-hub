@@ -280,24 +280,43 @@ impl HubStore {
     /// The generation the pair row holds, without decrypting it. The unit
     /// compares it with its own before every token request, while stopped or
     /// waiting and at start (R44a).
+    #[cfg(test)]
     pub(crate) fn stored_legacy_credential_generation(
         &self,
     ) -> Result<StoredLegacyGeneration, StoreError> {
-        panic!(
-            "C10_UNAVAILABLE_V1: R56/R62 manager call needs the vault-owned CredentialConnection"
-        );
+        if crate::auth::legacy_auth::state_fixture::for_store(self)? {
+            return Ok(match crate::auth::legacy_auth::state_fixture::load(self)? {None=>StoredLegacyGeneration::NoRow,Some(row)=>row.4.map_or(StoredLegacyGeneration::Unbound,StoredLegacyGeneration::Bound)});
+        }
+        self.test_legacy_vault().stored_generation(crate::auth::credential_envelope::CredentialSlot::OwnerApi)
+            .map(|generation| generation.map_or(StoredLegacyGeneration::NoRow,StoredLegacyGeneration::Bound))
+            .map_err(|_| StoreError::WriteRefused("credential_vault_unavailable"))
     }
 
     /// Whether `generation` is the output of a completed refresh binding, that
     /// is, a pair this unit's own refresh wrote (K2, R62). Any other
     /// generation that appears in the pair row came from an external writer.
+    #[cfg(test)]
     pub(crate) fn legacy_generation_is_refresh_output(
         &self,
         generation: Uuid,
     ) -> Result<bool, StoreError> {
-        panic!(
-            "C10_UNAVAILABLE_V1: R56/R62 manager call needs the vault-owned CredentialConnection"
-        );
+        if crate::auth::legacy_auth::state_fixture::for_store(self)? {return crate::auth::legacy_auth::state_fixture::output(self,generation);}
+        if let Some(result) = self.test_retained_refresh_output(generation) { return result; }
+        self.test_legacy_vault().is_completed_output(crate::auth::credential_envelope::CredentialSlot::OwnerApi,generation)
+            .map_err(|_| StoreError::WriteRefused("credential_vault_unavailable"))
+    }
+    #[cfg(test)]
+    pub(crate) fn test_legacy_vault(&self) -> std::sync::Arc<crate::auth::credential_vault::CredentialVault> {
+        crate::auth::credential_vault::fixtures::legacy_vault(self,self.database_path.parent().expect("fixture directory"))
+    }
+    #[cfg(test)]
+    pub(crate) fn test_credential_connection_in_use(&self) -> bool {
+        self.credential_connection_taken.load(std::sync::atomic::Ordering::Acquire)
+    }
+    #[cfg(test)]
+    pub(crate) fn test_legacy_unresolved(&self) -> Result<bool,StoreError> {
+        if crate::auth::legacy_auth::state_fixture::for_store(self)? {return crate::auth::legacy_auth::state_fixture::unresolved(self);}
+        self.test_legacy_vault().has_unresolved_refresh(crate::auth::credential_envelope::CredentialSlot::OwnerApi).map_err(|_|StoreError::WriteRefused("credential_vault_unavailable"))
     }
 
     /// The start time of the most recent `legacy_auth` token receipt, whatever
@@ -324,6 +343,7 @@ impl HubStore {
     /// change it and any external write does. A row without a generation, or
     /// no row, gives the empty string. It reads columns only, needs no
     /// sensitive access and may be called before the unit starts.
+    #[cfg(test)]
     pub(crate) fn owner_wire_credential_identity(&self) -> Result<String, StoreError> {
         let connection = self.open_read_only_connection()?;
         let version: i32 = connection

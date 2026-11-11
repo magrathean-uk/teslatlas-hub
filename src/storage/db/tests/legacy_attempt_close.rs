@@ -205,12 +205,11 @@ fn lc2_a_closed_attempt_without_release_keeps_the_input_fenced_for_ever() {
     })
     .expect("generation");
     assert!(matches!(
-        ({
-            let _retained_credential_input = &same;
-            let unavailable_value: Result<(), StoreError> = panic!(
-                "C10_UNAVAILABLE_V1: R28 RefreshTokenSpent replaces the C5 generation-only replacement error; preserved C5 assertion needs manager adaptation"
-            );
-            unavailable_value
+        s_test_with_credential_connection(&store,|connection|connection.replace_credential_pair(
+            &same,&EntryProvenance::Supplied,&LegacyCandidates(Vec::new()),ReplacePolicy::ReplaceAny,
+        )).map_err(|error|match crate::credentials::CredentialError::from(crate::auth::credential_vault::CredentialStoreError::from(error)){
+            crate::credentials::CredentialError::LegacyOwnerTokenStore(error)=>error,
+            _=>StoreError::WriteRefused("credential_vault_unavailable"),
         }),
         Err(StoreError::RefreshOutcomeUnknown { .. })
     ));
@@ -409,27 +408,29 @@ fn lc4_only_a_started_attempt_bound_to_the_input_can_be_closed() {
 
 #[test]
 fn lc5_an_unrotated_refresh_writes_the_pair_and_closes_the_receipt_in_one_step() {
-    let (_directory, store) = lc_store_with_pair();
-    let receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value }).expect("begin");
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value })
-        .expect("complete");
-    // The receipt is a success with the input released: the refresh token was not
-    // consumed, so the next attempt may present it again.
-    assert_eq!(
-        ({ let unavailable_value: Result<Vec<(String, Option<i64>, Option<i64>, bool)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value }).expect("receipts"),
-        vec![("success".to_owned(), Some(200), None, false)]
-    );
-    assert!(({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value }).expect("fences").is_empty());
-    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value }).expect("unresolved"));
-    let stored = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value })
-        .expect("load")
-        .expect("a row");
-    assert_eq!(stored.0.as_slice(), &[9; 8]);
-    assert_eq!(stored.4, Some(lc_gen(1)));
-    assert_eq!(stored.2, AS_T0 + 28_800);
-    let again = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value }).expect("begin again");
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: R57 fresh successor generations and R60 unrotated refresh replace the pre-C10 same-generation ciphertext fixture"); unavailable_value })
-        .expect("cleanup");
+    // X8's retained pre-C10 equal-generation component contract. No V1
+    // manager or vault is constructed by this case.
+    use crate::auth::legacy_auth::state_fixture as fixture;
+    let (_directory,store)=as_store();
+    fixture::write(&store,&fixture::input(lc_gen(1))).unwrap();
+    let receipt=fixture::begin(&store,lc_gen(1)).expect("begin");
+    let successor=fixture::row(Some(lc_gen(1)),vec![9;8],vec![0;8],(AS_T0+28_800,AS_T0+21_600));
+    fixture::finish(&store,receipt,lc_gen(1),&successor).expect("complete");
+    let receipts:Vec<(String,Option<i64>,Option<i64>,bool)> = {
+        let db=store.open().unwrap();
+        let mut query=db.prepare("SELECT r.outcome,r.http_status,r.retry_after_seconds,EXISTS(SELECT 1 FROM legacy_refresh_input_fences f JOIN legacy_refresh_receipt_bindings b ON b.input_credential_generation=f.input_credential_generation WHERE b.receipt_id=r.id) FROM outbound_request_receipts r ORDER BY r.id").unwrap();
+        query.query_map([],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).unwrap().collect::<Result<_,_>>().unwrap()
+    };
+    assert_eq!(receipts,vec![("success".to_owned(),Some(200),None,false)]);
+    let fences:i64=store.open().unwrap().query_row("SELECT count(*) FROM legacy_refresh_input_fences",[],|r|r.get(0)).unwrap();
+    assert_eq!(fences,0);
+    assert!(!fixture::unresolved(&store).expect("unresolved"));
+    let stored=fixture::load(&store).expect("load").expect("a row");
+    assert_eq!(stored.0.as_slice(),&[9;8]);
+    assert_eq!(stored.4,Some(lc_gen(1)));
+    assert_eq!(stored.2,AS_T0+28_800);
+    let again=fixture::begin(&store,lc_gen(1)).expect("begin again");
+    fixture::finish(&store,again,lc_gen(1),&successor).expect("cleanup");
 }
 
 #[test]

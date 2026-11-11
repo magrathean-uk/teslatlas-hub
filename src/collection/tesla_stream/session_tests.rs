@@ -27,6 +27,19 @@ use super::{
 };
 use crate::credentials::LegacyAuthManager;
 
+fn stream_receipts(store:&crate::db::HubStore)->Result<Vec<(String,Option<i64>,Option<i64>,bool)>,crate::db::StoreError>{
+    let db=store.open()?;
+    let mut query=db.prepare("SELECT r.outcome,r.http_status,r.retry_after_seconds,EXISTS(SELECT 1 FROM credential_refresh_attempts a WHERE a.receipt_id=r.id AND a.fence_id IS NOT NULL) FROM outbound_request_receipts r WHERE r.transport='legacy_auth' ORDER BY r.id").map_err(crate::db::StoreError::Query)?;
+    query.query_map([],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).map_err(crate::db::StoreError::Query)?.collect::<Result<Vec<_>,_>>().map_err(crate::db::StoreError::Query)
+}
+fn stream_fences(store:&crate::db::HubStore)->Result<Vec<uuid::Uuid>,crate::db::StoreError>{
+    let db=store.open()?;
+    let mut query=db.prepare("SELECT a.input_generation FROM credential_refresh_attempts a JOIN credential_refresh_fences f ON f.fence_id=a.fence_id WHERE a.slot='owner_api' ORDER BY a.receipt_id").map_err(crate::db::StoreError::Query)?;
+    let rows=query.query_map([],|r|r.get::<_,String>(0)).map_err(crate::db::StoreError::Query)?.collect::<Result<Vec<_>,_>>().map_err(crate::db::StoreError::Query)?;
+    rows.into_iter().map(|s|uuid::Uuid::parse_str(&s).map_err(|_|crate::db::StoreError::CredentialPairInvalid)).collect()
+}
+
+
 /// Lets real I/O (a loopback HTTP exchange with a token issuer) make progress
 /// without the paused clock moving: a blocking task holds the runtime's automatic
 /// time advance back while it sleeps. Only the tests that use the real issuer
@@ -979,13 +992,13 @@ async fn cs_p3_row8_stream_admission_matches_c5_state() {
             true,
         )];
         assert_eq!(
-            ({ let unavailable_value: Result<Vec<(String, Option<i64>, Option<i64>, bool)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(),
+            stream_receipts(&store).unwrap(),
             closed,
             "{status}"
         );
-        let fences = ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap();
+        let fences = stream_fences(&store).unwrap();
         assert_eq!(fences.len(), 1, "{status}: the dead input is fenced");
-        assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(), "{status}");
+        assert!(!store.test_legacy_unresolved().unwrap(), "{status}");
         assert_eq!(
             store
                 .load_collector_auth_row()
@@ -1011,12 +1024,12 @@ async fn cs_p3_row8_stream_admission_matches_c5_state() {
             "{status}: no second POST"
         );
         assert_eq!(
-            ({ let unavailable_value: Result<Vec<(String, Option<i64>, Option<i64>, bool)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(),
+            stream_receipts(&store).unwrap(),
             closed,
             "{status}"
         );
         assert_eq!(
-            ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(),
+            stream_fences(&store).unwrap(),
             fences,
             "{status}"
         );
@@ -1088,11 +1101,11 @@ async fn cs_p3_row8_stream_admission_matches_c5_state() {
         "signed out with the same reason"
     );
     assert_eq!(
-        ({ let unavailable_value: Result<Vec<(String, Option<i64>, Option<i64>, bool)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(),
+        stream_receipts(&store).unwrap(),
         [("authentication_rejected".to_owned(), Some(400), None, true)],
         "the one refresh is closed as an authentication rejection"
     );
-    assert_eq!(({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap().len(), 1);
+    assert_eq!(stream_fences(&store).unwrap().len(), 1);
     assert_eq!(
         store
             .load_collector_auth_row()

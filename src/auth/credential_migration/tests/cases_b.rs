@@ -1290,7 +1290,7 @@ fn refused(result: Result<crate::data_recovery::DataRecoveryReport, DataRecovery
 }
 
 #[test]
-fn ct062_data_backup() {
+pub(in crate::auth) fn ct062_data_backup() {
     // Case constants (R53): the exposed classification.
     assert_eq!(
         CAR_CONTROL_SECRET_TABLES,

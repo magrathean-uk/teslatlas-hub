@@ -110,7 +110,7 @@ fn doctor_fleet_pair_with(directory: &Path, store: &HubStore, access: &str, refr
         28_800,
     )
     .expect("fleet credentials");
-    crate::fleet_credentials::persist_fleet_setup_credentials(
+    crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
         store,
         directory,
         &credentials,

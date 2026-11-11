@@ -35,6 +35,19 @@ static TERRAIN_PASS_TEST_SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::co
 // Cache ownership counts are process-wide, so real adapter fixtures share this lock.
 static TERRAIN_CACHE_TEST_SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+/// Independent test observation of ciphertext immutability after admission loss.
+/// It never supplies credentials or a generation to a running manager.
+fn collector_pair_snapshot(store: &HubStore, fleet: bool) -> Option<(Vec<u8>,Vec<u8>,Option<Uuid>,i64,i64)> {
+    use rusqlite::OptionalExtension;
+    store.open().expect("snapshot observer").query_row("SELECT access_envelope,refresh_envelope,generation,expires_at,next_refresh_at FROM credential_pairs WHERE account_id=1 AND slot=?1",[if fleet { "fleet_api" } else { "owner_api" }],|r| {
+        let generation: String = r.get(2)?;
+        Ok((r.get(0)?,r.get(1)?,Uuid::parse_str(&generation).ok(),r.get(3)?,r.get(4)?))
+    }).optional().expect("snapshot")
+}
+fn collector_unresolved(store: &HubStore, fleet: bool) -> Result<bool,crate::db::StoreError> {
+    store.open()?.query_row("SELECT EXISTS(SELECT 1 FROM credential_refresh_attempts a JOIN outbound_request_receipts r ON r.id=a.receipt_id WHERE a.slot=?1 AND r.outcome='started')",[if fleet { "fleet_api" } else { "owner_api" }],|r| r.get(0)).map_err(crate::db::StoreError::Query)
+}
+
 // Opt-in step measurements keep ordinary test output quiet.
 macro_rules! terrain_test_timing {
     ($($arg:tt)*) => {

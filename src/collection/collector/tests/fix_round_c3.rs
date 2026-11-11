@@ -414,7 +414,7 @@ async fn r06_shutdown_waits_for_a_started_fleet_exchange_to_store_its_successor(
         60,
     )
     .expect("setup credentials");
-    crate::fleet_credentials::persist_fleet_setup_credentials(
+    crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
         &store,
         temporary.path(),
         &credentials,
@@ -457,7 +457,7 @@ async fn r06_shutdown_waits_for_a_started_fleet_exchange_to_store_its_successor(
             .is_err()
         );
     }
-    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("open attempt"));
+    assert!(collector_unresolved(&store,true).expect("open attempt"));
 
     let settlement = settle_fleet_exchange(&manager, None).await;
     assert!(
@@ -467,14 +467,12 @@ async fn r06_shutdown_waits_for_a_started_fleet_exchange_to_store_its_successor(
     settlement.into_result().expect("settled");
 
     assert!(
-        !({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("closed attempt"),
+        !collector_unresolved(&store,true).expect("closed attempt"),
         "the successor is stored before the clients are dropped"
     );
-    let stored = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("Fleet row")
-        .expect("Fleet credentials");
+    let stored = collector_pair_snapshot(&store,true).expect("Fleet credentials");
     assert_eq!(
-        stored.4,
+        stored.2,
         Some(manager.lock().await.credential_generation())
     );
     server.abort();
@@ -509,7 +507,7 @@ impl SettlementBed {
             60,
         )
         .expect("setup credentials");
-        crate::fleet_credentials::persist_fleet_setup_credentials(
+        crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
             &store,
             temporary.path(),
             &credentials,
@@ -517,15 +515,20 @@ impl SettlementBed {
         )
         .expect("persist due credentials");
         let admission = admitted.then(|| {
-            crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admit")
+            crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path())
         });
         let mut manager = match &admission {
-            Some(admission) => FleetAuthManager::from_store_for_admitted_user(
-                store.clone(),
-                temporary.path(),
-                Arc::clone(admission),
-                None,
-            ),
+            Some(admission) => {
+    let runtime_store = store.clone();
+    let runtime_path = temporary.path();
+    let runtime_admission = Arc::clone(admission);
+    let runtime_loss = None;
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+    )
+    .map_err(crate::fleet_credentials::FleetCredentialError::from)
+    .and_then(|vault| FleetAuthManager::from_store_for_admitted_user(vault, runtime_path, runtime_admission, runtime_loss))
+},
             None => FleetAuthManager::from_store(store.clone(), temporary.path()),
         }
         .expect("Fleet manager");
@@ -582,7 +585,7 @@ impl SettlementBed {
 
     /// The stored pair's generation and the state of the refresh attempts.
     fn stored(&self) -> (Option<Uuid>, Vec<String>) {
-        let generation: Option<Uuid> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
+        let generation = collector_pair_snapshot(&self.store,true).and_then(|row|row.2);
         let outcomes = self
             .store
             .open()
@@ -643,7 +646,7 @@ async fn r06_settlement_expires_at_65_seconds() {
     let (generation, outcomes) = bed.stored();
     assert_eq!(generation, input, "the original pair stands");
     assert_eq!(outcomes, ["started"], "the attempt stays unresolved");
-    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("receipts"));
+    assert!(collector_unresolved(&bed.store,true).expect("receipts"));
     assert_eq!(bed.encryption_entries(), 0);
     assert!(settlement.into_result().is_ok(), "a timeout is no error of the run");
 }

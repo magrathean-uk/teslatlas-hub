@@ -344,7 +344,7 @@ impl DrainBed {
         let config = supervised_restart_test_config(temporary.path());
         before(&wire, &seam);
         let runtime_admission = admitted.then(|| {
-            crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admit")
+            crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path())
         });
         let admission = runtime_admission.clone();
         let (ready_tx, ready_rx) = oneshot::channel();

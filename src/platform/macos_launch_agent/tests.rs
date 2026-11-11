@@ -116,7 +116,7 @@ fn seed_fleet_ready_hub(data_dir: &Path) {
         3_600,
     )
     .expect("Fleet credentials");
-    persist_fleet_setup_credentials(&store, data_dir, &credentials, SystemTime::now())
+    crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(&store, data_dir, &credentials, SystemTime::now())
         .expect("persist Fleet credentials");
 }
 
@@ -315,7 +315,7 @@ fn fleet_unresolved_refresh_passes_production_and_gui_start_preflight() {
             .unresolved_refresh
     );
     assert!(matches!(
-        crate::fleet_credentials::validate_stored_fleet_credentials(&store, &data_dir),
+        crate::auth::credential_vault::fixtures::validate_fixture_fleet_credentials(&store, &data_dir),
         Err(crate::fleet_credentials::FleetCredentialError::RotationOutcomeUnknown)
     ));
     let before = preflight_snapshot(&store, &data_dir);
@@ -374,7 +374,7 @@ fn fleet_unresolved_preflight_rejects_independent_credential_failures() {
             // A pair that lacks `vehicle_location` carries its own generation: fence it
             // afresh, so the refresh is unresolved and identified but the scopes fail.
             ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("clear");
-            persist_fleet_setup_credentials(
+            crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
                 store,
                 directory,
                 &FleetSetupCredentials::new(

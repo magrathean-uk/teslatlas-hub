@@ -1915,16 +1915,10 @@ async fn the_loop_stores_a_sleeping_car_once_records_its_stop_and_stays_quiet_af
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_supervised_restart_import(&store);
-    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("0600 Cloak key");
-    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Cloak key");
     let initial = OwnerTokens::from_secret_parts("k3-access".to_owned(), "k3-refresh".to_owned())
         .expect("initial pair");
-    let (access, refresh) =
-        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("Cloak pair");
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("store pair");
+    let fixture_now = current_epoch_millis().expect("clock").div_euclid(1_000);
+    let _generation = crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,temporary.path(),initial.access_token(),initial.refresh_token(),Some((fixture_now + 28_800, fixture_now + 21_600))).expect("supplied fixture pair");
     let fake = crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
         .await
         .expect("loopback Tesla");
@@ -2254,7 +2248,7 @@ fn r7_a_new_fleet_application_or_region_changes_the_fingerprint_and_resets_a_sto
             28_800,
         )
         .expect("setup credentials");
-        crate::fleet_credentials::persist_fleet_setup_credentials(
+        crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
             &store,
             dir.path(),
             &credentials,

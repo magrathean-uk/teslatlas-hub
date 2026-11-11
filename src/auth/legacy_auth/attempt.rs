@@ -530,23 +530,15 @@ fn successor_of(
     sent_at: i64,
     attempt: Attempt,
 ) -> Option<Box<SuccessorPair>> {
-    let tokens = crate::credentials::OwnerTokens::from_secret_parts(
+    let _tokens = crate::credentials::OwnerTokens::from_secret_parts(
         accepted.access_token.to_string(),
         accepted.refresh_token.to_string(),
     )
     .ok()?;
-    let output = crate::source_token_envelope::legacy_refresh_credential_generation(&tokens);
-    // A rotated successor has a refresh token of its own, so a different
-    // generation (K2); one that has the input's generation is not one.
-    //
-    // One that kept the refresh token has, in general, the input's generation,
-    // and is then written under it. It may also have a different one (C5-S5):
-    // the presented refresh token is the copy trimmed at load (R46) while the
-    // input generation is that of the stored, untrimmed bytes, so a pasted token
-    // with a trailing newline keeps its token but not its digest. The pair is
-    // then a changed generation, and is completed like a rotation (K2: the output
-    // differs from the input), which also stores the token without the padding.
-    // The token itself was not consumed (F6) either way.
+    // C10 R57: one fresh generation, retained with the pending successor for
+    // every persistence retry, including an answer that keeps its refresh.
+    let output = Uuid::new_v4();
+    // Every accepted answer has an output identity distinct from its input.
     if accepted.kind == AcceptedKind::Rotated && output == attempt.input {
         return None;
     }

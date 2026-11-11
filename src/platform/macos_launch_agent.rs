@@ -399,23 +399,19 @@ fn provider_credentials_are_usable(
 ) -> io::Result<()> {
     match provider {
         crate::config::CollectorProvider::Legacy => {
-            let tokens = ({ let _retained_call_context = &(store
-                ); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()
-                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
-                .ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "legacy Owner API credentials are required before install",
-                    )
-                })?;
-            ({ let replaced_callee: fn(&std::path::Path, &(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })(data_dir, &tokens).map_err(
-                |error| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("legacy Owner API credentials are unusable: {error}"),
-                    )
-                },
-            )?;
+            let presence=store.credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::OwnerApi)
+                .map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"credential presence unavailable"))?
+                .ok_or_else(||io::Error::new(io::ErrorKind::InvalidData,"legacy Owner API credentials are required before install"))?;
+            presence.header_check.map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"credential header unreadable"))?;
+            let secrets=crate::platform::private_directory::open_validated_read_only(&data_dir.join("secrets"))
+                .map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"credential directory unavailable"))?
+                .ok_or_else(||io::Error::new(io::ErrorKind::InvalidData,"credential keyring missing"))?;
+            crate::auth::credential_keys::check_keyring(&secrets)
+                .map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"credential keyring unusable"))?
+                .ok_or_else(||io::Error::new(io::ErrorKind::InvalidData,"credential keyring missing"))?;
+            if store.load_collector_auth_row().map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"credential status unavailable"))?.is_some_and(|row|row.state=="signed_out") {
+                return Err(io::Error::new(io::ErrorKind::InvalidData,"credential sign-in required"));
+            }
         }
         crate::config::CollectorProvider::Fleet => {
             // Diagnostic admission (C3 R47, B2 clarification 3): the pair, key,

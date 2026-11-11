@@ -2,6 +2,8 @@
 
 //! Encrypted persistence and one resident refresh owner for Fleet OAuth.
 
+use crate::auth::credential_vault::{CredentialVault, CredentialStoreError};
+use crate::auth::credential_envelope::{CredentialSlot, RefreshOwner};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rustix::{
     fs::{CWD, FileType, Mode, OFlags, RenameFlags, fstat, open, renameat_with},
@@ -134,158 +136,64 @@ impl std::fmt::Debug for FleetSetupCredentials {
     }
 }
 
+/// R58's public entry bridge keeps the vault and its admission opaque.
 pub fn persist_fleet_setup_credentials(
-    store: &HubStore,
-    data_dir: &Path,
-    credentials: &FleetSetupCredentials,
-    now: SystemTime,
+    entry: &crate::CredentialVaultEntry, _data_dir: &Path,
+    credentials: &FleetSetupCredentials, now: SystemTime,
 ) -> Result<(), FleetCredentialError> {
-    let existing = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
-    if ({ let unavailable_value: Result<bool, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })? {
-        return Err(FleetCredentialError::MigrationRequired);
-    }
-    let replacing_legacy = existing.is_some() && ({ let unavailable_value: Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })?.is_none();
-    if replacing_legacy {
-        ({ let unavailable_value: Result<(), crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
-    }
-    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
-    let schedule = refresh_schedule(now, credentials.expires_in_seconds)?;
-    let stored = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })?;
-    let persisted = if existing.is_some() {
-        ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-    } else {
-        ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-    };
-    if let Err(error) = persisted {
-        return Err(error.into());
-    }
-    if replacing_legacy {
-        ({ let unavailable_value: Result<(), crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
-    }
+    entry.vault().store_supplied_entry(credentials.credential_entry(now)?, crate::db::ReplacePolicy::ReplaceAny)?;
     Ok(())
 }
 
-/// Validate persisted Fleet credentials without claiming refresh ownership or
-/// changing their stored generation. This is the operational predicate: any
-/// unresolved refresh, identified or not, fences the stored input and the
-/// credential cannot collect. Production and GUI preflight use the diagnostic
-/// admission of [`inspect_stored_fleet_credentials`] instead, which lets an
-/// identified unresolved refresh start as a running reconnect stop.
-pub fn validate_stored_fleet_credentials(
-    store: &HubStore,
-    data_dir: &Path,
-) -> Result<(), FleetCredentialError> {
-    validate_stored_fleet_credentials_after(store, data_dir, || {})
+impl FleetSetupCredentials {
+    pub(crate) fn credential_entry(&self, now: SystemTime) -> Result<crate::auth::credential_vault::CredentialEntry, FleetCredentialError> {
+        let schedule = refresh_schedule(now, self.expires_in_seconds)?;
+        let mut entry = crate::auth::credential_vault::CredentialEntry::fleet_supplied(
+            Zeroizing::new(self.access_token.as_str().to_owned()), Zeroizing::new(self.refresh_token.as_str().to_owned()),
+            self.client_id.clone(), self.region, self.expires_in_seconds)?;
+        entry.set_schedule(schedule.expires_at, schedule.next_refresh_at);
+        Ok(entry)
+    }
 }
 
-/// [`validate_stored_fleet_credentials`] with a seam between its first
-/// unresolved-refresh check and the inspection, where a refresh can begin
-/// concurrently. The inspection's own finding counts: a refresh it reports as
-/// unresolved fences the input, so the operational answer is never success.
-fn validate_stored_fleet_credentials_after(
-    store: &HubStore,
-    data_dir: &Path,
-    after_first_check: impl FnOnce(),
-) -> Result<(), FleetCredentialError> {
-    if ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })()? {
-        return Err(FleetCredentialError::RotationOutcomeUnknown);
-    }
+pub fn validate_stored_fleet_credentials(entry: &crate::CredentialVaultEntry, _data_dir: &Path) -> Result<(), FleetCredentialError> {
+    validate_stored_fleet_credentials_after(entry.vault(), || {})
+}
+fn validate_stored_fleet_credentials_after(vault: &CredentialVault, after_first_check: impl FnOnce()) -> Result<(), FleetCredentialError> {
+    if vault.has_unresolved_refresh(CredentialSlot::FleetApi)? { return Err(FleetCredentialError::RotationOutcomeUnknown); }
     after_first_check();
-    if inspect_stored_fleet_credentials(store, data_dir)?.unresolved_refresh {
-        return Err(FleetCredentialError::RotationOutcomeUnknown);
-    }
+    let Some(plain) = vault.load(CredentialSlot::FleetApi)? else { return Err(FleetCredentialError::Missing); };
+    FleetAccessToken::new(plain.access.as_str())?;
+    FleetRefreshToken::new(plain.refresh.as_str())?;
+    FleetClientId::parse(plain.client_id.as_deref().ok_or(FleetCredentialError::Missing)?)?;
+    FleetRegion::from_storage_code(plain.region.as_deref().ok_or(FleetCredentialError::Missing)?)?;
+    if !fleet_scope_summary(&plain.access)?.collection_ready() { return Err(FleetCredentialError::MissingCollectionScopes); }
+    if vault.has_unresolved_refresh(CredentialSlot::FleetApi)? { return Err(FleetCredentialError::RotationOutcomeUnknown); }
     Ok(())
 }
+#[cfg(test)]
+fn validate_fixture_fleet_credentials_after(store: &HubStore, data: &Path, after_first_check: impl FnOnce()) -> Result<(), FleetCredentialError> {
+    let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), data);
+    validate_stored_fleet_credentials_after(&vault, after_first_check)
+}
 
-/// What a read-only inspection of the stored Fleet credential found once its
-/// independent integrity held.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FleetCredentialInspection {
-    /// An identified refresh whose outcome is unknown: a started token receipt
-    /// bound to this pair's generation, with its input fence (C5 R47). The
-    /// stored input is fenced, so the credential cannot collect, but the pair,
-    /// key, ciphertext, generation, claims and scopes are all sound and the owner
-    /// can reconnect.
-    pub unresolved_refresh: bool,
+pub struct FleetCredentialInspection { pub unresolved_refresh: bool }
+
+/// R68: this non-admitted surface proves presence and headers, without
+/// decrypting, selecting a key or accepting an unproven unresolved input.
+pub fn inspect_stored_fleet_credentials(store: &HubStore, data_dir: &Path) -> Result<FleetCredentialInspection, FleetCredentialError> {
+    let presence = store.credential_pair_presence(CredentialSlot::FleetApi)?.ok_or(FleetCredentialError::Missing)?;
+    presence.header_check.map_err(|error| FleetCredentialError::Store(StoreError::CredentialEnvelope(error)))?;
+    let secrets = crate::platform::private_directory::open_validated_read_only(&data_dir.join("secrets"))
+        .map_err(|_| FleetCredentialError::UnsafeKeyMaterial)?.ok_or(FleetCredentialError::KeyMissing)?;
+    crate::auth::credential_keys::check_keyring(&secrets)
+        .map_err(|_| FleetCredentialError::UnsafeKeyMaterial)?.ok_or(FleetCredentialError::KeyMissing)?;
+    Ok(FleetCredentialInspection { unresolved_refresh: store.unresolved_fleet_refresh_status()? })
 }
 
-/// Inspect persisted Fleet credentials for diagnostic admission, without
-/// claiming refresh ownership, writing, or settling anything.
-///
-/// The pair, its key, its ciphertext, its generation, its access-token claims
-/// and its collection scopes are validated independently of any unresolved
-/// refresh. Only after they hold can an unresolved refresh be reported, and only
-/// an identified one (see [`FleetCredentialInspection`]). A generation mismatch
-/// is a failure in its own right: `RotationOutcomeUnknown` is never accepted
-/// blindly, because the same error also means a mismatched pair, and an
-/// unresolved receipt that does not identify this pair is refused as well.
-pub fn inspect_stored_fleet_credentials(
-    store: &HubStore,
-    data_dir: &Path,
-) -> Result<FleetCredentialInspection, FleetCredentialError> {
-    let stored = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })?
-        .ok_or(FleetCredentialError::Missing)?;
-    if ({ let unavailable_value: Result<bool, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })? {
-        return Err(FleetCredentialError::MigrationRequired);
-    }
-    let (encryption_key, migration_required) = match ({ let unavailable_value: Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })? {
-        Some(key) => (key, false),
-        None => {
-            let cursor = load_existing_cursor_key_bytes(data_dir)?
-                .ok_or(FleetCredentialError::KeyMissing)?;
-            let cursor: [u8; 32] = cursor
-                .as_slice()
-                .try_into()
-                .map_err(|_| FleetCredentialError::KeyMissing)?;
-            (
-                Zeroizing::new(
-                    CursorKey::from_bytes(cursor)
-                        .fleet_credential_encryption_key()
-                        .to_vec(),
-                ),
-                true,
-            )
-        }
-    };
-    let plaintext =
-        decrypt_legacy_owner_tokens(&encryption_key, stored.0.as_slice(), stored.1.as_slice())?;
-    let credential_generation =
-        crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
-    if stored
-        .4
-        .is_some_and(|stored| stored != credential_generation)
-    {
-        return Err(FleetCredentialError::RotationOutcomeUnknown);
-    }
-    if migration_required {
-        return Err(FleetCredentialError::MigrationRequired);
-    }
-    let access_token = FleetAccessToken::new(plaintext.access_token().to_owned())?;
-    if !fleet_scope_summary(access_token.expose())?.collection_ready() {
-        return Err(FleetCredentialError::MissingCollectionScopes);
-    }
-    FleetRefreshToken::new(plaintext.refresh_token().to_owned())?;
-    FleetClientId::parse(stored.5.as_str())?;
-    FleetRegion::from_storage_code(stored.6.as_str())?;
-    let unresolved_refresh = store.identified_unresolved_fleet_refresh()?;
-    if !unresolved_refresh && ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })? {
-        return Err(FleetCredentialError::RotationOutcomeUnknown);
-    }
-    Ok(FleetCredentialInspection { unresolved_refresh })
-}
-
-pub fn stored_fleet_scope_summary(
-    store: &HubStore,
-    data_dir: &Path,
-) -> Result<Option<FleetScopeSummary>, FleetCredentialError> {
-    let Some(stored) = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })? else {
-        return Ok(None);
-    };
-    let encryption_key =
-        ({ let unavailable_value: Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })?.ok_or(FleetCredentialError::MigrationRequired)?;
-    let plaintext =
-        decrypt_legacy_owner_tokens(&encryption_key, stored.0.as_slice(), stored.1.as_slice())?;
-    fleet_scope_summary(plaintext.access_token()).map(Some)
+pub fn stored_fleet_scope_summary(entry: &crate::CredentialVaultEntry, _data_dir: &Path) -> Result<Option<FleetScopeSummary>, FleetCredentialError> {
+    entry.vault().load(CredentialSlot::FleetApi)?.map(|plain| fleet_scope_summary(&plain.access)).transpose()
 }
 
 fn fleet_scope_summary(access_token: &str) -> Result<FleetScopeSummary, FleetCredentialError> {
@@ -327,8 +235,7 @@ fn fleet_scope_summary(access_token: &str) -> Result<FleetScopeSummary, FleetCre
 }
 
 pub(crate) struct FleetAuthManager {
-    store: HubStore,
-    encryption_key: Zeroizing<Vec<u8>>,
+    vault: Arc<CredentialVault>,
     access_token: FleetAccessToken,
     refresh_token: FleetRefreshToken,
     client_id: FleetClientId,
@@ -381,12 +288,10 @@ enum FleetExchange {
 
 /// Everything a token exchange needs, owned, so it can outlive its caller.
 struct FleetExchangeJob {
-    store: HubStore,
+    vault: Arc<CredentialVault>,
     api: FleetAuthApi,
-    encryption_key: Zeroizing<Vec<u8>>,
     client_id: FleetClientId,
     refresh_token: FleetRefreshToken,
-    region: FleetRegion,
     generation: Uuid,
     receipt_id: crate::db::OutboundRequestReceiptId,
     now: SystemTime,
@@ -471,7 +376,7 @@ impl FleetExchangeJob {
                     if let Err(denied) = self.assert_sensitive_access() {
                         return failed(denied, true);
                     }
-                    if ({ let completion: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); completion })
+                    if self.vault.close_refresh(self.receipt_id, self.generation, completion.outcome, completion.http_status, completion.retry_after_seconds, true)
                         .is_err()
                     {
                         return failed(FleetCredentialError::RotationOutcomeUnknown, true);
@@ -492,15 +397,12 @@ impl FleetExchangeJob {
         if let Err(error) = self.assert_sensitive_access() {
             return failed(error, true);
         }
-        let stored = match ({ let encryption: Result<Option<uuid::Uuid>, FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); encryption }) {
-            Ok(stored) => stored,
-            Err(error) => return failed(error, true),
-        };
-        let Some(output_generation) = stored else {
-            return failed(FleetCredentialError::RotationOutcomeUnknown, true);
-        };
-        if let Err(error) = ({ let completion: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); completion }) {
-            return failed(FleetCredentialError::Store(error), true);
+        #[cfg(test)]
+        if let Some(entries) = &self.encryption_entries { entries.fetch_add(1, std::sync::atomic::Ordering::SeqCst); }
+        let output_generation = Uuid::new_v4();
+        if let Err(error) = self.vault.persist_refreshed(CredentialSlot::FleetApi, self.receipt_id, self.generation, output_generation,
+            refreshed.access_token.expose(), refreshed.refresh_token.expose(), schedule.expires_at, schedule.next_refresh_at) {
+            return failed(FleetCredentialError::from(error), true);
         }
         FleetExchange::Refreshed {
             access_token: refreshed.access_token,
@@ -512,6 +414,12 @@ impl FleetExchangeJob {
 }
 
 impl FleetAuthManager {
+    #[cfg(test)]
+    pub(crate) fn retain_fixture_admission(&mut self)->Arc<crate::hub_user_process::AdmittedUserHub>{
+        let admission=self.vault.test_admission();
+        self.admission=Some(Arc::clone(&admission));
+        admission
+    }
     pub(crate) fn mark_refresh_due(&mut self) {
         self.next_refresh_at = 0;
     }
@@ -522,68 +430,31 @@ impl FleetAuthManager {
     pub(crate) const fn credential_generation(&self) -> Uuid {
         self.credential_generation
     }
-
-    fn from_store_inner(
-        store: HubStore,
-        data_dir: &Path,
-        loss: Option<crate::credentials::LossObserver>,
-    ) -> Result<Self, FleetCredentialError> {
-        Self::build(store, data_dir, false, loss)
+    pub(crate) fn collector_credential_identity(&self) -> Result<String, FleetCredentialError> {
+        self.assert_sensitive_access()?;
+        self.vault.collector_credential_identity(true).map_err(Into::into)
     }
 
-    /// Build the manager. With `fenced` the unresolved refresh the inspection
-    /// identified is accepted, nothing is bound or written, and the manager is
-    /// fenced (see `input_fenced`); otherwise any unresolved refresh refuses.
-    ///
-    /// `loss` is the run's guard (B2 fix round, P3b fix 3, R-P3bF3-1): it is consulted
-    /// immediately before the generation bind, with no await between, and the manager
-    /// keeps it as its loss observer from then on.
-    fn build(
-        store: HubStore,
-        data_dir: &Path,
-        fenced: bool,
+    pub(crate) fn from_vault(
+        vault: Arc<CredentialVault>, accept_identified: bool,
         loss: Option<crate::credentials::LossObserver>,
     ) -> Result<Self, FleetCredentialError> {
-        if !fenced && ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })()? {
-            return Err(FleetCredentialError::RotationOutcomeUnknown);
-        }
-        let stored = ({ let _retained_call_context = &(store
-            ); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })()?
-            .ok_or(FleetCredentialError::Missing)?;
-        if ({ let replaced_callee: fn(&std::path::Path, bool) -> Result<bool, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(&({ let replaced_callee: fn(&std::path::Path) -> std::path::PathBuf = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(data_dir), true)? {
-            return Err(FleetCredentialError::MigrationRequired);
-        }
-        let encryption_key = ({ let replaced_callee: fn(&std::path::Path) -> Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(data_dir)?
-            .ok_or(FleetCredentialError::MigrationRequired)?;
-        let plaintext =
-            decrypt_legacy_owner_tokens(&encryption_key, stored.0.as_slice(), stored.1.as_slice())?;
-        let credential_generation =
-            crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
-        if !fenced {
-            if loss.as_ref().is_some_and(|lost| lost()) {
-                return Err(FleetCredentialError::SensitiveAccessUnavailable);
-            }
-            ({ let _retained_call_context = &(store); let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), uuid::Uuid) -> Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(&stored, credential_generation)?;
-        }
-        Ok(Self {
-            store,
-            encryption_key,
-            access_token: FleetAccessToken::new(plaintext.access_token().to_owned())?,
-            refresh_token: FleetRefreshToken::new(plaintext.refresh_token().to_owned())?,
-            client_id: FleetClientId::parse(stored.5.as_str())?,
-            region: FleetRegion::from_storage_code(stored.6.as_str())?,
-            expires_at: stored.2,
-            next_refresh_at: stored.3,
-            credential_generation,
-            refresh_terminal: false,
-            input_fenced: fenced,
-            in_flight: None,
-            #[cfg(unix)]
-            admission: None,
-            loss,
-            #[cfg(test)]
-            encryption_entries: None,
-        })
+        if loss.as_ref().is_some_and(|lost| lost()) { return Err(FleetCredentialError::SensitiveAccessUnavailable); }
+        let plain = vault.load(CredentialSlot::FleetApi)?.ok_or(FleetCredentialError::Missing)?;
+        if plain.refresh_owner != RefreshOwner::Hub { return Err(FleetCredentialError::RotationOutcomeUnknown); }
+        let access_token = FleetAccessToken::new(plain.access.as_str())?;
+        let refresh_token = FleetRefreshToken::new(plain.refresh.as_str())?;
+        let unresolved = vault.has_unresolved_refresh(CredentialSlot::FleetApi)?;
+        let input_fenced = if unresolved {
+            if !accept_identified || !vault.inspect_fleet_refresh_receipt()? { return Err(FleetCredentialError::RotationOutcomeUnknown); }
+            true
+        } else { false };
+        let client_id = FleetClientId::parse(plain.client_id.as_deref().ok_or(FleetCredentialError::Missing)?)?;
+        let region = FleetRegion::from_storage_code(plain.region.as_deref().ok_or(FleetCredentialError::Missing)?)?;
+        Ok(Self { vault, access_token, refresh_token, client_id, region,
+            expires_at: plain.expires_at, next_refresh_at: plain.next_refresh_at, credential_generation: plain.generation,
+            refresh_terminal: false, input_fenced, in_flight: None,
+            #[cfg(unix)] admission: None, loss, #[cfg(test)] encryption_entries: None })
     }
 
     /// The manager of the supervised collector's start (C3 R47, B2 clarification
@@ -596,27 +467,20 @@ impl FleetAuthManager {
     /// constructors still refuse an unresolved refresh.
     #[cfg(unix)]
     pub(crate) fn from_store_for_supervised_start(
-        store: HubStore,
+        vault: Arc<CredentialVault>,
         data_dir: &Path,
         admission: Arc<crate::hub_user_process::AdmittedUserHub>,
         loss: Option<crate::credentials::LossObserver>,
     ) -> Result<Self, FleetCredentialError> {
+        if loss.as_ref().is_some_and(|lost| lost()) { return Err(FleetCredentialError::SensitiveAccessUnavailable); }
         admission
             .assert_sensitive_access()
             .map_err(|_| FleetCredentialError::SensitiveAccessUnavailable)?;
         admission
             .assert_store_path(data_dir)
             .map_err(|_| FleetCredentialError::SensitiveAccessUnavailable)?;
-        let identified = matches!(
-            inspect_stored_fleet_credentials(&store, data_dir),
-            Ok(FleetCredentialInspection {
-                unresolved_refresh: true
-            })
-        );
-        if !identified {
-            return Self::from_store_for_admitted_user(store, data_dir, admission, loss);
-        }
-        let mut manager = Self::build(store, data_dir, true, loss)?;
+        let mut manager = Self::from_vault(vault, true, loss)?;
+        if !fleet_scope_summary(manager.access_token.expose())?.collection_ready() { return Err(FleetCredentialError::MissingCollectionScopes); }
         manager.admission = Some(admission);
         Ok(manager)
     }
@@ -637,18 +501,19 @@ impl FleetAuthManager {
 
     #[cfg(unix)]
     pub(crate) fn from_store_for_admitted_user(
-        store: HubStore,
+        vault: Arc<CredentialVault>,
         data_dir: &Path,
         admission: Arc<crate::hub_user_process::AdmittedUserHub>,
         loss: Option<crate::credentials::LossObserver>,
     ) -> Result<Self, FleetCredentialError> {
+        if loss.as_ref().is_some_and(|lost| lost()) { return Err(FleetCredentialError::SensitiveAccessUnavailable); }
         admission
             .assert_sensitive_access()
             .map_err(|_| FleetCredentialError::SensitiveAccessUnavailable)?;
         admission
             .assert_store_path(data_dir)
             .map_err(|_| FleetCredentialError::SensitiveAccessUnavailable)?;
-        let mut manager = Self::from_store_inner(store, data_dir, loss)?;
+        let mut manager = Self::from_vault(vault, false, loss)?;
         manager.admission = Some(admission);
         Ok(manager)
     }
@@ -658,7 +523,8 @@ impl FleetAuthManager {
         store: HubStore,
         data_dir: &Path,
     ) -> Result<Self, FleetCredentialError> {
-        Self::from_store_inner(store, data_dir, None)
+        let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store, data_dir);
+        Self::from_vault(vault, false, None)
     }
 
     #[cfg(test)]
@@ -754,10 +620,10 @@ impl FleetAuthManager {
         // admission are consulted immediately before it (B2 fix round, P3b fix 2,
         // R-P3bF2-1, Opus N2).
         self.assert_sensitive_access()?;
-        let receipt_id = ({ let reservation: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); reservation })
+        let receipt_id = self.vault.begin_refresh(CredentialSlot::FleetApi, self.credential_generation)
             .map_err(|error| {
-                self.refresh_terminal = true;
-                FleetCredentialError::Store(error)
+                if !matches!(error, CredentialStoreError::DurabilityUnavailable | CredentialStoreError::BackupExclusionFailed) { self.refresh_terminal = true; }
+                FleetCredentialError::from(error)
             })?;
         // A denial that arrives between the reservation and the job leaves the receipt
         // as it is: the cancellation would be a second receipt write after the loss,
@@ -765,9 +631,8 @@ impl FleetAuthManager {
         // reads (R-P3bF2-1; the request was not sent, and no later write is made).
         self.assert_sensitive_access()?;
         Ok(FleetExchangeJob {
-            store: self.store.clone(),
+            vault: Arc::clone(&self.vault),
             api: api.clone(),
-            encryption_key: Zeroizing::new(self.encryption_key.to_vec()),
             client_id: self.client_id.clone(),
             refresh_token: FleetRefreshToken::new(self.refresh_token.expose().to_owned()).map_err(
                 |_| {
@@ -775,7 +640,6 @@ impl FleetAuthManager {
                     FleetCredentialError::RotationOutcomeUnknown
                 },
             )?,
-            region: self.region,
             generation: self.credential_generation,
             receipt_id,
             now,
@@ -1040,6 +904,16 @@ impl FleetCredentialError {
     /// condition with the admission intact, and is not this.
     pub(crate) const fn is_admission_loss(&self) -> bool {
         matches!(self, Self::SensitiveAccessUnavailable)
+    }
+}
+
+impl From<CredentialStoreError> for FleetCredentialError {
+    fn from(error: CredentialStoreError) -> Self {
+        match error {
+            CredentialStoreError::Store(error) => Self::Store(error),
+            CredentialStoreError::SensitiveAccessUnavailable | CredentialStoreError::LockPoisoned => Self::SensitiveAccessUnavailable,
+            _ => Self::Store(StoreError::WriteRefused("credential_vault_unavailable")),
+        }
     }
 }
 

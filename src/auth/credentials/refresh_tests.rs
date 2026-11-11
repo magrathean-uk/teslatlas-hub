@@ -307,6 +307,7 @@ struct Rig {
     base: Url,
     env: Arc<ManualEnv>,
     server: JoinHandle<()>,
+    vault: Mutex<Option<std::sync::Weak<CredentialVault>>>,
 }
 
 impl Drop for Rig {
@@ -345,6 +346,7 @@ async fn new_rig() -> Rig {
         base: Url::parse(&format!("http://{address}/")).unwrap(),
         env,
         server,
+        vault: Mutex::new(None),
     }
 }
 
@@ -406,7 +408,7 @@ impl Rig {
         region: Option<crate::tesla_stream::StreamRegion>,
         loopback: Url,
     ) -> LegacyAuthManager {
-        LegacyAuthManager::from_hub_source_db_store_for_test(
+        let manager = LegacyAuthManager::from_hub_source_db_store_for_test(
             self.store.clone(),
             self.directory.path(),
             &self.endpoint(region),
@@ -414,11 +416,17 @@ impl Rig {
             false,
             self.env.clone(),
         )
-        .expect("manager")
+        .expect("manager");
+        if let LegacyAuthPersistence::Hub(persistence) = &manager.persistence { *self.vault.lock().unwrap() = Some(Arc::downgrade(&persistence.vault)); }
+        manager
     }
 
     fn client(&self) -> Client {
         crate::legacy_auth::build_auth_client(true).expect("auth client")
+    }
+    fn register_manager(&self, manager: LegacyAuthManager) -> LegacyAuthManager {
+        if let LegacyAuthPersistence::Hub(persistence) = &manager.persistence { *self.vault.lock().unwrap() = Some(Arc::downgrade(&persistence.vault)); }
+        manager
     }
 
     /// A manager started over a store whose attempt is unresolved (R57 step 3):
@@ -434,6 +442,7 @@ impl Rig {
             self.env.clone(),
         )
         .expect("a stopped manager");
+        if let LegacyAuthPersistence::Hub(persistence) = &manager.persistence { *self.vault.lock().unwrap() = Some(Arc::downgrade(&persistence.vault)); }
         assert!(matches!(
             manager.access_token_for_sensitive_use(),
             Err(LegacyAuthManagerError::Auth(LegacyAuthError::SignedOut {
@@ -473,16 +482,32 @@ impl Rig {
     }
 
     fn receipts(&self) -> Vec<(String, Option<i64>, Option<i64>, bool)> {
-        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
+        let db = self.store.open().expect("receipt fixture connection");
+        let mut statement = db.prepare("SELECT r.outcome, r.http_status, r.retry_after_seconds, EXISTS(SELECT 1 FROM credential_refresh_attempts a WHERE a.receipt_id=r.id AND (a.fence_id IS NOT NULL OR a.migrated=1)) FROM outbound_request_receipts r WHERE r.transport='legacy_auth' AND r.operation='token_refresh' ORDER BY r.id").expect("receipt fixture statement");
+        statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).expect("receipt fixture query").collect::<Result<_,_>>().expect("receipt fixture rows")
+    }
+    fn vault(&self) -> Arc<CredentialVault> {
+        if let Some(vault) = self.vault.lock().unwrap().as_ref().and_then(std::sync::Weak::upgrade) { return vault; }
+        crate::auth::credential_vault::fixtures::open_fixture_vault(self.store.clone(), self.directory.path())
+    }
+    fn fenced_generations(&self) -> Result<Vec<uuid::Uuid>, crate::db::StoreError> {
+        let db = self.store.open()?;
+        let mut statement = db.prepare("SELECT input_generation FROM credential_refresh_attempts WHERE fence_id IS NOT NULL OR migrated=1 UNION SELECT legacy_generation FROM credential_legacy_fences").map_err(crate::db::StoreError::Query)?;
+        let values = statement.query_map([], |r| r.get::<_,String>(0)).map_err(crate::db::StoreError::Query)?.collect::<Result<Vec<_>,_>>().map_err(crate::db::StoreError::Query)?;
+        values.into_iter().map(|v| uuid::Uuid::parse_str(&v).map_err(|_| crate::db::StoreError::CredentialPairInvalid)).collect()
+    }
+    fn unresolved(&self) -> Result<bool, crate::db::StoreError> {
+        self.store.open()?.query_row("SELECT EXISTS(SELECT 1 FROM credential_refresh_attempts a JOIN outbound_request_receipts r ON r.id=a.receipt_id WHERE a.slot='owner_api' AND r.outcome='started')", [], |row| row.get(0)).map_err(crate::db::StoreError::Query)
     }
 
     /// The pair the store holds: access, refresh, `expires_at`, `next_refresh_at`.
     fn stored_pair(&self) -> (String, String, i64, i64) {
-        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
+        let plain = self.vault().load(CredentialSlot::OwnerApi).expect("fixture pair").expect("present");
+        (plain.access.to_string(), plain.refresh.to_string(), plain.expires_at, plain.next_refresh_at)
     }
 
     fn stored_generation(&self) -> uuid::Uuid {
-        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
+        self.vault().stored_generation(CredentialSlot::OwnerApi).expect("fixture generation").expect("present")
     }
 
     /// Test 69: nothing the unit shows contains a secret.
@@ -523,6 +548,25 @@ fn auth_error(error: LegacyAuthManagerError) -> LegacyAuthError {
         LegacyAuthManagerError::Auth(error) => error,
         other => panic!("unexpected error {other:?}"),
     }
+}
+
+pub(in crate::auth) async fn assert_external_refresh_owner_contract() {
+    let rig = new_rig().await;
+    let mut entry = crate::auth::credential_vault::types::CredentialEntry::source_token(Zeroizing::new(jg()), Zeroizing::new("refresh-0".into())).expect("source fixture");
+    entry.set_schedule(T0 + 28_800, T0);
+    crate::auth::credential_vault::fixtures::seed_entry(rig.directory.path(), entry);
+    let mut observer = rig.manager();
+    assert!(!observer.allows_refresh(), "Serve source owner selects observer");
+    for hours in 0..=24 {
+        rig.at(T0 + hours * 3_600);
+        observer.refresh_if_due(&rig.client(), SystemTime::now()).await.expect("observer due check");
+    }
+    assert!(rig.backend.token_posts().is_empty(), "24 hours without token transport");
+    rig.vault().handover_owner_api_refresh_to_hub().expect("owner handover");
+    drop(observer);
+    let mut managed = rig.manager(); assert!(managed.allows_refresh(), "Serve Hub owner selects managed");
+    managed.refresh_now(&rig.client(), SystemTime::now()).await.expect("first token need");
+    assert!(rig.backend.token_posts().len() == 1, "one Hub refresh");
 }
 
 fn row_of(rig: &Rig) -> (String, Option<String>, Option<i64>, bool) {
@@ -568,7 +612,7 @@ async fn t18_a_due_refresh_is_persisted_before_the_next_request_carries_the_new_
         rig.receipts(),
         [("success".to_owned(), Some(200), None, true)]
     );
-    assert_eq!(({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(), [g0]);
+    assert_eq!(rig.fenced_generations().unwrap(), [g0]);
     assert_eq!(manager.auth.retry_at(), None);
     assert_eq!(manager.auth.retry_reason, None);
     assert_eq!(row_of(&rig), ("ready".into(), None, None, true));
@@ -877,8 +921,117 @@ async fn t29_ten_concurrent_callers_share_one_exchange_and_then_see_the_new_toke
 // ---------------------------------------------------------------------------
 
 fn plant(manager: &LegacyAuthManager, faults: &[PersistFault]) {
-        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
+    let LegacyAuthPersistence::Hub(persistence) = &manager.persistence else { panic!("Hub persistence"); };
+    persistence.faults.lock().unwrap().extend(faults.iter().copied());
+}
+
+/// CT96 uses C5's real manager, R24 clock and loopback endpoint. This helper
+/// is selected only by the V1 acceptance test, with no additional test here.
+pub(crate) async fn assert_vault_retry_barrier_contract() {
+    let rig = new_rig().await; rig.seed_due(); let mut manager = rig.manager();
+    let vault = rig.vault(); vault.test_block_completion_barriers(true);
+    rig.refresh(&mut manager).await.expect("pending exchange");
+    assert!(row_of(&rig).0 == "persistence_pending", "CT96.pending");
+    let counts = vault.test_commit_counts();
+    assert!(counts.0 > counts.1, "CT96.unproven");
+    let committed: String = rig.store.open().expect("test snapshot").query_row("SELECT generation FROM credential_pairs WHERE account_id=1 AND slot='owner_api'", [], |r| r.get(0)).expect("test generation");
+    for elapsed in [5, 15, 35, 75, 155, 315, 615, 915, 1215] {
+        rig.at(T0 + elapsed); rig.list(&mut manager).await.expect("current access remains usable");
+        assert!(manager.access_token() != "AT1", "CT96.previous_pair");
+        assert!(manager.auth.pending_successor.is_some(), "CT96.pending_successor");
+        assert!(vault.stored_generation(CredentialSlot::OwnerApi).is_err(), "CT96.generation_guard");
+        assert!(vault.load(CredentialSlot::OwnerApi).is_err(), "CT96.load_guard");
+        assert!(vault.test_commit_counts() == counts, "CT96.no_reservation_or_write");
+        let found: String = rig.store.open().expect("test snapshot").query_row("SELECT generation FROM credential_pairs WHERE account_id=1 AND slot='owner_api'", [], |r| r.get(0)).expect("test generation");
+        assert!(found == committed, "CT96.one_output");
+        assert!(rig.backend.token_posts().len() == 1, "CT96.no_token_request");
+        assert!(rig.backend.products().last().and_then(|r| r.authorization.as_deref()).is_some_and(|v| v != "Bearer AT1"), "CT96.no_successor_request");
     }
+    vault.test_block_completion_barriers(false); rig.at(T0 + 1515);
+    rig.list(&mut manager).await.expect("proved retry");
+    assert!(manager.access_token() == "AT1", "CT96.adoption_after_proof");
+    assert!(row_of(&rig).0 == "ready", "CT96.ready");
+    assert!(vault.test_commit_counts().0 == counts.0, "CT96.retry_without_write");
+    assert!(rig.backend.products().last().and_then(|r| r.authorization.as_deref()) == Some("Bearer AT1"), "CT96.proved_request");
+
+    // R15a: the detached exchange survives its caller, but its stored output
+    // still needs the same durability proof before the next token use.
+    let rig = new_rig().await; rig.seed_due();
+    rig.backend.script(vec![Reply::json(200, SUCCESS).after(Duration::from_millis(400))]);
+    let manager = Arc::new(tokio::sync::Mutex::new(rig.manager()));
+    let vault = rig.vault(); vault.test_block_completion_barriers(true);
+    let input = manager.lock().await.generation(); let client = rig.client();
+    let caller = { let manager = Arc::clone(&manager); tokio::spawn(async move {
+        manager.lock().await.refresh_if_due(&client, SystemTime::now()).await
+    }) };
+    seen_posts(&rig, 1).await; caller.abort(); let _ = caller.await;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let committed: bool = rig.store.open().expect("CT96 independent observer").query_row(
+                "SELECT generation != ?1 FROM credential_pairs WHERE slot='owner_api'", [input.to_string()], |row| row.get(0)).expect("CT96 output commit");
+            if committed { break; }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.expect("CT96 detached completion acknowledgement");
+    let mut manager = manager.lock().await;
+    rig.at(T0 + 1); rig.list(&mut manager).await.expect("CT96 preceding token after caller drop");
+    assert!(manager.access_token() != "AT1" && manager.auth.pending_successor.is_some(), "CT96 dropped caller cannot adopt unproven output");
+    assert!(rig.backend.products().last().and_then(|row| row.authorization.as_deref()) != Some("Bearer AT1"), "CT96 dropped caller sends preceding pair");
+    let counts = vault.test_commit_counts(); vault.test_block_completion_barriers(false);
+    rig.at(T0 + 6); rig.list(&mut manager).await.expect("CT96 detached retry after proof");
+    assert!(manager.access_token() == "AT1" && vault.test_commit_counts().0 == counts.0 && rig.backend.token_posts().len() == 1, "CT96 detached output adopted once after proof");
+}
+
+pub(crate) async fn assert_vault_fenced_successor_contract() {
+    let rig = new_rig().await; rig.seed_due(); let mut manager = rig.manager();
+    let input = manager.generation();
+    let candidates = crate::db::LegacyCandidates::for_successor("AT1", "refresh-1").expect("CT97 successor forms");
+    assert!(candidates.0.len() == 1, "CT97 one kept-constructor candidate");
+    rig.store.open().expect("legacy fence fixture").execute(
+        "INSERT INTO credential_legacy_fences(legacy_generation,identity,fenced_at_ms) VALUES(?1,'opaque',1)", [candidates.0[0].to_string()]).expect("CT97 legacy fence");
+    let _ = rig.refresh(&mut manager).await;
+    let persistence = match &manager.persistence { LegacyAuthPersistence::Hub(persistence) => persistence, _ => panic!("CT97 Hub persistence") };
+    assert!(persistence.closing_calls.load(Ordering::SeqCst) == 0, "CT97 C5 phase 3 makes no closing call");
+    assert!(rig.unresolved().expect("CT97 unresolved") && rig.stored_generation() == input
+        && manager.access_token() != "AT1" && rig.backend.token_posts().len() == 1, "CT97 input stays consumed and successor stays unused");
+}
+
+pub(crate) async fn assert_vault_read_interleaving_contract() {
+    for point in ["after_check", "after_snapshot", "after_barrier"] {
+        let rig = new_rig().await; rig.seed_due();
+        crate::auth::credential_vault::fixtures::seed_entry(rig.directory.path(),
+            crate::auth::credential_vault::CredentialEntry::fleet_supplied(Zeroizing::new("fleet-access-0001".into()), Zeroizing::new("fleet-refresh-0001".into()),
+                "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("independent Fleet fixture"));
+        let release = Arc::new(tokio::sync::Notify::new());
+        rig.backend.script(vec![Reply::json(200, SUCCESS).held_by(&release)]);
+        let manager = Arc::new(tokio::sync::Mutex::new(rig.manager()));
+        let input = manager.lock().await.generation(); let vault = rig.vault();
+        vault.test_block_completion_barriers(true); let client = rig.client();
+        let caller = { let manager = Arc::clone(&manager); tokio::spawn(async move {
+            manager.lock().await.refresh_if_due(&client, SystemTime::now()).await
+        }) };
+        seen_posts(&rig, 1).await; caller.abort(); let _ = caller.await;
+        let observed = vault.test_guarded_read_with_exchange(point, || release.notify_one());
+        let output = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let generation: String = rig.store.open().expect("CT99 independent observer").query_row(
+                    "SELECT generation FROM credential_pairs WHERE slot='owner_api'", [], |row| row.get(0)).expect("CT99 committed identity");
+                let generation = uuid::Uuid::parse_str(&generation).expect("CT99 stored UUID");
+                if generation != input { break generation; }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.expect("CT99 successor commit acknowledgement");
+        assert!(observed == Some(input), "CT99 guarded reader retained the preceding snapshot after the successor really committed");
+        assert!(vault.stored_generation(CredentialSlot::OwnerApi).is_err() && vault.load(CredentialSlot::OwnerApi).is_err(), "CT99 unproven output is fenced from later readers");
+        let mut manager = manager.lock().await; rig.at(T0 + 1);
+        rig.list(&mut manager).await.expect("CT99 preceding pair still usable");
+        assert!(manager.generation() == input && manager.access_token() != "AT1" && manager.auth.pending_successor.is_some(), "CT99 C5 retains its preceding in-memory pair");
+        assert!(rig.backend.products().last().and_then(|row| row.authorization.as_deref()) != Some("Bearer AT1"), "CT99 no request carries the unproven successor");
+        let counts = vault.test_commit_counts(); vault.test_block_completion_barriers(false); rig.at(T0 + 6);
+        rig.list(&mut manager).await.expect("CT99 proved retry");
+        assert!(manager.generation() == output && manager.access_token() == "AT1" && vault.test_commit_counts().0 == counts.0 && rig.backend.token_posts().len() == 1, "CT99 C5 adopts its proved output without another seal or request");
+    }
+}
 
 #[tokio::test]
 async fn t30_a_write_that_fails_twice_is_retried_at_five_and_fifteen_seconds_without_a_second_request()
@@ -886,10 +1039,15 @@ async fn t30_a_write_that_fails_twice_is_retried_at_five_and_fifteen_seconds_wit
     let rig = new_rig().await;
     rig.seed_due();
     let mut manager = rig.manager();
+    let reserved = || -> i64 { rig.store.open().expect("reservation observer").query_row(
+        "SELECT coalesce(sum(reserved_invocations),0) FROM credential_key_usage", [], |row| row.get(0)).expect("reserved invocations") };
+    let initial_reservations = reserved();
     plant(&manager, &[PersistFault::Fail, PersistFault::Fail]);
     rig.refresh(&mut manager)
         .await
         .expect("the attempt is not a failure");
+    let output = manager.auth.pending_successor.as_ref().expect("one validated output").output;
+    assert!(reserved() == initial_reservations, "X8 no reservation before a sealing retry");
     assert_eq!(rig.backend.token_posts().len(), 1);
     assert_eq!(
         row_of(&rig),
@@ -911,6 +1069,8 @@ async fn t30_a_write_that_fails_twice_is_retried_at_five_and_fifteen_seconds_wit
     }
     rig.at(T0 + 5);
     rig.list(&mut manager).await.expect("products at t0 + 5");
+    assert!(manager.auth.pending_successor.as_ref().expect("retained output").output == output
+        && reserved() == initial_reservations, "X8 retry retains the validated generation without sealing");
     assert_eq!(
         rig.backend
             .products()
@@ -944,6 +1104,7 @@ async fn t30_a_write_that_fails_twice_is_retried_at_five_and_fifteen_seconds_wit
         ("AT1".into(), "refresh-1".into(), T0 + 28_800, T0 + 21_600)
     );
     assert_eq!(row_of(&rig).0, "ready");
+    assert!(rig.stored_generation() == output && reserved() == initial_reservations + 2, "X8 successful sealing retry uses the retained generation and two invocations");
     rig.scan(&manager, "");
 }
 
@@ -1000,7 +1161,8 @@ async fn t32_an_ambiguous_write_is_recognised_by_its_generation_and_not_written_
     assert_eq!(row_of(&rig).0, "ready");
     assert_eq!(manager.access_token(), "AT1");
     assert_eq!(manager.generation(), rig.stored_generation());
-    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
+    assert!(!rig.vault().has_unresolved_refresh(CredentialSlot::OwnerApi).unwrap());
+    assert_vault_retry_barrier_contract().await;
 }
 
 #[tokio::test]
@@ -1045,11 +1207,11 @@ async fn t43_a_dead_refresh_token_signs_in_again_but_collects_until_the_access_t
         [("authentication_rejected".to_owned(), Some(400), None, true)]
     );
     assert_eq!(
-        ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap(),
+        rig.fenced_generations().unwrap(),
         [g0],
         "the input stays fenced"
     );
-    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
+    assert!(!rig.vault().has_unresolved_refresh(CredentialSlot::OwnerApi).unwrap());
     // While the access token is usable the owner is told (attention) and the Hub
     // stays ready: the lease is kept fresh at each simulated evaluation time.
     let lease = rig
@@ -1199,7 +1361,7 @@ async fn t45_repeated_503_retries_at_the_documented_times_with_the_same_refresh_
             .all(|receipt| *receipt == ("http_error".to_owned(), Some(503), None, false))
     );
     assert!(
-        ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+        rig.fenced_generations()
             .unwrap()
             .is_empty()
     );
@@ -1255,11 +1417,12 @@ async fn t47_a_refused_connection_sent_nothing_so_the_token_is_reused_after_a_mi
         [("transport_error".to_owned(), None, None, false)]
     );
     assert!(
-        ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+        rig.fenced_generations()
             .unwrap()
             .is_empty()
     );
     // At +60 the same refresh token is presented again, to the live server.
+    drop(manager);
     let live = rig.manager_with(None, rig.token_url());
     drop(live);
     manager = rig.manager_with(None, rig.token_url());
@@ -1294,8 +1457,8 @@ async fn t48_a_request_that_is_never_answered_leaves_the_outcome_unknown_for_goo
     );
     // The receipt stays started: unresolved, with its input fenced.
     assert_eq!(rig.receipts(), [("started".to_owned(), None, None, true)]);
-    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
-    assert_eq!(({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap().len(), 1);
+    assert!(rig.vault().has_unresolved_refresh(CredentialSlot::OwnerApi).unwrap());
+    assert_eq!(rig.fenced_generations().unwrap().len(), 1);
     // Collection continues while the token is usable; no further POST ever.
     rig.at(T0 + 100);
     rig.list(&mut manager).await.expect("products");
@@ -1307,6 +1470,8 @@ async fn t48_a_request_that_is_never_answered_leaves_the_outcome_unknown_for_goo
     // After a restart nothing is sent and the state is a sign-out. The manager is
     // built in that stopped state (C5-B2), so the collector can start and show it.
     rig.at(T0 + 200);
+    rig.scan(&manager, "");
+    drop(manager);
     let mut restarted = rig.restarted_stopped();
     assert_eq!(
         rig.state(),
@@ -1322,7 +1487,7 @@ async fn t48_a_request_that_is_never_answered_leaves_the_outcome_unknown_for_goo
         rig.backend.products().len() <= 1,
         "no Owner API request after the restart"
     );
-    rig.scan(&manager, "");
+    rig.scan(&restarted, "");
 }
 
 #[tokio::test]
@@ -1373,7 +1538,7 @@ async fn t49_a_handshake_that_never_completes_is_a_timeout_that_sent_nothing() {
         )
     );
     assert!(
-        ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+        rig.fenced_generations()
             .unwrap()
             .is_empty()
     );
@@ -1410,6 +1575,7 @@ async fn t50_an_answer_over_the_size_cap_is_unusable_and_leaves_the_attempt_unre
     assert_eq!(rig.stored_pair().0, jg());
     // After a restart the attempt is unresolved: a sign-out, nothing sent. The
     // manager is built in that stopped state (C5-B2).
+    drop(manager);
     let mut restarted = rig.restarted_stopped();
     assert_eq!(
         rig.state(),
@@ -1481,7 +1647,7 @@ async fn t54_the_same_pair_returned_is_not_renewed_nothing_is_persisted_and_the_
     );
     assert!(manager.write_log.lock().unwrap().is_empty(), "no persist");
     assert!(
-        ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+        rig.fenced_generations()
             .unwrap()
             .is_empty()
     );
@@ -1536,6 +1702,7 @@ async fn t55_two_consecutive_invalid_client_answers_are_an_api_refusal_that_surv
     // Test 94 (a): a restart with the same configuration restores the refusal
     // before any request, and sends nothing in the next 24 hours.
     let before = rig.row();
+    drop(manager);
     let mut restarted = rig.manager();
     assert_eq!(
         restarted.auth.stop,
@@ -1669,6 +1836,7 @@ async fn t58_a_403_naming_the_fleet_api_is_a_refusal_that_survives_a_restart() {
             [("http_error".to_owned(), Some(403), None, false)]
         );
         // Test 94 (b): restored after a restart, nothing sent.
+        drop(manager);
         let mut restarted = rig.manager();
         assert_eq!(
             restarted.auth.stop,
@@ -1784,6 +1952,7 @@ async fn t77_a_shutdown_during_an_exchange_waits_for_it_persists_it_and_starts_n
     assert_eq!(rig.backend.token_posts().len(), 1);
     // At the next start the state is ready with the new pair. The successor's
     // access token is opaque, so the region is the configured one (R4).
+    drop(manager);
     let next = rig.manager_with(
         Some(crate::tesla_stream::StreamRegion::Global),
         rig.token_url(),
@@ -1832,6 +2001,7 @@ async fn t77_a_dropped_caller_does_not_abort_the_exchange_and_its_result_is_adop
     );
     assert_eq!(rig.backend.token_posts().len(), 1);
     assert_eq!(guard.generation(), rig.stored_generation());
+    assert_vault_retry_barrier_contract().await;
 }
 
 #[tokio::test]
@@ -1851,6 +2021,7 @@ async fn t77_a_server_that_never_answers_is_an_unknown_outcome_at_the_next_start
     // The unknown outcome is the unit's state, already known to this process; it
     // is not a sensitive outcome of the shutdown and is not returned as one.
     manager.shutdown().await.expect("an orderly shutdown");
+    drop(manager);
     let mut restarted = rig.restarted_stopped();
     assert_eq!(
         rig.state(),
@@ -1977,7 +2148,7 @@ async fn t88_a_released_input_is_sent_again_and_a_dead_one_is_fenced_against_eve
         [("http_error".to_owned(), Some(400), None, false)]
     );
     assert!(
-        ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
+        rig.fenced_generations()
             .unwrap()
             .is_empty()
     );
@@ -2001,18 +2172,20 @@ async fn t88_a_released_input_is_sent_again_and_a_dead_one_is_fenced_against_eve
         rig.receipts(),
         [("authentication_rejected".to_owned(), Some(400), None, true)]
     );
+    let legacy_store_result=|result:Result<(),crate::auth::credential_vault::CredentialStoreError>| {
+        result.map_err(|error| match CredentialError::from(error) {
+            CredentialError::LegacyOwnerTokenStore(error)=>error,
+            _=>crate::db::StoreError::WriteRefused("credential_vault_unavailable"),
+        })
+    };
     assert!(matches!(
-        ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }),
+        legacy_store_result(rig.vault().begin_refresh(crate::auth::credential_envelope::CredentialSlot::OwnerApi,g0).map(|_|())),
         Err(crate::db::StoreError::RefreshOutcomeUnknown { .. })
     ));
-    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
-    let same = OwnerTokens::from_secret_parts(jg(), "refresh-0".to_owned()).unwrap();
-    let (access, refresh) =
-        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
-    let same =({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
-        .unwrap();
+    let same=rig.vault().load(crate::auth::credential_envelope::CredentialSlot::OwnerApi).unwrap().unwrap();
+    let entry=crate::auth::credential_vault::CredentialEntry::direct_entry(same.access,same.refresh).unwrap();
     assert!(matches!(
-        ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }),
+        legacy_store_result(rig.vault().store_supplied_entry(entry,crate::db::ReplacePolicy::ReplaceAny).map(|_|())),
         Err(crate::db::StoreError::RefreshOutcomeUnknown { .. })
     ));
 }
@@ -2022,8 +2195,8 @@ async fn t88_a_released_input_is_sent_again_and_a_dead_one_is_fenced_against_eve
 // ---------------------------------------------------------------------------
 
 fn replace_with_new_login(rig: &Rig, access: &str, refresh: &str) {
-        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
-    }
+    crate::auth::credential_vault::fixtures::seed_legacy_supplied_pair(rig.directory.path(), access, refresh, None);
+}
 
 #[tokio::test]
 async fn t87_an_external_write_before_a_due_refresh_loads_the_new_pair_and_sends_nothing() {
@@ -2082,7 +2255,7 @@ async fn t87_an_external_write_during_an_exchange_discards_the_successor_and_sig
     rig.refresh(&mut guard).await.expect("adopts at the retry");
     assert_eq!(guard.refresh_token(), "refresh-2");
     assert_eq!(guard.auth.stop, None);
-    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
+    assert!(!rig.vault().has_unresolved_refresh(CredentialSlot::OwnerApi).unwrap());
     assert_eq!(
         rig.stored_pair().1,
         "refresh-2",
@@ -2120,11 +2293,11 @@ async fn r17_a_guard_that_fails_after_the_reservation_cancels_it_and_sends_nothi
         [("cancelled".to_owned(), None, None, false)]
     );
     assert!(
-        ({ let unavailable_value: Result<Vec<uuid::Uuid>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+        rig.fenced_generations()
             .unwrap()
             .is_empty()
     );
-    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
+    assert!(!rig.vault().has_unresolved_refresh(CredentialSlot::OwnerApi).unwrap());
     assert_eq!(
         row_of(&rig),
         (
@@ -2235,6 +2408,7 @@ async fn r14_an_observer_never_sends_a_token_request_for_any_trigger() {
         rig.env.clone(),
     );
     let mut observer = observer.expect("observer");
+    if let LegacyAuthPersistence::Hub(persistence) = &observer.persistence { *rig.vault.lock().unwrap() = Some(Arc::downgrade(&persistence.vault)); }
     for step in 0..30 {
         rig.at(T0 + step * 3_600);
         rig.refresh(&mut observer)

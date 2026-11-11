@@ -451,6 +451,7 @@ fn convert_slot(
     slot: CredentialSlot,
     bindings: &[PreUpgradeRefreshBinding],
     unsafe_names: &mut Vec<&'static str>,
+    before_commit: &mut dyn FnMut(),
 ) -> PhaseResult<SlotOutcome> {
     let row = connection
         .read_pre_upgrade_credential_row(slot)?
@@ -506,12 +507,13 @@ fn convert_slot(
         .keys
         .as_ref()
         .ok_or(CredentialKeyError::KeyringMissing)?;
-    connection.reserve_and_seal_credential_pair(
+    connection.reserve_and_seal_credential_pair_with_commit(
         &mut pair,
         keys,
         access,
         refresh,
         &mut *context.nonces,
+        before_commit,
     )?;
     Ok(SlotOutcome::Converted(Box::new(pair)))
 }
@@ -765,7 +767,7 @@ pub(crate) fn run_phase_b(
                     CredentialSlot::OwnerApi => &owner_bindings,
                     CredentialSlot::FleetApi => &fleet_bindings,
                 };
-                match convert_slot(connection, context, slot, bindings, &mut unsafe_names)? {
+                match convert_slot(connection, context, slot, bindings, &mut unsafe_names, before_commit)? {
                     SlotOutcome::Converted(pair) => parts.pairs.push(*pair),
                     SlotOutcome::Blocked(reason) => parts.blocked.push((slot, reason)),
                 }
@@ -1032,4 +1034,4 @@ pub(crate) mod seam {
 
 #[cfg(test)]
 #[path = "credential_migration/tests.rs"]
-mod g24_m2_m;
+pub(in crate::auth) mod g24_m2_m;

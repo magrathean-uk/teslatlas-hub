@@ -197,14 +197,16 @@ fn f3_the_rejected_access_digest_is_stored_and_no_refresh_rewrites_it() {
         connection.cancel_unsent_credential_refresh(receipt, lc_gen(1))
     })
         .expect("cancel");
-    let receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: retained same-generation unrotated C5 completion needs R60 adaptation"); unavailable_value }).expect("begin");
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: retained same-generation unrotated C5 completion needs R60 adaptation"); unavailable_value })
-        .expect("complete");
+    let receipt=s_test_with_credential_connection(&store,|connection|connection.begin_credential_refresh(CredentialSlot::OwnerApi,lc_gen(1))).expect("begin");
+    s_test_with_credential_connection(&store,|connection|{
+        let successor=s_test_synthetic_pair(connection,CredentialSlot::OwnerApi,as_gen(6),b"synthetic-unrotated-access",format!("synthetic-refresh-{}",lc_gen(1)).as_bytes(),AS_T0+28_800,AS_T0+21_600)?;
+        connection.complete_credential_refresh(receipt,lc_gen(1),&successor,&LegacyCandidates(Vec::new()))
+    }).expect("complete");
     assert_eq!(
         store.load_collector_auth_row().unwrap(),
         Some(counted.clone())
     );
-    as_refresh(&store, lc_gen(1), as_gen(7));
+    as_refresh(&store, as_gen(6), as_gen(7));
     assert_eq!(store.load_collector_auth_row().unwrap(), Some(counted));
 
     // The column holds a 36-character digest or nothing.
@@ -242,21 +244,21 @@ fn f4_the_fill_of_a_missing_digest_is_conditional_on_the_row_the_fuse_and_the_pa
 
     // Another fuse (count or generation), or another stored pair: nothing is written.
     assert!(
-        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+        s_test_with_credential_connection(&store,|connection|connection.fill_credential_rejected_access_digest(pair.generation,digest,Some(lc_gen(1)),2))
             .is_err()
     );
     assert!(
-        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+        s_test_with_credential_connection(&store,|connection|connection.fill_credential_rejected_access_digest(pair.generation,digest,Some(as_gen(99)),1))
             .is_err()
     );
     assert!(
-        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+        s_test_with_credential_connection(&store,|connection|connection.fill_credential_rejected_access_digest(as_gen(98),digest,Some(lc_gen(1)),1))
             .is_err()
     );
-    let other_pair =({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+    let other_pair =s_test_with_credential_connection(&store,|connection|s_test_synthetic_pair(connection,CredentialSlot::OwnerApi,as_gen(97),b"another-access",b"another-refresh",0,0))
         .unwrap();
     assert!(
-        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+        s_test_with_credential_connection(&store,|connection|connection.fill_credential_rejected_access_digest(other_pair.generation,digest,Some(lc_gen(1)),1))
             .is_err()
     );
     assert_eq!(
@@ -265,7 +267,7 @@ fn f4_the_fill_of_a_missing_digest_is_conditional_on_the_row_the_fuse_and_the_pa
     );
 
     // The matching call fills the digest and nothing else.
-    ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+    s_test_with_credential_connection(&store,|connection|connection.fill_credential_rejected_access_digest(pair.generation,digest,Some(lc_gen(1)),1))
         .expect("the fill");
     assert_eq!(
         store.load_collector_auth_row().unwrap(),
@@ -276,7 +278,7 @@ fn f4_the_fill_of_a_missing_digest_is_conditional_on_the_row_the_fuse_and_the_pa
     );
     // A digest that is present is never replaced by a fill.
     assert!(
-        ({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+        s_test_with_credential_connection(&store,|connection|connection.fill_credential_rejected_access_digest(pair.generation,as_gen(79),Some(lc_gen(1)),1))
             .is_err()
     );
     assert_eq!(

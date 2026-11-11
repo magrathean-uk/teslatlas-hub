@@ -389,30 +389,11 @@ fn r3_run_owner_start(
     crate::crypto::install_default_provider();
     if seed {
         seed_the_late_import(store);
-        ({ let replaced_callee: fn(&std::path::Path, &[u8]) -> Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary, b"r3-cloak-key")
-            .expect("0600 Cloak key");
-        let key = ({ let replaced_callee: fn(&std::path::Path) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary).expect("Cloak key");
-        let initial =
-            OwnerTokens::from_secret_parts("r3-access".to_owned(), "r3-refresh".to_owned())
-                .expect("initial pair");
-        let (access, refresh) =
-            ({ let replaced_callee: fn(&[u8], &crate::credentials::OwnerTokens) -> Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(key.as_slice(), &initial)
-                .expect("Cloak pair");
-        let now_seconds = current_epoch_millis().expect("clock") / 1_000;
-        ({ let _retained_call_context = &(store
-            ); let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
-                &({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
-                    access,
-                    refresh,
-                    now_seconds + 36_000,
-                    now_seconds + 30_000,
-                )
-                .expect("a schedule that is not due"),
-            )
-            .expect("store the pair");
+        let now_seconds=current_epoch_millis().expect("clock")/1000;
+        crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(store,temporary,"r3-access","r3-refresh",Some((now_seconds+36_000,now_seconds+30_000))).expect("supplied guard fixture");
     }
     let base = url::Url::parse("http://127.0.0.1:9/").expect("unroutable");
-    let admission = crate::hub_user_process::AdmittedUserHub::for_test(temporary).expect("admit");
+    let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary);
     let manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store.clone(),
         temporary,
@@ -474,7 +455,7 @@ fn r3_run_fleet_start(
             CollectorProvider::Fleet,
         ))
         .expect("configure the car");
-        crate::fleet_credentials::persist_fleet_setup_credentials(
+        crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
             store,
             temporary,
             &FleetSetupCredentials::new(
@@ -489,14 +470,19 @@ fn r3_run_fleet_start(
         )
         .expect("persist credentials");
     }
-    let admission = crate::hub_user_process::AdmittedUserHub::for_test(temporary).expect("admit");
+    let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary);
     let manager = Arc::new(tokio::sync::Mutex::new(
-        FleetAuthManager::from_store_for_admitted_user(
-            store.clone(),
-            temporary,
-            Arc::clone(&admission),
-            None,
-        )
+        {
+    let runtime_store = HubStore::initialize(temporary).expect("restart store");
+    let runtime_path = temporary;
+    let runtime_admission = Arc::clone(&admission);
+    let runtime_loss = None;
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+    )
+    .map_err(crate::fleet_credentials::FleetCredentialError::from)
+    .and_then(|vault| FleetAuthManager::from_store_for_admitted_user(vault, runtime_path, runtime_admission, runtime_loss))
+}
         .expect("manager"),
     ));
     let unroutable = url::Url::parse("http://127.0.0.1:9/").expect("URL");
@@ -544,7 +530,7 @@ fn r3_run_cadence_wait_start(
         let config = cadence_wait_config(temporary, WaitMode::Legacy, None);
         let violation = config.collector.cadence_violation().expect("violation");
         let admission =
-            crate::hub_user_process::AdmittedUserHub::for_test(temporary).expect("admission");
+            crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary);
         let (ready_tx, _ready_rx) = oneshot::channel();
         let clock: Arc<dyn CollectorClock> = ManualClock::new(Instant::now(), wall);
         timeout(
@@ -854,13 +840,18 @@ async fn i3_01_a_fenced_telemetry_loop_still_replays_enriches_and_wakes_the_terr
         timeout_seconds: 1,
     };
     let admission =
-        crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admission");
-    let manager = FleetAuthManager::from_store_for_supervised_start(
-        store.clone(),
-        temporary.path(),
-        Arc::clone(&admission),
-        None,
+        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
+    let manager = {
+    let runtime_store = store.clone();
+    let runtime_path = temporary.path();
+    let runtime_admission = Arc::clone(&admission);
+    let runtime_loss = None;
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
     )
+    .map_err(crate::fleet_credentials::FleetCredentialError::from)
+    .and_then(|vault| FleetAuthManager::from_store_for_supervised_start(vault, runtime_path, runtime_admission, runtime_loss))
+}
     .expect("the supervised start admits it");
     assert!(manager.is_input_fenced());
     let manager = Arc::new(tokio::sync::Mutex::new(manager));

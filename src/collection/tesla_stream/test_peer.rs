@@ -938,19 +938,12 @@ impl Creds {
         crate::crypto::install_default_provider();
         let directory = crate::private_tempdir().expect("temporary directory");
         let store = HubStore::initialize(directory.path()).expect("store");
-        ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("private key");
-        let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("key");
         let tokens = crate::credentials::OwnerTokens::from_secret_parts(
             access.to_owned(),
             "test-refresh".to_owned(),
         )
         .expect("a pair");
-        let (cipher_access, cipher_refresh) =
-            ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-                .expect("encrypted pair");
-        ({ let _retained_generation = crate::source_token_envelope::legacy_refresh_credential_generation(&tokens); let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("the stored pair");
+        crate::auth::credential_vault::fixtures::seed_legacy_supplied_pair(directory.path(),tokens.access_token(),tokens.refresh_token(),Some(schedule));
         let token_url = issuer.join("oauth2/v3/token").expect("token endpoint");
         let manager = LegacyAuthManager::from_hub_source_db_store_for_test(
             store.clone(),

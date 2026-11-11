@@ -152,16 +152,22 @@ where
 {
     let cadence = config.collector.cadence()?;
 
-    let manager = LegacyAuthManager::from_hub_source_db_store_for_admitted_user(
-        store.clone(),
-        &config.data_dir,
-        &AuthEndpointConfig::from_config(config, false),
-        Arc::clone(&admission),
-        Some(write_guard.observer("credential")),
+    let manager = {
+    let runtime_store = store.clone();
+    let runtime_path = &config.data_dir;
+    let runtime_endpoint = &AuthEndpointConfig::from_config(config, false);
+    let runtime_admission = Arc::clone(&admission);
+    let runtime_loss = Some(write_guard.observer("credential"));
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
     )
+    .map_err(|error| crate::credentials::LegacyAuthManagerError::from(crate::credentials::CredentialError::from(error)))
+    .and_then(|vault| LegacyAuthManager::from_hub_source_db_store_for_admitted_user(runtime_store, runtime_path, runtime_endpoint, runtime_admission, runtime_loss, vault))
+}
     .map_err(CollectorError::from)
     .map_err(normalize_sensitive_access_error)?;
     let region = manager.region();
+    let allow_refresh = manager.allows_refresh();
     let client = client_for(region)?;
     // Creating the cursor key, when it is absent, is a durable write of its own (a file
     // of the data directory): the run's guard stands in front of it (R-P3bF3-1).
@@ -175,7 +181,7 @@ where
         manager: Arc::new(tokio::sync::Mutex::new(manager)),
         fuse: Arc::new(tokio::sync::Mutex::new(LegacyAuthFuse::default())),
         refresh: Arc::new(LegacyRefreshCoordinator::default()),
-        allow_refresh: true,
+        allow_refresh,
         region,
     };
     let stream_endpoint = config.collector.stream_endpoint(region)?;
@@ -410,13 +416,18 @@ where
         return Err(CollectorError::AdmittedLegacyAuthRequired);
     }
 
-    let manager = LegacyAuthManager::from_hub_source_db_store_observer_for_admitted_user(
-        store.clone(),
-        &config.data_dir,
-        &AuthEndpointConfig::from_config(config, false),
-        Arc::clone(&admission),
-        Some(write_guard.observer("credential")),
+    let manager = {
+    let runtime_store = store.clone();
+    let runtime_path = &config.data_dir;
+    let runtime_endpoint = &AuthEndpointConfig::from_config(config, false);
+    let runtime_admission = Arc::clone(&admission);
+    let runtime_loss = Some(write_guard.observer("credential"));
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
     )
+    .map_err(|error| crate::credentials::LegacyAuthManagerError::from(crate::credentials::CredentialError::from(error)))
+    .and_then(|vault| LegacyAuthManager::from_hub_source_db_store_observer_for_admitted_user(runtime_store, runtime_path, runtime_endpoint, runtime_admission, runtime_loss, vault))
+}
     .map_err(CollectorError::from)
     .map_err(normalize_sensitive_access_error)?;
     let region = manager.region();
@@ -474,12 +485,17 @@ where
     // as a running credential stop with an active lease and the reconnect
     // attention: the manager is fenced and sends nothing. Every other case keeps
     // the ordinary constructor and its errors.
-    let manager = FleetAuthManager::from_store_for_supervised_start(
-        store.clone(),
-        &config.data_dir,
-        Arc::clone(&admission),
-        Some(write_guard.observer("credential")),
-    )?;
+    let manager = {
+    let runtime_store = store.clone();
+    let runtime_path = &config.data_dir;
+    let runtime_admission = Arc::clone(&admission);
+    let runtime_loss = Some(write_guard.observer("credential"));
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+    )
+    .map_err(crate::fleet_credentials::FleetCredentialError::from)
+    .and_then(|vault| FleetAuthManager::from_store_for_supervised_start(vault, runtime_path, runtime_admission, runtime_loss))
+}?;
     let FleetClients {
         api,
         auth_api,

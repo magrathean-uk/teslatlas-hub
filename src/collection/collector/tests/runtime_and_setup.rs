@@ -489,7 +489,7 @@ async fn resident_fleet_control_uses_selected_vehicle_shared_bearer_proxy_and_au
         28_800,
     )
     .expect("Fleet credentials");
-    crate::fleet_credentials::persist_fleet_setup_credentials(
+    crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
         &store,
         temporary.path(),
         &credentials,
@@ -660,17 +660,26 @@ async fn fleet_observer_revalidates_admission_before_discovery_egress() {
         28_800,
     )
     .expect("Fleet credentials");
-    crate::fleet_credentials::persist_fleet_setup_credentials(
+    crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
         &store,
         temporary.path(),
         &credentials,
         SystemTime::now(),
     )
     .expect("persist Fleet credentials");
-    let admission = crate::hub_user_process::AdmittedUserHub::for_test(temporary.path())
-        .expect("admit observer");
+    let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
     let manager = Arc::new(tokio::sync::Mutex::new(
-        FleetAuthManager::from_store_for_admitted_user(store, temporary.path(), admission, None)
+        {
+    let runtime_store = store;
+    let runtime_path = temporary.path();
+    let runtime_admission = admission;
+    let runtime_loss = None;
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+    )
+    .map_err(crate::fleet_credentials::FleetCredentialError::from)
+    .and_then(|vault| FleetAuthManager::from_store_for_admitted_user(vault, runtime_path, runtime_admission, runtime_loss))
+}
             .expect("observer manager"),
     ));
 
@@ -1213,11 +1222,11 @@ async fn native_setup_discovers_and_publishes_one_vehicle_without_wake() {
         .await
         .expect("native setup");
 
-    assert_eq!(report.selected_vehicle_id, ({ let unavailable_value: u64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }) as i64);
+    assert_eq!(report.selected_vehicle_id, crate::test_unavailable_fixture::VEHICLE_ID as u64 as i64);
     assert_eq!(report.snapshots_published, 1);
     assert_eq!(
         store.selected_tesla_eid().expect("selection").unwrap().0,
-        ({ let unavailable_value: u64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }) as i64
+        crate::test_unavailable_fixture::VEHICLE_ID as u64 as i64
     );
     assert_eq!(store.published_vehicles().expect("vehicles").len(), 1);
     let requests = fake.audited_requests();
@@ -1232,14 +1241,7 @@ async fn native_setup_discovers_and_publishes_one_vehicle_without_wake() {
             "native-setup-refresh".to_owned(),
         )
         .expect("setup tokens");
-        let key = b"native-setup-key";
-        let (access, refresh) =
-            ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-                .expect("encrypted setup tokens");
-        let stored = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("stored setup tokens");
-        ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("persist setup tokens");
+        crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,temporary.path(),tokens.access_token(),tokens.refresh_token(),None).expect("supplied setup tokens");
         crate::macos_launch_agent::preflight_hub(temporary.path())
             .expect("native setup is service-ready");
     }

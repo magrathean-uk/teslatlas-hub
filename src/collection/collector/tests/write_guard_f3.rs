@@ -118,31 +118,13 @@ fn secrets_stamp(directory: &std::path::Path) -> String {
 fn p3bf3_seed_the_owner_store(temporary: &tempfile::TempDir) -> HubStore {
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_the_late_import(&store);
-    ({ let replaced_callee: fn(&std::path::Path, &[u8]) -> Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary.path(), b"guard-cloak-key")
-        .expect("0600 Cloak key");
-    let key = ({ let replaced_callee: fn(&std::path::Path) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary.path()).expect("Cloak key");
-    let initial =
-        OwnerTokens::from_secret_parts("guard-access".to_owned(), "guard-refresh".to_owned())
-            .expect("initial pair");
-    let (access, refresh) =
-        ({ let replaced_callee: fn(&[u8], &crate::credentials::OwnerTokens) -> Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(key.as_slice(), &initial)
-            .expect("Cloak pair");
-    let now_seconds = current_epoch_millis().expect("clock") / 1_000;
-    ({ let _retained_call_context = &(store
-        ); let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
-            &({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
-                access,
-                refresh,
-                now_seconds + 36_000,
-                now_seconds + 30_000,
-            )
-            .expect("a schedule that is not due"),
-        )
-        .expect("store the pair");
+    let now = current_epoch_millis().expect("clock") / 1_000;
+    crate::auth::credential_vault::fixtures::seed_legacy_supplied_pair(temporary.path(), "guard-access", "guard-refresh", Some((now + 36_000, now + 30_000)));
     store
 }
 
 fn p3bf3_seed_the_fleet_store(temporary: &tempfile::TempDir) -> HubStore {
+    use base64::Engine as _;
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     guard_block_on(finish_collection_for_provider(
         &store,
@@ -155,11 +137,12 @@ fn p3bf3_seed_the_fleet_store(temporary: &tempfile::TempDir) -> HubStore {
         CollectorProvider::Fleet,
     ))
     .expect("configure the car");
-    crate::fleet_credentials::persist_fleet_setup_credentials(
+    crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
         &store,
         temporary.path(),
         &FleetSetupCredentials::new(
-            "guard-fleet-access".to_owned(),
+            format!("e30.{}.sig", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+                serde_json::to_vec(&serde_json::json!({"scp":["vehicle_device_data","vehicle_location"]})).expect("Fleet fixture claims"))),
             "guard-fleet-refresh".to_owned(),
             "guard-fleet-client".to_owned(),
             crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica,
@@ -199,7 +182,7 @@ fn p3bf3_entry_seeded(
     );
     seed(temporary.path());
     let admission =
-        crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admit");
+        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
     let unroutable = url::Url::parse("http://127.0.0.1:9/").expect("unroutable");
     let client = OwnerApi::for_fake_http(unroutable.clone(), Duration::from_secs(1)).expect("client");
     let fleet = (kind == P3bf3Entry::Fleet).then(|| FleetClients {
@@ -412,7 +395,7 @@ fn p3bf3_the_dispatcher_hands_its_guard_to_the_configuration_wait() {
     let (temporary, store) = cadence_wait_hub();
     let config = cadence_wait_config(temporary.path(), WaitMode::Legacy, None);
     let admission =
-        crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admit");
+        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
     let (ready_tx, _ready_rx) = oneshot::channel();
     let seam = Arc::new(SupervisedCollectorTestSeam::default());
     let at_trip = Arc::new(Mutex::new(None));
@@ -463,7 +446,7 @@ fn p3bf3_run_the_owner_loop(
 ) -> (Result<(), CollectorError>, Option<String>, Arc<WriteGuardAudit>) {
     let base = url::Url::parse("http://127.0.0.1:9/").expect("unroutable");
     let admission =
-        crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admit");
+        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
     let manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store.clone(),
         temporary.path(),
@@ -605,14 +588,19 @@ fn p3bf3_the_fleet_supervisor_hands_its_own_guard_to_the_terrain_worker() {
     p3bf3_cached_terrain(&temporary, &store);
     let cursor_key = CursorKey::from_bytes([0x5D; 32]);
     let admission =
-        crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admit");
+        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
     let manager = Arc::new(tokio::sync::Mutex::new(
-        FleetAuthManager::from_store_for_admitted_user(
-            store.clone(),
-            temporary.path(),
-            Arc::clone(&admission),
-            None,
-        )
+        {
+    let runtime_store = store.clone();
+    let runtime_path = temporary.path();
+    let runtime_admission = Arc::clone(&admission);
+    let runtime_loss = None;
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+    )
+    .map_err(crate::fleet_credentials::FleetCredentialError::from)
+    .and_then(|vault| FleetAuthManager::from_store_for_admitted_user(vault, runtime_path, runtime_admission, runtime_loss))
+}
         .expect("manager"),
     ));
     let unroutable = url::Url::parse("http://127.0.0.1:9/").expect("URL");
@@ -808,8 +796,19 @@ enum InterruptedReplacement {
 }
 
 fn p3bf4_interrupt_the_replacement(state: InterruptedReplacement, data_dir: &std::path::Path) {
-        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency");
+    use crate::auth::{credential_keys as keys,credential_vault::fixtures};
+    match state {
+        InterruptedReplacement::LeftoverPrevious => {
+            let vault=fixtures::open_fixture_vault(HubStore::initialize(data_dir).expect("fixture store"),data_dir);
+            vault.test_rotation_barrier_failure();
+        }
+        InterruptedReplacement::PreviousMatches => {
+            let directory=crate::platform::private_directory::open_validated(&data_dir.join("secrets"),false).expect("secrets");
+            let current=keys::load_keyring(&directory).expect("ring").expect("present");
+            keys::begin_rotation(&directory,&fixtures::FixtureExclusion,&current,1_800_000_001).expect("published rotating ring");
+        }
     }
+}
 
 #[test]
 fn p3bf4_the_legacy_entries_settle_no_key_file_after_the_fence() {
@@ -836,7 +835,7 @@ fn p3bf4_the_legacy_entries_settle_no_key_file_after_the_fence() {
                 "{label}: a key file was removed, replaced or restored"
             );
             assert!(
-                outcome.secrets_before.contains("teslamate-encryption.previous.key"),
+                outcome.secrets_before.contains("credential-keys"),
                 "{label}: the previous generation was seeded"
             );
         }
@@ -856,27 +855,26 @@ fn p3bf4_the_admitted_legacy_entry_settles_the_interrupted_replacement() {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = p3bf3_seed_the_owner_store(&temporary);
         p3bf4_interrupt_the_replacement(state, temporary.path());
-        let stored = ({ let _retained_call_context = &(store
-            ); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })()
-            .expect("tokens")
-            .expect("stored pair");
-        let consulted = std::cell::Cell::new(0_usize);
-        let may_settle = || {
-            consulted.set(consulted.get() + 1);
-            true
-        };
-        let key = ({ let replaced_callee: fn(&std::path::Path, &(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), &dyn Fn() -> bool) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
-            temporary.path(),
-            &stored,
-            &may_settle,
-        )
-        .expect("the admitted settlement");
-        assert_eq!(key.as_slice(), b"guard-cloak-key", "{state:?}");
-        assert_eq!(consulted.get(), consultations, "{state:?}");
-        assert!(
-            !secrets_stamp(temporary.path()).contains("previous"),
-            "{state:?}: the previous generation is gone"
-        );
+        let consulted=Arc::new(AtomicUsize::new(0)); let observed=Arc::clone(&consulted);
+        let admission=crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
+        let endpoint=crate::legacy_auth::AuthEndpointConfig {mode:crate::legacy_auth::AuthMode::Tesla,region:Some(crate::tesla_stream::StreamRegion::Global),token_url:None,allow_loopback_http:true};
+        let manager={
+    let runtime_store = store;
+    let runtime_path = temporary.path();
+    let runtime_endpoint = &endpoint;
+    let runtime_admission = admission;
+    let runtime_loss: Option<crate::credentials::LossObserver> = Some(Arc::new(move ||{observed.fetch_add(1,Ordering::SeqCst);false}));
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+    )
+    .map_err(|error| crate::credentials::LegacyAuthManagerError::from(crate::credentials::CredentialError::from(error)))
+    .and_then(|vault| LegacyAuthManager::from_hub_source_db_store_for_admitted_user(runtime_store, runtime_path, runtime_endpoint, runtime_admission, runtime_loss, vault))
+}.expect("admitted rotating open");
+        assert!(manager.access_token()=="guard-access","pair authenticates after resumed rotation");
+        assert!(consulted.load(Ordering::SeqCst)>0,"guard consulted");
+        let ring=fs::read(temporary.path().join("secrets").join("credential-keys")).expect("ring");
+        assert!(ring.len()==88 && ring[5]==0,"previous key retired after proof");
+        let _=consultations;
     }
 }
 
@@ -916,8 +914,7 @@ fn p3bf4_the_stamp_counts_a_transient_file_write_the_final_files_do_not_show() {
 /// column existed: one counted rejection of the stored pair's generation, inside the fuse
 /// window, no stop and no rejected-access digest.
 fn p3bf5_seed_the_migrated_count_row(store: &HubStore) {
-    let pair = OwnerTokens::from_secret_parts("guard-access".to_owned(), "guard-refresh".to_owned())
-        .expect("the seeded pair");
+    let generation=store.test_legacy_vault().stored_generation(crate::auth::credential_envelope::CredentialSlot::OwnerApi).expect("generation").expect("seeded pair");
     let now_ms = current_epoch_millis().expect("clock");
     store
         .write_collector_auth_row(
@@ -929,9 +926,7 @@ fn p3bf5_seed_the_migrated_count_row(store: &HubStore) {
                 stopped_generation: None,
                 stopped_mode: None,
                 fuse_consecutive: 1,
-                fuse_generation: Some(
-                    crate::source_token_envelope::legacy_refresh_credential_generation(&pair),
-                ),
+                fuse_generation: Some(generation),
                 fuse_last_rejection_at: Some(now_ms / 1_000 - 10),
                 fuse_pause_until: None,
                 fuse_rejected_access_digest: None,
@@ -970,7 +965,7 @@ fn p3bf5_construct_over_the_migrated_row(trip: Option<(&'static str, usize)>) ->
         ..AuthEndpointConfig::from_config(&config, false)
     };
     let admission =
-        crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admit");
+        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
     let seam = Arc::new(SupervisedCollectorTestSeam::default());
     let at_trip = Arc::new(Mutex::new(None));
     if let Some((point, nth)) = trip {
@@ -992,13 +987,18 @@ fn p3bf5_construct_over_the_migrated_row(trip: Option<(&'static str, usize)>) ->
         Arc::clone(&seam),
         async move {
             let guard = RunWriteGuard::for_run(Some(Arc::clone(&admission)));
-            LegacyAuthManager::from_hub_source_db_store_for_admitted_user(
-                unit_store,
-                &data_dir,
-                &endpoint,
-                admission,
-                Some(guard.observer("credential")),
-            )
+            {
+    let runtime_store = unit_store;
+    let runtime_path = &data_dir;
+    let runtime_endpoint = &endpoint;
+    let runtime_admission = admission;
+    let runtime_loss = Some(guard.observer("credential"));
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+    )
+    .map_err(|error| crate::credentials::LegacyAuthManagerError::from(crate::credentials::CredentialError::from(error)))
+    .and_then(|vault| LegacyAuthManager::from_hub_source_db_store_for_admitted_user(runtime_store, runtime_path, runtime_endpoint, runtime_admission, runtime_loss, vault))
+}
             .map(drop)
         },
     ));

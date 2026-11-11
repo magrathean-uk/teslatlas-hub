@@ -892,19 +892,12 @@ async fn t42_a_signed_out_account_sends_nothing_and_the_owners_retry_resumes_it(
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_supervised_restart_import(&store);
-    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("0600 Cloak key");
-    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Cloak key");
     let initial =
         OwnerTokens::from_secret_parts("loop-access".to_owned(), "loop-refresh".to_owned())
             .expect("initial pair");
     let generation = crate::source_token_envelope::legacy_refresh_credential_generation(&initial);
-    let (access, refresh) =
-        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("Cloak pair");
     let (expires, next) = not_due_schedule();
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("store pair");
+    let generation = crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,temporary.path(),initial.access_token(),initial.refresh_token(),Some((expires,next))).expect("supplied fixture pair");
     // The unit's own row from the previous run: signed out for this very pair.
     let now = epoch_seconds_of(SystemTime::now());
     let signed_out = AuthStatus::stopped(
@@ -1056,18 +1049,11 @@ async fn t28_an_observer_whose_list_is_refused_waits_and_the_run_goes_on() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_supervised_restart_import(&store);
-    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("0600 Cloak key");
-    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Cloak key");
     let write_pair = |access: &str, refresh: &str| {
         let tokens =
             OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned()).expect("pair");
-        let (access, refresh) =
-            ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-                .expect("Cloak pair");
         let (expires, next) = not_due_schedule();
-        ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("store pair");
+        let _generation = crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,temporary.path(),tokens.access_token(),tokens.refresh_token(),Some((expires,next))).expect("supplied fixture pair");
     };
     write_pair("observer-access", "observer-refresh");
     let (fake, base, client, server) = auth_fake().await;

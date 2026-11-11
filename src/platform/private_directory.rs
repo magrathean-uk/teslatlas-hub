@@ -146,6 +146,35 @@ fn open_validated_as(
     walk(base, root.to_path_buf(), &resolved, leaf, create, euid)
 }
 
+/// R73's failed-probe lane retains descriptors without creating, repairing
+/// permissions, or touching ACLs. An absent leaf needs no directory custody.
+pub(crate) fn open_validated_read_only(path: &Path) -> Result<Option<PrivateDirectory>, PrivateDirectoryError> {
+    let components = plain_components(path)?;
+    let Some((leaf, parents)) = components.split_last() else { return Err(PrivateDirectoryError::InvalidPath); };
+    let resolved = resolve_existing_prefix(parents)?;
+    let euid = rustix::process::geteuid().as_raw();
+    let root = Path::new("/");
+    let mut descriptor = open(root, directory_flags(), Mode::empty()).map_err(|error| io_error(root, error))?;
+    check_ancestor(&descriptor, root, euid)?;
+    let mut walked = root.to_path_buf();
+    for name in &resolved {
+        walked.push(name);
+        let (child, _) = open_or_create(&descriptor, name, &walked, false)?;
+        check_ancestor(&child, &walked, euid)?;
+        descriptor = child;
+    }
+    walked.push(leaf);
+    let (descriptor, _) = match open_or_create(&descriptor, leaf, &walked, false) {
+        Err(PrivateDirectoryError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => return Ok(None),
+        other => other?,
+    };
+    let facts = facts_of(&descriptor, &walked)?;
+    if facts.uid != euid { return Err(PrivateDirectoryError::UntrustedOwner(walked)); }
+    if facts.mode & 0o022 != 0 { return Err(PrivateDirectoryError::WritableByOthers(walked)); }
+    Ok(Some(PrivateDirectory { descriptor, path: walked,
+        #[cfg(test)] mutation_attempts: std::sync::atomic::AtomicUsize::new(0) }))
+}
+
 /// Walk `parents` and `leaf` below `base`, which the caller has already
 /// vetted. Split out so tests can start from a directory they own.
 fn walk(
@@ -217,14 +246,55 @@ pub(crate) struct DurabilityError {
 
 /// Drain the device queue on macOS, with no weaker fallback (C10 R72).
 pub(crate) fn durable_sync_fd(fd: BorrowedFd<'_>) -> Result<(), DurabilityError> {
+    #[cfg(test)]
+    if SYNC_SEAM.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(seam) = slot.as_mut() else { return false; };
+        let regular = rustix::fs::fstat(fd).ok().is_some_and(|facts| FileType::from_raw_mode(facts.st_mode) == FileType::RegularFile);
+        seam.calls.push(if regular { "regular" } else { "directory" });
+        regular && seam.fail_regular
+    }) { return Err(DurabilityError { operation: "test_barrier", errno: 5 }); }
     #[cfg(target_os = "macos")]
     let (operation, result) = ("F_FULLFSYNC", rustix::fs::fcntl_fullfsync(fd));
     #[cfg(not(target_os = "macos"))]
     let (operation, result) = ("fsync", fsync(fd));
+    #[cfg(test)] SYNC_OBSERVATIONS.with(|slot| {
+        if let Some(events) = slot.borrow_mut().as_mut()
+            && let Ok(facts) = rustix::fs::fstat(fd)
+        {
+            events.push((operation, FileType::from_raw_mode(facts.st_mode) == FileType::RegularFile,
+                facts.st_dev as u64, facts.st_ino as u64));
+        }
+    });
     result.map_err(|error| DurabilityError {
         operation,
         errno: error.raw_os_error(),
     })
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct SyncSeam { fail_regular: bool, calls: Vec<&'static str> }
+#[cfg(test)]
+thread_local! { static SYNC_SEAM: std::cell::RefCell<Option<SyncSeam>> = const { std::cell::RefCell::new(None) }; }
+#[cfg(test)]
+thread_local! { static SYNC_OBSERVATIONS: std::cell::RefCell<Option<Vec<(&'static str, bool, u64, u64)>>> = const { std::cell::RefCell::new(None) }; }
+#[cfg(test)]
+pub(crate) fn with_sync_observations<T>(action: impl FnOnce() -> T) -> (T, Vec<(&'static str, bool, u64, u64)>) {
+    struct Reset(Option<Vec<(&'static str, bool, u64, u64)>>);
+    impl Drop for Reset { fn drop(&mut self) { SYNC_OBSERVATIONS.with(|slot| *slot.borrow_mut() = self.0.take()); } }
+    let reset = Reset(SYNC_OBSERVATIONS.with(|slot| slot.replace(Some(Vec::new()))));
+    let value = action();
+    let events = SYNC_OBSERVATIONS.with(|slot| slot.borrow_mut().as_mut().unwrap().clone());
+    drop(reset); (value, events)
+}
+#[cfg(test)]
+pub(crate) fn with_sync_faults<T>(fail_regular: bool, action: impl FnOnce() -> T) -> (T, Vec<&'static str>) {
+    struct Reset(Option<SyncSeam>);
+    impl Drop for Reset { fn drop(&mut self) { SYNC_SEAM.with(|slot| *slot.borrow_mut() = self.0.take()); } }
+    let reset = Reset(SYNC_SEAM.with(|slot| slot.replace(Some(SyncSeam { fail_regular, calls: Vec::new() }))));
+    let value = action(); let calls = SYNC_SEAM.with(|slot| slot.borrow_mut().as_mut().unwrap().calls.clone());
+    drop(reset); (value, calls)
 }
 
 /// Thread-local syscall controls for CT93; production never consults them.
@@ -502,7 +572,9 @@ impl PrivateDirectory {
 
     /// Apply the credential durability barrier to the held directory.
     pub(crate) fn durable_sync(&self) -> Result<(), DurabilityError> {
-        durable_sync_fd(self.descriptor.as_fd())
+        durable_sync_fd(self.descriptor.as_fd())?;
+        #[cfg(test)] crate::auth::credential_vault::fixtures::power_event("directory_barrier", Some(self.path()));
+        Ok(())
     }
 }
 
@@ -718,8 +790,53 @@ fn clear_and_verify(
 
 #[cfg(target_os = "macos")]
 fn chmod_clear_acl(directory: &OwnedFd, path: &Path) -> Result<(), PrivateDirectoryError> {
+    // A spawned chmod can transiently refuse its inherited descriptor path.
+    // Retry only that exact refusal, with the same directory still held. A
+    // successful clear must still pass clear_and_verify's independent listing.
+    for attempt in 0..3 {
+        let result = chmod_clear_acl_once(directory, path);
+        let descriptor_refusal = matches!(&result,
+            Err(PrivateDirectoryError::Io { source, .. })
+                if source.kind() == io::ErrorKind::Other
+                    && source.to_string() == ACL_DESCRIPTOR_REFUSAL);
+        if !descriptor_refusal || attempt == 2 { return result; }
+        fstat(directory).map_err(|error| io_error(path, error))?;
+    }
+    unreachable!("bounded ACL attempts return")
+}
+
+#[cfg(target_os = "macos")]
+const ACL_DESCRIPTOR_REFUSAL: &str = "cannot clear the extended ACL: chmod: /dev/fd/0: No such file or directory";
+
+#[cfg(all(test, target_os = "macos"))]
+thread_local! {
+    static ACL_DESCRIPTOR_REFUSALS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(all(test, target_os = "macos"))]
+pub(crate) fn with_acl_descriptor_refusals<T>(count: usize, action: impl FnOnce() -> T) -> (T, usize) {
+    struct Reset(usize);
+    impl Drop for Reset {
+        fn drop(&mut self) { ACL_DESCRIPTOR_REFUSALS.with(|slot| slot.set(self.0)); }
+    }
+    let reset = Reset(ACL_DESCRIPTOR_REFUSALS.with(|slot| slot.replace(count)));
+    let result = action();
+    let used = ACL_DESCRIPTOR_REFUSALS.with(|slot| count - slot.get());
+    drop(reset);
+    (result, used)
+}
+
+#[cfg(target_os = "macos")]
+fn chmod_clear_acl_once(directory: &OwnedFd, path: &Path) -> Result<(), PrivateDirectoryError> {
     use std::process::{Command, Stdio};
 
+    #[cfg(test)]
+    if ACL_DESCRIPTOR_REFUSALS.with(|slot| {
+        let remaining = slot.get();
+        if remaining == 0 { false } else { slot.set(remaining - 1); true }
+    }) {
+        return Err(io_error(path, io::Error::other(ACL_DESCRIPTOR_REFUSAL)));
+    }
     let held = directory
         .try_clone()
         .map_err(|error| io_error(path, error))?;

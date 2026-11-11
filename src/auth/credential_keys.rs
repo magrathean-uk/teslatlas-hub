@@ -346,6 +346,18 @@ pub(crate) fn load_keyring(
     )
 }
 
+/// Non-repairing custody for a vault whose durability probe failed.
+/// TRANSITIONAL: the admitted vault consumes this at its read-only open.
+pub(crate) fn load_keyring_read_only(
+    secrets: &PrivateDirectory,
+) -> Result<Option<KeyringHandle>, CredentialKeyError> {
+    Ok(read_keyring(secrets, false)?.map(|(keyring, exposure_suspected)| {
+        let mut handle = KeyringHandle::new(keyring);
+        handle.exposure_suspected = exposure_suspected;
+        handle
+    }))
+}
+
 fn read_keyring(
     secrets: &PrivateDirectory,
     repair: bool,

@@ -38,6 +38,8 @@ where
         .await
         .share_loss_fence(write_guard.observer("credential"));
     require_supervised_vehicle_lineage(store)?;
+    write_guard.check("credential-identity")?;
+    let credential_identity = manager.lock().await.collector_credential_identity()?;
     // The previous run's last heartbeat is the start of its downtime gap (C3 R8),
     // and this run's lease replaces it, so read it first.
     let previous_heartbeat_ms = store
@@ -48,7 +50,7 @@ where
     // C3 R7 step 1 and R8, before any other start step. Fleet polling has no
     // stream endpoint.
     write_guard.check("start-run")?;
-    let collector_start = start_collector_run(store, config, &cadence, "", previous_heartbeat_ms)?;
+    let collector_start = start_collector_run_with_identity(store, config, &cadence, "", previous_heartbeat_ms, &credential_identity)?;
     let (collector_state, collector_state_rx) = watch::channel(SupervisedCollectorState::Active);
     let (heartbeat_shutdown, heartbeat_stop) = oneshot::channel();
     let mut heartbeat_task = tokio::spawn(supervised_test_scoped(

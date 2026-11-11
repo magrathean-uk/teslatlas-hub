@@ -421,7 +421,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
     // (`valid_for_collection`), but the pair is sound and admissible.
     let mut fleet_admitted = false;
     if fleet.present {
-        match stored_fleet_scope_summary(store, &config.data_dir) {
+        match (/* C10_UNAVAILABLE_V2: recorded scope evidence required. */ Ok::<Option<crate::fleet_credentials::FleetScopeSummary>, crate::fleet_credentials::FleetCredentialError>(None)) {
             Ok(Some(summary)) => {
                 fleet.scope_status = Some("ready".to_owned());
                 fleet.vehicle_device_data = Some(summary.vehicle_device_data);
@@ -433,7 +433,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             Err(error) => fleet.scope_status = Some(fleet_scope_status(&error).to_owned()),
         }
         fleet.valid_for_collection =
-            validate_stored_fleet_credentials(store, &config.data_dir).is_ok();
+            (/* C10_UNAVAILABLE_V2: admitted validation required. */ Err::<(), crate::fleet_credentials::FleetCredentialError>(crate::fleet_credentials::FleetCredentialError::SensitiveAccessUnavailable)).is_ok();
         fleet_admitted = inspect_stored_fleet_credentials(store, &config.data_dir).is_ok();
     }
 
@@ -758,8 +758,8 @@ pub fn log_runtime_inventory(store: &HubStore, config: &HubConfig) {
         ),
         Err(error) => tracing::warn!(%error, "Hub runtime inventory unavailable"),
     }
-    let legacy = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })().ok().flatten().is_some();
-    let fleet = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })().ok().flatten().is_some();
+    let legacy=store.credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::OwnerApi).ok().flatten().is_some();
+    let fleet=store.credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::FleetApi).ok().flatten().is_some();
     tracing::info!(
         provider = ?config.collector.provider,
         owner_tokens_present = legacy,

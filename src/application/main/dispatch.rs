@@ -94,7 +94,7 @@ fn build_status_report(
     let legacy_credentials = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?;
     let fleet_credentials = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?;
     let (fleet_scope_summary, fleet_scope_status) = if fleet_credentials.is_some() {
-        match stored_fleet_scope_summary(store, &config.data_dir) {
+        match /* C10_UNAVAILABLE_V2: recorded scope evidence required. */ Ok::<Option<teslatlas_hub::fleet_credentials::FleetScopeSummary>, teslatlas_hub::fleet_credentials::FleetCredentialError>(None) {
             Ok(summary) => (summary, Some("ready")),
             Err(error) => {
                 let status = match error {

@@ -40,16 +40,22 @@ where
         .map(|lease| lease.heartbeat_at_ms);
     write_guard.check("start-lease")?;
     let collector_lease = store.acquire_supervised_collector_lease(current_epoch_millis()?)?;
+    // Prove identity before the start transaction can reset any refusal. The
+    // lease guard remains the first start boundary, including on admission loss.
+    write_guard.check("credential-identity")?;
+    let credential_identity = manager.lock().await.collector_credential_identity()
+        .map_err(CollectorError::from).map_err(normalize_sensitive_access_error)?;
     // C3 R7 step 1 and R8: reset a stored refusal when the mode or the
     // configuration changed, and close or record the downtime gap, before any
     // other start step.
     write_guard.check("start-run")?;
-    let collector_start = start_collector_run(
+    let collector_start = start_collector_run_with_identity(
         store,
         config,
         &cadence,
         &stream_endpoint,
         previous_heartbeat_ms,
+        &credential_identity,
     )?;
     // C5 R57 step 6 and the B2 clarification: the credential unit was built before
     // this start path ran, so it is told here whether C3 reset a refusal and what

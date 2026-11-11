@@ -1097,12 +1097,6 @@ fn legacy_refresh_intent_fences_restart_and_commits_atomically() {
         "INTENT-OWNER-02 duplicate refused before restart"
     );
     // Drop the actual once-held SQLite connection as well as the store handle.
-    let identity = std::sync::Arc::as_ptr(&store.credential_connection_taken) as usize;
-    drop(
-        S_TEST_CREDENTIAL_CONNECTIONS
-            .with(|connections| connections.borrow_mut().remove(&identity))
-            .unwrap(),
-    );
     drop(store);
     let reopened = HubStore::initialize(directory.path()).expect("restart store");
     let completed_receipt = s_test_with_credential_connection(&reopened, |connection| {
@@ -1188,12 +1182,6 @@ fn legacy_refresh_intent_fences_restart_and_commits_atomically() {
         );
         receipt
     });
-    let identity = std::sync::Arc::as_ptr(&reopened.credential_connection_taken) as usize;
-    drop(
-        S_TEST_CREDENTIAL_CONNECTIONS
-            .with(|connections| connections.borrow_mut().remove(&identity))
-            .unwrap(),
-    );
     drop(reopened);
     let persisted = HubStore::initialize(directory.path()).unwrap();
     s_test_with_credential_connection(&persisted, |connection| {
@@ -1601,12 +1589,6 @@ fn fleet_refresh_intent_fences_restart_and_commits_successor_atomically() {
         ),
         "INTENT2-FLEET-01 generic cancellation without HTTP status refuses the bound Fleet receipt"
     );
-    let identity = std::sync::Arc::as_ptr(&store.credential_connection_taken) as usize;
-    drop(
-        S_TEST_CREDENTIAL_CONNECTIONS
-            .with(|connections| connections.borrow_mut().remove(&identity))
-            .unwrap(),
-    );
     drop(store);
     let reopened = HubStore::initialize(directory.path()).expect("restart Fleet store");
     let completed_receipt = s_test_with_credential_connection(&reopened, |connection| {
@@ -1681,12 +1663,6 @@ fn fleet_refresh_intent_fences_restart_and_commits_successor_atomically() {
         );
         receipt
     });
-    let identity = std::sync::Arc::as_ptr(&reopened.credential_connection_taken) as usize;
-    drop(
-        S_TEST_CREDENTIAL_CONNECTIONS
-            .with(|connections| connections.borrow_mut().remove(&identity))
-            .unwrap(),
-    );
     drop(reopened);
     let persisted = HubStore::initialize(directory.path()).unwrap();
     s_test_with_credential_connection(&persisted, |connection| {

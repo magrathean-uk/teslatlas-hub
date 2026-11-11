@@ -58,9 +58,9 @@ async fn loop_products(State(wire): State<LoopWire>) -> axum::response::Response
             StatusCode::OK,
             json!({
                 "response": [{
-                    "id": ({ let excluded_fixture_value: i64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); excluded_fixture_value }),
-                    "vehicle_id": ({ let excluded_fixture_value: i64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); excluded_fixture_value }),
-                    "vin": ({ let excluded_fixture_value: &str = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); excluded_fixture_value }),
+                    "id": crate::test_unavailable_fixture::VEHICLE_ID,
+                    "vehicle_id": crate::test_unavailable_fixture::VEHICLE_ID,
+                    "vin": crate::test_unavailable_fixture::VIN,
                     "state": "asleep",
                     "display_name": "Loop fixture",
                     "in_service": false,
@@ -131,29 +131,13 @@ impl LoopBed {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         seed_supervised_restart_import(&store);
-        ({ let replaced_callee: fn(&std::path::Path, &[u8]) -> Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary.path(), b"loop-cloak-key")
-            .expect("0600 Cloak key");
-        let key = ({ let replaced_callee: fn(&std::path::Path) -> Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(temporary.path()).expect("Cloak key");
         let initial =
             OwnerTokens::from_secret_parts("loop-access".to_owned(), "loop-refresh".to_owned())
                 .expect("initial pair");
-        let (access, refresh) =
-            ({ let replaced_callee: fn(&[u8], &crate::credentials::OwnerTokens) -> Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(key.as_slice(), &initial)
-                .expect("Cloak pair");
         // A pair whose refresh is not due for hours: the loop makes no token request
         // at its start (a successful refresh would reset a blown fuse).
         let now_seconds = current_epoch_millis().expect("clock") / 1_000;
-        ({ let _retained_call_context = &(store
-            ); let replaced_callee: fn(&(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
-                &({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); replaced_callee })(
-                    access,
-                    refresh,
-                    now_seconds + 36_000,
-                    now_seconds + 28_800,
-                )
-                .expect("a later refresh schedule"),
-            )
-            .expect("store pair");
+        crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,temporary.path(),initial.access_token(),initial.refresh_token(),Some((now_seconds+36_000,now_seconds+28_800))).expect("supplied fixture pair");
         before_start(&store);
         let wire = LoopWire {
             mode,
@@ -960,7 +944,7 @@ impl FleetLoopBed {
             28_800,
         )
         .expect("setup credentials");
-        crate::fleet_credentials::persist_fleet_setup_credentials(
+        crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
             &store,
             temporary.path(),
             &credentials,
@@ -968,13 +952,18 @@ impl FleetLoopBed {
         )
         .expect("persist credentials");
         let admission =
-            crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admit");
-        let manager = FleetAuthManager::from_store_for_admitted_user(
-            store.clone(),
-            temporary.path(),
-            Arc::clone(&admission),
-            None,
-        )
+            crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
+        let manager = {
+    let runtime_store = store.clone();
+    let runtime_path = temporary.path();
+    let runtime_admission = Arc::clone(&admission);
+    let runtime_loss = None;
+    crate::auth::credential_vault::CredentialVault::open_for_runtime(
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+    )
+    .map_err(crate::fleet_credentials::FleetCredentialError::from)
+    .and_then(|vault| FleetAuthManager::from_store_for_admitted_user(vault, runtime_path, runtime_admission, runtime_loss))
+}
         .expect("manager");
         let manager = Arc::new(tokio::sync::Mutex::new(manager));
         let fake = FleetFake {
@@ -1109,9 +1098,38 @@ impl FleetLoopBed {
         self.server.abort();
     }
 
-    async fn wait_for(&mut self, label: &str, condition: impl FnMut() -> bool) {
-        let task = self.task.as_mut().expect("task");
-        k6_wait_for(task, label, condition).await;
+    /// Keep timeout evidence local to this bed, without taking a manager or vault lock.
+    async fn wait_for(&mut self, label: &str, mut condition: impl FnMut() -> bool) {
+        let deadline = Instant::now() + SUPERVISED_RESTART_WAIT;
+        while !condition() {
+            let task = self.task.as_mut().expect("task");
+            if task.is_finished() || Instant::now() >= deadline {
+                let log = self.seam.loop_log();
+                let mut gates: Vec<_> = self.seam.gates.lock().expect("gates")
+                    .iter()
+                    .map(|(name, gate)| {
+                        (
+                            *name,
+                            *gate.arrivals.borrow(),
+                            gate.cancelled(),
+                            gate.permits.available_permits(),
+                        )
+                    })
+                    .collect();
+                gates.sort_unstable_by_key(|gate| gate.0);
+                let fenced = self.seam.admission_fence.lock().expect("admission fence")
+                    .as_ref().map(AdmissionFence::is_set);
+                let refused = self.seam.write_audit.lock().expect("write audit")
+                    .as_ref().map(|audit| audit.refused.lock().expect("refused writes").clone());
+                let outcome = if task.is_finished() {
+                    format!("ended first: {:?}", (&mut *task).await)
+                } else {
+                    "timeout".to_owned()
+                };
+                panic!("{label}: {outcome}; loop={log:?}; gates(name,arrivals,cancelled,permits)={gates:?}; fenced={fenced:?}; refused={refused:?}");
+            }
+            sleep(Duration::from_millis(20)).await;
+        }
     }
 }
 

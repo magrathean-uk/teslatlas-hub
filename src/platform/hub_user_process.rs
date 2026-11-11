@@ -11,6 +11,17 @@ pub use crate::user_lifetime_lock::UserLifetimeLockError;
 #[doc(hidden)]
 pub struct AdmittedUserHub {
     lock: UserLifetimeLock,
+    credential_vault_taken: std::sync::atomic::AtomicBool,
+}
+
+pub(crate) struct CredentialVaultAdmission {
+    _admission: Arc<AdmittedUserHub>,
+}
+#[cfg(test)]
+impl Drop for CredentialVaultAdmission {
+    fn drop(&mut self) {
+        self._admission.credential_vault_taken.store(false, std::sync::atomic::Ordering::Release);
+    }
 }
 
 impl std::fmt::Debug for AdmittedUserHub {
@@ -26,6 +37,7 @@ impl AdmittedUserHub {
     pub fn admit(data_dir: &Path) -> Result<Arc<Self>, UserLifetimeLockError> {
         let admitted = Arc::new(Self {
             lock: UserLifetimeLock::acquire(data_dir)?,
+            credential_vault_taken: std::sync::atomic::AtomicBool::new(false),
         });
         admitted.assert_sensitive_access()?;
         Ok(admitted)
@@ -36,6 +48,17 @@ impl AdmittedUserHub {
     #[doc(hidden)]
     pub fn assert_sensitive_access(&self) -> Result<(), UserLifetimeLockError> {
         self.lock.revalidate()
+    }
+
+    pub(crate) fn take_credential_vault(self: &Arc<Self>) -> Option<CredentialVaultAdmission> {
+        self.credential_vault_taken.compare_exchange(
+            false, true, std::sync::atomic::Ordering::AcqRel, std::sync::atomic::Ordering::Acquire,
+        ).ok().map(|_|CredentialVaultAdmission { _admission: Arc::clone(self) })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_credential_vault_in_use(&self) -> bool {
+        self.credential_vault_taken.load(std::sync::atomic::Ordering::Acquire)
     }
 
     #[doc(hidden)]
@@ -57,6 +80,7 @@ impl AdmittedUserHub {
     pub(crate) fn for_test(data_dir: &Path) -> Result<Arc<Self>, UserLifetimeLockError> {
         Self::admit(data_dir)
     }
+
 }
 
 #[cfg(test)]

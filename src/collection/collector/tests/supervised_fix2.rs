@@ -17,7 +17,7 @@ async fn b2_denial_during_the_heartbeat_join_retains_the_lease() {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         let admission =
-            crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admit");
+            crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
         let lease = store
             .acquire_supervised_collector_lease(current_epoch_millis().expect("clock"))
             .expect("collector lease");
@@ -122,6 +122,7 @@ async fn b2_owner_renewal_loss_survives_recovery_when_shutdown_wins() {
         held = Some((
             seam.arm_gate("supervisor-select"),
             seam.arm_gate("renewal-candidate"),
+            seam.arm_gate("terrain-worker-pass"),
         ));
         finishes = Some(count_final_transactions(seam));
         // The credential unit shares the observed loss (B2 fix round, P3b fix 1), so a
@@ -130,11 +131,14 @@ async fn b2_owner_renewal_loss_survives_recovery_when_shutdown_wins() {
         let _ = seam.arm_gate("iteration-top");
     })
     .await;
-    let (select, renewal) = held.expect("gates");
+    let (select, renewal, terrain) = held.expect("gates");
     let finishes = finishes.expect("witness");
     let seam = Arc::clone(&bed.seam);
     select.arrived("the supervisor's wait", 1).await;
     renewal.arrived("the renewal's candidate", 1).await;
+    // Match the Fleet case: the renewal must observe the denial before the
+    // terrain worker can set their shared loss fence.
+    terrain.arrived("the terrain worker's pass", 1).await;
     let initial = bed
         .store
         .supervised_collector_lease_status()
@@ -194,6 +198,7 @@ async fn b2_fleet_renewal_loss_survives_recovery_when_shutdown_wins() {
         held = Some((
             seam.arm_gate("supervisor-select"),
             seam.arm_gate("renewal-candidate"),
+            seam.arm_gate("terrain-worker-pass"),
         ));
         finishes = Some(count_final_transactions(seam));
         // The manager shares the observed loss (B2 fix round, P3b fix 1), so a loop that
@@ -202,11 +207,15 @@ async fn b2_fleet_renewal_loss_survives_recovery_when_shutdown_wins() {
         let _ = seam.arm_gate("iteration-top");
     })
     .await;
-    let (select, renewal) = held.expect("gates");
+    let (select, renewal, terrain) = held.expect("gates");
     let finishes = finishes.expect("witness");
     let seam = Arc::clone(&bed.seam);
     select.arrived("the supervisor's wait", 1).await;
     renewal.arrived("the renewal's candidate", 1).await;
+    // A disabled terrain worker still runs its tidy pass and shares the loss fence.
+    // Hold its admission check too: this case requires the renewal to observe the
+    // denial first, before any other unit can set that fence.
+    terrain.arrived("the terrain worker's pass", 1).await;
     let initial = bed
         .store
         .supervised_collector_lease_status()

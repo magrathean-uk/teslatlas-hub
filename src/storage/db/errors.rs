@@ -58,6 +58,8 @@ pub enum StoreError {
     CredentialPairInvalid,
     #[error("cannot access credential pair store")]
     CredentialPairStore(#[source] rusqlite::Error),
+    #[error("credential commit outcome is unknown")]
+    CredentialCommit(#[source] rusqlite::Error),
     #[error("cannot access credential refresh receipt")]
     CredentialRefreshReceipt(#[source] rusqlite::Error),
     #[error("credential refresh outcome is unresolved")]
@@ -606,6 +608,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
                 StoreError::Configure(..) => (),
                 StoreError::CredentialPairInvalid => (),
                 StoreError::CredentialPairStore(..) => (),
+                StoreError::CredentialCommit(..) => (),
                 StoreError::CredentialRefreshReceipt(..) => (),
                 StoreError::RefreshOutcomeUnknown { .. } => (),
                 StoreError::RefreshTokenSpent => (),
@@ -835,6 +838,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
         check_store_error(StoreError::Configure(example()));
         check_store_error(StoreError::CredentialPairInvalid);
         check_store_error(StoreError::CredentialPairStore(example()));
+        check_store_error(StoreError::CredentialCommit(example()));
         check_store_error(StoreError::CredentialRefreshReceipt(example()));
         check_store_error(StoreError::RefreshOutcomeUnknown {
             reason: BeginRefusal::RowChanged,

@@ -279,7 +279,7 @@ async fn scrub_fleet_fixture(
         28_800,
     )
     .expect("Fleet credentials");
-    crate::fleet_credentials::persist_fleet_setup_credentials(
+    crate::auth::credential_vault::fixtures::seed_fleet_setup_credentials(
         store,
         temp,
         &credentials,

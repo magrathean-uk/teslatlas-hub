@@ -2034,7 +2034,7 @@ fn sign_out_clears_both_providers_but_preserves_cursor_key() {
         credentials::OwnerTokens,
         
         fleet_api::FleetRegion,
-        fleet_credentials::{FleetSetupCredentials, persist_fleet_setup_credentials},
+        fleet_credentials::FleetSetupCredentials,
         legacy_owner_credentials::{
             load_or_create_cursor_key,  
         },
@@ -2066,7 +2066,7 @@ fn sign_out_clears_both_providers_but_preserves_cursor_key() {
         3_600,
     )
     .expect("Fleet credentials");
-    persist_fleet_setup_credentials(
+    (/* C10_UNAVAILABLE_V2: entry vault required. */ |_: &teslatlas_hub::db::HubStore, _: &std::path::Path, _: &teslatlas_hub::fleet_credentials::FleetSetupCredentials, _: std::time::SystemTime| -> Result<(), teslatlas_hub::fleet_credentials::FleetCredentialError> { Err(teslatlas_hub::fleet_credentials::FleetCredentialError::SensitiveAccessUnavailable) })(
         &store,
         temporary.path(),
         &fleet,

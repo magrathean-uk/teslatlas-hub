@@ -34,9 +34,16 @@ fn as_row(state: &str, reason: Option<&str>, collecting: bool) -> CollectorAuthR
 }
 
 fn as_put_pair(store: &HubStore, generation: Option<Uuid>) {
-    let generation = generation.expect(
-        "C10_UNAVAILABLE_V1: R56/R62 must classify the pre-C10 Unbound generation through the vault",
-    );
+    if crate::auth::legacy_auth::state_fixture::for_store(store).expect("component fixture shape") {
+        crate::auth::legacy_auth::state_fixture::write(store,
+            &crate::auth::legacy_auth::state_fixture::row(generation, vec![0;8], vec![0;8], (0,0))).expect("pre-upgrade component replacement");
+        return;
+    }
+    let Some(generation)=generation else {
+        // X8: nullable generations exist only in a pre-C10 component fixture.
+        crate::auth::legacy_auth::state_fixture::write(store,&crate::auth::legacy_auth::state_fixture::row(None,vec![0;8],vec![0;8],(0,0))).expect("pre-upgrade component row");
+        return;
+    };
     s_test_with_credential_connection(store, |connection| {
         connection.set_test_now_ms(AS_T0 * 1_000);
         let refresh = format!("synthetic-refresh-{generation}");
@@ -1030,7 +1037,7 @@ fn cadence_does_not_mask_signed_out_or_revive_legacy_auth_in_fleet() {
         &temporary,
         &store,
         &as_jwt(usable_until + 300),
-        Some((usable_until + 1_000, usable_until - 500)),
+        Some((usable_until, usable_until - 500)),
     );
     // A lease renewed just before the bound, so only the credential can change.
     store
@@ -1420,7 +1427,7 @@ fn readiness_context_uses_loaded_mode_with_stale_or_missing_account_rows() {
         &temporary,
         &store,
         &as_jwt(usable_until + 300),
-        Some((usable_until + 1_000, usable_until - 500)),
+        Some((usable_until, usable_until - 500)),
     );
     store
         .write_collector_auth_row(

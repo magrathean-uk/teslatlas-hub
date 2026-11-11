@@ -376,6 +376,13 @@
         "src/storage/db/tests/g24_m2_s/migration_addition/cleanup.rs",
         "src/storage/db/tests/g24_m2_s/migration_addition/readers.rs",
         "src/storage/db/tests/g24_m2_s/migration_addition/snapshot_admission.rs",
+        "src/auth/credential_vault.rs",
+        "src/auth/credential_vault/entry.rs",
+        "src/auth/credential_vault/fixtures.rs",
+        "src/auth/credential_vault/tests.rs",
+        "src/auth/credential_vault/tests/admitted.rs",
+        "src/auth/credential_vault/tests/power.rs",
+        "src/auth/credential_vault/types.rs",
         "src/test_unavailable_fixture.rs"
       ],
       "globs": [

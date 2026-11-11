@@ -24,6 +24,7 @@ pub use auth::{
     credential_recovery, credentials, crypto, fleet_credentials, legacy_auth,
     legacy_owner_credentials, source_token_envelope,
 };
+pub use auth::credential_vault::entry::{open_credential_vault_for_entry, CredentialVaultEntry, CredentialVaultEntryError};
 
 pub use collection::{collector, current_state, fleet_telemetry, tesla_stream};
 pub use geo::{geocoder, gpx, location, terrain, terrain_cache};
@@ -89,6 +90,7 @@ pub(crate) fn private_tempdir() -> std::io::Result<tempfile::TempDir> {
     use std::os::unix::fs::PermissionsExt;
 
     tempfile::Builder::new()
+        .prefix("v")
         .permissions(std::fs::Permissions::from_mode(0o700))
         .tempdir()
 }

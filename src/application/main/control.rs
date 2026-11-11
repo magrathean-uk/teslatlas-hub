@@ -184,7 +184,7 @@ fn persist_fleet_setup_and_drop_legacy(
     credentials: &FleetSetupCredentials,
     now: SystemTime,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    persist_fleet_setup_credentials(store, data_dir, credentials, now).map_err(|error| {
+    (/* C10_UNAVAILABLE_V2: entry vault required. */ |_: &teslatlas_hub::db::HubStore, _: &std::path::Path, _: &teslatlas_hub::fleet_credentials::FleetSetupCredentials, _: std::time::SystemTime| -> Result<(), teslatlas_hub::fleet_credentials::FleetCredentialError> { Err(teslatlas_hub::fleet_credentials::FleetCredentialError::SensitiveAccessUnavailable) })(store, data_dir, credentials, now).map_err(|error| {
         provider_switch_outcome_ambiguous("persisting Fleet credentials", error)
     })?;
     ({ let unavailable_value: Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialRemovalError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }).map_err(|error| {

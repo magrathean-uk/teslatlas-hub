@@ -255,7 +255,7 @@ async fn cadence_wait_renews_past_initial_lease_and_releases_ownership() {
     let config = cadence_wait_config(temporary.path(), WaitMode::Legacy, None);
     let violation = config.collector.cadence_violation().expect("violation");
     let admission =
-        crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admission");
+        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
     let clock = ManualClock::new(Instant::now(), WAIT_WALL0);
     let (ready_tx, ready_rx) = oneshot::channel();
     let (stop_tx, stop_rx) = oneshot::channel::<()>();
@@ -321,7 +321,7 @@ async fn cadence_wait_renews_past_initial_lease_and_releases_ownership() {
     let (ready_tx, ready_rx) = oneshot::channel();
     let (_keep_open, stop_rx) = oneshot::channel::<()>();
     let admission =
-        crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admission");
+        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
     let violation = config.collector.cadence_violation().expect("violation");
     let task_store = store.clone();
     let task_config = config.clone();
@@ -388,8 +388,7 @@ async fn cadence_wait_has_no_collection_side_effects_and_requires_restart() {
         let config = cadence_wait_config(temporary.path(), mode, Some(&address));
         let state_before = cadence_wait_state_dump(&store);
         let gaps_before = cadence_wait_gaps(&store);
-        let admission = crate::hub_user_process::AdmittedUserHub::for_test(temporary.path())
-            .expect("admission");
+        let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
         let seam = Arc::new(SupervisedCollectorTestSeam::default());
         let (ready_tx, ready_rx) = oneshot::channel();
         let (stop_tx, stop_rx) = oneshot::channel::<()>();
@@ -575,8 +574,7 @@ async fn cadence_wait_preserves_admission_and_singleton_fences() {
     {
         let (temporary, store) = cadence_wait_hub();
         let config = cadence_wait_config(temporary.path(), WaitMode::Legacy, None);
-        let admission = crate::hub_user_process::AdmittedUserHub::for_test(temporary.path())
-            .expect("admission");
+        let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
         let lock = temporary.path().join(crate::user_lifetime_lock::LOCK_FILE_NAME);
         fs::remove_file(&lock).expect("remove lock");
         fs::write(&lock, b"").expect("replacement lock");
@@ -592,8 +590,7 @@ async fn cadence_wait_preserves_admission_and_singleton_fences() {
         let (temporary, store) = cadence_wait_hub();
         let other = crate::private_tempdir().expect("other directory");
         let config = cadence_wait_config(other.path(), WaitMode::Legacy, None);
-        let admission = crate::hub_user_process::AdmittedUserHub::for_test(temporary.path())
-            .expect("admission");
+        let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
         let (outcome, dropped) = attempt(store.clone(), config, admission).await;
         assert!(outcome.is_err(), "a foreign data directory refuses");
         assert!(dropped);
@@ -605,8 +602,7 @@ async fn cadence_wait_preserves_admission_and_singleton_fences() {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let config = cadence_wait_config(temporary.path(), WaitMode::Legacy, None);
-        let admission = crate::hub_user_process::AdmittedUserHub::for_test(temporary.path())
-            .expect("admission");
+        let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
         let (outcome, dropped) = attempt(store.clone(), config, admission).await;
         assert!(matches!(outcome, Err(CollectorError::SelectedVehicleMissing)));
         assert!(dropped);
@@ -622,8 +618,7 @@ async fn cadence_wait_preserves_admission_and_singleton_fences() {
             .acquire_supervised_collector_lease(current_epoch_millis().expect("clock"))
             .expect("another collector");
         let held = store.supervised_collector_lease_status().unwrap().expect("lease");
-        let admission = crate::hub_user_process::AdmittedUserHub::for_test(temporary.path())
-            .expect("admission");
+        let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
         let (outcome, dropped) = attempt(store.clone(), config, admission).await;
         assert!(matches!(
             outcome,
@@ -640,8 +635,7 @@ async fn cadence_wait_preserves_admission_and_singleton_fences() {
     {
         let (temporary, store) = cadence_wait_hub();
         let config = cadence_wait_config(temporary.path(), WaitMode::Legacy, None);
-        let admission = crate::hub_user_process::AdmittedUserHub::for_test(temporary.path())
-            .expect("admission");
+        let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
         let (ready_tx, ready_rx) = oneshot::channel();
         let (_keep_open, stop_rx) = oneshot::channel::<()>();
         let task_store = store.clone();
@@ -708,7 +702,7 @@ async fn cadence_wait_captured_run(mode: WaitMode, with_renewal_and_retry: bool)
     let (temporary, store) = cadence_wait_hub();
     let config = cadence_wait_config(temporary.path(), mode, None);
     let admission =
-        crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admission");
+        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
     let (ready_tx, ready_rx) = oneshot::channel();
     let (stop_tx, stop_rx) = oneshot::channel::<()>();
     let task_store = store.clone();

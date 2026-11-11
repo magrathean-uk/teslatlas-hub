@@ -11,6 +11,7 @@
 //! stop's `blocks_requests`) and the floor that gates them.
 
 use std::cell::Cell;
+use super::super::state_fixture as c5_fixture;
 
 use uuid::Uuid;
 
@@ -33,8 +34,8 @@ fn test_store() -> (tempfile::TempDir, HubStore) {
 /// Store a pair row whose ciphertext is a placeholder and whose generation is
 /// `generation`, through the path every external writer uses (K4).
 fn put_pair(store: &HubStore, generation: Uuid) {
-        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
-    }
+    c5_fixture::write(store,&c5_fixture::input(generation)).expect("pre-C10 component input");
+}
 
 
 
@@ -850,9 +851,9 @@ fn t68_an_unresolved_fencing_attempt_at_start_is_a_sign_out_until_an_external_wr
     let (_temporary, store) = test_store();
     let g0 = gen_id(1);
     put_pair(&store, g0);
-    ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+    c5_fixture::begin(&store,g0)
         .expect("begin an attempt that never finishes");
-    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
+    assert!(c5_fixture::unresolved(&store).unwrap());
     let restored = restore_at_start(&store, &inputs(T0, g0)).unwrap();
     let status = restored.status;
     assert_eq!(
@@ -864,11 +865,11 @@ fn t68_an_unresolved_fencing_attempt_at_start_is_a_sign_out_until_an_external_wr
     // is terminal; reading the facts settled nothing.
     assert!(!status.collecting && status.stop().unwrap().blocks_requests());
     assert!(status.state.lease_is_terminal());
-    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
+    assert!(c5_fixture::unresolved(&store).unwrap());
     // Only an external write lifts it (K4 closes the attempt).
     let g9 = gen_id(9);
     put_pair(&store, g9);
-    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
+    assert!(!c5_fixture::unresolved(&store).unwrap());
     assert_eq!(
         restore_at_start(&store, &inputs(T0 + 5, g9))
             .unwrap()
@@ -1048,7 +1049,7 @@ fn t94d_a_refusal_hides_an_unresolved_attempt_until_it_lifts() {
     store
         .write_collector_auth_row(&seeded.to_row(), T0 * 1_000)
         .unwrap();
-    ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+    c5_fixture::begin(&store,g0)
         .expect("an unresolved attempt");
     // Tesla mode, an unresolved attempt and the seeded refusal: the refusal is
     // shown, nothing is sent.
@@ -1276,8 +1277,8 @@ fn t87_an_external_write_is_told_from_this_units_own_refresh() {
     // This unit refreshes g0 into g1: from the unit's old view the row holds
     // its own output (a detached exchange persisted it, R15a); from the new
     // view it is current.
-    let receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
+    let receipt = c5_fixture::begin(&store,g0).unwrap();
+    c5_fixture::finish(&store,receipt,g0,&c5_fixture::successor(g1))
         .unwrap();
     assert_eq!(
         stored_pair_relation(&store, g0).unwrap(),
@@ -1300,8 +1301,8 @@ fn t87_an_external_write_is_told_from_this_units_own_refresh() {
         StoredPairRelation::Current
     );
     // A row with no generation was not written by this unit's refresh.
-    let unbound = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
+    let unbound = Ok::<_,StoreError>(c5_fixture::row(None,vec![9;8],vec![9;8],(T0+28_800,T0+21_600))).unwrap();
+    c5_fixture::write(&store,&unbound).unwrap();
     assert_eq!(
         stored_pair_relation(&store, g9).unwrap(),
         StoredPairRelation::External
@@ -1383,12 +1384,12 @@ fn t87_an_external_write_during_an_exchange_discards_the_successor_and_signs_not
     let (g0, g1, g9) = (gen_id(1), gen_id(2), gen_id(9));
     put_pair(&store, g0);
     // The exchange is in flight: the attempt is begun and the request sent.
-    let receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
-    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap());
+    let receipt = c5_fixture::begin(&store,g0).unwrap();
+    assert!(c5_fixture::unresolved(&store).unwrap());
     // The owner stores a new pair now (K4 closes the attempt, its fence stays).
     put_pair(&store, g9);
     // The exchange ends with a successor: its write fails.
-    let completed = ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value });
+    let completed = c5_fixture::finish(&store,receipt,g0,&c5_fixture::successor(g1));
     assert!(matches!(
         completed,
         Err(StoreError::RefreshOutcomeUnknown { .. })
@@ -1404,14 +1405,14 @@ fn t87_an_external_write_during_an_exchange_discards_the_successor_and_signs_not
     );
     // Nothing is unresolved, so the next start does not sign the owner out, and
     // the next request carries the external pair.
-    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap());
+    assert!(!c5_fixture::unresolved(&store).unwrap());
     let restored = restore_at_start(&store, &inputs(T0 + 3, g9)).unwrap();
     assert_eq!(restored.status, ready());
     // The consumed input stays fenced, so g0 cannot come back (K4).
-    let old =({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+    let old =Ok::<_,StoreError>(c5_fixture::input(g0))
         .unwrap();
     assert!(matches!(
-        ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }),
+        c5_fixture::write(&store,&old),
         Err(StoreError::RefreshOutcomeUnknown { .. })
     ));
 }
@@ -1425,7 +1426,7 @@ fn an_ambiguous_write_is_recognised_by_the_successors_generation_and_not_written
         PersistReread::Missing
     );
     put_pair(&store, g0);
-    let receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
+    let receipt = c5_fixture::begin(&store,g0).unwrap();
     // The write fails before it commits: the row still holds the input and the
     // same write can be tried again.
     assert_eq!(
@@ -1433,7 +1434,7 @@ fn an_ambiguous_write_is_recognised_by_the_successors_generation_and_not_written
         PersistReread::StillInput
     );
     // The write commits but the answer is lost (the caller saw an error).
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
+    c5_fixture::finish(&store,receipt,g0,&c5_fixture::successor(g1))
         .unwrap();
     // The retry's re-read finds the successor: persistence counts as done. A
     // second write would be refused, as the receipt is closed.
@@ -1442,12 +1443,12 @@ fn an_ambiguous_write_is_recognised_by_the_successors_generation_and_not_written
         PersistReread::AlreadyPersisted
     );
     assert!(matches!(
-        ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }),
+        c5_fixture::finish(&store,receipt,g0,&c5_fixture::successor(g1)),
         Err(StoreError::RefreshOutcomeUnknown { .. })
     ));
     // The pure rule: a generation that is neither is an external write.
-    let unbound = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
+    let unbound = Ok::<_,StoreError>(c5_fixture::row(None,vec![9;8],vec![9;8],(T0+28_800,T0+21_600))).unwrap();
+    c5_fixture::write(&store,&unbound).unwrap();
     assert_eq!(
         persist_reread(&store, g0, g1, None).unwrap(),
         PersistReread::External
@@ -1668,7 +1669,12 @@ impl StatusRecorder<FlakySink> {
 
 mod effective_view {
     use super::*;
-    use crate::legacy_auth::effective::{effective_auth_row, stored_auth_view};
+    use crate::legacy_auth::effective::stored_auth_view;
+    fn effective_auth_row(store:&HubStore,data:&std::path::Path,mode:StoppedMode,now:i64)->Result<Option<crate::legacy_auth::effective::EffectiveAuth>,crate::legacy_auth::effective::EffectiveAuthError>{
+        use crate::auth::credential_vault::{CredentialVault,VaultOptions,fixtures::FixtureExclusion};
+        let vault=CredentialVault::open(HubStore::initialize(data).expect("projection store"),crate::hub_user_process::AdmittedUserHub::for_test(data).expect("projection admission"),data,VaultOptions {exclusion:Some(std::sync::Arc::new(FixtureExclusion)),now_ms:Some(now),probe_failure:true}).map_err(|_|crate::legacy_auth::effective::EffectiveAuthError::Store(StoreError::WriteRefused("credential_vault_unavailable")))?;
+        crate::legacy_auth::effective::effective_auth_row_admitted(&vault,store,mode,now)
+    }
 
     fn jwt(exp: i64) -> String {
         use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -1688,7 +1694,11 @@ mod effective_view {
         refresh: &str,
         schedule: Option<(i64, i64)>,
     ) -> Uuid {
-        panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency");
+        let entry = crate::auth::credential_vault::CredentialEntry::provider_entry(zeroize::Zeroizing::new(access.into()),Some(zeroize::Zeroizing::new(refresh.into()))).expect("component supplied entry");
+        let mut entry=entry;
+        if let Some((expires,next))=schedule{entry.set_schedule(expires,next);}
+        let _ = store;
+        crate::auth::credential_vault::fixtures::seed_entry(directory,entry)
     }
 
     fn sign_in_row(generation: Uuid) -> CollectorAuthRow {
@@ -1729,8 +1739,8 @@ mod effective_view {
         (
             row,
             one("SELECT COUNT(*) FROM outbound_request_receipts"),
-            panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"),
-            panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"),
+            one("SELECT COUNT(*) FROM credential_refresh_attempts"),
+            one("SELECT COUNT(*) FROM credential_refresh_fences"),
         )
     }
 
@@ -1872,15 +1882,11 @@ mod effective_view {
         // The previous key generation is read when an interrupted replacement left
         // the current one behind, without settling the replacement.
         let secrets = temporary.path().join("secrets");
-        let current = ({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value });
-        let previous = secrets.join(".teslamate-encryption.previous.key");
-        std::fs::rename(&current, &previous).expect("previous generation");
-        std::fs::write(&current, b"a newer key that does not open the pair").expect("current");
-        std::fs::set_permissions(
-            &current,
-            std::os::unix::fs::PermissionsExt::from_mode(0o600),
-        )
-        .expect("mode");
+        let current = temporary.path().join("secrets").join("credential-keys");
+        let previous=current.clone();
+        let directory=crate::platform::private_directory::open_validated(&secrets,false).expect("secrets");
+        let keys=crate::auth::credential_keys::load_keyring(&directory).expect("ring").expect("present");
+        crate::auth::credential_keys::begin_rotation(&directory,&crate::auth::credential_vault::fixtures::FixtureExclusion,&keys,T0 as u64).expect("published rotating keyring");
         assert_eq!(
             view((usable_until - 10) * 1_000).row.state,
             "sign_in_required"
@@ -2095,8 +2101,8 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
     let (_temporary, store) = test_store();
     let g0 = gen_id(1);
     put_pair(&store, g0);
-    let receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
-    let successor = ({ let unavailable_value: (Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String) = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value });
+    let receipt = c5_fixture::begin(&store,g0).unwrap();
+    let successor = c5_fixture::successor(g0);
     let image = PairImage::of(&successor, g0);
     let own = |receipt| {
         Some(OwnWrite {
@@ -2111,7 +2117,7 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
     );
     // The write commits (the answer is lost): the row is the image and the attempt's
     // own receipt is closed as a successful token refresh.
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
+    c5_fixture::finish(&store,receipt,g0,&successor)
         .unwrap();
     assert_eq!(
         persist_reread(&store, g0, g0, own(receipt)).unwrap(),
@@ -2197,9 +2203,9 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
             (T0 + 30_000, T0 + 25_000),
         ),
     ] {
-        let replaced =({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); unavailable_value })
+        let replaced =Ok::<_,StoreError>(c5_fixture::row(Some(g0),access,vec![2;8],schedule))
             .unwrap();
-        ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
+        c5_fixture::write(&store,&replaced).unwrap();
         assert_eq!(
             persist_reread(&store, g0, g0, own(receipt)).unwrap(),
             PersistReread::External,
@@ -2207,8 +2213,8 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
         );
     }
     // Unbound, and a different generation.
-    let unbound = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
+    let unbound = Ok::<_,StoreError>(c5_fixture::row(None,vec![9;8],vec![9;8],(T0+28_800,T0+21_600))).unwrap();
+    c5_fixture::write(&store,&unbound).unwrap();
     assert_eq!(
         persist_reread(&store, g0, g0, own(receipt)).unwrap(),
         PersistReread::External
@@ -2219,7 +2225,7 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
         PersistReread::External
     );
     // Removed: missing, whatever the receipt says.
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
+    c5_fixture::remove(&store).unwrap();
     assert_eq!(
         persist_reread(&store, g0, g0, own(receipt)).unwrap(),
         PersistReread::Missing
@@ -2229,7 +2235,7 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
     // the write is simply tried again.
     let (_open_temporary, open_store) = test_store();
     put_pair(&open_store, g0);
-    let open_receipt = ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).unwrap();
+    let open_receipt = c5_fixture::begin(&open_store,g0).unwrap();
     assert_eq!(
         persist_reread(&open_store, g0, g0, own(open_receipt)).unwrap(),
         PersistReread::StillInput

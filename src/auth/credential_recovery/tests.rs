@@ -290,4 +290,4 @@ fn write_cursor_only_export(
 }
 
 #[path = "tests/g24_m2_recovery.rs"]
-mod g24_m2_recovery;
+pub(in crate::auth) mod g24_m2_recovery;

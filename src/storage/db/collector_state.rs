@@ -269,6 +269,7 @@ impl HubStore {
     /// credentials of another application or region. The Owner wire: the
     /// generation of the last external credential write (C5, B2 clarification
     /// of 2026-10-12), which the credential unit's own refreshes never change.
+    #[cfg(test)]
     pub(crate) fn collector_credential_identity(&self, fleet: bool) -> Result<String, StoreError> {
         if !fleet {
             return self.owner_wire_credential_identity();

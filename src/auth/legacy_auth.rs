@@ -22,6 +22,8 @@ mod http_date;
 pub(crate) mod rejection;
 pub(crate) mod schedule;
 pub(crate) mod state;
+#[cfg(test)]
+pub(crate) mod state_fixture;
 mod vocabulary;
 mod wire;
 
@@ -391,6 +393,8 @@ fn usable_until_of(access_token: &str, refreshed: bool, expires_at: i64) -> Opti
 /// (an unsound schedule loads as the imported form). Surrounding whitespace is
 /// trimmed as the load trims it. Read-only, secret-free output (B2
 /// clarification 3, C5 effective auth).
+// TRANSITIONAL: V2's admitted projection consumes this; R68 status uses clear metadata.
+#[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 admitted projection bounds."))]
 pub(crate) fn stored_usable_until(
     access_token: &str,
     expires_at: i64,
@@ -412,6 +416,8 @@ pub(crate) fn stored_usable_until(
 /// opposite answer). Configuration faults are not part of it: they never make a
 /// pair invalid. Read-only and secret-free output (B2 clarification 3, C5
 /// effective auth).
+// TRANSITIONAL: V2's admitted projection consumes this; R68 status never decrypts.
+#[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 admitted projection grammar."))]
 pub(crate) fn stored_pair_passes_grammar(
     access_token: &str,
     refresh_token: &str,

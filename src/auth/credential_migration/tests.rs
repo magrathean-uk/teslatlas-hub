@@ -699,13 +699,92 @@ fn legacy_row(refresh: &str) -> (PriorRow, Vec<u8>) {
     )
 }
 
+/// Previous-process input producer for V1's admitted-open proofs. All six
+/// predecessor tables and the fake decryptor are the accepted M fixtures.
+pub(in crate::auth) fn seed_admitted_open_fixture(fleet: bool, outcome: Option<&str>, fenced: bool, candidate: usize) -> tempfile::TempDir {
+    let (mut row, key) = legacy_row("refresh-0001");
+    if fleet { row.generation = None; }
+    let env = Env::hand_built((!fleet).then_some(&row), fleet.then_some(&row), outcome.is_some() || fenced);
+    let slot = if fleet { CredentialSlot::FleetApi } else { CredentialSlot::OwnerApi };
+    let names = if fleet { [FLEET_K4, RST_K2, FLEET_K5] } else { [REL_K1, RST_K1, REL_K2] };
+    env.put(names[candidate], &key);
+    if let Some(outcome) = outcome {
+        env.binding(slot, 1, uuid_n(0x1001), &uuid_n(0xa9).to_string(), Some(&uuid_n(0xaa).to_string()), (1_799_999_000_000, outcome));
+    }
+    if fenced { env.fence(slot, &uuid_n(0xaa).to_string()); }
+    // Returning only the root drops the admission, credential connection, store,
+    // key handles and directory descriptor before V1's target open begins.
+    env._root
+}
+pub(in crate::auth) fn seed_admitted_fence_mapping() -> tempfile::TempDir {
+    let (row, key) = legacy_row("refresh-0001"); let env = Env::hand_built(Some(&row), None, true);
+    env.put(REL_K1, &key);
+    env.binding(CredentialSlot::OwnerApi, 1, uuid_n(0x1001), &uuid_n(0xa9).to_string(), Some(&uuid_n(0xaa).to_string()), (1_799_999_000_000, "success"));
+    env.binding(CredentialSlot::OwnerApi, 2, uuid_n(0x1002), &uuid_n(0xaa).to_string(), None, (1_799_999_100_000, "started"));
+    env.fence(CredentialSlot::OwnerApi, &uuid_n(0xa9).to_string()); env.fence(CredentialSlot::OwnerApi, &uuid_n(0xaa).to_string());
+    env._root
+}
+pub(in crate::auth) fn seed_admitted_blocked_owner() -> tempfile::TempDir {
+    let (owner, _) = legacy_row("refresh-0001"); let fleet_key = key32(7);
+    let fleet = PriorRow::fake(&fleet_key, "fleet-access-0001", "fleet-refresh-0001", None);
+    let env = Env::hand_built(Some(&owner), Some(&fleet), false); env.put(FLEET_K4, &fleet_key); env._root
+}
+
+/// Previous-process inputs shared with the admitted-open proofs. No live
+/// credential handle or admission escapes this producer.
+pub(in crate::auth) fn seed_admitted_large() -> tempfile::TempDir {
+    let key = key32(1);
+    let token = "t".repeat(16_000);
+    let row = PriorRow::fake(&key, &token, &token, Some(uuid_n(0xaa)));
+    let env = Env::hand_built(Some(&row), None, false);
+    env.put(REL_K1, &key);
+    env._root
+}
+
+pub(in crate::auth) fn seed_admitted_catalogue() -> (tempfile::TempDir, Vec<Vec<u8>>) {
+    let vector = catalogue_vector("residue");
+    let env = Env::from_catalogue("catalogue-residue.sqlite");
+    env.put(REL_K1, &vector_bytes(&vector["legacy_current"], "key_hex"));
+    env.put(REL_K2, &vector_bytes(&vector["earlier_replaced_deleted"], "key_hex"));
+    env.put(FLEET_K4, &vector_bytes(&vector["fleet_current"], "key_hex"));
+    (env._root, earlier_values(&vector).into_iter().map(|(_, value)| value).collect())
+}
+
+pub(in crate::auth) fn seed_admitted_cursor_fleet() -> (tempfile::TempDir, String, String) {
+    let all = vectors();
+    let row = all["ciphertext_cases"].as_array().unwrap().iter().find(|row| row.get("cursor_key_hex").is_some()).unwrap();
+    let prior = PriorRow { access: vector_bytes(row,"access_ciphertext_hex"), refresh: vector_bytes(row,"refresh_ciphertext_hex"), expires: SCHEDULE.0, next: SCHEDULE.1, generation: Some(row["generation"].as_str().unwrap().parse().unwrap()) };
+    let env = Env::hand_built(None,Some(&prior),false);
+    env.put("hub-cursor.key", &vector_bytes(row,"cursor_key_hex"));
+    (env._root,row["access_plaintext"].as_str().unwrap().into(),row["refresh_plaintext"].as_str().unwrap().into())
+}
+
+pub(in crate::auth) fn seed_admitted_candidate_set(fleet: bool, mask: usize, authentic: usize, equal: bool) -> tempfile::TempDir {
+    let (mut row, key) = legacy_row("refresh-0001");
+    if fleet { row.generation = None; }
+    let env = Env::hand_built((!fleet).then_some(&row), fleet.then_some(&row), false);
+    let names = if fleet { [FLEET_K4, RST_K2, FLEET_K5] } else { [REL_K1, RST_K1, REL_K2] };
+    for (index, name) in names.into_iter().enumerate() {
+        let different = key32(17 + index as u8);
+        if mask & (1 << index) != 0 { env.put(name, if equal || index == authentic { &key } else { &different }); }
+    }
+    env._root
+}
+
 #[test]
 fn ct046_owner_api_conversion() {
     seam::reset();
     let (row, key) = legacy_row("refresh-0001");
     let mut env = Env::hand_built(Some(&row), None, false);
     env.put(REL_K1, &key);
-    let report = env.run().expect("CT46 Phase B converts the Legacy slot");
+    let mut commits = 0usize;
+    let report = env.run_with(&mut || commits += 1)
+        .expect("CT46 Phase B converts the Legacy slot");
+    assert_eq!(commits, 3, "R55 counts reservation, conversion and purge COMMITs");
+    let report_on_replay = env.run_with(&mut || commits += 1)
+        .expect("CT46 completed Phase B replay");
+    assert!(is_complete(&report_on_replay.state));
+    assert_eq!(commits, 3, "completed Phase B replay issues no counted COMMIT");
     assert_eq!(
         report.unsafe_candidates.len(),
         0,

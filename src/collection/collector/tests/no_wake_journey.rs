@@ -17,9 +17,9 @@ fn seed_journey_import(store: &HubStore) {
     let history = SourceDbHistory {
         cars: vec![SourceDbCar {
             id: 1,
-            eid: ({ let excluded_fixture_value: i64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); excluded_fixture_value }) as i64,
-            vid: Some(({ let excluded_fixture_value: i64 = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); excluded_fixture_value }) as i64),
-            vin: Some(({ let excluded_fixture_value: &str = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential dependency"); excluded_fixture_value }).to_owned()),
+            eid: crate::test_unavailable_fixture::VEHICLE_ID as i64,
+            vid: Some(crate::test_unavailable_fixture::STREAM_ID as i64),
+            vin: Some(crate::test_unavailable_fixture::VIN.to_owned()),
             name: Some("Journey fixture".to_owned()),
             model: Some("3".to_owned()),
             trim_badging: Some("74d".to_owned()),
@@ -139,17 +139,11 @@ async fn ct33_the_canonical_scenario_with_a_restart_never_wakes_the_car() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_journey_import(&store);
-    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("0600 Cloak key");
-    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Cloak key");
     let initial =
         OwnerTokens::from_secret_parts("journey-access".to_owned(), "journey-refresh".to_owned())
             .expect("initial pair");
-    let (access, refresh) =
-        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("Cloak initial pair");
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("store encrypted pair");
+    let fixture_now = current_epoch_millis().expect("clock").div_euclid(1_000);
+    let _generation = crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,temporary.path(),initial.access_token(),initial.refresh_token(),Some((fixture_now + 28_800, fixture_now + 21_600))).expect("supplied fixture pair");
 
     // The scenario is stepped by the test, in the order of the canonical one:
     // asleep, offline, online idle, drive, parked, charge, asleep again (with a
@@ -260,17 +254,11 @@ async fn the_loop_closes_an_open_drive_when_the_car_falls_silent() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_journey_import(&store);
-    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("0600 Cloak key");
-    let key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Cloak key");
     let initial =
         OwnerTokens::from_secret_parts("journey-access".to_owned(), "journey-refresh".to_owned())
             .expect("initial pair");
-    let (access, refresh) =
-        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("Cloak initial pair");
-    ({ let unavailable_value: Result<(), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V1: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("store encrypted pair");
+    let fixture_now = current_epoch_millis().expect("clock").div_euclid(1_000);
+    let _generation = crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,temporary.path(),initial.access_token(),initial.refresh_token(),Some((fixture_now + 28_800, fixture_now + 21_600))).expect("supplied fixture pair");
     let fake = crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
         .await
         .expect("loopback Tesla");
