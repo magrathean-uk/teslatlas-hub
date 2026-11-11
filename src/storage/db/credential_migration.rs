@@ -48,6 +48,9 @@ pub(crate) struct CredentialFormatState {
     pub(crate) started_at_ms: Option<i64>,
     pub(crate) converted_at_ms: Option<i64>,
     pub(crate) completed_at_ms: Option<i64>,
+    /// R16: the admitted vault found the keyring readable by others and made
+    /// it private. Cleared only when a rotation begun after that completes.
+    pub(crate) keyring_exposure: bool,
 }
 
 pub(crate) struct CredentialMigrationAttempt {
@@ -234,7 +237,7 @@ fn credential_format_state_on(
                      WHEN 'unavailable' THEN 1 ELSE -1 END
                  ELSE -1 END,
              durability_probed_at_ms, started_at_ms, converted_at_ms,
-             completed_at_ms FROM credential_format_state LIMIT 2",
+             completed_at_ms, keyring_exposure FROM credential_format_state LIMIT 2",
         )
         .map_err(StoreError::CredentialPairStore)?;
     #[cfg(test)]
@@ -311,6 +314,7 @@ fn credential_format_state_on(
             started_at_ms: row.get(18)?,
             converted_at_ms: row.get(19)?,
             completed_at_ms: row.get(20)?,
+            keyring_exposure: credential_migration_bool(row, 21)?,
         })
     })()
     .map_err(|_| StoreError::CredentialPairInvalid)?;
@@ -433,6 +437,42 @@ impl CredentialConnection {
             self.migration_state.conversion_barrier_passed = true;
         }
         Ok(state)
+    }
+
+    /// R16: records, under the vault lock and behind the credential barrier,
+    /// that the keyring was found readable by others (or that a rotation begun
+    /// after that finding has completed). Status ORs it with the live check.
+    pub(crate) fn record_credential_keyring_exposure(
+        &mut self,
+        exposed: bool,
+    ) -> Result<(), StoreError> {
+        if self.migration_state.barrier_failed {
+            return Err(StoreError::CredentialPairInvalid);
+        }
+        if credential_migration_state_on(&self.connection)?.keyring_exposure == exposed {
+            return Ok(());
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        credential_migration_state_on(&transaction)?;
+        transaction
+            .execute(
+                "UPDATE credential_format_state SET keyring_exposure=?1 WHERE singleton_id=1",
+                [i64::from(exposed)],
+            )
+            .map_err(StoreError::CredentialPairStore)?;
+        transaction
+            .commit()
+            .map_err(StoreError::CredentialPairStore)?;
+        self.credential_migration_barrier()
+    }
+
+    /// R55/R73: a failed keyring or `secrets/` barrier at vault open records
+    /// `durability = 'unavailable'` exactly as a failed probe barrier does.
+    pub(crate) fn record_credential_keyring_barrier_failure(&mut self) {
+        self.record_unavailable_after_barrier_failure();
     }
 
     pub(crate) fn record_credential_secrets_exclusion(
@@ -739,3 +779,34 @@ fn credential_migration_discard_blocked_slot(
 
 include!("credential_migration/conversion.rs");
 include!("credential_migration/readers.rs");
+
+/// M01-T15: a v79 store written before the keyring exposure diagnostic gains
+/// the column in place; the rung's v78 path creates it from the floor schema.
+fn credential_format_state_keyring_exposure_column(
+    connection: &Connection,
+) -> Result<(), StoreError> {
+    let present = |connection: &Connection| -> Result<bool, StoreError> {
+        connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_table_info('credential_format_state')
+                 WHERE name='keyring_exposure')",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Migrate)
+    };
+    if present(connection)? {
+        return Ok(());
+    }
+    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
+        .map_err(StoreError::Migrate)?;
+    if schema_version(&transaction)? == CREDENTIAL_FORMAT_SCHEMA_VERSION && !present(&transaction)? {
+        transaction
+            .execute_batch(
+                "ALTER TABLE credential_format_state ADD COLUMN keyring_exposure
+                 INTEGER NOT NULL DEFAULT 0 CHECK(keyring_exposure IN (0, 1))",
+            )
+            .map_err(StoreError::Migrate)?;
+    }
+    transaction.commit().map_err(StoreError::Migrate)
+}

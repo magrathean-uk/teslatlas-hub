@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use std::{cell::RefCell, ops::{Deref, DerefMut}, sync::Arc};
+#[cfg(any(test, debug_assertions))]
+use std::cell::RefCell;
+use std::{ops::{Deref, DerefMut}, sync::Arc};
 use zeroize::{Zeroize, Zeroizing};
 
 #[derive(Debug, Clone, Copy)]
@@ -11,10 +13,16 @@ pub struct SecretDropEvent {
     pub zeroised: bool,
 }
 pub(crate) type SecretDropObserver = Arc<dyn Fn(SecretDropEvent) + Send + Sync>;
+// DEC-065 rule 2: the observation bridge exists only in debug and test builds;
+// a release build has no observer slot, so nothing can be installed.
+#[cfg(any(test, debug_assertions))]
 thread_local! {
     static OBSERVER: RefCell<Option<SecretDropObserver>> = const { RefCell::new(None) };
 }
+#[cfg(any(test, debug_assertions))]
 pub(crate) fn current_secret_observer() -> Option<SecretDropObserver> { OBSERVER.with(|slot| slot.borrow().clone()) }
+#[cfg(not(any(test, debug_assertions)))]
+pub(crate) fn current_secret_observer() -> Option<SecretDropObserver> { None }
 pub(crate) fn note_secret_drop(observer: &Option<SecretDropObserver>, kind: &'static str, before: usize, after: usize, zeroised: bool) {
     if let Some(observer) = observer {
         let event = SecretDropEvent { kind, before, after, zeroised };
@@ -22,6 +30,7 @@ pub(crate) fn note_secret_drop(observer: &Option<SecretDropObserver>, kind: &'st
     }
 }
 
+#[cfg(any(test, debug_assertions))]
 #[doc(hidden)]
 pub fn observe_sign_in_secret_drops<T>(observer: impl Fn(SecretDropEvent) + Send + Sync + 'static, work: impl FnOnce() -> T) -> T {
     struct Restore(Option<SecretDropObserver>);
@@ -30,6 +39,14 @@ pub fn observe_sign_in_secret_drops<T>(observer: impl Fn(SecretDropEvent) + Send
     let result = work();
     drop(restore);
     result
+}
+
+/// Release builds compile no observer: the work runs and the observer is dropped unused.
+#[cfg(not(any(test, debug_assertions)))]
+#[doc(hidden)]
+pub fn observe_sign_in_secret_drops<T>(observer: impl Fn(SecretDropEvent) + Send + Sync + 'static, work: impl FnOnce() -> T) -> T {
+    drop(observer);
+    work()
 }
 
 /// A wiping text allocation whose drop proof follows it across threads.
