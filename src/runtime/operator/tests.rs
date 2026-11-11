@@ -808,7 +808,8 @@ fn collection_window_operator_channel_has_a_deadline_and_stops_promptly() {
     let stopping = Instant::now();
     drop(server);
     assert!(stopping.elapsed() < Duration::from_millis(500), "{:?}", stopping.elapsed());
-    pending.set_read_timeout(Some(Duration::from_secs(5))).expect("timeout");
+    // The service shut the connection down: the client reads its end at once.
+    let _ = pending.set_read_timeout(Some(Duration::from_secs(5)));
     let mut rest = Vec::new();
     let _ = pending.read_to_end(&mut rest);
 
@@ -886,13 +887,16 @@ async fn collection_window_operator_recovery_state_restores_keys_before_any_is_c
     crate::db::HubStore::initialize(&data).expect("store");
     assert!(!super::authority::credential_recovery_pending(&data), "nothing signed yet");
     // A data-only restore: signed history, no cursor key.
-    rusqlite::Connection::open(data.join("hub.sqlite"))
-        .expect("database")
+    // The head alone is enough for the check; its parents are not needed.
+    let connection = rusqlite::Connection::open(data.join("hub.sqlite")).expect("database");
+    connection.execute_batch("PRAGMA foreign_keys = OFF;").expect("no parents");
+    connection
         .execute(
             "INSERT INTO sync_heads (vehicle_id, base_snapshot_id, head_sequence, head_digest, terminal_cursor) VALUES ('v', 's', 1, ?1, 'c')",
             [&"a".repeat(64)],
         )
         .expect("signed head");
+    drop(connection);
     assert!(super::authority::credential_recovery_pending(&data));
 
     let gate = super::authority::RecoveryGate::new(true);
