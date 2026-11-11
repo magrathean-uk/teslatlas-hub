@@ -35,17 +35,9 @@ fn source_credential_disabled_entry_refuses_every_supplied_input() {
             assert_eq!(prepare_owner_entry(kind, text("access-0001"), Some(text("refresh-0001")), replace).unwrap_err().code(), "source_credential_disabled");
             let tokens = crate::credentials::OwnerTokens::from_secret_parts("access-0001".into(), "refresh-0001".into()).expect("synthetic pair");
             assert_eq!(prepare_owner_tokens(kind, tokens, replace).unwrap_err().code(), "source_credential_disabled");
-            let refused = decode_owner_entry(br#"{"accessToken":"access-0001","refreshToken":"refresh-0001"}"#, kind, replace).unwrap_err();
-            assert!(matches!(&refused, OwnerInputError::Credential(error) if error.code() == "source_credential_disabled"), "{refused}");
-            let refused = decode_owner_entry(b"not even a document", kind, replace).unwrap_err();
-            assert!(matches!(&refused, OwnerInputError::Credential(error) if error.code() == "source_credential_disabled"), "refused before parsing");
-            let refused = decode_owner_files(Zeroizing::new(b"access-0001".to_vec()), Zeroizing::new(b"refresh-0001".to_vec()), kind).unwrap_err();
-            assert!(matches!(&refused, OwnerInputError::Credential(error) if error.code() == "source_credential_disabled"));
         }
     }
     assert_eq!(prepare_fleet_entry(text("access-0002"), text("refresh-0002"), "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).unwrap_err().code(), "source_credential_disabled");
-    let refused = decode_fleet_entry(br#"{"accessToken":"a","refreshToken":"r","clientId":"c","region":"eu","expiresInSeconds":28800}"#).unwrap_err().to_string();
-    assert!(refused.starts_with("source_credential_disabled: ") && !refused.contains("access-0002"), "{refused}");
     for slot in [OWNER, FLEET] { assert!(entry.vault().credential_pair_presence(slot).expect("presence").is_none(), "nothing stored"); }
     assert!(!root.path().join("secrets").join("credential-keys").exists(), "no keyring created");
     assert!(SOURCE_CREDENTIAL_DISABLED_TEXT.contains("own login"));

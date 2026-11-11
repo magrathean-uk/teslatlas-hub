@@ -1,25 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #[cfg(unix)]
-fn command_requires_user_hub_admission(command: &Command) -> bool {
-    matches!(
-        command,
-        Command::Init
-            | Command::Bootstrap
-            | Command::Setup { .. }
-            | Command::SetupFleet { .. }
-            | Command::ConfigureFleetTelemetry
-            | Command::Serve
-            | Command::Observe { .. }
-            | Command::Migrate { .. }
-            | Command::Pair { .. }
-            | Command::Repair
-            | Command::Backup { .. }
-            | Command::ExportRecoveryCredentials { .. }
-            | Command::RestoreRecoveryCredentials { .. }
-    )
-}
-
 fn collector_can_start(
     store: &HubStore,
     config: &HubConfig,
@@ -85,13 +66,12 @@ fn validate_history_only_config(config: &HubConfig) -> Result<(), Box<dyn std::e
 const MAX_MIGRATION_POSTGRES_PASSWORD_BYTES: usize = 4 * 1024;
 #[cfg(unix)]
 const MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES: usize = MAX_MIGRATION_POSTGRES_PASSWORD_BYTES + 2;
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 const MAX_MIGRATION_TOKEN_BYTES: usize =
     teslatlas_hub::source_token_envelope::MAX_TOKEN_PLAINTEXT_BYTES;
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 const MAX_MIGRATION_TOKEN_FILE_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES + 2;
 #[cfg(unix)]
-const MAX_SETUP_TOKENS_STDIN_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES * 2 + 128;
 #[cfg(all(unix, test))]
 const MAX_MIGRATION_ENCRYPTION_KEY_BYTES: usize = 16 * 1024;
 
@@ -520,29 +500,6 @@ fn read_migration_secret(
     read_migration_secret_file(path, maximum).map_err(Into::into)
 }
 
-/// Source credentials are disabled: a token file named to `setup` is refused
-/// before it is opened (refusal-only shim until the setup command is rewired).
-#[cfg(unix)]
-fn read_setup_token_file(path: &Path, maximum: usize) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
-    let _ = (path, maximum);
-    Err(teslatlas_hub::auth::credential_sign_in::source_credential_disabled().into())
-}
-
-#[cfg(all(unix, test))]
-fn decode_setup_fleet_stdin(
-    bytes: &[u8],
-) -> Result<FleetSetupCredentials, Box<dyn std::error::Error>> {
-    Ok(teslatlas_hub::auth::credential_sign_in::decode_fleet_entry(bytes)?.into_credentials())
-}
-
-/// Source credentials are disabled: Fleet tokens on standard input are refused
-/// before standard input is read (refusal-only shim until `setup-fleet` is
-/// rewired to the Hub's own sign-in only).
-#[cfg(unix)]
-fn read_setup_fleet_from_stdin() -> Result<teslatlas_hub::auth::credential_sign_in::PreparedFleetSetup, Box<dyn std::error::Error>> {
-    Err(teslatlas_hub::auth::credential_sign_in::source_credential_disabled().into())
-}
-
 #[cfg(unix)]
 fn read_recovery_encryption_key(
     path: &Path,
@@ -597,19 +554,6 @@ fn source_key_location_refused() -> Box<dyn std::error::Error> {
 #[cfg(all(unix, test))]
 fn source_key_entry_refused() -> Box<dyn std::error::Error> {
     Box::new(SourceKeyFileRefusal { spelling: "--source-token-key-file", entry: true })
-}
-
-/// Source credentials are disabled: a source key named to `migrate` (either
-/// spelling, a path or `-`) is refused before the path is opened, standard
-/// input is read or the configuration is loaded. No key is ever prepared.
-#[cfg(unix)]
-fn prepare_migration_key_input(command: &Command, config_path: &Path) -> Result<Option<zeroize::Zeroizing<Vec<u8>>>, Box<dyn std::error::Error>> {
-    let _ = config_path;
-    let Command::Migrate { source_token_key_file, encryption_key_file, .. } = command else { return Ok(None); };
-    if source_token_key_file.is_some() || encryption_key_file.is_some() {
-        return Err(teslatlas_hub::auth::credential_sign_in::source_credential_disabled().into());
-    }
-    Ok(None)
 }
 
 #[cfg(all(unix, test))]

@@ -290,8 +290,8 @@ fn source_db_token_import_source_credential_disabled_stores_no_row() {
     let root = crate::private_tempdir().expect("entry root");
     let store = HubStore::initialize(root.path()).expect("store");
     let vault = fixtures::open_fixture_vault(store.clone(), root.path());
-    let refused = entry::decode_owner_entry(br#"{"accessToken":" \taccess-0001\r\n","refreshToken":"refresh-0001\n"}"#, entry::OwnerEntryKind::SourceToken, false).unwrap_err();
-    assert!(matches!(&refused, entry::OwnerInputError::Credential(error) if error.code() == "source_credential_disabled"), "{refused}");
+    let refused = entry::prepare_owner_entry(entry::OwnerEntryKind::SourceToken, zeroize::Zeroizing::new(" \taccess-0001\r\n".to_owned()), Some(zeroize::Zeroizing::new("refresh-0001\n".to_owned())), false).unwrap_err();
+    assert_eq!(refused.code(), "source_credential_disabled");
     assert!(vault.load(crate::auth::credential_envelope::CredentialSlot::OwnerApi).expect("load").is_none());
     assert_eq!(store.open().expect("observer").query_row::<i64, _, _>("SELECT count(*) FROM credential_pairs", [], |row| row.get(0)).expect("pair count"), 0);
 }

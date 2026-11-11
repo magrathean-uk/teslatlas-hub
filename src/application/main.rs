@@ -12,7 +12,6 @@ use std::{
 #[cfg(unix)]
 use std::future::Future;
 
-use clap::{Parser, Subcommand, ValueEnum};
 use qrcode::{QrCode, render::unicode::Dense1x2};
 use rustix::fs::{FileType, Mode, OFlags, fcntl_getfl, fcntl_setfl, fstat, open};
 use rustix::process::getuid;
@@ -29,7 +28,7 @@ use teslatlas_hub::{
     collector,
     config::{CollectorProvider, HubConfig, collector_mode},
     credential_recovery::{RECOVERY_ENCRYPTION_KEY_BYTES, export_credentials},
-    credentials::{OwnerTokens, SourceDbPassword},
+    credentials::SourceDbPassword,
     current_state::build_current_vehicle_summary,
     data_recovery::{create_data_backup, restore_data_backup, verify_data_backup},
     db::{
