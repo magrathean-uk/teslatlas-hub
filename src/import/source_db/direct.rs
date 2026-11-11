@@ -2449,6 +2449,10 @@ pub enum SourceDbDirectError {
 mod tests;
 
 #[cfg(test)]
+#[path = "direct/charge_tests.rs"]
+mod charge_tests;
+
+#[cfg(test)]
 mod n1_src_import_source_db_direct_rs_display_tests {
     use super::*;
     use crate::runtime::name_test_support::{ErrorExample, assert_name_free, example};
