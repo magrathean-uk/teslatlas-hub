@@ -620,6 +620,114 @@ async fn collector_resilience_unchanged_list_does_not_carry_the_owner_counts() {
         .await;
 }
 
+/// Review finding 3 (round 2): the scheduled list and a new or changed identity are
+/// stored inside the tick's one transaction. The first list after a restart names a
+/// car an earlier list had retired; later a car is renamed while the process runs.
+/// When the tick's commit fails, neither the reactivation nor the rename is stored
+/// (no transaction of their own committed them first); the retried tick stores
+/// both, once, and no standalone registration runs.
+#[tokio::test]
+async fn collector_resilience_inventory_and_identity_commit_inside_the_tick() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam.clone(), async {
+            let mut bed = TickBed::owner();
+            let car = core_vehicle(3, "asleep");
+            // A previous process registered the car; a complete setup list then
+            // retired it.
+            let earlier = IdentityCache::default()
+                .resolve(&bed.store, CollectorProvider::Legacy, &car, bed.wall())
+                .expect("identity");
+            bed.store
+                .reconcile_provider_inventory(earlier.source_id, &[], bed.wall())
+                .expect("retire");
+            let one = |store: &HubStore, sql: &str| -> Option<i64> {
+                store
+                    .open()
+                    .expect("observer")
+                    .query_row(sql, [], |row| row.get(0))
+                    .expect("one value")
+            };
+            let retired = |store: &HubStore| one(store, "SELECT retired_at_ms FROM vehicles");
+            let last_seen = |store: &HubStore| one(store, "SELECT last_seen_at_ms FROM vehicles");
+            assert!(retired(&bed.store).is_some(), "retired before the restart");
+            bed.store.instrumentation().reset();
+
+            // The restart's first list: stored with the tick, so a failed commit
+            // leaves the car retired.
+            let list_tick = |bed: &mut TickBed, vehicle: &Vehicle| {
+                let now = bed.now();
+                bed.scheduler.begin_tick();
+                let candidates = bed.scheduler.accept_discovery(vec![vehicle.clone()], now);
+                TickBatch {
+                    inventory: bed.identities.inventory_to_store(std::slice::from_ref(vehicle)),
+                    discoveries: candidates
+                        .into_iter()
+                        .map(|vehicle| DiscoveryItem {
+                            vehicle,
+                            received_at_ms: bed.wall(),
+                        })
+                        .collect(),
+                    first_result_at: Some(now),
+                    ..TickBatch::default()
+                }
+            };
+            let batch = list_tick(&mut bed, &car);
+            assert!(batch.inventory.is_some(), "the first list after a restart is stored");
+            seam.set_tick_commit_fault(true);
+            assert!(matches!(bed.commit(batch).await, TickOutcome::Failed));
+            assert!(
+                retired(&bed.store).is_some(),
+                "a failed tick stores no reactivation of its own: {}",
+                store_census(&bed.store)
+            );
+            seam.set_tick_commit_fault(false);
+            bed.advance(Duration::from_secs(30));
+            let batch = list_tick(&mut bed, &car);
+            assert!(batch.inventory.is_some(), "a list a failed tick held is stored again");
+            assert!(matches!(
+                bed.commit(batch).await,
+                TickOutcome::Committed { wrote: true, .. }
+            ));
+            assert!(retired(&bed.store).is_none(), "the tick reactivated the car");
+            assert_eq!(seam.tick_commits(), 1, "in the tick's one commit");
+            assert!(
+                bed.identities
+                    .inventory_to_store(std::slice::from_ref(&car))
+                    .is_none(),
+                "the same list is not stored again"
+            );
+
+            // A car renamed while the process runs (its state changed too, so the
+            // tick writes): a failed tick registers nothing.
+            bed.advance(Duration::from_secs(30));
+            let mut renamed = core_vehicle(3, "online");
+            renamed.display_name = Some("Renamed".to_owned());
+            let seen = last_seen(&bed.store);
+            let batch = list_tick(&mut bed, &renamed);
+            seam.set_tick_commit_fault(true);
+            assert!(matches!(bed.commit(batch).await, TickOutcome::Failed));
+            assert_eq!(
+                last_seen(&bed.store),
+                seen,
+                "a failed tick registers no identity of its own"
+            );
+            seam.set_tick_commit_fault(false);
+            bed.advance(Duration::from_secs(30));
+            let batch = list_tick(&mut bed, &renamed);
+            assert!(matches!(
+                bed.commit(batch).await,
+                TickOutcome::Committed { wrote: true, .. }
+            ));
+            assert!(last_seen(&bed.store) > seen, "the retried tick registered it");
+            assert_eq!(seam.tick_commits(), 2, "in the tick's one commit");
+            let counts = bed.store.instrumentation().snapshot();
+            assert_eq!(counts.source_registration_calls, 0, "no standalone source write");
+            assert_eq!(counts.vehicle_registration_calls, 0, "no standalone vehicle write");
+        })
+        .await;
+}
+
 /// The supervised Owner-wire loop, restarted over an asleep car. The first list after
 /// the restart registers no identity and stores nothing, in at most its one tick
 /// transaction; the unchanged lists after it make no write and no write transaction
@@ -766,6 +874,9 @@ async fn collector_resilience_unchanged_polls_after_a_restart_write_nothing() {
         "restart start and first tick: {counts:?}; first tick {first:?}\nAT STOP {census_at_stop}\nAFTER FIRST {census_after_first}"
     );
     assert_eq!(counts.vehicle_registration_calls, 0, "{since_stop}");
+    // Review finding 3 (round 2): the restart's first list is stored in its tick, not
+    // by a source registration and an inventory transaction of their own.
+    assert_eq!(counts.source_registration_calls, 0, "{since_stop}");
     assert!(first.tick_commits <= 1, "{since_stop}");
     assert_eq!(one("SELECT COUNT(*) FROM raw_observations"), observations, "{since_stop}");
     assert_eq!(one("SELECT MAX(last_seen_at_ms) FROM vehicles"), last_seen, "{since_stop}");

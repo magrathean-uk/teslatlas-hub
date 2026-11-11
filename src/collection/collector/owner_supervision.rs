@@ -48,41 +48,6 @@ fn require_open_collection_window_for(
     require_open_collection_window(&endpoint, crate::fleet_api::egress::Provider::Legacy)
 }
 
-/// The Owner-wire loop's scheduled inventory (C3 R53, M04-T01). The first list of a
-/// run, and any list whose cars or VINs differ from the last one the run stored, is
-/// stored as before: the source is registered and the listed cars are reactivated,
-/// two write transactions of their own. A list equal to the last one stored would
-/// change nothing (no car retires while the run holds the Hub, and a scheduled list
-/// never retires one), so it is not written again: an unchanged poll keeps to the
-/// one tick transaction and makes no write outside it. A failed list is returned
-/// as it came, and a failed store write leaves the memory unset so the next list
-/// is stored.
-fn accept_listed_owner_inventory(
-    store: &HubStore,
-    discovery: Result<Vec<Vehicle>, CollectorError>,
-    guard: Option<&RunWriteGuard>,
-    accepted: &mut Option<Vec<(u64, String)>>,
-) -> Result<Vec<Vehicle>, CollectorError> {
-    let vehicles = discovery?;
-    let mut listed: Vec<(u64, String)> = vehicles
-        .iter()
-        .map(|vehicle| (vehicle.id.get(), vehicle.vin.to_ascii_uppercase()))
-        .collect();
-    listed.sort();
-    if accepted.as_ref() == Some(&listed) {
-        return Ok(vehicles);
-    }
-    *accepted = None;
-    let vehicles = accept_scheduled_provider_inventory_guarded(
-        store,
-        CollectorProvider::Legacy,
-        Ok(vehicles),
-        guard,
-    )?;
-    *accepted = Some(listed);
-    Ok(vehicles)
-}
-
 async fn run_supervised_with_access<F>(
     store: &HubStore,
     config: &HubConfig,
@@ -270,9 +235,6 @@ where
             || config.collector.stream_endpoint_override.is_some(),
     );
     let mut identities = IdentityCache::default();
-    // The listed inventory this run last stored (M04-T01): an identical list stores
-    // nothing again (see `accept_listed_owner_inventory`).
-    let mut accepted_inventory: Option<Vec<(u64, String)>> = None;
     let mut next_status_refresh = clock.mono_now();
     // The owner's unapplied actions, read at each settings refresh and applied in
     // the next tick (C3 R65).
@@ -550,14 +512,13 @@ where
                         .await?;
                         list_log.emit("list", RequestKind::List, list_started, &checked.result);
                         let refused_after_check = checked.refused_after_check;
-                        let listed = accept_listed_owner_inventory(
-                            store,
-                            checked.result,
-                            run.scheduler.write_guard(),
-                            &mut accepted_inventory,
-                        );
-                        match listed {
+                        match checked.result {
                             Ok(vehicles) => {
+                                // The list is stored in this tick's transaction, and
+                                // only when it differs from the last one stored
+                                // (C3 R53, M04-T01): an unchanged poll writes nothing
+                                // outside its tick.
+                                run.batch.inventory = run.identities.inventory_to_store(&vehicles);
                                 let vehicles = filter_configured_vehicles_with_identity(
                                     store,
                                     vehicles,

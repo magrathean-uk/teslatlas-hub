@@ -45,15 +45,20 @@ struct CachedIdentity {
 
 /// The cars' store identities, resolved once per process and per change (C3 R5).
 /// Registering a car refreshes its `last_seen_at_ms`, a durable write, so it is
-/// done before the tick transaction and only when the identity is new or its
-/// descriptor changed; an unchanged poll writes nothing (R14, the Idle target).
-/// A process's first resolution reads the stored identity first and registers
-/// only when registration would change something (M04-T01), so the first poll
-/// after a restart of an unchanged car writes nothing either and the tick keeps
-/// its one transaction.
+/// done only when the identity is new or its descriptor changed; an unchanged poll
+/// writes nothing (R14, the Idle target). A process's first resolution reads the
+/// stored identity first and registers only when registration would change
+/// something (M04-T01), so the first poll after a restart of an unchanged car
+/// writes nothing either. A supervised tick registers inside its own transaction
+/// (M04-T01, review round 2 finding 3): [`Self::known`] answers what needs no write,
+/// and the rest is registered by [`register_identity_in_transaction`].
 #[derive(Default)]
 struct IdentityCache {
     entries: HashMap<VehicleId, CachedIdentity>,
+    /// The listed inventory (car id, upper-case VIN, sorted) this process last
+    /// stored (M04-T01): an identical list is not stored again, so an unchanged poll
+    /// keeps to its tick and writes nothing.
+    accepted_inventory: Option<Vec<(u64, String)>>,
 }
 
 impl IdentityCache {
@@ -68,9 +73,11 @@ impl IdentityCache {
         self.resolve_guarded(store, provider, vehicle, now_ms, None)
     }
 
-    /// [`Self::resolve`] for a supervised run: the source and the vehicle are two
-    /// independent store mutations, each preceded by the run's write guard (B2 fix
-    /// round, P3b fix 2, R-P3bF2-1). A cached identity writes nothing.
+    /// [`Self::resolve`] outside a tick (a one-shot collection, a test): a car that
+    /// needs registering is registered in its own transaction, each step preceded by
+    /// the run's write guard (B2 fix round, P3b fix 2, R-P3bF2-1). A known identity
+    /// writes nothing.
+    #[cfg(test)]
     fn resolve_guarded(
         &mut self,
         store: &HubStore,
@@ -79,37 +86,55 @@ impl IdentityCache {
         now_ms: i64,
         guard: Option<&RunWriteGuard>,
     ) -> Result<Registered, CollectorError> {
+        if let Some(registered) = self.known(store, provider, vehicle)? {
+            return Ok(registered);
+        }
+        let source_descriptor = provider_source(provider);
+        let mut descriptor = identity_descriptor(vehicle, Uuid::nil());
+        check_optional_write(guard, "identity-source")?;
+        let source = store.register_source(&source_descriptor, now_ms)?;
+        descriptor.source_id = source.source_id;
+        check_optional_write(guard, "identity-vehicle")?;
+        let record = store.register_vehicle(&descriptor, now_ms)?;
+        check_optional_write(guard, "identity-car-id")?;
+        let pack_car_id =
+            projection_car_id_for_vehicle(store, record.vehicle_id, vehicle.id.get())?;
+        let registered = Registered {
+            hub_id: record.vehicle_id,
+            source_id: source.source_id,
+            pack_car_id,
+            generation: source.generation,
+        };
+        self.remember(vehicle, registered.clone());
+        Ok(registered)
+    }
+
+    /// The car's identity when it needs no write: cached under the same descriptor,
+    /// or, on the process's first resolution of the car, stored so that
+    /// registration would leave it unchanged (M04-T01). That stored identity is
+    /// read, not registered again: no write and no transaction of its own. It is
+    /// matched on the identity (source key, Tesla id and VIN aliases), as the Fleet
+    /// receiver does, not on the display name: the lifecycle commit keeps
+    /// `vehicles.display_name` to the car's projected name, so the listed name
+    /// would never match it after a restart. `None` when the car must be
+    /// registered (new, or its descriptor changed while the process runs).
+    fn known(
+        &mut self,
+        store: &HubStore,
+        provider: CollectorProvider,
+        vehicle: &Vehicle,
+    ) -> Result<Option<Registered>, CollectorError> {
         let vin = clean_optional_text(Some(&vehicle.vin));
         let display_name = clean_optional_text(vehicle.display_name.as_deref());
-        let cached = self.entries.get(&vehicle.id);
-        if let Some(entry) = cached
-            && entry.vin == vin
-            && entry.display_name == display_name
-        {
-            return Ok(entry.registered.clone());
-        }
-        let cold = cached.is_none();
-        let source_descriptor = provider_source(provider);
-        let mut descriptor = VehicleDescriptor::new(Uuid::nil(), vehicle.id.get().to_string())
-            .with_tesla_identity(Some(vehicle.id.get() as i64), None);
-        descriptor.vin = vin.clone();
-        descriptor.display_name = display_name.clone();
-        // M04-T01: on the process's first resolution of the car, a stored identity
-        // that registration would leave unchanged is read, not registered again: no
-        // write and no transaction of its own. It is matched on the identity (source
-        // key, Tesla id and VIN aliases), as the Fleet receiver does, not on the
-        // display name: the lifecycle commit keeps `vehicles.display_name` to the
-        // car's projected name, so the listed name would never match it after a
-        // restart. A change seen while the process runs registers as before.
-        let unchanged = if cold {
-            let mut probe = descriptor.clone();
+        let Some(entry) = self.entries.get(&vehicle.id) else {
+            let mut probe = identity_descriptor(vehicle, Uuid::nil());
             probe.display_name = None;
-            store.registered_vehicle_unchanged(&source_descriptor, &probe)?
-        } else {
-            None
-        };
-        let registered = match unchanged {
-            Some(unchanged) => Registered {
+            let Some(unchanged) =
+                store.registered_vehicle_unchanged(&provider_source(provider), &probe)?
+            else {
+                return Ok(None);
+            };
+            let registered = Registered {
                 hub_id: unchanged.vehicle_id,
                 source_id: unchanged.source_id,
                 pack_car_id: projection_car_id_for_vehicle(
@@ -118,34 +143,123 @@ impl IdentityCache {
                     vehicle.id.get(),
                 )?,
                 generation: unchanged.source_generation,
-            },
-            None => {
-                check_optional_write(guard, "identity-source")?;
-                let source = store.register_source(&source_descriptor, now_ms)?;
-                descriptor.source_id = source.source_id;
-                check_optional_write(guard, "identity-vehicle")?;
-                let record = store.register_vehicle(&descriptor, now_ms)?;
-                check_optional_write(guard, "identity-car-id")?;
-                let pack_car_id =
-                    projection_car_id_for_vehicle(store, record.vehicle_id, vehicle.id.get())?;
-                Registered {
-                    hub_id: record.vehicle_id,
-                    source_id: source.source_id,
-                    pack_car_id,
-                    generation: source.generation,
-                }
-            }
+            };
+            self.remember(vehicle, registered.clone());
+            return Ok(Some(registered));
         };
+        Ok((entry.vin == vin && entry.display_name == display_name)
+            .then(|| entry.registered.clone()))
+    }
+
+    /// Cache the identity a registration returned (after its commit).
+    fn remember(&mut self, vehicle: &Vehicle, registered: Registered) {
         self.entries.insert(
             vehicle.id,
             CachedIdentity {
-                vin,
-                display_name,
-                registered: registered.clone(),
+                vin: clean_optional_text(Some(&vehicle.vin)),
+                display_name: clean_optional_text(vehicle.display_name.as_deref()),
+                registered,
             },
         );
-        Ok(registered)
     }
+
+    /// The listed cars as the inventory memory compares them.
+    fn inventory_key(vehicles: &[Vehicle]) -> Vec<(u64, String)> {
+        let mut listed: Vec<(u64, String)> = vehicles
+            .iter()
+            .map(|vehicle| (vehicle.id.get(), vehicle.vin.to_ascii_uppercase()))
+            .collect();
+        listed.sort();
+        listed
+    }
+
+    /// The scheduled list to store in the tick (C3 R53, M04-T01): the first list of
+    /// the process and any list whose cars or VINs differ from the last one stored.
+    /// A list equal to it would change nothing (no car retires while the run holds
+    /// the Hub, and a scheduled list never retires one), so it is not stored again.
+    fn inventory_to_store(&self, vehicles: &[Vehicle]) -> Option<Vec<Vehicle>> {
+        (self.accepted_inventory.as_deref() != Some(Self::inventory_key(vehicles).as_slice()))
+            .then(|| vehicles.to_vec())
+    }
+}
+
+/// The registration descriptor of a listed car under `source_id`.
+fn identity_descriptor(vehicle: &Vehicle, source_id: Uuid) -> VehicleDescriptor {
+    let mut descriptor = VehicleDescriptor::new(source_id, vehicle.id.get().to_string())
+        .with_tesla_identity(Some(vehicle.id.get() as i64), None);
+    descriptor.vin = clean_optional_text(Some(&vehicle.vin));
+    descriptor.display_name = clean_optional_text(vehicle.display_name.as_deref());
+    descriptor
+}
+
+/// Register a new or changed car inside the tick's transaction (M04-T01, review
+/// round 2 finding 3): the source and the vehicle are written with the tick's other
+/// rows and commit or roll back with them, each step preceded by the run's write
+/// guard. The identity is cached only after the commit.
+fn register_identity_in_transaction(
+    store: &HubStore,
+    transaction: &rusqlite::Transaction<'_>,
+    provider: CollectorProvider,
+    vehicle: &Vehicle,
+    now_ms: i64,
+    guard: Option<&RunWriteGuard>,
+) -> Result<Registered, CollectorError> {
+    check_optional_write(guard, "identity-source")?;
+    let (source, _) =
+        HubStore::register_source_in_transaction(transaction, &provider_source(provider), now_ms)?;
+    let descriptor = identity_descriptor(vehicle, source.source_id);
+    check_optional_write(guard, "identity-vehicle")?;
+    let record = HubStore::register_vehicle_in_transaction(transaction, &descriptor, now_ms, None)?;
+    check_optional_write(guard, "identity-car-id")?;
+    let pack_car_id = projection_car_id_for_vehicle(store, record.vehicle_id, vehicle.id.get())?;
+    Ok(Registered {
+        hub_id: record.vehicle_id,
+        source_id: source.source_id,
+        pack_car_id,
+        generation: source.generation,
+    })
+}
+
+/// Store the scheduled list inside the tick's transaction (C3 R53, M04-T01, review
+/// round 2 finding 3): the source is registered and the listed cars are
+/// reactivated, none retired, each step preceded by the run's write guard. Returns
+/// whether a row changed.
+fn store_inventory_in_transaction(
+    transaction: &rusqlite::Transaction<'_>,
+    provider: CollectorProvider,
+    listed: &[Vehicle],
+    observed_at_ms: i64,
+    guard: Option<&RunWriteGuard>,
+) -> Result<bool, CollectorError> {
+    check_optional_write(guard, "inventory-source")?;
+    let (source, created) = HubStore::register_source_in_transaction(
+        transaction,
+        &provider_source(provider),
+        observed_at_ms,
+    )?;
+    let inventory = listed
+        .iter()
+        .map(|vehicle| {
+            let mut descriptor =
+                VehicleDescriptor::new(source.source_id, vehicle.id.get().to_string());
+            descriptor.vin = Some(vehicle.vin.clone());
+            descriptor
+        })
+        .collect::<Vec<_>>();
+    check_optional_write(guard, "inventory-reconcile")?;
+    let changed = HubStore::reactivate_provider_inventory_in_transaction(
+        transaction,
+        source.source_id,
+        &inventory,
+        observed_at_ms,
+    )?;
+    Ok(created || changed)
+}
+
+/// An error that ends the run rather than failing one tick's store write: the loss
+/// of the admission (C3 R47) or the end of the collection window (M04-T01).
+fn ends_the_run(error: &CollectorError) -> bool {
+    loses_sensitive_access(error) || matches!(error, CollectorError::CollectionWindowClosed(_))
 }
 
 /// A listed car as a discovery candidate (C3 R14): Tesla's state as received,
@@ -182,6 +296,9 @@ struct HubEventItem {
 /// The results of a tick not yet stored (C3 R5).
 #[derive(Debug, Default)]
 struct TickBatch {
+    /// The scheduled list to store with the tick (M04-T01), when it differs from the
+    /// last one the process stored.
+    inventory: Option<Vec<Vehicle>>,
     discoveries: Vec<DiscoveryItem>,
     snapshots: Vec<SnapshotItem>,
     hub_events: Vec<HubEventItem>,
@@ -195,7 +312,8 @@ impl TickBatch {
     /// Nothing is waiting for a transaction (C3 R5: a reservation commit made with
     /// an empty batch is a lone one).
     fn is_empty(&self) -> bool {
-        self.discoveries.is_empty()
+        self.inventory.is_none()
+            && self.discoveries.is_empty()
             && self.snapshots.is_empty()
             && self.hub_events.is_empty()
             && self.failures.is_empty()
@@ -707,7 +825,11 @@ fn tick_needs_transaction(
     batch: &TickBatch,
     tick: &PendingTick,
 ) -> bool {
-    if !tick.is_empty() || !batch.snapshots.is_empty() || !batch.hub_events.is_empty() {
+    if !tick.is_empty()
+        || !batch.snapshots.is_empty()
+        || !batch.hub_events.is_empty()
+        || batch.inventory.is_some()
+    {
         return true;
     }
     batch.discoveries.iter().any(
@@ -786,20 +908,16 @@ async fn commit_tick(
     // any identity or tick write (B2 fix round, P3b fix 2, Opus N1).
     scheduler.check_write("tick-after-gate")?;
     let now_ms = scheduler.wall_or_last();
+    // The identities that need no write are read now; a new or changed car is
+    // registered inside the tick's transaction below (M04-T01).
     let mut registered: HashMap<VehicleId, Registered> = HashMap::new();
+    let mut unregistered: Vec<Vehicle> = Vec::new();
     for vehicle in batch_vehicles(&batch) {
-        match identities.resolve_guarded(
-            commit.store,
-            commit.provider,
-            &vehicle,
-            now_ms,
-            scheduler.write_guard(),
-        ) {
-            Ok(identity) => {
+        match identities.known(commit.store, commit.provider, &vehicle) {
+            Ok(Some(identity)) => {
                 registered.insert(vehicle.id, identity);
             }
-            // A refused write is the run's loss, not a store fault of the tick.
-            Err(error) if loses_sensitive_access(&error) => return Err(error),
+            Ok(None) => unregistered.push(vehicle),
             Err(error) => {
                 log_commit_failure(&error);
                 scheduler.commit_failed(tick, now);
@@ -809,8 +927,36 @@ async fn commit_tick(
     }
     let rows = tick.to_rows_write(now_ms);
     scheduler.check_write("tick-transaction")?;
+    let guard = scheduler.write_guard();
     let result = commit.store.collector_write_transaction(
         |transaction| {
+            // The scheduled list and the identities first, so the tick's rows can
+            // name them; all of it commits once, with the tick (M04-T01, review
+            // round 2 finding 3).
+            let mut wrote = false;
+            if let Some(listed) = &batch.inventory {
+                wrote |= store_inventory_in_transaction(
+                    transaction,
+                    commit.provider,
+                    listed,
+                    now_ms,
+                    guard,
+                )?;
+            }
+            let mut fresh = Vec::with_capacity(unregistered.len());
+            for vehicle in &unregistered {
+                let identity = register_identity_in_transaction(
+                    commit.store,
+                    transaction,
+                    commit.provider,
+                    vehicle,
+                    now_ms,
+                    guard,
+                )?;
+                registered.insert(vehicle.id, identity.clone());
+                fresh.push((vehicle.clone(), identity));
+                wrote = true;
+            }
             let output = write_tick_in_transaction(
                 commit.store,
                 transaction,
@@ -820,20 +966,28 @@ async fn commit_tick(
                 &batch,
                 &rows,
             )?;
-            let wrote = output.wrote;
-            Ok::<_, CollectorError>((output, wrote))
+            let wrote = wrote || output.wrote;
+            Ok::<_, CollectorError>(((output, fresh, wrote), wrote))
         },
         supervised_tick_commit_hook,
     );
-    let output = match result {
+    let (output, fresh, wrote) = match result {
         Ok(output) => output,
+        // A refused write is the run's end, not a store fault of the tick.
+        Err(error) if ends_the_run(&error) => return Err(error),
         Err(error) => {
             log_commit_failure(&error);
             scheduler.commit_failed(tick, now);
             return Ok(TickOutcome::Failed);
         }
     };
-    let wrote = output.wrote;
+    // Durable now (or, for a list that changed nothing, known to be stored).
+    for (vehicle, identity) in fresh {
+        identities.remember(&vehicle, identity);
+    }
+    if let Some(listed) = &batch.inventory {
+        identities.accepted_inventory = Some(IdentityCache::inventory_key(listed));
+    }
     #[cfg(test)]
     if wrote {
         supervised_tick_committed();
