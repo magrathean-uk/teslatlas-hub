@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:matrix:home-assistant:ha-initial-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "session_id", "cell_id", "session_input_sha256", "actor_id", "operation", "session_sequence_before", "session_sequence_after", "facts", "requests"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "session_id": {"type": "string", "format": "uuid"},
+    "cell_id": {"enum": ["home_assistant__macos_arm64", "home_assistant__debian13_arm64", "home_assistant__debian13_amd64"]},
+    "session_input_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "actor_id": {"const": "ha_flow"},
+    "operation": {"const": "initial_poll"},
+    "session_sequence_before": {"type": "integer", "minimum": 1},
+    "session_sequence_after": {"type": "integer", "minimum": 1},
+    "facts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vehicles", "sensors_per_vehicle", "initial_battery", "initial_inside_temperature_c", "empty_state_of_charge", "unicode_name"],
+      "properties": {
+        "vehicles": {"const": 2},
+        "sensors_per_vehicle": {"const": 13},
+        "initial_battery": {"const": 0},
+        "initial_inside_temperature_c": {"const": 21.5},
+        "empty_state_of_charge": {"type": "null"},
+        "unicode_name": {"const": "Interop – Árvíztűrő 🚗"}
+      }
+    },
+    "requests": {"type": "array", "maxItems": 0}
+  }
+}

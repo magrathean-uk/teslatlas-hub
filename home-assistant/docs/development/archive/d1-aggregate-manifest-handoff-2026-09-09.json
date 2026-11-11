@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "kind": "d1_home_assistant_component_manifest_handoff",
+  "status": "prepared_for_hub_aggregate_manifest_review",
+  "verified_at": "2026-09-09",
+  "owner": "home-assistant",
+  "source": {
+    "repository": "teslatlas-home-assistant",
+    "head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+    "working_tree": "dirty; unrelated paths preserved",
+    "product_version": "2026.36.2",
+    "home_assistant_baseline": "2026.8.3",
+    "profile_id": "hub-http-v1@1.0.0",
+    "profile_sha256s_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+  },
+  "payload": {
+    "root": "custom_components/teslatlas_hub",
+    "file_count": 31,
+    "payload_manifest_sha256": "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940",
+    "payload_manifest_file": "docs/development/d1-aggregate-manifest-payload-2026-09-09.txt",
+    "payload_manifest_file_sha256": "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940",
+    "payload_manifest_algorithm": "From custom_components/teslatlas_hub, sort payload-relative file paths using C locale; emit one UTF-8 line '<path-relative-to-this-root> <sha256(file)>\\n' per file; SHA-256 the resulting bytes.",
+    "includes": [
+      "integration Python and JSON resources",
+      "hub-http-v1@1.0.0 profile and schemas",
+      "translations/en.json"
+    ],
+    "excludes": [
+      "tools/",
+      "tests/",
+      ".venv/",
+      "__pycache__/",
+      "fixture credentials and invitations",
+      "Home Assistant configuration, database, registry, and WAL/SHM files"
+    ]
+  },
+  "selectors": [
+    {
+      "id": "debian13-arm64-container",
+      "status": "accepted_primary_runtime_lane_only",
+      "runtime": {
+        "os": "Debian 13 trixie",
+        "architecture": "aarch64",
+        "docker_engine": "26.1.5+dfsg1",
+        "compose": "2.26.1",
+        "home_assistant_image": "ghcr.io/home-assistant/home-assistant:2026.8.3",
+        "image_digest": "sha256:e53b24b1bde9e471f5167a032d29d8de5956c374cba44205da0a017b71cc4362",
+        "network": "host"
+      },
+      "artifact": {
+        "kind": "source_payload_read_only_mount",
+        "status": "accepted_live",
+        "payload_manifest_sha256": "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940",
+        "standalone_package": false
+      },
+      "target": {
+        "config_owner": "Home Assistant runtime",
+        "config_mount": "/config, persistent read-write",
+        "component_path": "/config/custom_components/teslatlas_hub",
+        "component_mount": "read-only",
+        "database_and_registry_owner": "Home Assistant runtime"
+      },
+      "install_contract": "Require an explicitly selected existing HA config or Container mount; stage only custom_components/teslatlas_hub; refuse overwrite of an existing integration; do not copy tools, tests, virtual environments, fixtures, credentials, or database files.",
+      "remove_contract": "Stop the selected HA runtime, preserve a private config backup and exact previous component bytes, remove only this integration payload, and restore the paired backup/component on rollback.",
+      "restart_contract": "Use Home Assistant UI Reload for integration-only changes; restart the selected Container after mounted component replacement; never create or start a native HA service.",
+      "acceptance_receipt": "docs/development/STATUS.json#b2_1_live_container_acceptance"
+    },
+    {
+      "id": "existing-ha-config",
+      "status": "supported_source_candidate_not_live_admitted",
+      "runtime": {
+        "selection": "caller-supplied existing Home Assistant runtime",
+        "required_input": "absolute existing HA config directory"
+      },
+      "artifact": {
+        "kind": "source_payload",
+        "status": "available_source_only",
+        "payload_manifest_sha256": "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940",
+        "standalone_package": false
+      },
+      "target": {
+        "component_path": "<selected-ha-config>/custom_components/teslatlas_hub",
+        "config_owner": "existing Home Assistant runtime",
+        "database_and_registry": "never owned or modified by the integration staging action"
+      },
+      "install_contract": "Validate the absolute target, refuse replacement without an exact previous-payload/config backup, and atomically stage/link only the immutable component payload.",
+      "remove_contract": "Operator stops HA, restores the paired previous component/config backup, and verifies unrelated config and registry bytes remain unchanged.",
+      "restart_contract": "Operator owns the HA restart; the selector does not install a daemon or silently start a runtime.",
+      "acceptance_receipt": "Per-run redacted receipt required; no installed acceptance is claimed by this handoff."
+    },
+    {
+      "id": "macos-selected-ha-runtime",
+      "status": "blocked_no_selected_ha_os_container_or_vm_target",
+      "runtime": {
+        "prepared_guest": "macOS 13.7.4 arm64 build 22H420",
+        "observed": "Docker, Compose, Home Assistant, Homebrew, Lima, Colima, and QEMU absent"
+      },
+      "artifact": {
+        "kind": "source_payload",
+        "status": "available_but_not_installable_without_selected_runtime",
+        "payload_manifest_sha256": "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940",
+        "standalone_native_macos_package": false
+      },
+      "blocked_reason": "The HA contract permits staging into an explicitly selected existing HA config or HA OS/Container/VM target only; it does not create a native macOS HA service.",
+      "acceptance_receipt": "Not started; provisioned target required."
+    },
+    {
+      "id": "debian13-x86_64-container",
+      "status": "blocked_no_fresh_authorized_target",
+      "artifact": {
+        "kind": "source_payload",
+        "status": "available_source_only",
+        "payload_manifest_sha256": "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940",
+        "standalone_package": false
+      },
+      "blocked_reason": "No fresh authorized Debian 13 x86_64 runtime is provisioned; retained/quarantined guests are not valid acceptance targets.",
+      "acceptance_receipt": "Not started; fresh target required."
+    },
+    {
+      "id": "native-macos-home-assistant-service",
+      "status": "unsupported_by_ha_integration_contract",
+      "artifact": {
+        "kind": "native_service",
+        "status": "blocked",
+        "reason": "This product does not create or own a native macOS Home Assistant service."
+      },
+      "acceptance_receipt": "No receipt permitted."
+    }
+  ],
+  "receipt_schema": {
+    "required_fields": [
+      "selector_id",
+      "status",
+      "source_head",
+      "payload_manifest_sha256",
+      "runtime_os_architecture_and_version",
+      "artifact_or_blocked_reason",
+      "selected_config_and_component_paths",
+      "ownership_and_mount_modes",
+      "install_remove_restart_actions",
+      "before_after_config_entry_registry_and_entity_counts",
+      "redaction_and_secret_presence_check",
+      "cleanup_and_listener_state"
+    ],
+    "secret_policy": "Never record invitation, bearer, private key, certificate bytes, database password, vehicle identity, or raw response values.",
+    "acceptance_rule": "A source payload or static Compose check cannot be promoted to an installed selector receipt without runtime-specific evidence."
+  },
+  "hub_action_requested": "Bind this HA payload and selector set into the reviewed Hub aggregate manifest/selection receipt. Keep blocked targets explicit and require a fresh runtime receipt before promoting them."
+}

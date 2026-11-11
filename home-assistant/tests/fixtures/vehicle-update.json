@@ -1,0 +1,22 @@
+{
+  "event_id": "fixture-event-2",
+  "vehicle": {
+    "id": "vehicle-alpha",
+    "name": "Fixture Alpha",
+    "state_of_charge": 71.0,
+    "charging_state": "stopped",
+    "charging_power_kw": 0.0,
+    "charge_limit_percent": 80.0,
+    "estimated_range_km": 304.0,
+    "odometer_km": 54327.5,
+    "activity_state": "driving",
+    "inside_temperature_c": 21.0,
+    "outside_temperature_c": 15.0,
+    "access_state": "locked",
+    "software_version": "2026.20.6",
+    "software_update_state": "current",
+    "telemetry_age_seconds": 0,
+    "data_quality": "complete"
+  },
+  "received_at": "2026-08-30T12:05:00Z"
+}

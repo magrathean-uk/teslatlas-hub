@@ -1,0 +1,28 @@
+{
+  "schema_version": 4,
+  "product": "Home Assistant",
+  "updated_at": "2026-09-22T10:00:00Z",
+  "state": "SOURCE_PUBLISHED_LOCAL_ARTIFACTS_REMOVED",
+  "macos_working_product_state": "HISTORICALLY_ACCEPTED_RUNTIME_REMOVED",
+  "planning_state": "COMPLETE",
+  "current_goal": null,
+  "current_worker": null,
+  "source": {
+    "accepted_implementation_lineage": "78186795dfe2575258d4e3c2b138f263f8df21b5",
+    "main_before_cleanup_metadata": "656c1db2891b4bf01929736f89d718af4d27208e",
+    "branch": "main",
+    "remote_ref": "refs/heads/main",
+    "publication": "SOURCE_PUBLISHED"
+  },
+  "local_state": {
+    "build_outputs": "REMOVED",
+    "candidate_artifacts": "REMOVED",
+    "external_receipts": "REMOVED",
+    "runtime": "NONE"
+  },
+  "evidence_summary": "Current source validation before publication: 134 passed, 2 skipped; formatting and matrix-contract checks passed. Historical guest evidence recorded one vehicle and 13 available entities.",
+  "evidence_boundary": "Historical results apply only to the exact former source and artifacts. Fresh runtime claims require a rebuild and new receipts.",
+  "remaining": [
+    "The Lima guest and Home Assistant container were removed; HACS/store distribution and real credentials remain deferred."
+  ]
+}
