@@ -66,7 +66,12 @@ fn source_credential_disabled_load_refuses_every_foreign_origin() {
         drop(entry);
         crate::auth::credential_vault::fixtures::seed_entry(root.path(), foreign);
         let store = restart_fixture_context(store, root.path()).expect("new process");
-        store.open().expect("fault SQL").execute("UPDATE credential_pairs SET access_envelope=zeroblob(length(access_envelope)) WHERE slot='owner_api'", []).expect("damage the envelope");
+        // Keep the header readable, damage the sealed bytes after it.
+        let fault = store.open().expect("fault SQL");
+        let mut sealed: Vec<u8> = fault.query_row("SELECT access_envelope FROM credential_pairs WHERE slot='owner_api'", [], |row| row.get(0)).expect("sealed access");
+        if let Some(last) = sealed.last_mut() { *last ^= 0xff; }
+        fault.execute("UPDATE credential_pairs SET access_envelope=?1 WHERE slot='owner_api'", [sealed]).expect("damage the envelope");
+        drop(fault);
         let entry = CredentialVaultEntry::for_test(open_fixture_vault(store.clone(), root.path()));
         assert_eq!(entry.vault().load(OWNER).unwrap_err().code(), "source_credential_disabled");
         let error = CredentialCommandError::from(entry.vault().load(OWNER).unwrap_err());
