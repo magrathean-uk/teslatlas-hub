@@ -804,7 +804,6 @@
       "rationale": "Teslatlas Viewer package imported with its full history on 2026-11-11 (Apache-2.0, own LICENSE and NOTICE), excluding the third-party files classified separately. This treatment does not prove chain of title.",
       "globs": [
         "viewer/.github/**",
-        "viewer/artifacts/**",
         "viewer/bin/**",
         "viewer/compatibility/**",
         "viewer/docs/**",
@@ -824,6 +823,7 @@
         "viewer/CLAUDE.md",
         "viewer/Dockerfile",
         "viewer/NOTICE",
+        "viewer/artifacts/teslatlas-sdk.json",
         "viewer/README.md",
         "viewer/compose.yaml",
         "viewer/index.html",
@@ -839,6 +839,19 @@
       ]
     },
     {
+      "id": "viewer-bundled-sdk-archive",
+      "class": "GENERATED",
+      "rationale": "Built npm package archive of the project's own TypeScript SDK (@teslatlas/sdk 2026.36.2), bundled in the imported Viewer package; it embeds package/LICENSE.",
+      "paths": [
+        "viewer/artifacts/teslatlas-sdk-2026.36.2.tgz"
+      ],
+      "exception": {
+        "origin": "Built from the project's own TypeScript SDK (@teslatlas/sdk) as recorded in viewer/artifacts/teslatlas-sdk.json (source commit 2afc5f99ab1a58662570c695618512d4e8e975d8).",
+        "licensing": "Embeds package/LICENSE, the Apache License 2.0 text. This treatment does not prove chain of title.",
+        "release_treatment": "Preserved as imported; not rebuilt or edited here."
+      }
+    },
+    {
       "id": "imported-apache-license-texts",
       "class": "THIRD-PARTY",
       "rationale": "Canonical Apache License 2.0 text shipped as the LICENSE of three imported packages.",
@@ -849,7 +862,7 @@
       ],
       "exception": {
         "origin": "The Apache Software Foundation, Apache License version 2.0, January 2004.",
-        "licensing": "Copyright 2004 The Apache Software Foundation; verbatim copying and distribution are permitted, modification is not. It is the licence the packages are released under, not Magrathean-authored text.",
+        "licensing": "Apache License 2.0 text, kept verbatim as a release policy. It is the licence the packages are released under, not Magrathean-authored text.",
         "release_treatment": "Ship verbatim as the package licence. Never rewrite it or apply project copyright headers to it."
       }
     },
@@ -862,7 +875,7 @@
       ],
       "exception": {
         "origin": "Free Software Foundation, GNU Affero General Public License version 3, 19 November 2007.",
-        "licensing": "Copyright 2007 Free Software Foundation, Inc.; verbatim copying and distribution are permitted, modification is not.",
+        "licensing": "GNU Affero General Public License version 3 text. The file states: Copyright (C) 2007 Free Software Foundation, Inc.; everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.",
         "release_treatment": "Ship verbatim as the Edge package licence. Never rewrite it or apply project copyright headers to it."
       }
     },
@@ -875,7 +888,7 @@
       ],
       "exception": {
         "origin": "Bundled upstream licence of Tesla Fleet Telemetry v0.9.4, revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b (https://github.com/teslamotors/fleet-telemetry), as listed in edge/docs/legal/third-party-notices.md.",
-        "licensing": "Apache License 2.0, copyright 2004 The Apache Software Foundation; the upstream sidecar is Apache-2.0 and distributors must ship this text.",
+        "licensing": "Apache License 2.0 text, kept verbatim as a release policy; the upstream sidecar is Apache-2.0 and distributors must ship this text.",
         "release_treatment": "Ship verbatim with the sidecar, its patch and notices. Never rewrite it or apply project copyright headers to it."
       }
     },
