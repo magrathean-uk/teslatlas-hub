@@ -11,7 +11,7 @@ use crate::{
     protocol::SequenceRange,
 };
 
-fn history() -> SourceDbHistory {
+pub(super) fn history() -> SourceDbHistory {
     SourceDbHistory {
         cars: vec![
             SourceDbCar {

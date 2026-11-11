@@ -13,6 +13,11 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::runtime::lifecycle::{
+    ChargeDisplayAggregates, ChargeSessionKind, fold_charge_display_aggregates,
+    fold_charge_session_kind,
+};
+
 use crate::geo::{
     geofence_validation::GeofenceInactiveReason,
     location::{MAX_IMPORTED_GEOFENCE_ID, MAX_IMPORTED_GEOFENCE_RADIUS_METRES},
@@ -983,54 +988,38 @@ pub struct SourceDbProjection {
     pub report: ProjectionReport,
 }
 
-/// Order-independent aggregate for a process's staged samples. It keeps only
-/// the facts needed by the parent charge row, so a producer never needs an
-/// unbounded session vector merely to derive charge metadata.
+/// Per-session sample accumulator of a closed imported charging session.
+/// Fixed-size keyed state, independent of sample read order. Its charger
+/// fields equal the C2 fold in `(timestamp_ms, id)` order.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ChargeProjectionFacts {
-    is_dc: Option<bool>,
+    kind: ChargeSessionKind,
+    type_key: Option<(i64, i64)>,
     max_charger_power_kw: Option<f64>,
-    fast_charger_type: Option<String>,
-    first_sample: Option<(i64, i64)>,
-    last_sample: Option<(i64, i64)>,
-    first_energy: Option<((i64, i64), f64)>,
-    last_energy: Option<((i64, i64), f64)>,
-    last_battery_level: Option<((i64, i64), i64)>,
-    first_rated_range_km: Option<((i64, i64), f64)>,
-    last_rated_range_km: Option<((i64, i64), f64)>,
+    first_key: Option<(i64, i64)>,
+    last_key: Option<(i64, i64)>,
 }
 
 impl ChargeProjectionFacts {
     pub fn observe(&mut self, sample: &SourceDbCharge) {
-        let order = (sample.date_ms, sample.id);
-        self.first_sample = Some(
-            self.first_sample
-                .map_or(order, |current| current.min(order)),
-        );
-        self.last_sample = Some(self.last_sample.map_or(order, |current| current.max(order)));
-        if let Some(value) = sample.fast_charger_present {
-            self.is_dc = Some(self.is_dc.unwrap_or(false).max(value));
+        let key = (sample.date_ms, sample.id);
+        let projected = project_charge_sample(sample);
+        // C2 supplies both the evidence combination and the informative,
+        // trimmed type. Only selection of the earliest type is keyed here.
+        let mut candidate = None;
+        fold_charge_session_kind(&mut self.kind.is_dc, &mut candidate, &projected);
+        if candidate.is_some() && self.type_key.is_none_or(|current| key < current) {
+            self.type_key = Some(key);
+            self.kind.fast_charger_type = candidate;
         }
-        if let Some(value) = sample.charger_power_kw {
-            self.max_charger_power_kw = Some(
-                self.max_charger_power_kw
-                    .map_or(value, |current| current.max(value)),
-            );
-        }
-        if sample.charger_power_kw.is_some_and(|value| value > 0.0)
-            && sample.fast_charger_type.is_some()
-        {
-            self.fast_charger_type = sample.fast_charger_type.clone();
-        }
-        update_first(
-            &mut self.first_energy,
-            order,
-            sample.charge_energy_added_kwh,
-        );
-        update_last(&mut self.last_energy, order, sample.charge_energy_added_kwh);
-        update_last(&mut self.last_battery_level, order, sample.battery_level);
-        update_first(&mut self.first_rated_range_km, order, sample.rated_range_km);
-        update_last(&mut self.last_rated_range_km, order, sample.rated_range_km);
+        let mut display = ChargeDisplayAggregates {
+            max_charger_power_kw: self.max_charger_power_kw,
+            ..Default::default()
+        };
+        fold_charge_display_aggregates(&mut display, &projected);
+        self.max_charger_power_kw = display.max_charger_power_kw;
+        self.first_key = Some(self.first_key.map_or(key, |current| current.min(key)));
+        self.last_key = Some(self.last_key.map_or(key, |current| current.max(key)));
     }
 
     pub fn from_samples(samples: &[&SourceDbCharge]) -> Self {
@@ -1039,13 +1028,6 @@ impl ChargeProjectionFacts {
             facts.observe(sample);
         }
         facts
-    }
-
-    fn energy_added(&self) -> Option<f64> {
-        let first = self.first_energy?.1;
-        let last = self.last_energy?.1;
-        let energy_added = last - first;
-        (energy_added.is_finite() && energy_added >= 0.0).then_some(energy_added)
     }
 }
 
@@ -1219,7 +1201,7 @@ pub fn project_position(
     }))
 }
 
-/// Map one charge session after callers have bounded and ordered its samples.
+/// Map one charge session after callers have bounded and folded its samples.
 /// A fragment producer may scan sample pages twice: once for this aggregate,
 /// then again to emit independently resumable sample fragments.
 pub fn project_charge(
@@ -1259,29 +1241,17 @@ pub fn project_charge(
         geofence,
         "charging_process.geofence_id",
     )?;
-    let charge_energy_added = process
-        .charge_energy_added
-        .or_else(|| sample_facts.energy_added());
-    let end_battery_level = process
-        .end_battery_level
-        .or_else(|| sample_facts.last_battery_level.map(|(_, value)| value));
-    let start_rated_range_km = process
-        .start_rated_range_km
-        .or_else(|| sample_facts.first_rated_range_km.map(|(_, value)| value));
-    let end_rated_range_km = process
-        .end_rated_range_km
-        .or_else(|| sample_facts.last_rated_range_km.map(|(_, value)| value));
+    let charge_energy_added = process.charge_energy_added;
+    let end_battery_level = process.end_battery_level;
+    let start_rated_range_km = process.start_rated_range_km;
+    let end_rated_range_km = process.end_rated_range_km;
     let start_latitude = position.map(|position| position.latitude);
     let start_longitude = position.map(|position| position.longitude);
-    let start_date_ms = sample_facts
-        .first_sample
-        .map_or(process.start_date_ms, |(date_ms, _)| {
-            process.start_date_ms.min(date_ms)
-        });
-    let end_date_ms = process.end_date_ms.map(|end_date_ms| {
-        sample_facts
-            .last_sample
-            .map_or(end_date_ms, |(date_ms, _)| end_date_ms.max(date_ms))
+    let start_date_ms = sample_facts.first_key.map_or(process.start_date_ms, |key| {
+        process.start_date_ms.min(key.0)
+    });
+    let end_date_ms = process.end_date_ms.map(|end| {
+        sample_facts.last_key.map_or(end, |key| end.max(key.0))
     });
     Ok(ProjectionCharge {
         id: process.id,
@@ -1293,7 +1263,7 @@ pub fn project_charge(
         start_ideal_range_km: process.start_ideal_range_km,
         end_ideal_range_km: process.end_ideal_range_km,
         cost: process.cost,
-        fast_charger_type: sample_facts.fast_charger_type.clone(),
+        fast_charger_type: sample_facts.kind.fast_charger_type.clone(),
         billing_type: geofence.and_then(|value| value.billing_type),
         cost_per_unit: geofence.and_then(|value| value.cost_per_unit),
         session_fee: geofence.and_then(|value| value.session_fee),
@@ -1305,7 +1275,7 @@ pub fn project_charge(
         address: address_value,
         location_name,
         geofence: geofence_value,
-        is_dc: sample_facts.is_dc,
+        is_dc: sample_facts.kind.is_dc,
         charge_rate_km_per_hour: None,
         max_charger_power_kw: sample_facts.max_charger_power_kw,
         outside_temp_avg: process.outside_temp_avg,
@@ -1488,11 +1458,10 @@ pub fn project_vehicle(
         .filter(|process| process.car_id == selected_car_id)
     {
         charge_ids.insert(process.id);
-        let mut samples = samples_by_process
+        let samples = samples_by_process
             .get(&process.id)
             .cloned()
             .unwrap_or_default();
-        samples.sort_unstable_by_key(|sample| (sample.date_ms, sample.id));
         let position = related_position_from_map(
             process.position_id,
             &positions_by_id,
@@ -1574,8 +1543,9 @@ fn normalise_efficiency(value: Option<f64>) -> Result<Option<f64>, SourceDbProje
             field: "car.efficiency",
         });
     }
-    // Source database stores this as kWh/km. Its own UI log multiplies by 1000 for
-    // Wh/km; the typed Teslatlas table is explicitly Wh/km.
+    // The source column holds kWh per km; the Hub car table holds Wh per km.
+    // A positive value below 1 is read as kWh per km and scaled; a larger
+    // value is read as already in Wh per km.
     Ok(Some(if value > 0.0 && value < 1.0 {
         value * 1_000.0
     } else {
@@ -1716,22 +1686,6 @@ fn require_selected_car(
     Ok(())
 }
 
-fn update_first<T: Copy>(
-    target: &mut Option<((i64, i64), T)>,
-    order: (i64, i64),
-    value: Option<T>,
-) {
-    if let Some(value) = value.filter(|_| target.is_none_or(|(current, _)| order < current)) {
-        *target = Some((order, value));
-    }
-}
-
-fn update_last<T: Copy>(target: &mut Option<((i64, i64), T)>, order: (i64, i64), value: Option<T>) {
-    if let Some(value) = value.filter(|_| target.is_none_or(|(current, _)| order > current)) {
-        *target = Some((order, value));
-    }
-}
-
 fn require_unique_ids(
     values: impl IntoIterator<Item = i64>,
     entity: &'static str,
@@ -1779,6 +1733,10 @@ pub enum SourceDbProjectionError {
 #[cfg(test)]
 #[path = "projection/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "projection/charger_type_tests.rs"]
+mod charger_type_tests;
 
 #[cfg(test)]
 mod n1_src_import_source_db_projection_rs_display_tests {

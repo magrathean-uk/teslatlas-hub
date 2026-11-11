@@ -768,7 +768,7 @@ fn project_drive_from_stage(
     .map_err(Into::into)
 }
 
-fn project_charge_from_stage(
+pub(super) fn project_charge_from_stage(
     stage: &SourceDbStage,
     process: &SourceDbChargingProcess,
     selected_car_id: i64,

@@ -7,19 +7,17 @@
 // The live observer and the seed of an imported open session fold the same
 // samples in the same order through these one-sample steps, so an open session
 // carries the same kind, type and aggregates whether the Hub collected it or
-// seeded it. From G2-4 bulk M5 the closed-import projection folds kind and type
-// through the same steps and takes `max_charger_power_kw` from the aggregate
-// step; it copies the supplied aggregate columns as they stand (see the caller
-// contract below). Each fold holds a fixed-size state, so a long session is
-// folded page by page, in `(timestamp_ms, id)` order, without holding its
-// samples (C2 R81 (b); the import streams and commits per block, Storage
-// 2026-10-10).
+// seeded it. The closed-import projection calls the same steps for kind,
+// informative type and peak power, using a fixed-size keyed accumulator to
+// obtain the ordered result from any read order. It copies supplied process
+// columns as they stand (see the caller contract below).
 //
 // Caller contract for the closed-import projection (G2-4 bulk M5):
-// 1. fold each closed imported session's samples in `(timestamp_ms, id)` order,
-//    page by page, through [`fold_charge_session_kind`] (or call
-//    [`charge_session_kind`] on an ordered iterator) and write the result to
-//    the row's `is_dc` and `fast_charger_type`; read no kind or type from the
+// 1. the importer feeds a keyed, order-independent fold, rather than page
+//    order, through the shared sample steps. Its result equals
+//    [`charge_session_kind`] on samples ordered by `(timestamp_ms, id)`:
+//    combine kind evidence and retain the least keyed informative type.
+//    Write these to `is_dc` and `fast_charger_type`; read neither from the
 //    imported process row (C2 R81 (c));
 // 2. copy the process row's supplied aggregate columns as they stand, a null
 //    included, and take `max_charger_power_kw`, which the source row does not
@@ -62,10 +60,10 @@ pub(crate) fn fold_charge_session_kind(
 /// asserts that each sample's `(timestamp_ms, id)` is greater than the
 /// previous one's.
 ///
-/// Called by the import projection (G2-4 bulk M5) for each closed imported
-/// session, which reads no kind or type from the imported process row (C2 R81
-/// (c)); the seed reaches the same step through [`observe_charge_sample`].
-#[allow(dead_code)] // C2 R81 (c): the closed-import caller is G2-4 bulk M5; tests call it now.
+/// The importer's keyed fold calls the shared one-sample step; this ordered
+/// form is its equivalence oracle. The seed reaches the same step through
+/// [`observe_charge_sample`].
+#[allow(dead_code)] // Importer calls the shared step; tests call this ordered oracle.
 pub(crate) fn charge_session_kind<'a>(
     samples_in_sample_order: impl IntoIterator<Item = &'a ProjectionChargeSample>,
 ) -> ChargeSessionKind {
@@ -163,9 +161,9 @@ pub(crate) fn fold_charge_display_aggregates(
 /// [`ChargeDisplayAggregates::default`]. Pure; it does not sort, so a caller
 /// feeds it in `(timestamp_ms, id)` order, whole or page by page through
 /// [`fold_charge_display_aggregates`]. A closed import copies the supplied
-/// process columns as they stand and takes `max_charger_power_kw` from here
-/// (G2-4 bulk M5, carried item M5-2).
-#[allow(dead_code)] // C2 R81 (e): the closed-import caller is G2-4 bulk M5; tests call it now.
+/// process columns as they stand and calls the shared aggregate step for
+/// `max_charger_power_kw` in its keyed, order-independent fold.
+#[allow(dead_code)] // Importer calls the shared step; tests call this ordered oracle.
 pub(crate) fn charge_display_aggregates<'a>(
     samples_in_sample_order: impl IntoIterator<Item = &'a ProjectionChargeSample>,
 ) -> ChargeDisplayAggregates {

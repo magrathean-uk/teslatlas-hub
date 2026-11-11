@@ -2029,6 +2029,17 @@ async fn write_positions(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// One decoded sample's per-process step of the direct copy stream.
+pub(super) fn observe_charge_for_process(
+    sample: &crate::source_db_projection::SourceDbCharge,
+    facts: &mut HashMap<i64, ChargeProjectionFacts>,
+) {
+    facts
+        .entry(sample.charging_process_id)
+        .or_default()
+        .observe(sample);
+}
+
 async fn write_charges(
     client: &Client,
     selected_car_id: i64,
@@ -2106,10 +2117,7 @@ async fn write_charges(
                 maximum_retained_processes,
             )?;
         }
-        facts
-            .entry(sample.charging_process_id)
-            .or_default()
-            .observe(&sample);
+        observe_charge_for_process(&sample, &mut facts);
         if !sample_counts.contains_key(&sample.charging_process_id) {
             ensure_direct_retained_table_rows(
                 "charge_sample_counts",
