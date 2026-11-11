@@ -8,3 +8,4 @@ pub mod current_state;
 pub mod fleet_telemetry;
 pub mod source_db_current;
 pub mod tesla_stream;
+pub mod window;
