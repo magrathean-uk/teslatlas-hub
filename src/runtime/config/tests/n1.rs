@@ -80,7 +80,7 @@ fn deprecated_alias_import_table_loads_as_the_current_table() {
 #[test]
 fn deprecated_alias_import_table_accepts_dotted_keys() {
     let text = format!(
-        "data_dir = \"/fictional/hub\"\nbind = \"127.0.0.1:21447\"\n{EARLIER_TABLE}.source_key = \"home-source\"\n"
+        "data_dir = \"/fictional/hub\"\nbind = \"127.0.0.1:21447\"\n{EARLIER_TABLE}.source_url = \"postgresql://reader@source.example/sourcedb\"\n{EARLIER_TABLE}.source_key = \"home-source\"\n"
     );
     let (config, _) = HubConfig::from_exact_bytes(text.as_bytes()).unwrap();
     assert_eq!(
