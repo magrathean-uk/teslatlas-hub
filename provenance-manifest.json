@@ -706,6 +706,38 @@
         "fixtures/g2-4/m1/build.py",
         "fixtures/g2-4/m1/builder.rs"
       ]
+    },
+    {
+      "id": "home-assistant-imported",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Teslatlas Home Assistant integration imported with its full history on 2026-11-11 (Apache-2.0, own LICENSE and NOTICE). This treatment does not prove chain of title.",
+      "globs": [
+        "home-assistant/**"
+      ]
+    },
+    {
+      "id": "edge-imported",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Teslatlas Edge package imported with its full history on 2026-11-11 (AGPL-3.0-only, own LICENSE and NOTICE). This treatment does not prove chain of title.",
+      "globs": [
+        "edge/**"
+      ]
+    },
+    {
+      "id": "sdk-swift-imported",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Teslatlas Swift SDK package imported with its full history on 2026-11-11 (Apache-2.0, own LICENSE and NOTICE). This treatment does not prove chain of title.",
+      "globs": [
+        "sdk-swift/**"
+      ]
+    },
+    {
+      "id": "viewer-imported",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Teslatlas Viewer package imported with its full history on 2026-11-11 (Apache-2.0, own LICENSE and NOTICE). This treatment does not prove chain of title.",
+      "globs": [
+        "viewer/**"
+      ]
     }
   ]
 }
