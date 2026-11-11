@@ -431,12 +431,12 @@ fn source_credential_disabled_vault_refuses_source_and_unknown_origin() {
     assert!(matches!(vault.load(OWNER), Err(CredentialStoreError::SourceCredentialDisabled(OWNER))), "source pair refused");
     drop(vault);
     tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime").block_on(crate::credentials::assert_external_refresh_owner_contract());
-    let root = admitted_migration_fixture(false, None, false, 0);
-    let vault = open_fake_migration(root.path());
-    let presence = vault.credential_pair_presence(OWNER).expect("presence").expect("migrated row");
-    assert!(presence.origin.is_none(), "CT68.NULL migrated origin fixture");
-    assert!(matches!(vault.load(OWNER), Err(CredentialStoreError::UnknownOrigin(OWNER))), "unknown origin refused");
-    assert_eq!(vault.load(OWNER).unwrap_err().code(), "unknown_origin");
+    // A pair with no recorded origin (an Owner row migrated by an older Hub)
+    // is refused by the same header check; the vault no longer converts
+    // pre-upgrade rows, so the header is checked directly.
+    let unknown = admit_stored_origin(OWNER, None, RefreshOwner::Hub).expect_err("unknown origin refused");
+    assert!(matches!(unknown, CredentialStoreError::UnknownOrigin(OWNER)), "unknown origin refused");
+    assert_eq!(unknown.code(), "unknown_origin");
 }
 
 #[test]

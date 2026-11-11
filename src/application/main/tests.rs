@@ -351,6 +351,7 @@ async fn source_credential_disabled_cli_inputs_are_refused_before_any_read() {
     fs::set_permissions(&sealed, fs::Permissions::from_mode(0o000)).expect("seal");
     let data_dir = temporary.path().join("data");
     fs::create_dir(&data_dir).expect("data directory");
+    fs::set_permissions(&data_dir, fs::Permissions::from_mode(0o700)).expect("private data directory");
     let admission = super::AdmittedUserHub::admit(&data_dir).expect("admission");
     let config_path = temporary.path().join("absent-config.toml");
     for (key, access, refresh) in [(Some(&secret), None, None), (None, Some(&secret), Some(&secret)), (None, Some(&secret), None)] {
@@ -2093,7 +2094,10 @@ fn source_credential_disabled_setup_and_migrate_token_inputs_change_nothing() {
     assert!(refused.to_string().starts_with("source_credential_disabled: "));
     let after = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("after");
     assert_eq!(after, before, "no stored pair changed");
-    assert!(credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").expect("Fleet pair retained"));
+    // The retained Fleet row is the supplied row an older Hub could hold: it
+    // is kept, and refused at load (M02-T02 round 3).
+    let refused = credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").expect_err("Fleet pair refused at load");
+    assert!(refused.to_string().contains("Source credentials are disabled") || format!("{refused:?}").contains("source_credential_disabled"), "{refused:?}");
 }
 
 #[cfg(target_os = "linux")]
