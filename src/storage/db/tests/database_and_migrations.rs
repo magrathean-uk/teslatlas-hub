@@ -283,41 +283,25 @@ fn inventory_counts_physical_pack_and_staging_bytes_once() {
     assert_eq!(inventory.physical_pack_bytes, 8);
 }
 
+// M02-T02: a source-token import is refused before parsing and stores nothing.
 #[test]
-fn source_db_token_import_loads_and_reopens_as_one_row() {
+fn source_db_token_import_source_credential_disabled_stores_no_row() {
     use crate::auth::{credential_sign_in as entry, credential_vault::fixtures};
     let root = crate::private_tempdir().expect("entry root");
     let store = HubStore::initialize(root.path()).expect("store");
     let vault = fixtures::open_fixture_vault(store.clone(), root.path());
-    let bridge = crate::CredentialVaultEntry::for_test(vault);
-    let prepared = entry::decode_owner_entry(br#"{"accessToken":" \taccess-0001\r\n","refreshToken":"refresh-0001\n"}"#, entry::OwnerEntryKind::SourceToken, false).expect("source entry");
-    drop(entry::persist_owner_entry(&bridge, prepared, false).expect("import barrier"));
-    drop(bridge);
-    let store = fixtures::restart_fixture_context(store, root.path()).expect("new process");
-    let vault = fixtures::open_fixture_vault(store.clone(), root.path());
-    let pair = vault.load(crate::auth::credential_envelope::CredentialSlot::OwnerApi).expect("load").expect("one pair");
-    assert_eq!((pair.access.as_str(), pair.refresh.as_str()), ("access-0001", "refresh-0001"));
-    assert_eq!((pair.origin.unwrap().as_str(), pair.refresh_owner.as_str(), pair.expires_at, pair.next_refresh_at), ("source_token", "external", 0, 0));
-    assert_eq!(store.open().expect("observer").query_row::<i64, _, _>("SELECT count(*) FROM credential_pairs", [], |row| row.get(0)).expect("pair count"), 1);
+    let refused = entry::decode_owner_entry(br#"{"accessToken":" \taccess-0001\r\n","refreshToken":"refresh-0001\n"}"#, entry::OwnerEntryKind::SourceToken, false).unwrap_err();
+    assert!(matches!(&refused, entry::OwnerInputError::Credential(error) if error.code() == "source_credential_disabled"), "{refused}");
+    assert!(vault.load(crate::auth::credential_envelope::CredentialSlot::OwnerApi).expect("load").is_none());
+    assert_eq!(store.open().expect("observer").query_row::<i64, _, _>("SELECT count(*) FROM credential_pairs", [], |row| row.get(0)).expect("pair count"), 0);
 }
 
 #[test]
-fn source_db_legacy_token_store_zeroizes_ciphertext() {
-    use crate::auth::{credential_sign_in as entry, credential_vault::fixtures};
+fn source_db_own_login_store_seals_ciphertext() {
+    use crate::auth::credential_vault::fixtures;
     let root = crate::private_tempdir().expect("entry root");
+    fixtures::seed_legacy_supplied_pair(root.path(), "access-0001", "refresh-0001", None);
     let store = HubStore::initialize(root.path()).expect("store");
-    let vault = fixtures::open_fixture_vault(store.clone(), root.path());
-    let bridge = crate::CredentialVaultEntry::for_test(vault);
-    let drops = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let observe = std::sync::Arc::clone(&drops);
-    entry::observe_sign_in_secret_drops(move |event| observe.lock().expect("drop events").push(event), || {
-        let prepared = entry::decode_owner_entry(br#"{"accessToken":"access-0001","refreshToken":"refresh-0001"}"#, entry::OwnerEntryKind::SourceToken, false).expect("entry");
-        assert!(!format!("{prepared:?}").contains("access-0001"));
-        drop(entry::persist_owner_entry(&bridge, prepared, false).expect("import barrier"));
-    });
-    let drops = drops.lock().expect("drop events");
-    assert_eq!(drops.iter().filter(|event| event.kind == "wire_secret" && event.before > 0).count(), 2);
-    assert!(drops.iter().all(|event| event.zeroised));
     let connection = store.open().expect("observer");
     let (access, refresh): (Vec<u8>, Vec<u8>) = connection.query_row("SELECT access_envelope,refresh_envelope FROM credential_pairs WHERE slot='owner_api'", [], |row| Ok((row.get(0)?,row.get(1)?))).expect("sealed pair");
     for bytes in [&access, &refresh] {
@@ -327,24 +311,20 @@ fn source_db_legacy_token_store_zeroizes_ciphertext() {
 }
 
 #[test]
-fn source_db_token_replacement_is_atomic_and_refresh_schedule_is_strict() {
-    use crate::auth::{credential_sign_in as entry, credential_vault::fixtures};
+fn source_db_own_login_replacement_is_atomic_and_refresh_schedule_is_strict() {
+    use crate::auth::credential_vault::fixtures;
     let root = crate::private_tempdir().expect("entry root");
     let store = HubStore::initialize(root.path()).expect("store");
     let vault = fixtures::open_fixture_vault(store.clone(), root.path());
-    let bridge = crate::CredentialVaultEntry::for_test(std::sync::Arc::clone(&vault));
-    let prepare = |access: &str, refresh: &str, replace| entry::prepare_owner_entry(entry::OwnerEntryKind::SourceToken,
-        zeroize::Zeroizing::new(access.to_owned()), Some(zeroize::Zeroizing::new(refresh.to_owned())), replace).expect("entry");
-    drop(entry::persist_owner_entry(&bridge, prepare("access-0001", "refresh-0001", false), false).expect("first import"));
+    fixtures::replace_legacy_supplied_pair(&store, root.path(), "access-0001", "refresh-0001", None).expect("first pair");
     let before = vault.load(crate::auth::credential_envelope::CredentialSlot::OwnerApi).expect("load").expect("pair");
-    assert_eq!(entry::persist_owner_entry(&bridge, prepare("access-0002", "refresh-0002", false), false).unwrap_err().code(), "slot_occupied");
     let observer = store.open().expect("observer");
     observer.execute_batch("CREATE TRIGGER fixture_pair_refusal BEFORE INSERT ON credential_pairs BEGIN SELECT RAISE(ABORT,'fixture pair fault'); END;").expect("fault trigger");
-    assert!(entry::persist_owner_entry(&bridge, prepare("access-0002", "refresh-0002", true), false).is_err());
+    assert!(fixtures::replace_legacy_supplied_pair(&store, root.path(), "access-0002", "refresh-0002", None).is_err());
     let after = vault.load(crate::auth::credential_envelope::CredentialSlot::OwnerApi).expect("load after refusal").expect("retained pair");
     assert_eq!((after.generation,after.access.as_str(),after.refresh.as_str(),after.expires_at,after.next_refresh_at), (before.generation,"access-0001","refresh-0001",0,0));
     observer.execute_batch("DROP TRIGGER fixture_pair_refusal").expect("end fault");
-    drop(entry::persist_owner_entry(&bridge, prepare("access-0002", "refresh-0002", true), false).expect("explicit replacement"));
+    fixtures::replace_legacy_supplied_pair(&store, root.path(), "access-0002", "refresh-0002", None).expect("explicit replacement");
     let after = vault.load(crate::auth::credential_envelope::CredentialSlot::OwnerApi).expect("replacement").expect("one pair");
     assert_eq!((after.access.as_str(),after.refresh.as_str(),after.expires_at,after.next_refresh_at), ("access-0002","refresh-0002",0,0));
     assert_ne!(after.generation,before.generation);

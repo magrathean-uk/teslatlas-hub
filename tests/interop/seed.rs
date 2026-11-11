@@ -471,13 +471,7 @@ fn prepare_with_vehicle_identities(
     // collection disabled. These fixed test strings have no provider authority.
     if !matches!(scenario, FixtureScenario::PhysicalV3Public513) {
         use teslatlas_hub::auth::credential_sign_in as credentials;
-        #[cfg(debug_assertions)]
-        let scope = credentials::SignInScope::open_for_test(root, true)?;
-        #[cfg(not(debug_assertions))]
-        let scope = credentials::SignInScope::open(root)?;
-        let supplied = credentials::decode_owner_entry(br#"{"accessToken":"access-0001","refreshToken":"refresh-0001"}"#, credentials::OwnerEntryKind::Provider, false)?;
-        drop(credentials::persist_owner_entry(scope.entry(), supplied, false)?);
-        scope.release()?;
+        credentials::seed_owner_pair_for_test(root, "access-0001", "refresh-0001", None)?;
         if !credentials::record_provider_admission_for_test(root)? { return Err("fixture_credentials_not_admitted".into()); }
     }
     let now = std::time::SystemTime::now()

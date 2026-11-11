@@ -424,6 +424,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     ) {
         return run_sign_in_command(&config_path, matches!(&cli.command, Command::SetupFleet { .. })).await;
     }
+    // Source credentials are disabled (M02-T02): the raw-token forms of
+    // `setup` (token files or standard input) and `setup-fleet` are refused
+    // here, before the configuration is read, the data directory is admitted,
+    // the database is initialised or any file or standard input is read.
+    #[cfg(unix)]
+    if matches!(
+        &cli.command,
+        Command::Setup { sign_in: false, .. } | Command::SetupFleet { sign_in: false, .. }
+    ) {
+        return Err(teslatlas_hub::auth::credential_sign_in::source_credential_disabled().into());
+    }
 
     if let Command::Healthcheck {
         ca_file,

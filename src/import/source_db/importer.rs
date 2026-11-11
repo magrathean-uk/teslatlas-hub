@@ -61,7 +61,7 @@ use crate::{
     },
     source_db_projection::{SourceDbOpenSession, SourceDbWatermark},
     source_db_reader::{
-        LegacyOwnerTokenCiphertexts, SourceDbReadLimits, read_open_session, read_selected_car,
+        SourceDbReadLimits, read_open_session, read_selected_car,
     },
     source_db_stage::{SourceDbStage, SourceDbStageFormat, SourceDbStageTable},
     updates_delivery::{
@@ -530,7 +530,6 @@ async fn capture_direct_import_snapshot(
     vehicle_id: Uuid,
     successor: bool,
     legacy_bridge: bool,
-    capture_legacy_token: bool,
     capture_physical: bool,
     progress: SourceDbMigrationProgressReporter,
 ) -> Result<DirectSnapshotCapture, SourceDbDirectError> {
@@ -548,7 +547,6 @@ async fn capture_direct_import_snapshot(
             binding,
             capture_snapshot_id,
             capture_range,
-            capture_legacy_token,
             physical_imports_dir,
             progress,
             |state_limits| {
@@ -589,7 +587,6 @@ async fn capture_direct_import_snapshot(
             binding,
             capture_snapshot_id,
             capture_range,
-            capture_legacy_token,
             physical_imports_dir,
             progress,
             capture_factory,
@@ -605,7 +602,6 @@ async fn capture_direct_import_snapshot(
             binding,
             capture_snapshot_id,
             capture_range,
-            capture_legacy_token,
             physical_imports_dir,
             progress,
             capture_factory,
@@ -642,7 +638,6 @@ pub async fn import_from_postgres(
         request,
         limits,
         false,
-        false,
         SourceDbMigrationProgressReporter::default(),
     )
     .await?
@@ -668,7 +663,6 @@ pub async fn import_selected_from_postgres_with_schema_22(
         cursor_key,
         request,
         limits,
-        false,
         true,
         SourceDbMigrationProgressReporter::default(),
     )
@@ -687,7 +681,7 @@ pub async fn import_selected_from_postgres_with_schema_22_and_progress(
     progress: SourceDbMigrationProgressReporter,
 ) -> Result<SourceDbSelectedImportReport, SourceDbImportError> {
     let captured = import_from_postgres_with_updates_capture(
-        store, source, password, cursor_key, request, limits, false, true, progress,
+        store, source, password, cursor_key, request, limits, true, progress,
     )
     .await?;
     finish_selected_schema_22_publication(store, cursor_key, captured)
@@ -712,7 +706,6 @@ pub async fn import_selected_history_snapshot_from_postgres_with_schema_22_and_p
         cursor_key,
         request,
         limits,
-        false,
         true,
         progress,
         CaptureCutoverPolicy::HistorySnapshot,
@@ -721,65 +714,11 @@ pub async fn import_selected_history_snapshot_from_postgres_with_schema_22_and_p
     finish_selected_schema_22_publication(store, cursor_key, captured)
 }
 
-/// As [`import_selected_from_postgres_with_schema_22`], while retaining the
-/// source's encrypted legacy token pair from the exact exported snapshot.
-/// The ciphertext stays opaque here and is returned only to the migration CLI.
-pub async fn import_selected_from_postgres_with_schema_22_and_legacy_token(
-    store: &HubStore,
-    source: &ReadOnlySource,
-    password: &SourceDbPassword,
-    cursor_key: &CursorKey,
-    request: &SourceDbImportRequest,
-    limits: SourceDbReadLimits,
-) -> Result<(SourceDbSelectedImportReport, LegacyOwnerTokenCiphertexts), SourceDbImportError> {
-    let mut captured = import_from_postgres_with_updates_capture(
-        store,
-        source,
-        password,
-        cursor_key,
-        request,
-        limits,
-        true,
-        true,
-        SourceDbMigrationProgressReporter::default(),
-    )
-    .await?;
-    let legacy_tokens = captured
-        .legacy_tokens
-        .take()
-        .ok_or(SourceDbImportError::LegacyTokenCaptureMissing)?;
-    let report = finish_selected_schema_22_publication(store, cursor_key, captured)?;
-    Ok((report, legacy_tokens))
-}
-
-/// Token-retaining selected-car import with optional machine-readable progress.
-pub async fn import_selected_from_postgres_with_schema_22_and_legacy_token_and_progress(
-    store: &HubStore,
-    source: &ReadOnlySource,
-    password: &SourceDbPassword,
-    cursor_key: &CursorKey,
-    request: &SourceDbImportRequest,
-    limits: SourceDbReadLimits,
-    progress: SourceDbMigrationProgressReporter,
-) -> Result<(SourceDbSelectedImportReport, LegacyOwnerTokenCiphertexts), SourceDbImportError> {
-    let mut captured = import_from_postgres_with_updates_capture(
-        store, source, password, cursor_key, request, limits, true, true, progress,
-    )
-    .await?;
-    let legacy_tokens = captured
-        .legacy_tokens
-        .take()
-        .ok_or(SourceDbImportError::LegacyTokenCaptureMissing)?;
-    let report = finish_selected_schema_22_publication(store, cursor_key, captured)?;
-    Ok((report, legacy_tokens))
-}
-
 #[derive(Debug)]
 struct CapturedSourceDbImport {
     report: SourceDbImportReport,
     binding: ProjectionBinding,
     updates_v2_2: DirectUpdatesSourceV2_2,
-    legacy_tokens: Option<LegacyOwnerTokenCiphertexts>,
     atomic_schema_22: Option<ProductionUpdatesPublication>,
     physical_stage: Option<crate::source_db_stage::OwnedSourceDbStage>,
     publication_gate: PublicationGate,
@@ -801,7 +740,6 @@ fn finish_selected_schema_22_publication(
         report,
         binding,
         updates_v2_2,
-        legacy_tokens: _,
         atomic_schema_22,
         physical_stage,
         publication_gate,
@@ -869,7 +807,6 @@ async fn import_from_postgres_with_updates_capture(
     cursor_key: &CursorKey,
     request: &SourceDbImportRequest,
     limits: SourceDbReadLimits,
-    capture_legacy_token: bool,
     prepare_schema_22: bool,
     progress: SourceDbMigrationProgressReporter,
 ) -> Result<CapturedSourceDbImport, SourceDbImportError> {
@@ -880,7 +817,6 @@ async fn import_from_postgres_with_updates_capture(
         cursor_key,
         request,
         limits,
-        capture_legacy_token,
         prepare_schema_22,
         progress,
         CaptureCutoverPolicy::RequireSettled,
@@ -896,19 +832,14 @@ async fn import_from_postgres_with_updates_capture_policy(
     cursor_key: &CursorKey,
     request: &SourceDbImportRequest,
     limits: SourceDbReadLimits,
-    capture_legacy_token: bool,
     prepare_schema_22: bool,
     progress: SourceDbMigrationProgressReporter,
     cutover_policy: CaptureCutoverPolicy,
 ) -> Result<CapturedSourceDbImport, SourceDbImportError> {
-    if capture_legacy_token && matches!(cutover_policy, CaptureCutoverPolicy::HistorySnapshot) {
-        return Err(SourceDbImportError::CutoverUnsettled);
-    }
     tracing::info!(
         host = source.host(),
         port = source.port(),
         database = source.database_name(),
-        capture_legacy_token,
         prepare_schema_22,
         "Source database import opening a read-only PostgreSQL snapshot; source rows are never deleted"
     );
@@ -1011,7 +942,6 @@ async fn import_from_postgres_with_updates_capture_policy(
         vehicle.vehicle_id,
         successor,
         legacy_bridge,
-        capture_legacy_token,
         prepare_schema_22,
         progress,
     )
@@ -1058,7 +988,6 @@ async fn import_from_postgres_with_updates_capture_policy(
     store.stage_import_generation_session(run_id, &open_session)?;
     let mut direct = first_capture.packs;
     let updates_v2_2 = first_capture.updates_v2_2;
-    let legacy_tokens = first_capture.legacy_tokens;
     let physical_stage = first_capture.physical_stage;
     let cutover = match settle_captured_session(open_session, cutover_policy, || {
         read_open_session(source, password, selected_car_id, limits)
@@ -1115,7 +1044,6 @@ async fn import_from_postgres_with_updates_capture_policy(
             },
             binding: binding.clone(),
             updates_v2_2,
-            legacy_tokens,
             atomic_schema_22: None,
             physical_stage,
             publication_gate,
@@ -1150,7 +1078,6 @@ async fn import_from_postgres_with_updates_capture_policy(
                 },
                 binding: binding.clone(),
                 updates_v2_2,
-                legacy_tokens,
                 atomic_schema_22: None,
                 physical_stage,
                 publication_gate,
@@ -1172,7 +1099,6 @@ async fn import_from_postgres_with_updates_capture_policy(
                 },
                 binding: binding.clone(),
                 updates_v2_2,
-                legacy_tokens,
                 atomic_schema_22: None,
                 physical_stage,
                 publication_gate,
@@ -1332,7 +1258,6 @@ async fn import_from_postgres_with_updates_capture_policy(
                 },
                 binding: binding.clone(),
                 updates_v2_2,
-                legacy_tokens,
                 atomic_schema_22: None,
                 physical_stage,
                 publication_gate,
@@ -1457,7 +1382,6 @@ async fn import_from_postgres_with_updates_capture_policy(
         },
         binding,
         updates_v2_2,
-        legacy_tokens,
         atomic_schema_22: prepared_schema_22.map(|prepared| prepared.publication),
         physical_stage,
         publication_gate,
@@ -2704,8 +2628,6 @@ pub enum SourceDbImportError {
     SelectedCarMissing,
     #[error("direct source database capture did not retain its required projection state")]
     ProjectionStateCaptureMissing,
-    #[error("direct source database capture did not retain the requested legacy token pair")]
-    LegacyTokenCaptureMissing,
     #[error(
         "existing source database direct-import base cannot be proved unchanged; rebase_required"
     )]
@@ -2796,7 +2718,6 @@ mod n1_src_import_source_db_importer_rs_display_tests {
                 SourceDbImportError::InvalidSelectedCarId => (),
                 SourceDbImportError::SelectedCarMissing => (),
                 SourceDbImportError::ProjectionStateCaptureMissing => (),
-                SourceDbImportError::LegacyTokenCaptureMissing => (),
                 SourceDbImportError::LegacyDirectImportRebaseRequired => (),
                 SourceDbImportError::DirectDeltaBatchOverflow => (),
                 SourceDbImportError::DirectDeltaBatchLimitExceeded { .. } => (),
@@ -2828,7 +2749,6 @@ mod n1_src_import_source_db_importer_rs_display_tests {
         check_source_db_import_error(SourceDbImportError::InvalidSelectedCarId);
         check_source_db_import_error(SourceDbImportError::SelectedCarMissing);
         check_source_db_import_error(SourceDbImportError::ProjectionStateCaptureMissing);
-        check_source_db_import_error(SourceDbImportError::LegacyTokenCaptureMissing);
         check_source_db_import_error(SourceDbImportError::LegacyDirectImportRebaseRequired);
         check_source_db_import_error(SourceDbImportError::DirectDeltaBatchOverflow);
         check_source_db_import_error(SourceDbImportError::DirectDeltaBatchLimitExceeded {

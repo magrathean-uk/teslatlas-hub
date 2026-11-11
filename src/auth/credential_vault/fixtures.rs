@@ -40,7 +40,7 @@ pub(in crate::auth) fn power_observer(observer: Option<Box<dyn FnMut(&str, Optio
 pub(crate) struct FixtureExclusion;
 #[cfg(test)]
 pub(crate) fn replace_legacy_supplied_pair(store: &HubStore, data: &Path, access: &str, refresh: &str, schedule: Option<(i64,i64)>) -> Result<Uuid,CredentialStoreError> {
-    let mut entry = CredentialEntry::direct_entry(Zeroizing::new(access.into()),Zeroizing::new(refresh.into()))?;
+    let mut entry = CredentialEntry::own_login_fixture(Zeroizing::new(access.into()),Zeroizing::new(refresh.into()))?;
     let (expires,next) = schedule.unwrap_or((0,0)); entry.set_schedule(expires,next);
     let registered = store.fixture_vault.current.lock().expect("fixture context");
     let active = registered.upgrade();
@@ -59,8 +59,10 @@ impl BackupExclusion for FixtureExclusion {
     }
 }
 #[cfg(test)]
+/// Seeds an Owner API pair as the Hub's own login would store it: since
+/// M02-T02 only that origin is admitted at load.
 pub(crate) fn seed_legacy_supplied_pair(data: &Path, access: &str, refresh: &str, schedule: Option<(i64, i64)>) -> Uuid {
-    let mut entry = CredentialEntry::direct_entry(Zeroizing::new(access.to_owned()), Zeroizing::new(refresh.to_owned())).expect("fixture entry");
+    let mut entry = CredentialEntry::own_login_fixture(Zeroizing::new(access.to_owned()), Zeroizing::new(refresh.to_owned())).expect("fixture entry");
     let (expires,next) = schedule.unwrap_or((0,0)); entry.set_schedule(expires,next);
     seed_entry(data, entry)
 }
@@ -75,7 +77,16 @@ pub(crate) fn seed_entry(data: &Path, entry: CredentialEntry) -> Uuid {
     let generation = Uuid::new_v4(); let mut row = entry.row(generation);
     connection.reserve_credential_invocations(keys.keyring().current.id, 2).expect("fixture reservation");
     row.seal(&keys, entry.access.as_bytes(), entry.refresh.as_bytes(), &mut OsNonces).expect("fixture seal");
-    connection.replace_credential_pair(&row, &EntryProvenance::Supplied, &entry.legacy, ReplacePolicy::ReplaceAny).expect("fixture pair");
+    let binding = (entry.origin == CredentialOrigin::HubLogin).then(|| {
+        let secret = own_login_grant_secret().expect("fixture grant secret");
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("fixture clock").as_millis() as i64;
+        (connection.insert_sign_in_binding(entry.slot, own_login_binding(&secret), now).expect("fixture binding"), secret)
+    });
+    let provenance = match &binding {
+        Some((sign_in_id, grant_secret)) => EntryProvenance::HubGrant { sign_in_id: *sign_in_id, grant_secret },
+        None => EntryProvenance::Supplied,
+    };
+    connection.replace_credential_pair(&row, &provenance, &entry.legacy, ReplacePolicy::ReplaceAny).expect("fixture pair");
     connection.credential_durability_barrier().expect("fixture pair barrier");
     generation
 }

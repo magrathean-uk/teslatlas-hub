@@ -22,8 +22,8 @@ pub(crate) mod status_fixtures;
 pub use buffers::observe_file_token_drops;
 pub(crate) use buffers::{DecodedFileToken, decoded_file_token};
 pub use custody::{FileCustodyError, read_credential_file, read_credential_file_with_hooks};
-pub use entries::{CanonicalOwnerTokens, OwnerEntryKind, PreparedOwnerEntry, PreparedFleetEntry, check_token_import_continuity, persist_owner_entry, prepare_owner_entry, persist_fleet_entry, prepare_fleet_entry};
-pub use messages::{CredentialCommandError, REPLACE_IMPORT_WARNING, credential_entry_error, credential_owner_message};
+pub use entries::{CanonicalOwnerTokens, OwnerEntryKind, PreparedOwnerEntry, PreparedFleetEntry, persist_owner_entry, prepare_owner_entry, persist_fleet_entry, prepare_fleet_entry};
+pub use messages::{CredentialCommandError, REPLACE_IMPORT_WARNING, SOURCE_CREDENTIAL_DISABLED_TEXT, credential_entry_error, credential_owner_message, source_credential_disabled};
 pub use messages::{SignInPreconditionError, owner_sign_in_precondition, sign_in_input_error, sign_in_service_pause_failed, sign_in_service_restart_failed, sign_in_status_precondition, sign_in_unavailable};
 pub use messages::diagnostic_admission_error;
 pub use status::{BlockedReasons, CredentialStatus, CredentialStoreStatus, SlotStatus, credential_status, credential_store_unhealthy};
@@ -47,7 +47,12 @@ pub use service::{SignInCompletion, SignInServiceError, SignInWorkError, with_si
 pub use service::with_sign_in_scope_for_test;
 #[cfg(any(debug_assertions, feature = "interop-fixture"))]
 #[doc(hidden)]
-pub use manager_fixture::{record_provider_admission_for_test, refresh_owner_manager_for_test, seed_owner_pair_for_test, seed_fleet_pair_for_test, begin_refresh_for_test, pair_matches_for_test};
+pub use manager_fixture::{record_provider_admission_for_test, refresh_owner_manager_for_test, begin_refresh_for_test, pair_matches_for_test};
+// Pair seeding writes a pair without an exchange, so it exists only in debug
+// and test builds, never in a release build (with or without interop-fixture).
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub use manager_fixture::{seed_owner_pair_for_test, seed_fleet_pair_for_test};
 
 #[cfg(test)]
 #[path = "credential_sign_in/tests.rs"]

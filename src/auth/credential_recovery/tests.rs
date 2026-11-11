@@ -79,11 +79,6 @@ fn wrong_key_tamper_and_existing_secrets_are_rejected() {
 }
 
 #[test]
-fn fleet_only_credentials_round_trip_with_the_dedicated_key() {
-        g24_m2_recovery::fleet_only_c10_round_trip();
-    }
-
-#[test]
 fn wrong_cursor_key_is_rejected_against_manifests_before_secrets_publication() {
     let temporary = tempfile::tempdir().expect("temporary root");
     let data = temporary.path().join("data");

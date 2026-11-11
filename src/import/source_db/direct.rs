@@ -47,12 +47,12 @@ use crate::{
         project_drive, project_position, project_state, project_update,
     },
     source_db_reader::{
-        LegacyOwnerTokenCiphertexts, SourceDbReadLimits, SourceDbReaderError, SourceDbSchemaInfo,
+        SourceDbReadLimits, SourceDbReaderError, SourceDbSchemaInfo,
         binary_copy_sql, charge_copy_types, decode_binary_charge, decode_binary_position,
         open_exported_snapshot_lease, open_snapshot_capture_lane, position_copy_types,
         query_bounded, read_addresses, read_car_and_car_settings_v2_2, read_cars,
         read_charging_processes, read_drives, read_geofences,
-        read_legacy_token_ciphertexts_in_client, read_open_session, read_open_session_in_client,
+        read_open_session, read_open_session_in_client,
         read_settings_v2_2, read_updates_v2_2, related_positions_binary_copy_sql,
     },
     source_db_schema::SourceTable,
@@ -118,7 +118,6 @@ pub(crate) struct DirectSnapshotCapture {
     pub materialised_drives: Vec<ProjectionDrive>,
     pub updates_v2_2: DirectUpdatesSourceV2_2,
     pub open_session: SourceDbOpenSession,
-    pub legacy_tokens: Option<LegacyOwnerTokenCiphertexts>,
     pub physical_stage: Option<crate::source_db_stage::OwnedSourceDbStage>,
 }
 
@@ -144,7 +143,6 @@ pub async fn write_direct_full_snapshot(
         sequence,
         SourceDbMigrationProgressReporter::default(),
         |_| Ok(None),
-        false,
         DirectCaptureMode::PublishPacks,
         false,
         None,
@@ -167,7 +165,6 @@ pub(crate) async fn write_direct_full_snapshot_with_projection_state<F>(
     binding: ProjectionBinding,
     snapshot_id: Uuid,
     sequence: SequenceRange,
-    capture_legacy_token: bool,
     physical_imports_dir: Option<&Path>,
     progress: SourceDbMigrationProgressReporter,
     mut capture_factory: F,
@@ -188,7 +185,6 @@ where
         sequence,
         progress,
         |limits| capture_factory(limits).map(Some),
-        capture_legacy_token,
         DirectCaptureMode::PublishPacks,
         true,
         physical_imports_dir,
@@ -208,7 +204,6 @@ pub(crate) async fn capture_direct_successor_diff_with_projection_state<F>(
     binding: ProjectionBinding,
     snapshot_id: Uuid,
     sequence: SequenceRange,
-    capture_legacy_token: bool,
     physical_imports_dir: Option<&Path>,
     progress: SourceDbMigrationProgressReporter,
     mut capture_factory: F,
@@ -229,7 +224,6 @@ where
         sequence,
         progress,
         |limits| capture_factory(limits).map(Some),
-        capture_legacy_token,
         DirectCaptureMode::SuccessorDiff,
         true,
         physical_imports_dir,
@@ -251,7 +245,6 @@ pub(crate) async fn capture_direct_snapshot_for_legacy_bridge<F>(
     binding: ProjectionBinding,
     snapshot_id: Uuid,
     sequence: SequenceRange,
-    capture_legacy_token: bool,
     physical_imports_dir: Option<&Path>,
     progress: SourceDbMigrationProgressReporter,
     mut capture_factory: F,
@@ -272,7 +265,6 @@ where
         sequence,
         progress,
         |limits| capture_factory(limits).map(Some),
-        capture_legacy_token,
         DirectCaptureMode::LegacyBridgeCapture,
         true,
         physical_imports_dir,
@@ -292,7 +284,6 @@ async fn write_direct_full_snapshot_with_capture_factory<F>(
     sequence: SequenceRange,
     progress: SourceDbMigrationProgressReporter,
     mut capture_factory: F,
-    capture_legacy_token: bool,
     capture_mode: DirectCaptureMode,
     capture_projection_state: bool,
     physical_imports_dir: Option<&Path>,
@@ -420,10 +411,6 @@ where
                 )
                 .await?,
             );
-        }
-        if capture_legacy_token {
-            capture.legacy_tokens =
-                Some(read_legacy_token_ciphertexts_in_client(lease.client()).await?);
         }
         tracing::info!(
             selected_car_id,
@@ -1344,7 +1331,6 @@ async fn write_from_session(
         materialised_drives,
         updates_v2_2,
         open_session,
-        legacy_tokens: None,
         physical_stage: None,
     })
 }

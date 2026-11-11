@@ -136,16 +136,20 @@ impl std::fmt::Debug for FleetSetupCredentials {
     }
 }
 
-/// R58's public entry bridge keeps the vault and its admission opaque.
+/// R58's public entry bridge. Source credentials are disabled (M02-T02): a
+/// raw Fleet token pair is never stored, so this refuses before the vault is
+/// touched or a token is copied.
 pub fn persist_fleet_setup_credentials(
     entry: &crate::CredentialVaultEntry, _data_dir: &Path,
     credentials: &FleetSetupCredentials, now: SystemTime,
 ) -> Result<(), FleetCredentialError> {
-    entry.vault().store_supplied_entry(credentials.credential_entry(now)?, crate::db::ReplacePolicy::ReplaceAny)?;
-    Ok(())
+    let _ = (entry, credentials, now);
+    Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi).into())
 }
 
 impl FleetSetupCredentials {
+    /// Fixture seeding only: the supplied row an older Hub could hold.
+    #[cfg(any(test, debug_assertions))]
     pub(crate) fn credential_entry(&self, now: SystemTime) -> Result<crate::auth::credential_vault::CredentialEntry, FleetCredentialError> {
         let schedule = refresh_schedule(now, self.expires_in_seconds)?;
         let mut entry = crate::auth::credential_vault::CredentialEntry::fleet_supplied(
@@ -185,6 +189,7 @@ pub struct FleetCredentialInspection { pub unresolved_refresh: bool }
 pub fn inspect_stored_fleet_credentials(store: &HubStore, data_dir: &Path) -> Result<FleetCredentialInspection, FleetCredentialError> {
     let presence = store.credential_pair_presence(CredentialSlot::FleetApi)?.ok_or(FleetCredentialError::Missing)?;
     presence.header_check.map_err(|error| FleetCredentialError::Store(StoreError::CredentialEnvelope(error)))?;
+    crate::auth::credential_vault::admit_stored_origin(presence.slot, presence.origin, presence.refresh_owner)?;
     let secrets = crate::platform::private_directory::open_validated_read_only(&data_dir.join("secrets"))
         .map_err(|_| FleetCredentialError::UnsafeKeyMaterial)?.ok_or(FleetCredentialError::KeyMissing)?;
     crate::auth::credential_keys::check_keyring(&secrets)
@@ -912,6 +917,7 @@ impl From<CredentialStoreError> for FleetCredentialError {
         match error {
             CredentialStoreError::Store(error) => Self::Store(error),
             CredentialStoreError::SensitiveAccessUnavailable | CredentialStoreError::LockPoisoned => Self::SensitiveAccessUnavailable,
+            CredentialStoreError::SourceCredentialDisabled(_) | CredentialStoreError::UnknownOrigin(_) => Self::Store(StoreError::WriteRefused("source_credential_disabled")),
             _ => Self::Store(StoreError::WriteRefused("credential_vault_unavailable")),
         }
     }

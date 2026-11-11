@@ -355,10 +355,7 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
     // macOS Serve preflight requires a usable encrypted pair even when the
     // collector is disabled. These literals have no authority at any provider.
     use teslatlas_hub::auth::credential_sign_in as credentials;
-    let scope = credentials::SignInScope::open_for_test(&data_dir, true).expect("synthetic entry process");
-    let supplied = credentials::decode_owner_entry(br#"{"accessToken":"access-0001","refreshToken":"refresh-0001"}"#, credentials::OwnerEntryKind::Provider, false).expect("synthetic entry");
-    drop(credentials::persist_owner_entry(scope.entry(), supplied, false).expect("entry barrier"));
-    scope.release().expect("entry admission released");
+    credentials::seed_owner_pair_for_test(&data_dir, "access-0001", "refresh-0001", None).expect("synthetic own-login pair");
     assert!(credentials::record_provider_admission_for_test(&data_dir).expect("previous C5 process records its admission"));
     let invitation = store
         .create_pairing("binary-smoke", 1_000, i64::MAX)

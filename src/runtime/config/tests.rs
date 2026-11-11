@@ -729,7 +729,7 @@ fn ct1_collector_defaults_follow_the_cadence_tables() {
     assert_eq!(config.online_poll_seconds, 60);
     assert_eq!(config.suspended_poll_seconds, 30);
     assert_eq!(config.sleeping_poll_seconds, 30);
-    assert_eq!(config.interval_seconds, 300);
+    assert_eq!(config.interval_seconds, 0, "collection is off by default");
     assert_eq!(config.offline_drive_timeout_seconds, 600);
     assert_eq!(config.max_backoff_seconds, 300);
     assert_eq!(config.request_timeout_seconds, 15);
@@ -2088,3 +2088,50 @@ mod b3_c7_c;
 
 #[path = "tests/n1.rs"]
 mod n1;
+
+/// A fresh configuration (only the required keys) selects the Hub's own
+/// login on Tesla's Owner API, refreshed by the Hub itself, with no provider
+/// URL and no source field, and keeps collection off: no supervised interval
+/// exists until one is configured.
+#[test]
+fn own_login_default_fresh_configuration_selects_own_login_with_collection_off() {
+    let root = tempfile::tempdir().expect("data root");
+    let (config, _) = HubConfig::from_exact_bytes(valid_config(root.path()).as_bytes()).expect("fresh configuration");
+    for collector in [&config.collector, &CollectorConfig::default()] {
+        assert_eq!(collector.provider, CollectorProvider::Legacy);
+        assert_eq!(collector_mode(collector), CollectorMode::Legacy);
+        assert_eq!(collector.owner_api_base_url.as_deref(), Some(TESLA_OWNER_API_GLOBAL_URL));
+        assert!(collector.legacy_auth.enabled, "the Hub refreshes its own login");
+        assert!(collector.legacy_auth.token_url.is_none(), "no provider token URL");
+        assert_eq!(collector.interval_seconds, 0, "collection is off");
+        assert!(matches!(collector.supervised_interval(), Err(ConfigError::SupervisedIntervalRequired)));
+        assert!(collector.fleet_telemetry.is_none());
+    }
+    assert!(config.import_source.source_url.is_none() && config.import_source.source_key.is_none() && config.import_source.current.is_none(), "no source fields");
+    assert!(DEFAULT_INVENTORY_INTERVAL_SECONDS > 0, "a positive interval stays available to configure");
+}
+
+/// No configuration key can name a token, a token file or another
+/// application's key: each credential-shaped key is rejected at parse.
+#[test]
+fn source_credential_disabled_config_rejects_credential_shaped_keys() {
+    let root = tempfile::tempdir().expect("data root");
+    let base = valid_config(root.path());
+    for extra in [
+        "access_token = 'synthetic'\n",
+        "refresh_token = 'synthetic'\n",
+        "encryption_key = 'synthetic'\n",
+        "[collector]\naccess_token = 'synthetic'\n",
+        "[collector]\nrefresh_token = 'synthetic'\n",
+        "[collector]\ntokens_file = '/synthetic'\n",
+        "[collector.legacy_auth]\nrefresh_token = 'synthetic'\n",
+        "[collector.legacy_auth]\nsource_token_key_file = '/synthetic'\n",
+        "[import_source]\nencryption_key = 'synthetic'\n",
+        "[import_source]\nsource_token_key_file = '/synthetic'\n",
+        "[import_source]\nimport_credentials = true\n",
+    ] {
+        let text = format!("{base}{extra}");
+        let error = HubConfig::from_exact_bytes(text.as_bytes()).expect_err(extra);
+        assert!(!error.to_string().contains("synthetic"), "{extra}: the value is never echoed");
+    }
+}

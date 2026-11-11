@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use super::*;
-use crate::{CredentialVaultEntry, auth::{credential_envelope::{CredentialOrigin, CredentialSlot, RefreshOwner}, credential_vault::{RedeemedGrant, fixtures::{open_fixture_vault, restart_fixture_context}}}, db::{HubStore, LegacyCandidates}};
+use crate::{CredentialVaultEntry, auth::{credential_envelope::{CredentialOrigin, CredentialSlot, RefreshOwner}, credential_vault::{CredentialEntry, RedeemedGrant, fixtures::{open_fixture_vault, restart_fixture_context}}}, db::{HubStore, ReplacePolicy}};
 use zeroize::Zeroizing;
 
 const OWNER: CredentialSlot = CredentialSlot::OwnerApi;
@@ -13,8 +13,10 @@ fn fixture() -> (tempfile::TempDir, HubStore, CredentialVaultEntry) {
     let entry = CredentialVaultEntry::for_test(open_fixture_vault(store.clone(), root.path()));
     (root, store, entry)
 }
-fn supplied(entry: &CredentialVaultEntry, kind: OwnerEntryKind, access: &str, refresh: Option<&str>, replace: bool) -> Result<CanonicalOwnerTokens, CredentialCommandError> {
-    persist_owner_entry(entry, prepare_owner_entry(kind, text(access), refresh.map(text), replace)?, false)
+/// Stores an Owner API pair as the Hub's own login does (fixture path).
+fn own(entry: &CredentialVaultEntry, access: &str, refresh: &str) -> Result<uuid::Uuid, CredentialCommandError> {
+    let pair = CredentialEntry::own_login_fixture(text(access), text(refresh))?;
+    Ok(entry.vault().store_supplied_entry(pair, ReplacePolicy::ReplaceAny)?)
 }
 fn grant(entry: &CredentialVaultEntry, access: &str, refresh: &str) {
     let session = entry.vault().begin_sign_in(OWNER).expect("begin sign-in");
@@ -22,94 +24,81 @@ fn grant(entry: &CredentialVaultEntry, access: &str, refresh: &str) {
     entry.vault().finish_hub_grant_aftercare(receipt).expect("aftercare");
 }
 fn owner(entry: &CredentialVaultEntry) -> crate::auth::credential_vault::CredentialPlain { entry.vault().load(OWNER).expect("read").expect("pair") }
-fn opaque(store: &HubStore) {
-    store.open().expect("fixture SQL").execute("INSERT INTO credential_legacy_fences(legacy_generation,identity,fenced_at_ms) VALUES(?1,'opaque',1)", [uuid::Uuid::new_v4().to_string()]).expect("opaque fence");
-}
 
+/// Every supplied-token input is refused with one stable code, before it is
+/// parsed, and nothing is stored or created: no pair, no keyring.
 #[test]
-fn ct072_origins() {
-    for (kind, origin, refresh_owner) in [(OwnerEntryKind::Direct, CredentialOrigin::DirectEntry, RefreshOwner::Hub), (OwnerEntryKind::Provider, CredentialOrigin::ProviderEntry, RefreshOwner::Hub), (OwnerEntryKind::SourceToken, CredentialOrigin::SourceToken, RefreshOwner::External)] {
-        let (_root, _store, entry) = fixture();
-        drop(supplied(&entry, kind, "access-0001", Some("refresh-0001"), false).expect("entry barrier"));
-        let pair = owner(&entry);
-        assert_eq!((pair.origin, pair.refresh_owner, pair.expires_at, pair.next_refresh_at), (Some(origin), refresh_owner, 0, 0));
-        if kind == OwnerEntryKind::SourceToken { assert_eq!(supplied(&entry, kind, "access-0002", Some("refresh-0002"), false).unwrap_err().code(), "slot_occupied"); }
+fn source_credential_disabled_entry_refuses_every_supplied_input() {
+    let (root, _store, entry) = fixture();
+    for kind in [OwnerEntryKind::Direct, OwnerEntryKind::Provider, OwnerEntryKind::SourceToken] {
+        for replace in [false, true] {
+            assert_eq!(prepare_owner_entry(kind, text("access-0001"), Some(text("refresh-0001")), replace).unwrap_err().code(), "source_credential_disabled");
+            let tokens = crate::credentials::OwnerTokens::from_secret_parts("access-0001".into(), "refresh-0001".into()).expect("synthetic pair");
+            assert_eq!(prepare_owner_tokens(kind, tokens, replace).unwrap_err().code(), "source_credential_disabled");
+            let refused = decode_owner_entry(br#"{"accessToken":"access-0001","refreshToken":"refresh-0001"}"#, kind, replace).unwrap_err();
+            assert!(matches!(&refused, OwnerInputError::Credential(error) if error.code() == "source_credential_disabled"), "{refused}");
+            let refused = decode_owner_entry(b"not even a document", kind, replace).unwrap_err();
+            assert!(matches!(&refused, OwnerInputError::Credential(error) if error.code() == "source_credential_disabled"), "refused before parsing");
+            let refused = decode_owner_files(Zeroizing::new(b"access-0001".to_vec()), Zeroizing::new(b"refresh-0001".to_vec()), kind).unwrap_err();
+            assert!(matches!(&refused, OwnerInputError::Credential(error) if error.code() == "source_credential_disabled"));
+        }
     }
-    let (_root, _store, entry) = fixture();
-    let prepared = prepare_fleet_entry(text("access-0003"), text("refresh-0003"), "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet input");
-    persist_fleet_entry(&entry, prepared, false).expect("Fleet barrier");
-    let pair = entry.vault().load(FLEET).expect("read").expect("Fleet pair");
-    assert_eq!((pair.origin, pair.refresh_owner), (Some(CredentialOrigin::FleetOauth), RefreshOwner::Hub));
-    assert!(pair.expires_at > pair.next_refresh_at && pair.next_refresh_at > 0);
+    assert_eq!(prepare_fleet_entry(text("access-0002"), text("refresh-0002"), "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).unwrap_err().code(), "source_credential_disabled");
+    let refused = decode_fleet_entry(br#"{"accessToken":"a","refreshToken":"r","clientId":"c","region":"eu","expiresInSeconds":28800}"#).unwrap_err().to_string();
+    assert!(refused.starts_with("source_credential_disabled: ") && !refused.contains("access-0002"), "{refused}");
+    for slot in [OWNER, FLEET] { assert!(entry.vault().credential_pair_presence(slot).expect("presence").is_none(), "nothing stored"); }
+    assert!(!root.path().join("secrets").join("credential-keys").exists(), "no keyring created");
+    assert!(SOURCE_CREDENTIAL_DISABLED_TEXT.contains("own login"));
+    assert_eq!(credential_owner_message("source_credential_disabled", None, None, None).as_deref(), Some(SOURCE_CREDENTIAL_DISABLED_TEXT));
 }
 
+/// A stored pair the Hub did not get from its own login is never opened: the
+/// origin refusal precedes key selection and decryption, so a damaged envelope
+/// still reports the policy code. The Hub's own login then replaces it.
 #[test]
-fn ct073_empty_refresh() {
-    for refresh in [None, Some(""), Some(" \t\r\n")] {
-        let (_root, store, entry) = fixture();
-        drop(supplied(&entry, OwnerEntryKind::Provider, "access-0001", refresh, false).expect("access-only provider"));
+fn source_credential_disabled_load_refuses_every_foreign_origin() {
+    for foreign in [
+        CredentialEntry::source_token(text("access-0001"), text("refresh-0001")).expect("source row"),
+        CredentialEntry::direct_entry(text("access-0001"), text("refresh-0001")).expect("typed row"),
+        CredentialEntry::provider_entry(text("access-0001"), None).expect("provider row"),
+    ] {
+        let (root, store, entry) = fixture();
+        drop(entry);
+        crate::auth::credential_vault::fixtures::seed_entry(root.path(), foreign);
+        let store = restart_fixture_context(store, root.path()).expect("new process");
+        // Keep the header readable, damage the sealed bytes after it.
+        let fault = store.open().expect("fault SQL");
+        let mut sealed: Vec<u8> = fault.query_row("SELECT access_envelope FROM credential_pairs WHERE slot='owner_api'", [], |row| row.get(0)).expect("sealed access");
+        if let Some(last) = sealed.last_mut() { *last ^= 0xff; }
+        fault.execute("UPDATE credential_pairs SET access_envelope=?1 WHERE slot='owner_api'", [sealed]).expect("damage the envelope");
+        drop(fault);
+        let entry = CredentialVaultEntry::for_test(open_fixture_vault(store.clone(), root.path()));
+        assert_eq!(entry.vault().load(OWNER).unwrap_err().code(), "source_credential_disabled");
+        let error = CredentialCommandError::from(entry.vault().load(OWNER).unwrap_err());
+        assert!(error.to_string().contains("own login") && !error.to_string().contains("access-0001"));
+        grant(&entry, "access-0002", "refresh-0002");
         let pair = owner(&entry);
-        assert!(!pair.refresh_present && pair.refresh.is_empty());
-        assert_eq!((pair.expires_at, pair.next_refresh_at), (0, 0));
-        let ciphertext: Vec<u8> = store.open().expect("fixture SQL").query_row("SELECT refresh_envelope FROM credential_pairs WHERE slot='owner_api'", [], |row| row.get(0)).expect("empty envelope");
-        assert_eq!(ciphertext.len(), 67, "CT73: authenticated empty plaintext");
-        assert_eq!(prepare_owner_entry(OwnerEntryKind::Direct, text("access-0002"), refresh.map(text), false).unwrap_err().code(), "empty_refresh_token");
-        assert_eq!(owner(&entry).access.as_str(), "access-0001");
+        assert_eq!((pair.origin, pair.refresh_owner, pair.access.as_str()), (Some(CredentialOrigin::HubLogin), RefreshOwner::Hub, "access-0002"));
     }
-}
-
-#[test]
-fn ct074_trimming() {
-    let (_root, _store, entry) = fixture();
-    let prepared = decode_owner_entry(br#"{"accessToken":" \taccess-0001\r\n","refreshToken":"\trefresh-0001\n"}"#, OwnerEntryKind::Direct, false).expect("received forms");
-    drop(persist_owner_entry(&entry, prepared, false).expect("entry barrier"));
-    let pair = owner(&entry);
-    assert_eq!((pair.access.as_str(), pair.refresh.as_str()), ("access-0001", "refresh-0001"));
-    entry.vault().begin_refresh(OWNER, pair.generation).expect("spend input");
-    assert_eq!(supplied(&entry, OwnerEntryKind::Direct, "access-0002", Some(" refresh-0001\r\n"), false).unwrap_err().code(), "refresh_token_spent");
 }
 
 #[test]
 fn ct075_entry_caps() {
     let (root, _store, entry) = fixture();
     let access = "a".repeat(16_384);
-    drop(supplied(&entry, OwnerEntryKind::Direct, &access, Some("refresh-0001"), false).expect("at cap"));
+    own(&entry, &access, "refresh-0001").expect("at cap");
     let generation = owner(&entry).generation;
-    for (access, refresh) in [("a".repeat(16_385), "refresh-0002".into()), ("access-0002".into(), "r".repeat(16_385))] {
-        assert_eq!(supplied(&entry, OwnerEntryKind::Direct, &access, Some(&refresh), false).unwrap_err().code(), "token_too_large");
+    for (access, refresh) in [("a".repeat(16_385), "refresh-0002".to_owned()), ("access-0002".into(), "r".repeat(16_385))] {
+        assert_eq!(own(&entry, &access, &refresh).unwrap_err().code(), "token_too_large");
         assert_eq!(owner(&entry).generation, generation);
     }
     assert!(root.path().join("secrets").join("credential-keys").exists());
 }
 
 #[test]
-fn ct076_coexistence() {
-    let (_root, _store, entry) = fixture();
-    drop(supplied(&entry, OwnerEntryKind::SourceToken, "access-0001", Some("refresh-0001"), false).expect("import"));
-    grant(&entry, "access-0002", "refresh-0002");
-    assert_eq!((owner(&entry).origin, owner(&entry).refresh_owner), (Some(CredentialOrigin::HubLogin), RefreshOwner::Hub));
-    assert_eq!(supplied(&entry, OwnerEntryKind::SourceToken, "access-0003", Some("refresh-0003"), false).unwrap_err().code(), "slot_occupied");
-    assert_eq!(owner(&entry).access.as_str(), "access-0002");
-    let prepared = prepare_owner_entry(OwnerEntryKind::SourceToken, text("access-0003"), Some(text("refresh-0003")), true).expect("explicit replacement");
-    struct RefusingNotice;
-    impl std::io::Write for RefusingNotice {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> { Err(std::io::Error::other("notice refused")) }
-        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
-    }
-    assert!(persist_owner_entry_with_notice(&entry, prepared, false, &mut RefusingNotice).is_err());
-    assert_eq!(owner(&entry).access.as_str(), "access-0002", "the warning must precede the replacement");
-    let prepared = prepare_owner_entry(OwnerEntryKind::SourceToken, text("access-0003"), Some(text("refresh-0003")), true).expect("replacement retry");
-    let mut notice = Vec::new();
-    drop(persist_owner_entry_with_notice(&entry, prepared, false, &mut notice).expect("explicit replacement"));
-    assert_eq!(notice, format!("{REPLACE_IMPORT_WARNING}\n").as_bytes());
-    assert_eq!(owner(&entry).refresh_owner, RefreshOwner::External);
-    assert!(REPLACE_IMPORT_WARNING.contains("fresh sign-in"));
-}
-
-#[test]
 fn ct079_keyring_lost_at_runtime() {
     let (root, store, entry) = fixture();
-    drop(supplied(&entry, OwnerEntryKind::Direct, "access-0001", Some("refresh-0001"), false).expect("entry"));
+    own(&entry, "access-0001", "refresh-0001").expect("entry");
     let pair = owner(&entry);
     entry.vault().begin_refresh(OWNER, pair.generation).expect("spent fence");
     std::fs::rename(root.path().join("secrets").join("credential-keys"), root.path().join("retained-keyring")).expect("simulate missing keyring");
@@ -118,14 +107,14 @@ fn ct079_keyring_lost_at_runtime() {
     let store = restart_fixture_context(store, root.path()).expect("new process");
     let entry = CredentialVaultEntry::for_test(open_fixture_vault(store, root.path()));
     assert_eq!(entry.vault().load(OWNER).unwrap_err().code(), "keyring_missing");
-    assert_eq!(supplied(&entry, OwnerEntryKind::Direct, "access-0002", Some("refresh-0001"), false).unwrap_err().code(), "refresh_token_spent");
+    assert_eq!(own(&entry, "access-0002", "refresh-0001").unwrap_err().code(), "refresh_token_spent");
 }
 
 #[test]
 fn ct080_foreign_key_row() {
     let (_root, store, entry) = fixture();
-    drop(supplied(&entry, OwnerEntryKind::Direct, "access-0001", Some("refresh-0001"), false).expect("entry"));
-    persist_fleet_entry(&entry, prepare_fleet_entry(text("access-0002"), text("refresh-0002"), "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet"), false).expect("Fleet barrier");
+    own(&entry, "access-0001", "refresh-0001").expect("entry");
+    entry.vault().store_supplied_entry(CredentialEntry::fleet_supplied(text("access-0002"), text("refresh-0002"), "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet"), ReplacePolicy::ReplaceAny).expect("Fleet barrier");
     store.open().expect("fault SQL").execute("UPDATE credential_pairs SET access_envelope=CAST(substr(access_envelope,1,6)||zeroblob(8)||substr(access_envelope,15) AS BLOB) WHERE slot='owner_api'", []).expect("foreign key header");
     assert_eq!(entry.vault().load(OWNER).unwrap_err().code(), "unknown_key");
     assert_eq!(entry.vault().load(FLEET).expect("independent slot").expect("Fleet").access.as_str(), "access-0002");
@@ -134,7 +123,7 @@ fn ct080_foreign_key_row() {
 #[test]
 fn ct081_binding_swaps() {
     let (_root, store, entry) = fixture();
-    drop(supplied(&entry, OwnerEntryKind::Direct, "access-0001", Some("refresh-0001"), false).expect("entry"));
+    own(&entry, "access-0001", "refresh-0001").expect("entry");
     store.open().expect("fault SQL").execute("UPDATE credential_pairs SET access_envelope=refresh_envelope, refresh_envelope=access_envelope WHERE slot='owner_api'", []).expect("swap fields");
     assert_eq!(entry.vault().load(OWNER).unwrap_err().code(), "binding_mismatch");
 }
@@ -142,16 +131,16 @@ fn ct081_binding_swaps() {
 #[test]
 fn ct082_copy_back() {
     let (_root, store, entry) = fixture();
-    drop(supplied(&entry, OwnerEntryKind::Direct, "access-0001", Some("refresh-0001"), false).expect("entry"));
+    own(&entry, "access-0001", "refresh-0001").expect("entry");
     let pair = owner(&entry);
     let sql = store.open().expect("fixture SQL");
     sql.execute_batch("CREATE TEMP TABLE retained_pair AS SELECT * FROM credential_pairs").expect("retained image");
     entry.vault().begin_refresh(OWNER, pair.generation).expect("first presentation fence");
-    drop(supplied(&entry, OwnerEntryKind::Direct, "access-0002", Some("refresh-0002"), false).expect("new supplied pair"));
+    own(&entry, "access-0002", "refresh-0002").expect("new own pair");
     sql.execute_batch("DELETE FROM credential_pairs; INSERT INTO credential_pairs SELECT * FROM retained_pair").expect("simulate copy back");
     assert_eq!(owner(&entry).access.as_str(), "access-0001");
     assert!(entry.vault().begin_refresh(OWNER, pair.generation).is_err());
-    assert_eq!(supplied(&entry, OwnerEntryKind::Direct, "access-0003", Some("refresh-0001"), false).unwrap_err().code(), "refresh_token_spent");
+    assert_eq!(own(&entry, "access-0003", "refresh-0001").unwrap_err().code(), "refresh_token_spent");
 }
 
 #[test]
@@ -173,69 +162,63 @@ fn ct083_no_secrets() {
     let _capture = tracing::subscriber::set_default(subscriber);
     let (_root, _store, entry) = fixture();
     tracing::callsite::rebuild_interest_cache();
-    let prepared = prepare_owner_entry(OwnerEntryKind::Direct, text("access-0001"), Some(text("refresh-0001")), false).expect("prepared");
-    let debug = format!("{prepared:?}");
-    assert!(!debug.contains("access-0001") && !debug.contains("refresh-0001"));
-    drop(persist_owner_entry(&entry, prepared, false).expect("entry"));
+    let refused = prepare_owner_entry(OwnerEntryKind::Direct, text("access-0001"), Some(text("refresh-0001")), false).unwrap_err();
+    own(&entry, "access-0001", "refresh-0001").expect("entry");
     let pair = owner(&entry);
     entry.vault().begin_refresh(OWNER, pair.generation).expect("spent");
-    let error = supplied(&entry, OwnerEntryKind::Direct, "access-0002", Some("refresh-0001"), false).unwrap_err();
-    for rendered in [error.to_string(), format!("{error:?}"), format!("{:?}", owner(&entry))] {
+    let error = own(&entry, "access-0002", "refresh-0001").unwrap_err();
+    for rendered in [refused.to_string(), format!("{refused:?}"), error.to_string(), format!("{error:?}"), format!("{:?}", owner(&entry))] {
         for secret in ["access-0001", "access-0002", "refresh-0001"] { assert!(!rendered.contains(secret)); }
     }
     let logs = logs.lock().expect("captured log");
     let text = std::str::from_utf8(&logs).expect("log UTF-8");
-    assert!(text.contains("provenance=") && text.contains("supplied"), "credential write provenance bytes={}", text.len());
     for secret in ["access-0001", "access-0002", "refresh-0001"] { assert!(!text.contains(secret), "credential in a log"); }
 }
 
 #[test]
 fn ct084_restore_without_secrets() {
     let (root, store, entry) = fixture();
-    drop(supplied(&entry, OwnerEntryKind::Direct, "access-0001", Some("refresh-0001"), false).expect("entry"));
+    own(&entry, "access-0001", "refresh-0001").expect("entry");
     std::fs::rename(root.path().join("secrets"), root.path().join("retained-custody")).expect("data-only restore image");
     let status = credential_status(&store, root.path(), 1_800_000_000_000).expect("status");
     assert!(status.legacy_credentials.present && status.credential_store.keyring == "keyring_missing");
     assert!(credential_store_unhealthy(&status, true, false));
 }
 
-#[test]
-fn ct085_canonical_migration_entry() {
-    let (_root, _store, entry) = fixture();
-    drop(supplied(&entry, OwnerEntryKind::SourceToken, " access-0001\n", Some("\trefresh-0001\r\n"), false).expect("source entry"));
-    let pair = owner(&entry);
-    assert_eq!((pair.access.as_str(), pair.refresh.as_str(), pair.refresh_owner), ("access-0001", "refresh-0001", RefreshOwner::External));
-    entry.vault().handover_owner_api_refresh_to_hub().expect("explicit handover");
-    entry.vault().begin_refresh(OWNER, pair.generation).expect("consume canonical form");
-    assert_eq!(supplied(&entry, OwnerEntryKind::Direct, "access-0002", Some("refresh-0001"), false).unwrap_err().code(), "refresh_token_spent");
-}
 
+/// A fresh store holds no sign-in; the Hub's own login is the one write path
+/// whose pair is admitted, with the own-login origin and the Hub as refresh
+/// owner.
 #[test]
-fn ct086_legacy_fences() {
-    for received in ["refresh-0001", "refresh-0001\n", "refresh-0001\r\n", " refresh-0001 "] {
-        let (root, store, entry) = fixture();
-        let candidates = LegacyCandidates::for_secret_parts("access-0001", received).expect("received candidates");
-        assert!(!candidates.0.is_empty());
-        for generation in candidates.0 {
-            store.open().expect("fixture SQL").execute("INSERT OR IGNORE INTO credential_legacy_fences(legacy_generation,identity,fenced_at_ms) VALUES(?1,'opaque',1)", [generation.to_string()]).expect("recognised fence");
-        }
-        assert_eq!(supplied(&entry, OwnerEntryKind::Direct, "access-0001", Some(received), false).unwrap_err().code(), "refresh_token_spent");
-        assert!(!root.path().join("secrets").join("credential-keys").exists());
-    }
-}
-
-#[test]
-fn ct098_continuity_supplied_paths() {
+fn own_login_default_sign_in_is_the_only_admitted_store_path() {
     let (root, store, entry) = fixture();
-    opaque(&store);
-    for kind in [OwnerEntryKind::Direct, OwnerEntryKind::Provider, OwnerEntryKind::SourceToken] {
-        for replace in [false, true] { assert_eq!(supplied(&entry, kind, "access-0001", Some("refresh-0001"), replace).unwrap_err().code(), "fresh_sign_in_required"); }
+    let fresh = credential_status(&store, root.path(), 1_800_000_000_000).expect("fresh status");
+    assert!(!fresh.legacy_credentials.present && !fresh.fleet_credentials.present, "a fresh store holds no sign-in");
+    assert!(entry.vault().load(OWNER).expect("fresh read").is_none());
+    grant(&entry, "access-0001", "refresh-0001");
+    let pair = owner(&entry);
+    assert_eq!((pair.origin, pair.refresh_owner), (Some(CredentialOrigin::HubLogin), RefreshOwner::Hub));
+    let status = credential_status(&store, root.path(), 1_800_000_000_000).expect("status");
+    assert_eq!((status.legacy_credentials.origin, status.legacy_credentials.store_state), (Some("hub_login"), "ok"));
+}
+
+/// The status projection reports a stored pair that is not the Hub's own
+/// login by its refusal code, without opening it, so no caller treats it as
+/// usable and the configured service is unhealthy until the owner signs in.
+#[test]
+fn source_credential_disabled_status_reports_refused_pairs_unusable() {
+    for (foreign, code) in [
+        (CredentialEntry::source_token(text("access-0001"), text("refresh-0001")).expect("source row"), "source_credential_disabled"),
+        (CredentialEntry::direct_entry(text("access-0001"), text("refresh-0001")).expect("typed row"), "source_credential_disabled"),
+    ] {
+        let (root, store, entry) = fixture();
+        drop(entry);
+        crate::auth::credential_vault::fixtures::seed_entry(root.path(), foreign);
+        let status = credential_status(&store, root.path(), 1_800_000_000_000).expect("status");
+        assert!(status.legacy_credentials.present);
+        assert_eq!(status.legacy_credentials.store_state, code);
+        assert!(credential_store_unhealthy(&status, true, false), "the configured Owner slot is unusable");
+        assert_eq!(credential_owner_message(code, None, None, None).as_deref(), Some(SOURCE_CREDENTIAL_DISABLED_TEXT));
     }
-    let fleet = prepare_fleet_entry(text("access-0002"), text("refresh-0002"), "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet input");
-    assert_eq!(persist_fleet_entry(&entry, fleet, false).unwrap_err().code(), "fresh_sign_in_required");
-    assert_eq!(check_token_import_continuity(&store).unwrap_err().code(), "fresh_sign_in_required");
-    assert!(!root.path().join("secrets").join("credential-keys").exists());
-    drop(supplied(&entry, OwnerEntryKind::Provider, "access-0003", None, false).expect("access-only exception"));
-    grant(&entry, "access-0004", "refresh-0004");
-    assert_eq!(owner(&entry).origin, Some(CredentialOrigin::HubLogin));
+    assert!(credential_owner_message("unknown_origin", None, None, None).is_some_and(|text| text.contains("own login")));
 }

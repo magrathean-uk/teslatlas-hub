@@ -148,10 +148,18 @@ impl CredentialEntry {
             owner: if origin == CredentialOrigin::SourceToken { RefreshOwner::External } else { RefreshOwner::Hub },
             access, refresh, legacy, client_id: None, region: None, expires_at: 0, next_refresh_at: 0 })
     }
-    // TRANSITIONAL: the three V2 Owner entry paths consume these constructors.
+    /// Fixture seeding only: an Owner API entry carrying the Hub's own login
+    /// origin, written through a sign-in binding like a redeemed grant.
+    #[cfg(any(test, debug_assertions))]
+    pub(in crate::auth) fn own_login_fixture(access: Zeroizing<String>, refresh: Zeroizing<String>) -> Result<Self, CredentialStoreError> { Self::build(access, refresh, CredentialOrigin::HubLogin) }
+    // Fixture seeding only since M02-T02: production accepts no supplied token.
+    #[cfg(test)]
     pub(in crate::auth) fn direct_entry(access: Zeroizing<String>, refresh: Zeroizing<String>) -> Result<Self, CredentialStoreError> { Self::build(access, refresh, CredentialOrigin::DirectEntry) }
+    #[cfg(test)]
     pub(in crate::auth) fn source_token(access: Zeroizing<String>, refresh: Zeroizing<String>) -> Result<Self, CredentialStoreError> { Self::build(access, refresh, CredentialOrigin::SourceToken) }
+    #[cfg(test)]
     pub(in crate::auth) fn provider_entry(access: Zeroizing<String>, refresh: Option<Zeroizing<String>>) -> Result<Self, CredentialStoreError> { Self::build(access, refresh.unwrap_or_default(), CredentialOrigin::ProviderEntry) }
+    #[cfg(any(test, debug_assertions))]
     pub(in crate::auth) fn fleet_supplied(access: Zeroizing<String>, refresh: Zeroizing<String>, client_id: String, region: crate::fleet_api::FleetRegion, expires_in: u64) -> Result<Self, CredentialStoreError> {
         crate::fleet_api::FleetClientId::parse(&client_id).map_err(|_| CredentialStoreError::InvalidOrigin)?;
         let mut entry = Self::build(access, refresh, CredentialOrigin::FleetOauth)?;
@@ -176,4 +184,19 @@ pub(super) fn canonical_text(value: &str) -> Result<Zeroizing<String>, Credentia
     if bytes.len() > super::super::credential_envelope::MAX_TOKEN_PLAINTEXT_BYTES { return Err(CredentialStoreError::TokenTooLarge); }
     let value = std::str::from_utf8(bytes).map_err(|_| CredentialStoreError::InvalidTokenBytes)?;
     let mut result = Zeroizing::new(String::with_capacity(value.len())); result.push_str(value); Ok(result)
+}
+
+/// Fixture seeding only: a fresh sign-in grant secret and its stored binding,
+/// computed as the Hub's own sign-in does.
+#[cfg(any(test, debug_assertions))]
+pub(crate) fn own_login_grant_secret() -> Result<Zeroizing<[u8; 32]>, CredentialStoreError> {
+    let mut secret = Zeroizing::new([0u8; 32]);
+    getrandom::fill(secret.as_mut()).map_err(|_| CredentialStoreError::Key(super::CredentialKeyError::EntropyUnavailable))?;
+    Ok(secret)
+}
+#[cfg(any(test, debug_assertions))]
+pub(crate) fn own_login_binding(secret: &Zeroizing<[u8; 32]>) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new(); hash.update(b"teslatlas-hub/sign-in-binding/v1\0"); hash.update(secret.as_slice());
+    hash.finalize_reset().into()
 }

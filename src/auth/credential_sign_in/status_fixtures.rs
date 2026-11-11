@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use std::sync::Arc;
-use crate::{auth::{credential_envelope::OsNonces, credential_keys, credential_migration::{self, CredentialPhaseB}, credential_vault::{CredentialVault, VaultOptions, fixtures::{FixtureExclusion, fixture_admission, open_fixture_vault}}}, db::HubStore, platform::private_directory};
+use crate::{auth::{credential_keys, credential_migration::{self, CredentialPhaseB}, credential_vault::{CredentialVault, VaultOptions, fixtures::{FixtureExclusion, fixture_admission, open_fixture_vault}}}, db::HubStore, platform::private_directory};
 
 pub(crate) fn phase_b(kind: &str) -> (tempfile::TempDir, HubStore) {
     let root = match kind {
@@ -27,7 +27,7 @@ pub(crate) fn phase_b(kind: &str) -> (tempfile::TempDir, HubStore) {
         let pages: i64 = connection.test_connection().query_row("PRAGMA page_count", [], |row| row.get(0)).expect("page count");
         connection.test_connection().execute_batch(&format!("PRAGMA max_page_count={pages}")).expect("synthetic disk full");
         let mut phase = CredentialPhaseB { data_dir: root.path(), sqlite_temp_dir: root.path(), admission: &admission,
-            secrets: &directory, keys: &mut keys, cursor_key: None, exclusion: &FixtureExclusion, nonces: &mut OsNonces, now_ms: 1_800_000_000_000 };
+            secrets: &directory, keys: &mut keys, exclusion: &FixtureExclusion, now_ms: 1_800_000_000_000 };
         assert!(credential_migration::run_phase_b(&mut connection, &mut phase, &mut || {}).is_err(), "conversion refuses disk full");
     } else { drop(open_fixture_vault(store.clone(), root.path())); }
     credential_migration::seam::reset();

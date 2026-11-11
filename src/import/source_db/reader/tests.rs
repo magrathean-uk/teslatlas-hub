@@ -15,7 +15,7 @@ use crate::{
 };
 
 #[test]
-fn source_check_snapshot_json_covers_connection_and_redacts_vin() {
+fn source_credential_disabled_check_snapshot_json_covers_connection_and_redacts_vin() {
     let snapshot = SourceDbCheckSnapshot {
         schema: SourceDbSchemaInfo {
             observed_migration_version: 105,
@@ -64,12 +64,6 @@ fn source_check_snapshot_json_covers_connection_and_redacts_vin() {
             updates: 2,
             schema_migrations: 105,
         },
-        source_tokens_relation_present: Some(true),
-        legacy_token_pair: Some(SourceDbLegacyTokenPairDiagnostics {
-            relation: "private.tokens".to_owned(),
-            access_ciphertext_bytes: 128,
-            refresh_ciphertext_bytes: 160,
-        }),
     };
     let value = serde_json::to_value(&snapshot).expect("JSON");
     assert_eq!(value["connection"]["transactionReadOnly"], true);
@@ -79,15 +73,16 @@ fn source_check_snapshot_json_covers_connection_and_redacts_vin() {
     assert_eq!(value["openSessions"]["chargingProcesses"], 1);
     assert_eq!(value["selectedCarCounts"]["positions"], 1_000);
     assert_eq!(value["sourceTotals"]["schemaMigrations"], 105);
-    assert_eq!(value["sourceTokensRelationPresent"], true);
-    assert_eq!(value["legacyTokenPair"]["relation"], "private.tokens");
+    source_credential_disabled_snapshot_has_no_credential_field(&value);
+}
 
-    let mut history_only = snapshot;
-    history_only.source_tokens_relation_present = None;
-    history_only.legacy_token_pair = None;
-    let history_value = serde_json::to_value(history_only).expect("history-only JSON");
-    assert!(history_value["sourceTokensRelationPresent"].is_null());
-    assert!(history_value["legacyTokenPair"].is_null());
+/// Source credentials are disabled: the check snapshot carries no field that
+/// could describe, count or locate the source's credential rows.
+fn source_credential_disabled_snapshot_has_no_credential_field(value: &serde_json::Value) {
+    let text = serde_json::to_string(value).expect("snapshot text").to_ascii_lowercase();
+    for needle in ["token", "ciphertext", "encryption", "secret"] {
+        assert!(!text.contains(needle), "snapshot names {needle}");
+    }
 }
 
 #[test]
@@ -121,8 +116,8 @@ fn live_source_witness_is_fixed_read_only_and_never_reads_private_tokens() {
     assert!(
         LIVE_SOURCE_WITNESS_SQL.contains("has_schema_privilege(current_user, 'private', 'USAGE')")
     );
-    assert!(!LIVE_SOURCE_WITNESS_SQL.contains("private\".\"tokens"));
-    assert!(!LIVE_SOURCE_WITNESS_SQL.contains("private.tokens"));
+    assert!(!LIVE_SOURCE_WITNESS_SQL.contains(&["private\".\"", "tok", "ens"].concat()));
+    assert!(!LIVE_SOURCE_WITNESS_SQL.contains(&["private.", "tok", "ens"].concat()));
     for relation in [
         "cars",
         "drives",
@@ -135,107 +130,6 @@ fn live_source_witness_is_fixed_read_only_and_never_reads_private_tokens() {
     ] {
         assert!(LIVE_SOURCE_WITNESS_SQL.contains(&format!("\"public\".\"{relation}\"")));
     }
-}
-
-#[test]
-fn exact_token_reader_requires_the_private_relation() {
-    assert_eq!(
-        exact_legacy_token_queries(true).expect("private token relation"),
-        (
-            PRIVATE_LEGACY_TOKEN_LENGTHS_SQL,
-            PRIVATE_LEGACY_TOKENS_SQL,
-            "private.tokens"
-        )
-    );
-    assert!(matches!(
-        exact_legacy_token_queries(false),
-        Err(SourceDbReaderError::LegacyTokenPairMissing)
-    ));
-    assert!(PRIVATE_LEGACY_TOKENS_EXISTS_SQL.contains("pg_catalog.to_regclass"));
-    assert!(PRIVATE_LEGACY_TOKENS_EXISTS_SQL.contains("'private.tokens'"));
-    assert!(!PRIVATE_LEGACY_TOKENS_EXISTS_SQL.contains(';'));
-}
-
-#[test]
-fn private_token_reader_query_is_bounded_and_fixed() {
-    assert!(PRIVATE_LEGACY_TOKENS_SQL.contains("FROM \"private\".\"tokens\""));
-    assert!(PRIVATE_LEGACY_TOKENS_SQL.contains("\"access\" AS \"access\""));
-    assert!(PRIVATE_LEGACY_TOKENS_SQL.contains("\"refresh\" AS \"refresh\""));
-    assert!(PRIVATE_LEGACY_TOKENS_SQL.ends_with("LIMIT 2"));
-    assert!(!PRIVATE_LEGACY_TOKENS_SQL.contains("WHERE"));
-    assert!(!PRIVATE_LEGACY_TOKENS_SQL.contains(';'));
-    assert!(PRIVATE_LEGACY_TOKEN_LENGTHS_SQL.contains("pg_catalog.octet_length"));
-    assert!(PRIVATE_LEGACY_TOKEN_LENGTHS_SQL.ends_with("LIMIT 2"));
-    assert!(!PRIVATE_LEGACY_TOKEN_LENGTHS_SQL.contains(';'));
-}
-
-#[test]
-fn ciphertext_lengths_allow_the_limit_and_reject_the_next_byte() {
-    assert!(
-        validate_legacy_ciphertext_length(
-            "private.tokens",
-            "access",
-            MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64
-        )
-        .is_ok()
-    );
-    match validate_legacy_ciphertext_length(
-        "private.tokens",
-        "access",
-        MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64 + 1,
-    ) {
-        Err(SourceDbReaderError::LegacyTokenCiphertextTooLarge {
-            relation,
-            column,
-            maximum,
-            actual,
-        }) => {
-            assert_eq!(relation, "private.tokens");
-            assert_eq!(column, "access");
-            assert_eq!(maximum, MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64);
-            assert_eq!(actual, MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64 + 1);
-        }
-        other => panic!("expected length error, got {other:?}"),
-    }
-}
-
-#[test]
-fn compatibility_requires_one_nonempty_bounded_token_pair() {
-    assert!(matches!(
-        validate_legacy_token_pair_lengths("private.tokens", &[]),
-        Err(SourceDbReaderError::LegacyTokenPairMissing)
-    ));
-    assert!(matches!(
-        validate_legacy_token_pair_lengths("private.tokens", &[(1, 1), (2, 2)]),
-        Err(SourceDbReaderError::LegacyTokenPairAmbiguous)
-    ));
-    assert!(matches!(
-        validate_legacy_token_pair_lengths("private.tokens", &[(0, 1)]),
-        Err(SourceDbReaderError::LegacyTokenPairEmpty)
-    ));
-    let valid = validate_legacy_token_pair_lengths(
-        "private.tokens",
-        &[(MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64, 1)],
-    )
-    .expect("bounded pair");
-    assert_eq!(
-        valid.access_ciphertext_bytes,
-        u64::try_from(MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES_I64).unwrap()
-    );
-}
-
-#[test]
-fn legacy_token_ciphertexts_are_redacted_and_zeroizable() {
-    let mut ciphertexts = LegacyOwnerTokenCiphertexts {
-        access: b"access-ciphertext-marker".to_vec(),
-        refresh: b"refresh-ciphertext-marker".to_vec(),
-    };
-    let debug = format!("{ciphertexts:?}");
-    assert!(!debug.contains("access-ciphertext-marker"));
-    assert!(!debug.contains("refresh-ciphertext-marker"));
-    ciphertexts.zeroize();
-    assert!(ciphertexts.access.iter().all(|byte| *byte == 0));
-    assert!(ciphertexts.refresh.iter().all(|byte| *byte == 0));
 }
 
 #[test]
@@ -261,20 +155,12 @@ fn cleanup_failure_is_typed_and_keeps_the_primary_reader_error() {
 }
 
 #[test]
-fn same_snapshot_token_companion_keeps_exact_private_contract() {
+fn same_snapshot_import_sql_is_exact() {
     assert!(
         snapshot_import_sql("000003A0-1")
             .expect("validated snapshot")
             .starts_with("SET TRANSACTION SNAPSHOT '")
     );
-    assert_eq!(
-        exact_legacy_token_queries(true)
-            .expect("exact private relation")
-            .2,
-        "private.tokens"
-    );
-    assert!(exact_legacy_token_queries(false).is_err());
-    assert!(PRIVATE_LEGACY_TOKENS_SQL.ends_with("LIMIT 2"));
 }
 
 #[test]
@@ -973,7 +859,7 @@ fn physical_relation_queries_use_nullable_initial_cursors() {
         assert!(sql.contains("ORDER BY source.id ASC"));
         assert!(sql.contains("LIMIT $2"));
         assert!(sql.contains(&format!("FROM public.{table} AS source")));
-        assert!(!sql.contains("private.tokens"));
+        assert!(!sql.contains(&["private.", "tok", "ens"].concat()));
     }
     assert!(CHARGES_V2_2_SQL.contains("INNER JOIN public.charging_processes AS process"));
     for sql in [ADDRESSES_V2_2_SQL, GEOFENCES_V2_2_SQL] {
@@ -1707,4 +1593,43 @@ fn sealed_stage_round_trips_the_small_snapshot_reader_contract() {
         materialize_small_staged_history(&stage, 0),
         Err(SourceDbReaderError::MaximumRowsExceeded { maximum: 0 })
     ));
+}
+
+/// Source credentials are disabled: no reader, capture, importer or pack
+/// source under `src/import/source_db` names the source's credential relation
+/// or keeps a credential-capture path. The needles are assembled at run time
+/// so this file does not match itself.
+#[test]
+fn source_credential_disabled_import_never_names_source_credential_relations() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/import/source_db");
+    let relation = ["tok", "ens"].concat();
+    let needles = [
+        format!("private.{relation}"),
+        format!("private\".\"{relation}\""),
+        format!("\"{relation}\""),
+        format!("from {relation}"),
+        ["legacy_", "token"].concat(),
+        ["token", "ciphertext"].concat(),
+        ["encryption", "_key"].concat(),
+    ];
+    let mut stack = vec![root];
+    let mut scanned = 0;
+    while let Some(path) = stack.pop() {
+        for entry in std::fs::read_dir(&path).expect("source directory") {
+            let path = entry.expect("source entry").path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if !matches!(path.extension().and_then(|value| value.to_str()), Some("rs" | "sql")) {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("source text").to_ascii_lowercase();
+            scanned += 1;
+            for needle in &needles {
+                assert!(!text.contains(needle.as_str()), "{} names {needle}", path.display());
+            }
+        }
+    }
+    assert!(scanned > 20, "the importer sources were scanned");
 }

@@ -7,13 +7,11 @@ use super::super::credential_vault::{CredentialVault, VaultOptions};
 use super::super::credential_keys::{BackupExclusion, CredentialKeyError, ExclusionState};
 use crate::{credentials::LegacyAuthManager, legacy_auth::{AuthEndpointConfig, AuthMode}};
 
+#[cfg(debug_assertions)]
 #[doc(hidden)]
 pub fn seed_owner_pair_for_test(data: &Path, access: &str, refresh: &str, schedule: Option<(i64, i64)>) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
-    #[cfg(debug_assertions)]
     let scope = super::SignInScope::open_for_test(data, true)?;
-    #[cfg(not(debug_assertions))]
-    let scope = super::SignInScope::open(data)?;
-    let mut entry = super::super::credential_vault::CredentialEntry::direct_entry(zeroize::Zeroizing::new(access.to_owned()), zeroize::Zeroizing::new(refresh.to_owned())).map_err(super::CredentialCommandError::from)?;
+    let mut entry = super::super::credential_vault::CredentialEntry::own_login_fixture(zeroize::Zeroizing::new(access.to_owned()), zeroize::Zeroizing::new(refresh.to_owned())).map_err(super::CredentialCommandError::from)?;
     let (expiry, next) = schedule.unwrap_or((0, 0));
     entry.set_schedule(expiry, next);
     let generation = scope.entry().vault().store_supplied_entry(entry, crate::db::ReplacePolicy::ReplaceAny).map_err(super::CredentialCommandError::from)?;
@@ -21,13 +19,13 @@ pub fn seed_owner_pair_for_test(data: &Path, access: &str, refresh: &str, schedu
     Ok(generation)
 }
 
+/// Seeds the supplied Fleet row an older Hub could hold; the vault refuses it
+/// at load, so it exercises only the refusal.
+#[cfg(debug_assertions)]
 #[doc(hidden)]
 pub fn seed_fleet_pair_for_test(data: &Path, credentials: &crate::fleet_credentials::FleetSetupCredentials) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
-    #[cfg(debug_assertions)]
     let scope = super::SignInScope::open_for_test(data, true)?;
-    #[cfg(not(debug_assertions))]
-    let scope = super::SignInScope::open(data)?;
-    crate::fleet_credentials::persist_fleet_setup_credentials(scope.entry(), data, credentials, SystemTime::now())?;
+    scope.entry().vault().store_supplied_entry(credentials.credential_entry(SystemTime::now())?, crate::db::ReplacePolicy::ReplaceAny).map_err(super::CredentialCommandError::from)?;
     let generation = scope.entry().vault().stored_generation(super::super::credential_envelope::CredentialSlot::FleetApi).map_err(super::CredentialCommandError::from)?
         .ok_or_else(|| std::io::Error::other("fixture_pair_absent"))?;
     scope.release()?;

@@ -4,6 +4,9 @@ use super::super::credential_vault::{CredentialStoreError, SignInError};
 
 pub const REPLACE_IMPORT_WARNING: &str = "Replacing the stored sign-in means that a rollback to the system the token came from will need a fresh sign-in there; after a rollback, sign in there again.";
 
+/// The one refusal text for every source-credential path (M02-T02).
+pub const SOURCE_CREDENTIAL_DISABLED_TEXT: &str = "Source credentials are disabled: the Hub never imports, stores, uses or refreshes another application's sign-in, its tokens or its key, and no option or setting changes that. Sign in with the Hub's own login (in the app, or with setup --sign-in).";
+
 /// Fixed owner copy. Inputs that are not recognised codes are never echoed.
 pub fn credential_owner_message(
     code: &str,
@@ -35,6 +38,8 @@ pub fn credential_owner_message(
             let bytes = cleanup_needed_bytes.filter(|bytes| *bytes > 0)?;
             return Some(format!("Finishing the sign-in format update needs {} GB more free space on the data disk. Backups wait until then.", bytes.div_ceil(1_000_000_000)));
         }
+        "source_credential_disabled" => SOURCE_CREDENTIAL_DISABLED_TEXT,
+        "unknown_origin" => "The stored sign-in was not made by the Hub's own login, so the Hub does not use it. Sign in with the Hub's own login (in the app, or with setup --sign-in).",
         "token_entry_requires_sign_in" => "Some sign-ins this Hub used before its last update cannot be recognised in every form, so it now stores new sign-ins only from its own login. Tokens entered by hand, provider refresh tokens and token imports are refused; sign in with the Hub's login instead.",
         "fresh_sign_in_required" => "This Hub cannot confirm that this token was not used before its last update, so it stores new sign-ins only from its own login. Sign in with the Hub's login (in the app, or with setup --sign-in; setup-fleet --sign-in for the Fleet connection). With a provider, enter only the provider's access token.",
         "empty_access_token" => "The access token was empty, so nothing was stored.",
@@ -115,6 +120,8 @@ pub fn credential_entry_error(error: crate::CredentialVaultEntryError) -> Creden
     CredentialCommandError::new(error.code())
 }
 
+/// The stable refusal of every source-credential input, flag and path.
+pub fn source_credential_disabled() -> CredentialCommandError { CredentialCommandError::new("source_credential_disabled") }
 pub fn sign_in_unavailable() -> CredentialCommandError { CredentialStoreError::SignIn(SignInError::Unavailable).into() }
 pub fn sign_in_service_pause_failed() -> CredentialCommandError { CredentialStoreError::SignIn(SignInError::ServicePauseFailed).into() }
 pub fn sign_in_service_restart_failed() -> CredentialCommandError { CredentialCommandError::new("sign_in_service_restart_failed") }
