@@ -819,6 +819,11 @@ struct ScheduledVehicle {
     phase: PollPhase,
     /// When the phase began, monotonic and wall.
     phase_since: (Instant, i64),
+    /// The phase, its wall start and its reason as the store held them for an
+    /// unheld car at a restart (M04-T01, review round 2 finding 6). The first phase
+    /// the car then enters keeps the stored start and reason when it is the same
+    /// phase, so an unchanged car's row is not rewritten. Taken at that first entry.
+    restored_phase: Option<(PollPhase, i64, &'static str)>,
     hold: VehicleHold,
     /// The reason code of the last transition (C3 section 7.4).
     reason: &'static str,
@@ -901,6 +906,7 @@ impl ScheduledVehicle {
             settings,
             phase: PollPhase::Unknown,
             phase_since: (now, wall_ms),
+            restored_phase: None,
             hold,
             reason: if settings.enabled {
                 "collecting"
@@ -1247,6 +1253,15 @@ fn enter_phase_gated(
     vehicle.phase = new;
     vehicle.phase_since = (now, wall_ms);
     vehicle.reason = reason;
+    // A restart keeps the unchanged persisted state (M04-T01): the stored phase,
+    // re-entered at the first list, keeps its stored wall start and reason. The
+    // monotonic start is still now, so every interval runs as before.
+    if let Some((stored, since_ms, stored_reason)) = vehicle.restored_phase.take()
+        && stored == new
+    {
+        vehicle.phase_since.1 = since_ms;
+        vehicle.reason = stored_reason;
+    }
     if matches!(
         new,
         PollPhase::Asleep | PollPhase::Offline | PollPhase::Suspended

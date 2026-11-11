@@ -927,11 +927,18 @@ async fn collector_resilience_unchanged_polls_after_a_restart_write_nothing() {
     let last_seen = one("SELECT MAX(last_seen_at_ms) FROM vehicles");
     let observations = one("SELECT COUNT(*) FROM raw_observations");
     let census_at_stop = store_census(&store);
+    let rows_at_stop = store.load_collector_state_rows().expect("rows").vehicles;
+    assert!(
+        rows_at_stop.iter().any(|row| row.phase == "asleep" && row.hold == "none"),
+        "the stop stored the unheld asleep car: {rows_at_stop:?}"
+    );
 
     // The restart: a new process over the same store.
     store.instrumentation().reset();
     let (mut task, control, clock, ready_rx, shutdown_tx) = run(store.clone(), 0xB2);
     let _cursor = wait_for_supervised_signal_or_abort("restart readiness", &mut task, ready_rx).await;
+    let at_readiness = store.instrumentation().snapshot();
+    let stamp_at_readiness = collector_rows_stamp(&store);
     let restart_lists = lists();
     let first = warm_up_the_controlled_loop_within(&control, clock.mono_now(), bound, |tick| {
         tick.requests > restart_lists
@@ -960,10 +967,11 @@ async fn collector_resilience_unchanged_polls_after_a_restart_write_nothing() {
     );
     assert_eq!(later.tick_commits, commits, "no tick committed");
     assert_eq!(collector_rows_stamp(&store), stamp, "no collector row changed");
-    // The restart's first list: the car is not registered again, nothing is stored for
-    // it, and its tick makes at most its one transaction. (That transaction may
-    // rewrite the car's scheduler row: a restart re-enters an unheld car's phase, C3
-    // R10, and the counts ride on that write.)
+    // The restart's first list: the car is not registered again and nothing is stored
+    // for it. Review finding 6 (round 2): the restart kept the car's unchanged stored
+    // row (phase, its start and reason), so that first poll, with no new observation,
+    // makes no durable write at all: no tick commit, no collector transaction, no
+    // collector row changed.
     let since_stop = format!(
         "restart start and first tick: {counts:?}; first tick {first:?}\nAT STOP {census_at_stop}\nAFTER FIRST {census_after_first}"
     );
@@ -971,7 +979,17 @@ async fn collector_resilience_unchanged_polls_after_a_restart_write_nothing() {
     // Review finding 3 (round 2): the restart's first list is stored in its tick, not
     // by a source registration and an inventory transaction of their own.
     assert_eq!(counts.source_registration_calls, 0, "{since_stop}");
-    assert!(first.tick_commits <= 1, "{since_stop}");
+    assert_eq!(first.tick_commits, 0, "{since_stop}");
+    assert_eq!(
+        counts.write_transaction_commits, at_readiness.write_transaction_commits,
+        "{since_stop}"
+    );
+    assert_eq!(stamp, stamp_at_readiness, "{since_stop}");
+    assert_eq!(
+        store.load_collector_state_rows().expect("rows").vehicles,
+        rows_at_stop,
+        "the car's row is the one stored at the stop: {since_stop}"
+    );
     assert_eq!(one("SELECT COUNT(*) FROM raw_observations"), observations, "{since_stop}");
     assert_eq!(one("SELECT MAX(last_seen_at_ms) FROM vehicles"), last_seen, "{since_stop}");
     assert!(fake.assert_no_wake_or_command().is_ok());
@@ -979,6 +997,47 @@ async fn collector_resilience_unchanged_polls_after_a_restart_write_nothing() {
     join_supervised_restart_task("restart join", &mut task)
         .await
         .expect("restart result");
+}
+
+/// Review finding 6 (round 2): a restart keeps an unheld car's unchanged stored
+/// state. The previous process stored the car asleep; the new process's first list
+/// says asleep again, so the car's view equals its stored row (phase, start, reason)
+/// and the tick has no row to write. A changed phase is still written.
+#[tokio::test]
+async fn collector_resilience_a_restart_keeps_an_unchanged_cars_stored_row() {
+    let mut bed = TickBed::owner();
+    bed.list(vec![core_vehicle(1, "asleep")]).await;
+    let hub = bed.scheduler.vehicles[&core_id(1)].hub_id.expect("hub id");
+    let stored = bed.store.load_collector_state_rows().expect("rows").vehicles;
+    assert_eq!(stored.len(), 1);
+    assert_eq!((stored[0].phase.as_str(), stored[0].hold.as_str()), ("asleep", "none"));
+    // Ten minutes later, a new process.
+    let (mut restarted, _clock, t) =
+        restarted_scheduler(crate::config::CollectorMode::Legacy, CORE_W0 + 600_000);
+    let configured = [(hub, 1, crate::hub_pack::ProjectionCarSettings::default())];
+    restarted.load(
+        &CollectorStateSnapshot::from_rows(
+            bed.store.load_collector_state_rows().expect("rows"),
+            DS_FP_A.to_owned(),
+            &configured,
+        ),
+        t,
+    );
+    restarted.apply_control_settings(&configured, t);
+    restarted.begin_tick();
+    restarted.accept_discovery(vec![core_vehicle(1, "asleep")], t);
+    let car = &restarted.vehicles[&core_id(1)];
+    assert_eq!(car.phase, PollPhase::Asleep, "the list decided the phase afresh");
+    assert_eq!(car.phase_since.1, stored[0].phase_since_ms, "the stored start is kept");
+    let tick = restarted.take_tick();
+    assert!(tick.vehicles.is_empty(), "no row to write: {:?}", tick.vehicles);
+    // A change is still a change: the car comes online and its row is written.
+    let later = t + Duration::from_secs(30);
+    restarted.accept_discovery(vec![core_vehicle(1, "online")], later);
+    restarted.vehicle_succeeded(core_id(1), PollPhase::Online, true, later);
+    let tick = restarted.take_tick();
+    assert_eq!(tick.vehicles.len(), 1, "{:?}", tick.vehicles);
+    assert_eq!(tick.vehicles[0].row.phase, "online");
 }
 
 // ---- Token expiry routes to the re-login state; a network loss only waits ------------

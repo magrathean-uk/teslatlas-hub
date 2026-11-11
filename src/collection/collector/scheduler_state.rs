@@ -713,6 +713,7 @@ impl VehicleScheduler {
         if matches!(row.hold.as_str(), "removed" | "paused" | "service") {
             vehicle.phase_since = (now, row.phase_since_ms);
         }
+        vehicle.restored_phase = None;
         match row.hold.as_str() {
             "removed" => {
                 vehicle.hold = VehicleHold::Removed;
@@ -748,6 +749,18 @@ impl VehicleScheduler {
                     // a gap reads the reported state.
                     vehicle.reported_state = Some("online".to_owned());
                     vehicle.reason = reason;
+                } else {
+                    // Any other stored phase restores as Unknown, so the first list
+                    // decides it afresh (C3 R7). Its stored start and reason are kept
+                    // for that decision (M04-T01, review round 2 finding 6): when the
+                    // list confirms the same phase, the car's row is unchanged and
+                    // the first poll after the restart writes nothing.
+                    let phase = phase_from_code(&row.phase);
+                    vehicle.restored_phase = (!matches!(
+                        phase,
+                        PollPhase::Unknown | PollPhase::Suspended
+                    ))
+                    .then_some((phase, row.phase_since_ms, reason));
                 }
             }
         }

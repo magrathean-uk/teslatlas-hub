@@ -711,6 +711,7 @@ impl VehicleScheduler {
         vehicle.stop_timers();
         vehicle.phase = PollPhase::Unknown;
         vehicle.phase_since = (now, wall_ms);
+        vehicle.restored_phase = None;
         vehicle.reason = reason;
         let hub_id = vehicle
             .hub_id
@@ -773,6 +774,7 @@ impl VehicleScheduler {
         vehicle.hold = VehicleHold::None;
         vehicle.phase = PollPhase::Unknown;
         vehicle.phase_since = (now, wall_ms);
+        vehicle.restored_phase = None;
         vehicle.reason = "vehicle_reappeared";
         log_vehicle_transition(
             vehicle,
