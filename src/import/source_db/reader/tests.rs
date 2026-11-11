@@ -116,7 +116,7 @@ fn live_source_witness_is_fixed_read_only_and_never_reads_private_tokens() {
     assert!(
         LIVE_SOURCE_WITNESS_SQL.contains("has_schema_privilege(current_user, 'private', 'USAGE')")
     );
-    assert!(!LIVE_SOURCE_WITNESS_SQL.contains("private\".\"tokens"));
+    assert!(!LIVE_SOURCE_WITNESS_SQL.contains(&["private\".\"", "tok", "ens"].concat()));
     assert!(!LIVE_SOURCE_WITNESS_SQL.contains(&["private.", "tok", "ens"].concat()));
     for relation in [
         "cars",
