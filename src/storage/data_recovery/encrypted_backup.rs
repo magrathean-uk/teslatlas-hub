@@ -39,6 +39,27 @@
 //! leaves the destination exactly as it was: the last good generation stays.
 //! Rotation runs only after publication and never touches the new generation;
 //! a rotation failure is reported beside a successful backup.
+//!
+//! Authenticity (M06-T02). Each generation's manifest is the first record of
+//! its archive, so it is authenticated by the password-derived key with the
+//! rest of the stream; it names the installation, the generation and its
+//! creation time, and the file name must be exactly the one those imply. A
+//! file in the destination is trusted only when it authenticates: rotation
+//! and stale-partial cleanup act only on files whose authenticated manifest
+//! names this Hub's installation and whose name matches it (still the same
+//! file when it is removed), and verify and restore refuse a file whose name
+//! does not match its authenticated generation. A foreign, substituted,
+//! renamed, linked or damaged file is never deleted, trusted or restored. On
+//! a local volume that enforces ownership the folder and the archives must
+//! also pass POSIX admission ([`super::backup_admission`]); network and
+//! removable volumes rely on the authenticated encryption alone.
+//!
+//! Secret exclusion (M06-T02). The seal removes credential rows, the
+//! credential unit's status row, pairing and collector authority, then
+//! vacuums the copy, so free pages copied from the live catalogue cannot
+//! carry an old refresh-token envelope or bearer digest into the archive. Key
+//! files (credential keys, the Fleet virtual-key private key, TLS identity,
+//! cursor key) are never members.
 
 use std::{
     fs::{self, File, OpenOptions},
@@ -58,6 +79,7 @@ use super::{
     DataRecoveryError, DataRecoveryReport, HubStore, MAX_BACKUP_MEMBERS, MAX_MANIFEST_BYTES,
     MAX_SCHEMA_22_NOOP_BYTES, PACK_DIRECTORY, PRIVATE_FILE_MODE, SCHEMA_22_NOOP_DIRECTORY,
     SCHEMA_VERSION, Sha256, StagingDirectory, StoreError, admit_staging_capacity,
+    backup_admission::{self, VolumeTrust},
     archive_crypto::{
         ArchiveReader, ArchiveWriter, DEFAULT_CHUNK_BYTES, DEFAULT_KDF, KdfParams, MAX_CHUNK_BYTES,
         MAX_KDF_MEMORY_KIB, SealingKey, TAG_BYTES, map_write_error,
@@ -67,8 +89,9 @@ use super::{
     excluded_host_state_strings, expected_protocol, finalize_restore,
     immutable_database_identity_at_schema, invalid, io_error, manifest_copy_bytes,
     no_replace_rename, open_regular_nonblocking, parse_canonical_json, prepare_new_destination,
-    read_directory, report, seal_backup_credentials, seal_backup_credentials_checked,
-    seal_host_authority, sync_directory, validate_manifest, validate_restored_data_tree,
+    read_directory, report, same_regular_file, seal_backup_credentials,
+    seal_backup_credentials_checked, seal_host_authority, sync_directory,
+    vacuum_sealed_catalogue, validate_manifest, validate_restored_data_tree,
     validate_schema_22_noop_bytes,
 };
 use rusqlite::{
@@ -96,7 +119,8 @@ pub(super) const HUB_PEAK_MEMORY_BYTES: u64 = 1024 * 1024 * 1024;
 /// What the rest of the Hub may hold while a backup runs.
 pub(super) const SERVICE_RESERVE_BYTES: u64 = 384 * 1024 * 1024;
 /// The largest catalogue an encrypted backup copies. The copy and its
-/// serialised image coexist briefly, so the budget counts it twice.
+/// serialised image coexist briefly, so the budget counts it twice; the vacuum
+/// of the sealed copy (its rebuilt image beside the copy) fits the same two.
 pub(super) const MAX_CATALOGUE_IMAGE_BYTES: u64 = 256 * 1024 * 1024;
 // The memory budget holds at compile time (the tests spell it out): the key
 // derivation phase, then the copy, no-op bodies and stream buffers, each beside
@@ -450,6 +474,7 @@ fn seal_catalogue(
     seal_backup_credentials_checked(&connection)?;
     seal_backup_credentials(&mut connection)?;
     seal_host_authority(&mut connection, current_epoch_ms()?)?;
+    vacuum_sealed_catalogue(&connection)?;
     if catalogue_identity(&connection, SCHEMA_VERSION)? != installation_id {
         return Err(invalid(
             "copied catalogue installation ID does not match the live source",
@@ -523,9 +548,55 @@ fn generation_stamp(created_at_ms: i64) -> Result<String, DataRecoveryError> {
     ))
 }
 
-/// A backup left half-written by a killed process: the Hub's own partial name,
-/// a regular file, never a link.
-fn remove_stale_partials(destination: &Path) -> Result<(), DataRecoveryError> {
+/// The file name a generation must have: the creation stamp and generation
+/// of its authenticated manifest.
+fn canonical_archive_name(manifest: &BackupManifest) -> Result<String, DataRecoveryError> {
+    Ok(format!(
+        "{ARCHIVE_PREFIX}{}-{}{ARCHIVE_SUFFIX}",
+        generation_stamp(manifest.created_at_ms)?,
+        manifest.generation
+    ))
+}
+
+/// Open `path` without following a link, admit it for `trust` and
+/// authenticate its manifest with `password`. The metadata is the opened
+/// file's, for the identity check before any removal.
+fn authenticate_file(
+    path: &Path,
+    password: &str,
+    trust: VolumeTrust,
+) -> Result<(BackupManifest, fs::Metadata), DataRecoveryError> {
+    let file = open_regular_nonblocking(path, "opening backup archive")?;
+    let metadata = file
+        .metadata()
+        .map_err(|source| io_error("inspecting backup archive", path, source))?;
+    backup_admission::admit_archive_file(&metadata, trust)?;
+    let opened = open_archive_file(file, path, password)?;
+    Ok((opened.manifest, metadata))
+}
+
+/// Remove `path` only while it is still the file that authenticated.
+fn remove_authenticated(path: &Path, authenticated: &fs::Metadata) -> Result<bool, DataRecoveryError> {
+    match fs::symlink_metadata(path) {
+        Ok(current) if same_regular_file(&current, authenticated) => {}
+        _ => return Ok(false),
+    }
+    fs::remove_file(path)
+        .map(|()| true)
+        .map_err(|source| io_error("removing an old generation", path, source))
+}
+
+/// A backup left half-written by a killed run of this Hub: the Hub's own
+/// partial name, a regular file (never a link) whose manifest authenticates
+/// and names this installation and the name's generation. Anything else with
+/// a partial name, including a partial killed before its manifest chunk was
+/// sealed, stays.
+fn remove_stale_partials(
+    destination: &Path,
+    password: &str,
+    installation_id: Uuid,
+    trust: VolumeTrust,
+) -> Result<(), DataRecoveryError> {
     let entries =
         fs::read_dir(destination).map_err(|source| DataRecoveryError::DestinationUnavailable {
             path: destination.to_path_buf(),
@@ -541,11 +612,17 @@ fn remove_stale_partials(destination: &Path) -> Result<(), DataRecoveryError> {
         else {
             continue;
         };
-        if Uuid::parse_str(inner).is_err() {
+        let Ok(generation) = Uuid::parse_str(inner) else {
+            continue;
+        };
+        if !entry.file_type().is_ok_and(|kind| kind.is_file()) {
             continue;
         }
-        if entry.file_type().is_ok_and(|kind| kind.is_file()) {
-            let _ = fs::remove_file(entry.path());
+        let path = entry.path();
+        if let Ok((manifest, metadata)) = authenticate_file(&path, password, trust) {
+            if manifest.installation_id == installation_id && manifest.generation == generation {
+                let _ = remove_authenticated(&path, &metadata);
+            }
         }
     }
     Ok(())
@@ -586,6 +663,7 @@ pub fn create_encrypted_backup(
     let cancel = request.cancel.as_deref();
     cancelled(cancel)?;
     let destination = resolve_destination(request.destination)?;
+    let trust = backup_admission::admit_destination(&destination)?;
     let live_data = store
         .database_path()
         .parent()
@@ -609,6 +687,10 @@ pub fn create_encrypted_backup(
     cancelled(cancel)?;
 
     let source_installation_id = store.installation_id()?;
+    // Before the catalogue copy, so a crafted partial header's key derivation
+    // never runs beside it.
+    remove_stale_partials(&destination, request.password, source_installation_id, trust)?;
+    cancelled(cancel)?;
     store.catalogue_check()?;
     let Snapshot {
         catalogue,
@@ -619,7 +701,6 @@ pub fn create_encrypted_backup(
     let generation = Uuid::new_v4();
     let partial = destination.join(format!("{PARTIAL_PREFIX}{generation}{PARTIAL_SUFFIX}"));
     let run = (|| {
-        remove_stale_partials(&destination)?;
         cancelled(cancel)?;
         let catalogue = seal_catalogue(catalogue, source_installation_id)?;
         let mut planned = vec![Planned {
@@ -654,10 +735,7 @@ pub fn create_encrypted_backup(
         };
         validate_manifest(&manifest)?;
         let manifest_bytes = canonical_json(&manifest)?;
-        let final_path = destination.join(format!(
-            "{ARCHIVE_PREFIX}{}-{generation}{ARCHIVE_SUFFIX}",
-            generation_stamp(created_at_ms)?
-        ));
+        let final_path = destination.join(canonical_archive_name(&manifest)?);
         let archive_bytes = write_partial(
             request,
             key,
@@ -696,7 +774,14 @@ pub fn create_encrypted_backup(
     drop(pins);
 
     let (rotated_generations, rotation_error) = match request.keep {
-        Some(keep) => rotate(&destination, keep.get(), &final_path),
+        Some(keep) => rotate(
+            &destination,
+            keep.get(),
+            &final_path,
+            request.password,
+            source_installation_id,
+            trust,
+        ),
         None => (0, None),
     };
     Ok(EncryptedBackupReport {
@@ -921,37 +1006,55 @@ fn stream_member(
     Ok(())
 }
 
-/// Remove generations beyond `keep`, oldest first, only after the new one is
-/// published. Returns how many went and the first failure, if any.
-fn rotate(destination: &Path, keep: usize, newest: &Path) -> (usize, Option<String>) {
+/// Remove this Hub's generations beyond `keep`, oldest first, only after the
+/// new one is published. Only files whose manifest authenticates, names this
+/// installation and matches the file name are ranked (by their authenticated
+/// creation time) or removed; a foreign, substituted, renamed, linked or
+/// damaged file is neither counted nor touched, so it can never push a real
+/// generation out. Returns how many went and the first failure, if any.
+fn rotate(
+    destination: &Path,
+    keep: usize,
+    newest: &Path,
+    password: &str,
+    installation_id: Uuid,
+    trust: VolumeTrust,
+) -> (usize, Option<String>) {
     let entries = match fs::read_dir(destination) {
         Ok(entries) => entries,
         Err(error) => return (0, Some(format!("could not list the destination: {error}"))),
     };
-    let mut generations: Vec<PathBuf> = entries
-        .flatten()
-        .filter(|entry| {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            name.starts_with(ARCHIVE_PREFIX)
-                && name.ends_with(ARCHIVE_SUFFIX)
-                && entry.file_type().is_ok_and(|kind| kind.is_file())
-        })
-        .map(|entry| entry.path())
-        .collect();
-    generations.sort();
-    generations.reverse();
-    let mut removed = 0;
-    for path in generations.into_iter().skip(keep) {
+    let mut own: Vec<(i64, Uuid, PathBuf, fs::Metadata)> = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !(name.starts_with(ARCHIVE_PREFIX) && name.ends_with(ARCHIVE_SUFFIX)) {
+            continue;
+        }
+        let path = entry.path();
         if path == newest {
             continue;
         }
-        let result = hook("rotate_remove", &path).and_then(|()| {
-            fs::remove_file(&path)
-                .map_err(|source| io_error("removing an old generation", &path, source))
-        });
+        let Ok((manifest, metadata)) = authenticate_file(&path, password, trust) else {
+            continue;
+        };
+        let canonical = canonical_archive_name(&manifest).ok();
+        if manifest.installation_id != installation_id || canonical.as_deref() != Some(name) {
+            continue;
+        }
+        own.push((manifest.created_at_ms, manifest.generation, path, metadata));
+    }
+    own.sort_by(|left, right| (right.0, right.1).cmp(&(left.0, left.1)));
+    let mut removed = 0;
+    // The new generation is always kept and counts as one.
+    for (_, _, path, metadata) in own.into_iter().skip(keep.saturating_sub(1)) {
+        let result = hook("rotate_remove", &path)
+            .and_then(|()| remove_authenticated(&path, &metadata));
         match result {
-            Ok(()) => removed += 1,
+            Ok(true) => removed += 1,
+            Ok(false) => {}
             Err(error) => return (removed, Some(error.to_string())),
         }
     }
@@ -965,8 +1068,38 @@ struct OpenedArchive {
     manifest_bytes: Vec<u8>,
 }
 
+/// Open an archive for verify or restore: admitted for its volume, its
+/// manifest authenticated, and its file name exactly the one its
+/// authenticated generation implies, so a renamed or substituted generation
+/// is never trusted or restored.
 fn open_archive(archive: &Path, password: &str) -> Result<OpenedArchive, DataRecoveryError> {
+    let parent = archive
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let trust = backup_admission::classify(parent)?;
     let file = open_regular_nonblocking(archive, "opening backup archive")?;
+    let metadata = file
+        .metadata()
+        .map_err(|source| io_error("inspecting backup archive", archive, source))?;
+    backup_admission::admit_archive_file(&metadata, trust)?;
+    let opened = open_archive_file(file, archive, password)?;
+    let named = archive.file_name().and_then(|name| name.to_str());
+    if named != Some(canonical_archive_name(&opened.manifest)?.as_str()) {
+        return Err(invalid(
+            "the archive's file name does not match its authenticated generation; restore \
+             the generation under the name the Hub gave it",
+        ));
+    }
+    Ok(opened)
+}
+
+/// Authenticate the manifest record of an opened archive or partial file.
+fn open_archive_file(
+    file: File,
+    archive: &Path,
+    password: &str,
+) -> Result<OpenedArchive, DataRecoveryError> {
     let mut reader = ArchiveReader::open(file, archive.to_path_buf(), password)?;
     let (path, size) = read_file_header(&mut reader)?;
     if path != MANIFEST_RECORD || size > MAX_MANIFEST_BYTES {
