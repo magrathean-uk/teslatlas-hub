@@ -2,6 +2,7 @@
 
 //! Configuration, diagnostics, and lifecycle projection.
 
+pub mod backup_schedule;
 pub mod config;
 pub mod diagnostics;
 pub mod lifecycle;
