@@ -1272,6 +1272,14 @@ pub fn restore_encrypted_backup(
     finalize_restore(staging, &destination, &opened.manifest)
 }
 
+/// The whole authenticated plaintext stream of an archive, for tests that
+/// look for bytes an archive must never carry.
+#[cfg(test)]
+pub(super) fn archive_plaintext(archive: &Path, password: &str) -> Result<Vec<u8>, DataRecoveryError> {
+    let file = open_regular_nonblocking(archive, "opening backup archive")?;
+    ArchiveReader::open(file, archive.to_path_buf(), password)?.read_to_end_plain()
+}
+
 #[cfg(test)]
 pub(super) mod test_hooks {
     use std::{

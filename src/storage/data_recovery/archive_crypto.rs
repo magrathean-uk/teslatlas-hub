@@ -519,6 +519,20 @@ impl<R: Read> ArchiveReader<R> {
         Ok(())
     }
 
+    /// Every remaining authenticated plaintext byte (tests inspect what an
+    /// archive carries).
+    #[cfg(test)]
+    pub(super) fn read_to_end_plain(&mut self) -> Result<Vec<u8>, DataRecoveryError> {
+        let mut all = Vec::new();
+        loop {
+            all.extend_from_slice(&self.plain[self.position..]);
+            self.position = self.plain.len();
+            if !self.fill()? {
+                return Ok(all);
+            }
+        }
+    }
+
     /// After the last record: no plaintext may remain and no chunk may follow.
     pub(super) fn expect_end(&mut self) -> Result<(), DataRecoveryError> {
         if self.position < self.plain.len() || self.fill()? {
