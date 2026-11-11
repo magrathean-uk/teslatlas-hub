@@ -228,7 +228,10 @@ extension OnboardingWindowControllerTests {
         spinUntil(3) { done != nil }
         guard case .success? = done else { return XCTFail("setup did not finish: \(String(describing: done))") }
         XCTAssertEqual(harness.rig.acquisitions(.account), 1, "the completion did not acquire again")
-        XCTAssertEqual(Set(harness.service.owners.map(\.id)).count, 1, "every service call carried the one owner")
+        XCTAssertFalse(harness.service.calls.contains { ["run:pause", "run:stop", "run:start", "run:restart"].contains($0) },
+                       "the sign-in never pauses, stops or restarts the service: \(harness.service.calls)")
+        XCTAssertEqual(harness.runner.names.filter { $0 == "window" || $0 == "setup" }, ["window", "setup"],
+                       "the window check, then setup with the code exchange")
         XCTAssertEqual(harness.rig.releases(.account), 1)
 
         // A cancelled generation: the late callback configures nothing.

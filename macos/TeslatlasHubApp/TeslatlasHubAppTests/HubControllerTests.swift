@@ -2145,7 +2145,9 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(events.values, ["check", "service:stop", "migrate"])
         XCTAssertNil(runner.stdin)
         XCTAssertTrue(runner.arguments.joined().contains("--online-snapshot"))
-        XCTAssertTrue(runner.arguments.joined().contains("--preserve-existing-credentials"))
+        // History only: no source key, token or credential flag reaches the import.
+        XCTAssertFalse(runner.arguments.joined().contains("--preserve-existing-credentials"))
+        XCTAssertFalse(runner.arguments.joined().contains("--encryption-key-file"))
         let versionAcknowledgedCommands = runner.arguments.filter {
             $0.contains("source-check") || $0.contains("migrate")
         }
@@ -3443,7 +3445,8 @@ extension HubControllerTests {
             let command = arguments.first { !$0.hasPrefix("-") && !$0.hasSuffix("config.toml") } ?? ""
             commands.append(command)
             if arguments.contains("source-check") {
-                completion(.success(arguments.contains("--history-only") ? Self.historyCompatibility : Self.compatibility))
+                // The source check never inspects a credential: its report always has that scope.
+                completion(.success(Self.historyCompatibility))
             } else if arguments.contains("migrate") {
                 completion(.success(#"{"status":"imported","captureMode":"online-snapshot"}"#))
             } else if arguments.contains("preflight") && arguments.contains("--history-only") {

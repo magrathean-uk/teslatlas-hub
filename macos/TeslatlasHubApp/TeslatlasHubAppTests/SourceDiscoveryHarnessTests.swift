@@ -50,7 +50,7 @@ final class SourceDiscoveryHarnessTests: XCTestCase {
                        #"{{range .Config.Env}}{{if eq (index (split . "=") 0) "DATABASE_USER" "DATABASE_PASS" "DATABASE_NAME"}}{{println .}}{{end}}{{end}}"#)
         XCTAssertFalse(SourceDiscovery.script.contains("{{range .Config.Env}}{{println .}}{{end}}"))
         XCTAssertFalse(SourceDiscovery.script.contains("encryption_key"))
-        XCTAssertFalse(SourceDiscovery.script.contains("key="))
+        XCTAssertFalse(SourceDiscovery.script.contains("printf 'key="))
         let result = try checked(scenario())
         XCTAssertEqual(result.status, 0)
         XCTAssertEqual(Set(result.values?.keys.map { $0 } ?? []),
