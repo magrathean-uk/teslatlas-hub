@@ -74,7 +74,11 @@ The schema cannot establish the release of the running source application. After
 checking the supported-release guidance, pass `--accept-schema-evidence` to
 acknowledge that limit; `migrate` requires the flag. The earlier schema flag is
 deprecated, remains a hidden alias, emits one warning
-on stderr and can be removed in a later version.
+on stderr and can be removed in a later version. The earlier verb `teslamate-check`
+is handled the same way: it still runs `source-check`, is absent from help, and
+warns once on stderr. Both aliases are on the removal list for the next release.
+They only map an earlier name to a command that exists; inputs that were removed
+on purpose, such as source tokens, stay refused.
 
 The import kind is `source_db`; a first keyless import uses `default`. On an
 upgraded catalogue, reuse its stored key with `--source-key` or configure
