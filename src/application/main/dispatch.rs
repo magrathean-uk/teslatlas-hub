@@ -518,7 +518,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = cli.config.unwrap_or_else(default_config_path);
     // Admission (M02-T10, rulings R5 and R6): every command is routed before
     // it reads a secret path, standard input or the network.
-    let _import_admission = match operator::admission::route(&cli.command) {
+    let route = operator::admission::route(&cli.command);
+    match route {
         Route::Refused(code) => {
             return Err(match code {
                 operator::admission::PROVIDER_PARKED => OperatorRefusal::provider_parked(),
@@ -528,9 +529,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         Route::Service => return run_forwarded(&config_path, &cli.command),
         Route::Issuer => return run_issuer(&cli.command),
-        Route::Import => admit_import_command(&cli.command, &config_path)?,
-        Route::Local => None,
-    };
+        Route::Import | Route::Local => {}
+    }
 
     if let Command::Healthcheck {
         ca_file,
@@ -572,6 +572,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             "History import requires --accept-schema-evidence after confirming source application release 4.2.0 or later"
         }.into());
     }
+
+    // Import and data restore are admitted only with the window Closed; the
+    // admission is held until the command ends.
+    let _import_admission = if route == Route::Import {
+        admit_import_command(&cli.command, &config_path)?
+    } else {
+        None
+    };
 
     #[cfg(target_os = "macos")]
     if let Command::ServePreflight { mode, history_only } = &cli.command {

@@ -495,8 +495,20 @@ async fn doctor_cli_attention_succeeds_but_unresolved_refresh_fails() {
     doctor(config_path.clone())
         .await
         .expect("a usable sign-in passes doctor");
-    // An unresolved Legacy refresh fails the dispatch and is not settled.
+    // An unresolved Legacy refresh fails the dispatch and is not settled. The
+    // refresh begins only under its own collector lease (M02-T04), so the
+    // synthetic lease steps aside for the begin and is restored after it.
+    sql(&store)
+        .execute("DELETE FROM supervised_collector_lease", [])
+        .expect("lease steps aside");
     unresolved_refresh(&store, "legacy_auth", generation);
+    lease(
+        &store,
+        real_now_ms() - 1_000,
+        real_now_ms(),
+        real_now_ms() + 29_000,
+        "active",
+    );
     let before = refresh_image(&store);
     store
         .checkpoint_catalogue_for_immutable_read()
@@ -512,6 +524,7 @@ async fn doctor_cli_attention_succeeds_but_unresolved_refresh_fails() {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     let (temporary, store) = private_hub();
     seed_car(&store);
@@ -761,13 +774,17 @@ fn cadence_invalid_keeps_otherwise_eligible_serve_supervised() {
             &format!("{provider}interval_seconds = 300"),
         );
         assert!(faulty.collector.cadence_violation().is_some());
-        // Eligibility ignores the cadence, so both start a supervised collector.
-        assert!(
+        // Eligibility ignores the cadence, so both start a supervised
+        // collector; a stored Fleet row is refused at load (M02-T02 parks
+        // Fleet), so a Fleet Hub is never eligible.
+        assert_eq!(
             collector_can_start(&store, &faulty).expect("eligibility"),
+            !fleet,
             "fleet {fleet}"
         );
-        assert!(
+        assert_eq!(
             collector_can_start(&store, &corrected).expect("eligibility"),
+            !fleet,
             "fleet {fleet}"
         );
         // Collection off, no car, and no credentials stay ineligible.

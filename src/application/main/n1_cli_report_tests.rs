@@ -62,10 +62,19 @@ fn synthetic_source_check_snapshot() -> SourceDbCheckSnapshot {
 #[test]
 fn source_check_reports_neutral_keys_and_schema_recognised() {
     let actual = source_check_success_report(42, &synthetic_source_check_snapshot(), true, true);
-    let expected: serde_json::Value = serde_json::from_str(include_str!(
+    let mut expected: serde_json::Value = serde_json::from_str(include_str!(
         "../../../macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/source-check-recognised.json"
     ))
     .unwrap();
+    // The report no longer carries the source-token keys (M02-T02): the
+    // check never inspects them and says so. The shared app fixture still
+    // holds them as nulls until the app side drops them.
+    let object = expected.as_object_mut().unwrap();
+    for key in ["legacyTokenPair", "sourceTokensRelationPresent"] {
+        assert!(object.remove(key).is_some_and(|value| value.is_null()), "{key}");
+        assert!(actual.get(key).is_none(), "{key}");
+    }
+    object.insert("credentialsInspected".to_owned(), serde_json::json!(false));
     assert_eq!(actual, expected);
     assert_eq!(actual["sourceSchemaRecognised"], true);
     assert_eq!(actual["schemaSetLabel"], "ea850d1b038c");
@@ -188,13 +197,15 @@ fn schema_arguments(command: &str, flag: &str) -> Vec<String> {
         "42",
         "--postgres-password-file",
         "fictional-password",
-        "--history-only",
         flag,
     ]
     .into_iter()
     .map(str::to_owned)
     .collect::<Vec<_>>();
+    // Source checks never inspect credentials, so only `migrate` takes
+    // `--history-only` (M02-T10).
     if command == "migrate" {
+        args.push("--history-only".to_owned());
         args.push("--online-snapshot".to_owned());
     }
     args
@@ -259,7 +270,7 @@ fn accept_schema_evidence_flag_works_for_check_and_migrate() {
 #[test]
 fn mt4_3_unknown_key_is_refused_unless_new_import_source() {
     let temp = tempfile::tempdir().unwrap();
-    let store = HubStore::initialize(temp.path()).unwrap();
+    let store = HubStore::initialize(&temp.path().join("data")).unwrap();
     let first = store
         .register_import_source("home-source", 1000, false)
         .unwrap();
@@ -296,7 +307,8 @@ fn mt4_3_unknown_key_is_refused_unless_new_import_source() {
 
 fn current_import_fixture() -> (tempfile::TempDir, HubStore, uuid::Uuid, uuid::Uuid) {
     let temporary = tempfile::tempdir().unwrap();
-    let store = HubStore::initialize(temporary.path()).unwrap();
+    // The store creates its own private data directory.
+    let store = HubStore::initialize(&temporary.path().join("data")).unwrap();
     let source = store
         .register_import_source("default", 1000, false)
         .unwrap();
@@ -328,20 +340,13 @@ fn assert_migration_argument_identity(arguments: Vec<String>) {
         new_import_source,
         history_only,
         online_snapshot,
-        encryption_key_file,
-        access_token_file,
-        refresh_token_file,
         ..
     } = cli.command
     else {
         panic!("migration command required")
     };
+    // The migration command has no key or token input at all (M02-T10).
     assert!(history_only && online_snapshot);
-    assert!(
-        encryption_key_file.is_none()
-            && access_token_file.is_none()
-            && refresh_token_file.is_none()
-    );
     let key = migration_source_key(source_key.as_deref(), None);
     assert_eq!(key, "default");
     store
@@ -405,7 +410,10 @@ async fn mt4_3_cli_refusal_preserves_abandoned_generation_before_initialisation(
         drop(connection);
         store.checkpoint_catalogue_for_immutable_read().unwrap();
         let staging = store.packs_dir().join(".staging");
-        fs::create_dir_all(&staging).unwrap();
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            fs::DirBuilder::new().recursive(true).mode(0o700).create(&staging).unwrap();
+        }
         let artefact = staging.join("synthetic-import-evidence");
         fs::write(&artefact, b"preserve refused import evidence").unwrap();
         let config_path = temp.path().join("config.toml");

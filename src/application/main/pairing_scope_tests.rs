@@ -11,10 +11,11 @@ use uuid::Uuid;
 
 use super::{io, write_test_identity};
 use crate::{
-    Cli, Command, ControlCommand, PairingCommandError, PairingCommandInput,
-    command_requires_user_hub_admission, execute_pairing_at, pair_with_configured_tls,
+    Cli, Command, ControlCommand, PairingCommandError, PairingCommandInput, execute_pairing_at, pair_with_configured_tls,
     paired_devices_json, pairing_grants_text, pairing_scope_from_flags, run_control,
 };
+
+use teslatlas_hub::runtime::operator::admission::requires_user_hub_admission as command_requires_user_hub_admission;
 
 const ALPHA: &str = "11111111-1111-4111-8111-111111111111";
 const BETA: &str = "22222222-2222-4222-8222-222222222222";
