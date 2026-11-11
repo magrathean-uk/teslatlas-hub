@@ -137,7 +137,7 @@ impl Rig {
         let (controller, _) = WindowController::start(
             WindowConfig {
                 dir: super::window_dir(&tmp.path().join("data")),
-                claim_path: tmp.path().join("claim/host-claim.lock"),
+                claim_path: crate::collection::window::HostClaim::default_path(&tmp.path().join("home")),
                 host_id: HOST.to_owned(),
             },
             WindowDeps {
@@ -164,6 +164,14 @@ impl Rig {
 
     fn data(&self) -> std::path::PathBuf {
         self.tmp.path().join("data")
+    }
+
+    fn home(&self) -> std::path::PathBuf {
+        self.tmp.path().join("home")
+    }
+
+    fn admit(&self) -> Result<admission::ImportAdmission, OperatorRefusal> {
+        admission::admit_import(Some(&self.data()), &self.home())
     }
 
     fn service(&self) -> OperatorService {
@@ -382,25 +390,25 @@ fn collection_window_operator_refuses_service_verbs_when_no_service_runs() {
 fn collection_window_operator_import_admission_follows_the_window() {
     let rig = Rig::new();
     // A Hub that never trusted an issuer has no window to wait for.
-    admission::admit_import(&rig.data()).expect("fresh Hub admits import");
+    rig.admit().expect("fresh Hub admits import");
     rig.controller
         .trust(&crate::collection::window::TrustDocument::parse(&rig.trust).expect("trust"))
         .expect("trusted");
-    let held = admission::admit_import(&rig.data()).expect("Closed admits import");
+    let held = rig.admit().expect("Closed admits import");
     drop(held);
     rig.controller.open(&rig.grant(600)).expect("open");
     assert_eq!(
-        admission::admit_import(&rig.data()).unwrap_err().code,
+        rig.admit().unwrap_err().code,
         "window_active"
     );
     rig.controller.close(CloseReason::OperatorClose);
     assert_eq!(
-        admission::admit_import(&rig.data()).unwrap_err().code,
+        rig.admit().unwrap_err().code,
         "window_active",
         "Closing still refuses"
     );
     rig.controller.finish_close().expect("handback");
-    let held = admission::admit_import(&rig.data()).expect("admitted after handback");
+    let held = rig.admit().expect("admitted after handback");
     // The issuer keeps its gap between grants.
     rig.clock.advance(2_000);
     // While the import holds the lock no window opens.
@@ -412,7 +420,7 @@ fn collection_window_operator_import_admission_follows_the_window() {
     // A corrupt state file fails closed.
     std::fs::write(super::window_dir(&rig.data()).join("state.json"), b"{").expect("corrupt");
     assert_eq!(
-        admission::admit_import(&rig.data()).unwrap_err().code,
+        rig.admit().unwrap_err().code,
         "state_unverifiable"
     );
 }
@@ -608,4 +616,77 @@ fn collection_window_operator_trust_needs_the_owner_or_the_pinned_issuer() {
         })
         .expect("G's grant of the new epoch opens");
     assert_eq!(status["phase"], "open");
+}
+
+/// Finding 4: the import pauses after it holds its locks and before it reads
+/// the window state; a `window open` in that pause is refused, so the import
+/// is never admitted while a window is open. The first use of a Hub with no
+/// window directory is locked the same way.
+#[test]
+fn collection_window_operator_import_admission_locks_before_it_reads_the_state() {
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data dir");
+    // First use: no window directory yet.
+    let mut opened = None;
+    let held = admission::admit_import_observed(Some(&rig.data()), &rig.home(), &mut || {
+        rig.controller
+            .trust(&crate::collection::window::TrustDocument::parse(&rig.trust).expect("trust"))
+            .expect_err("no trust while the import holds the window lock");
+        opened = Some(());
+    })
+    .expect("a fresh Hub admits the import");
+    assert!(opened.is_some());
+    drop(held);
+    rig.controller
+        .trust(&crate::collection::window::TrustDocument::parse(&rig.trust).expect("trust"))
+        .expect("trusted");
+    let grant = rig.grant(600);
+    let mut refusal = None;
+    let held = admission::admit_import_observed(Some(&rig.data()), &rig.home(), &mut || {
+        refusal = Some(rig.controller.open(&grant).unwrap_err().code());
+    })
+    .expect("admitted: the window could not open in the pause");
+    assert_eq!(refusal, Some("import_running"));
+    assert_eq!(rig.controller.status().phase, crate::collection::window::Phase::Closed);
+    assert!(!rig.controller.gate().is_open());
+    drop(held);
+    rig.controller.open(&grant).expect("opens once the import ends");
+    assert_eq!(rig.admit().unwrap_err().code, "window_active");
+}
+
+/// Finding 8: a restore with no configuration, or with the configuration of
+/// another, Closed Hub, is bound to this host's collection authority: it is
+/// refused while any window is open on the host and holds the host claim
+/// while it runs.
+#[test]
+fn collection_window_operator_restore_admission_follows_the_host_claim() {
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data dir");
+    let other = rig.tmp.path().join("other-data");
+    std::fs::create_dir_all(&other).expect("other data dir");
+    rig.controller
+        .trust(&crate::collection::window::TrustDocument::parse(&rig.trust).expect("trust"))
+        .expect("trusted");
+    rig.controller.open(&rig.grant(600)).expect("open");
+    for data in [None, Some(other.as_path())] {
+        assert_eq!(
+            admission::admit_import(data, &rig.home()).unwrap_err().code,
+            "window_active",
+            "{data:?}"
+        );
+    }
+    rig.controller.close(CloseReason::OperatorClose);
+    rig.controller.finish_close().expect("handback");
+    let held = admission::admit_import(None, &rig.home()).expect("no window on the host");
+    rig.clock.advance(2_000);
+    assert_eq!(
+        rig.controller.open(&rig.grant(600)).unwrap_err().code(),
+        "collector_busy",
+        "no window opens while the configuration-free restore runs"
+    );
+    drop(held);
+    let held = admission::admit_import(Some(&other), &rig.home()).expect("other Hub");
+    rig.clock.advance(2_000);
+    assert_eq!(rig.controller.open(&rig.grant(600)).unwrap_err().code(), "collector_busy");
+    drop(held);
 }

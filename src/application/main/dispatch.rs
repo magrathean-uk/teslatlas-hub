@@ -406,20 +406,23 @@ fn run_issuer(command: &Command) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Import and data restore wait for the window to be Closed with its
-/// handback recorded (design 2.10). A data restore on a host with no Hub
-/// configuration has no window to wait for.
+/// Import and data restore wait until no window is open on this host and
+/// the selected Hub's window is Closed with its handback recorded (design
+/// 2.10). A data restore with no Hub configuration is still bound to the
+/// host's collection authority: it proceeds only while no window holds the
+/// host claim, and holds it shared until it ends.
 fn admit_import_command(
     command: &Command,
     config_path: &Path,
 ) -> Result<Option<operator::admission::ImportAdmission>, Box<dyn std::error::Error>> {
+    let home = operator_home()?;
     if matches!(command, Command::RestoreData { .. })
         && matches!(fs::symlink_metadata(config_path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
     {
-        return Ok(None);
+        return Ok(Some(operator::admission::admit_import(None, &home)?));
     }
     let config = HubConfig::load(config_path)?;
-    Ok(Some(operator::admission::admit_import(&config.data_dir)?))
+    Ok(Some(operator::admission::admit_import(Some(&config.data_dir), &home)?))
 }
 
 /// What only the binary does inside the running service.

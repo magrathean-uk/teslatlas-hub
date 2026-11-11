@@ -385,7 +385,7 @@ mod authority {
 
     use teslatlas_hub::{
         collection::window::{
-            CloseReason, EgressGate, IssueRequest, Issuer, ManualProbe, MemoryAnchor, NoHighWater,
+            CloseReason, EgressGate, HostClaim, IssueRequest, Issuer, ManualProbe, MemoryAnchor, NoHighWater,
             Phase, PermitKind, Provider, SystemClock, WindowClock, WindowConfig, WindowController,
         },
         runtime::operator::authority::service_window_deps,
@@ -410,7 +410,8 @@ mod authority {
         let (controller, _) = WindowController::start(
             WindowConfig {
                 dir: data.join("window"),
-                claim_path: tmp.join("claim/host-claim.lock"),
+                // The claim of the Hub user's home, as the service holds it.
+                claim_path: HostClaim::default_path(tmp),
                 host_id: HOST.to_owned(),
             },
             deps,
@@ -475,6 +476,12 @@ mod authority {
         let restore = ["restore-data", "--source", &hub.secret("backup"), "--destination", &hub.secret("restored")];
         let output = hub.run(&restore, b"");
         assert_refused(&output, "window_active", &restore);
+        // Finding 8: with no configuration the restore is still bound to the
+        // host's collection authority.
+        fs::rename(hub.path("config.toml"), hub.path("moved.toml")).expect("configuration away");
+        let output = hub.run(&restore, b"");
+        assert_refused(&output, "window_active", &restore);
+        fs::rename(hub.path("moved.toml"), hub.path("config.toml")).expect("configuration back");
         controller.close(CloseReason::OperatorClose);
         let output = hub.run(&migrate, b"");
         assert_refused(&output, "window_active", &migrate);

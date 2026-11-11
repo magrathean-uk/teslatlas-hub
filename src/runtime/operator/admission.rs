@@ -10,13 +10,19 @@
 //! `service_not_running` before anything else is read. They never take the
 //! data-directory lifetime lock themselves. Fleet is parked: its verbs are
 //! refused `provider_parked`. Import and data restore are admitted only while
-//! the window is Closed with its handback recorded (design 2.10).
+//! no window is open on this host and the selected Hub's window is Closed
+//! with its handback recorded (design 2.10).
 
-use std::{fmt, path::Path};
+use std::{fmt, os::fd::OwnedFd, path::Path};
+
+use rustix::{
+    fs::{FlockOperation, Mode, OFlags, flock, fstat, open, stat},
+    io::Errno,
+};
 
 use super::cli::{Command, WindowCommand};
 use crate::collection::window::{
-    FileLock, LockMode, Phase, Refusal,
+    HostClaim, Phase, Refusal,
     state::{HubEntry, WindowStore},
 };
 
@@ -123,10 +129,12 @@ pub fn requires_user_hub_admission(command: &Command) -> bool {
 }
 
 /// Held for the whole of an import or data restore; while it lives no window
-/// can be opened (`import_running`).
+/// can be opened on this host (`collector_busy`) or on this data directory
+/// (`import_running`).
 #[derive(Debug)]
 pub struct ImportAdmission {
-    _lock: Option<FileLock>,
+    _claim: OwnedFd,
+    _window: Option<OwnedFd>,
 }
 
 fn ledger_synced(ledger: &[crate::collection::window::ledger::Line<HubEntry>]) -> bool {
@@ -136,17 +144,91 @@ fn ledger_synced(ledger: &[crate::collection::window::ledger::Line<HubEntry>]) -
     )
 }
 
-/// Admits a read-only import or data restore for `data_dir` only while its
-/// window is Closed with the last handback recorded. It reads the window
-/// directory and writes nothing: a Hub that never trusted an issuer has no
-/// window to wait for. Refused `window_active` in Pending, Open and Closing,
-/// `handback_pending` before the handback is synced, and
-/// `state_unverifiable` for a store that cannot be read.
-pub fn admit_import(data_dir: &Path) -> Result<ImportAdmission, OperatorRefusal> {
-    let store = WindowStore::new(&super::window_dir(data_dir));
-    if !store.dir().exists() {
-        return Ok(ImportAdmission { _lock: None });
+fn io_refusal() -> OperatorRefusal {
+    OperatorRefusal::window(Refusal::Io)
+}
+
+/// Creates `dir` (and its missing parents) private to this user.
+fn private_dir(dir: &Path) -> Result<(), OperatorRefusal> {
+    use std::os::unix::fs::DirBuilderExt;
+    if dir.is_dir() {
+        return Ok(());
     }
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .map_err(|_| io_refusal())
+}
+
+/// A shared `flock` on `path` that is stable: the locked descriptor is still
+/// the file at `path` after the lock is taken, so a lock file replaced
+/// meanwhile cannot leave the import holding a lock nobody else checks.
+/// `Ok(None)` when another holder has it exclusively.
+fn stable_shared_lock(path: &Path) -> Result<Option<OwnedFd>, OperatorRefusal> {
+    for _ in 0..3 {
+        let fd = open(
+            path,
+            OFlags::RDWR | OFlags::CREATE | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            Mode::from_raw_mode(0o600),
+        )
+        .map_err(|_| io_refusal())?;
+        match flock(&fd, FlockOperation::NonBlockingLockShared) {
+            Ok(()) => {}
+            Err(Errno::WOULDBLOCK) => return Ok(None),
+            Err(_) => return Err(io_refusal()),
+        }
+        let held = fstat(&fd).map_err(|_| io_refusal())?;
+        match stat(path) {
+            Ok(now) if now.st_dev == held.st_dev && now.st_ino == held.st_ino => {
+                return Ok(Some(fd));
+            }
+            _ => continue,
+        }
+    }
+    Err(io_refusal())
+}
+
+/// Admits a read-only import or data restore, binding it to this host's
+/// collection authority whatever configuration selected it (review findings
+/// 4 and 8). First the host claim every open window holds exclusively is
+/// taken shared, so no window is open anywhere on this host for this user
+/// and none can open while the admission lives; then, for a Hub data
+/// directory that exists, its window lock is taken shared before its state
+/// is read, so a window cannot open between the check and the lock. Both are
+/// held until the admission drops. A data directory with no window yet gets
+/// its lock created. Refused `window_active` while a window is Pending, Open
+/// or Closing, `handback_pending` before the handback is synced, and
+/// `state_unverifiable` for a store that cannot be read.
+pub fn admit_import(data_dir: Option<&Path>, home: &Path) -> Result<ImportAdmission, OperatorRefusal> {
+    admit_import_observed(data_dir, home, &mut || {})
+}
+
+/// [`admit_import`] with `locked` called once the locks are held and before
+/// any state is read (tests pause there).
+pub fn admit_import_observed(
+    data_dir: Option<&Path>,
+    home: &Path,
+    locked: &mut dyn FnMut(),
+) -> Result<ImportAdmission, OperatorRefusal> {
+    let claim_path = HostClaim::default_path(home);
+    if let Some(parent) = claim_path.parent() {
+        private_dir(parent)?;
+    }
+    let claim = stable_shared_lock(&claim_path)?
+        .ok_or_else(|| OperatorRefusal::window(Refusal::WindowActive))?;
+    let Some(data_dir) = data_dir.filter(|dir| dir.is_dir()) else {
+        locked();
+        return Ok(ImportAdmission {
+            _claim: claim,
+            _window: None,
+        });
+    };
+    let store = WindowStore::new(&super::window_dir(data_dir));
+    private_dir(store.dir())?;
+    let window = stable_shared_lock(&store.lock_path())?
+        .ok_or_else(|| OperatorRefusal::window(Refusal::WindowActive))?;
+    locked();
     let loaded = store.load().map_err(OperatorRefusal::window)?;
     if loaded.state.phase != Phase::Closed {
         return Err(OperatorRefusal::window(Refusal::WindowActive));
@@ -154,8 +236,8 @@ pub fn admit_import(data_dir: &Path) -> Result<ImportAdmission, OperatorRefusal>
     if loaded.trust.is_some() && !ledger_synced(&loaded.ledger) {
         return Err(OperatorRefusal::window(Refusal::HandbackPending));
     }
-    let lock = FileLock::acquire(&store.lock_path(), LockMode::Shared, false)
-        .map_err(OperatorRefusal::window)?
-        .ok_or_else(|| OperatorRefusal::window(Refusal::WindowActive))?;
-    Ok(ImportAdmission { _lock: Some(lock) })
+    Ok(ImportAdmission {
+        _claim: claim,
+        _window: Some(window),
+    })
 }
