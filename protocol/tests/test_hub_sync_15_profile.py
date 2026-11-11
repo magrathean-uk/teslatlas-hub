@@ -1479,13 +1479,13 @@ class LiveOverlayProfileTests(unittest.TestCase):
         self.assertNotIn("may tombstone a live duplicate", text)
         self.assertNotIn("in favour of the imported row inside that import's own head transition", text)
         self.assertNotIn("folds the live rows into a new head and answers head_changed", text)
-        # The wire key document is the 1.3.0 route and schema; the 1.4.0 key schema covers only the fixture key set.
+        # The 1.3.0 wire key document also validates against the inherited 1.4.0 schema.
         keys = json.loads((PROFILE / "profile.json").read_text())["signing_keys"]
         self.assertEqual((keys["wire_key_document"], keys["route"]),
                          ("../1.3.0/signing-keys.schema.json#/$defs/document", "/v1/vehicles/{vehicle_id}/sync/signing-keys"))
         self.assertIn("../1.3.0/signing-keys.schema.json", json.loads((PROFILE / "profile.json").read_text())["inherited_artifacts"])
         for phrase in ("profile_id hub-sync-v1@1.3.0", "validates against the 1.3.0 schema",
-                       "validate no wire document", "The 1.5 OpenAPI defines no key route"):
+                       "validates the same wire document", "The 1.5 OpenAPI defines no key route"):
             self.assertIn(phrase, keys["rule"])
         self.assertEqual(json.loads((ROOT / "profiles/hub-sync-v1/1.3.0/signing-keys.schema.json").read_text())
                          ["$defs"]["document"]["properties"]["profile_id"], {"const": "hub-sync-v1@1.3.0"})

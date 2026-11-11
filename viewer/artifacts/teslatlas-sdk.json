@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "package_name": "@teslatlas/sdk",
+  "package_version": "2026.36.2",
+  "tarball": "artifacts/teslatlas-sdk-2026.36.2.tgz",
+  "tarball_sha256": "1e62303c17d558002001de0aeccb90e50c3644c76f46ced4e492b2960ec6f4da",
+  "installed_content_manifest_sha256": "853cd8fc6bc5b1d063b599cdf26c7543c8d41f4bcf0ab3c84fa90c1bd8002cf8",
+  "installed_member_count": 88,
+  "source": {
+    "commit": "2afc5f99ab1a58662570c695618512d4e8e975d8",
+    "node_version": "v26.10.0",
+    "npm_version": "12.1.0"
+  },
+  "profile": {
+    "id": "hub-http-v1",
+    "revision": "1.0.0",
+    "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+  }
+}

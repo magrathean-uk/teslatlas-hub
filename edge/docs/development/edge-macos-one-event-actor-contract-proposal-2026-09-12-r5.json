@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "kind": "macos_edge_one_event_actor_contract_proposal_r5",
+  "date": "2026-09-12",
+  "status": "source_only_superseding_r4_guard_correction_no_runtime",
+  "supersession": {
+    "r4_proposal": {
+      "path": "docs/development/edge-macos-one-event-actor-contract-proposal-2026-09-12-r4.json",
+      "sha256": "2358982834062f8df894de76ce85e92b7563cebac3ba66fc19bb48f4660c8771",
+      "state": "rejected_by_Hub_for_late_result_path_preflight"
+    },
+    "hub_r4_review": {
+      "path": "hub/docs/development/edge-macos-one-event-actor-contract-review-2026-09-12-r4.json",
+      "sha256": "932bde29461221aabf99a2e5dc00990c3f882923c380530846329e9086d3cf0a",
+      "state": "rejected_pending_pre_spawn_output_path_preflight"
+    },
+    "r3_review": {
+      "path": "hub/docs/development/edge-macos-one-event-actor-contract-review-2026-09-12-r3.json",
+      "sha256": "d4dc413d276e0df6f9a0ef8e628a0e6b79127788822e0ad42b6667348a289f12",
+      "state": "preserved_rejected_history"
+    },
+    "correction": "The producer source/test pair remains byte-for-byte unchanged from r4. This additive r5 package replaces only the guard source/test pair and records the newly reviewed preflight boundary."
+  },
+  "root_cause": {
+    "r4_behavior": "r4 checked the guard before the clock but did not lstat the result, output or derived result-temporary path and did not reject path aliases before the timestamp/claim/spawn sequence.",
+    "reproduction": {
+      "input": "A valid local r4 fixture with the configured result path pre-created with sentinel bytes.",
+      "observed": "r4 read one clock value, created the guard, created output, invoked the helper once, then raised result already exists while leaving the sentinel and without a final result record.",
+      "evidence": "Hub independently reproduced helper_calls=call, clock_calls=1, guard_exists=true and preserved result sentinel bytes.",
+      "consequence": "A failed post-event result publication could be mistaken for a valid final one-shot receipt, and aliases could overwrite or collide with inputs/outputs."
+    }
+  },
+  "authority_boundary": {
+    "scope": "Edge-owned source-only correction to the future one-event actor guard",
+    "runtime_start": false,
+    "credential_creation": false,
+    "pki_creation": false,
+    "guest_start": false,
+    "process_start": false,
+    "network_request": false,
+    "producer_invocation": false,
+    "event_submission": false,
+    "hub_edit": false,
+    "event_authorized": false,
+    "r1_r2_reuse": false,
+    "authority_rule": "A separate coordinator submit-once decision and wholly fresh Hub-owned runtime remain mandatory after r5 review."
+  },
+  "unchanged_producer_source": {
+    "source": {
+      "path": "docs/development/edge-macos-one-event-actor-r4/producer/main.go",
+      "sha256": "d59c5e38245113bebdfe2635f1f3e42cfa4052f269d45d5fbd0b392a12697df2",
+      "bytes": 7267,
+      "mode": "0644",
+      "type": "regular",
+      "status": "unchanged_r4_fresh_review_candidate"
+    },
+    "test": {
+      "path": "docs/development/edge-macos-one-event-actor-r4/producer/main_test.go",
+      "sha256": "a60bdba6bb71da8af5e4ede33627affda55efbd813efe2705108211391eca40d",
+      "bytes": 3684,
+      "mode": "0644",
+      "type": "regular",
+      "status": "unchanged_r4_fresh_review_candidate"
+    },
+    "historical_binary_reuse": false,
+    "future_build": "Hub independently stages/builds this fresh candidate against pinned Fleet Telemetry revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b and binds the new darwin-arm64 binary hash."
+  },
+  "stable_guard_source_package": {
+    "source": {
+      "repository_relative_path": "docs/development/edge-macos-one-event-actor-r5/guard/invoke_one_event.py",
+      "absolute_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/docs/development/edge-macos-one-event-actor-r5/guard/invoke_one_event.py",
+      "sha256": "889d79fff2ec6154993a72a65c2161240df999666cd97bee9c34e1b9ecb51d1f",
+      "bytes": 24376,
+      "mode": "0644",
+      "type": "regular",
+      "future_staged_mode": "0500"
+    },
+    "test": {
+      "repository_relative_path": "docs/development/edge-macos-one-event-actor-r5/guard/test_invoke_one_event.py",
+      "absolute_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/docs/development/edge-macos-one-event-actor-r5/guard/test_invoke_one_event.py",
+      "sha256": "ab95b8f1eb2bc8ed922209c3e648fdfd4b28d4646ce6d5a18ed405b0c296a983",
+      "bytes": 10616,
+      "mode": "0644",
+      "type": "regular"
+    },
+    "readme": {
+      "repository_relative_path": "docs/development/edge-macos-one-event-actor-r5/README.md",
+      "absolute_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/docs/development/edge-macos-one-event-actor-r5/README.md",
+      "sha256": "d4f46851117a64a4caf898c480891970ac5f0a47bb13ff1d4fec27e8b6f92349",
+      "bytes": 1135,
+      "mode": "0644",
+      "type": "regular"
+    }
+  },
+  "r5_preflight_contract": {
+    "input_paths": "The contract, authorization, binding, helper, client certificate, client key and server CA are all exact absolute owner-only inputs and must not be output aliases.",
+    "output_paths": [
+      "guard",
+      "result",
+      "output",
+      "derived result temporary path .<result-name>.tmp"
+    ],
+    "order_before_clock": [
+      "Validate every output path against the contract and require its owner-only parent.",
+      "Derive the same-directory atomic-result temporary path used by result publication.",
+      "Require guard, result, output and result-temporary paths to be pairwise distinct after absolute normalized-path comparison.",
+      "Require every output path, including the derived temporary path, to be disjoint from every input path.",
+      "lstat every output path before the clock; any occupant, including a dangling symlink, fails closed. An existing valid guard is AlreadyClaimed; existing result/output/temp paths are final ContractError outcomes.",
+      "Only after the complete absent/non-alias preflight may the wrapper read CLOCK_REALTIME once and claim the guard with O_CREAT|O_EXCL."
+    ],
+    "sentinel_policy": "Pre-existing result/output/temp/input bytes are never opened for writing; the rejection tests preserve sentinel bytes and show zero clock reads, zero guard creation and zero child calls.",
+    "race_policy": "The preflight is followed by O_EXCL for guard, output and the result temporary file. Any race is fail-closed; no retry or replay path exists.",
+    "result_policy": "After the one child outcome, publish the result by fsyncing a 0600 same-directory temporary file and hard-linking it to the absent result path; never overwrite an existing result."
+  },
+  "focused_verification": {
+    "command": "PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s docs/development/edge-macos-one-event-actor-r5/guard -p 'test_*.py' -v",
+    "result": "passed 7/7 in 0.101 seconds",
+    "browser": false,
+    "network": false,
+    "runtime": false,
+    "regressions": [
+      "pre-existing guard is final before clock/spawn",
+      "pre-existing result sentinel rejects before clock/guard/spawn",
+      "pre-existing output sentinel rejects before clock/guard/spawn",
+      "pre-existing result-temp sentinel rejects before clock/guard/spawn",
+      "result/guard, result/output and guard/output aliases reject before clock/guard/spawn",
+      "output/input alias rejects before clock/guard/spawn and preserves input",
+      "valid absent output paths still permit one local helper invocation"
+    ]
+  },
+  "future_hub_gate": {
+    "required_before_runtime": [
+      "Hub independently rehashes and inspects the unchanged r4 producer source/test pair and new r5 guard source/test pair.",
+      "Hub stages the r5 wrapper in the fresh root with its exact source hash and owner-only executable mode.",
+      "Hub creates a wholly fresh identity/profile/runtime and performs a new empty baseline; no r1/r2 root, value, credential, port or transaction is reused.",
+      "Coordinator separately authorizes exactly one fresh submit-once event only after the source, profile, baseline and guard gates pass."
+    ],
+    "runtime_acceptance": "If separately authorized, prove one receiver ACK, one Edge admission/spool record, Hub durable commit-before-ACK, exact IDs/gaps/frontier, empty post-ACK pull, zero pending/spool and exactly one VehicleName projection."
+  },
+  "known_limits": [
+    "This source/test package is not a runtime, credential, PKI, producer, event, forwarding, durable-commit, ACK/frontier, projection, package, service, installed or production acceptance receipt.",
+    "The producer source was not changed by r5 and its prior isolated source test is not live receiver evidence.",
+    "Hub status/doctor does not expose application-ledger or sequence-table counts; SQLite error 14 remains an observation limitation rather than a zero-count assertion."
+  ],
+  "runtime_boundary": "Source-only r5 guard correction. No guest, listener, process, credentials, PKI, network request, producer invocation, event submission, shared-state mutation or Hub edit occurred."
+}

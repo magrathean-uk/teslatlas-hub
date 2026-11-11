@@ -1,0 +1,139 @@
+{
+  "hub_id": "urn:uuid:018f18d2-6f45-7b3c-8a91-3c7286a10d42",
+  "protocol": {
+    "current_version": "1.2.0",
+    "supported_versions": [
+      "1.0.0",
+      "1.1.0",
+      "1.2.0"
+    ],
+    "minimum_client_version": "1.0.0",
+    "version_header": "Teslatlas-Protocol-Version",
+    "selection": "highest-compatible-not-newer-than-client"
+  },
+  "capabilities": [
+    {
+      "id": "query.vehicles",
+      "version": "1.0.0",
+      "introduced_in": "1.0.0",
+      "status": "stable",
+      "href": "/v1/vehicles"
+    },
+    {
+      "id": "query.history",
+      "version": "1.0.0",
+      "introduced_in": "1.0.0",
+      "status": "stable",
+      "href": "/v1/vehicles/{vehicle_id}/drives"
+    },
+    {
+      "id": "events.sse",
+      "version": "1.0.0",
+      "introduced_in": "1.0.0",
+      "status": "stable",
+      "href": "/v1/events"
+    },
+    {
+      "id": "data-quality",
+      "version": "1.0.0",
+      "introduced_in": "1.0.0",
+      "status": "stable",
+      "href": "/v1/data-quality"
+    },
+    {
+      "id": "commands.async",
+      "version": "1.0.0",
+      "introduced_in": "1.1.0",
+      "status": "stable",
+      "href": "/v1/commands",
+      "commands": [
+        {
+          "name": "set_charge_limit",
+          "command_class": "charging",
+          "required_scope": "vehicle.commands.charging",
+          "retry_policy": "state_verified",
+          "confirmation_required": true,
+          "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "percent"
+            ],
+            "properties": {
+              "percent": {
+                "type": "integer",
+                "minimum": 50,
+                "maximum": 100
+              }
+            }
+          },
+          "expected_state_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "charge_limit_percent"
+            ],
+            "properties": {
+              "charge_limit_percent": {
+                "type": "integer",
+                "minimum": 50,
+                "maximum": 100
+              }
+            }
+          }
+        },
+        {
+          "name": "honk_horn",
+          "command_class": "nuisance",
+          "required_scope": "vehicle.commands.nuisance",
+          "retry_policy": "none",
+          "confirmation_required": true,
+          "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "additionalProperties": false
+          },
+          "expected_state_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "honk_sequence"
+            ],
+            "properties": {
+              "honk_sequence": {
+                "const": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "metadata.mutable",
+      "version": "1.0.0",
+      "introduced_in": "1.2.0",
+      "status": "stable",
+      "href": "/v1/vehicles/{vehicle_id}/metadata"
+    }
+  ],
+  "endpoints": {
+    "well_known": "https://hub.example.invalid/.well-known/teslatlas-hub",
+    "api": "https://hub.example.invalid/v1",
+    "events": "https://hub.example.invalid/v1/events",
+    "openapi": "https://hub.example.invalid/openapi/teslatlas-v1.openapi.json"
+  },
+  "limits": {
+    "max_request_body_bytes": 262144,
+    "default_page_size": 100,
+    "max_page_size": 500,
+    "max_history_range_days": 366,
+    "max_dense_range_days": 31,
+    "max_concurrent_requests": 8,
+    "max_sse_connections": 2,
+    "event_replay_retention_seconds": 86400,
+    "idempotency_retention_seconds": 86400
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "acceptance_boundary": "Passing query conformance does not prove sync ingestion, schema-2.2 client correctness, migration preservation, or platform matrix completion.",
+  "manifest": "Verify x-teslatlas-manifest-signature as Ed25519 over exact downloaded bytes using discovery manifestPublicKey before parsing/using object references. Preserve existing binding and sequence checks.",
+  "noop": "Preserve signed schema 2.2 no-op contract, exact manifest/object bindings, and hash verification; this is not an empty invented snapshot.",
+  "pack": "Verify content-addressed SHA256, declared compressed length and decompression limits. Resume single byte Range using matching strong ETag/If-Range and validate Content-Range; never join incompatible objects.",
+  "profile_id": "hub-http-v1@1.0.0",
+  "regression_sources": [
+    "hub/tests/tls_import_e2e.rs",
+    "hub/src/api/server/tests.rs",
+    "hub/src/sync/updates_delivery.rs"
+  ],
+  "routes": [
+    "GET /v1/vehicles/{vehicle_id}/sync/manifest",
+    "GET /v1/vehicles/{vehicle_id}/sync/noop",
+    "GET /v1/packs/sha256/{object_name}"
+  ],
+  "schema_2_2": "Full snapshots only; explicit x-teslatlas-supported-schemas: 2.2 required; incompatible/missing negotiation returns 406. Do not request delta-v2 for schema 2.2.",
+  "scope": "Existing sync transport remains separate from query profile schema validation. These regression gates remain mandatory for sync clients."
+}

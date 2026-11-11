@@ -1,0 +1,293 @@
+{
+  "schema": "teslatlas.edge.receiver-readiness-proposal/v1",
+  "kind": "edge_macos13_receiver_readiness_proposal",
+  "date": "2026-09-12",
+  "status": "proposal_only_fresh_bearer_required_after_bounded_startup_failure",
+  "authority": "../../../docs/development/ACTIVE_SCOPE.md",
+  "purpose": "Prepare one bounded readiness-only receiver runtime on the existing supported macOS 13.7.4 ARM64 target using the exact loader-verified c2ace candidate. This document creates no credential, guest root, process, listener or event.",
+  "scope": {
+    "target": "macos13-arm64",
+    "os": "macOS 13.7.4 build 22H420",
+    "architecture": "arm64",
+    "user": "admin (uid 501)",
+    "runtime": "readiness-only; no producer invocation, receiver envelope, Hub forwarding, HA observation or data-bearing action",
+    "shared_runtime_owner": "Hub",
+    "edge_action_now": "none; wait for a separate fresh runtime handoff and authorization",
+    "fresh_root": "/Users/admin/teslatlas-lab/candidates/edge-receiver-c2ace-readiness-20260912-r1",
+    "fresh_root_status": "Hub retained the root after one bounded startup failure; Edge did not create it and no new input may be added without fresh authorization"
+  },
+  "candidate": {
+    "host_path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-receiver-status-loopback-macos13-20260910/teslatlas-fleet-telemetry",
+    "sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "bytes": 29251922,
+    "mode_and_type": "0755 regular Mach-O 64-bit arm64 executable",
+    "build": "Go 1.27.0 darwin/arm64; CGO_ENABLED=0; GOARM64=v8.0; trimpath; no VCS metadata; stripped",
+    "deployment_target": "LC_BUILD_VERSION macOS 13.0 minimum, SDK 26.2",
+    "dynamic_dependencies": [
+      "/usr/lib/libSystem.B.dylib",
+      "/usr/lib/libresolv.9.dylib",
+      "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+      "/System/Library/Frameworks/Security.framework/Versions/A/Security"
+    ],
+    "forbidden_dependencies": "No /opt/homebrew, libzmq or zeromq dependency",
+    "loader_receipt": "hub/docs/development/edge-macos13-receiver-loader-handoff-2026-09-12-r1.json"
+  },
+  "bindings": {
+    "receiver": {
+      "host": "127.0.0.1",
+      "port": 21444,
+      "endpoint": "wss://127.0.0.1:21444/",
+      "owner": "Edge receiver",
+      "required_result": "Loopback-only listener; no public or wildcard bind"
+    },
+    "receiver_status": {
+      "host": "127.0.0.1",
+      "port": 21445,
+      "endpoint": "http://127.0.0.1:21445/status",
+      "config_field": "status_port",
+      "source_behavior": "The target-compatible status patch uses a loopback default for the optional status host and net.JoinHostPort formatting; the status endpoint must remain loopback-only.",
+      "required_result": "HTTP 200 with body/status ok"
+    },
+    "receiver_startup_bearer": {
+      "environment": "TESLATLAS_FLEET_TELEMETRY_BEARER_FILE",
+      "path": "/Users/admin/teslatlas-lab/candidates/edge-receiver-c2ace-readiness-20260912-r1/inputs/edge/receiver-token",
+      "owner": "admin (uid 501)",
+      "mode": "0600 private regular non-symlink file",
+      "source_requirement": "Absolute clean path; regular file owned by the service euid; mode has no group/other bits; 1..4096 printable ASCII bytes",
+      "current_status": "Missing in the bounded startup attempt; not created or read by Edge",
+      "boundary": "Required by the pinned receiver startup producer even when no record is submitted; it is an environment binding, not a receiver JSON field"
+    },
+    "hub": {
+      "status": "not started or bound by this proposal",
+      "reason": "Receiver-only readiness does not authorize a shared Hub fixture or forwarding event"
+    }
+  },
+  "receiver_config": {
+    "path": "/Users/admin/teslatlas-lab/candidates/edge-receiver-c2ace-readiness-20260912-r1/config/fleet-telemetry.json",
+    "mode": "0600 regular non-symlink file",
+    "top_level_fields": [
+      "host",
+      "port",
+      "status_port",
+      "log_level",
+      "json_log_enable",
+      "namespace",
+      "teslatlas",
+      "reliable_ack_sources",
+      "records",
+      "tls"
+    ],
+    "document": {
+      "host": "127.0.0.1",
+      "port": 21444,
+      "status_port": 21445,
+      "log_level": "info",
+      "json_log_enable": true,
+      "namespace": "teslatlas-edge",
+      "teslatlas": {
+        "timeout_ms": 2000
+      },
+      "reliable_ack_sources": {
+        "V": "teslatlas",
+        "alerts": "teslatlas",
+        "errors": "teslatlas"
+      },
+      "records": {
+        "V": [
+          "teslatlas"
+        ],
+        "connectivity": [
+          "teslatlas"
+        ],
+        "alerts": [
+          "teslatlas"
+        ],
+        "errors": [
+          "teslatlas"
+        ]
+      },
+      "tls": {
+        "server_cert": "/Users/admin/teslatlas-lab/candidates/edge-receiver-c2ace-readiness-20260912-r1/inputs/vehicle-tls/vehicle-tls.crt",
+        "server_key": "/Users/admin/teslatlas-lab/candidates/edge-receiver-c2ace-readiness-20260912-r1/inputs/vehicle-tls/vehicle-tls.key",
+        "ca_file": "/Users/admin/teslatlas-lab/candidates/edge-receiver-c2ace-readiness-20260912-r1/inputs/vehicle-tls/vehicle-client-ca.crt"
+      }
+    },
+    "tls_fields": [
+      "server_cert",
+      "server_key",
+      "ca_file"
+    ],
+    "forbidden_receiver_fields": [
+      "bearer",
+      "bearer_path",
+      "endpoint",
+      "dispatcher",
+      "spool_key_path"
+    ],
+    "source_rule": "Use only the pinned receiver template fields above; the required bearer is a separate environment binding and no dispatcher or Edge process is part of this receiver-only readiness gate."
+  },
+  "identity_proposal": {
+    "status": "fresh_owner_only_inputs_required_not_issued",
+    "receiver_server_identity": {
+      "certificate_path": "/Users/admin/teslatlas-lab/candidates/edge-receiver-c2ace-readiness-20260912-r1/inputs/vehicle-tls/vehicle-tls.crt",
+      "private_key_path": "/Users/admin/teslatlas-lab/candidates/edge-receiver-c2ace-readiness-20260912-r1/inputs/vehicle-tls/vehicle-tls.key",
+      "certificate_requirements": "Fresh receiver server leaf, IP SAN 127.0.0.1, key correspondence verified without exposing the key",
+      "private_key_mode": "0600"
+    },
+    "client_auth_trust": {
+      "ca_file_path": "/Users/admin/teslatlas-lab/candidates/edge-receiver-c2ace-readiness-20260912-r1/inputs/vehicle-tls/vehicle-client-ca.crt",
+      "certificate_requirements": "Fresh owner-only client issuing CA; any later synthetic client leaf must be separately sealed and verified as CA:FALSE with critical digitalSignature/keyEncipherment and TLS Web Client Authentication",
+      "public_certificate_mode": "0644"
+    },
+    "startup_bearer": {
+      "environment": "TESLATLAS_FLEET_TELEMETRY_BEARER_FILE",
+      "path": "/Users/admin/teslatlas-lab/candidates/edge-receiver-c2ace-readiness-20260912-r1/inputs/edge/receiver-token",
+      "status": "Fresh Hub-owned value required under later authorization; no value is recorded here"
+    },
+    "identity_boundary": "This proposal records receiver paths and verification rules only. No certificate, private key, bearer value, synthetic identity or credential was created, read or copied."
+  },
+  "fresh_root_layout": {
+    "root": {
+      "path": "/Users/admin/teslatlas-lab/candidates/edge-receiver-c2ace-readiness-20260912-r1",
+      "owner": "admin (uid 501)",
+      "mode": "0700",
+      "status": "Retained by Hub after one bounded startup failure; do not add or replace inputs without fresh authorization"
+    },
+    "directories": [
+      {
+        "path": "bin",
+        "mode": "0700",
+        "purpose": "Versioned receiver candidate only"
+      },
+      {
+        "path": "config",
+        "mode": "0700",
+        "purpose": "Receiver JSON only"
+      },
+      {
+        "path": "inputs/vehicle-tls",
+        "mode": "0700",
+        "purpose": "Fresh receiver server certificate/key and client-auth CA"
+      },
+      {
+        "path": "inputs/edge",
+        "mode": "0700",
+        "purpose": "Separate required receiver startup bearer input; no Edge process is part of this gate"
+      },
+      {
+        "path": "receipts",
+        "mode": "0700",
+        "purpose": "Redacted readiness/process/listener receipts only"
+      }
+    ],
+    "files": [
+      {
+        "path": "bin/teslatlas-fleet-telemetry",
+        "mode": "0500",
+        "source": "Exact c2ace candidate above"
+      },
+      {
+        "path": "config/fleet-telemetry.json",
+        "mode": "0600",
+        "source": "Receiver config document above"
+      },
+      {
+        "path": "inputs/vehicle-tls/vehicle-tls.crt",
+        "mode": "0644",
+        "source": "Fresh Hub-owned receiver server certificate; not issued by this proposal"
+      },
+      {
+        "path": "inputs/vehicle-tls/vehicle-tls.key",
+        "mode": "0600",
+        "source": "Fresh Hub-owned receiver server private key; not issued by this proposal"
+      },
+      {
+        "path": "inputs/vehicle-tls/vehicle-client-ca.crt",
+        "mode": "0644",
+        "source": "Fresh Hub-owned client issuing CA; not issued by this proposal"
+      },
+      {
+        "path": "inputs/edge/receiver-token",
+        "mode": "0600",
+        "source": "Fresh Hub-owned startup bearer; required by receiver initialization but not created or recorded by this proposal"
+      }
+    ],
+    "no_other_files": "Do not add retained state, old identity versions, stale credentials, producer artifacts or unlisted config fields to this root."
+  },
+  "source_validation": {
+    "pinned_lock": {
+      "path": "packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json",
+      "sha256": "b6ab33bff684bb597fff75c714c1bcb77579d166701a3bc89f26c58293bc01ec",
+      "upstream": "fleet-telemetry v0.9.4 / d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+      "archive_sha256": "a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9",
+      "overlay_sha256": "828a98fe3b36bf07c3d2d32041be45efad7594c6c580a982b588875a10898b98"
+    },
+    "template": {
+      "path": "packaging/fleet-telemetry.json.example",
+      "sha256": "3876e7cb31faf07e7b135c3d7375f9b52a58091f86336c3577dabe45738fad8f",
+      "top_level_fields": [
+        "host",
+        "port",
+        "status_port",
+        "log_level",
+        "json_log_enable",
+        "namespace",
+        "teslatlas",
+        "reliable_ack_sources",
+        "records",
+        "tls"
+      ],
+      "tls_fields": [
+        "server_cert",
+        "server_key",
+        "ca_file"
+      ],
+      "validation": "The proposed receiver document uses exactly these top-level and tls field names; the bearer is required only through TESLATLAS_FLEET_TELEMETRY_BEARER_FILE and no dispatcher pseudo-field is in JSON."
+    },
+    "status_patch_sources": {
+      "config_sha256": "e038749d245eba5148e0ef5376bc2f13803540811c99fb47232e852df47b013e",
+      "status_server_sha256": "e2b1bf6ef7fd1656caa0e7d38cb31c817b80e84da8dafd1885cc70581b90236a",
+      "status_server_test_sha256": "7b94a1f1eeb341de437c0ee45cd2c49377cbeedb63468a99d7533f0cb24785db",
+      "behavior": "Loopback status binding and configured-host formatting tests passed; the earlier wildcard status listener regression was fixed."
+    },
+    "focused_tests": [
+      "Go 1.27.0 with CGO_ENABLED=0: go test -count=1 -mod=readonly ./datastore/teslatlas passed",
+      "Go 1.27.0 with CGO_ENABLED=0: go test -count=1 -v -mod=readonly ./server/monitoring passed both status tests"
+    ],
+    "candidate_validation": "Hub independently verified the exact candidate on host and macOS 13.7.4 guest: SHA, size, arm64 Mach-O, macOS 13.0 minimum, system-only dependencies, valid ad-hoc signature and -help exit 0."
+  },
+  "readiness_gate": {
+    "current_boundary": "Do not start the guest or any runtime from this proposal.",
+    "future_order": [
+      "Hub obtains a fresh explicit runtime authorization, verifies the retained R1 root is the exact owner/mode-correct root from the bounded attempt, and verifies the proposed bearer path is absent before creating only that file.",
+      "Hub verifies macOS 13.7.4 build 22H420, arm64, admin uid 501 and the exact c2ace candidate bytes before staging.",
+      "Hub stages only the fresh receiver config, fresh receiver TLS inputs and the required fresh 0600 bearer file bound through TESLATLAS_FLEET_TELEMETRY_BEARER_FILE; every path, owner and mode is recorded without printing values.",
+      "If separately authorized, start only the receiver, then verify its loopback listener at 127.0.0.1:21444 and /status at 127.0.0.1:21445.",
+      "Do not invoke the synthetic producer, submit an envelope, poll or mutate Hub/HA, or advance any ACK/frontier in this readiness-only gate."
+    ],
+    "failure_rule": "Any occupied or ambiguous bind, stale input, wrong candidate identity, non-loopback listener, missing required input or non-200 readiness response aborts before a data-bearing action."
+  },
+  "cleanup_contract": {
+    "owner": "Hub for guest, fresh root and shared runtime; Edge records only its redacted receipt",
+    "current_action": "None; the guest is stopped and the root is retained from the bounded startup failure; Edge is not changing it.",
+    "future_order": [
+      "Do not invoke or retry a producer event; this gate has none.",
+      "Stop the receiver first within the bounded 10-second supervisor margin; record exit result and PID/UID.",
+      "Verify 127.0.0.1:21445 and 127.0.0.1:21444 are closed and no unrelated listener or process was touched.",
+      "Retain the versioned fresh root and redacted receipts for audit; do not delete, overwrite, down -v, reuse or merge it with any prior root.",
+      "Hub stops the existing macos13-arm64 guest only under its own bounded lifecycle authority; Edge does not start or stop it in this proposal."
+    ],
+    "receipt_requirements": "Record exact process/listener closure, root mode/ownership, candidate identity and no-secret/no-payload log scan without recording private values."
+  },
+  "ownership_and_safety": {
+    "edge": "Owns source validation, candidate binding, receiver field contract and this proposal.",
+    "hub": "Owns any fresh target availability, root creation, credentials, TLS inputs, process launch and cleanup.",
+    "coordinator": "Owns any separate data-bearing submit-once authorization.",
+    "producer_event": false,
+    "hub_forwarding": false,
+    "ha_observation": false,
+    "vehicle_commands": false,
+    "production_state": false,
+    "publication": false
+  }
+}

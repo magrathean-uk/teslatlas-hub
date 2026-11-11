@@ -6426,20 +6426,145 @@
       "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26"
     },
     {
-      "id": "cleanroom-protected-owner-file",
+      "id": "tesla-auth-mit-attribution",
       "class": "g2-4-recorded",
       "paths": [
-        "src/collection/fake_tesla.rs"
+        "macos/TeslatlasHubApp/TeslatlasHubApp/TeslaAuthWindowController.swift"
       ],
-      "match_kind": "regex",
-      "match": "^.*$",
+      "match_b64": "Ly8gT0F1dGggcGFyYW1ldGVycyBhbmQgY2FsbGJhY2sgc2VtYW50aWNzIGFyZSBkZXJpdmVkIGZyb20gVGVzbGEgQXV0aCB2MC4xNS4w",
+      "max_count": 0,
+      "expires": "G2-4-M2",
+      "review_by": "2027-01-31",
+      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26",
+      "reason": "MIT-licensed Tesla Auth v0.15.0 attribution is kept in TeslaAuthWindowController.swift; the licence permits the use with attribution",
+      "authority": "DEC-072 item 1",
+      "recorded_row": "DEC-072 item 1: MIT-licensed Tesla Auth attribution"
+    },
+    {
+      "id": "imported-f21aae047a74963d6a7d",
+      "class": "frozen-history",
+      "paths": [
+        "edge/docs/development/archive/2026-09-08/docs/plans/2026-08-30-foundation.md"
+      ],
+      "match_b64": "TWFuZGF0b3J5IGhvc3RlZCByZWxheSwgY29uc3VtZXIgZGFzaGJvYXJkLCBUZXNsYU1hdGUgbWlncmF0aW9uLCBvciB2ZWhpY2xlIGNvbW1hbmQgcHJveHku",
+      "max_count": 1,
+      "expires": "none",
+      "reason": "Frozen retired-package material imported unchanged, exact full-file digest pinned; no interpretation or clearance change.",
+      "authority": "DEC-074 (REPO-01 import of the archived satellite repositories)"
+    },
+    {
+      "id": "imported-664defb8680b8d1a689b",
+      "class": "frozen-history",
+      "paths": [
+        "edge/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md"
+      ],
+      "match_b64": "YGZpeHR1cmVzL3Rlc2xhbWF0ZS1wb3N0Z3Jlcy9gLCBvciBgVGVzbGF0bGFzQ29yZS54Y2ZyYW1ld29yay9gLiBBcHAgaXMgb3V0c2lkZQ==",
+      "max_count": 1,
+      "expires": "none",
+      "reason": "Frozen retired-package material imported unchanged, exact full-file digest pinned; no interpretation or clearance change.",
+      "authority": "DEC-074 (REPO-01 import of the archived satellite repositories)"
+    },
+    {
+      "id": "imported-f4e136f2cbfba85e6df2",
+      "class": "frozen-history",
+      "paths": [
+        "edge/docs/development/edge-macos-forwarding-contract-proposal-2026-09-12-r1.json"
+      ],
+      "match_b64": "Im5hbWVkLXNvdXJjZSBUZXNsYU1hdGUgcGFyaXR5IGFuZCBwYXNzaXZlIHByb3ZlbmFuY2Ui",
+      "max_count": 1,
+      "expires": "none",
+      "reason": "Frozen retired-package material imported unchanged, exact full-file digest pinned; no interpretation or clearance change.",
+      "authority": "DEC-074 (REPO-01 import of the archived satellite repositories)"
+    },
+    {
+      "id": "imported-a921077b4eee7b94bdb7",
+      "class": "frozen-history",
+      "paths": [
+        "edge/docs/development/edge-macos-forwarding-handoff-proposal-2026-09-09.json"
+      ],
+      "match_b64": "Im5hbWVkLXNvdXJjZSBUZXNsYU1hdGUgcGFyaXR5IGFuZCBwYXNzaXZlIHByb3ZlbmFuY2Ui",
+      "max_count": 1,
+      "expires": "none",
+      "reason": "Frozen retired-package material imported unchanged, exact full-file digest pinned; no interpretation or clearance change.",
+      "authority": "DEC-074 (REPO-01 import of the archived satellite repositories)"
+    },
+    {
+      "id": "imported-d48d352395a479f06834",
+      "class": "frozen-history",
+      "paths": [
+        "edge/docs/development/edge-macos-one-event-actor-contract-proposal-2026-09-12-r3.json"
+      ],
+      "match_b64": "Ik5vIG5hdGl2ZSBkZXZpY2UsIGNvbW1lcmNlLCBTaXJpLCBIb21lIEFzc2lzdGFudCwgbmFtZWQtc291cmNlIFRlc2xhTWF0ZSBvciBBcHBsZSBhY2NlcHRhbmNlIGlzIGNsYWltZWQgYnkgdGhpcyBwYWNrYWdlLiIs",
+      "max_count": 1,
+      "expires": "none",
+      "reason": "Frozen retired-package material imported unchanged, exact full-file digest pinned; no interpretation or clearance change.",
+      "authority": "DEC-074 (REPO-01 import of the archived satellite repositories)"
+    },
+    {
+      "id": "imported-eb8050f4e7e6fc65cabd",
+      "class": "frozen-history",
+      "paths": [
+        "edge/docs/development/edge-macos-one-event-actor-contract-proposal-2026-09-12-r4.json"
+      ],
+      "match_b64": "Ik5vIG5hdGl2ZSBkZXZpY2UsIGNvbW1lcmNlLCBTaXJpLCBIb21lIEFzc2lzdGFudCwgbmFtZWQtc291cmNlIFRlc2xhTWF0ZSwgaW5zdGFsbGVkLCBwYWNrYWdlLCBzZXJ2aWNlLCByZWxlYXNlIG9yIHByb2R1Y3Rpb24gYWNjZXB0YW5jZSBpcyBjbGFpbWVkLiI=",
+      "max_count": 1,
+      "expires": "none",
+      "reason": "Frozen retired-package material imported unchanged, exact full-file digest pinned; no interpretation or clearance change.",
+      "authority": "DEC-074 (REPO-01 import of the archived satellite repositories)"
+    },
+    {
+      "id": "imported-509d8c85b674ccb03324",
+      "class": "frozen-history",
+      "paths": [
+        "home-assistant/custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/field-semantics.json"
+      ],
+      "match_b64": "Ikh1YiBpbXBvcnQvdGVzbGFtYXRlIHByb2plY3Rpb246IHN0b3JlZCBrbSwgbWludXRlcywgQ2Vsc2l1cyBhbmQga1cgcGFzc2VkIHRocm91Z2g7IGVmZmljaWVuY3kgaXMgYWJzZW50IGluIGxpdmUvaW1wb3J0IHByb2plY3Rpb25zIg==",
       "max_count": 1,
       "expires": "G2-5",
       "review_by": "2027-01-31",
+      "reason": "Imported package text kept unchanged; names a legacy source or its import values.",
       "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26",
-      "reason": "clean-room protected file; owner-only edit",
-      "authority": "N1R-U and N1R-G, coordinator rulings 2026-10-26",
-      "recorded_row": "2026-10-26 N1R-U: clean-room protected file; owner-only edit"
+      "authority": "DEC-074 (REPO-01 import of the archived satellite repositories)"
+    },
+    {
+      "id": "imported-6b1df92324a9263ccd4e",
+      "class": "frozen-history",
+      "paths": [
+        "home-assistant/docs/development/archive/d1-debian13-arm64-container-selection-receipt-2026-09-09.json"
+      ],
+      "match_b64": "IkhBIE9TLCBtYWNPUywgRGViaWFuIHg4Nl82NCwgcmVwbGFjZW1lbnQtdXBncmFkZSwgZnVsbCBSMSBwYXJpdHksIFRlc2xhTWF0ZSBjb21wYXJpc29uLCBhbmQgZmluYWwgRDEvWDEgcmVnaXN0cnkgYWRtaXNzaW9uIHJlbWFpbiBvcGVuLiI=",
+      "max_count": 1,
+      "expires": "none",
+      "reason": "Frozen retired-package material imported unchanged, exact full-file digest pinned; no interpretation or clearance change.",
+      "authority": "DEC-074 (REPO-01 import of the archived satellite repositories)"
+    },
+    {
+      "id": "imported-189323baf9baf6887dd6",
+      "class": "frozen-history",
+      "paths": [
+        "sdk-swift/Sources/TeslatlasCurrentHub/Binding/field-semantics.json"
+      ],
+      "match_b64": "Ikh1YiBpbXBvcnQvdGVzbGFtYXRlIHByb2plY3Rpb246IHN0b3JlZCBrbSwgbWludXRlcywgQ2Vsc2l1cyBhbmQga1cgcGFzc2VkIHRocm91Z2g7IGVmZmljaWVuY3kgaXMgYWJzZW50IGluIGxpdmUvaW1wb3J0IHByb2plY3Rpb25zIg==",
+      "max_count": 1,
+      "expires": "G2-5",
+      "review_by": "2027-01-31",
+      "reason": "Imported package text kept unchanged; names a legacy source or its import values.",
+      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26",
+      "authority": "DEC-074 (REPO-01 import of the archived satellite repositories)"
+    },
+    {
+      "id": "imported-294e9054c1a6e4acb8bf",
+      "class": "frozen-history",
+      "paths": [
+        "sdk-swift/Sources/TeslatlasHubSDK/RichRepresentationValidator.swift"
+      ],
+      "match_b64": "ImNvbW1vbi5zb3VyY2UiOiAudmFsdWVzKFsuc3RyaW5nKCJvd25lcl9hcGkiKSwgLnN0cmluZygibGVnYWN5X3N0cmVhbSIpLCAuc3RyaW5nKCJmbGVldF9hcGkiKSwgLnN0cmluZygiZmxlZXRfdGVsZW1ldHJ5IiksIC5zdHJpbmcoInRlc2xhbWF0ZV9taXJyb3IiKSwgLnN0cmluZygidGVzbGFtYXRlX2ltcG9ydCIpLCAuc3RyaW5nKCJtYW51YWxfaW1wb3J0IiksIC5zdHJpbmcoImJsZV9nYXBfZmlsbCIpXSks",
+      "max_count": 2,
+      "expires": "G2-5",
+      "review_by": "2027-01-31",
+      "reason": "Imported package text kept unchanged; names a legacy source or its import values.",
+      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26",
+      "authority": "DEC-074 (REPO-01 import of the archived satellite repositories)"
     }
   ],
   "extra_patterns_b64": [

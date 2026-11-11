@@ -1,0 +1,351 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas-home-assistant-hub-admission-handoff",
+  "generated_at": "2026-09-08",
+  "scope": "HA-owned source/provenance handoff only; no installed host, Docker runtime, real Hub, UI, scheduler, replacement, live transport, publication, or registry mutation",
+  "checkout": {
+    "repository": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant",
+    "head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+    "working_tree": "dirty; all 40 paths classified below; unrelated edits preserved",
+    "working_tree_classification": {
+      "basis": "Path-role classification for this handoff; it does not infer authorship and does not authorize staging or deletion.",
+      "ha_owned_current_scope": [
+        ".gitignore",
+        "AGENTS.md",
+        "README.md",
+        "compatibility/hub.json",
+        "custom_components/teslatlas_hub/__init__.py",
+        "custom_components/teslatlas_hub/config_flow.py",
+        "custom_components/teslatlas_hub/current_hub_client.py",
+        "custom_components/teslatlas_hub/diagnostics.py",
+        "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/SHA256SUMS",
+        "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/openapi.json",
+        "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/profile.json",
+        "docs/product-versioning.md",
+        "docs/protocol-readiness.md",
+        "hacs.json",
+        "tests/test_config_flow.py",
+        "tests/test_diagnostics.py",
+        "tests/test_documentation.py",
+        "tests/test_init.py",
+        "tests/test_matrix_live.py",
+        "tests/test_migration.py",
+        "tests/test_package.py",
+        "tests/test_sensor.py",
+        "tools/matrix-contract.json",
+        "tools/matrix_contract.py",
+        "compose.yaml",
+        "docs/docker.md",
+        "docs/azure-debian-v1-evidence-contract-2026-09-08.md",
+        "docs/ha-admission-source-manifest-2026-09-08.json",
+        "docs/hub-admission-handoff-2026-09-08.json",
+        "docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+        "docs/superpowers/plans/2026-09-08-working-product-plan.md"
+      ],
+      "inherited_historical_scope": [
+        "docs/plans/2026-08-30-foundation.md",
+        "docs/superpowers/plans/2026-08-31-readiness-verification.md",
+        "docs/superpowers/specs/2026-08-30-hacs-local-push-foundation-design.md",
+        "docs/superpowers/specs/2026-08-31-concurrent-foundation-merge-design.md"
+      ],
+      "unrelated_preserved": [
+        ".DS_Store",
+        "custom_components/.DS_Store",
+        "docs/.DS_Store",
+        "tests/.DS_Store",
+        "tools/.DS_Store"
+      ]
+    }
+  },
+  "adapter": {
+    "id": "home_assistant",
+    "contract_revision": 1,
+    "required_case_count": 18,
+    "actors": [
+      {
+        "id": "ha_flow",
+        "kind": "installed_ha_flow",
+        "runtime_ref": "ha_container",
+        "entrypoint_ref": "ha_matrix_flow",
+        "artifact_roles": [
+          "home_assistant_integration_archive"
+        ],
+        "source_roles": [
+          "home_assistant_source"
+        ]
+      },
+      {
+        "id": "ha_client",
+        "kind": "installed_ha_client",
+        "runtime_ref": "ha_container",
+        "entrypoint_ref": "ha_matrix_client",
+        "artifact_roles": [
+          "home_assistant_integration_archive"
+        ],
+        "source_roles": [
+          "home_assistant_source"
+        ]
+      }
+    ],
+    "source_manifest": {
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/docs/ha-admission-source-manifest-2026-09-08.json",
+      "sha256": "e74a955374003be9820a450174715412b4a9c1d504b47eb33d1f93e6b2173832",
+      "file_count": 10
+    },
+    "source_manifest_refresh": {
+      "supersedes_path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/current-source-manifest.json",
+      "supersedes_sha256": "bff35f1342e4bb262dd9e06599695139df53631f613d38d48bcd698185eeb7c7",
+      "changed_file": "teslatlas-home-assistant/tests/test_matrix_live.py",
+      "previous_file_sha256": "67f84f10d13e614883ac8821c37354c71d605d53e65f2c5e591e533e3b7253a4",
+      "current_file_sha256": "5935c634766b397162fccfa74348a535bbcb8b70c69bb66223bd9e69f5cce108",
+      "unchanged_file_count": 9,
+      "verification_root": "/Users/bolyki/dev/source/teslatlas-service"
+    },
+    "contract_files": {
+      "manifest": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/matrix-contract.json",
+        "sha256": "6b3f8a19bba579790bd554a589a82f273facdbdf5515feba2c83b9eda2091820"
+      },
+      "validator": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/matrix_contract.py",
+        "sha256": "aa0c27880a59855e110a8a43c540c1e6127e449b63e1f834140c8c681014185f"
+      },
+      "raw_schemas": [
+        {
+          "id": "ha-runtime-v1",
+          "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-runtime-v1.schema.json",
+          "sha256": "a49e3212ac07a64c8f27de6baa06418013f4ef0f5a3515436973c9969095f31c"
+        },
+        {
+          "id": "ha-initial-v1",
+          "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-initial-v1.schema.json",
+          "sha256": "5e3525d5523e4162320bfdc2cdd6fc13f0203187d3fe2e141b9cdfe33f37f8e6"
+        },
+        {
+          "id": "ha-client-v1",
+          "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-client-v1.schema.json",
+          "sha256": "dcf05f837e37fc6541d8d6d0e3c5ce068a0b0eb662d8e6b00cb723171b9b3b92"
+        },
+        {
+          "id": "ha-flow-v1",
+          "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-flow-v1.schema.json",
+          "sha256": "dd4bd1c39e00e35b11550c20a5f660489cfcd93c15269e3b44799101e84ea189"
+        }
+      ]
+    }
+  },
+  "component_identity": {
+    "manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/current-component-manifest.json",
+    "manifest_sha256": "0a4ec2d743a3f181423c24bbf7c6d9d7e0feef5dc0f0fc3e5d3d69150945e896",
+    "member_count": 31,
+    "integration_manifest": {
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/custom_components/teslatlas_hub/manifest.json",
+      "sha256": "61e4a3143a392fe681908d1edff9db52a25ce5ac4bbd12e327ab36bcd9140449",
+      "domain": "teslatlas_hub",
+      "version": "2026.36.2",
+      "iot_class": "local_poll"
+    },
+    "profile": {
+      "sha256s_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/SHA256SUMS",
+      "sha256s_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "profile_json_sha256": "5b939b06ffb9354cc5227734b85a3f2d7edf46d509dcdda603bccd961b839d71",
+      "member_count": 17,
+      "openapi_json_sha256": "af46fba327341fa016c1b25e3f45d69a56f75740f5d0feda3714a89b3c3e9bf7"
+    },
+    "profile_provenance": {
+      "observed_at": "2026-09-08",
+      "embedded_snapshot": {
+        "source": "HA working-tree embedded profile bytes after refresh from canonical Protocol checkout",
+        "profile_id": "hub-http-v1@1.0.0",
+        "sha256s_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "profile_json_sha256": "5b939b06ffb9354cc5227734b85a3f2d7edf46d509dcdda603bccd961b839d71",
+        "openapi_json_sha256": "af46fba327341fa016c1b25e3f45d69a56f75740f5d0feda3714a89b3c3e9bf7",
+        "member_count": 17,
+        "member_checksums_match_embedded_sha256s": true,
+        "matches_protocol_checkout_observation": true
+      },
+      "sdk_vendored_snapshot": {
+        "source": "TypeScript SDK working-tree vendored profile bytes",
+        "sha256s_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "profile_json_sha256": "5b939b06ffb9354cc5227734b85a3f2d7edf46d509dcdda603bccd961b839d71",
+        "openapi_json_sha256": "af46fba327341fa016c1b25e3f45d69a56f75740f5d0feda3714a89b3c3e9bf7",
+        "status": "refreshed current canonical snapshot; sibling source gate remains Hub-owned"
+      },
+      "protocol_checkout_observation": {
+        "repository": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-protocol",
+        "head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+        "working_tree": "dirty; observed read-only and not changed by HA",
+        "sha256s_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "profile_json_sha256": "5b939b06ffb9354cc5227734b85a3f2d7edf46d509dcdda603bccd961b839d71",
+        "openapi_json_sha256": "af46fba327341fa016c1b25e3f45d69a56f75740f5d0feda3714a89b3c3e9bf7",
+        "semantic_delta": [
+          "profile.json adds max_claim_request_bytes=4096",
+          "openapi.json adds x-max-request-bytes=4096 to the claim request body",
+          "openapi.json declares text/plain response schemas/descriptions for claim 400, 415 and 422"
+        ],
+        "status": "working-tree candidate; not a committed or frozen cross-repository identity"
+      },
+      "canonical_ruling": "protocol_current_checkout_b80_canonical_ha_and_sdk_refreshed",
+      "admission_effect": "HA and the TypeScript SDK vendored profile bytes match the canonical Protocol checkout for all 17 members. Hub still must independently review the HA source-fixed registry and installed runtime.",
+      "previous_embedded_snapshot": {
+        "source": "HA working-tree embedded profile bytes",
+        "profile_id": "hub-http-v1@1.0.0",
+        "sha256s_sha256": "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b",
+        "profile_json_sha256": "a352aeb5e0818317ed8798107caf9b45ee47c30438c54b0d531a6cf936724a7b",
+        "openapi_json_sha256": "951a326d0ad9c0d16a9a0fe860cb84a7ecf0c0b88eb3dbb0fe92f763a4382440",
+        "member_count": 17,
+        "member_checksums_match_embedded_sha256s": true,
+        "status": "previous embedded snapshot before canonical Protocol refresh"
+      }
+    }
+  },
+  "runtime_identity": {
+    "source_expected_only": {
+      "runtime_ref": "ha_container",
+      "runtime_kind": "docker-container",
+      "python_version": "3.14.2",
+      "home_assistant_version": "2026.8.3",
+      "integration_version": "2026.36.2",
+      "iot_class": "local_poll",
+      "container_id_literal": "not observed; no installed container runtime"
+    },
+    "local_source_environment_only": {
+      "python_version": "3.14.7",
+      "home_assistant_version": "2026.8.3",
+      "aiohttp_version": "3.14.3",
+      "pytest_version": "9.0.3",
+      "pytest_homeassistant_custom_component_version": "0.13.357",
+      "ruff_version": "0.16.5"
+    },
+    "installed_runtime_observed": false
+  },
+  "generation_admission_rule": {
+    "stable_identity": [
+      "scenario_sha256",
+      "seed_sha256",
+      "store_id",
+      "store_schema_version",
+      "hub_id"
+    ],
+    "initial_observation": "root/controller sequence G1",
+    "pre_advance_verify": "independent root/controller sequence G1, same stable identity and service_generation as initial",
+    "advance": "advance-once from initial sequence with distinct before_store_sha256 and after_store_sha256",
+    "post_advance_observation": "independent root/controller sequence G2 with same stable identity and service_generation different from pre-advance G1",
+    "missing_post_advance_observation": "pending independent_observation_pending",
+    "unchanged_generation": "failed raw_fact_mismatch",
+    "verified_tests": [
+      "tests/test_matrix_live.py::test_real_projection_admits_only_changed_advance_generation",
+      "tests/test_matrix_live.py::test_advance_admission_is_pending_without_post_advance_observation",
+      "tests/test_matrix_live.py::test_polling_transport_admission_requires_changed_advance_generation"
+    ]
+  },
+  "reauth_cleanup": {
+    "source": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/custom_components/teslatlas_hub/config_flow.py",
+    "cleanup": "async_step_reauth_confirm closes its owned client in finally, including cancellation",
+    "verified_test": "tests/test_config_flow.py::test_cancelled_reauth_closes_owned_client",
+    "result": "passed"
+  },
+  "launcher_and_cleanup": {
+    "provenance_binding": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/provenance-launcher-binding.json",
+    "provenance_binding_sha256": "33cda376023bfff2b1f2361abc52bc110bdd21387b15a712c2d7dafebc49415e",
+    "launcher": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/matrix_live.py",
+    "launcher_sha256": "cb9dfad5ffe5c86ec2c33f5160bbdd81593262f9f9985ace01d83463f9645b55",
+    "wire": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/matrix_wire.py",
+    "wire_sha256": "cd7f4a620f5aaab46bd4e311f7e350063d5f6db39da72e5b0e8129f46e8d1085",
+    "initial_barrier": {
+      "ready": "ready-000001.json",
+      "ack": "ack-000001.json",
+      "phase": "ha_initial_observation",
+      "action": "advance_once"
+    },
+    "final_barrier": {
+      "ready": "ready-000002.json",
+      "ack": "ack-000002.json",
+      "phase": "evidence_ready",
+      "action": "close_completed"
+    },
+    "cleanup_invariants": [
+      "bounded framework-log drain before success",
+      "broker remains attached through close acknowledgement and closes on success or exception",
+      "ready/ack identity binds session, cell, SessionInput hash, nonce, sequence, phase, ready digest, action, and result digest",
+      "frozen evidence is rehashed after readiness; mutation fails closed"
+    ],
+    "provenance_binding_status": "refreshed after canonical HA profile rebind; still source-only"
+  },
+  "local_gates": {
+    "focused": "uv run --locked pytest -q tests/test_matrix_live.py tests/test_config_flow.py tests/test_init.py => 68 passed",
+    "full": "uv run --locked pytest -q => 115 passed, 2 skipped",
+    "ruff": "uv run --locked ruff check . => passed",
+    "format": "product-owned paths: 23 formatted; whole-tree check reports 5 pre-existing files would reformat; no mutation",
+    "compose_static": "docker-compose 5.5.1 config --quiet => passed",
+    "manifest_recheck": "current 10-file source manifest, 31-file component manifest and 17 profile member hashes match exactly"
+  },
+  "docker_boundary": {
+    "compose": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/compose.yaml",
+    "compose_sha256": "120382da9b70c0971791bf343d3a8ff2a7c79c244f65a087f12467f89c5994ea",
+    "docs": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/docs/docker.md",
+    "docs_sha256": "4c49b7c17a608d9c0243d4b736fa38fed1af3bb74e7240699b5f802ae2e89a32",
+    "daemon": "unavailable; no /var/run/docker.sock",
+    "runtime_acceptance": false
+  },
+  "azure_debian_v1_evidence_contract": {
+    "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/docs/azure-debian-v1-evidence-contract-2026-09-08.md",
+    "sha256": "d961735405846612aebfcb1711661f4b9d015a3e0996f4195a36bfbd36d0a448",
+    "status": "prepared final-bootstrap contract; owner supplies fresh disposable Azure Debian ARM64 and x86_64 VMs only after all development/integration and Mac plus VPS verification complete",
+    "identity_lock": {
+      "source_manifest_sha256": "e74a955374003be9820a450174715412b4a9c1d504b47eb33d1f93e6b2173832",
+      "component_manifest_sha256": "0a4ec2d743a3f181423c24bbf7c6d9d7e0feef5dc0f0fc3e5d3d69150945e896",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "expected_home_assistant": "2026.8.3",
+      "expected_python": "3.14.2",
+      "candidate_image": "ghcr.io/home-assistant/home-assistant:2026.8.3"
+    },
+    "required_lanes": [
+      "azure-debian-arm64-v1",
+      "azure-debian-x86_64-v1"
+    ],
+    "execution_owner": "Hub task 01a07f89-45cb-7ea2-b96e-aa89de18fd14 after Hub records the existing Mac and VPS prerequisites and owner-provided access; no Azure provisioning or release authority",
+    "required_stages": [
+      "install",
+      "activation",
+      "function",
+      "restart",
+      "persistence",
+      "upgrade",
+      "uninstall",
+      "cleanup"
+    ]
+  },
+  "hub_admission_request": {
+    "current_ha_registry_status": "not admitted",
+    "smallest_hub_owned_change": "Add one source-fixed home_assistant adapter module and one FIXED_INSTALLED_REGISTRY entry that binds the four HA contract files, the exact ten-file source manifest, the 31-member installed component manifest, target execution topology and reviewed launcher/cleanup callbacks. Runtime JSON must not select code.",
+    "launcher_boundary": "The Hub runner must create and bind SessionInput, launch only the reviewed HA entrypoint, retain the controller observation view, require G1/G1/G2 and the final close_completed barrier, and admit installed_service_runtime only after independent final-stop and transport cleanup.",
+    "do_not_do": [
+      "do not register HA from this source bundle alone",
+      "do not treat Python 3.14.7 local tests as the required installed Python 3.14.2 runtime",
+      "do not fabricate SessionInput, broker acknowledgements, invitations, runtime identity, or matrix rows"
+    ],
+    "profile_identity_gate": "HA embedded profile bytes and the refreshed TypeScript sibling match the canonical Protocol checkout b80d940e...; Hub must still bind this refreshed HA component identity to its source-fixed registry and installed runtime."
+  },
+  "blockers": [
+    "No pinned Python 3.14.2/Home Assistant 2026.8.3 installed runtime has been observed.",
+    "No reachable isolated Hub targets, trusted TLS/CA, invitation, revocation, advance coordination or three-target lifecycle resources are present.",
+    "Docker daemon is unavailable; Compose evidence is static only.",
+    "Hub must independently review and bind this exact HA source/component identity and add its own source-fixed registry/launcher seam.",
+    "Hub ledger remains 0/21 cells, 0/444 slots and 0/10 cohorts; HA remains outside the fixed registry.",
+    "The HA embedded and TypeScript sibling profiles now match the canonical Protocol checkout (SHA256SUMS b80d940e...); this source correction does not claim Hub installed acceptance."
+  ],
+  "safety": {
+    "hosts_touched": false,
+    "docker_runtime_touched": false,
+    "production_services_touched": false,
+    "vehicle_commands_sent": false,
+    "publication_performed": false
+  },
+  "review_evidence": {
+    "component_manifest_sha256": "0a4ec2d743a3f181423c24bbf7c6d9d7e0feef5dc0f0fc3e5d3d69150945e896",
+    "provenance_binding_sha256": "33cda376023bfff2b1f2361abc52bc110bdd21387b15a712c2d7dafebc49415e",
+    "independent_review_json_sha256": "e34992c94c93438142f21bcb1d23b883aabfb5d33da43c8d72bb8bbc7d6ef53f",
+    "profile_binding": "canonical Protocol b80d940... embedded in HA and refreshed in the TypeScript sibling; HA installed admission remains pending"
+  }
+}

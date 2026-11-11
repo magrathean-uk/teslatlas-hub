@@ -36,6 +36,7 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         profile = self.sync.load_profile()
         self.assertEqual(profile["profile_id"], "hub-sync-v1@1.3.0")
+        self.assertEqual(profile["status"], "served")
         self.assertEqual(profile["product_version_binding"], "none; this protocol profile has no exact Hub product-version pin")
         self.assertEqual(profile["authentication"], "paired bearer")
         self.assertEqual(profile["previous_profile"], "hub-sync-v1@1.2.0")

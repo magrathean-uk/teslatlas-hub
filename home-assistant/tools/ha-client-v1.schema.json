@@ -1,0 +1,358 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:matrix:home-assistant:ha-client-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id",
+    "cell_id",
+    "session_input_sha256",
+    "actor_id",
+    "operation",
+    "session_sequence_before",
+    "session_sequence_after",
+    "facts",
+    "requests"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cell_id": {
+      "enum": [
+        "home_assistant__macos_arm64",
+        "home_assistant__debian13_arm64",
+        "home_assistant__debian13_amd64"
+      ]
+    },
+    "session_input_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "actor_id": {
+      "const": "ha_client"
+    },
+    "operation": {
+      "enum": [
+        "probe",
+        "bad_pair",
+        "expired_pair",
+        "replay_pair",
+        "unknown_current",
+        "unsupported_surface"
+      ]
+    },
+    "session_sequence_before": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "session_sequence_after": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "facts": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/probeFacts"
+        },
+        {
+          "$ref": "#/$defs/pairFailureFacts"
+        },
+        {
+          "$ref": "#/$defs/expiredPairFacts"
+        },
+        {
+          "$ref": "#/$defs/unknownFacts"
+        },
+        {
+          "$ref": "#/$defs/unsupportedFacts"
+        }
+      ]
+    },
+    "requests": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/request"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "route",
+        "status",
+        "request_id"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "GET",
+            "POST"
+          ]
+        },
+        "route": {
+          "enum": [
+            "/.well-known/teslatlas-hub",
+            "/v1/pairings/{pairing_id}/claim",
+            "/v1/vehicles/{vehicle_id}/current"
+          ]
+        },
+        "status": {
+          "enum": [
+            200,
+            401,
+            404
+          ]
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "probeFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hub_id",
+        "api_versions",
+        "protocol",
+        "protocol_major",
+        "version",
+        "discovery_status",
+        "authorization_headers",
+        "credential_absent"
+      ],
+      "properties": {
+        "hub_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "api_versions": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "1.0"
+            }
+          ],
+          "items": false
+        },
+        "protocol": {
+          "const": "teslatlas-sync"
+        },
+        "protocol_major": {
+          "const": 1
+        },
+        "version": {
+          "const": "2026.36.2"
+        },
+        "discovery_status": {
+          "const": 200
+        },
+        "authorization_headers": {
+          "const": 0
+        },
+        "credential_absent": {
+          "const": true
+        }
+      }
+    },
+    "pairFailureFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_status",
+        "typed_error",
+        "credential_created",
+        "pairing_id"
+      ],
+      "properties": {
+        "claim_status": {
+          "const": 401
+        },
+        "typed_error": {
+          "const": "HubPairingError"
+        },
+        "credential_created": {
+          "const": false
+        },
+        "pairing_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "expiredPairFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_status",
+        "typed_error",
+        "credential_created",
+        "fixture_expires_at_ms",
+        "observed_after_expiry_ms",
+        "fixture_kind",
+        "pairing_id"
+      ],
+      "properties": {
+        "claim_status": {
+          "const": 401
+        },
+        "typed_error": {
+          "const": "HubPairingError"
+        },
+        "credential_created": {
+          "const": false
+        },
+        "fixture_expires_at_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "observed_after_expiry_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fixture_kind": {
+          "const": "persisted-one-second"
+        },
+        "pairing_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "optionalFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "access_state",
+        "activity_state",
+        "charge_limit_percent",
+        "charging_power_kw",
+        "charging_state",
+        "data_quality",
+        "estimated_range_km",
+        "inside_temperature_c",
+        "odometer_km",
+        "outside_temperature_c",
+        "software_update_state",
+        "software_version",
+        "state_of_charge",
+        "telemetry_age_seconds"
+      ],
+      "properties": {
+        "access_state": {
+          "type": "null"
+        },
+        "activity_state": {
+          "type": "null"
+        },
+        "charge_limit_percent": {
+          "type": "null"
+        },
+        "charging_power_kw": {
+          "type": "null"
+        },
+        "charging_state": {
+          "type": "null"
+        },
+        "data_quality": {
+          "type": "null"
+        },
+        "estimated_range_km": {
+          "type": "null"
+        },
+        "inside_temperature_c": {
+          "type": "null"
+        },
+        "odometer_km": {
+          "type": "null"
+        },
+        "outside_temperature_c": {
+          "type": "null"
+        },
+        "software_update_state": {
+          "type": "null"
+        },
+        "software_version": {
+          "type": "null"
+        },
+        "state_of_charge": {
+          "type": "null"
+        },
+        "telemetry_age_seconds": {
+          "type": "null"
+        }
+      }
+    },
+    "unknownFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "http_status",
+        "vehicle_id",
+        "state_of_charge",
+        "inside_temperature_c",
+        "optional_fields"
+      ],
+      "properties": {
+        "http_status": {
+          "const": 404
+        },
+        "vehicle_id": {
+          "const": "33333333-3333-4333-8333-333333333333"
+        },
+        "state_of_charge": {
+          "type": "null"
+        },
+        "inside_temperature_c": {
+          "type": "null"
+        },
+        "optional_fields": {
+          "$ref": "#/$defs/optionalFields"
+        }
+      }
+    },
+    "unsupportedFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operations",
+        "outgoing_requests"
+      ],
+      "properties": {
+        "operations": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "commands"
+            },
+            {
+              "const": "drives"
+            },
+            {
+              "const": "sse"
+            }
+          ],
+          "items": false
+        },
+        "outgoing_requests": {
+          "const": 0
+        }
+      }
+    }
+  }
+}

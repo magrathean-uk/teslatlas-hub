@@ -1,0 +1,253 @@
+{
+  "schema_version": 1,
+  "kind": "d1_swift_component_manifest_handoff",
+  "status": "prepared_for_hub_aggregate_manifest_review",
+  "verified_at": "2026-09-09",
+  "owner": "teslatlas-sdk-swift",
+  "scope": "source-only D1 developer-resource identity; no package publication, service start, installed selector, or runtime acceptance",
+  "source": {
+    "repository": "teslatlas-sdk-swift",
+    "repository_origin": "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
+    "head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+    "working_tree": "dirty; unrelated edits are preserved; the frozen source snapshot is external and excludes this handoff",
+    "snapshot_creation_status_sha256": "4c64ad4df9c9564e709ad4ceba99bcae5d12062930678b93799d2eb88f43437b",
+    "product_version": "2026.36.2",
+    "profile": {
+      "id": "hub-http-v1@1.0.0",
+      "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "status": "candidate"
+    },
+    "source_file_count": 158,
+    "source_manifest_sha256": "e92f4b75ac6da0ba62d78b1ac0c3ed1eacf4b779c753a570c722e9053ca9b7cb",
+    "source_manifest_algorithm": "sha256 of compact sorted-key JSON records produced by the Hub source snapshot walker; each record contains normalized path, file sha256, byte size, and executable bit; excludes .git, .build, dist, node_modules, target, caches, AGENTS.md, and other fixed excluded names",
+    "frozen_snapshot": {
+      "path": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-swift-d1-20260909-refresh-ro/frozen-source",
+      "manifest_format": "bootstrap-companions.py manifest schema_version=1",
+      "manifest_path": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-swift-d1-20260909-refresh-ro/local-sources.json",
+      "manifest_sha256": "4ebf48d90013fab1ed354703d305b8d9170d240cb7526d7d57b18a1c96c34a8c",
+      "component": "sdk-swift",
+      "file_count": 158,
+      "source_sha256": "e92f4b75ac6da0ba62d78b1ac0c3ed1eacf4b779c753a570c722e9053ca9b7cb",
+      "excluded_from_snapshot": [
+        "docs/development/d1-component-manifest-handoff-2026-09-09.json",
+        "docs/development/STATUS.json post-freeze D1 evidence update"
+      ],
+      "owner_only": true,
+      "read_only": true,
+      "read_only_path_count": 208,
+      "permission_contract": "frozen-source and every descendant have no write bits; directories are 0500, non-executable files are 0400, and executable files are 0500",
+      "verified_independently": "SDK rechecked source_manifest_for twice against the refreshed frozen directory, matched the external record both times, and verified all frozen-source paths have no write bits; Hub should repeat the exact check twice before binding"
+    }
+  },
+  "developer_resource": {
+    "kind": "swiftpm_source_package",
+    "package_identity": "teslatlas-sdk-swift",
+    "package_manifest": {
+      "path": "Package.swift",
+      "sha256": "cfae0738fec873d0b5361aae8ddc4f33e37bf2f42ee4e40259e23e23875e898f"
+    },
+    "version_file": {
+      "path": "VERSION",
+      "value": "2026.36.2",
+      "sha256": "051810d8d921954428efde3a273b987ac4bb5c5b7acab03aa45dee97eaa93ec0"
+    },
+    "swift_tools_version": "6.0",
+    "platform_floor": [
+      "iOS 17",
+      "macOS 14"
+    ],
+    "products": [
+      {
+        "name": "TeslatlasHubSDK",
+        "kind": "library"
+      },
+      {
+        "name": "TeslatlasCommands",
+        "kind": "library"
+      },
+      {
+        "name": "TeslatlasHubV1Compatibility",
+        "kind": "library"
+      },
+      {
+        "name": "TeslatlasCurrentHub",
+        "kind": "library"
+      },
+      {
+        "name": "TeslatlasHubSDKExample",
+        "kind": "executable"
+      }
+    ],
+    "target_count": 9,
+    "external_package_dependencies": [],
+    "selected_current_hub_product": "TeslatlasCurrentHub",
+    "release_output": {
+      "status": "not_retained_for_this_snapshot",
+      "package_archive_sha256": null,
+      "swiftpm_release_product_manifest_sha256": null,
+      "reason": "The available local container/build evidence belongs to an earlier source identity; no stale output is bound to this current dirty snapshot and no package checksum is invented"
+    },
+    "local_build_environment": {
+      "kind": "source_only_build_test_environment",
+      "Dockerfile_sha256": "4ce3ec0511c0b17372fa5d548b6c9fab95a2211ec87c3254a8a54445e8cb42a4",
+      "dockerignore_sha256": "07861f84d2b6fe9900f7655d9c8329d38cea2ef61756423c9dd9a32b56292a59",
+      "base_image": "swift:6.0.3-jammy",
+      "base_image_manifest_digest": "sha256:1ad73b8f2a2300c650da0949519418565661d802765b9a99435df22bc947e2b4",
+      "service_or_installed_runtime": false
+    }
+  },
+  "contract_identities": {
+    "current_hub": {
+      "profile_id": "hub-http-v1@1.0.0",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "product_version": "2026.36.2"
+    },
+    "strict_protocol": {
+      "profile_id": "teslatlas-protocol@1.2.0",
+      "source_commit": "79ced4c7fdc79520ad31d72a0280bf5f3f19f407"
+    },
+    "matrix_adapter": {
+      "contract_path": "tools/matrix-contract.json",
+      "contract_sha256": "8057eae6af5dfeb55e14544c2a8fa10cdf132f40638fa6b2072c78004dcef823",
+      "validator_path": "tools/matrix_contract.py",
+      "validator_sha256": "1019fbfc64c91038dbc68025bf31fb9483abb0cba13588440ab0861892b083df",
+      "live_runner_path": "tools/matrix_live.py",
+      "live_runner_sha256": "a7242473cfb091db8cf812c56314e28ebaf559859b1d1e4981f81534ff92ff05",
+      "wire_path": "tools/matrix_wire.py",
+      "wire_sha256": "fa9cf4abfd072c1e167568aff6f1efb35b0078a228cadf94bf7f834da5d05422"
+    },
+    "swift_worker_contracts": {
+      "launcher_interface_sha256": "dc7ef1bfbbf84c99f324c798e305d44d82e5296239f8d335d70f735ce009ea38",
+      "worker_schema_sha256": "34a8176e28162f425353f4ba4d0f3dd1a00375a2c54b8829178aa754af2ac486",
+      "raw_schema_sha256": "bd2d525a52e31651aac5357256c57243ebefdbde0fc191fb63d2ce822393bac7",
+      "runtime_schema_sha256": "d608f1e4c31548fbf7005e66a8997d5f0a65cee8685f60c096745ced278d24f2",
+      "linux_worker_contract_sha256": "d3f7a0ab940d18388694d89896fb1bf9974cacaa21d26faeda77a43a53bac764",
+      "macos_phase_contract_sha256": "8f4669502b4bbfa87d0ed6d9d2c42f3344306d1f8eba913cf14699a1193372f0",
+      "linux_phase_contract_sha256": "7f2250e31f3200c24a041a6bb7f7cc4519fcb39c173f31508a8d2b11a2b779c7"
+    }
+  },
+  "selectors": [
+    {
+      "id": "swiftpm-source",
+      "status": "supported_source_candidate_not_installed",
+      "artifact": "external frozen SwiftPM source snapshot bound by source_manifest_sha256 and Package.swift sha256",
+      "selection": "optional developer resource only; Hub aggregate selection must be explicit",
+      "service_ownership": "Swift owns library/client source only; Hub owns aggregate selection and any surrounding service",
+      "receipt_required": "source identity and selected product must be reverified before any build or runtime row"
+    },
+    {
+      "id": "swift__macos_arm64",
+      "status": "blocked_missing_installed_receipt",
+      "runtime": {
+        "os": "macOS 14 or newer",
+        "architecture": "arm64",
+        "execution": "local",
+        "actors": [
+          "swift_macos",
+          "swift_linux"
+        ]
+      },
+      "artifact": "swift_sdk_product; no current retained release-product identity is bound",
+      "blocked_reason": "No Hub-admitted Swift SessionInput, target receipt, observed runtime inventory, or cleanup receipt exists for this row",
+      "acceptance_receipt": "25 cases per applicable actor, source/product/profile identity, native and container runtime observations, lifecycle and cleanup evidence"
+    },
+    {
+      "id": "swift__debian13_arm64",
+      "status": "blocked_missing_installed_receipt",
+      "runtime": {
+        "os": "Debian 13 trixie",
+        "architecture": "aarch64",
+        "execution": "docker_exec_pipe",
+        "actors": [
+          "swift_macos",
+          "swift_linux"
+        ]
+      },
+      "artifact": "swift_sdk_product; local Docker build environment is not an installed target",
+      "blocked_reason": "The prepared Debian ARM64 guest is reachable, but no Swift installed row has been admitted or exercised",
+      "acceptance_receipt": "25 cases per applicable actor, container/product/runtime identity, restart/outage/recovery, lifecycle and cleanup evidence"
+    },
+    {
+      "id": "swift__debian13_amd64",
+      "status": "blocked_missing_fresh_target_and_receipt",
+      "runtime": {
+        "os": "Debian 13 trixie",
+        "architecture": "x86_64",
+        "execution": "docker_exec_pipe",
+        "actors": [
+          "swift_macos",
+          "swift_linux"
+        ]
+      },
+      "artifact": "swift_sdk_product; no architecture-specific output identity is bound",
+      "blocked_reason": "No fresh authorized Debian 13 amd64 target or Swift installed receipt is available",
+      "acceptance_receipt": "Fresh target plus the same source/product/profile, 25-case, runtime, lifecycle and cleanup evidence"
+    },
+    {
+      "id": "macos13_arm64",
+      "status": "blocked_platform_floor",
+      "runtime": {
+        "os": "macOS 13",
+        "architecture": "arm64"
+      },
+      "blocked_reason": "Package.swift declares macOS 14 as the minimum platform; a macOS 13 guest cannot substitute for the supported floor"
+    },
+    {
+      "id": "ios17_simulator_test_host",
+      "status": "supported_test_host_only_not_installed_selector",
+      "runtime": {
+        "platform": "iOS 17 or newer",
+        "role": "SDK-owned XCTest host"
+      },
+      "selection": "test evidence only; it does not create a Hub service or promote an installed selector"
+    },
+    {
+      "id": "native_swift_hub_service",
+      "status": "unsupported_by_swift_sdk_contract",
+      "blocked_reason": "The Swift SDK is a client/developer resource and does not implement Hub storage, collection, bootstrap, service lifecycle, installer daemon, or listener"
+    }
+  ],
+  "ownership": {
+    "source": "Swift owns its source package, public client products, contract bindings, and test/worker contracts within the selected snapshot",
+    "selection": "Hub aggregate owns explicit component selection, activation, target choice, and any retained output receipt",
+    "service": "No Swift service, daemon, listener, database, collector, installer daemon, or Hub lifecycle is owned or started by this component",
+    "runtime": "A future Hub runner owns the selected process/container lifecycle and root-issued deadlines; Swift worker output may report observed facts but may not choose commands, sockets, brokers, or executables",
+    "data": "Applications and Hub own endpoints, pairing state, credentials, vehicle data, databases, and server-side retention; the SDK does not claim ownership of them",
+    "removal": "Remove only the selected Swift source/output and its selection record; preserve Hub, Home Assistant, Edge, Viewer, credentials, databases, and unrelated component state"
+  },
+  "lifecycle": {
+    "stage": "Verify the external owner-only source manifest twice, copy only the exact listed bytes, and bind Package.swift, VERSION, profile, and contract identities before building",
+    "build": "Run fixed SwiftPM package-shape and release-build checks in the selected environment; retain a complete output manifest only when a later Hub-owned build receipt binds it to this source snapshot",
+    "activate": "D1 source selection does not authorize a service, listener, Hub socket, database, credential, or installed-matrix run",
+    "installed_run": "Only a fresh Hub-admitted SessionInput and fixed runner may launch the three X1 target rows; runtime_actual must come from worker-observed evidence, never copied from job metadata",
+    "restart": "Restart only the selected Swift worker/coordinator under the Hub runner; no native Swift service restart exists",
+    "upgrade": "Retain the prior selected source/output until the new source/product manifest is independently verified; rollback changes only the Swift developer resource",
+    "remove": "Stop and clean the selected runner before removing only Swift output/source selection; preserve unrelated component and application data",
+    "cleanup": "Receipt must show child-process/container exit and absence of an SDK-owned listener; D1 handoff itself performs no runtime cleanup"
+  },
+  "receipt_schema": {
+    "required_fields": [
+      "selector_id",
+      "status",
+      "source_head",
+      "source_manifest_sha256",
+      "package_manifest_sha256",
+      "swiftpm_product_and_output_identity",
+      "profile_and_contract_identities",
+      "runtime_os_architecture_and_version",
+      "actor_ids_and_fixed_execution_topology",
+      "observed_runtime_inventory",
+      "25_case_actor_outcomes_and_phase_evidence",
+      "install_remove_restart_upgrade_actions",
+      "before_after_unrelated_state_check",
+      "redaction_and_secret_presence_check",
+      "cleanup_child_process_and_listener_state"
+    ],
+    "runtime_identity_rule": "Outer receipt fields such as independently observed identity_sha256/runtime_ref may bind the runtime evidence, but they must not be inserted into the closed nested Swift runtime projection or copied from job runtime metadata",
+    "source_provenance_rule": "Every source/product/profile/contract identity is read from the fixed snapshot or independently verified output; job JSON cannot select code, actor topology, command, broker, executable, socket, or service",
+    "secret_policy": "Never record invitation, pairing URI, claim secret, bearer, TLS pin material, certificate or private-key bytes, private SessionInput, Docker socket, Hub database, vehicle UUID/VIN, raw response, opaque cursor, or credential path",
+    "accepted_public_fields": "Hashes, product/version identifiers, relative public paths, target OS/architecture, actor IDs, bounded counts, redacted statuses, and cleanup observations",
+    "acceptance_rule": "This source handoff and any package-shape/build check do not promote a selector to installed lifecycle acceptance; each target requires a fresh target-specific Hub receipt"
+  },
+  "hub_action_requested": "Verify the external owner-only Swift snapshot and bootstrap-companions manifest twice, bind only the exact source/SwiftPM/profile/contract identities into the aggregate D1 record, keep Swift optional and no-service, and leave every installed selector blocked until a fresh Hub SessionInput, target receipt, observed runtime evidence, lifecycle result, and cleanup receipt exist. Do not reuse the earlier stale Swift build artifact or start a runtime from this handoff."
+}

@@ -16,6 +16,8 @@ member advertises the profile identity. Its OpenAPI 3.1.0 document uses
 adjacent schemas, so consumers must bind the complete profile directory by its
 manifest digest.
 
-The candidate Hub sync contract `hub-sync-v1@1.3.0` also has an independent
-revision. Historical admission does not establish current runtime support; see
+The served Hub sync contracts `hub-sync-v1@1.3.0` and `hub-sync-v1@1.4.0`
+have independent revisions. `hub-sync-v1@1.5.0` is a candidate and is not served.
+HTTP `1.2.0` is retired as an advertised revision; its frozen bytes retain
+the historical `status: served` claim, while its keys remain aliases in `1.3.0`. Historical admission does not establish current runtime support; see
 [verification limits](verification.md).

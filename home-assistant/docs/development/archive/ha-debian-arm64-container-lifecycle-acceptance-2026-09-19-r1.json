@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.home-assistant.debian-arm64-container-lifecycle/v1",
+  "state": "accepted_source_built_synthetic_container_lane",
+  "recorded_at": "2026-09-19T10:10:12Z",
+  "cohort_id": "ha-debian-final-20260919-r1",
+  "source_binding": {
+    "repository": "teslatlas-home-assistant",
+    "head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+    "product_version": "2026.36.2",
+    "component_files": 31,
+    "component_payload_manifest": "docs/development/ha-component-payload-manifest-2026-09-19-r1.txt",
+    "component_payload_manifest_sha256": "ebf7d09f88e2ce8f80ea71b8b2ae0fb7569ae3521dea038b643b6cfe626439ca",
+    "profile_id": "hub-http-v1@1.0.0",
+    "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+  },
+  "hub_binding": {
+    "repository": "hub",
+    "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "source_fingerprint": "git:7fe8cb202c0eb7e291901a9b719d3fbe65c675bc;tracked-diff-sha256:8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca;snapshot-manifest-sha256:f3e9f240930c72909d982ad2f6429c4f6ab390eb34818505e92236f6027d443b",
+    "binary_sha256": "4b965423364160d597bd9e4f1a1d5b73be49c13edb0df3f8c4896fe6a973c433",
+    "interop_fixture_sha256": "45387ccc807fc486ee917f81d44fd9d47dece3dd6a8c79b1dc72e585fe998ff1",
+    "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+    "runtime_identity": "fresh owner-only Hub identity, CA, invitation, device bearer and persistent synthetic store",
+    "closed_endpoint": "https://127.0.0.1:18560"
+  },
+  "platform": {
+    "guest": "debian13-arm64",
+    "os": "Debian GNU/Linux 13.6 (trixie)",
+    "architecture": "aarch64",
+    "docker_engine": "26.1.5+dfsg1",
+    "compose": "2.26.1-4",
+    "home_assistant": "2026.8.3",
+    "python": "3.14.6",
+    "image_reference": "ghcr.io/home-assistant/home-assistant:2026.8.3",
+    "image_repository_digest": "sha256:14931c6b13756317849f46da1d01b45937a1150db66c081cfe529d48215943fe",
+    "arm64_platform_image_id": "sha256:e53b24b1bde9e471f5167a032d29d8de5956c374cba44205da0a017b71cc4362",
+    "network": "host",
+    "component_mount": "read_only",
+    "config_mount": "persistent_private_read_write",
+    "stop_grace_period": "60s"
+  },
+  "acceptance": {
+    "onboarding": "disposable owner user, core configuration and analytics completed without external input; private login removed during cleanup",
+    "config_flow": "authenticated Home Assistant user-source config-flow API created exactly one loaded entry",
+    "pairing_claim_status": 200,
+    "invitation_replay_status": 401,
+    "discovery": {
+      "status": 200,
+      "hub_identity_matched": true,
+      "protocol": "teslatlas-sync",
+      "protocol_major": 1,
+      "api_versions": ["1.0"],
+      "product_version": "2026.36.2",
+      "required_capabilities_present": true
+    },
+    "tls": {
+      "ordinary_system_trust_rejected_private_ca": true,
+      "isolated_private_ca_succeeded": true,
+      "health_status": 200,
+      "readiness_status": 200
+    },
+    "inventory": {
+      "config_entries": 1,
+      "vehicle_devices": 2,
+      "entities": 26,
+      "entity_count_basis": "13 current source vehicle sensor descriptions times two fixture vehicles",
+      "observed_vehicle_numeric_zero_preserved": true,
+      "sparse_vehicle_unknown_or_unavailable": true
+    },
+    "scheduler": {
+      "automatic_refresh_started_at_ms": 1789811982411,
+      "changed_value_observed_at_ms": 1789811988454,
+      "elapsed_ms": 6043,
+      "manual_refresh_used": false,
+      "non_overlap_source_regression": "tests/integration/test_current_hub_client.py::test_overlapping_snapshots_are_serialized"
+    },
+    "hub_outage": {
+      "observed_value_before": 1,
+      "unavailable_observed_at_ms": 1789812055485,
+      "elapsed_ms": 22140,
+      "same_store_restart_recovered_value": 1,
+      "recovery_observed_at_ms": 1789812109478
+    },
+    "credential_lifecycle": {
+      "revoked_bearer_started_reauthentication": true,
+      "fresh_invitation_claimed_once": true,
+      "same_config_entry_preserved": true,
+      "reads_restored": true,
+      "paired_devices_after": 2,
+      "revoked_devices_after": 1,
+      "active_devices_after": 1
+    },
+    "lifecycle": {
+      "same_identity_reconfigure": true,
+      "reload": true,
+      "disable_then_enable": true,
+      "post_enable_entries_devices_entities": [1, 2, 26],
+      "container_stop_closed_http": true,
+      "container_start_restored_http": true,
+      "post_restart_entry_state": "loaded",
+      "post_restart_entries_devices_entities": [1, 2, 26]
+    },
+    "diagnostics": {
+      "status": 200,
+      "secret_endpoint_hub_device_pairing_vehicle_values_absent": true,
+      "location_coordinate_cursor_raw_record_keys_absent": true,
+      "redacted_key_names_retained_without_private_values": true
+    },
+    "private_acceptance_state_sha256": "39159557ca87224f8640e7c20064d72ee93d71bb209fece8044eab3ace7929b0"
+  },
+  "checks": {
+    "focused_runtime_behavior": "58 passed in 1.98s",
+    "package_and_documentation": "7 passed in 0.17s",
+    "compose_config": "passed",
+    "component_payload_hash_check": "31 of 31 current files matched the r1 manifest",
+    "credential_files_final_modes_before_teardown": "core.config_entries and SQLite database/WAL/SHM were 0600; private acceptance/auth/invitation files were 0600"
+  },
+  "failure_ledger": [
+    {
+      "failure": "The historical 2026-09-09 payload manifest still named the pre-duplicate-identity-guard current_hub_client.py hash.",
+      "disposition": "Mounted the exact current 31-file source, verified every other member, and created the r1 current payload manifest without rewriting the historical receipt."
+    },
+    {
+      "failure": "The first fresh-invitation CLI attempt ran while the Hub held its lifetime store lock and exited before creating an invitation, leaving a zero-byte output file.",
+      "disposition": "Verified the bearer was revoked, stopped only the owned Hub process, deleted the exact empty file, issued one fresh invitation successfully, restarted the same store and consumed that invitation once. No claim or invitation was ambiguously retried."
+    },
+    {
+      "failure": "The first recovery observation selected every unavailable state-of-charge entity and was ambiguous because both vehicles were unavailable during the outage.",
+      "disposition": "No runtime action or credential was repeated. The controller selected the bound observed vehicle from the private scenario and confirmed its recovered value after the already-completed restart."
+    },
+    {
+      "failure": "The first diagnostics assertion rejected redacted key names as if they were private values.",
+      "disposition": "The payload already redacted the values. The check was corrected to reject all known private values and identity/location/cursor/raw structures; the same read-only diagnostics endpoint then passed."
+    },
+    {
+      "failure": "The first private-root deletion ran as the guest owner and could not remove root-owned Home Assistant files.",
+      "disposition": "Container and Hub were already stopped. The same exact validated non-symlink root was deleted with sudo; no other path was touched."
+    },
+    {
+      "failure": "The disposable Container selected the fixture-only CA file through SSL_CERT_FILE, so an unrelated Home Assistant alerts request could not validate its public certificate.",
+      "disposition": "The Teslatlas lane used normal certificate validation and passed its explicit system-trust rejection/private-CA trust checks. Unrelated outbound integration connectivity is not accepted by this isolated session; production operators should use a system-plus-private trust bundle when other HTTPS integrations need it."
+    }
+  ],
+  "cleanup": {
+    "home_assistant_container_absent": true,
+    "home_assistant_image_removed": true,
+    "hub_process_absent": true,
+    "guest_private_root_absent": true,
+    "guest_ports_8123_and_18560_closed": true,
+    "guest_stopped": true,
+    "host_ssh_port_60022_closed": true,
+    "heavy_build_lock_absent": true,
+    "host_nonsecret_preparation": "moved to /Users/bolyki/.Trash/ha-debian-final-20260919-r1-preparation for recoverable cleanup",
+    "retained_environment": "Docker Engine/client and Compose packages only"
+  },
+  "limitations": [
+    "Source-built synthetic Hub and official Home Assistant Container evidence only; no real account, vehicle, telemetry, production or named-source acceptance.",
+    "The authenticated config-flow API was exercised; no headed browser or visual UI acceptance is claimed.",
+    "No Home Assistant OS, Supervisor, add-on, HACS publication, standalone installer or package acceptance.",
+    "No replacement upgrade/rollback, complete parity matrix, macOS HA runtime, x86, Intel or Azure acceptance.",
+    "The isolated fixture-only CA environment does not accept unrelated Home Assistant outbound HTTPS integration connectivity.",
+    "The optional drives capability is not consumed by this Home Assistant integration."
+  ]
+}

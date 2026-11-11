@@ -588,7 +588,7 @@ index 0000000..a6b4396
 +
 +	acks := make(chan *telemetry.Record, 1)
 +	producer := testProducer(t, server.URL, acks)
-+	record := testRecord(t, "Athena")
++	record := testRecord(t, "Test Vehicle")
 +	producer.Produce(record)
 +
 +	select {
@@ -616,7 +616,7 @@ index 0000000..a6b4396
 +	}
 +	datum, ok := data[0].(map[string]interface{})
 +	value, valueOK := datum["value"].(map[string]interface{})
-+	if !ok || !valueOK || datum["key"] != "VehicleName" || value["stringValue"] != "Athena" || payload["vin"] != "TEST123" {
++	if !ok || !valueOK || datum["key"] != "VehicleName" || value["stringValue"] != "Test Vehicle" || payload["vin"] != "TEST123" {
 +		t.Fatalf("unexpected decoded payload: %#v", payload)
 +	}
 +}
@@ -641,7 +641,7 @@ index 0000000..a6b4396
 +			defer server.Close()
 +			acks := make(chan *telemetry.Record, 1)
 +			producer := testProducer(t, server.URL, acks)
-+			producer.Produce(testRecord(t, "Athena"))
++			producer.Produce(testRecord(t, "Test Vehicle"))
 +			select {
 +			case <-acks:
 +				t.Fatal("failed delivery was acknowledged")

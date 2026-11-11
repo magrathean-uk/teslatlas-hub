@@ -1,0 +1,12 @@
+{
+  "domain": "teslatlas_hub",
+  "name": "Teslatlas Hub",
+  "codeowners": ["@magrathean-uk"],
+  "config_flow": true,
+  "documentation": "https://github.com/magrathean-uk/teslatlas-home-assistant",
+  "integration_type": "hub",
+  "iot_class": "local_poll",
+  "issue_tracker": "https://github.com/magrathean-uk/teslatlas-home-assistant/issues",
+  "requirements": [],
+  "version": "2026.36.2"
+}

@@ -5,11 +5,15 @@ script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_dir=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 
 cd "$repo_dir"
-uv sync --locked
-uv run python tools/build_hub_http_profile_12.py --check
-uv run python tools/build_hub_http_profile_13.py --check
-uv run python tools/build_hub_sync_profile.py --check
-uv run python tools/build_hub_sync_14_profile.py --check
-uv run python tools/build_hub_sync_15_profile.py --check
-uv run python -m unittest discover -s tests -v
+# Task worktrees may link the owner's locked environment. Never sync into it.
+if [ ! -L .venv ]; then
+  uv sync --locked
+fi
+protocol_python="$repo_dir/.venv/bin/python"
+"$protocol_python" tools/build_hub_http_profile_12.py --check
+"$protocol_python" tools/build_hub_http_profile_13.py --check
+"$protocol_python" tools/build_hub_sync_profile.py --check
+"$protocol_python" tools/build_hub_sync_14_profile.py --check
+"$protocol_python" tools/build_hub_sync_15_profile.py --check
+"$protocol_python" -m unittest discover -s tests -v
 ./conformance/run

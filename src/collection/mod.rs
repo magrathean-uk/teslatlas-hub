@@ -9,3 +9,4 @@ pub mod fleet_telemetry;
 pub(crate) mod loopback_fixture;
 pub mod source_db_current;
 pub mod tesla_stream;
+pub mod window;

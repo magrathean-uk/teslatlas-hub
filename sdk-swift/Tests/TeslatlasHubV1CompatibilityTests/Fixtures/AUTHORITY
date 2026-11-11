@@ -1,0 +1,12 @@
+kind=teslatlas-hub-v1-fixture-authority
+fixture_proof=deterministic-offline-only
+live_hub_proof=separate-opt-in-test
+protocol_repository=https://github.com/magrathean-uk/teslatlas-protocol
+protocol_commit_checked=79ced4c7fdc79520ad31d72a0280bf5f3f19f407
+protocol_release_binding_present=false
+binding_status=vendored-from-immutable-hub-release-source
+binding_sha256=78aca4b6014625420efb66fbe35f6ea10d72a7f596210dac80964c33e0f04f65
+hub_repository=https://github.com/magrathean-uk/teslatlas-hub
+hub_tag=v1.0.0
+hub_tag_object=4b45708a00f14f76306f6cb37375eb0c538643d7
+hub_commit=a5e6c5c4f86776da96c9946f7e45b2080c571f86

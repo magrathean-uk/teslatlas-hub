@@ -1,0 +1,10 @@
+Package: teslatlas-edge
+Version: @VERSION@
+Section: net
+Priority: optional
+Architecture: @ARCHITECTURE@
+Depends: adduser, ca-certificates, libc6, systemd (>= 254)
+Maintainer: Magrathean UK LTD <contact@magrathean.uk>
+Description: User-operated Tesla Fleet Telemetry ingress for Teslatlas Hub
+ Teslatlas Edge receives decoded Fleet Telemetry records, stores them in an
+ encrypted bounded spool, and exposes durable batches to a home Hub.

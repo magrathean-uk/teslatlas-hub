@@ -798,3 +798,77 @@ fn ct095_wire_secret_drops() {
         .expect("test runtime")
         .block_on(crate::fleet_api::assert_fleet_wire_contract());
 }
+
+fn store_status(data: &Path) -> crate::auth::credential_sign_in::CredentialStatus {
+    crate::auth::credential_sign_in::credential_status(&HubStore::initialize(data).expect("status store"), data, 1_800_000_000_000).expect("status projection")
+}
+
+#[test]
+fn m01_t15_keyring_exposure_survives_restart_until_rotation() {
+    use std::os::unix::fs::PermissionsExt;
+    let (root, generation) = seeded();
+    let path = root.path().join("secrets").join("credential-keys");
+    let mode = |path: &Path| std::fs::metadata(path).expect("keyring metadata").permissions().mode() & 0o777;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).expect("exposed keyring fixture");
+    assert!(store_status(root.path()).credential_store.exposure_suspected && !status(root.path()).keyring_exposure, "live check before any repair");
+    let vault = open(root.path()); unchanged(&vault, generation);
+    assert!(mode(&path) == 0o600, "admitted open makes the keyring private");
+    assert!(status(root.path()).keyring_exposure && store_status(root.path()).credential_store.exposure_suspected, "repaired exposure recorded");
+    drop(vault);
+    let vault = open(root.path()); unchanged(&vault, generation);
+    assert!(store_status(root.path()).credential_store.exposure_suspected, "warning survives a restart");
+    vault.rotate().expect("rotation");
+    assert!(pair(&vault).generation == generation && mode(&path) == 0o600, "rotation keeps the pair");
+    assert!(!status(root.path()).keyring_exposure && !store_status(root.path()).credential_store.exposure_suspected, "rotation clears the warning");
+    drop(vault);
+    drop(open(root.path()));
+    assert!(!store_status(root.path()).credential_store.exposure_suspected, "cleared after the next restart");
+}
+
+#[test]
+fn m01_t15_resumed_rotation_keeps_exposure() {
+    use std::os::unix::fs::PermissionsExt;
+    let (root, generation) = seeded();
+    prepare_rotation(root.path());
+    let path = root.path().join("secrets").join("credential-keys");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).expect("exposed rotating keyring fixture");
+    let vault = open(root.path()); unchanged(&vault, generation);
+    assert!(vault.keys.read().expect("keys").as_ref().expect("keyring").keyring().previous.is_none(), "rotation resumed at open");
+    assert!(status(root.path()).keyring_exposure && store_status(root.path()).credential_store.exposure_suspected, "a resumed rotation's key was in the exposed file");
+    vault.rotate().expect("fresh rotation");
+    assert!(!status(root.path()).keyring_exposure && !store_status(root.path()).credential_store.exposure_suspected, "a rotation begun after the finding clears it");
+}
+
+#[test]
+fn m01_t15_keyring_barrier_failure_records_cause() {
+    let (root, generation) = seeded();
+    let (vault, calls) = private_directory::with_sync_faults(true, || open(root.path()));
+    assert!(calls.contains(&"regular"), "keyring barrier reached");
+    {
+        let state = vault.lock().expect("state");
+        assert!(state.read_only && matches!(state.resume_error, Some(CredentialStoreError::DurabilityUnavailable)), "cause recorded at open");
+    }
+    let projection = store_status(root.path());
+    assert!(projection.credential_store.durability == Some("unavailable"), "status reports unavailable durability");
+    assert!(crate::auth::credential_sign_in::credential_store_unhealthy(&projection, true, false), "readiness reports the credential store error");
+    assert!(matches!(vault.begin_refresh(OWNER, generation), Err(CredentialStoreError::DurabilityUnavailable)), "read-only refusal");
+    drop(vault);
+    let vault = open(root.path());
+    assert!(!vault.lock().expect("state").read_only && store_status(root.path()).credential_store.durability == Some("ok"), "next proven open recovers");
+}
+
+#[test]
+fn m01_t15_keyring_exposure_column_migrates_in_place() {
+    let root = crate::private_tempdir().expect("root");
+    drop(HubStore::initialize(root.path()).expect("v79 store"));
+    {
+        let raw = HubStore::initialize(root.path()).expect("store").open().expect("raw connection");
+        raw.execute_batch("ALTER TABLE credential_format_state DROP COLUMN keyring_exposure").expect("pre-column v79 fixture");
+        let present: bool = raw.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('credential_format_state') WHERE name='keyring_exposure')", [], |row| row.get(0)).expect("column check");
+        assert!(!present, "fixture lacks the column");
+    }
+    let store = HubStore::initialize(root.path()).expect("migrating open");
+    assert!(!store.credential_format_state().expect("format").expect("state").keyring_exposure, "column added with no exposure");
+    let raw = store.open().expect("raw connection");
+    assert!(raw.execute("UPDATE credential_format_state SET keyring_exposure=2", []).is_err(), "column keeps its check");
+}

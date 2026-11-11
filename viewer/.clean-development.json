@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/magrathean-uk/bolyki-dev/main/clean-development/schemas/project-config.schema.json",
+  "schemaVersion": 2,
+  "enabled": true,
+  "heavy": false,
+  "buildDirs": [
+    "dist"
+  ],
+  "depDirs": [
+    "node_modules"
+  ]
+}

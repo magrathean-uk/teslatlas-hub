@@ -1082,6 +1082,8 @@ impl HubStore {
         for (sha, _, _) in referenced_pack_rows_at(&connection, retired_cleanup_cutoff)? {
             catalog_shas.insert(sha);
         }
+        // A pack an encrypted backup is streaming stays while its pin row does.
+        catalog_shas.extend(crate::data_recovery::live_backup_pack_pins(&connection, now_ms)?);
 
         let sqlite_integrity = catalogue_quick_check_label(&connection)?;
         let (mut orphaned_packs_removed, mut freed_bytes) =

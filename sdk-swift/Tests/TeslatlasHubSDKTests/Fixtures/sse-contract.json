@@ -1,0 +1,111 @@
+{
+  "protocol_version": "1.2.0",
+  "endpoint": "/v1/events",
+  "media_type": "text/event-stream",
+  "encoding": "utf-8",
+  "framing": {
+    "fields": [
+      "id",
+      "event",
+      "data",
+      "retry"
+    ],
+    "dispatch_boundary": "blank-line",
+    "data_lines": "concatenate-with-newline",
+    "heartbeat_comment_seconds": 15
+  },
+  "replay": {
+    "request_header": "Last-Event-ID",
+    "resume": "strictly-after",
+    "minimum_retention_seconds": 86400,
+    "id_treatment": "opaque",
+    "bound_to": [
+      "hub_id",
+      "principal",
+      "normalized_filters"
+    ],
+    "reset": "empty-id-field",
+    "invalid_status": 400,
+    "invalid_error_code": "event_id_invalid",
+    "expired_status": 410,
+    "expired_error_code": "event_replay_expired"
+  },
+  "reconnect": {
+    "default_retry_milliseconds": 3000,
+    "maximum_retry_milliseconds": 30000,
+    "terminal_status": 204
+  },
+  "events": [
+    {
+      "name": "observation.admitted",
+      "introduced_in": "1.0.0",
+      "data_schema": "urn:teslatlas:protocol:schema:event:1.2.0"
+    },
+    {
+      "name": "vehicle.current.changed",
+      "introduced_in": "1.0.0",
+      "data_schema": "urn:teslatlas:protocol:schema:event:1.2.0"
+    },
+    {
+      "name": "drive.started",
+      "introduced_in": "1.0.0",
+      "data_schema": "urn:teslatlas:protocol:schema:event:1.2.0"
+    },
+    {
+      "name": "drive.updated",
+      "introduced_in": "1.0.0",
+      "data_schema": "urn:teslatlas:protocol:schema:event:1.2.0"
+    },
+    {
+      "name": "drive.ended",
+      "introduced_in": "1.0.0",
+      "data_schema": "urn:teslatlas:protocol:schema:event:1.2.0"
+    },
+    {
+      "name": "charge.started",
+      "introduced_in": "1.0.0",
+      "data_schema": "urn:teslatlas:protocol:schema:event:1.2.0"
+    },
+    {
+      "name": "charge.updated",
+      "introduced_in": "1.0.0",
+      "data_schema": "urn:teslatlas:protocol:schema:event:1.2.0"
+    },
+    {
+      "name": "charge.ended",
+      "introduced_in": "1.0.0",
+      "data_schema": "urn:teslatlas:protocol:schema:event:1.2.0"
+    },
+    {
+      "name": "state.changed",
+      "introduced_in": "1.0.0",
+      "data_schema": "urn:teslatlas:protocol:schema:event:1.2.0"
+    },
+    {
+      "name": "software_update.changed",
+      "introduced_in": "1.0.0",
+      "data_schema": "urn:teslatlas:protocol:schema:event:1.2.0"
+    },
+    {
+      "name": "data_quality.changed",
+      "introduced_in": "1.0.0",
+      "data_schema": "urn:teslatlas:protocol:schema:event:1.2.0"
+    },
+    {
+      "name": "command.changed",
+      "introduced_in": "1.1.0",
+      "data_schema": "urn:teslatlas:protocol:schema:event:1.2.0"
+    },
+    {
+      "name": "metadata.changed",
+      "introduced_in": "1.2.0",
+      "data_schema": "urn:teslatlas:protocol:schema:event:1.2.0"
+    }
+  ],
+  "examples": [
+    {
+      "name": "current-state-change",
+      "wire": "id: event_demo_0042\nevent: vehicle.current.changed\ndata: {\"event_id\":\"event_demo_0042\",\"event_type\":\"vehicle.current.changed\"\ndata: ,\"occurred_at\":\"2026-08-30T12:00:01.250Z\",\"vehicle_id\":\"vehicle_demo_alpha\",\"resource_id\":\"vehicle_demo_alpha\",\"revision\":42,\"data\":{\"resource_type\":\"current_state\",\"vehicle_id\":\"vehicle_demo_alpha\",\"observed_at\":\"2026-08-30T12:00:00.000Z\",\"revision\":42,\"state\":\"online\",\"battery_level_percent\":78,\"range_km\":338.4,\"odometer_km\":12000.5,\"inside_temperature_c\":21.5,\"outside_temperature_c\":17,\"locked\":true,\"climate_on\":false,\"charging_state\":\"disconnected\",\"location\":null,\"quality\":{\"subject_type\":\"vehicle\",\"subject_id\":\"vehicle_demo_alpha\",\"quality\":\"complete\",\"sources\":[\"fleet_telemetry\"],\"gap_count\":0,\"largest_gap_seconds\":0,\"derived_fields\":[],\"projection_version\":\"3.1.0\",\"assessed_at\":\"2026-08-30T12:00:01.250Z\",\"issues\":[]}}}\n\n"
+    }
+  ]
+}

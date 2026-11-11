@@ -1,0 +1,17 @@
+version = 1
+state_directory = "/var/lib/teslatlas-edge"
+receiver_bind = "127.0.0.1:8080"
+hub_bind = "0.0.0.0:8443"
+receiver_bearer_path = "/var/lib/teslatlas-edge/receiver-token"
+spool_key_path = "/var/lib/teslatlas-edge/spool-key"
+credential_store_path = "/var/lib/teslatlas-edge/hub-credentials.json"
+hub_server_certificate_path = "/etc/teslatlas-edge/hub-server.crt"
+hub_server_private_key_path = "/etc/teslatlas-edge/hub-server.key"
+hub_client_ca_path = "/etc/teslatlas-edge/hub-client-ca.crt"
+
+[spool]
+max_bytes = 536870912
+max_records = 100000
+retention_seconds = 604800
+batch_max_bytes = 1048576
+batch_max_records = 256

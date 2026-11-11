@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+  <title>Teslatlas Edge</title>
+  <options customize="always" require-scripts="false" hostArchitectures="arm64"/>
+  <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+  <welcome file="Welcome.html" mime-type="text/html"/>
+  <choices-outline>
+    <line choice="teslatlas-edge.core"/>
+    <line choice="teslatlas-edge.receiver"/>
+  </choices-outline>
+  <choice id="teslatlas-edge.core" title="Edge core" description="Encrypted spool and Hub mTLS delivery service" visible="true" enabled="true" start_selected="true">
+    <pkg-ref id="uk.co.magrathean.teslatlas.edge.core"/>
+  </choice>
+  <choice id="teslatlas-edge.receiver" title="Fleet Telemetry receiver" description="Optional raw TCP Fleet Telemetry receiver" visible="true" enabled="true" start_selected="true">
+    <pkg-ref id="uk.co.magrathean.teslatlas.edge.receiver"/>
+  </choice>
+  <pkg-ref id="uk.co.magrathean.teslatlas.edge.core" version="@VERSION@" auth="root">teslatlas-edge.core.pkg</pkg-ref>
+  <pkg-ref id="uk.co.magrathean.teslatlas.edge.receiver" version="@VERSION@" auth="root">teslatlas-edge.receiver.pkg</pkg-ref>
+</installer-gui-script>

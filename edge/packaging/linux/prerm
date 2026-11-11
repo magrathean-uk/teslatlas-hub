@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+service=teslatlas-edge.service
+receiver_service=teslatlas-fleet-telemetry.service
+
+if [ "${1:-}" = remove ] || [ "${1:-}" = deconfigure ]; then
+    if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+        systemctl is-active --quiet "$receiver_service" && systemctl stop "$receiver_service" || true
+        systemctl is-active --quiet "$service" && systemctl stop "$service" || true
+        systemctl is-enabled --quiet "$receiver_service" && systemctl disable "$receiver_service" || true
+        systemctl is-enabled --quiet "$service" && systemctl disable "$service" || true
+    fi
+fi

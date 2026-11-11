@@ -1,0 +1,11 @@
+.build/
+.swiftpm/
+DerivedData/
+*.xcresult
+__pycache__/
+*.pyc
+
+# secrets (clean-development)
+.env
+.env.*
+!.env.example

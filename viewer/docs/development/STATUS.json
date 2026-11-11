@@ -1,0 +1,458 @@
+{
+  "schema_version": 1,
+  "product": "Teslatlas Viewer",
+  "repository": "teslatlas-viewer",
+  "state": "EXCLUDED_BY_OWNER",
+  "native_goal_state": "excluded_by_owner",
+  "native_goal_id": "01a082b7-8fac-7812-8619-3ce41c8b1961",
+  "native_goal_created_at": "2026-09-09T13:48:09Z",
+  "goal_objective": "Active-scope Viewer working product: deliver a usable browser/static-service route on Debian 13 ARM64 and Apple-silicon macOS with normal pairing, current and history data, clear recovery, restart, and retained data; package the active targets only as concrete inputs become available. x86/amd64/Intel Mac, Azure, full cross-architecture work, polished installer completion, and named-source parity completion are separate deferred or final-acceptance gaps, not prerequisites.",
+  "plan": "PLAN.md",
+  "current_stage": "EXCLUDED_BY_OWNER",
+  "first_milestone_after_start": "B1",
+  "current_model": "gpt-5.6-luna",
+  "model_purpose": "owner-authorized development",
+  "last_verified": "2026-09-12",
+  "completed_this_programme": ["B1", "R1"],
+  "active_targets": [],
+  "deferred_targets": ["debian13-x86_64", "amd64", "intel-mac", "azure", "full-cross-architecture-matrix"],
+  "scope_override": "OWNER SCOPE CHANGE 2026-09-12: all Viewer development is excluded. Preserve source, history and completed evidence; do not build, test, pair, start runtimes, consume queued handoffs or create new Viewer evidence. The native goal is preserved but has no active work obligation. The supported goal control cannot cancel/remove the goal; get_goal remains paused, not complete. ARM64/Mac work for other products and all x86/App/production/vehicle/commit/push/CI/release work remain outside this Viewer task.",
+  "needed_input": "None while Viewer is excluded by owner. A future explicit owner scope change would be required before any Viewer work or queued Hub handoff may resume.",
+  "publication_authorized": false,
+  "evidence": [
+    {
+      "kind": "native_goal_creation",
+      "status": "active",
+      "confirmed_at": "2026-09-09T13:48:09Z",
+      "goal_id": "01a082b7-8fac-7812-8619-3ce41c8b1961",
+      "previous_goal_state": "get_goal returned no unfinished goal before creation; the deleted native goals were not resumed or duplicated",
+      "objective": "Active-scope Viewer working product: deliver a usable browser/static-service route on Debian 13 ARM64 and Apple-silicon macOS with normal pairing, current and history data, clear recovery, restart, and retained data; package the active targets only as concrete inputs become available. x86/amd64/Intel Mac, Azure, full cross-architecture work, polished installer completion, and named-source parity completion are separate deferred or final-acceptance gaps, not prerequisites.",
+      "creation_evidence": "create_goal returned status active with tokensUsed 0; the immediate get_goal verification returned the same objective and status active"
+    },
+    {
+      "kind": "b1_local_owned_gates",
+      "status": "passed",
+      "verified_at": "2026-09-08T21:22:22Z",
+      "source_head": "ba5424dcfeab59ac9fea0106f84fb5281672751a",
+      "sdk_source_head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+      "sdk_profile": "hub-http-v1@1.0.0",
+      "sdk_tarball_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+      "sdk_installed_content_manifest_sha256": "4b1a44f7d2cd0ab6c772642125358703aa25c1efe32d164a119a6fc9d858ded6",
+      "sdk_installed_member_count": 81,
+      "checks": {
+        "sdk_verify": "passed",
+        "sdk_artifact_tests": "2 passed",
+        "vitest": "104 passed",
+        "production_build": "passed with existing chunk-size advisory",
+        "packed_cli_smoke": "1 passed",
+        "fixture_browser_e2e": "14 passed",
+        "matrix_launcher_tests": "3 passed",
+        "matrix_contract_tests": "10 passed"
+      },
+      "limits": [
+        "sdk source repack test skipped because the exact Node v26.7.0 executable was not available on this host",
+        "these local gates are host-only; the separate installed Debian ARM64 result is recorded below"
+      ]
+    },
+    {
+      "kind": "b1_contract_correction",
+      "status": "passed",
+      "verified_at": "2026-09-08T21:22:22Z",
+      "what_it_proves": "Viewer matrix admission and runtime schema now bind the current verified 81-member SDK archive; the schema digest in matrix-contract.json was rebound to the changed schema.",
+      "checks": {
+        "python_matrix_contract": "10 passed",
+        "affected_paths": [
+          "tools/matrix_contract.py",
+          "tools/test_matrix_contract.py",
+          "tools/viewer-runtime-v1.schema.json",
+          "tools/matrix-contract.json"
+        ]
+      }
+    },
+    {
+      "kind": "b1_installed_browser_handoff",
+      "status": "passed",
+      "verified_at": "2026-09-08T22:50:24Z",
+      "receipt": "docs/development/receipts/2026-09-08-b1-installed-browser-r3.json",
+      "source_head": "ba5424dcfeab59ac9fea0106f84fb5281672751a",
+      "viewer_package_sha256": "30836eced2cd38d9c98374ea3247e1242c21e50832f41bcdd7e08bf779529851",
+      "hub_id": "92c1fadb-ea21-49ee-a690-e110056e846e",
+      "scenario": "two-vehicles-five-drives",
+      "checks": {
+        "installed_browser_smoke": "1 passed in 1.4s",
+        "current_state": "0%, 160.93 km, 16,093.44 km, Observed",
+        "history": "five IDs rendered in exact scenario order 105, 104, 103, 102, 101",
+        "empty_vehicle_refresh_and_clear": "passed",
+        "cleanup": "fixture launcher, Hub child, Viewer process stopped; ports 18480 and 4173 closed"
+      },
+      "limits": [
+        "B1 uses a bounded five-drive fixture; R1 51-drive 25/25/1 paging remains open",
+        "private invitation and certificate inputs were not copied into the repository"
+      ]
+    },
+    {
+      "kind": "r1_installed_browser_recovery",
+      "status": "passed",
+      "verified_at": "2026-09-09T01:57:58Z",
+      "receipt": "docs/development/receipts/2026-09-09-r1-installed-recovery7.json",
+      "source_head": "ba5424dcfeab59ac9fea0106f84fb5281672751a",
+      "viewer_package_sha256": "3fee3da110123679c8a0f1a062c1bff92f7bec3b38f83acc26b79314a3bc9e28",
+      "hub_id": "fc93a685-fbd6-4b29-9736-070ada1c337e",
+      "scenario": "viewer-r1-51-drives",
+      "checks": {
+        "installed_recovery_smoke": "1 passed in 4.1m",
+        "current_state": "0%, 160.93 km, 16,093.44 km, Observed",
+        "history": "51 drives in exact 25/25/1 order, 1051 through 1001, with terminal history and an empty vehicle",
+        "outage_restore": "passed; retained current state was Stale/Offline during outage and recovered after restart",
+        "revoke_repair": "passed; exact device revoked, 401 cleared the session, and a fresh invitation re-paired with current values",
+        "cleanup": "passed; Viewer, supervisor, Hub and listeners were absent"
+      },
+      "limits": [
+        "remaining installed R1 cases are 304/cache, unsupported zero-I/O, cancellation, and partial failure",
+        "D1 Docker/package runtime and X1 cross-platform lifecycle remain open"
+      ]
+    },
+    {
+      "kind": "r1_installed_browser_data_state",
+      "status": "passed",
+      "verified_at": "2026-09-09T07:13:37Z",
+      "receipt": "docs/development/receipts/2026-09-09-r1-installed-data-state.json",
+      "source_head": "ba5424dcfeab59ac9fea0106f84fb5281672751a",
+      "viewer_package_sha256": "96cbea31be369729f61eb99b73c18343b5d7555106486e7d868a0dfc24946454",
+      "hub_id": "5334ff3f-bd07-4c48-bc74-cebd6c7c526a",
+      "scenario": "viewer-r1-51-drives",
+      "checks": {
+        "installed_data_state_smoke": "1 passed in 3.1s",
+        "cache_revalidation": "passed; three loaded drive pages sent If-None-Match and returned 304",
+        "unsupported_resources": "passed; explicit unsupported messages and zero unsupported route requests",
+        "partial_failure": "passed; retained 51 drives remained visible and recovered after a clean refresh",
+        "cancellation": "passed; delayed current read was canceled by local session clear without late repopulation",
+        "cleanup": "passed; Viewer and Hub stopped with both listeners absent and no remaining fixture processes"
+      },
+      "limits": [
+        "browser abort/delay controls prove installed Viewer data-state behavior and are not Hub transport fault-injection evidence",
+        "selected helper parity, D1 package/daemon/Docker runtime, and X1 cross-platform lifecycle remain open"
+      ]
+    },
+    {
+      "kind": "d1_viewer_container_runtime",
+      "status": "passed_debian_arm64_runtime",
+      "verified_at": "2026-09-09T08:13:29Z",
+      "receipt": "docs/development/receipts/2026-09-09-d1-container-source.json",
+      "source_head": "ba5424dcfeab59ac9fea0106f84fb5281672751a",
+      "image_id": "sha256:6791fa6d019028ae4d0c3cad926207852830188ccf5dcc70e4e01b00d76e5ea6",
+      "guest": "debian13-arm64",
+      "checks": {
+        "compose_config": "passed",
+        "image_build": "passed; SDK verification (81 members) and production build completed",
+        "runtime_healthcheck": "passed; container became healthy",
+        "runtime_user": "passed; node uid=1000 gid=1000",
+        "runtime_persistence": "passed; mounts=[]",
+        "loopback_http": "passed; 127.0.0.1:4173 returned HTTP 200",
+        "restart": "passed; healthy after Compose restart and HTTP remained successful",
+        "clean_stop": "passed; Viewer container/network removed and port 4173 absent",
+        "unrelated_state": "passed; existing Hub, HA, and Edge containers remained unchanged"
+      },
+      "limits": [
+        "This is the selected Debian ARM64 Docker runtime only; native Debian package and macOS launchd lifecycle remain open.",
+        "No Hub readiness, browser TLS/CORS, helper parity, passive collection, Debian x86_64, upgrade, rollback, or forced-stop claim is made."
+      ]
+    },
+    {
+      "kind": "d1_viewer_component_manifest_handoff",
+      "status": "source_package_docker_runtime_ready_native_platform_pending",
+      "verified_at": "2026-09-09",
+      "receipt": "docs/development/d1-component-manifest-handoff-2026-09-09.json",
+      "handoff_sha256": "7945b580cccc8fb3f8580e962c496f8d283317db7b1cc175a60a1ca3de19b8d2",
+      "handoff_published_sha256": "2348e5959928c0f114236952f11aa98da674382ebe23294cee9f656b9f74aa6a",
+      "publication_redaction": "handoff_sha256 identifies the original handoff, which is held privately; the published copy and this record replace owner-only local artefact, lab and module-cache paths with neutral placeholders.",
+      "source_head": "ba5424dcfeab59ac9fea0106f84fb5281672751a",
+      "package_sha256": "c0ef6f9222fde6e06a6476dbed586b8f630f9abd9d3ed4587b4d9a50dfd8fb31",
+      "asset_manifest_sha256": "1998ad79a0199222b50d93bccbeffc3ead85804fadc25bb49d704f83606109d8",
+      "checks": {
+        "source_file_count": 106,
+        "source_manifest_sha256": "b57d3e5b7c015bf397b55ab5823afe33d20c0b2296d0892f39c6bd683d6bae7a",
+        "external_source_manifest_sha256": "ce0e854bdddb5e6a87a9ab199b213b709df7b66c079140504ab6d706eb855b82",
+        "frozen_source_snapshot": "<private-artefact-store>/teslatlas-viewer-d1-20260909/frozen-source",
+        "retained_package_archive": "<private-artefact-store>/teslatlas-viewer-d1-20260909/teslatlas-viewer-2026.36.2.tgz",
+        "profile": "hub-http-v1@1.0.0/b80d940e...",
+        "selectors": "Docker ARM64, native Debian ARM64, macOS ARM64, and blocked Debian x86_64 are explicit",
+        "native_package_hashes": "not invented; package build remains pending",
+        "docker_runtime_receipt": "docs/development/receipts/2026-09-09-d1-container-source.json; Debian ARM64 image sha256:6791fa6d019028ae4d0c3cad926207852830188ccf5dcc70e4e01b00d76e5ea6; build/health/HTTP/non-root/restart/clean-stop passed",
+        "hub_review": "Hub independently verified the receipt identities and now binds the Docker selector as runtime_passed_limited_cleaned; aggregate status remains source-only because native/platform selectors are not accepted"
+      },
+      "limits": [
+        "This handoff now includes selected Debian ARM64 Docker runtime evidence; no native package or macOS X1 lifecycle receipt exists yet.",
+        "The frozen source snapshot and package archive are owner-only external inputs and are not repository publication artifacts."
+      ]
+    },
+    {
+      "kind": "active_mac_runtime_inventory",
+      "status": "host_candidate_observed_no_acceptance",
+      "verified_at": "2026-09-09T13:49:46Z",
+      "host": "existing local Apple-silicon Mac",
+      "checks": {
+        "architecture": "arm64",
+        "os": "macOS 27.0",
+        "node": "v26.8.1",
+        "npm": "11.19.0",
+        "launchd": "/bin/launchctl available",
+        "docker_client": "29.8.0 at /opt/homebrew/bin/docker",
+        "docker_daemon": "unavailable; /var/run/docker.sock is absent"
+      },
+      "limits": [
+        "This is a read-only local host inventory, not a supported-floor or installed lifecycle acceptance result.",
+        "No package, service, listener, Hub fixture, credential, or Docker runtime was started or changed; a concrete Hub-owned Mac handoff is still required."
+      ]
+    },
+    {
+      "kind": "hub_active_mac_toolchain_handoff",
+      "status": "prepared_toolchain_only_viewer_consumer_pending",
+      "verified_at": "2026-09-09",
+      "handoff": "../hub/docs/development/active-macos-hub-viewer-toolchain-handoff-2026-09-09.json",
+      "handoff_sha256": "4192a310c5fdc9fc532a202de83fa39b29b6b74cd438faa2364294eb4e10ec9f",
+      "target": "existing local Apple-silicon Mac arm64/macOS 27.0",
+      "source_identities": {
+        "hub_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+        "viewer_head": "ba5424dcfeab59ac9fea0106f84fb5281672751a"
+      },
+      "checks": {
+        "xcode": "27.0 (27A5252f)",
+        "rust": "1.98.0-aarch64-apple-darwin",
+        "node": "v26.8.1",
+        "npm": "11.19.0",
+        "exact_go": "go1.27.0 Darwin ARM64 verified under the shared lock",
+        "next_hub_action": "build only from a disposable clean Hub HEAD snapshot"
+      },
+      "limits": [
+        "This handoff does not authorize or prove Hub package installation, app replacement, LaunchAgent/service start, listener, Viewer process, endpoint, trusted CA, invitation, pairing, browser journey, or retained-data behavior.",
+        "Viewer must wait for the following Hub-owned handoff with fresh endpoint/CA/invitation and lifecycle cleanup evidence; no prior ARM64 fixture or private input may be reused."
+      ]
+    },
+    {
+      "kind": "hub_active_mac_candidate_build_attempt",
+      "status": "failed_closed_snapshot_policy_mismatch_no_runtime",
+      "verified_at": "2026-09-09",
+      "candidate_root": "<private-lab>/candidates/hub-macos-arm64-20260909",
+      "source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+      "build_log": "<private-lab>/candidates/hub-macos-arm64-20260909/build-macos-app.log",
+      "build_log_sha256": "ca2bc4108281c3f8f23d21999af80ade4238bddc2cba61dbd85ca67883a8934a",
+      "checks": {
+        "rust_arm64_release_binary": "built; SHA256 55faf389f754773db1209916b50629c656b9e6a81cc864b2395358ceddcb7574",
+        "failure": "go-proxy-evidence: local Go build host Go identity is not an allowed complete binding",
+        "cause": "clean HEAD snapshot lock has two Go identities and omits the dirty worktree's user-owned toolchain entry; the requested user-owned path was therefore rejected fail-closed",
+        "official_clean_snapshot_toolchain": "<go-module-cache>/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/bin/go is present and matches the clean HEAD policy"
+      },
+      "limits": [
+        "No macOS app or package was produced; no package installation, service/LaunchAgent, listener, Viewer process, endpoint, CA, invitation, pairing, or browser evidence exists.",
+        "The failed candidate and its private inputs are not a Viewer runtime handoff and must not be reused; Hub owns the correction and any fresh build."
+      ]
+    },
+    {
+      "kind": "hub_active_mac_candidate_r2_in_progress",
+      "status": "running_under_heavy_build_lock_viewer_consumer_pending",
+      "verified_at": "2026-09-09T14:00:07Z",
+      "candidate_root": "<private-lab>/candidates/hub-macos-arm64-20260909-r2",
+      "source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+      "overlay": {
+        "path": "scripts/tesla-proxy-lock.json",
+        "sha256": "b4b02f44698d4d394d1e3dd1407d25f7223ad475b407eea109b844616c8244d2"
+      },
+      "heavy_build_lock": "<private-lab>/locks/heavy-build",
+      "processes": {
+        "build_shell_pid": 10758,
+        "build_script_pid": 10770,
+        "observed_state": "both alive after two bounded waits; log still in Go dependency download"
+      },
+      "limits": [
+        "No candidate app/package identity or runtime result exists while this build is running.",
+        "Viewer must not start, pair, open a listener, or alter a shared guest until Hub records successful candidate and follow-on endpoint/CA/invitation/lifecycle handoff."
+      ]
+    },
+    {
+      "kind": "hub_active_mac_candidate_r2_build_observed",
+      "status": "built_local_unsigned_candidate_handoff_pending",
+      "verified_at": "2026-09-09T15:00:29+01:00",
+      "candidate_root": "<private-lab>/candidates/hub-macos-arm64-20260909-r2",
+      "source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+      "overlay": {
+        "path": "scripts/tesla-proxy-lock.json",
+        "sha256": "b4b02f44698d4d394d1e3dd1407d25f7223ad475b407eea109b844616c8244d2"
+      },
+      "artifacts": {
+        "package": "<private-lab>/candidates/hub-macos-arm64-20260909-r2/dist/TeslatlasHub.pkg",
+        "package_sha256": "c3b50aecce3958bd2b434a5382e178e01f99638a203b214576631c3b4ef085d4",
+        "package_signature": "none",
+        "app_bundle": "<private-lab>/candidates/hub-macos-arm64-20260909-r2/dist/Teslatlas Hub.app",
+        "app_binary_architecture": "Mach-O arm64",
+        "app_binary_sha256": "2d5bba42ea16deceaa821677ea1f5a4fd7116f0d1197ee18e17d65875202dc22",
+        "resource_binary_sha256": "895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55",
+        "build_log_sha256": "5f1bd8f8949a18a66c4892b428ca7203eb4fb4d7cbbc1234ec90e91461641ff8"
+      },
+      "checks": {
+        "rust_release": "passed",
+        "go_proxy_evidence": "produced",
+        "productbuild": "passed",
+        "heavy_build_lock": "released",
+        "build_processes": "absent after completion"
+      },
+      "limits": [
+        "This is a read-only observation of Hub's disposable local unsigned candidate; it is not an installed package or runtime acceptance receipt.",
+        "No package installation, app replacement, LaunchAgent/service, listener, Viewer process, endpoint, CA, invitation, pairing, browser, or retained-data evidence exists.",
+        "Hub still must record the formal candidate identity, selected data/configuration root, lifecycle ownership, fresh Viewer inputs, and cleanup owner before Viewer acts."
+      ]
+    },
+    {
+      "kind": "hub_active_mac_profile_selection",
+      "status": "selected_current_hub_profile_handoff_requested",
+      "verified_at": "2026-09-09",
+      "candidate_id": "hub-macos-arm64-20260909-r2",
+      "profile": {
+        "id": "hub-http-v1@1.0.0",
+        "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "source": "teslatlas-protocol working-tree profile bound by Viewer compatibility/hub.json and prior installed receipts"
+      },
+      "alternate_not_selected": {
+        "source": "teslatlas-protocol tracked HEAD 05225bd5b2f56885025180d68fedf3a42baaa90b",
+        "profile_sha256": "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b",
+        "reason": "stale tracked HEAD profile does not match the current-Hub contract admitted by Viewer"
+      },
+      "checks": {
+        "working_tree_profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "viewer_compatibility_binding": "matches",
+        "installed_b1_r1_receipts": "match"
+      },
+      "limits": [
+        "Profile selection does not start the fixture or establish runtime acceptance.",
+        "Hub still must publish the fresh r2 process-fixture endpoint, trusted CA, invitation path, selected data root, lifecycle identity, and cleanup owner."
+      ]
+    },
+    {
+      "kind": "hub_active_mac_candidate_process_fixture_authorized",
+      "status": "seed_build_passed_staging_pending_viewer_consumer_not_started",
+      "verified_at": "2026-09-09",
+      "candidate_id": "hub-macos-arm64-20260909-r2",
+      "candidate_root": "<private-lab>/candidates/hub-macos-arm64-20260909-r2",
+      "candidate_hub_binary_sha256": "895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55",
+      "profile": {
+        "id": "hub-http-v1@1.0.0",
+        "manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "source_manifest_sha256": "e89ff7ecf4b9e0ddeebc6801ca4bf7a865b8c0561e12bb69e1c5d14f55b7ec24"
+      },
+      "fixture": {
+        "scenario_id": "b1-five-drives",
+        "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+        "endpoint": "https://127.0.0.1:18487",
+        "viewer_origin": "http://127.0.0.1:4173",
+        "control_root": "<private-lab>/runtime-fixtures/hub-macos-arm64-r2-20260909",
+        "fixture_lifetime_seconds": 1800,
+        "invitation_lifetime_seconds": 900
+      },
+      "seed": {
+        "status": "passed",
+        "architecture": "arm64",
+        "sha256": "b9b489a3b9c99d78a22a430b9b4bae1d0d78382f6aa737b2eae041e4c2229bce",
+        "runtime_started": false
+      },
+      "checks": {
+        "candidate_identity": "bound",
+        "current_profile_selection": "bound",
+        "seed_build": "passed under Hub-owned heavy-build lock",
+        "fixture_staging": "pending",
+        "ready_endpoint_ca_invitation": "not yet published",
+        "viewer_process": "not started"
+      },
+      "limits": [
+        "This handoff authorizes Hub-owned fixture preparation only; it does not authorize Viewer start or pairing before the ready receipt.",
+        "No package installation, LaunchAgent, app replacement, production, vehicle, credential, or shared guest action is included."
+      ]
+    },
+    {
+      "kind": "hub_active_mac_candidate_process_viewer_attempt",
+      "status": "ready_handoff_browser_pre_pairing_failed_locked_macos",
+      "verified_at": "2026-09-09",
+      "candidate_id": "hub-macos-arm64-20260909-r2",
+      "handoff": {
+        "state": "r2_candidate_process_fixture_ready_viewer_handoff_published",
+        "ready_descriptor": "<private-lab>/runtime-fixtures/hub-macos-arm64-r2-20260909/run/ready.json",
+        "ready_descriptor_sha256": "a9979b7111d30ee88292a7a6736ed64ee673a996d6c008d8d4af0837f121f3cc",
+        "hub_id": "7980ebf7-04a8-47a5-b4ae-5d17d356b618",
+        "endpoint": "https://127.0.0.1:18487",
+        "certificate_sha256": "a58543d25e7baba3d5a31518b1a6dee6371e8c91e25cb6a3cdaefe093d7eff0c",
+        "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+        "seed_sha256": "b9b489a3b9c99d78a22a430b9b4bae1d0d78382f6aa737b2eae041e4c2229bce"
+      },
+      "browser": {
+        "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "version": "152.0.7977.83",
+        "viewer_origin": "http://127.0.0.1:4173",
+        "certificate_bypass": false,
+        "result": "discovery request failed in the browser before pairing; UI reported Hub discovery unavailable"
+      },
+      "checks": {
+        "hub_https_readyz": "passed with supplied CA",
+        "hub_cors_probe": "passed for http://127.0.0.1:4173",
+        "viewer_http": "passed on 127.0.0.1:4173",
+        "pairing_invitation_consumed": "no; pairing was not reached",
+        "viewer_cleanup": "passed; Viewer terminal session stopped and port 4173 closed",
+        "temporary_keychain_cleanup": "passed; temporary certificate removed and user keychain list unchanged",
+        "hub_cleanup": "passed; launcher and child stopped, ports 18487 and 4173 closed",
+        "hub_stopped_descriptor_sha256": "cf7fd1e745edf8c57653134d1ffae565e87c2c4827b6b2d8b88647d0d10d9657"
+      },
+      "limits": [
+        "This is a pre-pairing browser failure, not Mac route acceptance; current/history/recovery/restart/retained-data behavior was not exercised on macOS.",
+        "The supplied invitation and fixture are not to be reused after Hub cleanup; obtain a fresh ready handoff after the Mac is unlocked and normal trust setup is available."
+      ]
+    },
+    {
+      "kind": "owner_restart_native_recheck",
+      "status": "fresh_mac_handoff_requested",
+      "verified_at": "2026-09-12T09:17:24Z",
+      "scope": "Debian ARM64 and Apple-silicon Mac only; x86/App/production/vehicle/commit/push/CI/release work remains excluded",
+      "desktop": {
+        "os": "macOS 27.0",
+        "architecture": "arm64",
+        "chrome": "accessible and running",
+        "login_keychain": "readable; no-timeout"
+      },
+      "runtime": {
+        "viewer_4173": "closed",
+        "expired_hub_18492": "closed",
+        "heavy_build_lock": "absent"
+      },
+      "previous_handoff": "hub/docs/development/active-macos-viewer-consumer-handoff-2026-09-10.json; expired and cleaned on owner stop; do not reuse",
+      "action": "Sent Hub a fresh handoff request for a new endpoint, CA, invitation, disposable root, exact process ownership and cleanup boundary; no Viewer or shared runtime was started."
+    },
+    {
+      "kind": "owner_scope_exclusion",
+      "status": "excluded_by_owner_before_current_history",
+      "verified_at": "2026-09-12T09:23:17Z",
+      "scope": "All Viewer development excluded; preserve source/history/evidence and do not resume on queued handoffs",
+      "r4_handoff": {
+        "hub_id": "76b3ef2c-d3e1-4619-adf7-c8d9b2625b64",
+        "endpoint": "https://127.0.0.1:18493",
+        "pairing": "reached successful pairing before the owner stop",
+        "current_history": "not run",
+        "invitation_or_certificate": "not recorded"
+      },
+      "cleanup": {
+        "viewer_process": "stopped",
+        "viewer_listener": "127.0.0.1:4173 closed",
+        "browser_session": "closed",
+        "temporary_ca_trust": "removed from the user keychain and trust settings",
+        "hub_fixture": "cleanup requested from Hub; Viewer did not stop Hub-owned processes"
+      },
+      "goal_control": "The supported goal control has no cancel/exclude operation; the native goal is left preserved and paused rather than falsely completed."
+    }
+  ],
+  "thread_id": "01a082b7-8fac-7812-8619-3ce41c8b1961",
+  "stage_semantics": "current_stage names the master programme stage; first_milestone_after_start names this product plan section",
+  "environment_access": "../../../docs/development/VM_ACCESS.md",
+  "reasoning_effort": "max",
+  "blocker": "Owner scope excludes all Viewer development. The resumed R4 browser reached pairing, then the owner stopped the task before current/history; Viewer cleanup is complete and Hub owns fixture cleanup. This is an owner exclusion, not a technical completion or a Viewer acceptance result.",
+  "blocker_owner": "Viewer owner / coordinator / package and platform owners",
+  "unblock_event": "Only an explicit future owner scope change may re-enable Viewer development; queued Hub handoffs must not auto-resume it.",
+  "next_ready_action": "None while excluded_by_owner. Preserve the dirty main checkout, source, historical evidence and receipts; do not build, test, pair, start Viewer, poll peers or consume stale/future handoffs.",
+  "development_authorized_at": "2026-09-08T21:13:48.933123+00:00"
+}
