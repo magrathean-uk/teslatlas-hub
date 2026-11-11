@@ -58,6 +58,10 @@ where
     // The run's one write guard is made here, before any credential unit is built or
     // cursor key created (B2 fix round, P3b fix 3, R-P3bF3-1), and handed down.
     let write_guard = RunWriteGuard::for_run(Some(Arc::clone(&admission)));
+    // M04-T01: the window's egress gate is asked before any startup branch, the
+    // configuration wait included: with the window closed no lease is taken, no wait
+    // state is written and no cursor key is created, whatever the configuration says.
+    require_open_collection_window_for(config)?;
     crate::diagnostics::log_runtime_inventory(store, config);
     let _activation = config.collector.supervised_interval()?;
     if config.collector.provider != CollectorProvider::Fleet
@@ -235,6 +239,9 @@ where
 {
     admission.assert_sensitive_access()?;
     admission.assert_store_path(&config.data_dir)?;
+    // M04-T01: the wait is a start like any other: outside an Open window it takes
+    // no lease, writes no wait state and creates no cursor key.
+    require_open_collection_window_for(config)?;
     // The wait has the run's write guard from its first write (B2 fix round, P3b fix
     // 2, R-P3bF2-1; fix 3: the entry point made it): the lease, the wait's gap, the
     // cursor key and the release are each preceded by it.

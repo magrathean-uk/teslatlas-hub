@@ -329,6 +329,57 @@ async fn collector_resilience_admitted_entry_refuses_before_the_credential_vault
     );
 }
 
+/// Review finding 1 (round 2): a configuration whose cadence is invalid sends the
+/// admitted entry to the configuration wait, which takes the lease, writes the wait's
+/// gap and creates the cursor key. With the window closed none of that happens: the
+/// gate is asked before that branch too.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn collector_resilience_cadence_wait_outside_the_window_takes_no_lease_or_cursor_key() {
+    crate::crypto::install_default_provider();
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("Hub store");
+    seed_supervised_restart_import(&store);
+    let window = TestWindow::closed();
+    let (endpoint, _port) = reserved_stream_endpoint();
+    let _route = window.route(&endpoint);
+    let mut config = supervised_restart_test_config(temporary.path());
+    config.collector.stream_endpoint_override = Some(endpoint.replacen("ws://", "wss://", 1));
+    // Above its range: the entry would wait for a corrected configuration.
+    config.collector.request_timeout_seconds = 121;
+    assert!(config.collector.cadence_violation().is_some(), "a cadence violation");
+    let admission =
+        crate::hub_user_process::AdmittedUserHub::admit(temporary.path()).expect("admission");
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let result = timeout(
+        SUPERVISED_RESTART_WAIT,
+        run_supervised_with_clients_for_admitted_user(
+            &store,
+            &config,
+            admission,
+            ready_tx,
+            |_| -> Result<OwnerApi, CollectorError> {
+                panic!("an Owner API client was built outside the window")
+            },
+            |_| -> Result<FleetClients, CollectorError> {
+                panic!("Fleet clients were built outside the window")
+            },
+            std::future::pending::<()>(),
+        ),
+    )
+    .await
+    .expect("the refused wait returns at once");
+    assert!(
+        matches!(result, Err(CollectorError::CollectionWindowClosed("window_closed"))),
+        "{result:?}"
+    );
+    assert!(ready_rx.await.is_err(), "no cursor key is handed over");
+    assert!(
+        !crate::legacy_owner_credentials::cursor_key_path(temporary.path()).exists(),
+        "no cursor key is created"
+    );
+    assert_nothing_started(&store, "configuration wait");
+}
+
 // ---- One transaction per tick; no durable write for an unchanged poll ----------------
 
 /// The process's first resolution of a car after a restart reads the stored identity
