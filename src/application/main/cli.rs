@@ -170,6 +170,9 @@ enum ControlCommand {
     /// the service stays stopped across logins until Start Hub in the app.
     #[command(name = "sign-out")]
     SignOut,
+    /// Rotate the credential key while the service is stopped.
+    #[command(name = "rotate-credential-key")]
+    RotateCredentialKey,
     /// Explicitly wake the selected car once.
     Wake {
         #[arg(long, required = true)]
@@ -360,22 +363,26 @@ enum Command {
         /// Legacy Owner API access-token file, or `-` for stdin.
         #[arg(
             long,
-            required_unless_present = "tokens_stdin",
+            required_unless_present_any = ["tokens_stdin", "sign_in"],
             requires = "refresh_token_file",
-            conflicts_with = "tokens_stdin"
+            conflicts_with_all = ["tokens_stdin", "sign_in"]
         )]
         access_token_file: Option<PathBuf>,
         /// Legacy Owner API refresh-token file, or `-` for stdin.
         #[arg(
             long,
-            required_unless_present = "tokens_stdin",
+            required_unless_present_any = ["tokens_stdin", "sign_in"],
             requires = "access_token_file",
-            conflicts_with = "tokens_stdin"
+            conflicts_with_all = ["tokens_stdin", "sign_in"]
         )]
         refresh_token_file: Option<PathBuf>,
         /// Read one bounded {accessToken,refreshToken} JSON object from stdin.
-        #[arg(long, conflicts_with_all = ["access_token_file", "refresh_token_file"])]
+        /// The Hub becomes the refresh owner. Do not enter a token another system still refreshes.
+        #[arg(long, conflicts_with_all = ["access_token_file", "refresh_token_file", "sign_in"])]
         tokens_stdin: bool,
+        /// Sign in using an authorization-code exchange.
+        #[arg(long, conflicts_with_all = ["access_token_file", "refresh_token_file", "tokens_stdin", "vehicle_id", "all_vehicles"])]
+        sign_in: bool,
         /// Tesla Owner API vehicle id. Required only when discovery finds multiple vehicles.
         #[arg(long, value_parser = clap::value_parser!(i64).range(1..), conflicts_with = "all_vehicles")]
         vehicle_id: Option<i64>,
@@ -387,6 +394,9 @@ enum Command {
     #[cfg(unix)]
     #[command(name = "setup-fleet")]
     SetupFleet {
+        /// Sign in using an authorization-code exchange.
+        #[arg(long, conflicts_with_all = ["vehicle_id", "all_vehicles"])]
+        sign_in: bool,
         /// Tesla Fleet API vehicle id. Required only when discovery finds multiple vehicles.
         #[arg(long, value_parser = clap::value_parser!(i64).range(1..), conflicts_with = "all_vehicles")]
         vehicle_id: Option<i64>,
@@ -504,23 +514,26 @@ enum Command {
         #[arg(long)]
         postgres_password_file: PathBuf,
         /// Import and publish history without reading or storing Tesla credentials.
-        #[arg(long, requires = "online_snapshot", conflicts_with_all = ["encryption_key_file", "access_token_file", "refresh_token_file", "preserve_existing_credentials"])]
+        #[arg(long, requires = "online_snapshot", conflicts_with_all = ["source_token_key_file", "encryption_key_file", "access_token_file", "refresh_token_file", "preserve_existing_credentials"])]
         history_only: bool,
         /// Source application's token key file, or `-` for stdin. Omit only with both fresh-token files. The earlier spelling `--encryption-key-file` is deprecated and still accepted.
-        #[arg(long = "source-token-key-file", alias = "encryption-key-file")]
+        #[arg(long = "source-token-key-file")]
+        source_token_key_file: Option<PathBuf>,
+        /// Deprecated spelling of --source-token-key-file.
+        #[arg(long = "encryption-key-file")]
         encryption_key_file: Option<PathBuf>,
         /// Fresh legacy access-token file when the source application's encryption key is unavailable.
         #[arg(
             long,
             requires = "refresh_token_file",
-            conflicts_with = "encryption_key_file"
+            conflicts_with_all = ["source_token_key_file", "encryption_key_file"]
         )]
         access_token_file: Option<PathBuf>,
         /// Fresh legacy refresh-token file when the source application's encryption key is unavailable.
         #[arg(
             long,
             requires = "access_token_file",
-            conflicts_with = "encryption_key_file"
+            conflicts_with_all = ["source_token_key_file", "encryption_key_file"]
         )]
         refresh_token_file: Option<PathBuf>,
         /// Take one live read-only snapshot, never prompt for cutover, and leave Hub stopped.
@@ -529,6 +542,10 @@ enum Command {
         /// Preserve an existing Hub account while importing source database history.
         #[arg(long, requires = "online_snapshot", hide = true)]
         preserve_existing_credentials: bool,
+        /// Replace the stored Owner pair with the supplied source pair.
+        /// Preserving the existing pair is the default.
+        #[arg(long, conflicts_with_all = ["preserve_existing_credentials", "history_only"])]
+        replace_credentials: bool,
         /// Confirm source application release 4.2.0 or later; database evidence alone cannot prove the application release.
         #[arg(long, required = true, alias = "acknowledge-v4-2-compatible-schema")]
         accept_schema_evidence: bool,

@@ -39,6 +39,21 @@ use crate::{
 };
 
 pub const RECOVERY_ENCRYPTION_KEY_BYTES: usize = 32;
+#[cfg(debug_assertions)]
+thread_local! { static RESTORE_FLOOR: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) }; }
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn with_restore_floor_for_test<T>(floor: i32, work: impl FnOnce() -> T) -> T {
+    struct Reset(Option<i32>);
+    impl Drop for Reset { fn drop(&mut self) { RESTORE_FLOOR.with(|slot| slot.set(self.0)); } }
+    let reset = Reset(RESTORE_FLOOR.with(|slot| slot.replace(Some(floor))));
+    let result = work(); drop(reset); result
+}
+fn restore_floor() -> i32 {
+    #[cfg(debug_assertions)]
+    if let Some(floor) = RESTORE_FLOOR.with(std::cell::Cell::get) { return floor; }
+    super::credential_migration::store_floor()
+}
 const FILE_MAGIC: &[u8] = b"TESLATLAS-HUB-CREDENTIAL-RECOVERY-V1\0";
 const NONCE_BYTES: usize = 12;
 const AUTH_TAG_BYTES: usize = 16;
@@ -55,6 +70,8 @@ const KNOWN_FLAGS: u8 = SOURCE_DB_KEY_FLAG | CURSOR_KEY_FLAG | FLEET_KEY_FLAG;
 
 #[derive(Debug, Error)]
 pub enum CredentialRecoveryError {
+    #[error(transparent)]
+    Vault(super::credential_sign_in::CredentialCommandError),
     #[error("credential-recovery encryption key must be exactly 32 bytes")]
     InvalidRecoveryKey,
     #[error("credential-recovery export contains no recoverable key material")]
@@ -212,95 +229,31 @@ pub fn restore_credentials(
     source: &Path,
     recovery_key: &[u8],
 ) -> Result<CredentialRecoveryReport, CredentialRecoveryError> {
-    let cipher = recovery_cipher(recovery_key)?;
-    let envelope = read_private_file(source)?;
-    let payload = decode_envelope(&cipher, &envelope)?;
-    if payload.installation_id != store.installation_id()? {
-        return Err(CredentialRecoveryError::InstallationMismatch);
-    }
-    validate_cursor_key_catalogue(store, payload.cursor_key.as_deref().map(Vec::as_slice))?;
-
-    let stored_tokens = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_M: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
-    let fleet_tokens = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_M: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
-    if stored_tokens.is_some() != payload.source_db_key.is_some() {
-        return Err(CredentialRecoveryError::CatalogueMismatch);
-    }
-    if let (Some(tokens), Some(key)) = (stored_tokens.as_ref(), payload.source_db_key.as_ref()) {
-        drop(decrypt_legacy_owner_tokens(
-            key,
-            tokens.0.as_slice(),
-            tokens.1.as_slice(),
-        )?);
-    }
-    if fleet_tokens.is_none() && payload.fleet_key.is_some() {
-        return Err(CredentialRecoveryError::CatalogueMismatch);
-    }
-    if let Some(tokens) = fleet_tokens.as_ref() {
-        match (payload.fleet_key.as_ref(), payload.cursor_key.as_ref()) {
-            (Some(key), _) => drop(decrypt_legacy_owner_tokens(
-                key,
-                tokens.0.as_slice(),
-                tokens.1.as_slice(),
-            )?),
-            (None, Some(cursor)) => {
-                let legacy = fleet_encryption_key(cursor)?;
-                drop(decrypt_legacy_owner_tokens(
-                    legacy.as_ref(),
-                    tokens.0.as_slice(),
-                    tokens.1.as_slice(),
-                )?);
-            }
-            (None, None) => return Err(CredentialRecoveryError::CatalogueMismatch),
-        }
-    }
-    if payload.source_db_key.is_none()
-        && payload.cursor_key.is_none()
-        && payload.fleet_key.is_none()
     {
-        return Err(CredentialRecoveryError::NoKeyMaterial);
+        let cipher = recovery_cipher(recovery_key)?;
+        let envelope = read_private_file(source)?;
+        let payload = decode_envelope(&cipher, &envelope)?;
+        if payload.installation_id != store.installation_id()? { return Err(CredentialRecoveryError::InstallationMismatch); }
+        validate_cursor_key_catalogue(store, payload.cursor_key.as_deref().map(Vec::as_slice))?;
     }
+    #[cfg(test)]
+    let vault = super::credential_vault::fixtures::open_fixture_vault(store.clone(), data_dir);
+    #[cfg(not(test))]
+    let admission = crate::hub_user_process::AdmittedUserHub::admit(data_dir)
+        .map_err(|_| CredentialRecoveryError::Vault(super::credential_sign_in::CredentialCommandError::new("sensitive_access_unavailable")))?;
+    #[cfg(not(test))]
+    let vault = super::credential_vault::CredentialVault::open(store.clone(), std::sync::Arc::clone(&admission), data_dir, Default::default())
+        .map_err(|error| CredentialRecoveryError::Vault(error.into()))?;
+    vault.restore_credentials(source, recovery_key)
+}
 
-    publish_secrets_directory(data_dir, &payload)?;
-    if let Some(tokens) = stored_tokens.as_ref() {
-        drop(({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_M: unaccepted candidate; removed credential table dependency"); unavailable_value })?);
-    }
-    let restored_cursor = load_existing_cursor_key_bytes(data_dir)?;
-    if restored_cursor.as_deref() != payload.cursor_key.as_deref() {
-        return Err(CredentialRecoveryError::CatalogueMismatch);
-    }
-    let restored_fleet_key = ({ let unavailable_value: Result<Option<zeroize::Zeroizing<Vec<u8>>>, crate::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_M: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
-    if restored_fleet_key.as_deref() != payload.fleet_key.as_deref() {
-        return Err(CredentialRecoveryError::CatalogueMismatch);
-    }
-    if let Some(tokens) = fleet_tokens.as_ref() {
-        if let Some(key) = restored_fleet_key.as_ref() {
-            drop(decrypt_legacy_owner_tokens(
-                key,
-                tokens.0.as_slice(),
-                tokens.1.as_slice(),
-            )?);
-        } else {
-            let cursor = restored_cursor
-                .as_ref()
-                .ok_or(CredentialRecoveryError::CatalogueMismatch)?;
-            let legacy = fleet_encryption_key(cursor)?;
-            drop(decrypt_legacy_owner_tokens(
-                legacy.as_ref(),
-                tokens.0.as_slice(),
-                tokens.1.as_slice(),
-            )?);
-        }
-    }
-
-    Ok(report(
-        "restored",
-        source,
-        payload.installation_id,
-        payload.source_db_key.is_some(),
-        payload.cursor_key.is_some(),
-        payload.fleet_key.is_some(),
-    ))
+/// Restore through the command's existing admission and sole vault.
+pub fn restore_credentials_from_entry(
+    entry: &crate::CredentialVaultEntry,
+    source: &Path,
+    recovery_key: &[u8],
+) -> Result<CredentialRecoveryReport, CredentialRecoveryError> {
+    entry.vault().restore_credentials(source, recovery_key)
 }
 
 fn report(
@@ -823,7 +776,7 @@ pub(crate) fn restore_credentials_with_connection(
 ) -> Result<CredentialRecoveryReport, CredentialRecoveryError> {
     use crate::auth::{
         credential_envelope::CredentialSlot,
-        credential_migration::{LAST_PRE_C10_VERSION, boundary_continues, store_floor},
+        credential_migration::{LAST_PRE_C10_VERSION, boundary_continues},
     };
     use crate::db::CredentialSlotFormatState;
 
@@ -1018,7 +971,7 @@ pub(crate) fn restore_credentials_with_connection(
     // R50: above the recorded floor raise, pre-upgrade members are refused
     // before anything is written.
     if (payload.source_db_key.is_some() || payload.fleet_key.is_some())
-        && store_floor() > LAST_PRE_C10_VERSION
+        && restore_floor() > LAST_PRE_C10_VERSION
     {
         return Err(CredentialRecoveryError::InvalidPayload(
             "pre-upgrade key members are refused above the store floor",
@@ -1135,6 +1088,7 @@ mod n1_src_auth_credential_recovery_rs_display_tests {
     fn every_reachable_error_display_omits_the_source_project_name() {
         fn check_credential_recovery_error(error: CredentialRecoveryError) {
             match &error {
+                CredentialRecoveryError::Vault(..) => (),
                 CredentialRecoveryError::InvalidRecoveryKey => (),
                 CredentialRecoveryError::NoKeyMaterial => (),
                 CredentialRecoveryError::DestinationExists => (),
@@ -1153,6 +1107,7 @@ mod n1_src_auth_credential_recovery_rs_display_tests {
             assert_name_free(&error);
         }
         check_credential_recovery_error(CredentialRecoveryError::InvalidRecoveryKey);
+        check_credential_recovery_error(CredentialRecoveryError::Vault(super::super::credential_sign_in::CredentialCommandError::new("durability_unavailable")));
         check_credential_recovery_error(CredentialRecoveryError::NoKeyMaterial);
         check_credential_recovery_error(CredentialRecoveryError::DestinationExists);
         check_credential_recovery_error(CredentialRecoveryError::UnsafeSource);

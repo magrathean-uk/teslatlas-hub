@@ -1477,7 +1477,11 @@ impl FleetTelemetryConfigureWire {
 
 /// A decoded token owns its wiping allocation even before its containing
 /// response has been constructed. No token formatting or cloning is provided.
-pub(crate) struct WireSecret(Zeroizing<String>);
+pub(crate) struct WireSecret(Zeroizing<String>, Option<crate::auth::credential_sign_in::SecretDropObserver>);
+
+impl WireSecret {
+    pub(crate) fn as_str(&self) -> &str { &self.0 }
+}
 
 impl Zeroize for WireSecret {
     fn zeroize(&mut self) {
@@ -1487,9 +1491,9 @@ impl Zeroize for WireSecret {
 
 impl Drop for WireSecret {
     fn drop(&mut self) {
-        #[cfg(test)]
         let length = self.0.len();
         self.zeroize();
+        crate::auth::credential_sign_in::note_secret_drop(&self.1, "wire_secret", length, self.0.len(), self.0.is_empty());
         #[cfg(test)]
         fleet_wire_drop("secret", length);
     }
@@ -1514,7 +1518,7 @@ impl<'de> Deserialize<'de> for WireSecret {
             fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
                 let mut text = Zeroizing::new(String::with_capacity(value.len()));
                 text.push_str(value);
-                Ok(WireSecret(text))
+                Ok(WireSecret(text, crate::auth::credential_sign_in::current_secret_observer()))
             }
 
             fn visit_borrowed_str<E: serde::de::Error>(
@@ -1525,7 +1529,7 @@ impl<'de> Deserialize<'de> for WireSecret {
             }
 
             fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
-                Ok(WireSecret(Zeroizing::new(value)))
+                Ok(WireSecret(Zeroizing::new(value), crate::auth::credential_sign_in::current_secret_observer()))
             }
         }
         deserializer.deserialize_string(SecretVisitor)
@@ -1556,8 +1560,8 @@ impl Drop for FleetTokenWire {
 impl FleetTokenWire {
     fn empty() -> Self {
         Self {
-            access_token: WireSecret(Zeroizing::new(String::new())),
-            refresh_token: WireSecret(Zeroizing::new(String::new())),
+            access_token: WireSecret(Zeroizing::new(String::new()), None),
+            refresh_token: WireSecret(Zeroizing::new(String::new()), None),
             expires_in: 0,
             token_type: String::new(),
         }

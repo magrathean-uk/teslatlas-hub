@@ -165,8 +165,8 @@ fn real_pair(
     access: &str,
     schedule: Option<(i64, i64)>,
 ) -> Uuid {
-        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
-    }
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(store, directory, access, "refresh-0001", schedule).expect("real entry")
+}
 
 fn fault() -> CadenceViolation {
     CadenceViolation {
@@ -488,8 +488,8 @@ async fn cadence_readyz_does_not_cache_readiness_past_token_usability() {
     let generation = real_pair(
         temporary.path(),
         &store,
-        &jwt(usable_until + 300),
-        Some((usable_until + 1_000, usable_until - 500)),
+        &jwt(usable_until + 1_300),
+        Some((usable_until, usable_until - 500)),
     );
     // A lease that is fresh across the whole probe, so only the token can change.
     store
@@ -564,17 +564,15 @@ async fn fleet_unresolved_refresh_is_attention_not_service_failure() {
         std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000),
     )
     .expect("persist pair");
-    let generation = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("store")
-        .expect("pair")
-        .4
-        .expect("generation");
-    ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("unresolved refresh");
-    // Independently valid, and the unresolved refresh is the identified one.
+    crate::auth::credential_vault::fixtures::validate_fixture_fleet_credentials(&store, temporary.path()).expect("admitted fixture integrity and scopes");
+    let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), temporary.path());
+    let generation = vault.stored_generation(crate::auth::credential_envelope::CredentialSlot::FleetApi).expect("fixture generation").expect("pair");
+    vault.begin_refresh(crate::auth::credential_envelope::CredentialSlot::FleetApi, generation).expect("unresolved refresh");
+    // The read-only inspection proves headers and the unresolved state. The
+    // admitted fixture above proved the independent integrity and scopes.
     let inspection =
         crate::fleet_credentials::inspect_stored_fleet_credentials(&store, temporary.path())
-            .expect("the pair, key, claims and scopes are independently valid");
+            .expect("read-only headers and refresh state");
     assert!(inspection.unresolved_refresh);
     write_rows(
         &store,

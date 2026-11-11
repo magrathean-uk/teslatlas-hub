@@ -42,7 +42,6 @@ use super::{
     MacServeWorkerStopTimeout, MigrationSecretReadError, clear_provider_credentials,
     command_requires_user_hub_admission, decode_setup_fleet_stdin, migration_start_requested,
     migration_stop_confirmed, persist_fleet_setup_and_drop_legacy,
-    persist_legacy_setup_and_drop_fleet, 
     read_migration_encryption_key, read_migration_postgres_password, read_migration_secret,
     read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
     should_emit_migration_progress, should_preserve_existing_migration_credentials,
@@ -619,11 +618,13 @@ async fn migration_without_version_confirmation_does_not_create_hub_target() {
             car_id: 7,
             postgres_password_file: PathBuf::from("unused-password"),
             history_only: false,
+            source_token_key_file: None,
             encryption_key_file: Some(PathBuf::from("unused-key")),
             access_token_file: None,
             refresh_token_file: None,
             online_snapshot: true,
             preserve_existing_credentials: false,
+            replace_credentials: false,
             accept_schema_evidence: false,
         },
     };
@@ -739,10 +740,7 @@ fn migration_encryption_key_reader_accepts_normal_line_endings() {
 #[cfg(target_os = "macos")]
 #[test]
 fn migration_password_and_token_semantic_boundaries_include_line_endings() {
-    use teslatlas_hub::source_token_envelope::{
-        CLOAK_ENVELOPE_OVERHEAD_BYTES, MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES,
-        
-    };
+    use teslatlas_hub::auth::credential_sign_in as credentials;
 
     let temporary = tempfile::tempdir().expect("temporary directory");
     let password_path = temporary.path().join("password");
@@ -769,10 +767,6 @@ fn migration_password_and_token_semantic_boundaries_include_line_endings() {
     assert!(read_migration_postgres_password(&password_path).is_err());
 
     assert_eq!(MAX_MIGRATION_TOKEN_BYTES, 16 * 1024);
-    assert_eq!(
-        MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES,
-        MAX_MIGRATION_TOKEN_BYTES + CLOAK_ENVELOPE_OVERHEAD_BYTES
-    );
     let access_path = temporary.path().join("access");
     let refresh_path = temporary.path().join("refresh");
     fs::write(
@@ -788,18 +782,28 @@ fn migration_password_and_token_semantic_boundaries_include_line_endings() {
     for path in [&access_path, &refresh_path] {
         fs::set_permissions(path, fs::Permissions::from_mode(0o600)).expect("token mode");
     }
-    let (access, refresh) = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value })
-    .expect("semantic token cap");
-    assert_eq!(access.len(), MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES);
-    assert_eq!(refresh.len(), MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES);
+    let prepare = || credentials::decode_owner_files(
+        read_migration_secret(&access_path, MAX_MIGRATION_TOKEN_FILE_BYTES).expect("access custody"),
+        read_migration_secret(&refresh_path, MAX_MIGRATION_TOKEN_FILE_BYTES).expect("refresh custody"),
+        credentials::OwnerEntryKind::SourceToken,
+    );
+    let prepared = prepare().expect("semantic token cap");
+    let data = temporary.path().join("entry-data");
+    let scope = credentials::SignInScope::open_for_test(&data, true).expect("entry process");
+    drop(credentials::persist_owner_entry(scope.entry(), prepared, false).expect("entry barrier"));
+    scope.release().expect("release");
+    let connection = rusqlite::Connection::open_with_flags(data.join("hub.sqlite"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).expect("read-only observer");
+    let lengths: (i64, i64) = connection.query_row("SELECT length(access_envelope),length(refresh_envelope) FROM credential_pairs WHERE slot='owner_api'", [], |row| Ok((row.get(0)?,row.get(1)?))).expect("sealed lengths");
+    assert_eq!(lengths, (MAX_MIGRATION_TOKEN_BYTES as i64 + 39 + 12 + 16, MAX_MIGRATION_TOKEN_BYTES as i64 + 39 + 12 + 16));
+    let access = zeroize::Zeroizing::new("a".repeat(MAX_MIGRATION_TOKEN_BYTES));
+    let refresh = zeroize::Zeroizing::new("b".repeat(MAX_MIGRATION_TOKEN_BYTES));
+    assert!(credentials::pair_matches_for_test(&data, false, &access, &refresh).expect("canonical pair"));
 
     fs::write(&access_path, vec![b'a'; MAX_MIGRATION_TOKEN_BYTES + 1])
         .expect("oversized access token");
     fs::set_permissions(&access_path, fs::Permissions::from_mode(0o600)).expect("token mode");
-    assert!(
-        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value })
-        .is_err()
-    );
+    assert!(matches!(prepare().unwrap_err(), credentials::OwnerInputError::Credential(error) if error.code() == "token_too_large"));
+    assert!(credentials::pair_matches_for_test(&data, false, &access, &refresh).expect("oversize refusal changes no pair"));
 }
 
 #[cfg(target_os = "macos")]
@@ -1646,76 +1650,19 @@ async fn doctor_does_not_create_or_initialize_a_missing_data_directory() {
 #[cfg(target_os = "macos")]
 #[tokio::test]
 async fn doctor_reports_inventory_and_does_not_delete_tokens() {
-    use teslatlas_hub::{
-        credentials::OwnerTokens,  fleet_api::FleetRegion,
-        fleet_credentials::FleetSetupCredentials, 
-        
-    };
-
-    let temporary = tempfile::tempdir().expect("temporary Hub");
-    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
-        .expect("private data directory");
-    let store = HubStore::initialize(temporary.path()).expect("store");
-    let fleet = FleetSetupCredentials::new(
-        "fleet-access".to_owned(),
-        "fleet-refresh".to_owned(),
-        "fleet-client".to_owned(),
-        FleetRegion::EuropeMiddleEastAndAfrica,
-        3_600,
-    )
-    .expect("Fleet credentials");
-    persist_fleet_setup_and_drop_legacy(
-        temporary.path(),
-        &store,
-        &fleet,
-        std::time::SystemTime::now(),
-    )
-    .expect("seed Fleet");
-    let legacy = OwnerTokens::from_file_bytes(
-        zeroize::Zeroizing::new(b"doctor-access".to_vec()),
-        zeroize::Zeroizing::new(b"doctor-refresh".to_vec()),
-    )
-    .expect("legacy credentials");
-    let encryption_key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, teslatlas_hub::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("random encryption key");
-    let (access, refresh) = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("encrypt");
-    let stored = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("legacy store");
-    ({ let unavailable_value: Result<(), Box<dyn std::error::Error>> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value })
-        .expect("copy legacy owner tokens without deleting Fleet");
-
-    let config_path = temporary.path().join("config.toml");
-    fs::write(
-        &config_path,
-        format!(
-            "data_dir = {:?}\nbind = '127.0.0.1:18443'\n\n[collector]\ninterval_seconds = 0\n",
-            temporary.path()
-        ),
-    )
-    .expect("write config");
-    fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600)).expect("private config");
-
-    run(Cli {
-        config: Some(config_path),
-        command: Command::Doctor,
-    })
-    .await
-    .expect("doctor succeeds on a healthy catalogue");
-
-    assert!(
-        ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("legacy after doctor")
-            .is_some(),
-        "doctor must not delete Owner tokens"
-    );
-    assert!(
-        ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("Fleet after doctor")
-            .is_some(),
-        "doctor must not delete Fleet tokens"
-    );
+    use teslatlas_hub::auth::credential_sign_in as credentials;
+    let (temporary, store) = v2_credential_pair_fixture(true);
+    assert!(credentials::record_provider_admission_for_test(temporary.path()).expect("C5 integrity record"));
+    let config = temporary.path().join("config.toml");
+    fs::write(&config, format!("data_dir = {:?}\nbind = '127.0.0.1:18443'\n[collector]\ninterval_seconds = 0\n", temporary.path())).expect("config");
+    fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).expect("private config");
+    store.checkpoint_catalogue_for_immutable_read().expect("checkpoint");
+    run(Cli { config: Some(config), command: Command::Doctor }).await.expect("doctor");
+    assert!(credentials::pair_matches_for_test(temporary.path(), false, "access-0001", "refresh-0001").expect("Owner retained"));
+    assert!(credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").expect("Fleet retained"));
     let inventory = store.catalogue_inventory().expect("inventory");
     assert_eq!(inventory.journal_mode, "wal");
-    assert_eq!(inventory.owner_api_credential_rows, 1);
-    assert_eq!(inventory.fleet_api_credential_rows, 1);
+    assert_eq!((inventory.owner_api_credential_rows, inventory.fleet_api_credential_rows), (1, 1));
 }
 
 #[test]
@@ -1910,6 +1857,7 @@ fn setup_command_accepts_private_token_files_and_positive_optional_vehicle() {
             access_token_file: Some(access_token_file),
             refresh_token_file: Some(refresh_token_file),
             tokens_stdin: false,
+            sign_in: false,
             vehicle_id: Some(70),
             all_vehicles: false,
         } if access_token_file.as_path() == Path::new("access")
@@ -1940,6 +1888,7 @@ fn setup_command_accepts_private_token_files_and_positive_optional_vehicle() {
             access_token_file: None,
             refresh_token_file: None,
             tokens_stdin: true,
+            sign_in: false,
             vehicle_id: None,
             all_vehicles: false,
         }
@@ -1965,6 +1914,7 @@ fn fleet_setup_is_stdin_only_and_decodes_bounded_fields() {
     assert!(matches!(
         selected.command,
         Command::SetupFleet {
+            sign_in: false,
             vehicle_id: Some(70),
             all_vehicles: false,
         }
@@ -1974,6 +1924,7 @@ fn fleet_setup_is_stdin_only_and_decodes_bounded_fields() {
     assert!(matches!(
         all.command,
         Command::SetupFleet {
+            sign_in: false,
             vehicle_id: None,
             all_vehicles: true,
         }
@@ -2030,117 +1981,79 @@ fn legacy_setup_requires_legacy_provider_before_mutation() {
 #[cfg(target_os = "macos")]
 #[test]
 fn sign_out_clears_both_providers_but_preserves_cursor_key() {
-    use teslatlas_hub::{
-        credentials::OwnerTokens,
-        
-        fleet_api::FleetRegion,
-        fleet_credentials::FleetSetupCredentials,
-        legacy_owner_credentials::{
-            load_or_create_cursor_key,  
-        },
-        
-    };
-
-    let temporary = tempfile::tempdir().expect("temporary Hub");
-    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
-        .expect("private temporary Hub");
-    let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let cursor_before = load_or_create_cursor_key(temporary.path()).expect("cursor key");
-    let cursor_proof = supervisor_cursor_proof(&cursor_before);
-    let legacy = OwnerTokens::from_file_bytes(
-        zeroize::Zeroizing::new(b"access".to_vec()),
-        zeroize::Zeroizing::new(b"refresh".to_vec()),
-    )
-    .expect("legacy credentials");
-    let legacy_key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, teslatlas_hub::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("random legacy key");
-    let (access, refresh) =
-        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("encrypt legacy");
-    let legacy_store = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("legacy store");
-    ({ let unavailable_value: Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("persist legacy");
-    let fleet = FleetSetupCredentials::new(
-        "fleet-access".to_owned(),
-        "fleet-refresh".to_owned(),
-        "fleet-client".to_owned(),
-        FleetRegion::EuropeMiddleEastAndAfrica,
-        3_600,
-    )
-    .expect("Fleet credentials");
-    (/* C10_UNAVAILABLE_V2: entry vault required. */ |_: &teslatlas_hub::db::HubStore, _: &std::path::Path, _: &teslatlas_hub::fleet_credentials::FleetSetupCredentials, _: std::time::SystemTime| -> Result<(), teslatlas_hub::fleet_credentials::FleetCredentialError> { Err(teslatlas_hub::fleet_credentials::FleetCredentialError::SensitiveAccessUnavailable) })(
-        &store,
-        temporary.path(),
-        &fleet,
-        std::time::SystemTime::now(),
-    )
-    .expect("persist Fleet");
-    assert!(({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).exists());
-
-    clear_provider_credentials(temporary.path(), &store).expect("sign out");
-
-    assert!(
-        ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("legacy row")
-            .is_none()
-    );
-    assert!(({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("Fleet row").is_none());
-    assert!(!({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).exists());
-    let cursor_after = load_or_create_cursor_key(temporary.path()).expect("cursor remains");
-    assert_eq!(supervisor_cursor_proof(&cursor_after), cursor_proof);
+    use teslatlas_hub::auth::credential_sign_in as credentials;
+    let (temporary, store) = v2_credential_pair_fixture(true);
+    let cursor = super::load_or_create_cursor_key(temporary.path()).expect("cursor");
+    let cursor_proof = supervisor_cursor_proof(&cursor);
+    let key_path = temporary.path().join("secrets").join("credential-keys");
+    let keys = zeroize::Zeroizing::new(fs::read(&key_path).expect("keyring"));
+    let scope = credentials::SignInScope::open_for_test(temporary.path(), true).expect("sign-out process");
+    clear_provider_credentials(scope.entry()).expect("sign out");
+    scope.release().expect("release");
+    let status = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("status");
+    assert!(!status.legacy_credentials.present && !status.fleet_credentials.present);
+    assert!(keys.as_slice() == fs::read(&key_path).expect("retained keyring").as_slice());
+    assert!(supervisor_cursor_proof(&super::load_or_create_cursor_key(temporary.path()).expect("cursor retained")) == cursor_proof);
 }
 
 #[cfg(target_os = "macos")]
 #[test]
 fn sign_out_attempts_legacy_removal_after_fleet_key_failure() {
-    use teslatlas_hub::{
-        credentials::OwnerTokens,
-        
-        legacy_owner_credentials::{ },
-        
-    };
-
-    let temporary = tempfile::tempdir().expect("temporary Hub");
-    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
-        .expect("private temporary Hub");
-    let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let legacy = OwnerTokens::from_file_bytes(
-        zeroize::Zeroizing::new(b"access".to_vec()),
-        zeroize::Zeroizing::new(b"refresh".to_vec()),
-    )
-    .expect("legacy credentials");
-    let legacy_key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, teslatlas_hub::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("random legacy key");
-    let (access, refresh) =
-        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("encrypt legacy");
-    let legacy_store = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("legacy store");
-    ({ let unavailable_value: Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("persist legacy");
-
-    let invalid_fleet_key = ({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value });
-    fs::create_dir(&invalid_fleet_key).expect("invalid Fleet key directory");
-    fs::set_permissions(&invalid_fleet_key, fs::Permissions::from_mode(0o700))
-        .expect("private invalid Fleet key");
-
-    let error = clear_provider_credentials(temporary.path(), &store)
-        .expect_err("Fleet key failure must be reported");
-    assert!(error.to_string().contains("Fleet credentials"));
-    assert!(
-        ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("legacy row")
-            .is_none(),
-        "Legacy credentials must still be removed"
-    );
+    use teslatlas_hub::auth::credential_sign_in as credentials;
+    let (temporary, store) = v2_credential_pair_fixture(true);
+    // Per-slot key files are gone. A Fleet-only clear failure must leave the
+    // other clear committed, in the required Owner-then-Fleet order.
+    let connection = rusqlite::Connection::open(store.database_path()).expect("fixture observer");
+    connection.execute_batch("CREATE TRIGGER fixture_fleet_clear_refusal BEFORE DELETE ON credential_pairs WHEN (SELECT count(*) FROM credential_pairs WHERE slot='owner_api')=0 BEGIN SELECT RAISE(ABORT,'fleet_clear_refused'); END;").expect("Fleet fault");
+    let scope = credentials::SignInScope::open_for_test(temporary.path(), true).expect("sign-out process");
+    let error = clear_provider_credentials(scope.entry()).expect_err("Fleet failure reported");
+    assert!(error.to_string().contains("fleet_api:"));
+    scope.release().expect("release");
+    let status = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("status");
+    assert!(!status.legacy_credentials.present, "Owner clear still commits");
+    assert!(status.fleet_credentials.present, "failed Fleet clear retains its row");
 }
 
 #[cfg(target_os = "macos")]
 #[test]
 fn setup_clears_the_other_provider_token_generation() {
-        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
-    }
+    use teslatlas_hub::auth::credential_sign_in as credentials;
+    let (temporary, store) = v2_credential_pair_fixture(false);
+    let scope = credentials::SignInScope::open_for_test(temporary.path(), true).expect("Owner setup process");
+    let prepared = credentials::decode_owner_entry(br#"{"accessToken":"access-0001","refreshToken":"refresh-0001"}"#, credentials::OwnerEntryKind::Direct, false).expect("Owner input");
+    drop(super::persist_legacy_setup_and_drop_fleet(scope.entry(), prepared).expect("Owner barrier and Fleet clear"));
+    scope.release().expect("release");
+    let first = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("status");
+    assert!(first.legacy_credentials.present && !first.fleet_credentials.present);
+    let claims = base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, br#"{"scp":["openid","offline_access","vehicle_device_data","vehicle_location"]}"#);
+    let access = zeroize::Zeroizing::new(format!("e30.{claims}.sig"));
+    let line = zeroize::Zeroizing::new(format!(r#"{{"accessToken":"{}","refreshToken":"refresh-0003","clientId":"client-0001","region":"europe_middle_east_and_africa","expiresInSeconds":3600}}"#, access.as_str()));
+    let prepared = credentials::decode_fleet_entry(line.as_bytes()).expect("Fleet input");
+    let scope = credentials::SignInScope::open_for_test(temporary.path(), true).expect("Fleet setup process");
+    drop(persist_fleet_setup_and_drop_legacy(scope.entry(), prepared).expect("Fleet barrier and Owner clear"));
+    scope.release().expect("release");
+    let second = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("status");
+    assert!(!second.legacy_credentials.present && second.fleet_credentials.present);
+    assert_eq!((second.fleet_credentials.origin, second.fleet_credentials.refresh_owner), (Some("fleet_oauth"), Some("hub")));
+}
 
 #[cfg(target_os = "macos")]
 #[test]
 fn migrate_copies_legacy_tokens_without_deleting_fleet() {
-        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
-    }
+    use teslatlas_hub::auth::credential_sign_in as credentials;
+    let (temporary, store) = v2_credential_pair_fixture(false);
+    let before = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("before").fleet_credentials;
+    credentials::check_token_import_continuity(&store).expect("continuity before source input");
+    let prepared = credentials::decode_owner_files(zeroize::Zeroizing::new(b" access-0001\r\n".to_vec()), zeroize::Zeroizing::new(b"refresh-0001\n".to_vec()), credentials::OwnerEntryKind::SourceToken).expect("source input");
+    let scope = credentials::SignInScope::open_for_test(temporary.path(), true).expect("migration scope");
+    drop(credentials::persist_owner_entry(scope.entry(), prepared, false).expect("migration credential barrier"));
+    scope.release().expect("release");
+    let after = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("after");
+    assert_eq!(after.fleet_credentials, before, "migration keeps Fleet metadata");
+    assert_eq!((after.legacy_credentials.origin, after.legacy_credentials.refresh_owner, after.legacy_credentials.expires_at, after.legacy_credentials.next_refresh_at), (Some("source_token"), Some("external"), Some(0), Some(0)));
+    assert!(credentials::pair_matches_for_test(temporary.path(), false, "access-0001", "refresh-0001").expect("canonical source pair"));
+    assert!(credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").expect("Fleet pair retained"));
+}
 
 #[cfg(target_os = "linux")]
 #[test]
@@ -2174,10 +2087,12 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         access_token_file: Some(PathBuf::from("access")),
         refresh_token_file: Some(PathBuf::from("refresh")),
         tokens_stdin: false,
+        sign_in: false,
         vehicle_id: None,
         all_vehicles: false,
     }));
     assert!(command_requires_user_hub_admission(&Command::SetupFleet {
+        sign_in: false,
         vehicle_id: None,
         all_vehicles: true,
     }));
@@ -2192,11 +2107,13 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         car_id: 1,
         postgres_password_file: PathBuf::from("password"),
         history_only: false,
+        source_token_key_file: None,
         encryption_key_file: Some(PathBuf::from("key")),
         access_token_file: None,
         refresh_token_file: None,
         online_snapshot: false,
         preserve_existing_credentials: false,
+        replace_credentials: false,
         accept_schema_evidence: true,
     }));
     assert!(command_requires_user_hub_admission(&Command::Pair {
@@ -2809,6 +2726,18 @@ fn default_pairing_presentation_includes_a_plain_link() {
 
 #[path = "n1_cli_report_tests.rs"]
 mod n1_cli_report_tests;
+
+#[cfg(target_os = "macos")]
+fn v2_credential_pair_fixture(owner: bool) -> (tempfile::TempDir, HubStore) {
+    use teslatlas_hub::auth::credential_sign_in as credentials;
+    let root = tempfile::tempdir().expect("temporary Hub");
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).expect("private Hub");
+    let store = HubStore::initialize(root.path()).expect("store");
+    if owner { credentials::seed_owner_pair_for_test(root.path(), "access-0001", "refresh-0001", None).expect("Owner entry"); }
+    let fleet = super::FleetSetupCredentials::new("access-0002".into(), "refresh-0002".into(), "client-0001".into(), super::FleetRegion::EuropeMiddleEastAndAfrica, 3600).expect("Fleet fixture");
+    credentials::seed_fleet_pair_for_test(root.path(), &fleet).expect("Fleet entry");
+    (root, store)
+}
 
 #[path = "service_cli_tests.rs"]
 mod service_cli_tests;

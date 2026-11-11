@@ -2,22 +2,30 @@
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    #[cfg(feature = "credential-relocation-fixture")]
+    { return credential_relocation_fixture::entry().await; }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
+    let cli = Cli::parse();
     use teslatlas_hub::runtime::development_event_log as dev;
     if dev::initialize().is_err() {
         eprintln!("teslatlas-hub: development journal unavailable");
         return ExitCode::FAILURE;
     }
-    tracing_subscriber::fmt()
+    let logging = tracing_subscriber::fmt()
         .with_env_filter(if dev::enabled() {
             EnvFilter::new("off")
         } else {
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
         })
         .with_ansi(std::io::stderr().is_terminal())
-        .with_target(false)
-        .init();
-
-    let cli = Cli::parse();
+        .with_target(false);
+    if matches!(&cli.command,
+        Command::Setup { .. } | Command::SetupFleet { .. } | Command::Migrate { history_only: false, .. }
+        | Command::Control { command: ControlCommand::SignOut, .. }
+        | Command::Control { command: ControlCommand::RotateCredentialKey, .. }) {
+        logging.with_writer(std::io::stderr).init();
+    } else { logging.init(); }
     #[cfg(target_os = "macos")]
     if matches!(&cli.command, Command::Serve) {
         teslatlas_hub::macos_launch_agent::compact_inherited_logs();
@@ -44,6 +52,7 @@ async fn main() -> ExitCode {
         eprintln!("teslatlas-hub: development journal incomplete");
     }
     ExitCode::from(report_outcome(result, &mut std::io::stderr()))
+    }
 }
 
 /// The exit status of a finished command (0, or 1 for an error) after the error
@@ -138,59 +147,35 @@ fn validate_legacy_setup_provider(provider: CollectorProvider) -> Result<(), &'s
 }
 
 fn clear_provider_credentials(
-    data_dir: &Path,
-    store: &HubStore,
+    entry: &teslatlas_hub::CredentialVaultEntry,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let result = teslatlas_hub::auth::credential_sign_in::sign_out(entry);
+    if result.scrub_pending { tracing::warn!(operation = "post_clear_scrub", outcome = "pending", "credential scrub"); }
     let mut failures = Vec::new();
-    if let Err(error) = ({ let unavailable_value: Result<(), teslatlas_hub::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }) {
-        failures.push(format!("Fleet credentials: {error}"));
+    for (slot, code) in [("owner_api", result.owner_api), ("fleet_api", result.fleet_api)] {
+        if let Some(code) = code {
+            let text = teslatlas_hub::auth::credential_sign_in::credential_owner_message(code, None, None, None).unwrap_or_default();
+            failures.push(format!("{slot}: {code}: {text}"));
+        }
     }
-    if let Err(error) = ({ let unavailable_value: Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialRemovalError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }) {
-        failures.push(format!("Legacy credentials: {error}"));
-    }
-    if failures.is_empty() {
-        Ok(())
-    } else {
-        Err(std::io::Error::other(format!(
-            "provider credential removal incomplete: {}",
-            failures.join("; ")
-        ))
-        .into())
-    }
+    if result.rows_remain { failures.push("credential_rows_remain".to_owned()); }
+    if failures.is_empty() { Ok(()) } else { Err(std::io::Error::other(failures.join("; ")).into()) }
 }
 
 fn persist_legacy_setup_and_drop_fleet(
-    data_dir: &Path,
-    store: &HubStore,
-    tokens: &OwnerTokens,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let encryption_key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, teslatlas_hub::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
-    let (access, refresh) = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
-    let stored = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })?;
-    ({ let unavailable_value: Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).map_err(|error| {
-        provider_switch_outcome_ambiguous("persisting Legacy credentials", error)
-    })?;
-    ({ let unavailable_value: Result<(), teslatlas_hub::fleet_credentials::FleetCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).map_err(|error| {
-        provider_switch_outcome_ambiguous("removing previous Fleet credentials", error)
-    })?;
-    Ok(())
+    entry: &teslatlas_hub::CredentialVaultEntry,
+    prepared: teslatlas_hub::auth::credential_sign_in::PreparedOwnerEntry,
+) -> Result<OwnerTokens, Box<dyn std::error::Error>> {
+    Ok(teslatlas_hub::auth::credential_sign_in::persist_owner_entry(entry, prepared, true)?.into_owner_tokens()?)
 }
 
 
 
 fn persist_fleet_setup_and_drop_legacy(
-    data_dir: &Path,
-    store: &HubStore,
-    credentials: &FleetSetupCredentials,
-    now: SystemTime,
-) -> Result<(), Box<dyn std::error::Error>> {
-    (/* C10_UNAVAILABLE_V2: entry vault required. */ |_: &teslatlas_hub::db::HubStore, _: &std::path::Path, _: &teslatlas_hub::fleet_credentials::FleetSetupCredentials, _: std::time::SystemTime| -> Result<(), teslatlas_hub::fleet_credentials::FleetCredentialError> { Err(teslatlas_hub::fleet_credentials::FleetCredentialError::SensitiveAccessUnavailable) })(store, data_dir, credentials, now).map_err(|error| {
-        provider_switch_outcome_ambiguous("persisting Fleet credentials", error)
-    })?;
-    ({ let unavailable_value: Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialRemovalError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }).map_err(|error| {
-        provider_switch_outcome_ambiguous("removing previous Legacy credentials", error)
-    })?;
-    Ok(())
+    entry: &teslatlas_hub::CredentialVaultEntry,
+    prepared: teslatlas_hub::auth::credential_sign_in::PreparedFleetSetup,
+) -> Result<teslatlas_hub::fleet_credentials::FleetSetupCredentials, Box<dyn std::error::Error>> {
+    Ok(teslatlas_hub::auth::credential_sign_in::persist_fleet_setup(entry, prepared, true)?)
 }
 
 #[cfg(unix)]
@@ -417,6 +402,39 @@ fn run_collector_command(
     Ok(())
 }
 
+fn run_credential_control_with(
+    config: &HubConfig,
+    command: &ControlCommand,
+    stop: impl FnOnce() -> Result<(), Box<dyn std::error::Error>>,
+    open: impl FnOnce(HubStore, std::sync::Arc<AdmittedUserHub>, &Path) -> Result<teslatlas_hub::CredentialVaultEntry, teslatlas_hub::CredentialVaultEntryError>,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    stop()?;
+    let admission = AdmittedUserHub::admit(&config.data_dir)?;
+    // The existing-store lane is deliberately read-only and carries no
+    // credential connection. Validate it, then obtain the admitted write lane.
+    drop(HubStore::open_existing(&config.data_dir)?);
+    let store = HubStore::initialize(&config.data_dir)?;
+    let entry = open(store.clone(), admission, &config.data_dir)
+        .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)?;
+    match command {
+        ControlCommand::SignOut => {
+            let mut checkpoint = CatalogueCheckpointGuard::new(store);
+            clear_provider_credentials(&entry)?;
+            checkpoint.finish()?;
+            Ok(serde_json::json!({"status":"signed_out","service":"stopped"}))
+        }
+        ControlCommand::RotateCredentialKey => Ok(serde_json::to_value(teslatlas_hub::auth::credential_sign_in::rotate_credential_key(&entry)?)?),
+        _ => unreachable!("credential controls are selected before this boundary"),
+    }
+}
+
+fn open_control_credential_vault(store: HubStore, admission: std::sync::Arc<AdmittedUserHub>, data: &Path) -> Result<teslatlas_hub::CredentialVaultEntry, teslatlas_hub::CredentialVaultEntryError> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    { teslatlas_hub::CredentialVaultEntry::open_for_test(store, admission, data, true) }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    { teslatlas_hub::open_credential_vault_for_entry(store, admission, data) }
+}
+
 async fn run_control(
     config_path: &Path,
     requested_vehicle_id: Option<uuid::Uuid>,
@@ -428,6 +446,21 @@ async fn run_control(
         return Err(CONTROL_PAIR_VEHICLE_ID_USAGE.into());
     }
     let config = HubConfig::load(config_path)?;
+    if matches!(command, ControlCommand::SignOut | ControlCommand::RotateCredentialKey) {
+        #[cfg(feature = "credential-relocation-fixture")]
+        credential_relocation_fixture::require_entry_path(&config.data_dir)?;
+        let result = run_credential_control_with(&config, command, || {
+            #[cfg(feature = "credential-relocation-fixture")]
+            teslatlas_hub::platform::r78_recording::with_fixture_backend(|backend| backend.persistent_stop())?;
+            #[cfg(all(target_os = "macos", not(feature = "credential-relocation-fixture")))]
+            teslatlas_hub::macos_launch_agent::stop_installed()?;
+            #[cfg(all(target_os = "linux", not(feature = "credential-relocation-fixture")))]
+            teslatlas_hub::linux_systemd::apply(teslatlas_hub::linux_systemd::ServiceAction::Stop)?;
+            Ok(())
+        }, open_control_credential_vault)?;
+        println!("{}", serde_json::to_string(&result)?);
+        return Ok(());
+    }
     let store = HubStore::open_existing(&config.data_dir)?;
     match command {
         ControlCommand::PairedDevices => {
@@ -465,26 +498,7 @@ async fn run_control(
             );
             return Ok(());
         }
-        ControlCommand::SignOut => {
-            #[cfg(target_os = "macos")]
-            teslatlas_hub::macos_launch_agent::stop_installed()?;
-            #[cfg(target_os = "linux")]
-            teslatlas_hub::linux_systemd::apply(teslatlas_hub::linux_systemd::ServiceAction::Stop)?;
-
-            #[cfg(unix)]
-            let _admission = AdmittedUserHub::admit(&config.data_dir)?;
-            let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
-            clear_provider_credentials(&config.data_dir, &store)?;
-            catalogue_checkpoint.finish()?;
-            println!(
-                "{}",
-                serde_json::json!({
-                    "status": "signed_out",
-                    "service": "stopped",
-                })
-            );
-            return Ok(());
-        }
+        ControlCommand::SignOut | ControlCommand::RotateCredentialKey => unreachable!("credential control returned before store opening"),
         _ => {}
     }
     let vehicle_id = control_target(&store, requested_vehicle_id)?;
@@ -499,7 +513,8 @@ async fn run_control(
         ControlCommand::PairedDevices
         | ControlCommand::Pair { .. }
         | ControlCommand::RevokeDevice { .. }
-        | ControlCommand::SignOut => {
+        | ControlCommand::SignOut
+        | ControlCommand::RotateCredentialKey => {
             unreachable!("global controls returned before vehicle selection")
         }
         ControlCommand::Wake { .. }

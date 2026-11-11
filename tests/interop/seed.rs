@@ -470,7 +470,15 @@ fn prepare_with_vehicle_identities(
     // Native macOS preflight requires encrypted account material even with
     // collection disabled. These fixed test strings have no provider authority.
     if !matches!(scenario, FixtureScenario::PhysicalV3Public513) {
-        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
+        use teslatlas_hub::auth::credential_sign_in as credentials;
+        #[cfg(debug_assertions)]
+        let scope = credentials::SignInScope::open_for_test(root, true)?;
+        #[cfg(not(debug_assertions))]
+        let scope = credentials::SignInScope::open(root)?;
+        let supplied = credentials::decode_owner_entry(br#"{"accessToken":"access-0001","refreshToken":"refresh-0001"}"#, credentials::OwnerEntryKind::Provider, false)?;
+        drop(credentials::persist_owner_entry(scope.entry(), supplied, false)?);
+        scope.release()?;
+        if !credentials::record_provider_admission_for_test(root)? { return Err("fixture_credentials_not_admitted".into()); }
     }
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?

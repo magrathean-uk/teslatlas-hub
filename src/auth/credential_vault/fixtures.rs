@@ -2,33 +2,43 @@
 //! Previous-process producers only. No live vault connection is used to seed.
 use super::*;
 
+#[cfg(test)]
 thread_local! {
     static PROBE_OBSERVER: std::cell::RefCell<Option<Box<dyn FnMut(&str)>>> = const { std::cell::RefCell::new(None) };
     static POWER_OBSERVER: std::cell::RefCell<Option<Box<dyn FnMut(&str, Option<&Path>)>>> = const { std::cell::RefCell::new(None) };
     static SEAL_OBSERVER: std::cell::RefCell<Option<Box<dyn FnMut(super::super::credential_envelope::KeyId)>>> = const { std::cell::RefCell::new(None) };
     static DIRECTORY_OPEN_FAILURE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
+#[cfg(test)]
 pub(super) fn directory_open_failure(error: &private_directory::PrivateDirectoryError) {
     DIRECTORY_OPEN_FAILURE.with(|slot| *slot.borrow_mut() = Some(format!("{error:?}")));
 }
+#[cfg(test)]
 pub(crate) fn probe_event(point:&str){PROBE_OBSERVER.with(|s|{if let Some(callback)=s.borrow_mut().as_mut(){callback(point);}});}
+#[cfg(test)]
 pub(in crate::auth) fn probe_observer(callback:Option<Box<dyn FnMut(&str)>>){PROBE_OBSERVER.with(|s|*s.borrow_mut()=callback);}
+#[cfg(test)]
 pub(crate) fn power_seal(id: super::super::credential_envelope::KeyId) {
     SEAL_OBSERVER.with(|observer| { if let Some(observer)=observer.borrow_mut().as_mut(){observer(id);} });
     power_event("seal",None);
 }
+#[cfg(test)]
 pub(in crate::auth) fn power_seal_observer(observer: Option<Box<dyn FnMut(super::super::credential_envelope::KeyId)>>) {
     SEAL_OBSERVER.with(|slot| *slot.borrow_mut()=observer);
 }
 /// Test file-system layer: only passed barriers advance its durable image.
+#[cfg(test)]
 pub(crate) fn power_event(kind: &str, path: Option<&Path>) {
     POWER_OBSERVER.with(|observer| { if let Some(observer) = observer.borrow_mut().as_mut() { observer(kind, path); } });
 }
+#[cfg(test)]
 pub(in crate::auth) fn power_observer(observer: Option<Box<dyn FnMut(&str, Option<&Path>)>>) {
     POWER_OBSERVER.with(|slot| *slot.borrow_mut() = observer);
 }
 
+#[cfg(test)]
 pub(crate) struct FixtureExclusion;
+#[cfg(test)]
 pub(crate) fn replace_legacy_supplied_pair(store: &HubStore, data: &Path, access: &str, refresh: &str, schedule: Option<(i64,i64)>) -> Result<Uuid,CredentialStoreError> {
     let mut entry = CredentialEntry::direct_entry(Zeroizing::new(access.into()),Zeroizing::new(refresh.into()))?;
     let (expires,next) = schedule.unwrap_or((0,0)); entry.set_schedule(expires,next);
@@ -39,18 +49,22 @@ pub(crate) fn replace_legacy_supplied_pair(store: &HubStore, data: &Path, access
         None => { wait_for_release(store); Ok(seed_entry(data,entry)) },
     }
 }
+#[cfg(test)]
 pub(crate) fn legacy_vault(store: &HubStore, data: &Path) -> Arc<CredentialVault> { open_fixture_vault(store.clone(),data) }
+#[cfg(test)]
 impl BackupExclusion for FixtureExclusion {
     fn ensure_excluded(&self, _: &Path) -> Result<ExclusionState, CredentialKeyError> {
         #[cfg(target_os = "macos")] { Ok(ExclusionState::Verified) }
         #[cfg(not(target_os = "macos"))] { Ok(ExclusionState::NotApplicable) }
     }
 }
+#[cfg(test)]
 pub(crate) fn seed_legacy_supplied_pair(data: &Path, access: &str, refresh: &str, schedule: Option<(i64, i64)>) -> Uuid {
     let mut entry = CredentialEntry::direct_entry(Zeroizing::new(access.to_owned()), Zeroizing::new(refresh.to_owned())).expect("fixture entry");
     let (expires,next) = schedule.unwrap_or((0,0)); entry.set_schedule(expires,next);
     seed_entry(data, entry)
 }
+#[cfg(test)]
 pub(crate) fn seed_entry(data: &Path, entry: CredentialEntry) -> Uuid {
     let store = HubStore::initialize(data).expect("fixture store");
     let mut connection = store.take_credential_connection().expect("fixture connection");
@@ -67,6 +81,7 @@ pub(crate) fn seed_entry(data: &Path, entry: CredentialEntry) -> Uuid {
 }
 
 /// CT19's expressly admitted canonical vector exception to Supplied seeding.
+#[cfg(test)]
 pub(in crate::auth) fn seed_rotation_vector(data: &Path) -> Uuid {
     use super::super::credential_envelope::{FixedNonces, KeyId};
     let store = HubStore::initialize(data).expect("vector store");
@@ -93,15 +108,19 @@ pub(in crate::auth) fn seed_rotation_vector(data: &Path) -> Uuid {
     generation
 }
 #[cfg(test)]
+#[cfg(test)]
 const OWNER_SLOT: CredentialSlot = CredentialSlot::OwnerApi;
+#[cfg(test)]
 pub(crate) fn seed_fleet_setup_credentials(_store: &HubStore, data: &Path, credentials: &crate::fleet_credentials::FleetSetupCredentials, now: SystemTime) -> Result<(), crate::fleet_credentials::FleetCredentialError> {
     seed_entry(data, credentials.credential_entry(now)?);
     Ok(())
 }
+#[cfg(test)]
 pub(crate) fn validate_fixture_fleet_credentials(store: &HubStore, data: &Path) -> Result<(), crate::fleet_credentials::FleetCredentialError> {
     let vault = open_fixture_vault(store.clone(), data);
     crate::fleet_credentials::validate_stored_fleet_credentials(&crate::CredentialVaultEntry::for_test(vault), data)
 }
+#[cfg(test)]
 pub(crate) fn open_fixture_vault(store: HubStore, data: &Path) -> Arc<CredentialVault> {
     let registry = Arc::clone(&store.fixture_vault);
     let mut registered = registry.current.lock().expect("fixture context");
@@ -129,12 +148,15 @@ pub(crate) fn open_fixture_vault(store: HubStore, data: &Path) -> Arc<Credential
     *registered = Arc::downgrade(&vault);
     vault
 }
+#[cfg(test)]
 pub(crate) fn open_admitted_fixture_vault(store: HubStore, data: &Path, admission: Arc<AdmittedUserHub>) -> Result<Arc<CredentialVault>, CredentialStoreError> {
     open_admitted_fixture_vault_inner(store, data, admission, true)
 }
+#[cfg(test)]
 pub(crate) fn open_runtime_fixture_vault(store: HubStore, data: &Path, admission: Arc<AdmittedUserHub>) -> Result<Arc<CredentialVault>, CredentialStoreError> {
     open_admitted_fixture_vault_inner(store, data, admission, false)
 }
+#[cfg(test)]
 fn open_admitted_fixture_vault_inner(store: HubStore, data: &Path, admission: Arc<AdmittedUserHub>, reuse: bool) -> Result<Arc<CredentialVault>, CredentialStoreError> {
     let registry = Arc::clone(&store.fixture_vault);
     let mut registered = registry.current.lock().map_err(|_|CredentialStoreError::LockPoisoned)?;
@@ -154,6 +176,7 @@ fn open_admitted_fixture_vault_inner(store: HubStore, data: &Path, admission: Ar
     *registered = Arc::downgrade(&vault);
     Ok(vault)
 }
+#[cfg(test)]
 pub(crate) fn fixture_admission(store: &HubStore, data: &Path) -> Arc<AdmittedUserHub> {
     let registered = store.fixture_vault.current.lock().expect("fixture context");
     match registered.upgrade() {
@@ -164,6 +187,7 @@ pub(crate) fn fixture_admission(store: &HubStore, data: &Path) -> Arc<AdmittedUs
         },
     }
 }
+#[cfg(test)]
 fn fixture_admission_locked(store: &HubStore, data: &Path) -> Arc<AdmittedUserHub> {
     let mut registered = store.fixture_vault.admission.lock().expect("fixture admission");
     if let Some(admission) = registered.as_ref() { return Arc::clone(admission); }
@@ -174,12 +198,15 @@ fn fixture_admission_locked(store: &HubStore, data: &Path) -> Arc<AdmittedUserHu
 /// A revoked fixture process can restart only after all of its holders finish.
 /// Consume its sole store context and close its admission synchronously before
 /// opening a fresh context. Ordinary fixture opens retain their admission.
+#[cfg(test)]
 pub(crate) fn restart_after_revocation(store: HubStore, data: &Path) -> Result<HubStore, &'static str> {
     restart_context(store, data, true)
 }
+#[cfg(test)]
 pub(crate) fn restart_fixture_context(store: HubStore, data: &Path) -> Result<HubStore, &'static str> {
     restart_context(store, data, false)
 }
+#[cfg(test)]
 fn restart_context(store: HubStore, data: &Path, require_revocation: bool) -> Result<HubStore, &'static str> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let registered = loop {
@@ -220,6 +247,7 @@ fn restart_context(store: HubStore, data: &Path, require_revocation: bool) -> Re
     drop(store);
     HubStore::initialize(data).map_err(|_| "fixture_restart_store_unavailable")
 }
+#[cfg(test)]
 fn wait_for_release(store: &HubStore) {
     let context = &store.fixture_vault;
     let mut release = context.release.lock().expect("fixture release");
@@ -229,4 +257,75 @@ fn wait_for_release(store: &HubStore) {
     release = guard;
     assert!(!timeout.timed_out() || !store.test_credential_connection_in_use(), "fixture_connection_release_timeout");
     drop(release);
+}
+
+#[cfg(debug_assertions)]
+pub(super) fn seed_pending_for_binary(data: &Path, candidate: u8, fleet: bool, missing_keyring: bool) -> Result<Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
+    use std::os::unix::fs::PermissionsExt;
+    if missing_keyring {
+        let store = HubStore::initialize(data)?;
+        let admission = AdmittedUserHub::admit(data)?;
+        let entry = entry::CredentialVaultEntry::open_for_test(store, admission, data, true)
+            .map_err(|error| std::io::Error::other(error.code()))?;
+        entry.vault().store_supplied_entry(CredentialEntry::fleet_supplied(Zeroizing::new("access-0099".into()), Zeroizing::new("refresh-0099".into()),
+            "client-0099".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800)
+            .map_err(super::super::credential_sign_in::CredentialCommandError::from)?, ReplacePolicy::ReplaceAny)
+            .map_err(super::super::credential_sign_in::CredentialCommandError::from)?;
+        drop(entry);
+        std::fs::rename(data.join("secrets").join("credential-keys"), data.join("saved-ring"))?;
+    }
+    let store = HubStore::initialize(data)?;
+    let db = store.open()?;
+    for ddl in [
+        "CREATE TABLE legacy_owner_tokens(singleton_id INTEGER PRIMARY KEY, access BLOB NOT NULL, refresh BLOB NOT NULL, expires_at INTEGER NOT NULL, next_refresh_at INTEGER NOT NULL, credential_generation TEXT) STRICT;",
+        "CREATE TABLE fleet_tokens(singleton_id INTEGER PRIMARY KEY, access BLOB NOT NULL, refresh BLOB NOT NULL, client_id TEXT NOT NULL, region TEXT NOT NULL, expires_at INTEGER NOT NULL, next_refresh_at INTEGER NOT NULL, credential_generation TEXT) STRICT;",
+        "CREATE TABLE legacy_refresh_receipt_bindings(receipt_id INTEGER PRIMARY KEY REFERENCES outbound_request_receipts(id), attempt_id TEXT NOT NULL UNIQUE, input_credential_generation TEXT NOT NULL, output_credential_generation TEXT) STRICT;",
+        "CREATE TABLE legacy_refresh_input_fences(input_credential_generation TEXT PRIMARY KEY NOT NULL COLLATE NOCASE) STRICT, WITHOUT ROWID;",
+        "CREATE TABLE fleet_refresh_receipt_bindings(receipt_id INTEGER PRIMARY KEY REFERENCES outbound_request_receipts(id), attempt_id TEXT NOT NULL UNIQUE, input_credential_generation TEXT NOT NULL, output_credential_generation TEXT) STRICT;",
+        "CREATE TABLE fleet_refresh_input_fences(input_credential_generation TEXT PRIMARY KEY NOT NULL COLLATE NOCASE) STRICT, WITHOUT ROWID;",
+    ] { db.execute_batch(ddl)?; }
+    let vectors: serde_json::Value = serde_json::from_slice(&std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/credential-pre-upgrade-vectors.json"))?)?;
+    let case = |id: &str| vectors["ciphertext_cases"].as_array().unwrap().iter().find(|case| case["id"] == id).unwrap();
+    let unhex = |text: &str| -> Vec<u8> { (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i+2], 16).unwrap()).collect() };
+    let owner = case("legacy_32");
+    let key = Zeroizing::new(unhex(owner["key_hex"].as_str().unwrap()));
+    db.execute("INSERT INTO legacy_owner_tokens VALUES(1,?1,?2,1800028800,1800021600,?3)",
+        rusqlite::params![unhex(owner["access_ciphertext_hex"].as_str().unwrap()), unhex(owner["refresh_ciphertext_hex"].as_str().unwrap()), owner["generation"].as_str().unwrap()])?;
+    db.execute("INSERT INTO legacy_refresh_input_fences(input_credential_generation) VALUES(?1)", [owner["generation"].as_str().unwrap()])?;
+    db.execute("UPDATE credential_format_state SET owner_api_state='pending', fleet_api_state=?1, owner_api_blocked=NULL, fleet_api_blocked=NULL, fences_pending=1, old_tables_dropped=0, purge_required=1, wal_scrubbed=0, old_files_removed=0, converted_at_ms=NULL, completed_at_ms=NULL, secrets_exclusion=NULL, durability=NULL WHERE singleton_id=1",
+        [if fleet { "pending" } else { "none" }])?;
+    let secrets = private_directory::open_validated(&data.join("secrets"), true)?;
+    let write = |name: &str, bytes: &[u8]| -> Result<(), Box<dyn std::error::Error>> {
+        let path = secrets.path().join(name);
+        std::fs::write(&path, bytes)?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        Ok(())
+    };
+    match candidate {
+        0 => (),
+        1 => write("pre-upgrade-owner-api.relocated.key", &key)?,
+        2 => {
+            let invalid: serde_json::Value = serde_json::from_slice(&std::fs::read(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/credential-pre-upgrade-invalid-pair.json"),
+            )?)?;
+            let row = invalid["ciphertext_cases"].as_array().unwrap().iter()
+                .find(|row| row["id"] == "legacy_crlf_refresh").unwrap();
+            db.execute("INSERT OR REPLACE INTO legacy_owner_tokens VALUES(1,?1,?2,1800028800,1800021600,?3)",
+                rusqlite::params![unhex(row["access_ciphertext_hex"].as_str().unwrap()), unhex(row["refresh_ciphertext_hex"].as_str().unwrap()), row["generation"].as_str().unwrap()])?;
+            db.execute("DELETE FROM legacy_refresh_input_fences", [])?;
+            db.execute("INSERT INTO legacy_refresh_input_fences(input_credential_generation) VALUES(?1)",
+                [row["generation"].as_str().unwrap()])?;
+            let key = Zeroizing::new(unhex(row["key_hex"].as_str().unwrap()));
+            write("pre-upgrade-owner-api.relocated.key", &key)?;
+        },
+        _ => return Err(std::io::Error::other("fixture_candidate_invalid").into()),
+    }
+    if fleet {
+        let row = case("fleet_file");
+        db.execute("INSERT INTO fleet_tokens VALUES(1,?1,?2,'client-0001','eu',1800028800,1800021600,?3)",
+            rusqlite::params![unhex(row["access_ciphertext_hex"].as_str().unwrap()), unhex(row["refresh_ciphertext_hex"].as_str().unwrap()), row["generation"].as_str().unwrap()])?;
+        write("fleet-credentials.key", &unhex(row["key_hex"].as_str().unwrap()))?;
+    }
+    Ok(key)
 }

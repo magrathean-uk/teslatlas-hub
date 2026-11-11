@@ -12,7 +12,6 @@ use std::{fs, os::unix::fs::PermissionsExt, path::Path, time::Duration};
 use rusqlite::{Connection, params};
 use teslatlas_hub::{
     config::HubConfig,
-    credentials::OwnerTokens,
     db::{HubStore, },
     fleet_api::FleetRegion,
     fleet_credentials::FleetSetupCredentials,
@@ -137,42 +136,31 @@ fn auth_row(
 /// The started refresh receipt, input fence and binding of an unresolved token
 /// refresh, as `begin_*_refresh` writes them.
 fn unresolved_refresh(store: &HubStore, transport: &str, generation: Uuid) {
-    let (fence, binding) = match transport {
-        "legacy_auth" => (
-            "legacy_refresh_input_fences",
-            "legacy_refresh_receipt_bindings",
-        ),
-        _ => (
-            "fleet_refresh_input_fences",
-            "fleet_refresh_receipt_bindings",
-        ),
-    };
+    teslatlas_hub::auth::credential_sign_in::begin_refresh_for_test(store.database_path().parent().expect("data directory"), transport != "legacy_auth", generation).expect("real fenced attempt");
+}
+
+fn refresh_image(store: &HubStore) -> [u8; 32] {
+    use sha2::Digest;
     let connection = sql(store);
-    connection
-        .execute(
-            "INSERT INTO outbound_request_receipts(correlation_id, started_at_ms,
-                 vehicle_tesla_id, transport, operation, safety_class, precondition, outcome)
-             VALUES (?1, ?2, NULL, ?3, 'token_refresh', 'non_wake_endpoint',
-                     'not_required', 'started')",
-            params![Uuid::new_v4().to_string(), NOW_MS, transport],
-        )
-        .expect("receipt");
-    let receipt = connection.last_insert_rowid();
-    ({ let _retained_query_context = &connection; let credential_query: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); credential_query })
-        .execute(
-            &format!("INSERT INTO {fence}(input_credential_generation) VALUES (?1)"),
-            params![generation.to_string()],
-        )
-        .expect("fence");
-    ({ let _retained_query_context = &connection; let credential_query: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); credential_query })
-        .execute(
-            &format!(
-                "INSERT INTO {binding}(receipt_id, attempt_id, input_credential_generation)
-                 VALUES (?1, ?2, ?3)"
-            ),
-            params![receipt, Uuid::new_v4().to_string(), generation.to_string()],
-        )
-        .expect("binding");
+    let mut digest = sha2::Sha256::new();
+    for query in ["SELECT * FROM credential_refresh_attempts", "SELECT * FROM outbound_request_receipts"] {
+        let mut statement = connection.prepare(query).expect("receipt snapshot");
+        let columns = statement.column_count();
+        let mut rows = statement.query([]).expect("receipt rows");
+        while let Some(row) = rows.next().expect("receipt row") {
+            for column in 0..columns {
+                use rusqlite::types::ValueRef;
+                match row.get_ref(column).expect("clear metadata") {
+                    ValueRef::Null => digest.update([0]),
+                    ValueRef::Integer(value) => { digest.update([1]); digest.update(value.to_be_bytes()); }
+                    ValueRef::Real(value) => { digest.update([2]); digest.update(value.to_bits().to_be_bytes()); }
+                    ValueRef::Text(value) => { digest.update([3]); digest.update((value.len() as u64).to_be_bytes()); digest.update(value); }
+                    ValueRef::Blob(value) => { digest.update([4]); digest.update((value.len() as u64).to_be_bytes()); digest.update(value); }
+                }
+            }
+        }
+    }
+    digest.finalize().into()
 }
 
 fn gap(store: &HubStore, kind: &str, started: i64, ended: Option<i64>, alert: bool) {
@@ -194,29 +182,10 @@ fn legacy_pair(
     refresh: &str,
     schedule: Option<(i64, i64)>,
 ) -> Uuid {
-    let key = b"cli readiness key";
-    let tokens = OwnerTokens::from_file_bytes(
-        zeroize::Zeroizing::new(access.as_bytes().to_vec()),
-        zeroize::Zeroizing::new(refresh.as_bytes().to_vec()),
-    )
-    .expect("tokens");
-    let (access, refresh) = ({ let replaced_callee: fn(&[u8], &teslatlas_hub::credentials::OwnerTokens) -> Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); replaced_callee })(key, &tokens).expect("encrypt");
-    let stored = match schedule {
-        Some((expires_at, next_refresh_at)) => {
-            ({ let replaced_callee: fn(Vec<u8>, Vec<u8>, i64, i64) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); replaced_callee })(access, refresh, expires_at, next_refresh_at)
-        }
-        None => ({ let replaced_callee: fn(Vec<u8>, Vec<u8>) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); replaced_callee })(access, refresh),
-    }
-    .expect("stored pair");
-    ({ let replaced_callee: fn(&std::path::Path, &teslatlas_hub::db::HubStore, &[u8], &(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); replaced_callee })(directory, store, key, &stored).expect("persist pair");
-    let generation: String = ({ let _retained_query_context = sql(store); let credential_query: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); credential_query })
-        .query_row(
-            concat!("SELECT credential_generation FROM ", "legacy_owner_tokens"),
-            [],
-            |row| row.get(0),
-        )
-        .expect("legacy generation");
-    Uuid::parse_str(&generation).expect("uuid")
+    assert!(store.database_path().parent() == Some(directory), "fixture store path");
+    let generation = teslatlas_hub::auth::credential_sign_in::seed_owner_pair_for_test(directory, access, refresh, schedule).expect("real entry");
+    assert!(teslatlas_hub::auth::credential_sign_in::record_provider_admission_for_test(directory).expect("C5 integrity record"));
+    generation
 }
 
 fn fleet_pair(directory: &Path, store: &HubStore) -> Uuid {
@@ -230,21 +199,8 @@ fn fleet_pair(directory: &Path, store: &HubStore) -> Uuid {
         28_800,
     )
     .expect("fleet credentials");
-    (/* C10_UNAVAILABLE_V2: entry vault required. */ |_: &teslatlas_hub::db::HubStore, _: &std::path::Path, _: &teslatlas_hub::fleet_credentials::FleetSetupCredentials, _: std::time::SystemTime| -> Result<(), teslatlas_hub::fleet_credentials::FleetCredentialError> { Err(teslatlas_hub::fleet_credentials::FleetCredentialError::SensitiveAccessUnavailable) })(
-        store,
-        directory,
-        &credentials,
-        std::time::UNIX_EPOCH + Duration::from_secs(1_000),
-    )
-    .expect("persist fleet");
-    let generation: String =({ let _retained_query_context = &(sql(store)
-        ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).query_row(
-            "SELECT credential_generation FROM fleet_tokens",
-            [],
-            |row| row.get(0),
-        )
-        .expect("fleet generation");
-    Uuid::parse_str(&generation).expect("uuid")
+    assert!(store.database_path().parent() == Some(directory), "fixture store path");
+    teslatlas_hub::auth::credential_sign_in::seed_fleet_pair_for_test(directory, &credentials).expect("Fleet entry")
 }
 
 fn jwt(exp: i64) -> String {
@@ -541,6 +497,7 @@ async fn doctor_cli_attention_succeeds_but_unresolved_refresh_fails() {
         .expect("a usable sign-in passes doctor");
     // An unresolved Legacy refresh fails the dispatch and is not settled.
     unresolved_refresh(&store, "legacy_auth", generation);
+    let before = refresh_image(&store);
     store
         .checkpoint_catalogue_for_immutable_read()
         .expect("checkpoint");
@@ -551,10 +508,7 @@ async fn doctor_cli_attention_succeeds_but_unresolved_refresh_fails() {
         failure.to_string().contains("doctor found failures"),
         "{failure}"
     );
-    assert!(
-        ({ let unavailable_value: Result<bool, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value })
-            .expect("read-only doctor")
-    );
+    assert!(refresh_image(&store) == before, "read-only doctor preserves every attempt and receipt field");
 }
 
 #[tokio::test]
@@ -574,6 +528,7 @@ async fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     );
     account(&store, "fleet_polling", "collecting");
     unresolved_refresh(&store, "fleet_api", generation);
+    let before = refresh_image(&store);
     store
         .checkpoint_catalogue_for_immutable_read()
         .expect("checkpoint");
@@ -596,10 +551,7 @@ async fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     })
     .await
     .expect("an identified unresolved Fleet refresh is attention for doctor");
-    assert!(
-        ({ let unavailable_value: Result<bool, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value })
-            .expect("nothing settled")
-    );
+    assert!(refresh_image(&store) == before, "doctor settles nothing");
 }
 
 #[test]
@@ -612,7 +564,8 @@ fn readiness_context_uses_loaded_mode_with_stale_or_missing_account_rows() {
         &store,
         &jwt(usable_until + 300),
         "refresh",
-        Some((usable_until + 1_000, usable_until - 500)),
+        // R68's transition is the stored expiry, independent of JWT claims.
+        Some((usable_until, usable_until - 500)),
     );
     lease(
         &store,

@@ -21,10 +21,6 @@ use crate::{
         CatalogueInventory, HubStore, ReadinessContext, SCHEMA_VERSION, StoreError,
         StreamAuditSummary, SupervisedCollectorLeaseStatus,
     },
-    fleet_credentials::{
-        FleetCredentialError, inspect_stored_fleet_credentials, stored_fleet_scope_summary,
-        validate_stored_fleet_credentials,
-    },
     geocoder::{POLICY_URL, provider_status},
     
 };
@@ -56,6 +52,9 @@ pub struct CredentialPresence {
     pub collecting: bool,
     /// The host clock differs from Tesla's by more than 300 s (C5 R55).
     pub clock_skew: bool,
+    pub origin: Option<&'static str>,
+    pub refresh_owner: Option<&'static str>,
+    pub store_state: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -70,6 +69,9 @@ pub struct FleetCredentialDiagnostics {
     pub vehicle_commands: Option<bool>,
     pub vehicle_charging_commands: Option<bool>,
     pub valid_for_collection: bool,
+    pub origin: Option<&'static str>,
+    pub refresh_owner: Option<&'static str>,
+    pub store_state: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -225,6 +227,7 @@ pub struct HubDoctorReport {
     pub checks: Vec<DoctorCheck>,
     pub catalogue: CatalogueInventory,
     pub credentials: CredentialDiagnostics,
+    pub credential_store: crate::auth::credential_sign_in::CredentialStoreStatus,
     pub collector: CollectorDiagnostics,
     pub stream_audit: StreamAuditSummary,
     pub tls: TlsDiagnostics,
@@ -233,6 +236,10 @@ pub struct HubDoctorReport {
 }
 
 const STREAM_AUDIT_DIAGNOSTIC_WINDOW_MS: i64 = 24 * 60 * 60 * 1_000;
+
+#[cfg(test)]
+#[path = "diagnostics/g24_m2_diagnostics.rs"]
+mod g24_m2_diagnostics;
 
 impl HubDoctorReport {
     pub fn is_ok(&self) -> bool {
@@ -345,10 +352,10 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         },
     };
 
-    let legacy_tokens = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?;
-    let fleet_tokens = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?;
-    let unresolved_legacy_refresh = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?;
     let now_ms = diagnostic_epoch_ms();
+    let credential_projection = crate::auth::credential_sign_in::credential_status(store, &config.data_dir, now_ms)?;
+    let legacy_tokens = &credential_projection.legacy_credentials;
+    let fleet_tokens = &credential_projection.fleet_credentials;
     // The loaded configuration, not the account row, decides whether the
     // credential unit's status applies (B2 clarification 3): Legacy and Provider
     // read it, effective at this moment; Fleet polling ignores a retained one and
@@ -372,70 +379,64 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             "signed_out" | "configuration_error" | "api_refused"
         )
     });
+    let owner_summary = if loaded_mode == CollectorMode::FleetPolling { None }
+        else { Some(crate::auth::legacy_auth::effective::owner_diagnostic_summary(store, now_ms)?) };
+    let unresolved_legacy_refresh = owner_summary.as_ref().is_some_and(|summary| summary.unresolved_refresh)
+        || auth_status.as_ref().is_some_and(|row| row.reason.as_deref() == Some("refresh_outcome_unknown"));
     // A Fleet configuration never touches the Legacy key material: the retained
     // pair is reported as present and not valid for collection, without a key
     // read or a decryption (C3 R1, B2 clarification 3).
     let legacy_key_valid = loaded_mode != CollectorMode::FleetPolling
-        && legacy_tokens.as_ref().is_some_and(|tokens| {
-            ({ let replaced_callee: fn(&std::path::Path, &(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })(&config.data_dir, tokens).is_ok()
-        });
+        && legacy_tokens.present && legacy_tokens.store_state == "ok"
+        && credential_projection.credential_store.keyring == "ok";
     // Operational validity: whether collection could use the pair now.
     let legacy_valid_for_collection =
         !unresolved_legacy_refresh && !auth_blocks_collection && legacy_key_valid;
-    // Diagnostic admission: the pair is present and decrypts, no Legacy refresh is
+    // Diagnostic admission: the pair is present and header-readable, no Legacy refresh is
     // unresolved and the applicable status is not signed out. A refusal or a
     // credential-unit configuration fault alone is attention, not a failure.
-    let legacy_admitted = legacy_tokens.is_some()
+    let legacy_admitted = legacy_tokens.present
         && legacy_key_valid
         && !unresolved_legacy_refresh
         && !auth_status
             .as_ref()
             .is_some_and(|row| row.state == "signed_out");
     let legacy = CredentialPresence {
-        present: legacy_tokens.is_some(),
-        expires_at: legacy_tokens.as_ref().map(|tokens| tokens.2),
-        next_refresh_at: legacy_tokens
-            .as_ref()
-            .map(|tokens| tokens.3),
+        present: legacy_tokens.present,
+        expires_at: legacy_tokens.expires_at,
+        next_refresh_at: legacy_tokens.next_refresh_at,
         valid_for_collection: legacy_valid_for_collection,
         auth_state: auth_status.as_ref().map(|row| row.state.clone()),
         auth_reason: auth_status.as_ref().and_then(|row| row.reason.clone()),
         retry_at: auth_status.as_ref().and_then(|row| row.retry_at),
         collecting: auth_status.as_ref().is_some_and(|row| row.collecting),
         clock_skew: auth_status.as_ref().is_some_and(|row| row.clock_skew),
+        origin: legacy_tokens.origin,
+        refresh_owner: legacy_tokens.refresh_owner,
+        store_state: legacy_tokens.store_state,
     };
-    let mut fleet = FleetCredentialDiagnostics {
-        present: fleet_tokens.is_some(),
-        expires_at: fleet_tokens.as_ref().map(|tokens| tokens.2),
-        next_refresh_at: fleet_tokens.as_ref().map(|tokens| tokens.3),
+    let fleet = FleetCredentialDiagnostics {
+        present: fleet_tokens.present,
+        expires_at: fleet_tokens.expires_at,
+        next_refresh_at: fleet_tokens.next_refresh_at,
         scope_status: None,
         vehicle_device_data: None,
         vehicle_location: None,
         vehicle_commands: None,
         vehicle_charging_commands: None,
         valid_for_collection: false,
+        origin: fleet_tokens.origin,
+        refresh_owner: fleet_tokens.refresh_owner,
+        store_state: fleet_tokens.store_state,
     };
-    // Independent integrity of the stored Fleet pair (key, ciphertext,
-    // generation, claims, scopes), then whether an identified refresh is
-    // unresolved. The unresolved input is fenced, so it never collects
-    // (`valid_for_collection`), but the pair is sound and admissible.
-    let mut fleet_admitted = false;
-    if fleet.present {
-        match (/* C10_UNAVAILABLE_V2: recorded scope evidence required. */ Ok::<Option<crate::fleet_credentials::FleetScopeSummary>, crate::fleet_credentials::FleetCredentialError>(None)) {
-            Ok(Some(summary)) => {
-                fleet.scope_status = Some("ready".to_owned());
-                fleet.vehicle_device_data = Some(summary.vehicle_device_data);
-                fleet.vehicle_location = Some(summary.vehicle_location);
-                fleet.vehicle_commands = Some(summary.vehicle_commands);
-                fleet.vehicle_charging_commands = Some(summary.vehicle_charging_commands);
-            }
-            Ok(None) => fleet.scope_status = Some("missing".to_owned()),
-            Err(error) => fleet.scope_status = Some(fleet_scope_status(&error).to_owned()),
-        }
-        fleet.valid_for_collection =
-            (/* C10_UNAVAILABLE_V2: admitted validation required. */ Err::<(), crate::fleet_credentials::FleetCredentialError>(crate::fleet_credentials::FleetCredentialError::SensitiveAccessUnavailable)).is_ok();
-        fleet_admitted = inspect_stored_fleet_credentials(store, &config.data_dir).is_ok();
-    }
+    // R68 diagnostic admission uses clear presence, headers, keyring checks
+    // and recorded refresh outcomes. Scope evidence is a separate check.
+    let fleet_admitted = fleet_tokens.present
+        && fleet_tokens.store_state == "ok"
+        && credential_projection.credential_store.keyring == "ok"
+        && crate::fleet_credentials::inspect_stored_fleet_credentials(store, &config.data_dir)
+            .is_ok_and(|inspection| !inspection.unresolved_refresh)
+        && !auth_status.as_ref().is_some_and(|row| row.state == "signed_out");
 
     let selected_credentials_present = match config.collector.provider {
         CollectorProvider::Legacy => legacy.present && legacy.valid_for_collection,
@@ -640,7 +641,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             3,
             DoctorCheck {
                 name: "fleetCollectionScopes".to_owned(),
-                passed: (!direct_provider_credentials_required && !fleet.present) || fleet_admitted,
+                passed: false, // G-DIAGNOSTIC-FLEET-WITNESS: no recorded scope evidence.
                 detail: fleet
                     .scope_status
                     .clone()
@@ -670,6 +671,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             legacy,
             fleet,
         },
+        credential_store: credential_projection.credential_store,
         collector: CollectorDiagnostics {
             provider: config.collector.provider,
             interval_seconds: config.collector.interval_seconds,
@@ -793,15 +795,6 @@ fn regular_file(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
 }
 
-fn fleet_scope_status(error: &FleetCredentialError) -> &'static str {
-    match error {
-        FleetCredentialError::MissingCollectionScopes => "missing_collection_scopes",
-        FleetCredentialError::InvalidAccessTokenClaims => "invalid_access_token_claims",
-        FleetCredentialError::MigrationRequired => "migration_required",
-        _ => "unavailable",
-    }
-}
-
 fn diagnostic_epoch_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -884,8 +877,8 @@ mod tests {
                 .iter()
                 .any(|check| check.name == "streamRecovery" && check.passed)
         );
-        assert!(({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("legacy").is_none());
-        assert!(({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("fleet").is_none());
+        assert!(store.credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::OwnerApi).expect("legacy presence").is_none());
+        assert!(store.credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::FleetApi).expect("Fleet presence").is_none());
         let json = serde_json::to_value(&report).expect("JSON");
         assert_eq!(json["status"], "ok");
         assert_eq!(json["sqlite"], report.sqlite);
@@ -956,12 +949,31 @@ mod tests {
 
     #[test]
     fn doctor_rejects_disabled_undecryptable_legacy_credentials() {
-        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
+        let (_root, store, config) = legacy_doctor_fixture();
+        assert_eq!(config.collector.interval_seconds, 0);
+        store.open().expect("fixture observer").execute("UPDATE credential_pairs SET access_envelope=zeroblob(length(access_envelope)) WHERE slot='owner_api'", []).expect("damage envelope header");
+        let report = inspect_hub(&store, &config).expect("read-only diagnosis");
+        assert_eq!(report.credentials.legacy.store_state, "corrupt");
+        assert!(!report.credentials.legacy.valid_for_collection);
+        assert!(!doctor_check(&report, "selectedProviderCredentials").passed);
+        assert_eq!(report.status, "failed");
     }
 
     #[test]
     fn doctor_rejects_unresolved_legacy_refresh_without_settling_it() {
-        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
+        let (root, store, config) = legacy_doctor_fixture();
+        let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), root.path());
+        let slot = crate::auth::credential_envelope::CredentialSlot::OwnerApi;
+        let generation = vault.stored_generation(slot).expect("generation").expect("pair");
+        vault.begin_refresh(slot, generation).expect("counted attempt");
+        let mut row = doctor_row("signed_out", Some("refresh_outcome_unknown"), false);
+        row.stopped_generation = Some(generation);
+        doctor_write_row(&store, &row);
+        let report = inspect_hub(&store, &config).expect("read-only diagnosis");
+        assert_eq!(report.status, "failed");
+        assert!(!doctor_check(&report, "selectedProviderCredentials").passed);
+        assert!(vault.has_unresolved_refresh(slot).expect("attempt retained"));
+        assert_eq!(store.load_collector_auth_row().expect("recorded status").expect("row").reason.as_deref(), Some("refresh_outcome_unknown"));
     }
 
     /// A Hub directory with a valid stored pair (imported form) and a doctor
@@ -969,7 +981,7 @@ mod tests {
     fn legacy_doctor_fixture() -> (tempfile::TempDir, HubStore, HubConfig) {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("store");
-        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
+        doctor_legacy_pair(temporary.path(), &store, "access-0001", None);
         let config_path = temporary.path().join("config.toml");
         fs::write(
             &config_path,
@@ -1044,15 +1056,18 @@ mod tests {
                 "collecting",
                 "expiresAt",
                 "nextRefreshAt",
+                "origin",
                 "present",
+                "refreshOwner",
                 "retryAt",
+                "storeState",
                 "validForCollection"
             ]
         );
         // Only codes, times and flags: every string value of the legacy block is a code.
         for value in legacy.as_object().expect("object").values() {
             if let Some(text) = value.as_str() {
-                assert!(matches!(text, "retrying" | "network"), "{text}");
+                assert!(matches!(text, "retrying" | "network" | "direct_entry" | "hub" | "ok"), "{text}");
             }
         }
         assert!(
@@ -1064,14 +1079,11 @@ mod tests {
 
     #[test]
     fn valid_for_collection_is_false_only_for_signed_out_configuration_error_and_api_refused() {
-        let (_temporary, store, config) = legacy_doctor_fixture();
-        // The stops are tied to the stored pair's own generation: a stop of another
-        // generation is lifted in the effective view (C5 R44a).
-        let generation = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("tokens")
-            .expect("row")
-            .4
-            .expect("bound generation");
+        let (temporary, store, config) = legacy_doctor_fixture();
+        // Only the fixture reads its generation; diagnostics consume the
+        // recorded status and never use a fresh comparison to lift a stop.
+        let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), temporary.path());
+        let generation = vault.stored_generation(crate::auth::credential_envelope::CredentialSlot::OwnerApi).expect("fixture generation").expect("pair");
         let row = |state: &str, reason: Option<&str>| crate::db::CollectorAuthRow {
             state: state.to_owned(),
             reason: reason.map(str::to_owned),
@@ -1121,11 +1133,7 @@ mod tests {
         store
             .write_collector_auth_row(&row("ready", None), 2_000)
             .expect("ready");
-        let tokens = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("tokens")
-            .expect("row");
-        ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-            .expect("begin");
+        vault.begin_refresh(crate::auth::credential_envelope::CredentialSlot::OwnerApi, generation).expect("unresolved attempt");
         let report = inspect_hub(&store, &config).expect("report");
         assert!(!report.credentials.legacy.valid_for_collection);
     }

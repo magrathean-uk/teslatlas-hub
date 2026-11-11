@@ -29,6 +29,7 @@ required-features = ["interop-fixture"]
 [features]
 default = []
 interop-fixture = []
+credential-relocation-fixture = []
 
 [dependencies]
 teslatlas-compute = { path = "compute" }

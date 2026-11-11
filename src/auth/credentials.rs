@@ -143,17 +143,24 @@ impl OwnerTokens {
         access_token: Zeroizing<Vec<u8>>,
         refresh_token: Zeroizing<Vec<u8>>,
     ) -> Result<Self, CredentialError> {
-        fn decode(bytes: &Zeroizing<Vec<u8>>) -> Result<String, CredentialError> {
+        fn decode(bytes: &Zeroizing<Vec<u8>>) -> Result<super::credential_sign_in::DecodedFileToken, CredentialError> {
             let bytes = bytes
                 .strip_suffix(b"\r\n")
                 .or_else(|| bytes.strip_suffix(b"\n"))
                 .unwrap_or(bytes);
-            std::str::from_utf8(bytes)
-                .map(str::to_owned)
-                .map_err(|_| CredentialError::InvalidTokenBytes)
+            let text = std::str::from_utf8(bytes)
+                .map_err(|_| CredentialError::InvalidTokenBytes)?;
+            Ok(super::credential_sign_in::decoded_file_token(
+                text,
+            ))
         }
 
-        Self::from_secret_parts(decode(&access_token)?, decode(&refresh_token)?)
+        let mut access_token = decode(&access_token)?;
+        let mut refresh_token = decode(&refresh_token)?;
+        Self::from_secret_parts(
+            std::mem::take(&mut *access_token),
+            std::mem::take(&mut *refresh_token),
+        )
     }
 
     pub(crate) fn access_token(&self) -> &str {

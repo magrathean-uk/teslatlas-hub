@@ -11,5 +11,12 @@ pub mod linux_systemd;
 pub mod macos_launch_agent;
 #[cfg(unix)]
 pub(crate) mod private_directory;
+pub mod r78_lifecycle;
+#[cfg(unix)]
+pub mod r78_service;
+#[cfg(unix)]
+pub mod r78_recording;
+#[cfg(all(feature = "credential-relocation-fixture", not(debug_assertions)))]
+compile_error!("credential-relocation-fixture is available only in debug builds");
 #[cfg(unix)]
 pub(crate) mod user_lifetime_lock;

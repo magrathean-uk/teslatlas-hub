@@ -371,6 +371,18 @@ fn credential_migration_state_on(
 }
 
 impl HubStore {
+    pub(crate) fn credential_opaque_fence_count(&self) -> Result<u64, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        let version = schema_version(&connection)?;
+        if version < CREDENTIAL_FORMAT_SCHEMA_VERSION { return Ok(0); }
+        if version != CREDENTIAL_FORMAT_SCHEMA_VERSION { return Err(StoreError::UnsupportedSchema(version)); }
+        connection.query_row(
+            "SELECT COUNT(*) FROM credential_legacy_fences WHERE identity = 'opaque'",
+            [],
+            |row| row.get::<_, i64>(0),
+        ).map(|count| count as u64).map_err(StoreError::Query)
+    }
+
     pub(crate) fn credential_format_state(
         &self,
     ) -> Result<Option<CredentialFormatState>, StoreError> {

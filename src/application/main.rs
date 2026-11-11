@@ -23,10 +23,12 @@ use teslatlas_hub::hub_user_process::AdmittedUserHub;
 use teslatlas_hub::protocol::CursorKey;
 #[cfg(unix)]
 use teslatlas_hub::source_db_import::derive_effective_import_profile;
+#[cfg(test)]
+use teslatlas_hub::{fleet_api::FleetRegion, fleet_credentials::FleetSetupCredentials};
 use teslatlas_hub::{
     collector,
     config::{CollectorProvider, HubConfig, collector_mode},
-    credential_recovery::{RECOVERY_ENCRYPTION_KEY_BYTES, export_credentials, restore_credentials},
+    credential_recovery::{RECOVERY_ENCRYPTION_KEY_BYTES, export_credentials},
     credentials::{OwnerTokens, SourceDbPassword},
     current_state::build_current_vehicle_summary,
     data_recovery::{create_data_backup, restore_data_backup, verify_data_backup},
@@ -34,10 +36,6 @@ use teslatlas_hub::{
         HubStore,  ObservationVerificationError, ReadinessContext, StoreError,
     },
     diagnostics::{inspect_hub, log_runtime_inventory},
-    fleet_api::FleetRegion,
-    fleet_credentials::{
-        FleetCredentialError, FleetSetupCredentials, inspect_stored_fleet_credentials,
-    },
     gpx::export_drive_gpx,
     hub_pack::GeofenceBillingType,
     legacy_owner_credentials::{
@@ -92,3 +90,14 @@ include!("main/pairing.rs");
 #[cfg(test)]
 #[path = "main/tests.rs"]
 mod tests;
+
+#[cfg(all(test, unix))]
+#[path = "main/credential_sign_in_tests.rs"]
+mod g24_m2_cli;
+
+#[cfg(all(feature = "credential-relocation-fixture", debug_assertions))]
+#[path = "main/credential_relocation_fixture.rs"]
+mod credential_relocation_fixture;
+#[cfg(test)]
+#[path = "main/credential_relocation_fixture_tests.rs"]
+mod g24_m2_fixture;

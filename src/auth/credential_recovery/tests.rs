@@ -2,7 +2,6 @@
 
 use super::*;
 use crate::{
-    credentials::OwnerTokens,
     data_recovery::{create_data_backup, restore_data_backup},
     
     legacy_owner_credentials::{
@@ -14,63 +13,29 @@ use crate::{
 
 #[test]
 fn encrypted_export_round_trips_after_data_only_restore() {
-    let temporary = tempfile::tempdir().expect("temporary root");
+    let temporary = crate::private_tempdir().expect("temporary root");
     let source_data = temporary.path().join("source-data");
     let source = HubStore::initialize(&source_data).expect("source store");
-    let tokens = OwnerTokens::from_secret_parts(
-        "credential-recovery-access".to_owned(),
-        "credential-recovery-refresh".to_owned(),
-    )
-    .expect("tokens");
-    let source_db_key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("random source database key");
-    let (access, refresh) =
-        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("ciphertext");
-    let stored = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("stored tokens");
-    ({ let unavailable_value: Result<(), crate::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("source credentials");
+    crate::auth::credential_vault::fixtures::seed_legacy_supplied_pair(&source_data, "access-0001", "refresh-0001", None);
     load_or_create_cursor_key(&source_data).expect("source cursor");
-    let source_cursor = load_existing_cursor_key_bytes(&source_data)
-        .expect("source cursor read")
-        .expect("source cursor bytes");
-
+    let source_cursor = load_existing_cursor_key_bytes(&source_data).expect("cursor read").expect("cursor");
     let data_backup = temporary.path().join("data-backup");
     create_data_backup(&source, &data_backup).expect("data backup");
     let restored_data = temporary.path().join("restored-data");
     restore_data_backup(&data_backup, &restored_data).expect("data restore");
     let restored = HubStore::initialize(&restored_data).expect("restored store");
-
-    let recovery_key = [7_u8; RECOVERY_ENCRYPTION_KEY_BYTES];
+    let recovery_key = [7; RECOVERY_ENCRYPTION_KEY_BYTES];
     let export = temporary.path().join("credentials.tthcr");
-    let report = export_credentials(&source, &source_data, &export, &recovery_key)
-        .expect("credential export");
-    assert!(report.secret_bearing);
+    let report = export_credentials(&source, &source_data, &export, &recovery_key).expect("credential export");
+    assert!(report.secret_bearing && report.cursor_key_included);
+    assert!(!report.pre_upgrade_owner_api_key_included && !report.pre_upgrade_fleet_api_key_included);
     let bytes = fs::read(&export).expect("encrypted bytes");
-    assert!(
-        !bytes
-            .windows(source_db_key.len())
-            .any(|part| part == source_db_key.as_slice())
-    );
-    assert!(
-        !bytes
-            .windows(32)
-            .any(|part| part == source_cursor.as_slice())
-    );
-
-    restore_credentials(&restored, &restored_data, &export, &recovery_key)
-        .expect("credential restore");
-    let restored_tokens = ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("token query")
-        .expect("stored token row");
-    let restored_key = ({ let unavailable_value: Result<zeroize::Zeroizing<Vec<u8>>, crate::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("restored source database key");
-    assert_eq!(restored_key.as_slice(), source_db_key.as_slice());
-    assert_eq!(
-        load_existing_cursor_key_bytes(&restored_data)
-            .expect("cursor read")
-            .expect("cursor key")
-            .as_slice(),
-        source_cursor.as_slice()
-    );
+    assert!(!bytes.windows(source_cursor.len()).any(|part| part == source_cursor.as_slice()));
+    restore_credentials(&restored, &restored_data, &export, &recovery_key).expect("credential restore");
+    assert_eq!(load_existing_cursor_key_bytes(&restored_data).expect("cursor read").expect("cursor").as_slice(), source_cursor.as_slice());
+    for slot in [crate::auth::credential_envelope::CredentialSlot::OwnerApi, crate::auth::credential_envelope::CredentialSlot::FleetApi] {
+        assert!(restored.credential_pair_presence(slot).expect("presence").is_none());
+    }
 }
 
 #[test]
@@ -101,10 +66,12 @@ fn wrong_key_tamper_and_existing_secrets_are_rejected() {
         restore_credentials(&store, &data, &tampered_path, &recovery_key),
         Err(CredentialRecoveryError::AuthenticationFailed)
     ));
-    assert!(matches!(
-        restore_credentials(&store, &data, &export, &recovery_key),
-        Err(CredentialRecoveryError::SecretsAlreadyExist)
-    ));
+    let cursor = data.join("secrets").join("hub-cursor.key");
+    let before = fs::read(&cursor).expect("existing member");
+    restore_credentials(&store, &data, &export, &recovery_key).expect("identical members retained");
+    assert_eq!(fs::read(&cursor).expect("retained member"), before);
+    fs::write(&cursor, [99; 32]).expect("conflicting member");
+    assert!(matches!(restore_credentials(&store, &data, &export, &recovery_key), Err(CredentialRecoveryError::SecretsAlreadyExist)));
     assert!(matches!(
         export_credentials(&store, &data, &export, &recovery_key),
         Err(CredentialRecoveryError::DestinationExists)

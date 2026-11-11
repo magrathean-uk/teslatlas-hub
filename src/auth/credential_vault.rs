@@ -11,7 +11,7 @@ use crate::{db::{HubStore, CredentialConnection, CredentialPairPresence, SealedC
 pub(crate) mod types;
 pub mod entry;
 pub(crate) use types::*;
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub(crate) mod fixtures;
 #[cfg(test)]
 thread_local! {
@@ -139,7 +139,7 @@ impl std::fmt::Debug for CredentialPlain {
 
 #[derive(Default)]
 pub(crate) struct VaultOptions {
-    #[cfg(test)] pub(crate) exclusion: Option<Arc<dyn BackupExclusion + Send + Sync>>,
+    #[cfg(any(test, debug_assertions))] pub(crate) exclusion: Option<Arc<dyn BackupExclusion + Send + Sync>>,
     #[cfg(test)] pub(crate) now_ms: Option<i64>,
     #[cfg(test)] pub(crate) probe_failure: bool,
 }
@@ -221,8 +221,10 @@ impl VaultLockSeam {
 impl VaultState {
     fn barrier(&mut self) -> Result<(), CredentialStoreError> {
         let started = self.commits_issued;
+        #[cfg(debug_assertions)] entry::test_boundary("credential_barrier")?;
         self.connection.credential_durability_barrier()?;
         self.commits_proven = started;
+        #[cfg(debug_assertions)] entry::test_boundary("credential_barrier_passed")?;
         Ok(())
     }
     fn guard_read(&mut self) -> Result<(), CredentialStoreError> {
@@ -239,7 +241,7 @@ pub(crate) struct CredentialVault {
     store: HubStore, admission: Arc<AdmittedUserHub>, data_dir: PathBuf,
     lock: Mutex<VaultState>,
     keys: RwLock<Option<KeyringHandle>>,
-    #[cfg(test)] options: VaultOptions,
+    #[cfg(any(test, debug_assertions))] options: VaultOptions,
     #[cfg(test)] lock_seam: Mutex<Option<Arc<VaultLockSeam>>>,
     #[cfg(test)] read_pause: Mutex<Option<Arc<ReadPauseSeam>>>,
 }
@@ -286,9 +288,9 @@ impl CredentialVault {
         let admission_lease = admission.take_credential_vault().ok_or(StoreError::CredentialConnectionTaken)?;
         let mut connection = store.take_credential_connection()?;
         connection.bind_vault_admission(admission_lease);
-        #[cfg(not(test))] let _ = options;
+        #[cfg(not(any(test, debug_assertions)))] let VaultOptions {} = options;
         let vault = Arc::new(Self { store, admission, data_dir: data_dir.to_owned(),
-            #[cfg(test)] options,
+            #[cfg(any(test, debug_assertions))] options,
             #[cfg(test)] lock_seam: Mutex::new(None),
             #[cfg(test)] read_pause: Mutex::new(None),
             keys: RwLock::new(None), lock: Mutex::new(VaultState { connection, commits_issued: 0,
@@ -300,6 +302,14 @@ impl CredentialVault {
             if vault.options.probe_failure { state.connection.set_test_barrier_failure(true); }
             #[cfg(test)] PROBE_CONTROL.with(|control|{if let Some(control)=control.borrow_mut().as_mut(){control(&mut state.connection);}});
             if let Err(error)=state.connection.probe_credential_durability(){state.read_only=true;state.resume_error=Some(error.into());}
+            #[cfg(debug_assertions)]
+            if entry::test_probe_failure() {
+                state.read_only = true; state.resume_error = Some(CredentialStoreError::DurabilityUnavailable);
+                vault.store.open()?.execute(
+                    "UPDATE credential_format_state SET durability='unavailable', durability_probed_at_ms=?1 WHERE singleton_id=1",
+                    [vault.now_ms()?],
+                ).map_err(StoreError::CredentialPairStore)?;
+            }
             #[cfg(test)]
             if vault.options.probe_failure { state.connection.set_test_barrier_failure(false); }
             let secrets_path = data_dir.join("secrets");
@@ -351,7 +361,7 @@ impl CredentialVault {
         Ok(vault)
     }
     fn exclusion(&self) -> &dyn BackupExclusion {
-        #[cfg(test)]
+        #[cfg(any(test, debug_assertions))]
         if let Some(exclusion) = &self.options.exclusion { return exclusion.as_ref(); }
         &SystemBackupExclusion
     }
@@ -399,7 +409,6 @@ impl CredentialVault {
         Ok(())
     }
     /// TRANSITIONAL: V2 reads presence without exposing a pair or generation.
-    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 presence operation."))]
     pub(crate) fn credential_pair_presence(&self, slot: CredentialSlot) -> Result<Option<CredentialPairPresence>, CredentialStoreError> {
         let _state = self.lock()?;
         self.store.credential_pair_presence(slot).map_err(Into::into)
@@ -565,7 +574,6 @@ impl CredentialVault {
         Ok(())
     }
     /// TRANSITIONAL: V2's rotation command calls this locked entry point.
-    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 rotation command."))]
     pub(crate) fn rotate(&self) -> Result<(), CredentialStoreError> {
         let mut state = self.lock()?; state.writable(true)?;
         let mut keys = self.keys.write().map_err(|_| CredentialStoreError::LockPoisoned)?;
@@ -652,13 +660,38 @@ impl CredentialVault {
         let mut row = entry.row(generation);
         let mut keys = self.keys.write().map_err(|_| CredentialStoreError::LockPoisoned)?;
         self.reserve(&mut state, &mut keys, 2)?;
-        row.seal(keys.as_ref().unwrap(), entry.access.as_bytes(), entry.refresh.as_bytes(), &mut OsNonces)?;
+        #[cfg(debug_assertions)] entry::test_boundary("entry_reserved")?;
+        if entry.refresh.is_empty() {
+            use super::credential_envelope::{CredentialColumn, EnvelopeKeys, EnvelopePlace, seal_value};
+            let keys = keys.as_ref().unwrap();
+            let id = keys.keyring().current.id;
+            let place = EnvelopePlace { table: 1, slot: row.slot, column: CredentialColumn::Access,
+                origin: row.origin, owner: row.refresh_owner, account_id: row.account_id, generation };
+            let key = keys.envelope_key(id).ok_or(CredentialKeyError::KeyringMissing)?;
+            row.access_envelope = seal_value(key, id, &place, entry.access.as_bytes(), &mut OsNonces)
+                .map_err(|error| CredentialStoreError::Envelope { slot: row.slot, error })?;
+            let refresh_place = EnvelopePlace { column: CredentialColumn::Refresh, ..place };
+            row.refresh_envelope = seal_value(key, id, &refresh_place, b"", &mut OsNonces)
+                .map_err(|error| CredentialStoreError::Envelope { slot: row.slot, error })?;
+        } else {
+            row.seal(keys.as_ref().unwrap(), entry.access.as_bytes(), entry.refresh.as_bytes(), &mut OsNonces)?;
+        }
+        #[cfg(debug_assertions)] entry::test_boundary("entry_sealed")?;
         let VaultState { connection, commits_issued, .. } = &mut *state;
         connection.replace_credential_pair_with_commit(&row, &EntryProvenance::Supplied, &entry.legacy, policy, &mut || *commits_issued += 1)?;
+        #[cfg(debug_assertions)] entry::test_boundary("entry_committed")?;
         state.barrier()?; Ok(generation)
     }
+    pub(in crate::auth) fn restore_credentials(&self, source: &Path, recovery_key: &[u8])
+        -> Result<super::credential_recovery::CredentialRecoveryReport, super::credential_recovery::CredentialRecoveryError>
+    {
+        use super::credential_recovery::{CredentialRecoveryError, restore_credentials_with_connection};
+        let mut state = self.lock().map_err(|error| CredentialRecoveryError::Vault(error.into()))?;
+        state.writable(false).map_err(|error| CredentialRecoveryError::Vault(error.into()))?;
+        state.guard_read().map_err(|error| CredentialRecoveryError::Vault(error.into()))?;
+        restore_credentials_with_connection(&self.store, &mut state.connection, &self.data_dir, source, recovery_key)
+    }
     /// TRANSITIONAL: V2 sign-out owns the clear operation and its follow-up scrub.
-    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 sign-out clear."))]
     pub(crate) fn clear_credential_pair(&self, slot: CredentialSlot) -> Result<(), CredentialStoreError> {
         let mut state = self.lock()?; state.writable(false)?; Self::slot_writable(&mut state, slot)?;
         state.guard_read()?;
@@ -668,7 +701,6 @@ impl CredentialVault {
         state.barrier()
     }
     /// TRANSITIONAL: the V2 sign-in scope calls this after its preconditions.
-    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 sign-in session."))]
     pub(in crate::auth) fn begin_sign_in(&self, slot: CredentialSlot) -> Result<SignInSession, CredentialStoreError> {
         use sha2::{Digest, Sha256};
         let mut state = self.lock()?; state.writable(true)?;
@@ -681,10 +713,10 @@ impl CredentialVault {
         let expires_at_ms = now.checked_add(600_000).ok_or(CredentialStoreError::SignIn(SignInError::Expired))?;
         let id = state.connection.insert_sign_in_binding(slot, binding, now)?;
         state.barrier()?;
-        Ok(SignInSession { id, slot, grant_secret, state: nonce, expires_at_ms })
+        Ok(SignInSession { id, slot, grant_secret, state: nonce, expires_at_ms,
+            drop_observer: super::credential_sign_in::current_secret_observer() })
     }
     /// TRANSITIONAL: V2 supplies a grant from its validated redemption only.
-    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 redeemed grant."))]
     pub(in crate::auth) fn store_hub_grant(&self, grant: RedeemedGrant) -> Result<StoredHubGrant, CredentialStoreError> {
         let mut state = self.lock()?; state.writable(true)?;
         let now = self.now_ms()?;
@@ -710,10 +742,10 @@ impl CredentialVault {
         let generation = Uuid::new_v4();
         let (expires_at, next_refresh_at) = if slot == CredentialSlot::OwnerApi {
             let lifetime = serde_json::Value::from(grant.expires_in);
-            let schedule = crate::legacy_auth::schedule::Schedule::after_send(now / 1000, Some(&lifetime), &grant.access);
+            let schedule = crate::legacy_auth::schedule::Schedule::after_send(grant.sent_at_s, Some(&lifetime), &grant.access);
             (schedule.expires_at, schedule.next_refresh_at)
         } else {
-            let expires = (now / 1000).checked_add(i64::try_from(grant.expires_in).map_err(|_| CredentialStoreError::SignIn(SignInError::AnswerInvalid))?).ok_or(CredentialStoreError::SignIn(SignInError::AnswerInvalid))?;
+            let expires = grant.sent_at_s.checked_add(i64::try_from(grant.expires_in).map_err(|_| CredentialStoreError::SignIn(SignInError::AnswerInvalid))?).ok_or(CredentialStoreError::SignIn(SignInError::AnswerInvalid))?;
             (expires, expires - (grant.expires_in / 4).clamp(1, 1800) as i64)
         };
         let mut row = SealedCredentialPair { account_id: 1, slot,
@@ -730,7 +762,6 @@ impl CredentialVault {
         state.barrier()?; Ok(StoredHubGrant::new(slot, generation))
     }
     /// TRANSITIONAL: V2 owns release and service restart after this call.
-    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 grant aftercare."))]
     pub(in crate::auth) fn finish_hub_grant_aftercare(&self, stored: StoredHubGrant) -> Result<(), CredentialStoreError> {
         let mut state = self.lock()?; state.writable(false)?;
         let mut keys = self.keys.write().map_err(|_| CredentialStoreError::LockPoisoned)?;
@@ -738,10 +769,18 @@ impl CredentialVault {
         self.phase_b(&mut state, &mut keys)
     }
     /// TRANSITIONAL: V2 invokes the bounded WAL scrub after its clear completes.
-    #[expect(dead_code, reason = "TRANSITIONAL: V2 post-clear WAL scrub.")]
     pub(crate) fn post_clear_scrub(&self) -> Result<bool, CredentialStoreError> {
         let mut state = self.lock()?; state.writable(false)?;
         state.connection.scrub_credential_wal().map_err(Into::into)
+    }
+    /// Complete migration cleanup after the independently barriered clears.
+    /// The entry retains this process's one vault throughout the operation.
+    pub(in crate::auth) fn finish_clear_aftercare(&self) -> Result<(), CredentialStoreError> {
+        let mut state = self.lock()?;
+        state.writable(false)?;
+        state.guard_read()?;
+        let mut keys = self.keys.write().map_err(|_| CredentialStoreError::LockPoisoned)?;
+        self.phase_b(&mut state, &mut keys)
     }
     /// TRANSITIONAL: V2's explicit handover changes the refresh owner.
     #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 refresh-owner handover."))]

@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 use super::*;
+use zeroize::Zeroize;
 
-/// TRANSITIONAL: V2 displays these fixed codes, never issuer descriptions.
-#[expect(dead_code, reason = "TRANSITIONAL: V2 sign-in error cases.")]
+/// V2 displays these fixed codes, never issuer descriptions.
 #[derive(Debug)]
 pub(crate) enum SignInError { StateMismatch, Refused(SignInRefusalCode), Expired, AnswerInvalid, Unavailable, BindingInvalid, SettingsInvalid, Cancelled, ServicePauseFailed }
 /// TRANSITIONAL: R69's complete RFC 6749 refusal allowlist.
-#[expect(dead_code, reason = "TRANSITIONAL: V2 issuer refusal codes.")]
 #[derive(Debug)]
 pub(crate) enum SignInRefusalCode { InvalidRequest, UnauthorizedClient, AccessDenied, UnsupportedResponseType, InvalidScope, ServerError, TemporarilyUnavailable, Other }
-#[expect(dead_code, reason = "TRANSITIONAL: V2 refusal-code conversion.")]
 impl SignInRefusalCode {
     pub(in crate::auth) fn from_issuer_code(code: &str) -> Self {
         match code {
@@ -39,11 +37,18 @@ impl SignInError {
 }
 
 /// TRANSITIONAL: consumed by the V2 redemption flow.
-#[expect(dead_code, reason = "TRANSITIONAL: V2 sign-in session and secret state.")]
 pub(crate) struct SignInSession {
     pub(super) id: Uuid, pub(super) slot: CredentialSlot,
     pub(super) grant_secret: Zeroizing<[u8; 32]>, pub(super) state: Zeroizing<[u8; 32]>,
     pub(super) expires_at_ms: i64,
+    pub(super) drop_observer: Option<crate::auth::credential_sign_in::SecretDropObserver>,
+}
+impl Drop for SignInSession {
+    fn drop(&mut self) {
+        self.grant_secret.zeroize(); self.state.zeroize();
+        crate::auth::credential_sign_in::note_secret_drop(&self.drop_observer, "grant_secret", 32, 32, self.grant_secret.iter().all(|byte| *byte == 0));
+        crate::auth::credential_sign_in::note_secret_drop(&self.drop_observer, "state", 32, 32, self.state.iter().all(|byte| *byte == 0));
+    }
 }
 #[expect(dead_code, reason = "TRANSITIONAL: V2 session accessors.")]
 impl SignInSession {
@@ -59,14 +64,19 @@ impl std::fmt::Debug for SignInSession {
     }
 }
 /// TRANSITIONAL: only the V2 validated redemption constructs this value.
-#[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 validated redemption."))]
 pub(crate) struct RedeemedGrant {
     pub(super) session: SignInSession, pub(super) access: Zeroizing<String>, pub(super) refresh: Zeroizing<String>,
     pub(super) expires_in: u64, pub(super) client_id: Option<String>, pub(super) region: Option<crate::fleet_api::FleetRegion>,
+    pub(super) sent_at_s: i64,
 }
 impl RedeemedGrant {
-    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 redemption constructor."))]
+    #[cfg(test)]
     pub(in crate::auth) fn from_validated_redemption(session: SignInSession, access: Zeroizing<String>, refresh: Zeroizing<String>, expires_in: u64, client_id: Option<String>, region: Option<crate::fleet_api::FleetRegion>) -> Result<Self, CredentialStoreError> {
+        let sent_at_s = (session.expires_at_ms - 600_000) / 1000;
+        Self::from_validated_redemption_at(session, access, refresh, expires_in, client_id, region, sent_at_s)
+    }
+    pub(in crate::auth) fn from_validated_redemption_at(session: SignInSession, mut access: Zeroizing<String>, mut refresh: Zeroizing<String>, expires_in: u64, client_id: Option<String>, region: Option<crate::fleet_api::FleetRegion>, sent_at_s: i64) -> Result<Self, CredentialStoreError> {
+        let validation = (|| {
         if canonical_token(access.as_bytes()) != access.as_bytes() || canonical_token(refresh.as_bytes()) != refresh.as_bytes() {
             return Err(CredentialStoreError::SignIn(SignInError::AnswerInvalid));
         }
@@ -78,7 +88,24 @@ impl RedeemedGrant {
             crate::fleet_api::FleetClientId::parse(client_id.as_deref().unwrap_or_default()).map_err(|_| CredentialStoreError::SignIn(SignInError::SettingsInvalid))?;
             if region.is_none() { return Err(CredentialStoreError::SignIn(SignInError::SettingsInvalid)); }
         } else if client_id.is_some() || region.is_some() { return Err(CredentialStoreError::InvalidOrigin); }
-        Ok(Self { session, access, refresh, expires_in, client_id, region })
+        Ok(())
+        })();
+        if let Err(error) = validation {
+            wipe_grant_text(&mut access, &session.drop_observer, "grant_access");
+            wipe_grant_text(&mut refresh, &session.drop_observer, "grant_refresh");
+            return Err(error);
+        }
+        Ok(Self { session, access, refresh, expires_in, client_id, region, sent_at_s })
+    }
+}
+fn wipe_grant_text(value: &mut Zeroizing<String>, observer: &Option<crate::auth::credential_sign_in::SecretDropObserver>, kind: &'static str) {
+    let before = value.len(); value.zeroize();
+    crate::auth::credential_sign_in::note_secret_drop(observer, kind, before, value.len(), value.is_empty());
+}
+impl Drop for RedeemedGrant {
+    fn drop(&mut self) {
+        wipe_grant_text(&mut self.access, &self.session.drop_observer, "grant_access");
+        wipe_grant_text(&mut self.refresh, &self.session.drop_observer, "grant_refresh");
     }
 }
 impl std::fmt::Debug for RedeemedGrant {
@@ -122,11 +149,8 @@ impl CredentialEntry {
             access, refresh, legacy, client_id: None, region: None, expires_at: 0, next_refresh_at: 0 })
     }
     // TRANSITIONAL: the three V2 Owner entry paths consume these constructors.
-    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 direct entry."))]
     pub(in crate::auth) fn direct_entry(access: Zeroizing<String>, refresh: Zeroizing<String>) -> Result<Self, CredentialStoreError> { Self::build(access, refresh, CredentialOrigin::DirectEntry) }
-    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 source-token entry."))]
     pub(in crate::auth) fn source_token(access: Zeroizing<String>, refresh: Zeroizing<String>) -> Result<Self, CredentialStoreError> { Self::build(access, refresh, CredentialOrigin::SourceToken) }
-    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: V2 provider entry."))]
     pub(in crate::auth) fn provider_entry(access: Zeroizing<String>, refresh: Option<Zeroizing<String>>) -> Result<Self, CredentialStoreError> { Self::build(access, refresh.unwrap_or_default(), CredentialOrigin::ProviderEntry) }
     pub(in crate::auth) fn fleet_supplied(access: Zeroizing<String>, refresh: Zeroizing<String>, client_id: String, region: crate::fleet_api::FleetRegion, expires_in: u64) -> Result<Self, CredentialStoreError> {
         crate::fleet_api::FleetClientId::parse(&client_id).map_err(|_| CredentialStoreError::InvalidOrigin)?;

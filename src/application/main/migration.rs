@@ -24,9 +24,10 @@ fn collector_can_start(
     store: &HubStore,
     config: &HubConfig,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    let credentials = teslatlas_hub::auth::credential_sign_in::credential_status(store, &config.data_dir, current_epoch_ms()?)?;
     let credentials_present = match config.collector.provider {
-        CollectorProvider::Legacy => ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?.is_some(),
-        CollectorProvider::Fleet => ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?.is_some(),
+        CollectorProvider::Legacy => credentials.legacy_credentials.present,
+        CollectorProvider::Fleet => credentials.fleet_credentials.present,
     };
     Ok(config.collector.interval_seconds > 0
         && !store.configured_tesla_vehicles()?.is_empty()
@@ -94,27 +95,6 @@ const MAX_SETUP_FLEET_STDIN_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES * 2 + 1_024
 const MAX_MIGRATION_ENCRYPTION_KEY_BYTES: usize = 16 * 1024;
 
 #[cfg(unix)]
-#[derive(serde::Deserialize, zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct SetupTokensStdin {
-    access_token: String,
-    refresh_token: String,
-}
-
-#[cfg(unix)]
-#[derive(serde::Deserialize, zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct SetupFleetStdin {
-    access_token: String,
-    refresh_token: String,
-    client_id: String,
-    #[zeroize(skip)]
-    region: FleetRegion,
-    #[zeroize(skip)]
-    expires_in_seconds: u64,
-}
-
-#[cfg(unix)]
 fn migration_stop_confirmed(answer: &str) -> bool {
     matches!(answer.trim(), "y" | "Y")
 }
@@ -157,8 +137,17 @@ impl std::fmt::Display for MigrationSecretReadError {
 impl std::error::Error for MigrationSecretReadError {}
 
 #[cfg(unix)]
+#[cfg(test)]
 async fn run_macos_migration(
-    admission: &AdmittedUserHub,
+    admission: &std::sync::Arc<AdmittedUserHub>,
+    input: MacMigrationInput<'_>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    run_macos_migration_prepared(admission, input, None, false).await
+}
+
+#[cfg(unix)]
+async fn run_macos_migration_prepared(
+    admission: &std::sync::Arc<AdmittedUserHub>,
     MacMigrationInput {
         config_path,
         source_url,
@@ -173,15 +162,11 @@ async fn run_macos_migration(
         online_snapshot,
         preserve_existing_credentials,
     }: MacMigrationInput<'_>,
+    mut prepared_key: Option<zeroize::Zeroizing<Vec<u8>>>,
+    replace_credentials: bool,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     if car_id <= 0 {
         return Err("--car-id must be a positive source car id".into());
-    }
-    if std::env::args_os().any(|argument| {
-        let argument = argument.to_string_lossy();
-        argument == "--encryption-key-file" || argument.starts_with("--encryption-key-file=")
-    }) {
-        eprintln!("--encryption-key-file is deprecated; use --source-token-key-file");
     }
     if history_only
         && (!online_snapshot
@@ -237,6 +222,8 @@ async fn run_macos_migration(
     limits.parallel_copy_lanes = profile.parallel_copy_lanes;
     if history_only {
         let store = HubStore::initialize(&config.data_dir)?;
+        let _entry = teslatlas_hub::open_credential_vault_for_entry(store.clone(), std::sync::Arc::clone(admission), &config.data_dir)
+            .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)?;
         let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
         store.check_import_source_key(import_source_key, new_import_source)?;
         let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
@@ -296,10 +283,14 @@ async fn run_macos_migration(
     };
 
     let store = HubStore::initialize(&config.data_dir)?;
+    let entry = teslatlas_hub::open_credential_vault_for_entry(store.clone(), std::sync::Arc::clone(admission), &config.data_dir)
+        .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)?;
+    let owner_status = teslatlas_hub::auth::credential_sign_in::credential_status(&store, &config.data_dir, current_epoch_ms()?)?;
     let preserve_existing_credentials = should_preserve_existing_migration_credentials(
         preserve_existing_credentials,
-        ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?.is_some(),
+        owner_status.legacy_credentials.present || owner_status.legacy_credentials.store_state != "ok",
     );
+    if copy_source_ciphertext && !preserve_existing_credentials { teslatlas_hub::auth::credential_sign_in::check_token_import_continuity(&store)?; }
     let capture_source_db_ciphertext = copy_source_ciphertext && !preserve_existing_credentials;
     let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
     store.check_import_source_key(import_source_key, new_import_source)?;
@@ -379,7 +370,7 @@ async fn run_macos_migration(
     );
     progress.advance_finalizing(1, 2);
 
-    let fleet_still_present = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?.is_some();
+    let fleet_still_present = teslatlas_hub::auth::credential_sign_in::credential_status(&store, &config.data_dir, current_epoch_ms()?)?.fleet_credentials.present;
     let imported_ciphertext_bytes = if preserve_existing_credentials {
         if captured_ciphertexts.is_some() {
             return Err("history-only migration unexpectedly retained source credentials".into());
@@ -388,39 +379,33 @@ async fn run_macos_migration(
         None
     } else {
         // The encrypted source pair came from the same final snapshot as history.
-        let (encryption_key, access_ciphertext, refresh_ciphertext) = if copy_source_ciphertext {
+        let (prepared, ciphertext_bytes) = if copy_source_ciphertext {
             let key_path = encryption_key_file.expect("validated encrypted-token input");
-            let key = read_source_token_key_checked(key_path, &config.data_dir, config_path)?;
+            let key = match prepared_key.take() { Some(key) => key, None => read_source_token_key_checked(key_path, &config.data_dir, config_path)? };
             if key.is_empty() {
-            return Err("the source application's ENCRYPTION_KEY is empty".into());
+                return Err("the source application's ENCRYPTION_KEY is empty".into());
             }
             let ciphertexts = captured_ciphertexts
                 .ok_or("final migration snapshot did not retain legacy owner tokens")?;
-            // Validate compatibility without exposing either plaintext token.
-            drop(decrypt_legacy_owner_tokens(
+            let lengths = (ciphertexts.access.len(), ciphertexts.refresh.len());
+            let tokens = decrypt_legacy_owner_tokens(
                 &key,
                 &ciphertexts.access,
                 &ciphertexts.refresh,
-            )?);
-            let (access, refresh) = ciphertexts.into_parts();
-            (key, access, refresh)
+            )?;
+            (teslatlas_hub::auth::credential_sign_in::prepare_owner_tokens(teslatlas_hub::auth::credential_sign_in::OwnerEntryKind::SourceToken, tokens, false)?, lengths)
         } else {
             let access_path = access_token_file.expect("validated access-token input");
             let refresh_path = refresh_token_file.expect("validated refresh-token input");
-            let key = ({ let replaced_callee: fn() -> Result<zeroize::Zeroizing<Vec<u8>>, teslatlas_hub::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?;
-            let (access, refresh) = ({ let replaced_callee: fn(&[u8], zeroize::Zeroizing<Vec<u8>>, zeroize::Zeroizing<Vec<u8>>) -> Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })(
-                &key,
-                read_migration_secret(access_path, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
-                read_migration_secret(refresh_path, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
-            )?;
-            (key, access, refresh)
+            (teslatlas_hub::auth::credential_sign_in::decode_owner_files(
+                read_setup_token_file(access_path, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
+                read_setup_token_file(refresh_path, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
+                teslatlas_hub::auth::credential_sign_in::OwnerEntryKind::SourceToken,
+            )?, (0, 0))
         };
-        let stored = ({ let replaced_callee: fn(Vec<u8>, Vec<u8>) -> Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })(access_ciphertext, refresh_ciphertext)?;
-        ({ let replaced_callee: fn(&std::path::Path, &teslatlas_hub::db::HubStore, &[u8], &(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<(), Box<dyn std::error::Error>> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })(&config.data_dir, &store, &encryption_key, &stored)
-            .map_err(|error| {
-                migration_outcome_ambiguous("persisting imported credentials", error)
-            })?;
-        Some((stored.0.as_slice().len(), stored.1.as_slice().len()))
+        let prepared = if replace_credentials { prepared.with_explicit_replacement() } else { prepared };
+        drop(teslatlas_hub::auth::credential_sign_in::persist_owner_entry(&entry, prepared, false)?);
+        Some(ciphertext_bytes)
     };
     progress.advance_finalizing(3, 4);
     tracing::info!(
@@ -641,36 +626,24 @@ fn read_migration_secret(
 }
 
 #[cfg(unix)]
-fn read_setup_tokens_from_stdin() -> Result<OwnerTokens, Box<dyn std::error::Error>> {
-    let bytes = read_bounded_migration_secret(std::io::stdin(), MAX_SETUP_TOKENS_STDIN_BYTES)?;
-    let mut input: SetupTokensStdin = serde_json::from_slice(&bytes)?;
-    OwnerTokens::from_file_bytes(
-        zeroize::Zeroizing::new(std::mem::take(&mut input.access_token).into_bytes()),
-        zeroize::Zeroizing::new(std::mem::take(&mut input.refresh_token).into_bytes()),
-    )
-    .map_err(Into::into)
+fn read_setup_token_file(path: &Path, maximum: usize) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
+    if path == Path::new("-") {
+        return read_bounded_migration_secret(std::io::stdin(), maximum).map_err(Into::into);
+    }
+    teslatlas_hub::auth::credential_sign_in::read_credential_file(path, maximum).map_err(Into::into)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn decode_setup_fleet_stdin(
     bytes: &[u8],
 ) -> Result<FleetSetupCredentials, Box<dyn std::error::Error>> {
-    let mut input: SetupFleetStdin = serde_json::from_slice(bytes)?;
-    let credentials = FleetSetupCredentials::new(
-        std::mem::take(&mut input.access_token),
-        std::mem::take(&mut input.refresh_token),
-        std::mem::take(&mut input.client_id),
-        input.region,
-        input.expires_in_seconds,
-    )?;
-    credentials.require_collection_scopes()?;
-    Ok(credentials)
+    Ok(teslatlas_hub::auth::credential_sign_in::decode_fleet_entry(bytes)?.into_credentials())
 }
 
 #[cfg(unix)]
-fn read_setup_fleet_from_stdin() -> Result<FleetSetupCredentials, Box<dyn std::error::Error>> {
+fn read_setup_fleet_from_stdin() -> Result<teslatlas_hub::auth::credential_sign_in::PreparedFleetSetup, Box<dyn std::error::Error>> {
     let bytes = read_bounded_migration_secret(std::io::stdin(), MAX_SETUP_FLEET_STDIN_BYTES)?;
-    decode_setup_fleet_stdin(&bytes)
+    teslatlas_hub::auth::credential_sign_in::decode_fleet_entry(&bytes)
 }
 
 #[cfg(unix)]
@@ -689,7 +662,7 @@ fn read_recovery_encryption_key(
     Ok(key)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn read_migration_encryption_key(
     path: &Path,
 ) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
@@ -704,8 +677,77 @@ fn read_migration_encryption_key(
 }
 
 #[cfg(unix)]
+#[derive(Debug)]
+struct SourceKeyFileRefusal { spelling: &'static str, entry: bool }
+#[cfg(unix)]
+impl std::fmt::Display for SourceKeyFileRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.entry {
+            write!(f, "source_key_file_location_refused: The key file given to {} is a link, is not a regular file, or changed while the Hub opened it, so the Hub did not read it. Give a regular file, or pass the key on standard input with {} -.", self.spelling, self.spelling)
+        } else {
+            write!(f, "source_key_file_location_refused: The key file given to {} is inside a folder the Hub manages (its data, configuration or import-session folder), so the Hub did not read it. Copy the key to another folder, or pass it on standard input with {} -.", self.spelling, self.spelling)
+        }
+    }
+}
+#[cfg(unix)]
+impl std::error::Error for SourceKeyFileRefusal {}
+#[cfg(unix)]
 fn source_key_location_refused() -> Box<dyn std::error::Error> {
-    "source_key_file_location_refused: the --source-token-key-file path is inside a Hub-managed directory or cannot be checked".into()
+    Box::new(SourceKeyFileRefusal { spelling: "--source-token-key-file", entry: false })
+}
+#[cfg(unix)]
+fn source_key_entry_refused() -> Box<dyn std::error::Error> {
+    Box::new(SourceKeyFileRefusal { spelling: "--source-token-key-file", entry: true })
+}
+
+#[cfg(unix)]
+fn prepare_migration_key_input(command: &Command, config_path: &Path) -> Result<Option<zeroize::Zeroizing<Vec<u8>>>, Box<dyn std::error::Error>> {
+    let Command::Migrate { source_token_key_file, encryption_key_file, postgres_password_file, source_key, new_import_source, .. } = command else { return Ok(None); };
+    if source_token_key_file.is_none() && encryption_key_file.is_none() { return Ok(None); }
+    if postgres_password_file == Path::new("-") && [source_token_key_file, encryption_key_file].into_iter().any(|path| path.as_deref() == Some(Path::new("-"))) {
+        return Err("only one migration secret may be read from stdin".into());
+    }
+    let config = HubConfig::load(config_path)?;
+    let import_source_key = migration_source_key(source_key.as_deref(), config.import_source.source_key.as_deref());
+    HubStore::preflight_import_source_key(&config.data_dir, import_source_key, *new_import_source)?;
+    prepare_source_key_files(source_token_key_file.as_deref(), encryption_key_file.as_deref(), &config.data_dir, config_path, &mut std::io::stderr())
+}
+
+#[cfg(unix)]
+fn prepare_source_key_files(
+    primary: Option<&Path>, deprecated: Option<&Path>, data_dir: &Path, config_path: &Path,
+    notice: &mut impl Write,
+) -> Result<Option<zeroize::Zeroizing<Vec<u8>>>, Box<dyn std::error::Error>> {
+    prepare_source_key_files_with(primary, deprecated, notice, |path, spelling| {
+        read_source_token_key_raw_with(path, data_dir, config_path, || {}).map_err(|error| {
+            if let Some(refusal) = error.downcast_ref::<SourceKeyFileRefusal>() {
+                Box::new(SourceKeyFileRefusal { spelling, entry: refusal.entry }) as Box<dyn std::error::Error>
+            } else { error }
+        })
+    })
+}
+
+#[cfg(unix)]
+fn prepare_source_key_files_with(
+    primary: Option<&Path>, deprecated: Option<&Path>, notice: &mut impl Write,
+    mut read: impl FnMut(&Path, &'static str) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>>,
+) -> Result<Option<zeroize::Zeroizing<Vec<u8>>>, Box<dyn std::error::Error>> {
+    if deprecated.is_some() { writeln!(notice, "--encryption-key-file is deprecated; use --source-token-key-file")?; }
+    let mut key = match (primary, deprecated) {
+        (None, None) => return Ok(None),
+        (Some(path), None) => read(path, "--source-token-key-file")?,
+        (None, Some(path)) => read(path, "--encryption-key-file")?,
+        (Some(primary), Some(deprecated)) => {
+            let bytes = read(primary, "--source-token-key-file")?;
+            if primary != deprecated {
+                let other = read(deprecated, "--encryption-key-file")?;
+                if bytes.as_slice() != other.as_slice() { return Err("conflicting_source_key_files".into()); }
+            }
+            bytes
+        }
+    };
+    if key.last() == Some(&b'\n') { key.pop(); if key.last() == Some(&b'\r') { key.pop(); } }
+    Ok(Some(key))
 }
 
 /// R54: the device and inode of every Hub-managed directory (the data
@@ -747,8 +789,22 @@ fn open_checked_key_directory(
     data_dir: &Path,
     config_path: &Path,
 ) -> Result<(std::os::fd::OwnedFd, std::ffi::OsString), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "macos")]
+    let session_root = Some(Path::new("/tmp"));
+    #[cfg(not(target_os = "macos"))]
+    let session_root = None;
+    open_checked_key_directory_with_session_root(path, data_dir, config_path, session_root)
+}
+
+#[cfg(unix)]
+fn open_checked_key_directory_with_session_root(
+    path: &Path,
+    data_dir: &Path,
+    config_path: &Path,
+    session_root: Option<&Path>,
+) -> Result<(std::os::fd::OwnedFd, std::ffi::OsString), Box<dyn std::error::Error>> {
     use rustix::fs::{Mode, OFlags, fstat, open, openat};
-    let managed = managed_directory_identities(data_dir, config_path);
+    let mut managed = managed_directory_identities(data_dir, config_path);
     let directory_path = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -760,6 +816,11 @@ fn open_checked_key_directory(
     let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
     let directory =
         open(directory_path, flags, Mode::empty()).map_err(|_| source_key_location_refused())?;
+    if let Some(session_root) = session_root {
+        if let Some(identity) = import_session_directory_identity(directory_path, &directory, session_root)? {
+            managed.push(identity);
+        }
+    }
     let mut current = directory
         .try_clone()
         .map_err(|_| source_key_location_refused())?;
@@ -778,6 +839,33 @@ fn open_checked_key_directory(
         current = parent;
     }
     Ok((directory, name))
+}
+
+/// The landed GUI creates `th-<UUID>` directly under its physical temporary
+/// root. Identify that directory, including when the key is in a descendant,
+/// without inspecting the key entry or scanning other import sessions.
+#[cfg(unix)]
+fn import_session_directory_identity(
+    directory_path: &Path,
+    directory: &std::os::fd::OwnedFd,
+    session_root: &Path,
+) -> Result<Option<(u64, u64)>, Box<dyn std::error::Error>> {
+    let physical_root = fs::canonicalize(session_root).map_err(|_| source_key_location_refused())?;
+    let physical_directory = fs::canonicalize(directory_path).map_err(|_| source_key_location_refused())?;
+    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW;
+    let physical = open(&physical_directory, flags, Mode::empty()).map_err(|_| source_key_location_refused())?;
+    let held = fstat(directory).map_err(|_| source_key_location_refused())?;
+    let resolved = fstat(&physical).map_err(|_| source_key_location_refused())?;
+    if (held.st_dev, held.st_ino) != (resolved.st_dev, resolved.st_ino) { return Err(source_key_location_refused()); }
+    let Ok(relative) = physical_directory.strip_prefix(&physical_root) else { return Ok(None); };
+    let Some(std::path::Component::Normal(name)) = relative.components().next() else { return Ok(None); };
+    let Some(name_text) = name.to_str() else { return Ok(None); };
+    let Some(identifier) = name_text.strip_prefix("th-") else { return Ok(None); };
+    if identifier.len() != 36 || uuid::Uuid::parse_str(identifier).is_err() { return Ok(None); }
+    let root = open(&physical_root, flags, Mode::empty()).map_err(|_| source_key_location_refused())?;
+    let session = rustix::fs::openat(&root, name, flags, Mode::empty()).map_err(|_| source_key_location_refused())?;
+    let facts = fstat(&session).map_err(|_| source_key_location_refused())?;
+    Ok(Some((facts.st_dev as u64, facts.st_ino as u64)))
 }
 
 #[cfg(unix)]
@@ -799,29 +887,42 @@ fn read_source_token_key_checked(
     data_dir: &Path,
     config_path: &Path,
 ) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
+    let mut key = read_source_token_key_raw_with(path, data_dir, config_path, || {})?;
+    if key.last() == Some(&b'\n') { key.pop(); if key.last() == Some(&b'\r') { key.pop(); } }
+    Ok(key)
+}
+
+#[cfg(unix)]
+fn read_source_token_key_raw_with(
+    path: &Path,
+    data_dir: &Path,
+    config_path: &Path,
+    after_classification: impl FnOnce(),
+) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
     use rustix::fs::{AtFlags, FileType, Mode, OFlags, fstat, openat, statat};
     if path == Path::new("-") {
-        return read_migration_encryption_key(path);
+        return read_bounded_migration_secret(std::io::stdin(), MAX_MIGRATION_ENCRYPTION_KEY_BYTES).map_err(Into::into);
     }
     let (directory, name) = open_checked_key_directory(path, data_dir, config_path)?;
     let classified = statat(&directory, name.as_os_str(), AtFlags::SYMLINK_NOFOLLOW)
-        .map_err(|_| source_key_location_refused())?;
+        .map_err(|_| source_key_entry_refused())?;
     if FileType::from_raw_mode(classified.st_mode) != FileType::RegularFile {
-        return Err(source_key_location_refused());
+        return Err(source_key_entry_refused());
     }
+    after_classification();
     let descriptor = openat(
         &directory,
         name.as_os_str(),
         OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
         Mode::empty(),
     )
-    .map_err(|_| source_key_location_refused())?;
-    let opened = fstat(&descriptor).map_err(|_| source_key_location_refused())?;
+    .map_err(|_| source_key_entry_refused())?;
+    let opened = fstat(&descriptor).map_err(|_| source_key_entry_refused())?;
     if FileType::from_raw_mode(opened.st_mode) != FileType::RegularFile
         || opened.st_dev != classified.st_dev
         || opened.st_ino != classified.st_ino
     {
-        return Err(source_key_location_refused());
+        return Err(source_key_entry_refused());
     }
     if usize::try_from(opened.st_size)
         .map_or(true, |size| size > MAX_MIGRATION_ENCRYPTION_KEY_BYTES)
@@ -839,12 +940,6 @@ fn read_source_token_key_checked(
     if key.len() > MAX_MIGRATION_ENCRYPTION_KEY_BYTES {
         return Err("the source application's ENCRYPTION_KEY is too large".into());
     }
-    if key.last() == Some(&b'\n') {
-        key.pop();
-        if key.last() == Some(&b'\r') {
-            key.pop();
-        }
-    }
     Ok(key)
 }
 
@@ -861,7 +956,7 @@ fn read_bounded_migration_secret(
     reader: impl Read,
     maximum: usize,
 ) -> Result<zeroize::Zeroizing<Vec<u8>>, MigrationSecretReadError> {
-    let mut bytes = zeroize::Zeroizing::new(Vec::with_capacity(maximum.min(8 * 1024)));
+    let mut bytes = zeroize::Zeroizing::new(Vec::with_capacity(maximum + 1));
     reader
         .take(u64::try_from(maximum + 1).expect("secret cap fits u64"))
         .read_to_end(&mut bytes)

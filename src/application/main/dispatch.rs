@@ -91,27 +91,12 @@ fn build_status_report(
         }));
     }
     let vehicle = (vehicle_summaries.len() == 1).then(|| vehicle_summaries[0].clone());
-    let legacy_credentials = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?;
-    let fleet_credentials = ({ let _retained_call_context = &(store); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?;
-    let (fleet_scope_summary, fleet_scope_status) = if fleet_credentials.is_some() {
-        match /* C10_UNAVAILABLE_V2: recorded scope evidence required. */ Ok::<Option<teslatlas_hub::fleet_credentials::FleetScopeSummary>, teslatlas_hub::fleet_credentials::FleetCredentialError>(None) {
-            Ok(summary) => (summary, Some("ready")),
-            Err(error) => {
-                let status = match error {
-                    FleetCredentialError::MissingCollectionScopes => "missing_collection_scopes",
-                    FleetCredentialError::InvalidAccessTokenClaims => "invalid_access_token_claims",
-                    FleetCredentialError::MigrationRequired => "migration_required",
-                    _ => "unavailable",
-                };
-                (None, Some(status))
-            }
-        }
-    } else {
-        (None, None)
-    };
+    let credentials = teslatlas_hub::auth::credential_sign_in::credential_status(store, &config.data_dir, now_ms)?;
+    let legacy_credentials = &credentials.legacy_credentials;
+    let fleet_credentials = &credentials.fleet_credentials;
     let selected_credentials_present = match config.collector.provider {
-        CollectorProvider::Legacy => legacy_credentials.is_some(),
-        CollectorProvider::Fleet => fleet_credentials.is_some(),
+        CollectorProvider::Legacy => legacy_credentials.present,
+        CollectorProvider::Fleet => fleet_credentials.present,
     };
     // One configuration-aware read of the three readiness tiers: the loaded mode
     // decides whether the credential status applies, an active cadence fault is
@@ -129,6 +114,10 @@ fn build_status_report(
     ));
     let collector = store.supervised_collector_lease_status()?;
     let database_bytes = fs::metadata(store.database_path())?.len();
+    let credential_error = teslatlas_hub::auth::credential_sign_in::credential_store_unhealthy(&credentials,
+        collector_required && config.collector.provider == CollectorProvider::Legacy,
+        collector_required && config.collector.provider == CollectorProvider::Fleet);
+    let readiness_reason = if credential_error { Some("credential_store_error") } else { view.service.as_ref().err().map(|failure| failure.code.code()) };
 
     let mut report = serde_json::json!({
         "status": "ok",
@@ -137,8 +126,8 @@ fn build_status_report(
             "path": store.database_path(),
             "bytes": database_bytes,
         },
-        "ready": view.service.is_ok(),
-        "readinessReason": view.service.err().map(|failure| failure.code),
+        "ready": view.service.is_ok() && !credential_error,
+        "readinessReason": readiness_reason,
         "collectionAttention": view.attention,
         "readinessDetail": view.detail,
         "collectorRunning": view.running,
@@ -149,20 +138,18 @@ fn build_status_report(
         "credentials": {
             "present": selected_credentials_present,
         },
-        "legacyCredentials": {
-            "present": legacy_credentials.is_some(),
-            "expiresAt": legacy_credentials.as_ref().map(|row| row.2),
-            "nextRefreshAt": legacy_credentials
-                .as_ref()
-                .map(|row| row.3),
-        },
+        "legacyCredentials": legacy_credentials,
         "fleetCredentials": {
-            "present": fleet_credentials.is_some(),
-            "expiresAt": fleet_credentials.as_ref().map(|credentials| credentials.2),
-            "nextRefreshAt": fleet_credentials.as_ref().map(|credentials| credentials.3),
-            "scopes": fleet_scope_summary,
-            "scopeStatus": fleet_scope_status,
+            "present": fleet_credentials.present,
+            "expiresAt": fleet_credentials.expires_at,
+            "nextRefreshAt": fleet_credentials.next_refresh_at,
+            "origin": fleet_credentials.origin,
+            "refreshOwner": fleet_credentials.refresh_owner,
+            "storeState": fleet_credentials.store_state,
+            "scopes": null,
+            "scopeStatus": if fleet_credentials.present { Some("unavailable") } else { None },
         },
+        "credentialStore": credentials.credential_store,
         "fleetTelemetry": {
             "enabled": config.collector.fleet_telemetry.is_some(),
             "configured": config.collector.fleet_telemetry.is_some(),
@@ -243,8 +230,200 @@ where
     .await
 }
 
+#[derive(Debug)]
+struct SignInCommandFailure {
+    primary: Option<Box<dyn std::error::Error>>,
+    restart_failed: bool,
+}
+impl std::fmt::Display for SignInCommandFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(primary) = &self.primary { write!(f, "{primary}")?; }
+        if self.restart_failed {
+            if self.primary.is_some() { f.write_str("\n")?; }
+            write!(f, "{}", teslatlas_hub::auth::credential_sign_in::sign_in_service_restart_failed())?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for SignInCommandFailure {}
+
+#[derive(Clone, Copy)]
+enum SignInEntryOpening {
+    Production,
+    #[cfg(test)]
+    Test { excluded: bool },
+}
+
+fn sign_in_preconditions(config: &HubConfig, fleet: bool) -> Result<(), Box<dyn std::error::Error>> {
+    use teslatlas_hub::auth::credential_sign_in as credentials;
+    if !fleet { credentials::owner_sign_in_precondition(collector_mode(&config.collector))?; }
+    match fs::symlink_metadata(config.data_dir.join("hub.sqlite")) {
+        Ok(_) => {
+            let store = HubStore::open_read_only(&config.data_dir)?;
+            let status = credentials::credential_status(&store, &config.data_dir, current_epoch_ms()?)?;
+            credentials::sign_in_status_precondition(&status)?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+
+fn run_sign_in_command_with<E, R, W>(
+    config: &HubConfig,
+    fleet: bool,
+    terminal: bool,
+    backend: &mut E,
+    opening: SignInEntryOpening,
+    reader: R,
+    cancellation: &mut tokio::sync::watch::Receiver<bool>,
+    output: &mut W,
+    runtime: &tokio::runtime::Handle,
+    configure: impl FnOnce(Option<teslatlas_hub::auth::credential_sign_in::SignInSettings>) -> Result<teslatlas_hub::auth::credential_sign_in::SignInSettings, teslatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    E: teslatlas_hub::platform::r78_lifecycle::ServiceEffects<Admission = std::sync::Arc<AdmittedUserHub>>,
+    E::Error: std::error::Error + 'static,
+    R: tokio::io::AsyncRead + Unpin,
+    W: Write,
+{
+    use teslatlas_hub::{auth::credential_sign_in as credentials, platform::r78_lifecycle::{Completion, PrimaryFailure, ServiceBudgets, ServiceFailure, Stage}};
+    sign_in_preconditions(config, fleet)?;
+    let mut input = credentials::SignInInput::new(reader);
+    let settings = if fleet {
+        let line = runtime.block_on(input.line(tokio::time::Instant::now() + Duration::from_secs(60), cancellation))
+            .map_err(|error| credentials::sign_in_input_error(error, true))?;
+        Some(credentials::SignInSettings::fleet(&line)?)
+    } else { None };
+    let settings = configure(settings)?;
+    let work = |entry: &teslatlas_hub::CredentialVaultEntry| {
+        let attempt = credentials::SignInAttempt::begin(entry, settings)?;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(600);
+        {
+            let address = attempt.authorization_url();
+            output.write_all(b"{\"authorizationUrl\":").map_err(|_| credentials::sign_in_unavailable())?;
+            serde::Serializer::serialize_str(&mut serde_json::Serializer::new(&mut *output), address.as_str())
+                .map_err(|_| credentials::sign_in_unavailable())?;
+            output.write_all(b"}\n").and_then(|()| output.flush()).map_err(|_| credentials::sign_in_unavailable())?;
+        }
+        if terminal { writeln!(std::io::stderr().lock(), "Paste the redirect address from the browser:").map_err(|_| credentials::sign_in_unavailable())?; }
+        let line = runtime.block_on(input.line(deadline, cancellation)).map_err(|error| credentials::sign_in_input_error(error, false))?;
+        if *cancellation.borrow() { return Err(credentials::sign_in_input_error(credentials::SignInInputError::Cancelled, false)); }
+        runtime.block_on(attempt.redeem(&line, |slot| {
+            serde_json::to_writer(&mut *output, &serde_json::json!({"status": "signed_in", "slot": slot})).map_err(|_| credentials::sign_in_unavailable())?;
+            output.write_all(b"\n").and_then(|()| output.flush()).map_err(|_| credentials::sign_in_unavailable())
+        }))
+    };
+    let completion = match opening {
+        SignInEntryOpening::Production => credentials::with_sign_in_scope(backend, ServiceBudgets::PRODUCTION, &config.data_dir, work),
+        #[cfg(test)]
+        SignInEntryOpening::Test { excluded } => credentials::with_sign_in_scope_for_test(backend, ServiceBudgets::SCALED_TEST, &config.data_dir, excluded, work),
+    };
+    let (original, restart_failed) = match completion {
+        Completion::Finished(result) => (result, false),
+        Completion::RestartFailed { original, .. } => (original, true),
+    };
+    let primary: Option<Box<dyn std::error::Error>> = match original {
+        Ok(()) => None,
+        Err(PrimaryFailure::Work(credentials::SignInWorkError::Open(error) | credentials::SignInWorkError::Work(error))) => Some(Box::new(error)),
+        Err(PrimaryFailure::Service(ServiceFailure::Backend { stage: Stage::Admission, error: credentials::SignInServiceError::Backend(error) })) => Some(Box::new(error)),
+        Err(_) => Some(Box::new(credentials::sign_in_service_pause_failed())),
+    };
+    if primary.is_some() || restart_failed { Err(Box::new(SignInCommandFailure { primary, restart_failed })) } else { Ok(()) }
+}
+
+fn sign_in_service_backend(data: &Path) -> teslatlas_hub::platform::r78_service::InstalledServiceEffects {
+    teslatlas_hub::platform::r78_service::InstalledServiceEffects::new(data, teslatlas_hub::platform::r78_lifecycle::ServiceBudgets::PRODUCTION)
+}
+
+struct SignInStdin {
+    descriptor: tokio::io::unix::AsyncFd<std::os::fd::OwnedFd>,
+    original_flags: OFlags,
+}
+impl SignInStdin {
+    fn new() -> std::io::Result<Self> {
+        let descriptor = rustix::io::dup(std::io::stdin())?;
+        let original_flags = fcntl_getfl(&descriptor)?;
+        fcntl_setfl(&descriptor, original_flags | OFlags::NONBLOCK)?;
+        match tokio::io::unix::AsyncFd::new(descriptor) {
+            Ok(descriptor) => Ok(Self { descriptor, original_flags }),
+            Err(error) => { let _result = fcntl_setfl(std::io::stdin(), original_flags); Err(error) }
+        }
+    }
+}
+impl Drop for SignInStdin {
+    fn drop(&mut self) { let _result = fcntl_setfl(self.descriptor.get_ref(), self.original_flags); }
+}
+impl tokio::io::AsyncRead for SignInStdin {
+    fn poll_read(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, buffer: &mut tokio::io::ReadBuf<'_>) -> std::task::Poll<std::io::Result<()>> {
+        loop {
+            let mut ready = std::task::ready!(self.descriptor.poll_read_ready(cx))?;
+            match ready.try_io(|descriptor| rustix::io::read(descriptor.get_ref(), buffer.initialize_unfilled()).map_err(Into::into)) {
+                Ok(Ok(count)) => { buffer.advance(count); return std::task::Poll::Ready(Ok(())); }
+                Ok(Err(error)) => return std::task::Poll::Ready(Err(error)),
+                Err(_) => continue,
+            }
+        }
+    }
+}
+
+async fn run_sign_in_command(config_path: &Path, fleet: bool) -> Result<(), Box<dyn std::error::Error>> {
+    use teslatlas_hub::auth::credential_sign_in as credentials;
+    let config = HubConfig::load(config_path)?;
+    sign_in_preconditions(&config, fleet)?;
+    if !fleet { return Err(credentials::sign_in_unavailable().into()); } // G-OWNER-VALUES.
+    let reader = SignInStdin::new().map_err(|_| credentials::sign_in_input_error(credentials::SignInInputError::Read, true))?;
+    let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).map_err(|_| credentials::sign_in_service_pause_failed())?;
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).map_err(|_| credentials::sign_in_service_pause_failed())?;
+    let mut hangup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup()).map_err(|_| credentials::sign_in_service_pause_failed())?;
+    let (cancel, mut cancellation) = tokio::sync::watch::channel(false);
+    let signals = tokio::spawn(async move {
+        tokio::select! { _ = interrupt.recv() => {}, _ = terminate.recv() => {}, _ = hangup.recv() => {} }
+        let _result = cancel.send(true);
+    });
+    let result = {
+        let mut backend = sign_in_service_backend(&config.data_dir);
+        let mut output = std::io::stdout().lock();
+        tokio::task::block_in_place(|| run_sign_in_command_with(&config, fleet, std::io::stdin().is_terminal(), &mut backend, SignInEntryOpening::Production,
+            reader, &mut cancellation, &mut output, &tokio::runtime::Handle::current(), |settings| settings.ok_or_else(credentials::sign_in_unavailable)))
+    };
+    signals.abort();
+    result
+}
+
+#[cfg(all(test, unix))]
+type CommandEntryOpener = fn(HubStore, std::sync::Arc<AdmittedUserHub>, &Path)
+    -> Result<teslatlas_hub::CredentialVaultEntry, teslatlas_hub::CredentialVaultEntryError>;
+#[cfg(all(test, unix))]
+thread_local! {
+    static COMMAND_ENTRY_OPENER: std::cell::Cell<Option<CommandEntryOpener>> = const { std::cell::Cell::new(None) };
+    static COMMAND_RESTORE_RESULT: std::cell::RefCell<Option<serde_json::Value>> = const { std::cell::RefCell::new(None) };
+}
+#[cfg(unix)]
+fn open_command_credential_vault(store: HubStore, admission: std::sync::Arc<AdmittedUserHub>, data: &Path)
+    -> Result<teslatlas_hub::CredentialVaultEntry, teslatlas_hub::CredentialVaultEntryError>
+{
+    #[cfg(test)]
+    if let Some(open) = COMMAND_ENTRY_OPENER.with(std::cell::Cell::get) { return open(store, admission, data); }
+    #[cfg(feature = "credential-relocation-fixture")]
+    { return teslatlas_hub::CredentialVaultEntry::open_for_test(store, admission, data, true); }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
+    teslatlas_hub::open_credential_vault_for_entry(store, admission, data)
+    }
+}
+
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    credential_relocation_fixture::require_dispatch(&cli)?;
     let config_path = cli.config.unwrap_or_else(default_config_path);
+    #[cfg(unix)]
+    if matches!(
+        &cli.command,
+        Command::Setup { sign_in: true, .. } | Command::SetupFleet { sign_in: true, .. }
+    ) {
+        return run_sign_in_command(&config_path, matches!(&cli.command, Command::SetupFleet { .. })).await;
+    }
 
     if let Command::Healthcheck {
         ca_file,
@@ -356,6 +535,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         return Err("serve requires a Unix platform".into());
     }
 
+    #[cfg(unix)]
+    let prepared_migration_key = prepare_migration_key_input(&cli.command, &config_path)?;
+
     // Long-lived service, import, credential, and recovery commands take the
     // local instance lock. `control` uses short SQLite transactions so it can
     // intentionally operate while the collector is running.
@@ -384,15 +566,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         new_import_source,
         postgres_password_file,
         history_only,
+        source_token_key_file,
         encryption_key_file,
         access_token_file,
         refresh_token_file,
         online_snapshot,
         preserve_existing_credentials,
+        replace_credentials,
         accept_schema_evidence: _,
     } = &cli.command
     {
-        let start_hub = run_macos_migration(
+        let start_hub = run_macos_migration_prepared(
             admitted_user_hub
                 .as_ref()
                 .ok_or("migration reached runtime without user admission")?,
@@ -404,12 +588,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 new_import_source: *new_import_source,
                 postgres_password_file,
                 history_only: *history_only,
-                encryption_key_file: encryption_key_file.as_deref(),
+                encryption_key_file: source_token_key_file.as_deref().or(encryption_key_file.as_deref()),
                 access_token_file: access_token_file.as_deref(),
                 refresh_token_file: refresh_token_file.as_deref(),
                 online_snapshot: *online_snapshot,
                 preserve_existing_credentials: *preserve_existing_credentials,
             },
+            prepared_migration_key,
+            *replace_credentials,
         )
         .await?;
         drop(admitted_user_hub);
@@ -471,6 +657,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
         Command::Status => {
+            #[cfg(feature = "credential-relocation-fixture")]
+            teslatlas_hub::platform::r78_recording::with_fixture_backend(|backend| {
+                backend.loaded_query()?;
+                backend.pid_query()?;
+                backend.plist_decode()?;
+                Ok(())
+            })?;
             let config = HubConfig::load(&config_path)?;
             let store = HubStore::open_read_only(&config.data_dir)?;
             let report = build_status_report(&store, &config, current_epoch_ms()?)?;
@@ -506,22 +699,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 if configured.is_empty() {
                     return Err("at least one configured vehicle is required".into());
                 }
-                match config.collector.provider {
-                    CollectorProvider::Legacy => {
-                        let tokens = ({ let _retained_call_context = &(store
-                            ); let replaced_callee: fn() -> Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })()?
-                            .ok_or("legacy Owner API credentials are required")?;
-                        ({ let replaced_callee: fn(&std::path::Path, &(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)) -> Result<zeroize::Zeroizing<Vec<u8>>, teslatlas_hub::legacy_owner_credentials::SourceDbCredentialError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); replaced_callee })(
-                            &config.data_dir,
-                            &tokens,
-                        )?;
-                    }
-                    CollectorProvider::Fleet => {
-                        // Diagnostic admission, read-only: an identified
-                        // unresolved refresh passes (the Hub starts as a running
-                        // reconnect stop); independent integrity failures do not.
-                        inspect_stored_fleet_credentials(store, &config.data_dir)?;
-                    }
+                let report = inspect_hub(store, &config)?;
+                let present = match config.collector.provider {
+                    CollectorProvider::Legacy => report.credentials.legacy.present,
+                    CollectorProvider::Fleet => report.credentials.fleet.present,
+                };
+                if !present || !report.checks.iter().any(|check| check.name == "selectedProviderCredentials" && check.passed) {
+                    let status = teslatlas_hub::auth::credential_sign_in::credential_status(store, &config.data_dir, current_epoch_ms()?)?;
+                    return Err(teslatlas_hub::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == CollectorProvider::Fleet).into());
                 }
                 Ok(())
             })?;
@@ -617,7 +802,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(unix)]
         Command::Bootstrap => {
-            panic!("C10_UNAVAILABLE_V2: unaccepted credential command");
+            let admission = admitted_user_hub.as_ref().cloned().ok_or("Bootstrap reached runtime without user admission")?;
+            let _entry = open_command_credential_vault(store.clone(), admission, &config.data_dir)
+                .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)?;
             println!(
                 "{}",
                 serde_json::json!({
@@ -632,28 +819,37 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             access_token_file,
             refresh_token_file,
             tokens_stdin,
+            sign_in: _,
             vehicle_id,
             all_vehicles,
         } => {
             validate_legacy_setup_provider(config.collector.provider)?;
-            let tokens = if tokens_stdin {
-                read_setup_tokens_from_stdin()?
+            use teslatlas_hub::auth::credential_sign_in::{OwnerEntryKind, decode_owner_entry, decode_owner_files};
+            let kind = if collector_mode(&config.collector) == teslatlas_hub::config::CollectorMode::Provider { OwnerEntryKind::Provider } else { OwnerEntryKind::Direct };
+            let prepared = if tokens_stdin {
+                let bytes = read_bounded_migration_secret(std::io::stdin(), MAX_SETUP_TOKENS_STDIN_BYTES)?;
+                decode_owner_entry(&bytes, kind, false)?
             } else {
-                OwnerTokens::from_file_bytes(
-                    read_migration_secret(
+                decode_owner_files(
+                    read_setup_token_file(
                         access_token_file
                             .as_deref()
                             .ok_or("setup access-token file is missing")?,
                         MAX_MIGRATION_TOKEN_FILE_BYTES,
                     )?,
-                    read_migration_secret(
+                    read_setup_token_file(
                         refresh_token_file
                             .as_deref()
                             .ok_or("setup refresh-token file is missing")?,
                         MAX_MIGRATION_TOKEN_FILE_BYTES,
                     )?,
+                    kind,
                 )?
             };
+            let admission = admitted_user_hub.as_ref().cloned().ok_or("setup reached runtime without user admission")?;
+            let entry = open_command_credential_vault(store.clone(), admission, &config.data_dir)
+                .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)?;
+            let tokens = persist_legacy_setup_and_drop_fleet(&entry, prepared)?;
             let report = if all_vehicles {
                 let report = collector::setup_native_vehicles(&store, &config, &tokens).await?;
                 serde_json::json!({
@@ -671,7 +867,6 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     "snapshotsPublished": report.snapshots_published,
                 })
             };
-            persist_legacy_setup_and_drop_fleet(&config.data_dir, &store, &tokens)?;
             catalogue_checkpoint.finish().map_err(|error| {
                 provider_switch_outcome_ambiguous("checkpointing Legacy setup", error)
             })?;
@@ -680,6 +875,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(unix)]
         Command::SetupFleet {
+            sign_in: _,
             vehicle_id,
             all_vehicles,
         } => {
@@ -687,6 +883,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 return Err("setup-fleet requires collector.provider = \"fleet\"".into());
             }
             let credentials = read_setup_fleet_from_stdin()?;
+            let entry_admission = admitted_user_hub.as_ref().cloned().ok_or("Fleet setup reached runtime without user admission")?;
+            let entry = open_command_credential_vault(store.clone(), entry_admission, &config.data_dir)
+                .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)?;
+            let credentials = persist_fleet_setup_and_drop_legacy(&entry, credentials)?;
             let admission = admitted_user_hub
                 .as_deref()
                 .ok_or("Fleet setup reached runtime without user admission")?;
@@ -717,12 +917,6 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     "snapshotsPublished": report.snapshots_published,
                 })
             };
-            persist_fleet_setup_and_drop_legacy(
-                &config.data_dir,
-                &store,
-                &credentials,
-                SystemTime::now(),
-            )?;
             catalogue_checkpoint.finish().map_err(|error| {
                 provider_switch_outcome_ambiguous("checkpointing Fleet setup", error)
             })?;
@@ -967,7 +1161,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             recovery_key_file,
         } => {
             let recovery_key = read_recovery_encryption_key(&recovery_key_file)?;
-            let report = restore_credentials(&store, &config.data_dir, &source, &recovery_key[..])?;
+            let admission = admitted_user_hub.as_ref().cloned().ok_or("restore reached runtime without user admission")?;
+            let entry = open_command_credential_vault(store.clone(), admission, &config.data_dir)
+                .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)?;
+            let report = teslatlas_hub::credential_recovery::restore_credentials_from_entry(&entry, &source, &recovery_key[..])?;
+            #[cfg(test)]
+            COMMAND_RESTORE_RESULT.with(|slot| *slot.borrow_mut() = Some(serde_json::to_value(&report).expect("recovery report JSON")));
             println!("{}", serde_json::to_string(&report)?);
         }
         Command::VerifyBackup { .. } | Command::RestoreData { .. } => {

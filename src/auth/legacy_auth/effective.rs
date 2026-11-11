@@ -14,6 +14,30 @@ use super::{
 };
 use crate::db::{CollectorAuthRow, HubStore, StoreError};
 
+/// Clear schedule and receipt facts only. This is not an integrity witness.
+pub(crate) struct OwnerDiagnosticSummary {
+    pub unresolved_refresh: bool,
+    pub schedule_usable: bool,
+}
+
+pub(crate) fn owner_diagnostic_summary(store: &HubStore, now_ms: i64) -> Result<OwnerDiagnosticSummary, StoreError> {
+    if store.credential_format_state()?.is_none() {
+        return Ok(OwnerDiagnosticSummary { unresolved_refresh: false, schedule_usable: false });
+    }
+    let presence = store.credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::OwnerApi)?;
+    let schedule_usable = presence.as_ref().is_some_and(|row| row.header_check.is_ok()
+        && clock_is_valid(now_ms.div_euclid(1_000))
+        && (row.expires_at == 0 || now_ms.div_euclid(1_000) < row.expires_at));
+    let connection = rusqlite::Connection::open_with_flags(store.database_path(),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX)
+        .map_err(StoreError::Open)?;
+    let unresolved_refresh = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM credential_refresh_attempts AS attempt JOIN outbound_request_receipts AS receipt ON receipt.id=attempt.receipt_id WHERE attempt.slot='owner_api' AND receipt.outcome='started')",
+        [], |row| row.get(0),
+    ).map_err(StoreError::Query)?;
+    Ok(OwnerDiagnosticSummary { unresolved_refresh, schedule_usable })
+}
+
 /// The status a reader should show, in the row's own shape.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct EffectiveAuth {

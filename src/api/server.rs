@@ -1419,8 +1419,30 @@ async fn ingest_fleet_telemetry(
 
 async fn ready(State(state): State<AppState>) -> impl IntoResponse {
     let readiness = state.service_readiness().await;
-    let mut response = match readiness {
-        Ok(()) => (
+    let credential_store_error = {
+        let store = Arc::clone(&state.store);
+        let mode = state.readiness_mode;
+        let required = state.supervised_collector_required;
+        let now = state.readiness_now_ms();
+        tokio::task::spawn_blocking(move || {
+            use crate::auth::credential_sign_in::{credential_status, credential_store_unhealthy};
+            let Some(data_dir) = store.database_path().parent() else { return true; };
+            let Ok(now) = now else { return true; };
+            match credential_status(&store, data_dir, now) {
+                Ok(status) => credential_store_unhealthy(&status,
+                    required && mode != Some(crate::config::CollectorMode::FleetPolling),
+                    required && mode == Some(crate::config::CollectorMode::FleetPolling)),
+                Err(_) => true,
+            }
+        }).await.unwrap_or(true)
+    };
+    let mut response = match (credential_store_error, readiness) {
+        (true, _) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
+            Json(Ready { status: "not_ready", reason: Some("credential_store_error") }),
+        ).into_response(),
+        (false, Ok(())) => (
             StatusCode::OK,
             [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
             Json(Ready {
@@ -1429,12 +1451,12 @@ async fn ready(State(state): State<AppState>) -> impl IntoResponse {
             }),
         )
             .into_response(),
-        Err(reason) => (
+        (false, Err(reason)) => (
             StatusCode::SERVICE_UNAVAILABLE,
             [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
             Json(Ready {
                 status: "not_ready",
-                reason: Some(reason),
+                reason: Some(reason.code()),
             }),
         )
             .into_response(),
@@ -2706,7 +2728,7 @@ struct Health<'a> {
 struct Ready<'a> {
     status: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    reason: Option<ReadinessReasonCode>,
+    reason: Option<&'a str>,
 }
 
 #[derive(Serialize)]

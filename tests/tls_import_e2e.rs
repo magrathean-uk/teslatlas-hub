@@ -342,7 +342,6 @@ fn claim_lifetime_ms(claim: &serde_json::Value) -> i64 {
 async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
     use std::os::unix::fs::PermissionsExt;
     use teslatlas_hub::{
-        credentials::OwnerTokens,
         
         legacy_owner_credentials::{load_or_create_cursor_key, },
         
@@ -355,16 +354,12 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
     let published = publish_typed_snapshot(&store, &cursor_key).expect("synthetic snapshot");
     // macOS Serve preflight requires a usable encrypted pair even when the
     // collector is disabled. These literals have no authority at any provider.
-    let tokens = OwnerTokens::from_file_bytes(
-        zeroize::Zeroizing::new(b"smoke-test-not-a-tesla-access-token".to_vec()),
-        zeroize::Zeroizing::new(b"smoke-test-not-a-tesla-refresh-token".to_vec()),
-    )
-    .expect("synthetic tokens");
-    let key = b"smoke-test-local-encryption-key";
-    let (access, refresh) =
-        ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), teslatlas_hub::source_token_envelope::SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("encrypt synthetic pair");
-    let stored = ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), teslatlas_hub::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("synthetic pair");
-    ({ let unavailable_value: Result<(), teslatlas_hub::legacy_owner_credentials::SourceDbCredentialImportError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).expect("seed synthetic pair");
+    use teslatlas_hub::auth::credential_sign_in as credentials;
+    let scope = credentials::SignInScope::open_for_test(&data_dir, true).expect("synthetic entry process");
+    let supplied = credentials::decode_owner_entry(br#"{"accessToken":"access-0001","refreshToken":"refresh-0001"}"#, credentials::OwnerEntryKind::Provider, false).expect("synthetic entry");
+    drop(credentials::persist_owner_entry(scope.entry(), supplied, false).expect("entry barrier"));
+    scope.release().expect("entry admission released");
+    assert!(credentials::record_provider_admission_for_test(&data_dir).expect("previous C5 process records its admission"));
     let invitation = store
         .create_pairing("binary-smoke", 1_000, i64::MAX)
         .expect("pairing");

@@ -5,6 +5,7 @@
 pub(crate) mod credential_envelope;
 pub(crate) mod credential_keys;
 pub(crate) mod credential_vault;
+pub mod credential_sign_in;
 pub mod credential_recovery;
 pub mod credentials;
 pub mod crypto;

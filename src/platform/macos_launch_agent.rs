@@ -6,12 +6,14 @@
 use std::{
     ffi::OsStr,
     fs::{self, File},
-    io::{self, Read, Seek, SeekFrom, Write},
-    net::{IpAddr, SocketAddr},
+    io::{self, Seek, SeekFrom, Write},
+    net::IpAddr,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
     time::Duration,
 };
+
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
+use std::{io::Read, net::SocketAddr, process::{Command, Stdio}};
 
 #[cfg(unix)]
 use std::os::{
@@ -23,19 +25,24 @@ use std::os::{
 mod fixture_clock;
 pub use fixture_clock::fixture_summary_now_ms;
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 const LABEL: &str = "com.teslatlas.hub";
+#[cfg(not(feature = "credential-relocation-fixture"))]
 const PLIST_NAME: &str = "com.teslatlas.hub.plist";
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 const SERVICE_UNLOAD_ATTEMPTS: usize = 100;
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 const SERVICE_READY_ATTEMPTS: usize = 50;
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 const SERVICE_READY_STABLE_OBSERVATIONS: usize = 10;
 const LOCK_RELEASE_ATTEMPTS: usize = 100;
 pub const DEVELOPMENT_SERVE_ENV: &str = "TESLATLAS_HUB_DEVELOPMENT";
 pub const DEVELOPMENT_SERVE_MODE_ENV: &str = "TESLATLAS_HUB_DEVELOPMENT_MODE";
-#[cfg(not(test))]
+#[cfg(all(not(test), not(feature = "credential-relocation-fixture")))]
 const SERVICE_UNLOAD_DELAY: Duration = Duration::from_millis(100);
 #[cfg(test)]
 const SERVICE_UNLOAD_DELAY: Duration = Duration::ZERO;
-#[cfg(not(test))]
+#[cfg(all(not(test), not(feature = "credential-relocation-fixture")))]
 const SERVICE_READY_DELAY: Duration = Duration::from_millis(100);
 #[cfg(test)]
 const SERVICE_READY_DELAY: Duration = Duration::ZERO;
@@ -43,7 +50,10 @@ const SERVICE_READY_DELAY: Duration = Duration::ZERO;
 const LOCK_RELEASE_DELAY: Duration = Duration::from_millis(100);
 #[cfg(test)]
 const LOCK_RELEASE_DELAY: Duration = Duration::ZERO;
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 const READINESS_CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
+
+include!("r78_deadlines.rs");
 
 /// Validate the configured collection authority, including receiver-only
 /// Fleet ingestion where no Tesla Fleet token is owned by Hub.
@@ -294,8 +304,13 @@ fn preflight_private_lan_serve(config: &crate::config::HubConfig) -> io::Result<
 
 /// Query the per-user LaunchAgent without changing it.
 pub fn service_is_loaded() -> io::Result<bool> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    { return super::r78_recording::with_fixture_backend(|backend| backend.loaded_query()); }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
     let (_, service) = service_identifiers();
     service_is_loaded_with_runner(&service, &mut real_launchctl)
+    }
 }
 
 /// Wait for a stopped Serve process to release the lifetime lock, then retain
@@ -312,24 +327,39 @@ pub fn wait_for_installed_readiness(
     config: &crate::config::HubConfig,
     config_digest: crate::protocol::Sha256Digest,
 ) -> io::Result<()> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    { let _ = (config, config_digest); return wait_for_current_installed_readiness(); }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
     let (_, service) = service_identifiers();
     let mut ready_pid = None;
     wait_for_service_ready_with_probe(&mut || {
         installed_service_is_ready(config, config_digest, &service, &mut ready_pid)
     })
+    }
 }
 
 /// Identify the exact configuration served by the existing job.
 pub fn wait_for_current_installed_readiness() -> io::Result<()> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    { return wait_for_current_installed_readiness_until(Instant::now() + ServiceBudgets::PRODUCTION.restart, ServiceBudgets::PRODUCTION, ServiceBudgets::PRODUCTION.readiness); }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
     let (config, digest) = configured_identity_from_plist(&installed_plist()?)?;
     wait_for_installed_readiness(&config, digest)
+    }
 }
 
 /// Start after the caller validated the exact loaded configuration.
 pub fn start_preflighted_installed() -> io::Result<()> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    { return start_preflighted_installed_until(Instant::now() + ServiceBudgets::PRODUCTION.restart, ServiceBudgets::PRODUCTION); }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
     let plist = installed_plist()?;
     let (domain, service) = service_identifiers();
     start_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
+    }
 }
 
 /// Persistently stop the per-user LaunchAgent: disable, then bootout, then wait
@@ -338,8 +368,13 @@ pub fn start_preflighted_installed() -> io::Result<()> {
 /// cannot be loaded, and start_preflighted_installed issues no enable. A transient
 /// stop is bootout plus wait_for_service_unloaded_with_runner.
 pub fn stop_installed() -> io::Result<()> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    { return super::r78_recording::with_fixture_backend(|backend| backend.persistent_stop()); }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
     let (_, service) = service_identifiers();
     stop_installed_with_runner(&service, &mut real_launchctl)
+    }
 }
 
 /// Refuse production start unless this data directory has a
@@ -431,12 +466,14 @@ fn provider_credentials_are_usable(
     Ok(())
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn configured_identity_from_plist(
     plist: &Path,
 ) -> io::Result<(crate::config::HubConfig, crate::protocol::Sha256Digest)> {
     if fs::metadata(plist)?.len() > 1024 * 1024 {
         return Err(io::Error::other("installed plist is too large"));
     }
+    refuse_real_launchctl_in_unit_tests()?;
     let output = Command::new("/usr/bin/plutil")
         .args(["-convert", "json", "-o", "-", "--"])
         .arg(plist)
@@ -469,13 +506,19 @@ fn configured_identity_from_plist(
     crate::config::HubConfig::load_with_digest(config_path).map_err(io::Error::other)
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn service_identifiers() -> (String, String) {
+    #[cfg(all(debug_assertions, not(feature = "credential-relocation-fixture")))]
+    if let Some(identity) = super::r78_service::test_identifiers() { return identity; }
     let domain = format!("gui/{}", rustix::process::geteuid().as_raw());
     let service = format!("{domain}/{LABEL}");
     (domain, service)
 }
 
+#[cfg(not(feature = "credential-relocation-fixture"))]
 fn installed_plist() -> io::Result<PathBuf> {
+    #[cfg(all(debug_assertions, not(feature = "credential-relocation-fixture")))]
+    if let Some(plist) = super::r78_service::test_plist() { return Ok(plist); }
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))?;
@@ -493,6 +536,7 @@ fn installed_plist() -> io::Result<PathBuf> {
     Ok(plist)
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn start_installed_with_runner(
     plist: &Path,
     domain: &str,
@@ -525,6 +569,7 @@ fn start_installed_with_runner(
     Ok(())
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn stop_installed_with_runner(
     service: &str,
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
@@ -557,6 +602,7 @@ fn wait_for_admission_with_probe<T>(
     ))
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn wait_for_service_unloaded_with_runner(
     service: &str,
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
@@ -575,6 +621,7 @@ fn wait_for_service_unloaded_with_runner(
     ))
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn service_is_loaded_with_runner(
     service: &str,
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
@@ -582,6 +629,7 @@ fn service_is_loaded_with_runner(
     runner(&[std::ffi::OsStr::new("print"), std::ffi::OsStr::new(service)])
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn wait_for_service_ready_with_probe(
     probe: &mut impl FnMut() -> io::Result<bool>,
 ) -> io::Result<()> {
@@ -605,6 +653,7 @@ fn wait_for_service_ready_with_probe(
     ))
 }
 
+#[cfg(not(feature = "credential-relocation-fixture"))]
 fn installed_service_is_ready(
     config: &crate::config::HubConfig,
     config_digest: crate::protocol::Sha256Digest,
@@ -629,6 +678,7 @@ fn installed_service_is_ready(
     })
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn readiness_observation(
     ready_pid: &mut Option<u32>,
     pid: u32,
@@ -640,17 +690,32 @@ fn readiness_observation(
     Ok(same_pid && listener_ready)
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn configured_application_is_ready(
     config: &crate::config::HubConfig,
     config_digest: crate::protocol::Sha256Digest,
     pid: u32,
 ) -> io::Result<bool> {
+    configured_application_is_ready_with_bounds(config, config_digest, pid,
+        ReadinessBounds { connect: READINESS_CONNECT_TIMEOUT, ..ServiceBudgets::PRODUCTION.readiness },
+        Instant::now() + Duration::from_millis(500))
+}
+
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
+fn configured_application_is_ready_with_bounds(
+    config: &crate::config::HubConfig,
+    config_digest: crate::protocol::Sha256Digest,
+    pid: u32,
+    bounds: ReadinessBounds,
+    deadline: Instant,
+) -> io::Result<bool> {
+    let remaining = remaining_service_time(deadline)?;
     let address = readiness_address(config.bind);
     let mut builder = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(READINESS_CONNECT_TIMEOUT)
-        .timeout(Duration::from_millis(500));
+        .connect_timeout(bounds.connect.min(remaining))
+        .timeout(bounds.request.min(remaining));
     let endpoint = if let Some(tls) = &config.tls {
         let mut pem = Vec::new();
         File::open(&tls.certificate_path)?
@@ -733,6 +798,7 @@ fn configured_application_is_ready(
     .map_err(|_| io::Error::other("readiness probe thread failed"))?
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn application_readiness_matches(
     status: reqwest::StatusCode,
     headers: &reqwest::header::HeaderMap,
@@ -757,6 +823,7 @@ fn application_readiness_matches(
         && serde_json::from_slice::<Ready>(body).is_ok_and(|ready| ready.status == "ready")
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn readiness_address(configured: SocketAddr) -> SocketAddr {
     if configured.ip().is_unspecified() {
         match configured {
@@ -768,6 +835,7 @@ fn readiness_address(configured: SocketAddr) -> SocketAddr {
     }
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn run_launchctl(
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
     arguments: &[&std::ffi::OsStr],
@@ -790,12 +858,18 @@ fn refuse_real_launchctl_in_unit_tests() -> io::Result<()> {
     ))
 }
 
-#[cfg(not(test))]
+#[cfg(all(not(test), not(feature = "credential-relocation-fixture")))]
 fn refuse_real_launchctl_in_unit_tests() -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn real_launchctl(arguments: &[&std::ffi::OsStr]) -> io::Result<bool> {
+    #[cfg(all(debug_assertions, not(feature = "credential-relocation-fixture")))]
+    if let Some(output) = super::r78_service::test_helper_result(Path::new("/bin/launchctl"), arguments, Instant::now() + ServiceBudgets::PRODUCTION.command) {
+        let output = output?;
+        return launchctl_output_is_present(arguments.first().and_then(|argument| argument.to_str()).unwrap_or("command"), &output);
+    }
     refuse_real_launchctl_in_unit_tests()?;
     let mut command = Command::new("/bin/launchctl");
     for argument in arguments {
@@ -829,7 +903,13 @@ fn real_launchctl(arguments: &[&std::ffi::OsStr]) -> io::Result<bool> {
     )))
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn real_service_running_pid(service: &str) -> io::Result<Option<u32>> {
+    #[cfg(all(debug_assertions, not(feature = "credential-relocation-fixture")))]
+    if let Some(output) = super::r78_service::test_helper_result(Path::new("/bin/launchctl"), &[OsStr::new("print"), OsStr::new(service)], Instant::now() + ServiceBudgets::PRODUCTION.command) {
+        let output = output?;
+        return if launchctl_output_is_present("print", &output)? { Ok(launchctl_print_running_pid(&String::from_utf8_lossy(&output.stdout))) } else { Ok(None) };
+    }
     refuse_real_launchctl_in_unit_tests()?;
     let output = Command::new("/bin/launchctl")
         .arg("print")
@@ -858,6 +938,7 @@ fn real_service_running_pid(service: &str) -> io::Result<Option<u32>> {
     )))
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn launchctl_print_running_pid(output: &str) -> Option<u32> {
     let running = output.lines().any(|line| line.trim() == "state = running");
     let pid = output.lines().find_map(|line| {
@@ -869,6 +950,7 @@ fn launchctl_print_running_pid(output: &str) -> Option<u32> {
     running.then_some(pid).flatten()
 }
 
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn expected_launchctl_absence(action: &str, status: Option<i32>, detail: &str) -> bool {
     (action == "print" && status == Some(113) && detail.contains("Could not find service"))
         || (action == "bootout" && status == Some(3) && detail.contains("No such process"))

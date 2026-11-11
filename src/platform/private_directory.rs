@@ -53,6 +53,23 @@ use thiserror::Error;
 const PRIVATE_MODE: u32 = 0o700;
 const PERMISSION_BITS: u32 = 0o7777;
 
+#[cfg(debug_assertions)]
+thread_local! {
+    static IO_OBSERVER: std::cell::RefCell<Option<Box<dyn FnMut(&str, &Path)>>> = const { std::cell::RefCell::new(None) };
+}
+#[cfg(debug_assertions)]
+pub(crate) fn observe_for_test(observer: Box<dyn FnMut(&str, &Path)>) -> impl Drop {
+    struct Reset(Option<Box<dyn FnMut(&str, &Path)>>);
+    impl Drop for Reset {
+        fn drop(&mut self) { IO_OBSERVER.with(|slot| *slot.borrow_mut() = self.0.take()); }
+    }
+    Reset(IO_OBSERVER.with(|slot| slot.replace(Some(observer))))
+}
+#[cfg(debug_assertions)]
+fn observe_io(operation: &str, path: &Path) {
+    IO_OBSERVER.with(|slot| { if let Some(observer) = slot.borrow_mut().as_mut() { observer(operation, path); } });
+}
+
 /// Why a directory is not a trusted private directory. The type is `pub` in a
 /// crate-private module so public error enums can carry it as their source.
 #[derive(Debug, Error)]
@@ -269,7 +286,12 @@ pub(crate) fn durable_sync_fd(fd: BorrowedFd<'_>) -> Result<(), DurabilityError>
     result.map_err(|error| DurabilityError {
         operation,
         errno: error.raw_os_error(),
-    })
+    })?;
+    #[cfg(debug_assertions)]
+    if fstat(fd).is_ok_and(|stat| FileType::from_raw_mode(stat.st_mode).is_file()) {
+        observe_io("file_barrier", Path::new(""));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -327,6 +349,7 @@ impl PrivateDirectory {
     /// symlink. `None` when the entry is absent, a symlink or not a regular
     /// file.
     pub(crate) fn open_regular(&self, name: &str) -> io::Result<Option<File>> {
+        #[cfg(debug_assertions)] observe_io("open", &self.path.join(name));
         single_component(name)?;
         let descriptor = match openat(
             &self.descriptor,
@@ -344,6 +367,7 @@ impl PrivateDirectory {
 
     /// Create a new `0600` file that must not exist, never through a symlink.
     pub(crate) fn create_exclusive(&self, name: &str) -> io::Result<File> {
+        #[cfg(debug_assertions)] observe_io("create", &self.path.join(name));
         #[cfg(test)]
         self.note_file_attempt(name);
         single_component(name)?;
@@ -358,6 +382,7 @@ impl PrivateDirectory {
 
     /// Rename one entry of this directory over another entry of it.
     pub(crate) fn rename(&self, from: &str, to: &str) -> io::Result<()> {
+        #[cfg(debug_assertions)] { observe_io("rename", &self.path.join(from)); observe_io("rename", &self.path.join(to)); }
         #[cfg(test)]
         {
             self.note_file_attempt(from);
@@ -370,6 +395,7 @@ impl PrivateDirectory {
 
     /// Remove one entry of this directory (never a directory). Absent is fine.
     pub(crate) fn remove(&self, name: &str) -> io::Result<()> {
+        #[cfg(debug_assertions)] observe_io("remove", &self.path.join(name));
         #[cfg(test)]
         self.note_file_attempt(name);
         single_component(name)?;
@@ -468,6 +494,7 @@ impl PrivateDirectory {
 
     /// Classify first, open regular files only, and validate what was opened.
     pub(crate) fn inspect_entry(&self, name: &str) -> Result<EntryState, PrivateDirectoryError> {
+        #[cfg(debug_assertions)] observe_io("inspect", &self.path.join(name));
         // The test seam changes the classification, never the production flags.
         fn classify(
             directory: &PrivateDirectory,
@@ -573,6 +600,7 @@ impl PrivateDirectory {
     /// Apply the credential durability barrier to the held directory.
     pub(crate) fn durable_sync(&self) -> Result<(), DurabilityError> {
         durable_sync_fd(self.descriptor.as_fd())?;
+        #[cfg(debug_assertions)] observe_io("directory_barrier", &self.path);
         #[cfg(test)] crate::auth::credential_vault::fixtures::power_event("directory_barrier", Some(self.path()));
         Ok(())
     }

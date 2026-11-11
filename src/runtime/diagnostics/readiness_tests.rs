@@ -82,8 +82,8 @@ fn doctor_legacy_pair(
     access: &str,
     schedule: Option<(i64, i64)>,
 ) -> Uuid {
-        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
-    }
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(store, directory, access, "refresh-0001", schedule).expect("real entry")
+}
 
 fn doctor_jwt(exp: i64) -> String {
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -117,11 +117,8 @@ fn doctor_fleet_pair_with(directory: &Path, store: &HubStore, access: &str, refr
         UNIX_EPOCH + std::time::Duration::from_secs(1_000),
     )
     .expect("persist fleet credentials");
-    ({ let unavailable_value: Result<Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)>, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value })
-        .expect("load")
-        .expect("row")
-        .4
-        .expect("generation")
+    crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), directory)
+        .stored_generation(crate::auth::credential_envelope::CredentialSlot::FleetApi).expect("generation read").expect("Fleet pair")
 }
 
 fn doctor_row(state: &str, reason: Option<&str>, collecting: bool) -> crate::db::CollectorAuthRow {
@@ -233,7 +230,7 @@ const DOCTOR_FLEET: &str = "provider = 'fleet'\ninterval_seconds = 300";
 
 #[test]
 fn doctor_attention_passes_without_claiming_collection_can_start() {
-    let (_temporary, store, config, generation) = doctor_legacy_hub(DOCTOR_LEGACY);
+    let (temporary, store, config, generation) = doctor_legacy_hub(DOCTOR_LEGACY);
 
     // Quiet: ready, no attention, collection can start.
     let quiet = inspect_hub(&store, &config).expect("report");
@@ -342,7 +339,7 @@ fn doctor_attention_passes_without_claiming_collection_can_start() {
             .detail
             .ends_with("authState=sign_in_required unresolvedRefresh=false")
     );
-    assert!(!({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }).unwrap());
+    assert!(!crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), temporary.path()).has_unresolved_refresh(crate::auth::credential_envelope::CredentialSlot::OwnerApi).expect("no unresolved attempt"));
 }
 
 #[test]
@@ -356,7 +353,7 @@ fn doctor_unresolved_refresh_remains_a_restart_failure() {
         (
             "unusable",
             doctor_jwt(now_secs - 3_600),
-            Some((now_secs + 10_000, now_secs + 5_000)),
+            Some((now_secs - 3_600, now_secs - 7_200)),
         ),
     ] {
         for (state, reason) in [
@@ -370,7 +367,8 @@ fn doctor_unresolved_refresh_remains_a_restart_failure() {
             let generation = doctor_legacy_pair(temporary.path(), &store, &access, schedule);
             let config = doctor_config(temporary.path(), DOCTOR_LEGACY, "");
             doctor_fresh_lease(&store);
-            ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("unresolved refresh");
+            let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), temporary.path());
+            vault.begin_refresh(crate::auth::credential_envelope::CredentialSlot::OwnerApi, generation).expect("unresolved refresh");
             let mut row = doctor_row(state, (!reason.is_empty()).then_some(reason), state == "ready");
             if state != "ready" {
                 row.stopped_generation = Some(generation);
@@ -392,7 +390,7 @@ fn doctor_unresolved_refresh_remains_a_restart_failure() {
                 _ => state,
             };
             assert_eq!(report.credentials.legacy.auth_state.as_deref(), Some(expected), "{case}");
-            assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("read-only"), "{case}");
+            assert!(vault.has_unresolved_refresh(crate::auth::credential_envelope::CredentialSlot::OwnerApi).expect("read-only"), "{case}");
             let stored = store.load_collector_auth_row().unwrap().expect("row");
             assert_eq!(stored.state, state, "{case}: the stored row is untouched");
         }
@@ -426,7 +424,7 @@ fn doctor_signed_out_and_integrity_failures_remain_failures() {
 
     // Missing key.
     doctor_write_row(&store, &doctor_row("ready", None, true));
-    let key_path = ({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value });
+    let key_path = temporary.path().join("secrets").join("credential-keys");
     let key = fs::read(&key_path).expect("key");
     fs::remove_file(&key_path).expect("remove key");
     let missing = inspect_hub(&store, &config).expect("report");
@@ -440,15 +438,9 @@ fn doctor_signed_out_and_integrity_failures_remain_failures() {
     // Damaged ciphertext under the right key.
     fs::write(&key_path, &key).expect("restore key");
     fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600)).expect("key mode");
-    assert_eq!(inspect_hub(&store, &config).expect("report").status, "ok");({ let _retained_query_context = &(store
-        .open()
-        .expect("catalogue")
-        ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).execute(
-            concat!(
-                "UPDATE ",
-                crate::db::import_table_names::legacy_owner_tokens_table!(),
-                " SET access = X'0102030405060708091011121314151617'"
-            ),
+    assert_eq!(inspect_hub(&store, &config).expect("report").status, "ok");
+    store.open().expect("catalogue").execute(
+            "UPDATE credential_pairs SET access_envelope=zeroblob(length(access_envelope)) WHERE slot='owner_api'",
             [],
         )
         .expect("damage ciphertext");
@@ -595,25 +587,25 @@ fn cs_p1_fleet_diagnostics_ignores_retained_c5() {
         assert!(report.credentials.fleet.valid_for_collection);
         assert!(report.collector.can_start);
     }
-    // Fleet never reads the Legacy key material: with the key gone the Fleet
-    // report is exactly what it was, and the retained pair is present but not
-    // valid for collection in a Fleet configuration.
+    // The keyring is shared. A damaged retained Legacy envelope changes that
+    // slot's header status and leaves Fleet's credentials and collector alone.
     let with_key = inspect_hub(&store, &fleet_config).expect("report");
     assert!(with_key.credentials.legacy.present);
     assert!(!with_key.credentials.legacy.valid_for_collection);
-    let key = ({ let unavailable_value: std::path::PathBuf = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value });
-    let key_bytes = fs::read(&key).expect("Legacy key");
-    fs::remove_file(&key).expect("remove the Legacy key");
+    let connection = store.open().expect("fixture observer");
+    let retained_envelope: Vec<u8> = connection.query_row("SELECT access_envelope FROM credential_pairs WHERE slot='owner_api'", [], |row| row.get(0)).expect("retained envelope");
+    connection.execute("UPDATE credential_pairs SET access_envelope=X'010203' WHERE slot='owner_api'", []).expect("damage retained slot");
     let without_key = inspect_hub(&store, &fleet_config).expect("report");
     assert_eq!(without_key.status, "ok", "{:?}", doctor_failed_checks(&without_key));
-    assert_eq!(without_key.credentials, with_key.credentials);
+    let mut expected = serde_json::to_value(&with_key.credentials).expect("expected metadata");
+    expected["legacy"]["storeState"] = "corrupt".into();
+    assert_eq!(serde_json::to_value(&without_key.credentials).expect("reported metadata"), expected);
     assert_eq!(without_key.collector, with_key.collector);
     assert_eq!(
         doctor_check(&without_key, "selectedProviderCredentials"),
         doctor_check(&with_key, "selectedProviderCredentials")
     );
-    fs::write(&key, key_bytes).expect("restore the Legacy key");
-    fs::set_permissions(&key, fs::Permissions::from_mode(0o600)).expect("private key");
+    connection.execute("UPDATE credential_pairs SET access_envelope=?1 WHERE slot='owner_api'", [retained_envelope]).expect("restore retained envelope");
     // Reading did not write: the retained row is exactly as stored.
     assert_eq!(store.load_collector_auth_row().unwrap(), Some(retained.clone()));
     // Switching back to Legacy exposes the applicable state, and the signed-out
@@ -634,7 +626,9 @@ fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     let generation = doctor_fleet_pair(temporary.path(), &store, DOCTOR_SCOPED_ACCESS);
     let config = doctor_config(temporary.path(), DOCTOR_FLEET, "");
     doctor_fresh_lease(&store);
-    ({ let unavailable_value: Result<crate::db::OutboundRequestReceiptId, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("unresolved Fleet refresh");
+    crate::auth::credential_vault::fixtures::validate_fixture_fleet_credentials(&store, temporary.path()).expect("admitted fixture integrity and scopes");
+    let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), temporary.path());
+    vault.begin_refresh(crate::auth::credential_envelope::CredentialSlot::FleetApi, generation).expect("unresolved Fleet refresh");
     let report = inspect_hub(&store, &config).expect("report");
     // Doctor passes; the service is ready; the unknown refresh is attention.
     assert_eq!(report.status, "ok", "{:?}", doctor_failed_checks(&report));
@@ -653,7 +647,7 @@ fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     assert!(doctor_check(&report, "selectedProviderCredentials").passed);
     assert!(doctor_check(&report, "fleetCollectionScopes").passed);
     assert!(doctor_check(&report, "collectorReadiness").passed);
-    assert!(({ let unavailable_value: Result<bool, crate::db::StoreError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); unavailable_value }).expect("nothing settled"));
+    assert!(vault.has_unresolved_refresh(crate::auth::credential_envelope::CredentialSlot::FleetApi).expect("nothing settled"));
     // A valid Fleet cap, billing or Fleet configuration stop is attention with
     // true operational flags (no unresolved receipt).
     let clean = crate::private_tempdir().expect("temporary Hub");
@@ -683,8 +677,25 @@ fn fleet_unresolved_refresh_is_attention_not_service_failure() {
 
 #[test]
 fn fleet_unknown_refresh_does_not_mask_independent_credential_failures() {
-        panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency");
-    }
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    doctor_seed_car(&store);
+    doctor_fleet_pair(temporary.path(), &store, DOCTOR_SCOPED_ACCESS);
+    doctor_fresh_lease(&store);
+    let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), temporary.path());
+    let slot = crate::auth::credential_envelope::CredentialSlot::FleetApi;
+    let generation = vault.stored_generation(slot).expect("fixture generation").expect("pair");
+    vault.begin_refresh(slot, generation).expect("identified unresolved input");
+    let keyring = temporary.path().join("secrets").join("credential-keys");
+    fs::rename(&keyring, temporary.path().join("saved-ring")).expect("independent missing keyring");
+    let config = doctor_config(temporary.path(), DOCTOR_FLEET, "");
+    let report = inspect_hub(&store, &config).expect("read-only diagnosis");
+    assert_eq!(report.status, "failed");
+    assert!(!doctor_check(&report, "selectedProviderCredentials").passed);
+    assert!(!report.credentials.fleet.valid_for_collection && !report.collector.can_start);
+    assert_eq!(report.credential_store.keyring, "keyring_missing");
+    assert!(vault.has_unresolved_refresh(slot).expect("receipt remains unresolved"));
+}
 
 #[test]
 fn readiness_context_uses_loaded_mode_with_stale_or_missing_account_rows() {
@@ -700,7 +711,8 @@ fn readiness_context_uses_loaded_mode_with_stale_or_missing_account_rows() {
         temporary.path(),
         &store,
         &doctor_jwt(usable_until + 300),
-        Some((usable_until + 1_000, usable_until - 500)),
+        // R68's transition is the stored expiry, independent of JWT claims.
+        Some((usable_until, usable_until - 500)),
     );
     doctor_fleet_pair(temporary.path(), &store, DOCTOR_SCOPED_ACCESS);
     doctor_fresh_lease(&store);
@@ -880,15 +892,9 @@ fn cadence_doctor_retains_credentials_scopes_and_service_failures() {
     assert_eq!(report.status, "failed");
     assert!(!doctor_check(&report, "selectedProviderCredentials").passed);
     assert!(doctor_check(&report, "collectorCadence").passed);
-    assert_eq!(store.load_collector_auth_row().unwrap(), Some(row));({ let _retained_query_context = &(store
-        .open()
-        .expect("catalogue")
-        ); let unavailable_value: &rusqlite::Connection = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential table dependency"); unavailable_value }).execute(
-            concat!(
-                "UPDATE ",
-                crate::db::import_table_names::legacy_owner_tokens_table!(),
-                " SET access = X'0102030405060708091011121314151617'"
-            ),
+    assert_eq!(store.load_collector_auth_row().unwrap(), Some(row));
+    store.open().expect("fixture observer").execute(
+            "UPDATE credential_pairs SET access_envelope=X'0102030405060708091011121314151617' WHERE slot='owner_api'",
             [],
         )
         .expect("damage ciphertext");
