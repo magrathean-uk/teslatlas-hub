@@ -62,8 +62,11 @@ fn command_sign_out(root: &Path) {
 
 #[test]
 fn ct077_sign_out() {
-    let root = root(); store_owner(root.path(), "access-0001", "refresh-0001");
-    with_entry(root.path(), true, |entry| sign_in::spend_refresh_for_test(entry, false));
+    let root = root();
+    let generation = sign_in::seed_owner_pair_for_test(root.path(), "access-0001", "refresh-0001", None).expect("own-login pair");
+    // A refresh begins only under the collector lease (M02-T04); the fixture
+    // holds one for its begin, leaving an unresolved attempt sign-out keeps.
+    sign_in::begin_refresh_for_test(root.path(), false, generation).expect("fenced attempt");
     let opened = std::cell::Cell::new(false);
     let error = run_credential_control_with(&command_config(root.path()), &ControlCommand::SignOut, || Err(std::io::Error::other("stop-refused").into()), |store, admission, root| { opened.set(true); test_bridge(store, admission, root) }).unwrap_err();
     assert_eq!(error.to_string(), "stop-refused"); assert!(!opened.get());
