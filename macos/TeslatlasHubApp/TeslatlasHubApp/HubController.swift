@@ -389,6 +389,9 @@ struct HubSnapshot {
     var dataDirectory: URL?
     var diagnosticLines: [String]
     var checkingStatus = false
+    /// The Hub's own login, credential state and collection window, when the
+    /// controller observes them (M04-T03); nil when not read.
+    var collection: HubCollectionStatus?
 
     var accountDisplay: String {
         guard accountState == .connected, let provider else { return account }
@@ -2936,6 +2939,11 @@ final class HubController {
     ) -> Void
     private(set) var snapshot: HubSnapshot
     private var lastStatusFailureCode: String?
+    /// Whether `refresh` also reads `window status` for Status (the application
+    /// controller does; test doubles opt in, so their command sequences stay as written).
+    private let observesCollectionWindow: Bool
+    /// The last sign-in refusal Status keeps showing (`sign_in_unavailable`); main thread.
+    private var lastSignInRefusalCode: String?
     private let refreshRequestLock = NSLock()
     private var newestRefreshRequest: UInt64 = 0
 
@@ -2966,6 +2974,7 @@ final class HubController {
              )
          },
          developmentConfiguration: DevelopmentHubConfiguration? = nil,
+         observesCollectionWindow: Bool = false,
          statusLifecycle: HubStatusProcessLifecycle = .shared,
          statusPauseBound: TimeInterval = 10,
          restorationBarrier: HubRestorationBarrier = HubWindowRestorationBarrier(),
@@ -2979,6 +2988,7 @@ final class HubController {
          }) {
         self.statusLifecycle = statusLifecycle
         self.statusPauseBound = statusPauseBound
+        self.observesCollectionWindow = observesCollectionWindow
         self.restorationBarrier = restorationBarrier
         self.staleImportCleaner = staleImportCleaner
         self.migrationConnector = migrationConnector
@@ -3055,7 +3065,7 @@ final class HubController {
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) throws -> HubController {
         guard let development = try DevelopmentHubConfiguration.from(environment: environment) else {
-            return HubController(environment: environment)
+            return HubController(environment: environment, observesCollectionWindow: true)
         }
         let runner = DevelopmentHubCommandRunner(configuration: development)
         return HubController(
@@ -3065,7 +3075,8 @@ final class HubController {
             launchAgent: nil,
             dataRemover: nil,
             serviceInstalledOverride: true,
-            developmentConfiguration: development
+            developmentConfiguration: development,
+            observesCollectionWindow: true
         )
     }
 
@@ -3126,6 +3137,7 @@ final class HubController {
             guard let self else { return }
             let installed = self.isServiceInstalled
             self.commandRunner.run(arguments: ["--config", self.configPath.path, "status"]) { result in
+                self.readCollectionWindow(after: result, loaded: loaded) { windowRead in
                 let settle: (Bool) -> Void = { liveReady in
                     DispatchQueue.main.async {
                         guard self.isNewestRefreshRequest(request) else {
@@ -3142,6 +3154,13 @@ final class HubController {
                                 self.lastStatusFailureCode = nil
                                 self.snapshot = self.statusSnapshot(status, installed: installed,
                                                                     loaded: loaded)
+                                if let windowRead {
+                                    let collection = HubCollectionStatus(
+                                        statusOutput: output, window: windowRead,
+                                        signInRefusal: self.lastSignInRefusalCode)
+                                    self.snapshot.collection = collection
+                                    self.snapshot.diagnosticLines += collection.diagnosticLines()
+                                }
                                 if !liveReady, case .loaded = loaded {
                                     self.snapshot.health = .degraded
                                     self.snapshot.service = "Development Hub · HTTPS readiness unavailable"
@@ -3162,6 +3181,24 @@ final class HubController {
                 if case .loaded = loaded, let live = self.serviceRunner as? HubLiveReadinessChecking {
                     live.checkLiveReadiness(completion: settle)
                 } else { settle(true) }
+                }
+            }
+        }
+    }
+
+    /// The collection window for Status: `window status` from the running service, asked
+    /// only when this controller observes it and `status` answered. A service that is not
+    /// loaded is not asked, since the command would only be refused `service_not_running`.
+    /// Read-only: nothing is opened, closed or signed in.
+    private func readCollectionWindow(after status: Result<String, Error>,
+                                      loaded: HubServiceLoadState,
+                                      completion: @escaping (HubCollectionStatus.WindowRead?) -> Void) {
+        guard observesCollectionWindow, case .success = status else { completion(nil); return }
+        guard case .loaded = loaded else { completion(.serviceNotLoaded); return }
+        commandRunner.run(arguments: Self.windowStatusArguments(configPath: configPath)) { result in
+            switch result {
+            case let .success(output): completion(.report(output))
+            case let .failure(error): completion(.failed(error))
             }
         }
     }
@@ -4090,6 +4127,14 @@ final class HubController {
             if case let .failure(error) = windowResult { finish(.failure(error)); return }
             op.phase("setup")
             op.run(invocation.arguments, stdin: invocation.standardInput) { setupResult in
+                let refusal: String?
+                if case let .failure(error) = setupResult,
+                   error.localizedDescription.contains("sign_in_unavailable") {
+                    refusal = "sign_in_unavailable"
+                } else {
+                    refusal = nil
+                }
+                DispatchQueue.main.async { self.lastSignInRefusalCode = refusal }
                 switch setupResult {
                 case .success: finish(.success(()))
                 case let .failure(error): finish(.failure(Self.signInError(error)))

@@ -104,6 +104,18 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     }
 
     static func details(for snapshot: HubSnapshot) -> [HubServiceDetail] {
+        baseDetails(for: snapshot) + collectionDetails(for: snapshot)
+    }
+
+    /// The Hub's own login, its credential state and the collection window (M04-T03),
+    /// as the running service reported them. No row offers an action.
+    static func collectionDetails(for snapshot: HubSnapshot,
+                                  date: (Date) -> String = HubCollectionStatus.defaultDateText) -> [HubServiceDetail] {
+        guard let collection = snapshot.collection else { return [] }
+        return collection.rows(date: date).map { HubServiceDetail(label: $0.label, value: $0.value) }
+    }
+
+    private static func baseDetails(for snapshot: HubSnapshot) -> [HubServiceDetail] {
         [
             .init(label: HubL10n.text("hub.ServiceDetailsWindowController.113.2182", fallback: "Version"), value: HubL10n.format("hub.HubDashboardView.279.1374", fallback: "Teslatlas Hub %1$@", arguments: [String(describing: snapshot.version)])),
             .init(label: HubL10n.text("hub.ServiceDetailsWindowController.114.2184", fallback: "Service"), value: snapshot.checkingStatus ? "Checking Hub" : (snapshot.health == .running ? HubL10n.text("hub.ServiceDetailsWindowController.114.2185", fallback: "Active") : snapshot.service)),
