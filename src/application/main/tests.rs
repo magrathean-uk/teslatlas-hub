@@ -40,13 +40,13 @@ use super::{
     MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES, MAX_MIGRATION_TOKEN_BYTES,
     MAX_MIGRATION_TOKEN_FILE_BYTES, MacCommandProxySpec, MacServeControl,
     MacServeWorkerStopTimeout, MigrationSecretReadError, clear_provider_credentials,
-    command_requires_user_hub_admission, decode_setup_fleet_stdin, migration_start_requested,
+    migration_start_requested,
     migration_stop_confirmed,
     read_migration_encryption_key, read_migration_postgres_password, read_migration_secret,
     read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
     should_emit_migration_progress,
     source_check_failure_details, source_db_version_confirmation, validate_history_only_config,
-    validate_legacy_setup_provider, validate_streaming_setting, write_migration_progress_event,
+    validate_streaming_setting, write_migration_progress_event,
 };
 use teslatlas_hub::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
 #[cfg(target_os = "macos")]
@@ -222,7 +222,7 @@ fn legal_aliases_and_source_command_parse_without_configuration() {
 #[cfg(unix)]
 #[test]
 fn container_healthcheck_does_not_open_hub_state() {
-    assert!(!command_requires_user_hub_admission(
+    assert!(!teslatlas_hub::runtime::operator::admission::requires_user_hub_admission(
         &Command::Healthcheck {
             ca_file: PathBuf::from("/etc/teslatlas-hub/tls/ca.pem"),
             server_name: "hub.example.invalid".to_owned(),
@@ -315,24 +315,22 @@ fn migration_progress_is_online_snapshot_only() {
 #[cfg(unix)]
 #[tokio::test]
 async fn source_credential_disabled_raw_token_setup_is_refused_by_the_dispatcher_first() {
+    // No token input exists any more (M02-T10): Fleet setup is refused
+    // `provider_parked` before the configuration is read, and `setup` is
+    // forwarded to the service, so it reads the configuration and nothing else.
     let temporary = tempfile::tempdir().expect("temporary directory");
     let sealed = temporary.path().join("sealed");
     fs::create_dir(&sealed).expect("sealed directory");
-    let secret = sealed.join("unread");
     fs::set_permissions(&sealed, fs::Permissions::from_mode(0o000)).expect("seal");
     let config_path = temporary.path().join("absent-config.toml");
-    let commands = [
-        Command::Setup { access_token_file: Some(secret.clone()), refresh_token_file: Some(secret.clone()),
-            tokens_stdin: false, sign_in: false, vehicle_id: None, all_vehicles: false },
-        Command::Setup { access_token_file: None, refresh_token_file: None,
-            tokens_stdin: true, sign_in: false, vehicle_id: Some(7), all_vehicles: false },
-        Command::SetupFleet { sign_in: false, vehicle_id: None, all_vehicles: true },
-    ];
-    for command in commands {
+    for command in [Command::SetupFleet, Command::ConfigureFleetTelemetry] {
         let error = run(Cli { config: Some(config_path.clone()), command }).await
-            .expect_err("raw-token setup is refused").to_string();
-        assert!(error.starts_with("source_credential_disabled: "), "{error}");
+            .expect_err("Fleet setup is refused").to_string();
+        assert!(error.starts_with("provider_parked: "), "{error}");
     }
+    let error = run(Cli { config: Some(config_path.clone()), command: Command::Setup { vehicle_id: Some(7), all_vehicles: false } }).await
+        .expect_err("setup without a configuration");
+    assert!(!error.to_string().starts_with("source_credential_disabled"), "{error}");
     fs::set_permissions(&sealed, fs::Permissions::from_mode(0o700)).expect("unseal");
     let entries: Vec<_> = fs::read_dir(temporary.path()).expect("listing").map(|entry| entry.expect("entry").file_name()).collect();
     assert_eq!(entries, vec![std::ffi::OsString::from("sealed")], "nothing was created or read");
@@ -371,22 +369,6 @@ async fn source_credential_disabled_cli_inputs_are_refused_before_any_read() {
         }).await.expect_err("source credential input").to_string();
         assert!(error.starts_with("source_credential_disabled: "), "{error}");
     }
-    for (primary, deprecated) in [(Some(secret.clone()), None), (None, Some(secret.clone())), (Some(PathBuf::from("-")), None)] {
-        let command = Command::Migrate {
-            source_key: None, new_import_source: false,
-            source: "postgresql://reader@127.0.0.1:9/sourcedb".to_owned(), car_id: 42,
-            postgres_password_file: secret.clone(), history_only: false,
-            source_token_key_file: primary, encryption_key_file: deprecated,
-            access_token_file: None, refresh_token_file: None, online_snapshot: true,
-            preserve_existing_credentials: false, replace_credentials: false, accept_schema_evidence: true,
-        };
-        let error = super::prepare_migration_key_input(&command, &config_path).expect_err("source key input").to_string();
-        assert!(error.starts_with("source_credential_disabled: "), "{error}");
-    }
-    let error = super::read_setup_token_file(&secret, MAX_MIGRATION_TOKEN_FILE_BYTES).expect_err("setup token file").to_string();
-    assert!(error.starts_with("source_credential_disabled: "), "{error}");
-    let error = super::read_setup_fleet_from_stdin().expect_err("Fleet tokens on standard input").to_string();
-    assert!(error.starts_with("source_credential_disabled: "), "{error}");
     fs::set_permissions(&sealed, fs::Permissions::from_mode(0o700)).expect("unseal");
     assert!(!config_path.exists() && !data_dir.join("hub.sqlite").exists(), "nothing was created");
 }
@@ -536,7 +518,7 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
         check.command,
         Command::SourceCheck { car_id: 7, .. }
     ));
-    assert!(!command_requires_user_hub_admission(&check.command));
+    assert!(!teslatlas_hub::runtime::operator::admission::requires_user_hub_admission(&check.command));
 
     assert!(
         Cli::try_parse_from([
@@ -564,10 +546,7 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
         "7",
         "--postgres-password-file",
         "password",
-        "--encryption-key-file",
-        "key",
         "--online-snapshot",
-        "--preserve-existing-credentials",
         "--accept-schema-evidence",
     ])
     .expect("online migration CLI");
@@ -575,7 +554,6 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
         migration.command,
         Command::Migrate {
             online_snapshot: true,
-            preserve_existing_credentials: true,
             accept_schema_evidence: true,
             ..
         }
@@ -621,7 +599,9 @@ fn history_only_cli_requires_online_capture_and_excludes_tesla_credentials() {
     let mut rejected = accepted;
     rejected.push("--preserve-existing-credentials");
     assert!(Cli::try_parse_from(rejected).is_err());
-    assert!(matches!(
+    // Source checks never inspect source credentials, so the flag that chose
+    // that is gone (M02-T10).
+    assert!(
         Cli::try_parse_from([
             "teslatlas-hub",
             "source-check",
@@ -633,13 +613,8 @@ fn history_only_cli_requires_online_capture_and_excludes_tesla_credentials() {
             "password",
             "--history-only"
         ])
-        .unwrap()
-        .command,
-        Command::SourceCheck {
-            history_only: true,
-            ..
-        }
-    ));
+        .is_err()
+    );
 }
 
 #[cfg(target_os = "macos")]
@@ -694,13 +669,7 @@ async fn migration_without_version_confirmation_does_not_create_hub_target() {
             car_id: 7,
             postgres_password_file: PathBuf::from("unused-password"),
             history_only: false,
-            source_token_key_file: None,
-            encryption_key_file: None,
-            access_token_file: None,
-            refresh_token_file: None,
             online_snapshot: true,
-            preserve_existing_credentials: false,
-            replace_credentials: false,
             accept_schema_evidence: false,
         },
     };
@@ -816,8 +785,6 @@ fn migration_encryption_key_reader_accepts_normal_line_endings() {
 #[cfg(target_os = "macos")]
 #[test]
 fn migration_password_and_token_semantic_boundaries_include_line_endings() {
-    use teslatlas_hub::auth::credential_sign_in as credentials;
-
     let temporary = tempfile::tempdir().expect("temporary directory");
     let password_path = temporary.path().join("password");
     for ending in [b"".as_slice(), b"\n".as_slice(), b"\r\n".as_slice()] {
@@ -858,14 +825,11 @@ fn migration_password_and_token_semantic_boundaries_include_line_endings() {
     for path in [&access_path, &refresh_path] {
         fs::set_permissions(path, fs::Permissions::from_mode(0o600)).expect("token mode");
     }
-    // Source credentials are disabled: token bytes, however well bounded, are
-    // refused and never stored.
-    let refused = credentials::decode_owner_files(
-        read_migration_secret(&access_path, MAX_MIGRATION_TOKEN_FILE_BYTES).expect("access custody"),
-        read_migration_secret(&refresh_path, MAX_MIGRATION_TOKEN_FILE_BYTES).expect("refresh custody"),
-        credentials::OwnerEntryKind::SourceToken,
-    ).unwrap_err();
-    assert!(matches!(refused, credentials::OwnerInputError::Credential(error) if error.code() == "source_credential_disabled"));
+    // The bounded reader still reads within its cap; no command hands token
+    // bytes to it any more (source credentials are disabled).
+    for path in [&access_path, &refresh_path] {
+        assert!(read_migration_secret(path, MAX_MIGRATION_TOKEN_FILE_BYTES).is_ok());
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -1721,7 +1685,9 @@ async fn doctor_reports_inventory_and_does_not_delete_tokens() {
     store.checkpoint_catalogue_for_immutable_read().expect("checkpoint");
     run(Cli { config: Some(config), command: Command::Doctor }).await.expect("doctor");
     assert!(credentials::pair_matches_for_test(temporary.path(), false, "access-0001", "refresh-0001").expect("Owner retained"));
-    assert!(credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").expect("Fleet retained"));
+    // The stored Fleet row is kept (counted below) but refused at load: Fleet
+    // is parked and supplied rows are source credentials (M02-T02).
+    assert!(credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").is_err(), "Fleet row refused at load");
     let inventory = store.catalogue_inventory().expect("inventory");
     assert_eq!(inventory.journal_mode, "wal");
     assert_eq!((inventory.owner_api_credential_rows, inventory.fleet_api_credential_rows), (1, 1));
@@ -1901,124 +1867,34 @@ fn observe_command_requires_positive_duration() {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn setup_command_accepts_private_token_files_and_positive_optional_vehicle() {
-    let cli = Cli::try_parse_from([
-        "teslatlas-hub",
-        "setup",
-        "--access-token-file",
-        "access",
-        "--refresh-token-file",
-        "refresh",
-        "--vehicle-id",
-        "70",
-    ])
-    .expect("setup CLI");
+fn setup_command_takes_only_a_positive_optional_vehicle() {
+    let cli = Cli::try_parse_from(["teslatlas-hub", "setup", "--vehicle-id", "70"]).expect("setup CLI");
+    assert!(matches!(cli.command, Command::Setup { vehicle_id: Some(70), all_vehicles: false }));
     assert!(matches!(
-        cli.command,
-        Command::Setup {
-            access_token_file: Some(access_token_file),
-            refresh_token_file: Some(refresh_token_file),
-            tokens_stdin: false,
-            sign_in: false,
-            vehicle_id: Some(70),
-            all_vehicles: false,
-        } if access_token_file.as_path() == Path::new("access")
-            && refresh_token_file.as_path() == Path::new("refresh")
+        Cli::try_parse_from(["teslatlas-hub", "setup"]).expect("setup CLI").command,
+        Command::Setup { vehicle_id: None, all_vehicles: false }
     ));
-    assert!(
-        Cli::try_parse_from([
-            "teslatlas-hub",
-            "setup",
-            "--access-token-file",
-            "access",
-            "--refresh-token-file",
-            "refresh",
-            "--vehicle-id",
-            "0",
-        ])
-        .is_err()
-    );
-    assert!(Cli::try_parse_from(["teslatlas-hub", "setup"]).is_err());
-    assert!(
-        Cli::try_parse_from(["teslatlas-hub", "setup", "--access-token-file", "access",]).is_err()
-    );
-    let stdin =
-        Cli::try_parse_from(["teslatlas-hub", "setup", "--tokens-stdin"]).expect("stdin setup CLI");
-    assert!(matches!(
-        stdin.command,
-        Command::Setup {
-            access_token_file: None,
-            refresh_token_file: None,
-            tokens_stdin: true,
-            sign_in: false,
-            vehicle_id: None,
-            all_vehicles: false,
-        }
-    ));
-    assert!(
-        Cli::try_parse_from([
-            "teslatlas-hub",
-            "setup",
-            "--tokens-stdin",
-            "--all-vehicles",
-            "--vehicle-id",
-            "70",
-        ])
-        .is_err()
-    );
+    assert!(Cli::try_parse_from(["teslatlas-hub", "setup", "--vehicle-id", "0"]).is_err());
+    assert!(Cli::try_parse_from(["teslatlas-hub", "setup", "--all-vehicles", "--vehicle-id", "70"]).is_err());
+    for removed in [["--access-token-file", "access"], ["--refresh-token-file", "refresh"], ["--tokens-stdin", "x"], ["--sign-in", "x"]] {
+        let mut args = vec!["teslatlas-hub", "setup"];
+        args.extend(removed);
+        assert!(Cli::try_parse_from(args).is_err(), "{removed:?}");
+    }
 }
 
 #[cfg(target_os = "macos")]
 #[test]
-fn fleet_setup_is_stdin_only_and_decodes_bounded_fields() {
-    let selected = Cli::try_parse_from(["teslatlas-hub", "setup-fleet", "--vehicle-id", "70"])
-        .expect("Fleet setup CLI");
-    assert!(matches!(
-        selected.command,
-        Command::SetupFleet {
-            sign_in: false,
-            vehicle_id: Some(70),
-            all_vehicles: false,
-        }
-    ));
-    let all = Cli::try_parse_from(["teslatlas-hub", "setup-fleet", "--all-vehicles"])
-        .expect("all Fleet vehicles CLI");
-    assert!(matches!(
-        all.command,
-        Command::SetupFleet {
-            sign_in: false,
-            vehicle_id: None,
-            all_vehicles: true,
-        }
-    ));
-    assert!(
-        Cli::try_parse_from([
-            "teslatlas-hub",
-            "setup-fleet",
-            "--all-vehicles",
-            "--vehicle-id",
-            "70",
-        ])
-        .is_err()
-    );
-    assert!(
-        decode_setup_fleet_stdin(
-            br#"{"accessToken":"e30.eyJzY3AiOlsib3BlbmlkIiwidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iLCJ2ZWhpY2xlX2NtZHMiLCJ2ZWhpY2xlX2NoYXJnaW5nX2NtZHMiXX0.sig","refreshToken":"refresh","clientId":"client","region":"europe_middle_east_and_africa","expiresInSeconds":3600}"#,
-        )
-        .is_err_and(|error| error.to_string().starts_with("source_credential_disabled: ")),
-        "Fleet token input is refused, however well formed"
-    );
-    assert!(
-        decode_setup_fleet_stdin(
-            br#"{"accessToken":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSJdfQ.sig","refreshToken":"refresh","clientId":"client","region":"europe_middle_east_and_africa","expiresInSeconds":3600}"#,
-        )
-        .is_err()
-    );
-    assert!(
-        decode_setup_fleet_stdin(
-            br#"{"accessToken":"access","refreshToken":"refresh","clientId":"client","region":"eu","expiresInSeconds":3600}"#,
-        )
-        .is_err()
+fn fleet_setup_takes_no_input_and_is_parked() {
+    assert!(matches!(Cli::try_parse_from(["teslatlas-hub", "setup-fleet"]).expect("parked verb").command, Command::SetupFleet));
+    for args in [vec!["setup-fleet", "--vehicle-id", "70"], vec!["setup-fleet", "--all-vehicles"], vec!["setup-fleet", "--sign-in"]] {
+        let mut all = vec!["teslatlas-hub"];
+        all.extend(args.clone());
+        assert!(Cli::try_parse_from(all).is_err(), "{args:?}");
+    }
+    assert_eq!(
+        teslatlas_hub::runtime::operator::admission::route(&Command::SetupFleet),
+        teslatlas_hub::runtime::operator::admission::Route::Refused("provider_parked")
     );
 }
 
@@ -2030,15 +1906,6 @@ fn fleet_rejects_enabling_legacy_streaming() {
     assert!(validate_streaming_setting(CollectorProvider::Fleet, Some(true)).is_err());
     assert!(validate_streaming_setting(CollectorProvider::Fleet, Some(false)).is_ok());
     assert!(validate_streaming_setting(CollectorProvider::Legacy, Some(true)).is_ok());
-}
-
-#[cfg(target_os = "macos")]
-#[test]
-fn legacy_setup_requires_legacy_provider_before_mutation() {
-    use teslatlas_hub::config::CollectorProvider;
-
-    assert!(validate_legacy_setup_provider(CollectorProvider::Legacy).is_ok());
-    assert!(validate_legacy_setup_provider(CollectorProvider::Fleet).is_err());
 }
 
 #[cfg(target_os = "macos")]
@@ -2085,13 +1952,16 @@ fn source_credential_disabled_setup_and_migrate_token_inputs_change_nothing() {
     let (temporary, store) = v2_credential_pair_fixture(false);
     let before = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("before");
     for kind in [credentials::OwnerEntryKind::Direct, credentials::OwnerEntryKind::Provider, credentials::OwnerEntryKind::SourceToken] {
-        let refused = credentials::decode_owner_entry(br#"{"accessToken":"access-0003","refreshToken":"refresh-0003"}"#, kind, false).unwrap_err();
-        assert!(matches!(refused, credentials::OwnerInputError::Credential(error) if error.code() == "source_credential_disabled"));
-        let refused = credentials::decode_owner_files(zeroize::Zeroizing::new(b" access-0003\r\n".to_vec()), zeroize::Zeroizing::new(b"refresh-0003\n".to_vec()), kind).unwrap_err();
-        assert!(matches!(refused, credentials::OwnerInputError::Credential(error) if error.code() == "source_credential_disabled"));
+        let access = zeroize::Zeroizing::new("access-0003".to_owned());
+        let refused = credentials::prepare_owner_entry(kind, access, Some(zeroize::Zeroizing::new("refresh-0003".to_owned())), false).unwrap_err();
+        assert_eq!(refused.code(), "source_credential_disabled");
     }
-    let refused = credentials::decode_fleet_entry(br#"{"accessToken":"e30.e30.sig","refreshToken":"refresh-0003","clientId":"client-0001","region":"europe_middle_east_and_africa","expiresInSeconds":3600}"#).unwrap_err();
-    assert!(refused.to_string().starts_with("source_credential_disabled: "));
+    // The command tree has no token input at all.
+    for args in [vec!["setup", "--tokens-stdin"], vec!["setup-fleet", "--sign-in"], vec!["setup", "--access-token-file", "a", "--refresh-token-file", "r"]] {
+        let mut all = vec!["teslatlas-hub"];
+        all.extend(args);
+        assert!(Cli::try_parse_from(all).is_err());
+    }
     let after = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("after");
     assert_eq!(after, before, "no stored pair changed");
     // The retained Fleet row is the supplied row an older Hub could hold: it
@@ -2127,20 +1997,8 @@ fn service_commands_parse_without_live_store_admission() {
 #[cfg(target_os = "macos")]
 #[test]
 fn long_lived_and_sensitive_commands_require_the_instance_lock() {
+    use teslatlas_hub::runtime::operator::admission::requires_user_hub_admission as command_requires_user_hub_admission;
     assert!(command_requires_user_hub_admission(&Command::Init));
-    assert!(command_requires_user_hub_admission(&Command::Setup {
-        access_token_file: Some(PathBuf::from("access")),
-        refresh_token_file: Some(PathBuf::from("refresh")),
-        tokens_stdin: false,
-        sign_in: false,
-        vehicle_id: None,
-        all_vehicles: false,
-    }));
-    assert!(command_requires_user_hub_admission(&Command::SetupFleet {
-        sign_in: false,
-        vehicle_id: None,
-        all_vehicles: true,
-    }));
     assert!(command_requires_user_hub_admission(&Command::Serve));
     assert!(command_requires_user_hub_admission(&Command::Observe {
         duration_seconds: 1,
@@ -2152,13 +2010,7 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         car_id: 1,
         postgres_password_file: PathBuf::from("password"),
         history_only: false,
-        source_token_key_file: None,
-        encryption_key_file: None,
-        access_token_file: None,
-        refresh_token_file: None,
         online_snapshot: false,
-        preserve_existing_credentials: false,
-        replace_credentials: false,
         accept_schema_evidence: true,
     }));
     assert!(command_requires_user_hub_admission(&Command::Pair {
@@ -2172,18 +2024,22 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
     assert!(command_requires_user_hub_admission(&Command::Backup {
         destination: PathBuf::from("backup"),
     }));
-    assert!(command_requires_user_hub_admission(
-        &Command::ExportRecoveryCredentials {
+    // Setup and credential recovery are forwarded to the running service and
+    // never take the lifetime lock themselves (ruling R5); Fleet is refused.
+    for command in [
+        Command::Setup { vehicle_id: None, all_vehicles: false },
+        Command::SetupFleet,
+        Command::ExportRecoveryCredentials {
             destination: PathBuf::from("credentials.tthcr"),
             recovery_key_file: PathBuf::from("recovery.key"),
-        }
-    ));
-    assert!(command_requires_user_hub_admission(
-        &Command::RestoreRecoveryCredentials {
+        },
+        Command::RestoreRecoveryCredentials {
             source: PathBuf::from("credentials.tthcr"),
             recovery_key_file: PathBuf::from("recovery.key"),
-        }
-    ));
+        },
+    ] {
+        assert!(!command_requires_user_hub_admission(&command), "{command:?}");
+    }
     assert!(!command_requires_user_hub_admission(&Command::Doctor));
     assert!(!command_requires_user_hub_admission(&Command::Legal));
     assert!(!command_requires_user_hub_admission(&Command::Source));

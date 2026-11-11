@@ -138,14 +138,6 @@ fn validate_streaming_setting(
     Ok(())
 }
 
-#[cfg(unix)]
-fn validate_legacy_setup_provider(provider: CollectorProvider) -> Result<(), &'static str> {
-    if provider != CollectorProvider::Legacy {
-        return Err("setup requires collector.provider = \"legacy\"");
-    }
-    Ok(())
-}
-
 fn clear_provider_credentials(
     entry: &teslatlas_hub::CredentialVaultEntry,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -162,38 +154,8 @@ fn clear_provider_credentials(
     if failures.is_empty() { Ok(()) } else { Err(std::io::Error::other(failures.join("; ")).into()) }
 }
 
-fn persist_legacy_setup_and_drop_fleet(
-    entry: &teslatlas_hub::CredentialVaultEntry,
-    prepared: teslatlas_hub::auth::credential_sign_in::PreparedOwnerEntry,
-) -> Result<OwnerTokens, Box<dyn std::error::Error>> {
-    Ok(teslatlas_hub::auth::credential_sign_in::persist_owner_entry(entry, prepared, true)?.into_owner_tokens()?)
-}
-
-
-
-fn persist_fleet_setup_and_drop_legacy(
-    entry: &teslatlas_hub::CredentialVaultEntry,
-    prepared: teslatlas_hub::auth::credential_sign_in::PreparedFleetSetup,
-) -> Result<teslatlas_hub::fleet_credentials::FleetSetupCredentials, Box<dyn std::error::Error>> {
-    Ok(teslatlas_hub::auth::credential_sign_in::persist_fleet_setup(entry, prepared, true)?)
-}
-
-#[cfg(unix)]
-const PROVIDER_SWITCH_OUTCOME_AMBIGUOUS: &str = "TESLATLAS_PROVIDER_SWITCH_OUTCOME_AMBIGUOUS";
-
 #[cfg(unix)]
 const MIGRATION_OUTCOME_AMBIGUOUS: &str = "TESLATLAS_MIGRATION_OUTCOME_AMBIGUOUS";
-
-#[cfg(unix)]
-fn provider_switch_outcome_ambiguous(
-    action: &str,
-    error: impl std::fmt::Display,
-) -> Box<dyn std::error::Error> {
-    std::io::Error::other(format!(
-        "{PROVIDER_SWITCH_OUTCOME_AMBIGUOUS}: {action}: {error}; Hub must remain stopped until status and diagnostics confirm the selected provider"
-    ))
-    .into()
-}
 
 #[cfg(unix)]
 fn migration_outcome_ambiguous(
@@ -211,17 +173,6 @@ fn migration_outcome_ambiguous(
 const CONTROL_PAIR_VEHICLE_ID_USAGE: &str = "--vehicle-id does not apply to `control pair`: it \
     selects the car of a vehicle command. Scope the invitation with `control pair --vehicle <UUID>` \
     (repeatable) or `--all-vehicles`";
-
-impl ChargeCostMode {
-    /// The name the owner types (C2 R53).
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Total => "total",
-            Self::PerKwh => "per_kwh",
-            Self::PerMinute => "per_minute",
-        }
-    }
-}
 
 /// The one deprecation line of an old `--mode` value (C2 R53a).
 fn deprecated_charge_cost_mode_line(alias: &str, mode: ChargeCostMode) -> String {

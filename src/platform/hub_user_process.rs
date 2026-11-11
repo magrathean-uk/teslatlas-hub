@@ -17,7 +17,10 @@ pub struct AdmittedUserHub {
 pub(crate) struct CredentialVaultAdmission {
     _admission: Arc<AdmittedUserHub>,
 }
-#[cfg(test)]
+/// The vault admission is released when its one vault closes (its credential
+/// connection drops), so a later collector run or recovery in the same
+/// service lifetime can open the vault again; two at once are still refused
+/// (M02-T10 finding 1).
 impl Drop for CredentialVaultAdmission {
     fn drop(&mut self) {
         self._admission.credential_vault_taken.store(false, std::sync::atomic::Ordering::Release);

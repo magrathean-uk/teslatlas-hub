@@ -1,25 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #[cfg(unix)]
-fn command_requires_user_hub_admission(command: &Command) -> bool {
-    matches!(
-        command,
-        Command::Init
-            | Command::Bootstrap
-            | Command::Setup { .. }
-            | Command::SetupFleet { .. }
-            | Command::ConfigureFleetTelemetry
-            | Command::Serve
-            | Command::Observe { .. }
-            | Command::Migrate { .. }
-            | Command::Pair { .. }
-            | Command::Repair
-            | Command::Backup { .. }
-            | Command::ExportRecoveryCredentials { .. }
-            | Command::RestoreRecoveryCredentials { .. }
-    )
-}
-
 fn collector_can_start(
     store: &HubStore,
     config: &HubConfig,
@@ -85,13 +66,12 @@ fn validate_history_only_config(config: &HubConfig) -> Result<(), Box<dyn std::e
 const MAX_MIGRATION_POSTGRES_PASSWORD_BYTES: usize = 4 * 1024;
 #[cfg(unix)]
 const MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES: usize = MAX_MIGRATION_POSTGRES_PASSWORD_BYTES + 2;
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 const MAX_MIGRATION_TOKEN_BYTES: usize =
     teslatlas_hub::source_token_envelope::MAX_TOKEN_PLAINTEXT_BYTES;
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 const MAX_MIGRATION_TOKEN_FILE_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES + 2;
 #[cfg(unix)]
-const MAX_SETUP_TOKENS_STDIN_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES * 2 + 128;
 #[cfg(all(unix, test))]
 const MAX_MIGRATION_ENCRYPTION_KEY_BYTES: usize = 16 * 1024;
 
@@ -520,29 +500,6 @@ fn read_migration_secret(
     read_migration_secret_file(path, maximum).map_err(Into::into)
 }
 
-/// Source credentials are disabled: a token file named to `setup` is refused
-/// before it is opened (refusal-only shim until the setup command is rewired).
-#[cfg(unix)]
-fn read_setup_token_file(path: &Path, maximum: usize) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
-    let _ = (path, maximum);
-    Err(teslatlas_hub::auth::credential_sign_in::source_credential_disabled().into())
-}
-
-#[cfg(all(unix, test))]
-fn decode_setup_fleet_stdin(
-    bytes: &[u8],
-) -> Result<FleetSetupCredentials, Box<dyn std::error::Error>> {
-    Ok(teslatlas_hub::auth::credential_sign_in::decode_fleet_entry(bytes)?.into_credentials())
-}
-
-/// Source credentials are disabled: Fleet tokens on standard input are refused
-/// before standard input is read (refusal-only shim until `setup-fleet` is
-/// rewired to the Hub's own sign-in only).
-#[cfg(unix)]
-fn read_setup_fleet_from_stdin() -> Result<teslatlas_hub::auth::credential_sign_in::PreparedFleetSetup, Box<dyn std::error::Error>> {
-    Err(teslatlas_hub::auth::credential_sign_in::source_credential_disabled().into())
-}
-
 #[cfg(unix)]
 fn read_recovery_encryption_key(
     path: &Path,
@@ -569,252 +526,6 @@ fn read_migration_encryption_key(
         if key.last() == Some(&b'\r') {
             key.pop();
         }
-    }
-    Ok(key)
-}
-
-// TRANSITIONAL (M02-T02): the source-key file readers below are unreachable
-// from any command; they remain only for the entry tests that T10 retires.
-#[cfg(all(unix, test))]
-#[derive(Debug)]
-struct SourceKeyFileRefusal { spelling: &'static str, entry: bool }
-#[cfg(all(unix, test))]
-impl std::fmt::Display for SourceKeyFileRefusal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.entry {
-            write!(f, "source_key_file_location_refused: The key file given to {} is a link, is not a regular file, or changed while the Hub opened it, so the Hub did not read it. Give a regular file, or pass the key on standard input with {} -.", self.spelling, self.spelling)
-        } else {
-            write!(f, "source_key_file_location_refused: The key file given to {} is inside a folder the Hub manages (its data, configuration or import-session folder), so the Hub did not read it. Copy the key to another folder, or pass it on standard input with {} -.", self.spelling, self.spelling)
-        }
-    }
-}
-#[cfg(all(unix, test))]
-impl std::error::Error for SourceKeyFileRefusal {}
-#[cfg(all(unix, test))]
-fn source_key_location_refused() -> Box<dyn std::error::Error> {
-    Box::new(SourceKeyFileRefusal { spelling: "--source-token-key-file", entry: false })
-}
-#[cfg(all(unix, test))]
-fn source_key_entry_refused() -> Box<dyn std::error::Error> {
-    Box::new(SourceKeyFileRefusal { spelling: "--source-token-key-file", entry: true })
-}
-
-/// Source credentials are disabled: a source key named to `migrate` (either
-/// spelling, a path or `-`) is refused before the path is opened, standard
-/// input is read or the configuration is loaded. No key is ever prepared.
-#[cfg(unix)]
-fn prepare_migration_key_input(command: &Command, config_path: &Path) -> Result<Option<zeroize::Zeroizing<Vec<u8>>>, Box<dyn std::error::Error>> {
-    let _ = config_path;
-    let Command::Migrate { source_token_key_file, encryption_key_file, .. } = command else { return Ok(None); };
-    if source_token_key_file.is_some() || encryption_key_file.is_some() {
-        return Err(teslatlas_hub::auth::credential_sign_in::source_credential_disabled().into());
-    }
-    Ok(None)
-}
-
-#[cfg(all(unix, test))]
-fn prepare_source_key_files_with(
-    primary: Option<&Path>, deprecated: Option<&Path>, notice: &mut impl Write,
-    mut read: impl FnMut(&Path, &'static str) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>>,
-) -> Result<Option<zeroize::Zeroizing<Vec<u8>>>, Box<dyn std::error::Error>> {
-    if deprecated.is_some() { writeln!(notice, "--encryption-key-file is deprecated; use --source-token-key-file")?; }
-    let mut key = match (primary, deprecated) {
-        (None, None) => return Ok(None),
-        (Some(path), None) => read(path, "--source-token-key-file")?,
-        (None, Some(path)) => read(path, "--encryption-key-file")?,
-        (Some(primary), Some(deprecated)) => {
-            let bytes = read(primary, "--source-token-key-file")?;
-            if primary != deprecated {
-                let other = read(deprecated, "--encryption-key-file")?;
-                if bytes.as_slice() != other.as_slice() { return Err("conflicting_source_key_files".into()); }
-            }
-            bytes
-        }
-    };
-    if key.last() == Some(&b'\n') { key.pop(); if key.last() == Some(&b'\r') { key.pop(); } }
-    Ok(Some(key))
-}
-
-/// R54: the device and inode of every Hub-managed directory (the data
-/// directory, its `secrets/` and the config file's parent), each opened and
-/// identified at its physical location.
-#[cfg(all(unix, test))]
-fn managed_directory_identities(data_dir: &Path, config_path: &Path) -> Vec<(u64, u64)> {
-    use rustix::fs::{Mode, OFlags, fstat, open};
-    let config_parent = config_path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    [
-        data_dir.to_path_buf(),
-        data_dir.join("secrets"),
-        config_parent.to_path_buf(),
-    ]
-    .iter()
-    .filter_map(|directory| {
-        let descriptor = open(
-            directory,
-            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
-            Mode::empty(),
-        )
-        .ok()?;
-        let facts = fstat(&descriptor).ok()?;
-        Some((facts.st_dev as u64, facts.st_ino as u64))
-    })
-    .collect()
-}
-
-/// R54: open the key path's containing directory through its path (ancestor
-/// links lead to the physical directory) and refuse it when it, or any
-/// directory above it reached through `..`, is Hub-managed. No I/O happens on
-/// the named entry.
-#[cfg(all(unix, test))]
-fn open_checked_key_directory(
-    path: &Path,
-    data_dir: &Path,
-    config_path: &Path,
-) -> Result<(std::os::fd::OwnedFd, std::ffi::OsString), Box<dyn std::error::Error>> {
-    #[cfg(target_os = "macos")]
-    let session_root = Some(Path::new("/tmp"));
-    #[cfg(not(target_os = "macos"))]
-    let session_root = None;
-    open_checked_key_directory_with_session_root(path, data_dir, config_path, session_root)
-}
-
-#[cfg(all(unix, test))]
-fn open_checked_key_directory_with_session_root(
-    path: &Path,
-    data_dir: &Path,
-    config_path: &Path,
-    session_root: Option<&Path>,
-) -> Result<(std::os::fd::OwnedFd, std::ffi::OsString), Box<dyn std::error::Error>> {
-    use rustix::fs::{Mode, OFlags, fstat, open, openat};
-    let mut managed = managed_directory_identities(data_dir, config_path);
-    let directory_path = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let name = path
-        .file_name()
-        .ok_or_else(source_key_location_refused)?
-        .to_owned();
-    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
-    let directory =
-        open(directory_path, flags, Mode::empty()).map_err(|_| source_key_location_refused())?;
-    if let Some(session_root) = session_root {
-        if let Some(identity) = import_session_directory_identity(directory_path, &directory, session_root)? {
-            managed.push(identity);
-        }
-    }
-    let mut current = directory
-        .try_clone()
-        .map_err(|_| source_key_location_refused())?;
-    loop {
-        let facts = fstat(&current).map_err(|_| source_key_location_refused())?;
-        let identity = (facts.st_dev as u64, facts.st_ino as u64);
-        if managed.contains(&identity) {
-            return Err(source_key_location_refused());
-        }
-        let parent = openat(&current, "..", flags, Mode::empty())
-            .map_err(|_| source_key_location_refused())?;
-        let parent_facts = fstat(&parent).map_err(|_| source_key_location_refused())?;
-        if (parent_facts.st_dev as u64, parent_facts.st_ino as u64) == identity {
-            break;
-        }
-        current = parent;
-    }
-    Ok((directory, name))
-}
-
-/// The landed GUI creates `th-<UUID>` directly under its physical temporary
-/// root. Identify that directory, including when the key is in a descendant,
-/// without inspecting the key entry or scanning other import sessions.
-#[cfg(all(unix, test))]
-fn import_session_directory_identity(
-    directory_path: &Path,
-    directory: &std::os::fd::OwnedFd,
-    session_root: &Path,
-) -> Result<Option<(u64, u64)>, Box<dyn std::error::Error>> {
-    let physical_root = fs::canonicalize(session_root).map_err(|_| source_key_location_refused())?;
-    let physical_directory = fs::canonicalize(directory_path).map_err(|_| source_key_location_refused())?;
-    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW;
-    let physical = open(&physical_directory, flags, Mode::empty()).map_err(|_| source_key_location_refused())?;
-    let held = fstat(directory).map_err(|_| source_key_location_refused())?;
-    let resolved = fstat(&physical).map_err(|_| source_key_location_refused())?;
-    if (held.st_dev, held.st_ino) != (resolved.st_dev, resolved.st_ino) { return Err(source_key_location_refused()); }
-    let Ok(relative) = physical_directory.strip_prefix(&physical_root) else { return Ok(None); };
-    let Some(std::path::Component::Normal(name)) = relative.components().next() else { return Ok(None); };
-    let Some(name_text) = name.to_str() else { return Ok(None); };
-    let Some(identifier) = name_text.strip_prefix("th-") else { return Ok(None); };
-    if identifier.len() != 36 || uuid::Uuid::parse_str(identifier).is_err() { return Ok(None); }
-    let root = open(&physical_root, flags, Mode::empty()).map_err(|_| source_key_location_refused())?;
-    let session = rustix::fs::openat(&root, name, flags, Mode::empty()).map_err(|_| source_key_location_refused())?;
-    let facts = fstat(&session).map_err(|_| source_key_location_refused())?;
-    Ok(Some((facts.st_dev as u64, facts.st_ino as u64)))
-}
-
-/// R54: an explicit key file is admitted by its physical location. The entry is
-/// classified relative to the held directory without following a link, opened
-/// with `O_NOFOLLOW`, its device and inode must match the classification, the
-/// cap is checked on the descriptor before the read, and it is read once.
-#[cfg(all(unix, test))]
-fn read_source_token_key_checked(
-    path: &Path,
-    data_dir: &Path,
-    config_path: &Path,
-) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
-    let mut key = read_source_token_key_raw_with(path, data_dir, config_path, || {})?;
-    if key.last() == Some(&b'\n') { key.pop(); if key.last() == Some(&b'\r') { key.pop(); } }
-    Ok(key)
-}
-
-#[cfg(all(unix, test))]
-fn read_source_token_key_raw_with(
-    path: &Path,
-    data_dir: &Path,
-    config_path: &Path,
-    after_classification: impl FnOnce(),
-) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
-    use rustix::fs::{AtFlags, FileType, Mode, OFlags, fstat, openat, statat};
-    if path == Path::new("-") {
-        return read_bounded_migration_secret(std::io::stdin(), MAX_MIGRATION_ENCRYPTION_KEY_BYTES).map_err(Into::into);
-    }
-    let (directory, name) = open_checked_key_directory(path, data_dir, config_path)?;
-    let classified = statat(&directory, name.as_os_str(), AtFlags::SYMLINK_NOFOLLOW)
-        .map_err(|_| source_key_entry_refused())?;
-    if FileType::from_raw_mode(classified.st_mode) != FileType::RegularFile {
-        return Err(source_key_entry_refused());
-    }
-    after_classification();
-    let descriptor = openat(
-        &directory,
-        name.as_os_str(),
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
-        Mode::empty(),
-    )
-    .map_err(|_| source_key_entry_refused())?;
-    let opened = fstat(&descriptor).map_err(|_| source_key_entry_refused())?;
-    if FileType::from_raw_mode(opened.st_mode) != FileType::RegularFile
-        || opened.st_dev != classified.st_dev
-        || opened.st_ino != classified.st_ino
-    {
-        return Err(source_key_entry_refused());
-    }
-    if usize::try_from(opened.st_size)
-        .map_or(true, |size| size > MAX_MIGRATION_ENCRYPTION_KEY_BYTES)
-    {
-        return Err("the source application's ENCRYPTION_KEY is too large".into());
-    }
-    let mut key = zeroize::Zeroizing::new(Vec::new());
-    std::io::Read::read_to_end(
-        &mut std::io::Read::take(
-            std::fs::File::from(descriptor),
-            u64::try_from(MAX_MIGRATION_ENCRYPTION_KEY_BYTES + 1).unwrap_or(u64::MAX),
-        ),
-        &mut key,
-    )?;
-    if key.len() > MAX_MIGRATION_ENCRYPTION_KEY_BYTES {
-        return Err("the source application's ENCRYPTION_KEY is too large".into());
     }
     Ok(key)
 }

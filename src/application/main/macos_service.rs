@@ -619,3 +619,143 @@ fn require_proxy_regular_file(path: &Path, label: &str) -> Result<(), Box<dyn st
     }
     Ok(())
 }
+
+/// The service's collector slot for the window supervisor (design 2.8): the
+/// collector runs as one task only inside an Open window and holds the
+/// collector lease while it runs; the supervisor stops it at the deadline, at
+/// a close or when the service stops. Its exit or failure never stops the
+/// service, which keeps serving the API. Clones share one slot.
+#[cfg(unix)]
+#[derive(Clone)]
+struct ServiceCollectorSlot {
+    inner: std::sync::Arc<std::sync::Mutex<ServiceCollectorSlotInner>>,
+}
+
+#[cfg(unix)]
+struct ServiceCollectorSlotInner {
+    runtime: tokio::runtime::Handle,
+    store: HubStore,
+    config: HubConfig,
+    admission: std::sync::Arc<AdmittedUserHub>,
+    recovery: std::sync::Arc<teslatlas_hub::runtime::operator::authority::RecoveryGate>,
+    running: Option<ServiceCollectorRun>,
+}
+
+#[cfg(unix)]
+struct ServiceCollectorRun {
+    task: tokio::task::JoinHandle<()>,
+    stop: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Kept so the collector's startup handoff succeeds; the listener has its
+    /// own cursor key.
+    _ready: tokio::sync::oneshot::Receiver<CursorKey>,
+}
+
+#[cfg(unix)]
+impl ServiceCollectorSlot {
+    fn new(
+        runtime: tokio::runtime::Handle,
+        store: HubStore,
+        config: HubConfig,
+        admission: std::sync::Arc<AdmittedUserHub>,
+        recovery: std::sync::Arc<teslatlas_hub::runtime::operator::authority::RecoveryGate>,
+    ) -> Self {
+        Self {
+            inner: std::sync::Arc::new(std::sync::Mutex::new(ServiceCollectorSlotInner {
+                runtime,
+                store,
+                config,
+                admission,
+                recovery,
+                running: None,
+            })),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, ServiceCollectorSlotInner> {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+#[cfg(unix)]
+impl ServiceCollectorSlotInner {
+    fn running(&self) -> bool {
+        self.running
+            .as_ref()
+            .is_some_and(|run| !run.task.is_finished())
+    }
+}
+
+#[cfg(unix)]
+impl teslatlas_hub::collection::window::CollectorSlot for ServiceCollectorSlot {
+    fn start(&mut self, deadline_wall: i64) -> Result<(), String> {
+        let mut inner = self.lock();
+        if inner.running() {
+            return Ok(());
+        }
+        // Nothing that could create or use a key starts before the
+        // credential recovery the service waits for (review finding 2).
+        if inner.recovery.pending() {
+            return Err(teslatlas_hub::runtime::operator::authority::CREDENTIAL_RECOVERY_PENDING.to_owned());
+        }
+        // Collection starts only with an admitted own login, a configured car
+        // and a positive cadence; inside the window the supervisor retries.
+        match collector_can_start(&inner.store, &inner.config) {
+            Ok(true) => {}
+            Ok(false) => return Err("collector_not_ready".to_owned()),
+            Err(error) => return Err(error.to_string()),
+        }
+        let (ready, ready_receiver) = tokio::sync::oneshot::channel();
+        let (stop, stop_receiver) = tokio::sync::oneshot::channel::<()>();
+        let store = inner.store.clone();
+        let config = inner.config.clone();
+        let admission = std::sync::Arc::clone(&inner.admission);
+        let task = inner.runtime.spawn(async move {
+            tracing::info!(deadline_wall, "collector starting inside the collection window");
+            let result = collector::run_supervised_for_admitted_user(
+                &store,
+                &config,
+                admission,
+                ready,
+                async move {
+                    let _ = stop_receiver.await;
+                },
+            )
+            .await;
+            match result {
+                Ok(()) => tracing::info!("collector stopped"),
+                Err(error) => tracing::warn!(%error, "collector stopped with an error"),
+            }
+        });
+        inner.running = Some(ServiceCollectorRun {
+            task,
+            stop: Some(stop),
+            _ready: ready_receiver,
+        });
+        Ok(())
+    }
+
+    fn is_running(&mut self) -> bool {
+        self.lock().running()
+    }
+
+    fn stop(&mut self) {
+        if let Some(run) = self.lock().running.as_mut()
+            && let Some(stop) = run.stop.take()
+        {
+            let _ = stop.send(());
+        }
+    }
+
+    /// The collector releases its lease as it exits, so the lease is free
+    /// once the task has finished.
+    fn release_lease(&mut self) -> Result<(), String> {
+        let mut inner = self.lock();
+        if inner.running() {
+            return Err("collector_stopping".to_owned());
+        }
+        inner.running = None;
+        Ok(())
+    }
+}

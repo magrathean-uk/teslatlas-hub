@@ -37,8 +37,6 @@ pub use control::{RotationResult, SignOutResult, rotate_credential_key, sign_out
 pub use input::{SIGN_IN_LINE_CAP, SignInInput, SignInInputError};
 pub use scope::SignInScope;
 pub use protocol::{FLEET_SIGN_IN_SCOPE, SignInSettings, SignInAttempt, pkce_verifier, pkce_challenge};
-pub use supplied::{OwnerInputError, decode_owner_entry, decode_owner_files};
-pub use supplied::{PreparedFleetSetup, decode_fleet_entry, persist_fleet_setup};
 pub use entries::clear_owner_after_fleet;
 pub use entries::prepare_owner_tokens;
 pub use entries::persist_owner_entry_with_notice;
