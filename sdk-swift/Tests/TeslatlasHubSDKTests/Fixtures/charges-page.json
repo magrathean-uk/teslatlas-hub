@@ -1,0 +1,34 @@
+{
+  "resource_type": "charge_page",
+  "items": [
+    {
+      "resource_type": "charge",
+      "charge_id": "charge_demo_0001",
+      "vehicle_id": "vehicle_demo_alpha",
+      "start_at": "2026-08-30T08:00:00.000Z",
+      "end_at": "2026-08-30T09:30:00.000Z",
+      "charging_type": "ac",
+      "energy_added_kwh": 18.4,
+      "start_battery_percent": 42,
+      "end_battery_percent": 78,
+      "location": null,
+      "quality": {
+        "subject_type": "charge",
+        "subject_id": "charge_demo_0001",
+        "quality": "complete",
+        "sources": [
+          "fleet_telemetry"
+        ],
+        "gap_count": 0,
+        "largest_gap_seconds": 0,
+        "derived_fields": [],
+        "projection_version": "3.1.0",
+        "assessed_at": "2026-08-30T09:30:01.000Z",
+        "issues": []
+      }
+    }
+  ],
+  "next_cursor": null,
+  "snapshot_revision": "snapshot_demo_0042",
+  "generated_at": "2026-08-30T12:31:00.000Z"
+}

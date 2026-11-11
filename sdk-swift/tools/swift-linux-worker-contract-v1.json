@@ -1,0 +1,674 @@
+{
+  "schema_version": 1,
+  "kind": "swift-linux-worker-contract",
+  "client_id": "swift",
+  "actor_id": "swift_linux",
+  "execution_kind": "docker_exec_pipe",
+  "target_cells": [
+    "swift__debian13_amd64",
+    "swift__debian13_arm64"
+  ],
+  "purpose": "Closed Hub client_execution registration and relay contract for the Swift Linux XCTest worker. The root runner owns Docker, process and broker authority; the worker receives only staged files, a private config path and the existing six-phase coordination flow.",
+  "authority": {
+    "root_runner": [
+      "resolve the reviewed registry entry and fixed executable/argument vector",
+      "select and verify the Docker context, image, container and worker paths",
+      "copy and hash-bind every staged file and handshake",
+      "own the Unix broker, deadline, process generation, exit and cleanup evidence"
+    ],
+    "worker": [
+      "read only TESLATLAS_CURRENT_HUB_MATRIX_WORKER_CONFIG",
+      "run only swift_current_linux_test from the registered product",
+      "write phase-ready, witness, evidence and actor-log files",
+      "never select commands, Docker objects, broker operations or credentials"
+    ]
+  },
+  "registration": {
+    "file_binding": "client_execution.registration",
+    "closed": true,
+    "additional_properties": false,
+    "required_keys": [
+      "schema_version",
+      "kind",
+      "client_id",
+      "actor_id",
+      "runtime_ref",
+      "entrypoint_ref",
+      "provider",
+                "container",
+                "source_product_map",
+                "config",
+                "log_path",
+                "io",
+                "outcome",
+                "cleanup"
+    ],
+    "properties": {
+      "schema_version": {
+        "type": "integer",
+        "const": 1
+      },
+      "kind": {
+        "type": "string",
+        "const": "swift-docker-exec-registration"
+      },
+      "client_id": {
+        "type": "string",
+        "const": "swift"
+      },
+      "actor_id": {
+        "type": "string",
+        "const": "swift_linux"
+      },
+      "runtime_ref": {
+        "type": "string",
+        "const": "swift_container"
+      },
+      "entrypoint_ref": {
+        "type": "string",
+        "const": "swift_current_linux_test"
+      },
+      "provider": {
+        "closed": true,
+        "required_keys": [
+          "docker_executable",
+          "context",
+          "provider",
+          "machine",
+          "kernel",
+          "architecture",
+          "emulation"
+        ],
+        "properties": {
+          "docker_executable": "root-owned regular-file binding for the Docker client",
+          "context": "root-owned binding for the selected Docker context; rechecked immediately before launch",
+          "provider": {
+            "const": "colima"
+          },
+          "machine": "observed opaque Colima machine identity and bound metadata",
+          "kernel": "observed guest kernel release",
+          "architecture": {
+            "enum": [
+              "amd64",
+              "arm64"
+            ]
+          },
+          "emulation": {
+            "enum": [
+              "native",
+              "emulated"
+            ]
+          }
+        }
+      },
+      "container": {
+        "closed": true,
+        "required_keys": [
+          "full_container_id",
+          "image_ref",
+          "full_image_id",
+          "image_digest",
+          "platform",
+          "user",
+          "network_mode",
+          "privilege",
+          "mounts"
+        ],
+        "properties": {
+          "full_container_id": "observed full container ID; 64 lower-case hexadecimal characters",
+          "image_ref": "fixed reviewed Swift image reference including tag",
+          "full_image_id": "observed full image ID; sha256:<64 lower-case hexadecimal>",
+          "image_digest": "observed manifest or content digest; sha256:<64 lower-case hexadecimal>",
+          "platform": {
+            "closed": true,
+            "required_keys": [
+              "os",
+              "version",
+              "architecture"
+            ],
+            "properties": {
+              "os": {
+                "const": "linux"
+              },
+              "version": "observed distribution release",
+              "architecture": {
+                "enum": [
+                  "amd64",
+                  "arm64"
+                ]
+              }
+            }
+          },
+          "user": "observed non-root UID/GID and username; worker must not run as root",
+          "network_mode": {
+            "const": "host"
+          },
+          "privilege": {
+            "const": "nonprivileged"
+          },
+          "mounts": {
+            "const": [],
+            "reason": "All files use bounded Docker archive/copy operations; no host mount or Docker socket is admitted."
+          }
+        }
+      },
+      "source_product_map": {
+        "closed_entries": true,
+        "description": "Fixed host-to-container archive copies selected by the registration; caller paths cannot add entries.",
+        "entry_required_keys": [
+          "id",
+          "role",
+          "host",
+          "container_path",
+          "bytes",
+          "sha256",
+          "mode",
+          "copy_method"
+        ],
+        "entry_properties": {
+          "id": {
+            "enum": [
+              "swift_source",
+              "swift_product",
+              "swift_product_manifest"
+            ]
+          },
+          "role": {
+            "enum": [
+              "swift_sdk_source",
+              "swift_sdk_product",
+              "swift_sdk_product_manifest"
+            ]
+          },
+          "host": "root-owned {path,sha256} binding",
+          "container_path": "canonical absolute path below the fresh container run root",
+          "bytes": "non-negative exact byte count",
+          "sha256": "sha256:<64 lower-case hexadecimal>",
+          "mode": "exact private mode, normally 0600 for an archive and manifest",
+          "copy_method": {
+            "const": "docker-archive"
+          }
+        },
+        "rules": [
+          "Copy the reviewed source/product bytes and manifest only; never copy the source checkout as a mount.",
+          "Rehash before copy, after copy and before execution; reject symlinks, traversal and aliases.",
+          "The selected product and entrypoint are fixed by the registry; job data cannot replace them."
+        ]
+      },
+      "config": {
+        "closed": true,
+        "required_keys": [
+          "host",
+          "container_path",
+          "environment_key",
+          "mode"
+        ],
+        "properties": {
+          "host": "root-owned worker-config-v1 {path,sha256} binding",
+          "container_path": "canonical absolute path below the fresh container run root",
+          "environment_key": {
+            "const": "TESLATLAS_CURRENT_HUB_MATRIX_WORKER_CONFIG"
+          },
+          "mode": {
+            "const": 384
+          }
+        }
+      },
+      "log_path": "canonical absolute actor-log path below the fresh container run root; stdout and stderr are captured there",
+      "io": {
+        "closed": true,
+        "required_keys": [
+          "stdin",
+          "stdout",
+          "stderr",
+          "tty"
+        ],
+        "properties": {
+          "stdin": {
+            "kind": "null-device",
+            "path": "/dev/null"
+          },
+          "stdout": {
+            "kind": "actor-log",
+            "destination": "registration.log_path"
+          },
+          "stderr": {
+            "kind": "actor-log",
+            "destination": "registration.log_path"
+          },
+          "tty": {
+            "const": false
+          }
+        },
+        "rules": [
+          "The worker process receives no broker NDJSON on stdin or stdout.",
+          "The root runner captures stdout and stderr into one bounded actor log with provenance."
+        ]
+      },
+      "outcome": {
+        "closed": true,
+        "required_keys": [
+          "expected_exit_code",
+          "max_log_bytes",
+          "failure_status"
+        ],
+        "properties": {
+          "expected_exit_code": {
+            "const": 0
+          },
+          "max_log_bytes": {
+            "const": 8388608
+          },
+          "failure_status": {
+            "enum": [
+              "failed",
+              "pending"
+            ]
+          }
+        }
+      },
+      "cleanup": {
+        "closed": true,
+        "required_keys": [
+          "require_exec_finished",
+          "require_descendants_zero",
+          "require_remote_paths_absent",
+          "require_stdout_closed",
+          "require_stderr_closed",
+          "container_pid1_untouched"
+        ],
+        "properties": {
+          "require_exec_finished": {
+            "const": true
+          },
+          "require_descendants_zero": {
+            "const": true
+          },
+          "require_remote_paths_absent": {
+            "const": true
+          },
+          "require_stdout_closed": {
+            "const": true
+          },
+          "require_stderr_closed": {
+            "const": true
+          },
+          "container_pid1_untouched": {
+            "const": true
+          }
+        }
+      }
+    }
+  },
+  "relay": {
+    "file_binding": "client_execution.relay",
+    "closed": true,
+    "additional_properties": false,
+    "required_keys": [
+      "schema_version",
+      "kind",
+      "session_id",
+      "cell_id",
+      "actor_id",
+      "container_id",
+      "host_run_root",
+      "container_run_root",
+      "broker",
+      "worker_config",
+      "file_transfer",
+      "handshake",
+      "provenance",
+      "cleanup"
+    ],
+    "properties": {
+      "schema_version": {
+        "type": "integer",
+        "const": 1
+      },
+      "kind": {
+        "type": "string",
+        "const": "swift-linux-worker-relay"
+      },
+      "session_id": "runner-issued UUIDv4; bound to the worker config and every phase file",
+      "cell_id": {
+        "enum": [
+          "swift__debian13_amd64",
+          "swift__debian13_arm64"
+        ]
+      },
+      "actor_id": {
+        "type": "string",
+        "const": "swift_linux"
+      },
+      "container_id": "must equal registration.container.full_container_id",
+      "host_run_root": "fresh canonical owner-only host directory, never source/product root",
+      "container_run_root": "fresh canonical unprivileged container directory, never a mount"
+    },
+    "broker": {
+      "closed": true,
+      "required_keys": [
+        "kind",
+        "location",
+        "worker_socket_exposure",
+        "max_frame_bytes"
+      ],
+      "properties": {
+        "kind": {
+          "const": "docker_exec_pipe"
+        },
+        "location": {
+          "const": "host-root-coordinator"
+        },
+        "worker_socket_exposure": {
+          "const": false
+        },
+        "max_frame_bytes": {
+          "const": 1048576
+        }
+      },
+      "authority": "The root coordinator alone owns the Unix broker and six-operation request sequence. The worker sees no broker descriptor, frame or operation selector."
+    },
+    "worker_config": {
+      "closed": true,
+      "required_keys": [
+        "environment_key",
+        "container_path",
+        "host_binding",
+        "path_rebind",
+        "digest_policy"
+      ],
+      "properties": {
+        "environment_key": {
+          "const": "TESLATLAS_CURRENT_HUB_MATRIX_WORKER_CONFIG"
+        },
+        "container_path": "{container_run_root}/worker-config.json",
+        "host_binding": "runner-generated worker-config-v1 binding",
+        "path_rebind": {
+          "allowed_fields": [
+            "private_root",
+            "coordination_dir",
+            "evidence_path",
+            "log_path",
+            "phase_contract.root.path",
+            "phase_contract.local.path",
+            "inputs[].root.path",
+            "inputs[].local.path"
+          ],
+          "rule": "Only canonical paths change from host staging to the container run root. Session/cell identity, instance nonce, bytes and hashes remain unchanged."
+        },
+        "digest_policy": {
+          "const": "sha256-verify-before-copy-and-after-read"
+        }
+      }
+    },
+    "file_transfer": {
+      "closed": true,
+      "required_keys": [
+        "mode",
+        "host_to_container",
+        "container_to_host",
+        "host_only",
+        "copy_rules",
+        "path_policy"
+      ],
+      "properties": {
+        "mode": {
+          "const": "docker-archive"
+        },
+        "host_to_container": [
+          {
+            "id": "worker_config",
+            "source": "worker_config.host_binding",
+            "destination": "{container_run_root}/worker-config.json",
+            "mode": 384
+          },
+          {
+            "id": "phase_contract",
+            "source": "worker_config.phase_contract.local",
+            "destination": "{container_run_root}/phase-contract.json",
+            "mode": 384
+          },
+          {
+            "id": "initial_observation",
+            "source": "worker_config.inputs[initial_observation].local",
+            "destination": "{container_run_root}/initial-observation.json",
+            "mode": 384
+          },
+          {
+            "id": "session_inputs",
+            "source": "worker_config.inputs[fixed-id].local",
+            "destination": "{container_run_root}/private/inputs/{fixed-id}",
+            "mode": 384
+          },
+          {
+            "id": "swift_product",
+            "source": "registration.source_product_map[swift_product].host",
+            "destination": "{container_run_root}/private/products/swift-sdk-product.tar",
+            "mode": 384
+          },
+          {
+            "id": "swift_source",
+            "source": "registration.source_product_map[swift_source].host",
+            "destination": "{container_run_root}/private/source/swift-sdk-source.tar",
+            "mode": 384
+          },
+          {
+            "id": "swift_product_manifest",
+            "source": "registration.source_product_map[swift_product_manifest].host",
+            "destination": "{container_run_root}/private/products/swift-sdk-manifest.json",
+            "mode": 384
+          },
+          {
+            "id": "phase_result",
+            "source": "root-coordinator-generated",
+            "destination": "{container_run_root}/coordination/worker-result-%06d.json",
+            "mode": 384
+          },
+          {
+            "id": "phase_ack",
+            "source": "root-launcher-generated",
+            "destination": "{container_run_root}/coordination/worker-ack-%06d.json",
+            "mode": 384
+          }
+        ],
+        "container_to_host": [
+          {
+            "id": "phase_ready",
+            "source": "{container_run_root}/coordination/worker-ready-%06d.json",
+            "destination": "{host_run_root}/coordination/worker-ready-%06d.json",
+            "mode": 384
+          },
+          {
+            "id": "phase_witness",
+            "source": "{container_run_root}/private/worker-witness-%06d.json",
+            "destination": "{host_run_root}/private/worker-witness-%06d.json",
+            "mode": 384
+          },
+          {
+            "id": "worker_evidence",
+            "source": "{container_run_root}/worker-evidence.json",
+            "destination": "{host_run_root}/worker-evidence.json",
+            "mode": 384
+          },
+          {
+            "id": "worker_log",
+            "source": "{container_run_root}/worker.log",
+            "destination": "{host_run_root}/worker.log",
+            "mode": 384
+          }
+        ],
+        "host_only": [
+          {
+            "id": "completion_ready",
+            "path": "{host_run_root}/ready-%06d.json",
+            "writer": "root-coordinator"
+          },
+          {
+            "id": "completion_ack",
+            "path": "{host_run_root}/ack-%06d.json",
+            "writer": "root-supervisor"
+          },
+          {
+            "id": "adapter_completion",
+            "path": "{host_run_root}/adapter-completion.json",
+            "writer": "root-coordinator"
+          }
+        ]
+      },
+      "copy_rules": {
+        "fresh_destination": true,
+        "exclusive_create": true,
+        "atomic_visibility": true,
+        "fsync_before_ack": true,
+        "reject_symlink": true,
+        "verify_sha256": true,
+        "max_worker_file_bytes": 1048576,
+        "max_evidence_and_log_bytes": 8388608,
+        "nested_binding_rule": "Retrieve phase witness by its fixed transfer ordinal and resolve it through a root-owned binding index; do not rewrite retained WorkerReady bytes."
+      },
+      "path_policy": {
+        "host_root": "runner-owned 0700 directory",
+        "container_root": "worker-owned 0700 directory",
+        "no_dot_dot": true,
+        "no_absolute_child_paths": true,
+        "no_source_or_product_alias": true,
+        "no_mounts": true
+      }
+    },
+    "handshake": {
+      "closed": true,
+      "phase_ready": {
+        "path": "{container_run_root}/coordination/worker-ready-%06d.json",
+        "direction": "container_to_host",
+        "writer": "worker",
+        "sequence": "1..6",
+        "retained_bytes": true,
+        "exclusive": true,
+        "fsync_before_transfer": true,
+        "nested_witness": "fixed private/worker-witness-%06d.json transfer; root resolves the binding without changing ready bytes"
+      },
+      "phase_result": {
+        "path": "{container_run_root}/coordination/worker-result-%06d.json",
+        "direction": "host_to_container",
+        "writer": "root-coordinator",
+        "sequence": "1..6",
+        "exclusive": true,
+        "fsync_before_ack": true
+      },
+      "phase_ack": {
+        "path": "{container_run_root}/coordination/worker-ack-%06d.json",
+        "direction": "host_to_container",
+        "writer": "root-launcher",
+        "sequence": "1..6",
+        "retained_ready_sha256": true,
+        "exclusive": true,
+        "fsync_before_worker_resume": true,
+        "binds": [
+          "session_id",
+          "cell_id",
+          "session_input_sha256",
+          "instance_nonce",
+          "sequence",
+          "ready_sha256",
+          "actor_id",
+          "phase"
+        ]
+      },
+      "completion_barrier": {
+        "location": "host_run_root",
+        "ready": "{host_run_root}/ready-%06d.json",
+        "ack": "{host_run_root}/ack-%06d.json",
+        "writer_ready": "root-coordinator",
+        "writer_ack": "root-supervisor",
+        "ordering": "after worker evidence/log retrieval and coordinator close; completion files are never copied into the container"
+      },
+      "ordering": [
+        "validate_registration_and_fresh_roots",
+        "start_fixed_nonroot_container_and_exec",
+        "copy_config_phase_inputs_source_product_and_manifest",
+        "copy_and_validate_phase_ready_and_nested_witness",
+        "root_coordinator_applies_phase_recipe",
+        "copy_phase_result_then_phase_ack_and_fsync",
+        "worker_resumes_and_repeats_exactly_six_phases",
+        "wait_for_exec_and_worker_exit",
+        "copy_final_evidence_and_actor_log",
+        "write_host_completion_ready_and_wait_for_root_ack",
+        "validate_cleanup_and_remove_owned_roots"
+      ],
+      "failure_rule": "Missing, stale, replaced, symlinked, hash-mismatched, premature or extra handshake files fail the cell and trigger bounded cleanup."
+    },
+    "provenance": {
+      "closed": true,
+      "required_keys": [
+        "docker_exec",
+        "command",
+        "transfer",
+        "exit",
+        "broker",
+        "stdout",
+        "stderr",
+        "timeline"
+      ],
+      "properties": {
+        "docker_exec": "runner-observed Docker exec/container identity with start and finish timestamps",
+        "command": "fixed registry entrypoint, product binding, derived argv digest and allowlisted environment digest; never raw secret-bearing argv",
+        "transfer": "ordered source/product/config/phase/evidence copy bindings with bytes, mode and SHA-256",
+        "exit": "observed XCTest exit code, signal/timeout disposition and completion state",
+        "broker": "root-owned Unix broker transcript binding; not worker stdout",
+        "stdout": "actor-log binding for worker stdout; unexpected bytes are logged and bounded",
+        "stderr": "actor-log binding for worker stderr; bounded and hash-bound",
+        "timeline": "monotonic launch, transfer, ready/ack, close, exit and cleanup timestamps"
+      }
+    },
+    "cleanup": {
+      "closed": true,
+      "required_keys": [
+        "worker_exit_zero",
+        "process_generation_absent",
+        "descendants_absent",
+        "stdout_closed",
+        "stderr_closed",
+        "docker_exec_closed",
+        "container_pid1_untouched",
+        "run_roots_removed",
+        "failure_blocks_admission"
+      ],
+      "properties": {
+        "worker_exit_zero": "true only after observed XCTest exit code 0",
+        "process_generation_absent": "root-owned observer proves the worker process generation is gone",
+        "descendants_absent": "root-owned observer proves no child or descendant remains",
+        "stdout_closed": {
+          "const": true
+        },
+        "stderr_closed": {
+          "const": true
+        },
+        "docker_exec_closed": {
+          "const": true
+        },
+        "container_pid1_untouched": {
+          "const": true
+        },
+        "run_roots_removed": "owned host and container run roots are absent after final bindings are read",
+        "failure_blocks_admission": {
+          "const": true
+        }
+      },
+      "timeout": "Use the one root-issued cell deadline plus a bounded cleanup deadline; never stop container PID 1 to hide a failed worker."
+    }
+  },
+  "forbidden_authority": [
+    "docker_socket",
+    "docker_cli_from_worker",
+    "docker_context_selection_from_job",
+    "container_pid1_control",
+    "arbitrary_command",
+    "arbitrary_argv",
+    "shell",
+    "ssh_identity",
+    "host_mount",
+    "broker_socket",
+    "broker_frame",
+    "credential_or_claim_secret"
+  ]
+}

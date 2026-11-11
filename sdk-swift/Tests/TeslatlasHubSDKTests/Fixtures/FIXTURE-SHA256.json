@@ -1,0 +1,18 @@
+{
+  "charge-samples-page.json": "bb8a8740f6d99f4976ae7be34581a55680a6212906fcd4b8ee98427adce49dc4",
+  "charges-page.json": "5fc8f6f98c3f01e13aed9eec7247a18007264b9dbb0b33921e7e5413642dc5c1",
+  "command-job.json": "fe81d674c0f8e53abd05ea9da679872cac0d4962ef73e214f618dd08bf26533e",
+  "command-request.json": "298866aaf415ff91c700163f29a11c6824f60c7e76e3dc71e10184e1265cea07",
+  "current-state.json": "e9adc6b1dd82ced03542be573a938b6542a66a139e376d93ee22cd1f2e44869b",
+  "data-quality-page.json": "fa0e0b67f120f36ea77b62d55840044a39210b4e0b4d30842660e8ebc44b1ff4",
+  "data-quality.json": "f27ca97995f578d7baf11191e1572d9726980c7b15c0dfae2a407b723fb3d24b",
+  "discovery.json": "3cc8ee2a7b206c04b36ca2186fff04b70bba7fd707870ad072c9eaf462480652",
+  "drives-page.json": "93e6bfa72ea0393f27d642cf582ceed6ff5ba376c3362614a25d91a6501c32f2",
+  "error.json": "ca531c39de525ef6c9ce497fdcffb9c7db207c92a3985c5def2eca69960557b5",
+  "event-envelope.json": "4b596779cc9ef06c1af2c93e58c605633af3ff2cea87db6eee455e2966e6463c",
+  "positions-page.json": "a1ae3dffdf9ef961b128486a9b79c82b517db60b6012d2bc960a0e0a8e03a3ed",
+  "sse-contract.json": "7b43558342be9eb85bed40e21b4b13a48730e4d8196df8e7dce6f5aab60f7c26",
+  "states-page.json": "0ab4fcab56ffa98381ee35c6464ef5ab74cbde3b50e76c4f107f9ba199e76209",
+  "updates-page.json": "e6ec85d4169ed44fd58c9beb69b902d777ae6a4fd44d78780df39705648e5cd4",
+  "vehicles-page.json": "98d173ab029d41989615dc28e8be62c2795b66ae6e3dfa6753b45fcc20a8148c"
+}

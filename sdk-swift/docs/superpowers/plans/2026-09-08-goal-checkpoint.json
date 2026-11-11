@@ -1,0 +1,9 @@
+{
+  "schema": "teslatlas.superseded-plan-reference/v1",
+  "status": "superseded",
+  "superseded_at": "2026-09-08",
+  "canonical_plan": "../../development/PLAN.md",
+  "historical_copy": "../../development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+  "historical_sha256": "dc5cbf1af30308f9993354e9782d1d0909131dbf203986b184b60238b6af4551",
+  "note": "Old native-goal observations are historical. New task objectives are held; native goals are deferred until owner start."
+}

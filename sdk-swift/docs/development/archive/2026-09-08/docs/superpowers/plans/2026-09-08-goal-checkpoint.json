@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-08T18:41:20Z",
+  "plan_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+  "planning_model": "gpt-5.6-terra",
+  "planning_effort": "max",
+  "historical_observed_planning_model": {
+    "model": "gpt-5.6-sol",
+    "effort": "high",
+    "scope": "Earlier portion of the 2026-09-08 checkpoint audit before the user's model-policy correction"
+  },
+  "developer_model": "gpt-5.6-terra",
+  "developer_effort": "high",
+  "actual_goal": {
+    "thread_id": "01a07f89-4e6b-76d0-ae93-cf958ce1becd",
+    "status": "blocked",
+    "objective": "Complete the authorized Teslatlas Swift SDK working-product plan in the existing teslatlas-sdk-swift main checkout, preserving completed work and unrelated edits. Development must run on gpt-5.6-luna with thinking=max after the parent orchestrator's handoff. Preserve all four library products and strict, historical Hub v1, and current hub-http-v1 contract boundaries; close adapter review findings I1–I9 with meaningful regression/composition evidence and independent re-review; finish the public consumer and caller credential/cancellation lifecycle; verify macOS, iOS simulator, and supported Linux behavior. Coordinate with Hub for shared launcher admission, isolated targets, and both Swift actors passing all 25 cases against each required Hub target, keeping local proof distinct from installed/live acceptance. Finish Swift-owned AGENTS guidance excluding App, a validated simple Docker build/test setup, current README/docs, and final source inventory reconciliation. Complete the authorized source-only GitHub commit/push phase only after required gates and review pass; no CI, releases, tags, binaries, or artifact uploads. Report shared dependencies to the orchestrator without editing sibling repositories.",
+    "tokens_used": 1763243,
+    "time_used_seconds": 3107,
+    "created_at_unix": 1788848189,
+    "updated_at_unix": 1788851296,
+    "token_budget": null,
+    "remaining_tokens": null,
+    "completion_budget_report": null
+  },
+  "goal_database_mutated": false,
+  "resume_control": {
+    "required_to_reactivate_goal_record": true,
+    "actor": "user",
+    "control": "Resume goal",
+    "blocks_ready_authorized_work": false,
+    "note": "The exposed goal tools cannot resume or replace this unfinished record. This planning pass did not mutate, complete or re-block it."
+  },
+  "proposed_objective": "Continue the authorized Teslatlas Swift SDK working-product goal from the verified 2026-09-08 checkpoint in the existing dirty teslatlas-sdk-swift main checkout. Preserve all four public library products and the strict 1.2, historical Hub v1.0.0, and current hub-http-v1@1.0.0 boundaries. First finish every meaningful Swift-owned local gap: actual production-transport error mapping, cancellation, deadline and exceptional cleanup evidence; native macOS and iOS simulator runtime evidence; supported Linux Swift and Docker runtime/package evidence when a daemon or approved Linux host is available. Then consume the Hub-owned fixed Swift SessionInput, launcher, worker, admission, supplement, log and runtime callbacks and prove swift_macos plus swift_linux pass all 25 required cases on macOS arm64, Debian 13 amd64 and a fresh Debian 13 arm64 target, including actual wrong-secret HTTP 401, restart, outage recovery, revocation, re-pair, cursor/header provenance and bounded cleanup. Keep compilation, local fixtures, synthetic composition and partial installed rows distinct from full acceptance. After the exact final source, package, runtime and receipt identities receive independent and Hub acceptance, reconcile and commit and push only reviewed source/docs to main; do not add CI, create releases or tags, upload binaries or evidence artifacts, edit App or sibling repositories, touch the quarantined ARM guest, operate production services, or send vehicle commands. Continue across milestone and agent-turn boundaries until the full acceptance criteria are met; do not treat a short phase, handoff or unchanged external wait as whole-goal completion.",
+  "acceptance_criteria": [
+    "All four SwiftPM products build from an ordinary external consumer on recorded supported toolchains.",
+    "Native macOS and iOS simulator tests execute the Apple production transport and lifecycle; simulator compilation remains separately labeled.",
+    "Supported Linux Swift builds and executes relevant tests with recorded architecture, compiler, libcurl TLS backend and native libraries.",
+    "Transport and worker cancellation, timeouts, size bounds and exceptional cleanup leave no lingering task, process, listener or connection.",
+    "A coherent wrong-secret invitation reaches an isolated actual Hub and returns HTTP 401 after required trust and identity validation.",
+    "Both Swift actors pass all 25 contract cases on each of the three required installed Hub targets through Hub-owned fixed admission.",
+    "The final stable source, package, runtime and receipts receive independent and Hub acceptance before the reviewed source-only main commit and push."
+  ],
+  "next_ready_milestone": {
+    "id": "M2",
+    "name": "Execute native Apple platform evidence",
+    "status": "PARTIAL; WAITING FOR IOS TEST HOST",
+    "first_action": "Supply an iOS XCTest application host or owner-approved simulator runner, then execute CurrentHubAppleConsumerTests on the inventoried iOS 27 UDID; native macOS and Apple-target compile evidence are already retained."
+  },
+  "milestones": [
+    {
+      "id": "M1",
+      "status": "COMPLETE (LOCAL)",
+      "deliverable": "Swift-owned actual-transport, error-mapping, cancellation, deadline and exceptional-cleanup evidence"
+    },
+    {
+      "id": "M2",
+      "status": "PARTIAL; WAITING FOR IOS TEST HOST",
+      "deliverable": "Native macOS and iOS simulator runtime evidence using the public package and Apple production transport"
+    },
+    {
+      "id": "M3",
+      "status": "COMPLETE (LINUX ARM64 CONTAINER)",
+      "deliverable": "Supported Linux Swift and Docker build/test/runtime evidence"
+    },
+    {
+      "id": "M4",
+      "status": "WAITING FOR OWNER/RESOURCE",
+      "deliverable": "Hub-owned fixed Swift registry and all 25 cases for both actors on all three installed targets"
+    },
+    {
+      "id": "M5",
+      "status": "WAITING FOR OWNER/RESOURCE",
+      "deliverable": "Final source freeze, independent and Hub acceptance, then source-only main commit and push"
+    }
+  ],
+  "dependencies": [
+    {
+      "owner_task_id": "01a07f89-4e6b-76d0-ae93-cf958ce1becd",
+      "owner_scope": "Swift M2",
+      "missing_input": "An iOS XCTest application host/project or owner-approved simulator runner; iOS 27 runtime and shutdown UDID are available but SwiftPM cannot execute its simulator test bundle from the macOS helper.",
+      "work_still_possible_locally": "M1 complete; native macOS URLSession evidence, Apple device/simulator test-target compilation, and the simulator execution attempt are retained without booting a device.",
+      "unblock_event": "A host runs CurrentHubAppleConsumerTests on the selected UDID with a nonzero test count."
+    },
+    {
+      "owner_task_id": "01a07048-a05c-72a2-9c7a-87dd59f52e9b",
+      "owner_scope": "Hub task 10 fixed registry",
+      "missing_input": "Complete source-fixed Swift FixedInstalledAdapter callbacks: build_session_input, launch_adapter, admit, build_supplement, execution_logs and runtime_inventory, plus fixed macOS/Linux workers; the Hub-side matrix_live.py source hash must be refreshed before reviewed-entry loading.",
+      "work_still_possible_locally": "M1, M2, final Swift source review and read-only interface compatibility checks.",
+      "unblock_event": "Hub tests and exposes an operational Swift registry entry bound to the reviewed source candidate."
+    },
+    {
+      "owner_task_id": "01a07048-a05c-72a2-9c7a-87dd59f52e9b",
+      "owner_scope": "Hub task 10a installed runtime",
+      "missing_input": "Isolated macOS, Debian amd64 and fresh Debian arm64 targets with private config/CA/invitation/seed, controller session and fresh ARM preparation. The local Colima Linux arm64 container gate is complete but is not installed-Hub acceptance; after Mac/VPS verification and Hub integration, owner-provided Azure arm64 and x86_64 VMs are the final bootstrap/.deb/Docker gate.",
+      "work_still_possible_locally": "M1/M2, final Swift source review and static Docker/source checks; local Linux arm64 package/container evidence is retained.",
+      "unblock_event": "Owner supplies current runtime inventory and target bindings; fresh ARM preparation passes without using the quarantined guest."
+    },
+    {
+      "owner_task_id": "01a07f89-4e6b-76d0-ae93-cf958ce1becd",
+      "owner_scope": "Swift final source and publication",
+      "coordinating_task_id": "01a07048-a05c-72a2-9c7a-87dd59f52e9b",
+      "missing_input": "Stable final task-owned tree, accepted installed rows, final review, correct remote/main identity and non-conflicting staged paths.",
+      "work_still_possible_locally": "Prepare the source inventory and publication checklist without staging unrelated files.",
+      "unblock_event": "All product gates pass and Hub records the exact final source/package/runtime/receipt relationship."
+    }
+  ],
+  "verified_evidence": {
+    "swift_head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+    "hub_head_read_only": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "bundle_path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-swift-adapter-current-final/swift-to-hub-admission-bundle.json",
+    "bundle_sha256": "2cce7d873d8835cd3b51043cdac01f5f1c1e10d1683254bd12bd48ce48ed0a6d",
+    "review_path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-swift-adapter-current-final/independent-review.md",
+    "review_sha256": "9dec4f558768afb1fccf74bf5e1409f94aaee94dac96f743a786e9a4e83c6326",
+    "source_review": "I1-I5 and I7-I9 closed at source/synthetic level; I6 materially source-closed with installed response-provenance residual; Linux worker contract and source/product archive mapping re-reviewed, including declared actor-log path; Hub integration blockers independently recorded; supplemental Apple fixture reviewed",
+    "local_gates": "Swift release non-live 139/139; Python adapter 27/27; all 25 synthetic cases admitted for both actor shapes; worker-support 11/11; private read 1/1; native macOS Apple consumer 1/1; Linux arm64 Docker 148 non-live tests plus release and external consumer builds; iOS test targets compile; simulator execution blocked before tests",
+    "installed_rows_accepted": 0,
+    "apple_platform_evidence_path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-swift-adapter-current-final/apple-platform-evidence.json",
+    "apple_platform_evidence_sha256": "7f049f3be630c4b960779f30a51f1d6a36a324043e062319c79ce2bbc70b3f3b",
+    "linux_docker_evidence_path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-swift-adapter-current-final/linux-docker-evidence.json",
+    "linux_docker_evidence_sha256": "2191b9530ee0dd566f7b477e0ad6f405c2d47f980b845747b650372cacb46fa9",
+    "source_manifest_sha256": "af2e6aa8240b6343e4ffdddd290a100a54c90acea7200cff8b00e2c7f6aa2cc6",
+    "adapter_diff_sha256": "c9ceac29dc858ea2cb1ce09be7d8e11d6a0f35e18f2e7d5777206947b7897a7d",
+    "launcher_worker_evidence_sha256": "5a611ca7cafe646189da13440a6cb41d43f62aaaae46fe518159768edafe43ab",
+    "gate_results_sha256": "25f368ee7abdf1f27620d08d222f5c9354639c0ee2e291beb07dd3e0647f9ce4",
+    "linux_worker_contract_sha256": "d3f7a0ab940d18388694d89896fb1bf9974cacaa21d26faeda77a43a53bac764",
+    "launcher_interface_sha256": "dc7ef1bfbbf84c99f324c798e305d44d82e5296239f8d335d70f735ce009ea38",
+    "source_files": 18
+  },
+  "current_model_policy": {
+    "authority": "Latest user instruction on 2026-09-08; supersedes earlier model policy and historical goal wording",
+    "coordinator_and_delegation": {
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high"
+    },
+    "product_coding_goal_and_workers": {
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "high"
+    }
+  },
+  "coordination_policy": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "high"
+  }
+}
