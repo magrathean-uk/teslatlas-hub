@@ -2,36 +2,42 @@
 
 //! The password-based stream-encrypted archive container (M06-T01).
 //!
-//! One archive file holds one backup generation. Layout:
+//! One archive file holds one backup generation. The Backups decision names
+//! the password-based format: Argon2id (RFC 9106) derives the key from the
+//! user-kept recovery password, and the payload is the STREAM construction
+//! (Hoang, Reyhanitabar, Rogaway and Vizár, 2015) over AES-256-GCM, the same
+//! online-AEAD shape that age uses for its payload. Layout:
 //!
 //! ```text
-//! header (80 bytes, plaintext, authenticated as the AAD of every chunk)
+//! header (88 bytes, plaintext, authenticated as the AAD of every chunk)
 //!   magic            8   "TLATLBK1"
-//!   version          1   1
-//!   kdf              1   1 = PBKDF2-HMAC-SHA-256
+//!   version          1   2
+//!   kdf              1   2 = Argon2id, version 0x13 (RFC 9106)
 //!   cipher           1   1 = AES-256-GCM, STREAM chunking
 //!   reserved         1   0
-//!   iterations       4   big endian
+//!   memory KiB       4   big endian, Argon2id m
+//!   passes           4   big endian, Argon2id t
+//!   lanes            4   big endian, Argon2id p
 //!   chunk bytes      4   big endian, plaintext bytes per full chunk
 //!   reserved         4   0
 //!   salt            16
 //!   nonce prefix     7
 //!   reserved         1   0
-//!   key check       32   HMAC-SHA-256(master, label || bytes 0..48)
+//!   key check       32   HMAC-SHA-256(master, label || bytes 0..56)
 //! chunks: each is AES-256-GCM(plaintext chunk) followed by its 16-byte tag
 //! ```
 //!
-//! The chunk nonce is the STREAM construction: the 7-byte prefix, a 32-bit
-//! big-endian chunk counter and one flag byte that is 1 only on the final
-//! chunk. A reordered, dropped, duplicated, extended or truncated chunk
-//! therefore fails authentication. The header is bound as additional data, so
-//! its parameters cannot be changed without detection.
+//! The chunk nonce is the STREAM nonce: the 7-byte prefix, a 32-bit big-endian
+//! chunk counter and one flag byte that is 1 only on the final chunk. A
+//! reordered, dropped, duplicated, extended or truncated chunk therefore fails
+//! authentication. The header is bound as additional data, so its parameters
+//! cannot be changed without detection.
 //!
-//! The key is derived from the user-kept recovery password with
-//! PBKDF2-HMAC-SHA-256 (RFC 8018). The crate carries no memory-hard KDF, so the
-//! iteration count carries the work factor; the generated recovery password has
-//! 160 bits of entropy, which makes an offline search infeasible whatever the
-//! KDF.
+//! Memory. The default Argon2id cost is the second recommended option of
+//! RFC 9106 section 4 (m = 64 MiB, t = 3, p = 4). A reader refuses any header
+//! asking for more than [`MAX_KDF_MEMORY_KIB`], so a crafted archive cannot
+//! push the Hub past its 1 GiB peak; [`super::encrypted_backup`] counts that
+//! maximum against the peak beside the in-memory catalogue copy.
 
 use std::{
     io::{self, Read, Write},
@@ -42,53 +48,102 @@ use aes_gcm::{
     Aes256Gcm, Nonce, Tag,
     aead::{AeadInOut, KeyInit},
 };
+use argon2::{Algorithm, Argon2, AssociatedData, Block, ParamsBuilder, Version};
 use zeroize::{Zeroize, Zeroizing};
 
 use super::{DataRecoveryError, invalid, io_error};
 use crate::protocol::{constant_time_eq, hmac_sha256};
 
 const MAGIC: &[u8; 8] = b"TLATLBK1";
-const FORMAT_VERSION: u8 = 1;
-const KDF_PBKDF2_SHA256: u8 = 1;
+const FORMAT_VERSION: u8 = 2;
+const KDF_ARGON2ID_V13: u8 = 2;
 const CIPHER_AES256GCM_STREAM: u8 = 1;
-const FIXED_HEADER_BYTES: usize = 48;
+const FIXED_HEADER_BYTES: usize = 56;
 pub(super) const HEADER_BYTES: usize = FIXED_HEADER_BYTES + 32;
+pub(super) const SALT_OFFSET: usize = 32;
 const SALT_BYTES: usize = 16;
+const PREFIX_OFFSET: usize = SALT_OFFSET + SALT_BYTES;
 const NONCE_PREFIX_BYTES: usize = 7;
-const TAG_BYTES: usize = 16;
+pub(super) const TAG_BYTES: usize = 16;
 
 /// Plaintext bytes per full chunk in production.
 pub(super) const DEFAULT_CHUNK_BYTES: usize = 1024 * 1024;
 const MIN_CHUNK_BYTES: usize = if cfg!(test) { 16 } else { 64 * 1024 };
-const MAX_CHUNK_BYTES: usize = 8 * 1024 * 1024;
-/// OWASP's 2023 floor for PBKDF2-HMAC-SHA-256 is 600,000 iterations.
-pub(super) const DEFAULT_KDF_ITERATIONS: u32 = 600_000;
-const MIN_KDF_ITERATIONS: u32 = if cfg!(test) { 1 } else { 100_000 };
-const MAX_KDF_ITERATIONS: u32 = 20_000_000;
+pub(super) const MAX_CHUNK_BYTES: usize = 8 * 1024 * 1024;
+
+/// Argon2id cost parameters as the header stores them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct KdfParams {
+    pub memory_kib: u32,
+    pub passes: u32,
+    pub lanes: u32,
+}
+
+/// RFC 9106 section 4, second recommended option.
+pub(crate) const DEFAULT_KDF: KdfParams = KdfParams {
+    memory_kib: 64 * 1024,
+    passes: 3,
+    lanes: 4,
+};
+/// The most memory a header may ask for (256 MiB).
+pub(super) const MAX_KDF_MEMORY_KIB: u32 = 256 * 1024;
+/// OWASP's Argon2id floor is 19 MiB; tests run far below it for speed.
+const MIN_KDF_MEMORY_KIB: u32 = if cfg!(test) { 8 } else { 19 * 1024 };
+const MAX_KDF_PASSES: u32 = 10;
+const MAX_KDF_LANES: u32 = 8;
 
 pub(super) const MIN_PASSWORD_CHARS: usize = 12;
 
-const KEY_LABEL: &[u8] = b"teslatlas-hub-backup-v1 encryption key";
-const CHECK_LABEL: &[u8] = b"teslatlas-hub-backup-v1 key check";
+const KEY_LABEL: &[u8] = b"teslatlas-hub-backup-v2 encryption key";
+const CHECK_LABEL: &[u8] = b"teslatlas-hub-backup-v2 key check";
 
-/// RFC 8018 PBKDF2 with HMAC-SHA-256 and a 32-byte output (one block).
-pub(super) fn pbkdf2_hmac_sha256_32(
+fn kdf_params_in_range(params: KdfParams) -> bool {
+    (MIN_KDF_MEMORY_KIB..=MAX_KDF_MEMORY_KIB).contains(&params.memory_kib)
+        && (1..=MAX_KDF_PASSES).contains(&params.passes)
+        && (1..=MAX_KDF_LANES).contains(&params.lanes)
+        && params.memory_kib >= 8 * params.lanes
+}
+
+/// Argon2id version 0x13 into `out`. `secret` and `data` are RFC 9106's
+/// optional K and X inputs; the archive passes both empty, and the published
+/// test vector exercises them. The working memory is zeroed before it is
+/// freed.
+pub(super) fn argon2id(
     password: &[u8],
     salt: &[u8],
-    iterations: u32,
-) -> Zeroizing<[u8; 32]> {
-    let mut first = Zeroizing::new(salt.to_vec());
-    first.extend_from_slice(&1_u32.to_be_bytes());
-    let mut block = hmac_sha256(password, &first);
-    let mut accumulator = Zeroizing::new(block);
-    for _ in 1..iterations {
-        block = hmac_sha256(password, &block);
-        for (target, byte) in accumulator.iter_mut().zip(block.iter()) {
-            *target ^= byte;
-        }
+    secret: &[u8],
+    data: &[u8],
+    params: KdfParams,
+    out: &mut [u8],
+) -> Result<(), DataRecoveryError> {
+    let refused = |_| invalid("the backup key derivation parameters are not usable");
+    let mut builder = ParamsBuilder::new();
+    builder
+        .m_cost(params.memory_kib)
+        .t_cost(params.passes)
+        .p_cost(params.lanes)
+        .output_len(out.len());
+    if !data.is_empty() {
+        builder.data(AssociatedData::new(data).map_err(refused)?);
     }
-    block.zeroize();
-    accumulator
+    let argon2_params = builder.build().map_err(refused)?;
+    let context = if secret.is_empty() {
+        Argon2::new(Algorithm::Argon2id, Version::V0x13, argon2_params.clone())
+    } else {
+        Argon2::new_with_secret(
+            secret,
+            Algorithm::Argon2id,
+            Version::V0x13,
+            argon2_params.clone(),
+        )
+        .map_err(refused)?
+    };
+    let mut blocks = vec![Block::new(); argon2_params.block_count()];
+    let result = context
+        .hash_password_into_with_memory(password, salt, out, blocks.as_mut_slice())
+        .map_err(refused);
+    blocks.zeroize();
+    result
 }
 
 struct Keys {
@@ -96,17 +151,35 @@ struct Keys {
     check: [u8; 32],
 }
 
-fn derive_keys(password: &str, fixed_header: &[u8], iterations: u32) -> Keys {
-    let master = pbkdf2_hmac_sha256_32(
+fn derive_keys(
+    password: &str,
+    fixed_header: &[u8],
+    params: KdfParams,
+) -> Result<Keys, DataRecoveryError> {
+    let mut master = Zeroizing::new([0_u8; 32]);
+    argon2id(
         password.as_bytes(),
-        &fixed_header[24..24 + SALT_BYTES],
-        iterations,
-    );
+        &fixed_header[SALT_OFFSET..SALT_OFFSET + SALT_BYTES],
+        &[],
+        &[],
+        params,
+        master.as_mut_slice(),
+    )?;
     let encryption = Zeroizing::new(hmac_sha256(master.as_slice(), KEY_LABEL));
     let mut check_input = CHECK_LABEL.to_vec();
     check_input.extend_from_slice(fixed_header);
     let check = hmac_sha256(master.as_slice(), &check_input);
-    Keys { encryption, check }
+    Ok(Keys { encryption, check })
+}
+
+#[cfg(test)]
+pub(super) fn derive_keys_for_test(
+    password: &str,
+    fixed_header: &[u8],
+    params: KdfParams,
+) -> ([u8; 32], [u8; 32]) {
+    let keys = derive_keys(password, fixed_header, params).expect("test keys");
+    (*keys.encryption, keys.check)
 }
 
 fn chunk_nonce(prefix: &[u8; NONCE_PREFIX_BYTES], counter: u32, last: bool) -> [u8; 12] {
@@ -144,6 +217,62 @@ pub fn generate_recovery_password() -> Result<String, DataRecoveryError> {
         .join("-"))
 }
 
+/// The derived key and header of one new archive. Deriving it is the costly,
+/// memory-hard step, so a run does it before it takes any store lock; the
+/// Argon2id memory is freed when this returns.
+pub(super) struct SealingKey {
+    cipher: Aes256Gcm,
+    header: [u8; HEADER_BYTES],
+    prefix: [u8; NONCE_PREFIX_BYTES],
+    chunk_bytes: usize,
+}
+
+impl SealingKey {
+    pub(super) fn derive(
+        password: &str,
+        params: KdfParams,
+        chunk_bytes: usize,
+    ) -> Result<Self, DataRecoveryError> {
+        if password.chars().count() < MIN_PASSWORD_CHARS {
+            return Err(invalid(format!(
+                "the backup password must have at least {MIN_PASSWORD_CHARS} characters"
+            )));
+        }
+        if !kdf_params_in_range(params)
+            || !(MIN_CHUNK_BYTES..=MAX_CHUNK_BYTES).contains(&chunk_bytes)
+        {
+            return Err(invalid("backup archive parameters are out of range"));
+        }
+        let mut fixed = [0_u8; FIXED_HEADER_BYTES];
+        fixed[..8].copy_from_slice(MAGIC);
+        fixed[8] = FORMAT_VERSION;
+        fixed[9] = KDF_ARGON2ID_V13;
+        fixed[10] = CIPHER_AES256GCM_STREAM;
+        fixed[12..16].copy_from_slice(&params.memory_kib.to_be_bytes());
+        fixed[16..20].copy_from_slice(&params.passes.to_be_bytes());
+        fixed[20..24].copy_from_slice(&params.lanes.to_be_bytes());
+        let chunk_field = u32::try_from(chunk_bytes).map_err(|_| invalid("chunk size"))?;
+        fixed[24..28].copy_from_slice(&chunk_field.to_be_bytes());
+        getrandom::fill(&mut fixed[SALT_OFFSET..SALT_OFFSET + SALT_BYTES])
+            .and_then(|()| {
+                getrandom::fill(&mut fixed[PREFIX_OFFSET..PREFIX_OFFSET + NONCE_PREFIX_BYTES])
+            })
+            .map_err(|_| invalid("system entropy is unavailable for the backup archive"))?;
+        let keys = derive_keys(password, &fixed, params)?;
+        let mut header = [0_u8; HEADER_BYTES];
+        header[..FIXED_HEADER_BYTES].copy_from_slice(&fixed);
+        header[FIXED_HEADER_BYTES..].copy_from_slice(&keys.check);
+        let mut prefix = [0_u8; NONCE_PREFIX_BYTES];
+        prefix.copy_from_slice(&fixed[PREFIX_OFFSET..PREFIX_OFFSET + NONCE_PREFIX_BYTES]);
+        Ok(Self {
+            cipher: Aes256Gcm::new((&*keys.encryption).into()),
+            header,
+            prefix,
+            chunk_bytes,
+        })
+    }
+}
+
 pub(super) struct ArchiveWriter<W: Write> {
     inner: W,
     path: PathBuf,
@@ -152,59 +281,29 @@ pub(super) struct ArchiveWriter<W: Write> {
     prefix: [u8; NONCE_PREFIX_BYTES],
     counter: u32,
     chunk_bytes: usize,
-    buffer: Vec<u8>,
+    buffer: Zeroizing<Vec<u8>>,
 }
 
 impl<W: Write> ArchiveWriter<W> {
+    /// Write the header of a new archive. A key seals one archive only: the
+    /// nonce prefix and salt are fresh per key.
     pub(super) fn start(
         mut inner: W,
         path: PathBuf,
-        password: &str,
-        iterations: u32,
-        chunk_bytes: usize,
+        key: SealingKey,
     ) -> Result<Self, DataRecoveryError> {
-        if password.chars().count() < MIN_PASSWORD_CHARS {
-            return Err(invalid(format!(
-                "the backup password must have at least {MIN_PASSWORD_CHARS} characters"
-            )));
-        }
-        if !(MIN_KDF_ITERATIONS..=MAX_KDF_ITERATIONS).contains(&iterations)
-            || !(MIN_CHUNK_BYTES..=MAX_CHUNK_BYTES).contains(&chunk_bytes)
-        {
-            return Err(invalid("backup archive parameters are out of range"));
-        }
-        let mut fixed = [0_u8; FIXED_HEADER_BYTES];
-        fixed[..8].copy_from_slice(MAGIC);
-        fixed[8] = FORMAT_VERSION;
-        fixed[9] = KDF_PBKDF2_SHA256;
-        fixed[10] = CIPHER_AES256GCM_STREAM;
-        fixed[12..16].copy_from_slice(&iterations.to_be_bytes());
-        let chunk_field = u32::try_from(chunk_bytes).map_err(|_| invalid("chunk size"))?;
-        fixed[16..20].copy_from_slice(&chunk_field.to_be_bytes());
-        // Bytes 20..24 are reserved zero; the salt starts at 24 so that the
-        // key derivation and the header layout agree.
-        getrandom::fill(&mut fixed[24..24 + SALT_BYTES])
-            .and_then(|()| getrandom::fill(&mut fixed[40..40 + NONCE_PREFIX_BYTES]))
-            .map_err(|_| invalid("system entropy is unavailable for the backup archive"))?;
-        let keys = derive_keys(password, &fixed, iterations);
-        let mut header = [0_u8; HEADER_BYTES];
-        header[..FIXED_HEADER_BYTES].copy_from_slice(&fixed);
-        header[FIXED_HEADER_BYTES..].copy_from_slice(&keys.check);
-        let mut prefix = [0_u8; NONCE_PREFIX_BYTES];
-        prefix.copy_from_slice(&fixed[40..40 + NONCE_PREFIX_BYTES]);
-        let cipher = Aes256Gcm::new((&*keys.encryption).into());
         inner
-            .write_all(&header)
+            .write_all(&key.header)
             .map_err(|source| map_write_error(&path, source))?;
         Ok(Self {
             inner,
             path,
-            cipher,
-            header,
-            prefix,
+            cipher: key.cipher,
+            header: key.header,
+            prefix: key.prefix,
             counter: 0,
-            chunk_bytes,
-            buffer: Vec::with_capacity(chunk_bytes),
+            chunk_bytes: key.chunk_bytes,
+            buffer: Zeroizing::new(Vec::with_capacity(key.chunk_bytes)),
         })
     }
 
@@ -301,34 +400,36 @@ impl<R: Read> ArchiveReader<R> {
             ));
         }
         if header[8] != FORMAT_VERSION
-            || header[9] != KDF_PBKDF2_SHA256
+            || header[9] != KDF_ARGON2ID_V13
             || header[10] != CIPHER_AES256GCM_STREAM
             || header[11] != 0
-            || header[20..24] != [0; 4]
+            || header[28..32] != [0; 4]
             || header[FIXED_HEADER_BYTES - 1] != 0
         {
             return Err(DataRecoveryError::CorruptArchive(
                 "unsupported backup archive version".into(),
             ));
         }
-        let iterations = u32::from_be_bytes(header[12..16].try_into().expect("four bytes"));
-        let chunk_bytes = usize::try_from(u32::from_be_bytes(
-            header[16..20].try_into().expect("four bytes"),
-        ))
-        .map_err(|_| invalid("chunk size"))?;
-        if !(MIN_KDF_ITERATIONS..=MAX_KDF_ITERATIONS).contains(&iterations)
+        let field = |at: usize| u32::from_be_bytes(header[at..at + 4].try_into().expect("four"));
+        let params = KdfParams {
+            memory_kib: field(12),
+            passes: field(16),
+            lanes: field(20),
+        };
+        let chunk_bytes = usize::try_from(field(24)).map_err(|_| invalid("chunk size"))?;
+        if !kdf_params_in_range(params)
             || !(MIN_CHUNK_BYTES..=MAX_CHUNK_BYTES).contains(&chunk_bytes)
         {
             return Err(DataRecoveryError::CorruptArchive(
                 "backup archive parameters are out of range".into(),
             ));
         }
-        let keys = derive_keys(password, &header[..FIXED_HEADER_BYTES], iterations);
+        let keys = derive_keys(password, &header[..FIXED_HEADER_BYTES], params)?;
         if !constant_time_eq(&keys.check, &header[FIXED_HEADER_BYTES..]) {
             return Err(DataRecoveryError::WrongPassword);
         }
         let mut prefix = [0_u8; NONCE_PREFIX_BYTES];
-        prefix.copy_from_slice(&header[40..40 + NONCE_PREFIX_BYTES]);
+        prefix.copy_from_slice(&header[PREFIX_OFFSET..PREFIX_OFFSET + NONCE_PREFIX_BYTES]);
         Ok(Self {
             inner,
             path,

@@ -6,14 +6,33 @@
 //! destination folder, encrypted with a key derived from a user-kept recovery
 //! password (see [`super::archive_crypto`] for the container).
 //!
-//! Plaintext handling. The archive streams encrypted straight into a partial
-//! file in the destination; nothing readable is ever written there. The one
-//! plaintext artefact is the online catalogue copy that SQLite's backup API
-//! produces, which needs a file: it lives in a private (0700) scratch
-//! directory outside the destination, is sealed (host authority removed)
-//! before it is read into the archive, and goes when the run ends. Packs and
-//! the signed no-op bodies are streamed from their source files and never
-//! copied.
+//! Order of a run, per the Backups decision (2026-10-08):
+//!
+//! 1. Derive the archive key (Argon2id), before any store lock.
+//! 2. Under the publication gate: copy the catalogue with SQLite's online
+//!    backup API into a private in-memory database, read the signed no-op
+//!    bodies, list the packs and pin every one of them with a pin row in the
+//!    live catalogue. Then release the gate.
+//! 3. Seal the in-memory copy (credential rows, pairing and collector
+//!    authority, pin rows) and stream one encrypted archive straight into a
+//!    partial file in the destination: manifest, catalogue, packs, no-ops.
+//! 4. Publish by a no-replace rename, release the pins, rotate.
+//!
+//! No plaintext is ever staged on disk. The catalogue copy is a `:memory:`
+//! database with in-memory journal and temporary storage, so it has no file
+//! and no side file; once sealed it is serialised and the database dropped; the no-op bodies stay in memory; packs are read from
+//! the live store, where the pins keep GC from removing them until the run
+//! ends. Compaction never deletes a pack file (it only retires catalogue
+//! references, which GC later acts on), so the pin protects a pack against
+//! both. A pin row carries a lease: a run killed with its pins in place stops
+//! protecting its packs when the lease runs out, and the next run clears it.
+//!
+//! Memory. The Hub's peak is 1 GiB. The key derivation (at most
+//! [`super::archive_crypto::MAX_KDF_MEMORY_KIB`]) finishes and frees its memory before the copy
+//! starts; the catalogue copy is capped at [`MAX_CATALOGUE_IMAGE_BYTES`] and
+//! counted twice (the copy and its serialised image overlap briefly); the
+//! rest is fixed buffers. See
+//! `memory_budget_fits_the_hub_peak` in the tests.
 //!
 //! Failure rule. A generation becomes visible only by a no-replace rename of a
 //! fully written, synced partial file, so every failure before the rename
@@ -31,23 +50,32 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use super::{
     BACKUP_KIND, BACKUP_SCOPE, BUILD_VERSION, BackupManifest, BackupMember, CATALOGUE_MEMBER,
     DataRecoveryError, DataRecoveryReport, HubStore, MAX_BACKUP_MEMBERS, MAX_MANIFEST_BYTES,
-    PACK_DIRECTORY, PRIVATE_FILE_MODE, SCHEMA_22_NOOP_DIRECTORY, SCHEMA_VERSION, Sha256,
-    StagingDirectory, StoreError, admit_staging_capacity,
+    MAX_SCHEMA_22_NOOP_BYTES, PACK_DIRECTORY, PRIVATE_FILE_MODE, SCHEMA_22_NOOP_DIRECTORY,
+    SCHEMA_VERSION, Sha256, StagingDirectory, StoreError, admit_staging_capacity,
     archive_crypto::{
-        ArchiveReader, ArchiveWriter, DEFAULT_CHUNK_BYTES, DEFAULT_KDF_ITERATIONS, map_write_error,
+        ArchiveReader, ArchiveWriter, DEFAULT_CHUNK_BYTES, DEFAULT_KDF, KdfParams, MAX_CHUNK_BYTES,
+        MAX_KDF_MEMORY_KIB, SealingKey, TAG_BYTES, map_write_error,
     },
-    canonical_json, canonical_pack_filename, check_backup_admission, create_private_directory,
-    current_epoch_ms, current_schema_22_noop_pairs, excluded_host_state_strings, expected_protocol,
-    finalize_restore, immutable_database_identity, immutable_database_identity_at_schema, invalid,
-    inventory_file, io_error, manifest_copy_bytes, no_replace_rename, open_regular_nonblocking,
-    parse_canonical_json, prepare_new_destination, read_directory, report, seal_backup_payload,
-    set_mode, sync_directory, validate_manifest, validate_restored_data_tree,
-    validate_schema_22_noop_directory, write_private_file,
+    canonical_json, canonical_pack_filename, catalogue_identity, check_backup_admission,
+    create_private_directory, current_epoch_ms, current_schema_22_noop_pairs_in,
+    excluded_host_state_strings, expected_protocol, finalize_restore,
+    immutable_database_identity_at_schema, invalid, io_error, manifest_copy_bytes,
+    no_replace_rename, open_regular_nonblocking, parse_canonical_json, prepare_new_destination,
+    read_directory, report, seal_backup_credentials, seal_backup_credentials_checked,
+    seal_host_authority, sync_directory, validate_manifest, validate_restored_data_tree,
+    validate_schema_22_noop_bytes,
+};
+use rusqlite::{
+    Connection, MAIN_DB, TransactionBehavior,
+    backup::{Backup, StepResult},
+    params,
+    serialize::Data,
 };
 use serde::Serialize;
 use sha2::Digest;
@@ -57,12 +85,48 @@ const ARCHIVE_PREFIX: &str = "teslatlas-hub-backup-";
 const ARCHIVE_SUFFIX: &str = ".tlbk";
 const PARTIAL_PREFIX: &str = ".teslatlas-hub-backup-";
 const PARTIAL_SUFFIX: &str = ".partial";
-const SCRATCH_PREFIX: &str = ".teslatlas-backup-scratch-";
 const MANIFEST_RECORD: &str = "manifest.json";
 const RECORD_FILE: u8 = 1;
 const RECORD_END: u8 = 0xFE;
 const MAX_RECORD_PATH_BYTES: usize = 1024;
-const STREAM_BUFFER_BYTES: usize = 1024 * 1024;
+pub(super) const STREAM_BUFFER_BYTES: usize = 1024 * 1024;
+
+/// The Hub's whole-process peak (Backups decision, 2026-10-08).
+pub(super) const HUB_PEAK_MEMORY_BYTES: u64 = 1024 * 1024 * 1024;
+/// What the rest of the Hub may hold while a backup runs.
+pub(super) const SERVICE_RESERVE_BYTES: u64 = 384 * 1024 * 1024;
+/// The largest catalogue an encrypted backup copies. The copy and its
+/// serialised image coexist briefly, so the budget counts it twice.
+pub(super) const MAX_CATALOGUE_IMAGE_BYTES: u64 = 256 * 1024 * 1024;
+// The memory budget holds at compile time (the tests spell it out): the key
+// derivation phase, then the copy, no-op bodies and stream buffers, each beside
+// the service reserve.
+const _: () = assert!(
+    SERVICE_RESERVE_BYTES + MAX_KDF_MEMORY_KIB as u64 * 1024 <= HUB_PEAK_MEMORY_BYTES
+        && SERVICE_RESERVE_BYTES
+            + 2 * MAX_CATALOGUE_IMAGE_BYTES
+            + MAX_BACKUP_MEMBERS as u64 * MAX_SCHEMA_22_NOOP_BYTES
+            + STREAM_BUFFER_BYTES as u64
+            + (MAX_CHUNK_BYTES + TAG_BYTES) as u64
+            <= HUB_PEAK_MEMORY_BYTES
+);
+const BACKUP_STEP_PAGES: i32 = 256;
+const BACKUP_BUSY_RETRIES: u32 = 2_000;
+const SQLITE_HEADER_BYTES: usize = 100;
+
+/// The pin rows of running encrypted backups. Backup-owned live state: it is
+/// created on first use, GC reads it when present, and the seal drops it from
+/// every copied or restored catalogue.
+const PACK_PIN_TABLE: &str = "backup_pack_pins";
+const CREATE_PACK_PIN_TABLE: &str = "CREATE TABLE IF NOT EXISTS backup_pack_pins (
+    pin_id TEXT NOT NULL CHECK(length(pin_id) = 36),
+    sha256 TEXT NOT NULL CHECK(length(sha256) = 64),
+    expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms > 0),
+    PRIMARY KEY(pin_id, sha256)
+) STRICT, WITHOUT ROWID;";
+pub(super) const DROP_PACK_PIN_TABLE: &str = "DROP TABLE IF EXISTS backup_pack_pins;";
+/// A pin's lease; a running backup renews it once half has passed.
+pub(super) const PACK_PIN_LEASE_MS: i64 = 6 * 60 * 60 * 1000;
 
 #[cfg(test)]
 pub(super) use test_hooks::{Action as HookAction, clear_hook, set_hook};
@@ -77,9 +141,8 @@ pub struct EncryptedBackupRequest<'a> {
     pub keep: Option<NonZeroUsize>,
     /// Set by the caller to stop the run; checked per chunk and per member.
     pub cancel: Option<Arc<AtomicBool>>,
-    pub(crate) kdf_iterations: u32,
+    pub(crate) kdf: KdfParams,
     pub(crate) chunk_bytes: usize,
-    pub(crate) scratch_parent: Option<PathBuf>,
 }
 
 impl<'a> EncryptedBackupRequest<'a> {
@@ -89,9 +152,8 @@ impl<'a> EncryptedBackupRequest<'a> {
             password,
             keep: None,
             cancel: None,
-            kdf_iterations: DEFAULT_KDF_ITERATIONS,
+            kdf: DEFAULT_KDF,
             chunk_bytes: DEFAULT_CHUNK_BYTES,
-            scratch_parent: None,
         }
     }
 }
@@ -120,8 +182,9 @@ fn cancelled(cancel: Option<&AtomicBool>) -> Result<(), DataRecoveryError> {
     }
 }
 
-/// A test seam: stages are "write", "record", "before_publish" and
-/// "rotate_remove". Production builds compile this to nothing.
+/// A test seam: stages are "catalogue_copied" (under the gate), "write",
+/// "record", "before_publish" and "rotate_remove". Production builds compile
+/// this to nothing.
 #[cfg(test)]
 fn hook(stage: &str, path: &Path) -> Result<(), DataRecoveryError> {
     match test_hooks::call(stage, path) {
@@ -173,15 +236,256 @@ impl Write for Sink {
 }
 
 enum Source {
-    /// A file in the private scratch directory (catalogue, no-op bodies).
-    Scratch(PathBuf),
-    /// A pack in the live store, content-addressed by its own name.
+    /// The sealed in-memory catalogue copy.
+    Catalogue,
+    /// A pack in the live store, content-addressed by its own name and pinned.
     Pack(PathBuf),
+    /// A small body held in memory (a signed schema 2.2 no-op).
+    Bytes(Vec<u8>),
 }
 
 struct Planned {
     member: BackupMember,
     source: Source,
+}
+
+/// Pin rows that keep GC from removing the packs a run is streaming. They are
+/// written under the publication gate and released when the run ends,
+/// whichever way it ends; a killed run leaves them to their lease.
+pub(super) struct PackPins<'a> {
+    store: &'a HubStore,
+    pin_id: Uuid,
+    expires_at_ms: i64,
+}
+
+fn pin_error(error: rusqlite::Error) -> DataRecoveryError {
+    DataRecoveryError::Store(StoreError::Query(error))
+}
+
+impl<'a> PackPins<'a> {
+    /// Pin `digests`; the caller holds the publication gate.
+    fn take<'d>(
+        store: &'a HubStore,
+        digests: impl Iterator<Item = &'d str>,
+    ) -> Result<Self, DataRecoveryError> {
+        let now = current_epoch_ms()?;
+        let expires_at_ms = now
+            .checked_add(PACK_PIN_LEASE_MS)
+            .ok_or_else(|| invalid("backup pin lease is out of range"))?;
+        let pin_id = Uuid::new_v4();
+        let mut connection = store.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(pin_error)?;
+        transaction
+            .execute_batch(CREATE_PACK_PIN_TABLE)
+            .map_err(pin_error)?;
+        transaction
+            .execute(
+                "DELETE FROM backup_pack_pins WHERE expires_at_ms <= ?1",
+                params![now],
+            )
+            .map_err(pin_error)?;
+        for digest in digests {
+            transaction
+                .execute(
+                    "INSERT INTO backup_pack_pins(pin_id, sha256, expires_at_ms)
+                     VALUES (?1, ?2, ?3)",
+                    params![pin_id.to_string(), digest, expires_at_ms],
+                )
+                .map_err(pin_error)?;
+        }
+        transaction.commit().map_err(pin_error)?;
+        Ok(Self {
+            store,
+            pin_id,
+            expires_at_ms,
+        })
+    }
+
+    /// Extend the lease once half of it has passed.
+    fn renew_if_due(&mut self) -> Result<(), DataRecoveryError> {
+        let now = current_epoch_ms()?;
+        if self.expires_at_ms - now > PACK_PIN_LEASE_MS / 2 {
+            return Ok(());
+        }
+        let expires_at_ms = now
+            .checked_add(PACK_PIN_LEASE_MS)
+            .ok_or_else(|| invalid("backup pin lease is out of range"))?;
+        self.store
+            .open()?
+            .execute(
+                "UPDATE backup_pack_pins SET expires_at_ms = ?2 WHERE pin_id = ?1",
+                params![self.pin_id.to_string(), expires_at_ms],
+            )
+            .map_err(pin_error)?;
+        self.expires_at_ms = expires_at_ms;
+        Ok(())
+    }
+
+    fn release_rows(&self) -> Result<(), DataRecoveryError> {
+        self.store
+            .open()?
+            .execute(
+                "DELETE FROM backup_pack_pins WHERE pin_id = ?1",
+                params![self.pin_id.to_string()],
+            )
+            .map_err(pin_error)?;
+        Ok(())
+    }
+}
+
+impl Drop for PackPins<'_> {
+    fn drop(&mut self) {
+        // A failed release leaves the rows to their lease; nothing else
+        // depends on it.
+        let _ = self.release_rows();
+    }
+}
+
+/// The packs that live backups have pinned, for GC. A store that never ran an
+/// encrypted backup has no pin table and no pins; an expired pin protects
+/// nothing.
+pub(crate) fn live_backup_pack_pins(
+    connection: &Connection,
+    now_ms: i64,
+) -> Result<Vec<String>, StoreError> {
+    let present: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1)",
+            [PACK_PIN_TABLE],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::Query)?;
+    if !present {
+        return Ok(Vec::new());
+    }
+    connection
+        .prepare("SELECT DISTINCT sha256 FROM backup_pack_pins WHERE expires_at_ms > ?1")
+        .map_err(StoreError::Query)?
+        .query_map(params![now_ms], |row| row.get::<_, String>(0))
+        .map_err(StoreError::Query)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::Query)
+}
+
+/// Copy the live catalogue with SQLite's online backup API into a private
+/// `:memory:` database. The copy has no file, so no journal, WAL or temporary
+/// side file can exist for it (temporary storage is in memory too). A source
+/// beyond [`MAX_CATALOGUE_IMAGE_BYTES`] is refused before anything is copied,
+/// and a source that grows past it during the copy stops the copy.
+pub(super) fn copy_catalogue_into_memory(
+    store: &HubStore,
+) -> Result<Connection, DataRecoveryError> {
+    let source = store.open()?;
+    let pragma = |name: &str| -> Result<u64, DataRecoveryError> {
+        let value: i64 = source
+            .query_row(&format!("PRAGMA {name}"), [], |row| row.get(0))
+            .map_err(DataRecoveryError::CatalogueIdentity)?;
+        u64::try_from(value).map_err(|_| invalid("catalogue page geometry is invalid"))
+    };
+    let page_size = pragma("page_size")?;
+    let image_bytes = pragma("page_count")?
+        .checked_mul(page_size)
+        .ok_or(DataRecoveryError::CapacityOverflow)?;
+    let too_large = || {
+        invalid(format!(
+            "the Hub catalogue ({image_bytes} bytes) is larger than the {} MiB that an \
+             encrypted backup may hold in memory",
+            MAX_CATALOGUE_IMAGE_BYTES / (1024 * 1024)
+        ))
+    };
+    if image_bytes > MAX_CATALOGUE_IMAGE_BYTES {
+        return Err(too_large());
+    }
+    let mut memory = Connection::open_in_memory().map_err(DataRecoveryError::CatalogueIdentity)?;
+    memory
+        .execute_batch("PRAGMA temp_store = MEMORY;")
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    {
+        let backup =
+            Backup::new(&source, &mut memory).map_err(DataRecoveryError::CatalogueIdentity)?;
+        let mut busy = 0_u32;
+        loop {
+            match backup
+                .step(BACKUP_STEP_PAGES)
+                .map_err(DataRecoveryError::CatalogueIdentity)?
+            {
+                StepResult::Done => break,
+                StepResult::More => busy = 0,
+                _ => {
+                    busy += 1;
+                    if busy > BACKUP_BUSY_RETRIES {
+                        return Err(invalid(
+                            "the live catalogue stayed locked during the backup copy",
+                        ));
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            }
+            let pages = u64::try_from(backup.progress().pagecount).unwrap_or(u64::MAX);
+            if pages.saturating_mul(page_size) > MAX_CATALOGUE_IMAGE_BYTES {
+                return Err(too_large());
+            }
+        }
+    }
+    Ok(memory)
+}
+
+/// The sealed catalogue image and its archive member. The image streams with
+/// its file-format version bytes set to the rollback journal (the copy of a
+/// WAL catalogue carries WAL's), exactly as a sealed staged file would be.
+struct SealedCatalogue {
+    image: Data<'static>,
+    header: [u8; SQLITE_HEADER_BYTES],
+    member: BackupMember,
+}
+
+/// Seal the copy, then serialise it into one in-memory image and drop the
+/// database: the two copies coexist only for the length of the serialisation.
+fn seal_catalogue(
+    mut connection: Connection,
+    installation_id: Uuid,
+) -> Result<SealedCatalogue, DataRecoveryError> {
+    seal_backup_credentials_checked(&connection)?;
+    seal_backup_credentials(&mut connection)?;
+    seal_host_authority(&mut connection, current_epoch_ms()?)?;
+    if catalogue_identity(&connection, SCHEMA_VERSION)? != installation_id {
+        return Err(invalid(
+            "copied catalogue installation ID does not match the live source",
+        ));
+    }
+    let image: Data<'static> = match connection
+        .serialize(MAIN_DB)
+        .map_err(DataRecoveryError::CatalogueIdentity)?
+    {
+        Data::Owned(owned) => Data::Owned(owned),
+        Data::Shared(_) => return Err(invalid("the in-memory catalogue copy is not private")),
+    };
+    drop(connection);
+    if image.len() <= SQLITE_HEADER_BYTES || !matches!((image[18], image[19]), (1 | 2, 1 | 2)) {
+        return Err(invalid(
+            "the in-memory catalogue copy is not a database image",
+        ));
+    }
+    let mut header = [0_u8; SQLITE_HEADER_BYTES];
+    header.copy_from_slice(&image[..SQLITE_HEADER_BYTES]);
+    header[18] = 1;
+    header[19] = 1;
+    let mut digest = Sha256::new();
+    digest.update(header);
+    digest.update(&image[SQLITE_HEADER_BYTES..]);
+    let member = BackupMember {
+        path: CATALOGUE_MEMBER.to_owned(),
+        size: image.len() as u64,
+        mode: PRIVATE_FILE_MODE,
+        sha256: hex::encode(digest.finalize()),
+    };
+    Ok(SealedCatalogue {
+        image,
+        header,
+        member,
+    })
 }
 
 fn resolve_destination(destination: &Path) -> Result<PathBuf, DataRecoveryError> {
@@ -247,6 +551,33 @@ fn remove_stale_partials(destination: &Path) -> Result<(), DataRecoveryError> {
     Ok(())
 }
 
+/// What the publication gate protects: the in-memory catalogue copy, the
+/// no-op bodies it selects, the pack list and the pins on those packs.
+struct Snapshot<'a> {
+    catalogue: Connection,
+    noops: Vec<Planned>,
+    packs: Vec<Planned>,
+    pins: PackPins<'a>,
+}
+
+fn take_snapshot(store: &HubStore) -> Result<Snapshot<'_>, DataRecoveryError> {
+    let gate = store.begin_backup_snapshot()?;
+    check_backup_admission(&gate)?;
+    let catalogue = copy_catalogue_into_memory(store)?;
+    let noops = plan_noops(store, &catalogue)?;
+    let packs = plan_packs(store)?;
+    let pins = PackPins::take(store, packs.iter().map(|item| item.member.sha256.as_str()))?;
+    hook("catalogue_copied", store.database_path())?;
+    // The gate goes as soon as the catalogue is copied and the packs pinned.
+    drop(gate);
+    Ok(Snapshot {
+        catalogue,
+        noops,
+        packs,
+        pins,
+    })
+}
+
 /// Create one encrypted backup generation.
 pub fn create_encrypted_backup(
     store: &HubStore,
@@ -272,103 +603,97 @@ pub fn create_encrypted_backup(
             "backup destination must not be inside the live Hub data directory",
         ));
     }
-    let scratch_parent = match &request.scratch_parent {
-        Some(path) => path.clone(),
-        None => std::env::temp_dir(),
-    }
-    .canonicalize()
-    .map_err(|source| io_error("resolving backup scratch directory", &destination, source))?;
-    if scratch_parent.starts_with(&destination) {
-        return Err(invalid(
-            "the backup scratch directory must not be inside the destination",
-        ));
-    }
+    // The memory-hard derivation runs, and frees its memory, before the run
+    // takes the gate or copies anything.
+    let key = SealingKey::derive(request.password, request.kdf, request.chunk_bytes)?;
+    cancelled(cancel)?;
 
     let source_installation_id = store.installation_id()?;
     store.catalogue_check()?;
-    // The publication gate is held for the whole run: no publication, GC or
-    // compaction that takes it can change the catalogue or the packs while
-    // they are read. Dropping the snapshot releases it.
-    let snapshot = store.begin_backup_snapshot()?;
-    check_backup_admission(&snapshot)?;
-    remove_stale_partials(&destination)?;
-    cancelled(cancel)?;
-
-    let scratch = tempfile::Builder::new()
-        .prefix(SCRATCH_PREFIX)
-        .tempdir_in(&scratch_parent)
-        .map_err(|source| io_error("creating backup scratch directory", &scratch_parent, source))?;
-    let data = scratch.path().join("data");
-    create_private_directory(&data)?;
-    let catalogue = data.join("hub.sqlite");
-    store.backup_catalogue_to(&catalogue)?;
-    seal_backup_payload(&data)?;
-    set_mode(
-        &catalogue,
-        PRIVATE_FILE_MODE,
-        "protecting scratch catalogue",
-    )?;
-    if immutable_database_identity(&data)? != source_installation_id {
-        return Err(invalid(
-            "copied catalogue installation ID does not match the live source",
-        ));
-    }
-    cancelled(cancel)?;
-
-    let planned = plan_members(store, &data, &catalogue)?;
-    let payload_bytes = planned.iter().try_fold(0_u64, |total, item| {
-        total
-            .checked_add(item.member.size)
-            .ok_or(DataRecoveryError::CapacityOverflow)
-    })?;
-    admit_staging_capacity(&destination, payload_bytes)?;
-
+    let Snapshot {
+        catalogue,
+        noops,
+        packs,
+        mut pins,
+    } = take_snapshot(store)?;
     let generation = Uuid::new_v4();
-    let created_at_ms = current_epoch_ms()?;
-    let manifest = BackupManifest {
-        kind: BACKUP_KIND.to_owned(),
-        generation,
-        created_at_ms,
-        build: BUILD_VERSION.to_owned(),
-        hub_schema: SCHEMA_VERSION,
-        protocol: expected_protocol(),
-        installation_id: source_installation_id,
-        scope: BACKUP_SCOPE.to_owned(),
-        excluded_host_state: excluded_host_state_strings(),
-        members: planned.iter().map(|item| item.member.clone()).collect(),
-    };
-    validate_manifest(&manifest)?;
-    let manifest_bytes = canonical_json(&manifest)?;
-
-    let final_path = destination.join(format!(
-        "{ARCHIVE_PREFIX}{}-{generation}{ARCHIVE_SUFFIX}",
-        generation_stamp(created_at_ms)?
-    ));
     let partial = destination.join(format!("{PARTIAL_PREFIX}{generation}{PARTIAL_SUFFIX}"));
-    let written = write_partial(request, &partial, &manifest_bytes, &planned);
-    let archive_bytes = match written {
-        Ok(bytes) => bytes,
+    let run = (|| {
+        remove_stale_partials(&destination)?;
+        cancelled(cancel)?;
+        let catalogue = seal_catalogue(catalogue, source_installation_id)?;
+        let mut planned = vec![Planned {
+            member: catalogue.member.clone(),
+            source: Source::Catalogue,
+        }];
+        planned.extend(packs);
+        planned.extend(noops);
+        if planned.len() > MAX_BACKUP_MEMBERS {
+            return Err(invalid("backup contains too many members"));
+        }
+        planned.sort_by(|left, right| left.member.path.cmp(&right.member.path));
+        let payload_bytes = planned.iter().try_fold(0_u64, |total, item| {
+            total
+                .checked_add(item.member.size)
+                .ok_or(DataRecoveryError::CapacityOverflow)
+        })?;
+        admit_staging_capacity(&destination, payload_bytes)?;
+
+        let created_at_ms = current_epoch_ms()?;
+        let manifest = BackupManifest {
+            kind: BACKUP_KIND.to_owned(),
+            generation,
+            created_at_ms,
+            build: BUILD_VERSION.to_owned(),
+            hub_schema: SCHEMA_VERSION,
+            protocol: expected_protocol(),
+            installation_id: source_installation_id,
+            scope: BACKUP_SCOPE.to_owned(),
+            excluded_host_state: excluded_host_state_strings(),
+            members: planned.iter().map(|item| item.member.clone()).collect(),
+        };
+        validate_manifest(&manifest)?;
+        let manifest_bytes = canonical_json(&manifest)?;
+        let final_path = destination.join(format!(
+            "{ARCHIVE_PREFIX}{}-{generation}{ARCHIVE_SUFFIX}",
+            generation_stamp(created_at_ms)?
+        ));
+        let archive_bytes = write_partial(
+            request,
+            key,
+            &partial,
+            &manifest_bytes,
+            &planned,
+            Some(catalogue),
+            &mut pins,
+        )?;
+        hook("before_publish", &partial)?;
+        cancelled(cancel)?;
+        no_replace_rename(&partial, &final_path)?;
+        sync_directory(&destination)?;
+        Ok((
+            final_path,
+            manifest.members.len(),
+            payload_bytes,
+            archive_bytes,
+        ))
+    })();
+    let (final_path, member_count, payload_bytes, archive_bytes) = match run {
+        Ok(done) => done,
         Err(error) => {
             #[cfg(test)]
             if test_hooks::CRASHED.with(|flag| flag.replace(false)) {
+                // A killed process removes nothing: its partial file stays
+                // for the next run, and its pins stay until their lease ends.
+                std::mem::forget(pins);
                 return Err(error);
             }
             let _ = fs::remove_file(&partial);
             return Err(error);
         }
     };
-    let published = (|| {
-        hook("before_publish", &partial)?;
-        cancelled(cancel)?;
-        no_replace_rename(&partial, &final_path)?;
-        sync_directory(&destination)
-    })();
-    if let Err(error) = published {
-        let _ = fs::remove_file(&partial);
-        return Err(error);
-    }
-    drop(scratch);
-    drop(snapshot);
+    // The packs are in the published generation: the pins go now.
+    drop(pins);
 
     let (rotated_generations, rotation_error) = match request.keep {
         Some(keep) => rotate(&destination, keep.get(), &final_path),
@@ -379,7 +704,7 @@ pub fn create_encrypted_backup(
         path: final_path,
         generation,
         installation_id: source_installation_id,
-        member_count: manifest.members.len(),
+        member_count,
         payload_bytes,
         archive_bytes,
         rotated_generations,
@@ -387,18 +712,35 @@ pub fn create_encrypted_backup(
     })
 }
 
-fn plan_members(
-    store: &HubStore,
-    data: &Path,
-    catalogue: &Path,
-) -> Result<Vec<Planned>, DataRecoveryError> {
-    let mut planned = vec![Planned {
-        member: inventory_file(catalogue, CATALOGUE_MEMBER.to_owned())?,
-        source: Source::Scratch(catalogue.to_path_buf()),
-    }];
+/// The signed no-op body of each current schema 2.2 snapshot in the copy,
+/// read while the gate still holds publication off.
+fn plan_noops(store: &HubStore, catalogue: &Connection) -> Result<Vec<Planned>, DataRecoveryError> {
+    let mut planned = Vec::new();
+    for (name, manifest) in current_schema_22_noop_pairs_in(catalogue)? {
+        let bytes = store
+            .schema_22_noop_for_snapshot(manifest.vehicle_id, manifest.snapshot_id)?
+            .ok_or(StoreError::Schema22NoOpNotFound)?;
+        validate_schema_22_noop_bytes(&name, &manifest, &bytes)?;
+        planned.push(Planned {
+            member: BackupMember {
+                path: format!("{SCHEMA_22_NOOP_DIRECTORY}/{name}"),
+                size: bytes.len() as u64,
+                mode: PRIVATE_FILE_MODE,
+                sha256: hex::encode(Sha256::digest(&bytes)),
+            },
+            source: Source::Bytes(bytes),
+        });
+        if planned.len() > MAX_BACKUP_MEMBERS {
+            return Err(invalid("backup contains too many members"));
+        }
+    }
+    Ok(planned)
+}
 
-    // Packs are immutable and content-addressed: the file name is the digest,
-    // which the stream re-checks while it reads.
+/// Packs are immutable and content-addressed: the file name is the digest,
+/// which the stream re-checks while it reads.
+fn plan_packs(store: &HubStore) -> Result<Vec<Planned>, DataRecoveryError> {
+    let mut planned = Vec::new();
     let pack_directory = store.packs_dir().join("sha256");
     match read_directory(&pack_directory) {
         Ok(entries) => {
@@ -433,38 +775,17 @@ fn plan_members(
         Err(DataRecoveryError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }
-
-    // The signed no-op body of each current schema 2.2 snapshot.
-    let expected = current_schema_22_noop_pairs(data)?;
-    if !expected.is_empty() {
-        let noop_directory = data.join("packs").join("noop");
-        create_private_directory(&data.join("packs"))?;
-        create_private_directory(&noop_directory)?;
-        for (name, manifest) in &expected {
-            let bytes = store
-                .schema_22_noop_for_snapshot(manifest.vehicle_id, manifest.snapshot_id)?
-                .ok_or(StoreError::Schema22NoOpNotFound)?;
-            let path = noop_directory.join(name);
-            write_private_file(&path, &bytes)?;
-            planned.push(Planned {
-                member: inventory_file(&path, format!("{SCHEMA_22_NOOP_DIRECTORY}/{name}"))?,
-                source: Source::Scratch(path),
-            });
-            if planned.len() > MAX_BACKUP_MEMBERS {
-                return Err(invalid("backup contains too many members"));
-            }
-        }
-        validate_schema_22_noop_directory(data, &expected)?;
-    }
-    planned.sort_by(|left, right| left.member.path.cmp(&right.member.path));
     Ok(planned)
 }
 
 fn write_partial(
     request: &EncryptedBackupRequest<'_>,
+    key: SealingKey,
     partial: &Path,
     manifest_bytes: &[u8],
     planned: &[Planned],
+    mut catalogue: Option<SealedCatalogue>,
+    pins: &mut PackPins<'_>,
 ) -> Result<u64, DataRecoveryError> {
     let cancel = request.cancel.as_deref();
     let file = OpenOptions::new()
@@ -480,13 +801,7 @@ fn write_partial(
         file,
         path: partial.to_path_buf(),
     };
-    let mut writer = ArchiveWriter::start(
-        sink,
-        partial.to_path_buf(),
-        request.password,
-        request.kdf_iterations,
-        request.chunk_bytes,
-    )?;
+    let mut writer = ArchiveWriter::start(sink, partial.to_path_buf(), key)?;
 
     hook("record", partial)?;
     put_file_header(&mut writer, MANIFEST_RECORD, manifest_bytes.len() as u64)?;
@@ -494,8 +809,49 @@ fn write_partial(
     let mut buffer = vec![0_u8; STREAM_BUFFER_BYTES];
     for item in planned {
         cancelled(cancel)?;
+        pins.renew_if_due()?;
         hook("record", partial)?;
-        stream_member(&mut writer, item, &mut buffer, cancel)?;
+        match &item.source {
+            Source::Catalogue => {
+                let sealed = catalogue
+                    .take()
+                    .ok_or_else(|| invalid("the catalogue member appears twice"))?;
+                stream_member(
+                    &mut writer,
+                    &item.member,
+                    sealed
+                        .header
+                        .as_slice()
+                        .chain(&sealed.image[SQLITE_HEADER_BYTES..]),
+                    &mut buffer,
+                    cancel,
+                )?;
+                // The copy's memory goes before the packs stream.
+                drop(sealed);
+            }
+            Source::Bytes(bytes) => {
+                stream_member(
+                    &mut writer,
+                    &item.member,
+                    bytes.as_slice(),
+                    &mut buffer,
+                    cancel,
+                )?;
+            }
+            Source::Pack(path) => {
+                let input = open_regular_nonblocking(path, "opening backup source member")?;
+                let metadata = input
+                    .metadata()
+                    .map_err(|source| io_error("inspecting backup source member", path, source))?;
+                if metadata.len() != item.member.size || metadata.nlink() == 0 {
+                    return Err(invalid(format!(
+                        "backup source member changed before it was streamed: {}",
+                        item.member.path
+                    )));
+                }
+                stream_member(&mut writer, &item.member, input, &mut buffer, cancel)?;
+            }
+        }
     }
     writer.write_plain(&[RECORD_END])?;
     let manifest_digest: [u8; 32] = Sha256::digest(manifest_bytes).into();
@@ -526,22 +882,12 @@ fn put_file_header(
 
 fn stream_member(
     writer: &mut ArchiveWriter<Sink>,
-    item: &Planned,
+    member: &BackupMember,
+    mut input: impl Read,
     buffer: &mut [u8],
     cancel: Option<&AtomicBool>,
 ) -> Result<(), DataRecoveryError> {
-    let (Source::Scratch(path) | Source::Pack(path)) = &item.source;
-    let member = &item.member;
-    let mut input = open_regular_nonblocking(path, "opening backup source member")?;
-    let metadata = input
-        .metadata()
-        .map_err(|source| io_error("inspecting backup source member", path, source))?;
-    if metadata.len() != member.size || metadata.nlink() == 0 {
-        return Err(invalid(format!(
-            "backup source member changed before it was streamed: {}",
-            member.path
-        )));
-    }
+    let source_path = Path::new(&member.path);
     put_file_header(writer, &member.path, member.size)?;
     let mut digest = Sha256::new();
     let mut streamed = 0_u64;
@@ -549,7 +895,7 @@ fn stream_member(
         cancelled(cancel)?;
         let read = input
             .read(buffer)
-            .map_err(|source| io_error("reading backup source member", path, source))?;
+            .map_err(|source| io_error("reading backup source member", source_path, source))?;
         if read == 0 {
             break;
         }
@@ -565,6 +911,7 @@ fn stream_member(
         digest.update(&buffer[..read]);
         writer.write_plain(&buffer[..read])?;
     }
+    buffer.fill(0);
     if streamed != member.size || hex::encode(digest.finalize()) != member.sha256 {
         return Err(invalid(format!(
             "backup source member changed or is damaged: {}",
