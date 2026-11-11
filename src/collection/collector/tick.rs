@@ -1470,6 +1470,8 @@ impl AdmissionFence {
 struct RunWriteGuard {
     fence: AdmissionFence,
     admission: Option<Arc<crate::hub_user_process::AdmittedUserHub>>,
+    /// The run's hold on the collection window (M04-T01), shared by every clone.
+    window: WindowAuthority,
     /// Test only: which boundaries consulted the guard and what they were told.
     #[cfg(test)]
     audit: Arc<WriteGuardAudit>,
@@ -1495,8 +1497,25 @@ impl RunWriteGuard {
         Self {
             fence,
             admission,
+            window: WindowAuthority::default(),
             #[cfg(test)]
             audit: Arc::default(),
+        }
+    }
+
+    /// The run's hold on the collection window, shared by every clone of the guard.
+    fn window(&self) -> &WindowAuthority {
+        &self.window
+    }
+
+    /// The guard of the run's orderly stop (C3 R8, R36): the explicitly authorised
+    /// shutdown writes (the frames the streams left queued, the stop record) still
+    /// need the admission, but not the window, which may have ended the run. It
+    /// shares the fence and the audit; background work keeps the window-checking guard.
+    fn for_shutdown(&self) -> Self {
+        Self {
+            window: WindowAuthority::default(),
+            ..self.clone()
         }
     }
 
@@ -1533,12 +1552,17 @@ impl RunWriteGuard {
         refused
     }
 
-    /// [`Self::refused`] as the result of the collector's own steps.
+    /// [`Self::refused`] as the result of the collector's own steps, and then the
+    /// collection window (M04-T01): once the window the run holds has closed or its
+    /// deadline has passed (also across a host sleep the window supervisor has not
+    /// yet seen), every collector write is refused with the window's code. The
+    /// credential unit's observer does not look at the window: a token exchange the
+    /// gate permitted may finish within its grace, and its rotated pair must be kept.
     fn check(&self, point: &'static str) -> Result<(), CollectorError> {
         if self.refused(point) {
             Err(CollectorError::SensitiveAccessUnavailable)
         } else {
-            Ok(())
+            self.window.check()
         }
     }
 
@@ -1564,6 +1588,51 @@ impl crate::geocoder::EgressGuard for RunWriteGuard {
     fn assert_egress_allowed(&self) -> Result<(), crate::geocoder::EgressGuardError> {
         self.check("geocoder")
             .map_err(|_| crate::geocoder::EgressGuardError)
+    }
+}
+
+/// The run's hold on the collection window (M04-T01, review round 2 finding 2). A
+/// run asks the window's egress gate before its first step and keeps the permit for
+/// its whole life (a stream permit: the window's close cancels it). Every write
+/// boundary of the run re-checks it ([`RunWriteGuard::check`]), as does every lease
+/// renewal, and the run's supervisor ends the run when it ends. The permit keeps the
+/// window's absolute deadlines on the gate's own clock, so a host that resumes past
+/// the deadline is refused at the next boundary even before the window supervisor
+/// has run. With no permit held (a one-shot command, a unit test of a part) nothing
+/// is refused.
+#[derive(Clone, Debug, Default)]
+struct WindowAuthority(Arc<std::sync::OnceLock<crate::fleet_api::egress::SendPermit>>);
+
+impl WindowAuthority {
+    /// Keep `permit` for the run; a permit already held is kept instead.
+    fn hold(&self, permit: crate::fleet_api::egress::SendPermit) {
+        let _ = self.0.set(permit);
+    }
+
+    /// Whether the run holds a window at all.
+    #[cfg(test)]
+    fn is_held(&self) -> bool {
+        self.0.get().is_some()
+    }
+
+    /// The window's refusal once the held window has ended.
+    fn check(&self) -> Result<(), CollectorError> {
+        match self.0.get() {
+            Some(permit) if permit.check().is_err() => {
+                Err(CollectorError::CollectionWindowClosed("window_closed"))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Resolves when the held window closes or its deadline passes; never without one.
+    async fn ended(&self) {
+        match self.0.get() {
+            Some(permit) => {
+                permit.ended().await;
+            }
+            None => std::future::pending::<()>().await,
+        }
     }
 }
 

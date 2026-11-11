@@ -2,21 +2,22 @@
 
 /// Collection starts only inside an Open collection window (M04-T01). Before its
 /// first store read or write, credential step or send, a run asks the window's
-/// egress gate, the one authority every Tesla send asks, for a permit it never
-/// uses: a closed window, a deadline already passed or a parked provider refuses
-/// the start, so no lease is taken, no gap, account or vehicle row is written and
-/// nothing is sent. The permit is dropped at once. `endpoint` only selects the
-/// gate a test routed; production always asks the process-wide gate.
+/// egress gate, the one authority every Tesla send asks: a closed window, a deadline
+/// already passed or a parked provider refuses the start, so no lease is taken, no
+/// gap, account or vehicle row is written and nothing is sent. The permit granted is
+/// a stream permit, which the run holds for its whole life ([`WindowAuthority`]): the
+/// window's close cancels it, and its absolute deadlines end it across a host sleep.
+/// `endpoint` only selects the gate a test routed; production always asks the
+/// process-wide gate.
 fn require_open_collection_window(
     endpoint: &str,
     provider: crate::fleet_api::egress::Provider,
-) -> Result<(), CollectorError> {
+) -> Result<crate::fleet_api::egress::SendPermit, CollectorError> {
     crate::fleet_api::egress::ask(
         endpoint,
         provider,
-        crate::fleet_api::egress::PermitKind::Request,
+        crate::fleet_api::egress::PermitKind::Stream,
     )
-    .map(drop)
     .map_err(|refusal| {
         tracing::warn!(
             target: "collector.decision",
@@ -31,7 +32,9 @@ fn require_open_collection_window(
 /// unit, vault or cursor key exists: the configured provider's gate is asked, and a
 /// test routes it through the configured stream endpoint.
 #[cfg(unix)]
-fn require_open_collection_window_for(config: &HubConfig) -> Result<(), CollectorError> {
+fn require_open_collection_window_for(
+    config: &HubConfig,
+) -> Result<crate::fleet_api::egress::SendPermit, CollectorError> {
     if config.collector.provider == CollectorProvider::Fleet {
         return require_open_collection_window(
             crate::fleet_api::FleetRegion::NorthAmericaAndAsiaPacific.base_url(),
@@ -96,8 +99,14 @@ where
     F: Future<Output = ()>,
 {
     // Nothing of the run happens outside an Open window (M04-T01): this is its first
-    // step, before the credential unit is touched or the store read.
-    require_open_collection_window(&stream_endpoint, crate::fleet_api::egress::Provider::Legacy)?;
+    // step, before the credential unit is touched or the store read. The run holds
+    // the window from here to its end: every write boundary and every lease renewal
+    // re-checks it, and the run ends when it ends (review round 2, finding 2).
+    write_guard.window().hold(require_open_collection_window(
+        &stream_endpoint,
+        crate::fleet_api::egress::Provider::Legacy,
+    )?);
+    let window = write_guard.window().clone();
     // The run's write guard exists before the credential unit and the cursor key (B2
     // fix round, P3b fix 3, R-P3bF3-1): the entry point made it, and it has been
     // consulted at every write since. The renewal revalidates the retained admission
@@ -162,6 +171,7 @@ where
             Arc::new(SystemCollectorClock),
             runtime_admission.clone(),
             admission_fence.clone(),
+            window.clone(),
         ),
     ));
     let mut terrain_worker = terrain_worker::spawn_terrain_worker(
@@ -1044,10 +1054,20 @@ where
         };
         tokio::pin!(admission_lost);
         supervised_test_gate("supervisor-select").await;
+        // The window the run holds is watched whatever the loop waits for: its close,
+        // or its deadline found passed after a host sleep, ends the run at once, and
+        // only the orderly stop's authorised writes follow (M04-T01).
+        let window_ended = window.ended();
+        tokio::pin!(window_ended);
         tokio::select! {
             biased;
             () = &mut admission_lost => (
                 Err(CollectorError::SensitiveAccessUnavailable),
+                false,
+                false,
+            ),
+            () = &mut window_ended => (
+                Err(CollectorError::CollectionWindowClosed("window_closed")),
                 false,
                 false,
             ),
@@ -1197,7 +1217,11 @@ where
             // met stays decisive when the admission passes again, and the stop's
             // frame writes check it (B2 fix round, P2, third pass).
             let shared_fence = loss.fence.clone();
-            drain_budget.guard_writes_with(write_guard.clone());
+            // The stop's frame writes are authorised shutdown operations (C3 R36):
+            // they keep the admission check but not the window's, which may be what
+            // ended the run (M04-T01).
+            drain_budget.guard_writes_with(write_guard.for_shutdown());
+            scheduler.guard_writes_with(write_guard.for_shutdown());
             let fence_set = shared_fence.wait_set();
             tokio::pin!(fence_set);
             let stop_streams = stop_all_streams_and_store(
@@ -1626,6 +1650,7 @@ async fn run_supervised_collector_heartbeat(
         Arc::new(SystemCollectorClock),
         None,
         AdmissionFence::default(),
+        WindowAuthority::default(),
     )
     .await
 }
@@ -1664,15 +1689,22 @@ async fn run_supervised_collector_heartbeat_with(
     clock: Arc<dyn CollectorClock>,
     admission: Option<Arc<crate::hub_user_process::AdmittedUserHub>>,
     fence: AdmissionFence,
+    window: WindowAuthority,
 ) -> Result<(), CollectorError> {
     let mut ticker = tokio::time::interval(interval);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
         tokio::select! {
+            // The window the run holds ends the renewal (M04-T01): no renewal is
+            // written once it has closed or its deadline has passed.
+            () = window.ended() => {
+                return Err(CollectorError::CollectionWindowClosed("window_closed"));
+            }
             // The test seam may hold a renewal candidate before it is ready (the
             // shutdown arm stays pollable meanwhile); nothing in production.
             () = async { ticker.tick().await; supervised_test_gate("renewal-candidate").await } => {
                 assert_renewal_allowed(admission.as_deref(), &fence)?;
+                window.check()?;
                 renew_supervised_collector_heartbeat_at(
                     &store,
                     lease,
@@ -1689,6 +1721,7 @@ async fn run_supervised_collector_heartbeat_with(
                     return Ok(());
                 }
                 assert_renewal_allowed(admission.as_deref(), &fence)?;
+                window.check()?;
                 renew_supervised_collector_heartbeat_at(
                     &store,
                     lease,

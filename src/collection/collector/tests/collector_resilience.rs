@@ -380,6 +380,125 @@ async fn collector_resilience_cadence_wait_outside_the_window_takes_no_lease_or_
     assert_nothing_started(&store, "configuration wait");
 }
 
+/// Review finding 2 (round 2): the window is held for the whole run. The host
+/// resumes past the window's deadline before any window supervisor has run: the
+/// run's write guard refuses every collector write at once (the orderly stop's own
+/// guard does not), and the run ends by itself with the window's code instead of
+/// collecting on.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn collector_resilience_window_expiry_mid_run_fences_writes_and_ends_the_run() {
+    let tripwire = Tripwire::spawn().await;
+    let (temporary, store, auth, client) = windowed_hub(&tripwire);
+    let window = TestWindow::open(60);
+    let (endpoint, _port) = reserved_stream_endpoint();
+    let _route = window.route(&endpoint);
+    let guard = RunWriteGuard::for_run(None);
+    let probe = guard.clone();
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let task_store = store.clone();
+    let config = supervised_restart_test_config(temporary.path());
+    let mut task = tokio::spawn(async move {
+        run_supervised_with_access(
+            &task_store,
+            &config,
+            supervised_restart_test_cadence(),
+            client,
+            auth,
+            endpoint,
+            CursorKey::from_bytes([0xA6; 32]),
+            Some(ready_tx),
+            guard,
+            std::future::pending::<()>(),
+        )
+        .await
+    });
+    let _cursor = wait_for_supervised_signal_or_abort("collector readiness", &mut task, ready_rx).await;
+    assert!(probe.window().is_held(), "the run holds the window");
+    assert!(probe.check("probe").is_ok(), "inside the window the run may write");
+    // A host sleep past the deadline: the window's clocks move, the runtime timer
+    // does not, and nothing closes the window on the Hub side.
+    window.advance(61);
+    assert!(
+        matches!(
+            probe.check("probe"),
+            Err(CollectorError::CollectionWindowClosed("window_closed"))
+        ),
+        "every collector write boundary is refused past the deadline"
+    );
+    assert!(
+        probe.for_shutdown().check("probe").is_ok(),
+        "the orderly stop keeps its authorised writes"
+    );
+    let result = timeout(Duration::from_secs(10), &mut task)
+        .await
+        .expect("the run ends by itself once its window has ended")
+        .expect("join");
+    assert!(
+        matches!(result, Err(CollectorError::CollectionWindowClosed("window_closed"))),
+        "{result:?}"
+    );
+}
+
+/// Review finding 2 (round 2): a lease renewal re-checks the window. A ready
+/// renewal after the host resumed past the deadline writes nothing and the renewal
+/// ends with the window's code.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn collector_resilience_window_expiry_stops_the_lease_renewal() {
+    let directory = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(directory.path()).expect("store");
+    let window = TestWindow::open(60);
+    let (endpoint, _port) = reserved_stream_endpoint();
+    let _route = window.route(&endpoint);
+    let authority = WindowAuthority::default();
+    authority.hold(
+        crate::fleet_api::egress::ask(
+            &endpoint,
+            crate::fleet_api::egress::Provider::Legacy,
+            crate::fleet_api::egress::PermitKind::Stream,
+        )
+        .expect("an open window"),
+    );
+    let lease = store
+        .acquire_supervised_collector_lease(current_epoch_millis().expect("clock") - 1_000)
+        .expect("lease");
+    let initial = store.supervised_collector_lease_status().expect("lease").expect("lease");
+    let (_state, state_rx) = watch::channel(SupervisedCollectorState::Active);
+    let (_stop, stop_rx) = oneshot::channel();
+    let mut heartbeat = tokio::spawn(run_supervised_collector_heartbeat_with(
+        store.clone(),
+        lease,
+        state_rx,
+        stop_rx,
+        Duration::from_millis(5),
+        Arc::new(SystemCollectorClock),
+        None,
+        AdmissionFence::default(),
+        authority,
+    ));
+    let heartbeat_at = || {
+        store
+            .supervised_collector_lease_status()
+            .expect("lease")
+            .map(|lease| lease.heartbeat_at_ms)
+    };
+    wait_for_supervised_restart_condition("a renewal inside the window", || {
+        heartbeat_at().is_some_and(|at| at > initial.heartbeat_at_ms)
+    })
+    .await;
+    window.advance(61);
+    let ended = timeout(Duration::from_secs(5), &mut heartbeat)
+        .await
+        .expect("the renewal ends once the window has ended")
+        .expect("join");
+    assert!(
+        matches!(ended, Err(CollectorError::CollectionWindowClosed("window_closed"))),
+        "{ended:?}"
+    );
+    let last = heartbeat_at();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(heartbeat_at(), last, "no renewal after the window ended");
+}
+
 // ---- One transaction per tick; no durable write for an unchanged poll ----------------
 
 /// The process's first resolution of a car after a restart reads the stored identity

@@ -61,7 +61,7 @@ where
     // M04-T01: the window's egress gate is asked before any startup branch, the
     // configuration wait included: with the window closed no lease is taken, no wait
     // state is written and no cursor key is created, whatever the configuration says.
-    require_open_collection_window_for(config)?;
+    write_guard.window().hold(require_open_collection_window_for(config)?);
     crate::diagnostics::log_runtime_inventory(store, config);
     let _activation = config.collector.supervised_interval()?;
     if config.collector.provider != CollectorProvider::Fleet
@@ -156,7 +156,7 @@ where
 {
     let cadence = config.collector.cadence()?;
     // M04-T01: no credential vault, unit or cursor key before the window is Open.
-    require_open_collection_window_for(config)?;
+    write_guard.window().hold(require_open_collection_window_for(config)?);
 
     let manager = {
     let runtime_store = store.clone();
@@ -241,7 +241,7 @@ where
     admission.assert_store_path(&config.data_dir)?;
     // M04-T01: the wait is a start like any other: outside an Open window it takes
     // no lease, writes no wait state and creates no cursor key.
-    require_open_collection_window_for(config)?;
+    write_guard.window().hold(require_open_collection_window_for(config)?);
     // The wait has the run's write guard from its first write (B2 fix round, P3b fix
     // 2, R-P3bF2-1; fix 3: the entry point made it): the lease, the wait's gap, the
     // cursor key and the release are each preceded by it.
@@ -300,6 +300,7 @@ where
         Arc::clone(&clock),
         Some(Arc::clone(&admission)),
         admission_fence.clone(),
+        write_guard.window().clone(),
     ));
     tracing::error!(
         code = crate::config::CadenceViolation::CODE,
@@ -311,22 +312,34 @@ where
         .send(cursor_key)
         .map_err(|_| CollectorError::SupervisedStartupReadyDropped);
     let mut heartbeat_finished = false;
+    // The window the wait holds ends it (M04-T01): its close, or its deadline found
+    // passed, stops the renewal and the wait; the release below is the one authorised
+    // shutdown write that follows.
+    let mut window_closed = false;
+    let window = write_guard.window().clone();
     if result.is_ok() {
         tokio::pin!(shutdown);
         let admission_lost = admission.wait_until_invalid();
         tokio::pin!(admission_lost);
+        let window_ended = window.ended();
+        tokio::pin!(window_ended);
         tokio::select! {
             biased;
             _ = &mut admission_lost => {
                 admission_fence.set();
                 result = Err(CollectorError::SensitiveAccessUnavailable);
             }
+            () = &mut window_ended => window_closed = true,
             () = &mut shutdown => {}
             joined = &mut heartbeat_task => {
                 heartbeat_finished = true;
                 result = joined
                     .map_err(|_| CollectorError::SupervisedHeartbeatTask)
                     .and_then(|outcome| outcome.and(Err(CollectorError::SupervisedHeartbeatTask)));
+                if matches!(result, Err(CollectorError::CollectionWindowClosed(_))) {
+                    window_closed = true;
+                    result = Ok(());
+                }
             }
         }
     }
@@ -336,18 +349,24 @@ where
             .await
             .map_err(|_| CollectorError::SupervisedHeartbeatTask)
             .and_then(|outcome| outcome);
-        if result.is_ok() {
-            result = joined;
+        match joined {
+            Err(CollectorError::CollectionWindowClosed(_)) => window_closed = true,
+            joined if result.is_ok() => result = joined,
+            _ => {}
         }
     }
     // Release only with the admission intact: a process that lost it writes
-    // nothing more, and the lease then expires on its own.
+    // nothing more, and the lease then expires on its own. The release is a
+    // shutdown write: it needs the admission, not the window.
     if result.is_ok() {
-        result = write_guard.check("cadence-release").and_then(|()| {
+        result = write_guard.for_shutdown().check("cadence-release").and_then(|()| {
             store
                 .release_supervised_collector_lease(collector_lease)
                 .map_err(CollectorError::from)
         });
+    }
+    if window_closed && result.is_ok() {
+        result = Err(CollectorError::CollectionWindowClosed("window_closed"));
     }
     result
 }
@@ -425,7 +444,7 @@ where
         return Err(CollectorError::AdmittedLegacyAuthRequired);
     }
     // M04-T01: no credential vault, unit or cursor key before the window is Open.
-    require_open_collection_window_for(config)?;
+    write_guard.window().hold(require_open_collection_window_for(config)?);
 
     let manager = {
     let runtime_store = store.clone();
@@ -494,7 +513,7 @@ where
     let cadence = config.collector.cadence()?;
     // M04-T01: no credential vault, manager or cursor key before the window is Open
     // (and Fleet is parked, so its gate refuses).
-    require_open_collection_window_for(config)?;
+    write_guard.window().hold(require_open_collection_window_for(config)?);
     // An identified unresolved refresh (C5 R47, C3 R47, B2 clarification 3) starts
     // as a running credential stop with an active lease and the reconnect
     // attention: the manager is fenced and sends nothing. Every other case keeps

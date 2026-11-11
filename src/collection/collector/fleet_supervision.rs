@@ -63,6 +63,7 @@ where
             Arc::new(SystemCollectorClock),
             Some(Arc::clone(&admission)),
             admission_fence.clone(),
+            write_guard.window().clone(),
         ),
     ));
     let mut terrain_worker = terrain_worker::spawn_terrain_worker(
