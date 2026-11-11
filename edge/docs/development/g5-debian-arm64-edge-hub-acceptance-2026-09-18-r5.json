@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.g5.debian_arm64.edge_acceptance",
+  "state": "accepted_closed",
+  "gate_id": "G5",
+  "cohort_id": "g5-debian-arm64-20260918-r5",
+  "recorded_at": "2026-09-18T18:21:44Z",
+  "scope": "One guarded synthetic VehicleName event from the pinned receiver through Edge encrypted spool and durable Hub projection on Debian 13 ARM64.",
+  "source_binding": {
+    "repository": "teslatlas-edge",
+    "head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+    "working_tree_status_sha256_before_receipt": "f7353e96f72ae44745bbb0fe3cdd05e9336269b2aab8ea3732699da1f75a463c",
+    "working_tree_status_entries_before_receipt": 122,
+    "dirty_patch_sha256": "219a8717a82a65d303a90eeaa94119ed43d585bd256a152c8b51e4b31f831549",
+    "untracked_source_manifest_sha256": "f41c5459cfea1f7e894a85b351e436d3df8640a866c9ef65755ba6aca25a2692",
+    "snapshot_manifest_sha256": "1f5eac772075a9fe794370ac3aecf99d46453361a9c8fd3c30cedb06120cf9cd",
+    "snapshot_members": 145,
+    "binary_sha256": "1ef857221eb83d67f96fd58d6f25a4b20d8f8b25ff9189cca1a6df4436997910"
+  },
+  "peer_source_binding": {
+    "repository": "hub",
+    "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "working_tree_status_sha256_before_receipt": "505b42d95a91ddf68019c9ce0c12a40a03cb81b3a4feea2f75670ae54ed6f2a6",
+    "working_tree_status_entries_before_receipt": 218,
+    "dirty_patch_sha256": "8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca",
+    "untracked_source_manifest_sha256": "4067ce964baadafee3d06186c9a965253ebf1fd8b23a9cbc8483de46560e99ee",
+    "snapshot_manifest_sha256": "f3e9f240930c72909d982ad2f6429c4f6ab390eb34818505e92236f6027d443b",
+    "snapshot_members": 640,
+    "binary_sha256": "4b965423364160d597bd9e4f1a1d5b73be49c13edb0df3f8c4896fe6a973c433",
+    "interop_fixture_sha256": "45387ccc807fc486ee917f81d44fd9d47dece3dd6a8c79b1dc72e585fe998ff1",
+    "commit_before_ack_source_sha256": "87df23a117fb7d798ac26c3482f8b1754ddffce089a98459421a31114f040a94"
+  },
+  "profiles": {
+    "hub-http-v1@1.0.0": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "edge-delivery-v2@2.0.0": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
+  },
+  "platform_and_toolchains": {
+    "guest": "Debian GNU/Linux 13.6 (trixie)",
+    "architecture": "aarch64",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+    "rust_target": "aarch64-unknown-linux-gnu",
+    "go": "go1.27.0 linux/arm64",
+    "go_archive_sha256": "51798d2c42d0e1c6ed7fd9f48728b4193abac9e8aad6dbac2fe96a81f5909bda"
+  },
+  "artifacts": {
+    "receiver_sha256": "22577092beac3622403328f3d0c6f13c4b7656e4ccfd80a75aa9bdedfada6b3b",
+    "repaired_helper_sha256": "89ba4d2d7af917a8bd7455861d10dc43fdb9d752a9d0815fb8de72baf33422a5",
+    "ledger_observer_sha256": "098c543a0fafc1d2c3c6c16f554f321c7c0535ffefff24778df33f548cbd35a2",
+    "fixture_validator_sha256": "42a6d63585b7341ebe34175a8e55e982bc4839b292b2ff0aa7125cf506b7f819"
+  },
+  "public_config_binding": {
+    "hub_sha256": "826bed1cdf6bd2aef81d597a640000a082a8cbcee8da361cff3b2a4d12a42ff2",
+    "edge_sha256": "39e66db1cf705f31b1e65465f505b2dda74c1940213331ae8d250581abdfb602",
+    "receiver_sha256": "f2cff169321ee978c09643e45dad0c79937380bc3e9f5dd3aa0f239a333cc4a9",
+    "ports": {
+      "receiver_admission": "127.0.0.1:8080",
+      "receiver_data": "127.0.0.1:35458",
+      "receiver_status": "0.0.0.0:35459",
+      "edge_hub_mtls": "192.168.5.15:35850",
+      "hub_tls": "127.0.0.1:32535"
+    }
+  },
+  "zero_event_gate": {
+    "preparation_receipt_sha256": "2aa0378480e8e2bec7c86d16a47fb5018c39af816d58c4551d0d79061305e0d6",
+    "readiness_receipt_sha256": "373ce5cbd1a1f3edfdf9004c5f8f241cb89fbec89a2aa84903faa7a77978781b",
+    "health_and_readiness": "passed",
+    "receiver_event_count": 0,
+    "encrypted_spool_records": 0,
+    "edge_pull_records": 0,
+    "edge_pull_gaps": 0,
+    "hub_ledger_rows": 0,
+    "hub_pending_publications": 0,
+    "hub_ack_frontier": 0,
+    "producer_invoked": false
+  },
+  "one_shot": {
+    "invocation_checkpoint_sha256": "2e6c2584f546c40b11aebd34219b671e8e2a16eec5ed6dd1c8fe3a76b19b29a0",
+    "authorization_sha256": "d408c4c326baa9510f704ba97faa7500bb631de75036800ef7a95c123f02da7a",
+    "contract_sha256": "1702d4be2a42ee4b088d6b94545eda4af6151671680f33103e1228f16e528e5c",
+    "guard_sha256": "5f486e169779817e4e66f41216334e6ffc5804451e219f88b04b4000084acc58",
+    "result_sha256": "3066311476eb5d829ea033708ccbbd8c0604476b7ebaf619d8678eeeb688e4a9",
+    "invocation_count": 1,
+    "exit_code": 0,
+    "ambiguity": false,
+    "retry_or_replay": false,
+    "encrypted_record_sha256": "5610c73faaa27affc53528c1f321aa31647a2b50e31a044e02a51ba36cbf7f72",
+    "encrypted_record_bytes": 641,
+    "plaintext_probe_absent": true
+  },
+  "acceptance": {
+    "acceptance_receipt_sha256": "fd5dc6f43487431719ddd272993de2e5447d002f9647e890546a35885c5e1384",
+    "hub_was_absent_at_admission": true,
+    "encrypted_record_survived_edge_restart": true,
+    "duplicate_pull_batch_identity_stable": true,
+    "stable_record_id_sha256": "97ea5355506b07dfcf2cedf723782f1b6bbf663c304ad591ad6e51f956806c35",
+    "batch_id_sha256": "9bb5d10aa029aec2c54752befdae850e519ad7e9695f1d82ebd5f7af86362ffb",
+    "spool_seq": 1,
+    "durable_counts": {
+      "lineages": 1,
+      "applications": 1,
+      "sequences": 1,
+      "accumulator_states": 1,
+      "pending_publications": 0
+    },
+    "disposition": "projected_telemetry",
+    "reason": "fleet_protojson_projected",
+    "commit_before_occurrence_bound_ack": true,
+    "committed_at_ms": 1789755297787,
+    "ack_receipt_mtime_ms": 1789755297788,
+    "readable_vehicle_count": 1,
+    "display_name": "synthetic-b2",
+    "observation_id": 1,
+    "ack_frontier": 1,
+    "duplicate_logical_projection_count": 0,
+    "numeric_lifecycle_passive_projection_count": 0,
+    "edge_pull_records_after_ack": 0,
+    "edge_pull_gaps_after_ack": 0,
+    "spool_pending_after_ack": 0,
+    "hub_restart_ledger_and_projection_unchanged": true
+  },
+  "repair_and_focused_tests": {
+    "helper_contract": "Require ACK topic and TXID, require the pinned BinarySerializer.Ack empty MessageID, reject wrong topic/TXID and every unexpected nonempty MessageID.",
+    "helper_source_sha256": "b908b02c51afc414e7fe7131f85691f80954138077eee9f2b168a1d2dc4bb378",
+    "helper_test_sha256": "67aeb56b93978bca4dd1d2de159483cd0ec2d1b13e609ec4d7d35ecb9b3995a5",
+    "helper_tests": "4 top-level tests passed with the exact pinned Go toolchain",
+    "receiver_bridge_integration_sha256": "336dbea38fa2105a250fed61b53f371fdc589c6875dc2eb8d7cbde0a399bdaa9",
+    "receiver_bridge_integration": "passed: one WebSocket V write produced one HTTP admission and one binary ACK; connectivity was not routed in the lane-only config",
+    "general_product_config_weakened": false
+  },
+  "failure_ledger": [
+    {
+      "cohort": "r1",
+      "receipt_sha256": "a9285a7965f709be7edfe4d1403745af68c67bbd7461364e09c438d52cc6e587",
+      "result": "preparation failed on loopback hub_bind"
+    },
+    {
+      "cohort": "r2",
+      "receipt_sha256": "c1947d1b554782a59eae19b93fb44c78bd74485c433ec1dedfc24a7f652f98e1",
+      "result": "zero baseline failed because observer lacked a shebang"
+    },
+    {
+      "cohort": "r3",
+      "receipt_sha256": "eda0ee1742738b331b3f83850da82f00d7b83c864f9ca9e2d903cf614daf1205",
+      "result": "zero baseline used the wrong spool path"
+    },
+    {
+      "cohort": "r4",
+      "receipt_sha256": "b08dd93f6ad103a614f6a50483c28fce86e27f41d03a42698b7119552ff20855",
+      "result": "one invocation was closed ambiguous with three encrypted admissions and no Hub projection; no retry"
+    },
+    {
+      "cohort": "r5-recovery-harness",
+      "result": "cleanup-only zombie/reap check failed after commit and ACK; product state was unaffected; the authorized persistence-only restart used explicit wait/reap and passed"
+    }
+  ],
+  "cleanup": {
+    "cleanup_receipt_sha256": "d9a49edaa339a609d1e8ebcc917a04f96f045ae5fb174e47442d1a9f8d767da5",
+    "private_root_files_before": 97,
+    "private_root_directories_before": 24,
+    "private_root_logical_bytes_before": 75898847,
+    "private_root_allocated_bytes_before": 76165120,
+    "private_root_absent": true,
+    "stop_order": [
+      "receiver",
+      "edge",
+      "hub"
+    ],
+    "owned_processes_absent": true,
+    "owned_ports_absent": true,
+    "guest_stopped": true,
+    "ssh_listener_absent": true,
+    "heavy_build_lock_absent": true
+  },
+  "limitations": [
+    "Synthetic source-built runtime evidence only; no real account, vehicle, production, package, installer or service-manager acceptance.",
+    "The pinned receiver fixes its internal admission endpoint at loopback port 8080 and defines its status listener as wildcard; both were private to the stopped guest.",
+    "The lane-only receiver record mapping contained V and intentionally omitted connectivity; the product's general configuration was not weakened.",
+    "No App integration acceptance; Viewer excluded; x86/Intel paused."
+  ]
+}

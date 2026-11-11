@@ -276,7 +276,7 @@ def profile_document(inherited):
         "signing_keys": {
             "wire_key_document": "../1.3.0/signing-keys.schema.json#/$defs/document",
             "route": "/v1/vehicles/{vehicle_id}/sync/signing-keys",
-            "rule": "A 1.5 client obtains the vehicle-bound signing keys from the 1.3.0 signing-keys route, whose document carries profile_id hub-sync-v1@1.3.0 and validates against the 1.3.0 schema. The signing_keys_schema and fixture_signing_keys referenced by this profile are the 1.4.0 fixture key set only and validate no wire document. The 1.5 OpenAPI defines no key route.",
+            "rule": "A 1.5 client obtains the vehicle-bound signing keys from the 1.3.0 signing-keys route, whose document carries profile_id hub-sync-v1@1.3.0 and validates against the 1.3.0 schema. The signing_keys_schema inherited from 1.4.0 validates the same wire document; fixture_signing_keys is a deterministic test key set, never a production trust anchor. The 1.5 OpenAPI defines no key route.",
         },
         "live_pack": {
             "contract": "../1.4.0/physical-delta-pack-v1-contract.json",

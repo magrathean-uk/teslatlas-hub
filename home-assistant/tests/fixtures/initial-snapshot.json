@@ -1,0 +1,52 @@
+{
+  "hub": {
+    "id": "hub-fixture",
+    "name": "Fixture Hub",
+    "protocol_version": "0.0-fixture",
+    "capabilities": ["current_state", "events"]
+  },
+  "status": {
+    "collector_health": "healthy",
+    "fleet_cost_usd": 12.34,
+    "backup_age_seconds": 3600
+  },
+  "vehicles": [
+    {
+      "id": "vehicle-alpha",
+      "name": "Fixture Alpha",
+      "state_of_charge": 72.5,
+      "charging_state": "stopped",
+      "charging_power_kw": 0.0,
+      "charge_limit_percent": 80.0,
+      "estimated_range_km": 310.2,
+      "odometer_km": 54321.0,
+      "activity_state": "asleep",
+      "inside_temperature_c": null,
+      "outside_temperature_c": 15.5,
+      "access_state": "locked",
+      "software_version": "2026.20.6",
+      "software_update_state": "current",
+      "telemetry_age_seconds": 42,
+      "data_quality": "complete"
+    },
+    {
+      "id": "vehicle-beta",
+      "name": "Fixture Beta",
+      "state_of_charge": 44.0,
+      "charging_state": "charging",
+      "charging_power_kw": 7.2,
+      "charge_limit_percent": 90.0,
+      "estimated_range_km": 188.0,
+      "odometer_km": 12000.5,
+      "activity_state": "online",
+      "inside_temperature_c": 20.0,
+      "outside_temperature_c": 13.0,
+      "access_state": "locked",
+      "software_version": "2026.20.6",
+      "software_update_state": "available",
+      "telemetry_age_seconds": 3,
+      "data_quality": "partial"
+    }
+  ],
+  "received_at": "2026-08-30T12:00:00Z"
+}

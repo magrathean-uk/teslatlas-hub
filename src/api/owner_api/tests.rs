@@ -593,7 +593,7 @@ fn guarded_legacy_manager(issuer: Url, admitted: Arc<AtomicBool>) -> LegacyAuthM
 #[tokio::test]
 async fn native_setup_discovery_is_one_bounded_products_request() {
     let state = FakeState::with_vehicles(
-        r#"{"response":[{"vehicle_id":71,"id":70,"vin":"5YJ3E1EA7KF000001","state":"asleep","display_name":"Athena"}],"count":1}"#,
+        r#"{"response":[{"vehicle_id":71,"id":70,"vin":"5YJ3E1EA7KF000001","state":"asleep","display_name":"Test Vehicle"}],"count":1}"#,
     );
     let fake = FakeServer::spawn(state.clone()).await;
     let auth = crate::legacy_auth::LegacyAuth::for_test(
@@ -1212,7 +1212,7 @@ fn vehicle_data_without_a_reflection_logs_nothing_and_is_unchanged() {
     let log = LogCapture::start();
     let secrets = ProviderSecrets::new(&[LONG_REFLECTED_ACCESS, LONG_REFLECTED_REFRESH, ""]);
     let raw = json!({"response": {
-        "display_name": "Athena",
+        "display_name": "Test Vehicle",
         "state": "online",
         "vehicle_state": {"car_version": "2026.20 abcdef"}
     }});
@@ -1374,7 +1374,7 @@ async fn legacy_discovery_drops_vehicle_names_that_reflect_a_credential() {
         r#"{{"response":[
             {{"vehicle_id":71,"id":70,"vin":"5YJ3E1EA7KF000001","state":"online","display_name":"{LONG_REFLECTED_ACCESS}"}},
             {{"vehicle_id":81,"id":80,"vin":"5YJ3E1EA7KF000002","state":"asleep","display_name":"Bearer {LONG_REFLECTED_REFRESH}"}},
-            {{"vehicle_id":91,"id":90,"vin":"5YJ3E1EA7KF000003","state":"online","display_name":"Athena"}}
+            {{"vehicle_id":91,"id":90,"vin":"5YJ3E1EA7KF000003","state":"online","display_name":"Test Vehicle"}}
         ],"count":3}}"#
     );
     let state = FakeState::with_vehicles(&body);
@@ -1393,7 +1393,7 @@ async fn legacy_discovery_drops_vehicle_names_that_reflect_a_credential() {
         .iter()
         .map(|vehicle| vehicle.display_name.as_deref())
         .collect::<Vec<_>>();
-    assert_eq!(names, vec![None, None, Some("Athena")]);
+    assert_eq!(names, vec![None, None, Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME)]);
     assert_eq!(
         vehicles
             .iter()
@@ -1417,7 +1417,7 @@ async fn legacy_discovery_drops_vehicle_names_that_reflect_a_credential() {
         once.iter()
             .map(|vehicle| vehicle.display_name.as_deref())
             .collect::<Vec<_>>(),
-        vec![None, None, Some("Athena")]
+        vec![None, None, Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME)]
     );
 
     let log = log.contents();
@@ -1436,7 +1436,7 @@ async fn legacy_discovery_drops_vehicle_names_that_reflect_a_credential() {
 /// and an ordinary state.
 fn state_reflecting_products(access: &str, refresh: &str) -> String {
     json!({"response": [
-        {"vehicle_id": 71, "id": 70, "vin": "5YJ3E1EA7KF000001", "state": access, "display_name": "Athena"},
+        {"vehicle_id": 71, "id": 70, "vin": "5YJ3E1EA7KF000001", "state": access, "display_name": "Test Vehicle"},
         {"vehicle_id": 81, "id": 80, "vin": "5YJ3E1EA7KF000002", "state": format!("x-{refresh}-y"), "display_name": "Hermes"},
         {"vehicle_id": 91, "id": 90, "vin": "5YJ3E1EA7KF000003", "state": "asleep", "display_name": "Apollo"}
     ], "count": 3})
@@ -1484,7 +1484,7 @@ async fn legacy_discovery_replaces_provider_states_that_reflect_a_credential() {
                 .iter()
                 .map(|vehicle| vehicle.display_name.as_deref())
                 .collect::<Vec<_>>(),
-            vec![Some("Athena"), Some("Hermes"), Some("Apollo")]
+            vec![Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME), Some("Hermes"), Some("Apollo")]
         );
         assert_eq!(
             listed
@@ -1587,21 +1587,21 @@ fn scrubbing_a_vehicle_list_names_only_the_paths_it_changed() {
     };
 
     let log = LogCapture::start();
-    let mut clean = vec![vehicle(1, "online", Some("Athena"))];
+    let mut clean = vec![vehicle(1, "online", Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME))];
     secrets.scrub_vehicle_list(&mut clean);
     assert_eq!(clean[0].state, "online");
-    assert_eq!(clean[0].display_name.as_deref(), Some("Athena"));
+    assert_eq!(clean[0].display_name.as_deref(), Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME));
     assert_eq!(log.contents(), "", "a clean list logs nothing");
     drop(log);
 
     let log = LogCapture::start();
     let mut states = vec![
-        vehicle(1, "list-secret-0123456789", Some("Athena")),
+        vehicle(1, "list-secret-0123456789", Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME)),
         vehicle(2, "asleep", None),
     ];
     secrets.scrub_vehicle_list(&mut states);
     assert_eq!(states[0].state, "unknown");
-    assert_eq!(states[0].display_name.as_deref(), Some("Athena"));
+    assert_eq!(states[0].display_name.as_deref(), Some(crate::collection::fake_tesla::FIXTURE_DISPLAY_NAME));
     assert_eq!(states[1].state, "asleep");
     let rendered = log.contents();
     assert!(rendered.contains("response[].state"), "{rendered}");

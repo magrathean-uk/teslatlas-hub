@@ -26,7 +26,7 @@ pub(crate) const MAX_CHARGE_SAMPLE_PAGE_LIMIT: u32 = 2048;
 /// One serialised JSON page, including its envelope, never exceeds this size.
 pub(crate) const MAX_PUBLIC_PAGE_BYTES: usize = 1024 * 1024;
 
-/// Page cursor `tqp1` of hub-http-v1@1.2.0 (`cursor.schema.json`): version,
+/// Page cursor `tqp1` of hub-http-v1@1.3.0 (`cursor.schema.json`): version,
 /// kind, vehicle UUID, scope id, from_ms, to_ms, last key A and last key B.
 const PAGE_CURSOR_PREFIX: &str = "tqp1";
 const PAGE_CURSOR_VERSION: u8 = 1;
@@ -191,7 +191,7 @@ impl PageItem for PublicDrive {
     }
 }
 
-/// `elevation_provenance` of hub-http-v1@1.2.0. The Hub only holds a truthful
+/// `elevation_provenance` of hub-http-v1@1.3.0. The Hub only holds a truthful
 /// record for terrain-derived elevation, so `source` is always `terrain`.
 #[derive(Debug, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct PublicElevationProvenance {
@@ -201,7 +201,7 @@ pub(crate) struct PublicElevationProvenance {
     pub(crate) tile: Option<String>,
 }
 
-/// One drive position as hub-http-v1@1.2.0 `position`. `power` is a number
+/// One drive position as hub-http-v1@1.3.0 `position`. `power` is a number
 /// (f64 projection), not an integer. Fields are held under their neutral names
 /// (C6 R58); `history_aliases` writes the 1.2.0 aliases.
 #[derive(Debug)]
@@ -292,7 +292,7 @@ impl PageItem for PublicPosition {
     }
 }
 
-/// One closed charge session as hub-http-v1@1.2.0 `charge`. The address
+/// One closed charge session as hub-http-v1@1.3.0 `charge`. The address
 /// provenance member is not emitted: the Hub keeps no truthful record yet.
 /// Fields are held under their neutral names (C6 R58); `history_aliases` writes
 /// the 1.2.0 aliases.
@@ -368,7 +368,7 @@ impl PageItem for PublicCharge {
     }
 }
 
-/// One charge sample as hub-http-v1@1.2.0 `charge_sample`. The charger power,
+/// One charge sample as hub-http-v1@1.3.0 `charge_sample`. The charger power,
 /// voltage and current fields are numbers (f64 projections), not integers.
 /// Fields are held under their neutral names (C6 R58); `history_aliases` writes
 /// the 1.2.0 aliases.
@@ -736,7 +736,7 @@ mod tests {
             ("positions", PageKind::Positions),
         ] {
             let path = format!(
-                "{}/protocol/profiles/hub-http-v1/1.2.0/examples/{file}.json",
+                "{}/protocol/profiles/hub-http-v1/1.3.0/examples/{file}.json",
                 env!("CARGO_MANIFEST_DIR")
             );
             let page: serde_json::Value =

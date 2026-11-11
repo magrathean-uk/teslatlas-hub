@@ -1,0 +1,316 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-19T10:48:06.402283+00:00",
+  "purpose": "Owner-authorized source snapshot and planning upload; not a release or new runtime acceptance",
+  "branch": "main",
+  "before_head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+  "authorization": "2026-09-19 owner: Commit and push current work",
+  "acceptance_receipts": "Retained unchanged; original tested source/dirty-tree identities remain historical",
+  "included_changes": [
+    {
+      "path": ".gitignore",
+      "sha256": "2f363f9204fea2a1e5cb210cbed247e8c874a1e3128d342b5e09dbaf7a8ac5a9",
+      "disposition": "included"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "b7d1e136de1885e688b4718bb6334363913e20a7594c52e0afb81cf4c1c5b9d2",
+      "disposition": "included"
+    },
+    {
+      "path": "README.md",
+      "sha256": "efb0d8ab6a86515104c3a5e465edfcd66e2aaa32e5769585cb63d83ffc3a4a27",
+      "disposition": "included"
+    },
+    {
+      "path": "compatibility/hub.json",
+      "sha256": "d55842cd2eb89e582282eb825b94b6bc807b5a3f814e152e2250556e1d201c7e",
+      "disposition": "included"
+    },
+    {
+      "path": "compose.yaml",
+      "sha256": "120382da9b70c0971791bf343d3a8ff2a7c79c244f65a087f12467f89c5994ea",
+      "disposition": "included"
+    },
+    {
+      "path": "custom_components/teslatlas_hub/__init__.py",
+      "sha256": "326c8243acb150e5eb557670527be2054348596e659bd1cb81b0e4604c5db5ad",
+      "disposition": "included"
+    },
+    {
+      "path": "custom_components/teslatlas_hub/config_flow.py",
+      "sha256": "96a78e8563dd49ca914ebd67d77089b7aca52b5f5db2798b9c33e38e6fd80208",
+      "disposition": "included"
+    },
+    {
+      "path": "custom_components/teslatlas_hub/current_hub_client.py",
+      "sha256": "aab9a607835fe947588b8b3efef22da70cad81862169ca508602ceb8a8325c98",
+      "disposition": "included"
+    },
+    {
+      "path": "custom_components/teslatlas_hub/diagnostics.py",
+      "sha256": "ef779a20632b3a04abaf5d088f41601f1bc47062ff6a09bf2a320331d7716657",
+      "disposition": "included"
+    },
+    {
+      "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/SHA256SUMS",
+      "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "disposition": "included"
+    },
+    {
+      "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/openapi.json",
+      "sha256": "af46fba327341fa016c1b25e3f45d69a56f75740f5d0feda3714a89b3c3e9bf7",
+      "disposition": "included"
+    },
+    {
+      "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/profile.json",
+      "sha256": "5b939b06ffb9354cc5227734b85a3f2d7edf46d509dcdda603bccd961b839d71",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/azure-debian-v1-evidence-contract-2026-09-08.md",
+      "sha256": "d961735405846612aebfcb1711661f4b9d015a3e0996f4195a36bfbd36d0a448",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/PLAN.md",
+      "sha256": "6a4c99019d38212feaf232d16a028b4718af0920b0b56a444651987a166c6d61",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/STATUS.json",
+      "sha256": "380bcf1437b6ceb17da231c59b2053c598f6ec38c101988971fe059023f81d6c",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/plans/2026-08-30-foundation.md",
+      "sha256": "92fef8dd78bc9cb25deb66f52070b8335dd34843505cec443b8da55cf3f6e636",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-30-hacs-local-push-foundation.md",
+      "sha256": "b9b14a9c977cfda0e0a3e9f2b0a0e649b6e62db5c63d45275575c921d9f9497e",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-31-contract-security-foundation.md",
+      "sha256": "168e7fcac1ca63ead04bb21d5c80cd29a79ca1282f2bc03270ec621e9cc83059",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-31-entity-registry-alignment.md",
+      "sha256": "bba49624db005b18ae57714b72da71e0b47f14a16f82c17e822d2e6ec7fca32a",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-31-readiness-verification.md",
+      "sha256": "43f79fea604b67e4c5c9d0f3ad57a24e17410286cf9c91345ecccb86f7aaebe4",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-31-runtime-continuity-state-machine.md",
+      "sha256": "9ec24eebf8966588b9e083057f6d1ca7d4e96362ca44e6554995aed94a14088a",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+      "sha256": "b613ddbf6bbe23aa613b1b9c064e74899fde634d8737507f27518e1387658f80",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+      "sha256": "a22c6603f282424c6cac27c8696ba0012e9872e789aeb770c14406d0edc4d13d",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/README.md",
+      "sha256": "6711fe306537c214ccb16bdc43742b079849de9306868a3fad1eb829b23370a1",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/d1-aggregate-manifest-handoff-2026-09-09.json",
+      "sha256": "feaaf67f6e1d668dadf27723bb3caff48222886df6f3c8379c0d80c76d437f1f",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/d1-aggregate-manifest-payload-2026-09-09.txt",
+      "sha256": "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/d1-debian13-arm64-container-selection-receipt-2026-09-09.json",
+      "sha256": "2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/ha-component-payload-manifest-2026-09-19-r1.txt",
+      "sha256": "ebf7d09f88e2ce8f80ea71b8b2ae0fb7569ae3521dea038b643b6cfe626439ca",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/ha-debian-arm64-container-lifecycle-acceptance-2026-09-19-r1.json",
+      "sha256": "fc04ddbb5ece3932f7f1be96d986ad0d44efaf57ab333d89f38748948200029a",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/docker.md",
+      "sha256": "645df06da9bc45b77bf12f0b2422039c75e486d2bb95a6b0d7cd8429a377e7ec",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/ha-admission-source-manifest-2026-09-08.json",
+      "sha256": "e74a955374003be9820a450174715412b4a9c1d504b47eb33d1f93e6b2173832",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/hub-admission-handoff-2026-09-08.json",
+      "sha256": "5d496de004faeb1880a78746a429823e7300d4597147ef9f36a7c7457c37648b",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/plans/2026-08-30-foundation.md",
+      "sha256": "ce94b43844d88c6c255b4e32f7fc9656f9d56fb76152bff831e160da76fac7f0",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/product-versioning.md",
+      "sha256": "0590637c78ee7c8d1fc4abf8cfc4a643318e5e88a1bcc7b8d37ff4c99d21f1d6",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/protocol-readiness.md",
+      "sha256": "6143bf5c62f607a3213c764a5b5bbb8d7bc69f37d2d5a69875d11b1d6e6a561e",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-08-30-hacs-local-push-foundation.md",
+      "sha256": "39a1d0cb596bd99f534a79eba2f652a064db0c44b8162465ae1cd41174c3a7d9",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-08-31-contract-security-foundation.md",
+      "sha256": "224d2fc4a66bd8b8b9f405137216788a1092acdbfc96aa6ab1ad3d87f6a8e185",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-08-31-entity-registry-alignment.md",
+      "sha256": "c3b63e3776cac6f6e0da9ad1bb96b85e6ad654394d69fde5e1627b871ed22f3a",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-08-31-readiness-verification.md",
+      "sha256": "cf8e2812a5d6030ba457cb4aa39c2638a9c5c0acb152446cac878efc30f304ab",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-08-31-runtime-continuity-state-machine.md",
+      "sha256": "b36b009bbb07d1c0815da11385f8cf33d57532e282984836060309531ee65f19",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+      "sha256": "adde26a1f5dbc4afe4ead8aeb3b230c5a12116fde819c0d150dedadabf980ce5",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-08-working-product-plan.md",
+      "sha256": "81ed6867aad9a37ac975c664c6452afbf5a53e0a945c54e4f826b7b9b94bc33a",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-08-30-hacs-local-push-foundation-design.md",
+      "sha256": "e6f50e909aa9955d6fa942efa8f026c5f35f87247652087a86c9fd0acf99ab65",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-08-31-concurrent-foundation-merge-design.md",
+      "sha256": "c853dab50643e126a03c5ee76449b744bed0012faf7ca1a3cb0bb9e32f15294d",
+      "disposition": "included"
+    },
+    {
+      "path": "hacs.json",
+      "sha256": "5227db539c44718150be6042206d769453e713451ae6fa7ef00bcd2e6b8ade57",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/integration/test_current_hub_client.py",
+      "sha256": "2ab9809bfc9a9fbba7fdd66518a850da6a4e0262271133c3d95213dfc0b8aa52",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_config_flow.py",
+      "sha256": "4728f63eefe18aa04128308b337d91a9e33c0697f10097b5db653de7947935d4",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_coordinator.py",
+      "sha256": "c0197f3bd00f5ad35f9541983a6131cfeb444ee45eeb5d146b37a368930ac9b0",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_diagnostics.py",
+      "sha256": "166a1d258b8918535e80642894390043807fc2492c55336f2d7bf7f8afdea98c",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_documentation.py",
+      "sha256": "7368246aa5ffb95749c754d90377b74a5487860e092eea515ef2247515d0fb1e",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_init.py",
+      "sha256": "d67bec38841b4da85f27045d5b6c21e68833d29d337e4473b3deed58ce43c76f",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_mac_consumer_forward.py",
+      "sha256": "ae67217685213492a0fb1566c14154a18506274965069948470da77144dcca0e",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_matrix_live.py",
+      "sha256": "5935c634766b397162fccfa74348a535bbcb8b70c69bb66223bd9e69f5cce108",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_migration.py",
+      "sha256": "3d13c03091553639661e330e957086affc674e913fc10d5ecfa8884282866697",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_package.py",
+      "sha256": "e8a18a432eecc1f370472b41f84db226406e2ae37bcbceb0f2f4eaa74f9f3a0b",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_sensor.py",
+      "sha256": "41f9df11fdde4673df1ad2a1e855521d5b2be273493fac96b93a7d20b678c069",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/mac-consumer-forward",
+      "sha256": "2c6c938f6d8fffe8f4beb18fc169ac2fc4e65309ccf204fc3c0fc280e22cf641",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/matrix-contract.json",
+      "sha256": "6b3f8a19bba579790bd554a589a82f273facdbdf5515feba2c83b9eda2091820",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/matrix_contract.py",
+      "sha256": "aa0c27880a59855e110a8a43c540c1e6127e449b63e1f834140c8c681014185f",
+      "disposition": "included"
+    }
+  ],
+  "excluded_local_paths": [
+    ".DS_Store",
+    ".serena/.gitignore",
+    ".serena/project.yml",
+    "custom_components/.DS_Store",
+    "docs/.DS_Store",
+    "tests/.DS_Store",
+    "tools/.DS_Store"
+  ],
+  "no_ci_release_tag_deployment": true
+}

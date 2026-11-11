@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "invalid_cursor",
+    "message": "cursor is invalid for this vehicle and time range"
+  }
+}

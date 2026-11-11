@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "kind": "d1_viewer_container_runtime",
+  "status": "passed_debian_arm64_runtime",
+  "verified_at": "2026-09-09T08:13:29Z",
+  "source_head": "ba5424dcfeab59ac9fea0106f84fb5281672751a",
+  "source_tree_dirty": true,
+  "source_manifest_sha256": "b57d3e5b7c015bf397b55ab5823afe33d20c0b2296d0892f39c6bd683d6bae7a",
+  "source_files": {
+    "Dockerfile_sha256": "d1f9509a4d4d2efc15afa32f8fcd82950bd67dced732f2429ade35cae9f94a51",
+    "compose_yaml_sha256": "2298aed0aa44cadcf775381df8d0679ecf2e143f7ae5557dff0d03f70b8be4bf",
+    "healthcheck_sha256": "0aaef16ac1aca5f52c81ba8c3f6e69a5173264fb0f71313fc687f93b43a37aaf",
+    "sdk_package_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c"
+  },
+  "artifact": {
+    "kind": "source_built_docker_image",
+    "image_tag": "teslatlas-viewer:local",
+    "image_id": "sha256:6791fa6d019028ae4d0c3cad926207852830188ccf5dcc70e4e01b00d76e5ea6",
+    "repo_digests": [],
+    "base_image": "node:26.8.1-bookworm-slim@sha256:367679cf9792759492a486e4aa4b421764d71a9546a6dae8aab81a99eb797b3e"
+  },
+  "runtime": {
+    "guest": "debian13-arm64",
+    "os": "Debian GNU/Linux 13.6",
+    "architecture": "aarch64",
+    "docker_engine": "26.1.5+dfsg1",
+    "compose": "2.26.1-4",
+    "container_project": "teslatlas-viewer-d1-r2-20260909",
+    "container_name": "teslatlas-viewer-d1-r2-20260909-viewer-1",
+    "service_identity": "node uid=1000 gid=1000",
+    "listener": "127.0.0.1:4173",
+    "source_staging": "owner-only disposable guest path; no credentials or Hub state"
+  },
+  "checks": {
+    "compose_config": "passed",
+    "image_build": "passed; npm ci, SDK verification (81 members), and production build completed",
+    "runtime_healthcheck": "passed; Docker health state became healthy using node bin/healthcheck.mjs",
+    "http_root": "passed; curl HTTP 200 on loopback",
+    "runtime_user": "passed; container Config.User=node and id reported uid=1000(node), gid=1000(node)",
+    "runtime_persistence": "passed; Docker inspect reported mounts=[] and the source Dockerfile/Compose declare no volume",
+    "restart": "passed; Compose restart returned healthy and loopback HTTP remained successful",
+    "clean_stop": "passed; Compose down removed the Viewer container and project network; port 4173 was absent",
+    "image_retention": "passed; image identity remained available after clean stop",
+    "unrelated_state": "passed; the pre-existing Hub, Home Assistant, and Edge containers remained the only running sibling containers"
+  },
+  "actions": {
+    "install": "staged the frozen Viewer source and ran the selected Compose profile with a distinct project name",
+    "remove": "removed only the Viewer Compose container and project network; retained the built image for identity review",
+    "upgrade": "not run in this Docker-only lane",
+    "rollback": "not run in this Docker-only lane",
+    "forced_stop": "not run in this Docker-only lane"
+  },
+  "redaction": {
+    "private_inputs_copied": false,
+    "secrets_recorded": false,
+    "raw_response_values_recorded": false,
+    "vehicle_or_pairing_state_used": false
+  },
+  "limits": [
+    "This receipt proves the selected Debian ARM64 Docker runtime only; it does not prove native Debian service-manager or macOS launchd lifecycle.",
+    "No Hub readiness, browser TLS/CORS, helper parity, passive collection, Debian x86_64, upgrade, rollback, or forced-stop claim is made by this receipt.",
+    "The image has no registry RepoDigest because it was built locally and was not published."
+  ]
+}

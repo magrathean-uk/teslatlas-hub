@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "status": "candidate",
+  "product_version": "2026.36.2",
+  "profile": {"id": "hub-http-v1", "revision": "1.0.0", "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"},
+  "tested_hub_versions": [],
+  "tested_hub_source_fingerprints": [],
+  "required_capabilities": ["query.vehicles", "query.current"],
+  "optional_capabilities": ["query.drives"],
+  "test_receipt_paths": []
+}

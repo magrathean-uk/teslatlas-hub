@@ -1,0 +1,546 @@
+{
+  "schema_version": 1,
+  "adapter_id": "edge_v2",
+  "revision": 1,
+  "required_cases": [
+    "candidate_artifact_identity",
+    "installed_service_runtime",
+    "edge_linux_runtime",
+    "edge_mtls_bearer_identity",
+    "edge_no_v1_downgrade",
+    "edge_source_owner_exclusivity",
+    "edge_uninterrupted_delivery_parity",
+    "edge_restart_delivery_parity",
+    "edge_duplicate_reenqueue_dedup",
+    "edge_gap_interleaving_later_ack_rejected",
+    "edge_unsupported_event_bounded_disposition",
+    "edge_conflicting_identity_blocks_ack",
+    "edge_transaction_fault_redelivery",
+    "edge_lost_ack_body_redelivery",
+    "edge_pending_publication_offline_recovery",
+    "edge_clean_shutdown_resume"
+  ],
+  "actors": [
+    {
+      "id": "installed_controller",
+      "kind": "installed_controller",
+      "required": true
+    },
+    {
+      "id": "edge_normal",
+      "kind": "edge_normal",
+      "required": true
+    },
+    {
+      "id": "edge_producer",
+      "kind": "edge_normal",
+      "required": true
+    },
+    {
+      "id": "edge_reference",
+      "kind": "edge_normal",
+      "required": true
+    },
+    {
+      "id": "edge_fault",
+      "kind": "edge_fault",
+      "required": true
+    },
+    {
+      "id": "edge_transport",
+      "kind": "edge_fault",
+      "required": true
+    }
+  ],
+  "cases": [
+    {
+      "id": "candidate_artifact_identity",
+      "actor_ids": [
+        "installed_controller",
+        "edge_producer"
+      ],
+      "evidence_kind": "identity",
+      "operations": [
+        "observe_identity"
+      ],
+      "raw_schema_ids": [
+        "edge_fixture_v1"
+      ]
+    },
+    {
+      "id": "installed_service_runtime",
+      "actor_ids": [
+        "installed_controller"
+      ],
+      "evidence_kind": "identity",
+      "operations": [
+        "observe_identity"
+      ],
+      "raw_schema_ids": [
+        "edge_fixture_v1"
+      ]
+    },
+    {
+      "id": "edge_linux_runtime",
+      "actor_ids": [
+        "edge_producer"
+      ],
+      "evidence_kind": "identity",
+      "operations": [
+        "observe_runtime"
+      ],
+      "raw_schema_ids": [
+        "edge_fixture_v1"
+      ]
+    },
+    {
+      "id": "edge_mtls_bearer_identity",
+      "actor_ids": [
+        "edge_producer",
+        "edge_normal",
+        "edge_transport"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "deliver_positive",
+        "negative_auth"
+      ],
+      "raw_schema_ids": [
+        "edge_http_v1"
+      ]
+    },
+    {
+      "id": "edge_no_v1_downgrade",
+      "actor_ids": [
+        "edge_reference",
+        "edge_transport"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "negative_v1_404",
+        "negative_v1_body",
+        "negative_redirect"
+      ],
+      "raw_schema_ids": [
+        "edge_http_v1"
+      ]
+    },
+    {
+      "id": "edge_source_owner_exclusivity",
+      "actor_ids": [
+        "installed_controller",
+        "edge_reference"
+      ],
+      "evidence_kind": "identity",
+      "operations": [
+        "observe_owner"
+      ],
+      "raw_schema_ids": [
+        "edge_fixture_v1",
+        "edge_cleanup_v1"
+      ]
+    },
+    {
+      "id": "edge_uninterrupted_delivery_parity",
+      "actor_ids": [
+        "edge_reference",
+        "edge_producer",
+        "edge_normal"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "reference_delivery"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "id": "edge_restart_delivery_parity",
+      "actor_ids": [
+        "installed_controller",
+        "edge_producer",
+        "edge_normal"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "restart_delivery"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "id": "edge_duplicate_reenqueue_dedup",
+      "actor_ids": [
+        "edge_producer",
+        "edge_normal"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "duplicate_reenqueue"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "id": "edge_gap_interleaving_later_ack_rejected",
+      "actor_ids": [
+        "edge_producer",
+        "edge_normal"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "gap_prepare",
+        "gap_reject",
+        "gap_consume"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_http_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "id": "edge_unsupported_event_bounded_disposition",
+      "actor_ids": [
+        "edge_producer",
+        "edge_normal"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "unsupported_event"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "id": "edge_conflicting_identity_blocks_ack",
+      "actor_ids": [
+        "edge_reference",
+        "edge_transport"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "conflicting_identity"
+      ],
+      "raw_schema_ids": [
+        "edge_http_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "id": "edge_transaction_fault_redelivery",
+      "actor_ids": [
+        "edge_fault",
+        "edge_producer"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "fault_raw_insert",
+        "fault_lifecycle_write",
+        "fault_receipt_insert",
+        "fault_frontier_update",
+        "fault_commit",
+        "fault_before_commit",
+        "fault_after_commit"
+      ],
+      "raw_schema_ids": [
+        "edge_fault_v1",
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "id": "edge_lost_ack_body_redelivery",
+      "actor_ids": [
+        "edge_fault",
+        "edge_producer"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "fault_lost_ack"
+      ],
+      "raw_schema_ids": [
+        "edge_fault_v1",
+        "edge_checkpoint_v1"
+      ]
+    },
+    {
+      "id": "edge_pending_publication_offline_recovery",
+      "actor_ids": [
+        "edge_fault",
+        "edge_producer"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "fault_offline_recovery"
+      ],
+      "raw_schema_ids": [
+        "edge_fault_v1",
+        "edge_snapshot_v1",
+        "edge_cleanup_v1"
+      ]
+    },
+    {
+      "id": "edge_clean_shutdown_resume",
+      "actor_ids": [
+        "installed_controller",
+        "edge_producer",
+        "edge_normal"
+      ],
+      "evidence_kind": "identity",
+      "operations": [
+        "resume_stop",
+        "resume_start",
+        "actors_closed"
+      ],
+      "raw_schema_ids": [
+        "edge_cleanup_v1",
+        "edge_checkpoint_v1"
+      ]
+    }
+  ],
+  "raw_schemas": [
+    {
+      "id": "edge_fixture_v1",
+      "schema": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/tools/interop/client_lanes/edge_contract/edge_fixture_v1.schema.json",
+        "sha256": "5f65a6a91e8a580ffe81bb5ee922ef39505ebaa19c232a80603efe822c9c9db6"
+      }
+    },
+    {
+      "id": "edge_checkpoint_v1",
+      "schema": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/tools/interop/client_lanes/edge_contract/edge_checkpoint_v1.schema.json",
+        "sha256": "859d2a6f90a8c610c6810608e9bf63cf1e0f0670e6e50262c88f7190a31d2f41"
+      }
+    },
+    {
+      "id": "edge_http_v1",
+      "schema": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/tools/interop/client_lanes/edge_contract/edge_http_v1.schema.json",
+        "sha256": "bb4e3c87df84053fe7a298ca5fc42c99424533b5da83d89372a50dcd75d2be0a"
+      }
+    },
+    {
+      "id": "edge_fault_v1",
+      "schema": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/tools/interop/client_lanes/edge_contract/edge_fault_v1.schema.json",
+        "sha256": "9eba37bec670157bd9641be14ee8cea446162c4c822ed503f95cf8b2909e4152"
+      }
+    },
+    {
+      "id": "edge_snapshot_v1",
+      "schema": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/tools/interop/client_lanes/edge_contract/edge_snapshot_v1.schema.json",
+        "sha256": "6279358ff76721ca0b97bba86bfc5573bf83e4dd88779b5c94d375d0ebf7b19e"
+      }
+    },
+    {
+      "id": "edge_cleanup_v1",
+      "schema": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/tools/interop/client_lanes/edge_contract/edge_cleanup_v1.schema.json",
+        "sha256": "3d6d1fcece6772bb1125c5a79027caab7b2a12726063a291b231317b10ce1ce8"
+      }
+    }
+  ],
+  "phases": [
+    {
+      "actor_id": "edge_normal",
+      "phase_id": "initial",
+      "ordinal": 1,
+      "recipe_id": "edge-initial"
+    },
+    {
+      "actor_id": "edge_producer",
+      "phase_id": "primary_1",
+      "ordinal": 2,
+      "recipe_id": "edge-primary_1"
+    },
+    {
+      "actor_id": "edge_reference",
+      "phase_id": "reference_1",
+      "ordinal": 3,
+      "recipe_id": "edge-reference_1"
+    },
+    {
+      "actor_id": "edge_producer",
+      "phase_id": "primary_2",
+      "ordinal": 4,
+      "recipe_id": "edge-primary_2"
+    },
+    {
+      "actor_id": "edge_reference",
+      "phase_id": "reference_2",
+      "ordinal": 5,
+      "recipe_id": "edge-reference_2"
+    },
+    {
+      "actor_id": "edge_producer",
+      "phase_id": "primary_3",
+      "ordinal": 6,
+      "recipe_id": "edge-primary_3"
+    },
+    {
+      "actor_id": "edge_reference",
+      "phase_id": "reference_3",
+      "ordinal": 7,
+      "recipe_id": "edge-reference_3"
+    },
+    {
+      "actor_id": "edge_transport",
+      "phase_id": "negative_auth",
+      "ordinal": 8,
+      "recipe_id": "edge-negative_auth"
+    },
+    {
+      "actor_id": "edge_transport",
+      "phase_id": "negative_v1_404",
+      "ordinal": 9,
+      "recipe_id": "edge-negative_v1_404"
+    },
+    {
+      "actor_id": "edge_transport",
+      "phase_id": "negative_v1_body",
+      "ordinal": 10,
+      "recipe_id": "edge-negative_v1_body"
+    },
+    {
+      "actor_id": "edge_transport",
+      "phase_id": "negative_redirect",
+      "ordinal": 11,
+      "recipe_id": "edge-negative_redirect"
+    },
+    {
+      "actor_id": "edge_transport",
+      "phase_id": "negative_conflict",
+      "ordinal": 12,
+      "recipe_id": "edge-negative_conflict"
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_raw_insert",
+      "ordinal": 13,
+      "recipe_id": "edge-fault_raw_insert"
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_lifecycle_write",
+      "ordinal": 14,
+      "recipe_id": "edge-fault_lifecycle_write"
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_receipt_insert",
+      "ordinal": 15,
+      "recipe_id": "edge-fault_receipt_insert"
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_frontier_update",
+      "ordinal": 16,
+      "recipe_id": "edge-fault_frontier_update"
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_commit",
+      "ordinal": 17,
+      "recipe_id": "edge-fault_commit"
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_before_commit",
+      "ordinal": 18,
+      "recipe_id": "edge-fault_before_commit"
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_after_commit",
+      "ordinal": 19,
+      "recipe_id": "edge-fault_after_commit"
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_lost_ack",
+      "ordinal": 20,
+      "recipe_id": "edge-fault_lost_ack"
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_offline_recovery",
+      "ordinal": 21,
+      "recipe_id": "edge-fault_offline_recovery"
+    },
+    {
+      "actor_id": "edge_producer",
+      "phase_id": "primary_6",
+      "ordinal": 22,
+      "recipe_id": "edge-primary_6"
+    },
+    {
+      "actor_id": "edge_reference",
+      "phase_id": "reference_6",
+      "ordinal": 23,
+      "recipe_id": "edge-reference_6"
+    },
+    {
+      "actor_id": "edge_producer",
+      "phase_id": "primary_8",
+      "ordinal": 24,
+      "recipe_id": "edge-primary_8"
+    },
+    {
+      "actor_id": "edge_reference",
+      "phase_id": "reference_8",
+      "ordinal": 25,
+      "recipe_id": "edge-reference_8"
+    },
+    {
+      "actor_id": "edge_producer",
+      "phase_id": "gap_prepare",
+      "ordinal": 26,
+      "recipe_id": "edge-gap_prepare"
+    },
+    {
+      "actor_id": "edge_normal",
+      "phase_id": "gap_reject",
+      "ordinal": 27,
+      "recipe_id": "edge-gap_reject"
+    },
+    {
+      "actor_id": "edge_producer",
+      "phase_id": "gap_consume",
+      "ordinal": 28,
+      "recipe_id": "edge-gap_consume"
+    },
+    {
+      "actor_id": "edge_normal",
+      "phase_id": "resume_stop",
+      "ordinal": 29,
+      "recipe_id": "edge-resume_stop"
+    },
+    {
+      "actor_id": "edge_normal",
+      "phase_id": "resume_start",
+      "ordinal": 30,
+      "recipe_id": "edge-resume_start"
+    },
+    {
+      "actor_id": "edge_normal",
+      "phase_id": "actors_closed",
+      "ordinal": 31,
+      "recipe_id": "edge-actors_closed"
+    }
+  ],
+  "validator": {
+    "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/tools/interop/client_lanes/edge_contract/matrix_contract.py",
+    "sha256": "bf1219b1766e3f2af0f90d45903e961117bcce3275fc2e0424dd6e146851605f"
+  }
+}

@@ -1,0 +1,254 @@
+{
+  "schema_version": 1,
+  "kind": "macos_edge_one_event_actor_contract_proposal_r3",
+  "date": "2026-09-12",
+  "status": "source_only_contract_ready_no_runtime",
+  "authority_boundary": {
+    "scope": "Source-only one-event actor contract after the closed r2 zero-event cohort",
+    "runtime_start": false,
+    "credential_creation": false,
+    "producer_invocation": false,
+    "event_submission": false,
+    "r1_r2_reuse": false,
+    "no_event_authority": true,
+    "authority_rule": "This document is a review package, not an authorization. A future actor call requires a separate coordinator submit-once authorization and a wholly fresh Hub-owned runtime cohort."
+  },
+  "closed_cohorts": {
+    "r1_final": {
+      "path": "hub/docs/development/edge-macos-empty-baseline-handoff-2026-09-12-r1-final.json",
+      "sha256": "df9f19a5f8368beafa88068f34c4239cf9ee4294bb6885fb97de76707b07939b",
+      "state": "closed_rejected_not_reusable"
+    },
+    "r2_final": {
+      "path": "hub/docs/development/edge-macos-empty-baseline-handoff-2026-09-12-r2.json",
+      "sha256": "21f46025eb51344e5403b94e37aa937eb2e7f86c2ecf301ddd72821d1b352867",
+      "state": "closed_zero_event_baseline_passed_no_producer_submission",
+      "verified": "The bounded empty baseline was stable for five seconds and cleanup closed all listed listeners, stopped the guest and released the shared heavy-build lock. Producer authorization, invocation and event submission were all false."
+    },
+    "non_reuse": "No r1 or r2 root, port, credential, certificate, private key, sealed binding, transaction, wrapper, runtime descriptor, readiness receipt or mutable handoff is an r3 input. Their hashes are provenance for closure only."
+  },
+  "verified_producer_source": {
+    "upstream": {
+      "repository": "teslamotors/fleet-telemetry",
+      "version": "v0.9.4",
+      "commit": "d64c73ab65e7c5fb5fc12b35fe507e2c6054227b"
+    },
+    "helper_source": {
+      "path": "/private/tmp/edge-fleet-src.current.x9MQxE/fleet-telemetry-d64c73ab65e7c5fb5fc12b35fe507e2c6054227b/cmd/synthetic-vehicle/main.go",
+      "sha256": "b27566c80766f4fa0823c2b797809ade65cf09a0d8dd080dd7d14efada34c698"
+    },
+    "helper_test_source": {
+      "path": "/private/tmp/edge-fleet-src.current.x9MQxE/fleet-telemetry-d64c73ab65e7c5fb5fc12b35fe507e2c6054227b/cmd/synthetic-vehicle/main_test.go",
+      "sha256": "cb54ff16b1b2149d74d1851203ce0fd878bb68ca09cb415c1a6a1df27fbda7da",
+      "upstream_helper_sha256": "b27566c80766f4fa0823c2b797809ade65cf09a0d8dd080dd7d14efada34c698"
+    },
+    "verified_candidate_provenance": {
+      "historical_path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-producer-darwin-arm64-20260909/synthetic-vehicle-darwin-arm64",
+      "sha256": "db916a52378004cbcacb1eb149feedc3d6369c194044f5c8f7f837e5b8b837e7",
+      "bytes": 13639666,
+      "mode_and_type": "0500 regular Mach-O 64-bit executable arm64",
+      "toolchain": "Go 1.27.0 darwin/arm64; CGO_ENABLED=0; GOOS=darwin; GOARCH=arm64; -trimpath; -buildvcs=false",
+      "source_verification": "The helper package compiled with go test -mod=readonly ./cmd/synthetic-vehicle; the package reported no test files. Static contract marker was present and the stale rejected VIN literal was absent.",
+      "mock_suite_verification": "Previously passed: Go 1.27.0 go test -count=1 -v -mod=readonly ./cmd/synthetic-vehicle; four top-level tests and six subtests passed in 1.364s against an ephemeral loopback TLS/WebSocket receiver.",
+      "rerun_policy": "No unchanged source suite is rerun for this document. Hub must rehash the source and fresh staged helper before any future cohort; the historical candidate path and binary are provenance only and must not be copied into r3."
+    },
+    "source_contract": {
+      "inputs": [
+        "Explicit endpoint",
+        "Client certificate",
+        "Client private key",
+        "Server CA",
+        "Sealed VIN",
+        "Fresh transaction ID",
+        "One assigned Unix-millisecond timestamp"
+      ],
+      "payload": "One synthetic VehicleName-only V datum",
+      "transport": "One WebSocket write followed by one ACK read",
+      "retry": false,
+      "compiled_identity": "No VIN or other actor identity may be embedded in the executable."
+    }
+  },
+  "verified_guard_design": {
+    "historical_wrapper_provenance": {
+      "path": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r1/handoff/invoke_one_event.py",
+      "sha256": "65348ba50a47942a976f68e0827cc086a93b0a12bac601b6fe609eb32ae62b3f",
+      "status": "Verified guard-design provenance only; the historical wrapper, authorization, guard and result paths are not r3 inputs."
+    },
+    "fresh_future_paths": {
+      "root": "<FRESH_HUB_R3_ROOT>",
+      "wrapper": "<FRESH_HUB_R3_ROOT>/handoff/invoke_one_event.py",
+      "authorization": "<FRESH_HUB_R3_ROOT>/handoff/authorize-event-r3.json",
+      "guard": "<FRESH_HUB_R3_ROOT>/handoff/producer-invocation-guard-r3.json",
+      "result": "<FRESH_HUB_R3_ROOT>/handoff/producer-invocation-result-r3.json",
+      "fresh_root_rule": "Hub creates and owns the fresh root; it must be absent before creation, non-symlinked, privately owned and mode-checked."
+    },
+    "exact_enforcement": "The wrapper requires an exact authorization object for the fresh binding, transaction, payload and one-call/no-retry policy. It claims the invocation guard with O_CREAT|O_EXCL before spawning. Any later invocation fails at the existing guard. Timeout, an ACK mismatch or a nonzero helper exit is final and cannot be retried or replayed.",
+    "pre_spawn_order": [
+      "Require a matching coordinator authorization receipt with event_authorized=true, fresh cohort identity, fresh sealed binding, fresh transaction, exact payload and one-call/no-retry policy.",
+      "Reject missing, expired, reused, mismatched or extra authorization fields before any helper process is created.",
+      "Revalidate the fresh helper bytes and the fresh client certificate profile against the exact receiver CA and pinned CommonName parser rule.",
+      "Read CLOCK_REALTIME exactly once, as Unix milliseconds, only after authorization/profile checks and immediately before claiming the invocation guard.",
+      "Create the guard using O_CREAT|O_EXCL before spawning; record the one timestamp and exact binding/transaction/policy in the winning guard. EEXIST is a final already-consumed result.",
+      "Pass the identical recorded Unix-millisecond value unchanged in -created-at-ms to the helper.",
+      "Spawn the helper exactly once with the staged argv below and enforce the bounded timeout.",
+      "Write the result atomically with the helper exit, receiver ACK outcome and cleanup disposition; no later invocation, timeout repair or replay is permitted."
+    ],
+    "timestamp_rule": "No r3 timestamp is assigned or stored by this proposal. After a matching authorization receipt exists, only the winning invocation reads CLOCK_REALTIME once, records that Unix-millisecond value in the exclusive guard and passes the same value unchanged to the helper. A later call cannot assign a new timestamp because the guard already exists.",
+    "timeout_seconds": 30,
+    "timeout_rule": "A 30-second timeout is final. Kill/cleanup and record the result under the same cohort; do not call the helper again.",
+    "invocation_count": 1,
+    "retry_or_replay": false
+  },
+  "fresh_actor_binding_placeholders": {
+    "status": "No r3 identity, certificate, key, port, timestamp, transaction or authorization value exists in this source-only package.",
+    "root": "<FRESH_HUB_R3_ROOT>",
+    "identity_binding": {
+      "source_id": "<FRESH_HUB_SEALED_SOURCE_ID>",
+      "vehicle_id": "<FRESH_HUB_SEALED_VEHICLE_ID>",
+      "vin": "<FRESH_HUB_SEALED_VIN>",
+      "car_id": "<FRESH_HUB_SEALED_CAR_ID>",
+      "installation_id": "<FRESH_HUB_SEALED_INSTALLATION_ID>",
+      "lineage": "<FRESH_HUB_SEALED_LINEAGE>",
+      "subject_common_name": "<FRESH_HUB_SEALED_COMMON_NAME>",
+      "value_policy": "Hub/coordinator keeps all identity values private; this proposal records placeholders and only public hashes in future receipts."
+    },
+    "transaction": {
+      "type": "V",
+      "id": "<FRESH_R3_TRANSACTION_ID>",
+      "status": "Not assigned or reserved now; Hub/coordinator assigns a fresh unique value in the private handoff and exact authorization receipt.",
+      "authorization_binding": "The exact transaction ID must be present in the authorization object before the one-time timestamp is assigned."
+    },
+    "payload": {
+      "datum_type": "V",
+      "event_shape": "One VehicleName-only synthetic datum",
+      "vehicle_name": "<FRESH_VEHICLE_NAME_ONLY_VALUE>",
+      "numeric_fields": false,
+      "unit_fields": false,
+      "lifecycle_fields": false,
+      "passive_source_fields": false,
+      "vehicle_command": false
+    },
+    "timestamp": "<ASSIGNED_ONCE_AFTER_EXPLICIT_AUTHORIZATION>",
+    "freshness": "Every placeholder is a future private value. No r2 sealed binding, certificate, key, transaction ID, endpoint, port or runtime root may satisfy an r3 placeholder."
+  },
+  "staged_executable_argv": {
+    "argv": [
+      "<FRESH_HUB_R3_ROOT>/bin/synthetic-vehicle-darwin-arm64",
+      "-endpoint",
+      "wss://127.0.0.1:<FRESH_R3_RECEIVER_DATA_PORT>/",
+      "-cert",
+      "<FRESH_HUB_R3_ROOT>/inputs/vehicle-tls/vehicle-client.crt",
+      "-key",
+      "<FRESH_HUB_R3_ROOT>/inputs/vehicle-tls/vehicle-client.key",
+      "-server-ca",
+      "<FRESH_HUB_R3_ROOT>/inputs/vehicle-tls/vehicle-server-ca.crt",
+      "-vin",
+      "<FRESH_HUB_SEALED_VIN>",
+      "-txid",
+      "<FRESH_R3_TRANSACTION_ID>",
+      "-created-at-ms",
+      "<ASSIGNED_ONCE_AFTER_AUTHORIZATION>"
+    ],
+    "ordering": "The argument order and explicit input contract are taken from the reviewed helper source. The future Hub handoff must replace only the placeholders with fresh exact values and must not add arguments or compiled identity data.",
+    "staged_paths": "The helper, wrapper, certificate, key and server CA are future fresh Hub-owned staged paths. This document does not stage, copy, read or create any of them.",
+    "fresh_paths_only": true,
+    "embedded_vin_forbidden": true,
+    "endpoint_rule": "The receiver data port is a fresh Hub-assigned value. No r1 or r2 port is reused or hard-coded by this proposal."
+  },
+  "certificate_gate": {
+    "pinned_parser": {
+      "source": "teslamotors/fleet-telemetry/messages/identity.go",
+      "revision": "d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+      "sha256": "20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5",
+      "issuer_rule": "Tesla Motors Products CA maps to vehicle_device.",
+      "common_name_rule": "Subject.CommonName is the device identity; dots are replaced with hyphens when deriving deviceID.",
+      "san_rule": "SubjectAltName is not required and is not read for this known issuer; its absence is not a failure."
+    },
+    "fresh_profile_requirements": [
+      "Machine-hash the exact fresh staged client-certificate PEM bytes and derive/machine-hash the exact DER bytes.",
+      "Match the leaf Subject.CommonName to the fresh sealed binding under the pinned parser rule without recording the identity value.",
+      "Verify issuer Tesla Motors Products CA, basic constraints CA:FALSE, and critical digitalSignature/keyEncipherment key usage.",
+      "Verify the clientAuth extended key usage.",
+      "Verify certificate/private-key public-key correspondence without emitting private bytes or private-key hashes.",
+      "Verify the leaf with the exact fresh receiver CA using openssl verify -purpose sslclient and confirm the receiver is configured with that exact CA hash.",
+      "Treat SAN as not required/read under the pinned parser; do not introduce a stale SAN expectation."
+    ],
+    "fresh_receipt_requirements": "Hub supplies a redacted fresh profile receipt with exact public PEM/DER/CA hashes, paths and modes. The receipt must not carry r2 public or private certificate values into r3.",
+    "r2_profile_provenance": {
+      "receipt_path": "docs/development/edge-macos-r2-certificate-profile-receipt-2026-09-12.json",
+      "sha256": "6897a292b5a0d11081319be7bc53b1d13272bc81b3800d8748fe1805b421740e",
+      "result": "The r2 profile gate passed under the same parser rule, but its certificate, CA, binding and runtime are closed evidence and are not r3 inputs."
+    }
+  },
+  "pre_invocation_gates": [
+    "Hub proposes a wholly fresh r3 root and exact private runtime handoff; r1/r2 roots, ports and descriptors are absent from the new staging set.",
+    "Hub rehashes the pinned helper source, reviewed helper test source and fresh staged darwin/arm64 helper; the candidate is staged at the fresh path and has no embedded VIN.",
+    "Hub stages a fresh receiver, Edge and Hub configuration and records exact public hashes; Edge independently verifies only supplied public/profile inputs before runtime authorization.",
+    "Fresh client certificate passes the pinned CommonName/issuer/profile/clientAuth/key-correspondence/exact-CA gate; SAN is not required.",
+    "Hub performs a new empty baseline on the fresh r3 cohort: Edge/receiver/Hub health is ready, queue/spool/admission/rejection/gap state is zero, and a trusted Hub v2 pull is empty before any actor call.",
+    "A separate coordinator authorization receipt matches the fresh sealed identity, fresh transaction, exact VehicleName-only payload, receiver endpoint/CA, one-call policy and expiry; event_authorized is true only in that private receipt.",
+    "The authorization has not been consumed and the fresh guard/result paths do not exist before invocation.",
+    "Immediately before spawn, the wrapper reads one timestamp, claims the guard with O_CREAT|O_EXCL and passes the same timestamp to the helper.",
+    "Any failed gate is recorded and closed; no helper call, retry, replacement, repair or replay occurs under a failed or consumed authorization."
+  ],
+  "hub_owned_changes_required": [
+    "Create and own the fresh r3 runtime root, exact receiver/Edge/Hub ports, process descriptors, cleanup records and private configuration; do not edit or reuse r1/r2 roots.",
+    "Revalidate and stage the helper at the fresh path, retaining the helper/source/test hashes and a reviewed fresh wrapper digest that implements the guard design above.",
+    "Provide fresh sealed identity and lineage, fresh client certificate/key/receiver CA and exact public hashes only after the new empty baseline is ready; keep private values out of this Edge proposal and coordinator messages.",
+    "Issue the exact coordinator authorization receipt only after readiness review; the receipt must bind the fresh transaction, payload, identity, endpoint and one-call/no-retry policy.",
+    "Run the actor through the wrapper exactly once after authorization, collect receiver ACK, Edge admission/spool, Hub durable commit/ACK/projection and cleanup evidence, and never rerun the helper.",
+    "Keep wrapper, runtime, credentials, fixture, ledger-observation and cleanup implementation changes Hub-owned. Edge proposes these requirements and does not edit Hub source or shared runtime code."
+  ],
+  "post_event_assertions": {
+    "receiver": [
+      "Exactly one mTLS WebSocket connection uses the fresh client identity and the exact receiver CA trust configuration.",
+      "Exactly one accepted VehicleName-only V envelope carries the fresh transaction ID and the one assigned timestamp; no numeric, unit, lifecycle or passive-source fields are present.",
+      "The helper receives exactly one matching receiver ACK and exits zero; no second logical envelope, connection retry or replay occurs."
+    ],
+    "edge": [
+      "Exactly one receiver admission is recorded with no auth, invalid, storage or capacity rejection.",
+      "Exactly one encrypted spool record is created for the admitted event, with one stable identity/sequence and no gap; its disposition is observable and classified.",
+      "The Edge-to-Hub v2 batch preserves record/gap order and the stable record identity; a duplicate pull before ACK, if observed, does not create a second projection.",
+      "After the Hub ACK, the v2 pull is empty and encrypted spool records and bytes return to zero; no duplicate, gap, pending or quarantine state remains."
+    ],
+    "hub": [
+      "A bounded v2 pull contains the one admitted record and its exact gap list; the stable record ID and v1 alias are persisted to a durable receipt before ACK.",
+      "The Hub deduplicates by stable record ID, commits the sealed lineage and application receipt durably before acknowledging, and classifies every observed sequence.",
+      "Exactly one ACK is posted with the exact record IDs, empty gap list and frontier advancing from null to the one admitted sequence; no ACK is sent before durable commit.",
+      "After ACK, the next v2 pull returns records=[] and gaps=[], pending publications are zero, and the Edge spool is zero.",
+      "Exactly one VehicleName projection is present. Numeric, unit-bearing, lifecycle, passive-source, duplicate and unexplained projections are absent."
+    ],
+    "failure_rule": "Any timeout, nonzero helper result, TLS/profile mismatch, wrong ACK, unknown sequence, gap, duplicate projection, nonempty pending state, unverifiable durable commit, or cleanup mismatch fails closed. Record the outcome, stop only fresh processes, and do not rerun or replay the helper."
+  },
+  "known_ledger_observation_limits": [
+    "Hub status/doctor does not expose application-ledger or sequence-table counts; those counts must not be inferred from status, readiness or a zero visible metric.",
+    "A direct read-only SQLite inspection may be unavailable with SQLite error 14. If unavailable, record the limitation rather than asserting ledger/application counts.",
+    "Source compilation, package artifacts, static checks and the ephemeral mock receiver suite are not live receiver-to-Edge-to-Hub forwarding, durable commit, ACK/frontier or projection acceptance proof.",
+    "A receiver ACK alone does not prove Edge admission, encrypted-spool durability, Hub commit-before-ACK or the exact projection; each downstream assertion requires its own runtime evidence."
+  ],
+  "cleanup_contract": {
+    "owner": "Hub",
+    "order": [
+      "Hub",
+      "receiver",
+      "Edge",
+      "guest"
+    ],
+    "producer_timeout_seconds": 30,
+    "hub_drain_timeout_seconds": 60,
+    "requirements": [
+      "Record exact fresh process PIDs, UIDs, exit codes/signals and result paths.",
+      "Close every fresh listener and verify no r3 port remains bound; do not report old r1/r2 port numbers as r3 cleanup evidence.",
+      "Stop the guest after Hub/receiver/Edge cleanup, verify the shared heavy-build lock is absent and retain redacted receipts.",
+      "Mark the fresh r3 root and all actor authorization/guard/result material non-reusable after any outcome; no repair, retry or cleanup substitution is permitted."
+    ]
+  },
+  "review_limits": [
+    "This is an Edge-owned source-only contract proposal. It does not create credentials, start a guest, start a listener, invoke a producer, submit an event, mutate Edge/Hub/HA state or publish an artifact.",
+    "The historical helper and wrapper hashes prove reviewed provenance and guard semantics only; Hub must independently revalidate fresh copies before any future cohort.",
+    "The r2 zero-event closure is a prerequisite reference and cannot be converted into r3 event, forwarding or ledger evidence.",
+    "No native device, commerce, Siri, Home Assistant, named-source TeslaMate or Apple acceptance is claimed by this package.",
+    "Hub owns shared runtime, credential, wrapper, ledger-observation and cleanup changes; any deviation requires a new review package and coordinator decision."
+  ],
+  "runtime_boundary": "Source-only contract proposal. No runtime, credentials, actor invocation, event, network request, shared-state mutation, Hub edit or publication occurred."
+}

@@ -1,0 +1,423 @@
+{
+  "schema_version": 1,
+  "kind": "edge-worker-phases",
+  "adapter_id": "edge_v2",
+  "phases": [
+    {
+      "actor_id": "edge_normal",
+      "phase_id": "initial",
+      "ordinal": 1,
+      "recipe_id": "edge-initial",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_fixture_v1",
+        "edge_http_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_producer",
+      "phase_id": "primary_1",
+      "ordinal": 2,
+      "recipe_id": "edge-primary_1",
+      "operations": [
+        "stop",
+        "start",
+        "verify",
+        "stop"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_reference",
+      "phase_id": "reference_1",
+      "ordinal": 3,
+      "recipe_id": "edge-reference_1",
+      "operations": [
+        "start",
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_producer",
+      "phase_id": "primary_2",
+      "ordinal": 4,
+      "recipe_id": "edge-primary_2",
+      "operations": [
+        "stop",
+        "start",
+        "verify",
+        "stop"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_reference",
+      "phase_id": "reference_2",
+      "ordinal": 5,
+      "recipe_id": "edge-reference_2",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_producer",
+      "phase_id": "primary_3",
+      "ordinal": 6,
+      "recipe_id": "edge-primary_3",
+      "operations": [
+        "stop",
+        "start",
+        "verify",
+        "stop"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_reference",
+      "phase_id": "reference_3",
+      "ordinal": 7,
+      "recipe_id": "edge-reference_3",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_transport",
+      "phase_id": "negative_auth",
+      "ordinal": 8,
+      "recipe_id": "edge-negative_auth",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_http_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_transport",
+      "phase_id": "negative_v1_404",
+      "ordinal": 9,
+      "recipe_id": "edge-negative_v1_404",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_http_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_transport",
+      "phase_id": "negative_v1_body",
+      "ordinal": 10,
+      "recipe_id": "edge-negative_v1_body",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_http_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_transport",
+      "phase_id": "negative_redirect",
+      "ordinal": 11,
+      "recipe_id": "edge-negative_redirect",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_http_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_transport",
+      "phase_id": "negative_conflict",
+      "ordinal": 12,
+      "recipe_id": "edge-negative_conflict",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_http_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_raw_insert",
+      "ordinal": 13,
+      "recipe_id": "edge-fault_raw_insert",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_fault_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_lifecycle_write",
+      "ordinal": 14,
+      "recipe_id": "edge-fault_lifecycle_write",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_fault_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_receipt_insert",
+      "ordinal": 15,
+      "recipe_id": "edge-fault_receipt_insert",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_fault_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_frontier_update",
+      "ordinal": 16,
+      "recipe_id": "edge-fault_frontier_update",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_fault_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_commit",
+      "ordinal": 17,
+      "recipe_id": "edge-fault_commit",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_fault_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_before_commit",
+      "ordinal": 18,
+      "recipe_id": "edge-fault_before_commit",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_fault_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_after_commit",
+      "ordinal": 19,
+      "recipe_id": "edge-fault_after_commit",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_fault_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_lost_ack",
+      "ordinal": 20,
+      "recipe_id": "edge-fault_lost_ack",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_fault_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_fault",
+      "phase_id": "fault_offline_recovery",
+      "ordinal": 21,
+      "recipe_id": "edge-fault_offline_recovery",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_fault_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_producer",
+      "phase_id": "primary_6",
+      "ordinal": 22,
+      "recipe_id": "edge-primary_6",
+      "operations": [
+        "stop",
+        "start",
+        "verify",
+        "stop"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_reference",
+      "phase_id": "reference_6",
+      "ordinal": 23,
+      "recipe_id": "edge-reference_6",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_producer",
+      "phase_id": "primary_8",
+      "ordinal": 24,
+      "recipe_id": "edge-primary_8",
+      "operations": [
+        "stop",
+        "start",
+        "verify",
+        "stop"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_reference",
+      "phase_id": "reference_8",
+      "ordinal": 25,
+      "recipe_id": "edge-reference_8",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_producer",
+      "phase_id": "gap_prepare",
+      "ordinal": 26,
+      "recipe_id": "edge-gap_prepare",
+      "operations": [
+        "stop"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_normal",
+      "phase_id": "gap_reject",
+      "ordinal": 27,
+      "recipe_id": "edge-gap_reject",
+      "operations": [],
+      "raw_schema_ids": [
+        "edge_http_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_producer",
+      "phase_id": "gap_consume",
+      "ordinal": 28,
+      "recipe_id": "edge-gap_consume",
+      "operations": [
+        "start",
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_checkpoint_v1",
+        "edge_snapshot_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_normal",
+      "phase_id": "resume_stop",
+      "ordinal": 29,
+      "recipe_id": "edge-resume_stop",
+      "operations": [
+        "stop"
+      ],
+      "raw_schema_ids": [
+        "edge_cleanup_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_normal",
+      "phase_id": "resume_start",
+      "ordinal": 30,
+      "recipe_id": "edge-resume_start",
+      "operations": [
+        "start",
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_cleanup_v1",
+        "edge_checkpoint_v1"
+      ]
+    },
+    {
+      "actor_id": "edge_normal",
+      "phase_id": "actors_closed",
+      "ordinal": 31,
+      "recipe_id": "edge-actors_closed",
+      "operations": [
+        "verify"
+      ],
+      "raw_schema_ids": [
+        "edge_cleanup_v1"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas-swift-f3-platform-gate-preparation",
+  "created_at": "2026-09-19T14:41:52Z",
+  "updated_at": "2026-09-19T14:59:42Z",
+  "state": "ACCEPTED_BOUNDED_PREPARATION",
+  "review": {
+    "required_model": "gpt-5.6-sol/high",
+    "initial_state": "REJECTED",
+    "initial_findings": [
+      {
+        "priority": "P1",
+        "finding": "Linux verified then discarded the accepted handoff and built the live repository with a consumer outside that identity.",
+        "closure": "The immutable published source commit is now materialized and verified; its canonical package and separately checksummed external consumer are the actual root-owned Docker context and SwiftPM uses isolated writable scratch."
+      },
+      {
+        "priority": "P2",
+        "finding": "README.md and docs/development.md retained superseded multi-architecture, old-digest and two-example instructions.",
+        "closure": "Both current documents now record the direct ARM64 child, locked parent provenance, actual handoff inputs and explicit native-only/no-emulation rule."
+      },
+      {
+        "priority": "P2",
+        "finding": "The verifier did not exact-value check the official catalog URL and Dockerfile source commit.",
+        "closure": "Both values are locked in code and contract and adversarial mutation cases require rejection."
+      }
+    ],
+    "closed_findings": 3,
+    "delta_state": "ACCEPTED_NO_FINDINGS"
+  },
+  "source": {
+    "repository": "teslatlas-sdk-swift",
+    "branch": "main",
+    "baseline_head": "d7ac4488fc5908015e8de55cd57983ea87172266",
+    "publication_state_at_receipt_freeze": "AUTHORIZED_PENDING_COMMIT_AND_PUSH"
+  },
+  "accepted_inputs": {
+    "protocol_runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+    "source_package_identity_sha256": "733071fcd8c7db0e64b38547dab90dd354ad728dc2d9efee7fd2de438a14876e",
+    "canonical_staging_root": "teslatlas-sdk-swift",
+    "source_input_files": 124,
+    "source_input_bytes": 769736,
+    "public_products": [
+      "TeslatlasHubSDK",
+      "TeslatlasCommands",
+      "TeslatlasHubV1Compatibility",
+      "TeslatlasCurrentHub"
+    ]
+  },
+  "prepared_gates": {
+    "ios17": {
+      "project": "iOSRuntimeHost/CurrentHubRuntimeHost.xcodeproj",
+      "shared_scheme": "CurrentHubRuntimeHost",
+      "destination": "platform=iOS Simulator,OS=17.0,name=iPhone 15",
+      "product_probe": "iOSRuntimeHost/Sources/PlatformSurfaceProbe.swift",
+      "isolated_derived_data": true,
+      "runtime_executed": false
+    },
+    "macos14": {
+      "required_host": "macOS 14 arm64",
+      "consumer": "accepted handoff external-four-library-consumer",
+      "isolated_swiftpm_scratch": true,
+      "rejects_current_macos_27_host": true,
+      "runtime_executed": false
+    },
+    "linux_arm64": {
+      "image": "swift:6.0.3-jammy",
+      "platform": "linux/arm64/v8",
+      "parent_oci_index_digest": "sha256:e2b0410500126d7f569d387b5817426cef5c38cc02dc494c3dc5edc8e10304d6",
+      "arm64_child_digest": "sha256:c84da0197afcc90ef90a64194d4d451be7c090a845bcbf632755f9c16334ba8f",
+      "dockerfile_source_git_commit": "f44060cdf224436060d2df98a5c3f63f2600de63",
+      "native_linux_arm64_required": true,
+      "emulation_allowed": false,
+      "matrix_wire_allowed": false,
+      "docker_context": "verified accepted source handoff",
+      "package_input": "teslatlas-sdk-swift",
+      "consumer_input": "separately checksummed external-four-library-consumer",
+      "live_repository_package_input": false,
+      "inputs_writable_by_container_user": false,
+      "swiftpm_scratch": "/tmp/teslatlas-platform-gate-build",
+      "docker_build_executed": false,
+      "container_executed": false
+    }
+  },
+  "image_evidence": {
+    "checked_at": "2026-09-19T14:10:00Z",
+    "methods": [
+      "Docker official-images Swift catalog read",
+      "Docker Registry v2 manifest read",
+      "docker manifest inspect --verbose without pull or build"
+    ],
+    "sources": [
+      "https://www.swift.org/install/linux/docker/",
+      "https://hub.docker.com/_/swift/",
+      "https://github.com/docker-library/official-images/blob/master/library/swift"
+    ],
+    "catalog_architectures_observed": [
+      "amd64",
+      "arm64v8"
+    ],
+    "selected_architecture": "arm64v8"
+  },
+  "verification": {
+    "host": "macOS 27.0 arm64",
+    "xcode": "27.0 (27A266a)",
+    "xcodegen": "2.46.0",
+    "checks": [
+      {
+        "command": "xcodegen generate --spec iOSRuntimeHost/project.yml --project iOSRuntimeHost",
+        "result": "PASSED_SHARED_PROJECT_REGENERATION"
+      },
+      {
+        "command": "python3 -m unittest tools/test_source_handoff.py",
+        "result": "PASSED_7_OF_7"
+      },
+      {
+        "command": "python3 -m unittest tools/test_platform_gate.py tools/test_ios_runtime_host.py",
+        "result": "PASSED_11_OF_11"
+      },
+      {
+        "command": "python3 tools/platform_gate.py verify",
+        "result": "PASSED_ACCEPTED_IDENTITIES_AND_STATIC_HARNESSES"
+      },
+      {
+        "command": "python3 tools/platform_gate.py command ios17",
+        "result": "PASSED_COMMAND_RENDER_ONLY"
+      },
+      {
+        "command": "python3 tools/platform_gate.py command macos14",
+        "result": "PASSED_COMMAND_RENDER_ONLY"
+      },
+      {
+        "command": "python3 tools/platform_gate.py command linux-arm64",
+        "result": "PASSED_COMMAND_RENDER_ONLY"
+      },
+      {
+        "command": "swift package dump-package for the staged accepted handoff external-four-library-consumer (via platform_gate.py verify)",
+        "result": "PASSED_MANIFEST_PARSE_AND_CANONICAL_PATH_BINDING"
+      },
+      {
+        "command": "python3 -m json.tool on platform-gates.json and STATUS.json",
+        "result": "PASSED"
+      },
+      {
+        "command": "git diff --check",
+        "result": "PASSED"
+      }
+    ]
+  },
+  "changed_files": [
+    "Dockerfile",
+    "README.md",
+    "docs/development.md",
+    "docs/development/PLAN.md",
+    "docs/development/STATUS.json",
+    "docs/development/f3-platform-gate-preparation-2026-09-19-r1.json",
+    "docs/development/platform-gate-preparation.md",
+    "iOSRuntimeHost/CurrentHubRuntimeHost.xcodeproj/project.pbxproj",
+    "iOSRuntimeHost/CurrentHubRuntimeHost.xcodeproj/xcshareddata/xcschemes/CurrentHubRuntimeHost.xcscheme",
+    "iOSRuntimeHost/Sources/AppDelegate.swift",
+    "iOSRuntimeHost/Sources/PlatformSurfaceProbe.swift",
+    "iOSRuntimeHost/project.yml",
+    "tools/platform-gates.json",
+    "tools/platform_gate.py",
+    "tools/test_ios_runtime_host.py",
+    "tools/test_platform_gate.py"
+  ],
+  "claim_boundary": {
+    "source_and_harness_preparation_only": true,
+    "macos14_accepted": false,
+    "ios17_accepted": false,
+    "linux_arm64_accepted": false,
+    "live_hub_accepted": false,
+    "catalog_lifecycle_accepted": false,
+    "f5_accepted": false,
+    "f3_accepted": false,
+    "f6_accepted": false,
+    "f7_accepted": false,
+    "app_used": false,
+    "viewer_used": false,
+    "vm_used": false,
+    "simulator_used": false,
+    "docker_build_or_run_used": false,
+    "matrix_wire_used": false,
+    "x86_or_intel_used": false
+  },
+  "open": [
+    "Exact macOS 14 Apple-silicon external-consumer execution",
+    "Exact iOS 17 simulator execution through the shared SDK-owned scheme",
+    "Native Linux ARM64 Docker build and four-library consumer execution",
+    "Live-Hub behavior and mandatory F5 real-input semantics",
+    "Catalog install, update, rollback and removal lifecycle",
+    "Final F3, F6 and F7 acceptance"
+  ]
+}

@@ -28,7 +28,7 @@ use uuid::Uuid;
 use crate::import::source_db::physical_delta_pack::verified_immutable_pack;
 
 use crate::{
-    db::{HubStore, PendingPhysicalV3Admission, StoredPack, VehicleScope},
+    db::{HubStore, PendingPhysicalV3Admission, StoreError, StoredPack, VehicleScope},
     hub_pack::ProjectionFixedNumericV2_2,
     manifest_signing::ManifestSigning,
     protocol::{CursorKey, Sha256Digest},
@@ -1029,7 +1029,7 @@ fn publish_selected_month_with_policy(
         && let Some(pack) =
             verified_cached_month(store, cursor_key, admission, &id, &month, previous)?
     {
-        require_current_source_head(&catalogue, admission)?;
+        require_current_source_head(store, &catalogue, admission)?;
         pack.sync_all()?;
         sync_directory(&store.packs_dir().join("sha256"))?;
         sync_directory(store.packs_dir())?;
@@ -1122,7 +1122,7 @@ fn publish_selected_month_with_policy(
         now_ms,
     )?;
 
-    require_current_source_head(&catalogue, admission)?;
+    require_current_source_head(store, &catalogue, admission)?;
     let transaction = catalogue.transaction()?;
     transaction.execute(
         "INSERT INTO prepared_map_months
@@ -1157,9 +1157,15 @@ fn publish_selected_month_with_policy(
 }
 
 fn require_current_source_head(
+    store: &HubStore,
     catalogue: &Connection,
     admission: &PendingPhysicalV3Admission,
 ) -> PreparedResult<()> {
+    if bound_public_head(store, admission.vehicle_id)?.as_ref() != Some(admission) {
+        return Err(invalid(
+            "prepared source binding changed before catalogue admission",
+        ));
+    }
     let current_receipt: Option<String> = catalogue
         .query_row(
             "SELECT receipt_id FROM pending_physical_v3_admissions
@@ -1176,6 +1182,35 @@ fn require_current_source_head(
     Ok(())
 }
 
+/// A restore or source rebind can leave the same receipt in the catalogue.
+/// Reuse history's authoritative binding validation, including generation,
+/// installation, account, selected car and active vehicle. Catalogue presence
+/// alone must never authorise a prepared result from the old binding.
+fn bound_public_head(
+    store: &HubStore,
+    vehicle_id: Uuid,
+) -> PreparedResult<Option<PendingPhysicalV3Admission>> {
+    match store.pending_physical_v3_control_admission_for_vehicle(vehicle_id) {
+        Ok(Some(head)) => {
+            // A lineage base can pin v2_projection_binding to its old generation.
+            // Check the mutable restore generation independently of that base.
+            let generation: i64 = store.open()?.query_row(
+                "SELECT s.generation FROM sources s
+                 JOIN vehicles v ON v.source_id = s.source_id WHERE v.vehicle_id = ?1",
+                [vehicle_id.to_string()],
+                |row| row.get(0),
+            )?;
+            Ok((u64::try_from(generation).ok() == Some(head.manifest.generation)).then_some(head))
+        }
+        Ok(head) => Ok(head),
+        Err(StoreError::PhysicalV3AdmissionInvalid) => Ok(None),
+        // A blocked rotation has no public prepared month. The served
+        // profiles require an unavailable optional preparation to be a 404.
+        Err(StoreError::PhysicalV3SecondHeadUnsupported(_)) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
 /// Resolve only a receipt from the current public PhysicalV3 head and exact
 /// vehicle. Older prepared receipts remain private after a head replacement.
 pub(crate) fn current_receipt(
@@ -1190,6 +1225,9 @@ pub(crate) fn current_receipt(
             .iter()
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
     {
+        return Ok(None);
+    }
+    if bound_public_head(store, vehicle_id)?.is_none() {
         return Ok(None);
     }
     let connection = store.open()?;
@@ -1241,11 +1279,20 @@ pub(crate) fn current_pack_candidate_exists(
     scope: VehicleScope,
 ) -> PreparedResult<bool> {
     let connection = store.open()?;
-    Ok(connection.query_row(
-        concat!("SELECT EXISTS(SELECT 1 ", prepared_pack_candidates!(), ")"),
+    let mut statement = connection.prepare(concat!(
+        "SELECT DISTINCT p.vehicle_id ",
+        prepared_pack_candidates!()
+    ))?;
+    let vehicles = statement.query_map(
         params![digest.to_string(), scope.grant_device_param()],
-        |row| row.get(0),
-    )?)
+        |row| row.get::<_, String>(0),
+    )?;
+    for vehicle in vehicles {
+        if bound_public_head(store, vehicle?.parse()?)?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Authorize content-addressed prepared objects through the current signed
@@ -1273,7 +1320,9 @@ pub(crate) fn current_pack(
     let mut entry = None;
     for candidate in entries {
         let (id, cached) = candidate?;
-        if current_semantic_receipt(cursor_key, &id, &cached)? {
+        if current_semantic_receipt(cursor_key, &id, &cached)?
+            && bound_public_head(store, cached.vehicle.parse()?)?.is_some()
+        {
             entry = Some(cached.compressed_bytes);
             break;
         }
@@ -1342,6 +1391,10 @@ pub(crate) fn insert_signed_month_fixture(
         .expect("prepared catalogue fixture");
     (id, receipt)
 }
+
+#[cfg(test)]
+#[path = "prepared_map/journey6_invalidation.rs"]
+mod journey6_invalidation;
 
 #[cfg(test)]
 mod tests {
@@ -2051,7 +2104,12 @@ mod tests {
         );
     }
 
-    fn month_stage(root: &Path, month: &Month, changed: bool, update: bool) -> SourceDbStage {
+    pub(super) fn month_stage(
+        root: &Path,
+        month: &Month,
+        changed: bool,
+        update: bool,
+    ) -> SourceDbStage {
         month_stage_with_open(root, month, changed, update, false)
     }
 
@@ -2464,7 +2522,7 @@ mod tests {
             damaged,
             "retain conflicting evidence"
         );
-        require_current_source_head(&store.open().unwrap(), &first.admission).unwrap();
+        require_current_source_head(&store, &store.open().unwrap(), &first.admission).unwrap();
     }
 
     #[tokio::test]
@@ -2536,7 +2594,7 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        require_current_source_head(&store.open().unwrap(), &first.admission).unwrap();
+        require_current_source_head(&store, &store.open().unwrap(), &first.admission).unwrap();
 
         let synced = std::cell::RefCell::new(Vec::new());
         let failure = publish_selected_month_with_policy(
@@ -2566,7 +2624,7 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        require_current_source_head(&store.open().unwrap(), &first.admission).unwrap();
+        require_current_source_head(&store, &store.open().unwrap(), &first.admission).unwrap();
         publish_selected_month(&store, &key, &valid, &first.admission, now_ms).unwrap();
         assert!(
             current_receipt(&store, &key, binding.vehicle_id, &id)

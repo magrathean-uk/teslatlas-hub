@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:viewer:sdk-raw-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "session_id", "cell_id", "session_input_sha256", "actor_id", "operation", "session_sequence_before", "session_sequence_after", "facts", "requests"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "session_id": {"type": "string", "format": "uuid"},
+    "cell_id": {"type": "string", "pattern": "^viewer__(macos_arm64|debian13_amd64|debian13_arm64)$"},
+    "session_input_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "actor_id": {"const": "viewer_sdk_contract"},
+    "operation": {"type": "string", "minLength": 1},
+    "session_sequence_before": {"type": "integer", "minimum": 1},
+    "session_sequence_after": {"type": "integer", "minimum": 1},
+    "facts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "typed_error": {"type": "string"},
+        "http_status": {"type": ["integer", "null"], "minimum": 100, "maximum": 599},
+        "outgoing_requests": {"type": "integer", "minimum": 0},
+        "old_credential_status": {"type": "integer", "minimum": 100, "maximum": 599},
+        "rotated": {"type": "boolean"},
+        "same_device": {"type": "boolean"}
+      }
+    },
+    "requests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["method", "route", "status", "request_id"],
+        "properties": {
+          "method": {"type": "string", "enum": ["GET", "POST", "OPTIONS"]},
+          "route": {"type": "string", "pattern": "^/"},
+          "status": {"type": "integer", "minimum": 100, "maximum": 599},
+          "request_id": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

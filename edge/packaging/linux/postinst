@@ -1,0 +1,59 @@
+#!/bin/sh
+set -eu
+
+service=teslatlas-edge.service
+receiver_service=teslatlas-fleet-telemetry.service
+state_file=${TESLATLAS_EDGE_MAINTAINER_STATE_FILE:-/run/teslatlas-edge-maintainer.state}
+backup_dir=${TESLATLAS_EDGE_UPGRADE_BACKUP_DIR:-/run/teslatlas-edge-package-upgrade}
+config_dir=/etc/teslatlas-edge
+state_dir=/var/lib/teslatlas-edge
+
+install -d -o root -g teslatlas-edge -m 0750 "$config_dir"
+install -d -o teslatlas-edge -g teslatlas-edge -m 0700 "$state_dir"
+if [ -f "$config_dir/config.toml" ] && [ ! -L "$config_dir/config.toml" ]; then
+    chown root:teslatlas-edge "$config_dir/config.toml"
+    chmod 0640 "$config_dir/config.toml"
+fi
+if [ -f "$config_dir/fleet-telemetry.json" ] && [ ! -L "$config_dir/fleet-telemetry.json" ]; then
+    chown root:teslatlas-edge "$config_dir/fleet-telemetry.json"
+    chmod 0640 "$config_dir/fleet-telemetry.json"
+fi
+
+if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload
+fi
+
+if [ -f "$state_file" ] && [ ! -L "$state_file" ]; then
+    IFS=' ' read -r edge_present edge_active edge_enabled receiver_present receiver_active receiver_enabled < "$state_file"
+    for value in "$edge_present" "$edge_active" "$edge_enabled" \
+        "$receiver_present" "$receiver_active" "$receiver_enabled"; do
+        case "$value" in 0|1) ;; *) echo "invalid Teslatlas Edge upgrade state" >&2; exit 1 ;; esac
+    done
+    set_enabled() {
+        selected=$1
+        was_present=$2
+        was_enabled=$3
+        [ "$was_present" = 1 ] || return 0
+        if [ "$was_enabled" = 1 ]; then
+            systemctl is-enabled --quiet "$selected" || systemctl enable "$selected"
+        else
+            if systemctl is-enabled --quiet "$selected"; then
+                systemctl disable "$selected"
+            fi
+        fi
+    }
+    start_if_recorded() {
+        selected=$1
+        was_present=$2
+        was_active=$3
+        [ "$was_present" = 1 ] && [ "$was_active" = 1 ] || return 0
+        systemctl start "$selected"
+        systemctl is-active --quiet "$selected"
+    }
+    set_enabled "$service" "$edge_present" "$edge_enabled"
+    set_enabled "$receiver_service" "$receiver_present" "$receiver_enabled"
+    start_if_recorded "$service" "$edge_present" "$edge_active"
+    start_if_recorded "$receiver_service" "$receiver_present" "$receiver_active"
+    rm -f "$state_file"
+    [ ! -e "$backup_dir" ] && [ ! -L "$backup_dir" ] || find "$backup_dir" -depth -delete
+fi

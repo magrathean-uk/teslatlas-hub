@@ -1,0 +1,27 @@
+{
+  "host": "0.0.0.0",
+  "port": 8444,
+  "status_port": 0,
+  "log_level": "info",
+  "json_log_enable": true,
+  "namespace": "teslatlas-edge",
+  "teslatlas": {
+    "timeout_ms": 2000
+  },
+  "reliable_ack_sources": {
+    "V": "teslatlas",
+    "alerts": "teslatlas",
+    "errors": "teslatlas"
+  },
+  "records": {
+    "V": ["teslatlas"],
+    "connectivity": ["teslatlas"],
+    "alerts": ["teslatlas"],
+    "errors": ["teslatlas"]
+  },
+  "tls": {
+    "server_cert": "/run/teslatlas-edge-vehicle-tls/vehicle-tls.crt",
+    "server_key": "/run/teslatlas-edge-vehicle-tls/vehicle-tls.key",
+    "ca_file": "/run/teslatlas-edge-vehicle-tls/vehicle-client-ca.crt"
+  }
+}

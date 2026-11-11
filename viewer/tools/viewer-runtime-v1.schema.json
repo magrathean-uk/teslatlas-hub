@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:viewer:runtime-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "session_id", "cell_id", "session_input_sha256", "actor_id", "operation", "session_sequence_before", "session_sequence_after", "facts", "requests"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "session_id": {"type": "string", "format": "uuid"},
+    "cell_id": {"type": "string", "pattern": "^viewer__(macos_arm64|debian13_amd64|debian13_arm64)$"},
+    "session_input_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "actor_id": {"const": "viewer_ui"},
+    "operation": {"const": "observe_installed_runtime"},
+    "session_sequence_before": {"type": "integer", "minimum": 1},
+    "session_sequence_after": {"type": "integer", "minimum": 1},
+    "facts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "hub_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "tarball_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "package_version": {"const": "2026.36.2"},
+        "installed_members": {"const": 81},
+        "bundle_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "packed_sdk_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "rendered_exact_values": {"const": true},
+        "browser": {"type": "string", "minLength": 1},
+        "service_mode": {"type": "string", "enum": ["installed-app-launchagent", "installed-deb-systemd"]}
+      }
+    },
+    "requests": {"type": "array", "maxItems": 0}
+  }
+}

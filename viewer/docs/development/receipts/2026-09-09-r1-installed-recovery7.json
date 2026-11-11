@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "stage": "R1",
+  "status": "passed",
+  "verified_at": "2026-09-09T01:57:58Z",
+  "source_head": "ba5424dcfeab59ac9fea0106f84fb5281672751a",
+  "sdk_profile": "hub-http-v1@1.0.0",
+  "sdk_profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+  "sdk_tarball_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+  "sdk_installed_member_count": 81,
+  "viewer_package_sha256": "3fee3da110123679c8a0f1a062c1bff92f7bec3b38f83acc26b79314a3bc9e28",
+  "hub": {
+    "hub_id": "fc93a685-fbd6-4b29-9736-070ada1c337e",
+    "endpoint": "https://127.0.0.1:18480",
+    "fixture_provenance": "synthetic-real-process",
+    "scenario_sha256": "bb27007d8de40e90db843de694a02d8da23a54874831c67aed455cac185cca6b",
+    "certificate_sha256": "6be86a5ca0c361cb7f7c85645fc4b79162bfa8a480659282e5766b181bed769f"
+  },
+  "scenario": {
+    "name": "viewer-r1-51-drives",
+    "drive_count": 51,
+    "drive_id_order": "1051 down through 1001",
+    "drive_page_lengths": [25, 25, 1],
+    "empty_vehicle": "second seeded vehicle rendered"
+  },
+  "browser": {
+    "platform": "Debian 13 ARM64",
+    "node": "v26.7.0",
+    "playwright": "1.62.1",
+    "chromium": "152.0.7977.82",
+    "page_origin": "http://127.0.0.1:4173",
+    "normal_tls_validation": true,
+    "certificate_bypass": false
+  },
+  "checks": {
+    "installed_recovery_smoke": "1 passed in 4.1m",
+    "wrong_uuid_correction": "passed",
+    "pairing_and_hub_identity": "passed",
+    "current_state": "0%, 160.93 km, 16,093.44 km, Observed",
+    "history_paging_and_order": "51 drives rendered in 25/25/1 pages, exact order 1051 through 1001",
+    "terminal_history": "passed",
+    "empty_vehicle": "passed",
+    "hub_outage": "Hub stopped through the owner supervisor; port 18480 closed; retained current state was labeled Stale; Hub health showed Offline and Cannot reach this Hub.",
+    "hub_restore": "Hub restarted through the owner supervisor with the same identity; readiness returned 200; current values recovered",
+    "operator_revoke": "exact active disposable device revoked through the Hub control; the paired_devices row was verified revoked by a read-only query",
+    "auth_after_revoke": "401 observed on the next authenticated read; session cleared to Pair with a Hub",
+    "fresh_invitation_repair": "new supervisor-issued invitation; pairing POST 200; current values recovered",
+    "clear_local_session": "returned to Pair with a Hub"
+  },
+  "control_barriers": {
+    "marker_files": [
+      "ready-for-outage.json",
+      "outage-complete.json",
+      "ready-for-restore.json",
+      "restore-complete.json",
+      "ready-for-revoke.json",
+      "revoke-complete.json",
+      "ready-for-repair.json",
+      "repair-ready.json",
+      "browser-complete.json"
+    ],
+    "marker_mode": "0600",
+    "repair_invitation_sha256": "0505b5b6389811d0690a1af2d76facd17d668ada83b456ba92fb3a262f92bf8d"
+  },
+  "cleanup": {
+    "status": "passed",
+    "viewer_pid": 57900,
+    "supervisor_pid": 70413,
+    "final_hub_pid": 75193,
+    "stopped_status": "stopped",
+    "hub_exit_code": 0,
+    "hub_alive": false,
+    "listener_closed": true,
+    "cleanup_errors": [],
+    "listeners_absent": ["127.0.0.1:4173", "127.0.0.1:18480"],
+    "remaining_fixture_processes": 0
+  },
+  "private_inputs": {
+    "invitation_and_certificate": "used only from the private Hub handoff; invitation contents were not copied into this receipt",
+    "raw_evidence": "retained under the owner-only guest fixture root"
+  },
+  "limits": [
+    "This receipt covers installed R1 paging and restart/revoke/re-pair recovery; the remaining R1 data-state cases are 304/cache, unsupported zero-I/O, cancellation, and partial failure.",
+    "B2 helper behavior is represented by companion-owner evidence; this Viewer receipt does not rerun or promote sibling products.",
+    "D1 Docker/package runtime and X1 cross-platform lifecycle acceptance remain open.",
+    "No commit, push, release, publication, CI, or artifact upload was performed."
+  ]
+}

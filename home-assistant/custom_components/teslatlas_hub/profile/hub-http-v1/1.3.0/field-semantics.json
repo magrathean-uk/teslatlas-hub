@@ -1,0 +1,1307 @@
+{
+  "address_provenance": {
+    "endpoint_host": "host name of the lookup endpoint; null when not recorded",
+    "language": "language requested from the geocoder; null when not recorded",
+    "licence": "data licence of the lookup result; null when not recorded",
+    "looked_up_at_ms": "epoch milliseconds of the lookup; null when not recorded",
+    "provider": "geocoder provider name; null when not recorded",
+    "source": {
+      "values": {
+        "geocoder": "value came from a recorded geocoder lookup",
+        "import": "The address was copied unchanged from the history of an import source, the source database the Hub's owner migrated from. The Hub did not look it up and does not replace it with a lookup. The Hub states nothing about how the import source obtained it.",
+        "manual": "value was set by the owner"
+      }
+    }
+  },
+  "charge": {
+    "address": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "text"
+    },
+    "address_provenance": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "provenance object; see address_provenance"
+    },
+    "billing_type": {
+      "nullable": true,
+      "source": "Deprecated alias of tariff_type; carries the same value.",
+      "unit": "text; known values per_kwh and per_minute; preserve unknown values"
+    },
+    "charge_energy_added": {
+      "nullable": true,
+      "source": "Deprecated alias of charge_energy_added_kwh; carries the same value.",
+      "unit": "kWh"
+    },
+    "charge_energy_added_kwh": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "kWh"
+    },
+    "charge_energy_used_kwh": {
+      "nullable": true,
+      "source": "Energy that entered the car through its charge inlet during the session, as the car reports it, over the same span as `charge_energy_added_kwh`. AC session (`is_dc` false): the on-board charger's input energy, computed from the AC input power. It is what a meter before the car registers, apart from cable losses. Because it is computed from apparent power, it can overstate the real energy where the power factor is below 1 (about 1 % at 0.99, about 5 % at 0.95). DC session (`is_dc` true): the integral of the DC charging power the source reports. From sources with the Owner API's charge-state shape, on the one car measured so far, it was about 7 % above the battery-side counter (median of 81 sessions, never below), consistent with a reading taken before the battery. From Fleet Telemetry it is not yet measured. Unknown kind (`is_dc` null): the integral of the per-sample power the Hub selects. That is inlet energy for an AC session, and the reported DC power's integral for a DC session that showed no kind evidence. Null when not measured; no energy is invented for unobserved time. It prices no DC session (see `cost`).",
+      "unit": "kWh"
+    },
+    "charge_rate_km_per_hour": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "km of range added per hour"
+    },
+    "cost": {
+      "nullable": true,
+      "source": "Cost of the session in currency units. Null means the cost is unknown: no complete tariff applied, its energy or time basis is missing, or nobody entered one. Zero is a known zero. Per-kWh tariffs: AC and unknown-kind sessions are priced on `charge_energy_used_kwh`, DC sessions on `charge_energy_added_kwh` only; a DC session without that figure has no per-kWh cost. Per-minute tariffs (`tariff_type` `per_minute`): the cost covers the whole connected time from `started_at_ms` to `ended_at_ms`, pauses included, in unrounded minutes. It is null when the stored samples show an unobserved stretch at either end of the session: the first sample is more than ten minutes after `started_at_ms`, the last two samples are more than ten minutes apart, or `ended_at_ms` is more than ten minutes after the last sample (the cases described under those keys). A session first seen in progress starts at its first sample and is priced over its observed time; a gap inside a session that later samples close is connected time and is priced; a row with no stored samples is priced over its own recorded start and end. Free Supercharging: when the owner's free-Supercharging setting is on, a session typed `Supercharger`, or a DC session of another DC type whose samples carry the charger brand Tesla and no other brand, costs zero. The session fee is added once per row (see `tariff_session_fee`). The Hub's automatic close and fill never overwrite a stored cost: a cost the import carried and a cost the owner entered stay. The owner can replace any stored cost, an imported one included. A total the owner enters replaces the cost and leaves the row's tariff unchanged. A unit price the owner enters, per kWh or per minute, replaces the row's tariff with that type and rate and no session fee, and the cost becomes the price on that tariff, with no free-charging rule and no fence fee; a per-minute price follows the per-minute rule above.",
+      "unit": "currency units; no currency code is carried; decimal serialised as a JSON number"
+    },
+    "cost_per_unit": {
+      "nullable": true,
+      "source": "Deprecated alias of tariff_rate; carries the same value.",
+      "unit": "currency units per kWh when tariff_type is per_kwh, per minute when per_minute; decimal serialised as a JSON number"
+    },
+    "duration_min": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "minutes, integer"
+    },
+    "end_battery_level": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "percent"
+    },
+    "end_battery_range_km": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "km"
+    },
+    "end_date_ms": {
+      "nullable": false,
+      "source": "Deprecated alias of ended_at_ms; carries the same value.",
+      "unit": "epoch milliseconds"
+    },
+    "end_ideal_battery_range_km": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "km"
+    },
+    "end_ideal_range_km": {
+      "nullable": true,
+      "source": "Deprecated alias of end_ideal_battery_range_km; carries the same value.",
+      "unit": "km"
+    },
+    "end_rated_range_km": {
+      "nullable": true,
+      "source": "Deprecated alias of end_battery_range_km; carries the same value.",
+      "unit": "km"
+    },
+    "ended_at_ms": {
+      "nullable": false,
+      "source": "End of the session. A session that continued across a period without data and then ended has as its end the first observation after that period, an upper bound: the true end lies between the last sample before the period and this time. A session recorded after a period without data (see `started_at_ms`) also ends at the first observation after it, an upper bound. For both, `duration_min` is an upper bound, and the stored samples show the period without data. A per-minute cost is computed only when the stored samples show no unobserved stretch at the start or the end of the session (see `cost`).",
+      "unit": "epoch milliseconds"
+    },
+    "fast_charger_type": {
+      "nullable": true,
+      "source": "Charger type of the session, by one rule for collected sessions and for closed imported sessions whose import applied that rule: the trimmed type of the first sample whose type carries information. Later values do not change it. Values that say nothing (empty, `<invalid>`, `Unknown`, `SNA`, `Other`, `Tesla`) are skipped. A closed imported session whose import stored its type by an earlier rule keeps that value until it is imported again.",
+      "unit": "text"
+    },
+    "geofence": {
+      "nullable": true,
+      "source": "Deprecated alias of geofence_name; carries the same value.",
+      "unit": "text"
+    },
+    "geofence_name": {
+      "nullable": true,
+      "source": "For a row the Hub collected: the name of the owner's geofence that contained the row's stored point when the row closed (the drive's start or end point; the charge's start point). Where fences overlap, the one with the smallest radius, then the nearest centre. Null when none did or the point is missing. For an imported row: the label the import source recorded. When the owner later creates, edits or deletes a geofence, stored rows are relabelled by one rule. A row whose point the change moves into or out of a fence takes the Hub's new answer there. A label that named a renamed fence takes the new name. Any other label, an imported one included, is kept, unless every fence of that name was deleted; then a row with a point takes the Hub's current answer there. Tariff fields and cost are never relabelled.",
+      "unit": "text"
+    },
+    "id": {
+      "nullable": false,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "signed64 identifier, preserve losslessly"
+    },
+    "is_dc": {
+      "nullable": true,
+      "source": "Session kind, by one rule for collected sessions and for closed imported sessions whose import applied that rule. True once any sample shows DC evidence (a DC charger type, the fast-charger flag with a type that is not Tesla AC equipment, or a power no AC inlet can carry), and then stays true. False when samples show AC evidence and none shows DC. Null when no sample says. A closed imported session whose import stored its kind by an earlier rule keeps that value until it is imported again.",
+      "unit": "boolean"
+    },
+    "location_name": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "text"
+    },
+    "max_charger_power_kw": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "kW"
+    },
+    "outside_temp_avg": {
+      "nullable": true,
+      "source": "Deprecated alias of outside_temp_avg_c; carries the same value.",
+      "unit": "degrees Celsius"
+    },
+    "outside_temp_avg_c": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "degrees Celsius"
+    },
+    "session_fee": {
+      "nullable": true,
+      "source": "Deprecated alias of tariff_session_fee; carries the same value.",
+      "unit": "currency units; decimal serialised as a JSON number"
+    },
+    "start_battery_level": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "percent"
+    },
+    "start_battery_range_km": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "km"
+    },
+    "start_date_ms": {
+      "nullable": false,
+      "source": "Deprecated alias of started_at_ms; carries the same value.",
+      "unit": "epoch milliseconds"
+    },
+    "start_ideal_battery_range_km": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "km"
+    },
+    "start_ideal_range_km": {
+      "nullable": true,
+      "source": "Deprecated alias of start_ideal_battery_range_km; carries the same value.",
+      "unit": "km"
+    },
+    "start_latitude": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "degrees"
+    },
+    "start_longitude": {
+      "nullable": true,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "degrees"
+    },
+    "start_rated_range_km": {
+      "nullable": true,
+      "source": "Deprecated alias of start_battery_range_km; carries the same value.",
+      "unit": "km"
+    },
+    "started_at_ms": {
+      "nullable": false,
+      "source": "Start of the session. A session the Hub first saw already in progress starts at its first sample, which is then later than the true start (an upper bound); its added energy is still complete. A session the Hub records after a period without data, because the car's own energy counter shows energy was added while the Hub saw nothing, starts at the last time up to which the car's energy had been accounted for, which is earlier than the true start (a lower bound).",
+      "unit": "epoch milliseconds"
+    },
+    "tariff_rate": {
+      "nullable": true,
+      "source": "Rate of the tariff recorded on the charge; `tariff_type` states which tariff it is and how and when it was recorded, and later geofence edits never change it. Currency units per kWh when `tariff_type` is `per_kwh`, per minute when `per_minute`. A unit price the owner enters replaces it.",
+      "unit": "currency units per kWh when tariff_type is per_kwh, per minute when per_minute; decimal serialised as a JSON number"
+    },
+    "tariff_session_fee": {
+      "nullable": true,
+      "source": "Session fee of the tariff recorded on the charge (see `tariff_type`). On a row the Hub collected that continues the previous row's plug-in (the car's own charging session continued with no unplug, drive or movement in between), the fee is waived so that a fee is charged once per connection: it is 0 when the tariff had a fee, and null, as in the tariff, when it had none. A unit price the owner enters replaces the tariff and clears the fee (null).",
+      "unit": "currency units; decimal serialised as a JSON number"
+    },
+    "tariff_type": {
+      "nullable": true,
+      "source": "The tariff recorded on the charge. For a charge the Hub collected: the tariff copied from the owner's geofence that contained its start point when it closed, or, when the owner asked the Hub to fill its missing cost after saving that geofence's tariff, the tariff of that geofence as the owner had just saved it. Later geofence edits never change it. It is null when no complete tariff was copied. For an imported charge: the tariff of the geofence the import source linked to the charge, as the import source held it when the history was imported; it is not a copy made when the session closed, and one of the three tariff keys can be null while another is not. For a charge whose price the owner entered as a unit price: the type the owner gave, which replaces any earlier tariff.",
+      "unit": "text; known values per_kwh and per_minute; preserve unknown values"
+    },
+    "vehicle_id": {
+      "nullable": false,
+      "source": "materialised charge projection; closed sessions only",
+      "unit": "plain UUID"
+    }
+  },
+  "charge_sample": {
+    "battery_heater_on": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "boolean"
+    },
+    "battery_level": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "percent"
+    },
+    "battery_range_km": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "km"
+    },
+    "charge_cable": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "text"
+    },
+    "charge_energy_added_kwh": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "kWh"
+    },
+    "charge_id": {
+      "nullable": false,
+      "source": "materialised charge-sample projection",
+      "unit": "signed64 identifier of the owning charge; equals the charge_id path parameter"
+    },
+    "charger_actual_current": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "amperes"
+    },
+    "charger_phases": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "count, zero/nonpositive means unknown"
+    },
+    "charger_pilot_current": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "amperes"
+    },
+    "charger_power_kw": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "kW"
+    },
+    "charger_voltage": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "volts"
+    },
+    "fast_charger_brand": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "text"
+    },
+    "fast_charger_present": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "boolean"
+    },
+    "fast_charger_type": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "text"
+    },
+    "id": {
+      "nullable": false,
+      "source": "materialised charge-sample projection",
+      "unit": "signed64 identifier, preserve losslessly"
+    },
+    "ideal_battery_range_km": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "km"
+    },
+    "ideal_range_km": {
+      "nullable": true,
+      "source": "Deprecated alias of ideal_battery_range_km; carries the same value.",
+      "unit": "km"
+    },
+    "outside_temp_c": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "degrees Celsius"
+    },
+    "rated_range_km": {
+      "nullable": true,
+      "source": "Deprecated alias of battery_range_km; carries the same value.",
+      "unit": "km"
+    },
+    "timestamp_ms": {
+      "nullable": false,
+      "source": "materialised charge-sample projection",
+      "unit": "epoch milliseconds"
+    },
+    "usable_battery_level": {
+      "nullable": true,
+      "source": "materialised charge-sample projection",
+      "unit": "percent"
+    }
+  },
+  "current": {
+    "active_route_destination": {
+      "nullable": true,
+      "source": "The destination name of the active route, trimmed; null when empty or longer than 65536 characters. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "text or provider enum"
+    },
+    "active_route_energy_at_arrival": {
+      "nullable": true,
+      "source": "Expected battery charge at arrival on the active route, as the provider gives it; finite. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "percent state of charge"
+    },
+    "active_route_km_to_arrival": {
+      "nullable": true,
+      "source": "Remaining distance of the active route in km, finite and not negative. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "km, provider miles converted and rounded to 0.01 km"
+    },
+    "active_route_latitude": {
+      "nullable": true,
+      "source": "Latitude of the active route destination in degrees, rounded to 6 decimals, from the newest statement that gives both route coordinates together; null when the pair is not a valid coordinate. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "degrees"
+    },
+    "active_route_longitude": {
+      "nullable": true,
+      "source": "Longitude of the active route destination in degrees, rounded to 6 decimals, from the newest statement that gives both route coordinates together; null when the pair is not a valid coordinate. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "degrees"
+    },
+    "active_route_miles_to_arrival": {
+      "nullable": true,
+      "source": "Deprecated alias of active_route_km_to_arrival; carries the provider miles value as given, because its name states miles.",
+      "unit": "miles, provider value unchanged"
+    },
+    "active_route_minutes_to_arrival": {
+      "nullable": true,
+      "source": "Minutes to arrival on the active route as given; finite and not negative. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "minutes"
+    },
+    "active_route_traffic_minutes_delay": {
+      "nullable": true,
+      "source": "Minutes of traffic delay on the active route as given; finite and not negative. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "minutes"
+    },
+    "activity_state": {
+      "nullable": true,
+      "source": "The Hub's own state of the car from its stored lifecycle phase: online (also while suspended), asleep, offline, driving, charging or updating; null when the phase is unknown. Without a readable lifecycle record the newest vehicle-data, stream or discovery row decides. There is no age rule: the value stays the last recorded phase however old it is, so compare observed_at_ms with your own clock.",
+      "unit": "text; online, asleep, offline, driving, charging, updating or null"
+    },
+    "any_door_open": {
+      "nullable": true,
+      "source": "True if any of the four door elements is open; false only if all four are known closed; otherwise null. The two trunks are not included. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "any_window_open": {
+      "nullable": true,
+      "source": "True if any of the four window elements is open or partly open; false only if all four are known closed; otherwise null. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "battery_level": {
+      "nullable": true,
+      "source": "Battery level in whole percent, from 0 to 100, from the charge state or from the import source battery level. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "percent"
+    },
+    "battery_range_km": {
+      "nullable": true,
+      "source": "Rated battery range in km, from 0 to 9999.99: the provider miles value converted and rounded to 0.01 km, or the import source value rounded to 0.01 km. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "km, provider miles converted and rounded to 0.01 km"
+    },
+    "car": {
+      "nullable": true,
+      "source": "car.efficiency_wh_per_km: Battery energy that adds one km of rated range, in Wh per km: the median of the figures of recent Hub-measured AC sessions. Before three such sessions exist, it is the value imported from the source database, whose basis the Hub does not guarantee.",
+      "unit": "optional materialised identity; api_vehicle_id/stream_vehicle_id/id signed64 (aliases source_eid/source_vid), efficiency_wh_per_km Wh/km, settings durations minutes"
+    },
+    "center_display_state": {
+      "nullable": true,
+      "source": "The provider state code of the centre display, an exact non-negative integer passed through without interpretation; a fraction or a negative number gives null. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "provider integer state code"
+    },
+    "charge_cable_connected": {
+      "nullable": true,
+      "source": "False when the newest charging state is Disconnected; true for Charging, Starting, Stopped, Complete or NoPower; otherwise from the connected cable text (an invalid cable text is false, any other non-empty text is true); null when neither is stated. Plug state is physical and persists through sleep.",
+      "unit": "boolean"
+    },
+    "charge_current_request": {
+      "nullable": true,
+      "source": "Requested charging current in whole amperes; not negative. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "amperes"
+    },
+    "charge_current_request_max": {
+      "nullable": true,
+      "source": "Highest requestable charging current in whole amperes; not negative. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "amperes"
+    },
+    "charge_energy_added": {
+      "nullable": true,
+      "source": "Energy added in the current or last charge, in kWh rounded to 2 decimals, from 0 to 999999.99. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "kWh"
+    },
+    "charge_limit_soc": {
+      "nullable": true,
+      "source": "Charge limit in whole percent, from 0 to 100. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "percent"
+    },
+    "charge_port_door_open": {
+      "nullable": true,
+      "source": "Whether the charge port door is open; a JSON boolean as given, any other type gives null. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "charger_actual_current": {
+      "nullable": true,
+      "source": "Charger current in whole amperes, from -32768 to 32767. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "amperes"
+    },
+    "charger_phases": {
+      "nullable": true,
+      "source": "Number of charger phases as a whole number, from 0 to 32767. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "count, zero/nonpositive means unknown"
+    },
+    "charger_power": {
+      "nullable": true,
+      "source": "Charger power in whole kW, from -32768 to 32767. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "kW"
+    },
+    "charger_voltage": {
+      "nullable": true,
+      "source": "Charger voltage in whole volts, from -32768 to 32767. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "volts"
+    },
+    "charging_state": {
+      "nullable": true,
+      "source": "The charging state, normalised: Charging, Starting, Stopped, Complete, Disconnected and NoPower in that spelling; Unknown and null give null; any other text is passed through trimmed. While activity_state is asleep, Charging and Starting are null. Otherwise persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "text or provider enum"
+    },
+    "climate_keeper_mode": {
+      "nullable": true,
+      "source": "The climate keeper mode, trimmed; null when empty or longer than 65536 characters. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "text or provider enum"
+    },
+    "display_name": {
+      "nullable": true,
+      "source": "The name the owner gave the car: the newest display name the vehicle list states, else the newest vehicle name of the vehicle state, else the stored car name when it is not empty; trimmed; null when none is usable. A source whose newest statement is not usable text (not a string, empty after trimming or longer than 65536 characters) passes to the next source. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "text or provider enum"
+    },
+    "door_driver_front_open": {
+      "nullable": true,
+      "source": "The newest statement for this door: true when open (any non-zero code), false when closed; null when unknown. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "door_driver_rear_open": {
+      "nullable": true,
+      "source": "The newest statement for this door: true when open (any non-zero code), false when closed; null when unknown. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "door_passenger_front_open": {
+      "nullable": true,
+      "source": "The newest statement for this door: true when open (any non-zero code), false when closed; null when unknown. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "door_passenger_rear_open": {
+      "nullable": true,
+      "source": "The newest statement for this door: true when open (any non-zero code), false when closed; null when unknown. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "doors_open": {
+      "nullable": true,
+      "source": "Deprecated alias of any_door_open; carries the same value.",
+      "unit": "boolean"
+    },
+    "download_perc": {
+      "nullable": true,
+      "source": "Deprecated alias of software_update_download_perc; carries the same value.",
+      "unit": "percent"
+    },
+    "driver_front_door_open": {
+      "nullable": true,
+      "source": "Deprecated alias of door_driver_front_open; carries the same value.",
+      "unit": "boolean"
+    },
+    "driver_front_window_open": {
+      "nullable": true,
+      "source": "Deprecated alias of window_driver_front_open; carries the same value.",
+      "unit": "boolean"
+    },
+    "driver_rear_door_open": {
+      "nullable": true,
+      "source": "Deprecated alias of door_driver_rear_open; carries the same value.",
+      "unit": "boolean"
+    },
+    "driver_rear_window_open": {
+      "nullable": true,
+      "source": "Deprecated alias of window_driver_rear_open; carries the same value.",
+      "unit": "boolean"
+    },
+    "elevation": {
+      "nullable": true,
+      "source": "Elevation in whole metres, from -32768 to 32767. Each row gives its elevation when that is valid, otherwise its native location elevation when that is valid; the newest row decides. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "metres"
+    },
+    "est_battery_range_km": {
+      "nullable": true,
+      "source": "Estimated battery range in km, from 0 to 9999.99: the provider miles value converted and rounded to 0.01 km, or the import source value rounded to 0.01 km. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "km, provider miles converted and rounded to 0.01 km"
+    },
+    "exterior_color": {
+      "nullable": true,
+      "source": "Exterior colour from the newest vehicle configuration statement; when there is none, the stored car value; trimmed text, null when empty or longer than 65536 characters. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "text or provider enum"
+    },
+    "front_trunk_open": {
+      "nullable": true,
+      "source": "The newest statement for this trunk: true when open (any non-zero code), false when closed; null when unknown. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "frunk_open": {
+      "nullable": true,
+      "source": "Deprecated alias of front_trunk_open; carries the same value.",
+      "unit": "boolean"
+    },
+    "geofence": {
+      "nullable": true,
+      "source": "Deprecated alias of geofence_name; carries the same value.",
+      "unit": "text"
+    },
+    "geofence_name": {
+      "nullable": true,
+      "source": "Name of the owner's geofence that contains the reported position, computed on each read from the rounded coordinates and never stored; null when the position is unknown or no fence contains it. Where fences overlap, the smallest radius wins, then the nearest centre.",
+      "unit": "text"
+    },
+    "heading": {
+      "nullable": true,
+      "source": "Heading in degrees as given, from 0 to 360 inclusive; 360 is kept and not turned into 0. Outside that range or not finite gives null. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "degrees"
+    },
+    "healthy": {
+      "nullable": true,
+      "source": "Deprecated alias of processing_healthy; carries the same value.",
+      "unit": "boolean"
+    },
+    "ideal_battery_range_km": {
+      "nullable": true,
+      "source": "Ideal battery range in km, from 0 to 9999.99: the provider miles value converted and rounded to 0.01 km, or the import source value rounded to 0.01 km. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "km, provider miles converted and rounded to 0.01 km"
+    },
+    "inside_temp": {
+      "nullable": true,
+      "source": "Cabin temperature in degrees Celsius, rounded to 1 decimal, from -999.9 to 999.9. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "degrees Celsius"
+    },
+    "install_perc": {
+      "nullable": true,
+      "source": "Deprecated alias of software_update_install_perc; carries the same value.",
+      "unit": "percent"
+    },
+    "is_climate_on": {
+      "nullable": true,
+      "source": "Whether the climate system is on; a JSON boolean as given, any other type gives null. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "boolean"
+    },
+    "is_preconditioning": {
+      "nullable": true,
+      "source": "Whether the car is preconditioning; a JSON boolean as given, any other type gives null. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "boolean"
+    },
+    "is_user_present": {
+      "nullable": true,
+      "source": "Whether a user is present in the car; a JSON boolean as given, any other type gives null. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "boolean"
+    },
+    "latitude": {
+      "nullable": true,
+      "source": "Latitude in degrees, rounded to 6 decimals, from the newest statement that gives latitude and longitude together; null when the pair is not a valid coordinate. Both coordinates always come from the same statement. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "degrees"
+    },
+    "locked": {
+      "nullable": true,
+      "source": "Whether the car is locked; a JSON boolean as given, any other type gives null. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "longitude": {
+      "nullable": true,
+      "source": "Longitude in degrees, rounded to 6 decimals, from the newest statement that gives latitude and longitude together; null when the pair is not a valid coordinate. Both coordinates always come from the same statement. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "degrees"
+    },
+    "model": {
+      "nullable": true,
+      "source": "Deprecated alias of model_code; carries the same value.",
+      "unit": "text; Hub model code S, X, 3, Y, R or C, or the model text passed through trimmed"
+    },
+    "model_code": {
+      "nullable": true,
+      "source": "The Hub model code: S, X, 3, Y, R or C when the VIN or the car's own model statement identifies the model, otherwise the model text the car or the import source gave, trimmed and passed through; null when neither states a model. A VIN decoding published by the regulator decides over any text.",
+      "unit": "text; Hub model code S, X, 3, Y, R or C, or the model text passed through trimmed"
+    },
+    "model_name": {
+      "nullable": true,
+      "source": "Model name derived from model_code by the Hub (Model S, Model X, Model 3, Model Y, Roadster or Cybertruck); null for a pass-through code.",
+      "unit": "text"
+    },
+    "model_year": {
+      "nullable": true,
+      "source": "Model year decoded from position 10 of a valid VIN with a regulator-published Tesla manufacturer code, in the window 2008 to 2037; null for any other VIN, an unpublished manufacturer code or no VIN.",
+      "unit": "year, integer"
+    },
+    "observed_at_ms": {
+      "nullable": true,
+      "source": "The greatest observed_at_ms over the rows the Hub accepts for the car from any source; null when there are none. It is the time the Hub last received information about the car, not a measurement time. The Hub gives no freshness guarantee beyond it: compare it with your own clock, because activity_state and the persistent fields keep their last known values however old they are.",
+      "unit": "epoch milliseconds"
+    },
+    "odometer": {
+      "nullable": true,
+      "source": "Deprecated alias of odometer_km; carries the same value.",
+      "unit": "km, provider miles converted unrounded; imported values as given"
+    },
+    "odometer_km": {
+      "nullable": true,
+      "source": "Odometer in km: the provider miles value converted, or the import source value as given; finite and not negative. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "km, provider miles converted unrounded; imported values as given"
+    },
+    "outside_temp": {
+      "nullable": true,
+      "source": "Outside temperature in degrees Celsius, rounded to 1 decimal, from -999.9 to 999.9. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "degrees Celsius"
+    },
+    "passenger_front_door_open": {
+      "nullable": true,
+      "source": "Deprecated alias of door_passenger_front_open; carries the same value.",
+      "unit": "boolean"
+    },
+    "passenger_front_window_open": {
+      "nullable": true,
+      "source": "Deprecated alias of window_passenger_front_open; carries the same value.",
+      "unit": "boolean"
+    },
+    "passenger_rear_door_open": {
+      "nullable": true,
+      "source": "Deprecated alias of door_passenger_rear_open; carries the same value.",
+      "unit": "boolean"
+    },
+    "passenger_rear_window_open": {
+      "nullable": true,
+      "source": "Deprecated alias of window_passenger_rear_open; carries the same value.",
+      "unit": "boolean"
+    },
+    "plugged_in": {
+      "nullable": true,
+      "source": "Deprecated alias of charge_cable_connected; carries the same value.",
+      "unit": "boolean"
+    },
+    "power": {
+      "nullable": true,
+      "source": "Drive power in whole kW (rounded half away from zero), from -32768 to 32767. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "kW"
+    },
+    "processing_healthy": {
+      "nullable": true,
+      "source": "True when the Hub's processing record for this car exists and is not quarantined; false when it is quarantined or cannot be read; null when the Hub holds no record. It reports the Hub's own processing of the car, the condition readiness reports, not the car's condition.",
+      "unit": "boolean"
+    },
+    "rated_battery_range_km": {
+      "nullable": true,
+      "source": "Deprecated alias of battery_range_km; carries the same value.",
+      "unit": "km, provider miles converted and rounded to 0.01 km"
+    },
+    "rear_trunk_open": {
+      "nullable": true,
+      "source": "The newest statement for this trunk: true when open (any non-zero code), false when closed; null when unknown. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "scheduled_charging_start_time": {
+      "nullable": true,
+      "source": "Start of the scheduled charge as the provider's epoch seconds, unchanged and not converted to milliseconds; not negative. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "epoch seconds"
+    },
+    "sentry_mode": {
+      "nullable": true,
+      "source": "Whether Sentry Mode is on; a JSON boolean as given, any other type gives null. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "boolean"
+    },
+    "service_mode": {
+      "nullable": true,
+      "source": "Whether the car is in service mode: the Hub lifecycle record when it states one, otherwise the newest service mode boolean the car reported, otherwise null.",
+      "unit": "boolean"
+    },
+    "shift_state": {
+      "nullable": true,
+      "source": "The gear after normalising the provider text: P, R, N or D; any other value gives null. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "text or provider enum"
+    },
+    "since": {
+      "nullable": true,
+      "source": "Deprecated alias of state_since_ms; carries the same value.",
+      "unit": "epoch milliseconds"
+    },
+    "software_update_available": {
+      "nullable": true,
+      "source": "True while an update is offered to the car and not yet installed (status available, scheduled, downloading, downloading_wifi_wait, wifi_wait or installing); false for the idle status (an empty text); null for any other or no status. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "software_update_download_perc": {
+      "nullable": true,
+      "source": "Download progress of the offered update, an integer from 0 to 100. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "percent"
+    },
+    "software_update_install_perc": {
+      "nullable": true,
+      "source": "Installation progress of the offered update, an integer from 0 to 100. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "percent"
+    },
+    "software_update_status": {
+      "nullable": true,
+      "source": "The update status the car reports, trimmed and verbatim; null when idle (an empty text), absent or not a text. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "text or provider enum"
+    },
+    "software_update_version": {
+      "nullable": true,
+      "source": "Version of the offered update, normalised like software_version; null unless software_update_available is true. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "text"
+    },
+    "software_version": {
+      "nullable": true,
+      "source": "The car's software version without its build hash: the Hub's tracked version, else the newest reported version, else the stored firmware version; the text before the first whitespace, which must be at least two dot-separated groups of 1 to 9 digits. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "text"
+    },
+    "speed": {
+      "nullable": true,
+      "source": "Deprecated alias of speed_kmh; carries the same value.",
+      "unit": "km/h, rounded integer from provider mph"
+    },
+    "speed_kmh": {
+      "nullable": true,
+      "source": "Speed converted from the provider mph value, an integer from 0 to 32767. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "km/h, rounded integer from provider mph"
+    },
+    "spoiler_type": {
+      "nullable": true,
+      "source": "Spoiler type from the newest vehicle configuration statement; when there is none, the stored car value; trimmed text, null when empty or longer than 65536 characters. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "text or provider enum"
+    },
+    "state": {
+      "nullable": true,
+      "source": "Deprecated alias of activity_state; carries the same value.",
+      "unit": "text; online, asleep, offline, driving, charging, updating or null"
+    },
+    "state_since_ms": {
+      "nullable": true,
+      "source": "The start of the condition activity_state names. driving: the first movement observation, an upper bound of the true start. charging: the first sample of a charge first seen in progress (an upper bound), or, for a charge that continued after a gap, the last time the car's energy was accounted for (a lower bound). updating: the first installing status. online, asleep and offline: the time of the observation that first gave that reachability, not the end of the last session. Null when the matching record is absent or the lifecycle record cannot be read.",
+      "unit": "epoch milliseconds"
+    },
+    "sun_roof_installed": {
+      "nullable": true,
+      "source": "Whether a sunroof is fitted, from the vehicle configuration: a JSON boolean as given, the exact integer 0 as false and any other exact integer as true. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "sun_roof_percent_open": {
+      "nullable": true,
+      "source": "Sunroof opening in whole percent, from 0 to 100. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "percent"
+    },
+    "sun_roof_state": {
+      "nullable": true,
+      "source": "The sunroof state text, trimmed; null when empty or longer than 65536 characters. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "text or provider enum"
+    },
+    "time_to_full_charge": {
+      "nullable": true,
+      "source": "Hours until the charge is complete, as given; finite and not negative. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Transient: null while activity_state is asleep or offline; null while the online interval of the car is open and the statement was received more than 60 seconds before that interval began; and null when the statement is older than the Hub's staleness bound (the configured offline drive timeout, 600 seconds by default), measured at the later of observed_at_ms and the Hub's clock.",
+      "unit": "hours"
+    },
+    "tpms_pressure_fl": {
+      "nullable": true,
+      "source": "Tyre pressure of the front left wheel in bar, rounded to 1 decimal, from 0 to 999.9. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "bar"
+    },
+    "tpms_pressure_fr": {
+      "nullable": true,
+      "source": "Tyre pressure of the front right wheel in bar, rounded to 1 decimal, from 0 to 999.9. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "bar"
+    },
+    "tpms_pressure_rl": {
+      "nullable": true,
+      "source": "Tyre pressure of the rear left wheel in bar, rounded to 1 decimal, from 0 to 999.9. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "bar"
+    },
+    "tpms_pressure_rr": {
+      "nullable": true,
+      "source": "Tyre pressure of the rear right wheel in bar, rounded to 1 decimal, from 0 to 999.9. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "bar"
+    },
+    "tpms_soft_warning_fl": {
+      "nullable": true,
+      "source": "Whether the tyre pressure soft warning of the front left wheel is set; a JSON boolean as given, any other type gives null. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "tpms_soft_warning_fr": {
+      "nullable": true,
+      "source": "Whether the tyre pressure soft warning of the front right wheel is set; a JSON boolean as given, any other type gives null. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "tpms_soft_warning_rl": {
+      "nullable": true,
+      "source": "Whether the tyre pressure soft warning of the rear left wheel is set; a JSON boolean as given, any other type gives null. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "tpms_soft_warning_rr": {
+      "nullable": true,
+      "source": "Whether the tyre pressure soft warning of the rear right wheel is set; a JSON boolean as given, any other type gives null. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "trim_badging": {
+      "nullable": true,
+      "source": "Trim badging from the newest vehicle configuration statement; when there is none, the stored car value; trimmed text, null when empty or longer than 65536 characters. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "text or provider enum"
+    },
+    "trunk_open": {
+      "nullable": true,
+      "source": "Deprecated alias of rear_trunk_open; carries the same value.",
+      "unit": "boolean"
+    },
+    "update_available": {
+      "nullable": true,
+      "source": "Deprecated alias of software_update_available; carries the same value.",
+      "unit": "boolean"
+    },
+    "update_status": {
+      "nullable": true,
+      "source": "Deprecated alias of software_update_status; carries the same value.",
+      "unit": "text or provider enum"
+    },
+    "update_version": {
+      "nullable": true,
+      "source": "Deprecated alias of software_update_version; carries the same value.",
+      "unit": "text"
+    },
+    "usable_battery_level": {
+      "nullable": true,
+      "source": "Usable battery level in whole percent, from 0 to 100. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "percent"
+    },
+    "vehicle_id": {
+      "nullable": false,
+      "unit": "plain UUID"
+    },
+    "version": {
+      "nullable": true,
+      "source": "Deprecated alias of software_version; carries the same value.",
+      "unit": "text"
+    },
+    "wheel_type": {
+      "nullable": true,
+      "source": "Wheel type from the newest vehicle configuration statement; when there is none, the stored car value; trimmed text, null when empty or longer than 65536 characters. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "text or provider enum"
+    },
+    "window_driver_front_open": {
+      "nullable": true,
+      "source": "The newest statement for this window: true when open or partly open, false when closed; null when unknown. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "window_driver_rear_open": {
+      "nullable": true,
+      "source": "The newest statement for this window: true when open or partly open, false when closed; null when unknown. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "window_passenger_front_open": {
+      "nullable": true,
+      "source": "The newest statement for this window: true when open or partly open, false when closed; null when unknown. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "window_passenger_rear_open": {
+      "nullable": true,
+      "source": "The newest statement for this window: true when open or partly open, false when closed; null when unknown. The newest statement of the field decides; when it is not valid the field is null and no older value is used. Persistent: the last known value is kept through sleep however old it is; compare observed_at_ms with your own clock.",
+      "unit": "boolean"
+    },
+    "windows_open": {
+      "nullable": true,
+      "source": "Deprecated alias of any_window_open; carries the same value.",
+      "unit": "boolean"
+    }
+  },
+  "drive": {
+    "ascent": {
+      "nullable": true,
+      "source": "Deprecated alias of ascent_m; carries the same value.",
+      "unit": "metres"
+    },
+    "ascent_m": {
+      "nullable": true,
+      "source": "Total climb of the drive in whole metres. Saturated at 32767: a larger total is served as 32767 and is then a lower bound. The drive's positions keep their own elevations.",
+      "unit": "metres"
+    },
+    "descent": {
+      "nullable": true,
+      "source": "Deprecated alias of descent_m; carries the same value.",
+      "unit": "metres"
+    },
+    "descent_m": {
+      "nullable": true,
+      "source": "Total descent of the drive in whole metres. Saturated at 32767: a larger total is served as 32767 and is then a lower bound. The drive's positions keep their own elevations.",
+      "unit": "metres"
+    },
+    "distance_km": {
+      "nullable": true,
+      "source": "Distance of the drive in km, from the odometer. When the Hub saw the car parked within its gap interval before the drive's first movement observation, the distance and the start values (start coordinates, battery level and ranges) are taken from that parked observation. They then include the stretch driven before the first movement observation, while `started_at_ms` and `duration_min` cover only the observed part. Distance divided by duration can therefore overstate the average speed by up to one parked polling interval of driving.",
+      "unit": "km"
+    },
+    "duration_min": {
+      "nullable": true,
+      "source": "Whole minutes of the observed drive, from `started_at_ms` to `ended_at_ms`. Saturated at 32767. When the drive starts from a recent parked observation, `distance_km` and the start values include the short stretch before the first movement observation, which this duration does not cover.",
+      "unit": "minutes, integer"
+    },
+    "efficiency": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "legacy projection numeric field, no current producer assigns a value; clients must preserve null, no unit claim is made"
+    },
+    "end_address": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "text"
+    },
+    "end_address_provenance": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "provenance object; see address_provenance"
+    },
+    "end_battery_range_km": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "km"
+    },
+    "end_date_ms": {
+      "nullable": false,
+      "source": "Deprecated alias of ended_at_ms; carries the same value.",
+      "unit": "epoch milliseconds"
+    },
+    "end_geofence": {
+      "nullable": true,
+      "source": "Deprecated alias of end_geofence_name; carries the same value.",
+      "unit": "text"
+    },
+    "end_geofence_name": {
+      "nullable": true,
+      "source": "For a row the Hub collected: the name of the owner's geofence that contained the row's stored point when the row closed (the drive's start or end point; the charge's start point). Where fences overlap, the one with the smallest radius, then the nearest centre. Null when none did or the point is missing. For an imported row: the label the import source recorded. When the owner later creates, edits or deletes a geofence, stored rows are relabelled by one rule. A row whose point the change moves into or out of a fence takes the Hub's new answer there. A label that named a renamed fence takes the new name. Any other label, an imported one included, is kept, unless every fence of that name was deleted; then a row with a point takes the Hub's current answer there. Tariff fields and cost are never relabelled.",
+      "unit": "text"
+    },
+    "end_ideal_battery_range_km": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "km"
+    },
+    "end_ideal_range_km": {
+      "nullable": true,
+      "source": "Deprecated alias of end_ideal_battery_range_km; carries the same value.",
+      "unit": "km"
+    },
+    "end_latitude": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "degrees"
+    },
+    "end_longitude": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "degrees"
+    },
+    "end_rated_range_km": {
+      "nullable": true,
+      "source": "Deprecated alias of end_battery_range_km; carries the same value.",
+      "unit": "km"
+    },
+    "end_soc": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "percent"
+    },
+    "ended_at_ms": {
+      "nullable": false,
+      "source": "End of the drive. When the car did not state the end (for example a source that reports no gear, or a drive closed because evidence stopped arriving), the end is the Hub's last evidence that the drive was in progress: the first observation without movement evidence that follows the drive's last observation with movement evidence, or, if there is none, the last observation folded into the drive. An observation without movement evidence does not show that the car had stopped. Observations after that point are not counted in the drive's duration, distance or averages. The end is never earlier than `started_at_ms`.",
+      "unit": "epoch milliseconds"
+    },
+    "id": {
+      "nullable": false,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "signed64 identifier, preserve losslessly"
+    },
+    "inside_temp_avg": {
+      "nullable": true,
+      "source": "Deprecated alias of inside_temp_avg_c; carries the same value.",
+      "unit": "degrees Celsius"
+    },
+    "inside_temp_avg_c": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "degrees Celsius"
+    },
+    "outside_temp_avg": {
+      "nullable": true,
+      "source": "Deprecated alias of outside_temp_avg_c; carries the same value.",
+      "unit": "degrees Celsius"
+    },
+    "outside_temp_avg_c": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "degrees Celsius"
+    },
+    "power_max": {
+      "nullable": true,
+      "source": "Deprecated alias of power_max_kw; carries the same value.",
+      "unit": "kW"
+    },
+    "power_max_kw": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "kW"
+    },
+    "power_min": {
+      "nullable": true,
+      "source": "Deprecated alias of power_min_kw; carries the same value.",
+      "unit": "kW"
+    },
+    "power_min_kw": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "kW"
+    },
+    "speed_max": {
+      "nullable": true,
+      "source": "Deprecated alias of speed_max_kmh; carries the same value.",
+      "unit": "km/h, integer"
+    },
+    "speed_max_kmh": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "km/h, integer"
+    },
+    "start_address": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "text"
+    },
+    "start_address_provenance": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "provenance object; see address_provenance"
+    },
+    "start_battery_range_km": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "km"
+    },
+    "start_date_ms": {
+      "nullable": false,
+      "source": "Deprecated alias of started_at_ms; carries the same value.",
+      "unit": "epoch milliseconds"
+    },
+    "start_geofence": {
+      "nullable": true,
+      "source": "Deprecated alias of start_geofence_name; carries the same value.",
+      "unit": "text"
+    },
+    "start_geofence_name": {
+      "nullable": true,
+      "source": "For a row the Hub collected: the name of the owner's geofence that contained the row's stored point when the row closed (the drive's start or end point; the charge's start point). Where fences overlap, the one with the smallest radius, then the nearest centre. Null when none did or the point is missing. For an imported row: the label the import source recorded. When the owner later creates, edits or deletes a geofence, stored rows are relabelled by one rule. A row whose point the change moves into or out of a fence takes the Hub's new answer there. A label that named a renamed fence takes the new name. Any other label, an imported one included, is kept, unless every fence of that name was deleted; then a row with a point takes the Hub's current answer there. Tariff fields and cost are never relabelled.",
+      "unit": "text"
+    },
+    "start_ideal_battery_range_km": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "km"
+    },
+    "start_ideal_range_km": {
+      "nullable": true,
+      "source": "Deprecated alias of start_ideal_battery_range_km; carries the same value.",
+      "unit": "km"
+    },
+    "start_latitude": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "degrees"
+    },
+    "start_longitude": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "degrees"
+    },
+    "start_rated_range_km": {
+      "nullable": true,
+      "source": "Deprecated alias of start_battery_range_km; carries the same value.",
+      "unit": "km"
+    },
+    "start_soc": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "percent"
+    },
+    "started_at_ms": {
+      "nullable": false,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "epoch milliseconds"
+    },
+    "vehicle_id": {
+      "nullable": false,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "plain UUID"
+    }
+  },
+  "elevation_provenance": {
+    "dataset": "terrain dataset name; null unless source is terrain",
+    "dataset_version": "terrain dataset version; null unless source is terrain",
+    "source": {
+      "values": {
+        "import": "The elevation was copied unchanged from the history of an import source, the source database the Hub's owner migrated from. The Hub did not sample it from terrain data and does not replace it. The Hub states nothing about how the import source obtained it.",
+        "terrain": "elevation was derived from a terrain dataset",
+        "vehicle": "elevation was reported by the vehicle"
+      }
+    },
+    "tile": "terrain tile identifier; null unless source is terrain"
+  },
+  "null_rule": "Null means unavailable, unknown, or not derivable. Preserve null and numeric zero distinctly; never infer a zero timestamp. Current owner/stream merge ignores null overlays. No freshness guarantee beyond observed_at_ms. Optional provenance fields may be absent or null; absent and null mean no truthful record exists.",
+  "number_rule": "position.power and the charge_sample fields charger_power_kw, charger_voltage, charger_actual_current and charger_pilot_current are whole numbers in the source database but are typed number, because the page routes serve the materialised projections of the Hub, which hold them as floating point: a whole value may carry a fraction digit (12 or 12.0). Clients accept both. Retyping these fields later is a new major profile.",
+  "position": {
+    "battery_heater": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "boolean"
+    },
+    "battery_heater_on": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "boolean"
+    },
+    "battery_level": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "percent"
+    },
+    "battery_range_km": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "km"
+    },
+    "date_ms": {
+      "nullable": false,
+      "source": "Deprecated alias of timestamp_ms; carries the same value.",
+      "unit": "epoch milliseconds"
+    },
+    "drive_id": {
+      "nullable": false,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "signed64 identifier of the owning drive; equals the drive_id path parameter"
+    },
+    "driver_temp_setting": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "degrees Celsius"
+    },
+    "elevation": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "metres, integer"
+    },
+    "elevation_provenance": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "provenance object; see elevation_provenance"
+    },
+    "est_battery_range_km": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "km"
+    },
+    "fan_status": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "provider integer fan level"
+    },
+    "id": {
+      "nullable": false,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "signed64 identifier, preserve losslessly"
+    },
+    "ideal_battery_range_km": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "km"
+    },
+    "inside_temp": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "degrees Celsius"
+    },
+    "is_climate_on": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "boolean"
+    },
+    "latitude": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "degrees"
+    },
+    "longitude": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "degrees"
+    },
+    "odometer": {
+      "nullable": true,
+      "source": "Deprecated alias of odometer_km; carries the same value.",
+      "unit": "km"
+    },
+    "odometer_km": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "km"
+    },
+    "outside_temp": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "degrees Celsius"
+    },
+    "passenger_temp_setting": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "degrees Celsius"
+    },
+    "power": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "kW"
+    },
+    "rated_battery_range_km": {
+      "nullable": true,
+      "source": "Deprecated alias of battery_range_km; carries the same value.",
+      "unit": "km"
+    },
+    "speed": {
+      "nullable": true,
+      "source": "Deprecated alias of speed_kmh; carries the same value.",
+      "unit": "km/h, integer"
+    },
+    "speed_kmh": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "km/h, integer"
+    },
+    "timestamp_ms": {
+      "nullable": false,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "epoch milliseconds"
+    },
+    "tpms_pressure_fl": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "bar"
+    },
+    "tpms_pressure_fr": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "bar"
+    },
+    "tpms_pressure_rl": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "bar"
+    },
+    "tpms_pressure_rr": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "bar"
+    },
+    "usable_battery_level": {
+      "nullable": true,
+      "source": "materialised position projection; no public-query conversion",
+      "unit": "percent"
+    }
+  },
+  "profile_id": "hub-http-v1@1.3.0",
+  "source_trace": [
+    "Hub current_state build_current_vehicle_summary: provider fields, rounded mph/miles conversions, latest admitted epoch milliseconds",
+    "Hub public_query PublicDrive projection: direct materialised values",
+    "Hub public page projections of the pack models ProjectionPosition, ProjectionCharge and ProjectionChargeSample: direct materialised values; car_id and source ids are dropped",
+    "Hub runtime/lifecycle drive_and_charge: end-start milliseconds divided by 60000; current speed and odometer conversions feed drive aggregates",
+    "Hub import projection: stored km, minutes, Celsius and kW passed through; efficiency is absent in live/import projections"
+  ]
+}

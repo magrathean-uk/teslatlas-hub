@@ -4,6 +4,10 @@ set -eu
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_dir=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 
+if [ -L "$repo_dir/.venv" ]; then
+  exec "$repo_dir/.venv/bin/python" "$script_dir/runner.py" "$@"
+fi
+
 if command -v uv >/dev/null 2>&1; then
   exec uv run --project "$repo_dir" python "$script_dir/runner.py" "$@"
 fi

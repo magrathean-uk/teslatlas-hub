@@ -1,0 +1,28 @@
+{
+  "schema_version": 4,
+  "product": "Edge",
+  "updated_at": "2026-09-22T10:00:00Z",
+  "state": "SOURCE_PUBLISHED_LOCAL_ARTIFACTS_REMOVED",
+  "macos_working_product_state": "HISTORICALLY_ACCEPTED_RUNTIME_REMOVED",
+  "planning_state": "COMPLETE",
+  "current_goal": null,
+  "current_worker": null,
+  "source": {
+    "accepted_implementation_lineage": "94bb86996254ed67ba90208573d5c6e0ad20c0bd",
+    "main_before_cleanup_metadata": "d360044d18e5d540a54e156a1fdfb16e30aa1ce6",
+    "branch": "main",
+    "remote_ref": "refs/heads/main",
+    "publication": "SOURCE_PUBLISHED"
+  },
+  "local_state": {
+    "build_outputs": "REMOVED",
+    "candidate_artifacts": "REMOVED",
+    "external_receipts": "REMOVED",
+    "runtime": "NONE"
+  },
+  "evidence_summary": "Historical: the accepted Edge profile and ordinary Hub lifecycle route passed for the former runtime.",
+  "evidence_boundary": "Historical results apply only to the exact former source and artifacts. Fresh runtime claims require a rebuild and new receipts.",
+  "remaining": [
+    "No Edge or Hub listener is running; public ingress and production collection remain separately gated."
+  ]
+}

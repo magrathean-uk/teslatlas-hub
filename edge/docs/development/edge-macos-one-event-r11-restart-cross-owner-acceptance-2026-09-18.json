@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.edge.macos_one_event_r11_restart_cross_owner_acceptance",
+  "date": "2026-09-18",
+  "state": "accepted_source_only_inactive_no_runtime_authority",
+  "authority": "Edge-owned final cross-owner source-only gate. This receipt accepts only the exact frozen Hub revalidation and inactive boundary; it does not authorize preparation, credentials, guest transfer, runtime, listener, producer or event action.",
+  "hub_restart_revalidation": {
+    "path": "hub/docs/development/edge-macos-one-event-r11-restart-revalidation-2026-09-18.json",
+    "sha256": "d64db856ac4948eb7bafaedaa2df15a6699537f13b7dea09cad3b46aade6c668",
+    "status": "passed_source_only_inputs_unchanged_inactive_awaiting_edge_review"
+  },
+  "inputs": {
+    "proposal": {
+      "path": "hub/docs/development/edge-macos-one-event-inactive-runtime-proposal-2026-09-12-r11.json",
+      "sha256": "5f6969ab295e06502ec415d9da52355519240aa7fe9510f49f39e03bc2b96544"
+    },
+    "preparation_specification": {
+      "path": "hub/docs/development/edge-macos-one-event-certificate-profile-preparation-2026-09-12-r11.json",
+      "sha256": "d800b93a929236aab471dc9528891b3cf28563b992e9bc90191b5965faac4eb0"
+    },
+    "one_use_preparer": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r11.py",
+      "sha256": "d3f2ffa5f6582e3a97abc9b4bfebf3fdc39ed269880011d493ae69862a58f909",
+      "mode": "0500"
+    },
+    "fixture_binding_validator": {
+      "path": "tools/interop/edge_fixture_binding.py",
+      "sha256": "42a6d63585b7341ebe34175a8e55e982bc4839b292b2ff0aa7125cf506b7f819"
+    },
+    "fixture_binding_test": {
+      "path": "tools/interop/test_edge_fixture_binding.py",
+      "sha256": "c3697062b280c4d119b1da3861a8bf5b8d97473eadbd2d3a49acfc03d996bae0"
+    }
+  },
+  "checks": {
+    "hub_receipt_sha256": "PASS",
+    "cross_hash_binding": "PASS; proposal binds the exact specification and preparer, and the specification binds the exact preparer",
+    "source_preflight": "PASS; 195 Hub manifest inputs, 15 Edge manifest inputs and 14 exact anchors/artifacts",
+    "fixed_launch_contract": "PASS; receiver dispatcher and Edge admission are 127.0.0.1:8080, bearer environment/path is exact, and receiver then Edge then Hub order is bound",
+    "focused_regression": {
+      "prior_edge_accepted_fixture_bound": "PASS 6/6",
+      "hub_restart_diagnostic": "PASS; 6 discovered, 5 passed, 1 skipped because no generic TESLATLAS_INTEROP_FIXTURE binary was configured",
+      "preparer_executed": false
+    },
+    "inactive_state": {
+      "host_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11",
+      "host_root_absent": true,
+      "guest_root": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r11",
+      "guest_root_absent": true,
+      "public_profile": "hub/docs/development/edge-macos-one-event-certificate-profile-review-2026-09-12-r11.json",
+      "public_profile_absent": true,
+      "preparation_lock": "/Users/bolyki/dev/teslatlas-lab/locks/heavy-build",
+      "preparation_lock_absent": true,
+      "ports_closed": [8080, 21850, 21458, 21459, 18535]
+    }
+  },
+  "runtime_boundary": {
+    "credentials_created": false,
+    "guest_started": false,
+    "runtime_started": false,
+    "listeners_started": false,
+    "producer_invoked": false,
+    "event_authorized": false,
+    "event_submitted": false,
+    "proof_boundary": "Source and non-mutating inactive-state evidence only; no prepared profile, fixture, PKI, credential, guest transfer, listener, runtime, producer, event or end-to-end delivery is proved."
+  },
+  "closed_predecessor": {
+    "path": "hub/docs/development/edge-macos-one-event-runtime-closure-2026-09-12-r10.json",
+    "sha256": "618093bce4920f40e1f7191990df781206ea4012788cb76d738428bdd508c86e",
+    "reuse_allowed": false
+  },
+  "next_gate": "Hub may freshly revalidate absence and execute the one-use r11 preparation once under the existing conditional authority. A separate gate remains required before any guest/runtime or producer event.",
+  "owner": "Edge"
+}

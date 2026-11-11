@@ -6,6 +6,12 @@ The crate forbids unsafe Rust.
 
 ## Scope
 
+- Package directories: `compute/`, `protocol/` and `sdk-typescript/` (Apache-2.0, built
+  and tested with the Hub); `home-assistant/` (Apache-2.0, parked, kept working);
+  `edge/` (AGPL-3.0, outside the Cargo workspace), `sdk-swift/` and `viewer/`
+  (Apache-2.0): retired, source preserved, not built or tested by the hub gates.
+  Their imported history is kept unchanged.
+
 - In the Teslatlas workspace, follow `../AGENTS.md` and the programme plan at
   `../docs/development/MASTER_PLAN.md`; the plan wins on process, model, scope and
   commit policy. Keep status there; old plans and receipts are background.

@@ -12,6 +12,7 @@ readme = ".github/README.md"
 
 [workspace]
 members = ["compute"]
+exclude = ["edge"]
 
 [lib]
 name = "teslatlas_hub"

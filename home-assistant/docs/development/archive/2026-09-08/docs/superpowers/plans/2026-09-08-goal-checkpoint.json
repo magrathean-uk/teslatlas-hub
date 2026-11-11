@@ -1,0 +1,178 @@
+{
+  "coordination_policy": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "high"
+  },
+  "goal_continuation": "The native goal remains blocked. With the available tools, resumption requires the user's supported Resume goal control. The parent can dispatch ordinary authorized development turns now; this does not activate the native goal. Do not replace an unfinished goal, mark it falsely complete, or edit internal app state. M2 is complete; retain the full proposed objective and acceptance gates while waiting for the Hub-owned M3 unblock event.",
+  "schema_version": 1,
+  "captured_at": "2026-09-08T19:47:27Z",
+  "plan_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+  "live_goal": {
+    "status": "blocked",
+    "objective": "Complete the existing Teslatlas Home Assistant working-product plan in /Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant, preserving completed work, unrelated edits and the independent main checkout. All subsequent development must execute on gpt-5.6-luna with thinking=max after the parent orchestrator's handoff. Deliver the read-only hub-http-v1@1.0.0 integration with verified pairing and identity/TLS protection, bounded scheduled polling and sensor semantics, cancellation/reauth/unload cleanup, controlled legacy-entry handling, and preserved entity IDs/names/disabled flags through reload and supported replacement. Reconcile claimed local coverage against actual tests and complete meaningful missing regressions; obtain Hub-owned independent correction-3 adapter admission and fresh pinned HA runtime/resources, then require admitted installed acceptance across Hub macOS ARM64, Debian ARM64 and Debian AMD64, with separate normal-scheduler, UI and replacement evidence. Hub owns shared runner/controller/ledger and cross-repository coordination; this task edits only its HA product root. After the core gate, finish product-owned AGENTS guidance excluding App, a simple official Home Assistant Docker Compose installation verified on supported Linux, current README/docs and evidence-backed compatibility metadata, then final review and the authorized source-only GitHub commit/push. Keep failed, skipped, pending and blocked results explicit; do not treat old receipts or local tests as final installed acceptance. No CI, releases, tags, HACS submission or artifact uploads.",
+    "token_budget": null,
+    "remaining_token_budget": null,
+    "tokens_used": 3461713,
+    "time_budget_seconds": null,
+    "time_used_seconds": 28749,
+    "created_at_epoch": 1788848180,
+    "updated_at_epoch": 1788878170,
+    "last_checked_at": "2026-09-08T18:10:56Z",
+    "check_result": "blocked; no configured token/time budget and no tool-reported usage-limit error"
+  },
+  "goal_control": {
+    "database_mutated_by_this_audit": false,
+    "resume_note": "The native goal remains blocked. With the available tools, resumption requires the user's supported Resume goal control. The parent can dispatch ordinary authorized development turns now; this does not activate the native goal. Do not replace an unfinished goal, mark it falsely complete, or edit internal app state. M2 is now complete; continue when the Hub-owned M3 admission dependency produces its unblock event."
+  },
+  "proposed_objective": "Carry the existing Teslatlas Home Assistant integration from its current source-bound canonical-profile handoff through full working-product acceptance and authorized source-only publication. Preserve the independent dirty main checkout, every completed HA change and unrelated edits. Use gpt-5.6-terra with thinking=high for all subsequent Home Assistant development and verification. First reconcile the exact final HA-owned diff and admission packet without repeating already-green checks. Then obtain Hub-owned fixed-registry admission for the exact HA adapter and its pinned Home Assistant 2026.8.3/Python 3.14.2 runtime, and require admitted execution against Hub macOS ARM64, Debian ARM64 and Debian AMD64 targets. Record the 18-case adapter result for each target and separate real evidence for UI pairing, the normal 30-second scheduler, changed observations, outage/recovery, revoked credential reauthentication, replacement with preserved entity IDs/names/disabled flags, reload, unload, final stop and transport cleanup. Validate the one-service official Home Assistant Container configuration on supported Linux Docker Engine, including trusted TLS, persistence, recreation and clean shutdown. Bind only admitted runtime evidence into compatibility metadata and public documentation, review the exact final source/docs diff, then commit and push only the verified Home Assistant source to its GitHub repository. Keep local tests, source reviews, static Compose checks, skips, failures and owner/resource waits accurately separated from installed acceptance. Do not use CI, create releases or tags, submit to HACS, upload artifacts, touch App, mutate sibling repositories, bypass the Hub controller, reuse the quarantined ARM guest, expose secrets or weaken TLS/profile/identity validators. This objective has no token or time budget and remains active across intermediate milestones until all required acceptance and source-publication work is complete.",
+  "developer_execution": {
+    "model": "gpt-5.6-terra",
+    "reasoning_effort": "high"
+  },
+  "current_evidence": {
+    "checkout_head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+    "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "handoff_sha256": "5d496de004faeb1880a78746a429823e7300d4597147ef9f36a7c7457c37648b",
+    "source_manifest_sha256": "e74a955374003be9820a450174715412b4a9c1d504b47eb33d1f93e6b2173832",
+    "component_manifest_sha256": "0a4ec2d743a3f181423c24bbf7c6d9d7e0feef5dc0f0fc3e5d3d69150945e896",
+    "provenance_binding_sha256": "33cda376023bfff2b1f2361abc52bc110bdd21387b15a712c2d7dafebc49415e",
+    "full_suite": "115 passed, 2 skipped",
+    "ruff": "passed",
+    "compose_static": "passed",
+    "hub_matrix": {
+      "accepted_cells": 0,
+      "total_cells": 21,
+      "accepted_slots": 0,
+      "total_slots": 444,
+      "accepted_cohorts": 0,
+      "total_cohorts": 10
+    },
+    "installed_acceptance": false,
+    "source_publication": false,
+    "m2_reconciliation": {
+      "status": "passed",
+      "documentation_tests": "3 passed",
+      "json_validation": "passed",
+      "diff_check": "passed",
+      "classification": "40 paths classified after adding the HA-owned refreshed source manifest and final Azure contract",
+      "private_evidence_hashes": "passed",
+      "hub_notification": "refreshed 5d496de0... packet prepared after focused verification and final Azure-contract ordering; Hub review remains pending",
+      "source_manifest_refresh": "passed: all 10 files match e74a9553...; only tests/test_matrix_live.py changed from private bff35f13... manifest; 49 focused tests and changed-file Ruff pass",
+      "azure_debian_v1_contract": "prepared d9617354... for final ARM64/x86_64 bootstrap only after existing Mac and VPS verification; no Azure request or runtime claim",
+      "final_claim_reconciliation": "passed: JSON/reference/diff checks remain current; no installed-runtime claim added"
+    }
+  },
+  "last_milestone_completed": {
+    "id": "M2",
+    "name": "Reconcile final HA-owned diff and admission packet",
+    "status": "DONE",
+    "evidence": {
+      "handoff_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/docs/hub-admission-handoff-2026-09-08.json",
+      "handoff_sha256": "5d496de004faeb1880a78746a429823e7300d4597147ef9f36a7c7457c37648b",
+      "source_manifest_sha256": "e74a955374003be9820a450174715412b4a9c1d504b47eb33d1f93e6b2173832",
+      "classified_paths": 40,
+      "ha_owned_current_scope": 29,
+      "inherited_historical_scope": 4,
+      "unrelated_preserved": 5,
+      "profile_binding": "HA and TypeScript sibling match canonical b80d940e... profile; public HA docs and source-only runtime identity were reconciled",
+      "source_manifest_refresh": "10 files byte/hash/mode verified; matrix module 49 passed; changed-file Ruff passed",
+      "azure_debian_v1_contract_sha256": "d961735405846612aebfcb1711661f4b9d015a3e0996f4195a36bfbd36d0a448",
+      "green_suites_repeated": false
+    }
+  },
+  "next_ready_milestone": {
+    "id": "M3",
+    "name": "Admit HA adapter and pinned runtime",
+    "status": "WAITING FOR OWNER",
+    "action": "Hub must acknowledge and bind refreshed handoff 5d496de0..., source manifest e74a9553..., component manifest 0a4ec2d..., provenance 33cda376..., and the exact reviewed launcher/runtime seam in its fixed registry; then complete the existing Mac and VPS verification before requesting final Azure ARM64/x86_64 access and supplying the accepted pinned HA 2026.8.3/Python 3.14.2 SessionInput and target inventory.",
+    "last_checked_at": "2026-09-08T19:47:27Z",
+    "last_observation": "Hub was notified of the final Azure-contract ordering. The refreshed HA-owned packet is verified; no registry acknowledgement, Mac/VPS evidence, runtime SessionInput, or Azure access request has been supplied.",
+    "owned_scope": [
+      "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant"
+    ]
+  },
+  "milestones": [
+    {
+      "id": "M1",
+      "name": "Canonical HA source and handoff",
+      "status": "DONE"
+    },
+    {
+      "id": "M2",
+      "name": "Reconcile final HA-owned diff and admission packet",
+      "status": "DONE"
+    },
+    {
+      "id": "M3",
+      "name": "Admit HA adapter and pinned runtime",
+      "status": "WAITING FOR OWNER"
+    },
+    {
+      "id": "M4",
+      "name": "Run installed HA lifecycle acceptance",
+      "status": "WAITING FOR RESOURCE"
+    },
+    {
+      "id": "M5",
+      "name": "Validate Linux Container and publish source",
+      "status": "WAITING FOR RESOURCE"
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "HA fixed-registry admission",
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "missing_input": "Reviewed Hub fixed-registry entry for the exact HA handoff, component manifest, provenance binding and runtime actor.",
+      "local_work_possible": "M2 final-diff and admission-packet reconciliation is complete; inspect only a concrete Hub acknowledgement or changed HA bytes.",
+      "unblock_event": "Hub ledger records the exact HA adapter/runtime entry as admitted."
+    },
+    {
+      "name": "Pinned HA runtime",
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "missing_input": "Accepted HA 2026.8.3/Python 3.14.2 actor paths, runtime inventory and preflight.",
+      "local_work_possible": "Keep source and docs current while preserving the distinction between Python 3.14.7 local checks and installed proof.",
+      "unblock_event": "Hub supplies a passing pinned-runtime preflight and valid SessionInput."
+    },
+    {
+      "name": "Three usable Hub targets",
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "missing_input": "Admitted macOS ARM64, fresh Debian ARM64 and Debian AMD64 targets with reachable trusted TLS and lifecycle control.",
+      "local_work_possible": "Review expected inputs and preserve the quarantined ARM guest boundary.",
+      "unblock_event": "All three targets are admitted and controller-ready."
+    },
+    {
+      "name": "Final Azure Debian v1 lanes",
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "missing_input": "Fresh disposable Azure Debian ARM64 and x86_64 VMs, but only after all development/integration and the existing Mac plus VPS verification have completed.",
+      "local_work_possible": "The exact source/component/profile/runtime evidence contract is prepared. Do not request Azure access or substitute it for Mac/VPS verification.",
+      "unblock_event": "Hub records prerequisite Mac/VPS evidence and the owner supplies the two disposable Azure targets."
+    },
+    {
+      "name": "Private lifecycle inputs and HA UI",
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "missing_input": "Short-lived invitations, CA and pin, advance/revoke/restart control, redacted evidence destinations and an isolated HA UI instance.",
+      "local_work_possible": "No secret-bearing substitute; retain the exact expected observations in the plan.",
+      "unblock_event": "Hub controller opens the installed HA lane."
+    },
+    {
+      "name": "Supported Linux Docker Engine",
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "missing_input": "Supported Linux daemon, pinned image digest and architecture, persistent config and reachable trusted Hub endpoint.",
+      "local_work_possible": "Static Compose and documentation review only.",
+      "unblock_event": "Container start, pair, poll, recreate and clean-stop execution is available."
+    }
+  ],
+  "current_model_policy": {
+    "authority": "Latest user instruction on 2026-09-08; supersedes earlier model policy and historical goal wording",
+    "coordinator_and_delegation": {
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high"
+    },
+    "product_coding_goal_and_workers": {
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "high"
+    }
+  },
+  "developer_model": "gpt-5.6-terra",
+  "developer_effort": "high"
+}

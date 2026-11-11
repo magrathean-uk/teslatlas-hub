@@ -1,0 +1,18 @@
+{
+  "hub_id": "018f18d2-6f45-7b3c-8a91-3c7286a10d42",
+  "protocol": "teslatlas-sync",
+  "protocol_major": 1,
+  "api_versions": [
+    "1.0"
+  ],
+  "capabilities": [
+    "query.vehicles",
+    "query.current",
+    "query.drives",
+    "sync.packs"
+  ],
+  "version": "1.0.0",
+  "sourceUrl": "https://github.com/magrathean-uk/teslatlas-hub/tree/v1.0.0",
+  "pack_format": "sqlite-zstd",
+  "manifestPublicKey": "abababababababababababababababababababababababababababababababab"
+}

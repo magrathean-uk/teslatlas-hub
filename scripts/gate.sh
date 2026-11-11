@@ -46,6 +46,7 @@ add() { checks="$checks$1|$2|$3
 add layout . "python3 scripts/verify-repository-layout.py"
 add provenance . "python3 scripts/verify-provenance.py"
 add name-policy . "python3 scripts/verify-name-policy.py --strict"
+add own-code . "python3 scripts/verify-own-code.py"
 add gitleaks . "gitleaks git --no-banner --redact ."
 add cargo-check . "cargo check --locked"
 add clippy . "cargo clippy --locked --all-targets -- -D warnings"

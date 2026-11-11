@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-08T19:02:00Z",
+  "goal_database_mutated": false,
+  "existing_goal": {
+    "thread_id": "01a07f89-5148-7463-b374-7b00232e082c",
+    "status": "blocked",
+    "objective": "Complete the authorized Teslatlas Viewer working-product plan in teslatlas-viewer only, preserving the current partial implementation and independent main checkout. Deliver ordinary live setup with editable trusted HTTPS/Hub identity and memory-only pairing; current/vehicle data and explicit per-vehicle 25-row drive paging with correct cache revalidation, cancellation, partial-failure recovery and authorization-loss handling; meaningful local unit, accessibility, production CLI and SDK-artifact verification; and an ordinary production-browser acceptance run against a Hub-owned installed disposable target proving 51-drive paging, trusted TLS/CORS, outage recovery, actual operator revocation and fresh-invitation re-pairing. Distinguish local proof from installed/live acceptance and keep ecosystem compatibility candidate status pending Hub-owned matrix acceptance. After core acceptance, reconcile Viewer AGENTS guidance excluding App, validate a simple local Docker/Compose package, update current README/docs and evidence, then complete the authorized reviewed source-only GitHub commit/push without CI, releases, tags or new artifact uploads. All development execution must use gpt-5.6-luna with thinking=max after the orchestrator handoff; this goal-setup turn performs no implementation, builds, tests, Git writes or live-host operations.",
+    "tokens_used": 1046521,
+    "time_used_seconds": 1898,
+    "created_at": 1788848182,
+    "updated_at": 1788850430,
+    "token_budget": null,
+    "time_budget_seconds": null,
+    "remaining_tokens": null,
+    "completion_budget_report": null,
+    "resume_required": true,
+    "note": "get_goal was refreshed at this checkpoint and returned the existing goal as blocked. No configured token or time budget was returned, and no budget/time exhaustion was reported. This work did not call update_goal, create_goal, or replace the unfinished goal. The exposed agent tools cannot resume or replace it; only the user's supported Resume goal control changes the native status. Authorized READY source work may proceed independently."
+  },
+  "proposed_objective": "Continue the existing Teslatlas Viewer goal from main at ba5424dcfeab59ac9fea0106f84fb5281672751a in teslatlas-viewer only. The normal npm run test:cli gate is passing with its measured Vite advisory retained. The source-only SDK route recreates the exact @teslatlas/sdk 2026.36.2 archive SHA-256 03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c from TypeScript SDK commit b1cd548fef7ddd26be2637c14bb435480166cef7 using Node v26.7.0 and npm 11.19.0, while keeping the archive ignored. The installed manifest SHA-256 is 4b1a44f7d2cd0ab6c772642125358703aa25c1efe32d164a119a6fc9d858ded6 and the hub-http-v1@1.0.0 profile SHA-256 is b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926. When the Hub owner supplies the reviewed Viewer registry entry and private disposable target, complete ordinary production-browser acceptance with trusted TLS/CORS, editable identity, memory-only pairing, known current values, 51-drive 25/25/1 paging, correct revalidation, outage recovery, actual operator revocation, and fresh-invitation re-pairing. When the local Docker daemon is available, validate the non-root image/Compose runtime and container-served product. Keep compatibility candidate status pending Hub matrix acceptance. Finish with reviewed source-only commit/push containing no CI, tags, releases, binaries, artifact uploads, private evidence, or unrelated edits. Continue through milestone boundaries while owned work remains; local or fixture proof alone is not full acceptance.",
+  "acceptance_criteria": [
+    "Normal npm run test:cli exits 0 while retaining the measured Vite advisory and all pack/install/server/containment/shutdown assertions.",
+    "The exact SDK archive, installed manifest, and canonical Hub profile are reproducible under the source-only delivery rule and pass Viewer verification.",
+    "A production browser completes the ordinary Viewer route against an identified installed Hub with real TLS/CORS, 25/25/1 paging, outage recovery, operator revocation, and fresh re-pairing.",
+    "The local Docker image and Compose service build, run non-root, serve verified assets, require no persistence, restart, and stop cleanly.",
+    "Current documentation and compatibility metadata distinguish local, fixture, managed, installed, Docker, and broader matrix evidence.",
+    "The final reviewed GitHub update is source-only and contains no CI, release, tag, binary artifact upload, private evidence, or unrelated work."
+  ],
+  "next_ready_milestone": null,
+  "next_waiting_work": [
+    {
+      "id": "M4",
+      "dependency": "Hub task 01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "unblock_event": "A reviewed Viewer registry entry and private installed-session handoff."
+    },
+    {
+      "id": "M5",
+      "dependency": "local Docker daemon and Compose runtime",
+      "unblock_event": "docker info and the selected Compose command succeed."
+    }
+  ],
+  "milestones": [
+    {
+      "id": "M1",
+      "name": "Current live product and SDK rebind",
+      "status": "DONE"
+    },
+    {
+      "id": "M2",
+      "name": "Repair the normal CLI pack/install gate",
+      "status": "DONE"
+    },
+    {
+      "id": "M3",
+      "name": "Finish local source, Docker-static, and documentation work",
+      "status": "DONE"
+    },
+    {
+      "id": "M4",
+      "name": "Accept the production Viewer against a real installed Hub",
+      "status": "WAITING FOR OWNER/RESOURCE"
+    },
+    {
+      "id": "M5",
+      "name": "Validate the local Docker runtime",
+      "status": "WAITING FOR OWNER/RESOURCE"
+    },
+    {
+      "id": "M6",
+      "name": "Final review and source-only GitHub update",
+      "status": "WAITING FOR OWNER/RESOURCE"
+    }
+  ],
+  "dependencies": [
+    {
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "owner": "Teslatlas Hub",
+      "missing_input": "Reviewed Viewer registry entry and private installed-session target with trusted origins, 51-drive and empty-vehicle seed, disposable pairing, outage, revoke, restore, and fresh-invitation operations.",
+      "work_still_possible_locally": "No Viewer-owned implementation remains ready; Viewer will run the installed browser acceptance only when the owner supplies the handoff.",
+      "unblock_event": "Hub records the reviewed Viewer entry and supplies the exact private installed-session handoff."
+    },
+    {
+      "owner_task_id": "01a07f89-5148-7463-b374-7b00232e082c",
+      "owner": "Teslatlas Viewer",
+      "missing_input": "Available local Docker daemon and working Compose command.",
+      "work_still_possible_locally": "Docker static review is complete. The runtime image, probes, restart, and clean-stop proof await this resource.",
+      "unblock_event": "docker info and the selected Compose command succeed for the Viewer project."
+    }
+  ],
+  "plan_path": "docs/superpowers/plans/2026-09-08-working-product-plan.md",
+  "developer_model": "gpt-5.6-terra",
+  "developer_effort": "high",
+  "planning_model": "gpt-6-astra",
+  "planning_effort": "high",
+  "historical_planning_model_observation": {
+    "model": "gpt-5.6-sol",
+    "effort": "high",
+    "status": "superseded_by_user_direction"
+  },
+  "account_usage_context": {
+    "weekly_used_percent": 30,
+    "weekly_remaining_percent": 70,
+    "rate_limit_reached": false,
+    "source": "parent coordinator readback during the 2026-09-08 model transition",
+    "is_goal_budget": false
+  },
+  "current_model_policy": {
+    "authority": "Latest user instruction on 2026-09-08; supersedes earlier model policy and historical goal wording",
+    "coordinator_and_delegation": {
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high"
+    },
+    "product_coding_goal_and_workers": {
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "high"
+    }
+  },
+  "coordination_policy": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "high"
+  },
+  "latest_development_progress": {
+    "M2": {
+      "status": "DONE",
+      "change": "The CLI integration test uses an isolated temporary npm cache, verifies the production build and measured Vite advisory, then packs those verified assets with npm pack --ignore-scripts before exercising the installed archive.",
+      "verification": "npm run test:cli passed with elevated loopback networking: 1 test, 0 failures, including install, serving, containment, signal, and clean-shutdown assertions.",
+      "sandbox_limit": "The same test under the restricted sandbox reaches only listen EPERM on 127.0.0.1 after build and pack; that is sandbox networking, not a Viewer test failure."
+    },
+    "M3": {
+      "status": "DONE",
+      "change": "Reconciled source-only SDK, Docker/Compose, compatibility, and current-documentation boundaries without changing Hub or installed state.",
+      "verification": "docker-compose config passed; metadata JSON parsing passed; 9 Viewer contract tests passed with Python 3.13; 2 Node launcher tests passed; all local Markdown links passed. The clean source Viewer-copy recipe recreated the ignored SDK archive, then npm ci, SDK verification, and production build passed.",
+      "remaining_external_dependencies": "Docker daemon/runtime and Hub installed-session handoff."
+    }
+  }
+}

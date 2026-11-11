@@ -1,0 +1,35 @@
+{
+  "items": [
+    {
+      "ascent": null,
+      "descent": null,
+      "distance_km": null,
+      "duration_min": null,
+      "efficiency": null,
+      "end_address": null,
+      "end_date_ms": 1788565960000,
+      "end_geofence": null,
+      "end_ideal_range_km": null,
+      "end_latitude": null,
+      "end_longitude": null,
+      "end_rated_range_km": null,
+      "end_soc": null,
+      "id": 101,
+      "inside_temp_avg": null,
+      "outside_temp_avg": null,
+      "power_max": null,
+      "power_min": null,
+      "speed_max": null,
+      "start_address": null,
+      "start_date_ms": 1788565900000,
+      "start_geofence": null,
+      "start_ideal_range_km": null,
+      "start_latitude": null,
+      "start_longitude": null,
+      "start_rated_range_km": null,
+      "start_soc": null,
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    }
+  ],
+  "next_cursor": null
+}
