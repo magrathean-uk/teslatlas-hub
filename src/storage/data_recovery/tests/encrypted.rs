@@ -54,6 +54,11 @@ struct Rig {
 /// folder.
 fn rig() -> Rig {
     clear_hook();
+    // M06-T02: these runs remove partials and rotate, which happens only on a
+    // volume that enforces ownership; the scratch volume may not.
+    crate::data_recovery::backup_admission::test_seam::force(Some(
+        crate::data_recovery::backup_admission::VolumeTrust::Posix,
+    ));
     let (temporary, store) = create_fixture();
     publish_schema_22_fixture(&store);
     let destination = temporary.path().join("destination");
@@ -611,8 +616,12 @@ fn data_recovery_corruption_is_detected_and_nothing_is_published() {
     let report = rig.backup();
     let good = fs::read(&report.path).unwrap();
     let restored = rig.temporary.path().join("restored");
+    // Each damaged copy keeps the generation's own file name (M06-T02 binds
+    // the name to the authenticated manifest), in a folder of its own.
     let mutate = |name: &str, bytes: Vec<u8>| {
-        let path = rig.temporary.path().join(name);
+        let folder = rig.temporary.path().join(format!("case-{name}"));
+        fs::create_dir(&folder).unwrap();
+        let path = folder.join(report.path.file_name().unwrap());
         fs::write(&path, bytes).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
         path

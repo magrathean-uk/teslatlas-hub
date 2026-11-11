@@ -773,8 +773,10 @@ fn seal_host_authority(
     // the same transaction that removes it (C3 R8): the gap and the removal of
     // every host authority commit together or not at all, and the copy's first
     // collector start closes the gap instead of recording a second downtime.
+    // `secure_delete` zeroes the removed bearer digests and sealed successors
+    // in place; the vacuum that follows every seal drops the free pages.
     connection
-        .execute_batch("PRAGMA foreign_keys = ON;")
+        .execute_batch("PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON;")
         .map_err(DataRecoveryError::CatalogueIdentity)?;
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -802,6 +804,24 @@ fn seal_host_authority(
     Ok(())
 }
 
+/// M06-T02: rebuild a sealed catalogue so that no free page or unused cell
+/// space keeps bytes of a row deleted earlier, in the live store or by the
+/// seal (an old refresh-token envelope, a bearer digest, a sealed successor).
+/// The backup API and a file copy carry free pages verbatim; `VACUUM` writes
+/// every page afresh and leaves no freelist.
+fn vacuum_sealed_catalogue(connection: &Connection) -> Result<(), DataRecoveryError> {
+    connection
+        .execute_batch("VACUUM;")
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    let free_pages: i64 = connection
+        .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    if free_pages != 0 {
+        return Err(invalid("the sealed catalogue still holds free pages"));
+    }
+    Ok(())
+}
+
 fn seal_staged_catalogue_at(payload: &Path, sealed_at_ms: i64) -> Result<(), DataRecoveryError> {
     let catalogue = payload.join("hub.sqlite");
     require_regular_file(&catalogue, "staged backup catalogue")?;
@@ -811,6 +831,7 @@ fn seal_staged_catalogue_at(payload: &Path, sealed_at_ms: i64) -> Result<(), Dat
     )
     .map_err(DataRecoveryError::CatalogueIdentity)?;
     seal_host_authority(&mut connection, sealed_at_ms)?;
+    vacuum_sealed_catalogue(&connection)?;
     let journal_mode: String = connection
         .query_row("PRAGMA journal_mode = DELETE", [], |row| row.get(0))
         .map_err(DataRecoveryError::CatalogueIdentity)?;
@@ -1962,6 +1983,7 @@ fn io_error(
 }
 
 mod archive_crypto;
+mod backup_admission;
 mod encrypted_backup;
 
 pub use archive_crypto::generate_recovery_password;
@@ -2169,7 +2191,10 @@ fn seal_backup_credentials_checked(connection: &Connection) -> Result<(), DataRe
 }
 
 /// R53 step 4: with `secure_delete` on and in one transaction, the credential
-/// rows go (fences, attempts and key usage stay).
+/// rows go (fences, attempts and key usage stay). M06-T02: so does the
+/// credential unit's status row, whose generations are digests of the owner's
+/// refresh and access tokens; without it and without a pair, a restored Hub
+/// is in the state of a fresh install and needs a fresh Hub login.
 fn seal_backup_credentials(connection: &mut Connection) -> Result<(), DataRecoveryError> {
     connection
         .execute_batch("PRAGMA secure_delete = ON;")
@@ -2178,7 +2203,10 @@ fn seal_backup_credentials(connection: &mut Connection) -> Result<(), DataRecove
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(DataRecoveryError::CatalogueIdentity)?;
     transaction
-        .execute_batch("DELETE FROM credential_pairs; DELETE FROM credential_sign_ins;")
+        .execute_batch(
+            "DELETE FROM credential_pairs; DELETE FROM credential_sign_ins;
+             DELETE FROM collector_auth_state;",
+        )
         .map_err(DataRecoveryError::CatalogueIdentity)?;
     transaction
         .commit()
@@ -2253,9 +2281,11 @@ fn seal_restored_payload(payload: &Path) -> Result<(), DataRecoveryError> {
             .map(|count| count == 1)
             .map_err(DataRecoveryError::CatalogueIdentity)
     };
+    // M06-T02: the credential unit's status row goes too, so the restored Hub
+    // starts as a fresh install that needs a fresh Hub login.
     let tables = CAR_CONTROL_SECRET_TABLES
         .iter()
-        .chain(["credential_sign_ins"].iter())
+        .chain(["credential_sign_ins", "collector_auth_state"].iter())
         .chain(PRE_UPGRADE_SECRET_TABLES.iter());
     for table in tables {
         if exists(table)? {
