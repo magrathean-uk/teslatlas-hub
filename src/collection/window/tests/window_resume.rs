@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use std::{fs, sync::Arc};
+use std::{
+    fs,
+    sync::{
+        Arc,
+        atomic::{AtomicI64, Ordering},
+    },
+};
 
 use super::support::*;
 use crate::collection::window::{
-    AnchorStore, CloseReason, HandbackSource, HighWater, HostClaim, PermitKind, Phase, Provider,
-    Refusal, ResumeOutcome, SignedGrant, Supervisor, WindowController,
+    AnchorStore, CloseReason, EgressGate, HandbackSource, HighWater, HostClaim, ManualClock,
+    NoHighWater, PermitKind, Phase, Provider, Refusal, ResumeOutcome, SignedGrant, Supervisor,
+    SystemClock, WindowClock, WindowController, WindowDeps,
     grant::GrantBody,
     state::{HubEntry, WindowStore},
 };
@@ -649,5 +656,143 @@ fn window_resume_rollback_then_restart_keeps_the_original_monotonic_deadline() {
         outcome,
         ResumeOutcome::ClosedAtStart(CloseReason::ClockInvalid)
     );
+    assert!(permit_refused(&hub));
+}
+
+/// The real system clock for monotonic time and boot identity, with the wall
+/// clock taken from the rig so grants stay valid. `mono_shift` and
+/// `boot_shift` model a source read from ahead or a different boot.
+#[derive(Debug)]
+struct RealClock {
+    wall: Arc<ManualClock>,
+    system: SystemClock,
+    mono_shift: AtomicI64,
+    boot_shift: AtomicI64,
+}
+
+impl RealClock {
+    /// A new service process: a fresh system clock reader.
+    fn new(rig: &Rig) -> Arc<Self> {
+        Arc::new(Self {
+            wall: rig.clock.clone(),
+            system: SystemClock::new(),
+            mono_shift: AtomicI64::new(0),
+            boot_shift: AtomicI64::new(0),
+        })
+    }
+}
+
+impl WindowClock for RealClock {
+    fn wall(&self) -> i64 {
+        self.wall.wall_now()
+    }
+
+    fn mono(&self) -> u64 {
+        self.system
+            .mono()
+            .saturating_add_signed(self.mono_shift.load(Ordering::SeqCst))
+    }
+
+    fn mono_boot_scoped(&self) -> bool {
+        self.system.mono_boot_scoped()
+    }
+
+    fn boot_time(&self) -> Result<i64, Refusal> {
+        Ok(self.system.boot_time()? + self.boot_shift.load(Ordering::SeqCst))
+    }
+}
+
+fn start_on(rig: &Rig, clock: Arc<RealClock>) -> (WindowController, ResumeOutcome) {
+    WindowController::start(
+        rig.config(),
+        WindowDeps {
+            clock: clock.clone(),
+            anchor: rig.anchor.clone(),
+            probe: rig.probe.clone(),
+            gate: EgressGate::new(clock),
+            handback: Arc::new(NoHighWater),
+        },
+    )
+}
+
+fn open_on(rig: &Rig, clock: Arc<RealClock>) -> WindowController {
+    let (hub, outcome) = start_on(rig, clock);
+    assert_eq!(outcome, ResumeOutcome::Fresh);
+    hub.trust(&rig.trust).expect("trust");
+    hub.open(&rig.grant(0, 3600)).unwrap();
+    hub
+}
+
+fn persisted_deadline_mono(rig: &Rig) -> u64 {
+    WindowStore::new(&rig.window_dir())
+        .load()
+        .unwrap()
+        .state
+        .deadline_mono
+}
+
+#[cfg(target_vendor = "apple")]
+#[test]
+fn window_resume_system_clock_restart_in_the_same_boot_keeps_the_original_deadline() {
+    let rig = Rig::new();
+    let hub = open_on(&rig, RealClock::new(&rig));
+    let deadline_mono = persisted_deadline_mono(&rig);
+    rig.clock.advance(1000);
+    drop(hub);
+    // The next process reads the system clock afresh.
+    let (hub, outcome) = start_on(&rig, RealClock::new(&rig));
+    assert_eq!(outcome, ResumeOutcome::Resumed(Phase::Open));
+    assert_eq!(hub.status().deadline, Some(T0 + 3600));
+    assert_eq!(
+        persisted_deadline_mono(&rig),
+        deadline_mono,
+        "the monotonic deadline is restored, not recomputed"
+    );
+    let permit = hub
+        .gate()
+        .permit(Provider::Legacy, PermitKind::Request)
+        .unwrap();
+    assert_eq!(permit.time_left().as_secs(), 2600);
+    rig.clock.advance(2600);
+    assert_eq!(hub.tick().unwrap(), Phase::Closing);
+}
+
+#[test]
+fn window_resume_system_clock_reboot_closes() {
+    let rig = Rig::new();
+    drop(open_on(&rig, RealClock::new(&rig)));
+    rig.clock.advance(100);
+    let rebooted = RealClock::new(&rig);
+    rebooted.boot_shift.store(600, Ordering::SeqCst);
+    let (hub, outcome) = start_on(&rig, rebooted);
+    assert_eq!(outcome, ResumeOutcome::ClosedAtStart(CloseReason::Reboot));
+    assert!(permit_refused(&hub));
+}
+
+#[test]
+fn window_resume_system_clock_reading_behind_its_anchor_closes() {
+    // At restart: the window was anchored on a reading ahead of the clock now.
+    let rig = Rig::new();
+    let ahead = RealClock::new(&rig);
+    ahead.mono_shift.store(100_000, Ordering::SeqCst);
+    drop(open_on(&rig, ahead));
+    rig.clock.advance(100);
+    let (hub, outcome) = start_on(&rig, RealClock::new(&rig));
+    assert_eq!(
+        outcome,
+        ResumeOutcome::ClosedAtStart(CloseReason::ClockInvalid)
+    );
+    assert!(permit_refused(&hub));
+    drop(hub);
+
+    // While running: the reading drops behind the anchor.
+    let rig = Rig::new();
+    let clock = RealClock::new(&rig);
+    let hub = open_on(&rig, clock.clone());
+    rig.clock.advance(10);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    clock.mono_shift.store(-100, Ordering::SeqCst);
+    assert_eq!(hub.tick().unwrap(), Phase::Closing);
+    assert_eq!(hub.status().close_reason, Some(CloseReason::ClockInvalid));
     assert!(permit_refused(&hub));
 }
