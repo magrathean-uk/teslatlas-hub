@@ -1342,7 +1342,10 @@ mod collection_window_egress {
     use super::*;
     use crate::{
         collection::window::{EgressGate, GateRefusal, PermitKind, Provider},
-        fleet_api::egress::test_support::{SilentServer, TestWindow, route},
+        fleet_api::egress::{
+            self,
+            test_support::{SilentServer, TestWindow, route},
+        },
     };
 
     const CLIENT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -1420,6 +1423,47 @@ mod collection_window_egress {
                 .permit(Provider::Legacy, PermitKind::Request)
                 .is_ok()
         );
+    }
+
+    /// A Legacy request permit is held inside an open window; `lapse` then moves
+    /// the window's clock past its deadline without moving the runtime clock.
+    /// The held permit must refuse its send: no connection is opened.
+    async fn assert_held_permit_lapse_sends_nothing(lapse: impl FnOnce(&TestWindow)) {
+        let server = SilentServer::spawn("http").await;
+        let window = TestWindow::open(3_600);
+        let _route = window.route(&server.url);
+        let permit = egress::ask(&server.url, Provider::Legacy, PermitKind::Request)
+            .expect("permitted inside the window");
+        assert_eq!(permit.check(), Ok(()));
+        lapse(&window);
+        assert_eq!(permit.check(), Err(egress::Cut::Deadline));
+        let address = server.url.trim_start_matches("http://").to_owned();
+        let sent = permit
+            .bound(tokio::net::TcpStream::connect(address))
+            .await
+            .map(|_| ());
+        assert_eq!(sent, Err(egress::Cut::Deadline));
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(3), permit.ended())
+                .await
+                .expect("the held permit has ended"),
+            egress::Cut::Deadline
+        );
+        // Give a connection the permit had let through time to be accepted.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(server.connections(), 0);
+    }
+
+    #[tokio::test]
+    async fn collection_window_egress_held_permit_after_a_wall_clock_step_sends_nothing() {
+        assert_held_permit_lapse_sends_nothing(|window| window.step_wall(3_600)).await;
+    }
+
+    #[tokio::test]
+    async fn collection_window_egress_held_permit_after_a_sleep_across_expiry_sends_nothing() {
+        // A host sleep: the wall and the sleep-counting monotonic clock move on,
+        // the runtime timer does not.
+        assert_held_permit_lapse_sends_nothing(|window| window.advance(3_600)).await;
     }
 
     #[tokio::test]

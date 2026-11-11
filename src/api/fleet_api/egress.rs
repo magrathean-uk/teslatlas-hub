@@ -10,17 +10,28 @@
 //! bounds its send: the send ends when the time the gate left it runs out and,
 //! for a request or a stream, when the window closes and cancels the permit.
 //!
+//! A permit also keeps its absolute deadlines on the gate's own clock (wall
+//! and monotonic) and re-checks them before every send it bounds
+//! ([`SendPermit::check`]) and, while held, at least every
+//! [`AUTHORITY_RECHECK`]. The runtime timer alone does not count a host sleep
+//! and does not see a forward wall-clock step, so without that re-check a held
+//! permit could outlive the window until a supervisor sweep cancelled it.
+//!
 //! In production every send asks the process-wide gate, which is closed until
 //! the window controller opens it. Unit tests talk to loopback doubles that have
 //! no window: a test build asks the gate a test routed to the endpoint's host
 //! and port ([`test_support::route`]) and sends without one otherwise.
 
-use std::future::Future;
+use std::{
+    future::Future,
+    sync::{Arc, OnceLock},
+    time::Duration,
+};
 
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
-use crate::collection::window::{EgressGate, Permit};
+use crate::collection::window::{EgressGate, Permit, SystemClock, WindowClock};
 pub(crate) use crate::collection::window::{GateRefusal, PermitKind, Provider};
 
 /// Why a permitted send was cut short.
@@ -32,22 +43,55 @@ pub(crate) enum Cut {
     Deadline,
 }
 
+/// How often a held permit re-reads the gate's clock for its absolute
+/// deadlines, so that a host sleep or a forward wall-clock step across the
+/// deadline ends it within this much running time.
+pub(crate) const AUTHORITY_RECHECK: Duration = Duration::from_secs(1);
+
+/// The permit's absolute deadlines, on the clock of the gate that granted it.
+#[derive(Debug)]
+struct Authority {
+    clock: Arc<dyn WindowClock>,
+    deadline_wall: i64,
+    deadline_mono: u64,
+}
+
+impl Authority {
+    /// `wall` and `mono` were read before the gate was asked, so the deadlines
+    /// fall no later than the gate's own.
+    fn new(clock: Arc<dyn WindowClock>, wall: i64, mono: u64, time_left: Duration) -> Self {
+        let left = time_left.as_secs();
+        Self {
+            clock,
+            deadline_wall: wall.saturating_add(i64::try_from(left).unwrap_or(i64::MAX)),
+            deadline_mono: mono.saturating_add(left),
+        }
+    }
+
+    fn expired(&self) -> bool {
+        self.clock.wall() >= self.deadline_wall || self.clock.mono() >= self.deadline_mono
+    }
+}
+
 /// Permission for one send, held until the send ends.
 #[derive(Debug)]
 pub(crate) struct SendPermit {
     cancel: CancellationToken,
-    /// When the send must have ended; `None` only for a test send to a double
-    /// that no test routed through a gate.
+    /// When the send must have ended on the runtime timer; `None` only for a
+    /// test send to a double that no test routed through a gate.
     deadline: Option<Instant>,
+    /// The absolute deadlines; `None` exactly when `deadline` is.
+    authority: Option<Authority>,
     /// The gate's permit: it keeps a token exchange counted as in flight.
     _permit: Option<Permit>,
 }
 
 impl SendPermit {
-    fn granted(permit: Permit) -> Self {
+    fn granted(permit: Permit, authority: Authority) -> Self {
         Self {
             cancel: permit.cancel_token().clone(),
             deadline: Some(Instant::now() + permit.time_left()),
+            authority: Some(authority),
             _permit: Some(permit),
         }
     }
@@ -57,12 +101,30 @@ impl SendPermit {
         Self {
             cancel: CancellationToken::new(),
             deadline: None,
+            authority: None,
             _permit: None,
         }
     }
 
-    /// Resolves when the window closes or the time left runs out; never for an
-    /// unrestricted test send.
+    /// Whether the permit still allows a send now: the window has not closed,
+    /// the runtime timer has not run out and neither absolute deadline has
+    /// passed on the gate's clock. Called before every network transition of a
+    /// held permit (connect, subscribe, Ping, send).
+    pub(crate) fn check(&self) -> Result<(), Cut> {
+        if self.cancel.is_cancelled() {
+            return Err(Cut::Closed);
+        }
+        if self.deadline.is_some_and(|deadline| Instant::now() >= deadline)
+            || self.authority.as_ref().is_some_and(Authority::expired)
+        {
+            return Err(Cut::Deadline);
+        }
+        Ok(())
+    }
+
+    /// Resolves when the window closes, the time left runs out or an absolute
+    /// deadline is found passed (checked at once and every
+    /// [`AUTHORITY_RECHECK`]); never for an unrestricted test send.
     pub(crate) async fn ended(&self) -> Cut {
         let deadline = self.deadline;
         let expired = async move {
@@ -71,16 +133,29 @@ impl SendPermit {
                 None => std::future::pending().await,
             }
         };
+        let lapsed = async {
+            match &self.authority {
+                Some(authority) => {
+                    while !authority.expired() {
+                        tokio::time::sleep(AUTHORITY_RECHECK).await;
+                    }
+                }
+                None => std::future::pending().await,
+            }
+        };
         tokio::select! {
             biased;
             () = self.cancel.cancelled() => Cut::Closed,
             () = expired => Cut::Deadline,
+            () = lapsed => Cut::Deadline,
         }
     }
 
-    /// Runs `send` until it ends or the permit does (see [`Self::ended`]).
-    /// Dropping the send closes its connection.
+    /// Runs `send` until it ends or the permit does (see [`Self::ended`]). The
+    /// permit is checked first, so a permit that has already ended sends
+    /// nothing. Dropping the send closes its connection.
     pub(crate) async fn bound<F: Future>(&self, send: F) -> Result<F::Output, Cut> {
+        self.check()?;
         tokio::select! {
             biased;
             cut = self.ended() => Err(cut),
@@ -105,7 +180,12 @@ pub(crate) fn ask(
     kind: PermitKind,
 ) -> Result<SendPermit, GateRefusal> {
     match gate_for(endpoint) {
-        Some(gate) => gate.permit(provider, kind).map(SendPermit::granted),
+        Some((gate, clock)) => {
+            let (wall, mono) = (clock.wall(), clock.mono());
+            let permit = gate.permit(provider, kind)?;
+            let authority = Authority::new(clock, wall, mono, permit.time_left());
+            Ok(SendPermit::granted(permit, authority))
+        }
         #[cfg(test)]
         None => Ok(SendPermit::unrestricted()),
         #[cfg(not(test))]
@@ -113,13 +193,20 @@ pub(crate) fn ask(
     }
 }
 
+/// The system clock, as the process-wide gate reads it (wall time and a
+/// monotonic reading). Deadlines are taken relative to this one's own readings.
+fn system_clock() -> Arc<dyn WindowClock> {
+    static CLOCK: OnceLock<Arc<dyn WindowClock>> = OnceLock::new();
+    CLOCK.get_or_init(|| Arc::new(SystemClock::new())).clone()
+}
+
 #[cfg(not(test))]
-fn gate_for(_endpoint: &str) -> Option<EgressGate> {
-    Some(EgressGate::process_wide().clone())
+fn gate_for(_endpoint: &str) -> Option<(EgressGate, Arc<dyn WindowClock>)> {
+    Some((EgressGate::process_wide().clone(), system_clock()))
 }
 
 #[cfg(test)]
-fn gate_for(endpoint: &str) -> Option<EgressGate> {
+fn gate_for(endpoint: &str) -> Option<(EgressGate, Arc<dyn WindowClock>)> {
     test_support::routed(endpoint)
 }
 
@@ -145,10 +232,12 @@ pub(crate) mod test_support {
         NoHighWater, Phase, WindowClock, WindowConfig, WindowController, WindowDeps,
     };
 
+    type Routed = (EgressGate, Arc<dyn WindowClock>);
+
     const T0: i64 = 1_800_000_000;
     const HOST: &str = "host-egress-test";
 
-    static ROUTES: Mutex<BTreeMap<String, EgressGate>> = Mutex::new(BTreeMap::new());
+    static ROUTES: Mutex<BTreeMap<String, Routed>> = Mutex::new(BTreeMap::new());
 
     fn key(endpoint: &str) -> Option<String> {
         let url = url::Url::parse(endpoint).ok()?;
@@ -159,7 +248,7 @@ pub(crate) mod test_support {
         ))
     }
 
-    pub(super) fn routed(endpoint: &str) -> Option<EgressGate> {
+    pub(super) fn routed(endpoint: &str) -> Option<Routed> {
         let key = key(endpoint)?;
         ROUTES.lock().expect("routes").get(&key).cloned()
     }
@@ -174,9 +263,18 @@ pub(crate) mod test_support {
         }
     }
 
+    /// Sends to the endpoint ask `gate`, which reads the system clock.
     pub(crate) fn route(endpoint: &str, gate: EgressGate) -> Route {
+        route_on(endpoint, gate, super::system_clock())
+    }
+
+    /// Sends to the endpoint ask `gate`, which reads `clock`.
+    pub(crate) fn route_on(endpoint: &str, gate: EgressGate, clock: Arc<dyn WindowClock>) -> Route {
         let key = key(endpoint).expect("a routable endpoint");
-        let previous = ROUTES.lock().expect("routes").insert(key.clone(), gate);
+        let previous = ROUTES
+            .lock()
+            .expect("routes")
+            .insert(key.clone(), (gate, clock));
         assert!(
             previous.is_none(),
             "{key} is already routed by another test"
@@ -259,12 +357,20 @@ pub(crate) mod test_support {
 
         /// Routes `endpoint` through this window's gate.
         pub(crate) fn route(&self, endpoint: &str) -> Route {
-            route(endpoint, self.gate())
+            route_on(endpoint, self.gate(), self.clock.clone())
         }
 
         /// Moves the window's clock on; the gate sees the deadline at the next ask.
+        /// The runtime clock does not move, as across a host sleep, which the
+        /// wall and the sleep-counting monotonic clock count and the runtime
+        /// timer does not.
         pub(crate) fn advance(&self, seconds: u64) {
             self.clock.advance(seconds);
+        }
+
+        /// Steps only the window's wall clock forward (an operator or NTP step).
+        pub(crate) fn step_wall(&self, seconds: i64) {
+            self.clock.shift_wall(seconds);
         }
 
         /// The operator closes the window.

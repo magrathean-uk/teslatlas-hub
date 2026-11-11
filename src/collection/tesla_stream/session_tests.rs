@@ -2109,8 +2109,9 @@ mod collection_window_egress {
     //! The stream asks the window's egress gate at the start of every attempt,
     //! before the credential check and any audit row, and holds the permit for
     //! the attempt's life. A refusal opens no connection and ends the run; the
-    //! window's close or deadline ends an open stream as a shutdown does
-    //! (unsubscribe, Close 1000) and the run does not reconnect.
+    //! window's close or deadline (also one passed across a host sleep or a
+    //! wall-clock step) ends an open stream by dropping its socket with no
+    //! further write (no unsubscribe, no Close), and the run does not reconnect.
 
     use super::*;
     use crate::fleet_api::egress::test_support::{Route, TestWindow};
@@ -2145,6 +2146,57 @@ mod collection_window_egress {
         assert!(run.event_within(Duration::from_secs(1)).await.is_none());
     }
 
+    /// The peer's outbound wire labels (frames, Closes and Pings).
+    fn outbound(peer: &Peer) -> Vec<String> {
+        peer.log
+            .labels()
+            .into_iter()
+            .filter(|label| {
+                label.starts_with("frame:") || label.starts_with("close:") || label == "ping"
+            })
+            .collect()
+    }
+
+    /// A stream is open and has delivered data inside a long window; `lapse`
+    /// then moves the window's clock past its deadline without moving the
+    /// runtime clock. The already-held permit must end the stream within the
+    /// re-check interval, with no write after the lapse and no reconnection.
+    async fn assert_held_permit_lapse_sends_nothing(lapse: impl FnOnce(&TestWindow)) {
+        let peer = streaming_peer(vec![u(T0, V1)]).await;
+        let window = TestWindow::open(3_600);
+        let (rig, _route, _port) = gated_rig(&peer, &window);
+        let (rig, _dir) = rig.with_store();
+        let store = rig.store.clone().expect("store");
+        let mut run = rig.start();
+        assert_eq!(run.event().await, StreamEvent::Healthy);
+        assert_eq!(telemetry_time(&run.event().await), T0);
+        let before = outbound(&peer);
+        lapse(&window);
+        // Nobody closes the window or sweeps its gate: the permit's own
+        // re-check of its absolute deadlines ends the stream.
+        run.finished(Duration::from_secs(5))
+            .await
+            .expect("the run ends at the lapsed deadline");
+        assert_eq!(outbound(&peer), before, "nothing is sent after the lapse");
+        assert_eq!(peer.log.count("accept"), 1);
+        let sessions = session_rows(&store);
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].outcome, "transport_ended");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn collection_window_egress_stream_held_permit_after_a_wall_clock_step_sends_nothing() {
+        assert_held_permit_lapse_sends_nothing(|window| window.step_wall(3_600)).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn collection_window_egress_stream_held_permit_after_a_sleep_across_expiry_sends_nothing()
+    {
+        // A host sleep: the wall and the sleep-counting monotonic clock move on,
+        // the runtime timer does not.
+        assert_held_permit_lapse_sends_nothing(|window| window.advance(3_600)).await;
+    }
+
     #[tokio::test(start_paused = true)]
     async fn collection_window_egress_stream_open_stream_is_cancelled_at_close() {
         let peer = streaming_peer(vec![u(T0, V1)]).await;
@@ -2159,16 +2211,16 @@ mod collection_window_egress {
         run.finished(Duration::from_secs(5))
             .await
             .expect("the run ends at the close");
-        // The stream ended as at shutdown: the unsubscribe frame, then Close 1000,
-        // and no reconnection.
+        // The window's close leaves no authority to send: the socket is dropped
+        // after the subscribe with no unsubscribe and no Close, and no
+        // reconnection.
         let wire = wire_labels(&peer);
-        assert_eq!(wire.len(), 3, "{wire:?}");
-        assert_eq!(wire[1], UNSUBSCRIBE);
-        assert_eq!(wire[2], "close:1000");
+        assert_eq!(wire.len(), 1, "{wire:?}");
+        assert!(wire[0].contains("data:subscribe_oauth"), "{wire:?}");
         assert_eq!(peer.log.count("accept"), 1);
         let sessions = session_rows(&store);
         assert_eq!(sessions.len(), 1);
-        assert_eq!(sessions[0].outcome, "orderly_shutdown");
+        assert_eq!(sessions[0].outcome, "transport_ended");
     }
 
     #[tokio::test(start_paused = true)]
@@ -2204,24 +2256,21 @@ mod collection_window_egress {
             .collect();
         assert!(ended >= Duration::from_secs(120), "{ended:?} {timeline:?}");
         assert!(ended < Duration::from_secs(125), "{ended:?} {timeline:?}");
-        // No connection after the deadline, and the last session ended as at
-        // shutdown: the unsubscribe frame, then Close 1000.
+        // No connection and no write at or after the deadline: the last session
+        // ended with its socket dropped, with no unsubscribe and no Close.
         assert!(
             timeline
                 .iter()
-                .filter(|(_, label)| label == "accept")
+                .filter(|(_, label)| label == "accept"
+                    || label == "ping"
+                    || label.starts_with("frame:")
+                    || label.starts_with("close:"))
                 .all(|(at, _)| *at < 120),
             "{timeline:?}"
         );
         let wire = wire_labels(&peer);
-        assert_eq!(wire[wire.len() - 2], UNSUBSCRIBE, "{wire:?}");
-        assert_eq!(wire[wire.len() - 1], "close:1000", "{wire:?}");
-        let last_unsubscribe = timeline
-            .iter()
-            .rev()
-            .find(|(_, label)| label.ends_with(r#""tag":"4242"}"#) && label.contains("unsubscribe"))
-            .map(|(at, _)| *at);
-        assert_eq!(last_unsubscribe, Some(120), "{timeline:?}");
+        let last = wire.last().expect("a subscribe was written");
+        assert!(last.contains("data:subscribe_oauth"), "{wire:?}");
     }
 
     #[tokio::test(start_paused = true)]
