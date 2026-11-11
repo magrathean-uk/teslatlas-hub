@@ -1317,5 +1317,8 @@ mod encrypted;
 #[path = "tests/m06_t02.rs"]
 mod m06_t02;
 
+#[path = "tests/m06_t07.rs"]
+mod m06_t07;
+
 #[path = "tests/g2_4_m1.rs"]
 mod g2_4_m1;
