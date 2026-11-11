@@ -58,3 +58,12 @@ sdk-typescript/docs/development/macos-browser-sequential-runtime-failure-2026-09
 sdk-typescript/tests/fixtures/tls/localhost-key.pem:private-key:1
 src/application/main/tests.rs:generic-api-key:2007
 src/application/main/tests.rs:generic-api-key:2013
+# SHA-256 digests in imported receipts (REPO-04); fingerprints only.
+5d0c894e720c2a4273ad75030354178cc42dfa57:edge/docs/development/edge-macos-forwarding-contract-proposal-2026-09-12-r2.json:generic-api-key:200
+5d0c894e720c2a4273ad75030354178cc42dfa57:edge/docs/development/edge-macos-r2-source-candidate-inventory-2026-09-12.json:generic-api-key:185
+bcea54a7e4aea0a7efd786f35a2463c2ca6a3fd2:home-assistant/docs/hub-admission-handoff-2026-09-08.json:generic-api-key:153
+bcea54a7e4aea0a7efd786f35a2463c2ca6a3fd2:home-assistant/docs/hub-admission-handoff-2026-09-08.json:generic-api-key:162
+bcea54a7e4aea0a7efd786f35a2463c2ca6a3fd2:home-assistant/docs/hub-admission-handoff-2026-09-08.json:generic-api-key:171
+bcea54a7e4aea0a7efd786f35a2463c2ca6a3fd2:home-assistant/docs/hub-admission-handoff-2026-09-08.json:generic-api-key:180
+bcea54a7e4aea0a7efd786f35a2463c2ca6a3fd2:home-assistant/docs/hub-admission-handoff-2026-09-08.json:generic-api-key:195
+fc8b1298a8d4a2b4efd087e010c11739f62866b9:home-assistant/docs/hub-admission-handoff-2026-10-07.json:generic-api-key:426
