@@ -1137,3 +1137,106 @@ fn deprecated_alias_check_verb_keeps_removed_inputs_refused() {
         assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument, "{removed}");
     }
 }
+
+/// Sends `request` on the control channel of `data` from `/usr/bin/nc`: a
+/// process of the owner that is not the Hub. Returns what it was answered.
+fn request_from_unrelated_process(data: &Path, request: &OperatorRequest) -> String {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut bytes = serde_json::to_vec(request).expect("request encodes");
+    bytes.push(b'\n');
+    let mut child = Command::new("/usr/bin/nc")
+        .arg("-U")
+        .arg(channel::socket_path(data))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("nc starts");
+    {
+        let mut input = child.stdin.take().expect("stdin");
+        let _ = input.write_all(&bytes);
+    }
+    let output = child.wait_with_output().expect("nc exits");
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+fn assert_peer_refused(answer: &str, what: &str) {
+    let response: channel::OperatorResponse =
+        serde_json::from_str(answer.trim()).unwrap_or_else(|_| panic!("{what}: {answer}"));
+    assert!(!response.ok, "{what}: {answer}");
+    assert_eq!(response.code.as_deref(), Some(channel::PEER_UNAUTHENTICATED), "{what}: {answer}");
+    assert!(response.result.is_none(), "{what}: nothing answered but the refusal");
+}
+
+/// M02-T11 review: a process of the owner that is not the Hub sends the
+/// purge with the confirmation. The service authenticates the requester
+/// before it reads the request, refuses it and removes nothing; the Hub's
+/// own operator command on the same channel still lists and purges.
+#[test]
+fn refused_credential_purge_an_unrelated_owner_process_is_refused_and_nothing_is_removed() {
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data dir");
+    let _server = rig.serve();
+    for confirm in [true, false] {
+        let answer = request_from_unrelated_process(
+            &rig.data(),
+            &OperatorRequest::PurgeRefusedCredentials { confirm },
+        );
+        assert_peer_refused(&answer, &format!("purge confirm={confirm}"));
+    }
+    assert!(rig.calls.all().is_empty(), "nothing listed or removed for the unrelated process");
+
+    let purged = rig
+        .forward(&OperatorRequest::PurgeRefusedCredentials { confirm: true })
+        .expect("the Hub's own command still purges");
+    assert_eq!(purged["mode"], "purge");
+    assert_eq!(rig.calls.all(), vec!["refused_purge".to_owned()]);
+}
+
+/// M02-T11 review: the same for the window verbs. An unrelated process of
+/// the owner cannot close, trust, open or read the window; the window stays
+/// Open and the supervisor is not woken. The Hub's own command still closes
+/// it.
+#[test]
+fn collection_window_operator_channel_refuses_an_unrelated_owner_process() {
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data dir");
+    let _server = rig.serve();
+    rig.forward(&OperatorRequest::WindowTrust {
+        document: encoded(&rig.trust),
+    })
+    .expect("trust");
+    let grant = encoded(&rig.grant(600));
+    rig.forward(&OperatorRequest::WindowOpen {
+        grant: grant.clone(),
+    })
+    .expect("open");
+    let kicks = *rig.kicks.lock().expect("kicks");
+
+    for request in [
+        OperatorRequest::WindowClose,
+        OperatorRequest::WindowStatus,
+        OperatorRequest::WindowTrust {
+            document: encoded(&rig.trust),
+        },
+        OperatorRequest::WindowOpen { grant },
+        OperatorRequest::Setup {
+            material: material(),
+            vehicle_id: Some(7),
+            all_vehicles: false,
+        },
+    ] {
+        let answer = request_from_unrelated_process(&rig.data(), &request);
+        assert_peer_refused(&answer, &format!("{request:?}"));
+    }
+    assert_eq!(rig.controller.status().phase, crate::collection::window::Phase::Open, "still Open");
+    assert_eq!(*rig.kicks.lock().expect("kicks"), kicks, "the supervisor was not woken");
+    assert!(rig.calls.all().is_empty(), "the backend was never asked");
+
+    let status = rig
+        .forward(&OperatorRequest::WindowClose)
+        .expect("the Hub's own command still closes the window");
+    assert_eq!(status["phase"], "closing");
+}

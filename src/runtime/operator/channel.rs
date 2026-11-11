@@ -5,7 +5,9 @@
 //!
 //! The service binds one Unix socket inside a private directory of its data
 //! directory and answers one bounded JSON request per connection, which must
-//! arrive whole within an absolute deadline. A command
+//! arrive whole within an absolute deadline. Each end authenticates the
+//! other as this user's Hub executable: the command before it reads its
+//! input, the service before it reads or acts on a request. A command
 //! connects before it reads a secret path or standard input: no socket, or no
 //! listener behind it, is `service_not_running`, so a refused command has read
 //! nothing and opened no network connection. Requests carry bounded material
@@ -57,6 +59,9 @@ pub const CHANNEL_BUSY: &str = "control_channel_busy";
 pub const CHANNEL_FAILED: &str = "control_channel_failed";
 /// The listener on the socket is not the admitted resident service.
 pub const SERVICE_UNAUTHENTICATED: &str = "service_unauthenticated";
+/// The process that sent a request is not the Hub's operator command: the
+/// service read nothing of it and did nothing.
+pub const PEER_UNAUTHENTICATED: &str = "peer_unauthenticated";
 
 /// The private directory that holds the socket.
 pub fn channel_dir(data_dir: &Path) -> PathBuf {
@@ -202,6 +207,51 @@ fn unauthenticated(what: &str) -> OperatorRefusal {
     )
 }
 
+/// Refusal the service answers a requester it does not admit; it has read
+/// nothing of the request and acted on nothing.
+fn peer_refused(what: &str) -> OperatorRefusal {
+    OperatorRefusal::new(
+        PEER_UNAUTHENTICATED,
+        format!("the requesting process {what}; nothing was done"),
+    )
+}
+
+/// Why the process at the other end of a connection is not admitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PeerFault {
+    /// The channel itself could not be inspected.
+    Uninspectable,
+    /// The kernel names no user or process for it.
+    Unidentified,
+    OtherUser,
+    NotHub,
+}
+
+impl PeerFault {
+    fn what(self) -> &'static str {
+        match self {
+            Self::Uninspectable => "could not be inspected",
+            Self::Unidentified => "cannot be identified",
+            Self::OtherUser => "belongs to another user",
+            Self::NotHub => "is not the Hub",
+        }
+    }
+
+    /// The refusal a command gives when the listener is not the service.
+    fn for_command(self) -> OperatorRefusal {
+        match self {
+            Self::Uninspectable => failed(self.what()),
+            Self::NotHub => unauthenticated("is not the Hub service"),
+            _ => unauthenticated(self.what()),
+        }
+    }
+
+    /// The refusal the service gives a requester it does not admit.
+    fn for_service(self) -> OperatorRefusal {
+        peer_refused(self.what())
+    }
+}
+
 /// Runs `work` where a Tokio reactor is current: the caller's, or a small
 /// one of its own.
 fn with_reactor<T>(work: impl FnOnce() -> T) -> Result<T, OperatorRefusal> {
@@ -218,26 +268,26 @@ fn with_reactor<T>(work: impl FnOnce() -> T) -> Result<T, OperatorRefusal> {
 }
 
 /// The peer's user id and process id, as the kernel reports them.
-fn peer_identity(stream: &UnixStream) -> Result<(u32, i32), OperatorRefusal> {
-    let clone = stream
-        .try_clone()
-        .map_err(|_| failed("could not be inspected"))?;
+fn peer_identity(stream: &UnixStream) -> Result<(u32, i32), PeerFault> {
+    let clone = stream.try_clone().map_err(|_| PeerFault::Uninspectable)?;
     // Tokio registers only non-blocking sockets. The clone shares the
     // stream's open file description, so blocking mode is restored after.
     clone
         .set_nonblocking(true)
-        .map_err(|_| failed("could not be inspected"))?;
+        .map_err(|_| PeerFault::Uninspectable)?;
     let credentials = with_reactor(|| {
         tokio::net::UnixStream::from_std(clone).and_then(|peer| peer.peer_cred())
     });
     stream
         .set_nonblocking(false)
-        .map_err(|_| failed("could not be inspected"))?;
-    let credentials = credentials?.map_err(|_| unauthenticated("cannot be identified"))?;
+        .map_err(|_| PeerFault::Uninspectable)?;
+    let credentials = credentials
+        .map_err(|_| PeerFault::Uninspectable)?
+        .map_err(|_| PeerFault::Unidentified)?;
     let pid = credentials
         .pid()
         .filter(|pid| *pid > 0)
-        .ok_or_else(|| unauthenticated("cannot be identified"))?;
+        .ok_or(PeerFault::Unidentified)?;
     Ok((credentials.uid(), pid))
 }
 
@@ -274,23 +324,38 @@ fn same_executable(left: &Path, right: &Path) -> bool {
     matches!((digest(left), digest(right)), (Some(a), Some(b)) if a == b)
 }
 
-/// Authenticates the peer as the admitted resident service: a process of
-/// this user running this Hub executable, the only process that binds the
-/// socket, and only while it holds the data-directory lifetime lock. A
-/// listener of any other program is refused before the command reads any
-/// input (review finding 7).
-fn authenticate(stream: &UnixStream) -> Result<(), OperatorRefusal> {
+/// Authenticates the process at the other end of `stream` as the Hub: a
+/// process of this user running this Hub executable (the same file, or a
+/// copy with the same bytes). Both ends apply it: a command to the listener
+/// before it reads any input (review finding 7), and the service to every
+/// requester before it reads or acts on a request (M02-T11 review), so a
+/// process of the same user that is not the Hub can neither receive a
+/// command's input nor have the service act for it.
+fn verify_peer(stream: &UnixStream) -> Result<(), PeerFault> {
     let (uid, pid) = peer_identity(stream)?;
     if uid != rustix::process::getuid().as_raw() {
-        return Err(unauthenticated("belongs to another user"));
+        return Err(PeerFault::OtherUser);
     }
-    let ours = std::env::current_exe().map_err(|_| failed("could not be inspected"))?;
-    let theirs =
-        process_executable(pid).ok_or_else(|| unauthenticated("cannot be identified"))?;
+    let ours = std::env::current_exe().map_err(|_| PeerFault::Uninspectable)?;
+    let theirs = process_executable(pid).ok_or(PeerFault::Unidentified)?;
     if !same_executable(&ours, &theirs) {
-        return Err(unauthenticated("is not the Hub service"));
+        return Err(PeerFault::NotHub);
     }
     Ok(())
+}
+
+/// Authenticates the listener as the admitted resident service, the only
+/// process that binds the socket and only while it holds the data-directory
+/// lifetime lock. A listener of any other program is refused before the
+/// command reads any input (review finding 7).
+fn authenticate(stream: &UnixStream) -> Result<(), OperatorRefusal> {
+    verify_peer(stream).map_err(PeerFault::for_command)
+}
+
+/// Authenticates a requester as the Hub's own operator command. Anything
+/// else, even a process of the owner, is refused before its request is read.
+fn authenticate_requester(stream: &UnixStream) -> Result<(), OperatorRefusal> {
+    verify_peer(stream).map_err(PeerFault::for_service)
 }
 
 /// Connects to the service on `data_dir`'s channel and authenticates it.
@@ -493,7 +558,12 @@ fn serve_one(mut stream: UnixStream, handler: &dyn OperatorHandler, deadline: Du
     if stream.set_nonblocking(false).is_err() {
         return;
     }
-    let result = read_request(&mut stream, deadline).and_then(|request| handler.handle(request));
+    // The requester is authenticated before a byte of its request is read,
+    // for every request: an unadmitted process gets a refusal and nothing
+    // reaches the handler.
+    let result = authenticate_requester(&stream)
+        .and_then(|()| read_request(&mut stream, deadline))
+        .and_then(|request| handler.handle(request));
     answer(&mut stream, result);
 }
 

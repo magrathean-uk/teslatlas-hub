@@ -265,7 +265,10 @@ pub fn service_trust_authority(host_id: &str) -> TrustAuthority {
     )
 }
 
-/// Answers the control channel inside the running service.
+/// Answers the control channel inside the running service. The channel
+/// hands it only requests from an authenticated requester (this user's Hub
+/// executable); any other process is refused there, before its request is
+/// read, so nothing here runs for it (M02-T11 review).
 pub struct OperatorService {
     controller: Arc<WindowController>,
     backend: Arc<dyn ServiceBackend>,
