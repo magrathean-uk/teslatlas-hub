@@ -445,9 +445,13 @@ where
                 // C3 R65: the owner's actions apply inside the tick, so the
                 // transaction that stores their effects also marks them applied.
                 if !owner_actions.is_empty() {
-                    if owner_actions
-                        .iter()
-                        .any(|action| action.kind == OwnerActionKind::RetryCollection)
+                    // An ordinary retry does not lift Owner API refused (M04-T01): the
+                    // credential unit's refusal is left in place too, so nothing is
+                    // sent. Only a fresh sign-in or a configuration change lifts it.
+                    if !scheduler.owner_api_refused()
+                        && owner_actions
+                            .iter()
+                            .any(|action| action.kind == OwnerActionKind::RetryCollection)
                     {
                         // A retry may start a refresh; the queues are drained
                         // meanwhile (C3 R11, C4 R56 g).
@@ -1377,7 +1381,12 @@ async fn run_credential_stop_iteration(
     let tick_now = scheduler.clock.mono_now();
     scheduler.begin_tick();
     if !owner_actions.is_empty() {
-        apply_owner_actions_with_credentials(scheduler, auth, owner_actions, tick_now).await;
+        // An ordinary retry does not lift Owner API refused (M04-T01).
+        if scheduler.owner_api_refused() {
+            scheduler.apply_owner_actions(owner_actions, tick_now);
+        } else {
+            apply_owner_actions_with_credentials(scheduler, auth, owner_actions, tick_now).await;
+        }
         owner_actions.clear();
     }
     let wrote = {

@@ -299,7 +299,7 @@ async fn r46_a_stored_pair_that_fails_the_grammar_is_a_terminal_lease_on_a_runni
 // ---- C5-S7, spec test 94 (d): the owner's retry over a refusal and an unresolved attempt ------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn t94d_the_owner_retry_turns_a_restored_refusal_over_an_unresolved_attempt_into_a_sign_out()
+async fn t94d_an_ordinary_owner_retry_leaves_a_restored_refusal_over_an_unresolved_attempt_in_place()
 {
     use crate::legacy_auth::{
         RefusalReason,
@@ -334,9 +334,10 @@ async fn t94d_the_owner_retry_turns_a_restored_refusal_over_an_unresolved_attemp
     sleep(Duration::from_millis(1_200)).await;
     assert_eq!(bed.fake.owner_requests(), 0);
     assert_eq!(bed.lease_state(), "active");
-    // The owner's retry control reaches the unit through the loop, as in production:
-    // the refusal lifts, and the attempt that was never resolved stops the account
-    // again, as a sign-out, with the lease terminal and no token request.
+    // The owner's ordinary retry (same login, same configuration) reaches the loop and
+    // is applied, but it lifts neither the account's nor the unit's Owner API refusal
+    // (M04-T01, review round 2 finding 5): the refusal stays, the lease stays active
+    // and nothing is sent. Only a fresh sign-in or a configuration change lifts it.
     bed.store
         .insert_collector_owner_action(
             "retry_collection",
@@ -344,21 +345,22 @@ async fn t94d_the_owner_retry_turns_a_restored_refusal_over_an_unresolved_attemp
             current_epoch_millis().expect("clock"),
         )
         .expect("retry row");
-    k6_wait_for(&mut running.task, "the sign-out", || {
-        bed.auth_state()
-            == Some((
-                "signed_out".to_owned(),
-                Some("refresh_outcome_unknown".to_owned()),
-            ))
+    k6_wait_for(&mut running.task, "the retry to be applied", || {
+        bed.store
+            .pending_collector_owner_actions()
+            .map(|pending| pending.is_empty())
+            .unwrap_or(false)
     })
     .await;
-    k6_wait_for(&mut running.task, "the terminal lease", || {
-        bed.lease_state() == "auth_terminal"
-    })
-    .await;
+    sleep(Duration::from_millis(1_200)).await;
+    assert_eq!(
+        bed.auth_state(),
+        Some(("api_refused".to_owned(), Some("owner_api".to_owned()))),
+        "the refusal stays"
+    );
+    assert_eq!(bed.lease_state(), "active");
     assert_eq!(bed.fake.token_requests(), 0, "no token request");
     assert_eq!(bed.fake.owner_requests(), 0);
-    assert!(bed.auth_row().expect("row").stopped_mode.is_none());
     running.stop().await;
 }
 

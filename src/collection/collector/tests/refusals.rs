@@ -485,7 +485,7 @@ async fn ct43_a_410_refuses_the_owner_api_stores_its_row_and_survives_a_restart(
 }
 
 #[tokio::test]
-async fn ct45_a_mode_change_resets_the_refusal_and_an_owner_retry_checks_again() {
+async fn ct45_a_mode_change_resets_the_refusal_and_an_owner_retry_does_not() {
     let seam = Arc::new(SupervisedCollectorTestSeam::default());
     SUPERVISED_COLLECTOR_TEST_SEAM
         .scope(seam.clone(), async {
@@ -527,8 +527,8 @@ async fn ct45_a_mode_change_resets_the_refusal_and_an_owner_retry_checks_again()
             fleet.load(&snapshot_of(&bed.store, hub, DS_FP_B), t);
             assert_eq!(fleet.account.state, AccountState::Collecting);
 
-            // An owner retry with the fake still answering 410: collecting, one list,
-            // refused again.
+            // An ordinary owner retry (same login, same configuration) lifts nothing
+            // and makes no list due (M04-T01, review round 2 finding 5).
             let mut bed = TickBed::k6_online_bed(crate::config::CollectorMode::Legacy, 1).await;
             bed.advance(Duration::from_secs(60));
             bed.transition_tick(|scheduler, now| {
@@ -546,12 +546,9 @@ async fn ct45_a_mode_change_resets_the_refusal_and_an_owner_retry_checks_again()
                 }],
                 now,
             );
-            assert_eq!(bed.scheduler.account.state, AccountState::Collecting);
-            assert!(bed.scheduler.discovery_due(now), "one list is due at once");
-            bed.scheduler
-                .discovery_failed_for_error(&ep_owner(OwnerApiError::Gone), now);
             assert_eq!(bed.scheduler.account.state, AccountState::OwnerApiRefused);
             assert_eq!(bed.scheduler.account.state_reason, "owner_api_gone");
+            assert!(!bed.scheduler.discovery_due(now), "no list is due");
             assert!(!bed.scheduler.discovery_due(now + Duration::from_secs(60)));
         })
         .await;
@@ -1876,7 +1873,7 @@ async fn k6_wait_for(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn ct66_the_owner_loop_refuses_after_a_repeated_403_and_an_owner_retry_sends_one_list() {
+async fn ct66_the_owner_loop_refuses_after_a_repeated_403_and_an_owner_retry_sends_nothing() {
     use crate::{
         credentials::{LegacyAuthManager, OwnerTokens},
         owner_api::OwnerApi,
@@ -2020,12 +2017,11 @@ async fn ct66_the_owner_loop_refuses_after_a_repeated_403_and_an_owner_retry_sen
         2,
         "no request while refused"
     );
-    // The owner's retry is applied within a settings refresh: exactly one list (and
-    // its resend), refused again, and the row is marked applied. One origin on the
-    // scheduler's clock, taken before the retry row is inserted, starts the bound
-    // (R65, CT66: the next settings refresh, 5 s, and two seconds).
-    let origin = control.clock().mono_now();
+    // The owner's ordinary retry (same login, same configuration) is applied within a
+    // settings refresh and marked applied, but lifts nothing and sends nothing (M04-T01,
+    // review round 2 finding 5): only a fresh sign-in or a configuration change does.
     let lists_before = wire.calls.load(Ordering::SeqCst);
+    let tokens_before = wire.token_calls.load(Ordering::SeqCst);
     store
         .insert_collector_owner_action(
             "retry_collection",
@@ -2033,16 +2029,14 @@ async fn ct66_the_owner_loop_refuses_after_a_repeated_403_and_an_owner_retry_sen
             current_epoch_millis().expect("clock"),
         )
         .expect("retry row");
-    let bound = CONTROL_SETTINGS_REFRESH + Duration::from_secs(2);
-    let retry_tick = step_the_controlled_loop_to_a_tick_within(&control, origin, bound, |tick| {
-        tick.at >= origin && tick.requests > lists_before
+    let origin = control.clock().mono_now();
+    let refreshes = step_the_controlled_loop_to_a_tick_within(&control, origin, step_bound, |_| true)
+        .await
+        .settings_refreshes_completed;
+    let after = step_the_controlled_loop_to_a_tick_within(&control, clock.mono_now(), step_bound, |tick| {
+        tick.settings_refreshes_completed >= refreshes + 2
     })
     .await;
-    assert!(
-        retry_tick.at <= origin + bound,
-        "the retry tick completed {:?} after the origin on the scheduler's clock (bound {bound:?})",
-        retry_tick.at.saturating_duration_since(origin)
-    );
     let applied: i64 = store
         .open()
         .expect("catalogue")
@@ -2053,12 +2047,9 @@ async fn ct66_the_owner_loop_refuses_after_a_repeated_403_and_an_owner_retry_sen
         )
         .expect("applied actions");
     assert_eq!(applied, 1, "the retry row is applied");
-    assert_eq!(
-        wire.calls.load(Ordering::SeqCst),
-        4,
-        "one list and its resend after the retry"
-    );
-    assert_eq!(retry_tick.account, "owner_api_refused", "refused again");
+    assert_eq!(wire.calls.load(Ordering::SeqCst), lists_before, "no list after the retry");
+    assert_eq!(wire.token_calls.load(Ordering::SeqCst), tokens_before, "no token request");
+    assert_eq!(after.account, "owner_api_refused", "still refused");
     shutdown_tx.send(()).expect("shutdown");
     join_supervised_restart_task("collector join", &mut task)
         .await

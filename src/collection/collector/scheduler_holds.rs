@@ -147,9 +147,10 @@ impl AccountState {
         match self {
             Self::Collecting => "Collecting.",
             // Its own state (M04-T01): the refusal starts no other source, so the
-            // text offers none; only the owner's retry or a mode change lifts it.
+            // text offers none; an ordinary retry does not lift it, only a fresh
+            // sign-in or a change of the collection settings does.
             Self::OwnerApiRefused => {
-                "Tesla has refused the Owner API. Collection is stopped and no other source is started; retry collection once Tesla allows the Owner API again."
+                "Tesla has refused the Owner API. Collection is stopped and no other source is started; a retry alone does not resume it: sign in to Tesla again or change the collection settings."
             }
             Self::ProviderRefused => {
                 "The data provider has refused the Hub (a subscription or authorisation matter at the provider). Collection is stopped until it is resolved there and collection is retried."
@@ -1104,10 +1105,33 @@ impl VehicleScheduler {
         applied
     }
 
+    /// Whether Tesla's refusal of the Owner API holds the account (C3 R48, M04-T01).
+    fn owner_api_refused(&self) -> bool {
+        self.account.state == AccountState::OwnerApiRefused
+    }
+
     /// `retry_collection` (C3 R65).
+    ///
+    /// Owner API refused is the exception (M04-T01, review round 2 finding 5): an
+    /// ordinary retry with the same credentials and configuration would only be
+    /// refused again, so it lifts nothing, makes no list due and sends nothing. The
+    /// action is still marked applied. Only a fresh sign-in or a configuration change
+    /// lifts the refusal, at the next start (C3 R7).
     fn owner_retry(&mut self, now: Instant) {
         let wall_ms = self.wall_or_last();
         let from = self.account.state;
+        if self.owner_api_refused() {
+            tracing::info!(
+                target: "collector.decision",
+                vehicle = "account",
+                from = from.code(),
+                to = from.code(),
+                reason = "owner_retry",
+                gated = true,
+                "collector retry refused: Owner API refused needs a fresh sign-in or a configuration change"
+            );
+            return;
+        }
         // The credential unit lifts a `CredentialStop` of the Owner wire (C5 R44).
         // In Fleet polling there is no unit: the stop is C3's own, and the owner's
         // retry (or a start with a changed fingerprint) is what lifts it (R47).

@@ -48,13 +48,54 @@ fn owner_api_refused_is_its_own_state_and_starts_no_other_source() {
         .expect("the refusal's account row");
     assert_eq!(account.row.state, "owner_api_refused");
     assert_eq!(account.row.reason_code, "owner_api_refused");
-    // The status says what happened and offers no other source (no provider, no Fleet
-    // polling) and no credential remedy.
+    // The status says what happened, offers no other source (no provider, no Fleet
+    // polling) and names the only remedies: a fresh sign-in or a settings change.
     let text = core.scheduler.status(later).account_text.to_lowercase();
     assert!(text.contains("refused the owner api"), "{text}");
-    for other in ["fleet", "provider", "credential", "sign in"] {
+    for other in ["fleet", "provider", "credential"] {
         assert!(!text.contains(other), "{other:?} in {text:?}");
     }
+    assert!(text.contains("sign in to tesla again"), "{text}");
+    assert!(text.contains("change the collection settings"), "{text}");
+}
+
+/// Review finding 5 (round 2): an ordinary retry with the same credentials and
+/// configuration does not lift Owner API refused. The action is applied (so it is not
+/// read again), but the account stays refused under its reason, no list is due and
+/// nothing may be sent; pauses and waits are left as they were.
+#[test]
+fn owner_api_refused_an_ordinary_retry_lifts_nothing_and_sends_nothing() {
+    let mut core = ep_online_core(1);
+    let at = core.at(60);
+    ep_sync_clock(&core, at);
+    core.scheduler
+        .discovery_failed_for_error(&ep_forbidden(true), at);
+    assert_eq!(core.scheduler.account.state, AccountState::OwnerApiRefused);
+    let _ = core.scheduler.take_tick();
+    let retry_at = at + Duration::from_secs(5);
+    ep_sync_clock(&core, retry_at);
+    core.scheduler.begin_tick();
+    let applied = core.scheduler.apply_owner_actions(
+        &[OwnerActionRow {
+            id: 41,
+            kind: OwnerActionKind::RetryCollection,
+            vehicle: None,
+        }],
+        retry_at,
+    );
+    assert_eq!(applied, vec![41], "the action is applied");
+    assert_eq!(core.scheduler.account.state, AccountState::OwnerApiRefused);
+    assert_eq!(core.scheduler.account.state_reason, "owner_api_refused");
+    assert!(!core.scheduler.discovery_due(retry_at), "no list is due");
+    assert!(!core.scheduler.requests_allowed(retry_at), "nothing may be sent");
+    let later = retry_at + Duration::from_secs(3_600);
+    ep_sync_clock(&core, later);
+    assert!(!core.scheduler.discovery_due(later));
+    let tick = core.scheduler.take_tick();
+    assert!(
+        tick.account.is_none_or(|account| account.row.state == "owner_api_refused"),
+        "the stored account stays refused"
+    );
 }
 
 /// The lease of a refused run stays `active`: a refusal is not the re-login state,
@@ -294,6 +335,34 @@ async fn owner_api_refused_never_switches_on_polling_or_another_source_across_a_
     assert_eq!(
         attention(),
         Some(crate::db::CollectionAttentionCode::CollectorApiRefused)
+    );
+    // Review finding 5 (round 2): the owner's ordinary retry, with the same login and
+    // configuration, goes through the loop and the credential unit as in production.
+    // It is applied, and lifts nothing: no list, no token request, still refused.
+    store
+        .insert_collector_owner_action("retry_collection", None, current_epoch_millis().expect("clock"))
+        .expect("retry row");
+    let before_retry =
+        step_the_controlled_loop_to_a_tick_within(&control, clock.mono_now(), step_bound, |_| true).await;
+    let after_retry = step_the_controlled_loop_to_a_tick_within(&control, clock.mono_now(), step_bound, |tick| {
+        tick.settings_refreshes_completed >= before_retry.settings_refreshes_completed + 2
+    })
+    .await;
+    assert!(
+        store
+            .pending_collector_owner_actions()
+            .expect("pending actions")
+            .is_empty(),
+        "the retry is applied"
+    );
+    assert_eq!(after_retry.account, "owner_api_refused", "still refused");
+    assert_eq!(wire.calls.load(Ordering::SeqCst), 1, "no list after the retry");
+    assert_eq!(others.load(Ordering::SeqCst), 0);
+    assert_eq!(stream.accepted.load(Ordering::SeqCst), 0);
+    assert_eq!(wire.token_calls.load(Ordering::SeqCst), tokens, "no token request after the retry");
+    assert_eq!(
+        stored_state(),
+        ("owner_api_refused".to_owned(), "owner_api_refused".to_owned())
     );
     shutdown_tx.send(()).expect("restart shutdown");
     join_supervised_restart_task("restart join", &mut task)
