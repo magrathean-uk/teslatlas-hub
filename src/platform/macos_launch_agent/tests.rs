@@ -150,6 +150,7 @@ fn source_run_config(temporary: &Path, data_dir: &Path) -> HubConfig {
         terrain: Default::default(),
         http: Default::default(),
         pairing: Default::default(),
+        backup: Default::default(),
     }
 }
 

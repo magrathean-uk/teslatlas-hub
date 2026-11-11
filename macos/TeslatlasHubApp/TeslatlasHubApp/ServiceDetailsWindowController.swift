@@ -50,6 +50,12 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     private let removeButton = HubActionButton(title: HubL10n.text("hub.service.remove.button", fallback: "Remove Background Service…"), target: nil, action: nil)
     private let deleteDataButton = HubActionButton(title: HubL10n.text("hub.ServiceDetailsWindowController.38.2169", fallback: "Delete Hub and Data…"), target: nil, action: nil)
     private var mutationsEnabled = true
+    /// Backups and Paired devices (M06-T04), present when a maintenance backend is given.
+    private(set) var backupSettings: BackupSettingsView?
+    private(set) var deviceList: DeviceListView?
+    private var maintenanceRequested = false
+    private var maintenanceLoaded = false
+    private var maintenanceReady = false
     private var embeddedBody: NSView?
     private var serviceHealth: HubHealth
 
@@ -59,6 +65,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
          mutationAllowed: @escaping () -> Bool = { true },
          onDismiss: @escaping () -> Void = {},
          embedded: Bool = false,
+         maintenance: HubMaintenanceBackend? = nil,
          errorPresenter: @escaping (Error) -> Void = HubUIPresentation.presentError,
          confirmationPresenter: @escaping ConfirmationPresenter = { alert, silentResponse in
              HubUIPresentation.response(to: alert, silentResponse: silentResponse)
@@ -70,6 +77,11 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         self.errorPresenter = errorPresenter
         self.confirmationPresenter = confirmationPresenter
         self.serviceHealth = snapshot.health
+        if let maintenance {
+            backupSettings = BackupSettingsView(backend: maintenance, mutationAllowed: mutationAllowed)
+            deviceList = DeviceListView(backend: maintenance, mutationAllowed: mutationAllowed,
+                                        confirmationPresenter: confirmationPresenter)
+        }
         super.init(window: embedded ? nil : HubUtilityWindowStyle.makeWindow(
             title: HubL10n.text("hub.AppDelegate.132.43", fallback: "Service Details"), size: HubMetrics.serviceDetailsSheetSize,
             minimum: NSSize(width: 450, height: 380)
@@ -80,6 +92,22 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         window?.contentView = body
         embeddedBody = embedded ? body : nil
         update(snapshot: snapshot)
+    }
+
+    /// Reads the backup state and the paired devices from the Hub once its status is
+    /// known and it is set up; until then nothing runs beside the pending status read.
+    func reloadMaintenance() {
+        maintenanceRequested = true
+        maintenanceLoaded = false
+        loadMaintenanceIfReady()
+    }
+
+    private func loadMaintenanceIfReady() {
+        guard maintenanceRequested, maintenanceReady, !maintenanceLoaded,
+              backupSettings != nil || deviceList != nil else { return }
+        maintenanceLoaded = true
+        backupSettings?.reload()
+        deviceList?.reload()
     }
 
     @available(*, unavailable)
@@ -131,6 +159,8 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
 
     func update(snapshot: HubSnapshot) {
         serviceHealth = snapshot.health
+        maintenanceReady = !snapshot.checkingStatus && snapshot.health != .needsInstall
+        defer { loadMaintenanceIfReady() }
         rowsStack.arrangedSubviews.forEach {
             rowsStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
@@ -150,6 +180,8 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
 
     func setMutationsEnabled(_ enabled: Bool) {
         mutationsEnabled = enabled
+        backupSettings?.setMutationsEnabled(enabled)
+        deviceList?.setMutationsEnabled(enabled)
         updateMutationButtons()
     }
 
@@ -273,7 +305,8 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
 
         dangerCard.isHidden = !controller.allowsServiceRemoval
         removeButton.isHidden = !controller.allowsServiceRemoval
-        let body = NSStackView(views: [detailsCard, pendingSurface, lifecycleCard, dangerCard])
+        let maintenanceViews: [NSView] = [backupSettings, deviceList].compactMap { $0 }
+        let body = NSStackView(views: [detailsCard, pendingSurface, lifecycleCard] + maintenanceViews + [dangerCard])
         body.orientation = .vertical
         body.alignment = .leading
         body.spacing = 16
@@ -289,7 +322,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         document.addSubview(body)
         scroll.documentView = document
         root.addSubview(scroll)
-        for view in [detailsCard, pendingSurface, lifecycleCard, dangerCard] {
+        for view in [detailsCard, pendingSurface, lifecycleCard, dangerCard] + maintenanceViews {
             view.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
         }
         NSLayoutConstraint.activate([

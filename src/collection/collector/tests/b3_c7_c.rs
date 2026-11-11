@@ -44,6 +44,7 @@ fn config_with_default_geocoder(directory: &std::path::Path) -> HubConfig {
         tls: None,
         http: Default::default(),
         pairing: Default::default(),
+        backup: Default::default(),
         collector: crate::config::CollectorConfig::default(),
         geocoder: crate::config::GeocoderConfig::default(),
         import_source: crate::config::ImportSourceConfig::default(),

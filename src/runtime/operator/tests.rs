@@ -81,6 +81,16 @@ impl ServiceBackend for FakeBackend {
         self.0.push(&format!("restore:{}", source.display()));
         Ok(json!({ "status": "restored" }))
     }
+
+    fn refused_credentials(&self) -> Result<Value, OperatorRefusal> {
+        self.0.push("refused_list");
+        Ok(json!({ "mode": "list" }))
+    }
+
+    fn purge_refused_credentials(&self) -> Result<Value, OperatorRefusal> {
+        self.0.push("refused_purge");
+        Ok(json!({ "mode": "purge" }))
+    }
 }
 
 /// The owner at the Hub Mac: answers the trust confirmation as told and
@@ -874,6 +884,16 @@ impl ServiceBackend for RestoringBackend {
         std::io::Write::write_all(&mut file, &self.key).expect("key");
         Ok(json!({ "status": "restored", "cursorKeyIncluded": true }))
     }
+
+    fn refused_credentials(&self) -> Result<Value, OperatorRefusal> {
+        self.calls.push("refused_list");
+        Ok(json!({}))
+    }
+
+    fn purge_refused_credentials(&self) -> Result<Value, OperatorRefusal> {
+        self.calls.push("refused_purge");
+        Ok(json!({}))
+    }
 }
 
 /// Finding 2: after a data-only restore the service waits in its recovery
@@ -955,4 +975,165 @@ async fn collection_window_operator_recovery_state_restores_keys_before_any_is_c
     assert_eq!(status["credentialRecoveryPending"], false);
     rig.forward(&OperatorRequest::WindowTrust { document: encoded(&rig.trust) })
         .expect("window verbs answer again");
+}
+
+/// M02-T11 acceptance 1 and 3: the purge command parses with a listing mode
+/// and a confirmation flag, is forwarded to the running service, lists
+/// without the confirmation (deleting nothing) and purges only once the
+/// window is Closed, holding the import lock.
+#[test]
+fn refused_credential_purge_is_forwarded_lists_without_confirmation_and_waits_for_the_window() {
+    for (arguments, confirm) in [
+        (&["teslatlas-hub", "purge-refused-credentials"][..], false),
+        (&["teslatlas-hub", "purge-refused-credentials", "--confirm"][..], true),
+    ] {
+        let cli = Cli::try_parse_from(arguments.iter().copied()).expect("parses");
+        assert!(
+            matches!(cli.command, Command::PurgeRefusedCredentials { confirm: parsed } if parsed == confirm),
+            "{arguments:?}"
+        );
+        assert_eq!(admission::route(&cli.command), Route::Service, "forwarded to the service");
+        assert!(!admission::requires_user_hub_admission(&cli.command), "never takes the lifetime lock");
+    }
+    assert!(Cli::try_parse_from(["teslatlas-hub", "purge-refused-credentials", "--yes"]).is_err());
+
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data dir");
+    let _server = rig.serve();
+    let list = OperatorRequest::PurgeRefusedCredentials { confirm: false };
+    let purge = OperatorRequest::PurgeRefusedCredentials { confirm: true };
+    assert_eq!(rig.forward(&list).expect("listing")["mode"], "list");
+    assert_eq!(rig.calls.all(), vec!["refused_list".to_owned()], "without --confirm only the listing runs");
+
+    rig.forward(&OperatorRequest::WindowTrust {
+        document: encoded(&rig.trust),
+    })
+    .expect("trust");
+    rig.forward(&OperatorRequest::WindowOpen {
+        grant: encoded(&rig.grant(600)),
+    })
+    .expect("open");
+    let refused = rig.forward(&purge).unwrap_err();
+    assert_eq!(refused.code, "window_active", "no purge inside a window");
+    rig.forward(&list).expect("the listing is read-only, so it runs in a window");
+    rig.forward(&OperatorRequest::WindowClose).expect("close");
+    assert_eq!(rig.forward(&purge).unwrap_err().code, "window_active", "not while Closing");
+    rig.controller.finish_close().expect("handback");
+    assert_eq!(rig.forward(&purge).expect("purge")["mode"], "purge");
+    assert_eq!(
+        rig.calls.all(),
+        vec!["refused_list".to_owned(), "refused_list".to_owned(), "refused_purge".to_owned()],
+        "the purge reached the backend once, after the window closed"
+    );
+}
+
+// Deprecated aliases (M05-T05). Names carry `deprecated_alias` so the
+// milestone's filter runs them. An alias only maps an earlier name to a
+// command that still exists; inputs removed on purpose stay refused.
+
+const EARLIER_CHECK_VERB: &str = crate::runtime::legacy_names::DEPRECATED_VERB_SOURCE_CHECK;
+
+fn check_arguments(command: &str, flag: &str) -> Vec<String> {
+    let mut arguments = [
+        "teslatlas-hub",
+        command,
+        "--source",
+        "postgresql://reader@source.example/sourcedb",
+        "--car-id",
+        "42",
+        "--postgres-password-file",
+        "fictional-password",
+        flag,
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<Vec<_>>();
+    if command == "migrate" {
+        arguments.extend(["--history-only".to_owned(), "--online-snapshot".to_owned()]);
+    }
+    arguments
+}
+
+#[test]
+fn deprecated_alias_schema_flag_works_warns_and_is_hidden() {
+    for command in ["source-check", "migrate"] {
+        let mut warnings = Vec::new();
+        let cli = Cli::parse_with_schema_warning(
+            check_arguments(command, "--acknowledge-v4-2-compatible-schema"),
+            &mut warnings,
+        )
+        .expect("the earlier flag parses");
+        match cli.command {
+            Command::SourceCheck { accept_schema_evidence, .. }
+            | Command::Migrate { accept_schema_evidence, .. } => assert!(accept_schema_evidence),
+            _ => panic!("wrong command"),
+        }
+        let warnings = String::from_utf8(warnings).expect("utf8");
+        assert_eq!(warnings.lines().count(), 1, "{warnings}");
+        assert!(warnings.contains("--accept-schema-evidence"));
+        assert!(warnings.contains("a later version"));
+        let help = Cli::try_parse_from(["teslatlas-hub", command, "--help"])
+            .unwrap_err()
+            .to_string();
+        assert!(help.contains("--accept-schema-evidence"));
+        assert!(!help.contains("--acknowledge-v4-2-compatible-schema"));
+    }
+}
+
+#[test]
+fn deprecated_alias_check_verb_works_warns_once_and_is_hidden() {
+    let mut earlier = check_arguments("source-check", "--accept-schema-evidence");
+    earlier[1] = EARLIER_CHECK_VERB.to_owned();
+    for with_config in [false, true] {
+        let mut arguments = earlier.clone();
+        if with_config {
+            arguments.splice(1..1, ["--config".to_owned(), "fictional.toml".to_owned()]);
+        }
+        let mut warnings = Vec::new();
+        let cli = Cli::parse_with_schema_warning(arguments, &mut warnings)
+            .expect("the earlier verb parses");
+        assert!(matches!(
+            cli.command,
+            Command::SourceCheck { car_id: 42, accept_schema_evidence: true, .. }
+        ));
+        assert_eq!(cli.config.is_some(), with_config);
+        let warnings = String::from_utf8(warnings).expect("utf8");
+        assert_eq!(warnings.lines().count(), 1, "{warnings}");
+        assert!(warnings.contains(EARLIER_CHECK_VERB));
+        assert!(warnings.contains("use source-check"));
+        assert!(warnings.contains("a later version"));
+    }
+    // The verb and the earlier flag each warn once, together.
+    let mut warnings = Vec::new();
+    Cli::parse_with_schema_warning(
+        check_arguments(EARLIER_CHECK_VERB, "--acknowledge-v4-2-compatible-schema"),
+        &mut warnings,
+    )
+    .expect("both earlier names parse");
+    assert_eq!(String::from_utf8(warnings).expect("utf8").lines().count(), 2);
+    // The current name stays silent, and the earlier verb is not in help.
+    let mut warnings = Vec::new();
+    Cli::parse_with_schema_warning(
+        check_arguments("source-check", "--accept-schema-evidence"),
+        &mut warnings,
+    )
+    .expect("current name parses");
+    assert!(warnings.is_empty());
+    let help = Cli::try_parse_from(["teslatlas-hub", "--help"]).unwrap_err().to_string();
+    assert!(help.contains("source-check"));
+    assert!(!help.contains(EARLIER_CHECK_VERB), "{help}");
+    let command_help = Cli::try_parse_from(["teslatlas-hub", "source-check", "--help"])
+        .unwrap_err()
+        .to_string();
+    assert!(!command_help.contains(EARLIER_CHECK_VERB), "{command_help}");
+}
+
+#[test]
+fn deprecated_alias_check_verb_keeps_removed_inputs_refused() {
+    for removed in ["--access-token-file", "--refresh-token-file", "--encryption-key-file"] {
+        let mut arguments = check_arguments(EARLIER_CHECK_VERB, "--accept-schema-evidence");
+        arguments.extend([removed.to_owned(), "fictional-token".to_owned()]);
+        let error = Cli::try_parse_from(arguments).unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument, "{removed}");
+    }
 }

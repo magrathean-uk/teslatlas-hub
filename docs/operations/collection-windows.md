@@ -8,11 +8,12 @@ from the other logger's database. Hub never reads, stores, uses or refreshes a
 token held by another application, and no setting or flag changes that.
 
 This guide covers issuing a grant, trusting the issuer, issuer key custody,
-opening, stopping, rolling back and restarting. `teslatlas-hub window --help`
+opening, stopping, rolling back, restarting and removing refused credentials. `teslatlas-hub window --help`
 lists the verbs.
 
-`window status`, `window trust`, `window open`, `window close`, `setup` and the
-credential-recovery commands are forwarded to the running Hub service, which
+`window status`, `window trust`, `window open`, `window close`, `setup`, the
+credential-recovery commands and `purge-refused-credentials` are forwarded to
+the running Hub service, which
 holds the window authority. With no service running they are refused with
 `service_not_running` before they read any file, standard input or the
 network. The issuer verbs (`window issuer-init`, `window issuer-trust`,
@@ -163,3 +164,45 @@ time you want Hub to stop collecting.
 - If the state is unreadable it closes with `state_unverifiable`. A crash during
   Closing completes the close at the next start.
 - Backups and restores never carry the window directory.
+
+## Remove refused credentials
+
+An upgraded Hub keeps the credentials it refuses until you remove them: a
+sign-in stored by an earlier version (the `pre_upgrade` origin), a stored Fleet
+pair, or any pair the Hub's own login did not make. Nothing is deleted on
+upgrade. While such a credential is kept, `status` and `doctor` show a
+`refusedCredentialPurge` entry naming the command, and while a refused
+pre-upgrade credential blocks backups, `teslatlas-hub backup` is refused with
+`backup_blocked_by_refused_credentials`, naming the same command. A refused
+Fleet slot is never replaced while Fleet is parked, so only this command ends
+that wait.
+
+1. With the Hub service running, list what would be removed:
+
+   ```sh
+   teslatlas-hub purge-refused-credentials
+   ```
+
+   The listing names each refused slot, its origin and the table that holds it,
+   the old key files in the Hub's `secrets` folder and the old tables. It never
+   prints a secret value, and it deletes and writes nothing.
+
+2. Remove them:
+
+   ```sh
+   teslatlas-hub purge-refused-credentials --confirm
+   ```
+
+   The service deletes the refused rows, their encrypted values and the old
+   tables in one database transaction, and removes the old key files only after
+   that transaction is safely on disk. It then reclaims the freed space and
+   completes the credential cleanup; the report says whether cleanup is
+   complete. The pair from the Hub's own login is never touched.
+
+The command is refused with `window_active` while a window is Pending, Open or
+Closing, `collector_running` while a collector holds its lease, and
+`refresh_active` while a refresh of the Hub's own sign-in is unresolved. It goes
+only through the running service and makes no network connection. If cleanup
+needs more free space, the report says it is incomplete, and the Hub finishes it
+the next time it opens its credential store. Afterwards the store reports no refused slot and
+backups are no longer blocked.

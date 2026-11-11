@@ -172,6 +172,11 @@ fn build_status_report(
     if let Some(violation) = cadence_violation {
         report["collectorCadenceError"] = serde_json::to_value(violation.report())?;
     }
+    // Refused credentials are kept until the owner removes them (DEC-083);
+    // status names the command while any is kept.
+    if let Some(hint) = operator::purge::hint(store)? {
+        report["refusedCredentialPurge"] = hint;
+    }
     Ok(report)
 }
 
@@ -389,6 +394,18 @@ fn run_forwarded(config_path: &Path, command: &Command) -> Result<(), Box<dyn st
             source: absolute_path(source)?,
             recovery_key_file: absolute_path(recovery_key_file)?,
         },
+        Command::PurgeRefusedCredentials { confirm } => {
+            OperatorRequest::PurgeRefusedCredentials { confirm: *confirm }
+        }
+        // The password stays in its file: the service reads it.
+        Command::BackupNow {
+            destination,
+            password_file,
+        } => OperatorRequest::BackupNow {
+            destination: destination.as_deref().map(absolute_path).transpose()?,
+            password_file: password_file.as_deref().map(absolute_path).transpose()?,
+        },
+        Command::BackupStatus => OperatorRequest::BackupStatus,
         _ => return Err("this command is not forwarded to the service".into()),
     };
     let result = operator::channel::exchange(stream, &request, FORWARD_TIMEOUT)?;
@@ -431,6 +448,7 @@ struct HubServiceBackend {
     store: HubStore,
     data_dir: PathBuf,
     admission: std::sync::Arc<AdmittedUserHub>,
+    backup: std::sync::Arc<teslatlas_hub::runtime::backup_schedule::BackupScheduler>,
 }
 
 #[cfg(unix)]
@@ -493,6 +511,35 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
         .map_err(|error| OperatorRefusal::new("recovery_failed", error.to_string()))?;
         serde_json::to_value(&report)
             .map_err(|_| OperatorRefusal::new("recovery_failed", "the report is not encodable"))
+    }
+
+    fn refused_credentials(&self) -> Result<serde_json::Value, OperatorRefusal> {
+        operator::purge::list(&self.store, &self.data_dir)
+    }
+
+    fn purge_refused_credentials(&self) -> Result<serde_json::Value, OperatorRefusal> {
+        let entry = open_command_credential_vault(
+            self.store.clone(),
+            std::sync::Arc::clone(&self.admission),
+            &self.data_dir,
+        )
+        .map_err(|error| {
+            let error = teslatlas_hub::auth::credential_sign_in::credential_entry_error(error);
+            OperatorRefusal::new(error.code(), error.to_string())
+        })?;
+        operator::purge::purge(&entry)
+    }
+
+    fn backup_now(
+        &self,
+        destination: Option<&Path>,
+        password_file: Option<&Path>,
+    ) -> Result<serde_json::Value, OperatorRefusal> {
+        self.backup.run_now(destination, password_file)
+    }
+
+    fn backup_status(&self) -> Result<serde_json::Value, OperatorRefusal> {
+        Ok(self.backup.status())
     }
 }
 
@@ -758,11 +805,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Doctor => {
             let config = HubConfig::load(&config_path)?;
-            let report = run_immutable_diagnostic(&config.data_dir, |store| {
-                Ok(inspect_hub(store, &config)?)
+            let (report, purge_hint) = run_immutable_diagnostic(&config.data_dir, |store| {
+                Ok((inspect_hub(store, &config)?, operator::purge::hint(store)?))
             })?;
             report.log();
-            println!("{}", serde_json::to_string_pretty(&report)?);
+            // The doctor names the purge command while refused credentials
+            // are kept (DEC-083).
+            let mut printed = serde_json::to_value(&report)?;
+            if let Some(hint) = purge_hint {
+                printed["refusedCredentialPurge"] = hint;
+            }
+            println!("{}", serde_json::to_string_pretty(&printed)?);
             if !report.is_ok() {
                 return Err(std::io::Error::other("doctor found failures; see JSON report").into());
             }
@@ -1023,6 +1076,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     source_db_current_enabled = config.import_source.current.is_some(),
                     "Hub serve starting"
                 );
+                let backup_schedule = start_backup_schedule(&config, &store, &recovery)?;
                 let supervisor = operator::authority::SupervisorThread::spawn(
                     std::sync::Arc::clone(&authority),
                     ServiceCollectorSlot::new(
@@ -1041,6 +1095,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             store: store.clone(),
                             data_dir: config.data_dir.clone(),
                             admission: std::sync::Arc::clone(&admission),
+                            backup: std::sync::Arc::clone(&backup_schedule),
                         }),
                         supervisor.kicker(),
                         operator::authority::service_trust_authority(authority.host_id()),
@@ -1104,6 +1159,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     .await
                 };
                 drop(channel);
+                tokio::task::spawn_blocking(move || backup_schedule.stop()).await?;
                 tokio::task::spawn_blocking(move || supervisor.stop()).await?;
                 drop(authority);
                 match &serve_result {
@@ -1213,11 +1269,24 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", serde_json::to_string(&report)?);
         }
         Command::Backup { destination } => {
-            let report = create_data_backup(&store, &destination)?;
+            // A refusal caused by refused pre-upgrade credentials names the
+            // command that removes them (DEC-083).
+            let report = create_data_backup(&store, &destination).map_err(
+                |error| -> Box<dyn std::error::Error> {
+                    match teslatlas_hub::data_recovery::refused_credential_backup_message(&store, &error) {
+                        Some(message) => message.into(),
+                        None => error.into(),
+                    }
+                },
+            )?;
             println!("{}", serde_json::to_string(&report)?);
         }
-        Command::ExportRecoveryCredentials { .. } | Command::RestoreRecoveryCredentials { .. } => {
-            unreachable!("credential recovery is forwarded to the running service")
+        Command::ExportRecoveryCredentials { .. }
+        | Command::RestoreRecoveryCredentials { .. }
+        | Command::PurgeRefusedCredentials { .. }
+        | Command::BackupNow { .. }
+        | Command::BackupStatus => {
+            unreachable!("credential recovery, the purge and the backup verbs are forwarded to the running service")
         }
         Command::VerifyBackup { .. } | Command::RestoreData { .. } => {
             unreachable!("immutable data-recovery commands return before writable Hub state")

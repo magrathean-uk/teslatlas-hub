@@ -9,7 +9,8 @@
 //! [`authority`] is that service's side: one window controller on the
 //! process-wide egress gate, the supervisor that runs the collector only
 //! inside an Open window, and the channel handler. [`issuer`] holds the
-//! issuer verbs of the issuer Mac.
+//! issuer verbs of the issuer Mac. [`purge`] lists and removes the refused
+//! credentials an upgraded store keeps (M02-T11).
 
 use std::path::{Path, PathBuf};
 
@@ -19,6 +20,7 @@ pub mod channel;
 pub mod cli;
 pub mod host;
 pub mod issuer;
+pub mod purge;
 pub mod trust;
 
 #[cfg(test)]

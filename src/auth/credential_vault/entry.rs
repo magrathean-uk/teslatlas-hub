@@ -4,6 +4,10 @@ pub struct CredentialVaultEntry { vault: Arc<CredentialVault> }
 pub struct CredentialVaultEntryError { error: CredentialStoreError }
 impl CredentialVaultEntry {
     pub(in crate::auth) fn vault(&self) -> &CredentialVault { &self.vault }
+    /// The operator's refused-credential purge (M02-T11), on this process's one vault.
+    pub(crate) fn purge_refused_credentials(&self) -> Result<RefusedCredentialReport, CredentialStoreError> {
+        self.vault.purge_refused_credentials()
+    }
     #[cfg(test)]
     pub(crate) fn for_test(vault: Arc<CredentialVault>) -> Self { Self { vault } }
 

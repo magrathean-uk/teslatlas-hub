@@ -1573,6 +1573,222 @@ impl CredentialConnection {
         self.events.clone()
     }
 }
+
+/// Refusal code: the refused-credential purge waits while a collector holds
+/// its lease, which only happens inside a collection window (M02-T11).
+pub(crate) const REFUSED_PURGE_COLLECTOR_RUNNING: &str = "collector_running";
+/// Refusal code: the refused-credential purge waits while a refresh of the
+/// admitted own-login pair is unresolved (M02-T11).
+pub(crate) const REFUSED_PURGE_REFRESH_ACTIVE: &str = "refresh_active";
+/// The tables an upgraded store keeps until its credential conversion drops
+/// them (the predecessor list of the conversion).
+const PRE_UPGRADE_CREDENTIAL_TABLES: [&str; 6] = [
+    "legacy_refresh_receipt_bindings",
+    "legacy_refresh_input_fences",
+    "fleet_refresh_receipt_bindings",
+    "fleet_refresh_input_fences",
+    "legacy_owner_tokens",
+    "fleet_tokens",
+];
+
+/// One refused credential row the purge removes (M02-T11, DEC-083): slot,
+/// origin and refusal code only, never a secret, envelope or generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RefusedCredentialRow {
+    pub(crate) slot: CredentialSlot,
+    /// `pre_upgrade` for a row an upgraded store kept in its old table, else
+    /// the stored origin, or `unknown` for a row written before origins.
+    pub(crate) origin: &'static str,
+    /// `pre_upgrade_table` or `credential_pairs`.
+    pub(crate) table: &'static str,
+    /// The code the credential load refuses the row with.
+    pub(crate) refusal: &'static str,
+}
+
+/// What the refused-credential purge removes from the database: the refused
+/// rows and, when the purge completes the conversion, the old tables.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct RefusedCredentialInventory {
+    pub(crate) rows: Vec<RefusedCredentialRow>,
+    pub(crate) old_tables: Vec<&'static str>,
+}
+
+/// The refused rows of one read snapshot. A pending slot with a recorded
+/// block holds pre-upgrade source material; a stored pair the load refuses
+/// (any Fleet pair, a source, supplied or unknown-origin Owner pair) is
+/// refused by its header. The admitted own-login Owner pair is never listed.
+/// The old tables are listed only when removing the rows lets the
+/// conversion drop them.
+fn refused_credential_inventory_on(
+    connection: &Connection,
+) -> Result<RefusedCredentialInventory, StoreError> {
+    let state = credential_migration_state_on(connection)?;
+    let mut rows = Vec::new();
+    for slot in [CredentialSlot::OwnerApi, CredentialSlot::FleetApi] {
+        let (format, blocked) = state.slot(slot);
+        if format == CredentialSlotFormatState::Pending && blocked.is_some() {
+            rows.push(RefusedCredentialRow {
+                slot,
+                origin: "pre_upgrade",
+                table: "pre_upgrade_table",
+                refusal: "source_credential_disabled",
+            });
+        }
+        let stored = connection
+            .query_row(
+                "SELECT origin, refresh_owner FROM credential_pairs WHERE account_id=1 AND slot=?1",
+                [slot.as_str()],
+                |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()
+            .map_err(StoreError::CredentialPairStore)?;
+        if let Some((origin, owner)) = stored {
+            let origin =
+                credential_origin(origin.as_deref()).ok_or(StoreError::CredentialPairInvalid)?;
+            let owner = credential_owner(&owner).ok_or(StoreError::CredentialPairInvalid)?;
+            if let Some(refusal) =
+                crate::auth::credential_vault::stored_origin_refusal(slot, origin, owner)
+            {
+                rows.push(RefusedCredentialRow {
+                    slot,
+                    origin: origin.map_or("unknown", CredentialOrigin::as_str),
+                    table: "credential_pairs",
+                    refusal,
+                });
+            }
+        }
+    }
+    let remains_pending = |slot: CredentialSlot| {
+        let (format, blocked) = state.slot(slot);
+        format == CredentialSlotFormatState::Pending && blocked.is_none()
+    };
+    let converts = !rows.is_empty()
+        && state.converted_at_ms.is_none()
+        && !state.fences_pending
+        && !remains_pending(CredentialSlot::OwnerApi)
+        && !remains_pending(CredentialSlot::FleetApi);
+    let mut old_tables = Vec::new();
+    if converts {
+        for table in PRE_UPGRADE_CREDENTIAL_TABLES {
+            let present: bool = connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+                    [table],
+                    |row| row.get(0),
+                )
+                .map_err(StoreError::CredentialPairStore)?;
+            if present {
+                old_tables.push(table);
+            }
+        }
+    }
+    Ok(RefusedCredentialInventory { rows, old_tables })
+}
+
+impl HubStore {
+    /// The refused credential rows and old tables, read without admission or
+    /// the credential connection and without opening any envelope (M02-T11).
+    pub(crate) fn refused_credential_inventory(
+        &self,
+    ) -> Result<RefusedCredentialInventory, StoreError> {
+        let mut connection = self.open_read_only_connection()?;
+        if credential_schema_version(&connection)? < CREDENTIAL_FORMAT_SCHEMA_VERSION {
+            return Ok(RefusedCredentialInventory::default());
+        }
+        let transaction = connection.transaction().map_err(StoreError::Begin)?;
+        refused_credential_inventory_on(&transaction)
+    }
+}
+
+impl CredentialConnection {
+    /// Removes every refused credential row in one transaction (M02-T11,
+    /// DEC-083): the refused stored pairs with their ciphertext, the
+    /// pre-upgrade rows of blocked slots (each slot becomes discarded), and,
+    /// once no slot is left pending, the old tables through the conversion.
+    /// The residue purge, WAL scrub and completion are re-armed, so the
+    /// caller's Phase B run after the commit vacuums the freed pages and
+    /// removes the pre-upgrade key files. The admitted own-login pair is never
+    /// touched. Refused while a collector holds its lease or a refresh of a
+    /// pair that stays is unresolved; an unresolved attempt of a removed slot
+    /// is cancelled with it, as sign-out does. Returns what was removed.
+    pub(crate) fn purge_refused_credentials_with_commit(
+        &mut self,
+        before_commit: &mut dyn FnMut(),
+    ) -> Result<RefusedCredentialInventory, StoreError> {
+        if self.migration_state.barrier_failed {
+            return Err(StoreError::CredentialPairInvalid);
+        }
+        let now = self.now_ms()?;
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let inventory = refused_credential_inventory_on(&tx)?;
+        let collector_running: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM supervised_collector_lease WHERE
+            singleton_id=1 AND lease_until_ms>?1)",
+                [now],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::CredentialPairStore)?;
+        if collector_running {
+            return Err(StoreError::WriteRefused(REFUSED_PURGE_COLLECTOR_RUNNING));
+        }
+        for slot in [CredentialSlot::OwnerApi, CredentialSlot::FleetApi] {
+            let removed = inventory.rows.iter().any(|row| row.slot == slot);
+            if !removed
+                && credential_unresolved(&tx, slot).map_err(StoreError::CredentialRefreshReceipt)?
+            {
+                return Err(StoreError::WriteRefused(REFUSED_PURGE_REFRESH_ACTIVE));
+            }
+        }
+        if inventory.rows.is_empty() {
+            return Ok(inventory);
+        }
+        for row in &inventory.rows {
+            if row.table == "credential_pairs" {
+                let deleted = tx
+                    .execute(
+                        "DELETE FROM credential_pairs WHERE account_id=1 AND slot=?1",
+                        [row.slot.as_str()],
+                    )
+                    .map_err(StoreError::CredentialPairStore)?;
+                if deleted != 1 {
+                    return Err(StoreError::CredentialPairInvalid);
+                }
+            } else {
+                credential_migration_discard_blocked_slot(&tx, row.slot, now)?;
+            }
+            credential_cancel_slot(&tx, row.slot, now)?;
+        }
+        let state = credential_migration_state_on(&tx)?;
+        if state.converted_at_ms.is_none()
+            && !state.fences_pending
+            && state.owner_api_state != CredentialSlotFormatState::Pending
+            && state.fleet_api_state != CredentialSlotFormatState::Pending
+        {
+            credential_migration_update_state(
+                &tx,
+                &state,
+                &CredentialMigrationTarget::from_state(&state),
+                state.counts(),
+                now,
+            )?;
+        }
+        tx.execute(
+            "UPDATE credential_format_state SET purge_required=1, purge_needed_bytes=NULL,
+             wal_scrubbed=0, completed_at_ms=NULL WHERE singleton_id=1",
+            [],
+        )
+        .map_err(StoreError::CredentialPairStore)?;
+        credential_migration_state_on(&tx)?;
+        before_commit();
+        tx.commit().map_err(StoreError::CredentialCommit)?;
+        self.migration_state.vacuum_succeeded = false;
+        Ok(inventory)
+    }
+}
 fn credential_schema_version(connection: &Connection) -> Result<i32, StoreError> {
     connection
         .pragma_query_value(None, "user_version", |row| row.get(0))

@@ -1138,12 +1138,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             lifecycleActions: makeServiceLifecycleActions(),
             mutationAllowed: { [weak self] in self?.actionsAvailable ?? false },
             onDismiss: { [weak self] in self?.dismissEmbeddedDetail() },
-            embedded: true
+            embedded: true,
+            maintenance: maintenanceBackend
         )
         details.setMutationsEnabled(actionsAvailable)
+        details.reloadMaintenance()
         detailsWindow = details
         let page = details.makeEmbeddedPage { [weak self] in self?.dismissEmbeddedDetail() }
         presentEmbeddedDetail(details, page: page, from: .settings)
+    }
+
+    /// Backups and Paired devices (M06-T04) run Hub commands, so a preview shows neither.
+    private var maintenanceBackend: HubMaintenanceBackend? {
+        controller.previewMode ? nil : HubControllerMaintenance(controller: controller)
     }
 
     private var canPresentEmbeddedDetail: Bool {
@@ -1705,11 +1712,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 controller: self.controller,
                 lifecycleActions: self.makeServiceLifecycleActions(),
                 mutationAllowed: { [weak self] in self?.actionsAvailable ?? false },
-                onDismiss: { [weak self] in self?.dismissServiceDetails() }
+                onDismiss: { [weak self] in self?.dismissServiceDetails() },
+                maintenance: self.maintenanceBackend
             )
         } as? ServiceDetailsWindowController
         detailsWindow = details
         details?.setMutationsEnabled(actionsAvailable)
+        details?.reloadMaintenance()
         return details
     }
 

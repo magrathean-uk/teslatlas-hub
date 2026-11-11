@@ -143,19 +143,14 @@ fn source_check_unreached_comparison_reports_null() {
 
 #[test]
 fn unknown_subcommand_names_source_check() {
-    for command in [
-        "unlisted-action".to_owned(),
-        ["tesl", "amate-check"].concat(),
-    ] {
-        let error = Cli::try_parse_from(["teslatlas-hub", &command])
-            .unwrap_err()
-            .to_string();
-        assert!(!error.contains("error: error:"), "{error}");
-        assert!(
-            error.contains("Import checks use source-check; see docs/guides/cli.md."),
-            "{error}"
-        );
-    }
+    let error = Cli::try_parse_from(["teslatlas-hub", "unlisted-action"])
+        .unwrap_err()
+        .to_string();
+    assert!(!error.contains("error: error:"), "{error}");
+    assert!(
+        error.contains("Import checks use source-check; see docs/guides/cli.md."),
+        "{error}"
+    );
 }
 
 #[test]

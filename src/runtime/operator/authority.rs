@@ -6,7 +6,8 @@
 //! egress gate, so opening a window is what lets this process send Tesla
 //! traffic and closing it is what stops every send. A supervisor thread drives
 //! the controller and the collector slot; the local control channel forwards
-//! the operator's window, setup and recovery requests to [`OperatorService`].
+//! the operator's window, setup, recovery and purge requests to
+//! [`OperatorService`].
 //! The API is served whatever the collector does: the collector runs only
 //! inside an Open window, and its exit never stops the service.
 
@@ -228,6 +229,30 @@ pub trait ServiceBackend: Send + Sync {
         source: &Path,
         recovery_key_file: &Path,
     ) -> Result<Value, OperatorRefusal>;
+    /// Lists the refused credentials; deletes and writes nothing (M02-T11).
+    fn refused_credentials(&self) -> Result<Value, OperatorRefusal>;
+    /// Removes the refused credentials (M02-T11). Called only while the
+    /// window is Closed, holding the import lock.
+    fn purge_refused_credentials(&self) -> Result<Value, OperatorRefusal>;
+    /// Runs one encrypted backup now (M06-T03): the service's backup
+    /// schedule runs it, so a scheduled run and this one never overlap.
+    fn backup_now(
+        &self,
+        _destination: Option<&Path>,
+        _password_file: Option<&Path>,
+    ) -> Result<Value, OperatorRefusal> {
+        Err(OperatorRefusal::new(
+            "backup_unavailable",
+            "this service has no backup schedule",
+        ))
+    }
+    /// The backup schedule's state (M06-T04), read-only.
+    fn backup_status(&self) -> Result<Value, OperatorRefusal> {
+        Err(OperatorRefusal::new(
+            "backup_unavailable",
+            "this service has no backup schedule",
+        ))
+    }
 }
 
 /// The service's trust authority: the issuer pin in the login keychain and
@@ -391,6 +416,34 @@ impl OperatorHandler for OperatorService {
                 self.recovery.complete();
                 Ok(report)
             }
+            // Without the confirmation only the read-only listing runs.
+            OperatorRequest::PurgeRefusedCredentials { confirm: false } => {
+                self.backend.refused_credentials()
+            }
+            // The purge waits for the window to close and holds the import
+            // lock throughout, so no window opens and no collector starts
+            // while rows are removed (M02-T11).
+            OperatorRequest::PurgeRefusedCredentials { confirm: true } => {
+                let _guard = self
+                    .controller
+                    .import_guard()
+                    .map_err(OperatorRefusal::window)?;
+                self.backend.purge_refused_credentials()
+            }
+            // A backup runs beside a collection window (the operation copies
+            // the catalogue under its own publication gate), so it takes no
+            // import lock; the schedule's one-run slot refuses an overlap.
+            OperatorRequest::BackupNow {
+                destination,
+                password_file,
+            } => {
+                for path in [&destination, &password_file].into_iter().flatten() {
+                    Self::recovery_paths(&[path])?;
+                }
+                self.backend
+                    .backup_now(destination.as_deref(), password_file.as_deref())
+            }
+            OperatorRequest::BackupStatus => self.backend.backup_status(),
         }
     }
 }

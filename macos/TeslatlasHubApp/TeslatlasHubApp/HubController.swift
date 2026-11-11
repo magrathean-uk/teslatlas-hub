@@ -5463,6 +5463,24 @@ final class HubController {
             ?? configPath.deletingLastPathComponent().appendingPathComponent("data", isDirectory: true)
     }
 
+    /// M06-T04: the configuration and data folder the Backups and Devices sections use.
+    var maintenanceConfigPath: URL { configPath }
+    var maintenanceDataDirectory: URL { dataDirectory }
+
+    /// M06-T04: one Hub command against this Hub's configuration (`backup-status`,
+    /// `backup-now`, `control paired-devices`, `control revoke-device`). The answer
+    /// comes back on the main queue. Preview mode runs nothing.
+    func runMaintenanceCommand(_ arguments: [String],
+                               completion: @escaping (Result<String, Error>) -> Void) {
+        guard !previewMode else {
+            DispatchQueue.main.async { completion(.failure(HubActionError.preview)) }
+            return
+        }
+        commandRunner.run(arguments: ["--config", configPath.path] + arguments) { result in
+            DispatchQueue.main.async { completion(result) }
+        }
+    }
+
     private var migrationHandoverMarker: URL {
         configPath.deletingLastPathComponent().appendingPathComponent(".teslamate-handover-pending")
     }

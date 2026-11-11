@@ -104,9 +104,12 @@ development mode with pairing disabled and cannot verify client authentication.
 ## Import source configuration
 
 Use `[import_source]` for import defaults and `[import_source.current]` for an
-optional read-only current-state source. Unknown earlier table names are refused
-with replacement guidance. Keep the key already recorded in an upgraded Hub;
-a first keyless import uses `default`.
+optional read-only current-state source. The earlier table name `[teslamate]`
+and its `current` sub-table are still read as `[import_source]`, as a hidden
+deprecated alias: Hub warns once on stderr, and refuses a file that sets both
+names. The alias is on the removal list for the next release. Other unknown
+table names are refused with replacement guidance. Keep the key already recorded
+in an upgraded Hub; a first keyless import uses `default`.
 
 ```toml
 [import_source]

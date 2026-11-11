@@ -68,6 +68,97 @@ pub struct HubConfig {
     pub http: HttpConfig,
     #[serde(default)]
     pub pairing: PairingConfig,
+    #[serde(default)]
+    pub backup: BackupConfig,
+}
+
+/// Scheduled encrypted backups (M06-T03). The recovery password is never
+/// part of the configuration: `password_file` names an owned mode-0600 file
+/// that the service reads at each run and never logs. A change applies when
+/// the service restarts.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct BackupConfig {
+    /// Runs scheduled backups. Off by default; `backup-now` needs no schedule.
+    #[serde(default)]
+    pub enabled: bool,
+    /// The user-selected backup folder; it must already exist and lie outside
+    /// the Hub data directory.
+    #[serde(default)]
+    pub destination: Option<PathBuf>,
+    /// Owned mode-0600 file holding the recovery password (at least 12
+    /// characters; one trailing newline is ignored).
+    #[serde(default)]
+    pub password_file: Option<PathBuf>,
+    /// Hours between scheduled runs.
+    #[serde(default = "default_backup_interval_hours")]
+    pub interval_hours: u32,
+    /// Generations kept after a successful run. A destination that does not
+    /// enforce ownership keeps every generation whatever this says.
+    #[serde(default = "default_backup_keep")]
+    pub keep: u32,
+}
+
+pub const MIN_BACKUP_INTERVAL_HOURS: u32 = 1;
+pub const MAX_BACKUP_INTERVAL_HOURS: u32 = 24 * 366;
+pub const MIN_BACKUP_KEEP: u32 = 1;
+pub const MAX_BACKUP_KEEP: u32 = 1000;
+
+const fn default_backup_interval_hours() -> u32 {
+    24
+}
+
+const fn default_backup_keep() -> u32 {
+    7
+}
+
+impl Default for BackupConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            destination: None,
+            password_file: None,
+            interval_hours: default_backup_interval_hours(),
+            keep: default_backup_keep(),
+        }
+    }
+}
+
+impl BackupConfig {
+    pub fn validate(&self, data_dir: &Path) -> Result<(), ConfigError> {
+        if !(MIN_BACKUP_INTERVAL_HOURS..=MAX_BACKUP_INTERVAL_HOURS).contains(&self.interval_hours)
+        {
+            return Err(ConfigError::Invalid(
+                "backup.interval_hours must be between 1 and 8784",
+            ));
+        }
+        if !(MIN_BACKUP_KEEP..=MAX_BACKUP_KEEP).contains(&self.keep) {
+            return Err(ConfigError::Invalid(
+                "backup.keep must be between 1 and 1000",
+            ));
+        }
+        if let Some(destination) = &self.destination {
+            if !destination.is_absolute() {
+                return Err(ConfigError::Invalid("backup.destination must be absolute"));
+            }
+            if destination.starts_with(data_dir) {
+                return Err(ConfigError::Invalid(
+                    "backup.destination must lie outside the Hub data directory",
+                ));
+            }
+        }
+        if let Some(password_file) = &self.password_file
+            && !password_file.is_absolute()
+        {
+            return Err(ConfigError::Invalid("backup.password_file must be absolute"));
+        }
+        if self.enabled && (self.destination.is_none() || self.password_file.is_none()) {
+            return Err(ConfigError::Invalid(
+                "backup.destination and backup.password_file are required while backup.enabled is true",
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// How long a paired device may keep renewing its bearer. Each claim writes
@@ -1930,6 +2021,53 @@ impl ImportSourceConfig {
 }
 
 /// Import source keys are opaque non-secret labels, never URLs or credentials.
+/// Rewrites the earlier table name to `[import_source]` and warns once per
+/// process on stderr, which never mixes with command output. Returns the
+/// rewritten text, or `None` when the earlier name is absent. Both names in
+/// one file are refused rather than merged. The digest of the loaded bytes is
+/// unaffected: it is taken from the file as written.
+fn renamed_deprecated_tables(source: &str) -> Result<Option<String>, ConfigError> {
+    let Ok(mut root) = source.parse::<toml::Table>() else {
+        return Ok(None);
+    };
+    if !rename_deprecated_tables(&mut root)? {
+        return Ok(None);
+    }
+    static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        eprintln!("{}", deprecated_table_warning());
+    }
+    toml::to_string(&root)
+        .map(Some)
+        .map_err(|_| ConfigError::Invalid("configuration could not be rewritten"))
+}
+
+/// The one-line warning for the earlier name of `[import_source]`.
+pub fn deprecated_table_warning() -> String {
+    format!(
+        "configuration table [{}] is deprecated; use [import_source]. The alias will be removed in a later version.",
+        crate::runtime::legacy_names::DEPRECATED_CONFIG_TABLE_IMPORT_SOURCE
+    )
+}
+
+/// Moves the earlier table (and its `current` sub-table) to `import_source`.
+/// Returns whether anything moved.
+fn rename_deprecated_tables(root: &mut toml::Table) -> Result<bool, ConfigError> {
+    let earlier = crate::runtime::legacy_names::DEPRECATED_CONFIG_TABLE_IMPORT_SOURCE;
+    if !root.contains_key(earlier) {
+        return Ok(false);
+    }
+    if root.contains_key("import_source") {
+        return Err(ConfigError::Invalid(
+            "the earlier import table name and [import_source] are both set; keep only [import_source]",
+        ));
+    }
+    if let Some(table) = root.remove(earlier) {
+        root.insert("import_source".to_owned(), table);
+    }
+    Ok(true)
+}
+
 pub fn validate_import_source_key(key: &str) -> Result<(), ConfigError> {
     if key.trim().is_empty()
         || key.len() > 256
@@ -2030,6 +2168,9 @@ impl HubConfig {
         {
             return Err(ConfigError::EdgeDeliveryRetired);
         }
+        // An earlier table name is read as `[import_source]` (M05-T05).
+        let renamed = renamed_deprecated_tables(source)?;
+        let source = renamed.as_deref().unwrap_or(source);
         let unknown_top_level = source.parse::<toml::Table>().ok().is_some_and(|root| {
             root.keys().any(|key| {
                 !matches!(
@@ -2043,6 +2184,7 @@ impl HubConfig {
                         | "terrain"
                         | "http"
                         | "pairing"
+                        | "backup"
                 )
             })
         });
@@ -2075,6 +2217,7 @@ impl HubConfig {
         }
         self.http.validate()?;
         self.pairing.validate()?;
+        self.backup.validate(&self.data_dir)?;
         if self.collector.request_timeout_seconds == 0 {
             return Err(ConfigError::InvalidOwnerApiTimeout);
         }
