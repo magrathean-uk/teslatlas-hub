@@ -6,7 +6,7 @@ This guide explains the four ways Teslatlas Hub can receive data from a Tesla, w
 
 | Path | What you need | Monthly cost | Data quality | Who sees your data |
 | --- | --- | --- | --- | --- |
-| 1. Legacy (default) | Your Tesla account token pair (from the source application or a token app) | Free | Best resolution (streaming every second while driving) | Tesla and your Hub only |
+| 1. Legacy (default) | Your Tesla account, signed in to Hub itself | Free | Best resolution (streaming every second while driving) | Tesla and your Hub only |
 | 2. Provider | An account with Teslemetry, Tessie or an Owner-API-compatible provider | Provider subscription (see below) | Fleet Telemetry, usually 1 to 60 s intervals; provider polling sometimes | Tesla, the provider and your Hub |
 | 3. Direct Fleet polling | Your own Tesla developer application, a card on file, a web page you control for the key file | Tesla usage charges, about $0.12 per awake hour at a 60 s interval; a $10 monthly allowance covers light use | Snapshots at the interval you choose | Tesla and your Hub only |
 | 4. Self-hosted Fleet Telemetry | Everything in 3 plus a public hostname with a certificate and inbound TCP 443 to your Hub | Tesla streaming charges, roughly $0.007 per awake hour | Fleet Telemetry at the intervals you configure | Tesla and your Hub only |
@@ -29,17 +29,16 @@ The Mac app shows this guide, with screenshots, as the Collection step of its se
 
 **How it works.** Hub uses the same unofficial Owner API and streaming connection that the source application has used for years, with a token pair from your Tesla account. The car streams position, speed and power every second while driving; Hub polls state at a slow cadence otherwise, and never wakes a sleeping car.
 
-**What you need.** A Tesla access and refresh token. Hub does not take your Tesla password.
+**What you need.** Your Tesla account, an open collection window and the Hub app. Hub does not take your Tesla password or a token pair.
 
 **Steps.**
 1. In Hub, choose *Legacy* (the default) on the Collection screen.
-2. Provide the token pair in one of two ways:
-   - *Migrating from the source application*: Hub reads the source application's stored token during the migration (optional; Hub can also sign in with its own token so the source application keeps working if you roll back).
-   - *Fresh*: generate a token pair with a token tool such as "Auth app for Tesla" and paste it into Hub. Hub stores it encrypted and refreshes it automatically.
-3. Hub shows the vehicles on the account. Pick the ones to record.
-4. Wait for the first observation. Status shows "recording" and the last data time.
+2. Wait for a collection window to be open (see [Collection windows](../operations/collection-windows.md)). Hub sends nothing to Tesla outside a window, including sign-in.
+3. Sign in with your Tesla account in the Hub app. Hub exchanges the authorisation code itself and stores the resulting token pair, encrypted, as its own login. Hub does not accept a pasted token pair, and it never reads a token held by the source application or by any other application.
+4. Hub shows the vehicles on the account. Pick the ones to record.
+5. Wait for the first observation. Status shows "recording" and the last data time.
 
-**What can go wrong.** Tesla may refuse the Owner API in future. Hub reports that as "Owner API refused" (not as a wrong password) and offers the other paths; your history stays. A refresh token is single-use: if another logger (the source application) refreshes with the same chain, one of them is logged out. Run only one.
+**What can go wrong.** Tesla may refuse the Owner API in future. Hub reports that as "Owner API refused" (not as a wrong password) and offers the other paths; your history stays. Hub's login is its own and is renewed only inside a window; if it lapses, sign in again in the next window. History between windows is filled by read-only import from the source application's database.
 
 ## Path 2: Provider (Teslemetry, Tessie or an Owner-API-compatible provider)
 

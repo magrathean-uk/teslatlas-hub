@@ -7,6 +7,12 @@ Core/Legacy-only and omit those companions; do not follow this guide as though
 installing the `.deb` alone provides a complete Fleet deployment. See the
 [package limits](../releases/release-notes-2026.36.1.md).
 
+Fleet API collection is parked in the current release: Hub refuses stored Fleet
+credentials and the `setup-fleet` token input is removed. Outside an open
+[collection window](../operations/collection-windows.md) Hub sends no Tesla
+traffic, including Fleet setup, telemetry configuration and token refresh. The
+steps below describe the intended design and are kept for reference.
+
 Fleet API login requires a Tesla Developer application. The application owns
 the HTTPS callback URI and client secret; Hub stores only the resulting access
 token, single-use refresh token, public client ID, and region.
@@ -153,8 +159,9 @@ test "$oauth_status" -eq 0
 
 Use `--vehicle-id TESLA_EID` instead of `--all-vehicles` to select one vehicle.
 Hub verifies the selected regional Fleet API by listing the account's vehicles,
-then encrypts the credentials in its private store. Only the resident collector
-owns refresh-token rotation. Setup and service preflight reject tokens missing
+then encrypts the credentials in its private store. Hub uses only the
+credentials it obtained itself, and only the resident service, inside an open
+window, rotates the refresh token. Setup and service preflight reject tokens missing
 `vehicle_device_data` or `vehicle_location`; `status` exposes only safe scope
 booleans and a redacted scope status.
 
@@ -349,7 +356,7 @@ Hub runtime path. Its `operationalState` requires separate receiver service
 health and a recent durable vehicle receipt before an operator calls the push
 path active. Confirm that the latest observation advances after the vehicle
 emits a changed field. This check does not wake the vehicle or send a vehicle
-command. Never run two Hub processes with the same Fleet refresh token.
+command. Hub allows one refresh at a time; a second Hub process on the same host is refused.
 
 ## Vehicle commands
 

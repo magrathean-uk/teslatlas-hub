@@ -2,7 +2,8 @@
 
 ## Protected assets
 
-- provider access and refresh tokens;
+- Hub's own Tesla access and refresh tokens;
+- the window issuer key and its ledger;
 - Fleet virtual-key and command-proxy material;
 - device pairing bearers and cursor-signing keys;
 - exact vehicle identity, location, and travel history; and
@@ -16,7 +17,8 @@
 | Remote sync | TLS plus paired-device bearer authentication. |
 | Pairing | Short-lived, single-use invitation; claim is the only unauthenticated mutation. |
 | Fleet Telemetry ingress | Private bearer on supervised loopback route. |
-| Provider credentials | Resident collector is the sole refresh owner. |
+| Tesla credentials | Hub uses only the login it created itself through its own authorisation-code exchange. It never reads, stores, loads or refreshes a token held by another application. Only the resident service, inside an open collection window, sends Tesla traffic and refreshes that login; one refresh runs at a time. |
+| Collection window | A grant signed by the Mac's window issuer, naming this host, approved by the owner and ending at a hard expiry. Outside a window Hub sends nothing to Tesla and keeps history current by read-only import. See [Collection windows](../operations/collection-windows.md). |
 | history import | Read-only PostgreSQL transaction and exact schema admission. |
 | Vehicle command | Explicit action, confirmation, selected vehicle, bounded proxy. |
 | Source release | Immutable annotated tag, exact version, clean tree, provenance classification, and licence material. |
