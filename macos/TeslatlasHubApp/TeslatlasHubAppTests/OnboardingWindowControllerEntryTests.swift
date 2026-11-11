@@ -105,7 +105,10 @@ extension OnboardingWindowControllerTests {
     /// the network. The route has no token field to fill.
     func submitLegacySignIn(_ onboarding: OnboardingWindowController, _ harness: WindowOwnerRig) throws {
         harness.runner.results["window"] = .success(OwnerRunner.windowClosed)
-        XCTAssertThrowsError(try field(placeholder: "Access token", in: onboarding), "no token field exists")
+        let placeholders = descendantViews(of: onboarding.window?.contentView)
+            .compactMap { ($0 as? NSTextField)?.placeholderString }
+        XCTAssertFalse(placeholders.contains("Access token") || placeholders.contains("Refresh token"),
+                       "the sign-in route has no token field")
         press(try primaryButton("Connect Tesla", in: onboarding))
     }
 
@@ -429,7 +432,7 @@ extension OnboardingWindowControllerTests {
 
     func testEntryAccountUseLegacyUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "AccountUseLegacy", family: .account, options: connectedOptions(),
-                              effect: { $0.runner.count("setup") >= 1 }) { test, h, _ in
+                              effect: { $0.runner.count("window") >= 1 }) { test, h, _ in
             try test.chooseMenuItem("Use Legacy token", h)
             let onboarding = try XCTUnwrap(test.currentOnboarding(h))
             XCTAssertEqual(onboarding.currentRoute, .legacy)
