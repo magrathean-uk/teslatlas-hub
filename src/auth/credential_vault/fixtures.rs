@@ -67,6 +67,13 @@ pub(crate) fn seed_legacy_supplied_pair(data: &Path, access: &str, refresh: &str
     seed_entry(data, entry)
 }
 #[cfg(test)]
+/// Seeds a Fleet pair for the refresh fence tests outside `crate::auth`.
+pub(crate) fn seed_fleet_supplied_pair(data: &Path, access: &str, refresh: &str) -> Uuid {
+    let entry = CredentialEntry::fleet_supplied(Zeroizing::new(access.to_owned()), Zeroizing::new(refresh.to_owned()),
+        "client-fixture".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet fixture entry");
+    seed_entry(data, entry)
+}
+#[cfg(test)]
 pub(crate) fn seed_entry(data: &Path, entry: CredentialEntry) -> Uuid {
     let store = HubStore::initialize(data).expect("fixture store");
     let mut connection = store.take_credential_connection().expect("fixture connection");
