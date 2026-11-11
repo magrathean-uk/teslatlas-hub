@@ -1,30 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-/// Opaque predecessor ciphertext. No plaintext or generation derivation lives here.
-pub(crate) struct PreUpgradeCredentialRow {
-    pub(crate) encrypted_access: Vec<u8>,
-    pub(crate) encrypted_refresh: Vec<u8>,
-    pub(crate) expires_at: i64,
-    pub(crate) next_refresh_at: i64,
-    pub(crate) generation: Option<Uuid>,
-    pub(crate) client_id: Option<String>,
-    pub(crate) region: Option<String>,
-}
-
-impl std::fmt::Debug for PreUpgradeCredentialRow {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PreUpgradeCredentialRow")
-            .field("encrypted_access", &"<redacted>")
-            .field("encrypted_refresh", &"<redacted>")
-            .field("generation", &"<redacted>")
-            .field("expires_at", &self.expires_at)
-            .field("next_refresh_at", &self.next_refresh_at)
-            .field("client_id", &self.client_id)
-            .field("region", &self.region)
-            .finish()
-    }
-}
-
 pub(crate) struct PreUpgradeRefreshBinding {
     pub(crate) receipt_id: OutboundRequestReceiptId,
     pub(crate) attempt_id: Uuid,
@@ -70,13 +45,6 @@ std::thread_local! {
     static CREDENTIAL_PRE_UPGRADE_DECODE_VISITS: std::cell::Cell<usize> = const {
         std::cell::Cell::new(0)
     };
-    static CREDENTIAL_PRE_UPGRADE_BLOB_BYTES_READ: std::cell::Cell<usize> = const {
-        std::cell::Cell::new(0)
-    };
-    static CREDENTIAL_PRE_UPGRADE_READ_PHASES:
-        std::cell::RefCell<Vec<(&'static str, bool)>> = const {
-            std::cell::RefCell::new(Vec::new())
-        };
 }
 
 #[cfg(test)]
@@ -93,42 +61,6 @@ fn credential_pre_upgrade_decode_visits() -> usize {
 fn credential_pre_upgrade_record_decode_visit() {
     CREDENTIAL_PRE_UPGRADE_DECODE_VISITS.with(|visits| {
         visits.set(visits.get().saturating_add(1));
-    });
-}
-
-// Observe actual Vec decoding even when the reader subsequently returns Err.
-#[cfg(test)]
-fn credential_pre_upgrade_reset_blob_bytes_read() {
-    CREDENTIAL_PRE_UPGRADE_BLOB_BYTES_READ.with(|bytes| bytes.set(0));
-}
-
-#[cfg(test)]
-fn credential_pre_upgrade_blob_bytes_read() -> usize {
-    CREDENTIAL_PRE_UPGRADE_BLOB_BYTES_READ.with(std::cell::Cell::get)
-}
-
-#[cfg(test)]
-fn credential_pre_upgrade_record_blob_bytes_read(count: usize) {
-    CREDENTIAL_PRE_UPGRADE_BLOB_BYTES_READ.with(|bytes| {
-        bytes.set(bytes.get().saturating_add(count));
-    });
-}
-
-// Test-only transaction observations contain phase names and SQLite flags only.
-#[cfg(test)]
-fn credential_pre_upgrade_reset_read_phases() {
-    CREDENTIAL_PRE_UPGRADE_READ_PHASES.with(|phases| phases.borrow_mut().clear());
-}
-
-#[cfg(test)]
-fn credential_pre_upgrade_read_phases() -> Vec<(&'static str, bool)> {
-    CREDENTIAL_PRE_UPGRADE_READ_PHASES.with(|phases| phases.borrow().clone())
-}
-
-#[cfg(test)]
-fn credential_pre_upgrade_record_read_phase(phase: &'static str, is_autocommit: bool) {
-    CREDENTIAL_PRE_UPGRADE_READ_PHASES.with(|phases| {
-        phases.borrow_mut().push((phase, is_autocommit));
     });
 }
 
@@ -394,8 +326,6 @@ fn credential_pre_upgrade_history_bounds(connection: &Connection) -> Result<(), 
 }
 
 struct CredentialPreUpgradeRowMetadata {
-    access_length: i64,
-    refresh_length: i64,
     expires_at: i64,
     next_refresh_at: i64,
     generation: Option<Uuid>,
@@ -408,8 +338,6 @@ fn credential_pre_upgrade_row_metadata_on(
     connection: &Connection,
     slot: CredentialSlot,
 ) -> Result<Option<CredentialPreUpgradeRowMetadata>, StoreError> {
-    #[cfg(test)]
-    credential_pre_upgrade_record_read_phase("metadata", connection.is_autocommit());
     let (table, _, _) = credential_pre_upgrade_tables(slot);
     let count = credential_pre_upgrade_count(connection, table, false)?;
     if count == 0 {
@@ -487,59 +415,11 @@ fn credential_pre_upgrade_row_metadata_on(
         (None, None)
     };
     Ok(Some(CredentialPreUpgradeRowMetadata {
-        access_length,
-        refresh_length,
         expires_at,
         next_refresh_at,
         generation,
         client_id,
         region,
-    }))
-}
-
-fn credential_pre_upgrade_row_on(
-    connection: &Connection,
-    slot: CredentialSlot,
-) -> Result<Option<PreUpgradeCredentialRow>, StoreError> {
-    let Some(metadata) = credential_pre_upgrade_row_metadata_on(connection, slot)? else {
-        return Ok(None);
-    };
-    let (table, _, _) = credential_pre_upgrade_tables(slot);
-    // The first statement above checked both lengths without selecting either
-    // blob. Both statements run within the caller's one logical transaction.
-    #[cfg(test)]
-    credential_pre_upgrade_record_read_phase("blob_fetch", connection.is_autocommit());
-    let mut statement = connection
-        .prepare(&format!(
-            "SELECT access, refresh FROM main.{table} WHERE singleton_id=1"
-        ))
-        .map_err(StoreError::CredentialPairStore)?;
-    let mut rows = statement
-        .query([])
-        .map_err(StoreError::CredentialPairStore)?;
-    let row = rows
-        .next()
-        .map_err(StoreError::CredentialPairStore)?
-        .ok_or(StoreError::CredentialPairInvalid)?;
-    let encrypted_access: Vec<u8> = credential_pre_upgrade_get(row, 0)?;
-    #[cfg(test)]
-    credential_pre_upgrade_record_blob_bytes_read(encrypted_access.len());
-    let encrypted_refresh: Vec<u8> = credential_pre_upgrade_get(row, 1)?;
-    #[cfg(test)]
-    credential_pre_upgrade_record_blob_bytes_read(encrypted_refresh.len());
-    if encrypted_access.len() as i64 != metadata.access_length
-        || encrypted_refresh.len() as i64 != metadata.refresh_length
-    {
-        return Err(StoreError::CredentialPairInvalid);
-    }
-    Ok(Some(PreUpgradeCredentialRow {
-        encrypted_access,
-        encrypted_refresh,
-        expires_at: metadata.expires_at,
-        next_refresh_at: metadata.next_refresh_at,
-        generation: metadata.generation,
-        client_id: metadata.client_id,
-        region: metadata.region,
     }))
 }
 
@@ -884,30 +764,6 @@ fn credential_pre_upgrade_reader_version(connection: &Connection) -> Result<(), 
 }
 
 impl CredentialConnection {
-    pub(crate) fn read_pre_upgrade_credential_row(
-        &mut self,
-        slot: crate::auth::credential_envelope::CredentialSlot,
-    ) -> Result<Option<PreUpgradeCredentialRow>, StoreError> {
-        let transaction =
-            Transaction::new_unchecked(&self.connection, TransactionBehavior::Deferred)
-                .map_err(StoreError::CredentialPairStore)?;
-        credential_pre_upgrade_reader_version(&transaction)?;
-        let state = credential_format_state_on(&transaction)?;
-        let present = credential_pre_upgrade_validate(&transaction, &state)?;
-        let row = if present {
-            credential_pre_upgrade_row_on(&transaction, slot)?
-        } else {
-            None
-        };
-        #[cfg(test)]
-        if let Some(value) = row.as_ref() {
-            self.blob_bytes_read = self
-                .blob_bytes_read
-                .saturating_add(value.encrypted_access.len() + value.encrypted_refresh.len());
-        }
-        Ok(row)
-    }
-
     pub(crate) fn read_pre_upgrade_refresh_bindings(
         &mut self,
         slot: crate::auth::credential_envelope::CredentialSlot,

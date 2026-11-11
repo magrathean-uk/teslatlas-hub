@@ -4,7 +4,6 @@ use super::*;
 pub(super) fn run_local_readers_are_bounded() {
     case_variant_predecessors();
     post_drop_and_below_rung();
-    credential_values_and_length_first();
     receipt_join_and_optional_output();
     schema_and_value_refusals();
     floor_presence_64_masks();
@@ -75,13 +74,6 @@ fn post_drop_and_below_rung() {
     for slot in [CredentialSlot::OwnerApi, CredentialSlot::FleetApi] {
         assert!(
             f.conn
-                .read_pre_upgrade_credential_row(slot)
-                .unwrap()
-                .is_none(),
-            "READER-POSTDROP-01 recorded table-drop returns an absent token row"
-        );
-        assert!(
-            f.conn
                 .read_pre_upgrade_refresh_bindings(slot)
                 .unwrap()
                 .is_empty(),
@@ -105,13 +97,6 @@ fn post_drop_and_below_rung() {
     for slot in [CredentialSlot::OwnerApi, CredentialSlot::FleetApi] {
         assert!(
             matches!(
-                f.conn.read_pre_upgrade_credential_row(slot),
-                Err(StoreError::UnsupportedSchema(78))
-            ),
-            "READER-VERSION-01 below-rung token reader refuses before credential query"
-        );
-        assert!(
-            matches!(
                 f.conn.read_pre_upgrade_refresh_bindings(slot),
                 Err(StoreError::UnsupportedSchema(78))
             ),
@@ -130,178 +115,6 @@ fn post_drop_and_below_rung() {
         before,
         "READER-VERSION-04 version refusal has no source write"
     );
-}
-
-fn credential_values_and_length_first() {
-    let mut f = migration_fixture(true, true, false);
-    let before_bytes = f.conn.blob_bytes_read;
-    credential_pre_upgrade_reset_blob_bytes_read();
-    credential_pre_upgrade_reset_read_phases();
-    let owner = f
-        .conn
-        .read_pre_upgrade_credential_row(CredentialSlot::OwnerApi)
-        .unwrap()
-        .unwrap();
-    let read_phases = credential_pre_upgrade_read_phases();
-    assert!(
-        read_phases.iter().any(|(phase, _)| *phase == "metadata")
-            && read_phases.iter().any(|(phase, _)| *phase == "blob_fetch"),
-        "READER-TX-01 positive row read observes metadata validation and actual ciphertext fetch"
-    );
-    assert!(
-        read_phases.iter().all(|(_, autocommit)| !*autocommit),
-        "READER-TX-02 both length checks and ciphertext fetch share the explicit read transaction"
-    );
-    assert_eq!(
-        owner.encrypted_access,
-        [0xa1, 0xa2],
-        "READER-ROW-01 Owner access ciphertext preserved"
-    );
-    assert_eq!(
-        owner.encrypted_refresh,
-        [0xb1, 0xb2, 0xb3],
-        "READER-ROW-02 Owner refresh ciphertext preserved"
-    );
-    assert_eq!(
-        (owner.expires_at, owner.next_refresh_at),
-        (0, 0),
-        "READER-ROW-03 Owner zero schedule preserved"
-    );
-    assert_eq!(
-        owner.generation,
-        Some(generation(101)),
-        "READER-ROW-04 optional stored generation preserved without derivation"
-    );
-    assert!(
-        owner.client_id.is_none() && owner.region.is_none(),
-        "READER-ROW-05 Owner has no fabricated Fleet metadata"
-    );
-    assert_eq!(
-        f.conn.blob_bytes_read - before_bytes,
-        5,
-        "READER-LENGTH-01 successful logical read fetches exactly both ciphertexts"
-    );
-    assert_eq!(
-        credential_pre_upgrade_blob_bytes_read(),
-        5,
-        "READER-ACTUAL-BLOB-01 actual Vec decode metric observes both successful Owner BLOB fetches"
-    );
-    let debug = format!("{owner:?}");
-    assert!(
-        !debug.contains(&generation(101).to_string())
-            && !debug.contains("[161, 162]")
-            && !debug.contains("[177, 178, 179]"),
-        "READER-CUSTODY-01 Debug redacts generations and ciphertext bytes"
-    );
-    credential_pre_upgrade_reset_blob_bytes_read();
-    let fleet = f
-        .conn
-        .read_pre_upgrade_credential_row(CredentialSlot::FleetApi)
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        fleet.encrypted_access,
-        [0xc1, 0xc2, 0xc3],
-        "READER-ROW-06 Fleet access ciphertext preserved"
-    );
-    assert_eq!(
-        fleet.encrypted_refresh,
-        [0xd1, 0xd2],
-        "READER-ROW-07 Fleet refresh ciphertext preserved"
-    );
-    assert_eq!(
-        (fleet.expires_at, fleet.next_refresh_at),
-        (900, 600),
-        "READER-ROW-08 Fleet schedule preserved"
-    );
-    assert_eq!(
-        fleet.generation,
-        Some(generation(202)),
-        "READER-ROW-09 Fleet generation preserved"
-    );
-    assert_eq!(
-        (fleet.client_id.as_deref(), fleet.region.as_deref()),
-        (Some("synthetic-client"), Some("eu")),
-        "READER-ROW-10 Fleet client and region preserved exactly"
-    );
-    assert_eq!(
-        credential_pre_upgrade_blob_bytes_read(),
-        5,
-        "READER-ACTUAL-BLOB-02 actual Vec decode metric observes both successful Fleet BLOB fetches"
-    );
-
-    f.conn
-        .test_connection()
-        .execute(
-            "UPDATE legacy_owner_tokens SET credential_generation=NULL",
-            [],
-        )
-        .unwrap();
-    assert!(
-        f.conn
-            .read_pre_upgrade_credential_row(CredentialSlot::OwnerApi)
-            .unwrap()
-            .unwrap()
-            .generation
-            .is_none(),
-        "READER-ROW-11 absent generation is preserved, never recomputed by S"
-    );
-    for column in ["access", "refresh"] {
-        f.conn
-            .test_connection()
-            .execute(
-                &format!("UPDATE legacy_owner_tokens SET {column}=zeroblob(16424)"),
-                [],
-            )
-            .unwrap();
-        let row = f
-            .conn
-            .read_pre_upgrade_credential_row(CredentialSlot::OwnerApi)
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            if column == "access" {
-                row.encrypted_access.len()
-            } else {
-                row.encrypted_refresh.len()
-            },
-            16_424,
-            "READER-LENGTH-02 inclusive predecessor ciphertext cap is accepted"
-        );
-        f.conn
-            .test_connection()
-            .execute(
-                &format!("UPDATE legacy_owner_tokens SET {column}=zeroblob(16425)"),
-                [],
-            )
-            .unwrap();
-        let before = f.conn.blob_bytes_read;
-        credential_pre_upgrade_reset_blob_bytes_read();
-        assert!(
-            matches!(
-                f.conn
-                    .read_pre_upgrade_credential_row(CredentialSlot::OwnerApi),
-                Err(StoreError::CredentialPairInvalid)
-            ),
-            "READER-LENGTH-03 either oversized ciphertext refuses the whole row"
-        );
-        assert_eq!(
-            f.conn.blob_bytes_read, before,
-            "READER-LENGTH-04 both stored lengths are checked before either blob fetch"
-        );
-        assert_eq!(
-            credential_pre_upgrade_blob_bytes_read(),
-            0,
-            "READER-ACTUAL-BLOB-03 rejected length allocates neither ciphertext even when a later fetch would return Err"
-        );
-        f.conn
-            .test_connection()
-            .execute(
-                &format!("UPDATE legacy_owner_tokens SET {column}=X'0102'"),
-                [],
-            )
-            .unwrap();
-    }
 }
 
 fn seed_receipt(db: &Connection, id: i64, slot: CredentialSlot, started: i64, terminal: bool) {
@@ -646,9 +459,9 @@ fn schema_and_value_refusals() {
     for slot in [CredentialSlot::OwnerApi, CredentialSlot::FleetApi] {
         assert!(
             f.conn
-                .read_pre_upgrade_credential_row(slot)
+                .read_pre_upgrade_refresh_bindings(slot)
                 .unwrap()
-                .is_none(),
+                .is_empty(),
             "READER-SHAPE-02 equivalent DDL and implicit INTEGER PRIMARY KEY nonnull are admitted"
         );
     }
@@ -852,12 +665,6 @@ fn at_rung_presence_64_masks_for_each_drop_flag() {
                 let admitted = (dropped && mask == 0) || (!dropped && mask == 63);
                 for slot in [CredentialSlot::OwnerApi, CredentialSlot::FleetApi] {
                     if admitted {
-                        let row = f.conn.read_pre_upgrade_credential_row(slot).unwrap();
-                        assert_eq!(
-                            row.is_some(),
-                            !dropped && occupied,
-                            "PRESENCE-AT-01 whole-matrix token presence agrees: drop={dropped} mask={mask} occupied={occupied}"
-                        );
                         assert_eq!(
                             f.conn
                                 .read_pre_upgrade_refresh_bindings(slot)
@@ -873,13 +680,6 @@ fn at_rung_presence_64_masks_for_each_drop_flag() {
                             "PRESENCE-AT-03 post-drop empty never queries missing tables"
                         );
                     } else {
-                        assert!(
-                            matches!(
-                                f.conn.read_pre_upgrade_credential_row(slot),
-                                Err(StoreError::CredentialPairInvalid)
-                            ),
-                            "PRESENCE-AT-04 inconsistent full matrix rejects token reader: drop={dropped} mask={mask} occupied={occupied}"
-                        );
                         assert!(
                             matches!(
                                 f.conn.read_pre_upgrade_refresh_bindings(slot),
@@ -921,9 +721,9 @@ fn sanitised_and_mapped_history() {
     for slot in [CredentialSlot::OwnerApi, CredentialSlot::FleetApi] {
         assert!(
             f.conn
-                .read_pre_upgrade_credential_row(slot)
+                .read_pre_upgrade_refresh_bindings(slot)
                 .unwrap()
-                .is_none(),
+                .is_empty(),
             "READER-SANITISED-01 R53 discarded/no-row state is admitted before final drop"
         );
     }
@@ -962,10 +762,6 @@ fn fence_tables_100000_each() {
             .unwrap();
     }
     for slot in [CredentialSlot::OwnerApi, CredentialSlot::FleetApi] {
-        assert!(
-            matches!(f.conn.read_pre_upgrade_credential_row(slot), Ok(None)),
-            "READER-CAPACITY-09 every token reader admits the valid independent 200000-fence source"
-        );
         assert!(
             matches!(f.conn.read_pre_upgrade_refresh_bindings(slot), Ok(ref rows) if rows.is_empty()),
             "READER-CAPACITY-10 every binding reader admits source union above the destination cap"

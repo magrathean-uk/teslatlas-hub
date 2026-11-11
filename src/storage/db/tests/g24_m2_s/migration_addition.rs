@@ -375,19 +375,6 @@ fn assert_readers_invalid(f: &mut Fixture, context: &str) {
         let before_changes = f.conn.test_connection().total_changes();
         assert!(
             matches!(
-                f.conn.read_pre_upgrade_credential_row(slot),
-                Err(StoreError::CredentialPairInvalid)
-            ),
-            "{context}: credential row refuses inconsistent whole source"
-        );
-        assert_eq!(
-            f.conn.test_connection().total_changes(),
-            before_changes,
-            "{context}: credential row refusal issues no same-value or rolled-back SQL mutation"
-        );
-        let before_changes = f.conn.test_connection().total_changes();
-        assert!(
-            matches!(
                 f.conn.read_pre_upgrade_refresh_bindings(slot),
                 Err(StoreError::CredentialPairInvalid)
             ),
