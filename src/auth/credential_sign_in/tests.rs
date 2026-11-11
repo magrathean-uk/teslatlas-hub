@@ -66,7 +66,7 @@ fn source_credential_disabled_load_refuses_every_foreign_origin() {
         drop(entry);
         crate::auth::credential_vault::fixtures::seed_entry(root.path(), foreign);
         let store = restart_fixture_context(store, root.path()).expect("new process");
-        store.open().expect("fault SQL").execute("UPDATE credential_pairs SET access_envelope=zeroblob(4) WHERE slot='owner_api'", []).expect("damage the envelope");
+        store.open().expect("fault SQL").execute("UPDATE credential_pairs SET access_envelope=zeroblob(length(access_envelope)) WHERE slot='owner_api'", []).expect("damage the envelope");
         let entry = CredentialVaultEntry::for_test(open_fixture_vault(store.clone(), root.path()));
         assert_eq!(entry.vault().load(OWNER).unwrap_err().code(), "source_credential_disabled");
         let error = CredentialCommandError::from(entry.vault().load(OWNER).unwrap_err());

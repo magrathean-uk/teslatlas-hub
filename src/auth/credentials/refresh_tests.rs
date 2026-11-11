@@ -555,15 +555,15 @@ pub(in crate::auth) async fn assert_external_refresh_owner_contract() {
     let mut entry = crate::auth::credential_vault::types::CredentialEntry::source_token(Zeroizing::new(jg()), Zeroizing::new("refresh-0".into())).expect("source fixture");
     entry.set_schedule(T0 + 28_800, T0);
     crate::auth::credential_vault::fixtures::seed_entry(rig.directory.path(), entry);
-    let mut observer = rig.manager();
-    assert!(!observer.allows_refresh(), "Serve source owner selects observer");
-    for hours in 0..=24 {
+    // Since M02-T02 the runtime refuses to build a manager over a source pair.
+    for hours in [0, 24] {
         rig.at(T0 + hours * 3_600);
-        observer.refresh_if_due(&rig.client(), SystemTime::now()).await.expect("observer due check");
+        let refused = LegacyAuthManager::from_hub_source_db_store_for_test(rig.store.clone(), rig.directory.path(),
+            &rig.endpoint(None), Some(rig.token_url()), false, rig.env.clone()).err().expect("source pair refused");
+        assert!(matches!(refused, crate::credentials::LegacyAuthManagerError::Credential(crate::credentials::CredentialError::SourceCredentialDisabled)), "{refused:?}");
     }
-    assert!(rig.backend.token_posts().is_empty(), "24 hours without token transport");
+    assert!(rig.backend.token_posts().is_empty(), "no token transport");
     assert_eq!(rig.vault().load(CredentialSlot::OwnerApi).unwrap_err().code(), "source_credential_disabled", "a source pair is never loaded");
-    drop(observer);
     assert!(rig.backend.token_posts().is_empty(), "no handover and no refresh of a source pair");
 }
 

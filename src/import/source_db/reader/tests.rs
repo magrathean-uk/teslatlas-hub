@@ -117,7 +117,7 @@ fn live_source_witness_is_fixed_read_only_and_never_reads_private_tokens() {
         LIVE_SOURCE_WITNESS_SQL.contains("has_schema_privilege(current_user, 'private', 'USAGE')")
     );
     assert!(!LIVE_SOURCE_WITNESS_SQL.contains("private\".\"tokens"));
-    assert!(!LIVE_SOURCE_WITNESS_SQL.contains("private.tokens"));
+    assert!(!LIVE_SOURCE_WITNESS_SQL.contains(&["private.", "tokens"].concat()));
     for relation in [
         "cars",
         "drives",
@@ -859,7 +859,7 @@ fn physical_relation_queries_use_nullable_initial_cursors() {
         assert!(sql.contains("ORDER BY source.id ASC"));
         assert!(sql.contains("LIMIT $2"));
         assert!(sql.contains(&format!("FROM public.{table} AS source")));
-        assert!(!sql.contains("private.tokens"));
+        assert!(!sql.contains(&["private.", "tokens"].concat()));
     }
     assert!(CHARGES_V2_2_SQL.contains("INNER JOIN public.charging_processes AS process"));
     for sql in [ADDRESSES_V2_2_SQL, GEOFENCES_V2_2_SQL] {

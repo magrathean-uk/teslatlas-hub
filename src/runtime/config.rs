@@ -2202,9 +2202,11 @@ pub enum ConfigError {
     UnsafeFile,
     #[error("configuration file identity changed while reading")]
     FileIdentityChanged,
-    #[error("invalid configuration: {0}")]
+    // The parser's message only: its source snippet would echo a value, such
+    // as a token pasted under a refused key (M02-T02).
+    #[error("invalid configuration: {}", .0.message())]
     Parse(toml::de::Error),
-    #[error("{0}\nImport settings are in [import_source]; see docs/guides/configuration.md.")]
+    #[error("{}\nImport settings are in [import_source]; see docs/guides/configuration.md.", .0.message())]
     UnknownTopLevelField(toml::de::Error),
     #[error("invalid configuration: {0}")]
     Invalid(&'static str),
