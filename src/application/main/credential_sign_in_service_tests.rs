@@ -198,11 +198,19 @@ fn stub_observation(data: &Path, bounds: ReadinessBounds) -> std::io::Result<Opt
         Ok(socket) => socket,
         Err(_) => return Ok(None),
     };
-    socket.set_read_timeout(Some(bounds.request))?;
-    socket.set_write_timeout(Some(bounds.request))?;
-    socket.write_all(b"GET /readyz HTTP/1.0\r\n\r\n")?;
-    let mut response = String::new();
-    socket.take(4096).read_to_string(&mut response)?;
+    // As in the production probe, a transport failure during the exchange (the stub
+    // closing a request it read too late, under load) is "not ready yet", not an error.
+    let exchange = (move || -> std::io::Result<String> {
+        socket.set_read_timeout(Some(bounds.request))?;
+        socket.set_write_timeout(Some(bounds.request))?;
+        socket.write_all(b"GET /readyz HTTP/1.0\r\n\r\n")?;
+        let mut response = String::new();
+        socket.take(4096).read_to_string(&mut response)?;
+        Ok(response)
+    })();
+    let Ok(response) = exchange else {
+        return Ok(None);
+    };
     Ok(
         (response.contains(&format!("x-teslatlas-native-process-id: {pid}\r\n"))
             && response.ends_with("{\"status\":\"ready\"}"))

@@ -195,6 +195,17 @@ pub(crate) fn run_helper_until(
         if let Some(result) = test_helper_result(program, arguments, deadline) {
             return result;
         }
+        run_spawned_helper_until(program, arguments, deadline)
+    }
+}
+
+#[cfg(not(feature = "credential-relocation-fixture"))]
+fn run_spawned_helper_until(
+    program: &Path,
+    arguments: &[&std::ffi::OsStr],
+    deadline: Instant,
+) -> io::Result<std::process::Output> {
+    {
         use std::{
             fs::File,
             io::{Read, Seek, SeekFrom},
@@ -261,12 +272,22 @@ pub(crate) fn run_helper_until(
 #[cfg(debug_assertions)]
 #[doc(hidden)]
 pub fn sleeping_helper_for_test(deadline: Instant) -> io::Result<()> {
-    run_helper_until(
-        Path::new("/bin/sleep"),
-        &[std::ffi::OsStr::new("30")],
-        deadline,
-    )
-    .map(|_| ())
+    // CT100(q) runs this from inside a test hook, which holds the thread's hook slot,
+    // so the hung helper is spawned directly rather than routed through the hook again.
+    #[cfg(feature = "credential-relocation-fixture")]
+    {
+        let _ = deadline;
+        Err(io::Error::new(io::ErrorKind::Unsupported, "fixture_child_refused"))
+    }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
+        run_spawned_helper_until(
+            Path::new("/bin/sleep"),
+            &[std::ffi::OsStr::new("30")],
+            deadline,
+        )
+        .map(|_| ())
+    }
 }
 
 /// A synthetic child service performs one non-blocking admission and one vault

@@ -165,6 +165,11 @@ fn ct083_no_secrets() {
     let sink = std::sync::Arc::clone(&logs);
     let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false).with_max_level(tracing::Level::TRACE)
         .with_writer(move || LogWriter(std::sync::Arc::clone(&sink))).finish();
+    // With a single registered dispatcher, tracing evaluates callsite interest and the
+    // global level on whichever thread registers or rebuilds, so a parallel test thread
+    // with no subscriber can switch this capture off. A second, inert dispatcher keeps
+    // every thread on the shared path (the anchor of `tesla_stream::recovery_tests`).
+    let _anchor = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
     let _capture = tracing::subscriber::set_default(subscriber);
     let (_root, _store, entry) = fixture();
     tracing::callsite::rebuild_interest_cache();
