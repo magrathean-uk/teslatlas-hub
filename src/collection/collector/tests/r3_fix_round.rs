@@ -128,27 +128,32 @@ async fn r3_probe_answer_course(answer: R3ProbeAnswer) {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn c3_r3_01_a_probe_answered_503_is_asked_again_only_after_the_probe_period() {
     r3_probe_answer_course(R3ProbeAnswer::ServerError).await;
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn c3_r3_01_a_probe_answered_403_is_asked_again_only_after_the_probe_period() {
     r3_probe_answer_course(R3ProbeAnswer::Forbidden).await;
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn c3_r3_01_a_probe_answered_401_after_the_refresh_is_asked_again_only_after_the_probe_period()
  {
     r3_probe_answer_course(R3ProbeAnswer::UnauthorisedAfterRefresh).await;
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn c3_r3_01_a_probe_lost_on_the_wire_is_asked_again_only_after_the_probe_period() {
     r3_probe_answer_course(R3ProbeAnswer::TransportError).await;
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn c3_r3_01_r3c_03_a_failed_tick_commit_after_a_probe_keeps_the_probe_period() {
     // The probe list went out and was counted; the tick's commit then failed, which
     // returns the account to its baseline. The next probe is one period after the one
@@ -206,6 +211,7 @@ async fn c3_r3_01_r3c_03_a_failed_tick_commit_after_a_probe_keeps_the_probe_peri
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn c3_r3_01_f2_2_a_successful_probe_whose_commit_failed_is_probed_again_after_the_store_wait()
  {
     // Hub fix pass 2 (F2-2): the probe is answered 200, which resumes collection inside
@@ -272,6 +278,7 @@ async fn c3_r3_01_f2_2_a_successful_probe_whose_commit_failed_is_probed_again_af
 // ---- C3-R3-02: a restart across a month boundary probes a stored suspension ----
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn c3_r3_02_ct46_a_restart_in_a_new_month_probes_a_stored_billing_suspension_at_the_first_tick()
  {
     // CORE_W0 is 2025-10-09 07:33:20 UTC; 2025-10-31 22:00:00 UTC is 1_948_000 s on.
@@ -642,6 +649,7 @@ fn mig_r3_1_a_failed_owner_start_keeps_the_downtime_from_the_predecessors_heartb
 }
 
 #[test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 fn mig_r3_1_a_failed_fleet_start_keeps_the_downtime_from_the_predecessors_heartbeat() {
     r3_mig_course(R3Entry::Fleet, true);
 }
@@ -735,6 +743,7 @@ fn mig_r3_1_k1_repeated_failed_owner_starts_each_under_the_minimum_keep_the_firs
 }
 
 #[test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 fn mig_r3_1_k1_repeated_failed_fleet_starts_each_under_the_minimum_keep_the_first_heartbeat() {
     r3_mig_short_chain(R3Entry::Fleet);
 }
@@ -816,6 +825,7 @@ fn r3_enrichment_job_status(store: &HubStore) -> String {
 }
 
 #[tokio::test(start_paused = true)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn i3_01_a_fenced_telemetry_loop_still_replays_enriches_and_wakes_the_terrain_worker() {
     // The telemetry maintenance loop over a fenced manager (an identified unresolved
     // refresh) sends no Fleet request and touches no credential, but its own tail work

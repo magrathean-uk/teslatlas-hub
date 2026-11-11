@@ -445,6 +445,7 @@ async fn b2_a_restored_admission_after_an_observed_loss_persists_nothing_in_the_
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn b2_a_restored_admission_cannot_let_a_detached_fleet_exchange_persist_after_a_supervisor_first_loss(
 ) {
     // R-P3bF-1, Fleet: the supervisor ends on the loss while a token exchange is held
@@ -500,6 +501,7 @@ async fn b2_a_restored_admission_cannot_let_a_detached_fleet_exchange_persist_af
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn b2_a_tick_commit_is_refused_after_the_fence_is_set_while_the_admission_holds() {
     // R-P3bF-1, the loop's own write paths: a loss only the renewal saw leaves the
     // fence set while the admission passes again. A tick held just before its store
@@ -547,6 +549,7 @@ async fn b2_a_tick_commit_is_refused_after_the_fence_is_set_while_the_admission_
 const LOOP_WRITE_BOUNDARIES: [&str; 2] = ["before-enrichment", "before-export-replay"];
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn b2_a_fleet_loop_crosses_no_write_boundary_after_the_fence_is_set_while_the_admission_holds()
 {
     // Each boundary in turn: the loop is held at it, the fence is set with the

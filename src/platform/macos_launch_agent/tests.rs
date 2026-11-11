@@ -257,9 +257,11 @@ fn provider_preflight_accepts_only_the_selected_usable_credentials() {
     let temporary = crate::private_tempdir().expect("temporary directory");
     seed_fleet_ready_hub(temporary.path());
 
-    preflight_hub_for_provider(temporary.path(), CollectorProvider::Fleet)
-        .expect("Fleet preflight");
-    preflight_hub(temporary.path()).expect("generic provider preflight");
+    // M02-T02: the stored Fleet pair is refused, so no provider preflight passes.
+    let refused = preflight_hub_for_provider(temporary.path(), CollectorProvider::Fleet)
+        .expect_err("Fleet preflight refuses the stored Fleet pair");
+    assert!(refused.to_string().contains("source_credential_disabled"), "{refused}");
+    assert!(preflight_hub(temporary.path()).is_err(), "generic provider preflight");
     assert!(preflight_hub_for_provider(temporary.path(), CollectorProvider::Legacy).is_err());
 }
 
@@ -304,6 +306,7 @@ fn preflight_snapshot(store: &HubStore, data_dir: &Path) -> String {
 }
 
 #[test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 fn fleet_unresolved_refresh_passes_production_and_gui_start_preflight() {
     let temporary = crate::private_tempdir().expect("temporary directory");
     let data_dir = temporary.path().join("state");

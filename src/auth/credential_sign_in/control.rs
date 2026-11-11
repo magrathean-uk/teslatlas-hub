@@ -107,9 +107,9 @@ mod tests {
         let (_root, _store, entry) = fixture();
         let result = rotate_credential_key(&entry).expect("rotation barrier");
         assert_eq!(serde_json::to_value(result).expect("result"), serde_json::json!({"status":"rotated","rows":2,"keyAgeDays":0}));
-        for (slot, access) in [(CredentialSlot::OwnerApi,"access-0001"), (CredentialSlot::FleetApi,"access-0002")] {
-            let plain = entry.vault().load(slot).expect("read").expect("pair");
-            assert_eq!(plain.access.as_str(), access);
-        }
+        let plain = entry.vault().load(CredentialSlot::OwnerApi).expect("read").expect("pair");
+        assert_eq!(plain.access.as_str(), "access-0001");
+        // M02-T02: the Fleet row is carried through rotation but refused at load.
+        assert_eq!(entry.vault().load(CredentialSlot::FleetApi).expect_err("Fleet refused").code(), "source_credential_disabled");
     }
 }

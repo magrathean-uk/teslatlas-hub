@@ -1118,10 +1118,13 @@ fn ct037_parallel_slots() {
         name: &str,
         signals: Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Sender<()>)>,
     ) {
-        for i in 0..200u128 {
+        let mut i = 0u128;
+        let mut announced = false;
+        while i < 200 {
             let id = {
                 let mut f = shared.lock().unwrap();
                 if i == 0
+                    && !announced
                     && let Some((pending, _)) = &signals
                 {
                     let timeout: i64 = f
@@ -1136,8 +1139,24 @@ fn ct037_parallel_slots() {
                     pending
                         .send(())
                         .expect("acknowledge pending begin before SQLite call");
+                    announced = true;
                 }
-                let id = f.begin(slot, i + 1);
+                // M02-T04: one origin refreshes at a time; a begin while the
+                // other origin's refresh is unresolved is refused, so retry.
+                let id = match f.conn.begin_credential_refresh(slot, generation(i + 1)) {
+                    Ok(id) => {
+                        f.conn
+                            .credential_durability_barrier()
+                            .expect("begin durable before request");
+                        id
+                    }
+                    Err(StoreError::WriteRefused("refresh_fence_other_origin")) => {
+                        drop(f);
+                        std::thread::yield_now();
+                        continue;
+                    }
+                    Err(error) => panic!("begin refresh: {error:?}"),
+                };
                 if i == 0
                     && let Some((_, completed)) = &signals
                 {
@@ -1154,6 +1173,7 @@ fn ct037_parallel_slots() {
                 f.complete(id, i + 1, &successor),
                 RefreshCompletion::Completed
             );
+            i += 1;
         }
     }
     let owner = {
@@ -1740,7 +1760,15 @@ fn ct044_clear() {
     f.put(&owner, ReplacePolicy::OnlyIfEmpty).unwrap();
     f.put(&fleet, ReplacePolicy::OnlyIfEmpty).unwrap();
     let owner_receipt = f.begin(CredentialSlot::OwnerApi, 1);
-    let fleet_receipt = f.begin(CredentialSlot::FleetApi, 1);
+    // M02-T04: the Fleet refresh cannot begin while the Owner one is unresolved.
+    assert!(
+        matches!(
+            f.conn
+                .begin_credential_refresh(CredentialSlot::FleetApi, generation(1)),
+            Err(StoreError::WriteRefused("refresh_fence_other_origin"))
+        ),
+        "CT44 one origin refreshes at a time"
+    );
     let before = (
         f.count("credential_refresh_attempts"),
         f.count("credential_refresh_fences"),
@@ -1780,10 +1808,6 @@ fn ct044_clear() {
     );
     assert_eq!(
         receipt(f.conn.test_connection(), owner_receipt).0,
-        "cancelled"
-    );
-    assert_eq!(
-        receipt(f.conn.test_connection(), fleet_receipt).0,
         "cancelled"
     );
 }

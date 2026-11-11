@@ -621,6 +621,7 @@ fn cs_p1_fleet_diagnostics_ignores_retained_c5() {
 
 #[test]
 #[ignore = "G-DIAGNOSTIC-FLEET-WITNESS (DEC-068 item 3): the doctor has no recorded Fleet scope and integrity witness yet"]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("store");

@@ -8,9 +8,14 @@
 const CORE_W0: i64 = 1_760_000_000_000;
 
 fn core_cadence() -> CollectorCadence {
-    crate::config::CollectorConfig::default()
-        .cadence()
-        .expect("default cadence")
+    crate::config::CollectorConfig {
+        // M02-T02: collection is off by default; these tests collect at the
+        // recommended interval.
+        interval_seconds: crate::config::DEFAULT_INVENTORY_INTERVAL_SECONDS,
+        ..crate::config::CollectorConfig::default()
+    }
+    .cadence()
+    .expect("default cadence")
 }
 
 struct Core {

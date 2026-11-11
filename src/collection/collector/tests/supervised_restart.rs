@@ -6,9 +6,14 @@
 /// (`suspended` is the Suspended state-check interval). A test that needs another
 /// value overrides that field where it needs it and says why.
 fn test_cadence() -> CollectorCadence {
-    crate::config::CollectorConfig::default()
-        .cadence()
-        .expect("the default cadence is valid")
+    crate::config::CollectorConfig {
+        // M02-T02: collection is off by default; these tests collect at the
+        // recommended interval.
+        interval_seconds: crate::config::DEFAULT_INVENTORY_INTERVAL_SECONDS,
+        ..crate::config::CollectorConfig::default()
+    }
+    .cadence()
+    .expect("the default cadence is valid")
 }
 
 fn supervised_restart_test_cadence() -> CollectorCadence {
@@ -41,7 +46,12 @@ fn supervised_restart_test_config(data_dir: &std::path::Path) -> HubConfig {
         tls: None,
         http: Default::default(),
         pairing: Default::default(),
-        collector: crate::config::CollectorConfig::default(),
+        collector: crate::config::CollectorConfig {
+            // M02-T02: collection is off by default; these tests collect at the
+            // recommended interval.
+            interval_seconds: crate::config::DEFAULT_INVENTORY_INTERVAL_SECONDS,
+            ..crate::config::CollectorConfig::default()
+        },
         geocoder: crate::config::GeocoderConfig {
             enabled: false,
             ..crate::config::GeocoderConfig::default()

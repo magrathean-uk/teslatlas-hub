@@ -1134,6 +1134,7 @@ impl FleetLoopBed {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct55b_the_fleet_loop_with_every_car_asleep_makes_one_list_a_second_and_writes_only_counts() {
     let clock = controlled_cadence_clock();
     let mut control = None;
@@ -1286,6 +1287,7 @@ async fn ct55b_a_delayed_owner_list_response_changes_nothing_in_the_logical_wind
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct55b_a_delayed_fleet_list_response_changes_nothing_in_the_logical_window() {
     let clock = controlled_cadence_clock();
     let mut control = None;
@@ -1529,6 +1531,7 @@ async fn wait_for_background_work(label: &str, mut condition: impl FnMut() -> bo
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn r_p2f5_a_handoff_that_never_comes_fails_on_the_scheduler_clock_while_ticks_continue() {
     // R-P2F5-1. A controlled loop goes on ticking while a handoff sender stays alive and
     // sends nothing: the traversal that waits for the handoff fails at its two seconds
@@ -1591,6 +1594,7 @@ async fn r_p2f5_a_handoff_that_never_comes_fails_on_the_scheduler_clock_while_ti
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct74a_a_fleet_401_after_the_refresh_is_a_credential_stop_inside_the_loop() {
     // The car drives, so a drive is open. The credential is then refused whatever
     // token a request carries: the read's resend after the tick's refresh gets 401.
@@ -1822,6 +1826,7 @@ async fn ct74a_a_fleet_401_after_the_refresh_is_a_credential_stop_inside_the_loo
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct74b_the_loss_of_sensitive_access_ends_the_run_with_no_stop_no_gap_and_no_write() {
     // The admission's revalidation fails while the loop runs: the run returns
     // `SensitiveAccessUnavailable` within that iteration, the account row is

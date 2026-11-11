@@ -738,7 +738,15 @@ fn ct1_collector_defaults_follow_the_cadence_tables() {
     assert_eq!(collector_mode(&config), CollectorMode::Legacy);
     assert!(config.start_notices().is_empty());
 
-    let cadence = config.cadence().expect("default cadence is valid");
+    // Collection off gives no inventory list; collecting at the recommended
+    // interval lists every five minutes.
+    assert_eq!(config.cadence().expect("default cadence is valid").inventory, Duration::ZERO);
+    let cadence = CollectorConfig {
+        interval_seconds: crate::config::DEFAULT_INVENTORY_INTERVAL_SECONDS,
+        ..CollectorConfig::default()
+    }
+    .cadence()
+    .expect("collecting cadence is valid");
     assert_eq!(cadence.driving, Duration::from_millis(10_000));
     assert_eq!(cadence.driving_stream, secs(60));
     assert_eq!(cadence.charging, secs(30));

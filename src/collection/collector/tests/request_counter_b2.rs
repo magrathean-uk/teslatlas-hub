@@ -150,6 +150,7 @@ impl FleetBed {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct67c_a_read_refused_with_the_refreshed_token_is_a_credential_stop_with_no_second_refresh() {
     // The resent read gets 401 with token B: no second token request in the tick;
     // the outcome is the Fleet credential stop (C3 R47): `CredentialStop`, one
@@ -201,6 +202,7 @@ async fn ct67c_a_read_refused_with_the_refreshed_token_is_a_credential_stop_with
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct67c_a_self_refreshed_token_stop_cancels_queued_reads() {
     // The list is not due and the token's refresh is: the first read's own start
     // refreshes it, carries token B and is refused, which is a stop without a resend.
@@ -264,6 +266,7 @@ fn polled_through<'a>(inner: TickFuture<'a>, polls: &Arc<AtomicUsize>) -> TickFu
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn r47_cancelling_a_never_polled_fleet_request_releases_its_admission() {
     // The loop admits a request (the ledger counts its start) and takes its guard when
     // it builds the future, in the production probe and read factories. A credential
@@ -392,6 +395,7 @@ async fn r47_cancelling_a_never_polled_fleet_request_releases_its_admission() {
 
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct67c_a_failed_stop_commit_keeps_fleet_stopped_without_queued_sends() {
     // The tick's resent read is refused with the refreshed token, which is a Fleet
     // credential stop, and the commit that would store the stop fails. The stop is
@@ -483,6 +487,7 @@ async fn ct67c_a_failed_stop_commit_keeps_fleet_stopped_without_queued_sends() {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct67b_a_read_lost_before_the_handler_is_one_unreachable_car_with_no_failure_counted() {
     // The control of the ct67b_a flake (R-P3bF4-1). The old bed served a socket with a
     // five-second client deadline, and under load one of the three first-contact reads

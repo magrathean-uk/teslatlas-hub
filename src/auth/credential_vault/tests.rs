@@ -367,7 +367,8 @@ fn ct020_rotation_crash_points() {
     for _ in 0..2 {
         let vault = open(root.path());
         assert!(vault.lock().expect("state").resume_error.is_some(), "CT20.undecodable resume recorded");
-        assert!(vault.load(OWNER).is_err() && vault.load(CredentialSlot::FleetApi).expect("independent Fleet read").is_some(), "CT20.independent readable slot");
+        // M02-T02: the Fleet slot is refused at load, not by the Owner decode failure.
+        assert!(vault.load(OWNER).is_err() && matches!(vault.load(CredentialSlot::FleetApi), Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "CT20.independent slot refusal");
     }
 }
 
@@ -463,8 +464,14 @@ fn ct097_successor_legacy_forms() {
         let result = with_successor_generation_fixture(candidates.0[0], || vault.persist_refreshed(slot, receipt, input, Uuid::new_v4(), "access-0002", "refresh-0002", 1_800_028_800, 1_800_027_000));
         if fenced {
             assert!(matches!(result, Err(CredentialStoreError::RefreshTokenSpent)), "legacy successor fence");
-            let row = vault.load(slot).expect("retained load").expect("pair");
-            assert!(row.generation == input && row.access.as_str() == "access-0001" && row.refresh.as_str() == "refresh-0001", "CT97 pair retained");
+            if slot == OWNER {
+                let row = vault.load(slot).expect("retained load").expect("pair");
+                assert!(row.generation == input && row.access.as_str() == "access-0001" && row.refresh.as_str() == "refresh-0001", "CT97 pair retained");
+            } else {
+                // M02-T02: the retained Fleet pair is refused at load.
+                assert!(matches!(vault.load(slot), Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "CT97 Fleet pair refused");
+                assert!(vault.stored_generation(slot).expect("generation") == Some(input), "CT97 Fleet pair retained");
+            }
             assert!(vault.has_unresolved_refresh(slot).expect("unresolved"), "input consumed");
             assert!(vault.test_commit_counts().0 == issued + 1, "no completion or closing commit");
         } else { result.expect("leading space is a separate legacy form"); }
@@ -591,23 +598,22 @@ fn ct070_rotation_during_refresh() {
 
 #[test]
 fn ct071_both_slots() {
+    // M02-T04: one origin refreshes at a time, so the Fleet refresh cannot begin
+    // while the Owner one is unresolved; M02-T02: the Fleet pair is never loaded.
     let (root, owner_input) = seeded();
     let fleet = CredentialEntry::fleet_supplied(Zeroizing::new("fleet-access-0001".into()), Zeroizing::new("fleet-refresh-0001".into()), "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28800).expect("Fleet entry");
     let fleet_input = seed_entry(root.path(), fleet);
     let vault = open(root.path());
     let owner_receipt = vault.begin_refresh(OWNER, owner_input).expect("Owner begin");
-    let fleet_receipt = vault.begin_refresh(CredentialSlot::FleetApi, fleet_input).expect("Fleet begin");
-    let rendezvous = Arc::new(std::sync::Barrier::new(3));
-    let mut workers = Vec::new();
-    for (slot, receipt, input, access, refresh) in [(OWNER, owner_receipt, owner_input, "access-0002", "refresh-0002"), (CredentialSlot::FleetApi, fleet_receipt, fleet_input, "fleet-access-0002", "fleet-refresh-0002")] {
-        let vault = Arc::clone(&vault); let rendezvous = Arc::clone(&rendezvous);
-        workers.push(std::thread::spawn(move || { rendezvous.wait(); let output = Uuid::new_v4(); vault.persist_refreshed(slot, receipt, input, output, access, refresh, 1_800_028_800, 1_800_027_000).expect("persisted"); (slot, output) }));
-    }
-    rendezvous.wait();
-    for worker in workers { let (slot, output) = worker.join().expect("completion thread"); assert!(vault.load(slot).expect("open successor").expect("pair").generation == output, "both successors readable"); }
+    let refused = vault.begin_refresh(CredentialSlot::FleetApi, fleet_input).expect_err("Fleet begin refused while Owner is unresolved");
+    assert!(matches!(refused, CredentialStoreError::Store(StoreError::WriteRefused("refresh_fence_other_origin"))), "{refused:?}");
+    let output = Uuid::new_v4();
+    vault.persist_refreshed(OWNER, owner_receipt, owner_input, output, "access-0002", "refresh-0002", 1_800_028_800, 1_800_027_000).expect("persisted");
+    assert!(pair(&vault).generation == output, "Owner successor readable");
+    assert!(matches!(vault.load(CredentialSlot::FleetApi), Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "Fleet pair refused at load");
     let state = vault.lock().expect("state");
     let counts: (i64, i64) = state.connection.test_connection().query_row("SELECT (SELECT count(*) FROM credential_refresh_fences), (SELECT count(*) FROM outbound_request_receipts WHERE outcome='success')", [], |row| Ok((row.get(0)?, row.get(1)?))).expect("completion evidence");
-    assert!(counts == (2, 2), "two spent fences and successes");
+    assert!(counts == (1, 1), "one spent fence and one success");
 }
 
 #[test]
@@ -617,7 +623,8 @@ fn ct099_guarded_read_interleavings() {
     for point in ["after_check", "after_snapshot", "after_barrier"] {
         assert_read_interleaving(point, OWNER, false);
     }
-    assert_read_interleaving("after_check", CredentialSlot::FleetApi, false);
+    // M02-T02: a Fleet pair is refused at load before any guarded read, so only
+    // Owner reads interleave with a completion.
     assert_read_interleaving("after_check", OWNER, true);
     let (root, input) = seeded(); let vault = open(root.path()); let receipt = vault.begin_refresh(OWNER, input).expect("begin"); let output = Uuid::new_v4();
     vault.lock().expect("state").connection.set_test_barrier_failure_at(Some(2));

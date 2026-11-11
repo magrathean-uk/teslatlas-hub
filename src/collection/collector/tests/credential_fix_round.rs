@@ -728,6 +728,7 @@ impl FleetBed {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn fleet_credential_errors_are_not_admission_loss() {
     use FleetCredentialError as Condition;
     // A Fleet credential that is missing, lacks its key, scopes or claims, or whose
@@ -853,6 +854,7 @@ fn invalidate_the_retained_admission(data_dir: &std::path::Path) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn supervisor_first_admission_loss_skips_shutdown_writes_and_settlement() {
     // The retained handle is invalidated while the Fleet collector holds a token
     // exchange in flight. The supervisor ends on the loss first: no final
@@ -940,6 +942,7 @@ async fn supervisor_first_admission_loss_skips_shutdown_writes_and_settlement() 
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn fleet_runtime_refresh_stop_survives_failed_commit_once() {
     // The account is collecting when a refresh Tesla answered with an error fences the
     // stored pair, and the request that meets the fence is an identified unresolved
@@ -1117,6 +1120,7 @@ enum P3Retained {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn fleet_unresolved_refresh_starts_a_running_credential_stop() {
     // The production startup path: the manager comes from the supervised start's own
     // constructor, the run from the Fleet supervisor, and the Fleet clients are
@@ -1413,6 +1417,7 @@ async fn fleet_unresolved_refresh_starts_a_running_credential_stop() {
 }
 
 #[tokio::test(start_paused = true)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn fleet_telemetry_maintenance_keeps_running_over_an_identified_unresolved_refresh() {
     // Native Fleet Telemetry keeps its push collection and its lease while the stored
     // pair's refresh outcome is unknown: the maintenance loop sends nothing (its token
@@ -1694,17 +1699,20 @@ async fn assert_the_late_fleet_denial(case: Option<RenewalEndsFirst>, restored: 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn b2_a_late_fleet_settlement_denial_preserves_the_lease_and_sensitive_error() {
     assert_the_late_fleet_denial(None, false).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn b2_the_fleet_supervisor_fences_renewal_on_loss_before_held_cleanup() {
     assert_the_late_fleet_denial(Some(RenewalEndsFirst::Supervisor), false).await;
     assert_the_late_fleet_denial(Some(RenewalEndsFirst::Renewal), false).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn b2_a_restored_admission_after_an_observed_loss_persists_nothing_in_the_fleet_unit() {
     // R-P3bF-1: the loss is observed while the held answer is out (by the supervisor's
     // watch, and by the renewal first), the admission passes again, and the released
@@ -1714,6 +1722,7 @@ async fn b2_a_restored_admission_after_an_observed_loss_persists_nothing_in_the_
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn b2_an_ordinary_fleet_settlement_failure_reaches_the_result_without_being_a_loss() {
     // The same shutdown with the admission intact and an exchange that fails the
     // ordinary way (Tesla answers the held request with an error): the failure is the
@@ -1833,6 +1842,7 @@ fn each_tick_refreshes_at_most_once_is_judged_per_tick_not_in_total() {
 }
 
 #[tokio::test(start_paused = true)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn b2_k3_the_forced_refresh_of_a_withheld_resend_spends_no_spacing_wait() {
     // The same course as the test that follows, on the in-process bed and under paused
     // tokio time (B2 apply, K3): every token is refused, the first tick's resend is not
@@ -1876,6 +1886,7 @@ async fn b2_k3_the_forced_refresh_of_a_withheld_resend_spends_no_spacing_wait() 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn b2_a_withheld_resend_then_a_second_forced_refresh_waits_on_no_spacing_and_holds_no_manager() {
     // CT74a's own script refuses a list whose resend the persisted reservation
     // covers. This is the case it leaves open: the list's resend is not covered, so

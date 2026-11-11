@@ -2336,6 +2336,7 @@ async fn r10_a_restart_rewrites_no_row_for_a_car_no_list_has_named_yet() {
 // ---- P2 (B2 fix round): the derived Fleet credential stop is never durable ---------------------------
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn b2_a_fleet_restart_lifts_only_the_derived_credential_stop() {
     // A Fleet credential stop is derived in memory (C3 R47, B2 clarification 3): it is
     // committed with its gap but never stored as the account's state, and a restart

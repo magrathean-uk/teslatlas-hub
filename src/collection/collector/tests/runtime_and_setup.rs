@@ -443,6 +443,7 @@ async fn resident_control_socket_is_private_bounded_and_service_owned() {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn resident_fleet_control_uses_selected_vehicle_shared_bearer_proxy_and_audit() {
     const SELECTED_EID: i64 = 70;
     const SELECTED_VIN: &str = "5YJ3E1EA7KF000001";
@@ -647,6 +648,7 @@ async fn resident_fleet_control_uses_selected_vehicle_shared_bearer_proxy_and_au
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn fleet_observer_revalidates_admission_before_discovery_egress() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");

@@ -117,7 +117,8 @@ fn ct080_foreign_key_row() {
     entry.vault().store_supplied_entry(CredentialEntry::fleet_supplied(text("access-0002"), text("refresh-0002"), "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet"), ReplacePolicy::ReplaceAny).expect("Fleet barrier");
     store.open().expect("fault SQL").execute("UPDATE credential_pairs SET access_envelope=CAST(substr(access_envelope,1,6)||zeroblob(8)||substr(access_envelope,15) AS BLOB) WHERE slot='owner_api'", []).expect("foreign key header");
     assert_eq!(entry.vault().load(OWNER).unwrap_err().code(), "unknown_key");
-    assert_eq!(entry.vault().load(FLEET).expect("independent slot").expect("Fleet").access.as_str(), "access-0002");
+    // M02-T02: the independent Fleet slot is refused at load, not by the Owner fault.
+    assert_eq!(entry.vault().load(FLEET).unwrap_err().code(), "source_credential_disabled");
 }
 
 #[test]

@@ -1160,6 +1160,7 @@ fn only_a_ledger_that_loaded_the_store_flushes_what_a_one_shot_sender_counted() 
 // ---- The Fleet helpers count their resends (R24, R47) ----------------------------------------------
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn a_resend_after_a_refresh_is_a_second_counted_and_billed_request() {
     let bed = ct67_bed().await;
     let ledger = LedgerBed::fleet(1_000, utc_ms(2026, 10, 15, 0));
@@ -1187,6 +1188,7 @@ async fn a_resend_after_a_refresh_is_a_second_counted_and_billed_request() {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn a_resend_the_reservation_does_not_cover_is_not_sent() {
     let bed = ct67_bed().await;
     let ledger = LedgerBed::fleet(1_000, utc_ms(2026, 10, 15, 0));
@@ -1933,6 +1935,7 @@ async fn ct13_a_reservation_that_rides_on_waiting_results_is_not_a_lone_commit()
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct16_the_cap_stops_the_fake_at_five_requests_and_the_stop_survives_a_restart() {
     let mut bed = FleetBed::new(k7_policy(1, crate::config::FLEET_PRICING), "online").await;
     // Tick 1: the list (300 U) and the first read (300 U).
@@ -2002,6 +2005,7 @@ async fn ct16_the_cap_stops_the_fake_at_five_requests_and_the_stop_survives_a_re
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct16_free_state_checks_leave_room_for_a_fifth_read() {
     let mut bed = FleetBed::new(k7_policy(1, k7_free_state_pricing()), "online").await;
     bed.tick().await;
@@ -2021,6 +2025,7 @@ async fn ct16_free_state_checks_leave_room_for_a_fifth_read() {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct17_a_crash_after_a_send_leaves_a_reservation_that_counts_as_sent() {
     let mut bed = FleetBed::new(k7_policy(1_000, crate::config::FLEET_PRICING), "online").await;
     // A long-running process sends 7 reads; the reservation grows with use, by
@@ -2067,6 +2072,7 @@ async fn ct17_a_crash_after_a_send_leaves_a_reservation_that_counts_as_sent() {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct17_in_a_run_to_the_cap_no_request_passes_the_reservation_and_gross_stays_under_it() {
     // 40 cents: 60,000 U, two hundred requests in all.
     let mut bed = FleetBed::new(k7_policy(40, crate::config::FLEET_PRICING), "online").await;
@@ -2141,11 +2147,13 @@ async fn ct62_course(allow_refresh: bool) {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct62_a_crash_loop_over_counts_at_most_one_lists_reservation_per_start() {
     ct62_course(false).await;
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct62_the_same_crash_loop_in_managed_mode_reserves_no_resend_slot() {
     // CT62 also runs with `allow_refresh = true` (B2 clarification, option H): a
     // just-started managed process reserves exactly one `state` request for one list.
@@ -2153,6 +2161,7 @@ async fn ct62_the_same_crash_loop_in_managed_mode_reserves_no_resend_slot() {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn a_list_that_carries_the_ticks_refreshed_token_is_not_refreshed_again() {
     // C3 R47: at most one token refresh per tick. A list whose tick has already
     // refreshed (the latch is set) meets 401 with that token: it is a credential stop,
@@ -2177,6 +2186,7 @@ async fn a_list_that_carries_the_ticks_refreshed_token_is_not_refreshed_again() 
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn a_managed_tick_reserves_exactly_what_it_sends_and_plans_no_resend_slot() {
     // C3 R27, R47 (B2 clarification, option H): `run_fleet_tick` plans no slot for a
     // resend, whether or not the tick may refresh. The first tick of three online cars
@@ -2194,6 +2204,7 @@ async fn a_managed_tick_reserves_exactly_what_it_sends_and_plans_no_resend_slot(
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct62b_a_crash_loop_after_unbilled_sends_counts_only_what_may_have_been_sent() {
     // C3 R27 (B2 clarification): the stored `state` row is (sent 100, billable 46,
     // reserved 100), so 54 sends were answered and not billed. Ten times: start, one
@@ -2246,6 +2257,7 @@ async fn ct62b_a_crash_loop_after_unbilled_sends_counts_only_what_may_have_been_
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct54_with_every_commit_failing_sends_stop_once_the_persisted_reservation_is_used() {
     let seam = Arc::new(SupervisedCollectorTestSeam::default());
     let witness = seam.clone();
@@ -2307,6 +2319,7 @@ async fn ct54_with_every_commit_failing_sends_stop_once_the_persisted_reservatio
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn a_fleet_tick_writes_its_counters_in_its_own_transaction_and_an_idle_tick_writes_nothing() {
     let seam = Arc::new(SupervisedCollectorTestSeam::default());
     let witness = seam.clone();
@@ -2342,6 +2355,7 @@ async fn a_fleet_tick_writes_its_counters_in_its_own_transaction_and_an_idle_tic
 // ---- Review round: R50 probe, R47 refresh, R27 restart reservation -------------------------------
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn r50_a_billing_suspension_probes_with_one_counted_list_and_resumes_without_idling() {
     let mut bed = FleetBed::new(k7_policy(1_000, crate::config::FLEET_PRICING), "asleep").await;
     // The first tick lists; the car sleeps, so nothing is read.
@@ -2389,6 +2403,7 @@ async fn r50_a_billing_suspension_probes_with_one_counted_list_and_resumes_witho
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn r50_a_probe_the_cap_forbids_is_asked_again_at_the_next_probe_time() {
     // One cent is five requests at the data price: the list, the 402 and what the
     // probes add reach the cap, and the suspended account neither spins nor sends.
@@ -2417,6 +2432,7 @@ async fn r50_a_probe_the_cap_forbids_is_asked_again_at_the_next_probe_time() {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn r47_a_fleet_403_sends_one_request_and_makes_no_token_refresh() {
     let mut bed = FleetBed::new(k7_policy(1_000, crate::config::FLEET_PRICING), "online").await;
     bed.allow_refresh = true;
@@ -2505,6 +2521,7 @@ impl FleetBed {
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn the_loss_of_sensitive_access_on_the_list_or_a_read_ends_the_tick_with_no_stop_and_no_gap() {
     // C3 R47, CT74 (b) at the tick: a Fleet request that cannot use the credential
     // because the admission failed ends the run with the error: no `CredentialStop`,
@@ -2547,6 +2564,7 @@ async fn the_loss_of_sensitive_access_on_the_list_or_a_read_ends_the_tick_with_n
 }
 
 #[tokio::test(start_paused = true)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct67_three_reads_with_an_expired_token_make_one_refresh_and_resend_what_the_reservation_covers() {
     // C3 R47 (B2 clarification, option H): exactly one refresh; a read that carried
     // token A is resent once with token B in the same tick when the reservation
@@ -2601,6 +2619,7 @@ async fn ct67_three_reads_with_an_expired_token_make_one_refresh_and_resend_what
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct67b_a_resend_the_reservation_does_not_cover_stays_due_without_a_wait_or_a_failure() {
     // A just-started managed process with three cars: the tick's list gets 401 with
     // token A, the refresh gives token B, and the list's resend is not covered (one

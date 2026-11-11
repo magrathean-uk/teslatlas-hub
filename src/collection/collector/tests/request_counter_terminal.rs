@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn r47_a_terminal_credential_outcome_stops_the_account_inside_the_loop_and_stores_the_gap() {
     // An observer may not refresh: a 401 on the list is a Fleet credential stop. The
     // run does not end (C3 R47, B2 clarification): the account is `CredentialStop`,
@@ -24,6 +25,7 @@ async fn r47_a_terminal_credential_outcome_stops_the_account_inside_the_loop_and
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn r9_every_scheduled_request_is_logged_at_debug_with_its_operation_class_status_and_duration()
  {
     // One event per request at its completion: the operation, the class the
@@ -85,6 +87,7 @@ async fn r9_every_scheduled_request_is_logged_at_debug_with_its_operation_class_
 }
 
 #[tokio::test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn r47_a_terminal_outcome_on_a_read_stops_the_account_and_stores_the_gap_too() {
     // The same as for the list, on the read path: the closure that handles the
     // result enters `CredentialStop`, and `drive_requests` stores the tick's rows;

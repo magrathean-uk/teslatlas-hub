@@ -1694,7 +1694,8 @@ mod effective_view {
         refresh: &str,
         schedule: Option<(i64, i64)>,
     ) -> Uuid {
-        let entry = crate::auth::credential_vault::CredentialEntry::provider_entry(zeroize::Zeroizing::new(access.into()),Some(zeroize::Zeroizing::new(refresh.into()))).expect("component supplied entry");
+        // M02-T02: only the Hub's own login is admitted at load.
+        let entry = crate::auth::credential_vault::CredentialEntry::own_login_fixture(zeroize::Zeroizing::new(access.into()),zeroize::Zeroizing::new(refresh.into())).expect("own-login entry");
         let mut entry=entry;
         if let Some((expires,next))=schedule{entry.set_schedule(expires,next);}
         let _ = store;

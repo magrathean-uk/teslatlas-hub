@@ -577,6 +577,7 @@ fn p3bf3_cached_terrain(temporary: &tempfile::TempDir, store: &HubStore) {
 }
 
 #[test]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 fn p3bf3_the_fleet_supervisor_hands_its_own_guard_to_the_terrain_worker() {
     // The Fleet loop's start over stored credentials and unroutable Fleet clients, with
     // the terrain worker enabled over a cached tile: the run's audit trips at the worker's

@@ -188,6 +188,7 @@ async fn b2_owner_renewal_loss_survives_recovery_when_shutdown_wins() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn b2_fleet_renewal_loss_survives_recovery_when_shutdown_wins() {
     // The same as the Owner's case, on the Fleet supervisor: after the renewal's loss and
     // the admission's recovery an ordinary shutdown writes no last transaction and
