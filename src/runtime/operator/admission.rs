@@ -98,7 +98,8 @@ pub fn route(command: &Command) -> Route {
         Command::SetupFleet | Command::ConfigureFleetTelemetry => Route::Refused(PROVIDER_PARKED),
         Command::ExportRecoveryCredentials { .. }
         | Command::RestoreRecoveryCredentials { .. }
-        | Command::PurgeRefusedCredentials { .. } => Route::Service,
+        | Command::PurgeRefusedCredentials { .. }
+        | Command::BackupNow { .. } => Route::Service,
         Command::Window { command } => match command {
             WindowCommand::Status
             | WindowCommand::Trust { .. }

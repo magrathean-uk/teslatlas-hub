@@ -120,6 +120,14 @@ pub enum OperatorRequest {
     PurgeRefusedCredentials {
         confirm: bool,
     },
+    /// Runs one encrypted backup now (M06-T03). The paths default to the
+    /// configuration's; the password stays in its file, which the service reads.
+    BackupNow {
+        #[serde(default)]
+        destination: Option<PathBuf>,
+        #[serde(default)]
+        password_file: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

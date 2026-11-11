@@ -397,6 +397,14 @@ fn run_forwarded(config_path: &Path, command: &Command) -> Result<(), Box<dyn st
         Command::PurgeRefusedCredentials { confirm } => {
             OperatorRequest::PurgeRefusedCredentials { confirm: *confirm }
         }
+        // The password stays in its file: the service reads it.
+        Command::BackupNow {
+            destination,
+            password_file,
+        } => OperatorRequest::BackupNow {
+            destination: destination.as_deref().map(absolute_path).transpose()?,
+            password_file: password_file.as_deref().map(absolute_path).transpose()?,
+        },
         _ => return Err("this command is not forwarded to the service".into()),
     };
     let result = operator::channel::exchange(stream, &request, FORWARD_TIMEOUT)?;
@@ -439,6 +447,7 @@ struct HubServiceBackend {
     store: HubStore,
     data_dir: PathBuf,
     admission: std::sync::Arc<AdmittedUserHub>,
+    backup: std::sync::Arc<teslatlas_hub::runtime::backup_schedule::BackupScheduler>,
 }
 
 #[cfg(unix)]
@@ -518,6 +527,14 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
             OperatorRefusal::new(error.code(), error.to_string())
         })?;
         operator::purge::purge(&entry)
+    }
+
+    fn backup_now(
+        &self,
+        destination: Option<&Path>,
+        password_file: Option<&Path>,
+    ) -> Result<serde_json::Value, OperatorRefusal> {
+        self.backup.run_now(destination, password_file)
     }
 }
 
@@ -1054,6 +1071,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     source_db_current_enabled = config.import_source.current.is_some(),
                     "Hub serve starting"
                 );
+                let backup_schedule = start_backup_schedule(&config, &store, &recovery)?;
                 let supervisor = operator::authority::SupervisorThread::spawn(
                     std::sync::Arc::clone(&authority),
                     ServiceCollectorSlot::new(
@@ -1072,6 +1090,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             store: store.clone(),
                             data_dir: config.data_dir.clone(),
                             admission: std::sync::Arc::clone(&admission),
+                            backup: std::sync::Arc::clone(&backup_schedule),
                         }),
                         supervisor.kicker(),
                         operator::authority::service_trust_authority(authority.host_id()),
@@ -1135,6 +1154,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     .await
                 };
                 drop(channel);
+                tokio::task::spawn_blocking(move || backup_schedule.stop()).await?;
                 tokio::task::spawn_blocking(move || supervisor.stop()).await?;
                 drop(authority);
                 match &serve_result {
@@ -1258,8 +1278,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::ExportRecoveryCredentials { .. }
         | Command::RestoreRecoveryCredentials { .. }
-        | Command::PurgeRefusedCredentials { .. } => {
-            unreachable!("credential recovery and the purge are forwarded to the running service")
+        | Command::PurgeRefusedCredentials { .. }
+        | Command::BackupNow { .. } => {
+            unreachable!("credential recovery, the purge and backup-now are forwarded to the running service")
         }
         Command::VerifyBackup { .. } | Command::RestoreData { .. } => {
             unreachable!("immutable data-recovery commands return before writable Hub state")

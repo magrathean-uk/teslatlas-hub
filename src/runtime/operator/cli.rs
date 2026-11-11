@@ -589,6 +589,19 @@ pub enum Command {
         #[arg(long)]
         confirm: bool,
     },
+    /// Run one encrypted backup now, the same operation the service's schedule
+    /// runs (forwarded to the running service). The destination and the
+    /// password file default to the `[backup]` configuration; the password
+    /// itself is never an argument. Refused while another backup runs.
+    #[command(name = "backup-now")]
+    BackupNow {
+        /// Backup folder (default: `backup.destination`).
+        #[arg(long)]
+        destination: Option<PathBuf>,
+        /// Owned mode-0600 file holding the recovery password (default: `backup.password_file`).
+        #[arg(long)]
+        password_file: Option<PathBuf>,
+    },
     /// Collection windows: status, trust, open and close are forwarded to the
     /// running service; the issuer verbs run on the issuer Mac only.
     Window {

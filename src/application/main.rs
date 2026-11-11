@@ -74,6 +74,7 @@ const IMMUTABLE_DIAGNOSTIC_OPEN_DELAY: Duration = Duration::from_millis(100);
 const IMMUTABLE_DIAGNOSTIC_OPEN_DELAY: Duration = Duration::ZERO;
 
 include!("main/macos_service.rs");
+include!("main/backup.rs");
 include!("main/cli.rs");
 include!("main/healthcheck.rs");
 include!("main/control.rs");
