@@ -1,5 +1,85 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+/// Collection starts only inside an Open collection window (M04-T01). Before its
+/// first store read or write, credential step or send, a run asks the window's
+/// egress gate, the one authority every Tesla send asks, for a permit it never
+/// uses: a closed window, a deadline already passed or a parked provider refuses
+/// the start, so no lease is taken, no gap, account or vehicle row is written and
+/// nothing is sent. The permit is dropped at once. `endpoint` only selects the
+/// gate a test routed; production always asks the process-wide gate.
+fn require_open_collection_window(
+    endpoint: &str,
+    provider: crate::fleet_api::egress::Provider,
+) -> Result<(), CollectorError> {
+    crate::fleet_api::egress::ask(
+        endpoint,
+        provider,
+        crate::fleet_api::egress::PermitKind::Request,
+    )
+    .map(drop)
+    .map_err(|refusal| {
+        tracing::warn!(
+            target: "collector.decision",
+            code = refusal.code(),
+            "collector start refused: the collection window is not open"
+        );
+        CollectorError::CollectionWindowClosed(refusal.code())
+    })
+}
+
+/// [`require_open_collection_window`] for an admitted entry, before its credential
+/// unit, vault or cursor key exists: the configured provider's gate is asked, and a
+/// test routes it through the configured stream endpoint.
+#[cfg(unix)]
+fn require_open_collection_window_for(config: &HubConfig) -> Result<(), CollectorError> {
+    if config.collector.provider == CollectorProvider::Fleet {
+        return require_open_collection_window(
+            crate::fleet_api::FleetRegion::NorthAmericaAndAsiaPacific.base_url(),
+            crate::fleet_api::egress::Provider::Fleet,
+        );
+    }
+    let endpoint = config
+        .collector
+        .stream_endpoint(StreamRegion::Global)
+        .unwrap_or_else(|_| streaming_endpoint(StreamRegion::Global).to_owned());
+    require_open_collection_window(&endpoint, crate::fleet_api::egress::Provider::Legacy)
+}
+
+/// The Owner-wire loop's scheduled inventory (C3 R53, M04-T01). The first list of a
+/// run, and any list whose cars or VINs differ from the last one the run stored, is
+/// stored as before: the source is registered and the listed cars are reactivated,
+/// two write transactions of their own. A list equal to the last one stored would
+/// change nothing (no car retires while the run holds the Hub, and a scheduled list
+/// never retires one), so it is not written again: an unchanged poll keeps to the
+/// one tick transaction and makes no write outside it. A failed list is returned
+/// as it came, and a failed store write leaves the memory unset so the next list
+/// is stored.
+fn accept_listed_owner_inventory(
+    store: &HubStore,
+    discovery: Result<Vec<Vehicle>, CollectorError>,
+    guard: Option<&RunWriteGuard>,
+    accepted: &mut Option<Vec<(u64, String)>>,
+) -> Result<Vec<Vehicle>, CollectorError> {
+    let vehicles = discovery?;
+    let mut listed: Vec<(u64, String)> = vehicles
+        .iter()
+        .map(|vehicle| (vehicle.id.get(), vehicle.vin.to_ascii_uppercase()))
+        .collect();
+    listed.sort();
+    if accepted.as_ref() == Some(&listed) {
+        return Ok(vehicles);
+    }
+    *accepted = None;
+    let vehicles = accept_scheduled_provider_inventory_guarded(
+        store,
+        CollectorProvider::Legacy,
+        Ok(vehicles),
+        guard,
+    )?;
+    *accepted = Some(listed);
+    Ok(vehicles)
+}
+
 async fn run_supervised_with_access<F>(
     store: &HubStore,
     config: &HubConfig,
@@ -15,6 +95,9 @@ async fn run_supervised_with_access<F>(
 where
     F: Future<Output = ()>,
 {
+    // Nothing of the run happens outside an Open window (M04-T01): this is its first
+    // step, before the credential unit is touched or the store read.
+    require_open_collection_window(&stream_endpoint, crate::fleet_api::egress::Provider::Legacy)?;
     // The run's write guard exists before the credential unit and the cursor key (B2
     // fix round, P3b fix 3, R-P3bF3-1): the entry point made it, and it has been
     // consulted at every write since. The renewal revalidates the retained admission
@@ -177,6 +260,9 @@ where
             || config.collector.stream_endpoint_override.is_some(),
     );
     let mut identities = IdentityCache::default();
+    // The listed inventory this run last stored (M04-T01): an identical list stores
+    // nothing again (see `accept_listed_owner_inventory`).
+    let mut accepted_inventory: Option<Vec<(u64, String)>> = None;
     let mut next_status_refresh = clock.mono_now();
     // The owner's unapplied actions, read at each settings refresh and applied in
     // the next tick (C3 R65).
@@ -454,11 +540,11 @@ where
                         .await?;
                         list_log.emit("list", RequestKind::List, list_started, &checked.result);
                         let refused_after_check = checked.refused_after_check;
-                        let listed = accept_scheduled_provider_inventory_guarded(
+                        let listed = accept_listed_owner_inventory(
                             store,
-                            CollectorProvider::Legacy,
                             checked.result,
                             run.scheduler.write_guard(),
+                            &mut accepted_inventory,
                         );
                         match listed {
                             Ok(vehicles) => {

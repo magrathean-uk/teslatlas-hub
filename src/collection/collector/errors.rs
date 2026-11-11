@@ -75,6 +75,11 @@ pub enum CollectorError {
     FleetResendWithheld,
     #[error("supervised collector startup receiver closed")]
     SupervisedStartupReadyDropped,
+    /// The collection window's egress gate refused the start (M04-T01): the window
+    /// is not Open, its deadline has passed, or the provider is parked. The run
+    /// took no lease and wrote and sent nothing. The value is the gate's code.
+    #[error("collection window is not open: {0}")]
+    CollectionWindowClosed(&'static str),
     #[cfg(unix)]
     #[error("admitted collector store does not match the selected Hub store")]
     AdmittedStoreMismatch,

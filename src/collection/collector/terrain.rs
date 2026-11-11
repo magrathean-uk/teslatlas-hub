@@ -151,6 +151,8 @@ where
     F: Future<Output = ()>,
 {
     let cadence = config.collector.cadence()?;
+    // M04-T01: no credential vault, unit or cursor key before the window is Open.
+    require_open_collection_window_for(config)?;
 
     let manager = {
     let runtime_store = store.clone();
@@ -415,6 +417,8 @@ where
     if !config.collector.legacy_auth.enabled {
         return Err(CollectorError::AdmittedLegacyAuthRequired);
     }
+    // M04-T01: no credential vault, unit or cursor key before the window is Open.
+    require_open_collection_window_for(config)?;
 
     let manager = {
     let runtime_store = store.clone();
@@ -481,6 +485,9 @@ where
     );
     let _activation = config.collector.supervised_interval()?;
     let cadence = config.collector.cadence()?;
+    // M04-T01: no credential vault, manager or cursor key before the window is Open
+    // (and Fleet is parked, so its gate refuses).
+    require_open_collection_window_for(config)?;
     // An identified unresolved refresh (C5 R47, C3 R47, B2 clarification 3) starts
     // as a running credential stop with an active lease and the reconnect
     // attention: the manager is fenced and sends nothing. Every other case keeps
