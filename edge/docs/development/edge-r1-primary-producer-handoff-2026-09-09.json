@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "status": "prepared_waiting_fresh_fixture_and_authorization_after_r13_transport_gate",
+  "run_id": "edge-r1-primary-20260909",
+  "cell_id": "edge_v2__debian13_arm64",
+  "profile": "edge-delivery-v2@2.0.0",
+  "wire_versions": [1, 2],
+  "producer": {
+    "source_id": "8c867580-27df-4e80-9a5f-c73f9864f805",
+    "vehicle_id": "024c338a-decd-4196-976e-29fe11b1810e",
+    "vin": "5YJ3E1EA7KF000002",
+    "car_id": 10,
+    "installation_id": "edge-r1-20260909",
+    "lineage": "edge-spool-r1-20260909",
+    "transaction_type": "V",
+    "transaction_id_prefix": "edge-r1-primary-20260909-"
+  },
+  "candidate_modes": {
+    "docker_arm64": {
+      "guest": "teslatlas-debian13-arm64",
+      "compose_project": "edge-r1-arm64-20260909",
+      "runtime_root": "/home/bolyki.guest/teslatlas-edge-r1-docker-runtime-20260909",
+      "edge_hub_port": 20443,
+      "edge_receiver_port": 20444,
+      "edge_health_bind": "127.0.0.1:8080",
+      "edge_uid_gid": "10001:10001"
+    },
+    "native_arm64": {
+      "guest": "teslatlas-debian13-arm64",
+      "runtime_root": "/home/bolyki.guest/teslatlas-edge-r1-native-runtime-20260909",
+      "edge_hub_port": 20445,
+      "edge_receiver_port": 20446,
+      "edge_health_bind": "127.0.0.1:8080",
+      "service_identity": "teslatlas-edge"
+    }
+  },
+  "hub_requirements": {
+    "collector_target": "The fresh Hub fixture must bind only to the selected candidate Edge URL and publish a new owner-only descriptor.",
+    "fixture_identity": "Use the producer source_id, vehicle_id, vin, car_id, installation_id, and lineage above; do not reuse the closed r5 root, credentials, pending record, or HA invitation.",
+    "transport_gate": "The generic collector transport gate is satisfied by the accepted r13 source regression and bounded same-Hub mTLS path; it does not authorize or bind this distinct cohort. A fresh fixture and fresh coordinator authorization remain required.",
+    "custody": "Hub owns the fixture, ledger, and Hub credentials; Edge owns the candidate runtime, receiver credentials, encrypted spool, and receiver TLS inputs.",
+    "acceptance": "Fresh listener/root custody must be agreed by Hub, HA, and Edge before launch; one synthetic V submission is authorized only after that handoff."
+  },
+  "reconciliation": {
+    "recorded_at": "2026-09-09",
+    "coordination_reference": "docs/development/coordination/2026-09-09-r13-pass-r1-release.json",
+    "transport_gate": {
+      "status": "satisfied_as_generic_source_and_regression_gate",
+      "evidence": [
+        "hub/docs/development/STATUS.json:b2_edge_transport_safe_socket_diagnostic",
+        "hub/docs/development/STATUS.json:b2_r13_authorized_name_only_edge_hub_ha_journey"
+      ],
+      "boundary": "The accepted r13 path proves the corrected Hub transport/application route for its own fresh cohort; it does not retroactively reclassify r9/r10 or grant this handoff a live listener, fixture, or producer authorization."
+    },
+    "r13_identity_boundary": {
+      "source_id": "8c867580-27df-4e80-9a5f-c73f9864f809",
+      "vehicle_id": "024c338a-decd-4196-976e-29fe11b18111",
+      "vin": "5YJ3E1EA7KF000005",
+      "car_id": 12,
+      "installation_id": "edge-r13-authorized-20260909",
+      "lineage": "edge-spool-r13-authorized-20260909",
+      "listeners": ["20943", "20944"],
+      "reuse": "The r13 root, credentials, actor, record and HA entry are closed and not reusable."
+    },
+    "this_handoff_identity_boundary": "This handoff remains the separate source 8c867580-27df-4e80-9a5f-c73f9864f805 / vehicle 024c338a-decd-4196-976e-29fe11b1810e / VIN 5YJ3E1EA7KF000002 / car 10 cohort. It has no fresh Hub fixture, cross-owner custody receipt or submit-once authorization, and remains launch-free.",
+    "remaining_gate": "Hub must publish a fresh owner-only fixture/collector descriptor bound only to this handoff's exact producer identity; HA and Edge must agree the same fresh custody and cleanup boundary; the coordinator must authorize one bounded synthetic V attempt."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "tesla_account_credentials": false,
+    "vehicle_commands": false,
+    "passive_vehicle_provenance": false,
+    "reuse_closed_r5_state": false
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "run_id": "edge-r11-diagnostic-20260909",
+  "guest": "teslatlas-debian13-arm64",
+  "runtime_root": "/home/bolyki.guest/teslatlas-edge-r11-diagnostic-20260909",
+  "compose_project": "edge-r11-diagnostic-20260909",
+  "image": {
+    "reference": "teslatlas-edge:local",
+    "sha256": "c04e30499821f8f412764541a2627e038fb9703a6f2f884c4e9525fe8005b2a4",
+    "architecture": "linux/arm64"
+  },
+  "producer_manifest": {
+    "path": "/home/bolyki.guest/teslatlas-edge-r11-diagnostic-20260909/manifest/producer-handoff.json",
+    "sha256": "137f527536dfcac7f52bb6e706014c16e9f4bff5ad8f80d05e2be3ac268c1d2f",
+    "submission": "not invoked"
+  },
+  "listeners": {
+    "edge_delivery": "https://127.0.0.1:20643",
+    "receiver": "wss://127.0.0.1:20644/",
+    "bind_scope": "loopback-only",
+    "r10_ports_preserved": [20543, 20544]
+  },
+  "trust_handoff": {
+    "preparer": "tools/interop/client_lanes/prepare_hub_consumer_inputs.sh",
+    "preparer_sha256": "500531a755f50c01ae3eecfd1a7e9f68586109115cf6cc369711340d2fed6c53",
+    "test_sha256": "f3cd93488bc7094dab70cb44147fb6aa699e0689b6336dae6b11793f546fa82c",
+    "input_root": "/home/bolyki.guest/teslatlas-edge-r11-diagnostic-20260909/hub-inputs",
+    "input_root_mode_owner": "0700 bolyki:bolyki",
+    "files": {
+      "server_ca.pem": {
+        "path": "/home/bolyki.guest/teslatlas-edge-r11-diagnostic-20260909/hub-inputs/server-ca.pem",
+        "mode_nlink_owner": "0600 1 bolyki:bolyki",
+        "sha256_fingerprint": "aa7f2a66b6e0cbe95588ed35a9f0ea26420df76cbff58c011f0aec22f3bf993d",
+        "subject": "CN=Teslatlas Edge r11 server CA",
+        "issuer": "CN=Teslatlas Edge r11 server CA",
+        "basic_constraints": "CA:TRUE"
+      },
+      "hub-client.crt": {
+        "path": "/home/bolyki.guest/teslatlas-edge-r11-diagnostic-20260909/hub-inputs/hub-client.crt",
+        "mode_nlink_owner": "0600 1 bolyki:bolyki",
+        "sha256_fingerprint": "3eb5111a2d0390d82655ec5193d85e5fd62ddf5d889ea713c5746b7eb9b7d159",
+        "subject": "CN=teslatlas-edge-r11-hub-client",
+        "issuer": "CN=Teslatlas Edge r11 Hub-client CA",
+        "purpose": "sslclient",
+        "basic_constraints": "CA:FALSE"
+      },
+      "hub-client.key": {
+        "path": "/home/bolyki.guest/teslatlas-edge-r11-diagnostic-20260909/hub-inputs/hub-client.key",
+        "mode_nlink_owner": "0600 1 bolyki:bolyki",
+        "value": "withheld"
+      },
+      "delivery-bearer": {
+        "path": "/home/bolyki.guest/teslatlas-edge-r11-diagnostic-20260909/hub-inputs/delivery-bearer",
+        "mode_nlink_owner": "0600 1 bolyki:bolyki",
+        "value": "withheld"
+      }
+    },
+    "server_leaf": {
+      "path": "/home/bolyki.guest/teslatlas-edge-r11-diagnostic-20260909/hub-tls/hub-server.crt",
+      "mode_nlink_owner": "0644 1 10001:10001",
+      "sha256_fingerprint": "19fa782ed3cb1c2e58a95acfec88b04b19f3167e688bb31499c32076c714461b",
+      "subject": "CN=teslatlas-edge-r11-delivery",
+      "issuer": "CN=Teslatlas Edge r11 server CA",
+      "basic_constraints": "CA:FALSE",
+      "san": "IP Address:127.0.0.1, DNS:localhost",
+      "purpose": "sslserver"
+    },
+    "hub_client_ca": {
+      "path": "/home/bolyki.guest/teslatlas-edge-r11-diagnostic-20260909/hub-tls/hub-client-ca.crt",
+      "mode_nlink_owner": "0644 1 10001:10001",
+      "sha256_fingerprint": "ffae53116fd1197241c5f80435d544f0a751c80f0b9d5cd09ffea888b3d7bd56",
+      "subject": "CN=Teslatlas Edge r11 Hub-client CA",
+      "basic_constraints": "CA:TRUE"
+    },
+    "verification": {
+      "server": "openssl verify -CAfile server-ca.pem -purpose sslserver -verify_ip 127.0.0.1: OK",
+      "client": "openssl verify -CAfile hub-client-ca.crt -purpose sslclient: OK",
+      "preparer_contract": "1 focused test passed; rejects leaf-as-CA and validates owner-only bundle"
+    }
+  },
+  "state": {
+    "initialization": "Edge init and doctor passed",
+    "healthz": {
+      "status": "ok",
+      "queue_records": 0,
+      "queue_bytes": 0,
+      "corrupt_records": 0,
+      "expired_records": 0,
+      "pending_gap_notices": 0,
+      "capacity_exhausted": false
+    },
+    "readyz": "status ok with the same zero queue",
+    "spool_files": [
+      ".lock (0600 1 10001:10001, 0 bytes)",
+      "FORMAT (0600 1 10001:10001, 2 bytes)",
+      "sequence.tlem (0600 1 10001:10001, 149 bytes)"
+    ],
+    "producer_or_helper": "no producer submission and no helper invocation"
+  },
+  "mounts": {
+    "edge": [
+      "/var/lib/teslatlas-edge rw",
+      "/run/teslatlas-edge-receiver rw",
+      "/etc/teslatlas-edge/config.toml ro",
+      "/run/teslatlas-edge-hub-tls ro"
+    ],
+    "receiver": [
+      "/run/teslatlas-edge-vehicle-tls ro",
+      "/run/teslatlas-edge-receiver ro",
+      "/etc/teslatlas-edge/fleet-telemetry.json ro"
+    ],
+    "separation": "receiver has no Edge state/spool/Hub-TLS mount; Edge has no vehicle-TLS mount"
+  },
+  "authorization": "Hub independently validated this fresh handoff and ran exactly one non-submitting v2 poll. Producer submission, HA attachment, vehicle commands, and r5-r10 input reuse were prohibited.",
+  "hub_probe": {
+    "request_count": 1,
+    "path": "GET /v2/hub/batches/next",
+    "result": "passed",
+    "batch": "empty",
+    "ledger": "zero mutation"
+  },
+  "cleanup_plan": "After the no-op result and next instruction, stop receiver first and Edge second with this named Compose project, verify 20643/20644 are closed, retain the sealed root/state, and do not use down -v or delete the spool.",
+  "cleanup_receipt": {
+    "receiver": "stopped first; container exited 143 after bounded SIGTERM",
+    "edge": "stopped second; container exited 0",
+    "listeners": "20643 and 20644 closed",
+    "root": "retained at the named path with 0700 bolyki ownership",
+    "state": "encrypted spool metadata retained; no record files were created",
+    "unrelated_listeners": "r10 20543/20544 and HA 18483 remained listening"
+  }
+}

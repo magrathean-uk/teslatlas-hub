@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.edge.macos_one_event_r11_concrete_profile_acceptance",
+  "date": "2026-09-18",
+  "state": "accepted_prepared_inactive_profile_no_guest_runtime_authority",
+  "authority": "Edge-owned independent source-only concrete-profile gate. This receipt does not authorize guest transfer, runtime, listener, producer, event, or delivery.",
+  "inputs": {
+    "hub_restart_revalidation": {
+      "path": "/Users/bolyki/dev/source/teslatlas-service/hub/docs/development/edge-macos-one-event-r11-restart-revalidation-2026-09-18.json",
+      "sha256": "d64db856ac4948eb7bafaedaa2df15a6699537f13b7dea09cad3b46aade6c668"
+    },
+    "prior_edge_cross_owner_gate": {
+      "path": "docs/development/edge-macos-one-event-r11-restart-cross-owner-acceptance-2026-09-18.json",
+      "sha256": "4d8b4449de277fbbd47b755ceffa6559fb0269a2ce0bb08fe318d26eed7b4bc8"
+    },
+    "concrete_preparation": {
+      "path": "/Users/bolyki/dev/source/teslatlas-service/hub/docs/development/edge-macos-one-event-r11-concrete-preparation-2026-09-18.json",
+      "sha256": "96a1342128f2d10fec169ea2beae02c22ee790980261146cb2ff188c32f6d664"
+    },
+    "profile": {
+      "path": "/Users/bolyki/dev/source/teslatlas-service/hub/docs/development/edge-macos-one-event-certificate-profile-review-2026-09-12-r11.json",
+      "sha256": "4b896644694800b37cf749b96788d01559f256fb3b73ca0295a28b29ca5038c2"
+    },
+    "source_profile_staging": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11/evidence/source-profile-staging.json",
+      "sha256": "509b2e61c3257c8532a8c2a351b75a09204d8dc4dd21405b8d8a52030e9b2e7c"
+    },
+    "fixture_binding_validation_public": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11/evidence/fixture-binding-validation-public.json",
+      "sha256": "6fe2ed243d9d21fdfd26c96c8e6424d7bdd0985c7e4420e6590dd53488110a84"
+    },
+    "preparation_summary": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11/evidence/preparation-summary.json",
+      "sha256": "4f068ba355cfc089226bee7bbe28fa91a68957263c17883a7950b87028781a11"
+    },
+    "frozen_source_snapshot": {
+      "proposal_sha256": "5f6969ab295e06502ec415d9da52355519240aa7fe9510f49f39e03bc2b96544",
+      "preparation_specification_sha256": "d800b93a929236aab471dc9528891b3cf28563b992e9bc90191b5965faac4eb0",
+      "preparer_sha256": "d3f2ffa5f6582e3a97abc9b4bfebf3fdc39ed269880011d493ae69862a58f909",
+      "preparer_mode": "0500",
+      "fixture_binding_validator_sha256": "42a6d63585b7341ebe34175a8e55e982bc4839b292b2ff0aa7125cf506b7f819",
+      "fixture_binding_test_sha256": "c3697062b280c4d119b1da3861a8bf5b8d97473eadbd2d3a49acfc03d996bae0"
+    }
+  },
+  "checks": {
+    "evidence_hashes": "PASS: all seven bound receipts match their supplied SHA-256 values",
+    "source_snapshot": "PASS: proposal, specification, preparer, validator and test bytes unchanged; preparer is mode 0500",
+    "cross_owner_restart_binding": "PASS: Hub restart receipt and prior Edge cross-owner receipt bind the same five source hashes and inactive boundaries",
+    "staged_artifacts": {
+      "count": 8,
+      "mode": "0500",
+      "uid": 501,
+      "links": 1,
+      "hashes": {
+        "edge": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a",
+        "fixture_binding_validator": "42a6d63585b7341ebe34175a8e55e982bc4839b292b2ff0aa7125cf506b7f819",
+        "guard": "889d79fff2ec6154993a72a65c2161240df999666cd97bee9c34e1b9ecb51d1f",
+        "helper": "4b7c0170888d9f45fcd145bf3d34eecf7363898036daca6332b67354fc47ea59",
+        "hub": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+        "interop_fixture": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6",
+        "ledger_observer": "098c543a0fafc1d2c3c6c16f554f321c7c0535ffefff24778df33f548cbd35a2",
+        "receiver": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6"
+      },
+      "result": "PASS: actual staged files, hashes, ownership, links, modes and guest mappings match"
+    },
+    "rendered_configs": {
+      "edge_sha256": "a1674d255f4024d2c28450578385a6e4d4c6be26c2cade5af1dec972d7e52079",
+      "hub_sha256": "ed7d4289ed2b118e0787c0ea44b592624ff06591094cd9e5b3c23dffd7958303",
+      "receiver_sha256": "e66c50e2aea82fb430f883a04004349a7dbe0a5b4db89f317ddd0d3d073a8cf2",
+      "result": "PASS: staged config bytes match the concrete preparation receipt"
+    },
+    "private_metadata": {
+      "file_count": 15,
+      "mode": "0600",
+      "uid": 501,
+      "links": 1,
+      "public_certificate_hashes_verified": 7,
+      "secret_metadata_hashes": "withheld",
+      "secret_contents_read": false,
+      "raw_values_recorded": false,
+      "result": "PASS"
+    },
+    "fixture_store": {
+      "database_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11/guest-stage/hub/hub.sqlite",
+      "database_sha256": "7904059618fb15954a3b792b2169b414fadd1a9dc4c765e92176fd0f357c74cf",
+      "binding_sha256": "9f3dff1c306549adefbb91a39e4c05c709f813a06e3cf39b35ab74ef69be3340",
+      "checked_relationships": 7,
+      "database_immutable": true,
+      "database_query_only": true,
+      "database_fingerprint_unchanged": true,
+      "negative_hub_id_mismatch": "PASS before PKI, credential or runtime",
+      "wal_present": false,
+      "shm_present": false,
+      "wal_shm_absent_before_and_after": true,
+      "result": "PASS: independent validator confirmed the seven-relationship immutable/query-only store"
+    },
+    "inactive_binding": {
+      "event_authorized": false,
+      "mode": "0600",
+      "links": 1,
+      "transaction_id": "edge-mac-r11-20260912-v-001",
+      "identity_values": "withheld; only bound hashes were reviewed",
+      "result": "PASS"
+    },
+    "launch_contract": {
+      "cwd": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r11",
+      "start_order": [
+        "receiver",
+        "edge",
+        "hub"
+      ],
+      "receiver": {
+        "dispatch": "http://127.0.0.1:8080/v1/internal/fleet-telemetry",
+        "data_bind": "127.0.0.1:21458",
+        "status": "http://127.0.0.1:21459/status",
+        "bearer_environment": "TESLATLAS_FLEET_TELEMETRY_BEARER_FILE",
+        "tls_paths": "guest private receiver server cert/key and vehicle client CA"
+      },
+      "edge": {
+        "receiver_bind": "127.0.0.1:8080",
+        "hub_bind": "192.168.64.10:21850",
+        "tls_paths": "guest private Edge Hub server cert/key and CA"
+      },
+      "hub": {
+        "bind": "127.0.0.1:18535",
+        "edge_base_url": "https://192.168.64.10:21850/",
+        "tls_paths": "guest private Edge CA/client cert/key",
+        "bearer_path": "guest private hub-bearer"
+      },
+      "result": "PASS: exact receiver, Edge and Hub argv/cwd/binds/TLS roles and order verified"
+    }
+  },
+  "inactive_runtime_boundary": {
+    "guest_root": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r11",
+    "guest_root_absent": true,
+    "ports_closed": [
+      8080,
+      21850,
+      21458,
+      21459,
+      18535
+    ],
+    "owned_runtime_listener_processes": false,
+    "guest_command_invoked": false,
+    "runtime_started": false,
+    "listener_started": false,
+    "producer_invoked": false,
+    "event_authorized": false,
+    "event_submitted": false,
+    "shared_guest_status_probe": "inconclusive without guest action; no Lima/Tart guest was started or contacted",
+    "result": "PASS: source-only inactive boundary preserved"
+  },
+  "next_gate": "Coordinator may separately decide the next inactive/zero-event runtime gate. No guest transfer, runtime/listener start, producer invocation or event authorization is granted by this receipt."
+}

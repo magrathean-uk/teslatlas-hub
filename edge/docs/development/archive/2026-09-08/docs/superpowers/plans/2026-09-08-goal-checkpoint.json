@@ -1,0 +1,171 @@
+{
+  "coordination_policy": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "high"
+  },
+  "goal_continuation": "The native goal remains blocked. With the available tools, resumption requires the user's supported Resume goal control. The parent can dispatch ordinary authorized development turns now; this does not activate the native goal. Do not replace an unfinished goal, mark it falsely complete, or edit internal app state. Continue READY owned work without waiting for native resumption; retain the full proposed objective and acceptance gates.",
+  "schema_version": 1,
+  "captured_at": "2026-09-08T18:27:52Z",
+  "actual_goal": {
+    "thread_id": "01a07f89-57a9-7831-9162-c1dede446ee9",
+    "status": "blocked",
+    "objective": "Deliver Teslatlas Edge as the optional working Fleet Telemetry ingress and Hub bridge by executing teslatlas-edge/docs/superpowers/plans/2026-09-08-working-product-plan.md, preserving completed baseline evidence and unfinished owned changes. Development turns and development subagents now use gpt-5.6-terra with thinking=high after the parent orchestrator's model transition. Complete occurrence-bound ACK deletion with safe guarded storage migration; exclusive spool ownership and monotonic sequence recovery; bounded batching, capacity/readiness and shutdown; and pinned receiver retransmission and mTLS/bearer recovery. Preserve public wire v2 and supported v1 behavior, encrypted bounded at-least-once spooling, and no Tesla account credentials or vehicle commands. With Hub-owned consumer fixes and reviewed fixtures/targets, establish actual local and installed Linux Edge/Hub normal, replay, restart, loss, auth, capacity, and fault acceptance across required Hub target cells; distinguish local tests, installed acceptance, Docker acceptance and separately pending passive vehicle proof. After the core gate, complete simple Edge/receiver Docker packaging and persistence/recovery validation, current README/docs/compatibility evidence and Edge AGENTS guidance excluding App, then review and perform the authorized source/docs-only commit/push phase last. Own Edge paths only; report shared dependencies to Hub/orchestrator. Preserve independent main checkouts and unrelated edits; no CI, releases, tags, artifact uploads or unauthorized live-host operations. Do not declare complete while required migration, product review, installed cells or Docker gates remain unaccepted.",
+    "token_budget": null,
+    "tokens_used": 2527897,
+    "time_used_seconds": 5826,
+    "created_at_unix": 1788848193,
+    "updated_at_unix": 1788854020
+  },
+  "native_goal_observation": {
+    "observed_at": "2026-09-08T18:10:42Z",
+    "status": "blocked",
+    "remaining_tokens": null,
+    "completion_budget_report": null,
+    "tokens_used": 2527897,
+    "time_used_seconds": 5826,
+    "note": "The exposed tools cannot resume or replace an unfinished native goal. No budget or time-limit error was returned; ordinary authorized development continues separately."
+  },
+  "proposed_objective": "Resume the existing full Edge goal and finish the reviewed current-tree handoff, Hub-owned installed fixture and mandatory installed target matrix, Docker runtime/lifecycle acceptance, evidence-accurate documentation and AGENTS guidance, independent product review, and the final Edge source/docs-only commit and push. Preserve occurrence-bound format-3 ACK safety, guarded format-2 migration, exclusive spool ownership, monotonic lineage, bounded delivery/capacity/shutdown, pinned receiver retry boundaries, mTLS/bearer recovery, public wire v2 and supported v1, encrypted bounded at-least-once spooling, unrelated dirty work, and separate local, installed, Docker, and passive-vehicle claims.",
+  "plan_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+  "models": {
+    "coordinator_and_delegation": {
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high"
+    },
+    "all_development_agents": {
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "high"
+    }
+  },
+  "owner_tasks": {
+    "edge_goal": "01a07f89-57a9-7831-9162-c1dede446ee9",
+    "hub": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+    "parent_orchestrator": "01a07048-a05c-72a2-9c7a-87dd59f52e9b"
+  },
+  "next_ready_milestone": {
+    "id": "M3",
+    "status": "WAITING",
+    "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+    "action": "Hub implements and independently reviews the accepted installed Edge fixture, registry entry, observers, exact invocation, and first clean installed Linux pair. Edge then supplies the reviewed M2 identities for the installed run."
+  },
+  "m2_handoff": {
+    "status": "completed_review_approved_no_handoff_blocking_finding",
+    "completed_at": "2026-09-08T18:26:50Z",
+    "manifest": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/.superpowers/sdd/2026-09-08-working-product-plan/m2-edge-handoff-manifest-2026-09-08.json",
+    "manifest_sha256": "ddde28d3cb6ca3abe251c34550b90780979fd1d481cc6ec19e1b9b0550efbf96",
+    "report": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/.superpowers/sdd/2026-09-08-working-product-plan/task-m2-report.md",
+    "report_sha256": "90d34ae2c8ccec276d11ad15c8ed42622d86cbd6dd65e82c5cea7472749b16e1",
+    "independent_review": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/.superpowers/sdd/2026-09-08-working-product-plan/task-m2-review.md",
+    "independent_review_sha256": "30e29168ea9561e6133c8e8d260635522c211f3be197f8605140837c6b994095",
+    "verdict": {
+      "specification_compliance": "PASS",
+      "task_quality": "APPROVED",
+      "handoff": "permitted"
+    },
+    "scope_limit": "Local source and evidence identity only; no installed, Docker-runtime, service-manager, receiver-wire, or passive-vehicle acceptance."
+  },
+  "external_dependency_observation": {
+    "observed_at": "2026-09-08T18:27:52Z",
+    "hub_edge_fixture_directory": "absent at /Users/bolyki/dev/source/teslatlas-service/hub/tests/interop/edge_installed",
+    "hub_fixture_ledger_status": "design_accepted_bounded_implementation_pending",
+    "hub_shared_integration_ledger_status": "correction3_I16_and_I14_I15_source_corrections_independently_rereviewed_installed_acceptance_pending",
+    "hub_execution_ledger_status": "bounded_source_and_local_gate_execution_complete_installed_live_and_publication_pending",
+    "docker_daemon": "unavailable: unix:///var/run/docker.sock does not exist"
+  },
+  "dependencies": [
+    {
+      "id": "goal_dispatch",
+      "owner_task_id": "01a07048-a05c-72a2-9c7a-87dd59f52e9b",
+      "missing_input": "The native goal is blocked and requires the user Resume control; ordinary Terra/high development can proceed now.",
+      "local_work_possible": "M2 source review and evidenced corrections are READY; they do not depend on native goal resumption.",
+      "unblock_event": "M2 is dispatched on gpt-5.6-terra with high reasoning; native goal resumption is a separate user action."
+    },
+    {
+      "id": "exact_go_toolchain",
+      "owner_task_id": "01a07f89-57a9-7831-9162-c1dede446ee9",
+      "missing_input": "Exact Go 1.27.0; the current host has Go 1.27.1.",
+      "local_work_possible": "Rust and Python gates, source review, and retained exact-Go evidence remain available.",
+      "unblock_event": "Exact Go 1.27.0 is available or an accepted immutable bridge binary identity is supplied."
+    },
+    {
+      "id": "hub_edge_fixture",
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "missing_input": "Reviewed installed Edge fixture implementation, registry entry, observers, and exact invocation.",
+      "local_work_possible": "Edge can finish M2 and publish exact contract/release/fault identities.",
+      "unblock_event": "Hub's accepted fixture implementation and independent review pass."
+    },
+    {
+      "id": "installed_targets",
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "missing_input": "Usable installed Linux pair and required macOS arm64, Debian 13 arm64, and Debian 13 amd64 target runtimes; ARM64 is quarantined.",
+      "local_work_possible": "Local real-process gates and package inspection remain possible.",
+      "unblock_event": "Reviewed fixed-runtime inventory, least-privilege observation, and a clean installed Linux pair are available."
+    },
+    {
+      "id": "docker_runtime",
+      "owner_task_id": "01a07048-a05c-72a2-9c7a-87dd59f52e9b",
+      "missing_input": "Daemon-equipped isolated Linux amd64/arm64 environment.",
+      "local_work_possible": "Static Docker/Compose review and evidence-accurate docs can proceed.",
+      "unblock_event": "The final Edge tree is staged on a daemon-equipped host."
+    },
+    {
+      "id": "passive_vehicle_ingress",
+      "owner_task_id": "01a07048-a05c-72a2-9c7a-87dd59f52e9b",
+      "missing_input": "Already authorized passive vehicle-wire source and provenance capture.",
+      "local_work_possible": "Dispatcher-entry and installed normalized-envelope acceptance can finish.",
+      "unblock_event": "An authorized passive route supplies receiver TLS/parser evidence without commands or registration changes."
+    },
+    {
+      "id": "final_source_publication",
+      "owner_task_id": "01a07f89-57a9-7831-9162-c1dede446ee9",
+      "missing_input": "M2-M4 acceptance receipts, reviews, and a clean exact staged diff.",
+      "local_work_possible": "Draft documentation may use confirmed evidence.",
+      "unblock_event": "Mandatory reviews, installed cells, Docker gates, remote inspection, and staged-diff review pass."
+    }
+  ],
+  "milestones": [
+    {
+      "id": "M1",
+      "status": "DONE",
+      "owner_task_id": "01a07f89-57a9-7831-9162-c1dede446ee9",
+      "deliverable": "Edge local correctness, matrix contract publication, dispatcher bridge evidence, and current Hub normal/fault local lanes."
+    },
+    {
+      "id": "M2",
+      "status": "DONE",
+      "owner_task_id": "01a07f89-57a9-7831-9162-c1dede446ee9",
+      "deliverable": "Independent current-tree review, affected local gate refresh, and immutable Hub handoff identities."
+    },
+    {
+      "id": "M3",
+      "status": "WAITING",
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "deliverable": "Reviewed Hub Edge fixture, installed Linux core pass, and mandatory Hub target matrix."
+    },
+    {
+      "id": "M4",
+      "status": "WAITING",
+      "owner_task_id": "01a07f89-57a9-7831-9162-c1dede446ee9",
+      "deliverable": "Linux amd64/arm64 Docker image and lifecycle acceptance with persistent state."
+    },
+    {
+      "id": "M5",
+      "status": "WAITING",
+      "owner_task_id": "01a07f89-57a9-7831-9162-c1dede446ee9",
+      "deliverable": "Evidence-accurate Edge docs/AGENTS, final review, and source/docs-only commit and push."
+    }
+  ],
+  "current_model_policy": {
+    "authority": "Latest user instruction on 2026-09-08; supersedes earlier model policy and historical goal wording",
+    "coordinator_and_delegation": {
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high"
+    },
+    "product_coding_goal_and_workers": {
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "high"
+    }
+  },
+  "developer_model": "gpt-5.6-terra",
+  "developer_effort": "high"
+}

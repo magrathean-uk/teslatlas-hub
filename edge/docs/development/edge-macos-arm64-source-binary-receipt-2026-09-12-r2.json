@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_arm64_source_binary_receipt_r2",
+  "date": "2026-09-12",
+  "status": "passed_fresh_locked_source_to_binary_build",
+  "purpose": "Fresh r2 Edge arm64 candidate for the wholly fresh cohort; no runtime or producer action.",
+  "source": {
+    "repository": "teslatlas-edge",
+    "head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+    "working_tree": {
+      "status_command": "git status --porcelain=v1 --untracked-files=all",
+      "status_sha256": "2668aa11d802ecb07490d869f5e68fe3cf4b0a5fbd1b1a147d2ee3710b7527ee",
+      "status_path_count": 101,
+      "capture_boundary": "Stable before and after the r2 build; r2 receipt and later ledger documentation were written after this build boundary.",
+      "scope": "Every Cargo/Rust compilation input is listed below with its content hash and status. Docs, packaging, tests, scripts and other non-input dirty paths were not compiled by this --bin invocation.",
+      "additional_build_inputs": []
+    },
+    "manifest_sha256": "a3894551089b006c57f21a575161dc2174b4037c6b71098e7c88ed3254087d75",
+    "manifest_count": 15,
+    "manifest_revalidated_before_and_after": true,
+    "manifest": [
+      {"path": "Cargo.lock", "status": "modified", "sha256": "aca4cc8acd30b366299ed732e7ba86af77d41adda8a2865c1804e1c1255bdd09"},
+      {"path": "Cargo.toml", "status": "modified", "sha256": "bd048534f861ecb031d46adc7f1ba7d4754f091076ac83870d8d4b0aabced786"},
+      {"path": "src/admission.rs", "status": "modified", "sha256": "ec65888a4cc8e44c649b62474bad5bfa87f16dce90618719b32a46cad97ab7c2"},
+      {"path": "src/config.rs", "status": "modified", "sha256": "be8b87e7c8998fa8f14cf2e2e0fe2492591d255329b688621076b91d6ee5eb39"},
+      {"path": "src/credentials.rs", "status": "clean", "sha256": "eaa0431149e2527e5714855a08ed728adbc2c13fbac2c26b2ba26516fa3549b8"},
+      {"path": "src/crypto.rs", "status": "clean", "sha256": "04d5e4138bac166048b2d3f26781f696edf944179e5ad3fb1c939fd16f11eee2"},
+      {"path": "src/delivery.rs", "status": "modified", "sha256": "68bc2f897d253a7986c5a1eafd1ebc261e8f148525d084129ec73d8ebe376fb5"},
+      {"path": "src/health.rs", "status": "modified", "sha256": "e3d6242314916feb910b05d0875105746961c3f7dd39016530cf0fc6d386154b"},
+      {"path": "src/lib.rs", "status": "clean", "sha256": "6125ec4019237ec1d674d6596c4e1fcb2c1c9632189c78cc2f82ba31a2ea24d3"},
+      {"path": "src/main.rs", "status": "clean", "sha256": "b3f47d3d6d11174f8e3219084915648dfa1bba307234f29861fe20dce825b2df"},
+      {"path": "src/metrics.rs", "status": "clean", "sha256": "cbf1b609f7b344c6daec9ddf28584440aa993b6f20d0b224e202696ebe033259"},
+      {"path": "src/protocol.rs", "status": "modified", "sha256": "8114af8e64cdd939655b7b1a353a88738e0f933040448ef2ecb4b476a980a7a3"},
+      {"path": "src/runtime.rs", "status": "clean", "sha256": "9452b8d733f2d1082f94209c8547089515ac420c6875a5ab6b70e4ed7356ba21"},
+      {"path": "src/spool.rs", "status": "modified", "sha256": "f58780c8cd2390fd31fa7f76ac12c562a9fbb55650c9f17321d2e03a9c0d25eb"},
+      {"path": "src/tls.rs", "status": "clean", "sha256": "9887aaede9950b6583cbaed2e8dbf0d464b4ac32ff22d6548688a34c34fa3f27"}
+    ]
+  },
+  "build": {
+    "working_directory": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge",
+    "command": "rustup run 1.98.0 cargo build --locked --target-dir /Users/bolyki/dev/teslatlas-lab/build/teslatlas-edge/source-binary-20260912-r2 --release --target aarch64-apple-darwin --bin teslatlas-edge",
+    "target": "aarch64-apple-darwin",
+    "profile": "release",
+    "result": "Finished release profile [optimized] target(s)",
+    "duration_seconds": 38.32,
+    "toolchain": {
+      "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+      "rustc_commit": "88d9e12ae178fab0fb5cc050a94da85685d449ea",
+      "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+      "llvm": "22.1.8",
+      "host": "aarch64-apple-darwin",
+      "macos_host": "27.0 build 26A428",
+      "xcode_sdk": "macOSX27.0"
+    },
+    "cargo_metadata": {
+      "package": "teslatlas-edge 2026.36.2",
+      "compiled_targets": [
+        "teslatlas_edge library from src/lib.rs",
+        "teslatlas-edge binary from src/main.rs"
+      ],
+      "build_script": null,
+      "cargo_config": null
+    }
+  },
+  "output": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/build/teslatlas-edge/source-binary-20260912-r2/aarch64-apple-darwin/release/teslatlas-edge",
+    "sha256": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a",
+    "bytes": 5730352,
+    "mode_uid_gid": "0755 501:20",
+    "file_type": "Mach-O 64-bit executable arm64",
+    "mach_header": {
+      "filetype": "MH_EXECUTE",
+      "cpu": "ARM64",
+      "flags": "NOUNDEFS DYLDLINK TWOLEVEL PIE MH_HAS_TLV_DESCRIPTORS"
+    },
+    "load_commands": {
+      "platform": "MACOS",
+      "minimum_os": "11.0",
+      "sdk": "27.0",
+      "tool": "ld 27037.1"
+    },
+    "dynamic_dependencies": [
+      "/usr/lib/libiconv.2.dylib",
+      "/usr/lib/libSystem.B.dylib"
+    ],
+    "loader_check": {
+      "command": "<output> --help",
+      "exit_code": 0,
+      "result": "Help-only execution completed without opening a listener or reading runtime credentials."
+    },
+    "deterministic_comparison": "SHA-256 matches the prior r1 candidate bytes, but this is a new r2 build output at a new path with a new receipt and lock occurrence."
+  },
+  "shared_build_lock": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/locks/heavy-build",
+    "task_id": "01a082b7-9723-7211-b9f0-8b505e450b7e",
+    "build_shell_pid": 84937,
+    "acquired_before_build": true,
+    "released_after_build": true,
+    "post_build_recheck": "absent",
+    "lock_scope": "Only this fresh r2 Edge build used the shared heavy-build lock in this occurrence."
+  },
+  "safety_boundary": {
+    "guest_started": false,
+    "listener_started": false,
+    "credential_created_or_expired": false,
+    "producer_invoked": false,
+    "event_sent": false,
+    "hub_or_ha_mutated": false,
+    "package_installed": false,
+    "publication_or_upload": false
+  }
+}
