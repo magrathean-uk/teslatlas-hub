@@ -34,12 +34,12 @@ use tokio::{
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use url::Url;
 
-/// Canonical fixture car identity (loopback TeslaMate dump, car_id=1).
-pub const FIXTURE_EID: u64 = 1_493_114_796_524_256;
-pub const FIXTURE_VID: u64 = 182_630_373_857;
-const FIXTURE_VID_TAG: &str = "182630373857";
-pub const FIXTURE_VIN: &str = "LRW3F7EB0MC165515";
-pub const FIXTURE_DISPLAY_NAME: &str = "Athena";
+/// Synthetic fixture identity; this is not a real vehicle.
+pub const FIXTURE_EID: u64 = 1_234_567_890_123_456;
+pub const FIXTURE_VID: u64 = 123_456_789_012;
+const FIXTURE_VID_TAG: &str = "123456789012";
+pub const FIXTURE_VIN: &str = "1M8GDM9AXKP042788";
+pub const FIXTURE_DISPLAY_NAME: &str = "Test Vehicle";
 /// Deterministic fake successor pair returned by the loopback OAuth endpoint.
 /// These values are test fixtures, never real credentials.
 pub const FAKE_REFRESHED_ACCESS_TOKEN: &str = "qts-fake-successor-access";

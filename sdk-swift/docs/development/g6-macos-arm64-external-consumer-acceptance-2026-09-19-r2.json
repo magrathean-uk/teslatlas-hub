@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.swift.g6.macos_arm64.external_consumer_acceptance",
+  "state": "accepted_closed",
+  "gate_id": "G6",
+  "recorded_at": "2026-09-19T08:46:37Z",
+  "scope": "Maintained external SwiftPM CurrentHubConsumer against one wholly fresh source-built synthetic Hub on Apple-silicon macOS.",
+  "source_binding": {
+    "repository": "teslatlas-sdk-swift",
+    "head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+    "branch": "main",
+    "working_tree_status_entries_before_receipt": 55,
+    "working_tree_status_sha256_before_receipt": "c56d64f68964560050c37120f6e9fb9a70d48934e9ab0ae205e91953f8e02934",
+    "tracked_diff_sha256": "96c8a1edae4ad7b9509347bee9cdf6303708223a958b1ca8794c20e3ef691f95",
+    "content_manifest_members": 175,
+    "content_manifest_sha256": "2109dc00f26e755cd8bc3d17135ca7d2ff24142092f37d573eec3340a1c0ba55",
+    "pre_and_post_build_manifest_match": true,
+    "staged_basename": "teslatlas-sdk-swift",
+    "staged_members_verified": 175
+  },
+  "hub_source_binding": {
+    "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "tracked_diff_sha256": "8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca",
+    "content_manifest_members": 641,
+    "content_manifest_sha256": "42f1787eb94ad81595fad1e5795d547633d0fea848735dfd47ab4e86ed53249d",
+    "hub_binary_sha256": "8577ec7cf4aa3017df4fb90cc0523d46436245031260b6a65418ce1a273abaae",
+    "interop_fixture_sha256": "c9398d5a7fdf218dd2dc072c3920e99dca84d91f14655b00a135af9380ff6ab0"
+  },
+  "binding": {
+    "profile": "hub-http-v1@1.0.0",
+    "profile_manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "product_version": "2026.36.2",
+    "protocol_typescript_swift_profile_bytes_match": true
+  },
+  "build_and_tests": {
+    "platform": "macOS 27.0 build 26A428 arm64",
+    "swift": "Apple Swift 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)",
+    "focused_example_tests": {"passed": 11, "failed": 0},
+    "release_build_count_for_accepted_cohort": 1,
+    "release_binary_sha256": "17f9b72497a231bf47ce39169bbc99379012e2ee18e353badfbbbfad1eadd8b9",
+    "release_binary_bytes": 869856,
+    "release_binary_architecture": "Mach-O 64-bit arm64",
+    "heavy_build_lock": "held atomically and did not overlap the Hub build"
+  },
+  "acceptance": {
+    "invocation_count": 1,
+    "consumer_exit_code": 0,
+    "stderr_bytes": 0,
+    "discovery_identity_profile_product_and_capabilities": "passed",
+    "normal_tls_with_expected_hub_identity": "passed",
+    "claim_status": "passed",
+    "invitation_replay_rejected": true,
+    "health_status": "ok",
+    "readiness_status": "ready",
+    "vehicle_count": 2,
+    "current_observed_count": 1,
+    "current_absent_count": 1,
+    "drive_page_counts": [2, 2, 1],
+    "drive_count": 5,
+    "opaque_cursor_continuity": true,
+    "conditional_not_modified_count": 3,
+    "credential_rotation": "passed",
+    "old_credential_rejected": true,
+    "post_rotation_read_status": "passed",
+    "hub_restart_continuity": "same identity, rotated credential, readiness and data passed",
+    "hub_generation_exit_codes": [0, 0]
+  },
+  "maintained_example_changes": {
+    "reason": "The prior example did not assert all G6 acceptance facts required by the final programme.",
+    "scope": "Added exact discovery and canonical synthetic-fixture checks, deliberate invitation replay rejection, both current results, conditional drive reads, old-token rejection, post-rotation readback and an optional bounded restart checkpoint.",
+    "credentials_remain_in_memory": true,
+    "secrets_or_identifiers_printed": false
+  },
+  "redacted_evidence_hashes": {
+    "consumer_stdout": "2586630d7dd328e1340e50588b0049b90614bb8c6fa0d01839965af71f596544",
+    "consumer_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "doctor": "f03b722072c055810e810d5352dada2fdea670ff24754015946d2e8cde88e411"
+  },
+  "failure_ledger": [
+    {
+      "cohort": "r1",
+      "result": "pre-claim harness input-shape failure; zero paired devices; no retry or replay",
+      "consumer_stderr_sha256": "9abfa3a6514cbcd39b0887433f43378e08881d2aac427b84d1466abb9b25ddd1",
+      "private_root_absent": true
+    }
+  ],
+  "cleanup": {
+    "hub_stopped": true,
+    "task_listeners_closed": true,
+    "owned_processes_and_listeners_absent": true,
+    "heavy_build_lock_absent": true,
+    "fresh_r1_and_r2_scratch_private_runtime_roots_absent": true,
+    "reproducible_release_build_artifact_retained": true
+  },
+  "limitations": [
+    "Current macOS 27.0 arm64 synthetic external-consumer proof only; macOS 14 is declared but was not minimum-floor tested.",
+    "No App, installer, notarization, real data, production, Tesla account, vehicle, Viewer, x86, Intel or full-matrix acceptance."
+  ]
+}

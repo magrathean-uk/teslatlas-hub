@@ -1,6 +1,6 @@
 # Hub changes-since contract
 
-[`hub-sync-v1@1.4.0`](../../profiles/hub-sync-v1/1.4.0/) adds a negotiated
+[`hub-sync-v1@1.4.0`](../../profiles/hub-sync-v1/1.4.0/) is served and adds a negotiated
 PhysicalV3 changed-set representation for a schema 2.2 base. A client selects
 the 1.4 bootstrap with `x-teslatlas-sync-profile: hub-sync-v1@1.4.0` and the
 existing `x-teslatlas-supported-schemas: 2.1,2.2` header. Its changes-since
@@ -109,8 +109,8 @@ rotation, then the high-water mark, then a regression, then no-op or the next
 changed set. Error statuses are inherited from 1.3.0 and are unsigned; the 1.5
 OpenAPI lists only `200` and `409` for changes-since and `200` and `406` for the
 manifest, as 1.4 does. The wire key document is the 1.3.0 signing-keys route
-and schema; the 1.4.0 key schema the profile refers to covers only the fixture
-key set.
+and schema; the 1.4.0 key schema the profile refers to validates that same
+wire document. Its fixture key set is a test vector, never a production trust anchor.
 
 A client applies a live changed set only when its stored `(receipt_id,
 manifest_sha256, live_sequence)` equals the receipt's base and
@@ -195,8 +195,8 @@ limits are the 1.4 limits. It commits no live pack: the advance example points a
 the committed 1.4 positive pack digest as a placeholder, and pack-level live rules
 are exercised by conformance that derives a live pack at run time.
 
-[`hub-sync-v1@1.3.0`](../../profiles/hub-sync-v1/1.3.0/) is the candidate,
-source-neutral successor to the `hub-sync-v1@1.0.0`, `1.1.0`, and `1.2.0`
+[`hub-sync-v1@1.3.0`](../../profiles/hub-sync-v1/1.3.0/) is served for the
+legacy and lineage 2.1 path. It is the source-neutral successor to the `hub-sync-v1@1.0.0`, `1.1.0`, and `1.2.0`
 candidates, which were retired and are no longer in this package. It
 has no exact Hub product-version pin. A client selects its bootstrap
 representation with both `x-teslatlas-sync-profile: hub-sync-v1@1.3.0` and
@@ -273,7 +273,7 @@ retired `1.2.0` prepared artefact could contain at most 497 route spans in
 addition to 120 map months. These maxima keep their largest compact JSON forms
 inside 2 MiB.
 
-Candidate `1.4.0` applies these limits jointly. Its individual schema maxima
+Served `1.4.0` applies these limits jointly. Its individual schema maxima
 MUST NOT be treated as independently combinable. Before publishing or admitting
 a PhysicalV3 checkpoint/rebase journey, the producer and receiver MUST ensure
 the original request and mandatory exact retry each fit 8192 encoded bytes, and
@@ -282,7 +282,7 @@ the complete replacement manifest, rebase and other control responses each fit
 whitespace and numeric spellings. It also checks the complete compact rebase
 and exact retry before accepting their parsed bindings. A schema-valid
 combination that exceeds any of these joint limits is inadmissible; it MUST NOT
-produce an oversized retry or an incomplete replacement. The candidate's
+produce an oversized retry or an incomplete replacement. The profile's
 4096-character identity and 1771-chunk schema maxima remain intact.
 
 Candidate `1.5.0` keeps the same bounds. Its 8192-byte request bound counts the
@@ -311,7 +311,7 @@ rebase flow.
 
 The retired `1.2.0` published its `map_months_and_routes` receipt unchanged.
 
-Candidate `1.3.0` replaces that prepared payload for newly negotiated 1.3
+Served `1.3.0` replaces that prepared payload for newly negotiated 1.3
 clients with the map-month-only `teslatlas-prepared-v1` contract. The signed
 receipt binds the source manifest, receipt, manifest schema and sequence, input
 window, generation identity, fixed units, algorithm version, map style, exact

@@ -244,7 +244,7 @@ async fn fake_handler(State(state): State<FakeState>, request: Request<Body>) ->
         (
             StatusCode::OK,
             format!(
-                r#"{{"response":[{{"id":70,"vehicle_id":71,"vin":"{TEST_VIN}","state":"online","display_name":"Athena"}}],"count":1}}"#
+                r#"{{"response":[{{"id":70,"vehicle_id":71,"vin":"{TEST_VIN}","state":"online","display_name":"Test Vehicle"}}],"count":1}}"#
             ),
         )
             .into_response()
@@ -926,7 +926,7 @@ fn reflecting_vehicle_list(access: &str, refresh: &str) -> String {
     serde_json::json!({"response": [
         {"id": 70, "vehicle_id": 71, "vin": "5YJ3E1EA7KF000001", "state": "online", "display_name": access},
         {"id": 80, "vehicle_id": 81, "vin": "5YJ3E1EA7KF000002", "state": "asleep", "display_name": format!("Bearer {refresh}")},
-        {"id": 90, "vehicle_id": 91, "vin": "5YJ3E1EA7KF000003", "state": "online", "display_name": "Athena"}
+        {"id": 90, "vehicle_id": 91, "vin": "5YJ3E1EA7KF000003", "state": "online", "display_name": "Test Vehicle"}
     ], "count": 3})
     .to_string()
 }
@@ -935,7 +935,7 @@ fn reflecting_vehicle_list(access: &str, refresh: &str) -> String {
 /// only, as `valid_short_text` needs) and an ordinary state, one per vehicle.
 fn state_reflecting_vehicle_list(access: &str, refresh: &str) -> String {
     serde_json::json!({"response": [
-        {"id": 70, "vehicle_id": 71, "vin": "5YJ3E1EA7KF000001", "state": access, "display_name": "Athena"},
+        {"id": 70, "vehicle_id": 71, "vin": "5YJ3E1EA7KF000001", "state": access, "display_name": "Test Vehicle"},
         {"id": 80, "vehicle_id": 81, "vin": "5YJ3E1EA7KF000002", "state": format!("x-{refresh}-y"), "display_name": "Hermes"},
         {"id": 90, "vehicle_id": 91, "vin": "5YJ3E1EA7KF000003", "state": "asleep", "display_name": "Apollo"}
     ], "count": 3})
@@ -1066,7 +1066,7 @@ async fn fleet_discovery_drops_vehicle_names_that_reflect_a_credential() {
             .iter()
             .map(|vehicle| vehicle.display_name.as_deref())
             .collect::<Vec<_>>(),
-        vec![None, None, Some("Athena")]
+        vec![None, None, Some("Test Vehicle")]
     );
     assert_eq!(
         vehicles
@@ -1115,7 +1115,7 @@ async fn fleet_discovery_replaces_provider_states_that_reflect_a_credential() {
             .iter()
             .map(|vehicle| vehicle.display_name.as_deref())
             .collect::<Vec<_>>(),
-        vec![Some("Athena"), Some("Hermes"), Some("Apollo")]
+        vec![Some("Test Vehicle"), Some("Hermes"), Some("Apollo")]
     );
     assert_eq!(
         vehicles

@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "kind": "macos_edge_one_event_actor_guard_correction_receipt_r5",
+  "date": "2026-09-12",
+  "state": "source_only_passed_focused_preflight_tests_no_runtime",
+  "proposal": {
+    "path": "docs/development/edge-macos-one-event-actor-contract-proposal-2026-09-12-r5.json",
+    "sha256": "d205d56076798696715d501252f5f67f83fc6e6e07143ed2683ecc4f495ff49f"
+  },
+  "supersedes_rejected": {
+    "r4_review": {
+      "path": "hub/docs/development/edge-macos-one-event-actor-contract-review-2026-09-12-r4.json",
+      "sha256": "932bde29461221aabf99a2e5dc00990c3f882923c380530846329e9086d3cf0a",
+      "finding": "Result/output/temporary preflight and alias rejection happened after one spawn."
+    },
+    "r4_proposal": {
+      "path": "docs/development/edge-macos-one-event-actor-contract-proposal-2026-09-12-r4.json",
+      "sha256": "2358982834062f8df894de76ce85e92b7563cebac3ba66fc19bb48f4660c8771"
+    }
+  },
+  "unchanged_producer": {
+    "source_path": "docs/development/edge-macos-one-event-actor-r4/producer/main.go",
+    "source_sha256": "d59c5e38245113bebdfe2635f1f3e42cfa4052f269d45d5fbd0b392a12697df2",
+    "test_path": "docs/development/edge-macos-one-event-actor-r4/producer/main_test.go",
+    "test_sha256": "a60bdba6bb71da8af5e4ede33627affda55efbd813efe2705108211391eca40d",
+    "status": "unchanged_from_r4"
+  },
+  "stable_r5_guard": {
+    "source": {
+      "path": "docs/development/edge-macos-one-event-actor-r5/guard/invoke_one_event.py",
+      "sha256": "889d79fff2ec6154993a72a65c2161240df999666cd97bee9c34e1b9ecb51d1f",
+      "bytes": 24376,
+      "mode": "0644",
+      "type": "regular"
+    },
+    "test": {
+      "path": "docs/development/edge-macos-one-event-actor-r5/guard/test_invoke_one_event.py",
+      "sha256": "ab95b8f1eb2bc8ed922209c3e648fdfd4b28d4646ce6d5a18ed405b0c296a983",
+      "bytes": 10616,
+      "mode": "0644",
+      "type": "regular"
+    }
+  },
+  "verification": {
+    "command": "PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s docs/development/edge-macos-one-event-actor-r5/guard -p 'test_*.py' -v",
+    "result": "7/7 passed in 0.101 seconds",
+    "browser": false,
+    "network": false,
+    "runtime": false,
+    "proof": [
+      "Pre-existing guard, result, output and result-temp files fail before clock/claim/spawn.",
+      "Result/guard, result/output and guard/output aliases fail before clock/claim/spawn.",
+      "Output/input alias fails before clock/claim/spawn and preserves the input sentinel.",
+      "Valid absent paths retain the one local-helper invocation behavior."
+    ]
+  },
+  "runtime_boundary": {
+    "guest_started": false,
+    "credential_created": false,
+    "pki_created": false,
+    "process_started": false,
+    "network_requested": false,
+    "producer_invoked": false,
+    "event_submitted": false,
+    "shared_state_mutated": false,
+    "result": "Source and focused local test evidence only; no event authority."
+  },
+  "next_gate": "Hub independently rehashes/inspects r5, stages the wrapper and unchanged producer under a wholly fresh root, revalidates fresh profile and empty baseline, and obtains a separate coordinator submit-once decision before any runtime action."
+}

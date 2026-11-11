@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "kind": "edge_r13_authorized_producer_handoff",
+  "date": "2026-09-09",
+  "run_id": "edge-r13-authorized-20260909",
+  "status": "single_submission_passed_hub_ha_cleanup_complete",
+  "eligibility": "This fresh, coordinator-authorized candidate was used for exactly one producer invocation after Hub and HA confirmed the same contract. The data-bearing path completed through receiver ACK, Edge encrypted spool, Hub durable commit/ACK frontier and the temporary HA name-only observation. The runtime is now closed and retained as evidence; no replay or second record is permitted.",
+  "guest": {
+    "name": "teslatlas-debian13-arm64",
+    "os": "Debian GNU/Linux 13",
+    "architecture": "aarch64",
+    "kernel": "6.12.95+deb13-cloud-arm64",
+    "systemd": "257.13"
+  },
+  "runtime": {
+    "root": "/home/bolyki.guest/teslatlas-edge-r13-authorized-20260909",
+    "compose_project": "edge-r13-authorized-20260909",
+    "image": {
+      "reference": "teslatlas-edge:local",
+      "sha256": "c04e30499821f8f412764541a2627e038fb9703a6f2f884c4e9525fe8005b2a4",
+      "architecture": "linux/arm64"
+    },
+    "listeners": {
+      "edge_delivery": "https://127.0.0.1:20943",
+      "receiver": "wss://127.0.0.1:20944/",
+      "bind_scope": "loopback-only",
+      "unrelated_preserved": [
+        "127.0.0.1:18483",
+        "127.0.0.1:20543",
+        "127.0.0.1:20544",
+        "127.0.0.1:20743",
+        "127.0.0.1:20744"
+      ]
+    },
+    "container_identity": "Edge and receiver run as UID/GID 10001:10001 with restart=0 during the five-second stability observation",
+    "initialization": "init and doctor passed after correcting only the new r13 state and receiver-secret directory ownership before startup",
+    "health": "healthz and readyz returned status ok; records=0 bytes=0 corrupt=0 expired=0 pending_gap_notices=0 capacity_exhausted=false",
+    "queue": {
+      "records": 0,
+      "bytes": 0,
+      "corrupt_records": 0,
+      "expired_records": 0,
+      "pending_gap_notices": 0,
+      "capacity_exhausted": false
+    },
+    "mount_isolation": "Edge has state, receiver-secret, config and Hub-TLS; receiver has receiver-secret, fleet config and vehicle-TLS read-only, with no Edge spool-key or Hub-TLS mount.",
+    "secret_marker_scans": "No r13 VIN, transaction ID, bearer value or key-path marker appeared in the scanned image history or runtime logs."
+  },
+  "producer": {
+    "source_id": "8c867580-27df-4e80-9a5f-c73f9864f809",
+    "vehicle_id": "024c338a-decd-4196-976e-29fe11b18111",
+    "vin": "5YJ3E1EA7KF000005",
+    "car_id": 12,
+    "installation_id": "edge-r13-authorized-20260909",
+    "lineage": "edge-spool-r13-authorized-20260909",
+    "transaction_type": "V",
+    "transaction_id": "edge-r13-authorized-20260909-v-001"
+  },
+  "manifest": {
+    "local_path": "/private/tmp/edge-r13-pki-20260909/producer-handoff.json",
+    "guest_path": "/home/bolyki.guest/teslatlas-edge-r13-authorized-20260909/manifest/producer-handoff.json",
+    "sha256": "9f8ab549fecf548dd3dc4bbda93a45b58526b97f224a375344e34a8524acd374",
+    "producer_submission": "exactly one invocation; receiver ACK returned; exit code 0; no retry"
+  },
+  "actor": {
+    "guest_path": "/home/bolyki.guest/teslatlas-edge-r13-authorized-20260909/manifest/synthetic-vehicle",
+    "sha256": "85c250307b4cefa4a58a0dd53bc921beb4ccc521dba78d05329bcc4a19f4c790",
+    "architecture": "ELF 64-bit LSB executable, ARM aarch64, statically linked",
+    "source": "Exact pinned fleet-telemetry v0.9.4 / d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+    "source_main_sha256": "b27566c80766f4fa0823c2b797809ade65cf09a0d8dd080dd7d14efada34c698",
+    "identity_marker": "teslatlas-synthetic-vehicle-identity-v2",
+    "identity_source": "The VIN is passed from producer.vin in the sealed manifest; it is not embedded in the actor.",
+    "execution_preparation": "The owner-only actor mode was changed to 0700 without changing its content or sha256 so the sealed binary could be executed exactly once.",
+    "required_flags": [
+      "-endpoint",
+      "-cert",
+      "-key",
+      "-server-ca",
+      "-vin",
+      "-txid",
+      "-created-at-ms"
+    ]
+  },
+  "public_record_contract": {
+    "wire_topic": "V",
+    "transaction_id": "edge-r13-authorized-20260909-v-001",
+    "payload": {
+      "protobuf_field": "VehicleName",
+      "protobuf_value": "synthetic-b2",
+      "protobuf_value_type": "string",
+      "created_at_ms": 1788933999000
+    },
+    "envelope": {
+      "vehicle_device": "vehicle_device.5YJ3E1EA7KF000005",
+      "timestamp_seconds_argument": 1788933999,
+      "envelope_id": "edge-b2-envelope-0001",
+      "record_id": "computed only after Edge admission"
+    },
+    "expected_hub_projection": {
+      "source_id": "8c867580-27df-4e80-9a5f-c73f9864f809",
+      "vehicle_id": "024c338a-decd-4196-976e-29fe11b18111",
+      "transaction_type": "V",
+      "transaction_id": "edge-r13-authorized-20260909-v-001",
+      "canonical_field": "vehicle_name",
+      "canonical_value": "synthetic-b2",
+      "field_timestamp_ms": 1788933999000
+    },
+    "expected_home_assistant_projection": {
+      "device_display_name": "synthetic-b2",
+      "entity_id": null,
+      "value": null,
+      "units": null,
+      "boundary": "VehicleName is name-only. No numeric sensor, value or units may be claimed from this record."
+    }
+  },
+  "pki_public_metadata": {
+    "edge_server_ca_sha256": "E068EBF23F6B9B6B210DE085745D2AC0D55BCF4F3EAA506E36A509E0A2A283CF",
+    "edge_server_leaf_sha256": "E43288D55657BB7AF9B3D1469DE4F28B252F1AAFF46F8921525582A94255DCD2",
+    "hub_client_ca_sha256": "A7908E9633B51B9D9BC4BCBCB499529E023B49F6530DE535D8113A2F9DDC89DD4",
+    "hub_client_leaf_sha256": "26D225672F945870C806DCADB3558FFA6232A2347151EBB46678BF08A97B34B2",
+    "vehicle_server_ca_sha256": "60F44E5737DC9264278967914A1660DCC84306AA95FC1B1180EF84546C997B8D7",
+    "vehicle_server_leaf_sha256": "8A45F80440756B499A6CD24AEA35CF8020E558834ABEBC3D4FA782C2610F4783",
+    "vehicle_client_ca_sha256": "0B33BC235ACC02E3ED23AAE7EF6A3702DC187D90C87D738F4CC314A751D4386B",
+    "vehicle_client_leaf_sha256": "82905B25686243041CF7A8E70BE06A6A2AB5316F40ACF037C7E2388356E17E87",
+    "vehicle_client_profile": "Tesla Motors Products CA issuer, VIN leaf common name, CA:FALSE, digitalSignature/keyEncipherment and TLS Web Client Authentication; accepted by exact pinned verifier. Private keys and bearer withheld."
+  },
+  "hub_consumer_inputs": {
+    "root": "/home/bolyki.guest/teslatlas-edge-r13-authorized-20260909/hub-inputs",
+    "directory": "0700 bolyki:bolyki",
+    "files": "server-ca.pem, hub-client.crt, hub-client.key and delivery-bearer are distinct regular 0600 files; private values withheld",
+    "edge_credential": "home-hub-r13 enrolled in the isolated r13 state; bearer value withheld"
+  },
+  "coordination": {
+    "pre_submit": "Hub and HA confirmed this exact source/vehicle/VIN/topic/transaction/timestamp/name-only contract against the fresh r13 root and empty runtime before submission.",
+    "authorization": "The coordinator issued SUBMIT ONCE; exactly one actor invocation was performed and no retry or replay is allowed.",
+    "hub_fixture": "Fresh isolated fixture 18494 was bound to r13 20943, durably committed the admitted batch, reached ACK frontier 3 and was stopped with an owner-only receipt.",
+    "ha_attachment": "Temporary 18494 observed the name-only synthetic-b2 projection through a normal scheduler interval, then was removed; primary 18483 was restored.",
+    "producer_invocation": "exactly one; receiver ACK received; exit code 0; no retry",
+    "hub_poll": "Hub fixture received and durably committed the admitted batch; final pending non-complete count was 0",
+    "ha_attachment_action": "completed and cleaned up"
+  },
+  "submission": {
+    "count": 1,
+    "endpoint": "wss://127.0.0.1:20944/",
+    "actor_result": "receiver_wire=passed ack=received topic=V txid_match=true",
+    "exit_code": 0,
+    "receiver_admission": "The corrected Tesla Motors Products CA/VIN client identity was accepted by the pinned receiver and one ACK was returned.",
+    "edge_after_drain": {
+      "healthz_readyz": "status ok",
+      "queue_records": 0,
+      "queue_bytes": 0,
+      "corrupt_records": 0,
+      "expired_records": 0,
+      "pending_gap_notices": 0,
+      "capacity_exhausted": false,
+      "restart_counts": "Edge 0; receiver 0",
+      "retained_receipt": "one encrypted .tlea receipt, mode 0600 owned by 10001:10001; no plaintext payload marker"
+    },
+    "hub": {
+      "fixture": "fresh isolated 18494 bound to Edge 20943",
+      "lineages": 1,
+      "applications": 3,
+      "sequences": 3,
+      "ack_frontier": 3,
+      "pending_non_complete": 0,
+      "sequence_classification": {
+        "1": "durable_non_projection_event / projection_unsupported",
+        "2": "projected_telemetry / fleet_protojson_projected",
+        "3": "durable_non_projection_event / projection_unsupported"
+      },
+      "sequence_shape_caveat": "One actor datum was accompanied by three durable Hub ingress sequences. Hub classified two as lifecycle/non-projection artifacts and one as the VehicleName projection; Edge does not claim that one actor datum maps to exactly one stored sequence.",
+      "accumulator": "VehicleName plus __connectivity, VIN, owner state, timestamp/version metadata; no numeric telemetry field",
+      "projection": "vehicle_name=synthetic-b2; the only value-bearing payload field was VehicleName",
+      "fixture_cleanup": "Launcher and direct child stopped with owner-only receipt; 18494 closed"
+    },
+    "home_assistant": {
+      "temporary_entry": "18494",
+      "device_display_name": "synthetic-b2",
+      "scheduler": "healthy through a normal interval",
+      "name_only_boundary": "no new name sensor, numeric value or units",
+      "cleanup": "temporary 18494 removed; primary 18483 and its trust configuration restored"
+    }
+  },
+  "cleanup_policy": {
+    "after_one_record": "Completed: receiver stopped first with exit 143, then Edge with exit 0; both restart counts were 0, 20943 and 20944 are closed, and the named root/state was retained.",
+    "on_failure": "Not applicable; the one record completed. No retry or replay is permitted.",
+    "scope": "r10/r11/r12, installed Hub 8443 and primary HA 18483 remained outside the cleanup scope."
+  }
+}

@@ -1,0 +1,42 @@
+#!/bin/sh
+set -eu
+
+service=teslatlas-edge.service
+receiver_service=teslatlas-fleet-telemetry.service
+state_file=${TESLATLAS_EDGE_MAINTAINER_STATE_FILE:-/run/teslatlas-edge-maintainer.state}
+backup_dir=${TESLATLAS_EDGE_UPGRADE_BACKUP_DIR:-/run/teslatlas-edge-package-upgrade}
+
+restore_upgrade() {
+    [ -d "$backup_dir" ] && [ ! -L "$backup_dir" ] || return 0
+    install -o root -g root -m 0755 "$backup_dir/teslatlas-edge" /usr/bin/teslatlas-edge
+    install -o root -g root -m 0755 "$backup_dir/fleet-telemetry" /usr/lib/teslatlas-edge/fleet-telemetry
+    install -o root -g root -m 0755 "$backup_dir/run-with-spool-format-guard.sh" \
+        /usr/lib/teslatlas-edge/run-with-spool-format-guard.sh
+    install -o root -g root -m 0644 "$backup_dir/teslatlas-edge.service" \
+        /lib/systemd/system/teslatlas-edge.service
+    install -o root -g root -m 0644 "$backup_dir/teslatlas-fleet-telemetry.service" \
+        /lib/systemd/system/teslatlas-fleet-telemetry.service
+    if [ -f "$state_file" ] && [ ! -L "$state_file" ] && [ -d /run/systemd/system ]; then
+        IFS=' ' read -r _ edge_active edge_enabled _ receiver_active receiver_enabled < "$state_file"
+        systemctl daemon-reload
+        if [ "$edge_enabled" = 1 ]; then systemctl enable "$service"; else systemctl disable "$service"; fi
+        if [ "$receiver_enabled" = 1 ]; then systemctl enable "$receiver_service"; else systemctl disable "$receiver_service"; fi
+        if [ "$edge_active" = 1 ]; then systemctl start "$service"; systemctl is-active --quiet "$service"; fi
+        if [ "$receiver_active" = 1 ]; then systemctl start "$receiver_service"; systemctl is-active --quiet "$receiver_service"; fi
+    fi
+    rm -f "$state_file"
+    find "$backup_dir" -depth -delete
+}
+
+case "${1:-}" in
+    abort-upgrade|failed-upgrade)
+        restore_upgrade
+        ;;
+    remove|purge)
+        if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+            systemctl daemon-reload || true
+        fi
+        rm -f "$state_file"
+        [ ! -e "$backup_dir" ] && [ ! -L "$backup_dir" ] || find "$backup_dir" -depth -delete
+        ;;
+esac

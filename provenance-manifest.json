@@ -84,6 +84,7 @@
         "docs/maintainers/plans/2026-09-04-macos-app-redesign-fidelity-completion.md",
         "docs/maintainers/plans/2026-09-04-macos-app-redesign.md",
         "docs/operations/backup-and-recovery.md",
+        "docs/operations/beta-side-by-side.md",
         "docs/operations/data-and-retention.md",
         "docs/operations/data-protection-for-deployers.md",
         "docs/operations/runbook.md",
@@ -755,6 +756,204 @@
         "fixtures/g2-4/m1/build.py",
         "fixtures/g2-4/m1/builder.rs"
       ]
+    },
+    {
+      "id": "home-assistant-imported",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Teslatlas Home Assistant integration imported with its full history on 2026-11-11 (Apache-2.0, own LICENSE and NOTICE), excluding the third-party files classified separately. This treatment does not prove chain of title.",
+      "globs": [
+        "home-assistant/.github/**",
+        "home-assistant/compatibility/**",
+        "home-assistant/custom_components/**",
+        "home-assistant/docs/**",
+        "home-assistant/tests/**",
+        "home-assistant/tools/**"
+      ],
+      "paths": [
+        "home-assistant/.clean-development.json",
+        "home-assistant/.gitignore",
+        "home-assistant/AGENTS.md",
+        "home-assistant/CLAUDE.md",
+        "home-assistant/NOTICE",
+        "home-assistant/README.md",
+        "home-assistant/compose.yaml",
+        "home-assistant/hacs.json",
+        "home-assistant/pyproject.toml",
+        "home-assistant/uv.lock"
+      ]
+    },
+    {
+      "id": "edge-imported",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Teslatlas Edge package imported with its full history on 2026-11-11 (AGPL-3.0-only, own LICENSE and NOTICE), excluding the third-party files classified separately. This treatment does not prove chain of title.",
+      "globs": [
+        "edge/.github/**",
+        "edge/compatibility/**",
+        "edge/docs/architecture/**",
+        "edge/docs/development/**",
+        "edge/docs/operations/**",
+        "edge/docs/reference/**",
+        "edge/docs/superpowers/**",
+        "edge/packaging/docker/**",
+        "edge/packaging/linux/**",
+        "edge/packaging/macos/**",
+        "edge/scripts/**",
+        "edge/src/**",
+        "edge/tests/**",
+        "edge/tools/**"
+      ],
+      "paths": [
+        "edge/.clean-development.json",
+        "edge/.dockerignore",
+        "edge/.gitignore",
+        "edge/AGENTS.md",
+        "edge/CLAUDE.md",
+        "edge/Cargo.lock",
+        "edge/Cargo.toml",
+        "edge/Dockerfile",
+        "edge/NOTICE",
+        "edge/README.md",
+        "edge/compose.yaml",
+        "edge/docs/legal/licensing.md",
+        "edge/docs/legal/third-party-notices.md",
+        "edge/packaging/config.toml.example",
+        "edge/packaging/fleet-telemetry.json.example",
+        "edge/packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json"
+      ]
+    },
+    {
+      "id": "sdk-swift-imported",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Teslatlas Swift SDK package imported with its full history on 2026-11-11 (Apache-2.0, own LICENSE and NOTICE), excluding the third-party files classified separately. This treatment does not prove chain of title.",
+      "globs": [
+        "sdk-swift/.github/**",
+        "sdk-swift/Examples/**",
+        "sdk-swift/Sources/**",
+        "sdk-swift/Tests/**",
+        "sdk-swift/compatibility/**",
+        "sdk-swift/docs/**",
+        "sdk-swift/iOSRuntimeHost/**",
+        "sdk-swift/tools/**"
+      ],
+      "paths": [
+        "sdk-swift/.clean-development.json",
+        "sdk-swift/.dockerignore",
+        "sdk-swift/.gitignore",
+        "sdk-swift/AGENTS.md",
+        "sdk-swift/CLAUDE.md",
+        "sdk-swift/Dockerfile",
+        "sdk-swift/NOTICE",
+        "sdk-swift/Package.swift",
+        "sdk-swift/README.md",
+        "sdk-swift/VERSION"
+      ]
+    },
+    {
+      "id": "viewer-imported",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Teslatlas Viewer package imported with its full history on 2026-11-11 (Apache-2.0, own LICENSE and NOTICE), excluding the third-party files classified separately. This treatment does not prove chain of title.",
+      "globs": [
+        "viewer/.github/**",
+        "viewer/bin/**",
+        "viewer/compatibility/**",
+        "viewer/docs/**",
+        "viewer/e2e/**",
+        "viewer/output/**",
+        "viewer/public/**",
+        "viewer/scripts/**",
+        "viewer/src/**",
+        "viewer/tools/**"
+      ],
+      "paths": [
+        "viewer/.clean-development.json",
+        "viewer/.dockerignore",
+        "viewer/.gitignore",
+        "viewer/.node-version",
+        "viewer/AGENTS.md",
+        "viewer/CLAUDE.md",
+        "viewer/Dockerfile",
+        "viewer/NOTICE",
+        "viewer/artifacts/teslatlas-sdk.json",
+        "viewer/README.md",
+        "viewer/compose.yaml",
+        "viewer/index.html",
+        "viewer/package-lock.json",
+        "viewer/package.json",
+        "viewer/playwright.config.ts",
+        "viewer/playwright.hub.config.ts",
+        "viewer/tsconfig.app.json",
+        "viewer/tsconfig.json",
+        "viewer/tsconfig.node.json",
+        "viewer/vite.config.ts",
+        "viewer/vitest.setup.ts"
+      ]
+    },
+    {
+      "id": "viewer-bundled-sdk-archive",
+      "class": "GENERATED",
+      "rationale": "Built npm package archive of the project's own TypeScript SDK (@teslatlas/sdk 2026.36.2), bundled in the imported Viewer package; it embeds package/LICENSE.",
+      "paths": [
+        "viewer/artifacts/teslatlas-sdk-2026.36.2.tgz"
+      ],
+      "exception": {
+        "origin": "Built from the project's own TypeScript SDK (@teslatlas/sdk) as recorded in viewer/artifacts/teslatlas-sdk.json (source commit 2afc5f99ab1a58662570c695618512d4e8e975d8).",
+        "licensing": "Embeds package/LICENSE, the Apache License 2.0 text. This treatment does not prove chain of title.",
+        "release_treatment": "Preserved as imported; not rebuilt or edited here."
+      }
+    },
+    {
+      "id": "imported-apache-license-texts",
+      "class": "THIRD-PARTY",
+      "rationale": "Canonical Apache License 2.0 text shipped as the LICENSE of three imported packages.",
+      "paths": [
+        "home-assistant/LICENSE",
+        "sdk-swift/LICENSE",
+        "viewer/LICENSE"
+      ],
+      "exception": {
+        "origin": "The Apache Software Foundation, Apache License version 2.0, January 2004.",
+        "licensing": "Apache License 2.0 text, kept verbatim as a release policy. It is the licence the packages are released under, not Magrathean-authored text.",
+        "release_treatment": "Ship verbatim as the package licence. Never rewrite it or apply project copyright headers to it."
+      }
+    },
+    {
+      "id": "imported-edge-agpl-text",
+      "class": "THIRD-PARTY",
+      "rationale": "Canonical GNU Affero General Public License version 3 text shipped as the LICENSE of the imported Edge package.",
+      "paths": [
+        "edge/LICENSE"
+      ],
+      "exception": {
+        "origin": "Free Software Foundation, GNU Affero General Public License version 3, 19 November 2007.",
+        "licensing": "GNU Affero General Public License version 3 text. The file states: Copyright (C) 2007 Free Software Foundation, Inc.; everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.",
+        "release_treatment": "Ship verbatim as the Edge package licence. Never rewrite it or apply project copyright headers to it."
+      }
+    },
+    {
+      "id": "imported-fleet-telemetry-apache-text",
+      "class": "THIRD-PARTY",
+      "rationale": "Apache License 2.0 text bundled with the Edge Fleet Telemetry sidecar notices.",
+      "paths": [
+        "edge/docs/legal/Apache-2.0-fleet-telemetry.txt"
+      ],
+      "exception": {
+        "origin": "Bundled upstream licence of Tesla Fleet Telemetry v0.9.4, revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b (https://github.com/teslamotors/fleet-telemetry), as listed in edge/docs/legal/third-party-notices.md.",
+        "licensing": "Apache License 2.0 text, kept verbatim as a release policy; the upstream sidecar is Apache-2.0 and distributors must ship this text.",
+        "release_treatment": "Ship verbatim with the sidecar, its patch and notices. Never rewrite it or apply project copyright headers to it."
+      }
+    },
+    {
+      "id": "imported-edge-fleet-telemetry-overlay",
+      "class": "THIRD-PARTY",
+      "rationale": "Edge copy of the patch against Tesla Fleet Telemetry; it contains upstream context and modifications.",
+      "paths": [
+        "edge/packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch"
+      ],
+      "exception": {
+        "origin": "Tesla Fleet Telemetry v0.9.4, revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b, plus the Teslatlas loopback-dispatcher modifications (a fixed loopback HTTP datastore and reliable acknowledgement tests) identified by the patch; see edge/NOTICE and edge/docs/legal/third-party-notices.md.",
+        "licensing": "Apache-2.0 for the upstream receiver and the distributed modified receiver; upstream notices remain required.",
+        "release_treatment": "Ship the patch, pinned upstream identity, Apache-2.0 text, notices and corresponding source with bundled sidecar releases."
+      }
     }
   ]
 }

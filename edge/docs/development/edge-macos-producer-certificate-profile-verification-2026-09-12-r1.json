@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "kind": "macos_edge_producer_certificate_profile_verification_r1",
+  "date": "2026-09-12",
+  "state": "completed_redacted_cohort_rejected_no_submission",
+  "scope": "Public producer certificate and pinned-receiver identity-policy reconciliation for the closed macOS 13 ARM64 empty-baseline cohort. No replacement input, runtime retry or producer event was authorized.",
+  "source_handoff": {
+    "path": "hub/docs/development/edge-macos-empty-baseline-handoff-2026-09-12-r1.json",
+    "binding_status": "immutable closed-r1 snapshot directly verified and bound; mutable handoff is historical only",
+    "historical_digests": [
+      {
+        "sha256": "4fd3ed7237f7ae15e83176d611d76e0761fb4abcb4170f462cfa562bfb5a52eb",
+        "role": "Earlier ready-state receipt"
+      },
+      {
+        "sha256": "a9007816bcbee9f63751600a0869acd0218153ce863bdde52d14f7f07019df52",
+        "role": "Coordinator-supplied closed-handoff digest before immutable snapshot; historical only"
+      },
+      {
+        "sha256": "8aadc454966d9cf692fe32260ddf531d8594e5a26c56902424901f8873c278fc",
+        "role": "Observed mutable handoff digest; historical only"
+      }
+    ],
+    "immutable_closed_snapshot": {
+      "path": "hub/docs/development/edge-macos-empty-baseline-handoff-2026-09-12-r1-final.json",
+      "sha256": "df9f19a5f8368beafa88068f34c4239cf9ee4294bb6885fb97de76707b07939b",
+      "binding_status": "Direct shasum -a 256 matched Hub's supplied digest; python3 -m json.tool passed; snapshot states immutable and final closed-r1 handoff"
+    },
+    "state": "closed_rejected_certificate_identity_review_no_submission",
+    "recorded_leaf_pem_sha256": "fcf012de17db696f2dd5d1fd2af9d542f7b3560c39451db55a53de69de12c905",
+    "event_authorized": false,
+    "producer_invoked": false
+  },
+  "public_certificate_reconciliation": {
+    "guest_certificate_path": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r1/vehicle-tls/vehicle-client.crt",
+    "host_staging_certificate_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r1/staging/vehicle-tls/vehicle-client.crt",
+    "staging_manifest_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r1/staging-manifest.json",
+    "observed_leaf_pem_sha256": "fcf01266e005309904d36d67a407303497db4280723f261a024cae165fb0c6ba",
+    "observed_leaf_der_sha256": "3f7f6207e7716bca25cd2dafad5ca17df617d2c432a09e1f6f2cf856167d0f58",
+    "staging_manifest_leaf_pem_sha256": "fcf01266e005309904d36d67a407303497db4280723f261a024cae165fb0c6ba",
+    "guest_and_host_public_pem_match": true,
+    "recorded_leaf_hash_found_in_retained_public_material": false,
+    "discrepancy": "The superseded fcf012de... value was a handoff recording error. The retained guest public certificate, host staging copy and immutable staging manifest bind the observed fcf01266... PEM hash.",
+    "raw_private_values_recorded": false
+  },
+  "certificate_profile": {
+    "subject_common_name_sealed_identity": "PASS; sealed identity value withheld",
+    "issuer_common_name": {
+      "expected": "Tesla Motors Products CA",
+      "result": "PASS"
+    },
+    "basic_constraints": {
+      "expected": "CA:FALSE",
+      "result": "PASS"
+    },
+    "key_usage": {
+      "expected": "critical digitalSignature,keyEncipherment",
+      "result": "PASS"
+    },
+    "clientauth_eku": {
+      "expected": "TLS Web Client Authentication / clientAuth",
+      "result": "PASS"
+    },
+    "vin_san": {
+      "result": "NOT_APPLICABLE",
+      "observed": "No subjectAltName extension",
+      "policy": "The pinned Tesla Motors Products CA parser derives identity from Subject.CommonName and does not require or read a VIN SAN for this issuer.",
+      "prior_check_reclassification": "The earlier VIN SAN FAIL was an inapplicable expectation, not a pinned-parser mismatch."
+    },
+    "key_correspondence": {
+      "result": "PASS",
+      "method": "The public certificate key corresponds to the staged client key; key material was not recorded or emitted."
+    },
+    "receiver_ca_trust_anchor": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r1/staging/vehicle-tls/vehicle-client-ca.crt",
+      "sha256": "a40e395721b874d41a0d1607f2ed7c5c848b5825087a4d9ff38d0a8803898020",
+      "result": "PASS",
+      "method": "openssl verify -purpose sslclient returned OK for the observed leaf against this exact CA file."
+    }
+  },
+  "pinned_parser": {
+    "upstream": "teslamotors/fleet-telemetry",
+    "revision": "d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+    "file": "messages/identity.go",
+    "source_sha256": "20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5",
+    "known_issuer_policy": "Tesla Motors Products CA maps to vehicle_device.",
+    "identity_rule": "CreateIdentityFromCert derives deviceID from Subject.CommonName with dots replaced by hyphens; a SAN is not required or read for this known issuer.",
+    "client_id_rule": "BuildClientID composes <clientType>.<deviceID>.",
+    "identity_policy_match": "PASS",
+    "pinned_parser_mismatch": false
+  },
+  "generator_and_test_binding": {
+    "generator": "tools/interop/client_lanes/synthetic_vehicle_identity.py",
+    "generator_sha256": "878d98acb8f9d3aacf496d6d74f55daa732af800e38afce72a2a166150383b2d",
+    "generator_test": "tools/interop/client_lanes/test_synthetic_vehicle_identity.py",
+    "generator_test_sha256": "31290e9761c557d6ea6c2b0a989fc82e80fe6eb02dc047ba4f10f8827b3978af",
+    "pinned_identity_test": "tools/interop/client_lanes/test_pinned_receiver_identity.py",
+    "pinned_identity_test_sha256": "d2460a4813017076b00804930e4e098312bdea4189b79bbfe020035432f8cad8",
+    "profile_rule": "The source generator uses the sealed synthetic identity as leaf CommonName, Tesla Motors Products CA as issuer, no SAN extension, CA:FALSE, critical digitalSignature/keyEncipherment and clientAuth EKU."
+  },
+  "result": {
+    "public_leaf_pem_sha256": "fcf01266e005309904d36d67a407303497db4280723f261a024cae165fb0c6ba",
+    "public_leaf_der_sha256": "3f7f6207e7716bca25cd2dafad5ca17df617d2c432a09e1f6f2cf856167d0f58",
+    "issuer_and_profile_match": "PASS",
+    "vin_san_match": "NOT_APPLICABLE_BY_PINNED_PARSER_POLICY",
+    "clientauth_eku": "PASS",
+    "key_correspondence": "PASS",
+    "receiver_ca_trust_anchor_match": "PASS",
+    "pinned_parser_identity_match": "PASS",
+    "overall_cohort_decision": "FAIL_CLOSED"
+  },
+  "decision": {
+    "failure_cause": "The closed handoff recorded fcf012de... as the expected leaf hash, but the immutable public certificate evidence is fcf01266...; Hub confirmed the former was a recording error.",
+    "initial_san_failure": "Reclassified as an inapplicable criterion because the pinned parser uses Subject.CommonName for this issuer.",
+    "cohort_status": "Coordinator rejected and closed the cohort; no retry, replacement certificate, runtime restart or event is permitted.",
+    "next_authority": "A future fresh owner-authorized handoff and coordinator decision would be required; this receipt grants none."
+  },
+  "runtime_boundary": "Redacted local and retained public-certificate evidence only. The stopped guest was not restarted, no credential or runtime root was changed, no producer/helper was invoked, no telemetry event was sent, and no Hub or HA state was mutated. Private key and sealed identity values were not recorded or emitted.",
+  "limitations": [
+    "This receipt reconciles source and public certificate identity policy only; it is not producer-event, Edge forwarding, durable Hub commit/ACK/frontier, HA, install, release or user-acceptance evidence.",
+    "The guest public path is retained as prior-run evidence; the host staging copy and staging manifest are the available immutable local copies after cleanup."
+  ]
+}

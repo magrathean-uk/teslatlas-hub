@@ -1,0 +1,353 @@
+{
+  "schema_version": 1,
+  "kind": "macos_edge_one_event_actor_contract_proposal_r4",
+  "date": "2026-09-12",
+  "status": "source_only_superseding_r3_stable_review_package_no_runtime",
+  "supersession": {
+    "supersedes": {
+      "path": "docs/development/edge-macos-one-event-actor-contract-proposal-2026-09-12-r3.json",
+      "sha256": "5c327fdd47379e865a30c93cb7a269184546118d08c9acdb435cfa77c5d83026",
+      "status": "historical_r3_contract_preserved_unchanged"
+    },
+    "hub_review": {
+      "path": "hub/docs/development/edge-macos-one-event-actor-contract-review-2026-09-12-r3.json",
+      "sha256": "d4dc413d276e0df6f9a0ef8e628a0e6b79127788822e0ad42b6667348a289f12",
+      "state": "rejected_pending_stable_reviewable_sources_and_guard_implementation",
+      "findings": [
+        "The r3 helper and helper-test paths under /private/tmp were absent at review time.",
+        "The r3 wrapper reference was a historical stopped-guest path, not a stable fresh implementation or focused test source."
+      ],
+      "required_correction": "Keep r3 as evidence and add stable host-side helper source/test and fresh wrapper source/test identities before any new runtime decision."
+    },
+    "correction": "This r4 package provides four stable source/test files. The producer pair is a fresh source candidate and is explicitly not byte-identical to the historical helper binary whose original source is no longer available."
+  },
+  "authority_boundary": {
+    "scope": "Edge-owned source-only review package for one future bounded synthetic VehicleName event",
+    "runtime_start": false,
+    "credential_creation": false,
+    "pki_creation": false,
+    "guest_start": false,
+    "process_start": false,
+    "network_request": false,
+    "producer_invocation": false,
+    "event_submission": false,
+    "hub_edit": false,
+    "event_authorized": false,
+    "r1_r2_reuse": false,
+    "authority_rule": "A separate coordinator submit-once decision and a wholly fresh Hub-owned runtime cohort are required after independent source, certificate, empty-baseline and guard review."
+  },
+  "closed_cohorts": {
+    "r1_final": {
+      "path": "hub/docs/development/edge-macos-empty-baseline-handoff-2026-09-12-r1-final.json",
+      "sha256": "df9f19a5f8368beafa88068f34c4239cf9ee4294bb6885fb97de76707b07939b",
+      "state": "closed_rejected_not_reusable"
+    },
+    "r2_final": {
+      "path": "hub/docs/development/edge-macos-empty-baseline-handoff-2026-09-12-r2.json",
+      "sha256": "21f46025eb51344e5403b94e37aa937eb2e7f86c2ecf301ddd72821d1b352867",
+      "state": "closed_zero_event_baseline_passed_no_producer_submission",
+      "verified": "The empty baseline was stable for five seconds and cleanup closed listeners, stopped the guest and released the shared heavy-build lock. No producer, event, forwarding, durable commit, ACK or projection action is carried by this package."
+    },
+    "non_reuse": "No r1 or r2 root, port, credential, certificate, private key, sealed binding, transaction, wrapper, runtime descriptor, readiness receipt or mutable handoff is an r4 input. Their hashes document closure only."
+  },
+  "stable_source_package": {
+    "source_status": "fresh_review_candidate_stable_on_host",
+    "historical_source_status": "The previously claimed /private/tmp helper source and test are absent and cannot be recovered as exact bytes from the current workspace. No historical source hash is promoted as an r4 source identity.",
+    "historical_helper_binary": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-producer-darwin-arm64-20260909/synthetic-vehicle-darwin-arm64",
+      "sha256": "db916a52378004cbcacb1eb149feedc3d6369c194044f5c8f7f837e5b8b837e7",
+      "bytes": 13639666,
+      "mode_and_type": "0500 regular Mach-O 64-bit executable arm64",
+      "reuse": false,
+      "role": "historical provenance only; do not copy, stage or invoke"
+    },
+    "pinned_dependency": {
+      "repository": "teslamotors/fleet-telemetry",
+      "revision": "d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+      "identity_source_path": "messages/identity.go",
+      "identity_source_sha256": "20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5",
+      "source_archive_path": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909-r2/dist/fleet-telemetry-evidence/fleet-telemetry-upstream-source.tar.gz",
+      "source_archive_sha256": "a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9",
+      "source_archive_mode": "0600",
+      "role": "pinned source dependency for messages/protos only; not r1/r2 runtime or identity material"
+    },
+    "files": {
+      "helper_source": {
+        "repository_relative_path": "docs/development/edge-macos-one-event-actor-r4/producer/main.go",
+        "absolute_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/docs/development/edge-macos-one-event-actor-r4/producer/main.go",
+        "sha256": "d59c5e38245113bebdfe2635f1f3e42cfa4052f269d45d5fbd0b392a12697df2",
+        "bytes": 7267,
+        "mode": "0644",
+        "type": "regular",
+        "fresh_candidate": true,
+        "byte_identical_to_historical_binary_source": false
+      },
+      "helper_test_source": {
+        "repository_relative_path": "docs/development/edge-macos-one-event-actor-r4/producer/main_test.go",
+        "absolute_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/docs/development/edge-macos-one-event-actor-r4/producer/main_test.go",
+        "sha256": "a60bdba6bb71da8af5e4ede33627affda55efbd813efe2705108211391eca40d",
+        "bytes": 3684,
+        "mode": "0644",
+        "type": "regular",
+        "fresh_candidate": true,
+        "fixture_only": true
+      },
+      "package_readme": {
+        "repository_relative_path": "docs/development/edge-macos-one-event-actor-r4/README.md",
+        "absolute_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/docs/development/edge-macos-one-event-actor-r4/README.md",
+        "sha256": "9d37737382cf25001f006ce105d58102ad4615863cb2b13bcb4c18d0ced29b19",
+        "bytes": 2053,
+        "mode": "0644",
+        "type": "regular"
+      }
+    },
+    "focused_source_test": {
+      "command": "go test -mod=readonly ./cmd/synthetic-vehicle (pinned upstream source snapshot with this fresh candidate overlaid in an isolated temporary directory)",
+      "result": "passed 0.421 seconds",
+      "runtime": false,
+      "network": false,
+      "coverage": [
+        "one VehicleName string datum and explicit protobuf timestamp",
+        "one topic-V envelope with derived message ID and vehicle_device identity",
+        "matching binary ACK acceptance and transaction/topic mismatch rejection",
+        "malformed endpoint and VIN rejection"
+      ]
+    },
+    "helper_behavior": {
+      "identity_marker": "teslatlas-synthetic-vehicle-identity-v2",
+      "arguments": [
+        "-endpoint",
+        "-cert",
+        "-key",
+        "-server-ca",
+        "-vin",
+        "-txid",
+        "-created-at-ms"
+      ],
+      "payload": "One protobuf VehicleName string datum in one topic-V FlatBuffers envelope; no numeric, unit, lifecycle, passive-source or vehicle-command field.",
+      "transport": "One binary WebSocket write followed by one binary ACK read.",
+      "tls": "mTLS client certificate/key with a separate server-CA pool, TLS 1.2 minimum and endpoint hostname verification.",
+      "timestamp": "The wrapper supplies created-at-ms; the helper places the same value in the protobuf timestamp and the FlatBuffers seconds field without reading a clock.",
+      "retry_or_replay": false,
+      "embedded_identity": "No VIN, endpoint, certificate, key, transaction ID or cohort-specific identity is embedded in the source candidate."
+    },
+    "source_review_boundary": "Hub must stage the source candidate into the pinned Fleet Telemetry source tree, independently inspect/re-hash both source files and build a fresh darwin-arm64 helper before any runtime. The source pair is not a runtime receipt or acceptance proof."
+  },
+  "guard_package": {
+    "files": {
+      "wrapper_source": {
+        "repository_relative_path": "docs/development/edge-macos-one-event-actor-r4/guard/invoke_one_event.py",
+        "absolute_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/docs/development/edge-macos-one-event-actor-r4/guard/invoke_one_event.py",
+        "sha256": "4b072a2bc51d27c78fe1db84c9535d0fae7b4dc413b5e4c1eb9dc76a0e28084a",
+        "bytes": 22602,
+        "mode": "0644",
+        "type": "regular",
+        "future_staged_mode": "0500"
+      },
+      "wrapper_test_source": {
+        "repository_relative_path": "docs/development/edge-macos-one-event-actor-r4/guard/test_invoke_one_event.py",
+        "absolute_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/docs/development/edge-macos-one-event-actor-r4/guard/test_invoke_one_event.py",
+        "sha256": "1a48c87c90eedd32c7027dd6c06621a546b9d421274ac207fcddd931481e4fff",
+        "bytes": 11815,
+        "mode": "0644",
+        "type": "regular"
+      }
+    },
+    "focused_test": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s docs/development/edge-macos-one-event-actor-r4/guard -p 'test_*.py' -v",
+      "result": "passed 6/6 in 0.925 seconds",
+      "browser": false,
+      "network": false,
+      "runtime": false,
+      "coverage": [
+        "exact authorization mismatch fails before timestamp, guard or spawn",
+        "owner-only input and helper identity/hash checks pass for a local fixture",
+        "one timestamp read and exact argv propagation",
+        "O_CREAT|O_EXCL guard and atomic result creation",
+        "existing guard is final and does not read a second timestamp or spawn",
+        "nonzero helper and timeout are final no-retry outcomes"
+      ]
+    },
+    "guard_policy": {
+      "input_contract": "Exact JSON authorization object, exact binding hash and payload descriptor, exact helper hash/marker, exact owner-only certificate/key/server-CA files and exact output paths.",
+      "binding_policy": "The binding carries event_authorized=false; only the exact separate authorization object may set event_authorized=true. The binding payload is exactly topic V, transaction type V, VehicleName string and single-wrapper-created-at-ms timestamp source.",
+      "path_policy": "All inputs are absolute, non-symlink regular files owned by the invoking user with one hard link and no group/world access. Certificate, key and server-CA paths must be distinct.",
+      "timestamp_policy": "After every authorization/profile/hash/path check and an existing-guard check, call the supplied CLOCK_REALTIME Unix-ms function exactly once. Reject zero, negative or expired values.",
+      "guard_policy": "Immediately after that one timestamp read, create the guard with O_WRONLY|O_CREAT|O_EXCL and mode 0600. EEXIST is final already-consumed state.",
+      "spawn_policy": "Pass the identical timestamp and exact argv order to one subprocess.run call with shell=false, stdin=DEVNULL, captured output and a maximum 30-second authorization timeout. No retry or replay path exists.",
+      "result_policy": "Record completed, failed_no_retry or timed_out_no_retry once. Persist result through a same-directory 0600 temporary file, fsync, hard-link publication and temporary-file removal; never overwrite an existing result.",
+      "redaction_policy": "Guard and result records contain hashes, transaction and timestamp metadata but not the sealed VIN, private key bytes, certificate bytes or private credential values."
+    }
+  },
+  "fresh_actor_binding_placeholders": {
+    "status": "No r4 identity, certificate, key, endpoint, receiver port, timestamp, transaction or coordinator authorization is assigned by this package.",
+    "root": "<FRESH_HUB_R4_ROOT>",
+    "identity_binding": {
+      "source_id": "<FRESH_HUB_SEALED_SOURCE_ID>",
+      "vehicle_id": "<FRESH_HUB_SEALED_VEHICLE_ID>",
+      "vin": "<FRESH_HUB_SEALED_VIN>",
+      "car_id": "<FRESH_HUB_SEALED_CAR_ID>",
+      "installation_id": "<FRESH_HUB_SEALED_INSTALLATION_ID>",
+      "lineage": "<FRESH_HUB_SEALED_LINEAGE>",
+      "subject_common_name": "<FRESH_HUB_SEALED_COMMON_NAME>",
+      "value_policy": "Hub/coordinator keeps identity values private and exposes only the exact public hashes required for independent review."
+    },
+    "transaction": {
+      "type": "V",
+      "id": "<FRESH_R4_TRANSACTION_ID>",
+      "status": "Not assigned or reserved now.",
+      "authorization_binding": "The fresh transaction ID must be present in the exact authorization object before the one timestamp is assigned."
+    },
+    "payload": {
+      "datum_type": "V",
+      "event_shape": "One VehicleName-only synthetic datum",
+      "vehicle_name": "synthetic-b2",
+      "numeric_fields": false,
+      "unit_fields": false,
+      "lifecycle_fields": false,
+      "passive_source_fields": false,
+      "vehicle_command": false
+    },
+    "endpoint": "wss://127.0.0.1:<FRESH_R4_RECEIVER_DATA_PORT>/",
+    "timestamp": "<ASSIGNED_ONCE_AFTER_EXPLICIT_AUTHORIZATION>",
+    "freshness": "Every private placeholder must be newly generated for r4. No closed r1/r2 value or path may satisfy it."
+  },
+  "authorization_shape": {
+    "required_exact_fields": [
+      "schema_version",
+      "event_authorized",
+      "cohort_id",
+      "binding_sha256",
+      "helper_sha256",
+      "transaction_id",
+      "payload_sha256",
+      "endpoint",
+      "certificate_sha256",
+      "key_sha256",
+      "server_ca_sha256",
+      "invocation_count",
+      "retry_or_replay",
+      "timeout_seconds",
+      "expires_at_ms"
+    ],
+    "required_values": {
+      "schema_version": 1,
+      "event_authorized": true,
+      "invocation_count": 1,
+      "retry_or_replay": false,
+      "timeout_seconds": 30,
+      "endpoint": "The exact fresh receiver wss endpoint",
+      "binding_sha256": "The exact fresh sealed binding hash",
+      "helper_sha256": "The exact freshly built helper hash",
+      "payload_sha256": "The canonical hash of the exact VehicleName-only payload descriptor",
+      "expires_at_ms": "Fresh future expiry checked before the one timestamp read"
+    },
+    "private_values": "The VIN, certificate/key/CA paths and cohort identity remain in the Hub-owned fresh handoff; this Edge package contains no assigned values."
+  },
+  "staged_executable_argv": {
+    "argv": [
+      "<FRESH_HUB_R4_ROOT>/bin/synthetic-vehicle-darwin-arm64",
+      "-endpoint",
+      "wss://127.0.0.1:<FRESH_R4_RECEIVER_DATA_PORT>/",
+      "-cert",
+      "<FRESH_HUB_R4_ROOT>/inputs/vehicle-tls/vehicle-client.crt",
+      "-key",
+      "<FRESH_HUB_R4_ROOT>/inputs/vehicle-tls/vehicle-client.key",
+      "-server-ca",
+      "<FRESH_HUB_R4_ROOT>/inputs/vehicle-tls/vehicle-server-ca.crt",
+      "-vin",
+      "<FRESH_HUB_SEALED_VIN>",
+      "-txid",
+      "<FRESH_R4_TRANSACTION_ID>",
+      "-created-at-ms",
+      "<ASSIGNED_ONCE_AFTER_AUTHORIZATION>"
+    ],
+    "ordering": "The wrapper passes exactly this flag order and no additional cohort-specific arguments. The timestamp value is identical to the winning guard record.",
+    "fresh_paths_only": true,
+    "embedded_vin_forbidden": true,
+    "endpoint_rule": "The receiver data port is newly assigned by Hub for the fresh r4 root; no closed cohort port is reused or hard-coded in this proposal."
+  },
+  "certificate_gate": {
+    "pinned_parser": {
+      "source": "teslamotors/fleet-telemetry/messages/identity.go",
+      "revision": "d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+      "sha256": "20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5",
+      "issuer_rule": "Tesla Motors Products CA maps to vehicle_device.",
+      "common_name_rule": "Subject.CommonName is the device identity; dots are replaced with hyphens when deriving deviceID.",
+      "san_rule": "SubjectAltName is not required and is not read for this known issuer."
+    },
+    "fresh_profile_requirements": [
+      "Hash the exact fresh staged client certificate PEM and DER bytes.",
+      "Match the leaf Subject.CommonName to the fresh sealed binding under the pinned parser without recording the identity value.",
+      "Verify issuer Tesla Motors Products CA, CA:FALSE, critical digitalSignature/keyEncipherment and clientAuth.",
+      "Verify client certificate/private-key public-key correspondence without emitting private material.",
+      "Verify the leaf with the exact fresh receiver CA using sslclient purpose and bind the public CA hash to the receiver configuration.",
+      "Do not turn absent SAN into a failure under the pinned parser policy."
+    ],
+    "edge_role": "Edge may review supplied public/profile hashes; Hub owns fresh credential creation, staging, runtime and cleanup."
+  },
+  "pre_invocation_gates": [
+    "Hub proposes a wholly fresh r4 root, receiver/Edge/Hub listeners, process descriptors and private handoff; r1/r2 inputs are absent from the staging set.",
+    "Hub rehashes and reviews the stable producer source/test files and builds a fresh darwin-arm64 helper with no embedded VIN; the fresh binary hash is bound in the private authorization.",
+    "Hub stages the fresh wrapper source at the future root, records its source hash and mode, and runs the focused browser-free/no-network guard tests before any runtime.",
+    "Fresh certificate/profile checks pass against the pinned parser and exact receiver CA; the future public receipt contains paths, modes and public hashes only.",
+    "The fresh runtime reaches a new zero-event empty baseline before any producer call; no closed baseline is converted into r4 evidence.",
+    "A separate coordinator authorization exactly matches fresh identity, transaction, payload, endpoint, certificate/key/CA hashes, one-call policy and expiry.",
+    "Fresh guard, result and output paths are absent before invocation; any existing guard is final and no timestamp is read.",
+    "The wrapper reads one timestamp, claims O_CREAT|O_EXCL, spawns exactly once and passes the same timestamp to the helper.",
+    "Any failed gate is final and cleanup records the outcome without retry, repair, replacement or replay under the consumed authorization."
+  ],
+  "hub_owned_changes_required": [
+    "Independently rehash and inspect the four stable source/test files and retain the exact paths, bytes, modes and hashes in a fresh pre-runtime receipt.",
+    "Stage the producer candidate into the pinned Fleet Telemetry source tree and build a new darwin-arm64 helper; do not copy the historical binary.",
+    "Stage the fresh wrapper with owner-only executable mode and bind its exact source hash before authorizing a runtime.",
+    "Create fresh identity, certificate/key/CA, endpoint, transaction, process, output and cleanup inputs only within the new Hub-owned root.",
+    "Run a new empty baseline, then request a separate coordinator submit-once authorization; no Edge proposal field authorizes the event.",
+    "If authorized, invoke through the wrapper once, collect receiver ACK, Edge admission/spool, Hub durable commit/ACK/frontier/projection and cleanup evidence, then mark every fresh actor input non-reusable.",
+    "Keep wrapper, runtime, credentials, fixture, ledger observation and cleanup implementation changes Hub-owned; any deviation requires a new review package."
+  ],
+  "post_event_assertions": {
+    "receiver": [
+      "Exactly one fresh mTLS WebSocket connection and one binary topic-V envelope are accepted.",
+      "The envelope carries the fresh transaction and one assigned timestamp with one VehicleName string datum only.",
+      "Exactly one matching binary ACK is read and the helper exits zero; no retry, replay or second connection occurs."
+    ],
+    "edge": [
+      "Exactly one authenticated admission and one encrypted spool record are observed with no rejection or gap.",
+      "The v2 pull preserves stable record identity/order and the exact gap list; every disposition is classified.",
+      "After Hub ACK, v2 pull is empty and Edge records/bytes/pending/gap/quarantine state return to zero."
+    ],
+    "hub": [
+      "The one admitted record and exact gap list are durably recorded before ACK; stable record ID and v1 alias are bound.",
+      "Commit-before-ACK is proven with every observed sequence disposition and no inferred private-table counts.",
+      "ACK contains exact record IDs, empty gaps and frontier advance from null to the admitted sequence.",
+      "After ACK, the next pull is empty, pending publications are zero and no duplicate projection exists.",
+      "Exactly one VehicleName projection is present; numeric, unit-bearing, lifecycle, passive-source, duplicate and unexplained projections are absent."
+    ],
+    "failure_rule": "Any timeout, helper failure, TLS/profile mismatch, wrong ACK, unknown sequence, gap, duplicate/unexplained projection, nonempty pending state, unverifiable durable commit or cleanup mismatch fails closed and cannot trigger a retry."
+  },
+  "known_ledger_observation_limits": [
+    "Hub status/doctor does not expose application-ledger or sequence-table counts; do not infer them from a zero visible metric.",
+    "Read-only SQLite may be unavailable with SQLite error 14; record the limitation rather than asserting private counts.",
+    "Source/test, static, package and local no-network proof is not live receiver-to-Edge-to-Hub forwarding, durable commit, ACK/frontier or projection acceptance.",
+    "A receiver ACK alone does not prove Edge admission, encrypted-spool durability, Hub commit-before-ACK or the exact projection."
+  ],
+  "cleanup_contract": {
+    "owner": "Hub",
+    "order": ["Hub", "receiver", "Edge", "guest"],
+    "producer_timeout_seconds": 30,
+    "requirements": [
+      "Record exact fresh process PIDs, UIDs, exit/signal results, wrapper guard/result/output paths and public hashes.",
+      "Close every fresh listener and verify no fresh r4 port remains bound; do not report old cohort ports as r4 cleanup evidence.",
+      "Stop the guest after Hub/receiver/Edge cleanup, verify the shared heavy-build lock is absent and retain redacted receipts.",
+      "Mark fresh root, authorization, guard, result, credentials, transaction and identity non-reusable after any outcome."
+    ]
+  },
+  "review_limits": [
+    "This Edge-owned package adds stable review sources only. It does not create credentials, start a guest/listener/process, invoke a producer, submit an event, mutate Edge/Hub/HA state or publish an artifact.",
+    "The producer pair is a fresh source candidate because the old temporary source is absent; it must not be described as source proof for the historical binary.",
+    "The r1/r2 closure receipts and r3 rejection are preserved evidence only and cannot be converted into r4 runtime or forwarding acceptance.",
+    "No native device, commerce, Siri, Home Assistant, named-source TeslaMate, installed, package, service, release or production acceptance is claimed."
+  ],
+  "runtime_boundary": "Source-only r4 contract and source/test package. No runtime, credentials, PKI, guest, listener, process, network request, producer invocation, event submission, shared-state mutation or Hub edit occurred."
+}

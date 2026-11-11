@@ -1,0 +1,52 @@
+services:
+  edge:
+    image: teslatlas-edge:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    user: "10001:10001"
+    restart: unless-stopped
+    stop_grace_period: 10s
+    ports:
+      - "${EDGE_HUB_BIND:-127.0.0.1}:${EDGE_HUB_PORT:-8443}:8443"
+      - "${EDGE_RECEIVER_PUBLIC_BIND:-0.0.0.0}:${EDGE_RECEIVER_PORT:-443}:8444"
+    volumes:
+      - "${EDGE_RUNTIME_DIR:?set EDGE_RUNTIME_DIR}/state:/var/lib/teslatlas-edge"
+      - "${EDGE_RUNTIME_DIR:?set EDGE_RUNTIME_DIR}/receiver-secret:/run/teslatlas-edge-receiver"
+      - "${EDGE_RUNTIME_DIR:?set EDGE_RUNTIME_DIR}/config/config.toml:/etc/teslatlas-edge/config.toml:ro"
+      - "${EDGE_RUNTIME_DIR:?set EDGE_RUNTIME_DIR}/hub-tls:/run/teslatlas-edge-hub-tls:ro"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  receiver:
+    image: teslatlas-edge:local
+    entrypoint: ["/usr/bin/fleet-telemetry"]
+    user: "10001:10001"
+    network_mode: service:edge
+    depends_on:
+      edge:
+        condition: service_healthy
+        restart: true
+    restart: unless-stopped
+    stop_grace_period: 10s
+    environment:
+      TESLATLAS_FLEET_TELEMETRY_BEARER_FILE: /run/teslatlas-edge-receiver/receiver-token
+    command: ["-config=/etc/teslatlas-edge/fleet-telemetry.json"]
+    volumes:
+      - "${EDGE_RUNTIME_DIR:?set EDGE_RUNTIME_DIR}/receiver-secret:/run/teslatlas-edge-receiver:ro"
+      - "${EDGE_RUNTIME_DIR:?set EDGE_RUNTIME_DIR}/config/fleet-telemetry.json:/etc/teslatlas-edge/fleet-telemetry.json:ro"
+      - "${EDGE_RUNTIME_DIR:?set EDGE_RUNTIME_DIR}/vehicle-tls:/run/teslatlas-edge-vehicle-tls:ro"
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"

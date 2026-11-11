@@ -5,10 +5,13 @@
   "heavy": false,
   "buildDirs": [
     "target",
-    "sdk-typescript/dist"
+    "sdk-typescript/dist",
+    "viewer/dist"
   ],
   "depDirs": [
     "protocol/.venv",
-    "sdk-typescript/node_modules"
+    "sdk-typescript/node_modules",
+    "home-assistant/.venv",
+    "viewer/node_modules"
   ]
 }

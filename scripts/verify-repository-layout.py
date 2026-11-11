@@ -71,6 +71,10 @@ LEGACY_DOCUMENT_PREFIXES = (
     "docs/superpowers/",
     "protocol/docs/development/archive/",
     "sdk-typescript/docs/development/archive/",
+    "edge/docs/development/archive/",
+    "edge/docs/reference/product-versioning.md",
+    "home-assistant/docs/development/archive/",
+    "sdk-swift/docs/development/archive/",
 )
 LEGACY_PLAN_POINTER = "docs/development/PLAN.md"
 LEGACY_RUST_LINE_LIMITS = {"src/api/server/tests.rs": 3_200}

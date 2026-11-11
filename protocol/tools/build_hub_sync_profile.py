@@ -1176,7 +1176,7 @@ def bundle():
         },
     }
     profile = {
-        "profile_id": PROFILE_ID, "status": "candidate", "contract_version": "1.3.0",
+        "profile_id": PROFILE_ID, "status": "served", "contract_version": "1.3.0",
         "authentication": "paired bearer",
         "product_version_binding": "none; this protocol profile has no exact Hub product-version pin",
         "schema_version_range": {"minimum": "2.1", "maximum": "2.2"},

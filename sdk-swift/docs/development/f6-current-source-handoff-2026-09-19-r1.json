@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.swift-sdk.f6-current-source-handoff/v1",
+  "recorded_at": "2026-09-19T21:14:39Z",
+  "result": "PREPARED_BOUNDED_SOURCE_ONLY",
+  "scope": "Exact public clean Git export, deterministic four-product SwiftPM handoff binding and Hub-compatible source candidate for current Swift main; no runtime, catalog mutation, package publication or gate acceptance",
+  "source_identity": {
+    "repository": "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
+    "branch": "main",
+    "commit": "f98dde980c8fecf994917e3470950a3d853b4cc7",
+    "tree": "32305690a5718a0fc5d8d0df9bceb59edab001b9",
+    "local_head_at_review_start": "f98dde980c8fecf994917e3470950a3d853b4cc7",
+    "cached_origin_main_at_review_start": "f98dde980c8fecf994917e3470950a3d853b4cc7",
+    "anonymous_public_main_at_review_start": "f98dde980c8fecf994917e3470950a3d853b4cc7",
+    "public_commit_tree": "32305690a5718a0fc5d8d0df9bceb59edab001b9"
+  },
+  "public_reachability": {
+    "transport": "Unauthenticated HTTPS with Git credential helper disabled, terminal prompting disabled, and public GitHub commit API readback",
+    "exact_commit_was_public_main_at_review_start": true,
+    "protocol_runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+    "protocol_runtime_source_tree": "931507b56c641d330d3a75513f3eb1f88f24e219",
+    "protocol_public_main_at_review": "08b05cfab0f408997b02ec06fbfdb5319e93c487",
+    "protocol_runtime_source_is_public_main_ancestor": true
+  },
+  "clean_export": {
+    "command": "git -c tar.umask=0022 archive --format=tar --prefix=teslatlas-sdk-swift-f98dde980c8fecf994917e3470950a3d853b4cc7/ f98dde980c8fecf994917e3470950a3d853b4cc7",
+    "archive_sha256": "b5d93cc59c9a16a3224fd21d1b68bb353d09487d76c16a3abbe28a8e488d7475",
+    "archive_bytes": 1443840,
+    "directory_member_count": 45,
+    "regular_file_count": 174,
+    "regular_file_bytes": 1273270,
+    "two_exports_byte_identical": true,
+    "worktree_used_as_source": false
+  },
+  "complete_source_manifest": {
+    "path": "docs/development/f6-current-source-manifest-f98dde98-2026-09-19.json",
+    "sha256": "bf861eff3d092a9d555e53a389a6cc3b779734c2a35850fd920c1c34855980bb",
+    "aggregate_sha256": "f17cdf691a47a8bd205836c7987028f3033eda1f47144c219ca530e07a0deb05",
+    "entry_count": 174,
+    "entry_fields": [
+      "path",
+      "git_mode",
+      "size",
+      "sha256"
+    ],
+    "coverage": "Every regular file in the exact commit tree; archive paths, modes, sizes and hashes match the immutable Git object and no dirty-worktree or untracked bytes are included."
+  },
+  "four_product_source_handoff": {
+    "accepted_foundation_commit": "d7ac4488fc5908015e8de55cd57983ea87172266",
+    "accepted_foundation_receipt": "docs/development/f3-f6-source-handoff-foundation-2026-09-19-r1.json",
+    "accepted_foundation_receipt_sha256": "bc1e6487145a319b1493c580b2ff21175ad188750fd2c2afb301a796c1064504",
+    "accepted_source_package_identity_sha256": "733071fcd8c7db0e64b38547dab90dd354ad728dc2d9efee7fd2de438a14876e",
+    "accepted_source_input_files": 124,
+    "accepted_source_input_bytes": 769736,
+    "protocol_runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+    "public_products": [
+      "TeslatlasHubSDK",
+      "TeslatlasCommands",
+      "TeslatlasHubV1Compatibility",
+      "TeslatlasCurrentHub"
+    ],
+    "current_commit_replay": {
+      "source_package_identity_sha256": "fbb4fb8fd766e2c7ef1fb2bd74468ed5b1c67e242949fa381863355df1a81c0b",
+      "source_input_files": 124,
+      "source_input_bytes": 770034,
+      "umask_022_and_077_manifests_byte_identical": true,
+      "strict_verification_passed_for_both": true
+    },
+    "identity_reconciliation": "The accepted 733071fc identity remains bound to immutable foundation commit d7ac4488. Current public commit f98dde98 is its direct descendant and changes only README.md and docs/development.md inside the handoff selection; package manifest, Sources, Tests, examples, protocol binding and the four products are unchanged. Because documentation is intentionally content-bound, replaying the current commit truthfully yields successor identity fbb4fb8f rather than relabelling it as the accepted identity.",
+    "runtime_acceptance_transferred_to_current_commit": false
+  },
+  "profile": {
+    "product_version": "2026.36.2",
+    "id": "hub-http-v1",
+    "revision": "1.0.0",
+    "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "checksum_path": "Sources/TeslatlasCurrentHub/Binding/SHA256SUMS"
+  },
+  "hub_catalog": {
+    "algorithm_authority": "hub/tools/companions/core.py source_manifest_for and _source_digest",
+    "excluded_clean_export_paths": [
+      "AGENTS.md"
+    ],
+    "included_file_count": 173,
+    "regular_file_bytes": 1271656,
+    "source_sha256": "1e776960a13aaa76a47f7a8faad2736be2b1f442ea58afe4832253349e987ad6",
+    "component_candidate": {
+      "repository": "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
+      "commit": "f98dde980c8fecf994917e3470950a3d853b4cc7",
+      "source_sha256": "1e776960a13aaa76a47f7a8faad2736be2b1f442ea58afe4832253349e987ad6",
+      "product_version": "2026.36.2",
+      "profile": {
+        "id": "hub-http-v1",
+        "revision": "1.0.0",
+        "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+      },
+      "artifacts": {}
+    },
+    "independent_recomputation_matches_manifest": true,
+    "catalog_admission_performed": false,
+    "catalog_lifecycle_performed": false
+  },
+  "safety": {
+    "duplicate_archive_paths": 0,
+    "unsafe_archive_paths": 0,
+    "link_members": 0,
+    "special_members": 0,
+    "archive_file_set_matches_git_tree": true,
+    "archive_modes_sizes_hashes_match_git_tree": true,
+    "temporary_exports_removed": true,
+    "docker_vm_xcode_or_runtime_used": false,
+    "preserved_untracked_cache_paths": true
+  },
+  "checks": {
+    "public_source_identity": "PASS",
+    "protocol_public_identity_and_ancestry": "PASS",
+    "clean_export_reproducibility": "PASS",
+    "complete_manifest_recomputation": "PASS",
+    "current_four_product_handoff_replay": "PASS",
+    "hub_source_projection_recomputation": "PASS",
+    "profile_digest": "PASS",
+    "focused_source_handoff_tests": "PASS_7_OF_7",
+    "json_parse": "PASS",
+    "diff_check": "PASS"
+  },
+  "acceptance": {
+    "bounded_current_source_handoff_prepared": true,
+    "remaining_p1_p2_findings": [],
+    "runtime_acceptance_claimed": false,
+    "f3_complete": false,
+    "f6_complete": false,
+    "f7_complete": false
+  },
+  "limitations": [
+    "Hub must independently recompute and explicitly admit the exact component candidate; this receipt does not mutate the Hub catalog.",
+    "No clean resolve/build/update/status/rollback/removal lifecycle was run from the current catalog candidate.",
+    "The accepted d7ac4488 four-product handoff remains immutable historical evidence; the f98dde98 replay is a deterministic successor identity and is not runtime acceptance.",
+    "Platform-floor runtime, live Hub, F5 real-input semantics and final F3, F6 and F7 acceptance remain open."
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.d1-component-selection-receipt/v1",
+  "status": "accepted_primary_runtime_lane_only",
+  "verified_at": "2026-09-09",
+  "selector_id": "debian13-arm64-container",
+  "component_ids": ["home-assistant"],
+  "component_manifest_sha256": "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940",
+  "candidate_source_and_artifact_identities": {
+    "repository": "teslatlas-home-assistant",
+    "head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+    "product_version": "2026.36.2",
+    "payload_manifest": "docs/development/d1-aggregate-manifest-payload-2026-09-09.txt",
+    "payload_manifest_sha256": "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940",
+    "profile_id": "hub-http-v1@1.0.0",
+    "profile_sha256s_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "artifact_kind": "source_payload_read_only_mount",
+    "standalone_package": false
+  },
+  "platform_and_runtime": {
+    "os": "Debian GNU/Linux 13 trixie",
+    "architecture": "aarch64",
+    "docker_engine": "26.1.5+dfsg1",
+    "compose": "2.26.1",
+    "home_assistant_image": "ghcr.io/home-assistant/home-assistant:2026.8.3",
+    "image_architecture": "arm64/linux",
+    "image_digest": "sha256:e53b24b1bde9e471f5167a032d29d8de5956c374cba44205da0a017b71cc4362",
+    "network": "host",
+    "stop_grace_period": "60s"
+  },
+  "ownership_and_paths": {
+    "compose_root": "/home/bolyki.guest/teslatlas-ha-b2-20260908",
+    "config_mount": "/config persistent read-write; Home Assistant owns config/database/registry",
+    "component_mount": "/config/custom_components/teslatlas_hub read-only",
+    "trust_mount": "private fixture CA read-only; exact path and bytes remain redacted",
+    "component_owner": "Teslatlas HA payload staging",
+    "runtime_owner": "selected Home Assistant Container",
+    "never_owned": [
+      "Home Assistant database",
+      "entity/device registries",
+      "Hub credentials",
+      "Tesla credentials",
+      "native macOS Home Assistant service"
+    ]
+  },
+  "install_remove_restart_actions": {
+    "install": "Explicitly selected Container mount; only custom_components/teslatlas_hub staged; no tools/tests/fixtures/credentials/database copied; Compose config validation passed.",
+    "remove": "Stop selected Container, preserve private config and exact component bytes, remove only the integration payload, and restore the paired backup for rollback.",
+    "integration_reload": "Home Assistant UI Reload after integration changes.",
+    "container_restart": "docker compose stop/up or restart after mounted component/image change; no hidden service start.",
+    "rollback": "Restore matching component bytes and configuration backup while HA is stopped; recheck registry/config integrity."
+  },
+  "readiness_and_function_result": {
+    "compose_config": "passed",
+    "home_assistant_http": 200,
+    "hub_fixture_readyz": 200,
+    "ui_pairing": "success",
+    "devices": 2,
+    "entities": 26,
+    "scheduled_refresh": "advanced fixture state appeared after approximately one 30-second poll",
+    "reauthentication": "revoked bearer entered repair flow; fresh private invitation repaired the same entry",
+    "reload": "UI integration reload succeeded",
+    "unload": "disable confirmation removed integration devices/entities; re-enable restored 2 devices/26 entities",
+    "container_restart": "stop/up returned HTTP 200 and retained one Teslatlas config entry",
+    "receipt_source": "docs/development/STATUS.json#b2_1_live_container_acceptance"
+  },
+  "data_identity_before_after": {
+    "config_entries_before": 1,
+    "config_entries_after": 1,
+    "teslatlas_entry_port": 18483,
+    "entities_before": 26,
+    "entities_after": 26,
+    "invitation_persisted": false,
+    "database_error_markers_after_restart": false,
+    "primary_fixture_identity": "unchanged; private Hub UUID/token/pin values redacted"
+  },
+  "redaction_check": {
+    "raw_invitation": "absent",
+    "bearer": "absent",
+    "private_key_or_certificate_bytes": "absent",
+    "database_password": "absent",
+    "vehicle_identity_and_raw_response": "absent",
+    "diagnostics": "endpoint, bearer, Hub identity, pairing material, vehicle identity, coordinates, and replay identity redacted"
+  },
+  "cleanup_and_listener_state": {
+    "primary_runtime": "owner-controlled selected Container lane remains active",
+    "primary_hub_fixture": "18483 remains the only retained HA fixture lane; no disposable r12/r13 input reused",
+    "temporary_entries": "none beyond the retained primary entry",
+    "temporary_ports": "closed as recorded in STATUS.json",
+    "hidden_services_started": false
+  },
+  "limitations": [
+    "This is a source/selection receipt for one accepted Debian ARM64 Container lane, not a standalone installer or package publication.",
+    "Hub aggregate promotion remains source-ready but runtime-receipt gated.",
+    "HA OS, macOS, Debian x86_64, replacement-upgrade, full R1 parity, TeslaMate comparison, and final D1/X1 registry admission remain open."
+  ]
+}

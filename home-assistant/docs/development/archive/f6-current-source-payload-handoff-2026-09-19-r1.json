@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.home-assistant.f6-current-source-payload-handoff/v1",
+  "status": "source_payload_accepted_metadata_delta_pending",
+  "verified_at": "2026-09-19T20:28:44Z",
+  "scope": "Exact clean Git export and HACS-shaped custom integration payload for the local-unpublished Hub source catalog; source and payload provenance only",
+  "source": {
+    "repository": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
+    "branch": "main",
+    "commit": "dfb2b05067a88ba02e6dbfbd6db614f8a99b12f4",
+    "origin_main": "dfb2b05067a88ba02e6dbfbd6db614f8a99b12f4",
+    "live_remote_main": "dfb2b05067a88ba02e6dbfbd6db614f8a99b12f4",
+    "git_tree": "43de76c71bba607f5d37226b4fa7a28c7b0887ee",
+    "product_version": "2026.36.2",
+    "archive": {
+      "path": "/Users/bolyki/.codex/artifacts/teslatlas-home-assistant-f6-20260919-dfb2b05/teslatlas-home-assistant-dfb2b05067a88ba02e6dbfbd6db614f8a99b12f4.tar",
+      "format": "git archive tar with one commit-qualified top-level directory",
+      "sha256": "e9cb7aadfa1694018f583628db92f9482520734226ea8f7dd9fc15476e7ae067",
+      "size": 1617920,
+      "member_count": 127,
+      "regular_file_count": 102,
+      "directory_count": 25,
+      "executable_file_count": 2,
+      "reproducibility": "Two consecutive git archive constructions from the immutable commit were byte-identical"
+    },
+    "frozen_export": {
+      "path": "/Users/bolyki/.codex/artifacts/teslatlas-home-assistant-f6-20260919-dfb2b05/frozen-source",
+      "regular_file_count": 102,
+      "total_regular_file_bytes": 1524700,
+      "symlink_count": 0,
+      "unsupported_file_type_count": 0,
+      "writable_path_count_after_sealing": 0
+    },
+    "complete_manifest": {
+      "path": "/Users/bolyki/.codex/artifacts/teslatlas-home-assistant-f6-20260919-dfb2b05/complete-source-manifest.json",
+      "sha256": "565c4defa7c64832cc48213bf8e4be699c1da722929c3faff6fbc4568a80ae3d",
+      "file_count": 102,
+      "algorithm": "Compact sorted-key JSON over every regular Git-export file with path, SHA-256, byte size and exact Git mode; repository, commit and tree are bound at the top level",
+      "mode_counts": {
+        "100644": 100,
+        "100755": 2
+      }
+    },
+    "hub_catalog_source_record": {
+      "path": "/Users/bolyki/.codex/artifacts/teslatlas-home-assistant-f6-20260919-dfb2b05/hub-local-source-record.json",
+      "record_sha256": "00c25816e23dff8015e61db209ba7590d2f9019c1676d359709191141e9c2a75",
+      "source_sha256": "4af006321a29e0e9039458ef41c9421afe2537a72c7ec41dc89890b01dd41ec0",
+      "file_count": 101,
+      "algorithm": "Hub tools/companions/core.py source_manifest_for schema; AGENTS.md is the only clean-export file intentionally excluded by the Hub catalog walker"
+    }
+  },
+  "profile": {
+    "id": "hub-http-v1",
+    "revision": "1.0.0",
+    "catalog_identity": "hub-http-v1@1.0.0",
+    "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "checksum_file": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/SHA256SUMS",
+    "verified_entry_count": 17,
+    "verification": "All 17 SHA256SUMS entries passed against the frozen export"
+  },
+  "component_payload": {
+    "shape": "HACS repository layout custom_components/teslatlas_hub",
+    "root": "custom_components/teslatlas_hub",
+    "manifest": "docs/development/ha-component-payload-manifest-2026-09-19-r2.txt",
+    "payload_manifest_sha256": "ebf7d09f88e2ce8f80ea71b8b2ae0fb7569ae3521dea038b643b6cfe626439ca",
+    "file_count": 31,
+    "manifest_size": 3005,
+    "algorithm": "C-locale payload-relative path order; one UTF-8 line '<path> <sha256>\\n' per regular file under custom_components/teslatlas_hub",
+    "source_binding": "Generated from the frozen dfb2b050 export and independently compared byte-for-byte with the retained r1 manifest",
+    "reproduced_prior_hash": true,
+    "generated_or_private_files_included": false
+  },
+  "historical_runtime_receipt": {
+    "path": "docs/development/ha-debian-arm64-container-lifecycle-acceptance-2026-09-19-r1.json",
+    "sha256": "fc04ddbb5ece3932f7f1be96d986ad0d44efaf57ab333d89f38748948200029a",
+    "accepted_runtime_source_head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+    "disposition": "Preserved as historical runtime evidence only; not rebound to dfb2b050 and not the selection receipt for this current-source catalog handoff"
+  },
+  "catalog_selection": {
+    "publication_status": "local-unpublished",
+    "selection_receipt": "docs/development/f6-current-source-payload-handoff-2026-09-19-r1.json",
+    "selection_receipt_sha256_location": "Record the SHA-256 of this immutable tracked file after freezing; the receipt does not contain its own digest",
+    "runtime_acceptance": false,
+    "hub_catalog_update_performed": false,
+    "independent_hub_recomputation_required": true
+  },
+  "safety_and_cleanup": {
+    "archive_members_safe": true,
+    "archive_absolute_or_parent_traversal_members": 0,
+    "source_export_from_git_object_database_only": true,
+    "working_tree_bytes_in_export": false,
+    "private_credentials_or_runtime_data_in_payload": false,
+    "docker_or_vm_started": false,
+    "home_assistant_or_hub_runtime_started": false,
+    "network_used_after_remote_identity_revalidation": false,
+    "temporary_export_paths_remaining": 0,
+    "retained_output": "Owner-only read-only artifact root listed in source.archive and source.frozen_export"
+  },
+  "independent_review": {
+    "reviewer": "gpt-5.6-sol/high",
+    "verdict": "ACCEPT",
+    "reviewed_candidate_receipt_sha256": "c228aa6a6df37e6a3fb0e2e61a432cec8b29e6178118fbdcfd7eb0b13a1c0613",
+    "blocking_findings": [],
+    "recomputed_identities": {
+      "source_archive_sha256": "e9cb7aadfa1694018f583628db92f9482520734226ea8f7dd9fc15476e7ae067",
+      "complete_source_manifest_sha256": "565c4defa7c64832cc48213bf8e4be699c1da722929c3faff6fbc4568a80ae3d",
+      "hub_catalog_source_record_sha256": "00c25816e23dff8015e61db209ba7590d2f9019c1676d359709191141e9c2a75",
+      "hub_catalog_source_sha256": "4af006321a29e0e9039458ef41c9421afe2537a72c7ec41dc89890b01dd41ec0",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "payload_manifest_sha256": "ebf7d09f88e2ce8f80ea71b8b2ae0fb7569ae3521dea038b643b6cfe626439ca"
+    },
+    "source_count_reconciliation": "The complete clean Git export contains 102 regular files. The Hub source walker intentionally excludes only AGENTS.md, producing the accepted 101-file catalog source record without omitting runtime, package, profile, test or documentation bytes.",
+    "catalog_input_limit": "Accepted only as an exact local-unpublished current-source and component-payload input. No Hub catalog mutation, installation, runtime, replacement/rollback, publication or F4/F5/F6/F7 acceptance follows from this review.",
+    "metadata_delta": "This review metadata changes the selection-receipt file hash and requires the same reviewer to confirm the metadata-only delta before catalog admission."
+  },
+  "limitations": [
+    "This handoff does not prove manual installation, Container operation, HA OS or Supervisor compatibility, HACS publication, replacement, rollback or removal.",
+    "No Home Assistant or Hub runtime was rerun, and the historical f650331 runtime receipt is not current-source runtime acceptance.",
+    "F4, F5, F6 and F7 remain open; this receipt is a bounded current-source and catalog-payload input only.",
+    "Hub must independently recompute the source and payload records and explicitly admit the selection receipt before using these hashes in its catalog."
+  ]
+}

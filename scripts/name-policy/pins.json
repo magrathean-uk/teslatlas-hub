@@ -2074,6 +2074,62 @@
     {
       "path": "tests/fixtures/recovery-flags-7.bin",
       "sha256": "d4ca21803b574af61cc22fa55a7b4d1ef0c1e2c7ede90f71c80a01449bcc543e"
+    },
+    {
+      "path": "edge/docs/development/archive/2026-09-08/docs/plans/2026-08-30-foundation.md",
+      "sha256": "1ca65f694a749ee87f90b2778e87288db3b36cf1b56a888e047fc156903be173"
+    },
+    {
+      "path": "edge/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+      "sha256": "6e2a3300d808fd52ce8a4c6cf92ae5549774cf0ffc1859c2281d5b8b011b6f7e"
+    },
+    {
+      "path": "edge/docs/development/edge-macos-forwarding-contract-proposal-2026-09-12-r1.json",
+      "sha256": "9bf4c2f85911f94a35a19353b024f6a59f6eb39635f8a89b8159aa2b64ee4bd8"
+    },
+    {
+      "path": "edge/docs/development/edge-macos-forwarding-handoff-proposal-2026-09-09.json",
+      "sha256": "04c130f8e83273da485656dee5bf2403256160eb8c9788d994528bc4d5d1bb90"
+    },
+    {
+      "path": "edge/docs/development/edge-macos-one-event-actor-contract-proposal-2026-09-12-r3.json",
+      "sha256": "5c327fdd47379e865a30c93cb7a269184546118d08c9acdb435cfa77c5d83026"
+    },
+    {
+      "path": "edge/docs/development/edge-macos-one-event-actor-contract-proposal-2026-09-12-r4.json",
+      "sha256": "2358982834062f8df894de76ce85e92b7563cebac3ba66fc19bb48f4660c8771"
+    },
+    {
+      "path": "home-assistant/docs/development/archive/d1-debian13-arm64-container-selection-receipt-2026-09-09.json",
+      "sha256": "2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2"
+    },
+    {
+      "path": "viewer/artifacts/teslatlas-sdk-2026.36.2.tgz",
+      "sha256": "1e62303c17d558002001de0aeccb90e50c3644c76f46ced4e492b2960ec6f4da"
+    },
+    {
+      "path": "viewer/output/playwright/screenshots/complete-desktop.png",
+      "sha256": "976b30a7212c145ec93494c0ac900b94dd27aceb1528548efb38c910f9af06b5"
+    },
+    {
+      "path": "viewer/output/playwright/screenshots/complete-mobile.png",
+      "sha256": "0731e80c9cd2aba4db2c261c2a8ada3ab314ac7f28bb4883dd65010cb363be56"
+    },
+    {
+      "path": "viewer/output/playwright/screenshots/error-mobile.png",
+      "sha256": "6b40b00e1279be7ec91d80cad80858201ee359e7d460c2dc45b39c692bd86309"
+    },
+    {
+      "path": "viewer/output/playwright/screenshots/pairing-mobile.png",
+      "sha256": "adc509da3dbad98ed8a737b061c0e81bce369a86955c382733a0c6be1a855abb"
+    },
+    {
+      "path": "viewer/output/playwright/screenshots/removal-confirmation-mobile.png",
+      "sha256": "6609a6223930eaac3da458ef3360545916d0380c6c2a04c910538e154ff0e015"
+    },
+    {
+      "path": "viewer/output/playwright/screenshots/stale-desktop.png",
+      "sha256": "f55dd9446004275f9fb8cd867268c87bbc27294b08e5ab2caae98ca11d2fc0dc"
     }
   ]
 }

@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "stage": "B1",
+  "status": "passed",
+  "verified_at": "2026-09-08T22:50:24Z",
+  "source_head": "ba5424dcfeab59ac9fea0106f84fb5281672751a",
+  "sdk_profile": "hub-http-v1@1.0.0",
+  "sdk_profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+  "sdk_tarball_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+  "sdk_installed_member_count": 81,
+  "viewer_package_sha256": "30836eced2cd38d9c98374ea3247e1242c21e50832f41bcdd7e08bf779529851",
+  "hub": {
+    "hub_id": "92c1fadb-ea21-49ee-a690-e110056e846e",
+    "endpoint": "https://127.0.0.1:18480",
+    "fixture_provenance": "synthetic-real-process"
+  },
+  "scenario": {
+    "name": "two-vehicles-five-drives",
+    "sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+    "drive_pages": [[105, 104], [103, 102], [101]],
+    "note": "B1 bounded scenario; 51-drive R1 paging remains separate."
+  },
+  "browser": {
+    "node": "v26.7.0",
+    "playwright": "1.62.1",
+    "chromium": "152.0.7977.82",
+    "page_origin": "http://127.0.0.1:4173"
+  },
+  "checks": {
+    "installed_browser_smoke": "1 passed in 1.4s",
+    "wrong_uuid_inspection": "passed",
+    "pairing_and_hub_identity": "passed",
+    "current_state": "0%, 160.93 km, 16,093.44 km, Observed",
+    "history": "five IDs rendered in exact scenario order 105, 104, 103, 102, 101",
+    "empty_vehicle": "passed",
+    "refresh": "passed",
+    "clear_local_session": "returned to Pair with a Hub"
+  },
+  "cleanup": {
+    "status": "passed",
+    "fixture_launcher_pid": 21433,
+    "fixture_hub_pid": 21449,
+    "viewer_pid": 25728,
+    "stopped_pids": [25728, 21433, 21449],
+    "listeners_absent": ["127.0.0.1:4173", "127.0.0.1:18480"],
+    "remaining_fixture_processes": 0
+  },
+  "private_inputs": {
+    "invitation_and_certificate": "used only from the private r3 fixture handoff; not copied into this receipt",
+    "raw_evidence": "retained under the private guest fixture root"
+  },
+  "limits": [
+    "This is B1 five-drive acceptance, not the R1 51-drive 25/25/1 matrix.",
+    "B2 helpers, D1 packaging, and X1 cross-platform lifecycle acceptance remain open.",
+    "No commit, push, release, publication, CI, or artifact upload was performed."
+  ]
+}

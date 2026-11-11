@@ -1,0 +1,211 @@
+{
+  "schema_version": 1,
+  "kind": "edge_r12_fresh_contract",
+  "date": "2026-09-09",
+  "run_id": "edge-r12-fresh-20260909",
+  "status": "single_submission_failed_receiver_identity_cleanup_complete",
+  "eligibility": "The 20743/20744 runtime was repaired in place after its initial key-custody failure and remains diagnostic-only. The distinct 20843/20844 replacement was the sole eligible r12 handoff candidate; its one coordinator-authorized actor call was consumed and rejected by the receiver before Edge admission. The root is closed and retained as failed-path evidence; no replay or second record is permitted.",
+  "guest": {
+    "name": "teslatlas-debian13-arm64",
+    "os": "Debian GNU/Linux 13 (trixie)",
+    "architecture": "aarch64"
+  },
+  "image": {
+    "reference": "teslatlas-edge:local",
+    "sha256": "c04e30499821f8f412764541a2627e038fb9703a6f2f884c4e9525fe8005b2a4",
+    "architecture": "linux/arm64"
+  },
+  "producer": {
+    "source_id": "8c867580-27df-4e80-9a5f-c73f9864f807",
+    "vehicle_id": "024c338a-decd-4196-976e-29fe11b18110",
+    "vin": "5YJ3E1EA7KF000004",
+    "car_id": 11,
+    "installation_id": "edge-r12-fresh-20260909",
+    "lineage": "edge-spool-r12-fresh-20260909",
+    "transaction_type": "V",
+    "transaction_id": "edge-r12-fresh-20260909-v-001"
+  },
+  "manifest": {
+    "guest_path": "/home/bolyki.guest/teslatlas-edge-r12-fresh-20260909/manifest/producer-handoff.json",
+    "sha256": "028b97b985c6f28cc9f43ec3eeb96cb57d92d816dd3c4a8c6529a946927cb320",
+    "producer_submission": "not invoked"
+  },
+  "actor": {
+    "guest_path": "/home/bolyki.guest/teslatlas-edge-r12-fresh-20260909/manifest/synthetic-vehicle",
+    "sha256": "d5f1fa538086cd3f7b7acc74766d92e3e5d9bebf977787b67c1999d34f658d4c",
+    "contract_marker": "teslatlas-synthetic-vehicle-identity-v2",
+    "source_sha256": "b27566c80766f4fa0823c2b797809ade65cf09a0d8dd080dd7d14efada34c698",
+    "required_flags": [
+      "-endpoint",
+      "-cert",
+      "-key",
+      "-server-ca",
+      "-vin",
+      "-txid",
+      "-created-at-ms"
+    ],
+    "identity_source": "The VIN is passed from producer.vin in this descriptor; it is not embedded in the helper."
+  },
+  "public_record_contract": {
+    "wire_topic": "V",
+    "transaction_id": "edge-r12-fresh-20260909-v-001",
+    "payload": {
+      "protobuf_field": "VehicleName",
+      "protobuf_value": "synthetic-b2",
+      "protobuf_value_type": "string",
+      "created_at_ms": 1788927737000,
+      "created_at_semantics": "Explicit Unix-millisecond value supplied through -created-at-ms; the actor writes it to Payload.CreatedAt."
+    },
+    "envelope": {
+      "vehicle_device": "vehicle_device.5YJ3E1EA7KF000004",
+      "timestamp_seconds_argument": 1788927737,
+      "envelope_id": "edge-b2-envelope-0001",
+      "runtime_generated_arrival_metadata": "The actor's final runtime clock argument is not a fixed acceptance value."
+    },
+    "expected_hub_projection": {
+      "source_id": "8c867580-27df-4e80-9a5f-c73f9864f807",
+      "vehicle_id": "024c338a-decd-4196-976e-29fe11b18110",
+      "transaction_type": "V",
+      "transaction_id": "edge-r12-fresh-20260909-v-001",
+      "canonical_field": "vehicle_name",
+      "canonical_value": "synthetic-b2",
+      "field_timestamp_ms": 1788927737000,
+      "record_id": "Computed from the admitted full envelope; no record_id exists before submission."
+    },
+    "expected_home_assistant_projection": {
+      "mismatch_identified": "This actor emits only VehicleName. It does not emit battery, temperature, charging, range, odometer, access, activity, or software fields.",
+      "device_display_name": "synthetic-b2",
+      "entity_id": null,
+      "value": null,
+      "units": null,
+      "acceptance_boundary": "The current actor has no value-bearing HA sensor contract. Normal vehicle sensor entities, if the vehicle is present in the HA snapshot, cannot be claimed to carry a delivered value from this record; Hub and HA must bind to the device display name or choose an explicitly supported alternate synthetic field before submission."
+    }
+  },
+  "receiver_custody_repair": {
+    "initial_failure": "The receiver logged panic: open /run/teslatlas-edge-vehicle-tls/vehicle-tls.key: permission denied.",
+    "root_cause": "The replacement vehicle-tls.key was copied as root:root mode 0600 after the service directory was assigned to the runtime identity; the receiver process runs as 10001:10001 and could not open the key.",
+    "source_provenance": {
+      "documentation": "docs/operations/docker.md",
+      "documentation_sha256": "ba91f072583e7b2b8d0b7d0ab6e1af8a3dab7aca51ea8e25a6176e8a9a09836d",
+      "contract_test": "tests/packaging_contract.rs",
+      "contract_test_sha256": "61783bc6485aa9937ebca1415e1f8d1396c1b158fcc2a799d5456e1d80077b5f",
+      "required_setup": [
+        "sudo chown 10001:10001 <runtime-root>/vehicle-tls/vehicle-tls.key",
+        "sudo chmod 0600 <runtime-root>/vehicle-tls/vehicle-tls.key"
+      ]
+    },
+    "effective_runtime": {
+      "uid": 10001,
+      "gid": 10001,
+      "host_key": "0600 10001:10001",
+      "container_key": "0600 10001:10001",
+      "read_test_as_receiver_uid": "passed; test -r returned 0",
+      "receiver_spool_key": "absent from receiver mount",
+      "receiver_hub_tls": "absent from receiver mount"
+    },
+    "stability": {
+      "edge_status": "running",
+      "edge_restart_count": 0,
+      "receiver_status": "running",
+      "receiver_restart_count": 10,
+      "receiver_restart_count_during_five_second_observation": "unchanged at 10 after the ownership correction",
+      "interpretation": "The receiver restart count records the pre-correction restart loop. The current container remained running after the key became readable."
+    }
+  },
+  "runtime_observation": {
+    "runtime_root": "/home/bolyki.guest/teslatlas-edge-r12-fresh-20260909",
+    "compose_project": "edge-r12-fresh-20260909",
+    "listeners": {
+      "edge_delivery": "https://127.0.0.1:20743",
+      "receiver": "wss://127.0.0.1:20744/",
+      "bind_scope": "loopback-only",
+      "preserved_unrelated": [
+        "127.0.0.1:20543",
+        "127.0.0.1:20544",
+        "127.0.0.1:18483"
+      ]
+    },
+    "health": {
+      "probe_boundary": "In-container HTTP probe on 127.0.0.1:8080; host TLS probe without a client certificate is expected to fail at the mTLS boundary.",
+      "healthz": "status ok; records=0 bytes=0 corrupt_records=0 expired_records=0 pending_gap_notices=0 capacity_exhausted=false",
+      "readyz": "status ok; records=0 bytes=0 corrupt_records=0 expired_records=0 pending_gap_notices=0 capacity_exhausted=false"
+    },
+    "state": {
+      "queue_records": 0,
+      "queue_bytes": 0,
+      "corrupt_records": 0,
+      "expired_records": 0,
+      "pending_gap_notices": 0,
+      "capacity_exhausted": false,
+      "persistent_files": "FORMAT, sequence.tlem, .lock, spool-key and hub-credentials.json are 0600 owned by 10001:10001"
+    },
+    "hub_input_root": {
+      "path": "/home/bolyki.guest/teslatlas-edge-r12-fresh-20260909/hub-inputs",
+      "directory": "0700 bolyki:bolyki",
+      "files": "server-ca.pem, hub-client.crt, hub-client.key and delivery-bearer are distinct regular 0600 nlink=1 files; private values withheld"
+    },
+    "mount_isolation": "Edge has state, receiver-secret, config and Hub-TLS; receiver has receiver-secret, fleet config and vehicle-TLS read-only, with no Edge state/spool-key or Hub-TLS path.",
+    "secret_marker_scans": "No synthetic VIN, transaction ID, bearer value, or key-path marker appeared in the scanned runtime logs; image history marker scan was clean.",
+    "actions": {
+      "init": "passed",
+      "doctor": "passed",
+      "producer_invocation": "not invoked",
+      "record_submission": "not attempted",
+      "hub_poll": "not attempted",
+      "ha_attachment": "not attempted"
+    }
+  },
+  "replacement_runtime": {
+    "runtime_root": "/home/bolyki.guest/teslatlas-edge-r12-replacement-20260909",
+    "compose_project": "edge-r12-replacement-20260909",
+    "image": {
+      "sha256": "c04e30499821f8f412764541a2627e038fb9703a6f2f884c4e9525fe8005b2a4",
+      "architecture": "linux/arm64"
+    },
+    "listeners": {
+      "edge_delivery": "https://127.0.0.1:20843",
+      "receiver": "wss://127.0.0.1:20844/",
+      "bind_scope": "loopback-only",
+      "unrelated_preserved": [
+        "127.0.0.1:20743",
+        "127.0.0.1:20744",
+        "127.0.0.1:20543",
+        "127.0.0.1:20544",
+        "127.0.0.1:18483"
+      ]
+    },
+    "manifest_sha256": "028b97b985c6f28cc9f43ec3eeb96cb57d92d816dd3c4a8c6529a946927cb320",
+    "actor_sha256": "d5f1fa538086cd3f7b7acc74766d92e3e5d9bebf977787b67c1999d34f658d4c",
+    "initialization": "Edge init and doctor passed before startup",
+    "health": "In-container healthz and readyz both returned status ok with records=0 bytes=0 corrupt_records=0 expired_records=0 pending_gap_notices=0 capacity_exhausted=false",
+    "container_identity": "Edge and receiver user 10001:10001; both restart counts 0 and unchanged during a five-second observation",
+    "receiver_key": "0600 10001:10001; readable from the receiver process",
+    "mount_isolation": "Receiver cannot see the Edge spool key or Hub-TLS mount; it sees only receiver-secret, fleet config and vehicle-TLS read-only",
+    "hub_input_root": "0700 bolyki:bolyki with server-ca.pem, hub-client.crt, hub-client.key and delivery-bearer as distinct 0600 nlink=1 files; private values withheld",
+    "producer_invocation": "one attempted; receiver rejected application identity before Edge admission",
+    "hub_poll": "Hub 18493 pre-record control passed with zero state; no data batch or ACK occurred after the failed admission",
+    "ha_attachment": "fresh temporary 18493 entry was attached and scheduler-verified, then removed; primary 18483 restored"
+  },
+  "single_authorized_submission": {
+    "invocation_count": 1,
+    "endpoint": "wss://127.0.0.1:20844/",
+    "contract": "VehicleName=synthetic-b2 only; topic V; transaction edge-r12-fresh-20260909-v-001; created_at_ms=1788927737000",
+    "actor_sha256": "d5f1fa538086cd3f7b7acc74766d92e3e5d9bebf977787b67c1999d34f658d4c",
+    "result": "failed_before_edge_admission",
+    "exit_code": 1,
+    "helper_error": "websocket: close 1006 (abnormal closure): unexpected EOF",
+    "receiver_observation": "One request reached the receiver; extract_sender_id_err reported unauthorized certificate for the custom r12 replacement client issuer. The presented leaf chains to the mounted client CA, but its public certificate has no X509 extensions; no receiver ACK was returned.",
+    "edge_after_attempt": "healthz/readyz status ok; records=0 bytes=0 corrupt_records=0 expired_records=0 pending_gap_notices=0 capacity_exhausted=false; Edge and receiver restart counts remained 0; 20843/20844 remained listening until authorized cleanup",
+    "hub_and_ha": "Hub post-call ledger remained zero and its 18493 fixture was closed cleanly; HA removed only the temporary 18493 entry and restored primary 18483; no delivered HA value or name update was observed",
+    "cleanup": "Receiver stopped first with exit 143, Edge second with exit 0; both restart counts 0; 20843/20844 closed; root and sealed evidence retained",
+    "replay_policy": "The one-shot authorization is consumed. Do not retry, repair in place, alter credentials, invoke another actor, or create a replacement root without fresh coordinator authorization."
+  },
+  "replacement_required": {
+    "new_root": "/home/bolyki.guest/teslatlas-edge-r12-replacement-20260909",
+    "candidate_listeners": [
+      "127.0.0.1:20843",
+      "127.0.0.1:20844"
+    ],
+    "rule": "This distinct root was the sole r12 candidate, is now closed after the failed one-shot, and is retained as evidence only. Do not reuse it, the repaired-in-place r12-fresh root, their restart history, or their private inputs."
+  }
+}

@@ -1,0 +1,46 @@
+# The context is deny-by-default. Keep the COPY list in Dockerfile and this
+# allowlist in sync when a package input is deliberately added.
+**
+!Package.swift
+!VERSION
+!LICENSE
+!Sources/
+!Sources/**
+!Tests/
+!Tests/**
+!Examples/
+!Examples/TeslatlasHubSDKExample/
+!Examples/TeslatlasHubSDKExample/**
+!Examples/CurrentHubConsumer/
+!Examples/CurrentHubConsumer/Package.swift
+!Examples/CurrentHubConsumer/Sources/
+!Examples/CurrentHubConsumer/Sources/**
+!Examples/CurrentHubConsumer/Tests/
+!Examples/CurrentHubConsumer/Tests/**
+
+# Keep these exclusions after the allowlist so a future source re-inclusion
+# cannot admit local build output, credentials, or private evidence.
+**/.git
+**/.build
+**/.swiftpm
+**/DerivedData
+**/*.xcworkspace
+**/*.xcodeproj
+**/.DS_Store
+**/__pycache__
+**/*.pyc
+**/.venv
+**/venv
+**/private
+**/private/**
+**/receipts
+**/receipts/**
+**/artifacts
+**/artifacts/**
+**/*.env
+**/*.env.*
+**/*.pem
+**/*.p8
+**/*.key
+**/*credential*
+**/*secret*

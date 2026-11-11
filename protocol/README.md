@@ -23,18 +23,19 @@ It carries three distinct contract families with different identities:
   whole `1.2.0` contract and every `1.2.0` key, as a deprecated alias that carries
   the same value, and adds neutral key names: 28 for `current`, the renamed `car`
   and `car.settings` keys and 33 for the history items. Its predecessor
-  `hub-http-v1@1.2.0` is retained. The `1.2.0` minor added JSON pages for charges,
+  `hub-http-v1@1.2.0` is retired as an advertised revision; its published
+  bytes are retained unchanged, including its historical `status: served` field. The `1.2.0` minor added JSON pages for charges,
   charge samples and drive positions, address and elevation provenance, device
   vehicle grants, same-successor rotation retries, a bounded credential lifetime
   and self-revocation to the discovery, pairing, vehicle, current and drives reads.
-  What `1.2.0` said of itself while it was the minor a Hub served: A Hub built from
-  the current source names `hub-http-v1@1.2.0` in its discovery document; the earlier `1.0.0` and `1.1.0`
-  profiles were retired and are no longer in this package.
-- Candidate Hub changes-since: `hub-sync-v1@1.4.0`, documented in
+  The earlier `1.0.0` and `1.1.0` profiles were retired and are no longer
+  in this package.
+- Served Hub changes-since: `hub-sync-v1@1.4.0`, documented in
   [`docs/reference/hub-sync.md`](docs/reference/hub-sync.md). It defines
   schema 2.2 PhysicalV3 bootstrap checkpoints, bounded signed changed sets,
   no-op receipts, vehicle-bound signing-key discovery, and complete signed
-  replacement after compaction. The retained `1.3.0` profile also defines
+  replacement after compaction. The served `1.3.0` profile handles the legacy
+  and lineage 2.1 path and also defines
   signed prepared map months.
   The candidate `hub-sync-v1@1.5.0` adds a live overlay (`base_live_sequence`,
   `live_sequence`, the `sync.live` capability) to a PhysicalV3 head; no Hub
@@ -70,7 +71,7 @@ or deployment instructions.
   contract plus neutral key names with deprecated aliases, assembled from
   `1.2.0` by `tools/build_hub_http_profile_13.py`. Offline checks run with
   `./conformance/run --profile hub-http-v1@1.3.0`.
-- `profiles/hub-http-v1/1.2.0/` — current-Hub HTTP schemas, OpenAPI 3.1.0,
+- `profiles/hub-http-v1/1.2.0/` - frozen, retired HTTP schemas, OpenAPI 3.1.0,
   examples, cases, and content hash. Distribute the complete directory because
   its OpenAPI references adjacent schema files. Offline checks run with
   `./conformance/run --profile hub-http-v1@1.2.0`.
@@ -81,7 +82,7 @@ or deployment instructions.
   relative path.
 - `profiles/hub-sync-v1/1.4.0/` — negotiated schema 2.2 PhysicalV3 changed
   sets, typed delta packs, bounded admission, no-op and full-replacement rebase.
-- `profiles/hub-sync-v1/1.3.0/` — retained changes-since, no-op, key discovery,
+- `profiles/hub-sync-v1/1.3.0/` - served changes-since, no-op, key discovery,
   schema 2.2 multi-chunk manifests, and signed prepared map months.
 - `profiles/receiver-v1/1.0.0/` — the receiver envelope schema, examples and
   vectors, with the two annotated rules a conforming receiver enforces.

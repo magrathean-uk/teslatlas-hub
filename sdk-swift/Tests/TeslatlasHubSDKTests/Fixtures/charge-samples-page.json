@@ -1,0 +1,22 @@
+{
+  "resource_type": "charge_sample_page",
+  "items": [
+    {
+      "resource_type": "charge_sample",
+      "charge_sample_id": "charge_sample_demo_0001",
+      "charge_id": "charge_demo_0001",
+      "vehicle_id": "vehicle_demo_alpha",
+      "observed_at": "2026-08-30T08:30:00.000Z",
+      "battery_level_percent": 54,
+      "power_kw": 7.2,
+      "energy_added_kwh": 6.1,
+      "voltage_v": 240,
+      "current_a": 30,
+      "phases": 1,
+      "quality_flags": []
+    }
+  ],
+  "next_cursor": null,
+  "snapshot_revision": "snapshot_demo_0042",
+  "generated_at": "2026-08-30T12:31:00.000Z"
+}

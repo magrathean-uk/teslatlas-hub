@@ -240,7 +240,7 @@ def build(check):
     sql = pack_sql(catalog_value)
     previous_sha = hashlib.sha256(PREVIOUS.read_bytes()).hexdigest()
     profile = {
-        "profile_id": "hub-sync-v1@1.4.0", "status": "candidate", "previous_profile": "hub-sync-v1@1.3.0",
+        "profile_id": "hub-sync-v1@1.4.0", "status": "served", "previous_profile": "hub-sync-v1@1.3.0",
         "previous_profile_sha256": previous_sha, "snapshot_schema": "2.2", "changed_set_format": FORMAT,
         "bootstrap_selector": {"header": "x-teslatlas-sync-profile", "value": "hub-sync-v1@1.4.0",
                                "required_schema_header": "x-teslatlas-supported-schemas", "required_schema_value": "2.1,2.2"},
@@ -256,6 +256,11 @@ def build(check):
         "pack_sql": "physical-delta-pack-v1.sql", "signature": "Ed25519 over RFC 8785 canonical JSON without signature",
         "fixture_signing_keys": "fixture-signing-keys.json",
         "signing_keys_schema": "signing-keys.schema.json",
+        "signing_keys": {
+            "route": "/v1/vehicles/{vehicle_id}/sync/signing-keys",
+            "wire_key_document": "../1.3.0/signing-keys.schema.json#/$defs/document",
+            "rule": "The shared vehicle-bound signing-keys route returns profile_id hub-sync-v1@1.3.0 for every sync revision. The local signing_keys_schema validates that wire document; the fixture uses the same document shape. Selecting the 1.4 bootstrap does not change the key document identity.",
+        },
         "max_request_body_bytes": 8192, "max_control_body_bytes": 2097152,
         "joint_body_admission": "Individual schema member maxima are not independently combinable. Every request and the exact retry_request MUST fit 8192 raw UTF-8 JSON bytes; each signed control response and exact replacement manifest MUST fit 2097152 raw UTF-8 JSON bytes. A replacement MUST satisfy these limits jointly before it is published. Producers MUST choose bounded checkpoint IDs and chunk references so the complete signed rebase and mandatory exact retry both fit. Receivers MUST enforce raw limits before parsing, including whitespace and numeric lexemes. A schema-valid over-bound value is not an admitted wire document.",
     }
@@ -314,11 +319,10 @@ def build(check):
               "vehicle_id": "33333333-3333-4333-8333-333333333333",
               "generation": 1, "selected_car_id": 1}
     key_document = json.loads((PREVIOUS.parent / "fixture-signing-keys.json").read_text())
-    key_document.update(profile_id=profile["profile_id"], vehicle_id=source["vehicle_id"])
+    key_document.update(vehicle_id=source["vehicle_id"])
     files["fixture-signing-keys.json"] = key_document
     key_schema = json.loads((PREVIOUS.parent / "signing-keys.schema.json").read_text())
     key_schema["$id"] = "urn:teslatlas:hub-sync-v1:1.4.0:signing-keys"
-    key_schema["$defs"]["document"]["properties"]["profile_id"] = {"const": profile["profile_id"]}
     files["signing-keys.schema.json"] = key_schema
     checkpoints = []
     for sequence in (42, 43):

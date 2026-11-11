@@ -67,6 +67,18 @@ Hub; use its stop control when pausing collection.
 
 See the [documentation index](../docs/index.md) for the full guide and policy list.
 
+## Packages in this repository
+
+| Directory | Package | Licence | Status |
+|---|---|---|---|
+| `compute/` | [Compute library](../compute/README.md) | Apache-2.0 | Built with the Hub |
+| `protocol/` | [Protocol](../protocol/README.md) | Apache-2.0 | Wire contract |
+| `sdk-typescript/` | [TypeScript client](../sdk-typescript/README.md) | Apache-2.0 | Client for the Hub API |
+| `home-assistant/` | [Home Assistant integration](../home-assistant/README.md) | Apache-2.0 | Parked, kept working |
+| `edge/` | [Edge](../edge/README.md) | AGPL-3.0-only | Retired, source preserved, not built or tested by the hub gates |
+| `sdk-swift/` | [Swift SDK](../sdk-swift/README.md) | Apache-2.0 | Retired, source preserved, not built or tested by the hub gates |
+| `viewer/` | [Viewer](../viewer/README.md) | Apache-2.0 | Retired, source preserved, not built or tested by the hub gates |
+
 ## Privacy and security
 
 Vehicle history can contain precise locations and other sensitive information.

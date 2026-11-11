@@ -684,8 +684,8 @@ final class HubControllerTests: XCTestCase {
         source=postgresql://reader:database-secret@127.0.0.1/source database
         jwt=eyJheader.payload.signature
         vehicle=5YJ3E1EA7KF317000
-        display_name="Athena Road Trip"
-        {"vehicleName":"Athena JSON"}
+        display_name="Test Vehicle Road Trip"
+        {"vehicleName":"Test Vehicle JSON"}
         locationName="Home driveway" status=ready
         geofence=Private Yard mode=live
         {"location_name":"Office Garage","geofence":"Secret \\"Annex\\" Wing","geofenceName":"School Run","status":"ready"}
@@ -741,7 +741,7 @@ final class HubControllerTests: XCTestCase {
         for secret in ["bearer-secret-value", "access-secret-value", "refresh-secret-value",
                        "ingest-secret-value", "private-secret-value",
                        "EU_secret_code", "public-state", "database-secret", "eyJheader.payload.signature",
-                       "5YJ3E1EA7KF317000", "Athena Road Trip", "Athena JSON",
+                       "5YJ3E1EA7KF317000", "Test Vehicle Road Trip", "Test Vehicle JSON",
                        "Home", "driveway", "Private", "Yard", "Office", "Garage",
                        "Secret", "Annex", "Wing", "School", "Run",
                        "477a04f6-b726-50e3-86e0-a5a9143b3239", "a04f6-b726",

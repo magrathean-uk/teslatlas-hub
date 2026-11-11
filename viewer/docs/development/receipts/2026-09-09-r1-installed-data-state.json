@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "stage": "R1",
+  "status": "passed",
+  "verified_at": "2026-09-09T07:13:37Z",
+  "source_head": "ba5424dcfeab59ac9fea0106f84fb5281672751a",
+  "sdk_profile": "hub-http-v1@1.0.0",
+  "sdk_profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+  "sdk_tarball_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+  "sdk_installed_member_count": 81,
+  "viewer_package_sha256": "96cbea31be369729f61eb99b73c18343b5d7555106486e7d868a0dfc24946454",
+  "hub": {
+    "hub_id": "5334ff3f-bd07-4c48-bc74-cebd6c7c526a",
+    "endpoint": "https://127.0.0.1:18480",
+    "fixture_provenance": "synthetic-real-process",
+    "scenario_sha256": "bb27007d8de40e90db843de694a02d8da23a54874831c67aed455cac185cca6b",
+    "certificate_sha256": "4372f3dca474e1f580759d48275855d42221c33872b57a878b05baafcae7b966"
+  },
+  "scenario": {
+    "name": "viewer-r1-51-drives",
+    "drive_count": 51,
+    "drive_id_order": "1051 down through 1001",
+    "drive_page_lengths": [25, 25, 1]
+  },
+  "browser": {
+    "platform": "Debian 13 ARM64",
+    "node": "v26.7.0",
+    "playwright": "1.62.1",
+    "chromium": "152.0.7977.82",
+    "page_origin": "http://127.0.0.1:4173",
+    "normal_tls_validation": true,
+    "certificate_bypass": false
+  },
+  "checks": {
+    "installed_data_state_smoke": "1 passed in 3.1s",
+    "current_state": "0%, 160.93 km, 16,093.44 km, Observed",
+    "cache_revalidation": "passed; all three loaded drive pages sent If-None-Match and returned 304 while retaining 51 drives",
+    "unsupported_resources": "passed; explicit unsupported messages were visible and no charges, quality, collectors, or devices route was requested",
+    "partial_failure": "passed; targeted drive GETs were aborted, 51 retained drives stayed visible with the retained-data notice, and a clean refresh recovered",
+    "cancellation": "passed; a delayed current GET was canceled by clearing the local session, the request failed, and the UI stayed at Pair with a Hub without late repopulation",
+    "clear_local_session": "returned to Pair with a Hub"
+  },
+  "cleanup": {
+    "status": "passed",
+    "viewer_pid": 171678,
+    "fixture_hub_pid": 170804,
+    "hub_exit_code": 0,
+    "stopped_pids": [171678, 170804],
+    "viewer_listener_absent": true,
+    "hub_listener_absent": true,
+    "listeners_absent": ["127.0.0.1:4173", "127.0.0.1:18480"],
+    "remaining_viewer_run_processes": 0,
+    "remaining_fixture_processes": 0,
+    "hub_cleanup_owner": "Hub task; its owner-only stopped record reported normal child exit and cleanup_errors=[]"
+  },
+  "private_inputs": {
+    "invitation_and_certificate": "used only from the fresh private Hub handoff; not copied into this receipt",
+    "browser_nss_database": "owner-only guest database; not copied into this receipt",
+    "raw_evidence": "retained under the owner-only guest run root"
+  },
+  "limits": [
+    "Cancellation and partial failure use the installed browser's bounded route controls; they are Viewer data-state behavior, not a claim about Hub transport fault injection.",
+    "B2 sibling behavior, D1 package/daemon/Docker runtime, and X1 cross-platform lifecycle acceptance remain open.",
+    "No commit, push, release, publication, CI, or artifact upload was performed."
+  ]
+}

@@ -82,7 +82,7 @@
     "../1.4.0/examples/changes-since-request-physical.json": "68e304aaadd1f5394b99bdbdec3f4011e42bb8dfdd0830cf587c364300827f0f",
     "../1.4.0/examples/signed-full-manifest-42.json": "f430601b7197404e69bc85bad960917e5ecec7f02604f52610dd023e9c3ffbc1",
     "../1.4.0/examples/signed-full-manifest-43.json": "8b5ad2bc48c116cf300f5be011e69bdc0d18f8255e584ff57c8986edb6c43d80",
-    "../1.4.0/fixture-signing-keys.json": "c66dda1b4b58963ab5c1c4ba7352e6cff4ee38a7acaaaf8d89df6d3fefd2e275",
+    "../1.4.0/fixture-signing-keys.json": "162e37a73ed0b6a62e7feb5cfd358536008bd47091558dcf84207018b35c84cf",
     "../1.4.0/packs/physical-changed-set-v1.sqlite.zst": "47aff1e523b0e7b60a577e2206e6ee023f8883cbd7a6415ab0e91eb821803c15",
     "../1.4.0/physical-changed-set-receipt.schema.json": "0f6aacaee31f697e4d3ba6afbb8cc9fb213c11794c6b6f4ae0a50fb07e422237",
     "../1.4.0/physical-delta-pack-v1-contract.json": "9f75357376ac97086d271b32877cfee57b4071491266f8750ad09eda0c6607fe",
@@ -90,7 +90,7 @@
     "../1.4.0/physical-field-catalog.json": "e58b821f0e3277645729d637bc2275f43f58760176117c58e3099426bb85aa10",
     "../1.4.0/physical-rebase-hint.schema.json": "f5a10cd2fd3bbd61feaff831c07bf17f94fa496eb35bec9b20449e85904da164",
     "../1.4.0/physical-value-semantics.json": "87a172309116e1e5ab4a623e0ed1f85ba95ba7a4b6933506ab38068bfb284dcd",
-    "../1.4.0/signing-keys.schema.json": "d5d1ec151cca4f500d115099617bb3a43699d43ee03a5fc02069815a6fe42836"
+    "../1.4.0/signing-keys.schema.json": "b067a0e85f93c50404af01f8485337cabdc7f461120de9fb1767f23e124a2970"
   },
   "joint_body_admission": "Individual schema member maxima are not independently combinable. Every request, including its base_live_sequence member, and the exact retry_request MUST fit 8192 raw UTF-8 JSON bytes; each signed control response and exact replacement manifest, including its live_sequence member, MUST fit 2097152 raw UTF-8 JSON bytes. A replacement MUST satisfy these limits jointly before it is published. Producers MUST choose bounded checkpoint IDs and chunk references so the complete signed rebase and mandatory exact retry both fit. Receivers MUST enforce raw limits before parsing, including whitespace and numeric lexemes. A schema-valid over-bound value is not an admitted wire document.",
   "live_overlay_schema": "live-overlay.schema.json",
@@ -250,12 +250,12 @@
   "pack_contract": "../1.4.0/physical-delta-pack-v1-contract.json",
   "pack_sql": "../1.4.0/physical-delta-pack-v1.sql",
   "previous_profile": "hub-sync-v1@1.4.0",
-  "previous_profile_sha256": "42f6b5cdbbe98c347b95c6d1f1f07d9beadb4917e62a1fc2c753924c33660f33",
+  "previous_profile_sha256": "5e7020d8ff38e8b1a5a6c50f079cddfdfae605d87f9f27f471edb0bf76901c02",
   "profile_id": "hub-sync-v1@1.5.0",
   "signature": "Ed25519 over RFC 8785 canonical JSON without signature",
   "signing_keys": {
     "route": "/v1/vehicles/{vehicle_id}/sync/signing-keys",
-    "rule": "A 1.5 client obtains the vehicle-bound signing keys from the 1.3.0 signing-keys route, whose document carries profile_id hub-sync-v1@1.3.0 and validates against the 1.3.0 schema. The signing_keys_schema and fixture_signing_keys referenced by this profile are the 1.4.0 fixture key set only and validate no wire document. The 1.5 OpenAPI defines no key route.",
+    "rule": "A 1.5 client obtains the vehicle-bound signing keys from the 1.3.0 signing-keys route, whose document carries profile_id hub-sync-v1@1.3.0 and validates against the 1.3.0 schema. The signing_keys_schema inherited from 1.4.0 validates the same wire document; fixture_signing_keys is a deterministic test key set, never a production trust anchor. The 1.5 OpenAPI defines no key route.",
     "wire_key_document": "../1.3.0/signing-keys.schema.json#/$defs/document"
   },
   "signing_keys_schema": "../1.4.0/signing-keys.schema.json",

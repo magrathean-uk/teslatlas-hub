@@ -37,7 +37,7 @@ fn source_check_snapshot_json_covers_connection_and_redacts_vin() {
         },
         selected_car: SourceDbSelectedCarDiagnostics {
             id: 1,
-            name: Some("Athena".to_owned()),
+            name: Some("Test Vehicle".to_owned()),
             model: Some("3".to_owned()),
             vin_present: true,
         },

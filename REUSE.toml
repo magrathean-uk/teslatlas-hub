@@ -27,3 +27,21 @@ path = ["sdk-typescript/**"]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 MAGRATHEAN UK LTD"
 SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["home-assistant/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 MAGRATHEAN UK LTD"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["sdk-swift/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 MAGRATHEAN UK LTD"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["viewer/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 MAGRATHEAN UK LTD"
+SPDX-License-Identifier = "Apache-2.0"
