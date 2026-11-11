@@ -4,23 +4,16 @@
 // durable write a tick's results cause commits in one write transaction: the
 // discovery observations of R14, the `vehicle_data` observations and their
 // lifecycle deltas, the Hub events of R40 and R52, the scheduler rows of R4 and
-// the gaps of R8. The commit happens when every request of the tick has
-// completed or when the oldest uncommitted result is `K_TICK_COMMIT_AGE` old,
-// whichever comes first. A tick whose requests produced nothing to store writes
+// the gaps of R8. The commit happens once, when every request of the tick has
+// completed (M04-T01: one transaction per tick; the C3 R5 commit age that split a
+// slow tick into two transactions is retired, and a tick's wait is bounded by the
+// request timeout instead). A tick whose requests produced nothing to store writes
 // nothing.
 //
 // The scheduler keeps its decisions in memory and reports the outcome:
 // `commit_succeeded` moves its persisted views, `commit_failed` returns it to
 // the state before the tick (R6). Nothing here decides cadence or errors; later
 // parts fill the results this module stores.
-
-/// The longest a result waits for its transaction (C3 R5, `K_TICK_COMMIT_AGE`,
-/// **provisional**, gate M-I1): the plan's intake target is 250 ms from an
-/// admitted observation to its durable commit, and without a bound a received
-/// observation would wait for the slowest of up to `K_MAX_IN_FLIGHT` requests
-/// (each up to `request_timeout_seconds`). 100 ms leaves 150 ms of the target
-/// for the commit itself.
-const K_TICK_COMMIT_AGE: Duration = Duration::from_millis(100);
 
 /// What the store knows of a car's identity for one tick (C3 R5): its Hub id,
 /// the source it belongs to and its pack-local car id.
@@ -303,8 +296,8 @@ struct TickBatch {
     snapshots: Vec<SnapshotItem>,
     hub_events: Vec<HubEventItem>,
     failures: Vec<VehicleCollectionFailure>,
-    /// When the oldest result of the batch arrived: its transaction is due
-    /// `K_TICK_COMMIT_AGE` later.
+    /// When the oldest result of the batch arrived: the commit logs how long it
+    /// waited for the tick's one transaction.
     first_result_at: Option<Instant>,
 }
 
@@ -322,12 +315,6 @@ impl TickBatch {
     /// Note a result arriving at `now`: the first one starts the commit clock.
     fn note_result(&mut self, now: Instant) {
         self.first_result_at.get_or_insert(now);
-    }
-
-    /// When the batch must commit at the latest (C3 R5), if it holds a result.
-    fn commit_deadline(&self) -> Option<Instant> {
-        self.first_result_at
-            .map(|first| deadline_after(first, K_TICK_COMMIT_AGE))
     }
 }
 
@@ -863,6 +850,14 @@ async fn commit_tick(
 ) -> Result<TickOutcome, CollectorError> {
     // The test seam may hold the commit before anything is written.
     supervised_test_gate("tick-write").await;
+    if let Some(first) = batch.first_result_at {
+        tracing::debug!(
+            target: "collector.decision",
+            waited_ms = u64::try_from(now.saturating_duration_since(first).as_millis())
+                .unwrap_or(u64::MAX),
+            "tick commit"
+        );
+    }
     // A loss the supervisor or the renewal observed stays decisive when the admission
     // passes again (B2 fix round, P3b fix 1, R-P3bF-1): no transaction is begun, the
     // batch is dropped with the run, and the loop ends with the sensitive failure.
@@ -1278,11 +1273,11 @@ type TickFuture<'a> =
 /// Run a tick's requests concurrently and commit under the bound of C3 R5. Each
 /// request resolves to a key and a result; `handle` applies one result to the
 /// scheduler and the batch (the caller's code: its effects on streams and state
-/// are its own) and returns whether to go on. The batch commits when the last
-/// request has completed or when its oldest result is `K_TICK_COMMIT_AGE` old,
-/// and the results of requests still in flight then go into a further
-/// transaction of the same tick. With no requests the batch commits at once, so
-/// a list's result and the scheduler's own changes are stored.
+/// are its own) and returns whether to go on. The batch commits once, when the
+/// last request has completed (M04-T01, review round 2 finding 4: one transaction
+/// per tick, also when one car answers late; each request is bounded by the
+/// request timeout). With no requests the batch commits at once, so a list's
+/// result and the scheduler's own changes are stored.
 async fn drive_requests<Handle>(
     run: &mut TickRun<'_>,
     requests: Vec<TickFuture<'_>>,
@@ -1307,7 +1302,6 @@ where
     // an expired deadline is serviced before any ready request (B2 clarification 3).
     let pump_armed = pump.as_ref().is_some_and(StreamPump::armed);
     while !pending.is_empty() {
-        let deadline = run.batch.commit_deadline();
         let drain_at = pump.as_ref().map_or_else(Instant::now, StreamPump::deadline);
         tokio::select! {
             biased;
@@ -1361,15 +1355,6 @@ where
                         return Err(error);
                     }
                 }
-            }
-            () = async {
-                match deadline {
-                    Some(deadline) => tokio::time::sleep_until(deadline).await,
-                    None => std::future::pending::<()>().await,
-                }
-            } => {
-                let now = run.scheduler.clock.mono_now();
-                run.commit_now(now).await?;
             }
         }
     }

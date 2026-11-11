@@ -728,6 +728,100 @@ async fn collector_resilience_inventory_and_identity_commit_inside_the_tick() {
         .await;
 }
 
+/// Review finding 4 (round 2): one car answers at once and another only after the
+/// old 100 ms commit age has long passed. The tick still commits once, after the late
+/// answer, with both results.
+#[tokio::test(start_paused = true)]
+async fn collector_resilience_a_late_answer_keeps_the_tick_to_one_commit() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam.clone(), async {
+            let directory = crate::private_tempdir().expect("temporary store");
+            let store = HubStore::initialize(directory.path()).expect("store");
+            let t0 = Instant::now();
+            let mut scheduler = VehicleScheduler::new_with(
+                core_cadence(),
+                crate::config::CollectorMode::Legacy,
+                core_cadence().fleet_policy(),
+                t0,
+                Arc::new(SystemCollectorClock),
+                FixedJitter::constant(0.0),
+            );
+            let mut identities = IdentityCache::default();
+            let cursor_key = CursorKey::from_bytes([0x41; 32]);
+            let (terrain, _terrain_rx) = mpsc::channel(8);
+            let cars = [1, 2].map(|id| core_vehicle(id, "online"));
+            scheduler.accept_discovery(cars.to_vec(), t0);
+            for car in &cars {
+                let registered = identities
+                    .resolve(&store, CollectorProvider::Legacy, car, CORE_W0)
+                    .expect("identity");
+                scheduler.vehicles.get_mut(&car.id).unwrap().hub_id = Some(registered.hub_id);
+            }
+            assert_eq!(scheduler.due_vehicles(t0), vec![core_id(1), core_id(2)]);
+            let mut run = TickRun {
+                scheduler: &mut scheduler,
+                identities: &mut identities,
+                commit: TickCommit {
+                    store: &store,
+                    cursor_key: &cursor_key,
+                    provider: CollectorProvider::Legacy,
+                    offline_drive_timeout: Duration::from_secs(600),
+                },
+                batch: TickBatch::default(),
+                terrain_wake: &terrain,
+                any_wrote: false,
+            };
+            let mut requests: Vec<TickFuture<'_>> = Vec::new();
+            for (id, delay) in [(1u64, 10u64), (2, 8_000)] {
+                requests.push(Box::pin(async move {
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    (
+                        TickKey::Read(core_id(id)),
+                        Ok(TickPayload::Data(VehicleData::for_test(id, parked_fields()))),
+                    )
+                }));
+            }
+            let flow = drive_requests(
+                &mut run,
+                requests,
+                None,
+                |run: &mut TickRun<'_>, key, result, now| {
+                    let (TickKey::Read(id), Ok(TickPayload::Data(snapshot))) = (key, result) else {
+                        panic!("a read result");
+                    };
+                    let vehicle = run.scheduler.vehicles[&id].vehicle.clone();
+                    run.scheduler.vehicle_succeeded(id, poll_phase(&snapshot), true, now);
+                    run.batch.snapshots.push(SnapshotItem {
+                        vehicle,
+                        snapshot,
+                        received_at_ms: CORE_W0,
+                    });
+                    Ok(ReadFlow::Continue)
+                },
+            )
+            .await
+            .expect("tick");
+            assert_eq!(flow, ReadFlow::Continue);
+            let attempts: Vec<Duration> = seam
+                .tick_commit_times
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|at| *at - t0)
+                .collect();
+            assert_eq!(attempts, vec![Duration::from_millis(8_000)], "one commit, after the late answer");
+            assert_eq!(seam.tick_commits(), 1);
+            let stored: i64 = store
+                .open()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM current_observations", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(stored, 2, "both reads are stored in that commit");
+        })
+        .await;
+}
+
 /// The supervised Owner-wire loop, restarted over an asleep car. The first list after
 /// the restart registers no identity and stores nothing, in at most its one tick
 /// transaction; the unchanged lists after it make no write and no write transaction

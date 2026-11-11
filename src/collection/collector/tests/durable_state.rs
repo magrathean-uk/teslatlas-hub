@@ -1329,7 +1329,9 @@ fn ct58_a_persisted_refusal_survives_a_restart_until_the_configuration_changes()
 // ---- CT69 -------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn ct69_a_result_waits_at_most_the_commit_age_for_its_transaction() {
+async fn ct69_a_slow_read_keeps_the_tick_to_one_transaction() {
+    // M04-T01 (review round 2, finding 4) retires the C3 R5 commit age: the early
+    // results wait for the slow one and the tick commits once.
     let seam = Arc::new(SupervisedCollectorTestSeam::default());
     SUPERVISED_COLLECTOR_TEST_SEAM
         .scope(seam.clone(), async {
@@ -1406,8 +1408,7 @@ async fn ct69_a_result_waits_at_most_the_commit_age_for_its_transaction() {
             .await
             .expect("tick");
             assert_eq!(flow, ReadFlow::Continue);
-            // The first transaction commits 100 ms after the first result (at 40 ms),
-            // with the two early results; the second at 5 s with the third's.
+            // One transaction, at 5 s, with all three results.
             let times: Vec<Duration> = seam
                 .tick_commit_times
                 .lock()
@@ -1415,11 +1416,8 @@ async fn ct69_a_result_waits_at_most_the_commit_age_for_its_transaction() {
                 .iter()
                 .map(|at| *at - t0)
                 .collect();
-            assert_eq!(
-                times,
-                vec![Duration::from_millis(140), Duration::from_millis(5_000)]
-            );
-            assert_eq!(seam.tick_commits(), 2);
+            assert_eq!(times, vec![Duration::from_millis(5_000)]);
+            assert_eq!(seam.tick_commits(), 1);
             assert!(run.any_wrote);
             let stored: i64 = store
                 .open()
