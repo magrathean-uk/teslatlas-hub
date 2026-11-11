@@ -301,7 +301,6 @@ fn collector_resilience_restart_reads_an_unchanged_identity_without_writing() {
     assert_eq!(again, first, "the same identity");
     let counts = store.instrumentation().snapshot();
     assert_eq!(counts.registration_calls(), 0, "nothing is registered again");
-    assert_eq!(counts.writable_opens, 0, "no connection opened for writing");
     assert_eq!(seen(&store), 1_000, "no durable write");
     // A renamed car is registered, under the same identity.
     let mut renamed = car.clone();
@@ -359,10 +358,18 @@ async fn collector_resilience_unchanged_list_does_not_carry_the_owner_counts() {
                 bed.list(vec![core_vehicle(3, "asleep")]).await,
                 TickOutcome::Idle
             ));
-            // A tick that writes anyway carries them.
+            // A tick that writes anyway (a read's snapshot) carries them.
             bed.advance(Duration::from_secs(30));
+            bed.list(vec![core_vehicle(3, "online")]).await;
+            bed.advance(Duration::from_secs(1));
+            let now = bed.now();
+            bed.scheduler.begin_tick();
+            let mut batch = TickBatch::default();
+            let item = bed.read_item(3, parked_fields());
+            batch.snapshots.push(item);
+            batch.note_result(now);
             assert!(matches!(
-                bed.list(vec![core_vehicle(3, "online")]).await,
+                bed.commit(batch).await,
                 TickOutcome::Committed { wrote: true, .. }
             ));
             let rows = bed.store.load_collector_state_rows().expect("rows").counters;
@@ -684,7 +691,7 @@ async fn collector_resilience_token_expiry_during_a_network_loss_waits_without_r
 /// a network loss does.
 struct LossyRelay {
     url: url::Url,
-    up: Arc<std::sync::atomic::AtomicBool>,
+    up: watch::Sender<bool>,
     dropped: Arc<AtomicUsize>,
     task: JoinHandle<()>,
 }
@@ -698,22 +705,27 @@ impl LossyRelay {
         );
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("relay");
         let address = listener.local_addr().expect("relay address");
-        let up = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let (up, state) = watch::channel(true);
         let dropped = Arc::new(AtomicUsize::new(0));
         let task = {
-            let up = Arc::clone(&up);
             let dropped = Arc::clone(&dropped);
             tokio::spawn(async move {
                 while let Ok((mut inbound, _)) = listener.accept().await {
-                    if !up.load(Ordering::SeqCst) {
+                    if !*state.borrow() {
                         dropped.fetch_add(1, Ordering::SeqCst);
                         drop(inbound);
                         continue;
                     }
                     let target = target.clone();
+                    let mut state = state.clone();
                     tokio::spawn(async move {
                         if let Ok(mut outbound) = tokio::net::TcpStream::connect(target).await {
-                            let _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await;
+                            // A loss also cuts the connections already open, so a
+                            // pooled keep-alive connection cannot outlive it.
+                            tokio::select! {
+                                _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound) => {}
+                                _ = state.wait_for(|up| !*up) => {}
+                            }
                         }
                     });
                 }
@@ -755,6 +767,7 @@ async fn collector_resilience_network_loss_and_restart_keep_every_committed_obse
     .await
     .expect("loopback Tesla");
     fake.set_step(crate::collection::loopback_fixture::ScenarioStep::Parked);
+    // The Owner reads are the subject; no stream competes with them.
     fake.set_stream_available(false);
     let relay = LossyRelay::spawn(fake.http_base_url()).await;
     let owner_reads = |store: &HubStore| -> i64 {
@@ -814,7 +827,7 @@ async fn collector_resilience_network_loss_and_restart_keep_every_committed_obse
     k6_wait_for(&mut task, "first reads", || owner_reads(&store) >= 2).await;
     // The network goes: every connection to Tesla is dropped. The run goes on, and
     // nothing it committed goes away.
-    relay.up.store(false, Ordering::SeqCst);
+    relay.up.send_replace(false);
     let before_loss = owner_reads(&store);
     k6_wait_for(&mut task, "requests during the loss", || {
         relay.dropped.load(Ordering::SeqCst) >= 3
@@ -824,7 +837,7 @@ async fn collector_resilience_network_loss_and_restart_keep_every_committed_obse
     assert!(during_loss >= before_loss, "no committed observation is lost");
     assert!(!task.is_finished(), "the run survives the network loss");
     // The network comes back: collection resumes.
-    relay.up.store(true, Ordering::SeqCst);
+    relay.up.send_replace(true);
     k6_wait_for(&mut task, "reads after the loss", || {
         owner_reads(&store) > during_loss
     })

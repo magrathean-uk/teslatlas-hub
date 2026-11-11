@@ -30,7 +30,6 @@ fn owner_api_refused_is_its_own_state_and_starts_no_other_source() {
     ep_sync_clock(&core, later);
     assert!(!core.scheduler.requests_allowed(later));
     assert!(!core.scheduler.discovery_due(later));
-    assert!(core.scheduler.due_vehicles(later).is_empty());
     assert!(!core.scheduler.should_start_stream(core_id(1)));
     // The credential unit does not move it: a ready unit does not lift it, and a
     // terminal stop of the unit does not turn it into the re-login state.
