@@ -440,8 +440,10 @@ pub struct CredentialConnection {
     // Fields drop in declaration order: close SQLite before releasing the take.
     _lease: CredentialConnectionLease,
 }
+/// Releases the store's one credential connection when it drops, after SQLite
+/// has closed, so the next window or recovery of the same service lifetime can
+/// take it again; a second concurrent take is still refused (M02-T10).
 struct CredentialConnectionLease {
-    #[cfg(test)]
     taken: std::sync::Arc<std::sync::atomic::AtomicBool>,
     admission: Option<crate::hub_user_process::CredentialVaultAdmission>,
     #[cfg(test)]
@@ -453,7 +455,6 @@ impl Drop for CredentialConnectionLease {
         drop(self.admission.take());
         #[cfg(test)]
         let _guard = self.fixture.release.lock().unwrap_or_else(|error| error.into_inner());
-        #[cfg(test)]
         self.taken.store(false, std::sync::atomic::Ordering::Release);
         #[cfg(test)]
         self.fixture.released.notify_all();
@@ -509,7 +510,6 @@ impl HubStore {
                 .map_err(StoreError::Configure)?;
             Ok(CredentialConnection {
                 _lease: CredentialConnectionLease {
-                    #[cfg(test)]
                     taken: self.credential_connection_taken.clone(),
                     admission: None,
                     #[cfg(test)]
