@@ -839,3 +839,116 @@ fn collection_window_operator_channel_has_a_deadline_and_stops_promptly() {
     }
     assert!(rig.calls.all().is_empty(), "the backend was never asked");
 }
+
+/// Restores the original cursor key, as the vault's credential restore does.
+struct RestoringBackend {
+    data: std::path::PathBuf,
+    key: [u8; 32],
+    calls: Arc<Calls>,
+}
+
+impl ServiceBackend for RestoringBackend {
+    fn setup(&self, _: SetupMaterial, _: Option<i64>, _: bool) -> Result<Value, OperatorRefusal> {
+        self.calls.push("setup");
+        Ok(json!({}))
+    }
+
+    fn recovery_export(&self, _: &Path, _: &Path) -> Result<Value, OperatorRefusal> {
+        self.calls.push("export");
+        Ok(json!({}))
+    }
+
+    fn recovery_restore(&self, _: &Path, _: &Path) -> Result<Value, OperatorRefusal> {
+        use std::os::unix::fs::OpenOptionsExt;
+        self.calls.push("restore");
+        let secrets = self.data.join("secrets");
+        std::fs::create_dir_all(&secrets).expect("secrets");
+        std::fs::set_permissions(&secrets, std::fs::Permissions::from_mode(0o700)).expect("mode");
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(crate::legacy_owner_credentials::cursor_key_path(&self.data))
+            .map_err(|_| OperatorRefusal::new("recovery_failed", "a key already exists"))?;
+        std::io::Write::write_all(&mut file, &self.key).expect("key");
+        Ok(json!({ "status": "restored", "cursorKeyIncluded": true }))
+    }
+}
+
+/// Finding 2: after a data-only restore the service waits in its recovery
+/// state. Nothing that could create a key or sign data runs; the credential
+/// restore then writes the original key, and the API's key loader returns
+/// that key instead of a new one.
+#[tokio::test]
+async fn collection_window_operator_recovery_state_restores_keys_before_any_is_created() {
+    let rig = Rig::new();
+    let data = rig.data();
+    crate::db::HubStore::initialize(&data).expect("store");
+    assert!(!super::authority::credential_recovery_pending(&data), "nothing signed yet");
+    // A data-only restore: signed history, no cursor key.
+    rusqlite::Connection::open(data.join("hub.sqlite"))
+        .expect("database")
+        .execute(
+            "INSERT INTO sync_heads (vehicle_id, base_snapshot_id, head_sequence, head_digest, terminal_cursor) VALUES ('v', 's', 1, ?1, 'c')",
+            [&"a".repeat(64)],
+        )
+        .expect("signed head");
+    assert!(super::authority::credential_recovery_pending(&data));
+
+    let gate = super::authority::RecoveryGate::new(true);
+    let original = [7_u8; 32];
+    let kicks = rig.kicks.clone();
+    let service = OperatorService::new(
+        rig.controller.clone(),
+        Arc::new(RestoringBackend {
+            data: data.clone(),
+            key: original,
+            calls: rig.calls.clone(),
+        }),
+        Box::new(move || *kicks.lock().expect("kicks") += 1),
+        TrustAuthority::new(rig.pin.clone(), HOST, rig.owner.clone()),
+        &data,
+    )
+    .with_recovery(gate.clone());
+    let _server = ChannelServer::bind(&data, Arc::new(service)).expect("channel bound");
+
+    let status = rig.forward(&OperatorRequest::WindowStatus).expect("status");
+    assert_eq!(status["credentialRecoveryPending"], true);
+    for request in [
+        OperatorRequest::WindowTrust { document: encoded(&rig.trust) },
+        OperatorRequest::WindowOpen { grant: encoded(b"{}") },
+        OperatorRequest::Setup { material: material(), vehicle_id: None, all_vehicles: true },
+        OperatorRequest::RecoveryExport {
+            destination: "/abs/export".into(),
+            recovery_key_file: "/abs/recovery.key".into(),
+        },
+    ] {
+        assert_eq!(rig.forward(&request).unwrap_err().code, "credential_recovery_pending");
+    }
+    assert!(rig.calls.all().is_empty());
+    assert!(
+        std::fs::symlink_metadata(crate::legacy_owner_credentials::cursor_key_path(&data)).is_err(),
+        "no key was created while waiting"
+    );
+
+    rig.forward(&OperatorRequest::RecoveryRestore {
+        source: "/abs/export".into(),
+        recovery_key_file: "/abs/recovery.key".into(),
+    })
+    .expect("restore");
+    tokio::time::timeout(std::time::Duration::from_secs(5), gate.restored())
+        .await
+        .expect("the recovery state ended");
+    assert!(!super::authority::credential_recovery_pending(&data));
+    // The API now starts with the recovered key, not a new one.
+    crate::legacy_owner_credentials::load_or_create_cursor_key(&data).expect("key loads");
+    assert_eq!(
+        std::fs::read(crate::legacy_owner_credentials::cursor_key_path(&data)).expect("key file"),
+        original,
+        "the API's key is the restored one"
+    );
+    let status = rig.forward(&OperatorRequest::WindowStatus).expect("status");
+    assert_eq!(status["credentialRecoveryPending"], false);
+    rig.forward(&OperatorRequest::WindowTrust { document: encoded(&rig.trust) })
+        .expect("window verbs answer again");
+}

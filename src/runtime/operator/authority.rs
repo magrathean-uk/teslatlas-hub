@@ -129,6 +129,66 @@ impl HandbackSource for StoreHighWater {
     }
 }
 
+/// Refusal while the service waits for its credential recovery.
+pub const CREDENTIAL_RECOVERY_PENDING: &str = "credential_recovery_pending";
+
+/// Whether the data directory holds data a cursor key signed (sync
+/// manifests or heads) but no cursor key: a data-only restore. Starting the
+/// API now would create a new key that can never match the signed data and
+/// would make the original key unrestorable (review finding 2).
+pub fn credential_recovery_pending(data_dir: &Path) -> bool {
+    let key = crate::legacy_owner_credentials::cursor_key_path(data_dir);
+    if !matches!(std::fs::symlink_metadata(&key), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+    {
+        return false;
+    }
+    let Ok(connection) = rusqlite::Connection::open_with_flags(
+        data_dir.join("hub.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return false;
+    };
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_manifests) OR EXISTS(SELECT 1 FROM sync_heads)",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .unwrap_or(false)
+}
+
+/// The service's recovery state (review finding 2). While pending, the
+/// service answers only window status, window close and credential restore:
+/// the API has not started, so no key has been generated and nothing signed,
+/// and the collector does not start. A successful restore ends it, and the
+/// service goes on to start the API with the recovered key.
+#[derive(Debug)]
+pub struct RecoveryGate {
+    pending: tokio::sync::watch::Sender<bool>,
+}
+
+impl RecoveryGate {
+    pub fn new(pending: bool) -> Arc<Self> {
+        Arc::new(Self {
+            pending: tokio::sync::watch::Sender::new(pending),
+        })
+    }
+
+    pub fn pending(&self) -> bool {
+        *self.pending.borrow()
+    }
+
+    fn complete(&self) {
+        self.pending.send_replace(false);
+    }
+
+    /// Resolves once the recovery has completed (at once if none was due).
+    pub async fn restored(&self) {
+        let mut receiver = self.pending.subscribe();
+        let _ = receiver.wait_for(|pending| !pending).await;
+    }
+}
+
 /// The redacted window status the operator commands print.
 pub fn status_json(status: &WindowStatus) -> Value {
     json!({
@@ -187,6 +247,7 @@ pub struct OperatorService {
     kick: Box<dyn Fn() + Send + Sync>,
     trust: TrustAuthority,
     window_dir: PathBuf,
+    recovery: Arc<RecoveryGate>,
 }
 
 impl OperatorService {
@@ -205,7 +266,14 @@ impl OperatorService {
             kick,
             trust,
             window_dir: super::window_dir(data_dir),
+            recovery: RecoveryGate::new(false),
         }
+    }
+
+    /// Answers in the recovery state of `recovery` while it is pending.
+    pub fn with_recovery(mut self, recovery: Arc<RecoveryGate>) -> Self {
+        self.recovery = recovery;
+        self
     }
 
     fn decode(text: &str, maximum: usize, what: &str) -> Result<Vec<u8>, OperatorRefusal> {
@@ -222,7 +290,9 @@ impl OperatorService {
     }
 
     fn status(&self) -> Value {
-        status_json(&self.controller.status())
+        let mut status = status_json(&self.controller.status());
+        status["credentialRecoveryPending"] = json!(self.recovery.pending());
+        status
     }
 
     /// The service reads recovery files only at absolute paths it is named:
@@ -244,6 +314,19 @@ impl OperatorService {
 
 impl OperatorHandler for OperatorService {
     fn handle(&self, request: OperatorRequest) -> Result<Value, OperatorRefusal> {
+        if self.recovery.pending() {
+            match request {
+                OperatorRequest::WindowStatus
+                | OperatorRequest::WindowClose
+                | OperatorRequest::RecoveryRestore { .. } => {}
+                _ => {
+                    return Err(OperatorRefusal::new(
+                        CREDENTIAL_RECOVERY_PENDING,
+                        "this Hub's data was restored without its keys; run restore-recovery-credentials first",
+                    ));
+                }
+            }
+        }
         match request {
             OperatorRequest::WindowStatus => Ok(self.status()),
             OperatorRequest::WindowTrust { document } => {
@@ -302,7 +385,11 @@ impl OperatorHandler for OperatorService {
                     .controller
                     .import_guard()
                     .map_err(OperatorRefusal::window)?;
-                self.backend.recovery_restore(&source, &recovery_key_file)
+                let report = self.backend.recovery_restore(&source, &recovery_key_file)?;
+                // The vault the restore opened is closed again; the service
+                // may now start its API with the restored key.
+                self.recovery.complete();
+                Ok(report)
             }
         }
     }

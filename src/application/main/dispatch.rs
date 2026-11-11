@@ -1002,6 +1002,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     // key (C3 R21).
                     config.collector.log_start_notices();
                 }
+                // A data-only restore leaves signed data without its cursor
+                // key: the service then waits in its recovery state, before
+                // the API could create a new key, until the operator's
+                // restore-recovery-credentials restores it (review finding 2).
+                let recovery = operator::authority::RecoveryGate::new(
+                    operator::authority::credential_recovery_pending(&config.data_dir),
+                );
                 let (authority, resumed) = operator::authority::start_service_authority(
                     &config.data_dir,
                     &operator_home()?,
@@ -1023,6 +1030,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         store.clone(),
                         config.clone(),
                         std::sync::Arc::clone(&admission),
+                        std::sync::Arc::clone(&recovery),
                     ),
                 )?;
                 let channel = operator::channel::ChannelServer::bind(
@@ -1037,8 +1045,24 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         supervisor.kicker(),
                         operator::authority::service_trust_authority(authority.host_id()),
                         &config.data_dir,
-                    )),
+                    )
+                    .with_recovery(std::sync::Arc::clone(&recovery))),
                 )?;
+                let recovery_stop = if recovery.pending() {
+                    tracing::warn!(
+                        "this Hub's signed data has no cursor key; the API starts after restore-recovery-credentials"
+                    );
+                    tokio::select! {
+                        () = recovery.restored() => None,
+                        error = admission.wait_until_invalid() => {
+                            Some(Err(std::io::Error::other(error)))
+                        }
+                        _ = tokio::signal::ctrl_c() => Some(Ok(())),
+                        _ = sigterm.recv() => Some(Ok(())),
+                    }
+                } else {
+                    None
+                };
                 let server_config = config;
                 let server_admission = std::sync::Arc::clone(&admission);
                 let control_admission = std::sync::Arc::clone(&admission);
@@ -1046,35 +1070,39 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let command_proxy = mac_command_proxy_spec(&server_config)?;
                 #[cfg(not(target_os = "macos"))]
                 let command_proxy = None;
-                let serve_result = run_macos_serve_with_optional_proxy(
-                    command_proxy,
-                    false,
-                    |_ready, _shutdown| async { Ok(()) },
-                    move |cursor_key, shutdown| async move {
-                        server::serve_for_admitted_user_at(
-                            store,
-                            &server_config,
-                            config_sha256,
-                            server_admission,
-                            cursor_key,
-                            summary_now_ms,
-                            async move {
-                                let _ = shutdown.await;
-                            },
-                        )
-                        .await
-                    },
-                    async move {
-                        tokio::select! {
-                            error = control_admission.wait_until_invalid() => {
-                                MacServeControl::AdmissionInvalidated(std::io::Error::other(error))
+                let serve_result = if let Some(stopped) = recovery_stop {
+                    stopped
+                } else {
+                    run_macos_serve_with_optional_proxy(
+                        command_proxy,
+                        false,
+                        |_ready, _shutdown| async { Ok(()) },
+                        move |cursor_key, shutdown| async move {
+                            server::serve_for_admitted_user_at(
+                                store,
+                                &server_config,
+                                config_sha256,
+                                server_admission,
+                                cursor_key,
+                                summary_now_ms,
+                                async move {
+                                    let _ = shutdown.await;
+                                },
+                            )
+                            .await
+                        },
+                        async move {
+                            tokio::select! {
+                                error = control_admission.wait_until_invalid() => {
+                                    MacServeControl::AdmissionInvalidated(std::io::Error::other(error))
+                                }
+                                _ = tokio::signal::ctrl_c() => MacServeControl::Shutdown,
+                                _ = sigterm.recv() => MacServeControl::Shutdown,
                             }
-                            _ = tokio::signal::ctrl_c() => MacServeControl::Shutdown,
-                            _ = sigterm.recv() => MacServeControl::Shutdown,
-                        }
-                    },
-                )
-                .await;
+                        },
+                    )
+                    .await
+                };
                 drop(channel);
                 tokio::task::spawn_blocking(move || supervisor.stop()).await?;
                 drop(authority);
