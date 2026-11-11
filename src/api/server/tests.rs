@@ -124,6 +124,7 @@ fn local_tls_server_config(
         terrain: Default::default(),
         http: Default::default(),
         pairing: Default::default(),
+        backup: Default::default(),
     }
 }
 
@@ -138,6 +139,7 @@ fn local_plain_server_config(data_dir: std::path::PathBuf, bind: SocketAddr) -> 
         terrain: Default::default(),
         http: Default::default(),
         pairing: Default::default(),
+        backup: Default::default(),
     }
 }
 

@@ -46,6 +46,7 @@ fn supervised_restart_test_config(data_dir: &std::path::Path) -> HubConfig {
         tls: None,
         http: Default::default(),
         pairing: Default::default(),
+        backup: Default::default(),
         collector: crate::config::CollectorConfig {
             // M02-T02: collection is off by default; these tests collect at the
             // recommended interval.

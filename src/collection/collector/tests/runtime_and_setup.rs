@@ -1365,6 +1365,7 @@ async fn disabled_geocoder_leaves_pending_jobs_untouched() {
         tls: None,
         http: Default::default(),
         pairing: Default::default(),
+        backup: Default::default(),
         collector: crate::config::CollectorConfig::default(),
         geocoder: crate::config::GeocoderConfig {
             enabled: false,
