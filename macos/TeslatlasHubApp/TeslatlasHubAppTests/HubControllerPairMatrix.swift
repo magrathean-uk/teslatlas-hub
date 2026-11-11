@@ -31,7 +31,7 @@ extension HubControllerTests {
     }
 
     private static let localSource = "postgresql://reader@127.0.0.1:55438/source_snapshot"
-    private static let remoteSource = "postgresql://reader@server.local/sourcedb"
+    private static let remoteSource = "postgresql://reader@127.0.0.1:55439/sourcedb"
 
     private func credentials() -> HubFleetSetupCredentials {
         HubFleetSetupCredentials(accessToken: "a", refreshToken: "r", clientID: "c",
@@ -40,7 +40,7 @@ extension HubControllerTests {
 
     private func heldScenarios() -> [Held] {
         let creds = credentials()
-        let tokens = TeslaAuthTokens(accessToken: "a", refreshToken: "r")
+        let grant = TeslaAuthCodeGrant(code: "c", codeVerifier: String(repeating: "v", count: 64), redirectURI: "tesla://auth/callback")
         return [
             Held(family: .start, name: "service start") { rig, box in
                 rig.service.hold("start"); rig.controller.startHub { _ in box.completions += 1 }
@@ -80,11 +80,11 @@ extension HubControllerTests {
             Held(family: .account, name: "fleet first run setup", options: .init(installed: false)) { rig, box in
                 rig.runner.hold("setup-fleet"); rig.controller.configureFleetAccount(credentials: creds) { _ in box.completions += 1 }
             },
-            Held(family: .account, name: "legacy pause") { rig, box in
-                rig.service.hold("pause"); rig.controller.configureTeslaAccount(tokens: tokens) { _ in box.completions += 1 }
+            Held(family: .account, name: "sign-in window check") { rig, box in
+                rig.runner.hold("window"); rig.controller.configureTeslaAccount(grant: grant) { _ in box.completions += 1 }
             },
-            Held(family: .account, name: "legacy first run setup", options: .init(installed: false)) { rig, box in
-                rig.runner.hold("setup"); rig.controller.configureTeslaAccount(tokens: tokens) { _ in box.completions += 1 }
+            Held(family: .account, name: "sign-in setup") { rig, box in
+                rig.runner.hold("setup"); rig.controller.configureTeslaAccount(grant: grant) { _ in box.completions += 1 }
             },
             Held(family: .account, name: "sign-in context", begin: { rig, box in
                 if case let .success(signIn) = rig.controller.beginLegacySignIn() { box.signIn = signIn }
@@ -114,7 +114,7 @@ extension HubControllerTests {
                 spinUntil(3) { rig.runner.heldKeys.contains("status") }
             },
             Held(family: .migration, name: "local compatibility", options: .init(installed: false)) { rig, box in
-                rig.runner.hold("source-check:history")
+                rig.runner.hold("source-check")
                 rig.controller.checkSourceCompatibility(source: Self.localSource, carID: "1", passwordFile: "/p",
                                                            acceptSchemaEvidence: true, historyOnly: true) { _ in box.completions += 1 }
             },
@@ -130,7 +130,7 @@ extension HubControllerTests {
             },
             Held(family: .migration, name: "online import", options: .init(installed: false)) { rig, box in
                 rig.runner.hold("migrate")
-                rig.controller.importSourceOnline(source: Self.remoteSource, carID: "1", passwordFile: "/p", encryptionKeyFile: "/k",
+                rig.controller.importSourceOnline(source: Self.remoteSource, carID: "1", passwordFile: "/p",
                                                      acceptSchemaEvidence: true) { _ in box.completions += 1 }
             },
             Held(family: .migration, name: "ssh preparation") { rig, box in
@@ -175,7 +175,7 @@ extension HubControllerTests {
 
     private func asks() -> [Ask] {
         let creds = credentials()
-        let tokens = TeslaAuthTokens(accessToken: "a", refreshToken: "r")
+        let grant = TeslaAuthCodeGrant(code: "c", codeVerifier: String(repeating: "v", count: 64), redirectURI: "tesla://auth/callback")
         func outcome(_ done: @escaping (Bool) -> Void) -> (Result<Void, Error>) -> Void {
             { if case .failure = $0 { done(true) } else { done(false) } }
         }
@@ -187,7 +187,7 @@ extension HubControllerTests {
             Ask(family: .delete, name: "Delete") { rig, done in rig.controller.deleteHubAndData { if case .failure = $0 { done(true) } else { done(false) } } },
             Ask(family: .reconcile, name: "Reconcile", deferred: true) { rig, done in rig.controller.reconcileLaunchAgent { done(false) } },
             Ask(family: .account, name: "Fleet") { rig, done in rig.controller.configureFleetAccount(credentials: creds, completion: outcome(done)) },
-            Ask(family: .account, name: "Legacy token") { rig, done in rig.controller.configureTeslaAccount(tokens: tokens, completion: outcome(done)) },
+            Ask(family: .account, name: "Code sign-in") { rig, done in rig.controller.configureTeslaAccount(grant: grant, completion: outcome(done)) },
             Ask(family: .account, name: "Sign-in context") { rig, done in
                 switch rig.controller.beginLegacySignIn() {
                 case .failure: done(true)
@@ -207,7 +207,7 @@ extension HubControllerTests {
                                                                 acceptSchemaEvidence: true, completion: outcome(done))
             },
             Ask(family: .migration, name: "Online import") { rig, done in
-                rig.controller.importSourceOnline(source: Self.remoteSource, carID: "1", passwordFile: "/p", encryptionKeyFile: "/k",
+                rig.controller.importSourceOnline(source: Self.remoteSource, carID: "1", passwordFile: "/p",
                                                      acceptSchemaEvidence: true, completion: outcome(done))
             },
             Ask(family: .migration, name: "SSH preparation") { rig, done in

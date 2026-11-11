@@ -18,10 +18,9 @@ final class OnboardingHubControllerTests: XCTestCase {
                                        serviceInstalledOverride: false)
         let finished = expectation(description: "preflight failure presented safely")
 
-        controller.importSourceOnline(source: "postgresql://reader@localhost/sourcedb",
+        controller.importSourceOnline(source: "postgresql://reader@127.0.0.1/sourcedb",
                                          carID: "1",
                                          passwordFile: "/private/password",
-                                         encryptionKeyFile: "/private/encryption",
                                          acceptSchemaEvidence: true) { result in
             guard case let .failure(error) = result else {
                 return XCTFail("failed preflight unexpectedly imported")
@@ -97,10 +96,9 @@ final class OnboardingHubControllerTests: XCTestCase {
                                        serviceInstalledOverride: false)
         let finished = expectation(description: "migration failure recorded")
 
-        controller.importSourceOnline(source: "postgresql://reader@localhost/sourcedb",
+        controller.importSourceOnline(source: "postgresql://reader@127.0.0.1/sourcedb",
                                          carID: "1",
                                          passwordFile: "/private/password",
-                                         encryptionKeyFile: "/private/encryption",
                                          acceptSchemaEvidence: true) { result in
             guard case .failure = result else { return XCTFail("expected migration failure") }
             finished.fulfill()
@@ -305,9 +303,12 @@ final class OnboardingHubControllerTests: XCTestCase {
         XCTAssertEqual(Array(migrate[migrateStart...]), Array(expectedArgv.dropFirst()))
         XCTAssertTrue(controller.hasPendingMigrationHandover)
         XCTAssertTrue(controller.historyOnlyControlActive)
-        XCTAssertTrue(runner.argumentCalls.filter { $0.contains("source-check") || $0.contains("migrate") }
-            .allSatisfy { $0.contains("--history-only") && !$0.contains("--encryption-key-file")
-                && !$0.contains("--preserve-existing-credentials") })
+        XCTAssertTrue(runner.argumentCalls.filter { $0.contains("source-check") }
+            .allSatisfy { !$0.contains("--history-only") })
+        XCTAssertTrue(runner.argumentCalls.filter { $0.contains("migrate") }
+            .allSatisfy { $0.contains("--history-only") })
+        XCTAssertTrue(runner.argumentCalls.allSatisfy { !$0.contains("--encryption-key-file")
+            && !$0.contains("--preserve-existing-credentials") && !$0.contains("--tokens-stdin") })
         XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 0"))
 
         let verified = expectation(description: "history verified")
@@ -419,10 +420,9 @@ final class OnboardingHubControllerTests: XCTestCase {
                                        serviceInstalledOverride: true)
         let migration = expectation(description: "online migration completes")
 
-        controller.importSourceOnline(source: "postgresql://reader@localhost/sourcedb",
+        controller.importSourceOnline(source: "postgresql://reader@127.0.0.1/sourcedb",
                                          carID: "1",
                                          passwordFile: "/private/password",
-                                         encryptionKeyFile: "/private/encryption",
                                          acceptSchemaEvidence: true) { result in
             if case let .failure(error) = result { XCTFail(error.localizedDescription) }
             migration.fulfill()
@@ -838,10 +838,9 @@ final class OnboardingHubControllerTests: XCTestCase {
         let finished = expectation(description: "progress import completes")
         var updates: [HubMigrationProgress] = []
 
-        controller.importSourceOnline(source: "postgresql://reader@localhost/sourcedb",
+        controller.importSourceOnline(source: "postgresql://reader@127.0.0.1/sourcedb",
                                          carID: "1",
                                          passwordFile: "/private/password",
-                                         encryptionKeyFile: "/private/encryption",
                                          acceptSchemaEvidence: true,
                                          progress: {
                                              XCTAssertTrue(Thread.isMainThread)
@@ -871,10 +870,9 @@ final class OnboardingHubControllerTests: XCTestCase {
                                        serviceInstalledOverride: false)
         let finished = expectation(description: "import completed")
 
-        controller.importSourceOnline(source: "postgresql://reader@localhost/sourcedb",
+        controller.importSourceOnline(source: "postgresql://reader@127.0.0.1/sourcedb",
                                          carID: "1",
                                          passwordFile: "/private/password",
-                                         encryptionKeyFile: "/private/encryption",
                                          acceptSchemaEvidence: true,
                                          progress: { _ in lateProgress.fulfill() }) { result in
             if case let .failure(error) = result { XCTFail(error.localizedDescription) }
@@ -896,10 +894,9 @@ final class OnboardingHubControllerTests: XCTestCase {
                                        serviceInstalledOverride: true)
         let rejected = expectation(description: "missing acknowledgement rejected")
 
-        controller.importSourceOnline(source: "postgresql://reader@localhost/sourcedb",
+        controller.importSourceOnline(source: "postgresql://reader@127.0.0.1/sourcedb",
                                          carID: "1",
                                          passwordFile: "/private/password",
-                                         encryptionKeyFile: "/private/encryption",
                                          acceptSchemaEvidence: false) { result in
             guard case let .failure(error) = result else {
                 return XCTFail("missing acknowledgement was accepted")
@@ -928,10 +925,9 @@ final class OnboardingHubControllerTests: XCTestCase {
                                        serviceInstalledOverride: true)
         let migration = expectation(description: "missing report rejected")
 
-        controller.importSourceOnline(source: "postgresql://reader@localhost/sourcedb",
+        controller.importSourceOnline(source: "postgresql://reader@127.0.0.1/sourcedb",
                                          carID: "1",
                                          passwordFile: "/private/password",
-                                         encryptionKeyFile: "/private/encryption",
                                          acceptSchemaEvidence: true) { result in
             guard case let .failure(error) = result else {
                 return XCTFail("expected missing report failure")

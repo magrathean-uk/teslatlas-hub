@@ -97,7 +97,6 @@ final class SourceServerImportSession {
     let source: String
     let carID: String
     let passwordFile: URL
-    let encryptionKeyFile: URL
     let sourceVersion: String?
 
     private let tunnel: Process
@@ -109,7 +108,6 @@ final class SourceServerImportSession {
     init(source: String,
          carID: String,
          passwordFile: URL,
-         encryptionKeyFile: URL,
          sourceVersion: String?,
          tunnel: Process,
          temporaryDirectory: URL,
@@ -117,7 +115,6 @@ final class SourceServerImportSession {
         self.source = source
         self.carID = carID
         self.passwordFile = passwordFile
-        self.encryptionKeyFile = encryptionKeyFile
         self.sourceVersion = sourceVersion
         self.tunnel = tunnel
         self.temporaryDirectory = temporaryDirectory
@@ -491,11 +488,10 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
         let manager = FileManager.default
         let directory = resources.temporaryDirectory
         let passwordFile = directory.appendingPathComponent("postgres-password")
-        let keyFile = directory.appendingPathComponent("encryption-key")
+        // The only secret written is the database password; no source key is selected,
+        // carried or written.
         try Data(values["password"]!.utf8).write(to: passwordFile, options: .atomic)
-        try Data(values["key"]!.utf8).write(to: keyFile, options: .atomic)
         try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: passwordFile.path)
-        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyFile.path)
 
         let sourceVersion: String?
         do {
@@ -514,7 +510,6 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             source: "postgresql://\(user)@127.0.0.1:\(localPort)/\(database)",
             carID: values["car"]!,
             passwordFile: passwordFile,
-            encryptionKeyFile: keyFile,
             sourceVersion: sourceVersion,
             tunnel: tunnel,
             temporaryDirectory: directory,

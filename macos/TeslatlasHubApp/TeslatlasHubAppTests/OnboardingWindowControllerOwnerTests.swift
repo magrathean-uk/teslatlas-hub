@@ -216,14 +216,14 @@ extension OnboardingWindowControllerTests {
     func testOAuthCompletionUsesItsOwnerAndIgnoresCancelledGeneration() throws {
         let harness = try WindowOwnerRig(.init(loaded: .loaded))
         defer { harness.tearDown() }
-        let tokens = TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
+        let grant = TeslaAuthCodeGrant(code: "code", codeVerifier: String(repeating: "v", count: 64), redirectURI: "tesla://auth/callback")
 
         // Completion continues under the context held since before authentication began.
         guard case let .success(signIn) = harness.controller.beginLegacySignIn() else { return XCTFail("not admitted") }
         XCTAssertEqual(harness.controller.lifecycleCapabilities.owner, .account)
         XCTAssertEqual(harness.rig.acquisitions(.account), 1)
         var done: Result<Void, Error>?
-        signIn.configure(tokens: tokens) { done = $0 }
+        signIn.configure(grant: grant) { done = $0 }
         harness.rig.drain()
         spinUntil(3) { done != nil }
         guard case .success? = done else { return XCTFail("setup did not finish: \(String(describing: done))") }
@@ -237,7 +237,7 @@ extension OnboardingWindowControllerTests {
         XCTAssertTrue(harness.controller.lifecycleCapabilities.isIdle)
         let before = harness.rig.signature()
         var late: Result<Void, Error>?
-        cancelled.configure(tokens: tokens) { late = $0 }
+        cancelled.configure(grant: grant) { late = $0 }
         guard case .failure? = late else { return XCTFail("a cancelled sign-in configured an account") }
         XCTAssertEqual(harness.rig.signature(), before, "the late authentication callback changed nothing")
 
@@ -250,7 +250,7 @@ extension OnboardingWindowControllerTests {
         XCTAssertTrue(harness.controller.hubDeletionCompleted)
         let afterDelete = harness.rig.signature()
         var lateAfterDelete: Result<Void, Error>?
-        beforeDelete.configure(tokens: tokens) { lateAfterDelete = $0 }
+        beforeDelete.configure(grant: grant) { lateAfterDelete = $0 }
         guard case .failure? = lateAfterDelete else { return XCTFail("configured an account after Delete") }
         XCTAssertEqual(harness.rig.signature(), afterDelete)
         guard case .failure = harness.controller.beginLegacySignIn() else { return XCTFail("a sign-in began after Delete") }
@@ -304,8 +304,8 @@ extension OnboardingWindowControllerTests {
         let root = try XCTUnwrap(sheet.window?.contentView)
         func allViews(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(allViews) }
         let fields = allViews(root).compactMap { $0 as? NSTextField }.filter { $0.isEditable }
-        let source = try XCTUnwrap(fields.first { $0.placeholderString == "postgresql://reader@host/database" })
-        source.stringValue = "postgresql://reader@localhost/source"
+        let source = try XCTUnwrap(fields.first { $0.placeholderString == "postgresql://reader@127.0.0.1/database" })
+        source.stringValue = "postgresql://reader@127.0.0.1/source"
         for field in fields where field.stringValue.isEmpty { field.stringValue = "/private/file" }
         let acknowledgement = try XCTUnwrap(allViews(root).compactMap { $0 as? NSButton }
             .first { $0.title.hasPrefix("I confirm") })

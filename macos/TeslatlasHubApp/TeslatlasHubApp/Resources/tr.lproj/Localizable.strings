@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "Kaynak uygulama uyumluluk denetimi geçerli bir rapor döndürmedi.";
 "hub.HubController.1562.581" = "Kaynak veritabanı doğrulanamadı. Sunucu bağlantısını denetleyip yeniden deneyin.";
 "hub.HubController.1585.586" = "İçe aktarmadan önce kaynak uygulamanın 4.2.0 veya daha yeni bir sürümünü kullandığınızı doğrulayın.";
-"hub.HubController.1591.587" = "Kaynak uygulama ENCRYPTION_KEY dosyasını seçin.";
+"hub.HubController.1591.587" = "Oturum açmak için açık bir toplama penceresi gerekir. Bir pencere açın, ardından yeniden oturum açın.";
 "hub.HubController.1718.615" = "Kaynak uygulamadan içe aktarma geçerli bir tamamlanma raporu döndürmedi. Hub durdurulmuş durumda kalıyor.";
 "hub.HubController.1742.624" = "İçe aktarma tamamlandı ancak Hub güvenli devir koşulunu kaydedemedi: %1$@. Hub durdurulmuş durumda kalıyor.";
 "hub.HubController.1846.655" = "Doğrudan PostgreSQL kaynağından içe aktarmadan önce kaynak uygulamanın 4.2.0 veya daha yeni bir sürümünü kullandığınızı doğrulayın.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "İçe Aktar";
 "hub.ImportSheetController.112.1706" = "İptal";
 "hub.ImportSheetController.148.1709" = "Tüm alanları doldurun";
-"hub.ImportSheetController.149.1710" = "Kaynak, araç kimliği, parola dosyası ve ENCRYPTION_KEY dosyası gereklidir.";
+"hub.ImportSheetController.149.1710" = "Kaynak, araç kimliği ve parola dosyası gereklidir.";
 "hub.ImportSheetController.156.1711" = "Kaynak uygulama sürümünü onaylayın";
 "hub.ImportSheetController.17.1690" = "Bu veritabanının kaynak uygulamanın 4.2.0 veya daha yeni bir sürümüne ait olduğunu onaylıyorum";
 "hub.ImportSheetController.26.1691" = "Geçmişi İçe Aktar";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "Araç Kimliği";
 "hub.ImportSheetController.69.1697" = "Parola dosyası";
 "hub.ImportSheetController.7.1687" = "Hub, kaynak uygulamayı durdurmadan veya değiştirmeden kaynak veritabanındaki verileri okur. İçe aktarma sonrasında kaynak uygulamada Tesla erişimini kendiniz ne zaman devre dışı bırakmanız gerektiğini Hub size bildirir.";
-"hub.ImportSheetController.73.1699" = "Kaynak uygulama ENCRYPTION_KEY dosyası";
+"hub.ImportSheetController.73.1699" = "Hub çalışmıyor. Hub’ı başlatın, bir toplama penceresi açın, ardından oturum açın.";
 "hub.ImportSheetController.9.1688" = "İçe aktarmadan önce kaynak uygulamanın yedeğini alın, sürümünü 4.2.0 veya daha yenisine yükseltin, bir kez başlatın ve veritabanı geçişlerinin tamamlanmasını bekleyin. Doğrudan veritabanı bağlantısı, çalışan uygulamanın sürümünü doğrulayamaz.";
 "hub.LogsWindowController.113.1730" = "Daha fazla günlük eylemi";
 "hub.LogsWindowController.123.1732" = "Görüntülenen, kopyalanan ve kaydedilen günlüklerde erişim bilgileri ile özel tanımlayıcılar gizlenir. Paylaşmadan önce gözden geçirin.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Yeni bir Hub kurun veya kaynak uygulama geçmişinizi aktarın.";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetry önerilir. Eski nesil belirteçler önceki kurulumlarda çalışır.";
 "hub.OnboardingWindowController.608.1929" = "Bir Tesla Fleet uygulaması oluşturun, ardından kimlik bilgilerini aşağıya yapıştırın.";
-"hub.OnboardingWindowController.610.1930" = "Tesla'da oturum açın veya var olan belirteç çiftini yapıştırın.";
+"hub.OnboardingWindowController.610.1930" = "Bir toplama penceresi açıkken Tesla’da oturum açın. Hub hiçbir zaman belirteç kabul etmez.";
 "hub.OnboardingWindowController.612.1931" = "Araç geçmişini içe aktarmak için kaynak uygulama sunucunuza bağlanın.";
 "hub.OnboardingWindowController.614.1932" = "Her şeyin doğru yapılandırıldığını denetliyoruz.";
 "hub.OnboardingWindowController.617.1933" = "Kaynak uygulama geçmişiniz Hub'a aktarıldı.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla'nın resmî akış API'si. Araçlara canlı komutlar göndermeyi sağlar.";
 "hub.OnboardingWindowController.752.1958" = "Eski Nesil Belirteç";
-"hub.OnboardingWindowController.753.1959" = "Owner API için erişim ve yenileme belirteci çiftini kullanın.";
+"hub.OnboardingWindowController.753.1959" = "Tesla’da oturum açın. Hub kendi oturum açma bilgilerini korur.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet Uygulaması Oluştur";
 "hub.OnboardingWindowController.771.1964" = "İstemci Kimliği";
 "hub.OnboardingWindowController.774.1967" = "Sona Erme Süresi";
 "hub.OnboardingWindowController.776.1968" = "Kimlik bilgileri bu Mac'te şifrelenir";
 "hub.OnboardingWindowController.788.1970" = "Tesla ile Oturum Aç";
-"hub.OnboardingWindowController.790.1972" = "veya var olan belirteç çiftini kullanın";
+"hub.OnboardingWindowController.790.1972" = "Oturum açma henüz kullanılamıyor: bu Hub’da Owner API oturum açma değerleri yok. Hiçbir şey değiştirilmedi.";
 "hub.OnboardingWindowController.798.1975" = "Belirteçler bu Mac'te şifrelenir";
 "hub.OnboardingWindowController.822.1978" = "Bağlantı noktası";
 "hub.OnboardingWindowController.832.1980" = "SSH kullanıcısı";

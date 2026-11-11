@@ -7,7 +7,9 @@ enum SourceDeploymentFacts {
     static let databasePassword = "DATABASE_PASS"
     static let databaseName = "DATABASE_NAME"
     static let databaseHost = "DATABASE_HOST"
-    static let encryptionKey = "ENCRYPTION_KEY"
+    /// Names the source application container by the presence of this variable name.
+    /// Only the name is compared; its value is never selected, read or carried.
+    static let sourceShapeMarker = "ENCRYPTION_KEY"
     static let databaseService = "database"
     static let ociVersionLabel = "org.opencontainers.image.version"
     static let postgresPort = "5432"

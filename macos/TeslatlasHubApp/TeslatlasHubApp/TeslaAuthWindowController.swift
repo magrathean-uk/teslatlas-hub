@@ -9,10 +9,16 @@ import WebKit
 
 // OAuth parameters and callback semantics are derived from Tesla Auth v0.15.0
 // (MIT), commit 68da1f850e9cb87ac0e54c608d5a2e90d3ad1608.
-// Modified for Teslatlas Hub on 2026-08-22 and 2026-08-25.
-struct TeslaAuthTokens {
-    let accessToken: String
-    let refreshToken: String
+// Modified for Teslatlas Hub on 2026-08-22, 2026-08-25 and 2026-11-11.
+
+/// The authorisation material of the Hub's own sign-in. The app never exchanges it and
+/// never sees a token: it hands the code, its PKCE verifier and the redirect URI to
+/// `teslatlas-hub setup`, and the running service performs the exchange inside an open
+/// collection window.
+struct TeslaAuthCodeGrant: Equatable {
+    let code: String
+    let codeVerifier: String
+    let redirectURI: String
 }
 
 enum TeslaAuthError: LocalizedError, Equatable {
@@ -22,6 +28,7 @@ enum TeslaAuthError: LocalizedError, Equatable {
     case invalidCallback
     case stateMismatch
     case invalidIssuer
+    // Kept for the diagnostic codes: the app itself never exchanges a code.
     case invalidResponse
     case exchangeFailed
 
@@ -39,22 +46,15 @@ enum TeslaAuthError: LocalizedError, Equatable {
     }
 }
 
-struct TeslaTokenExchangeRequest: Equatable {
-    let url: URL
-    let body: Data
-}
-
 enum TeslaCallbackOutcome: Equatable {
     case cancelled
-    case exchange(TeslaTokenExchangeRequest)
+    case code(TeslaAuthCodeGrant)
 }
 
 struct TeslaOAuthFlow {
     static let clientID = "ownerapi"
     static let redirectURI = "tesla://auth/callback"
     static let authorizationEndpoint = URL(string: "https://auth.tesla.com/oauth2/v3/authorize")!
-    static let tokenEndpoint = URL(string: "https://auth.tesla.com/oauth2/v3/token")!
-    static let chinaTokenEndpoint = URL(string: "https://auth.tesla.cn/oauth2/v3/token")!
     static let scopes = "openid email offline_access"
 
     let state: String
@@ -109,16 +109,8 @@ struct TeslaOAuthFlow {
         guard let issuerURL = URL(string: issuer), issuerURL.host != nil else {
             throw TeslaAuthError.invalidIssuer
         }
-        let tokenURL = issuerURL.host?.lowercased() == Self.chinaTokenEndpoint.host
-            ? Self.chinaTokenEndpoint : Self.tokenEndpoint
-        let body = Self.formBody([
-            URLQueryItem(name: "grant_type", value: "authorization_code"),
-            URLQueryItem(name: "code", value: code),
-            URLQueryItem(name: "redirect_uri", value: Self.redirectURI),
-            URLQueryItem(name: "client_id", value: Self.clientID),
-            URLQueryItem(name: "code_verifier", value: verifier)
-        ])
-        return .exchange(TeslaTokenExchangeRequest(url: tokenURL, body: body))
+        return .code(TeslaAuthCodeGrant(code: code, codeVerifier: verifier,
+                                         redirectURI: Self.redirectURI))
     }
 
     private static func randomURLSafe(byteCount: Int) throws -> String {
@@ -139,12 +131,6 @@ struct TeslaOAuthFlow {
             .replacingOccurrences(of: "=", with: "")
     }
 
-    private static func formBody(_ items: [URLQueryItem]) -> Data {
-        var components = URLComponents()
-        components.queryItems = items
-        return Data((components.percentEncodedQuery ?? "").utf8)
-    }
-
     private static func constantTimeEqual(_ left: String, _ right: String) -> Bool {
         let left = Array(left.utf8)
         let right = Array(right.utf8)
@@ -158,133 +144,15 @@ struct TeslaOAuthFlow {
     }
 }
 
-struct TeslaTokenResponseBuffer {
-    static let maximumBytes = 64 * 1024
-    private(set) var data = Data()
-
-    mutating func append(_ chunk: Data) -> Bool {
-        guard chunk.count <= Self.maximumBytes - data.count else { return false }
-        data.append(chunk)
-        return true
-    }
-}
-
-private final class TeslaTokenExchange: NSObject, URLSessionDataDelegate {
-    private var session: URLSession?
-    private var completion: ((Result<TeslaAuthTokens, Error>) -> Void)?
-    private var responseAccepted = false
-    private var responseBody = TeslaTokenResponseBuffer()
-    private var completed = false
-    private let delegateQueue: OperationQueue
-
-    override init() {
-        let queue = OperationQueue()
-        queue.maxConcurrentOperationCount = 1
-        delegateQueue = queue
-        super.init()
-    }
-
-    func start(_ exchange: TeslaTokenExchangeRequest,
-               completion: @escaping (Result<TeslaAuthTokens, Error>) -> Void) {
-        var request = URLRequest(url: exchange.url, timeoutInterval: 30)
-        request.httpMethod = "POST"
-        request.httpBody = exchange.body
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 30
-        configuration.httpShouldSetCookies = false
-        configuration.httpCookieAcceptPolicy = .never
-        self.completion = completion
-        let session = URLSession(configuration: configuration,
-                                 delegate: self,
-                                 delegateQueue: delegateQueue)
-        self.session = session
-        session.dataTask(with: request).resume()
-    }
-
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
-                    didReceive response: URLResponse,
-                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        guard let response = response as? HTTPURLResponse,
-              (200...299).contains(response.statusCode),
-              response.expectedContentLength < 0 ||
-                response.expectedContentLength <= Int64(TeslaTokenResponseBuffer.maximumBytes) else {
-            completionHandler(.cancel)
-            finish(.failure(TeslaAuthError.exchangeFailed))
-            return
-        }
-        responseAccepted = true
-        completionHandler(.allow)
-    }
-
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
-                    didReceive data: Data) {
-        guard !completed else { return }
-        guard responseBody.append(data) else {
-            dataTask.cancel()
-            finish(.failure(TeslaAuthError.exchangeFailed))
-            return
-        }
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask,
-                    didCompleteWithError error: Error?) {
-        guard !completed else { return }
-        guard error == nil, responseAccepted else {
-            finish(.failure(TeslaAuthError.exchangeFailed))
-            return
-        }
-        struct TokenResponse: Decodable {
-            let accessToken: String
-            let refreshToken: String
-            let expiresIn: Double
-
-            enum CodingKeys: String, CodingKey {
-                case accessToken = "access_token"
-                case refreshToken = "refresh_token"
-                case expiresIn = "expires_in"
-            }
-        }
-        guard let token = try? JSONDecoder().decode(TokenResponse.self, from: responseBody.data),
-              !token.accessToken.isEmpty, !token.refreshToken.isEmpty, token.expiresIn > 0 else {
-            finish(.failure(TeslaAuthError.invalidResponse))
-            return
-        }
-        finish(.success(TeslaAuthTokens(accessToken: token.accessToken,
-                                        refreshToken: token.refreshToken)))
-    }
-
-    private func finish(_ result: Result<TeslaAuthTokens, Error>) {
-        guard !completed else { return }
-        completed = true
-        let callback = completion
-        completion = nil
-        session?.finishTasksAndInvalidate()
-        session = nil
-        callback?(result)
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask,
-                    willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest,
-                    completionHandler: @escaping (URLRequest?) -> Void) {
-        completionHandler(nil)
-    }
-}
-
 final class TeslaAuthWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate {
     private let flow: TeslaOAuthFlow
     private let webView: WKWebView
-    private let completion: (Result<TeslaAuthTokens, Error>) -> Void
-    private var exchange: TeslaTokenExchange?
+    private let completion: (Result<TeslaAuthCodeGrant, Error>) -> Void
     private var finished = false
     private var callbackConsumed = false
 
     init(loadAuthorizationURL: Bool = true,
-         completion: @escaping (Result<TeslaAuthTokens, Error>) -> Void) throws {
+         completion: @escaping (Result<TeslaAuthCodeGrant, Error>) -> Void) throws {
         flow = try TeslaOAuthFlow()
         self.completion = completion
         let configuration = WKWebViewConfiguration()
@@ -323,13 +191,9 @@ final class TeslaAuthWindowController: NSWindowController, NSWindowDelegate, WKN
             switch try flow.callback(url) {
             case .cancelled:
                 finish(.failure(TeslaAuthError.cancelled))
-            case let .exchange(request):
-                showProgress()
-                let exchange = TeslaTokenExchange()
-                self.exchange = exchange
-                exchange.start(request) { [weak self] result in
-                    DispatchQueue.main.async { self?.finish(result) }
-                }
+            case let .code(grant):
+                // No exchange here: the grant goes to the Hub service, which exchanges it.
+                finish(.success(grant))
             }
         } catch {
             finish(.failure(error))
@@ -354,23 +218,9 @@ final class TeslaAuthWindowController: NSWindowController, NSWindowDelegate, WKN
         finish(.failure(TeslaAuthError.cancelled), closeWindow: false)
     }
 
-    private func showProgress() {
-        let progressText = HubL10n.text("hub.TeslaAuthWindowController.358.html_progress",
-                                        fallback: "Finishing secure Tesla login…")
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-        webView.loadHTMLString("""
-        <!doctype html><meta charset="utf-8"><style>
-        body{font:15px -apple-system;margin:0;display:grid;place-items:center;height:100vh;color:#333}
-        </style><p>\(progressText)</p>
-        """, baseURL: nil)
-    }
-
-    private func finish(_ result: Result<TeslaAuthTokens, Error>, closeWindow: Bool = true) {
+    private func finish(_ result: Result<TeslaAuthCodeGrant, Error>, closeWindow: Bool = true) {
         guard !finished else { return }
         finished = true
-        exchange = nil
         if closeWindow { window?.close() }
         completion(result)
     }

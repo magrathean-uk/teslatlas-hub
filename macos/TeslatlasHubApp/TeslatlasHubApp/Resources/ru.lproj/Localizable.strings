@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "Проверка совместимости исходного приложения не вернула действительного отчёта.";
 "hub.HubController.1562.581" = "Не удалось проверить исходную базу данных. Проверьте подключение к серверу и повторите попытку.";
 "hub.HubController.1585.586" = "Перед импортом подтвердите, что используется исходное приложение версии 4.2.0 или новее.";
-"hub.HubController.1591.587" = "Выберите файл ENCRYPTION_KEY для исходного приложения.";
+"hub.HubController.1591.587" = "Для входа нужно открытое окно сбора данных. Откройте окно и войдите снова.";
 "hub.HubController.1718.615" = "Импорт из исходного приложения не вернул действительного отчёта о завершении. Hub остаётся остановленным.";
 "hub.HubController.1742.624" = "Импорт завершён, но Hub не смог записать защитный маркер передачи управления: %1$@. Hub остаётся остановленным.";
 "hub.HubController.1846.655" = "Перед импортом из прямого источника PostgreSQL подтвердите, что используется исходное приложение версии 4.2.0 или новее.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Импортировать";
 "hub.ImportSheetController.112.1706" = "Отмена";
 "hub.ImportSheetController.148.1709" = "Заполните все поля";
-"hub.ImportSheetController.149.1710" = "Необходимо указать источник, ID автомобиля, файл пароля и файл ENCRYPTION_KEY.";
+"hub.ImportSheetController.149.1710" = "Необходимо указать источник, ID автомобиля и файл пароля.";
 "hub.ImportSheetController.156.1711" = "Подтвердите версию исходного приложения";
 "hub.ImportSheetController.17.1690" = "Подтверждаю, что эта база данных принадлежит исходному приложению версии 4.2.0 или новее";
 "hub.ImportSheetController.26.1691" = "Импортировать историю";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "ID автомобиля";
 "hub.ImportSheetController.69.1697" = "Файл пароля";
 "hub.ImportSheetController.7.1687" = "Hub считывает данные из исходной базы данных, не останавливая и не изменяя исходное приложение. После импорта Hub сообщит, когда вам нужно самостоятельно отключить доступ к Tesla в исходном приложении.";
-"hub.ImportSheetController.73.1699" = "Файл ENCRYPTION_KEY исходного приложения";
+"hub.ImportSheetController.73.1699" = "Hub не запущен. Запустите Hub, откройте окно сбора данных и войдите.";
 "hub.ImportSheetController.9.1688" = "Перед импортом создайте резервную копию исходного приложения, обновите его до версии 4.2.0 или более новой, запустите его один раз и дождитесь завершения миграций базы данных. Прямое подключение к базе данных не позволяет подтвердить версию работающего приложения.";
 "hub.LogsWindowController.113.1730" = "Дополнительные действия с журналом";
 "hub.LogsWindowController.123.1732" = "В отображаемых, скопированных и сохранённых журналах учётные данные и личные идентификаторы скрыты. Проверьте журналы перед передачей.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Настройте новый Hub или перенесите историю из исходного приложения.";
 "hub.OnboardingWindowController.606.1928" = "Рекомендуется Fleet Telemetry. Токены Legacy подходят для старых конфигураций.";
 "hub.OnboardingWindowController.608.1929" = "Создайте приложение Tesla Fleet, затем вставьте его учётные данные ниже.";
-"hub.OnboardingWindowController.610.1930" = "Войдите через Tesla или вставьте имеющуюся пару токенов.";
+"hub.OnboardingWindowController.610.1930" = "Войдите через Tesla, пока открыто окно сбора данных. Hub никогда не принимает токен.";
 "hub.OnboardingWindowController.612.1931" = "Подключитесь к серверу исходного приложения, чтобы импортировать историю автомобиля.";
 "hub.OnboardingWindowController.614.1932" = "Проверяем правильность всех подключений.";
 "hub.OnboardingWindowController.617.1933" = "История вашего автомобиля импортирована в Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Официальный потоковый API Tesla. Позволяет отправлять команды автомобилю в реальном времени.";
 "hub.OnboardingWindowController.752.1958" = "Токен Legacy";
-"hub.OnboardingWindowController.753.1959" = "Использовать пару токенов доступа и обновления owner-API.";
+"hub.OnboardingWindowController.753.1959" = "Войдите через Tesla. Hub сохраняет собственный вход.";
 "hub.OnboardingWindowController.760.1960" = "Создать приложение Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "Идентификатор клиента";
 "hub.OnboardingWindowController.774.1967" = "Срок действия истекает через";
 "hub.OnboardingWindowController.776.1968" = "Учётные данные зашифрованы на этом Mac";
 "hub.OnboardingWindowController.788.1970" = "Войти через Tesla";
-"hub.OnboardingWindowController.790.1972" = "или использовать имеющуюся пару токенов";
+"hub.OnboardingWindowController.790.1972" = "Вход пока недоступен: в этом Hub нет значений для входа через Owner API. Ничего не изменено.";
 "hub.OnboardingWindowController.798.1975" = "Токены зашифрованы на этом Mac";
 "hub.OnboardingWindowController.822.1978" = "Порт";
 "hub.OnboardingWindowController.832.1980" = "Пользователь SSH";

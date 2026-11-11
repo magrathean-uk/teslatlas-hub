@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "Verificarea compatibilității aplicației sursă nu a returnat un raport valid.";
 "hub.HubController.1562.581" = "Nu s-a putut verifica baza de date sursă. Verifică conexiunea la server și încearcă din nou.";
 "hub.HubController.1585.586" = "Confirmă că aplicația sursă are versiunea 4.2.0 sau mai nouă înainte de import.";
-"hub.HubController.1591.587" = "Alege fișierul cu cheia ENCRYPTION_KEY a aplicației sursă.";
+"hub.HubController.1591.587" = "Autentificarea necesită o fereastră de colectare deschisă. Deschide o fereastră, apoi autentifică-te din nou.";
 "hub.HubController.1718.615" = "Importul din aplicația sursă nu a returnat un raport valid de finalizare. Hub-ul rămâne oprit.";
 "hub.HubController.1742.624" = "Importul s-a încheiat, dar Hub-ul nu a putut înregistra condiția de siguranță pentru predare: %1$@. Hub-ul rămâne oprit.";
 "hub.HubController.1846.655" = "Confirmă că aplicația sursă are versiunea 4.2.0 sau mai nouă înainte de importul dintr-o sursă PostgreSQL directă.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Importă";
 "hub.ImportSheetController.112.1706" = "Anulează";
 "hub.ImportSheetController.148.1709" = "Completează toate câmpurile";
-"hub.ImportSheetController.149.1710" = "Sunt necesare sursa, ID-ul vehiculului, fișierul cu parola și fișierul ENCRYPTION_KEY.";
+"hub.ImportSheetController.149.1710" = "Sunt necesare sursa, ID-ul vehiculului și fișierul cu parola.";
 "hub.ImportSheetController.156.1711" = "Confirmă versiunea aplicației sursă";
 "hub.ImportSheetController.17.1690" = "Confirm că această bază de date aparține versiunii 4.2.0 sau unei versiuni mai noi a aplicației sursă";
 "hub.ImportSheetController.26.1691" = "Importă istoricul";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "ID-ul vehiculului";
 "hub.ImportSheetController.69.1697" = "Fișierul cu parola";
 "hub.ImportSheetController.7.1687" = "Hub citește baza de date sursă fără să o modifice sau să oprească aplicația sursă. După import, Hub îți spune când să dezactivezi tu accesul la Tesla în aplicația sursă.";
-"hub.ImportSheetController.73.1699" = "Fișierul ENCRYPTION_KEY al aplicației sursă";
+"hub.ImportSheetController.73.1699" = "Hub nu rulează. Pornește Hub, deschide o fereastră de colectare, apoi autentifică-te.";
 "hub.ImportSheetController.9.1688" = "Înainte de import: fă o copie de siguranță a aplicației sursă, actualizeaz-o la versiunea 4.2.0 sau una mai nouă, pornește-o o dată și așteaptă să se încheie migrațiile bazei de date. O conexiune directă la baza de date nu poate confirma versiunea aplicației care rulează.";
 "hub.LogsWindowController.113.1730" = "Mai multe acțiuni pentru jurnale";
 "hub.LogsWindowController.123.1732" = "În jurnalele afișate, copiate și salvate, datele de autentificare și identificatorii privați sunt mascate. Verifică jurnalele înainte de a le partaja.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Configurează un Hub nou sau transferă aici istoricul din aplicația sursă.";
 "hub.OnboardingWindowController.606.1928" = "Se recomandă Fleet Telemetry. Tokenurile legacy funcționează cu configurații mai vechi.";
 "hub.OnboardingWindowController.608.1929" = "Creează o aplicație Tesla Fleet, apoi lipește mai jos datele de autentificare.";
-"hub.OnboardingWindowController.610.1930" = "Autentifică-te cu Tesla sau lipește o pereche existentă de tokenuri.";
+"hub.OnboardingWindowController.610.1930" = "Autentifică-te cu Tesla cât timp este deschisă o fereastră de colectare. Hub nu acceptă niciodată un token.";
 "hub.OnboardingWindowController.612.1931" = "Conectează-te la serverul aplicației sursă pentru a importa istoricul vehiculelor.";
 "hub.OnboardingWindowController.614.1932" = "Se verifică dacă toate componentele sunt conectate corect.";
 "hub.OnboardingWindowController.617.1933" = "Istoricul aplicației sursă a fost importat în Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "API-ul oficial de streaming al Tesla. Permite trimiterea în timp real a comenzilor către vehicul.";
 "hub.OnboardingWindowController.752.1958" = "Token legacy";
-"hub.OnboardingWindowController.753.1959" = "Folosește o pereche de tokenuri owner API: unul de acces și unul de reîmprospătare.";
+"hub.OnboardingWindowController.753.1959" = "Autentifică-te cu Tesla. Hub își păstrează propria autentificare.";
 "hub.OnboardingWindowController.760.1960" = "Creează aplicația Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID client";
 "hub.OnboardingWindowController.774.1967" = "Expiră în";
 "hub.OnboardingWindowController.776.1968" = "Datele de autentificare sunt criptate pe acest Mac";
 "hub.OnboardingWindowController.788.1970" = "Autentifică-te cu Tesla";
-"hub.OnboardingWindowController.790.1972" = "sau folosește o pereche de tokenuri existentă";
+"hub.OnboardingWindowController.790.1972" = "Autentificarea nu este încă disponibilă: acest Hub nu are valori de autentificare pentru Owner API. Nu s-a modificat nimic.";
 "hub.OnboardingWindowController.798.1975" = "Tokenurile sunt criptate pe acest Mac";
 "hub.OnboardingWindowController.822.1978" = "Port";
 "hub.OnboardingWindowController.832.1980" = "Utilizator SSH";

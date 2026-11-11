@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "De bronapplicatie-compatibiliteitscontrole heeft geen geldig rapport opgeleverd.";
 "hub.HubController.1562.581" = "Kon de brondatabase niet verifiëren. Controleer de serververbinding en probeer het opnieuw.";
 "hub.HubController.1585.586" = "Bevestig dat je versie 4.2.0 of nieuwer van de bronapplicatie gebruikt voordat je gegevens importeert.";
-"hub.HubController.1591.587" = "Kies het bestand met de bronapplicatie-ENCRYPTION_KEY.";
+"hub.HubController.1591.587" = "Aanmelden vereist een geopend verzamelvenster. Open een venster en meld je opnieuw aan.";
 "hub.HubController.1718.615" = "De bronapplicatie-import heeft geen geldig voltooiingsrapport opgeleverd. De Hub blijft gestopt.";
 "hub.HubController.1742.624" = "De import is voltooid, maar de Hub kon de beveiligde overdrachtsvoorwaarde niet vastleggen: %1$@. De Hub blijft gestopt.";
 "hub.HubController.1846.655" = "Bevestig dat je versie 4.2.0 of nieuwer van de bronapplicatie gebruikt voordat je importeert vanuit een directe PostgreSQL-bron.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Importeren";
 "hub.ImportSheetController.112.1706" = "Annuleren";
 "hub.ImportSheetController.148.1709" = "Vul alle velden in.";
-"hub.ImportSheetController.149.1710" = "Bron, auto-ID, wachtwoordbestand en ENCRYPTION_KEY-bestand zijn verplicht.";
+"hub.ImportSheetController.149.1710" = "Bron, auto-ID en wachtwoordbestand zijn verplicht.";
 "hub.ImportSheetController.156.1711" = "Bevestig de bronapplicatie-versie";
 "hub.ImportSheetController.17.1690" = "Ik bevestig dat deze database afkomstig is van versie 4.2.0 of nieuwer van de bronapplicatie.";
 "hub.ImportSheetController.26.1691" = "Geschiedenis importeren";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "Auto-ID";
 "hub.ImportSheetController.69.1697" = "Wachtwoordbestand";
 "hub.ImportSheetController.7.1687" = "De Hub leest de brondatabase zonder de bronapplicatie te stoppen of te wijzigen. Na de import geeft de Hub aan wanneer je zelf de Tesla-toegang in de bronapplicatie moet uitschakelen.";
-"hub.ImportSheetController.73.1699" = "ENCRYPTION_KEY-bestand van de bronapplicatie";
+"hub.ImportSheetController.73.1699" = "Hub draait niet. Start Hub, open een verzamelvenster en meld je aan.";
 "hub.ImportSheetController.9.1688" = "Maak vóór de import een back-up van de bronapplicatie, werk deze bij naar versie 4.2.0 of nieuwer, start deze één keer en wacht tot de databasemigraties zijn voltooid. Een rechtstreekse databaseverbinding kan niet bevestigen welke versie van de actieve app draait.";
 "hub.LogsWindowController.113.1730" = "Meer logboekacties";
 "hub.LogsWindowController.123.1732" = "De weergegeven, gekopieerde en opgeslagen logboeken schermen toegangsgegevens en privé-identificatoren af. Controleer ze voordat je ze deelt.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Stel een nieuwe Hub in of importeer je geschiedenis vanuit de bronapplicatie.";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetry wordt aanbevolen. Legacy-tokens werken met oudere installaties.";
 "hub.OnboardingWindowController.608.1929" = "Maak een Tesla Fleet-app aan en plak de bijbehorende toegangsgegevens hieronder.";
-"hub.OnboardingWindowController.610.1930" = "Meld je aan bij Tesla of plak een bestaand tokenpaar.";
+"hub.OnboardingWindowController.610.1930" = "Meld je aan bij Tesla terwijl een verzamelvenster open is. Hub accepteert nooit een token.";
 "hub.OnboardingWindowController.612.1931" = "Verbind met je bronapplicatie-server om de voertuiggeschiedenis te importeren.";
 "hub.OnboardingWindowController.614.1932" = "Controleren of alles goed is ingesteld.";
 "hub.OnboardingWindowController.617.1933" = "Je bronapplicatie-geschiedenis is geïmporteerd in de Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "De officiële streaming-API van Tesla. Hiermee kun je live opdrachten naar je voertuig sturen.";
 "hub.OnboardingWindowController.752.1958" = "Legacy-token";
-"hub.OnboardingWindowController.753.1959" = "Gebruik een toegangstoken en vernieuwingstoken van de Owner API.";
+"hub.OnboardingWindowController.753.1959" = "Meld je aan bij Tesla. Hub houdt zijn eigen aanmelding.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet-app aanmaken";
 "hub.OnboardingWindowController.771.1964" = "Client-ID";
 "hub.OnboardingWindowController.774.1967" = "Verloopt over";
 "hub.OnboardingWindowController.776.1968" = "Toegangsgegevens zijn versleuteld op deze Mac";
 "hub.OnboardingWindowController.788.1970" = "Aanmelden bij Tesla";
-"hub.OnboardingWindowController.790.1972" = "of gebruik een bestaand tokenpaar";
+"hub.OnboardingWindowController.790.1972" = "Aanmelden is nog niet beschikbaar: deze Hub heeft geen aanmeldwaarden voor de Owner API. Er is niets gewijzigd.";
 "hub.OnboardingWindowController.798.1975" = "Tokens worden op deze Mac versleuteld";
 "hub.OnboardingWindowController.822.1978" = "Poort";
 "hub.OnboardingWindowController.832.1980" = "SSH-gebruiker";

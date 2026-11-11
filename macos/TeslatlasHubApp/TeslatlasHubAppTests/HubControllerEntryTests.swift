@@ -51,7 +51,7 @@ extension HubControllerTests {
     }
 
     private var localSource: String { "postgresql://reader@127.0.0.1:55438/source_snapshot" }
-    private var remoteSource: String { "postgresql://reader@server.local/sourcedb" }
+    private var remoteSource: String { "postgresql://reader@127.0.0.1:55439/sourcedb" }
 
     // MARK: 9. Migration stages (the controller requests the onboarding window makes)
 
@@ -89,7 +89,7 @@ extension HubControllerTests {
         try assertAPIEntry(APIRoute(name: "OnlineImport", family: .migration, options: .init(installed: false),
                                     effect: { $0.runner.count("migrate") >= 1 }) { rig in
             rig.controller.importSourceOnline(source: self.remoteSource, carID: "1", passwordFile: "/p",
-                                                 encryptionKeyFile: "/k", acceptSchemaEvidence: true) { _ in }
+                                                 acceptSchemaEvidence: true) { _ in }
         })
     }
 

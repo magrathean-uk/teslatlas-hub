@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "Semakan keserasian aplikasi sumber tidak memulangkan laporan yang sah.";
 "hub.HubController.1562.581" = "Pengesahan pangkalan data sumber gagal. Semak sambungan pelayan dan cuba lagi.";
 "hub.HubController.1585.586" = "Sahkan bahawa aplikasi sumber versi 4.2.0 atau lebih baharu sebelum mengimport.";
-"hub.HubController.1591.587" = "Pilih fail ENCRYPTION_KEY aplikasi sumber.";
+"hub.HubController.1591.587" = "Log masuk memerlukan tetingkap pengumpulan yang terbuka. Buka tetingkap, kemudian log masuk semula.";
 "hub.HubController.1718.615" = "Import aplikasi sumber tidak memulangkan laporan penyelesaian yang sah. Hub kekal dihentikan.";
 "hub.HubController.1742.624" = "Import selesai, tetapi Hub tidak dapat merekodkan syarat serahan selamat: %1$@. Hub kekal dihentikan.";
 "hub.HubController.1846.655" = "Sahkan bahawa aplikasi sumber versi 4.2.0 atau lebih baharu sebelum mengimport daripada sumber PostgreSQL terus.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Import";
 "hub.ImportSheetController.112.1706" = "Batal";
 "hub.ImportSheetController.148.1709" = "Lengkapkan semua medan";
-"hub.ImportSheetController.149.1710" = "Sumber, ID kereta, fail kata laluan dan fail ENCRYPTION_KEY diperlukan.";
+"hub.ImportSheetController.149.1710" = "Sumber, ID kereta dan fail kata laluan diperlukan.";
 "hub.ImportSheetController.156.1711" = "Sahkan versi aplikasi sumber";
 "hub.ImportSheetController.17.1690" = "Saya mengesahkan bahawa pangkalan data ini milik aplikasi sumber versi 4.2.0 atau lebih baharu";
 "hub.ImportSheetController.26.1691" = "Import sejarah";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "ID kereta";
 "hub.ImportSheetController.69.1697" = "Fail kata laluan";
 "hub.ImportSheetController.7.1687" = "Hub membaca pangkalan data sumber tanpa menghentikan aplikasi sumber atau mengubah datanya. Selepas import, Hub akan memberitahu anda bila anda perlu menyahaktifkan akses Tesla dalam aplikasi sumber sendiri.";
-"hub.ImportSheetController.73.1699" = "Fail ENCRYPTION_KEY aplikasi sumber";
+"hub.ImportSheetController.73.1699" = "Hub tidak berjalan. Mulakan Hub, buka tetingkap pengumpulan, kemudian log masuk.";
 "hub.ImportSheetController.9.1688" = "Sebelum import: sandarkan aplikasi sumber, kemas kininya kepada versi 4.2.0 atau lebih baharu, mulakannya sekali dan tunggu sehingga migrasi pangkalan datanya selesai. Sambungan pangkalan data terus tidak dapat membuktikan versi aplikasi yang sedang berjalan.";
 "hub.LogsWindowController.113.1730" = "Tindakan log lain";
 "hub.LogsWindowController.123.1732" = "Log yang dipaparkan, disalin dan disimpan menyamarkan rahsia akses dan pengecam peribadi. Semak sebelum berkongsi.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Sediakan Hub baharu atau pindahkan sejarah anda daripada aplikasi sumber.";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetry disyorkan. Token legasi berfungsi dengan persediaan yang lebih lama.";
 "hub.OnboardingWindowController.608.1929" = "Cipta aplikasi Tesla Fleet, kemudian tampal kredensialnya di bawah.";
-"hub.OnboardingWindowController.610.1930" = "Log masuk ke Tesla atau tampal pasangan token sedia ada.";
+"hub.OnboardingWindowController.610.1930" = "Log masuk ke Tesla semasa tetingkap pengumpulan dibuka. Hub tidak pernah menerima token.";
 "hub.OnboardingWindowController.612.1931" = "Sambung ke pelayan aplikasi sumber untuk mengimport sejarah kenderaannya.";
 "hub.OnboardingWindowController.614.1932" = "Memastikan semuanya dikonfigurasikan dengan betul.";
 "hub.OnboardingWindowController.617.1933" = "Sejarah kenderaan anda telah diimport ke Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "API penstriman rasmi Tesla. Membolehkan arahan kenderaan masa nyata.";
 "hub.OnboardingWindowController.752.1958" = "Token Legasi";
-"hub.OnboardingWindowController.753.1959" = "Gunakan pasangan token akses dan token muat semula Owner API.";
+"hub.OnboardingWindowController.753.1959" = "Log masuk ke Tesla. Hub mengekalkan log masuk sendiri.";
 "hub.OnboardingWindowController.760.1960" = "Cipta Aplikasi Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID Klien";
 "hub.OnboardingWindowController.774.1967" = "Tamat tempoh dalam";
 "hub.OnboardingWindowController.776.1968" = "Kredensial disulitkan pada Mac ini";
 "hub.OnboardingWindowController.788.1970" = "Log masuk dengan Tesla";
-"hub.OnboardingWindowController.790.1972" = "atau gunakan pasangan token sedia ada";
+"hub.OnboardingWindowController.790.1972" = "Log masuk belum tersedia: Hub ini tiada nilai log masuk Owner API. Tiada apa-apa yang diubah.";
 "hub.OnboardingWindowController.798.1975" = "Token disulitkan pada Mac ini";
 "hub.OnboardingWindowController.822.1978" = "Port";
 "hub.OnboardingWindowController.832.1980" = "Pengguna SSH";

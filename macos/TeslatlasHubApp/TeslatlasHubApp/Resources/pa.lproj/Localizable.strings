@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਅਨੁਕੂਲਤਾ ਜਾਂਚ ਤੋਂ ਕੋਈ ਵੈਧ ਰਿਪੋਰਟ ਨਹੀਂ ਮਿਲੀ।";
 "hub.HubController.1562.581" = "ਸਰੋਤ ਡਾਟਾਬੇਸ ਦੀ ਪੁਸ਼ਟੀ ਨਹੀਂ ਹੋ ਸਕੀ। ਸਰਵਰ ਕਨੈਕਸ਼ਨ ਜਾਂਚੋ ਅਤੇ ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।";
 "hub.HubController.1585.586" = "ਆਯਾਤ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਪੁਸ਼ਟੀ ਕਰੋ ਕਿ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.2.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵਾਂ ਹੈ।";
-"hub.HubController.1591.587" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ENCRYPTION_KEY ਫ਼ਾਈਲ ਚੁਣੋ।";
+"hub.HubController.1591.587" = "ਸਾਈਨ ਇਨ ਲਈ ਖੁੱਲ੍ਹੀ ਇਕੱਤਰ ਕਰਨ ਵਾਲੀ ਵਿੰਡੋ ਲੋੜੀਂਦੀ ਹੈ। ਇੱਕ ਵਿੰਡੋ ਖੋਲ੍ਹੋ, ਫਿਰ ਦੁਬਾਰਾ ਸਾਈਨ ਇਨ ਕਰੋ।";
 "hub.HubController.1718.615" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਆਯਾਤ ਤੋਂ ਪੂਰਾ ਹੋਣ ਦੀ ਕੋਈ ਵੈਧ ਰਿਪੋਰਟ ਨਹੀਂ ਮਿਲੀ। Hub ਬੰਦ ਹੀ ਰਹੇਗਾ।";
 "hub.HubController.1742.624" = "ਆਯਾਤ ਪੂਰਾ ਹੋ ਗਿਆ, ਪਰ ਸੁਰੱਖਿਅਤ ਹਵਾਲਗੀ ਦੀ ਸ਼ਰਤ ਦਰਜ ਨਹੀਂ ਹੋ ਸਕੀ: %1$@। Hub ਬੰਦ ਹੀ ਰਹੇਗਾ।";
 "hub.HubController.1846.655" = "ਸਿੱਧੇ PostgreSQL ਸਰੋਤ ਤੋਂ ਆਯਾਤ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਪੁਸ਼ਟੀ ਕਰੋ ਕਿ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.2.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵਾਂ ਹੈ।";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "ਆਯਾਤ ਕਰੋ";
 "hub.ImportSheetController.112.1706" = "ਰੱਦ ਕਰੋ";
 "hub.ImportSheetController.148.1709" = "ਸਾਰੇ ਖੇਤਰ ਭਰੋ";
-"hub.ImportSheetController.149.1710" = "ਸਰੋਤ, ਕਾਰ ID, ਪਾਸਵਰਡ ਫ਼ਾਈਲ ਅਤੇ ENCRYPTION_KEY ਫ਼ਾਈਲ ਲੋੜੀਂਦੇ ਹਨ।";
+"hub.ImportSheetController.149.1710" = "ਸਰੋਤ, ਕਾਰ ID ਅਤੇ ਪਾਸਵਰਡ ਫ਼ਾਈਲ ਲੋੜੀਂਦੇ ਹਨ।";
 "hub.ImportSheetController.156.1711" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਵਰਜਨ ਦੀ ਪੁਸ਼ਟੀ ਕਰੋ";
 "hub.ImportSheetController.17.1690" = "ਮੈਂ ਪੁਸ਼ਟੀ ਕਰਦਾ ਹਾਂ ਕਿ ਇਹ ਡਾਟਾਬੇਸ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.2.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵੇਂ ਵਰਜਨ ਦਾ ਹੈ।";
 "hub.ImportSheetController.26.1691" = "ਇਤਿਹਾਸ ਆਯਾਤ ਕਰੋ";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "ਕਾਰ ID";
 "hub.ImportSheetController.69.1697" = "ਪਾਸਵਰਡ ਫ਼ਾਈਲ";
 "hub.ImportSheetController.7.1687" = "Hub ਸਰੋਤ ਡਾਟਾਬੇਸ ਨੂੰ ਪੜ੍ਹਦਾ ਹੈ, ਪਰ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਨੂੰ ਨਾ ਰੋਕਦਾ ਹੈ, ਨਾ ਬਦਲਦਾ ਹੈ। ਆਯਾਤ ਤੋਂ ਬਾਅਦ Hub ਤੁਹਾਨੂੰ ਦੱਸੇਗਾ ਕਿ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਵਿੱਚ Tesla ਪਹੁੰਚ ਕਦੋਂ ਤੁਸੀਂ ਖੁਦ ਬੰਦ ਕਰਨੀ ਹੈ।";
-"hub.ImportSheetController.73.1699" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ENCRYPTION_KEY ਫ਼ਾਈਲ";
+"hub.ImportSheetController.73.1699" = "Hub ਚੱਲ ਨਹੀਂ ਰਿਹਾ। Hub ਸ਼ੁਰੂ ਕਰੋ, ਇਕੱਤਰ ਕਰਨ ਵਾਲੀ ਵਿੰਡੋ ਖੋਲ੍ਹੋ, ਫਿਰ ਸਾਈਨ ਇਨ ਕਰੋ।";
 "hub.ImportSheetController.9.1688" = "ਆਯਾਤ ਤੋਂ ਪਹਿਲਾਂ: ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਦਾ ਬੈਕਅੱਪ ਲਓ, ਇਸਨੂੰ 4.2.0 ਜਾਂ ਨਵੇਂ ਵਰਜਨ ’ਤੇ ਅੱਪਡੇਟ ਕਰੋ, ਇੱਕ ਵਾਰ ਚਲਾਓ ਅਤੇ ਇਸਦੇ ਡਾਟਾਬੇਸ ਮਾਈਗ੍ਰੇਸ਼ਨ ਪੂਰੇ ਹੋਣ ਦੀ ਉਡੀਕ ਕਰੋ। ਸਿੱਧਾ ਡਾਟਾਬੇਸ ਕਨੈਕਸ਼ਨ ਚੱਲ ਰਹੇ ਐਪ ਦਾ ਵਰਜਨ ਸਾਬਤ ਨਹੀਂ ਕਰ ਸਕਦਾ।";
 "hub.LogsWindowController.113.1730" = "ਹੋਰ ਲੌਗ ਕਾਰਵਾਈਆਂ";
 "hub.LogsWindowController.123.1732" = "ਦਿਖਾਏ, ਕਾਪੀ ਕੀਤੇ ਅਤੇ ਸੇਵ ਕੀਤੇ ਲੌਗਾਂ ਵਿੱਚੋਂ ਪਹੁੰਚ-ਪ੍ਰਮਾਣ ਅਤੇ ਨਿੱਜੀ ਪਛਾਣਕਰਤਾ ਹਟਾਏ ਜਾਂਦੇ ਹਨ। ਸਾਂਝਾ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਸਮੀਖਿਆ ਕਰੋ।";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "ਨਵਾਂ Hub ਸੈੱਟ ਅੱਪ ਕਰੋ ਜਾਂ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਤੋਂ ਆਪਣਾ ਇਤਿਹਾਸ ਲਿਆਓ।";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetry ਦੀ ਸਿਫ਼ਾਰਸ਼ ਕੀਤੀ ਜਾਂਦੀ ਹੈ। Legacy ਟੋਕਨ ਪੁਰਾਣੇ ਸੈੱਟਅੱਪਾਂ ਨਾਲ ਕੰਮ ਕਰਦੇ ਹਨ।";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet ਐਪਲੀਕੇਸ਼ਨ ਬਣਾਓ, ਫਿਰ ਇਸਦੇ ਪਹੁੰਚ-ਪ੍ਰਮਾਣ ਹੇਠਾਂ ਪੇਸਟ ਕਰੋ।";
-"hub.OnboardingWindowController.610.1930" = "Tesla ਨਾਲ ਸਾਈਨ ਇਨ ਕਰੋ ਜਾਂ ਟੋਕਨਾਂ ਦੀ ਮੌਜੂਦਾ ਜੋੜੀ ਪੇਸਟ ਕਰੋ।";
+"hub.OnboardingWindowController.610.1930" = "ਇਕੱਤਰ ਕਰਨ ਵਾਲੀ ਵਿੰਡੋ ਖੁੱਲ੍ਹੀ ਹੋਣ ਦੌਰਾਨ Tesla ਨਾਲ ਸਾਈਨ ਇਨ ਕਰੋ। Hub ਕਦੇ ਵੀ ਟੋਕਨ ਸਵੀਕਾਰ ਨਹੀਂ ਕਰਦਾ।";
 "hub.OnboardingWindowController.612.1931" = "ਵਾਹਨ ਇਤਿਹਾਸ ਆਯਾਤ ਕਰਨ ਲਈ ਆਪਣੇ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਸਰਵਰ ਨਾਲ ਕਨੈਕਟ ਕਰੋ।";
 "hub.OnboardingWindowController.614.1932" = "ਜਾਂਚ ਰਹੇ ਹਾਂ ਕਿ ਸਭ ਕੁਝ ਠੀਕ ਤਰ੍ਹਾਂ ਜੁੜਿਆ ਹੈ।";
 "hub.OnboardingWindowController.617.1933" = "ਤੁਹਾਡਾ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਇਤਿਹਾਸ Hub ਵਿੱਚ ਆਯਾਤ ਹੋ ਗਿਆ ਹੈ।";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla ਦੀ ਅਧਿਕਾਰਤ streaming API। ਇਹ ਲਾਈਵ ਵਾਹਨ ਕਮਾਂਡਾਂ ਦੀ ਸਹੂਲਤ ਦਿੰਦੀ ਹੈ।";
 "hub.OnboardingWindowController.752.1958" = "Legacy ਟੋਕਨ";
-"hub.OnboardingWindowController.753.1959" = "Owner API ਦੇ ਪਹੁੰਚ ਟੋਕਨ ਅਤੇ ਤਾਜ਼ਾ ਕਰਨ ਵਾਲੇ ਟੋਕਨ ਦੀ ਜੋੜੀ ਵਰਤੋ।";
+"hub.OnboardingWindowController.753.1959" = "Tesla ਨਾਲ ਸਾਈਨ ਇਨ ਕਰੋ। Hub ਆਪਣਾ ਲਾਗਇਨ ਰੱਖਦਾ ਹੈ।";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet ਐਪ ਬਣਾਓ";
 "hub.OnboardingWindowController.771.1964" = "ਕਲਾਇੰਟ ID";
 "hub.OnboardingWindowController.774.1967" = "ਮਿਆਦ ਮੁੱਕਣ ਵਿੱਚ";
 "hub.OnboardingWindowController.776.1968" = "ਪਹੁੰਚ-ਪ੍ਰਮਾਣ ਇਸ Mac ਉੱਤੇ ਇਨਕ੍ਰਿਪਟ ਕੀਤੇ ਜਾਂਦੇ ਹਨ";
 "hub.OnboardingWindowController.788.1970" = "Tesla ਨਾਲ ਸਾਈਨ ਇਨ ਕਰੋ";
-"hub.OnboardingWindowController.790.1972" = "ਜਾਂ ਮੌਜੂਦਾ ਟੋਕਨਾਂ ਦੀ ਜੋੜੀ ਵਰਤੋ";
+"hub.OnboardingWindowController.790.1972" = "ਸਾਈਨ ਇਨ ਹਾਲੇ ਉਪਲਬਧ ਨਹੀਂ ਹੈ: ਇਸ Hub ਕੋਲ Owner API ਸਾਈਨ-ਇਨ ਮੁੱਲ ਨਹੀਂ ਹਨ। ਕੁਝ ਵੀ ਨਹੀਂ ਬਦਲਿਆ ਗਿਆ।";
 "hub.OnboardingWindowController.798.1975" = "ਟੋਕਨ ਇਸ Mac ਉੱਤੇ ਇਨਕ੍ਰਿਪਟ ਕੀਤੇ ਜਾਂਦੇ ਹਨ";
 "hub.OnboardingWindowController.822.1978" = "ਪੋਰਟ";
 "hub.OnboardingWindowController.832.1980" = "SSH ਵਰਤੋਂਕਾਰ";

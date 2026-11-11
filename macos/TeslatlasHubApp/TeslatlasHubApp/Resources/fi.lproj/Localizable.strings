@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "Lähdesovelluksen yhteensopivuustarkistus ei palauttanut kelvollista raporttia.";
 "hub.HubController.1562.581" = "Lähdetietokantaa ei voitu tarkistaa. Tarkista palvelinyhteys ja yritä uudelleen.";
 "hub.HubController.1585.586" = "Vahvista ennen tuontia, että käytössä on lähdesovellus 4.2.0 tai uudempi.";
-"hub.HubController.1591.587" = "Valitse lähdesovelluksen ENCRYPTION_KEY-tiedosto.";
+"hub.HubController.1591.587" = "Kirjautuminen vaatii avoimen keruuikkunan. Avaa ikkuna ja kirjaudu sisään uudelleen.";
 "hub.HubController.1718.615" = "Lähdesovelluksen tuonti ei palauttanut kelvollista valmistumisraporttia. Hub pysyy pysäytettynä.";
 "hub.HubController.1742.624" = "Tuonti valmistui, mutta Hub ei voinut tallentaa turvallisen siirron varmistusta: %1$@. Hub pysyy pysäytettynä.";
 "hub.HubController.1846.655" = "Vahvista ennen suoraan PostgreSQL-lähteestä tuontia, että käytössä on lähdesovellus 4.2.0 tai uudempi.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Tuo";
 "hub.ImportSheetController.112.1706" = "Peruuta";
 "hub.ImportSheetController.148.1709" = "Täytä kaikki kentät";
-"hub.ImportSheetController.149.1710" = "Lähde, auton tunnus, salasanatiedosto ja lähdesovelluksen ENCRYPTION_KEY-tiedosto ovat pakollisia.";
+"hub.ImportSheetController.149.1710" = "Lähde, auton tunnus ja salasanatiedosto ovat pakollisia.";
 "hub.ImportSheetController.156.1711" = "Vahvista lähdesovelluksen versio";
 "hub.ImportSheetController.17.1690" = "Vahvistan, että tämä tietokanta kuuluu lähdesovelluksen versioon 4.2.0 tai uudempaan";
 "hub.ImportSheetController.26.1691" = "Tuo historia";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "Auton tunnus";
 "hub.ImportSheetController.69.1697" = "Salasanatiedosto";
 "hub.ImportSheetController.7.1687" = "Hub lukee lähdetietokantaa pysäyttämättä tai muuttamatta lähdesovellusta. Tuonnin jälkeen Hub ilmoittaa, milloin voit itse poistaa Tesla-käyttöoikeuden käytöstä lähdesovelluksessa.";
-"hub.ImportSheetController.73.1699" = "Lähdesovelluksen ENCRYPTION_KEY-tiedosto";
+"hub.ImportSheetController.73.1699" = "Hub ei ole käynnissä. Käynnistä Hub, avaa keruuikkuna ja kirjaudu sitten sisään.";
 "hub.ImportSheetController.9.1688" = "Ennen tuontia: tee lähdesovelluksesta varmuuskopio, päivitä se versioon 4.2.0 tai uudempaan, käynnistä se kerran ja odota tietokannan migraatioiden valmistumista. Suora tietokantayhteys ei voi vahvistaa käynnissä olevan sovelluksen versiota.";
 "hub.LogsWindowController.113.1730" = "Lisää lokitoimintoja";
 "hub.LogsWindowController.123.1732" = "Näytetyistä, kopioiduista ja tallennetuista lokeista poistetaan käyttöoikeustiedot ja yksityiset tunnisteet. Tarkista lokit ennen jakamista.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Määritä uusi Hub tai siirrä historiatiedot lähdesovelluksesta.";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetryä suositellaan. Perinteiset tokenit toimivat vanhemmissa määrityksissä.";
 "hub.OnboardingWindowController.608.1929" = "Luo Tesla Fleet -sovellus ja liitä sen käyttöoikeustiedot alle.";
-"hub.OnboardingWindowController.610.1930" = "Kirjaudu sisään Teslan kautta tai liitä olemassa oleva tokenpari.";
+"hub.OnboardingWindowController.610.1930" = "Kirjaudu sisään Teslan kautta, kun keruuikkuna on auki. Hub ei koskaan hyväksy tokenia.";
 "hub.OnboardingWindowController.612.1931" = "Muodosta yhteys lähdesovelluksen palvelimeen tuodaksesi sen ajoneuvohistorian.";
 "hub.OnboardingWindowController.614.1932" = "Tarkistetaan, että kaikki on määritetty oikein.";
 "hub.OnboardingWindowController.617.1933" = "Lähdesovelluksen historiatiedot on tuotu Hubiin.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Teslan virallinen suoratoistorajapinta. Mahdollistaa reaaliaikaiset ajoneuvokomennot.";
 "hub.OnboardingWindowController.752.1958" = "Perinteinen token";
-"hub.OnboardingWindowController.753.1959" = "Käytä auton omistajan API:n käyttöoikeus- ja päivitystokenparia.";
+"hub.OnboardingWindowController.753.1959" = "Kirjaudu sisään Teslan kautta. Hub säilyttää oman kirjautumisensa.";
 "hub.OnboardingWindowController.760.1960" = "Luo Tesla Fleet -sovellus";
 "hub.OnboardingWindowController.771.1964" = "Asiakastunnus";
 "hub.OnboardingWindowController.774.1967" = "Vanhenee";
 "hub.OnboardingWindowController.776.1968" = "Käyttöoikeustiedot salataan tässä Macissa";
 "hub.OnboardingWindowController.788.1970" = "Kirjaudu sisään Teslan kautta";
-"hub.OnboardingWindowController.790.1972" = "tai käytä olemassa olevaa tokenparia";
+"hub.OnboardingWindowController.790.1972" = "Kirjautuminen ei ole vielä käytettävissä: tällä Hubilla ei ole Owner API -kirjautumisarvoja. Mitään ei muutettu.";
 "hub.OnboardingWindowController.798.1975" = "Tokenit salataan tässä Macissa";
 "hub.OnboardingWindowController.822.1978" = "Portti";
 "hub.OnboardingWindowController.832.1980" = "SSH-käyttäjä";

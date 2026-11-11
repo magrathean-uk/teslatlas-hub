@@ -12,7 +12,6 @@ final class ImportSheetController: NSWindowController {
     private let sourceField = NSTextField(string: "")
     private let carField = NSTextField(string: "1")
     private let passwordField = NSTextField(string: "")
-    private let encryptionField = NSTextField(string: "")
     private let versionAcknowledgement = NSButton(
         checkboxWithTitle: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.2.0 or later and will not be updated during the import."),
         target: nil,
@@ -64,17 +63,13 @@ final class ImportSheetController: NSWindowController {
         let schemaExplanation = NSTextField(wrappingLabelWithString: HubL10n.text("hub.import.ackExplain", fallback: "A schema check cannot show which release of the source application wrote this database: more than one release shares this schema."))
         schemaExplanation.textColor = .secondaryLabelColor
         stack.addArrangedSubview(schemaExplanation)
-        sourceField.placeholderString = "postgresql://reader@host/database"
+        sourceField.placeholderString = "postgresql://reader@127.0.0.1/database"
         stack.addArrangedSubview(field(HubL10n.text("hub.ImportSheetController.64.1694", fallback: "PostgreSQL source"), sourceField))
         stack.addArrangedSubview(field(HubL10n.text("hub.ImportSheetController.65.1695", fallback: "Car ID"), carField))
         let passwordRow = NSStackView(views: [passwordField, button(HubL10n.text("hub.ImportSheetController.110.1702", fallback: "Choose…"), #selector(choosePassword))])
         passwordRow.spacing = 8
         passwordRow.widthAnchor.constraint(equalToConstant: 504).isActive = true
         stack.addArrangedSubview(labeled(HubL10n.text("hub.ImportSheetController.69.1697", fallback: "Password file"), passwordRow))
-        let encryptionRow = NSStackView(views: [encryptionField, button(HubL10n.text("hub.ImportSheetController.110.1702", fallback: "Choose…"), #selector(chooseEncryption))])
-        encryptionRow.spacing = 8
-        encryptionRow.widthAnchor.constraint(equalToConstant: 504).isActive = true
-        stack.addArrangedSubview(labeled(HubL10n.text("hub.ImportSheetController.73.1699", fallback: "Source application's ENCRYPTION_KEY file"), encryptionRow))
         stack.addArrangedSubview(versionAcknowledgement)
         let buttons = NSStackView(views: [spacer(),
             button(HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"), #selector(cancelPressed)),
@@ -136,23 +131,13 @@ final class ImportSheetController: NSWindowController {
         }
     }
 
-    @objc private func chooseEncryption() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.beginSheetModal(for: window!) { [weak self] response in
-            if response == .OK { self?.encryptionField.stringValue = panel.url?.path ?? "" }
-        }
-    }
-
     @objc private func cancelPressed() { window?.sheetParent?.endSheet(window!) }
 
     @objc private func importPressed() {
-        guard !sourceField.stringValue.isEmpty, !carField.stringValue.isEmpty, !passwordField.stringValue.isEmpty, !encryptionField.stringValue.isEmpty else {
+        guard !sourceField.stringValue.isEmpty, !carField.stringValue.isEmpty, !passwordField.stringValue.isEmpty else {
             let alert = NSAlert()
             alert.messageText = HubL10n.text("hub.ImportSheetController.148.1709", fallback: "Complete all fields")
-            alert.informativeText = HubL10n.text("hub.ImportSheetController.149.1710", fallback: "Source, car ID, password file, and ENCRYPTION_KEY file are required.")
+            alert.informativeText = HubL10n.text("hub.ImportSheetController.149.1710", fallback: "Source, car ID and password file are required.")
             HubUIPresentation.presentInformation(alert)
             return
         }
@@ -173,7 +158,6 @@ final class ImportSheetController: NSWindowController {
         controller.importSource(source: sourceField.stringValue,
                                    carID: carField.stringValue,
                                    passwordFile: passwordField.stringValue,
-                                   encryptionKeyFile: encryptionField.stringValue,
                                    acceptSchemaEvidence: versionAccepted) { [weak self] result in
             switch result {
             case .success: if let window = self?.window, let parent = window.sheetParent { parent.endSheet(window) }

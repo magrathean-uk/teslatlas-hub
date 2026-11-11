@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "Il controllo di compatibilità con l'applicazione di origine non ha restituito un report valido.";
 "hub.HubController.1562.581" = "Impossibile verificare il database di origine. Controlla la connessione al server e riprova.";
 "hub.HubController.1585.586" = "Conferma che l'applicazione di origine sia alla versione 4.2.0 o successiva prima di importare.";
-"hub.HubController.1591.587" = "Scegli il file ENCRYPTION_KEY dell'applicazione di origine.";
+"hub.HubController.1591.587" = "L’accesso richiede una finestra di raccolta aperta. Apri una finestra, poi accedi di nuovo.";
 "hub.HubController.1718.615" = "L'importazione dall'applicazione di origine non ha restituito un report di completamento valido. L'Hub resta arrestato.";
 "hub.HubController.1742.624" = "L'importazione è stata completata, ma l'Hub non è riuscito a registrare il vincolo di sicurezza per il passaggio: %1$@. L'Hub resta arrestato.";
 "hub.HubController.1846.655" = "Conferma che l'applicazione di origine sia alla versione 4.2.0 o successiva prima di importare da una sorgente PostgreSQL diretta.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Importa";
 "hub.ImportSheetController.112.1706" = "Annulla";
 "hub.ImportSheetController.148.1709" = "Compila tutti i campi";
-"hub.ImportSheetController.149.1710" = "Sono obbligatori l'origine, l'ID auto, il file della password e il file ENCRYPTION_KEY.";
+"hub.ImportSheetController.149.1710" = "Sono obbligatori l’origine, l’ID auto e il file della password.";
 "hub.ImportSheetController.156.1711" = "Conferma la versione dell'applicazione di origine";
 "hub.ImportSheetController.17.1690" = "Confermo che questo database appartiene all'applicazione di origine 4.2.0 o versione successiva";
 "hub.ImportSheetController.26.1691" = "Importa la cronologia";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "ID auto";
 "hub.ImportSheetController.69.1697" = "File della password";
 "hub.ImportSheetController.7.1687" = "L'Hub legge il database di origine senza modificarlo né arrestare l'applicazione di origine. Dopo l'importazione, l'Hub ti indica quando disattivare personalmente l'accesso a Tesla nell'applicazione di origine.";
-"hub.ImportSheetController.73.1699" = "File ENCRYPTION_KEY dell'applicazione di origine";
+"hub.ImportSheetController.73.1699" = "Hub non è in esecuzione. Avvia Hub, apri una finestra di raccolta, poi accedi.";
 "hub.ImportSheetController.9.1688" = "Prima dell'importazione: esegui un backup dell'applicazione di origine, aggiornala alla versione 4.2.0 o successiva, avviala una volta e attendi che le migrazioni del database siano terminate. Una connessione diretta al database non può dimostrare quale versione dell'app sia in esecuzione.";
 "hub.LogsWindowController.113.1730" = "Altre azioni sui log";
 "hub.LogsWindowController.123.1732" = "I log visualizzati, copiati e salvati oscurano le credenziali e gli identificativi privati. Controllali prima di condividerli.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Configura un nuovo Hub o trasferisci la tua cronologia dall'applicazione di origine.";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetry è consigliato. I token Legacy funzionano con le configurazioni precedenti.";
 "hub.OnboardingWindowController.608.1929" = "Crea un'applicazione Tesla Fleet, poi incolla qui sotto le sue credenziali.";
-"hub.OnboardingWindowController.610.1930" = "Accedi con Tesla oppure incolla una coppia di token esistente.";
+"hub.OnboardingWindowController.610.1930" = "Accedi con Tesla mentre è aperta una finestra di raccolta. Hub non accetta mai un token.";
 "hub.OnboardingWindowController.612.1931" = "Connettiti al server dell'applicazione di origine per importare la cronologia del veicolo.";
 "hub.OnboardingWindowController.614.1932" = "Verifica che tutti i collegamenti siano configurati correttamente.";
 "hub.OnboardingWindowController.617.1933" = "La cronologia dell'applicazione di origine è stata importata in Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "L'API di streaming ufficiale di Tesla. Abilita i comandi per il veicolo in tempo reale.";
 "hub.OnboardingWindowController.752.1958" = "Token Legacy";
-"hub.OnboardingWindowController.753.1959" = "Usa una coppia di token di accesso e aggiornamento per l'Owner API.";
+"hub.OnboardingWindowController.753.1959" = "Accedi con Tesla. Hub mantiene un proprio accesso.";
 "hub.OnboardingWindowController.760.1960" = "Crea un'app Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID client";
 "hub.OnboardingWindowController.774.1967" = "Scade tra";
 "hub.OnboardingWindowController.776.1968" = "Le credenziali sono crittografate su questo Mac";
 "hub.OnboardingWindowController.788.1970" = "Accedi con Tesla";
-"hub.OnboardingWindowController.790.1972" = "oppure usa una coppia di token esistente";
+"hub.OnboardingWindowController.790.1972" = "L’accesso non è ancora disponibile: questo Hub non ha valori di accesso per l’Owner API. Non è stato modificato nulla.";
 "hub.OnboardingWindowController.798.1975" = "I token sono crittografati su questo Mac";
 "hub.OnboardingWindowController.822.1978" = "Porta";
 "hub.OnboardingWindowController.832.1980" = "Utente SSH";

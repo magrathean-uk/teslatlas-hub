@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "移行元アプリケーションの互換性チェックから有効なレポートが返されませんでした。";
 "hub.HubController.1562.581" = "移行元データベースを確認できませんでした。サーバー接続を確認して、もう一度お試しください。";
 "hub.HubController.1585.586" = "インポートする前に、移行元アプリケーションが4.2.0以降であることを確認してください。";
-"hub.HubController.1591.587" = "移行元アプリケーションのENCRYPTION_KEYファイルを選択してください。";
+"hub.HubController.1591.587" = "サインインには、開いているデータ収集ウィンドウが必要です。ウィンドウを開いてから、もう一度サインインしてください。";
 "hub.HubController.1718.615" = "移行元アプリケーションのインポートから有効な完了レポートが返されませんでした。Hubは停止したままです。";
 "hub.HubController.1742.624" = "インポートは完了しましたが、安全な引き継ぎ条件を記録できませんでした：%1$@。Hubは停止したままです。";
 "hub.HubController.1846.655" = "PostgreSQLソースから直接インポートする前に、移行元アプリケーションが4.2.0以降であることを確認してください。";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "インポート";
 "hub.ImportSheetController.112.1706" = "キャンセル";
 "hub.ImportSheetController.148.1709" = "すべての項目を入力してください";
-"hub.ImportSheetController.149.1710" = "ソース、車両ID、パスワードファイル、ENCRYPTION_KEYファイルが必要です。";
+"hub.ImportSheetController.149.1710" = "ソース、車両ID、パスワードファイルが必要です。";
 "hub.ImportSheetController.156.1711" = "移行元アプリケーションのバージョンを確認";
 "hub.ImportSheetController.17.1690" = "このデータベースが移行元アプリケーション 4.2.0以降のものであることを確認します";
 "hub.ImportSheetController.26.1691" = "履歴をインポート";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "車両ID";
 "hub.ImportSheetController.69.1697" = "パスワードファイル";
 "hub.ImportSheetController.7.1687" = "Hubは移行元アプリケーションを停止したりデータを変更したりせずに、移行元データベースを読み取ります。インポート後はHubの案内に従い、移行元アプリケーションでTeslaへのアクセスを自分で無効にしてください。";
-"hub.ImportSheetController.73.1699" = "移行元アプリケーション ENCRYPTION_KEYファイル";
+"hub.ImportSheetController.73.1699" = "Hubが実行されていません。Hubを起動し、データ収集ウィンドウを開いてから、サインインしてください。";
 "hub.ImportSheetController.9.1688" = "インポート前に移行元アプリケーションをバックアップし、バージョン4.2.0以降に更新して、一度起動し、データベースの移行が完了するまで待ってください。データベースへ直接接続しても、実行中のアプリのバージョンは確認できません。";
 "hub.LogsWindowController.113.1730" = "その他のログ操作";
 "hub.LogsWindowController.123.1732" = "表示、コピー、保存されるログでは、認証情報と非公開の識別子を伏せています。共有する前に内容を確認してください。";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "新しいHubをセットアップするか、移行元アプリケーションから履歴を移行してください。";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetryを推奨します。レガシートークンは旧式のセットアップで使用できます。";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleetアプリケーションを作成し、その認証情報を下に貼り付けてください。";
-"hub.OnboardingWindowController.610.1930" = "Teslaでサインインするか、既存のトークンペアを貼り付けてください。";
+"hub.OnboardingWindowController.610.1930" = "データ収集ウィンドウが開いている間に、Teslaでサインインしてください。Hubはトークンを一切受け付けません。";
 "hub.OnboardingWindowController.612.1931" = "車両履歴をインポートするには、移行元アプリケーションのサーバーに接続してください。";
 "hub.OnboardingWindowController.614.1932" = "すべてが正しく設定されていることを確認しています。";
 "hub.OnboardingWindowController.617.1933" = "車両履歴がHubにインポートされました。";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Teslaの公式ストリーミングAPIです。リアルタイムの車両コマンドを利用できます。";
 "hub.OnboardingWindowController.752.1958" = "レガシートークン";
-"hub.OnboardingWindowController.753.1959" = "Owner APIのアクセストークンとリフレッシュトークンのペアを使用します。";
+"hub.OnboardingWindowController.753.1959" = "Teslaでサインインしてください。Hubは独自のログインを保持します。";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleetアプリを作成";
 "hub.OnboardingWindowController.771.1964" = "クライアントID";
 "hub.OnboardingWindowController.774.1967" = "有効期限";
 "hub.OnboardingWindowController.776.1968" = "認証情報はこのMac上で暗号化されます";
 "hub.OnboardingWindowController.788.1970" = "Teslaでサインイン";
-"hub.OnboardingWindowController.790.1972" = "または既存のトークンペアを使用";
+"hub.OnboardingWindowController.790.1972" = "サインインはまだ利用できません。このHubにはOwner APIのサインイン値がありません。何も変更されていません。";
 "hub.OnboardingWindowController.798.1975" = "トークンはこのMac上で暗号化されます";
 "hub.OnboardingWindowController.822.1978" = "ポート";
 "hub.OnboardingWindowController.832.1980" = "SSHユーザー";

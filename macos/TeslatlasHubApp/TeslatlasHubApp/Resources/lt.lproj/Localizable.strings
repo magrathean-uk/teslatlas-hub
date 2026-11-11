@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "Šaltinio programos suderinamumo patikra nepateikė galiojančios ataskaitos.";
 "hub.HubController.1562.581" = "Nepavyko patikrinti šaltinio duomenų bazės. Patikrinkite ryšį su serveriu ir bandykite dar kartą.";
 "hub.HubController.1585.586" = "Prieš importuodami patvirtinkite, kad naudojama šaltinio programos 4.2.0 arba naujesnė versija.";
-"hub.HubController.1591.587" = "Pasirinkite šaltinio programos ENCRYPTION_KEY failą.";
+"hub.HubController.1591.587" = "Prisijungimui reikia atidaryto rinkimo lango. Atidarykite langą ir prisijunkite dar kartą.";
 "hub.HubController.1718.615" = "Šaltinio programos importavimas nepateikė galiojančios užbaigimo ataskaitos. Hub liks sustabdytas.";
 "hub.HubController.1742.624" = "Importavimas baigtas, bet Hub nepavyko įrašyti saugaus perdavimo patikros būsenos: %1$@. Hub liks sustabdytas.";
 "hub.HubController.1846.655" = "Prieš importuodami tiesiai iš PostgreSQL šaltinio patvirtinkite, kad naudojama šaltinio programos 4.2.0 arba naujesnė versija.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "Importuoti";
 "hub.ImportSheetController.112.1706" = "Atšaukti";
 "hub.ImportSheetController.148.1709" = "Užpildykite visus laukus";
-"hub.ImportSheetController.149.1710" = "Būtina nurodyti šaltinį, automobilio ID, slaptažodžio failą ir ENCRYPTION_KEY failą.";
+"hub.ImportSheetController.149.1710" = "Būtina nurodyti šaltinį, automobilio ID ir slaptažodžio failą.";
 "hub.ImportSheetController.156.1711" = "Patvirtinkite šaltinio programos versiją";
 "hub.ImportSheetController.17.1690" = "Patvirtinu, kad ši duomenų bazė priklauso šaltinio programos 4.2.0 arba naujesnei versijai";
 "hub.ImportSheetController.26.1691" = "Importuoti istoriją";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "Automobilio ID";
 "hub.ImportSheetController.69.1697" = "Slaptažodžio failas";
 "hub.ImportSheetController.7.1687" = "Hub nuskaito šaltinio duomenų bazę nestabdydamas ir nekeisdamas šaltinio programos. Baigus importuoti, Hub nurodys, kada patiems išjungti šaltinio programos prieigą prie „Tesla“.";
-"hub.ImportSheetController.73.1699" = "Šaltinio programos ENCRYPTION_KEY failas";
+"hub.ImportSheetController.73.1699" = "Hub neveikia. Paleiskite Hub, atidarykite rinkimo langą ir prisijunkite.";
 "hub.ImportSheetController.9.1688" = "Prieš importuodami sukurkite šaltinio programos atsarginę kopiją, atnaujinkite šaltinio programą iki 4.2.0 arba naujesnės versijos, vieną kartą paleiskite šaltinio programą ir palaukite, kol bus baigtos duomenų bazės migracijos. Tiesioginis ryšys su duomenų baze neleidžia patvirtinti, kokia programos versija veikia.";
 "hub.LogsWindowController.113.1730" = "Daugiau žurnalų veiksmų";
 "hub.LogsWindowController.123.1732" = "Rodomuose, kopijuojamuose ir išsaugomuose žurnaluose paslepiami prisijungimo duomenys ir privatūs identifikatoriai. Prieš bendrindami žurnalus peržiūrėkite.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "Nustatykite naują Hub arba perkelkite istoriją iš šaltinio programos.";
 "hub.OnboardingWindowController.606.1928" = "Rekomenduojama naudoti Fleet Telemetry. Senieji prieigos raktai tinka senesnėms sąrankoms.";
 "hub.OnboardingWindowController.608.1929" = "Sukurkite Tesla Fleet programą ir įklijuokite jos prisijungimo duomenis žemiau.";
-"hub.OnboardingWindowController.610.1930" = "Prisijunkite prie „Tesla“ arba įklijuokite esamą prieigos raktų porą.";
+"hub.OnboardingWindowController.610.1930" = "Prisijunkite prie „Tesla“, kol atidarytas rinkimo langas. Hub niekada nepriima prieigos rakto.";
 "hub.OnboardingWindowController.612.1931" = "Prisijunkite prie šaltinio programos serverio, kad importuotumėte transporto priemonių istoriją.";
 "hub.OnboardingWindowController.614.1932" = "Tikrinama, ar viskas tinkamai paruošta.";
 "hub.OnboardingWindowController.617.1933" = "Jūsų šaltinio programos istorija importuota į Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Oficiali „Tesla“ srautinių duomenų API. Ji suteikia galimybę siųsti komandas transporto priemonei realiuoju laiku.";
 "hub.OnboardingWindowController.752.1958" = "Senasis prieigos raktas";
-"hub.OnboardingWindowController.753.1959" = "Naudokite owner-API prieigos ir atnaujinimo raktų porą.";
+"hub.OnboardingWindowController.753.1959" = "Prisijunkite prie „Tesla“. Hub išsaugo savo prisijungimą.";
 "hub.OnboardingWindowController.760.1960" = "Sukurti Tesla Fleet programą";
 "hub.OnboardingWindowController.771.1964" = "Kliento ID";
 "hub.OnboardingWindowController.774.1967" = "Galiojimo laikas";
 "hub.OnboardingWindowController.776.1968" = "Prisijungimo duomenys užšifruojami šiame Mac kompiuteryje";
 "hub.OnboardingWindowController.788.1970" = "Prisijungti prie „Tesla“";
-"hub.OnboardingWindowController.790.1972" = "arba naudoti esamą prieigos raktų porą";
+"hub.OnboardingWindowController.790.1972" = "Prisijungti dar negalima: šiame Hub nėra Owner API prisijungimo reikšmių. Niekas nebuvo pakeista.";
 "hub.OnboardingWindowController.798.1975" = "Prieigos raktai užšifruojami šiame Mac kompiuteryje";
 "hub.OnboardingWindowController.822.1978" = "Prievadas";
 "hub.OnboardingWindowController.832.1980" = "SSH naudotojas";

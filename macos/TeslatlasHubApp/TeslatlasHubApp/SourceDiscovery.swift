@@ -10,6 +10,17 @@ enum SourceVersionClassification: Equatable {
 
 
 enum SourceDiscovery {
+    /// The only database fields discovery selects from the source container.
+    static let allowListedNames = [SourceDeploymentFacts.databaseUser,
+                                   SourceDeploymentFacts.databasePassword,
+                                   SourceDeploymentFacts.databaseName]
+
+    /// A Docker template that prints `NAME=value` only for the allow-listed names.
+    static var allowListedValuesTemplate: String {
+        let names = allowListedNames.map { "\"\($0)\"" }.joined(separator: " ")
+        return "{{range .Config.Env}}{{if eq (index (split . \"=\") 0) \(names)}}{{println .}}{{end}}{{end}}"
+    }
+
     static let script = #"""
 set -eu
 
@@ -43,7 +54,7 @@ while IFS= read -r project_name; do
         [ -n "$src_container_id" ] || continue
         environment_names=$(docker_run inspect -f '{{range .Config.Env}}{{index (split . "=") 0}}{{println}}{{end}}' "$src_container_id")
         candidate=1
-        for required_name in \#(SourceDeploymentFacts.databaseUser) \#(SourceDeploymentFacts.databasePassword) \#(SourceDeploymentFacts.databaseName) \#(SourceDeploymentFacts.encryptionKey); do
+        for required_name in \#(SourceDeploymentFacts.databaseUser) \#(SourceDeploymentFacts.databasePassword) \#(SourceDeploymentFacts.databaseName) \#(SourceDeploymentFacts.sourceShapeMarker); do
             printf '%s\n' "$environment_names" | grep -Fxq "$required_name" || candidate=0
         done
         if [ "$candidate" -eq 1 ]; then
@@ -68,16 +79,17 @@ database_count=$(printf '%s\n' "$database_ids" | awk 'NF {count += 1} END {print
 [ "$database_count" -eq 1 ] || { printf '%s\n' 'Several database service containers are running.' >&2; exit 28; }
 database_id=$(printf '%s\n' "$database_ids" | head -n 1)
 
-# Read values only after one candidate has been selected.
-environment_values=$(docker_run inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$src_container_id")
+# Read values only after one candidate has been selected, and only the allow-listed
+# database fields: the template selects them by name inside Docker, so no other
+# variable's value leaves the container record.
+environment_values=$(docker_run inspect -f '\#(SourceDiscovery.allowListedValuesTemplate)' "$src_container_id")
 env_value() {
     printf '%s\n' "$environment_values" | awk -F= -v key="$1" '$1 == key {sub(/^[^=]*=/, ""); print; exit}'
 }
 db_user=$(env_value \#(SourceDeploymentFacts.databaseUser))
 db_pass=$(env_value \#(SourceDeploymentFacts.databasePassword))
 db_name=$(env_value \#(SourceDeploymentFacts.databaseName))
-encryption_key=$(env_value \#(SourceDeploymentFacts.encryptionKey))
-[ -n "$db_user" ] && [ -n "$db_pass" ] && [ -n "$db_name" ] && [ -n "$encryption_key" ] || { printf '%s\n' 'Source database credentials are incomplete.' >&2; exit 23; }
+[ -n "$db_user" ] && [ -n "$db_pass" ] && [ -n "$db_name" ] || { printf '%s\n' 'Source database credentials are incomplete.' >&2; exit 23; }
 src_oci_version=$(docker_run inspect -f '{{index .Config.Labels "\#(SourceDeploymentFacts.ociVersionLabel)"}}' "$src_container_id" 2>/dev/null || true)
 network=$(docker_run inspect -f '{{range $name, $value := .NetworkSettings.Networks}}{{println $name}}{{end}}' "$database_id" | head -n 1)
 db_ip=$(docker_run inspect -f "{{with index .NetworkSettings.Networks \"$network\"}}{{.IPAddress}}{{end}}" "$database_id")
@@ -91,7 +103,6 @@ encode() { printf '%s' "$1" | base64 | tr -d '\r\n'; }
 printf 'user=%s\n' "$(encode "$db_user")"
 printf 'password=%s\n' "$(encode "$db_pass")"
 printf 'database=%s\n' "$(encode "$db_name")"
-printf 'key=%s\n' "$(encode "$encryption_key")"
 printf 'car=%s\n' "$(encode "$car_id")"
 printf 'address=%s\n' "$(encode "$db_ip")"
 printf 'oci_version=%s\n' "$(encode "$src_oci_version")"
@@ -105,7 +116,7 @@ printf 'oci_version=%s\n' "$(encode "$src_oci_version")"
                   let value = String(data: data, encoding: .utf8) else { continue }
             values[String(parts[0])] = value
         }
-        guard ["user", "password", "database", "key", "car", "address"].allSatisfy({ !(values[$0] ?? "").isEmpty }) else {
+        guard ["user", "password", "database", "car", "address"].allSatisfy({ !(values[$0] ?? "").isEmpty }) else {
             throw HubActionError.commandFailed(HubL10n.text("hub.SourceServerImporter.428.2461", fallback: "Source server returned incomplete setup details."))
         }
         return values

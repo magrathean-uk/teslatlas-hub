@@ -166,6 +166,9 @@ final class OwnerService: HubServiceControlling {
 final class OwnerRunner: HubCommandRunning {
     static let compatible = #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
     static let historyCompatible = #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
+    /// `window status` from a running service with an Open collection window.
+    static let windowOpen = #"{"phase":"open","trusted":true,"faulted":false,"closeReason":null,"seq":1}"#
+    static let windowClosed = #"{"phase":"closed","trusted":true,"faulted":false,"closeReason":"expired","seq":1}"#
     static let historyReady = #"{"status":"ready","credentialScope":"history-only","publishedVehicles":1,"collectorEnabled":false}"#
     static let imported = #"{"status":"imported","captureMode":"online-snapshot"}"#
     static let ready = #"{"status":"ok","ready":true}"#
@@ -220,8 +223,9 @@ final class OwnerRunner: HubCommandRunning {
 
     private func defaultResult(_ key: String) -> Result<String, Error> {
         switch key {
-        case "source-check": return .success(Self.compatible)
-        case "source-check:history": return .success(Self.historyCompatible)
+        // The source check never inspects a credential: its report always has that scope.
+        case "source-check": return .success(Self.historyCompatible)
+        case "window": return .success(Self.windowOpen)
         case "preflight:history": return .success(Self.historyReady)
         case "migrate", "migrate:history": return .success(Self.imported)
         case "status": return .success(Self.ready)
@@ -297,7 +301,6 @@ final class OwnerConnector {
                         source: "postgresql://reader@127.0.0.1:5432/sourcedb",
                         carID: "1",
                         passwordFile: owner.directory.appendingPathComponent("password"),
-                        encryptionKeyFile: owner.directory.appendingPathComponent("key"),
                         sourceVersion: "4.2.0",
                         tunnel: Process(),
                         temporaryDirectory: owner.directory,

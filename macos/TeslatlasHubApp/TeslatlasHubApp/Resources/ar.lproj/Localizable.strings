@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "لم يُعِد فحص توافق التطبيق المصدر تقريرًا صالحًا.";
 "hub.HubController.1562.581" = "تعذر التحقق من قاعدة البيانات المصدر. تحقق من اتصال الخادم وحاول مرة أخرى.";
 "hub.HubController.1585.586" = "تأكد من أن إصدار التطبيق المصدر هو 4.2.0 أو أحدث قبل الاستيراد.";
-"hub.HubController.1591.587" = "اختر ملف ENCRYPTION_KEY الخاص بالتطبيق المصدر.";
+"hub.HubController.1591.587" = "يتطلب تسجيل الدخول نافذة جمع بيانات مفتوحة. افتح نافذة، ثم سجّل الدخول مرة أخرى.";
 "hub.HubController.1718.615" = "لم يُعِد الاستيراد من التطبيق المصدر تقرير إكمال صالحًا. سيظل Hub متوقفًا.";
 "hub.HubController.1742.624" = "اكتمل الاستيراد، لكن تعذّر على Hub تسجيل شرط التسليم الآمن: %1$@. سيظل Hub متوقفًا.";
 "hub.HubController.1846.655" = "تأكد من أن إصدار التطبيق المصدر هو 4.2.0 أو أحدث قبل الاستيراد من مصدر PostgreSQL مباشر.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "استيراد";
 "hub.ImportSheetController.112.1706" = "إلغاء";
 "hub.ImportSheetController.148.1709" = "أكمل جميع الحقول";
-"hub.ImportSheetController.149.1710" = "المصدر ومعرّف السيارة وملف كلمة المرور وملف ENCRYPTION_KEY حقول مطلوبة.";
+"hub.ImportSheetController.149.1710" = "المصدر ومعرّف السيارة وملف كلمة المرور حقول مطلوبة.";
 "hub.ImportSheetController.156.1711" = "تأكيد إصدار التطبيق المصدر";
 "hub.ImportSheetController.17.1690" = "أؤكد أن قاعدة البيانات هذه تخص التطبيق المصدر بالإصدار 4.2.0 أو أحدث.";
 "hub.ImportSheetController.26.1691" = "استيراد السجل";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "معرّف السيارة";
 "hub.ImportSheetController.69.1697" = "ملف كلمة المرور";
 "hub.ImportSheetController.7.1687" = "يقرأ Hub قاعدة البيانات المصدر من دون إيقاف التطبيق المصدر أو تغييره. بعد الاستيراد، سيخبرك Hub بموعد تعطيل وصول Tesla في التطبيق المصدر بنفسك.";
-"hub.ImportSheetController.73.1699" = "ملف ENCRYPTION_KEY الخاص بالتطبيق المصدر";
+"hub.ImportSheetController.73.1699" = "Hub غير قيد التشغيل. شغّل Hub وافتح نافذة جمع بيانات، ثم سجّل الدخول.";
 "hub.ImportSheetController.9.1688" = "قبل الاستيراد: أنشئ نسخة احتياطية من التطبيق المصدر، وحدّثه إلى الإصدار 4.2.0 أو أحدث، وشغّله مرة واحدة، وانتظر اكتمال ترحيل قاعدة بياناته. لا يمكن لاتصال مباشر بقاعدة البيانات إثبات إصدار التطبيق الجاري تشغيله.";
 "hub.LogsWindowController.113.1730" = "إجراءات إضافية للسجلات";
 "hub.LogsWindowController.123.1732" = "تحجب السجلات المعروضة أو المنسوخة أو المحفوظة بيانات الاعتماد والمعرّفات الخاصة. راجعها قبل مشاركتها.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "أعدّ Hub جديدًا أو انقل سجلك من التطبيق المصدر.";
 "hub.OnboardingWindowController.606.1928" = "يوصى باستخدام Fleet Telemetry. وتعمل الرموز المميّزة القديمة مع الإعدادات الأقدم.";
 "hub.OnboardingWindowController.608.1929" = "أنشئ تطبيق Tesla Fleet، ثم الصق بيانات اعتماده أدناه.";
-"hub.OnboardingWindowController.610.1930" = "سجّل الدخول باستخدام Tesla أو الصق زوجًا موجودًا من الرموز المميّزة.";
+"hub.OnboardingWindowController.610.1930" = "سجّل الدخول باستخدام Tesla أثناء فتح نافذة جمع بيانات. لا يقبل Hub أي رمز مميّز أبدًا.";
 "hub.OnboardingWindowController.612.1931" = "اتصل بخادم التطبيق المصدر لاستيراد سجل المركبة منه.";
 "hub.OnboardingWindowController.614.1932" = "نتأكد من إعداد كل شيء على النحو الصحيح.";
 "hub.OnboardingWindowController.617.1933" = "تم استيراد سجل مركبتك إلى Hub.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "واجهة API الرسمية من Tesla لبث البيانات، وتتيح أوامر مباشرة للمركبة.";
 "hub.OnboardingWindowController.752.1958" = "الرمز المميّز القديم";
-"hub.OnboardingWindowController.753.1959" = "استخدم زوج رمزي الوصول والتحديث لواجهة API الخاصة بالمالك.";
+"hub.OnboardingWindowController.753.1959" = "سجّل الدخول باستخدام Tesla. يحتفظ Hub بتسجيل دخول خاص به.";
 "hub.OnboardingWindowController.760.1960" = "إنشاء تطبيق Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "معرّف العميل";
 "hub.OnboardingWindowController.774.1967" = "ينتهي خلال";
 "hub.OnboardingWindowController.776.1968" = "تُشفّر بيانات الاعتماد على هذا الـ Mac.";
 "hub.OnboardingWindowController.788.1970" = "تسجيل الدخول باستخدام Tesla";
-"hub.OnboardingWindowController.790.1972" = "أو استخدام زوج موجود من الرموز المميّزة.";
+"hub.OnboardingWindowController.790.1972" = "تسجيل الدخول غير متاح بعد: لا يحتوي هذا Hub على قيم تسجيل الدخول لـ Owner API. لم يتم تغيير أي شيء.";
 "hub.OnboardingWindowController.798.1975" = "تُشفّر الرموز المميّزة على هذا الـ Mac.";
 "hub.OnboardingWindowController.822.1978" = "المنفذ";
 "hub.OnboardingWindowController.832.1980" = "مستخدم SSH";

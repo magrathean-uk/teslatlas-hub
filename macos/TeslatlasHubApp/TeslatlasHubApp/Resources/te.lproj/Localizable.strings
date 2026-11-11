@@ -131,7 +131,7 @@
 "hub.HubController.1552.580" = "మూల అనువర్తనం అనుకూలత తనిఖీ నుంచి చెల్లుబాటు అయ్యే నివేదిక రాలేదు.";
 "hub.HubController.1562.581" = "మూల డేటాబేస్‌ను ధృవీకరించలేకపోయాం. సర్వర్ కనెక్షన్‌ను తనిఖీ చేసి మళ్లీ ప్రయత్నించండి.";
 "hub.HubController.1585.586" = "దిగుమతికి ముందు మూల అనువర్తనం 4.2.0 లేదా దానికంటే కొత్త సంస్కరణ అని నిర్ధారించండి.";
-"hub.HubController.1591.587" = "మూల అనువర్తనం ENCRYPTION_KEY ఫైల్‌ను ఎంచుకోండి.";
+"hub.HubController.1591.587" = "సైన్ ఇన్ చేయడానికి తెరిచిన సేకరణ విండో అవసరం. ఒక విండోను తెరిచి, మళ్లీ సైన్ ఇన్ చేయండి.";
 "hub.HubController.1718.615" = "మూల అనువర్తనం దిగుమతి పూర్తయినట్లు చెల్లుబాటు అయ్యే నివేదిక ఇవ్వలేదు. Hub ఆగి ఉంది.";
 "hub.HubController.1742.624" = "దిగుమతి పూర్తయింది, కానీ హ్యాండోవర్ భద్రతా నియంత్రణ స్థితిని నమోదు చేయలేకపోయాం: %1$@. Hub ఆగి ఉంది.";
 "hub.HubController.1846.655" = "నేరుగా PostgreSQL మూలం నుంచి దిగుమతి చేసే ముందు మూల అనువర్తనం 4.2.0 లేదా దానికంటే కొత్త సంస్కరణ అని నిర్ధారించండి.";
@@ -337,7 +337,7 @@
 "hub.ImportSheetController.111.1704" = "దిగుమతి";
 "hub.ImportSheetController.112.1706" = "రద్దు";
 "hub.ImportSheetController.148.1709" = "అన్ని ఫీల్డ్‌లను పూరించండి";
-"hub.ImportSheetController.149.1710" = "మూలం, కారు ID, పాస్‌వర్డ్ ఫైల్, ENCRYPTION_KEY ఫైల్ తప్పనిసరి.";
+"hub.ImportSheetController.149.1710" = "మూలం, కారు ID, పాస్‌వర్డ్ ఫైల్ తప్పనిసరి.";
 "hub.ImportSheetController.156.1711" = "మూల అనువర్తనం వెర్షన్‌ను నిర్ధారించండి";
 "hub.ImportSheetController.17.1690" = "ఈ డేటాబేస్ మూల అనువర్తనం 4.2.0 లేదా కొత్త వెర్షన్‌కు చెందినదని నేను నిర్ధారిస్తున్నాను";
 "hub.ImportSheetController.26.1691" = "చరిత్రను దిగుమతి చేయండి";
@@ -346,7 +346,7 @@
 "hub.ImportSheetController.65.1695" = "కారు ID";
 "hub.ImportSheetController.69.1697" = "పాస్‌వర్డ్ ఫైల్";
 "hub.ImportSheetController.7.1687" = "Hub మూల అనువర్తనాన్ని ఆపకుండా లేదా మార్చకుండా మూల డేటాబేస్‌ను చదువుతుంది. దిగుమతి తర్వాత మూల అనువర్తనంలో Tesla యాక్సెస్‌ను మీరే ఎప్పుడు నిలిపివేయాలో Hub చెబుతుంది.";
-"hub.ImportSheetController.73.1699" = "మూల అనువర్తనం ENCRYPTION_KEY ఫైల్";
+"hub.ImportSheetController.73.1699" = "Hub నడవడం లేదు. Hubను ప్రారంభించి, సేకరణ విండోను తెరిచి, ఆపై సైన్ ఇన్ చేయండి.";
 "hub.ImportSheetController.9.1688" = "దిగుమతికి ముందు: మూల అనువర్తనం యొక్క బ్యాకప్ తీసుకోండి, దాన్ని 4.2.0 లేదా కొత్త వెర్షన్‌కు అప్‌డేట్ చేసి, ఒకసారి ప్రారంభించి, డేటాబేస్ మైగ్రేషన్‌లు పూర్తయ్యే వరకు వేచి ఉండండి. నేరుగా డేటాబేస్ కనెక్షన్‌తో నడుస్తున్న యాప్ వెర్షన్‌ను నిర్ధారించలేరు.";
 "hub.LogsWindowController.113.1730" = "మరిన్ని లాగ్ చర్యలు";
 "hub.LogsWindowController.123.1732" = "చూపించిన, కాపీ చేసిన, సేవ్ చేసిన లాగ్‌లలో ప్రవేశ వివరాలు, ప్రైవేట్ గుర్తింపులు తొలగించబడతాయి. పంచుకునే ముందు పరిశీలించండి.";
@@ -453,7 +453,7 @@
 "hub.OnboardingWindowController.604.1927" = "కొత్త Hubను సెటప్ చేయండి లేదా మూల అనువర్తనం నుంచి మీ చరిత్రను తీసుకురండి.";
 "hub.OnboardingWindowController.606.1928" = "Fleet Telemetry సిఫార్సు చేయబడింది. లెగసీ టోకెన్‌లు పాత సెటప్‌లతో పనిచేస్తాయి.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet అప్లికేషన్‌ను సృష్టించి, దాని ప్రవేశ వివరాలను క్రింద అతికించండి.";
-"hub.OnboardingWindowController.610.1930" = "Teslaతో సైన్ ఇన్ చేయండి లేదా ఇప్పటికే ఉన్న టోకెన్ జంటను అతికించండి.";
+"hub.OnboardingWindowController.610.1930" = "సేకరణ విండో తెరిచి ఉన్నప్పుడు Teslaతో సైన్ ఇన్ చేయండి. Hub ఎప్పుడూ టోకెన్‌ను అంగీకరించదు.";
 "hub.OnboardingWindowController.612.1931" = "వాహన చరిత్రను దిగుమతి చేయడానికి మీ మూల అనువర్తనం సర్వర్‌కు కనెక్ట్ చేయండి.";
 "hub.OnboardingWindowController.614.1932" = "అన్నీ సరిగ్గా అమర్చబడ్డాయో తనిఖీ చేస్తోంది.";
 "hub.OnboardingWindowController.617.1933" = "మీ మూల అనువర్తనం చరిత్ర Hubలోకి దిగుమతి చేయబడింది.";
@@ -470,13 +470,13 @@
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla అధికారిక స్ట్రీమింగ్ API. ఇది లైవ్ వాహన ఆదేశాలను అందుబాటులోకి తెస్తుంది.";
 "hub.OnboardingWindowController.752.1958" = "లెగసీ టోకెన్";
-"hub.OnboardingWindowController.753.1959" = "Tesla Owner API యాక్సెస్, రిఫ్రెష్ టోకెన్ జంటను ఉపయోగించండి.";
+"hub.OnboardingWindowController.753.1959" = "Teslaతో సైన్ ఇన్ చేయండి. Hub తన సొంత లాగిన్‌ను ఉంచుకుంటుంది.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet యాప్‌ను సృష్టించండి";
 "hub.OnboardingWindowController.771.1964" = "క్లయింట్ ID";
 "hub.OnboardingWindowController.774.1967" = "గడువు";
 "hub.OnboardingWindowController.776.1968" = "ప్రవేశ వివరాలు ఈ Macలో ఎన్‌క్రిప్ట్ చేయబడతాయి";
 "hub.OnboardingWindowController.788.1970" = "Teslaతో సైన్ ఇన్ చేయండి";
-"hub.OnboardingWindowController.790.1972" = "లేదా ఇప్పటికే ఉన్న టోకెన్ జంటను ఉపయోగించండి";
+"hub.OnboardingWindowController.790.1972" = "సైన్ ఇన్ ఇంకా అందుబాటులో లేదు: ఈ Hubలో Owner API సైన్ ఇన్ విలువలు లేవు. ఏదీ మార్చబడలేదు.";
 "hub.OnboardingWindowController.798.1975" = "టోకెన్‌లు ఈ Macలో ఎన్‌క్రిప్ట్ చేయబడతాయి";
 "hub.OnboardingWindowController.822.1978" = "పోర్ట్";
 "hub.OnboardingWindowController.832.1980" = "SSH వినియోగదారు";

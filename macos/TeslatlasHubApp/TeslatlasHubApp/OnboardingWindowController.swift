@@ -200,8 +200,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private let fleetRefreshToken = NSSecureTextField(string: "")
     private let fleetExpiry = NSTextField(string: "3600")
     private let fleetRegion = HubFormPopUpButton(frame: .zero)
-    private let legacyAccessToken = NSSecureTextField(string: "")
-    private let legacyRefreshToken = NSSecureTextField(string: "")
 
     private let migrationServer = NSTextField(string: "")
     private let migrationUser = NSTextField(string: "user")
@@ -228,7 +226,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private let migrationSource = NSTextField(string: "")
     private let migrationCarID = NSTextField(string: "")
     private let migrationPasswordFile = NSTextField(string: "")
-    private let migrationKeyFile = NSTextField(string: "")
     private var migrationSession: SourceServerImportSession?
     private var migrationPreparation: HubMigrationPreparation?
     private var accountSignIn: HubAccountSignIn?
@@ -495,7 +492,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         fleetRefreshToken.delegate = self
         fleetExpiry.delegate = self
         for field in [fleetClientID, fleetAccessToken, fleetRefreshToken, fleetExpiry,
-                      legacyAccessToken, legacyRefreshToken,
                       migrationServer, migrationUser, migrationPort,
                       migrationIdentityFile, migrationSSHPassword,
                       migrationSource, migrationCarID, migrationPasswordFile] {
@@ -512,8 +508,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         migrationPasswordFile.delegate = self
         fleetRefreshToken.placeholderString = HubL10n.text("hub.OnboardingWindowController.481.1904", fallback: "Refresh token")
         fleetClientID.placeholderString = HubL10n.text("hub.OnboardingWindowController.482.1905", fallback: "Tesla application client ID")
-        legacyAccessToken.placeholderString = HubL10n.text("hub.OnboardingWindowController.474.1900", fallback: "Access token")
-        legacyRefreshToken.placeholderString = HubL10n.text("hub.OnboardingWindowController.481.1904", fallback: "Refresh token")
         migrationServer.placeholderString = "server.local"
         migrationIdentityFile.placeholderString = HubL10n.text("hub.OnboardingWindowController.486.1909", fallback: "Optional — uses SSH agent or default keys")
         migrationSSHPassword.placeholderString = HubL10n.text("hub.OnboardingWindowController.487.1910", fallback: "SSH password")
@@ -639,7 +633,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case .fleet:
             return HubL10n.text("hub.OnboardingWindowController.608.1929", fallback: "Create a Tesla Fleet application, then paste its credentials below.")
         case .legacy:
-            return HubL10n.text("hub.OnboardingWindowController.610.1930", fallback: "Sign in with Tesla, or paste an existing token pair.")
+            return HubL10n.text("hub.OnboardingWindowController.610.1930", fallback: "Sign in with Tesla while a collection window is open. Hub never accepts a token.")
         case .migration:
             return HubL10n.text("hub.OnboardingWindowController.612.1931", fallback: "Connect to your source application server to import its vehicle history.")
         case .verify:
@@ -782,7 +776,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                                  selected: state.provider == .fleet,
                                  action: #selector(selectFleet))
         let legacy = choiceButton(title: HubL10n.text("hub.OnboardingWindowController.752.1958", fallback: "Legacy Token"),
-                                  subtitle: HubL10n.text("hub.OnboardingWindowController.753.1959", fallback: "Use an owner-API access and refresh token pair."),
+                                  subtitle: HubL10n.text("hub.OnboardingWindowController.753.1959", fallback: "Sign in with Tesla. Hub keeps its own login."),
                                   selected: state.provider == .legacy,
                                   action: #selector(selectLegacy))
         return verticalChoices([fleet, legacy])
@@ -819,19 +813,13 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private func legacyBody() -> NSView {
         let signIn = HubActionButton(title: HubL10n.text("hub.OnboardingWindowController.788.1970", fallback: "Sign in with Tesla"), target: self, action: #selector(startLegacySignIn))
         configurePrimaryButton(signIn, symbol: "person.crop.circle.badge.checkmark")
-        let or = NSTextField(labelWithString: HubL10n.text("hub.OnboardingWindowController.790.1972", fallback: "or use an existing token pair"))
-        or.textColor = .secondaryLabelColor
-        or.alignment = .center
-        let form = onboardingForm([
-            (HubL10n.text("hub.OnboardingWindowController.474.1900", fallback: "Access token"), legacyAccessToken),
-            (HubL10n.text("hub.OnboardingWindowController.481.1904", fallback: "Refresh token"), legacyRefreshToken)
-        ])
-        let stack = NSStackView(views: [signIn, or, form,
+        // Sign-in is the code exchange only: no token field exists.
+        let stack = NSStackView(views: [signIn,
                                        featureRow(HubL10n.text("hub.OnboardingWindowController.798.1975", fallback: "Tokens are encrypted on this Mac"), "lock.fill")])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 14
-        for field in stack.arrangedSubviews.dropFirst(2) {
+        for field in stack.arrangedSubviews.dropFirst() {
             field.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
         return withError(stack)
@@ -1592,25 +1580,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func configureLegacy() {
-        let access = legacyAccessToken.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let refresh = legacyRefreshToken.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !access.isEmpty || !refresh.isEmpty {
-            guard !access.isEmpty, !refresh.isEmpty else {
-                HubAppLog.shared.record("setup.rejected", category: "account", level: "WARN",
-                                        fields: [
-                                            "provider": "legacy",
-                                            "reason": "incomplete_token_pair"
-                                        ])
-                showInlineError(HubL10n.text("hub.OnboardingWindowController.1500.2071", fallback: "Enter both the access token and refresh token."))
-                return
-            }
-            setBusy(true, operation: .setup)
-            controller.configureTeslaAccount(tokens: TeslaAuthTokens(accessToken: access,
-                                                                      refreshToken: refresh)) { [weak self] result in
-                self?.setupFinished(result)
-            }
-            return
-        }
         startLegacySignIn()
     }
 
@@ -1628,6 +1597,28 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             return
         }
         accountSignIn = signIn
+        // Sign-in needs an open collection window; check it before the Tesla page opens.
+        setBusy(true, operation: .setup)
+        signIn.requireOpenWindow { [weak self] windowResult in
+            guard let self else { signIn.cancel(); return }
+            self.setBusy(false)
+            switch windowResult {
+            case .success:
+                self.openTeslaLogin(signIn)
+            case let .failure(error):
+                signIn.cancel()
+                self.accountSignIn = nil
+                HubAppLog.shared.record("authentication.refused", category: "account", level: "WARN",
+                                        fields: [
+                                            "provider": "legacy",
+                                            "error_code": HubAppLog.errorCode(error)
+                                        ])
+                self.showInlineError(error.localizedDescription)
+            }
+        }
+    }
+
+    private func openTeslaLogin(_ signIn: HubAccountSignIn) {
         HubAppLog.shared.record("authentication.started", category: "account",
                                 fields: ["provider": "legacy"])
         do {
@@ -1637,11 +1628,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 self.updateWindowCloseAvailability()
                 self.updateFooter()
                 switch result {
-                case let .success(tokens):
+                case let .success(grant):
                     HubAppLog.shared.record("authentication.completed", category: "account",
                                             fields: ["provider": "legacy"])
                     self.setBusy(true, operation: .setup)
-                    signIn.configure(tokens: tokens) { [weak self] setup in
+                    signIn.configure(grant: grant) { [weak self] setup in
                         self?.accountSignIn = nil
                         self?.setupFinished(setup)
                     }
@@ -1785,7 +1776,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 self.migrationSource.stringValue = session.source
                 self.migrationCarID.stringValue = session.carID
                 self.migrationPasswordFile.stringValue = session.passwordFile.path
-                self.migrationKeyFile.stringValue = session.encryptionKeyFile.path
                 self.checkConnectedMigrationSession(session)
             case let .failure(error):
                 HubAppLog.shared.record("connection.failed", category: "history_import",
@@ -1880,7 +1870,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         controller.importSourceOnline(source: session.source,
                                          carID: session.carID,
                                          passwordFile: session.passwordFile.path,
-                                         encryptionKeyFile: session.encryptionKeyFile.path,
                                          acceptSchemaEvidence: versionAccepted,
                                          progress: { [weak self] update in
                                              self?.updateMigrationProgress(update)
@@ -1899,7 +1888,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         !migrationSource.stringValue.isEmpty
             && Int64(migrationCarID.stringValue).map { $0 > 0 } == true
             && !migrationPasswordFile.stringValue.isEmpty
-            && !migrationKeyFile.stringValue.isEmpty
     }
 
     private var currentMigrationIdentity: String {
@@ -2023,10 +2011,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     @objc private func chooseMigrationPassword() {
         chooseFile(for: migrationPasswordFile)
-    }
-
-    @objc private func chooseMigrationKey() {
-        chooseFile(for: migrationKeyFile)
     }
 
     @objc private func chooseMigrationIdentity() {
@@ -2311,7 +2295,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             candidates.append(contentsOf: [fleetClientID, fleetAccessToken, fleetRefreshToken,
                                            fleetExpiry, fleetRegion])
         case .legacy:
-            candidates.append(contentsOf: [legacyAccessToken, legacyRefreshToken])
+            break
         case .migration:
             candidates.append(contentsOf: migrationKeyViews)
         case .welcome, .choose, .provider, .verify, .finish:
