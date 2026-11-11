@@ -24,18 +24,6 @@ const SECRETS_DIRECTORY_MODE: u32 = 0o700;
 const KEY_FILE_MODE: u32 = 0o600;
 const CURSOR_KEY_BYTES: usize = 32;
 
-
-
-
-
-
-
-
-
-
-
-
-
 pub fn cursor_key_path(data_dir: &Path) -> PathBuf {
     data_dir.join("secrets/hub-cursor.key")
 }
@@ -56,46 +44,6 @@ pub fn load_or_create_cursor_key(
         Err(error) => Err(SourceDbCredentialError::InspectCursorKey(error)),
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 fn create_cursor_key_once(
     secrets_dir: &Path,
@@ -185,12 +133,6 @@ fn validate_secrets_directory(path: &Path) -> Result<(), SourceDbCredentialError
     }
     Ok(())
 }
-
-
-
-
-
-
 
 fn read_checked_cursor_key_file(
     path: &Path,
@@ -319,8 +261,6 @@ fn read_checked_secret_file_after_open(
     }
     Ok(bytes)
 }
-
-
 
 fn sync_directory(path: &Path) -> Result<(), SourceDbCredentialError> {
     attempt(path);

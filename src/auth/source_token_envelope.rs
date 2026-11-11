@@ -50,8 +50,6 @@ pub fn decrypt_legacy_owner_tokens(
         .map_err(|_| SourceDbTokenError::InvalidPlaintext)
 }
 
-
-
 /// Stable, non-reversible identity of the single-use refresh authority.
 /// Tesla refresh tokens are high-entropy secrets; the domain-separated digest
 /// lets the durable fence recognize the same plaintext across random Cloak
@@ -88,17 +86,11 @@ pub(crate) fn legacy_access_token_digest(access_token: &str) -> uuid::Uuid {
     uuid::Uuid::from_bytes(bytes[..16].try_into().expect("fixed digest prefix"))
 }
 
-
-
-
-
 fn secret_utf8_copy(bytes: &[u8]) -> Result<String, SourceDbTokenError> {
     std::str::from_utf8(bytes)
         .map(str::to_owned)
         .map_err(|_| SourceDbTokenError::InvalidPlaintext)
 }
-
-
 
 fn cloak_cipher(encryption_key: &[u8]) -> Result<Aes256Gcm, SourceDbTokenError> {
     if encryption_key.is_empty() {
@@ -151,8 +143,6 @@ fn decrypt_cloak_value(
         .map_err(|_| SourceDbTokenError::AuthenticationFailed)
 }
 
-
-
 #[derive(Debug, Error)]
 pub enum SourceDbTokenError {
     #[error("operating-system entropy is unavailable for legacy owner token encryption")]
@@ -183,8 +173,8 @@ mod tests {
     use super::{
         ASSOCIATED_DATA, AUTH_TAG_BYTES, CLOAK_TAG, CLOAK_TYPE, MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES,
         MAX_TOKEN_PLAINTEXT_BYTES, NONCE_BYTES, SourceDbTokenError,
-        decrypt_legacy_owner_tokens,  
-        legacy_access_token_digest, legacy_refresh_credential_generation,
+        decrypt_legacy_owner_tokens, legacy_access_token_digest,
+        legacy_refresh_credential_generation,
     };
     use crate::credentials::OwnerTokens;
 
@@ -204,71 +194,132 @@ mod tests {
         0x7a, 0x5f, 0x31, 0xef, 0x8a, 0xcc, 0x98, 0x8d, 0xda,
     ];
 
+    /// The test side of the envelope `decrypt_cloak_value` reads: type, tag length, tag,
+    /// nonce, authentication tag, ciphertext, under the SHA-256 of the key bytes. Production
+    /// has no encrypt side; tests seal their own synthetic values with it.
+    fn seal(key: &[u8], nonce: [u8; NONCE_BYTES], plaintext: &[u8]) -> Vec<u8> {
+        let derived = Zeroizing::new(Sha256::digest(key).to_vec());
+        let cipher = Aes256Gcm::new_from_slice(derived.as_slice()).expect("test key");
+        let sealed = cipher
+            .encrypt(
+                &Nonce::from(nonce),
+                Payload {
+                    msg: plaintext,
+                    aad: ASSOCIATED_DATA,
+                },
+            )
+            .expect("test seal");
+        let (ciphertext, tag) = sealed.split_at(sealed.len() - AUTH_TAG_BYTES);
+        let mut envelope = vec![CLOAK_TYPE, u8::try_from(CLOAK_TAG.len()).expect("tag length")];
+        envelope.extend_from_slice(CLOAK_TAG);
+        envelope.extend_from_slice(&nonce);
+        envelope.extend_from_slice(tag);
+        envelope.extend_from_slice(ciphertext);
+        envelope
+    }
 
+    fn nonce(first: u8) -> [u8; NONCE_BYTES] {
+        std::array::from_fn(|index| first.wrapping_add(u8::try_from(index).expect("index")))
+    }
+
+    #[test]
+    fn test_seal_reproduces_the_independent_access_vector() {
+        assert_eq!(seal(ENCRYPTION_KEY, nonce(1), ACCESS_TOKEN), EXTERNAL_CLOAK_ACCESS);
+    }
 
     #[test]
     fn decrypts_deterministic_cloak_access_refresh_pair_with_exact_key_bytes() {
-        panic!("C10_UNAVAILABLE_E: unaccepted candidate; removed credential table dependency");
+        let refresh = seal(ENCRYPTION_KEY, nonce(0x21), REFRESH_TOKEN);
+        let tokens = decrypt_legacy_owner_tokens(ENCRYPTION_KEY, &EXTERNAL_CLOAK_ACCESS, &refresh)
+            .expect("the pair authenticates under the exact key bytes");
+        assert_eq!(tokens.access_token().as_bytes(), ACCESS_TOKEN);
+        assert_eq!(tokens.refresh_token().as_bytes(), REFRESH_TOKEN);
+
+        // The key is used as given: a trailing newline is a different key.
+        let mut padded = ENCRYPTION_KEY.to_vec();
+        padded.push(b'\n');
+        assert!(matches!(
+            decrypt_legacy_owner_tokens(&padded, &EXTERNAL_CLOAK_ACCESS, &refresh),
+            Err(SourceDbTokenError::AuthenticationFailed)
+        ));
+        assert!(matches!(
+            decrypt_legacy_owner_tokens(b"", &EXTERNAL_CLOAK_ACCESS, &refresh),
+            Err(SourceDbTokenError::EmptyEncryptionKey)
+        ));
     }
 
     #[test]
-    fn encrypts_legacy_pair_read_from_newline_terminated_files() {
-        panic!("C10_UNAVAILABLE_E: unaccepted candidate; removed credential table dependency");
-    }
-
-    #[test]
-    fn envelope_exact_plaintext_cap_persists_and_next_byte_is_rejected() {
+    fn envelope_at_the_plaintext_cap_decrypts_and_one_byte_more_is_refused() {
         assert_eq!(MAX_TOKEN_PLAINTEXT_BYTES, 16 * 1024);
         assert_eq!(
             MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES,
             MAX_TOKEN_PLAINTEXT_BYTES + super::CLOAK_ENVELOPE_OVERHEAD_BYTES
         );
-        let access = Zeroizing::new(vec![b'a'; MAX_TOKEN_PLAINTEXT_BYTES]);
-        let refresh = Zeroizing::new(vec![b'b'; MAX_TOKEN_PLAINTEXT_BYTES]);
-        let (access_ciphertext, refresh_ciphertext) =
-            ({ let encrypt_legacy_owner_token_files: fn(&[u8], Zeroizing<Vec<u8>>, Zeroizing<Vec<u8>>) -> Result<(Vec<u8>, Vec<u8>), SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); encrypt_legacy_owner_token_files(ENCRYPTION_KEY, access, refresh) })
-                .expect("exact plaintext cap encrypts");
-        assert_eq!(access_ciphertext.len(), MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES);
-        assert_eq!(refresh_ciphertext.len(), MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES);
-        let stored =
-            ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), crate::db::StoreError> = panic!("C10_UNAVAILABLE_E: unaccepted candidate; removed credential table dependency"); unavailable_value })
-                .expect("exact envelope cap persists");
-        assert_eq!(
-            decrypt_legacy_owner_tokens(ENCRYPTION_KEY, stored.0.as_slice(), stored.1.as_slice())
-                .expect("stored cap decrypts")
-                .access_token()
-                .len(),
-            MAX_TOKEN_PLAINTEXT_BYTES
-        );
+        let access = seal(ENCRYPTION_KEY, nonce(1), &vec![b'a'; MAX_TOKEN_PLAINTEXT_BYTES]);
+        let refresh = seal(ENCRYPTION_KEY, nonce(2), &vec![b'b'; MAX_TOKEN_PLAINTEXT_BYTES]);
+        assert_eq!(access.len(), MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES);
+        assert_eq!(refresh.len(), MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES);
+        let tokens = decrypt_legacy_owner_tokens(ENCRYPTION_KEY, &access, &refresh)
+            .expect("the cap decrypts");
+        assert_eq!(tokens.access_token().len(), MAX_TOKEN_PLAINTEXT_BYTES);
+        assert_eq!(tokens.refresh_token().len(), MAX_TOKEN_PLAINTEXT_BYTES);
 
+        let over = seal(ENCRYPTION_KEY, nonce(3), &vec![b'a'; MAX_TOKEN_PLAINTEXT_BYTES + 1]);
+        assert_eq!(over.len(), MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES + 1);
         assert!(matches!(
-            ({ let encrypt_legacy_owner_token_files: fn(&[u8], Zeroizing<Vec<u8>>, Zeroizing<Vec<u8>>) -> Result<(Vec<u8>, Vec<u8>), SourceDbTokenError> = panic!("C10_UNAVAILABLE_V2: unaccepted candidate; removed credential dependency"); encrypt_legacy_owner_token_files(
-                ENCRYPTION_KEY,
-                Zeroizing::new(vec![b'a'; MAX_TOKEN_PLAINTEXT_BYTES + 1]),
-                Zeroizing::new(vec![b'b'; MAX_TOKEN_PLAINTEXT_BYTES]),
-            ) }),
+            decrypt_legacy_owner_tokens(ENCRYPTION_KEY, &over, &refresh),
             Err(SourceDbTokenError::InvalidPlaintext)
         ));
     }
 
     #[test]
     fn rejects_deterministic_cloak_pair_with_wrong_key() {
-        panic!("C10_UNAVAILABLE_E: unaccepted candidate; removed credential table dependency");
+        let refresh = seal(ENCRYPTION_KEY, nonce(0x21), REFRESH_TOKEN);
+        assert!(matches!(
+            decrypt_legacy_owner_tokens(WRONG_ENCRYPTION_KEY, &EXTERNAL_CLOAK_ACCESS, &refresh),
+            Err(SourceDbTokenError::AuthenticationFailed)
+        ));
+        // Each value authenticates on its own: a refresh sealed under another key fails
+        // even when the access value is good.
+        let foreign = seal(WRONG_ENCRYPTION_KEY, nonce(0x21), REFRESH_TOKEN);
+        assert!(matches!(
+            decrypt_legacy_owner_tokens(ENCRYPTION_KEY, &EXTERNAL_CLOAK_ACCESS, &foreign),
+            Err(SourceDbTokenError::AuthenticationFailed)
+        ));
     }
 
     #[test]
     fn rejects_deterministic_cloak_pair_with_altered_authenticated_byte() {
-        panic!("C10_UNAVAILABLE_E: unaccepted candidate; removed credential table dependency");
-    }
-
-    #[test]
-    fn encrypts_source_db_cloak_pair_that_round_trips() {
-        panic!("C10_UNAVAILABLE_E: unaccepted candidate; removed credential table dependency");
-    }
-
-    #[test]
-    fn encrypts_with_distinct_cryptographic_nonces() {
-        panic!("C10_UNAVAILABLE_E: unaccepted candidate; removed credential table dependency");
+        let refresh = seal(ENCRYPTION_KEY, nonce(0x21), REFRESH_TOKEN);
+        let header = 2 + CLOAK_TAG.len();
+        // Nonce, authentication tag and ciphertext are all authenticated.
+        for index in header..EXTERNAL_CLOAK_ACCESS.len() {
+            let mut altered = EXTERNAL_CLOAK_ACCESS;
+            altered[index] ^= 0x01;
+            assert!(
+                matches!(
+                    decrypt_legacy_owner_tokens(ENCRYPTION_KEY, &altered, &refresh),
+                    Err(SourceDbTokenError::AuthenticationFailed)
+                ),
+                "byte {index}"
+            );
+        }
+        // The header is checked before decryption.
+        let mut wrong_type = EXTERNAL_CLOAK_ACCESS;
+        wrong_type[0] = CLOAK_TYPE + 1;
+        let mut wrong_tag = EXTERNAL_CLOAK_ACCESS;
+        wrong_tag[2] ^= 0x01;
+        for altered in [wrong_type, wrong_tag] {
+            assert!(matches!(
+                decrypt_legacy_owner_tokens(ENCRYPTION_KEY, &altered, &refresh),
+                Err(SourceDbTokenError::UnsupportedEnvelope)
+            ));
+        }
+        let without_ciphertext = &EXTERNAL_CLOAK_ACCESS[..header + NONCE_BYTES + AUTH_TAG_BYTES];
+        assert!(matches!(
+            decrypt_legacy_owner_tokens(ENCRYPTION_KEY, without_ciphertext, &refresh),
+            Err(SourceDbTokenError::UnsupportedEnvelope)
+        ));
     }
 
     #[test]
