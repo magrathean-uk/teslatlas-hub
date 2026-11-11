@@ -81,20 +81,34 @@ impl IdentityCache {
     ) -> Result<Registered, CollectorError> {
         let vin = clean_optional_text(Some(&vehicle.vin));
         let display_name = clean_optional_text(vehicle.display_name.as_deref());
-        if let Some(entry) = self.entries.get(&vehicle.id)
+        let cached = self.entries.get(&vehicle.id);
+        if let Some(entry) = cached
             && entry.vin == vin
             && entry.display_name == display_name
         {
             return Ok(entry.registered.clone());
         }
+        let cold = cached.is_none();
         let source_descriptor = provider_source(provider);
         let mut descriptor = VehicleDescriptor::new(Uuid::nil(), vehicle.id.get().to_string())
             .with_tesla_identity(Some(vehicle.id.get() as i64), None);
         descriptor.vin = vin.clone();
         descriptor.display_name = display_name.clone();
-        // M04-T01: a stored identity that registration would leave unchanged is
-        // read, not registered again: no write and no transaction of its own.
-        let registered = match store.registered_vehicle_unchanged(&source_descriptor, &descriptor)? {
+        // M04-T01: on the process's first resolution of the car, a stored identity
+        // that registration would leave unchanged is read, not registered again: no
+        // write and no transaction of its own. It is matched on the identity (source
+        // key, Tesla id and VIN aliases), as the Fleet receiver does, not on the
+        // display name: the lifecycle commit keeps `vehicles.display_name` to the
+        // car's projected name, so the listed name would never match it after a
+        // restart. A change seen while the process runs registers as before.
+        let unchanged = if cold {
+            let mut probe = descriptor.clone();
+            probe.display_name = None;
+            store.registered_vehicle_unchanged(&source_descriptor, &probe)?
+        } else {
+            None
+        };
+        let registered = match unchanged {
             Some(unchanged) => Registered {
                 hub_id: unchanged.vehicle_id,
                 source_id: unchanged.source_id,

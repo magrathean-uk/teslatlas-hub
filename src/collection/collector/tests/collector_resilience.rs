@@ -302,14 +302,29 @@ fn collector_resilience_restart_reads_an_unchanged_identity_without_writing() {
     let counts = store.instrumentation().snapshot();
     assert_eq!(counts.registration_calls(), 0, "nothing is registered again");
     assert_eq!(seen(&store), 1_000, "no durable write");
-    // A renamed car is registered, under the same identity.
+    // A car renamed while the process runs is registered, under the same identity.
     let mut renamed = car.clone();
     renamed.display_name = Some("Renamed".to_owned());
-    let changed = IdentityCache::default()
+    let changed = restarted
         .resolve(&store, CollectorProvider::Legacy, &renamed, 9_000)
         .expect("identity of the renamed car");
     assert_eq!(changed, first);
     assert_eq!(seen(&store), 9_000, "a change is registered");
+    // After a restart a stored name that differs from the listed one (the lifecycle
+    // keeps the projected name there) is no identity change: nothing is written.
+    store.instrumentation().reset();
+    let named_elsewhere = IdentityCache::default()
+        .resolve(&store, CollectorProvider::Legacy, &car, 12_000)
+        .expect("identity under the stored name");
+    assert_eq!(named_elsewhere, first);
+    assert_eq!(store.instrumentation().snapshot().registration_calls(), 0);
+    assert_eq!(seen(&store), 9_000);
+    // A different VIN is a change even after a restart: it is registered (and the
+    // store refuses the conflict).
+    let mut other_vin = car.clone();
+    other_vin.vin = "5YJ3E1EA7KF999999".to_owned();
+    let _ = IdentityCache::default().resolve(&store, CollectorProvider::Legacy, &other_vin, 13_000);
+    assert_eq!(store.instrumentation().snapshot().vehicle_registration_calls, 1);
 }
 
 /// A list equal to the stored lifecycle needs a transaction only to read the facts;
@@ -746,6 +761,31 @@ impl Drop for LossyRelay {
     }
 }
 
+/// [`k6_wait_for`] that names the requests the loopback Tesla saw when it times out.
+async fn wait_with_requests(
+    task: &mut JoinHandle<Result<(), CollectorError>>,
+    fake: &crate::collection::loopback_fixture::FakeTeslaSource,
+    label: &str,
+    mut condition: impl FnMut() -> bool,
+) {
+    let deadline = Instant::now() + SUPERVISED_RESTART_WAIT;
+    while !condition() {
+        if task.is_finished() {
+            let result = (&mut *task).await;
+            panic!("{label}: the collector ended first: {result:?}");
+        }
+        if Instant::now() >= deadline {
+            let paths: Vec<(String, bool)> = fake
+                .audited_requests()
+                .iter()
+                .map(|request| (request.path.clone(), request.rejected))
+                .collect();
+            panic!("{label} timeout; requests seen: {paths:?}");
+        }
+        sleep(Duration::from_millis(20)).await;
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn collector_resilience_network_loss_and_restart_keep_every_committed_observation() {
     crate::crypto::install_default_provider();
@@ -767,8 +807,7 @@ async fn collector_resilience_network_loss_and_restart_keep_every_committed_obse
     .await
     .expect("loopback Tesla");
     fake.set_step(crate::collection::loopback_fixture::ScenarioStep::Parked);
-    // The Owner reads are the subject; no stream competes with them.
-    fake.set_stream_available(false);
+    let fake = Arc::new(fake);
     let relay = LossyRelay::spawn(fake.http_base_url()).await;
     let owner_reads = |store: &HubStore| -> i64 {
         store
@@ -824,12 +863,12 @@ async fn collector_resilience_network_loss_and_restart_keep_every_committed_obse
 
     let (mut task, ready_rx, shutdown_tx) = start(store.clone(), 0xE1);
     let _cursor = wait_for_supervised_signal_or_abort("readiness", &mut task, ready_rx).await;
-    k6_wait_for(&mut task, "first reads", || owner_reads(&store) >= 2).await;
+    wait_with_requests(&mut task, &fake, "first reads", || owner_reads(&store) >= 2).await;
     // The network goes: every connection to Tesla is dropped. The run goes on, and
     // nothing it committed goes away.
     relay.up.send_replace(false);
     let before_loss = owner_reads(&store);
-    k6_wait_for(&mut task, "requests during the loss", || {
+    wait_with_requests(&mut task, &fake, "requests during the loss", || {
         relay.dropped.load(Ordering::SeqCst) >= 3
     })
     .await;
@@ -838,7 +877,7 @@ async fn collector_resilience_network_loss_and_restart_keep_every_committed_obse
     assert!(!task.is_finished(), "the run survives the network loss");
     // The network comes back: collection resumes.
     relay.up.send_replace(true);
-    k6_wait_for(&mut task, "reads after the loss", || {
+    wait_with_requests(&mut task, &fake, "reads after the loss", || {
         owner_reads(&store) > during_loss
     })
     .await;
@@ -864,7 +903,7 @@ async fn collector_resilience_network_loss_and_restart_keep_every_committed_obse
     assert_eq!(owner_reads(&reopened), committed, "every committed read survives");
     let (mut task, ready_rx, shutdown_tx) = start(reopened.clone(), 0xE2);
     let _cursor = wait_for_supervised_signal_or_abort("restart readiness", &mut task, ready_rx).await;
-    k6_wait_for(&mut task, "reads after the restart", || {
+    wait_with_requests(&mut task, &fake, "reads after the restart", || {
         owner_reads(&reopened) > committed
     })
     .await;
