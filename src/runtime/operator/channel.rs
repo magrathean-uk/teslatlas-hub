@@ -10,7 +10,8 @@
 //! listener behind it, is `service_not_running`, so a refused command has read
 //! nothing and opened no network connection. Requests carry bounded material
 //! only (a grant, a trust document, the sign-in code material, recovery file
-//! paths); no request carries an access or refresh token.
+//! paths, the purge confirmation); no request carries an access or refresh
+//! token.
 
 use std::{
     fmt,
@@ -114,6 +115,10 @@ pub enum OperatorRequest {
     RecoveryRestore {
         source: PathBuf,
         recovery_key_file: PathBuf,
+    },
+    /// Lists the refused credentials, or with `confirm` removes them (M02-T11).
+    PurgeRefusedCredentials {
+        confirm: bool,
     },
 }
 

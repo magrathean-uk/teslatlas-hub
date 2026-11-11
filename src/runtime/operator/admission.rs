@@ -5,7 +5,8 @@
 //! Every parsed command is routed here before the binary reads a secret path,
 //! standard input or the network. Tesla code exchange and vehicle discovery
 //! run only inside the service that holds the window authority, so `setup`,
-//! the window verbs and the credential-recovery verbs are forwarded to it over
+//! the window verbs, the credential-recovery verbs and the refused-credential
+//! purge are forwarded to it over
 //! the local control channel; with no service running they are refused
 //! `service_not_running` before anything else is read. They never take the
 //! data-directory lifetime lock themselves. Fleet is parked: its verbs are
@@ -95,9 +96,9 @@ pub fn route(command: &Command) -> Route {
         Command::Setup { .. } => Route::Service,
         #[cfg(unix)]
         Command::SetupFleet | Command::ConfigureFleetTelemetry => Route::Refused(PROVIDER_PARKED),
-        Command::ExportRecoveryCredentials { .. } | Command::RestoreRecoveryCredentials { .. } => {
-            Route::Service
-        }
+        Command::ExportRecoveryCredentials { .. }
+        | Command::RestoreRecoveryCredentials { .. }
+        | Command::PurgeRefusedCredentials { .. } => Route::Service,
         Command::Window { command } => match command {
             WindowCommand::Status
             | WindowCommand::Trust { .. }

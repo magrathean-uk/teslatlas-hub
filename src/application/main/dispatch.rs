@@ -172,6 +172,11 @@ fn build_status_report(
     if let Some(violation) = cadence_violation {
         report["collectorCadenceError"] = serde_json::to_value(violation.report())?;
     }
+    // Refused credentials are kept until the owner removes them (DEC-083);
+    // status names the command while any is kept.
+    if let Some(hint) = operator::purge::hint(store)? {
+        report["refusedCredentialPurge"] = hint;
+    }
     Ok(report)
 }
 
@@ -389,6 +394,9 @@ fn run_forwarded(config_path: &Path, command: &Command) -> Result<(), Box<dyn st
             source: absolute_path(source)?,
             recovery_key_file: absolute_path(recovery_key_file)?,
         },
+        Command::PurgeRefusedCredentials { confirm } => {
+            OperatorRequest::PurgeRefusedCredentials { confirm: *confirm }
+        }
         _ => return Err("this command is not forwarded to the service".into()),
     };
     let result = operator::channel::exchange(stream, &request, FORWARD_TIMEOUT)?;
@@ -493,6 +501,23 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
         .map_err(|error| OperatorRefusal::new("recovery_failed", error.to_string()))?;
         serde_json::to_value(&report)
             .map_err(|_| OperatorRefusal::new("recovery_failed", "the report is not encodable"))
+    }
+
+    fn refused_credentials(&self) -> Result<serde_json::Value, OperatorRefusal> {
+        operator::purge::list(&self.store, &self.data_dir)
+    }
+
+    fn purge_refused_credentials(&self) -> Result<serde_json::Value, OperatorRefusal> {
+        let entry = open_command_credential_vault(
+            self.store.clone(),
+            std::sync::Arc::clone(&self.admission),
+            &self.data_dir,
+        )
+        .map_err(|error| {
+            let error = teslatlas_hub::auth::credential_sign_in::credential_entry_error(error);
+            OperatorRefusal::new(error.code(), error.to_string())
+        })?;
+        operator::purge::purge(&entry)
     }
 }
 
@@ -758,11 +783,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Doctor => {
             let config = HubConfig::load(&config_path)?;
-            let report = run_immutable_diagnostic(&config.data_dir, |store| {
-                Ok(inspect_hub(store, &config)?)
+            let (report, purge_hint) = run_immutable_diagnostic(&config.data_dir, |store| {
+                Ok((inspect_hub(store, &config)?, operator::purge::hint(store)?))
             })?;
             report.log();
-            println!("{}", serde_json::to_string_pretty(&report)?);
+            // The doctor names the purge command while refused credentials
+            // are kept (DEC-083).
+            let mut printed = serde_json::to_value(&report)?;
+            if let Some(hint) = purge_hint {
+                printed["refusedCredentialPurge"] = hint;
+            }
+            println!("{}", serde_json::to_string_pretty(&printed)?);
             if !report.is_ok() {
                 return Err(std::io::Error::other("doctor found failures; see JSON report").into());
             }
@@ -1213,11 +1244,22 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", serde_json::to_string(&report)?);
         }
         Command::Backup { destination } => {
-            let report = create_data_backup(&store, &destination)?;
+            // A refusal caused by refused pre-upgrade credentials names the
+            // command that removes them (DEC-083).
+            let report = create_data_backup(&store, &destination).map_err(
+                |error| -> Box<dyn std::error::Error> {
+                    match teslatlas_hub::data_recovery::refused_credential_backup_message(&store, &error) {
+                        Some(message) => message.into(),
+                        None => error.into(),
+                    }
+                },
+            )?;
             println!("{}", serde_json::to_string(&report)?);
         }
-        Command::ExportRecoveryCredentials { .. } | Command::RestoreRecoveryCredentials { .. } => {
-            unreachable!("credential recovery is forwarded to the running service")
+        Command::ExportRecoveryCredentials { .. }
+        | Command::RestoreRecoveryCredentials { .. }
+        | Command::PurgeRefusedCredentials { .. } => {
+            unreachable!("credential recovery and the purge are forwarded to the running service")
         }
         Command::VerifyBackup { .. } | Command::RestoreData { .. } => {
             unreachable!("immutable data-recovery commands return before writable Hub state")

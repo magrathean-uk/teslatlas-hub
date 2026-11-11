@@ -2068,6 +2068,28 @@ pub(crate) enum BackupWait {
     PurgePending { needed_bytes: Option<u64> },
 }
 
+/// The backup refusal while refused pre-upgrade credentials block it
+/// (M02-T11, DEC-083): it names the command that lists and removes them,
+/// because a refused slot is never replaced by itself.
+pub const BACKUP_BLOCKED_BY_REFUSED_CREDENTIALS: &str = "backup_blocked_by_refused_credentials: data backups are blocked by refused credentials kept from before the upgrade; list them with `teslatlas-hub purge-refused-credentials` and remove them with `teslatlas-hub purge-refused-credentials --confirm`";
+
+/// The refusal text for a backup that waits because a refused pre-upgrade
+/// slot blocks the credential cleanup; `None` for any other outcome.
+pub fn refused_credential_backup_message(
+    store: &HubStore,
+    error: &DataRecoveryError,
+) -> Option<&'static str> {
+    if !matches!(
+        error,
+        DataRecoveryError::Store(StoreError::BackupWaitsForCredentialCleanup)
+    ) {
+        return None;
+    }
+    let state = store.credential_format_state().ok().flatten()?;
+    (state.owner_api_blocked.is_some() || state.fleet_api_blocked.is_some())
+        .then_some(BACKUP_BLOCKED_BY_REFUSED_CREDENTIALS)
+}
+
 pub(crate) const CAR_CONTROL_SECRET_TABLES: &[&str] = &["credential_pairs"];
 pub(crate) const PRE_UPGRADE_SECRET_TABLES: &[&str] = &["legacy_owner_tokens", "fleet_tokens"];
 pub(crate) const CAR_CONTROL_SECRET_FILES: &[&str] = &[

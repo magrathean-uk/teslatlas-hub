@@ -574,6 +574,18 @@ pub enum Command {
         #[arg(long)]
         recovery_key_file: PathBuf,
     },
+    /// List the credentials the Hub refuses and keeps (pre-upgrade and Fleet
+    /// rows, other pairs its own login did not make), their old key files and
+    /// old tables, naming slots and origins only, never a secret value; with
+    /// --confirm, remove them. The Hub's own login is never touched. Forwarded
+    /// to the running service; refused while a collection window is open or a
+    /// refresh is unresolved.
+    #[command(name = "purge-refused-credentials")]
+    PurgeRefusedCredentials {
+        /// Remove what the listing names. Without it nothing is deleted.
+        #[arg(long)]
+        confirm: bool,
+    },
     /// Collection windows: status, trust, open and close are forwarded to the
     /// running service; the issuer verbs run on the issuer Mac only.
     Window {

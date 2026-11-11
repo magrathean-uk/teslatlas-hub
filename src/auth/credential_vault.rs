@@ -60,7 +60,7 @@ impl std::fmt::Debug for CredentialStoreError {
     }
 }
 impl CredentialStoreError {
-    pub(in crate::auth) fn code(&self) -> &'static str {
+    pub(crate) fn code(&self) -> &'static str {
         fn envelope(error: &EnvelopeError) -> &'static str {
             match error {
                 EnvelopeError::UnknownKey => "unknown_key", EnvelopeError::BindingMismatch(_) => "binding_mismatch",
@@ -849,6 +849,93 @@ impl CredentialVault {
         let mut keys = self.keys.write().map_err(|_| CredentialStoreError::LockPoisoned)?;
         self.phase_b(&mut state, &mut keys)
     }
+    /// Removes the refused credentials (M02-T11, DEC-083): the refused rows,
+    /// their ciphertext and the old tables in one counted commit, then, behind
+    /// its barrier, Phase B vacuums, scrubs the WAL and removes the
+    /// pre-upgrade key files, so no key file is removed before the commit is
+    /// durable. The admitted own-login pair is never touched.
+    pub(crate) fn purge_refused_credentials(&self) -> Result<RefusedCredentialReport, CredentialStoreError> {
+        let mut state = self.lock()?; state.writable(false)?; state.guard_read()?;
+        let files = match state.secrets.as_ref() { Some(secrets) => old_key_files(secrets)?, None => Vec::new() };
+        let VaultState { connection, commits_issued, .. } = &mut *state;
+        let removed = connection.purge_refused_credentials_with_commit(&mut || *commits_issued += 1)?;
+        state.barrier()?;
+        if removed.rows.is_empty() {
+            return Ok(RefusedCredentialReport::new("purge", &removed, Vec::new(), Some(files), None));
+        }
+        let mut keys = self.keys.write().map_err(|_| CredentialStoreError::LockPoisoned)?;
+        self.phase_b(&mut state, &mut keys)?;
+        drop(keys);
+        let remaining = match state.secrets.as_ref() { Some(secrets) => old_key_files(secrets)?, None => Vec::new() };
+        let removed_files = files.iter().copied().filter(|name| !remaining.contains(name)).collect();
+        let complete = state.connection.credential_format_state()?.completed_at_ms.is_some();
+        Ok(RefusedCredentialReport::new("purge", &removed, removed_files, Some(remaining), Some(complete)))
+    }
+}
+
+/// The command that lists and removes refused credentials (M02-T11).
+pub(crate) const REFUSED_CREDENTIAL_PURGE_COMMAND: &str = "teslatlas-hub purge-refused-credentials";
+/// The pre-upgrade key files Phase B removes once the conversion is durable
+/// (R49's removal list in `credential_migration`), named for the listing.
+const PRE_UPGRADE_KEY_FILES: [&str; 7] = [
+    "pre-upgrade-owner-api.relocated.key", "pre-upgrade-owner-api.relocated-previous.key",
+    "pre-upgrade-owner-api.key", "pre-upgrade-fleet-api.key", "fleet-credentials.key",
+    ".fleet-credentials.pending.key", ".fleet-credentials-key-migration",
+];
+
+/// Which pre-upgrade key files `secrets/` holds, by name only: no file is
+/// opened or read.
+fn old_key_files(secrets: &PrivateDirectory) -> Result<Vec<&'static str>, CredentialStoreError> {
+    let names = secrets.entry_names().map_err(|_| CredentialKeyError::Io { operation: "list_secrets" })?;
+    Ok(PRE_UPGRADE_KEY_FILES.into_iter().filter(|known| names.iter().any(|name| name == known)).collect())
+}
+
+/// One refused slot as the operator sees it: no secret value.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RefusedSlotView { pub(crate) slot: &'static str, pub(crate) origin: &'static str, pub(crate) table: &'static str, pub(crate) refusal: &'static str }
+
+/// The listing or the outcome of the refused-credential purge. It names
+/// slots, origins, key files and tables, never a secret value.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RefusedCredentialReport {
+    /// `list` (nothing was deleted) or `purge`.
+    pub(crate) mode: &'static str,
+    pub(crate) refused_slots: Vec<RefusedSlotView>,
+    /// List: the key files the purge removes. Purge: the ones it removed.
+    pub(crate) old_key_files: Vec<&'static str>,
+    pub(crate) old_tables: Vec<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) old_key_files_remaining: Option<Vec<&'static str>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) cleanup_complete: Option<bool>,
+    /// List only, when there is something to remove: the confirmed command.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) confirm_command: Option<String>,
+}
+
+impl RefusedCredentialReport {
+    fn new(mode: &'static str, inventory: &crate::db::RefusedCredentialInventory, old_key_files: Vec<&'static str>,
+        remaining: Option<Vec<&'static str>>, cleanup_complete: Option<bool>) -> Self {
+        let refused_slots = inventory.rows.iter().map(|row| RefusedSlotView { slot: row.slot.as_str(), origin: row.origin, table: row.table, refusal: row.refusal }).collect();
+        let confirm_command = (mode == "list" && !inventory.rows.is_empty()).then(|| format!("{REFUSED_CREDENTIAL_PURGE_COMMAND} --confirm"));
+        Self { mode, refused_slots, old_key_files, old_tables: inventory.old_tables.clone(), old_key_files_remaining: remaining, cleanup_complete, confirm_command }
+    }
+}
+
+/// The listing: read-only, without admission, the credential connection or
+/// any envelope, so nothing is deleted or written (M02-T11).
+pub(crate) fn refused_credential_listing(store: &HubStore, data_dir: &Path) -> Result<RefusedCredentialReport, CredentialStoreError> {
+    let inventory = store.refused_credential_inventory()?;
+    let files = if inventory.rows.is_empty() { Vec::new() } else {
+        match private_directory::open_validated_read_only(&data_dir.join("secrets")) {
+            Ok(Some(secrets)) => old_key_files(&secrets)?,
+            Ok(None) => Vec::new(),
+            Err(_) => return Err(CredentialKeyError::Io { operation: "secrets_directory" }.into()),
+        }
+    };
+    Ok(RefusedCredentialReport::new("list", &inventory, files, None, None))
 }
 
 #[cfg(test)]
