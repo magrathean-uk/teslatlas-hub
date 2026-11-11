@@ -735,8 +735,14 @@ async fn commit_tick(
     let other_writes = tick_needs_transaction(scheduler, &batch, &tick);
     // The request counters join the tick (C3 R5, R25): Fleet polling writes them in
     // every commit that has any change, the Owner-wire counts ride on a commit that
-    // happens anyway or wait for their hourly flush.
-    scheduler.attach_counters(&mut tick, other_writes, false);
+    // happens anyway or wait for their hourly flush. A transaction a discovery needs
+    // only to read the lifecycle facts is not such a commit: it rolls back when the
+    // state is unchanged, and counts attached to it would turn an unchanged poll into
+    // a durable write (M04-T01). Only scheduler rows, a snapshot or a Hub event make
+    // the commit certain.
+    let certain_writes =
+        !tick.is_empty() || !batch.snapshots.is_empty() || !batch.hub_events.is_empty();
+    scheduler.attach_counters(&mut tick, certain_writes, false);
     if !other_writes && tick.counters.is_empty() {
         // Nothing to write: the persisted views already match.
         return Ok(TickOutcome::Idle);
