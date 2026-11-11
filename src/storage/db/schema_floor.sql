@@ -1181,6 +1181,7 @@ CREATE TABLE credential_format_state (
     started_at_ms INTEGER CHECK(started_at_ms IS NULL OR started_at_ms >= 0),
     converted_at_ms INTEGER CHECK(converted_at_ms IS NULL OR converted_at_ms >= 0),
     completed_at_ms INTEGER CHECK(completed_at_ms IS NULL OR completed_at_ms >= 0),
+    keyring_exposure INTEGER NOT NULL DEFAULT 0 CHECK(keyring_exposure IN (0, 1)),
     CHECK(owner_api_blocked IS NULL OR owner_api_state = 'pending'),
     CHECK(fleet_api_blocked IS NULL OR fleet_api_state = 'pending'),
     CHECK((converted_at_ms IS NOT NULL) = (owner_api_state <> 'pending' AND fleet_api_state <> 'pending'

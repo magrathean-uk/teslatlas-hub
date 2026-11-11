@@ -2095,7 +2095,7 @@ const _: () = assert!(
 fn credential_schema_rung(connection: &Connection, fresh: bool) -> Result<(), StoreError> {
     let version = schema_version(connection)?;
     if version == CREDENTIAL_FORMAT_SCHEMA_VERSION {
-        return Ok(());
+        return credential_format_state_keyring_exposure_column(connection);
     }
     if version != MIN_STORE_VERSION {
         return Err(StoreError::UnsupportedSchema(version));

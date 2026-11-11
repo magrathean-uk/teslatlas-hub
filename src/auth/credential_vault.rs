@@ -341,7 +341,19 @@ impl CredentialVault {
                 Some(secrets) if state.read_only => credential_keys::load_keyring_read_only(secrets)?,
                 Some(secrets) => credential_keys::load_keyring(secrets)?,
             };
-            if keys.is_some() && vault.prove_keyring(&state).is_err() { state.read_only = true; }
+            // R16: the repairing load made an exposed keyring private; the finding
+            // stays recorded until a rotation begun after it completes.
+            if !state.read_only && keys.as_ref().is_some_and(|handle| handle.exposure_suspected)
+                && let Err(error) = state.connection.record_credential_keyring_exposure(true) {
+                state.read_only = true; state.resume_error.get_or_insert(error.into());
+            }
+            // R55/R73: a failed keyring or secrets/ barrier is recorded like a failed probe.
+            if keys.is_some() && let Err(error) = vault.prove_keyring(&state) {
+                if matches!(error, CredentialStoreError::DurabilityUnavailable) {
+                    state.connection.record_credential_keyring_barrier_failure();
+                }
+                state.read_only = true; state.resume_error.get_or_insert(error);
+            }
             if !state.read_only && state.exclusion_verified {
                 #[cfg(test)] OPEN_CONTROL.with(|control| {
                     if let Some(control) = control.borrow_mut().as_mut() { control(&mut state.connection); }
@@ -586,11 +598,15 @@ impl CredentialVault {
     }
     fn rotate_locked(&self, state: &mut VaultState, keys: &mut Option<KeyringHandle>) -> Result<(), CredentialStoreError> {
         state.writable(true)?; state.guard_read()?;
-        if keys.as_ref().ok_or(CredentialKeyError::KeyringMissing)?.keyring().previous.is_none() {
+        // Only a rotation begun here generated its key after every recorded
+        // exposure; a resumed one may hold a key the exposed file carried.
+        let fresh = keys.as_ref().ok_or(CredentialKeyError::KeyringMissing)?.keyring().previous.is_none();
+        if fresh {
             let rotated = credential_keys::begin_rotation(state.secrets.as_ref().unwrap(), self.exclusion(), keys.as_ref().unwrap(), (self.now_ms()? / 1000) as u64);
             #[cfg(test)] rotation_key_events();
             *keys = Some(Self::key_result(state, rotated)?);
         }
+        if keys.as_ref().unwrap().exposure_suspected { state.connection.record_credential_keyring_exposure(true)?; }
         #[cfg(test)] {
             let seam = self.lock_seam.lock().unwrap().clone();
             if let Some(seam) = seam { seam.pause_rotation(); }
@@ -642,9 +658,14 @@ impl CredentialVault {
         }
         state.barrier()?;
         #[cfg(test)] rotation_note("reseal_barrier");
-        let finished = credential_keys::finish_rotation(state.secrets.as_ref().unwrap(), keys_ref);
+        let rotating = keys.as_mut().unwrap();
+        // Already recorded above; the finished handle then reports only its own reload.
+        rotating.exposure_suspected = false;
+        let finished = credential_keys::finish_rotation(state.secrets.as_ref().unwrap(), rotating);
         #[cfg(test)] rotation_key_events();
         *keys = Some(Self::key_result(state, finished)?);
+        let exposed = keys.as_ref().unwrap().exposure_suspected;
+        if exposed || fresh { state.connection.record_credential_keyring_exposure(exposed)?; }
         state.connection.scrub_credential_wal()?;
         #[cfg(test)] if let Some(seam) = self.lock_seam.lock().expect("rotation trace").as_ref() { seam.record("rotation_finished"); }
         Ok(())

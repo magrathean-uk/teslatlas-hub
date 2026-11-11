@@ -152,7 +152,9 @@ pub fn credential_status(store: &HubStore, data_dir: &Path, now_ms: i64) -> Resu
                 fleet_api: format.fleet_api_blocked.map(block_code),
             },
             cleanup_needed_bytes: format.purge_needed_bytes.map(|bytes| bytes.max(0) as u64),
-            keyring, key_age_days, exposure_suspected, secrets_backup_excluded,
+            keyring, key_age_days, secrets_backup_excluded,
+            // R16: the live check, or an exposure the vault repaired and recorded.
+            exposure_suspected: exposure_suspected || format.keyring_exposure,
             durability: format.durability.map(|state| match state {
                 CredentialDurabilityState::Ok => "ok", CredentialDurabilityState::Unavailable => "unavailable",
             }),
