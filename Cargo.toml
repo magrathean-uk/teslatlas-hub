@@ -35,6 +35,8 @@ credential-relocation-fixture = []
 teslatlas-compute = { path = "compute" }
 getrandom = "0.4.3"
 aes-gcm = { version = "0.11.1", features = ["zeroize"] }
+# Argon2id (RFC 9106) derives the encrypted-backup key from the recovery password.
+argon2 = { version = "0.6.0", default-features = false, features = ["zeroize"] }
 axum = "0.8.9"
 axum-server = { version = "0.8.0", features = ["tls-rustls-no-provider"] }
 base64 = "0.23.1"
@@ -49,7 +51,7 @@ rcgen = { version = "0.14.9", default-features = false, features = ["crypto", "p
 reqwest = { version = "0.13.4", default-features = false, features = ["http2", "json", "query", "rustls-no-provider", "stream"] }
 rust_decimal = { version = "1.42.1", features = ["db-tokio-postgres"] }
 rustix = { version = "1.1.4", features = ["fs", "process"] }
-rusqlite = { version = "0.40.2", features = ["backup", "bundled"] }
+rusqlite = { version = "0.40.2", features = ["backup", "bundled", "serialize"] }
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
 # `float_roundtrip` makes parsing exact, so the f64 accumulators of the open

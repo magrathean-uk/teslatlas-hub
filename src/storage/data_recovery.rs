@@ -105,6 +105,20 @@ pub enum DataRecoveryError {
         #[source]
         source: rustix::io::Errno,
     },
+    #[error("the backup password is wrong, or the archive header is damaged")]
+    WrongPassword,
+    #[error("the backup archive is damaged: {0}")]
+    CorruptArchive(String),
+    #[error("the backup was cancelled")]
+    Cancelled,
+    #[error("the backup destination is unavailable at {path}: {source}")]
+    DestinationUnavailable {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("the backup destination is full at {path}")]
+    DestinationFull { path: PathBuf },
     #[error("Hub data-recovery staging capacity calculation overflowed")]
     CapacityOverflow,
     #[error(
@@ -465,6 +479,17 @@ pub fn restore_data_backup(
         ));
     }
 
+    finalize_restore(staging, &destination, &manifest)
+}
+
+/// The shared tail of every restore: migrate when the catalogue is older, seal
+/// out host authority, re-verify the staged tree and publish it without
+/// replacement. The staged tree already holds every verified member.
+fn finalize_restore(
+    staging: StagingDirectory,
+    destination: &Path,
+    manifest: &BackupManifest,
+) -> Result<DataRecoveryReport, DataRecoveryError> {
     let migrated = manifest.hub_schema != SCHEMA_VERSION;
     if migrated {
         let migrated_store = HubStore::initialize(&staging.path)?;
@@ -495,8 +520,8 @@ pub fn restore_data_backup(
     validate_restored_data_tree(&staging.path, &manifest.members, true)?;
     sync_restored_data(&staging.path, &manifest.members)?;
 
-    let report = report(STATUS_DATA_RESTORED, &destination, &manifest)?;
-    staging.publish(&destination)?;
+    let report = report(STATUS_DATA_RESTORED, destination, manifest)?;
+    staging.publish(destination)?;
     Ok(report)
 }
 
@@ -730,14 +755,12 @@ fn seal_staged_catalogue(payload: &Path) -> Result<(), DataRecoveryError> {
     seal_staged_catalogue_at(payload, current_epoch_ms()?)
 }
 
-fn seal_staged_catalogue_at(payload: &Path, sealed_at_ms: i64) -> Result<(), DataRecoveryError> {
-    let catalogue = payload.join("hub.sqlite");
-    require_regular_file(&catalogue, "staged backup catalogue")?;
-    let mut connection = Connection::open_with_flags(
-        &catalogue,
-        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(DataRecoveryError::CatalogueIdentity)?;
+/// Remove host-local authority from a copied or restored catalogue, on its own
+/// connection (a staged file, or the encrypted backup's in-memory copy).
+fn seal_host_authority(
+    connection: &mut Connection,
+    sealed_at_ms: i64,
+) -> Result<(), DataRecoveryError> {
     // Collector leases and pairing credentials are host-local authority, never
     // recoverable data. Remove them before a copied catalogue is inventoried or
     // a restored catalogue is published. Installation/account/vehicle identity
@@ -769,9 +792,25 @@ fn seal_staged_catalogue_at(payload: &Path, sealed_at_ms: i64) -> Result<(), Dat
     transaction
         .execute("DELETE FROM supervised_collector_lease", [])
         .map_err(DataRecoveryError::CatalogueIdentity)?;
+    // A running encrypted backup's pack pins are live-host state too.
+    transaction
+        .execute_batch(encrypted_backup::DROP_PACK_PIN_TABLE)
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
     transaction
         .commit()
         .map_err(DataRecoveryError::CatalogueIdentity)?;
+    Ok(())
+}
+
+fn seal_staged_catalogue_at(payload: &Path, sealed_at_ms: i64) -> Result<(), DataRecoveryError> {
+    let catalogue = payload.join("hub.sqlite");
+    require_regular_file(&catalogue, "staged backup catalogue")?;
+    let mut connection = Connection::open_with_flags(
+        &catalogue,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(DataRecoveryError::CatalogueIdentity)?;
+    seal_host_authority(&mut connection, sealed_at_ms)?;
     let journal_mode: String = connection
         .query_row("PRAGMA journal_mode = DELETE", [], |row| row.get(0))
         .map_err(DataRecoveryError::CatalogueIdentity)?;
@@ -1330,7 +1369,15 @@ fn immutable_database_identity_at_schema(
     data: &Path,
     expected_schema: i32,
 ) -> Result<Uuid, DataRecoveryError> {
-    let connection = open_immutable_catalogue(data)?;
+    catalogue_identity(&open_immutable_catalogue(data)?, expected_schema)
+}
+
+/// Application ID, declared schema, quick-check and installation ID of a
+/// catalogue on any connection (an immutable file or an in-memory copy).
+fn catalogue_identity(
+    connection: &Connection,
+    expected_schema: i32,
+) -> Result<Uuid, DataRecoveryError> {
     let application_id: i32 = connection
         .query_row("PRAGMA application_id", [], |row| row.get(0))
         .map_err(DataRecoveryError::CatalogueIdentity)?;
@@ -1594,7 +1641,12 @@ fn schema_22_noop_member_filename(path: &str) -> Option<&str> {
 fn current_schema_22_noop_pairs(
     data: &Path,
 ) -> Result<BTreeMap<String, SyncManifest>, DataRecoveryError> {
-    let connection = open_immutable_catalogue(data)?;
+    current_schema_22_noop_pairs_in(&open_immutable_catalogue(data)?)
+}
+
+fn current_schema_22_noop_pairs_in(
+    connection: &Connection,
+) -> Result<BTreeMap<String, SyncManifest>, DataRecoveryError> {
     let rows = connection
         .prepare(
             "SELECT snapshot_id, vehicle_id, head_sequence, manifest_json
@@ -1700,21 +1752,35 @@ fn validate_schema_22_noop_directory(
             )));
         }
         let bytes = read_bounded_private_file(&path, MAX_SCHEMA_22_NOOP_BYTES)?;
-        let noop: SignedNoOpState =
-            serde_json::from_slice(&bytes).map_err(DataRecoveryError::Decode)?;
-        if serde_json::to_vec(&noop).map_err(DataRecoveryError::Encode)? != bytes {
-            return Err(invalid(format!(
-                "schema 2.2 no-op member is not canonical typed JSON: {name}"
-            )));
-        }
-        validate_schema_22_pair(manifest, &noop).map_err(|error| {
-            invalid(format!(
-                "schema 2.2 no-op member does not match its manifest: {}",
-                error.message
-            ))
-        })?;
+        validate_schema_22_noop_bytes(name, manifest, &bytes)?;
     }
     Ok(())
+}
+
+/// One schema 2.2 no-op body: bounded, canonical typed JSON, paired with its
+/// current manifest.
+fn validate_schema_22_noop_bytes(
+    name: &str,
+    manifest: &SyncManifest,
+    bytes: &[u8],
+) -> Result<(), DataRecoveryError> {
+    if bytes.is_empty() || bytes.len() as u64 > MAX_SCHEMA_22_NOOP_BYTES {
+        return Err(invalid(format!(
+            "schema 2.2 no-op member has an unsafe size: {name}"
+        )));
+    }
+    let noop: SignedNoOpState = serde_json::from_slice(bytes).map_err(DataRecoveryError::Decode)?;
+    if serde_json::to_vec(&noop).map_err(DataRecoveryError::Encode)? != bytes {
+        return Err(invalid(format!(
+            "schema 2.2 no-op member is not canonical typed JSON: {name}"
+        )));
+    }
+    validate_schema_22_pair(manifest, &noop).map_err(|error| {
+        invalid(format!(
+            "schema 2.2 no-op member does not match its manifest: {}",
+            error.message
+        ))
+    })
 }
 
 fn require_directory_entries<const N: usize>(
@@ -1895,6 +1961,16 @@ fn io_error(
     }
 }
 
+mod archive_crypto;
+mod encrypted_backup;
+
+pub use archive_crypto::generate_recovery_password;
+pub(crate) use encrypted_backup::live_backup_pack_pins;
+pub use encrypted_backup::{
+    EncryptedBackupReport, EncryptedBackupRequest, create_encrypted_backup,
+    restore_encrypted_backup, verify_encrypted_backup,
+};
+
 #[cfg(test)]
 #[path = "data_recovery/tests.rs"]
 mod tests;
@@ -2056,29 +2132,9 @@ fn remove_unpublished_payload(payload: &Path) {
     let _ = remove_payload_files(payload);
 }
 
-/// R53 steps 3 and 4: the payload seal. The copy's own state row must be
-/// credential-clean and OLD-T1 and OLD-T2 absent; then, with `secure_delete`
-/// on and in one transaction, the credential rows go (fences, attempts and key
-/// usage stay) before the retained seal closes the connection and checks that
-/// no side file is left.
-fn seal_backup_payload(payload: &Path) -> Result<(), DataRecoveryError> {
-    #[cfg(test)]
-    {
-        use crate::auth::credential_migration::seam::{PayloadAction, payload_stage};
-        if !matches!(
-            payload_stage("after_copy", payload),
-            PayloadAction::Continue
-        ) {
-            return Err(invalid("backup stopped after the copy"));
-        }
-    }
-    let catalogue = payload.join("hub.sqlite");
-    require_regular_file(&catalogue, "staged backup catalogue")?;
-    let mut connection = Connection::open_with_flags(
-        &catalogue,
-        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(DataRecoveryError::CatalogueIdentity)?;
+/// R53 step 3: the copy's own state row must be credential-clean and OLD-T1
+/// and OLD-T2 absent.
+fn seal_backup_credentials_checked(connection: &Connection) -> Result<(), DataRecoveryError> {
     let clean: bool = connection
         .query_row(
             "SELECT converted_at_ms IS NOT NULL AND purge_required = 0
@@ -2109,16 +2165,12 @@ fn seal_backup_payload(payload: &Path) -> Result<(), DataRecoveryError> {
             "staged backup catalogue still holds a pre-upgrade credential table",
         ));
     }
-    #[cfg(test)]
-    {
-        use crate::auth::credential_migration::seam::{PayloadAction, payload_stage};
-        if !matches!(
-            payload_stage("seal_transaction", payload),
-            PayloadAction::Continue
-        ) {
-            return Err(invalid("backup seal transaction failed"));
-        }
-    }
+    Ok(())
+}
+
+/// R53 step 4: with `secure_delete` on and in one transaction, the credential
+/// rows go (fences, attempts and key usage stay).
+fn seal_backup_credentials(connection: &mut Connection) -> Result<(), DataRecoveryError> {
     connection
         .execute_batch("PRAGMA secure_delete = ON;")
         .map_err(DataRecoveryError::CatalogueIdentity)?;
@@ -2131,6 +2183,44 @@ fn seal_backup_payload(payload: &Path) -> Result<(), DataRecoveryError> {
     transaction
         .commit()
         .map_err(DataRecoveryError::CatalogueIdentity)?;
+    Ok(())
+}
+
+/// R53 steps 3 and 4: the payload seal. The copy's own state row must be
+/// credential-clean and OLD-T1 and OLD-T2 absent; then, with `secure_delete`
+/// on and in one transaction, the credential rows go (fences, attempts and key
+/// usage stay) before the retained seal closes the connection and checks that
+/// no side file is left.
+fn seal_backup_payload(payload: &Path) -> Result<(), DataRecoveryError> {
+    #[cfg(test)]
+    {
+        use crate::auth::credential_migration::seam::{PayloadAction, payload_stage};
+        if !matches!(
+            payload_stage("after_copy", payload),
+            PayloadAction::Continue
+        ) {
+            return Err(invalid("backup stopped after the copy"));
+        }
+    }
+    let catalogue = payload.join("hub.sqlite");
+    require_regular_file(&catalogue, "staged backup catalogue")?;
+    let mut connection = Connection::open_with_flags(
+        &catalogue,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(DataRecoveryError::CatalogueIdentity)?;
+    seal_backup_credentials_checked(&connection)?;
+    #[cfg(test)]
+    {
+        use crate::auth::credential_migration::seam::{PayloadAction, payload_stage};
+        if !matches!(
+            payload_stage("seal_transaction", payload),
+            PayloadAction::Continue
+        ) {
+            return Err(invalid("backup seal transaction failed"));
+        }
+    }
+    seal_backup_credentials(&mut connection)?;
     drop(connection);
     seal_staged_catalogue(payload)
 }
