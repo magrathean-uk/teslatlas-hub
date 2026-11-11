@@ -379,7 +379,7 @@ fn backup_schedule_due_time_is_pure_and_tolerates_a_clock_set_back() {
     state.last_failure_code = Some(BACKUP_FAILED.to_owned());
     assert_eq!(next_due_ms(&s, &state, 0, 12 * HOUR), 16 * HOUR);
     // An overdue run that failed waits the retry from that attempt.
-    assert_eq!(next_due_ms(&s, &state, 0, 40 * HOUR), 16 * HOUR.max(11 * HOUR + s.retry_ms));
+    assert_eq!(next_due_ms(&s, &state, 0, 40 * HOUR), (16 * HOUR).max(11 * HOUR + s.retry_ms));
     state.last_attempt_ms = Some(39 * HOUR);
     assert_eq!(next_due_ms(&s, &state, 0, 40 * HOUR), 39 * HOUR + s.retry_ms);
 }
@@ -467,7 +467,7 @@ fn backup_schedule_real_runner_writes_a_verifiable_generation_and_leaks_no_passw
     let mut paths = Vec::new();
     for _ in 0..3 {
         let report = schedule.run_now(None, None).expect("backup");
-        assert_eq!(report["status"], "complete");
+        assert_eq!(report["status"], "encrypted_backup_created");
         assert_eq!(report["trigger"], "manual");
         assert!(!report.to_string().contains(PASSWORD));
         paths.push(PathBuf::from(report["path"].as_str().expect("path")));
