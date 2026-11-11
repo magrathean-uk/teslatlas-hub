@@ -34,7 +34,9 @@ struct Hub {
 
 fn hub() -> Hub {
     clear_hook();
-    test_seam::force(None);
+    // Removals happen only where ownership is enforced; the scratch volume
+    // may ignore ownership, so the tests say which volume they play.
+    test_seam::force(Some(VolumeTrust::Posix));
     let (temporary, store) = create_fixture();
     publish_schema_22_fixture(&store);
     let destination = temporary.path().join("destination");
@@ -569,7 +571,8 @@ fn backup_path_substitution_posix_admission_applies_on_local_volumes_only() {
     verify_encrypted_backup(&good.path, PASSWORD).expect("private archive on a local volume");
     fs::set_permissions(&good.path, fs::Permissions::from_mode(0o660)).unwrap();
 
-    // Network and removable volumes rely on the authenticated encryption.
+    // Network and ownership-ignoring volumes rely on the authenticated
+    // encryption, and nothing is ever deleted there.
     test_seam::force(Some(VolumeTrust::EncryptionOnly));
     let shared_report = create_encrypted_backup(&hub.store, &hub.request_to(&shared))
         .expect("backup to a network or removable volume");
@@ -581,7 +584,321 @@ fn backup_path_substitution_posix_admission_applies_on_local_volumes_only() {
     let mut request = hub.request_to(&shared);
     request.keep = std::num::NonZeroUsize::new(1);
     let latest = create_encrypted_backup(&hub.store, &request).expect("rotating backup");
-    assert_eq!(latest.rotated_generations, 1);
-    assert!(!shared_report.path.exists() && garbage.exists());
+    assert_eq!(latest.rotated_generations, 0, "no removal can be protected there");
+    assert!(latest.rotation_error.is_some(), "the kept generations are reported");
+    assert!(shared_report.path.exists() && garbage.exists());
     test_seam::force(None);
+}
+
+// ---------------------------------------------------------------------------
+// backup_path_substitution, round 2: the six review findings
+// ---------------------------------------------------------------------------
+
+const PROTECTED: &str = ".teslatlas-hub-removals";
+
+fn partial_name_of(generation: Uuid) -> String {
+    format!(".teslatlas-hub-backup-{generation}.partial")
+}
+
+fn rotating_request<'a>(hub: &Hub, destination: &'a Path, keep: usize) -> EncryptedBackupRequest<'a> {
+    let mut request = hub.request_to(destination);
+    request.keep = std::num::NonZeroUsize::new(keep);
+    request
+}
+
+/// Finding 1: the new generation counts for retention only once the complete
+/// published file authenticates and is the object the run wrote.
+#[test]
+fn backup_path_substitution_newest_counts_only_as_the_authenticated_written_object() {
+    let hub = hub();
+    let first = hub.backup();
+    tick();
+
+    // A destination writer replaces the closed partial before publication.
+    let stand_in = hub.temporary.path().join("stand-in");
+    set_hook({
+        let stand_in = stand_in.clone();
+        move |stage, path| {
+            if stage == "before_publish" {
+                fs::write(&stand_in, vec![0x42_u8; 8192]).unwrap();
+                fs::set_permissions(&stand_in, fs::Permissions::from_mode(0o600)).unwrap();
+                fs::rename(&stand_in, path).unwrap();
+            }
+            HookAction::Continue
+        }
+    });
+    let swapped = create_encrypted_backup(&hub.store, &rotating_request(&hub, &hub.destination, 1))
+        .expect("the run publishes what it finds");
+    clear_hook();
+    assert_eq!(swapped.rotated_generations, 0);
+    assert!(swapped.rotation_error.is_some(), "the doubt is reported");
+    verify_encrypted_backup(&first.path, PASSWORD).expect("the last good generation stays");
+    assert!(verify_encrypted_backup(&swapped.path, PASSWORD).is_err());
+    tick();
+
+    // The published archive is truncated once it has authenticated.
+    set_hook(|stage, path| {
+        if stage == "rotate_confirmed" {
+            let file = fs::OpenOptions::new().write(true).open(path).unwrap();
+            let length = file.metadata().unwrap().len();
+            file.set_len(length / 2).unwrap();
+        }
+        HookAction::Continue
+    });
+    let truncated = create_encrypted_backup(&hub.store, &rotating_request(&hub, &hub.destination, 1))
+        .expect("backup despite the truncation");
+    clear_hook();
+    assert_eq!(truncated.rotated_generations, 0);
+    assert!(truncated.rotation_error.is_some());
+    verify_encrypted_backup(&first.path, PASSWORD).expect("the last good generation stays");
+    assert!(!hub.destination.join(PROTECTED).exists(), "nothing is left claimed");
+}
+
+/// Finding 2: a generation damaged beyond its manifest neither counts nor goes.
+#[test]
+fn backup_path_substitution_damaged_generations_neither_count_nor_go() {
+    let hub = hub();
+    let first = hub.backup();
+    tick();
+    let second = hub.backup();
+    tick();
+    let mut bytes = fs::read(&second.path).unwrap();
+    let near_end = bytes.len() - 5;
+    bytes[near_end] ^= 0x01;
+    fs::write(&second.path, &bytes).unwrap();
+    assert!(verify_encrypted_backup(&second.path, PASSWORD).is_err(), "precondition");
+
+    let third = hub.backup_keeping(2);
+    assert_eq!(third.rotated_generations, 0, "the damaged one does not count");
+    assert!(third.rotation_error.is_some(), "the damaged generation is reported");
+    verify_encrypted_backup(&first.path, PASSWORD).expect("the genuine older generation stays");
+    assert!(second.path.exists(), "a damaged generation is never removed");
+    verify_encrypted_backup(&third.path, PASSWORD).expect("newest");
+}
+
+/// Finding 3: a complete generation under a partial name is kept; only a
+/// partial the live catalogue records as an abandoned run goes.
+#[test]
+fn backup_path_substitution_a_generation_renamed_as_a_partial_is_kept() {
+    let hub = hub();
+    let first = hub.backup();
+    let disguised = hub.destination.join(partial_name_of(first.generation));
+    fs::rename(&first.path, &disguised).unwrap();
+    tick();
+    hub.backup();
+    assert!(disguised.exists(), "a renamed genuine generation is never cleaned up");
+    fs::rename(&disguised, &first.path).unwrap();
+    verify_encrypted_backup(&first.path, PASSWORD).expect("intact");
+    tick();
+
+    // This Hub's run killed after the archive was complete: the next run
+    // publishes it under its own name instead of removing it.
+    set_hook(|stage, _| {
+        if stage == "before_publish" {
+            HookAction::Crash
+        } else {
+            HookAction::Continue
+        }
+    });
+    assert!(create_encrypted_backup(&hub.store, &hub.request_to(&hub.destination)).is_err());
+    clear_hook();
+    let abandoned: Vec<String> = hub
+        .entries()
+        .into_iter()
+        .filter(|name| name.ends_with(".partial"))
+        .collect();
+    assert_eq!(abandoned.len(), 1);
+    let generation = abandoned[0]
+        .trim_start_matches(".teslatlas-hub-backup-")
+        .trim_end_matches(".partial")
+        .to_owned();
+    tick();
+    hub.backup();
+    let published: Vec<String> = hub
+        .entries()
+        .into_iter()
+        .filter(|name| name.ends_with(&format!("-{generation}.tlbk")))
+        .collect();
+    assert_eq!(published.len(), 1, "the complete abandoned run is kept and published");
+    verify_encrypted_backup(&hub.destination.join(&published[0]), PASSWORD).expect("published");
+    assert!(!hub.destination.join(&abandoned[0]).exists());
+    tick();
+
+    // A recorded partial replaced by another generation of this Hub: the
+    // name and the generation say "own", the identity does not.
+    set_hook(|stage, _| {
+        if stage == "record" {
+            HookAction::Crash
+        } else {
+            HookAction::Continue
+        }
+    });
+    assert!(create_encrypted_backup(&hub.store, &hub.request_to(&hub.destination)).is_err());
+    clear_hook();
+    let recorded = hub
+        .entries()
+        .into_iter()
+        .find(|name| name.ends_with(".partial"))
+        .expect("the killed run's partial");
+    let elsewhere = hub.temporary.path().join("elsewhere");
+    fs::create_dir(&elsewhere).unwrap();
+    let substitute = create_encrypted_backup(&hub.store, &hub.request_to(&elsewhere)).unwrap();
+    fs::rename(&substitute.path, hub.destination.join(&recorded)).unwrap();
+    tick();
+    hub.backup();
+    assert!(hub.destination.join(&recorded).exists(), "not the recorded object: kept");
+}
+
+/// Finding 4: a removal claims its candidate into a protected directory and
+/// authenticates what it claimed; where no directory can be protected,
+/// nothing is deleted.
+#[test]
+fn backup_path_substitution_removal_claims_and_authenticates_what_it_removes() {
+    let hub = hub();
+    let first = hub.backup();
+    tick();
+    let second = hub.backup();
+    tick();
+    let elsewhere = hub.temporary.path().join("elsewhere");
+    fs::create_dir(&elsewhere).unwrap();
+    let substitute = create_encrypted_backup(&hub.store, &hub.request_to(&elsewhere)).unwrap();
+    let substitute_bytes = fs::read(&substitute.path).unwrap();
+    tick();
+
+    // The candidate's name is swapped for another genuine generation in the
+    // moment before its removal.
+    let swapped = std::rc::Rc::new(std::cell::RefCell::new(None::<PathBuf>));
+    set_hook({
+        let swapped = swapped.clone();
+        let substitute = substitute.path.clone();
+        move |stage, path| {
+            if stage == "rotate_remove" && swapped.borrow().is_none() {
+                fs::rename(&substitute, path).unwrap();
+                *swapped.borrow_mut() = Some(path.to_path_buf());
+            }
+            HookAction::Continue
+        }
+    });
+    let third = hub.backup_keeping(1);
+    clear_hook();
+    let swapped = swapped.borrow().clone().expect("a removal was attempted");
+    assert_eq!(fs::read(&swapped).unwrap(), substitute_bytes, "the substitute is kept");
+    assert!(third.rotation_error.is_some(), "the refused removal is reported");
+    assert_eq!(third.rotated_generations, 1, "the other candidate went");
+    assert!(!hub.destination.join(PROTECTED).exists());
+    let _ = (&first, &second);
+    tick();
+
+    // A protected directory that others can enter protects nothing.
+    let fourth = hub.backup();
+    tick();
+    fs::create_dir(hub.destination.join(PROTECTED)).unwrap();
+    fs::set_permissions(hub.destination.join(PROTECTED), fs::Permissions::from_mode(0o777))
+        .unwrap();
+    let fifth = hub.backup_keeping(1);
+    assert_eq!(fifth.rotated_generations, 0);
+    assert!(fifth.rotation_error.is_some());
+    verify_encrypted_backup(&fourth.path, PASSWORD).expect("kept");
+    fs::remove_dir(hub.destination.join(PROTECTED)).unwrap();
+    tick();
+
+    // No protected directory on a volume that ignores ownership: no removal,
+    // and a failed run's partial stays too.
+    test_seam::force(Some(VolumeTrust::EncryptionOnly));
+    let sixth = hub.backup_keeping(1);
+    assert_eq!(sixth.rotated_generations, 0);
+    assert!(sixth.rotation_error.is_some());
+    for kept in [&third.path, &fourth.path, &fifth.path] {
+        verify_encrypted_backup(kept, PASSWORD).expect("nothing is deleted");
+    }
+    set_hook(|stage, _| {
+        if stage == "write" {
+            HookAction::Fail(std::io::ErrorKind::BrokenPipe)
+        } else {
+            HookAction::Continue
+        }
+    });
+    assert!(create_encrypted_backup(&hub.store, &hub.request_to(&hub.destination)).is_err());
+    clear_hook();
+    assert_eq!(
+        hub.entries().iter().filter(|name| name.ends_with(".partial")).count(),
+        1,
+        "the failed run's partial is not deleted where no removal is protected"
+    );
+    test_seam::force(Some(VolumeTrust::Posix));
+}
+
+/// Finding 5: removable media that enforce ownership keep POSIX admission.
+#[cfg(target_os = "macos")]
+#[test]
+fn backup_path_substitution_removable_volumes_with_ownership_keep_posix_admission() {
+    use crate::data_recovery::backup_admission::trust_for_mount;
+    const MNT_REMOVABLE: u32 = 0x0000_0200;
+    const MNT_LOCAL: u32 = 0x0000_1000;
+    const MNT_IGNORE_OWNERSHIP: u32 = 0x0020_0000;
+    for kind in ["apfs", "hfs"] {
+        assert_eq!(trust_for_mount(MNT_LOCAL | MNT_REMOVABLE, kind), VolumeTrust::Posix);
+        assert_eq!(trust_for_mount(MNT_LOCAL, kind), VolumeTrust::Posix);
+        assert_eq!(
+            trust_for_mount(MNT_LOCAL | MNT_REMOVABLE | MNT_IGNORE_OWNERSHIP, kind),
+            VolumeTrust::EncryptionOnly
+        );
+        assert_eq!(trust_for_mount(0, kind), VolumeTrust::EncryptionOnly, "network");
+    }
+    for kind in ["exfat", "msdos", "ntfs"] {
+        assert_eq!(
+            trust_for_mount(MNT_LOCAL | MNT_REMOVABLE, kind),
+            VolumeTrust::EncryptionOnly
+        );
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn add_acl(path: &Path, entry: &str) {
+    let status = std::process::Command::new("/bin/chmod")
+        .arg("+a")
+        .arg(entry)
+        .arg(path)
+        .status()
+        .unwrap();
+    assert!(status.success(), "cannot set `{entry}` on {}", path.display());
+}
+
+/// Finding 6: an ACL that lets another account write, add or delete refuses
+/// a destination or an archive whose mode bits look private.
+#[cfg(target_os = "macos")]
+#[test]
+fn backup_path_substitution_acl_write_grants_are_refused() {
+    use crate::data_recovery::backup_admission::acl_listing_grants_write;
+    let hub = hub();
+    let good = hub.backup();
+
+    let open_folder = hub.temporary.path().join("acl-folder");
+    fs::create_dir(&open_folder).unwrap();
+    fs::set_permissions(&open_folder, fs::Permissions::from_mode(0o700)).unwrap();
+    add_acl(&open_folder, "group:everyone allow list,search,add_file,delete_child");
+    let refused = create_encrypted_backup(&hub.store, &hub.request_to(&open_folder));
+    assert!(matches!(refused, Err(DataRecoveryError::InvalidBackup(_))));
+    assert_eq!(fs::read_dir(&open_folder).unwrap().count(), 0, "nothing written");
+
+    add_acl(&good.path, "group:everyone allow write,append");
+    assert!(verify_encrypted_backup(&good.path, PASSWORD).is_err());
+    let target = hub.temporary.path().join("acl-restore");
+    assert!(restore_encrypted_backup(&good.path, PASSWORD, &target).is_err());
+    assert!(!target.exists());
+
+    // A deny entry grants nothing.
+    let denied = hub.temporary.path().join("deny-folder");
+    fs::create_dir(&denied).unwrap();
+    fs::set_permissions(&denied, fs::Permissions::from_mode(0o700)).unwrap();
+    add_acl(&denied, "group:everyone deny delete");
+    create_encrypted_backup(&hub.store, &hub.request_to(&denied)).expect("deny entries admit");
+
+    let listing = "drwx------  2 hub  staff  64 Nov 11 17:21 d\n \
+                   0: group:staff deny delete\n \
+                   1: group:everyone inherited allow list,search,delete_child\n";
+    assert!(acl_listing_grants_write(listing));
+    assert!(!acl_listing_grants_write(
+        "-rw-------  1 hub  staff  0 Nov 11 17:21 f\n 0: group:everyone allow read\n"
+    ));
 }

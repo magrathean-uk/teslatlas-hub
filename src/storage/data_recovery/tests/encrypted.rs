@@ -54,6 +54,11 @@ struct Rig {
 /// folder.
 fn rig() -> Rig {
     clear_hook();
+    // M06-T02: these runs remove partials and rotate, which happens only on a
+    // volume that enforces ownership; the scratch volume may not.
+    crate::data_recovery::backup_admission::test_seam::force(Some(
+        crate::data_recovery::backup_admission::VolumeTrust::Posix,
+    ));
     let (temporary, store) = create_fixture();
     publish_schema_22_fixture(&store);
     let destination = temporary.path().join("destination");
