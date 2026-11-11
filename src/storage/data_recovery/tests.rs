@@ -1311,5 +1311,8 @@ fn noncanonical_or_scope_expanding_manifest_is_rejected() {
 #[path = "tests/b2.rs"]
 mod b2;
 
+#[path = "tests/encrypted.rs"]
+mod encrypted;
+
 #[path = "tests/g2_4_m1.rs"]
 mod g2_4_m1;

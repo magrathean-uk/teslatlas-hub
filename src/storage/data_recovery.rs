@@ -105,6 +105,20 @@ pub enum DataRecoveryError {
         #[source]
         source: rustix::io::Errno,
     },
+    #[error("the backup password is wrong, or the archive header is damaged")]
+    WrongPassword,
+    #[error("the backup archive is damaged: {0}")]
+    CorruptArchive(String),
+    #[error("the backup was cancelled")]
+    Cancelled,
+    #[error("the backup destination is unavailable at {path}: {source}")]
+    DestinationUnavailable {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("the backup destination is full at {path}")]
+    DestinationFull { path: PathBuf },
     #[error("Hub data-recovery staging capacity calculation overflowed")]
     CapacityOverflow,
     #[error(
@@ -465,6 +479,17 @@ pub fn restore_data_backup(
         ));
     }
 
+    finalize_restore(staging, &destination, &manifest)
+}
+
+/// The shared tail of every restore: migrate when the catalogue is older, seal
+/// out host authority, re-verify the staged tree and publish it without
+/// replacement. The staged tree already holds every verified member.
+fn finalize_restore(
+    staging: StagingDirectory,
+    destination: &Path,
+    manifest: &BackupManifest,
+) -> Result<DataRecoveryReport, DataRecoveryError> {
     let migrated = manifest.hub_schema != SCHEMA_VERSION;
     if migrated {
         let migrated_store = HubStore::initialize(&staging.path)?;
@@ -495,8 +520,8 @@ pub fn restore_data_backup(
     validate_restored_data_tree(&staging.path, &manifest.members, true)?;
     sync_restored_data(&staging.path, &manifest.members)?;
 
-    let report = report(STATUS_DATA_RESTORED, &destination, &manifest)?;
-    staging.publish(&destination)?;
+    let report = report(STATUS_DATA_RESTORED, destination, manifest)?;
+    staging.publish(destination)?;
     Ok(report)
 }
 
@@ -1894,6 +1919,15 @@ fn io_error(
         source,
     }
 }
+
+mod archive_crypto;
+mod encrypted_backup;
+
+pub use archive_crypto::generate_recovery_password;
+pub use encrypted_backup::{
+    EncryptedBackupReport, EncryptedBackupRequest, create_encrypted_backup,
+    restore_encrypted_backup, verify_encrypted_backup,
+};
 
 #[cfg(test)]
 #[path = "data_recovery/tests.rs"]
