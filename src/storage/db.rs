@@ -349,6 +349,8 @@ impl StreamFaultPoint {
 #[derive(Debug, Clone)]
 pub struct HubStore {
     credential_connection_taken: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// The refresh fence's lease capability (M02 design 5), shared by clones.
+    refresh_fence: RefreshFenceCapability,
     /// One test process context, shared only by clones of this store.
     #[cfg(test)]
     pub(crate) fixture_vault: Arc<FixtureVault>,

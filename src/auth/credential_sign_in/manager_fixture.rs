@@ -34,16 +34,29 @@ pub fn seed_fleet_pair_for_test(data: &Path, credentials: &crate::fleet_credenti
 
 #[doc(hidden)]
 pub fn begin_refresh_for_test(data: &Path, fleet: bool, expected: uuid::Uuid) -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(debug_assertions)]
-    let scope = super::SignInScope::open_for_test(data, true)?;
-    #[cfg(not(debug_assertions))]
-    let scope = super::SignInScope::open(data)?;
+    // A refresh begins only under the live collector lease of the store that
+    // opened the vault (M02 design 5), so the fixture holds one for its begin.
+    let admission = AdmittedUserHub::admit(data)?;
+    let store = HubStore::initialize(data)?;
+    let vault = CredentialVault::open(store.clone(), Arc::clone(&admission), data,
+        VaultOptions { #[cfg(debug_assertions)] exclusion: Some(Arc::new(Excluded)), ..VaultOptions::default() }).map_err(super::CredentialCommandError::from)?;
     let slot = if fleet { super::super::credential_envelope::CredentialSlot::FleetApi } else { super::super::credential_envelope::CredentialSlot::OwnerApi };
-    let actual = scope.entry().vault().stored_generation(slot).map_err(super::CredentialCommandError::from)?;
+    let actual = vault.stored_generation(slot).map_err(super::CredentialCommandError::from)?;
     if actual != Some(expected) { return Err(std::io::Error::other("fixture_generation_mismatch").into()); }
-    scope.entry().vault().begin_refresh(slot, expected).map_err(super::CredentialCommandError::from)?;
-    scope.release()?;
-    Ok(())
+    with_refresh_lease(&store, || vault.begin_refresh(slot, expected).map(|_| ()).map_err(super::CredentialCommandError::from))?;
+    drop(vault);
+    drop(store);
+    Arc::try_unwrap(admission).map(drop).map_err(|_| std::io::Error::other("fixture_admission_retained").into())
+}
+
+/// Hold the supervised collector lease on `store` for one refresh, as the
+/// collector does, and give it back whatever the refresh returned.
+fn with_refresh_lease<T, E: Into<Box<dyn std::error::Error>>>(store: &HubStore, refresh: impl FnOnce() -> Result<T, E>) -> Result<T, Box<dyn std::error::Error>> {
+    let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?.as_millis();
+    let lease = store.acquire_supervised_collector_lease(i64::try_from(now)?)?;
+    let result = refresh().map_err(Into::into);
+    store.release_supervised_collector_lease(lease)?;
+    result
 }
 
 #[doc(hidden)]
@@ -123,7 +136,13 @@ pub async fn refresh_owner_manager_for_test(data: &Path, token_url: &str, before
     let loaded = manager.access_token_for_sensitive_use()? == before;
     crate::crypto::install_default_provider();
     let client = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(std::time::Duration::from_secs(60)).build()?;
-    manager.refresh_now(&client, SystemTime::now()).await?;
+    let store = fixture.store.clone().expect("fixture store");
+    let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?.as_millis();
+    let lease = store.acquire_supervised_collector_lease(i64::try_from(now)?)?;
+    let refreshed = manager.refresh_now(&client, SystemTime::now()).await;
+    store.release_supervised_collector_lease(lease)?;
+    drop(store);
+    refreshed?;
     let adopted = manager.access_token_for_sensitive_use()? == after;
     manager.shutdown().await?;
     fixture.release()?;

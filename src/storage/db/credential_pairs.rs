@@ -5,6 +5,59 @@ use crate::auth::credential_envelope::{
 };
 use crate::auth::credential_keys::KeyringHandle;
 pub(crate) const MAX_CREDENTIAL_REFRESH_FENCES: usize = MAX_OUTBOUND_REQUEST_RECEIPTS as usize;
+/// Refusal code: the refresh start has no process admission (the data-dir lock).
+pub(crate) const REFRESH_FENCE_PROCESS_LOCK: &str = "refresh_fence_process_lock";
+/// Refusal code: a refresh of the other origin is unresolved.
+pub(crate) const REFRESH_FENCE_OTHER_ORIGIN: &str = "refresh_fence_other_origin";
+/// The lease half of the one refresh fence (M02 design 5). The store handle that
+/// acquired the supervised collector lease holds its instance id here, shared with
+/// its clones and with the credential connection taken from them, and gives it up
+/// on release or loss. A refresh begins only when this id still names the live,
+/// unexpired lease row, read inside the begin transaction.
+#[derive(Clone)]
+pub(crate) struct RefreshFenceCapability {
+    held: std::sync::Arc<std::sync::Mutex<Option<Uuid>>>,
+    /// Test only: unit fixtures that do not exercise the fence start waived; the
+    /// fence tests enforce it. Release builds have no waiver.
+    #[cfg(test)]
+    waived: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+impl Default for RefreshFenceCapability {
+    fn default() -> Self {
+        Self {
+            held: std::sync::Arc::default(),
+            #[cfg(test)]
+            waived: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+        }
+    }
+}
+impl std::fmt::Debug for RefreshFenceCapability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RefreshFenceCapability").finish_non_exhaustive()
+    }
+}
+impl RefreshFenceCapability {
+    fn slot(&self) -> std::sync::MutexGuard<'_, Option<Uuid>> {
+        self.held.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+    pub(crate) fn hold(&self, instance: Uuid) {
+        *self.slot() = Some(instance);
+    }
+    pub(crate) fn withdraw(&self, instance: Uuid) {
+        let mut held = self.slot();
+        if *held == Some(instance) {
+            *held = None;
+        }
+    }
+    /// `Ok(None)` only for a waived test fixture; otherwise the lease to prove.
+    fn required_lease(&self) -> Result<Option<Uuid>, StoreError> {
+        #[cfg(test)]
+        if self.waived.load(std::sync::atomic::Ordering::Acquire) {
+            return Ok(None);
+        }
+        self.slot().map(Some).ok_or(StoreError::SupervisedCollectorLeaseLost)
+    }
+}
 const CREDENTIAL_PAIR_COLUMNS: &str = "account_id, slot, origin, refresh_owner, generation,
     access_envelope, refresh_envelope, refresh_present, refresh_fingerprint, expires_at,
     next_refresh_at, client_id, region, migrated, written_at_ms";
@@ -367,6 +420,7 @@ pub struct CredentialConnection {
     database_path: PathBuf,
     barrier_directory: File,
     migration_state: CredentialMigrationRuntime,
+    refresh_fence: RefreshFenceCapability,
     #[cfg(test)]
     now_ms: Option<i64>,
     #[cfg(test)]
@@ -465,6 +519,7 @@ impl HubStore {
                 database_path: self.database_path.clone(),
                 barrier_directory,
                 migration_state: CredentialMigrationRuntime::default(),
+                refresh_fence: self.refresh_fence.clone(),
                 #[cfg(test)]
                 now_ms: None,
                 #[cfg(test)]
@@ -874,10 +929,17 @@ impl CredentialConnection {
     ) -> Result<OutboundRequestReceiptId, StoreError> {
         let now = self.now_ms()?;
         let capacity = self.capacity();
+        // M02 design 5: one fence for both origins. The process lock and the
+        // lease are proved before the transaction reads anything else.
+        let lease = self.refresh_fence.required_lease()?;
+        if lease.is_some() && self._lease.admission.is_none() {
+            return Err(StoreError::WriteRefused(REFRESH_FENCE_PROCESS_LOCK));
+        }
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
+        credential_refresh_fence(&tx, slot, lease, now)?;
         let row = tx
             .query_row(
                 "SELECT generation, refresh_present, refresh_fingerprint FROM
@@ -1648,6 +1710,42 @@ fn credential_unresolved(connection: &Connection, slot: CredentialSlot) -> rusql
         |row| row.get(0),
     )
 }
+/// The fence's checks inside the begin transaction: the held lease is the live,
+/// unexpired row, and no refresh of the other origin is unresolved. The own
+/// origin's unresolved attempt stays `AttemptInFlight`, checked by the caller.
+fn credential_refresh_fence(
+    tx: &Transaction<'_>,
+    slot: CredentialSlot,
+    lease: Option<Uuid>,
+    now: i64,
+) -> Result<(), StoreError> {
+    if let Some(instance) = lease {
+        let live: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM supervised_collector_lease WHERE
+            singleton_id=1 AND instance_id=?1 AND lease_until_ms>?2)",
+                params![instance.to_string(), now],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::CredentialRefreshReceipt)?;
+        if !live {
+            return Err(StoreError::SupervisedCollectorLeaseLost);
+        }
+    }
+    let other = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM credential_refresh_attempts a JOIN
+            outbound_request_receipts r ON r.id=a.receipt_id WHERE
+            a.account_id=1 AND a.slot<>?1 AND r.outcome='started')",
+            [slot.as_str()],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(StoreError::CredentialRefreshReceipt)?;
+    if other {
+        return Err(StoreError::WriteRefused(REFRESH_FENCE_OTHER_ORIGIN));
+    }
+    Ok(())
+}
 fn credential_token_spent(
     connection: &Connection,
     fingerprint: Option<&[u8; 32]>,
@@ -2233,6 +2331,12 @@ fn s_test_with_credential_connection<T>(
 }
 #[cfg(test)]
 impl HubStore {
+    /// Test only: hold this store (and its clones) to the whole refresh fence.
+    pub(crate) fn test_enforce_refresh_fence(&self) {
+        self.refresh_fence
+            .waived
+            .store(false, std::sync::atomic::Ordering::Release);
+    }
     pub(crate) fn test_retained_refresh_output(&self, generation: Uuid) -> Option<Result<bool, StoreError>> {
         let mut retained = self.test_retained_credential_connection.0.lock().expect("S fixture connection");
         retained.as_mut().map(|connection| connection.generation_is_refresh_output(CredentialSlot::OwnerApi, generation))
@@ -2294,4 +2398,158 @@ fn s_test_synthetic_pair(
         &mut OsNonces,
     )?;
     Ok(pair)
+}
+
+/// M02-T04: the one refresh fence (lease plus process lock, both origins) and the
+/// refusal of a rejected or reused refresh token, at the refresh start.
+#[cfg(test)]
+mod refresh_fence_tests {
+    use super::*;
+    use crate::hub_user_process::AdmittedUserHub;
+
+    fn fenced_store() -> (tempfile::TempDir, HubStore) {
+        let directory = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(directory.path()).expect("store");
+        store.test_enforce_refresh_fence();
+        (directory, store)
+    }
+
+    /// The process lock: this process's data-dir admission, bound as the vault binds it.
+    fn admit(directory: &Path, connection: &mut CredentialConnection) -> Arc<AdmittedUserHub> {
+        let admission = AdmittedUserHub::admit(directory).expect("process lock");
+        connection.bind_vault_admission(admission.take_credential_vault().expect("vault admission"));
+        admission
+    }
+
+    fn seed(connection: &mut CredentialConnection, slot: CredentialSlot, generation: Uuid, refresh: &[u8]) -> Result<(), StoreError> {
+        let now = connection.now_ms()? / 1_000;
+        let pair = s_test_synthetic_pair(connection, slot, generation, b"fence-access", refresh, now + 28_800, now + 21_600)?;
+        connection.replace_credential_pair(&pair, &EntryProvenance::Supplied, &LegacyCandidates(Vec::new()), ReplacePolicy::ReplaceAny)
+    }
+
+    fn attempts(connection: &CredentialConnection) -> i64 {
+        connection.connection.query_row("SELECT count(*) FROM credential_refresh_attempts", [], |row| row.get(0)).expect("attempt count")
+    }
+
+    fn now_ms() -> i64 {
+        outbound_request_clock_ms().expect("clock")
+    }
+
+    #[test]
+    fn refresh_fence_begin_needs_the_live_lease_of_this_store() {
+        let (directory, store) = fenced_store();
+        let mut connection = store.take_credential_connection().expect("connection");
+        let _admission = admit(directory.path(), &mut connection);
+        let input = Uuid::new_v4();
+        seed(&mut connection, CredentialSlot::OwnerApi, input, b"fence-refresh-lease").expect("pair");
+        let lease_lost = |result: Result<OutboundRequestReceiptId, StoreError>| matches!(result, Err(StoreError::SupervisedCollectorLeaseLost));
+
+        assert!(lease_lost(connection.begin_credential_refresh(CredentialSlot::OwnerApi, input)), "no lease, no refresh");
+        // Another handle's lease is another process's collector, not this store's.
+        let other = HubStore::initialize(directory.path()).expect("second handle");
+        let foreign = other.acquire_supervised_collector_lease(now_ms()).expect("foreign lease");
+        assert!(lease_lost(connection.begin_credential_refresh(CredentialSlot::OwnerApi, input)), "a foreign lease does not admit");
+        other.release_supervised_collector_lease(foreign).expect("foreign release");
+        // This store's own lease row, once expired, does not admit either.
+        let _stale = store.acquire_supervised_collector_lease(now_ms() - 86_400_000).expect("expired lease");
+        assert!(lease_lost(connection.begin_credential_refresh(CredentialSlot::OwnerApi, input)), "an expired lease does not admit");
+        assert_eq!(attempts(&connection), 0, "a refused begin writes no attempt");
+
+        // A clone of the store shares the capability; its live lease admits one begin.
+        let lease = store.clone().acquire_supervised_collector_lease(now_ms()).expect("live lease");
+        let receipt = connection.begin_credential_refresh(CredentialSlot::OwnerApi, input).expect("begin under the live lease");
+        connection.cancel_unsent_credential_refresh(receipt, input).expect("cancel unsent");
+        store.release_supervised_collector_lease(lease).expect("release");
+        assert!(lease_lost(connection.begin_credential_refresh(CredentialSlot::OwnerApi, input)), "a released lease ends the right to refresh");
+        assert_eq!(attempts(&connection), 0, "the one admitted attempt was cancelled unsent; the refused begin added none");
+    }
+
+    #[test]
+    fn refresh_fence_lost_lease_withdraws_the_capability() {
+        let (directory, store) = fenced_store();
+        let mut connection = store.take_credential_connection().expect("connection");
+        let _admission = admit(directory.path(), &mut connection);
+        let input = Uuid::new_v4();
+        seed(&mut connection, CredentialSlot::FleetApi, input, b"fence-refresh-lost").expect("pair");
+        let expired = store.acquire_supervised_collector_lease(now_ms() - 86_400_000).expect("expiring lease");
+        let other = HubStore::initialize(directory.path()).expect("second handle");
+        let successor = other.acquire_supervised_collector_lease(now_ms()).expect("successor lease");
+        assert!(matches!(
+            store.heartbeat_supervised_collector_lease(expired, SupervisedCollectorState::Active, now_ms()),
+            Err(StoreError::SupervisedCollectorLeaseLost)
+        ));
+        assert!(store.refresh_fence.slot().is_none(), "the lost lease is withdrawn");
+        assert!(matches!(connection.begin_credential_refresh(CredentialSlot::FleetApi, input), Err(StoreError::SupervisedCollectorLeaseLost)));
+        other.release_supervised_collector_lease(successor).expect("release");
+    }
+
+    #[test]
+    fn refresh_fence_begin_needs_the_process_lock() {
+        let (_directory, store) = fenced_store();
+        let mut connection = store.take_credential_connection().expect("connection");
+        let input = Uuid::new_v4();
+        seed(&mut connection, CredentialSlot::OwnerApi, input, b"fence-refresh-lock").expect("pair");
+        let lease = store.acquire_supervised_collector_lease(now_ms()).expect("lease");
+        assert!(matches!(
+            connection.begin_credential_refresh(CredentialSlot::OwnerApi, input),
+            Err(StoreError::WriteRefused(REFRESH_FENCE_PROCESS_LOCK))
+        ));
+        assert_eq!(attempts(&connection), 0);
+        store.release_supervised_collector_lease(lease).expect("release");
+    }
+
+    #[test]
+    fn refresh_fence_serialises_legacy_and_fleet() {
+        let (directory, store) = fenced_store();
+        let mut connection = store.take_credential_connection().expect("connection");
+        let _admission = admit(directory.path(), &mut connection);
+        let owner = Uuid::new_v4();
+        let fleet = Uuid::new_v4();
+        seed(&mut connection, CredentialSlot::OwnerApi, owner, b"fence-refresh-owner").expect("owner pair");
+        seed(&mut connection, CredentialSlot::FleetApi, fleet, b"fence-refresh-fleet").expect("Fleet pair");
+        let lease = store.acquire_supervised_collector_lease(now_ms()).expect("lease");
+        let other_origin = |result: Result<OutboundRequestReceiptId, StoreError>| matches!(result, Err(StoreError::WriteRefused(REFRESH_FENCE_OTHER_ORIGIN)));
+
+        let owner_receipt = connection.begin_credential_refresh(CredentialSlot::OwnerApi, owner).expect("Legacy begin");
+        assert!(other_origin(connection.begin_credential_refresh(CredentialSlot::FleetApi, fleet)), "Fleet waits for the Legacy refresh");
+        assert_eq!(attempts(&connection), 1);
+        connection.cancel_unsent_credential_refresh(owner_receipt, owner).expect("Legacy resolved");
+
+        let fleet_receipt = connection.begin_credential_refresh(CredentialSlot::FleetApi, fleet).expect("Fleet begin once Legacy is resolved");
+        assert!(other_origin(connection.begin_credential_refresh(CredentialSlot::OwnerApi, owner)), "Legacy waits for the Fleet refresh");
+        assert!(matches!(
+            connection.begin_credential_refresh(CredentialSlot::FleetApi, fleet),
+            Err(StoreError::RefreshOutcomeUnknown { reason: BeginRefusal::AttemptInFlight })
+        ), "the own origin keeps its in-flight refusal");
+        connection.cancel_unsent_credential_refresh(fleet_receipt, fleet).expect("Fleet resolved");
+        assert_eq!(attempts(&connection), 0, "both admitted attempts were cancelled unsent; no refused begin added one");
+        store.release_supervised_collector_lease(lease).expect("release");
+    }
+
+    #[test]
+    fn refresh_reuse_rejected_token_is_never_presented_again() {
+        let (directory, store) = fenced_store();
+        let mut connection = store.take_credential_connection().expect("connection");
+        let _admission = admit(directory.path(), &mut connection);
+        let lease = store.acquire_supervised_collector_lease(now_ms()).expect("lease");
+        for (slot, refresh) in [(CredentialSlot::OwnerApi, &b"reuse-refresh-owner"[..]), (CredentialSlot::FleetApi, &b"reuse-refresh-fleet"[..])] {
+            let input = Uuid::new_v4();
+            seed(&mut connection, slot, input, refresh).expect("pair");
+            let receipt = connection.begin_credential_refresh(slot, input).expect("begin");
+            connection
+                .close_credential_refresh_attempt(receipt, input, OutboundRequestOutcome::AuthenticationRejected, Some(401), None, false)
+                .expect("rejected answer closed");
+            assert!(!connection.has_unresolved_credential_refresh(slot).expect("resolved"));
+            assert!(matches!(
+                connection.begin_credential_refresh(slot, input),
+                Err(StoreError::RefreshOutcomeUnknown { reason: BeginRefusal::TokenSpent })
+            ), "{slot:?}: the rejected input is fenced");
+            // The same refresh token offered again under a new generation is a reuse.
+            assert!(matches!(
+                seed(&mut connection, slot, Uuid::new_v4(), refresh),
+                Err(StoreError::RefreshTokenSpent)
+            ), "{slot:?}: a reused token is refused at write");
+        }
+        store.release_supervised_collector_lease(lease).expect("release");
+    }
 }

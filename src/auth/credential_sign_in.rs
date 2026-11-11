@@ -2,6 +2,9 @@
 
 //! Command-facing credential input and custody.
 
+// DEC-065 rule 2: the release stubs of the two secret-drop observers stay
+// compiled but unexported, so release builds expose neither name.
+#[cfg_attr(not(any(test, debug_assertions)), allow(dead_code, reason = "Observer stubs are unexported in release builds."))]
 mod buffers;
 mod custody;
 mod entries;
@@ -13,12 +16,15 @@ mod input;
 mod protocol;
 mod supplied;
 mod service;
+#[cfg_attr(not(any(test, debug_assertions)), allow(dead_code, reason = "Observer stubs are unexported in release builds."))]
 mod observe;
 #[cfg(any(debug_assertions, feature = "interop-fixture"))]
 mod manager_fixture;
 #[cfg(test)]
 pub(crate) mod status_fixtures;
 
+#[cfg(any(test, debug_assertions))]
+#[doc(hidden)]
 pub use buffers::observe_file_token_drops;
 pub(crate) use buffers::{DecodedFileToken, decoded_file_token};
 pub use custody::{FileCustodyError, read_credential_file, read_credential_file_with_hooks};
@@ -36,7 +42,10 @@ pub use supplied::{PreparedFleetSetup, decode_fleet_entry, persist_fleet_setup};
 pub use entries::clear_owner_after_fleet;
 pub use entries::prepare_owner_tokens;
 pub use entries::persist_owner_entry_with_notice;
-pub use observe::{SecretBuffer, SecretDropEvent, SecretText, observe_sign_in_secret_drops};
+pub use observe::{SecretBuffer, SecretText};
+#[cfg(any(test, debug_assertions))]
+#[doc(hidden)]
+pub use observe::{SecretDropEvent, observe_sign_in_secret_drops};
 pub(crate) use observe::{SecretDropObserver, current_secret_observer, note_secret_drop};
 #[cfg(debug_assertions)]
 #[doc(hidden)]

@@ -730,6 +730,7 @@ impl HubStore {
             .map_err(StoreError::Query)?;
         let backup_store = Self {
             credential_connection_taken: std::sync::Arc::default(),
+            refresh_fence: RefreshFenceCapability::default(),
             #[cfg(test)]
             fixture_vault: Arc::default(),
             #[cfg(test)]
@@ -935,6 +936,8 @@ impl HubStore {
             transaction
                 .commit()
                 .map_err(StoreError::SupervisedCollectorLeaseWrite)?;
+            // M02 design 5: only the store handle that took the lease may refresh.
+            self.refresh_fence.hold(lease.instance_id);
             Ok(lease)
         } else {
             Err(StoreError::SupervisedCollectorLeaseHeld)
@@ -970,6 +973,7 @@ impl HubStore {
         if changed == 1 {
             Ok(())
         } else {
+            self.refresh_fence.withdraw(lease.instance_id);
             Err(StoreError::SupervisedCollectorLeaseLost)
         }
     }
@@ -980,6 +984,8 @@ impl HubStore {
         &self,
         lease: SupervisedCollectorLease,
     ) -> Result<(), StoreError> {
+        // Withdrawn first: a failed delete still ends this handle's refresh right.
+        self.refresh_fence.withdraw(lease.instance_id);
         let connection = self.open()?;
         connection
             .execute(

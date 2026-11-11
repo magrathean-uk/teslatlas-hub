@@ -46,6 +46,7 @@ impl HubStore {
 
         let store = Self {
             credential_connection_taken: std::sync::Arc::default(),
+            refresh_fence: RefreshFenceCapability::default(),
             #[cfg(test)]
             fixture_vault: Arc::default(),
             #[cfg(test)]
@@ -420,6 +421,7 @@ impl HubStore {
             credential_connection_taken: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
                 true,
             )),
+            refresh_fence: RefreshFenceCapability::default(),
             #[cfg(test)]
             fixture_vault: Arc::default(),
             #[cfg(test)]
