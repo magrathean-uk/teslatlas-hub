@@ -25,6 +25,7 @@ use thiserror::Error;
 use url::Url;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
+use self::egress::{PermitKind, Provider};
 use crate::{
     hub_pack::ProjectionCarSettings,
     owner_api::{
@@ -298,16 +299,24 @@ impl FleetAuthApi {
             .body(body.bytes.to_vec());
         #[cfg(test)]
         crate::api::test_egress_guard::refuse_production_request(&request);
-        #[cfg(test)]
-        let response = if let Some(transport) = self.in_process.as_ref() {
-            let request = request.build().map_err(|_| FleetApiError::InvalidEndpoint)?;
-            transport.call(request).await?
-        } else {
-            request.send().await.map_err(classify_transport_error)?
-        };
-        #[cfg(not(test))]
-        let response = request.send().await.map_err(classify_transport_error)?;
-        let mut response = decode_fleet_token_response(response).await?;
+        let (client, request) = request.build_split();
+        let request = request.map_err(classify_transport_error)?;
+        // M02-T09: the window's gate is asked immediately before the send.
+        let permit = ask_gate(&request, PermitKind::TokenExchange)?;
+        let mut response = permit
+            .bound(async {
+                #[cfg(test)]
+                if let Some(transport) = self.in_process.as_ref() {
+                    return decode_fleet_token_response(transport.call(request).await?).await;
+                }
+                let response = client
+                    .execute(request)
+                    .await
+                    .map_err(classify_transport_error)?;
+                decode_fleet_token_response(response).await
+            })
+            .await
+            .map_err(cut_error)??;
         if !response.token_type.eq_ignore_ascii_case("bearer")
             || !(MIN_TOKEN_LIFETIME_SECONDS..=MAX_TOKEN_LIFETIME_SECONDS)
                 .contains(&response.expires_in)
@@ -1993,8 +2002,44 @@ where
 {
     #[cfg(test)]
     crate::api::test_egress_guard::refuse_production_request(&request);
-    let response = request.send().await.map_err(classify_transport_error)?;
-    decode_json_response(response).await
+    let (client, request) = request.build_split();
+    let request = request.map_err(classify_transport_error)?;
+    // M02-T09: the window's gate is asked immediately before the send.
+    let permit = ask_gate(&request, PermitKind::Request)?;
+    permit
+        .bound(async {
+            let response = client
+                .execute(request)
+                .await
+                .map_err(classify_transport_error)?;
+            decode_json_response(response).await
+        })
+        .await
+        .map_err(cut_error)?
+}
+
+/// Asks the window's egress gate for one Fleet send (M02-T09). A refusal
+/// (`window_closed`, or `provider_parked` while Fleet is parked) means nothing
+/// was sent and no connection was opened; it is never retried here.
+fn ask_gate(
+    request: &reqwest::Request,
+    kind: PermitKind,
+) -> Result<egress::SendPermit, FleetApiError> {
+    egress::ask(request.url().as_str(), Provider::Fleet, kind).map_err(|refusal| {
+        tracing::debug!(
+            code = refusal.code(),
+            "Fleet send refused by the window gate"
+        );
+        FleetApiError::RequestNotSent
+    })
+}
+
+/// A permitted Fleet send that the window ended while it was in flight.
+fn cut_error(cut: egress::Cut) -> FleetApiError {
+    match cut {
+        egress::Cut::Deadline => FleetApiError::RequestTimeout,
+        egress::Cut::Closed => FleetApiError::Transport,
+    }
 }
 
 /// The send path of a test client: the in-process handler when the client has
@@ -2014,7 +2059,11 @@ where
     let request = request
         .build()
         .map_err(|_| FleetApiError::InvalidEndpoint)?;
-    decode_json_response(transport.call(request).await?).await
+    let permit = ask_gate(&request, PermitKind::Request)?;
+    permit
+        .bound(async { decode_json_response(transport.call(request).await?).await })
+        .await
+        .map_err(cut_error)?
 }
 
 async fn decode_json_response<T>(response: reqwest::Response) -> Result<T, FleetApiError>
@@ -2160,6 +2209,7 @@ async fn read_response_with_limit(
     Ok(bytes)
 }
 
+pub(crate) mod egress;
 #[cfg(test)]
 pub(crate) mod in_process;
 #[cfg(test)]
