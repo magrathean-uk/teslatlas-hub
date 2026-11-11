@@ -8,9 +8,16 @@ from the other logger's database. Hub never reads, stores, uses or refreshes a
 token held by another application, and no setting or flag changes that.
 
 This guide covers issuing a grant, trusting the issuer, issuer key custody,
-opening, stopping, rolling back and restarting. Command names marked
-*(name may change)* are provisional until the operator commands land with
-M02-T10; check `teslatlas-hub window --help` for the shipped spelling.
+opening, stopping, rolling back and restarting. `teslatlas-hub window --help`
+lists the verbs.
+
+`window status`, `window trust`, `window open`, `window close`, `setup` and the
+credential-recovery commands are forwarded to the running Hub service, which
+holds the window authority. With no service running they are refused with
+`service_not_running` before they read any file, standard input or the
+network. The issuer verbs (`window issuer-init`, `window issuer-trust`,
+`window issue`, `window void`) and `window host-id` run on the issuer Mac
+without a service.
 
 ## How a window works
 
@@ -42,9 +49,12 @@ M02-T10; check `teslatlas-hub window --help` for the shipped spelling.
   1Password and is read through `op-cached` at each issuance as a 0600 file
   passed by path. It is never stored in a repository, the data directory, a
   backup, the lab or the login keychain.
-- Create the key pair and the issuer ledger once with `window issuer-init`
-  *(name may change)*. Store the private key in 1Password, then discard the
-  local copy. The public key goes to each Hub with `window trust`.
+- Create the key pair and the issuer ledger once with
+  `teslatlas-hub window issuer-init --key-out KEY --trust-out TRUST`. Store the
+  private key in 1Password, then discard the local copy. The trust document
+  (the public key, its id and the trust epoch) goes to each Hub with
+  `window trust`. `window issuer-trust --key-file KEY --trust-out TRUST` writes
+  it again; add `--new-epoch` to start a new trust epoch.
 - The ledger is a hash-chained file in
   `~/dev/machine/records/teslatlas/hub-evidence/window-issuer/` (directory mode
   0700, internal drive). After each issuance the ledger head digest and
@@ -53,7 +63,7 @@ M02-T10; check `teslatlas-hub window --help` for the shipped spelling.
 - Issuance holds one exclusive lock from the overlap check through signing and
   publication. A reservation entry is written and synced before signing; if
   publication fails, the reservation keeps blocking overlaps until it is voided
-  with an explicit entry.
+  with `window void --key-file KEY --seq N --reason TEXT`.
 - The issuer refuses to write a grant if the key file is missing, unreadable,
   wider than 0600 or the wrong length; the key id differs from the ledger; the
   ledger is missing or its chain is broken; the approver is not the owner or the
@@ -62,38 +72,43 @@ M02-T10; check `teslatlas-hub window --help` for the shipped spelling.
 
 ## Trust the issuer on a Hub
 
-1. Copy the issuer public key file to the Hub host.
-2. With the window Closed, run `teslatlas-hub window trust FILE` *(name may
-   change)*. Hub stores the key and key id in its data directory and starts a
-   fresh window ledger with a new trust epoch. Running it again sets a new
-   epoch, which invalidates every earlier grant.
+1. Copy the issuer trust document to the Hub host.
+2. With the Hub service running and the window Closed, run
+   `teslatlas-hub window trust FILE`. Hub stores the key and key id in its data
+   directory and starts a fresh window ledger with the document's trust epoch.
+   The epoch must be newer than the one Hub last trusted; a document from
+   `window issuer-trust --new-epoch` invalidates every earlier grant.
 
 A Hub whose window state or ledger is missing, corrupt or chain-broken refuses
 every open until `window trust` is run again.
 
 ## Issue a grant
 
-1. Agree the window with the owner and record the approval reference.
-2. On the issuer Mac, run `teslatlas-hub window issue` *(name may change)*
-   with the host id of the target Hub, the start, the expiry, the approver, the
-   reason and the approval reference. The key is read from 1Password for this
-   run.
+1. Agree the window with the owner and record the approval reference. Read the
+   target Hub's host id with `teslatlas-hub window host-id` on that host.
+2. On the issuer Mac, run `teslatlas-hub window issue --key-file KEY
+   --host-id HOST --starts-at START --expires-at EXPIRY --approver G
+   --reason TEXT --approval-ref REF --out GRANT`. Times are UTC, as RFC 3339
+   (`2026-11-12T09:30:00Z`) or Unix seconds. The key is read from 1Password for
+   this run.
 3. Copy the signed grant file to the Hub host (to a guest, over SSH).
 
 ## Open
 
-1. Confirm the state is Closed with `teslatlas-hub window status` *(name may
-   change)*, and that no import is running.
-2. Run `teslatlas-hub window open --grant FILE` *(name may change)*. A refusal
+1. Confirm the state is Closed with `teslatlas-hub window status`, and that no
+   import is running.
+2. Run `teslatlas-hub window open --grant FILE`. A refusal
    returns a stable reason code and changes no state. Typical codes:
    `host_mismatch`, `import_running`, `collector_busy`, a clock refusal, or a
    grant at or below the consumption anchor.
 3. If the grant starts in the future the window is Pending and opens at the
    start time.
 4. Sign in with the Hub app while `window status` reports Open. The app passes
-   the authorisation code to the running service, which performs the exchange.
-   Collection starts once Hub holds its own login. Confirm the latest
-   observation advances.
+   the authorisation code, its PKCE verifier and the redirect URI to
+   `teslatlas-hub setup` on standard input; `setup` forwards them to the
+   running service, which performs the exchange and vehicle discovery. Outside
+   an Open window the service refuses with `window_closed`. Collection starts
+   once Hub holds its own login. Confirm the latest observation advances.
 
 ## Stop
 
@@ -101,8 +116,8 @@ every open until `window trust` is run again.
   cancels streams, lets a token exchange already begun finish (up to 60
   seconds), releases the collector lease and host claim, syncs the handback
   record and moves to Closed.
-- *Early:* run `teslatlas-hub window close` *(name may change)*. The same
-  closing sequence applies with reason `operator_close`.
+- *Early:* run `teslatlas-hub window close`. The same closing sequence
+  applies with reason `operator_close`.
 - Hub also closes itself on `relogin_needed`, `owner_api_refused`,
   `clock_invalid`, `reboot` and `state_unverifiable`. After `relogin_needed`
   the account stays signed out, and no retry happens until a new window and a
@@ -117,11 +132,13 @@ time you want Hub to stop collecting.
    Closed with the handback record written.
 2. **Revoke Hub's own grant.** Hub's login belongs to Hub alone, so revoking
    does not touch any other application:
-   - sign Hub out (`teslatlas-hub sign-out` *(name may change)*) to remove its
-     stored Tesla credential generations locally;
+   - sign Hub out (`teslatlas-hub control sign-out`) to remove its stored
+     Tesla credential generations locally;
    - optionally revoke Hub's application from Tesla Account Security;
-   - run `window trust` again with the same issuer key to set a new trust
-     epoch, so no earlier grant can open a window.
+   - on the issuer Mac write a new-epoch trust document
+     (`window issuer-trust --key-file KEY --trust-out TRUST --new-epoch`) and
+     run `window trust TRUST` on the Hub, so no earlier grant can open a
+     window.
    Hub's consumption anchor stays in the login keychain, so restoring an older
    data directory does not make a used grant valid again.
 3. **Confirm the other logger resumed.** In the other logger's database, check
