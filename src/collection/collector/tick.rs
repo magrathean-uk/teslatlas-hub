@@ -47,6 +47,10 @@ struct CachedIdentity {
 /// Registering a car refreshes its `last_seen_at_ms`, a durable write, so it is
 /// done before the tick transaction and only when the identity is new or its
 /// descriptor changed; an unchanged poll writes nothing (R14, the Idle target).
+/// A process's first resolution reads the stored identity first and registers
+/// only when registration would change something (M04-T01), so the first poll
+/// after a restart of an unchanged car writes nothing either and the tick keeps
+/// its one transaction.
 #[derive(Default)]
 struct IdentityCache {
     entries: HashMap<VehicleId, CachedIdentity>,
@@ -83,22 +87,40 @@ impl IdentityCache {
         {
             return Ok(entry.registered.clone());
         }
-        check_optional_write(guard, "identity-source")?;
-        let source = store.register_source(&provider_source(provider), now_ms)?;
-        let mut descriptor = VehicleDescriptor::new(source.source_id, vehicle.id.get().to_string())
+        let source_descriptor = provider_source(provider);
+        let mut descriptor = VehicleDescriptor::new(Uuid::nil(), vehicle.id.get().to_string())
             .with_tesla_identity(Some(vehicle.id.get() as i64), None);
         descriptor.vin = vin.clone();
         descriptor.display_name = display_name.clone();
-        check_optional_write(guard, "identity-vehicle")?;
-        let record = store.register_vehicle(&descriptor, now_ms)?;
-        check_optional_write(guard, "identity-car-id")?;
-        let pack_car_id =
-            projection_car_id_for_vehicle(store, record.vehicle_id, vehicle.id.get())?;
-        let registered = Registered {
-            hub_id: record.vehicle_id,
-            source_id: source.source_id,
-            pack_car_id,
-            generation: source.generation,
+        // M04-T01: a stored identity that registration would leave unchanged is
+        // read, not registered again: no write and no transaction of its own.
+        let registered = match store.registered_vehicle_unchanged(&source_descriptor, &descriptor)? {
+            Some(unchanged) => Registered {
+                hub_id: unchanged.vehicle_id,
+                source_id: unchanged.source_id,
+                pack_car_id: projection_car_id_for_vehicle(
+                    store,
+                    unchanged.vehicle_id,
+                    vehicle.id.get(),
+                )?,
+                generation: unchanged.source_generation,
+            },
+            None => {
+                check_optional_write(guard, "identity-source")?;
+                let source = store.register_source(&source_descriptor, now_ms)?;
+                descriptor.source_id = source.source_id;
+                check_optional_write(guard, "identity-vehicle")?;
+                let record = store.register_vehicle(&descriptor, now_ms)?;
+                check_optional_write(guard, "identity-car-id")?;
+                let pack_car_id =
+                    projection_car_id_for_vehicle(store, record.vehicle_id, vehicle.id.get())?;
+                Registered {
+                    hub_id: record.vehicle_id,
+                    source_id: source.source_id,
+                    pack_car_id,
+                    generation: source.generation,
+                }
+            }
         };
         self.entries.insert(
             vehicle.id,
