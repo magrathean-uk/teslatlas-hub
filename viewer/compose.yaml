@@ -1,0 +1,9 @@
+services:
+  viewer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: teslatlas-viewer:local
+    ports:
+      - "127.0.0.1:4173:4173"
+    restart: unless-stopped

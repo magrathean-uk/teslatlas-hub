@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "kind": "d1_viewer_component_manifest_handoff",
+  "status": "prepared_for_aggregate_runtime_recheck",
+  "verified_at": "2026-09-09",
+  "owner": "teslatlas-viewer",
+  "source": {
+    "repository": "teslatlas-viewer",
+    "head": "ba5424dcfeab59ac9fea0106f84fb5281672751a",
+    "working_tree": "dirty; unrelated paths preserved; the frozen source snapshot is external and excludes this handoff",
+    "product_version": "2026.36.2",
+    "profile_id": "hub-http-v1@1.0.0",
+    "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "source_file_count": 106,
+    "source_manifest_sha256": "b57d3e5b7c015bf397b55ab5823afe33d20c0b2296d0892f39c6bd683d6bae7a",
+    "source_manifest_algorithm": "sha256 of compact sorted-key JSON records produced by the Hub source snapshot walker; each record contains normalized path, file sha256, byte size, and executable bit; excludes .git, dist, node_modules, target, caches, and AGENTS.md",
+    "frozen_snapshot": {
+      "path": "<private-artefact-store>/teslatlas-viewer-d1-20260909/frozen-source",
+      "manifest_format": "bootstrap-companions.py manifest schema_version=1",
+      "manifest_path": "<private-artefact-store>/teslatlas-viewer-d1-20260909/local-sources.json",
+      "manifest_sha256": "ce0e854bdddb5e6a87a9ab199b213b709df7b66c079140504ab6d706eb855b82",
+      "component": "viewer",
+      "file_count": 106,
+      "source_sha256": "b57d3e5b7c015bf397b55ab5823afe33d20c0b2296d0892f39c6bd683d6bae7a",
+      "excluded_from_snapshot": "docs/development/d1-component-manifest-handoff-2026-09-09.json",
+      "owner_only": true,
+      "verified_independently": "two exact source_manifest_for rechecks passed after the snapshot was made read-only"
+    }
+  },
+  "payload": {
+    "kind": "npm_static_service",
+    "package_filename": "teslatlas-viewer-2026.36.2.tgz",
+    "package_sha256": "c0ef6f9222fde6e06a6476dbed586b8f630f9abd9d3ed4587b4d9a50dfd8fb31",
+    "package_member_count": 10,
+    "package_archive_retention": {
+      "path": "<private-artefact-store>/teslatlas-viewer-d1-20260909/teslatlas-viewer-2026.36.2.tgz",
+      "sha256": "c0ef6f9222fde6e06a6476dbed586b8f630f9abd9d3ed4587b4d9a50dfd8fb31",
+      "owner_only": true,
+      "byte_match_verified": true
+    },
+    "asset_manifest_sha256": "1998ad79a0199222b50d93bccbeffc3ead85804fadc25bb49d704f83606109d8",
+    "sdk_package_filename": "teslatlas-sdk-2026.36.2.tgz",
+    "sdk_package_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+    "healthcheck": {
+      "path": "bin/healthcheck.mjs",
+      "behavior": "returns success only for HTTP 200 from the local static root",
+      "source_sha256": "0aaef16ac1aca5f52c81ba8c3f6e69a5173264fb0f71313fc687f93b43a37aaf"
+    },
+    "docker_source": {
+      "Dockerfile_sha256": "d1f9509a4d4d2efc15afa32f8fcd82950bd67dced732f2429ade35cae9f94a51",
+      "compose_yaml_sha256": "2298aed0aa44cadcf775381df8d0679ecf2e143f7ae5557dff0d03f70b8be4bf",
+      "status": "debian_arm64_runtime_passed",
+      "runtime_receipt": "docs/development/receipts/2026-09-09-d1-container-source.json",
+      "image_id": "sha256:6791fa6d019028ae4d0c3cad926207852830188ccf5dcc70e4e01b00d76e5ea6",
+      "runtime": "Debian GNU/Linux 13.6 aarch64; Docker 26.1.5+dfsg1; Compose 2.26.1-4; non-root node uid=1000; loopback 127.0.0.1:4173",
+      "checks": "fresh image build, SDK verification, production build, healthy healthcheck, HTTP 200, no mounts, restart, clean stop and sibling-state preservation passed"
+    },
+    "native_package_status": "Debian and macOS service-manager payloads are not yet built; no package hash is invented"
+  },
+  "selectors": [
+    {
+      "id": "debian13-arm64-docker",
+      "status": "runtime_passed",
+      "runtime": {
+        "os": "Debian 13 trixie",
+        "architecture": "aarch64",
+        "docker_engine": "26.1.5+dfsg1",
+        "compose": "2.26.1",
+        "node_runtime": ">=26.0.0"
+      },
+      "artifact": {
+        "kind": "source-built-viewer-image",
+        "Dockerfile_sha256": "d1f9509a4d4d2efc15afa32f8fcd82950bd67dced732f2429ade35cae9f94a51",
+        "image_sha256": "sha256:6791fa6d019028ae4d0c3cad926207852830188ccf5dcc70e4e01b00d76e5ea6"
+      },
+      "service_ownership": "Viewer owns the stateless static service payload and loopback listener; Hub aggregate owns opt-in selection and activation",
+      "target": "Distinct guest Docker project teslatlas-viewer-d1-r2-20260909 and loopback port 4173; existing sibling containers remained untouched",
+      "acceptance_receipt": "docs/development/receipts/2026-09-09-d1-container-source.json"
+    },
+    {
+      "id": "debian13-arm64-native",
+      "status": "source_candidate_package_pending",
+      "runtime": {
+        "os": "Debian 13 trixie",
+        "architecture": "aarch64",
+        "node_runtime": ">=26.0.0",
+        "service_manager": "systemd"
+      },
+      "artifact": {
+        "kind": "npm_static_service",
+        "package_sha256": "c0ef6f9222fde6e06a6476dbed586b8f630f9abd9d3ed4587b4d9a50dfd8fb31",
+        "native_package_sha256": null
+      },
+      "service_ownership": "Viewer owns its optional stateless static service payload; the selected installer owns service activation and must not touch Hub, HA, or Edge data",
+      "target": "Fresh selected host required; no native service was installed by this handoff",
+      "acceptance_receipt": "Fresh package install/start/restart/stop/upgrade/rollback/uninstall and data-preservation evidence required"
+    },
+    {
+      "id": "macos13-arm64-launchagent",
+      "status": "source_candidate_package_pending_runtime",
+      "runtime": {
+        "os": "macOS 13.7.4",
+        "architecture": "arm64",
+        "node_runtime": ">=26.0.0",
+        "service_manager": "launchd user agent"
+      },
+      "artifact": {
+        "kind": "npm_static_service",
+        "package_sha256": "c0ef6f9222fde6e06a6476dbed586b8f630f9abd9d3ed4587b4d9a50dfd8fb31",
+        "native_package_sha256": null
+      },
+      "service_ownership": "Viewer owns the login-session static service payload; the selected installer owns visible opt-in activation and must not claim a native Hub administration service",
+      "target": "Prepared guest currently has no Node/npm; provisioned runtime and package build are required",
+      "acceptance_receipt": "Fresh selected package install/launchd start/restart/stop/upgrade/rollback/uninstall and listener ownership evidence required"
+    },
+    {
+      "id": "debian13-x86_64",
+      "status": "blocked_no_fresh_authorized_target",
+      "artifact": {
+        "kind": "source_candidate",
+        "package_sha256": "c0ef6f9222fde6e06a6476dbed586b8f630f9abd9d3ed4587b4d9a50dfd8fb31"
+      },
+      "blocked_reason": "No fresh authorized Debian 13 x86_64 lifecycle target is available; retained or quarantined guests are not substituted."
+    }
+  ],
+  "ownership": {
+    "config": "Viewer has no pairing/configuration store; endpoint and session material remain browser-memory-only",
+    "data": "Viewer is stateless and owns no Hub, HA, Edge, database, TLS, or pairing data",
+    "service": "Viewer owns its static CLI and optional service payload; Hub aggregate owns selection and cross-component activation",
+    "removal": "Remove only Viewer package/code and service registration; preserve unrelated component state"
+  },
+  "lifecycle": {
+    "install": "Stage and verify the exact package before activation; require a selected runtime and non-root service identity",
+    "restart": "Restart only the selected Viewer service and verify the same static package, listener, and HTTP health",
+    "upgrade": "Retain the previous Viewer package until the new package is verified; rollback must not touch Hub/HA/Edge state",
+    "uninstall": "Stop and remove only Viewer code/service registration; there is no Viewer data directory to purge",
+    "runtime": "The static-root healthcheck is liveness only; Hub readiness, browser TLS, and CORS remain external"
+  },
+  "receipt_schema": {
+    "required_fields": [
+      "selector_id",
+      "status",
+      "source_head",
+      "source_manifest_sha256",
+      "package_or_image_identity",
+      "runtime_os_architecture_and_version",
+      "service_identity_and_listener",
+      "install_remove_restart_upgrade_actions",
+      "before_after_unrelated_state_check",
+      "health_and_function_result",
+      "redaction_and_secret_presence_check",
+      "cleanup_and_child_process_state"
+    ],
+    "secret_policy": "Never record invitation, bearer, private key, certificate bytes, Hub database, vehicle identity, or raw response values.",
+    "acceptance_rule": "This source handoff and static check do not promote any selector to installed lifecycle acceptance."
+  },
+  "hub_action_requested": "Verify the external owner-only bootstrap-companions manifest and frozen Viewer snapshot twice, verify the retained package archive, verify the redacted Debian ARM64 Docker runtime receipt and image identity, then bind only the accepted source/package/profile/Docker identities into the aggregate D1 manifest. Keep selectors without native package or runtime receipts blocked. Do not mutate a host or sibling service from this handoff."
+}

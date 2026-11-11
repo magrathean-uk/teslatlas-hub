@@ -1,0 +1,386 @@
+{
+  "schema_version": 1,
+  "adapter_id": "viewer",
+  "revision": 1,
+  "required_cases": [
+    "candidate_artifact_identity",
+    "installed_service_runtime",
+    "discovery_identity_profile",
+    "unauthenticated_discovery",
+    "bad_invitation",
+    "expired_invitation",
+    "replayed_invitation",
+    "real_auth",
+    "credential_lifecycle_reauth",
+    "revocation",
+    "unknown_vehicle",
+    "exact_current_values",
+    "endpoint_restart",
+    "outage_recovery",
+    "unsupported_operation_zero_requests",
+    "credential_rotation_api",
+    "drives_three_page_order",
+    "drives_terminal_cursor",
+    "drives_etag_304",
+    "drives_wrong_vehicle_cursor",
+    "drives_wrong_filter_cursor",
+    "built_viewer_packed_sdk",
+    "real_browser_cors",
+    "browser_normal_tls_validation"
+  ],
+  "actors": [
+    {
+      "id": "viewer_ui",
+      "kind": "built_viewer_ui",
+      "required": true
+    },
+    {
+      "id": "viewer_sdk_contract",
+      "kind": "packed_sdk_dependency",
+      "required": true
+    }
+  ],
+  "cases": [
+    {
+      "id": "candidate_artifact_identity",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "identity",
+      "operations": [
+        "observe_installed_runtime"
+      ],
+      "raw_schema_ids": [
+        "viewer-runtime-v1"
+      ]
+    },
+    {
+      "id": "installed_service_runtime",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "identity",
+      "operations": [
+        "observe_installed_runtime"
+      ],
+      "raw_schema_ids": [
+        "viewer-runtime-v1"
+      ]
+    },
+    {
+      "id": "discovery_identity_profile",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "discover"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1"
+      ]
+    },
+    {
+      "id": "unauthenticated_discovery",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "discover"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1"
+      ]
+    },
+    {
+      "id": "bad_invitation",
+      "actor_ids": [
+        "viewer_sdk_contract"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "bad_invitation"
+      ],
+      "raw_schema_ids": [
+        "viewer-sdk-v1"
+      ]
+    },
+    {
+      "id": "expired_invitation",
+      "actor_ids": [
+        "viewer_sdk_contract"
+      ],
+      "evidence_kind": "zero_request",
+      "operations": [
+        "expired_invitation"
+      ],
+      "raw_schema_ids": [
+        "viewer-sdk-v1"
+      ]
+    },
+    {
+      "id": "replayed_invitation",
+      "actor_ids": [
+        "viewer_sdk_contract"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "replayed_invitation"
+      ],
+      "raw_schema_ids": [
+        "viewer-sdk-v1"
+      ]
+    },
+    {
+      "id": "real_auth",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "pair_and_render"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1"
+      ]
+    },
+    {
+      "id": "credential_lifecycle_reauth",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "revoke_and_repair"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1"
+      ]
+    },
+    {
+      "id": "revocation",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "revoke_and_recover"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1"
+      ]
+    },
+    {
+      "id": "unknown_vehicle",
+      "actor_ids": [
+        "viewer_sdk_contract"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "unknown_vehicle"
+      ],
+      "raw_schema_ids": [
+        "viewer-sdk-v1"
+      ]
+    },
+    {
+      "id": "exact_current_values",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "render_current"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1"
+      ]
+    },
+    {
+      "id": "endpoint_restart",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "restart_refresh"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1"
+      ]
+    },
+    {
+      "id": "outage_recovery",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "outage_recovery"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1"
+      ]
+    },
+    {
+      "id": "unsupported_operation_zero_requests",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "zero_request",
+      "operations": [
+        "unsupported_and_logout"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1"
+      ]
+    },
+    {
+      "id": "credential_rotation_api",
+      "actor_ids": [
+        "viewer_sdk_contract"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "credential_rotation"
+      ],
+      "raw_schema_ids": [
+        "viewer-sdk-v1"
+      ]
+    },
+    {
+      "id": "drives_three_page_order",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "drive_pages"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1"
+      ]
+    },
+    {
+      "id": "drives_terminal_cursor",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "drive_terminal"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1"
+      ]
+    },
+    {
+      "id": "drives_etag_304",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "drive_revalidation"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1"
+      ]
+    },
+    {
+      "id": "drives_wrong_vehicle_cursor",
+      "actor_ids": [
+        "viewer_sdk_contract"
+      ],
+      "evidence_kind": "zero_request",
+      "operations": [
+        "wrong_vehicle_cursor"
+      ],
+      "raw_schema_ids": [
+        "viewer-sdk-v1"
+      ]
+    },
+    {
+      "id": "drives_wrong_filter_cursor",
+      "actor_ids": [
+        "viewer_sdk_contract"
+      ],
+      "evidence_kind": "zero_request",
+      "operations": [
+        "wrong_filter_cursor"
+      ],
+      "raw_schema_ids": [
+        "viewer-sdk-v1"
+      ]
+    },
+    {
+      "id": "built_viewer_packed_sdk",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "identity",
+      "operations": [
+        "full_ui_journey"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1",
+        "viewer-runtime-v1"
+      ]
+    },
+    {
+      "id": "real_browser_cors",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "browser_cors"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1"
+      ]
+    },
+    {
+      "id": "browser_normal_tls_validation",
+      "actor_ids": [
+        "viewer_ui"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "browser_trust"
+      ],
+      "raw_schema_ids": [
+        "viewer-ui-v1"
+      ]
+    }
+  ],
+  "raw_schemas": [
+    {
+      "id": "viewer-ui-v1",
+      "schema": {
+        "path": "viewer-ui-raw-v1.schema.json",
+        "sha256": "3593829f23d5ee57a465b3457751b78f8e5968123801f100192b2fb6730f7919"
+      }
+    },
+    {
+      "id": "viewer-sdk-v1",
+      "schema": {
+        "path": "viewer-sdk-raw-v1.schema.json",
+        "sha256": "02666ee940f22727bcefdd4cfb31ce3639f519220c483e7cc778c764590177b0"
+      }
+    },
+    {
+      "id": "viewer-runtime-v1",
+      "schema": {
+        "path": "viewer-runtime-v1.schema.json",
+        "sha256": "6ecfa0c6be4ed402ce1469485f5b878f64fbdbcf7ff8d28dd357ddd4fcd40478"
+      }
+    }
+  ],
+  "phases": [],
+  "validator": {
+    "path": "matrix_contract.py",
+    "sha256": "0831f595959b85b8036692aa5c295f4d20086d36f2de7bc09a9e40f489b7185f"
+  }
+}
