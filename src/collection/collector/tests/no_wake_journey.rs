@@ -17,9 +17,9 @@ fn seed_journey_import(store: &HubStore) {
     let history = SourceDbHistory {
         cars: vec![SourceDbCar {
             id: 1,
-            eid: crate::test_unavailable_fixture::VEHICLE_ID as i64,
-            vid: Some(crate::test_unavailable_fixture::STREAM_ID as i64),
-            vin: Some(crate::test_unavailable_fixture::VIN.to_owned()),
+            eid: crate::collection::loopback_fixture::VEHICLE_ID as i64,
+            vid: Some(crate::collection::loopback_fixture::STREAM_ID as i64),
+            vin: Some(crate::collection::loopback_fixture::VIN.to_owned()),
             name: Some("Journey fixture".to_owned()),
             model: Some("3".to_owned()),
             trim_badging: Some("74d".to_owned()),
@@ -68,7 +68,7 @@ impl JourneyRun {
     async fn start(
         store: &HubStore,
         data_dir: &std::path::Path,
-        fake: &crate::test_unavailable_fixture::FakeTeslaSource,
+        fake: &crate::collection::loopback_fixture::FakeTeslaSource,
         cursor_byte: u8,
     ) -> Self {
         // Observer mode: the Hub is not the refresh owner, so no token request is
@@ -148,69 +148,69 @@ async fn ct33_the_canonical_scenario_with_a_restart_never_wakes_the_car() {
     // The scenario is stepped by the test, in the order of the canonical one:
     // asleep, offline, online idle, drive, parked, charge, asleep again (with a
     // restart of the collector), software update, unchanged.
-    let fake = crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
+    let fake = crate::collection::loopback_fixture::FakeTeslaSource::spawn_canonical(crate::collection::loopback_fixture::AdvanceMode::Manual)
         .await
         .expect("loopback Tesla");
     fake.set_base_ts_ms(current_epoch_millis().expect("clock") - 900_000);
-    assert_eq!(fake.current_step(), crate::test_unavailable_fixture::ScenarioStep::AsleepDiscovery);
+    assert_eq!(fake.current_step(), crate::collection::loopback_fixture::ScenarioStep::AsleepDiscovery);
 
     let run = JourneyRun::start(&store, temporary.path(), &fake, 0xC3).await;
     // Asleep and offline: the lists are read, the car is not.
     wait_for_supervised_restart_condition("asleep lists", || {
-        audited_at(&fake, "products", crate::test_unavailable_fixture::ScenarioStep::AsleepDiscovery) >= 2
+        audited_at(&fake, "products", crate::collection::loopback_fixture::ScenarioStep::AsleepDiscovery) >= 2
     })
     .await;
     fake.advance();
-    assert_eq!(fake.current_step(), crate::test_unavailable_fixture::ScenarioStep::OfflineDiscovery);
+    assert_eq!(fake.current_step(), crate::collection::loopback_fixture::ScenarioStep::OfflineDiscovery);
     wait_for_supervised_restart_condition("offline lists", || {
-        audited_at(&fake, "products", crate::test_unavailable_fixture::ScenarioStep::OfflineDiscovery) >= 2
+        audited_at(&fake, "products", crate::collection::loopback_fixture::ScenarioStep::OfflineDiscovery) >= 2
     })
     .await;
     // The car wakes (the list says online): one wake read, then the cadence.
     fake.advance();
-    assert_eq!(fake.current_step(), crate::test_unavailable_fixture::ScenarioStep::OnlineIdle);
+    assert_eq!(fake.current_step(), crate::collection::loopback_fixture::ScenarioStep::OnlineIdle);
     wait_for_supervised_restart_condition("online idle read", || {
-        audited_at(&fake, "vehicle_data", crate::test_unavailable_fixture::ScenarioStep::OnlineIdle) >= 1
+        audited_at(&fake, "vehicle_data", crate::collection::loopback_fixture::ScenarioStep::OnlineIdle) >= 1
     })
     .await;
     fake.advance();
-    assert_eq!(fake.current_step(), crate::test_unavailable_fixture::ScenarioStep::DrivePositions);
+    assert_eq!(fake.current_step(), crate::collection::loopback_fixture::ScenarioStep::DrivePositions);
     wait_for_supervised_restart_condition("drive reads", || {
-        audited_at(&fake, "vehicle_data", crate::test_unavailable_fixture::ScenarioStep::DrivePositions) >= 2
+        audited_at(&fake, "vehicle_data", crate::collection::loopback_fixture::ScenarioStep::DrivePositions) >= 2
     })
     .await;
     fake.advance();
-    assert_eq!(fake.current_step(), crate::test_unavailable_fixture::ScenarioStep::Parked);
+    assert_eq!(fake.current_step(), crate::collection::loopback_fixture::ScenarioStep::Parked);
     wait_for_supervised_restart_condition("parked read", || {
-        audited_at(&fake, "vehicle_data", crate::test_unavailable_fixture::ScenarioStep::Parked) >= 1
+        audited_at(&fake, "vehicle_data", crate::collection::loopback_fixture::ScenarioStep::Parked) >= 1
     })
     .await;
     fake.advance();
-    assert_eq!(fake.current_step(), crate::test_unavailable_fixture::ScenarioStep::ChargeSamples);
+    assert_eq!(fake.current_step(), crate::collection::loopback_fixture::ScenarioStep::ChargeSamples);
     wait_for_supervised_restart_condition("charge reads", || {
-        audited_at(&fake, "vehicle_data", crate::test_unavailable_fixture::ScenarioStep::ChargeSamples) >= 1
+        audited_at(&fake, "vehicle_data", crate::collection::loopback_fixture::ScenarioStep::ChargeSamples) >= 1
     })
     .await;
 
     // The collector restarts while the car goes to sleep: a restarted collector
     // reads a listed-asleep car no more than a running one does.
     run.stop().await;
-    fake.set_step(crate::test_unavailable_fixture::ScenarioStep::AsleepRestart);
+    fake.set_step(crate::collection::loopback_fixture::ScenarioStep::AsleepRestart);
     let run = JourneyRun::start(&store, temporary.path(), &fake, 0xC4).await;
     wait_for_supervised_restart_condition("asleep lists after the restart", || {
-        audited_at(&fake, "products", crate::test_unavailable_fixture::ScenarioStep::AsleepRestart) >= 2
+        audited_at(&fake, "products", crate::collection::loopback_fixture::ScenarioStep::AsleepRestart) >= 2
     })
     .await;
     fake.advance();
-    assert_eq!(fake.current_step(), crate::test_unavailable_fixture::ScenarioStep::OnlineSoftwareUpdate);
+    assert_eq!(fake.current_step(), crate::collection::loopback_fixture::ScenarioStep::OnlineSoftwareUpdate);
     wait_for_supervised_restart_condition("software update lists", || {
-        audited_at(&fake, "products", crate::test_unavailable_fixture::ScenarioStep::OnlineSoftwareUpdate) >= 2
+        audited_at(&fake, "products", crate::collection::loopback_fixture::ScenarioStep::OnlineSoftwareUpdate) >= 2
     })
     .await;
     fake.advance();
-    assert_eq!(fake.current_step(), crate::test_unavailable_fixture::ScenarioStep::UnchangedNoOp);
+    assert_eq!(fake.current_step(), crate::collection::loopback_fixture::ScenarioStep::UnchangedNoOp);
     wait_for_supervised_restart_condition("unchanged lists", || {
-        audited_at(&fake, "products", crate::test_unavailable_fixture::ScenarioStep::UnchangedNoOp) >= 1
+        audited_at(&fake, "products", crate::collection::loopback_fixture::ScenarioStep::UnchangedNoOp) >= 1
     })
     .await;
     run.stop().await;
@@ -221,9 +221,9 @@ async fn ct33_the_canonical_scenario_with_a_restart_never_wakes_the_car() {
     fake.assert_no_wake_or_command()
         .expect("no wake or command was sent");
     for step in [
-        crate::test_unavailable_fixture::ScenarioStep::AsleepDiscovery,
-        crate::test_unavailable_fixture::ScenarioStep::OfflineDiscovery,
-        crate::test_unavailable_fixture::ScenarioStep::AsleepRestart,
+        crate::collection::loopback_fixture::ScenarioStep::AsleepDiscovery,
+        crate::collection::loopback_fixture::ScenarioStep::OfflineDiscovery,
+        crate::collection::loopback_fixture::ScenarioStep::AsleepRestart,
     ] {
         assert_eq!(
             audited_at(&fake, "vehicle_data", step),
@@ -236,7 +236,7 @@ async fn ct33_the_canonical_scenario_with_a_restart_never_wakes_the_car() {
         );
     }
     // The proof is not vacuous: the car was read in the steps where it was awake.
-    for step in [crate::test_unavailable_fixture::ScenarioStep::OnlineIdle, crate::test_unavailable_fixture::ScenarioStep::DrivePositions] {
+    for step in [crate::collection::loopback_fixture::ScenarioStep::OnlineIdle, crate::collection::loopback_fixture::ScenarioStep::DrivePositions] {
         assert!(audited_at(&fake, "vehicle_data", step) >= 1, "{step:?}");
     }
     fake.shutdown().await;
@@ -259,11 +259,11 @@ async fn the_loop_closes_an_open_drive_when_the_car_falls_silent() {
             .expect("initial pair");
     let fixture_now = current_epoch_millis().expect("clock").div_euclid(1_000);
     let _generation = crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,temporary.path(),initial.access_token(),initial.refresh_token(),Some((fixture_now + 28_800, fixture_now + 21_600))).expect("supplied fixture pair");
-    let fake = crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
+    let fake = crate::collection::loopback_fixture::FakeTeslaSource::spawn_canonical(crate::collection::loopback_fixture::AdvanceMode::Manual)
         .await
         .expect("loopback Tesla");
     fake.set_base_ts_ms(current_epoch_millis().expect("clock") - 900_000);
-    fake.set_step(crate::test_unavailable_fixture::ScenarioStep::DrivePositions);
+    fake.set_step(crate::collection::loopback_fixture::ScenarioStep::DrivePositions);
     let hub = store
         .configured_tesla_vehicles()
         .expect("configured")
@@ -273,15 +273,15 @@ async fn the_loop_closes_an_open_drive_when_the_car_falls_silent() {
 
     let run = JourneyRun::start(&store, temporary.path(), &fake, 0xC5).await;
     wait_for_supervised_restart_condition("drive reads", || {
-        audited_at(&fake, "vehicle_data", crate::test_unavailable_fixture::ScenarioStep::DrivePositions) >= 2
+        audited_at(&fake, "vehicle_data", crate::collection::loopback_fixture::ScenarioStep::DrivePositions) >= 2
             && store
                 .collector_lifecycle_snapshot(hub)
                 .is_ok_and(|snapshot| snapshot.drive_open)
     })
     .await;
-    let reads_while_driving = audited_at(&fake, "vehicle_data", crate::test_unavailable_fixture::ScenarioStep::DrivePositions);
+    let reads_while_driving = audited_at(&fake, "vehicle_data", crate::collection::loopback_fixture::ScenarioStep::DrivePositions);
     // The car goes to sleep: the list says asleep, nothing more is read for it.
-    fake.set_step(crate::test_unavailable_fixture::ScenarioStep::AsleepRestart);
+    fake.set_step(crate::collection::loopback_fixture::ScenarioStep::AsleepRestart);
     wait_for_supervised_restart_condition("the drive is closed by no_data", || {
         store
             .collector_lifecycle_snapshot(hub)
@@ -290,7 +290,7 @@ async fn the_loop_closes_an_open_drive_when_the_car_falls_silent() {
     .await;
     run.stop().await;
     assert_eq!(
-        audited_at(&fake, "vehicle_data", crate::test_unavailable_fixture::ScenarioStep::AsleepRestart),
+        audited_at(&fake, "vehicle_data", crate::collection::loopback_fixture::ScenarioStep::AsleepRestart),
         0,
         "no read of the asleep car"
     );
@@ -302,9 +302,9 @@ async fn the_loop_closes_an_open_drive_when_the_car_falls_silent() {
 /// How many audited requests of `suffix` (`products` or `vehicle_data`) the fake
 /// received while it stood at `step`.
 fn audited_at(
-    fake: &crate::test_unavailable_fixture::FakeTeslaSource,
+    fake: &crate::collection::loopback_fixture::FakeTeslaSource,
     suffix: &str,
-    step: crate::test_unavailable_fixture::ScenarioStep,
+    step: crate::collection::loopback_fixture::ScenarioStep,
 ) -> usize {
     fake.audited_requests()
         .iter()

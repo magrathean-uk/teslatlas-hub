@@ -57,7 +57,7 @@ async fn observer_never_posts_a_refresh_token() {
     crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,data.path(),tokens.access_token(),tokens.refresh_token(),None).expect("store supplied pair");
 
     let fake =
-        crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
+        crate::collection::loopback_fixture::FakeTeslaSource::spawn_canonical(crate::collection::loopback_fixture::AdvanceMode::Manual)
             .await
             .expect("fake Tesla");
     let mut manager = LegacyAuthManager::from_hub_source_db_store_observer_with_issuer(
@@ -94,7 +94,7 @@ async fn replaced_runtime_admission_blocks_refresh_before_token_transport() {
     let admission = crate::hub_user_process::AdmittedUserHub::for_test(&data_dir)
         .expect("admit data directory");
     let fake =
-        crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
+        crate::collection::loopback_fixture::FakeTeslaSource::spawn_canonical(crate::collection::loopback_fixture::AdvanceMode::Manual)
             .await
             .expect("fake Tesla");
     let auth = LegacyAuth::for_test(
@@ -131,7 +131,7 @@ async fn hub_source_db_store_refreshes_and_reopens_with_the_successor() {
     crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,data.path(),initial.access_token(),initial.refresh_token(),Some((fixture_now + 28_800, fixture_now - 60))).expect("store supplied pair");
 
     let fake =
-        crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
+        crate::collection::loopback_fixture::FakeTeslaSource::spawn_canonical(crate::collection::loopback_fixture::AdvanceMode::Manual)
             .await
             .expect("fake Tesla");
     let mut manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
@@ -160,11 +160,11 @@ async fn hub_source_db_store_refreshes_and_reopens_with_the_successor() {
     let decrypted = OwnerTokens { access_token: plain.access, refresh_token: plain.refresh };
     assert_eq!(
         decrypted.access_token(),
-        crate::test_unavailable_fixture::ACCESS_TOKEN
+        crate::collection::loopback_fixture::ACCESS_TOKEN
     );
     assert_eq!(
         decrypted.refresh_token(),
-        crate::test_unavailable_fixture::REFRESH_TOKEN
+        crate::collection::loopback_fixture::REFRESH_TOKEN
     );
     assert_eq!(stored.0, expected_expires);
     assert_eq!(stored.1, expected_next_refresh);
@@ -178,7 +178,7 @@ async fn hub_source_db_store_refreshes_and_reopens_with_the_successor() {
         .expect("the stale authority adopts the successor");
     assert_eq!(
         stale_manager.access_token(),
-        crate::test_unavailable_fixture::ACCESS_TOKEN
+        crate::collection::loopback_fixture::ACCESS_TOKEN
     );
     assert_eq!(stale_manager.generation(), manager.generation());
     assert_eq!(fake.token_refresh_request_count(), 1);
@@ -206,11 +206,11 @@ async fn hub_source_db_store_refreshes_and_reopens_with_the_successor() {
     .expect("reopen successor");
     assert_eq!(
         reopened.access_token(),
-        crate::test_unavailable_fixture::ACCESS_TOKEN
+        crate::collection::loopback_fixture::ACCESS_TOKEN
     );
     assert_eq!(
         reopened.refresh_token(),
-        crate::test_unavailable_fixture::REFRESH_TOKEN
+        crate::collection::loopback_fixture::REFRESH_TOKEN
     );
     assert_eq!(reopened.next_refresh_at(), expected_next_refresh);
 }
@@ -228,7 +228,7 @@ async fn runtime_replacement_after_refresh_receipt_begin_cancels_before_token_po
     crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,data.path(),initial.access_token(),initial.refresh_token(),Some((fixture_now + 28_800, fixture_now - 60))).expect("store supplied pair");
 
     let fake =
-        crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
+        crate::collection::loopback_fixture::FakeTeslaSource::spawn_canonical(crate::collection::loopback_fixture::AdvanceMode::Manual)
             .await
             .expect("fake Tesla");
     let mut manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(

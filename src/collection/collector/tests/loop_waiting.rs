@@ -58,9 +58,9 @@ async fn loop_products(State(wire): State<LoopWire>) -> axum::response::Response
             StatusCode::OK,
             json!({
                 "response": [{
-                    "id": crate::test_unavailable_fixture::VEHICLE_ID,
-                    "vehicle_id": crate::test_unavailable_fixture::VEHICLE_ID,
-                    "vin": crate::test_unavailable_fixture::VIN,
+                    "id": crate::collection::loopback_fixture::VEHICLE_ID,
+                    "vehicle_id": crate::collection::loopback_fixture::VEHICLE_ID,
+                    "vin": crate::collection::loopback_fixture::VIN,
                     "state": "asleep",
                     "display_name": "Loop fixture",
                     "in_service": false,

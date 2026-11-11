@@ -401,7 +401,7 @@
         "src/auth/credential_sign_in/supplied.rs",
         "src/auth/credential_sign_in/tests.rs",
         "tests/support/r78_recording.rs",
-        "src/test_unavailable_fixture.rs"
+        "src/collection/loopback_fixture.rs"
       ],
       "globs": [
         "src/api/*.rs",

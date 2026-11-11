@@ -1207,7 +1207,7 @@ async fn native_setup_discovers_and_publishes_one_vehicle_without_wake() {
     crate::crypto::install_default_provider();
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let fake = crate::test_unavailable_fixture::FakeTeslaSource::spawn_canonical(crate::test_unavailable_fixture::AdvanceMode::Manual)
+    let fake = crate::collection::loopback_fixture::FakeTeslaSource::spawn_canonical(crate::collection::loopback_fixture::AdvanceMode::Manual)
         .await
         .expect("loopback Tesla");
     let auth = LegacyAuth::for_test(
@@ -1222,11 +1222,11 @@ async fn native_setup_discovers_and_publishes_one_vehicle_without_wake() {
         .await
         .expect("native setup");
 
-    assert_eq!(report.selected_vehicle_id, crate::test_unavailable_fixture::VEHICLE_ID as u64 as i64);
+    assert_eq!(report.selected_vehicle_id, crate::collection::loopback_fixture::VEHICLE_ID as u64 as i64);
     assert_eq!(report.snapshots_published, 1);
     assert_eq!(
         store.selected_tesla_eid().expect("selection").unwrap().0,
-        crate::test_unavailable_fixture::VEHICLE_ID as u64 as i64
+        crate::collection::loopback_fixture::VEHICLE_ID as u64 as i64
     );
     assert_eq!(store.published_vehicles().expect("vehicles").len(), 1);
     let requests = fake.audited_requests();
