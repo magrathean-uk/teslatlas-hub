@@ -162,7 +162,7 @@ fn plant_secrets(hub: &Hub) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     connection
         .execute_batch("DELETE FROM credential_pairs;")
         .expect("delete old pairs");
-    insert_pair(&connection, "owner_api", &live);
+    insert_pair(&connection, "owner_api", &live.iter().copied().cycle().take(256).collect::<Vec<u8>>());
     connection
         .execute(
             "INSERT INTO collector_auth_state(singleton_id, state, reason, collecting, retry_at,
