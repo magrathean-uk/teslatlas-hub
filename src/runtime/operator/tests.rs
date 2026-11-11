@@ -1097,8 +1097,9 @@ fn collection_window_operator_channel_refuses_an_unrelated_owner_process() {
         document: encoded(&rig.trust),
     })
     .expect("trust");
+    let grant = encoded(&rig.grant(600));
     rig.forward(&OperatorRequest::WindowOpen {
-        grant: encoded(&rig.grant(600)),
+        grant: grant.clone(),
     })
     .expect("open");
     let kicks = *rig.kicks.lock().expect("kicks");
@@ -1109,9 +1110,7 @@ fn collection_window_operator_channel_refuses_an_unrelated_owner_process() {
         OperatorRequest::WindowTrust {
             document: encoded(&rig.trust),
         },
-        OperatorRequest::WindowOpen {
-            grant: encoded(&rig.grant(300)),
-        },
+        OperatorRequest::WindowOpen { grant },
         OperatorRequest::Setup {
             material: material(),
             vehicle_id: Some(7),
