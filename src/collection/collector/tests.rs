@@ -87,6 +87,11 @@ mod b3_c9_p;
 mod b3_c9_s;
 #[path = "tests/b3_c9_w.rs"]
 pub(super) mod b3_c9_w;
+// M04-T01: restart, network loss, expiry and the window; the refused state.
+#[path = "tests/collector_resilience.rs"]
+mod collector_resilience;
+#[path = "tests/owner_api_refused.rs"]
+mod owner_api_refused;
 include!("tests/provider_secret_scrub.rs");
 include!("tests/loop_waiting.rs");
 include!("tests/loop_drain.rs");

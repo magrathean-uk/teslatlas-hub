@@ -479,6 +479,7 @@ async fn b2_observed_admission_loss_fences_renewal_after_revalidation_recovers()
         Arc::new(SystemCollectorClock),
         None,
         fence.clone(),
+        WindowAuthority::default(),
     ));
     let heartbeat_at = || {
         store

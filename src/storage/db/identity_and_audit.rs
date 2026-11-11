@@ -792,6 +792,45 @@ impl HubStore {
         observed_at_ms: i64,
         retire_missing: bool,
     ) -> Result<(), StoreError> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        Self::reconcile_provider_inventory_in_transaction(
+            &transaction,
+            source_id,
+            inventory,
+            observed_at_ms,
+            retire_missing,
+        )?;
+        transaction.commit().map_err(StoreError::RegisterVehicle)
+    }
+
+    /// [`Self::reactivate_provider_inventory`] inside the caller's write transaction
+    /// (M04-T01: the collector's scheduled list is stored in its tick's one
+    /// transaction). Returns whether a row changed; nothing is committed here.
+    pub(crate) fn reactivate_provider_inventory_in_transaction(
+        transaction: &Transaction<'_>,
+        source_id: Uuid,
+        inventory: &[VehicleDescriptor],
+        observed_at_ms: i64,
+    ) -> Result<bool, StoreError> {
+        Self::reconcile_provider_inventory_in_transaction(
+            transaction,
+            source_id,
+            inventory,
+            observed_at_ms,
+            false,
+        )
+    }
+
+    fn reconcile_provider_inventory_in_transaction(
+        transaction: &Transaction<'_>,
+        source_id: Uuid,
+        inventory: &[VehicleDescriptor],
+        observed_at_ms: i64,
+        retire_missing: bool,
+    ) -> Result<bool, StoreError> {
         if source_id.is_nil() {
             return Err(StoreError::NilSourceId);
         }
@@ -808,11 +847,8 @@ impl HubStore {
                 vins.insert(vin.to_ascii_uppercase());
             }
         }
-        let mut connection = self.open()?;
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(StoreError::Begin)?;
-        ensure_source_exists(&transaction, source_id)?;
+        let mut changed = false;
+        ensure_source_exists(transaction, source_id)?;
         let mut statement = transaction
             .prepare(
                 "SELECT vehicle.vehicle_id,
@@ -864,6 +900,7 @@ impl HubStore {
                             params![vehicle_id],
                         )
                         .map_err(StoreError::RegisterVehicle)?;
+                    changed = true;
                 }
             } else if retire_missing && retired_at_ms.is_none() {
                 transaction
@@ -872,9 +909,10 @@ impl HubStore {
                         params![observed_at_ms, vehicle_id],
                     )
                     .map_err(StoreError::RegisterVehicle)?;
+                changed = true;
             }
         }
-        transaction.commit().map_err(StoreError::RegisterVehicle)
+        Ok(changed)
     }
 
     /// Return the stable Hub identity for a collector source, creating it the
@@ -1120,21 +1158,49 @@ impl HubStore {
     ) -> Result<(SourceRecord, bool), StoreError> {
         #[cfg(test)]
         StoreInstrumentation::bump(&self.instrumentation.source_registration_calls);
-        descriptor.validate()?;
-        validate_timestamp("source created_at_ms", created_at_ms)?;
-
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
+        let registered = Self::register_source_in_transaction_with(
+            &transaction,
+            descriptor,
+            created_at_ms,
+            expected_source_id,
+            import_permission,
+        )?;
+        transaction.commit().map_err(StoreError::RegisterSource)?;
+        Ok(registered)
+    }
+
+    /// [`Self::register_source`] inside the caller's write transaction (M04-T01: the
+    /// collector stores its listed inventory and a new car in its tick's one
+    /// transaction). Returns the source and whether this call created it; nothing is
+    /// committed here.
+    pub(crate) fn register_source_in_transaction(
+        transaction: &Transaction<'_>,
+        descriptor: &SourceDescriptor,
+        created_at_ms: i64,
+    ) -> Result<(SourceRecord, bool), StoreError> {
+        Self::register_source_in_transaction_with(transaction, descriptor, created_at_ms, None, None)
+    }
+
+    fn register_source_in_transaction_with(
+        transaction: &Transaction<'_>,
+        descriptor: &SourceDescriptor,
+        created_at_ms: i64,
+        expected_source_id: Option<Uuid>,
+        import_permission: Option<bool>,
+    ) -> Result<(SourceRecord, bool), StoreError> {
+        descriptor.validate()?;
+        validate_timestamp("source created_at_ms", created_at_ms)?;
         if let Some(new_import_source) = import_permission {
-            require_import_source_key(&transaction, &descriptor.key, new_import_source)?;
+            require_import_source_key(transaction, &descriptor.key, new_import_source)?;
         }
-        if let Some(source) = find_source(&transaction, descriptor)? {
+        if let Some(source) = find_source(transaction, descriptor)? {
             if expected_source_id.is_some_and(|expected| expected != source.source_id) {
                 return Err(StoreError::InvalidSourceId);
             }
-            transaction.commit().map_err(StoreError::RegisterSource)?;
             return Ok((source, false));
         }
 
@@ -1163,8 +1229,6 @@ impl HubStore {
                 params![source_id.to_string(), descriptor.kind, descriptor.key],
             )
             .map_err(StoreError::RegisterSource)?;
-        transaction.commit().map_err(StoreError::RegisterSource)?;
-
         Ok((
             SourceRecord {
                 source_id,
@@ -1341,14 +1405,32 @@ impl HubStore {
     ) -> Result<VehicleRecord, StoreError> {
         #[cfg(test)]
         StoreInstrumentation::bump(&self.instrumentation.vehicle_registration_calls);
-        descriptor.validate()?;
-        validate_timestamp("vehicle registered_at_ms", registered_at_ms)?;
-
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
-        ensure_source_exists(&transaction, descriptor.source_id)?;
+        let vehicle = Self::register_vehicle_in_transaction(
+            &transaction,
+            descriptor,
+            registered_at_ms,
+            expected_vehicle_id,
+        )?;
+        transaction.commit().map_err(StoreError::RegisterVehicle)?;
+        Ok(vehicle)
+    }
+
+    /// [`Self::register_vehicle`] inside the caller's write transaction (M04-T01:
+    /// the collector registers a new or changed car in its tick's one transaction).
+    /// Nothing is committed here.
+    pub(crate) fn register_vehicle_in_transaction(
+        transaction: &Transaction<'_>,
+        descriptor: &VehicleDescriptor,
+        registered_at_ms: i64,
+        expected_vehicle_id: Option<Uuid>,
+    ) -> Result<VehicleRecord, StoreError> {
+        descriptor.validate()?;
+        validate_timestamp("vehicle registered_at_ms", registered_at_ms)?;
+        ensure_source_exists(transaction, descriptor.source_id)?;
 
         let source_vehicle = find_vehicle(
             &transaction,
@@ -1356,9 +1438,9 @@ impl HubStore {
             &descriptor.source_vehicle_key,
         )?;
         let had_source_vehicle = source_vehicle.is_some();
-        let identity_vehicle = find_identity_vehicle(&transaction, descriptor)?;
+        let identity_vehicle = find_identity_vehicle(transaction, descriptor)?;
         let identity_record = match identity_vehicle {
-            Some(vehicle_id) => find_vehicle_by_id(&transaction, vehicle_id)?,
+            Some(vehicle_id) => find_vehicle_by_id(transaction, vehicle_id)?,
             None => None,
         };
         if source_vehicle.is_some()
@@ -1398,13 +1480,12 @@ impl HubStore {
                     ],
                 )
                 .map_err(StoreError::RegisterVehicle)?;
-            register_vehicle_aliases(&transaction, vehicle.vehicle_id, descriptor)?;
+            register_vehicle_aliases(transaction, vehicle.vehicle_id, descriptor)?;
             vehicle.source_id = descriptor.source_id;
             vehicle.source_vehicle_key = descriptor.source_vehicle_key.clone();
             vehicle.vin = descriptor.vin.clone().or(vehicle.vin);
             vehicle.display_name = descriptor.display_name.clone().or(vehicle.display_name);
             vehicle.last_seen_at_ms = vehicle.last_seen_at_ms.max(registered_at_ms);
-            transaction.commit().map_err(StoreError::RegisterVehicle)?;
             return Ok(vehicle);
         }
 
@@ -1433,9 +1514,7 @@ impl HubStore {
             created_at_ms: registered_at_ms,
             last_seen_at_ms: registered_at_ms,
         };
-        register_vehicle_aliases(&transaction, vehicle.vehicle_id, descriptor)?;
-        transaction.commit().map_err(StoreError::RegisterVehicle)?;
-
+        register_vehicle_aliases(transaction, vehicle.vehicle_id, descriptor)?;
         Ok(vehicle)
     }
 

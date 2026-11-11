@@ -4,23 +4,16 @@
 // durable write a tick's results cause commits in one write transaction: the
 // discovery observations of R14, the `vehicle_data` observations and their
 // lifecycle deltas, the Hub events of R40 and R52, the scheduler rows of R4 and
-// the gaps of R8. The commit happens when every request of the tick has
-// completed or when the oldest uncommitted result is `K_TICK_COMMIT_AGE` old,
-// whichever comes first. A tick whose requests produced nothing to store writes
+// the gaps of R8. The commit happens once, when every request of the tick has
+// completed (M04-T01: one transaction per tick; the C3 R5 commit age that split a
+// slow tick into two transactions is retired, and a tick's wait is bounded by the
+// request timeout instead). A tick whose requests produced nothing to store writes
 // nothing.
 //
 // The scheduler keeps its decisions in memory and reports the outcome:
 // `commit_succeeded` moves its persisted views, `commit_failed` returns it to
 // the state before the tick (R6). Nothing here decides cadence or errors; later
 // parts fill the results this module stores.
-
-/// The longest a result waits for its transaction (C3 R5, `K_TICK_COMMIT_AGE`,
-/// **provisional**, gate M-I1): the plan's intake target is 250 ms from an
-/// admitted observation to its durable commit, and without a bound a received
-/// observation would wait for the slowest of up to `K_MAX_IN_FLIGHT` requests
-/// (each up to `request_timeout_seconds`). 100 ms leaves 150 ms of the target
-/// for the commit itself.
-const K_TICK_COMMIT_AGE: Duration = Duration::from_millis(100);
 
 /// What the store knows of a car's identity for one tick (C3 R5): its Hub id,
 /// the source it belongs to and its pack-local car id.
@@ -45,11 +38,20 @@ struct CachedIdentity {
 
 /// The cars' store identities, resolved once per process and per change (C3 R5).
 /// Registering a car refreshes its `last_seen_at_ms`, a durable write, so it is
-/// done before the tick transaction and only when the identity is new or its
-/// descriptor changed; an unchanged poll writes nothing (R14, the Idle target).
+/// done only when the identity is new or its descriptor changed; an unchanged poll
+/// writes nothing (R14, the Idle target). A process's first resolution reads the
+/// stored identity first and registers only when registration would change
+/// something (M04-T01), so the first poll after a restart of an unchanged car
+/// writes nothing either. A supervised tick registers inside its own transaction
+/// (M04-T01, review round 2 finding 3): [`Self::known`] answers what needs no write,
+/// and the rest is registered by [`register_identity_in_transaction`].
 #[derive(Default)]
 struct IdentityCache {
     entries: HashMap<VehicleId, CachedIdentity>,
+    /// The listed inventory (car id, upper-case VIN, sorted) this process last
+    /// stored (M04-T01): an identical list is not stored again, so an unchanged poll
+    /// keeps to its tick and writes nothing.
+    accepted_inventory: Option<Vec<(u64, String)>>,
 }
 
 impl IdentityCache {
@@ -64,9 +66,11 @@ impl IdentityCache {
         self.resolve_guarded(store, provider, vehicle, now_ms, None)
     }
 
-    /// [`Self::resolve`] for a supervised run: the source and the vehicle are two
-    /// independent store mutations, each preceded by the run's write guard (B2 fix
-    /// round, P3b fix 2, R-P3bF2-1). A cached identity writes nothing.
+    /// [`Self::resolve`] outside a tick (a one-shot collection, a test): a car that
+    /// needs registering is registered in its own transaction, each step preceded by
+    /// the run's write guard (B2 fix round, P3b fix 2, R-P3bF2-1). A known identity
+    /// writes nothing.
+    #[cfg(test)]
     fn resolve_guarded(
         &mut self,
         store: &HubStore,
@@ -75,20 +79,14 @@ impl IdentityCache {
         now_ms: i64,
         guard: Option<&RunWriteGuard>,
     ) -> Result<Registered, CollectorError> {
-        let vin = clean_optional_text(Some(&vehicle.vin));
-        let display_name = clean_optional_text(vehicle.display_name.as_deref());
-        if let Some(entry) = self.entries.get(&vehicle.id)
-            && entry.vin == vin
-            && entry.display_name == display_name
-        {
-            return Ok(entry.registered.clone());
+        if let Some(registered) = self.known(store, provider, vehicle)? {
+            return Ok(registered);
         }
+        let source_descriptor = provider_source(provider);
+        let mut descriptor = identity_descriptor(vehicle, Uuid::nil());
         check_optional_write(guard, "identity-source")?;
-        let source = store.register_source(&provider_source(provider), now_ms)?;
-        let mut descriptor = VehicleDescriptor::new(source.source_id, vehicle.id.get().to_string())
-            .with_tesla_identity(Some(vehicle.id.get() as i64), None);
-        descriptor.vin = vin.clone();
-        descriptor.display_name = display_name.clone();
+        let source = store.register_source(&source_descriptor, now_ms)?;
+        descriptor.source_id = source.source_id;
         check_optional_write(guard, "identity-vehicle")?;
         let record = store.register_vehicle(&descriptor, now_ms)?;
         check_optional_write(guard, "identity-car-id")?;
@@ -100,16 +98,161 @@ impl IdentityCache {
             pack_car_id,
             generation: source.generation,
         };
+        self.remember(vehicle, registered.clone());
+        Ok(registered)
+    }
+
+    /// The car's identity when it needs no write: cached under the same descriptor,
+    /// or, on the process's first resolution of the car, stored so that
+    /// registration would leave it unchanged (M04-T01). That stored identity is
+    /// read, not registered again: no write and no transaction of its own. It is
+    /// matched on the identity (source key, Tesla id and VIN aliases), as the Fleet
+    /// receiver does, not on the display name: the lifecycle commit keeps
+    /// `vehicles.display_name` to the car's projected name, so the listed name
+    /// would never match it after a restart. `None` when the car must be
+    /// registered (new, or its descriptor changed while the process runs).
+    fn known(
+        &mut self,
+        store: &HubStore,
+        provider: CollectorProvider,
+        vehicle: &Vehicle,
+    ) -> Result<Option<Registered>, CollectorError> {
+        let vin = clean_optional_text(Some(&vehicle.vin));
+        let display_name = clean_optional_text(vehicle.display_name.as_deref());
+        let Some(entry) = self.entries.get(&vehicle.id) else {
+            let mut probe = identity_descriptor(vehicle, Uuid::nil());
+            probe.display_name = None;
+            let Some(unchanged) =
+                store.registered_vehicle_unchanged(&provider_source(provider), &probe)?
+            else {
+                return Ok(None);
+            };
+            let registered = Registered {
+                hub_id: unchanged.vehicle_id,
+                source_id: unchanged.source_id,
+                pack_car_id: projection_car_id_for_vehicle(
+                    store,
+                    unchanged.vehicle_id,
+                    vehicle.id.get(),
+                )?,
+                generation: unchanged.source_generation,
+            };
+            self.remember(vehicle, registered.clone());
+            return Ok(Some(registered));
+        };
+        Ok((entry.vin == vin && entry.display_name == display_name)
+            .then(|| entry.registered.clone()))
+    }
+
+    /// Cache the identity a registration returned (after its commit).
+    fn remember(&mut self, vehicle: &Vehicle, registered: Registered) {
         self.entries.insert(
             vehicle.id,
             CachedIdentity {
-                vin,
-                display_name,
-                registered: registered.clone(),
+                vin: clean_optional_text(Some(&vehicle.vin)),
+                display_name: clean_optional_text(vehicle.display_name.as_deref()),
+                registered,
             },
         );
-        Ok(registered)
     }
+
+    /// The listed cars as the inventory memory compares them.
+    fn inventory_key(vehicles: &[Vehicle]) -> Vec<(u64, String)> {
+        let mut listed: Vec<(u64, String)> = vehicles
+            .iter()
+            .map(|vehicle| (vehicle.id.get(), vehicle.vin.to_ascii_uppercase()))
+            .collect();
+        listed.sort();
+        listed
+    }
+
+    /// The scheduled list to store in the tick (C3 R53, M04-T01): the first list of
+    /// the process and any list whose cars or VINs differ from the last one stored.
+    /// A list equal to it would change nothing (no car retires while the run holds
+    /// the Hub, and a scheduled list never retires one), so it is not stored again.
+    fn inventory_to_store(&self, vehicles: &[Vehicle]) -> Option<Vec<Vehicle>> {
+        (self.accepted_inventory.as_deref() != Some(Self::inventory_key(vehicles).as_slice()))
+            .then(|| vehicles.to_vec())
+    }
+}
+
+/// The registration descriptor of a listed car under `source_id`.
+fn identity_descriptor(vehicle: &Vehicle, source_id: Uuid) -> VehicleDescriptor {
+    let mut descriptor = VehicleDescriptor::new(source_id, vehicle.id.get().to_string())
+        .with_tesla_identity(Some(vehicle.id.get() as i64), None);
+    descriptor.vin = clean_optional_text(Some(&vehicle.vin));
+    descriptor.display_name = clean_optional_text(vehicle.display_name.as_deref());
+    descriptor
+}
+
+/// Register a new or changed car inside the tick's transaction (M04-T01, review
+/// round 2 finding 3): the source and the vehicle are written with the tick's other
+/// rows and commit or roll back with them, each step preceded by the run's write
+/// guard. The identity is cached only after the commit.
+fn register_identity_in_transaction(
+    store: &HubStore,
+    transaction: &rusqlite::Transaction<'_>,
+    provider: CollectorProvider,
+    vehicle: &Vehicle,
+    now_ms: i64,
+    guard: Option<&RunWriteGuard>,
+) -> Result<Registered, CollectorError> {
+    check_optional_write(guard, "identity-source")?;
+    let (source, _) =
+        HubStore::register_source_in_transaction(transaction, &provider_source(provider), now_ms)?;
+    let descriptor = identity_descriptor(vehicle, source.source_id);
+    check_optional_write(guard, "identity-vehicle")?;
+    let record = HubStore::register_vehicle_in_transaction(transaction, &descriptor, now_ms, None)?;
+    check_optional_write(guard, "identity-car-id")?;
+    let pack_car_id = projection_car_id_for_vehicle(store, record.vehicle_id, vehicle.id.get())?;
+    Ok(Registered {
+        hub_id: record.vehicle_id,
+        source_id: source.source_id,
+        pack_car_id,
+        generation: source.generation,
+    })
+}
+
+/// Store the scheduled list inside the tick's transaction (C3 R53, M04-T01, review
+/// round 2 finding 3): the source is registered and the listed cars are
+/// reactivated, none retired, each step preceded by the run's write guard. Returns
+/// whether a row changed.
+fn store_inventory_in_transaction(
+    transaction: &rusqlite::Transaction<'_>,
+    provider: CollectorProvider,
+    listed: &[Vehicle],
+    observed_at_ms: i64,
+    guard: Option<&RunWriteGuard>,
+) -> Result<bool, CollectorError> {
+    check_optional_write(guard, "inventory-source")?;
+    let (source, created) = HubStore::register_source_in_transaction(
+        transaction,
+        &provider_source(provider),
+        observed_at_ms,
+    )?;
+    let inventory = listed
+        .iter()
+        .map(|vehicle| {
+            let mut descriptor =
+                VehicleDescriptor::new(source.source_id, vehicle.id.get().to_string());
+            descriptor.vin = Some(vehicle.vin.clone());
+            descriptor
+        })
+        .collect::<Vec<_>>();
+    check_optional_write(guard, "inventory-reconcile")?;
+    let changed = HubStore::reactivate_provider_inventory_in_transaction(
+        transaction,
+        source.source_id,
+        &inventory,
+        observed_at_ms,
+    )?;
+    Ok(created || changed)
+}
+
+/// An error that ends the run rather than failing one tick's store write: the loss
+/// of the admission (C3 R47) or the end of the collection window (M04-T01).
+fn ends_the_run(error: &CollectorError) -> bool {
+    loses_sensitive_access(error) || matches!(error, CollectorError::CollectionWindowClosed(_))
 }
 
 /// A listed car as a discovery candidate (C3 R14): Tesla's state as received,
@@ -146,12 +289,15 @@ struct HubEventItem {
 /// The results of a tick not yet stored (C3 R5).
 #[derive(Debug, Default)]
 struct TickBatch {
+    /// The scheduled list to store with the tick (M04-T01), when it differs from the
+    /// last one the process stored.
+    inventory: Option<Vec<Vehicle>>,
     discoveries: Vec<DiscoveryItem>,
     snapshots: Vec<SnapshotItem>,
     hub_events: Vec<HubEventItem>,
     failures: Vec<VehicleCollectionFailure>,
-    /// When the oldest result of the batch arrived: its transaction is due
-    /// `K_TICK_COMMIT_AGE` later.
+    /// When the oldest result of the batch arrived: the commit logs how long it
+    /// waited for the tick's one transaction.
     first_result_at: Option<Instant>,
 }
 
@@ -159,7 +305,8 @@ impl TickBatch {
     /// Nothing is waiting for a transaction (C3 R5: a reservation commit made with
     /// an empty batch is a lone one).
     fn is_empty(&self) -> bool {
-        self.discoveries.is_empty()
+        self.inventory.is_none()
+            && self.discoveries.is_empty()
             && self.snapshots.is_empty()
             && self.hub_events.is_empty()
             && self.failures.is_empty()
@@ -168,12 +315,6 @@ impl TickBatch {
     /// Note a result arriving at `now`: the first one starts the commit clock.
     fn note_result(&mut self, now: Instant) {
         self.first_result_at.get_or_insert(now);
-    }
-
-    /// When the batch must commit at the latest (C3 R5), if it holds a result.
-    fn commit_deadline(&self) -> Option<Instant> {
-        self.first_result_at
-            .map(|first| deadline_after(first, K_TICK_COMMIT_AGE))
     }
 }
 
@@ -671,7 +812,11 @@ fn tick_needs_transaction(
     batch: &TickBatch,
     tick: &PendingTick,
 ) -> bool {
-    if !tick.is_empty() || !batch.snapshots.is_empty() || !batch.hub_events.is_empty() {
+    if !tick.is_empty()
+        || !batch.snapshots.is_empty()
+        || !batch.hub_events.is_empty()
+        || batch.inventory.is_some()
+    {
         return true;
     }
     batch.discoveries.iter().any(
@@ -705,6 +850,14 @@ async fn commit_tick(
 ) -> Result<TickOutcome, CollectorError> {
     // The test seam may hold the commit before anything is written.
     supervised_test_gate("tick-write").await;
+    if let Some(first) = batch.first_result_at {
+        tracing::debug!(
+            target: "collector.decision",
+            waited_ms = u64::try_from(now.saturating_duration_since(first).as_millis())
+                .unwrap_or(u64::MAX),
+            "tick commit"
+        );
+    }
     // A loss the supervisor or the renewal observed stays decisive when the admission
     // passes again (B2 fix round, P3b fix 1, R-P3bF-1): no transaction is begun, the
     // batch is dropped with the run, and the loop ends with the sensitive failure.
@@ -713,8 +866,14 @@ async fn commit_tick(
     let other_writes = tick_needs_transaction(scheduler, &batch, &tick);
     // The request counters join the tick (C3 R5, R25): Fleet polling writes them in
     // every commit that has any change, the Owner-wire counts ride on a commit that
-    // happens anyway or wait for their hourly flush.
-    scheduler.attach_counters(&mut tick, other_writes, false);
+    // happens anyway or wait for their hourly flush. A transaction a discovery needs
+    // only to read the lifecycle facts is not such a commit: it rolls back when the
+    // state is unchanged, and counts attached to it would turn an unchanged poll into
+    // a durable write (M04-T01). Only scheduler rows, a snapshot or a Hub event make
+    // the commit certain.
+    let certain_writes =
+        !tick.is_empty() || !batch.snapshots.is_empty() || !batch.hub_events.is_empty();
+    scheduler.attach_counters(&mut tick, certain_writes, false);
     if !other_writes && tick.counters.is_empty() {
         // Nothing to write: the persisted views already match.
         return Ok(TickOutcome::Idle);
@@ -744,20 +903,16 @@ async fn commit_tick(
     // any identity or tick write (B2 fix round, P3b fix 2, Opus N1).
     scheduler.check_write("tick-after-gate")?;
     let now_ms = scheduler.wall_or_last();
+    // The identities that need no write are read now; a new or changed car is
+    // registered inside the tick's transaction below (M04-T01).
     let mut registered: HashMap<VehicleId, Registered> = HashMap::new();
+    let mut unregistered: Vec<Vehicle> = Vec::new();
     for vehicle in batch_vehicles(&batch) {
-        match identities.resolve_guarded(
-            commit.store,
-            commit.provider,
-            &vehicle,
-            now_ms,
-            scheduler.write_guard(),
-        ) {
-            Ok(identity) => {
+        match identities.known(commit.store, commit.provider, &vehicle) {
+            Ok(Some(identity)) => {
                 registered.insert(vehicle.id, identity);
             }
-            // A refused write is the run's loss, not a store fault of the tick.
-            Err(error) if loses_sensitive_access(&error) => return Err(error),
+            Ok(None) => unregistered.push(vehicle),
             Err(error) => {
                 log_commit_failure(&error);
                 scheduler.commit_failed(tick, now);
@@ -767,8 +922,36 @@ async fn commit_tick(
     }
     let rows = tick.to_rows_write(now_ms);
     scheduler.check_write("tick-transaction")?;
+    let guard = scheduler.write_guard();
     let result = commit.store.collector_write_transaction(
         |transaction| {
+            // The scheduled list and the identities first, so the tick's rows can
+            // name them; all of it commits once, with the tick (M04-T01, review
+            // round 2 finding 3).
+            let mut wrote = false;
+            if let Some(listed) = &batch.inventory {
+                wrote |= store_inventory_in_transaction(
+                    transaction,
+                    commit.provider,
+                    listed,
+                    now_ms,
+                    guard,
+                )?;
+            }
+            let mut fresh = Vec::with_capacity(unregistered.len());
+            for vehicle in &unregistered {
+                let identity = register_identity_in_transaction(
+                    commit.store,
+                    transaction,
+                    commit.provider,
+                    vehicle,
+                    now_ms,
+                    guard,
+                )?;
+                registered.insert(vehicle.id, identity.clone());
+                fresh.push((vehicle.clone(), identity));
+                wrote = true;
+            }
             let output = write_tick_in_transaction(
                 commit.store,
                 transaction,
@@ -778,20 +961,28 @@ async fn commit_tick(
                 &batch,
                 &rows,
             )?;
-            let wrote = output.wrote;
-            Ok::<_, CollectorError>((output, wrote))
+            let wrote = wrote || output.wrote;
+            Ok::<_, CollectorError>(((output, fresh, wrote), wrote))
         },
         supervised_tick_commit_hook,
     );
-    let output = match result {
+    let (output, fresh, wrote) = match result {
         Ok(output) => output,
+        // A refused write is the run's end, not a store fault of the tick.
+        Err(error) if ends_the_run(&error) => return Err(error),
         Err(error) => {
             log_commit_failure(&error);
             scheduler.commit_failed(tick, now);
             return Ok(TickOutcome::Failed);
         }
     };
-    let wrote = output.wrote;
+    // Durable now (or, for a list that changed nothing, known to be stored).
+    for (vehicle, identity) in fresh {
+        identities.remember(&vehicle, identity);
+    }
+    if let Some(listed) = &batch.inventory {
+        identities.accepted_inventory = Some(IdentityCache::inventory_key(listed));
+    }
     #[cfg(test)]
     if wrote {
         supervised_tick_committed();
@@ -1082,11 +1273,11 @@ type TickFuture<'a> =
 /// Run a tick's requests concurrently and commit under the bound of C3 R5. Each
 /// request resolves to a key and a result; `handle` applies one result to the
 /// scheduler and the batch (the caller's code: its effects on streams and state
-/// are its own) and returns whether to go on. The batch commits when the last
-/// request has completed or when its oldest result is `K_TICK_COMMIT_AGE` old,
-/// and the results of requests still in flight then go into a further
-/// transaction of the same tick. With no requests the batch commits at once, so
-/// a list's result and the scheduler's own changes are stored.
+/// are its own) and returns whether to go on. The batch commits once, when the
+/// last request has completed (M04-T01, review round 2 finding 4: one transaction
+/// per tick, also when one car answers late; each request is bounded by the
+/// request timeout). With no requests the batch commits at once, so a list's
+/// result and the scheduler's own changes are stored.
 async fn drive_requests<Handle>(
     run: &mut TickRun<'_>,
     requests: Vec<TickFuture<'_>>,
@@ -1111,7 +1302,6 @@ where
     // an expired deadline is serviced before any ready request (B2 clarification 3).
     let pump_armed = pump.as_ref().is_some_and(StreamPump::armed);
     while !pending.is_empty() {
-        let deadline = run.batch.commit_deadline();
         let drain_at = pump.as_ref().map_or_else(Instant::now, StreamPump::deadline);
         tokio::select! {
             biased;
@@ -1165,15 +1355,6 @@ where
                         return Err(error);
                     }
                 }
-            }
-            () = async {
-                match deadline {
-                    Some(deadline) => tokio::time::sleep_until(deadline).await,
-                    None => std::future::pending::<()>().await,
-                }
-            } => {
-                let now = run.scheduler.clock.mono_now();
-                run.commit_now(now).await?;
             }
         }
     }
@@ -1428,6 +1609,8 @@ impl AdmissionFence {
 struct RunWriteGuard {
     fence: AdmissionFence,
     admission: Option<Arc<crate::hub_user_process::AdmittedUserHub>>,
+    /// The run's hold on the collection window (M04-T01), shared by every clone.
+    window: WindowAuthority,
     /// Test only: which boundaries consulted the guard and what they were told.
     #[cfg(test)]
     audit: Arc<WriteGuardAudit>,
@@ -1453,8 +1636,25 @@ impl RunWriteGuard {
         Self {
             fence,
             admission,
+            window: WindowAuthority::default(),
             #[cfg(test)]
             audit: Arc::default(),
+        }
+    }
+
+    /// The run's hold on the collection window, shared by every clone of the guard.
+    fn window(&self) -> &WindowAuthority {
+        &self.window
+    }
+
+    /// The guard of the run's orderly stop (C3 R8, R36): the explicitly authorised
+    /// shutdown writes (the frames the streams left queued, the stop record) still
+    /// need the admission, but not the window, which may have ended the run. It
+    /// shares the fence and the audit; background work keeps the window-checking guard.
+    fn for_shutdown(&self) -> Self {
+        Self {
+            window: WindowAuthority::default(),
+            ..self.clone()
         }
     }
 
@@ -1491,12 +1691,17 @@ impl RunWriteGuard {
         refused
     }
 
-    /// [`Self::refused`] as the result of the collector's own steps.
+    /// [`Self::refused`] as the result of the collector's own steps, and then the
+    /// collection window (M04-T01): once the window the run holds has closed or its
+    /// deadline has passed (also across a host sleep the window supervisor has not
+    /// yet seen), every collector write is refused with the window's code. The
+    /// credential unit's observer does not look at the window: a token exchange the
+    /// gate permitted may finish within its grace, and its rotated pair must be kept.
     fn check(&self, point: &'static str) -> Result<(), CollectorError> {
         if self.refused(point) {
             Err(CollectorError::SensitiveAccessUnavailable)
         } else {
-            Ok(())
+            self.window.check()
         }
     }
 
@@ -1522,6 +1727,51 @@ impl crate::geocoder::EgressGuard for RunWriteGuard {
     fn assert_egress_allowed(&self) -> Result<(), crate::geocoder::EgressGuardError> {
         self.check("geocoder")
             .map_err(|_| crate::geocoder::EgressGuardError)
+    }
+}
+
+/// The run's hold on the collection window (M04-T01, review round 2 finding 2). A
+/// run asks the window's egress gate before its first step and keeps the permit for
+/// its whole life (a stream permit: the window's close cancels it). Every write
+/// boundary of the run re-checks it ([`RunWriteGuard::check`]), as does every lease
+/// renewal, and the run's supervisor ends the run when it ends. The permit keeps the
+/// window's absolute deadlines on the gate's own clock, so a host that resumes past
+/// the deadline is refused at the next boundary even before the window supervisor
+/// has run. With no permit held (a one-shot command, a unit test of a part) nothing
+/// is refused.
+#[derive(Clone, Debug, Default)]
+struct WindowAuthority(Arc<std::sync::OnceLock<crate::fleet_api::egress::SendPermit>>);
+
+impl WindowAuthority {
+    /// Keep `permit` for the run; a permit already held is kept instead.
+    fn hold(&self, permit: crate::fleet_api::egress::SendPermit) {
+        let _ = self.0.set(permit);
+    }
+
+    /// Whether the run holds a window at all.
+    #[cfg(test)]
+    fn is_held(&self) -> bool {
+        self.0.get().is_some()
+    }
+
+    /// The window's refusal once the held window has ended.
+    fn check(&self) -> Result<(), CollectorError> {
+        match self.0.get() {
+            Some(permit) if permit.check().is_err() => {
+                Err(CollectorError::CollectionWindowClosed("window_closed"))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Resolves when the held window closes or its deadline passes; never without one.
+    async fn ended(&self) {
+        match self.0.get() {
+            Some(permit) => {
+                permit.ended().await;
+            }
+            None => std::future::pending::<()>().await,
+        }
     }
 }
 

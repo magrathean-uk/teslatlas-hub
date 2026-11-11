@@ -1,5 +1,53 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+/// Collection starts only inside an Open collection window (M04-T01). Before its
+/// first store read or write, credential step or send, a run asks the window's
+/// egress gate, the one authority every Tesla send asks: a closed window, a deadline
+/// already passed or a parked provider refuses the start, so no lease is taken, no
+/// gap, account or vehicle row is written and nothing is sent. The permit granted is
+/// a stream permit, which the run holds for its whole life ([`WindowAuthority`]): the
+/// window's close cancels it, and its absolute deadlines end it across a host sleep.
+/// `endpoint` only selects the gate a test routed; production always asks the
+/// process-wide gate.
+fn require_open_collection_window(
+    endpoint: &str,
+    provider: crate::fleet_api::egress::Provider,
+) -> Result<crate::fleet_api::egress::SendPermit, CollectorError> {
+    crate::fleet_api::egress::ask(
+        endpoint,
+        provider,
+        crate::fleet_api::egress::PermitKind::Stream,
+    )
+    .map_err(|refusal| {
+        tracing::warn!(
+            target: "collector.decision",
+            code = refusal.code(),
+            "collector start refused: the collection window is not open"
+        );
+        CollectorError::CollectionWindowClosed(refusal.code())
+    })
+}
+
+/// [`require_open_collection_window`] for an admitted entry, before its credential
+/// unit, vault or cursor key exists: the configured provider's gate is asked, and a
+/// test routes it through the configured stream endpoint.
+#[cfg(unix)]
+fn require_open_collection_window_for(
+    config: &HubConfig,
+) -> Result<crate::fleet_api::egress::SendPermit, CollectorError> {
+    if config.collector.provider == CollectorProvider::Fleet {
+        return require_open_collection_window(
+            crate::fleet_api::FleetRegion::NorthAmericaAndAsiaPacific.base_url(),
+            crate::fleet_api::egress::Provider::Fleet,
+        );
+    }
+    let endpoint = config
+        .collector
+        .stream_endpoint(StreamRegion::Global)
+        .unwrap_or_else(|_| streaming_endpoint(StreamRegion::Global).to_owned());
+    require_open_collection_window(&endpoint, crate::fleet_api::egress::Provider::Legacy)
+}
+
 async fn run_supervised_with_access<F>(
     store: &HubStore,
     config: &HubConfig,
@@ -15,6 +63,15 @@ async fn run_supervised_with_access<F>(
 where
     F: Future<Output = ()>,
 {
+    // Nothing of the run happens outside an Open window (M04-T01): this is its first
+    // step, before the credential unit is touched or the store read. The run holds
+    // the window from here to its end: every write boundary and every lease renewal
+    // re-checks it, and the run ends when it ends (review round 2, finding 2).
+    write_guard.window().hold(require_open_collection_window(
+        &stream_endpoint,
+        crate::fleet_api::egress::Provider::Legacy,
+    )?);
+    let window = write_guard.window().clone();
     // The run's write guard exists before the credential unit and the cursor key (B2
     // fix round, P3b fix 3, R-P3bF3-1): the entry point made it, and it has been
     // consulted at every write since. The renewal revalidates the retained admission
@@ -79,6 +136,7 @@ where
             Arc::new(SystemCollectorClock),
             runtime_admission.clone(),
             admission_fence.clone(),
+            window.clone(),
         ),
     ));
     let mut terrain_worker = terrain_worker::spawn_terrain_worker(
@@ -387,9 +445,13 @@ where
                 // C3 R65: the owner's actions apply inside the tick, so the
                 // transaction that stores their effects also marks them applied.
                 if !owner_actions.is_empty() {
-                    if owner_actions
-                        .iter()
-                        .any(|action| action.kind == OwnerActionKind::RetryCollection)
+                    // An ordinary retry does not lift Owner API refused (M04-T01): the
+                    // credential unit's refusal is left in place too, so nothing is
+                    // sent. Only a fresh sign-in or a configuration change lifts it.
+                    if !scheduler.owner_api_refused()
+                        && owner_actions
+                            .iter()
+                            .any(|action| action.kind == OwnerActionKind::RetryCollection)
                     {
                         // A retry may start a refresh; the queues are drained
                         // meanwhile (C3 R11, C4 R56 g).
@@ -454,14 +516,13 @@ where
                         .await?;
                         list_log.emit("list", RequestKind::List, list_started, &checked.result);
                         let refused_after_check = checked.refused_after_check;
-                        let listed = accept_scheduled_provider_inventory_guarded(
-                            store,
-                            CollectorProvider::Legacy,
-                            checked.result,
-                            run.scheduler.write_guard(),
-                        );
-                        match listed {
+                        match checked.result {
                             Ok(vehicles) => {
+                                // The list is stored in this tick's transaction, and
+                                // only when it differs from the last one stored
+                                // (C3 R53, M04-T01): an unchanged poll writes nothing
+                                // outside its tick.
+                                run.batch.inventory = run.identities.inventory_to_store(&vehicles);
                                 let vehicles = filter_configured_vehicles_with_identity(
                                     store,
                                     vehicles,
@@ -958,10 +1019,20 @@ where
         };
         tokio::pin!(admission_lost);
         supervised_test_gate("supervisor-select").await;
+        // The window the run holds is watched whatever the loop waits for: its close,
+        // or its deadline found passed after a host sleep, ends the run at once, and
+        // only the orderly stop's authorised writes follow (M04-T01).
+        let window_ended = window.ended();
+        tokio::pin!(window_ended);
         tokio::select! {
             biased;
             () = &mut admission_lost => (
                 Err(CollectorError::SensitiveAccessUnavailable),
+                false,
+                false,
+            ),
+            () = &mut window_ended => (
+                Err(CollectorError::CollectionWindowClosed("window_closed")),
                 false,
                 false,
             ),
@@ -1111,7 +1182,11 @@ where
             // met stays decisive when the admission passes again, and the stop's
             // frame writes check it (B2 fix round, P2, third pass).
             let shared_fence = loss.fence.clone();
-            drain_budget.guard_writes_with(write_guard.clone());
+            // The stop's frame writes are authorised shutdown operations (C3 R36):
+            // they keep the admission check but not the window's, which may be what
+            // ended the run (M04-T01).
+            drain_budget.guard_writes_with(write_guard.for_shutdown());
+            scheduler.guard_writes_with(write_guard.for_shutdown());
             let fence_set = shared_fence.wait_set();
             tokio::pin!(fence_set);
             let stop_streams = stop_all_streams_and_store(
@@ -1306,7 +1381,12 @@ async fn run_credential_stop_iteration(
     let tick_now = scheduler.clock.mono_now();
     scheduler.begin_tick();
     if !owner_actions.is_empty() {
-        apply_owner_actions_with_credentials(scheduler, auth, owner_actions, tick_now).await;
+        // An ordinary retry does not lift Owner API refused (M04-T01).
+        if scheduler.owner_api_refused() {
+            scheduler.apply_owner_actions(owner_actions, tick_now);
+        } else {
+            apply_owner_actions_with_credentials(scheduler, auth, owner_actions, tick_now).await;
+        }
         owner_actions.clear();
     }
     let wrote = {
@@ -1540,6 +1620,7 @@ async fn run_supervised_collector_heartbeat(
         Arc::new(SystemCollectorClock),
         None,
         AdmissionFence::default(),
+        WindowAuthority::default(),
     )
     .await
 }
@@ -1578,15 +1659,22 @@ async fn run_supervised_collector_heartbeat_with(
     clock: Arc<dyn CollectorClock>,
     admission: Option<Arc<crate::hub_user_process::AdmittedUserHub>>,
     fence: AdmissionFence,
+    window: WindowAuthority,
 ) -> Result<(), CollectorError> {
     let mut ticker = tokio::time::interval(interval);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
         tokio::select! {
+            // The window the run holds ends the renewal (M04-T01): no renewal is
+            // written once it has closed or its deadline has passed.
+            () = window.ended() => {
+                return Err(CollectorError::CollectionWindowClosed("window_closed"));
+            }
             // The test seam may hold a renewal candidate before it is ready (the
             // shutdown arm stays pollable meanwhile); nothing in production.
             () = async { ticker.tick().await; supervised_test_gate("renewal-candidate").await } => {
                 assert_renewal_allowed(admission.as_deref(), &fence)?;
+                window.check()?;
                 renew_supervised_collector_heartbeat_at(
                     &store,
                     lease,
@@ -1603,6 +1691,7 @@ async fn run_supervised_collector_heartbeat_with(
                     return Ok(());
                 }
                 assert_renewal_allowed(admission.as_deref(), &fence)?;
+                window.check()?;
                 renew_supervised_collector_heartbeat_at(
                     &store,
                     lease,
