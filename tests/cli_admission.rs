@@ -6,7 +6,9 @@
 //! and credential recovery refuse `service_not_running` before they read a
 //! secret path or standard input and with no network connection; Fleet verbs
 //! are refused `provider_parked`; import waits for the window to close; and the
-//! service's window authority is what opens the process-wide egress gate.
+//! service's window authority is what opens the process-wide egress gate. A
+//! listener of another program on the socket is not the service and receives
+//! nothing.
 //!
 //! Secret paths sit inside a mode-000 directory, so a command that tried to
 //! read one would fail with an I/O error instead of its policy code. A
@@ -261,96 +263,81 @@ fn source_credential_disabled_fleet_verbs_are_parked_before_the_configuration_is
     assert_eq!(hub.endpoint.connections(), 0);
 }
 
-/// A stand-in service on the control channel: it records each request and
-/// answers it.
-struct FakeService {
-    requests: Arc<Mutex<Vec<serde_json::Value>>>,
+/// An impostor on the control channel: another program of the same user
+/// bound to the socket while the service is stopped. It records every byte
+/// it receives and answers as if it were the service.
+struct Impostor {
+    received: Arc<Mutex<Vec<Vec<u8>>>>,
     _thread: JoinHandle<()>,
 }
 
-impl FakeService {
+impl Impostor {
     fn bind(data: &Path) -> Self {
         let dir = data.join("operator");
         fs::create_dir_all(&dir).expect("channel dir");
         fs::set_permissions(data, fs::Permissions::from_mode(0o700)).expect("data mode");
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).expect("channel mode");
         let listener = UnixListener::bind(dir.join("control.sock")).expect("bind");
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let recorded = requests.clone();
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let recorded = received.clone();
         let thread = std::thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(mut stream) = stream else { continue };
                 let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
                 let mut bytes = Vec::new();
                 let _ = stream.read_to_end(&mut bytes);
-                // The admission probe connects and closes without a request.
-                let Ok(request) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-                    continue;
-                };
-                recorded.lock().expect("requests").push(request);
-                let _ = stream.write_all(br#"{"ok":true,"result":{"phase":"closed","forwarded":true}}"#);
+                recorded.lock().expect("received").push(bytes);
+                let _ = stream.write_all(br#"{"ok":true,"result":{"phase":"open"}}"#);
             }
         });
         Self {
-            requests,
+            received,
             _thread: thread,
         }
     }
 
-    fn requests(&self) -> Vec<serde_json::Value> {
-        self.requests.lock().expect("requests").clone()
+    fn bytes_received(&self) -> usize {
+        self.received.lock().expect("received").iter().map(Vec::len).sum()
     }
 }
 
+/// Finding 7: with the service stopped, a process of the same user bound to
+/// the socket is not the admitted service. Every forwarded verb is refused
+/// `service_unauthenticated` before it reads its input, and the impostor
+/// receives no byte: no code material, grant, trust document or path.
 #[test]
-fn collection_window_forwarded_verbs_reach_the_running_service() {
+fn collection_window_an_impostor_on_the_socket_receives_nothing() {
     let hub = Hub::new();
-    let service = FakeService::bind(&hub.data());
-    let output = hub.run(&["window", "status"], b"");
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-    let printed: serde_json::Value = serde_json::from_str(stdout(&output).trim()).expect("JSON");
-    assert_eq!(printed, serde_json::json!({"phase": "closed", "forwarded": true}));
-
+    let impostor = Impostor::bind(&hub.data());
     let grant = hub.path("grant.json");
     fs::write(&grant, b"{\"body\":{}}").expect("grant");
-    let output = hub.run(&["window", "open", "--grant", grant.to_str().expect("path")], b"");
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-
+    let trust = hub.path("trust.json");
+    fs::write(&trust, b"{}").expect("trust");
     let material = format!(
         r#"{{"code":"code-0001","codeVerifier":"{}","redirectUri":"https://auth.tesla.com/void/callback"}}"#,
         "v".repeat(43)
     );
-    let output = hub.run(&["setup", "--vehicle-id", "7"], material.as_bytes());
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-    // Token-shaped input is refused as a source credential and never sent.
-    let output = hub.run(&["setup", "--all-vehicles"], TOKENS);
-    assert_refused(&output, "source_credential_disabled", &["setup"]);
-    let output = hub.run(&["setup"], br#"{"code":"c"}"#);
-    assert_refused(&output, "setup_input_invalid", &["setup"]);
-
-    // The recovery key is never read by the command: only its path travels.
-    hub.seal(true);
-    let key = hub.secret("recovery.key");
-    let out = hub.secret("export.tthcr");
-    let output = hub.run(
-        &["export-recovery-credentials", "--destination", &out, "--recovery-key-file", &key],
-        b"",
-    );
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-    hub.seal(false);
-
-    let requests = service.requests();
-    let ops: Vec<_> = requests.iter().map(|request| request["op"].clone()).collect();
-    assert_eq!(
-        ops,
-        ["window_status", "window_open", "setup", "recovery_export"].map(serde_json::Value::from)
-    );
-    assert_eq!(requests[1]["grant"], "eyJib2R5Ijp7fX0=");
-    assert_eq!(requests[2]["vehicle_id"], 7);
-    assert_eq!(requests[2]["material"]["code"], "code-0001");
-    let setup = requests[2].to_string().to_ascii_lowercase();
-    assert!(!setup.contains("token"), "{setup}");
-    assert_eq!(requests[3]["recovery_key_file"], key.as_str());
+    let (grant, trust) = (grant.to_str().expect("path"), trust.to_str().expect("path"));
+    let key = hub.path("recovery.key");
+    let key = key.to_str().expect("path");
+    let cases: Vec<(Vec<&str>, &[u8])> = vec![
+        (vec!["setup", "--vehicle-id", "7"], material.as_bytes()),
+        // Token-shaped input would be refused as a source credential if it
+        // were read; it is not.
+        (vec!["setup", "--all-vehicles"], TOKENS),
+        (vec!["window", "status"], b""),
+        (vec!["window", "open", "--grant", grant], b""),
+        (vec!["window", "trust", trust], b""),
+        (vec!["window", "close"], b""),
+        (vec!["export-recovery-credentials", "--destination", "/tmp/x", "--recovery-key-file", key], b""),
+        (vec!["restore-recovery-credentials", "--source", "/tmp/x", "--recovery-key-file", key], b""),
+    ];
+    for (case, input) in &cases {
+        let output = hub.run(case, input);
+        assert_refused(&output, "service_unauthenticated", case);
+        assert!(stdout(&output).is_empty(), "{case:?}: nothing printed from the impostor");
+    }
+    assert_eq!(impostor.bytes_received(), 0, "the impostor received nothing");
     assert_eq!(hub.endpoint.connections(), 0);
 }
 

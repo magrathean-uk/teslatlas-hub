@@ -331,14 +331,16 @@ fn encoded(bytes: &[u8]) -> String {
 }
 
 /// Forwards one service verb to the running service (ruling R5). Only the
-/// configuration is read before the channel is probed, so with no service
-/// running the command is refused `service_not_running` having read no secret
-/// path or standard input and opened no network connection. It never takes
-/// the data-directory lifetime lock.
+/// configuration is read before the channel is connected and the service on
+/// it authenticated, so with no service running, or another program on the
+/// socket, the command is refused having read no secret path or standard
+/// input and opened no network connection; its input then travels on that
+/// same authenticated connection. It never takes the data-directory
+/// lifetime lock.
 fn run_forwarded(config_path: &Path, command: &Command) -> Result<(), Box<dyn std::error::Error>> {
     let config = HubConfig::load(config_path)?;
     let data = config.data_dir.as_path();
-    drop(operator::channel::connect(data)?);
+    let stream = operator::channel::connect(data)?;
     let request = match command {
         #[cfg(unix)]
         Command::Setup {
@@ -389,7 +391,7 @@ fn run_forwarded(config_path: &Path, command: &Command) -> Result<(), Box<dyn st
         },
         _ => return Err("this command is not forwarded to the service".into()),
     };
-    let result = operator::channel::forward(data, &request, FORWARD_TIMEOUT)?;
+    let result = operator::channel::exchange(stream, &request, FORWARD_TIMEOUT)?;
     println!("{}", serde_json::to_string(&result)?);
     Ok(())
 }

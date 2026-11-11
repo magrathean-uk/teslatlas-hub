@@ -45,6 +45,8 @@ const SOCKET_PATH_MAX: usize = 103;
 
 pub const CHANNEL_UNSAFE: &str = "control_channel_unsafe";
 pub const CHANNEL_FAILED: &str = "control_channel_failed";
+/// The listener on the socket is not the admitted resident service.
+pub const SERVICE_UNAUTHENTICATED: &str = "service_unauthenticated";
 
 /// The private directory that holds the socket.
 pub fn channel_dir(data_dir: &Path) -> PathBuf {
@@ -168,24 +170,118 @@ fn check_private_dir(dir: &Path) -> Result<bool, OperatorRefusal> {
     }
 }
 
-/// Whether a service answers on `data_dir`'s channel. Reads nothing else.
+fn unauthenticated(what: &str) -> OperatorRefusal {
+    OperatorRefusal::new(
+        SERVICE_UNAUTHENTICATED,
+        format!("the process on the control channel {what}; nothing was sent"),
+    )
+}
+
+/// Runs `work` where a Tokio reactor is current: the caller's, or a small
+/// one of its own.
+fn with_reactor<T>(work: impl FnOnce() -> T) -> Result<T, OperatorRefusal> {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        let _entered = handle.enter();
+        return Ok(work());
+    }
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .map_err(|_| failed("could not be inspected"))?;
+    let _entered = runtime.enter();
+    Ok(work())
+}
+
+/// The peer's user id and process id, as the kernel reports them.
+fn peer_identity(stream: &UnixStream) -> Result<(u32, i32), OperatorRefusal> {
+    let clone = stream
+        .try_clone()
+        .map_err(|_| failed("could not be inspected"))?;
+    let credentials = with_reactor(|| {
+        tokio::net::UnixStream::from_std(clone).and_then(|peer| peer.peer_cred())
+    })?
+    .map_err(|_| unauthenticated("cannot be identified"))?;
+    let pid = credentials
+        .pid()
+        .filter(|pid| *pid > 0)
+        .ok_or_else(|| unauthenticated("cannot be identified"))?;
+    Ok((credentials.uid(), pid))
+}
+
+/// The executable a process runs, from the kernel's record of its exec path.
+fn process_executable(pid: i32) -> Option<PathBuf> {
+    if cfg!(target_os = "linux") {
+        return std::fs::read_link(format!("/proc/{pid}/exe")).ok();
+    }
+    let output = std::process::Command::new("/bin/ps")
+        .args(["-ww", "-o", "comm=", "-p", &pid.to_string()])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    let text = String::from_utf8(output.stdout).ok()?;
+    let path = text.trim();
+    (output.status.success() && path.starts_with('/')).then(|| PathBuf::from(path))
+}
+
+/// The same file, or a copy with the same bytes (the app may carry its own).
+fn same_executable(left: &Path, right: &Path) -> bool {
+    let (Ok(a), Ok(b)) = (std::fs::metadata(left), std::fs::metadata(right)) else {
+        return false;
+    };
+    if a.dev() == b.dev() && a.ino() == b.ino() {
+        return true;
+    }
+    if a.len() != b.len() {
+        return false;
+    }
+    let digest = |path: &Path| -> Option<String> {
+        let bytes = std::fs::read(path).ok()?;
+        Some(crate::collection::window::ledger::sha256_hex(&bytes))
+    };
+    matches!((digest(left), digest(right)), (Some(a), Some(b)) if a == b)
+}
+
+/// Authenticates the peer as the admitted resident service: a process of
+/// this user running this Hub executable, the only process that binds the
+/// socket, and only while it holds the data-directory lifetime lock. A
+/// listener of any other program is refused before the command reads any
+/// input (review finding 7).
+fn authenticate(stream: &UnixStream) -> Result<(), OperatorRefusal> {
+    let (uid, pid) = peer_identity(stream)?;
+    if uid != rustix::process::getuid().as_raw() {
+        return Err(unauthenticated("belongs to another user"));
+    }
+    let ours = std::env::current_exe().map_err(|_| failed("could not be inspected"))?;
+    let theirs =
+        process_executable(pid).ok_or_else(|| unauthenticated("cannot be identified"))?;
+    if !same_executable(&ours, &theirs) {
+        return Err(unauthenticated("is not the Hub service"));
+    }
+    Ok(())
+}
+
+/// Connects to the service on `data_dir`'s channel and authenticates it.
+/// Reads nothing else: the command reads its input only after this, and
+/// sends it on this same connection.
 pub fn connect(data_dir: &Path) -> Result<UnixStream, OperatorRefusal> {
     let path = socket_path(data_dir);
     if !check_private_dir(&channel_dir(data_dir))? {
         return Err(OperatorRefusal::service_not_running());
     }
-    match UnixStream::connect(&path) {
-        Ok(stream) => Ok(stream),
+    let stream = match UnixStream::connect(&path) {
+        Ok(stream) => stream,
         Err(error)
             if matches!(
                 error.kind(),
                 ErrorKind::NotFound | ErrorKind::ConnectionRefused
             ) =>
         {
-            Err(OperatorRefusal::service_not_running())
+            return Err(OperatorRefusal::service_not_running());
         }
-        Err(_) => Err(failed("could not be reached")),
-    }
+        Err(_) => return Err(failed("could not be reached")),
+    };
+    authenticate(&stream)?;
+    Ok(stream)
 }
 
 /// Sends one request on a connected stream and returns the service's result
@@ -227,7 +323,7 @@ pub fn exchange(
     }
 }
 
-/// Connects and sends one request.
+/// Connects, authenticates the service and sends one request.
 pub fn forward(
     data_dir: &Path,
     request: &OperatorRequest,
