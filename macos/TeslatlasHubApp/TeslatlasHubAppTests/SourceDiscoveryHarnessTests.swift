@@ -56,10 +56,11 @@ final class SourceDiscoveryHarnessTests: XCTestCase {
         XCTAssertEqual(Set(result.values?.keys.map { $0 } ?? []),
                        ["user", "password", "database", "car", "address", "oci_version"])
         XCTAssertEqual(result.calls.filter { $0.contains(SourceDiscovery.allowListedValuesTemplate) }.count, 1)
-        // A server answer that still carries a key is parsed without it being required.
-        let values = try SourceDiscovery.parse(["user", "password", "database", "car", "address"]
+        // An answer that still carried a key line is parsed with that line dropped.
+        let values = try SourceDiscovery.parse(["user", "password", "database", "car", "address", "key"]
             .map { "\($0)=\(Data("x".utf8).base64EncodedString())" }.joined(separator: "\n"))
         XCTAssertNil(values["key"])
+        XCTAssertEqual(Set(values.keys), ["user", "password", "database", "car", "address"])
     }
 
     func testDiscoveryFindsOneCandidateByEnvironmentShape() throws {

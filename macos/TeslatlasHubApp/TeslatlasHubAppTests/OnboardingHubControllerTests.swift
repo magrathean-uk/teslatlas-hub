@@ -37,6 +37,41 @@ final class OnboardingHubControllerTests: XCTestCase {
         XCTAssertFalse(HubAppLog.shared.recentText().contains(secret))
     }
 
+    func testGuidedImportSessionCarriesNoSourceKey() throws {
+        // The SSH session holds the source, car and database password file only.
+        let owner = try SourceImportDirectoryOwner.create(in: HubTestScratch.directory)
+        defer { try? FileManager.default.removeItem(at: owner.directory) }
+        let session = SourceServerImportSession(
+            source: "postgresql://reader@127.0.0.1:55439/sourcedb", carID: "1",
+            passwordFile: owner.directory.appendingPathComponent("postgres-password"),
+            sourceVersion: "4.2.0", tunnel: Process(), temporaryDirectory: owner.directory,
+            directoryOwner: owner)
+        defer { session.close() }
+        let labels = Mirror(reflecting: session).children.compactMap(\.label)
+        XCTAssertTrue(labels.contains("passwordFile"))
+        XCTAssertFalse(labels.contains { $0.lowercased().contains("key") || $0.lowercased().contains("token") },
+                       "\(labels)")
+    }
+
+    func testLocalAndManualSourceChecksRequireNumericLoopback() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let runner = OnboardingRunner()
+        let controller = HubController(commandRunner: runner, serviceRunner: OnboardingService(),
+                                       homeDirectory: home, serviceInstalledOverride: false)
+        for source in ["postgresql://reader@server.local/sourcedb", "postgresql://reader@localhost/sourcedb"] {
+            let refused = expectation(description: source)
+            controller.checkSourceCompatibility(source: source, carID: "1", passwordFile: "/p",
+                                                acceptSchemaEvidence: true) { result in
+                guard case let .failure(error) = result else { return XCTFail("checked \(source)") }
+                XCTAssertEqual(error.localizedDescription, "Choose a local PostgreSQL source on 127.0.0.1 or ::1.")
+                refused.fulfill()
+            }
+            wait(for: [refused], timeout: 1)
+        }
+        XCTAssertTrue(runner.argumentCalls.isEmpty, "the refusal launches nothing")
+    }
+
     func testMigrationFailurePresentsOnlyActionableCredentialRecovery() {
         let rawDiagnostic = """
         {"event":"migration_progress","completedRows":11000000,"totalRows":11063752,"phase":"copy_positions"}
@@ -435,6 +470,17 @@ final class OnboardingHubControllerTests: XCTestCase {
         XCTAssertTrue(runner.argumentCalls
             .filter { $0.contains("source-check") || $0.contains("migrate") }
             .allSatisfy { $0.contains("--accept-schema-evidence") })
+        // The guided import runs without the source key: no key, token or credential flag.
+        let migrate = try XCTUnwrap(runner.argumentCalls.first { $0.contains("migrate") })
+        XCTAssertEqual(Array(migrate.drop { $0 != "migrate" }), [
+            "migrate", "--source", "postgresql://reader@127.0.0.1/sourcedb", "--car-id", "1",
+            "--postgres-password-file", "/private/password", "--online-snapshot", "--accept-schema-evidence"
+        ])
+        let check = try XCTUnwrap(runner.argumentCalls.first { $0.contains("source-check") })
+        XCTAssertEqual(Array(check.drop { $0 != "source-check" }), [
+            "source-check", "--source", "postgresql://reader@127.0.0.1/sourcedb", "--car-id", "1",
+            "--postgres-password-file", "/private/password", "--accept-schema-evidence"
+        ])
         XCTAssertTrue(controller.hasPendingMigrationHandover)
         let config = home.appendingPathComponent(
             "Library/Application Support/Teslatlas Hub/config.toml"

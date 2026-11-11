@@ -108,11 +108,15 @@ printf 'address=%s\n' "$(encode "$db_ip")"
 printf 'oci_version=%s\n' "$(encode "$src_oci_version")"
 """#
 
+    /// The only fields a discovery answer may carry; any other line is dropped unread.
+    static let resultNames: Set<String> = ["user", "password", "database", "car", "address", "oci_version"]
+
     static func parse(_ output: String) throws -> [String: String] {
         var values: [String: String] = [:]
         for line in output.split(whereSeparator: \.isNewline) {
             let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-            guard parts.count == 2, let data = Data(base64Encoded: String(parts[1])),
+            guard parts.count == 2, resultNames.contains(String(parts[0])),
+                  let data = Data(base64Encoded: String(parts[1])),
                   let value = String(data: data, encoding: .utf8) else { continue }
             values[String(parts[0])] = value
         }
