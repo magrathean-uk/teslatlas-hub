@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 
 use super::*;
+use crate::db::hub_ids::HUB_ID_BASE;
 use crate::tesla_stream::parse_data_update;
 
 const T0: i64 = 1_760_000_000_000;
@@ -710,14 +711,19 @@ fn st10_state_intervals_open_close_and_continue() {
     assert_eq!(
         closed_states(&result.delta),
         vec![
-            (1, "online".to_owned(), T0, T0 + 20 * MIN),
-            (2, "asleep".to_owned(), T0 + 20 * MIN, T0 + 5 * HOUR),
+            (HUB_ID_BASE, "online".to_owned(), T0, T0 + 20 * MIN),
+            (
+                HUB_ID_BASE + 1,
+                "asleep".to_owned(),
+                T0 + 20 * MIN,
+                T0 + 5 * HOUR
+            ),
         ]
     );
     assert_eq!(
         result.state.open_state,
         Some(OpenState {
-            id: 3,
+            id: HUB_ID_BASE + 2,
             car_id: 1,
             state: "online".to_owned(),
             start_date_ms: T0 + 5 * HOUR,
@@ -768,7 +774,7 @@ fn st12_late_discovery_is_ignored_and_a_later_one_accepted() {
     let accepted = step(late.state, &d(3, T0 + 11 * MIN, "asleep"));
     assert_eq!(
         closed_states(&accepted.delta),
-        vec![(1, "online".to_owned(), T0 + 10 * MIN, T0 + 11 * MIN)]
+        vec![(HUB_ID_BASE, "online".to_owned(), T0 + 10 * MIN, T0 + 11 * MIN)]
     );
     assert_eq!(
         accepted
@@ -1607,7 +1613,7 @@ fn st16_update_finish_records_one_row_from_the_install_start() {
     assert_eq!(
         state.open_update,
         Some(OpenUpdate {
-            id: 1,
+            id: HUB_ID_BASE,
             car_id: 1,
             start_date_ms: T0 + MIN
         })
@@ -1627,7 +1633,7 @@ fn st16_update_finish_records_one_row_from_the_install_start() {
     assert_eq!(
         finished.delta.updates,
         vec![ProjectionUpdate {
-            id: 1,
+            id: HUB_ID_BASE,
             car_id: 1,
             start_date_ms: T0 + MIN,
             end_date_ms: T0 + 40 * MIN,
@@ -1641,7 +1647,7 @@ fn st16_update_finish_records_one_row_from_the_install_start() {
         Some("2024.20.1 bb")
     );
     assert_eq!(finished.state.last_car_version_at_ms, Some(T0 + 40 * MIN));
-    assert_eq!(finished.state.next_update_id, 2);
+    assert_eq!(finished.state.next_update_id, HUB_ID_BASE + 1);
 }
 
 #[test]
@@ -1667,12 +1673,15 @@ fn st17_update_cancel_leaves_no_row() {
     );
     assert!(cancelled.state.open_update.is_none());
     assert!(cancelled.delta.updates.is_empty());
-    // An id is never reused: the next install takes id 2.
+    // An id is never reused: the next install takes the next Hub id.
     let again = step(
         cancelled.state,
         &status_sample(4, T0 + 3 * MIN, "installing", "2024.14.3 aa", json!({})),
     );
-    assert_eq!(again.state.open_update.map(|open| open.id), Some(2));
+    assert_eq!(
+        again.state.open_update.map(|open| open.id),
+        Some(HUB_ID_BASE + 1)
+    );
 }
 
 #[test]
@@ -1696,7 +1705,7 @@ fn st18_missed_update_has_a_lower_bound_start() {
     assert_eq!(
         missed.delta.updates,
         vec![ProjectionUpdate {
-            id: 1,
+            id: HUB_ID_BASE,
             car_id: 1,
             start_date_ms: T0,
             end_date_ms: T0 + 3 * 24 * HOUR,

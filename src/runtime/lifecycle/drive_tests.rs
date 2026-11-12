@@ -13,6 +13,7 @@ use serde_json::{Map, json};
 
 use super::tests::imported_position_fixture;
 use super::*;
+use crate::db::hub_ids::HUB_ID_BASE;
 use crate::tesla_stream::StreamUpdate;
 
 pub(crate) const T0: i64 = 1_760_000_000_000;
@@ -208,7 +209,7 @@ fn st23_basic_drive_with_a_lead_from_the_parked_spot() {
     let result = run(&samples);
     assert_eq!(result.delta.drives.len(), 1);
     let drive = &result.delta.drives[0];
-    assert_eq!((drive.id, drive.car_id), (1, 1));
+    assert_eq!((drive.id, drive.car_id), (HUB_ID_BASE, 1));
     assert_eq!(drive.start_date_ms, T0 + MIN);
     assert_eq!(drive.end_date_ms, T0 + 3 * MIN);
     // The snapshot of obs 1 is within T_gap, so the distance counts the
@@ -226,7 +227,7 @@ fn st23_basic_drive_with_a_lead_from_the_parked_spot() {
             .delta
             .open_drive_positions
             .iter()
-            .all(|position| position.drive_id == Some(1))
+            .all(|position| position.drive_id == Some(HUB_ID_BASE))
     );
     assert_eq!(
         dates(&result.delta.open_drive_positions),
@@ -374,7 +375,10 @@ fn st27_gear_shuffling_discards_both_drives_and_keeps_their_positions() {
     let samples = st27_samples();
     let result = run(&samples);
     assert!(result.delta.drives.is_empty());
-    assert_eq!(result.delta.discarded_drive_ids, vec![1, 2]);
+    assert_eq!(
+        result.delta.discarded_drive_ids,
+        vec![HUB_ID_BASE, HUB_ID_BASE + 1]
+    );
     assert!(result.delta.open_drive_positions.is_empty());
     assert_eq!(result.delta.positions.len(), 4);
     assert!(result.delta.positions.iter().all(|p| p.drive_id.is_none()));
@@ -384,7 +388,7 @@ fn st27_gear_shuffling_discards_both_drives_and_keeps_their_positions() {
     );
     assert!(result.state.open_drive.is_none());
     // Ids of discarded drives are never reused.
-    assert_eq!(result.state.next_drive_id, 3);
+    assert_eq!(result.state.next_drive_id, HUB_ID_BASE + 2);
 }
 
 #[test]
@@ -464,7 +468,7 @@ fn st29b_a_gnss_jump_with_a_fine_odometer_is_discarded() {
     let samples = st29b_samples();
     let result = run(&samples);
     assert!(result.delta.drives.is_empty());
-    assert_eq!(result.delta.discarded_drive_ids, vec![1]);
+    assert_eq!(result.delta.discarded_drive_ids, vec![HUB_ID_BASE]);
     assert_eq!(result.delta.positions.len(), 2);
 }
 
@@ -534,7 +538,7 @@ fn st34_a_return_after_the_gap_showing_motion_opens_a_new_drive_without_a_lead()
     assert_eq!(result.delta.drives.len(), 1);
     assert_eq!(result.delta.drives[0].end_date_ms, T0);
     let second = result.state.open_drive.as_ref().expect("second drive");
-    assert_eq!(second.id, 2);
+    assert_eq!(second.id, HUB_ID_BASE + 1);
     assert_eq!(second.start_date_ms, T0 + 40 * MIN);
     // No lead: the first odometer is the one of the return observation.
     assert!(close_to(second.first_odometer.unwrap(), 1010.0 * K_MILE_KM));
@@ -902,7 +906,7 @@ fn standalone_positions_while_driving_are_drive_children() {
             .delta
             .open_drive_positions
             .iter()
-            .all(|position| position.drive_id == Some(1))
+            .all(|position| position.drive_id == Some(HUB_ID_BASE))
     );
 }
 
@@ -1002,7 +1006,9 @@ fn st44_an_imported_open_drive_is_continued_and_closed_with_its_seeded_id() {
     assert_eq!(drive.outside_temp_avg, Some(19.0));
     assert_eq!(drive.inside_temp_avg, Some(21.0));
     assert_eq!((drive.ascent, drive.descent), (Some(7), Some(2)));
-    // The imported children are not rewritten: only the live position joins.
+    // The imported children are not rewritten: only the live position joins,
+    // as a new Hub child (the second Hub position, after the continuing
+    // observation's), so it takes a Hub id and not a watermark-derived one.
     assert_eq!(
         closed
             .delta
@@ -1010,7 +1016,7 @@ fn st44_an_imported_open_drive_is_continued_and_closed_with_its_seeded_id() {
             .iter()
             .map(|position| position.id)
             .collect::<Vec<_>>(),
-        vec![703]
+        vec![HUB_ID_BASE + 1]
     );
     assert!(closed.state.open_drive.is_none());
 }
@@ -1724,16 +1730,16 @@ fn a_gap_of_exactly_t_gap_keeps_the_drive_and_one_millisecond_more_closes_it() {
         "exactly T_gap continues the drive"
     );
     let open = at_gap.state.open_drive.as_ref().expect("still open");
-    assert_eq!((open.id, open.position_count), (1, 3));
+    assert_eq!((open.id, open.position_count), (HUB_ID_BASE, 3));
 
     let past_gap = step_one(state, &driving(3, T0 + t_gap + 1, 10.002, Some(1002.0)));
     assert_eq!(past_gap.delta.drives.len(), 1);
-    assert_eq!(past_gap.delta.drives[0].id, 1);
+    assert_eq!(past_gap.delta.drives[0].id, HUB_ID_BASE);
     assert_eq!(past_gap.delta.drives[0].end_date_ms, T0);
     // The same observation opens a second drive, without a lead (R41a: the
     // parked spot is older than `T_gap`).
     let second = past_gap.state.open_drive.as_ref().expect("a second drive");
-    assert_eq!(second.id, 2);
+    assert_eq!(second.id, HUB_ID_BASE + 1);
     assert_eq!(second.start_date_ms, T0 + t_gap + 1);
     assert_eq!(second.first_odometer, Some(1002.0 * K_MILE_KM));
 }

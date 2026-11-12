@@ -614,7 +614,7 @@ fn t65_a_commit_that_closes_a_charge_succeeds_beside_an_undecodable_row() {
     harness.feed_all(&gap_sequence(false));
     let closed = harness
         .store
-        .materialised_charge_for_vehicle(v, 1)
+        .materialised_charge_for_vehicle(v, crate::db::hub_ids::HUB_ID_BASE)
         .expect("read")
         .expect("the close committed its own row");
     assert!(closed.end_date_ms.is_some());
@@ -672,7 +672,8 @@ fn t61_run(
     for (id, x) in [(1, 24.00), (2, 24.00), (3, 25.60)] {
         eff_put(&store, v, id, x);
     }
-    // The lifecycle state allocates above the seeded rows (C1 R10).
+    // The lifecycle state holds a cursor below the Hub range, so the next
+    // charge is raised to the first Hub id, clear of the seeded rows (C1 R10).
     let mut state = crate::lifecycle::OpenSessionState::new();
     state.next_charge_id = 4;
     state.next_charge_sample_id = 1_000;
@@ -734,9 +735,9 @@ fn t61_run(
         }
     }
     let charge = store
-        .materialised_charge_for_vehicle(v, 4)
+        .materialised_charge_for_vehicle(v, crate::db::hub_ids::HUB_ID_BASE)
         .expect("read charge")
-        .expect("the closed charge, allocated above the seeded rows");
+        .expect("the closed charge, allocated from the Hub id range above the seeded rows");
     (charge, eff_car_of(&store, v), eff_car_mutations(&store, v))
 }
 

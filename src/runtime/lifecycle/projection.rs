@@ -1370,6 +1370,7 @@ mod stream_fixture_tests {
 
     #[test]
     fn stream_drive_closes_before_owner_poll_and_duplicate_is_idempotent() {
+        let hub = crate::db::hub_ids::HUB_ID_BASE;
         let state = OpenSessionState::new();
         let parked = sample(1, 1_700_000_000_000, 100.0, "P");
         let driving_one = sample(2, 1_700_000_001_000, 100.0, "D");
@@ -1388,7 +1389,7 @@ mod stream_fixture_tests {
                 .delta
                 .open_drive_positions
                 .iter()
-                .filter(|position| position.drive_id == Some(1))
+                .filter(|position| position.drive_id == Some(hub))
                 .count(),
             1
         );
@@ -1398,7 +1399,7 @@ mod stream_fixture_tests {
                 .open_drive_positions
                 .iter()
                 .chain(third.delta.open_drive_positions.iter())
-                .filter(|position| position.drive_id == Some(1))
+                .filter(|position| position.drive_id == Some(hub))
                 .count(),
             2
         );

@@ -166,7 +166,10 @@ fn c1_st111_decode_close_merge() {
         "the fold fills the fold time"
     );
     assert!(first.delta.drives.is_empty() && first.delta.recompute_drive_ids.is_empty());
-    assert_eq!(position_ids(&first.delta.open_drive_positions), vec![14]);
+    // The inherited drive keeps its source id 1; the fixture's position cursor
+    // 14 lies below the Hub range, so the new positions take Hub ids.
+    let hub = crate::db::hub_ids::HUB_ID_BASE;
+    assert_eq!(position_ids(&first.delta.open_drive_positions), vec![hub]);
     let restored =
         OpenSessionState::decode(&first.state.encode().expect("encode")).expect("decode");
     assert!(
@@ -188,7 +191,10 @@ fn c1_st111_decode_close_merge() {
     );
     assert_eq!(second.delta.recompute_drive_ids, vec![1]);
     assert!(second.delta.discarded_drive_ids.is_empty());
-    assert_eq!(position_ids(&second.delta.open_drive_positions), vec![15]);
+    assert_eq!(
+        position_ids(&second.delta.open_drive_positions),
+        vec![hub + 1]
+    );
     assert!(second.state.open_drive.is_none());
 
     // A drive this build opens (ST23's kind), closed with no recompute id, even

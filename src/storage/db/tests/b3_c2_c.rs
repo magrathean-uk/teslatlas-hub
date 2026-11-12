@@ -194,9 +194,18 @@ fn c2_t86_every_domain_seed_promotion() {
                 promote(&store, &source, &vehicle, &session, T69_T0);
             }
             let cursor_path = if path == "seed" { "" } else { "promote " };
+            // The cursor starts at the Hub range base, which lies above the
+            // persisted floor (900) and the snapshot (500), so a new Hub id
+            // never collides with a persisted or imported id.
+            let cursor = cursor_of(id_cursors(&store, v), domain);
             assert_eq!(
-                cursor_of(id_cursors(&store, v), domain),
-                901,
+                cursor,
+                crate::db::hub_ids::HUB_ID_BASE,
+                "c2_t86_every_domain_seed_promotion: {} {cursor_path}cursor is the Hub range start, not the watermark",
+                domain.as_str()
+            );
+            assert!(
+                cursor > 900,
                 "c2_t86_every_domain_seed_promotion: {} {cursor_path}cursor must exceed the persisted floor, not just the snapshot",
                 domain.as_str()
             );
@@ -216,7 +225,7 @@ fn c2_t86_every_domain_seed_promotion() {
         pair(Some(800), Some(T_MID)),
     ];
     // d's stored pair after each call under the writer seed and under the
-    // promotion, and its cursor.
+    // promotion; its cursor stays at the Hub range start throughout.
     let seed_rows = [
         pair(Some(500), Some(T_HI)),
         pair(Some(500), Some(T_HI)),
@@ -224,7 +233,7 @@ fn c2_t86_every_domain_seed_promotion() {
         pair(Some(800), Some(T_HI)),
         pair(Some(800), Some(T_HI)),
     ];
-    let cursor_after = [501, 501, 501, 801, 801];
+    let cursor_after = [crate::db::hub_ids::HUB_ID_BASE; 5];
     let seed_no_op = [false, true, true, false, true];
     for domain in WatermarkDomain::ALL {
         for path in ["seed", "promote"] {
@@ -266,8 +275,9 @@ fn c2_t86_every_domain_seed_promotion() {
                         other.as_str()
                     );
                 }
-                // The matching cursor follows the stored maximum, never lowered;
-                // the other five keep their values after call 1.
+                // The matching cursor stays at the Hub range start whatever the
+                // stored maximum (a watermark never raises it); the other five
+                // keep their values after call 1.
                 let cursors = id_cursors(&store, v);
                 assert_eq!(
                     cursor_of(cursors, domain),

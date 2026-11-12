@@ -287,7 +287,8 @@ fn st51_a_basic_charge_opens_at_charging_and_closes_at_complete() {
     assert_eq!(charge.charge_energy_added, Some(20.0));
     assert_eq!(charge.start_battery_level, Some(50));
     assert_eq!(charge.end_battery_level, Some(80));
-    assert_eq!(charge.id, 1);
+    let hub = crate::db::hub_ids::HUB_ID_BASE;
+    assert_eq!(charge.id, hub);
     assert_eq!(
         result
             .delta
@@ -295,10 +296,10 @@ fn st51_a_basic_charge_opens_at_charging_and_closes_at_complete() {
             .iter()
             .map(|sample| (sample.id, sample.charge_process_id))
             .collect::<Vec<_>>(),
-        (1..=5).map(|id| (id, 1)).collect::<Vec<_>>()
+        (0..5).map(|k| (hub + k, hub)).collect::<Vec<_>>()
     );
-    assert_eq!(result.state.next_charge_id, 2);
-    assert_eq!(result.state.next_charge_sample_id, 6);
+    assert_eq!(result.state.next_charge_id, hub + 1);
+    assert_eq!(result.state.next_charge_sample_id, hub + 5);
     // R69: the snapshot the closed charge leaves.
     let snapshot = result.state.parked_snapshot.expect("snapshot");
     assert_eq!(snapshot.at_ms, Some(T0 + 9 * MIN));
@@ -667,7 +668,10 @@ fn st58_a_gap_with_a_moved_car_closes_at_the_last_sample_and_records_an_after_ga
     assert_eq!(result.delta.open_charge_samples.len(), 2);
     assert_eq!(
         result.delta.charge_start_coordinates,
-        vec![(1, 10.0, 20.0), (2, 10.5, 20.5)]
+        vec![
+            (crate::db::hub_ids::HUB_ID_BASE, 10.0, 20.0),
+            (crate::db::hub_ids::HUB_ID_BASE + 1, 10.5, 20.5)
+        ]
     );
 }
 
@@ -733,7 +737,10 @@ fn st59_a_lower_counter_starts_a_new_session() {
     assert_eq!(energies(&result.delta), vec![Some(10.0), Some(0.3)]);
     // The reset observation is sampled once, in the new session.
     assert_eq!(result.delta.open_charge_samples.len(), 4);
-    assert_eq!(result.delta.open_charge_samples[2].charge_process_id, 2);
+    assert_eq!(
+        result.delta.open_charge_samples[2].charge_process_id,
+        crate::db::hub_ids::HUB_ID_BASE + 1
+    );
 }
 
 #[test]
@@ -1143,7 +1150,7 @@ fn st77_a_sparse_odometer_below_the_last_reading_is_unmoved() {
         .open_charge
         .clone()
         .expect("one session continues");
-    assert_eq!(open.id, 1);
+    assert_eq!(open.id, crate::db::hub_ids::HUB_ID_BASE);
     assert_eq!(open.sample_count, 2);
     assert_eq!(open.last_odometer_km, Some(1000.4 * K_MILE_KM));
     // The session then closes as one row with both samples' energy.
@@ -1306,7 +1313,7 @@ fn st90_the_preset_is_the_snapshots_counter_and_one_session_spans_the_lowered_co
         all.delta
             .open_charge_samples
             .iter()
-            .filter(|sample| sample.charge_process_id == 2)
+            .filter(|sample| sample.charge_process_id == crate::db::hub_ids::HUB_ID_BASE + 1)
             .count(),
         3
     );
@@ -1353,7 +1360,10 @@ fn a_gap_with_a_lower_counter_or_no_class_fails_continuity() {
         cv(2, T0 + HOUR, "Charging", Some(0.2), Some(60), Some(1000.0)),
     ]);
     assert_eq!(spans(&fell.delta), vec![(T0, Some(T0))]);
-    assert_eq!(fell.state.open_charge.as_ref().map(|open| open.id), Some(2));
+    assert_eq!(
+        fell.state.open_charge.as_ref().map(|open| open.id),
+        Some(crate::db::hub_ids::HUB_ID_BASE + 1)
+    );
     // No class (a state text Tesla does not define) after a gap fails too.
     let unknown = run(&[
         start.clone(),
@@ -1381,7 +1391,7 @@ fn a_session_closed_after_a_gap_continues_under_a_new_id_when_active() {
     let open = result.state.open_charge.expect("second session");
     assert_eq!(open.start_date_ms, T0 + HOUR);
     assert_eq!(open.first_energy_added, Some(0.0));
-    assert_eq!(open.id, 2);
+    assert_eq!(open.id, crate::db::hub_ids::HUB_ID_BASE + 1);
 }
 
 #[test]

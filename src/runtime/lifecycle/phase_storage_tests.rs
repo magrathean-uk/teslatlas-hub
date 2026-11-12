@@ -103,8 +103,18 @@ fn st68_replay_after_a_failed_commit_gives_one_set_of_rows() {
                 ))
                 .collect::<Vec<_>>(),
             vec![
-                (1, "online".to_owned(), T0, Some(T0 + 20 * MIN)),
-                (2, "asleep".to_owned(), T0 + 20 * MIN, None),
+                (
+                    crate::db::hub_ids::HUB_ID_BASE,
+                    "online".to_owned(),
+                    T0,
+                    Some(T0 + 20 * MIN)
+                ),
+                (
+                    crate::db::hub_ids::HUB_ID_BASE + 1,
+                    "asleep".to_owned(),
+                    T0 + 20 * MIN,
+                    None
+                ),
             ],
             "fault {point:?}"
         );

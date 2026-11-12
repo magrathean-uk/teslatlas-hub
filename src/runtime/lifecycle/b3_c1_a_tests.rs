@@ -124,10 +124,14 @@ fn c1_st106_dip_inside_charge() {
     let reopened = run(&st106(9.98)[..4]);
     let open = reopened.state.open_charge.as_ref().expect("second row");
     assert_eq!(open.first_energy_added, Some(0.0), "restart against 10.04");
-    assert_eq!(open.id, 2);
+    let hub = crate::db::hub_ids::HUB_ID_BASE;
+    assert_eq!(open.id, hub + 1);
     // The restart observation is sampled once, in the new row.
     assert_eq!(split.delta.open_charge_samples.len(), 5);
-    assert_eq!(split.delta.open_charge_samples[2].charge_process_id, 2);
+    assert_eq!(
+        split.delta.open_charge_samples[2].charge_process_id,
+        hub + 1
+    );
 }
 
 /// C1 ST107's observations at `T0`: the top-up that continues the plug-in across
@@ -161,7 +165,8 @@ fn c1_st107_boundary_dip_topup() {
     assert_eq!(energies(&result.delta), vec![Some(50.86), Some(0.34)]);
     let second = run(&st107()[..5]);
     let open = second.state.open_charge.as_ref().expect("row 2 is open");
-    assert_eq!(open.id, 2);
+    let hub = crate::db::hub_ids::HUB_ID_BASE;
+    assert_eq!(open.id, hub + 1);
     assert_eq!(open.first_energy_added, Some(50.86), "baseline 50.86");
     // The rows are one plug-in: three samples in row 1 and three in row 2, and
     // every sample is in the row that was open when it arrived.
@@ -171,7 +176,7 @@ fn c1_st107_boundary_dip_topup() {
         .iter()
         .map(|sample| sample.charge_process_id)
         .collect::<Vec<_>>();
-    assert_eq!(rows, vec![1, 1, 1, 2, 2, 2]);
+    assert_eq!(rows, vec![hub, hub, hub, hub + 1, hub + 1, hub + 1]);
     // A restart against 50.86 starts from zero again: 50.80 is 0.06 below.
     let mut restarted = st107();
     restarted[4] = powered(v(5, T0 + 121 * SEC, "Charging", 50.80, None), 8);

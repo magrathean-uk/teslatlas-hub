@@ -635,7 +635,11 @@ fn state_intervals_transition_keep_open_state_and_resume_after_restart() {
     assert_eq!(third.delta.states[0].end_date_ms, Some(3_000));
     assert_eq!(third.delta.states[1].state, "online");
     assert_eq!(third.delta.states[1].end_date_ms, None);
-    assert_eq!(third.state.next_state_id, 4);
+    // Three states were allocated from the Hub range.
+    assert_eq!(
+        third.state.next_state_id,
+        crate::db::hub_ids::HUB_ID_BASE + 3
+    );
 }
 
 #[test]

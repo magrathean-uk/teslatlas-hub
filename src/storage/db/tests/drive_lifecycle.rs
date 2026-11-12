@@ -212,9 +212,11 @@ fn a_discarded_drive_keeps_its_positions_as_standalone_rows() {
         .materialised_history(vehicle.vehicle_id)
         .expect("history");
     assert!(history.drives.is_empty());
+    // Hub-allocated position ids start at the Hub range base.
+    let hub = crate::db::hub_ids::HUB_ID_BASE;
     assert_eq!(
         placed_positions(&history),
-        vec![(1, None, T0), (2, None, T0 + 10 * SEC)]
+        vec![(hub, None, T0), (hub + 1, None, T0 + 10 * SEC)]
     );
     assert_eq!(open_position_rows(&store, &vehicle), 0);
 }
@@ -534,9 +536,15 @@ fn st95_b_the_children_labels_and_terrain_recompute_agree_with_the_row() {
     // standalone.
     let t0 = crate::lifecycle::drive_tests::T0;
     let min = crate::lifecycle::drive_tests::MIN;
+    // Hub-allocated ids start at the Hub range base: drive and positions.
+    let hub = crate::db::hub_ids::HUB_ID_BASE;
     assert_eq!(
         placed_positions(&history),
-        vec![(1, Some(1), t0), (2, Some(1), t0 + min), (3, None, t0 + 2 * min)]
+        vec![
+            (hub, Some(hub), t0),
+            (hub + 1, Some(hub), t0 + min),
+            (hub + 2, None, t0 + 2 * min)
+        ]
     );
     assert_eq!(open_position_rows(&store, &vehicle), 0);
     // A terrain recompute over the drive's children gives the row's totals.
@@ -568,9 +576,14 @@ fn st96_b_a_discarded_drive_leaves_every_position_standalone() {
         .materialised_history(vehicle.vehicle_id)
         .expect("history");
     assert!(history.drives.is_empty());
+    let hub = crate::db::hub_ids::HUB_ID_BASE;
     assert_eq!(
         placed_positions(&history),
-        vec![(1, None, T0), (2, None, T0 + MIN), (3, None, T0 + 2 * MIN)]
+        vec![
+            (hub, None, T0),
+            (hub + 1, None, T0 + MIN),
+            (hub + 2, None, T0 + 2 * MIN)
+        ]
     );
     assert_eq!(open_position_rows(&store, &vehicle), 0);
 }
@@ -588,9 +601,10 @@ fn st97_c_a_delayed_motion_fact_leaves_the_later_position_standalone() {
         .expect("history");
     assert_eq!(history.drives.len(), 1);
     assert_eq!(history.drives[0].end_date_ms, T0 + MIN + 30 * SEC);
+    let hub = crate::db::hub_ids::HUB_ID_BASE;
     assert_eq!(
         placed_positions(&history),
-        vec![(1, Some(1), T0), (2, None, T0 + 2 * MIN)]
+        vec![(hub, Some(hub), T0), (hub + 1, None, T0 + 2 * MIN)]
     );
 }
 
@@ -608,15 +622,16 @@ fn st98_b_an_overflowed_end_keeps_the_children_with_the_row() {
     assert_eq!(history.drives.len(), 1);
     assert_eq!(history.drives[0].end_date_ms, T0 + MIN);
     // A and L1 stay under the drive; L2 to L5 are standalone.
+    let hub = crate::db::hub_ids::HUB_ID_BASE;
     assert_eq!(
         placed_positions(&history),
         vec![
-            (1, Some(1), T0),
-            (2, Some(1), T0 + MIN),
-            (3, None, T0 + 2 * MIN),
-            (4, None, T0 + 3 * MIN),
-            (5, None, T0 + 4 * MIN),
-            (6, None, T0 + 5 * MIN),
+            (hub, Some(hub), T0),
+            (hub + 1, Some(hub), T0 + MIN),
+            (hub + 2, None, T0 + 2 * MIN),
+            (hub + 3, None, T0 + 3 * MIN),
+            (hub + 4, None, T0 + 4 * MIN),
+            (hub + 5, None, T0 + 5 * MIN),
         ]
     );
 }

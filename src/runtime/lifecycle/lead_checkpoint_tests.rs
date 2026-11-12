@@ -10,6 +10,7 @@ use serde_json::{Map, json};
 
 use super::drive_tests::{MIN, SEC, T0, vd};
 use super::*;
+use crate::db::hub_ids::HUB_ID_BASE;
 
 pub(crate) const A: (f64, f64) = (10.0, 20.0);
 pub(crate) const B: (f64, f64) = (10.0012, 20.0);
@@ -318,7 +319,7 @@ fn st95_c_a_blob_without_lead_checkpoints_decodes_with_none() {
 fn st96_an_explicit_end_before_a_later_position_discards_what_the_end_source_discards() {
     let step = run_all(&st96_samples());
     assert!(step.delta.drives.is_empty(), "C alone would cross 100 m");
-    assert_eq!(step.delta.discarded_drive_ids, vec![1]);
+    assert_eq!(step.delta.discarded_drive_ids, vec![HUB_ID_BASE]);
     assert_eq!(
         step.state.last_stationary_position_at_ms,
         Some(T0 + 2 * MIN)
@@ -412,7 +413,11 @@ fn st97_b_a_fresh_motion_fact_at_or_after_the_cut_settles_the_checkpoint() {
         .collect::<Vec<_>>();
     assert_eq!(
         all_positions,
-        vec![(10.0, Some(1)), (10.003, Some(1)), (10.004, Some(1))]
+        vec![
+            (10.0, Some(HUB_ID_BASE)),
+            (10.003, Some(HUB_ID_BASE)),
+            (10.004, Some(HUB_ID_BASE))
+        ]
     );
 }
 

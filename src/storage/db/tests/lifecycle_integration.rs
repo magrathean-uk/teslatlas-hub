@@ -118,6 +118,12 @@ fn id_cursors(store: &HubStore, vehicle: Uuid) -> [i64; 6] {
     ]
 }
 
+/// The six cursors of a freshly seeded or promoted state: since the Hub id
+/// range (M03-T12) no import watermark raises a cursor, so each starts at the
+/// first Hub id and stays clear of every imported id (the watermarks above
+/// are all below it).
+const HUB_CURSORS: [i64; 6] = [crate::db::hub_ids::HUB_ID_BASE; 6];
+
 fn put_watermark(
     store: &HubStore,
     source: Uuid,
@@ -154,7 +160,8 @@ fn st93_a_seed_raises_every_cursor_above_its_import_watermark() {
         .expect("seed");
     assert_eq!(
         id_cursors(&store, vehicle.vehicle_id),
-        [41, 501, 51, 901, 31, 13]
+        HUB_CURSORS,
+        "the watermarks (40, 500, 50, 900, 30, 12) do not raise the cursors"
     );
 }
 
@@ -194,17 +201,22 @@ fn st93_live_charges_and_samples_take_ids_above_the_watermarks() {
         .expect("history");
     assert_eq!(
         history.charges.iter().map(|row| row.id).collect::<Vec<_>>(),
-        vec![7, 51],
-        "the new charge is 51, not 8"
+        vec![7, crate::db::hub_ids::HUB_ID_BASE],
+        "the new charge is the first Hub id, not 8 and not above the watermark"
     );
     let new_samples = history
         .charge_samples
         .iter()
-        .filter(|sample| sample.charge_process_id == 51)
+        .filter(|sample| sample.charge_process_id == crate::db::hub_ids::HUB_ID_BASE)
         .map(|sample| sample.id)
         .collect::<Vec<_>>();
     assert_eq!(new_samples.len(), 3);
-    assert!(new_samples.iter().all(|id| *id > 900), "{new_samples:?}");
+    assert!(
+        new_samples
+            .iter()
+            .all(|id| crate::db::hub_ids::is_hub_id(*id) && *id > 900),
+        "{new_samples:?}"
+    );
 }
 
 #[test]
@@ -215,13 +227,14 @@ fn st93_a_later_watermark_raises_the_cursors_of_a_seeded_state() {
     store
         .seed_imported_open_session(source.source_id, v, 1, &st93_session(start), start)
         .expect("seed");
-    // A later promotion raises the positions watermark to 800.
+    // A later promotion raises the positions watermark to 800; the cursors
+    // stay at the Hub range start.
     let mut later = st93_session(start);
     later.watermarks.positions.max_id = Some(800);
     store
         .seed_imported_open_session(source.source_id, v, 1, &later, start + COST_MIN)
         .expect("later seed");
-    assert_eq!(id_cursors(&store, v), [41, 801, 51, 901, 31, 13]);
+    assert_eq!(id_cursors(&store, v), HUB_CURSORS);
 
     // A watermark row without an id, or below a cursor, changes nothing.
     let mut lower = st93_session(start);
@@ -230,7 +243,7 @@ fn st93_a_later_watermark_raises_the_cursors_of_a_seeded_state() {
     store
         .seed_imported_open_session(source.source_id, v, 1, &lower, start + 2 * COST_MIN)
         .expect("lower seed");
-    assert_eq!(id_cursors(&store, v), [41, 801, 51, 901, 31, 13]);
+    assert_eq!(id_cursors(&store, v), HUB_CURSORS);
 }
 
 #[test]
@@ -258,8 +271,8 @@ fn st93_the_watermarks_of_every_source_bound_the_cursors() {
         .expect("reseed");
     assert_eq!(
         id_cursors(&store, v),
-        [41, 2_001, 51, 901, 32, 13],
-        "positions follow the other source, charges ignore its NULL"
+        HUB_CURSORS,
+        "no source's watermark (positions 2000, states 31, charges NULL) raises a cursor"
     );
 }
 
@@ -634,7 +647,7 @@ fn st105_a_promotion_raises_the_cursors_above_every_sources_watermarks() {
     put_watermark(&store, second, v, "charges", Some(1_500));
     put_watermark(&store, second, v, "drives", None);
     promote_st93(&store, &source, &vehicle, start);
-    assert_eq!(id_cursors(&store, v), [41, 2_001, 51, 1_501, 31, 13]);
+    assert_eq!(id_cursors(&store, v), HUB_CURSORS);
 }
 
 #[test]
@@ -645,7 +658,7 @@ fn st105_a_promotion_raises_the_cursors_of_a_state_seeded_before_and_never_lower
     store
         .seed_imported_open_session(source.source_id, v, 1, &st93_session(start), start)
         .expect("seed");
-    assert_eq!(id_cursors(&store, v), [41, 501, 51, 901, 31, 13]);
+    assert_eq!(id_cursors(&store, v), HUB_CURSORS);
     let second = store
         .register_source(
             &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "st105-b-second"),
@@ -658,9 +671,9 @@ fn st105_a_promotion_raises_the_cursors_of_a_state_seeded_before_and_never_lower
     // The state was seeded before, and the session is the same; the raise
     // still reads every source's rows as they stand in the transaction.
     promote_st93(&store, &source, &vehicle, start + COST_MIN);
-    assert_eq!(id_cursors(&store, v), [41, 2_001, 51, 901, 31, 21]);
+    assert_eq!(id_cursors(&store, v), HUB_CURSORS);
     // (c) A lowered watermark row lowers no cursor.
     put_watermark(&store, second, v, "positions", Some(600));
     promote_st93(&store, &source, &vehicle, start + 2 * COST_MIN);
-    assert_eq!(id_cursors(&store, v), [41, 2_001, 51, 901, 31, 21]);
+    assert_eq!(id_cursors(&store, v), HUB_CURSORS);
 }
