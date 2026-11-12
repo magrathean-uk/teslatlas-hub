@@ -238,8 +238,10 @@ fn data_recovery_m06_t10_older_format_bundle_still_verifies_and_restores() {
         restored.installation_id,
         store.installation_id().expect("installation")
     );
+    // Packs come back byte for byte; the catalogue and the no-op bodies are
+    // re-signed under the restore's fresh cursor key (M06-T09).
     for (path, bytes) in &bodies {
-        if path == CATALOGUE_MEMBER {
+        if !path.starts_with(PACK_DIRECTORY) {
             continue;
         }
         let relative = path.strip_prefix("data/").expect("data member");
