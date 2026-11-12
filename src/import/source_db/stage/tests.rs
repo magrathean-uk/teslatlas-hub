@@ -907,3 +907,90 @@ fn refuses_to_consume_the_host_disk_reserve() {
         Err(SourceDbStageError::InsufficientFreeSpace { .. })
     ));
 }
+
+#[test]
+fn source_db_single_pass_stage_bytes_and_sealed_digest_match_the_two_pass_reference() {
+    use crate::import::source_db::canonical_json::tests::position;
+    let temporary = tempdir().expect("temp dir");
+    let positions = vec![(11, position(true)), (12, position(false))];
+    let car = Row {
+        label: "fixture \"car\"".into(),
+        ordinal: 1,
+    };
+
+    let mut single =
+        SourceDbStage::create_physical_v3(temporary.path().join("single"), limits())
+            .expect("single stage");
+    single
+        .insert(SourceDbStageTable::Cars, 1, &car)
+        .expect("car");
+    single
+        .insert_page_parallel(SourceDbStageTable::Positions, positions.clone())
+        .expect("positions");
+    single.seal().expect("seal single");
+
+    let reference_json = |value: &dyn erased_reference::Encode| value.two_pass();
+    let mut reference =
+        SourceDbStage::create_physical_v3(temporary.path().join("reference"), limits())
+            .expect("reference stage");
+    reference
+        .insert_encoded_json_page(SourceDbStageTable::Cars, [(1, reference_json(&car))])
+        .expect("reference car");
+    reference
+        .insert_encoded_json_page(
+            SourceDbStageTable::Positions,
+            positions
+                .iter()
+                .map(|(id, row)| (*id, reference_json(row)))
+                .collect::<Vec<_>>(),
+        )
+        .expect("reference positions");
+    reference.seal().expect("seal reference");
+
+    for table in [SourceDbStageTable::Cars, SourceDbStageTable::Positions] {
+        let stored = |stage: &SourceDbStage| {
+            stage
+                .connection
+                .prepare(
+                    "SELECT source_id, row_json, encoded_bytes FROM stage_rows
+                      WHERE table_name = ?1 ORDER BY source_id",
+                )
+                .expect("prepare")
+                .query_map([table.as_str()], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                })
+                .expect("query")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("rows")
+        };
+        assert_eq!(stored(&single), stored(&reference), "{}", table.as_str());
+    }
+    assert_eq!(
+        single.stats().expect("stats").payload_bytes,
+        reference.stats().expect("stats").payload_bytes
+    );
+    assert_eq!(
+        single.sealed_content_digest().expect("single digest"),
+        reference.sealed_content_digest().expect("reference digest")
+    );
+}
+
+mod erased_reference {
+    /// The encoding every stage row used before the single pass: a full
+    /// `serde_json::Value`, then its compact bytes.
+    pub(super) trait Encode {
+        fn two_pass(&self) -> String;
+    }
+
+    impl<T: serde::Serialize> Encode for T {
+        fn two_pass(&self) -> String {
+            let value = serde_json::to_value(self).expect("to_value");
+            assert!(value.is_object());
+            serde_json::to_string(&value).expect("to_string")
+        }
+    }
+}

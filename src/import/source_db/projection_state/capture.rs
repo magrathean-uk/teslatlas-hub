@@ -246,13 +246,19 @@ pub(crate) fn canonical_payload_and_digest<T: Serialize>(
     value: &T,
 ) -> Result<(Vec<u8>, Sha256Digest), SourceDbProjectionStateError> {
     validate_row_identity(id, car_id)?;
-    let canonical =
-        serde_json::to_value(value).map_err(SourceDbProjectionStateError::SerializeRow)?;
-    if !canonical.is_object() {
-        return Err(SourceDbProjectionStateError::PayloadMustBeJsonObject);
-    }
-    let payload =
-        serde_json::to_vec(&canonical).map_err(SourceDbProjectionStateError::SerializeRow)?;
+    // One pass for plain row structs, byte-identical to the two-pass
+    // reference encoding kept below for every other shape.
+    let payload = match crate::import::source_db::canonical_json::encode_sorted_object(value) {
+        Some(payload) => payload,
+        None => {
+            let canonical = serde_json::to_value(value)
+                .map_err(SourceDbProjectionStateError::SerializeRow)?;
+            if !canonical.is_object() {
+                return Err(SourceDbProjectionStateError::PayloadMustBeJsonObject);
+            }
+            serde_json::to_vec(&canonical).map_err(SourceDbProjectionStateError::SerializeRow)?
+        }
+    };
     let length = u64::try_from(payload.len()).expect("usize fits u64");
     let mut hasher = Sha256::new();
     hasher.update(DIGEST_DOMAIN);
