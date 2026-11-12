@@ -5963,14 +5963,14 @@
       ]
     },
     {
-      "id": "retained-60e7645cec8355cc52fe",
+      "id": "retained-f4159ad925d2fe93ee39",
       "class": "frozen-history",
       "match_kind": "regex",
-      "match_b64": "XlwtXCBvcHRpb25hbFwgcmVhZFwtb25seVwgVGVzbGFNYXRlXCA0XC4xXC4xXCBoaXN0b3J5XCBhbmRcIGNyZWRlbnRpYWxcIG1pZ3JhdGlvbjsk",
+      "match_b64": "XlwtXCBvcHRpb25hbFwgcmVhZFwtb25seVwgVGVzbGFNYXRlXCA0XC4xXC4xXCBoaXN0b3J5XCBpbXBvcnQ7XCBub1wgY3JlZGVudGlhbFwgaXNcIGltcG9ydGVkOyQ=",
       "max_count": 1,
       "expires": "none",
-      "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
-      "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
+      "reason": "Release note corrected so no credential import is claimed; exact full-file digest pinned.",
+      "authority": "DEC-085 item 4, owner approval (G, 12 November 2026)",
       "paths": [
         "docs/releases/release-notes-v1.0.0-beta.1.md"
       ]

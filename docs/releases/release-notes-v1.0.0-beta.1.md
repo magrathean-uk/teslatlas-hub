@@ -12,7 +12,7 @@ collector and local Teslatlas sync hub.
 - multi-vehicle legacy and Fleet API operation;
 - legacy driving stream and native Fleet Telemetry push;
 - explicit signed vehicle commands in Fleet mode;
-- optional read-only TeslaMate 4.1.1 history and credential migration;
+- optional read-only TeslaMate 4.1.1 history import; no credential is imported;
 - integrity diagnostics, repair, backups, restore, and encrypted credential
   recovery;
 - exact Fleet Telemetry upstream and all 45 locked Go runtime-module source
@@ -37,8 +37,9 @@ migration.
 
 ## Operation
 
-Keep plaintext HTTP on loopback. Run only one owner of a legacy refresh-token
-pair. Vehicle commands require deliberate confirmation.
+Keep plaintext HTTP on loopback. The Hub signs in with its own Tesla login and
+sends Tesla traffic only inside an approved collection window. Fleet setup is
+not available in this beta. Vehicle commands require deliberate confirmation.
 
 ## Legal
 

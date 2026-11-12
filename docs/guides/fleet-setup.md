@@ -7,7 +7,7 @@ Core/Legacy-only and omit those companions; do not follow this guide as though
 installing the `.deb` alone provides a complete Fleet deployment. See the
 [package limits](../releases/release-notes-2026.36.1.md).
 
-Fleet API collection is parked in the current release: Hub refuses stored Fleet
+Fleet setup is not available in this beta. Fleet API collection is parked: Hub refuses stored Fleet
 credentials and the `setup-fleet` token input is removed. Outside an open
 [collection window](../operations/collection-windows.md) Hub sends no Tesla
 traffic, including Fleet setup, telemetry configuration and token refresh. The

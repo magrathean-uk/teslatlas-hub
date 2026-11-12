@@ -12,7 +12,8 @@ opening, stopping, rolling back, restarting and removing refused credentials. `t
 lists the verbs.
 
 `window status`, `window trust`, `window open`, `window close`, `setup`, the
-credential-recovery commands and `purge-refused-credentials` are forwarded to
+credential-recovery commands, `purge-refused-credentials`, `backup-now` and
+`backup-status` are forwarded to
 the running Hub service, which
 holds the window authority. With no service running they are refused with
 `service_not_running` before they read any file, standard input or the
@@ -164,6 +165,9 @@ time you want Hub to stop collecting.
 - If the state is unreadable it closes with `state_unverifiable`. A crash during
   Closing completes the close at the next start.
 - Backups and restores never carry the window directory.
+  `teslatlas-hub backup-now` runs one encrypted backup through the running
+  service and `teslatlas-hub backup-status` shows the schedule; neither sends
+  anything to Tesla.
 
 ## Remove refused credentials
 
