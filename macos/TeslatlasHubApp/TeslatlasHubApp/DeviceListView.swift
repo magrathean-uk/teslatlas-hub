@@ -69,10 +69,10 @@ final class DeviceListView: NSView {
     static func revokeConfirmation(for device: HubPairedDevice) -> NSAlert {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Revoke \(device.name)?"
-        alert.informativeText = "This device stops reading from the Hub at once. To use it again, pair it again."
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Revoke")
+        alert.messageText = HubL10n.format("hub.devices.revokeTitle", fallback: "Revoke %1$@?", arguments: [device.name])
+        alert.informativeText = HubL10n.text("hub.devices.revokeInfo", fallback: "This device stops reading from the Hub at once. To use it again, pair it again.")
+        alert.addButton(withTitle: HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"))
+        alert.addButton(withTitle: HubL10n.text("hub.devices.revoke", fallback: "Revoke"))
         alert.buttons[0].keyEquivalent = "\r"
         alert.buttons[1].keyEquivalent = ""
         return alert
@@ -94,7 +94,7 @@ final class DeviceListView: NSView {
             self.revoking.remove(device.id)
             switch result {
             case .success:
-                self.reload { self.showMessage("\(device.name) was revoked.", isError: false) }
+                self.reload { self.showMessage(HubL10n.format("hub.devices.revokedDone", fallback: "%1$@ was revoked.", arguments: [device.name]), isError: false) }
             case let .failure(error):
                 sender.isEnabled = self.mutationsEnabled
                 self.showMessage(HubServiceRefusal.parse(error.localizedDescription)?.message
@@ -113,7 +113,7 @@ final class DeviceListView: NSView {
         }
         messageLabel.isHidden = true
         guard !devices.isEmpty else {
-            showMessage("No paired devices.", isError: false)
+            showMessage(HubL10n.text("hub.devices.none", fallback: "No paired devices."), isError: false)
             return
         }
         let names = backend.vehicleNames
@@ -134,7 +134,7 @@ final class DeviceListView: NSView {
         name.font = HubTypography.emphasis
         name.textColor = device.isActive ? HubPalette.foreground : HubPalette.mutedForeground
         name.lineBreakMode = .byTruncatingTail
-        let grants = NSTextField(labelWithString: "Cars: \(device.grantText(vehicleNames: vehicleNames))")
+        let grants = NSTextField(labelWithString: HubL10n.format("hub.devices.cars", fallback: "Cars: %1$@", arguments: [device.grantText(vehicleNames: vehicleNames)]))
         grants.font = HubTypography.caption
         grants.textColor = HubPalette.mutedForeground
         grants.lineBreakMode = .byTruncatingTail
@@ -149,13 +149,13 @@ final class DeviceListView: NSView {
         copy.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         var views: [NSView] = [copy, NSView()]
         if device.isActive {
-            let revoke = HubActionButton(title: "Revoke…", target: self, action: #selector(revokePressed(_:)))
+            let revoke = HubActionButton(title: HubL10n.text("hub.devices.revokeEllipsis", fallback: "Revoke…"), target: self, action: #selector(revokePressed(_:)))
             revoke.identifier = NSUserInterfaceItemIdentifier(Self.revokeIdentifier(device.id))
             revoke.hubStyle = .flatDanger
             revoke.hubFont = HubTypography.action
             revoke.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
             revoke.isEnabled = mutationsEnabled && !revoking.contains(device.id)
-            revoke.setAccessibilityLabel("Revoke \(device.name)")
+            revoke.setAccessibilityLabel(HubL10n.format("hub.devices.revokeAccessibility", fallback: "Revoke %1$@", arguments: [device.name]))
             views.append(revoke)
         }
         let line = NSStackView(views: views)
@@ -178,10 +178,10 @@ final class DeviceListView: NSView {
     }
 
     private func build() {
-        let title = NSTextField(labelWithString: "Paired devices")
+        let title = NSTextField(labelWithString: HubL10n.text("hub.devices.title", fallback: "Paired devices"))
         title.font = HubTypography.emphasis
         title.textColor = HubPalette.foreground
-        let detail = NSTextField(wrappingLabelWithString: "Phones and apps that read this Hub, with the cars each may read.")
+        let detail = NSTextField(wrappingLabelWithString: HubL10n.text("hub.devices.detail", fallback: "Phones and apps that read this Hub, with the cars each may read."))
         detail.font = HubTypography.caption
         detail.textColor = HubPalette.mutedForeground
         rowsStack.orientation = .vertical

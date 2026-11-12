@@ -28,11 +28,11 @@ enum HubMaintenanceError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .unreadableReport: return "The Hub's answer could not be read."
+        case .unreadableReport: return HubL10n.text("hub.backup.maint.unreadable", fallback: "The Hub's answer could not be read.")
         case .passwordTooShort:
-            return "The recovery password needs at least \(HubBackupSchedule.minimumPasswordLength) characters."
-        case .passwordFileUnwritable: return "The recovery password could not be saved."
-        case .configurationMissing: return "Set up the Hub before changing backups."
+            return HubL10n.format("hub.backup.problem.passwordShort", fallback: "The recovery password needs at least %1$@ characters.", arguments: [String(describing: HubBackupSchedule.minimumPasswordLength)])
+        case .passwordFileUnwritable: return HubL10n.text("hub.backup.maint.unwritable", fallback: "The recovery password could not be saved.")
+        case .configurationMissing: return HubL10n.text("hub.backup.maint.configMissing", fallback: "Set up the Hub before changing backups.")
         }
     }
 }

@@ -23,15 +23,15 @@ final class BackupSettingsView: NSView {
     let blockedLabel = NSTextField(wrappingLabelWithString: "")
     let progressIndicator = NSProgressIndicator()
     let progressLabel = NSTextField(wrappingLabelWithString: "")
-    let backUpNowButton = HubActionButton(title: "Back up now", target: nil, action: nil)
-    let enabledCheckbox = NSButton(checkboxWithTitle: "Back up on a schedule", target: nil, action: nil)
+    let backUpNowButton = HubActionButton(title: HubL10n.text("hub.backup.backUpNow", fallback: "Back up now"), target: nil, action: nil)
+    let enabledCheckbox = NSButton(checkboxWithTitle: HubL10n.text("hub.backup.onSchedule", fallback: "Back up on a schedule"), target: nil, action: nil)
     let intervalPopup = NSPopUpButton()
     let keepField = NSTextField(string: "")
     let keepStepper = NSStepper()
     let destinationLabel = NSTextField(labelWithString: "")
-    let chooseFolderButton = HubActionButton(title: "Choose…", target: nil, action: nil)
+    let chooseFolderButton = HubActionButton(title: HubL10n.text("hub.ImportSheetController.110.1702", fallback: "Choose…"), target: nil, action: nil)
     let passwordField = NSSecureTextField(string: "")
-    let saveButton = HubActionButton(title: "Save schedule", target: nil, action: nil)
+    let saveButton = HubActionButton(title: HubL10n.text("hub.backup.saveSchedule", fallback: "Save schedule"), target: nil, action: nil)
     let noteLabel = NSTextField(wrappingLabelWithString: "")
 
     private(set) var runState: HubBackupRunState = .idle
@@ -92,7 +92,7 @@ final class BackupSettingsView: NSView {
                 }
             case let .failure(error):
                 self.status = nil
-                self.showRows([("Backups", HubServiceRefusal.parse(error.localizedDescription)?.message
+                self.showRows([(HubL10n.text("hub.backup.title", fallback: "Backups"), HubServiceRefusal.parse(error.localizedDescription)?.message
                                     ?? error.localizedDescription)])
                 self.blockedLabel.isHidden = true
             }
@@ -180,8 +180,8 @@ final class BackupSettingsView: NSView {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Choose"
-        panel.message = "Choose a folder for encrypted Hub backups, outside the Hub data folder."
+        panel.prompt = HubL10n.text("hub.backup.panelPrompt", fallback: "Choose")
+        panel.message = HubL10n.text("hub.backup.panelMessage", fallback: "Choose a folder for encrypted Hub backups, outside the Hub data folder.")
         chooseFolder(panel, window) { [weak self] url in
             guard let self, let url else { return }
             self.settings.destination = url.path
@@ -222,7 +222,7 @@ final class BackupSettingsView: NSView {
         case let .success(saved):
             passwordField.stringValue = ""
             show(settings: saved)
-            noteLabel.stringValue = "Saved. The schedule applies when the Hub restarts."
+            noteLabel.stringValue = HubL10n.text("hub.backup.savedNote", fallback: "Saved. The schedule applies when the Hub restarts.")
             noteLabel.textColor = HubPalette.mutedForeground
         case let .failure(error):
             passwordField.stringValue = ""
@@ -258,19 +258,23 @@ final class BackupSettingsView: NSView {
         keepStepper.integerValue = loaded.keep
         keepField.integerValue = loaded.keep
         destinationLabel.stringValue = loaded.destination.map { ($0 as NSString).abbreviatingWithTildeInPath }
-            ?? "No folder chosen"
+            ?? HubL10n.text("hub.backup.noFolder", fallback: "No folder chosen")
         passwordField.placeholderString = loaded.passwordFile == nil
-            ? "Recovery password (at least 12 characters)"
-            : "Saved. Type a new one to replace it"
+            ? Self.passwordPlaceholder
+            : HubL10n.text("hub.backup.passwordSaved", fallback: "Saved. Type a new one to replace it")
+    }
+
+    static var passwordPlaceholder: String {
+        HubL10n.format("hub.backup.passwordPlaceholder", fallback: "Recovery password (at least %1$@ characters)", arguments: [String(describing: HubBackupSchedule.minimumPasswordLength)])
     }
 
     static func intervalTitle(_ hours: Int) -> String {
         switch hours {
-        case 1: return "Every hour"
-        case 24: return "Every day"
-        case 48: return "Every 2 days"
-        case 168: return "Every week"
-        default: return "Every \(hours) hours"
+        case 1: return HubL10n.text("hub.backup.intervalHour", fallback: "Every hour")
+        case 24: return HubL10n.text("hub.backup.intervalDay", fallback: "Every day")
+        case 48: return HubL10n.text("hub.backup.intervalTwoDays", fallback: "Every 2 days")
+        case 168: return HubL10n.text("hub.backup.intervalWeek", fallback: "Every week")
+        default: return HubL10n.format("hub.backup.intervalHours", fallback: "Every %1$@ hours", arguments: [String(describing: hours)])
         }
     }
 
@@ -309,11 +313,11 @@ final class BackupSettingsView: NSView {
     // MARK: Layout
 
     private func build() {
-        let title = NSTextField(labelWithString: "Backups")
+        let title = NSTextField(labelWithString: HubL10n.text("hub.backup.title", fallback: "Backups"))
         title.font = HubTypography.emphasis
         title.textColor = HubPalette.foreground
         let detail = NSTextField(wrappingLabelWithString:
-            "Encrypted copies of the Hub's history. The recovery password stays in an owner-only file on this Mac.")
+            HubL10n.text("hub.backup.detail", fallback: "Encrypted copies of the Hub's history. The recovery password stays in an owner-only file on this Mac."))
         detail.font = HubTypography.caption
         detail.textColor = HubPalette.mutedForeground
 
@@ -343,7 +347,7 @@ final class BackupSettingsView: NSView {
         runRow.alignment = .centerY
         runRow.spacing = 8
 
-        let scheduleTitle = NSTextField(labelWithString: "Schedule")
+        let scheduleTitle = NSTextField(labelWithString: HubL10n.text("hub.backup.schedule", fallback: "Schedule"))
         scheduleTitle.font = HubTypography.label
         scheduleTitle.textColor = HubPalette.foreground
         enabledCheckbox.identifier = NSUserInterfaceItemIdentifier("hub.backup.enabled")
@@ -364,9 +368,9 @@ final class BackupSettingsView: NSView {
         keepField.target = self
         keepField.action = #selector(keepFieldChanged)
         keepField.widthAnchor.constraint(equalToConstant: 52).isActive = true
-        let keepLabel = NSTextField(labelWithString: "Keep")
+        let keepLabel = NSTextField(labelWithString: HubL10n.text("hub.backup.keep", fallback: "Keep"))
         keepLabel.font = HubTypography.caption
-        let keepSuffix = NSTextField(labelWithString: "backups")
+        let keepSuffix = NSTextField(labelWithString: HubL10n.text("hub.backup.keepSuffix", fallback: "backups"))
         keepSuffix.font = HubTypography.caption
         let cadenceRow = NSStackView(views: [intervalPopup, keepLabel, keepField, keepStepper, keepSuffix])
         cadenceRow.alignment = .centerY
@@ -378,7 +382,7 @@ final class BackupSettingsView: NSView {
         destinationLabel.lineBreakMode = .byTruncatingMiddle
         configure(chooseFolderButton, id: "hub.backup.choose-folder", symbol: "folder",
                   style: .neutral, action: #selector(chooseFolderPressed))
-        let folderLabel = NSTextField(labelWithString: "Folder")
+        let folderLabel = NSTextField(labelWithString: HubL10n.text("hub.backup.folder", fallback: "Folder"))
         folderLabel.font = HubTypography.caption
         let folderRow = NSStackView(views: [folderLabel, destinationLabel, chooseFolderButton])
         folderRow.alignment = .centerY
@@ -386,8 +390,8 @@ final class BackupSettingsView: NSView {
         destinationLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         passwordField.identifier = NSUserInterfaceItemIdentifier("hub.backup.password")
-        passwordField.placeholderString = "Recovery password (at least 12 characters)"
-        passwordField.setAccessibilityLabel("Recovery password")
+        passwordField.placeholderString = Self.passwordPlaceholder
+        passwordField.setAccessibilityLabel(HubL10n.text("hub.backup.passwordLabel", fallback: "Recovery password"))
         passwordField.widthAnchor.constraint(equalToConstant: 280).isActive = true
         configure(saveButton, id: "hub.backup.save", symbol: nil, style: .neutral, action: #selector(savePressed))
         let passwordRow = NSStackView(views: [passwordField, saveButton])
