@@ -163,17 +163,24 @@ every open until `window trust` is run again.
    finishes it when it next opens the credential store, as the collector's
    restart does. A window closed during a sign-in stays Closing while the
    sign-in may still finish, and is handed back within the 60-second grace
-   whatever the sign-in is doing: 40 seconds in, the sign-in's permit lapses
-   and nothing more is written under it (a write already under way has until
-   the handback). A sign-in cut off before its login was committed refuses
-   `window_closed` and leaves at most an unused binding, which expires; one cut
-   off after the commit is stored with `"aftercare": "pending"`.
+   whatever the sign-in is doing. From 40 seconds in, new sign-in work is
+   refused and nothing new starts, and the window is handed back by 55 seconds
+   at the latest. No Tesla traffic follows the handback. A local write that
+   had already begun and then stalls is not cut off: it may still finish after
+   the handback. It sends nothing to Tesla, and lands whole or not at all. The
+   `setup` reply waits for that write, so it can arrive after the window has
+   closed and report the discovery as failed. A later window, sign-in or
+   credential store open picks up whatever was stored. A sign-in cut off before
+   its login was committed refuses `window_closed` and leaves at most an unused
+   binding, which expires; one cut off after the commit is stored with
+   `"aftercare": "pending"`.
 
 ## Stop
 
 - *At expiry:* nothing to do. At the deadline Hub stops issuing Tesla traffic,
   cancels streams, lets a token exchange already begun finish (up to 60
-  seconds), releases the collector lease and host claim, syncs the handback
+  seconds; a local write already under way may finish later, see the sign-in
+  notes above), releases the collector lease and host claim, syncs the handback
   record and moves to Closed.
 - *Early:* run `teslatlas-hub window close`. The same closing sequence
   applies with reason `operator_close`.
