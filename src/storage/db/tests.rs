@@ -79,3 +79,6 @@ mod g2_4_m1;
 
 #[path = "tests/source_key_guards.rs"]
 mod source_key_guards;
+
+#[path = "tests/import_storage_cost.rs"]
+mod import_storage_cost;

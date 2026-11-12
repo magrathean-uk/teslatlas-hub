@@ -429,6 +429,8 @@ pub(crate) struct StoreInstrumentation {
     read_fault: std::sync::Mutex<Option<StoreReadFault>>,
     /// Export-outbox page reads to fail, armed by a test.
     outbox_page_faults: std::sync::atomic::AtomicUsize,
+    /// Full pack verifications made by physical v3 admission (M03-T03).
+    pub(crate) physical_v3_pack_verifications: std::sync::atomic::AtomicUsize,
 }
 
 /// Test only (G2-6 6A fix round 2, R5): which per-vehicle read of the
@@ -490,6 +492,11 @@ impl StoreInstrumentation {
             publication_task_starts: Self::read(&self.publication_task_starts),
             publication_task_exits: Self::read(&self.publication_task_exits),
         }
+    }
+
+    /// Full pack verifications made by physical v3 admission (M03-T03).
+    pub(crate) fn physical_v3_pack_verifications(&self) -> usize {
+        Self::read(&self.physical_v3_pack_verifications)
     }
 
     pub(crate) fn note_publication_task_start(&self) {
