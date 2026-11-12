@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "La comprobación del esquema no puede indicar qué versión de la aplicación de origen creó esta base de datos: varias versiones comparten el mismo esquema.";
 
 "hub.import.ackRelease" = "Confirmo que la aplicación de origen está en la versión 4.2.0 o posterior y que no se actualizará durante la importación.";
+
+"hub.backup.title" = "Copias de seguridad";
+
+"hub.backup.detail" = "Copias cifradas del historial del Hub. La contraseña de recuperación se guarda en un archivo de este Mac accesible solo para el propietario.";
+
+"hub.backup.backUpNow" = "Copiar ahora";
+
+"hub.backup.onSchedule" = "Copiar según una programación";
+
+"hub.backup.saveSchedule" = "Guardar programación";
+
+"hub.backup.panelPrompt" = "Elegir";
+
+"hub.backup.panelMessage" = "Elige una carpeta para las copias de seguridad cifradas del Hub, fuera de la carpeta de datos del Hub.";
+
+"hub.backup.savedNote" = "Guardado. La programación se aplica cuando el Hub se reinicia.";
+
+"hub.backup.noFolder" = "Ninguna carpeta elegida";
+
+"hub.backup.passwordPlaceholder" = "Contraseña de recuperación (al menos %1$@ caracteres)";
+
+"hub.backup.passwordSaved" = "Guardada. Escribe una nueva para sustituirla";
+
+"hub.backup.intervalHour" = "Cada hora";
+
+"hub.backup.intervalDay" = "Cada día";
+
+"hub.backup.intervalTwoDays" = "Cada 2 días";
+
+"hub.backup.intervalWeek" = "Cada semana";
+
+"hub.backup.intervalHours" = "Cada %1$@ horas";
+
+"hub.backup.schedule" = "Programación";
+
+"hub.backup.keep" = "Conservar";
+
+"hub.backup.keepSuffix" = "copias";
+
+"hub.backup.folder" = "Carpeta";
+
+"hub.backup.passwordLabel" = "Contraseña de recuperación";
+
+"hub.backup.problem.passwordShort" = "La contraseña de recuperación necesita al menos %1$@ caracteres.";
+
+"hub.backup.problem.interval" = "El intervalo debe estar entre 1 y 8784 horas.";
+
+"hub.backup.problem.keep" = "El número de copias que conservar debe estar entre 1 y 1000.";
+
+"hub.backup.problem.chooseFolder" = "Elige una carpeta para las copias de seguridad.";
+
+"hub.backup.problem.folderInside" = "Elige una carpeta para las copias de seguridad fuera de la carpeta de datos del Hub.";
+
+"hub.backup.problem.needsBoth" = "Las copias programadas necesitan una carpeta de copias y una contraseña de recuperación.";
+
+"hub.backup.lastGoodNone" = "Aún ninguna";
+
+"hub.backup.nextOff" = "Las copias programadas están desactivadas";
+
+"hub.backup.nextNotScheduled" = "Sin programar: elige una carpeta y una contraseña";
+
+"hub.backup.nextPaused" = "Esperando la recuperación de las credenciales";
+
+"hub.collection.notReported" = "No informado";
+
+"hub.backup.blocked" = "Las credenciales rechazadas bloquean las copias. Ejecuta purge-refused-credentials para eliminarlas.";
+
+"hub.backup.lastFailedMessage" = "El último intento falló: %1$@";
+
+"hub.backup.lastFailedCode" = "El último intento falló (%1$@)";
+
+"hub.backup.row.lastGood" = "Última copia correcta";
+
+"hub.backup.row.next" = "Próxima copia";
+
+"hub.backup.row.running" = "Se está haciendo una copia ahora";
+
+"hub.backup.row.lastAttempt" = "Último intento";
+
+"hub.backup.run.running" = "Copiando…";
+
+"hub.backup.run.stillRunning" = "La copia sigue en curso en el servicio del Hub.";
+
+"hub.backup.run.finishedGeneration" = "Copia terminada: %1$@";
+
+"hub.backup.run.finished" = "Copia terminada";
+
+"hub.backup.run.failed" = "La copia falló: %1$@";
+
+"hub.backup.maint.unreadable" = "No se pudo leer la respuesta del Hub.";
+
+"hub.backup.maint.unwritable" = "No se pudo guardar la contraseña de recuperación.";
+
+"hub.backup.maint.configMissing" = "Configura el Hub antes de cambiar las copias de seguridad.";
+
+"hub.devices.title" = "Dispositivos vinculados";
+
+"hub.devices.detail" = "Teléfonos y apps que leen este Hub, con los coches que cada uno puede leer.";
+
+"hub.devices.revokeTitle" = "¿Revocar %1$@?";
+
+"hub.devices.revokeInfo" = "Este dispositivo deja de leer del Hub de inmediato. Para volver a usarlo, vincúlalo de nuevo.";
+
+"hub.devices.revoke" = "Revocar";
+
+"hub.devices.revokeEllipsis" = "Revocar…";
+
+"hub.devices.revokeAccessibility" = "Revocar %1$@";
+
+"hub.devices.revokedDone" = "Se revocó %1$@.";
+
+"hub.devices.none" = "No hay dispositivos vinculados.";
+
+"hub.devices.cars" = "Coches: %1$@";
+
+"hub.devices.noCars" = "Ningún coche";
+
+"hub.devices.carFallback" = "Coche %1$@";
+
+"hub.devices.unnamed" = "Dispositivo sin nombre";
+
+"hub.devices.stateRevoked" = "Revocado %1$@";
+
+"hub.devices.stateExpired" = "Caducado %1$@";
+
+"hub.devices.stateLastSeen" = "Visto por última vez %1$@";
+
+"hub.devices.stateNeverSeen" = "Aún no visto";
+
+"hub.collection.loginOwn" = "Sesión iniciada con el inicio de sesión propio del Hub";
+
+"hub.collection.loginSignedOut" = "Sesión cerrada";
+
+"hub.collection.loginNotOwn" = "El inicio de sesión guardado no es el propio del Hub";
+
+"hub.collection.credValidUntil" = "Válido hasta %1$@";
+
+"hub.collection.credValid" = "Válido";
+
+"hub.collection.credRelogin" = "Se necesita iniciar sesión de nuevo: inicia sesión en la próxima ventana abierta";
+
+"hub.collection.credOwnerRefused" = "Owner API rechazada: Tesla rechazó este inicio de sesión";
+
+"hub.collection.credRefused" = "Rechazado (%1$@)";
+
+"hub.collection.credExposure" = "Posible exposición: inicia sesión de nuevo en la próxima ventana abierta";
+
+"hub.collection.credAttention" = "Requiere atención (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Sin sesión iniciada";
+
+"hub.collection.windowOpenUntil" = "Abierta hasta %1$@";
+
+"hub.collection.windowOpen" = "Abierta";
+
+"hub.collection.windowPending" = "Pendiente";
+
+"hub.collection.windowPendingFrom" = "Pendiente desde %1$@";
+
+"hub.collection.windowPendingUntil" = "Pendiente hasta %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Pendiente desde %1$@ hasta %2$@";
+
+"hub.collection.windowClosingExpiry" = "Cerrándose (caduca %1$@)";
+
+"hub.collection.windowClosing" = "Cerrándose";
+
+"hub.collection.windowClosedReason" = "Cerrada (%1$@)";
+
+"hub.collection.windowClosed" = "Cerrada";
+
+"hub.collection.windowUntrusted" = "Cerrada (sin emisor de confianza)";
+
+"hub.collection.windowFaulted" = "Cerrada (el estado de la ventana necesita un nuevo documento de confianza)";
+
+"hub.collection.windowRecovery" = "Cerrada (esperando la recuperación de las credenciales: ejecuta restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Desconocido: el canal de control no es de este Hub";
+
+"hub.collection.windowNotRunning" = "Desconocido: el Hub no se está ejecutando";
+
+"hub.collection.reasonExpired" = "caducada";
+
+"hub.collection.reasonOperator" = "cerrada por el operador";
+
+"hub.collection.reasonRelogin" = "se necesita iniciar sesión de nuevo";
+
+"hub.collection.reasonOwnerRefused" = "Owner API rechazada";
+
+"hub.collection.reasonClock" = "falló la comprobación del reloj";
+
+"hub.collection.reasonReboot" = "el Mac se reinició";
+
+"hub.collection.reasonUnverifiable" = "no se pudo verificar el estado";
+
+"hub.collection.reasonClaimLost" = "reclamación de recopilación perdida";
+
+"hub.collection.fleet" = "En pausa: no hay ninguna acción de Fleet disponible";
+
+"hub.collection.signInUnavailable" = "Inicio de sesión no disponible en este Hub";
+
+"hub.collection.labelLogin" = "Inicio de sesión de Tesla";
+
+"hub.collection.labelCredential" = "Estado de las credenciales";
+
+"hub.collection.labelWindow" = "Ventana de recopilación";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Inicio de sesión";
+
+"hub.signIn.recoveryPending" = "El Hub está esperando la recuperación de sus credenciales: los datos de este Hub se restauraron sin sus claves. Ejecuta restore-recovery-credentials y luego inicia sesión. No se cambió nada.";
+
+"hub.signIn.serviceUnauthenticated" = "El proceso que responde en el canal de control del Hub no es este Hub, así que no se envió nada. Reinicia el Hub y vuelve a iniciar sesión.";
+
+"hub.signIn.busy" = "El Hub está ocupado con otras solicitudes. No se cambió nada; vuelve a iniciar sesión en un momento.";

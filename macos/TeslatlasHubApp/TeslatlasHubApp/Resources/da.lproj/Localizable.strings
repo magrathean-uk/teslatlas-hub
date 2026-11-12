@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "Et skematjek kan ikke vise, hvilken version af kildeprogrammet der oprettede denne database: flere versioner bruger det samme skema.";
 
 "hub.import.ackRelease" = "Jeg bekræfter, at kildeprogrammet er version 4.2.0 eller nyere og ikke bliver opdateret under importen.";
+
+"hub.backup.title" = "Sikkerhedskopier";
+
+"hub.backup.detail" = "Krypterede kopier af Hubbens historik. Gendannelseskodeordet ligger i en fil på denne Mac, som kun ejeren kan læse.";
+
+"hub.backup.backUpNow" = "Tag backup nu";
+
+"hub.backup.onSchedule" = "Tag backup efter en tidsplan";
+
+"hub.backup.saveSchedule" = "Gem tidsplan";
+
+"hub.backup.panelPrompt" = "Vælg";
+
+"hub.backup.panelMessage" = "Vælg en mappe til krypterede Hub-backups uden for Hubbens datamappe.";
+
+"hub.backup.savedNote" = "Gemt. Tidsplanen gælder, når Hubben genstarter.";
+
+"hub.backup.noFolder" = "Ingen mappe valgt";
+
+"hub.backup.passwordPlaceholder" = "Gendannelseskodeord (mindst %1$@ tegn)";
+
+"hub.backup.passwordSaved" = "Gemt. Skriv et nyt for at erstatte det";
+
+"hub.backup.intervalHour" = "Hver time";
+
+"hub.backup.intervalDay" = "Hver dag";
+
+"hub.backup.intervalTwoDays" = "Hver 2. dag";
+
+"hub.backup.intervalWeek" = "Hver uge";
+
+"hub.backup.intervalHours" = "Hver %1$@. time";
+
+"hub.backup.schedule" = "Tidsplan";
+
+"hub.backup.keep" = "Behold";
+
+"hub.backup.keepSuffix" = "backups";
+
+"hub.backup.folder" = "Mappe";
+
+"hub.backup.passwordLabel" = "Gendannelseskodeord";
+
+"hub.backup.problem.passwordShort" = "Gendannelseskodeordet skal være mindst %1$@ tegn.";
+
+"hub.backup.problem.interval" = "Intervallet skal være mellem 1 og 8784 timer.";
+
+"hub.backup.problem.keep" = "Antallet af backups, der beholdes, skal være mellem 1 og 1000.";
+
+"hub.backup.problem.chooseFolder" = "Vælg en backupmappe.";
+
+"hub.backup.problem.folderInside" = "Vælg en backupmappe uden for Hubbens datamappe.";
+
+"hub.backup.problem.needsBoth" = "Planlagte backups kræver en backupmappe og et gendannelseskodeord.";
+
+"hub.backup.lastGoodNone" = "Ingen endnu";
+
+"hub.backup.nextOff" = "Planlagte backups er slået fra";
+
+"hub.backup.nextNotScheduled" = "Ikke planlagt: vælg en mappe og et kodeord";
+
+"hub.backup.nextPaused" = "Venter på gendannelse af loginoplysninger";
+
+"hub.collection.notReported" = "Ikke oplyst";
+
+"hub.backup.blocked" = "Afviste loginoplysninger blokerer backups. Kør purge-refused-credentials for at fjerne dem.";
+
+"hub.backup.lastFailedMessage" = "Seneste forsøg mislykkedes: %1$@";
+
+"hub.backup.lastFailedCode" = "Seneste forsøg mislykkedes (%1$@)";
+
+"hub.backup.row.lastGood" = "Seneste vellykkede backup";
+
+"hub.backup.row.next" = "Næste backup";
+
+"hub.backup.row.running" = "En backup kører lige nu";
+
+"hub.backup.row.lastAttempt" = "Seneste forsøg";
+
+"hub.backup.run.running" = "Tager backup …";
+
+"hub.backup.run.stillRunning" = "Backuppen kører stadig i Hub-tjenesten.";
+
+"hub.backup.run.finishedGeneration" = "Backup fuldført: %1$@";
+
+"hub.backup.run.finished" = "Backup fuldført";
+
+"hub.backup.run.failed" = "Backup mislykkedes: %1$@";
+
+"hub.backup.maint.unreadable" = "Hubbens svar kunne ikke læses.";
+
+"hub.backup.maint.unwritable" = "Gendannelseskodeordet kunne ikke gemmes.";
+
+"hub.backup.maint.configMissing" = "Konfigurer Hubben, før du ændrer backups.";
+
+"hub.devices.title" = "Parrede enheder";
+
+"hub.devices.detail" = "Telefoner og apps, der læser denne Hub, med de biler, hver af dem må læse.";
+
+"hub.devices.revokeTitle" = "Tilbagekald %1$@?";
+
+"hub.devices.revokeInfo" = "Denne enhed holder straks op med at læse fra Hubben. Par den igen for at bruge den igen.";
+
+"hub.devices.revoke" = "Tilbagekald";
+
+"hub.devices.revokeEllipsis" = "Tilbagekald …";
+
+"hub.devices.revokeAccessibility" = "Tilbagekald %1$@";
+
+"hub.devices.revokedDone" = "%1$@ blev tilbagekaldt.";
+
+"hub.devices.none" = "Ingen parrede enheder.";
+
+"hub.devices.cars" = "Biler: %1$@";
+
+"hub.devices.noCars" = "Ingen biler";
+
+"hub.devices.carFallback" = "Bil %1$@";
+
+"hub.devices.unnamed" = "Unavngiven enhed";
+
+"hub.devices.stateRevoked" = "Tilbagekaldt %1$@";
+
+"hub.devices.stateExpired" = "Udløbet %1$@";
+
+"hub.devices.stateLastSeen" = "Sidst set %1$@";
+
+"hub.devices.stateNeverSeen" = "Ikke set endnu";
+
+"hub.collection.loginOwn" = "Logget ind med Hubbens eget login";
+
+"hub.collection.loginSignedOut" = "Logget ud";
+
+"hub.collection.loginNotOwn" = "Det gemte login er ikke Hubbens eget";
+
+"hub.collection.credValidUntil" = "Gyldigt til %1$@";
+
+"hub.collection.credValid" = "Gyldigt";
+
+"hub.collection.credRelogin" = "Nyt login nødvendigt: log ind igen i det næste åbne vindue";
+
+"hub.collection.credOwnerRefused" = "Owner API afvist: Tesla afviste dette login";
+
+"hub.collection.credRefused" = "Afvist (%1$@)";
+
+"hub.collection.credExposure" = "Mistanke om eksponering: log ind igen i det næste åbne vindue";
+
+"hub.collection.credAttention" = "Kræver opmærksomhed (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Ikke logget ind";
+
+"hub.collection.windowOpenUntil" = "Åbent til %1$@";
+
+"hub.collection.windowOpen" = "Åbent";
+
+"hub.collection.windowPending" = "Afventer";
+
+"hub.collection.windowPendingFrom" = "Afventer fra %1$@";
+
+"hub.collection.windowPendingUntil" = "Afventer til %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Afventer fra %1$@ til %2$@";
+
+"hub.collection.windowClosingExpiry" = "Lukker (udløber %1$@)";
+
+"hub.collection.windowClosing" = "Lukker";
+
+"hub.collection.windowClosedReason" = "Lukket (%1$@)";
+
+"hub.collection.windowClosed" = "Lukket";
+
+"hub.collection.windowUntrusted" = "Lukket (ingen betroet udsteder)";
+
+"hub.collection.windowFaulted" = "Lukket (vinduets tilstand kræver et nyt tillidsdokument)";
+
+"hub.collection.windowRecovery" = "Lukket (venter på gendannelse af loginoplysninger: kør restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Ukendt: Kontrolkanalen tilhører ikke denne Hub";
+
+"hub.collection.windowNotRunning" = "Ukendt: Hubben kører ikke";
+
+"hub.collection.reasonExpired" = "udløbet";
+
+"hub.collection.reasonOperator" = "lukket af operatøren";
+
+"hub.collection.reasonRelogin" = "nyt login nødvendigt";
+
+"hub.collection.reasonOwnerRefused" = "Owner API afvist";
+
+"hub.collection.reasonClock" = "urkontrol mislykkedes";
+
+"hub.collection.reasonReboot" = "Mac'en blev genstartet";
+
+"hub.collection.reasonUnverifiable" = "tilstanden kunne ikke bekræftes";
+
+"hub.collection.reasonClaimLost" = "indsamlingskrav mistet";
+
+"hub.collection.fleet" = "Parkeret: ingen Fleet-handling er tilgængelig";
+
+"hub.collection.signInUnavailable" = "Login er ikke tilgængeligt på denne Hub";
+
+"hub.collection.labelLogin" = "Tesla-login";
+
+"hub.collection.labelCredential" = "Status for loginoplysninger";
+
+"hub.collection.labelWindow" = "Indsamlingsvindue";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Login";
+
+"hub.signIn.recoveryPending" = "Hubben venter på gendannelse af sine loginoplysninger: Denne Hubs data blev gendannet uden dens nøgler. Kør restore-recovery-credentials, og log derefter ind. Intet blev ændret.";
+
+"hub.signIn.serviceUnauthenticated" = "Processen, der svarer på Hubbens kontrolkanal, er ikke denne Hub, så intet blev sendt. Genstart Hubben, og log derefter ind igen.";
+
+"hub.signIn.busy" = "Hubben er optaget af andre anmodninger. Intet blev ændret; log ind igen om et øjeblik.";

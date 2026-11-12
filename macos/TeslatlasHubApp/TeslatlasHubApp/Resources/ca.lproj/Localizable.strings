@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "La comprovació de l’esquema no pot indicar quina versió de l’aplicació d’origen va crear aquesta base de dades: més d’una versió comparteix aquest esquema.";
 
 "hub.import.ackRelease" = "Confirmo que l’aplicació d’origen té la versió 4.2.0 o una de posterior i que no s’actualitzarà durant la importació.";
+
+"hub.backup.title" = "Còpies de seguretat";
+
+"hub.backup.detail" = "Còpies xifrades de l'historial del Hub. La contrasenya de recuperació es guarda en un fitxer d'aquest Mac que només pot llegir el propietari.";
+
+"hub.backup.backUpNow" = "Fes una còpia ara";
+
+"hub.backup.onSchedule" = "Fes còpies segons una programació";
+
+"hub.backup.saveSchedule" = "Desa la programació";
+
+"hub.backup.panelPrompt" = "Tria";
+
+"hub.backup.panelMessage" = "Tria una carpeta per a les còpies de seguretat xifrades del Hub, fora de la carpeta de dades del Hub.";
+
+"hub.backup.savedNote" = "Desat. La programació s'aplica quan el Hub es reiniciï.";
+
+"hub.backup.noFolder" = "Cap carpeta triada";
+
+"hub.backup.passwordPlaceholder" = "Contrasenya de recuperació (almenys %1$@ caràcters)";
+
+"hub.backup.passwordSaved" = "Desada. Escriu-ne una de nova per substituir-la";
+
+"hub.backup.intervalHour" = "Cada hora";
+
+"hub.backup.intervalDay" = "Cada dia";
+
+"hub.backup.intervalTwoDays" = "Cada 2 dies";
+
+"hub.backup.intervalWeek" = "Cada setmana";
+
+"hub.backup.intervalHours" = "Cada %1$@ hores";
+
+"hub.backup.schedule" = "Programació";
+
+"hub.backup.keep" = "Conserva";
+
+"hub.backup.keepSuffix" = "còpies";
+
+"hub.backup.folder" = "Carpeta";
+
+"hub.backup.passwordLabel" = "Contrasenya de recuperació";
+
+"hub.backup.problem.passwordShort" = "La contrasenya de recuperació necessita almenys %1$@ caràcters.";
+
+"hub.backup.problem.interval" = "L'interval ha d'estar entre 1 i 8784 hores.";
+
+"hub.backup.problem.keep" = "El nombre de còpies que es conserven ha d'estar entre 1 i 1000.";
+
+"hub.backup.problem.chooseFolder" = "Tria una carpeta per a les còpies de seguretat.";
+
+"hub.backup.problem.folderInside" = "Tria una carpeta per a les còpies de seguretat fora de la carpeta de dades del Hub.";
+
+"hub.backup.problem.needsBoth" = "Les còpies programades necessiten una carpeta de còpies i una contrasenya de recuperació.";
+
+"hub.backup.lastGoodNone" = "Encara cap";
+
+"hub.backup.nextOff" = "Les còpies programades estan desactivades";
+
+"hub.backup.nextNotScheduled" = "No programada: tria una carpeta i una contrasenya";
+
+"hub.backup.nextPaused" = "S'espera la recuperació de les credencials";
+
+"hub.collection.notReported" = "No informat";
+
+"hub.backup.blocked" = "Les credencials rebutjades bloquegen les còpies. Executa purge-refused-credentials per esborrar-les.";
+
+"hub.backup.lastFailedMessage" = "L'últim intent ha fallat: %1$@";
+
+"hub.backup.lastFailedCode" = "L'últim intent ha fallat (%1$@)";
+
+"hub.backup.row.lastGood" = "Última còpia correcta";
+
+"hub.backup.row.next" = "Pròxima còpia";
+
+"hub.backup.row.running" = "Ara s'està fent una còpia";
+
+"hub.backup.row.lastAttempt" = "Últim intent";
+
+"hub.backup.run.running" = "Fent la còpia…";
+
+"hub.backup.run.stillRunning" = "La còpia encara s'executa al servei del Hub.";
+
+"hub.backup.run.finishedGeneration" = "Còpia acabada: %1$@";
+
+"hub.backup.run.finished" = "Còpia acabada";
+
+"hub.backup.run.failed" = "La còpia ha fallat: %1$@";
+
+"hub.backup.maint.unreadable" = "No s'ha pogut llegir la resposta del Hub.";
+
+"hub.backup.maint.unwritable" = "No s'ha pogut desar la contrasenya de recuperació.";
+
+"hub.backup.maint.configMissing" = "Configura el Hub abans de canviar les còpies de seguretat.";
+
+"hub.devices.title" = "Dispositius enllaçats";
+
+"hub.devices.detail" = "Telèfons i aplicacions que llegeixen aquest Hub, amb els cotxes que pot llegir cadascun.";
+
+"hub.devices.revokeTitle" = "Vols revocar %1$@?";
+
+"hub.devices.revokeInfo" = "Aquest dispositiu deixa de llegir del Hub immediatament. Per tornar-lo a fer servir, enllaça'l de nou.";
+
+"hub.devices.revoke" = "Revoca";
+
+"hub.devices.revokeEllipsis" = "Revoca…";
+
+"hub.devices.revokeAccessibility" = "Revoca %1$@";
+
+"hub.devices.revokedDone" = "S'ha revocat %1$@.";
+
+"hub.devices.none" = "No hi ha dispositius enllaçats.";
+
+"hub.devices.cars" = "Cotxes: %1$@";
+
+"hub.devices.noCars" = "Cap cotxe";
+
+"hub.devices.carFallback" = "Cotxe %1$@";
+
+"hub.devices.unnamed" = "Dispositiu sense nom";
+
+"hub.devices.stateRevoked" = "Revocat %1$@";
+
+"hub.devices.stateExpired" = "Caducat %1$@";
+
+"hub.devices.stateLastSeen" = "Vist per última vegada %1$@";
+
+"hub.devices.stateNeverSeen" = "Encara no vist";
+
+"hub.collection.loginOwn" = "Sessió iniciada amb l'inici de sessió propi del Hub";
+
+"hub.collection.loginSignedOut" = "Sessió tancada";
+
+"hub.collection.loginNotOwn" = "L'inici de sessió desat no és el propi del Hub";
+
+"hub.collection.credValidUntil" = "Vàlid fins al %1$@";
+
+"hub.collection.credValid" = "Vàlid";
+
+"hub.collection.credRelogin" = "Cal tornar a iniciar la sessió: inicia-la de nou a la pròxima finestra oberta";
+
+"hub.collection.credOwnerRefused" = "Owner API rebutjada: Tesla ha rebutjat aquest inici de sessió";
+
+"hub.collection.credRefused" = "Rebutjat (%1$@)";
+
+"hub.collection.credExposure" = "Sospita d'exposició: inicia la sessió de nou a la pròxima finestra oberta";
+
+"hub.collection.credAttention" = "Necessita atenció (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Sessió no iniciada";
+
+"hub.collection.windowOpenUntil" = "Oberta fins al %1$@";
+
+"hub.collection.windowOpen" = "Oberta";
+
+"hub.collection.windowPending" = "Pendent";
+
+"hub.collection.windowPendingFrom" = "Pendent des del %1$@";
+
+"hub.collection.windowPendingUntil" = "Pendent fins al %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Pendent des del %1$@ fins al %2$@";
+
+"hub.collection.windowClosingExpiry" = "Tancant (caduca %1$@)";
+
+"hub.collection.windowClosing" = "Tancant";
+
+"hub.collection.windowClosedReason" = "Tancada (%1$@)";
+
+"hub.collection.windowClosed" = "Tancada";
+
+"hub.collection.windowUntrusted" = "Tancada (cap emissor de confiança)";
+
+"hub.collection.windowFaulted" = "Tancada (l'estat de la finestra necessita un document de confiança nou)";
+
+"hub.collection.windowRecovery" = "Tancada (s'espera la recuperació de les credencials: executa restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Desconegut: el canal de control no és d'aquest Hub";
+
+"hub.collection.windowNotRunning" = "Desconegut: el Hub no s'està executant";
+
+"hub.collection.reasonExpired" = "caducada";
+
+"hub.collection.reasonOperator" = "tancada per l'operador";
+
+"hub.collection.reasonRelogin" = "cal tornar a iniciar la sessió";
+
+"hub.collection.reasonOwnerRefused" = "Owner API rebutjada";
+
+"hub.collection.reasonClock" = "ha fallat la comprovació del rellotge";
+
+"hub.collection.reasonReboot" = "el Mac s'ha reiniciat";
+
+"hub.collection.reasonUnverifiable" = "no s'ha pogut verificar l'estat";
+
+"hub.collection.reasonClaimLost" = "reclamació de recollida perduda";
+
+"hub.collection.fleet" = "En pausa: no hi ha cap acció de Fleet disponible";
+
+"hub.collection.signInUnavailable" = "L'inici de sessió no està disponible en aquest Hub";
+
+"hub.collection.labelLogin" = "Inici de sessió de Tesla";
+
+"hub.collection.labelCredential" = "Estat de les credencials";
+
+"hub.collection.labelWindow" = "Finestra de recollida";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Inici de sessió";
+
+"hub.signIn.recoveryPending" = "El Hub espera la recuperació de les seves credencials: les dades d'aquest Hub s'han restaurat sense les seves claus. Executa restore-recovery-credentials i després inicia la sessió. No s'ha canviat res.";
+
+"hub.signIn.serviceUnauthenticated" = "El procés que respon al canal de control del Hub no és aquest Hub, així que no s'ha enviat res. Reinicia el Hub i després torna a iniciar la sessió.";
+
+"hub.signIn.busy" = "El Hub està ocupat amb altres sol·licituds. No s'ha canviat res; torna a iniciar la sessió d'aquí a un moment.";
