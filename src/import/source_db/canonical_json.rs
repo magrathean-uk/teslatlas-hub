@@ -238,4 +238,4 @@ impl ser::Serializer for TopLevel {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

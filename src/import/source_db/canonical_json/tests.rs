@@ -7,6 +7,9 @@ use serde::Serialize;
 use super::{encode_sorted_object, encode_sorted_object_string};
 use crate::hub_pack::{ProjectionFixedNumericV2_2, ProjectionFloat64BitsV2_2};
 use crate::import::source_db::projection::SourceDbPositionPhysicalV2_2;
+use crate::import::source_db::projection_state::{
+    SourceDbProjectionStateEntity, canonical_payload_and_digest,
+};
 
 fn two_pass<T: Serialize>(value: &T) -> Vec<u8> {
     let value = serde_json::to_value(value).expect("to_value");
@@ -20,7 +23,7 @@ fn assert_identical<T: Serialize>(value: &T) {
     assert_eq!(string.as_bytes(), single.as_slice());
 }
 
-fn position(filled: bool) -> SourceDbPositionPhysicalV2_2 {
+pub(crate) fn position(filled: bool) -> SourceDbPositionPhysicalV2_2 {
     let numeric = |value: i64| {
         if filled {
             Some(ProjectionFixedNumericV2_2::Finite(value))
@@ -176,4 +179,24 @@ fn source_db_canonical_json_other_shapes_fall_back_to_two_pass() {
     let raw = serde_json::value::RawValue::from_string("{\"b\":1,\"a\":2}".to_owned())
         .expect("raw value");
     assert!(encode_sorted_object(&raw).is_none());
+}
+
+#[test]
+fn source_db_canonical_json_projection_state_payload_and_digest_match_two_pass() {
+    for (id, row) in [(7, position(true)), (8, position(false))] {
+        let single =
+            canonical_payload_and_digest(SourceDbProjectionStateEntity::Position, id, 1, &row)
+                .expect("single pass");
+        // A `serde_json::Value` object serialises as a map, so it always takes
+        // the two-pass reference path inside the same function.
+        let reference = canonical_payload_and_digest(
+            SourceDbProjectionStateEntity::Position,
+            id,
+            1,
+            &serde_json::to_value(&row).expect("value"),
+        )
+        .expect("two pass");
+        assert_eq!(single, reference);
+        assert_eq!(single.0, two_pass(&row));
+    }
 }
