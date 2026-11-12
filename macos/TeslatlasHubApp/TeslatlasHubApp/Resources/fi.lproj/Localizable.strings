@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub on valmis";
 "hub.OnboardingWindowController.602.1926" = "Oma Tesla-telemetriakeräimesi toimii yksityisesti tässä Macissa.";
 "hub.OnboardingWindowController.604.1927" = "Määritä uusi Hub tai siirrä historiatiedot lähdesovelluksesta.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetryä suositellaan. Perinteiset tokenit toimivat vanhemmissa määrityksissä.";
+"hub.OnboardingWindowController.606.1928" = "Aloita kirjautumalla sisään Tesla-omistajan tililläsi. Fleet Telemetry on käytettävissä, jos haluat sen.";
 "hub.OnboardingWindowController.608.1929" = "Luo Tesla Fleet -sovellus ja liitä sen käyttöoikeustiedot alle.";
 "hub.OnboardingWindowController.610.1930" = "Kirjaudu sisään Teslan kautta, kun keruuikkuna on auki. Hub ei koskaan hyväksy tokenia.";
 "hub.OnboardingWindowController.612.1931" = "Muodosta yhteys lähdesovelluksen palvelimeen tuodaksesi sen ajoneuvohistorian.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Siirrä aiempi ajoneuvohistoriasi.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Teslan virallinen suoratoistorajapinta. Mahdollistaa reaaliaikaiset ajoneuvokomennot.";
-"hub.OnboardingWindowController.752.1958" = "Perinteinen token";
+"hub.OnboardingWindowController.752.1958" = "Omistajan kirjautuminen";
 "hub.OnboardingWindowController.753.1959" = "Kirjaudu sisään Teslan kautta. Hub säilyttää oman kirjautumisensa.";
 "hub.OnboardingWindowController.760.1960" = "Luo Tesla Fleet -sovellus";
 "hub.OnboardingWindowController.771.1964" = "Asiakastunnus";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Valitse avain…";
 "hub.OnboardingWindowController.888.1990" = "Vain historiatietoja varten. Hub ei tarkastele eikä tuo Teslan tunnistetietoja. Tiedonkeruu pysyy poissa käytöstä. Tietokannan skeeman voi tarkistaa; lähdesovelluksen versio jää tuntemattomaksi.";
 "hub.OnboardingWindowController.891.1991" = "Paikallinen PostgreSQL-lähde";
-"hub.OnboardingWindowController.895.1994" = "Vahvistan, että tämä tietokanta käyttää v4.2-yhteensopivaa skeemaa; tämä ei todista sovelluksen versiota";
 "hub.OnboardingWindowController.915.1997" = "Lähdesovellus %1$@";
 "hub.OnboardingWindowController.927.2001" = "Tarkistetaan…";
 "hub.OnboardingWindowController.935.2004" = "Vaihda palvelin";

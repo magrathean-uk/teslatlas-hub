@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub готов";
 "hub.OnboardingWindowController.602.1926" = "Ваш собственный сборщик телеметрии Tesla работает на этом Mac с соблюдением конфиденциальности.";
 "hub.OnboardingWindowController.604.1927" = "Настройте новый Hub или перенесите историю из исходного приложения.";
-"hub.OnboardingWindowController.606.1928" = "Рекомендуется Fleet Telemetry. Токены Legacy подходят для старых конфигураций.";
+"hub.OnboardingWindowController.606.1928" = "Для начала войдите в аккаунт владельца Tesla. Fleet Telemetry доступен, если вы предпочтёте его.";
 "hub.OnboardingWindowController.608.1929" = "Создайте приложение Tesla Fleet, затем вставьте его учётные данные ниже.";
 "hub.OnboardingWindowController.610.1930" = "Войдите через Tesla, пока открыто окно сбора данных. Hub никогда не принимает токен.";
 "hub.OnboardingWindowController.612.1931" = "Подключитесь к серверу исходного приложения, чтобы импортировать историю автомобиля.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Перенести существующую историю автомобиля.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Официальный потоковый API Tesla. Позволяет отправлять команды автомобилю в реальном времени.";
-"hub.OnboardingWindowController.752.1958" = "Токен Legacy";
+"hub.OnboardingWindowController.752.1958" = "Вход владельца";
 "hub.OnboardingWindowController.753.1959" = "Войдите через Tesla. Hub сохраняет собственный вход.";
 "hub.OnboardingWindowController.760.1960" = "Создать приложение Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "Идентификатор клиента";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Выбрать ключ…";
 "hub.OnboardingWindowController.888.1990" = "Только история. Hub не будет просматривать или импортировать учётные данные Tesla. Сбор данных останется выключенным. Схему базы данных можно проверить, но версия исходного приложения останется неизвестной.";
 "hub.OnboardingWindowController.891.1991" = "Локальный источник PostgreSQL";
-"hub.OnboardingWindowController.895.1994" = "Я понимаю, что схема базы данных совместима с v4.2, но это не подтверждает версию приложения";
 "hub.OnboardingWindowController.915.1997" = "Исходное приложение %1$@";
 "hub.OnboardingWindowController.927.2001" = "Проверка…";
 "hub.OnboardingWindowController.935.2004" = "Изменить сервер";

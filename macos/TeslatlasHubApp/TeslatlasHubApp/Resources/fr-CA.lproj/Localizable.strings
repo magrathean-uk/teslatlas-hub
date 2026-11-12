@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub est prêt";
 "hub.OnboardingWindowController.602.1926" = "Ton propre collecteur de télémétrie Tesla, qui s’exécute en privé sur ce Mac.";
 "hub.OnboardingWindowController.604.1927" = "Configure un Hub neuf ou importe ton historique de l’application source.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry est recommandé. Les jetons historiques sont compatibles avec les anciennes configurations.";
+"hub.OnboardingWindowController.606.1928" = "Pour commencer, connecte-toi avec ton compte propriétaire Tesla. Fleet Telemetry reste disponible si tu le préfères.";
 "hub.OnboardingWindowController.608.1929" = "Crée une application Tesla Fleet, puis colle ses identifiants ci-dessous.";
 "hub.OnboardingWindowController.610.1930" = "Connecte-toi avec Tesla pendant qu’une fenêtre de collecte est ouverte. Le Hub n’accepte jamais de jeton.";
 "hub.OnboardingWindowController.612.1931" = "Connecte-toi à ton serveur de l’application source pour importer l’historique de ses véhicules.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Importe l’historique existant de ton véhicule.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "API officielle de diffusion en continu de Tesla. Elle permet d’envoyer des commandes au véhicule en temps réel.";
-"hub.OnboardingWindowController.752.1958" = "Jeton historique";
+"hub.OnboardingWindowController.752.1958" = "Connexion propriétaire";
 "hub.OnboardingWindowController.753.1959" = "Connecte-toi avec Tesla. Le Hub conserve sa propre connexion.";
 "hub.OnboardingWindowController.760.1960" = "Créer une application Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "Identifiant client";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Choisir une clé…";
 "hub.OnboardingWindowController.888.1990" = "Historique seulement. Le Hub n’examinera ni n’importera les identifiants Tesla. La collecte reste désactivée. Le schéma de la base de données peut être vérifié; la version de l’application source demeure inconnue.";
 "hub.OnboardingWindowController.891.1991" = "Source PostgreSQL locale";
-"hub.OnboardingWindowController.895.1994" = "Je reconnais qu’il s’agit d’un schéma de base de données compatible avec la version 4.2, et non d’une preuve de la version de l’application";
 "hub.OnboardingWindowController.915.1997" = "L’application source %1$@";
 "hub.OnboardingWindowController.927.2001" = "Vérification…";
 "hub.OnboardingWindowController.935.2004" = "Changer de serveur";

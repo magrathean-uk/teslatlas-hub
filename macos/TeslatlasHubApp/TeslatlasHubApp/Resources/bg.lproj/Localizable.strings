@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub е готов";
 "hub.OnboardingWindowController.602.1926" = "Твой личен събирач на телеметрия от Tesla, работещ локално на този Mac.";
 "hub.OnboardingWindowController.604.1927" = "Настрой нов Hub или прехвърли съществуващата си история от изходното приложение.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry се препоръчва. Наследените токени работят с по-стари конфигурации.";
+"hub.OnboardingWindowController.606.1928" = "Започнете, като влезете с акаунта си на собственик в Tesla. Fleet Telemetry е на разположение, ако предпочитате него.";
 "hub.OnboardingWindowController.608.1929" = "Създай приложение Tesla Fleet, после постави данните му за достъп по-долу.";
 "hub.OnboardingWindowController.610.1930" = "Влез в акаунта си в Tesla, докато е отворен прозорец за събиране. Hub никога не приема токен.";
 "hub.OnboardingWindowController.612.1931" = "Свържи се със сървъра на изходното приложение, за да импортираш историята на автомобилите.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Прехвърли съществуващата история на автомобила.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Официалният API на Tesla за поточни данни. Дава възможност за команди към автомобила в реално време.";
-"hub.OnboardingWindowController.752.1958" = "Наследен токен";
+"hub.OnboardingWindowController.752.1958" = "Вход на собственика";
 "hub.OnboardingWindowController.753.1959" = "Влез в акаунта си в Tesla. Hub използва собствен вход.";
 "hub.OnboardingWindowController.760.1960" = "Създай приложение Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID на клиента";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Избери ключ…";
 "hub.OnboardingWindowController.888.1990" = "Само история. Hub няма да проверява или импортира данни за достъп до Tesla. Събирането остава изключено. Може да се провери схемата на базата данни; версията на изходното приложение остава неизвестна.";
 "hub.OnboardingWindowController.891.1991" = "Локален източник на PostgreSQL";
-"hub.OnboardingWindowController.895.1994" = "Потвърждавам, че схемата на базата данни е съвместима с v4.2; това не доказва версията на приложението";
 "hub.OnboardingWindowController.915.1997" = "Изходното приложение %1$@";
 "hub.OnboardingWindowController.927.2001" = "Проверка…";
 "hub.OnboardingWindowController.935.2004" = "Смени сървъра";

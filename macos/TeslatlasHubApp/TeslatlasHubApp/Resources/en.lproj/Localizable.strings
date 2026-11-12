@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub is ready";
 "hub.OnboardingWindowController.602.1926" = "Your own Tesla telemetry collector, running privately on this Mac.";
 "hub.OnboardingWindowController.604.1927" = "Set up a fresh Hub or bring your history over from the source application.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry is recommended. Legacy tokens work with older setups.";
+"hub.OnboardingWindowController.606.1928" = "Sign in with your Tesla owner account to start. Fleet Telemetry is available if you prefer it.";
 "hub.OnboardingWindowController.608.1929" = "Create a Tesla Fleet application, then paste its credentials below.";
 "hub.OnboardingWindowController.610.1930" = "Sign in with Tesla while a collection window is open. Hub never accepts a token.";
 "hub.OnboardingWindowController.612.1931" = "Connect to your source application server to import its vehicle history.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Bring your existing vehicle history.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla's official streaming API. Vehicle commands use the Tesla Fleet API.";
-"hub.OnboardingWindowController.752.1958" = "Legacy Token";
+"hub.OnboardingWindowController.752.1958" = "Owner Sign-in";
 "hub.OnboardingWindowController.753.1959" = "Sign in with Tesla. Hub keeps its own login.";
 "hub.OnboardingWindowController.760.1960" = "Create Tesla Fleet App";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Choose Key…";
 "hub.OnboardingWindowController.888.1990" = "History only. Hub will not inspect or import Tesla credentials. Collection remains off. The database schema can be checked; the source application version remains unknown.";
 "hub.OnboardingWindowController.891.1991" = "Local PostgreSQL source";
-"hub.OnboardingWindowController.895.1994" = "I acknowledge this is a v4.2-compatible database schema, not proof of the application version";
 "hub.OnboardingWindowController.915.1997" = "Source application %1$@";
 "hub.OnboardingWindowController.927.2001" = "Checking…";
 "hub.OnboardingWindowController.935.2004" = "Change Server";

@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub พร้อมใช้งานแล้ว";
 "hub.OnboardingWindowController.602.1926" = "ตัวรวบรวมข้อมูลเทเลเมทรี Tesla ของคุณเอง ซึ่งทำงานเป็นส่วนตัวบน Mac เครื่องนี้";
 "hub.OnboardingWindowController.604.1927" = "ตั้งค่า Hub ใหม่หรือย้ายประวัติของคุณจากแอปพลิเคชันต้นทาง";
-"hub.OnboardingWindowController.606.1928" = "แนะนำ Fleet Telemetry ส่วน Legacy token ใช้ได้กับการตั้งค่าแบบเก่า";
+"hub.OnboardingWindowController.606.1928" = "ลงชื่อเข้าใช้ด้วยบัญชีเจ้าของ Tesla ของคุณเพื่อเริ่มต้น หากต้องการ ยังใช้ Fleet Telemetry ได้";
 "hub.OnboardingWindowController.608.1929" = "สร้างแอป Tesla Fleet แล้ววางข้อมูลเข้าสู่ระบบด้านล่าง";
 "hub.OnboardingWindowController.610.1930" = "ลงชื่อเข้าใช้ด้วย Tesla ขณะที่หน้าต่างการเก็บข้อมูลเปิดอยู่ Hub ไม่รับโทเค็นไม่ว่ากรณีใด";
 "hub.OnboardingWindowController.612.1931" = "เชื่อมต่อกับเซิร์ฟเวอร์แอปพลิเคชันต้นทางเพื่อนำเข้าประวัติรถ";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "ย้ายประวัติรถที่มีอยู่มา";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "API สตรีมมิงอย่างเป็นทางการของ Tesla ซึ่งเปิดใช้คำสั่งควบคุมรถแบบเรียลไทม์";
-"hub.OnboardingWindowController.752.1958" = "Legacy Token";
+"hub.OnboardingWindowController.752.1958" = "การลงชื่อเข้าใช้ของเจ้าของ";
 "hub.OnboardingWindowController.753.1959" = "ลงชื่อเข้าใช้ด้วย Tesla Hub เก็บการเข้าสู่ระบบของตัวเอง";
 "hub.OnboardingWindowController.760.1960" = "สร้าง Tesla Fleet App";
 "hub.OnboardingWindowController.771.1964" = "รหัสไคลเอ็นต์";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "เลือกคีย์…";
 "hub.OnboardingWindowController.888.1990" = "ใช้เฉพาะประวัติเท่านั้น Hub จะไม่ตรวจสอบหรือนำเข้าข้อมูลเข้าสู่ระบบ Tesla การเก็บข้อมูลยังคงปิดอยู่ ตรวจสอบสคีมาฐานข้อมูลได้ แต่ยังไม่ทราบเวอร์ชันของแอปพลิเคชันต้นทาง";
 "hub.OnboardingWindowController.891.1991" = "แหล่งข้อมูล PostgreSQL ในเครื่อง";
-"hub.OnboardingWindowController.895.1994" = "ฉันรับทราบว่าสคีมาฐานข้อมูลนี้เข้ากันได้กับ v4.2 แต่ไม่ได้ยืนยันเวอร์ชันของแอป";
 "hub.OnboardingWindowController.915.1997" = "แอปพลิเคชันต้นทาง %1$@";
 "hub.OnboardingWindowController.927.2001" = "กำลังตรวจสอบ…";
 "hub.OnboardingWindowController.935.2004" = "เปลี่ยนเซิร์ฟเวอร์";

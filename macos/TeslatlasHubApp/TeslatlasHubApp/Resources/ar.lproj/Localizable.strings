@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub جاهز";
 "hub.OnboardingWindowController.602.1926" = "جامع بيانات القياس عن بُعد من Tesla، يعمل محليًا على هذا الـ Mac وبخصوصية.";
 "hub.OnboardingWindowController.604.1927" = "أعدّ Hub جديدًا أو انقل سجلك من التطبيق المصدر.";
-"hub.OnboardingWindowController.606.1928" = "يوصى باستخدام Fleet Telemetry. وتعمل الرموز المميّزة القديمة مع الإعدادات الأقدم.";
+"hub.OnboardingWindowController.606.1928" = "ابدأ بتسجيل الدخول باستخدام حساب مالك Tesla الخاص بك. يتوفر Fleet Telemetry إن كنت تفضّله.";
 "hub.OnboardingWindowController.608.1929" = "أنشئ تطبيق Tesla Fleet، ثم الصق بيانات اعتماده أدناه.";
 "hub.OnboardingWindowController.610.1930" = "سجّل الدخول باستخدام Tesla أثناء فتح نافذة جمع بيانات. لا يقبل Hub أي رمز مميّز أبدًا.";
 "hub.OnboardingWindowController.612.1931" = "اتصل بخادم التطبيق المصدر لاستيراد سجل المركبة منه.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "انقل سجل مركبتك الحالي.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "واجهة API الرسمية من Tesla لبث البيانات، وتتيح أوامر مباشرة للمركبة.";
-"hub.OnboardingWindowController.752.1958" = "الرمز المميّز القديم";
+"hub.OnboardingWindowController.752.1958" = "تسجيل دخول المالك";
 "hub.OnboardingWindowController.753.1959" = "سجّل الدخول باستخدام Tesla. يحتفظ Hub بتسجيل دخول خاص به.";
 "hub.OnboardingWindowController.760.1960" = "إنشاء تطبيق Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "معرّف العميل";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "اختيار مفتاح…";
 "hub.OnboardingWindowController.888.1990" = "للسجل فقط. لن يطّلع Hub على بيانات اعتماد Tesla أو يستوردها. سيظل جمع البيانات متوقفًا. يمكن فحص مخطط قاعدة البيانات، لكن يظل إصدار التطبيق المصدر غير معروف.";
 "hub.OnboardingWindowController.891.1991" = "مصدر PostgreSQL محلي";
-"hub.OnboardingWindowController.895.1994" = "أقرّ بأن مخطط قاعدة البيانات هذا متوافق مع v4.2، لكنه لا يثبت إصدار التطبيق.";
 "hub.OnboardingWindowController.915.1997" = "التطبيق المصدر %1$@";
 "hub.OnboardingWindowController.927.2001" = "جارٍ التحقق…";
 "hub.OnboardingWindowController.935.2004" = "تغيير الخادم";

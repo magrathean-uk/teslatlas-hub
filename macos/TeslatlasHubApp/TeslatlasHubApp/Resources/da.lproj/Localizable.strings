@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub er klar";
 "hub.OnboardingWindowController.602.1926" = "Din egen Tesla-telemetriindsamler, der kører privat på denne Mac.";
 "hub.OnboardingWindowController.604.1927" = "Konfigurer en ny Hub, eller overfør din historik fra kildeprogrammet.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry anbefales. Legacy-tokens fungerer med ældre opsætninger.";
+"hub.OnboardingWindowController.606.1928" = "Log ind med din Tesla-ejerkonto for at komme i gang. Fleet Telemetry er tilgængelig, hvis du foretrækker det.";
 "hub.OnboardingWindowController.608.1929" = "Opret en Tesla Fleet-app, og indsæt dens adgangsoplysninger nedenfor.";
 "hub.OnboardingWindowController.610.1930" = "Log ind med Tesla, mens et indsamlingsvindue er åbent. Hub accepterer aldrig et token.";
 "hub.OnboardingWindowController.612.1931" = "Opret forbindelse til din kildeprogramserver for at importere dens køretøjshistorik.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Overfør din eksisterende køretøjshistorik.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Teslas officielle streaming-API. Giver adgang til live-kommandoer til køretøjet.";
-"hub.OnboardingWindowController.752.1958" = "Legacy-token";
+"hub.OnboardingWindowController.752.1958" = "Ejerlogin";
 "hub.OnboardingWindowController.753.1959" = "Log ind med Tesla. Hub beholder sit eget login.";
 "hub.OnboardingWindowController.760.1960" = "Opret Tesla Fleet-app";
 "hub.OnboardingWindowController.771.1964" = "Klient-id";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Vælg nøgle…";
 "hub.OnboardingWindowController.888.1990" = "Kun historik. Hub undersøger eller importerer ikke Tesla-adgangsoplysninger. Dataindsamlingen forbliver slået fra. Databaseskemaet kan kontrolleres; kildeprogrammets version er stadig ukendt.";
 "hub.OnboardingWindowController.891.1991" = "Lokal PostgreSQL-kilde";
-"hub.OnboardingWindowController.895.1994" = "Jeg bekræfter, at dette databaseskema er kompatibelt med v4.2, men ikke dokumenterer appversionen";
 "hub.OnboardingWindowController.915.1997" = "Kildeprogrammet %1$@";
 "hub.OnboardingWindowController.927.2001" = "Kontrollerer…";
 "hub.OnboardingWindowController.935.2004" = "Skift server";

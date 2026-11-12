@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub તૈયાર છે";
 "hub.OnboardingWindowController.602.1926" = "આ Mac પર ખાનગી રીતે ચાલતું તમારું પોતાનું Tesla ટેલિમેટ્રી એકત્રિત કરતું સાધન.";
 "hub.OnboardingWindowController.604.1927" = "નવું Hub સેટ અપ કરો અથવા સ્રોત એપ્લિકેશનમાંથી તમારો ઇતિહાસ અહીં લાવો.";
-"hub.OnboardingWindowController.606.1928" = "ફ્લીટ Telemetryની ભલામણ છે. લેગસી ટોકન જૂની ગોઠવણીઓ સાથે કામ કરે છે.";
+"hub.OnboardingWindowController.606.1928" = "શરૂ કરવા માટે તમારા Tesla માલિક એકાઉન્ટથી સાઇન ઇન કરો. જો તમે પસંદ કરો તો Fleet Telemetry ઉપલબ્ધ છે.";
 "hub.OnboardingWindowController.608.1929" = "Tesla ફ્લીટ એપ્લિકેશન બનાવો, પછી તેની ઓળખપત્ર માહિતી નીચે પેસ્ટ કરો.";
 "hub.OnboardingWindowController.610.1930" = "સંગ્રહ વિન્ડો ખુલ્લી હોય ત્યારે Tesla સાથે સાઇન ઇન કરો. Hub ક્યારેય ટોકન સ્વીકારતું નથી.";
 "hub.OnboardingWindowController.612.1931" = "વાહનનો ઇતિહાસ આયાત કરવા માટે તમારા સ્રોત એપ્લિકેશન સર્વર સાથે જોડાઓ.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "તમારા વાહનનો હાલનો ઇતિહાસ અહીં લાવો.";
 "hub.OnboardingWindowController.748.1956" = "ફ્લીટ ટેલિમેટ્રી";
 "hub.OnboardingWindowController.749.1957" = "Teslaનું અધિકૃત સ્ટ્રીમિંગ API. તે લાઇવ વાહન આદેશો મોકલવાની સુવિધા આપે છે.";
-"hub.OnboardingWindowController.752.1958" = "લેગસી ટોકન";
+"hub.OnboardingWindowController.752.1958" = "માલિક સાઇન-ઇન";
 "hub.OnboardingWindowController.753.1959" = "Tesla સાથે સાઇન ઇન કરો. Hub પોતાનું લૉગિન જાળવે છે.";
 "hub.OnboardingWindowController.760.1960" = "Tesla ફ્લીટ ઍપ બનાવો";
 "hub.OnboardingWindowController.771.1964" = "ક્લાયન્ટ ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "કી પસંદ કરો…";
 "hub.OnboardingWindowController.888.1990" = "ફક્ત ઇતિહાસ. Hub Teslaના ઓળખપત્રો તપાસશે કે આયાત કરશે નહીં. ડેટા સંગ્રહ બંધ જ રહેશે. ડેટાબેઝ સ્કીમાની ચકાસણી કરી શકાય છે; સ્રોત એપ્લિકેશનનું સંસ્કરણ અજ્ઞાત રહેશે.";
 "hub.OnboardingWindowController.891.1991" = "સ્થાનિક PostgreSQL સ્રોત";
-"hub.OnboardingWindowController.895.1994" = "હું સ્વીકારું છું કે આ ડેટાબેઝ સ્કીમા v4.2 સાથે સુસંગત છે, પરંતુ તે ઍપનું સંસ્કરણ સાબિત કરતું નથી";
 "hub.OnboardingWindowController.915.1997" = "સ્રોત એપ્લિકેશન %1$@";
 "hub.OnboardingWindowController.927.2001" = "તપાસ ચાલી રહી છે…";
 "hub.OnboardingWindowController.935.2004" = "સર્વર બદલો";

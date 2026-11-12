@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub를 사용할 준비가 되었습니다";
 "hub.OnboardingWindowController.602.1926" = "이 Mac에서 비공개로 실행되는 개인용 Tesla 텔레메트리 수집기입니다.";
 "hub.OnboardingWindowController.604.1927" = "새 Hub를 설정하거나 원본 애플리케이션의 기록을 가져오세요.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry를 권장합니다. 레거시 토큰은 기존 설정에서 사용할 수 있습니다.";
+"hub.OnboardingWindowController.606.1928" = "시작하려면 Tesla 소유자 계정으로 로그인하세요. 원하시면 Fleet Telemetry도 사용할 수 있습니다.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet 애플리케이션을 만든 다음 자격 증명을 아래에 붙여넣으세요.";
 "hub.OnboardingWindowController.610.1930" = "수집 창이 열려 있는 동안 Tesla로 로그인하세요. Hub는 토큰을 절대 받지 않습니다.";
 "hub.OnboardingWindowController.612.1931" = "차량 기록을 가져오려면 원본 애플리케이션 서버에 연결하세요.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "기존 차량 기록을 가져옵니다.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla의 공식 스트리밍 API입니다. 실시간 차량 명령을 사용할 수 있습니다.";
-"hub.OnboardingWindowController.752.1958" = "레거시 토큰";
+"hub.OnboardingWindowController.752.1958" = "소유자 로그인";
 "hub.OnboardingWindowController.753.1959" = "Tesla로 로그인하세요. Hub는 자체 로그인을 유지합니다.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet 앱 만들기";
 "hub.OnboardingWindowController.771.1964" = "클라이언트 ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "키 선택…";
 "hub.OnboardingWindowController.888.1990" = "기록 전용입니다. Hub는 Tesla 자격 증명을 확인하거나 가져오지 않으며 데이터 수집은 꺼진 상태로 유지됩니다. 데이터베이스 스키마는 확인할 수 있지만 원본 애플리케이션 버전은 알 수 없습니다.";
 "hub.OnboardingWindowController.891.1991" = "로컬 PostgreSQL 소스";
-"hub.OnboardingWindowController.895.1994" = "이 데이터베이스 스키마가 v4.2와 호환된다는 점을 확인했습니다. 이것이 앱 버전을 입증하지는 않습니다.";
 "hub.OnboardingWindowController.915.1997" = "원본 애플리케이션 %1$@";
 "hub.OnboardingWindowController.927.2001" = "확인 중…";
 "hub.OnboardingWindowController.935.2004" = "서버 변경";

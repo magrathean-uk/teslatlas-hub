@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub ਤਿਆਰ ਹੈ";
 "hub.OnboardingWindowController.602.1926" = "ਤੁਹਾਡਾ ਆਪਣਾ Tesla ਟੈਲੀਮੈਟਰੀ ਕਲੈਕਟਰ, ਇਸ Mac ਉੱਤੇ ਨਿੱਜੀ ਤੌਰ ’ਤੇ ਚੱਲਦਾ ਹੈ।";
 "hub.OnboardingWindowController.604.1927" = "ਨਵਾਂ Hub ਸੈੱਟ ਅੱਪ ਕਰੋ ਜਾਂ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਤੋਂ ਆਪਣਾ ਇਤਿਹਾਸ ਲਿਆਓ।";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry ਦੀ ਸਿਫ਼ਾਰਸ਼ ਕੀਤੀ ਜਾਂਦੀ ਹੈ। Legacy ਟੋਕਨ ਪੁਰਾਣੇ ਸੈੱਟਅੱਪਾਂ ਨਾਲ ਕੰਮ ਕਰਦੇ ਹਨ।";
+"hub.OnboardingWindowController.606.1928" = "ਸ਼ੁਰੂ ਕਰਨ ਲਈ ਆਪਣੇ Tesla ਮਾਲਕ ਖਾਤੇ ਨਾਲ ਸਾਈਨ ਇਨ ਕਰੋ। ਜੇ ਤੁਸੀਂ ਚਾਹੋ ਤਾਂ Fleet Telemetry ਉਪਲਬਧ ਹੈ।";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet ਐਪਲੀਕੇਸ਼ਨ ਬਣਾਓ, ਫਿਰ ਇਸਦੇ ਪਹੁੰਚ-ਪ੍ਰਮਾਣ ਹੇਠਾਂ ਪੇਸਟ ਕਰੋ।";
 "hub.OnboardingWindowController.610.1930" = "ਇਕੱਤਰ ਕਰਨ ਵਾਲੀ ਵਿੰਡੋ ਖੁੱਲ੍ਹੀ ਹੋਣ ਦੌਰਾਨ Tesla ਨਾਲ ਸਾਈਨ ਇਨ ਕਰੋ। Hub ਕਦੇ ਵੀ ਟੋਕਨ ਸਵੀਕਾਰ ਨਹੀਂ ਕਰਦਾ।";
 "hub.OnboardingWindowController.612.1931" = "ਵਾਹਨ ਇਤਿਹਾਸ ਆਯਾਤ ਕਰਨ ਲਈ ਆਪਣੇ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਸਰਵਰ ਨਾਲ ਕਨੈਕਟ ਕਰੋ।";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "ਆਪਣਾ ਮੌਜੂਦਾ ਵਾਹਨ ਇਤਿਹਾਸ ਲਿਆਓ।";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla ਦੀ ਅਧਿਕਾਰਤ streaming API। ਇਹ ਲਾਈਵ ਵਾਹਨ ਕਮਾਂਡਾਂ ਦੀ ਸਹੂਲਤ ਦਿੰਦੀ ਹੈ।";
-"hub.OnboardingWindowController.752.1958" = "Legacy ਟੋਕਨ";
+"hub.OnboardingWindowController.752.1958" = "ਮਾਲਕ ਸਾਈਨ ਇਨ";
 "hub.OnboardingWindowController.753.1959" = "Tesla ਨਾਲ ਸਾਈਨ ਇਨ ਕਰੋ। Hub ਆਪਣਾ ਲਾਗਇਨ ਰੱਖਦਾ ਹੈ।";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet ਐਪ ਬਣਾਓ";
 "hub.OnboardingWindowController.771.1964" = "ਕਲਾਇੰਟ ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "ਕੁੰਜੀ ਚੁਣੋ…";
 "hub.OnboardingWindowController.888.1990" = "ਸਿਰਫ਼ ਇਤਿਹਾਸ ਲਈ। Hub Tesla ਪਹੁੰਚ-ਪ੍ਰਮਾਣ ਦੀ ਜਾਂਚ ਜਾਂ ਆਯਾਤ ਨਹੀਂ ਕਰੇਗਾ। ਡਾਟਾ ਇਕੱਠਾ ਕਰਨਾ ਬੰਦ ਰਹੇਗਾ। ਡਾਟਾਬੇਸ ਸਕੀਮਾ ਦੀ ਜਾਂਚ ਹੋ ਸਕਦੀ ਹੈ; ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਦਾ ਵਰਜਨ ਅਣਜਾਣ ਰਹੇਗਾ।";
 "hub.OnboardingWindowController.891.1991" = "ਸਥਾਨਕ PostgreSQL ਸਰੋਤ";
-"hub.OnboardingWindowController.895.1994" = "ਮੈਂ ਮੰਨਦਾ ਹਾਂ ਕਿ ਇਹ v4.2-ਅਨੁਕੂਲ ਡਾਟਾਬੇਸ ਸਕੀਮਾ ਹੈ, ਐਪਲੀਕੇਸ਼ਨ ਵਰਜਨ ਦਾ ਸਬੂਤ ਨਹੀਂ";
 "hub.OnboardingWindowController.915.1997" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ %1$@";
 "hub.OnboardingWindowController.927.2001" = "ਜਾਂਚ ਰਹੇ ਹਾਂ…";
 "hub.OnboardingWindowController.935.2004" = "ਸਰਵਰ ਬਦਲੋ";

@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub đã sẵn sàng";
 "hub.OnboardingWindowController.602.1926" = "Bộ thu thập dữ liệu đo từ xa Tesla của riêng bạn, chạy riêng tư trên máy Mac này.";
 "hub.OnboardingWindowController.604.1927" = "Thiết lập Hub mới hoặc chuyển lịch sử từ ứng dụng nguồn sang.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry được khuyến nghị. Token đời cũ hoạt động với các thiết lập cũ hơn.";
+"hub.OnboardingWindowController.606.1928" = "Để bắt đầu, hãy đăng nhập bằng tài khoản chủ xe Tesla của bạn. Fleet Telemetry vẫn có sẵn nếu bạn muốn dùng.";
 "hub.OnboardingWindowController.608.1929" = "Tạo ứng dụng Tesla Fleet rồi dán thông tin xác thực vào bên dưới.";
 "hub.OnboardingWindowController.610.1930" = "Hãy đăng nhập bằng Tesla khi cửa sổ thu thập đang mở. Hub không bao giờ chấp nhận token.";
 "hub.OnboardingWindowController.612.1931" = "Kết nối với máy chủ ứng dụng nguồn để nhập lịch sử xe.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Chuyển lịch sử xe hiện có của bạn sang.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "API truyền phát chính thức của Tesla. Cho phép gửi lệnh điều khiển xe theo thời gian thực.";
-"hub.OnboardingWindowController.752.1958" = "Token đời cũ";
+"hub.OnboardingWindowController.752.1958" = "Đăng nhập chủ xe";
 "hub.OnboardingWindowController.753.1959" = "Hãy đăng nhập bằng Tesla. Hub giữ đăng nhập riêng của mình.";
 "hub.OnboardingWindowController.760.1960" = "Tạo ứng dụng Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Chọn khóa…";
 "hub.OnboardingWindowController.888.1990" = "Chỉ dùng lịch sử. Hub sẽ không kiểm tra hoặc nhập thông tin xác thực Tesla. Tính năng thu thập vẫn tắt. Có thể kiểm tra lược đồ cơ sở dữ liệu; chưa biết phiên bản ứng dụng nguồn.";
 "hub.OnboardingWindowController.891.1991" = "Nguồn PostgreSQL cục bộ";
-"hub.OnboardingWindowController.895.1994" = "Tôi xác nhận đây là lược đồ cơ sở dữ liệu tương thích với phiên bản 4.2, không phải bằng chứng về phiên bản ứng dụng.";
 "hub.OnboardingWindowController.915.1997" = "Ứng dụng nguồn %1$@";
 "hub.OnboardingWindowController.927.2001" = "Đang kiểm tra…";
 "hub.OnboardingWindowController.935.2004" = "Đổi máy chủ";

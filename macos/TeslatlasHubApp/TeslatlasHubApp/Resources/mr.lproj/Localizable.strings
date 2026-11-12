@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub तयार आहे";
 "hub.OnboardingWindowController.602.1926" = "तुमचा स्वतःचा Tesla टेलीमेट्री संग्राहक, या Mac वर खाजगीपणे चालतो.";
 "hub.OnboardingWindowController.604.1927" = "नवीन Hub सेट अप करा किंवा स्रोत अनुप्रयोगातून तुमचा इतिहास आणा.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry वापरण्याची शिफारस आहे. Legacy टोकन जुन्या सेटअपमध्ये चालतात.";
+"hub.OnboardingWindowController.606.1928" = "सुरू करण्यासाठी तुमच्या Tesla मालक खात्याने साइन इन करा. तुम्हाला हवे असल्यास Fleet Telemetry उपलब्ध आहे.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet अ‍ॅप्लिकेशन तयार करा, मग त्याचे प्रवेश तपशील खाली पेस्ट करा.";
 "hub.OnboardingWindowController.610.1930" = "संकलन विंडो उघडी असताना Tesla मध्ये साइन इन करा. Hub कधीही टोकन स्वीकारत नाही.";
 "hub.OnboardingWindowController.612.1931" = "वाहनांचा इतिहास आयात करण्यासाठी तुमच्या स्रोत अनुप्रयोग सर्व्हरशी जोडा.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "तुमचा विद्यमान वाहन इतिहास आणा.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla चे अधिकृत स्ट्रीमिंग API. रिअल-टाइम वाहन आदेश सक्षम करते.";
-"hub.OnboardingWindowController.752.1958" = "Legacy टोकन";
+"hub.OnboardingWindowController.752.1958" = "मालक साइन-इन";
 "hub.OnboardingWindowController.753.1959" = "Tesla मध्ये साइन इन करा. Hub स्वतःचे लॉगिन ठेवतो.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet अ‍ॅप तयार करा";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "की निवडा…";
 "hub.OnboardingWindowController.888.1990" = "इतिहासापुरते. Hub Tesla प्रवेश तपशील तपासणार किंवा आयात करणार नाही. डेटा संकलन बंदच राहील. डेटाबेस स्कीमा तपासता येईल; स्रोत अनुप्रयोगाची आवृत्ती मात्र अज्ञात राहील.";
 "hub.OnboardingWindowController.891.1991" = "स्थानिक PostgreSQL स्रोत";
-"hub.OnboardingWindowController.895.1994" = "हा डेटाबेस v4.2-सुसंगत स्कीमा वापरतो, पण यावरून अ‍ॅपची आवृत्ती सिद्ध होत नाही, हे मी मान्य करतो.";
 "hub.OnboardingWindowController.915.1997" = "स्रोत अनुप्रयोग %1$@";
 "hub.OnboardingWindowController.927.2001" = "तपासत आहे…";
 "hub.OnboardingWindowController.935.2004" = "सर्व्हर बदला";

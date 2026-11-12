@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub ପ୍ରସ୍ତୁତ ଅଛି";
 "hub.OnboardingWindowController.602.1926" = "ଏହି Macରେ ବ୍ୟକ୍ତିଗତ ଭାବେ ଚାଲୁଥିବା ଆପଣଙ୍କ ନିଜ Tesla ଟେଲିମେଟ୍ରି କଲେକ୍ଟର୍।";
 "hub.OnboardingWindowController.604.1927" = "ନୂଆ Hub ସେଟଅପ୍ କରନ୍ତୁ କିମ୍ବା ଉତ୍ସ ଆପ୍ଲିକେସନ୍ରୁ ଆପଣଙ୍କ ଇତିହାସ ଆଣନ୍ତୁ।";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry ସୁପାରିଶ କରାଯାଏ। Legacy token ପୁରୁଣା ସେଟଅପ୍‌ରେ କାମ କରେ।";
+"hub.OnboardingWindowController.606.1928" = "ଆରମ୍ଭ କରିବାକୁ ଆପଣଙ୍କ Tesla ମାଲିକ ଖାତାରେ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ। ଆପଣ ଚାହିଁଲେ Fleet Telemetry ଉପଲବ୍ଧ ଅଛି।";
 "hub.OnboardingWindowController.608.1929" = "ଏକ Tesla Fleet ଆପ୍ଲିକେସନ୍ ତିଆରି କରି ତଳେ ଏହାର ପରିଚୟପତ୍ର ଦିଅନ୍ତୁ।";
 "hub.OnboardingWindowController.610.1930" = "ସଂଗ୍ରହ ୱିଣ୍ଡୋ ଖୋଲା ଥିବା ସମୟରେ Teslaରେ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ। Hub କେବେ ବି token ଗ୍ରହଣ କରେ ନାହିଁ।";
 "hub.OnboardingWindowController.612.1931" = "ଯାନ ଇତିହାସ ଆମଦାନି କରିବାକୁ ଆପଣଙ୍କ ଉତ୍ସ ଆପ୍ଲିକେସନ୍ ସର୍ଭର ସହିତ ସଂଯୋଗ କରନ୍ତୁ।";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "ଆପଣଙ୍କ ବର୍ତ୍ତମାନର ଯାନ ଇତିହାସ ଆଣନ୍ତୁ।";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Teslaର ଅଫିସିଆଲ୍ ଷ୍ଟ୍ରିମିଂ API। ଏହା ଯାନକୁ ସିଧାସଳଖ କମାଣ୍ଡ ପଠାଇବା ସକ୍ଷମ କରେ।";
-"hub.OnboardingWindowController.752.1958" = "Legacy Token";
+"hub.OnboardingWindowController.752.1958" = "ମାଲିକ ସାଇନ୍ ଇନ୍";
 "hub.OnboardingWindowController.753.1959" = "Teslaରେ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ। Hub ନିଜର ଲଗଇନ୍ ରଖେ।";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet ଆପ୍ ତିଆରି କରନ୍ତୁ";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "କୀ ବାଛନ୍ତୁ…";
 "hub.OnboardingWindowController.888.1990" = "କେବଳ ଇତିହାସ। Hub Tesla ପ୍ରବେଶ ତଥ୍ୟ ଯାଞ୍ଚ କିମ୍ବା ଆମଦାନି କରିବ ନାହିଁ। ତଥ୍ୟ ସଂଗ୍ରହ ବନ୍ଦ ରହିବ। ଡାଟାବେସ୍ ସ୍କିମା ଯାଞ୍ଚ କରାଯାଇପାରେ; ଉତ୍ସ ଆପ୍ଲିକେସନ୍‌ର ସଂସ୍କରଣ ଅଜ୍ଞାତ ରହିବ।";
 "hub.OnboardingWindowController.891.1991" = "ସ୍ଥାନୀୟ PostgreSQL ଉତ୍ସ";
-"hub.OnboardingWindowController.895.1994" = "ଏହା v4.2-ସୁସଙ୍ଗତ ଡାଟାବେସ୍ ସ୍କିମା ବୋଲି ମୁଁ ସ୍ୱୀକାର କରୁଛି; ଏହା ଆପ୍‌ର ସଂସ୍କରଣର ପ୍ରମାଣ ନୁହେଁ";
 "hub.OnboardingWindowController.915.1997" = "ଉତ୍ସ ଆପ୍ଲିକେସନ୍ %1$@";
 "hub.OnboardingWindowController.927.2001" = "ଯାଞ୍ଚ ହେଉଛି…";
 "hub.OnboardingWindowController.935.2004" = "ସର୍ଭର ବଦଳାନ୍ତୁ";

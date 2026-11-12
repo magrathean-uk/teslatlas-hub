@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub je spreman";
 "hub.OnboardingWindowController.602.1926" = "Vaš vlastiti prikupljač Tesline telemetrije radi privatno na ovom Macu.";
 "hub.OnboardingWindowController.604.1927" = "Postavite novi Hub ili prenesite povijest iz izvorne aplikacije.";
-"hub.OnboardingWindowController.606.1928" = "Preporučujemo Fleet Telemetry. Naslijeđeni tokeni rade sa starijim postavkama.";
+"hub.OnboardingWindowController.606.1928" = "Za početak se prijavite svojim Tesla vlasničkim računom. Fleet Telemetry dostupan je ako ga više volite.";
 "hub.OnboardingWindowController.608.1929" = "Izradite aplikaciju Tesla Fleet, a zatim u nastavku zalijepite njezine vjerodajnice.";
 "hub.OnboardingWindowController.610.1930" = "Prijavite se na Teslu dok je otvoren prozor prikupljanja. Hub nikada ne prihvaća token.";
 "hub.OnboardingWindowController.612.1931" = "Povežite se s poslužiteljem izvorne aplikacije da biste uvezli njegovu povijest vozila.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Prenesite postojeću povijest vozila.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Službeni Teslin API za prijenos podataka uživo. Omogućuje slanje naredbi vozilu.";
-"hub.OnboardingWindowController.752.1958" = "Naslijeđeni token";
+"hub.OnboardingWindowController.752.1958" = "Prijava vlasnika";
 "hub.OnboardingWindowController.753.1959" = "Prijavite se na Teslu. Hub zadržava vlastitu prijavu.";
 "hub.OnboardingWindowController.760.1960" = "Izradi aplikaciju Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID klijenta";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Odaberi ključ…";
 "hub.OnboardingWindowController.888.1990" = "Samo povijest. Hub neće pregledati ni uvesti vjerodajnice za Teslu. Prikupljanje podataka ostaje isključeno. Može se provjeriti shema baze podataka; verzija izvorne aplikacije i dalje nije poznata.";
 "hub.OnboardingWindowController.891.1991" = "Lokalni izvor PostgreSQL";
-"hub.OnboardingWindowController.895.1994" = "Potvrđujem da je shema baze podataka kompatibilna s verzijom 4.2, ali to ne dokazuje verziju aplikacije";
 "hub.OnboardingWindowController.915.1997" = "Izvorna aplikacija %1$@";
 "hub.OnboardingWindowController.927.2001" = "Provjera…";
 "hub.OnboardingWindowController.935.2004" = "Promijeni poslužitelj";

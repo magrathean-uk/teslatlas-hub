@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub தயாராக உள்ளது";
 "hub.OnboardingWindowController.602.1926" = "இந்த Mac-இல் தனிப்பட்ட முறையில் இயங்கும் உங்களுக்கான Tesla டெலிமெட்ரி சேகரிப்பி.";
 "hub.OnboardingWindowController.604.1927" = "புதிய Hub-ஐ அமைக்கவும் அல்லது மூலப் பயன்பாட்டிலிருந்து உங்கள் வரலாற்றைக் கொண்டு வரவும்.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry பரிந்துரைக்கப்படுகிறது. பழைய அமைப்புகளிலும் பழைய டோக்கன்கள் செயல்படும்.";
+"hub.OnboardingWindowController.606.1928" = "தொடங்க உங்கள் Tesla உரிமையாளர் கணக்கில் உள்நுழையவும். விரும்பினால் Fleet Telemetry கிடைக்கும்.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet செயலியை உருவாக்கி, அதன் அணுகல் சான்றுகளை கீழே உள்ளிடவும்.";
 "hub.OnboardingWindowController.610.1930" = "சேகரிப்பு சாளரம் திறந்திருக்கும்போது Tesla-வில் உள்நுழையவும். Hub ஒருபோதும் டோக்கனை ஏற்காது.";
 "hub.OnboardingWindowController.612.1931" = "வாகன வரலாற்றை இறக்குமதி செய்ய உங்கள் மூலப் பயன்பாடு சேவையகத்துடன் இணைக்கவும்.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "உங்கள் ஏற்கனவே உள்ள வாகன வரலாற்றைக் கொண்டு வாருங்கள்.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla-வின் அதிகாரப்பூர்வ ஸ்ட்ரீமிங் API. நேரடி வாகனக் கட்டளைகளை இது வழங்குகிறது.";
-"hub.OnboardingWindowController.752.1958" = "பழைய டோக்கன்";
+"hub.OnboardingWindowController.752.1958" = "உரிமையாளர் உள்நுழைவு";
 "hub.OnboardingWindowController.753.1959" = "Tesla-வில் உள்நுழையவும். Hub தனக்கான உள்நுழைவை வைத்திருக்கும்.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet செயலியை உருவாக்கு";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "விசையைத் தேர்ந்தெடு…";
 "hub.OnboardingWindowController.888.1990" = "வரலாறு மட்டும். Hub, Tesla அணுகல் சான்றுகளை ஆய்வு செய்யாது; இறக்குமதியும் செய்யாது. தரவு சேகரிப்பு முடக்கப்பட்டே இருக்கும். தரவுத்தள ஸ்கீமாவைச் சரிபார்க்கலாம்; மூலப் பயன்பாட்டின் பதிப்பு தெரியாது.";
 "hub.OnboardingWindowController.891.1991" = "உள்ளூர் PostgreSQL மூலம்";
-"hub.OnboardingWindowController.895.1994" = "இது v4.2-உடன் இணக்கமான தரவுத்தள ஸ்கீமா என்பதை ஏற்கிறேன்; இது செயலியின் பதிப்புக்கான சான்று அல்ல";
 "hub.OnboardingWindowController.915.1997" = "மூலப் பயன்பாடு %1$@";
 "hub.OnboardingWindowController.927.2001" = "சரிபார்க்கிறது…";
 "hub.OnboardingWindowController.935.2004" = "சேவையகத்தை மாற்று";

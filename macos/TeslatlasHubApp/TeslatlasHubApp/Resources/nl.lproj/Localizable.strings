@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub is klaar";
 "hub.OnboardingWindowController.602.1926" = "Je eigen Tesla-telemetrieverzamelaar draait privé op deze Mac.";
 "hub.OnboardingWindowController.604.1927" = "Stel een nieuwe Hub in of importeer je geschiedenis vanuit de bronapplicatie.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry wordt aanbevolen. Legacy-tokens werken met oudere installaties.";
+"hub.OnboardingWindowController.606.1928" = "Meld je om te beginnen aan met je Tesla-eigenaarsaccount. Fleet Telemetry is beschikbaar als je dat liever gebruikt.";
 "hub.OnboardingWindowController.608.1929" = "Maak een Tesla Fleet-app aan en plak de bijbehorende toegangsgegevens hieronder.";
 "hub.OnboardingWindowController.610.1930" = "Meld je aan bij Tesla terwijl een verzamelvenster open is. Hub accepteert nooit een token.";
 "hub.OnboardingWindowController.612.1931" = "Verbind met je bronapplicatie-server om de voertuiggeschiedenis te importeren.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Importeer je bestaande voertuiggeschiedenis.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "De officiële streaming-API van Tesla. Hiermee kun je live opdrachten naar je voertuig sturen.";
-"hub.OnboardingWindowController.752.1958" = "Legacy-token";
+"hub.OnboardingWindowController.752.1958" = "Aanmelden als eigenaar";
 "hub.OnboardingWindowController.753.1959" = "Meld je aan bij Tesla. Hub houdt zijn eigen aanmelding.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet-app aanmaken";
 "hub.OnboardingWindowController.771.1964" = "Client-ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Sleutel kiezen…";
 "hub.OnboardingWindowController.888.1990" = "Alleen geschiedenis. De Hub leest geen Tesla-inloggegevens en importeert deze ook niet. Gegevensverzameling blijft uitgeschakeld. Het databaseschema kan worden gecontroleerd; de versie van de bronapplicatie blijft onbekend.";
 "hub.OnboardingWindowController.891.1991" = "Lokale PostgreSQL-bron";
-"hub.OnboardingWindowController.895.1994" = "Ik bevestig dat dit een databaseschema is dat compatibel is met v4.2; dit bewijst niet welke applicatieversie wordt gebruikt";
 "hub.OnboardingWindowController.915.1997" = "Bronapplicatie %1$@";
 "hub.OnboardingWindowController.927.2001" = "Controleren…";
 "hub.OnboardingWindowController.935.2004" = "Server wijzigen";

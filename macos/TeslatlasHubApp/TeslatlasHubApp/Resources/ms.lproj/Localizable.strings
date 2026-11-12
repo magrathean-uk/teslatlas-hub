@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub sedia";
 "hub.OnboardingWindowController.602.1926" = "Pengumpul telemetri Tesla milik anda sendiri, berjalan secara peribadi pada Mac ini.";
 "hub.OnboardingWindowController.604.1927" = "Sediakan Hub baharu atau pindahkan sejarah anda daripada aplikasi sumber.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry disyorkan. Token legasi berfungsi dengan persediaan yang lebih lama.";
+"hub.OnboardingWindowController.606.1928" = "Untuk bermula, log masuk dengan akaun pemilik Tesla anda. Fleet Telemetry tersedia jika anda lebih suka.";
 "hub.OnboardingWindowController.608.1929" = "Cipta aplikasi Tesla Fleet, kemudian tampal kredensialnya di bawah.";
 "hub.OnboardingWindowController.610.1930" = "Log masuk ke Tesla semasa tetingkap pengumpulan dibuka. Hub tidak pernah menerima token.";
 "hub.OnboardingWindowController.612.1931" = "Sambung ke pelayan aplikasi sumber untuk mengimport sejarah kenderaannya.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Pindahkan sejarah kenderaan sedia ada.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "API penstriman rasmi Tesla. Membolehkan arahan kenderaan masa nyata.";
-"hub.OnboardingWindowController.752.1958" = "Token Legasi";
+"hub.OnboardingWindowController.752.1958" = "Log masuk pemilik";
 "hub.OnboardingWindowController.753.1959" = "Log masuk ke Tesla. Hub mengekalkan log masuk sendiri.";
 "hub.OnboardingWindowController.760.1960" = "Cipta Aplikasi Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID Klien";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Pilih Kunci…";
 "hub.OnboardingWindowController.888.1990" = "Untuk sejarah sahaja. Hub tidak akan memeriksa atau mengimport kredensial Tesla. Pengumpulan kekal dimatikan. Skema pangkalan data boleh disemak; versi aplikasi sumber kekal tidak diketahui.";
 "hub.OnboardingWindowController.891.1991" = "Sumber PostgreSQL setempat";
-"hub.OnboardingWindowController.895.1994" = "Saya mengakui bahawa ini ialah skema pangkalan data yang serasi dengan v4.2, bukan bukti versi aplikasi.";
 "hub.OnboardingWindowController.915.1997" = "Aplikasi sumber %1$@";
 "hub.OnboardingWindowController.927.2001" = "Menyemak…";
 "hub.OnboardingWindowController.935.2004" = "Tukar Pelayan";

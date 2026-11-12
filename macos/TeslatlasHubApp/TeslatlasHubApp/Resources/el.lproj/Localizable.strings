@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Το Teslatlas Hub είναι έτοιμο";
 "hub.OnboardingWindowController.602.1926" = "Ο δικός σας συλλέκτης τηλεμετρίας Tesla, που εκτελείται ιδιωτικά σε αυτό το Mac.";
 "hub.OnboardingWindowController.604.1927" = "Ρυθμίστε ένα νέο Hub ή μεταφέρετε το ιστορικό σας από την εφαρμογή προέλευσης.";
-"hub.OnboardingWindowController.606.1928" = "Συνιστάται το Fleet Telemetry. Τα διακριτικά παλαιού τύπου λειτουργούν με παλαιότερες ρυθμίσεις.";
+"hub.OnboardingWindowController.606.1928" = "Για να ξεκινήσετε, συνδεθείτε με τον λογαριασμό ιδιοκτήτη σας στην Tesla. Το Fleet Telemetry είναι διαθέσιμο αν το προτιμάτε.";
 "hub.OnboardingWindowController.608.1929" = "Δημιουργήστε μια εφαρμογή Tesla Fleet και, στη συνέχεια, επικολλήστε παρακάτω τα διαπιστευτήριά της.";
 "hub.OnboardingWindowController.610.1930" = "Συνδεθείτε στην Tesla ενώ είναι ανοιχτό ένα παράθυρο συλλογής. Το Hub δεν δέχεται ποτέ διακριτικό.";
 "hub.OnboardingWindowController.612.1931" = "Συνδεθείτε με τον διακομιστή της εφαρμογής προέλευσης για να εισαγάγετε το ιστορικό των οχημάτων της.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Μεταφέρετε το υπάρχον ιστορικό οχημάτων σας.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Το επίσημο API συνεχούς ροής της Tesla. Επιτρέπει εντολές οχήματος σε πραγματικό χρόνο.";
-"hub.OnboardingWindowController.752.1958" = "Διακριτικό παλαιού τύπου";
+"hub.OnboardingWindowController.752.1958" = "Σύνδεση ιδιοκτήτη";
 "hub.OnboardingWindowController.753.1959" = "Συνδεθείτε στην Tesla. Το Hub διατηρεί τη δική του σύνδεση.";
 "hub.OnboardingWindowController.760.1960" = "Δημιουργία εφαρμογής Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "Αναγνωριστικό πελάτη";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Επιλογή κλειδιού…";
 "hub.OnboardingWindowController.888.1990" = "Μόνο ιστορικό. Το Hub δεν θα ελέγξει ούτε θα εισαγάγει διαπιστευτήρια Tesla. Η συλλογή παραμένει απενεργοποιημένη. Μπορεί να ελεγχθεί το σχήμα της βάσης δεδομένων· η έκδοση της εφαρμογής προέλευσης παραμένει άγνωστη.";
 "hub.OnboardingWindowController.891.1991" = "Τοπική πηγή PostgreSQL";
-"hub.OnboardingWindowController.895.1994" = "Αναγνωρίζω ότι πρόκειται για σχήμα βάσης δεδομένων συμβατό με την έκδοση 4.2 και όχι για απόδειξη της έκδοσης της εφαρμογής";
 "hub.OnboardingWindowController.915.1997" = "Εφαρμογή προέλευσης %1$@";
 "hub.OnboardingWindowController.927.2001" = "Έλεγχος…";
 "hub.OnboardingWindowController.935.2004" = "Αλλαγή διακομιστή";

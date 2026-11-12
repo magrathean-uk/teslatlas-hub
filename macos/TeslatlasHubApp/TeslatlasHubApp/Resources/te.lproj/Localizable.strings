@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub సిద్ధంగా ఉంది";
 "hub.OnboardingWindowController.602.1926" = "మీ సొంత Tesla టెలిమెట్రీ సేకరణ సేవ; ఈ Macలో ప్రైవేట్‌గా నడుస్తుంది.";
 "hub.OnboardingWindowController.604.1927" = "కొత్త Hubను సెటప్ చేయండి లేదా మూల అనువర్తనం నుంచి మీ చరిత్రను తీసుకురండి.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry సిఫార్సు చేయబడింది. లెగసీ టోకెన్‌లు పాత సెటప్‌లతో పనిచేస్తాయి.";
+"hub.OnboardingWindowController.606.1928" = "ప్రారంభించడానికి మీ Tesla యజమాని ఖాతాతో సైన్ ఇన్ చేయండి. మీరు కోరుకుంటే Fleet Telemetry అందుబాటులో ఉంది.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet అప్లికేషన్‌ను సృష్టించి, దాని ప్రవేశ వివరాలను క్రింద అతికించండి.";
 "hub.OnboardingWindowController.610.1930" = "సేకరణ విండో తెరిచి ఉన్నప్పుడు Teslaతో సైన్ ఇన్ చేయండి. Hub ఎప్పుడూ టోకెన్‌ను అంగీకరించదు.";
 "hub.OnboardingWindowController.612.1931" = "వాహన చరిత్రను దిగుమతి చేయడానికి మీ మూల అనువర్తనం సర్వర్‌కు కనెక్ట్ చేయండి.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "మీ ప్రస్తుత వాహన చరిత్రను తీసుకురండి.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla అధికారిక స్ట్రీమింగ్ API. ఇది లైవ్ వాహన ఆదేశాలను అందుబాటులోకి తెస్తుంది.";
-"hub.OnboardingWindowController.752.1958" = "లెగసీ టోకెన్";
+"hub.OnboardingWindowController.752.1958" = "యజమాని సైన్ ఇన్";
 "hub.OnboardingWindowController.753.1959" = "Teslaతో సైన్ ఇన్ చేయండి. Hub తన సొంత లాగిన్‌ను ఉంచుకుంటుంది.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet యాప్‌ను సృష్టించండి";
 "hub.OnboardingWindowController.771.1964" = "క్లయింట్ ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "కీని ఎంచుకోండి…";
 "hub.OnboardingWindowController.888.1990" = "చరిత్ర మాత్రమే. Hub Tesla ప్రవేశ వివరాలను తనిఖీ చేయదు లేదా దిగుమతి చేయదు. డేటా సేకరణ నిలిపివేయబడుతుంది. డేటాబేస్ స్కీమాను తనిఖీ చేయవచ్చు; మూల అనువర్తనం వెర్షన్ మాత్రం తెలియదు.";
 "hub.OnboardingWindowController.891.1991" = "స్థానిక PostgreSQL మూలం";
-"hub.OnboardingWindowController.895.1994" = "ఇది v4.2కు అనుకూలమైన డేటాబేస్ స్కీమా మాత్రమే; అప్లికేషన్ వెర్షన్‌కు రుజువు కాదని అంగీకరిస్తున్నాను";
 "hub.OnboardingWindowController.915.1997" = "మూల అనువర్తనం %1$@";
 "hub.OnboardingWindowController.927.2001" = "తనిఖీ చేస్తోంది…";
 "hub.OnboardingWindowController.935.2004" = "సర్వర్‌ను మార్చండి";

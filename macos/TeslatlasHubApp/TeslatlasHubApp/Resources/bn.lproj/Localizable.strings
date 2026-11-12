@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub প্রস্তুত";
 "hub.OnboardingWindowController.602.1926" = "এই Mac-এ ব্যক্তিগতভাবে চলা আপনার নিজস্ব Tesla টেলিমেট্রি সংগ্রাহক।";
 "hub.OnboardingWindowController.604.1927" = "নতুন Hub সেট আপ করুন অথবা উৎস অ্যাপ্লিকেশন থেকে আপনার ইতিহাস নিয়ে আসুন।";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry ব্যবহারের পরামর্শ দেওয়া হয়। লেগ্যাসি টোকেন পুরোনো সেটআপে কাজ করে।";
+"hub.OnboardingWindowController.606.1928" = "শুরু করতে আপনার Tesla মালিকের অ্যাকাউন্ট দিয়ে সাইন ইন করুন। আপনি চাইলে Fleet Telemetry ব্যবহার করা যাবে।";
 "hub.OnboardingWindowController.608.1929" = "একটি Tesla Fleet অ্যাপ্লিকেশন তৈরি করুন, তারপর নিচে এর পরিচয়পত্র পেস্ট করুন।";
 "hub.OnboardingWindowController.610.1930" = "সংগ্রহ উইন্ডো খোলা থাকার সময় Tesla দিয়ে সাইন ইন করুন। Hub কখনও টোকেন গ্রহণ করে না।";
 "hub.OnboardingWindowController.612.1931" = "গাড়ির ইতিহাস ইমপোর্ট করতে আপনার উৎস অ্যাপ্লিকেশন সার্ভারে সংযুক্ত করুন।";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "আপনার বিদ্যমান গাড়ির ইতিহাস নিয়ে আসুন।";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla-র অফিসিয়াল স্ট্রিমিং API। এতে লাইভ গাড়ির কমান্ড পাঠানো যায়।";
-"hub.OnboardingWindowController.752.1958" = "লেগ্যাসি টোকেন";
+"hub.OnboardingWindowController.752.1958" = "মালিকের সাইন-ইন";
 "hub.OnboardingWindowController.753.1959" = "Tesla দিয়ে সাইন ইন করুন। Hub নিজস্ব লগইন রাখে।";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet অ্যাপ তৈরি করুন";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "কী বেছে নিন…";
 "hub.OnboardingWindowController.888.1990" = "শুধু ইতিহাস। Hub Tesla-র প্রবেশতথ্য পরীক্ষা বা ইমপোর্ট করবে না। ডেটা সংগ্রহ বন্ধ থাকবে। ডেটাবেসের স্কিমা যাচাই করা যায়; উৎস অ্যাপ্লিকেশনের সংস্করণ অজানা থাকবে।";
 "hub.OnboardingWindowController.891.1991" = "স্থানীয় PostgreSQL উৎস";
-"hub.OnboardingWindowController.895.1994" = "আমি স্বীকার করছি, এটি v4.2-সামঞ্জস্যপূর্ণ ডেটাবেস স্কিমা; অ্যাপ্লিকেশনের সংস্করণের প্রমাণ নয়";
 "hub.OnboardingWindowController.915.1997" = "উৎস অ্যাপ্লিকেশন %1$@";
 "hub.OnboardingWindowController.927.2001" = "যাচাই হচ্ছে…";
 "hub.OnboardingWindowController.935.2004" = "সার্ভার বদলান";

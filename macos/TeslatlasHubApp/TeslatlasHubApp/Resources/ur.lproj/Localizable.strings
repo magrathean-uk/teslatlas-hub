@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub تیار ہے";
 "hub.OnboardingWindowController.602.1926" = "آپ کا اپنا Tesla ٹیلی میٹری کلیکٹر، جو اسی Mac پر نجی طور پر چلتا ہے۔";
 "hub.OnboardingWindowController.604.1927" = "نیا Hub سیٹ اپ کریں یا ماخذ ایپلی کیشن سے اپنی ہسٹری منتقل کریں۔";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry تجویز کیا جاتا ہے۔ Legacy ٹوکن پرانے سیٹ اپس کے ساتھ کام کرتے ہیں۔";
+"hub.OnboardingWindowController.606.1928" = "شروع کرنے کے لیے اپنے Tesla مالک اکاؤنٹ سے سائن اِن کریں۔ اگر آپ چاہیں تو Fleet Telemetry دستیاب ہے۔";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet ایپلیکیشن بنائیں، پھر اس کی اسناد نیچے پیسٹ کریں۔";
 "hub.OnboardingWindowController.610.1930" = "جمع آوری ونڈو کھلی ہونے کے دوران Tesla کے ساتھ سائن اِن کریں۔ Hub کبھی ٹوکن قبول نہیں کرتا۔";
 "hub.OnboardingWindowController.612.1931" = "گاڑیوں کی ہسٹری درآمد کرنے کے لیے اپنے ماخذ ایپلی کیشن کے سرور سے منسلک ہوں۔";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "اپنی موجودہ گاڑیوں کی ہسٹری منتقل کریں۔";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla کا سرکاری streaming API۔ اس سے گاڑی کے لائیو کمانڈز دستیاب ہوتے ہیں۔";
-"hub.OnboardingWindowController.752.1958" = "Legacy Token";
+"hub.OnboardingWindowController.752.1958" = "مالک سائن اِن";
 "hub.OnboardingWindowController.753.1959" = "Tesla کے ساتھ سائن اِن کریں۔ Hub اپنا لاگ اِن خود رکھتا ہے۔";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet ایپ بنائیں";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "کلید منتخب کریں…";
 "hub.OnboardingWindowController.888.1990" = "صرف ہسٹری۔ Hub Tesla اسناد نہ دیکھے گا اور نہ درآمد کرے گا۔ ڈیٹا جمع کرنا بند رہے گا۔ ڈیٹا بیس اسکیما کی جانچ ہو سکتی ہے؛ ماخذ ایپلی کیشن کا ورژن نامعلوم رہے گا۔";
 "hub.OnboardingWindowController.891.1991" = "مقامی PostgreSQL ماخذ";
-"hub.OnboardingWindowController.895.1994" = "میں تسلیم کرتا ہوں کہ یہ v4.2 کے ساتھ مطابقت رکھنے والا ڈیٹا بیس اسکیما ہے، ایپلیکیشن ورژن کا ثبوت نہیں";
 "hub.OnboardingWindowController.915.1997" = "ماخذ ایپلی کیشن %1$@";
 "hub.OnboardingWindowController.927.2001" = "جانچ ہو رہی ہے…";
 "hub.OnboardingWindowController.935.2004" = "سرور تبدیل کریں";

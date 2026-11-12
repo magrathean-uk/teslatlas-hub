@@ -94,7 +94,7 @@ enum HubOnboardingRoute: Equatable {
 struct HubOnboardingState: Equatable {
     var route: HubOnboardingRoute = .welcome
     var path: HubOnboardingPath = .newInstallation
-    var provider: HubOnboardingProvider = .fleet
+    var provider: HubOnboardingProvider = .legacy
 
     var step: Int {
         switch route {
@@ -634,7 +634,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case .choose:
             return HubL10n.text("hub.OnboardingWindowController.604.1927", fallback: "Set up a fresh Hub or bring your history over from the source application.")
         case .provider:
-            return HubL10n.text("hub.OnboardingWindowController.606.1928", fallback: "Fleet Telemetry is recommended. Legacy tokens work with older setups.")
+            return HubL10n.text("hub.OnboardingWindowController.606.1928", fallback: "Sign in with your Tesla owner account to start. Fleet Telemetry is available if you prefer it.")
         case .fleet:
             return HubL10n.text("hub.OnboardingWindowController.608.1929", fallback: "Create a Tesla Fleet application, then paste its credentials below.")
         case .legacy:
@@ -776,15 +776,16 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func providerBody() -> NSView {
+        // The owner sign-in is offered first and is the default; Fleet stays one click away.
+        let legacy = choiceButton(title: HubL10n.text("hub.OnboardingWindowController.752.1958", fallback: "Owner Sign-in"),
+                                  subtitle: HubL10n.text("hub.OnboardingWindowController.753.1959", fallback: "Sign in with Tesla. Hub keeps its own login."),
+                                  selected: state.provider == .legacy,
+                                  action: #selector(selectLegacy))
         let fleet = choiceButton(title: HubL10n.text("hub.OnboardingWindowController.748.1956", fallback: "Fleet Telemetry"),
                                  subtitle: HubL10n.text("hub.OnboardingWindowController.749.1957", fallback: "Tesla's official streaming API. Enables live vehicle commands."),
                                  selected: state.provider == .fleet,
                                  action: #selector(selectFleet))
-        let legacy = choiceButton(title: HubL10n.text("hub.OnboardingWindowController.752.1958", fallback: "Legacy Token"),
-                                  subtitle: HubL10n.text("hub.OnboardingWindowController.753.1959", fallback: "Sign in with Tesla. Hub keeps its own login."),
-                                  selected: state.provider == .legacy,
-                                  action: #selector(selectLegacy))
-        return verticalChoices([fleet, legacy])
+        return verticalChoices([legacy, fleet])
     }
 
     private func fleetBody() -> NSView {

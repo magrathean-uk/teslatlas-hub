@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hubの準備ができました";
 "hub.OnboardingWindowController.602.1926" = "このMac上で非公開に稼働する、あなた専用のTeslaテレメトリー収集サービスです。";
 "hub.OnboardingWindowController.604.1927" = "新しいHubをセットアップするか、移行元アプリケーションから履歴を移行してください。";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetryを推奨します。レガシートークンは旧式のセットアップで使用できます。";
+"hub.OnboardingWindowController.606.1928" = "はじめに、Teslaのオーナーアカウントでサインインしてください。ご希望であればFleet Telemetryも利用できます。";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleetアプリケーションを作成し、その認証情報を下に貼り付けてください。";
 "hub.OnboardingWindowController.610.1930" = "データ収集ウィンドウが開いている間に、Teslaでサインインしてください。Hubはトークンを一切受け付けません。";
 "hub.OnboardingWindowController.612.1931" = "車両履歴をインポートするには、移行元アプリケーションのサーバーに接続してください。";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "既存の車両履歴を移行します。";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Teslaの公式ストリーミングAPIです。リアルタイムの車両コマンドを利用できます。";
-"hub.OnboardingWindowController.752.1958" = "レガシートークン";
+"hub.OnboardingWindowController.752.1958" = "オーナーとしてサインイン";
 "hub.OnboardingWindowController.753.1959" = "Teslaでサインインしてください。Hubは独自のログインを保持します。";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleetアプリを作成";
 "hub.OnboardingWindowController.771.1964" = "クライアントID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "キーを選択…";
 "hub.OnboardingWindowController.888.1990" = "履歴専用です。HubはTesla認証情報を確認もインポートもしません。データ収集は停止したままです。データベーススキーマは確認できますが、移行元アプリケーションのバージョンは不明のままです。";
 "hub.OnboardingWindowController.891.1991" = "ローカルPostgreSQLソース";
-"hub.OnboardingWindowController.895.1994" = "これはv4.2互換のデータベーススキーマであり、アプリケーションのバージョンを証明するものではないことを確認しました";
 "hub.OnboardingWindowController.915.1997" = "移行元アプリケーション %1$@";
 "hub.OnboardingWindowController.927.2001" = "確認中…";
 "hub.OnboardingWindowController.935.2004" = "サーバーを変更";

@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub 已就緒";
 "hub.OnboardingWindowController.602.1926" = "您專屬的 Tesla 遙測資料收集器，在這部 Mac 上私下執行。";
 "hub.OnboardingWindowController.604.1927" = "設定全新的 Hub，或將您的歷史記錄從來源應用程式匯入。";
-"hub.OnboardingWindowController.606.1928" = "建議使用 Fleet Telemetry。舊式 Token 可與較舊的設定搭配使用。";
+"hub.OnboardingWindowController.606.1928" = "請先使用 Tesla 車主帳戶登入。如果你較喜歡，亦可使用 Fleet Telemetry。";
 "hub.OnboardingWindowController.608.1929" = "建立 Tesla Fleet 應用程式，然後在下方貼上其憑證。";
 "hub.OnboardingWindowController.610.1930" = "請在收集視窗開啟時使用 Tesla 帳戶登入。Hub 絕不接受 Token。";
 "hub.OnboardingWindowController.612.1931" = "連接來源應用程式伺服器以匯入其中的車輛歷史記錄。";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "匯入您現有的車輛歷史記錄。";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla 官方串流 API，可啟用即時車輛指令。";
-"hub.OnboardingWindowController.752.1958" = "舊式 Token";
+"hub.OnboardingWindowController.752.1958" = "車主登入";
 "hub.OnboardingWindowController.753.1959" = "請使用 Tesla 帳戶登入。Hub 保留自己的登入。";
 "hub.OnboardingWindowController.760.1960" = "建立 Tesla Fleet 應用程式";
 "hub.OnboardingWindowController.771.1964" = "用戶端 ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "選擇金鑰…";
 "hub.OnboardingWindowController.888.1990" = "僅供歷史記錄使用。Hub 不會檢視或匯入 Tesla 憑證。資料收集會保持停用。可檢查資料庫結構描述；來源應用程式版本仍然未知。";
 "hub.OnboardingWindowController.891.1991" = "本機 PostgreSQL 資料來源";
-"hub.OnboardingWindowController.895.1994" = "我明白此資料庫結構描述與 v4.2 相容，但這並不能證明應用程式版本";
 "hub.OnboardingWindowController.915.1997" = "來源應用程式 %1$@";
 "hub.OnboardingWindowController.927.2001" = "正在檢查…";
 "hub.OnboardingWindowController.935.2004" = "更改伺服器";

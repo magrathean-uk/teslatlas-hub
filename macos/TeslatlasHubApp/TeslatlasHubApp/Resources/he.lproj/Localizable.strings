@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub מוכן";
 "hub.OnboardingWindowController.602.1926" = "אוסף נתוני טלמטריה של Tesla שפועל באופן פרטי ב-Mac הזה.";
 "hub.OnboardingWindowController.604.1927" = "הגדירו Hub חדש או העבירו אליו את ההיסטוריה שלכם מיישום המקור.";
-"hub.OnboardingWindowController.606.1928" = "מומלץ להשתמש ב-Fleet Telemetry. אסימוני Legacy פועלים בהגדרות ישנות יותר.";
+"hub.OnboardingWindowController.606.1928" = "כדי להתחיל, התחברו עם חשבון הבעלים שלכם ב-Tesla. Fleet Telemetry זמין אם תעדיפו אותו.";
 "hub.OnboardingWindowController.608.1929" = "צרו יישום Tesla Fleet והדביקו את פרטי ההתחברות שלו למטה.";
 "hub.OnboardingWindowController.610.1930" = "התחברו ל-Tesla כשחלון איסוף פתוח. Hub לעולם אינו מקבל אסימון.";
 "hub.OnboardingWindowController.612.1931" = "התחברו לשרת יישום המקור כדי לייבא את היסטוריית הרכב שלו.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "העבירו את היסטוריית הרכב הקיימת שלכם.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "ממשק הזרמת הנתונים הרשמי של Tesla. מאפשר פקודות לרכב בזמן אמת.";
-"hub.OnboardingWindowController.752.1958" = "אסימון Legacy";
+"hub.OnboardingWindowController.752.1958" = "התחברות הבעלים";
 "hub.OnboardingWindowController.753.1959" = "התחברו ל-Tesla. Hub שומר על ההתחברות שלו.";
 "hub.OnboardingWindowController.760.1960" = "צרו יישום Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "מזהה לקוח";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "בחירת מפתח…";
 "hub.OnboardingWindowController.888.1990" = "היסטוריה בלבד. ה-Hub לא יבדוק או ייבא פרטי התחברות של Tesla. האיסוף יישאר מושבת. אפשר לבדוק את סכמת מסד הנתונים; גרסת יישום המקור תישאר לא ידועה.";
 "hub.OnboardingWindowController.891.1991" = "מקור PostgreSQL מקומי";
-"hub.OnboardingWindowController.895.1994" = "אני מאשר שזו סכמת מסד נתונים התואמת ל-v4.2, ולא הוכחה לגרסת היישום";
 "hub.OnboardingWindowController.915.1997" = "יישום המקור %1$@";
 "hub.OnboardingWindowController.927.2001" = "בודק…";
 "hub.OnboardingWindowController.935.2004" = "שינוי שרת";

@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub je pripravený";
 "hub.OnboardingWindowController.602.1926" = "Váš vlastný zberač telemetrie Tesla, ktorý beží súkromne na tomto Macu.";
 "hub.OnboardingWindowController.604.1927" = "Nastavte nový Hub alebo preneste svoju históriu zo zdrojovej aplikácie.";
-"hub.OnboardingWindowController.606.1928" = "Odporúčame Fleet Telemetry. Staršie tokeny fungujú v starších konfiguráciách.";
+"hub.OnboardingWindowController.606.1928" = "Začnite prihlásením do účtu majiteľa Tesly. Fleet Telemetry je k dispozícii, ak ho uprednostňujete.";
 "hub.OnboardingWindowController.608.1929" = "Vytvorte aplikáciu Tesla Fleet a nižšie vložte jej prihlasovacie údaje.";
 "hub.OnboardingWindowController.610.1930" = "Prihláste sa cez Teslu, kým je otvorené okno zberu. Hub nikdy neprijíma token.";
 "hub.OnboardingWindowController.612.1931" = "Pripojte sa k serveru zdrojovej aplikácie a importujte históriu vozidla.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Preneste existujúcu históriu vozidla.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Oficiálne streamovacie API Tesly. Umožňuje odosielať príkazy vozidlu v reálnom čase.";
-"hub.OnboardingWindowController.752.1958" = "Starší token";
+"hub.OnboardingWindowController.752.1958" = "Prihlásenie majiteľa";
 "hub.OnboardingWindowController.753.1959" = "Prihláste sa cez Teslu. Hub si ponecháva vlastné prihlásenie.";
 "hub.OnboardingWindowController.760.1960" = "Vytvoriť aplikáciu Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID klienta";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Vybrať kľúč…";
 "hub.OnboardingWindowController.888.1990" = "Iba história. Hub nebude kontrolovať ani importovať prihlasovacie údaje Tesly. Zber zostane vypnutý. Schému databázy možno skontrolovať; verzia zdrojovej aplikácie zostane neznáma.";
 "hub.OnboardingWindowController.891.1991" = "Miestny zdroj PostgreSQL";
-"hub.OnboardingWindowController.895.1994" = "Potvrdzujem, že ide o schému databázy kompatibilnú s verziou 4.2, čo však nedokazuje verziu aplikácie.";
 "hub.OnboardingWindowController.915.1997" = "Zdrojová aplikácia %1$@";
 "hub.OnboardingWindowController.927.2001" = "Kontroluje sa…";
 "hub.OnboardingWindowController.935.2004" = "Zmeniť server";

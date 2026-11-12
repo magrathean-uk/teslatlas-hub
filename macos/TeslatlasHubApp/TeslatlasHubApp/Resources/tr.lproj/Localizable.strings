@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub hazır";
 "hub.OnboardingWindowController.602.1926" = "Bu Mac'te size özel çalışan Tesla telemetri toplayıcınız.";
 "hub.OnboardingWindowController.604.1927" = "Yeni bir Hub kurun veya kaynak uygulama geçmişinizi aktarın.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry önerilir. Eski nesil belirteçler önceki kurulumlarda çalışır.";
+"hub.OnboardingWindowController.606.1928" = "Başlamak için Tesla sahibi hesabınızla oturum açın. Tercih ederseniz Fleet Telemetry de kullanılabilir.";
 "hub.OnboardingWindowController.608.1929" = "Bir Tesla Fleet uygulaması oluşturun, ardından kimlik bilgilerini aşağıya yapıştırın.";
 "hub.OnboardingWindowController.610.1930" = "Bir toplama penceresi açıkken Tesla’da oturum açın. Hub hiçbir zaman belirteç kabul etmez.";
 "hub.OnboardingWindowController.612.1931" = "Araç geçmişini içe aktarmak için kaynak uygulama sunucunuza bağlanın.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Mevcut araç geçmişinizi aktarın.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla'nın resmî akış API'si. Araçlara canlı komutlar göndermeyi sağlar.";
-"hub.OnboardingWindowController.752.1958" = "Eski Nesil Belirteç";
+"hub.OnboardingWindowController.752.1958" = "Sahip Girişi";
 "hub.OnboardingWindowController.753.1959" = "Tesla’da oturum açın. Hub kendi oturum açma bilgilerini korur.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet Uygulaması Oluştur";
 "hub.OnboardingWindowController.771.1964" = "İstemci Kimliği";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Anahtar Seç…";
 "hub.OnboardingWindowController.888.1990" = "Yalnızca geçmiş modu. Hub Tesla kimlik bilgilerini incelemez veya içe aktarmaz. Veri toplama kapalı kalır. Veritabanı şeması denetlenebilir; kaynak uygulamanın sürümü bilinmez.";
 "hub.OnboardingWindowController.891.1991" = "Yerel PostgreSQL kaynağı";
-"hub.OnboardingWindowController.895.1994" = "Bu veritabanı şemasının v4.2 ile uyumlu olduğunu, ancak bunun uygulama sürümünü kanıtlamadığını kabul ediyorum";
 "hub.OnboardingWindowController.915.1997" = "Kaynak uygulama %1$@";
 "hub.OnboardingWindowController.927.2001" = "Denetleniyor…";
 "hub.OnboardingWindowController.935.2004" = "Sunucuyu Değiştir";

@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "A Teslatlas Hub használatra kész";
 "hub.OnboardingWindowController.602.1926" = "Saját Tesla-telemetria-adatgyűjtőd, amely privát módon ezen a Macen fut.";
 "hub.OnboardingWindowController.604.1927" = "Állíts be egy új Hubot, vagy hozd át a forrásalkalmazásból az előzményeket.";
-"hub.OnboardingWindowController.606.1928" = "A Fleet Telemetryt javasoljuk. A Legacy tokenek régebbi beállításokkal működnek.";
+"hub.OnboardingWindowController.606.1928" = "A kezdéshez jelentkezz be a Tesla tulajdonosi fiókoddal. A Fleet Telemetry is elérhető, ha azt szeretnéd.";
 "hub.OnboardingWindowController.608.1929" = "Hozz létre egy Tesla Fleet-alkalmazást, majd illeszd be alább a hitelesítő adatait.";
 "hub.OnboardingWindowController.610.1930" = "Jelentkezz be a Teslával, amíg egy gyűjtési ablak nyitva van. A Hub soha nem fogad el tokent.";
 "hub.OnboardingWindowController.612.1931" = "Csatlakozz a forrásalkalmazás-kiszolgálóhoz a járműelőzmények importálásához.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Hozd át a meglévő járműelőzményeidet.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "A Tesla hivatalos adatfolyam-API-ja. Lehetővé teszi az élő járműparancsokat.";
-"hub.OnboardingWindowController.752.1958" = "Legacy Token";
+"hub.OnboardingWindowController.752.1958" = "Tulajdonosi bejelentkezés";
 "hub.OnboardingWindowController.753.1959" = "Jelentkezz be a Teslával. A Hub megtartja a saját bejelentkezését.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet-alkalmazás létrehozása";
 "hub.OnboardingWindowController.771.1964" = "Ügyfélazonosító";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Kulcs kiválasztása…";
 "hub.OnboardingWindowController.888.1990" = "Csak előzmények. A Hub nem vizsgálja meg és nem importálja a Tesla hitelesítő adatait. Az adatgyűjtés kikapcsolva marad. Az adatbázisséma ellenőrizhető; a forrásalkalmazás verziója továbbra sem ismert.";
 "hub.OnboardingWindowController.891.1991" = "Helyi PostgreSQL-forrás";
-"hub.OnboardingWindowController.895.1994" = "Tudomásul veszem, hogy ez egy v4.2-kompatibilis adatbázisséma, nem pedig az alkalmazás verziójának bizonyítéka.";
 "hub.OnboardingWindowController.915.1997" = "Forrásalkalmazás %1$@";
 "hub.OnboardingWindowController.927.2001" = "Ellenőrzés…";
 "hub.OnboardingWindowController.935.2004" = "Kiszolgáló módosítása";

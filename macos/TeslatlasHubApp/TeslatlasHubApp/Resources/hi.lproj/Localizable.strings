@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub तैयार है";
 "hub.OnboardingWindowController.602.1926" = "आपका अपना Tesla टेलीमेट्री कलेक्टर, इसी Mac पर निजी तौर पर चल रहा है।";
 "hub.OnboardingWindowController.604.1927" = "नया Hub सेट अप करें या स्रोत अनुप्रयोग से अपना इतिहास लाएँ।";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry अनुशंसित है। पुराने सेटअप में Legacy टोकन काम करते हैं।";
+"hub.OnboardingWindowController.606.1928" = "शुरू करने के लिए अपने Tesla मालिक खाते से साइन इन करें। अगर आप चाहें, तो Fleet Telemetry उपलब्ध है।";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet ऐप्लिकेशन बनाएँ, फिर नीचे उसके क्रेडेंशियल चिपकाएँ।";
 "hub.OnboardingWindowController.610.1930" = "संग्रह विंडो खुली होने पर Tesla में साइन इन करें। Hub कभी टोकन स्वीकार नहीं करता।";
 "hub.OnboardingWindowController.612.1931" = "वाहन इतिहास इंपोर्ट करने के लिए अपने स्रोत अनुप्रयोग सर्वर से कनेक्ट करें।";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "अपना मौजूदा वाहन इतिहास लाएँ।";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla का आधिकारिक स्ट्रीमिंग API। इससे लाइव वाहन कमांड उपलब्ध होती हैं।";
-"hub.OnboardingWindowController.752.1958" = "Legacy टोकन";
+"hub.OnboardingWindowController.752.1958" = "मालिक साइन-इन";
 "hub.OnboardingWindowController.753.1959" = "Tesla में साइन इन करें। Hub अपना अलग लॉगिन रखता है।";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet ऐप बनाएँ";
 "hub.OnboardingWindowController.771.1964" = "क्लाइंट ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "कुंजी चुनें…";
 "hub.OnboardingWindowController.888.1990" = "केवल इतिहास। Hub Tesla क्रेडेंशियल की जाँच या इंपोर्ट नहीं करेगा। डेटा संग्रह बंद रहेगा। डेटाबेस स्कीमा जाँचा जा सकता है; स्रोत अनुप्रयोग का संस्करण अज्ञात रहेगा।";
 "hub.OnboardingWindowController.891.1991" = "स्थानीय PostgreSQL स्रोत";
-"hub.OnboardingWindowController.895.1994" = "मेरी समझ है कि यह v4.2-संगत डेटाबेस स्कीमा है; इससे ऐप्लिकेशन संस्करण साबित नहीं होता";
 "hub.OnboardingWindowController.915.1997" = "स्रोत अनुप्रयोग %1$@";
 "hub.OnboardingWindowController.927.2001" = "जाँच हो रही है…";
 "hub.OnboardingWindowController.935.2004" = "सर्वर बदलें";

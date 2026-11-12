@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub готовий";
 "hub.OnboardingWindowController.602.1926" = "Ваш власний збирач телеметрії Tesla, що приватно працює на цьому Mac.";
 "hub.OnboardingWindowController.604.1927" = "Налаштуйте новий Hub або перенесіть до нього історію з вихідної програми.";
-"hub.OnboardingWindowController.606.1928" = "Рекомендовано Fleet Telemetry. Токени застарілого типу працюють зі старими конфігураціями.";
+"hub.OnboardingWindowController.606.1928" = "Щоб почати, увійдіть в обліковий запис власника Tesla. Fleet Telemetry доступний, якщо ви надаєте йому перевагу.";
 "hub.OnboardingWindowController.608.1929" = "Створіть застосунок Tesla Fleet, а потім вставте нижче його облікові дані.";
 "hub.OnboardingWindowController.610.1930" = "Увійдіть через Tesla, поки відкрито вікно збору даних. Hub ніколи не приймає токен.";
 "hub.OnboardingWindowController.612.1931" = "Підключіться до сервера вихідної програми, щоб імпортувати історію автомобіля.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Перенесіть наявну історію автомобіля.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Офіційний потоковий API Tesla. Дає змогу надсилати команди автомобілю.";
-"hub.OnboardingWindowController.752.1958" = "Застарілий токен";
+"hub.OnboardingWindowController.752.1958" = "Вхід власника";
 "hub.OnboardingWindowController.753.1959" = "Увійдіть через Tesla. Hub зберігає власний вхід.";
 "hub.OnboardingWindowController.760.1960" = "Створити застосунок Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "Ідентифікатор клієнта";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Вибрати ключ…";
 "hub.OnboardingWindowController.888.1990" = "Лише історія. Hub не перевірятиме й не імпортуватиме облікові дані Tesla. Збір даних залишиться вимкненим. Схему бази можна перевірити; версія вихідної програми залишиться невідомою.";
 "hub.OnboardingWindowController.891.1991" = "Джерело локальної бази PostgreSQL";
-"hub.OnboardingWindowController.895.1994" = "Підтверджую, що схема цієї бази даних сумісна з версією 4.2; це не підтверджує версію застосунку.";
 "hub.OnboardingWindowController.915.1997" = "Вихідна програма %1$@";
 "hub.OnboardingWindowController.927.2001" = "Перевірка…";
 "hub.OnboardingWindowController.935.2004" = "Змінити сервер";

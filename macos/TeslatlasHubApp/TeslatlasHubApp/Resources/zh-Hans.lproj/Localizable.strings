@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub 已就绪";
 "hub.OnboardingWindowController.602.1926" = "在此 Mac 上私密运行的专属 Tesla 遥测采集器。";
 "hub.OnboardingWindowController.604.1927" = "全新设置 Hub，或从源应用程序导入现有历史记录。";
-"hub.OnboardingWindowController.606.1928" = "推荐使用 Fleet Telemetry。Legacy 令牌适用于较旧的设置。";
+"hub.OnboardingWindowController.606.1928" = "请先使用 Tesla 车主账户登录。如果你更喜欢，也可以使用 Fleet Telemetry。";
 "hub.OnboardingWindowController.608.1929" = "创建 Tesla Fleet 应用，然后在下方粘贴其凭据。";
 "hub.OnboardingWindowController.610.1930" = "请在采集窗口打开时使用 Tesla 登录。Hub 绝不接受令牌。";
 "hub.OnboardingWindowController.612.1931" = "连接到源应用程序服务器以导入其中的车辆历史记录。";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "导入现有车辆历史记录。";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla 官方的流式 API，可启用实时车辆指令。";
-"hub.OnboardingWindowController.752.1958" = "Legacy 令牌";
+"hub.OnboardingWindowController.752.1958" = "车主登录";
 "hub.OnboardingWindowController.753.1959" = "请使用 Tesla 登录。Hub 保留自己的登录。";
 "hub.OnboardingWindowController.760.1960" = "创建 Tesla Fleet 应用";
 "hub.OnboardingWindowController.771.1964" = "客户端 ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "选择密钥…";
 "hub.OnboardingWindowController.888.1990" = "仅历史记录模式。Hub 不会检查或导入 Tesla 凭据。数据采集保持关闭。可以检查数据库架构；源应用程序版本仍未知。";
 "hub.OnboardingWindowController.891.1991" = "本地 PostgreSQL 来源";
-"hub.OnboardingWindowController.895.1994" = "我确认这是兼容 v4.2 的数据库架构，但这不能证明应用版本";
 "hub.OnboardingWindowController.915.1997" = "源应用程序 %1$@";
 "hub.OnboardingWindowController.927.2001" = "正在检查…";
 "hub.OnboardingWindowController.935.2004" = "更改服务器";

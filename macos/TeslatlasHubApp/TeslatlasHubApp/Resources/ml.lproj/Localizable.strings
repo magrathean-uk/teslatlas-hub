@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub തയ്യാറാണ്";
 "hub.OnboardingWindowController.602.1926" = "നിങ്ങളുടെ സ്വന്തം Tesla ടെലിമെട്രി ശേഖരണ സംവിധാനം ഈ Mac-ൽ സ്വകാര്യമായി പ്രവർത്തിക്കുന്നു.";
 "hub.OnboardingWindowController.604.1927" = "പുതിയ Hub സജ്ജീകരിക്കുകയോ ഉറവിട ആപ്ലിക്കേഷനിൽ നിന്നുള്ള നിങ്ങളുടെ ചരിത്രം കൊണ്ടുവരികയോ ചെയ്യുക.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry ശുപാർശ ചെയ്യുന്നു. പഴയ സജ്ജീകരണങ്ങളിൽ Legacy ടോക്കണുകൾ പ്രവർത്തിക്കും.";
+"hub.OnboardingWindowController.606.1928" = "ആരംഭിക്കാൻ നിങ്ങളുടെ Tesla ഉടമയുടെ അക്കൗണ്ട് ഉപയോഗിച്ച് സൈൻ ഇൻ ചെയ്യുക. താൽപ്പര്യമെങ്കിൽ Fleet Telemetry ലഭ്യമാണ്.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet ആപ്ലിക്കേഷൻ സൃഷ്ടിച്ച് അതിന്റെ പ്രവേശനവിവരങ്ങൾ താഴെ ഒട്ടിക്കുക.";
 "hub.OnboardingWindowController.610.1930" = "ശേഖരണ വിൻഡോ തുറന്നിരിക്കുമ്പോൾ Tesla-യിൽ സൈൻ ഇൻ ചെയ്യുക. Hub ഒരിക്കലും ടോക്കൺ സ്വീകരിക്കില്ല.";
 "hub.OnboardingWindowController.612.1931" = "വാഹന ചരിത്രം ഇറക്കുമതി ചെയ്യാൻ നിങ്ങളുടെ ഉറവിട ആപ്ലിക്കേഷൻ സെർവറുമായി ബന്ധിപ്പിക്കുക.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "നിങ്ങളുടെ നിലവിലുള്ള വാഹന ചരിത്രം കൊണ്ടുവരിക.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla-യുടെ ഔദ്യോഗിക സ്ട്രീമിംഗ് API. തത്സമയ വാഹന കമാൻഡുകൾ പ്രവർത്തനക്ഷമമാക്കുന്നു.";
-"hub.OnboardingWindowController.752.1958" = "Legacy ടോക്കൺ";
+"hub.OnboardingWindowController.752.1958" = "ഉടമയുടെ സൈൻ ഇൻ";
 "hub.OnboardingWindowController.753.1959" = "Tesla-യിൽ സൈൻ ഇൻ ചെയ്യുക. Hub സ്വന്തം ലോഗിൻ സൂക്ഷിക്കുന്നു.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet ആപ്പ് സൃഷ്ടിക്കുക";
 "hub.OnboardingWindowController.771.1964" = "ക്ലയന്റ് ഐഡി";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "കീ തിരഞ്ഞെടുക്കുക…";
 "hub.OnboardingWindowController.888.1990" = "ചരിത്രം മാത്രം. Hub Tesla പ്രവേശനവിവരങ്ങൾ പരിശോധിക്കുകയോ ഇറക്കുമതി ചെയ്യുകയോ ചെയ്യില്ല. ശേഖരണം ഓഫായിരിക്കും. ഡാറ്റാബേസ് സ്കീമ പരിശോധിക്കാം; ഉറവിട ആപ്ലിക്കേഷന്റെ പതിപ്പ് അജ്ഞാതമായി തുടരും.";
 "hub.OnboardingWindowController.891.1991" = "പ്രാദേശിക PostgreSQL ഉറവിടം";
-"hub.OnboardingWindowController.895.1994" = "ഇത് v4.2-നോട് പൊരുത്തപ്പെടുന്ന ഡാറ്റാബേസ് സ്കീമയാണെന്ന് ഞാൻ അംഗീകരിക്കുന്നു; ആപ്ലിക്കേഷന്റെ പതിപ്പിന് ഇത് തെളിവല്ല";
 "hub.OnboardingWindowController.915.1997" = "ഉറവിട ആപ്ലിക്കേഷൻ %1$@";
 "hub.OnboardingWindowController.927.2001" = "പരിശോധിക്കുന്നു…";
 "hub.OnboardingWindowController.935.2004" = "സെർവർ മാറ്റുക";

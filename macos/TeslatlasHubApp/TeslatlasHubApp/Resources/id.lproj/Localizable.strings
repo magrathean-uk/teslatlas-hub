@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub siap";
 "hub.OnboardingWindowController.602.1926" = "Pengumpul telemetri Tesla Anda sendiri, berjalan secara privat di Mac ini.";
 "hub.OnboardingWindowController.604.1927" = "Siapkan Hub baru atau pindahkan riwayat Anda dari aplikasi sumber.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry direkomendasikan. Token lama berfungsi pada penyiapan yang lebih lama.";
+"hub.OnboardingWindowController.606.1928" = "Untuk memulai, masuk dengan akun pemilik Tesla. Fleet Telemetry tersedia jika lebih disukai.";
 "hub.OnboardingWindowController.608.1929" = "Buat aplikasi Tesla Fleet, lalu tempelkan kredensialnya di bawah ini.";
 "hub.OnboardingWindowController.610.1930" = "Masuk dengan Tesla selagi jendela pengumpulan terbuka. Hub tidak pernah menerima token.";
 "hub.OnboardingWindowController.612.1931" = "Hubungkan ke server aplikasi sumber untuk mengimpor riwayat kendaraannya.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Pindahkan riwayat kendaraan Anda yang sudah ada.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "API streaming resmi Tesla. Mengaktifkan perintah kendaraan secara langsung.";
-"hub.OnboardingWindowController.752.1958" = "Token lama";
+"hub.OnboardingWindowController.752.1958" = "Masuk sebagai pemilik";
 "hub.OnboardingWindowController.753.1959" = "Masuk dengan Tesla. Hub menyimpan login-nya sendiri.";
 "hub.OnboardingWindowController.760.1960" = "Buat Aplikasi Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID klien";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Pilih Kunci…";
 "hub.OnboardingWindowController.888.1990" = "Khusus riwayat. Hub tidak akan memeriksa atau mengimpor kredensial Tesla. Pengumpulan data tetap nonaktif. Skema basis data dapat diperiksa; versi aplikasi sumber tetap tidak diketahui.";
 "hub.OnboardingWindowController.891.1991" = "Sumber PostgreSQL lokal";
-"hub.OnboardingWindowController.895.1994" = "Saya memahami bahwa skema basis data ini kompatibel dengan v4.2, tetapi bukan bukti versi aplikasi";
 "hub.OnboardingWindowController.915.1997" = "Aplikasi sumber %1$@";
 "hub.OnboardingWindowController.927.2001" = "Memeriksa…";
 "hub.OnboardingWindowController.935.2004" = "Ubah server";

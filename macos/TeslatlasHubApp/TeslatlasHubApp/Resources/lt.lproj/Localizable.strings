@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub paruoštas";
 "hub.OnboardingWindowController.602.1926" = "Jūsų privatus „Tesla“ telemetrijos rinktuvas, veikiantis šiame Mac kompiuteryje.";
 "hub.OnboardingWindowController.604.1927" = "Nustatykite naują Hub arba perkelkite istoriją iš šaltinio programos.";
-"hub.OnboardingWindowController.606.1928" = "Rekomenduojama naudoti Fleet Telemetry. Senieji prieigos raktai tinka senesnėms sąrankoms.";
+"hub.OnboardingWindowController.606.1928" = "Norėdami pradėti, prisijunkite su savo „Tesla“ savininko paskyra. Jei norite, galima naudoti ir Fleet Telemetry.";
 "hub.OnboardingWindowController.608.1929" = "Sukurkite Tesla Fleet programą ir įklijuokite jos prisijungimo duomenis žemiau.";
 "hub.OnboardingWindowController.610.1930" = "Prisijunkite prie „Tesla“, kol atidarytas rinkimo langas. Hub niekada nepriima prieigos rakto.";
 "hub.OnboardingWindowController.612.1931" = "Prisijunkite prie šaltinio programos serverio, kad importuotumėte transporto priemonių istoriją.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Perkelkite esamą transporto priemonės istoriją.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Oficiali „Tesla“ srautinių duomenų API. Ji suteikia galimybę siųsti komandas transporto priemonei realiuoju laiku.";
-"hub.OnboardingWindowController.752.1958" = "Senasis prieigos raktas";
+"hub.OnboardingWindowController.752.1958" = "Savininko prisijungimas";
 "hub.OnboardingWindowController.753.1959" = "Prisijunkite prie „Tesla“. Hub išsaugo savo prisijungimą.";
 "hub.OnboardingWindowController.760.1960" = "Sukurti Tesla Fleet programą";
 "hub.OnboardingWindowController.771.1964" = "Kliento ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Pasirinkti raktą…";
 "hub.OnboardingWindowController.888.1990" = "Tik istorija. Hub netikrins ir neimportuos „Tesla“ prisijungimo duomenų. Duomenų rinkimas liks išjungtas. Duomenų bazės schemą galima patikrinti, tačiau šaltinio programos versija liks nežinoma.";
 "hub.OnboardingWindowController.891.1991" = "Vietinis PostgreSQL šaltinis";
-"hub.OnboardingWindowController.895.1994" = "Patvirtinu, kad duomenų bazės schema suderinama su v4.2, tačiau tai neįrodo programos versijos";
 "hub.OnboardingWindowController.915.1997" = "Šaltinio programa %1$@";
 "hub.OnboardingWindowController.927.2001" = "Tikrinama…";
 "hub.OnboardingWindowController.935.2004" = "Keisti serverį";

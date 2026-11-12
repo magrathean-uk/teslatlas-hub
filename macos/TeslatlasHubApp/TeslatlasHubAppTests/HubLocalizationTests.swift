@@ -18,7 +18,7 @@ final class HubLocalizationTests: XCTestCase {
         }
         let englishKeys = Set(try table(english, "Localizable.strings").keys)
         let pluralKeys = Set(try table(english, "Localizable.stringsdict").keys)
-        XCTAssertEqual(englishKeys.count, 734)
+        XCTAssertEqual(englishKeys.count, 733)
         XCTAssertEqual(pluralKeys.count, 6)
         for language in languages {
             let directory = resources.appendingPathComponent("\(language).lproj")
@@ -34,6 +34,34 @@ final class HubLocalizationTests: XCTestCase {
                 let entry = try XCTUnwrap(value as? [String: Any])
                 let rule = try XCTUnwrap(entry["count"] as? [String: String])
                 XCTAssertFalse(try XCTUnwrap(rule["other"]).isEmpty, "\(language): \(key)")
+            }
+        }
+    }
+
+    func testTheOwnerSignInFirstLinesAreTranslatedInEveryLocale() throws {
+        let resources = try XCTUnwrap(Bundle.main.resourceURL)
+        let title = "hub.OnboardingWindowController.752.1958"
+        let subtitle = "hub.OnboardingWindowController.606.1928"
+        let removed = "hub.OnboardingWindowController.895.1994"
+        func table(_ language: String) throws -> [String: String] {
+            let url = resources.appendingPathComponent("\(language).lproj/Localizable.strings")
+            let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil)
+            return try XCTUnwrap(plist as? [String: String])
+        }
+        let english = try table("en")
+        XCTAssertEqual(english[title], "Owner Sign-in")
+        XCTAssertFalse(try XCTUnwrap(english[subtitle]).localizedCaseInsensitiveContains("recommended"))
+        let languages = Bundle.main.localizations.filter { $0 != "Base" }
+        XCTAssertEqual(languages.count, 56)
+        for language in languages {
+            let strings = try table(language)
+            XCTAssertNil(strings[removed], "\(language): the unused v4.2 line is gone")
+            for key in [title, subtitle] {
+                let value = try XCTUnwrap(strings[key], "\(language): \(key)")
+                XCTAssertFalse(value.isEmpty, "\(language): \(key)")
+                if !language.hasPrefix("en") {
+                    XCTAssertNotEqual(value, english[key], "\(language): \(key) is not English copied in")
+                }
             }
         }
     }

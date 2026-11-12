@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "El Hub Teslatlas està a punt";
 "hub.OnboardingWindowController.602.1926" = "El teu propi servei de recollida de telemetria de Tesla, que s’executa de manera privada en aquest Mac.";
 "hub.OnboardingWindowController.604.1927" = "Configura un Hub nou o importa-hi l’historial de l’aplicació d’origen.";
-"hub.OnboardingWindowController.606.1928" = "Es recomana Fleet Telemetry. Els tokens heretats funcionen amb configuracions antigues.";
+"hub.OnboardingWindowController.606.1928" = "Per començar, inicia la sessió amb el teu compte de propietari de Tesla. Fleet Telemetry està disponible si ho prefereixes.";
 "hub.OnboardingWindowController.608.1929" = "Crea una aplicació Tesla Fleet i, després, enganxa’n les credencials a continuació.";
 "hub.OnboardingWindowController.610.1930" = "Inicia la sessió amb Tesla mentre hi hagi una finestra de recollida oberta. El Hub no accepta mai cap token.";
 "hub.OnboardingWindowController.612.1931" = "Connecta’t al servidor de l’aplicació d’origen per importar-ne l’historial dels vehicles.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Importa l’historial existent del vehicle.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "API oficial de transmissió en temps real de Tesla. Permet enviar ordres al vehicle en temps real.";
-"hub.OnboardingWindowController.752.1958" = "Token heretat";
+"hub.OnboardingWindowController.752.1958" = "Inici de sessió del propietari";
 "hub.OnboardingWindowController.753.1959" = "Inicia la sessió amb Tesla. El Hub conserva el seu propi inici de sessió.";
 "hub.OnboardingWindowController.760.1960" = "Crea una aplicació Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "Identificador de client";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Tria una clau…";
 "hub.OnboardingWindowController.888.1990" = "Només historial. El Hub no inspeccionarà ni importarà les credencials de Tesla. La recollida continuarà desactivada. Es pot comprovar l’esquema de la base de dades, però la versió de l’aplicació d’origen continuarà sent desconeguda.";
 "hub.OnboardingWindowController.891.1991" = "Font PostgreSQL local";
-"hub.OnboardingWindowController.895.1994" = "Reconec que es tracta d’un esquema de base de dades compatible amb la versió 4.2, no d’una prova de la versió de l’aplicació";
 "hub.OnboardingWindowController.915.1997" = "L’aplicació d’origen %1$@";
 "hub.OnboardingWindowController.927.2001" = "S’està comprovant…";
 "hub.OnboardingWindowController.935.2004" = "Canvia el servidor";

@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub este gata";
 "hub.OnboardingWindowController.602.1926" = "Colectorul tău de telemetrie Tesla, care rulează în mod privat pe acest Mac.";
 "hub.OnboardingWindowController.604.1927" = "Configurează un Hub nou sau transferă aici istoricul din aplicația sursă.";
-"hub.OnboardingWindowController.606.1928" = "Se recomandă Fleet Telemetry. Tokenurile legacy funcționează cu configurații mai vechi.";
+"hub.OnboardingWindowController.606.1928" = "Pentru a începe, autentifică-te cu contul tău de proprietar Tesla. Fleet Telemetry este disponibil dacă preferi.";
 "hub.OnboardingWindowController.608.1929" = "Creează o aplicație Tesla Fleet, apoi lipește mai jos datele de autentificare.";
 "hub.OnboardingWindowController.610.1930" = "Autentifică-te cu Tesla cât timp este deschisă o fereastră de colectare. Hub nu acceptă niciodată un token.";
 "hub.OnboardingWindowController.612.1931" = "Conectează-te la serverul aplicației sursă pentru a importa istoricul vehiculelor.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Transferă-ți istoricul existent al vehiculelor.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "API-ul oficial de streaming al Tesla. Permite trimiterea în timp real a comenzilor către vehicul.";
-"hub.OnboardingWindowController.752.1958" = "Token legacy";
+"hub.OnboardingWindowController.752.1958" = "Autentificare proprietar";
 "hub.OnboardingWindowController.753.1959" = "Autentifică-te cu Tesla. Hub își păstrează propria autentificare.";
 "hub.OnboardingWindowController.760.1960" = "Creează aplicația Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID client";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Alege cheia…";
 "hub.OnboardingWindowController.888.1990" = "Doar istoric. Hub nu va inspecta și nu va importa datele de autentificare Tesla. Colectarea rămâne dezactivată. Schema bazei de date poate fi verificată; versiunea aplicației sursă rămâne necunoscută.";
 "hub.OnboardingWindowController.891.1991" = "Sursă PostgreSQL locală";
-"hub.OnboardingWindowController.895.1994" = "Confirm că schema bazei de date este compatibilă cu v4.2; aceasta nu dovedește versiunea aplicației";
 "hub.OnboardingWindowController.915.1997" = "Aplicația sursă %1$@";
 "hub.OnboardingWindowController.927.2001" = "Se verifică…";
 "hub.OnboardingWindowController.935.2004" = "Schimbă serverul";

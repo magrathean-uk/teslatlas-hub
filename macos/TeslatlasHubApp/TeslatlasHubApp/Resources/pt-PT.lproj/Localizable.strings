@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "O Teslatlas Hub está pronto";
 "hub.OnboardingWindowController.602.1926" = "O teu próprio coletor de telemetria Tesla, a funcionar de forma privada neste Mac.";
 "hub.OnboardingWindowController.604.1927" = "Configura um Hub novo ou transfere o teu histórico da aplicação de origem.";
-"hub.OnboardingWindowController.606.1928" = "A Fleet Telemetry é recomendada. Os tokens legados funcionam com configurações mais antigas.";
+"hub.OnboardingWindowController.606.1928" = "Para começar, inicia sessão com a tua conta de proprietário da Tesla. O Fleet Telemetry está disponível se preferires.";
 "hub.OnboardingWindowController.608.1929" = "Cria uma aplicação Tesla Fleet e, em seguida, cola abaixo as respetivas credenciais.";
 "hub.OnboardingWindowController.610.1930" = "Inicia sessão na Tesla enquanto uma janela de recolha estiver aberta. O Hub nunca aceita um token.";
 "hub.OnboardingWindowController.612.1931" = "Liga-te ao servidor da aplicação de origem para importares o histórico dos veículos.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Transfere o histórico existente do veículo.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "API oficial de transmissão contínua da Tesla. Permite enviar comandos ao veículo em tempo real.";
-"hub.OnboardingWindowController.752.1958" = "Token legado";
+"hub.OnboardingWindowController.752.1958" = "Início de sessão do proprietário";
 "hub.OnboardingWindowController.753.1959" = "Inicia sessão na Tesla. O Hub mantém o seu próprio início de sessão.";
 "hub.OnboardingWindowController.760.1960" = "Criar aplicação Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID do cliente";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Selecionar chave…";
 "hub.OnboardingWindowController.888.1990" = "Apenas histórico. O Hub não irá consultar nem importar credenciais da Tesla. A recolha permanece desativada. É possível verificar o esquema da base de dados; a versão da aplicação de origem continuará desconhecida.";
 "hub.OnboardingWindowController.891.1991" = "Origem PostgreSQL local";
-"hub.OnboardingWindowController.895.1994" = "Confirmo que este esquema da base de dados é compatível com a versão 4.2, mas não prova qual é a versão da aplicação";
 "hub.OnboardingWindowController.915.1997" = "Aplicação de origem %1$@";
 "hub.OnboardingWindowController.927.2001" = "A verificar…";
 "hub.OnboardingWindowController.935.2004" = "Alterar servidor";

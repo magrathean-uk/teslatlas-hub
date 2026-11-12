@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub er tilbúinn";
 "hub.OnboardingWindowController.602.1926" = "Þinn eigin Tesla-gagnasafnari fyrir fjarmælingar, sem keyrir staðbundið á þessum Mac.";
 "hub.OnboardingWindowController.604.1927" = "Settu upp nýjan Hub eða færðu ferilinn þinn úr upprunaforritinu.";
-"hub.OnboardingWindowController.606.1928" = "Mælt er með Fleet Telemetry. Eldri aðgangslyklar virka með eldri uppsetningum.";
+"hub.OnboardingWindowController.606.1928" = "Skráðu þig inn með Tesla-eigandareikningnum þínum til að byrja. Fleet Telemetry er í boði ef þú kýst það frekar.";
 "hub.OnboardingWindowController.608.1929" = "Búðu til Tesla Fleet-forrit og límdu síðan aðgangsupplýsingar þess hér að neðan.";
 "hub.OnboardingWindowController.610.1930" = "Skráðu þig inn hjá Tesla á meðan söfnunargluggi er opinn. Hub tekur aldrei við aðgangslykli.";
 "hub.OnboardingWindowController.612.1931" = "Tengstu upprunaþjóninum þínum til að flytja inn feril ökutækisins.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "Flytja inn fyrirliggjandi feril ökutækisins.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Opinbert streymisviðmót Tesla. Gerir rauntímaskipanir til ökutækis mögulegar.";
-"hub.OnboardingWindowController.752.1958" = "Eldri aðgangslykill";
+"hub.OnboardingWindowController.752.1958" = "Innskráning eiganda";
 "hub.OnboardingWindowController.753.1959" = "Skráðu þig inn hjá Tesla. Hub heldur sinni eigin innskráningu.";
 "hub.OnboardingWindowController.760.1960" = "Búa til Tesla Fleet-forrit";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "Velja lykil…";
 "hub.OnboardingWindowController.888.1990" = "Aðeins ferill. Hub skoðar hvorki né flytur inn Tesla-aðgangsupplýsingar. Gagnasöfnun helst óvirk. Athuga má skema gagnagrunnsins, en útgáfa upprunaforritsins verður áfram óþekkt.";
 "hub.OnboardingWindowController.891.1991" = "Staðbundinn PostgreSQL-gagnagjafi";
-"hub.OnboardingWindowController.895.1994" = "Ég staðfesti að ég hafi yfirfarið skema upprunagagnagrunnsins; það staðfestir ekki útgáfu upprunaforritsins.";
 "hub.OnboardingWindowController.915.1997" = "Upprunaforritið %1$@";
 "hub.OnboardingWindowController.927.2001" = "Athuga…";
 "hub.OnboardingWindowController.935.2004" = "Skipta um þjón";

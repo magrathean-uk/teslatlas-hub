@@ -451,7 +451,7 @@
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub ಸಿದ್ಧವಾಗಿದೆ";
 "hub.OnboardingWindowController.602.1926" = "ನಿಮ್ಮದೇ Tesla ಟೆಲಿಮೆಟ್ರಿ ಸಂಗ್ರಾಹಕ; ಈ Mac‌ನಲ್ಲಿ ಖಾಸಗಿಯಾಗಿ ಚಲಿಸುತ್ತದೆ.";
 "hub.OnboardingWindowController.604.1927" = "ಹೊಸ Hub ಸೆಟಪ್ ಮಾಡಿ ಅಥವಾ ಮೂಲ ಅಪ್ಲಿಕೇಶನ್‌ನಿಂದ ನಿಮ್ಮ ಇತಿಹಾಸವನ್ನು ವರ್ಗಾಯಿಸಿ.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry ಶಿಫಾರಸು ಮಾಡಲಾಗಿದೆ. Legacy ಟೋಕನ್‌ಗಳು ಹಳೆಯ ಸೆಟಪ್‌ಗಳಲ್ಲಿಯೂ ಕಾರ್ಯನಿರ್ವಹಿಸುತ್ತವೆ.";
+"hub.OnboardingWindowController.606.1928" = "ಪ್ರಾರಂಭಿಸಲು ನಿಮ್ಮ Tesla ಮಾಲೀಕರ ಖಾತೆಯೊಂದಿಗೆ ಸೈನ್ ಇನ್ ಮಾಡಿ. ನೀವು ಬಯಸಿದರೆ Fleet Telemetry ಲಭ್ಯವಿದೆ.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet ಅಪ್ಲಿಕೇಶನ್ ರಚಿಸಿ, ನಂತರ ಅದರ ರುಜುವಾತುಗಳನ್ನು ಕೆಳಗೆ ಅಂಟಿಸಿ.";
 "hub.OnboardingWindowController.610.1930" = "ಸಂಗ್ರಹ ವಿಂಡೋ ತೆರೆದಿರುವಾಗ Tesla ಮೂಲಕ ಸೈನ್ ಇನ್ ಮಾಡಿ. Hub ಎಂದಿಗೂ ಟೋಕನ್ ಸ್ವೀಕರಿಸುವುದಿಲ್ಲ.";
 "hub.OnboardingWindowController.612.1931" = "ವಾಹನದ ಇತಿಹಾಸ ಆಮದುಮಾಡಲು ನಿಮ್ಮ ಮೂಲ ಅಪ್ಲಿಕೇಶನ್ ಸರ್ವರ್‌ಗೆ ಸಂಪರ್ಕಿಸಿ.";
@@ -469,7 +469,7 @@
 "hub.OnboardingWindowController.741.1955" = "ನಿಮ್ಮ ಈಗಿರುವ ವಾಹನದ ಇತಿಹಾಸವನ್ನು ವರ್ಗಾಯಿಸಿ.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla ಅಧಿಕೃತ ಸ್ಟ್ರೀಮಿಂಗ್ API. ಇದು ಲೈವ್ ವಾಹನ ಆಜ್ಞೆಗಳನ್ನು ಸಕ್ರಿಯಗೊಳಿಸುತ್ತದೆ.";
-"hub.OnboardingWindowController.752.1958" = "Legacy ಟೋಕನ್";
+"hub.OnboardingWindowController.752.1958" = "ಮಾಲೀಕರ ಸೈನ್ ಇನ್";
 "hub.OnboardingWindowController.753.1959" = "Tesla ಮೂಲಕ ಸೈನ್ ಇನ್ ಮಾಡಿ. Hub ತನ್ನದೇ ಆದ ಲಾಗಿನ್ ಅನ್ನು ಉಳಿಸಿಕೊಳ್ಳುತ್ತದೆ.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet ಆ್ಯಪ್ ರಚಿಸಿ";
 "hub.OnboardingWindowController.771.1964" = "ಕ್ಲೈಂಟ್ ID";
@@ -483,7 +483,6 @@
 "hub.OnboardingWindowController.836.1982" = "ಕೀ ಆಯ್ಕೆಮಾಡಿ…";
 "hub.OnboardingWindowController.888.1990" = "ಇತಿಹಾಸ ಮಾತ್ರ. Hub Tesla ರುಜುವಾತುಗಳನ್ನು ಪರಿಶೀಲಿಸುವುದಿಲ್ಲ ಅಥವಾ ಆಮದು ಮಾಡುವುದಿಲ್ಲ. ಸಂಗ್ರಹಣೆ ನಿಷ್ಕ್ರಿಯವಾಗಿಯೇ ಇರುತ್ತದೆ. ಡೇಟಾಬೇಸ್ ಸ್ಕೀಮಾವನ್ನು ಪರಿಶೀಲಿಸಬಹುದು; ಮೂಲ ಅಪ್ಲಿಕೇಶನ್‌ನ ಆವೃತ್ತಿ ತಿಳಿದಿಲ್ಲ.";
 "hub.OnboardingWindowController.891.1991" = "ಸ್ಥಳೀಯ PostgreSQL ಮೂಲ";
-"hub.OnboardingWindowController.895.1994" = "ಇದು v4.2ಕ್ಕೆ ಹೊಂದಿಕೊಳ್ಳುವ ಡೇಟಾಬೇಸ್ ಸ್ಕೀಮಾ ಎಂದು ಒಪ್ಪುತ್ತೇನೆ; ಇದು ಆ್ಯಪ್ ಆವೃತ್ತಿಯ ಪುರಾವೆಯಲ್ಲ";
 "hub.OnboardingWindowController.915.1997" = "ಮೂಲ ಅಪ್ಲಿಕೇಶನ್ %1$@";
 "hub.OnboardingWindowController.927.2001" = "ಪರಿಶೀಲಿಸಲಾಗುತ್ತಿದೆ…";
 "hub.OnboardingWindowController.935.2004" = "ಸರ್ವರ್ ಬದಲಾಯಿಸಿ";
