@@ -88,6 +88,11 @@ fn floor_store_preserves_populated_tables() {
             "M1-T3: {table} count before upgrade"
         );
     }
+    assert!(
+        super::tests::g2_4_m1::catalogue_floor_witnesses(&connection) > 0,
+        "M1-T3: the floor witnesses are listed as imported rows for v80 (M03-T11)"
+    );
+    let before = rows(&connection);
     migrate(&connection).unwrap();
     assert_eq!(
         schema_version(&connection).unwrap(),
@@ -265,6 +270,7 @@ fn suffix_steps_run_once() {
             .unwrap();
     }
     emptied.pragma_update(None, "secure_delete", false).unwrap();
+    super::tests::g2_4_m1::catalogue_floor_witnesses(&emptied);
     migrate(&emptied).unwrap();
     let drop_state: (
         String,

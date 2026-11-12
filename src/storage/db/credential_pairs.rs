@@ -2419,11 +2419,16 @@ const _: () = assert!(
     CREDENTIAL_FORMAT_SCHEMA_VERSION == MIN_STORE_VERSION + 1
         && CREDENTIAL_FORMAT_SCHEMA_VERSION <= SCHEMA_VERSION
 );
+/// Every schema from the credential format rung to the head keeps the
+/// credential tables unchanged, so each of them opens and reads credentials.
+fn credential_format_schema(version: i32) -> bool {
+    (CREDENTIAL_FORMAT_SCHEMA_VERSION..=SCHEMA_VERSION).contains(&version)
+}
 /// Phase A needs no key and is reached only after the ordinary writable-store
 /// admission and floor creation. Phase B owns decryption, barriers and scrubbing.
 fn credential_schema_rung(connection: &Connection, fresh: bool) -> Result<(), StoreError> {
     let version = schema_version(connection)?;
-    if version == CREDENTIAL_FORMAT_SCHEMA_VERSION {
+    if credential_format_schema(version) {
         return credential_format_state_keyring_exposure_column(connection);
     }
     if version != MIN_STORE_VERSION {
@@ -2457,7 +2462,7 @@ fn credential_schema_rung_transaction(
     let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
         .map_err(StoreError::Migrate)?;
     let version = schema_version(&transaction)?;
-    if version == CREDENTIAL_FORMAT_SCHEMA_VERSION {
+    if credential_format_schema(version) {
         return Ok(());
     }
     if version != MIN_STORE_VERSION {

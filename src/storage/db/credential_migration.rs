@@ -366,7 +366,7 @@ fn credential_migration_state_on(
     connection: &Connection,
 ) -> Result<CredentialFormatState, StoreError> {
     let version = schema_version(connection)?;
-    if version != CREDENTIAL_FORMAT_SCHEMA_VERSION {
+    if !credential_format_schema(version) {
         return Err(StoreError::UnsupportedSchema(version));
     }
     let state = credential_format_state_on(connection)?;
@@ -379,7 +379,7 @@ impl HubStore {
         let connection = self.open_read_only_connection()?;
         let version = schema_version(&connection)?;
         if version < CREDENTIAL_FORMAT_SCHEMA_VERSION { return Ok(0); }
-        if version != CREDENTIAL_FORMAT_SCHEMA_VERSION { return Err(StoreError::UnsupportedSchema(version)); }
+        if !credential_format_schema(version) { return Err(StoreError::UnsupportedSchema(version)); }
         connection.query_row(
             "SELECT COUNT(*) FROM credential_legacy_fences WHERE identity = 'opaque'",
             [],
@@ -397,7 +397,7 @@ impl HubStore {
         if version < CREDENTIAL_FORMAT_SCHEMA_VERSION {
             return Ok(None);
         }
-        if version != CREDENTIAL_FORMAT_SCHEMA_VERSION {
+        if !credential_format_schema(version) {
             return Err(StoreError::UnsupportedSchema(version));
         }
         let state = credential_format_state_on(&transaction)?;
@@ -800,7 +800,7 @@ fn credential_format_state_keyring_exposure_column(
     }
     let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
         .map_err(StoreError::Migrate)?;
-    if schema_version(&transaction)? == CREDENTIAL_FORMAT_SCHEMA_VERSION && !present(&transaction)? {
+    if credential_format_schema(schema_version(&transaction)?) && !present(&transaction)? {
         transaction
             .execute_batch(
                 "ALTER TABLE credential_format_state ADD COLUMN keyring_exposure
