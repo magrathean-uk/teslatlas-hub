@@ -4288,7 +4288,10 @@ final class HubController {
                                                 "retry_held": held ? "true" : "false"
                                             ])
                     self.refresh { _ in completion(.failure(error)) }
-                case let .failure(error as HubOwnerSignInUnconfirmed):
+                case let .failure(error) where HubActionError.settingQuiescenceAside(error) is HubOwnerSignInUnconfirmed:
+                    // The error may be wrapped as not quiescent (a timed-out setup child that may
+                    // still run): it is classified by what is underneath and passed on as it is,
+                    // so the executor's child tracking reaches the operation that owns the work.
                     // No answer in time: the pair may be stored, so the status is read again and
                     // no grant is held. A discovery retry held from an earlier run is superseded, so
                     // no grant, deadline or retry button remains. Only the stable code is logged,
@@ -4469,8 +4472,13 @@ final class HubController {
     /// still store the pair, so it is reported as unconfirmed.
     static func signInError(_ error: Error, afterSetup: Bool = false) -> Error {
         if afterSetup {
-            if case HubActionError.commandTimedOut = error { return HubOwnerSignInUnconfirmed() }
-            if error.localizedDescription.contains("control_channel_failed") { return HubOwnerSignInUnconfirmed() }
+            // The executor can wrap a timeout as `commandNotQuiescent(commandTimedOut, ...)`: the
+            // underlying error decides, and a child that may still run stays tracked.
+            let underlying = HubActionError.settingQuiescenceAside(error)
+            var noAnswer = false
+            if case HubActionError.commandTimedOut = underlying { noAnswer = true }
+            if underlying.localizedDescription.contains("control_channel_failed") { noAnswer = true }
+            if noAnswer { return HubActionError.keepingQuiescence(of: error, in: HubOwnerSignInUnconfirmed()) }
         }
         let text = error.localizedDescription
         for code in ["sign_in_unavailable", "window_closed", "credential_recovery_pending",

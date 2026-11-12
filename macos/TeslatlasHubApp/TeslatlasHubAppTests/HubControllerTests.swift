@@ -2601,6 +2601,59 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(runner.statusRuns, 0)
     }
 
+    func testSetupTimeoutWrappedAsNotQuiescentIsUnconfirmedAndKeepsItsChildTracked() throws {
+        // M02-T17: the executor reports a timed-out setup whose child may still run as
+        // commandNotQuiescent(commandTimedOut, ...). It is classified by the error underneath,
+        // gets the unconfirmed handling, and the owner stays held until the child is gone.
+        let quiescence = HubChildQuiescence()
+        quiescence.childMayRun()
+        let wrapped = HubActionError.commandNotQuiescent(HubActionError.commandTimedOut, quiescence)
+
+        let classified = HubController.signInError(wrapped, afterSetup: true)
+        guard case let HubActionError.commandNotQuiescent(inner, kept) = classified else {
+            return XCTFail("the child tracking is preserved: \(classified)")
+        }
+        XCTAssertEqual(inner as? HubOwnerSignInUnconfirmed, HubOwnerSignInUnconfirmed())
+        XCTAssertTrue(kept === quiescence, "the same quiescence is carried on")
+        // Before setup has run the same error is not unconfirmed and is left as it is.
+        guard case let HubActionError.commandNotQuiescent(untouched, _) = HubController.signInError(wrapped) else {
+            return XCTFail("a failure before setup keeps its wrapper")
+        }
+        XCTAssertNil(untouched as? HubOwnerSignInUnconfirmed)
+
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .failure(wrapped))
+        runner.statusResult = .success(Self.noPairStatus)
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        let finished = expectation(description: "wrapped setup timeout")
+
+        controller.configureTeslaAccount(grant: Self.codeGrant) { result in
+            guard case let .failure(error) = result else { return XCTFail("shown as success") }
+            guard case let HubActionError.commandNotQuiescent(inner, _) = error else {
+                return XCTFail("the child tracking reaches the caller: \(error)")
+            }
+            XCTAssertEqual(inner as? HubOwnerSignInUnconfirmed, HubOwnerSignInUnconfirmed())
+            XCTAssertTrue(error.localizedDescription.contains(Self.unconfirmedLine))
+            // The status was read again before the owner saw the line.
+            XCTAssertEqual(runner.statusRuns, 1)
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(events.values.filter { $0 == "setup" }.count, 1)
+        XCTAssertNil(controller.lastVehiclesConfigured)
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline)
+        XCTAssertFalse(controller.lifecycleCapabilities.isIdle, "the owner is held while the child may still write")
+        let log = HubAppLog.shared.recentText()
+        XCTAssertTrue(log.contains("setup.unconfirmed"))
+
+        quiescence.childReaped()
+        spinUntil(3) { controller.lifecycleCapabilities.isIdle }
+        XCTAssertTrue(controller.lifecycleCapabilities.isIdle, "released once the child is gone")
+    }
+
     func testOnboardingShowsTheUnconfirmedLineAndDoesNotAdvance() throws {
         // Driven through the page's own retry (the Tesla login window is never opened): the
         // resumed setup gets no answer, the page shows the app's line and stays on sign-in.
