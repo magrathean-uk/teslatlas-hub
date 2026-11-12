@@ -7,6 +7,7 @@
 //! `serde_json::to_string(&serde_json::to_value(row)?)` produces: one JSON
 //! object whose top-level keys are in byte order, because `serde_json::Value`
 //! keeps object keys in a `BTreeMap` (the `preserve_order` feature is off).
+//! The `source_db_canonical_json_*` tests are the guard that `preserve_order` stays off.
 //! Building the whole intermediate `Value` costs a `BTreeMap` node and an owned
 //! key `String` per field for every one of millions of rows.
 //!

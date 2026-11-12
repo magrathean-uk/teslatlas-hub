@@ -93,6 +93,15 @@ struct Mixed {
     #[serde(rename = "Upper")]
     upper: bool,
     _underscore: (),
+    negative_zero: f64,
+    exponent_small: f64,
+    exponent_large: f64,
+    min_positive: f64,
+    infinity: f64,
+    negative_infinity: f64,
+    non_bmp: String,
+    i64_min: i64,
+    wide: u128,
 }
 
 #[derive(Serialize)]
@@ -117,6 +126,17 @@ fn mixed() -> Mixed {
         text: "plain".to_owned(),
         upper: true,
         _underscore: (),
+        negative_zero: -0.0,
+        exponent_small: 1e-7,
+        exponent_large: 1e300,
+        min_positive: f64::MIN_POSITIVE,
+        infinity: f64::INFINITY,
+        negative_infinity: f64::NEG_INFINITY,
+        non_bmp: "\u{1F600} \u{10FFFF}".to_owned(),
+        i64_min: i64::MIN,
+        // serde_json without `arbitrary_precision` keeps a u128 only within the
+        // u64 range; a wider value is a serialisation error on both paths.
+        wide: u128::from(u64::MAX),
     }
 }
 
@@ -179,6 +199,13 @@ fn source_db_canonical_json_other_shapes_fall_back_to_two_pass() {
     let raw = serde_json::value::RawValue::from_string("{\"b\":1,\"a\":2}".to_owned())
         .expect("raw value");
     assert!(encode_sorted_object(&raw).is_none());
+    #[derive(Serialize)]
+    struct OutOfRange {
+        wide: u128,
+    }
+    let out_of_range = OutOfRange { wide: u128::MAX };
+    assert!(encode_sorted_object(&out_of_range).is_none());
+    assert!(serde_json::to_value(&out_of_range).is_err());
 }
 
 #[test]
