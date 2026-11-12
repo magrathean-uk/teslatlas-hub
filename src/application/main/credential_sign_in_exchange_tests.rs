@@ -80,3 +80,34 @@ fn sign_in_exchange_setup_report_names_no_secret() {
     drop(entry);
     assert_no_pair(root.path());
 }
+
+fn setup_input(code: &str, redirect: &str) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({"code": code, "codeVerifier": EXCHANGE_VERIFIER, "redirectUri": redirect})).expect("setup input")
+}
+
+/// Round 2, finding 1: the forwarded `setup` command's own input parser
+/// admits exactly the owner redirect the Mac app registers, and refuses every
+/// other one before anything is forwarded. What it admits reaches the
+/// exchange, which then refuses only at the (closed) egress gate.
+#[test]
+fn sign_in_exchange_forwarded_setup_parser_admits_the_owner_redirect() {
+    let material = parse_setup_material(&setup_input("code-bin-parse-0001", sign_in::OWNER_REDIRECT_URI))
+        .unwrap_or_else(|refusal| panic!("the owner redirect is refused: {}", refusal.code));
+    assert_eq!(material.redirect_uri, sign_in::OWNER_REDIRECT_URI);
+    for other in ["https://auth.tesla.com/void/callback", "http://127.0.0.1/callback", "http://localhost/callback",
+        "tesla://auth/callback/", "tesla://auth/callback?x=1", "TESLA://auth/callback", ""] {
+        let refusal = parse_setup_material(&setup_input("code-bin-parse-0002", other)).unwrap_err();
+        assert_eq!(refusal.code, operator::admission::SETUP_INPUT_INVALID, "redirect {other:?}");
+        assert!(!refusal.message.contains("code-bin-parse-0002"), "no code in the refusal");
+    }
+    let root = root();
+    let entry = exchange_entry(root.path());
+    let issuer = StubIssuer::valid();
+    let token = format!("{}/token", issuer.endpoint);
+    let error = run_owner_exchange(|| sign_in::exchange_owner_code_with_stub_for_test(
+        &entry, &material.code, &material.code_verifier, &material.redirect_uri, &token)).unwrap_err();
+    assert_eq!(error.code(), "window_closed", "the parsed material passes every local check");
+    assert_eq!(issuer.calls(), 0, "nothing sent");
+    drop(entry);
+    assert_no_pair(root.path());
+}

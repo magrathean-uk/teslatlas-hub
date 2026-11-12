@@ -292,14 +292,11 @@ fn parse_setup_material(bytes: &[u8]) -> Result<SetupMaterial, OperatorRefusal> 
     {
         return Err(setup_input_invalid("the PKCE verifier is not 43 to 128 unreserved characters"));
     }
-    let redirect_valid = code_text_valid(redirect, 2048)
-        && url::Url::parse(redirect).is_ok_and(|url| {
-            url.scheme() == "https"
-                || (url.scheme() == "http"
-                    && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]")))
-        });
-    if !redirect_valid {
-        return Err(setup_input_invalid("the redirect URI is not an https or loopback address"));
+    // The one owner redirect the Mac app's sign-in window registers
+    // (DEC-088): the exchange sends exactly this value, so no other is
+    // forwarded to the service.
+    if redirect != teslatlas_hub::auth::credential_sign_in::OWNER_REDIRECT_URI {
+        return Err(setup_input_invalid("the redirect URI is not the owner sign-in redirect"));
     }
     Ok(SetupMaterial {
         code: code.to_owned(),
