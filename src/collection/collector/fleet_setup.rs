@@ -287,6 +287,64 @@ pub async fn setup_native_vehicles(
     setup_native_vehicles_with_client(store, &config.data_dir, &client, &auth).await
 }
 
+/// Which of the listed cars the owner `setup` configures (M02-T13): the one
+/// car the account lists (or the one this Hub already holds), the car named
+/// by `--vehicle-id`, or every listed car (`--all-vehicles`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnerCarSelection {
+    Implicit,
+    Vehicle(i64),
+    All,
+}
+
+/// The Owner API client of the owner `setup` discovery: the configured base
+/// for the region of the Hub's own pair.
+pub(crate) fn owner_discovery_client(
+    config: &HubConfig,
+    auth: &LegacyAuth,
+) -> Result<OwnerApi, CollectorError> {
+    Ok(OwnerApi::new(
+        config
+            .collector
+            .owner_api_options_for_region(auth.region())?,
+    )?)
+}
+
+/// Car discovery of the owner `setup` with the Hub's own login (M02-T13).
+/// One bounded products list, sent through the window's egress gate with a
+/// permit of its own and strictly parsed; the selection is then applied to
+/// that list and the chosen cars are recorded. A failed or malformed list,
+/// or a selection the list does not hold, writes nothing. No vehicle-data
+/// read, wake or command, and no refresh: `auth` is the pair just loaded.
+/// Returns how many cars are configured.
+pub(crate) async fn configure_owner_cars(
+    store: &HubStore,
+    config: &HubConfig,
+    client: &OwnerApi,
+    auth: &LegacyAuth,
+    selection: OwnerCarSelection,
+) -> Result<usize, CollectorError> {
+    if store.database_path() != config.data_dir.join("hub.sqlite") {
+        return Err(CollectorError::NativeSetupStoreMismatch);
+    }
+    let data_dir = &config.data_dir;
+    match selection {
+        OwnerCarSelection::All => setup_native_vehicles_with_client(store, data_dir, client, auth)
+            .await
+            .map(|report| report.vehicles.len()),
+        OwnerCarSelection::Vehicle(vehicle_id) => {
+            setup_native_vehicle_with_client(store, data_dir, client, auth, Some(vehicle_id))
+                .await
+                .map(|_| 1)
+        }
+        OwnerCarSelection::Implicit => {
+            setup_native_vehicle_with_client(store, data_dir, client, auth, None)
+                .await
+                .map(|_| 1)
+        }
+    }
+}
+
 /// The setup commands' vehicle list (C3 R24, R25): a request of category `state`,
 /// counted at completion in a ledger of its own and written before the answer is
 /// used, because a setup command has no scheduler tick to carry its count (R27

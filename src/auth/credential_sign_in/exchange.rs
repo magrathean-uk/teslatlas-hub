@@ -67,14 +67,28 @@ pub const WINDOW_CLOSED: &str = "window_closed";
 pub enum OwnerSignIn {
     Complete,
     AftercarePending,
+    /// A repeat `setup` with the material of a sign-in this process stored
+    /// (M02-T13): nothing was sent to Tesla and the stored pair is the one
+    /// that exchange wrote, so `setup` only runs its car discovery again.
+    Resumed,
 }
 
 impl OwnerSignIn {
-    /// The fixed report value: `complete` or `pending`.
+    /// The fixed report value: `complete`, `pending` or, for a resumed
+    /// sign-in whose write happened earlier, `unchanged`.
     pub fn aftercare(self) -> &'static str {
         match self {
             Self::Complete => "complete",
             Self::AftercarePending => "pending",
+            Self::Resumed => "unchanged",
+        }
+    }
+
+    /// The fixed report value: `exchanged` or `resumed`.
+    pub fn sign_in(self) -> &'static str {
+        match self {
+            Self::Complete | Self::AftercarePending => "exchanged",
+            Self::Resumed => "resumed",
         }
     }
 }
@@ -131,6 +145,62 @@ fn spend_code(code: &str) -> Result<(), CredentialCommandError> {
     if used.len() >= USED_CODES_KEPT { used.pop_front(); }
     used.push_back(digest);
     Ok(())
+}
+
+/// How long a stored sign-in may be resumed by a repeat `setup` with the same
+/// material: as long as a sign-in may take (the vault's 10 minutes).
+const RESUME_WINDOW_S: i64 = 600;
+
+/// The sign-ins this process stored: the digest of their code and verifier,
+/// the generation the exchange wrote and when it was sent. Only digests.
+static STORED_SIGN_INS: Mutex<VecDeque<([u8; 32], uuid::Uuid, i64)>> = Mutex::new(VecDeque::new());
+
+fn material_digest(code: &str, code_verifier: &str) -> [u8; 32] {
+    let mut hash = Sha256::new();
+    hash.update(b"teslatlas-hub/owner-sign-in/v1\0");
+    hash.update(code.as_bytes());
+    hash.update(b"\0");
+    hash.update(code_verifier.as_bytes());
+    hash.finalize().into()
+}
+
+fn record_stored_sign_in(code: &str, code_verifier: &str, generation: uuid::Uuid, sent_at_s: i64) {
+    let Ok(mut stored) = STORED_SIGN_INS.lock() else { return };
+    if stored.len() >= USED_CODES_KEPT { stored.pop_front(); }
+    stored.push_back((material_digest(code, code_verifier), generation, sent_at_s));
+}
+
+/// Whether this material belongs to a sign-in this process stored less than
+/// [`RESUME_WINDOW_S`] ago whose pair is still the stored owner pair.
+fn resumable(entry: &CredentialVaultEntry, code: &str, code_verifier: &str) -> Result<bool, CredentialCommandError> {
+    let digest = material_digest(code, code_verifier);
+    let now = now_s()?;
+    let recorded = STORED_SIGN_INS.lock().ok().and_then(|stored| stored.iter().rev()
+        .find(|(candidate, _, at)| *candidate == digest && (0..=RESUME_WINDOW_S).contains(&(now - at)))
+        .map(|(_, generation, _)| *generation));
+    let Some(generation) = recorded else { return Ok(false) };
+    Ok(entry.vault().stored_generation(CredentialSlot::OwnerApi).ok().flatten() == Some(generation))
+}
+
+/// `setup`'s sign-in (M02-T13): the material of a sign-in this process
+/// stored, with that sign-in's pair still in place, resumes it with no
+/// request to Tesla, so a failed car discovery can be finished by repeating
+/// `setup` without a second Tesla login. Any other material is exchanged by
+/// [`exchange_owner_code`], which refuses a used code as before.
+pub async fn sign_in_or_resume_owner_code(entry: &CredentialVaultEntry, code: &str, code_verifier: &str, redirect_uri: &str) -> Result<OwnerSignIn, CredentialCommandError> {
+    check_material(code, code_verifier, redirect_uri)?;
+    if resumable(entry, code, code_verifier)? { return Ok(OwnerSignIn::Resumed); }
+    exchange_owner_code(entry, code, code_verifier, redirect_uri).await
+}
+
+/// [`sign_in_or_resume_owner_code`] against a loopback stub token endpoint,
+/// for the binary's tests.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub async fn sign_in_or_resume_owner_code_with_stub_for_test(entry: &CredentialVaultEntry, code: &str, code_verifier: &str, redirect_uri: &str, stub: &str) -> Result<OwnerSignIn, CredentialCommandError> {
+    check_material(code, code_verifier, redirect_uri)?;
+    if resumable(entry, code, code_verifier)? { return Ok(OwnerSignIn::Resumed); }
+    exchange_owner_code_with_stub_for_test(entry, code, code_verifier, redirect_uri, stub).await
 }
 
 /// The request body in one wiping buffer of its exact length.
@@ -274,6 +344,11 @@ async fn exchange_at(entry: &CredentialVaultEntry, code: &str, code_verifier: &s
     let stored = entry.vault().store_hub_grant(grant)?;
     // Durable: the window may now finish closing.
     drop(permit);
+    // The generation this exchange wrote, so the same material may later
+    // resume this sign-in while that pair is still the stored one.
+    if let Ok(Some(generation)) = entry.vault().stored_generation(CredentialSlot::OwnerApi) {
+        record_stored_sign_in(code, code_verifier, generation, sent_at_s);
+    }
     tracing::info!(slot = "owner_api", origin = "hub_login", refresh_owner = "hub", provenance = "own_legacy_exchange", "credential write");
     // The pair is stored: an aftercare failure no longer makes the sign-in a
     // refusal. The vault's next open runs the aftercare again.

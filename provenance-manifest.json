@@ -392,6 +392,8 @@
         "src/auth/credential_sign_in/buffers.rs",
         "src/auth/credential_sign_in/control.rs",
         "src/auth/credential_sign_in/custody.rs",
+        "src/auth/credential_sign_in/discovery.rs",
+        "src/auth/credential_sign_in/discovery_tests.rs",
         "src/auth/credential_sign_in/entries.rs",
         "src/auth/credential_sign_in/exchange.rs",
         "src/auth/credential_sign_in/exchange_tests.rs",
