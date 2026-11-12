@@ -1822,6 +1822,14 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
+        // This seed writes the source's standalone positions without the
+        // seam's instant rule, so with any of them it may not run over the
+        // Hub's own collection (design M03-SEAM-R3, section 4; publication
+        // applies the seam instead). Seeding only the session state stays
+        // open: it writes no row the seam weighs.
+        if !session.standalone_positions.is_empty() {
+            refuse_unplanned_import_seam_in_transaction(&transaction, &vehicle_id.to_string())?;
+        }
         if let Some((expected_last_observation_id, expected_updated_at_ms)) = expected {
             let actual: Option<(i64, i64)> = transaction
                 .query_row(

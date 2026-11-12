@@ -723,5 +723,143 @@ fn nearest(winners: &[i64], at_ms: i64, bounds: &BTreeMap<i64, (i64, Option<i64>
         .map(|(id, _)| id)
 }
 
+impl SeamPlan {
+    /// Whether applying the plan changes a row the store already holds on the
+    /// Hub's side, removes an earlier import's copy, or changes a recorded
+    /// decision. Writing the winning source rows does not count: publication
+    /// writes those together with the packs that carry them.
+    pub fn changes_the_store(&self) -> bool {
+        let sessions = |plan: &SessionPlan| {
+            !(plan.skipped.is_empty()
+                && plan.superseded.is_empty()
+                && plan.stale.is_empty()
+                && plan.links_dropped.is_empty()
+                && plan.widened.is_empty())
+        };
+        let children = |plan: &ChildPlan| !(plan.hub_removed.is_empty() && plan.moved_hub.is_empty());
+        sessions(&self.drives)
+            || sessions(&self.charges)
+            || children(&self.positions)
+            || children(&self.charge_samples)
+    }
+}
+
+/// What an import's packs do with one source session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackedSession {
+    /// Not packed: the seam gave the session to another row (or the store
+    /// keeps its own copy of an inherited session under the same id).
+    Skip,
+    /// Packed, with these bounds when the plan widened it.
+    Keep { bounds: Option<(i64, Option<i64>)> },
+}
+
+/// What an import's packs do with one source child.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackedChild {
+    /// Not packed: inside coverage the Hub's own children stand.
+    Skip,
+    /// Packed under this parent.
+    Keep { parent: Option<i64> },
+}
+
+/// The part of a [`SeamPlan`] an import's packs carry: which source drives
+/// are packed and with what bounds, which are skipped and which row stands
+/// for each, and the coverage that decides source positions by instant.
+///
+/// Packs and the store apply the same plan: a packed drive carries the
+/// bounds the store writes, and a source position keeps its instant rule.
+/// A source position whose drive was skipped is packed under the drive that
+/// stands for it; its bounds are not widened for it, as the store holds no
+/// source positions.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SeamPackPlan {
+    coverage: HubCoverage,
+    imported: BTreeMap<i64, Option<(i64, Option<i64>)>>,
+    skipped: BTreeMap<i64, i64>,
+    /// Inherited sessions whose stored row stays under the same id.
+    held: BTreeSet<i64>,
+}
+
+impl SeamPackPlan {
+    /// The packed part of `plan` for the drives under `coverage`.
+    pub fn for_drives(coverage: &HubCoverage, plan: &SessionPlan) -> Self {
+        let widened: BTreeMap<i64, (i64, Option<i64>)> = plan
+            .widened
+            .iter()
+            .map(|bounds| (bounds.id, (bounds.start_ms, bounds.end_ms)))
+            .collect();
+        Self {
+            coverage: coverage.clone(),
+            imported: plan
+                .imported
+                .iter()
+                .map(|id| (*id, widened.get(id).copied()))
+                .collect(),
+            skipped: plan
+                .skipped
+                .iter()
+                .map(|link| (link.loser_id, link.winner_id))
+                .collect(),
+            held: plan
+                .inherited
+                .iter()
+                .filter(|(_, copy)| *copy == InheritedCopy::Stored)
+                .map(|(id, _)| *id)
+                .collect(),
+        }
+    }
+
+    /// The source drive ids packed, ascending.
+    pub fn imported_drives(&self) -> impl Iterator<Item = i64> + '_ {
+        self.imported.keys().copied()
+    }
+
+    /// What the packs do with source drive `id`; `None` for an id the plan
+    /// never saw.
+    pub fn drive(&self, id: i64) -> Option<PackedSession> {
+        if let Some(bounds) = self.imported.get(&id) {
+            return Some(PackedSession::Keep { bounds: *bounds });
+        }
+        (self.skipped.contains_key(&id) || self.held.contains(&id)).then_some(PackedSession::Skip)
+    }
+
+    /// What the packs do with one source position, by its instant.
+    pub fn position(&self, child: ChildRow) -> PackedChild {
+        if self.coverage.contains(child.at_ms) {
+            return PackedChild::Skip;
+        }
+        let parent = child
+            .parent
+            .map(|parent| self.skipped.get(&parent).copied().unwrap_or(parent));
+        PackedChild::Keep { parent }
+    }
+
+    /// A digest of everything the packs take from the plan. Publication
+    /// plans again inside its transaction and refuses when this differs.
+    pub fn digest(&self) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let mut hash = Sha256::new();
+        hash.update(b"teslatlas-hub import seam pack plan v1\n");
+        for (start, end) in self.coverage.intervals() {
+            hash.update(format!("coverage {start} {end}\n"));
+        }
+        for (id, bounds) in &self.imported {
+            match bounds {
+                Some((start, Some(end))) => hash.update(format!("drive {id} {start} {end}\n")),
+                Some((start, None)) => hash.update(format!("drive {id} {start} -\n")),
+                None => hash.update(format!("drive {id}\n")),
+            }
+        }
+        for (loser, winner) in &self.skipped {
+            hash.update(format!("skip {loser} {winner}\n"));
+        }
+        for id in &self.held {
+            hash.update(format!("held {id}\n"));
+        }
+        hash.finalize().into()
+    }
+}
+
 #[cfg(test)]
 mod tests;
