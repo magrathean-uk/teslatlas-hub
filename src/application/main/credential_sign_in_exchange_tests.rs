@@ -22,7 +22,7 @@ fn stub_setup(entry: &CredentialVaultEntry, issuer: &StubIssuer, code: &str, red
     let token = format!("{}/token", issuer.endpoint);
     let signed_in = run_owner_exchange(|| sign_in::exchange_owner_code_with_stub_for_test(entry, code, EXCHANGE_VERIFIER, redirect, &token))
         .map_err(setup_refusal)?;
-    Ok(owner_setup_report(signed_in))
+    Ok(owner_setup_report(signed_in, Ok(sign_in::OwnerDiscovery { vehicles_configured: 0 })))
 }
 
 fn assert_no_pair(root: &Path) {
@@ -72,8 +72,10 @@ fn sign_in_exchange_setup_refuses_a_wrong_redirect_and_a_reused_code_locally() {
 /// path never accepts the real token endpoint.
 #[test]
 fn sign_in_exchange_setup_report_names_no_secret() {
-    assert_eq!(owner_setup_report(sign_in::OwnerSignIn::Complete), serde_json::json!({"status": "signed_in", "slot": "owner_api", "origin": "hub_login", "aftercare": "complete", "vehicleDiscovery": "not_run"}));
-    assert_eq!(owner_setup_report(sign_in::OwnerSignIn::AftercarePending)["aftercare"], "pending");
+    let configured = || Ok(sign_in::OwnerDiscovery { vehicles_configured: 1 });
+    assert_eq!(owner_setup_report(sign_in::OwnerSignIn::Complete, configured()), serde_json::json!({"status": "signed_in", "slot": "owner_api", "origin": "hub_login", "signIn": "exchanged", "aftercare": "complete", "vehicleDiscovery": "configured", "vehiclesConfigured": 1}));
+    assert_eq!(owner_setup_report(sign_in::OwnerSignIn::AftercarePending, configured())["aftercare"], "pending");
+    assert_eq!(owner_setup_report(sign_in::OwnerSignIn::Resumed, configured())["signIn"], "resumed");
     let root = root();
     let entry = exchange_entry(root.path());
     let error = run_owner_exchange(|| sign_in::exchange_owner_code_with_stub_for_test(&entry, "code-bin-real-0001", EXCHANGE_VERIFIER, sign_in::OWNER_REDIRECT_URI, sign_in::OWNER_TOKEN_ENDPOINT)).unwrap_err();
@@ -184,6 +186,7 @@ fn sign_in_exchange_setup_takes_the_vault_from_an_active_collector() {
         },
         |entry| run_owner_exchange(|| sign_in::exchange_owner_code_with_stub_for_test(
             entry, "code-bin-custody-0001", EXCHANGE_VERIFIER, sign_in::OWNER_REDIRECT_URI, &token)),
+        |_| unreachable!("no discovery after a refused sign-in"),
     )
     .unwrap_err();
     assert_eq!(refusal.code, "window_closed", "the sign-in opened the vault and reached the exchange");
@@ -195,4 +198,102 @@ fn sign_in_exchange_setup_takes_the_vault_from_an_active_collector() {
     assert!(!custody.requested(), "custody released");
     after.stop();
     assert_no_pair(root.path());
+}
+
+/// M02-T13: with no Open window the service's car discovery, on the vault's
+/// stored own pair, is refused `window_closed` by the production gate before
+/// any connection to the (loopback) Owner API; the pair stays and no car is
+/// configured.
+#[test]
+fn sign_in_discovery_setup_refuses_while_the_gate_is_closed() {
+    assert!(!teslatlas_hub::collection::window::EgressGate::process_wide().is_open(), "no test opens the process gate");
+    let root = root();
+    sign_in::seed_owner_pair_for_test(root.path(), "bin-discovery-access-0001", "bin-discovery-refresh-0001", None).expect("own pair");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback listener");
+    listener.set_nonblocking(true).expect("non-blocking");
+    let stub = format!("https://{}/", listener.local_addr().expect("listener address"));
+    let entry = exchange_entry(root.path());
+    let store = HubStore::initialize(root.path()).expect("store");
+    let mut config = command_config(root.path());
+    config.collector.stream_region = Some(teslatlas_hub::tesla_stream::StreamRegion::Global);
+    let error = run_owner_exchange(|| sign_in::discover_owner_cars_with_stub_for_test(
+        &entry, &store, &config, sign_in::OwnerCarSelection::Vehicle(7001), &stub)).unwrap_err();
+    assert_eq!(error.code(), "window_closed");
+    assert!(matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock), "no connection opened");
+    let other = run_owner_exchange(|| sign_in::discover_owner_cars_with_stub_for_test(
+        &entry, &store, &config, sign_in::OwnerCarSelection::All, "https://192.0.2.1/")).unwrap_err();
+    assert_eq!(other.code(), "discovery_settings_invalid", "the stub seam accepts only loopback");
+    drop(entry);
+    assert!(store.configured_tesla_vehicles().expect("cars").is_empty(), "no car configured");
+    assert!(projection(root.path()).legacy_credentials.present, "the own pair stays");
+    for secret in ["bin-discovery-access-0001", "bin-discovery-refresh-0001"] {
+        assert!(!error.to_string().contains(secret), "no token in the refusal");
+    }
+}
+
+/// M02-T13: `setup` lists and records the cars inside the sign-in's custody,
+/// with the same vault and the collector stopped, then the collector starts
+/// again. A discovery failure after a stored sign-in still reports the
+/// sign-in as stored, with discovery failed and its fixed code; a refused
+/// sign-in runs no discovery. A bad car choice refuses before anything else.
+#[test]
+fn sign_in_discovery_setup_runs_inside_custody_and_reports_its_outcome() {
+    use teslatlas_hub::collection::window::{CollectorSlot as _, CredentialCustody, Supervisor};
+    let root = root();
+    let scratch = tempfile::tempdir().expect("scratch");
+    let store = HubStore::initialize(root.path()).expect("store");
+    let admission = AdmittedUserHub::admit(root.path()).expect("one service admission");
+    let window = operator_window::Window::new(scratch.path(), root.path());
+    window.controller.open(&window.grant(600)).expect("window opens");
+    let slot = HoldingSlot {
+        store: store.clone(), admission: Arc::clone(&admission), root: root.path().to_owned(),
+        held: Arc::default(), starts: Arc::default(),
+    };
+    let custody = CredentialCustody::new();
+    let supervisor = Arc::new(Mutex::new(
+        Supervisor::new(Arc::clone(&window.controller), slot.clone()).with_custody(custody.clone()),
+    ));
+    assert!(supervisor.lock().expect("supervisor").step().collector_running, "the collector runs inside the window");
+    let kick = {
+        let supervisor = Arc::clone(&supervisor);
+        move || { supervisor.lock().expect("supervisor").step(); }
+    };
+    let open = || CredentialVaultEntry::open_for_test(store.clone(), Arc::clone(&admission), root.path(), true);
+
+    let mut probe = slot.clone();
+    let report = owner_setup(&custody, &kick, open, |_| Ok(sign_in::OwnerSignIn::Complete), |entry| {
+        assert!(!probe.is_running(), "discovery runs with the collector stopped");
+        assert!(open().is_err(), "discovery holds the sign-in's one vault");
+        let _ = entry;
+        Ok(sign_in::OwnerDiscovery { vehicles_configured: 2 })
+    }).expect("setup");
+    assert_eq!(report, serde_json::json!({"status": "signed_in", "slot": "owner_api", "origin": "hub_login", "signIn": "exchanged",
+        "aftercare": "complete", "vehicleDiscovery": "configured", "vehiclesConfigured": 2}));
+    assert_eq!(slot.starts.load(Ordering::SeqCst), 2, "the collector started again after discovery");
+
+    let report = owner_setup(&custody, &kick, open, |_| Ok(sign_in::OwnerSignIn::Resumed), |_| {
+        Err(sign_in::owner_car_selection(Some(7001), true).unwrap_err())
+    }).expect("a stored sign-in is not refused by its discovery");
+    assert_eq!(report["status"], "signed_in");
+    assert_eq!(report["signIn"], "resumed");
+    assert_eq!(report["vehicleDiscovery"], "failed");
+    assert_eq!(report["discoveryCode"], "discovery_selection_invalid");
+    assert!(report["discoveryMessage"].as_str().is_some_and(|text| !text.is_empty()), "fixed owner text");
+    assert_eq!(slot.starts.load(Ordering::SeqCst), 3, "the collector started again after a failed discovery");
+
+    let discovered = Arc::new(AtomicUsize::new(0));
+    let ran = Arc::clone(&discovered);
+    let refusal = owner_setup(&custody, &kick, open, |_| Err(sign_in::sign_in_unavailable()), move |_| {
+        ran.fetch_add(1, Ordering::SeqCst);
+        Ok(sign_in::OwnerDiscovery { vehicles_configured: 1 })
+    }).unwrap_err();
+    assert_eq!(refusal.code, "sign_in_unavailable");
+    assert_eq!(discovered.load(Ordering::SeqCst), 0, "no discovery after a refused sign-in");
+    assert_eq!(slot.starts.load(Ordering::SeqCst), 4);
+    assert!(!custody.requested(), "custody released");
+
+    let backend_refusal = sign_in::owner_car_selection(Some(7001), true).map_err(setup_refusal).unwrap_err();
+    assert_eq!(backend_refusal.code, "discovery_selection_invalid");
+    let mut after = slot.clone();
+    after.stop();
 }

@@ -125,9 +125,28 @@ every open until `window trust` is run again.
    refusal (`sign_in_refused`), an unusable or oversized answer
    (`sign_in_answer_invalid`) or an unreachable issuer (`sign_in_unavailable`)
    stores nothing; start the sign-in again for a new code. Refusals name a
-   fixed code only, never the code, verifier or a token. Until vehicle
-   discovery is wired to the Hub's own login, `setup` reports
-   `"vehicleDiscovery": "not_run"`.
+   fixed code only, never the code, verifier or a token.
+
+   Vehicle discovery follows in the same request, inside the same Open window,
+   with the pair just stored: one bounded products list over the Owner API,
+   through the egress gate with a permit of its own, and no vehicle-data read,
+   wake or command. `setup --vehicle-id ID` configures that listed car,
+   `setup --all-vehicles` every listed car, and plain `setup` the one listed
+   car (or the car this Hub already holds). The configured cars let collection
+   start when the collector restarts. The report then reads
+   `"vehicleDiscovery": "configured"` with `"vehiclesConfigured"`, and names
+   no VIN, car name or token. If discovery fails after the sign-in is stored,
+   `setup` still reports `"status": "signed_in"`, with
+   `"vehicleDiscovery": "failed"` and a fixed `discoveryCode`: for example
+   `discovery_vehicle_not_listed`, `discovery_selection_required`,
+   `discovery_answer_invalid`, `discovery_refused` or `window_closed`. The
+   stored login stays and no car is configured. To finish, run the same
+   `setup` again with the same sign-in material (and a corrected choice)
+   within 10 minutes, before the service restarts and while that login is
+   still stored: the service recognises the sign-in it stored, sends nothing
+   to Tesla's token endpoint (`"signIn": "resumed"`) and only lists the cars
+   again. After that, a new sign-in is needed. Fleet stays parked:
+   with `collector.provider = "fleet"` discovery refuses (`provider_parked`).
 
    While the window's collector runs it holds the Hub's credential store, so
    `setup` first asks the service to stop it; collection pauses for the sign-in
