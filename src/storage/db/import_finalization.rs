@@ -2639,7 +2639,11 @@ fn reconcile_imported_materialisation_in_transaction(
 
     let mut previous_id = 0_i64;
     for drive in drives {
-        if drive.id <= previous_id || drive.car_id != car_id {
+        // A source id inside the Hub's range would be taken for a Hub row.
+        if drive.id <= previous_id
+            || drive.id >= crate::db::hub_ids::HUB_ID_BASE
+            || drive.car_id != car_id
+        {
             return Err(StoreError::InvalidImportGeneration);
         }
         previous_id = drive.id;
@@ -2710,30 +2714,6 @@ fn reconcile_imported_materialisation_in_transaction(
         }
     };
     let prior_imported_drive_ids = prior_imported_drive_ids.into_iter().collect::<HashSet<_>>();
-    let current_drive_ids = drives.iter().map(|drive| drive.id).collect::<HashSet<_>>();
-
-    // A numeric source database drive ID is not a durable ownership marker. Live
-    // collection can allocate the same next ID after the preceding import.
-    // Only a row listed by the preceding imported projection is replaceable;
-    // rejecting every other collision keeps the transaction (and the live
-    // history) intact for an explicit reconciliation.
-    for drive in drives {
-        if !prior_imported_drive_ids.contains(&drive.id) {
-            let collision: bool = transaction
-                .query_row(
-                    "SELECT EXISTS(
-                        SELECT 1 FROM materialised_drives
-                         WHERE vehicle_id = ?1 AND drive_id = ?2
-                     )",
-                    params![vehicle_key.as_str(), drive.id],
-                    |row| row.get(0),
-                )
-                .map_err(StoreError::LifecycleWrite)?;
-            if collision {
-                return Err(StoreError::LineageCatalogConflict);
-            }
-        }
-    }
 
     let car_json = serde_json::to_string(car).map_err(StoreError::SerializeLifecycleRow)?;
     transaction
@@ -2749,62 +2729,15 @@ fn reconcile_imported_materialisation_in_transaction(
         )
         .map_err(StoreError::LifecycleWrite)?;
 
-    for drive in drives {
-        let drive_json = serde_json::to_string(drive).map_err(StoreError::SerializeLifecycleRow)?;
-        transaction
-            .execute(
-                "INSERT INTO materialised_drives(
-                    vehicle_id, drive_id, car_id, drive_json,
-                    inside_temp_avg, power_max, power_min,
-                    start_ideal_range_km, end_ideal_range_km, ascent, descent
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-                 ON CONFLICT(vehicle_id, drive_id) DO UPDATE SET
-                    car_id = excluded.car_id,
-                    drive_json = excluded.drive_json,
-                    inside_temp_avg = excluded.inside_temp_avg,
-                    power_max = excluded.power_max,
-                    power_min = excluded.power_min,
-                    start_ideal_range_km = excluded.start_ideal_range_km,
-                    end_ideal_range_km = excluded.end_ideal_range_km,
-                    ascent = excluded.ascent,
-                    descent = excluded.descent
-                 WHERE materialised_drives.car_id IS NOT excluded.car_id
-                    OR materialised_drives.drive_json IS NOT excluded.drive_json
-                    OR materialised_drives.inside_temp_avg IS NOT excluded.inside_temp_avg
-                    OR materialised_drives.power_max IS NOT excluded.power_max
-                    OR materialised_drives.power_min IS NOT excluded.power_min
-                    OR materialised_drives.start_ideal_range_km IS NOT excluded.start_ideal_range_km
-                    OR materialised_drives.end_ideal_range_km IS NOT excluded.end_ideal_range_km
-                    OR materialised_drives.ascent IS NOT excluded.ascent
-                    OR materialised_drives.descent IS NOT excluded.descent",
-                params![
-                    vehicle_key.as_str(),
-                    drive.id,
-                    car_id,
-                    drive_json,
-                    drive.inside_temp_avg,
-                    drive.power_max,
-                    drive.power_min,
-                    drive.start_ideal_range_km,
-                    drive.end_ideal_range_km,
-                    drive.ascent,
-                    drive.descent,
-                ],
-            )
-            .map_err(StoreError::LifecycleWrite)?;
-    }
-    for drive_id in prior_imported_drive_ids {
-        if !current_drive_ids.contains(&drive_id) {
-            transaction
-                .execute(
-                    "DELETE FROM materialised_drives
-                      WHERE vehicle_id = ?1 AND drive_id = ?2",
-                    params![vehicle_key.as_str(), drive_id],
-                )
-                .map_err(StoreError::LifecycleWrite)?;
-        }
-    }
-    Ok(())
+    // Ownership is the id range, not the prior inventory or a digest: the
+    // seam plan decides which side keeps each drive and position, and writes
+    // its losers to `import_seam_links` with tombstones for the Hub's.
+    apply_import_seam_to_drives_in_transaction(
+        transaction,
+        vehicle_id,
+        drives,
+        &prior_imported_drive_ids,
+    )
 }
 
 /// Preserve the exact import checkpoint before changing its active base.

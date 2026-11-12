@@ -300,8 +300,19 @@ fn promote_imported_open_session_in_transaction(
             row,
         )?;
     }
+    // Positions go by instant (design M03-SEAM-R3, section 4): inside the
+    // Hub's coverage the Hub's own rows stand, so a source position there is
+    // not written; outside it the source's is. Source ids never reach the
+    // Hub's range, so no source position can take a Hub row's key.
+    let coverage = import_seam_coverage_in_transaction(transaction, &vehicle)?;
     let mut standalone_positions_inserted = 0;
     for row in &session.standalone_positions {
+        if crate::db::hub_ids::is_hub_id(row.id) || row.id > crate::db::hub_ids::HUB_ID_MAX {
+            return Err(StoreError::InvalidImportGeneration);
+        }
+        if coverage.contains(row.date_ms) {
+            continue;
+        }
         let position = crate::lifecycle::imported_position(row);
         let json = serde_json::to_string(&position).map_err(StoreError::SerializeLifecycleRow)?;
         standalone_positions_inserted += transaction.execute(
@@ -346,4 +357,477 @@ fn promote_imported_open_session_in_transaction(
         watermarks_written: watermarks.len(),
         no_op: false,
     })
+}
+
+/// The collection coverage of one vehicle, read inside a publication
+/// transaction. A window still open in the store has no cutoff yet, so the
+/// publication refuses rather than guess one.
+fn import_seam_coverage_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_key: &str,
+) -> Result<crate::import::source_db::seam::HubCoverage, StoreError> {
+    crate::import::source_db::seam::HubCoverage::for_store(transaction, vehicle_key)
+        .map_err(|_| StoreError::ImportGenerationConflict)
+}
+
+/// One stored drive as the seam weighs it.
+struct StoredSeamDrive {
+    car_id: i64,
+    start_ms: i64,
+    end_ms: Option<i64>,
+}
+
+/// One Hub-range position as the seam weighs it.
+struct StoredSeamPosition {
+    car_id: i64,
+    at_ms: i64,
+    drive_id: Option<i64>,
+}
+
+/// The import seam applied to the drives and positions in the store, inside
+/// the publication transaction (design M03-SEAM-R3, section 4).
+///
+/// Ownership is the id range: a Hub-range row is the Hub's. A stored drive
+/// with a source id is the Hub's inherited session (one id on both sides)
+/// when the prior import did not list it or a Hub-range position belongs to
+/// it; every other stored source-id drive is an earlier import's. The pure
+/// [`plan_seam`](crate::import::source_db::seam::plan_seam) decides from the
+/// coverage in the store, those rows, the source drives and the recorded
+/// links, and this applies it: winning source drives are written, Hub drives
+/// that lost are removed with a tombstone, source drives that lost are not
+/// written (and removed with a tombstone if an earlier import stored them),
+/// stale source rows go with a tombstone, Hub positions outside coverage go
+/// with a tombstone, Hub positions whose drive lost move to the winner, kept
+/// sessions widen to hold their children, and every loser is recorded in
+/// `import_seam_links`. Applied again to the same source, the plan finds its
+/// links and superseded rows and changes nothing.
+fn apply_import_seam_to_drives_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    drives: &[ProjectionDrive],
+    prior_imported_drive_ids: &HashSet<i64>,
+) -> Result<(), StoreError> {
+    use crate::db::hub_ids::{HUB_ID_BASE, HUB_ID_MAX, is_hub_id};
+    use crate::import::source_db::seam::{
+        ChildRow, HubRows, SeamLinks, SessionRow, SourceRows, plan_seam,
+    };
+
+    let vehicle_key = vehicle_id.to_string();
+    let coverage = import_seam_coverage_in_transaction(transaction, &vehicle_key)?;
+
+    let stored_drives: std::collections::BTreeMap<i64, StoredSeamDrive> = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT drive_id, car_id,
+                        CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER),
+                        CAST(json_extract(drive_json, '$.end_date_ms') AS INTEGER)
+                   FROM materialised_drives WHERE vehicle_id = ?1 ORDER BY drive_id ASC",
+            )
+            .map_err(StoreError::Query)?;
+        let rows = statement
+            .query_map(params![vehicle_key.as_str()], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                ))
+            })
+            .map_err(StoreError::Query)?;
+        let mut stored = std::collections::BTreeMap::new();
+        for row in rows {
+            let (id, car_id, start_ms, end_ms) = row.map_err(StoreError::Query)?;
+            // A stored drive without a start cannot be weighed; it stays as
+            // it is and is never planned away.
+            let Some(start_ms) = start_ms else { continue };
+            stored.insert(
+                id,
+                StoredSeamDrive {
+                    car_id,
+                    start_ms,
+                    end_ms,
+                },
+            );
+        }
+        stored
+    };
+    let hub_positions: std::collections::BTreeMap<i64, StoredSeamPosition> = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT position_id, car_id, drive_id,
+                        CAST(json_extract(position_json, '$.date_ms') AS INTEGER)
+                   FROM materialised_positions
+                  WHERE vehicle_id = ?1 AND position_id BETWEEN ?2 AND ?3
+                  ORDER BY position_id ASC",
+            )
+            .map_err(StoreError::Query)?;
+        let rows = statement
+            .query_map(
+                params![vehicle_key.as_str(), HUB_ID_BASE, HUB_ID_MAX],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, Option<i64>>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                    ))
+                },
+            )
+            .map_err(StoreError::Query)?;
+        let mut positions = std::collections::BTreeMap::new();
+        for row in rows {
+            let (id, car_id, drive_id, at_ms) = row.map_err(StoreError::Query)?;
+            // A Hub position without an instant cannot be placed; it stays.
+            let Some(at_ms) = at_ms else { continue };
+            positions.insert(
+                id,
+                StoredSeamPosition {
+                    car_id,
+                    at_ms,
+                    drive_id,
+                },
+            );
+        }
+        positions
+    };
+
+    let held_by_hub_position: HashSet<i64> = hub_positions
+        .values()
+        .filter_map(|position| position.drive_id)
+        .collect();
+    let mut hub = HubRows::default();
+    let mut hub_side: HashSet<i64> = HashSet::new();
+    for (id, drive) in &stored_drives {
+        let inherited = !prior_imported_drive_ids.contains(id) || held_by_hub_position.contains(id);
+        if is_hub_id(*id) || inherited {
+            hub.drives.push(SessionRow {
+                id: *id,
+                start_ms: drive.start_ms,
+                end_ms: drive.end_ms,
+            });
+            hub_side.insert(*id);
+        } else {
+            hub.imported_drives.push(*id);
+        }
+    }
+    hub.positions = hub_positions
+        .iter()
+        .map(|(id, position)| ChildRow {
+            id: *id,
+            at_ms: position.at_ms,
+            parent: position.drive_id,
+        })
+        .collect();
+    let source = SourceRows {
+        drives: drives
+            .iter()
+            .map(|drive| SessionRow {
+                id: drive.id,
+                start_ms: drive.start_date_ms,
+                end_ms: Some(drive.end_date_ms),
+            })
+            .collect(),
+        ..SourceRows::default()
+    };
+    let links = SeamLinks {
+        drives: seam_links_in_transaction(transaction, &vehicle_key, "drive")?,
+        ..SeamLinks::default()
+    };
+    let plan = plan_seam(&coverage, &hub, &source, &links);
+    let drive_plan = &plan.drives;
+    let position_plan = &plan.positions;
+
+    let widened: HashMap<i64, (i64, Option<i64>)> = drive_plan
+        .widened
+        .iter()
+        .map(|bounds| (bounds.id, (bounds.start_ms, bounds.end_ms)))
+        .collect();
+
+    // Hub drives that lost: removed with a tombstone. Their positions are
+    // decided by instant below, never because their drive lost.
+    for link in &drive_plan.superseded {
+        if !is_hub_id(link.loser_id) && !hub_side.contains(&link.loser_id) {
+            return Err(StoreError::InvalidImportGeneration);
+        }
+        if let Some(drive) = stored_drives.get(&link.loser_id) {
+            remove_seam_drive_in_transaction(transaction, vehicle_id, link.loser_id, drive.car_id)?;
+        }
+    }
+    // Source drives that lost, and stale source rows: an earlier import's
+    // copy goes with a tombstone; a Hub-range row is never removed here.
+    let source_gone = drive_plan
+        .skipped
+        .iter()
+        .map(|link| link.loser_id)
+        .chain(drive_plan.stale.iter().copied());
+    for id in source_gone {
+        if is_hub_id(id) {
+            return Err(StoreError::InvalidImportGeneration);
+        }
+        if let Some(drive) = stored_drives.get(&id) {
+            remove_seam_drive_in_transaction(transaction, vehicle_id, id, drive.car_id)?;
+        }
+    }
+
+    // Winning source drives, an inherited session's source copy among them.
+    let source_by_id: HashMap<i64, &ProjectionDrive> =
+        drives.iter().map(|drive| (drive.id, drive)).collect();
+    for id in &drive_plan.imported {
+        let Some(drive) = source_by_id.get(id) else {
+            return Err(StoreError::InvalidImportGeneration);
+        };
+        let mut drive = (*drive).clone();
+        if let Some((start_ms, end_ms)) = widened.get(id) {
+            drive.start_date_ms = *start_ms;
+            drive.end_date_ms = end_ms.unwrap_or(drive.end_date_ms);
+        }
+        let changed = upsert_imported_drive_in_transaction(transaction, &vehicle_key, &drive)?;
+        if changed && hub_side.contains(id) {
+            // The Hub's inherited row now holds the source copy.
+            let drive_json =
+                serde_json::to_string(&drive).map_err(StoreError::SerializeLifecycleRow)?;
+            record_sync_mutation_in_transaction(
+                transaction,
+                vehicle_id,
+                "drive",
+                drive.id,
+                drive.car_id,
+                "upsert",
+                &drive_json,
+            )?;
+        }
+    }
+    // Kept Hub sessions that widen to hold the children they gained.
+    for id in &drive_plan.hub_kept {
+        if let Some((start_ms, end_ms)) = widened.get(id) {
+            widen_hub_drive_in_transaction(transaction, vehicle_id, *id, *start_ms, *end_ms)?;
+        }
+    }
+
+    // Hub positions by instant: outside coverage they go with a tombstone.
+    for id in &position_plan.hub_removed {
+        let Some(position) = hub_positions.get(id) else {
+            continue;
+        };
+        transaction
+            .execute(
+                "DELETE FROM materialised_positions WHERE vehicle_id = ?1 AND position_id = ?2",
+                params![vehicle_key.as_str(), id],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+        record_sync_mutation_in_transaction(
+            transaction,
+            vehicle_id,
+            "position",
+            *id,
+            position.car_id,
+            "tombstone",
+            "{}",
+        )?;
+    }
+    // Kept Hub positions whose drive lost move to the winner.
+    for moved in &position_plan.moved_hub {
+        move_hub_position_in_transaction(transaction, vehicle_id, moved.id, moved.to)?;
+    }
+
+    let decided: Vec<_> = drive_plan
+        .skipped
+        .iter()
+        .chain(&drive_plan.superseded)
+        .copied()
+        .collect();
+    record_seam_links_in_transaction(
+        transaction,
+        &vehicle_key,
+        "drive",
+        &decided,
+        &drive_plan.links_dropped,
+    )
+}
+
+/// Stores one imported drive; an unchanged row is not rewritten. Returns
+/// whether the row was written.
+fn upsert_imported_drive_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_key: &str,
+    drive: &ProjectionDrive,
+) -> Result<bool, StoreError> {
+    let drive_json = serde_json::to_string(drive).map_err(StoreError::SerializeLifecycleRow)?;
+    let written = transaction
+        .execute(
+            "INSERT INTO materialised_drives(
+                vehicle_id, drive_id, car_id, drive_json,
+                inside_temp_avg, power_max, power_min,
+                start_ideal_range_km, end_ideal_range_km, ascent, descent
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(vehicle_id, drive_id) DO UPDATE SET
+                car_id = excluded.car_id,
+                drive_json = excluded.drive_json,
+                inside_temp_avg = excluded.inside_temp_avg,
+                power_max = excluded.power_max,
+                power_min = excluded.power_min,
+                start_ideal_range_km = excluded.start_ideal_range_km,
+                end_ideal_range_km = excluded.end_ideal_range_km,
+                ascent = excluded.ascent,
+                descent = excluded.descent
+             WHERE materialised_drives.car_id IS NOT excluded.car_id
+                OR materialised_drives.drive_json IS NOT excluded.drive_json
+                OR materialised_drives.inside_temp_avg IS NOT excluded.inside_temp_avg
+                OR materialised_drives.power_max IS NOT excluded.power_max
+                OR materialised_drives.power_min IS NOT excluded.power_min
+                OR materialised_drives.start_ideal_range_km IS NOT excluded.start_ideal_range_km
+                OR materialised_drives.end_ideal_range_km IS NOT excluded.end_ideal_range_km
+                OR materialised_drives.ascent IS NOT excluded.ascent
+                OR materialised_drives.descent IS NOT excluded.descent",
+            params![
+                vehicle_key,
+                drive.id,
+                drive.car_id,
+                drive_json,
+                drive.inside_temp_avg,
+                drive.power_max,
+                drive.power_min,
+                drive.start_ideal_range_km,
+                drive.end_ideal_range_km,
+                drive.ascent,
+                drive.descent,
+            ],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    Ok(written > 0)
+}
+
+/// Removes one drive the seam decided against, with its pending address work,
+/// and journals its tombstone. Its positions are not touched: positions go by
+/// instant, never because their drive lost.
+fn remove_seam_drive_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    drive_id: i64,
+    car_id: i64,
+) -> Result<(), StoreError> {
+    let vehicle_key = vehicle_id.to_string();
+    transaction
+        .execute(
+            "DELETE FROM address_enrichment_jobs
+              WHERE vehicle_id = ?1 AND target_type = 'drive' AND target_id = ?2",
+            params![vehicle_key.as_str(), drive_id],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    let removed = transaction
+        .execute(
+            "DELETE FROM materialised_drives WHERE vehicle_id = ?1 AND drive_id = ?2",
+            params![vehicle_key.as_str(), drive_id],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    if removed == 0 {
+        return Ok(());
+    }
+    record_sync_mutation_in_transaction(
+        transaction,
+        vehicle_id,
+        "drive",
+        drive_id,
+        car_id,
+        "tombstone",
+        "{}",
+    )
+}
+
+/// Widens a kept Hub drive's bounds to hold the children it gained; its
+/// totals stay its own. Journals the changed row.
+fn widen_hub_drive_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    drive_id: i64,
+    start_ms: i64,
+    end_ms: Option<i64>,
+) -> Result<(), StoreError> {
+    let vehicle_key = vehicle_id.to_string();
+    let Some((car_id, drive_json)) = transaction
+        .query_row(
+            "SELECT car_id, drive_json FROM materialised_drives
+              WHERE vehicle_id = ?1 AND drive_id = ?2",
+            params![vehicle_key.as_str(), drive_id],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(StoreError::Query)?
+    else {
+        return Ok(());
+    };
+    let mut value: Value =
+        serde_json::from_str(&drive_json).map_err(|_| StoreError::InvalidLifecycleSession)?;
+    let Some(object) = value.as_object_mut() else {
+        return Err(StoreError::InvalidLifecycleSession);
+    };
+    object.insert("start_date_ms".into(), Value::from(start_ms));
+    if let Some(end_ms) = end_ms {
+        object.insert("end_date_ms".into(), Value::from(end_ms));
+    }
+    let widened = value.to_string();
+    if widened == drive_json {
+        return Ok(());
+    }
+    transaction
+        .execute(
+            "UPDATE materialised_drives SET drive_json = ?3 WHERE vehicle_id = ?1 AND drive_id = ?2",
+            params![vehicle_key.as_str(), drive_id, widened],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    record_sync_mutation_in_transaction(
+        transaction,
+        vehicle_id,
+        "drive",
+        drive_id,
+        car_id,
+        "upsert",
+        &widened,
+    )
+}
+
+/// Moves one kept Hub position to the drive that won its instant and
+/// journals the changed row.
+fn move_hub_position_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    position_id: i64,
+    drive_id: i64,
+) -> Result<(), StoreError> {
+    let vehicle_key = vehicle_id.to_string();
+    let Some((car_id, position_json)) = transaction
+        .query_row(
+            "SELECT car_id, position_json FROM materialised_positions
+              WHERE vehicle_id = ?1 AND position_id = ?2",
+            params![vehicle_key.as_str(), position_id],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(StoreError::Query)?
+    else {
+        return Ok(());
+    };
+    let mut value: Value =
+        serde_json::from_str(&position_json).map_err(|_| StoreError::InvalidLifecycleSession)?;
+    let Some(object) = value.as_object_mut() else {
+        return Err(StoreError::InvalidLifecycleSession);
+    };
+    object.insert("drive_id".into(), Value::from(drive_id));
+    let moved = value.to_string();
+    transaction
+        .execute(
+            "UPDATE materialised_positions SET drive_id = ?3, position_json = ?4
+              WHERE vehicle_id = ?1 AND position_id = ?2",
+            params![vehicle_key.as_str(), position_id, drive_id, moved],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    record_sync_mutation_in_transaction(
+        transaction,
+        vehicle_id,
+        "position",
+        position_id,
+        car_id,
+        "upsert",
+        &moved,
+    )
 }

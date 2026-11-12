@@ -564,17 +564,68 @@ fn sparse_direct_successor_writes_only_changed_projection_and_drive_rows() {
     }
 }
 
-#[test]
-fn direct_successor_rejects_a_new_import_id_owned_by_live_collection_atomically() {
+// M03-T15: the import seam applied to drives and positions in the store
+// (design M03-SEAM-R3, section 4). Every test publishes through the real
+// import publication path; Hub rows and coverage are written as the
+// collector and the window controller leave them.
+
+const SEAM_T: i64 = 1_800_000_000_000;
+const SEAM_MINUTE: i64 = 60_000;
+
+/// A store with a published base of no drives.
+fn seam_store() -> (
+    tempfile::TempDir,
+    HubStore,
+    VehicleRecord,
+    ProjectionBinding,
+    ProjectionCar,
+) {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
-    let retained = import_materialised_test_drive(7, 10, 4.0);
-    let removed = import_materialised_test_drive(8, 10, 5.0);
-    let (vehicle, binding, mut successor_car, base) =
-        direct_materialised_base(&store, &[retained.clone(), removed.clone()]);
-    let base_car = successor_car.clone();
-    let live_collision = import_materialised_test_drive(9, binding.selected_car_id, 9.0);
-    let live_json = serde_json::to_string(&live_collision).expect("serialize live drive");
+    let (vehicle, binding, car, _) = direct_materialised_base(&store, &[]);
+    (temporary, store, vehicle, binding, car)
+}
+
+fn seam_drive(id: i64, car_id: i64, start_ms: i64, end_ms: i64) -> ProjectionDrive {
+    let mut drive = import_materialised_test_drive(id, car_id, 3.0);
+    drive.start_date_ms = start_ms;
+    drive.end_date_ms = end_ms;
+    drive
+}
+
+fn seam_position(
+    id: i64,
+    car_id: i64,
+    date_ms: i64,
+) -> crate::source_db_projection::SourceDbPosition {
+    serde_json::from_value(serde_json::json!({
+        "id": id, "car_id": car_id, "drive_id": null, "date_ms": date_ms,
+        "latitude": 47.5, "longitude": 19.0
+    }))
+    .expect("source position")
+}
+
+/// A handed-back window `[opened_ms, closed_ms)` in the store's coverage.
+fn seam_window(store: &HubStore, seq: i64, opened_ms: i64, closed_ms: Option<i64>) {
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "INSERT INTO collection_coverage(seq, grant_digest, opened_at_ms, closed_at_ms, gaps_json, sealed)
+             VALUES (?1, ?2, ?3, ?4, '[]', ?5)",
+            params![
+                seq,
+                format!("grant-{seq}"),
+                opened_ms,
+                closed_ms,
+                if closed_ms.is_some() { COVERAGE_SEALED_HANDBACK } else { COVERAGE_SEALED_OPEN }
+            ],
+        )
+        .expect("coverage window");
+}
+
+/// A drive the Hub collected (or extended), as the collector stores it.
+fn seam_hub_drive(store: &HubStore, vehicle: &VehicleRecord, drive: &ProjectionDrive) {
     store
         .open()
         .expect("catalogue")
@@ -583,13 +634,51 @@ fn direct_successor_rejects_a_new_import_id_owned_by_live_collection_atomically(
              VALUES (?1, ?2, ?3, ?4)",
             params![
                 vehicle.vehicle_id.to_string(),
-                live_collision.id,
-                live_collision.car_id,
-                live_json
+                drive.id,
+                drive.car_id,
+                serde_json::to_string(drive).expect("drive json")
             ],
         )
-        .expect("seed next live-created drive");
+        .expect("Hub drive");
+}
 
+/// A position the Hub collected.
+fn seam_hub_position(
+    store: &HubStore,
+    vehicle: &VehicleRecord,
+    car_id: i64,
+    id: i64,
+    drive_id: Option<i64>,
+    date_ms: i64,
+) {
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "INSERT INTO materialised_positions(vehicle_id, position_id, drive_id, car_id, position_json)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                vehicle.vehicle_id.to_string(),
+                id,
+                drive_id,
+                car_id,
+                serde_json::json!({"id": id, "car_id": car_id, "drive_id": drive_id, "date_ms": date_ms})
+                    .to_string()
+            ],
+        )
+        .expect("Hub position");
+}
+
+/// Publishes one import successor of `drives` (ascending ids) and the open
+/// session's standalone positions through the real publication path.
+fn seam_publish(
+    store: &HubStore,
+    vehicle: &VehicleRecord,
+    binding: &ProjectionBinding,
+    car: &ProjectionCar,
+    drives: &[ProjectionDrive],
+    standalone_positions: Vec<crate::source_db_projection::SourceDbPosition>,
+) -> Result<(), StoreError> {
     let run_id = store
         .begin_import_generation(
             binding.account_id,
@@ -597,101 +686,789 @@ fn direct_successor_rejects_a_new_import_id_owned_by_live_collection_atomically(
             binding.selected_car_id,
             3_000,
         )
-        .expect("successor staging generation");
+        .expect("successor generation");
     store
         .stage_import_generation_session(
             run_id,
             &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
+                standalone_positions,
                 ..Default::default()
             },
         )
-        .expect("successor staged session");
+        .expect("successor session");
     let prior = store
         .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
         )
-        .expect("prior imported state");
-    let state = create_direct_import_projection_state(&store, run_id, 32);
+        .expect("prior state");
+    let state = create_direct_import_projection_state(store, run_id, 64);
     let mut capture = crate::import_projection_state::SourceDbProjectionStateCapture::for_successor(
         state,
         Box::new(prior),
     );
-    successor_car.firmware_version = Some("2026.21".into());
-    let updated = import_materialised_test_drive(7, binding.selected_car_id, 6.0);
-    let imported_collision = import_materialised_test_drive(9, binding.selected_car_id, 10.0);
-    capture
-        .record_car(&successor_car)
-        .expect("capture updated car");
-    capture
-        .record_drive(&updated)
-        .expect("capture retained imported drive");
-    capture
-        .record_drive(&imported_collision)
-        .expect("capture colliding imported drive");
+    capture.record_car(car).expect("capture car");
+    for drive in drives {
+        capture.record_drive(drive).expect("capture drive");
+    }
     capture.seal().expect("seal successor state");
     let state = capture.into_state();
-    let delta = imported_typed_delta(&store, &binding, &base);
+    let lineage = store
+        .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+        .expect("lineage")
+        .expect("published lineage");
+    let delta = imported_typed_delta(store, binding, &lineage);
+    store.finalize_import_generation_delta_successors_with_projection_state_and_materialisation(
+        run_id,
+        binding.account_id,
+        vehicle.vehicle_id,
+        binding.selected_car_id,
+        3_000,
+        std::slice::from_ref(&delta),
+        &import_delta_test_cursor_key(),
+        &import_delta_test_cursor(binding, delta.to_sequence),
+        Sha256Digest::of_bytes(format!("seam-{run_id}").as_bytes()),
+        &[],
+        &state,
+        car,
+        drives,
+    )
+}
 
-    assert!(matches!(
-        store
-            .finalize_import_generation_delta_successors_with_projection_state_and_materialisation(
-                run_id,
-                binding.account_id,
-                vehicle.vehicle_id,
-                binding.selected_car_id,
-                3_000,
-                std::slice::from_ref(&delta),
-                &import_delta_test_cursor_key(),
-                &import_delta_test_cursor(&binding, delta.to_sequence),
-                Sha256Digest::of_bytes(b"direct-materialised-collision"),
-                &[],
-                &state,
-                &successor_car,
-                &[updated, imported_collision],
-            ),
-        Err(StoreError::LineageCatalogConflict)
-    ));
+/// The stored drives: id, start and end.
+fn seam_stored_drives(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, i64, i64)> {
+    let connection = store.open().expect("catalogue");
+    let mut statement = connection
+        .prepare(
+            "SELECT drive_id,
+                    CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER),
+                    CAST(json_extract(drive_json, '$.end_date_ms') AS INTEGER)
+               FROM materialised_drives WHERE vehicle_id = ?1 ORDER BY drive_id",
+        )
+        .expect("drives");
+    statement
+        .query_map(params![vehicle.vehicle_id.to_string()], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .expect("drive rows")
+        .collect::<Result<_, _>>()
+        .expect("drive rows")
+}
 
-    assert_eq!(
-        store
-            .materialised_drive_for_vehicle(vehicle.vehicle_id, live_collision.id)
-            .expect("live collision after rollback"),
-        Some(live_collision)
-    );
-    assert_eq!(
-        store
-            .materialised_drive_for_vehicle(vehicle.vehicle_id, retained.id)
-            .expect("prior retained drive after rollback"),
-        Some(retained)
-    );
-    assert_eq!(
-        store
-            .materialised_drive_for_vehicle(vehicle.vehicle_id, removed.id)
-            .expect("prior removed drive after rollback"),
-        Some(removed)
-    );
-    assert_eq!(
-        store
-            .materialised_car_for_vehicle(vehicle.vehicle_id)
-            .expect("prior car after rollback"),
-        Some(base_car)
-    );
-    assert_eq!(
-        store
-            .lineage_manifest_for_vehicle(vehicle.vehicle_id)
-            .expect("lineage after rollback")
-            .expect("base lineage remains")
-            .base
-            .snapshot_id,
-        base.base.snapshot_id
+/// The stored positions: id, drive id (column and JSON agree) and instant.
+fn seam_stored_positions(
+    store: &HubStore,
+    vehicle: &VehicleRecord,
+) -> Vec<(i64, Option<i64>, i64)> {
+    let connection = store.open().expect("catalogue");
+    let mut statement = connection
+        .prepare(
+            "SELECT position_id, drive_id,
+                    CAST(json_extract(position_json, '$.drive_id') AS INTEGER),
+                    CAST(json_extract(position_json, '$.date_ms') AS INTEGER)
+               FROM materialised_positions WHERE vehicle_id = ?1 ORDER BY position_id",
+        )
+        .expect("positions");
+    statement
+        .query_map(params![vehicle.vehicle_id.to_string()], |row| {
+            let column: Option<i64> = row.get(1)?;
+            let json: Option<i64> = row.get(2)?;
+            assert_eq!(column, json, "the position's drive column and JSON agree");
+            Ok((row.get(0)?, column, row.get(3)?))
+        })
+        .expect("position rows")
+        .collect::<Result<_, _>>()
+        .expect("position rows")
+}
+
+/// The drive and position mutations journalled for sync, in order.
+fn seam_mutations(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(String, i64, String)> {
+    let connection = store.open().expect("catalogue");
+    let mut statement = connection
+        .prepare(
+            "SELECT entity, entity_id, operation FROM sync_mutations
+              WHERE vehicle_id = ?1 AND entity IN ('drive', 'position') ORDER BY revision",
+        )
+        .expect("mutations");
+    statement
+        .query_map(params![vehicle.vehicle_id.to_string()], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .expect("mutation rows")
+        .collect::<Result<_, _>>()
+        .expect("mutation rows")
+}
+
+/// The recorded drive decisions: loser and winner.
+fn seam_links(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, i64)> {
+    let connection = store.open().expect("catalogue");
+    let mut statement = connection
+        .prepare(
+            "SELECT loser_id, winner_id FROM import_seam_links
+              WHERE vehicle_id = ?1 AND entity = 'drive' ORDER BY loser_id",
+        )
+        .expect("links");
+    statement
+        .query_map(params![vehicle.vehicle_id.to_string()], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .expect("link rows")
+        .collect::<Result<_, _>>()
+        .expect("link rows")
+}
+
+fn tombstone(entity: &str, id: i64) -> (String, i64, String) {
+    (entity.to_owned(), id, "tombstone".to_owned())
+}
+
+#[test]
+fn import_seam_source_id_at_the_base_is_refused() {
+    use crate::db::hub_ids::HUB_ID_BASE;
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let retained = import_materialised_test_drive(7, 10, 4.0);
+    let (vehicle, binding, car, base) = direct_materialised_base(&store, &[retained.clone()]);
+    let car_id = binding.selected_car_id;
+    let below = import_materialised_test_drive(HUB_ID_BASE - 1, car_id, 5.0);
+    let at_base = import_materialised_test_drive(HUB_ID_BASE, car_id, 6.0);
+
+    let refused = seam_publish(
+        &store,
+        &vehicle,
+        &binding,
+        &car,
+        &[retained.clone(), below.clone(), at_base],
+        Vec::new(),
     );
     assert!(
-        staging_generation_exists(&store, run_id),
-        "rejected collision leaves the staging generation retryable"
+        matches!(refused, Err(StoreError::InvalidImportGeneration)),
+        "a source drive id at the base is refused: {refused:?}"
     );
+    // Nothing of the refused publication is visible.
+    assert_eq!(
+        seam_stored_drives(&store, &vehicle)
+            .iter()
+            .map(|row| row.0)
+            .collect::<Vec<_>>(),
+        vec![retained.id]
+    );
+    let lineage = store
+        .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+        .expect("lineage")
+        .expect("base lineage remains");
+    assert_eq!(lineage.head_sequence, base.head_sequence);
+
+    // A standalone position at the base is refused as well.
+    let refused = seam_publish(
+        &store,
+        &vehicle,
+        &binding,
+        &car,
+        &[retained.clone()],
+        vec![seam_position(HUB_ID_BASE, car_id, SEAM_T)],
+    );
+    assert!(
+        matches!(refused, Err(StoreError::InvalidImportGeneration)),
+        "a source position id at the base is refused: {refused:?}"
+    );
+    assert!(seam_stored_positions(&store, &vehicle).is_empty());
+
+    // The last id below the base is the source's and is admitted.
+    seam_publish(
+        &store,
+        &vehicle,
+        &binding,
+        &car,
+        &[retained.clone(), below.clone()],
+        Vec::new(),
+    )
+    .expect("the last source id below the base");
+    assert_eq!(
+        seam_stored_drives(&store, &vehicle)
+            .iter()
+            .map(|row| row.0)
+            .collect::<Vec<_>>(),
+        vec![retained.id, below.id]
+    );
+}
+
+#[test]
+fn import_seam_replay_after_a_clash_keeps_every_drive() {
+    use crate::db::hub_ids::HUB_ID_BASE;
+    let (_temporary, store, vehicle, binding, car) = seam_store();
+    let car_id = binding.selected_car_id;
+    seam_window(&store, 1, SEAM_T, Some(SEAM_T + 60 * SEAM_MINUTE));
+    // The Hub collected two drives in its window.
+    let (first, second) = (HUB_ID_BASE + 1, HUB_ID_BASE + 2);
+    seam_hub_drive(
+        &store,
+        &vehicle,
+        &seam_drive(
+            first,
+            car_id,
+            SEAM_T + 10 * SEAM_MINUTE,
+            SEAM_T + 20 * SEAM_MINUTE,
+        ),
+    );
+    seam_hub_drive(
+        &store,
+        &vehicle,
+        &seam_drive(
+            second,
+            car_id,
+            SEAM_T + 30 * SEAM_MINUTE,
+            SEAM_T + 40 * SEAM_MINUTE,
+        ),
+    );
+    for (offset, minute) in [(1, 10), (2, 15), (3, 20), (4, 30), (5, 40)] {
+        let drive = if minute < 30 { first } else { second };
+        seam_hub_position(
+            &store,
+            &vehicle,
+            car_id,
+            HUB_ID_BASE + offset,
+            Some(drive),
+            SEAM_T + minute * SEAM_MINUTE,
+        );
+    }
+    // The source holds the first trip too (it clashes in time), and its own
+    // drives before and after the window.
+    let source = vec![
+        seam_drive(
+            40,
+            car_id,
+            SEAM_T - 30 * SEAM_MINUTE,
+            SEAM_T - 20 * SEAM_MINUTE,
+        ),
+        seam_drive(
+            41,
+            car_id,
+            SEAM_T + 10 * SEAM_MINUTE + 5_000,
+            SEAM_T + 20 * SEAM_MINUTE - 5_000,
+        ),
+        seam_drive(
+            42,
+            car_id,
+            SEAM_T + 90 * SEAM_MINUTE,
+            SEAM_T + 100 * SEAM_MINUTE,
+        ),
+    ];
+    let positions_before = seam_stored_positions(&store, &vehicle);
+
+    seam_publish(&store, &vehicle, &binding, &car, &source, Vec::new()).expect("first publication");
+    let drive_ids = |store: &HubStore| -> Vec<i64> {
+        seam_stored_drives(store, &vehicle)
+            .iter()
+            .map(|row| row.0)
+            .collect()
+    };
+    assert_eq!(
+        drive_ids(&store),
+        vec![40, 42, first, second],
+        "the Hub's trip is stored once"
+    );
+    assert_eq!(seam_links(&store, &vehicle), vec![(41, first)]);
+    assert_eq!(seam_stored_positions(&store, &vehicle), positions_before);
+    assert!(
+        seam_mutations(&store, &vehicle).is_empty(),
+        "nothing of the Hub's is removed"
+    );
+    let after_first = (
+        seam_stored_drives(&store, &vehicle),
+        seam_links(&store, &vehicle),
+    );
+
+    // The same source published again changes nothing: every drive stays.
+    seam_publish(&store, &vehicle, &binding, &car, &source, Vec::new()).expect("replay");
+    assert_eq!(
+        (
+            seam_stored_drives(&store, &vehicle),
+            seam_links(&store, &vehicle)
+        ),
+        after_first
+    );
+    assert_eq!(seam_stored_positions(&store, &vehicle), positions_before);
+    assert!(
+        seam_mutations(&store, &vehicle).is_empty(),
+        "a replay journals nothing"
+    );
+}
+
+#[test]
+fn import_seam_drive_across_a_window_edge_is_stored_once() {
+    use crate::db::hub_ids::HUB_ID_BASE;
+    let (_temporary, store, vehicle, binding, car) = seam_store();
+    let car_id = binding.selected_car_id;
+    seam_window(&store, 1, SEAM_T, Some(SEAM_T + 60 * SEAM_MINUTE));
+    // The Hub began recording at window open, in the middle of a drive the
+    // source recorded whole across the edge.
+    let hub_drive = HUB_ID_BASE + 1;
+    seam_hub_drive(
+        &store,
+        &vehicle,
+        &seam_drive(hub_drive, car_id, SEAM_T, SEAM_T + 5 * SEAM_MINUTE),
+    );
+    for (offset, minute) in [(1, 1), (2, 3), (3, 5)] {
+        seam_hub_position(
+            &store,
+            &vehicle,
+            car_id,
+            HUB_ID_BASE + offset,
+            Some(hub_drive),
+            SEAM_T + minute * SEAM_MINUTE,
+        );
+    }
+    let crossing = seam_drive(
+        50,
+        car_id,
+        SEAM_T - 10 * SEAM_MINUTE,
+        SEAM_T + 5 * SEAM_MINUTE,
+    );
+    let source = vec![crossing.clone()];
+
+    seam_publish(&store, &vehicle, &binding, &car, &source, Vec::new()).expect("publication");
+    assert_eq!(
+        seam_stored_drives(&store, &vehicle),
+        vec![(50, crossing.start_date_ms, crossing.end_date_ms)],
+        "the crossing drive is stored once, as the source's"
+    );
+    // The Hub's positions inside its coverage stay, now under the winner.
+    let positions: Vec<(i64, Option<i64>)> = seam_stored_positions(&store, &vehicle)
+        .iter()
+        .map(|row| (row.0, row.1))
+        .collect();
+    assert_eq!(
+        positions,
+        vec![
+            (HUB_ID_BASE + 1, Some(50)),
+            (HUB_ID_BASE + 2, Some(50)),
+            (HUB_ID_BASE + 3, Some(50))
+        ]
+    );
+    assert_eq!(seam_links(&store, &vehicle), vec![(hub_drive, 50)]);
+    let journal = seam_mutations(&store, &vehicle);
+    assert_eq!(
+        journal
+            .iter()
+            .filter(|row| row.2 == "tombstone")
+            .collect::<Vec<_>>(),
+        vec![&tombstone("drive", hub_drive)],
+        "the Hub's half goes with one tombstone and no position goes"
+    );
+    assert_eq!(
+        journal.iter().filter(|row| row.0 == "position").count(),
+        3,
+        "each moved position is journalled"
+    );
+
+    // A replay finds the superseded row and its link and repeats itself.
+    seam_publish(&store, &vehicle, &binding, &car, &source, Vec::new()).expect("replay");
+    assert_eq!(seam_stored_drives(&store, &vehicle).len(), 1);
+    assert_eq!(seam_links(&store, &vehicle), vec![(hub_drive, 50)]);
+    assert_eq!(
+        seam_mutations(&store, &vehicle),
+        journal,
+        "a replay journals nothing"
+    );
+}
+
+#[test]
+fn import_seam_inherited_drive_closed_earlier_by_source_keeps_hub_positions() {
+    use crate::db::hub_ids::HUB_ID_BASE;
+    let (_temporary, store, vehicle, binding, car) = seam_store();
+    let car_id = binding.selected_car_id;
+    seam_window(&store, 1, SEAM_T, Some(SEAM_T + 120 * SEAM_MINUTE));
+    // The import before the window inherited the open drive 60; the Hub went
+    // on collecting it from window open and closed it an hour later.
+    let inherited = seam_drive(
+        60,
+        car_id,
+        SEAM_T - 20 * SEAM_MINUTE,
+        SEAM_T + 60 * SEAM_MINUTE,
+    );
+    seam_hub_drive(&store, &vehicle, &inherited);
+    let hub_positions: Vec<i64> = (1..=59).map(|minute| HUB_ID_BASE + minute).collect();
+    for (index, id) in hub_positions.iter().enumerate() {
+        seam_hub_position(
+            &store,
+            &vehicle,
+            car_id,
+            *id,
+            Some(60),
+            SEAM_T + (index as i64 + 1) * SEAM_MINUTE,
+        );
+    }
+    // The source closed its copy just after the window opened.
+    let source = vec![
+        seam_drive(
+            59,
+            car_id,
+            SEAM_T - 90 * SEAM_MINUTE,
+            SEAM_T - 80 * SEAM_MINUTE,
+        ),
+        seam_drive(60, car_id, SEAM_T - 20 * SEAM_MINUTE, SEAM_T + SEAM_MINUTE),
+    ];
+
+    for round in ["publication", "replay"] {
+        seam_publish(&store, &vehicle, &binding, &car, &source, Vec::new()).expect(round);
+        assert_eq!(
+            seam_stored_drives(&store, &vehicle),
+            vec![
+                (59, source[0].start_date_ms, source[0].end_date_ms),
+                (60, inherited.start_date_ms, inherited.end_date_ms)
+            ],
+            "{round}: the stored row the Hub saw more of stays"
+        );
+        let kept: Vec<(i64, Option<i64>)> = seam_stored_positions(&store, &vehicle)
+            .iter()
+            .map(|row| (row.0, row.1))
+            .collect();
+        assert_eq!(
+            kept,
+            hub_positions
+                .iter()
+                .map(|id| (*id, Some(60)))
+                .collect::<Vec<_>>(),
+            "{round}: every Hub position of the inherited drive stays"
+        );
+        assert!(
+            seam_links(&store, &vehicle).is_empty(),
+            "{round}: one id, no loser"
+        );
+        assert!(
+            seam_mutations(&store, &vehicle).is_empty(),
+            "{round}: nothing removed"
+        );
+    }
+}
+
+#[test]
+fn import_seam_standalone_positions_inside_coverage_are_the_hubs() {
+    use crate::db::hub_ids::HUB_ID_BASE;
+    let (_temporary, store, vehicle, binding, car) = seam_store();
+    let car_id = binding.selected_car_id;
+    seam_window(&store, 1, SEAM_T, Some(SEAM_T + 60 * SEAM_MINUTE));
+    let hub_position = HUB_ID_BASE + 5;
+    seam_hub_position(
+        &store,
+        &vehicle,
+        car_id,
+        hub_position,
+        None,
+        SEAM_T + 10 * SEAM_MINUTE,
+    );
+    let standalone = vec![
+        seam_position(70, car_id, SEAM_T + 10 * SEAM_MINUTE),
+        seam_position(71, car_id, SEAM_T - 10 * SEAM_MINUTE),
+        seam_position(72, car_id, SEAM_T + 60 * SEAM_MINUTE),
+        seam_position(73, car_id, SEAM_T),
+    ];
+
+    for round in ["publication", "replay"] {
+        seam_publish(&store, &vehicle, &binding, &car, &[], standalone.clone()).expect(round);
+        assert_eq!(
+            seam_stored_positions(&store, &vehicle),
+            vec![
+                (71, None, SEAM_T - 10 * SEAM_MINUTE),
+                (72, None, SEAM_T + 60 * SEAM_MINUTE),
+                (hub_position, None, SEAM_T + 10 * SEAM_MINUTE),
+            ],
+            "{round}: inside coverage (open edge included) the Hub's; at and after the close the source's"
+        );
+        assert!(
+            seam_mutations(&store, &vehicle).is_empty(),
+            "{round}: the Hub's stays"
+        );
+    }
+}
+
+#[test]
+fn import_seam_source_time_correction_after_a_skip() {
+    use crate::db::hub_ids::HUB_ID_BASE;
+    let (_temporary, store, vehicle, binding, car) = seam_store();
+    let car_id = binding.selected_car_id;
+    seam_window(&store, 1, SEAM_T, Some(SEAM_T + 60 * SEAM_MINUTE));
+    let hub_drive = HUB_ID_BASE + 1;
+    seam_hub_drive(
+        &store,
+        &vehicle,
+        &seam_drive(
+            hub_drive,
+            car_id,
+            SEAM_T + 10 * SEAM_MINUTE,
+            SEAM_T + 20 * SEAM_MINUTE,
+        ),
+    );
+    let before = seam_drive(
+        40,
+        car_id,
+        SEAM_T - 30 * SEAM_MINUTE,
+        SEAM_T - 20 * SEAM_MINUTE,
+    );
+    let clash = seam_drive(
+        41,
+        car_id,
+        SEAM_T + 10 * SEAM_MINUTE,
+        SEAM_T + 20 * SEAM_MINUTE,
+    );
+    seam_publish(
+        &store,
+        &vehicle,
+        &binding,
+        &car,
+        &[before.clone(), clash],
+        Vec::new(),
+    )
+    .expect("first publication");
+    assert_eq!(seam_links(&store, &vehicle), vec![(41, hub_drive)]);
+
+    // The source corrects drive 41's times so they no longer meet the Hub's
+    // drive. The recorded decision holds while its winner exists.
+    let corrected = seam_drive(
+        41,
+        car_id,
+        SEAM_T + 45 * SEAM_MINUTE,
+        SEAM_T + 50 * SEAM_MINUTE,
+    );
+    seam_publish(
+        &store,
+        &vehicle,
+        &binding,
+        &car,
+        &[before.clone(), corrected],
+        Vec::new(),
+    )
+    .expect("publication after the correction");
+    assert_eq!(
+        seam_stored_drives(&store, &vehicle)
+            .iter()
+            .map(|row| row.0)
+            .collect::<Vec<_>>(),
+        vec![40, hub_drive],
+        "the skipped drive stays skipped"
+    );
+    assert_eq!(seam_links(&store, &vehicle), vec![(41, hub_drive)]);
+
+    // The source deletes drive 41: its link goes, and nothing else changes.
+    seam_publish(&store, &vehicle, &binding, &car, &[before], Vec::new())
+        .expect("publication after the deletion");
+    assert!(seam_links(&store, &vehicle).is_empty());
+    assert_eq!(
+        seam_stored_drives(&store, &vehicle)
+            .iter()
+            .map(|row| row.0)
+            .collect::<Vec<_>>(),
+        vec![40, hub_drive]
+    );
+    assert!(seam_mutations(&store, &vehicle).is_empty());
+}
+
+#[test]
+fn import_seam_publishing_between_two_windows() {
+    use crate::db::hub_ids::HUB_ID_BASE;
+    let (_temporary, store, vehicle, binding, car) = seam_store();
+    let car_id = binding.selected_car_id;
+    let hour = 60 * SEAM_MINUTE;
+    // The first window, handed back, with the Hub's drive and positions.
+    seam_window(&store, 1, SEAM_T, Some(SEAM_T + hour));
+    let first = HUB_ID_BASE + 1;
+    seam_hub_drive(
+        &store,
+        &vehicle,
+        &seam_drive(
+            first,
+            car_id,
+            SEAM_T + 10 * SEAM_MINUTE,
+            SEAM_T + 20 * SEAM_MINUTE,
+        ),
+    );
+    seam_hub_position(
+        &store,
+        &vehicle,
+        car_id,
+        HUB_ID_BASE + 1,
+        Some(first),
+        SEAM_T + 15 * SEAM_MINUTE,
+    );
+    let earlier = seam_drive(80, car_id, SEAM_T - hour, SEAM_T - hour + 10 * SEAM_MINUTE);
+    let first_clash = seam_drive(
+        81,
+        car_id,
+        SEAM_T + 10 * SEAM_MINUTE,
+        SEAM_T + 20 * SEAM_MINUTE,
+    );
+    seam_publish(
+        &store,
+        &vehicle,
+        &binding,
+        &car,
+        &[earlier.clone(), first_clash.clone()],
+        Vec::new(),
+    )
+    .expect("publication after the first window");
+
+    // The second window opens; while it is open there is no cutoff, so a
+    // publication refuses and changes nothing.
+    seam_window(&store, 2, SEAM_T + 3 * hour, None);
+    let between = seam_drive(82, car_id, SEAM_T + 90 * SEAM_MINUTE, SEAM_T + 2 * hour);
+    let second_clash = seam_drive(
+        83,
+        car_id,
+        SEAM_T + 3 * hour + 10 * SEAM_MINUTE,
+        SEAM_T + 3 * hour + 20 * SEAM_MINUTE,
+    );
+    let source = vec![earlier, first_clash, between, second_clash];
+    let drives_before = seam_stored_drives(&store, &vehicle);
+    assert!(matches!(
+        seam_publish(&store, &vehicle, &binding, &car, &source, Vec::new()),
+        Err(StoreError::ImportGenerationConflict)
+    ));
+    assert_eq!(seam_stored_drives(&store, &vehicle), drives_before);
+
+    // Handed back, with the Hub's second drive.
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "UPDATE collection_coverage SET closed_at_ms = ?1, sealed = ?2 WHERE seq = 2",
+            params![SEAM_T + 4 * hour, COVERAGE_SEALED_HANDBACK],
+        )
+        .expect("handback");
+    let second = HUB_ID_BASE + 2;
+    seam_hub_drive(
+        &store,
+        &vehicle,
+        &seam_drive(
+            second,
+            car_id,
+            SEAM_T + 3 * hour + 10 * SEAM_MINUTE,
+            SEAM_T + 3 * hour + 20 * SEAM_MINUTE,
+        ),
+    );
+    seam_hub_position(
+        &store,
+        &vehicle,
+        car_id,
+        HUB_ID_BASE + 2,
+        Some(second),
+        SEAM_T + 3 * hour + 15 * SEAM_MINUTE,
+    );
+    for round in ["publication", "replay"] {
+        seam_publish(&store, &vehicle, &binding, &car, &source, Vec::new()).expect(round);
+        assert_eq!(
+            seam_stored_drives(&store, &vehicle)
+                .iter()
+                .map(|row| row.0)
+                .collect::<Vec<_>>(),
+            vec![80, 82, first, second],
+            "{round}: each window's drive is the Hub's, the drive between them the source's"
+        );
+        assert_eq!(
+            seam_links(&store, &vehicle),
+            vec![(81, first), (83, second)]
+        );
+        assert_eq!(seam_stored_positions(&store, &vehicle).len(), 2);
+        assert!(
+            seam_mutations(&store, &vehicle).is_empty(),
+            "{round}: nothing removed"
+        );
+    }
+}
+
+#[test]
+fn import_seam_restore_then_import() {
+    use crate::db::hub_ids::HUB_ID_BASE;
+    let (_temporary, store, vehicle, binding, car) = seam_store();
+    let car_id = binding.selected_car_id;
+    // A backup taken inside a window: the store shows the window open and
+    // the Hub's rows up to its last moment.
+    seam_window(&store, 1, SEAM_T, None);
+    let hub_drive = HUB_ID_BASE + 1;
+    let last_ms = SEAM_T + 20 * SEAM_MINUTE;
+    seam_hub_drive(
+        &store,
+        &vehicle,
+        &seam_drive(hub_drive, car_id, SEAM_T + 10 * SEAM_MINUTE, last_ms),
+    );
+    seam_hub_position(
+        &store,
+        &vehicle,
+        car_id,
+        HUB_ID_BASE + 1,
+        Some(hub_drive),
+        SEAM_T + 10 * SEAM_MINUTE,
+    );
+    // The Hub's last row is a position at exactly the drive's end.
+    seam_hub_position(
+        &store,
+        &vehicle,
+        car_id,
+        HUB_ID_BASE + 2,
+        Some(hub_drive),
+        last_ms,
+    );
+    // The restored host has no window open, so it seals the window per
+    // vehicle at its last Hub row.
+    let sealed = crate::db::seal_restored_open_windows(&store.open().expect("catalogue"), None)
+        .expect("seal the restored window");
+    assert_eq!(sealed, 1);
+
+    // The source resumed after the restore; it also holds the Hub's trip and
+    // a position at the Hub's last instant.
+    let resumed = seam_drive(
+        93,
+        car_id,
+        SEAM_T + 30 * SEAM_MINUTE,
+        SEAM_T + 40 * SEAM_MINUTE,
+    );
+    let source = vec![
+        seam_drive(
+            91,
+            car_id,
+            SEAM_T + 10 * SEAM_MINUTE + 5_000,
+            last_ms - 5_000,
+        ),
+        resumed,
+    ];
+    let standalone = vec![
+        seam_position(92, car_id, last_ms),
+        seam_position(94, car_id, last_ms + 1),
+    ];
+    for round in ["publication", "replay"] {
+        seam_publish(
+            &store,
+            &vehicle,
+            &binding,
+            &car,
+            &source,
+            standalone.clone(),
+        )
+        .expect(round);
+        assert_eq!(
+            seam_stored_drives(&store, &vehicle)
+                .iter()
+                .map(|row| row.0)
+                .collect::<Vec<_>>(),
+            vec![93, hub_drive],
+            "{round}: the Hub's trip stands inside the sealed coverage"
+        );
+        assert_eq!(seam_links(&store, &vehicle), vec![(91, hub_drive)]);
+        let positions: Vec<i64> = seam_stored_positions(&store, &vehicle)
+            .iter()
+            .map(|row| row.0)
+            .collect();
+        assert_eq!(
+            positions,
+            vec![94, HUB_ID_BASE + 1, HUB_ID_BASE + 2],
+            "{round}: the Hub's position at its last instant stays; the source's at that instant does not"
+        );
+        assert!(
+            seam_mutations(&store, &vehicle).is_empty(),
+            "{round}: nothing removed"
+        );
+    }
 }
 
 #[test]
