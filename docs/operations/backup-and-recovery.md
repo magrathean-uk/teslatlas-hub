@@ -123,6 +123,37 @@ records how many files and bytes the directory holds, and `verify-backup` and
 the totals by walking the directory. Earlier builds cannot read a
 `backup-v5.json` directory.
 
+## Where scheduled encrypted backups read the recovery password
+
+Scheduled encrypted backups (`[backup]` in the configuration) and `backup-now`
+read the recovery password at each run; it is never part of the configuration,
+a command line, an environment variable, a report or a log.
+
+- Mac: the app stores the password in the owner's login keychain, as a generic
+  password with service `uk.magrathean.teslatlas.hub.backup` and account the
+  `backup.password_file` path (no file is written there). The item's access
+  list trusts only the app and its bundled service, so the service reads it
+  without a prompt and any other program meets the Keychain's confirmation.
+  The service never shows a prompt: when it cannot read the item (missing,
+  keychain locked, or a service whose code no longer matches the access list)
+  the run is refused with `backup_password_unavailable`, retried after the
+  retry wait, and the app shows the message as the last failure. Save the
+  recovery password again in Service details, Backups, to recreate the item.
+  A `backup-password` file left by an earlier version beside `config.toml` is
+  moved into the Keychain and removed when the app next opens the Backups
+  section or saves it; until then the service says the password is waiting to
+  move and does not read the file.
+- Unsigned development builds: the access list trusts the exact binaries that
+  saved the item, so after a rebuild the service is refused
+  (`backup_password_unavailable`) until the password is saved again from the
+  rebuilt app.
+- Linux and Docker: `backup.password_file` names an absolute path to a regular
+  file the service account owns, mode 0600 or tighter, at most 1 KiB of UTF-8.
+  The service refuses a file with any access control list entry that grants
+  another account access (`setfacl -b` removes one) with
+  `backup_password_file_invalid`. A manual `backup-now --password-file` reads
+  the file it names this way on every system.
+
 ## Export recovery credentials
 
 Create a private export directory, then create a random raw 32-byte key in a
