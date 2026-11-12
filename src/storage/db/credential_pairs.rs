@@ -1516,6 +1516,27 @@ impl CredentialConnection {
         tx.commit().map_err(StoreError::CredentialPairStore)?;
         Ok(id)
     }
+    /// Removes the sign-in binding of an attempt that stored nothing
+    /// (M02-T12); absent is fine. The vault supplies its counted-COMMIT
+    /// callback and proves the commit with its barrier.
+    pub(crate) fn discard_sign_in_binding_with_commit(
+        &mut self,
+        id: Uuid,
+        before_commit: &mut dyn FnMut(),
+    ) -> Result<(), StoreError> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        tx.execute(
+            "DELETE FROM credential_sign_ins WHERE sign_in_id=?1",
+            [id.to_string()],
+        )
+        .map_err(StoreError::CredentialPairStore)?;
+        before_commit();
+        tx.commit().map_err(StoreError::CredentialPairStore)?;
+        Ok(())
+    }
     pub(crate) fn scrub_credential_wal(&mut self) -> Result<bool, StoreError> {
         let mut wal = self.database_path.as_os_str().to_os_string();
         wal.push("-wal");

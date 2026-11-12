@@ -129,6 +129,19 @@ every open until `window trust` is run again.
    discovery is wired to the Hub's own login, `setup` reports
    `"vehicleDiscovery": "not_run"`.
 
+   While the window's collector runs it holds the Hub's credential store, so
+   `setup` first asks the service to stop it; collection pauses for the sign-in
+   and restarts on the new login once it ends. If the collector does not stop
+   within 30 seconds the sign-in is refused (`collector_still_running`); a
+   second sign-in while one runs is refused (`sign_in_busy`). A refusal before
+   the write leaves the stored login as it was. If the disk does not confirm
+   the write, `setup` reports `sign_in_stored_unconfirmed`: check
+   `teslatlas-hub status` before signing in again. A stored sign-in whose
+   follow-up cleanup failed reports `"aftercare": "pending"`; the service
+   finishes it when it next opens the credential store, as the collector's
+   restart does. A window closed during a sign-in stays Closing until the
+   answer is stored or, once the 60-second grace has passed, discarded.
+
 ## Stop
 
 - *At expiry:* nothing to do. At the deadline Hub stops issuing Tesla traffic,

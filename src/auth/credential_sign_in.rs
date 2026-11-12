@@ -39,7 +39,7 @@ pub use control::{RotationResult, SignOutResult, rotate_credential_key, sign_out
 pub use input::{SIGN_IN_LINE_CAP, SignInInput, SignInInputError};
 pub use scope::SignInScope;
 pub use owner_client::{OWNER_AUTHORIZATION_ENDPOINT, OWNER_CLIENT_ID, OWNER_REDIRECT_URI, OWNER_SCOPE, OWNER_TOKEN_ENDPOINT};
-pub use exchange::{ANSWER_CAP as OWNER_EXCHANGE_ANSWER_CAP, MAX_OWNER_CODE_BYTES, SIGN_IN_CODE_REUSED, SIGN_IN_MATERIAL_INVALID, exchange_owner_code};
+pub use exchange::{ANSWER_CAP as OWNER_EXCHANGE_ANSWER_CAP, MAX_OWNER_CODE_BYTES, SIGN_IN_CODE_REUSED, SIGN_IN_MATERIAL_INVALID, OwnerSignIn, exchange_owner_code};
 #[cfg(debug_assertions)]
 #[doc(hidden)]
 pub use exchange::exchange_owner_code_with_stub_for_test;

@@ -579,7 +579,7 @@ fn owner_setup(
     kick: &dyn Fn(),
     open_entry: impl FnOnce() -> Result<teslatlas_hub::CredentialVaultEntry, teslatlas_hub::CredentialVaultEntryError>,
     exchange: impl FnOnce(&teslatlas_hub::CredentialVaultEntry)
-        -> Result<(), teslatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+        -> Result<teslatlas_hub::auth::credential_sign_in::OwnerSignIn, teslatlas_hub::auth::credential_sign_in::CredentialCommandError>,
 ) -> Result<serde_json::Value, OperatorRefusal> {
     use teslatlas_hub::collection::window::custody::{CUSTODY_WAIT, SIGN_IN_BUSY};
     let held = custody.acquire(CUSTODY_WAIT, kick).map_err(|code| {
@@ -600,8 +600,7 @@ fn owner_setup(
         });
     drop(held);
     kick();
-    result.map_err(setup_refusal)?;
-    Ok(owner_setup_report())
+    Ok(owner_setup_report(result.map_err(setup_refusal)?))
 }
 
 /// The refusal `setup` returns: the fixed code and its fixed owner text.
@@ -612,13 +611,18 @@ fn setup_refusal(
     OperatorRefusal::new(error.code(), error.to_string())
 }
 
-/// What a successful `setup` reports: no token, code or account detail.
+/// What a successful `setup` reports: no token, code or account detail. The
+/// pair is stored either way; `aftercare` says whether the cleanup behind
+/// the write completed or waits for the vault's next open.
 #[cfg(unix)]
-fn owner_setup_report() -> serde_json::Value {
+fn owner_setup_report(
+    signed_in: teslatlas_hub::auth::credential_sign_in::OwnerSignIn,
+) -> serde_json::Value {
     serde_json::json!({
         "status": "signed_in",
         "slot": "owner_api",
         "origin": "hub_login",
+        "aftercare": signed_in.aftercare(),
         "vehicleDiscovery": "not_run",
     })
 }
@@ -628,10 +632,16 @@ fn owner_setup_report() -> serde_json::Value {
 #[cfg(unix)]
 fn run_owner_exchange<'a, F>(
     exchange: impl FnOnce() -> F + Send + 'a,
-) -> Result<(), teslatlas_hub::auth::credential_sign_in::CredentialCommandError>
+) -> Result<
+    teslatlas_hub::auth::credential_sign_in::OwnerSignIn,
+    teslatlas_hub::auth::credential_sign_in::CredentialCommandError,
+>
 where
     F: std::future::Future<
-            Output = Result<(), teslatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+            Output = Result<
+                teslatlas_hub::auth::credential_sign_in::OwnerSignIn,
+                teslatlas_hub::auth::credential_sign_in::CredentialCommandError,
+            >,
         > + 'a,
 {
     use teslatlas_hub::auth::credential_sign_in::sign_in_unavailable;

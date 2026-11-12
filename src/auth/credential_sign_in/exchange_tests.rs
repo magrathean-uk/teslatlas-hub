@@ -144,7 +144,7 @@ fn assert_secret_free(error: &CredentialCommandError, code: &str) {
     }
 }
 
-async fn exchange(entry: &CredentialVaultEntry, code: &str, verifier: &str, redirect: &str, stub: &Stub) -> Result<(), CredentialCommandError> {
+async fn exchange(entry: &CredentialVaultEntry, code: &str, verifier: &str, redirect: &str, stub: &Stub) -> Result<OwnerSignIn, CredentialCommandError> {
     exchange_at_stub_for_test(entry, code, verifier, redirect, &stub.url).await
 }
 
@@ -472,3 +472,67 @@ async fn owner_exchange_close_waits_for_a_paused_persistence() {
     }
 }
 
+fn binding_count(root: &std::path::Path) -> i64 {
+    rusqlite::Connection::open(root.join("hub.sqlite")).expect("synthetic SQL")
+        .query_row("SELECT count(*) FROM credential_sign_ins", [], |row| row.get(0)).expect("binding count")
+}
+
+/// One exchange with the vault cut at `point` (the cut stands in for a
+/// failed write or durability barrier there).
+async fn exchange_cut_at(entry: &CredentialVaultEntry, point: &'static str, code: &str, stub: &Stub) -> Result<OwnerSignIn, CredentialCommandError> {
+    let _faults = CredentialVaultEntry::test_faults(false, None, Some(point), Box::new(|_| {}));
+    exchange(entry, code, VERIFIER, OWNER_REDIRECT_URI, stub).await
+}
+
+/// Round 2, finding 3: faults at each persistence boundary of the exchange.
+/// Before the pair's commit (the binding's barrier, the publication of a
+/// keyring this attempt created) the store is left as it was: no binding, no
+/// new keyring and an existing pair untouched. A commit whose barrier fails
+/// is `sign_in_stored_unconfirmed`, never a plain refusal, and keeps the key
+/// its pair needs. An aftercare failure after the durable write is a stored
+/// sign-in with its aftercare pending, not a refusal.
+#[tokio::test]
+async fn owner_exchange_persistence_faults_leave_no_partial_state() {
+    let stub = Stub::spawn(Reply::Pkce).await;
+    let window = TestWindow::open(600);
+    let _route = window.route(&stub.url);
+
+    // A first sign-in: the binding and key-publication faults leave nothing.
+    for point in ["sign_in_binding_committed", "sign_in_key_published"] {
+        let (root, _store, entry) = fixture();
+        let error = exchange_cut_at(&entry, point, &format!("code-fault-fresh-{point}"), &stub).await.unwrap_err();
+        assert_eq!(error.code(), "durability_unavailable", "{point}");
+        assert_secret_free(&error, &format!("code-fault-fresh-{point}"));
+        assert_untouched(root.path(), &entry);
+    }
+
+    // A re-sign-in over an existing own pair: a binding fault leaves the pair
+    // as it was, with its key, and no binding.
+    let (root, _store, entry) = fixture();
+    exchange(&entry, "code-fault-existing-0001", VERIFIER, OWNER_REDIRECT_URI, &stub).await.expect("first sign-in");
+    let existing = entry.vault().stored_generation(CredentialSlot::OwnerApi).expect("read").expect("existing pair");
+    let error = exchange_cut_at(&entry, "sign_in_binding_committed", "code-fault-existing-0002", &stub).await.unwrap_err();
+    assert_eq!(error.code(), "durability_unavailable");
+    assert_eq!(entry.vault().stored_generation(CredentialSlot::OwnerApi).expect("read"), Some(existing), "the existing pair is kept");
+    assert_eq!(binding_count(root.path()), 0, "no binding left behind");
+    assert!(root.path().join("secrets").join("credential-keys").exists(), "the existing key is kept");
+
+    // The commit barrier: the pair was committed, so the refusal says so and
+    // the key the pair needs stays; the binding went with the commit.
+    let error = exchange_cut_at(&entry, "sign_in_pair_committed", "code-fault-existing-0003", &stub).await.unwrap_err();
+    assert_eq!(error.code(), "sign_in_stored_unconfirmed");
+    assert_secret_free(&error, "code-fault-existing-0003");
+    assert_eq!(binding_count(root.path()), 0, "the binding was consumed by the commit");
+    assert!(root.path().join("secrets").join("credential-keys").exists(), "the committed pair keeps its key");
+    let replaced = entry.vault().stored_generation(CredentialSlot::OwnerApi).expect("read after a passing barrier").expect("pair");
+    assert_ne!(replaced, existing, "the committed pair is the one read once its barrier passes");
+    assert!(entry.vault().load(CredentialSlot::OwnerApi).expect("read").is_some_and(|pair| pair.origin == Some(CredentialOrigin::HubLogin)));
+
+    // Aftercare after the durable write: a stored sign-in, aftercare pending.
+    let (root, _store, entry) = fixture();
+    let signed_in = exchange_cut_at(&entry, "sign_in_aftercare", "code-fault-aftercare-0001", &stub).await.expect("stored");
+    assert_eq!(signed_in, OwnerSignIn::AftercarePending);
+    assert!(entry.vault().load(CredentialSlot::OwnerApi).expect("read").is_some(), "the pair is stored");
+    assert_eq!(binding_count(root.path()), 0);
+    assert_eq!(exchange(&entry, "code-fault-aftercare-0002", VERIFIER, OWNER_REDIRECT_URI, &stub).await.expect("stored"), OwnerSignIn::Complete);
+}

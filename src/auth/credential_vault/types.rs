@@ -4,7 +4,10 @@ use zeroize::Zeroize;
 
 /// V2 displays these fixed codes, never issuer descriptions.
 #[derive(Debug)]
-pub(crate) enum SignInError { StateMismatch, Refused(SignInRefusalCode), Expired, AnswerInvalid, Unavailable, BindingInvalid, SettingsInvalid, Cancelled, ServicePauseFailed }
+pub(crate) enum SignInError { StateMismatch, Refused(SignInRefusalCode), Expired, AnswerInvalid, Unavailable, BindingInvalid, SettingsInvalid, Cancelled, ServicePauseFailed,
+    /// The grant's pair was committed but its durability barrier failed: the
+    /// sign-in may have replaced the stored pair (M02-T12).
+    StoredUnconfirmed }
 /// TRANSITIONAL: R69's complete RFC 6749 refusal allowlist.
 #[derive(Debug)]
 pub(crate) enum SignInRefusalCode { InvalidRequest, UnauthorizedClient, AccessDenied, UnsupportedResponseType, InvalidScope, ServerError, TemporarilyUnavailable, Other }
@@ -32,6 +35,7 @@ impl SignInError {
             Self::StateMismatch => "sign_in_state_mismatch", Self::Refused(_) => "sign_in_refused", Self::Expired => "sign_in_expired",
             Self::AnswerInvalid => "sign_in_answer_invalid", Self::Unavailable => "sign_in_unavailable", Self::BindingInvalid => "sign_in_binding_invalid",
             Self::SettingsInvalid => "sign_in_settings_invalid", Self::Cancelled => "sign_in_cancelled", Self::ServicePauseFailed => "sign_in_service_pause_failed",
+            Self::StoredUnconfirmed => "sign_in_stored_unconfirmed",
         }
     }
 }

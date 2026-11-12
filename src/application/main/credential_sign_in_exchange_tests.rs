@@ -20,9 +20,9 @@ fn exchange_entry(root: &Path) -> CredentialVaultEntry {
 
 fn stub_setup(entry: &CredentialVaultEntry, issuer: &StubIssuer, code: &str, redirect: &str) -> Result<serde_json::Value, OperatorRefusal> {
     let token = format!("{}/token", issuer.endpoint);
-    run_owner_exchange(|| sign_in::exchange_owner_code_with_stub_for_test(entry, code, EXCHANGE_VERIFIER, redirect, &token))
+    let signed_in = run_owner_exchange(|| sign_in::exchange_owner_code_with_stub_for_test(entry, code, EXCHANGE_VERIFIER, redirect, &token))
         .map_err(setup_refusal)?;
-    Ok(owner_setup_report())
+    Ok(owner_setup_report(signed_in))
 }
 
 fn assert_no_pair(root: &Path) {
@@ -72,7 +72,8 @@ fn sign_in_exchange_setup_refuses_a_wrong_redirect_and_a_reused_code_locally() {
 /// path never accepts the real token endpoint.
 #[test]
 fn sign_in_exchange_setup_report_names_no_secret() {
-    assert_eq!(owner_setup_report(), serde_json::json!({"status": "signed_in", "slot": "owner_api", "origin": "hub_login", "vehicleDiscovery": "not_run"}));
+    assert_eq!(owner_setup_report(sign_in::OwnerSignIn::Complete), serde_json::json!({"status": "signed_in", "slot": "owner_api", "origin": "hub_login", "aftercare": "complete", "vehicleDiscovery": "not_run"}));
+    assert_eq!(owner_setup_report(sign_in::OwnerSignIn::AftercarePending)["aftercare"], "pending");
     let root = root();
     let entry = exchange_entry(root.path());
     let error = run_owner_exchange(|| sign_in::exchange_owner_code_with_stub_for_test(&entry, "code-bin-real-0001", EXCHANGE_VERIFIER, sign_in::OWNER_REDIRECT_URI, sign_in::OWNER_TOKEN_ENDPOINT)).unwrap_err();

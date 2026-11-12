@@ -60,6 +60,25 @@ pub const SIGN_IN_MATERIAL_INVALID: &str = "sign_in_material_invalid";
 /// The egress gate refused: no window is Open.
 pub const WINDOW_CLOSED: &str = "window_closed";
 
+/// A stored owner sign-in. The pair is durable either way; its aftercare
+/// (the migration cleanup behind the write) either completed or is left to
+/// the vault's next open, which runs it again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnerSignIn {
+    Complete,
+    AftercarePending,
+}
+
+impl OwnerSignIn {
+    /// The fixed report value: `complete` or `pending`.
+    pub fn aftercare(self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::AftercarePending => "pending",
+        }
+    }
+}
+
 /// The same product token as the refresh request (R11).
 const EXCHANGE_USER_AGENT: &str = concat!("Teslatlas-Hub/", env!("CARGO_PKG_VERSION"));
 
@@ -178,7 +197,7 @@ fn now_s() -> Result<i64, CredentialCommandError> {
 /// Exchanges the owner's authorisation code at Tesla's owner token endpoint
 /// and stores the answer as the Hub's own pair. See the module notes for the
 /// order of checks; a refusal at any step leaves the store unchanged.
-pub async fn exchange_owner_code(entry: &CredentialVaultEntry, code: &str, code_verifier: &str, redirect_uri: &str) -> Result<(), CredentialCommandError> {
+pub async fn exchange_owner_code(entry: &CredentialVaultEntry, code: &str, code_verifier: &str, redirect_uri: &str) -> Result<OwnerSignIn, CredentialCommandError> {
     let endpoint = Url::parse(OWNER_TOKEN_ENDPOINT).map_err(|_| failure(SignInError::SettingsInvalid))?;
     exchange_at(entry, code, code_verifier, redirect_uri, endpoint, false).await
 }
@@ -188,7 +207,7 @@ pub async fn exchange_owner_code(entry: &CredentialVaultEntry, code: &str, code_
 /// unless a window is Open. No real endpoint is accepted.
 #[cfg(debug_assertions)]
 #[doc(hidden)]
-pub async fn exchange_owner_code_with_stub_for_test(entry: &CredentialVaultEntry, code: &str, code_verifier: &str, redirect_uri: &str, stub: &str) -> Result<(), CredentialCommandError> {
+pub async fn exchange_owner_code_with_stub_for_test(entry: &CredentialVaultEntry, code: &str, code_verifier: &str, redirect_uri: &str, stub: &str) -> Result<OwnerSignIn, CredentialCommandError> {
     let endpoint = stub_endpoint(stub)?;
     exchange_at(entry, code, code_verifier, redirect_uri, endpoint, true).await
 }
@@ -205,7 +224,7 @@ fn stub_endpoint(stub: &str) -> Result<Url, CredentialCommandError> {
     Ok(url)
 }
 
-async fn exchange_at(entry: &CredentialVaultEntry, code: &str, code_verifier: &str, redirect_uri: &str, endpoint: Url, loopback: bool) -> Result<(), CredentialCommandError> {
+async fn exchange_at(entry: &CredentialVaultEntry, code: &str, code_verifier: &str, redirect_uri: &str, endpoint: Url, loopback: bool) -> Result<OwnerSignIn, CredentialCommandError> {
     check_material(code, code_verifier, redirect_uri)?;
     spend_code(code)?;
     let body = request_body(code, code_verifier)?;
@@ -243,20 +262,32 @@ async fn exchange_at(entry: &CredentialVaultEntry, code: &str, code_verifier: &s
     permit.check().map_err(|_| CredentialCommandError::new(WINDOW_CLOSED))?;
     // The local binding that proves this grant came from the Hub's own
     // exchange; begun only now, so a failed exchange leaves none behind.
+    // Each step below that refuses leaves no binding or attempt-created key
+    // behind; the vault removes them (or reports a committed but unproven
+    // write as `sign_in_stored_unconfirmed`).
     let session = entry.vault().begin_sign_in(CredentialSlot::OwnerApi)?;
+    let sign_in_id = session.id();
     let grant = RedeemedGrant::from_validated_redemption_at(session, Zeroizing::new(tokens.access.as_str().to_owned()),
-        Zeroizing::new(tokens.refresh.as_str().to_owned()), tokens.expires_in, None, None, sent_at_s)?;
+        Zeroizing::new(tokens.refresh.as_str().to_owned()), tokens.expires_in, None, None, sent_at_s);
     drop(tokens);
+    let grant = grant.inspect_err(|_| entry.vault().abandon_sign_in(sign_in_id))?;
     let stored = entry.vault().store_hub_grant(grant)?;
     // Durable: the window may now finish closing.
     drop(permit);
     tracing::info!(slot = "owner_api", origin = "hub_login", refresh_owner = "hub", provenance = "own_legacy_exchange", "credential write");
-    entry.vault().finish_hub_grant_aftercare(stored)?;
-    Ok(())
+    // The pair is stored: an aftercare failure no longer makes the sign-in a
+    // refusal. The vault's next open runs the aftercare again.
+    match entry.vault().finish_hub_grant_aftercare(stored) {
+        Ok(()) => Ok(OwnerSignIn::Complete),
+        Err(error) => {
+            tracing::warn!(code = error.code(), "credential aftercare deferred after a stored sign-in");
+            Ok(OwnerSignIn::AftercarePending)
+        }
+    }
 }
 
 #[cfg(test)]
-async fn exchange_at_stub_for_test(entry: &CredentialVaultEntry, code: &str, code_verifier: &str, redirect_uri: &str, stub: &str) -> Result<(), CredentialCommandError> {
+async fn exchange_at_stub_for_test(entry: &CredentialVaultEntry, code: &str, code_verifier: &str, redirect_uri: &str, stub: &str) -> Result<OwnerSignIn, CredentialCommandError> {
     exchange_at(entry, code, code_verifier, redirect_uri, stub_endpoint(stub)?, true).await
 }
 

@@ -55,6 +55,7 @@ pub fn credential_owner_message(
         }
         "sign_in_expired" => "The sign-in took longer than 10 minutes. Start it again.",
         "sign_in_answer_invalid" => "The sign-in answer could not be used. Start it again.",
+        "sign_in_stored_unconfirmed" => "The sign-in was written but the disk did not confirm it. Check the Hub's status before signing in again.",
         "sign_in_unavailable" => "The Hub could not reach Tesla's sign-in service. Check the connection and start again.",
         "sign_in_binding_invalid" => "The sign-in could not be completed. Start it again.",
         "sign_in_settings_invalid" => "The Fleet sign-in settings were missing, incomplete or too large. Nothing was changed. Check them and start again.",
