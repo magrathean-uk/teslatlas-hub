@@ -265,7 +265,7 @@ fn accept_schema_evidence_flag_works_for_check_and_migrate() {
 #[test]
 fn mt4_3_unknown_key_is_refused_unless_new_import_source() {
     let temp = tempfile::tempdir().unwrap();
-    let store = HubStore::initialize(&temp.path().join("data")).unwrap();
+    let store = HubStore::initialize(temp.path().join("data")).unwrap();
     let first = store
         .register_import_source("home-source", 1000, false)
         .unwrap();
@@ -303,7 +303,7 @@ fn mt4_3_unknown_key_is_refused_unless_new_import_source() {
 fn current_import_fixture() -> (tempfile::TempDir, HubStore, uuid::Uuid, uuid::Uuid) {
     let temporary = tempfile::tempdir().unwrap();
     // The store creates its own private data directory.
-    let store = HubStore::initialize(&temporary.path().join("data")).unwrap();
+    let store = HubStore::initialize(temporary.path().join("data")).unwrap();
     let source = store
         .register_import_source("default", 1000, false)
         .unwrap();
