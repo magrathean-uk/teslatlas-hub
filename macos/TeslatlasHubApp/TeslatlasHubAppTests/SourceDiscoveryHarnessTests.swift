@@ -7,7 +7,7 @@ import XCTest
 final class SourceDiscoveryHarnessTests: XCTestCase {
     private let full = ["DATABASE_USER": "chosen-user", "DATABASE_PASS": "chosen-password",
                         "DATABASE_NAME": "sourcedb", "ENCRYPTION_KEY": "chosen-key"]
-    private func scenario(version: String? = "4.2.0", uid: Int = 501,
+    private func scenario(version: String? = "4.4.0", uid: Int = 501,
                           candidateCount: Int = 1, databases: [String] = ["database-a"]) -> [String: Any] {
         var containers: [String: Any] = [
             "database-a": ["project": "arbitrary-project", "env": ["POSTGRES_PASSWORD": "unselected-db-secret"]],
@@ -68,7 +68,7 @@ final class SourceDiscoveryHarnessTests: XCTestCase {
         XCTAssertEqual(result.status, 0)
         XCTAssertEqual(result.values?["password"], "chosen-password")
         XCTAssertEqual(result.values?["car"], "42")
-        XCTAssertEqual(result.classification, .supported("4.2.0"))
+        XCTAssertEqual(result.classification, .supported("4.4.0"))
         XCTAssertTrue(result.versionAdmitted)
     }
     func testDiscoveryReportsNoCandidate() throws {
@@ -101,6 +101,12 @@ final class SourceDiscoveryHarnessTests: XCTestCase {
         containers["old-identity"] = ["project": "arbitrary-project", "env": ["DATABASE_USER": "unselected-user-secret"], "image": oldName + "/" + oldName + ":4.2.0"]
         value["containers"] = containers
         XCTAssertEqual(try checked(value).status, 20)
+    }
+    func testEarlierReviewedSetReleaseIsRefusedBeforeImport() throws {
+        let result = try checked(scenario(version: "4.2.0"))
+        XCTAssertEqual(result.status, 0)
+        XCTAssertEqual(result.classification, .tooOld("4.2.0"))
+        XCTAssertFalse(result.versionAdmitted)
     }
     func testTooOldOCITravelsThroughParserAndProductionAdmission() throws {
         let result = try checked(scenario(version: "4.1.1"))

@@ -108,6 +108,8 @@ pub(crate) const PINNED_MIGRATION_VERSIONS: [i64; SOURCE_DB_V4_MIGRATION_COUNT] 
     20260718160000,
     20260807090000,
     20260808090000,
+    20261009120000,
+    20261014120000,
 ];
 
 fn complete_schema() -> Vec<ObservedColumn<'static>> {
@@ -303,10 +305,13 @@ fn reviewed_migration_pin_requires_the_exact_upstream_set() {
     assert_eq!(SOURCE_DB_V4_SOURCE_REVISION.len(), 40);
     assert_eq!(
         SOURCE_DB_V4_SOURCE_REVISION,
-        "e8d24886f97f22469c2675f89be843f6d401c76a"
+        "42d187daadd0104fc9c4509785df47a26705845a"
     );
     assert!(is_supported_source_db_revision(
         SOURCE_DB_V4_SOURCE_REVISION
+    ));
+    assert!(is_supported_source_db_revision(
+        SOURCE_DB_V4_2_SOURCE_REVISION
     ));
     assert!(is_supported_source_db_revision(
         SOURCE_DB_V4_1_1_SOURCE_REVISION
@@ -787,4 +792,188 @@ fn text_family_accepts_current_text_and_varchar_columns() {
     assert!(ValueType::Text.accepts_udt("text"));
     assert!(ValueType::Text.accepts_udt("varchar"));
     assert!(!ValueType::Text.accepts_udt("int4"));
+}
+
+#[test]
+fn source_db_schema_20261014120000_is_the_accepted_reviewed_set() {
+    assert_eq!(MAX_VALIDATED_MIGRATION, 20_261_014_120_000);
+    assert_eq!(MIN_SUPPORTED_MIGRATION, MAX_VALIDATED_MIGRATION);
+    assert_eq!(PINNED_MIGRATION_VERSIONS.len(), 107);
+    assert_eq!(validate_migration_version(20_261_014_120_000), Ok(()));
+    assert_eq!(
+        validate_migration_versions(&PINNED_MIGRATION_VERSIONS),
+        Ok(20_261_014_120_000)
+    );
+    // The set hash is the sorted, newline-delimited 14-digit list.
+    let mut digest = Sha256::new();
+    for version in PINNED_MIGRATION_VERSIONS {
+        digest.update(format!("{version:014}\n").as_bytes());
+    }
+    assert_eq!(
+        hex::encode(digest.finalize()),
+        SOURCE_DB_V4_MIGRATION_SET_SHA256
+    );
+}
+
+#[test]
+fn source_db_schema_newer_than_20261014120000_is_still_refused() {
+    assert_eq!(
+        validate_migration_version(20_261_014_120_001),
+        Err(SchemaCompatibilityError::UnreviewedMigration {
+            found: 20_261_014_120_001,
+            maximum: 20_261_014_120_000,
+        })
+    );
+    let mut newer = PINNED_MIGRATION_VERSIONS.to_vec();
+    newer.push(20_261_101_000_000);
+    assert_eq!(
+        validate_migration_versions(&newer),
+        Err(SchemaCompatibilityError::UnreviewedMigration {
+            found: 20_261_101_000_000,
+            maximum: 20_261_014_120_000,
+        })
+    );
+}
+
+#[test]
+fn source_db_schema_v4_2_set_and_partial_v4_4_sets_are_refused() {
+    // The earlier v4.2-compatible set ends at 20260808090000.
+    let v4_2 = &PINNED_MIGRATION_VERSIONS[..PINNED_MIGRATION_VERSIONS.len() - 2];
+    assert_eq!(v4_2.last(), Some(&20_260_808_090_000));
+    assert_eq!(
+        validate_migration_versions(v4_2),
+        Err(SchemaCompatibilityError::LegacyMigration {
+            found: 20_260_808_090_000,
+            minimum: 20_261_014_120_000,
+        })
+    );
+    // The newest migration without its 20261009120000 predecessor.
+    let without_predecessor: Vec<i64> = PINNED_MIGRATION_VERSIONS
+        .iter()
+        .copied()
+        .filter(|version| *version != 20_261_009_120_000)
+        .collect();
+    assert_eq!(
+        validate_migration_versions(&without_predecessor),
+        Err(SchemaCompatibilityError::MigrationSetMismatch)
+    );
+}
+
+#[test]
+fn source_db_preferred_range_enum_rename_is_admitted_with_the_same_labels() {
+    // Schema 20261014120000 renamed the `range` enum to `preferred_range`;
+    // labels and order are unchanged, so imported values keep their meaning.
+    let schema = complete_schema();
+    let preferred_range = schema
+        .iter()
+        .find(|column| column.table == "settings" && column.name == "preferred_range")
+        .expect("settings.preferred_range");
+    assert_eq!(preferred_range.type_name, "preferred_range");
+    assert_eq!(preferred_range.format_type, "preferred_range");
+    assert!(!preferred_range.nullable);
+    assert_eq!(validate_observed_schema(&schema), Ok(()));
+    assert!(ENUM_PROBE_SQL.contains("'preferred_range'"));
+    assert!(!ENUM_PROBE_SQL.contains("'range'"));
+
+    // The pre-rename type name is no longer the reviewed shape.
+    let mut old_type = complete_schema();
+    let column = old_type
+        .iter_mut()
+        .find(|column| column.table == "settings" && column.name == "preferred_range")
+        .expect("settings.preferred_range");
+    column.type_name = "range";
+    column.format_type = "range";
+    assert_eq!(
+        validate_observed_schema(&old_type),
+        Err(SchemaCompatibilityError::IncompatibleColumnType {
+            table: "settings",
+            column: "preferred_range",
+            expected: ValueType::PreferredRange,
+        })
+    );
+
+    assert_eq!(validate_observed_enums(&complete_enums()), Ok(()));
+    let preferred: Vec<_> = complete_enums()
+        .into_iter()
+        .filter(|value| value.type_name == "preferred_range")
+        .map(|value| value.label)
+        .collect();
+    assert_eq!(preferred, ["ideal", "rated"]);
+
+    let mut old_enum = complete_enums();
+    for value in &mut old_enum {
+        if value.type_name == "preferred_range" {
+            value.type_name = "range";
+        }
+    }
+    assert_eq!(
+        validate_observed_enums(&old_enum),
+        Err(SchemaCompatibilityError::EnumLabelsMismatch {
+            type_name: "preferred_range",
+        })
+    );
+
+    let mut reordered = complete_enums();
+    let ideal = reordered
+        .iter()
+        .position(|value| value.type_name == "preferred_range" && value.label == "ideal")
+        .expect("ideal label");
+    reordered.swap(ideal, ideal + 1);
+    assert_eq!(
+        validate_observed_enums(&reordered),
+        Err(SchemaCompatibilityError::EnumLabelsMismatch {
+            type_name: "preferred_range",
+        })
+    );
+}
+
+/// Review REV-M03-T08 finding 1: source admission stays on the current set,
+/// while each earlier reviewed revision keeps its own hash, count and newest
+/// migration for verifying artefacts published before the upgrade.
+#[test]
+fn reviewed_source_sets_keep_their_own_tuples_and_admission_stays_current() {
+    let current = reviewed_source_set(SOURCE_DB_V4_SOURCE_REVISION).expect("current set");
+    assert!(current.is_current());
+    assert_eq!(current, &CURRENT_REVIEWED_SOURCE_SET);
+    assert_eq!(current.release, "4.4.0");
+    assert_eq!(current.migration_count, PINNED_MIGRATION_VERSIONS.len());
+    assert_eq!(current.newest_migration, 20_261_014_120_000);
+    assert_eq!(
+        migration_set_sha256(&PINNED_MIGRATION_VERSIONS),
+        current.migration_set_sha256
+    );
+
+    let earlier = reviewed_source_set(SOURCE_DB_V4_2_SOURCE_REVISION).expect("v4.2 set");
+    assert!(!earlier.is_current());
+    assert_eq!(earlier.release, "4.2.0");
+    assert_eq!(earlier.migration_count, 105);
+    assert_eq!(earlier.newest_migration, 20_260_808_090_000);
+    // The v4.2 list is the current list without its two newest migrations.
+    let v4_2_versions = &PINNED_MIGRATION_VERSIONS[..PINNED_MIGRATION_VERSIONS.len() - 2];
+    assert_eq!(v4_2_versions.last(), Some(&20_260_808_090_000));
+    assert_eq!(
+        migration_set_sha256(v4_2_versions),
+        earlier.migration_set_sha256
+    );
+    assert!(earlier.matches(earlier.migration_set_sha256, 105, 20_260_808_090_000));
+    assert!(!earlier.matches(current.migration_set_sha256, 105, 20_260_808_090_000));
+    assert!(!earlier.matches(earlier.migration_set_sha256, 107, 20_260_808_090_000));
+    assert!(!earlier.matches(earlier.migration_set_sha256, 105, 20_261_014_120_000));
+    let beta = reviewed_source_set(SOURCE_DB_V4_1_1_SOURCE_REVISION).expect("v4.1.1 set");
+    assert_eq!(beta.migration_set_sha256, earlier.migration_set_sha256);
+
+    assert!(reviewed_source_set("0000000000000000000000000000000000000000").is_none());
+    // Admission accepts only the current list: the v4.2 list is a legacy source.
+    assert!(matches!(
+        validate_migration_versions(v4_2_versions),
+        Err(SchemaCompatibilityError::LegacyMigration { .. })
+    ));
+}
+
+fn migration_set_sha256(versions: &[i64]) -> String {
+    let mut digest = Sha256::new();
+    for version in versions {
+        digest.update(format!("{version:014}\n").as_bytes());
+    }
+    hex::encode(digest.finalize())
 }

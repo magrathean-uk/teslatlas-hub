@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "ดำเนินการส่งมอบการย้ายแอปพลิเคชันต้นทางให้เสร็จสิ้นหรือยกเลิกก่อนออกจากระบบ";
 "hub.HubController.1504.567" = "ตัดการเชื่อมต่อไม่เสร็จสมบูรณ์ มีการรีเฟรชสถานะ Hub แล้ว โปรดตรวจสอบว่าบัญชียังเชื่อมต่ออยู่หรือไม่ %1$@";
 "hub.HubController.1522.568" = "โปรดยืนยันว่าได้ตรวจทานสคีมาของฐานข้อมูลต้นทาง แล้วก่อนตรวจสอบความเข้ากันได้";
-"hub.HubController.1523.569" = "โปรดยืนยันว่าแอปพลิเคชันต้นทางเป็นเวอร์ชัน 4.2.0 ขึ้นไปก่อนตรวจสอบความเข้ากันได้";
+"hub.HubController.1523.569" = "โปรดยืนยันว่าแอปพลิเคชันต้นทางเป็นเวอร์ชัน 4.4.0 ขึ้นไปก่อนตรวจสอบความเข้ากันได้";
 "hub.HubController.1532.570" = "เลือกแหล่ง PostgreSQL ในเครื่องที่ใช้ 127.0.0.1 หรือ ::1";
 "hub.HubController.1536.571" = "ID รถต้นทาง ต้องเป็นจำนวนบวก";
 "hub.HubController.1539.572" = "เลือกไฟล์รหัสผ่าน PostgreSQL ที่จำกัดสิทธิ์การเข้าถึง";
 "hub.HubController.1552.580" = "การตรวจสอบความเข้ากันได้ของแอปพลิเคชันต้นทางไม่ได้ส่งคืนรายงานที่ถูกต้อง";
 "hub.HubController.1562.581" = "ตรวจสอบฐานข้อมูลต้นทางไม่ได้ โปรดตรวจสอบการเชื่อมต่อเซิร์ฟเวอร์แล้วลองอีกครั้ง";
-"hub.HubController.1585.586" = "โปรดยืนยันว่าแอปพลิเคชันต้นทางเป็นเวอร์ชัน 4.2.0 ขึ้นไปก่อนนำเข้า";
+"hub.HubController.1585.586" = "โปรดยืนยันว่าแอปพลิเคชันต้นทางเป็นเวอร์ชัน 4.4.0 ขึ้นไปก่อนนำเข้า";
 "hub.HubController.1591.587" = "การลงชื่อเข้าใช้ต้องมีหน้าต่างการเก็บข้อมูลที่เปิดอยู่ เปิดหน้าต่าง แล้วลงชื่อเข้าใช้อีกครั้ง";
 "hub.HubController.1718.615" = "การนำเข้าแอปพลิเคชันต้นทางไม่ได้ส่งรายงานการเสร็จสิ้นที่ถูกต้อง Hub ยังคงหยุดทำงาน";
 "hub.HubController.1742.624" = "นำเข้าเสร็จแล้ว แต่ Hub บันทึกเงื่อนไขการส่งมอบอย่างปลอดภัยไม่ได้: %1$@ Hub ยังคงหยุดทำงาน";
-"hub.HubController.1846.655" = "โปรดยืนยันว่าแอปพลิเคชันต้นทางเป็นเวอร์ชัน 4.2.0 ขึ้นไปก่อนนำเข้าจากแหล่ง PostgreSQL โดยตรง";
+"hub.HubController.1846.655" = "โปรดยืนยันว่าแอปพลิเคชันต้นทางเป็นเวอร์ชัน 4.4.0 ขึ้นไปก่อนนำเข้าจากแหล่ง PostgreSQL โดยตรง";
 "hub.HubController.1865.658" = "แหล่ง PostgreSQL ต้องมี scheme postgres หรือ postgresql, โฮสต์ และชื่อฐานข้อมูล";
 "hub.HubController.1869.659" = "ห้ามใส่รหัสผ่านในแหล่ง PostgreSQL ให้ใช้ช่องไฟล์รหัสผ่าน";
 "hub.HubController.1966.689" = "ตั้งค่า Fleet ไม่สำเร็จ: %1$@ การกู้คืนการกำหนดค่า Hub ก็ล้มเหลวเช่นกัน: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "กรอกข้อมูลให้ครบทุกช่อง";
 "hub.ImportSheetController.149.1710" = "ต้องระบุแหล่งข้อมูล รหัสรถ และไฟล์รหัสผ่าน";
 "hub.ImportSheetController.156.1711" = "ยืนยันเวอร์ชันแอปพลิเคชันต้นทาง";
-"hub.ImportSheetController.17.1690" = "ฉันยืนยันว่าฐานข้อมูลนี้เป็นของแอปพลิเคชันต้นทางเวอร์ชัน 4.2.0 ขึ้นไป";
+"hub.ImportSheetController.17.1690" = "ฉันยืนยันว่าฐานข้อมูลนี้เป็นของแอปพลิเคชันต้นทางเวอร์ชัน 4.4.0 ขึ้นไป";
 "hub.ImportSheetController.26.1691" = "นำเข้าประวัติ";
 "hub.ImportSheetController.49.1693" = "คัดลอกข้อมูลจากฐานข้อมูล PostgreSQL ต้นทาง ไปยัง Teslatlas Hub";
 "hub.ImportSheetController.64.1694" = "แหล่งข้อมูล PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "ไฟล์รหัสผ่าน";
 "hub.ImportSheetController.7.1687" = "Hub จะอ่านฐานข้อมูลต้นทางโดยไม่หยุดแอปพลิเคชันต้นทางหรือแก้ไขข้อมูล หลังนำเข้า Hub จะแจ้งให้คุณปิดการเข้าถึง Tesla ในแอปพลิเคชันต้นทางด้วยตนเอง";
 "hub.ImportSheetController.73.1699" = "Hub ไม่ได้ทำงานอยู่ เริ่ม Hub เปิดหน้าต่างการเก็บข้อมูล แล้วลงชื่อเข้าใช้";
-"hub.ImportSheetController.9.1688" = "ก่อนนำเข้า: สำรองข้อมูลแอปพลิเคชันต้นทาง อัปเดตเป็นเวอร์ชัน 4.2.0 ขึ้นไป เริ่มการทำงานหนึ่งครั้ง และรอให้การย้ายฐานข้อมูลเสร็จสิ้น การเชื่อมต่อฐานข้อมูลโดยตรงไม่สามารถยืนยันเวอร์ชันของแอปที่กำลังทำงานได้";
+"hub.ImportSheetController.9.1688" = "ก่อนนำเข้า: สำรองข้อมูลแอปพลิเคชันต้นทาง อัปเดตเป็นเวอร์ชัน 4.4.0 ขึ้นไป เริ่มการทำงานหนึ่งครั้ง และรอให้การย้ายฐานข้อมูลเสร็จสิ้น การเชื่อมต่อฐานข้อมูลโดยตรงไม่สามารถยืนยันเวอร์ชันของแอปที่กำลังทำงานได้";
 "hub.LogsWindowController.113.1730" = "การดำเนินการเพิ่มเติมกับบันทึก";
 "hub.LogsWindowController.123.1732" = "ข้อมูลเข้าสู่ระบบและตัวระบุส่วนตัวจะถูกปกปิดในบันทึกที่แสดง คัดลอก หรือบันทึกไว้ โปรดตรวจสอบก่อนแชร์";
 "hub.LogsWindowController.17.1712" = "กำลังโหลดบันทึก…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "กรอกทั้งโทเค็นการเข้าถึงและโทเค็นรีเฟรช";
 "hub.OnboardingWindowController.1631.2105" = "กรอกเซิร์ฟเวอร์แอปพลิเคชันต้นทาง ผู้ใช้ SSH และพอร์ต";
 "hub.OnboardingWindowController.168.1852" = "ดำเนินการต่อ";
-"hub.OnboardingWindowController.1691.2113" = "การตรวจสอบสคีมาไม่สามารถระบุรุ่นของแอปพลิเคชันต้นทางได้ โปรดยืนยันว่าเซิร์ฟเวอร์ที่กำลังทำงานใช้รุ่น 4.2.0 หรือใหม่กว่า แล้วจึงดำเนินการต่อ";
+"hub.OnboardingWindowController.1691.2113" = "การตรวจสอบสคีมาไม่สามารถระบุรุ่นของแอปพลิเคชันต้นทางได้ โปรดยืนยันว่าเซิร์ฟเวอร์ที่กำลังทำงานใช้รุ่น 4.4.0 หรือใหม่กว่า แล้วจึงดำเนินการต่อ";
 "hub.OnboardingWindowController.1740.2131" = "เชื่อมต่อกับเซิร์ฟเวอร์แอปพลิเคชันต้นทางก่อนนำเข้า";
 "hub.OnboardingWindowController.1750.2137" = "การตั้งค่าเซิร์ฟเวอร์เปลี่ยนไปแล้ว เชื่อมต่อกับเซิร์ฟเวอร์แอปพลิเคชันต้นทางอีกครั้งก่อนนำเข้า";
 "hub.OnboardingWindowController.1820.2143" = "มีการตรวจสอบอย่างน้อยหนึ่งรายการที่ต้องดำเนินการ";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "เลือกคีย์ SSH";
 "hub.OnboardingWindowController.1981.2148" = "เลือกคีย์";
 "hub.OnboardingWindowController.200.1857" = "ใช้สแนปช็อต PostgreSQL ในเครื่อง (เฉพาะประวัติ)";
-"hub.OnboardingWindowController.203.1858" = "ฉันยืนยันว่าเซิร์ฟเวอร์นี้ใช้แอปพลิเคชันต้นทางเวอร์ชัน 4.2.0 ขึ้นไป";
+"hub.OnboardingWindowController.203.1858" = "ฉันยืนยันว่าเซิร์ฟเวอร์นี้ใช้แอปพลิเคชันต้นทางเวอร์ชัน 4.4.0 ขึ้นไป";
 "hub.OnboardingWindowController.252.1859" = "การนำเข้าครั้งก่อนยังไม่เสร็จ ตรวจสอบแอปพลิเคชันต้นทางแล้วเรียกใช้การนำเข้าอีกครั้ง";
 "hub.OnboardingWindowController.292.1862" = "พร้อมนำเข้า";
 "hub.OnboardingWindowController.298.1866" = "การเชื่อมต่อแอปพลิเคชันต้นทางล้มเหลว";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub ไม่สามารถจองพอร์ตช่องทางเชื่อมต่อฐานข้อมูลในเครื่องได้";
 "hub.SourceServerImporter.744.2586" = "ลองอีกครั้ง";
 "hub.SourceServerImporter.746.2588" = "อัปเดตแอปพลิเคชันต้นทางก่อน";
-"hub.SourceServerImporter.747.2589" = "การย้ายข้อมูลแบบมีคำแนะนำต้องใช้แอปพลิเคชันต้นทางเวอร์ชัน 4.2.0 ขึ้นไป";
+"hub.SourceServerImporter.747.2589" = "การย้ายข้อมูลแบบมีคำแนะนำต้องใช้แอปพลิเคชันต้นทางเวอร์ชัน 4.4.0 ขึ้นไป";
 "hub.SourceServerImporter.748.2590" = "สำรองข้อมูลแอปพลิเคชันต้นทาง อัปเดต แล้วรอให้การย้ายฐานข้อมูลเสร็จ จากนั้นเชื่อมต่ออีกครั้ง";
 "hub.SourceServerImporter.763.2594" = "แอปพลิเคชันต้นทางไม่ได้ทำงานหรือไม่พบคอนเทนเนอร์";
 "hub.SourceServerImporter.764.2596" = "ไม่สามารถระบุโปรเจ็กต์ Docker Compose ของแอปพลิเคชันต้นทางได้";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "บัญชีนี้เข้าถึง Docker ไม่ได้ ให้สิทธิ์เข้าถึง Docker โดยตรงหรืออนุญาต sudo แบบไม่ต้องใช้รหัสผ่านสำหรับ Docker";
 "hub.SourceServerImporter.834.2668" = "ไม่พบ Docker บนเซิร์ฟเวอร์แอปพลิเคชันต้นทาง ตรวจสอบเซิร์ฟเวอร์และ PATH ของบัญชี";
 "hub.SourceServerImporter.836.2670" = "ติดตั้ง Docker แล้ว แต่ยังใช้ไม่ได้ ตรวจสอบว่าบริการ Docker กำลังทำงาน";
-"hub.SourceServerImporter.838.2672" = "การย้ายข้อมูลแบบมีคำแนะนำต้องใช้แอปพลิเคชันต้นทางเวอร์ชัน 4.2.0 ขึ้นไป อัปเดตแอปพลิเคชันต้นทางแล้วลองอีกครั้ง";
+"hub.SourceServerImporter.838.2672" = "การย้ายข้อมูลแบบมีคำแนะนำต้องใช้แอปพลิเคชันต้นทางเวอร์ชัน 4.4.0 ขึ้นไป อัปเดตแอปพลิเคชันต้นทางแล้วลองอีกครั้ง";
 "hub.SourceServerImporter.840.2674" = "SSH เชื่อมต่อหรือยืนยันตัวตนไม่ได้ ตรวจสอบเซิร์ฟเวอร์ พอร์ต บัญชี และวิธีการยืนยันตัวตนที่เลือก";
 "hub.SourceServerImporter.842.2676" = "การยืนยันตัวตน SSH ล้มเหลว ตรวจสอบบัญชีและวิธีการยืนยันตัวตนที่เลือก";
 "hub.SourceServerImporter.854.2688" = "เซิร์ฟเวอร์ SSH ปิดการเชื่อมต่อ ตรวจสอบบันทึกของเซิร์ฟเวอร์และนโยบาย SSH";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "การตรวจสอบสคีมาไม่สามารถระบุได้ว่ารุ่นใดของแอปพลิเคชันต้นทางเขียนฐานข้อมูลนี้ เพราะมีหลายรุ่นที่ใช้สคีมานี้ร่วมกัน";
 
-"hub.import.ackRelease" = "ข้าพเจ้ายืนยันว่าแอปพลิเคชันต้นทางเป็นรุ่น 4.2.0 หรือใหม่กว่า และจะไม่มีการอัปเดตระหว่างการนำเข้า";
+"hub.import.ackRelease" = "ข้าพเจ้ายืนยันว่าแอปพลิเคชันต้นทางเป็นรุ่น 4.4.0 หรือใหม่กว่า และจะไม่มีการอัปเดตระหว่างการนำเข้า";
+
+"hub.backup.title" = "การสำรองข้อมูล";
+
+"hub.backup.detail" = "สำเนาที่เข้ารหัสของประวัติ Hub รหัสผ่านสำหรับกู้คืนจะอยู่ในไฟล์บน Mac เครื่องนี้ที่เจ้าของเท่านั้นที่อ่านได้";
+
+"hub.backup.backUpNow" = "สำรองข้อมูลตอนนี้";
+
+"hub.backup.onSchedule" = "สำรองข้อมูลตามกำหนดเวลา";
+
+"hub.backup.saveSchedule" = "บันทึกกำหนดเวลา";
+
+"hub.backup.panelPrompt" = "เลือก";
+
+"hub.backup.panelMessage" = "เลือกโฟลเดอร์สำหรับการสำรองข้อมูล Hub ที่เข้ารหัส นอกโฟลเดอร์ข้อมูลของ Hub";
+
+"hub.backup.savedNote" = "บันทึกแล้ว กำหนดเวลาจะมีผลเมื่อ Hub เริ่มทำงานใหม่";
+
+"hub.backup.noFolder" = "ยังไม่ได้เลือกโฟลเดอร์";
+
+"hub.backup.passwordPlaceholder" = "รหัสผ่านสำหรับกู้คืน (อย่างน้อย %1$@ อักขระ)";
+
+"hub.backup.passwordSaved" = "บันทึกแล้ว พิมพ์รหัสผ่านใหม่เพื่อแทนที่";
+
+"hub.backup.intervalHour" = "ทุกชั่วโมง";
+
+"hub.backup.intervalDay" = "ทุกวัน";
+
+"hub.backup.intervalTwoDays" = "ทุก 2 วัน";
+
+"hub.backup.intervalWeek" = "ทุกสัปดาห์";
+
+"hub.backup.intervalHours" = "ทุก %1$@ ชั่วโมง";
+
+"hub.backup.schedule" = "กำหนดเวลา";
+
+"hub.backup.keep" = "เก็บไว้";
+
+"hub.backup.keepSuffix" = "รายการสำรอง";
+
+"hub.backup.folder" = "โฟลเดอร์";
+
+"hub.backup.passwordLabel" = "รหัสผ่านสำหรับกู้คืน";
+
+"hub.backup.problem.passwordShort" = "รหัสผ่านสำหรับกู้คืนต้องมีอย่างน้อย %1$@ อักขระ";
+
+"hub.backup.problem.interval" = "ช่วงเวลาต้องอยู่ระหว่าง 1 ถึง 8784 ชั่วโมง";
+
+"hub.backup.problem.keep" = "จำนวนการสำรองข้อมูลที่เก็บไว้ต้องอยู่ระหว่าง 1 ถึง 1000";
+
+"hub.backup.problem.chooseFolder" = "เลือกโฟลเดอร์สำรองข้อมูล";
+
+"hub.backup.problem.folderInside" = "เลือกโฟลเดอร์สำรองข้อมูลนอกโฟลเดอร์ข้อมูลของ Hub";
+
+"hub.backup.problem.needsBoth" = "การสำรองข้อมูลตามกำหนดเวลาต้องมีโฟลเดอร์สำรองข้อมูลและรหัสผ่านสำหรับกู้คืน";
+
+"hub.backup.lastGoodNone" = "ยังไม่มี";
+
+"hub.backup.nextOff" = "การสำรองข้อมูลตามกำหนดเวลาปิดอยู่";
+
+"hub.backup.nextNotScheduled" = "ยังไม่ได้ตั้งเวลา: เลือกโฟลเดอร์และรหัสผ่าน";
+
+"hub.backup.nextPaused" = "กำลังรอการกู้คืนข้อมูลรับรอง";
+
+"hub.collection.notReported" = "ไม่ได้รายงาน";
+
+"hub.backup.blocked" = "ข้อมูลรับรองที่ถูกปฏิเสธบล็อกการสำรองข้อมูล เรียกใช้ purge-refused-credentials เพื่อล้างข้อมูลเหล่านั้น";
+
+"hub.backup.lastFailedMessage" = "ความพยายามครั้งล่าสุดล้มเหลว: %1$@";
+
+"hub.backup.lastFailedCode" = "ความพยายามครั้งล่าสุดล้มเหลว (%1$@)";
+
+"hub.backup.row.lastGood" = "การสำรองข้อมูลที่สำเร็จครั้งล่าสุด";
+
+"hub.backup.row.next" = "การสำรองข้อมูลครั้งถัดไป";
+
+"hub.backup.row.running" = "กำลังสำรองข้อมูลอยู่ขณะนี้";
+
+"hub.backup.row.lastAttempt" = "ความพยายามครั้งล่าสุด";
+
+"hub.backup.run.running" = "กำลังสำรองข้อมูล…";
+
+"hub.backup.run.stillRunning" = "การสำรองข้อมูลยังทำงานอยู่ในบริการ Hub";
+
+"hub.backup.run.finishedGeneration" = "สำรองข้อมูลเสร็จแล้ว: %1$@";
+
+"hub.backup.run.finished" = "สำรองข้อมูลเสร็จแล้ว";
+
+"hub.backup.run.failed" = "สำรองข้อมูลไม่สำเร็จ: %1$@";
+
+"hub.backup.maint.unreadable" = "อ่านคำตอบของ Hub ไม่ได้";
+
+"hub.backup.maint.unwritable" = "บันทึกรหัสผ่านสำหรับกู้คืนไม่ได้";
+
+"hub.backup.maint.configMissing" = "ตั้งค่า Hub ก่อนเปลี่ยนการสำรองข้อมูล";
+
+"hub.devices.title" = "อุปกรณ์ที่จับคู่แล้ว";
+
+"hub.devices.detail" = "โทรศัพท์และแอปที่อ่าน Hub นี้ พร้อมรถที่แต่ละเครื่องอ่านได้";
+
+"hub.devices.revokeTitle" = "เพิกถอนสิทธิ์ของ %1$@ ไหม";
+
+"hub.devices.revokeInfo" = "อุปกรณ์นี้จะหยุดอ่านจาก Hub ทันที หากต้องการใช้อีกครั้ง ให้จับคู่ใหม่";
+
+"hub.devices.revoke" = "เพิกถอน";
+
+"hub.devices.revokeEllipsis" = "เพิกถอน…";
+
+"hub.devices.revokeAccessibility" = "เพิกถอนสิทธิ์ของ %1$@";
+
+"hub.devices.revokedDone" = "เพิกถอนสิทธิ์ของ %1$@ แล้ว";
+
+"hub.devices.none" = "ไม่มีอุปกรณ์ที่จับคู่แล้ว";
+
+"hub.devices.cars" = "รถ: %1$@";
+
+"hub.devices.noCars" = "ไม่มีรถ";
+
+"hub.devices.carFallback" = "รถ %1$@";
+
+"hub.devices.unnamed" = "อุปกรณ์ที่ไม่มีชื่อ";
+
+"hub.devices.stateRevoked" = "เพิกถอนเมื่อ %1$@";
+
+"hub.devices.stateExpired" = "หมดอายุเมื่อ %1$@";
+
+"hub.devices.stateLastSeen" = "พบล่าสุดเมื่อ %1$@";
+
+"hub.devices.stateNeverSeen" = "ยังไม่เคยพบ";
+
+"hub.collection.loginOwn" = "ลงชื่อเข้าใช้ด้วยการเข้าสู่ระบบของ Hub เอง";
+
+"hub.collection.loginSignedOut" = "ออกจากระบบแล้ว";
+
+"hub.collection.loginNotOwn" = "การเข้าสู่ระบบที่เก็บไว้ไม่ใช่ของ Hub เอง";
+
+"hub.collection.credValidUntil" = "ใช้ได้ถึง %1$@";
+
+"hub.collection.credValid" = "ใช้ได้";
+
+"hub.collection.credRelogin" = "ต้องเข้าสู่ระบบใหม่: เข้าสู่ระบบอีกครั้งในหน้าต่างที่เปิดครั้งถัดไป";
+
+"hub.collection.credOwnerRefused" = "Owner API ถูกปฏิเสธ: Tesla ปฏิเสธการเข้าสู่ระบบนี้";
+
+"hub.collection.credRefused" = "ถูกปฏิเสธ (%1$@)";
+
+"hub.collection.credExposure" = "สงสัยว่าข้อมูลรั่วไหล: เข้าสู่ระบบอีกครั้งในหน้าต่างที่เปิดครั้งถัดไป";
+
+"hub.collection.credAttention" = "ต้องตรวจสอบ (%1$@)";
+
+"hub.collection.credNotSignedIn" = "ยังไม่ได้เข้าสู่ระบบ";
+
+"hub.collection.windowOpenUntil" = "เปิดถึง %1$@";
+
+"hub.collection.windowOpen" = "เปิดอยู่";
+
+"hub.collection.windowPending" = "รอดำเนินการ";
+
+"hub.collection.windowPendingFrom" = "รอดำเนินการตั้งแต่ %1$@";
+
+"hub.collection.windowPendingUntil" = "รอดำเนินการถึง %1$@";
+
+"hub.collection.windowPendingFromUntil" = "รอดำเนินการตั้งแต่ %1$@ ถึง %2$@";
+
+"hub.collection.windowClosingExpiry" = "กำลังปิด (หมดอายุ %1$@)";
+
+"hub.collection.windowClosing" = "กำลังปิด";
+
+"hub.collection.windowClosedReason" = "ปิดแล้ว (%1$@)";
+
+"hub.collection.windowClosed" = "ปิดแล้ว";
+
+"hub.collection.windowUntrusted" = "ปิดแล้ว (ไม่มีผู้ออกที่เชื่อถือได้)";
+
+"hub.collection.windowFaulted" = "ปิดแล้ว (สถานะหน้าต่างต้องใช้เอกสารความเชื่อถือใหม่)";
+
+"hub.collection.windowRecovery" = "ปิดแล้ว (กำลังรอการกู้คืนข้อมูลรับรอง: เรียกใช้ restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "ไม่ทราบ: ช่องควบคุมไม่ใช่ของ Hub นี้";
+
+"hub.collection.windowNotRunning" = "ไม่ทราบ: Hub ไม่ได้ทำงานอยู่";
+
+"hub.collection.reasonExpired" = "หมดอายุแล้ว";
+
+"hub.collection.reasonOperator" = "ปิดโดยผู้ดูแล";
+
+"hub.collection.reasonRelogin" = "ต้องเข้าสู่ระบบใหม่";
+
+"hub.collection.reasonOwnerRefused" = "Owner API ถูกปฏิเสธ";
+
+"hub.collection.reasonClock" = "การตรวจสอบนาฬิกาล้มเหลว";
+
+"hub.collection.reasonReboot" = "Mac เริ่มทำงานใหม่";
+
+"hub.collection.reasonUnverifiable" = "ตรวจสอบสถานะไม่ได้";
+
+"hub.collection.reasonClaimLost" = "สิทธิ์การเก็บข้อมูลหายไป";
+
+"hub.collection.fleet" = "พักไว้: ไม่มีการดำเนินการ Fleet ที่ใช้ได้";
+
+"hub.collection.signInUnavailable" = "ไม่สามารถเข้าสู่ระบบบน Hub นี้ได้";
+
+"hub.collection.labelLogin" = "การเข้าสู่ระบบ Tesla";
+
+"hub.collection.labelCredential" = "สถานะข้อมูลรับรอง";
+
+"hub.collection.labelWindow" = "หน้าต่างการเก็บข้อมูล";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "การเข้าสู่ระบบ";
+
+"hub.signIn.recoveryPending" = "Hub กำลังรอการกู้คืนข้อมูลรับรองของตัวเอง: ข้อมูลของ Hub นี้ถูกกู้คืนโดยไม่มีคีย์ เรียกใช้ restore-recovery-credentials แล้วเข้าสู่ระบบ ไม่มีสิ่งใดเปลี่ยนแปลง";
+
+"hub.signIn.serviceUnauthenticated" = "กระบวนการที่ตอบบนช่องควบคุมของ Hub ไม่ใช่ Hub นี้ จึงไม่มีสิ่งใดถูกส่ง รีสตาร์ท Hub แล้วเข้าสู่ระบบอีกครั้ง";
+
+"hub.signIn.busy" = "Hub กำลังยุ่งกับคำขออื่น ไม่มีสิ่งใดเปลี่ยนแปลง เข้าสู่ระบบอีกครั้งในอีกสักครู่";

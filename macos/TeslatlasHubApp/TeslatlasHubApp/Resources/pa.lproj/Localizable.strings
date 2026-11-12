@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "ਸਾਈਨ ਆਉਟ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਮਾਈਗ੍ਰੇਸ਼ਨ ਦੀ ਹਵਾਲਗੀ ਪੂਰੀ ਕਰੋ ਜਾਂ ਰੱਦ ਕਰੋ।";
 "hub.HubController.1504.567" = "ਡਿਸਕਨੈਕਟ ਸਾਫ਼ ਤਰੀਕੇ ਨਾਲ ਪੂਰਾ ਨਹੀਂ ਹੋਇਆ। Hub ਦੀ ਸਥਿਤੀ ਤਾਜ਼ਾ ਕੀਤੀ ਗਈ ਹੈ; ਜਾਂਚੋ ਕਿ ਖਾਤਾ ਹਾਲੇ ਜੁੜਿਆ ਹੈ ਜਾਂ ਨਹੀਂ। %1$@";
 "hub.HubController.1522.568" = "ਅਨੁਕੂਲਤਾ ਜਾਂਚਣ ਤੋਂ ਪਹਿਲਾਂ ਸਮੀਖਿਆ ਕੀਤੇ ਸਰੋਤ ਡਾਟਾਬੇਸ ਦੀ ਸਕੀਮਾ ਦੀ ਪੁਸ਼ਟੀ ਕਰੋ।";
-"hub.HubController.1523.569" = "ਅਨੁਕੂਲਤਾ ਜਾਂਚਣ ਤੋਂ ਪਹਿਲਾਂ ਪੁਸ਼ਟੀ ਕਰੋ ਕਿ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.2.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵਾਂ ਹੈ।";
+"hub.HubController.1523.569" = "ਅਨੁਕੂਲਤਾ ਜਾਂਚਣ ਤੋਂ ਪਹਿਲਾਂ ਪੁਸ਼ਟੀ ਕਰੋ ਕਿ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.4.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵਾਂ ਹੈ।";
 "hub.HubController.1532.570" = "127.0.0.1 ਜਾਂ ::1 ਉੱਤੇ ਸਥਾਨਕ PostgreSQL ਸਰੋਤ ਚੁਣੋ।";
 "hub.HubController.1536.571" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਕਾਰ ID ਧਨਾਤਮਕ ਅੰਕ ਹੋਣਾ ਚਾਹੀਦਾ ਹੈ।";
 "hub.HubController.1539.572" = "ਸੁਰੱਖਿਅਤ PostgreSQL ਪਾਸਵਰਡ ਫ਼ਾਈਲ ਚੁਣੋ।";
 "hub.HubController.1552.580" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਅਨੁਕੂਲਤਾ ਜਾਂਚ ਤੋਂ ਕੋਈ ਵੈਧ ਰਿਪੋਰਟ ਨਹੀਂ ਮਿਲੀ।";
 "hub.HubController.1562.581" = "ਸਰੋਤ ਡਾਟਾਬੇਸ ਦੀ ਪੁਸ਼ਟੀ ਨਹੀਂ ਹੋ ਸਕੀ। ਸਰਵਰ ਕਨੈਕਸ਼ਨ ਜਾਂਚੋ ਅਤੇ ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।";
-"hub.HubController.1585.586" = "ਆਯਾਤ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਪੁਸ਼ਟੀ ਕਰੋ ਕਿ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.2.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵਾਂ ਹੈ।";
+"hub.HubController.1585.586" = "ਆਯਾਤ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਪੁਸ਼ਟੀ ਕਰੋ ਕਿ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.4.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵਾਂ ਹੈ।";
 "hub.HubController.1591.587" = "ਸਾਈਨ ਇਨ ਲਈ ਖੁੱਲ੍ਹੀ ਇਕੱਤਰ ਕਰਨ ਵਾਲੀ ਵਿੰਡੋ ਲੋੜੀਂਦੀ ਹੈ। ਇੱਕ ਵਿੰਡੋ ਖੋਲ੍ਹੋ, ਫਿਰ ਦੁਬਾਰਾ ਸਾਈਨ ਇਨ ਕਰੋ।";
 "hub.HubController.1718.615" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਆਯਾਤ ਤੋਂ ਪੂਰਾ ਹੋਣ ਦੀ ਕੋਈ ਵੈਧ ਰਿਪੋਰਟ ਨਹੀਂ ਮਿਲੀ। Hub ਬੰਦ ਹੀ ਰਹੇਗਾ।";
 "hub.HubController.1742.624" = "ਆਯਾਤ ਪੂਰਾ ਹੋ ਗਿਆ, ਪਰ ਸੁਰੱਖਿਅਤ ਹਵਾਲਗੀ ਦੀ ਸ਼ਰਤ ਦਰਜ ਨਹੀਂ ਹੋ ਸਕੀ: %1$@। Hub ਬੰਦ ਹੀ ਰਹੇਗਾ।";
-"hub.HubController.1846.655" = "ਸਿੱਧੇ PostgreSQL ਸਰੋਤ ਤੋਂ ਆਯਾਤ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਪੁਸ਼ਟੀ ਕਰੋ ਕਿ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.2.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵਾਂ ਹੈ।";
+"hub.HubController.1846.655" = "ਸਿੱਧੇ PostgreSQL ਸਰੋਤ ਤੋਂ ਆਯਾਤ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਪੁਸ਼ਟੀ ਕਰੋ ਕਿ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.4.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵਾਂ ਹੈ।";
 "hub.HubController.1865.658" = "PostgreSQL ਸਰੋਤ ਵਿੱਚ postgres ਜਾਂ postgresql ਸਕੀਮ, ਹੋਸਟ ਅਤੇ ਡਾਟਾਬੇਸ ਦਾ ਨਾਮ ਹੋਣਾ ਲਾਜ਼ਮੀ ਹੈ।";
 "hub.HubController.1869.659" = "PostgreSQL ਸਰੋਤ ਵਿੱਚ ਪਾਸਵਰਡ ਨਹੀਂ ਹੋਣਾ ਚਾਹੀਦਾ। ਪਾਸਵਰਡ ਫ਼ਾਈਲ ਵਾਲਾ ਖੇਤਰ ਵਰਤੋ।";
 "hub.HubController.1966.689" = "Fleet ਸੈੱਟਅੱਪ ਅਸਫਲ ਹੋਇਆ: %1$@ Hub ਸੰਰਚਨਾ ਦੀ ਬਹਾਲੀ ਵੀ ਅਸਫਲ ਹੋਈ: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "ਸਾਰੇ ਖੇਤਰ ਭਰੋ";
 "hub.ImportSheetController.149.1710" = "ਸਰੋਤ, ਕਾਰ ID ਅਤੇ ਪਾਸਵਰਡ ਫ਼ਾਈਲ ਲੋੜੀਂਦੇ ਹਨ।";
 "hub.ImportSheetController.156.1711" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਵਰਜਨ ਦੀ ਪੁਸ਼ਟੀ ਕਰੋ";
-"hub.ImportSheetController.17.1690" = "ਮੈਂ ਪੁਸ਼ਟੀ ਕਰਦਾ ਹਾਂ ਕਿ ਇਹ ਡਾਟਾਬੇਸ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.2.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵੇਂ ਵਰਜਨ ਦਾ ਹੈ।";
+"hub.ImportSheetController.17.1690" = "ਮੈਂ ਪੁਸ਼ਟੀ ਕਰਦਾ ਹਾਂ ਕਿ ਇਹ ਡਾਟਾਬੇਸ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.4.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵੇਂ ਵਰਜਨ ਦਾ ਹੈ।";
 "hub.ImportSheetController.26.1691" = "ਇਤਿਹਾਸ ਆਯਾਤ ਕਰੋ";
 "hub.ImportSheetController.49.1693" = "ਸਰੋਤ ਡਾਟਾਬੇਸ ਤੋਂ ਡਾਟਾ Teslatlas Hub ਵਿੱਚ ਕਾਪੀ ਕਰੋ।";
 "hub.ImportSheetController.64.1694" = "PostgreSQL ਸਰੋਤ";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "ਪਾਸਵਰਡ ਫ਼ਾਈਲ";
 "hub.ImportSheetController.7.1687" = "Hub ਸਰੋਤ ਡਾਟਾਬੇਸ ਨੂੰ ਪੜ੍ਹਦਾ ਹੈ, ਪਰ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਨੂੰ ਨਾ ਰੋਕਦਾ ਹੈ, ਨਾ ਬਦਲਦਾ ਹੈ। ਆਯਾਤ ਤੋਂ ਬਾਅਦ Hub ਤੁਹਾਨੂੰ ਦੱਸੇਗਾ ਕਿ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਵਿੱਚ Tesla ਪਹੁੰਚ ਕਦੋਂ ਤੁਸੀਂ ਖੁਦ ਬੰਦ ਕਰਨੀ ਹੈ।";
 "hub.ImportSheetController.73.1699" = "Hub ਚੱਲ ਨਹੀਂ ਰਿਹਾ। Hub ਸ਼ੁਰੂ ਕਰੋ, ਇਕੱਤਰ ਕਰਨ ਵਾਲੀ ਵਿੰਡੋ ਖੋਲ੍ਹੋ, ਫਿਰ ਸਾਈਨ ਇਨ ਕਰੋ।";
-"hub.ImportSheetController.9.1688" = "ਆਯਾਤ ਤੋਂ ਪਹਿਲਾਂ: ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਦਾ ਬੈਕਅੱਪ ਲਓ, ਇਸਨੂੰ 4.2.0 ਜਾਂ ਨਵੇਂ ਵਰਜਨ ’ਤੇ ਅੱਪਡੇਟ ਕਰੋ, ਇੱਕ ਵਾਰ ਚਲਾਓ ਅਤੇ ਇਸਦੇ ਡਾਟਾਬੇਸ ਮਾਈਗ੍ਰੇਸ਼ਨ ਪੂਰੇ ਹੋਣ ਦੀ ਉਡੀਕ ਕਰੋ। ਸਿੱਧਾ ਡਾਟਾਬੇਸ ਕਨੈਕਸ਼ਨ ਚੱਲ ਰਹੇ ਐਪ ਦਾ ਵਰਜਨ ਸਾਬਤ ਨਹੀਂ ਕਰ ਸਕਦਾ।";
+"hub.ImportSheetController.9.1688" = "ਆਯਾਤ ਤੋਂ ਪਹਿਲਾਂ: ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਦਾ ਬੈਕਅੱਪ ਲਓ, ਇਸਨੂੰ 4.4.0 ਜਾਂ ਨਵੇਂ ਵਰਜਨ ’ਤੇ ਅੱਪਡੇਟ ਕਰੋ, ਇੱਕ ਵਾਰ ਚਲਾਓ ਅਤੇ ਇਸਦੇ ਡਾਟਾਬੇਸ ਮਾਈਗ੍ਰੇਸ਼ਨ ਪੂਰੇ ਹੋਣ ਦੀ ਉਡੀਕ ਕਰੋ। ਸਿੱਧਾ ਡਾਟਾਬੇਸ ਕਨੈਕਸ਼ਨ ਚੱਲ ਰਹੇ ਐਪ ਦਾ ਵਰਜਨ ਸਾਬਤ ਨਹੀਂ ਕਰ ਸਕਦਾ।";
 "hub.LogsWindowController.113.1730" = "ਹੋਰ ਲੌਗ ਕਾਰਵਾਈਆਂ";
 "hub.LogsWindowController.123.1732" = "ਦਿਖਾਏ, ਕਾਪੀ ਕੀਤੇ ਅਤੇ ਸੇਵ ਕੀਤੇ ਲੌਗਾਂ ਵਿੱਚੋਂ ਪਹੁੰਚ-ਪ੍ਰਮਾਣ ਅਤੇ ਨਿੱਜੀ ਪਛਾਣਕਰਤਾ ਹਟਾਏ ਜਾਂਦੇ ਹਨ। ਸਾਂਝਾ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਸਮੀਖਿਆ ਕਰੋ।";
 "hub.LogsWindowController.17.1712" = "ਲੌਗ ਲੋਡ ਹੋ ਰਹੇ ਹਨ…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "ਪਹੁੰਚ ਟੋਕਨ ਅਤੇ ਤਾਜ਼ਾ ਕਰਨ ਵਾਲਾ ਟੋਕਨ ਦੋਵੇਂ ਦਰਜ ਕਰੋ।";
 "hub.OnboardingWindowController.1631.2105" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਸਰਵਰ, SSH ਵਰਤੋਂਕਾਰ ਅਤੇ ਪੋਰਟ ਦਰਜ ਕਰੋ।";
 "hub.OnboardingWindowController.168.1852" = "ਜਾਰੀ ਰੱਖੋ";
-"hub.OnboardingWindowController.1691.2113" = "ਸਕੀਮਾ ਜਾਂਚ ਤੋਂ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਦੀ ਰਿਲੀਜ਼ ਪਤਾ ਨਹੀਂ ਲੱਗ ਸਕਦੀ। ਪੁਸ਼ਟੀ ਕਰੋ ਕਿ ਚੱਲ ਰਿਹਾ ਸਰਵਰ 4.2.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵੀਂ ਰਿਲੀਜ਼ ਚਲਾ ਰਿਹਾ ਹੈ, ਫਿਰ ਜਾਰੀ ਰੱਖੋ।";
+"hub.OnboardingWindowController.1691.2113" = "ਸਕੀਮਾ ਜਾਂਚ ਤੋਂ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਦੀ ਰਿਲੀਜ਼ ਪਤਾ ਨਹੀਂ ਲੱਗ ਸਕਦੀ। ਪੁਸ਼ਟੀ ਕਰੋ ਕਿ ਚੱਲ ਰਿਹਾ ਸਰਵਰ 4.4.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵੀਂ ਰਿਲੀਜ਼ ਚਲਾ ਰਿਹਾ ਹੈ, ਫਿਰ ਜਾਰੀ ਰੱਖੋ।";
 "hub.OnboardingWindowController.1740.2131" = "ਆਯਾਤ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਸਰਵਰ ਨਾਲ ਕਨੈਕਟ ਕਰੋ।";
 "hub.OnboardingWindowController.1750.2137" = "ਸਰਵਰ ਸੈਟਿੰਗਾਂ ਬਦਲ ਗਈਆਂ ਹਨ। ਆਯਾਤ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਸਰਵਰ ਨਾਲ ਮੁੜ ਕਨੈਕਟ ਕਰੋ।";
 "hub.OnboardingWindowController.1820.2143" = "ਇੱਕ ਜਾਂ ਵੱਧ ਜਾਂਚਾਂ ਵੱਲ ਧਿਆਨ ਦੇਣ ਦੀ ਲੋੜ ਹੈ।";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "SSH ਕੁੰਜੀ ਚੁਣੋ";
 "hub.OnboardingWindowController.1981.2148" = "ਕੁੰਜੀ ਚੁਣੋ";
 "hub.OnboardingWindowController.200.1857" = "ਸਥਾਨਕ PostgreSQL ਸਨੈਪਸ਼ਾਟ ਵਰਤੋ (ਸਿਰਫ਼ ਇਤਿਹਾਸ)";
-"hub.OnboardingWindowController.203.1858" = "ਮੈਂ ਪੁਸ਼ਟੀ ਕਰਦਾ ਹਾਂ ਕਿ ਇਹ ਸਰਵਰ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.2.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵਾਂ ਚਲਾ ਰਿਹਾ ਹੈ";
+"hub.OnboardingWindowController.203.1858" = "ਮੈਂ ਪੁਸ਼ਟੀ ਕਰਦਾ ਹਾਂ ਕਿ ਇਹ ਸਰਵਰ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.4.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵਾਂ ਚਲਾ ਰਿਹਾ ਹੈ";
 "hub.OnboardingWindowController.252.1859" = "ਪਿਛਲਾ ਆਯਾਤ ਪੂਰਾ ਨਹੀਂ ਹੋਇਆ। ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਜਾਂਚੋ ਅਤੇ ਆਯਾਤ ਮੁੜ ਚਲਾਓ।";
 "hub.OnboardingWindowController.292.1862" = "ਆਯਾਤ ਲਈ ਤਿਆਰ।";
 "hub.OnboardingWindowController.298.1866" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਨਾਲ ਕਨੈਕਸ਼ਨ ਅਸਫਲ ਹੋਇਆ";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub ਸਥਾਨਕ ਡਾਟਾਬੇਸ ਟਨਲ ਲਈ ਪੋਰਟ ਰਾਖਵੀਂ ਨਹੀਂ ਕਰ ਸਕਿਆ।";
 "hub.SourceServerImporter.744.2586" = "ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰੋ।";
 "hub.SourceServerImporter.746.2588" = "ਪਹਿਲਾਂ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਅੱਪਡੇਟ ਕਰੋ";
-"hub.SourceServerImporter.747.2589" = "ਦਿਸ਼ਾ-ਨਿਰਦੇਸ਼ਿਤ ਮਾਈਗ੍ਰੇਸ਼ਨ ਲਈ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.2.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵਾਂ ਲੋੜੀਂਦਾ ਹੈ।";
+"hub.SourceServerImporter.747.2589" = "ਦਿਸ਼ਾ-ਨਿਰਦੇਸ਼ਿਤ ਮਾਈਗ੍ਰੇਸ਼ਨ ਲਈ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.4.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵਾਂ ਲੋੜੀਂਦਾ ਹੈ।";
 "hub.SourceServerImporter.748.2590" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਦਾ ਬੈਕਅੱਪ ਲਓ, ਇਸਨੂੰ ਅੱਪਡੇਟ ਕਰੋ, ਇਸ ਦੀਆਂ ਮਾਈਗ੍ਰੇਸ਼ਨਾਂ ਪੂਰੀਆਂ ਹੋਣ ਦਿਓ, ਫਿਰ ਮੁੜ ਕਨੈਕਟ ਕਰੋ।";
 "hub.SourceServerImporter.763.2594" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਚੱਲ ਨਹੀਂ ਰਿਹਾ ਜਾਂ ਇਸਦਾ ਕੰਟੇਨਰ ਨਹੀਂ ਲੱਭਿਆ ਜਾ ਸਕਿਆ।";
 "hub.SourceServerImporter.764.2596" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ Docker Compose ਪ੍ਰੋਜੈਕਟ ਦੀ ਪਛਾਣ ਨਹੀਂ ਹੋ ਸਕੀ।";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "ਇਸ ਖਾਤੇ ਨੂੰ Docker ਤੱਕ ਪਹੁੰਚ ਨਹੀਂ ਹੈ। ਸਿੱਧੀ Docker ਪਹੁੰਚ ਦਿਓ ਜਾਂ Docker ਲਈ ਬਿਨਾਂ ਪਾਸਵਰਡ sudo ਦੀ ਇਜਾਜ਼ਤ ਦਿਓ।";
 "hub.SourceServerImporter.834.2668" = "ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਸਰਵਰ ਉੱਤੇ Docker ਨਹੀਂ ਮਿਲਿਆ। ਸਰਵਰ ਅਤੇ ਖਾਤੇ ਦਾ PATH ਜਾਂਚੋ।";
 "hub.SourceServerImporter.836.2670" = "Docker ਸਥਾਪਿਤ ਹੈ ਪਰ ਉਪਲਬਧ ਨਹੀਂ ਹੈ। ਜਾਂਚੋ ਕਿ Docker ਸੇਵਾ ਚੱਲ ਰਹੀ ਹੈ।";
-"hub.SourceServerImporter.838.2672" = "ਦਿਸ਼ਾ-ਨਿਰਦੇਸ਼ਿਤ ਮਾਈਗ੍ਰੇਸ਼ਨ ਲਈ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.2.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵਾਂ ਲੋੜੀਂਦਾ ਹੈ। ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਅੱਪਡੇਟ ਕਰੋ, ਫਿਰ ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰੋ।";
+"hub.SourceServerImporter.838.2672" = "ਦਿਸ਼ਾ-ਨਿਰਦੇਸ਼ਿਤ ਮਾਈਗ੍ਰੇਸ਼ਨ ਲਈ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ 4.4.0 ਜਾਂ ਇਸ ਤੋਂ ਨਵਾਂ ਲੋੜੀਂਦਾ ਹੈ। ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਅੱਪਡੇਟ ਕਰੋ, ਫਿਰ ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰੋ।";
 "hub.SourceServerImporter.840.2674" = "SSH ਕਨੈਕਟ ਜਾਂ ਪ੍ਰਮਾਣਿਤ ਨਹੀਂ ਕਰ ਸਕਿਆ। ਸਰਵਰ, ਪੋਰਟ, ਖਾਤਾ ਅਤੇ ਚੁਣਿਆ ਪ੍ਰਮਾਣਿਕਤਾ ਢੰਗ ਜਾਂਚੋ।";
 "hub.SourceServerImporter.842.2676" = "SSH ਪ੍ਰਮਾਣਿਕਤਾ ਅਸਫਲ ਹੋਈ। ਖਾਤਾ ਅਤੇ ਚੁਣਿਆ ਪ੍ਰਮਾਣਿਕਤਾ ਢੰਗ ਜਾਂਚੋ।";
 "hub.SourceServerImporter.854.2688" = "SSH ਸਰਵਰ ਨੇ ਕਨੈਕਸ਼ਨ ਬੰਦ ਕਰ ਦਿੱਤਾ। ਸਰਵਰ ਲੌਗ ਅਤੇ SSH ਨੀਤੀ ਜਾਂਚੋ।";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "ਸਕੀਮਾ ਜਾਂਚ ਇਹ ਨਹੀਂ ਦੱਸ ਸਕਦੀ ਕਿ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਦੀ ਕਿਹੜੀ ਰਿਲੀਜ਼ ਨੇ ਇਹ ਡਾਟਾਬੇਸ ਲਿਖਿਆ ਸੀ: ਕਈ ਰਿਲੀਜ਼ਾਂ ਵਿੱਚ ਇਹੀ ਸਕੀਮਾ ਹੈ।";
 
-"hub.import.ackRelease" = "ਮੈਂ ਪੁਸ਼ਟੀ ਕਰਦਾ/ਕਰਦੀ ਹਾਂ ਕਿ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਦੀ ਰਿਲੀਜ਼ 4.2.0 ਜਾਂ ਉਸ ਤੋਂ ਨਵੀਂ ਹੈ ਅਤੇ ਆਯਾਤ ਦੌਰਾਨ ਇਸਨੂੰ ਅੱਪਡੇਟ ਨਹੀਂ ਕੀਤਾ ਜਾਵੇਗਾ।";
+"hub.import.ackRelease" = "ਮੈਂ ਪੁਸ਼ਟੀ ਕਰਦਾ/ਕਰਦੀ ਹਾਂ ਕਿ ਸਰੋਤ ਐਪਲੀਕੇਸ਼ਨ ਦੀ ਰਿਲੀਜ਼ 4.4.0 ਜਾਂ ਉਸ ਤੋਂ ਨਵੀਂ ਹੈ ਅਤੇ ਆਯਾਤ ਦੌਰਾਨ ਇਸਨੂੰ ਅੱਪਡੇਟ ਨਹੀਂ ਕੀਤਾ ਜਾਵੇਗਾ।";
+
+"hub.backup.title" = "ਬੈਕਅੱਪ";
+
+"hub.backup.detail" = "Hub ਦੇ ਇਤਿਹਾਸ ਦੀਆਂ ਇਨਕ੍ਰਿਪਟ ਕੀਤੀਆਂ ਕਾਪੀਆਂ। ਰਿਕਵਰੀ ਪਾਸਵਰਡ ਇਸ Mac ਦੀ ਅਜਿਹੀ ਫ਼ਾਈਲ ਵਿੱਚ ਰਹਿੰਦਾ ਹੈ ਜਿਸਨੂੰ ਸਿਰਫ਼ ਮਾਲਕ ਪੜ੍ਹ ਸਕਦਾ ਹੈ।";
+
+"hub.backup.backUpNow" = "ਹੁਣੇ ਬੈਕਅੱਪ ਲਓ";
+
+"hub.backup.onSchedule" = "ਸਮਾਂ-ਸਾਰਣੀ ਅਨੁਸਾਰ ਬੈਕਅੱਪ ਲਓ";
+
+"hub.backup.saveSchedule" = "ਸਮਾਂ-ਸਾਰਣੀ ਸੁਰੱਖਿਅਤ ਕਰੋ";
+
+"hub.backup.panelPrompt" = "ਚੁਣੋ";
+
+"hub.backup.panelMessage" = "ਇਨਕ੍ਰਿਪਟ ਕੀਤੇ Hub ਬੈਕਅੱਪ ਲਈ Hub ਡਾਟਾ ਫੋਲਡਰ ਤੋਂ ਬਾਹਰ ਇੱਕ ਫੋਲਡਰ ਚੁਣੋ।";
+
+"hub.backup.savedNote" = "ਸੁਰੱਖਿਅਤ ਕੀਤਾ ਗਿਆ। Hub ਦੁਬਾਰਾ ਸ਼ੁਰੂ ਹੋਣ 'ਤੇ ਸਮਾਂ-ਸਾਰਣੀ ਲਾਗੂ ਹੁੰਦੀ ਹੈ।";
+
+"hub.backup.noFolder" = "ਕੋਈ ਫੋਲਡਰ ਨਹੀਂ ਚੁਣਿਆ ਗਿਆ";
+
+"hub.backup.passwordPlaceholder" = "ਰਿਕਵਰੀ ਪਾਸਵਰਡ (ਘੱਟੋ-ਘੱਟ %1$@ ਅੱਖਰ)";
+
+"hub.backup.passwordSaved" = "ਸੁਰੱਖਿਅਤ ਕੀਤਾ ਗਿਆ। ਬਦਲਣ ਲਈ ਨਵਾਂ ਪਾਸਵਰਡ ਟਾਈਪ ਕਰੋ";
+
+"hub.backup.intervalHour" = "ਹਰ ਘੰਟੇ";
+
+"hub.backup.intervalDay" = "ਹਰ ਦਿਨ";
+
+"hub.backup.intervalTwoDays" = "ਹਰ 2 ਦਿਨ";
+
+"hub.backup.intervalWeek" = "ਹਰ ਹਫ਼ਤੇ";
+
+"hub.backup.intervalHours" = "ਹਰ %1$@ ਘੰਟੇ";
+
+"hub.backup.schedule" = "ਸਮਾਂ-ਸਾਰਣੀ";
+
+"hub.backup.keep" = "ਰੱਖੋ";
+
+"hub.backup.keepSuffix" = "ਬੈਕਅੱਪ";
+
+"hub.backup.folder" = "ਫੋਲਡਰ";
+
+"hub.backup.passwordLabel" = "ਰਿਕਵਰੀ ਪਾਸਵਰਡ";
+
+"hub.backup.problem.passwordShort" = "ਰਿਕਵਰੀ ਪਾਸਵਰਡ ਵਿੱਚ ਘੱਟੋ-ਘੱਟ %1$@ ਅੱਖਰ ਹੋਣੇ ਚਾਹੀਦੇ ਹਨ।";
+
+"hub.backup.problem.interval" = "ਅੰਤਰਾਲ 1 ਤੋਂ 8784 ਘੰਟਿਆਂ ਦੇ ਵਿਚਕਾਰ ਹੋਣਾ ਚਾਹੀਦਾ ਹੈ।";
+
+"hub.backup.problem.keep" = "ਰੱਖੇ ਜਾਣ ਵਾਲੇ ਬੈਕਅੱਪਾਂ ਦੀ ਗਿਣਤੀ 1 ਤੋਂ 1000 ਦੇ ਵਿਚਕਾਰ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ।";
+
+"hub.backup.problem.chooseFolder" = "ਇੱਕ ਬੈਕਅੱਪ ਫੋਲਡਰ ਚੁਣੋ।";
+
+"hub.backup.problem.folderInside" = "Hub ਡਾਟਾ ਫੋਲਡਰ ਤੋਂ ਬਾਹਰ ਇੱਕ ਬੈਕਅੱਪ ਫੋਲਡਰ ਚੁਣੋ।";
+
+"hub.backup.problem.needsBoth" = "ਸਮਾਂ-ਸਾਰਣੀ ਵਾਲੇ ਬੈਕਅੱਪਾਂ ਲਈ ਇੱਕ ਬੈਕਅੱਪ ਫੋਲਡਰ ਅਤੇ ਇੱਕ ਰਿਕਵਰੀ ਪਾਸਵਰਡ ਚਾਹੀਦਾ ਹੈ।";
+
+"hub.backup.lastGoodNone" = "ਹਾਲੇ ਕੋਈ ਨਹੀਂ";
+
+"hub.backup.nextOff" = "ਸਮਾਂ-ਸਾਰਣੀ ਵਾਲੇ ਬੈਕਅੱਪ ਬੰਦ ਹਨ";
+
+"hub.backup.nextNotScheduled" = "ਸਮਾਂ-ਸਾਰਣੀ ਨਹੀਂ ਹੈ: ਇੱਕ ਫੋਲਡਰ ਅਤੇ ਇੱਕ ਪਾਸਵਰਡ ਚੁਣੋ";
+
+"hub.backup.nextPaused" = "ਪ੍ਰਮਾਣ-ਪੱਤਰ ਰਿਕਵਰੀ ਦੀ ਉਡੀਕ ਹੈ";
+
+"hub.collection.notReported" = "ਰਿਪੋਰਟ ਨਹੀਂ ਕੀਤਾ ਗਿਆ";
+
+"hub.backup.blocked" = "ਰੱਦ ਕੀਤੇ ਪ੍ਰਮਾਣ-ਪੱਤਰ ਬੈਕਅੱਪ ਨੂੰ ਰੋਕਦੇ ਹਨ। ਉਹਨਾਂ ਨੂੰ ਸਾਫ਼ ਕਰਨ ਲਈ purge-refused-credentials ਚਲਾਓ।";
+
+"hub.backup.lastFailedMessage" = "ਪਿਛਲੀ ਕੋਸ਼ਿਸ਼ ਅਸਫਲ ਰਹੀ: %1$@";
+
+"hub.backup.lastFailedCode" = "ਪਿਛਲੀ ਕੋਸ਼ਿਸ਼ ਅਸਫਲ ਰਹੀ (%1$@)";
+
+"hub.backup.row.lastGood" = "ਪਿਛਲਾ ਸਫਲ ਬੈਕਅੱਪ";
+
+"hub.backup.row.next" = "ਅਗਲਾ ਬੈਕਅੱਪ";
+
+"hub.backup.row.running" = "ਇੱਕ ਬੈਕਅੱਪ ਹੁਣ ਚੱਲ ਰਿਹਾ ਹੈ";
+
+"hub.backup.row.lastAttempt" = "ਪਿਛਲੀ ਕੋਸ਼ਿਸ਼";
+
+"hub.backup.run.running" = "ਬੈਕਅੱਪ ਲਿਆ ਜਾ ਰਿਹਾ ਹੈ…";
+
+"hub.backup.run.stillRunning" = "ਬੈਕਅੱਪ ਹਾਲੇ ਵੀ Hub ਸੇਵਾ ਵਿੱਚ ਚੱਲ ਰਿਹਾ ਹੈ।";
+
+"hub.backup.run.finishedGeneration" = "ਬੈਕਅੱਪ ਪੂਰਾ ਹੋਇਆ: %1$@";
+
+"hub.backup.run.finished" = "ਬੈਕਅੱਪ ਪੂਰਾ ਹੋਇਆ";
+
+"hub.backup.run.failed" = "ਬੈਕਅੱਪ ਅਸਫਲ ਰਿਹਾ: %1$@";
+
+"hub.backup.maint.unreadable" = "Hub ਦਾ ਜਵਾਬ ਪੜ੍ਹਿਆ ਨਹੀਂ ਜਾ ਸਕਿਆ।";
+
+"hub.backup.maint.unwritable" = "ਰਿਕਵਰੀ ਪਾਸਵਰਡ ਸੁਰੱਖਿਅਤ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਿਆ।";
+
+"hub.backup.maint.configMissing" = "ਬੈਕਅੱਪ ਬਦਲਣ ਤੋਂ ਪਹਿਲਾਂ Hub ਸੈੱਟਅੱਪ ਕਰੋ।";
+
+"hub.devices.title" = "ਜੋੜੇ ਗਏ ਡਿਵਾਈਸ";
+
+"hub.devices.detail" = "ਇਸ Hub ਨੂੰ ਪੜ੍ਹਨ ਵਾਲੇ ਫ਼ੋਨ ਅਤੇ ਐਪਾਂ, ਅਤੇ ਹਰ ਇੱਕ ਦੇ ਪੜ੍ਹ ਸਕਣ ਵਾਲੀਆਂ ਕਾਰਾਂ।";
+
+"hub.devices.revokeTitle" = "%1$@ ਦੀ ਪਹੁੰਚ ਰੱਦ ਕਰਨੀ ਹੈ?";
+
+"hub.devices.revokeInfo" = "ਇਹ ਡਿਵਾਈਸ ਤੁਰੰਤ Hub ਤੋਂ ਪੜ੍ਹਨਾ ਬੰਦ ਕਰ ਦਿੰਦਾ ਹੈ। ਇਸਨੂੰ ਦੁਬਾਰਾ ਵਰਤਣ ਲਈ ਇਸਨੂੰ ਦੁਬਾਰਾ ਜੋੜੋ।";
+
+"hub.devices.revoke" = "ਪਹੁੰਚ ਰੱਦ ਕਰੋ";
+
+"hub.devices.revokeEllipsis" = "ਪਹੁੰਚ ਰੱਦ ਕਰੋ…";
+
+"hub.devices.revokeAccessibility" = "%1$@ ਦੀ ਪਹੁੰਚ ਰੱਦ ਕਰੋ";
+
+"hub.devices.revokedDone" = "%1$@ ਦੀ ਪਹੁੰਚ ਰੱਦ ਕਰ ਦਿੱਤੀ ਗਈ।";
+
+"hub.devices.none" = "ਕੋਈ ਜੋੜਿਆ ਗਿਆ ਡਿਵਾਈਸ ਨਹੀਂ ਹੈ।";
+
+"hub.devices.cars" = "ਕਾਰਾਂ: %1$@";
+
+"hub.devices.noCars" = "ਕੋਈ ਕਾਰ ਨਹੀਂ";
+
+"hub.devices.carFallback" = "ਕਾਰ %1$@";
+
+"hub.devices.unnamed" = "ਬਿਨਾਂ ਨਾਮ ਵਾਲਾ ਡਿਵਾਈਸ";
+
+"hub.devices.stateRevoked" = "ਰੱਦ ਕੀਤਾ ਗਿਆ %1$@";
+
+"hub.devices.stateExpired" = "ਮਿਆਦ ਪੁੱਗੀ %1$@";
+
+"hub.devices.stateLastSeen" = "ਆਖ਼ਰੀ ਵਾਰ ਦੇਖਿਆ ਗਿਆ %1$@";
+
+"hub.devices.stateNeverSeen" = "ਹਾਲੇ ਤੱਕ ਨਹੀਂ ਦੇਖਿਆ ਗਿਆ";
+
+"hub.collection.loginOwn" = "Hub ਦੇ ਆਪਣੇ ਲੌਗਇਨ ਨਾਲ ਸਾਈਨ ਇਨ ਹੈ";
+
+"hub.collection.loginSignedOut" = "ਸਾਈਨ ਆਊਟ ਹੈ";
+
+"hub.collection.loginNotOwn" = "ਸੁਰੱਖਿਅਤ ਕੀਤਾ ਲੌਗਇਨ Hub ਦਾ ਆਪਣਾ ਨਹੀਂ ਹੈ";
+
+"hub.collection.credValidUntil" = "%1$@ ਤੱਕ ਵੈਧ";
+
+"hub.collection.credValid" = "ਵੈਧ";
+
+"hub.collection.credRelogin" = "ਦੁਬਾਰਾ ਲੌਗਇਨ ਚਾਹੀਦਾ ਹੈ: ਅਗਲੀ ਖੁੱਲ੍ਹੀ ਵਿੰਡੋ ਵਿੱਚ ਦੁਬਾਰਾ ਸਾਈਨ ਇਨ ਕਰੋ";
+
+"hub.collection.credOwnerRefused" = "Owner API ਰੱਦ: Tesla ਨੇ ਇਸ ਲੌਗਇਨ ਨੂੰ ਰੱਦ ਕਰ ਦਿੱਤਾ";
+
+"hub.collection.credRefused" = "ਰੱਦ (%1$@)";
+
+"hub.collection.credExposure" = "ਉਜਾਗਰ ਹੋਣ ਦਾ ਸ਼ੱਕ: ਅਗਲੀ ਖੁੱਲ੍ਹੀ ਵਿੰਡੋ ਵਿੱਚ ਦੁਬਾਰਾ ਸਾਈਨ ਇਨ ਕਰੋ";
+
+"hub.collection.credAttention" = "ਧਿਆਨ ਚਾਹੀਦਾ ਹੈ (%1$@)";
+
+"hub.collection.credNotSignedIn" = "ਸਾਈਨ ਇਨ ਨਹੀਂ ਹੈ";
+
+"hub.collection.windowOpenUntil" = "%1$@ ਤੱਕ ਖੁੱਲ੍ਹੀ";
+
+"hub.collection.windowOpen" = "ਖੁੱਲ੍ਹੀ";
+
+"hub.collection.windowPending" = "ਬਕਾਇਆ";
+
+"hub.collection.windowPendingFrom" = "%1$@ ਤੋਂ ਬਕਾਇਆ";
+
+"hub.collection.windowPendingUntil" = "%1$@ ਤੱਕ ਬਕਾਇਆ";
+
+"hub.collection.windowPendingFromUntil" = "%1$@ ਤੋਂ %2$@ ਤੱਕ ਬਕਾਇਆ";
+
+"hub.collection.windowClosingExpiry" = "ਬੰਦ ਹੋ ਰਹੀ ਹੈ (ਮਿਆਦ %1$@)";
+
+"hub.collection.windowClosing" = "ਬੰਦ ਹੋ ਰਹੀ ਹੈ";
+
+"hub.collection.windowClosedReason" = "ਬੰਦ (%1$@)";
+
+"hub.collection.windowClosed" = "ਬੰਦ";
+
+"hub.collection.windowUntrusted" = "ਬੰਦ (ਕੋਈ ਭਰੋਸੇਯੋਗ ਜਾਰੀਕਰਤਾ ਨਹੀਂ)";
+
+"hub.collection.windowFaulted" = "ਬੰਦ (ਵਿੰਡੋ ਦੀ ਸਥਿਤੀ ਨੂੰ ਨਵਾਂ ਭਰੋਸਾ ਦਸਤਾਵੇਜ਼ ਚਾਹੀਦਾ ਹੈ)";
+
+"hub.collection.windowRecovery" = "ਬੰਦ (ਪ੍ਰਮਾਣ-ਪੱਤਰ ਰਿਕਵਰੀ ਦੀ ਉਡੀਕ ਹੈ: restore-recovery-credentials ਚਲਾਓ)";
+
+"hub.collection.windowUnauthenticated" = "ਅਣਜਾਣ: ਕੰਟਰੋਲ ਚੈਨਲ ਇਸ Hub ਦਾ ਨਹੀਂ ਹੈ";
+
+"hub.collection.windowNotRunning" = "ਅਣਜਾਣ: Hub ਨਹੀਂ ਚੱਲ ਰਿਹਾ";
+
+"hub.collection.reasonExpired" = "ਮਿਆਦ ਪੁੱਗ ਗਈ";
+
+"hub.collection.reasonOperator" = "ਆਪਰੇਟਰ ਨੇ ਬੰਦ ਕੀਤਾ";
+
+"hub.collection.reasonRelogin" = "ਦੁਬਾਰਾ ਲੌਗਇਨ ਚਾਹੀਦਾ ਹੈ";
+
+"hub.collection.reasonOwnerRefused" = "Owner API ਰੱਦ";
+
+"hub.collection.reasonClock" = "ਘੜੀ ਦੀ ਜਾਂਚ ਅਸਫਲ ਰਹੀ";
+
+"hub.collection.reasonReboot" = "Mac ਦੁਬਾਰਾ ਸ਼ੁਰੂ ਹੋਇਆ";
+
+"hub.collection.reasonUnverifiable" = "ਸਥਿਤੀ ਦੀ ਪੁਸ਼ਟੀ ਨਹੀਂ ਹੋ ਸਕੀ";
+
+"hub.collection.reasonClaimLost" = "ਸੰਗ੍ਰਹਿ ਦਾ ਦਾਅਵਾ ਗੁੰਮ ਹੋ ਗਿਆ";
+
+"hub.collection.fleet" = "ਰੋਕਿਆ ਗਿਆ: ਕੋਈ Fleet ਕਾਰਵਾਈ ਉਪਲਬਧ ਨਹੀਂ ਹੈ";
+
+"hub.collection.signInUnavailable" = "ਇਸ Hub 'ਤੇ ਸਾਈਨ ਇਨ ਉਪਲਬਧ ਨਹੀਂ ਹੈ";
+
+"hub.collection.labelLogin" = "Tesla ਲੌਗਇਨ";
+
+"hub.collection.labelCredential" = "ਪ੍ਰਮਾਣ-ਪੱਤਰ ਦੀ ਸਥਿਤੀ";
+
+"hub.collection.labelWindow" = "ਸੰਗ੍ਰਹਿ ਵਿੰਡੋ";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "ਸਾਈਨ ਇਨ";
+
+"hub.signIn.recoveryPending" = "Hub ਆਪਣੇ ਪ੍ਰਮਾਣ-ਪੱਤਰਾਂ ਦੀ ਰਿਕਵਰੀ ਦੀ ਉਡੀਕ ਕਰ ਰਿਹਾ ਹੈ: ਇਸ Hub ਦਾ ਡਾਟਾ ਉਸਦੀਆਂ ਕੁੰਜੀਆਂ ਤੋਂ ਬਿਨਾਂ ਬਹਾਲ ਕੀਤਾ ਗਿਆ ਸੀ। restore-recovery-credentials ਚਲਾਓ, ਫਿਰ ਸਾਈਨ ਇਨ ਕਰੋ। ਕੁਝ ਨਹੀਂ ਬਦਲਿਆ ਗਿਆ।";
+
+"hub.signIn.serviceUnauthenticated" = "Hub ਦੇ ਕੰਟਰੋਲ ਚੈਨਲ 'ਤੇ ਜਵਾਬ ਦੇਣ ਵਾਲੀ ਪ੍ਰਕਿਰਿਆ ਇਹ Hub ਨਹੀਂ ਹੈ, ਇਸ ਲਈ ਕੁਝ ਨਹੀਂ ਭੇਜਿਆ ਗਿਆ। Hub ਨੂੰ ਦੁਬਾਰਾ ਸ਼ੁਰੂ ਕਰੋ, ਫਿਰ ਦੁਬਾਰਾ ਸਾਈਨ ਇਨ ਕਰੋ।";
+
+"hub.signIn.busy" = "Hub ਹੋਰ ਬੇਨਤੀਆਂ ਵਿੱਚ ਰੁੱਝਿਆ ਹੋਇਆ ਹੈ। ਕੁਝ ਨਹੀਂ ਬਦਲਿਆ ਗਿਆ; ਥੋੜ੍ਹੀ ਦੇਰ ਬਾਅਦ ਦੁਬਾਰਾ ਸਾਈਨ ਇਨ ਕਰੋ।";

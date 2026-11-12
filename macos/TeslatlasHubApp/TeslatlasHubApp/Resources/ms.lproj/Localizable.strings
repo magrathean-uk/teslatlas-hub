@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Selesaikan atau batalkan serahan migrasi aplikasi sumber sebelum log keluar.";
 "hub.HubController.1504.567" = "Pemutusan sambungan tidak selesai dengan baik. Status Hub telah dimuat semula; semak sama ada akaun masih bersambung. %1$@";
 "hub.HubController.1522.568" = "Sahkan skema pangkalan data sumber yang telah disemak sebelum menyemak keserasian.";
-"hub.HubController.1523.569" = "Sahkan bahawa aplikasi sumber versi 4.2.0 atau lebih baharu sebelum menyemak keserasian.";
+"hub.HubController.1523.569" = "Sahkan bahawa aplikasi sumber versi 4.4.0 atau lebih baharu sebelum menyemak keserasian.";
 "hub.HubController.1532.570" = "Pilih sumber PostgreSQL setempat pada 127.0.0.1 atau ::1.";
 "hub.HubController.1536.571" = "ID kereta sumber mesti nombor positif.";
 "hub.HubController.1539.572" = "Pilih fail kata laluan PostgreSQL yang dilindungi.";
 "hub.HubController.1552.580" = "Semakan keserasian aplikasi sumber tidak memulangkan laporan yang sah.";
 "hub.HubController.1562.581" = "Pengesahan pangkalan data sumber gagal. Semak sambungan pelayan dan cuba lagi.";
-"hub.HubController.1585.586" = "Sahkan bahawa aplikasi sumber versi 4.2.0 atau lebih baharu sebelum mengimport.";
+"hub.HubController.1585.586" = "Sahkan bahawa aplikasi sumber versi 4.4.0 atau lebih baharu sebelum mengimport.";
 "hub.HubController.1591.587" = "Log masuk memerlukan tetingkap pengumpulan yang terbuka. Buka tetingkap, kemudian log masuk semula.";
 "hub.HubController.1718.615" = "Import aplikasi sumber tidak memulangkan laporan penyelesaian yang sah. Hub kekal dihentikan.";
 "hub.HubController.1742.624" = "Import selesai, tetapi Hub tidak dapat merekodkan syarat serahan selamat: %1$@. Hub kekal dihentikan.";
-"hub.HubController.1846.655" = "Sahkan bahawa aplikasi sumber versi 4.2.0 atau lebih baharu sebelum mengimport daripada sumber PostgreSQL terus.";
+"hub.HubController.1846.655" = "Sahkan bahawa aplikasi sumber versi 4.4.0 atau lebih baharu sebelum mengimport daripada sumber PostgreSQL terus.";
 "hub.HubController.1865.658" = "Sumber PostgreSQL mesti menyertakan skema postgres atau postgresql, hos dan nama pangkalan data.";
 "hub.HubController.1869.659" = "Sumber PostgreSQL tidak boleh mengandungi kata laluan. Gunakan medan fail kata laluan.";
 "hub.HubController.1966.689" = "Persediaan Fleet gagal: %1$@. Pemulihan konfigurasi Hub juga gagal: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Lengkapkan semua medan";
 "hub.ImportSheetController.149.1710" = "Sumber, ID kereta dan fail kata laluan diperlukan.";
 "hub.ImportSheetController.156.1711" = "Sahkan versi aplikasi sumber";
-"hub.ImportSheetController.17.1690" = "Saya mengesahkan bahawa pangkalan data ini milik aplikasi sumber versi 4.2.0 atau lebih baharu";
+"hub.ImportSheetController.17.1690" = "Saya mengesahkan bahawa pangkalan data ini milik aplikasi sumber versi 4.4.0 atau lebih baharu";
 "hub.ImportSheetController.26.1691" = "Import sejarah";
 "hub.ImportSheetController.49.1693" = "Salin data daripada pangkalan data PostgreSQL sumber ke Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "Sumber PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Fail kata laluan";
 "hub.ImportSheetController.7.1687" = "Hub membaca pangkalan data sumber tanpa menghentikan aplikasi sumber atau mengubah datanya. Selepas import, Hub akan memberitahu anda bila anda perlu menyahaktifkan akses Tesla dalam aplikasi sumber sendiri.";
 "hub.ImportSheetController.73.1699" = "Hub tidak berjalan. Mulakan Hub, buka tetingkap pengumpulan, kemudian log masuk.";
-"hub.ImportSheetController.9.1688" = "Sebelum import: sandarkan aplikasi sumber, kemas kininya kepada versi 4.2.0 atau lebih baharu, mulakannya sekali dan tunggu sehingga migrasi pangkalan datanya selesai. Sambungan pangkalan data terus tidak dapat membuktikan versi aplikasi yang sedang berjalan.";
+"hub.ImportSheetController.9.1688" = "Sebelum import: sandarkan aplikasi sumber, kemas kininya kepada versi 4.4.0 atau lebih baharu, mulakannya sekali dan tunggu sehingga migrasi pangkalan datanya selesai. Sambungan pangkalan data terus tidak dapat membuktikan versi aplikasi yang sedang berjalan.";
 "hub.LogsWindowController.113.1730" = "Tindakan log lain";
 "hub.LogsWindowController.123.1732" = "Log yang dipaparkan, disalin dan disimpan menyamarkan rahsia akses dan pengecam peribadi. Semak sebelum berkongsi.";
 "hub.LogsWindowController.17.1712" = "Memuatkan log…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Masukkan token akses dan token muat semula.";
 "hub.OnboardingWindowController.1631.2105" = "Masukkan pelayan aplikasi sumber, pengguna SSH dan port.";
 "hub.OnboardingWindowController.168.1852" = "Teruskan";
-"hub.OnboardingWindowController.1691.2113" = "Semakan skema tidak dapat menentukan keluaran aplikasi sumber. Sahkan bahawa pelayan yang sedang berjalan menggunakan keluaran 4.2.0 atau lebih baharu, kemudian teruskan.";
+"hub.OnboardingWindowController.1691.2113" = "Semakan skema tidak dapat menentukan keluaran aplikasi sumber. Sahkan bahawa pelayan yang sedang berjalan menggunakan keluaran 4.4.0 atau lebih baharu, kemudian teruskan.";
 "hub.OnboardingWindowController.1740.2131" = "Sambung ke pelayan aplikasi sumber sebelum mengimport.";
 "hub.OnboardingWindowController.1750.2137" = "Tetapan pelayan berubah. Sambung semula ke pelayan aplikasi sumber sebelum mengimport.";
 "hub.OnboardingWindowController.1820.2143" = "Satu atau lebih semakan memerlukan perhatian.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Pilih Kunci SSH";
 "hub.OnboardingWindowController.1981.2148" = "Pilih Kunci";
 "hub.OnboardingWindowController.200.1857" = "Gunakan snapshot PostgreSQL setempat (sejarah sahaja)";
-"hub.OnboardingWindowController.203.1858" = "Saya mengesahkan bahawa pelayan ini menjalankan aplikasi sumber versi 4.2.0 atau lebih baharu";
+"hub.OnboardingWindowController.203.1858" = "Saya mengesahkan bahawa pelayan ini menjalankan aplikasi sumber versi 4.4.0 atau lebih baharu";
 "hub.OnboardingWindowController.252.1859" = "Import terdahulu tidak selesai. Semak aplikasi sumber dan jalankan import sekali lagi.";
 "hub.OnboardingWindowController.292.1862" = "Sedia untuk diimport.";
 "hub.OnboardingWindowController.298.1866" = "Sambungan aplikasi sumber gagal";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub tidak dapat menempah port terowong pangkalan data setempat.";
 "hub.SourceServerImporter.744.2586" = "Cuba lagi.";
 "hub.SourceServerImporter.746.2588" = "Kemas kini aplikasi sumber dahulu";
-"hub.SourceServerImporter.747.2589" = "Migrasi berpandu memerlukan aplikasi sumber versi 4.2.0 atau lebih baharu.";
+"hub.SourceServerImporter.747.2589" = "Migrasi berpandu memerlukan aplikasi sumber versi 4.4.0 atau lebih baharu.";
 "hub.SourceServerImporter.748.2590" = "Sandarkan aplikasi sumber, kemas kininya, biarkan migrasinya selesai, kemudian sambung semula.";
 "hub.SourceServerImporter.763.2594" = "Aplikasi sumber tidak berjalan atau kontenanya tidak dapat ditemui.";
 "hub.SourceServerImporter.764.2596" = "Projek Docker Compose aplikasi sumber tidak dapat dikenal pasti.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Akaun ini tidak dapat mengakses Docker. Berikan akses Docker secara terus atau benarkan sudo tanpa kata laluan untuk Docker.";
 "hub.SourceServerImporter.834.2668" = "Docker tidak ditemui pada pelayan aplikasi sumber. Semak pelayan dan PATH akaun.";
 "hub.SourceServerImporter.836.2670" = "Docker dipasang tetapi tidak tersedia. Semak sama ada perkhidmatan Docker sedang berjalan.";
-"hub.SourceServerImporter.838.2672" = "Migrasi berpandu memerlukan aplikasi sumber versi 4.2.0 atau lebih baharu. Kemas kini aplikasi sumber, kemudian cuba lagi.";
+"hub.SourceServerImporter.838.2672" = "Migrasi berpandu memerlukan aplikasi sumber versi 4.4.0 atau lebih baharu. Kemas kini aplikasi sumber, kemudian cuba lagi.";
 "hub.SourceServerImporter.840.2674" = "Sambungan atau pengesahan SSH gagal. Semak pelayan, port, akaun dan kaedah pengesahan yang dipilih.";
 "hub.SourceServerImporter.842.2676" = "Pengesahan SSH gagal. Semak akaun dan kaedah pengesahan yang dipilih.";
 "hub.SourceServerImporter.854.2688" = "Pelayan SSH menutup sambungan. Semak log pelayan dan dasar SSH.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "Semakan skema tidak dapat menentukan keluaran aplikasi sumber yang menulis pangkalan data ini: beberapa keluaran berkongsi skema ini.";
 
-"hub.import.ackRelease" = "Saya mengesahkan aplikasi sumber menggunakan keluaran 4.2.0 atau lebih baharu dan tidak akan dikemas kini semasa import.";
+"hub.import.ackRelease" = "Saya mengesahkan aplikasi sumber menggunakan keluaran 4.4.0 atau lebih baharu dan tidak akan dikemas kini semasa import.";
+
+"hub.backup.title" = "Sandaran";
+
+"hub.backup.detail" = "Salinan terenkripsi sejarah Hub. Kata laluan pemulihan disimpan dalam fail pada Mac ini yang hanya boleh dibaca pemilik.";
+
+"hub.backup.backUpNow" = "Sandar sekarang";
+
+"hub.backup.onSchedule" = "Sandar mengikut jadual";
+
+"hub.backup.saveSchedule" = "Simpan jadual";
+
+"hub.backup.panelPrompt" = "Pilih";
+
+"hub.backup.panelMessage" = "Pilih folder untuk sandaran Hub yang dienkripsi, di luar folder data Hub.";
+
+"hub.backup.savedNote" = "Disimpan. Jadual terpakai apabila Hub dimulakan semula.";
+
+"hub.backup.noFolder" = "Tiada folder dipilih";
+
+"hub.backup.passwordPlaceholder" = "Kata laluan pemulihan (sekurang-kurangnya %1$@ aksara)";
+
+"hub.backup.passwordSaved" = "Disimpan. Taip yang baharu untuk menggantikannya";
+
+"hub.backup.intervalHour" = "Setiap jam";
+
+"hub.backup.intervalDay" = "Setiap hari";
+
+"hub.backup.intervalTwoDays" = "Setiap 2 hari";
+
+"hub.backup.intervalWeek" = "Setiap minggu";
+
+"hub.backup.intervalHours" = "Setiap %1$@ jam";
+
+"hub.backup.schedule" = "Jadual";
+
+"hub.backup.keep" = "Simpan";
+
+"hub.backup.keepSuffix" = "sandaran";
+
+"hub.backup.folder" = "Folder";
+
+"hub.backup.passwordLabel" = "Kata laluan pemulihan";
+
+"hub.backup.problem.passwordShort" = "Kata laluan pemulihan memerlukan sekurang-kurangnya %1$@ aksara.";
+
+"hub.backup.problem.interval" = "Selang mesti antara 1 dan 8784 jam.";
+
+"hub.backup.problem.keep" = "Bilangan sandaran yang disimpan mesti antara 1 dan 1000.";
+
+"hub.backup.problem.chooseFolder" = "Pilih folder sandaran.";
+
+"hub.backup.problem.folderInside" = "Pilih folder sandaran di luar folder data Hub.";
+
+"hub.backup.problem.needsBoth" = "Sandaran berjadual memerlukan folder sandaran dan kata laluan pemulihan.";
+
+"hub.backup.lastGoodNone" = "Belum ada";
+
+"hub.backup.nextOff" = "Sandaran berjadual dimatikan";
+
+"hub.backup.nextNotScheduled" = "Tidak dijadualkan: pilih folder dan kata laluan";
+
+"hub.backup.nextPaused" = "Menunggu pemulihan bukti kelayakan";
+
+"hub.collection.notReported" = "Tidak dilaporkan";
+
+"hub.backup.blocked" = "Bukti kelayakan yang ditolak menyekat sandaran. Jalankan purge-refused-credentials untuk mengosongkannya.";
+
+"hub.backup.lastFailedMessage" = "Percubaan terakhir gagal: %1$@";
+
+"hub.backup.lastFailedCode" = "Percubaan terakhir gagal (%1$@)";
+
+"hub.backup.row.lastGood" = "Sandaran berjaya terakhir";
+
+"hub.backup.row.next" = "Sandaran seterusnya";
+
+"hub.backup.row.running" = "Sandaran sedang berjalan sekarang";
+
+"hub.backup.row.lastAttempt" = "Percubaan terakhir";
+
+"hub.backup.run.running" = "Sedang menyandar…";
+
+"hub.backup.run.stillRunning" = "Sandaran masih berjalan dalam perkhidmatan Hub.";
+
+"hub.backup.run.finishedGeneration" = "Sandaran selesai: %1$@";
+
+"hub.backup.run.finished" = "Sandaran selesai";
+
+"hub.backup.run.failed" = "Sandaran gagal: %1$@";
+
+"hub.backup.maint.unreadable" = "Jawapan Hub tidak dapat dibaca.";
+
+"hub.backup.maint.unwritable" = "Kata laluan pemulihan tidak dapat disimpan.";
+
+"hub.backup.maint.configMissing" = "Sediakan Hub sebelum menukar sandaran.";
+
+"hub.devices.title" = "Peranti berpasangan";
+
+"hub.devices.detail" = "Telefon dan apl yang membaca Hub ini, beserta kereta yang boleh dibaca oleh setiap satu.";
+
+"hub.devices.revokeTitle" = "Batalkan akses %1$@?";
+
+"hub.devices.revokeInfo" = "Peranti ini berhenti membaca daripada Hub serta-merta. Untuk menggunakannya semula, pasangkan semula.";
+
+"hub.devices.revoke" = "Batalkan akses";
+
+"hub.devices.revokeEllipsis" = "Batalkan akses…";
+
+"hub.devices.revokeAccessibility" = "Batalkan akses %1$@";
+
+"hub.devices.revokedDone" = "Akses %1$@ telah dibatalkan.";
+
+"hub.devices.none" = "Tiada peranti berpasangan.";
+
+"hub.devices.cars" = "Kereta: %1$@";
+
+"hub.devices.noCars" = "Tiada kereta";
+
+"hub.devices.carFallback" = "Kereta %1$@";
+
+"hub.devices.unnamed" = "Peranti tanpa nama";
+
+"hub.devices.stateRevoked" = "Dibatalkan %1$@";
+
+"hub.devices.stateExpired" = "Tamat tempoh %1$@";
+
+"hub.devices.stateLastSeen" = "Kali terakhir dilihat %1$@";
+
+"hub.devices.stateNeverSeen" = "Belum pernah dilihat";
+
+"hub.collection.loginOwn" = "Log masuk dengan log masuk Hub sendiri";
+
+"hub.collection.loginSignedOut" = "Log keluar";
+
+"hub.collection.loginNotOwn" = "Log masuk yang disimpan bukan milik Hub sendiri";
+
+"hub.collection.credValidUntil" = "Sah sehingga %1$@";
+
+"hub.collection.credValid" = "Sah";
+
+"hub.collection.credRelogin" = "Log masuk semula diperlukan: log masuk lagi dalam tetingkap terbuka seterusnya";
+
+"hub.collection.credOwnerRefused" = "Owner API ditolak: Tesla menolak log masuk ini";
+
+"hub.collection.credRefused" = "Ditolak (%1$@)";
+
+"hub.collection.credExposure" = "Disyaki terdedah: log masuk lagi dalam tetingkap terbuka seterusnya";
+
+"hub.collection.credAttention" = "Memerlukan perhatian (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Belum log masuk";
+
+"hub.collection.windowOpenUntil" = "Terbuka sehingga %1$@";
+
+"hub.collection.windowOpen" = "Terbuka";
+
+"hub.collection.windowPending" = "Menunggu";
+
+"hub.collection.windowPendingFrom" = "Menunggu dari %1$@";
+
+"hub.collection.windowPendingUntil" = "Menunggu sehingga %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Menunggu dari %1$@ sehingga %2$@";
+
+"hub.collection.windowClosingExpiry" = "Sedang ditutup (tamat %1$@)";
+
+"hub.collection.windowClosing" = "Sedang ditutup";
+
+"hub.collection.windowClosedReason" = "Ditutup (%1$@)";
+
+"hub.collection.windowClosed" = "Ditutup";
+
+"hub.collection.windowUntrusted" = "Ditutup (tiada pengeluar dipercayai)";
+
+"hub.collection.windowFaulted" = "Ditutup (keadaan tetingkap memerlukan dokumen kepercayaan baharu)";
+
+"hub.collection.windowRecovery" = "Ditutup (menunggu pemulihan bukti kelayakan: jalankan restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Tidak diketahui: saluran kawalan bukan milik Hub ini";
+
+"hub.collection.windowNotRunning" = "Tidak diketahui: Hub tidak berjalan";
+
+"hub.collection.reasonExpired" = "tamat tempoh";
+
+"hub.collection.reasonOperator" = "ditutup oleh operator";
+
+"hub.collection.reasonRelogin" = "log masuk semula diperlukan";
+
+"hub.collection.reasonOwnerRefused" = "Owner API ditolak";
+
+"hub.collection.reasonClock" = "semakan jam gagal";
+
+"hub.collection.reasonReboot" = "Mac dimulakan semula";
+
+"hub.collection.reasonUnverifiable" = "keadaan tidak dapat disahkan";
+
+"hub.collection.reasonClaimLost" = "tuntutan pengumpulan hilang";
+
+"hub.collection.fleet" = "Digantung: tiada tindakan Fleet tersedia";
+
+"hub.collection.signInUnavailable" = "Log masuk tidak tersedia pada Hub ini";
+
+"hub.collection.labelLogin" = "Log masuk Tesla";
+
+"hub.collection.labelCredential" = "Keadaan bukti kelayakan";
+
+"hub.collection.labelWindow" = "Tetingkap pengumpulan";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Log masuk";
+
+"hub.signIn.recoveryPending" = "Hub menunggu pemulihan bukti kelayakannya: data Hub ini dipulihkan tanpa kuncinya. Jalankan restore-recovery-credentials, kemudian log masuk. Tiada apa yang diubah.";
+
+"hub.signIn.serviceUnauthenticated" = "Proses yang menjawab pada saluran kawalan Hub bukan Hub ini, jadi tiada apa yang dihantar. Mulakan semula Hub, kemudian log masuk semula.";
+
+"hub.signIn.busy" = "Hub sibuk dengan permintaan lain. Tiada apa yang diubah; log masuk semula sebentar lagi.";

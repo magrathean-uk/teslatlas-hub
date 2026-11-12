@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Завърши или отмени предаването при миграцията на изходното приложение, преди да излезеш от акаунта.";
 "hub.HubController.1504.567" = "Връзката не беше прекъсната докрай. Състоянието на Hub е обновено; провери дали акаунтът все още е свързан. %1$@";
 "hub.HubController.1522.568" = "Потвърди, че си прегледал схемата на изходната база данни, преди да провериш съвместимостта.";
-"hub.HubController.1523.569" = "Потвърди, че използваш изходното приложение с версия 4.2.0 или по-нова, преди проверката за съвместимост.";
+"hub.HubController.1523.569" = "Потвърди, че използваш изходното приложение с версия 4.4.0 или по-нова, преди проверката за съвместимост.";
 "hub.HubController.1532.570" = "Избери локален източник на PostgreSQL на 127.0.0.1 или ::1.";
 "hub.HubController.1536.571" = "Идентификаторът на автомобила в изходната база данни трябва да е положително число.";
 "hub.HubController.1539.572" = "Избери защитения файл с паролата за PostgreSQL.";
 "hub.HubController.1552.580" = "Проверката за съвместимост с изходното приложение не върна валиден отчет.";
 "hub.HubController.1562.581" = "Не можа да се потвърди изходната база данни. Провери връзката със сървъра и опитай отново.";
-"hub.HubController.1585.586" = "Потвърди, че използваш изходното приложение с версия 4.2.0 или по-нова, преди импортирането.";
+"hub.HubController.1585.586" = "Потвърди, че използваш изходното приложение с версия 4.4.0 или по-нова, преди импортирането.";
 "hub.HubController.1591.587" = "За вход е необходим отворен прозорец за събиране. Отвори прозорец и влез отново.";
 "hub.HubController.1718.615" = "Импортирането от изходното приложение не върна валиден отчет за завършване. Hub остава спрян.";
 "hub.HubController.1742.624" = "Импортирането завърши, но Hub не успя да запише условието за безопасно предаване: %1$@. Hub остава спрян.";
-"hub.HubController.1846.655" = "Потвърди, че използваш изходното приложение с версия 4.2.0 или по-нова, преди да импортираш от директен източник на PostgreSQL.";
+"hub.HubController.1846.655" = "Потвърди, че използваш изходното приложение с версия 4.4.0 или по-нова, преди да импортираш от директен източник на PostgreSQL.";
 "hub.HubController.1865.658" = "Източникът на PostgreSQL трябва да съдържа схема postgres или postgresql, хост и име на база данни.";
 "hub.HubController.1869.659" = "Източникът на PostgreSQL не трябва да съдържа парола. Използвай полето за файла с паролата.";
 "hub.HubController.1966.689" = "Настройването на Fleet беше неуспешно: %1$@. Възстановяването на конфигурацията на Hub също беше неуспешно: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Попълни всички полета";
 "hub.ImportSheetController.149.1710" = "Необходими са източник, ID на автомобила и файл с паролата.";
 "hub.ImportSheetController.156.1711" = "Потвърди версията на изходното приложение";
-"hub.ImportSheetController.17.1690" = "Потвърждавам, че тази база данни принадлежи на изходното приложение с версия 4.2.0 или по-нова";
+"hub.ImportSheetController.17.1690" = "Потвърждавам, че тази база данни принадлежи на изходното приложение с версия 4.4.0 или по-нова";
 "hub.ImportSheetController.26.1691" = "Импортиране на история";
 "hub.ImportSheetController.49.1693" = "Копирай данни от изходната PostgreSQL база данни в Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "Източник на PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Файл с паролата";
 "hub.ImportSheetController.7.1687" = "Hub чете данни от изходната база данни, без да спира или променя изходното приложение. След импортирането Hub ще ти каже кога сам да изключиш достъпа до Tesla в изходното приложение.";
 "hub.ImportSheetController.73.1699" = "Hub не работи. Стартирай Hub, отвори прозорец за събиране и влез.";
-"hub.ImportSheetController.9.1688" = "Преди импортиране: направи резервно копие на изходното приложение, обнови го до версия 4.2.0 или по-нова, стартирай го веднъж и изчакай миграциите на базата данни да завършат. Директната връзка с базата данни не може да потвърди версията на работещото приложение.";
+"hub.ImportSheetController.9.1688" = "Преди импортиране: направи резервно копие на изходното приложение, обнови го до версия 4.4.0 или по-нова, стартирай го веднъж и изчакай миграциите на базата данни да завършат. Директната връзка с базата данни не може да потвърди версията на работещото приложение.";
 "hub.LogsWindowController.113.1730" = "Още действия с журналите";
 "hub.LogsWindowController.123.1732" = "Показаните, копираните и запазените журнали заличават данните за достъп и личните идентификатори. Прегледай ги, преди да ги споделиш.";
 "hub.LogsWindowController.17.1712" = "Журналите се зареждат…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Въведи и токена за достъп, и токена за обновяване.";
 "hub.OnboardingWindowController.1631.2105" = "Въведи сървъра на изходното приложение, SSH потребителя и порта.";
 "hub.OnboardingWindowController.168.1852" = "Продължи";
-"hub.OnboardingWindowController.1691.2113" = "Проверката на схемата не може да установи версията на изходното приложение. Потвърди, че на сървъра работи версия 4.2.0 или по-нова, после продължи.";
+"hub.OnboardingWindowController.1691.2113" = "Проверката на схемата не може да установи версията на изходното приложение. Потвърди, че на сървъра работи версия 4.4.0 или по-нова, после продължи.";
 "hub.OnboardingWindowController.1740.2131" = "Свържи се със сървъра на изходното приложение, преди да импортираш.";
 "hub.OnboardingWindowController.1750.2137" = "Настройките на сървъра се промениха. Свържи се отново със сървъра на изходното приложение, преди да импортираш.";
 "hub.OnboardingWindowController.1820.2143" = "Една или повече проверки изискват внимание.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Избери SSH ключ";
 "hub.OnboardingWindowController.1981.2148" = "Избери ключ";
 "hub.OnboardingWindowController.200.1857" = "Използвай локално копие на PostgreSQL (само история)";
-"hub.OnboardingWindowController.203.1858" = "Потвърждавам, че този сървър работи с изходното приложение с версия 4.2.0 или по-нова";
+"hub.OnboardingWindowController.203.1858" = "Потвърждавам, че този сървър работи с изходното приложение с версия 4.4.0 или по-нова";
 "hub.OnboardingWindowController.252.1859" = "Предишният импорт не завърши. Провери изходното приложение и стартирай импортирането отново.";
 "hub.OnboardingWindowController.292.1862" = "Готово за импорт.";
 "hub.OnboardingWindowController.298.1866" = "Връзката с изходното приложение беше неуспешна";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub не можа да заеме локален порт за тунела до базата данни.";
 "hub.SourceServerImporter.744.2586" = "Опитай отново.";
 "hub.SourceServerImporter.746.2588" = "Първо обнови изходното приложение";
-"hub.SourceServerImporter.747.2589" = "Ръководената миграция изисква изходното приложение с версия 4.2.0 или по-нова.";
+"hub.SourceServerImporter.747.2589" = "Ръководената миграция изисква изходното приложение с версия 4.4.0 или по-нова.";
 "hub.SourceServerImporter.748.2590" = "Направи резервно копие на изходното приложение, обнови го, изчакай миграциите му да завършат и после се свържи отново.";
 "hub.SourceServerImporter.763.2594" = "Изходното приложение не работи или контейнерът му не е намерен.";
 "hub.SourceServerImporter.764.2596" = "Не можа да се идентифицира Docker Compose проектът на изходното приложение.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Този акаунт няма достъп до Docker. Разреши директен достъп до Docker или sudo без парола за Docker.";
 "hub.SourceServerImporter.834.2668" = "Docker не е намерен на сървъра на изходното приложение. Провери сървъра и PATH на акаунта.";
 "hub.SourceServerImporter.836.2670" = "Docker е инсталиран, но не е достъпен. Провери дали услугата Docker работи.";
-"hub.SourceServerImporter.838.2672" = "Ръководената миграция изисква изходното приложение с версия 4.2.0 или по-нова. Обнови изходното приложение и опитай отново.";
+"hub.SourceServerImporter.838.2672" = "Ръководената миграция изисква изходното приложение с версия 4.4.0 или по-нова. Обнови изходното приложение и опитай отново.";
 "hub.SourceServerImporter.840.2674" = "SSH не успя да се свърже или да се удостовери. Провери сървъра, порта, акаунта и избрания метод за удостоверяване.";
 "hub.SourceServerImporter.842.2676" = "SSH удостоверяването беше неуспешно. Провери акаунта и избрания метод за удостоверяване.";
 "hub.SourceServerImporter.854.2688" = "SSH сървърът затвори връзката. Провери журналите на сървъра и правилата за SSH.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "Проверката на схемата не може да покаже коя версия на изходното приложение е създала тази база данни: повече от една версия използва същата схема.";
 
-"hub.import.ackRelease" = "Потвърждавам, че изходното приложение е версия 4.2.0 или по-нова и няма да бъде актуализирано по време на импортирането.";
+"hub.import.ackRelease" = "Потвърждавам, че изходното приложение е версия 4.4.0 или по-нова и няма да бъде актуализирано по време на импортирането.";
+
+"hub.backup.title" = "Резервни копия";
+
+"hub.backup.detail" = "Шифровани копия на историята на Hub. Паролата за възстановяване се пази във файл на този Mac, достъпен само за собственика.";
+
+"hub.backup.backUpNow" = "Създай копие сега";
+
+"hub.backup.onSchedule" = "Създавай копия по график";
+
+"hub.backup.saveSchedule" = "Запази графика";
+
+"hub.backup.panelPrompt" = "Избери";
+
+"hub.backup.panelMessage" = "Изберете папка за шифрованите резервни копия на Hub извън папката с данни на Hub.";
+
+"hub.backup.savedNote" = "Запазено. Графикът ще важи след рестартиране на Hub.";
+
+"hub.backup.noFolder" = "Не е избрана папка";
+
+"hub.backup.passwordPlaceholder" = "Парола за възстановяване (поне %1$@ знака)";
+
+"hub.backup.passwordSaved" = "Запазена. Въведете нова, за да я замените";
+
+"hub.backup.intervalHour" = "Всеки час";
+
+"hub.backup.intervalDay" = "Всеки ден";
+
+"hub.backup.intervalTwoDays" = "На всеки 2 дни";
+
+"hub.backup.intervalWeek" = "Всяка седмица";
+
+"hub.backup.intervalHours" = "На всеки %1$@ ч";
+
+"hub.backup.schedule" = "График";
+
+"hub.backup.keep" = "Пази";
+
+"hub.backup.keepSuffix" = "копия";
+
+"hub.backup.folder" = "Папка";
+
+"hub.backup.passwordLabel" = "Парола за възстановяване";
+
+"hub.backup.problem.passwordShort" = "Паролата за възстановяване трябва да е поне %1$@ знака.";
+
+"hub.backup.problem.interval" = "Интервалът трябва да е между 1 и 8784 часа.";
+
+"hub.backup.problem.keep" = "Броят на пазените копия трябва да е между 1 и 1000.";
+
+"hub.backup.problem.chooseFolder" = "Изберете папка за резервни копия.";
+
+"hub.backup.problem.folderInside" = "Изберете папка за резервни копия извън папката с данни на Hub.";
+
+"hub.backup.problem.needsBoth" = "Копията по график изискват папка и парола за възстановяване.";
+
+"hub.backup.lastGoodNone" = "Още няма";
+
+"hub.backup.nextOff" = "Копията по график са изключени";
+
+"hub.backup.nextNotScheduled" = "Не е насрочено: изберете папка и парола";
+
+"hub.backup.nextPaused" = "Изчаква възстановяване на данните за вход";
+
+"hub.collection.notReported" = "Не е съобщено";
+
+"hub.backup.blocked" = "Отхвърлените данни за вход блокират копията. Изпълнете purge-refused-credentials, за да ги изчистите.";
+
+"hub.backup.lastFailedMessage" = "Последният опит не успя: %1$@";
+
+"hub.backup.lastFailedCode" = "Последният опит не успя (%1$@)";
+
+"hub.backup.row.lastGood" = "Последно успешно копие";
+
+"hub.backup.row.next" = "Следващо копие";
+
+"hub.backup.row.running" = "В момента се създава копие";
+
+"hub.backup.row.lastAttempt" = "Последен опит";
+
+"hub.backup.run.running" = "Създаване на копие…";
+
+"hub.backup.run.stillRunning" = "Копието все още се създава в услугата на Hub.";
+
+"hub.backup.run.finishedGeneration" = "Копието е готово: %1$@";
+
+"hub.backup.run.finished" = "Копието е готово";
+
+"hub.backup.run.failed" = "Копието не успя: %1$@";
+
+"hub.backup.maint.unreadable" = "Отговорът на Hub не можа да бъде прочетен.";
+
+"hub.backup.maint.unwritable" = "Паролата за възстановяване не можа да бъде запазена.";
+
+"hub.backup.maint.configMissing" = "Настройте Hub, преди да променяте копията.";
+
+"hub.devices.title" = "Сдвоени устройства";
+
+"hub.devices.detail" = "Телефони и приложения, които четат този Hub, с автомобилите, които всяко може да чете.";
+
+"hub.devices.revokeTitle" = "Отнемане на достъпа на %1$@?";
+
+"hub.devices.revokeInfo" = "Това устройство веднага спира да чете от Hub. За да го ползвате отново, сдвоете го наново.";
+
+"hub.devices.revoke" = "Отнеми";
+
+"hub.devices.revokeEllipsis" = "Отнеми…";
+
+"hub.devices.revokeAccessibility" = "Отнеми достъпа на %1$@";
+
+"hub.devices.revokedDone" = "Достъпът на %1$@ е отнет.";
+
+"hub.devices.none" = "Няма сдвоени устройства.";
+
+"hub.devices.cars" = "Автомобили: %1$@";
+
+"hub.devices.noCars" = "Няма автомобили";
+
+"hub.devices.carFallback" = "Автомобил %1$@";
+
+"hub.devices.unnamed" = "Устройство без име";
+
+"hub.devices.stateRevoked" = "Отнет на %1$@";
+
+"hub.devices.stateExpired" = "Изтекъл на %1$@";
+
+"hub.devices.stateLastSeen" = "Последно видяно на %1$@";
+
+"hub.devices.stateNeverSeen" = "Още не е виждано";
+
+"hub.collection.loginOwn" = "Влезли сте със собствения вход на Hub";
+
+"hub.collection.loginSignedOut" = "Излезли сте";
+
+"hub.collection.loginNotOwn" = "Запазеният вход не е собствен на Hub";
+
+"hub.collection.credValidUntil" = "Валиден до %1$@";
+
+"hub.collection.credValid" = "Валиден";
+
+"hub.collection.credRelogin" = "Нужен е нов вход: влезте отново в следващия отворен прозорец";
+
+"hub.collection.credOwnerRefused" = "Owner API отказан: Tesla отхвърли този вход";
+
+"hub.collection.credRefused" = "Отхвърлено (%1$@)";
+
+"hub.collection.credExposure" = "Подозрение за разкриване: влезте отново в следващия отворен прозорец";
+
+"hub.collection.credAttention" = "Изисква внимание (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Не сте влезли";
+
+"hub.collection.windowOpenUntil" = "Отворен до %1$@";
+
+"hub.collection.windowOpen" = "Отворен";
+
+"hub.collection.windowPending" = "Предстои";
+
+"hub.collection.windowPendingFrom" = "Предстои от %1$@";
+
+"hub.collection.windowPendingUntil" = "Предстои до %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Предстои от %1$@ до %2$@";
+
+"hub.collection.windowClosingExpiry" = "Затваря се (изтича %1$@)";
+
+"hub.collection.windowClosing" = "Затваря се";
+
+"hub.collection.windowClosedReason" = "Затворен (%1$@)";
+
+"hub.collection.windowClosed" = "Затворен";
+
+"hub.collection.windowUntrusted" = "Затворен (няма доверен издател)";
+
+"hub.collection.windowFaulted" = "Затворен (състоянието на прозореца изисква нов документ за доверие)";
+
+"hub.collection.windowRecovery" = "Затворен (изчаква възстановяване на данните за вход: изпълнете restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Неизвестно: каналът за управление не е на този Hub";
+
+"hub.collection.windowNotRunning" = "Неизвестно: Hub не работи";
+
+"hub.collection.reasonExpired" = "изтекъл";
+
+"hub.collection.reasonOperator" = "затворен от оператора";
+
+"hub.collection.reasonRelogin" = "нужен е нов вход";
+
+"hub.collection.reasonOwnerRefused" = "Owner API отказан";
+
+"hub.collection.reasonClock" = "проверката на часовника не успя";
+
+"hub.collection.reasonReboot" = "Mac е рестартиран";
+
+"hub.collection.reasonUnverifiable" = "състоянието не можа да бъде проверено";
+
+"hub.collection.reasonClaimLost" = "правото за събиране е изгубено";
+
+"hub.collection.fleet" = "Паузирано: няма налични действия за Fleet";
+
+"hub.collection.signInUnavailable" = "Входът не е наличен на този Hub";
+
+"hub.collection.labelLogin" = "Вход в Tesla";
+
+"hub.collection.labelCredential" = "Състояние на данните за вход";
+
+"hub.collection.labelWindow" = "Прозорец за събиране";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Вход";
+
+"hub.signIn.recoveryPending" = "Hub изчаква възстановяване на данните си за вход: данните на този Hub са възстановени без ключовете му. Изпълнете restore-recovery-credentials и после влезте. Нищо не е променено.";
+
+"hub.signIn.serviceUnauthenticated" = "Процесът, който отговаря на канала за управление на Hub, не е този Hub, затова нищо не е изпратено. Рестартирайте Hub и влезте отново.";
+
+"hub.signIn.busy" = "Hub е зает с други заявки. Нищо не е променено; влезте отново след малко.";

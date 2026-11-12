@@ -21,7 +21,7 @@ async fn main() -> ExitCode {
         .with_ansi(std::io::stderr().is_terminal())
         .with_target(false);
     if matches!(&cli.command,
-        Command::Setup { .. } | Command::SetupFleet { .. } | Command::Migrate { history_only: false, .. }
+        Command::Setup { .. } | Command::SetupFleet | Command::Migrate { history_only: false, .. }
         | Command::Control { command: ControlCommand::SignOut, .. }
         | Command::Control { command: ControlCommand::RotateCredentialKey, .. }) {
         logging.with_writer(std::io::stderr).init();

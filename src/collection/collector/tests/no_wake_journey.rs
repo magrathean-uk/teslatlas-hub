@@ -17,8 +17,8 @@ fn seed_journey_import(store: &HubStore) {
     let history = SourceDbHistory {
         cars: vec![SourceDbCar {
             id: 1,
-            eid: crate::collection::loopback_fixture::VEHICLE_ID as i64,
-            vid: Some(crate::collection::loopback_fixture::STREAM_ID as i64),
+            eid: crate::collection::loopback_fixture::VEHICLE_ID,
+            vid: Some(crate::collection::loopback_fixture::STREAM_ID),
             vin: Some(crate::collection::loopback_fixture::VIN.to_owned()),
             name: Some("Journey fixture".to_owned()),
             model: Some("3".to_owned()),

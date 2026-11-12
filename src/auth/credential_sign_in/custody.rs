@@ -81,5 +81,5 @@ fn matches_stat(metadata: &fs::Metadata, stat: &rustix::fs::Stat) -> bool {
         && metadata.uid() == stat.st_uid && metadata.mode() == stat.st_mode as u32
         && metadata.len() == stat.st_size as u64
         && metadata.mtime() == stat.st_mtime
-        && metadata.mtime_nsec() == stat.st_mtime_nsec as i64
+        && metadata.mtime_nsec() == stat.st_mtime_nsec
 }

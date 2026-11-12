@@ -10,7 +10,7 @@ fn synthetic_source_check_snapshot() -> SourceDbCheckSnapshot {
     SourceDbCheckSnapshot {
         schema: SourceDbSchemaInfo {
             observed_migration_version: MAX_VALIDATED_MIGRATION,
-            observed_migration_count: 105,
+            observed_migration_count: SOURCE_DB_V4_MIGRATION_COUNT,
             minimum_supported_migration_version: MAX_VALIDATED_MIGRATION,
             maximum_validated_migration_version: MAX_VALIDATED_MIGRATION,
             pinned_source_revision: SOURCE_DB_V4_SOURCE_REVISION,
@@ -54,7 +54,7 @@ fn synthetic_source_check_snapshot() -> SourceDbCheckSnapshot {
             charges: 3,
             states: 4,
             updates: 1,
-            schema_migrations: 105,
+            schema_migrations: u64::try_from(SOURCE_DB_V4_MIGRATION_COUNT).unwrap(),
         },
     }
 }
@@ -77,7 +77,7 @@ fn source_check_reports_neutral_keys_and_schema_recognised() {
     object.insert("credentialsInspected".to_owned(), serde_json::json!(false));
     assert_eq!(actual, expected);
     assert_eq!(actual["sourceSchemaRecognised"], true);
-    assert_eq!(actual["schemaSetLabel"], "ea850d1b038c");
+    assert_eq!(actual["schemaSetLabel"], "c497f904ef74");
     let forbidden = ["tesl", "amate"].concat();
     assert!(
         !serde_json::to_string(&actual)
@@ -88,7 +88,7 @@ fn source_check_reports_neutral_keys_and_schema_recognised() {
     let pending = source_check_success_report(42, &synthetic_source_check_snapshot(), true, false);
     assert_eq!(pending["status"], "confirmation_required");
     assert_eq!(pending["sourceSchemaRecognised"], true);
-    assert_eq!(pending["schemaSetLabel"], "ea850d1b038c");
+    assert_eq!(pending["schemaSetLabel"], "c497f904ef74");
 }
 
 #[test]
@@ -107,6 +107,103 @@ fn source_check_not_recognised_report_is_false_without_label() {
     ] {
         assert!(actual.get(key).is_none());
     }
+}
+
+/// Review REV-M03-T08 finding 2: both report paths and both shared app
+/// fixtures name the current reviewed set (revision, count, newest migration
+/// and set label) together, so the CLI and the app cannot drift apart.
+#[test]
+fn source_check_reports_and_fixtures_name_the_current_reviewed_set() {
+    use teslatlas_hub::source_db_schema::CURRENT_REVIEWED_SOURCE_SET as SET;
+    let label = &SET.migration_set_sha256[..12];
+    let recognised: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/source-check-recognised.json"
+    ))
+    .unwrap();
+    let refused: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/source-check-not-recognised.json"
+    ))
+    .unwrap();
+    for accept in [true, false] {
+        let success =
+            source_check_success_report(42, &synthetic_source_check_snapshot(), true, accept);
+        for report in [&success, &recognised] {
+            assert_eq!(report["pinnedSourceRevision"], SET.source_revision);
+            assert_eq!(report["observedMigrationCount"], SET.migration_count);
+            assert_eq!(report["observedMigrationVersion"], SET.newest_migration);
+            assert_eq!(
+                report["minimumSupportedMigrationVersion"],
+                SET.newest_migration
+            );
+            assert_eq!(
+                report["maximumValidatedMigrationVersion"],
+                SET.newest_migration
+            );
+            assert_eq!(
+                report["sourceTotals"]["schemaMigrations"],
+                SET.migration_count
+            );
+            assert_eq!(report["schemaSetLabel"], label);
+            assert_eq!(report["requiredVersion"], SET.release);
+        }
+    }
+    for reason in [
+        "schema_mismatch",
+        "older_than_v4_4_compatible_schema",
+        "newer_than_v4_4_compatible_schema",
+    ] {
+        let failure = source_check_failure_report(42, "incompatible", reason, None, "guidance");
+        for report in [&failure, &refused] {
+            assert_eq!(report["pinnedSourceRevision"], SET.source_revision);
+            assert_eq!(report["expectedMigrationCount"], SET.migration_count);
+            assert_eq!(report["requiredVersion"], SET.release);
+            assert_eq!(
+                report["maximumValidatedMigrationVersion"],
+                SET.newest_migration
+            );
+        }
+    }
+}
+
+/// Review REV-M03-T08 finding 3: the producer names the new set and release
+/// together. A recognised report carries the reason code and required
+/// release the app admits, and a source still at the earlier reviewed set is
+/// refused with guidance to update the source application to 4.4.0 first.
+#[test]
+fn source_check_names_release_4_4_0_and_guides_an_earlier_set_source() {
+    use teslatlas_hub::source_db_schema::{
+        CURRENT_REVIEWED_SOURCE_SET as SET, V4_2_REVIEWED_SOURCE_SET,
+    };
+    assert_eq!(SET.release, "4.4.0");
+    let success = source_check_success_report(42, &synthetic_source_check_snapshot(), true, true);
+    assert_eq!(success["status"], "compatible");
+    assert_eq!(success["reasonCode"], "v4_4_compatible_schema");
+    assert_eq!(success["schemaEvidence"], "v4_4_compatible_schema");
+    assert_eq!(success["requiredVersion"], "4.4.0");
+    let migration_ack =
+        source_check_success_report(42, &synthetic_source_check_snapshot(), false, true);
+    assert_eq!(migration_ack["reasonCode"], "v4_4_compatible_schema");
+    let pending = source_check_success_report(42, &synthetic_source_check_snapshot(), false, false);
+    assert_eq!(pending["reasonCode"], "v4_4_version_unconfirmed");
+    assert!(pending["guidance"].as_str().unwrap().contains("4.4.0"));
+
+    let earlier_set = SourceDbReaderError::Schema(SchemaCompatibilityError::LegacyMigration {
+        found: V4_2_REVIEWED_SOURCE_SET.newest_migration,
+        minimum: SET.newest_migration,
+    });
+    let (status, reason, observed, guidance) = source_check_failure_details(&earlier_set);
+    let refused = source_check_failure_report(42, status, reason, observed, guidance);
+    assert_eq!(refused["status"], "incompatible");
+    assert_eq!(refused["reasonCode"], "older_than_v4_4_compatible_schema");
+    assert_eq!(refused["observedMigrationVersion"], 20_260_808_090_000_i64);
+    assert_eq!(refused["requiredVersion"], "4.4.0");
+    assert_eq!(refused["sourceSchemaRecognised"], false);
+    let guidance = refused["guidance"].as_str().unwrap();
+    assert!(
+        guidance.contains("update it to release 4.4.0"),
+        "{guidance}"
+    );
+    assert!(guidance.contains("Back up"), "{guidance}");
 }
 
 #[test]
@@ -128,8 +225,8 @@ fn source_check_unreached_comparison_reports_null() {
         assert!(actual.get("schemaSetLabel").is_none());
     }
     for reason in [
-        "older_than_v4_2_compatible_schema",
-        "newer_than_v4_2_compatible_schema",
+        "older_than_v4_4_compatible_schema",
+        "newer_than_v4_4_compatible_schema",
         "schema_mismatch",
     ] {
         assert_eq!(
@@ -265,7 +362,7 @@ fn accept_schema_evidence_flag_works_for_check_and_migrate() {
 #[test]
 fn mt4_3_unknown_key_is_refused_unless_new_import_source() {
     let temp = tempfile::tempdir().unwrap();
-    let store = HubStore::initialize(&temp.path().join("data")).unwrap();
+    let store = HubStore::initialize(temp.path().join("data")).unwrap();
     let first = store
         .register_import_source("home-source", 1000, false)
         .unwrap();
@@ -303,7 +400,7 @@ fn mt4_3_unknown_key_is_refused_unless_new_import_source() {
 fn current_import_fixture() -> (tempfile::TempDir, HubStore, uuid::Uuid, uuid::Uuid) {
     let temporary = tempfile::tempdir().unwrap();
     // The store creates its own private data directory.
-    let store = HubStore::initialize(&temporary.path().join("data")).unwrap();
+    let store = HubStore::initialize(temporary.path().join("data")).unwrap();
     let source = store
         .register_import_source("default", 1000, false)
         .unwrap();

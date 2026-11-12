@@ -3503,7 +3503,7 @@ final class HubController {
             throw HubActionError.commandFailed(
                 historyOnly
                     ? HubL10n.text("hub.HubController.1522.568", fallback: "Acknowledge the reviewed source database schema before checking compatibility.")
-                    : HubL10n.text("hub.HubController.1523.569", fallback: "Confirm the source application's release is 4.2.0 or later before checking compatibility.")
+                    : HubL10n.text("hub.HubController.1523.569", fallback: "Confirm the source application's release is 4.4.0 or later before checking compatibility.")
             )
         }
         try Self.validateMigrationSource(source)
@@ -3565,7 +3565,7 @@ final class HubController {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard acceptSchemaEvidence else {
             completion(.failure(HubActionError.commandFailed(
-                HubL10n.text("hub.HubController.1585.586", fallback: "Confirm the source application's release is 4.2.0 or later before importing.")
+                HubL10n.text("hub.HubController.1585.586", fallback: "Confirm the source application's release is 4.4.0 or later before importing.")
             )))
             return
         }
@@ -3863,7 +3863,7 @@ final class HubController {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard acceptSchemaEvidence else {
             completion(.failure(HubActionError.commandFailed(
-                HubL10n.text("hub.HubController.1846.655", fallback: "Confirm the source application's release is 4.2.0 or later before importing from a direct PostgreSQL source.")
+                HubL10n.text("hub.HubController.1846.655", fallback: "Confirm the source application's release is 4.4.0 or later before importing from a direct PostgreSQL source.")
             )))
             return
         }
@@ -4225,15 +4225,15 @@ final class HubController {
                 fallback: "Sign-in needs an open collection window. Open a window, then sign in again."))
         case "credential_recovery_pending":
             return HubActionError.commandFailed(
-                "Hub is waiting for its credential recovery: this Hub's data was restored without its keys. "
-                + "Run restore-recovery-credentials, then sign in. Nothing was changed.")
+                HubL10n.text("hub.signIn.recoveryPending", fallback: "Hub is waiting for its credential recovery: this Hub's data was restored without its keys. "
+                + "Run restore-recovery-credentials, then sign in. Nothing was changed."))
         case "service_unauthenticated":
             return HubActionError.commandFailed(
-                "The process answering on the Hub's control channel is not this Hub, so nothing was sent. "
-                + "Restart Hub, then sign in again.")
+                HubL10n.text("hub.signIn.serviceUnauthenticated", fallback: "The process answering on the Hub's control channel is not this Hub, so nothing was sent. "
+                + "Restart Hub, then sign in again."))
         case "control_channel_busy":
             return HubActionError.commandFailed(
-                "Hub is busy with other requests. Nothing was changed; sign in again in a moment.")
+                HubL10n.text("hub.signIn.busy", fallback: "Hub is busy with other requests. Nothing was changed; sign in again in a moment."))
         default:
             return HubActionError.commandFailed(HubL10n.text(
                 "hub.ImportSheetController.73.1699",

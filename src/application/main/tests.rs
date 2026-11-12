@@ -426,13 +426,14 @@ fn source_check_failures_are_redacted_and_actionable() {
 
     assert_eq!(
         source_check_failure_details(&older).1,
-        "older_than_v4_2_compatible_schema"
+        "older_than_v4_4_compatible_schema"
     );
     assert_eq!(source_check_failure_details(&older).2, Some(1));
     assert!(source_check_failure_details(&older).3.contains("update"));
+    assert!(source_check_failure_details(&older).3.contains("4.4.0"));
     assert_eq!(
         source_check_failure_details(&newer).1,
-        "newer_than_v4_2_compatible_schema"
+        "newer_than_v4_4_compatible_schema"
     );
     assert!(
         source_check_failure_details(&newer)
@@ -490,12 +491,12 @@ fn source_check_reports_an_exceeded_read_budget_plainly() {
 fn source_check_requires_honest_version_confirmation() {
     let unconfirmed = source_db_version_confirmation(false);
     assert_eq!(unconfirmed.0, "confirmation_required");
-    assert_eq!(unconfirmed.1, "v4_2_version_unconfirmed");
+    assert_eq!(unconfirmed.1, "v4_4_version_unconfirmed");
     assert!(unconfirmed.2.contains("cannot establish"));
 
     let confirmed = source_db_version_confirmation(true);
     assert_eq!(confirmed.0, "compatible");
-    assert_eq!(confirmed.1, "v4_2_compatible_schema");
+    assert_eq!(confirmed.1, "v4_4_compatible_schema");
     assert!(!confirmed.1.contains("exact"));
 }
 

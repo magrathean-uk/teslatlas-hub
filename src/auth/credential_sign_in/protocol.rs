@@ -40,7 +40,7 @@ pub fn pkce_verifier(secret: &[u8; 32]) -> SecretText { encode_secret(secret, "v
 pub fn pkce_challenge(verifier: &str) -> SecretText {
     let mut digest = Sha256::digest(verifier.as_bytes());
     let mut output = SecretText::new("challenge", 43);
-    URL_SAFE_NO_PAD.encode_string(&digest, output.buffer_mut());
+    URL_SAFE_NO_PAD.encode_string(digest, output.buffer_mut());
     digest.as_mut_slice().zeroize();
     super::note_secret_drop(&super::current_secret_observer(), "challenge_digest", digest.len(), digest.len(), digest.iter().all(|byte| *byte == 0));
     output

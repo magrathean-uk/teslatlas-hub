@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Dovršite ili otkažite predaju pri migraciji s izvorne aplikacije prije odjave.";
 "hub.HubController.1504.567" = "Prekid veze nije dovršen bez pogrešaka. Status Huba osvježen je; provjerite je li račun i dalje povezan. %1$@";
 "hub.HubController.1522.568" = "Potvrdite da ste pregledali shemu izvorne baze podataka prije provjere kompatibilnosti.";
-"hub.HubController.1523.569" = "Potvrdite da je izvorna aplikacija verzije 4.2.0 ili novije prije provjere kompatibilnosti.";
+"hub.HubController.1523.569" = "Potvrdite da je izvorna aplikacija verzije 4.4.0 ili novije prije provjere kompatibilnosti.";
 "hub.HubController.1532.570" = "Odaberite lokalni izvor PostgreSQL na adresi 127.0.0.1 ili ::1.";
 "hub.HubController.1536.571" = "ID automobila u izvornoj bazi podataka mora biti pozitivan broj.";
 "hub.HubController.1539.572" = "Odaberite zaštićenu datoteku s lozinkom za PostgreSQL.";
 "hub.HubController.1552.580" = "Provjera kompatibilnosti s izvornom aplikacijom nije vratila valjano izvješće.";
 "hub.HubController.1562.581" = "Nije moguće provjeriti izvornu bazu podataka. Provjerite vezu s poslužiteljem i pokušajte ponovno.";
-"hub.HubController.1585.586" = "Potvrdite da je izvorna aplikacija verzije 4.2.0 ili novije prije uvoza.";
+"hub.HubController.1585.586" = "Potvrdite da je izvorna aplikacija verzije 4.4.0 ili novije prije uvoza.";
 "hub.HubController.1591.587" = "Za prijavu je potreban otvoren prozor prikupljanja. Otvorite prozor, a zatim se ponovno prijavite.";
 "hub.HubController.1718.615" = "Uvoz iz izvorne aplikacije nije vratio valjano izvješće o dovršetku. Hub je i dalje zaustavljen.";
 "hub.HubController.1742.624" = "Uvoz je dovršen, ali Hub nije uspio zabilježiti sigurnosni preduvjet za predaju: %1$@. Hub je i dalje zaustavljen.";
-"hub.HubController.1846.655" = "Potvrdite da je izvorna aplikacija verzije 4.2.0 ili novije prije uvoza iz izravnog izvora PostgreSQL.";
+"hub.HubController.1846.655" = "Potvrdite da je izvorna aplikacija verzije 4.4.0 ili novije prije uvoza iz izravnog izvora PostgreSQL.";
 "hub.HubController.1865.658" = "Izvor PostgreSQL mora sadržavati shemu postgres ili postgresql, naziv hosta i naziv baze podataka.";
 "hub.HubController.1869.659" = "Izvor PostgreSQL ne smije sadržavati lozinku. Upotrijebite polje za datoteku s lozinkom.";
 "hub.HubController.1966.689" = "Postavljanje Fleeta nije uspjelo: %1$@ Nije uspio ni oporavak konfiguracije Huba: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Ispunite sva polja";
 "hub.ImportSheetController.149.1710" = "Potrebni su izvor, ID automobila i datoteka s lozinkom.";
 "hub.ImportSheetController.156.1711" = "Potvrdite verziju izvorne aplikacije";
-"hub.ImportSheetController.17.1690" = "Potvrđujem da ova baza podataka pripada izvornoj aplikaciji verzije 4.2.0 ili novije";
+"hub.ImportSheetController.17.1690" = "Potvrđujem da ova baza podataka pripada izvornoj aplikaciji verzije 4.4.0 ili novije";
 "hub.ImportSheetController.26.1691" = "Uvezi povijest";
 "hub.ImportSheetController.49.1693" = "Kopirajte podatke iz izvorne baze podataka PostgreSQL u Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "Izvor PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Datoteka s lozinkom";
 "hub.ImportSheetController.7.1687" = "Hub čita podatke iz izvorne baze podataka bez zaustavljanja ili mijenjanja izvorne aplikacije. Nakon uvoza Hub će vam reći kada trebate sami onemogućiti pristup Tesli u izvornoj aplikaciji.";
 "hub.ImportSheetController.73.1699" = "Hub nije pokrenut. Pokrenite Hub, otvorite prozor prikupljanja, a zatim se prijavite.";
-"hub.ImportSheetController.9.1688" = "Prije uvoza: izradite sigurnosnu kopiju izvorne aplikacije, ažurirajte je na verziju 4.2.0 ili noviju, jednom je pokrenite i pričekajte da dovrši migracije baze podataka. Izravna veza s bazom podataka ne može potvrditi verziju pokrenute aplikacije.";
+"hub.ImportSheetController.9.1688" = "Prije uvoza: izradite sigurnosnu kopiju izvorne aplikacije, ažurirajte je na verziju 4.4.0 ili noviju, jednom je pokrenite i pričekajte da dovrši migracije baze podataka. Izravna veza s bazom podataka ne može potvrditi verziju pokrenute aplikacije.";
 "hub.LogsWindowController.113.1730" = "Više radnji za zapisnike";
 "hub.LogsWindowController.123.1732" = "U prikazanim, kopiranim i spremljenim zapisnicima skrivaju se vjerodajnice i privatni identifikatori. Pregledajte ih prije dijeljenja.";
 "hub.LogsWindowController.17.1712" = "Učitavanje zapisnika…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Unesite i token za pristup i token za osvježavanje.";
 "hub.OnboardingWindowController.1631.2105" = "Unesite poslužitelj izvorne aplikacije, SSH korisnika i port.";
 "hub.OnboardingWindowController.168.1852" = "Nastavi";
-"hub.OnboardingWindowController.1691.2113" = "Provjera sheme ne može utvrditi verziju izvorne aplikacije. Potvrdite da na poslužitelju radi izvorna aplikacija verzije 4.2.0 ili novije, a zatim nastavite.";
+"hub.OnboardingWindowController.1691.2113" = "Provjera sheme ne može utvrditi verziju izvorne aplikacije. Potvrdite da na poslužitelju radi izvorna aplikacija verzije 4.4.0 ili novije, a zatim nastavite.";
 "hub.OnboardingWindowController.1740.2131" = "Povežite se s poslužiteljem izvorne aplikacije prije uvoza.";
 "hub.OnboardingWindowController.1750.2137" = "Postavke poslužitelja promijenjene su. Ponovno se povežite s poslužiteljem izvorne aplikacije prije uvoza.";
 "hub.OnboardingWindowController.1820.2143" = "Jedna ili više provjera zahtijeva pozornost.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Odaberi SSH ključ";
 "hub.OnboardingWindowController.1981.2148" = "Odaberi ključ";
 "hub.OnboardingWindowController.200.1857" = "Upotrijebi lokalnu snimku stanja PostgreSQL-a (samo povijest)";
-"hub.OnboardingWindowController.203.1858" = "Potvrđujem da na ovom poslužitelju radi izvorna aplikacija verzije 4.2.0 ili novije";
+"hub.OnboardingWindowController.203.1858" = "Potvrđujem da na ovom poslužitelju radi izvorna aplikacija verzije 4.4.0 ili novije";
 "hub.OnboardingWindowController.252.1859" = "Prethodni uvoz nije dovršen. Provjerite izvornu aplikaciju i ponovno pokrenite uvoz.";
 "hub.OnboardingWindowController.292.1862" = "Spremno za uvoz.";
 "hub.OnboardingWindowController.298.1866" = "Povezivanje s izvornom aplikacijom nije uspjelo";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub nije uspio rezervirati lokalni port za tunel do baze podataka.";
 "hub.SourceServerImporter.744.2586" = "Pokušajte ponovno.";
 "hub.SourceServerImporter.746.2588" = "Najprije ažurirajte izvornu aplikaciju";
-"hub.SourceServerImporter.747.2589" = "Vođeni uvoz zahtijeva izvornu aplikaciju verzije 4.2.0 ili novije.";
+"hub.SourceServerImporter.747.2589" = "Vođeni uvoz zahtijeva izvornu aplikaciju verzije 4.4.0 ili novije.";
 "hub.SourceServerImporter.748.2590" = "Izradite sigurnosnu kopiju izvorne aplikacije, ažurirajte je i pričekajte da dovrši migracije, a zatim se ponovno povežite.";
 "hub.SourceServerImporter.763.2594" = "Izvorna aplikacija ne radi ili njezin spremnik nije pronađen.";
 "hub.SourceServerImporter.764.2596" = "Nije moguće utvrditi Docker Compose projekt izvorne aplikacije.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Ovaj račun nema pristup Dockeru. Omogućite izravan pristup Dockeru ili dopustite pokretanje Dockera pomoću sudo naredbe bez lozinke.";
 "hub.SourceServerImporter.834.2668" = "Docker nije pronađen na poslužitelju izvorne aplikacije. Provjerite poslužitelj i PATH korisničkog računa.";
 "hub.SourceServerImporter.836.2670" = "Docker je instaliran, ali nije dostupan. Provjerite radi li usluga Dockera.";
-"hub.SourceServerImporter.838.2672" = "Vođeni uvoz zahtijeva izvornu aplikaciju verzije 4.2.0 ili novije. Ažurirajte izvornu aplikaciju, a zatim pokušajte ponovno.";
+"hub.SourceServerImporter.838.2672" = "Vođeni uvoz zahtijeva izvornu aplikaciju verzije 4.4.0 ili novije. Ažurirajte izvornu aplikaciju, a zatim pokušajte ponovno.";
 "hub.SourceServerImporter.840.2674" = "SSH se nije mogao povezati ni autentificirati. Provjerite poslužitelj, port, račun i odabrani način autentifikacije.";
 "hub.SourceServerImporter.842.2676" = "SSH autentifikacija nije uspjela. Provjerite račun i odabrani način autentifikacije.";
 "hub.SourceServerImporter.854.2688" = "SSH poslužitelj zatvorio je vezu. Provjerite zapisnike poslužitelja i pravila za SSH.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "Provjera sheme ne može pokazati koja je verzija izvorne aplikacije stvorila ovu bazu podataka: više verzija upotrebljava istu shemu.";
 
-"hub.import.ackRelease" = "Potvrđujem da je izvorna aplikacija verzije 4.2.0 ili novije i da se neće ažurirati tijekom uvoza.";
+"hub.import.ackRelease" = "Potvrđujem da je izvorna aplikacija verzije 4.4.0 ili novije i da se neće ažurirati tijekom uvoza.";
+
+"hub.backup.title" = "Sigurnosne kopije";
+
+"hub.backup.detail" = "Šifrirane kopije povijesti Huba. Zaporka za oporavak nalazi se u datoteci na ovom Macu koju može čitati samo vlasnik.";
+
+"hub.backup.backUpNow" = "Napravi kopiju sada";
+
+"hub.backup.onSchedule" = "Izrađuj kopije prema rasporedu";
+
+"hub.backup.saveSchedule" = "Spremi raspored";
+
+"hub.backup.panelPrompt" = "Odaberi";
+
+"hub.backup.panelMessage" = "Odaberite mapu za šifrirane sigurnosne kopije Huba izvan podatkovne mape Huba.";
+
+"hub.backup.savedNote" = "Spremljeno. Raspored vrijedi nakon ponovnog pokretanja Huba.";
+
+"hub.backup.noFolder" = "Mapa nije odabrana";
+
+"hub.backup.passwordPlaceholder" = "Zaporka za oporavak (najmanje %1$@ znakova)";
+
+"hub.backup.passwordSaved" = "Spremljeno. Upišite novu da biste je zamijenili";
+
+"hub.backup.intervalHour" = "Svaki sat";
+
+"hub.backup.intervalDay" = "Svaki dan";
+
+"hub.backup.intervalTwoDays" = "Svaka 2 dana";
+
+"hub.backup.intervalWeek" = "Svaki tjedan";
+
+"hub.backup.intervalHours" = "Svakih %1$@ h";
+
+"hub.backup.schedule" = "Raspored";
+
+"hub.backup.keep" = "Zadrži";
+
+"hub.backup.keepSuffix" = "kopija";
+
+"hub.backup.folder" = "Mapa";
+
+"hub.backup.passwordLabel" = "Zaporka za oporavak";
+
+"hub.backup.problem.passwordShort" = "Zaporka za oporavak mora imati najmanje %1$@ znakova.";
+
+"hub.backup.problem.interval" = "Interval mora biti između 1 i 8784 sata.";
+
+"hub.backup.problem.keep" = "Broj zadržanih kopija mora biti između 1 i 1000.";
+
+"hub.backup.problem.chooseFolder" = "Odaberite mapu za sigurnosne kopije.";
+
+"hub.backup.problem.folderInside" = "Odaberite mapu za sigurnosne kopije izvan podatkovne mape Huba.";
+
+"hub.backup.problem.needsBoth" = "Planirane sigurnosne kopije trebaju mapu za kopije i zaporku za oporavak.";
+
+"hub.backup.lastGoodNone" = "Još nijedna";
+
+"hub.backup.nextOff" = "Planirane sigurnosne kopije su isključene";
+
+"hub.backup.nextNotScheduled" = "Nije planirano: odaberite mapu i zaporku";
+
+"hub.backup.nextPaused" = "Čeka oporavak vjerodajnica";
+
+"hub.collection.notReported" = "Nije prijavljeno";
+
+"hub.backup.blocked" = "Odbijene vjerodajnice blokiraju sigurnosne kopije. Pokrenite purge-refused-credentials da ih uklonite.";
+
+"hub.backup.lastFailedMessage" = "Zadnji pokušaj nije uspio: %1$@";
+
+"hub.backup.lastFailedCode" = "Zadnji pokušaj nije uspio (%1$@)";
+
+"hub.backup.row.lastGood" = "Zadnja uspješna kopija";
+
+"hub.backup.row.next" = "Sljedeća kopija";
+
+"hub.backup.row.running" = "Kopija se trenutačno izrađuje";
+
+"hub.backup.row.lastAttempt" = "Zadnji pokušaj";
+
+"hub.backup.run.running" = "Izrada kopije…";
+
+"hub.backup.run.stillRunning" = "Kopija se još izrađuje u usluzi Hub.";
+
+"hub.backup.run.finishedGeneration" = "Kopija dovršena: %1$@";
+
+"hub.backup.run.finished" = "Kopija dovršena";
+
+"hub.backup.run.failed" = "Kopija nije uspjela: %1$@";
+
+"hub.backup.maint.unreadable" = "Odgovor Huba nije bilo moguće pročitati.";
+
+"hub.backup.maint.unwritable" = "Zaporku za oporavak nije bilo moguće spremiti.";
+
+"hub.backup.maint.configMissing" = "Postavite Hub prije promjene sigurnosnih kopija.";
+
+"hub.devices.title" = "Upareni uređaji";
+
+"hub.devices.detail" = "Telefoni i aplikacije koji čitaju ovaj Hub, s automobilima koje svaki od njih smije čitati.";
+
+"hub.devices.revokeTitle" = "Opozvati pristup za %1$@?";
+
+"hub.devices.revokeInfo" = "Ovaj uređaj odmah prestaje čitati iz Huba. Za ponovnu upotrebu uparite ga ponovno.";
+
+"hub.devices.revoke" = "Opozovi";
+
+"hub.devices.revokeEllipsis" = "Opozovi…";
+
+"hub.devices.revokeAccessibility" = "Opozovi pristup za %1$@";
+
+"hub.devices.revokedDone" = "Pristup za %1$@ je opozvan.";
+
+"hub.devices.none" = "Nema uparenih uređaja.";
+
+"hub.devices.cars" = "Automobili: %1$@";
+
+"hub.devices.noCars" = "Nema automobila";
+
+"hub.devices.carFallback" = "Automobil %1$@";
+
+"hub.devices.unnamed" = "Neimenovani uređaj";
+
+"hub.devices.stateRevoked" = "Opozvano %1$@";
+
+"hub.devices.stateExpired" = "Isteklo %1$@";
+
+"hub.devices.stateLastSeen" = "Zadnji put viđeno %1$@";
+
+"hub.devices.stateNeverSeen" = "Još nije viđeno";
+
+"hub.collection.loginOwn" = "Prijavljeno vlastitom prijavom Huba";
+
+"hub.collection.loginSignedOut" = "Odjavljeno";
+
+"hub.collection.loginNotOwn" = "Spremljena prijava nije vlastita prijava Huba";
+
+"hub.collection.credValidUntil" = "Vrijedi do %1$@";
+
+"hub.collection.credValid" = "Vrijedi";
+
+"hub.collection.credRelogin" = "Potrebna je nova prijava: prijavite se ponovno u sljedećem otvorenom prozoru";
+
+"hub.collection.credOwnerRefused" = "Owner API odbijen: Tesla je odbila ovu prijavu";
+
+"hub.collection.credRefused" = "Odbijeno (%1$@)";
+
+"hub.collection.credExposure" = "Sumnja na otkrivanje: prijavite se ponovno u sljedećem otvorenom prozoru";
+
+"hub.collection.credAttention" = "Zahtijeva pozornost (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Nije prijavljeno";
+
+"hub.collection.windowOpenUntil" = "Otvoreno do %1$@";
+
+"hub.collection.windowOpen" = "Otvoreno";
+
+"hub.collection.windowPending" = "Na čekanju";
+
+"hub.collection.windowPendingFrom" = "Na čekanju od %1$@";
+
+"hub.collection.windowPendingUntil" = "Na čekanju do %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Na čekanju od %1$@ do %2$@";
+
+"hub.collection.windowClosingExpiry" = "Zatvara se (istječe %1$@)";
+
+"hub.collection.windowClosing" = "Zatvara se";
+
+"hub.collection.windowClosedReason" = "Zatvoreno (%1$@)";
+
+"hub.collection.windowClosed" = "Zatvoreno";
+
+"hub.collection.windowUntrusted" = "Zatvoreno (nema pouzdanog izdavatelja)";
+
+"hub.collection.windowFaulted" = "Zatvoreno (stanje prozora treba novi dokument povjerenja)";
+
+"hub.collection.windowRecovery" = "Zatvoreno (čeka oporavak vjerodajnica: pokrenite restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Nepoznato: kontrolni kanal nije od ovog Huba";
+
+"hub.collection.windowNotRunning" = "Nepoznato: Hub nije pokrenut";
+
+"hub.collection.reasonExpired" = "isteklo";
+
+"hub.collection.reasonOperator" = "zatvorio operater";
+
+"hub.collection.reasonRelogin" = "potrebna je nova prijava";
+
+"hub.collection.reasonOwnerRefused" = "Owner API odbijen";
+
+"hub.collection.reasonClock" = "provjera sata nije uspjela";
+
+"hub.collection.reasonReboot" = "Mac se ponovno pokrenuo";
+
+"hub.collection.reasonUnverifiable" = "stanje nije bilo moguće provjeriti";
+
+"hub.collection.reasonClaimLost" = "pravo na prikupljanje izgubljeno";
+
+"hub.collection.fleet" = "Zaustavljeno: nijedna radnja za Fleet nije dostupna";
+
+"hub.collection.signInUnavailable" = "Prijava na ovom Hubu nije dostupna";
+
+"hub.collection.labelLogin" = "Prijava u Teslu";
+
+"hub.collection.labelCredential" = "Stanje vjerodajnica";
+
+"hub.collection.labelWindow" = "Prozor prikupljanja";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Prijava";
+
+"hub.signIn.recoveryPending" = "Hub čeka oporavak svojih vjerodajnica: podaci ovog Huba vraćeni su bez njegovih ključeva. Pokrenite restore-recovery-credentials, a zatim se prijavite. Ništa nije promijenjeno.";
+
+"hub.signIn.serviceUnauthenticated" = "Proces koji odgovara na kontrolnom kanalu Huba nije ovaj Hub, pa ništa nije poslano. Ponovno pokrenite Hub, a zatim se ponovno prijavite.";
+
+"hub.signIn.busy" = "Hub je zauzet drugim zahtjevima. Ništa nije promijenjeno; prijavite se ponovno za trenutak.";

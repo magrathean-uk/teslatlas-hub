@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Finalizează sau anulează predarea migrării aplicației sursă înainte de a ieși din cont.";
 "hub.HubController.1504.567" = "Deconectarea nu s-a încheiat corect. Starea Hub-ului a fost actualizată; verifică dacă acest cont este încă conectat. %1$@";
 "hub.HubController.1522.568" = "Confirmă că ai examinat schema bazei de date sursă înainte de verificarea compatibilității.";
-"hub.HubController.1523.569" = "Confirmă că aplicația sursă are versiunea 4.2.0 sau mai nouă înainte de verificarea compatibilității.";
+"hub.HubController.1523.569" = "Confirmă că aplicația sursă are versiunea 4.4.0 sau mai nouă înainte de verificarea compatibilității.";
 "hub.HubController.1532.570" = "Alege o sursă PostgreSQL locală la 127.0.0.1 sau ::1.";
 "hub.HubController.1536.571" = "ID-ul mașinii din aplicația sursă trebuie să fie un număr pozitiv.";
 "hub.HubController.1539.572" = "Alege fișierul protejat al parolei PostgreSQL.";
 "hub.HubController.1552.580" = "Verificarea compatibilității aplicației sursă nu a returnat un raport valid.";
 "hub.HubController.1562.581" = "Nu s-a putut verifica baza de date sursă. Verifică conexiunea la server și încearcă din nou.";
-"hub.HubController.1585.586" = "Confirmă că aplicația sursă are versiunea 4.2.0 sau mai nouă înainte de import.";
+"hub.HubController.1585.586" = "Confirmă că aplicația sursă are versiunea 4.4.0 sau mai nouă înainte de import.";
 "hub.HubController.1591.587" = "Autentificarea necesită o fereastră de colectare deschisă. Deschide o fereastră, apoi autentifică-te din nou.";
 "hub.HubController.1718.615" = "Importul din aplicația sursă nu a returnat un raport valid de finalizare. Hub-ul rămâne oprit.";
 "hub.HubController.1742.624" = "Importul s-a încheiat, dar Hub-ul nu a putut înregistra condiția de siguranță pentru predare: %1$@. Hub-ul rămâne oprit.";
-"hub.HubController.1846.655" = "Confirmă că aplicația sursă are versiunea 4.2.0 sau mai nouă înainte de importul dintr-o sursă PostgreSQL directă.";
+"hub.HubController.1846.655" = "Confirmă că aplicația sursă are versiunea 4.4.0 sau mai nouă înainte de importul dintr-o sursă PostgreSQL directă.";
 "hub.HubController.1865.658" = "Sursa PostgreSQL trebuie să includă schema „postgres” sau „postgresql”, gazda și numele bazei de date.";
 "hub.HubController.1869.659" = "Sursa PostgreSQL nu trebuie să conțină o parolă. Folosește câmpul fișierului de parole.";
 "hub.HubController.1966.689" = "Configurarea Fleet a eșuat: %1$@ Recuperarea configurației Hub-ului a eșuat și ea: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Completează toate câmpurile";
 "hub.ImportSheetController.149.1710" = "Sunt necesare sursa, ID-ul vehiculului și fișierul cu parola.";
 "hub.ImportSheetController.156.1711" = "Confirmă versiunea aplicației sursă";
-"hub.ImportSheetController.17.1690" = "Confirm că această bază de date aparține versiunii 4.2.0 sau unei versiuni mai noi a aplicației sursă";
+"hub.ImportSheetController.17.1690" = "Confirm că această bază de date aparține versiunii 4.4.0 sau unei versiuni mai noi a aplicației sursă";
 "hub.ImportSheetController.26.1691" = "Importă istoricul";
 "hub.ImportSheetController.49.1693" = "Copiază date dintr-o bază de date PostgreSQL a aplicației sursă în Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "Sursă PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Fișierul cu parola";
 "hub.ImportSheetController.7.1687" = "Hub citește baza de date sursă fără să o modifice sau să oprească aplicația sursă. După import, Hub îți spune când să dezactivezi tu accesul la Tesla în aplicația sursă.";
 "hub.ImportSheetController.73.1699" = "Hub nu rulează. Pornește Hub, deschide o fereastră de colectare, apoi autentifică-te.";
-"hub.ImportSheetController.9.1688" = "Înainte de import: fă o copie de siguranță a aplicației sursă, actualizeaz-o la versiunea 4.2.0 sau una mai nouă, pornește-o o dată și așteaptă să se încheie migrațiile bazei de date. O conexiune directă la baza de date nu poate confirma versiunea aplicației care rulează.";
+"hub.ImportSheetController.9.1688" = "Înainte de import: fă o copie de siguranță a aplicației sursă, actualizeaz-o la versiunea 4.4.0 sau una mai nouă, pornește-o o dată și așteaptă să se încheie migrațiile bazei de date. O conexiune directă la baza de date nu poate confirma versiunea aplicației care rulează.";
 "hub.LogsWindowController.113.1730" = "Mai multe acțiuni pentru jurnale";
 "hub.LogsWindowController.123.1732" = "În jurnalele afișate, copiate și salvate, datele de autentificare și identificatorii privați sunt mascate. Verifică jurnalele înainte de a le partaja.";
 "hub.LogsWindowController.17.1712" = "Se încarcă jurnalele…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Introdu atât tokenul de acces, cât și tokenul de reîmprospătare.";
 "hub.OnboardingWindowController.1631.2105" = "Introdu serverul aplicației sursă, utilizatorul SSH și portul.";
 "hub.OnboardingWindowController.168.1852" = "Continuă";
-"hub.OnboardingWindowController.1691.2113" = "Verificarea schemei nu poate stabili versiunea aplicației sursă. Confirmă că serverul care rulează utilizează versiunea 4.2.0 sau una ulterioară, apoi continuă.";
+"hub.OnboardingWindowController.1691.2113" = "Verificarea schemei nu poate stabili versiunea aplicației sursă. Confirmă că serverul care rulează utilizează versiunea 4.4.0 sau una ulterioară, apoi continuă.";
 "hub.OnboardingWindowController.1740.2131" = "Conectează-te la serverul aplicației sursă înainte de import.";
 "hub.OnboardingWindowController.1750.2137" = "Setările serverului s-au schimbat. Conectează-te din nou la serverul aplicației sursă înainte de import.";
 "hub.OnboardingWindowController.1820.2143" = "Una sau mai multe verificări necesită atenție.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Alege cheia SSH";
 "hub.OnboardingWindowController.1981.2148" = "Alege cheia";
 "hub.OnboardingWindowController.200.1857" = "Folosește un instantaneu PostgreSQL local (doar pentru istoric)";
-"hub.OnboardingWindowController.203.1858" = "Confirm că pe acest server rulează aplicația sursă 4.2.0 sau o versiune mai nouă";
+"hub.OnboardingWindowController.203.1858" = "Confirm că pe acest server rulează aplicația sursă 4.4.0 sau o versiune mai nouă";
 "hub.OnboardingWindowController.252.1859" = "Importul anterior nu s-a încheiat. Verifică aplicația sursă și rulează din nou importul.";
 "hub.OnboardingWindowController.292.1862" = "Gata pentru import.";
 "hub.OnboardingWindowController.298.1866" = "Conectarea la aplicația sursă a eșuat";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub nu a putut rezerva un port local pentru tunelul bazei de date.";
 "hub.SourceServerImporter.744.2586" = "Încearcă din nou.";
 "hub.SourceServerImporter.746.2588" = "Actualizează mai întâi aplicația sursă";
-"hub.SourceServerImporter.747.2589" = "Migrarea asistată necesită aplicația sursă 4.2.0 sau o versiune mai nouă.";
+"hub.SourceServerImporter.747.2589" = "Migrarea asistată necesită aplicația sursă 4.4.0 sau o versiune mai nouă.";
 "hub.SourceServerImporter.748.2590" = "Fă o copie de siguranță a aplicației sursă, actualizeaz-o, așteaptă să se încheie migrațiile, apoi conectează-te din nou.";
 "hub.SourceServerImporter.763.2594" = "Aplicația sursă nu rulează sau containerul său nu a fost găsit.";
 "hub.SourceServerImporter.764.2596" = "Proiectul Docker Compose al aplicației sursă nu a putut fi identificat.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Acest cont nu poate accesa Docker. Acordă-i acces direct la Docker sau permite-i să folosească sudo fără parolă pentru Docker.";
 "hub.SourceServerImporter.834.2668" = "Docker nu a fost găsit pe serverul aplicației sursă. Verifică serverul și PATH-ul contului.";
 "hub.SourceServerImporter.836.2670" = "Docker este instalat, dar nu este disponibil. Verifică dacă serviciul Docker rulează.";
-"hub.SourceServerImporter.838.2672" = "Migrarea asistată necesită aplicația sursă 4.2.0 sau o versiune mai nouă. Actualizează aplicația sursă, apoi încearcă din nou.";
+"hub.SourceServerImporter.838.2672" = "Migrarea asistată necesită aplicația sursă 4.4.0 sau o versiune mai nouă. Actualizează aplicația sursă, apoi încearcă din nou.";
 "hub.SourceServerImporter.840.2674" = "Conexiunea SSH sau autentificarea nu a reușit. Verifică serverul, portul, contul și metoda de autentificare selectată.";
 "hub.SourceServerImporter.842.2676" = "Autentificarea SSH a eșuat. Verifică contul și metoda de autentificare selectată.";
 "hub.SourceServerImporter.854.2688" = "Serverul SSH a închis conexiunea. Verifică jurnalele serverului și politica SSH.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "Verificarea schemei nu poate arăta ce versiune a aplicației sursă a creat această bază de date: mai multe versiuni folosesc aceeași schemă.";
 
-"hub.import.ackRelease" = "Confirm că versiunea aplicației sursă este 4.2.0 sau una ulterioară și că aplicația nu va fi actualizată în timpul importului.";
+"hub.import.ackRelease" = "Confirm că versiunea aplicației sursă este 4.4.0 sau una ulterioară și că aplicația nu va fi actualizată în timpul importului.";
+
+"hub.backup.title" = "Copii de rezervă";
+
+"hub.backup.detail" = "Copii criptate ale istoricului Hub. Parola de recuperare se află într-un fișier de pe acest Mac, accesibil doar proprietarului.";
+
+"hub.backup.backUpNow" = "Fă o copie acum";
+
+"hub.backup.onSchedule" = "Fă copii după un program";
+
+"hub.backup.saveSchedule" = "Salvează programul";
+
+"hub.backup.panelPrompt" = "Alege";
+
+"hub.backup.panelMessage" = "Alege un dosar pentru copiile de rezervă criptate ale Hub, în afara dosarului de date al Hub.";
+
+"hub.backup.savedNote" = "Salvat. Programul se aplică la repornirea Hub.";
+
+"hub.backup.noFolder" = "Niciun dosar ales";
+
+"hub.backup.passwordPlaceholder" = "Parolă de recuperare (cel puțin %1$@ caractere)";
+
+"hub.backup.passwordSaved" = "Salvată. Tastează una nouă pentru a o înlocui";
+
+"hub.backup.intervalHour" = "În fiecare oră";
+
+"hub.backup.intervalDay" = "În fiecare zi";
+
+"hub.backup.intervalTwoDays" = "La fiecare 2 zile";
+
+"hub.backup.intervalWeek" = "În fiecare săptămână";
+
+"hub.backup.intervalHours" = "La fiecare %1$@ h";
+
+"hub.backup.schedule" = "Program";
+
+"hub.backup.keep" = "Păstrează";
+
+"hub.backup.keepSuffix" = "copii";
+
+"hub.backup.folder" = "Dosar";
+
+"hub.backup.passwordLabel" = "Parolă de recuperare";
+
+"hub.backup.problem.passwordShort" = "Parola de recuperare trebuie să aibă cel puțin %1$@ caractere.";
+
+"hub.backup.problem.interval" = "Intervalul trebuie să fie între 1 și 8784 de ore.";
+
+"hub.backup.problem.keep" = "Numărul de copii păstrate trebuie să fie între 1 și 1000.";
+
+"hub.backup.problem.chooseFolder" = "Alege un dosar pentru copii de rezervă.";
+
+"hub.backup.problem.folderInside" = "Alege un dosar pentru copii de rezervă în afara dosarului de date al Hub.";
+
+"hub.backup.problem.needsBoth" = "Copiile programate au nevoie de un dosar pentru copii și de o parolă de recuperare.";
+
+"hub.backup.lastGoodNone" = "Încă niciuna";
+
+"hub.backup.nextOff" = "Copiile programate sunt dezactivate";
+
+"hub.backup.nextNotScheduled" = "Neprogramat: alege un dosar și o parolă";
+
+"hub.backup.nextPaused" = "Se așteaptă recuperarea datelor de autentificare";
+
+"hub.collection.notReported" = "Nu este raportat";
+
+"hub.backup.blocked" = "Datele de autentificare refuzate blochează copiile de rezervă. Rulează purge-refused-credentials pentru a le șterge.";
+
+"hub.backup.lastFailedMessage" = "Ultima încercare a eșuat: %1$@";
+
+"hub.backup.lastFailedCode" = "Ultima încercare a eșuat (%1$@)";
+
+"hub.backup.row.lastGood" = "Ultima copie reușită";
+
+"hub.backup.row.next" = "Următoarea copie";
+
+"hub.backup.row.running" = "O copie se face chiar acum";
+
+"hub.backup.row.lastAttempt" = "Ultima încercare";
+
+"hub.backup.run.running" = "Se face copia…";
+
+"hub.backup.run.stillRunning" = "Copia încă rulează în serviciul Hub.";
+
+"hub.backup.run.finishedGeneration" = "Copie terminată: %1$@";
+
+"hub.backup.run.finished" = "Copie terminată";
+
+"hub.backup.run.failed" = "Copia a eșuat: %1$@";
+
+"hub.backup.maint.unreadable" = "Răspunsul Hub nu a putut fi citit.";
+
+"hub.backup.maint.unwritable" = "Parola de recuperare nu a putut fi salvată.";
+
+"hub.backup.maint.configMissing" = "Configurează Hub înainte de a modifica copiile de rezervă.";
+
+"hub.devices.title" = "Dispozitive asociate";
+
+"hub.devices.detail" = "Telefoane și aplicații care citesc acest Hub, cu mașinile pe care le poate citi fiecare.";
+
+"hub.devices.revokeTitle" = "Revoci accesul pentru %1$@?";
+
+"hub.devices.revokeInfo" = "Acest dispozitiv nu va mai citi imediat din Hub. Pentru a-l folosi din nou, asociază-l din nou.";
+
+"hub.devices.revoke" = "Revocă";
+
+"hub.devices.revokeEllipsis" = "Revocă…";
+
+"hub.devices.revokeAccessibility" = "Revocă accesul pentru %1$@";
+
+"hub.devices.revokedDone" = "Accesul pentru %1$@ a fost revocat.";
+
+"hub.devices.none" = "Niciun dispozitiv asociat.";
+
+"hub.devices.cars" = "Mașini: %1$@";
+
+"hub.devices.noCars" = "Nicio mașină";
+
+"hub.devices.carFallback" = "Mașina %1$@";
+
+"hub.devices.unnamed" = "Dispozitiv fără nume";
+
+"hub.devices.stateRevoked" = "Revocat %1$@";
+
+"hub.devices.stateExpired" = "Expirat %1$@";
+
+"hub.devices.stateLastSeen" = "Văzut ultima dată %1$@";
+
+"hub.devices.stateNeverSeen" = "Încă nevăzut";
+
+"hub.collection.loginOwn" = "Autentificat cu autentificarea proprie a Hub";
+
+"hub.collection.loginSignedOut" = "Deconectat";
+
+"hub.collection.loginNotOwn" = "Autentificarea stocată nu este cea proprie a Hub";
+
+"hub.collection.credValidUntil" = "Valabil până la %1$@";
+
+"hub.collection.credValid" = "Valabil";
+
+"hub.collection.credRelogin" = "Este necesară o nouă autentificare: autentifică-te din nou în următoarea fereastră deschisă";
+
+"hub.collection.credOwnerRefused" = "Owner API refuzat: Tesla a refuzat această autentificare";
+
+"hub.collection.credRefused" = "Refuzat (%1$@)";
+
+"hub.collection.credExposure" = "Expunere suspectată: autentifică-te din nou în următoarea fereastră deschisă";
+
+"hub.collection.credAttention" = "Necesită atenție (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Neautentificat";
+
+"hub.collection.windowOpenUntil" = "Deschisă până la %1$@";
+
+"hub.collection.windowOpen" = "Deschisă";
+
+"hub.collection.windowPending" = "În așteptare";
+
+"hub.collection.windowPendingFrom" = "În așteptare de la %1$@";
+
+"hub.collection.windowPendingUntil" = "În așteptare până la %1$@";
+
+"hub.collection.windowPendingFromUntil" = "În așteptare de la %1$@ până la %2$@";
+
+"hub.collection.windowClosingExpiry" = "Se închide (expiră %1$@)";
+
+"hub.collection.windowClosing" = "Se închide";
+
+"hub.collection.windowClosedReason" = "Închisă (%1$@)";
+
+"hub.collection.windowClosed" = "Închisă";
+
+"hub.collection.windowUntrusted" = "Închisă (niciun emitent de încredere)";
+
+"hub.collection.windowFaulted" = "Închisă (starea ferestrei are nevoie de un nou document de încredere)";
+
+"hub.collection.windowRecovery" = "Închisă (se așteaptă recuperarea datelor de autentificare: rulează restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Necunoscut: canalul de control nu aparține acestui Hub";
+
+"hub.collection.windowNotRunning" = "Necunoscut: Hub nu rulează";
+
+"hub.collection.reasonExpired" = "expirată";
+
+"hub.collection.reasonOperator" = "închisă de operator";
+
+"hub.collection.reasonRelogin" = "este necesară o nouă autentificare";
+
+"hub.collection.reasonOwnerRefused" = "Owner API refuzat";
+
+"hub.collection.reasonClock" = "verificarea ceasului a eșuat";
+
+"hub.collection.reasonReboot" = "Mac-ul a repornit";
+
+"hub.collection.reasonUnverifiable" = "starea nu a putut fi verificată";
+
+"hub.collection.reasonClaimLost" = "dreptul de colectare a fost pierdut";
+
+"hub.collection.fleet" = "Suspendat: nicio acțiune Fleet nu este disponibilă";
+
+"hub.collection.signInUnavailable" = "Autentificarea nu este disponibilă pe acest Hub";
+
+"hub.collection.labelLogin" = "Autentificare Tesla";
+
+"hub.collection.labelCredential" = "Starea datelor de autentificare";
+
+"hub.collection.labelWindow" = "Fereastră de colectare";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Autentificare";
+
+"hub.signIn.recoveryPending" = "Hub așteaptă recuperarea datelor sale de autentificare: datele acestui Hub au fost restaurate fără cheile sale. Rulează restore-recovery-credentials, apoi autentifică-te. Nu s-a modificat nimic.";
+
+"hub.signIn.serviceUnauthenticated" = "Procesul care răspunde pe canalul de control al Hub nu este acest Hub, așa că nu s-a trimis nimic. Repornește Hub, apoi autentifică-te din nou.";
+
+"hub.signIn.busy" = "Hub este ocupat cu alte solicitări. Nu s-a modificat nimic; autentifică-te din nou peste un moment.";

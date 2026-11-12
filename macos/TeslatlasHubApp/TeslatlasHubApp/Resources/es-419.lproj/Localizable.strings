@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Termina o cancela la transferencia de migración de la aplicación de origen antes de cerrar sesión.";
 "hub.HubController.1504.567" = "La desconexión no terminó correctamente. Se actualizó el estado del Hub; comprueba si la cuenta sigue conectada. %1$@";
 "hub.HubController.1522.568" = "Confirma que revisaste el esquema de la base de datos de origen antes de comprobar la compatibilidad.";
-"hub.HubController.1523.569" = "Confirma que usas la aplicación de origen 4.2.0 o posterior antes de comprobar la compatibilidad.";
+"hub.HubController.1523.569" = "Confirma que usas la aplicación de origen 4.4.0 o posterior antes de comprobar la compatibilidad.";
 "hub.HubController.1532.570" = "Elige una fuente local de PostgreSQL en 127.0.0.1 o ::1.";
 "hub.HubController.1536.571" = "El ID del auto de la aplicación de origen debe ser un número positivo.";
 "hub.HubController.1539.572" = "Elige el archivo protegido que contiene la contraseña de PostgreSQL.";
 "hub.HubController.1552.580" = "La comprobación de compatibilidad de la aplicación de origen no devolvió un informe válido.";
 "hub.HubController.1562.581" = "No se pudo verificar la base de datos de origen. Comprueba la conexión al servidor e inténtalo de nuevo.";
-"hub.HubController.1585.586" = "Confirma que usas la aplicación de origen 4.2.0 o posterior antes de importar.";
+"hub.HubController.1585.586" = "Confirma que usas la aplicación de origen 4.4.0 o posterior antes de importar.";
 "hub.HubController.1591.587" = "El inicio de sesión necesita una ventana de recopilación abierta. Abre una ventana e inicia sesión de nuevo.";
 "hub.HubController.1718.615" = "La importación de la aplicación de origen no devolvió un informe válido de finalización. El Hub sigue detenido.";
 "hub.HubController.1742.624" = "La importación terminó, pero el Hub no pudo registrar el paso de transferencia segura: %1$@. El Hub sigue detenido.";
-"hub.HubController.1846.655" = "Confirma que usas la aplicación de origen 4.2.0 o posterior antes de importar directamente desde PostgreSQL.";
+"hub.HubController.1846.655" = "Confirma que usas la aplicación de origen 4.4.0 o posterior antes de importar directamente desde PostgreSQL.";
 "hub.HubController.1865.658" = "La fuente de PostgreSQL debe incluir un esquema postgres o postgresql, un host y el nombre de la base de datos.";
 "hub.HubController.1869.659" = "La fuente de PostgreSQL no debe incluir una contraseña. Usa el campo del archivo de contraseña.";
 "hub.HubController.1966.689" = "Falló la configuración de Fleet: %1$@. También falló la recuperación de la configuración del Hub: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Completa todos los campos";
 "hub.ImportSheetController.149.1710" = "Se requieren la fuente, el ID del auto y el archivo de contraseña.";
 "hub.ImportSheetController.156.1711" = "Confirmar la versión de la aplicación de origen";
-"hub.ImportSheetController.17.1690" = "Confirmo que esta base de datos pertenece a la aplicación de origen 4.2.0 o posterior";
+"hub.ImportSheetController.17.1690" = "Confirmo que esta base de datos pertenece a la aplicación de origen 4.4.0 o posterior";
 "hub.ImportSheetController.26.1691" = "Importar historial";
 "hub.ImportSheetController.49.1693" = "Copia los datos de una base de datos PostgreSQL de la aplicación de origen a Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "Fuente de PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Archivo de contraseña";
 "hub.ImportSheetController.7.1687" = "Hub lee la base de datos de origen sin modificarla ni detener la aplicación de origen. Después de la importación, Hub te indicará cuándo debes desactivar tú mismo el acceso a Tesla en la aplicación de origen.";
 "hub.ImportSheetController.73.1699" = "Hub no se está ejecutando. Inicia Hub, abre una ventana de recopilación e inicia sesión.";
-"hub.ImportSheetController.9.1688" = "Antes de importar: crea una copia de seguridad de la aplicación de origen, actualízala a la versión 4.2.0 o posterior, iníciala una vez y espera a que terminen las migraciones de la base de datos. Una conexión directa a la base de datos no puede confirmar la versión de la app en ejecución.";
+"hub.ImportSheetController.9.1688" = "Antes de importar: crea una copia de seguridad de la aplicación de origen, actualízala a la versión 4.4.0 o posterior, iníciala una vez y espera a que terminen las migraciones de la base de datos. Una conexión directa a la base de datos no puede confirmar la versión de la app en ejecución.";
 "hub.LogsWindowController.113.1730" = "Más acciones de registro";
 "hub.LogsWindowController.123.1732" = "Los registros que se muestran, copian y guardan ocultan las credenciales y los identificadores privados. Revísalos antes de compartirlos.";
 "hub.LogsWindowController.17.1712" = "Cargando registros…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Ingresa tanto el token de acceso como el token de actualización.";
 "hub.OnboardingWindowController.1631.2105" = "Ingresa el servidor de la aplicación de origen, el usuario de SSH y el puerto.";
 "hub.OnboardingWindowController.168.1852" = "Continuar";
-"hub.OnboardingWindowController.1691.2113" = "Una comprobación del esquema no permite determinar la versión de la aplicación de origen. Confirma que el servidor en ejecución usa la versión 4.2.0 o posterior y continúa.";
+"hub.OnboardingWindowController.1691.2113" = "Una comprobación del esquema no permite determinar la versión de la aplicación de origen. Confirma que el servidor en ejecución usa la versión 4.4.0 o posterior y continúa.";
 "hub.OnboardingWindowController.1740.2131" = "Conéctate al servidor de la aplicación de origen antes de importar.";
 "hub.OnboardingWindowController.1750.2137" = "La configuración del servidor cambió. Vuelve a conectarte al servidor de la aplicación de origen antes de importar.";
 "hub.OnboardingWindowController.1820.2143" = "Una o varias comprobaciones requieren atención.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Elegir clave SSH";
 "hub.OnboardingWindowController.1981.2148" = "Elegir clave";
 "hub.OnboardingWindowController.200.1857" = "Usar una instantánea local de PostgreSQL (solo historial)";
-"hub.OnboardingWindowController.203.1858" = "Confirmo que este servidor ejecuta la aplicación de origen 4.2.0 o posterior";
+"hub.OnboardingWindowController.203.1858" = "Confirmo que este servidor ejecuta la aplicación de origen 4.4.0 o posterior";
 "hub.OnboardingWindowController.252.1859" = "La importación anterior no terminó. Comprueba la aplicación de origen y vuelve a ejecutarla.";
 "hub.OnboardingWindowController.292.1862" = "Listo para importar.";
 "hub.OnboardingWindowController.298.1866" = "Falló la conexión a la aplicación de origen";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "El Hub no pudo reservar un puerto local para el túnel a la base de datos.";
 "hub.SourceServerImporter.744.2586" = "Vuelve a intentarlo.";
 "hub.SourceServerImporter.746.2588" = "Primero actualiza la aplicación de origen";
-"hub.SourceServerImporter.747.2589" = "La migración guiada requiere la aplicación de origen 4.2.0 o posterior.";
+"hub.SourceServerImporter.747.2589" = "La migración guiada requiere la aplicación de origen 4.4.0 o posterior.";
 "hub.SourceServerImporter.748.2590" = "Crea una copia de seguridad de la aplicación de origen, actualízala, espera a que terminen sus migraciones y vuelve a conectarte.";
 "hub.SourceServerImporter.763.2594" = "La aplicación de origen no está en ejecución o no se encontró su contenedor.";
 "hub.SourceServerImporter.764.2596" = "No se pudo identificar el proyecto de Docker Compose de la aplicación de origen.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Esta cuenta no puede acceder a Docker. Otorga acceso directo a Docker o permite usar sudo sin contraseña para Docker.";
 "hub.SourceServerImporter.834.2668" = "No se encontró Docker en el servidor de la aplicación de origen. Comprueba la ruta PATH de la cuenta del servidor.";
 "hub.SourceServerImporter.836.2670" = "Docker está instalado, pero no está disponible. Comprueba que el servicio de Docker esté en ejecución.";
-"hub.SourceServerImporter.838.2672" = "La migración guiada requiere la aplicación de origen 4.2.0 o posterior. Actualiza la aplicación de origen y vuelve a intentarlo.";
+"hub.SourceServerImporter.838.2672" = "La migración guiada requiere la aplicación de origen 4.4.0 o posterior. Actualiza la aplicación de origen y vuelve a intentarlo.";
 "hub.SourceServerImporter.840.2674" = "SSH no pudo conectarse ni autenticar la cuenta. Comprueba el servidor, el puerto, la cuenta y el método de autenticación seleccionado.";
 "hub.SourceServerImporter.842.2676" = "Falló la autenticación de SSH. Comprueba la cuenta y el método de autenticación seleccionado.";
 "hub.SourceServerImporter.854.2688" = "El servidor SSH cerró la conexión. Comprueba los registros del servidor y la política de SSH.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "La revisión del esquema no puede indicar qué versión de la aplicación de origen creó esta base de datos: varias versiones comparten el mismo esquema.";
 
-"hub.import.ackRelease" = "Confirmo que la aplicación de origen está en la versión 4.2.0 o posterior y que no se actualizará durante la importación.";
+"hub.import.ackRelease" = "Confirmo que la aplicación de origen está en la versión 4.4.0 o posterior y que no se actualizará durante la importación.";
+
+"hub.backup.title" = "Copias de seguridad";
+
+"hub.backup.detail" = "Copias cifradas del historial del Hub. La contraseña de recuperación se guarda en un archivo de este Mac accesible solo para el propietario.";
+
+"hub.backup.backUpNow" = "Copiar ahora";
+
+"hub.backup.onSchedule" = "Copiar según una programación";
+
+"hub.backup.saveSchedule" = "Guardar programación";
+
+"hub.backup.panelPrompt" = "Elegir";
+
+"hub.backup.panelMessage" = "Elige una carpeta para las copias de seguridad cifradas del Hub, fuera de la carpeta de datos del Hub.";
+
+"hub.backup.savedNote" = "Guardado. La programación se aplica cuando el Hub se reinicia.";
+
+"hub.backup.noFolder" = "Ninguna carpeta elegida";
+
+"hub.backup.passwordPlaceholder" = "Contraseña de recuperación (al menos %1$@ caracteres)";
+
+"hub.backup.passwordSaved" = "Guardada. Escribe una nueva para sustituirla";
+
+"hub.backup.intervalHour" = "Cada hora";
+
+"hub.backup.intervalDay" = "Cada día";
+
+"hub.backup.intervalTwoDays" = "Cada 2 días";
+
+"hub.backup.intervalWeek" = "Cada semana";
+
+"hub.backup.intervalHours" = "Cada %1$@ horas";
+
+"hub.backup.schedule" = "Programación";
+
+"hub.backup.keep" = "Conservar";
+
+"hub.backup.keepSuffix" = "copias";
+
+"hub.backup.folder" = "Carpeta";
+
+"hub.backup.passwordLabel" = "Contraseña de recuperación";
+
+"hub.backup.problem.passwordShort" = "La contraseña de recuperación necesita al menos %1$@ caracteres.";
+
+"hub.backup.problem.interval" = "El intervalo debe estar entre 1 y 8784 horas.";
+
+"hub.backup.problem.keep" = "El número de copias que conservar debe estar entre 1 y 1000.";
+
+"hub.backup.problem.chooseFolder" = "Elige una carpeta para las copias de seguridad.";
+
+"hub.backup.problem.folderInside" = "Elige una carpeta para las copias de seguridad fuera de la carpeta de datos del Hub.";
+
+"hub.backup.problem.needsBoth" = "Las copias programadas necesitan una carpeta de copias y una contraseña de recuperación.";
+
+"hub.backup.lastGoodNone" = "Aún ninguna";
+
+"hub.backup.nextOff" = "Las copias programadas están desactivadas";
+
+"hub.backup.nextNotScheduled" = "Sin programar: elige una carpeta y una contraseña";
+
+"hub.backup.nextPaused" = "Esperando la recuperación de las credenciales";
+
+"hub.collection.notReported" = "No informado";
+
+"hub.backup.blocked" = "Las credenciales rechazadas bloquean las copias. Ejecuta purge-refused-credentials para eliminarlas.";
+
+"hub.backup.lastFailedMessage" = "El último intento falló: %1$@";
+
+"hub.backup.lastFailedCode" = "El último intento falló (%1$@)";
+
+"hub.backup.row.lastGood" = "Última copia correcta";
+
+"hub.backup.row.next" = "Próxima copia";
+
+"hub.backup.row.running" = "Se está haciendo una copia ahora";
+
+"hub.backup.row.lastAttempt" = "Último intento";
+
+"hub.backup.run.running" = "Copiando…";
+
+"hub.backup.run.stillRunning" = "La copia sigue en curso en el servicio del Hub.";
+
+"hub.backup.run.finishedGeneration" = "Copia terminada: %1$@";
+
+"hub.backup.run.finished" = "Copia terminada";
+
+"hub.backup.run.failed" = "La copia falló: %1$@";
+
+"hub.backup.maint.unreadable" = "No se pudo leer la respuesta del Hub.";
+
+"hub.backup.maint.unwritable" = "No se pudo guardar la contraseña de recuperación.";
+
+"hub.backup.maint.configMissing" = "Configura el Hub antes de cambiar las copias de seguridad.";
+
+"hub.devices.title" = "Dispositivos vinculados";
+
+"hub.devices.detail" = "Teléfonos y apps que leen este Hub, con los autos que cada uno puede leer.";
+
+"hub.devices.revokeTitle" = "¿Revocar %1$@?";
+
+"hub.devices.revokeInfo" = "Este dispositivo deja de leer del Hub de inmediato. Para volver a usarlo, vincúlalo de nuevo.";
+
+"hub.devices.revoke" = "Revocar";
+
+"hub.devices.revokeEllipsis" = "Revocar…";
+
+"hub.devices.revokeAccessibility" = "Revocar %1$@";
+
+"hub.devices.revokedDone" = "Se revocó %1$@.";
+
+"hub.devices.none" = "No hay dispositivos vinculados.";
+
+"hub.devices.cars" = "Autos: %1$@";
+
+"hub.devices.noCars" = "Ningún auto";
+
+"hub.devices.carFallback" = "Auto %1$@";
+
+"hub.devices.unnamed" = "Dispositivo sin nombre";
+
+"hub.devices.stateRevoked" = "Revocado %1$@";
+
+"hub.devices.stateExpired" = "Caducado %1$@";
+
+"hub.devices.stateLastSeen" = "Visto por última vez %1$@";
+
+"hub.devices.stateNeverSeen" = "Aún no visto";
+
+"hub.collection.loginOwn" = "Sesión iniciada con el inicio de sesión propio del Hub";
+
+"hub.collection.loginSignedOut" = "Sesión cerrada";
+
+"hub.collection.loginNotOwn" = "El inicio de sesión guardado no es el propio del Hub";
+
+"hub.collection.credValidUntil" = "Válido hasta %1$@";
+
+"hub.collection.credValid" = "Válido";
+
+"hub.collection.credRelogin" = "Se necesita iniciar sesión de nuevo: inicia sesión en la próxima ventana abierta";
+
+"hub.collection.credOwnerRefused" = "Owner API rechazada: Tesla rechazó este inicio de sesión";
+
+"hub.collection.credRefused" = "Rechazado (%1$@)";
+
+"hub.collection.credExposure" = "Posible exposición: inicia sesión de nuevo en la próxima ventana abierta";
+
+"hub.collection.credAttention" = "Requiere atención (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Sin sesión iniciada";
+
+"hub.collection.windowOpenUntil" = "Abierta hasta %1$@";
+
+"hub.collection.windowOpen" = "Abierta";
+
+"hub.collection.windowPending" = "Pendiente";
+
+"hub.collection.windowPendingFrom" = "Pendiente desde %1$@";
+
+"hub.collection.windowPendingUntil" = "Pendiente hasta %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Pendiente desde %1$@ hasta %2$@";
+
+"hub.collection.windowClosingExpiry" = "Cerrándose (caduca %1$@)";
+
+"hub.collection.windowClosing" = "Cerrándose";
+
+"hub.collection.windowClosedReason" = "Cerrada (%1$@)";
+
+"hub.collection.windowClosed" = "Cerrada";
+
+"hub.collection.windowUntrusted" = "Cerrada (sin emisor de confianza)";
+
+"hub.collection.windowFaulted" = "Cerrada (el estado de la ventana necesita un nuevo documento de confianza)";
+
+"hub.collection.windowRecovery" = "Cerrada (esperando la recuperación de las credenciales: ejecuta restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Desconocido: el canal de control no es de este Hub";
+
+"hub.collection.windowNotRunning" = "Desconocido: el Hub no se está ejecutando";
+
+"hub.collection.reasonExpired" = "caducada";
+
+"hub.collection.reasonOperator" = "cerrada por el operador";
+
+"hub.collection.reasonRelogin" = "se necesita iniciar sesión de nuevo";
+
+"hub.collection.reasonOwnerRefused" = "Owner API rechazada";
+
+"hub.collection.reasonClock" = "falló la comprobación del reloj";
+
+"hub.collection.reasonReboot" = "el Mac se reinició";
+
+"hub.collection.reasonUnverifiable" = "no se pudo verificar el estado";
+
+"hub.collection.reasonClaimLost" = "reclamación de recopilación perdida";
+
+"hub.collection.fleet" = "En pausa: no hay ninguna acción de Fleet disponible";
+
+"hub.collection.signInUnavailable" = "Inicio de sesión no disponible en este Hub";
+
+"hub.collection.labelLogin" = "Inicio de sesión de Tesla";
+
+"hub.collection.labelCredential" = "Estado de las credenciales";
+
+"hub.collection.labelWindow" = "Ventana de recopilación";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Inicio de sesión";
+
+"hub.signIn.recoveryPending" = "El Hub está esperando la recuperación de sus credenciales: los datos de este Hub se restauraron sin sus claves. Ejecuta restore-recovery-credentials y luego inicia sesión. No se cambió nada.";
+
+"hub.signIn.serviceUnauthenticated" = "El proceso que responde en el canal de control del Hub no es este Hub, así que no se envió nada. Reinicia el Hub y vuelve a iniciar sesión.";
+
+"hub.signIn.busy" = "El Hub está ocupado con otras solicitudes. No se cambió nada; vuelve a iniciar sesión en un momento.";

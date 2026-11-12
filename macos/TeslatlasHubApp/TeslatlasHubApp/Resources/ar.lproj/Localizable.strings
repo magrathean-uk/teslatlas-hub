@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "أكمل تسليم ترحيل التطبيق المصدر أو ألغِه قبل تسجيل الخروج.";
 "hub.HubController.1504.567" = "لم يكتمل قطع الاتصال على نحو سليم. تم تحديث حالة Hub؛ تحقق مما إذا كان الحساب لا يزال متصلًا. %1$@";
 "hub.HubController.1522.568" = "أقرّ بمراجعة مخطط قاعدة البيانات المصدر قبل التحقق من التوافق.";
-"hub.HubController.1523.569" = "تأكد من أن إصدار التطبيق المصدر هو 4.2.0 أو أحدث قبل فحص التوافق.";
+"hub.HubController.1523.569" = "تأكد من أن إصدار التطبيق المصدر هو 4.4.0 أو أحدث قبل فحص التوافق.";
 "hub.HubController.1532.570" = "اختر مصدر PostgreSQL محليًا على 127.0.0.1 أو ::1.";
 "hub.HubController.1536.571" = "يجب أن يكون معرّف السيارة في المصدر رقمًا موجبًا.";
 "hub.HubController.1539.572" = "اختر ملف كلمة مرور PostgreSQL المحمي.";
 "hub.HubController.1552.580" = "لم يُعِد فحص توافق التطبيق المصدر تقريرًا صالحًا.";
 "hub.HubController.1562.581" = "تعذر التحقق من قاعدة البيانات المصدر. تحقق من اتصال الخادم وحاول مرة أخرى.";
-"hub.HubController.1585.586" = "تأكد من أن إصدار التطبيق المصدر هو 4.2.0 أو أحدث قبل الاستيراد.";
+"hub.HubController.1585.586" = "تأكد من أن إصدار التطبيق المصدر هو 4.4.0 أو أحدث قبل الاستيراد.";
 "hub.HubController.1591.587" = "يتطلب تسجيل الدخول نافذة جمع بيانات مفتوحة. افتح نافذة، ثم سجّل الدخول مرة أخرى.";
 "hub.HubController.1718.615" = "لم يُعِد الاستيراد من التطبيق المصدر تقرير إكمال صالحًا. سيظل Hub متوقفًا.";
 "hub.HubController.1742.624" = "اكتمل الاستيراد، لكن تعذّر على Hub تسجيل شرط التسليم الآمن: %1$@. سيظل Hub متوقفًا.";
-"hub.HubController.1846.655" = "تأكد من أن إصدار التطبيق المصدر هو 4.2.0 أو أحدث قبل الاستيراد من مصدر PostgreSQL مباشر.";
+"hub.HubController.1846.655" = "تأكد من أن إصدار التطبيق المصدر هو 4.4.0 أو أحدث قبل الاستيراد من مصدر PostgreSQL مباشر.";
 "hub.HubController.1865.658" = "يجب أن يتضمن مصدر PostgreSQL مخططًا من postgres أو postgresql، واسم مضيف، واسم قاعدة بيانات.";
 "hub.HubController.1869.659" = "يجب ألا يتضمن مصدر PostgreSQL كلمة مرور. استخدم حقل ملف كلمة المرور.";
 "hub.HubController.1966.689" = "فشل إعداد Fleet: %1$@، كما فشل استرداد إعداد Hub: %2$@.";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "أكمل جميع الحقول";
 "hub.ImportSheetController.149.1710" = "المصدر ومعرّف السيارة وملف كلمة المرور حقول مطلوبة.";
 "hub.ImportSheetController.156.1711" = "تأكيد إصدار التطبيق المصدر";
-"hub.ImportSheetController.17.1690" = "أؤكد أن قاعدة البيانات هذه تخص التطبيق المصدر بالإصدار 4.2.0 أو أحدث.";
+"hub.ImportSheetController.17.1690" = "أؤكد أن قاعدة البيانات هذه تخص التطبيق المصدر بالإصدار 4.4.0 أو أحدث.";
 "hub.ImportSheetController.26.1691" = "استيراد السجل";
 "hub.ImportSheetController.49.1693" = "انسخ البيانات من قاعدة بيانات PostgreSQL المصدر إلى Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "مصدر PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "ملف كلمة المرور";
 "hub.ImportSheetController.7.1687" = "يقرأ Hub قاعدة البيانات المصدر من دون إيقاف التطبيق المصدر أو تغييره. بعد الاستيراد، سيخبرك Hub بموعد تعطيل وصول Tesla في التطبيق المصدر بنفسك.";
 "hub.ImportSheetController.73.1699" = "Hub غير قيد التشغيل. شغّل Hub وافتح نافذة جمع بيانات، ثم سجّل الدخول.";
-"hub.ImportSheetController.9.1688" = "قبل الاستيراد: أنشئ نسخة احتياطية من التطبيق المصدر، وحدّثه إلى الإصدار 4.2.0 أو أحدث، وشغّله مرة واحدة، وانتظر اكتمال ترحيل قاعدة بياناته. لا يمكن لاتصال مباشر بقاعدة البيانات إثبات إصدار التطبيق الجاري تشغيله.";
+"hub.ImportSheetController.9.1688" = "قبل الاستيراد: أنشئ نسخة احتياطية من التطبيق المصدر، وحدّثه إلى الإصدار 4.4.0 أو أحدث، وشغّله مرة واحدة، وانتظر اكتمال ترحيل قاعدة بياناته. لا يمكن لاتصال مباشر بقاعدة البيانات إثبات إصدار التطبيق الجاري تشغيله.";
 "hub.LogsWindowController.113.1730" = "إجراءات إضافية للسجلات";
 "hub.LogsWindowController.123.1732" = "تحجب السجلات المعروضة أو المنسوخة أو المحفوظة بيانات الاعتماد والمعرّفات الخاصة. راجعها قبل مشاركتها.";
 "hub.LogsWindowController.17.1712" = "جارٍ تحميل السجلات…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "أدخل رمز الوصول ورمز التحديث كليهما.";
 "hub.OnboardingWindowController.1631.2105" = "أدخل خادم التطبيق المصدر ومستخدم SSH والمنفذ.";
 "hub.OnboardingWindowController.168.1852" = "متابعة";
-"hub.OnboardingWindowController.1691.2113" = "لا يمكن لفحص المخطط تحديد إصدار التطبيق المصدر. تأكد من أن الخادم يشغّل التطبيق المصدر بالإصدار 4.2.0 أو أحدث، ثم تابع.";
+"hub.OnboardingWindowController.1691.2113" = "لا يمكن لفحص المخطط تحديد إصدار التطبيق المصدر. تأكد من أن الخادم يشغّل التطبيق المصدر بالإصدار 4.4.0 أو أحدث، ثم تابع.";
 "hub.OnboardingWindowController.1740.2131" = "اتصل بخادم التطبيق المصدر قبل الاستيراد.";
 "hub.OnboardingWindowController.1750.2137" = "تغيّرت إعدادات الخادم. اتصل بخادم التطبيق المصدر مجددًا قبل الاستيراد.";
 "hub.OnboardingWindowController.1820.2143" = "تتطلب نتيجة فحص واحدة أو أكثر الانتباه.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "اختيار مفتاح SSH";
 "hub.OnboardingWindowController.1981.2148" = "اختيار مفتاح";
 "hub.OnboardingWindowController.200.1857" = "استخدام لقطة PostgreSQL محلية (للسجل فقط)";
-"hub.OnboardingWindowController.203.1858" = "أؤكد أن هذا الخادم يشغّل التطبيق المصدر بالإصدار 4.2.0 أو أحدث.";
+"hub.OnboardingWindowController.203.1858" = "أؤكد أن هذا الخادم يشغّل التطبيق المصدر بالإصدار 4.4.0 أو أحدث.";
 "hub.OnboardingWindowController.252.1859" = "لم يكتمل الاستيراد السابق. تحقق من التطبيق المصدر ثم أعد تشغيل الاستيراد.";
 "hub.OnboardingWindowController.292.1862" = "جاهز للاستيراد.";
 "hub.OnboardingWindowController.298.1866" = "فشل الاتصال بالتطبيق المصدر.";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "تعذّر على Hub حجز منفذ محلي لنفق قاعدة البيانات.";
 "hub.SourceServerImporter.744.2586" = "حاول مرة أخرى.";
 "hub.SourceServerImporter.746.2588" = "حدّث التطبيق المصدر أولًا.";
-"hub.SourceServerImporter.747.2589" = "يتطلب الترحيل الإرشادي التطبيق المصدر بالإصدار 4.2.0 أو أحدث.";
+"hub.SourceServerImporter.747.2589" = "يتطلب الترحيل الإرشادي التطبيق المصدر بالإصدار 4.4.0 أو أحدث.";
 "hub.SourceServerImporter.748.2590" = "أنشئ نسخة احتياطية من التطبيق المصدر، وحدّثه، وانتظر اكتمال عمليات ترحيل قاعدة البيانات، ثم اتصل مجددًا.";
 "hub.SourceServerImporter.763.2594" = "التطبيق المصدر غير قيد التشغيل أو تعذّر العثور على حاويته.";
 "hub.SourceServerImporter.764.2596" = "تعذّر تحديد مشروع Docker Compose الخاص بالتطبيق المصدر.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "لا يستطيع هذا الحساب الوصول إلى Docker. امنحه صلاحية وصول مباشرة إلى Docker أو اسمح له باستخدام sudo بلا كلمة مرور لتشغيل Docker.";
 "hub.SourceServerImporter.834.2668" = "لم يُعثر على Docker في خادم التطبيق المصدر. تحقق من الخادم ومتغير PATH لحساب المستخدم.";
 "hub.SourceServerImporter.836.2670" = "Docker مثبت لكنه غير متاح. تحقق من تشغيل خدمة Docker.";
-"hub.SourceServerImporter.838.2672" = "يتطلب الترحيل الإرشادي التطبيق المصدر بالإصدار 4.2.0 أو أحدث. حدّث التطبيق المصدر ثم حاول مرة أخرى.";
+"hub.SourceServerImporter.838.2672" = "يتطلب الترحيل الإرشادي التطبيق المصدر بالإصدار 4.4.0 أو أحدث. حدّث التطبيق المصدر ثم حاول مرة أخرى.";
 "hub.SourceServerImporter.840.2674" = "تعذّر على SSH الاتصال أو المصادقة. تحقق من الخادم والمنفذ والحساب وطريقة المصادقة المحددة.";
 "hub.SourceServerImporter.842.2676" = "فشلت مصادقة SSH. تحقق من الحساب وطريقة المصادقة المحددة.";
 "hub.SourceServerImporter.854.2688" = "أغلق خادم SSH الاتصال. تحقق من سجلات الخادم وسياسة SSH.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "لا يستطيع فحص المخطط تحديد أيّ إصدار من التطبيق المصدر كتب قاعدة البيانات هذه، إذ تشترك عدة إصدارات في هذا المخطط.";
 
-"hub.import.ackRelease" = "أؤكد أن التطبيق المصدر بإصدار 4.2.0 أو أحدث، وأنه لن يُحدّث أثناء الاستيراد.";
+"hub.import.ackRelease" = "أؤكد أن التطبيق المصدر بإصدار 4.4.0 أو أحدث، وأنه لن يُحدّث أثناء الاستيراد.";
+
+"hub.backup.title" = "النسخ الاحتياطية";
+
+"hub.backup.detail" = "نسخ مشفّرة من سجل Hub. تبقى كلمة مرور الاسترداد في ملف على هذا الـ Mac لا يقرؤه إلا المالك.";
+
+"hub.backup.backUpNow" = "نسخ احتياطي الآن";
+
+"hub.backup.onSchedule" = "نسخ احتياطي وفق جدول";
+
+"hub.backup.saveSchedule" = "حفظ الجدول";
+
+"hub.backup.panelPrompt" = "اختيار";
+
+"hub.backup.panelMessage" = "اختر مجلدًا للنسخ الاحتياطية المشفّرة لـ Hub، خارج مجلد بيانات Hub.";
+
+"hub.backup.savedNote" = "تم الحفظ. يسري الجدول عند إعادة تشغيل Hub.";
+
+"hub.backup.noFolder" = "لم يتم اختيار مجلد";
+
+"hub.backup.passwordPlaceholder" = "كلمة مرور الاسترداد (%1$@ أحرف على الأقل)";
+
+"hub.backup.passwordSaved" = "تم الحفظ. اكتب كلمة مرور جديدة لاستبدالها";
+
+"hub.backup.intervalHour" = "كل ساعة";
+
+"hub.backup.intervalDay" = "كل يوم";
+
+"hub.backup.intervalTwoDays" = "كل يومين";
+
+"hub.backup.intervalWeek" = "كل أسبوع";
+
+"hub.backup.intervalHours" = "كل %1$@ ساعة";
+
+"hub.backup.schedule" = "الجدول";
+
+"hub.backup.keep" = "الاحتفاظ بـ";
+
+"hub.backup.keepSuffix" = "نسخ احتياطية";
+
+"hub.backup.folder" = "المجلد";
+
+"hub.backup.passwordLabel" = "كلمة مرور الاسترداد";
+
+"hub.backup.problem.passwordShort" = "تحتاج كلمة مرور الاسترداد إلى %1$@ أحرف على الأقل.";
+
+"hub.backup.problem.interval" = "يجب أن تكون الفترة بين 1 و8784 ساعة.";
+
+"hub.backup.problem.keep" = "يجب أن يكون عدد النسخ المحتفظ بها بين 1 و1000.";
+
+"hub.backup.problem.chooseFolder" = "اختر مجلدًا للنسخ الاحتياطية.";
+
+"hub.backup.problem.folderInside" = "اختر مجلدًا للنسخ الاحتياطية خارج مجلد بيانات Hub.";
+
+"hub.backup.problem.needsBoth" = "تحتاج النسخ الاحتياطية المجدولة إلى مجلد نسخ احتياطية وكلمة مرور استرداد.";
+
+"hub.backup.lastGoodNone" = "لا يوجد بعد";
+
+"hub.backup.nextOff" = "النسخ الاحتياطية المجدولة متوقفة";
+
+"hub.backup.nextNotScheduled" = "غير مجدولة: اختر مجلدًا وكلمة مرور";
+
+"hub.backup.nextPaused" = "في انتظار استرداد بيانات الاعتماد";
+
+"hub.collection.notReported" = "غير مُبلَّغ";
+
+"hub.backup.blocked" = "تحظر بيانات الاعتماد المرفوضة النسخ الاحتياطية. شغّل purge-refused-credentials لمسحها.";
+
+"hub.backup.lastFailedMessage" = "فشلت المحاولة الأخيرة: %1$@";
+
+"hub.backup.lastFailedCode" = "فشلت المحاولة الأخيرة (%1$@)";
+
+"hub.backup.row.lastGood" = "آخر نسخة احتياطية ناجحة";
+
+"hub.backup.row.next" = "النسخة الاحتياطية التالية";
+
+"hub.backup.row.running" = "نسخة احتياطية قيد التشغيل الآن";
+
+"hub.backup.row.lastAttempt" = "المحاولة الأخيرة";
+
+"hub.backup.run.running" = "جارٍ النسخ الاحتياطي…";
+
+"hub.backup.run.stillRunning" = "لا يزال النسخ الاحتياطي قيد التشغيل في خدمة Hub.";
+
+"hub.backup.run.finishedGeneration" = "اكتمل النسخ الاحتياطي: %1$@";
+
+"hub.backup.run.finished" = "اكتمل النسخ الاحتياطي";
+
+"hub.backup.run.failed" = "فشل النسخ الاحتياطي: %1$@";
+
+"hub.backup.maint.unreadable" = "تعذّرت قراءة ردّ Hub.";
+
+"hub.backup.maint.unwritable" = "تعذّر حفظ كلمة مرور الاسترداد.";
+
+"hub.backup.maint.configMissing" = "أعدّ Hub قبل تغيير النسخ الاحتياطية.";
+
+"hub.devices.title" = "الأجهزة المقترنة";
+
+"hub.devices.detail" = "الهواتف والتطبيقات التي تقرأ هذا الـ Hub، مع السيارات التي يمكن لكلٍّ منها قراءتها.";
+
+"hub.devices.revokeTitle" = "هل تريد إلغاء وصول %1$@؟";
+
+"hub.devices.revokeInfo" = "يتوقف هذا الجهاز عن القراءة من Hub فورًا. لاستخدامه مجددًا، اقرنه من جديد.";
+
+"hub.devices.revoke" = "إلغاء الوصول";
+
+"hub.devices.revokeEllipsis" = "إلغاء الوصول…";
+
+"hub.devices.revokeAccessibility" = "إلغاء وصول %1$@";
+
+"hub.devices.revokedDone" = "تم إلغاء وصول %1$@.";
+
+"hub.devices.none" = "لا توجد أجهزة مقترنة.";
+
+"hub.devices.cars" = "السيارات: %1$@";
+
+"hub.devices.noCars" = "لا توجد سيارات";
+
+"hub.devices.carFallback" = "السيارة %1$@";
+
+"hub.devices.unnamed" = "جهاز بلا اسم";
+
+"hub.devices.stateRevoked" = "أُلغي في %1$@";
+
+"hub.devices.stateExpired" = "انتهت صلاحيته في %1$@";
+
+"hub.devices.stateLastSeen" = "شوهد آخر مرة في %1$@";
+
+"hub.devices.stateNeverSeen" = "لم يُشاهد بعد";
+
+"hub.collection.loginOwn" = "تم تسجيل الدخول باستخدام تسجيل الدخول الخاص بـ Hub";
+
+"hub.collection.loginSignedOut" = "تم تسجيل الخروج";
+
+"hub.collection.loginNotOwn" = "تسجيل الدخول المخزَّن ليس الخاص بـ Hub";
+
+"hub.collection.credValidUntil" = "صالح حتى %1$@";
+
+"hub.collection.credValid" = "صالح";
+
+"hub.collection.credRelogin" = "يلزم تسجيل الدخول مجددًا: سجّل الدخول مرة أخرى في النافذة المفتوحة التالية";
+
+"hub.collection.credOwnerRefused" = "رُفض Owner API: رفضت Tesla تسجيل الدخول هذا";
+
+"hub.collection.credRefused" = "مرفوض (%1$@)";
+
+"hub.collection.credExposure" = "يُشتبه في انكشاف البيانات: سجّل الدخول مرة أخرى في النافذة المفتوحة التالية";
+
+"hub.collection.credAttention" = "يحتاج إلى انتباه (%1$@)";
+
+"hub.collection.credNotSignedIn" = "لم يتم تسجيل الدخول";
+
+"hub.collection.windowOpenUntil" = "مفتوحة حتى %1$@";
+
+"hub.collection.windowOpen" = "مفتوحة";
+
+"hub.collection.windowPending" = "قيد الانتظار";
+
+"hub.collection.windowPendingFrom" = "قيد الانتظار من %1$@";
+
+"hub.collection.windowPendingUntil" = "قيد الانتظار حتى %1$@";
+
+"hub.collection.windowPendingFromUntil" = "قيد الانتظار من %1$@ حتى %2$@";
+
+"hub.collection.windowClosingExpiry" = "قيد الإغلاق (تنتهي في %1$@)";
+
+"hub.collection.windowClosing" = "قيد الإغلاق";
+
+"hub.collection.windowClosedReason" = "مغلقة (%1$@)";
+
+"hub.collection.windowClosed" = "مغلقة";
+
+"hub.collection.windowUntrusted" = "مغلقة (لا توجد جهة إصدار موثوقة)";
+
+"hub.collection.windowFaulted" = "مغلقة (تحتاج حالة النافذة إلى مستند ثقة جديد)";
+
+"hub.collection.windowRecovery" = "مغلقة (في انتظار استرداد بيانات الاعتماد: شغّل restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "غير معروف: قناة التحكم لا تخص هذا الـ Hub";
+
+"hub.collection.windowNotRunning" = "غير معروف: Hub غير قيد التشغيل";
+
+"hub.collection.reasonExpired" = "انتهت الصلاحية";
+
+"hub.collection.reasonOperator" = "أغلقها المشغّل";
+
+"hub.collection.reasonRelogin" = "يلزم تسجيل الدخول مجددًا";
+
+"hub.collection.reasonOwnerRefused" = "رُفض Owner API";
+
+"hub.collection.reasonClock" = "فشل فحص الساعة";
+
+"hub.collection.reasonReboot" = "أُعيد تشغيل الـ Mac";
+
+"hub.collection.reasonUnverifiable" = "تعذّر التحقق من الحالة";
+
+"hub.collection.reasonClaimLost" = "فُقد حق الجمع";
+
+"hub.collection.fleet" = "متوقفة مؤقتًا: لا يتوفر أي إجراء لـ Fleet";
+
+"hub.collection.signInUnavailable" = "تسجيل الدخول غير متاح على هذا الـ Hub";
+
+"hub.collection.labelLogin" = "تسجيل الدخول إلى Tesla";
+
+"hub.collection.labelCredential" = "حالة بيانات الاعتماد";
+
+"hub.collection.labelWindow" = "نافذة الجمع";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "تسجيل الدخول";
+
+"hub.signIn.recoveryPending" = "ينتظر Hub استرداد بيانات اعتماده: استُعيدت بيانات هذا الـ Hub دون مفاتيحه. شغّل restore-recovery-credentials ثم سجّل الدخول. لم يتغير شيء.";
+
+"hub.signIn.serviceUnauthenticated" = "العملية التي تردّ على قناة التحكم الخاصة بـ Hub ليست هذا الـ Hub، لذلك لم يُرسل شيء. أعد تشغيل Hub ثم سجّل الدخول مرة أخرى.";
+
+"hub.signIn.busy" = "Hub مشغول بطلبات أخرى. لم يتغير شيء؛ سجّل الدخول مرة أخرى بعد قليل.";

@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Termine ou annule la passation de migration de l’application source avant de te déconnecter.";
 "hub.HubController.1504.567" = "La déconnexion ne s’est pas terminée correctement. L’état du Hub a été actualisé ; vérifie si le compte est toujours connecté. %1$@";
 "hub.HubController.1522.568" = "Confirme que tu as examiné le schéma de la base de données source avant de vérifier sa compatibilité.";
-"hub.HubController.1523.569" = "Confirme que l’application source est en version 4.2.0 ou ultérieure avant de vérifier la compatibilité.";
+"hub.HubController.1523.569" = "Confirme que l’application source est en version 4.4.0 ou ultérieure avant de vérifier la compatibilité.";
 "hub.HubController.1532.570" = "Choisis une source PostgreSQL locale sur 127.0.0.1 ou ::1.";
 "hub.HubController.1536.571" = "L’identifiant de voiture dans l’application source doit être un nombre positif.";
 "hub.HubController.1539.572" = "Sélectionne le fichier de mot de passe PostgreSQL protégé.";
 "hub.HubController.1552.580" = "Le contrôle de compatibilité de l’application source n’a renvoyé aucun rapport valide.";
 "hub.HubController.1562.581" = "Impossible de vérifier la base de données source. Vérifie la connexion au serveur et réessaie.";
-"hub.HubController.1585.586" = "Confirme que l’application source est en version 4.2.0 ou ultérieure avant l’importation.";
+"hub.HubController.1585.586" = "Confirme que l’application source est en version 4.4.0 ou ultérieure avant l’importation.";
 "hub.HubController.1591.587" = "La connexion nécessite une fenêtre de collecte ouverte. Ouvre une fenêtre, puis reconnecte-toi.";
 "hub.HubController.1718.615" = "L’importation depuis l’application source n’a renvoyé aucun rapport d’achèvement valide. Le Hub reste arrêté.";
 "hub.HubController.1742.624" = "L’importation est terminée, mais le Hub n’a pas pu consigner la condition de sécurité du transfert : %1$@. Le Hub reste arrêté.";
-"hub.HubController.1846.655" = "Confirme que l’application source est en version 4.2.0 ou ultérieure avant d’importer depuis une source PostgreSQL directe.";
+"hub.HubController.1846.655" = "Confirme que l’application source est en version 4.4.0 ou ultérieure avant d’importer depuis une source PostgreSQL directe.";
 "hub.HubController.1865.658" = "La source PostgreSQL doit inclure un schéma « postgres » ou « postgresql », un hôte et un nom de base de données.";
 "hub.HubController.1869.659" = "La source PostgreSQL ne doit pas contenir de mot de passe. Utilise le champ du fichier de mot de passe.";
 "hub.HubController.1966.689" = "La configuration Fleet a échoué : %1$@. La récupération de la configuration du Hub a également échoué : %2$@.";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Renseigne tous les champs.";
 "hub.ImportSheetController.149.1710" = "La source, l’ID du véhicule et le fichier de mot de passe sont obligatoires.";
 "hub.ImportSheetController.156.1711" = "Confirmer la version de l’application source";
-"hub.ImportSheetController.17.1690" = "Je confirme que cette base de données appartient à l’application source 4.2.0 ou à une version ultérieure.";
+"hub.ImportSheetController.17.1690" = "Je confirme que cette base de données appartient à l’application source 4.4.0 ou à une version ultérieure.";
 "hub.ImportSheetController.26.1691" = "Importer l’historique";
 "hub.ImportSheetController.49.1693" = "Copie les données d’une base PostgreSQL de l’application source dans Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "Source PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Fichier de mot de passe";
 "hub.ImportSheetController.7.1687" = "Le Hub lit la base de données source sans la modifier ni arrêter l’application source. Après l’importation, le Hub t’indique quand désactiver toi-même l’accès à Tesla dans l’application source.";
 "hub.ImportSheetController.73.1699" = "Le Hub n’est pas en cours d’exécution. Démarre le Hub, ouvre une fenêtre de collecte, puis connecte-toi.";
-"hub.ImportSheetController.9.1688" = "Avant l’importation : sauvegarde l’application source, mets-la à jour vers la version 4.2.0 ou ultérieure, démarre-la une fois et attends la fin de ses migrations de base de données. Une connexion directe à la base ne permet pas de vérifier la version de l’application en cours d’exécution.";
+"hub.ImportSheetController.9.1688" = "Avant l’importation : sauvegarde l’application source, mets-la à jour vers la version 4.4.0 ou ultérieure, démarre-la une fois et attends la fin de ses migrations de base de données. Une connexion directe à la base ne permet pas de vérifier la version de l’application en cours d’exécution.";
 "hub.LogsWindowController.113.1730" = "Autres actions sur les journaux";
 "hub.LogsWindowController.123.1732" = "Les journaux affichés, copiés et enregistrés masquent les identifiants d’accès et les identifiants privés. Vérifie-les avant de les partager.";
 "hub.LogsWindowController.17.1712" = "Chargement des journaux…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Saisis le jeton d’accès et le jeton de renouvellement.";
 "hub.OnboardingWindowController.1631.2105" = "Renseigne le serveur de l’application source, l’utilisateur SSH et le port.";
 "hub.OnboardingWindowController.168.1852" = "Continuer";
-"hub.OnboardingWindowController.1691.2113" = "La vérification du schéma ne permet pas de déterminer la version de l’application source. Confirme que le serveur en cours d’exécution utilise la version 4.2.0 ou ultérieure, puis continue.";
+"hub.OnboardingWindowController.1691.2113" = "La vérification du schéma ne permet pas de déterminer la version de l’application source. Confirme que le serveur en cours d’exécution utilise la version 4.4.0 ou ultérieure, puis continue.";
 "hub.OnboardingWindowController.1740.2131" = "Connecte-toi au serveur de l’application source avant d’importer.";
 "hub.OnboardingWindowController.1750.2137" = "Les réglages du serveur ont changé. Reconnecte-toi au serveur de l’application source avant d’importer.";
 "hub.OnboardingWindowController.1820.2143" = "Un ou plusieurs contrôles nécessitent ton attention.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Choisir une clé SSH";
 "hub.OnboardingWindowController.1981.2148" = "Choisir une clé";
 "hub.OnboardingWindowController.200.1857" = "Utiliser un instantané local de PostgreSQL (historique uniquement)";
-"hub.OnboardingWindowController.203.1858" = "Je confirme que ce serveur exécute l’application source 4.2.0 ou une version ultérieure.";
+"hub.OnboardingWindowController.203.1858" = "Je confirme que ce serveur exécute l’application source 4.4.0 ou une version ultérieure.";
 "hub.OnboardingWindowController.252.1859" = "L’importation précédente ne s’est pas terminée. Vérifie l’application source et relance l’importation.";
 "hub.OnboardingWindowController.292.1862" = "Prêt pour l’importation.";
 "hub.OnboardingWindowController.298.1866" = "Échec de la connexion à l’application source";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Le Hub n’a pas pu réserver de port local pour le tunnel vers la base de données.";
 "hub.SourceServerImporter.744.2586" = "Réessaie.";
 "hub.SourceServerImporter.746.2588" = "Mets d’abord l’application source à jour";
-"hub.SourceServerImporter.747.2589" = "La migration guidée nécessite l’application source 4.2.0 ou une version ultérieure.";
+"hub.SourceServerImporter.747.2589" = "La migration guidée nécessite l’application source 4.4.0 ou une version ultérieure.";
 "hub.SourceServerImporter.748.2590" = "Sauvegarde l’application source, mets-la à jour, laisse ses migrations se terminer, puis reconnecte-toi.";
 "hub.SourceServerImporter.763.2594" = "L’application source n’est pas en cours d’exécution ou son conteneur est introuvable.";
 "hub.SourceServerImporter.764.2596" = "Impossible d’identifier le projet Docker Compose de l’application source.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Ce compte ne peut pas accéder à Docker. Accorde-lui un accès direct à Docker ou autorise sudo sans mot de passe pour Docker.";
 "hub.SourceServerImporter.834.2668" = "Docker est introuvable sur le serveur de l’application source. Vérifie le serveur et la variable PATH du compte.";
 "hub.SourceServerImporter.836.2670" = "Docker est installé mais indisponible. Vérifie que le service Docker est en cours d’exécution.";
-"hub.SourceServerImporter.838.2672" = "La migration guidée nécessite l’application source 4.2.0 ou une version ultérieure. Mets l’application source à jour, puis réessaie.";
+"hub.SourceServerImporter.838.2672" = "La migration guidée nécessite l’application source 4.4.0 ou une version ultérieure. Mets l’application source à jour, puis réessaie.";
 "hub.SourceServerImporter.840.2674" = "La connexion ou l’authentification SSH a échoué. Vérifie le serveur, le port, le compte et la méthode d’authentification sélectionnée.";
 "hub.SourceServerImporter.842.2676" = "L’authentification SSH a échoué. Vérifie le compte et la méthode d’authentification sélectionnée.";
 "hub.SourceServerImporter.854.2688" = "Le serveur SSH a fermé la connexion. Vérifie ses journaux et sa politique SSH.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "La vérification du schéma ne permet pas de savoir quelle version de l’application source a créé cette base de données : plusieurs versions utilisent le même schéma.";
 
-"hub.import.ackRelease" = "Je confirme que l’application source est en version 4.2.0 ou ultérieure et qu’elle ne sera pas mise à jour pendant l’importation.";
+"hub.import.ackRelease" = "Je confirme que l’application source est en version 4.4.0 ou ultérieure et qu’elle ne sera pas mise à jour pendant l’importation.";
+
+"hub.backup.title" = "Sauvegardes";
+
+"hub.backup.detail" = "Copies chiffrées de l'historique du Hub. Le mot de passe de récupération reste dans un fichier réservé au propriétaire sur ce Mac.";
+
+"hub.backup.backUpNow" = "Sauvegarder maintenant";
+
+"hub.backup.onSchedule" = "Sauvegarder selon un calendrier";
+
+"hub.backup.saveSchedule" = "Enregistrer le calendrier";
+
+"hub.backup.panelPrompt" = "Choisir";
+
+"hub.backup.panelMessage" = "Choisissez un dossier pour les sauvegardes chiffrées du Hub, en dehors du dossier de données du Hub.";
+
+"hub.backup.savedNote" = "Enregistré. Le calendrier s'applique au redémarrage du Hub.";
+
+"hub.backup.noFolder" = "Aucun dossier choisi";
+
+"hub.backup.passwordPlaceholder" = "Mot de passe de récupération (au moins %1$@ caractères)";
+
+"hub.backup.passwordSaved" = "Enregistré. Saisissez-en un nouveau pour le remplacer";
+
+"hub.backup.intervalHour" = "Toutes les heures";
+
+"hub.backup.intervalDay" = "Tous les jours";
+
+"hub.backup.intervalTwoDays" = "Tous les 2 jours";
+
+"hub.backup.intervalWeek" = "Toutes les semaines";
+
+"hub.backup.intervalHours" = "Toutes les %1$@ heures";
+
+"hub.backup.schedule" = "Calendrier";
+
+"hub.backup.keep" = "Conserver";
+
+"hub.backup.keepSuffix" = "sauvegardes";
+
+"hub.backup.folder" = "Dossier";
+
+"hub.backup.passwordLabel" = "Mot de passe de récupération";
+
+"hub.backup.problem.passwordShort" = "Le mot de passe de récupération doit comporter au moins %1$@ caractères.";
+
+"hub.backup.problem.interval" = "L'intervalle doit être compris entre 1 et 8784 heures.";
+
+"hub.backup.problem.keep" = "Le nombre de sauvegardes conservées doit être compris entre 1 et 1000.";
+
+"hub.backup.problem.chooseFolder" = "Choisissez un dossier de sauvegarde.";
+
+"hub.backup.problem.folderInside" = "Choisissez un dossier de sauvegarde en dehors du dossier de données du Hub.";
+
+"hub.backup.problem.needsBoth" = "Les sauvegardes planifiées nécessitent un dossier de sauvegarde et un mot de passe de récupération.";
+
+"hub.backup.lastGoodNone" = "Aucune pour l'instant";
+
+"hub.backup.nextOff" = "Les sauvegardes planifiées sont désactivées";
+
+"hub.backup.nextNotScheduled" = "Non planifiée : choisissez un dossier et un mot de passe";
+
+"hub.backup.nextPaused" = "En attente de la récupération des identifiants";
+
+"hub.collection.notReported" = "Non communiqué";
+
+"hub.backup.blocked" = "Des identifiants refusés bloquent les sauvegardes. Exécutez purge-refused-credentials pour les effacer.";
+
+"hub.backup.lastFailedMessage" = "Dernière tentative échouée : %1$@";
+
+"hub.backup.lastFailedCode" = "Dernière tentative échouée (%1$@)";
+
+"hub.backup.row.lastGood" = "Dernière sauvegarde réussie";
+
+"hub.backup.row.next" = "Prochaine sauvegarde";
+
+"hub.backup.row.running" = "Une sauvegarde est en cours";
+
+"hub.backup.row.lastAttempt" = "Dernière tentative";
+
+"hub.backup.run.running" = "Sauvegarde en cours…";
+
+"hub.backup.run.stillRunning" = "La sauvegarde est toujours en cours dans le service du Hub.";
+
+"hub.backup.run.finishedGeneration" = "Sauvegarde terminée : %1$@";
+
+"hub.backup.run.finished" = "Sauvegarde terminée";
+
+"hub.backup.run.failed" = "Échec de la sauvegarde : %1$@";
+
+"hub.backup.maint.unreadable" = "La réponse du Hub n'a pas pu être lue.";
+
+"hub.backup.maint.unwritable" = "Le mot de passe de récupération n'a pas pu être enregistré.";
+
+"hub.backup.maint.configMissing" = "Configurez le Hub avant de modifier les sauvegardes.";
+
+"hub.devices.title" = "Appareils associés";
+
+"hub.devices.detail" = "Téléphones et apps qui lisent ce Hub, avec les voitures que chacun peut lire.";
+
+"hub.devices.revokeTitle" = "Révoquer %1$@ ?";
+
+"hub.devices.revokeInfo" = "Cet appareil cesse immédiatement de lire depuis le Hub. Pour le réutiliser, associez-le de nouveau.";
+
+"hub.devices.revoke" = "Révoquer";
+
+"hub.devices.revokeEllipsis" = "Révoquer…";
+
+"hub.devices.revokeAccessibility" = "Révoquer %1$@";
+
+"hub.devices.revokedDone" = "%1$@ a été révoqué.";
+
+"hub.devices.none" = "Aucun appareil associé.";
+
+"hub.devices.cars" = "Voitures : %1$@";
+
+"hub.devices.noCars" = "Aucune voiture";
+
+"hub.devices.carFallback" = "Voiture %1$@";
+
+"hub.devices.unnamed" = "Appareil sans nom";
+
+"hub.devices.stateRevoked" = "Révoqué le %1$@";
+
+"hub.devices.stateExpired" = "Expiré le %1$@";
+
+"hub.devices.stateLastSeen" = "Vu pour la dernière fois le %1$@";
+
+"hub.devices.stateNeverSeen" = "Jamais vu";
+
+"hub.collection.loginOwn" = "Connecté avec l'identifiant propre au Hub";
+
+"hub.collection.loginSignedOut" = "Déconnecté";
+
+"hub.collection.loginNotOwn" = "L'identifiant enregistré n'est pas celui du Hub";
+
+"hub.collection.credValidUntil" = "Valide jusqu'au %1$@";
+
+"hub.collection.credValid" = "Valide";
+
+"hub.collection.credRelogin" = "Nouvelle connexion nécessaire : reconnectez-vous dans la prochaine fenêtre ouverte";
+
+"hub.collection.credOwnerRefused" = "Owner API refusée : Tesla a refusé cet identifiant";
+
+"hub.collection.credRefused" = "Refusé (%1$@)";
+
+"hub.collection.credExposure" = "Exposition suspectée : reconnectez-vous dans la prochaine fenêtre ouverte";
+
+"hub.collection.credAttention" = "Nécessite une attention (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Non connecté";
+
+"hub.collection.windowOpenUntil" = "Ouverte jusqu'au %1$@";
+
+"hub.collection.windowOpen" = "Ouverte";
+
+"hub.collection.windowPending" = "En attente";
+
+"hub.collection.windowPendingFrom" = "En attente à partir du %1$@";
+
+"hub.collection.windowPendingUntil" = "En attente jusqu'au %1$@";
+
+"hub.collection.windowPendingFromUntil" = "En attente du %1$@ au %2$@";
+
+"hub.collection.windowClosingExpiry" = "Fermeture (expiration le %1$@)";
+
+"hub.collection.windowClosing" = "Fermeture";
+
+"hub.collection.windowClosedReason" = "Fermée (%1$@)";
+
+"hub.collection.windowClosed" = "Fermée";
+
+"hub.collection.windowUntrusted" = "Fermée (aucun émetteur de confiance)";
+
+"hub.collection.windowFaulted" = "Fermée (l'état de la fenêtre nécessite un nouveau document de confiance)";
+
+"hub.collection.windowRecovery" = "Fermée (en attente de la récupération des identifiants : exécutez restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Inconnu : le canal de contrôle n'est pas celui de ce Hub";
+
+"hub.collection.windowNotRunning" = "Inconnu : le Hub n'est pas en cours d'exécution";
+
+"hub.collection.reasonExpired" = "expirée";
+
+"hub.collection.reasonOperator" = "fermée par l'opérateur";
+
+"hub.collection.reasonRelogin" = "nouvelle connexion nécessaire";
+
+"hub.collection.reasonOwnerRefused" = "Owner API refusée";
+
+"hub.collection.reasonClock" = "échec de la vérification de l'horloge";
+
+"hub.collection.reasonReboot" = "le Mac a redémarré";
+
+"hub.collection.reasonUnverifiable" = "l'état n'a pas pu être vérifié";
+
+"hub.collection.reasonClaimLost" = "revendication de collecte perdue";
+
+"hub.collection.fleet" = "En pause : aucune action Fleet n'est disponible";
+
+"hub.collection.signInUnavailable" = "Connexion indisponible sur ce Hub";
+
+"hub.collection.labelLogin" = "Connexion Tesla";
+
+"hub.collection.labelCredential" = "État des identifiants";
+
+"hub.collection.labelWindow" = "Fenêtre de collecte";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Connexion";
+
+"hub.signIn.recoveryPending" = "Le Hub attend la récupération de ses identifiants : les données de ce Hub ont été restaurées sans ses clés. Exécutez restore-recovery-credentials, puis connectez-vous. Rien n'a été modifié.";
+
+"hub.signIn.serviceUnauthenticated" = "Le processus qui répond sur le canal de contrôle du Hub n'est pas ce Hub, donc rien n'a été envoyé. Redémarrez le Hub, puis connectez-vous de nouveau.";
+
+"hub.signIn.busy" = "Le Hub est occupé par d'autres demandes. Rien n'a été modifié ; reconnectez-vous dans un instant.";

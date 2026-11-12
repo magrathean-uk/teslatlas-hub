@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Hãy hoàn tất hoặc hủy việc bàn giao di trú ứng dụng nguồn trước khi đăng xuất.";
 "hub.HubController.1504.567" = "Quá trình ngắt kết nối không kết thúc bình thường. Trạng thái Hub đã được làm mới; hãy kiểm tra tài khoản còn kết nối hay không. %1$@";
 "hub.HubController.1522.568" = "Xác nhận đã xem lại lược đồ cơ sở dữ liệu nguồn trước khi kiểm tra tính tương thích.";
-"hub.HubController.1523.569" = "Xác nhận ứng dụng nguồn phiên bản 4.2.0 trở lên trước khi kiểm tra tính tương thích.";
+"hub.HubController.1523.569" = "Xác nhận ứng dụng nguồn phiên bản 4.4.0 trở lên trước khi kiểm tra tính tương thích.";
 "hub.HubController.1532.570" = "Chọn nguồn PostgreSQL cục bộ tại 127.0.0.1 hoặc ::1.";
 "hub.HubController.1536.571" = "ID xe nguồn phải là số dương.";
 "hub.HubController.1539.572" = "Chọn tệp mật khẩu PostgreSQL được bảo vệ.";
 "hub.HubController.1552.580" = "Kiểm tra tính tương thích ứng dụng nguồn không trả về báo cáo hợp lệ.";
 "hub.HubController.1562.581" = "Không thể xác minh cơ sở dữ liệu nguồn. Hãy kiểm tra kết nối máy chủ rồi thử lại.";
-"hub.HubController.1585.586" = "Xác nhận ứng dụng nguồn phiên bản 4.2.0 trở lên trước khi nhập dữ liệu.";
+"hub.HubController.1585.586" = "Xác nhận ứng dụng nguồn phiên bản 4.4.0 trở lên trước khi nhập dữ liệu.";
 "hub.HubController.1591.587" = "Đăng nhập cần có cửa sổ thu thập đang mở. Hãy mở một cửa sổ, rồi đăng nhập lại.";
 "hub.HubController.1718.615" = "Quá trình nhập ứng dụng nguồn không trả về báo cáo hoàn tất hợp lệ. Hub vẫn ở trạng thái đã dừng.";
 "hub.HubController.1742.624" = "Đã nhập xong nhưng không ghi được điều kiện cho phép bàn giao an toàn: %1$@. Hub vẫn ở trạng thái đã dừng.";
-"hub.HubController.1846.655" = "Xác nhận ứng dụng nguồn phiên bản 4.2.0 trở lên trước khi nhập từ nguồn PostgreSQL trực tiếp.";
+"hub.HubController.1846.655" = "Xác nhận ứng dụng nguồn phiên bản 4.4.0 trở lên trước khi nhập từ nguồn PostgreSQL trực tiếp.";
 "hub.HubController.1865.658" = "Nguồn PostgreSQL phải có phần scheme là postgres hoặc postgresql, cùng máy chủ và tên cơ sở dữ liệu.";
 "hub.HubController.1869.659" = "Nguồn PostgreSQL không được chứa mật khẩu. Hãy dùng trường tệp mật khẩu.";
 "hub.HubController.1966.689" = "Thiết lập Fleet không thành công: %1$@. Khôi phục cấu hình Hub cũng không thành công: %2$@.";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Hãy điền đầy đủ các trường.";
 "hub.ImportSheetController.149.1710" = "Cần có nguồn, ID xe và tệp mật khẩu.";
 "hub.ImportSheetController.156.1711" = "Xác nhận phiên bản ứng dụng nguồn";
-"hub.ImportSheetController.17.1690" = "Tôi xác nhận cơ sở dữ liệu này thuộc về ứng dụng nguồn phiên bản 4.2.0 trở lên.";
+"hub.ImportSheetController.17.1690" = "Tôi xác nhận cơ sở dữ liệu này thuộc về ứng dụng nguồn phiên bản 4.4.0 trở lên.";
 "hub.ImportSheetController.26.1691" = "Nhập lịch sử";
 "hub.ImportSheetController.49.1693" = "Sao chép dữ liệu từ cơ sở dữ liệu PostgreSQL nguồn vào Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "Nguồn PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Tệp mật khẩu";
 "hub.ImportSheetController.7.1687" = "Hub đọc cơ sở dữ liệu nguồn mà không dừng ứng dụng nguồn hoặc thay đổi dữ liệu. Sau khi nhập, Hub sẽ hướng dẫn bạn tự tắt quyền truy cập Tesla trong ứng dụng nguồn.";
 "hub.ImportSheetController.73.1699" = "Hub chưa chạy. Hãy khởi động Hub, mở một cửa sổ thu thập, rồi đăng nhập.";
-"hub.ImportSheetController.9.1688" = "Trước khi nhập: hãy sao lưu ứng dụng nguồn, cập nhật lên phiên bản 4.2.0 trở lên, khởi động một lần và đợi quá trình di chuyển cơ sở dữ liệu hoàn tất. Kết nối trực tiếp với cơ sở dữ liệu không thể xác minh phiên bản ứng dụng đang chạy.";
+"hub.ImportSheetController.9.1688" = "Trước khi nhập: hãy sao lưu ứng dụng nguồn, cập nhật lên phiên bản 4.4.0 trở lên, khởi động một lần và đợi quá trình di chuyển cơ sở dữ liệu hoàn tất. Kết nối trực tiếp với cơ sở dữ liệu không thể xác minh phiên bản ứng dụng đang chạy.";
 "hub.LogsWindowController.113.1730" = "Thao tác nhật ký khác";
 "hub.LogsWindowController.123.1732" = "Nhật ký được hiển thị, sao chép và lưu sẽ lược bỏ thông tin xác thực và mã định danh riêng tư. Hãy xem lại trước khi chia sẻ.";
 "hub.LogsWindowController.17.1712" = "Đang tải nhật ký…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Nhập cả mã truy cập và mã làm mới.";
 "hub.OnboardingWindowController.1631.2105" = "Nhập máy chủ ứng dụng nguồn, tên người dùng SSH và cổng.";
 "hub.OnboardingWindowController.168.1852" = "Tiếp tục";
-"hub.OnboardingWindowController.1691.2113" = "Việc kiểm tra lược đồ không thể xác định bản phát hành của ứng dụng nguồn. Hãy xác nhận máy chủ đang chạy bản phát hành 4.2.0 trở lên rồi tiếp tục.";
+"hub.OnboardingWindowController.1691.2113" = "Việc kiểm tra lược đồ không thể xác định bản phát hành của ứng dụng nguồn. Hãy xác nhận máy chủ đang chạy bản phát hành 4.4.0 trở lên rồi tiếp tục.";
 "hub.OnboardingWindowController.1740.2131" = "Kết nối với máy chủ ứng dụng nguồn trước khi nhập.";
 "hub.OnboardingWindowController.1750.2137" = "Cài đặt máy chủ đã thay đổi. Hãy kết nối lại với máy chủ ứng dụng nguồn trước khi nhập.";
 "hub.OnboardingWindowController.1820.2143" = "Một hoặc nhiều mục kiểm tra cần được chú ý.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Chọn khóa SSH";
 "hub.OnboardingWindowController.1981.2148" = "Chọn khóa";
 "hub.OnboardingWindowController.200.1857" = "Dùng bản chụp PostgreSQL cục bộ (chỉ lịch sử)";
-"hub.OnboardingWindowController.203.1858" = "Tôi xác nhận máy chủ này đang chạy ứng dụng nguồn phiên bản 4.2.0 trở lên";
+"hub.OnboardingWindowController.203.1858" = "Tôi xác nhận máy chủ này đang chạy ứng dụng nguồn phiên bản 4.4.0 trở lên";
 "hub.OnboardingWindowController.252.1859" = "Lần nhập trước chưa hoàn tất. Hãy kiểm tra ứng dụng nguồn rồi chạy nhập lại.";
 "hub.OnboardingWindowController.292.1862" = "Sẵn sàng nhập.";
 "hub.OnboardingWindowController.298.1866" = "Kết nối ứng dụng nguồn không thành công";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub không thể dành một cổng cục bộ cho đường hầm cơ sở dữ liệu.";
 "hub.SourceServerImporter.744.2586" = "Hãy thử lại.";
 "hub.SourceServerImporter.746.2588" = "Trước tiên, hãy cập nhật ứng dụng nguồn";
-"hub.SourceServerImporter.747.2589" = "Quy trình chuyển đổi có hướng dẫn yêu cầu ứng dụng nguồn phiên bản 4.2.0 trở lên.";
+"hub.SourceServerImporter.747.2589" = "Quy trình chuyển đổi có hướng dẫn yêu cầu ứng dụng nguồn phiên bản 4.4.0 trở lên.";
 "hub.SourceServerImporter.748.2590" = "Hãy sao lưu ứng dụng nguồn, cập nhật phiên bản, đợi các bước di chuyển cơ sở dữ liệu hoàn tất rồi kết nối lại.";
 "hub.SourceServerImporter.763.2594" = "Ứng dụng nguồn không chạy hoặc không tìm thấy container của ứng dụng nguồn.";
 "hub.SourceServerImporter.764.2596" = "Không thể xác định dự án Docker Compose của ứng dụng nguồn.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Tài khoản này không thể truy cập Docker. Hãy cấp quyền Docker trực tiếp hoặc cho phép dùng sudo không cần mật khẩu cho Docker.";
 "hub.SourceServerImporter.834.2668" = "Không tìm thấy Docker trên máy chủ ứng dụng nguồn. Hãy kiểm tra PATH của máy chủ và tài khoản.";
 "hub.SourceServerImporter.836.2670" = "Docker đã được cài đặt nhưng không khả dụng. Hãy kiểm tra dịch vụ Docker có đang chạy không.";
-"hub.SourceServerImporter.838.2672" = "Quy trình chuyển đổi có hướng dẫn yêu cầu ứng dụng nguồn phiên bản 4.2.0 trở lên. Hãy cập nhật ứng dụng nguồn rồi thử lại.";
+"hub.SourceServerImporter.838.2672" = "Quy trình chuyển đổi có hướng dẫn yêu cầu ứng dụng nguồn phiên bản 4.4.0 trở lên. Hãy cập nhật ứng dụng nguồn rồi thử lại.";
 "hub.SourceServerImporter.840.2674" = "Không thể kết nối SSH hoặc xác thực. Hãy kiểm tra máy chủ, cổng, tài khoản và phương thức xác thực đã chọn.";
 "hub.SourceServerImporter.842.2676" = "Xác thực SSH không thành công. Hãy kiểm tra tài khoản và phương thức xác thực đã chọn.";
 "hub.SourceServerImporter.854.2688" = "Máy chủ SSH đã đóng kết nối. Hãy kiểm tra nhật ký máy chủ và chính sách SSH.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "Việc kiểm tra lược đồ không thể xác định bản phát hành nào của ứng dụng nguồn đã ghi cơ sở dữ liệu này: nhiều bản phát hành dùng chung lược đồ.";
 
-"hub.import.ackRelease" = "Tôi xác nhận ứng dụng nguồn đang ở bản phát hành 4.2.0 trở lên và sẽ không được cập nhật trong khi nhập dữ liệu.";
+"hub.import.ackRelease" = "Tôi xác nhận ứng dụng nguồn đang ở bản phát hành 4.4.0 trở lên và sẽ không được cập nhật trong khi nhập dữ liệu.";
+
+"hub.backup.title" = "Bản sao lưu";
+
+"hub.backup.detail" = "Các bản sao được mã hóa của lịch sử Hub. Mật khẩu khôi phục nằm trong một tệp trên máy Mac này mà chỉ chủ sở hữu mới đọc được.";
+
+"hub.backup.backUpNow" = "Sao lưu ngay";
+
+"hub.backup.onSchedule" = "Sao lưu theo lịch";
+
+"hub.backup.saveSchedule" = "Lưu lịch";
+
+"hub.backup.panelPrompt" = "Chọn";
+
+"hub.backup.panelMessage" = "Chọn một thư mục cho các bản sao lưu Hub được mã hóa, nằm ngoài thư mục dữ liệu của Hub.";
+
+"hub.backup.savedNote" = "Đã lưu. Lịch sẽ áp dụng khi Hub khởi động lại.";
+
+"hub.backup.noFolder" = "Chưa chọn thư mục";
+
+"hub.backup.passwordPlaceholder" = "Mật khẩu khôi phục (ít nhất %1$@ ký tự)";
+
+"hub.backup.passwordSaved" = "Đã lưu. Nhập mật khẩu mới để thay thế";
+
+"hub.backup.intervalHour" = "Mỗi giờ";
+
+"hub.backup.intervalDay" = "Mỗi ngày";
+
+"hub.backup.intervalTwoDays" = "Mỗi 2 ngày";
+
+"hub.backup.intervalWeek" = "Mỗi tuần";
+
+"hub.backup.intervalHours" = "Mỗi %1$@ giờ";
+
+"hub.backup.schedule" = "Lịch";
+
+"hub.backup.keep" = "Giữ";
+
+"hub.backup.keepSuffix" = "bản sao lưu";
+
+"hub.backup.folder" = "Thư mục";
+
+"hub.backup.passwordLabel" = "Mật khẩu khôi phục";
+
+"hub.backup.problem.passwordShort" = "Mật khẩu khôi phục cần có ít nhất %1$@ ký tự.";
+
+"hub.backup.problem.interval" = "Khoảng thời gian phải nằm trong khoảng từ 1 đến 8784 giờ.";
+
+"hub.backup.problem.keep" = "Số bản sao lưu được giữ phải nằm trong khoảng từ 1 đến 1000.";
+
+"hub.backup.problem.chooseFolder" = "Chọn một thư mục sao lưu.";
+
+"hub.backup.problem.folderInside" = "Chọn một thư mục sao lưu nằm ngoài thư mục dữ liệu của Hub.";
+
+"hub.backup.problem.needsBoth" = "Sao lưu theo lịch cần có thư mục sao lưu và mật khẩu khôi phục.";
+
+"hub.backup.lastGoodNone" = "Chưa có";
+
+"hub.backup.nextOff" = "Sao lưu theo lịch đang tắt";
+
+"hub.backup.nextNotScheduled" = "Chưa lên lịch: hãy chọn thư mục và mật khẩu";
+
+"hub.backup.nextPaused" = "Đang chờ khôi phục thông tin xác thực";
+
+"hub.collection.notReported" = "Chưa báo cáo";
+
+"hub.backup.blocked" = "Thông tin xác thực bị từ chối đang chặn việc sao lưu. Chạy purge-refused-credentials để xóa chúng.";
+
+"hub.backup.lastFailedMessage" = "Lần thử gần nhất thất bại: %1$@";
+
+"hub.backup.lastFailedCode" = "Lần thử gần nhất thất bại (%1$@)";
+
+"hub.backup.row.lastGood" = "Bản sao lưu thành công gần nhất";
+
+"hub.backup.row.next" = "Bản sao lưu tiếp theo";
+
+"hub.backup.row.running" = "Một bản sao lưu đang chạy";
+
+"hub.backup.row.lastAttempt" = "Lần thử gần nhất";
+
+"hub.backup.run.running" = "Đang sao lưu…";
+
+"hub.backup.run.stillRunning" = "Bản sao lưu vẫn đang chạy trong dịch vụ Hub.";
+
+"hub.backup.run.finishedGeneration" = "Đã sao lưu xong: %1$@";
+
+"hub.backup.run.finished" = "Đã sao lưu xong";
+
+"hub.backup.run.failed" = "Sao lưu thất bại: %1$@";
+
+"hub.backup.maint.unreadable" = "Không đọc được phản hồi của Hub.";
+
+"hub.backup.maint.unwritable" = "Không lưu được mật khẩu khôi phục.";
+
+"hub.backup.maint.configMissing" = "Hãy thiết lập Hub trước khi thay đổi sao lưu.";
+
+"hub.devices.title" = "Thiết bị đã ghép nối";
+
+"hub.devices.detail" = "Điện thoại và ứng dụng đọc Hub này, cùng các xe mà mỗi thiết bị được đọc.";
+
+"hub.devices.revokeTitle" = "Thu hồi quyền của %1$@?";
+
+"hub.devices.revokeInfo" = "Thiết bị này ngừng đọc từ Hub ngay lập tức. Để dùng lại, hãy ghép nối lại.";
+
+"hub.devices.revoke" = "Thu hồi";
+
+"hub.devices.revokeEllipsis" = "Thu hồi…";
+
+"hub.devices.revokeAccessibility" = "Thu hồi quyền của %1$@";
+
+"hub.devices.revokedDone" = "Đã thu hồi quyền của %1$@.";
+
+"hub.devices.none" = "Không có thiết bị đã ghép nối.";
+
+"hub.devices.cars" = "Xe: %1$@";
+
+"hub.devices.noCars" = "Không có xe";
+
+"hub.devices.carFallback" = "Xe %1$@";
+
+"hub.devices.unnamed" = "Thiết bị chưa đặt tên";
+
+"hub.devices.stateRevoked" = "Đã thu hồi %1$@";
+
+"hub.devices.stateExpired" = "Đã hết hạn %1$@";
+
+"hub.devices.stateLastSeen" = "Lần cuối thấy %1$@";
+
+"hub.devices.stateNeverSeen" = "Chưa từng thấy";
+
+"hub.collection.loginOwn" = "Đã đăng nhập bằng tài khoản riêng của Hub";
+
+"hub.collection.loginSignedOut" = "Đã đăng xuất";
+
+"hub.collection.loginNotOwn" = "Tài khoản đã lưu không phải tài khoản riêng của Hub";
+
+"hub.collection.credValidUntil" = "Có hiệu lực đến %1$@";
+
+"hub.collection.credValid" = "Có hiệu lực";
+
+"hub.collection.credRelogin" = "Cần đăng nhập lại: hãy đăng nhập lại ở cửa sổ mở tiếp theo";
+
+"hub.collection.credOwnerRefused" = "Owner API bị từ chối: Tesla đã từ chối đăng nhập này";
+
+"hub.collection.credRefused" = "Bị từ chối (%1$@)";
+
+"hub.collection.credExposure" = "Nghi ngờ bị lộ: hãy đăng nhập lại ở cửa sổ mở tiếp theo";
+
+"hub.collection.credAttention" = "Cần chú ý (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Chưa đăng nhập";
+
+"hub.collection.windowOpenUntil" = "Mở đến %1$@";
+
+"hub.collection.windowOpen" = "Đang mở";
+
+"hub.collection.windowPending" = "Đang chờ";
+
+"hub.collection.windowPendingFrom" = "Đang chờ từ %1$@";
+
+"hub.collection.windowPendingUntil" = "Đang chờ đến %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Đang chờ từ %1$@ đến %2$@";
+
+"hub.collection.windowClosingExpiry" = "Đang đóng (hết hạn %1$@)";
+
+"hub.collection.windowClosing" = "Đang đóng";
+
+"hub.collection.windowClosedReason" = "Đã đóng (%1$@)";
+
+"hub.collection.windowClosed" = "Đã đóng";
+
+"hub.collection.windowUntrusted" = "Đã đóng (không có nhà phát hành đáng tin cậy)";
+
+"hub.collection.windowFaulted" = "Đã đóng (trạng thái cửa sổ cần tài liệu tin cậy mới)";
+
+"hub.collection.windowRecovery" = "Đã đóng (đang chờ khôi phục thông tin xác thực: chạy restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Không rõ: kênh điều khiển không thuộc Hub này";
+
+"hub.collection.windowNotRunning" = "Không rõ: Hub không chạy";
+
+"hub.collection.reasonExpired" = "đã hết hạn";
+
+"hub.collection.reasonOperator" = "do nhà vận hành đóng";
+
+"hub.collection.reasonRelogin" = "cần đăng nhập lại";
+
+"hub.collection.reasonOwnerRefused" = "Owner API bị từ chối";
+
+"hub.collection.reasonClock" = "kiểm tra đồng hồ thất bại";
+
+"hub.collection.reasonReboot" = "Mac đã khởi động lại";
+
+"hub.collection.reasonUnverifiable" = "không thể xác minh trạng thái";
+
+"hub.collection.reasonClaimLost" = "mất quyền thu thập";
+
+"hub.collection.fleet" = "Tạm dừng: không có thao tác Fleet nào khả dụng";
+
+"hub.collection.signInUnavailable" = "Đăng nhập không khả dụng trên Hub này";
+
+"hub.collection.labelLogin" = "Đăng nhập Tesla";
+
+"hub.collection.labelCredential" = "Trạng thái thông tin xác thực";
+
+"hub.collection.labelWindow" = "Cửa sổ thu thập";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Đăng nhập";
+
+"hub.signIn.recoveryPending" = "Hub đang chờ khôi phục thông tin xác thực: dữ liệu của Hub này đã được khôi phục mà không có khóa. Hãy chạy restore-recovery-credentials rồi đăng nhập. Chưa có gì bị thay đổi.";
+
+"hub.signIn.serviceUnauthenticated" = "Tiến trình trả lời trên kênh điều khiển của Hub không phải Hub này, nên chưa có gì được gửi. Hãy khởi động lại Hub rồi đăng nhập lại.";
+
+"hub.signIn.busy" = "Hub đang bận với các yêu cầu khác. Chưa có gì bị thay đổi; hãy đăng nhập lại sau ít phút.";

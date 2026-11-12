@@ -293,76 +293,83 @@ struct HubCollectionStatus: Equatable {
 
     func loginText() -> String {
         switch login {
-        case .own: return "Signed in with the Hub's own login"
-        case .signedOut: return "Signed out"
-        case .notOwn: return "Stored login is not the Hub's own"
-        case .unknown: return "Not reported"
+        case .own: return HubL10n.text("hub.collection.loginOwn", fallback: "Signed in with the Hub's own login")
+        case .signedOut: return HubL10n.text("hub.collection.loginSignedOut", fallback: "Signed out")
+        case .notOwn: return HubL10n.text("hub.collection.loginNotOwn", fallback: "Stored login is not the Hub's own")
+        case .unknown: return HubL10n.text("hub.collection.notReported", fallback: "Not reported")
         }
     }
 
     func credentialText(date: (Date) -> String = HubCollectionStatus.defaultDateText) -> String {
         switch credential {
-        case let .valid(expiresAt?): return "Valid until \(date(expiresAt))"
-        case .valid(nil): return "Valid"
-        case .reloginNeeded: return "Re-login needed: sign in again in the next open window"
-        case .ownerAPIRefused: return "Owner API refused: Tesla refused this login"
-        case let .refused(code): return "Refused (\(code))"
-        case .exposureSuspected: return "Exposure suspected: sign in again in the next open window"
-        case let .needsAttention(code): return "Needs attention (\(code))"
-        case .notSignedIn: return "Not signed in"
-        case .unknown: return "Not reported"
+        case let .valid(expiresAt?): return HubL10n.format("hub.collection.credValidUntil", fallback: "Valid until %1$@", arguments: [date(expiresAt)])
+        case .valid(nil): return HubL10n.text("hub.collection.credValid", fallback: "Valid")
+        case .reloginNeeded: return HubL10n.text("hub.collection.credRelogin", fallback: "Re-login needed: sign in again in the next open window")
+        case .ownerAPIRefused: return HubL10n.text("hub.collection.credOwnerRefused", fallback: "Owner API refused: Tesla refused this login")
+        case let .refused(code): return HubL10n.format("hub.collection.credRefused", fallback: "Refused (%1$@)", arguments: [code])
+        case .exposureSuspected: return HubL10n.text("hub.collection.credExposure", fallback: "Exposure suspected: sign in again in the next open window")
+        case let .needsAttention(code): return HubL10n.format("hub.collection.credAttention", fallback: "Needs attention (%1$@)", arguments: [code])
+        case .notSignedIn: return HubL10n.text("hub.collection.credNotSignedIn", fallback: "Not signed in")
+        case .unknown: return HubL10n.text("hub.collection.notReported", fallback: "Not reported")
         }
     }
 
     func windowText(date: (Date) -> String = HubCollectionStatus.defaultDateText) -> String {
         switch window {
-        case let .open(expiresAt?): return "Open until \(date(expiresAt))"
-        case .open(nil): return "Open"
+        case let .open(expiresAt?): return HubL10n.format("hub.collection.windowOpenUntil", fallback: "Open until %1$@", arguments: [date(expiresAt)])
+        case .open(nil): return HubL10n.text("hub.collection.windowOpen", fallback: "Open")
         case let .pending(startsAt, expiresAt):
-            let start = startsAt.map { " from \(date($0))" } ?? ""
-            let end = expiresAt.map { " until \(date($0))" } ?? ""
-            return "Pending\(start)\(end)"
-        case let .closing(expiresAt?): return "Closing (expiry \(date(expiresAt)))"
-        case .closing(nil): return "Closing"
-        case let .closed(reason?): return "Closed (\(Self.closeReasonText(reason)))"
-        case .closed(nil): return "Closed"
-        case .untrusted: return "Closed (no trusted issuer)"
-        case .faulted: return "Closed (window state needs a new trust document)"
+            switch (startsAt, expiresAt) {
+            case let (start?, end?):
+                return HubL10n.format("hub.collection.windowPendingFromUntil", fallback: "Pending from %1$@ until %2$@", arguments: [date(start), date(end)])
+            case let (start?, nil):
+                return HubL10n.format("hub.collection.windowPendingFrom", fallback: "Pending from %1$@", arguments: [date(start)])
+            case let (nil, end?):
+                return HubL10n.format("hub.collection.windowPendingUntil", fallback: "Pending until %1$@", arguments: [date(end)])
+            case (nil, nil):
+                return HubL10n.text("hub.collection.windowPending", fallback: "Pending")
+            }
+        case let .closing(expiresAt?): return HubL10n.format("hub.collection.windowClosingExpiry", fallback: "Closing (expiry %1$@)", arguments: [date(expiresAt)])
+        case .closing(nil): return HubL10n.text("hub.collection.windowClosing", fallback: "Closing")
+        case let .closed(reason?): return HubL10n.format("hub.collection.windowClosedReason", fallback: "Closed (%1$@)", arguments: [Self.closeReasonText(reason)])
+        case .closed(nil): return HubL10n.text("hub.collection.windowClosed", fallback: "Closed")
+        case .untrusted: return HubL10n.text("hub.collection.windowUntrusted", fallback: "Closed (no trusted issuer)")
+        case .faulted: return HubL10n.text("hub.collection.windowFaulted", fallback: "Closed (window state needs a new trust document)")
         case .recoveryPending:
-            return "Closed (waiting for credential recovery: run restore-recovery-credentials)"
-        case .serviceUnauthenticated: return "Unknown: the control channel is not this Hub"
-        case .serviceNotRunning: return "Unknown: Hub is not running"
-        case .unknown: return "Not reported"
+            return HubL10n.text("hub.collection.windowRecovery", fallback: "Closed (waiting for credential recovery: run restore-recovery-credentials)")
+        case .serviceUnauthenticated: return HubL10n.text("hub.collection.windowUnauthenticated", fallback: "Unknown: the control channel is not this Hub")
+        case .serviceNotRunning: return HubL10n.text("hub.collection.windowNotRunning", fallback: "Unknown: Hub is not running")
+        case .unknown: return HubL10n.text("hub.collection.notReported", fallback: "Not reported")
         }
     }
 
     static func closeReasonText(_ code: String) -> String {
         switch code {
-        case "expired": return "expired"
-        case "operator_close": return "closed by the operator"
-        case "relogin_needed": return "re-login needed"
-        case "owner_api_refused": return "Owner API refused"
-        case "clock_invalid": return "clock check failed"
-        case "reboot": return "the Mac restarted"
-        case "state_unverifiable": return "state could not be verified"
-        case "claim_lost": return "collection claim lost"
+        case "expired": return HubL10n.text("hub.collection.reasonExpired", fallback: "expired")
+        case "operator_close": return HubL10n.text("hub.collection.reasonOperator", fallback: "closed by the operator")
+        case "relogin_needed": return HubL10n.text("hub.collection.reasonRelogin", fallback: "re-login needed")
+        case "owner_api_refused": return HubL10n.text("hub.collection.reasonOwnerRefused", fallback: "Owner API refused")
+        case "clock_invalid": return HubL10n.text("hub.collection.reasonClock", fallback: "clock check failed")
+        case "reboot": return HubL10n.text("hub.collection.reasonReboot", fallback: "the Mac restarted")
+        case "state_unverifiable": return HubL10n.text("hub.collection.reasonUnverifiable", fallback: "state could not be verified")
+        case "claim_lost": return HubL10n.text("hub.collection.reasonClaimLost", fallback: "collection claim lost")
         default: return code
         }
     }
 
-    static let fleetText = "Parked: no Fleet action is available"
-    static let signInUnavailableText = "Sign-in unavailable on this Hub"
+    static var fleetText: String { HubL10n.text("hub.collection.fleet", fallback: "Parked: no Fleet action is available") }
+    static var signInUnavailableText: String { HubL10n.text("hub.collection.signInUnavailable", fallback: "Sign-in unavailable on this Hub") }
 
     /// The labelled rows Status shows, in order.
     func rows(date: (Date) -> String = HubCollectionStatus.defaultDateText) -> [(label: String, value: String)] {
         var rows: [(label: String, value: String)] = [
-            ("Tesla login", loginText()),
-            ("Credential state", credentialText(date: date)),
-            ("Collection window", windowText(date: date)),
-            ("Fleet", Self.fleetText)
+            (HubL10n.text("hub.collection.labelLogin", fallback: "Tesla login"), loginText()),
+            (HubL10n.text("hub.collection.labelCredential", fallback: "Credential state"), credentialText(date: date)),
+            (HubL10n.text("hub.collection.labelWindow", fallback: "Collection window"), windowText(date: date)),
+            (HubL10n.text("hub.collection.labelFleet", fallback: "Fleet"), Self.fleetText)
         ]
         if signInRefusal == "sign_in_unavailable" {
-            rows.insert(("Sign-in", Self.signInUnavailableText), at: 2)
+            rows.insert((HubL10n.text("hub.collection.labelSignIn", fallback: "Sign-in"), Self.signInUnavailableText), at: 2)
         }
         return rows
     }

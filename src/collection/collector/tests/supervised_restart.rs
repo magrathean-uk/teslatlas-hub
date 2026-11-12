@@ -73,8 +73,8 @@ fn seed_supervised_restart_import(store: &HubStore) {
     let history = SourceDbHistory {
         cars: vec![SourceDbCar {
             id: 1,
-            eid: crate::collection::loopback_fixture::VEHICLE_ID as i64,
-            vid: Some(crate::collection::loopback_fixture::STREAM_ID as i64),
+            eid: crate::collection::loopback_fixture::VEHICLE_ID,
+            vid: Some(crate::collection::loopback_fixture::STREAM_ID),
             vin: Some(crate::collection::loopback_fixture::VIN.to_owned()),
             name: Some("Restart fixture".to_owned()),
             model: Some("3".to_owned()),
@@ -988,7 +988,7 @@ impl P3Entry {
         entry: P3Entrypoint,
         seam: Arc<SupervisedCollectorTestSeam>,
     ) -> Self {
-        let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, &config.data_dir);
+        let admission = crate::auth::credential_vault::fixtures::fixture_admission(store, &config.data_dir);
         let (ready_tx, ready_rx) = oneshot::channel();
         let (stop_tx, stop_rx) = oneshot::channel::<()>();
         // A simulated process must construct a new vault, even on a retained store.

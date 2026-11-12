@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Ljúktu afhendingu vegna yfirfærslunnar úr upprunaforritinu eða hættu við hana áður en þú skráir þig út.";
 "hub.HubController.1504.567" = "Ekki tókst að aftengja að fullu. Staða Hub var endurnýjuð; athugaðu hvort reikningurinn sé enn tengdur. %1$@";
 "hub.HubController.1522.568" = "Staðfestu að þú hafir yfirfarið skema upprunagagnagrunnsins áður en eindrægni er athuguð.";
-"hub.HubController.1523.569" = "Staðfestu að upprunaforritið 4.2.0 eða nýrra sé uppsett áður en eindrægni er athuguð.";
+"hub.HubController.1523.569" = "Staðfestu að upprunaforritið 4.4.0 eða nýrra sé uppsett áður en eindrægni er athuguð.";
 "hub.HubController.1532.570" = "Veldu staðbundinn PostgreSQL-gagnagjafa á 127.0.0.1 eða ::1.";
 "hub.HubController.1536.571" = "Auðkenni bíls í upprunaforritinu verður að vera jákvæð tala.";
 "hub.HubController.1539.572" = "Veldu aðgangsvarða lykilorðaskrá PostgreSQL.";
 "hub.HubController.1552.580" = "Eindrægnipróf upprunaforritsins skilaði ekki gildri skýrslu.";
 "hub.HubController.1562.581" = "Ekki tókst að sannreyna upprunagagnagrunninn. Athugaðu tengingu við þjóninn og reyndu aftur.";
-"hub.HubController.1585.586" = "Staðfestu að upprunaforritið 4.2.0 eða nýrra sé uppsett áður en innflutningur hefst.";
+"hub.HubController.1585.586" = "Staðfestu að upprunaforritið 4.4.0 eða nýrra sé uppsett áður en innflutningur hefst.";
 "hub.HubController.1591.587" = "Innskráning krefst opins söfnunarglugga. Opnaðu glugga og skráðu þig svo inn aftur.";
 "hub.HubController.1718.615" = "Innflutningur úr upprunaforritinu skilaði ekki gildri lokaskýrslu. Hub er áfram stöðvaður.";
 "hub.HubController.1742.624" = "Innflutningi lauk, en Hub gat ekki skráð skilyrði öruggrar afhendingar: %1$@. Hub er áfram stöðvaður.";
-"hub.HubController.1846.655" = "Staðfestu að upprunaforritið 4.2.0 eða nýrra sé uppsett áður en flutt er inn úr beinum PostgreSQL-gagnagjafa.";
+"hub.HubController.1846.655" = "Staðfestu að upprunaforritið 4.4.0 eða nýrra sé uppsett áður en flutt er inn úr beinum PostgreSQL-gagnagjafa.";
 "hub.HubController.1865.658" = "PostgreSQL-gagnagjafi verður að innihalda slóðarskemuna postgres eða postgresql, hýsil og heiti gagnagrunns.";
 "hub.HubController.1869.659" = "PostgreSQL-gagnagjafinn má ekki innihalda lykilorð. Notaðu reitinn fyrir lykilorðaskrá.";
 "hub.HubController.1966.689" = "Uppsetning Fleet mistókst: %1$@. Einnig mistókst að endurheimta stillingar Hub: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Fylltu út alla reiti";
 "hub.ImportSheetController.149.1710" = "Gagnagjafi, auðkenni bíls og lykilorðaskrá eru nauðsynleg.";
 "hub.ImportSheetController.156.1711" = "Staðfestu útgáfu upprunaforritsins";
-"hub.ImportSheetController.17.1690" = "Ég staðfesti að þessi gagnagrunnur sé úr útgáfu 4.2.0 eða nýrri af upprunaforritinu.";
+"hub.ImportSheetController.17.1690" = "Ég staðfesti að þessi gagnagrunnur sé úr útgáfu 4.4.0 eða nýrri af upprunaforritinu.";
 "hub.ImportSheetController.26.1691" = "Flytja inn feril";
 "hub.ImportSheetController.49.1693" = "Afritaðu gögn úr PostgreSQL-upprunagagnagrunninum yfir í Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "PostgreSQL-gagnagjafi";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Lykilorðaskrá";
 "hub.ImportSheetController.7.1687" = "Hub les upprunagagnagrunninn án þess að stöðva upprunaforritið eða breyta því. Eftir innflutning segir Hub þér hvenær þú átt að gera Tesla-aðgang óvirkan í upprunaforritinu.";
 "hub.ImportSheetController.73.1699" = "Hub er ekki í gangi. Ræstu Hub, opnaðu söfnunarglugga og skráðu þig svo inn.";
-"hub.ImportSheetController.9.1688" = "Fyrir innflutning skaltu taka öryggisafrit af upprunaforritinu, uppfæra það í útgáfu 4.2.0 eða nýrri, ræsa það einu sinni og bíða þar til gagnagrunnsuppfærslum þess lýkur. Ekki er hægt að staðfesta keyrandi útgáfu forritsins með beinni gagnagrunnstengingu.";
+"hub.ImportSheetController.9.1688" = "Fyrir innflutning skaltu taka öryggisafrit af upprunaforritinu, uppfæra það í útgáfu 4.4.0 eða nýrri, ræsa það einu sinni og bíða þar til gagnagrunnsuppfærslum þess lýkur. Ekki er hægt að staðfesta keyrandi útgáfu forritsins með beinni gagnagrunnstengingu.";
 "hub.LogsWindowController.113.1730" = "Fleiri aðgerðir fyrir annála";
 "hub.LogsWindowController.123.1732" = "Aðgangsupplýsingar og einkakenni eru afmáð úr birtum, afrituðum og vistuðum annálum. Yfirfarðu annálana áður en þeim er deilt.";
 "hub.LogsWindowController.17.1712" = "Hleð annálum…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Sláðu inn bæði aðgangslykilinn og endurnýjunarlykilinn.";
 "hub.OnboardingWindowController.1631.2105" = "Sláðu inn upprunaþjón, SSH-notanda og gátt.";
 "hub.OnboardingWindowController.168.1852" = "Halda áfram";
-"hub.OnboardingWindowController.1691.2113" = "Skemaskoðun getur ekki staðfest útgáfu upprunaforritsins. Staðfestu að keyrandi þjónn noti útgáfu 4.2.0 eða nýrri og haltu svo áfram.";
+"hub.OnboardingWindowController.1691.2113" = "Skemaskoðun getur ekki staðfest útgáfu upprunaforritsins. Staðfestu að keyrandi þjónn noti útgáfu 4.4.0 eða nýrri og haltu svo áfram.";
 "hub.OnboardingWindowController.1740.2131" = "Tengstu upprunaþjóninum áður en þú flytur inn.";
 "hub.OnboardingWindowController.1750.2137" = "Stillingar þjónsins breyttust. Tengstu upprunaþjóninum aftur áður en þú flytur inn.";
 "hub.OnboardingWindowController.1820.2143" = "Ein eða fleiri athuganir þarfnast yfirferðar.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Velja SSH-lykil";
 "hub.OnboardingWindowController.1981.2148" = "Velja lykil";
 "hub.OnboardingWindowController.200.1857" = "Nota staðbundna PostgreSQL-skyndimynd (aðeins ferill)";
-"hub.OnboardingWindowController.203.1858" = "Ég staðfesti að upprunaforritið 4.2.0 eða nýrra keyri á þessum þjóni";
+"hub.OnboardingWindowController.203.1858" = "Ég staðfesti að upprunaforritið 4.4.0 eða nýrra keyri á þessum þjóni";
 "hub.OnboardingWindowController.252.1859" = "Fyrri innflutningi lauk ekki. Athugaðu upprunaforritið og reyndu innflutninginn aftur.";
 "hub.OnboardingWindowController.292.1862" = "Tilbúið til innflutnings.";
 "hub.OnboardingWindowController.298.1866" = "Tenging við upprunaforritið mistókst";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub gat ekki frátekið staðbundna gátt fyrir gagnagrunnsgöng.";
 "hub.SourceServerImporter.744.2586" = "Reyndu aftur.";
 "hub.SourceServerImporter.746.2588" = "Uppfærðu upprunaforritið fyrst";
-"hub.SourceServerImporter.747.2589" = "Leiðsögn um yfirfærslu krefst þess að upprunaforritið sé í útgáfu 4.2.0 eða nýrri.";
+"hub.SourceServerImporter.747.2589" = "Leiðsögn um yfirfærslu krefst þess að upprunaforritið sé í útgáfu 4.4.0 eða nýrri.";
 "hub.SourceServerImporter.748.2590" = "Taktu öryggisafrit af upprunaforritinu, uppfærðu það, leyfðu gagnagrunnsuppfærslunum að ljúka og tengstu svo aftur.";
 "hub.SourceServerImporter.763.2594" = "Upprunaforritið er ekki í gangi eða ekki tókst að finna gám þess.";
 "hub.SourceServerImporter.764.2596" = "Ekki tókst að bera kennsl á Docker Compose-verkefni upprunaforritsins.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Þessi reikningur hefur ekki aðgang að Docker. Veittu beinan Docker-aðgang eða leyfðu sudo án lykilorðs fyrir Docker.";
 "hub.SourceServerImporter.834.2668" = "Docker fannst ekki á upprunaþjóninum. Athugaðu PATH-stillingu þjónsins og reikningsins.";
 "hub.SourceServerImporter.836.2670" = "Docker er uppsett en ekki tiltækt. Athugaðu hvort Docker-þjónustan sé í gangi.";
-"hub.SourceServerImporter.838.2672" = "Leiðsögn um yfirfærslu krefst þess að upprunaforritið sé í útgáfu 4.2.0 eða nýrri. Uppfærðu upprunaforritið og reyndu aftur.";
+"hub.SourceServerImporter.838.2672" = "Leiðsögn um yfirfærslu krefst þess að upprunaforritið sé í útgáfu 4.4.0 eða nýrri. Uppfærðu upprunaforritið og reyndu aftur.";
 "hub.SourceServerImporter.840.2674" = "SSH náði ekki að tengjast eða sannvotta. Athugaðu þjón, gátt, reikning og valda auðkenningaraðferð.";
 "hub.SourceServerImporter.842.2676" = "SSH-auðkenning mistókst. Athugaðu reikninginn og valda auðkenningaraðferð.";
 "hub.SourceServerImporter.854.2688" = "SSH-þjónninn lokaði tengingunni. Athugaðu annála þjónsins og SSH-reglur.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "Skemaskoðun getur ekki sýnt hvaða útgáfa upprunaforritsins bjó til þennan gagnagrunn: fleiri en ein útgáfa notar sama skema.";
 
-"hub.import.ackRelease" = "Ég staðfesti að upprunaforritið sé í útgáfu 4.2.0 eða nýrri og verði ekki uppfært meðan á innflutningi stendur.";
+"hub.import.ackRelease" = "Ég staðfesti að upprunaforritið sé í útgáfu 4.4.0 eða nýrri og verði ekki uppfært meðan á innflutningi stendur.";
+
+"hub.backup.title" = "Afrit";
+
+"hub.backup.detail" = "Dulkóruð afrit af ferli Hub. Endurheimtarlykilorðið er í skrá á þessari Mac-tölvu sem aðeins eigandinn getur lesið.";
+
+"hub.backup.backUpNow" = "Taka afrit núna";
+
+"hub.backup.onSchedule" = "Taka afrit samkvæmt áætlun";
+
+"hub.backup.saveSchedule" = "Vista áætlun";
+
+"hub.backup.panelPrompt" = "Velja";
+
+"hub.backup.panelMessage" = "Veldu möppu fyrir dulkóruð afrit af Hub utan gagnamöppu Hub.";
+
+"hub.backup.savedNote" = "Vistað. Áætlunin gildir þegar Hub endurræsist.";
+
+"hub.backup.noFolder" = "Engin mappa valin";
+
+"hub.backup.passwordPlaceholder" = "Endurheimtarlykilorð (að minnsta kosti %1$@ stafir)";
+
+"hub.backup.passwordSaved" = "Vistað. Sláðu inn nýtt til að skipta því út";
+
+"hub.backup.intervalHour" = "Á klukkustundar fresti";
+
+"hub.backup.intervalDay" = "Daglega";
+
+"hub.backup.intervalTwoDays" = "Á 2 daga fresti";
+
+"hub.backup.intervalWeek" = "Vikulega";
+
+"hub.backup.intervalHours" = "Á %1$@ klst. fresti";
+
+"hub.backup.schedule" = "Áætlun";
+
+"hub.backup.keep" = "Geyma";
+
+"hub.backup.keepSuffix" = "afrit";
+
+"hub.backup.folder" = "Mappa";
+
+"hub.backup.passwordLabel" = "Endurheimtarlykilorð";
+
+"hub.backup.problem.passwordShort" = "Endurheimtarlykilorðið þarf að vera að minnsta kosti %1$@ stafir.";
+
+"hub.backup.problem.interval" = "Bilið þarf að vera á milli 1 og 8784 klukkustunda.";
+
+"hub.backup.problem.keep" = "Fjöldi afrita sem eru geymd þarf að vera á milli 1 og 1000.";
+
+"hub.backup.problem.chooseFolder" = "Veldu afritamöppu.";
+
+"hub.backup.problem.folderInside" = "Veldu afritamöppu utan gagnamöppu Hub.";
+
+"hub.backup.problem.needsBoth" = "Áætluð afrit þurfa afritamöppu og endurheimtarlykilorð.";
+
+"hub.backup.lastGoodNone" = "Ekkert enn";
+
+"hub.backup.nextOff" = "Áætluð afrit eru slökkt";
+
+"hub.backup.nextNotScheduled" = "Ekki áætlað: veldu möppu og lykilorð";
+
+"hub.backup.nextPaused" = "Bíður eftir endurheimt innskráningarupplýsinga";
+
+"hub.collection.notReported" = "Ekki tilkynnt";
+
+"hub.backup.blocked" = "Hafnað innskráningarupplýsingar loka á afrit. Keyrðu purge-refused-credentials til að hreinsa þær.";
+
+"hub.backup.lastFailedMessage" = "Síðasta tilraun mistókst: %1$@";
+
+"hub.backup.lastFailedCode" = "Síðasta tilraun mistókst (%1$@)";
+
+"hub.backup.row.lastGood" = "Síðasta vel heppnaða afrit";
+
+"hub.backup.row.next" = "Næsta afrit";
+
+"hub.backup.row.running" = "Afrit er í gangi núna";
+
+"hub.backup.row.lastAttempt" = "Síðasta tilraun";
+
+"hub.backup.run.running" = "Tek afrit…";
+
+"hub.backup.run.stillRunning" = "Afritið er enn í gangi í Hub-þjónustunni.";
+
+"hub.backup.run.finishedGeneration" = "Afriti lokið: %1$@";
+
+"hub.backup.run.finished" = "Afriti lokið";
+
+"hub.backup.run.failed" = "Afritið mistókst: %1$@";
+
+"hub.backup.maint.unreadable" = "Ekki tókst að lesa svar Hub.";
+
+"hub.backup.maint.unwritable" = "Ekki tókst að vista endurheimtarlykilorðið.";
+
+"hub.backup.maint.configMissing" = "Settu upp Hub áður en þú breytir afritum.";
+
+"hub.devices.title" = "Pöruð tæki";
+
+"hub.devices.detail" = "Símar og forrit sem lesa þetta Hub, með þeim bílum sem hvert þeirra má lesa.";
+
+"hub.devices.revokeTitle" = "Afturkalla %1$@?";
+
+"hub.devices.revokeInfo" = "Þetta tæki hættir strax að lesa úr Hub. Paraðu það aftur til að nota það aftur.";
+
+"hub.devices.revoke" = "Afturkalla";
+
+"hub.devices.revokeEllipsis" = "Afturkalla…";
+
+"hub.devices.revokeAccessibility" = "Afturkalla %1$@";
+
+"hub.devices.revokedDone" = "%1$@ var afturkallað.";
+
+"hub.devices.none" = "Engin pöruð tæki.";
+
+"hub.devices.cars" = "Bílar: %1$@";
+
+"hub.devices.noCars" = "Engir bílar";
+
+"hub.devices.carFallback" = "Bíll %1$@";
+
+"hub.devices.unnamed" = "Ónefnt tæki";
+
+"hub.devices.stateRevoked" = "Afturkallað %1$@";
+
+"hub.devices.stateExpired" = "Rann út %1$@";
+
+"hub.devices.stateLastSeen" = "Sást síðast %1$@";
+
+"hub.devices.stateNeverSeen" = "Hefur ekki sést enn";
+
+"hub.collection.loginOwn" = "Skráð inn með eigin innskráningu Hub";
+
+"hub.collection.loginSignedOut" = "Skráð út";
+
+"hub.collection.loginNotOwn" = "Vistaða innskráningin er ekki innskráning Hub sjálfs";
+
+"hub.collection.credValidUntil" = "Gilt til %1$@";
+
+"hub.collection.credValid" = "Gilt";
+
+"hub.collection.credRelogin" = "Ný innskráning nauðsynleg: skráðu þig inn aftur í næsta opna glugga";
+
+"hub.collection.credOwnerRefused" = "Owner API hafnað: Tesla hafnaði þessari innskráningu";
+
+"hub.collection.credRefused" = "Hafnað (%1$@)";
+
+"hub.collection.credExposure" = "Grunur um afhjúpun: skráðu þig inn aftur í næsta opna glugga";
+
+"hub.collection.credAttention" = "Þarfnast athygli (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Ekki skráð inn";
+
+"hub.collection.windowOpenUntil" = "Opinn til %1$@";
+
+"hub.collection.windowOpen" = "Opinn";
+
+"hub.collection.windowPending" = "Í bið";
+
+"hub.collection.windowPendingFrom" = "Í bið frá %1$@";
+
+"hub.collection.windowPendingUntil" = "Í bið til %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Í bið frá %1$@ til %2$@";
+
+"hub.collection.windowClosingExpiry" = "Lokast (rennur út %1$@)";
+
+"hub.collection.windowClosing" = "Lokast";
+
+"hub.collection.windowClosedReason" = "Lokaður (%1$@)";
+
+"hub.collection.windowClosed" = "Lokaður";
+
+"hub.collection.windowUntrusted" = "Lokaður (enginn treystur útgefandi)";
+
+"hub.collection.windowFaulted" = "Lokaður (staða gluggans þarfnast nýs traustskjals)";
+
+"hub.collection.windowRecovery" = "Lokaður (bíður eftir endurheimt innskráningarupplýsinga: keyrðu restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Óþekkt: stjórnrásin tilheyrir ekki þessu Hub";
+
+"hub.collection.windowNotRunning" = "Óþekkt: Hub er ekki í gangi";
+
+"hub.collection.reasonExpired" = "rann út";
+
+"hub.collection.reasonOperator" = "lokað af stjórnanda";
+
+"hub.collection.reasonRelogin" = "ný innskráning nauðsynleg";
+
+"hub.collection.reasonOwnerRefused" = "Owner API hafnað";
+
+"hub.collection.reasonClock" = "klukkuathugun mistókst";
+
+"hub.collection.reasonReboot" = "Mac-tölvan endurræstist";
+
+"hub.collection.reasonUnverifiable" = "ekki tókst að staðfesta stöðuna";
+
+"hub.collection.reasonClaimLost" = "söfnunarkröfu glatað";
+
+"hub.collection.fleet" = "Í bið: engin Fleet-aðgerð er tiltæk";
+
+"hub.collection.signInUnavailable" = "Innskráning er ekki tiltæk á þessu Hub";
+
+"hub.collection.labelLogin" = "Tesla-innskráning";
+
+"hub.collection.labelCredential" = "Staða innskráningarupplýsinga";
+
+"hub.collection.labelWindow" = "Söfnunargluggi";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Innskráning";
+
+"hub.signIn.recoveryPending" = "Hub bíður eftir endurheimt innskráningarupplýsinga sinna: gögn þessa Hub voru endurheimt án lykla þess. Keyrðu restore-recovery-credentials og skráðu þig svo inn. Engu var breytt.";
+
+"hub.signIn.serviceUnauthenticated" = "Ferlið sem svarar á stjórnrás Hub er ekki þetta Hub, svo engu var sent. Endurræstu Hub og skráðu þig svo inn aftur.";
+
+"hub.signIn.busy" = "Hub er upptekið við aðrar beiðnir. Engu var breytt; skráðu þig inn aftur eftir augnablik.";

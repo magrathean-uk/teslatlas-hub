@@ -388,11 +388,10 @@ impl CredentialVault {
                     state.resume_error = Some(error);
                 }
             }
-            if !state.read_only && keys.as_ref().is_some_and(|k| k.keyring().previous.is_some()) {
-                if let Err(error) = vault.rotate_locked(&mut state, &mut keys) {
-                    if matches!(error, CredentialStoreError::DurabilityUnavailable) { state.read_only = true; }
-                    state.resume_error = Some(error);
-                }
+            if !state.read_only && keys.as_ref().is_some_and(|k| k.keyring().previous.is_some())
+                && let Err(error) = vault.rotate_locked(&mut state, &mut keys) {
+                if matches!(error, CredentialStoreError::DurabilityUnavailable) { state.read_only = true; }
+                state.resume_error = Some(error);
             }
         }
         Ok(vault)

@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "השלימו או בטלו את תהליך העברת האחריות מיישום המקור לפני ההתנתקות.";
 "hub.HubController.1504.567" = "הניתוק לא הושלם כראוי. מצב ה-Hub עודכן; בדקו אם החשבון עדיין מחובר. %1$@";
 "hub.HubController.1522.568" = "אשרו שעיינתם בסכימה של מסד נתוני המקור לפני בדיקת התאימות.";
-"hub.HubController.1523.569" = "אשרו שיישום המקור בגרסה 4.2.0 ואילך לפני בדיקת התאימות.";
+"hub.HubController.1523.569" = "אשרו שיישום המקור בגרסה 4.4.0 ואילך לפני בדיקת התאימות.";
 "hub.HubController.1532.570" = "בחרו מקור PostgreSQL מקומי בכתובת 127.0.0.1 או ::1.";
 "hub.HubController.1536.571" = "מזהה הרכב במקור חייב להיות מספר חיובי.";
 "hub.HubController.1539.572" = "בחרו את קובץ הסיסמה המוגן של PostgreSQL.";
 "hub.HubController.1552.580" = "בדיקת התאימות של יישום המקור לא החזירה דוח תקין.";
 "hub.HubController.1562.581" = "לא ניתן לאמת את מסד נתוני המקור. בדקו את החיבור לשרת ונסו שוב.";
-"hub.HubController.1585.586" = "אשרו שיישום המקור בגרסה 4.2.0 ואילך לפני הייבוא.";
+"hub.HubController.1585.586" = "אשרו שיישום המקור בגרסה 4.4.0 ואילך לפני הייבוא.";
 "hub.HubController.1591.587" = "ההתחברות דורשת חלון איסוף פתוח. פתחו חלון ואז התחברו שוב.";
 "hub.HubController.1718.615" = "ייבוא מיישום המקור לא החזיר דוח השלמה תקין. שירות ה-Hub נשאר עצור.";
 "hub.HubController.1742.624" = "הייבוא הושלם, אך ה-Hub לא הצליח לרשום את תנאי הסף להעברה בטוחה: %1$@. שירות ה-Hub נשאר עצור.";
-"hub.HubController.1846.655" = "אשרו שיישום המקור בגרסה 4.2.0 ואילך לפני הייבוא ממקור PostgreSQL ישיר.";
+"hub.HubController.1846.655" = "אשרו שיישום המקור בגרסה 4.4.0 ואילך לפני הייבוא ממקור PostgreSQL ישיר.";
 "hub.HubController.1865.658" = "מקור PostgreSQL חייב לכלול סכמת postgres או postgresql, מארח ושם מסד נתונים.";
 "hub.HubController.1869.659" = "אסור לכלול סיסמה במקור PostgreSQL. השתמשו בשדה של קובץ הסיסמה.";
 "hub.HubController.1966.689" = "הגדרת Fleet נכשלה: %1$@. גם שחזור תצורת ה-Hub נכשל: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "יש למלא את כל השדות";
 "hub.ImportSheetController.149.1710" = "נדרשים מקור, מזהה רכב וקובץ סיסמה.";
 "hub.ImportSheetController.156.1711" = "אישור גרסת יישום המקור";
-"hub.ImportSheetController.17.1690" = "אני מאשר שמסד הנתונים הזה שייך ליישום המקור בגרסה 4.2.0 ומעלה";
+"hub.ImportSheetController.17.1690" = "אני מאשר שמסד הנתונים הזה שייך ליישום המקור בגרסה 4.4.0 ומעלה";
 "hub.ImportSheetController.26.1691" = "ייבוא היסטוריה";
 "hub.ImportSheetController.49.1693" = "העתיקו נתונים ממסד נתוני המקור מסוג PostgreSQL אל Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "מקור PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "קובץ סיסמה";
 "hub.ImportSheetController.7.1687" = "ה-Hub קורא את מסד נתוני המקור בלי לעצור את יישום המקור או לשנות אותו. לאחר הייבוא, ה-Hub ינחה אתכם מתי להשבית בעצמכם את הגישה של Tesla ביישום המקור.";
 "hub.ImportSheetController.73.1699" = "Hub אינו פועל. הפעילו את Hub, פתחו חלון איסוף ואז התחברו.";
-"hub.ImportSheetController.9.1688" = "לפני הייבוא: גבו את יישום המקור, עדכנו אותו לגרסה 4.2.0 ומעלה, הפעילו אותו פעם אחת והמתינו לסיום עדכוני סכמת מסד הנתונים. חיבור ישיר למסד הנתונים אינו יכול לאמת את גרסת היישום הפועל.";
+"hub.ImportSheetController.9.1688" = "לפני הייבוא: גבו את יישום המקור, עדכנו אותו לגרסה 4.4.0 ומעלה, הפעילו אותו פעם אחת והמתינו לסיום עדכוני סכמת מסד הנתונים. חיבור ישיר למסד הנתונים אינו יכול לאמת את גרסת היישום הפועל.";
 "hub.LogsWindowController.113.1730" = "פעולות נוספות ביומן";
 "hub.LogsWindowController.123.1732" = "היומנים המוצגים, המועתקים והשמורים מסתירים פרטי התחברות ומזהים פרטיים. בדקו אותם לפני השיתוף.";
 "hub.LogsWindowController.17.1712" = "טוען יומנים…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "הזינו גם את אסימון הגישה וגם את אסימון הרענון.";
 "hub.OnboardingWindowController.1631.2105" = "הזינו את שרת יישום המקור, משתמש SSH ואת היציאה.";
 "hub.OnboardingWindowController.168.1852" = "המשך";
-"hub.OnboardingWindowController.1691.2113" = "בדיקת סכימה אינה יכולה לקבוע את גרסת יישום המקור. אשרו שהשרת מריץ את יישום המקור בגרסה 4.2.0 ומעלה, ואז המשיכו.";
+"hub.OnboardingWindowController.1691.2113" = "בדיקת סכימה אינה יכולה לקבוע את גרסת יישום המקור. אשרו שהשרת מריץ את יישום המקור בגרסה 4.4.0 ומעלה, ואז המשיכו.";
 "hub.OnboardingWindowController.1740.2131" = "התחברו לשרת יישום המקור לפני הייבוא.";
 "hub.OnboardingWindowController.1750.2137" = "הגדרות השרת השתנו. התחברו שוב לשרת יישום המקור לפני הייבוא.";
 "hub.OnboardingWindowController.1820.2143" = "בדיקה אחת או יותר דורשת תשומת לב.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "בחירת מפתח SSH";
 "hub.OnboardingWindowController.1981.2148" = "בחירת מפתח";
 "hub.OnboardingWindowController.200.1857" = "השתמשו בתמונת מצב מקומית של PostgreSQL (היסטוריה בלבד)";
-"hub.OnboardingWindowController.203.1858" = "אני מאשר שהשרת הזה מריץ את יישום המקור בגרסה 4.2.0 ומעלה";
+"hub.OnboardingWindowController.203.1858" = "אני מאשר שהשרת הזה מריץ את יישום המקור בגרסה 4.4.0 ומעלה";
 "hub.OnboardingWindowController.252.1859" = "הייבוא הקודם לא הושלם. בדקו את יישום המקור והפעילו שוב את הייבוא.";
 "hub.OnboardingWindowController.292.1862" = "מוכן לייבוא.";
 "hub.OnboardingWindowController.298.1866" = "החיבור ליישום המקור נכשל";
@@ -530,7 +530,7 @@
 "hub.SourceServerImporter.695.2534" = "בחרו מפתח פרטי שניתן להשתמש בו";
 "hub.SourceServerImporter.696.2535" = "ה-Hub לא הצליח להשתמש בבטחה במפתח ה-SSH שנבחר.";
 "hub.SourceServerImporter.697.2536" = "בחרו מפתח פרטי שבבעלות המשתמש הזה ב-Mac.";
-"hub.SourceServerImporter.697.2537" = "אל תבחרו בקובץ ‎.pub.";
+"hub.SourceServerImporter.697.2537" = "אל תבחרו בקובץ .pub.";
 "hub.SourceServerImporter.699.2539" = "הזינו את סיסמת ה-SSH";
 "hub.SourceServerImporter.700.2540" = "נבחר אימות באמצעות סיסמה, אך לא הוזנה סיסמה.";
 "hub.SourceServerImporter.701.2541" = "הזינו את סיסמת חשבון השרת או השתמשו בתצורת SSH, בסוכן או באימות באמצעות מפתח.";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "ה-Hub לא הצליח לתפוס יציאה מקומית למנהרת מסד הנתונים.";
 "hub.SourceServerImporter.744.2586" = "נסו שוב.";
 "hub.SourceServerImporter.746.2588" = "עדכנו תחילה את יישום המקור";
-"hub.SourceServerImporter.747.2589" = "ההעברה המודרכת דורשת את יישום המקור בגרסה 4.2.0 ומעלה.";
+"hub.SourceServerImporter.747.2589" = "ההעברה המודרכת דורשת את יישום המקור בגרסה 4.4.0 ומעלה.";
 "hub.SourceServerImporter.748.2590" = "גבו את יישום המקור, עדכנו אותו, המתינו לסיום עדכוני סכמת מסד הנתונים שלו ואז התחברו שוב.";
 "hub.SourceServerImporter.763.2594" = "יישום המקור אינו פועל או שלא ניתן למצוא את הקונטיינר שלו.";
 "hub.SourceServerImporter.764.2596" = "לא ניתן לזהות את פרויקט Docker Compose של יישום המקור.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "לחשבון הזה אין גישה ל-Docker. העניקו לו גישה ישירה ל-Docker או אפשרו sudo ללא סיסמה עבור Docker.";
 "hub.SourceServerImporter.834.2668" = "Docker לא נמצא בשרת יישום המקור. בדקו את השרת ואת משתנה PATH של החשבון.";
 "hub.SourceServerImporter.836.2670" = "Docker מותקן אך אינו זמין. בדקו ששירות Docker פועל.";
-"hub.SourceServerImporter.838.2672" = "ההעברה המודרכת דורשת את יישום המקור בגרסה 4.2.0 ומעלה. עדכנו את יישום המקור ונסו שוב.";
+"hub.SourceServerImporter.838.2672" = "ההעברה המודרכת דורשת את יישום המקור בגרסה 4.4.0 ומעלה. עדכנו את יישום המקור ונסו שוב.";
 "hub.SourceServerImporter.840.2674" = "SSH לא הצליח להתחבר או לבצע אימות. בדקו את השרת, היציאה, החשבון ושיטת האימות שנבחרה.";
 "hub.SourceServerImporter.842.2676" = "אימות SSH נכשל. בדקו את החשבון ואת שיטת האימות שנבחרה.";
 "hub.SourceServerImporter.854.2688" = "שרת ה-SSH סגר את החיבור. בדקו את יומני השרת ואת מדיניות SSH.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "בדיקת סכימה אינה יכולה לקבוע איזו גרסה של יישום המקור כתבה את מסד הנתונים הזה: כמה גרסאות חולקות את אותה סכימה.";
 
-"hub.import.ackRelease" = "אני מאשר/ת שיישום המקור הוא בגרסה 4.2.0 או חדשה יותר ושלא יעודכן במהלך הייבוא.";
+"hub.import.ackRelease" = "אני מאשר/ת שיישום המקור הוא בגרסה 4.4.0 או חדשה יותר ושלא יעודכן במהלך הייבוא.";
+
+"hub.backup.title" = "גיבויים";
+
+"hub.backup.detail" = "עותקים מוצפנים של היסטוריית ה-Hub. סיסמת השחזור נשארת בקובץ ב-Mac הזה שרק הבעלים יכול לקרוא.";
+
+"hub.backup.backUpNow" = "גבה עכשיו";
+
+"hub.backup.onSchedule" = "גבה לפי לוח זמנים";
+
+"hub.backup.saveSchedule" = "שמור לוח זמנים";
+
+"hub.backup.panelPrompt" = "בחירה";
+
+"hub.backup.panelMessage" = "בחרו תיקייה לגיבויים מוצפנים של ה-Hub, מחוץ לתיקיית הנתונים של ה-Hub.";
+
+"hub.backup.savedNote" = "נשמר. לוח הזמנים חל כשה-Hub יופעל מחדש.";
+
+"hub.backup.noFolder" = "לא נבחרה תיקייה";
+
+"hub.backup.passwordPlaceholder" = "סיסמת שחזור (לפחות %1$@ תווים)";
+
+"hub.backup.passwordSaved" = "נשמרה. הקלידו סיסמה חדשה כדי להחליף אותה";
+
+"hub.backup.intervalHour" = "כל שעה";
+
+"hub.backup.intervalDay" = "כל יום";
+
+"hub.backup.intervalTwoDays" = "כל יומיים";
+
+"hub.backup.intervalWeek" = "כל שבוע";
+
+"hub.backup.intervalHours" = "כל %1$@ שעות";
+
+"hub.backup.schedule" = "לוח זמנים";
+
+"hub.backup.keep" = "שמור";
+
+"hub.backup.keepSuffix" = "גיבויים";
+
+"hub.backup.folder" = "תיקייה";
+
+"hub.backup.passwordLabel" = "סיסמת שחזור";
+
+"hub.backup.problem.passwordShort" = "סיסמת השחזור חייבת לכלול לפחות %1$@ תווים.";
+
+"hub.backup.problem.interval" = "המרווח חייב להיות בין 1 ל-8784 שעות.";
+
+"hub.backup.problem.keep" = "מספר הגיבויים לשמירה חייב להיות בין 1 ל-1000.";
+
+"hub.backup.problem.chooseFolder" = "בחרו תיקיית גיבויים.";
+
+"hub.backup.problem.folderInside" = "בחרו תיקיית גיבויים מחוץ לתיקיית הנתונים של ה-Hub.";
+
+"hub.backup.problem.needsBoth" = "גיבויים מתוזמנים דורשים תיקיית גיבויים וסיסמת שחזור.";
+
+"hub.backup.lastGoodNone" = "עדיין אין";
+
+"hub.backup.nextOff" = "גיבויים מתוזמנים כבויים";
+
+"hub.backup.nextNotScheduled" = "לא מתוזמן: בחרו תיקייה וסיסמה";
+
+"hub.backup.nextPaused" = "ממתין לשחזור פרטי הזיהוי";
+
+"hub.collection.notReported" = "לא דווח";
+
+"hub.backup.blocked" = "פרטי זיהוי שנדחו חוסמים גיבויים. הריצו purge-refused-credentials כדי לנקות אותם.";
+
+"hub.backup.lastFailedMessage" = "הניסיון האחרון נכשל: %1$@";
+
+"hub.backup.lastFailedCode" = "הניסיון האחרון נכשל (%1$@)";
+
+"hub.backup.row.lastGood" = "הגיבוי המוצלח האחרון";
+
+"hub.backup.row.next" = "הגיבוי הבא";
+
+"hub.backup.row.running" = "גיבוי רץ כרגע";
+
+"hub.backup.row.lastAttempt" = "הניסיון האחרון";
+
+"hub.backup.run.running" = "מגבה…";
+
+"hub.backup.run.stillRunning" = "הגיבוי עדיין רץ בשירות ה-Hub.";
+
+"hub.backup.run.finishedGeneration" = "הגיבוי הסתיים: %1$@";
+
+"hub.backup.run.finished" = "הגיבוי הסתיים";
+
+"hub.backup.run.failed" = "הגיבוי נכשל: %1$@";
+
+"hub.backup.maint.unreadable" = "לא ניתן היה לקרוא את התשובה של ה-Hub.";
+
+"hub.backup.maint.unwritable" = "לא ניתן היה לשמור את סיסמת השחזור.";
+
+"hub.backup.maint.configMissing" = "הגדירו את ה-Hub לפני שינוי הגיבויים.";
+
+"hub.devices.title" = "מכשירים מזווגים";
+
+"hub.devices.detail" = "טלפונים ואפליקציות שקוראים את ה-Hub הזה, עם הרכבים שכל אחד מהם רשאי לקרוא.";
+
+"hub.devices.revokeTitle" = "לבטל את הגישה של %1$@?";
+
+"hub.devices.revokeInfo" = "המכשיר הזה יפסיק לקרוא מה-Hub מיד. כדי להשתמש בו שוב, זווגו אותו מחדש.";
+
+"hub.devices.revoke" = "ביטול גישה";
+
+"hub.devices.revokeEllipsis" = "ביטול גישה…";
+
+"hub.devices.revokeAccessibility" = "ביטול הגישה של %1$@";
+
+"hub.devices.revokedDone" = "הגישה של %1$@ בוטלה.";
+
+"hub.devices.none" = "אין מכשירים מזווגים.";
+
+"hub.devices.cars" = "רכבים: %1$@";
+
+"hub.devices.noCars" = "אין רכבים";
+
+"hub.devices.carFallback" = "רכב %1$@";
+
+"hub.devices.unnamed" = "מכשיר ללא שם";
+
+"hub.devices.stateRevoked" = "בוטל ב-%1$@";
+
+"hub.devices.stateExpired" = "פג תוקף ב-%1$@";
+
+"hub.devices.stateLastSeen" = "נראה לאחרונה ב-%1$@";
+
+"hub.devices.stateNeverSeen" = "עדיין לא נראה";
+
+"hub.collection.loginOwn" = "מחובר עם הכניסה של ה-Hub עצמו";
+
+"hub.collection.loginSignedOut" = "מנותק";
+
+"hub.collection.loginNotOwn" = "הכניסה השמורה אינה הכניסה של ה-Hub עצמו";
+
+"hub.collection.credValidUntil" = "תקף עד %1$@";
+
+"hub.collection.credValid" = "תקף";
+
+"hub.collection.credRelogin" = "נדרשת כניסה מחדש: היכנסו שוב בחלון הפתוח הבא";
+
+"hub.collection.credOwnerRefused" = "Owner API נדחה: Tesla דחתה את הכניסה הזו";
+
+"hub.collection.credRefused" = "נדחה (%1$@)";
+
+"hub.collection.credExposure" = "חשד לחשיפה: היכנסו שוב בחלון הפתוח הבא";
+
+"hub.collection.credAttention" = "דורש תשומת לב (%1$@)";
+
+"hub.collection.credNotSignedIn" = "לא מחובר";
+
+"hub.collection.windowOpenUntil" = "פתוח עד %1$@";
+
+"hub.collection.windowOpen" = "פתוח";
+
+"hub.collection.windowPending" = "ממתין";
+
+"hub.collection.windowPendingFrom" = "ממתין מ-%1$@";
+
+"hub.collection.windowPendingUntil" = "ממתין עד %1$@";
+
+"hub.collection.windowPendingFromUntil" = "ממתין מ-%1$@ עד %2$@";
+
+"hub.collection.windowClosingExpiry" = "נסגר (פג תוקף ב-%1$@)";
+
+"hub.collection.windowClosing" = "נסגר";
+
+"hub.collection.windowClosedReason" = "סגור (%1$@)";
+
+"hub.collection.windowClosed" = "סגור";
+
+"hub.collection.windowUntrusted" = "סגור (אין מנפיק מהימן)";
+
+"hub.collection.windowFaulted" = "סגור (מצב החלון דורש מסמך אמון חדש)";
+
+"hub.collection.windowRecovery" = "סגור (ממתין לשחזור פרטי הזיהוי: הריצו restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "לא ידוע: ערוץ הבקרה אינו של ה-Hub הזה";
+
+"hub.collection.windowNotRunning" = "לא ידוע: ה-Hub אינו פועל";
+
+"hub.collection.reasonExpired" = "פג תוקף";
+
+"hub.collection.reasonOperator" = "נסגר על ידי המפעיל";
+
+"hub.collection.reasonRelogin" = "נדרשת כניסה מחדש";
+
+"hub.collection.reasonOwnerRefused" = "Owner API נדחה";
+
+"hub.collection.reasonClock" = "בדיקת השעון נכשלה";
+
+"hub.collection.reasonReboot" = "ה-Mac הופעל מחדש";
+
+"hub.collection.reasonUnverifiable" = "לא ניתן היה לאמת את המצב";
+
+"hub.collection.reasonClaimLost" = "הזכות לאיסוף אבדה";
+
+"hub.collection.fleet" = "מושהה: אין פעולת Fleet זמינה";
+
+"hub.collection.signInUnavailable" = "כניסה אינה זמינה ב-Hub הזה";
+
+"hub.collection.labelLogin" = "כניסה ל-Tesla";
+
+"hub.collection.labelCredential" = "מצב פרטי הזיהוי";
+
+"hub.collection.labelWindow" = "חלון איסוף";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "כניסה";
+
+"hub.signIn.recoveryPending" = "ה-Hub ממתין לשחזור פרטי הזיהוי שלו: נתוני ה-Hub הזה שוחזרו בלי המפתחות שלו. הריצו restore-recovery-credentials ואז היכנסו. שום דבר לא שונה.";
+
+"hub.signIn.serviceUnauthenticated" = "התהליך שעונה בערוץ הבקרה של ה-Hub אינו ה-Hub הזה, ולכן שום דבר לא נשלח. הפעילו מחדש את ה-Hub ואז היכנסו שוב.";
+
+"hub.signIn.busy" = "ה-Hub עסוק בבקשות אחרות. שום דבר לא שונה; היכנסו שוב בעוד רגע.";

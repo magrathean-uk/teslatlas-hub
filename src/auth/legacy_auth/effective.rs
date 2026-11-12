@@ -17,6 +17,7 @@ use crate::db::{CollectorAuthRow, HubStore, StoreError};
 /// Clear schedule and receipt facts only. This is not an integrity witness.
 pub(crate) struct OwnerDiagnosticSummary {
     pub unresolved_refresh: bool,
+    #[allow(dead_code, reason = "carried for diagnostics, not read yet")]
     pub schedule_usable: bool,
 }
 
@@ -76,6 +77,7 @@ pub(crate) fn stored_auth_view(row: CollectorAuthRow) -> CollectorAuthRow {
 
 /// C5-X8 section 7: the projection inside an admitted process uses the
 /// already-open vault. Non-admitted surfaces keep `effective_auth_row` below.
+#[cfg_attr(not(test), expect(dead_code, reason = "used by the test build only"))]
 pub(crate) fn effective_auth_row_admitted(
     vault: &crate::auth::credential_vault::CredentialVault,
     store: &HubStore,

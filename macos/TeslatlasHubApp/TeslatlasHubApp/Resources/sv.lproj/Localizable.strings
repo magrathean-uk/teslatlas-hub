@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Slutför eller avbryt överlämningen vid källprogrammigreringen innan du loggar ut.";
 "hub.HubController.1504.567" = "Frånkopplingen slutfördes inte korrekt. Hub-statusen har uppdaterats. Kontrollera om kontot fortfarande är anslutet. %1$@";
 "hub.HubController.1522.568" = "Bekräfta att du har granskat källdatabasens schema innan du kontrollerar kompatibiliteten.";
-"hub.HubController.1523.569" = "Bekräfta att källprogrammet är version 4.2.0 eller senare innan du kontrollerar kompatibiliteten.";
+"hub.HubController.1523.569" = "Bekräfta att källprogrammet är version 4.4.0 eller senare innan du kontrollerar kompatibiliteten.";
 "hub.HubController.1532.570" = "Välj en lokal PostgreSQL-källa på 127.0.0.1 eller ::1.";
 "hub.HubController.1536.571" = "Bilens ID i källprogrammet måste vara ett positivt tal.";
 "hub.HubController.1539.572" = "Välj den skyddade PostgreSQL-lösenordsfilen.";
 "hub.HubController.1552.580" = "Kontrollen av källprogramkompatibilitet returnerade ingen giltig rapport.";
 "hub.HubController.1562.581" = "Det gick inte att verifiera källdatabasen. Kontrollera serveranslutningen och försök igen.";
-"hub.HubController.1585.586" = "Bekräfta att källprogrammet är version 4.2.0 eller senare innan du importerar.";
+"hub.HubController.1585.586" = "Bekräfta att källprogrammet är version 4.4.0 eller senare innan du importerar.";
 "hub.HubController.1591.587" = "Inloggning kräver ett öppet insamlingsfönster. Öppna ett fönster och logga in igen.";
 "hub.HubController.1718.615" = "Källprogramimporten returnerade ingen giltig slutrapport. Hub-tjänsten förblir stoppad.";
 "hub.HubController.1742.624" = "Importen slutfördes, men Hub kunde inte registrera villkoret för säker överlämning: %1$@. Hub-tjänsten förblir stoppad.";
-"hub.HubController.1846.655" = "Bekräfta att källprogrammet är version 4.2.0 eller senare innan du importerar från en direkt PostgreSQL-källa.";
+"hub.HubController.1846.655" = "Bekräfta att källprogrammet är version 4.4.0 eller senare innan du importerar från en direkt PostgreSQL-källa.";
 "hub.HubController.1865.658" = "PostgreSQL-källan måste innehålla schemat postgres eller postgresql, en värd och ett databasnamn.";
 "hub.HubController.1869.659" = "PostgreSQL-källan får inte innehålla ett lösenord. Använd fältet för lösenordsfilen.";
 "hub.HubController.1966.689" = "Konfigurationen av Fleet misslyckades: %1$@ Återställningen av Hub-konfigurationen misslyckades också: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Fyll i alla fält";
 "hub.ImportSheetController.149.1710" = "Källa, bil-ID och lösenordsfil krävs.";
 "hub.ImportSheetController.156.1711" = "Bekräfta källprogramversion";
-"hub.ImportSheetController.17.1690" = "Jag bekräftar att den här databasen tillhör version 4.2.0 eller senare av källprogrammet";
+"hub.ImportSheetController.17.1690" = "Jag bekräftar att den här databasen tillhör version 4.4.0 eller senare av källprogrammet";
 "hub.ImportSheetController.26.1691" = "Importera historik";
 "hub.ImportSheetController.49.1693" = "Kopiera data från PostgreSQL-källdatabasen till Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "PostgreSQL-källa";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Lösenordsfil";
 "hub.ImportSheetController.7.1687" = "Hub läser källdatabasen utan att stoppa eller ändra källprogrammet. Efter importen meddelar Hub när du själv ska inaktivera Tesla-åtkomsten i källprogrammet.";
 "hub.ImportSheetController.73.1699" = "Hub körs inte. Starta Hub, öppna ett insamlingsfönster och logga sedan in.";
-"hub.ImportSheetController.9.1688" = "Före importen: säkerhetskopiera källprogrammet, uppdatera det till version 4.2.0 eller senare, starta appen en gång och vänta tills databasmigreringarna är klara. En direkt databasanslutning kan inte bekräfta vilken appversion som körs.";
+"hub.ImportSheetController.9.1688" = "Före importen: säkerhetskopiera källprogrammet, uppdatera det till version 4.4.0 eller senare, starta appen en gång och vänta tills databasmigreringarna är klara. En direkt databasanslutning kan inte bekräfta vilken appversion som körs.";
 "hub.LogsWindowController.113.1730" = "Fler loggåtgärder";
 "hub.LogsWindowController.123.1732" = "Loggar som visas, kopieras eller sparas maskerar autentiseringsuppgifter och privata identifierare. Granska dem innan du delar dem.";
 "hub.LogsWindowController.17.1712" = "Läser in loggar…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Ange både åtkomsttoken och förnyelsetoken.";
 "hub.OnboardingWindowController.1631.2105" = "Ange källprogramservern, SSH-användaren och porten.";
 "hub.OnboardingWindowController.168.1852" = "Fortsätt";
-"hub.OnboardingWindowController.1691.2113" = "En schemakontroll kan inte fastställa källprogrammets version. Bekräfta att servern som körs använder version 4.2.0 eller senare och fortsätt sedan.";
+"hub.OnboardingWindowController.1691.2113" = "En schemakontroll kan inte fastställa källprogrammets version. Bekräfta att servern som körs använder version 4.4.0 eller senare och fortsätt sedan.";
 "hub.OnboardingWindowController.1740.2131" = "Anslut till källprogramservern innan du importerar.";
 "hub.OnboardingWindowController.1750.2137" = "Serverinställningarna har ändrats. Anslut till källprogramservern igen innan du importerar.";
 "hub.OnboardingWindowController.1820.2143" = "En eller flera kontroller kräver åtgärd.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Välj SSH-nyckel";
 "hub.OnboardingWindowController.1981.2148" = "Välj nyckel";
 "hub.OnboardingWindowController.200.1857" = "Använd en lokal PostgreSQL-ögonblicksbild (endast historik)";
-"hub.OnboardingWindowController.203.1858" = "Jag bekräftar att den här servern kör källprogrammet 4.2.0 eller senare";
+"hub.OnboardingWindowController.203.1858" = "Jag bekräftar att den här servern kör källprogrammet 4.4.0 eller senare";
 "hub.OnboardingWindowController.252.1859" = "Den föregående importen slutfördes inte. Kontrollera källprogrammet och kör importen igen.";
 "hub.OnboardingWindowController.292.1862" = "Redo att importera.";
 "hub.OnboardingWindowController.298.1866" = "Anslutningen till källprogrammet misslyckades";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub kunde inte reservera en lokal port för databastunneln.";
 "hub.SourceServerImporter.744.2586" = "Försök igen.";
 "hub.SourceServerImporter.746.2588" = "Uppdatera källprogrammet först";
-"hub.SourceServerImporter.747.2589" = "Den guidade migreringen kräver källprogrammet 4.2.0 eller senare.";
+"hub.SourceServerImporter.747.2589" = "Den guidade migreringen kräver källprogrammet 4.4.0 eller senare.";
 "hub.SourceServerImporter.748.2590" = "Säkerhetskopiera källprogrammet, uppdatera det, vänta tills migreringarna är klara och anslut sedan igen.";
 "hub.SourceServerImporter.763.2594" = "Källprogrammet körs inte eller dess container kunde inte hittas.";
 "hub.SourceServerImporter.764.2596" = "Källprogrammets Docker Compose-projekt kunde inte identifieras.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Det här kontot har inte åtkomst till Docker. Ge det direkt åtkomst till Docker eller tillåt sudo utan lösenord för Docker.";
 "hub.SourceServerImporter.834.2668" = "Docker hittades inte på källprogramservern. Kontrollera PATH för servern och kontot.";
 "hub.SourceServerImporter.836.2670" = "Docker är installerat men inte tillgängligt. Kontrollera att Docker-tjänsten körs.";
-"hub.SourceServerImporter.838.2672" = "Den guidade migreringen kräver källprogrammet 4.2.0 eller senare. Uppdatera källprogrammet och försök igen.";
+"hub.SourceServerImporter.838.2672" = "Den guidade migreringen kräver källprogrammet 4.4.0 eller senare. Uppdatera källprogrammet och försök igen.";
 "hub.SourceServerImporter.840.2674" = "SSH kunde inte ansluta eller autentisera. Kontrollera servern, porten, kontot och den valda autentiseringsmetoden.";
 "hub.SourceServerImporter.842.2676" = "SSH-autentiseringen misslyckades. Kontrollera kontot och den valda autentiseringsmetoden.";
 "hub.SourceServerImporter.854.2688" = "SSH-servern stängde anslutningen. Kontrollera serverloggarna och SSH-policyn.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "En schemakontroll kan inte visa vilken version av källprogrammet som skapade databasen: flera versioner delar samma schema.";
 
-"hub.import.ackRelease" = "Jag bekräftar att källprogrammet är version 4.2.0 eller senare och inte uppdateras under importen.";
+"hub.import.ackRelease" = "Jag bekräftar att källprogrammet är version 4.4.0 eller senare och inte uppdateras under importen.";
+
+"hub.backup.title" = "Säkerhetskopior";
+
+"hub.backup.detail" = "Krypterade kopior av Hubbens historik. Återställningslösenordet ligger i en fil på den här Macen som bara ägaren kan läsa.";
+
+"hub.backup.backUpNow" = "Säkerhetskopiera nu";
+
+"hub.backup.onSchedule" = "Säkerhetskopiera enligt schema";
+
+"hub.backup.saveSchedule" = "Spara schema";
+
+"hub.backup.panelPrompt" = "Välj";
+
+"hub.backup.panelMessage" = "Välj en mapp för krypterade Hub-säkerhetskopior utanför Hubbens datamapp.";
+
+"hub.backup.savedNote" = "Sparat. Schemat gäller när Hubben startar om.";
+
+"hub.backup.noFolder" = "Ingen mapp vald";
+
+"hub.backup.passwordPlaceholder" = "Återställningslösenord (minst %1$@ tecken)";
+
+"hub.backup.passwordSaved" = "Sparat. Skriv ett nytt för att ersätta det";
+
+"hub.backup.intervalHour" = "Varje timme";
+
+"hub.backup.intervalDay" = "Varje dag";
+
+"hub.backup.intervalTwoDays" = "Varannan dag";
+
+"hub.backup.intervalWeek" = "Varje vecka";
+
+"hub.backup.intervalHours" = "Var %1$@:e timme";
+
+"hub.backup.schedule" = "Schema";
+
+"hub.backup.keep" = "Behåll";
+
+"hub.backup.keepSuffix" = "säkerhetskopior";
+
+"hub.backup.folder" = "Mapp";
+
+"hub.backup.passwordLabel" = "Återställningslösenord";
+
+"hub.backup.problem.passwordShort" = "Återställningslösenordet måste vara minst %1$@ tecken.";
+
+"hub.backup.problem.interval" = "Intervallet måste vara mellan 1 och 8784 timmar.";
+
+"hub.backup.problem.keep" = "Antalet säkerhetskopior som behålls måste vara mellan 1 och 1000.";
+
+"hub.backup.problem.chooseFolder" = "Välj en mapp för säkerhetskopior.";
+
+"hub.backup.problem.folderInside" = "Välj en mapp för säkerhetskopior utanför Hubbens datamapp.";
+
+"hub.backup.problem.needsBoth" = "Schemalagda säkerhetskopior kräver en mapp för säkerhetskopior och ett återställningslösenord.";
+
+"hub.backup.lastGoodNone" = "Inga ännu";
+
+"hub.backup.nextOff" = "Schemalagda säkerhetskopior är avstängda";
+
+"hub.backup.nextNotScheduled" = "Inte schemalagt: välj en mapp och ett lösenord";
+
+"hub.backup.nextPaused" = "Väntar på att inloggningsuppgifterna ska återställas";
+
+"hub.collection.notReported" = "Inte rapporterat";
+
+"hub.backup.blocked" = "Nekade inloggningsuppgifter blockerar säkerhetskopior. Kör purge-refused-credentials för att rensa dem.";
+
+"hub.backup.lastFailedMessage" = "Senaste försöket misslyckades: %1$@";
+
+"hub.backup.lastFailedCode" = "Senaste försöket misslyckades (%1$@)";
+
+"hub.backup.row.lastGood" = "Senaste lyckade säkerhetskopia";
+
+"hub.backup.row.next" = "Nästa säkerhetskopia";
+
+"hub.backup.row.running" = "En säkerhetskopiering pågår just nu";
+
+"hub.backup.row.lastAttempt" = "Senaste försök";
+
+"hub.backup.run.running" = "Säkerhetskopierar …";
+
+"hub.backup.run.stillRunning" = "Säkerhetskopieringen pågår fortfarande i Hub-tjänsten.";
+
+"hub.backup.run.finishedGeneration" = "Säkerhetskopiering klar: %1$@";
+
+"hub.backup.run.finished" = "Säkerhetskopiering klar";
+
+"hub.backup.run.failed" = "Säkerhetskopieringen misslyckades: %1$@";
+
+"hub.backup.maint.unreadable" = "Hubbens svar kunde inte läsas.";
+
+"hub.backup.maint.unwritable" = "Återställningslösenordet kunde inte sparas.";
+
+"hub.backup.maint.configMissing" = "Konfigurera Hubben innan du ändrar säkerhetskopior.";
+
+"hub.devices.title" = "Parkopplade enheter";
+
+"hub.devices.detail" = "Telefoner och appar som läser den här Hubben, med de bilar var och en får läsa.";
+
+"hub.devices.revokeTitle" = "Återkalla %1$@?";
+
+"hub.devices.revokeInfo" = "Den här enheten slutar läsa från Hubben direkt. Parkoppla den igen för att använda den igen.";
+
+"hub.devices.revoke" = "Återkalla";
+
+"hub.devices.revokeEllipsis" = "Återkalla …";
+
+"hub.devices.revokeAccessibility" = "Återkalla %1$@";
+
+"hub.devices.revokedDone" = "%1$@ återkallades.";
+
+"hub.devices.none" = "Inga parkopplade enheter.";
+
+"hub.devices.cars" = "Bilar: %1$@";
+
+"hub.devices.noCars" = "Inga bilar";
+
+"hub.devices.carFallback" = "Bil %1$@";
+
+"hub.devices.unnamed" = "Enhet utan namn";
+
+"hub.devices.stateRevoked" = "Återkallad %1$@";
+
+"hub.devices.stateExpired" = "Gick ut %1$@";
+
+"hub.devices.stateLastSeen" = "Senast sedd %1$@";
+
+"hub.devices.stateNeverSeen" = "Inte sedd ännu";
+
+"hub.collection.loginOwn" = "Inloggad med Hubbens egen inloggning";
+
+"hub.collection.loginSignedOut" = "Utloggad";
+
+"hub.collection.loginNotOwn" = "Den sparade inloggningen är inte Hubbens egen";
+
+"hub.collection.credValidUntil" = "Giltig till %1$@";
+
+"hub.collection.credValid" = "Giltig";
+
+"hub.collection.credRelogin" = "Ny inloggning behövs: logga in igen i nästa öppna fönster";
+
+"hub.collection.credOwnerRefused" = "Owner API nekades: Tesla nekade den här inloggningen";
+
+"hub.collection.credRefused" = "Nekad (%1$@)";
+
+"hub.collection.credExposure" = "Misstänkt exponering: logga in igen i nästa öppna fönster";
+
+"hub.collection.credAttention" = "Behöver uppmärksamhet (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Inte inloggad";
+
+"hub.collection.windowOpenUntil" = "Öppet till %1$@";
+
+"hub.collection.windowOpen" = "Öppet";
+
+"hub.collection.windowPending" = "Väntar";
+
+"hub.collection.windowPendingFrom" = "Väntar från %1$@";
+
+"hub.collection.windowPendingUntil" = "Väntar till %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Väntar från %1$@ till %2$@";
+
+"hub.collection.windowClosingExpiry" = "Stängs (går ut %1$@)";
+
+"hub.collection.windowClosing" = "Stängs";
+
+"hub.collection.windowClosedReason" = "Stängt (%1$@)";
+
+"hub.collection.windowClosed" = "Stängt";
+
+"hub.collection.windowUntrusted" = "Stängt (ingen betrodd utfärdare)";
+
+"hub.collection.windowFaulted" = "Stängt (fönstrets tillstånd behöver ett nytt förtroendedokument)";
+
+"hub.collection.windowRecovery" = "Stängt (väntar på att inloggningsuppgifterna ska återställas: kör restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Okänt: kontrollkanalen tillhör inte den här Hubben";
+
+"hub.collection.windowNotRunning" = "Okänt: Hubben körs inte";
+
+"hub.collection.reasonExpired" = "gick ut";
+
+"hub.collection.reasonOperator" = "stängdes av operatören";
+
+"hub.collection.reasonRelogin" = "ny inloggning behövs";
+
+"hub.collection.reasonOwnerRefused" = "Owner API nekades";
+
+"hub.collection.reasonClock" = "klockkontrollen misslyckades";
+
+"hub.collection.reasonReboot" = "Macen startades om";
+
+"hub.collection.reasonUnverifiable" = "tillståndet kunde inte verifieras";
+
+"hub.collection.reasonClaimLost" = "insamlingsanspråket förlorades";
+
+"hub.collection.fleet" = "Parkerad: ingen Fleet-åtgärd är tillgänglig";
+
+"hub.collection.signInUnavailable" = "Inloggning är inte tillgänglig på den här Hubben";
+
+"hub.collection.labelLogin" = "Tesla-inloggning";
+
+"hub.collection.labelCredential" = "Status för inloggningsuppgifter";
+
+"hub.collection.labelWindow" = "Insamlingsfönster";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Inloggning";
+
+"hub.signIn.recoveryPending" = "Hubben väntar på att dess inloggningsuppgifter ska återställas: den här Hubbens data återställdes utan dess nycklar. Kör restore-recovery-credentials och logga sedan in. Inget ändrades.";
+
+"hub.signIn.serviceUnauthenticated" = "Processen som svarar på Hubbens kontrollkanal är inte den här Hubben, så inget skickades. Starta om Hubben och logga sedan in igen.";
+
+"hub.signIn.busy" = "Hubben är upptagen med andra förfrågningar. Inget ändrades; logga in igen om en stund.";

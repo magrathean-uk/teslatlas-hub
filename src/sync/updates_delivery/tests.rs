@@ -8,8 +8,8 @@ use crate::{
     },
     source_db_reader::SourceDbSchemaInfo,
     source_db_schema::{
-        MAX_VALIDATED_MIGRATION, SOURCE_DB_V4_1_1_SOURCE_REVISION,
-        SOURCE_DB_V4_MIGRATION_SET_SHA256,
+        MAX_VALIDATED_MIGRATION, SOURCE_DB_V4_1_1_SOURCE_REVISION, SOURCE_DB_V4_MIGRATION_COUNT,
+        SOURCE_DB_V4_MIGRATION_SET_SHA256, V4_1_1_REVIEWED_SOURCE_SET, V4_2_REVIEWED_SOURCE_SET,
     },
     updates_logical::decode_updates_logical_stream,
 };
@@ -257,17 +257,29 @@ fn production_capture_publishes_dynamic_exact_pair_and_reuses_exact_bytes() {
         .expect("zero-row signed pair");
     let mut legacy_noop: SignedNoOpState =
         serde_json::from_slice(&empty_pair.1).expect("typed legacy no-op");
-    legacy_noop
-        .source_witness
-        .as_mut()
-        .expect("production witness")
-        .source_revision = SOURCE_DB_V4_1_1_SOURCE_REVISION.into();
+    {
+        let witness = legacy_noop
+            .source_witness
+            .as_mut()
+            .expect("production witness");
+        witness.source_revision = SOURCE_DB_V4_1_1_SOURCE_REVISION.into();
+        witness.pinned_migration_set_sha256 =
+            V4_1_1_REVIEWED_SOURCE_SET.migration_set_sha256.into();
+        witness.observed_migration_count = 105;
+        witness.observed_migration_version = V4_1_1_REVIEWED_SOURCE_SET.newest_migration;
+    }
     let legacy_witness = legacy_noop
         .source_witness
         .clone()
         .expect("legacy production witness");
     validate_production_source_witness(&legacy_noop, &legacy_witness)
-        .expect("legacy beta witness remains readable");
+        .expect("legacy beta witness remains readable under its own tuple");
+    let mut mixed_witness = legacy_witness.clone();
+    mixed_witness.pinned_migration_set_sha256 = SOURCE_DB_V4_MIGRATION_SET_SHA256.into();
+    assert!(
+        validate_production_source_witness(&legacy_noop, &mixed_witness).is_err(),
+        "a legacy revision with the current migration set is not a reviewed tuple"
+    );
     let mut unknown_witness = legacy_witness;
     unknown_witness.source_revision = "0000000000000000000000000000000000000000".into();
     assert!(validate_production_source_witness(&legacy_noop, &unknown_witness).is_err());
@@ -581,4 +593,142 @@ fn timestamp_parser_rejects_invalid_calendar_dates_and_times() {
     assert!(parse_pg_timestamp_us(b"2026-01-01 24:00:00").is_err());
     assert!(parse_pg_timestamp_us(b"2026-01-01 00:60:00").is_err());
     assert!(parse_pg_timestamp_us(b"2026-01-01 00:00:60").is_err());
+}
+
+fn registered_binding(store: &HubStore, selected_car_id: i64) -> ProjectionBinding {
+    let registered_source = store
+        .register_source(
+            &SourceDescriptor::new(
+                crate::db::IMPORT_SOURCE_KIND,
+                format!("test-source-{}", Uuid::new_v4()),
+            ),
+            1_000,
+        )
+        .expect("source");
+    let registered_vehicle = store
+        .register_vehicle(
+            &VehicleDescriptor {
+                source_id: registered_source.source_id,
+                source_vehicle_key: format!("test-car-{}", Uuid::new_v4()),
+                vin: Some("TESTVIN".into()),
+                display_name: Some("Selected".into()),
+                tesla_eid: Some(100),
+                tesla_vid: Some(200),
+            },
+            1_000,
+        )
+        .expect("vehicle");
+    ProjectionBinding {
+        installation_id: store.installation_id().expect("installation"),
+        account_id: registered_source.source_id,
+        vehicle_id: registered_vehicle.vehicle_id,
+        generation: registered_source.generation,
+        selected_car_id,
+    }
+}
+
+fn v4_2_production_source(car_id: i16) -> DirectUpdatesSourceV2_2 {
+    let mut source = production_source(car_id);
+    source.schema.observed_migration_version = V4_2_REVIEWED_SOURCE_SET.newest_migration;
+    source.schema.observed_migration_count = V4_2_REVIEWED_SOURCE_SET.migration_count;
+    source.schema.minimum_supported_migration_version = V4_2_REVIEWED_SOURCE_SET.newest_migration;
+    source.schema.maximum_validated_migration_version = V4_2_REVIEWED_SOURCE_SET.newest_migration;
+    source.schema.pinned_source_revision = V4_2_REVIEWED_SOURCE_SET.source_revision;
+    source.schema.pinned_migration_set_sha256 = V4_2_REVIEWED_SOURCE_SET.migration_set_sha256;
+    source
+}
+
+/// Review REV-M03-T08 finding 1: a store published by the earlier release
+/// under the 20260808090000 set must still verify after the upgrade to the
+/// 20261014120000 set and must accept a successor from a current capture.
+#[test]
+fn store_published_under_the_v4_2_set_verifies_and_publishes_a_current_successor() {
+    let temp = crate::private_tempdir().expect("store root");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([44; 32]);
+    let binding = registered_binding(&store, 7);
+
+    let earlier = {
+        let gate = store.try_acquire_publication_gate().expect("gate");
+        let head = production_updates_head(&store, binding.vehicle_id).expect("head");
+        publish_production_updates_schema_22_admitting(
+            &store,
+            &cursor_key,
+            &binding,
+            v4_2_production_source(7),
+            &gate,
+            &head,
+            None,
+            &V4_2_REVIEWED_SOURCE_SET,
+        )
+        .expect("the earlier release publishes under the v4.2 set")
+    };
+    assert_eq!(
+        earlier.source_witness.source_revision,
+        V4_2_REVIEWED_SOURCE_SET.source_revision
+    );
+    assert_eq!(earlier.source_witness.observed_migration_count, 105);
+    let earlier_pair = schema_22_signed_artifacts(&store, binding.vehicle_id, &cursor_key)
+        .expect("the v4.2 pair still verifies after the upgrade");
+
+    let error = publish_production_updates_schema_22(
+        &store,
+        &cursor_key,
+        &binding,
+        v4_2_production_source(7),
+    )
+    .expect_err("a v4.2 capture is no longer admitted for new publications");
+    assert!(
+        error
+            .message
+            .contains("superseded reviewed source set 4.2.0")
+    );
+    assert_eq!(
+        schema_22_signed_artifacts(&store, binding.vehicle_id, &cursor_key)
+            .expect("pair survives the refused capture"),
+        earlier_pair
+    );
+
+    let successor =
+        publish_production_updates_schema_22(&store, &cursor_key, &binding, production_source(7))
+            .expect("a current capture publishes a successor over the v4.2 store");
+    assert!(!successor.reused_current_snapshot);
+    assert_ne!(successor.snapshot_id, earlier.snapshot_id);
+    assert!(successor.sequence > earlier.sequence);
+    assert_eq!(
+        successor.source_witness.source_revision,
+        SOURCE_DB_V4_SOURCE_REVISION
+    );
+    assert_eq!(
+        successor.source_witness.observed_migration_count,
+        u64::try_from(SOURCE_DB_V4_MIGRATION_COUNT).expect("count")
+    );
+    schema_22_signed_artifacts(&store, binding.vehicle_id, &cursor_key)
+        .expect("the successor pair verifies");
+}
+
+/// A capture or witness naming an unknown revision is refused even when its
+/// migration facts copy a reviewed set.
+#[test]
+fn unknown_source_revision_is_refused_for_captures_and_witnesses() {
+    let temp = crate::private_tempdir().expect("store root");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([45; 32]);
+    let binding = registered_binding(&store, 7);
+    let mut unknown = production_source(7);
+    unknown.schema.pinned_source_revision = "0000000000000000000000000000000000000000";
+    let error = publish_production_updates_schema_22(&store, &cursor_key, &binding, unknown)
+        .expect_err("unknown revision must fail closed");
+    assert!(error.message.contains("contradicts"));
+    let mut mixed = v4_2_production_source(7);
+    mixed.schema.pinned_migration_set_sha256 = SOURCE_DB_V4_MIGRATION_SET_SHA256;
+    let error = publish_production_updates_schema_22(&store, &cursor_key, &binding, mixed)
+        .expect_err("a v4.2 revision with the current hash is not a reviewed tuple");
+    assert!(error.message.contains("contradicts"));
+    assert!(
+        store
+            .manifest_for_vehicle(binding.vehicle_id)
+            .expect("manifest lookup")
+            .is_none()
+    );
 }

@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "退出登录前，请先完成或取消源应用程序迁移交接。";
 "hub.HubController.1504.567" = "断开连接未能正常完成。Hub 状态已刷新；请检查账户是否仍处于连接状态。%1$@";
 "hub.HubController.1522.568" = "检查兼容性前，请确认您已审核源数据库架构。";
-"hub.HubController.1523.569" = "检查兼容性前，请确认源应用程序版本为 4.2.0 或更高。";
+"hub.HubController.1523.569" = "检查兼容性前，请确认源应用程序版本为 4.4.0 或更高。";
 "hub.HubController.1532.570" = "请选择使用 127.0.0.1 或 ::1 的本地 PostgreSQL 数据源。";
 "hub.HubController.1536.571" = "源车辆 ID 必须是正数。";
 "hub.HubController.1539.572" = "请选择受保护的 PostgreSQL 密码文件。";
 "hub.HubController.1552.580" = "源应用程序兼容性检查未返回有效报告。";
 "hub.HubController.1562.581" = "无法验证源数据库。请检查服务器连接后重试。";
-"hub.HubController.1585.586" = "导入前请确认源应用程序版本为 4.2.0 或更高。";
+"hub.HubController.1585.586" = "导入前请确认源应用程序版本为 4.4.0 或更高。";
 "hub.HubController.1591.587" = "登录需要一个已打开的采集窗口。请打开窗口，然后重新登录。";
 "hub.HubController.1718.615" = "源应用程序导入未返回有效的完成报告。Hub 仍保持停止状态。";
 "hub.HubController.1742.624" = "导入已完成，但 Hub 无法记录安全交接标记：%1$@。Hub 仍保持停止状态。";
-"hub.HubController.1846.655" = "从直接 PostgreSQL 数据源导入前，请确认源应用程序版本为 4.2.0 或更高。";
+"hub.HubController.1846.655" = "从直接 PostgreSQL 数据源导入前，请确认源应用程序版本为 4.4.0 或更高。";
 "hub.HubController.1865.658" = "PostgreSQL 数据源必须包含 postgres 或 postgresql 协议前缀、主机和数据库名称。";
 "hub.HubController.1869.659" = "PostgreSQL 数据源中不得包含密码。请使用密码文件字段。";
 "hub.HubController.1966.689" = "Fleet 设置失败：%1$@；Hub 配置恢复也失败：%2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "请填写所有字段";
 "hub.ImportSheetController.149.1710" = "来源、车辆 ID 和密码文件均为必填项。";
 "hub.ImportSheetController.156.1711" = "确认源应用程序版本";
-"hub.ImportSheetController.17.1690" = "我确认此数据库属于源应用程序 4.2.0 或更高版本";
+"hub.ImportSheetController.17.1690" = "我确认此数据库属于源应用程序 4.4.0 或更高版本";
 "hub.ImportSheetController.26.1691" = "导入历史记录";
 "hub.ImportSheetController.49.1693" = "将源 PostgreSQL 数据库中的数据复制到 Teslatlas Hub。";
 "hub.ImportSheetController.64.1694" = "PostgreSQL 来源";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "密码文件";
 "hub.ImportSheetController.7.1687" = "Hub 只读取源数据库，不会停止源应用程序或更改数据。导入后，Hub 会告知您何时应自行在源应用程序中停用 Tesla 访问权限。";
 "hub.ImportSheetController.73.1699" = "Hub 未运行。请启动 Hub，打开采集窗口，然后登录。";
-"hub.ImportSheetController.9.1688" = "导入前：备份源应用程序，将其更新到 4.2.0 或更高版本，启动一次，并等待数据库迁移完成。直接连接数据库无法证明正在运行的应用版本。";
+"hub.ImportSheetController.9.1688" = "导入前：备份源应用程序，将其更新到 4.4.0 或更高版本，启动一次，并等待数据库迁移完成。直接连接数据库无法证明正在运行的应用版本。";
 "hub.LogsWindowController.113.1730" = "更多日志操作";
 "hub.LogsWindowController.123.1732" = "显示、复制和保存的日志都会对凭据及私人标识符进行脱敏。分享前请先检查。";
 "hub.LogsWindowController.17.1712" = "正在加载日志…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "请输入访问令牌和刷新令牌。";
 "hub.OnboardingWindowController.1631.2105" = "请输入源应用程序服务器、SSH 用户和端口。";
 "hub.OnboardingWindowController.168.1852" = "继续";
-"hub.OnboardingWindowController.1691.2113" = "架构检查无法确定源应用程序的版本。请确认正在运行的服务器为 4.2.0 或更新版本，然后继续。";
+"hub.OnboardingWindowController.1691.2113" = "架构检查无法确定源应用程序的版本。请确认正在运行的服务器为 4.4.0 或更新版本，然后继续。";
 "hub.OnboardingWindowController.1740.2131" = "请先连接源应用程序服务器，再导入。";
 "hub.OnboardingWindowController.1750.2137" = "服务器设置已更改。请先重新连接源应用程序服务器，再导入。";
 "hub.OnboardingWindowController.1820.2143" = "一项或多项检查需要您留意。";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "选择 SSH 密钥";
 "hub.OnboardingWindowController.1981.2148" = "选择密钥";
 "hub.OnboardingWindowController.200.1857" = "使用本地 PostgreSQL 快照（仅历史记录）";
-"hub.OnboardingWindowController.203.1858" = "我确认此服务器运行的是源应用程序 4.2.0 或更高版本";
+"hub.OnboardingWindowController.203.1858" = "我确认此服务器运行的是源应用程序 4.4.0 或更高版本";
 "hub.OnboardingWindowController.252.1859" = "上次导入未完成。请检查源应用程序，然后重新运行导入。";
 "hub.OnboardingWindowController.292.1862" = "已准备好导入。";
 "hub.OnboardingWindowController.298.1866" = "源应用程序连接失败";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub 无法预留本地数据库隧道端口。";
 "hub.SourceServerImporter.744.2586" = "请重试。";
 "hub.SourceServerImporter.746.2588" = "请先更新源应用程序";
-"hub.SourceServerImporter.747.2589" = "引导式迁移要求源应用程序 4.2.0 或更高版本。";
+"hub.SourceServerImporter.747.2589" = "引导式迁移要求源应用程序 4.4.0 或更高版本。";
 "hub.SourceServerImporter.748.2590" = "请备份源应用程序、更新它并等待迁移完成，然后重新连接。";
 "hub.SourceServerImporter.763.2594" = "源应用程序未运行，或找不到其容器。";
 "hub.SourceServerImporter.764.2596" = "无法识别源应用程序的 Docker Compose 项目。";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "此账户无法访问 Docker。请授予直接 Docker 访问权限，或允许通过免密码 sudo 运行 Docker。";
 "hub.SourceServerImporter.834.2668" = "在源应用程序服务器上找不到 Docker。请检查服务器和账户的 PATH。";
 "hub.SourceServerImporter.836.2670" = "Docker 已安装，但当前不可用。请检查 Docker 服务是否正在运行。";
-"hub.SourceServerImporter.838.2672" = "引导式迁移要求源应用程序 4.2.0 或更高版本。请先更新源应用程序，然后重试。";
+"hub.SourceServerImporter.838.2672" = "引导式迁移要求源应用程序 4.4.0 或更高版本。请先更新源应用程序，然后重试。";
 "hub.SourceServerImporter.840.2674" = "SSH 无法连接或完成身份验证。请检查服务器、端口、账户和所选身份验证方式。";
 "hub.SourceServerImporter.842.2676" = "SSH 身份验证失败。请检查账户和所选身份验证方式。";
 "hub.SourceServerImporter.854.2688" = "SSH 服务器关闭了连接。请检查服务器日志和 SSH 策略。";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "架构检查无法确定是源应用程序的哪个版本写入了此数据库：多个版本共用此架构。";
 
-"hub.import.ackRelease" = "我确认源应用程序为 4.2.0 或更新版本，并且导入期间不会更新。";
+"hub.import.ackRelease" = "我确认源应用程序为 4.4.0 或更新版本，并且导入期间不会更新。";
+
+"hub.backup.title" = "备份";
+
+"hub.backup.detail" = "Hub 历史记录的加密副本。恢复密码保存在这台 Mac 上仅所有者可读的文件中。";
+
+"hub.backup.backUpNow" = "立即备份";
+
+"hub.backup.onSchedule" = "按计划备份";
+
+"hub.backup.saveSchedule" = "存储计划";
+
+"hub.backup.panelPrompt" = "选取";
+
+"hub.backup.panelMessage" = "请在 Hub 数据文件夹之外，选择用于存放加密 Hub 备份的文件夹。";
+
+"hub.backup.savedNote" = "已存储。计划将在 Hub 重新启动后生效。";
+
+"hub.backup.noFolder" = "未选择文件夹";
+
+"hub.backup.passwordPlaceholder" = "恢复密码（至少 %1$@ 个字符）";
+
+"hub.backup.passwordSaved" = "已存储。输入新密码以替换";
+
+"hub.backup.intervalHour" = "每小时";
+
+"hub.backup.intervalDay" = "每天";
+
+"hub.backup.intervalTwoDays" = "每 2 天";
+
+"hub.backup.intervalWeek" = "每周";
+
+"hub.backup.intervalHours" = "每 %1$@ 小时";
+
+"hub.backup.schedule" = "计划";
+
+"hub.backup.keep" = "保留";
+
+"hub.backup.keepSuffix" = "个备份";
+
+"hub.backup.folder" = "文件夹";
+
+"hub.backup.passwordLabel" = "恢复密码";
+
+"hub.backup.problem.passwordShort" = "恢复密码至少需要 %1$@ 个字符。";
+
+"hub.backup.problem.interval" = "间隔必须在 1 到 8784 小时之间。";
+
+"hub.backup.problem.keep" = "保留的备份数量必须在 1 到 1000 之间。";
+
+"hub.backup.problem.chooseFolder" = "请选择备份文件夹。";
+
+"hub.backup.problem.folderInside" = "请选择 Hub 数据文件夹之外的备份文件夹。";
+
+"hub.backup.problem.needsBoth" = "计划备份需要备份文件夹和恢复密码。";
+
+"hub.backup.lastGoodNone" = "暂无";
+
+"hub.backup.nextOff" = "计划备份已关闭";
+
+"hub.backup.nextNotScheduled" = "未安排：请选择文件夹和密码";
+
+"hub.backup.nextPaused" = "正在等待凭据恢复";
+
+"hub.collection.notReported" = "未报告";
+
+"hub.backup.blocked" = "被拒绝的凭据会阻止备份。运行 purge-refused-credentials 以清除它们。";
+
+"hub.backup.lastFailedMessage" = "上次尝试失败：%1$@";
+
+"hub.backup.lastFailedCode" = "上次尝试失败（%1$@）";
+
+"hub.backup.row.lastGood" = "上次成功的备份";
+
+"hub.backup.row.next" = "下次备份";
+
+"hub.backup.row.running" = "正在进行备份";
+
+"hub.backup.row.lastAttempt" = "上次尝试";
+
+"hub.backup.run.running" = "正在备份…";
+
+"hub.backup.run.stillRunning" = "备份仍在 Hub 服务中运行。";
+
+"hub.backup.run.finishedGeneration" = "备份已完成：%1$@";
+
+"hub.backup.run.finished" = "备份已完成";
+
+"hub.backup.run.failed" = "备份失败：%1$@";
+
+"hub.backup.maint.unreadable" = "无法读取 Hub 的响应。";
+
+"hub.backup.maint.unwritable" = "无法存储恢复密码。";
+
+"hub.backup.maint.configMissing" = "更改备份之前，请先设置 Hub。";
+
+"hub.devices.title" = "已配对的设备";
+
+"hub.devices.detail" = "读取此 Hub 的手机和 App，以及各自可以读取的车辆。";
+
+"hub.devices.revokeTitle" = "要撤销“%1$@”的访问权限吗？";
+
+"hub.devices.revokeInfo" = "此设备会立即停止读取 Hub。若要再次使用，请重新配对。";
+
+"hub.devices.revoke" = "撤销";
+
+"hub.devices.revokeEllipsis" = "撤销…";
+
+"hub.devices.revokeAccessibility" = "撤销“%1$@”的访问权限";
+
+"hub.devices.revokedDone" = "已撤销“%1$@”的访问权限。";
+
+"hub.devices.none" = "没有已配对的设备。";
+
+"hub.devices.cars" = "车辆：%1$@";
+
+"hub.devices.noCars" = "无车辆";
+
+"hub.devices.carFallback" = "车辆 %1$@";
+
+"hub.devices.unnamed" = "未命名的设备";
+
+"hub.devices.stateRevoked" = "已撤销 %1$@";
+
+"hub.devices.stateExpired" = "已过期 %1$@";
+
+"hub.devices.stateLastSeen" = "上次出现 %1$@";
+
+"hub.devices.stateNeverSeen" = "尚未出现";
+
+"hub.collection.loginOwn" = "已使用 Hub 自己的登录信息登录";
+
+"hub.collection.loginSignedOut" = "已退出登录";
+
+"hub.collection.loginNotOwn" = "存储的登录信息不是 Hub 自己的";
+
+"hub.collection.credValidUntil" = "有效期至 %1$@";
+
+"hub.collection.credValid" = "有效";
+
+"hub.collection.credRelogin" = "需要重新登录：请在下一个打开的窗口中再次登录";
+
+"hub.collection.credOwnerRefused" = "Owner API 被拒绝：Tesla 拒绝了此登录";
+
+"hub.collection.credRefused" = "已拒绝（%1$@）";
+
+"hub.collection.credExposure" = "疑似泄露：请在下一个打开的窗口中再次登录";
+
+"hub.collection.credAttention" = "需要注意（%1$@）";
+
+"hub.collection.credNotSignedIn" = "未登录";
+
+"hub.collection.windowOpenUntil" = "开放至 %1$@";
+
+"hub.collection.windowOpen" = "开放";
+
+"hub.collection.windowPending" = "待开始";
+
+"hub.collection.windowPendingFrom" = "自 %1$@ 起待开始";
+
+"hub.collection.windowPendingUntil" = "至 %1$@ 前待开始";
+
+"hub.collection.windowPendingFromUntil" = "自 %1$@ 至 %2$@ 待开始";
+
+"hub.collection.windowClosingExpiry" = "正在关闭（到期时间 %1$@）";
+
+"hub.collection.windowClosing" = "正在关闭";
+
+"hub.collection.windowClosedReason" = "已关闭（%1$@）";
+
+"hub.collection.windowClosed" = "已关闭";
+
+"hub.collection.windowUntrusted" = "已关闭（没有可信的签发方）";
+
+"hub.collection.windowFaulted" = "已关闭（窗口状态需要新的信任文档）";
+
+"hub.collection.windowRecovery" = "已关闭（正在等待凭据恢复：运行 restore-recovery-credentials）";
+
+"hub.collection.windowUnauthenticated" = "未知：控制通道不属于此 Hub";
+
+"hub.collection.windowNotRunning" = "未知：Hub 未运行";
+
+"hub.collection.reasonExpired" = "已过期";
+
+"hub.collection.reasonOperator" = "已由操作员关闭";
+
+"hub.collection.reasonRelogin" = "需要重新登录";
+
+"hub.collection.reasonOwnerRefused" = "Owner API 被拒绝";
+
+"hub.collection.reasonClock" = "时钟检查失败";
+
+"hub.collection.reasonReboot" = "Mac 已重新启动";
+
+"hub.collection.reasonUnverifiable" = "无法验证状态";
+
+"hub.collection.reasonClaimLost" = "采集权益已丢失";
+
+"hub.collection.fleet" = "已暂停：没有可用的 Fleet 操作";
+
+"hub.collection.signInUnavailable" = "此 Hub 上无法登录";
+
+"hub.collection.labelLogin" = "Tesla 登录";
+
+"hub.collection.labelCredential" = "凭据状态";
+
+"hub.collection.labelWindow" = "采集窗口";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "登录";
+
+"hub.signIn.recoveryPending" = "Hub 正在等待恢复其凭据：此 Hub 的数据在没有密钥的情况下被恢复。请运行 restore-recovery-credentials，然后登录。未更改任何内容。";
+
+"hub.signIn.serviceUnauthenticated" = "在 Hub 控制通道上响应的进程不是此 Hub，因此未发送任何内容。请重新启动 Hub，然后再次登录。";
+
+"hub.signIn.busy" = "Hub 正忙于处理其他请求。未更改任何内容；请稍后再次登录。";

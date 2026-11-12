@@ -5,16 +5,10 @@
 use crate::auth::credential_vault::{CredentialVault, CredentialStoreError};
 use crate::auth::credential_envelope::{CredentialSlot, RefreshOwner};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use rustix::{
-    fs::{CWD, FileType, Mode, OFlags, RenameFlags, fstat, open, renameat_with},
-    io::Errno,
-    process::getuid,
-};
 use serde::Serialize;
+#[cfg(test)]
+use std::{fs, os::unix::fs::PermissionsExt};
 use std::{
-    fs::{self, File, OpenOptions},
-    io::{Read, Write},
-    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::Path,
     path::PathBuf,
     sync::Arc,
@@ -26,7 +20,6 @@ use thiserror::Error;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::{
-    credentials::OwnerTokens,
     db::{
          HubStore, OutboundRequestCompletion, OutboundRequestOutcome, StoreError,
     },
@@ -34,12 +27,11 @@ use crate::{
         FleetAccessToken, FleetApiConfigError, FleetApiError, FleetAuthApi, FleetClientId,
         FleetRefreshToken, FleetRegion,
     },
-    legacy_owner_credentials::{SourceDbCredentialError, load_existing_cursor_key_bytes},
-    protocol::CursorKey,
-    source_token_envelope::{
-        SourceDbTokenError, decrypt_legacy_owner_tokens, 
-    },
+    legacy_owner_credentials::SourceDbCredentialError,
+    source_token_envelope::SourceDbTokenError,
 };
+#[cfg(test)]
+use crate::legacy_owner_credentials::load_existing_cursor_key_bytes;
 
 const MIN_FLEET_TOKEN_LIFETIME_SECONDS: u64 = 60;
 const MAX_FLEET_TOKEN_LIFETIME_SECONDS: u64 = 365 * 24 * 60 * 60;
@@ -174,11 +166,6 @@ fn validate_stored_fleet_credentials_after(vault: &CredentialVault, after_first_
     if !fleet_scope_summary(&plain.access)?.collection_ready() { return Err(FleetCredentialError::MissingCollectionScopes); }
     if vault.has_unresolved_refresh(CredentialSlot::FleetApi)? { return Err(FleetCredentialError::RotationOutcomeUnknown); }
     Ok(())
-}
-#[cfg(test)]
-fn validate_fixture_fleet_credentials_after(store: &HubStore, data: &Path, after_first_check: impl FnOnce()) -> Result<(), FleetCredentialError> {
-    let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), data);
-    validate_stored_fleet_credentials_after(&vault, after_first_check)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

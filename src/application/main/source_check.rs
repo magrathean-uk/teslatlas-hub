@@ -29,7 +29,8 @@ impl Drop for CatalogueCheckpointGuard {
 }
 
 #[cfg(unix)]
-const SOURCE_DB_REQUIRED_VERSION: &str = "4.2.0";
+const SOURCE_DB_REQUIRED_VERSION: &str =
+    teslatlas_hub::source_db_schema::CURRENT_REVIEWED_SOURCE_SET.release;
 
 #[cfg(unix)]
 fn schema_set_label(digest: &str) -> Option<String> {
@@ -50,14 +51,14 @@ fn source_db_version_confirmation(
     if accept_schema_evidence {
         (
             "compatible",
-            "v4_2_compatible_schema",
+            "v4_4_compatible_schema",
             "The recognised source schema was verified and the version limitation was acknowledged. The source database is read-only and ready for import; its data is never deleted.",
         )
     } else {
         (
             "confirmation_required",
-            "v4_2_version_unconfirmed",
-            "A schema check cannot establish the source application's running release. Confirm release 4.2.0 or later, then retry with --accept-schema-evidence.",
+            "v4_4_version_unconfirmed",
+            "A schema check cannot establish the source application's running release. Confirm release 4.4.0 or later, then retry with --accept-schema-evidence.",
         )
     }
 }
@@ -73,13 +74,13 @@ fn source_check_success_report(
         if accept_schema_evidence {
             (
                 "compatible",
-                "v4_2_compatible_schema",
+                "v4_4_compatible_schema",
                 "The read-only source database has the recognised history schema. The source application's release is unknown; no Tesla credentials were inspected or imported.",
             )
         } else {
             (
                 "confirmation_required",
-                "v4_2_schema_acknowledgement_required",
+                "v4_4_schema_acknowledgement_required",
                 "The source database has the recognised history schema, but the source application's release is unknown. Acknowledge schema-only history import before continuing.",
             )
         }
@@ -98,7 +99,7 @@ fn source_check_success_report(
         "sourceTotals":snapshot.source_totals,"sourceNeverMutated":true,
         "credentialScope":"history-only","credentialsInspected":false,
         "applicationVersionStatus":if history_only {"unknown"} else {"operator-acknowledged"},
-        "versionEvidence":"database_schema_only","schemaEvidence":"v4_2_compatible_schema",
+        "versionEvidence":"database_schema_only","schemaEvidence":"v4_4_compatible_schema",
         "versionAcknowledged":accept_schema_evidence,"guidance":guidance,
         "sourceSchemaRecognised":true,"schemaSetLabel":schema_set_label(snapshot.schema.pinned_migration_set_sha256)
     })
@@ -113,8 +114,8 @@ fn source_check_failure_report(
     guidance: &str,
 ) -> serde_json::Value {
     let recognition = match reason_code {
-        "older_than_v4_2_compatible_schema"
-        | "newer_than_v4_2_compatible_schema"
+        "older_than_v4_4_compatible_schema"
+        | "newer_than_v4_4_compatible_schema"
         | "schema_mismatch" => Some(false),
         _ => None,
     };
@@ -166,18 +167,18 @@ fn source_check_failure_details(
             found, ..
         }) => (
             "incompatible",
-            "older_than_v4_2_compatible_schema",
+            "older_than_v4_4_compatible_schema",
             Some(*found),
-            "Back up source application, update it to version 4.2.0 or newer, allow its migrations to finish, then retry.",
+            "This source database has the earlier reviewed schema. Back up the source application, update it to release 4.4.0 or newer, start it once and let its migrations finish, then retry.",
         ),
         SourceDbReaderError::Schema(SchemaCompatibilityError::UnreviewedMigration {
             found,
             ..
         }) => (
             "incompatible",
-            "newer_than_v4_2_compatible_schema",
+            "newer_than_v4_4_compatible_schema",
             Some(*found),
-            "This Hub build supports the reviewed source application v4.2-compatible schema only. Do not downgrade a live database; use a separate compatible backup or wait for a reviewed adapter.",
+            "This Hub build supports the reviewed source application v4.4-compatible schema only. Do not downgrade a live database; use a separate compatible backup or wait for a reviewed adapter.",
         ),
         SourceDbReaderError::Schema(_) | SourceDbReaderError::MissingMigrationVersion => (
             "incompatible",

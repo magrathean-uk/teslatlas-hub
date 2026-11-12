@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Viimeistele tai peruuta lähdesovelluksen siirron luovutus ennen uloskirjautumista.";
 "hub.HubController.1504.567" = "Yhteyden katkaisu ei päättynyt normaalisti. Hubin tila päivitettiin; tarkista, onko tili yhä yhdistetty. %1$@";
 "hub.HubController.1522.568" = "Vahvista, että olet tutustunut lähdetietokannan tarkistettuun skeemaan, ennen yhteensopivuuden tarkistamista.";
-"hub.HubController.1523.569" = "Vahvista ennen yhteensopivuuden tarkistamista, että käytössä on lähdesovellus 4.2.0 tai uudempi.";
+"hub.HubController.1523.569" = "Vahvista ennen yhteensopivuuden tarkistamista, että käytössä on lähdesovellus 4.4.0 tai uudempi.";
 "hub.HubController.1532.570" = "Valitse paikallinen PostgreSQL-lähde osoitteesta 127.0.0.1 tai ::1.";
 "hub.HubController.1536.571" = "Auton tunnuksen lähdesovelluksessa on oltava positiivinen kokonaisluku.";
 "hub.HubController.1539.572" = "Valitse suojattu PostgreSQL-salasanatiedosto.";
 "hub.HubController.1552.580" = "Lähdesovelluksen yhteensopivuustarkistus ei palauttanut kelvollista raporttia.";
 "hub.HubController.1562.581" = "Lähdetietokantaa ei voitu tarkistaa. Tarkista palvelinyhteys ja yritä uudelleen.";
-"hub.HubController.1585.586" = "Vahvista ennen tuontia, että käytössä on lähdesovellus 4.2.0 tai uudempi.";
+"hub.HubController.1585.586" = "Vahvista ennen tuontia, että käytössä on lähdesovellus 4.4.0 tai uudempi.";
 "hub.HubController.1591.587" = "Kirjautuminen vaatii avoimen keruuikkunan. Avaa ikkuna ja kirjaudu sisään uudelleen.";
 "hub.HubController.1718.615" = "Lähdesovelluksen tuonti ei palauttanut kelvollista valmistumisraporttia. Hub pysyy pysäytettynä.";
 "hub.HubController.1742.624" = "Tuonti valmistui, mutta Hub ei voinut tallentaa turvallisen siirron varmistusta: %1$@. Hub pysyy pysäytettynä.";
-"hub.HubController.1846.655" = "Vahvista ennen suoraan PostgreSQL-lähteestä tuontia, että käytössä on lähdesovellus 4.2.0 tai uudempi.";
+"hub.HubController.1846.655" = "Vahvista ennen suoraan PostgreSQL-lähteestä tuontia, että käytössä on lähdesovellus 4.4.0 tai uudempi.";
 "hub.HubController.1865.658" = "PostgreSQL-yhteysosoitteessa on oltava postgres- tai postgresql-URI-skeema, palvelin ja tietokannan nimi.";
 "hub.HubController.1869.659" = "PostgreSQL-yhteysosoite ei saa sisältää salasanaa. Valitse salasanatiedosto sille varatusta kentästä.";
 "hub.HubController.1966.689" = "Fleet-määritys epäonnistui: %1$@. Myös Hubin määrityksen palautus epäonnistui: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Täytä kaikki kentät";
 "hub.ImportSheetController.149.1710" = "Lähde, auton tunnus ja salasanatiedosto ovat pakollisia.";
 "hub.ImportSheetController.156.1711" = "Vahvista lähdesovelluksen versio";
-"hub.ImportSheetController.17.1690" = "Vahvistan, että tämä tietokanta kuuluu lähdesovelluksen versioon 4.2.0 tai uudempaan";
+"hub.ImportSheetController.17.1690" = "Vahvistan, että tämä tietokanta kuuluu lähdesovelluksen versioon 4.4.0 tai uudempaan";
 "hub.ImportSheetController.26.1691" = "Tuo historia";
 "hub.ImportSheetController.49.1693" = "Kopioi tiedot PostgreSQL-lähdetietokannasta Teslatlas Hubiin.";
 "hub.ImportSheetController.64.1694" = "PostgreSQL-lähde";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Salasanatiedosto";
 "hub.ImportSheetController.7.1687" = "Hub lukee lähdetietokantaa pysäyttämättä tai muuttamatta lähdesovellusta. Tuonnin jälkeen Hub ilmoittaa, milloin voit itse poistaa Tesla-käyttöoikeuden käytöstä lähdesovelluksessa.";
 "hub.ImportSheetController.73.1699" = "Hub ei ole käynnissä. Käynnistä Hub, avaa keruuikkuna ja kirjaudu sitten sisään.";
-"hub.ImportSheetController.9.1688" = "Ennen tuontia: tee lähdesovelluksesta varmuuskopio, päivitä se versioon 4.2.0 tai uudempaan, käynnistä se kerran ja odota tietokannan migraatioiden valmistumista. Suora tietokantayhteys ei voi vahvistaa käynnissä olevan sovelluksen versiota.";
+"hub.ImportSheetController.9.1688" = "Ennen tuontia: tee lähdesovelluksesta varmuuskopio, päivitä se versioon 4.4.0 tai uudempaan, käynnistä se kerran ja odota tietokannan migraatioiden valmistumista. Suora tietokantayhteys ei voi vahvistaa käynnissä olevan sovelluksen versiota.";
 "hub.LogsWindowController.113.1730" = "Lisää lokitoimintoja";
 "hub.LogsWindowController.123.1732" = "Näytetyistä, kopioiduista ja tallennetuista lokeista poistetaan käyttöoikeustiedot ja yksityiset tunnisteet. Tarkista lokit ennen jakamista.";
 "hub.LogsWindowController.17.1712" = "Ladataan lokit…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Anna sekä käyttöoikeustoken että päivitystoken.";
 "hub.OnboardingWindowController.1631.2105" = "Anna lähdesovelluksen palvelin, SSH-käyttäjä ja portti.";
 "hub.OnboardingWindowController.168.1852" = "Jatka";
-"hub.OnboardingWindowController.1691.2113" = "Skeeman tarkistus ei voi osoittaa lähdesovelluksen versiota. Vahvista, että käynnissä oleva palvelin käyttää versiota 4.2.0 tai uudempaa, ja jatka.";
+"hub.OnboardingWindowController.1691.2113" = "Skeeman tarkistus ei voi osoittaa lähdesovelluksen versiota. Vahvista, että käynnissä oleva palvelin käyttää versiota 4.4.0 tai uudempaa, ja jatka.";
 "hub.OnboardingWindowController.1740.2131" = "Muodosta yhteys lähdesovelluksen palvelimeen ennen tuontia.";
 "hub.OnboardingWindowController.1750.2137" = "Palvelimen asetukset muuttuivat. Muodosta yhteys lähdesovelluksen palvelimeen uudelleen ennen tuontia.";
 "hub.OnboardingWindowController.1820.2143" = "Yksi tai useampi tarkistus vaatii huomiota.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Valitse SSH-avain";
 "hub.OnboardingWindowController.1981.2148" = "Valitse avain";
 "hub.OnboardingWindowController.200.1857" = "Käytä paikallista PostgreSQL-tilannevedosta (vain historiatietoja varten)";
-"hub.OnboardingWindowController.203.1858" = "Vahvistan, että tämä palvelin käyttää lähdesovelluksen versiota 4.2.0 tai uudempaa";
+"hub.OnboardingWindowController.203.1858" = "Vahvistan, että tämä palvelin käyttää lähdesovelluksen versiota 4.4.0 tai uudempaa";
 "hub.OnboardingWindowController.252.1859" = "Edellinen tuonti jäi kesken. Tarkista lähdesovellus ja suorita tuonti uudelleen.";
 "hub.OnboardingWindowController.292.1862" = "Valmis tuontia varten.";
 "hub.OnboardingWindowController.298.1866" = "Lähdesovelluksen yhteys epäonnistui";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub ei voinut varata paikallista tietokantatunnelin porttia.";
 "hub.SourceServerImporter.744.2586" = "Yritä uudelleen.";
 "hub.SourceServerImporter.746.2588" = "Päivitä lähdesovellus ensin";
-"hub.SourceServerImporter.747.2589" = "Ohjattu siirto edellyttää lähdesovelluksen versiota 4.2.0 tai uudempaa.";
+"hub.SourceServerImporter.747.2589" = "Ohjattu siirto edellyttää lähdesovelluksen versiota 4.4.0 tai uudempaa.";
 "hub.SourceServerImporter.748.2590" = "Tee lähdesovelluksesta varmuuskopio, päivitä se, anna sen tietokantamigraatioiden valmistua ja muodosta sitten yhteys uudelleen.";
 "hub.SourceServerImporter.763.2594" = "Lähdesovellus ei ole käynnissä tai sen säilöä ei löytynyt.";
 "hub.SourceServerImporter.764.2596" = "Lähdesovelluksen Docker Compose -projektia ei voitu tunnistaa.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Tällä tilillä ei ole pääsyä Dockeriin. Anna suora Docker-käyttöoikeus tai salli salasanaton sudo Dockerin käyttöä varten.";
 "hub.SourceServerImporter.834.2668" = "Lähdesovelluksen palvelimelta ei löytynyt Dockeria. Tarkista palvelin ja tilin PATH-muuttuja.";
 "hub.SourceServerImporter.836.2670" = "Docker on asennettu, mutta ei käytettävissä. Tarkista, että Docker-palvelu on käynnissä.";
-"hub.SourceServerImporter.838.2672" = "Ohjattu siirto edellyttää lähdesovelluksen versiota 4.2.0 tai uudempaa. Päivitä lähdesovellus ja yritä sitten uudelleen.";
+"hub.SourceServerImporter.838.2672" = "Ohjattu siirto edellyttää lähdesovelluksen versiota 4.4.0 tai uudempaa. Päivitä lähdesovellus ja yritä sitten uudelleen.";
 "hub.SourceServerImporter.840.2674" = "SSH-yhteyden muodostaminen tai todentaminen epäonnistui. Tarkista palvelin, portti, tili ja valittu todennusmenetelmä.";
 "hub.SourceServerImporter.842.2676" = "SSH-todennus epäonnistui. Tarkista tili ja valittu todennusmenetelmä.";
 "hub.SourceServerImporter.854.2688" = "SSH-palvelin sulki yhteyden. Tarkista palvelimen lokit ja SSH-käytäntö.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "Skeeman tarkistus ei voi kertoa, mikä lähdesovelluksen julkaisu loi tämän tietokannan: samaa skeemaa käyttää useampi julkaisu.";
 
-"hub.import.ackRelease" = "Vahvistan, että lähdesovelluksen versio on 4.2.0 tai uudempi eikä sitä päivitetä tuonnin aikana.";
+"hub.import.ackRelease" = "Vahvistan, että lähdesovelluksen versio on 4.4.0 tai uudempi eikä sitä päivitetä tuonnin aikana.";
+
+"hub.backup.title" = "Varmuuskopiot";
+
+"hub.backup.detail" = "Hubin historian salattuja kopioita. Palautussalasana on tällä Macilla tiedostossa, jota vain omistaja voi lukea.";
+
+"hub.backup.backUpNow" = "Varmuuskopioi nyt";
+
+"hub.backup.onSchedule" = "Varmuuskopioi aikataulun mukaan";
+
+"hub.backup.saveSchedule" = "Tallenna aikataulu";
+
+"hub.backup.panelPrompt" = "Valitse";
+
+"hub.backup.panelMessage" = "Valitse kansio Hubin salatuille varmuuskopioille Hubin datakansion ulkopuolelta.";
+
+"hub.backup.savedNote" = "Tallennettu. Aikataulu tulee voimaan, kun Hub käynnistyy uudelleen.";
+
+"hub.backup.noFolder" = "Kansiota ei ole valittu";
+
+"hub.backup.passwordPlaceholder" = "Palautussalasana (vähintään %1$@ merkkiä)";
+
+"hub.backup.passwordSaved" = "Tallennettu. Kirjoita uusi korvataksesi sen";
+
+"hub.backup.intervalHour" = "Joka tunti";
+
+"hub.backup.intervalDay" = "Joka päivä";
+
+"hub.backup.intervalTwoDays" = "Joka 2. päivä";
+
+"hub.backup.intervalWeek" = "Joka viikko";
+
+"hub.backup.intervalHours" = "%1$@ tunnin välein";
+
+"hub.backup.schedule" = "Aikataulu";
+
+"hub.backup.keep" = "Säilytä";
+
+"hub.backup.keepSuffix" = "varmuuskopiota";
+
+"hub.backup.folder" = "Kansio";
+
+"hub.backup.passwordLabel" = "Palautussalasana";
+
+"hub.backup.problem.passwordShort" = "Palautussalasanan on oltava vähintään %1$@ merkkiä.";
+
+"hub.backup.problem.interval" = "Välin on oltava 1–8784 tuntia.";
+
+"hub.backup.problem.keep" = "Säilytettävien varmuuskopioiden määrän on oltava 1–1000.";
+
+"hub.backup.problem.chooseFolder" = "Valitse varmuuskopiokansio.";
+
+"hub.backup.problem.folderInside" = "Valitse varmuuskopiokansio Hubin datakansion ulkopuolelta.";
+
+"hub.backup.problem.needsBoth" = "Ajastetut varmuuskopiot tarvitsevat varmuuskopiokansion ja palautussalasanan.";
+
+"hub.backup.lastGoodNone" = "Ei vielä yhtään";
+
+"hub.backup.nextOff" = "Ajastetut varmuuskopiot ovat pois päältä";
+
+"hub.backup.nextNotScheduled" = "Ei ajastettu: valitse kansio ja salasana";
+
+"hub.backup.nextPaused" = "Odottaa tunnistetietojen palautusta";
+
+"hub.collection.notReported" = "Ei ilmoitettu";
+
+"hub.backup.blocked" = "Hylätyt tunnistetiedot estävät varmuuskopioinnin. Poista ne suorittamalla purge-refused-credentials.";
+
+"hub.backup.lastFailedMessage" = "Viimeisin yritys epäonnistui: %1$@";
+
+"hub.backup.lastFailedCode" = "Viimeisin yritys epäonnistui (%1$@)";
+
+"hub.backup.row.lastGood" = "Viimeisin onnistunut varmuuskopio";
+
+"hub.backup.row.next" = "Seuraava varmuuskopio";
+
+"hub.backup.row.running" = "Varmuuskopiointi on käynnissä";
+
+"hub.backup.row.lastAttempt" = "Viimeisin yritys";
+
+"hub.backup.run.running" = "Varmuuskopioidaan…";
+
+"hub.backup.run.stillRunning" = "Varmuuskopiointi on yhä käynnissä Hub-palvelussa.";
+
+"hub.backup.run.finishedGeneration" = "Varmuuskopiointi valmis: %1$@";
+
+"hub.backup.run.finished" = "Varmuuskopiointi valmis";
+
+"hub.backup.run.failed" = "Varmuuskopiointi epäonnistui: %1$@";
+
+"hub.backup.maint.unreadable" = "Hubin vastausta ei voitu lukea.";
+
+"hub.backup.maint.unwritable" = "Palautussalasanaa ei voitu tallentaa.";
+
+"hub.backup.maint.configMissing" = "Määritä Hub ennen varmuuskopioiden muuttamista.";
+
+"hub.devices.title" = "Yhdistetyt laitteet";
+
+"hub.devices.detail" = "Puhelimet ja sovellukset, jotka lukevat tätä Hubia, sekä autot, joita kukin saa lukea.";
+
+"hub.devices.revokeTitle" = "Perutaanko laitteen %1$@ oikeudet?";
+
+"hub.devices.revokeInfo" = "Tämä laite lakkaa heti lukemasta Hubia. Voit ottaa sen uudelleen käyttöön yhdistämällä sen uudelleen.";
+
+"hub.devices.revoke" = "Peruuta oikeudet";
+
+"hub.devices.revokeEllipsis" = "Peruuta oikeudet…";
+
+"hub.devices.revokeAccessibility" = "Peruuta laitteen %1$@ oikeudet";
+
+"hub.devices.revokedDone" = "Laitteen %1$@ oikeudet peruttiin.";
+
+"hub.devices.none" = "Ei yhdistettyjä laitteita.";
+
+"hub.devices.cars" = "Autot: %1$@";
+
+"hub.devices.noCars" = "Ei autoja";
+
+"hub.devices.carFallback" = "Auto %1$@";
+
+"hub.devices.unnamed" = "Nimetön laite";
+
+"hub.devices.stateRevoked" = "Peruttu %1$@";
+
+"hub.devices.stateExpired" = "Vanhentunut %1$@";
+
+"hub.devices.stateLastSeen" = "Nähty viimeksi %1$@";
+
+"hub.devices.stateNeverSeen" = "Ei vielä nähty";
+
+"hub.collection.loginOwn" = "Kirjauduttu Hubin omilla tunnuksilla";
+
+"hub.collection.loginSignedOut" = "Kirjauduttu ulos";
+
+"hub.collection.loginNotOwn" = "Tallennetut tunnukset eivät ole Hubin omat";
+
+"hub.collection.credValidUntil" = "Voimassa %1$@ asti";
+
+"hub.collection.credValid" = "Voimassa";
+
+"hub.collection.credRelogin" = "Uusi kirjautuminen tarvitaan: kirjaudu uudelleen seuraavassa avoimessa ikkunassa";
+
+"hub.collection.credOwnerRefused" = "Owner API hylättiin: Tesla hylkäsi nämä tunnukset";
+
+"hub.collection.credRefused" = "Hylätty (%1$@)";
+
+"hub.collection.credExposure" = "Epäillään paljastumista: kirjaudu uudelleen seuraavassa avoimessa ikkunassa";
+
+"hub.collection.credAttention" = "Vaatii huomiota (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Ei kirjautuneena";
+
+"hub.collection.windowOpenUntil" = "Auki %1$@ asti";
+
+"hub.collection.windowOpen" = "Auki";
+
+"hub.collection.windowPending" = "Odottaa";
+
+"hub.collection.windowPendingFrom" = "Odottaa alkaen %1$@";
+
+"hub.collection.windowPendingUntil" = "Odottaa %1$@ asti";
+
+"hub.collection.windowPendingFromUntil" = "Odottaa %1$@–%2$@";
+
+"hub.collection.windowClosingExpiry" = "Suljetaan (vanhenee %1$@)";
+
+"hub.collection.windowClosing" = "Suljetaan";
+
+"hub.collection.windowClosedReason" = "Suljettu (%1$@)";
+
+"hub.collection.windowClosed" = "Suljettu";
+
+"hub.collection.windowUntrusted" = "Suljettu (ei luotettua myöntäjää)";
+
+"hub.collection.windowFaulted" = "Suljettu (ikkunan tila tarvitsee uuden luottamusasiakirjan)";
+
+"hub.collection.windowRecovery" = "Suljettu (odottaa tunnistetietojen palautusta: suorita restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Tuntematon: ohjauskanava ei kuulu tälle Hubille";
+
+"hub.collection.windowNotRunning" = "Tuntematon: Hub ei ole käynnissä";
+
+"hub.collection.reasonExpired" = "vanhentunut";
+
+"hub.collection.reasonOperator" = "operaattori sulki";
+
+"hub.collection.reasonRelogin" = "uusi kirjautuminen tarvitaan";
+
+"hub.collection.reasonOwnerRefused" = "Owner API hylättiin";
+
+"hub.collection.reasonClock" = "kellon tarkistus epäonnistui";
+
+"hub.collection.reasonReboot" = "Mac käynnistyi uudelleen";
+
+"hub.collection.reasonUnverifiable" = "tilaa ei voitu vahvistaa";
+
+"hub.collection.reasonClaimLost" = "keruuvaraus menetettiin";
+
+"hub.collection.fleet" = "Pysäytetty: Fleet-toimintoja ei ole käytettävissä";
+
+"hub.collection.signInUnavailable" = "Kirjautuminen ei ole käytettävissä tässä Hubissa";
+
+"hub.collection.labelLogin" = "Tesla-kirjautuminen";
+
+"hub.collection.labelCredential" = "Tunnistetietojen tila";
+
+"hub.collection.labelWindow" = "Keruuikkuna";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Kirjautuminen";
+
+"hub.signIn.recoveryPending" = "Hub odottaa tunnistetietojensa palautusta: tämän Hubin data palautettiin ilman sen avaimia. Suorita restore-recovery-credentials ja kirjaudu sitten sisään. Mitään ei muutettu.";
+
+"hub.signIn.serviceUnauthenticated" = "Prosessi, joka vastaa Hubin ohjauskanavalla, ei ole tämä Hub, joten mitään ei lähetetty. Käynnistä Hub uudelleen ja kirjaudu sitten uudelleen.";
+
+"hub.signIn.busy" = "Hub on varattu muihin pyyntöihin. Mitään ei muutettu; kirjaudu uudelleen hetken kuluttua.";

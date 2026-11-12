@@ -508,7 +508,7 @@ pub enum Command {
         /// Take one live read-only snapshot, never prompt for cutover, and leave Hub stopped.
         #[arg(long)]
         online_snapshot: bool,
-        /// Confirm source application release 4.2.0 or later; database evidence alone cannot prove the application release.
+        /// Confirm source application release 4.4.0 or later; database evidence alone cannot prove the application release.
         #[arg(long, required = true, alias = "acknowledge-v4-2-compatible-schema")]
         accept_schema_evidence: bool,
     },

@@ -34,6 +34,7 @@ fn insert_metadata_v2_2(
     request: &ProjectionPackRequestV2_2<'_>,
     row_count: u64,
     purpose: ProjectionPackPurposeV2_2,
+    source_set: &ReviewedSourceSet,
 ) -> Result<(), ProjectionPackError> {
     let values = [
         ("protocol", "teslatlas-sync".to_owned()),
@@ -56,10 +57,10 @@ fn insert_metadata_v2_2(
             "unreconciled_fields",
             THP2_2_UNRECONCILED_FIELD_COUNT.to_string(),
         ),
-        ("source_revision", SOURCE_DB_V4_SOURCE_REVISION.to_owned()),
+        ("source_revision", source_set.source_revision.to_owned()),
         (
             "migration_set_sha256",
-            SOURCE_DB_V4_MIGRATION_SET_SHA256.to_owned(),
+            source_set.migration_set_sha256.to_owned(),
         ),
         (
             "car_settings_slice_sha256",

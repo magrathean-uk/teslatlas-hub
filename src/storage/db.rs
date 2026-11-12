@@ -56,7 +56,6 @@ use crate::{
         Sha256Digest, SyncManifest, TransportPack, canonical_delta_chain_digest,
     },
     source_db_projection::SourceDbOpenSession,
-    source_token_envelope::MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES,
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU

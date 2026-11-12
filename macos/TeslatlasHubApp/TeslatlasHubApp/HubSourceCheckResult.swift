@@ -4,6 +4,12 @@ import CoreFoundation
 import Foundation
 
 struct HubSourceCheckResult: Equatable {
+    /// Source application release of the reviewed source set this Hub admits;
+    /// it must match the `requiredVersion` of a successful source check.
+    static let requiredSourceRelease = "4.4.0"
+    /// Reason code of a successful check against that reviewed set.
+    static let compatibleReasonCode = "v4_4_compatible_schema"
+
     let compatible: Bool
     let message: String
     let reasonCode: String
@@ -69,7 +75,7 @@ struct HubSourceCheckResult: Equatable {
             let label = validLabel(root["schemaSetLabel"] as? String)
             return HubSourceCheckResult(
                 compatible: processSucceeded && status == "compatible"
-                    && reason == "v4_2_compatible_schema" && required == "4.2.0"
+                    && reason == compatibleReasonCode && required == requiredSourceRelease
                     && (!historyOnly || scopeValid) && recognised == true && label != nil,
                 message: guidance, reasonCode: reason, requiredVersion: required,
                 schemaRecognised: recognised, schemaSetLabel: label)

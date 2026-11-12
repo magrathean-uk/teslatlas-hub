@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Schließe die Quellanwendung-Migrationsübergabe ab oder brich sie ab, bevor du dich abmeldest.";
 "hub.HubController.1504.567" = "Die Trennung wurde nicht vollständig abgeschlossen. Der Hub-Status wurde aktualisiert; prüfe, ob das Konto noch verbunden ist. %1$@";
 "hub.HubController.1522.568" = "Bestätige das geprüfte Schema der Quelldatenbank, bevor du die Kompatibilität prüfst.";
-"hub.HubController.1523.569" = "Bestätige, dass die Quellanwendung in Version 4.2.0 oder neuer vorliegt, bevor du die Kompatibilität prüfst.";
+"hub.HubController.1523.569" = "Bestätige, dass die Quellanwendung in Version 4.4.0 oder neuer vorliegt, bevor du die Kompatibilität prüfst.";
 "hub.HubController.1532.570" = "Wähle eine lokale PostgreSQL-Datenquelle unter 127.0.0.1 oder ::1 aus.";
 "hub.HubController.1536.571" = "Die Quellanwendung-Fahrzeug-ID muss eine positive Zahl sein.";
 "hub.HubController.1539.572" = "Wähle die geschützte PostgreSQL-Passwortdatei aus.";
 "hub.HubController.1552.580" = "Die Quellanwendung-Kompatibilitätsprüfung hat keinen gültigen Bericht zurückgegeben.";
 "hub.HubController.1562.581" = "Die Quelldatenbank konnte nicht überprüft werden. Prüfe die Serververbindung und versuche es erneut.";
-"hub.HubController.1585.586" = "Bestätige, dass die Quellanwendung in Version 4.2.0 oder neuer vorliegt, bevor du Daten importierst.";
+"hub.HubController.1585.586" = "Bestätige, dass die Quellanwendung in Version 4.4.0 oder neuer vorliegt, bevor du Daten importierst.";
 "hub.HubController.1591.587" = "Für die Anmeldung muss ein Erfassungsfenster geöffnet sein. Öffne ein Fenster und melde dich erneut an.";
 "hub.HubController.1718.615" = "Der Quellanwendung-Import hat keinen gültigen Abschlussbericht zurückgegeben. Der Hub bleibt angehalten.";
 "hub.HubController.1742.624" = "Der Import ist abgeschlossen, aber der Hub konnte die Freigabebedingung für die sichere Übergabe nicht speichern: %1$@. Der Hub bleibt angehalten.";
-"hub.HubController.1846.655" = "Bestätige, dass die Quellanwendung in Version 4.2.0 oder neuer vorliegt, bevor du aus einer direkten PostgreSQL-Datenquelle importierst.";
+"hub.HubController.1846.655" = "Bestätige, dass die Quellanwendung in Version 4.4.0 oder neuer vorliegt, bevor du aus einer direkten PostgreSQL-Datenquelle importierst.";
 "hub.HubController.1865.658" = "Die PostgreSQL-Datenquelle muss das URL-Schema postgres oder postgresql, einen Host und einen Datenbanknamen enthalten.";
 "hub.HubController.1869.659" = "Die PostgreSQL-Datenquelle darf kein Passwort enthalten. Verwende dafür das Feld für die Passwortdatei.";
 "hub.HubController.1966.689" = "Fleet-Einrichtung fehlgeschlagen: %1$@ Auch die Wiederherstellung der Hub-Konfiguration ist fehlgeschlagen: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Fülle alle Felder aus";
 "hub.ImportSheetController.149.1710" = "Quelle, Fahrzeug-ID und Passwortdatei sind erforderlich.";
 "hub.ImportSheetController.156.1711" = "Quellanwendung-Version bestätigen";
-"hub.ImportSheetController.17.1690" = "Ich bestätige, dass diese Datenbank zu Version 4.2.0 oder einer neueren Version der Quellanwendung gehört.";
+"hub.ImportSheetController.17.1690" = "Ich bestätige, dass diese Datenbank zu Version 4.4.0 oder einer neueren Version der Quellanwendung gehört.";
 "hub.ImportSheetController.26.1691" = "Verlauf importieren";
 "hub.ImportSheetController.49.1693" = "Kopiere Daten aus der PostgreSQL-Quelldatenbank in den Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "PostgreSQL-Datenquelle";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Passwortdatei";
 "hub.ImportSheetController.7.1687" = "Der Hub liest aus der Quelldatenbank, ohne die Quellanwendung anzuhalten oder zu verändern. Nach dem Import sagt dir der Hub, wann du den Tesla-Zugriff in der Quellanwendung selbst deaktivieren sollst.";
 "hub.ImportSheetController.73.1699" = "Der Hub läuft nicht. Starte den Hub, öffne ein Erfassungsfenster und melde dich dann an.";
-"hub.ImportSheetController.9.1688" = "Erstelle vor dem Import ein Backup der Quellanwendung, aktualisiere sie auf Version 4.2.0 oder neuer, starte sie einmal und warte, bis die Datenbankmigrationen abgeschlossen sind. Über eine direkte Datenbankverbindung lässt sich die Version der laufenden App nicht nachweisen.";
+"hub.ImportSheetController.9.1688" = "Erstelle vor dem Import ein Backup der Quellanwendung, aktualisiere sie auf Version 4.4.0 oder neuer, starte sie einmal und warte, bis die Datenbankmigrationen abgeschlossen sind. Über eine direkte Datenbankverbindung lässt sich die Version der laufenden App nicht nachweisen.";
 "hub.LogsWindowController.113.1730" = "Weitere Protokollaktionen";
 "hub.LogsWindowController.123.1732" = "In angezeigten, kopierten und gespeicherten Protokollen werden Zugangsdaten und private Kennungen geschwärzt. Prüfe die Protokolle vor dem Teilen.";
 "hub.LogsWindowController.17.1712" = "Protokolle werden geladen…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Gib sowohl das Zugriffstoken als auch das Aktualisierungstoken ein.";
 "hub.OnboardingWindowController.1631.2105" = "Gib den Quellanwendung-Server, den SSH-Benutzer und den Port ein.";
 "hub.OnboardingWindowController.168.1852" = "Weiter";
-"hub.OnboardingWindowController.1691.2113" = "Eine Schemaprüfung kann die Version der Quellanwendung nicht feststellen. Bestätige, dass auf dem Server Version 4.2.0 oder eine neuere Version läuft, und fahre dann fort.";
+"hub.OnboardingWindowController.1691.2113" = "Eine Schemaprüfung kann die Version der Quellanwendung nicht feststellen. Bestätige, dass auf dem Server Version 4.4.0 oder eine neuere Version läuft, und fahre dann fort.";
 "hub.OnboardingWindowController.1740.2131" = "Verbinde dich mit dem Quellanwendung-Server, bevor du Daten importierst.";
 "hub.OnboardingWindowController.1750.2137" = "Die Servereinstellungen haben sich geändert. Verbinde dich erneut mit dem Quellanwendung-Server, bevor du Daten importierst.";
 "hub.OnboardingWindowController.1820.2143" = "Eine oder mehrere Prüfungen erfordern deine Aufmerksamkeit.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "SSH-Schlüssel auswählen";
 "hub.OnboardingWindowController.1981.2148" = "Schlüssel auswählen";
 "hub.OnboardingWindowController.200.1857" = "Lokalen PostgreSQL-Snapshot verwenden (nur Verlauf)";
-"hub.OnboardingWindowController.203.1858" = "Ich bestätige, dass auf diesem Server Version 4.2.0 oder eine neuere Version der Quellanwendung läuft.";
+"hub.OnboardingWindowController.203.1858" = "Ich bestätige, dass auf diesem Server Version 4.4.0 oder eine neuere Version der Quellanwendung läuft.";
 "hub.OnboardingWindowController.252.1859" = "Der vorherige Import wurde nicht abgeschlossen. Prüfe die Quellanwendung und führe den Import erneut aus.";
 "hub.OnboardingWindowController.292.1862" = "Bereit für den Import.";
 "hub.OnboardingWindowController.298.1866" = "Verbindung zur Quellanwendung fehlgeschlagen";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Der Hub konnte keinen lokalen Port für den Datenbanktunnel reservieren.";
 "hub.SourceServerImporter.744.2586" = "Versuche es erneut.";
 "hub.SourceServerImporter.746.2588" = "Quellanwendung zuerst aktualisieren";
-"hub.SourceServerImporter.747.2589" = "Die geführte Migration erfordert die Quellanwendung in Version 4.2.0 oder neuer.";
+"hub.SourceServerImporter.747.2589" = "Die geführte Migration erfordert die Quellanwendung in Version 4.4.0 oder neuer.";
 "hub.SourceServerImporter.748.2590" = "Sichere die Quellanwendung, aktualisiere sie und warte, bis die Migrationen abgeschlossen sind. Verbinde dich danach erneut.";
 "hub.SourceServerImporter.763.2594" = "Die Quellanwendung läuft nicht oder ihr Container wurde nicht gefunden.";
 "hub.SourceServerImporter.764.2596" = "Das Docker-Compose-Projekt der Quellanwendung konnte nicht ermittelt werden.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Dieses Konto hat keinen Zugriff auf Docker. Gewähre direkten Docker-Zugriff oder erlaube passwortloses sudo für Docker.";
 "hub.SourceServerImporter.834.2668" = "Docker wurde auf dem Quellanwendung-Server nicht gefunden. Prüfe Server und Konto-PATH.";
 "hub.SourceServerImporter.836.2670" = "Docker ist installiert, aber nicht verfügbar. Prüfe, ob der Docker-Dienst läuft.";
-"hub.SourceServerImporter.838.2672" = "Die geführte Migration erfordert die Quellanwendung in Version 4.2.0 oder neuer. Aktualisiere die Quellanwendung und versuche es erneut.";
+"hub.SourceServerImporter.838.2672" = "Die geführte Migration erfordert die Quellanwendung in Version 4.4.0 oder neuer. Aktualisiere die Quellanwendung und versuche es erneut.";
 "hub.SourceServerImporter.840.2674" = "SSH konnte keine Verbindung herstellen oder sich nicht authentifizieren. Prüfe Server, Port, Konto und ausgewählte Authentifizierungsmethode.";
 "hub.SourceServerImporter.842.2676" = "SSH-Authentifizierung fehlgeschlagen. Prüfe Konto und ausgewählte Authentifizierungsmethode.";
 "hub.SourceServerImporter.854.2688" = "Der SSH-Server hat die Verbindung geschlossen. Prüfe Serverprotokolle und SSH-Richtlinien.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "Eine Schema-Prüfung kann nicht feststellen, welche Version der Quellanwendung diese Datenbank erstellt hat: Mehrere Versionen verwenden dasselbe Schema.";
 
-"hub.import.ackRelease" = "Ich bestätige, dass die Quellanwendung Version 4.2.0 oder neuer hat und während des Imports nicht aktualisiert wird.";
+"hub.import.ackRelease" = "Ich bestätige, dass die Quellanwendung Version 4.4.0 oder neuer hat und während des Imports nicht aktualisiert wird.";
+
+"hub.backup.title" = "Backups";
+
+"hub.backup.detail" = "Verschlüsselte Kopien des Hub-Verlaufs. Das Wiederherstellungspasswort liegt in einer Datei auf diesem Mac, die nur dir gehört.";
+
+"hub.backup.backUpNow" = "Jetzt sichern";
+
+"hub.backup.onSchedule" = "Nach Zeitplan sichern";
+
+"hub.backup.saveSchedule" = "Zeitplan sichern";
+
+"hub.backup.panelPrompt" = "Auswählen";
+
+"hub.backup.panelMessage" = "Wähle einen Ordner für verschlüsselte Hub-Backups außerhalb des Hub-Datenordners.";
+
+"hub.backup.savedNote" = "Gespeichert. Der Zeitplan gilt, sobald der Hub neu startet.";
+
+"hub.backup.noFolder" = "Kein Ordner ausgewählt";
+
+"hub.backup.passwordPlaceholder" = "Wiederherstellungspasswort (mindestens %1$@ Zeichen)";
+
+"hub.backup.passwordSaved" = "Gespeichert. Gib ein neues ein, um es zu ersetzen";
+
+"hub.backup.intervalHour" = "Jede Stunde";
+
+"hub.backup.intervalDay" = "Jeden Tag";
+
+"hub.backup.intervalTwoDays" = "Alle 2 Tage";
+
+"hub.backup.intervalWeek" = "Jede Woche";
+
+"hub.backup.intervalHours" = "Alle %1$@ Stunden";
+
+"hub.backup.schedule" = "Zeitplan";
+
+"hub.backup.keep" = "Behalten";
+
+"hub.backup.keepSuffix" = "Backups";
+
+"hub.backup.folder" = "Ordner";
+
+"hub.backup.passwordLabel" = "Wiederherstellungspasswort";
+
+"hub.backup.problem.passwordShort" = "Das Wiederherstellungspasswort muss mindestens %1$@ Zeichen haben.";
+
+"hub.backup.problem.interval" = "Das Intervall muss zwischen 1 und 8784 Stunden liegen.";
+
+"hub.backup.problem.keep" = "Die Anzahl der Backups muss zwischen 1 und 1000 liegen.";
+
+"hub.backup.problem.chooseFolder" = "Wähle einen Backup-Ordner.";
+
+"hub.backup.problem.folderInside" = "Wähle einen Backup-Ordner außerhalb des Hub-Datenordners.";
+
+"hub.backup.problem.needsBoth" = "Geplante Backups brauchen einen Backup-Ordner und ein Wiederherstellungspasswort.";
+
+"hub.backup.lastGoodNone" = "Noch keines";
+
+"hub.backup.nextOff" = "Geplante Backups sind aus";
+
+"hub.backup.nextNotScheduled" = "Nicht geplant: Wähle einen Ordner und ein Passwort";
+
+"hub.backup.nextPaused" = "Wartet auf die Wiederherstellung der Zugangsdaten";
+
+"hub.collection.notReported" = "Nicht gemeldet";
+
+"hub.backup.blocked" = "Abgelehnte Zugangsdaten blockieren Backups. Führe purge-refused-credentials aus, um sie zu entfernen.";
+
+"hub.backup.lastFailedMessage" = "Letzter Versuch fehlgeschlagen: %1$@";
+
+"hub.backup.lastFailedCode" = "Letzter Versuch fehlgeschlagen (%1$@)";
+
+"hub.backup.row.lastGood" = "Letztes erfolgreiches Backup";
+
+"hub.backup.row.next" = "Nächstes Backup";
+
+"hub.backup.row.running" = "Ein Backup läuft gerade";
+
+"hub.backup.row.lastAttempt" = "Letzter Versuch";
+
+"hub.backup.run.running" = "Sicherung läuft …";
+
+"hub.backup.run.stillRunning" = "Das Backup läuft noch im Hub-Dienst.";
+
+"hub.backup.run.finishedGeneration" = "Backup abgeschlossen: %1$@";
+
+"hub.backup.run.finished" = "Backup abgeschlossen";
+
+"hub.backup.run.failed" = "Backup fehlgeschlagen: %1$@";
+
+"hub.backup.maint.unreadable" = "Die Antwort des Hubs konnte nicht gelesen werden.";
+
+"hub.backup.maint.unwritable" = "Das Wiederherstellungspasswort konnte nicht gespeichert werden.";
+
+"hub.backup.maint.configMissing" = "Richte den Hub ein, bevor du Backups änderst.";
+
+"hub.devices.title" = "Gekoppelte Geräte";
+
+"hub.devices.detail" = "Handys und Apps, die diesen Hub lesen, mit den Fahrzeugen, die sie jeweils lesen dürfen.";
+
+"hub.devices.revokeTitle" = "%1$@ entziehen?";
+
+"hub.devices.revokeInfo" = "Dieses Gerät liest sofort nicht mehr vom Hub. Um es wieder zu verwenden, koppelst du es erneut.";
+
+"hub.devices.revoke" = "Entziehen";
+
+"hub.devices.revokeEllipsis" = "Entziehen …";
+
+"hub.devices.revokeAccessibility" = "%1$@ entziehen";
+
+"hub.devices.revokedDone" = "%1$@ wurde entzogen.";
+
+"hub.devices.none" = "Keine gekoppelten Geräte.";
+
+"hub.devices.cars" = "Fahrzeuge: %1$@";
+
+"hub.devices.noCars" = "Keine Fahrzeuge";
+
+"hub.devices.carFallback" = "Fahrzeug %1$@";
+
+"hub.devices.unnamed" = "Unbenanntes Gerät";
+
+"hub.devices.stateRevoked" = "Entzogen %1$@";
+
+"hub.devices.stateExpired" = "Abgelaufen %1$@";
+
+"hub.devices.stateLastSeen" = "Zuletzt gesehen %1$@";
+
+"hub.devices.stateNeverSeen" = "Noch nicht gesehen";
+
+"hub.collection.loginOwn" = "Mit dem eigenen Login des Hubs angemeldet";
+
+"hub.collection.loginSignedOut" = "Abgemeldet";
+
+"hub.collection.loginNotOwn" = "Das gespeicherte Login ist nicht das eigene des Hubs";
+
+"hub.collection.credValidUntil" = "Gültig bis %1$@";
+
+"hub.collection.credValid" = "Gültig";
+
+"hub.collection.credRelogin" = "Neue Anmeldung nötig: Melde dich im nächsten offenen Fenster erneut an";
+
+"hub.collection.credOwnerRefused" = "Owner API abgelehnt: Tesla hat dieses Login abgelehnt";
+
+"hub.collection.credRefused" = "Abgelehnt (%1$@)";
+
+"hub.collection.credExposure" = "Offenlegung vermutet: Melde dich im nächsten offenen Fenster erneut an";
+
+"hub.collection.credAttention" = "Braucht Aufmerksamkeit (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Nicht angemeldet";
+
+"hub.collection.windowOpenUntil" = "Offen bis %1$@";
+
+"hub.collection.windowOpen" = "Offen";
+
+"hub.collection.windowPending" = "Ausstehend";
+
+"hub.collection.windowPendingFrom" = "Ausstehend ab %1$@";
+
+"hub.collection.windowPendingUntil" = "Ausstehend bis %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Ausstehend ab %1$@ bis %2$@";
+
+"hub.collection.windowClosingExpiry" = "Wird geschlossen (Ablauf %1$@)";
+
+"hub.collection.windowClosing" = "Wird geschlossen";
+
+"hub.collection.windowClosedReason" = "Geschlossen (%1$@)";
+
+"hub.collection.windowClosed" = "Geschlossen";
+
+"hub.collection.windowUntrusted" = "Geschlossen (kein vertrauenswürdiger Aussteller)";
+
+"hub.collection.windowFaulted" = "Geschlossen (der Fensterstatus braucht ein neues Vertrauensdokument)";
+
+"hub.collection.windowRecovery" = "Geschlossen (wartet auf die Wiederherstellung der Zugangsdaten: führe restore-recovery-credentials aus)";
+
+"hub.collection.windowUnauthenticated" = "Unbekannt: Der Steuerkanal gehört nicht zu diesem Hub";
+
+"hub.collection.windowNotRunning" = "Unbekannt: Der Hub läuft nicht";
+
+"hub.collection.reasonExpired" = "abgelaufen";
+
+"hub.collection.reasonOperator" = "vom Betreiber geschlossen";
+
+"hub.collection.reasonRelogin" = "neue Anmeldung nötig";
+
+"hub.collection.reasonOwnerRefused" = "Owner API abgelehnt";
+
+"hub.collection.reasonClock" = "Uhrzeitprüfung fehlgeschlagen";
+
+"hub.collection.reasonReboot" = "der Mac wurde neu gestartet";
+
+"hub.collection.reasonUnverifiable" = "Status konnte nicht überprüft werden";
+
+"hub.collection.reasonClaimLost" = "Erfassungsanspruch verloren";
+
+"hub.collection.fleet" = "Geparkt: Keine Fleet-Aktion verfügbar";
+
+"hub.collection.signInUnavailable" = "Anmeldung bei diesem Hub nicht verfügbar";
+
+"hub.collection.labelLogin" = "Tesla-Login";
+
+"hub.collection.labelCredential" = "Zugangsdatenstatus";
+
+"hub.collection.labelWindow" = "Erfassungsfenster";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Anmeldung";
+
+"hub.signIn.recoveryPending" = "Der Hub wartet auf die Wiederherstellung seiner Zugangsdaten: Die Daten dieses Hubs wurden ohne seine Schlüssel wiederhergestellt. Führe restore-recovery-credentials aus und melde dich dann an. Es wurde nichts geändert.";
+
+"hub.signIn.serviceUnauthenticated" = "Der Prozess, der auf dem Steuerkanal des Hubs antwortet, ist nicht dieser Hub, daher wurde nichts gesendet. Starte den Hub neu und melde dich dann erneut an.";
+
+"hub.signIn.busy" = "Der Hub ist mit anderen Anfragen beschäftigt. Es wurde nichts geändert; melde dich in einem Moment erneut an.";

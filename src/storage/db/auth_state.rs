@@ -72,6 +72,7 @@ impl std::fmt::Debug for CollectorAuthRow {
 
 /// What the pair row holds, read without decrypting it (C5 R44a, R62).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), expect(dead_code, reason = "used by the test build only"))]
 pub(crate) enum StoredLegacyGeneration {
     /// No pair row exists.
     NoRow,

@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Finish or cancel the source application migration handover before signing out.";
 "hub.HubController.1504.567" = "Disconnect did not finish cleanly. Hub status was refreshed; check whether the account is still connected. %1$@";
 "hub.HubController.1522.568" = "Acknowledge the reviewed source database schema before checking compatibility.";
-"hub.HubController.1523.569" = "Confirm the source application's release is 4.2.0 or later before checking compatibility.";
+"hub.HubController.1523.569" = "Confirm the source application's release is 4.4.0 or later before checking compatibility.";
 "hub.HubController.1532.570" = "Choose a local PostgreSQL source on 127.0.0.1 or ::1.";
 "hub.HubController.1536.571" = "Source car ID must be a positive number.";
 "hub.HubController.1539.572" = "Choose the protected PostgreSQL password file.";
 "hub.HubController.1552.580" = "The source application compatibility check returned no valid report.";
 "hub.HubController.1562.581" = "Could not verify the source database. Check the server connection and try again.";
-"hub.HubController.1585.586" = "Confirm the source application's release is 4.2.0 or later before importing.";
+"hub.HubController.1585.586" = "Confirm the source application's release is 4.4.0 or later before importing.";
 "hub.HubController.1591.587" = "Sign-in needs an open collection window. Open a window, then sign in again.";
 "hub.HubController.1718.615" = "Source application import returned no valid completion report. Hub remains stopped.";
 "hub.HubController.1742.624" = "Import completed, but Hub could not record the safe handover gate: %1$@. Hub remains stopped.";
-"hub.HubController.1846.655" = "Confirm the source application's release is 4.2.0 or later before importing from a direct PostgreSQL source.";
+"hub.HubController.1846.655" = "Confirm the source application's release is 4.4.0 or later before importing from a direct PostgreSQL source.";
 "hub.HubController.1865.658" = "PostgreSQL source must include a postgres or postgresql scheme, host, and database name.";
 "hub.HubController.1869.659" = "PostgreSQL source must not contain a password. Use the password file field.";
 "hub.HubController.1966.689" = "Fleet setup failed: %1$@; Hub configuration recovery also failed: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Complete all fields";
 "hub.ImportSheetController.149.1710" = "Source, car ID and password file are required.";
 "hub.ImportSheetController.156.1711" = "Confirm the source application version";
-"hub.ImportSheetController.17.1690" = "I confirm this database belongs to release 4.2.0 or later of the source application";
+"hub.ImportSheetController.17.1690" = "I confirm this database belongs to release 4.4.0 or later of the source application";
 "hub.ImportSheetController.26.1691" = "Import History";
 "hub.ImportSheetController.49.1693" = "Copy data from the source PostgreSQL database into Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "PostgreSQL source";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Password file";
 "hub.ImportSheetController.7.1687" = "Hub reads the source database without stopping or changing the source application. After import, Hub tells you when to disable Tesla access in the source application yourself.";
 "hub.ImportSheetController.73.1699" = "Hub is not running. Start Hub, open a collection window, then sign in.";
-"hub.ImportSheetController.9.1688" = "Before import: back up the source application, update it to release 4.2.0 or later, start it once, and wait for its database migrations to finish. A direct database connection cannot prove the running app version.";
+"hub.ImportSheetController.9.1688" = "Before import: back up the source application, update it to release 4.4.0 or later, start it once, and wait for its database migrations to finish. A direct database connection cannot prove the running app version.";
 "hub.LogsWindowController.113.1730" = "More log actions";
 "hub.LogsWindowController.123.1732" = "Displayed, copied, and saved logs redact credentials and private identifiers. Review before sharing.";
 "hub.LogsWindowController.17.1712" = "Loading logs…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Enter both the access token and refresh token.";
 "hub.OnboardingWindowController.1631.2105" = "Enter the source application server, SSH user, and port.";
 "hub.OnboardingWindowController.168.1852" = "Continue";
-"hub.OnboardingWindowController.1691.2113" = "A schema check cannot establish the source application release. Confirm that the running server is at release 4.2.0 or later, then continue.";
+"hub.OnboardingWindowController.1691.2113" = "A schema check cannot establish the source application release. Confirm that the running server is at release 4.4.0 or later, then continue.";
 "hub.OnboardingWindowController.1740.2131" = "Connect to the source application server before importing.";
 "hub.OnboardingWindowController.1750.2137" = "Server settings changed. Connect to the source application server again before importing.";
 "hub.OnboardingWindowController.1820.2143" = "One or more checks need attention.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Choose SSH Key";
 "hub.OnboardingWindowController.1981.2148" = "Choose Key";
 "hub.OnboardingWindowController.200.1857" = "Use a local PostgreSQL snapshot (history only)";
-"hub.OnboardingWindowController.203.1858" = "I confirm this server runs release 4.2.0 or later of the source application";
+"hub.OnboardingWindowController.203.1858" = "I confirm this server runs release 4.4.0 or later of the source application";
 "hub.OnboardingWindowController.252.1859" = "The previous import did not finish. Check the source application and run the import again.";
 "hub.OnboardingWindowController.292.1862" = "Ready to import.";
 "hub.OnboardingWindowController.298.1866" = "Source application connection failed";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub could not reserve a local database tunnel port.";
 "hub.SourceServerImporter.744.2586" = "Try again.";
 "hub.SourceServerImporter.746.2588" = "Update the source application first";
-"hub.SourceServerImporter.747.2589" = "Guided migration requires release 4.2.0 or later of the source application.";
+"hub.SourceServerImporter.747.2589" = "Guided migration requires release 4.4.0 or later of the source application.";
 "hub.SourceServerImporter.748.2590" = "Back up the source application, update it, let its migrations finish, then connect again.";
 "hub.SourceServerImporter.763.2594" = "The source application is not running or its container could not be found.";
 "hub.SourceServerImporter.764.2596" = "The source application's Docker Compose project could not be identified.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "This account cannot access Docker. Grant direct Docker access or allow passwordless sudo for Docker.";
 "hub.SourceServerImporter.834.2668" = "Docker was not found on the source application server. Check the server and account PATH.";
 "hub.SourceServerImporter.836.2670" = "Docker is installed but unavailable. Check that the Docker service is running.";
-"hub.SourceServerImporter.838.2672" = "Guided migration requires release 4.2.0 or later of the source application. Update the source application, then try again.";
+"hub.SourceServerImporter.838.2672" = "Guided migration requires release 4.4.0 or later of the source application. Update the source application, then try again.";
 "hub.SourceServerImporter.840.2674" = "SSH could not connect or authenticate. Check the server, port, account, and selected authentication method.";
 "hub.SourceServerImporter.842.2676" = "SSH authentication failed. Check the account and selected authentication method.";
 "hub.SourceServerImporter.854.2688" = "The SSH server closed the connection. Check the server logs and SSH policy.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "A schema check cannot show which release of the source application wrote this database: more than one release shares this schema.";
 
-"hub.import.ackRelease" = "I confirm that the source application is at release 4.2.0 or later and will not be updated during the import.";
+"hub.import.ackRelease" = "I confirm that the source application is at release 4.4.0 or later and will not be updated during the import.";
+
+"hub.backup.title" = "Backups";
+
+"hub.backup.detail" = "Encrypted copies of the Hub's history. The recovery password stays in an owner-only file on this Mac.";
+
+"hub.backup.backUpNow" = "Back up now";
+
+"hub.backup.onSchedule" = "Back up on a schedule";
+
+"hub.backup.saveSchedule" = "Save schedule";
+
+"hub.backup.panelPrompt" = "Choose";
+
+"hub.backup.panelMessage" = "Choose a folder for encrypted Hub backups, outside the Hub data folder.";
+
+"hub.backup.savedNote" = "Saved. The schedule applies when the Hub restarts.";
+
+"hub.backup.noFolder" = "No folder chosen";
+
+"hub.backup.passwordPlaceholder" = "Recovery password (at least %1$@ characters)";
+
+"hub.backup.passwordSaved" = "Saved. Type a new one to replace it";
+
+"hub.backup.intervalHour" = "Every hour";
+
+"hub.backup.intervalDay" = "Every day";
+
+"hub.backup.intervalTwoDays" = "Every 2 days";
+
+"hub.backup.intervalWeek" = "Every week";
+
+"hub.backup.intervalHours" = "Every %1$@ hours";
+
+"hub.backup.schedule" = "Schedule";
+
+"hub.backup.keep" = "Keep";
+
+"hub.backup.keepSuffix" = "backups";
+
+"hub.backup.folder" = "Folder";
+
+"hub.backup.passwordLabel" = "Recovery password";
+
+"hub.backup.problem.passwordShort" = "The recovery password needs at least %1$@ characters.";
+
+"hub.backup.problem.interval" = "The interval must be between 1 and 8784 hours.";
+
+"hub.backup.problem.keep" = "Keep must be between 1 and 1000 backups.";
+
+"hub.backup.problem.chooseFolder" = "Choose a backup folder.";
+
+"hub.backup.problem.folderInside" = "Choose a backup folder outside the Hub data folder.";
+
+"hub.backup.problem.needsBoth" = "Scheduled backups need a backup folder and a recovery password.";
+
+"hub.backup.lastGoodNone" = "None yet";
+
+"hub.backup.nextOff" = "Scheduled backups are off";
+
+"hub.backup.nextNotScheduled" = "Not scheduled: choose a folder and a password";
+
+"hub.backup.nextPaused" = "Waiting for credential recovery";
+
+"hub.collection.notReported" = "Not reported";
+
+"hub.backup.blocked" = "Refused credentials block backups. Run purge-refused-credentials to clear them.";
+
+"hub.backup.lastFailedMessage" = "Last attempt failed: %1$@";
+
+"hub.backup.lastFailedCode" = "Last attempt failed (%1$@)";
+
+"hub.backup.row.lastGood" = "Last good backup";
+
+"hub.backup.row.next" = "Next backup";
+
+"hub.backup.row.running" = "A backup is running now";
+
+"hub.backup.row.lastAttempt" = "Last attempt";
+
+"hub.backup.run.running" = "Backing up…";
+
+"hub.backup.run.stillRunning" = "The backup is still running in the Hub service.";
+
+"hub.backup.run.finishedGeneration" = "Backup finished: %1$@";
+
+"hub.backup.run.finished" = "Backup finished";
+
+"hub.backup.run.failed" = "Backup failed: %1$@";
+
+"hub.backup.maint.unreadable" = "The Hub's answer could not be read.";
+
+"hub.backup.maint.unwritable" = "The recovery password could not be saved.";
+
+"hub.backup.maint.configMissing" = "Set up the Hub before changing backups.";
+
+"hub.devices.title" = "Paired devices";
+
+"hub.devices.detail" = "Phones and apps that read this Hub, with the cars each may read.";
+
+"hub.devices.revokeTitle" = "Revoke %1$@?";
+
+"hub.devices.revokeInfo" = "This device stops reading from the Hub at once. To use it again, pair it again.";
+
+"hub.devices.revoke" = "Revoke";
+
+"hub.devices.revokeEllipsis" = "Revoke…";
+
+"hub.devices.revokeAccessibility" = "Revoke %1$@";
+
+"hub.devices.revokedDone" = "%1$@ was revoked.";
+
+"hub.devices.none" = "No paired devices.";
+
+"hub.devices.cars" = "Cars: %1$@";
+
+"hub.devices.noCars" = "No cars";
+
+"hub.devices.carFallback" = "Car %1$@";
+
+"hub.devices.unnamed" = "Unnamed device";
+
+"hub.devices.stateRevoked" = "Revoked %1$@";
+
+"hub.devices.stateExpired" = "Expired %1$@";
+
+"hub.devices.stateLastSeen" = "Last seen %1$@";
+
+"hub.devices.stateNeverSeen" = "Not seen yet";
+
+"hub.collection.loginOwn" = "Signed in with the Hub's own login";
+
+"hub.collection.loginSignedOut" = "Signed out";
+
+"hub.collection.loginNotOwn" = "Stored login is not the Hub's own";
+
+"hub.collection.credValidUntil" = "Valid until %1$@";
+
+"hub.collection.credValid" = "Valid";
+
+"hub.collection.credRelogin" = "Re-login needed: sign in again in the next open window";
+
+"hub.collection.credOwnerRefused" = "Owner API refused: Tesla refused this login";
+
+"hub.collection.credRefused" = "Refused (%1$@)";
+
+"hub.collection.credExposure" = "Exposure suspected: sign in again in the next open window";
+
+"hub.collection.credAttention" = "Needs attention (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Not signed in";
+
+"hub.collection.windowOpenUntil" = "Open until %1$@";
+
+"hub.collection.windowOpen" = "Open";
+
+"hub.collection.windowPending" = "Pending";
+
+"hub.collection.windowPendingFrom" = "Pending from %1$@";
+
+"hub.collection.windowPendingUntil" = "Pending until %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Pending from %1$@ until %2$@";
+
+"hub.collection.windowClosingExpiry" = "Closing (expiry %1$@)";
+
+"hub.collection.windowClosing" = "Closing";
+
+"hub.collection.windowClosedReason" = "Closed (%1$@)";
+
+"hub.collection.windowClosed" = "Closed";
+
+"hub.collection.windowUntrusted" = "Closed (no trusted issuer)";
+
+"hub.collection.windowFaulted" = "Closed (window state needs a new trust document)";
+
+"hub.collection.windowRecovery" = "Closed (waiting for credential recovery: run restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Unknown: the control channel is not this Hub";
+
+"hub.collection.windowNotRunning" = "Unknown: Hub is not running";
+
+"hub.collection.reasonExpired" = "expired";
+
+"hub.collection.reasonOperator" = "closed by the operator";
+
+"hub.collection.reasonRelogin" = "re-login needed";
+
+"hub.collection.reasonOwnerRefused" = "Owner API refused";
+
+"hub.collection.reasonClock" = "clock check failed";
+
+"hub.collection.reasonReboot" = "the Mac restarted";
+
+"hub.collection.reasonUnverifiable" = "state could not be verified";
+
+"hub.collection.reasonClaimLost" = "collection claim lost";
+
+"hub.collection.fleet" = "Parked: no Fleet action is available";
+
+"hub.collection.signInUnavailable" = "Sign-in unavailable on this Hub";
+
+"hub.collection.labelLogin" = "Tesla login";
+
+"hub.collection.labelCredential" = "Credential state";
+
+"hub.collection.labelWindow" = "Collection window";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Sign-in";
+
+"hub.signIn.recoveryPending" = "Hub is waiting for its credential recovery: this Hub's data was restored without its keys. Run restore-recovery-credentials, then sign in. Nothing was changed.";
+
+"hub.signIn.serviceUnauthenticated" = "The process answering on the Hub's control channel is not this Hub, so nothing was sent. Restart Hub, then sign in again.";
+
+"hub.signIn.busy" = "Hub is busy with other requests. Nothing was changed; sign in again in a moment.";

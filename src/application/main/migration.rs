@@ -219,7 +219,7 @@ async fn run_macos_migration_prepared(
                 "captureMode": "online-snapshot",
                 "credentialScope": "history-only",
                 "applicationVersionStatus": "unknown",
-                "schemaEvidence": "v4_2_compatible_schema",
+                "schemaEvidence": "v4_4_compatible_schema",
                 "selectedCarId": car_id,
                 "projectedRows": report.projected_rows,
                 "snapshotId": report.snapshot_id,

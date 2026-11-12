@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Rond de overdracht tijdens de bronapplicatie-migratie af of annuleer deze voordat je je afmeldt.";
 "hub.HubController.1504.567" = "De verbinding is niet goed verbroken. De Hub-status is vernieuwd; controleer of het account nog verbonden is. %1$@";
 "hub.HubController.1522.568" = "Bevestig dat je het schema van de brondatabase hebt gecontroleerd voordat je de compatibiliteit controleert.";
-"hub.HubController.1523.569" = "Bevestig dat je versie 4.2.0 of nieuwer van de bronapplicatie gebruikt voordat je de compatibiliteit controleert.";
+"hub.HubController.1523.569" = "Bevestig dat je versie 4.4.0 of nieuwer van de bronapplicatie gebruikt voordat je de compatibiliteit controleert.";
 "hub.HubController.1532.570" = "Kies een lokale PostgreSQL-bron op 127.0.0.1 of ::1.";
 "hub.HubController.1536.571" = "De bronapplicatie-auto-ID moet een positief getal zijn.";
 "hub.HubController.1539.572" = "Kies het beveiligde wachtwoordbestand voor PostgreSQL.";
 "hub.HubController.1552.580" = "De bronapplicatie-compatibiliteitscontrole heeft geen geldig rapport opgeleverd.";
 "hub.HubController.1562.581" = "Kon de brondatabase niet verifiëren. Controleer de serververbinding en probeer het opnieuw.";
-"hub.HubController.1585.586" = "Bevestig dat je versie 4.2.0 of nieuwer van de bronapplicatie gebruikt voordat je gegevens importeert.";
+"hub.HubController.1585.586" = "Bevestig dat je versie 4.4.0 of nieuwer van de bronapplicatie gebruikt voordat je gegevens importeert.";
 "hub.HubController.1591.587" = "Aanmelden vereist een geopend verzamelvenster. Open een venster en meld je opnieuw aan.";
 "hub.HubController.1718.615" = "De bronapplicatie-import heeft geen geldig voltooiingsrapport opgeleverd. De Hub blijft gestopt.";
 "hub.HubController.1742.624" = "De import is voltooid, maar de Hub kon de beveiligde overdrachtsvoorwaarde niet vastleggen: %1$@. De Hub blijft gestopt.";
-"hub.HubController.1846.655" = "Bevestig dat je versie 4.2.0 of nieuwer van de bronapplicatie gebruikt voordat je importeert vanuit een directe PostgreSQL-bron.";
+"hub.HubController.1846.655" = "Bevestig dat je versie 4.4.0 of nieuwer van de bronapplicatie gebruikt voordat je importeert vanuit een directe PostgreSQL-bron.";
 "hub.HubController.1865.658" = "De PostgreSQL-bron moet een URL met het schema postgres of postgresql, een host en een databasenaam bevatten.";
 "hub.HubController.1869.659" = "De PostgreSQL-bron mag geen wachtwoord bevatten. Gebruik het veld voor het wachtwoordbestand.";
 "hub.HubController.1966.689" = "De configuratie van Fleet is mislukt: %1$@ Het herstel van de Hub-configuratie is ook mislukt: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Vul alle velden in.";
 "hub.ImportSheetController.149.1710" = "Bron, auto-ID en wachtwoordbestand zijn verplicht.";
 "hub.ImportSheetController.156.1711" = "Bevestig de bronapplicatie-versie";
-"hub.ImportSheetController.17.1690" = "Ik bevestig dat deze database afkomstig is van versie 4.2.0 of nieuwer van de bronapplicatie.";
+"hub.ImportSheetController.17.1690" = "Ik bevestig dat deze database afkomstig is van versie 4.4.0 of nieuwer van de bronapplicatie.";
 "hub.ImportSheetController.26.1691" = "Geschiedenis importeren";
 "hub.ImportSheetController.49.1693" = "Kopieer gegevens uit de PostgreSQL-brondatabase naar Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "PostgreSQL-bron";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Wachtwoordbestand";
 "hub.ImportSheetController.7.1687" = "De Hub leest de brondatabase zonder de bronapplicatie te stoppen of te wijzigen. Na de import geeft de Hub aan wanneer je zelf de Tesla-toegang in de bronapplicatie moet uitschakelen.";
 "hub.ImportSheetController.73.1699" = "Hub draait niet. Start Hub, open een verzamelvenster en meld je aan.";
-"hub.ImportSheetController.9.1688" = "Maak vóór de import een back-up van de bronapplicatie, werk deze bij naar versie 4.2.0 of nieuwer, start deze één keer en wacht tot de databasemigraties zijn voltooid. Een rechtstreekse databaseverbinding kan niet bevestigen welke versie van de actieve app draait.";
+"hub.ImportSheetController.9.1688" = "Maak vóór de import een back-up van de bronapplicatie, werk deze bij naar versie 4.4.0 of nieuwer, start deze één keer en wacht tot de databasemigraties zijn voltooid. Een rechtstreekse databaseverbinding kan niet bevestigen welke versie van de actieve app draait.";
 "hub.LogsWindowController.113.1730" = "Meer logboekacties";
 "hub.LogsWindowController.123.1732" = "De weergegeven, gekopieerde en opgeslagen logboeken schermen toegangsgegevens en privé-identificatoren af. Controleer ze voordat je ze deelt.";
 "hub.LogsWindowController.17.1712" = "Logboeken laden…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Voer zowel het toegangstoken als het vernieuwingstoken in.";
 "hub.OnboardingWindowController.1631.2105" = "Voer de bronapplicatie-server, SSH-gebruiker en poort in.";
 "hub.OnboardingWindowController.168.1852" = "Doorgaan";
-"hub.OnboardingWindowController.1691.2113" = "Een schemacontrole kan niet vaststellen welke versie van de bronapplicatie wordt gebruikt. Bevestig dat de actieve server versie 4.2.0 of nieuwer gebruikt en ga daarna verder.";
+"hub.OnboardingWindowController.1691.2113" = "Een schemacontrole kan niet vaststellen welke versie van de bronapplicatie wordt gebruikt. Bevestig dat de actieve server versie 4.4.0 of nieuwer gebruikt en ga daarna verder.";
 "hub.OnboardingWindowController.1740.2131" = "Maak vóór het importeren verbinding met de bronapplicatie-server.";
 "hub.OnboardingWindowController.1750.2137" = "De serverinstellingen zijn gewijzigd. Maak opnieuw verbinding met de bronapplicatie-server voordat je importeert.";
 "hub.OnboardingWindowController.1820.2143" = "Een of meer controles vereisen aandacht.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "SSH-sleutel kiezen";
 "hub.OnboardingWindowController.1981.2148" = "Sleutel kiezen";
 "hub.OnboardingWindowController.200.1857" = "Lokale PostgreSQL-snapshot gebruiken (alleen geschiedenis)";
-"hub.OnboardingWindowController.203.1858" = "Ik bevestig dat op deze server versie 4.2.0 of nieuwer van de bronapplicatie draait.";
+"hub.OnboardingWindowController.203.1858" = "Ik bevestig dat op deze server versie 4.4.0 of nieuwer van de bronapplicatie draait.";
 "hub.OnboardingWindowController.252.1859" = "De vorige import is niet voltooid. Controleer de bronapplicatie en voer de import opnieuw uit.";
 "hub.OnboardingWindowController.292.1862" = "Klaar om te importeren.";
 "hub.OnboardingWindowController.298.1866" = "Verbinding met de bronapplicatie mislukt";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "De Hub kon geen lokale poort reserveren voor de databasetunnel.";
 "hub.SourceServerImporter.744.2586" = "Probeer het opnieuw.";
 "hub.SourceServerImporter.746.2588" = "Werk de bronapplicatie eerst bij";
-"hub.SourceServerImporter.747.2589" = "Voor begeleide migratie is versie 4.2.0 of nieuwer van de bronapplicatie vereist.";
+"hub.SourceServerImporter.747.2589" = "Voor begeleide migratie is versie 4.4.0 of nieuwer van de bronapplicatie vereist.";
 "hub.SourceServerImporter.748.2590" = "Maak een back-up van de bronapplicatie, werk deze bij en wacht tot de migraties zijn voltooid. Maak daarna opnieuw verbinding.";
 "hub.SourceServerImporter.763.2594" = "De bronapplicatie is niet actief of de container is niet gevonden.";
 "hub.SourceServerImporter.764.2596" = "Het Docker Compose-project van de bronapplicatie kon niet worden vastgesteld.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Dit account heeft geen toegang tot Docker. Geef het rechtstreeks toegang tot Docker of sta sudo zonder wachtwoord toe voor Docker.";
 "hub.SourceServerImporter.834.2668" = "Docker is niet gevonden op de bronapplicatie-server. Controleer de PATH van de server en het account.";
 "hub.SourceServerImporter.836.2670" = "Docker is geïnstalleerd, maar niet beschikbaar. Controleer of de Docker-service actief is.";
-"hub.SourceServerImporter.838.2672" = "Voor begeleide migratie is versie 4.2.0 of nieuwer van de bronapplicatie vereist. Werk de bronapplicatie bij en probeer het opnieuw.";
+"hub.SourceServerImporter.838.2672" = "Voor begeleide migratie is versie 4.4.0 of nieuwer van de bronapplicatie vereist. Werk de bronapplicatie bij en probeer het opnieuw.";
 "hub.SourceServerImporter.840.2674" = "SSH kon geen verbinding maken of niet verifiëren. Controleer de server, poort, het account en de geselecteerde verificatiemethode.";
 "hub.SourceServerImporter.842.2676" = "SSH-verificatie is mislukt. Controleer het account en de geselecteerde verificatiemethode.";
 "hub.SourceServerImporter.854.2688" = "De SSH-server heeft de verbinding gesloten. Controleer de serverlogboeken en het SSH-beleid.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "Een schemacontrole kan niet laten zien welke versie van de bronapplicatie deze database heeft gemaakt: meerdere versies gebruiken hetzelfde schema.";
 
-"hub.import.ackRelease" = "Ik bevestig dat de bronapplicatie versie 4.2.0 of hoger is en tijdens het importeren niet wordt bijgewerkt.";
+"hub.import.ackRelease" = "Ik bevestig dat de bronapplicatie versie 4.4.0 of hoger is en tijdens het importeren niet wordt bijgewerkt.";
+
+"hub.backup.title" = "Back-ups";
+
+"hub.backup.detail" = "Versleutelde kopieën van de geschiedenis van de Hub. Het herstelwachtwoord staat in een bestand op deze Mac dat alleen de eigenaar kan lezen.";
+
+"hub.backup.backUpNow" = "Nu een back-up maken";
+
+"hub.backup.onSchedule" = "Back-up maken volgens schema";
+
+"hub.backup.saveSchedule" = "Schema bewaren";
+
+"hub.backup.panelPrompt" = "Kies";
+
+"hub.backup.panelMessage" = "Kies een map voor versleutelde Hub-back-ups, buiten de gegevensmap van de Hub.";
+
+"hub.backup.savedNote" = "Bewaard. Het schema geldt zodra de Hub opnieuw start.";
+
+"hub.backup.noFolder" = "Geen map gekozen";
+
+"hub.backup.passwordPlaceholder" = "Herstelwachtwoord (minstens %1$@ tekens)";
+
+"hub.backup.passwordSaved" = "Bewaard. Typ een nieuw wachtwoord om het te vervangen";
+
+"hub.backup.intervalHour" = "Elk uur";
+
+"hub.backup.intervalDay" = "Elke dag";
+
+"hub.backup.intervalTwoDays" = "Om de 2 dagen";
+
+"hub.backup.intervalWeek" = "Elke week";
+
+"hub.backup.intervalHours" = "Elke %1$@ uur";
+
+"hub.backup.schedule" = "Schema";
+
+"hub.backup.keep" = "Bewaar";
+
+"hub.backup.keepSuffix" = "back-ups";
+
+"hub.backup.folder" = "Map";
+
+"hub.backup.passwordLabel" = "Herstelwachtwoord";
+
+"hub.backup.problem.passwordShort" = "Het herstelwachtwoord moet minstens %1$@ tekens hebben.";
+
+"hub.backup.problem.interval" = "Het interval moet tussen 1 en 8784 uur liggen.";
+
+"hub.backup.problem.keep" = "Het aantal te bewaren back-ups moet tussen 1 en 1000 liggen.";
+
+"hub.backup.problem.chooseFolder" = "Kies een back-upmap.";
+
+"hub.backup.problem.folderInside" = "Kies een back-upmap buiten de gegevensmap van de Hub.";
+
+"hub.backup.problem.needsBoth" = "Geplande back-ups hebben een back-upmap en een herstelwachtwoord nodig.";
+
+"hub.backup.lastGoodNone" = "Nog geen";
+
+"hub.backup.nextOff" = "Geplande back-ups staan uit";
+
+"hub.backup.nextNotScheduled" = "Niet gepland: kies een map en een wachtwoord";
+
+"hub.backup.nextPaused" = "Wacht op herstel van de inloggegevens";
+
+"hub.collection.notReported" = "Niet gemeld";
+
+"hub.backup.blocked" = "Geweigerde inloggegevens blokkeren back-ups. Voer purge-refused-credentials uit om ze te wissen.";
+
+"hub.backup.lastFailedMessage" = "Laatste poging mislukt: %1$@";
+
+"hub.backup.lastFailedCode" = "Laatste poging mislukt (%1$@)";
+
+"hub.backup.row.lastGood" = "Laatste geslaagde back-up";
+
+"hub.backup.row.next" = "Volgende back-up";
+
+"hub.backup.row.running" = "Er loopt nu een back-up";
+
+"hub.backup.row.lastAttempt" = "Laatste poging";
+
+"hub.backup.run.running" = "Back-up maken…";
+
+"hub.backup.run.stillRunning" = "De back-up loopt nog in de Hub-service.";
+
+"hub.backup.run.finishedGeneration" = "Back-up voltooid: %1$@";
+
+"hub.backup.run.finished" = "Back-up voltooid";
+
+"hub.backup.run.failed" = "Back-up mislukt: %1$@";
+
+"hub.backup.maint.unreadable" = "Het antwoord van de Hub kon niet worden gelezen.";
+
+"hub.backup.maint.unwritable" = "Het herstelwachtwoord kon niet worden bewaard.";
+
+"hub.backup.maint.configMissing" = "Stel de Hub in voordat je back-ups wijzigt.";
+
+"hub.devices.title" = "Gekoppelde apparaten";
+
+"hub.devices.detail" = "Telefoons en apps die deze Hub lezen, met de auto's die elk mag lezen.";
+
+"hub.devices.revokeTitle" = "%1$@ intrekken?";
+
+"hub.devices.revokeInfo" = "Dit apparaat stopt direct met lezen van de Hub. Om het opnieuw te gebruiken, koppel je het opnieuw.";
+
+"hub.devices.revoke" = "Intrekken";
+
+"hub.devices.revokeEllipsis" = "Intrekken…";
+
+"hub.devices.revokeAccessibility" = "%1$@ intrekken";
+
+"hub.devices.revokedDone" = "%1$@ is ingetrokken.";
+
+"hub.devices.none" = "Geen gekoppelde apparaten.";
+
+"hub.devices.cars" = "Auto's: %1$@";
+
+"hub.devices.noCars" = "Geen auto's";
+
+"hub.devices.carFallback" = "Auto %1$@";
+
+"hub.devices.unnamed" = "Naamloos apparaat";
+
+"hub.devices.stateRevoked" = "Ingetrokken %1$@";
+
+"hub.devices.stateExpired" = "Verlopen %1$@";
+
+"hub.devices.stateLastSeen" = "Laatst gezien %1$@";
+
+"hub.devices.stateNeverSeen" = "Nog niet gezien";
+
+"hub.collection.loginOwn" = "Ingelogd met de eigen login van de Hub";
+
+"hub.collection.loginSignedOut" = "Uitgelogd";
+
+"hub.collection.loginNotOwn" = "De opgeslagen login is niet de eigen login van de Hub";
+
+"hub.collection.credValidUntil" = "Geldig tot %1$@";
+
+"hub.collection.credValid" = "Geldig";
+
+"hub.collection.credRelogin" = "Opnieuw inloggen nodig: log opnieuw in via het volgende open venster";
+
+"hub.collection.credOwnerRefused" = "Owner API geweigerd: Tesla heeft deze login geweigerd";
+
+"hub.collection.credRefused" = "Geweigerd (%1$@)";
+
+"hub.collection.credExposure" = "Blootstelling vermoed: log opnieuw in via het volgende open venster";
+
+"hub.collection.credAttention" = "Heeft aandacht nodig (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Niet ingelogd";
+
+"hub.collection.windowOpenUntil" = "Open tot %1$@";
+
+"hub.collection.windowOpen" = "Open";
+
+"hub.collection.windowPending" = "In afwachting";
+
+"hub.collection.windowPendingFrom" = "In afwachting vanaf %1$@";
+
+"hub.collection.windowPendingUntil" = "In afwachting tot %1$@";
+
+"hub.collection.windowPendingFromUntil" = "In afwachting van %1$@ tot %2$@";
+
+"hub.collection.windowClosingExpiry" = "Wordt gesloten (verloopt %1$@)";
+
+"hub.collection.windowClosing" = "Wordt gesloten";
+
+"hub.collection.windowClosedReason" = "Gesloten (%1$@)";
+
+"hub.collection.windowClosed" = "Gesloten";
+
+"hub.collection.windowUntrusted" = "Gesloten (geen vertrouwde uitgever)";
+
+"hub.collection.windowFaulted" = "Gesloten (de venstertoestand heeft een nieuw vertrouwensdocument nodig)";
+
+"hub.collection.windowRecovery" = "Gesloten (wacht op herstel van de inloggegevens: voer restore-recovery-credentials uit)";
+
+"hub.collection.windowUnauthenticated" = "Onbekend: het controlekanaal is niet van deze Hub";
+
+"hub.collection.windowNotRunning" = "Onbekend: de Hub draait niet";
+
+"hub.collection.reasonExpired" = "verlopen";
+
+"hub.collection.reasonOperator" = "gesloten door de operator";
+
+"hub.collection.reasonRelogin" = "opnieuw inloggen nodig";
+
+"hub.collection.reasonOwnerRefused" = "Owner API geweigerd";
+
+"hub.collection.reasonClock" = "klokcontrole mislukt";
+
+"hub.collection.reasonReboot" = "de Mac is opnieuw gestart";
+
+"hub.collection.reasonUnverifiable" = "toestand kon niet worden geverifieerd";
+
+"hub.collection.reasonClaimLost" = "verzamelclaim kwijt";
+
+"hub.collection.fleet" = "Geparkeerd: geen Fleet-actie beschikbaar";
+
+"hub.collection.signInUnavailable" = "Inloggen niet beschikbaar op deze Hub";
+
+"hub.collection.labelLogin" = "Tesla-login";
+
+"hub.collection.labelCredential" = "Status van de inloggegevens";
+
+"hub.collection.labelWindow" = "Verzamelvenster";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Inloggen";
+
+"hub.signIn.recoveryPending" = "De Hub wacht op herstel van zijn inloggegevens: de gegevens van deze Hub zijn hersteld zonder de sleutels. Voer restore-recovery-credentials uit en log daarna in. Er is niets gewijzigd.";
+
+"hub.signIn.serviceUnauthenticated" = "Het proces dat op het controlekanaal van de Hub antwoordt, is niet deze Hub, dus er is niets verzonden. Start de Hub opnieuw en log daarna opnieuw in.";
+
+"hub.signIn.busy" = "De Hub is bezig met andere verzoeken. Er is niets gewijzigd; log over een moment opnieuw in.";

@@ -38,6 +38,7 @@ pub fn begin_refresh_for_test(data: &Path, fleet: bool, expected: uuid::Uuid) ->
     // opened the vault (M02 design 5), so the fixture holds one for its begin.
     let admission = AdmittedUserHub::admit(data)?;
     let store = HubStore::initialize(data)?;
+    #[allow(clippy::needless_update)] // test builds add VaultOptions fields
     let vault = CredentialVault::open(store.clone(), Arc::clone(&admission), data,
         VaultOptions { #[cfg(debug_assertions)] exclusion: Some(Arc::new(Excluded)), ..VaultOptions::default() }).map_err(super::CredentialCommandError::from)?;
     let slot = if fleet { super::super::credential_envelope::CredentialSlot::FleetApi } else { super::super::credential_envelope::CredentialSlot::OwnerApi };
@@ -98,6 +99,7 @@ impl FixtureManager {
         }
         let admission = AdmittedUserHub::admit(data)?;
         let store = HubStore::initialize(data)?;
+        #[allow(clippy::needless_update)] // test builds add VaultOptions fields
         let vault = CredentialVault::open(store.clone(), Arc::clone(&admission), data,
             VaultOptions { #[cfg(debug_assertions)] exclusion: Some(Arc::new(Excluded)), ..VaultOptions::default() }).map_err(super::CredentialCommandError::from)?;
         // Opaque synthetic tokens use C5's explicit Provider loopback profile.

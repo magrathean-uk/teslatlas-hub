@@ -280,7 +280,7 @@ pub(crate) fn durable_sync_fd(fd: BorrowedFd<'_>) -> Result<(), DurabilityError>
             && let Ok(facts) = rustix::fs::fstat(fd)
         {
             events.push((operation, FileType::from_raw_mode(facts.st_mode) == FileType::RegularFile,
-                facts.st_dev as u64, facts.st_ino as u64));
+                facts.st_dev as u64, facts.st_ino));
         }
     });
     result.map_err(|error| DurabilityError {

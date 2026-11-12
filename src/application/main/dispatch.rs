@@ -688,7 +688,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         return Err(if *history_only {
             "history-only import requires --accept-schema-evidence; the database schema is reviewed but the source application version remains unknown"
         } else {
-            "History import requires --accept-schema-evidence after confirming source application release 4.2.0 or later"
+            "History import requires --accept-schema-evidence after confirming source application release 4.4.0 or later"
         }.into());
     }
 

@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "로그아웃하기 전에 원본 애플리케이션 마이그레이션 인계 절차를 완료하거나 취소하세요.";
 "hub.HubController.1504.567" = "연결 해제가 정상적으로 완료되지 않았습니다. Hub 상태를 새로 고쳤습니다. 계정이 계속 연결되어 있는지 확인하세요. %1$@";
 "hub.HubController.1522.568" = "호환성을 확인하기 전에 검토한 원본 데이터베이스 스키마를 확인했다고 표시하세요.";
-"hub.HubController.1523.569" = "호환성을 확인하기 전에 원본 애플리케이션 버전이 4.2.0 이상인지 확인하세요.";
+"hub.HubController.1523.569" = "호환성을 확인하기 전에 원본 애플리케이션 버전이 4.4.0 이상인지 확인하세요.";
 "hub.HubController.1532.570" = "127.0.0.1 또는 ::1에 있는 로컬 PostgreSQL 소스를 선택하세요.";
 "hub.HubController.1536.571" = "원본 차량 ID는 양수여야 합니다.";
 "hub.HubController.1539.572" = "보호된 PostgreSQL 암호 파일을 선택하세요.";
 "hub.HubController.1552.580" = "원본 애플리케이션 호환성 확인에서 유효한 보고서를 반환하지 않았습니다.";
 "hub.HubController.1562.581" = "원본 데이터베이스를 확인하지 못했습니다. 서버 연결을 확인하고 다시 시도하세요.";
-"hub.HubController.1585.586" = "가져오기 전에 원본 애플리케이션 버전이 4.2.0 이상인지 확인하세요.";
+"hub.HubController.1585.586" = "가져오기 전에 원본 애플리케이션 버전이 4.4.0 이상인지 확인하세요.";
 "hub.HubController.1591.587" = "로그인하려면 열려 있는 수집 창이 필요합니다. 창을 연 다음 다시 로그인하세요.";
 "hub.HubController.1718.615" = "원본 애플리케이션 가져오기에서 유효한 완료 보고서가 반환되지 않았습니다. Hub는 중지된 상태로 유지됩니다.";
 "hub.HubController.1742.624" = "가져오기는 완료되었지만 안전한 인계 조건을 기록하지 못했습니다: %1$@. Hub는 중지된 상태로 유지됩니다.";
-"hub.HubController.1846.655" = "직접 PostgreSQL 소스에서 가져오기 전에 원본 애플리케이션 버전이 4.2.0 이상인지 확인하세요.";
+"hub.HubController.1846.655" = "직접 PostgreSQL 소스에서 가져오기 전에 원본 애플리케이션 버전이 4.4.0 이상인지 확인하세요.";
 "hub.HubController.1865.658" = "PostgreSQL 소스에는 postgres 또는 postgresql 스킴, 호스트 및 데이터베이스 이름이 있어야 합니다.";
 "hub.HubController.1869.659" = "PostgreSQL 소스에 암호를 포함하면 안 됩니다. 암호 파일 필드를 사용하세요.";
 "hub.HubController.1966.689" = "Fleet 설정에 실패했습니다: %1$@. Hub 설정 복구에도 실패했습니다: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "모든 항목을 입력하세요";
 "hub.ImportSheetController.149.1710" = "소스, 차량 ID, 암호 파일이 필요합니다.";
 "hub.ImportSheetController.156.1711" = "원본 애플리케이션 버전 확인";
-"hub.ImportSheetController.17.1690" = "이 데이터베이스가 원본 애플리케이션 4.2.0 이상에 속함을 확인합니다";
+"hub.ImportSheetController.17.1690" = "이 데이터베이스가 원본 애플리케이션 4.4.0 이상에 속함을 확인합니다";
 "hub.ImportSheetController.26.1691" = "기록 가져오기";
 "hub.ImportSheetController.49.1693" = "원본 PostgreSQL 데이터베이스의 데이터를 Teslatlas Hub로 복사합니다.";
 "hub.ImportSheetController.64.1694" = "PostgreSQL 소스";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "암호 파일";
 "hub.ImportSheetController.7.1687" = "Hub는 원본 애플리케이션을 중지하거나 데이터를 변경하지 않고 원본 데이터베이스를 읽습니다. 가져온 뒤 원본 애플리케이션에서 Tesla 접근을 직접 비활성화할 시점을 Hub가 안내합니다.";
 "hub.ImportSheetController.73.1699" = "Hub가 실행 중이 아닙니다. Hub를 시작하고 수집 창을 연 다음 로그인하세요.";
-"hub.ImportSheetController.9.1688" = "가져오기 전에 원본 애플리케이션을 백업하고 4.2.0 이상으로 업데이트하세요. 한 번 실행한 뒤 데이터베이스 마이그레이션이 끝날 때까지 기다리세요. 데이터베이스에 직접 연결하는 것만으로는 실행 중인 앱 버전을 확인할 수 없습니다.";
+"hub.ImportSheetController.9.1688" = "가져오기 전에 원본 애플리케이션을 백업하고 4.4.0 이상으로 업데이트하세요. 한 번 실행한 뒤 데이터베이스 마이그레이션이 끝날 때까지 기다리세요. 데이터베이스에 직접 연결하는 것만으로는 실행 중인 앱 버전을 확인할 수 없습니다.";
 "hub.LogsWindowController.113.1730" = "기타 로그 동작";
 "hub.LogsWindowController.123.1732" = "표시·복사·저장되는 로그에서는 자격 증명과 비공개 식별 정보를 가립니다. 공유하기 전에 검토하세요.";
 "hub.LogsWindowController.17.1712" = "로그 불러오는 중…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "액세스 토큰과 새로 고침 토큰을 모두 입력하세요.";
 "hub.OnboardingWindowController.1631.2105" = "원본 애플리케이션 서버, SSH 사용자 및 포트를 입력하세요.";
 "hub.OnboardingWindowController.168.1852" = "계속";
-"hub.OnboardingWindowController.1691.2113" = "스키마 검사만으로는 원본 애플리케이션의 릴리스를 확인할 수 없습니다. 실행 중인 서버가 릴리스 4.2.0 이상인지 확인한 뒤 계속하세요.";
+"hub.OnboardingWindowController.1691.2113" = "스키마 검사만으로는 원본 애플리케이션의 릴리스를 확인할 수 없습니다. 실행 중인 서버가 릴리스 4.4.0 이상인지 확인한 뒤 계속하세요.";
 "hub.OnboardingWindowController.1740.2131" = "가져오기 전에 원본 애플리케이션 서버에 연결하세요.";
 "hub.OnboardingWindowController.1750.2137" = "서버 설정이 변경되었습니다. 가져오기 전에 원본 애플리케이션 서버에 다시 연결하세요.";
 "hub.OnboardingWindowController.1820.2143" = "하나 이상의 점검에 조치가 필요합니다.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "SSH 키 선택";
 "hub.OnboardingWindowController.1981.2148" = "키 선택";
 "hub.OnboardingWindowController.200.1857" = "로컬 PostgreSQL 스냅샷 사용(기록 전용)";
-"hub.OnboardingWindowController.203.1858" = "이 서버에서 원본 애플리케이션 4.2.0 이상이 실행 중임을 확인합니다";
+"hub.OnboardingWindowController.203.1858" = "이 서버에서 원본 애플리케이션 4.4.0 이상이 실행 중임을 확인합니다";
 "hub.OnboardingWindowController.252.1859" = "이전 가져오기가 완료되지 않았습니다. 원본 애플리케이션을 확인하고 가져오기를 다시 실행하세요.";
 "hub.OnboardingWindowController.292.1862" = "가져올 준비가 되었습니다.";
 "hub.OnboardingWindowController.298.1866" = "원본 애플리케이션 연결 실패";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub가 로컬 데이터베이스 터널 포트를 확보하지 못했습니다.";
 "hub.SourceServerImporter.744.2586" = "다시 시도하세요.";
 "hub.SourceServerImporter.746.2588" = "먼저 원본 애플리케이션을 업데이트하세요";
-"hub.SourceServerImporter.747.2589" = "안내형 마이그레이션을 진행하려면 원본 애플리케이션 4.2.0 이상이 필요합니다.";
+"hub.SourceServerImporter.747.2589" = "안내형 마이그레이션을 진행하려면 원본 애플리케이션 4.4.0 이상이 필요합니다.";
 "hub.SourceServerImporter.748.2590" = "원본 애플리케이션을 백업하고 업데이트한 다음, 마이그레이션이 완료될 때까지 기다린 후 다시 연결하세요.";
 "hub.SourceServerImporter.763.2594" = "원본 애플리케이션이 실행 중이 아니거나 컨테이너를 찾을 수 없습니다.";
 "hub.SourceServerImporter.764.2596" = "원본 애플리케이션의 Docker Compose 프로젝트를 식별할 수 없습니다.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "이 계정은 Docker에 접근할 수 없습니다. 직접 Docker 접근 권한을 부여하거나 Docker에 암호 없는 sudo를 허용하세요.";
 "hub.SourceServerImporter.834.2668" = "원본 애플리케이션 서버에서 Docker를 찾을 수 없습니다. 서버와 계정의 PATH를 확인하세요.";
 "hub.SourceServerImporter.836.2670" = "Docker가 설치되어 있지만 사용할 수 없습니다. Docker 서비스가 실행 중인지 확인하세요.";
-"hub.SourceServerImporter.838.2672" = "안내형 마이그레이션에는 원본 애플리케이션 4.2.0 이상이 필요합니다. 원본 애플리케이션을 업데이트한 다음 다시 시도하세요.";
+"hub.SourceServerImporter.838.2672" = "안내형 마이그레이션에는 원본 애플리케이션 4.4.0 이상이 필요합니다. 원본 애플리케이션을 업데이트한 다음 다시 시도하세요.";
 "hub.SourceServerImporter.840.2674" = "SSH로 연결하거나 인증할 수 없습니다. 서버, 포트, 계정, 선택한 인증 방식을 확인하세요.";
 "hub.SourceServerImporter.842.2676" = "SSH 인증에 실패했습니다. 계정과 선택한 인증 방식을 확인하세요.";
 "hub.SourceServerImporter.854.2688" = "SSH 서버가 연결을 종료했습니다. 서버 로그와 SSH 정책을 확인하세요.";
@@ -615,4 +615,220 @@
 
 "hub.import.ackExplain" = "스키마 검사만으로는 어떤 릴리스의 원본 애플리케이션이 이 데이터베이스를 작성했는지 알 수 없습니다. 여러 릴리스가 같은 스키마를 사용합니다.";
 
-"hub.import.ackRelease" = "원본 애플리케이션이 릴리스 4.2.0 이상이며 가져오는 동안 업데이트되지 않을 것임을 확인합니다.";
+"hub.import.ackRelease" = "원본 애플리케이션이 릴리스 4.4.0 이상이며 가져오는 동안 업데이트되지 않을 것임을 확인합니다.";
+
+"hub.backup.title" = "백업";
+
+"hub.backup.detail" = "Hub 기록의 암호화된 사본입니다. 복구 암호는 이 Mac에서 소유자만 읽을 수 있는 파일에 저장됩니다.";
+
+"hub.backup.backUpNow" = "지금 백업";
+
+"hub.backup.onSchedule" = "일정에 따라 백업";
+
+"hub.backup.saveSchedule" = "일정 저장";
+
+"hub.backup.panelPrompt" = "선택";
+
+"hub.backup.panelMessage" = "Hub 데이터 폴더 밖에서 암호화된 Hub 백업을 저장할 폴더를 선택하세요.";
+
+"hub.backup.savedNote" = "저장했습니다. 일정은 Hub를 다시 시작하면 적용됩니다.";
+
+"hub.backup.noFolder" = "선택한 폴더 없음";
+
+"hub.backup.passwordPlaceholder" = "복구 암호(%1$@자 이상)";
+
+"hub.backup.passwordSaved" = "저장했습니다. 바꾸려면 새 암호를 입력하세요";
+
+"hub.backup.intervalHour" = "1시간마다";
+
+"hub.backup.intervalDay" = "매일";
+
+"hub.backup.intervalTwoDays" = "2일마다";
+
+"hub.backup.intervalWeek" = "매주";
+
+"hub.backup.intervalHours" = "%1$@시간마다";
+
+"hub.backup.schedule" = "일정";
+
+"hub.backup.keep" = "보관";
+
+"hub.backup.keepSuffix" = "개 백업";
+
+"hub.backup.folder" = "폴더";
+
+"hub.backup.passwordLabel" = "복구 암호";
+
+"hub.backup.problem.passwordShort" = "복구 암호는 %1$@자 이상이어야 합니다.";
+
+"hub.backup.problem.interval" = "간격은 1~8784시간 사이여야 합니다.";
+
+"hub.backup.problem.keep" = "보관할 백업 수는 1~1000 사이여야 합니다.";
+
+"hub.backup.problem.chooseFolder" = "백업 폴더를 선택하세요.";
+
+"hub.backup.problem.folderInside" = "Hub 데이터 폴더 밖의 백업 폴더를 선택하세요.";
+
+"hub.backup.problem.needsBoth" = "예약된 백업에는 백업 폴더와 복구 암호가 필요합니다.";
+
+"hub.backup.lastGoodNone" = "아직 없음";
+
+"hub.backup.nextOff" = "예약된 백업이 꺼져 있습니다";
+
+"hub.backup.nextNotScheduled" = "예약되지 않음: 폴더와 암호를 선택하세요";
+
+"hub.backup.nextPaused" = "인증 정보 복구를 기다리는 중";
+
+"hub.collection.notReported" = "보고되지 않음";
+
+"hub.backup.blocked" = "거부된 인증 정보가 백업을 막고 있습니다. purge-refused-credentials를 실행해 지우세요.";
+
+"hub.backup.lastFailedMessage" = "마지막 시도 실패: %1$@";
+
+"hub.backup.lastFailedCode" = "마지막 시도 실패(%1$@)";
+
+"hub.backup.row.lastGood" = "마지막으로 성공한 백업";
+
+"hub.backup.row.next" = "다음 백업";
+
+"hub.backup.row.running" = "백업이 지금 실행 중입니다";
+
+"hub.backup.row.lastAttempt" = "마지막 시도";
+
+"hub.backup.run.running" = "백업 중…";
+
+"hub.backup.run.stillRunning" = "백업이 아직 Hub 서비스에서 실행 중입니다.";
+
+"hub.backup.run.finishedGeneration" = "백업 완료: %1$@";
+
+"hub.backup.run.finished" = "백업 완료";
+
+"hub.backup.run.failed" = "백업 실패: %1$@";
+
+"hub.backup.maint.unreadable" = "Hub의 응답을 읽을 수 없습니다.";
+
+"hub.backup.maint.unwritable" = "복구 암호를 저장할 수 없습니다.";
+
+"hub.backup.maint.configMissing" = "백업을 변경하기 전에 Hub를 설정하세요.";
+
+"hub.devices.title" = "페어링된 기기";
+
+"hub.devices.detail" = "이 Hub를 읽는 휴대폰과 앱, 그리고 각각이 읽을 수 있는 차량입니다.";
+
+"hub.devices.revokeTitle" = "%1$@의 접근을 해제할까요?";
+
+"hub.devices.revokeInfo" = "이 기기는 Hub에서 즉시 읽기를 중단합니다. 다시 사용하려면 다시 페어링하세요.";
+
+"hub.devices.revoke" = "해제";
+
+"hub.devices.revokeEllipsis" = "해제…";
+
+"hub.devices.revokeAccessibility" = "%1$@ 접근 해제";
+
+"hub.devices.revokedDone" = "%1$@의 접근을 해제했습니다.";
+
+"hub.devices.none" = "페어링된 기기가 없습니다.";
+
+"hub.devices.cars" = "차량: %1$@";
+
+"hub.devices.noCars" = "차량 없음";
+
+"hub.devices.carFallback" = "차량 %1$@";
+
+"hub.devices.unnamed" = "이름 없는 기기";
+
+"hub.devices.stateRevoked" = "해제됨 %1$@";
+
+"hub.devices.stateExpired" = "만료됨 %1$@";
+
+"hub.devices.stateLastSeen" = "마지막 확인 %1$@";
+
+"hub.devices.stateNeverSeen" = "아직 확인되지 않음";
+
+"hub.collection.loginOwn" = "Hub 자체 로그인으로 로그인됨";
+
+"hub.collection.loginSignedOut" = "로그아웃됨";
+
+"hub.collection.loginNotOwn" = "저장된 로그인이 Hub 자체의 것이 아닙니다";
+
+"hub.collection.credValidUntil" = "%1$@까지 유효";
+
+"hub.collection.credValid" = "유효";
+
+"hub.collection.credRelogin" = "다시 로그인해야 함: 다음에 열리는 창에서 다시 로그인하세요";
+
+"hub.collection.credOwnerRefused" = "Owner API 거부됨: Tesla가 이 로그인을 거부했습니다";
+
+"hub.collection.credRefused" = "거부됨(%1$@)";
+
+"hub.collection.credExposure" = "노출 의심: 다음에 열리는 창에서 다시 로그인하세요";
+
+"hub.collection.credAttention" = "확인 필요(%1$@)";
+
+"hub.collection.credNotSignedIn" = "로그인되지 않음";
+
+"hub.collection.windowOpenUntil" = "%1$@까지 열림";
+
+"hub.collection.windowOpen" = "열림";
+
+"hub.collection.windowPending" = "대기 중";
+
+"hub.collection.windowPendingFrom" = "%1$@부터 대기 중";
+
+"hub.collection.windowPendingUntil" = "%1$@까지 대기 중";
+
+"hub.collection.windowPendingFromUntil" = "%1$@부터 %2$@까지 대기 중";
+
+"hub.collection.windowClosingExpiry" = "닫는 중(만료 %1$@)";
+
+"hub.collection.windowClosing" = "닫는 중";
+
+"hub.collection.windowClosedReason" = "닫힘(%1$@)";
+
+"hub.collection.windowClosed" = "닫힘";
+
+"hub.collection.windowUntrusted" = "닫힘(신뢰할 수 있는 발급자 없음)";
+
+"hub.collection.windowFaulted" = "닫힘(창 상태에 새 신뢰 문서가 필요함)";
+
+"hub.collection.windowRecovery" = "닫힘(인증 정보 복구를 기다리는 중: restore-recovery-credentials 실행)";
+
+"hub.collection.windowUnauthenticated" = "알 수 없음: 제어 채널이 이 Hub의 것이 아닙니다";
+
+"hub.collection.windowNotRunning" = "알 수 없음: Hub가 실행 중이 아닙니다";
+
+"hub.collection.reasonExpired" = "만료됨";
+
+"hub.collection.reasonOperator" = "운영자가 닫음";
+
+"hub.collection.reasonRelogin" = "다시 로그인해야 함";
+
+"hub.collection.reasonOwnerRefused" = "Owner API 거부됨";
+
+"hub.collection.reasonClock" = "시계 확인 실패";
+
+"hub.collection.reasonReboot" = "Mac이 다시 시작됨";
+
+"hub.collection.reasonUnverifiable" = "상태를 확인할 수 없음";
+
+"hub.collection.reasonClaimLost" = "수집 권한을 잃음";
+
+"hub.collection.fleet" = "보류됨: 사용할 수 있는 Fleet 작업이 없습니다";
+
+"hub.collection.signInUnavailable" = "이 Hub에서는 로그인을 사용할 수 없습니다";
+
+"hub.collection.labelLogin" = "Tesla 로그인";
+
+"hub.collection.labelCredential" = "인증 정보 상태";
+
+"hub.collection.labelWindow" = "수집 창";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "로그인";
+
+"hub.signIn.recoveryPending" = "Hub가 인증 정보 복구를 기다리고 있습니다. 이 Hub의 데이터가 키 없이 복원되었습니다. restore-recovery-credentials를 실행한 다음 로그인하세요. 변경된 것은 없습니다.";
+
+"hub.signIn.serviceUnauthenticated" = "Hub의 제어 채널에서 응답하는 프로세스가 이 Hub가 아니므로 아무것도 전송되지 않았습니다. Hub를 다시 시작한 다음 다시 로그인하세요.";
+
+"hub.signIn.busy" = "Hub가 다른 요청을 처리 중입니다. 변경된 것은 없습니다. 잠시 후 다시 로그인하세요.";

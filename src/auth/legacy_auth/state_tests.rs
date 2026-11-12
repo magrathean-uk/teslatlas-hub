@@ -1301,7 +1301,7 @@ fn t87_an_external_write_is_told_from_this_units_own_refresh() {
         StoredPairRelation::Current
     );
     // A row with no generation was not written by this unit's refresh.
-    let unbound = Ok::<_,StoreError>(c5_fixture::row(None,vec![9;8],vec![9;8],(T0+28_800,T0+21_600))).unwrap();
+    let unbound = c5_fixture::row(None,vec![9;8],vec![9;8],(T0+28_800,T0+21_600));
     c5_fixture::write(&store,&unbound).unwrap();
     assert_eq!(
         stored_pair_relation(&store, g9).unwrap(),
@@ -1409,8 +1409,7 @@ fn t87_an_external_write_during_an_exchange_discards_the_successor_and_signs_not
     let restored = restore_at_start(&store, &inputs(T0 + 3, g9)).unwrap();
     assert_eq!(restored.status, ready());
     // The consumed input stays fenced, so g0 cannot come back (K4).
-    let old =Ok::<_,StoreError>(c5_fixture::input(g0))
-        .unwrap();
+    let old = c5_fixture::input(g0);
     assert!(matches!(
         c5_fixture::write(&store,&old),
         Err(StoreError::RefreshOutcomeUnknown { .. })
@@ -1447,7 +1446,7 @@ fn an_ambiguous_write_is_recognised_by_the_successors_generation_and_not_written
         Err(StoreError::RefreshOutcomeUnknown { .. })
     ));
     // The pure rule: a generation that is neither is an external write.
-    let unbound = Ok::<_,StoreError>(c5_fixture::row(None,vec![9;8],vec![9;8],(T0+28_800,T0+21_600))).unwrap();
+    let unbound = c5_fixture::row(None,vec![9;8],vec![9;8],(T0+28_800,T0+21_600));
     c5_fixture::write(&store,&unbound).unwrap();
     assert_eq!(
         persist_reread(&store, g0, g1, None).unwrap(),
@@ -2204,8 +2203,7 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
             (T0 + 30_000, T0 + 25_000),
         ),
     ] {
-        let replaced =Ok::<_,StoreError>(c5_fixture::row(Some(g0),access,vec![2;8],schedule))
-            .unwrap();
+        let replaced = c5_fixture::row(Some(g0),access,vec![2;8],schedule);
         c5_fixture::write(&store,&replaced).unwrap();
         assert_eq!(
             persist_reread(&store, g0, g0, own(receipt)).unwrap(),
@@ -2214,7 +2212,7 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
         );
     }
     // Unbound, and a different generation.
-    let unbound = Ok::<_,StoreError>(c5_fixture::row(None,vec![9;8],vec![9;8],(T0+28_800,T0+21_600))).unwrap();
+    let unbound = c5_fixture::row(None,vec![9;8],vec![9;8],(T0+28_800,T0+21_600));
     c5_fixture::write(&store,&unbound).unwrap();
     assert_eq!(
         persist_reread(&store, g0, g0, own(receipt)).unwrap(),

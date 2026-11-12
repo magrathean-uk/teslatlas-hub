@@ -6,14 +6,14 @@ final class ImportSheetController: NSWindowController {
     static let sourceHandoverDetail =
         HubL10n.text("hub.ImportSheetController.7.1687", fallback: "Hub reads the source database without stopping or changing the source application. After import, Hub tells you when to disable Tesla access in the source application yourself.")
     static let sourceVersionRequirement =
-        HubL10n.text("hub.ImportSheetController.9.1688", fallback: "Before import: back up the source application, update it to release 4.2.0 or later, start it once, and wait for its database migrations to finish. A direct database connection cannot prove the running app version.")
+        HubL10n.text("hub.ImportSheetController.9.1688", fallback: "Before import: back up the source application, update it to release 4.4.0 or later, start it once, and wait for its database migrations to finish. A direct database connection cannot prove the running app version.")
 
     private let controller: HubController
     private let sourceField = NSTextField(string: "")
     private let carField = NSTextField(string: "1")
     private let passwordField = NSTextField(string: "")
     private let versionAcknowledgement = NSButton(
-        checkboxWithTitle: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.2.0 or later and will not be updated during the import."),
+        checkboxWithTitle: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.4.0 or later and will not be updated during the import."),
         target: nil,
         action: nil
     )
