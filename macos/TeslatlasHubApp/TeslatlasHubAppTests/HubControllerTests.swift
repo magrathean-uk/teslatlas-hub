@@ -2735,6 +2735,52 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(onboarding.currentRoute, .legacy)
     }
 
+    func testAWrappedUnconfirmedSignInReadsAsItsLineAndOtherWrappedFailuresAreUnchanged() {
+        // M02-T17: the owner reads the unconfirmed line first, followed by the not-quiescent
+        // sentence. An executor failure the wrapper carries still says only the sentence.
+        let quiescence = HubChildQuiescence()
+        quiescence.childMayRun()
+        let sentence = HubActionError.commandNotQuiescent(HubActionError.commandTimedOut, quiescence).localizedDescription
+        let unconfirmed = HubActionError.commandNotQuiescent(HubOwnerSignInUnconfirmed(), quiescence).localizedDescription
+        XCTAssertTrue(unconfirmed.hasPrefix(Self.unconfirmedLine), unconfirmed)
+        XCTAssertTrue(unconfirmed.hasSuffix(sentence), unconfirmed)
+        let systemError = NSError(domain: NSPOSIXErrorDomain, code: Int(EPIPE))
+        XCTAssertEqual(HubActionError.commandNotQuiescent(systemError, quiescence).localizedDescription, sentence)
+        XCTAssertTrue(HubActionError.isExecutorFailure(systemError))
+        XCTAssertTrue(HubActionError.isExecutorFailure(HubActionError.commandTimedOut))
+    }
+
+    func testAnUnconfirmedSignInForAStaleOperationDeliversNothingAndReleasesNothing() throws {
+        // M02-T17 negative case: an unconfirmed result that arrives after its owner has already
+        // settled (the stale-operation branch) is not shown and does not settle anything, so a
+        // later owner keeps its admission.
+        let authority = HubLifecycleAuthority()
+        guard case let .success(token) = authority.acquire(.account) else { return XCTFail("not admitted") }
+        let operation = HubLifecycleOperation(token: token, authority: authority,
+                                              commandRunner: OwnerRunner(), serviceRunner: OwnerService())
+        var settled = 0
+        operation.settle { settled += 1 }
+        XCTAssertEqual(settled, 1)
+        XCTAssertFalse(operation.isLive)
+        guard case .success = authority.acquire(.start) else { return XCTFail("the next owner was not admitted") }
+
+        let quiescence = HubChildQuiescence()
+        quiescence.childMayRun()
+        var delivered = 0
+        for result: Result<Void, Error> in [
+            .failure(HubOwnerSignInUnconfirmed()),
+            .failure(HubActionError.commandNotQuiescent(HubOwnerSignInUnconfirmed(), quiescence))
+        ] {
+            HubController.finishOwnerSignIn(operation, result) { _ in delivered += 1 }
+        }
+        quiescence.childReaped()
+        spinBriefly()
+        XCTAssertEqual(delivered, 0, "a stale sign-in shows nothing")
+        XCTAssertEqual(settled, 1, "the earlier settlement is not repeated")
+        XCTAssertEqual(authority.capabilities.owner, .start, "the later owner is not released")
+        XCTAssertEqual(authority.journal.filter { if case .released = $0 { return true } else { return false } }.count, 1)
+    }
+
     func testAFailureThatIsNotUnconfirmedLeavesTheHeldRetryUntouched() throws {
         // M02-T17 negative case: only a missing answer supersedes the held discovery retry. A
         // resumed setup refused with another failure keeps the grant, its deadline and the retry,
