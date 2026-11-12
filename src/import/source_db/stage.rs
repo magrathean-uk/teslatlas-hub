@@ -1147,6 +1147,11 @@ fn encode_rows_parallel<T: Serialize + Sync>(
 }
 
 fn encode_row<T: Serialize>(value: &T) -> Result<String, SourceDbStageError> {
+    // One pass for plain row structs; the bytes equal the two-pass encoding
+    // below, which stays the reference and the path for every other shape.
+    if let Some(json) = super::canonical_json::encode_sorted_object_string(value) {
+        return Ok(json);
+    }
     let value = serde_json::to_value(value).map_err(SourceDbStageError::SerializeRow)?;
     if !matches!(value, Value::Object(_)) {
         return Err(SourceDbStageError::RowMustBeJsonObject);

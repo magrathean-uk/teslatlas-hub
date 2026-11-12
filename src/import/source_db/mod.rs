@@ -2,6 +2,7 @@
 
 //! Source database compatibility, capture, and projection.
 
+pub(crate) mod canonical_json;
 pub mod direct;
 pub mod fragments;
 pub mod importer;
