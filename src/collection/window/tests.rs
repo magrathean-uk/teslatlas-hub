@@ -6,5 +6,6 @@
 //! is proven by M03-T04, not here.
 
 mod collection_window;
+mod import_seam_coverage;
 mod support;
 mod window_resume;
