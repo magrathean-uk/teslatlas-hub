@@ -398,6 +398,11 @@ fn orphan_pack_compaction_a_failed_commit_leaves_no_unretained_file() {
         ..ProtocolLimits::default()
     };
 
+    let lineage_packs = rig
+        .store
+        .v2_lineage_pack_count(rig.vehicle_id)
+        .expect("pack count");
+
     orphan_pack_fail_lineage_commits(&rig.store);
     let publication_gate = rig.store.try_acquire_publication_gate().expect("gate");
     let result = compact_v2_lineage_if_needed_with_limits_guarded(
@@ -419,7 +424,7 @@ fn orphan_pack_compaction_a_failed_commit_leaves_no_unretained_file() {
         rig.store
             .v2_lineage_pack_count(rig.vehicle_id)
             .expect("pack count"),
-        3,
+        lineage_packs,
         "the lineage is unchanged"
     );
 }
