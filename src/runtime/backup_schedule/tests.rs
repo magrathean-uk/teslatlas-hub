@@ -34,11 +34,21 @@ use crate::{
 const PASSWORD: &str = "correct horse battery staple";
 const HOUR: i64 = MS_PER_HOUR;
 
+/// The source a configuration that names `path` and no `password_source`
+/// means on this system: the Keychain item on the Mac, the file elsewhere.
+fn configured(path: &Path) -> PasswordSource {
+    if cfg!(target_os = "macos") {
+        PasswordSource::Keychain { account: path.to_string_lossy().into_owned() }
+    } else {
+        PasswordSource::File(path.to_path_buf())
+    }
+}
+
 fn settings(enabled: bool) -> BackupSettings {
     BackupSettings {
         enabled,
         destination: Some(PathBuf::from("/backup/destination")),
-        password_file: Some(PathBuf::from("/backup/password")),
+        password: Some(configured(Path::new("/backup/password"))),
         interval_ms: 6 * HOUR,
         keep: NonZeroUsize::new(3),
         retry_ms: 15 * 60 * 1000,
@@ -107,7 +117,7 @@ fn backup_schedule_runs_when_due_and_waits_the_interval_after_a_success() {
     assert_eq!(script.count(), 1);
     let job = script.jobs.lock().unwrap()[0].clone();
     assert_eq!(job.destination, PathBuf::from("/backup/destination"));
-    assert_eq!(job.password, PasswordSource::configured(Path::new("/backup/password")));
+    assert_eq!(job.password, configured(Path::new("/backup/password")));
     assert_eq!(job.keep, NonZeroUsize::new(3));
     // Nothing until a whole interval has passed.
     match schedule.tick(first + 6 * HOUR - 1) {
@@ -267,7 +277,7 @@ fn backup_schedule_manual_trigger_uses_its_paths_refuses_relative_ones_and_needs
     assert_eq!(relative.code, BACKUP_PATH_INVALID);
     let mut bare = settings(false);
     bare.destination = None;
-    bare.password_file = None;
+    bare.password = None;
     let schedule = scheduler(bare, script.clone(), dir.path(), 0);
     assert_eq!(schedule.run_now(None, None).expect_err("unconfigured").code, BACKUP_NOT_CONFIGURED);
     assert_eq!(
@@ -544,7 +554,7 @@ fn backup_schedule_real_runner_writes_a_verifiable_generation_and_leaks_no_passw
     fs::create_dir(&state_dir).unwrap();
     let mut live = settings(false);
     live.destination = Some(destination.clone());
-    live.password_file = Some(password.clone());
+    live.password = Some(configured(&password));
     live.keep = NonZeroUsize::new(2);
     // On the Mac the configured path names the Keychain item (an injected
     // store here); elsewhere the file itself is read.
@@ -642,7 +652,8 @@ impl keychain::PasswordKeychain for FakeKeychain {
 
 #[test]
 fn backup_schedule_keychain_source_on_the_mac_and_a_file_elsewhere_or_when_given() {
-    let source = PasswordSource::configured(Path::new("/Users/me/Hub/backup-password"));
+    let config = parse("[backup]\npassword_file = \"/Users/me/Hub/backup-password\"\n").expect("config");
+    let source = BackupSettings::from_config(&config.backup).password.expect("a source");
     if cfg!(target_os = "macos") {
         assert_eq!(source, PasswordSource::Keychain { account: "/Users/me/Hub/backup-password".to_owned() });
     } else {
@@ -656,7 +667,7 @@ fn backup_schedule_keychain_source_on_the_mac_and_a_file_elsewhere_or_when_given
     schedule.run_now(None, None).expect("manual");
     schedule.run_now(None, Some(Path::new("/given"))).expect("manual with a file");
     let jobs = script.jobs.lock().unwrap().clone();
-    let configured = PasswordSource::configured(Path::new("/backup/password"));
+    let configured = configured(Path::new("/backup/password"));
     assert_eq!(jobs[0].password, configured);
     assert_eq!(jobs[1].password, configured);
     assert_eq!(jobs[2].password, PasswordSource::File(PathBuf::from("/given")));
@@ -751,4 +762,195 @@ fn backup_schedule_the_service_reads_a_disposable_keychain_without_a_prompt() {
     assert_eq!(classify(-25308), KeychainFailure::Refused);
     assert_eq!(classify(-25293), KeychainFailure::Refused);
     assert_eq!(classify(-50), KeychainFailure::Unreadable);
+}
+
+// M06-T13: `backup.password_source` names where the password comes from.
+
+/// The `[backup]` table alone, validated as on the Mac (`macos`) or elsewhere.
+fn backup_table(table: &str, macos: bool) -> Result<BackupConfig, crate::config::ConfigError> {
+    let config: BackupConfig = toml::from_str(table).expect("a [backup] table");
+    config.validate_on(Path::new("/data/hub"), macos).map(|()| config)
+}
+
+fn invalid_message(result: Result<BackupConfig, crate::config::ConfigError>) -> &'static str {
+    match result {
+        Err(crate::config::ConfigError::Invalid(message)) => message,
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn backup_password_source_each_value_is_accepted_where_valid() {
+    use crate::config::BackupPasswordSource;
+    // The Keychain on the Mac, with no password_file: the default account.
+    let keychain = backup_table(
+        "enabled = true\ndestination = \"/Volumes/Backups/hub\"\npassword_source = \"keychain\"\n",
+        true,
+    )
+    .expect("keychain without a path on the Mac");
+    assert_eq!(keychain.password_source, Some(BackupPasswordSource::Keychain));
+    assert_eq!(
+        BackupSettings::from_config_on(&keychain, true).password,
+        Some(PasswordSource::Keychain { account: keychain::DEFAULT_ACCOUNT.to_owned() })
+    );
+    // With the path the app writes: that path is the item's account.
+    let named = backup_table(
+        "enabled = true\ndestination = \"/b\"\npassword_source = \"keychain\"\npassword_file = \"/Users/me/Hub/backup-password\"\n",
+        true,
+    )
+    .expect("keychain with the app's path");
+    assert_eq!(
+        BackupSettings::from_config_on(&named, true).password,
+        Some(PasswordSource::Keychain { account: "/Users/me/Hub/backup-password".to_owned() })
+    );
+    // A file, on the Mac and elsewhere.
+    for macos in [true, false] {
+        let file = backup_table(
+            "enabled = true\ndestination = \"/b\"\npassword_source = \"file\"\npassword_file = \"/run/credentials/hub/backup-password\"\n",
+            macos,
+        )
+        .expect("file with a path");
+        assert_eq!(file.password_source_on(macos), BackupPasswordSource::File);
+        assert_eq!(
+            BackupSettings::from_config_on(&file, macos).password,
+            Some(PasswordSource::File(PathBuf::from("/run/credentials/hub/backup-password")))
+        );
+    }
+    // Through the service's own loader on this system.
+    let native = if cfg!(target_os = "macos") { "keychain" } else { "file" };
+    let loaded = parse(&format!(
+        "[backup]\nenabled = true\ndestination = \"/b\"\npassword_source = \"{native}\"\npassword_file = \"/p\"\n"
+    ))
+    .expect("the native source loads");
+    assert_eq!(loaded.backup.effective_password_source(), loaded.backup.password_source.unwrap());
+    // Any other value is refused by name.
+    assert!(parse("[backup]\npassword_source = \"environment\"\n").is_err());
+    assert!(parse("[backup]\npassword_source = \"Keychain\"\n").is_err());
+}
+
+#[test]
+fn backup_password_source_keychain_is_refused_off_the_mac() {
+    for table in [
+        "password_source = \"keychain\"\n",
+        "enabled = true\ndestination = \"/b\"\npassword_source = \"keychain\"\npassword_file = \"/p\"\n",
+    ] {
+        let message = invalid_message(backup_table(table, false));
+        assert!(message.contains("only on macOS") && message.contains("\"file\""), "{message}");
+    }
+    let loaded = parse("[backup]\npassword_source = \"keychain\"\n");
+    if cfg!(target_os = "macos") {
+        loaded.expect("the Mac accepts the Keychain");
+    } else {
+        assert!(loaded.is_err(), "the service refuses the Keychain off the Mac");
+    }
+}
+
+#[test]
+fn backup_password_source_file_without_a_path_is_refused() {
+    for macos in [true, false] {
+        for table in [
+            "password_source = \"file\"\n",
+            "enabled = true\ndestination = \"/b\"\npassword_source = \"file\"\n",
+        ] {
+            let message = invalid_message(backup_table(table, macos));
+            assert!(message.contains("backup.password_file is required"), "{message}");
+        }
+        // The path rules stay: an absolute path only.
+        let relative = backup_table("password_source = \"file\"\npassword_file = \"relative\"\n", macos);
+        assert_eq!(invalid_message(relative), "backup.password_file must be absolute");
+    }
+    assert!(parse("[backup]\npassword_source = \"file\"\n").is_err());
+}
+
+#[test]
+fn backup_password_source_an_old_configuration_loads_with_the_same_behaviour() {
+    use crate::config::BackupPasswordSource;
+    let old = "enabled = true\ndestination = \"/Volumes/Backups/hub\"\npassword_file = \"/Users/me/Hub/backup-password\"\n";
+    // The Mac: the Keychain item named by the path (M06-T12); elsewhere: the file.
+    let mac = backup_table(old, true).expect("loads on the Mac");
+    assert_eq!(mac.password_source, None);
+    assert_eq!(mac.password_source_on(true), BackupPasswordSource::Keychain);
+    assert_eq!(
+        BackupSettings::from_config_on(&mac, true).password,
+        Some(PasswordSource::Keychain { account: "/Users/me/Hub/backup-password".to_owned() })
+    );
+    let elsewhere = backup_table(old, false).expect("loads elsewhere");
+    assert_eq!(elsewhere.password_source_on(false), BackupPasswordSource::File);
+    assert_eq!(
+        BackupSettings::from_config_on(&elsewhere, false).password,
+        Some(PasswordSource::File(PathBuf::from("/Users/me/Hub/backup-password")))
+    );
+    // Still required while enabled, with the earlier message, on both.
+    for macos in [true, false] {
+        let message = invalid_message(backup_table("enabled = true\ndestination = \"/b\"\n", macos));
+        assert_eq!(
+            message,
+            "backup.destination and backup.password_file are required while backup.enabled is true"
+        );
+        // Not enabled and no path: no source, so a manual run without a file is refused.
+        let bare = backup_table("destination = \"/b\"\n", macos).expect("loads");
+        assert_eq!(BackupSettings::from_config_on(&bare, macos).password, None);
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let script = Arc::new(Script::default());
+    let bare = parse("[backup]\ndestination = \"/b\"\n").expect("loads");
+    let schedule = scheduler(BackupSettings::from_config(&bare.backup), script.clone(), dir.path(), 0);
+    assert_eq!(schedule.run_now(None, None).expect_err("no source").code, BACKUP_NOT_CONFIGURED);
+    assert_eq!(schedule.status_at(0)["configured"], json!(false));
+    assert_eq!(script.count(), 0);
+    // The service's own loader on this system gives the platform's meaning.
+    let native = parse(&format!("[backup]\n{old}")).expect("an old configuration loads");
+    assert_eq!(
+        BackupSettings::from_config(&native.backup).password,
+        Some(configured(Path::new("/Users/me/Hub/backup-password")))
+    );
+}
+
+#[test]
+fn backup_password_source_the_schedule_reads_the_named_source_only() {
+    use keychain::{BACKUP_PASSWORD_UNAVAILABLE, KeychainFailure};
+    let root = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(root.path().join("data")).expect("store");
+    let destination = root.path().join("destination");
+    fs::create_dir(&destination).unwrap();
+    fs::set_permissions(&destination, fs::Permissions::from_mode(0o700)).unwrap();
+    // A valid password file at the configured path in every case.
+    let file = password_file(root.path(), "backup-password", format!("{PASSWORD}\n").as_bytes(), 0o600);
+    let account = file.to_string_lossy().into_owned();
+    let mut index = 0;
+    let mut run = |source: PasswordSource, keychain: Arc<FakeKeychain>| {
+        index += 1;
+        let state_dir = root.path().join(format!("state-{index}"));
+        fs::create_dir(&state_dir).unwrap();
+        let mut live = settings(true);
+        live.destination = Some(destination.clone());
+        live.password = Some(source);
+        let runner = StoreBackupRunner::with_keychain(store.clone(), keychain);
+        let schedule = scheduler(live, Arc::new(runner), &state_dir, 0);
+        match schedule.tick(10 * 60 * 1000) {
+            Tick::Ran(result) => result.map(|()| schedule.last().last_generation),
+            other => panic!("{other:?}"),
+        }
+    };
+
+    // Keychain: the file beside it is never read, even when the item is missing.
+    let missing = Arc::new(FakeKeychain::failing(KeychainFailure::Missing));
+    let refusal = run(PasswordSource::Keychain { account: account.clone() }, missing.clone())
+        .expect_err("no fallback to the file");
+    assert_eq!(refusal.code, BACKUP_PASSWORD_UNAVAILABLE);
+    assert_eq!(missing.reads.load(Ordering::SeqCst), 1);
+    assert_eq!(fs::read_dir(&destination).unwrap().count(), 0, "nothing was written");
+    let held = Arc::new(FakeKeychain::holding(keychain::DEFAULT_ACCOUNT, PASSWORD.as_bytes()));
+    run(PasswordSource::Keychain { account: keychain::DEFAULT_ACCOUNT.to_owned() }, held.clone())
+        .expect("the Keychain item runs the backup");
+    assert_eq!(held.reads.load(Ordering::SeqCst), 1);
+
+    // File: the Keychain is never asked, even when it holds the password.
+    let unused = Arc::new(FakeKeychain::holding(&account, PASSWORD.as_bytes()));
+    run(PasswordSource::File(file.clone()), unused.clone()).expect("the file runs the backup");
+    let absent = root.path().join("absent-password");
+    let refusal = run(PasswordSource::File(absent), unused.clone()).expect_err("no fallback to the Keychain");
+    assert_eq!(refusal.code, password::PASSWORD_FILE_INVALID);
+    assert_eq!(unused.reads.load(Ordering::SeqCst), 0);
+    assert!(file.exists(), "the file is left as it was");
 }

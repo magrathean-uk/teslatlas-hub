@@ -5,7 +5,9 @@
 //! On the Mac the app stores the recovery password as a generic password in
 //! the owner's login keychain: service [`KEYCHAIN_SERVICE`], account the
 //! `backup.password_file` path the configuration names (so each Hub
-//! configuration has its own item; no file is written there). The item's
+//! configuration has its own item; no file is written there), or
+//! [`DEFAULT_ACCOUNT`] when `backup.password_source = "keychain"` names no
+//! path (M06-T13). The item's
 //! access list trusts exactly the app and its bundled service. The service is
 //! the per-user LaunchAgent, so it runs while the owner is logged in and the
 //! login keychain is open to it.
@@ -27,6 +29,10 @@ use crate::runtime::operator::admission::OperatorRefusal;
 
 /// The Keychain item's service attribute; the app writes the same string.
 pub const KEYCHAIN_SERVICE: &str = "uk.magrathean.teslatlas.hub.backup";
+
+/// The item's account when the configuration names the Keychain source and
+/// no `backup.password_file` (the app always names the path it writes).
+pub const DEFAULT_ACCOUNT: &str = "unattended-backup";
 
 /// The run is refused because the service cannot read the password item.
 pub const BACKUP_PASSWORD_UNAVAILABLE: &str = "backup_password_unavailable";
@@ -69,7 +75,9 @@ pub fn read_keychain_password(
 /// password and no Keychain internals beyond what the owner can act on.
 pub fn unavailable(failure: KeychainFailure, account: &str) -> OperatorRefusal {
     let message = match failure {
-        KeychainFailure::Missing if Path::new(account).exists() => {
+        KeychainFailure::Missing
+            if Path::new(account).is_absolute() && Path::new(account).exists() =>
+        {
             "the backup password is still in a file waiting to move into the Keychain; open Teslatlas Hub to move it, or save the recovery password again in Service details, Backups"
         }
         KeychainFailure::Missing => {

@@ -129,6 +129,23 @@ Scheduled encrypted backups (`[backup]` in the configuration) and `backup-now`
 read the recovery password at each run; it is never part of the configuration,
 a command line, an environment variable, a report or a log.
 
+`backup.password_source` names the one place the service reads it, with no
+fallback to the other:
+
+- `"keychain"`: the Mac Keychain item below (macOS only; elsewhere the
+  configuration is refused). `backup.password_file` is optional and only names
+  the item's account; no file is read. Without it the account is
+  `unattended-backup`. The Mac app writes `password_source = "keychain"`, with
+  its own path as the account, whenever it saves the Backups section.
+- `"file"`: the file `backup.password_file` names, which is then required
+  (Linux and Docker, see below).
+- Not set (a configuration written before this setting): the Keychain on the
+  Mac, with `backup.password_file` as the item's account, and the file
+  elsewhere; `backup.password_file` stays required while `backup.enabled` is
+  true.
+
+How each source behaves:
+
 - Mac: the app stores the password in the owner's login keychain, as a generic
   password with service `uk.magrathean.teslatlas.hub.backup` and account the
   `backup.password_file` path (no file is written there). The item's access
@@ -147,8 +164,9 @@ a command line, an environment variable, a report or a log.
   saved the item, so after a rebuild the service is refused
   (`backup_password_unavailable`) until the password is saved again from the
   rebuilt app.
-- Linux and Docker: `backup.password_file` names an absolute path to a regular
-  file the service account owns, mode 0600 or tighter, at most 1 KiB of UTF-8.
+- Linux and Docker (`password_source = "file"`): `backup.password_file` names
+  an absolute path to a regular file the service account owns, mode 0600 or
+  tighter, at most 1 KiB of UTF-8.
   The service refuses a file with any access control list entry that grants
   another account access (`setfacl -b` removes one) with
   `backup_password_file_invalid`. A manual `backup-now --password-file` reads
