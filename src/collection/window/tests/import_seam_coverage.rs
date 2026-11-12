@@ -4,7 +4,10 @@
 //! ledger, so a backup, a restore and a new host carry the import cutoff. Every
 //! test drives the real controller and the real store.
 
-use std::path::{Path, PathBuf};
+use std::{
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+};
 
 use rusqlite::{Connection, params};
 
@@ -28,6 +31,10 @@ fn home(rig: &Rig) -> PathBuf {
 
 /// A store in the rig's data directory with two registered vehicles.
 fn store_with_vehicles(rig: &Rig) -> (HubStore, String, String) {
+    // The controller made the data directory on the way to its window
+    // directory; the store wants it private to the user.
+    std::fs::create_dir_all(data_dir(rig)).unwrap();
+    std::fs::set_permissions(data_dir(rig), std::fs::Permissions::from_mode(0o700)).unwrap();
     let store = HubStore::initialize(&data_dir(rig)).unwrap();
     let source = store
         .register_source(&SourceDescriptor::new("owner_api", "import-seam-coverage"), 1_000)
