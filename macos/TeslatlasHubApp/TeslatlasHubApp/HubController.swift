@@ -505,7 +505,9 @@ enum HubActionError: LocalizedError {
                                         fallback: "A Hub command could not be stopped and may still be running. Wait a moment before trying again.")
             // F8-1: a failure that a layer above the executor has already put into words (the Delete refusal,
             // the Start preflight message) keeps its words; the sentence follows. The executor's own failure
-            // says nothing more than the sentence.
+            // says nothing more than the sentence. M02-T17: an unconfirmed sign-in is such a classification,
+            // so the owner reads its line first, while the child it came from may still run.
+            if inner is HubOwnerSignInUnconfirmed { return inner.localizedDescription + " " + sentence }
             return Self.isExecutorFailure(inner) ? sentence : inner.localizedDescription + " " + sentence
         case let .lifecycleRefused(refusal):
             return refusal.userMessage
@@ -4193,7 +4195,7 @@ final class HubController {
     /// are refused, `childHeld` is published) until the child is gone, but the owner is not left
     /// with nothing on screen while it stalls. Every other outcome is delivered after the release,
     /// as before. A stale operation delivers nothing, as `finish` does.
-    fileprivate static func finishOwnerSignIn(_ op: HubLifecycleOperation,
+    static func finishOwnerSignIn(_ op: HubLifecycleOperation,
                                               _ result: Result<Void, Error>,
                                               completion: @escaping (Result<Void, Error>) -> Void) {
         guard case let .failure(error) = result,
