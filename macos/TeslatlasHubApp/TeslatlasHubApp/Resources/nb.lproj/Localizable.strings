@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Fullfør eller avbryt overleveringen for kildeprogrammigreringen før du logger ut.";
 "hub.HubController.1504.567" = "Frakoblingen ble ikke fullført som den skulle. Hub-statusen er oppdatert. Kontroller om kontoen fortsatt er tilkoblet. %1$@";
 "hub.HubController.1522.568" = "Bekreft at du har gjennomgått skjemaet for kildedatabasen før du kontrollerer kompatibiliteten.";
-"hub.HubController.1523.569" = "Bekreft at kildeprogrammet er versjon 4.2.0 eller nyere før du kontrollerer kompatibiliteten.";
+"hub.HubController.1523.569" = "Bekreft at kildeprogrammet er versjon 4.4.0 eller nyere før du kontrollerer kompatibiliteten.";
 "hub.HubController.1532.570" = "Velg en lokal PostgreSQL-kilde på 127.0.0.1 eller ::1.";
 "hub.HubController.1536.571" = "Bil-ID-en i kildeprogrammet må være et positivt tall.";
 "hub.HubController.1539.572" = "Velg den beskyttede PostgreSQL-passordfilen.";
 "hub.HubController.1552.580" = "Kompatibilitetskontrollen for kildeprogrammet returnerte ingen gyldig rapport.";
 "hub.HubController.1562.581" = "Kunne ikke bekrefte kildedatabasen. Kontroller servertilkoblingen og prøv igjen.";
-"hub.HubController.1585.586" = "Bekreft at kildeprogrammet er versjon 4.2.0 eller nyere før import.";
+"hub.HubController.1585.586" = "Bekreft at kildeprogrammet er versjon 4.4.0 eller nyere før import.";
 "hub.HubController.1591.587" = "Pålogging krever et åpent innsamlingsvindu. Åpne et vindu, og logg inn på nytt.";
 "hub.HubController.1718.615" = "Kildeprogramimporten returnerte ingen gyldig fullføringsrapport. Hub forblir stanset.";
 "hub.HubController.1742.624" = "Importen ble fullført, men Hub kunne ikke registrere kontrollpunktet for sikker overlevering: %1$@. Hub forblir stanset.";
-"hub.HubController.1846.655" = "Bekreft at kildeprogrammet er versjon 4.2.0 eller nyere før du importerer fra en direkte PostgreSQL-kilde.";
+"hub.HubController.1846.655" = "Bekreft at kildeprogrammet er versjon 4.4.0 eller nyere før du importerer fra en direkte PostgreSQL-kilde.";
 "hub.HubController.1865.658" = "PostgreSQL-kilden må inneholde URL-skjemaet postgres eller postgresql, en vert og et databasenavn.";
 "hub.HubController.1869.659" = "PostgreSQL-kilden må ikke inneholde et passord. Bruk feltet for passordfil.";
 "hub.HubController.1966.689" = "Fleet-oppsettet mislyktes: %1$@. Gjenoppretting av Hub-konfigurasjonen mislyktes også: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Fyll ut alle feltene";
 "hub.ImportSheetController.149.1710" = "Kilde, bil-ID og passordfil er obligatoriske.";
 "hub.ImportSheetController.156.1711" = "Bekreft kildeprogramversjon";
-"hub.ImportSheetController.17.1690" = "Jeg bekrefter at denne databasen tilhører versjon 4.2.0 eller nyere av kildeprogrammet";
+"hub.ImportSheetController.17.1690" = "Jeg bekrefter at denne databasen tilhører versjon 4.4.0 eller nyere av kildeprogrammet";
 "hub.ImportSheetController.26.1691" = "Importer historikk";
 "hub.ImportSheetController.49.1693" = "Kopier data fra PostgreSQL-kildedatabasen til Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "PostgreSQL-kilde";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Passordfil";
 "hub.ImportSheetController.7.1687" = "Hub leser kildedatabasen uten å stoppe eller endre kildeprogrammet. Etter importen gir Hub beskjed om når du selv skal deaktivere Tesla-tilgangen i kildeprogrammet.";
 "hub.ImportSheetController.73.1699" = "Hub kjører ikke. Start Hub, åpne et innsamlingsvindu, og logg inn.";
-"hub.ImportSheetController.9.1688" = "Før import: Ta sikkerhetskopi av kildeprogrammet, oppdater til versjon 4.2.0 eller nyere, start det én gang, og vent til databasemigreringene er fullført. En direkte databasetilkobling kan ikke bekrefte hvilken appversjon som kjører.";
+"hub.ImportSheetController.9.1688" = "Før import: Ta sikkerhetskopi av kildeprogrammet, oppdater til versjon 4.4.0 eller nyere, start det én gang, og vent til databasemigreringene er fullført. En direkte databasetilkobling kan ikke bekrefte hvilken appversjon som kjører.";
 "hub.LogsWindowController.113.1730" = "Flere logghandlinger";
 "hub.LogsWindowController.123.1732" = "Loggene som vises, kopieres eller lagres, sladder legitimasjon og private identifikatorer. Gå gjennom dem før du deler.";
 "hub.LogsWindowController.17.1712" = "Laster logger…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Skriv inn både tilgangstokenet og fornyelsestokenet.";
 "hub.OnboardingWindowController.1631.2105" = "Skriv inn kildeprogramserveren, SSH-brukeren og porten.";
 "hub.OnboardingWindowController.168.1852" = "Fortsett";
-"hub.OnboardingWindowController.1691.2113" = "En skjemakontroll kan ikke fastslå kildeprogrammets versjon. Bekreft at serveren som kjører, bruker versjon 4.2.0 eller nyere, og fortsett deretter.";
+"hub.OnboardingWindowController.1691.2113" = "En skjemakontroll kan ikke fastslå kildeprogrammets versjon. Bekreft at serveren som kjører, bruker versjon 4.4.0 eller nyere, og fortsett deretter.";
 "hub.OnboardingWindowController.1740.2131" = "Koble til kildeprogramserveren før du importerer.";
 "hub.OnboardingWindowController.1750.2137" = "Serverinnstillingene er endret. Koble til kildeprogramserveren på nytt før du importerer.";
 "hub.OnboardingWindowController.1820.2143" = "Én eller flere kontroller krever oppmerksomhet.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Velg SSH-nøkkel";
 "hub.OnboardingWindowController.1981.2148" = "Velg nøkkel";
 "hub.OnboardingWindowController.200.1857" = "Bruk et lokalt øyeblikksbilde av PostgreSQL-databasen (bare historikk)";
-"hub.OnboardingWindowController.203.1858" = "Jeg bekrefter at denne serveren kjører kildeprogrammet versjon 4.2.0 eller nyere";
+"hub.OnboardingWindowController.203.1858" = "Jeg bekrefter at denne serveren kjører kildeprogrammet versjon 4.4.0 eller nyere";
 "hub.OnboardingWindowController.252.1859" = "Forrige import ble ikke fullført. Kontroller kildeprogrammet og kjør importen på nytt.";
 "hub.OnboardingWindowController.292.1862" = "Klar til import.";
 "hub.OnboardingWindowController.298.1866" = "Tilkobling til kildeprogrammet mislyktes";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub kunne ikke reservere en lokal port for databasetunnelen.";
 "hub.SourceServerImporter.744.2586" = "Prøv igjen.";
 "hub.SourceServerImporter.746.2588" = "Oppdater kildeprogrammet først";
-"hub.SourceServerImporter.747.2589" = "Veiledet migrering krever kildeprogrammet 4.2.0 eller nyere.";
+"hub.SourceServerImporter.747.2589" = "Veiledet migrering krever kildeprogrammet 4.4.0 eller nyere.";
 "hub.SourceServerImporter.748.2590" = "Ta sikkerhetskopi av kildeprogrammet, oppdater det, vent til databasemigreringene er fullført, og koble deretter til på nytt.";
 "hub.SourceServerImporter.763.2594" = "Kildeprogrammet kjører ikke, eller containeren ble ikke funnet.";
 "hub.SourceServerImporter.764.2596" = "Kildeprogramprosjektet i Docker Compose kunne ikke identifiseres.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Denne kontoen har ikke tilgang til Docker. Gi den direkte tilgang til Docker, eller tillat passordløs sudo for Docker.";
 "hub.SourceServerImporter.834.2668" = "Fant ikke Docker på kildeprogramserveren. Kontroller PATH for serveren og kontoen.";
 "hub.SourceServerImporter.836.2670" = "Docker er installert, men utilgjengelig. Kontroller at Docker-tjenesten kjører.";
-"hub.SourceServerImporter.838.2672" = "Veiledet migrering krever kildeprogrammet 4.2.0 eller nyere. Oppdater kildeprogrammet, og prøv igjen.";
+"hub.SourceServerImporter.838.2672" = "Veiledet migrering krever kildeprogrammet 4.4.0 eller nyere. Oppdater kildeprogrammet, og prøv igjen.";
 "hub.SourceServerImporter.840.2674" = "SSH kunne ikke koble til eller autentisere. Kontroller serveren, porten, kontoen og den valgte autentiseringsmetoden.";
 "hub.SourceServerImporter.842.2676" = "SSH-autentisering mislyktes. Kontroller kontoen og den valgte autentiseringsmetoden.";
 "hub.SourceServerImporter.854.2688" = "SSH-serveren lukket tilkoblingen. Kontroller serverloggene og SSH-policyen.";
@@ -615,7 +615,7 @@
 
 "hub.import.ackExplain" = "En skjemakontroll kan ikke vise hvilken versjon av kildeprogrammet som opprettet databasen: flere versjoner deler det samme skjemaet.";
 
-"hub.import.ackRelease" = "Jeg bekrefter at kildeprogrammet er versjon 4.2.0 eller nyere og ikke blir oppdatert under importen.";
+"hub.import.ackRelease" = "Jeg bekrefter at kildeprogrammet er versjon 4.4.0 eller nyere og ikke blir oppdatert under importen.";
 
 "hub.backup.title" = "Sikkerhetskopier";
 

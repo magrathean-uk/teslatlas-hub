@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "로그아웃하기 전에 원본 애플리케이션 마이그레이션 인계 절차를 완료하거나 취소하세요.";
 "hub.HubController.1504.567" = "연결 해제가 정상적으로 완료되지 않았습니다. Hub 상태를 새로 고쳤습니다. 계정이 계속 연결되어 있는지 확인하세요. %1$@";
 "hub.HubController.1522.568" = "호환성을 확인하기 전에 검토한 원본 데이터베이스 스키마를 확인했다고 표시하세요.";
-"hub.HubController.1523.569" = "호환성을 확인하기 전에 원본 애플리케이션 버전이 4.2.0 이상인지 확인하세요.";
+"hub.HubController.1523.569" = "호환성을 확인하기 전에 원본 애플리케이션 버전이 4.4.0 이상인지 확인하세요.";
 "hub.HubController.1532.570" = "127.0.0.1 또는 ::1에 있는 로컬 PostgreSQL 소스를 선택하세요.";
 "hub.HubController.1536.571" = "원본 차량 ID는 양수여야 합니다.";
 "hub.HubController.1539.572" = "보호된 PostgreSQL 암호 파일을 선택하세요.";
 "hub.HubController.1552.580" = "원본 애플리케이션 호환성 확인에서 유효한 보고서를 반환하지 않았습니다.";
 "hub.HubController.1562.581" = "원본 데이터베이스를 확인하지 못했습니다. 서버 연결을 확인하고 다시 시도하세요.";
-"hub.HubController.1585.586" = "가져오기 전에 원본 애플리케이션 버전이 4.2.0 이상인지 확인하세요.";
+"hub.HubController.1585.586" = "가져오기 전에 원본 애플리케이션 버전이 4.4.0 이상인지 확인하세요.";
 "hub.HubController.1591.587" = "로그인하려면 열려 있는 수집 창이 필요합니다. 창을 연 다음 다시 로그인하세요.";
 "hub.HubController.1718.615" = "원본 애플리케이션 가져오기에서 유효한 완료 보고서가 반환되지 않았습니다. Hub는 중지된 상태로 유지됩니다.";
 "hub.HubController.1742.624" = "가져오기는 완료되었지만 안전한 인계 조건을 기록하지 못했습니다: %1$@. Hub는 중지된 상태로 유지됩니다.";
-"hub.HubController.1846.655" = "직접 PostgreSQL 소스에서 가져오기 전에 원본 애플리케이션 버전이 4.2.0 이상인지 확인하세요.";
+"hub.HubController.1846.655" = "직접 PostgreSQL 소스에서 가져오기 전에 원본 애플리케이션 버전이 4.4.0 이상인지 확인하세요.";
 "hub.HubController.1865.658" = "PostgreSQL 소스에는 postgres 또는 postgresql 스킴, 호스트 및 데이터베이스 이름이 있어야 합니다.";
 "hub.HubController.1869.659" = "PostgreSQL 소스에 암호를 포함하면 안 됩니다. 암호 파일 필드를 사용하세요.";
 "hub.HubController.1966.689" = "Fleet 설정에 실패했습니다: %1$@. Hub 설정 복구에도 실패했습니다: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "모든 항목을 입력하세요";
 "hub.ImportSheetController.149.1710" = "소스, 차량 ID, 암호 파일이 필요합니다.";
 "hub.ImportSheetController.156.1711" = "원본 애플리케이션 버전 확인";
-"hub.ImportSheetController.17.1690" = "이 데이터베이스가 원본 애플리케이션 4.2.0 이상에 속함을 확인합니다";
+"hub.ImportSheetController.17.1690" = "이 데이터베이스가 원본 애플리케이션 4.4.0 이상에 속함을 확인합니다";
 "hub.ImportSheetController.26.1691" = "기록 가져오기";
 "hub.ImportSheetController.49.1693" = "원본 PostgreSQL 데이터베이스의 데이터를 Teslatlas Hub로 복사합니다.";
 "hub.ImportSheetController.64.1694" = "PostgreSQL 소스";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "암호 파일";
 "hub.ImportSheetController.7.1687" = "Hub는 원본 애플리케이션을 중지하거나 데이터를 변경하지 않고 원본 데이터베이스를 읽습니다. 가져온 뒤 원본 애플리케이션에서 Tesla 접근을 직접 비활성화할 시점을 Hub가 안내합니다.";
 "hub.ImportSheetController.73.1699" = "Hub가 실행 중이 아닙니다. Hub를 시작하고 수집 창을 연 다음 로그인하세요.";
-"hub.ImportSheetController.9.1688" = "가져오기 전에 원본 애플리케이션을 백업하고 4.2.0 이상으로 업데이트하세요. 한 번 실행한 뒤 데이터베이스 마이그레이션이 끝날 때까지 기다리세요. 데이터베이스에 직접 연결하는 것만으로는 실행 중인 앱 버전을 확인할 수 없습니다.";
+"hub.ImportSheetController.9.1688" = "가져오기 전에 원본 애플리케이션을 백업하고 4.4.0 이상으로 업데이트하세요. 한 번 실행한 뒤 데이터베이스 마이그레이션이 끝날 때까지 기다리세요. 데이터베이스에 직접 연결하는 것만으로는 실행 중인 앱 버전을 확인할 수 없습니다.";
 "hub.LogsWindowController.113.1730" = "기타 로그 동작";
 "hub.LogsWindowController.123.1732" = "표시·복사·저장되는 로그에서는 자격 증명과 비공개 식별 정보를 가립니다. 공유하기 전에 검토하세요.";
 "hub.LogsWindowController.17.1712" = "로그 불러오는 중…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "액세스 토큰과 새로 고침 토큰을 모두 입력하세요.";
 "hub.OnboardingWindowController.1631.2105" = "원본 애플리케이션 서버, SSH 사용자 및 포트를 입력하세요.";
 "hub.OnboardingWindowController.168.1852" = "계속";
-"hub.OnboardingWindowController.1691.2113" = "스키마 검사만으로는 원본 애플리케이션의 릴리스를 확인할 수 없습니다. 실행 중인 서버가 릴리스 4.2.0 이상인지 확인한 뒤 계속하세요.";
+"hub.OnboardingWindowController.1691.2113" = "스키마 검사만으로는 원본 애플리케이션의 릴리스를 확인할 수 없습니다. 실행 중인 서버가 릴리스 4.4.0 이상인지 확인한 뒤 계속하세요.";
 "hub.OnboardingWindowController.1740.2131" = "가져오기 전에 원본 애플리케이션 서버에 연결하세요.";
 "hub.OnboardingWindowController.1750.2137" = "서버 설정이 변경되었습니다. 가져오기 전에 원본 애플리케이션 서버에 다시 연결하세요.";
 "hub.OnboardingWindowController.1820.2143" = "하나 이상의 점검에 조치가 필요합니다.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "SSH 키 선택";
 "hub.OnboardingWindowController.1981.2148" = "키 선택";
 "hub.OnboardingWindowController.200.1857" = "로컬 PostgreSQL 스냅샷 사용(기록 전용)";
-"hub.OnboardingWindowController.203.1858" = "이 서버에서 원본 애플리케이션 4.2.0 이상이 실행 중임을 확인합니다";
+"hub.OnboardingWindowController.203.1858" = "이 서버에서 원본 애플리케이션 4.4.0 이상이 실행 중임을 확인합니다";
 "hub.OnboardingWindowController.252.1859" = "이전 가져오기가 완료되지 않았습니다. 원본 애플리케이션을 확인하고 가져오기를 다시 실행하세요.";
 "hub.OnboardingWindowController.292.1862" = "가져올 준비가 되었습니다.";
 "hub.OnboardingWindowController.298.1866" = "원본 애플리케이션 연결 실패";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub가 로컬 데이터베이스 터널 포트를 확보하지 못했습니다.";
 "hub.SourceServerImporter.744.2586" = "다시 시도하세요.";
 "hub.SourceServerImporter.746.2588" = "먼저 원본 애플리케이션을 업데이트하세요";
-"hub.SourceServerImporter.747.2589" = "안내형 마이그레이션을 진행하려면 원본 애플리케이션 4.2.0 이상이 필요합니다.";
+"hub.SourceServerImporter.747.2589" = "안내형 마이그레이션을 진행하려면 원본 애플리케이션 4.4.0 이상이 필요합니다.";
 "hub.SourceServerImporter.748.2590" = "원본 애플리케이션을 백업하고 업데이트한 다음, 마이그레이션이 완료될 때까지 기다린 후 다시 연결하세요.";
 "hub.SourceServerImporter.763.2594" = "원본 애플리케이션이 실행 중이 아니거나 컨테이너를 찾을 수 없습니다.";
 "hub.SourceServerImporter.764.2596" = "원본 애플리케이션의 Docker Compose 프로젝트를 식별할 수 없습니다.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "이 계정은 Docker에 접근할 수 없습니다. 직접 Docker 접근 권한을 부여하거나 Docker에 암호 없는 sudo를 허용하세요.";
 "hub.SourceServerImporter.834.2668" = "원본 애플리케이션 서버에서 Docker를 찾을 수 없습니다. 서버와 계정의 PATH를 확인하세요.";
 "hub.SourceServerImporter.836.2670" = "Docker가 설치되어 있지만 사용할 수 없습니다. Docker 서비스가 실행 중인지 확인하세요.";
-"hub.SourceServerImporter.838.2672" = "안내형 마이그레이션에는 원본 애플리케이션 4.2.0 이상이 필요합니다. 원본 애플리케이션을 업데이트한 다음 다시 시도하세요.";
+"hub.SourceServerImporter.838.2672" = "안내형 마이그레이션에는 원본 애플리케이션 4.4.0 이상이 필요합니다. 원본 애플리케이션을 업데이트한 다음 다시 시도하세요.";
 "hub.SourceServerImporter.840.2674" = "SSH로 연결하거나 인증할 수 없습니다. 서버, 포트, 계정, 선택한 인증 방식을 확인하세요.";
 "hub.SourceServerImporter.842.2676" = "SSH 인증에 실패했습니다. 계정과 선택한 인증 방식을 확인하세요.";
 "hub.SourceServerImporter.854.2688" = "SSH 서버가 연결을 종료했습니다. 서버 로그와 SSH 정책을 확인하세요.";
@@ -615,7 +615,7 @@
 
 "hub.import.ackExplain" = "스키마 검사만으로는 어떤 릴리스의 원본 애플리케이션이 이 데이터베이스를 작성했는지 알 수 없습니다. 여러 릴리스가 같은 스키마를 사용합니다.";
 
-"hub.import.ackRelease" = "원본 애플리케이션이 릴리스 4.2.0 이상이며 가져오는 동안 업데이트되지 않을 것임을 확인합니다.";
+"hub.import.ackRelease" = "원본 애플리케이션이 릴리스 4.4.0 이상이며 가져오는 동안 업데이트되지 않을 것임을 확인합니다.";
 
 "hub.backup.title" = "백업";
 

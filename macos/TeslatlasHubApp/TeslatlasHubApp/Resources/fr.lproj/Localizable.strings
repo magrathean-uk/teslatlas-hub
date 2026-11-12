@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Termine ou annule la passation de migration de l’application source avant de te déconnecter.";
 "hub.HubController.1504.567" = "La déconnexion ne s’est pas terminée correctement. L’état du Hub a été actualisé ; vérifie si le compte est toujours connecté. %1$@";
 "hub.HubController.1522.568" = "Confirme que tu as examiné le schéma de la base de données source avant de vérifier sa compatibilité.";
-"hub.HubController.1523.569" = "Confirme que l’application source est en version 4.2.0 ou ultérieure avant de vérifier la compatibilité.";
+"hub.HubController.1523.569" = "Confirme que l’application source est en version 4.4.0 ou ultérieure avant de vérifier la compatibilité.";
 "hub.HubController.1532.570" = "Choisis une source PostgreSQL locale sur 127.0.0.1 ou ::1.";
 "hub.HubController.1536.571" = "L’identifiant de voiture dans l’application source doit être un nombre positif.";
 "hub.HubController.1539.572" = "Sélectionne le fichier de mot de passe PostgreSQL protégé.";
 "hub.HubController.1552.580" = "Le contrôle de compatibilité de l’application source n’a renvoyé aucun rapport valide.";
 "hub.HubController.1562.581" = "Impossible de vérifier la base de données source. Vérifie la connexion au serveur et réessaie.";
-"hub.HubController.1585.586" = "Confirme que l’application source est en version 4.2.0 ou ultérieure avant l’importation.";
+"hub.HubController.1585.586" = "Confirme que l’application source est en version 4.4.0 ou ultérieure avant l’importation.";
 "hub.HubController.1591.587" = "La connexion nécessite une fenêtre de collecte ouverte. Ouvre une fenêtre, puis reconnecte-toi.";
 "hub.HubController.1718.615" = "L’importation depuis l’application source n’a renvoyé aucun rapport d’achèvement valide. Le Hub reste arrêté.";
 "hub.HubController.1742.624" = "L’importation est terminée, mais le Hub n’a pas pu consigner la condition de sécurité du transfert : %1$@. Le Hub reste arrêté.";
-"hub.HubController.1846.655" = "Confirme que l’application source est en version 4.2.0 ou ultérieure avant d’importer depuis une source PostgreSQL directe.";
+"hub.HubController.1846.655" = "Confirme que l’application source est en version 4.4.0 ou ultérieure avant d’importer depuis une source PostgreSQL directe.";
 "hub.HubController.1865.658" = "La source PostgreSQL doit inclure un schéma « postgres » ou « postgresql », un hôte et un nom de base de données.";
 "hub.HubController.1869.659" = "La source PostgreSQL ne doit pas contenir de mot de passe. Utilise le champ du fichier de mot de passe.";
 "hub.HubController.1966.689" = "La configuration Fleet a échoué : %1$@. La récupération de la configuration du Hub a également échoué : %2$@.";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Renseigne tous les champs.";
 "hub.ImportSheetController.149.1710" = "La source, l’ID du véhicule et le fichier de mot de passe sont obligatoires.";
 "hub.ImportSheetController.156.1711" = "Confirmer la version de l’application source";
-"hub.ImportSheetController.17.1690" = "Je confirme que cette base de données appartient à l’application source 4.2.0 ou à une version ultérieure.";
+"hub.ImportSheetController.17.1690" = "Je confirme que cette base de données appartient à l’application source 4.4.0 ou à une version ultérieure.";
 "hub.ImportSheetController.26.1691" = "Importer l’historique";
 "hub.ImportSheetController.49.1693" = "Copie les données d’une base PostgreSQL de l’application source dans Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "Source PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Fichier de mot de passe";
 "hub.ImportSheetController.7.1687" = "Le Hub lit la base de données source sans la modifier ni arrêter l’application source. Après l’importation, le Hub t’indique quand désactiver toi-même l’accès à Tesla dans l’application source.";
 "hub.ImportSheetController.73.1699" = "Le Hub n’est pas en cours d’exécution. Démarre le Hub, ouvre une fenêtre de collecte, puis connecte-toi.";
-"hub.ImportSheetController.9.1688" = "Avant l’importation : sauvegarde l’application source, mets-la à jour vers la version 4.2.0 ou ultérieure, démarre-la une fois et attends la fin de ses migrations de base de données. Une connexion directe à la base ne permet pas de vérifier la version de l’application en cours d’exécution.";
+"hub.ImportSheetController.9.1688" = "Avant l’importation : sauvegarde l’application source, mets-la à jour vers la version 4.4.0 ou ultérieure, démarre-la une fois et attends la fin de ses migrations de base de données. Une connexion directe à la base ne permet pas de vérifier la version de l’application en cours d’exécution.";
 "hub.LogsWindowController.113.1730" = "Autres actions sur les journaux";
 "hub.LogsWindowController.123.1732" = "Les journaux affichés, copiés et enregistrés masquent les identifiants d’accès et les identifiants privés. Vérifie-les avant de les partager.";
 "hub.LogsWindowController.17.1712" = "Chargement des journaux…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Saisis le jeton d’accès et le jeton de renouvellement.";
 "hub.OnboardingWindowController.1631.2105" = "Renseigne le serveur de l’application source, l’utilisateur SSH et le port.";
 "hub.OnboardingWindowController.168.1852" = "Continuer";
-"hub.OnboardingWindowController.1691.2113" = "La vérification du schéma ne permet pas de déterminer la version de l’application source. Confirme que le serveur en cours d’exécution utilise la version 4.2.0 ou ultérieure, puis continue.";
+"hub.OnboardingWindowController.1691.2113" = "La vérification du schéma ne permet pas de déterminer la version de l’application source. Confirme que le serveur en cours d’exécution utilise la version 4.4.0 ou ultérieure, puis continue.";
 "hub.OnboardingWindowController.1740.2131" = "Connecte-toi au serveur de l’application source avant d’importer.";
 "hub.OnboardingWindowController.1750.2137" = "Les réglages du serveur ont changé. Reconnecte-toi au serveur de l’application source avant d’importer.";
 "hub.OnboardingWindowController.1820.2143" = "Un ou plusieurs contrôles nécessitent ton attention.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Choisir une clé SSH";
 "hub.OnboardingWindowController.1981.2148" = "Choisir une clé";
 "hub.OnboardingWindowController.200.1857" = "Utiliser un instantané local de PostgreSQL (historique uniquement)";
-"hub.OnboardingWindowController.203.1858" = "Je confirme que ce serveur exécute l’application source 4.2.0 ou une version ultérieure.";
+"hub.OnboardingWindowController.203.1858" = "Je confirme que ce serveur exécute l’application source 4.4.0 ou une version ultérieure.";
 "hub.OnboardingWindowController.252.1859" = "L’importation précédente ne s’est pas terminée. Vérifie l’application source et relance l’importation.";
 "hub.OnboardingWindowController.292.1862" = "Prêt pour l’importation.";
 "hub.OnboardingWindowController.298.1866" = "Échec de la connexion à l’application source";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Le Hub n’a pas pu réserver de port local pour le tunnel vers la base de données.";
 "hub.SourceServerImporter.744.2586" = "Réessaie.";
 "hub.SourceServerImporter.746.2588" = "Mets d’abord l’application source à jour";
-"hub.SourceServerImporter.747.2589" = "La migration guidée nécessite l’application source 4.2.0 ou une version ultérieure.";
+"hub.SourceServerImporter.747.2589" = "La migration guidée nécessite l’application source 4.4.0 ou une version ultérieure.";
 "hub.SourceServerImporter.748.2590" = "Sauvegarde l’application source, mets-la à jour, laisse ses migrations se terminer, puis reconnecte-toi.";
 "hub.SourceServerImporter.763.2594" = "L’application source n’est pas en cours d’exécution ou son conteneur est introuvable.";
 "hub.SourceServerImporter.764.2596" = "Impossible d’identifier le projet Docker Compose de l’application source.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Ce compte ne peut pas accéder à Docker. Accorde-lui un accès direct à Docker ou autorise sudo sans mot de passe pour Docker.";
 "hub.SourceServerImporter.834.2668" = "Docker est introuvable sur le serveur de l’application source. Vérifie le serveur et la variable PATH du compte.";
 "hub.SourceServerImporter.836.2670" = "Docker est installé mais indisponible. Vérifie que le service Docker est en cours d’exécution.";
-"hub.SourceServerImporter.838.2672" = "La migration guidée nécessite l’application source 4.2.0 ou une version ultérieure. Mets l’application source à jour, puis réessaie.";
+"hub.SourceServerImporter.838.2672" = "La migration guidée nécessite l’application source 4.4.0 ou une version ultérieure. Mets l’application source à jour, puis réessaie.";
 "hub.SourceServerImporter.840.2674" = "La connexion ou l’authentification SSH a échoué. Vérifie le serveur, le port, le compte et la méthode d’authentification sélectionnée.";
 "hub.SourceServerImporter.842.2676" = "L’authentification SSH a échoué. Vérifie le compte et la méthode d’authentification sélectionnée.";
 "hub.SourceServerImporter.854.2688" = "Le serveur SSH a fermé la connexion. Vérifie ses journaux et sa politique SSH.";
@@ -615,7 +615,7 @@
 
 "hub.import.ackExplain" = "La vérification du schéma ne permet pas de savoir quelle version de l’application source a créé cette base de données : plusieurs versions utilisent le même schéma.";
 
-"hub.import.ackRelease" = "Je confirme que l’application source est en version 4.2.0 ou ultérieure et qu’elle ne sera pas mise à jour pendant l’importation.";
+"hub.import.ackRelease" = "Je confirme que l’application source est en version 4.4.0 ou ultérieure et qu’elle ne sera pas mise à jour pendant l’importation.";
 
 "hub.backup.title" = "Sauvegardes";
 

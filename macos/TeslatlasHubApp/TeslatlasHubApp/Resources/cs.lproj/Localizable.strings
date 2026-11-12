@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Než se odhlásíte, dokončete nebo zrušte předání při migraci zdrojové aplikace.";
 "hub.HubController.1504.567" = "Odpojení nebylo dokončeno čistě. Stav Hubu byl aktualizován; ověřte, zda je účet stále připojen. %1$@";
 "hub.HubController.1522.568" = "Před kontrolou kompatibility potvrďte, že jste zkontrolovali schéma zdrojové databáze.";
-"hub.HubController.1523.569" = "Před kontrolou kompatibility potvrďte verzi zdrojové aplikace 4.2.0 nebo novější.";
+"hub.HubController.1523.569" = "Před kontrolou kompatibility potvrďte verzi zdrojové aplikace 4.4.0 nebo novější.";
 "hub.HubController.1532.570" = "Vyberte místní zdroj PostgreSQL na adrese 127.0.0.1 nebo ::1.";
 "hub.HubController.1536.571" = "ID vozidla ve zdrojové databázi musí být kladné číslo.";
 "hub.HubController.1539.572" = "Vyberte chráněný soubor s heslem PostgreSQL.";
 "hub.HubController.1552.580" = "Kontrola kompatibility zdrojové aplikace nevrátila platnou zprávu.";
 "hub.HubController.1562.581" = "Nepodařilo se ověřit zdrojovou databázi. Zkontrolujte připojení k serveru a zkuste to znovu.";
-"hub.HubController.1585.586" = "Před importem potvrďte verzi zdrojové aplikace 4.2.0 nebo novější.";
+"hub.HubController.1585.586" = "Před importem potvrďte verzi zdrojové aplikace 4.4.0 nebo novější.";
 "hub.HubController.1591.587" = "Přihlášení vyžaduje otevřené okno sběru. Otevřete okno a přihlaste se znovu.";
 "hub.HubController.1718.615" = "Import ze zdrojové aplikace nevrátil platné potvrzení o dokončení. Hub zůstává zastavený.";
 "hub.HubController.1742.624" = "Import byl dokončen, ale Hub nedokázal zaznamenat bezpečnou podmínku pro předání: %1$@. Hub zůstává zastavený.";
-"hub.HubController.1846.655" = "Před importem z přímého zdroje PostgreSQL potvrďte verzi zdrojové aplikace 4.2.0 nebo novější.";
+"hub.HubController.1846.655" = "Před importem z přímého zdroje PostgreSQL potvrďte verzi zdrojové aplikace 4.4.0 nebo novější.";
 "hub.HubController.1865.658" = "Zdroj PostgreSQL musí obsahovat schéma postgres nebo postgresql, hostitele a název databáze.";
 "hub.HubController.1869.659" = "Zdroj PostgreSQL nesmí obsahovat heslo. Použijte pole pro soubor s heslem.";
 "hub.HubController.1966.689" = "Nastavení Tesla Fleet selhalo: %1$@. Obnovení konfigurace Hubu také selhalo: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Vyplňte všechna pole.";
 "hub.ImportSheetController.149.1710" = "Je nutné zadat zdroj, ID vozidla a soubor s heslem.";
 "hub.ImportSheetController.156.1711" = "Potvrďte verzi zdrojové aplikace";
-"hub.ImportSheetController.17.1690" = "Potvrzuji, že tato databáze patří k verzi zdrojové aplikace 4.2.0 nebo novější.";
+"hub.ImportSheetController.17.1690" = "Potvrzuji, že tato databáze patří k verzi zdrojové aplikace 4.4.0 nebo novější.";
 "hub.ImportSheetController.26.1691" = "Importovat historii";
 "hub.ImportSheetController.49.1693" = "Zkopírujte data ze zdrojové databáze PostgreSQL do Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "Zdroj PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Soubor s heslem";
 "hub.ImportSheetController.7.1687" = "Hub čte data ze zdrojové databáze, aniž by zastavoval nebo měnil zdrojovou aplikaci. Po importu vám sdělí, kdy máte sami vypnout přístup k Tesle ve zdrojové aplikaci.";
 "hub.ImportSheetController.73.1699" = "Hub neběží. Spusťte Hub, otevřete okno sběru a poté se přihlaste.";
-"hub.ImportSheetController.9.1688" = "Před importem: zazálohujte zdrojovou aplikaci, aktualizujte ji na verzi 4.2.0 nebo novější, jednou ji spusťte a počkejte na dokončení migrací databáze. Z přímého připojení k databázi nelze ověřit verzi spuštěné aplikace.";
+"hub.ImportSheetController.9.1688" = "Před importem: zazálohujte zdrojovou aplikaci, aktualizujte ji na verzi 4.4.0 nebo novější, jednou ji spusťte a počkejte na dokončení migrací databáze. Z přímého připojení k databázi nelze ověřit verzi spuštěné aplikace.";
 "hub.LogsWindowController.113.1730" = "Další akce s protokoly";
 "hub.LogsWindowController.123.1732" = "Zobrazované, kopírované a ukládané protokoly skrývají přihlašovací údaje a soukromé identifikátory. Před sdílením je zkontrolujte.";
 "hub.LogsWindowController.17.1712" = "Načítání protokolů…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Zadejte přístupový i obnovovací token.";
 "hub.OnboardingWindowController.1631.2105" = "Zadejte server zdrojové aplikace, uživatele SSH a port.";
 "hub.OnboardingWindowController.168.1852" = "Pokračovat";
-"hub.OnboardingWindowController.1691.2113" = "Kontrola schématu nedokáže určit verzi zdrojové aplikace. Potvrďte, že na serveru běží zdrojová aplikace verze 4.2.0 nebo novější, a potom pokračujte.";
+"hub.OnboardingWindowController.1691.2113" = "Kontrola schématu nedokáže určit verzi zdrojové aplikace. Potvrďte, že na serveru běží zdrojová aplikace verze 4.4.0 nebo novější, a potom pokračujte.";
 "hub.OnboardingWindowController.1740.2131" = "Před importem se připojte k serveru zdrojové aplikace.";
 "hub.OnboardingWindowController.1750.2137" = "Nastavení serveru se změnilo. Před importem se znovu připojte k serveru zdrojové aplikace.";
 "hub.OnboardingWindowController.1820.2143" = "Jedna nebo více kontrol vyžaduje pozornost.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Vyberte klíč SSH";
 "hub.OnboardingWindowController.1981.2148" = "Vybrat klíč";
 "hub.OnboardingWindowController.200.1857" = "Použít místní snímek PostgreSQL (pouze historie)";
-"hub.OnboardingWindowController.203.1858" = "Potvrzuji, že na tomto serveru běží zdrojová aplikace verze 4.2.0 nebo novější.";
+"hub.OnboardingWindowController.203.1858" = "Potvrzuji, že na tomto serveru běží zdrojová aplikace verze 4.4.0 nebo novější.";
 "hub.OnboardingWindowController.252.1859" = "Předchozí import nebyl dokončen. Zkontrolujte zdrojovou aplikaci a spusťte import znovu.";
 "hub.OnboardingWindowController.292.1862" = "Připraveno k importu.";
 "hub.OnboardingWindowController.298.1866" = "Připojení k zdrojové aplikaci selhalo";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hubu se nepodařilo rezervovat port pro místní databázový tunel.";
 "hub.SourceServerImporter.744.2586" = "Zkuste to znovu.";
 "hub.SourceServerImporter.746.2588" = "Nejprve aktualizujte zdrojovou aplikaci";
-"hub.SourceServerImporter.747.2589" = "Řízená migrace vyžaduje verzi zdrojové aplikace 4.2.0 nebo novější.";
+"hub.SourceServerImporter.747.2589" = "Řízená migrace vyžaduje verzi zdrojové aplikace 4.4.0 nebo novější.";
 "hub.SourceServerImporter.748.2590" = "Zazálohujte zdrojovou aplikaci, aktualizujte ji, počkejte na dokončení migrací a potom se znovu připojte.";
 "hub.SourceServerImporter.763.2594" = "Zdrojová aplikace neběží nebo se nepodařilo najít její kontejner.";
 "hub.SourceServerImporter.764.2596" = "Projekt Docker Compose systému zdrojové aplikace se nepodařilo určit.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Tento účet nemá přístup k Dockeru. Udělte mu přímý přístup k Dockeru nebo povolte použití sudo bez hesla pro Docker.";
 "hub.SourceServerImporter.834.2668" = "Docker nebyl na serveru zdrojové aplikace nalezen. Zkontrolujte server a proměnnou PATH účtu.";
 "hub.SourceServerImporter.836.2670" = "Docker je nainstalován, ale není dostupný. Zkontrolujte, zda běží služba Docker.";
-"hub.SourceServerImporter.838.2672" = "Řízená migrace vyžaduje zdrojovou aplikaci verze 4.2.0 nebo novější. Aktualizujte zdrojovou aplikaci a zkuste to znovu.";
+"hub.SourceServerImporter.838.2672" = "Řízená migrace vyžaduje zdrojovou aplikaci verze 4.4.0 nebo novější. Aktualizujte zdrojovou aplikaci a zkuste to znovu.";
 "hub.SourceServerImporter.840.2674" = "SSH se nemohlo připojit nebo ověřit účet. Zkontrolujte server, port, účet a zvolený způsob ověření.";
 "hub.SourceServerImporter.842.2676" = "Ověření SSH selhalo. Zkontrolujte účet a zvolený způsob ověření.";
 "hub.SourceServerImporter.854.2688" = "Server SSH ukončil připojení. Zkontrolujte protokoly serveru a zásady SSH.";
@@ -615,7 +615,7 @@
 
 "hub.import.ackExplain" = "Kontrola schématu nedokáže určit, která verze zdrojové aplikace tuto databázi vytvořila: stejné schéma používá více verzí.";
 
-"hub.import.ackRelease" = "Potvrzuji, že zdrojová aplikace je ve verzi 4.2.0 nebo novější a během importu nebude aktualizována.";
+"hub.import.ackRelease" = "Potvrzuji, že zdrojová aplikace je ve verzi 4.4.0 nebo novější a během importu nebude aktualizována.";
 
 "hub.backup.title" = "Zálohy";
 

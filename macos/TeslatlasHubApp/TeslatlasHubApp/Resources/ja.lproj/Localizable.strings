@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "サインアウトする前に、移行元アプリケーションからの移行の引き継ぎを完了するかキャンセルしてください。";
 "hub.HubController.1504.567" = "切断処理が正常に完了しませんでした。Hubの状態を更新しました。アカウントがまだ接続中か確認してください。%1$@";
 "hub.HubController.1522.568" = "互換性をチェックする前に、確認済みの移行元データベースのスキーマを承認してください。";
-"hub.HubController.1523.569" = "互換性をチェックする前に、移行元アプリケーションが4.2.0以降であることを確認してください。";
+"hub.HubController.1523.569" = "互換性をチェックする前に、移行元アプリケーションが4.4.0以降であることを確認してください。";
 "hub.HubController.1532.570" = "127.0.0.1または::1上のローカルPostgreSQLソースを選択してください。";
 "hub.HubController.1536.571" = "移行元の車両IDは正の数である必要があります。";
 "hub.HubController.1539.572" = "保護されたPostgreSQLパスワードファイルを選択してください。";
 "hub.HubController.1552.580" = "移行元アプリケーションの互換性チェックから有効なレポートが返されませんでした。";
 "hub.HubController.1562.581" = "移行元データベースを確認できませんでした。サーバー接続を確認して、もう一度お試しください。";
-"hub.HubController.1585.586" = "インポートする前に、移行元アプリケーションが4.2.0以降であることを確認してください。";
+"hub.HubController.1585.586" = "インポートする前に、移行元アプリケーションが4.4.0以降であることを確認してください。";
 "hub.HubController.1591.587" = "サインインには、開いているデータ収集ウィンドウが必要です。ウィンドウを開いてから、もう一度サインインしてください。";
 "hub.HubController.1718.615" = "移行元アプリケーションのインポートから有効な完了レポートが返されませんでした。Hubは停止したままです。";
 "hub.HubController.1742.624" = "インポートは完了しましたが、安全な引き継ぎ条件を記録できませんでした：%1$@。Hubは停止したままです。";
-"hub.HubController.1846.655" = "PostgreSQLソースから直接インポートする前に、移行元アプリケーションが4.2.0以降であることを確認してください。";
+"hub.HubController.1846.655" = "PostgreSQLソースから直接インポートする前に、移行元アプリケーションが4.4.0以降であることを確認してください。";
 "hub.HubController.1865.658" = "PostgreSQLソースには、postgresまたはpostgresqlのスキーム、ホスト、データベース名が必要です。";
 "hub.HubController.1869.659" = "PostgreSQLソースにパスワードを含めないでください。パスワードファイル欄を使用してください。";
 "hub.HubController.1966.689" = "Fleetの設定に失敗しました：%1$@ Hub設定の復旧にも失敗しました：%2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "すべての項目を入力してください";
 "hub.ImportSheetController.149.1710" = "ソース、車両ID、パスワードファイルが必要です。";
 "hub.ImportSheetController.156.1711" = "移行元アプリケーションのバージョンを確認";
-"hub.ImportSheetController.17.1690" = "このデータベースが移行元アプリケーション 4.2.0以降のものであることを確認します";
+"hub.ImportSheetController.17.1690" = "このデータベースが移行元アプリケーション 4.4.0以降のものであることを確認します";
 "hub.ImportSheetController.26.1691" = "履歴をインポート";
 "hub.ImportSheetController.49.1693" = "移行元のPostgreSQLデータベースからTeslatlas Hubにデータをコピーします。";
 "hub.ImportSheetController.64.1694" = "PostgreSQLソース";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "パスワードファイル";
 "hub.ImportSheetController.7.1687" = "Hubは移行元アプリケーションを停止したりデータを変更したりせずに、移行元データベースを読み取ります。インポート後はHubの案内に従い、移行元アプリケーションでTeslaへのアクセスを自分で無効にしてください。";
 "hub.ImportSheetController.73.1699" = "Hubが実行されていません。Hubを起動し、データ収集ウィンドウを開いてから、サインインしてください。";
-"hub.ImportSheetController.9.1688" = "インポート前に移行元アプリケーションをバックアップし、バージョン4.2.0以降に更新して、一度起動し、データベースの移行が完了するまで待ってください。データベースへ直接接続しても、実行中のアプリのバージョンは確認できません。";
+"hub.ImportSheetController.9.1688" = "インポート前に移行元アプリケーションをバックアップし、バージョン4.4.0以降に更新して、一度起動し、データベースの移行が完了するまで待ってください。データベースへ直接接続しても、実行中のアプリのバージョンは確認できません。";
 "hub.LogsWindowController.113.1730" = "その他のログ操作";
 "hub.LogsWindowController.123.1732" = "表示、コピー、保存されるログでは、認証情報と非公開の識別子を伏せています。共有する前に内容を確認してください。";
 "hub.LogsWindowController.17.1712" = "ログを読み込み中…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "アクセストークンとリフレッシュトークンの両方を入力してください。";
 "hub.OnboardingWindowController.1631.2105" = "移行元アプリケーションのサーバー、SSHユーザー、ポートを入力してください。";
 "hub.OnboardingWindowController.168.1852" = "続ける";
-"hub.OnboardingWindowController.1691.2113" = "スキーマの確認だけでは、移行元アプリケーションのリリースを特定できません。実行中のサーバーがリリース4.2.0以降であることを確認してから、続けてください。";
+"hub.OnboardingWindowController.1691.2113" = "スキーマの確認だけでは、移行元アプリケーションのリリースを特定できません。実行中のサーバーがリリース4.4.0以降であることを確認してから、続けてください。";
 "hub.OnboardingWindowController.1740.2131" = "インポートする前に移行元アプリケーションのサーバーへ接続してください。";
 "hub.OnboardingWindowController.1750.2137" = "サーバー設定が変更されました。インポートする前に移行元アプリケーションのサーバーへ再接続してください。";
 "hub.OnboardingWindowController.1820.2143" = "1つ以上のチェックで対応が必要です。";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "SSHキーを選択";
 "hub.OnboardingWindowController.1981.2148" = "キーを選択";
 "hub.OnboardingWindowController.200.1857" = "ローカルPostgreSQLスナップショットを使用（履歴専用）";
-"hub.OnboardingWindowController.203.1858" = "このサーバーで移行元アプリケーション 4.2.0以降が実行されていることを確認します";
+"hub.OnboardingWindowController.203.1858" = "このサーバーで移行元アプリケーション 4.4.0以降が実行されていることを確認します";
 "hub.OnboardingWindowController.252.1859" = "前回のインポートは完了しませんでした。移行元アプリケーションを確認して、インポートをもう一度実行してください。";
 "hub.OnboardingWindowController.292.1862" = "インポートの準備ができました。";
 "hub.OnboardingWindowController.298.1866" = "移行元アプリケーションへの接続に失敗しました";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hubはローカルデータベーストンネル用のポートを確保できませんでした。";
 "hub.SourceServerImporter.744.2586" = "もう一度お試しください。";
 "hub.SourceServerImporter.746.2588" = "先に移行元アプリケーションを更新してください";
-"hub.SourceServerImporter.747.2589" = "ガイド付き移行には移行元アプリケーション 4.2.0以降が必要です。";
+"hub.SourceServerImporter.747.2589" = "ガイド付き移行には移行元アプリケーション 4.4.0以降が必要です。";
 "hub.SourceServerImporter.748.2590" = "移行元アプリケーションをバックアップして更新し、データベースの移行が完了してから、もう一度接続してください。";
 "hub.SourceServerImporter.763.2594" = "移行元アプリケーションが実行されていないか、コンテナが見つかりません。";
 "hub.SourceServerImporter.764.2596" = "移行元アプリケーションのDocker Composeプロジェクトを特定できませんでした。";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "このアカウントにはDockerへのアクセス権がありません。Dockerへの直接アクセスを許可するか、Docker用のパスワードなしsudoを許可してください。";
 "hub.SourceServerImporter.834.2668" = "移行元アプリケーションのサーバーにDockerが見つかりません。サーバーとアカウントのPATHを確認してください。";
 "hub.SourceServerImporter.836.2670" = "Dockerはインストールされていますが、利用できません。Dockerサービスが稼働中か確認してください。";
-"hub.SourceServerImporter.838.2672" = "ガイド付き移行には移行元アプリケーション 4.2.0以降が必要です。移行元アプリケーションを更新してから、もう一度お試しください。";
+"hub.SourceServerImporter.838.2672" = "ガイド付き移行には移行元アプリケーション 4.4.0以降が必要です。移行元アプリケーションを更新してから、もう一度お試しください。";
 "hub.SourceServerImporter.840.2674" = "SSHで接続または認証できませんでした。サーバー、ポート、アカウント、選択した認証方法を確認してください。";
 "hub.SourceServerImporter.842.2676" = "SSH認証に失敗しました。アカウントと選択した認証方法を確認してください。";
 "hub.SourceServerImporter.854.2688" = "SSHサーバーが接続を閉じました。サーバーログとSSHポリシーを確認してください。";
@@ -615,7 +615,7 @@
 
 "hub.import.ackExplain" = "スキーマを確認しても、このデータベースを書き込んだ移行元アプリケーションのリリースは特定できません。同じスキーマを使うリリースが複数あります。";
 
-"hub.import.ackRelease" = "移行元アプリケーションがリリース 4.2.0 以降であり、インポート中に更新されないことを確認します。";
+"hub.import.ackRelease" = "移行元アプリケーションがリリース 4.4.0 以降であり、インポート中に更新されないことを確認します。";
 
 "hub.backup.title" = "バックアップ";
 

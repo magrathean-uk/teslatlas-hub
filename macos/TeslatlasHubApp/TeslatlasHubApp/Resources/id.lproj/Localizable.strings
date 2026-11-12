@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Selesaikan atau batalkan serah terima migrasi aplikasi sumber sebelum keluar dari akun.";
 "hub.HubController.1504.567" = "Pemutusan tidak selesai dengan baik. Status Hub telah diperbarui; periksa apakah akun masih terhubung. %1$@";
 "hub.HubController.1522.568" = "Konfirmasikan bahwa skema basis data sumber telah ditinjau sebelum memeriksa kompatibilitas.";
-"hub.HubController.1523.569" = "Konfirmasikan bahwa aplikasi sumber versi 4.2.0 atau lebih baru digunakan sebelum memeriksa kompatibilitas.";
+"hub.HubController.1523.569" = "Konfirmasikan bahwa aplikasi sumber versi 4.4.0 atau lebih baru digunakan sebelum memeriksa kompatibilitas.";
 "hub.HubController.1532.570" = "Pilih sumber PostgreSQL lokal di 127.0.0.1 atau ::1.";
 "hub.HubController.1536.571" = "ID mobil sumber harus berupa angka positif.";
 "hub.HubController.1539.572" = "Pilih file kata sandi PostgreSQL yang dilindungi.";
 "hub.HubController.1552.580" = "Pemeriksaan kompatibilitas aplikasi sumber tidak menghasilkan laporan yang valid.";
 "hub.HubController.1562.581" = "Tidak dapat memverifikasi basis data sumber. Periksa koneksi server dan coba lagi.";
-"hub.HubController.1585.586" = "Konfirmasikan bahwa aplikasi sumber versi 4.2.0 atau lebih baru digunakan sebelum mengimpor.";
+"hub.HubController.1585.586" = "Konfirmasikan bahwa aplikasi sumber versi 4.4.0 atau lebih baru digunakan sebelum mengimpor.";
 "hub.HubController.1591.587" = "Masuk memerlukan jendela pengumpulan yang terbuka. Buka jendela, lalu masuk lagi.";
 "hub.HubController.1718.615" = "Impor aplikasi sumber tidak menghasilkan laporan penyelesaian yang valid. Hub tetap berhenti.";
 "hub.HubController.1742.624" = "Impor selesai, tetapi Hub tidak dapat mencatat status gerbang serah terima aman: %1$@. Hub tetap berhenti.";
-"hub.HubController.1846.655" = "Konfirmasikan bahwa aplikasi sumber versi 4.2.0 atau lebih baru digunakan sebelum mengimpor dari sumber PostgreSQL langsung.";
+"hub.HubController.1846.655" = "Konfirmasikan bahwa aplikasi sumber versi 4.4.0 atau lebih baru digunakan sebelum mengimpor dari sumber PostgreSQL langsung.";
 "hub.HubController.1865.658" = "Sumber PostgreSQL harus menyertakan skema postgres atau postgresql, host, dan nama basis data.";
 "hub.HubController.1869.659" = "Sumber PostgreSQL tidak boleh memuat kata sandi. Gunakan kolom file kata sandi.";
 "hub.HubController.1966.689" = "Penyiapan Fleet gagal: %1$@. Pemulihan konfigurasi Hub juga gagal: %2$@.";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Lengkapi semua kolom";
 "hub.ImportSheetController.149.1710" = "Sumber, ID mobil, dan file kata sandi wajib diisi.";
 "hub.ImportSheetController.156.1711" = "Konfirmasi versi aplikasi sumber";
-"hub.ImportSheetController.17.1690" = "Saya mengonfirmasi bahwa basis data ini milik aplikasi sumber versi 4.2.0 atau lebih baru";
+"hub.ImportSheetController.17.1690" = "Saya mengonfirmasi bahwa basis data ini milik aplikasi sumber versi 4.4.0 atau lebih baru";
 "hub.ImportSheetController.26.1691" = "Impor riwayat";
 "hub.ImportSheetController.49.1693" = "Salin data dari basis data PostgreSQL sumber ke Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "Sumber PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "File kata sandi";
 "hub.ImportSheetController.7.1687" = "Hub membaca basis data sumber tanpa menghentikan aplikasi sumber atau mengubah datanya. Setelah impor, Hub akan memberi tahu Anda kapan harus menonaktifkan sendiri akses Tesla di aplikasi sumber.";
 "hub.ImportSheetController.73.1699" = "Hub tidak berjalan. Mulai Hub, buka jendela pengumpulan, lalu masuk.";
-"hub.ImportSheetController.9.1688" = "Sebelum mengimpor: cadangkan aplikasi sumber, perbarui ke versi 4.2.0 atau lebih baru, jalankan sekali, lalu tunggu hingga migrasi basis datanya selesai. Koneksi langsung ke basis data tidak dapat membuktikan versi aplikasi yang sedang berjalan.";
+"hub.ImportSheetController.9.1688" = "Sebelum mengimpor: cadangkan aplikasi sumber, perbarui ke versi 4.4.0 atau lebih baru, jalankan sekali, lalu tunggu hingga migrasi basis datanya selesai. Koneksi langsung ke basis data tidak dapat membuktikan versi aplikasi yang sedang berjalan.";
 "hub.LogsWindowController.113.1730" = "Tindakan log lainnya";
 "hub.LogsWindowController.123.1732" = "Kredensial dan pengenal pribadi disamarkan dalam log yang ditampilkan, disalin, atau disimpan. Tinjau sebelum membagikannya.";
 "hub.LogsWindowController.17.1712" = "Memuat log…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Masukkan token akses dan token refresh.";
 "hub.OnboardingWindowController.1631.2105" = "Masukkan server aplikasi sumber, pengguna SSH, dan port.";
 "hub.OnboardingWindowController.168.1852" = "Lanjutkan";
-"hub.OnboardingWindowController.1691.2113" = "Pemeriksaan skema tidak dapat memastikan rilis aplikasi sumber. Konfirmasikan bahwa server yang berjalan menggunakan rilis 4.2.0 atau lebih baru, lalu lanjutkan.";
+"hub.OnboardingWindowController.1691.2113" = "Pemeriksaan skema tidak dapat memastikan rilis aplikasi sumber. Konfirmasikan bahwa server yang berjalan menggunakan rilis 4.4.0 atau lebih baru, lalu lanjutkan.";
 "hub.OnboardingWindowController.1740.2131" = "Hubungkan ke server aplikasi sumber sebelum mengimpor.";
 "hub.OnboardingWindowController.1750.2137" = "Pengaturan server berubah. Hubungkan kembali ke server aplikasi sumber sebelum mengimpor.";
 "hub.OnboardingWindowController.1820.2143" = "Satu atau beberapa pemeriksaan memerlukan perhatian.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Pilih Kunci SSH";
 "hub.OnboardingWindowController.1981.2148" = "Pilih Kunci";
 "hub.OnboardingWindowController.200.1857" = "Gunakan snapshot PostgreSQL lokal (khusus riwayat)";
-"hub.OnboardingWindowController.203.1858" = "Saya mengonfirmasi bahwa server ini menjalankan aplikasi sumber versi 4.2.0 atau lebih baru";
+"hub.OnboardingWindowController.203.1858" = "Saya mengonfirmasi bahwa server ini menjalankan aplikasi sumber versi 4.4.0 atau lebih baru";
 "hub.OnboardingWindowController.252.1859" = "Impor sebelumnya tidak selesai. Periksa aplikasi sumber, lalu jalankan impor lagi.";
 "hub.OnboardingWindowController.292.1862" = "Siap diimpor.";
 "hub.OnboardingWindowController.298.1866" = "Koneksi ke aplikasi sumber gagal";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub tidak dapat menyediakan port terowongan basis data lokal.";
 "hub.SourceServerImporter.744.2586" = "Coba lagi.";
 "hub.SourceServerImporter.746.2588" = "Perbarui aplikasi sumber terlebih dahulu";
-"hub.SourceServerImporter.747.2589" = "Migrasi terpandu memerlukan aplikasi sumber versi 4.2.0 atau lebih baru.";
+"hub.SourceServerImporter.747.2589" = "Migrasi terpandu memerlukan aplikasi sumber versi 4.4.0 atau lebih baru.";
 "hub.SourceServerImporter.748.2590" = "Cadangkan aplikasi sumber, perbarui, tunggu hingga migrasinya selesai, lalu hubungkan kembali.";
 "hub.SourceServerImporter.763.2594" = "Aplikasi sumber tidak berjalan atau containernya tidak dapat ditemukan.";
 "hub.SourceServerImporter.764.2596" = "Proyek Docker Compose aplikasi sumber tidak dapat diidentifikasi.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Akun ini tidak dapat mengakses Docker. Berikan akses Docker langsung atau izinkan sudo tanpa kata sandi untuk Docker.";
 "hub.SourceServerImporter.834.2668" = "Docker tidak ditemukan di server aplikasi sumber. Periksa server dan PATH akun.";
 "hub.SourceServerImporter.836.2670" = "Docker terpasang, tetapi tidak tersedia. Pastikan layanan Docker sedang berjalan.";
-"hub.SourceServerImporter.838.2672" = "Migrasi terpandu memerlukan aplikasi sumber versi 4.2.0 atau lebih baru. Perbarui aplikasi sumber, lalu coba lagi.";
+"hub.SourceServerImporter.838.2672" = "Migrasi terpandu memerlukan aplikasi sumber versi 4.4.0 atau lebih baru. Perbarui aplikasi sumber, lalu coba lagi.";
 "hub.SourceServerImporter.840.2674" = "SSH tidak dapat terhubung atau melakukan autentikasi. Periksa server, port, akun, dan metode autentikasi yang dipilih.";
 "hub.SourceServerImporter.842.2676" = "Autentikasi SSH gagal. Periksa akun dan metode autentikasi yang dipilih.";
 "hub.SourceServerImporter.854.2688" = "Server SSH menutup koneksi. Periksa log server dan kebijakan SSH.";
@@ -615,7 +615,7 @@
 
 "hub.import.ackExplain" = "Pemeriksaan skema tidak dapat menunjukkan rilis aplikasi sumber yang membuat basis data ini: beberapa rilis menggunakan skema yang sama.";
 
-"hub.import.ackRelease" = "Saya mengonfirmasi bahwa aplikasi sumber berada pada rilis 4.2.0 atau lebih baru dan tidak akan diperbarui selama impor.";
+"hub.import.ackRelease" = "Saya mengonfirmasi bahwa aplikasi sumber berada pada rilis 4.4.0 atau lebih baru dan tidak akan diperbarui selama impor.";
 
 "hub.backup.title" = "Cadangan";
 

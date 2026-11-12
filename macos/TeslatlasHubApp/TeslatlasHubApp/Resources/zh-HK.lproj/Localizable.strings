@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "登出前，請完成或取消來源應用程式遷移交接。";
 "hub.HubController.1504.567" = "中斷連線程序未能正常完成。Hub 狀態已更新；請檢查帳戶是否仍然連線。%1$@";
 "hub.HubController.1522.568" = "檢查相容性前，請確認已審閱來源資料庫結構描述。";
-"hub.HubController.1523.569" = "檢查相容性前，請確認來源應用程式版本為 4.2.0 或更新版本。";
+"hub.HubController.1523.569" = "檢查相容性前，請確認來源應用程式版本為 4.4.0 或更新版本。";
 "hub.HubController.1532.570" = "請選擇位於 127.0.0.1 或 ::1 的本機 PostgreSQL 資料來源。";
 "hub.HubController.1536.571" = "來源車輛 ID 必須是大於 0 的數字。";
 "hub.HubController.1539.572" = "請選擇受保護的 PostgreSQL 密碼檔案。";
 "hub.HubController.1552.580" = "來源應用程式相容性檢查未傳回有效報告。";
 "hub.HubController.1562.581" = "無法驗證來源資料庫。請檢查伺服器連線，然後再試一次。";
-"hub.HubController.1585.586" = "匯入前，請確認來源應用程式版本為 4.2.0 或更新版本。";
+"hub.HubController.1585.586" = "匯入前，請確認來源應用程式版本為 4.4.0 或更新版本。";
 "hub.HubController.1591.587" = "登入需要一個已開啟的收集視窗。請開啟視窗，然後重新登入。";
 "hub.HubController.1718.615" = "來源應用程式匯入未傳回有效的完成報告。Hub 仍維持停止狀態。";
 "hub.HubController.1742.624" = "匯入已完成，但 Hub 無法記錄安全交接閘門：%1$@。Hub 仍維持停止狀態。";
-"hub.HubController.1846.655" = "從直接 PostgreSQL 資料來源匯入前，請確認來源應用程式版本為 4.2.0 或更新版本。";
+"hub.HubController.1846.655" = "從直接 PostgreSQL 資料來源匯入前，請確認來源應用程式版本為 4.4.0 或更新版本。";
 "hub.HubController.1865.658" = "PostgreSQL 資料來源必須包含 postgres 或 postgresql URI 方案、主機及資料庫名稱。";
 "hub.HubController.1869.659" = "PostgreSQL 資料來源不得包含密碼。請使用密碼檔案欄位。";
 "hub.HubController.1966.689" = "Fleet 設定失敗：%1$@；Hub 設定復原亦告失敗：%2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "請填妥所有欄位";
 "hub.ImportSheetController.149.1710" = "資料來源、車輛 ID 及密碼檔案均為必填項目。";
 "hub.ImportSheetController.156.1711" = "確認來源應用程式版本";
-"hub.ImportSheetController.17.1690" = "本人確認此資料庫屬於來源應用程式 4.2.0 或更新版本";
+"hub.ImportSheetController.17.1690" = "本人確認此資料庫屬於來源應用程式 4.4.0 或更新版本";
 "hub.ImportSheetController.26.1691" = "匯入歷史記錄";
 "hub.ImportSheetController.49.1693" = "將資料從來源 PostgreSQL 資料庫複製至 Teslatlas Hub。";
 "hub.ImportSheetController.64.1694" = "PostgreSQL 資料來源";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "密碼檔案";
 "hub.ImportSheetController.7.1687" = "Hub 只會讀取來源資料庫，不會停止來源應用程式或修改資料。匯入後，Hub 會告訴您何時要自行在來源應用程式中停用 Tesla 存取權。";
 "hub.ImportSheetController.73.1699" = "Hub 未有執行。請啟動 Hub，開啟收集視窗，然後登入。";
-"hub.ImportSheetController.9.1688" = "匯入前：備份來源應用程式，將其更新至 4.2.0 或更新版本，啟動一次，並等候資料庫遷移完成。直接連接資料庫無法確認正在執行的應用程式版本。";
+"hub.ImportSheetController.9.1688" = "匯入前：備份來源應用程式，將其更新至 4.4.0 或更新版本，啟動一次，並等候資料庫遷移完成。直接連接資料庫無法確認正在執行的應用程式版本。";
 "hub.LogsWindowController.113.1730" = "更多記錄操作";
 "hub.LogsWindowController.123.1732" = "畫面顯示、複製及儲存的記錄均會遮蓋憑證及私人識別資料。分享前請先檢查。";
 "hub.LogsWindowController.17.1712" = "正在載入記錄…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "請輸入存取 Token 及重新整理 Token。";
 "hub.OnboardingWindowController.1631.2105" = "請輸入來源應用程式伺服器、SSH 使用者及通訊埠。";
 "hub.OnboardingWindowController.168.1852" = "繼續";
-"hub.OnboardingWindowController.1691.2113" = "結構描述檢查無法確定來源應用程式的版本。請確認正在執行的伺服器為 4.2.0 或更新版本，然後繼續。";
+"hub.OnboardingWindowController.1691.2113" = "結構描述檢查無法確定來源應用程式的版本。請確認正在執行的伺服器為 4.4.0 或更新版本，然後繼續。";
 "hub.OnboardingWindowController.1740.2131" = "匯入前，請先連接來源應用程式伺服器。";
 "hub.OnboardingWindowController.1750.2137" = "伺服器設定已變更。匯入前，請再次連接來源應用程式伺服器。";
 "hub.OnboardingWindowController.1820.2143" = "一項或多項檢查需要處理。";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "選擇 SSH 金鑰";
 "hub.OnboardingWindowController.1981.2148" = "選擇金鑰";
 "hub.OnboardingWindowController.200.1857" = "使用本機 PostgreSQL 快照（僅供歷史記錄）";
-"hub.OnboardingWindowController.203.1858" = "我確認此伺服器執行的是來源應用程式 4.2.0 或更新版本";
+"hub.OnboardingWindowController.203.1858" = "我確認此伺服器執行的是來源應用程式 4.4.0 或更新版本";
 "hub.OnboardingWindowController.252.1859" = "上次匯入未有完成。請檢查來源應用程式，然後再次執行匯入。";
 "hub.OnboardingWindowController.292.1862" = "準備匯入。";
 "hub.OnboardingWindowController.298.1866" = "來源應用程式連線失敗";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub 無法保留本機資料庫通道埠。";
 "hub.SourceServerImporter.744.2586" = "請再試一次。";
 "hub.SourceServerImporter.746.2588" = "請先更新來源應用程式";
-"hub.SourceServerImporter.747.2589" = "引導式遷移需要來源應用程式 4.2.0 或更新版本。";
+"hub.SourceServerImporter.747.2589" = "引導式遷移需要來源應用程式 4.4.0 或更新版本。";
 "hub.SourceServerImporter.748.2590" = "請先備份來源應用程式並更新版本，等候資料庫遷移完成，然後重新連線。";
 "hub.SourceServerImporter.763.2594" = "來源應用程式未有執行，或找不到其容器。";
 "hub.SourceServerImporter.764.2596" = "無法識別來源應用程式的 Docker Compose 專案。";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "此帳戶無法存取 Docker。請授予直接 Docker 存取權，或允許使用無密碼 sudo 執行 Docker。";
 "hub.SourceServerImporter.834.2668" = "來源應用程式伺服器上找不到 Docker。請檢查伺服器及帳戶的 PATH。";
 "hub.SourceServerImporter.836.2670" = "Docker 已安裝，但目前無法使用。請檢查 Docker 服務是否正在執行。";
-"hub.SourceServerImporter.838.2672" = "引導式遷移需要來源應用程式 4.2.0 或更新版本。請更新來源應用程式，然後再試一次。";
+"hub.SourceServerImporter.838.2672" = "引導式遷移需要來源應用程式 4.4.0 或更新版本。請更新來源應用程式，然後再試一次。";
 "hub.SourceServerImporter.840.2674" = "SSH 無法連線或驗證。請檢查伺服器、通訊埠、帳戶及所選的驗證方式。";
 "hub.SourceServerImporter.842.2676" = "SSH 驗證失敗。請檢查帳戶及所選的驗證方式。";
 "hub.SourceServerImporter.854.2688" = "SSH 伺服器已關閉連線。請檢查伺服器記錄及 SSH 政策。";
@@ -615,7 +615,7 @@
 
 "hub.import.ackExplain" = "結構描述檢查無法確定是哪個版本的來源應用程式寫入此資料庫：多個版本共用此結構描述。";
 
-"hub.import.ackRelease" = "我確認來源應用程式為 4.2.0 或更新版本，並且匯入期間不會更新。";
+"hub.import.ackRelease" = "我確認來源應用程式為 4.4.0 或更新版本，並且匯入期間不會更新。";
 
 "hub.backup.title" = "備份";
 

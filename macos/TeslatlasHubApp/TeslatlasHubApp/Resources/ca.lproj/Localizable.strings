@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Completa o cancel·la el traspàs de migració de l’aplicació d’origen abans de tancar la sessió.";
 "hub.HubController.1504.567" = "La desconnexió no s’ha completat correctament. S’ha actualitzat l’estat del Hub; comprova si el compte encara està connectat. %1$@";
 "hub.HubController.1522.568" = "Confirma que has revisat l’esquema de la base de dades d’origen abans de comprovar-ne la compatibilitat.";
-"hub.HubController.1523.569" = "Confirma que l’aplicació d’origen té la versió 4.2.0 o una de posterior abans de comprovar-ne la compatibilitat.";
+"hub.HubController.1523.569" = "Confirma que l’aplicació d’origen té la versió 4.4.0 o una de posterior abans de comprovar-ne la compatibilitat.";
 "hub.HubController.1532.570" = "Tria una font PostgreSQL local a 127.0.0.1 o ::1.";
 "hub.HubController.1536.571" = "L’identificador del vehicle de l’aplicació d’origen ha de ser un número positiu.";
 "hub.HubController.1539.572" = "Tria el fitxer protegit que conté la contrasenya de PostgreSQL.";
 "hub.HubController.1552.580" = "La comprovació de compatibilitat de l’aplicació d’origen no ha retornat cap informe vàlid.";
 "hub.HubController.1562.581" = "No s’ha pogut verificar la base de dades d’origen. Comprova la connexió amb el servidor i torna-ho a provar.";
-"hub.HubController.1585.586" = "Confirma que l’aplicació d’origen té la versió 4.2.0 o una de posterior abans d’importar.";
+"hub.HubController.1585.586" = "Confirma que l’aplicació d’origen té la versió 4.4.0 o una de posterior abans d’importar.";
 "hub.HubController.1591.587" = "L’inici de sessió necessita una finestra de recollida oberta. Obre una finestra i torna a iniciar la sessió.";
 "hub.HubController.1718.615" = "La importació de l’aplicació d’origen no ha retornat cap informe de finalització vàlid. El Hub continua aturat.";
 "hub.HubController.1742.624" = "La importació s’ha completat, però el Hub no ha pogut registrar el control de seguretat del traspàs: %1$@. El Hub continua aturat.";
-"hub.HubController.1846.655" = "Confirma que l’aplicació d’origen té la versió 4.2.0 o una de posterior abans d’importar des d’una font PostgreSQL directa.";
+"hub.HubController.1846.655" = "Confirma que l’aplicació d’origen té la versió 4.4.0 o una de posterior abans d’importar des d’una font PostgreSQL directa.";
 "hub.HubController.1865.658" = "La font PostgreSQL ha d’incloure un esquema postgres o postgresql, un amfitrió i el nom d’una base de dades.";
 "hub.HubController.1869.659" = "La font PostgreSQL no pot contenir cap contrasenya. Fes servir el camp del fitxer de contrasenya.";
 "hub.HubController.1966.689" = "La configuració de Fleet ha fallat: %1$@. També ha fallat la recuperació de la configuració del Hub: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Completa tots els camps";
 "hub.ImportSheetController.149.1710" = "Cal indicar la font, l’ID del vehicle i el fitxer de contrasenya.";
 "hub.ImportSheetController.156.1711" = "Confirma la versió de l’aplicació d’origen";
-"hub.ImportSheetController.17.1690" = "Confirmo que aquesta base de dades pertany a l’aplicació d’origen 4.2.0 o una versió posterior";
+"hub.ImportSheetController.17.1690" = "Confirmo que aquesta base de dades pertany a l’aplicació d’origen 4.4.0 o una versió posterior";
 "hub.ImportSheetController.26.1691" = "Importa l’historial";
 "hub.ImportSheetController.49.1693" = "Copia dades d’una base de dades PostgreSQL de l’aplicació d’origen a Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "Font PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Fitxer de contrasenya";
 "hub.ImportSheetController.7.1687" = "El Hub llegeix la base de dades d’origen sense modificar-la ni aturar l’aplicació d’origen. Després de la importació, el Hub t’indicarà quan hagis de desactivar tu mateix l’accés a Tesla a l’aplicació d’origen.";
 "hub.ImportSheetController.73.1699" = "El Hub no s’està executant. Inicia el Hub, obre una finestra de recollida i inicia la sessió.";
-"hub.ImportSheetController.9.1688" = "Abans d’importar: fes una còpia de seguretat de l’aplicació d’origen, actualitza-la a la versió 4.2.0 o posterior, inicia-la una vegada i espera que acabin les migracions de la base de dades. Una connexió directa a la base de dades no pot confirmar la versió de l’aplicació en execució.";
+"hub.ImportSheetController.9.1688" = "Abans d’importar: fes una còpia de seguretat de l’aplicació d’origen, actualitza-la a la versió 4.4.0 o posterior, inicia-la una vegada i espera que acabin les migracions de la base de dades. Una connexió directa a la base de dades no pot confirmar la versió de l’aplicació en execució.";
 "hub.LogsWindowController.113.1730" = "Més accions de registre";
 "hub.LogsWindowController.123.1732" = "Els registres que es mostren, es copien o es desen oculten les credencials i els identificadors privats. Revisa’ls abans de compartir-los.";
 "hub.LogsWindowController.17.1712" = "S’estan carregant els registres…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Introdueix tant el token d’accés com el token d’actualització.";
 "hub.OnboardingWindowController.1631.2105" = "Introdueix el servidor de l’aplicació d’origen, l’usuari SSH i el port.";
 "hub.OnboardingWindowController.168.1852" = "Continua";
-"hub.OnboardingWindowController.1691.2113" = "La comprovació de l’esquema no pot determinar la versió de l’aplicació d’origen. Confirma que el servidor en execució utilitza la versió 4.2.0 o una de posterior i, tot seguit, continua.";
+"hub.OnboardingWindowController.1691.2113" = "La comprovació de l’esquema no pot determinar la versió de l’aplicació d’origen. Confirma que el servidor en execució utilitza la versió 4.4.0 o una de posterior i, tot seguit, continua.";
 "hub.OnboardingWindowController.1740.2131" = "Connecta’t al servidor de l’aplicació d’origen abans d’importar.";
 "hub.OnboardingWindowController.1750.2137" = "La configuració del servidor ha canviat. Torna a connectar-te al servidor de l’aplicació d’origen abans d’importar.";
 "hub.OnboardingWindowController.1820.2143" = "Cal revisar un o més elements de les comprovacions.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Tria una clau SSH";
 "hub.OnboardingWindowController.1981.2148" = "Tria una clau";
 "hub.OnboardingWindowController.200.1857" = "Fes servir una instantània local de PostgreSQL (només historial)";
-"hub.OnboardingWindowController.203.1858" = "Confirmo que aquest servidor executa l’aplicació d’origen 4.2.0 o una versió posterior";
+"hub.OnboardingWindowController.203.1858" = "Confirmo que aquest servidor executa l’aplicació d’origen 4.4.0 o una versió posterior";
 "hub.OnboardingWindowController.252.1859" = "La importació anterior no s’ha acabat. Comprova l’aplicació d’origen i torna a executar la importació.";
 "hub.OnboardingWindowController.292.1862" = "A punt per importar.";
 "hub.OnboardingWindowController.298.1866" = "Ha fallat la connexió amb l’aplicació d’origen";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "El Hub no ha pogut reservar un port local per al túnel de la base de dades.";
 "hub.SourceServerImporter.744.2586" = "Torna-ho a provar.";
 "hub.SourceServerImporter.746.2588" = "Actualitza l’aplicació d’origen primer";
-"hub.SourceServerImporter.747.2589" = "La migració guiada requereix l’aplicació d’origen 4.2.0 o una versió posterior.";
+"hub.SourceServerImporter.747.2589" = "La migració guiada requereix l’aplicació d’origen 4.4.0 o una versió posterior.";
 "hub.SourceServerImporter.748.2590" = "Fes una còpia de seguretat de l’aplicació d’origen, actualitza-la, espera que acabin les migracions i torna a connectar-t’hi.";
 "hub.SourceServerImporter.763.2594" = "L’aplicació d’origen no s’està executant o no s’ha trobat el seu contenidor.";
 "hub.SourceServerImporter.764.2596" = "No s’ha pogut identificar el projecte Docker Compose de l’aplicació d’origen.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Aquest compte no pot accedir a Docker. Concedeix-li accés directe a Docker o permet-li executar Docker amb sudo sense contrasenya.";
 "hub.SourceServerImporter.834.2668" = "No s’ha trobat Docker al servidor de l’aplicació d’origen. Comprova el servidor i la variable PATH del compte.";
 "hub.SourceServerImporter.836.2670" = "Docker està instal·lat però no està disponible. Comprova que el servei Docker estigui en funcionament.";
-"hub.SourceServerImporter.838.2672" = "La migració guiada requereix l’aplicació d’origen 4.2.0 o una versió posterior. Actualitza l’aplicació d’origen i torna-ho a provar.";
+"hub.SourceServerImporter.838.2672" = "La migració guiada requereix l’aplicació d’origen 4.4.0 o una versió posterior. Actualitza l’aplicació d’origen i torna-ho a provar.";
 "hub.SourceServerImporter.840.2674" = "No s’ha pogut establir la connexió SSH o autenticar-s’hi. Comprova el servidor, el port, el compte i el mètode d’autenticació seleccionat.";
 "hub.SourceServerImporter.842.2676" = "Ha fallat l’autenticació SSH. Comprova el compte i el mètode d’autenticació seleccionat.";
 "hub.SourceServerImporter.854.2688" = "El servidor SSH ha tancat la connexió. Comprova els registres del servidor i les polítiques SSH.";
@@ -615,7 +615,7 @@
 
 "hub.import.ackExplain" = "La comprovació de l’esquema no pot indicar quina versió de l’aplicació d’origen va crear aquesta base de dades: més d’una versió comparteix aquest esquema.";
 
-"hub.import.ackRelease" = "Confirmo que l’aplicació d’origen té la versió 4.2.0 o una de posterior i que no s’actualitzarà durant la importació.";
+"hub.import.ackRelease" = "Confirmo que l’aplicació d’origen té la versió 4.4.0 o una de posterior i que no s’actualitzarà durant la importació.";
 
 "hub.backup.title" = "Còpies de seguretat";
 

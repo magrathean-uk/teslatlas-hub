@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Przed wylogowaniem dokończ przekazanie podczas migracji z aplikacji źródłowej albo je anuluj.";
 "hub.HubController.1504.567" = "Rozłączanie nie zakończyło się prawidłowo. Odświeżono stan Hubu; sprawdź, czy konto jest nadal połączone. %1$@";
 "hub.HubController.1522.568" = "Przed sprawdzeniem zgodności potwierdź zapoznanie się ze sprawdzonym schematem źródłowej bazy danych.";
-"hub.HubController.1523.569" = "Przed sprawdzeniem zgodności potwierdź użycie aplikacji źródłowej w wersji 4.2.0 lub nowszej.";
+"hub.HubController.1523.569" = "Przed sprawdzeniem zgodności potwierdź użycie aplikacji źródłowej w wersji 4.4.0 lub nowszej.";
 "hub.HubController.1532.570" = "Wybierz lokalne źródło PostgreSQL pod adresem 127.0.0.1 lub ::1.";
 "hub.HubController.1536.571" = "ID samochodu w źródłowej bazie danych musi być liczbą dodatnią.";
 "hub.HubController.1539.572" = "Wybierz chroniony plik hasła PostgreSQL.";
 "hub.HubController.1552.580" = "Kontrola zgodności aplikacji źródłowej nie zwróciła prawidłowego raportu.";
 "hub.HubController.1562.581" = "Nie udało się zweryfikować źródłowej bazy danych. Sprawdź połączenie z serwerem i spróbuj ponownie.";
-"hub.HubController.1585.586" = "Przed importem potwierdź użycie aplikacji źródłowej w wersji 4.2.0 lub nowszej.";
+"hub.HubController.1585.586" = "Przed importem potwierdź użycie aplikacji źródłowej w wersji 4.4.0 lub nowszej.";
 "hub.HubController.1591.587" = "Logowanie wymaga otwartego okna zbierania danych. Otwórz okno i zaloguj się ponownie.";
 "hub.HubController.1718.615" = "Import z aplikacji źródłowej nie zwrócił prawidłowego raportu zakończenia. Hub pozostaje zatrzymany.";
 "hub.HubController.1742.624" = "Import zakończono, ale Hub nie mógł zapisać warunku bezpiecznego przekazania: %1$@. Hub pozostaje zatrzymany.";
-"hub.HubController.1846.655" = "Przed importem z bezpośredniego źródła PostgreSQL potwierdź użycie aplikacji źródłowej w wersji 4.2.0 lub nowszej.";
+"hub.HubController.1846.655" = "Przed importem z bezpośredniego źródła PostgreSQL potwierdź użycie aplikacji źródłowej w wersji 4.4.0 lub nowszej.";
 "hub.HubController.1865.658" = "Źródło PostgreSQL musi zawierać schemat postgres lub postgresql, host i nazwę bazy danych.";
 "hub.HubController.1869.659" = "Źródło PostgreSQL nie może zawierać hasła. Użyj pola „Plik hasła”.";
 "hub.HubController.1966.689" = "Konfiguracja Fleet nie powiodła się: %1$@. Przywrócenie konfiguracji Hubu również nie powiodło się: %2$@.";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Wypełnij wszystkie pola";
 "hub.ImportSheetController.149.1710" = "Źródło, ID samochodu i plik hasła są wymagane.";
 "hub.ImportSheetController.156.1711" = "Potwierdź wersję aplikacji źródłowej";
-"hub.ImportSheetController.17.1690" = "Potwierdzam, że ta baza danych należy do aplikacji źródłowej w wersji 4.2.0 lub nowszej";
+"hub.ImportSheetController.17.1690" = "Potwierdzam, że ta baza danych należy do aplikacji źródłowej w wersji 4.4.0 lub nowszej";
 "hub.ImportSheetController.26.1691" = "Importuj historię";
 "hub.ImportSheetController.49.1693" = "Skopiuj dane ze źródłowej bazy danych PostgreSQL do Teslatlas Huba.";
 "hub.ImportSheetController.64.1694" = "Źródło PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Plik hasła";
 "hub.ImportSheetController.7.1687" = "Hub odczytuje dane ze źródłowej bazy danych bez zatrzymywania lub zmieniania aplikacji źródłowej. Po imporcie Hub poinformuje Cię, kiedy samodzielnie wyłączyć dostęp do Tesli w aplikacji źródłowej.";
 "hub.ImportSheetController.73.1699" = "Hub nie działa. Uruchom Hub, otwórz okno zbierania danych, a następnie zaloguj się.";
-"hub.ImportSheetController.9.1688" = "Przed importem: utwórz kopię zapasową aplikacji źródłowej, zaktualizuj ją do wersji 4.2.0 lub nowszej, uruchom ją raz i poczekaj na zakończenie migracji bazy danych. Bezpośrednie połączenie z bazą danych nie pozwala potwierdzić wersji działającej aplikacji.";
+"hub.ImportSheetController.9.1688" = "Przed importem: utwórz kopię zapasową aplikacji źródłowej, zaktualizuj ją do wersji 4.4.0 lub nowszej, uruchom ją raz i poczekaj na zakończenie migracji bazy danych. Bezpośrednie połączenie z bazą danych nie pozwala potwierdzić wersji działającej aplikacji.";
 "hub.LogsWindowController.113.1730" = "Więcej czynności dotyczących dzienników";
 "hub.LogsWindowController.123.1732" = "W wyświetlanych, kopiowanych i zapisywanych dziennikach ukrywane są dane uwierzytelniające i prywatne identyfikatory. Sprawdź je przed udostępnieniem.";
 "hub.LogsWindowController.17.1712" = "Wczytywanie dzienników…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Wprowadź zarówno token dostępu, jak i token odświeżania.";
 "hub.OnboardingWindowController.1631.2105" = "Wprowadź serwer aplikacji źródłowej, użytkownika SSH i port.";
 "hub.OnboardingWindowController.168.1852" = "Kontynuuj";
-"hub.OnboardingWindowController.1691.2113" = "Sprawdzenie schematu bazy danych nie pozwala ustalić wersji aplikacji źródłowej. Potwierdź, że na serwerze działa aplikacja źródłowa w wersji 4.2.0 lub nowszej, a następnie kontynuuj.";
+"hub.OnboardingWindowController.1691.2113" = "Sprawdzenie schematu bazy danych nie pozwala ustalić wersji aplikacji źródłowej. Potwierdź, że na serwerze działa aplikacja źródłowa w wersji 4.4.0 lub nowszej, a następnie kontynuuj.";
 "hub.OnboardingWindowController.1740.2131" = "Połącz się z serwerem aplikacji źródłowej przed importem.";
 "hub.OnboardingWindowController.1750.2137" = "Ustawienia serwera uległy zmianie. Połącz się ponownie z serwerem aplikacji źródłowej przed importem.";
 "hub.OnboardingWindowController.1820.2143" = "Co najmniej jedna kontrola wymaga uwagi.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Wybierz klucz SSH";
 "hub.OnboardingWindowController.1981.2148" = "Wybierz klucz";
 "hub.OnboardingWindowController.200.1857" = "Użyj lokalnej migawki PostgreSQL (tylko historia)";
-"hub.OnboardingWindowController.203.1858" = "Potwierdzam, że na tym serwerze działa aplikacja źródłowa w wersji 4.2.0 lub nowszej";
+"hub.OnboardingWindowController.203.1858" = "Potwierdzam, że na tym serwerze działa aplikacja źródłowa w wersji 4.4.0 lub nowszej";
 "hub.OnboardingWindowController.252.1859" = "Poprzedni import nie został ukończony. Sprawdź aplikację źródłową i uruchom import ponownie.";
 "hub.OnboardingWindowController.292.1862" = "Gotowe do importu.";
 "hub.OnboardingWindowController.298.1866" = "Połączenie z aplikacją źródłową nie powiodło się";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub nie może zarezerwować lokalnego portu dla tunelu do bazy danych.";
 "hub.SourceServerImporter.744.2586" = "Spróbuj ponownie.";
 "hub.SourceServerImporter.746.2588" = "Najpierw zaktualizuj aplikację źródłową";
-"hub.SourceServerImporter.747.2589" = "Migracja z przewodnikiem wymaga aplikacji źródłowej w wersji 4.2.0 lub nowszej.";
+"hub.SourceServerImporter.747.2589" = "Migracja z przewodnikiem wymaga aplikacji źródłowej w wersji 4.4.0 lub nowszej.";
 "hub.SourceServerImporter.748.2590" = "Utwórz kopię zapasową aplikacji źródłowej, zaktualizuj aplikację źródłową, poczekaj na zakończenie migracji bazy danych, a następnie połącz się ponownie.";
 "hub.SourceServerImporter.763.2594" = "Aplikacja źródłowa nie działa lub nie znaleziono jej kontenera.";
 "hub.SourceServerImporter.764.2596" = "Nie udało się zidentyfikować projektu Docker Compose aplikacji źródłowej.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "To konto nie ma dostępu do Dockera. Przyznaj mu bezpośredni dostęp do Dockera albo zezwól na uruchamianie Dockera przez sudo bez hasła.";
 "hub.SourceServerImporter.834.2668" = "Nie znaleziono Dockera na serwerze aplikacji źródłowej. Sprawdź serwer i zmienną PATH konta.";
 "hub.SourceServerImporter.836.2670" = "Docker jest zainstalowany, ale niedostępny. Sprawdź, czy usługa Docker działa.";
-"hub.SourceServerImporter.838.2672" = "Migracja z przewodnikiem wymaga aplikacji źródłowej w wersji 4.2.0 lub nowszej. Zaktualizuj aplikację źródłową, a następnie spróbuj ponownie.";
+"hub.SourceServerImporter.838.2672" = "Migracja z przewodnikiem wymaga aplikacji źródłowej w wersji 4.4.0 lub nowszej. Zaktualizuj aplikację źródłową, a następnie spróbuj ponownie.";
 "hub.SourceServerImporter.840.2674" = "Nie udało się połączyć przez SSH ani uwierzytelnić. Sprawdź serwer, port, konto i wybraną metodę uwierzytelniania.";
 "hub.SourceServerImporter.842.2676" = "Uwierzytelnianie SSH nie powiodło się. Sprawdź konto i wybraną metodę uwierzytelniania.";
 "hub.SourceServerImporter.854.2688" = "Serwer SSH zamknął połączenie. Sprawdź dzienniki serwera i zasady SSH.";
@@ -615,7 +615,7 @@
 
 "hub.import.ackExplain" = "Sprawdzenie schematu nie pozwala ustalić, która wersja aplikacji źródłowej utworzyła tę bazę danych: kilka wersji korzysta z tego samego schematu.";
 
-"hub.import.ackRelease" = "Potwierdzam, że aplikacja źródłowa działa w wersji 4.2.0 lub nowszej i nie zostanie zaktualizowana podczas importu.";
+"hub.import.ackRelease" = "Potwierdzam, że aplikacja źródłowa działa w wersji 4.4.0 lub nowszej i nie zostanie zaktualizowana podczas importu.";
 
 "hub.backup.title" = "Kopie zapasowe";
 

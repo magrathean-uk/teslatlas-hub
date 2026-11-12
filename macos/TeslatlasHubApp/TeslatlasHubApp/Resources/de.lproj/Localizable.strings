@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Schließe die Quellanwendung-Migrationsübergabe ab oder brich sie ab, bevor du dich abmeldest.";
 "hub.HubController.1504.567" = "Die Trennung wurde nicht vollständig abgeschlossen. Der Hub-Status wurde aktualisiert; prüfe, ob das Konto noch verbunden ist. %1$@";
 "hub.HubController.1522.568" = "Bestätige das geprüfte Schema der Quelldatenbank, bevor du die Kompatibilität prüfst.";
-"hub.HubController.1523.569" = "Bestätige, dass die Quellanwendung in Version 4.2.0 oder neuer vorliegt, bevor du die Kompatibilität prüfst.";
+"hub.HubController.1523.569" = "Bestätige, dass die Quellanwendung in Version 4.4.0 oder neuer vorliegt, bevor du die Kompatibilität prüfst.";
 "hub.HubController.1532.570" = "Wähle eine lokale PostgreSQL-Datenquelle unter 127.0.0.1 oder ::1 aus.";
 "hub.HubController.1536.571" = "Die Quellanwendung-Fahrzeug-ID muss eine positive Zahl sein.";
 "hub.HubController.1539.572" = "Wähle die geschützte PostgreSQL-Passwortdatei aus.";
 "hub.HubController.1552.580" = "Die Quellanwendung-Kompatibilitätsprüfung hat keinen gültigen Bericht zurückgegeben.";
 "hub.HubController.1562.581" = "Die Quelldatenbank konnte nicht überprüft werden. Prüfe die Serververbindung und versuche es erneut.";
-"hub.HubController.1585.586" = "Bestätige, dass die Quellanwendung in Version 4.2.0 oder neuer vorliegt, bevor du Daten importierst.";
+"hub.HubController.1585.586" = "Bestätige, dass die Quellanwendung in Version 4.4.0 oder neuer vorliegt, bevor du Daten importierst.";
 "hub.HubController.1591.587" = "Für die Anmeldung muss ein Erfassungsfenster geöffnet sein. Öffne ein Fenster und melde dich erneut an.";
 "hub.HubController.1718.615" = "Der Quellanwendung-Import hat keinen gültigen Abschlussbericht zurückgegeben. Der Hub bleibt angehalten.";
 "hub.HubController.1742.624" = "Der Import ist abgeschlossen, aber der Hub konnte die Freigabebedingung für die sichere Übergabe nicht speichern: %1$@. Der Hub bleibt angehalten.";
-"hub.HubController.1846.655" = "Bestätige, dass die Quellanwendung in Version 4.2.0 oder neuer vorliegt, bevor du aus einer direkten PostgreSQL-Datenquelle importierst.";
+"hub.HubController.1846.655" = "Bestätige, dass die Quellanwendung in Version 4.4.0 oder neuer vorliegt, bevor du aus einer direkten PostgreSQL-Datenquelle importierst.";
 "hub.HubController.1865.658" = "Die PostgreSQL-Datenquelle muss das URL-Schema postgres oder postgresql, einen Host und einen Datenbanknamen enthalten.";
 "hub.HubController.1869.659" = "Die PostgreSQL-Datenquelle darf kein Passwort enthalten. Verwende dafür das Feld für die Passwortdatei.";
 "hub.HubController.1966.689" = "Fleet-Einrichtung fehlgeschlagen: %1$@ Auch die Wiederherstellung der Hub-Konfiguration ist fehlgeschlagen: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Fülle alle Felder aus";
 "hub.ImportSheetController.149.1710" = "Quelle, Fahrzeug-ID und Passwortdatei sind erforderlich.";
 "hub.ImportSheetController.156.1711" = "Quellanwendung-Version bestätigen";
-"hub.ImportSheetController.17.1690" = "Ich bestätige, dass diese Datenbank zu Version 4.2.0 oder einer neueren Version der Quellanwendung gehört.";
+"hub.ImportSheetController.17.1690" = "Ich bestätige, dass diese Datenbank zu Version 4.4.0 oder einer neueren Version der Quellanwendung gehört.";
 "hub.ImportSheetController.26.1691" = "Verlauf importieren";
 "hub.ImportSheetController.49.1693" = "Kopiere Daten aus der PostgreSQL-Quelldatenbank in den Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "PostgreSQL-Datenquelle";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Passwortdatei";
 "hub.ImportSheetController.7.1687" = "Der Hub liest aus der Quelldatenbank, ohne die Quellanwendung anzuhalten oder zu verändern. Nach dem Import sagt dir der Hub, wann du den Tesla-Zugriff in der Quellanwendung selbst deaktivieren sollst.";
 "hub.ImportSheetController.73.1699" = "Der Hub läuft nicht. Starte den Hub, öffne ein Erfassungsfenster und melde dich dann an.";
-"hub.ImportSheetController.9.1688" = "Erstelle vor dem Import ein Backup der Quellanwendung, aktualisiere sie auf Version 4.2.0 oder neuer, starte sie einmal und warte, bis die Datenbankmigrationen abgeschlossen sind. Über eine direkte Datenbankverbindung lässt sich die Version der laufenden App nicht nachweisen.";
+"hub.ImportSheetController.9.1688" = "Erstelle vor dem Import ein Backup der Quellanwendung, aktualisiere sie auf Version 4.4.0 oder neuer, starte sie einmal und warte, bis die Datenbankmigrationen abgeschlossen sind. Über eine direkte Datenbankverbindung lässt sich die Version der laufenden App nicht nachweisen.";
 "hub.LogsWindowController.113.1730" = "Weitere Protokollaktionen";
 "hub.LogsWindowController.123.1732" = "In angezeigten, kopierten und gespeicherten Protokollen werden Zugangsdaten und private Kennungen geschwärzt. Prüfe die Protokolle vor dem Teilen.";
 "hub.LogsWindowController.17.1712" = "Protokolle werden geladen…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Gib sowohl das Zugriffstoken als auch das Aktualisierungstoken ein.";
 "hub.OnboardingWindowController.1631.2105" = "Gib den Quellanwendung-Server, den SSH-Benutzer und den Port ein.";
 "hub.OnboardingWindowController.168.1852" = "Weiter";
-"hub.OnboardingWindowController.1691.2113" = "Eine Schemaprüfung kann die Version der Quellanwendung nicht feststellen. Bestätige, dass auf dem Server Version 4.2.0 oder eine neuere Version läuft, und fahre dann fort.";
+"hub.OnboardingWindowController.1691.2113" = "Eine Schemaprüfung kann die Version der Quellanwendung nicht feststellen. Bestätige, dass auf dem Server Version 4.4.0 oder eine neuere Version läuft, und fahre dann fort.";
 "hub.OnboardingWindowController.1740.2131" = "Verbinde dich mit dem Quellanwendung-Server, bevor du Daten importierst.";
 "hub.OnboardingWindowController.1750.2137" = "Die Servereinstellungen haben sich geändert. Verbinde dich erneut mit dem Quellanwendung-Server, bevor du Daten importierst.";
 "hub.OnboardingWindowController.1820.2143" = "Eine oder mehrere Prüfungen erfordern deine Aufmerksamkeit.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "SSH-Schlüssel auswählen";
 "hub.OnboardingWindowController.1981.2148" = "Schlüssel auswählen";
 "hub.OnboardingWindowController.200.1857" = "Lokalen PostgreSQL-Snapshot verwenden (nur Verlauf)";
-"hub.OnboardingWindowController.203.1858" = "Ich bestätige, dass auf diesem Server Version 4.2.0 oder eine neuere Version der Quellanwendung läuft.";
+"hub.OnboardingWindowController.203.1858" = "Ich bestätige, dass auf diesem Server Version 4.4.0 oder eine neuere Version der Quellanwendung läuft.";
 "hub.OnboardingWindowController.252.1859" = "Der vorherige Import wurde nicht abgeschlossen. Prüfe die Quellanwendung und führe den Import erneut aus.";
 "hub.OnboardingWindowController.292.1862" = "Bereit für den Import.";
 "hub.OnboardingWindowController.298.1866" = "Verbindung zur Quellanwendung fehlgeschlagen";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Der Hub konnte keinen lokalen Port für den Datenbanktunnel reservieren.";
 "hub.SourceServerImporter.744.2586" = "Versuche es erneut.";
 "hub.SourceServerImporter.746.2588" = "Quellanwendung zuerst aktualisieren";
-"hub.SourceServerImporter.747.2589" = "Die geführte Migration erfordert die Quellanwendung in Version 4.2.0 oder neuer.";
+"hub.SourceServerImporter.747.2589" = "Die geführte Migration erfordert die Quellanwendung in Version 4.4.0 oder neuer.";
 "hub.SourceServerImporter.748.2590" = "Sichere die Quellanwendung, aktualisiere sie und warte, bis die Migrationen abgeschlossen sind. Verbinde dich danach erneut.";
 "hub.SourceServerImporter.763.2594" = "Die Quellanwendung läuft nicht oder ihr Container wurde nicht gefunden.";
 "hub.SourceServerImporter.764.2596" = "Das Docker-Compose-Projekt der Quellanwendung konnte nicht ermittelt werden.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Dieses Konto hat keinen Zugriff auf Docker. Gewähre direkten Docker-Zugriff oder erlaube passwortloses sudo für Docker.";
 "hub.SourceServerImporter.834.2668" = "Docker wurde auf dem Quellanwendung-Server nicht gefunden. Prüfe Server und Konto-PATH.";
 "hub.SourceServerImporter.836.2670" = "Docker ist installiert, aber nicht verfügbar. Prüfe, ob der Docker-Dienst läuft.";
-"hub.SourceServerImporter.838.2672" = "Die geführte Migration erfordert die Quellanwendung in Version 4.2.0 oder neuer. Aktualisiere die Quellanwendung und versuche es erneut.";
+"hub.SourceServerImporter.838.2672" = "Die geführte Migration erfordert die Quellanwendung in Version 4.4.0 oder neuer. Aktualisiere die Quellanwendung und versuche es erneut.";
 "hub.SourceServerImporter.840.2674" = "SSH konnte keine Verbindung herstellen oder sich nicht authentifizieren. Prüfe Server, Port, Konto und ausgewählte Authentifizierungsmethode.";
 "hub.SourceServerImporter.842.2676" = "SSH-Authentifizierung fehlgeschlagen. Prüfe Konto und ausgewählte Authentifizierungsmethode.";
 "hub.SourceServerImporter.854.2688" = "Der SSH-Server hat die Verbindung geschlossen. Prüfe Serverprotokolle und SSH-Richtlinien.";
@@ -615,7 +615,7 @@
 
 "hub.import.ackExplain" = "Eine Schema-Prüfung kann nicht feststellen, welche Version der Quellanwendung diese Datenbank erstellt hat: Mehrere Versionen verwenden dasselbe Schema.";
 
-"hub.import.ackRelease" = "Ich bestätige, dass die Quellanwendung Version 4.2.0 oder neuer hat und während des Imports nicht aktualisiert wird.";
+"hub.import.ackRelease" = "Ich bestätige, dass die Quellanwendung Version 4.4.0 oder neuer hat und während des Imports nicht aktualisiert wird.";
 
 "hub.backup.title" = "Backups";
 

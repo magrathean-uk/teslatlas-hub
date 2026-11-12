@@ -124,17 +124,17 @@
 "hub.HubController.1486.555" = "Dovršite ili otkažite predaju pri migraciji s izvorne aplikacije prije odjave.";
 "hub.HubController.1504.567" = "Prekid veze nije dovršen bez pogrešaka. Status Huba osvježen je; provjerite je li račun i dalje povezan. %1$@";
 "hub.HubController.1522.568" = "Potvrdite da ste pregledali shemu izvorne baze podataka prije provjere kompatibilnosti.";
-"hub.HubController.1523.569" = "Potvrdite da je izvorna aplikacija verzije 4.2.0 ili novije prije provjere kompatibilnosti.";
+"hub.HubController.1523.569" = "Potvrdite da je izvorna aplikacija verzije 4.4.0 ili novije prije provjere kompatibilnosti.";
 "hub.HubController.1532.570" = "Odaberite lokalni izvor PostgreSQL na adresi 127.0.0.1 ili ::1.";
 "hub.HubController.1536.571" = "ID automobila u izvornoj bazi podataka mora biti pozitivan broj.";
 "hub.HubController.1539.572" = "Odaberite zaštićenu datoteku s lozinkom za PostgreSQL.";
 "hub.HubController.1552.580" = "Provjera kompatibilnosti s izvornom aplikacijom nije vratila valjano izvješće.";
 "hub.HubController.1562.581" = "Nije moguće provjeriti izvornu bazu podataka. Provjerite vezu s poslužiteljem i pokušajte ponovno.";
-"hub.HubController.1585.586" = "Potvrdite da je izvorna aplikacija verzije 4.2.0 ili novije prije uvoza.";
+"hub.HubController.1585.586" = "Potvrdite da je izvorna aplikacija verzije 4.4.0 ili novije prije uvoza.";
 "hub.HubController.1591.587" = "Za prijavu je potreban otvoren prozor prikupljanja. Otvorite prozor, a zatim se ponovno prijavite.";
 "hub.HubController.1718.615" = "Uvoz iz izvorne aplikacije nije vratio valjano izvješće o dovršetku. Hub je i dalje zaustavljen.";
 "hub.HubController.1742.624" = "Uvoz je dovršen, ali Hub nije uspio zabilježiti sigurnosni preduvjet za predaju: %1$@. Hub je i dalje zaustavljen.";
-"hub.HubController.1846.655" = "Potvrdite da je izvorna aplikacija verzije 4.2.0 ili novije prije uvoza iz izravnog izvora PostgreSQL.";
+"hub.HubController.1846.655" = "Potvrdite da je izvorna aplikacija verzije 4.4.0 ili novije prije uvoza iz izravnog izvora PostgreSQL.";
 "hub.HubController.1865.658" = "Izvor PostgreSQL mora sadržavati shemu postgres ili postgresql, naziv hosta i naziv baze podataka.";
 "hub.HubController.1869.659" = "Izvor PostgreSQL ne smije sadržavati lozinku. Upotrijebite polje za datoteku s lozinkom.";
 "hub.HubController.1966.689" = "Postavljanje Fleeta nije uspjelo: %1$@ Nije uspio ni oporavak konfiguracije Huba: %2$@";
@@ -339,7 +339,7 @@
 "hub.ImportSheetController.148.1709" = "Ispunite sva polja";
 "hub.ImportSheetController.149.1710" = "Potrebni su izvor, ID automobila i datoteka s lozinkom.";
 "hub.ImportSheetController.156.1711" = "Potvrdite verziju izvorne aplikacije";
-"hub.ImportSheetController.17.1690" = "Potvrđujem da ova baza podataka pripada izvornoj aplikaciji verzije 4.2.0 ili novije";
+"hub.ImportSheetController.17.1690" = "Potvrđujem da ova baza podataka pripada izvornoj aplikaciji verzije 4.4.0 ili novije";
 "hub.ImportSheetController.26.1691" = "Uvezi povijest";
 "hub.ImportSheetController.49.1693" = "Kopirajte podatke iz izvorne baze podataka PostgreSQL u Teslatlas Hub.";
 "hub.ImportSheetController.64.1694" = "Izvor PostgreSQL";
@@ -347,7 +347,7 @@
 "hub.ImportSheetController.69.1697" = "Datoteka s lozinkom";
 "hub.ImportSheetController.7.1687" = "Hub čita podatke iz izvorne baze podataka bez zaustavljanja ili mijenjanja izvorne aplikacije. Nakon uvoza Hub će vam reći kada trebate sami onemogućiti pristup Tesli u izvornoj aplikaciji.";
 "hub.ImportSheetController.73.1699" = "Hub nije pokrenut. Pokrenite Hub, otvorite prozor prikupljanja, a zatim se prijavite.";
-"hub.ImportSheetController.9.1688" = "Prije uvoza: izradite sigurnosnu kopiju izvorne aplikacije, ažurirajte je na verziju 4.2.0 ili noviju, jednom je pokrenite i pričekajte da dovrši migracije baze podataka. Izravna veza s bazom podataka ne može potvrditi verziju pokrenute aplikacije.";
+"hub.ImportSheetController.9.1688" = "Prije uvoza: izradite sigurnosnu kopiju izvorne aplikacije, ažurirajte je na verziju 4.4.0 ili noviju, jednom je pokrenite i pričekajte da dovrši migracije baze podataka. Izravna veza s bazom podataka ne može potvrditi verziju pokrenute aplikacije.";
 "hub.LogsWindowController.113.1730" = "Više radnji za zapisnike";
 "hub.LogsWindowController.123.1732" = "U prikazanim, kopiranim i spremljenim zapisnicima skrivaju se vjerodajnice i privatni identifikatori. Pregledajte ih prije dijeljenja.";
 "hub.LogsWindowController.17.1712" = "Učitavanje zapisnika…";
@@ -412,7 +412,7 @@
 "hub.OnboardingWindowController.1500.2071" = "Unesite i token za pristup i token za osvježavanje.";
 "hub.OnboardingWindowController.1631.2105" = "Unesite poslužitelj izvorne aplikacije, SSH korisnika i port.";
 "hub.OnboardingWindowController.168.1852" = "Nastavi";
-"hub.OnboardingWindowController.1691.2113" = "Provjera sheme ne može utvrditi verziju izvorne aplikacije. Potvrdite da na poslužitelju radi izvorna aplikacija verzije 4.2.0 ili novije, a zatim nastavite.";
+"hub.OnboardingWindowController.1691.2113" = "Provjera sheme ne može utvrditi verziju izvorne aplikacije. Potvrdite da na poslužitelju radi izvorna aplikacija verzije 4.4.0 ili novije, a zatim nastavite.";
 "hub.OnboardingWindowController.1740.2131" = "Povežite se s poslužiteljem izvorne aplikacije prije uvoza.";
 "hub.OnboardingWindowController.1750.2137" = "Postavke poslužitelja promijenjene su. Ponovno se povežite s poslužiteljem izvorne aplikacije prije uvoza.";
 "hub.OnboardingWindowController.1820.2143" = "Jedna ili više provjera zahtijeva pozornost.";
@@ -420,7 +420,7 @@
 "hub.OnboardingWindowController.1980.2147" = "Odaberi SSH ključ";
 "hub.OnboardingWindowController.1981.2148" = "Odaberi ključ";
 "hub.OnboardingWindowController.200.1857" = "Upotrijebi lokalnu snimku stanja PostgreSQL-a (samo povijest)";
-"hub.OnboardingWindowController.203.1858" = "Potvrđujem da na ovom poslužitelju radi izvorna aplikacija verzije 4.2.0 ili novije";
+"hub.OnboardingWindowController.203.1858" = "Potvrđujem da na ovom poslužitelju radi izvorna aplikacija verzije 4.4.0 ili novije";
 "hub.OnboardingWindowController.252.1859" = "Prethodni uvoz nije dovršen. Provjerite izvornu aplikaciju i ponovno pokrenite uvoz.";
 "hub.OnboardingWindowController.292.1862" = "Spremno za uvoz.";
 "hub.OnboardingWindowController.298.1866" = "Povezivanje s izvornom aplikacijom nije uspjelo";
@@ -567,7 +567,7 @@
 "hub.SourceServerImporter.743.2585" = "Hub nije uspio rezervirati lokalni port za tunel do baze podataka.";
 "hub.SourceServerImporter.744.2586" = "Pokušajte ponovno.";
 "hub.SourceServerImporter.746.2588" = "Najprije ažurirajte izvornu aplikaciju";
-"hub.SourceServerImporter.747.2589" = "Vođeni uvoz zahtijeva izvornu aplikaciju verzije 4.2.0 ili novije.";
+"hub.SourceServerImporter.747.2589" = "Vođeni uvoz zahtijeva izvornu aplikaciju verzije 4.4.0 ili novije.";
 "hub.SourceServerImporter.748.2590" = "Izradite sigurnosnu kopiju izvorne aplikacije, ažurirajte je i pričekajte da dovrši migracije, a zatim se ponovno povežite.";
 "hub.SourceServerImporter.763.2594" = "Izvorna aplikacija ne radi ili njezin spremnik nije pronađen.";
 "hub.SourceServerImporter.764.2596" = "Nije moguće utvrditi Docker Compose projekt izvorne aplikacije.";
@@ -600,7 +600,7 @@
 "hub.SourceServerImporter.832.2666" = "Ovaj račun nema pristup Dockeru. Omogućite izravan pristup Dockeru ili dopustite pokretanje Dockera pomoću sudo naredbe bez lozinke.";
 "hub.SourceServerImporter.834.2668" = "Docker nije pronađen na poslužitelju izvorne aplikacije. Provjerite poslužitelj i PATH korisničkog računa.";
 "hub.SourceServerImporter.836.2670" = "Docker je instaliran, ali nije dostupan. Provjerite radi li usluga Dockera.";
-"hub.SourceServerImporter.838.2672" = "Vođeni uvoz zahtijeva izvornu aplikaciju verzije 4.2.0 ili novije. Ažurirajte izvornu aplikaciju, a zatim pokušajte ponovno.";
+"hub.SourceServerImporter.838.2672" = "Vođeni uvoz zahtijeva izvornu aplikaciju verzije 4.4.0 ili novije. Ažurirajte izvornu aplikaciju, a zatim pokušajte ponovno.";
 "hub.SourceServerImporter.840.2674" = "SSH se nije mogao povezati ni autentificirati. Provjerite poslužitelj, port, račun i odabrani način autentifikacije.";
 "hub.SourceServerImporter.842.2676" = "SSH autentifikacija nije uspjela. Provjerite račun i odabrani način autentifikacije.";
 "hub.SourceServerImporter.854.2688" = "SSH poslužitelj zatvorio je vezu. Provjerite zapisnike poslužitelja i pravila za SSH.";
@@ -615,7 +615,7 @@
 
 "hub.import.ackExplain" = "Provjera sheme ne može pokazati koja je verzija izvorne aplikacije stvorila ovu bazu podataka: više verzija upotrebljava istu shemu.";
 
-"hub.import.ackRelease" = "Potvrđujem da je izvorna aplikacija verzije 4.2.0 ili novije i da se neće ažurirati tijekom uvoza.";
+"hub.import.ackRelease" = "Potvrđujem da je izvorna aplikacija verzije 4.4.0 ili novije i da se neće ažurirati tijekom uvoza.";
 
 "hub.backup.title" = "Sigurnosne kopije";
 
