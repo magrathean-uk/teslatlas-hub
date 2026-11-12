@@ -12,9 +12,9 @@ protocol HubMaintenanceBackend: AnyObject {
     /// Car names by Hub vehicle id, for the device grants.
     var vehicleNames: [UUID: String] { get }
     func loadBackupSchedule() -> Result<HubBackupSchedule, Error>
-    /// Writes the `[backup]` section; with a password, first replaces the Keychain item
-    /// the section names (M06-T12). The service applies the schedule when it restarts
-    /// and reads the password at each run.
+    /// Writes the `[backup]` section with `password_source = "keychain"` (M06-T13); with a
+    /// password, first replaces the Keychain item the section names (M06-T12). The service
+    /// applies the schedule when it restarts and reads the password at each run.
     func saveBackupSchedule(_ schedule: HubBackupSchedule, password: String?) -> Result<HubBackupSchedule, Error>
     func readBackupStatus(completion: @escaping (Result<HubBackupStatus, Error>) -> Void)
     func backUpNow(completion: @escaping (HubBackupRunState) -> Void)
@@ -210,7 +210,7 @@ final class HubControllerMaintenance: HubMaintenanceBackend {
                 try? migratePasswordFile(named: saved.passwordFile)
             }
             let original = try String(contentsOf: configPath, encoding: .utf8)
-            let updated = saved.applied(to: original)
+            let updated = Self.namingKeychainSource(in: saved.applied(to: original))
             if updated != original {
                 try Data(updated.utf8).write(to: configPath, options: .atomic)
                 try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: configPath.path)
@@ -219,6 +219,37 @@ final class HubControllerMaintenance: HubMaintenanceBackend {
         } catch {
             return .failure(error)
         }
+    }
+
+    /// The source the app's configuration names for the unattended password (M06-T13).
+    static let keychainPasswordSource = "keychain"
+
+    /// `config` with `password_source = "keychain"` in its `[backup]` table, so the
+    /// service reads the password only from the Keychain item the app writes (its account
+    /// stays the `password_file` path). An existing `password_source` line is replaced;
+    /// other lines, other tables and comments stay as they are. `config` already holds
+    /// the table (`HubBackupSchedule.applied(to:)` adds it).
+    static func namingKeychainSource(in config: String) -> String {
+        var lines = config.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        func content(_ line: String) -> String {
+            String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0])
+                .trimmingCharacters(in: .whitespaces)
+        }
+        guard let table = lines.firstIndex(where: { content($0) == "[backup]" }) else { return config }
+        let entry = "password_source = \"\(keychainPasswordSource)\""
+        let end = lines[(table + 1)...].firstIndex(where: { content($0).hasPrefix("[") }) ?? lines.endIndex
+        let existing = lines[(table + 1)..<end].firstIndex { line in
+            let parts = content(line).split(separator: "=", maxSplits: 1)
+            return parts.count == 2 && parts[0].trimmingCharacters(in: .whitespaces) == "password_source"
+        }
+        if let existing {
+            guard content(lines[existing]) != entry else { return config }
+            let indentation = String(lines[existing].prefix { $0 == " " || $0 == "\t" })
+            lines[existing] = indentation + entry
+        } else {
+            lines.insert(entry, at: table + 1)
+        }
+        return lines.joined(separator: "\n")
     }
 
     func readBackupStatus(completion: @escaping (Result<HubBackupStatus, Error>) -> Void) {

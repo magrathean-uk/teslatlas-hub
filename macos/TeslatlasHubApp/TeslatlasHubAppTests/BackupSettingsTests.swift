@@ -475,6 +475,8 @@ final class BackupSettingsTests: XCTestCase {
         let written = try String(contentsOf: hub.config, encoding: .utf8)
         XCTAssertFalse(written.contains(password))
         XCTAssertEqual(HubBackupSchedule(config: written).passwordFile, name.path)
+        XCTAssertEqual(written.components(separatedBy: "password_source = \"keychain\"").count, 2,
+                       "the section names the Keychain as the password source once (M06-T13)")
         XCTAssertEqual(try backend.loadBackupSchedule().get(), saved)
 
         // A short password changes nothing; a failing Keychain is reported and changes nothing.
@@ -531,6 +533,7 @@ final class BackupSettingsTests: XCTestCase {
         try writeLegacy(mode: 0o600)
         _ = try second.saveBackupSchedule(loaded, password: nil).get()
         XCTAssertEqual(saver.items, [name.path: Array(password.utf8)])
+        XCTAssertTrue(try String(contentsOf: hub.config, encoding: .utf8).contains("password_source = \"keychain\""))
         XCTAssertFalse(FileManager.default.fileExists(atPath: name.path))
 
         // A file the configuration does not name as the app's own is never touched.
@@ -542,6 +545,34 @@ final class BackupSettingsTests: XCTestCase {
         _ = try HubControllerMaintenance(controller: hub.controller, passwordStore: untouched).loadBackupSchedule().get()
         XCTAssertEqual(untouched.items, [:])
         XCTAssertTrue(FileManager.default.fileExists(atPath: elsewhere.path))
+    }
+
+    /// M06-T13: the app's `[backup]` section names the Keychain as the password source,
+    /// replacing any other source and leaving the rest of the file as it was.
+    func testSavedScheduleNamesTheKeychainPasswordSource() throws {
+        let hub = try hubFolder("BackupPasswordSource")
+        defer { try? FileManager.default.removeItem(at: hub.home) }
+        let config = "data_dir = \"/Hub/data\"\n\n[backup]\n# chosen by hand\n  password_source = \"file\"\n"
+            + "enabled = false\n\n[pairing]\npassword_source = \"file\"\n"
+        try Data(config.utf8).write(to: hub.config)
+        let store = FakePasswordStore()
+        let backend = HubControllerMaintenance(controller: hub.controller, passwordStore: store)
+        let schedule = HubBackupSchedule(enabled: true, destination: "/Volumes/B")
+        _ = try backend.saveBackupSchedule(schedule, password: "correct horse battery staple").get()
+        let written = try String(contentsOf: hub.config, encoding: .utf8)
+        let backupTable = written.components(separatedBy: "[pairing]")[0]
+        XCTAssertTrue(backupTable.contains("  password_source = \"keychain\"\n"), written)
+        XCTAssertFalse(backupTable.contains("\"file\""), written)
+        XCTAssertTrue(written.hasSuffix("[pairing]\npassword_source = \"file\"\n"), "another table is untouched")
+        XCTAssertTrue(written.contains("# chosen by hand"))
+        XCTAssertEqual(store.items.count, 1, "the Keychain item itself is unchanged in shape")
+
+        // Saving again changes nothing; a section without the key gets it right under the header.
+        _ = try backend.saveBackupSchedule(try backend.loadBackupSchedule().get(), password: nil).get()
+        XCTAssertEqual(try String(contentsOf: hub.config, encoding: .utf8), written)
+        XCTAssertEqual(HubControllerMaintenance.namingKeychainSource(in: "[backup]\nkeep = 7\n"),
+                       "[backup]\npassword_source = \"keychain\"\nkeep = 7\n")
+        XCTAssertEqual(HubControllerMaintenance.namingKeychainSource(in: "data_dir = \"/d\"\n"), "data_dir = \"/d\"\n")
     }
 
     /// The real Keychain store against a disposable keychain this test creates and deletes:
