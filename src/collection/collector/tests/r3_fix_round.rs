@@ -400,7 +400,7 @@ fn r3_run_owner_start(
         crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(store,temporary,"r3-access","r3-refresh",Some((now_seconds+36_000,now_seconds+30_000))).expect("supplied guard fixture");
     }
     let base = url::Url::parse("http://127.0.0.1:9/").expect("unroutable");
-    let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary);
+    let admission = crate::auth::credential_vault::fixtures::fixture_admission(store, temporary);
     let manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store.clone(),
         temporary,
@@ -477,7 +477,7 @@ fn r3_run_fleet_start(
         )
         .expect("persist credentials");
     }
-    let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary);
+    let admission = crate::auth::credential_vault::fixtures::fixture_admission(store, temporary);
     let manager = Arc::new(tokio::sync::Mutex::new(
         {
     let runtime_store = HubStore::initialize(temporary).expect("restart store");
@@ -537,7 +537,7 @@ fn r3_run_cadence_wait_start(
         let config = cadence_wait_config(temporary, WaitMode::Legacy, None);
         let violation = config.collector.cadence_violation().expect("violation");
         let admission =
-            crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary);
+            crate::auth::credential_vault::fixtures::fixture_admission(store, temporary);
         let (ready_tx, _ready_rx) = oneshot::channel();
         let clock: Arc<dyn CollectorClock> = ManualClock::new(Instant::now(), wall);
         timeout(

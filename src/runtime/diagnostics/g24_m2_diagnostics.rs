@@ -15,8 +15,8 @@ fn read_only_routes(root: &Path, store: &HubStore) {
     let rows: i64 = connection.query_row("SELECT count(*) FROM sqlite_schema", [], |row| row.get(0)).expect("schema count");
     for _ in 0..2 {
         let lane = HubStore::open_read_only(root).expect("non-admitted lane");
-        drop(credential_status(&lane, root, 1_800_000_000_000).expect("status"));
-        drop(inspect_hub(&lane, &config(root)).expect("doctor and preflight projection"));
+        let _ = credential_status(&lane, root, 1_800_000_000_000).expect("status");
+        let _ = inspect_hub(&lane, &config(root)).expect("doctor and preflight projection");
     }
     assert_eq!(connection.query_row::<i64, _, _>("PRAGMA data_version", [], |row| row.get(0)).expect("version after"), version);
     assert_eq!(connection.query_row::<i64, _, _>("SELECT count(*) FROM sqlite_schema", [], |row| row.get(0)).expect("schema after"), rows);

@@ -2092,6 +2092,7 @@ pub fn refused_credential_backup_message(
 
 pub(crate) const CAR_CONTROL_SECRET_TABLES: &[&str] = &["credential_pairs"];
 pub(crate) const PRE_UPGRADE_SECRET_TABLES: &[&str] = &["legacy_owner_tokens", "fleet_tokens"];
+#[cfg_attr(not(test), expect(dead_code, reason = "used by the test build only"))]
 pub(crate) const CAR_CONTROL_SECRET_FILES: &[&str] = &[
     "credential-keys",
     "fleet-command-key.pem",

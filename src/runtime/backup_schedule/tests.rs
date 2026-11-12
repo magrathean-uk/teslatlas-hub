@@ -451,7 +451,7 @@ fn backup_schedule_password_file_rules_and_nothing_prints_the_password() {
 #[test]
 fn backup_schedule_real_runner_writes_a_verifiable_generation_and_leaks_no_password() {
     let root = crate::private_tempdir().unwrap();
-    let store = HubStore::initialize(&root.path().join("data")).expect("store");
+    let store = HubStore::initialize(root.path().join("data")).expect("store");
     store.create_pairing("Schedule fixture", 1_000, 10_000).expect("pairing");
     let destination = root.path().join("destination");
     fs::create_dir(&destination).unwrap();

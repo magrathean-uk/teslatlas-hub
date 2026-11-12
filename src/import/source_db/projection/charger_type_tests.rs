@@ -171,7 +171,7 @@ fn ind12_dc_evidence_anywhere_wins() {
     let mut ac = sample(1, 100, None, Some(7.0));
     ac.fast_charger_present = Some(false);
     let quiet = sample(2, 150, None, None);
-    assert_eq!(projected(&[quiet.clone()]).is_dc, None);
+    assert_eq!(projected(std::slice::from_ref(&quiet)).is_dc, None);
     assert_eq!(projected(&[ac.clone(), quiet.clone()]).is_dc, Some(false));
     for dc in [sample(3, 200, Some("Supercharger"), None), sample(3, 200, None, Some(58.0)), {
         let mut row = sample(3, 200, None, None);

@@ -372,7 +372,7 @@ async fn post_send_refresh_failure_is_terminal_until_explicit_new_credentials() 
     let replacement =
         OwnerTokens::from_secret_parts("fresh-access".to_owned(), "fresh-refresh".to_owned())
             .expect("explicit replacement tokens");
-    let replacement_generation =
+    let _replacement_generation =
         crate::source_token_envelope::legacy_refresh_credential_generation(&replacement);
     crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,data.path(),replacement.access_token(),replacement.refresh_token(),Some((fixture_now + 28_800, fixture_now + 21_600))).expect("store supplied pair");
     let recovered =

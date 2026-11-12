@@ -234,13 +234,11 @@ fn run_spawned_helper_until(
             if Instant::now() >= deadline {
                 let kill = child.kill();
                 let reap = child.wait();
-                if let Err(error) = reap {
+                reap?;
+                if let Err(error) = kill
+                    && error.kind() != io::ErrorKind::InvalidInput
+                {
                     return Err(error);
-                }
-                if let Err(error) = kill {
-                    if error.kind() != io::ErrorKind::InvalidInput {
-                        return Err(error);
-                    }
                 }
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
@@ -321,6 +319,7 @@ pub fn stub_admit_and_load_slot_for_test(
     }
     let admission = AdmittedUserHub::admit(data_dir).map_err(io::Error::other)?;
     let store = crate::db::HubStore::initialize(data_dir).map_err(io::Error::other)?;
+    #[allow(clippy::needless_update)] // test builds add VaultOptions fields
     let vault = CredentialVault::open(
         store.clone(),
         Arc::clone(&admission),

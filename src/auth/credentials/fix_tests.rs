@@ -279,7 +279,7 @@ async fn s5_a_padded_refresh_token_that_the_answer_keeps_is_persisted_as_a_chang
     )]);
     let mut manager = rig.manager();
     let stored = rig.stored_generation();
-    let padded =
+    let _padded =
         OwnerTokens::from_secret_parts(jg(), "refresh-0 ".to_owned()).expect("padded tokens");
     assert_eq!(
         stored,
@@ -299,7 +299,7 @@ async fn s5_a_padded_refresh_token_that_the_answer_keeps_is_persisted_as_a_chang
         rig.stored_pair(),
         ("AT1".into(), "refresh-0".into(), T0 + 28_800, T0 + 21_600)
     );
-    let trimmed =
+    let _trimmed =
         OwnerTokens::from_secret_parts("AT1".to_owned(), "refresh-0".to_owned()).expect("trimmed");
     let after = rig.stored_generation();
     assert_eq!(

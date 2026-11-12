@@ -1784,7 +1784,7 @@ pub(crate) async fn assert_fleet_wire_contract() {
     fn buffer_type(_: &Zeroizing<Vec<u8>>) {}
     trait AmbiguousIfClone<A> { fn marker() {} }
     impl<T: ?Sized> AmbiguousIfClone<()> for T {}
-    impl<T: ?Sized + Clone> AmbiguousIfClone<u8> for T {}
+    impl<T: Clone> AmbiguousIfClone<u8> for T {}
     let _ = <WireSecret as AmbiguousIfClone<_>>::marker;
     let _ = <FleetTokenWire as AmbiguousIfClone<_>>::marker;
     wiping::<FleetTokenWire>();

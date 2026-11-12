@@ -713,7 +713,7 @@ struct FleetLedger {
 }
 
 fn fleet_ledger(store: &HubStore) -> Option<FleetLedger> {
-    let stored = fleet_snapshot(&store).expect("Fleet row")?;
+    let stored = fleet_snapshot(store).expect("Fleet row")?;
     let attempts =(store
         .open()
         .expect("catalogue")

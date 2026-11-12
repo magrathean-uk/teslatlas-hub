@@ -281,7 +281,7 @@ fn hdiutil(
 #[cfg(target_os = "macos")]
 fn mount_point(output: &str, volume: &str) -> Option<PathBuf> {
     output.lines().find_map(|line| {
-        let field = line.split('\t').map(str::trim).last()?;
+        let field = line.split('\t').map(str::trim).next_back()?;
         let path = Path::new(field);
         (path.is_absolute()
             && path

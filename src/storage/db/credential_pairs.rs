@@ -22,6 +22,8 @@ pub(crate) struct RefreshFenceCapability {
     #[cfg(test)]
     waived: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
+// Test builds start with the fence waived, so the derive (all false) would differ.
+#[allow(clippy::derivable_impls)]
 impl Default for RefreshFenceCapability {
     fn default() -> Self {
         Self {
@@ -2265,14 +2267,6 @@ impl CredentialConnection {
         tx.commit().map_err(StoreError::CredentialPairStore)
     }
 
-    /// Returns SQLite's effective limit, which cannot be below its page count.
-    /// CT52 uses SQLite's allocation limit during conversion.
-    pub(crate) fn set_test_max_page_count(&mut self, pages: u32) -> Result<u32, StoreError> {
-        self.connection.pragma_update(None, "max_page_count", pages)
-            .map_err(StoreError::Configure)?;
-        self.connection.pragma_query_value(None, "max_page_count", |row| row.get(0))
-            .map_err(StoreError::Query)
-    }
 
     /// CT21's connection-local SQLite refusal, lifted before recovery.
     pub(crate) fn set_test_query_only(&mut self, enabled: bool) -> Result<(), StoreError> {

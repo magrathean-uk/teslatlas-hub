@@ -32,12 +32,6 @@ macro_rules! import_projection_state_bridges_table {
     };
 }
 
-macro_rules! legacy_owner_tokens_table {
-    () => {
-        "legacy_owner_tokens"
-    };
-}
-
 macro_rules! import_state_spool_alias {
     () => {
         "import_state_spool"
@@ -50,4 +44,3 @@ pub(crate) use import_projection_state_bridges_table;
 pub(crate) use import_projection_state_heads_table;
 pub(crate) use import_projection_state_rows_table;
 pub(crate) use import_state_spool_alias;
-pub(crate) use legacy_owner_tokens_table;

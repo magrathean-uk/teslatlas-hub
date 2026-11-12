@@ -559,7 +559,7 @@ pub(in crate::auth) async fn assert_external_refresh_owner_contract() {
     for hours in [0, 24] {
         rig.at(T0 + hours * 3_600);
         let refused = LegacyAuthManager::from_hub_source_db_store_for_test(rig.store.clone(), rig.directory.path(),
-            &rig.endpoint(None), Some(rig.token_url()), false, rig.env.clone()).err().expect("source pair refused");
+            &rig.endpoint(None), Some(rig.token_url()), false, rig.env.clone()).expect_err("source pair refused");
         assert!(matches!(refused, crate::credentials::LegacyAuthManagerError::Credential(crate::credentials::CredentialError::SourceCredentialDisabled)), "{refused:?}");
     }
     assert!(rig.backend.token_posts().is_empty(), "no token transport");

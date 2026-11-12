@@ -2116,7 +2116,7 @@ fn own_login_default_fresh_configuration_selects_own_login_with_collection_off()
         assert!(collector.fleet_telemetry.is_none());
     }
     assert!(config.import_source.source_url.is_none() && config.import_source.source_key.is_none() && config.import_source.current.is_none(), "no source fields");
-    assert!(DEFAULT_INVENTORY_INTERVAL_SECONDS > 0, "a positive interval stays available to configure");
+    const { assert!(DEFAULT_INVENTORY_INTERVAL_SECONDS > 0, "a positive interval stays available to configure") };
 }
 
 /// No configuration key can name a token, a token file or another

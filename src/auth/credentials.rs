@@ -16,13 +16,11 @@ use crate::legacy_auth::{
     schedule::EXCHANGE_WAIT_AT_MOST,
     state::{
         AuthState, AuthStatus, AuthStop, CLOCK_RECHECK_SECONDS, EXTERNAL_WRITE_RECHECK_SECONDS,
-        FuseSnapshot, MIN_REFRESH_INTERVAL_SECONDS, OwnWrite, PairImage, PairLoad, PersistReread,
+        FuseSnapshot, MIN_REFRESH_INTERVAL_SECONDS, PairLoad, PersistReread,
         StartInputs, StatusReason, StatusRecorder, StatusSink, StoppedMode, StoredPairRelation,
         clock_is_valid, skew_after_answer,
     },
 };
-#[cfg(test)]
-use crate::legacy_auth::state::{persist_reread,restore_at_start,stored_pair_relation};
 use crate::auth::credential_envelope::{MAX_TOKEN_PLAINTEXT_BYTES, CredentialSlot, RefreshOwner};
 use crate::auth::credential_vault::{CredentialVault, CredentialStoreError};
 mod hub_persistence;
@@ -669,7 +667,7 @@ impl LegacyAuthManager {
 
     fn from_vault_with_policy(
         store: crate::db::HubStore,
-        data_dir: &Path,
+        _data_dir: &Path,
         refresh_policy: LegacyAuthRefreshPolicy,
         mode: AuthMode,
         fallback_region: crate::tesla_stream::StreamRegion,
@@ -1379,6 +1377,8 @@ impl LegacyAuthManager {
         let ports = self.ports();
         match persist_step(ports.as_ref(), &successor, true) {
             PersistStep::Done => {
+                // Hub is the only variant outside test builds.
+                #[allow(irrefutable_let_patterns)]
                 if let LegacyAuthPersistence::Hub(persistence) = &self.persistence { persistence.set_generation(successor.output); }
                 let spread = self.env.spread_unit();
                 self.auth.apply_persisted(&successor, now, spread);
@@ -1800,7 +1800,9 @@ impl LegacyAuthManager {
             let ports = self.ports();
             match persist_step(ports.as_ref(), &successor, true) {
                 PersistStep::Done => {
-                    if let LegacyAuthPersistence::Hub(persistence) = &self.persistence { persistence.set_generation(successor.output); }
+                    // Hub is the only variant outside test builds.
+                #[allow(irrefutable_let_patterns)]
+                if let LegacyAuthPersistence::Hub(persistence) = &self.persistence { persistence.set_generation(successor.output); }
                     let spread = self.env.spread_unit();
                     self.auth.apply_persisted(&successor, now, spread);
                 }
