@@ -1,0 +1,271 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//! M04-T06: a full-snapshot publication that fails after its pack write removes the
+//! pack it created, under the publication gate, unless a catalogue row (or an earlier
+//! publication of the same digest) retains it; the original error is returned.
+
+use super::*;
+use crate::durability_fault::{DurabilityFaultPoint, inject};
+use crate::hub_pack::{
+    ProjectionBinding, ProjectionPackOwnership, ProjectionPackRequest, ProjectionPackWriter,
+    ProjectionSnapshot,
+};
+
+const COLLECTED_AT_MS: i64 = 1_800_000_000_000;
+
+fn orphan_pack_collection(source_vehicle_id: u64, vin: &str) -> ManualCollection {
+    ManualCollection {
+        vehicles: vec![Vehicle::for_test(source_vehicle_id, vin, "online")],
+        snapshots: vec![VehicleData::for_test(
+            source_vehicle_id,
+            json!({
+                "drive_state": {"timestamp": COLLECTED_AT_MS - 1},
+                "vehicle_config": {"car_type": "model3"},
+                "vehicle_state": {"car_version": "2026.20"}
+            }),
+        )],
+        failures: vec![],
+    }
+}
+
+fn orphan_pack_publish(
+    store: &HubStore,
+    collection: &ManualCollection,
+) -> Result<usize, CollectorError> {
+    persist_collection(store, collection, COLLECTED_AT_MS).expect("raw observation");
+    materialise_lifecycle_for_collection(store, collection, COLLECTED_AT_MS).expect("lifecycle");
+    let publication_gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    publish_compatibility_snapshots(
+        store,
+        &publication_gate,
+        &CursorKey::from_bytes([7; 32]),
+        collection,
+        COLLECTED_AT_MS,
+    )
+}
+
+/// Every content-addressed pack file, with whether a catalogue row retains it.
+fn orphan_pack_files(store: &HubStore) -> Vec<(String, bool)> {
+    let directory = store.packs_dir().join("sha256");
+    let mut files: Vec<(String, bool)> = std::fs::read_dir(&directory)
+        .expect("pack directory")
+        .map(|entry| entry.expect("pack entry").file_name())
+        .filter_map(|name| {
+            name.to_str()
+                .and_then(|name| name.strip_suffix(".sqlite.zst"))
+                .map(str::to_owned)
+        })
+        .map(|digest| {
+            let retained = store.pack_sha256_is_retained(&digest).expect("retention");
+            (digest, retained)
+        })
+        .collect();
+    files.sort();
+    files
+}
+
+fn assert_orphan_pack_original_error(result: Result<usize, CollectorError>) {
+    match result {
+        Err(CollectorError::Store(crate::db::StoreError::CatalogueDurability(source))) => {
+            assert_eq!(
+                source.to_string(),
+                "injected durability fault at catalogue_before_commit",
+                "the catalogue failure is returned unchanged"
+            );
+        }
+        other => panic!("expected the original catalogue failure, got {other:?}"),
+    }
+}
+
+#[test]
+fn orphan_pack_a_failed_publication_leaves_no_unretained_file() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let collection = orphan_pack_collection(9, "5YJ3E1EA7KF000001");
+
+    let result = {
+        // The catalogue commit is the step after the pack write.
+        let _fault = inject(DurabilityFaultPoint::CatalogueBeforeCommit);
+        orphan_pack_publish(&store, &collection)
+    };
+
+    assert_orphan_pack_original_error(result);
+    assert_eq!(
+        orphan_pack_files(&store),
+        Vec::<(String, bool)>::new(),
+        "the failed publication left no pack file behind"
+    );
+}
+
+#[test]
+fn orphan_pack_an_earlier_publication_survives_a_later_failure() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    orphan_pack_publish(&store, &orphan_pack_collection(9, "5YJ3E1EA7KF000001"))
+        .expect("the earlier publication");
+    let earlier = orphan_pack_files(&store);
+    assert_eq!(earlier.len(), 1, "the earlier publication wrote one pack");
+    assert!(earlier[0].1, "a catalogue row retains the earlier pack");
+
+    let result = {
+        let _fault = inject(DurabilityFaultPoint::CatalogueBeforeCommit);
+        orphan_pack_publish(&store, &orphan_pack_collection(10, "5YJ3E1EA7KF000002"))
+    };
+
+    assert_orphan_pack_original_error(result);
+    assert_eq!(
+        orphan_pack_files(&store),
+        earlier,
+        "the earlier pack survives and the failed one is gone"
+    );
+}
+
+fn orphan_pack_snapshot() -> ProjectionSnapshot {
+    ProjectionSnapshot {
+        cars: vec![compatibility_car(
+            &Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online"),
+            None,
+            1,
+        )],
+        drives: vec![],
+        positions: vec![],
+        charges: vec![],
+        charge_samples: vec![],
+    }
+}
+
+fn orphan_pack_request(snapshot: &ProjectionSnapshot) -> ProjectionPackRequest<'_> {
+    ProjectionPackRequest {
+        pack_id: Uuid::from_u128(4),
+        snapshot_id: Uuid::from_u128(5),
+        ordinal: 0,
+        binding: ProjectionBinding {
+            installation_id: Uuid::from_u128(1),
+            account_id: Uuid::from_u128(2),
+            vehicle_id: Uuid::from_u128(3),
+            generation: 1,
+            selected_car_id: 1,
+        },
+        sequence: SequenceRange {
+            from_exclusive: 0,
+            to_inclusive: 1,
+        },
+        snapshot,
+    }
+}
+
+fn orphan_pack_failure() -> CollectorError {
+    crate::db::StoreError::CatalogueDurability(std::io::Error::other("catalogue failure")).into()
+}
+
+#[test]
+fn orphan_pack_a_retained_pack_with_the_same_digest_survives_the_failure() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let snapshot = orphan_pack_snapshot();
+    let request = orphan_pack_request(&snapshot);
+    let writer = ProjectionPackWriter::new(store.packs_dir());
+    let cursor_key = CursorKey::from_bytes([46; 32]);
+
+    // The pack this publication created is named by a catalogue row by the time the
+    // failure is handled (an earlier commit of the same digest): it stays.
+    let created = writer.write_full_snapshot(&request).expect("created pack");
+    assert_eq!(created.ownership(), ProjectionPackOwnership::Created);
+    let manifest = request
+        .signed_manifest(&created, &cursor_key)
+        .expect("manifest");
+    store.publish_manifest(&manifest).expect("catalogue row");
+    let publication_gate = store.try_acquire_publication_gate().expect("gate");
+    discard_failed_publication_pack(
+        &store,
+        &publication_gate,
+        &created,
+        &orphan_pack_failure(),
+        None,
+    );
+    assert!(created.path.is_file(), "the retained pack survives");
+
+    // A later write of the same digest reuses the file: it never removes it.
+    let reused = writer.write_full_snapshot(&request).expect("reused pack");
+    assert_eq!(reused.ownership(), ProjectionPackOwnership::ReusedExisting);
+    discard_failed_publication_pack(
+        &store,
+        &publication_gate,
+        &reused,
+        &orphan_pack_failure(),
+        None,
+    );
+    assert!(reused.path.is_file(), "the reused pack survives");
+    store.catalogue_check().expect("catalogue still valid");
+}
+
+#[test]
+fn orphan_pack_an_ambiguous_commit_or_a_refused_guard_keeps_the_pack() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let snapshot = orphan_pack_snapshot();
+    let request = orphan_pack_request(&snapshot);
+    let publication_gate = store.try_acquire_publication_gate().expect("gate");
+    let created = ProjectionPackWriter::new(store.packs_dir())
+        .write_full_snapshot(&request)
+        .expect("created pack");
+
+    // The commit may have landed: startup repair owns the evidence.
+    let ambiguous: CollectorError = crate::db::StoreError::AmbiguousCatalogueCommit {
+        vehicle_id: Uuid::from_u128(3),
+        snapshot_id: Uuid::from_u128(5),
+    }
+    .into();
+    discard_failed_publication_pack(&store, &publication_gate, &created, &ambiguous, None);
+    assert!(created.path.is_file(), "an ambiguous commit keeps the pack");
+
+    // The run may no longer write: the removal is a write too.
+    let fence = AdmissionFence::default();
+    fence.set();
+    let guard = RunWriteGuard::from(fence);
+    discard_failed_publication_pack(
+        &store,
+        &publication_gate,
+        &created,
+        &orphan_pack_failure(),
+        Some(&guard),
+    );
+    assert!(created.path.is_file(), "a refused guard keeps the pack");
+
+    // With neither, the unretained pack this publication created is removed.
+    discard_failed_publication_pack(
+        &store,
+        &publication_gate,
+        &created,
+        &orphan_pack_failure(),
+        None,
+    );
+    assert!(!created.path.exists(), "the unretained pack is removed");
+}
+
+#[test]
+fn orphan_pack_a_failed_removal_is_logged_and_does_not_panic() {
+    use std::os::unix::fs::PermissionsExt;
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let snapshot = orphan_pack_snapshot();
+    let request = orphan_pack_request(&snapshot);
+    let publication_gate = store.try_acquire_publication_gate().expect("gate");
+    let created = ProjectionPackWriter::new(store.packs_dir())
+        .write_full_snapshot(&request)
+        .expect("created pack");
+    // A mode the removal helper refuses to unlink makes the removal fail.
+    std::fs::set_permissions(&created.path, std::fs::Permissions::from_mode(0o600))
+        .expect("mode");
+
+    discard_failed_publication_pack(
+        &store,
+        &publication_gate,
+        &created,
+        &orphan_pack_failure(),
+        None,
+    );
+    assert!(created.path.is_file(), "the failed removal left the file");
+}

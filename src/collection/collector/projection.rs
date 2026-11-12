@@ -1042,11 +1042,53 @@ fn publish_resolved_vehicle(
     };
     check_optional_write(guard, "publication-pack")?;
     let built = writer.write_full_snapshot_with_states_and_updates(&request, &states, &updates)?;
-    let manifest = request
-        .signed_manifest_with_states_and_updates(&built, &states, &updates, cursor_key)?;
-    check_optional_write(guard, "publication-finalize")?;
-    store.finalize_import_snapshot_with_binding(&manifest, fingerprint, &[], &binding)?;
+    let finalized = (|| {
+        let manifest = request
+            .signed_manifest_with_states_and_updates(&built, &states, &updates, cursor_key)?;
+        check_optional_write(guard, "publication-finalize")?;
+        store.finalize_import_snapshot_with_binding(&manifest, fingerprint, &[], &binding)?;
+        Ok(())
+    })();
+    if let Err(error) = finalized {
+        discard_failed_publication_pack(store, publication_gate, &built, &error, guard);
+        return Err(error);
+    }
     Ok(1)
+}
+
+/// After a full-snapshot publication fails past its pack write (M04-T06), remove the
+/// pack it wrote, so no file that no catalogue row retains stays under `packs/sha256`
+/// (backups archive that directory whole). The caller holds the publication gate, so
+/// no other publication can be between its own write and commit of the same digest.
+/// Kept: a file this publication reused rather than created, a file a catalogue row
+/// or a retired lineage names (the store checks that under the gate), the evidence of
+/// an ambiguous catalogue commit (startup repair owns it), and every file once the
+/// run's guard refuses writes. A failed removal is logged; the caller returns the
+/// original error either way.
+fn discard_failed_publication_pack(
+    store: &HubStore,
+    publication_gate: &crate::db::PublicationGate,
+    built: &crate::hub_pack::BuiltProjectionPack,
+    error: &CollectorError,
+    guard: Option<&RunWriteGuard>,
+) {
+    if !built.may_remove_unpublished_file()
+        || matches!(
+            error,
+            CollectorError::Store(crate::db::StoreError::AmbiguousCatalogueCommit { .. })
+        )
+    {
+        return;
+    }
+    if let Err(refusal) = check_optional_write(guard, "publication-pack-removal") {
+        tracing::warn!(path = %built.path.display(), %refusal, "kept the pack of a failed publication: the run may no longer write");
+        return;
+    }
+    if let Err(removal) =
+        store.remove_unretained_pack(publication_gate, built.metadata.sha256, &built.path)
+    {
+        tracing::warn!(path = %built.path.display(), %removal, "could not remove the pack of a failed publication");
+    }
 }
 
 /// The car a live vehicle's first materialisation stores (C6 R14).
