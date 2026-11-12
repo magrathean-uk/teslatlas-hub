@@ -8,24 +8,33 @@
 //! validate their rows with this module, and only then use the fixed paginated
 //! projections below.
 //!
-//! The contract is pinned to the source database v4.2.0 tag revision
-//! `e8d24886f97f22469c2675f89be843f6d401c76a`. source database v4.2.0 retains
-//! the same migration identifiers and physical schema as v4.1.1, so database
-//! evidence proves only v4.2-compatible schema, not the running app version.
+//! The contract is pinned to the source database v4.4.0 tag revision
+//! `42d187daadd0104fc9c4509785df47a26705845a` (107 migrations, newest
+//! `20261014120000`). It adds two migrations to the earlier v4.2.0 set; the
+//! only change to the relations and enums read here is the rename of the
+//! `range` enum to `preferred_range` with the same labels in the same order
+//! (`docs/releases/source-schema-compatibility.md`). Database evidence proves
+//! only the v4.4-compatible schema, not the running app version.
 //! A source must match that migration high-water mark and complete ordered set.
 //! A newer migration, or a database reconstructed with a different migration
 //! history, is rejected until its schema delta has been reviewed.
 
 use sha2::{Digest, Sha256};
 
-/// First source database migration version this adapter supports (the v4.2-compatible set).
-pub const MIN_SUPPORTED_MIGRATION: i64 = 20_260_808_090_000;
+/// First source database migration version this adapter supports (the
+/// v4.4-compatible set). The adapter admits exactly one reviewed set, so an
+/// older v4.2-compatible source (newest migration `20260808090000`) is refused
+/// as a legacy migration.
+pub const MIN_SUPPORTED_MIGRATION: i64 = 20_261_014_120_000;
 
-/// Last migration in the pinned v4.2.0 source tree.
+/// Last migration in the pinned v4.4.0 source tree.
 pub const MAX_VALIDATED_MIGRATION: i64 = MIN_SUPPORTED_MIGRATION;
 
-/// Immutable v4.2.0 source revision written by new imports.
-pub const SOURCE_DB_V4_SOURCE_REVISION: &str = "e8d24886f97f22469c2675f89be843f6d401c76a";
+/// Immutable v4.4.0 source revision written by new imports.
+pub const SOURCE_DB_V4_SOURCE_REVISION: &str = "42d187daadd0104fc9c4509785df47a26705845a";
+
+/// Immutable v4.2.0 revision retained as legacy beta provenance.
+pub const SOURCE_DB_V4_2_SOURCE_REVISION: &str = "e8d24886f97f22469c2675f89be843f6d401c76a";
 
 /// Immutable v4.1.1 revision retained as legacy beta provenance.
 pub const SOURCE_DB_V4_1_1_SOURCE_REVISION: &str = "d6c43bc8c48784da8f0b701945b80b20911b3d1a";
@@ -35,18 +44,20 @@ pub const SOURCE_DB_V4_1_1_SOURCE_REVISION: &str = "d6c43bc8c48784da8f0b701945b8
 pub const fn is_supported_source_db_revision(revision: &str) -> bool {
     matches!(
         revision.as_bytes(),
-        b"e8d24886f97f22469c2675f89be843f6d401c76a" | b"d6c43bc8c48784da8f0b701945b80b20911b3d1a"
+        b"42d187daadd0104fc9c4509785df47a26705845a"
+            | b"e8d24886f97f22469c2675f89be843f6d401c76a"
+            | b"d6c43bc8c48784da8f0b701945b80b20911b3d1a"
     )
 }
 
 /// Number of migrations in the pinned source revision.
-pub const SOURCE_DB_V4_MIGRATION_COUNT: usize = 105;
+pub const SOURCE_DB_V4_MIGRATION_COUNT: usize = 107;
 
 /// SHA-256 of the sorted, newline-delimited 14-digit migration versions in
 /// the pinned source revision. The exact list—not only its high-water mark—is
 /// part of the read-only source admission contract.
 pub const SOURCE_DB_V4_MIGRATION_SET_SHA256: &str =
-    "ea850d1b038c4af950db32e7a0939aa5ebe8f1dcefe5e56dcd592f3451038868";
+    "c497f904ef7426ea2468f7ed13044d6f74fe34e0c3e14e5c3360eea0ed35edea";
 
 /// Fixed read-only session statements. The COPY statement timeout is supplied
 /// separately from validated import limits so large historical reads can be
@@ -146,7 +157,7 @@ WHERE "type"."typname" = ANY (
     'unit_of_length',
     'unit_of_temperature',
     'unit_of_pressure',
-    'range'
+    'preferred_range'
   ]::text[]
 )
   AND "namespace"."nspname" = 'public'
@@ -264,7 +275,7 @@ impl ValueType {
             Self::UnitOfLength => matches!(type_name, "unit_of_length"),
             Self::UnitOfTemperature => matches!(type_name, "unit_of_temperature"),
             Self::UnitOfPressure => matches!(type_name, "unit_of_pressure"),
-            Self::PreferredRange => matches!(type_name, "range"),
+            Self::PreferredRange => matches!(type_name, "preferred_range"),
         }
     }
 
@@ -286,7 +297,7 @@ impl ValueType {
             Self::UnitOfLength => "unit_of_length",
             Self::UnitOfTemperature => "unit_of_temperature",
             Self::UnitOfPressure => "unit_of_pressure",
-            Self::PreferredRange => "range",
+            Self::PreferredRange => "preferred_range",
         }
     }
 }
@@ -441,7 +452,7 @@ const SETTINGS_SOURCE_COLUMNS: &[PinnedSourceColumn] = &[
         name: "preferred_range",
         value_type: ValueType::PreferredRange,
         nullable: false,
-        format_type: "range",
+        format_type: "preferred_range",
     },
     PinnedSourceColumn {
         name: "base_url",
@@ -1559,7 +1570,7 @@ pub fn validate_observed_schema(
 
 const PINNED_ENUM_LABELS: &[(&str, &[&str])] = &[
     ("billing_type", &["per_kwh", "per_minute"]),
-    ("range", &["ideal", "rated"]),
+    ("preferred_range", &["ideal", "rated"]),
     ("states_status", &["online", "offline", "asleep"]),
     ("unit_of_length", &["km", "mi"]),
     ("unit_of_pressure", &["bar", "psi"]),

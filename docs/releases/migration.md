@@ -98,7 +98,9 @@ application releases can share one schema set, so the schema cannot establish
 the running release; the operator must acknowledge that limit explicitly.
 Extra tables and columns are allowed, but a missing or changed reviewed column,
 enum, relationship, or migration set fails closed. A later source application release
-that adds migrations remains blocked until its schema delta is reviewed.
+that adds migrations remains blocked until its schema delta is reviewed. The
+current contract and each review are in
+[Source schema compatibility](source-schema-compatibility.md).
 
 ### Imported records
 
