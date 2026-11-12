@@ -249,7 +249,8 @@ fn backup_secret_exclusion_no_refresh_token_or_key_bytes_reach_an_encrypted_arch
     for name in CAR_CONTROL_SECRET_FILES {
         assert!(!restored.join(name).exists(), "{name} is not restored");
     }
-    assert!(!restored.join("secrets").exists());
+    // Only the cursor key restore generated (M06-T09), no restored key file.
+    assert_only_a_fresh_cursor_key(&restored, None);
     let image = fs::read(restored.join("hub.sqlite")).unwrap();
     assert!(!holds(&image, &deleted) && !holds(&image, &live));
 }
@@ -297,7 +298,7 @@ fn backup_secret_exclusion_restore_requires_a_fresh_hub_login_and_a_new_virtual_
     // No Fleet virtual-key private key or credential key: a new virtual key
     // is generated and enrolled after restore.
     assert!(!restored.join("fleet-command-key.pem").exists());
-    assert!(!restored.join("secrets").exists());
+    assert_only_a_fresh_cursor_key(&restored, None);
 }
 
 // ---------------------------------------------------------------------------
@@ -351,9 +352,11 @@ fn restore_revocation_a_pre_revocation_backup_does_not_resurrect_access() {
     ] {
         assert_eq!(table_rows(&restored, table), 0, "{table} is empty after restore");
     }
-    // TLS identity and cursor key are host state the restored Hub generates.
+    // TLS identity is host state the restored Hub generates on first serve;
+    // restore itself regenerates the cursor key and re-signs (M06-T09).
     assert!(!restored.join("tls").exists());
-    assert!(!crate::legacy_owner_credentials::cursor_key_path(&restored).exists());
+    let old_key = fs::read(crate::legacy_owner_credentials::cursor_key_path(&hub.data())).unwrap();
+    assert_only_a_fresh_cursor_key(&restored, Some(&old_key));
 }
 
 #[test]

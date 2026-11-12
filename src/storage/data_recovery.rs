@@ -7,7 +7,9 @@
 //! every immutable pack referenced by that catalogue, and each current
 //! schema-2.2 manifest's signed no-op body. Decryption and signing keys are
 //! deliberately excluded. TLS/configuration/service state is also omitted, so
-//! restore leaves the service stopped and collector authority absent.
+//! restore leaves the service stopped and collector authority absent. Restore
+//! generates a fresh cursor key and re-signs the restored sync state under it
+//! (M06-T09), so no key from the old host is needed and no old cursor verifies.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -557,6 +559,13 @@ fn finalize_restore(
     }
     restored_store.verify_immutable_snapshot_unchanged()?;
     validate_restored_data_tree(&staging.path, &manifest.members, true)?;
+    drop(restored_store);
+    // The bundle carries no cursor key. With the tree verified against it,
+    // write a fresh key into the staged tree and re-sign every stored cursor
+    // the old key signed (M06-T09): the restored Hub starts its API without
+    // the old host's key export, and the rename below publishes the key and
+    // the re-signed data together or not at all.
+    cursor_reissue::regenerate_cursor_key(&staging.path)?;
     sync_restored_data(&staging.path, &manifest.members)?;
 
     let report = report(STATUS_DATA_RESTORED, destination, manifest)?;
@@ -2084,6 +2093,7 @@ fn io_error(
 
 mod archive_crypto;
 mod backup_admission;
+mod cursor_reissue;
 mod encrypted_backup;
 mod encrypted_scratch;
 mod recovery_password;

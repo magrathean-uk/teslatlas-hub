@@ -228,6 +228,26 @@ fn publish_lineage_fixture(store: &HubStore, cursor_key: &CursorKey) -> LineageM
     lineage
 }
 
+/// The restored tree's `secrets` holds only the cursor key restore generated
+/// (M06-T09): a fresh 32-byte key, never `old`, and no credential key.
+fn assert_only_a_fresh_cursor_key(restored: &Path, old: Option<&[u8]>) -> CursorKey {
+    let names: Vec<String> = fs::read_dir(restored.join("secrets"))
+        .expect("restored secrets")
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["hub-cursor.key"], "secrets holds only the new cursor key");
+    let bytes = fs::read(crate::legacy_owner_credentials::cursor_key_path(restored)).unwrap();
+    if let Some(old) = old {
+        assert_ne!(bytes.as_slice(), old, "restore regenerates the cursor key");
+    }
+    CursorKey::from_bytes(bytes.as_slice().try_into().expect("32-byte key"))
+}
+
+/// `cursor` re-issued under `new` with the claims `old` signed.
+fn reissued(cursor: &OpaqueCursor, old: &CursorKey, new: &CursorKey) -> OpaqueCursor {
+    OpaqueCursor::issue(new, cursor.verify(old).expect("old cursor")).expect("re-issued")
+}
+
 fn pairing_authority_counts(data: &Path) -> (i64, i64) {
     let connection = open_immutable_catalogue(data).expect("pairing authority catalogue");
     let challenges = connection
@@ -820,7 +840,8 @@ fn data_backup_revokes_pairing_authority_and_preserves_identity_and_lineage() {
     assert_eq!(restored_report.installation_id, installation_id);
     assert!(!restored_report.clean_host_ready);
     assert_eq!(tree_snapshot(&backup), before);
-    assert!(!restored.join("secrets").exists());
+    // The lineage is signed, so restore writes a fresh cursor key (M06-T09).
+    let restored_key = assert_only_a_fresh_cursor_key(&restored, Some(&source_cursor));
     assert!(!restored.join("tls").exists());
 
     let restored_store = HubStore::open_immutable_read_only(&restored).expect("restored store");
@@ -854,8 +875,11 @@ fn data_backup_revokes_pairing_authority_and_preserves_identity_and_lineage() {
         restored_store
             .lineage_manifest_for_vehicle(source_lineage.vehicle_id)
             .expect("restored lineage"),
-        Some(source_lineage),
-        "restore sanitation must preserve account-bound vehicle sync lineage"
+        Some(LineageManifestV2 {
+            terminal_cursor: reissued(&source_lineage.terminal_cursor, &cursor_key, &restored_key),
+            ..source_lineage
+        }),
+        "restore sanitation must preserve account-bound vehicle sync lineage, re-signed"
     );
     let connection = open_immutable_catalogue(&restored).expect("immutable authority query");
     let restored_authority_rows: i64 = connection
@@ -1182,9 +1206,24 @@ fn schema_22_pair_round_trips_with_exact_private_paths_modes_and_digests() {
     let restored = temporary.path().join("schema-22-restored");
     restore_data_backup(&backup, &restored).expect("restore schema 2.2 backup");
     let restored_noop = restored.join("packs").join("noop").join(name);
+    // The no-op comes back re-signed under the regenerated key (M06-T09).
+    let source_key = CursorKey::from_bytes(
+        fs::read(crate::legacy_owner_credentials::cursor_key_path(
+            store.database_path().parent().unwrap(),
+        ))
+        .unwrap()
+        .as_slice()
+        .try_into()
+        .unwrap(),
+    );
+    let restored_key = assert_only_a_fresh_cursor_key(&restored, None);
+    let resigned = SignedNoOpState {
+        terminal_cursor: reissued(&noop.terminal_cursor, &source_key, &restored_key),
+        ..noop.clone()
+    };
     assert_eq!(
         fs::read(&restored_noop).expect("restored no-op"),
-        expected_bytes
+        serde_json::to_vec(&resigned).unwrap()
     );
     assert_eq!(
         permission_mode(&fs::metadata(restored_noop.parent().unwrap()).unwrap()),
@@ -1322,6 +1361,9 @@ mod m06_t07;
 
 #[path = "tests/m06_t08.rs"]
 mod m06_t08;
+
+#[path = "tests/m06_t09.rs"]
+mod m06_t09;
 
 #[path = "tests/g2_4_m1.rs"]
 mod g2_4_m1;

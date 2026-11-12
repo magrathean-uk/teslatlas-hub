@@ -37,7 +37,9 @@ and all referenced immutable packs, including active or retained PhysicalV3,
 changed-set, and prepared-map packs. Pairing invitations and active device
 authority are removed.
 It excludes the source application decryption key, cursor-signing key, TLS identity,
-configuration, and service state.
+configuration, and service state. A restore does not need the excluded keys
+from the old host: it generates a new cursor-signing key itself (see
+[Restore](#restore)).
 
 ### Older plaintext directory backups
 
@@ -120,19 +122,21 @@ sudo sh -c '
 sudoedit /etc/teslatlas-hub/recovery-config.toml
 ```
 
-While the service is stopped, restore credentials with that configuration and
-the raw key retrieved from its separate security domain:
+The restore needs no credential export from the old host. When the backup
+holds signed sync history, `restore-data` writes a new cursor-signing key into
+the restored directory (`secrets/hub-cursor.key`, mode 0600) and re-signs every
+stored sync cursor and schema 2.2 no-op body under it, with the same contents
+otherwise. History rows and packs are unchanged. This happens in the private
+staging directory before the restored directory appears, so an interrupted
+restore leaves no destination behind: run it again. A backup without sync
+history gets its key when the restored Hub first starts.
 
-```sh
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/recovery-config.toml \
-  restore-recovery-credentials \
-  --source /srv/teslatlas-hub-recovery/teslatlas-credentials.tthcr \
-  --recovery-key-file /media/teslatlas-recovery-key/teslatlas-recovery.key
-```
-
-Credential restore requires the matching installation ID and refuses to
-overwrite an existing `secrets` directory.
+Every device paired before the restore is refused afterwards: its bearer no
+longer exists and its sync cursor no longer verifies. Pair each device again;
+it then downloads a fresh snapshot. The manifest-signing key, and with it the
+signature `key_id`, changes with the cursor key. `restore-recovery-credentials`
+is not part of this procedure; it refuses to write into a restored directory
+that already has a `secrets` directory.
 
 The packaged unit reads `/etc/teslatlas-hub/config.toml` and can write only
 under `/var/lib/teslatlas-hub`. Add a separate no-clobber systemd drop-in that
