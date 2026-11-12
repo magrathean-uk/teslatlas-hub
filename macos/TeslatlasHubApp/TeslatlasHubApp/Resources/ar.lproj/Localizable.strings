@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "السيارات المُعدّة: %d";
 
 "hub.signIn.reportInvalid" = "تعذّر على Hub تأكيد تسجيل الدخول. سجّل الدخول باستخدام Tesla مرة أخرى.";
+
+"hub.signIn.unconfirmed" = "لم يؤكد Hub تسجيل الدخول في الوقت المناسب، لكن قد يكون قد حُفظ. تحقّق من حالة Hub قبل تسجيل الدخول مرة أخرى.";

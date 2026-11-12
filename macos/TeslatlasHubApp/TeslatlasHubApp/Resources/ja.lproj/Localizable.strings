@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "設定済みの車：%d";
 
 "hub.signIn.reportInvalid" = "Hubはサインインを確認できませんでした。Teslaでもう一度サインインしてください。";
+
+"hub.signIn.unconfirmed" = "Hubが時間内にサインインを確認できませんでしたが、保存されている可能性があります。もう一度サインインする前に、Hubのステータスを確認してください。";

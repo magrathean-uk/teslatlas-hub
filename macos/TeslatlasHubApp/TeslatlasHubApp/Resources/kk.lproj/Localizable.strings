@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Бапталған көліктер: %d";
 
 "hub.signIn.reportInvalid" = "Hub кіруді растай алмады. Tesla арқылы қайта кіріңіз.";
+
+"hub.signIn.unconfirmed" = "Hub кіруді уақытында растамады, бірақ ол сақталған болуы мүмкін. Қайта кірмес бұрын Hub күйін тексеріңіз.";

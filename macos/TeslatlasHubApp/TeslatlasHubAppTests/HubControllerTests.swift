@@ -2488,6 +2488,204 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(HubController.signInError(other).localizedDescription, other.localizedDescription)
     }
 
+    static let unconfirmedLine = "Hub did not confirm the sign-in in time, but it may have been stored. "
+        + "Check Hub's status before signing in again."
+    static let storedPairStatus = #"{"status":"ok","version":"9.9.9","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","vehicles":[],"credentials":{"present":true},"legacyCredentials":{"present":true,"origin":"hub_login","refreshOwner":"hub","storeState":"ok"},"fleetCredentials":{"present":false}}"#
+    static let noPairStatus = #"{"status":"ok","version":"9.9.9","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","vehicles":[],"credentials":{"present":false},"legacyCredentials":{"present":false},"fleetCredentials":{"present":false}}"#
+
+    func testOwnerSignInThatGetsNoAnswerIsUnconfirmedRefreshesStatusAndHoldsNoGrant() throws {
+        // M02-T17: the CLI's forward timeout and the app's own command timeout both leave the
+        // pair possibly stored. Each shows the app's own line, refreshes the status, advances
+        // nothing, holds no grant and logs nothing of the code or the verifier.
+        let outcomes: [(String, Error)] = [
+            ("control_channel_failed", HubActionError.commandExited(
+                1, "control_channel_failed: the service's answer did not arrive")),
+            ("timed_out", HubActionError.commandTimedOut)
+        ]
+        for (name, failure) in outcomes {
+            let events = EventRecorder()
+            let runner = ScriptedRunner(events: events, result: .failure(failure))
+            runner.statusResult = .success(Self.noPairStatus)
+            let home = try temporaryHome()
+            defer { try? FileManager.default.removeItem(at: home) }
+            let controller = signInController(runner, events: events, home: home)
+            let finished = expectation(description: name)
+
+            controller.configureTeslaAccount(grant: Self.codeGrant) { result in
+                guard case let .failure(error) = result else { return XCTFail("\(name): shown as success") }
+                XCTAssertEqual(error as? HubOwnerSignInUnconfirmed, HubOwnerSignInUnconfirmed(), name)
+                XCTAssertEqual(error.localizedDescription, Self.unconfirmedLine, name)
+                // The status was read again before the owner saw the line; none is stored yet.
+                XCTAssertEqual(runner.statusRuns, 1, name)
+                XCTAssertNotEqual(controller.snapshot.accountState, .connected, name)
+                finished.fulfill()
+            }
+            wait(for: [finished], timeout: 2)
+            XCTAssertEqual(events.values.filter { $0 == "setup" }.count, 1, name)
+            XCTAssertNil(controller.lastVehiclesConfigured, name)
+            XCTAssertFalse(controller.canRetryOwnerDiscovery, name)
+            XCTAssertNil(controller.ownerDiscoveryRetryDeadline, name)
+            XCTAssertTrue(controller.lifecycleCapabilities.isIdle, name)
+
+            // A later status with the stored pair shows the account as connected.
+            runner.statusResult = .success(Self.storedPairStatus)
+            let refreshed = expectation(description: "\(name) refreshed")
+            controller.refresh { snapshot in
+                XCTAssertEqual(snapshot.accountState, .connected, name)
+                XCTAssertEqual(snapshot.account, "Connected", name)
+                refreshed.fulfill()
+            }
+            wait(for: [refreshed], timeout: 2)
+            XCTAssertEqual(controller.snapshot.accountState, .connected, name)
+
+            let log = HubAppLog.shared.recentText()
+            XCTAssertTrue(log.contains("setup.unconfirmed"), name)
+            for secret in [Self.codeGrant.code, Self.codeGrant.codeVerifier] {
+                XCTAssertFalse(log.contains(secret), name)
+            }
+        }
+    }
+
+    func testOwnerSignInUnconfirmedRefreshReadsAStoredPairAsConnected() throws {
+        // The refresh that follows the unconfirmed line is the one that reads the stored pair.
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .failure(HubActionError.commandTimedOut))
+        runner.statusResult = .success(Self.storedPairStatus)
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        let finished = expectation(description: "unconfirmed with a stored pair")
+
+        controller.configureTeslaAccount(grant: Self.codeGrant) { result in
+            guard case let .failure(error) = result else { return XCTFail("shown as success") }
+            XCTAssertEqual(error.localizedDescription, Self.unconfirmedLine)
+            XCTAssertEqual(controller.snapshot.accountState, .connected)
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(runner.statusRuns, 1)
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+    }
+
+    func testOnlyASetupWithNoAnswerIsUnconfirmedAndOtherFailuresAreUnchanged() throws {
+        // The window check sends nothing, so its failures keep their own lines; after setup
+        // only the two no-answer outcomes change, and no other command failure does.
+        let lost = HubActionError.commandExited(1, "control_channel_failed: the answer did not arrive")
+        XCTAssertEqual(HubController.signInError(lost).localizedDescription, lost.localizedDescription)
+        XCTAssertEqual(HubController.signInError(lost, afterSetup: true).localizedDescription, Self.unconfirmedLine)
+        XCTAssertEqual(HubController.signInError(HubActionError.commandTimedOut, afterSetup: true).localizedDescription,
+                       Self.unconfirmedLine)
+        let other = HubActionError.commandFailed("setup_input_invalid: bad input")
+        XCTAssertEqual(HubController.signInError(other, afterSetup: true).localizedDescription,
+                       other.localizedDescription)
+        XCTAssertEqual(HubController.signInError(HubActionError.commandExited(
+            1, "window_closed: sign-in and vehicle discovery need an open collection window"), afterSetup: true)
+            .localizedDescription,
+                       "Sign-in needs an open collection window. Open a window, then sign in again.")
+
+        // A window check that lost its answer is not unconfirmed: nothing had been sent.
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success("{}"))
+        runner.windowStatus = .failure(lost)
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        let finished = expectation(description: "window check lost")
+        controller.configureTeslaAccount(grant: Self.codeGrant) { result in
+            guard case let .failure(error) = result else { return XCTFail("signed in") }
+            XCTAssertNil(error as? HubOwnerSignInUnconfirmed)
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(events.values, ["window"])
+        XCTAssertEqual(runner.statusRuns, 0)
+    }
+
+    func testSetupTimeoutWrappedAsNotQuiescentIsUnconfirmedAndKeepsItsChildTracked() throws {
+        // M02-T17: the executor reports a timed-out setup whose child may still run as
+        // commandNotQuiescent(commandTimedOut, ...). It is classified by the error underneath,
+        // gets the unconfirmed handling, and the owner stays held until the child is gone.
+        let quiescence = HubChildQuiescence()
+        quiescence.childMayRun()
+        let wrapped = HubActionError.commandNotQuiescent(HubActionError.commandTimedOut, quiescence)
+
+        let classified = HubController.signInError(wrapped, afterSetup: true)
+        guard case let HubActionError.commandNotQuiescent(inner, kept) = classified else {
+            return XCTFail("the child tracking is preserved: \(classified)")
+        }
+        XCTAssertEqual(inner as? HubOwnerSignInUnconfirmed, HubOwnerSignInUnconfirmed())
+        XCTAssertTrue(kept === quiescence, "the same quiescence is carried on")
+        // Before setup has run the same error is not unconfirmed and is left as it is.
+        guard case let HubActionError.commandNotQuiescent(untouched, _) = HubController.signInError(wrapped) else {
+            return XCTFail("a failure before setup keeps its wrapper")
+        }
+        XCTAssertNil(untouched as? HubOwnerSignInUnconfirmed)
+
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .failure(wrapped))
+        runner.statusResult = .success(Self.noPairStatus)
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        let finished = expectation(description: "wrapped setup timeout")
+
+        controller.configureTeslaAccount(grant: Self.codeGrant) { result in
+            guard case let .failure(error) = result else { return XCTFail("shown as success") }
+            guard case let HubActionError.commandNotQuiescent(inner, _) = error else {
+                return XCTFail("the child tracking reaches the caller: \(error)")
+            }
+            XCTAssertEqual(inner as? HubOwnerSignInUnconfirmed, HubOwnerSignInUnconfirmed())
+            XCTAssertTrue(error.localizedDescription.contains(Self.unconfirmedLine))
+            // The status was read again before the owner saw the line.
+            XCTAssertEqual(runner.statusRuns, 1)
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(events.values.filter { $0 == "setup" }.count, 1)
+        XCTAssertNil(controller.lastVehiclesConfigured)
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline)
+        XCTAssertFalse(controller.lifecycleCapabilities.isIdle, "the owner is held while the child may still write")
+        let log = HubAppLog.shared.recentText()
+        XCTAssertTrue(log.contains("setup.unconfirmed"))
+
+        quiescence.childReaped()
+        spinUntil(3) { controller.lifecycleCapabilities.isIdle }
+        XCTAssertTrue(controller.lifecycleCapabilities.isIdle, "released once the child is gone")
+    }
+
+    func testOnboardingShowsTheUnconfirmedLineAndDoesNotAdvance() throws {
+        // Driven through the page's own retry (the Tesla login window is never opened): the
+        // resumed setup gets no answer, the page shows the app's line and stays on sign-in.
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.failedReport("window_closed")))
+        runner.statusResult = .success(Self.storedPairStatus)
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        let failed = expectation(description: "discovery failed")
+        controller.configureTeslaAccount(grant: Self.codeGrant) { _ in failed.fulfill() }
+        wait(for: [failed], timeout: 2)
+        let onboarding = OnboardingWindowController(controller: controller, initialRoute: .legacy, onComplete: { _ in })
+        defer { onboarding.close() }
+        let statusRunsBefore = runner.statusRuns
+
+        runner.result = .failure(HubActionError.commandExited(
+            1, "control_channel_failed: the service's answer did not arrive"))
+        try retryButton(in: onboarding).performClick(nil)
+        spinUntil(3) { self.shownText(in: onboarding).contains(Self.unconfirmedLine) }
+
+        XCTAssertTrue(shownText(in: onboarding).contains(Self.unconfirmedLine))
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
+        // The held discovery retry is superseded: no grant, deadline or retry button remains.
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline)
+        XCTAssertNil(shownRetryButton(in: onboarding), "no retry is offered after an unconfirmed sign-in")
+        XCTAssertGreaterThan(runner.statusRuns, statusRunsBefore, "the status was read again")
+        XCTAssertEqual(controller.snapshot.accountState, .connected)
+        XCTAssertNil(controller.lastVehiclesConfigured)
+    }
+
     static let configuredReport = #"{"status":"signed_in","slot":"owner_api","origin":"hub_login","signIn":"exchanged","aftercare":"complete","vehicleDiscovery":"configured","vehiclesConfigured":2}"#
     static func configuredReport(_ count: Int, signIn: String = "resumed") -> String {
         #"{"status":"signed_in","slot":"owner_api","origin":"hub_login","signIn":"\#(signIn)","aftercare":"complete","vehicleDiscovery":"configured","vehiclesConfigured":\#(count)}"#
@@ -3833,6 +4031,9 @@ private final class ScriptedRunner: HubCommandRunning {
     private(set) var arguments: [[String]] = []
     /// What `window status` answers; the running service has an Open window by default.
     var windowStatus: Result<String, Error> = .success(#"{"phase":"open","trusted":true}"#)
+    /// What the Hub's `status` answers, when a test sets it; otherwise `result` answers it.
+    var statusResult: Result<String, Error>?
+    private(set) var statusRuns = 0
 
     init(events: EventRecorder,
          result: Result<String, Error>,
@@ -3859,6 +4060,13 @@ private final class ScriptedRunner: HubCommandRunning {
         let event = arguments.contains("migrate") ? "migrate" :
             (arguments.contains("setup") ? "setup" : "command")
         events.append(event)
+        if arguments.last == "status" {
+            statusRuns += 1
+            if let statusResult {
+                completion(statusResult)
+                return
+            }
+        }
         if arguments.contains("--all-vehicles"), unsupportedAllVehiclesAttempts > 0 {
             unsupportedAllVehiclesAttempts -= 1
             completion(.failure(HubActionError.commandFailed(

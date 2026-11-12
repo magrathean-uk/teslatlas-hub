@@ -18,7 +18,7 @@ final class HubLocalizationTests: XCTestCase {
         }
         let englishKeys = Set(try table(english, "Localizable.strings").keys)
         let pluralKeys = Set(try table(english, "Localizable.stringsdict").keys)
-        XCTAssertEqual(englishKeys.count, 730)
+        XCTAssertEqual(englishKeys.count, 731)
         XCTAssertEqual(pluralKeys.count, 6)
         for language in languages {
             let directory = resources.appendingPathComponent("\(language).lproj")
@@ -34,6 +34,30 @@ final class HubLocalizationTests: XCTestCase {
                 let entry = try XCTUnwrap(value as? [String: Any])
                 let rule = try XCTUnwrap(entry["count"] as? [String: String])
                 XCTAssertFalse(try XCTUnwrap(rule["other"]).isEmpty, "\(language): \(key)")
+            }
+        }
+    }
+
+    func testTheUnconfirmedSignInLineIsTranslatedInEveryLocale() throws {
+        let resources = try XCTUnwrap(Bundle.main.resourceURL)
+        let key = "hub.signIn.unconfirmed"
+        func table(_ language: String) throws -> [String: String] {
+            let url = resources.appendingPathComponent("\(language).lproj/Localizable.strings")
+            let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil)
+            return try XCTUnwrap(plist as? [String: String])
+        }
+        let english = try XCTUnwrap(try table("en")[key])
+        XCTAssertEqual(english, "Hub did not confirm the sign-in in time, but it may have been stored. "
+                       + "Check Hub's status before signing in again.")
+        let languages = Bundle.main.localizations.filter { $0 != "Base" }
+        XCTAssertEqual(languages.count, 56)
+        for language in languages {
+            let value = try XCTUnwrap(try table(language)[key], language)
+            XCTAssertFalse(value.isEmpty, language)
+            if language.hasPrefix("en") {
+                XCTAssertEqual(value, english, "\(language) follows English in its own spelling")
+            } else {
+                XCTAssertNotEqual(value, english, "\(language): not English copied in")
             }
         }
     }

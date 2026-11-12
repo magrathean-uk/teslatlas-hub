@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Mobil yang dikonfigurasi: %d";
 
 "hub.signIn.reportInvalid" = "Hub tidak dapat mengonfirmasi proses masuk. Masuk lagi dengan Tesla.";
+
+"hub.signIn.unconfirmed" = "Hub tidak mengonfirmasi proses masuk tepat waktu, tetapi mungkin sudah tersimpan. Periksa status Hub sebelum masuk lagi.";

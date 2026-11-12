@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Nakonfigurovaná auta: %d";
 
 "hub.signIn.reportInvalid" = "Hub nemohl přihlášení potvrdit. Znovu se přihlaste k Tesle.";
+
+"hub.signIn.unconfirmed" = "Hub přihlášení včas nepotvrdil, ale může být uloženo. Před dalším přihlášením zkontrolujte stav Hubu.";

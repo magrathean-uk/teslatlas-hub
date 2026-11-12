@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Nakonfigurované autá: %d";
 
 "hub.signIn.reportInvalid" = "Hub nemohol potvrdiť prihlásenie. Znova sa prihláste cez Teslu.";
+
+"hub.signIn.unconfirmed" = "Hub včas nepotvrdil prihlásenie, ale mohlo byť uložené. Pred opätovným prihlásením skontrolujte stav Hubu.";

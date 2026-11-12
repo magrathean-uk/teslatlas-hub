@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Mașini configurate: %d";
 
 "hub.signIn.reportInvalid" = "Hub nu a putut confirma autentificarea. Autentifică-te din nou cu Tesla.";
+
+"hub.signIn.unconfirmed" = "Hub nu a confirmat autentificarea la timp, dar este posibil să fi fost salvată. Verifică starea Hub înainte să te autentifici din nou.";

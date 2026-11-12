@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Konfigurerade bilar: %d";
 
 "hub.signIn.reportInvalid" = "Hub kunde inte bekräfta inloggningen. Logga in med Tesla igen.";
+
+"hub.signIn.unconfirmed" = "Hub bekräftade inte inloggningen i tid, men den kan ha sparats. Kontrollera Hubs status innan du loggar in igen.";

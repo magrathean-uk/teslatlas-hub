@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "已配置的车辆：%d";
 
 "hub.signIn.reportInvalid" = "Hub 无法确认此次登录。请再次使用 Tesla 登录。";
+
+"hub.signIn.unconfirmed" = "Hub 未能及时确认此次登录，但登录信息可能已保存。请先检查 Hub 的状态，再重新登录。";

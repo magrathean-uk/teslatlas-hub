@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Kereta yang dikonfigurasikan: %d";
 
 "hub.signIn.reportInvalid" = "Hub tidak dapat mengesahkan log masuk. Log masuk semula dengan Tesla.";
+
+"hub.signIn.unconfirmed" = "Hub tidak mengesahkan log masuk dalam masa yang ditetapkan, tetapi ia mungkin telah disimpan. Semak status Hub sebelum log masuk semula.";

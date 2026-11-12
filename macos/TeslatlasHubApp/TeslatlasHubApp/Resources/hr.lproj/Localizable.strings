@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Konfigurirani automobili: %d";
 
 "hub.signIn.reportInvalid" = "Hub nije mogao potvrditi prijavu. Ponovno se prijavite putem Tesle.";
+
+"hub.signIn.unconfirmed" = "Hub nije na vrijeme potvrdio prijavu, ali je možda spremljena. Provjerite status Huba prije ponovne prijave.";

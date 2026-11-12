@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Beállított autók: %d";
 
 "hub.signIn.reportInvalid" = "A Hub nem tudta megerősíteni a bejelentkezést. Jelentkezz be újra a Teslával.";
+
+"hub.signIn.unconfirmed" = "A Hub nem erősítette meg időben a bejelentkezést, de lehet, hogy az elmentődött. Ellenőrizd a Hub állapotát, mielőtt újra bejelentkezel.";
