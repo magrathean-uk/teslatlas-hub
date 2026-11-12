@@ -344,3 +344,131 @@ fn owner_exchange_client_matches_the_mac_sign_in_window() {
     assert_eq!(OWNER_TOKEN_ENDPOINT.strip_suffix("/token"), OWNER_AUTHORIZATION_ENDPOINT.strip_suffix("/authorize"), "one issuer");
     assert!(stub_endpoint(OWNER_TOKEN_ENDPOINT).is_err(), "the stub path never accepts the real endpoint");
 }
+
+/// A pause at the start of the exchange's write, armed on one thread only so
+/// that no other test's exchange can meet it.
+pub(super) mod persistence_pause {
+    use std::{cell::RefCell, sync::{Arc, Condvar, Mutex}, time::Duration};
+
+    #[derive(Default)]
+    pub(crate) struct Pause { state: Mutex<(bool, bool)>, changed: Condvar }
+
+    thread_local! { static ARMED: RefCell<Option<Arc<Pause>>> = const { RefCell::new(None) }; }
+
+    pub(crate) fn arm(pause: Arc<Pause>) { ARMED.with(|slot| *slot.borrow_mut() = Some(pause)); }
+
+    /// Called by the exchange once its permit has been checked, before it
+    /// writes anything; blocks while a pause is armed on this thread.
+    pub(crate) fn reached() {
+        let Some(pause) = ARMED.with(|slot| slot.borrow_mut().take()) else { return };
+        let mut state = pause.state.lock().expect("pause");
+        state.0 = true;
+        pause.changed.notify_all();
+        let (_state, waited) = pause.changed.wait_timeout_while(state, Duration::from_secs(30), |state| !state.1).expect("pause");
+        assert!(!waited.timed_out(), "the paused write was released");
+    }
+
+    impl Pause {
+        pub(crate) fn wait_reached(&self) {
+            let state = self.state.lock().expect("pause");
+            let (_state, waited) = self.changed.wait_timeout_while(state, Duration::from_secs(30), |state| !state.0).expect("pause");
+            assert!(!waited.timed_out(), "the exchange reached its write");
+        }
+        pub(crate) fn release(&self) {
+            self.state.lock().expect("pause").1 = true;
+            self.changed.notify_all();
+        }
+    }
+}
+
+/// A trusted window controller on a manual clock, shared with a supervisor.
+struct SupervisedWindow {
+    clock: Arc<crate::collection::window::ManualClock>,
+    controller: Arc<crate::collection::window::WindowController>,
+    _dir: tempfile::TempDir,
+}
+
+impl SupervisedWindow {
+    fn open(length: i64) -> Self {
+        use crate::collection::window::{EgressGate, IssueRequest, Issuer, ManualClock, ManualProbe, MemoryAnchor, NoHighWater, Phase, WindowClock, WindowConfig, WindowController, WindowDeps};
+        let dir = tempfile::TempDir::new().expect("window dir");
+        let clock = Arc::new(ManualClock::new(1_800_000_000));
+        let anchor = Arc::new(MemoryAnchor::new());
+        let issuer = Issuer::new(&dir.path().join("issuer"), "host-exchange-issuer", anchor.clone(), clock.clone());
+        let key = dir.path().join("issuer.key");
+        let trust = issuer.init(&key).expect("issuer init");
+        let (controller, _) = WindowController::start(
+            WindowConfig { dir: dir.path().join("data/window"), claim_path: dir.path().join("claim/host-claim.lock"), host_id: "host-exchange-test".to_owned() },
+            WindowDeps { clock: clock.clone(), anchor, probe: Arc::new(ManualProbe::new(0.2)), gate: EgressGate::new(clock.clone()), handback: Arc::new(NoHighWater) },
+        );
+        controller.trust(&trust).expect("trust");
+        let now = clock.wall();
+        let out = dir.path().join("grant.json");
+        issuer.issue(&key, &IssueRequest {
+            host_id: "host-exchange-test".to_owned(), starts_at: now, expires_at: now + length,
+            approver: "G".to_owned(), reason: "exchange close test".to_owned(), approval_ref: "approval-exchange-close".to_owned(),
+        }, &out).expect("grant issued");
+        assert_eq!(controller.open(&std::fs::read(out).expect("grant")).expect("open").phase, Phase::Open);
+        Self { clock, controller: Arc::new(controller), _dir: dir }
+    }
+}
+
+/// No collector: the supervisor only drives the window.
+#[derive(Clone, Default)]
+struct IdleSlot;
+
+impl crate::collection::window::CollectorSlot for IdleSlot {
+    fn start(&mut self, _deadline_wall: i64) -> Result<(), String> { Err("no collector here".to_owned()) }
+    fn is_running(&mut self) -> bool { false }
+    fn stop(&mut self) {}
+    fn release_lease(&mut self) -> Result<(), String> { Ok(()) }
+}
+
+/// Round 2, finding 4: the operator closes the window while an exchange,
+/// its answer in hand, is paused before its write. The window stays Closing
+/// with no handback while the exchange holds its permit: released within the
+/// grace, the write completes and only then is the window handed back;
+/// released after the grace has lapsed, the answer is dropped unstored, and
+/// again the handback follows the refusal.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn owner_exchange_close_waits_for_a_paused_persistence() {
+    use crate::collection::window::{CloseReason, Phase, Supervisor};
+    let stub = Stub::spawn(Reply::Pkce).await;
+    for (case, (code, past_grace)) in [("code-close-paused-0001", false), ("code-close-lapsed-0001", true)].into_iter().enumerate() {
+        let (root, _store, entry) = fixture();
+        let window = SupervisedWindow::open(600);
+        let _route = crate::fleet_api::egress::test_support::route_on(&stub.url, window.controller.gate().clone(), window.clock.clone());
+        let mut supervisor = Supervisor::new(Arc::clone(&window.controller), IdleSlot).with_custody(crate::collection::window::CredentialCustody::new());
+        let pause = Arc::new(persistence_pause::Pause::default());
+        let result = std::thread::scope(|scope| {
+            let exchange = {
+                let (entry, pause, url) = (&entry, Arc::clone(&pause), stub.url.clone());
+                scope.spawn(move || {
+                    persistence_pause::arm(pause);
+                    tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime")
+                        .block_on(exchange_at_stub_for_test(entry, code, VERIFIER, OWNER_REDIRECT_URI, &url))
+                })
+            };
+            pause.wait_reached();
+            window.controller.close(CloseReason::OperatorClose);
+            assert_eq!(supervisor.step().phase, Phase::Closing, "case {case}: Closing while the exchange holds its answer");
+            window.clock.advance(if past_grace { 61 } else { 30 });
+            let report = supervisor.step();
+            assert_eq!((report.phase, report.closed), (Phase::Closing, None), "case {case}: no handback while the write is paused");
+            assert!(window.controller.status().last_handback.is_none(), "case {case}: no handback recorded");
+            assert!(window.controller.gate().exchange_in_flight(), "case {case}");
+            pause.release();
+            exchange.join().expect("exchange thread")
+        });
+        if past_grace {
+            let error = result.unwrap_err();
+            assert_eq!(error.code(), WINDOW_CLOSED, "case {case}");
+            assert_untouched(root.path(), &entry);
+        } else {
+            result.expect("the paused write completes within the grace");
+            assert!(entry.vault().load(CredentialSlot::OwnerApi).expect("read").is_some(), "the pair is durable before the handback");
+        }
+        assert_eq!(supervisor.step().closed, Some(CloseReason::OperatorClose), "case {case}: then the window is handed back");
+    }
+}
+

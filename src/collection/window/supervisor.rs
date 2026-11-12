@@ -144,8 +144,14 @@ impl<S: CollectorSlot> Supervisor<S> {
             Phase::Closing => {
                 self.slot.stop();
                 let closing_at = status.closing_at.unwrap_or(wall);
-                let waited_out = wall >= closing_at + EXCHANGE_GRACE_SECONDS;
-                if !self.controller.gate().exchange_in_flight() || waited_out {
+                // After the grace every exchange still holding its permit is
+                // cancelled; one already storing its answer finishes first,
+                // so the handback never precedes its durable write or its
+                // refusal (design 2.7).
+                if wall >= closing_at + EXCHANGE_GRACE_SECONDS {
+                    self.controller.gate().lapse_exchanges();
+                }
+                if !self.controller.gate().exchange_in_flight() {
                     if let Some(start) = self.gap_start.take() {
                         let _ = self.controller.record_gap(start, closing_at.max(start));
                     }

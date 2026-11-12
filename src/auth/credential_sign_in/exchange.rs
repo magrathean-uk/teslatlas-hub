@@ -20,7 +20,10 @@
 //! 4. one POST, bounded by the permit, with no redirect followed and the answer
 //!    read to at most [`ANSWER_CAP`] bytes;
 //! 5. only a complete, validated answer is stored, through the vault's one
-//!    grant path, which keeps its admission rules and the refresh fence.
+//!    grant path, which keeps its admission rules and the refresh fence. The
+//!    permit is held until that write is durable or refused, so a closing
+//!    window stays Closing meanwhile; it is checked once more first, so after
+//!    the window's grace has lapsed nothing is stored (design 2.7).
 //!
 //! Every error is a fixed code: no code, verifier, token or issuer text appears
 //! in an error, a log line or a report.
@@ -220,7 +223,6 @@ async fn exchange_at(entry: &CredentialVaultEntry, code: &str, code_verifier: &s
         // code may be spent at Tesla and nothing is stored.
         Ok(Err(_)) | Err(_) => return Err(failure(SignInError::AnswerInvalid)),
     };
-    drop(permit);
     let bytes = match answer {
         Answer::Complete(status, bytes) if status.is_success() => bytes,
         Answer::Complete(_, bytes) => return Err(refused(&bytes)),
@@ -233,6 +235,12 @@ async fn exchange_at(entry: &CredentialVaultEntry, code: &str, code_verifier: &s
     {
         return Err(failure(SignInError::AnswerInvalid));
     }
+    // The permit still holds the window: a close waits for this write, and
+    // once the grace has lapsed (or the permit's own deadline passed) the
+    // answer is dropped unstored.
+    #[cfg(test)]
+    tests::persistence_pause::reached();
+    permit.check().map_err(|_| CredentialCommandError::new(WINDOW_CLOSED))?;
     // The local binding that proves this grant came from the Hub's own
     // exchange; begun only now, so a failed exchange leaves none behind.
     let session = entry.vault().begin_sign_in(CredentialSlot::OwnerApi)?;
@@ -240,6 +248,8 @@ async fn exchange_at(entry: &CredentialVaultEntry, code: &str, code_verifier: &s
         Zeroizing::new(tokens.refresh.as_str().to_owned()), tokens.expires_in, None, None, sent_at_s)?;
     drop(tokens);
     let stored = entry.vault().store_hub_grant(grant)?;
+    // Durable: the window may now finish closing.
+    drop(permit);
     tracing::info!(slot = "owner_api", origin = "hub_login", refresh_owner = "hub", provenance = "own_legacy_exchange", "credential write");
     entry.vault().finish_hub_grant_aftercare(stored)?;
     Ok(())

@@ -336,7 +336,10 @@ fn collection_window_exchange_grace_holds_closing_then_releases() {
     assert_eq!(report.closed, Some(CloseReason::Expired));
     assert_eq!(slot.log.lock().unwrap().released, 1);
 
-    // An exchange that never finishes is waited out, then the close completes.
+    // An exchange that has not finished by the end of the grace is cancelled
+    // (its bounded send is cut there and lets its permit go); the close
+    // completes once no exchange holds a permit, so it never precedes an
+    // exchange's durable write (M02-T12, design 2.7).
     let rig = Rig::new();
     let hub = Arc::new(rig.trusted_hub());
     hub.open(&rig.grant(0, 3600)).unwrap();
@@ -344,13 +347,17 @@ fn collection_window_exchange_grace_holds_closing_then_releases() {
     let mut supervisor = Supervisor::new(hub.clone(), slot.clone());
     supervisor.step();
     rig.clock.advance(3599);
-    let _held = hub
+    let held = hub
         .gate()
         .permit(Provider::Legacy, PermitKind::TokenExchange)
         .unwrap();
     rig.clock.advance(1);
     assert_eq!(supervisor.step().phase, Phase::Closing);
+    assert!(!held.is_cancelled(), "the exchange keeps its grace");
     rig.clock.advance(61);
+    assert_eq!(supervisor.step().phase, Phase::Closing);
+    assert!(held.is_cancelled(), "the grace has lapsed");
+    drop(held);
     assert_eq!(supervisor.step().closed, Some(CloseReason::Expired));
 }
 

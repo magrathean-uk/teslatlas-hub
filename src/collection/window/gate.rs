@@ -69,6 +69,9 @@ struct OpenWindow {
 struct GateState {
     open: Option<OpenWindow>,
     cancellable: Vec<CancellationToken>,
+    /// The tokens of token-exchange permits: a close leaves them running for
+    /// the grace, and only [`EgressGate::lapse_exchanges`] cancels them.
+    exchanges: Vec<CancellationToken>,
     /// The wall time at which the gate saw a deadline reached; cleared only
     /// by `open`.
     expiry_observed: Option<i64>,
@@ -176,6 +179,8 @@ impl EgressGate {
         let exchange = if kind == PermitKind::TokenExchange {
             left += EXCHANGE_GRACE_SECONDS as u64;
             self.inner.exchanges.fetch_add(1, Ordering::SeqCst);
+            state.exchanges.retain(|token| !token.is_cancelled());
+            state.exchanges.push(cancel.clone());
             Some(ExchangeGuard(self.inner.exchanges.clone()))
         } else {
             state.cancellable.retain(|token| !token.is_cancelled());
@@ -191,7 +196,19 @@ impl EgressGate {
         })
     }
 
-    /// Whether a token exchange permitted before the deadline is still running.
+    /// Ends the grace of every token exchange still holding its permit: each
+    /// is cancelled, so one still sending is cut and one that has not yet
+    /// begun to store its answer refuses to (it checks its permit first). An
+    /// exchange already storing keeps its permit, and so stays in flight,
+    /// until its write is durable or refused (design 2.7).
+    pub fn lapse_exchanges(&self) {
+        for token in self.inner.state.lock().expect("gate lock").exchanges.drain(..) {
+            token.cancel();
+        }
+    }
+
+    /// Whether a token exchange permitted before the deadline still holds its
+    /// permit: sending, or storing its answer.
     pub fn exchange_in_flight(&self) -> bool {
         self.inner.exchanges.load(Ordering::SeqCst) > 0
     }
