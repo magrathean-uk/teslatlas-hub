@@ -448,6 +448,89 @@ fn backup_schedule_password_file_rules_and_nothing_prints_the_password() {
     assert!(!debug.contains(PASSWORD));
 }
 
+/// REV-M06-T06 finding 6: a mode-0600 file whose ACL lets another account
+/// read it was accepted, because only the mode bits were checked.
+#[test]
+fn backup_schedule_password_file_with_a_foreign_acl_is_refused() {
+    let dir = crate::private_tempdir().unwrap();
+    let shared = password_file(dir.path(), "shared", PASSWORD.as_bytes(), 0o600);
+    #[cfg(target_os = "macos")]
+    let granted = std::process::Command::new("/bin/chmod")
+        .arg("+a")
+        .arg("group:everyone allow read")
+        .arg(&shared)
+        .status()
+        .unwrap()
+        .success();
+    #[cfg(not(target_os = "macos"))]
+    let granted = std::process::Command::new("setfacl")
+        .arg("--modify")
+        .arg("user:nobody:r")
+        .arg(&shared)
+        .status()
+        .is_ok_and(|status| status.success());
+    if granted {
+        assert_eq!(
+            fs::metadata(&shared).unwrap().permissions().mode() & 0o777,
+            0o600,
+            "the mode bits do not show the grant"
+        );
+        let refusal = password::read_password_file(&shared).expect_err("an ACL grant is refused");
+        assert_eq!(refusal.code, password::PASSWORD_FILE_INVALID);
+        assert!(refusal.message.contains("access control list"), "{refusal}");
+        assert!(!refusal.message.contains(PASSWORD), "{refusal}");
+    } else {
+        assert!(!cfg!(target_os = "macos"), "chmod +a must work on macOS");
+    }
+    // A deny-only list grants nothing and is accepted.
+    #[cfg(target_os = "macos")]
+    {
+        let denied = password_file(dir.path(), "denied", PASSWORD.as_bytes(), 0o600);
+        assert!(
+            std::process::Command::new("/bin/chmod")
+                .arg("+a")
+                .arg("group:everyone deny write")
+                .arg(&denied)
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert_eq!(password::read_password_file(&denied).unwrap().as_str(), PASSWORD);
+    }
+}
+
+#[test]
+fn backup_schedule_acl_parsers_refuse_any_grant_and_anything_malformed() {
+    let entry = |tag: u16, permissions: u16, id: u32| {
+        let mut bytes = tag.to_le_bytes().to_vec();
+        bytes.extend_from_slice(&permissions.to_le_bytes());
+        bytes.extend_from_slice(&id.to_le_bytes());
+        bytes
+    };
+    let header = 2_u32.to_le_bytes().to_vec();
+    let base = [header.clone(), entry(0x01, 6, u32::MAX), entry(0x04, 0, u32::MAX), entry(0x20, 0, u32::MAX)].concat();
+    assert!(!password::posix_acl_grants_access(&base));
+    let masked = [base.clone(), entry(0x10, 0, u32::MAX)].concat();
+    assert!(!password::posix_acl_grants_access(&masked));
+    assert!(password::posix_acl_grants_access(&[base.clone(), entry(0x02, 4, 65534)].concat()));
+    assert!(password::posix_acl_grants_access(&[base.clone(), entry(0x08, 2, 20)].concat()));
+    assert!(!password::posix_acl_grants_access(&[base.clone(), entry(0x08, 0, 20)].concat()));
+    assert!(password::posix_acl_grants_access(&[base.clone(), entry(0x40, 0, 0)].concat()));
+    assert!(password::posix_acl_grants_access(&base[..base.len() - 1]));
+    assert!(password::posix_acl_grants_access(&[1_u32.to_le_bytes().to_vec(), base[4..].to_vec()].concat()));
+    assert!(password::posix_acl_grants_access(&[]));
+
+    let plain = "-rw-------  1 owner  staff  12 Nov 12 13:00 /p\n";
+    assert!(!password::macos_acl_listing_grants_access(plain));
+    assert!(password::macos_acl_listing_grants_access(&format!("{plain} 0: group:everyone allow read\n")));
+    assert!(password::macos_acl_listing_grants_access(&format!(
+        "{plain} 0: user:other deny write\n 1: user:other inherited allow write,append\n"
+    )));
+    assert!(!password::macos_acl_listing_grants_access(&format!("{plain} 0: group:everyone deny read\n")));
+    // A file name holding "allow" on the first line is not an entry.
+    assert!(!password::macos_acl_listing_grants_access("-rw-------  1 o  s  1 Nov 12 13:00 /a 0: allow\n"));
+}
+
 #[test]
 fn backup_schedule_real_runner_writes_a_verifiable_generation_and_leaks_no_password() {
     let root = crate::private_tempdir().unwrap();
