@@ -530,7 +530,7 @@
 "hub.SourceServerImporter.695.2534" = "בחרו מפתח פרטי שניתן להשתמש בו";
 "hub.SourceServerImporter.696.2535" = "ה-Hub לא הצליח להשתמש בבטחה במפתח ה-SSH שנבחר.";
 "hub.SourceServerImporter.697.2536" = "בחרו מפתח פרטי שבבעלות המשתמש הזה ב-Mac.";
-"hub.SourceServerImporter.697.2537" = "אל תבחרו בקובץ ‎.pub.";
+"hub.SourceServerImporter.697.2537" = "אל תבחרו בקובץ .pub.";
 "hub.SourceServerImporter.699.2539" = "הזינו את סיסמת ה-SSH";
 "hub.SourceServerImporter.700.2540" = "נבחר אימות באמצעות סיסמה, אך לא הוזנה סיסמה.";
 "hub.SourceServerImporter.701.2541" = "הזינו את סיסמת חשבון השרת או השתמשו בתצורת SSH, בסוכן או באימות באמצעות מפתח.";
@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "בדיקת סכימה אינה יכולה לקבוע איזו גרסה של יישום המקור כתבה את מסד הנתונים הזה: כמה גרסאות חולקות את אותה סכימה.";
 
 "hub.import.ackRelease" = "אני מאשר/ת שיישום המקור הוא בגרסה 4.2.0 או חדשה יותר ושלא יעודכן במהלך הייבוא.";
+
+"hub.backup.title" = "גיבויים";
+
+"hub.backup.detail" = "עותקים מוצפנים של היסטוריית ה-Hub. סיסמת השחזור נשארת בקובץ ב-Mac הזה שרק הבעלים יכול לקרוא.";
+
+"hub.backup.backUpNow" = "גבה עכשיו";
+
+"hub.backup.onSchedule" = "גבה לפי לוח זמנים";
+
+"hub.backup.saveSchedule" = "שמור לוח זמנים";
+
+"hub.backup.panelPrompt" = "בחירה";
+
+"hub.backup.panelMessage" = "בחרו תיקייה לגיבויים מוצפנים של ה-Hub, מחוץ לתיקיית הנתונים של ה-Hub.";
+
+"hub.backup.savedNote" = "נשמר. לוח הזמנים חל כשה-Hub יופעל מחדש.";
+
+"hub.backup.noFolder" = "לא נבחרה תיקייה";
+
+"hub.backup.passwordPlaceholder" = "סיסמת שחזור (לפחות %1$@ תווים)";
+
+"hub.backup.passwordSaved" = "נשמרה. הקלידו סיסמה חדשה כדי להחליף אותה";
+
+"hub.backup.intervalHour" = "כל שעה";
+
+"hub.backup.intervalDay" = "כל יום";
+
+"hub.backup.intervalTwoDays" = "כל יומיים";
+
+"hub.backup.intervalWeek" = "כל שבוע";
+
+"hub.backup.intervalHours" = "כל %1$@ שעות";
+
+"hub.backup.schedule" = "לוח זמנים";
+
+"hub.backup.keep" = "שמור";
+
+"hub.backup.keepSuffix" = "גיבויים";
+
+"hub.backup.folder" = "תיקייה";
+
+"hub.backup.passwordLabel" = "סיסמת שחזור";
+
+"hub.backup.problem.passwordShort" = "סיסמת השחזור חייבת לכלול לפחות %1$@ תווים.";
+
+"hub.backup.problem.interval" = "המרווח חייב להיות בין 1 ל-8784 שעות.";
+
+"hub.backup.problem.keep" = "מספר הגיבויים לשמירה חייב להיות בין 1 ל-1000.";
+
+"hub.backup.problem.chooseFolder" = "בחרו תיקיית גיבויים.";
+
+"hub.backup.problem.folderInside" = "בחרו תיקיית גיבויים מחוץ לתיקיית הנתונים של ה-Hub.";
+
+"hub.backup.problem.needsBoth" = "גיבויים מתוזמנים דורשים תיקיית גיבויים וסיסמת שחזור.";
+
+"hub.backup.lastGoodNone" = "עדיין אין";
+
+"hub.backup.nextOff" = "גיבויים מתוזמנים כבויים";
+
+"hub.backup.nextNotScheduled" = "לא מתוזמן: בחרו תיקייה וסיסמה";
+
+"hub.backup.nextPaused" = "ממתין לשחזור פרטי הזיהוי";
+
+"hub.collection.notReported" = "לא דווח";
+
+"hub.backup.blocked" = "פרטי זיהוי שנדחו חוסמים גיבויים. הריצו purge-refused-credentials כדי לנקות אותם.";
+
+"hub.backup.lastFailedMessage" = "הניסיון האחרון נכשל: %1$@";
+
+"hub.backup.lastFailedCode" = "הניסיון האחרון נכשל (%1$@)";
+
+"hub.backup.row.lastGood" = "הגיבוי המוצלח האחרון";
+
+"hub.backup.row.next" = "הגיבוי הבא";
+
+"hub.backup.row.running" = "גיבוי רץ כרגע";
+
+"hub.backup.row.lastAttempt" = "הניסיון האחרון";
+
+"hub.backup.run.running" = "מגבה…";
+
+"hub.backup.run.stillRunning" = "הגיבוי עדיין רץ בשירות ה-Hub.";
+
+"hub.backup.run.finishedGeneration" = "הגיבוי הסתיים: %1$@";
+
+"hub.backup.run.finished" = "הגיבוי הסתיים";
+
+"hub.backup.run.failed" = "הגיבוי נכשל: %1$@";
+
+"hub.backup.maint.unreadable" = "לא ניתן היה לקרוא את התשובה של ה-Hub.";
+
+"hub.backup.maint.unwritable" = "לא ניתן היה לשמור את סיסמת השחזור.";
+
+"hub.backup.maint.configMissing" = "הגדירו את ה-Hub לפני שינוי הגיבויים.";
+
+"hub.devices.title" = "מכשירים מזווגים";
+
+"hub.devices.detail" = "טלפונים ואפליקציות שקוראים את ה-Hub הזה, עם הרכבים שכל אחד מהם רשאי לקרוא.";
+
+"hub.devices.revokeTitle" = "לבטל את הגישה של %1$@?";
+
+"hub.devices.revokeInfo" = "המכשיר הזה יפסיק לקרוא מה-Hub מיד. כדי להשתמש בו שוב, זווגו אותו מחדש.";
+
+"hub.devices.revoke" = "ביטול גישה";
+
+"hub.devices.revokeEllipsis" = "ביטול גישה…";
+
+"hub.devices.revokeAccessibility" = "ביטול הגישה של %1$@";
+
+"hub.devices.revokedDone" = "הגישה של %1$@ בוטלה.";
+
+"hub.devices.none" = "אין מכשירים מזווגים.";
+
+"hub.devices.cars" = "רכבים: %1$@";
+
+"hub.devices.noCars" = "אין רכבים";
+
+"hub.devices.carFallback" = "רכב %1$@";
+
+"hub.devices.unnamed" = "מכשיר ללא שם";
+
+"hub.devices.stateRevoked" = "בוטל ב-%1$@";
+
+"hub.devices.stateExpired" = "פג תוקף ב-%1$@";
+
+"hub.devices.stateLastSeen" = "נראה לאחרונה ב-%1$@";
+
+"hub.devices.stateNeverSeen" = "עדיין לא נראה";
+
+"hub.collection.loginOwn" = "מחובר עם הכניסה של ה-Hub עצמו";
+
+"hub.collection.loginSignedOut" = "מנותק";
+
+"hub.collection.loginNotOwn" = "הכניסה השמורה אינה הכניסה של ה-Hub עצמו";
+
+"hub.collection.credValidUntil" = "תקף עד %1$@";
+
+"hub.collection.credValid" = "תקף";
+
+"hub.collection.credRelogin" = "נדרשת כניסה מחדש: היכנסו שוב בחלון הפתוח הבא";
+
+"hub.collection.credOwnerRefused" = "Owner API נדחה: Tesla דחתה את הכניסה הזו";
+
+"hub.collection.credRefused" = "נדחה (%1$@)";
+
+"hub.collection.credExposure" = "חשד לחשיפה: היכנסו שוב בחלון הפתוח הבא";
+
+"hub.collection.credAttention" = "דורש תשומת לב (%1$@)";
+
+"hub.collection.credNotSignedIn" = "לא מחובר";
+
+"hub.collection.windowOpenUntil" = "פתוח עד %1$@";
+
+"hub.collection.windowOpen" = "פתוח";
+
+"hub.collection.windowPending" = "ממתין";
+
+"hub.collection.windowPendingFrom" = "ממתין מ-%1$@";
+
+"hub.collection.windowPendingUntil" = "ממתין עד %1$@";
+
+"hub.collection.windowPendingFromUntil" = "ממתין מ-%1$@ עד %2$@";
+
+"hub.collection.windowClosingExpiry" = "נסגר (פג תוקף ב-%1$@)";
+
+"hub.collection.windowClosing" = "נסגר";
+
+"hub.collection.windowClosedReason" = "סגור (%1$@)";
+
+"hub.collection.windowClosed" = "סגור";
+
+"hub.collection.windowUntrusted" = "סגור (אין מנפיק מהימן)";
+
+"hub.collection.windowFaulted" = "סגור (מצב החלון דורש מסמך אמון חדש)";
+
+"hub.collection.windowRecovery" = "סגור (ממתין לשחזור פרטי הזיהוי: הריצו restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "לא ידוע: ערוץ הבקרה אינו של ה-Hub הזה";
+
+"hub.collection.windowNotRunning" = "לא ידוע: ה-Hub אינו פועל";
+
+"hub.collection.reasonExpired" = "פג תוקף";
+
+"hub.collection.reasonOperator" = "נסגר על ידי המפעיל";
+
+"hub.collection.reasonRelogin" = "נדרשת כניסה מחדש";
+
+"hub.collection.reasonOwnerRefused" = "Owner API נדחה";
+
+"hub.collection.reasonClock" = "בדיקת השעון נכשלה";
+
+"hub.collection.reasonReboot" = "ה-Mac הופעל מחדש";
+
+"hub.collection.reasonUnverifiable" = "לא ניתן היה לאמת את המצב";
+
+"hub.collection.reasonClaimLost" = "הזכות לאיסוף אבדה";
+
+"hub.collection.fleet" = "מושהה: אין פעולת Fleet זמינה";
+
+"hub.collection.signInUnavailable" = "כניסה אינה זמינה ב-Hub הזה";
+
+"hub.collection.labelLogin" = "כניסה ל-Tesla";
+
+"hub.collection.labelCredential" = "מצב פרטי הזיהוי";
+
+"hub.collection.labelWindow" = "חלון איסוף";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "כניסה";
+
+"hub.signIn.recoveryPending" = "ה-Hub ממתין לשחזור פרטי הזיהוי שלו: נתוני ה-Hub הזה שוחזרו בלי המפתחות שלו. הריצו restore-recovery-credentials ואז היכנסו. שום דבר לא שונה.";
+
+"hub.signIn.serviceUnauthenticated" = "התהליך שעונה בערוץ הבקרה של ה-Hub אינו ה-Hub הזה, ולכן שום דבר לא נשלח. הפעילו מחדש את ה-Hub ואז היכנסו שוב.";
+
+"hub.signIn.busy" = "ה-Hub עסוק בבקשות אחרות. שום דבר לא שונה; היכנסו שוב בעוד רגע.";

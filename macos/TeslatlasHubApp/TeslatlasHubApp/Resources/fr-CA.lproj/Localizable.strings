@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "La vérification du schéma ne permet pas de savoir quelle version de l’application source a créé cette base de données : plusieurs versions utilisent le même schéma.";
 
 "hub.import.ackRelease" = "Je confirme que l’application source est en version 4.2.0 ou ultérieure et qu’elle ne sera pas mise à jour pendant l’importation.";
+
+"hub.backup.title" = "Sauvegardes";
+
+"hub.backup.detail" = "Copies chiffrées de l'historique du Hub. Le mot de passe de récupération reste dans un fichier réservé au propriétaire sur ce Mac.";
+
+"hub.backup.backUpNow" = "Sauvegarder maintenant";
+
+"hub.backup.onSchedule" = "Sauvegarder selon un calendrier";
+
+"hub.backup.saveSchedule" = "Enregistrer le calendrier";
+
+"hub.backup.panelPrompt" = "Choisir";
+
+"hub.backup.panelMessage" = "Choisissez un dossier pour les sauvegardes chiffrées du Hub, en dehors du dossier de données du Hub.";
+
+"hub.backup.savedNote" = "Enregistré. Le calendrier s'applique au redémarrage du Hub.";
+
+"hub.backup.noFolder" = "Aucun dossier choisi";
+
+"hub.backup.passwordPlaceholder" = "Mot de passe de récupération (au moins %1$@ caractères)";
+
+"hub.backup.passwordSaved" = "Enregistré. Saisissez-en un nouveau pour le remplacer";
+
+"hub.backup.intervalHour" = "Toutes les heures";
+
+"hub.backup.intervalDay" = "Tous les jours";
+
+"hub.backup.intervalTwoDays" = "Tous les 2 jours";
+
+"hub.backup.intervalWeek" = "Toutes les semaines";
+
+"hub.backup.intervalHours" = "Toutes les %1$@ heures";
+
+"hub.backup.schedule" = "Calendrier";
+
+"hub.backup.keep" = "Conserver";
+
+"hub.backup.keepSuffix" = "sauvegardes";
+
+"hub.backup.folder" = "Dossier";
+
+"hub.backup.passwordLabel" = "Mot de passe de récupération";
+
+"hub.backup.problem.passwordShort" = "Le mot de passe de récupération doit comporter au moins %1$@ caractères.";
+
+"hub.backup.problem.interval" = "L'intervalle doit être compris entre 1 et 8784 heures.";
+
+"hub.backup.problem.keep" = "Le nombre de sauvegardes conservées doit être compris entre 1 et 1000.";
+
+"hub.backup.problem.chooseFolder" = "Choisissez un dossier de sauvegarde.";
+
+"hub.backup.problem.folderInside" = "Choisissez un dossier de sauvegarde en dehors du dossier de données du Hub.";
+
+"hub.backup.problem.needsBoth" = "Les sauvegardes planifiées nécessitent un dossier de sauvegarde et un mot de passe de récupération.";
+
+"hub.backup.lastGoodNone" = "Aucune pour l'instant";
+
+"hub.backup.nextOff" = "Les sauvegardes planifiées sont désactivées";
+
+"hub.backup.nextNotScheduled" = "Non planifiée : choisissez un dossier et un mot de passe";
+
+"hub.backup.nextPaused" = "En attente de la récupération des identifiants";
+
+"hub.collection.notReported" = "Non communiqué";
+
+"hub.backup.blocked" = "Des identifiants refusés bloquent les sauvegardes. Exécutez purge-refused-credentials pour les effacer.";
+
+"hub.backup.lastFailedMessage" = "Dernière tentative échouée : %1$@";
+
+"hub.backup.lastFailedCode" = "Dernière tentative échouée (%1$@)";
+
+"hub.backup.row.lastGood" = "Dernière sauvegarde réussie";
+
+"hub.backup.row.next" = "Prochaine sauvegarde";
+
+"hub.backup.row.running" = "Une sauvegarde est en cours";
+
+"hub.backup.row.lastAttempt" = "Dernière tentative";
+
+"hub.backup.run.running" = "Sauvegarde en cours…";
+
+"hub.backup.run.stillRunning" = "La sauvegarde est toujours en cours dans le service du Hub.";
+
+"hub.backup.run.finishedGeneration" = "Sauvegarde terminée : %1$@";
+
+"hub.backup.run.finished" = "Sauvegarde terminée";
+
+"hub.backup.run.failed" = "Échec de la sauvegarde : %1$@";
+
+"hub.backup.maint.unreadable" = "La réponse du Hub n'a pas pu être lue.";
+
+"hub.backup.maint.unwritable" = "Le mot de passe de récupération n'a pas pu être enregistré.";
+
+"hub.backup.maint.configMissing" = "Configurez le Hub avant de modifier les sauvegardes.";
+
+"hub.devices.title" = "Appareils associés";
+
+"hub.devices.detail" = "Téléphones et apps qui lisent ce Hub, avec les voitures que chacun peut lire.";
+
+"hub.devices.revokeTitle" = "Révoquer %1$@ ?";
+
+"hub.devices.revokeInfo" = "Cet appareil cesse immédiatement de lire depuis le Hub. Pour le réutiliser, associez-le de nouveau.";
+
+"hub.devices.revoke" = "Révoquer";
+
+"hub.devices.revokeEllipsis" = "Révoquer…";
+
+"hub.devices.revokeAccessibility" = "Révoquer %1$@";
+
+"hub.devices.revokedDone" = "%1$@ a été révoqué.";
+
+"hub.devices.none" = "Aucun appareil associé.";
+
+"hub.devices.cars" = "Voitures : %1$@";
+
+"hub.devices.noCars" = "Aucune voiture";
+
+"hub.devices.carFallback" = "Voiture %1$@";
+
+"hub.devices.unnamed" = "Appareil sans nom";
+
+"hub.devices.stateRevoked" = "Révoqué le %1$@";
+
+"hub.devices.stateExpired" = "Expiré le %1$@";
+
+"hub.devices.stateLastSeen" = "Vu pour la dernière fois le %1$@";
+
+"hub.devices.stateNeverSeen" = "Jamais vu";
+
+"hub.collection.loginOwn" = "Connecté avec l'identifiant propre au Hub";
+
+"hub.collection.loginSignedOut" = "Déconnecté";
+
+"hub.collection.loginNotOwn" = "L'identifiant enregistré n'est pas celui du Hub";
+
+"hub.collection.credValidUntil" = "Valide jusqu'au %1$@";
+
+"hub.collection.credValid" = "Valide";
+
+"hub.collection.credRelogin" = "Nouvelle connexion nécessaire : reconnectez-vous dans la prochaine fenêtre ouverte";
+
+"hub.collection.credOwnerRefused" = "Owner API refusée : Tesla a refusé cet identifiant";
+
+"hub.collection.credRefused" = "Refusé (%1$@)";
+
+"hub.collection.credExposure" = "Exposition suspectée : reconnectez-vous dans la prochaine fenêtre ouverte";
+
+"hub.collection.credAttention" = "Nécessite une attention (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Non connecté";
+
+"hub.collection.windowOpenUntil" = "Ouverte jusqu'au %1$@";
+
+"hub.collection.windowOpen" = "Ouverte";
+
+"hub.collection.windowPending" = "En attente";
+
+"hub.collection.windowPendingFrom" = "En attente à partir du %1$@";
+
+"hub.collection.windowPendingUntil" = "En attente jusqu'au %1$@";
+
+"hub.collection.windowPendingFromUntil" = "En attente du %1$@ au %2$@";
+
+"hub.collection.windowClosingExpiry" = "Fermeture (expiration le %1$@)";
+
+"hub.collection.windowClosing" = "Fermeture";
+
+"hub.collection.windowClosedReason" = "Fermée (%1$@)";
+
+"hub.collection.windowClosed" = "Fermée";
+
+"hub.collection.windowUntrusted" = "Fermée (aucun émetteur de confiance)";
+
+"hub.collection.windowFaulted" = "Fermée (l'état de la fenêtre nécessite un nouveau document de confiance)";
+
+"hub.collection.windowRecovery" = "Fermée (en attente de la récupération des identifiants : exécutez restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Inconnu : le canal de contrôle n'est pas celui de ce Hub";
+
+"hub.collection.windowNotRunning" = "Inconnu : le Hub n'est pas en cours d'exécution";
+
+"hub.collection.reasonExpired" = "expirée";
+
+"hub.collection.reasonOperator" = "fermée par l'opérateur";
+
+"hub.collection.reasonRelogin" = "nouvelle connexion nécessaire";
+
+"hub.collection.reasonOwnerRefused" = "Owner API refusée";
+
+"hub.collection.reasonClock" = "échec de la vérification de l'horloge";
+
+"hub.collection.reasonReboot" = "le Mac a redémarré";
+
+"hub.collection.reasonUnverifiable" = "l'état n'a pas pu être vérifié";
+
+"hub.collection.reasonClaimLost" = "revendication de collecte perdue";
+
+"hub.collection.fleet" = "En pause : aucune action Fleet n'est disponible";
+
+"hub.collection.signInUnavailable" = "Connexion indisponible sur ce Hub";
+
+"hub.collection.labelLogin" = "Connexion Tesla";
+
+"hub.collection.labelCredential" = "État des identifiants";
+
+"hub.collection.labelWindow" = "Fenêtre de collecte";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Connexion";
+
+"hub.signIn.recoveryPending" = "Le Hub attend la récupération de ses identifiants : les données de ce Hub ont été restaurées sans ses clés. Exécutez restore-recovery-credentials, puis connectez-vous. Rien n'a été modifié.";
+
+"hub.signIn.serviceUnauthenticated" = "Le processus qui répond sur le canal de contrôle du Hub n'est pas ce Hub, donc rien n'a été envoyé. Redémarrez le Hub, puis connectez-vous de nouveau.";
+
+"hub.signIn.busy" = "Le Hub est occupé par d'autres demandes. Rien n'a été modifié ; reconnectez-vous dans un instant.";

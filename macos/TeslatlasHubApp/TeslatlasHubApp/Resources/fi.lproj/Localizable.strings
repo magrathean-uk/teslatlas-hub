@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "Skeeman tarkistus ei voi kertoa, mikä lähdesovelluksen julkaisu loi tämän tietokannan: samaa skeemaa käyttää useampi julkaisu.";
 
 "hub.import.ackRelease" = "Vahvistan, että lähdesovelluksen versio on 4.2.0 tai uudempi eikä sitä päivitetä tuonnin aikana.";
+
+"hub.backup.title" = "Varmuuskopiot";
+
+"hub.backup.detail" = "Hubin historian salattuja kopioita. Palautussalasana on tällä Macilla tiedostossa, jota vain omistaja voi lukea.";
+
+"hub.backup.backUpNow" = "Varmuuskopioi nyt";
+
+"hub.backup.onSchedule" = "Varmuuskopioi aikataulun mukaan";
+
+"hub.backup.saveSchedule" = "Tallenna aikataulu";
+
+"hub.backup.panelPrompt" = "Valitse";
+
+"hub.backup.panelMessage" = "Valitse kansio Hubin salatuille varmuuskopioille Hubin datakansion ulkopuolelta.";
+
+"hub.backup.savedNote" = "Tallennettu. Aikataulu tulee voimaan, kun Hub käynnistyy uudelleen.";
+
+"hub.backup.noFolder" = "Kansiota ei ole valittu";
+
+"hub.backup.passwordPlaceholder" = "Palautussalasana (vähintään %1$@ merkkiä)";
+
+"hub.backup.passwordSaved" = "Tallennettu. Kirjoita uusi korvataksesi sen";
+
+"hub.backup.intervalHour" = "Joka tunti";
+
+"hub.backup.intervalDay" = "Joka päivä";
+
+"hub.backup.intervalTwoDays" = "Joka 2. päivä";
+
+"hub.backup.intervalWeek" = "Joka viikko";
+
+"hub.backup.intervalHours" = "%1$@ tunnin välein";
+
+"hub.backup.schedule" = "Aikataulu";
+
+"hub.backup.keep" = "Säilytä";
+
+"hub.backup.keepSuffix" = "varmuuskopiota";
+
+"hub.backup.folder" = "Kansio";
+
+"hub.backup.passwordLabel" = "Palautussalasana";
+
+"hub.backup.problem.passwordShort" = "Palautussalasanan on oltava vähintään %1$@ merkkiä.";
+
+"hub.backup.problem.interval" = "Välin on oltava 1–8784 tuntia.";
+
+"hub.backup.problem.keep" = "Säilytettävien varmuuskopioiden määrän on oltava 1–1000.";
+
+"hub.backup.problem.chooseFolder" = "Valitse varmuuskopiokansio.";
+
+"hub.backup.problem.folderInside" = "Valitse varmuuskopiokansio Hubin datakansion ulkopuolelta.";
+
+"hub.backup.problem.needsBoth" = "Ajastetut varmuuskopiot tarvitsevat varmuuskopiokansion ja palautussalasanan.";
+
+"hub.backup.lastGoodNone" = "Ei vielä yhtään";
+
+"hub.backup.nextOff" = "Ajastetut varmuuskopiot ovat pois päältä";
+
+"hub.backup.nextNotScheduled" = "Ei ajastettu: valitse kansio ja salasana";
+
+"hub.backup.nextPaused" = "Odottaa tunnistetietojen palautusta";
+
+"hub.collection.notReported" = "Ei ilmoitettu";
+
+"hub.backup.blocked" = "Hylätyt tunnistetiedot estävät varmuuskopioinnin. Poista ne suorittamalla purge-refused-credentials.";
+
+"hub.backup.lastFailedMessage" = "Viimeisin yritys epäonnistui: %1$@";
+
+"hub.backup.lastFailedCode" = "Viimeisin yritys epäonnistui (%1$@)";
+
+"hub.backup.row.lastGood" = "Viimeisin onnistunut varmuuskopio";
+
+"hub.backup.row.next" = "Seuraava varmuuskopio";
+
+"hub.backup.row.running" = "Varmuuskopiointi on käynnissä";
+
+"hub.backup.row.lastAttempt" = "Viimeisin yritys";
+
+"hub.backup.run.running" = "Varmuuskopioidaan…";
+
+"hub.backup.run.stillRunning" = "Varmuuskopiointi on yhä käynnissä Hub-palvelussa.";
+
+"hub.backup.run.finishedGeneration" = "Varmuuskopiointi valmis: %1$@";
+
+"hub.backup.run.finished" = "Varmuuskopiointi valmis";
+
+"hub.backup.run.failed" = "Varmuuskopiointi epäonnistui: %1$@";
+
+"hub.backup.maint.unreadable" = "Hubin vastausta ei voitu lukea.";
+
+"hub.backup.maint.unwritable" = "Palautussalasanaa ei voitu tallentaa.";
+
+"hub.backup.maint.configMissing" = "Määritä Hub ennen varmuuskopioiden muuttamista.";
+
+"hub.devices.title" = "Yhdistetyt laitteet";
+
+"hub.devices.detail" = "Puhelimet ja sovellukset, jotka lukevat tätä Hubia, sekä autot, joita kukin saa lukea.";
+
+"hub.devices.revokeTitle" = "Perutaanko laitteen %1$@ oikeudet?";
+
+"hub.devices.revokeInfo" = "Tämä laite lakkaa heti lukemasta Hubia. Voit ottaa sen uudelleen käyttöön yhdistämällä sen uudelleen.";
+
+"hub.devices.revoke" = "Peruuta oikeudet";
+
+"hub.devices.revokeEllipsis" = "Peruuta oikeudet…";
+
+"hub.devices.revokeAccessibility" = "Peruuta laitteen %1$@ oikeudet";
+
+"hub.devices.revokedDone" = "Laitteen %1$@ oikeudet peruttiin.";
+
+"hub.devices.none" = "Ei yhdistettyjä laitteita.";
+
+"hub.devices.cars" = "Autot: %1$@";
+
+"hub.devices.noCars" = "Ei autoja";
+
+"hub.devices.carFallback" = "Auto %1$@";
+
+"hub.devices.unnamed" = "Nimetön laite";
+
+"hub.devices.stateRevoked" = "Peruttu %1$@";
+
+"hub.devices.stateExpired" = "Vanhentunut %1$@";
+
+"hub.devices.stateLastSeen" = "Nähty viimeksi %1$@";
+
+"hub.devices.stateNeverSeen" = "Ei vielä nähty";
+
+"hub.collection.loginOwn" = "Kirjauduttu Hubin omilla tunnuksilla";
+
+"hub.collection.loginSignedOut" = "Kirjauduttu ulos";
+
+"hub.collection.loginNotOwn" = "Tallennetut tunnukset eivät ole Hubin omat";
+
+"hub.collection.credValidUntil" = "Voimassa %1$@ asti";
+
+"hub.collection.credValid" = "Voimassa";
+
+"hub.collection.credRelogin" = "Uusi kirjautuminen tarvitaan: kirjaudu uudelleen seuraavassa avoimessa ikkunassa";
+
+"hub.collection.credOwnerRefused" = "Owner API hylättiin: Tesla hylkäsi nämä tunnukset";
+
+"hub.collection.credRefused" = "Hylätty (%1$@)";
+
+"hub.collection.credExposure" = "Epäillään paljastumista: kirjaudu uudelleen seuraavassa avoimessa ikkunassa";
+
+"hub.collection.credAttention" = "Vaatii huomiota (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Ei kirjautuneena";
+
+"hub.collection.windowOpenUntil" = "Auki %1$@ asti";
+
+"hub.collection.windowOpen" = "Auki";
+
+"hub.collection.windowPending" = "Odottaa";
+
+"hub.collection.windowPendingFrom" = "Odottaa alkaen %1$@";
+
+"hub.collection.windowPendingUntil" = "Odottaa %1$@ asti";
+
+"hub.collection.windowPendingFromUntil" = "Odottaa %1$@–%2$@";
+
+"hub.collection.windowClosingExpiry" = "Suljetaan (vanhenee %1$@)";
+
+"hub.collection.windowClosing" = "Suljetaan";
+
+"hub.collection.windowClosedReason" = "Suljettu (%1$@)";
+
+"hub.collection.windowClosed" = "Suljettu";
+
+"hub.collection.windowUntrusted" = "Suljettu (ei luotettua myöntäjää)";
+
+"hub.collection.windowFaulted" = "Suljettu (ikkunan tila tarvitsee uuden luottamusasiakirjan)";
+
+"hub.collection.windowRecovery" = "Suljettu (odottaa tunnistetietojen palautusta: suorita restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Tuntematon: ohjauskanava ei kuulu tälle Hubille";
+
+"hub.collection.windowNotRunning" = "Tuntematon: Hub ei ole käynnissä";
+
+"hub.collection.reasonExpired" = "vanhentunut";
+
+"hub.collection.reasonOperator" = "operaattori sulki";
+
+"hub.collection.reasonRelogin" = "uusi kirjautuminen tarvitaan";
+
+"hub.collection.reasonOwnerRefused" = "Owner API hylättiin";
+
+"hub.collection.reasonClock" = "kellon tarkistus epäonnistui";
+
+"hub.collection.reasonReboot" = "Mac käynnistyi uudelleen";
+
+"hub.collection.reasonUnverifiable" = "tilaa ei voitu vahvistaa";
+
+"hub.collection.reasonClaimLost" = "keruuvaraus menetettiin";
+
+"hub.collection.fleet" = "Pysäytetty: Fleet-toimintoja ei ole käytettävissä";
+
+"hub.collection.signInUnavailable" = "Kirjautuminen ei ole käytettävissä tässä Hubissa";
+
+"hub.collection.labelLogin" = "Tesla-kirjautuminen";
+
+"hub.collection.labelCredential" = "Tunnistetietojen tila";
+
+"hub.collection.labelWindow" = "Keruuikkuna";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Kirjautuminen";
+
+"hub.signIn.recoveryPending" = "Hub odottaa tunnistetietojensa palautusta: tämän Hubin data palautettiin ilman sen avaimia. Suorita restore-recovery-credentials ja kirjaudu sitten sisään. Mitään ei muutettu.";
+
+"hub.signIn.serviceUnauthenticated" = "Prosessi, joka vastaa Hubin ohjauskanavalla, ei ole tämä Hub, joten mitään ei lähetetty. Käynnistä Hub uudelleen ja kirjaudu sitten uudelleen.";
+
+"hub.signIn.busy" = "Hub on varattu muihin pyyntöihin. Mitään ei muutettu; kirjaudu uudelleen hetken kuluttua.";
