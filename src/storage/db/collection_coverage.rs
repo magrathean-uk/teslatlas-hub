@@ -257,8 +257,10 @@ pub fn record_coverage_handback(
     Ok(true)
 }
 
-/// The latest moment, from `opened_ms` on, of a Hub-range drive, charge or
-/// position of `vehicle`; `opened_ms` when it has none.
+/// The end of a restored window for `vehicle`: the instant after the latest
+/// moment, from `opened_ms` on, of its Hub-range drives, charges and
+/// positions, so the half-open coverage holds that last row too;
+/// `opened_ms` when it has none.
 fn last_hub_row_ms(
     connection: &Connection,
     vehicle: &str,
@@ -288,15 +290,18 @@ fn last_hub_row_ms(
         ],
         |row| row.get(0),
     )?;
-    Ok(latest.unwrap_or(opened_ms).max(opened_ms))
+    Ok(latest
+        .map_or(opened_ms, |latest| latest.saturating_add(1))
+        .max(opened_ms))
 }
 
 /// Seals every window that is open in the store, except `running` (the grant
 /// sequence and digest of a window open on this host). Such a window is the
 /// mark of a restore of a backup taken inside a window: no window is open on
-/// this host, so the window is closed per vehicle at that vehicle's last
-/// Hub-range row (`sealed = 'restore'`, `vehicle_ends_json`), and the Hub's
-/// rows inside it stand, as in a closed window. Returns how many were sealed.
+/// this host, so the window is closed per vehicle just after that vehicle's
+/// last Hub-range row (`sealed = 'restore'`, `vehicle_ends_json`, the end
+/// excluded), and the Hub's rows inside it, the last one included, stand, as
+/// in a closed window. Returns how many were sealed.
 pub fn seal_restored_open_windows(
     connection: &Connection,
     running: Option<(i64, &str)>,

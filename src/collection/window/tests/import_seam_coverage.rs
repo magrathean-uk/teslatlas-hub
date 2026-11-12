@@ -260,15 +260,18 @@ fn import_seam_restored_open_window_is_sealed_per_vehicle() {
     assert_eq!(new_host.status().phase, Phase::Closed);
     let (sealed, closed, _) = coverage_row(&restored_connection, 1);
     assert_eq!(sealed, "restore");
-    assert_eq!(closed, Some((T0 + 700) * SECOND));
-    assert_eq!(coverage_of(&restored_connection, &first), vec![(T0 * SECOND, (T0 + 300) * SECOND)]);
-    assert_eq!(coverage_of(&restored_connection, &second), vec![(T0 * SECOND, (T0 + 700) * SECOND)]);
+    // The seal is the instant after each vehicle's last Hub row, so the
+    // half-open coverage holds that row too (settled in M03-T15).
+    assert_eq!(closed, Some((T0 + 700) * SECOND + 1));
+    assert_eq!(coverage_of(&restored_connection, &first), vec![(T0 * SECOND, (T0 + 300) * SECOND + 1)]);
+    assert_eq!(coverage_of(&restored_connection, &second), vec![(T0 * SECOND, (T0 + 700) * SECOND + 1)]);
+    assert!(HubCoverage::for_store(&restored_connection, &first).unwrap().contains((T0 + 300) * SECOND));
     let ends: String = restored_connection
         .query_row("SELECT vehicle_ends_json FROM collection_coverage WHERE seq = 1", [], |row| row.get(0))
         .unwrap();
     let ends: serde_json::Value = serde_json::from_str(&ends).unwrap();
-    assert_eq!(ends[&first], (T0 + 300) * SECOND);
-    assert_eq!(ends[&second], (T0 + 700) * SECOND);
+    assert_eq!(ends[&first], (T0 + 300) * SECOND + 1);
+    assert_eq!(ends[&second], (T0 + 700) * SECOND + 1);
 
     // The original host restarts on its own open window and does not seal it.
     drop(hub);
