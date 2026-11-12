@@ -92,6 +92,9 @@ pub(super) mod b3_c9_w;
 mod collector_resilience;
 #[path = "tests/owner_api_refused.rs"]
 mod owner_api_refused;
+// M03-T12: the collector's seed of the Hub id range.
+#[path = "tests/import_seam_hub_ids.rs"]
+mod import_seam_hub_ids;
 include!("tests/provider_secret_scrub.rs");
 include!("tests/loop_waiting.rs");
 include!("tests/loop_drain.rs");
