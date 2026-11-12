@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Lähdesovelluksen tuonti epäonnistui; yritä tuontia uudelleen.";
 "hub.HubController.2457.838" = "Viimeistele lähdesovelluksen siirron luovutus ennen Hubin käynnistämistä.";
 "hub.HubController.2479.850" = "Viimeistele lähdesovelluksen siirron luovutus ennen Hubin uudelleenkäynnistämistä.";
-"hub.HubController.250.318" = "Perinteinen Tesla-token";
+"hub.HubController.250.318" = "Omistajan kirjautuminen";
 "hub.HubController.2503.863" = "Hubin käynnistys on jo käynnissä.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Viimeistele siirron tarkistukset ennen Hubin käynnistämistä.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Esikatselun testiaineisto";
 "hub.LogsWindowController.70.1725" = "Tarkista Hubin ja sovelluksen lokit, joista tunnistetiedot on poistettu.";
 "hub.MainWindowController.1152.1840" = "Käytä Fleet API:a";
-"hub.MainWindowController.1153.1841" = "Käytä perinteistä Tesla-tokenia";
+"hub.MainWindowController.1153.1841" = "Käytä omistajan kirjautumista";
 "hub.MainWindowController.1154.1842" = "Tuo historia…";
 "hub.MainWindowController.1156.1843" = "Katkaise Tesla-yhteys…";
 "hub.MainWindowController.1158.1844" = "Yhdistä Tesla-tili…";
 "hub.MainWindowController.1428.1846" = "Katkaistaanko Teslan yhteys Hubiin?";
-"hub.MainWindowController.1429.1847" = "Hub pysähtyy ja poistaa tallennetut Fleet API -tunnistetiedot ja perinteisen Tesla-tokenin. Kerätyt tietosi säilyvät tässä Macissa.";
+"hub.MainWindowController.1429.1847" = "Hub pysähtyy ja poistaa tallennetut Fleet API -tunnistetiedot ja omistajan kirjautumisen tunnistetiedot. Kerätyt tietosi säilyvät tässä Macissa.";
 "hub.MainWindowController.1431.1849" = "Katkaise yhteys";
 "hub.MainWindowController.15.1766" = "Ajoneuvo";
 "hub.MainWindowController.22.1768" = "Pysäytä Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Tuo tiedot";
 "hub.OnboardingWindowController.1362.2047" = "Yhdistä palvelimeen";
 "hub.OnboardingWindowController.1471.2059" = "Täytä Fleet-asiakastunnuksen, tokenin, alueen ja voimassaolon päättymisajan kentät.";
-"hub.OnboardingWindowController.1500.2071" = "Anna sekä käyttöoikeustoken että päivitystoken.";
 "hub.OnboardingWindowController.1631.2105" = "Anna lähdesovelluksen palvelin, SSH-käyttäjä ja portti.";
 "hub.OnboardingWindowController.168.1852" = "Jatka";
 "hub.OnboardingWindowController.1691.2113" = "Skeeman tarkistus ei voi osoittaa lähdesovelluksen versiota. Vahvista, että käynnissä oleva palvelin käyttää versiota 4.4.0 tai uudempaa, ja jatka.";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "Miten haluat aloittaa?";
 "hub.OnboardingWindowController.590.1919" = "Valitse, miten Hub muodostaa yhteyden";
 "hub.OnboardingWindowController.591.1920" = "Määritä Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Yhdistä tokenilla";
+"hub.OnboardingWindowController.592.1921" = "Kirjaudu sisään Teslan kautta";
 "hub.OnboardingWindowController.593.1922" = "Tuo historia…";
 "hub.OnboardingWindowController.594.1923" = "Tarkistetaan Hubin toimintaa";
 "hub.OnboardingWindowController.595.1924" = "Siirto valmis";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Teslan kirjautumistilan tunniste ei täsmännyt. Aloita kirjautuminen uudelleen.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla palautti virheelliset tilin myöntäjätiedot.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Viimeistellään suojattua Tesla-kirjautumista…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla palautti virheellisen tokenvastauksen.";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla-tokenien vaihto epäonnistui.";
 "hub.SourceServerImporter.34.2284" = "Koodi: %1$@";
 "hub.SourceServerImporter.428.2461" = "Lähdesovelluksen palvelin palautti puutteelliset määritystiedot.";
 "hub.SourceServerImporter.691.2530" = "Tarkista palvelimen tiedot";

@@ -18,7 +18,7 @@ final class HubLocalizationTests: XCTestCase {
         }
         let englishKeys = Set(try table(english, "Localizable.strings").keys)
         let pluralKeys = Set(try table(english, "Localizable.stringsdict").keys)
-        XCTAssertEqual(englishKeys.count, 733)
+        XCTAssertEqual(englishKeys.count, 730)
         XCTAssertEqual(pluralKeys.count, 6)
         for language in languages {
             let directory = resources.appendingPathComponent("\(language).lproj")
@@ -49,7 +49,7 @@ final class HubLocalizationTests: XCTestCase {
             return try XCTUnwrap(plist as? [String: String])
         }
         let english = try table("en")
-        XCTAssertEqual(english[title], "Owner Sign-in")
+        XCTAssertEqual(english[title], "Owner sign-in")
         XCTAssertFalse(try XCTUnwrap(english[subtitle]).localizedCaseInsensitiveContains("recommended"))
         let languages = Bundle.main.localizations.filter { $0 != "Base" }
         XCTAssertEqual(languages.count, 56)
@@ -62,6 +62,48 @@ final class HubLocalizationTests: XCTestCase {
                 if !language.hasPrefix("en") {
                     XCTAssertNotEqual(value, english[key], "\(language): \(key) is not English copied in")
                 }
+            }
+        }
+    }
+
+    func testTheOwnerSignInNameIsTranslatedInEveryLocale() throws {
+        let resources = try XCTUnwrap(Bundle.main.resourceURL)
+        let name = "hub.HubController.250.318"
+        let card = "hub.OnboardingWindowController.752.1958"
+        let menu = "hub.MainWindowController.1153.1841"
+        let removal = "hub.MainWindowController.1429.1847"
+        let pageTitle = "hub.OnboardingWindowController.592.1921"
+        let signIn = "hub.OnboardingWindowController.788.1970"
+        let removed = ["hub.OnboardingWindowController.1500.2071",
+                       "hub.TeslaAuthWindowController.36.2241",
+                       "hub.TeslaAuthWindowController.37.2242"]
+        func table(_ language: String) throws -> [String: String] {
+            let url = resources.appendingPathComponent("\(language).lproj/Localizable.strings")
+            let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil)
+            return try XCTUnwrap(plist as? [String: String])
+        }
+        let english = try table("en")
+        XCTAssertEqual(english[name], "Owner sign-in")
+        XCTAssertEqual(english[card], "Owner sign-in")
+        XCTAssertEqual(english[menu], "Use owner sign-in")
+        XCTAssertEqual(english[removal],
+                       "Hub will stop and remove its stored Fleet and owner sign-in credentials. Your collected data stays on this Mac.")
+        XCTAssertEqual(english[pageTitle], "Sign in with Tesla")
+        XCTAssertEqual(english[signIn], "Sign in with Tesla")
+        let languages = Bundle.main.localizations.filter { $0 != "Base" }
+        XCTAssertEqual(languages.count, 56)
+        for language in languages {
+            let strings = try table(language)
+            for key in removed { XCTAssertNil(strings[key], "\(language): \(key) is gone") }
+            XCTAssertEqual(strings[pageTitle], strings[signIn], "\(language): the page is titled as its button")
+            XCTAssertEqual(strings[name], strings[card], "\(language): one name for the provider")
+            for key in [name, menu, removal, pageTitle] {
+                let value = try XCTUnwrap(strings[key], "\(language): \(key)")
+                XCTAssertFalse(value.isEmpty, "\(language): \(key)")
+                if !language.hasPrefix("en") {
+                    XCTAssertNotEqual(value, english[key], "\(language): \(key) is not English copied in")
+                }
+                XCTAssertFalse(value.localizedCaseInsensitiveContains("legacy token"), "\(language): \(key)")
             }
         }
     }

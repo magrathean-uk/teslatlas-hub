@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Falló la importación de la aplicación de origen; vuelve a intentarlo.";
 "hub.HubController.2457.838" = "Completa el traspaso de la aplicación de origen antes de iniciar el Hub.";
 "hub.HubController.2479.850" = "Completa el traspaso de la aplicación de origen antes de reiniciar el Hub.";
-"hub.HubController.250.318" = "Token heredado";
+"hub.HubController.250.318" = "Inicio de sesión del propietario";
 "hub.HubController.2503.863" = "El inicio del Hub ya está en curso.";
 "hub.HubController.251.319" = "API de Fleet";
 "hub.HubController.2519.869" = "Completa las comprobaciones de migración antes de iniciar el Hub.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Vista previa de la prueba";
 "hub.LogsWindowController.70.1725" = "Revisa los registros del Hub y de la app con datos ocultos.";
 "hub.MainWindowController.1152.1840" = "Usar la API de Fleet";
-"hub.MainWindowController.1153.1841" = "Usar token heredado";
+"hub.MainWindowController.1153.1841" = "Usar el inicio de sesión del propietario";
 "hub.MainWindowController.1154.1842" = "Migrar desde la aplicación de origen…";
 "hub.MainWindowController.1156.1843" = "Desconectar Tesla…";
 "hub.MainWindowController.1158.1844" = "Conectar cuenta de Tesla…";
 "hub.MainWindowController.1428.1846" = "¿Desconectar Tesla del Hub?";
-"hub.MainWindowController.1429.1847" = "El Hub se detendrá y eliminará las credenciales guardadas de Fleet y Legacy. Los datos recopilados permanecen en esta Mac.";
+"hub.MainWindowController.1429.1847" = "El Hub se detendrá y eliminará las credenciales guardadas de Fleet y del inicio de sesión del propietario. Los datos recopilados permanecen en esta Mac.";
 "hub.MainWindowController.1431.1849" = "Desconectar";
 "hub.MainWindowController.15.1766" = "Vehículo";
 "hub.MainWindowController.22.1768" = "Detener Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Importar datos";
 "hub.OnboardingWindowController.1362.2047" = "Conectar al servidor";
 "hub.OnboardingWindowController.1471.2059" = "Completa los campos de ID de cliente, token, región y vencimiento de Fleet.";
-"hub.OnboardingWindowController.1500.2071" = "Ingresa tanto el token de acceso como el token de actualización.";
 "hub.OnboardingWindowController.1631.2105" = "Ingresa el servidor de la aplicación de origen, el usuario de SSH y el puerto.";
 "hub.OnboardingWindowController.168.1852" = "Continuar";
 "hub.OnboardingWindowController.1691.2113" = "Una comprobación del esquema no permite determinar la versión de la aplicación de origen. Confirma que el servidor en ejecución usa la versión 4.4.0 o posterior y continúa.";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "¿Cómo quieres comenzar?";
 "hub.OnboardingWindowController.590.1919" = "Elige cómo se conecta el Hub";
 "hub.OnboardingWindowController.591.1920" = "Configurar Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Conectar con un token";
+"hub.OnboardingWindowController.592.1921" = "Iniciar sesión con Tesla";
 "hub.OnboardingWindowController.593.1922" = "Migrar desde la aplicación de origen";
 "hub.OnboardingWindowController.594.1923" = "Comprobando el Hub";
 "hub.OnboardingWindowController.595.1924" = "Migración completada";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "El estado de inicio de sesión de Tesla no coincide. Inicia sesión de nuevo.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla devolvió un emisor de cuenta no válido.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Finalizando el inicio de sesión seguro en Tesla…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla devolvió una respuesta de token no válida.";
-"hub.TeslaAuthWindowController.37.2242" = "Falló el intercambio de tokens de Tesla.";
 "hub.SourceServerImporter.34.2284" = "Código: %1$@";
 "hub.SourceServerImporter.428.2461" = "El servidor de la aplicación de origen devolvió datos de configuración incompletos.";
 "hub.SourceServerImporter.691.2530" = "Comprueba los datos del servidor";

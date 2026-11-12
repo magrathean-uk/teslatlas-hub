@@ -353,7 +353,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case "choose": return HubOnboardingState(route: .choose)
         case "choose-migration": return HubOnboardingState(route: .choose, path: .migration)
         case "provider": return HubOnboardingState(route: .provider)
-        case "fleet": return HubOnboardingState(route: .fleet)
+        case "fleet": return HubOnboardingState(route: .fleet, provider: .fleet)
         case "legacy": return HubOnboardingState(route: .legacy, provider: .legacy)
         case "migration", "migration-error": return HubOnboardingState(route: .migration, path: .migration)
         case "migration-connected": return HubOnboardingState(route: .migration, path: .migration)
@@ -620,7 +620,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case .choose: return HubL10n.text("hub.OnboardingWindowController.589.1918", fallback: "How would you like to start?")
         case .provider: return HubL10n.text("hub.OnboardingWindowController.590.1919", fallback: "Choose how Hub connects")
         case .fleet: return HubL10n.text("hub.OnboardingWindowController.591.1920", fallback: "Set up Fleet Telemetry")
-        case .legacy: return HubL10n.text("hub.OnboardingWindowController.592.1921", fallback: "Connect with a token")
+        case .legacy: return HubL10n.text("hub.OnboardingWindowController.592.1921", fallback: "Sign in with Tesla")
         case .migration: return HubL10n.text("hub.OnboardingWindowController.593.1922", fallback: "Import History…")
         case .verify: return HubL10n.text("hub.OnboardingWindowController.594.1923", fallback: "Checking your Hub")
         case .finish: return state.path == .migration ? HubL10n.text("hub.OnboardingWindowController.595.1924", fallback: "Migration complete") : HubL10n.text("hub.OnboardingWindowController.595.1925", fallback: "Teslatlas Hub is ready")
@@ -777,7 +777,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     private func providerBody() -> NSView {
         // The owner sign-in is offered first and is the default; Fleet stays one click away.
-        let legacy = choiceButton(title: HubL10n.text("hub.OnboardingWindowController.752.1958", fallback: "Owner Sign-in"),
+        let legacy = choiceButton(title: HubL10n.text("hub.OnboardingWindowController.752.1958", fallback: "Owner sign-in"),
                                   subtitle: HubL10n.text("hub.OnboardingWindowController.753.1959", fallback: "Sign in with Tesla. Hub keeps its own login."),
                                   selected: state.provider == .legacy,
                                   action: #selector(selectLegacy))

@@ -433,7 +433,7 @@ extension OnboardingWindowControllerTests {
     func testEntryAccountUseLegacyUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "AccountUseLegacy", family: .account, options: connectedOptions(),
                               effect: { $0.runner.count("window") >= 1 }) { test, h, _ in
-            try test.chooseMenuItem("Use Legacy token", h)
+            try test.chooseMenuItem("Use owner sign-in", h)
             let onboarding = try XCTUnwrap(test.currentOnboarding(h))
             XCTAssertEqual(onboarding.currentRoute, .legacy)
             XCTAssertEqual(h.rig.acquisitions(.account), 0)

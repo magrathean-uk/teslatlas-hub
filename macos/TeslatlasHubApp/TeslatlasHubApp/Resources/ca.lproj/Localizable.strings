@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "La importació de l’aplicació d’origen ha fallat; torna-la a provar.";
 "hub.HubController.2457.838" = "Completa el traspàs de l’aplicació d’origen abans d’iniciar el Hub.";
 "hub.HubController.2479.850" = "Completa el traspàs de l’aplicació d’origen abans de reiniciar el Hub.";
-"hub.HubController.250.318" = "Token heretat";
+"hub.HubController.250.318" = "Inici de sessió del propietari";
 "hub.HubController.2503.863" = "L’inici del Hub ja està en curs.";
 "hub.HubController.251.319" = "API de Fleet";
 "hub.HubController.2519.869" = "Completa les comprovacions de migració abans d’iniciar el Hub.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Dades de mostra de previsualització";
 "hub.LogsWindowController.70.1725" = "Revisa els registres del Hub i de l’aplicació, amb les dades sensibles ocultes.";
 "hub.MainWindowController.1152.1840" = "Fes servir l’API Fleet";
-"hub.MainWindowController.1153.1841" = "Fes servir el token heretat";
+"hub.MainWindowController.1153.1841" = "Fes servir l’inici de sessió del propietari";
 "hub.MainWindowController.1154.1842" = "Migra des de l’aplicació d’origen…";
 "hub.MainWindowController.1156.1843" = "Desconnecta Tesla…";
 "hub.MainWindowController.1158.1844" = "Connecta el compte de Tesla…";
 "hub.MainWindowController.1428.1846" = "Vols desconnectar Tesla del Hub?";
-"hub.MainWindowController.1429.1847" = "El Hub s’aturarà i eliminarà les credencials desades de Fleet i del token heretat. Les dades recollides es conservaran en aquest Mac.";
+"hub.MainWindowController.1429.1847" = "El Hub s’aturarà i eliminarà les credencials desades de Fleet i de l’inici de sessió del propietari. Les dades recollides es conservaran en aquest Mac.";
 "hub.MainWindowController.1431.1849" = "Desconnecta";
 "hub.MainWindowController.15.1766" = "Vehicle";
 "hub.MainWindowController.22.1768" = "Atura el Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Importa les dades";
 "hub.OnboardingWindowController.1362.2047" = "Connecta amb el servidor";
 "hub.OnboardingWindowController.1471.2059" = "Completa els camps d’identificador de client, token, regió i caducitat de Fleet.";
-"hub.OnboardingWindowController.1500.2071" = "Introdueix tant el token d’accés com el token d’actualització.";
 "hub.OnboardingWindowController.1631.2105" = "Introdueix el servidor de l’aplicació d’origen, l’usuari SSH i el port.";
 "hub.OnboardingWindowController.168.1852" = "Continua";
 "hub.OnboardingWindowController.1691.2113" = "La comprovació de l’esquema no pot determinar la versió de l’aplicació d’origen. Confirma que el servidor en execució utilitza la versió 4.4.0 o una de posterior i, tot seguit, continua.";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "Com vols començar?";
 "hub.OnboardingWindowController.590.1919" = "Tria com es connecta el Hub";
 "hub.OnboardingWindowController.591.1920" = "Configura Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Connecta’t amb un token";
+"hub.OnboardingWindowController.592.1921" = "Inicia la sessió amb Tesla";
 "hub.OnboardingWindowController.593.1922" = "Migra des de l’aplicació d’origen";
 "hub.OnboardingWindowController.594.1923" = "S’està comprovant el Hub";
 "hub.OnboardingWindowController.595.1924" = "Migració completada";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "L’estat de l’inici de sessió a Tesla no coincideix. Torna a iniciar el procés d’inici de sessió.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla ha retornat un emissor del compte no vàlid.";
 "hub.TeslaAuthWindowController.358.html_progress" = "S’està acabant l’inici de sessió segur a Tesla…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla ha retornat una resposta de token no vàlida.";
-"hub.TeslaAuthWindowController.37.2242" = "Ha fallat l’intercanvi de tokens amb Tesla.";
 "hub.SourceServerImporter.34.2284" = "Codi: %1$@";
 "hub.SourceServerImporter.428.2461" = "El servidor de l’aplicació d’origen ha retornat dades de configuració incompletes.";
 "hub.SourceServerImporter.691.2530" = "Comprova les dades del servidor";

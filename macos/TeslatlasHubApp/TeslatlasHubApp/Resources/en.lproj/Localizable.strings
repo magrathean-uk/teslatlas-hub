@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Source application import failed; retry the import.";
 "hub.HubController.2457.838" = "Finish the source application handover before starting Hub.";
 "hub.HubController.2479.850" = "Finish the source application handover before restarting Hub.";
-"hub.HubController.250.318" = "Legacy token";
+"hub.HubController.250.318" = "Owner sign-in";
 "hub.HubController.2503.863" = "Hub startup is already in progress.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Finish the migration checks before starting Hub.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Preview fixture";
 "hub.LogsWindowController.70.1725" = "Review redacted Hub and application logs.";
 "hub.MainWindowController.1152.1840" = "Use Fleet API";
-"hub.MainWindowController.1153.1841" = "Use Legacy token";
+"hub.MainWindowController.1153.1841" = "Use owner sign-in";
 "hub.MainWindowController.1154.1842" = "Import History…";
 "hub.MainWindowController.1156.1843" = "Disconnect Tesla…";
 "hub.MainWindowController.1158.1844" = "Connect Tesla Account…";
 "hub.MainWindowController.1428.1846" = "Disconnect Tesla from Hub?";
-"hub.MainWindowController.1429.1847" = "Hub will stop and remove its stored Fleet and Legacy credentials. Your collected data stays on this Mac.";
+"hub.MainWindowController.1429.1847" = "Hub will stop and remove its stored Fleet and owner sign-in credentials. Your collected data stays on this Mac.";
 "hub.MainWindowController.1431.1849" = "Disconnect";
 "hub.MainWindowController.15.1766" = "Vehicle";
 "hub.MainWindowController.22.1768" = "Stop Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Import Data";
 "hub.OnboardingWindowController.1362.2047" = "Connect to Server";
 "hub.OnboardingWindowController.1471.2059" = "Complete the Fleet client ID, token, region, and expiry fields.";
-"hub.OnboardingWindowController.1500.2071" = "Enter both the access token and refresh token.";
 "hub.OnboardingWindowController.1631.2105" = "Enter the source application server, SSH user, and port.";
 "hub.OnboardingWindowController.168.1852" = "Continue";
 "hub.OnboardingWindowController.1691.2113" = "A schema check cannot establish the source application release. Confirm that the running server is at release 4.4.0 or later, then continue.";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "How would you like to start?";
 "hub.OnboardingWindowController.590.1919" = "Choose how Hub connects";
 "hub.OnboardingWindowController.591.1920" = "Set up Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Connect with a token";
+"hub.OnboardingWindowController.592.1921" = "Sign in with Tesla";
 "hub.OnboardingWindowController.593.1922" = "Import History…";
 "hub.OnboardingWindowController.594.1923" = "Checking your Hub";
 "hub.OnboardingWindowController.595.1924" = "Migration complete";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "Bring your existing vehicle history.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla's official streaming API. Vehicle commands use the Tesla Fleet API.";
-"hub.OnboardingWindowController.752.1958" = "Owner Sign-in";
+"hub.OnboardingWindowController.752.1958" = "Owner sign-in";
 "hub.OnboardingWindowController.753.1959" = "Sign in with Tesla. Hub keeps its own login.";
 "hub.OnboardingWindowController.760.1960" = "Create Tesla Fleet App";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Tesla login state did not match. Start login again.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla returned an invalid account issuer.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Finishing secure Tesla login…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla returned an invalid token response.";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla token exchange failed.";
 "hub.SourceServerImporter.34.2284" = "Code: %1$@";
 "hub.SourceServerImporter.428.2461" = "Source application server returned incomplete setup details.";
 "hub.SourceServerImporter.691.2530" = "Check the server details";

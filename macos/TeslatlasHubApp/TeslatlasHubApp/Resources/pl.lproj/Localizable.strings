@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Import z aplikacji źródłowej nie powiódł się; ponów go.";
 "hub.HubController.2457.838" = "Dokończ przekazanie z aplikacji źródłowej przed uruchomieniem Huba.";
 "hub.HubController.2479.850" = "Dokończ przekazanie z aplikacji źródłowej przed ponownym uruchomieniem Huba.";
-"hub.HubController.250.318" = "Token starszego typu";
+"hub.HubController.250.318" = "Logowanie właściciela";
 "hub.HubController.2503.863" = "Uruchamianie Huba już trwa.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Przed uruchomieniem Huba dokończ kontrole migracji.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Podgląd danych przykładowych";
 "hub.LogsWindowController.70.1725" = "Sprawdź dzienniki Huba i aplikacji z ukrytymi danymi.";
 "hub.MainWindowController.1152.1840" = "Użyj Fleet API";
-"hub.MainWindowController.1153.1841" = "Użyj tokenu starszego typu";
+"hub.MainWindowController.1153.1841" = "Użyj logowania właściciela";
 "hub.MainWindowController.1154.1842" = "Importuj historię…";
 "hub.MainWindowController.1156.1843" = "Odłącz konto Tesla…";
 "hub.MainWindowController.1158.1844" = "Połącz konto Tesla…";
 "hub.MainWindowController.1428.1846" = "Odłączyć konto Tesla od Huba?";
-"hub.MainWindowController.1429.1847" = "Hub zostanie zatrzymany i usunie zapisane dane uwierzytelniające Fleet oraz starszego typu. Zebrane dane pozostaną na tym Macu.";
+"hub.MainWindowController.1429.1847" = "Hub zostanie zatrzymany i usunie zapisane dane uwierzytelniające Fleet oraz logowania właściciela. Zebrane dane pozostaną na tym Macu.";
 "hub.MainWindowController.1431.1849" = "Odłącz";
 "hub.MainWindowController.15.1766" = "Pojazd";
 "hub.MainWindowController.22.1768" = "Zatrzymaj Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Importuj dane";
 "hub.OnboardingWindowController.1362.2047" = "Połącz z serwerem";
 "hub.OnboardingWindowController.1471.2059" = "Uzupełnij pola: ID klienta Fleet, token, region i termin ważności.";
-"hub.OnboardingWindowController.1500.2071" = "Wprowadź zarówno token dostępu, jak i token odświeżania.";
 "hub.OnboardingWindowController.1631.2105" = "Wprowadź serwer aplikacji źródłowej, użytkownika SSH i port.";
 "hub.OnboardingWindowController.168.1852" = "Kontynuuj";
 "hub.OnboardingWindowController.1691.2113" = "Sprawdzenie schematu bazy danych nie pozwala ustalić wersji aplikacji źródłowej. Potwierdź, że na serwerze działa aplikacja źródłowa w wersji 4.4.0 lub nowszej, a następnie kontynuuj.";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "Jak chcesz rozpocząć?";
 "hub.OnboardingWindowController.590.1919" = "Wybierz sposób połączenia Huba";
 "hub.OnboardingWindowController.591.1920" = "Skonfiguruj Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Połącz za pomocą tokenu";
+"hub.OnboardingWindowController.592.1921" = "Zaloguj się do Tesli";
 "hub.OnboardingWindowController.593.1922" = "Importuj historię…";
 "hub.OnboardingWindowController.594.1923" = "Sprawdzanie Huba";
 "hub.OnboardingWindowController.595.1924" = "Migracja zakończona";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Stan logowania do Tesli jest niezgodny. Rozpocznij logowanie ponownie.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla zwróciła nieprawidłową wartość wystawcy konta.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Kończenie bezpiecznego logowania do Tesli…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla zwróciła nieprawidłową odpowiedź z tokenem.";
-"hub.TeslaAuthWindowController.37.2242" = "Wymiana tokenu z Teslą nie powiodła się.";
 "hub.SourceServerImporter.34.2284" = "Kod: %1$@";
 "hub.SourceServerImporter.428.2461" = "Serwer aplikacji źródłowej zwrócił niekompletne dane konfiguracji.";
 "hub.SourceServerImporter.691.2530" = "Sprawdź dane serwera";

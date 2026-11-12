@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "উৎস অ্যাপ্লিকেশন ইমপোর্ট ব্যর্থ হয়েছে; ইমপোর্ট আবার চেষ্টা করুন।";
 "hub.HubController.2457.838" = "Hub চালু করার আগে উৎস অ্যাপ্লিকেশন হস্তান্তর সম্পন্ন করুন।";
 "hub.HubController.2479.850" = "Hub পুনরায় চালু করার আগে উৎস অ্যাপ্লিকেশন হস্তান্তর সম্পন্ন করুন।";
-"hub.HubController.250.318" = "লেগ্যাসি টোকেন";
+"hub.HubController.250.318" = "মালিকের সাইন-ইন";
 "hub.HubController.2503.863" = "Hub চালু করার প্রক্রিয়া ইতিমধ্যে চলছে।";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Hub চালু করার আগে মাইগ্রেশনের যাচাইগুলো সম্পন্ন করুন।";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "প্রিভিউ ফিক্সচার";
 "hub.LogsWindowController.70.1725" = "গোপনীয় তথ্য মুছে Hub ও অ্যাপ্লিকেশনের লগ পর্যালোচনা করুন।";
 "hub.MainWindowController.1152.1840" = "Fleet API ব্যবহার করুন";
-"hub.MainWindowController.1153.1841" = "লেগ্যাসি টোকেন ব্যবহার করুন";
+"hub.MainWindowController.1153.1841" = "মালিকের সাইন-ইন ব্যবহার করুন";
 "hub.MainWindowController.1154.1842" = "ইতিহাস ইমপোর্ট করুন…";
 "hub.MainWindowController.1156.1843" = "Tesla সংযোগ বিচ্ছিন্ন করুন…";
 "hub.MainWindowController.1158.1844" = "Tesla অ্যাকাউন্ট সংযুক্ত করুন…";
 "hub.MainWindowController.1428.1846" = "Hub থেকে Tesla সংযোগ বিচ্ছিন্ন করবেন?";
-"hub.MainWindowController.1429.1847" = "Hub বন্ধ হবে এবং সংরক্ষিত Fleet ও লেগ্যাসি প্রবেশতথ্য মুছে ফেলবে। আপনার সংগৃহীত ডেটা এই Mac-এ থাকবে।";
+"hub.MainWindowController.1429.1847" = "Hub বন্ধ হবে এবং সংরক্ষিত Fleet ও মালিকের সাইন-ইনের প্রবেশতথ্য মুছে ফেলবে। আপনার সংগৃহীত ডেটা এই Mac-এ থাকবে।";
 "hub.MainWindowController.1431.1849" = "সংযোগ বিচ্ছিন্ন করুন";
 "hub.MainWindowController.15.1766" = "গাড়ি";
 "hub.MainWindowController.22.1768" = "Hub বন্ধ করুন";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "ডেটা ইমপোর্ট করুন";
 "hub.OnboardingWindowController.1362.2047" = "সার্ভারে সংযুক্ত করুন";
 "hub.OnboardingWindowController.1471.2059" = "Fleet client ID, token, region এবং মেয়াদ শেষের ঘরগুলো পূরণ করুন।";
-"hub.OnboardingWindowController.1500.2071" = "অ্যাক্সেস টোকেন এবং রিফ্রেশ টোকেন—দুটিই লিখুন।";
 "hub.OnboardingWindowController.1631.2105" = "উৎস অ্যাপ্লিকেশন সার্ভার, SSH ব্যবহারকারী এবং পোর্ট লিখুন।";
 "hub.OnboardingWindowController.168.1852" = "চালিয়ে যান";
 "hub.OnboardingWindowController.1691.2113" = "স্কিমা যাচাই করে উৎস অ্যাপ্লিকেশনের রিলিজ নির্ধারণ করা যায় না। চালু সার্ভারটি 4.4.0 বা পরবর্তী রিলিজে চলছে নিশ্চিত করুন, তারপর চালিয়ে যান।";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "আপনি কীভাবে শুরু করতে চান?";
 "hub.OnboardingWindowController.590.1919" = "Hub কীভাবে সংযুক্ত হবে তা বেছে নিন";
 "hub.OnboardingWindowController.591.1920" = "Fleet Telemetry সেট আপ করুন";
-"hub.OnboardingWindowController.592.1921" = "টোকেন দিয়ে সংযুক্ত করুন";
+"hub.OnboardingWindowController.592.1921" = "Tesla দিয়ে সাইন ইন করুন";
 "hub.OnboardingWindowController.593.1922" = "ইতিহাস ইমপোর্ট করুন…";
 "hub.OnboardingWindowController.594.1923" = "আপনার Hub পরীক্ষা করা হচ্ছে";
 "hub.OnboardingWindowController.595.1924" = "মাইগ্রেশন সম্পন্ন";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Tesla লগইন অবস্থা মেলেনি। আবার লগইন শুরু করুন।";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla অবৈধ অ্যাকাউন্ট issuer ফেরত দিয়েছে।";
 "hub.TeslaAuthWindowController.358.html_progress" = "নিরাপদ Tesla লগইন সম্পন্ন করা হচ্ছে…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla অবৈধ টোকেন প্রতিক্রিয়া ফেরত দিয়েছে।";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla টোকেন বিনিময় ব্যর্থ হয়েছে।";
 "hub.SourceServerImporter.34.2284" = "কোড: %1$@";
 "hub.SourceServerImporter.428.2461" = "উৎস অ্যাপ্লিকেশন সার্ভার অসম্পূর্ণ সেটআপের বিবরণ ফেরত দিয়েছে।";
 "hub.SourceServerImporter.691.2530" = "সার্ভারের বিবরণ পরীক্ষা করুন";

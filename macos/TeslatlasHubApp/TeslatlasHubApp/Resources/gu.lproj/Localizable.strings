@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "સ્રોત એપ્લિકેશન આયાત નિષ્ફળ ગઈ; આયાત ફરી પ્રયાસ કરો.";
 "hub.HubController.2457.838" = "Hub શરૂ કરતા પહેલાં સ્રોત એપ્લિકેશનનું હસ્તાંતરણ પૂર્ણ કરો.";
 "hub.HubController.2479.850" = "Hub ફરી શરૂ કરતા પહેલાં સ્રોત એપ્લિકેશનનું હસ્તાંતરણ પૂર્ણ કરો.";
-"hub.HubController.250.318" = "લેગસી ટોકન";
+"hub.HubController.250.318" = "માલિક સાઇન-ઇન";
 "hub.HubController.2503.863" = "Hub શરૂ કરવાની પ્રક્રિયા પહેલેથી ચાલી રહી છે.";
 "hub.HubController.251.319" = "ફ્લીટ API";
 "hub.HubController.2519.869" = "Hub શરૂ કરતા પહેલાં માઇગ્રેશનની ચકાસણીઓ પૂર્ણ કરો.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "પૂર્વાવલોકન નમૂનો";
 "hub.LogsWindowController.70.1725" = "Hub અને ઍપના સંવેદનશીલ વિગતો છુપાવેલા લૉગ્સની સમીક્ષા કરો.";
 "hub.MainWindowController.1152.1840" = "ફ્લીટ API વાપરો";
-"hub.MainWindowController.1153.1841" = "લેગસી ટોકન વાપરો";
+"hub.MainWindowController.1153.1841" = "માલિક સાઇન-ઇન વાપરો";
 "hub.MainWindowController.1154.1842" = "ઇતિહાસ આયાત કરો…";
 "hub.MainWindowController.1156.1843" = "Teslaનું જોડાણ તોડો…";
 "hub.MainWindowController.1158.1844" = "Tesla ખાતું જોડો…";
 "hub.MainWindowController.1428.1846" = "Teslaનું Hub સાથેનું જોડાણ તોડવું છે?";
-"hub.MainWindowController.1429.1847" = "Hub બંધ થશે અને તેમાં સંગ્રહિત ફ્લીટ તથા લેગસી ઓળખપત્રો દૂર કરશે. એકત્રિત ડેટા આ Mac પર જ રહેશે.";
+"hub.MainWindowController.1429.1847" = "Hub બંધ થશે અને તેમાં સંગ્રહિત ફ્લીટ તથા માલિક સાઇન-ઇનના ઓળખપત્રો દૂર કરશે. એકત્રિત ડેટા આ Mac પર જ રહેશે.";
 "hub.MainWindowController.1431.1849" = "જોડાણ તોડો";
 "hub.MainWindowController.15.1766" = "વાહન";
 "hub.MainWindowController.22.1768" = "Hub બંધ કરો";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "ડેટા આયાત કરો";
 "hub.OnboardingWindowController.1362.2047" = "સર્વર સાથે જોડાઓ";
 "hub.OnboardingWindowController.1471.2059" = "ફ્લીટ ક્લાયન્ટ ID, ટોકન, પ્રદેશ અને સમાપ્તિના ક્ષેત્રો ભરો.";
-"hub.OnboardingWindowController.1500.2071" = "ઍક્સેસ ટોકન અને રિફ્રેશ ટોકન બંને દાખલ કરો.";
 "hub.OnboardingWindowController.1631.2105" = "સ્રોત એપ્લિકેશન સર્વર, SSH વપરાશકર્તા અને પોર્ટ દાખલ કરો.";
 "hub.OnboardingWindowController.168.1852" = "ચાલુ રાખો";
 "hub.OnboardingWindowController.1691.2113" = "સ્કીમા તપાસથી સ્રોત એપ્લિકેશનની આવૃત્તિ જાણી શકાતી નથી. ચાલતું સર્વર આવૃત્તિ 4.4.0 અથવા તેનાથી નવું ચલાવે છે તેની પુષ્ટિ કરો, પછી ચાલુ રાખો.";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "તમે કેવી રીતે શરૂ કરવા માંગો છો?";
 "hub.OnboardingWindowController.590.1919" = "Hub કેવી રીતે જોડાય તે પસંદ કરો";
 "hub.OnboardingWindowController.591.1920" = "ફ્લીટ Telemetry સેટ અપ કરો";
-"hub.OnboardingWindowController.592.1921" = "ટોકન વડે જોડાઓ";
+"hub.OnboardingWindowController.592.1921" = "Tesla સાથે સાઇન ઇન કરો";
 "hub.OnboardingWindowController.593.1922" = "ઇતિહાસ આયાત કરો…";
 "hub.OnboardingWindowController.594.1923" = "તમારા Hubની તપાસ થઈ રહી છે";
 "hub.OnboardingWindowController.595.1924" = "સ્થળાંતર પૂર્ણ થયું";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Tesla લૉગિનની સ્થિતિ મેળ ખાતી નથી. લૉગિન ફરી શરૂ કરો.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla તરફથી ખાતાનો અમાન્ય જારીકર્તા મળ્યો.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Teslaનું સુરક્ષિત લૉગિન પૂર્ણ થઈ રહ્યું છે…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla તરફથી ટોકનનો અમાન્ય પ્રતિસાદ મળ્યો.";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla ટોકન વિનિમય નિષ્ફળ ગયું.";
 "hub.SourceServerImporter.34.2284" = "કોડ: %1$@";
 "hub.SourceServerImporter.428.2461" = "સ્રોત એપ્લિકેશન સર્વર તરફથી સેટઅપની અપૂરતી વિગતો મળી.";
 "hub.SourceServerImporter.691.2530" = "સર્વરની વિગતો તપાસો";

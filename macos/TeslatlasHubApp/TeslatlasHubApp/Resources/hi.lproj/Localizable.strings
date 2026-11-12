@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "स्रोत अनुप्रयोग इंपोर्ट विफल हुआ; इंपोर्ट फिर से चलाएँ।";
 "hub.HubController.2457.838" = "Hub शुरू करने से पहले स्रोत अनुप्रयोग हैंडओवर पूरा करें।";
 "hub.HubController.2479.850" = "Hub फिर से शुरू करने से पहले स्रोत अनुप्रयोग हैंडओवर पूरा करें।";
-"hub.HubController.250.318" = "Legacy टोकन";
+"hub.HubController.250.318" = "मालिक साइन-इन";
 "hub.HubController.2503.863" = "Hub शुरू होने की प्रक्रिया पहले से चल रही है।";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Hub शुरू करने से पहले माइग्रेशन जाँचें पूरी करें।";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "पूर्वावलोकन नमूना";
 "hub.LogsWindowController.70.1725" = "संवेदनशील जानकारी हटाए गए Hub और ऐप लॉग की समीक्षा करें।";
 "hub.MainWindowController.1152.1840" = "Fleet API इस्तेमाल करें";
-"hub.MainWindowController.1153.1841" = "Legacy टोकन इस्तेमाल करें";
+"hub.MainWindowController.1153.1841" = "मालिक साइन-इन इस्तेमाल करें";
 "hub.MainWindowController.1154.1842" = "इतिहास इंपोर्ट करें…";
 "hub.MainWindowController.1156.1843" = "Tesla डिस्कनेक्ट करें…";
 "hub.MainWindowController.1158.1844" = "Tesla खाता कनेक्ट करें…";
 "hub.MainWindowController.1428.1846" = "Hub से Tesla डिस्कनेक्ट करें?";
-"hub.MainWindowController.1429.1847" = "Hub रुक जाएगा और सहेजे गए Fleet और Legacy क्रेडेंशियल हटा देगा। आपका एकत्र किया गया डेटा इसी Mac पर रहेगा।";
+"hub.MainWindowController.1429.1847" = "Hub रुक जाएगा और सहेजे गए Fleet और मालिक साइन-इन के क्रेडेंशियल हटा देगा। आपका एकत्र किया गया डेटा इसी Mac पर रहेगा।";
 "hub.MainWindowController.1431.1849" = "डिस्कनेक्ट करें";
 "hub.MainWindowController.15.1766" = "वाहन";
 "hub.MainWindowController.22.1768" = "Hub रोकें";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "डेटा इंपोर्ट करें";
 "hub.OnboardingWindowController.1362.2047" = "सर्वर से कनेक्ट करें";
 "hub.OnboardingWindowController.1471.2059" = "Fleet क्लाइंट ID, टोकन, क्षेत्र और समाप्ति फ़ील्ड भरें।";
-"hub.OnboardingWindowController.1500.2071" = "एक्सेस टोकन और रीफ़्रेश टोकन दोनों दर्ज करें।";
 "hub.OnboardingWindowController.1631.2105" = "स्रोत अनुप्रयोग सर्वर, SSH उपयोगकर्ता और पोर्ट दर्ज करें।";
 "hub.OnboardingWindowController.168.1852" = "जारी रखें";
 "hub.OnboardingWindowController.1691.2113" = "स्कीमा जाँच से स्रोत ऐप्लिकेशन की रिलीज़ का पता नहीं चलता। पुष्टि करें कि चल रहा सर्वर रिलीज़ 4.4.0 या उसके बाद का चला रहा है, फिर जारी रखें।";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "आप कैसे शुरू करना चाहेंगे?";
 "hub.OnboardingWindowController.590.1919" = "चुनें कि Hub कैसे कनेक्ट हो";
 "hub.OnboardingWindowController.591.1920" = "Fleet Telemetry सेट अप करें";
-"hub.OnboardingWindowController.592.1921" = "टोकन से कनेक्ट करें";
+"hub.OnboardingWindowController.592.1921" = "Tesla में साइन इन करें";
 "hub.OnboardingWindowController.593.1922" = "इतिहास इंपोर्ट करें…";
 "hub.OnboardingWindowController.594.1923" = "आपका Hub जाँचा जा रहा है";
 "hub.OnboardingWindowController.595.1924" = "माइग्रेशन पूरा हुआ";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Tesla लॉगिन स्थिति मेल नहीं खाई। लॉगिन फिर से शुरू करें।";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla ने खाते के लिए अमान्य issuer लौटाया।";
 "hub.TeslaAuthWindowController.358.html_progress" = "सुरक्षित Tesla लॉगिन पूरा हो रहा है…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla ने अमान्य टोकन प्रतिक्रिया लौटाई।";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla टोकन एक्सचेंज विफल हुआ।";
 "hub.SourceServerImporter.34.2284" = "कोड: %1$@";
 "hub.SourceServerImporter.428.2461" = "स्रोत अनुप्रयोग सर्वर ने सेटअप की अधूरी जानकारी लौटाई।";
 "hub.SourceServerImporter.691.2530" = "सर्वर विवरण जाँचें";

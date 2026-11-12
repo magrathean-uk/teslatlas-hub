@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "원본 애플리케이션 가져오기에 실패했습니다. 가져오기를 다시 시도하세요.";
 "hub.HubController.2457.838" = "Hub를 시작하기 전에 원본 애플리케이션 인계 절차를 완료하세요.";
 "hub.HubController.2479.850" = "Hub를 다시 시작하기 전에 원본 애플리케이션 인계 절차를 완료하세요.";
-"hub.HubController.250.318" = "레거시 토큰";
+"hub.HubController.250.318" = "소유자 로그인";
 "hub.HubController.2503.863" = "Hub 시작이 이미 진행 중입니다.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Hub를 시작하기 전에 마이그레이션 점검을 완료하세요.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "미리보기 예시 데이터";
 "hub.LogsWindowController.70.1725" = "가림 처리된 Hub 및 앱 로그를 검토하세요.";
 "hub.MainWindowController.1152.1840" = "Fleet API 사용";
-"hub.MainWindowController.1153.1841" = "레거시 토큰 사용";
+"hub.MainWindowController.1153.1841" = "소유자 로그인 사용";
 "hub.MainWindowController.1154.1842" = "기록 가져오기…";
 "hub.MainWindowController.1156.1843" = "Tesla 연결 해제…";
 "hub.MainWindowController.1158.1844" = "Tesla 계정 연결…";
 "hub.MainWindowController.1428.1846" = "Hub에서 Tesla 연결을 해제할까요?";
-"hub.MainWindowController.1429.1847" = "Hub가 중지되고 저장된 Fleet 및 레거시 자격 증명이 제거됩니다. 수집한 데이터는 이 Mac에 그대로 남습니다.";
+"hub.MainWindowController.1429.1847" = "Hub가 중지되고 저장된 Fleet 및 소유자 로그인 자격 증명이 제거됩니다. 수집한 데이터는 이 Mac에 그대로 남습니다.";
 "hub.MainWindowController.1431.1849" = "연결 해제";
 "hub.MainWindowController.15.1766" = "차량";
 "hub.MainWindowController.22.1768" = "Hub 중지";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "데이터 가져오기";
 "hub.OnboardingWindowController.1362.2047" = "서버에 연결";
 "hub.OnboardingWindowController.1471.2059" = "Fleet 클라이언트 ID, 토큰, 리전 및 만료일을 모두 입력하세요.";
-"hub.OnboardingWindowController.1500.2071" = "액세스 토큰과 새로 고침 토큰을 모두 입력하세요.";
 "hub.OnboardingWindowController.1631.2105" = "원본 애플리케이션 서버, SSH 사용자 및 포트를 입력하세요.";
 "hub.OnboardingWindowController.168.1852" = "계속";
 "hub.OnboardingWindowController.1691.2113" = "스키마 검사만으로는 원본 애플리케이션의 릴리스를 확인할 수 없습니다. 실행 중인 서버가 릴리스 4.4.0 이상인지 확인한 뒤 계속하세요.";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "어떻게 시작하시겠습니까?";
 "hub.OnboardingWindowController.590.1919" = "Hub의 연결 방식을 선택하세요";
 "hub.OnboardingWindowController.591.1920" = "Fleet Telemetry 설정";
-"hub.OnboardingWindowController.592.1921" = "토큰으로 연결";
+"hub.OnboardingWindowController.592.1921" = "Tesla로 로그인";
 "hub.OnboardingWindowController.593.1922" = "기록 가져오기…";
 "hub.OnboardingWindowController.594.1923" = "Hub 확인 중";
 "hub.OnboardingWindowController.595.1924" = "마이그레이션 완료";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Tesla 로그인 상태가 일치하지 않습니다. 다시 로그인을 시작하세요.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla가 유효하지 않은 계정 발급자를 반환했습니다.";
 "hub.TeslaAuthWindowController.358.html_progress" = "보안 Tesla 로그인 마무리 중…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla가 유효하지 않은 토큰 응답을 반환했습니다.";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla 토큰 교환에 실패했습니다.";
 "hub.SourceServerImporter.34.2284" = "코드: %1$@";
 "hub.SourceServerImporter.428.2461" = "원본 애플리케이션 서버에서 불완전한 설정 정보를 반환했습니다.";
 "hub.SourceServerImporter.691.2530" = "서버 정보 확인";

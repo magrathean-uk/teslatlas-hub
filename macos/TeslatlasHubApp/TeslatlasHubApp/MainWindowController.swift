@@ -1249,7 +1249,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let menu = NSMenu(title: HubL10n.text("hub.HubController.1162.479", fallback: "Tesla account"))
         if lastPresentedSnapshot.accountState == .connected {
             menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1152.1840", fallback: "Use Fleet API"), action: #selector(useFleetPressed)))
-            menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1153.1841", fallback: "Use Legacy token"), action: #selector(useLegacyPressed)))
+            menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1153.1841", fallback: "Use owner sign-in"), action: #selector(useLegacyPressed)))
             menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1154.1842", fallback: "Import History…"), action: #selector(importHistoryPressed)))
             menu.addItem(.separator())
             menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1156.1843", fallback: "Disconnect Tesla…"), action: #selector(disconnectTeslaPressed)))
@@ -1530,7 +1530,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = HubL10n.text("hub.MainWindowController.1428.1846", fallback: "Disconnect Tesla from Hub?")
-        alert.informativeText = HubL10n.text("hub.MainWindowController.1429.1847", fallback: "Hub will stop and remove its stored Fleet and Legacy credentials. Your collected data stays on this Mac.")
+        alert.informativeText = HubL10n.text("hub.MainWindowController.1429.1847", fallback: "Hub will stop and remove its stored Fleet and owner sign-in credentials. Your collected data stays on this Mac.")
         alert.addButton(withTitle: HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"))
         alert.addButton(withTitle: HubL10n.text("hub.MainWindowController.1431.1849", fallback: "Disconnect"))
         alert.buttons[0].keyEquivalent = "\r"

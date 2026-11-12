@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "De bronapplicatie-import is mislukt. Probeer de import opnieuw.";
 "hub.HubController.2457.838" = "Rond de bronapplicatie-overdracht af voordat je de Hub start.";
 "hub.HubController.2479.850" = "Rond de bronapplicatie-overdracht af voordat je de Hub opnieuw start.";
-"hub.HubController.250.318" = "Legacy-token";
+"hub.HubController.250.318" = "Aanmelden als eigenaar";
 "hub.HubController.2503.863" = "De Hub wordt al gestart.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Rond de migratiecontroles af voordat je de Hub start.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Voorbeeldlogboek";
 "hub.LogsWindowController.70.1725" = "Controleer de afgeschermde logboeken van de Hub en de app.";
 "hub.MainWindowController.1152.1840" = "Fleet API gebruiken";
-"hub.MainWindowController.1153.1841" = "Legacy-token gebruiken";
+"hub.MainWindowController.1153.1841" = "Aanmelden als eigenaar gebruiken";
 "hub.MainWindowController.1154.1842" = "Geschiedenis importeren…";
 "hub.MainWindowController.1156.1843" = "Verbinding met Tesla verbreken…";
 "hub.MainWindowController.1158.1844" = "Tesla-account verbinden…";
 "hub.MainWindowController.1428.1846" = "Verbinding met Tesla verbreken in de Hub?";
-"hub.MainWindowController.1429.1847" = "De Hub wordt gestopt en verwijdert de opgeslagen Fleet- en Legacy-toegangsgegevens. Je verzamelde gegevens blijven op deze Mac.";
+"hub.MainWindowController.1429.1847" = "De Hub wordt gestopt en verwijdert de opgeslagen toegangsgegevens voor Fleet en voor het aanmelden als eigenaar. Je verzamelde gegevens blijven op deze Mac.";
 "hub.MainWindowController.1431.1849" = "Verbinding verbreken";
 "hub.MainWindowController.15.1766" = "Voertuig";
 "hub.MainWindowController.22.1768" = "Hub stoppen";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Gegevens importeren";
 "hub.OnboardingWindowController.1362.2047" = "Verbinding maken met de server";
 "hub.OnboardingWindowController.1471.2059" = "Vul de velden voor Fleet-client-ID, token, regio en vervaldatum in.";
-"hub.OnboardingWindowController.1500.2071" = "Voer zowel het toegangstoken als het vernieuwingstoken in.";
 "hub.OnboardingWindowController.1631.2105" = "Voer de bronapplicatie-server, SSH-gebruiker en poort in.";
 "hub.OnboardingWindowController.168.1852" = "Doorgaan";
 "hub.OnboardingWindowController.1691.2113" = "Een schemacontrole kan niet vaststellen welke versie van de bronapplicatie wordt gebruikt. Bevestig dat de actieve server versie 4.4.0 of nieuwer gebruikt en ga daarna verder.";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "Hoe wil je beginnen?";
 "hub.OnboardingWindowController.590.1919" = "Kies hoe de Hub verbinding maakt";
 "hub.OnboardingWindowController.591.1920" = "Fleet Telemetry instellen";
-"hub.OnboardingWindowController.592.1921" = "Verbinden met een token";
+"hub.OnboardingWindowController.592.1921" = "Aanmelden bij Tesla";
 "hub.OnboardingWindowController.593.1922" = "Geschiedenis importeren…";
 "hub.OnboardingWindowController.594.1923" = "Je Hub controleren";
 "hub.OnboardingWindowController.595.1924" = "Migratie voltooid";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "De Tesla-aanmeldstatus komt niet overeen. Start het aanmelden opnieuw.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla heeft een ongeldige URL van de accountuitgever teruggestuurd.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Beveiligd aanmelden bij Tesla wordt afgerond…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla heeft een ongeldig tokenantwoord teruggestuurd.";
-"hub.TeslaAuthWindowController.37.2242" = "Tokenuitwisseling met Tesla mislukt.";
 "hub.SourceServerImporter.34.2284" = "Code: %1$@";
 "hub.SourceServerImporter.428.2461" = "De bronapplicatie-server heeft onvolledige installatiegegevens teruggestuurd.";
 "hub.SourceServerImporter.691.2530" = "Controleer de servergegevens";

@@ -241,7 +241,7 @@ enum HubAccountProvider: String, Equatable {
 
     var displayName: String {
         switch self {
-        case .legacy: return HubL10n.text("hub.HubController.250.318", fallback: "Legacy token")
+        case .legacy: return HubL10n.text("hub.HubController.250.318", fallback: "Owner sign-in")
         case .fleet: return HubL10n.text("hub.HubController.251.319", fallback: "Fleet API")
         }
     }

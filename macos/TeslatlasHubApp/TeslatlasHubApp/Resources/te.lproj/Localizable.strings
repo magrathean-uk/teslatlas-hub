@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "మూల అనువర్తనం దిగుమతి విఫలమైంది; దిగుమతిని మళ్లీ ప్రయత్నించండి.";
 "hub.HubController.2457.838" = "Hubను ప్రారంభించే ముందు మూల అనువర్తనం హ్యాండోవర్‌ను పూర్తి చేయండి.";
 "hub.HubController.2479.850" = "Hubను పునఃప్రారంభించే ముందు మూల అనువర్తనం హ్యాండోవర్‌ను పూర్తి చేయండి.";
-"hub.HubController.250.318" = "లెగసీ టోకెన్";
+"hub.HubController.250.318" = "యజమాని సైన్ ఇన్";
 "hub.HubController.2503.863" = "Hub ప్రారంభం ఇప్పటికే జరుగుతోంది.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Hubను ప్రారంభించే ముందు మైగ్రేషన్ తనిఖీలను పూర్తి చేయండి.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "స్థిర పరీక్షా డేటా ప్రివ్యూ";
 "hub.LogsWindowController.70.1725" = "గోప్య వివరాలు తొలగించిన Hub, యాప్ లాగ్‌లను పరిశీలించండి.";
 "hub.MainWindowController.1152.1840" = "Fleet API ఉపయోగించండి";
-"hub.MainWindowController.1153.1841" = "లెగసీ టోకెన్ ఉపయోగించండి";
+"hub.MainWindowController.1153.1841" = "యజమాని సైన్ ఇన్ ఉపయోగించండి";
 "hub.MainWindowController.1154.1842" = "చరిత్రను దిగుమతి చేయండి…";
 "hub.MainWindowController.1156.1843" = "Teslaను డిస్‌కనెక్ట్ చేయండి…";
 "hub.MainWindowController.1158.1844" = "Tesla ఖాతాను కనెక్ట్ చేయండి…";
 "hub.MainWindowController.1428.1846" = "Teslaను Hub నుంచి డిస్‌కనెక్ట్ చేయాలా?";
-"hub.MainWindowController.1429.1847" = "Hub ఆగి, నిల్వ చేసిన Fleet, లెగసీ ప్రవేశ వివరాలను తొలగిస్తుంది. మీరు సేకరించిన డేటా ఈ Macలోనే ఉంటుంది.";
+"hub.MainWindowController.1429.1847" = "Hub ఆగి, నిల్వ చేసిన Fleet, యజమాని సైన్ ఇన్ ప్రవేశ వివరాలను తొలగిస్తుంది. మీరు సేకరించిన డేటా ఈ Macలోనే ఉంటుంది.";
 "hub.MainWindowController.1431.1849" = "డిస్‌కనెక్ట్ చేయండి";
 "hub.MainWindowController.15.1766" = "వాహనం";
 "hub.MainWindowController.22.1768" = "Hubను ఆపండి";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "డేటాను దిగుమతి చేయండి";
 "hub.OnboardingWindowController.1362.2047" = "సర్వర్‌కు కనెక్ట్ చేయండి";
 "hub.OnboardingWindowController.1471.2059" = "Fleet క్లయింట్ ID, టోకెన్, ప్రాంతం, గడువు ఫీల్డ్‌లన్నీ పూరించండి.";
-"hub.OnboardingWindowController.1500.2071" = "యాక్సెస్ టోకెన్, రిఫ్రెష్ టోకెన్ రెండింటినీ నమోదు చేయండి.";
 "hub.OnboardingWindowController.1631.2105" = "మూల అనువర్తనం సర్వర్, SSH వినియోగదారు, పోర్ట్ నమోదు చేయండి.";
 "hub.OnboardingWindowController.168.1852" = "కొనసాగించండి";
 "hub.OnboardingWindowController.1691.2113" = "స్కీమా తనిఖీ ద్వారా మూల అనువర్తనం విడుదలను నిర్ధారించలేరు. నడుస్తున్న సర్వర్ 4.4.0 లేదా ఆ తర్వాతి విడుదలను ఉపయోగిస్తోందని నిర్ధారించి, ఆపై కొనసాగించండి.";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "ఎలా ప్రారంభించాలనుకుంటున్నారు?";
 "hub.OnboardingWindowController.590.1919" = "Hub ఎలా కనెక్ట్ కావాలో ఎంచుకోండి";
 "hub.OnboardingWindowController.591.1920" = "Fleet Telemetryను సెటప్ చేయండి";
-"hub.OnboardingWindowController.592.1921" = "టోకెన్‌తో కనెక్ట్ చేయండి";
+"hub.OnboardingWindowController.592.1921" = "Teslaతో సైన్ ఇన్ చేయండి";
 "hub.OnboardingWindowController.593.1922" = "చరిత్రను దిగుమతి చేయండి…";
 "hub.OnboardingWindowController.594.1923" = "మీ Hubను తనిఖీ చేస్తోంది";
 "hub.OnboardingWindowController.595.1924" = "మైగ్రేషన్ పూర్తయింది";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Tesla లాగిన్ స్థితి సరిపోలలేదు. లాగిన్‌ను మళ్లీ ప్రారంభించండి.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla చెల్లని ఖాతా జారీదారును తిరిగి ఇచ్చింది.";
 "hub.TeslaAuthWindowController.358.html_progress" = "సురక్షిత Tesla లాగిన్ పూర్తవుతోంది…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla చెల్లని టోకెన్ ప్రతిస్పందన ఇచ్చింది.";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla టోకెన్ మార్పిడి విఫలమైంది.";
 "hub.SourceServerImporter.34.2284" = "కోడ్: %1$@";
 "hub.SourceServerImporter.428.2461" = "మూల అనువర్తనం సర్వర్ అసంపూర్ణ సెటప్ వివరాలు ఇచ్చింది.";
 "hub.SourceServerImporter.691.2530" = "సర్వర్ వివరాలను తనిఖీ చేయండి";

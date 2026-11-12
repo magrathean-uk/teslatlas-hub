@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "L’importation de l’application source a échoué; relance-la.";
 "hub.HubController.2457.838" = "Termine le transfert depuis l’application source avant de démarrer le Hub.";
 "hub.HubController.2479.850" = "Termine le transfert depuis l’application source avant de redémarrer le Hub.";
-"hub.HubController.250.318" = "Jeton historique";
+"hub.HubController.250.318" = "Connexion propriétaire";
 "hub.HubController.2503.863" = "Le démarrage du Hub est déjà en cours.";
 "hub.HubController.251.319" = "API Tesla Fleet";
 "hub.HubController.2519.869" = "Termine les vérifications de migration avant de démarrer le Hub.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Données d’exemple (aperçu)";
 "hub.LogsWindowController.70.1725" = "Examine les journaux expurgés du Hub et de l’application.";
 "hub.MainWindowController.1152.1840" = "Utiliser l’API Tesla Fleet";
-"hub.MainWindowController.1153.1841" = "Utiliser le jeton historique";
+"hub.MainWindowController.1153.1841" = "Utiliser la connexion propriétaire";
 "hub.MainWindowController.1154.1842" = "Migrer depuis l’application source…";
 "hub.MainWindowController.1156.1843" = "Déconnecter Tesla…";
 "hub.MainWindowController.1158.1844" = "Connecter un compte Tesla…";
 "hub.MainWindowController.1428.1846" = "Déconnecter Tesla du Hub ?";
-"hub.MainWindowController.1429.1847" = "Le Hub s’arrêtera et supprimera les identifiants Fleet et les jetons historiques enregistrés. Les données collectées resteront sur ce Mac.";
+"hub.MainWindowController.1429.1847" = "Le Hub s’arrêtera et supprimera les identifiants Fleet et ceux de la connexion propriétaire enregistrés. Les données collectées resteront sur ce Mac.";
 "hub.MainWindowController.1431.1849" = "Déconnecter";
 "hub.MainWindowController.15.1766" = "Véhicule";
 "hub.MainWindowController.22.1768" = "Arrêter le Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Importer les données";
 "hub.OnboardingWindowController.1362.2047" = "Se connecter au serveur";
 "hub.OnboardingWindowController.1471.2059" = "Remplis les champs de l’identifiant client Fleet, du jeton, de la région et de l’expiration.";
-"hub.OnboardingWindowController.1500.2071" = "Saisis le jeton d’accès et le jeton d’actualisation.";
 "hub.OnboardingWindowController.1631.2105" = "Saisis le serveur de l’application source, l’utilisateur SSH et le port.";
 "hub.OnboardingWindowController.168.1852" = "Continuer";
 "hub.OnboardingWindowController.1691.2113" = "La vérification du schéma ne permet pas de déterminer la version de l’application source. Confirme que le serveur en cours d’exécution utilise la version 4.4.0 ou ultérieure, puis continue.";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "Comment veux-tu commencer ?";
 "hub.OnboardingWindowController.590.1919" = "Choisis comment le Hub se connecte";
 "hub.OnboardingWindowController.591.1920" = "Configurer Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Se connecter avec un jeton";
+"hub.OnboardingWindowController.592.1921" = "Se connecter avec Tesla";
 "hub.OnboardingWindowController.593.1922" = "Migrer depuis l’application source";
 "hub.OnboardingWindowController.594.1923" = "Vérification du Hub";
 "hub.OnboardingWindowController.595.1924" = "Migration terminée";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "L’état de connexion Tesla ne correspond pas. Recommence la connexion.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla a renvoyé un émetteur de compte invalide.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Connexion sécurisée à Tesla en cours…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla a renvoyé une réponse de jeton invalide.";
-"hub.TeslaAuthWindowController.37.2242" = "L’échange du jeton Tesla a échoué.";
 "hub.SourceServerImporter.34.2284" = "Code : %1$@";
 "hub.SourceServerImporter.428.2461" = "Le serveur de l’application source a renvoyé des renseignements de configuration incomplets.";
 "hub.SourceServerImporter.691.2530" = "Vérifie les renseignements du serveur";

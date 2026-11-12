@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "來源應用程式匯入失敗；請再試一次。";
 "hub.HubController.2457.838" = "啟動 Hub 前，請先完成來源應用程式交接。";
 "hub.HubController.2479.850" = "重新啟動 Hub 前，請先完成來源應用程式交接。";
-"hub.HubController.250.318" = "舊版權杖";
+"hub.HubController.250.318" = "車主登入";
 "hub.HubController.2503.863" = "Hub 啟動作業已在進行中。";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "啟動 Hub 前，請先完成遷移檢查。";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "預覽範例資料";
 "hub.LogsWindowController.70.1725" = "檢視已遮蔽敏感資訊的 Hub 與 App 記錄。";
 "hub.MainWindowController.1152.1840" = "使用 Fleet API";
-"hub.MainWindowController.1153.1841" = "使用舊版權杖";
+"hub.MainWindowController.1153.1841" = "使用車主登入";
 "hub.MainWindowController.1154.1842" = "匯入歷史記錄…";
 "hub.MainWindowController.1156.1843" = "中斷 Tesla 連線…";
 "hub.MainWindowController.1158.1844" = "連線 Tesla 帳號…";
 "hub.MainWindowController.1428.1846" = "要中斷 Tesla 與 Hub 的連線嗎？";
-"hub.MainWindowController.1429.1847" = "Hub 將停止並移除已儲存的 Fleet 與舊版權杖認證資料。你收集的資料會保留在此 Mac 上。";
+"hub.MainWindowController.1429.1847" = "Hub 將停止並移除已儲存的 Fleet 與車主登入認證資料。你收集的資料會保留在此 Mac 上。";
 "hub.MainWindowController.1431.1849" = "中斷連線";
 "hub.MainWindowController.15.1766" = "車輛";
 "hub.MainWindowController.22.1768" = "停止 Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "匯入資料";
 "hub.OnboardingWindowController.1362.2047" = "連線至伺服器";
 "hub.OnboardingWindowController.1471.2059" = "請填妥 Fleet 用戶端 ID、權杖、區域和到期時間欄位。";
-"hub.OnboardingWindowController.1500.2071" = "請同時輸入存取權杖和更新權杖。";
 "hub.OnboardingWindowController.1631.2105" = "請輸入來源應用程式伺服器、SSH 使用者和連接埠。";
 "hub.OnboardingWindowController.168.1852" = "繼續";
 "hub.OnboardingWindowController.1691.2113" = "結構描述檢查無法確定來源應用程式的版本。請確認執行中的伺服器為 4.4.0 或更新版本，再繼續。";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "您想如何開始？";
 "hub.OnboardingWindowController.590.1919" = "選擇 Hub 的連線方式";
 "hub.OnboardingWindowController.591.1920" = "設定 Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "使用權杖連線";
+"hub.OnboardingWindowController.592.1921" = "使用 Tesla 登入";
 "hub.OnboardingWindowController.593.1922" = "匯入歷史記錄…";
 "hub.OnboardingWindowController.594.1923" = "正在檢查 Hub";
 "hub.OnboardingWindowController.595.1924" = "遷移完成";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Tesla 登入狀態不符。請重新開始登入。";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla 傳回的帳戶發行者無效。";
 "hub.TeslaAuthWindowController.358.html_progress" = "正在完成安全的 Tesla 登入…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla 傳回的權杖回應無效。";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla 權杖交換失敗。";
 "hub.SourceServerImporter.34.2284" = "代碼：%1$@";
 "hub.SourceServerImporter.428.2461" = "來源應用程式伺服器傳回的設定詳細資料不完整。";
 "hub.SourceServerImporter.691.2530" = "檢查伺服器詳細資料";

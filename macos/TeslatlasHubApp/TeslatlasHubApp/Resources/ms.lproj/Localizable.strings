@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Import aplikasi sumber gagal; cuba import semula.";
 "hub.HubController.2457.838" = "Selesaikan serahan aplikasi sumber sebelum memulakan Hub.";
 "hub.HubController.2479.850" = "Selesaikan serahan aplikasi sumber sebelum memulakan semula Hub.";
-"hub.HubController.250.318" = "Token legasi";
+"hub.HubController.250.318" = "Log masuk pemilik";
 "hub.HubController.2503.863" = "Permulaan Hub sedang berlangsung.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Selesaikan semakan migrasi sebelum memulakan Hub.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Data contoh pratonton";
 "hub.LogsWindowController.70.1725" = "Semak log Hub dan aplikasi yang telah disamarkan.";
 "hub.MainWindowController.1152.1840" = "Gunakan Fleet API";
-"hub.MainWindowController.1153.1841" = "Gunakan token legasi";
+"hub.MainWindowController.1153.1841" = "Gunakan log masuk pemilik";
 "hub.MainWindowController.1154.1842" = "Import sejarah…";
 "hub.MainWindowController.1156.1843" = "Putuskan sambungan Tesla…";
 "hub.MainWindowController.1158.1844" = "Sambungkan Akaun Tesla…";
 "hub.MainWindowController.1428.1846" = "Putuskan sambungan Tesla daripada Hub?";
-"hub.MainWindowController.1429.1847" = "Hub akan dihentikan dan kredensial Fleet serta Legasi yang disimpannya akan dibuang. Data yang telah dikumpulkan kekal pada Mac ini.";
+"hub.MainWindowController.1429.1847" = "Hub akan dihentikan dan kredensial Fleet serta log masuk pemilik yang disimpannya akan dibuang. Data yang telah dikumpulkan kekal pada Mac ini.";
 "hub.MainWindowController.1431.1849" = "Putuskan Sambungan";
 "hub.MainWindowController.15.1766" = "Kenderaan";
 "hub.MainWindowController.22.1768" = "Hentikan Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Import Data";
 "hub.OnboardingWindowController.1362.2047" = "Sambung ke Pelayan";
 "hub.OnboardingWindowController.1471.2059" = "Lengkapkan medan ID klien Fleet, token, rantau dan tarikh luput.";
-"hub.OnboardingWindowController.1500.2071" = "Masukkan token akses dan token muat semula.";
 "hub.OnboardingWindowController.1631.2105" = "Masukkan pelayan aplikasi sumber, pengguna SSH dan port.";
 "hub.OnboardingWindowController.168.1852" = "Teruskan";
 "hub.OnboardingWindowController.1691.2113" = "Semakan skema tidak dapat menentukan keluaran aplikasi sumber. Sahkan bahawa pelayan yang sedang berjalan menggunakan keluaran 4.4.0 atau lebih baharu, kemudian teruskan.";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "Bagaimanakah anda mahu bermula?";
 "hub.OnboardingWindowController.590.1919" = "Pilih cara Hub bersambung";
 "hub.OnboardingWindowController.591.1920" = "Sediakan Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Sambung dengan token";
+"hub.OnboardingWindowController.592.1921" = "Log masuk dengan Tesla";
 "hub.OnboardingWindowController.593.1922" = "Import sejarah…";
 "hub.OnboardingWindowController.594.1923" = "Menyemak Hub anda";
 "hub.OnboardingWindowController.595.1924" = "Migrasi selesai";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Nilai state log masuk Tesla tidak sepadan. Mulakan log masuk sekali lagi.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla memulangkan issuer akaun yang tidak sah.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Menyelesaikan log masuk Tesla yang selamat…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla memulangkan respons token yang tidak sah.";
-"hub.TeslaAuthWindowController.37.2242" = "Pertukaran token Tesla gagal.";
 "hub.SourceServerImporter.34.2284" = "Kod: %1$@";
 "hub.SourceServerImporter.428.2461" = "Pelayan aplikasi sumber memulangkan butiran persediaan yang tidak lengkap.";
 "hub.SourceServerImporter.691.2530" = "Semak butiran pelayan";

@@ -686,7 +686,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         onboarding.navigate(to: .legacy)
         XCTAssertEqual(onboarding.currentRoute, .legacy)
         XCTAssertTrue(labels(in: onboarding.window?.contentView)
-            .contains { $0.stringValue == "Connect with a token" })
+            .contains { $0.stringValue == "Sign in with Tesla" })
 
         onboarding.navigate(to: .migration)
         XCTAssertEqual(onboarding.currentRoute, .migration)

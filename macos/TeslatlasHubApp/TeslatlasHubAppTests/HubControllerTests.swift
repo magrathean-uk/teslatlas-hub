@@ -1214,7 +1214,7 @@ final class HubControllerTests: XCTestCase {
         var snapshot = HubSnapshot.previewRunning
         snapshot.provider = .legacy
         XCTAssertEqual(snapshot.account, "Connected")
-        XCTAssertEqual(snapshot.accountDisplay, "Connected · Legacy token")
+        XCTAssertEqual(snapshot.accountDisplay, "Connected · Owner sign-in")
 
         snapshot.account = "Not configured"
         snapshot.accountState = .notConfigured
@@ -1313,7 +1313,7 @@ final class HubControllerTests: XCTestCase {
             XCTAssertTrue(error.localizedDescription.contains("status was refreshed"))
             XCTAssertEqual(controller.snapshot.account, "Connected")
             XCTAssertEqual(controller.snapshot.provider, .legacy)
-            XCTAssertEqual(controller.snapshot.accountDisplay, "Connected · Legacy token")
+            XCTAssertEqual(controller.snapshot.accountDisplay, "Connected · Owner sign-in")
             finished.fulfill()
         }
 
@@ -1536,7 +1536,7 @@ final class HubControllerTests: XCTestCase {
         let visibleText = labels(in: dashboard.window?.contentView).map(\.stringValue)
         XCTAssertTrue(visibleText.contains("Starting Hub…"))
         XCTAssertFalse(visibleText.contains("Attention needed"))
-        XCTAssertFalse(visibleText.contains("Connected · Legacy token"))
+        XCTAssertFalse(visibleText.contains("Connected · Owner sign-in"))
         XCTAssertFalse(visibleText.contains("Healthy · 1 MB"))
     }
 
@@ -1697,7 +1697,7 @@ final class HubControllerTests: XCTestCase {
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
                 .contains { $0.stringValue == "Vehicle commands require Tesla Fleet API." })
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
-                .contains { $0.stringValue == "Connected · Legacy token" })
+                .contains { $0.stringValue == "Connected · Owner sign-in" })
             settled.fulfill()
         }
 

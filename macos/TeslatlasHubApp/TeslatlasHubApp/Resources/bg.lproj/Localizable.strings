@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Импортирането от изходното приложение беше неуспешно; опитай отново.";
 "hub.HubController.2457.838" = "Завърши предаването при миграцията на изходното приложение, преди да стартираш Hub.";
 "hub.HubController.2479.850" = "Завърши предаването при миграцията на изходното приложение, преди да рестартираш Hub.";
-"hub.HubController.250.318" = "Наследен токен";
+"hub.HubController.250.318" = "Вход на собственика";
 "hub.HubController.2503.863" = "Стартирането на Hub вече тече.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Завърши проверките за миграцията, преди да стартираш Hub.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Преглед на примерните журнали";
 "hub.LogsWindowController.70.1725" = "Прегледай журналите на Hub и приложението със заличени данни.";
 "hub.MainWindowController.1152.1840" = "Използвай Fleet API";
-"hub.MainWindowController.1153.1841" = "Използвай наследен токен";
+"hub.MainWindowController.1153.1841" = "Използвай вход на собственика";
 "hub.MainWindowController.1154.1842" = "Импортиране на история…";
 "hub.MainWindowController.1156.1843" = "Прекъсни връзката с Tesla…";
 "hub.MainWindowController.1158.1844" = "Свържи акаунт в Tesla…";
 "hub.MainWindowController.1428.1846" = "Да се прекъсне ли връзката с Tesla в Hub?";
-"hub.MainWindowController.1429.1847" = "Hub ще бъде спрян и ще премахне запазените данни за достъп до Fleet API и Legacy. Събраните данни ще останат на този Mac.";
+"hub.MainWindowController.1429.1847" = "Hub ще бъде спрян и ще премахне запазените данни за достъп за Fleet и за входа на собственика. Събраните данни ще останат на този Mac.";
 "hub.MainWindowController.1431.1849" = "Прекъсни връзката";
 "hub.MainWindowController.15.1766" = "Автомобил";
 "hub.MainWindowController.22.1768" = "Спри Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Импортирай данни";
 "hub.OnboardingWindowController.1362.2047" = "Свържи се със сървър";
 "hub.OnboardingWindowController.1471.2059" = "Попълни ID на клиента, токена, региона и срока на валидност на Fleet.";
-"hub.OnboardingWindowController.1500.2071" = "Въведи и токена за достъп, и токена за обновяване.";
 "hub.OnboardingWindowController.1631.2105" = "Въведи сървъра на изходното приложение, SSH потребителя и порта.";
 "hub.OnboardingWindowController.168.1852" = "Продължи";
 "hub.OnboardingWindowController.1691.2113" = "Проверката на схемата не може да установи версията на изходното приложение. Потвърди, че на сървъра работи версия 4.4.0 или по-нова, после продължи.";
@@ -444,7 +443,7 @@
 "hub.OnboardingWindowController.589.1918" = "Как искаш да започнеш?";
 "hub.OnboardingWindowController.590.1919" = "Избери как Hub да се свързва";
 "hub.OnboardingWindowController.591.1920" = "Настрой Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Свържи се с токен";
+"hub.OnboardingWindowController.592.1921" = "Влез в акаунта си в Tesla";
 "hub.OnboardingWindowController.593.1922" = "Импортиране на история…";
 "hub.OnboardingWindowController.594.1923" = "Проверка на Hub";
 "hub.OnboardingWindowController.595.1924" = "Миграцията завърши";
@@ -519,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Състоянието на входа в Tesla не съвпадна. Стартирай входа отново.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla върна невалиден издател на акаунта.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Приключване на сигурния вход в Tesla…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla върна невалиден отговор с токен.";
-"hub.TeslaAuthWindowController.37.2242" = "Обмяната на токена с Tesla беше неуспешна.";
 "hub.SourceServerImporter.34.2284" = "Код: %1$@";
 "hub.SourceServerImporter.428.2461" = "Сървърът на изходното приложение върна непълни данни за настройка.";
 "hub.SourceServerImporter.691.2530" = "Провери данните за сървъра";
