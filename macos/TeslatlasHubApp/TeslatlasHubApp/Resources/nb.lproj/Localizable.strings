@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "En skjemakontroll kan ikke vise hvilken versjon av kildeprogrammet som opprettet databasen: flere versjoner deler det samme skjemaet.";
 
 "hub.import.ackRelease" = "Jeg bekrefter at kildeprogrammet er versjon 4.2.0 eller nyere og ikke blir oppdatert under importen.";
+
+"hub.backup.title" = "Sikkerhetskopier";
+
+"hub.backup.detail" = "Krypterte kopier av Hubens historikk. Gjenopprettingspassordet ligger i en fil på denne Macen som bare eieren kan lese.";
+
+"hub.backup.backUpNow" = "Ta sikkerhetskopi nå";
+
+"hub.backup.onSchedule" = "Ta sikkerhetskopi etter en tidsplan";
+
+"hub.backup.saveSchedule" = "Lagre tidsplan";
+
+"hub.backup.panelPrompt" = "Velg";
+
+"hub.backup.panelMessage" = "Velg en mappe for krypterte Hub-sikkerhetskopier utenfor Hubens datamappe.";
+
+"hub.backup.savedNote" = "Lagret. Tidsplanen gjelder når Hub starter på nytt.";
+
+"hub.backup.noFolder" = "Ingen mappe valgt";
+
+"hub.backup.passwordPlaceholder" = "Gjenopprettingspassord (minst %1$@ tegn)";
+
+"hub.backup.passwordSaved" = "Lagret. Skriv et nytt for å erstatte det";
+
+"hub.backup.intervalHour" = "Hver time";
+
+"hub.backup.intervalDay" = "Hver dag";
+
+"hub.backup.intervalTwoDays" = "Annenhver dag";
+
+"hub.backup.intervalWeek" = "Hver uke";
+
+"hub.backup.intervalHours" = "Hver %1$@. time";
+
+"hub.backup.schedule" = "Tidsplan";
+
+"hub.backup.keep" = "Behold";
+
+"hub.backup.keepSuffix" = "sikkerhetskopier";
+
+"hub.backup.folder" = "Mappe";
+
+"hub.backup.passwordLabel" = "Gjenopprettingspassord";
+
+"hub.backup.problem.passwordShort" = "Gjenopprettingspassordet må være på minst %1$@ tegn.";
+
+"hub.backup.problem.interval" = "Intervallet må være mellom 1 og 8784 timer.";
+
+"hub.backup.problem.keep" = "Antall sikkerhetskopier som beholdes, må være mellom 1 og 1000.";
+
+"hub.backup.problem.chooseFolder" = "Velg en mappe for sikkerhetskopier.";
+
+"hub.backup.problem.folderInside" = "Velg en mappe for sikkerhetskopier utenfor Hubens datamappe.";
+
+"hub.backup.problem.needsBoth" = "Planlagte sikkerhetskopier trenger en mappe for sikkerhetskopier og et gjenopprettingspassord.";
+
+"hub.backup.lastGoodNone" = "Ingen ennå";
+
+"hub.backup.nextOff" = "Planlagte sikkerhetskopier er av";
+
+"hub.backup.nextNotScheduled" = "Ikke planlagt: velg en mappe og et passord";
+
+"hub.backup.nextPaused" = "Venter på gjenoppretting av påloggingsopplysninger";
+
+"hub.collection.notReported" = "Ikke rapportert";
+
+"hub.backup.blocked" = "Avviste påloggingsopplysninger blokkerer sikkerhetskopier. Kjør purge-refused-credentials for å fjerne dem.";
+
+"hub.backup.lastFailedMessage" = "Siste forsøk mislyktes: %1$@";
+
+"hub.backup.lastFailedCode" = "Siste forsøk mislyktes (%1$@)";
+
+"hub.backup.row.lastGood" = "Siste vellykkede sikkerhetskopi";
+
+"hub.backup.row.next" = "Neste sikkerhetskopi";
+
+"hub.backup.row.running" = "En sikkerhetskopi pågår nå";
+
+"hub.backup.row.lastAttempt" = "Siste forsøk";
+
+"hub.backup.run.running" = "Tar sikkerhetskopi …";
+
+"hub.backup.run.stillRunning" = "Sikkerhetskopien pågår fortsatt i Hub-tjenesten.";
+
+"hub.backup.run.finishedGeneration" = "Sikkerhetskopi fullført: %1$@";
+
+"hub.backup.run.finished" = "Sikkerhetskopi fullført";
+
+"hub.backup.run.failed" = "Sikkerhetskopieringen mislyktes: %1$@";
+
+"hub.backup.maint.unreadable" = "Svaret fra Hub kunne ikke leses.";
+
+"hub.backup.maint.unwritable" = "Gjenopprettingspassordet kunne ikke lagres.";
+
+"hub.backup.maint.configMissing" = "Sett opp Hub før du endrer sikkerhetskopier.";
+
+"hub.devices.title" = "Sammenkoblede enheter";
+
+"hub.devices.detail" = "Telefoner og apper som leser denne Hub, med bilene hver av dem kan lese.";
+
+"hub.devices.revokeTitle" = "Tilbakekall %1$@?";
+
+"hub.devices.revokeInfo" = "Denne enheten slutter straks å lese fra Hub. Koble den til på nytt for å bruke den igjen.";
+
+"hub.devices.revoke" = "Tilbakekall";
+
+"hub.devices.revokeEllipsis" = "Tilbakekall …";
+
+"hub.devices.revokeAccessibility" = "Tilbakekall %1$@";
+
+"hub.devices.revokedDone" = "%1$@ ble tilbakekalt.";
+
+"hub.devices.none" = "Ingen sammenkoblede enheter.";
+
+"hub.devices.cars" = "Biler: %1$@";
+
+"hub.devices.noCars" = "Ingen biler";
+
+"hub.devices.carFallback" = "Bil %1$@";
+
+"hub.devices.unnamed" = "Enhet uten navn";
+
+"hub.devices.stateRevoked" = "Tilbakekalt %1$@";
+
+"hub.devices.stateExpired" = "Utløpt %1$@";
+
+"hub.devices.stateLastSeen" = "Sist sett %1$@";
+
+"hub.devices.stateNeverSeen" = "Ikke sett ennå";
+
+"hub.collection.loginOwn" = "Logget inn med Hubens egen innlogging";
+
+"hub.collection.loginSignedOut" = "Logget ut";
+
+"hub.collection.loginNotOwn" = "Den lagrede innloggingen er ikke Hubens egen";
+
+"hub.collection.credValidUntil" = "Gyldig til %1$@";
+
+"hub.collection.credValid" = "Gyldig";
+
+"hub.collection.credRelogin" = "Ny innlogging trengs: logg inn på nytt i neste åpne vindu";
+
+"hub.collection.credOwnerRefused" = "Owner API avvist: Tesla avviste denne innloggingen";
+
+"hub.collection.credRefused" = "Avvist (%1$@)";
+
+"hub.collection.credExposure" = "Mistanke om eksponering: logg inn på nytt i neste åpne vindu";
+
+"hub.collection.credAttention" = "Trenger oppmerksomhet (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Ikke logget inn";
+
+"hub.collection.windowOpenUntil" = "Åpent til %1$@";
+
+"hub.collection.windowOpen" = "Åpent";
+
+"hub.collection.windowPending" = "Venter";
+
+"hub.collection.windowPendingFrom" = "Venter fra %1$@";
+
+"hub.collection.windowPendingUntil" = "Venter til %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Venter fra %1$@ til %2$@";
+
+"hub.collection.windowClosingExpiry" = "Lukkes (utløper %1$@)";
+
+"hub.collection.windowClosing" = "Lukkes";
+
+"hub.collection.windowClosedReason" = "Lukket (%1$@)";
+
+"hub.collection.windowClosed" = "Lukket";
+
+"hub.collection.windowUntrusted" = "Lukket (ingen pålitelig utsteder)";
+
+"hub.collection.windowFaulted" = "Lukket (vindustilstanden trenger et nytt tillitsdokument)";
+
+"hub.collection.windowRecovery" = "Lukket (venter på gjenoppretting av påloggingsopplysninger: kjør restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Ukjent: kontrollkanalen tilhører ikke denne Hub";
+
+"hub.collection.windowNotRunning" = "Ukjent: Hub kjører ikke";
+
+"hub.collection.reasonExpired" = "utløpt";
+
+"hub.collection.reasonOperator" = "lukket av operatøren";
+
+"hub.collection.reasonRelogin" = "ny innlogging trengs";
+
+"hub.collection.reasonOwnerRefused" = "Owner API avvist";
+
+"hub.collection.reasonClock" = "klokkekontrollen mislyktes";
+
+"hub.collection.reasonReboot" = "Macen ble startet på nytt";
+
+"hub.collection.reasonUnverifiable" = "tilstanden kunne ikke bekreftes";
+
+"hub.collection.reasonClaimLost" = "innsamlingskravet er mistet";
+
+"hub.collection.fleet" = "Parkert: ingen Fleet-handling er tilgjengelig";
+
+"hub.collection.signInUnavailable" = "Innlogging er ikke tilgjengelig på denne Hub";
+
+"hub.collection.labelLogin" = "Tesla-innlogging";
+
+"hub.collection.labelCredential" = "Status for påloggingsopplysninger";
+
+"hub.collection.labelWindow" = "Innsamlingsvindu";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Innlogging";
+
+"hub.signIn.recoveryPending" = "Hub venter på gjenoppretting av påloggingsopplysningene sine: Dataene til denne Hub ble gjenopprettet uten nøklene. Kjør restore-recovery-credentials, og logg deretter inn. Ingenting ble endret.";
+
+"hub.signIn.serviceUnauthenticated" = "Prosessen som svarer på Hubens kontrollkanal, er ikke denne Hub, så ingenting ble sendt. Start Hub på nytt, og logg deretter inn igjen.";
+
+"hub.signIn.busy" = "Hub er opptatt med andre forespørsler. Ingenting ble endret; logg inn igjen om et øyeblikk.";

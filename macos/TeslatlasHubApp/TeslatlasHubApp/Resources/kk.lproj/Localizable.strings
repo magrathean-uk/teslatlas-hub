@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "Схеманы тексеру бұл дерекқорды бастапқы қолданбаның қай шығарылымы жазғанын анықтай алмайды: бірнеше шығарылымда осы схема ортақ.";
 
 "hub.import.ackRelease" = "Бастапқы қолданбаның 4.2.0 немесе одан жаңарақ нұсқада жұмыс істейтінін және импорт кезінде жаңартылмайтынын растаймын.";
+
+"hub.backup.title" = "Сақтық көшірмелер";
+
+"hub.backup.detail" = "Hub тарихының шифрланған көшірмелері. Қалпына келтіру құпия сөзі осы Mac-тағы тек иесі оқи алатын файлда сақталады.";
+
+"hub.backup.backUpNow" = "Қазір көшірме жасау";
+
+"hub.backup.onSchedule" = "Кесте бойынша көшірме жасау";
+
+"hub.backup.saveSchedule" = "Кестені сақтау";
+
+"hub.backup.panelPrompt" = "Таңдау";
+
+"hub.backup.panelMessage" = "Шифрланған Hub сақтық көшірмелері үшін Hub деректер қалтасынан тыс қалтаны таңдаңыз.";
+
+"hub.backup.savedNote" = "Сақталды. Кесте Hub қайта іске қосылғанда қолданылады.";
+
+"hub.backup.noFolder" = "Қалта таңдалмаған";
+
+"hub.backup.passwordPlaceholder" = "Қалпына келтіру құпия сөзі (кемінде %1$@ таңба)";
+
+"hub.backup.passwordSaved" = "Сақталды. Ауыстыру үшін жаңасын енгізіңіз";
+
+"hub.backup.intervalHour" = "Әр сағат сайын";
+
+"hub.backup.intervalDay" = "Күн сайын";
+
+"hub.backup.intervalTwoDays" = "Әр 2 күн сайын";
+
+"hub.backup.intervalWeek" = "Апта сайын";
+
+"hub.backup.intervalHours" = "Әр %1$@ сағат сайын";
+
+"hub.backup.schedule" = "Кесте";
+
+"hub.backup.keep" = "Сақтау";
+
+"hub.backup.keepSuffix" = "көшірме";
+
+"hub.backup.folder" = "Қалта";
+
+"hub.backup.passwordLabel" = "Қалпына келтіру құпия сөзі";
+
+"hub.backup.problem.passwordShort" = "Қалпына келтіру құпия сөзі кемінде %1$@ таңбадан тұруы керек.";
+
+"hub.backup.problem.interval" = "Аралық 1 мен 8784 сағат арасында болуы керек.";
+
+"hub.backup.problem.keep" = "Сақталатын көшірмелер саны 1 мен 1000 арасында болуы керек.";
+
+"hub.backup.problem.chooseFolder" = "Сақтық көшірме қалтасын таңдаңыз.";
+
+"hub.backup.problem.folderInside" = "Hub деректер қалтасынан тыс сақтық көшірме қалтасын таңдаңыз.";
+
+"hub.backup.problem.needsBoth" = "Кесте бойынша көшірмелерге сақтық көшірме қалтасы мен қалпына келтіру құпия сөзі қажет.";
+
+"hub.backup.lastGoodNone" = "Әзірге жоқ";
+
+"hub.backup.nextOff" = "Кесте бойынша көшірмелер өшірулі";
+
+"hub.backup.nextNotScheduled" = "Жоспарланбаған: қалта мен құпия сөзді таңдаңыз";
+
+"hub.backup.nextPaused" = "Тіркелгі деректерін қалпына келтіру күтілуде";
+
+"hub.collection.notReported" = "Хабарланбаған";
+
+"hub.backup.blocked" = "Қабылданбаған тіркелгі деректері көшірме жасауды бөгейді. Оларды тазалау үшін purge-refused-credentials іске қосыңыз.";
+
+"hub.backup.lastFailedMessage" = "Соңғы әрекет сәтсіз аяқталды: %1$@";
+
+"hub.backup.lastFailedCode" = "Соңғы әрекет сәтсіз аяқталды (%1$@)";
+
+"hub.backup.row.lastGood" = "Соңғы сәтті көшірме";
+
+"hub.backup.row.next" = "Келесі көшірме";
+
+"hub.backup.row.running" = "Қазір көшірме жасалып жатыр";
+
+"hub.backup.row.lastAttempt" = "Соңғы әрекет";
+
+"hub.backup.run.running" = "Көшірме жасалуда…";
+
+"hub.backup.run.stillRunning" = "Көшірме әлі де Hub қызметінде жасалып жатыр.";
+
+"hub.backup.run.finishedGeneration" = "Көшірме аяқталды: %1$@";
+
+"hub.backup.run.finished" = "Көшірме аяқталды";
+
+"hub.backup.run.failed" = "Көшірме жасау сәтсіз аяқталды: %1$@";
+
+"hub.backup.maint.unreadable" = "Hub жауабын оқу мүмкін болмады.";
+
+"hub.backup.maint.unwritable" = "Қалпына келтіру құпия сөзін сақтау мүмкін болмады.";
+
+"hub.backup.maint.configMissing" = "Көшірмелерді өзгертпес бұрын Hub баптаңыз.";
+
+"hub.devices.title" = "Жұптастырылған құрылғылар";
+
+"hub.devices.detail" = "Осы Hub оқитын телефондар мен қолданбалар және әрқайсысы оқи алатын көліктер.";
+
+"hub.devices.revokeTitle" = "%1$@ рұқсатын қайтарып алу керек пе?";
+
+"hub.devices.revokeInfo" = "Бұл құрылғы Hub-тан оқуды бірден тоқтатады. Қайта пайдалану үшін оны қайта жұптастырыңыз.";
+
+"hub.devices.revoke" = "Қайтарып алу";
+
+"hub.devices.revokeEllipsis" = "Қайтарып алу…";
+
+"hub.devices.revokeAccessibility" = "%1$@ рұқсатын қайтарып алу";
+
+"hub.devices.revokedDone" = "%1$@ рұқсаты қайтарып алынды.";
+
+"hub.devices.none" = "Жұптастырылған құрылғылар жоқ.";
+
+"hub.devices.cars" = "Көліктер: %1$@";
+
+"hub.devices.noCars" = "Көліктер жоқ";
+
+"hub.devices.carFallback" = "Көлік %1$@";
+
+"hub.devices.unnamed" = "Атаусыз құрылғы";
+
+"hub.devices.stateRevoked" = "Қайтарып алынды: %1$@";
+
+"hub.devices.stateExpired" = "Мерзімі аяқталды: %1$@";
+
+"hub.devices.stateLastSeen" = "Соңғы көрінген уақыты: %1$@";
+
+"hub.devices.stateNeverSeen" = "Әлі көрінген жоқ";
+
+"hub.collection.loginOwn" = "Hub-тың өз кіруімен кірілді";
+
+"hub.collection.loginSignedOut" = "Шығылды";
+
+"hub.collection.loginNotOwn" = "Сақталған кіру Hub-тың өзінікі емес";
+
+"hub.collection.credValidUntil" = "%1$@ дейін жарамды";
+
+"hub.collection.credValid" = "Жарамды";
+
+"hub.collection.credRelogin" = "Қайта кіру қажет: келесі ашық терезеде қайта кіріңіз";
+
+"hub.collection.credOwnerRefused" = "Owner API қабылданбады: Tesla бұл кіруді қабылдамады";
+
+"hub.collection.credRefused" = "Қабылданбады (%1$@)";
+
+"hub.collection.credExposure" = "Ашылып қалды деген күдік бар: келесі ашық терезеде қайта кіріңіз";
+
+"hub.collection.credAttention" = "Назар аударуды қажет етеді (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Кірілмеген";
+
+"hub.collection.windowOpenUntil" = "%1$@ дейін ашық";
+
+"hub.collection.windowOpen" = "Ашық";
+
+"hub.collection.windowPending" = "Күтуде";
+
+"hub.collection.windowPendingFrom" = "%1$@ бастап күтуде";
+
+"hub.collection.windowPendingUntil" = "%1$@ дейін күтуде";
+
+"hub.collection.windowPendingFromUntil" = "%1$@ бастап %2$@ дейін күтуде";
+
+"hub.collection.windowClosingExpiry" = "Жабылуда (мерзімі %1$@)";
+
+"hub.collection.windowClosing" = "Жабылуда";
+
+"hub.collection.windowClosedReason" = "Жабық (%1$@)";
+
+"hub.collection.windowClosed" = "Жабық";
+
+"hub.collection.windowUntrusted" = "Жабық (сенімді шығарушы жоқ)";
+
+"hub.collection.windowFaulted" = "Жабық (терезе күйіне жаңа сенім құжаты қажет)";
+
+"hub.collection.windowRecovery" = "Жабық (тіркелгі деректерін қалпына келтіру күтілуде: restore-recovery-credentials іске қосыңыз)";
+
+"hub.collection.windowUnauthenticated" = "Белгісіз: басқару арнасы осы Hub-қа тиесілі емес";
+
+"hub.collection.windowNotRunning" = "Белгісіз: Hub жұмыс істемейді";
+
+"hub.collection.reasonExpired" = "мерзімі аяқталды";
+
+"hub.collection.reasonOperator" = "оператор жапты";
+
+"hub.collection.reasonRelogin" = "қайта кіру қажет";
+
+"hub.collection.reasonOwnerRefused" = "Owner API қабылданбады";
+
+"hub.collection.reasonClock" = "сағатты тексеру сәтсіз аяқталды";
+
+"hub.collection.reasonReboot" = "Mac қайта іске қосылды";
+
+"hub.collection.reasonUnverifiable" = "күйді тексеру мүмкін болмады";
+
+"hub.collection.reasonClaimLost" = "жинау құқығы жоғалды";
+
+"hub.collection.fleet" = "Тоқтатылған: Fleet әрекеттері қолжетімді емес";
+
+"hub.collection.signInUnavailable" = "Бұл Hub-та кіру қолжетімді емес";
+
+"hub.collection.labelLogin" = "Tesla арқылы кіру";
+
+"hub.collection.labelCredential" = "Тіркелгі деректерінің күйі";
+
+"hub.collection.labelWindow" = "Деректерді жинау терезесі";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Кіру";
+
+"hub.signIn.recoveryPending" = "Hub өз тіркелгі деректерін қалпына келтіруді күтуде: осы Hub деректері кілттерсіз қалпына келтірілді. restore-recovery-credentials іске қосып, содан кейін кіріңіз. Ештеңе өзгертілмеді.";
+
+"hub.signIn.serviceUnauthenticated" = "Hub басқару арнасында жауап беріп тұрған процесс осы Hub емес, сондықтан ештеңе жіберілмеді. Hub қайта іске қосып, содан кейін қайта кіріңіз.";
+
+"hub.signIn.busy" = "Hub басқа сұрауларға бос емес. Ештеңе өзгертілмеді; сәлден кейін қайта кіріңіз.";
