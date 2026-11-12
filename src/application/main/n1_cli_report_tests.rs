@@ -144,23 +144,66 @@ fn source_check_reports_and_fixtures_name_the_current_reviewed_set() {
                 SET.migration_count
             );
             assert_eq!(report["schemaSetLabel"], label);
+            assert_eq!(report["requiredVersion"], SET.release);
         }
     }
     for reason in [
         "schema_mismatch",
-        "older_than_v4_2_compatible_schema",
-        "newer_than_v4_2_compatible_schema",
+        "older_than_v4_4_compatible_schema",
+        "newer_than_v4_4_compatible_schema",
     ] {
         let failure = source_check_failure_report(42, "incompatible", reason, None, "guidance");
         for report in [&failure, &refused] {
             assert_eq!(report["pinnedSourceRevision"], SET.source_revision);
             assert_eq!(report["expectedMigrationCount"], SET.migration_count);
+            assert_eq!(report["requiredVersion"], SET.release);
             assert_eq!(
                 report["maximumValidatedMigrationVersion"],
                 SET.newest_migration
             );
         }
     }
+}
+
+/// Review REV-M03-T08 finding 3: the producer names the new set and release
+/// together. A recognised report carries the reason code and required
+/// release the app admits, and a source still at the earlier reviewed set is
+/// refused with guidance to update the source application to 4.4.0 first.
+#[test]
+fn source_check_names_release_4_4_0_and_guides_an_earlier_set_source() {
+    use teslatlas_hub::source_db_schema::{
+        CURRENT_REVIEWED_SOURCE_SET as SET, V4_2_REVIEWED_SOURCE_SET,
+    };
+    assert_eq!(SET.release, "4.4.0");
+    let success = source_check_success_report(42, &synthetic_source_check_snapshot(), true, true);
+    assert_eq!(success["status"], "compatible");
+    assert_eq!(success["reasonCode"], "v4_4_compatible_schema");
+    assert_eq!(success["schemaEvidence"], "v4_4_compatible_schema");
+    assert_eq!(success["requiredVersion"], "4.4.0");
+    let migration_ack =
+        source_check_success_report(42, &synthetic_source_check_snapshot(), false, true);
+    assert_eq!(migration_ack["reasonCode"], "v4_4_compatible_schema");
+    let pending = source_check_success_report(42, &synthetic_source_check_snapshot(), false, false);
+    assert_eq!(pending["reasonCode"], "v4_4_version_unconfirmed");
+    assert!(pending["guidance"].as_str().unwrap().contains("4.4.0"));
+
+    let earlier_set = SourceDbReaderError::Schema(SchemaCompatibilityError::LegacyMigration {
+        found: V4_2_REVIEWED_SOURCE_SET.newest_migration,
+        minimum: SET.newest_migration,
+    });
+    let (status, reason, observed, guidance) = source_check_failure_details(&earlier_set);
+    let refused = source_check_failure_report(42, status, reason, observed, guidance);
+    assert_eq!(refused["status"], "incompatible");
+    assert_eq!(refused["reasonCode"], "older_than_v4_4_compatible_schema");
+    assert_eq!(refused["observedMigrationVersion"], 20_260_808_090_000_i64);
+    assert_eq!(refused["requiredVersion"], "4.4.0");
+    assert_eq!(refused["sourceSchemaRecognised"], false);
+    let guidance = refused["guidance"].as_str().unwrap();
+    assert!(
+        guidance.contains("update it to release 4.4.0"),
+        "{guidance}"
+    );
+    assert!(guidance.contains("Back up"), "{guidance}");
 }
 
 #[test]
@@ -182,8 +225,8 @@ fn source_check_unreached_comparison_reports_null() {
         assert!(actual.get("schemaSetLabel").is_none());
     }
     for reason in [
-        "older_than_v4_2_compatible_schema",
-        "newer_than_v4_2_compatible_schema",
+        "older_than_v4_4_compatible_schema",
+        "newer_than_v4_4_compatible_schema",
         "schema_mismatch",
     ] {
         assert_eq!(

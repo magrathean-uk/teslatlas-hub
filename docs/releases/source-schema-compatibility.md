@@ -62,9 +62,31 @@ the importer already imports whatever id the row holds.
 Consequences:
 
 - A source still at `20260808090000` (the v4.2-compatible set) is refused as an
-  older schema and must be upgraded to v4.4.0 first. Imports and published
-  packs record the v4.4.0 revision and set hash.
+  older schema and must be upgraded to v4.4.0 first. The source check reports
+  `older_than_v4_4_compatible_schema` with that guidance, and the Mac app's
+  guided import asks for release 4.4.0 or later before it connects. Imports and
+  published packs record the v4.4.0 revision and set hash; a successful check
+  reports `v4_4_compatible_schema` with required release `4.4.0`, which is the
+  only report the Mac app accepts for import.
 - Earlier contracts: v4.2.0 (`e8d24886f97f22469c2675f89be843f6d401c76a`) and
   v4.1.1 (`d6c43bc8c48784da8f0b701945b80b20911b3d1a`) share the 105-migration
-  set ending at `20260808090000`; both revisions remain accepted only as beta
-  provenance.
+  set ending at `20260808090000`.
+
+## Verifying artefacts published under an earlier set
+
+Source admission accepts only the current set. Artefacts that an earlier
+import already published (source witnesses, captures and packs) keep the
+revision they were captured under. Each reviewed set is a tuple of revision,
+migration-set hash, migration count and newest migration, and an artefact is
+verified against the tuple of its own revision:
+
+| Revision | Release | Set SHA-256 | Count | Newest migration |
+|---|---|---|---|---|
+| `42d187daadd0104fc9c4509785df47a26705845a` | 4.4.0 (current) | `c497f904…edea` | 107 | `20261014120000` |
+| `e8d24886f97f22469c2675f89be843f6d401c76a` | 4.2.0 | `ea850d1b…8868` | 105 | `20260808090000` |
+| `d6c43bc8c48784da8f0b701945b80b20911b3d1a` | 4.1.1 | `ea850d1b…8868` | 105 | `20260808090000` |
+
+A store published under the 4.2.0 set therefore still verifies after the
+upgrade, and the next import from a 4.4.0 source publishes a successor
+snapshot over it. An unknown revision, or a known revision with another set's
+hash, count or newest migration, is refused.

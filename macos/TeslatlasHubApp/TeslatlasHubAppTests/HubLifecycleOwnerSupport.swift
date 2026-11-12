@@ -164,8 +164,8 @@ final class OwnerService: HubServiceControlling {
 
 /// A command runner double: records every command and holds a named one on request.
 final class OwnerRunner: HubCommandRunning {
-    static let compatible = #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
-    static let historyCompatible = #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
+    static let compatible = #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
+    static let historyCompatible = #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
     /// `window status` from a running service with an Open collection window.
     static let windowOpen = #"{"phase":"open","trusted":true,"faulted":false,"closeReason":null,"seq":1}"#
     static let windowClosed = #"{"phase":"closed","trusted":true,"faulted":false,"closeReason":"expired","seq":1}"#
@@ -301,7 +301,7 @@ final class OwnerConnector {
                         source: "postgresql://reader@127.0.0.1:5432/sourcedb",
                         carID: "1",
                         passwordFile: owner.directory.appendingPathComponent("password"),
-                        sourceVersion: "4.2.0",
+                        sourceVersion: "4.4.0",
                         tunnel: Process(),
                         temporaryDirectory: owner.directory,
                         directoryOwner: owner)

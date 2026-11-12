@@ -100,6 +100,38 @@ final class SourceReportModelTests: XCTestCase {
         XCTAssertNil(report.recognitionKey)
         XCTAssertFalse(report.mayImport)
     }
+    /// Review REV-M03-T08 finding 3: only a report for the current reviewed
+    /// set (release 4.4.0) enables import; a report naming the earlier set
+    /// does not, and a refusal of an earlier-set source keeps the producer's
+    /// guidance to update the source application to 4.4.0 first.
+    func testOnlyTheCurrentReviewedSetEnablesImport() throws {
+        let current = try fixture("source-check-recognised")
+        XCTAssertEqual(current["reasonCode"] as? String, HubSourceCheckResult.compatibleReasonCode)
+        XCTAssertEqual(current["requiredVersion"] as? String, HubSourceCheckResult.requiredSourceRelease)
+        XCTAssertEqual(HubSourceCheckResult.requiredSourceRelease, "4.4.0")
+        XCTAssertTrue(try XCTUnwrap(HubSourceCheckResult.parse(output(current), historyOnly: true)).mayImport)
+
+        var earlier = current
+        earlier["reasonCode"] = "v4_2_compatible_schema"
+        earlier["requiredVersion"] = "4.2.0"
+        XCTAssertFalse(try XCTUnwrap(HubSourceCheckResult.parse(output(earlier), historyOnly: true)).mayImport)
+        var staleRelease = current
+        staleRelease["requiredVersion"] = "4.2.0"
+        XCTAssertFalse(try XCTUnwrap(HubSourceCheckResult.parse(output(staleRelease), historyOnly: true)).mayImport)
+
+        var refused = try fixture("source-check-not-recognised")
+        let guidance = "This source database has the earlier reviewed schema. Back up the source application, update it to release 4.4.0 or newer, start it once and let its migrations finish, then retry."
+        refused["reasonCode"] = "older_than_v4_4_compatible_schema"
+        refused["observedMigrationVersion"] = 20260808090000
+        refused["guidance"] = guidance
+        let report = try XCTUnwrap(HubSourceCheckResult.fromCommandResult(
+            .failure(HubActionError.commandExited(1, try output(refused))), historyOnly: true))
+        XCTAssertFalse(report.mayImport)
+        XCTAssertEqual(report.schemaRecognised, false)
+        XCTAssertEqual(report.message, guidance)
+        XCTAssertEqual(report.requiredVersion, "4.4.0")
+    }
+
     func testRecognisedReportShowsTheSchemaSetLabel() throws {
         let value = try fixture("source-check-recognised")
         let report = try XCTUnwrap(HubSourceCheckResult.parse(output(value), historyOnly: true))

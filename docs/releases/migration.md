@@ -23,7 +23,7 @@ database, do not import it with this release.
 
 1. Back up the source application and keep a recoverable copy. Do not remove the original
    installation after the first successful import.
-2. Update the source application to release 4.2.0 or later, start it once, and
+2. Update the source application to release 4.4.0 or later, start it once, and
    let its database changes finish. A newer release is not automatically
    supported: the check tells you.
 3. Prepare your server address, SSH port, user and authentication. The account
