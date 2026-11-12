@@ -895,7 +895,7 @@ async fn t42_a_signed_out_account_sends_nothing_and_the_owners_retry_resumes_it(
     let initial =
         OwnerTokens::from_secret_parts("loop-access".to_owned(), "loop-refresh".to_owned())
             .expect("initial pair");
-    let generation = crate::source_token_envelope::legacy_refresh_credential_generation(&initial);
+    let _generation = crate::source_token_envelope::legacy_refresh_credential_generation(&initial);
     let (expires, next) = not_due_schedule();
     let generation = crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store,temporary.path(),initial.access_token(),initial.refresh_token(),Some((expires,next))).expect("supplied fixture pair");
     // The unit's own row from the previous run: signed out for this very pair.

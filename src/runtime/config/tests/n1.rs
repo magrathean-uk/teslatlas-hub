@@ -91,12 +91,10 @@ fn deprecated_alias_import_table_accepts_dotted_keys() {
 
 #[test]
 fn deprecated_alias_import_table_with_the_current_table_is_refused() {
-    let text = format!(
-        "{}[import_source]\nsource_key = \"other\"\n",
-        format!(
-            "data_dir = \"/fictional/hub\"\nbind = \"127.0.0.1:21447\"\n[{EARLIER_TABLE}]\nsource_key = \"home-source\"\n"
-        )
+    let earlier = format!(
+        "data_dir = \"/fictional/hub\"\nbind = \"127.0.0.1:21447\"\n[{EARLIER_TABLE}]\nsource_key = \"home-source\"\n"
     );
+    let text = format!("{earlier}[import_source]\nsource_key = \"other\"\n");
     let error = HubConfig::from_exact_bytes(text.as_bytes())
         .unwrap_err()
         .to_string();

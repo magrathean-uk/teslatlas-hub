@@ -448,7 +448,7 @@ fn p3bf3_run_the_owner_loop(
 ) -> (Result<(), CollectorError>, Option<String>, Arc<WriteGuardAudit>) {
     let base = url::Url::parse("http://127.0.0.1:9/").expect("unroutable");
     let admission =
-        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
+        crate::auth::credential_vault::fixtures::fixture_admission(store, temporary.path());
     let manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store.clone(),
         temporary.path(),

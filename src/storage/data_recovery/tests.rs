@@ -740,12 +740,12 @@ fn data_backup_revokes_pairing_authority_and_preserves_identity_and_lineage() {
         source_data,
     ))
     .expect("source cursor bytes");
-    let owner_tokens = crate::credentials::OwnerTokens::from_secret_parts(
+    let _owner_tokens = crate::credentials::OwnerTokens::from_secret_parts(
         "backup-access".to_owned(),
         "backup-refresh".to_owned(),
     )
     .expect("owner tokens");
-    let encryption_key = b"backup exact source token key";
+    let _encryption_key = b"backup exact source token key";
     let (access, refresh) =
         ({ let unavailable_value: Result<(Vec<u8>, Vec<u8>), crate::source_token_envelope::SourceDbTokenError> = Ok((b"c10-backup-access".to_vec(), b"c10-backup-refresh".to_vec())); unavailable_value })
             .expect("encrypt owner tokens");

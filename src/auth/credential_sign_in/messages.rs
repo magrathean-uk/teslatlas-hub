@@ -50,10 +50,7 @@ pub fn credential_owner_message(
         "invalid_origin" => "The token input named an origin, which the Hub sets itself, so nothing was stored; remove the origin and try again.",
         "sign_in_state_mismatch" => "The sign-in answer did not belong to this sign-in. Start the sign-in again.",
         "sign_in_refused" => {
-            let issuer = match issuer_code {
-                Some(code @ ("invalid_request" | "unauthorized_client" | "access_denied" | "unsupported_response_type" | "invalid_scope" | "server_error" | "temporarily_unavailable")) => code,
-                _ => "other",
-            };
+            let issuer = issuer_code.filter(|code| matches!(*code, "invalid_request" | "unauthorized_client" | "access_denied" | "unsupported_response_type" | "invalid_scope" | "server_error" | "temporarily_unavailable")).unwrap_or("other");
             return Some(format!("Tesla did not complete the sign-in. ({issuer})"));
         }
         "sign_in_expired" => "The sign-in took longer than 10 minutes. Start it again.",

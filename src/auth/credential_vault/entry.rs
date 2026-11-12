@@ -46,6 +46,7 @@ impl CredentialVaultEntry {
                 } else { Err(CredentialKeyError::BackupExclusionFailed) }
             }
         }
+        #[allow(clippy::needless_update)] // test builds add VaultOptions fields
         CredentialVault::open(store, admission, data_dir, VaultOptions {
             exclusion: Some(Arc::new(TestExclusion(excluded))), ..VaultOptions::default()
         }).map(|vault| Self { vault }).map_err(|error| CredentialVaultEntryError { error })

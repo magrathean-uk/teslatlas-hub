@@ -110,10 +110,10 @@ fn m1_t1_create_schema_equals_stepwise_fixture() {
     // The frozen predecessor includes the six credential tables that the
     // current creation DDL intentionally omits. Rebuild its complete schema.
     for (_, name, _, sql) in &expected {
-        if name != "sqlite_sequence" {
-            if let Some(sql) = sql {
-                floor_creation.execute_batch(sql).unwrap();
-            }
+        if name != "sqlite_sequence"
+            && let Some(sql) = sql
+        {
+            floor_creation.execute_batch(sql).unwrap();
         }
     }
     assert!(
@@ -327,10 +327,10 @@ fn m1_t4_import_readers_equal_stepwise_store() {
     let floor_schema: Schema =
         serde_json::from_str(include_str!("../../../../fixtures/g2-4/m1/schema-f.json")).unwrap();
     for (_, name, _, sql) in &floor_schema {
-        if name != "sqlite_sequence" {
-            if let Some(sql) = sql {
-                baseline.execute_batch(sql).unwrap();
-            }
+        if name != "sqlite_sequence"
+            && let Some(sql) = sql
+        {
+            baseline.execute_batch(sql).unwrap();
         }
     }
     assert!(

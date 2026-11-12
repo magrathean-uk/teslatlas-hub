@@ -17,9 +17,8 @@ struct Resources {
 }
 impl Resources {
     fn release(&mut self) {
-        if let Some(scope) = self.scope.take() {
-            if scope.release().is_err() { self.release_failed.store(true, Ordering::Release); }
-        }
+        if let Some(scope) = self.scope.take()
+            && scope.release().is_err() { self.release_failed.store(true, Ordering::Release); }
         if let Some(admission) = self.admission.take() {
             match Arc::try_unwrap(admission) {
                 Ok(admission) => drop(admission),

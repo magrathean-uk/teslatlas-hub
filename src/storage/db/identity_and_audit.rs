@@ -1433,7 +1433,7 @@ impl HubStore {
         ensure_source_exists(transaction, descriptor.source_id)?;
 
         let source_vehicle = find_vehicle(
-            &transaction,
+            transaction,
             descriptor.source_id,
             &descriptor.source_vehicle_key,
         )?;

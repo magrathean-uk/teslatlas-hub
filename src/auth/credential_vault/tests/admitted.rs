@@ -158,5 +158,5 @@ fn ct101_old_names_never_touched_open() {
     // M02-T02: the refused pre-upgrade store is blocked, so backups wait; the
     // encoded names are checked through reopen only.
     assert!(fingerprint()==before,"CT101.encoded files keep bytes inode and mtime through reopen");
-    assert!(credential_migration::seam::with(|s| s.events.iter().all(|event| !event.contains(&encoded) || event.starts_with("list_returned:"))), "CT101.no operation on encoded entry");
+    assert!(credential_migration::seam::with(|s| s.events.iter().all(|event| !event.contains(encoded) || event.starts_with("list_returned:"))), "CT101.no operation on encoded entry");
 }

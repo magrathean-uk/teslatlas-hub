@@ -201,9 +201,9 @@ fn backup_large_catalogue_scratch_phase_fits_the_hub_peak() {
     assert!(SERVICE_RESERVE_BYTES + scratch_phase + 16 * 1024 * 1024 <= HUB_PEAK_MEMORY_BYTES);
     // The volume is prepared below the cap, so growth before the gate still
     // fits the in-memory path's refusal margin.
-    assert!(SCRATCH_THRESHOLD_BYTES < MAX_CATALOGUE_IMAGE_BYTES);
-    assert!(LARGE_CATALOGUE_TARGET_BYTES > MAX_CATALOGUE_IMAGE_BYTES);
-    assert!(LARGE_RUN_MEMORY_LIMIT_BYTES < LARGE_CATALOGUE_TARGET_BYTES);
+    const { assert!(SCRATCH_THRESHOLD_BYTES < MAX_CATALOGUE_IMAGE_BYTES) };
+    const { assert!(LARGE_CATALOGUE_TARGET_BYTES > MAX_CATALOGUE_IMAGE_BYTES) };
+    const { assert!(LARGE_RUN_MEMORY_LIMIT_BYTES < LARGE_CATALOGUE_TARGET_BYTES) };
 }
 
 #[test]
@@ -390,12 +390,12 @@ fn backup_no_plaintext_staging_through_the_encrypted_scratch_volume() {
                     .borrow_mut()
                     .push(format!("canary in {} at {stage}", path.display()));
             }
-            if let Some(image) = seen_image.borrow().as_ref() {
-                if !file_holds(image, &[SQLITE_MAGIC]).is_empty() {
-                    leaked
-                        .borrow_mut()
-                        .push(format!("a clear SQLite page in the image at {stage}"));
-                }
+            if let Some(image) = seen_image.borrow().as_ref()
+                && !file_holds(image, &[SQLITE_MAGIC]).is_empty()
+            {
+                leaked
+                    .borrow_mut()
+                    .push(format!("a clear SQLite page in the image at {stage}"));
             }
         }
         HookAction::Continue

@@ -22,8 +22,9 @@ use super::{
 };
 use crate::db::{
     CollectorAuthRow, HubStore,  OutboundRequestReceiptId, StoreError,
-    StoredLegacyGeneration,
 };
+#[cfg(test)]
+use crate::db::StoredLegacyGeneration;
 
 /// 2020-01-01T00:00:00Z (R38). Every token the `oauth2/v3` issuers mint
 /// postdates 2020, so a host clock before it is certainly wrong: a host
@@ -889,11 +890,13 @@ pub(crate) enum PersistReread {
     /// fact committed, so persistence counts as done and nothing is written again.
     /// Only a successor whose generation differs from its input's is proved this
     /// way; one that kept the refresh token needs [`Self::ClosedForThisAttempt`].
+    #[cfg_attr(not(test), expect(dead_code, reason = "used by the test build only"))]
     AlreadyPersisted,
     /// The pair row is exactly the row this attempt wrote and the attempt's own
     /// receipt is closed as a successful token refresh: the atomic write of the
     /// pair and the closing of the receipt both committed (CL-14). Nothing is
     /// written again.
+    #[cfg_attr(not(test), expect(dead_code, reason = "used by the test build only"))]
     ClosedForThisAttempt,
     /// The row still holds the input: the write may be tried again.
     StillInput,
@@ -911,6 +914,7 @@ pub(crate) enum PersistReread {
 /// refresh token only; the image does. It is ciphertext, bounded by the store's
 /// own limit, and never formatted.
 #[derive(Clone, PartialEq, Eq)]
+#[cfg_attr(not(test), expect(dead_code, reason = "used by the test build only"))]
 pub(crate) struct PairImage {
     access: Vec<u8>,
     refresh: Vec<u8>,
@@ -919,6 +923,7 @@ pub(crate) struct PairImage {
     generation: Uuid,
 }
 
+#[cfg_attr(not(test), expect(dead_code, reason = "used by the test build only"))]
 impl PairImage {
     /// The image of a row about to be written under `generation`.
     pub(crate) fn of(row: &(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String), generation: Uuid) -> Self {
@@ -929,25 +934,6 @@ impl PairImage {
             next_refresh_at: row.3,
             generation,
         }
-    }
-
-    /// The row this image describes, rebuilt from the ciphertext it holds: a retry of
-    /// the same attempt's write puts this very row again (R-P3bF-3), so the witness
-    /// never names an image that was not stored. `None` when the image is not of the
-    /// write with this `generation` and schedule.
-    pub(crate) fn row_for_a_retry(
-        &self,
-        generation: Uuid,
-        expires_at: i64,
-        next_refresh_at: i64,
-    ) -> Option<(Vec<u8>, Vec<u8>, i64, i64, Option<uuid::Uuid>, String, String)> {
-        if self.generation != generation
-            || self.expires_at != expires_at
-            || self.next_refresh_at != next_refresh_at
-        {
-            return None;
-        }
-        Some((self.access.clone(),self.refresh.clone(),self.expires_at,self.next_refresh_at,Some(self.generation),String::new(),String::new()))
     }
 
     /// Whether a stored row is exactly this image.
@@ -969,6 +955,7 @@ impl fmt::Debug for PairImage {
 /// What the unit knows of its own write: the receipt of the attempt and the row it
 /// wrote.
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(not(test), expect(dead_code, reason = "used by the test build only"))]
 pub(crate) struct OwnWrite<'a> {
     pub(crate) receipt: OutboundRequestReceiptId,
     pub(crate) image: &'a PairImage,
@@ -986,11 +973,13 @@ pub(crate) struct OwnWrite<'a> {
 /// proves the write (CL-14, R-P3b-12). A missing or unbound row, or one that
 /// differs from the image once the attempt is no longer open, outranks any receipt.
 /// Without `own` the generation alone decides, as for any other successor.
+#[cfg_attr(not(test), expect(dead_code, reason = "used by the test build only"))]
 struct RereadReceiptInput {
     transport: String,
     operation: String,
     outcome: String,
 }
+#[cfg_attr(not(test), expect(dead_code, reason = "used by the test build only"))]
 impl RereadReceiptInput {
     fn is_started(&self) -> bool {
         self.outcome == "started"

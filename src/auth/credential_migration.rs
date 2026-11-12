@@ -108,9 +108,12 @@ pub(crate) struct CredentialPhaseB<'a> {
 
 /// The migration receipt of one run.
 #[derive(Debug)]
+#[cfg_attr(not(test), expect(dead_code, reason = "read by the test build only"))]
 pub(crate) struct CredentialMigrationReport {
     pub(crate) state: CredentialFormatState,
+    #[allow(dead_code, reason = "receipt field, not read yet")]
     pub(crate) unsafe_candidates: Vec<&'static str>,
+    #[allow(dead_code, reason = "receipt field, not read yet")]
     pub(crate) opaque_binding_outputs: u64,
 }
 

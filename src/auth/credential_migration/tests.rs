@@ -160,6 +160,7 @@ struct Env {
     keys: Option<KeyringHandle>,
     admission: Arc<AdmittedUserHub>,
     secrets: PrivateDirectory,
+    #[allow(dead_code, reason = "held to keep the key alive for the fixture")]
     cursor: Option<crate::protocol::CursorKey>,
     exclusion: FakeExclusion,
     fake: bool,

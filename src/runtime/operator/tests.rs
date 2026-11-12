@@ -585,7 +585,7 @@ fn collection_window_operator_trust_needs_the_owner_or_the_pinned_issuer() {
     let own = attacker.bump_trust_epoch(&attacker_key).expect("epoch 2");
     let refused = trust(&own.to_bytes().expect("bytes")).unwrap_err();
     assert_eq!(refused.code, "owner_confirmation_refused");
-    assert_eq!(rig.controller.status().trusted, false);
+    assert!(!rig.controller.status().trusted);
     let refused = rig
         .forward(&OperatorRequest::WindowOpen { grant: attacker_grant() })
         .unwrap_err();
