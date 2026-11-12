@@ -45,13 +45,14 @@ fn seam_downgrade_to_v79(connection: &Connection) {
         .unwrap();
 }
 
-/// A raw v79 catalogue, made by the real creation path and downgraded. Raw
-/// connections leave foreign keys off, so catalogue rows need no import head.
+/// A raw v79 catalogue, made by the real creation path and downgraded, with
+/// foreign keys off so catalogue rows need no vehicle or import head.
 fn seam_v79_catalogue() -> (tempfile::TempDir, Connection) {
     let directory = crate::private_tempdir().unwrap();
     let connection = Connection::open(directory.path().join("hub.sqlite")).unwrap();
     migrate(&connection).unwrap();
     seam_downgrade_to_v79(&connection);
+    connection.pragma_update(None, "foreign_keys", false).unwrap();
     assert_eq!(schema_version(&connection).unwrap(), V79);
     (directory, connection)
 }
@@ -360,9 +361,9 @@ fn seam_reseal_backup(backup: &Path, from_schema: i32, schema: i32, old_digest: 
     let manifest_path = backup.join("backup-v4.json");
     let manifest = fs::read_to_string(&manifest_path).unwrap();
     let old_manifest_digest = hex(&Sha256::digest(manifest.as_bytes()));
-    let from = format!("\"hub_schema\":{from_schema}");
+    let from = format!("\"hubSchema\":{from_schema}");
     assert_eq!(manifest.matches(&from).count(), 1);
-    let manifest = manifest.replacen(&from, &format!("\"hub_schema\":{schema}"), 1);
+    let manifest = manifest.replacen(&from, &format!("\"hubSchema\":{schema}"), 1);
     let start = manifest.find("\"path\":\"data/hub.sqlite\"").unwrap();
     let open = manifest[..start].rfind('{').unwrap();
     let close = start + manifest[start..].find('}').unwrap();
