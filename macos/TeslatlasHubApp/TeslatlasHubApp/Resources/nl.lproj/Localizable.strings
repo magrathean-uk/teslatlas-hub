@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "Een schemacontrole kan niet laten zien welke versie van de bronapplicatie deze database heeft gemaakt: meerdere versies gebruiken hetzelfde schema.";
 
 "hub.import.ackRelease" = "Ik bevestig dat de bronapplicatie versie 4.2.0 of hoger is en tijdens het importeren niet wordt bijgewerkt.";
+
+"hub.backup.title" = "Back-ups";
+
+"hub.backup.detail" = "Versleutelde kopieën van de geschiedenis van de Hub. Het herstelwachtwoord staat in een bestand op deze Mac dat alleen de eigenaar kan lezen.";
+
+"hub.backup.backUpNow" = "Nu een back-up maken";
+
+"hub.backup.onSchedule" = "Back-up maken volgens schema";
+
+"hub.backup.saveSchedule" = "Schema bewaren";
+
+"hub.backup.panelPrompt" = "Kies";
+
+"hub.backup.panelMessage" = "Kies een map voor versleutelde Hub-back-ups, buiten de gegevensmap van de Hub.";
+
+"hub.backup.savedNote" = "Bewaard. Het schema geldt zodra de Hub opnieuw start.";
+
+"hub.backup.noFolder" = "Geen map gekozen";
+
+"hub.backup.passwordPlaceholder" = "Herstelwachtwoord (minstens %1$@ tekens)";
+
+"hub.backup.passwordSaved" = "Bewaard. Typ een nieuw wachtwoord om het te vervangen";
+
+"hub.backup.intervalHour" = "Elk uur";
+
+"hub.backup.intervalDay" = "Elke dag";
+
+"hub.backup.intervalTwoDays" = "Om de 2 dagen";
+
+"hub.backup.intervalWeek" = "Elke week";
+
+"hub.backup.intervalHours" = "Elke %1$@ uur";
+
+"hub.backup.schedule" = "Schema";
+
+"hub.backup.keep" = "Bewaar";
+
+"hub.backup.keepSuffix" = "back-ups";
+
+"hub.backup.folder" = "Map";
+
+"hub.backup.passwordLabel" = "Herstelwachtwoord";
+
+"hub.backup.problem.passwordShort" = "Het herstelwachtwoord moet minstens %1$@ tekens hebben.";
+
+"hub.backup.problem.interval" = "Het interval moet tussen 1 en 8784 uur liggen.";
+
+"hub.backup.problem.keep" = "Het aantal te bewaren back-ups moet tussen 1 en 1000 liggen.";
+
+"hub.backup.problem.chooseFolder" = "Kies een back-upmap.";
+
+"hub.backup.problem.folderInside" = "Kies een back-upmap buiten de gegevensmap van de Hub.";
+
+"hub.backup.problem.needsBoth" = "Geplande back-ups hebben een back-upmap en een herstelwachtwoord nodig.";
+
+"hub.backup.lastGoodNone" = "Nog geen";
+
+"hub.backup.nextOff" = "Geplande back-ups staan uit";
+
+"hub.backup.nextNotScheduled" = "Niet gepland: kies een map en een wachtwoord";
+
+"hub.backup.nextPaused" = "Wacht op herstel van de inloggegevens";
+
+"hub.collection.notReported" = "Niet gemeld";
+
+"hub.backup.blocked" = "Geweigerde inloggegevens blokkeren back-ups. Voer purge-refused-credentials uit om ze te wissen.";
+
+"hub.backup.lastFailedMessage" = "Laatste poging mislukt: %1$@";
+
+"hub.backup.lastFailedCode" = "Laatste poging mislukt (%1$@)";
+
+"hub.backup.row.lastGood" = "Laatste geslaagde back-up";
+
+"hub.backup.row.next" = "Volgende back-up";
+
+"hub.backup.row.running" = "Er loopt nu een back-up";
+
+"hub.backup.row.lastAttempt" = "Laatste poging";
+
+"hub.backup.run.running" = "Back-up maken…";
+
+"hub.backup.run.stillRunning" = "De back-up loopt nog in de Hub-service.";
+
+"hub.backup.run.finishedGeneration" = "Back-up voltooid: %1$@";
+
+"hub.backup.run.finished" = "Back-up voltooid";
+
+"hub.backup.run.failed" = "Back-up mislukt: %1$@";
+
+"hub.backup.maint.unreadable" = "Het antwoord van de Hub kon niet worden gelezen.";
+
+"hub.backup.maint.unwritable" = "Het herstelwachtwoord kon niet worden bewaard.";
+
+"hub.backup.maint.configMissing" = "Stel de Hub in voordat je back-ups wijzigt.";
+
+"hub.devices.title" = "Gekoppelde apparaten";
+
+"hub.devices.detail" = "Telefoons en apps die deze Hub lezen, met de auto's die elk mag lezen.";
+
+"hub.devices.revokeTitle" = "%1$@ intrekken?";
+
+"hub.devices.revokeInfo" = "Dit apparaat stopt direct met lezen van de Hub. Om het opnieuw te gebruiken, koppel je het opnieuw.";
+
+"hub.devices.revoke" = "Intrekken";
+
+"hub.devices.revokeEllipsis" = "Intrekken…";
+
+"hub.devices.revokeAccessibility" = "%1$@ intrekken";
+
+"hub.devices.revokedDone" = "%1$@ is ingetrokken.";
+
+"hub.devices.none" = "Geen gekoppelde apparaten.";
+
+"hub.devices.cars" = "Auto's: %1$@";
+
+"hub.devices.noCars" = "Geen auto's";
+
+"hub.devices.carFallback" = "Auto %1$@";
+
+"hub.devices.unnamed" = "Naamloos apparaat";
+
+"hub.devices.stateRevoked" = "Ingetrokken %1$@";
+
+"hub.devices.stateExpired" = "Verlopen %1$@";
+
+"hub.devices.stateLastSeen" = "Laatst gezien %1$@";
+
+"hub.devices.stateNeverSeen" = "Nog niet gezien";
+
+"hub.collection.loginOwn" = "Ingelogd met de eigen login van de Hub";
+
+"hub.collection.loginSignedOut" = "Uitgelogd";
+
+"hub.collection.loginNotOwn" = "De opgeslagen login is niet de eigen login van de Hub";
+
+"hub.collection.credValidUntil" = "Geldig tot %1$@";
+
+"hub.collection.credValid" = "Geldig";
+
+"hub.collection.credRelogin" = "Opnieuw inloggen nodig: log opnieuw in via het volgende open venster";
+
+"hub.collection.credOwnerRefused" = "Owner API geweigerd: Tesla heeft deze login geweigerd";
+
+"hub.collection.credRefused" = "Geweigerd (%1$@)";
+
+"hub.collection.credExposure" = "Blootstelling vermoed: log opnieuw in via het volgende open venster";
+
+"hub.collection.credAttention" = "Heeft aandacht nodig (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Niet ingelogd";
+
+"hub.collection.windowOpenUntil" = "Open tot %1$@";
+
+"hub.collection.windowOpen" = "Open";
+
+"hub.collection.windowPending" = "In afwachting";
+
+"hub.collection.windowPendingFrom" = "In afwachting vanaf %1$@";
+
+"hub.collection.windowPendingUntil" = "In afwachting tot %1$@";
+
+"hub.collection.windowPendingFromUntil" = "In afwachting van %1$@ tot %2$@";
+
+"hub.collection.windowClosingExpiry" = "Wordt gesloten (verloopt %1$@)";
+
+"hub.collection.windowClosing" = "Wordt gesloten";
+
+"hub.collection.windowClosedReason" = "Gesloten (%1$@)";
+
+"hub.collection.windowClosed" = "Gesloten";
+
+"hub.collection.windowUntrusted" = "Gesloten (geen vertrouwde uitgever)";
+
+"hub.collection.windowFaulted" = "Gesloten (de venstertoestand heeft een nieuw vertrouwensdocument nodig)";
+
+"hub.collection.windowRecovery" = "Gesloten (wacht op herstel van de inloggegevens: voer restore-recovery-credentials uit)";
+
+"hub.collection.windowUnauthenticated" = "Onbekend: het controlekanaal is niet van deze Hub";
+
+"hub.collection.windowNotRunning" = "Onbekend: de Hub draait niet";
+
+"hub.collection.reasonExpired" = "verlopen";
+
+"hub.collection.reasonOperator" = "gesloten door de operator";
+
+"hub.collection.reasonRelogin" = "opnieuw inloggen nodig";
+
+"hub.collection.reasonOwnerRefused" = "Owner API geweigerd";
+
+"hub.collection.reasonClock" = "klokcontrole mislukt";
+
+"hub.collection.reasonReboot" = "de Mac is opnieuw gestart";
+
+"hub.collection.reasonUnverifiable" = "toestand kon niet worden geverifieerd";
+
+"hub.collection.reasonClaimLost" = "verzamelclaim kwijt";
+
+"hub.collection.fleet" = "Geparkeerd: geen Fleet-actie beschikbaar";
+
+"hub.collection.signInUnavailable" = "Inloggen niet beschikbaar op deze Hub";
+
+"hub.collection.labelLogin" = "Tesla-login";
+
+"hub.collection.labelCredential" = "Status van de inloggegevens";
+
+"hub.collection.labelWindow" = "Verzamelvenster";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Inloggen";
+
+"hub.signIn.recoveryPending" = "De Hub wacht op herstel van zijn inloggegevens: de gegevens van deze Hub zijn hersteld zonder de sleutels. Voer restore-recovery-credentials uit en log daarna in. Er is niets gewijzigd.";
+
+"hub.signIn.serviceUnauthenticated" = "Het proces dat op het controlekanaal van de Hub antwoordt, is niet deze Hub, dus er is niets verzonden. Start de Hub opnieuw en log daarna opnieuw in.";
+
+"hub.signIn.busy" = "De Hub is bezig met andere verzoeken. Er is niets gewijzigd; log over een moment opnieuw in.";

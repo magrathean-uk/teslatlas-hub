@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "스키마 검사만으로는 어떤 릴리스의 원본 애플리케이션이 이 데이터베이스를 작성했는지 알 수 없습니다. 여러 릴리스가 같은 스키마를 사용합니다.";
 
 "hub.import.ackRelease" = "원본 애플리케이션이 릴리스 4.2.0 이상이며 가져오는 동안 업데이트되지 않을 것임을 확인합니다.";
+
+"hub.backup.title" = "백업";
+
+"hub.backup.detail" = "Hub 기록의 암호화된 사본입니다. 복구 암호는 이 Mac에서 소유자만 읽을 수 있는 파일에 저장됩니다.";
+
+"hub.backup.backUpNow" = "지금 백업";
+
+"hub.backup.onSchedule" = "일정에 따라 백업";
+
+"hub.backup.saveSchedule" = "일정 저장";
+
+"hub.backup.panelPrompt" = "선택";
+
+"hub.backup.panelMessage" = "Hub 데이터 폴더 밖에서 암호화된 Hub 백업을 저장할 폴더를 선택하세요.";
+
+"hub.backup.savedNote" = "저장했습니다. 일정은 Hub를 다시 시작하면 적용됩니다.";
+
+"hub.backup.noFolder" = "선택한 폴더 없음";
+
+"hub.backup.passwordPlaceholder" = "복구 암호(%1$@자 이상)";
+
+"hub.backup.passwordSaved" = "저장했습니다. 바꾸려면 새 암호를 입력하세요";
+
+"hub.backup.intervalHour" = "1시간마다";
+
+"hub.backup.intervalDay" = "매일";
+
+"hub.backup.intervalTwoDays" = "2일마다";
+
+"hub.backup.intervalWeek" = "매주";
+
+"hub.backup.intervalHours" = "%1$@시간마다";
+
+"hub.backup.schedule" = "일정";
+
+"hub.backup.keep" = "보관";
+
+"hub.backup.keepSuffix" = "개 백업";
+
+"hub.backup.folder" = "폴더";
+
+"hub.backup.passwordLabel" = "복구 암호";
+
+"hub.backup.problem.passwordShort" = "복구 암호는 %1$@자 이상이어야 합니다.";
+
+"hub.backup.problem.interval" = "간격은 1~8784시간 사이여야 합니다.";
+
+"hub.backup.problem.keep" = "보관할 백업 수는 1~1000 사이여야 합니다.";
+
+"hub.backup.problem.chooseFolder" = "백업 폴더를 선택하세요.";
+
+"hub.backup.problem.folderInside" = "Hub 데이터 폴더 밖의 백업 폴더를 선택하세요.";
+
+"hub.backup.problem.needsBoth" = "예약된 백업에는 백업 폴더와 복구 암호가 필요합니다.";
+
+"hub.backup.lastGoodNone" = "아직 없음";
+
+"hub.backup.nextOff" = "예약된 백업이 꺼져 있습니다";
+
+"hub.backup.nextNotScheduled" = "예약되지 않음: 폴더와 암호를 선택하세요";
+
+"hub.backup.nextPaused" = "인증 정보 복구를 기다리는 중";
+
+"hub.collection.notReported" = "보고되지 않음";
+
+"hub.backup.blocked" = "거부된 인증 정보가 백업을 막고 있습니다. purge-refused-credentials를 실행해 지우세요.";
+
+"hub.backup.lastFailedMessage" = "마지막 시도 실패: %1$@";
+
+"hub.backup.lastFailedCode" = "마지막 시도 실패(%1$@)";
+
+"hub.backup.row.lastGood" = "마지막으로 성공한 백업";
+
+"hub.backup.row.next" = "다음 백업";
+
+"hub.backup.row.running" = "백업이 지금 실행 중입니다";
+
+"hub.backup.row.lastAttempt" = "마지막 시도";
+
+"hub.backup.run.running" = "백업 중…";
+
+"hub.backup.run.stillRunning" = "백업이 아직 Hub 서비스에서 실행 중입니다.";
+
+"hub.backup.run.finishedGeneration" = "백업 완료: %1$@";
+
+"hub.backup.run.finished" = "백업 완료";
+
+"hub.backup.run.failed" = "백업 실패: %1$@";
+
+"hub.backup.maint.unreadable" = "Hub의 응답을 읽을 수 없습니다.";
+
+"hub.backup.maint.unwritable" = "복구 암호를 저장할 수 없습니다.";
+
+"hub.backup.maint.configMissing" = "백업을 변경하기 전에 Hub를 설정하세요.";
+
+"hub.devices.title" = "페어링된 기기";
+
+"hub.devices.detail" = "이 Hub를 읽는 휴대폰과 앱, 그리고 각각이 읽을 수 있는 차량입니다.";
+
+"hub.devices.revokeTitle" = "%1$@의 접근을 해제할까요?";
+
+"hub.devices.revokeInfo" = "이 기기는 Hub에서 즉시 읽기를 중단합니다. 다시 사용하려면 다시 페어링하세요.";
+
+"hub.devices.revoke" = "해제";
+
+"hub.devices.revokeEllipsis" = "해제…";
+
+"hub.devices.revokeAccessibility" = "%1$@ 접근 해제";
+
+"hub.devices.revokedDone" = "%1$@의 접근을 해제했습니다.";
+
+"hub.devices.none" = "페어링된 기기가 없습니다.";
+
+"hub.devices.cars" = "차량: %1$@";
+
+"hub.devices.noCars" = "차량 없음";
+
+"hub.devices.carFallback" = "차량 %1$@";
+
+"hub.devices.unnamed" = "이름 없는 기기";
+
+"hub.devices.stateRevoked" = "해제됨 %1$@";
+
+"hub.devices.stateExpired" = "만료됨 %1$@";
+
+"hub.devices.stateLastSeen" = "마지막 확인 %1$@";
+
+"hub.devices.stateNeverSeen" = "아직 확인되지 않음";
+
+"hub.collection.loginOwn" = "Hub 자체 로그인으로 로그인됨";
+
+"hub.collection.loginSignedOut" = "로그아웃됨";
+
+"hub.collection.loginNotOwn" = "저장된 로그인이 Hub 자체의 것이 아닙니다";
+
+"hub.collection.credValidUntil" = "%1$@까지 유효";
+
+"hub.collection.credValid" = "유효";
+
+"hub.collection.credRelogin" = "다시 로그인해야 함: 다음에 열리는 창에서 다시 로그인하세요";
+
+"hub.collection.credOwnerRefused" = "Owner API 거부됨: Tesla가 이 로그인을 거부했습니다";
+
+"hub.collection.credRefused" = "거부됨(%1$@)";
+
+"hub.collection.credExposure" = "노출 의심: 다음에 열리는 창에서 다시 로그인하세요";
+
+"hub.collection.credAttention" = "확인 필요(%1$@)";
+
+"hub.collection.credNotSignedIn" = "로그인되지 않음";
+
+"hub.collection.windowOpenUntil" = "%1$@까지 열림";
+
+"hub.collection.windowOpen" = "열림";
+
+"hub.collection.windowPending" = "대기 중";
+
+"hub.collection.windowPendingFrom" = "%1$@부터 대기 중";
+
+"hub.collection.windowPendingUntil" = "%1$@까지 대기 중";
+
+"hub.collection.windowPendingFromUntil" = "%1$@부터 %2$@까지 대기 중";
+
+"hub.collection.windowClosingExpiry" = "닫는 중(만료 %1$@)";
+
+"hub.collection.windowClosing" = "닫는 중";
+
+"hub.collection.windowClosedReason" = "닫힘(%1$@)";
+
+"hub.collection.windowClosed" = "닫힘";
+
+"hub.collection.windowUntrusted" = "닫힘(신뢰할 수 있는 발급자 없음)";
+
+"hub.collection.windowFaulted" = "닫힘(창 상태에 새 신뢰 문서가 필요함)";
+
+"hub.collection.windowRecovery" = "닫힘(인증 정보 복구를 기다리는 중: restore-recovery-credentials 실행)";
+
+"hub.collection.windowUnauthenticated" = "알 수 없음: 제어 채널이 이 Hub의 것이 아닙니다";
+
+"hub.collection.windowNotRunning" = "알 수 없음: Hub가 실행 중이 아닙니다";
+
+"hub.collection.reasonExpired" = "만료됨";
+
+"hub.collection.reasonOperator" = "운영자가 닫음";
+
+"hub.collection.reasonRelogin" = "다시 로그인해야 함";
+
+"hub.collection.reasonOwnerRefused" = "Owner API 거부됨";
+
+"hub.collection.reasonClock" = "시계 확인 실패";
+
+"hub.collection.reasonReboot" = "Mac이 다시 시작됨";
+
+"hub.collection.reasonUnverifiable" = "상태를 확인할 수 없음";
+
+"hub.collection.reasonClaimLost" = "수집 권한을 잃음";
+
+"hub.collection.fleet" = "보류됨: 사용할 수 있는 Fleet 작업이 없습니다";
+
+"hub.collection.signInUnavailable" = "이 Hub에서는 로그인을 사용할 수 없습니다";
+
+"hub.collection.labelLogin" = "Tesla 로그인";
+
+"hub.collection.labelCredential" = "인증 정보 상태";
+
+"hub.collection.labelWindow" = "수집 창";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "로그인";
+
+"hub.signIn.recoveryPending" = "Hub가 인증 정보 복구를 기다리고 있습니다. 이 Hub의 데이터가 키 없이 복원되었습니다. restore-recovery-credentials를 실행한 다음 로그인하세요. 변경된 것은 없습니다.";
+
+"hub.signIn.serviceUnauthenticated" = "Hub의 제어 채널에서 응답하는 프로세스가 이 Hub가 아니므로 아무것도 전송되지 않았습니다. Hub를 다시 시작한 다음 다시 로그인하세요.";
+
+"hub.signIn.busy" = "Hub가 다른 요청을 처리 중입니다. 변경된 것은 없습니다. 잠시 후 다시 로그인하세요.";

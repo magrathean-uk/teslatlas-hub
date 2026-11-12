@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "Kontrola schématu nedokáže určit, která verze zdrojové aplikace tuto databázi vytvořila: stejné schéma používá více verzí.";
 
 "hub.import.ackRelease" = "Potvrzuji, že zdrojová aplikace je ve verzi 4.2.0 nebo novější a během importu nebude aktualizována.";
+
+"hub.backup.title" = "Zálohy";
+
+"hub.backup.detail" = "Šifrované kopie historie Hubu. Heslo pro obnovení je uloženo v souboru na tomto Macu, který smí číst jen vlastník.";
+
+"hub.backup.backUpNow" = "Zálohovat teď";
+
+"hub.backup.onSchedule" = "Zálohovat podle plánu";
+
+"hub.backup.saveSchedule" = "Uložit plán";
+
+"hub.backup.panelPrompt" = "Vybrat";
+
+"hub.backup.panelMessage" = "Vyberte složku pro šifrované zálohy Hubu mimo datovou složku Hubu.";
+
+"hub.backup.savedNote" = "Uloženo. Plán se použije po restartu Hubu.";
+
+"hub.backup.noFolder" = "Není vybrána žádná složka";
+
+"hub.backup.passwordPlaceholder" = "Heslo pro obnovení (alespoň %1$@ znaků)";
+
+"hub.backup.passwordSaved" = "Uloženo. Pro nahrazení zadejte nové";
+
+"hub.backup.intervalHour" = "Každou hodinu";
+
+"hub.backup.intervalDay" = "Každý den";
+
+"hub.backup.intervalTwoDays" = "Každé 2 dny";
+
+"hub.backup.intervalWeek" = "Každý týden";
+
+"hub.backup.intervalHours" = "Každých %1$@ h";
+
+"hub.backup.schedule" = "Plán";
+
+"hub.backup.keep" = "Ponechat";
+
+"hub.backup.keepSuffix" = "záloh";
+
+"hub.backup.folder" = "Složka";
+
+"hub.backup.passwordLabel" = "Heslo pro obnovení";
+
+"hub.backup.problem.passwordShort" = "Heslo pro obnovení musí mít alespoň %1$@ znaků.";
+
+"hub.backup.problem.interval" = "Interval musí být mezi 1 a 8784 hodinami.";
+
+"hub.backup.problem.keep" = "Počet ponechaných záloh musí být mezi 1 a 1000.";
+
+"hub.backup.problem.chooseFolder" = "Vyberte složku pro zálohy.";
+
+"hub.backup.problem.folderInside" = "Vyberte složku pro zálohy mimo datovou složku Hubu.";
+
+"hub.backup.problem.needsBoth" = "Plánované zálohy potřebují složku pro zálohy a heslo pro obnovení.";
+
+"hub.backup.lastGoodNone" = "Zatím žádná";
+
+"hub.backup.nextOff" = "Plánované zálohy jsou vypnuté";
+
+"hub.backup.nextNotScheduled" = "Neplánováno: vyberte složku a heslo";
+
+"hub.backup.nextPaused" = "Čeká na obnovení přihlašovacích údajů";
+
+"hub.collection.notReported" = "Nehlášeno";
+
+"hub.backup.blocked" = "Odmítnuté přihlašovací údaje blokují zálohy. Spusťte purge-refused-credentials a vymažte je.";
+
+"hub.backup.lastFailedMessage" = "Poslední pokus selhal: %1$@";
+
+"hub.backup.lastFailedCode" = "Poslední pokus selhal (%1$@)";
+
+"hub.backup.row.lastGood" = "Poslední úspěšná záloha";
+
+"hub.backup.row.next" = "Další záloha";
+
+"hub.backup.row.running" = "Záloha právě probíhá";
+
+"hub.backup.row.lastAttempt" = "Poslední pokus";
+
+"hub.backup.run.running" = "Zálohování…";
+
+"hub.backup.run.stillRunning" = "Záloha stále probíhá ve službě Hubu.";
+
+"hub.backup.run.finishedGeneration" = "Záloha dokončena: %1$@";
+
+"hub.backup.run.finished" = "Záloha dokončena";
+
+"hub.backup.run.failed" = "Záloha selhala: %1$@";
+
+"hub.backup.maint.unreadable" = "Odpověď Hubu se nepodařilo přečíst.";
+
+"hub.backup.maint.unwritable" = "Heslo pro obnovení se nepodařilo uložit.";
+
+"hub.backup.maint.configMissing" = "Před změnou záloh Hub nastavte.";
+
+"hub.devices.title" = "Spárovaná zařízení";
+
+"hub.devices.detail" = "Telefony a aplikace, které čtou tento Hub, s auty, která může každé z nich číst.";
+
+"hub.devices.revokeTitle" = "Odvolat zařízení %1$@?";
+
+"hub.devices.revokeInfo" = "Toto zařízení přestane okamžitě číst z Hubu. Chcete-li ho znovu používat, spárujte ho znovu.";
+
+"hub.devices.revoke" = "Odvolat";
+
+"hub.devices.revokeEllipsis" = "Odvolat…";
+
+"hub.devices.revokeAccessibility" = "Odvolat zařízení %1$@";
+
+"hub.devices.revokedDone" = "Zařízení %1$@ bylo odvoláno.";
+
+"hub.devices.none" = "Žádná spárovaná zařízení.";
+
+"hub.devices.cars" = "Auta: %1$@";
+
+"hub.devices.noCars" = "Žádná auta";
+
+"hub.devices.carFallback" = "Auto %1$@";
+
+"hub.devices.unnamed" = "Nepojmenované zařízení";
+
+"hub.devices.stateRevoked" = "Odvoláno %1$@";
+
+"hub.devices.stateExpired" = "Vypršelo %1$@";
+
+"hub.devices.stateLastSeen" = "Naposledy viděno %1$@";
+
+"hub.devices.stateNeverSeen" = "Zatím neviděno";
+
+"hub.collection.loginOwn" = "Přihlášeno vlastním přihlášením Hubu";
+
+"hub.collection.loginSignedOut" = "Odhlášeno";
+
+"hub.collection.loginNotOwn" = "Uložené přihlášení není vlastní přihlášení Hubu";
+
+"hub.collection.credValidUntil" = "Platné do %1$@";
+
+"hub.collection.credValid" = "Platné";
+
+"hub.collection.credRelogin" = "Je nutné nové přihlášení: přihlaste se znovu v dalším otevřeném okně";
+
+"hub.collection.credOwnerRefused" = "Owner API odmítlo: Tesla toto přihlášení odmítla";
+
+"hub.collection.credRefused" = "Odmítnuto (%1$@)";
+
+"hub.collection.credExposure" = "Podezření na prozrazení: přihlaste se znovu v dalším otevřeném okně";
+
+"hub.collection.credAttention" = "Vyžaduje pozornost (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Nepřihlášeno";
+
+"hub.collection.windowOpenUntil" = "Otevřeno do %1$@";
+
+"hub.collection.windowOpen" = "Otevřeno";
+
+"hub.collection.windowPending" = "Čeká";
+
+"hub.collection.windowPendingFrom" = "Čeká od %1$@";
+
+"hub.collection.windowPendingUntil" = "Čeká do %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Čeká od %1$@ do %2$@";
+
+"hub.collection.windowClosingExpiry" = "Zavírá se (vyprší %1$@)";
+
+"hub.collection.windowClosing" = "Zavírá se";
+
+"hub.collection.windowClosedReason" = "Zavřeno (%1$@)";
+
+"hub.collection.windowClosed" = "Zavřeno";
+
+"hub.collection.windowUntrusted" = "Zavřeno (žádný důvěryhodný vydavatel)";
+
+"hub.collection.windowFaulted" = "Zavřeno (stav okna potřebuje nový dokument důvěry)";
+
+"hub.collection.windowRecovery" = "Zavřeno (čeká na obnovení přihlašovacích údajů: spusťte restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Neznámé: řídicí kanál nepatří tomuto Hubu";
+
+"hub.collection.windowNotRunning" = "Neznámé: Hub neběží";
+
+"hub.collection.reasonExpired" = "vypršelo";
+
+"hub.collection.reasonOperator" = "zavřeno operátorem";
+
+"hub.collection.reasonRelogin" = "je nutné nové přihlášení";
+
+"hub.collection.reasonOwnerRefused" = "Owner API odmítlo";
+
+"hub.collection.reasonClock" = "kontrola hodin selhala";
+
+"hub.collection.reasonReboot" = "Mac se restartoval";
+
+"hub.collection.reasonUnverifiable" = "stav se nepodařilo ověřit";
+
+"hub.collection.reasonClaimLost" = "nárok na sběr byl ztracen";
+
+"hub.collection.fleet" = "Pozastaveno: není dostupná žádná akce Fleet";
+
+"hub.collection.signInUnavailable" = "Přihlášení není na tomto Hubu dostupné";
+
+"hub.collection.labelLogin" = "Přihlášení k Tesle";
+
+"hub.collection.labelCredential" = "Stav přihlašovacích údajů";
+
+"hub.collection.labelWindow" = "Okno sběru";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Přihlášení";
+
+"hub.signIn.recoveryPending" = "Hub čeká na obnovení svých přihlašovacích údajů: data tohoto Hubu byla obnovena bez jeho klíčů. Spusťte restore-recovery-credentials a poté se přihlaste. Nic se nezměnilo.";
+
+"hub.signIn.serviceUnauthenticated" = "Proces, který odpovídá na řídicím kanálu Hubu, není tento Hub, proto nebylo nic odesláno. Restartujte Hub a poté se přihlaste znovu.";
+
+"hub.signIn.busy" = "Hub je zaneprázdněn jinými požadavky. Nic se nezměnilo; za chvíli se přihlaste znovu.";

@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "A séma ellenőrzése nem tudja megállapítani, hogy a forrásalkalmazás melyik kiadása hozta létre ezt az adatbázist: több kiadás használja ugyanazt a sémát.";
 
 "hub.import.ackRelease" = "Megerősítem, hogy a forrásalkalmazás 4.2.0-s vagy újabb kiadású, és az importálás alatt nem frissül.";
+
+"hub.backup.title" = "Biztonsági mentések";
+
+"hub.backup.detail" = "A Hub előzményeinek titkosított másolatai. A helyreállítási jelszó egy olyan fájlban van ezen a Macen, amelyet csak a tulajdonos olvashat.";
+
+"hub.backup.backUpNow" = "Mentés most";
+
+"hub.backup.onSchedule" = "Mentés ütemezés szerint";
+
+"hub.backup.saveSchedule" = "Ütemezés mentése";
+
+"hub.backup.panelPrompt" = "Kiválasztás";
+
+"hub.backup.panelMessage" = "Válassz mappát a Hub titkosított biztonsági mentéseinek, a Hub adatmappáján kívül.";
+
+"hub.backup.savedNote" = "Mentve. Az ütemezés a Hub újraindulásakor lép érvénybe.";
+
+"hub.backup.noFolder" = "Nincs mappa kiválasztva";
+
+"hub.backup.passwordPlaceholder" = "Helyreállítási jelszó (legalább %1$@ karakter)";
+
+"hub.backup.passwordSaved" = "Mentve. Írj be egy újat a lecseréléséhez";
+
+"hub.backup.intervalHour" = "Óránként";
+
+"hub.backup.intervalDay" = "Naponta";
+
+"hub.backup.intervalTwoDays" = "2 naponta";
+
+"hub.backup.intervalWeek" = "Hetente";
+
+"hub.backup.intervalHours" = "%1$@ óránként";
+
+"hub.backup.schedule" = "Ütemezés";
+
+"hub.backup.keep" = "Megtartás";
+
+"hub.backup.keepSuffix" = "mentés";
+
+"hub.backup.folder" = "Mappa";
+
+"hub.backup.passwordLabel" = "Helyreállítási jelszó";
+
+"hub.backup.problem.passwordShort" = "A helyreállítási jelszónak legalább %1$@ karakter hosszúnak kell lennie.";
+
+"hub.backup.problem.interval" = "Az időköznek 1 és 8784 óra között kell lennie.";
+
+"hub.backup.problem.keep" = "A megtartott mentések számának 1 és 1000 között kell lennie.";
+
+"hub.backup.problem.chooseFolder" = "Válassz mentési mappát.";
+
+"hub.backup.problem.folderInside" = "Válassz mentési mappát a Hub adatmappáján kívül.";
+
+"hub.backup.problem.needsBoth" = "Az ütemezett mentésekhez mentési mappa és helyreállítási jelszó kell.";
+
+"hub.backup.lastGoodNone" = "Még nincs";
+
+"hub.backup.nextOff" = "Az ütemezett mentések ki vannak kapcsolva";
+
+"hub.backup.nextNotScheduled" = "Nincs ütemezve: válassz mappát és jelszót";
+
+"hub.backup.nextPaused" = "Várakozás a hitelesítési adatok helyreállítására";
+
+"hub.collection.notReported" = "Nincs jelentve";
+
+"hub.backup.blocked" = "Az elutasított hitelesítési adatok blokkolják a mentéseket. Futtasd a purge-refused-credentials parancsot a törlésükhöz.";
+
+"hub.backup.lastFailedMessage" = "Az utolsó kísérlet sikertelen volt: %1$@";
+
+"hub.backup.lastFailedCode" = "Az utolsó kísérlet sikertelen volt (%1$@)";
+
+"hub.backup.row.lastGood" = "Utolsó sikeres mentés";
+
+"hub.backup.row.next" = "Következő mentés";
+
+"hub.backup.row.running" = "Most fut egy mentés";
+
+"hub.backup.row.lastAttempt" = "Utolsó kísérlet";
+
+"hub.backup.run.running" = "Mentés…";
+
+"hub.backup.run.stillRunning" = "A mentés még fut a Hub szolgáltatásban.";
+
+"hub.backup.run.finishedGeneration" = "Mentés kész: %1$@";
+
+"hub.backup.run.finished" = "Mentés kész";
+
+"hub.backup.run.failed" = "A mentés sikertelen: %1$@";
+
+"hub.backup.maint.unreadable" = "A Hub válaszát nem sikerült beolvasni.";
+
+"hub.backup.maint.unwritable" = "A helyreállítási jelszót nem sikerült elmenteni.";
+
+"hub.backup.maint.configMissing" = "A mentések módosítása előtt állítsd be a Hubot.";
+
+"hub.devices.title" = "Párosított eszközök";
+
+"hub.devices.detail" = "A Hubot olvasó telefonok és appok, azokkal az autókkal, amelyeket egyenként olvashatnak.";
+
+"hub.devices.revokeTitle" = "Visszavonod a(z) %1$@ hozzáférését?";
+
+"hub.devices.revokeInfo" = "Ez az eszköz azonnal leáll a Hub olvasásával. Újbóli használatához párosítsd újra.";
+
+"hub.devices.revoke" = "Visszavonás";
+
+"hub.devices.revokeEllipsis" = "Visszavonás…";
+
+"hub.devices.revokeAccessibility" = "A(z) %1$@ hozzáférésének visszavonása";
+
+"hub.devices.revokedDone" = "A(z) %1$@ hozzáférése visszavonva.";
+
+"hub.devices.none" = "Nincs párosított eszköz.";
+
+"hub.devices.cars" = "Autók: %1$@";
+
+"hub.devices.noCars" = "Nincs autó";
+
+"hub.devices.carFallback" = "Autó %1$@";
+
+"hub.devices.unnamed" = "Névtelen eszköz";
+
+"hub.devices.stateRevoked" = "Visszavonva: %1$@";
+
+"hub.devices.stateExpired" = "Lejárt: %1$@";
+
+"hub.devices.stateLastSeen" = "Utoljára látva: %1$@";
+
+"hub.devices.stateNeverSeen" = "Még nem látott";
+
+"hub.collection.loginOwn" = "Bejelentkezve a Hub saját bejelentkezésével";
+
+"hub.collection.loginSignedOut" = "Kijelentkezve";
+
+"hub.collection.loginNotOwn" = "A tárolt bejelentkezés nem a Hub saját bejelentkezése";
+
+"hub.collection.credValidUntil" = "Érvényes eddig: %1$@";
+
+"hub.collection.credValid" = "Érvényes";
+
+"hub.collection.credRelogin" = "Új bejelentkezés szükséges: jelentkezz be újra a következő nyitott ablakban";
+
+"hub.collection.credOwnerRefused" = "Owner API elutasítva: a Tesla elutasította ezt a bejelentkezést";
+
+"hub.collection.credRefused" = "Elutasítva (%1$@)";
+
+"hub.collection.credExposure" = "Feltételezett kitettség: jelentkezz be újra a következő nyitott ablakban";
+
+"hub.collection.credAttention" = "Figyelmet igényel (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Nincs bejelentkezve";
+
+"hub.collection.windowOpenUntil" = "Nyitva eddig: %1$@";
+
+"hub.collection.windowOpen" = "Nyitva";
+
+"hub.collection.windowPending" = "Függőben";
+
+"hub.collection.windowPendingFrom" = "Függőben ettől: %1$@";
+
+"hub.collection.windowPendingUntil" = "Függőben eddig: %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Függőben: %1$@ – %2$@";
+
+"hub.collection.windowClosingExpiry" = "Zárás alatt (lejár: %1$@)";
+
+"hub.collection.windowClosing" = "Zárás alatt";
+
+"hub.collection.windowClosedReason" = "Zárva (%1$@)";
+
+"hub.collection.windowClosed" = "Zárva";
+
+"hub.collection.windowUntrusted" = "Zárva (nincs megbízható kibocsátó)";
+
+"hub.collection.windowFaulted" = "Zárva (az ablak állapotához új megbízhatósági dokumentum kell)";
+
+"hub.collection.windowRecovery" = "Zárva (várakozás a hitelesítési adatok helyreállítására: futtasd a restore-recovery-credentials parancsot)";
+
+"hub.collection.windowUnauthenticated" = "Ismeretlen: a vezérlőcsatorna nem ehhez a Hubhoz tartozik";
+
+"hub.collection.windowNotRunning" = "Ismeretlen: a Hub nem fut";
+
+"hub.collection.reasonExpired" = "lejárt";
+
+"hub.collection.reasonOperator" = "az operátor lezárta";
+
+"hub.collection.reasonRelogin" = "új bejelentkezés szükséges";
+
+"hub.collection.reasonOwnerRefused" = "Owner API elutasítva";
+
+"hub.collection.reasonClock" = "az óra ellenőrzése sikertelen";
+
+"hub.collection.reasonReboot" = "a Mac újraindult";
+
+"hub.collection.reasonUnverifiable" = "az állapotot nem sikerült ellenőrizni";
+
+"hub.collection.reasonClaimLost" = "a gyűjtési jogosultság elveszett";
+
+"hub.collection.fleet" = "Szünetel: nem érhető el Fleet-művelet";
+
+"hub.collection.signInUnavailable" = "A bejelentkezés nem érhető el ezen a Hubon";
+
+"hub.collection.labelLogin" = "Tesla-bejelentkezés";
+
+"hub.collection.labelCredential" = "Hitelesítési adatok állapota";
+
+"hub.collection.labelWindow" = "Gyűjtési ablak";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Bejelentkezés";
+
+"hub.signIn.recoveryPending" = "A Hub a hitelesítési adatai helyreállítására vár: a Hub adatai a kulcsai nélkül lettek visszaállítva. Futtasd a restore-recovery-credentials parancsot, majd jelentkezz be. Semmi sem változott.";
+
+"hub.signIn.serviceUnauthenticated" = "A Hub vezérlőcsatornáján válaszoló folyamat nem ez a Hub, ezért semmi sem lett elküldve. Indítsd újra a Hubot, majd jelentkezz be újra.";
+
+"hub.signIn.busy" = "A Hub más kérésekkel van elfoglalva. Semmi sem változott; jelentkezz be újra egy pillanat múlva.";

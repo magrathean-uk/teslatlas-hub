@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "Skemaskoðun getur ekki sýnt hvaða útgáfa upprunaforritsins bjó til þennan gagnagrunn: fleiri en ein útgáfa notar sama skema.";
 
 "hub.import.ackRelease" = "Ég staðfesti að upprunaforritið sé í útgáfu 4.2.0 eða nýrri og verði ekki uppfært meðan á innflutningi stendur.";
+
+"hub.backup.title" = "Afrit";
+
+"hub.backup.detail" = "Dulkóruð afrit af ferli Hub. Endurheimtarlykilorðið er í skrá á þessari Mac-tölvu sem aðeins eigandinn getur lesið.";
+
+"hub.backup.backUpNow" = "Taka afrit núna";
+
+"hub.backup.onSchedule" = "Taka afrit samkvæmt áætlun";
+
+"hub.backup.saveSchedule" = "Vista áætlun";
+
+"hub.backup.panelPrompt" = "Velja";
+
+"hub.backup.panelMessage" = "Veldu möppu fyrir dulkóruð afrit af Hub utan gagnamöppu Hub.";
+
+"hub.backup.savedNote" = "Vistað. Áætlunin gildir þegar Hub endurræsist.";
+
+"hub.backup.noFolder" = "Engin mappa valin";
+
+"hub.backup.passwordPlaceholder" = "Endurheimtarlykilorð (að minnsta kosti %1$@ stafir)";
+
+"hub.backup.passwordSaved" = "Vistað. Sláðu inn nýtt til að skipta því út";
+
+"hub.backup.intervalHour" = "Á klukkustundar fresti";
+
+"hub.backup.intervalDay" = "Daglega";
+
+"hub.backup.intervalTwoDays" = "Á 2 daga fresti";
+
+"hub.backup.intervalWeek" = "Vikulega";
+
+"hub.backup.intervalHours" = "Á %1$@ klst. fresti";
+
+"hub.backup.schedule" = "Áætlun";
+
+"hub.backup.keep" = "Geyma";
+
+"hub.backup.keepSuffix" = "afrit";
+
+"hub.backup.folder" = "Mappa";
+
+"hub.backup.passwordLabel" = "Endurheimtarlykilorð";
+
+"hub.backup.problem.passwordShort" = "Endurheimtarlykilorðið þarf að vera að minnsta kosti %1$@ stafir.";
+
+"hub.backup.problem.interval" = "Bilið þarf að vera á milli 1 og 8784 klukkustunda.";
+
+"hub.backup.problem.keep" = "Fjöldi afrita sem eru geymd þarf að vera á milli 1 og 1000.";
+
+"hub.backup.problem.chooseFolder" = "Veldu afritamöppu.";
+
+"hub.backup.problem.folderInside" = "Veldu afritamöppu utan gagnamöppu Hub.";
+
+"hub.backup.problem.needsBoth" = "Áætluð afrit þurfa afritamöppu og endurheimtarlykilorð.";
+
+"hub.backup.lastGoodNone" = "Ekkert enn";
+
+"hub.backup.nextOff" = "Áætluð afrit eru slökkt";
+
+"hub.backup.nextNotScheduled" = "Ekki áætlað: veldu möppu og lykilorð";
+
+"hub.backup.nextPaused" = "Bíður eftir endurheimt innskráningarupplýsinga";
+
+"hub.collection.notReported" = "Ekki tilkynnt";
+
+"hub.backup.blocked" = "Hafnað innskráningarupplýsingar loka á afrit. Keyrðu purge-refused-credentials til að hreinsa þær.";
+
+"hub.backup.lastFailedMessage" = "Síðasta tilraun mistókst: %1$@";
+
+"hub.backup.lastFailedCode" = "Síðasta tilraun mistókst (%1$@)";
+
+"hub.backup.row.lastGood" = "Síðasta vel heppnaða afrit";
+
+"hub.backup.row.next" = "Næsta afrit";
+
+"hub.backup.row.running" = "Afrit er í gangi núna";
+
+"hub.backup.row.lastAttempt" = "Síðasta tilraun";
+
+"hub.backup.run.running" = "Tek afrit…";
+
+"hub.backup.run.stillRunning" = "Afritið er enn í gangi í Hub-þjónustunni.";
+
+"hub.backup.run.finishedGeneration" = "Afriti lokið: %1$@";
+
+"hub.backup.run.finished" = "Afriti lokið";
+
+"hub.backup.run.failed" = "Afritið mistókst: %1$@";
+
+"hub.backup.maint.unreadable" = "Ekki tókst að lesa svar Hub.";
+
+"hub.backup.maint.unwritable" = "Ekki tókst að vista endurheimtarlykilorðið.";
+
+"hub.backup.maint.configMissing" = "Settu upp Hub áður en þú breytir afritum.";
+
+"hub.devices.title" = "Pöruð tæki";
+
+"hub.devices.detail" = "Símar og forrit sem lesa þetta Hub, með þeim bílum sem hvert þeirra má lesa.";
+
+"hub.devices.revokeTitle" = "Afturkalla %1$@?";
+
+"hub.devices.revokeInfo" = "Þetta tæki hættir strax að lesa úr Hub. Paraðu það aftur til að nota það aftur.";
+
+"hub.devices.revoke" = "Afturkalla";
+
+"hub.devices.revokeEllipsis" = "Afturkalla…";
+
+"hub.devices.revokeAccessibility" = "Afturkalla %1$@";
+
+"hub.devices.revokedDone" = "%1$@ var afturkallað.";
+
+"hub.devices.none" = "Engin pöruð tæki.";
+
+"hub.devices.cars" = "Bílar: %1$@";
+
+"hub.devices.noCars" = "Engir bílar";
+
+"hub.devices.carFallback" = "Bíll %1$@";
+
+"hub.devices.unnamed" = "Ónefnt tæki";
+
+"hub.devices.stateRevoked" = "Afturkallað %1$@";
+
+"hub.devices.stateExpired" = "Rann út %1$@";
+
+"hub.devices.stateLastSeen" = "Sást síðast %1$@";
+
+"hub.devices.stateNeverSeen" = "Hefur ekki sést enn";
+
+"hub.collection.loginOwn" = "Skráð inn með eigin innskráningu Hub";
+
+"hub.collection.loginSignedOut" = "Skráð út";
+
+"hub.collection.loginNotOwn" = "Vistaða innskráningin er ekki innskráning Hub sjálfs";
+
+"hub.collection.credValidUntil" = "Gilt til %1$@";
+
+"hub.collection.credValid" = "Gilt";
+
+"hub.collection.credRelogin" = "Ný innskráning nauðsynleg: skráðu þig inn aftur í næsta opna glugga";
+
+"hub.collection.credOwnerRefused" = "Owner API hafnað: Tesla hafnaði þessari innskráningu";
+
+"hub.collection.credRefused" = "Hafnað (%1$@)";
+
+"hub.collection.credExposure" = "Grunur um afhjúpun: skráðu þig inn aftur í næsta opna glugga";
+
+"hub.collection.credAttention" = "Þarfnast athygli (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Ekki skráð inn";
+
+"hub.collection.windowOpenUntil" = "Opinn til %1$@";
+
+"hub.collection.windowOpen" = "Opinn";
+
+"hub.collection.windowPending" = "Í bið";
+
+"hub.collection.windowPendingFrom" = "Í bið frá %1$@";
+
+"hub.collection.windowPendingUntil" = "Í bið til %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Í bið frá %1$@ til %2$@";
+
+"hub.collection.windowClosingExpiry" = "Lokast (rennur út %1$@)";
+
+"hub.collection.windowClosing" = "Lokast";
+
+"hub.collection.windowClosedReason" = "Lokaður (%1$@)";
+
+"hub.collection.windowClosed" = "Lokaður";
+
+"hub.collection.windowUntrusted" = "Lokaður (enginn treystur útgefandi)";
+
+"hub.collection.windowFaulted" = "Lokaður (staða gluggans þarfnast nýs traustskjals)";
+
+"hub.collection.windowRecovery" = "Lokaður (bíður eftir endurheimt innskráningarupplýsinga: keyrðu restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Óþekkt: stjórnrásin tilheyrir ekki þessu Hub";
+
+"hub.collection.windowNotRunning" = "Óþekkt: Hub er ekki í gangi";
+
+"hub.collection.reasonExpired" = "rann út";
+
+"hub.collection.reasonOperator" = "lokað af stjórnanda";
+
+"hub.collection.reasonRelogin" = "ný innskráning nauðsynleg";
+
+"hub.collection.reasonOwnerRefused" = "Owner API hafnað";
+
+"hub.collection.reasonClock" = "klukkuathugun mistókst";
+
+"hub.collection.reasonReboot" = "Mac-tölvan endurræstist";
+
+"hub.collection.reasonUnverifiable" = "ekki tókst að staðfesta stöðuna";
+
+"hub.collection.reasonClaimLost" = "söfnunarkröfu glatað";
+
+"hub.collection.fleet" = "Í bið: engin Fleet-aðgerð er tiltæk";
+
+"hub.collection.signInUnavailable" = "Innskráning er ekki tiltæk á þessu Hub";
+
+"hub.collection.labelLogin" = "Tesla-innskráning";
+
+"hub.collection.labelCredential" = "Staða innskráningarupplýsinga";
+
+"hub.collection.labelWindow" = "Söfnunargluggi";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Innskráning";
+
+"hub.signIn.recoveryPending" = "Hub bíður eftir endurheimt innskráningarupplýsinga sinna: gögn þessa Hub voru endurheimt án lykla þess. Keyrðu restore-recovery-credentials og skráðu þig svo inn. Engu var breytt.";
+
+"hub.signIn.serviceUnauthenticated" = "Ferlið sem svarar á stjórnrás Hub er ekki þetta Hub, svo engu var sent. Endurræstu Hub og skráðu þig svo inn aftur.";
+
+"hub.signIn.busy" = "Hub er upptekið við aðrar beiðnir. Engu var breytt; skráðu þig inn aftur eftir augnablik.";

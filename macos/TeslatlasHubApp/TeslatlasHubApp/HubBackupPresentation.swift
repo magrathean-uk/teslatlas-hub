@@ -51,22 +51,22 @@ struct HubBackupSchedule: Equatable {
     /// about to be saved with them.
     func problem(dataDirectory: URL?, newPassword: String? = nil) -> String? {
         if let newPassword, newPassword.count < Self.minimumPasswordLength {
-            return "The recovery password needs at least \(Self.minimumPasswordLength) characters."
+            return HubL10n.format("hub.backup.problem.passwordShort", fallback: "The recovery password needs at least %1$@ characters.", arguments: [String(describing: Self.minimumPasswordLength)])
         }
         guard Self.intervalRange.contains(intervalHours) else {
-            return "The interval must be between 1 and 8784 hours."
+            return HubL10n.text("hub.backup.problem.interval", fallback: "The interval must be between 1 and 8784 hours.")
         }
         guard Self.keepRange.contains(keep) else {
-            return "Keep must be between 1 and 1000 backups."
+            return HubL10n.text("hub.backup.problem.keep", fallback: "Keep must be between 1 and 1000 backups.")
         }
         if let destination {
-            guard destination.hasPrefix("/") else { return "Choose a backup folder." }
+            guard destination.hasPrefix("/") else { return HubL10n.text("hub.backup.problem.chooseFolder", fallback: "Choose a backup folder.") }
             if let dataDirectory, HubBackupSchedule.isInside(destination, folder: dataDirectory.path) {
-                return "Choose a backup folder outside the Hub data folder."
+                return HubL10n.text("hub.backup.problem.folderInside", fallback: "Choose a backup folder outside the Hub data folder.")
             }
         }
         if enabled && (destination == nil || (passwordFile == nil && newPassword == nil)) {
-            return "Scheduled backups need a backup folder and a recovery password."
+            return HubL10n.text("hub.backup.problem.needsBoth", fallback: "Scheduled backups need a backup folder and a recovery password.")
         }
         return nil
     }
@@ -284,15 +284,15 @@ struct HubBackupStatus: Equatable {
         case let (success?, generation?): return "\(date(success)) (\(generation))"
         case let (success?, nil): return date(success)
         case let (nil, generation?): return generation
-        case (nil, nil): return "None yet"
+        case (nil, nil): return HubL10n.text("hub.backup.lastGoodNone", fallback: "None yet")
         }
     }
 
     func nextRunText(date: (Date) -> String = HubCollectionStatus.defaultDateText) -> String {
-        if !enabled { return "Scheduled backups are off" }
-        if !configured { return "Not scheduled: choose a folder and a password" }
-        if paused { return "Waiting for credential recovery" }
-        return nextRun.map(date) ?? "Not reported"
+        if !enabled { return HubL10n.text("hub.backup.nextOff", fallback: "Scheduled backups are off") }
+        if !configured { return HubL10n.text("hub.backup.nextNotScheduled", fallback: "Not scheduled: choose a folder and a password") }
+        if paused { return HubL10n.text("hub.backup.nextPaused", fallback: "Waiting for credential recovery") }
+        return nextRun.map(date) ?? HubL10n.text("hub.collection.notReported", fallback: "Not reported")
     }
 
     /// The service's words when refused credentials block backups. The app offers no
@@ -300,21 +300,21 @@ struct HubBackupStatus: Equatable {
     var blockedText: String? {
         guard blocked else { return nil }
         if let lastFailureMessage, !lastFailureMessage.isEmpty { return lastFailureMessage }
-        return "Refused credentials block backups. Run purge-refused-credentials to clear them."
+        return HubL10n.text("hub.backup.blocked", fallback: "Refused credentials block backups. Run purge-refused-credentials to clear them.")
     }
 
     func lastResultText() -> String? {
         guard let code = lastFailureCode, !blocked else { return nil }
-        if let lastFailureMessage, !lastFailureMessage.isEmpty { return "Last attempt failed: \(lastFailureMessage)" }
-        return "Last attempt failed (\(code))"
+        if let lastFailureMessage, !lastFailureMessage.isEmpty { return HubL10n.format("hub.backup.lastFailedMessage", fallback: "Last attempt failed: %1$@", arguments: [lastFailureMessage]) }
+        return HubL10n.format("hub.backup.lastFailedCode", fallback: "Last attempt failed (%1$@)", arguments: [code])
     }
 
     func rows(date: (Date) -> String = HubCollectionStatus.defaultDateText) -> [(label: String, value: String)] {
         var rows: [(label: String, value: String)] = [
-            ("Last good backup", lastGoodText(date: date)),
-            ("Next backup", running ? "A backup is running now" : nextRunText(date: date))
+            (HubL10n.text("hub.backup.row.lastGood", fallback: "Last good backup"), lastGoodText(date: date)),
+            (HubL10n.text("hub.backup.row.next", fallback: "Next backup"), running ? HubL10n.text("hub.backup.row.running", fallback: "A backup is running now") : nextRunText(date: date))
         ]
-        if let text = lastResultText() { rows.append(("Last attempt", text)) }
+        if let text = lastResultText() { rows.append((HubL10n.text("hub.backup.row.lastAttempt", fallback: "Last attempt"), text)) }
         return rows
     }
 }
@@ -336,12 +336,12 @@ enum HubBackupRunState: Equatable {
     var text: String? {
         switch self {
         case .idle: return nil
-        case .running: return "Backing up…"
-        case .stillRunning: return "The backup is still running in the Hub service."
-        case let .finished(generation?): return "Backup finished: \(generation)"
-        case .finished(nil): return "Backup finished"
+        case .running: return HubL10n.text("hub.backup.run.running", fallback: "Backing up…")
+        case .stillRunning: return HubL10n.text("hub.backup.run.stillRunning", fallback: "The backup is still running in the Hub service.")
+        case let .finished(generation?): return HubL10n.format("hub.backup.run.finishedGeneration", fallback: "Backup finished: %1$@", arguments: [generation])
+        case .finished(nil): return HubL10n.text("hub.backup.run.finished", fallback: "Backup finished")
         case let .blocked(message): return message
-        case let .failed(message): return "Backup failed: \(message)"
+        case let .failed(message): return HubL10n.format("hub.backup.run.failed", fallback: "Backup failed: %1$@", arguments: [message])
         }
     }
 
@@ -401,7 +401,7 @@ struct HubPairedDevice: Equatable {
         let vehicles = (object["vehicles"] as? [String] ?? []).compactMap(UUID.init(uuidString:))
         return HubPairedDevice(
             id: id,
-            name: (value("display_name", "displayName") as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Unnamed device",
+            name: (value("display_name", "displayName") as? String).flatMap { $0.isEmpty ? nil : $0 } ?? HubL10n.text("hub.devices.unnamed", fallback: "Unnamed device"),
             created: HubCollectionStatus.date(value("created_at_ms", "createdAtMs")),
             expires: HubCollectionStatus.date(value("expires_at_ms", "expiresAtMs")),
             revoked: HubCollectionStatus.date(value("revoked_at_ms", "revokedAtMs")),
@@ -412,15 +412,15 @@ struct HubPairedDevice: Equatable {
 
     /// The cars this device may read, by name where the Hub knows it.
     func grantText(vehicleNames: [UUID: String]) -> String {
-        guard !vehicles.isEmpty else { return "No cars" }
-        return vehicles.map { vehicleNames[$0] ?? "Car \($0.uuidString.prefix(8).lowercased())" }
+        guard !vehicles.isEmpty else { return HubL10n.text("hub.devices.noCars", fallback: "No cars") }
+        return vehicles.map { vehicleNames[$0] ?? HubL10n.format("hub.devices.carFallback", fallback: "Car %1$@", arguments: [String($0.uuidString.prefix(8).lowercased())]) }
             .joined(separator: ", ")
     }
 
     func stateText(date: (Date) -> String = HubCollectionStatus.defaultDateText) -> String {
-        if let revoked { return "Revoked \(date(revoked))" }
-        if let expires, expires <= Date() { return "Expired \(date(expires))" }
-        if let lastSeen { return "Last seen \(date(lastSeen))" }
-        return "Not seen yet"
+        if let revoked { return HubL10n.format("hub.devices.stateRevoked", fallback: "Revoked %1$@", arguments: [date(revoked)]) }
+        if let expires, expires <= Date() { return HubL10n.format("hub.devices.stateExpired", fallback: "Expired %1$@", arguments: [date(expires)]) }
+        if let lastSeen { return HubL10n.format("hub.devices.stateLastSeen", fallback: "Last seen %1$@", arguments: [date(lastSeen)]) }
+        return HubL10n.text("hub.devices.stateNeverSeen", fallback: "Not seen yet")
     }
 }

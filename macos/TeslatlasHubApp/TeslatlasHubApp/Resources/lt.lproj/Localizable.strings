@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "Schemos patikra negali parodyti, kuri šaltinio programos laida sukūrė šią duomenų bazę: tą pačią schemą naudoja kelios laidos.";
 
 "hub.import.ackRelease" = "Patvirtinu, kad šaltinio programa yra 4.2.0 arba naujesnės laidos ir importavimo metu nebus atnaujinta.";
+
+"hub.backup.title" = "Atsarginės kopijos";
+
+"hub.backup.detail" = "Užšifruotos „Hub“ istorijos kopijos. Atkūrimo slaptažodis laikomas faile šiame „Mac“, kurį gali skaityti tik savininkas.";
+
+"hub.backup.backUpNow" = "Kurti kopiją dabar";
+
+"hub.backup.onSchedule" = "Kurti kopijas pagal tvarkaraštį";
+
+"hub.backup.saveSchedule" = "Įrašyti tvarkaraštį";
+
+"hub.backup.panelPrompt" = "Pasirinkti";
+
+"hub.backup.panelMessage" = "Pasirinkite aplanką užšifruotoms „Hub“ atsarginėms kopijoms ne „Hub“ duomenų aplanke.";
+
+"hub.backup.savedNote" = "Įrašyta. Tvarkaraštis įsigalios, kai „Hub“ bus paleistas iš naujo.";
+
+"hub.backup.noFolder" = "Aplankas nepasirinktas";
+
+"hub.backup.passwordPlaceholder" = "Atkūrimo slaptažodis (bent %1$@ simbolių)";
+
+"hub.backup.passwordSaved" = "Įrašyta. Įveskite naują, kad pakeistumėte";
+
+"hub.backup.intervalHour" = "Kas valandą";
+
+"hub.backup.intervalDay" = "Kasdien";
+
+"hub.backup.intervalTwoDays" = "Kas 2 dienas";
+
+"hub.backup.intervalWeek" = "Kas savaitę";
+
+"hub.backup.intervalHours" = "Kas %1$@ val.";
+
+"hub.backup.schedule" = "Tvarkaraštis";
+
+"hub.backup.keep" = "Saugoti";
+
+"hub.backup.keepSuffix" = "kopijų";
+
+"hub.backup.folder" = "Aplankas";
+
+"hub.backup.passwordLabel" = "Atkūrimo slaptažodis";
+
+"hub.backup.problem.passwordShort" = "Atkūrimo slaptažodį turi sudaryti bent %1$@ simbolių.";
+
+"hub.backup.problem.interval" = "Intervalas turi būti nuo 1 iki 8784 valandų.";
+
+"hub.backup.problem.keep" = "Saugomų kopijų skaičius turi būti nuo 1 iki 1000.";
+
+"hub.backup.problem.chooseFolder" = "Pasirinkite atsarginių kopijų aplanką.";
+
+"hub.backup.problem.folderInside" = "Pasirinkite atsarginių kopijų aplanką ne „Hub“ duomenų aplanke.";
+
+"hub.backup.problem.needsBoth" = "Suplanuotoms atsarginėms kopijoms reikia atsarginių kopijų aplanko ir atkūrimo slaptažodžio.";
+
+"hub.backup.lastGoodNone" = "Dar nėra";
+
+"hub.backup.nextOff" = "Suplanuotos atsarginės kopijos išjungtos";
+
+"hub.backup.nextNotScheduled" = "Nesuplanuota: pasirinkite aplanką ir slaptažodį";
+
+"hub.backup.nextPaused" = "Laukiama prisijungimo duomenų atkūrimo";
+
+"hub.collection.notReported" = "Nepranešta";
+
+"hub.backup.blocked" = "Atmesti prisijungimo duomenys blokuoja atsargines kopijas. Paleiskite purge-refused-credentials, kad juos pašalintumėte.";
+
+"hub.backup.lastFailedMessage" = "Paskutinis bandymas nepavyko: %1$@";
+
+"hub.backup.lastFailedCode" = "Paskutinis bandymas nepavyko (%1$@)";
+
+"hub.backup.row.lastGood" = "Paskutinė sėkminga kopija";
+
+"hub.backup.row.next" = "Kita kopija";
+
+"hub.backup.row.running" = "Kopija kuriama dabar";
+
+"hub.backup.row.lastAttempt" = "Paskutinis bandymas";
+
+"hub.backup.run.running" = "Kuriama kopija…";
+
+"hub.backup.run.stillRunning" = "Kopija vis dar kuriama „Hub“ tarnyboje.";
+
+"hub.backup.run.finishedGeneration" = "Kopija baigta: %1$@";
+
+"hub.backup.run.finished" = "Kopija baigta";
+
+"hub.backup.run.failed" = "Kopijos sukurti nepavyko: %1$@";
+
+"hub.backup.maint.unreadable" = "Nepavyko perskaityti „Hub“ atsakymo.";
+
+"hub.backup.maint.unwritable" = "Nepavyko įrašyti atkūrimo slaptažodžio.";
+
+"hub.backup.maint.configMissing" = "Nustatykite „Hub“ prieš keisdami atsargines kopijas.";
+
+"hub.devices.title" = "Susieti įrenginiai";
+
+"hub.devices.detail" = "Telefonai ir programos, kurios skaito šį „Hub“, su automobiliais, kuriuos kiekviena gali skaityti.";
+
+"hub.devices.revokeTitle" = "Atšaukti „%1$@“ prieigą?";
+
+"hub.devices.revokeInfo" = "Šis įrenginys iškart nustos skaityti iš „Hub“. Norėdami jį vėl naudoti, susiekite iš naujo.";
+
+"hub.devices.revoke" = "Atšaukti";
+
+"hub.devices.revokeEllipsis" = "Atšaukti…";
+
+"hub.devices.revokeAccessibility" = "Atšaukti „%1$@“ prieigą";
+
+"hub.devices.revokedDone" = "„%1$@“ prieiga atšaukta.";
+
+"hub.devices.none" = "Nėra susietų įrenginių.";
+
+"hub.devices.cars" = "Automobiliai: %1$@";
+
+"hub.devices.noCars" = "Nėra automobilių";
+
+"hub.devices.carFallback" = "Automobilis %1$@";
+
+"hub.devices.unnamed" = "Įrenginys be pavadinimo";
+
+"hub.devices.stateRevoked" = "Atšaukta %1$@";
+
+"hub.devices.stateExpired" = "Nebegalioja nuo %1$@";
+
+"hub.devices.stateLastSeen" = "Paskutinį kartą matyta %1$@";
+
+"hub.devices.stateNeverSeen" = "Dar nematyta";
+
+"hub.collection.loginOwn" = "Prisijungta naudojant paties „Hub“ prisijungimą";
+
+"hub.collection.loginSignedOut" = "Atsijungta";
+
+"hub.collection.loginNotOwn" = "Išsaugotas prisijungimas nėra paties „Hub“";
+
+"hub.collection.credValidUntil" = "Galioja iki %1$@";
+
+"hub.collection.credValid" = "Galioja";
+
+"hub.collection.credRelogin" = "Reikia prisijungti iš naujo: prisijunkite dar kartą kitame atvirame lange";
+
+"hub.collection.credOwnerRefused" = "Owner API atmesta: „Tesla“ atmetė šį prisijungimą";
+
+"hub.collection.credRefused" = "Atmesta (%1$@)";
+
+"hub.collection.credExposure" = "Įtariamas atskleidimas: prisijunkite dar kartą kitame atvirame lange";
+
+"hub.collection.credAttention" = "Reikia dėmesio (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Neprisijungta";
+
+"hub.collection.windowOpenUntil" = "Atidaryta iki %1$@";
+
+"hub.collection.windowOpen" = "Atidaryta";
+
+"hub.collection.windowPending" = "Laukiama";
+
+"hub.collection.windowPendingFrom" = "Laukiama nuo %1$@";
+
+"hub.collection.windowPendingUntil" = "Laukiama iki %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Laukiama nuo %1$@ iki %2$@";
+
+"hub.collection.windowClosingExpiry" = "Uždaroma (galioja iki %1$@)";
+
+"hub.collection.windowClosing" = "Uždaroma";
+
+"hub.collection.windowClosedReason" = "Uždaryta (%1$@)";
+
+"hub.collection.windowClosed" = "Uždaryta";
+
+"hub.collection.windowUntrusted" = "Uždaryta (nėra patikimo išdavėjo)";
+
+"hub.collection.windowFaulted" = "Uždaryta (lango būsenai reikia naujo pasitikėjimo dokumento)";
+
+"hub.collection.windowRecovery" = "Uždaryta (laukiama prisijungimo duomenų atkūrimo: paleiskite restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Nežinoma: valdymo kanalas nepriklauso šiam „Hub“";
+
+"hub.collection.windowNotRunning" = "Nežinoma: „Hub“ neveikia";
+
+"hub.collection.reasonExpired" = "nebegalioja";
+
+"hub.collection.reasonOperator" = "uždarė operatorius";
+
+"hub.collection.reasonRelogin" = "reikia prisijungti iš naujo";
+
+"hub.collection.reasonOwnerRefused" = "Owner API atmesta";
+
+"hub.collection.reasonClock" = "laikrodžio patikra nepavyko";
+
+"hub.collection.reasonReboot" = "„Mac“ buvo paleistas iš naujo";
+
+"hub.collection.reasonUnverifiable" = "būsenos patikrinti nepavyko";
+
+"hub.collection.reasonClaimLost" = "rinkimo teisė prarasta";
+
+"hub.collection.fleet" = "Sustabdyta: jokių „Fleet“ veiksmų nėra";
+
+"hub.collection.signInUnavailable" = "Prisijungimas šiame „Hub“ nepasiekiamas";
+
+"hub.collection.labelLogin" = "„Tesla“ prisijungimas";
+
+"hub.collection.labelCredential" = "Prisijungimo duomenų būsena";
+
+"hub.collection.labelWindow" = "Rinkimo langas";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Prisijungimas";
+
+"hub.signIn.recoveryPending" = "„Hub“ laukia savo prisijungimo duomenų atkūrimo: šio „Hub“ duomenys buvo atkurti be jo raktų. Paleiskite restore-recovery-credentials, tada prisijunkite. Nieko nepakeista.";
+
+"hub.signIn.serviceUnauthenticated" = "Procesas, atsakantis „Hub“ valdymo kanale, nėra šis „Hub“, todėl nieko neišsiųsta. Paleiskite „Hub“ iš naujo, tada prisijunkite dar kartą.";
+
+"hub.signIn.busy" = "„Hub“ užsiėmęs kitomis užklausomis. Nieko nepakeista; prisijunkite dar kartą po akimirkos.";

@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "Verificarea schemei nu poate arăta ce versiune a aplicației sursă a creat această bază de date: mai multe versiuni folosesc aceeași schemă.";
 
 "hub.import.ackRelease" = "Confirm că versiunea aplicației sursă este 4.2.0 sau una ulterioară și că aplicația nu va fi actualizată în timpul importului.";
+
+"hub.backup.title" = "Copii de rezervă";
+
+"hub.backup.detail" = "Copii criptate ale istoricului Hub. Parola de recuperare se află într-un fișier de pe acest Mac, accesibil doar proprietarului.";
+
+"hub.backup.backUpNow" = "Fă o copie acum";
+
+"hub.backup.onSchedule" = "Fă copii după un program";
+
+"hub.backup.saveSchedule" = "Salvează programul";
+
+"hub.backup.panelPrompt" = "Alege";
+
+"hub.backup.panelMessage" = "Alege un dosar pentru copiile de rezervă criptate ale Hub, în afara dosarului de date al Hub.";
+
+"hub.backup.savedNote" = "Salvat. Programul se aplică la repornirea Hub.";
+
+"hub.backup.noFolder" = "Niciun dosar ales";
+
+"hub.backup.passwordPlaceholder" = "Parolă de recuperare (cel puțin %1$@ caractere)";
+
+"hub.backup.passwordSaved" = "Salvată. Tastează una nouă pentru a o înlocui";
+
+"hub.backup.intervalHour" = "În fiecare oră";
+
+"hub.backup.intervalDay" = "În fiecare zi";
+
+"hub.backup.intervalTwoDays" = "La fiecare 2 zile";
+
+"hub.backup.intervalWeek" = "În fiecare săptămână";
+
+"hub.backup.intervalHours" = "La fiecare %1$@ h";
+
+"hub.backup.schedule" = "Program";
+
+"hub.backup.keep" = "Păstrează";
+
+"hub.backup.keepSuffix" = "copii";
+
+"hub.backup.folder" = "Dosar";
+
+"hub.backup.passwordLabel" = "Parolă de recuperare";
+
+"hub.backup.problem.passwordShort" = "Parola de recuperare trebuie să aibă cel puțin %1$@ caractere.";
+
+"hub.backup.problem.interval" = "Intervalul trebuie să fie între 1 și 8784 de ore.";
+
+"hub.backup.problem.keep" = "Numărul de copii păstrate trebuie să fie între 1 și 1000.";
+
+"hub.backup.problem.chooseFolder" = "Alege un dosar pentru copii de rezervă.";
+
+"hub.backup.problem.folderInside" = "Alege un dosar pentru copii de rezervă în afara dosarului de date al Hub.";
+
+"hub.backup.problem.needsBoth" = "Copiile programate au nevoie de un dosar pentru copii și de o parolă de recuperare.";
+
+"hub.backup.lastGoodNone" = "Încă niciuna";
+
+"hub.backup.nextOff" = "Copiile programate sunt dezactivate";
+
+"hub.backup.nextNotScheduled" = "Neprogramat: alege un dosar și o parolă";
+
+"hub.backup.nextPaused" = "Se așteaptă recuperarea datelor de autentificare";
+
+"hub.collection.notReported" = "Nu este raportat";
+
+"hub.backup.blocked" = "Datele de autentificare refuzate blochează copiile de rezervă. Rulează purge-refused-credentials pentru a le șterge.";
+
+"hub.backup.lastFailedMessage" = "Ultima încercare a eșuat: %1$@";
+
+"hub.backup.lastFailedCode" = "Ultima încercare a eșuat (%1$@)";
+
+"hub.backup.row.lastGood" = "Ultima copie reușită";
+
+"hub.backup.row.next" = "Următoarea copie";
+
+"hub.backup.row.running" = "O copie se face chiar acum";
+
+"hub.backup.row.lastAttempt" = "Ultima încercare";
+
+"hub.backup.run.running" = "Se face copia…";
+
+"hub.backup.run.stillRunning" = "Copia încă rulează în serviciul Hub.";
+
+"hub.backup.run.finishedGeneration" = "Copie terminată: %1$@";
+
+"hub.backup.run.finished" = "Copie terminată";
+
+"hub.backup.run.failed" = "Copia a eșuat: %1$@";
+
+"hub.backup.maint.unreadable" = "Răspunsul Hub nu a putut fi citit.";
+
+"hub.backup.maint.unwritable" = "Parola de recuperare nu a putut fi salvată.";
+
+"hub.backup.maint.configMissing" = "Configurează Hub înainte de a modifica copiile de rezervă.";
+
+"hub.devices.title" = "Dispozitive asociate";
+
+"hub.devices.detail" = "Telefoane și aplicații care citesc acest Hub, cu mașinile pe care le poate citi fiecare.";
+
+"hub.devices.revokeTitle" = "Revoci accesul pentru %1$@?";
+
+"hub.devices.revokeInfo" = "Acest dispozitiv nu va mai citi imediat din Hub. Pentru a-l folosi din nou, asociază-l din nou.";
+
+"hub.devices.revoke" = "Revocă";
+
+"hub.devices.revokeEllipsis" = "Revocă…";
+
+"hub.devices.revokeAccessibility" = "Revocă accesul pentru %1$@";
+
+"hub.devices.revokedDone" = "Accesul pentru %1$@ a fost revocat.";
+
+"hub.devices.none" = "Niciun dispozitiv asociat.";
+
+"hub.devices.cars" = "Mașini: %1$@";
+
+"hub.devices.noCars" = "Nicio mașină";
+
+"hub.devices.carFallback" = "Mașina %1$@";
+
+"hub.devices.unnamed" = "Dispozitiv fără nume";
+
+"hub.devices.stateRevoked" = "Revocat %1$@";
+
+"hub.devices.stateExpired" = "Expirat %1$@";
+
+"hub.devices.stateLastSeen" = "Văzut ultima dată %1$@";
+
+"hub.devices.stateNeverSeen" = "Încă nevăzut";
+
+"hub.collection.loginOwn" = "Autentificat cu autentificarea proprie a Hub";
+
+"hub.collection.loginSignedOut" = "Deconectat";
+
+"hub.collection.loginNotOwn" = "Autentificarea stocată nu este cea proprie a Hub";
+
+"hub.collection.credValidUntil" = "Valabil până la %1$@";
+
+"hub.collection.credValid" = "Valabil";
+
+"hub.collection.credRelogin" = "Este necesară o nouă autentificare: autentifică-te din nou în următoarea fereastră deschisă";
+
+"hub.collection.credOwnerRefused" = "Owner API refuzat: Tesla a refuzat această autentificare";
+
+"hub.collection.credRefused" = "Refuzat (%1$@)";
+
+"hub.collection.credExposure" = "Expunere suspectată: autentifică-te din nou în următoarea fereastră deschisă";
+
+"hub.collection.credAttention" = "Necesită atenție (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Neautentificat";
+
+"hub.collection.windowOpenUntil" = "Deschisă până la %1$@";
+
+"hub.collection.windowOpen" = "Deschisă";
+
+"hub.collection.windowPending" = "În așteptare";
+
+"hub.collection.windowPendingFrom" = "În așteptare de la %1$@";
+
+"hub.collection.windowPendingUntil" = "În așteptare până la %1$@";
+
+"hub.collection.windowPendingFromUntil" = "În așteptare de la %1$@ până la %2$@";
+
+"hub.collection.windowClosingExpiry" = "Se închide (expiră %1$@)";
+
+"hub.collection.windowClosing" = "Se închide";
+
+"hub.collection.windowClosedReason" = "Închisă (%1$@)";
+
+"hub.collection.windowClosed" = "Închisă";
+
+"hub.collection.windowUntrusted" = "Închisă (niciun emitent de încredere)";
+
+"hub.collection.windowFaulted" = "Închisă (starea ferestrei are nevoie de un nou document de încredere)";
+
+"hub.collection.windowRecovery" = "Închisă (se așteaptă recuperarea datelor de autentificare: rulează restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Necunoscut: canalul de control nu aparține acestui Hub";
+
+"hub.collection.windowNotRunning" = "Necunoscut: Hub nu rulează";
+
+"hub.collection.reasonExpired" = "expirată";
+
+"hub.collection.reasonOperator" = "închisă de operator";
+
+"hub.collection.reasonRelogin" = "este necesară o nouă autentificare";
+
+"hub.collection.reasonOwnerRefused" = "Owner API refuzat";
+
+"hub.collection.reasonClock" = "verificarea ceasului a eșuat";
+
+"hub.collection.reasonReboot" = "Mac-ul a repornit";
+
+"hub.collection.reasonUnverifiable" = "starea nu a putut fi verificată";
+
+"hub.collection.reasonClaimLost" = "dreptul de colectare a fost pierdut";
+
+"hub.collection.fleet" = "Suspendat: nicio acțiune Fleet nu este disponibilă";
+
+"hub.collection.signInUnavailable" = "Autentificarea nu este disponibilă pe acest Hub";
+
+"hub.collection.labelLogin" = "Autentificare Tesla";
+
+"hub.collection.labelCredential" = "Starea datelor de autentificare";
+
+"hub.collection.labelWindow" = "Fereastră de colectare";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Autentificare";
+
+"hub.signIn.recoveryPending" = "Hub așteaptă recuperarea datelor sale de autentificare: datele acestui Hub au fost restaurate fără cheile sale. Rulează restore-recovery-credentials, apoi autentifică-te. Nu s-a modificat nimic.";
+
+"hub.signIn.serviceUnauthenticated" = "Procesul care răspunde pe canalul de control al Hub nu este acest Hub, așa că nu s-a trimis nimic. Repornește Hub, apoi autentifică-te din nou.";
+
+"hub.signIn.busy" = "Hub este ocupat cu alte solicitări. Nu s-a modificat nimic; autentifică-te din nou peste un moment.";

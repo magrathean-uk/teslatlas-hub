@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "Việc kiểm tra lược đồ không thể xác định bản phát hành nào của ứng dụng nguồn đã ghi cơ sở dữ liệu này: nhiều bản phát hành dùng chung lược đồ.";
 
 "hub.import.ackRelease" = "Tôi xác nhận ứng dụng nguồn đang ở bản phát hành 4.2.0 trở lên và sẽ không được cập nhật trong khi nhập dữ liệu.";
+
+"hub.backup.title" = "Bản sao lưu";
+
+"hub.backup.detail" = "Các bản sao được mã hóa của lịch sử Hub. Mật khẩu khôi phục nằm trong một tệp trên máy Mac này mà chỉ chủ sở hữu mới đọc được.";
+
+"hub.backup.backUpNow" = "Sao lưu ngay";
+
+"hub.backup.onSchedule" = "Sao lưu theo lịch";
+
+"hub.backup.saveSchedule" = "Lưu lịch";
+
+"hub.backup.panelPrompt" = "Chọn";
+
+"hub.backup.panelMessage" = "Chọn một thư mục cho các bản sao lưu Hub được mã hóa, nằm ngoài thư mục dữ liệu của Hub.";
+
+"hub.backup.savedNote" = "Đã lưu. Lịch sẽ áp dụng khi Hub khởi động lại.";
+
+"hub.backup.noFolder" = "Chưa chọn thư mục";
+
+"hub.backup.passwordPlaceholder" = "Mật khẩu khôi phục (ít nhất %1$@ ký tự)";
+
+"hub.backup.passwordSaved" = "Đã lưu. Nhập mật khẩu mới để thay thế";
+
+"hub.backup.intervalHour" = "Mỗi giờ";
+
+"hub.backup.intervalDay" = "Mỗi ngày";
+
+"hub.backup.intervalTwoDays" = "Mỗi 2 ngày";
+
+"hub.backup.intervalWeek" = "Mỗi tuần";
+
+"hub.backup.intervalHours" = "Mỗi %1$@ giờ";
+
+"hub.backup.schedule" = "Lịch";
+
+"hub.backup.keep" = "Giữ";
+
+"hub.backup.keepSuffix" = "bản sao lưu";
+
+"hub.backup.folder" = "Thư mục";
+
+"hub.backup.passwordLabel" = "Mật khẩu khôi phục";
+
+"hub.backup.problem.passwordShort" = "Mật khẩu khôi phục cần có ít nhất %1$@ ký tự.";
+
+"hub.backup.problem.interval" = "Khoảng thời gian phải nằm trong khoảng từ 1 đến 8784 giờ.";
+
+"hub.backup.problem.keep" = "Số bản sao lưu được giữ phải nằm trong khoảng từ 1 đến 1000.";
+
+"hub.backup.problem.chooseFolder" = "Chọn một thư mục sao lưu.";
+
+"hub.backup.problem.folderInside" = "Chọn một thư mục sao lưu nằm ngoài thư mục dữ liệu của Hub.";
+
+"hub.backup.problem.needsBoth" = "Sao lưu theo lịch cần có thư mục sao lưu và mật khẩu khôi phục.";
+
+"hub.backup.lastGoodNone" = "Chưa có";
+
+"hub.backup.nextOff" = "Sao lưu theo lịch đang tắt";
+
+"hub.backup.nextNotScheduled" = "Chưa lên lịch: hãy chọn thư mục và mật khẩu";
+
+"hub.backup.nextPaused" = "Đang chờ khôi phục thông tin xác thực";
+
+"hub.collection.notReported" = "Chưa báo cáo";
+
+"hub.backup.blocked" = "Thông tin xác thực bị từ chối đang chặn việc sao lưu. Chạy purge-refused-credentials để xóa chúng.";
+
+"hub.backup.lastFailedMessage" = "Lần thử gần nhất thất bại: %1$@";
+
+"hub.backup.lastFailedCode" = "Lần thử gần nhất thất bại (%1$@)";
+
+"hub.backup.row.lastGood" = "Bản sao lưu thành công gần nhất";
+
+"hub.backup.row.next" = "Bản sao lưu tiếp theo";
+
+"hub.backup.row.running" = "Một bản sao lưu đang chạy";
+
+"hub.backup.row.lastAttempt" = "Lần thử gần nhất";
+
+"hub.backup.run.running" = "Đang sao lưu…";
+
+"hub.backup.run.stillRunning" = "Bản sao lưu vẫn đang chạy trong dịch vụ Hub.";
+
+"hub.backup.run.finishedGeneration" = "Đã sao lưu xong: %1$@";
+
+"hub.backup.run.finished" = "Đã sao lưu xong";
+
+"hub.backup.run.failed" = "Sao lưu thất bại: %1$@";
+
+"hub.backup.maint.unreadable" = "Không đọc được phản hồi của Hub.";
+
+"hub.backup.maint.unwritable" = "Không lưu được mật khẩu khôi phục.";
+
+"hub.backup.maint.configMissing" = "Hãy thiết lập Hub trước khi thay đổi sao lưu.";
+
+"hub.devices.title" = "Thiết bị đã ghép nối";
+
+"hub.devices.detail" = "Điện thoại và ứng dụng đọc Hub này, cùng các xe mà mỗi thiết bị được đọc.";
+
+"hub.devices.revokeTitle" = "Thu hồi quyền của %1$@?";
+
+"hub.devices.revokeInfo" = "Thiết bị này ngừng đọc từ Hub ngay lập tức. Để dùng lại, hãy ghép nối lại.";
+
+"hub.devices.revoke" = "Thu hồi";
+
+"hub.devices.revokeEllipsis" = "Thu hồi…";
+
+"hub.devices.revokeAccessibility" = "Thu hồi quyền của %1$@";
+
+"hub.devices.revokedDone" = "Đã thu hồi quyền của %1$@.";
+
+"hub.devices.none" = "Không có thiết bị đã ghép nối.";
+
+"hub.devices.cars" = "Xe: %1$@";
+
+"hub.devices.noCars" = "Không có xe";
+
+"hub.devices.carFallback" = "Xe %1$@";
+
+"hub.devices.unnamed" = "Thiết bị chưa đặt tên";
+
+"hub.devices.stateRevoked" = "Đã thu hồi %1$@";
+
+"hub.devices.stateExpired" = "Đã hết hạn %1$@";
+
+"hub.devices.stateLastSeen" = "Lần cuối thấy %1$@";
+
+"hub.devices.stateNeverSeen" = "Chưa từng thấy";
+
+"hub.collection.loginOwn" = "Đã đăng nhập bằng tài khoản riêng của Hub";
+
+"hub.collection.loginSignedOut" = "Đã đăng xuất";
+
+"hub.collection.loginNotOwn" = "Tài khoản đã lưu không phải tài khoản riêng của Hub";
+
+"hub.collection.credValidUntil" = "Có hiệu lực đến %1$@";
+
+"hub.collection.credValid" = "Có hiệu lực";
+
+"hub.collection.credRelogin" = "Cần đăng nhập lại: hãy đăng nhập lại ở cửa sổ mở tiếp theo";
+
+"hub.collection.credOwnerRefused" = "Owner API bị từ chối: Tesla đã từ chối đăng nhập này";
+
+"hub.collection.credRefused" = "Bị từ chối (%1$@)";
+
+"hub.collection.credExposure" = "Nghi ngờ bị lộ: hãy đăng nhập lại ở cửa sổ mở tiếp theo";
+
+"hub.collection.credAttention" = "Cần chú ý (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Chưa đăng nhập";
+
+"hub.collection.windowOpenUntil" = "Mở đến %1$@";
+
+"hub.collection.windowOpen" = "Đang mở";
+
+"hub.collection.windowPending" = "Đang chờ";
+
+"hub.collection.windowPendingFrom" = "Đang chờ từ %1$@";
+
+"hub.collection.windowPendingUntil" = "Đang chờ đến %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Đang chờ từ %1$@ đến %2$@";
+
+"hub.collection.windowClosingExpiry" = "Đang đóng (hết hạn %1$@)";
+
+"hub.collection.windowClosing" = "Đang đóng";
+
+"hub.collection.windowClosedReason" = "Đã đóng (%1$@)";
+
+"hub.collection.windowClosed" = "Đã đóng";
+
+"hub.collection.windowUntrusted" = "Đã đóng (không có nhà phát hành đáng tin cậy)";
+
+"hub.collection.windowFaulted" = "Đã đóng (trạng thái cửa sổ cần tài liệu tin cậy mới)";
+
+"hub.collection.windowRecovery" = "Đã đóng (đang chờ khôi phục thông tin xác thực: chạy restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Không rõ: kênh điều khiển không thuộc Hub này";
+
+"hub.collection.windowNotRunning" = "Không rõ: Hub không chạy";
+
+"hub.collection.reasonExpired" = "đã hết hạn";
+
+"hub.collection.reasonOperator" = "do nhà vận hành đóng";
+
+"hub.collection.reasonRelogin" = "cần đăng nhập lại";
+
+"hub.collection.reasonOwnerRefused" = "Owner API bị từ chối";
+
+"hub.collection.reasonClock" = "kiểm tra đồng hồ thất bại";
+
+"hub.collection.reasonReboot" = "Mac đã khởi động lại";
+
+"hub.collection.reasonUnverifiable" = "không thể xác minh trạng thái";
+
+"hub.collection.reasonClaimLost" = "mất quyền thu thập";
+
+"hub.collection.fleet" = "Tạm dừng: không có thao tác Fleet nào khả dụng";
+
+"hub.collection.signInUnavailable" = "Đăng nhập không khả dụng trên Hub này";
+
+"hub.collection.labelLogin" = "Đăng nhập Tesla";
+
+"hub.collection.labelCredential" = "Trạng thái thông tin xác thực";
+
+"hub.collection.labelWindow" = "Cửa sổ thu thập";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Đăng nhập";
+
+"hub.signIn.recoveryPending" = "Hub đang chờ khôi phục thông tin xác thực: dữ liệu của Hub này đã được khôi phục mà không có khóa. Hãy chạy restore-recovery-credentials rồi đăng nhập. Chưa có gì bị thay đổi.";
+
+"hub.signIn.serviceUnauthenticated" = "Tiến trình trả lời trên kênh điều khiển của Hub không phải Hub này, nên chưa có gì được gửi. Hãy khởi động lại Hub rồi đăng nhập lại.";
+
+"hub.signIn.busy" = "Hub đang bận với các yêu cầu khác. Chưa có gì bị thay đổi; hãy đăng nhập lại sau ít phút.";

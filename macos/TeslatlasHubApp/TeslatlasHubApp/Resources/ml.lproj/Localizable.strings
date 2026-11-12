@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "ഈ ഡാറ്റാബേസ് ഏത് പതിപ്പിലെ ഉറവിട ആപ്ലിക്കേഷനാണ് എഴുതിയതെന്ന് സ്കീമ പരിശോധനയ്ക്ക് വ്യക്തമാക്കാനാവില്ല: പല പതിപ്പുകളും ഒരേ സ്കീമ പങ്കിടുന്നു.";
 
 "hub.import.ackRelease" = "ഉറവിട ആപ്ലിക്കേഷൻ പതിപ്പ് 4.2.0 അല്ലെങ്കിൽ അതിനുശേഷമുള്ളതാണെന്നും ഇറക്കുമതിക്കിടെ അത് അപ്‌ഡേറ്റ് ചെയ്യില്ലെന്നും ഞാൻ സ്ഥിരീകരിക്കുന്നു.";
+
+"hub.backup.title" = "ബാക്കപ്പുകൾ";
+
+"hub.backup.detail" = "Hub-ന്റെ ചരിത്രത്തിന്റെ എൻക്രിപ്റ്റ് ചെയ്ത പകർപ്പുകൾ. റിക്കവറി പാസ്‌വേഡ് ഈ Mac-ലെ, ഉടമയ്ക്ക് മാത്രം വായിക്കാവുന്ന ഒരു ഫയലിൽ സൂക്ഷിക്കുന്നു.";
+
+"hub.backup.backUpNow" = "ഇപ്പോൾ ബാക്കപ്പ് ചെയ്യുക";
+
+"hub.backup.onSchedule" = "ഷെഡ്യൂൾ അനുസരിച്ച് ബാക്കപ്പ് ചെയ്യുക";
+
+"hub.backup.saveSchedule" = "ഷെഡ്യൂൾ സേവ് ചെയ്യുക";
+
+"hub.backup.panelPrompt" = "തിരഞ്ഞെടുക്കുക";
+
+"hub.backup.panelMessage" = "എൻക്രിപ്റ്റ് ചെയ്ത Hub ബാക്കപ്പുകൾക്കായി Hub ഡാറ്റ ഫോൾഡറിന് പുറത്തുള്ള ഒരു ഫോൾഡർ തിരഞ്ഞെടുക്കുക.";
+
+"hub.backup.savedNote" = "സേവ് ചെയ്തു. Hub വീണ്ടും ആരംഭിക്കുമ്പോൾ ഷെഡ്യൂൾ ബാധകമാകും.";
+
+"hub.backup.noFolder" = "ഫോൾഡർ തിരഞ്ഞെടുത്തിട്ടില്ല";
+
+"hub.backup.passwordPlaceholder" = "റിക്കവറി പാസ്‌വേഡ് (കുറഞ്ഞത് %1$@ പ്രതീകങ്ങൾ)";
+
+"hub.backup.passwordSaved" = "സേവ് ചെയ്തു. മാറ്റാൻ പുതിയ പാസ്‌വേഡ് ടൈപ്പ് ചെയ്യുക";
+
+"hub.backup.intervalHour" = "ഓരോ മണിക്കൂറും";
+
+"hub.backup.intervalDay" = "എല്ലാ ദിവസവും";
+
+"hub.backup.intervalTwoDays" = "ഓരോ 2 ദിവസവും";
+
+"hub.backup.intervalWeek" = "എല്ലാ ആഴ്ചയും";
+
+"hub.backup.intervalHours" = "ഓരോ %1$@ മണിക്കൂറും";
+
+"hub.backup.schedule" = "ഷെഡ്യൂൾ";
+
+"hub.backup.keep" = "സൂക്ഷിക്കുക";
+
+"hub.backup.keepSuffix" = "ബാക്കപ്പുകൾ";
+
+"hub.backup.folder" = "ഫോൾഡർ";
+
+"hub.backup.passwordLabel" = "റിക്കവറി പാസ്‌വേഡ്";
+
+"hub.backup.problem.passwordShort" = "റിക്കവറി പാസ്‌വേഡിൽ കുറഞ്ഞത് %1$@ പ്രതീകങ്ങൾ വേണം.";
+
+"hub.backup.problem.interval" = "ഇടവേള 1-നും 8784 മണിക്കൂറിനും ഇടയിലായിരിക്കണം.";
+
+"hub.backup.problem.keep" = "സൂക്ഷിക്കുന്ന ബാക്കപ്പുകളുടെ എണ്ണം 1-നും 1000-നും ഇടയിലായിരിക്കണം.";
+
+"hub.backup.problem.chooseFolder" = "ഒരു ബാക്കപ്പ് ഫോൾഡർ തിരഞ്ഞെടുക്കുക.";
+
+"hub.backup.problem.folderInside" = "Hub ഡാറ്റ ഫോൾഡറിന് പുറത്തുള്ള ഒരു ബാക്കപ്പ് ഫോൾഡർ തിരഞ്ഞെടുക്കുക.";
+
+"hub.backup.problem.needsBoth" = "ഷെഡ്യൂൾ ചെയ്ത ബാക്കപ്പുകൾക്ക് ഒരു ബാക്കപ്പ് ഫോൾഡറും റിക്കവറി പാസ്‌വേഡും വേണം.";
+
+"hub.backup.lastGoodNone" = "ഇതുവരെ ഇല്ല";
+
+"hub.backup.nextOff" = "ഷെഡ്യൂൾ ചെയ്ത ബാക്കപ്പുകൾ ഓഫാണ്";
+
+"hub.backup.nextNotScheduled" = "ഷെഡ്യൂൾ ചെയ്തിട്ടില്ല: ഒരു ഫോൾഡറും പാസ്‌വേഡും തിരഞ്ഞെടുക്കുക";
+
+"hub.backup.nextPaused" = "ക്രെഡൻഷ്യൽ റിക്കവറിക്കായി കാത്തിരിക്കുന്നു";
+
+"hub.collection.notReported" = "റിപ്പോർട്ട് ചെയ്തിട്ടില്ല";
+
+"hub.backup.blocked" = "നിരസിച്ച ക്രെഡൻഷ്യലുകൾ ബാക്കപ്പുകളെ തടയുന്നു. അവ നീക്കാൻ purge-refused-credentials പ്രവർത്തിപ്പിക്കുക.";
+
+"hub.backup.lastFailedMessage" = "അവസാന ശ്രമം പരാജയപ്പെട്ടു: %1$@";
+
+"hub.backup.lastFailedCode" = "അവസാന ശ്രമം പരാജയപ്പെട്ടു (%1$@)";
+
+"hub.backup.row.lastGood" = "അവസാനത്തെ വിജയകരമായ ബാക്കപ്പ്";
+
+"hub.backup.row.next" = "അടുത്ത ബാക്കപ്പ്";
+
+"hub.backup.row.running" = "ഒരു ബാക്കപ്പ് ഇപ്പോൾ നടക്കുന്നു";
+
+"hub.backup.row.lastAttempt" = "അവസാന ശ്രമം";
+
+"hub.backup.run.running" = "ബാക്കപ്പ് ചെയ്യുന്നു…";
+
+"hub.backup.run.stillRunning" = "ബാക്കപ്പ് ഇപ്പോഴും Hub സേവനത്തിൽ നടക്കുന്നു.";
+
+"hub.backup.run.finishedGeneration" = "ബാക്കപ്പ് പൂർത്തിയായി: %1$@";
+
+"hub.backup.run.finished" = "ബാക്കപ്പ് പൂർത്തിയായി";
+
+"hub.backup.run.failed" = "ബാക്കപ്പ് പരാജയപ്പെട്ടു: %1$@";
+
+"hub.backup.maint.unreadable" = "Hub-ന്റെ മറുപടി വായിക്കാനായില്ല.";
+
+"hub.backup.maint.unwritable" = "റിക്കവറി പാസ്‌വേഡ് സേവ് ചെയ്യാനായില്ല.";
+
+"hub.backup.maint.configMissing" = "ബാക്കപ്പുകൾ മാറ്റുന്നതിന് മുമ്പ് Hub സജ്ജമാക്കുക.";
+
+"hub.devices.title" = "ജോടിയാക്കിയ ഉപകരണങ്ങൾ";
+
+"hub.devices.detail" = "ഈ Hub വായിക്കുന്ന ഫോണുകളും ആപ്പുകളും, ഓരോന്നിനും വായിക്കാവുന്ന കാറുകളും.";
+
+"hub.devices.revokeTitle" = "%1$@-ന്റെ ആക്സസ് പിൻവലിക്കണോ?";
+
+"hub.devices.revokeInfo" = "ഈ ഉപകരണം ഉടൻ Hub-ൽ നിന്ന് വായിക്കുന്നത് നിർത്തും. വീണ്ടും ഉപയോഗിക്കാൻ വീണ്ടും ജോടിയാക്കുക.";
+
+"hub.devices.revoke" = "പിൻവലിക്കുക";
+
+"hub.devices.revokeEllipsis" = "പിൻവലിക്കുക…";
+
+"hub.devices.revokeAccessibility" = "%1$@-ന്റെ ആക്സസ് പിൻവലിക്കുക";
+
+"hub.devices.revokedDone" = "%1$@-ന്റെ ആക്സസ് പിൻവലിച്ചു.";
+
+"hub.devices.none" = "ജോടിയാക്കിയ ഉപകരണങ്ങളില്ല.";
+
+"hub.devices.cars" = "കാറുകൾ: %1$@";
+
+"hub.devices.noCars" = "കാറുകളില്ല";
+
+"hub.devices.carFallback" = "കാർ %1$@";
+
+"hub.devices.unnamed" = "പേരില്ലാത്ത ഉപകരണം";
+
+"hub.devices.stateRevoked" = "പിൻവലിച്ചത് %1$@";
+
+"hub.devices.stateExpired" = "കാലഹരണപ്പെട്ടത് %1$@";
+
+"hub.devices.stateLastSeen" = "അവസാനം കണ്ടത് %1$@";
+
+"hub.devices.stateNeverSeen" = "ഇതുവരെ കണ്ടിട്ടില്ല";
+
+"hub.collection.loginOwn" = "Hub-ന്റെ സ്വന്തം ലോഗിൻ ഉപയോഗിച്ച് സൈൻ ഇൻ ചെയ്തിരിക്കുന്നു";
+
+"hub.collection.loginSignedOut" = "സൈൻ ഔട്ട് ചെയ്തിരിക്കുന്നു";
+
+"hub.collection.loginNotOwn" = "സംഭരിച്ച ലോഗിൻ Hub-ന്റെ സ്വന്തമല്ല";
+
+"hub.collection.credValidUntil" = "%1$@ വരെ സാധുവാണ്";
+
+"hub.collection.credValid" = "സാധുവാണ്";
+
+"hub.collection.credRelogin" = "വീണ്ടും ലോഗിൻ വേണം: അടുത്ത തുറന്ന വിൻഡോയിൽ വീണ്ടും സൈൻ ഇൻ ചെയ്യുക";
+
+"hub.collection.credOwnerRefused" = "Owner API നിരസിച്ചു: Tesla ഈ ലോഗിൻ നിരസിച്ചു";
+
+"hub.collection.credRefused" = "നിരസിച്ചു (%1$@)";
+
+"hub.collection.credExposure" = "വെളിപ്പെട്ടതായി സംശയം: അടുത്ത തുറന്ന വിൻഡോയിൽ വീണ്ടും സൈൻ ഇൻ ചെയ്യുക";
+
+"hub.collection.credAttention" = "ശ്രദ്ധ വേണം (%1$@)";
+
+"hub.collection.credNotSignedIn" = "സൈൻ ഇൻ ചെയ്തിട്ടില്ല";
+
+"hub.collection.windowOpenUntil" = "%1$@ വരെ തുറന്നിരിക്കും";
+
+"hub.collection.windowOpen" = "തുറന്നിരിക്കുന്നു";
+
+"hub.collection.windowPending" = "തീർപ്പാക്കാനുണ്ട്";
+
+"hub.collection.windowPendingFrom" = "%1$@ മുതൽ തീർപ്പാക്കാനുണ്ട്";
+
+"hub.collection.windowPendingUntil" = "%1$@ വരെ തീർപ്പാക്കാനുണ്ട്";
+
+"hub.collection.windowPendingFromUntil" = "%1$@ മുതൽ %2$@ വരെ തീർപ്പാക്കാനുണ്ട്";
+
+"hub.collection.windowClosingExpiry" = "അടയ്ക്കുന്നു (കാലാവധി %1$@)";
+
+"hub.collection.windowClosing" = "അടയ്ക്കുന്നു";
+
+"hub.collection.windowClosedReason" = "അടച്ചു (%1$@)";
+
+"hub.collection.windowClosed" = "അടച്ചു";
+
+"hub.collection.windowUntrusted" = "അടച്ചു (വിശ്വസനീയ ഇഷ്യൂവർ ഇല്ല)";
+
+"hub.collection.windowFaulted" = "അടച്ചു (വിൻഡോ നിലയ്ക്ക് പുതിയ വിശ്വാസ രേഖ വേണം)";
+
+"hub.collection.windowRecovery" = "അടച്ചു (ക്രെഡൻഷ്യൽ റിക്കവറിക്കായി കാത്തിരിക്കുന്നു: restore-recovery-credentials പ്രവർത്തിപ്പിക്കുക)";
+
+"hub.collection.windowUnauthenticated" = "അജ്ഞാതം: കൺട്രോൾ ചാനൽ ഈ Hub-ന്റേതല്ല";
+
+"hub.collection.windowNotRunning" = "അജ്ഞാതം: Hub പ്രവർത്തിക്കുന്നില്ല";
+
+"hub.collection.reasonExpired" = "കാലഹരണപ്പെട്ടു";
+
+"hub.collection.reasonOperator" = "ഓപ്പറേറ്റർ അടച്ചു";
+
+"hub.collection.reasonRelogin" = "വീണ്ടും ലോഗിൻ വേണം";
+
+"hub.collection.reasonOwnerRefused" = "Owner API നിരസിച്ചു";
+
+"hub.collection.reasonClock" = "ക്ലോക്ക് പരിശോധന പരാജയപ്പെട്ടു";
+
+"hub.collection.reasonReboot" = "Mac വീണ്ടും ആരംഭിച്ചു";
+
+"hub.collection.reasonUnverifiable" = "നില പരിശോധിക്കാനായില്ല";
+
+"hub.collection.reasonClaimLost" = "ശേഖരണ അവകാശം നഷ്ടപ്പെട്ടു";
+
+"hub.collection.fleet" = "താൽക്കാലികമായി നിർത്തി: Fleet പ്രവർത്തനങ്ങളൊന്നും ലഭ്യമല്ല";
+
+"hub.collection.signInUnavailable" = "ഈ Hub-ൽ സൈൻ ഇൻ ലഭ്യമല്ല";
+
+"hub.collection.labelLogin" = "Tesla ലോഗിൻ";
+
+"hub.collection.labelCredential" = "ക്രെഡൻഷ്യലുകളുടെ നില";
+
+"hub.collection.labelWindow" = "ശേഖരണ വിൻഡോ";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "സൈൻ ഇൻ";
+
+"hub.signIn.recoveryPending" = "Hub അതിന്റെ ക്രെഡൻഷ്യൽ റിക്കവറിക്കായി കാത്തിരിക്കുന്നു: ഈ Hub-ന്റെ ഡാറ്റ അതിന്റെ കീകൾ ഇല്ലാതെ പുനഃസ്ഥാപിച്ചതാണ്. restore-recovery-credentials പ്രവർത്തിപ്പിച്ച ശേഷം സൈൻ ഇൻ ചെയ്യുക. ഒന്നും മാറ്റിയിട്ടില്ല.";
+
+"hub.signIn.serviceUnauthenticated" = "Hub-ന്റെ കൺട്രോൾ ചാനലിൽ മറുപടി നൽകുന്ന പ്രോസസ് ഈ Hub അല്ല, അതിനാൽ ഒന്നും അയച്ചിട്ടില്ല. Hub വീണ്ടും ആരംഭിച്ച ശേഷം വീണ്ടും സൈൻ ഇൻ ചെയ്യുക.";
+
+"hub.signIn.busy" = "Hub മറ്റ് അഭ്യർത്ഥനകളിൽ തിരക്കിലാണ്. ഒന്നും മാറ്റിയിട്ടില്ല; അൽപ്പം കഴിഞ്ഞ് വീണ്ടും സൈൻ ഇൻ ചെയ്യുക.";

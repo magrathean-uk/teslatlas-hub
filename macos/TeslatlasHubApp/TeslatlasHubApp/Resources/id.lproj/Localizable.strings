@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "Pemeriksaan skema tidak dapat menunjukkan rilis aplikasi sumber yang membuat basis data ini: beberapa rilis menggunakan skema yang sama.";
 
 "hub.import.ackRelease" = "Saya mengonfirmasi bahwa aplikasi sumber berada pada rilis 4.2.0 atau lebih baru dan tidak akan diperbarui selama impor.";
+
+"hub.backup.title" = "Cadangan";
+
+"hub.backup.detail" = "Salinan terenkripsi dari riwayat Hub. Kata sandi pemulihan disimpan di file di Mac ini yang hanya bisa dibaca pemilik.";
+
+"hub.backup.backUpNow" = "Cadangkan sekarang";
+
+"hub.backup.onSchedule" = "Cadangkan sesuai jadwal";
+
+"hub.backup.saveSchedule" = "Simpan jadwal";
+
+"hub.backup.panelPrompt" = "Pilih";
+
+"hub.backup.panelMessage" = "Pilih folder untuk cadangan Hub terenkripsi, di luar folder data Hub.";
+
+"hub.backup.savedNote" = "Tersimpan. Jadwal berlaku saat Hub dimulai ulang.";
+
+"hub.backup.noFolder" = "Belum ada folder yang dipilih";
+
+"hub.backup.passwordPlaceholder" = "Kata sandi pemulihan (minimal %1$@ karakter)";
+
+"hub.backup.passwordSaved" = "Tersimpan. Ketik yang baru untuk menggantinya";
+
+"hub.backup.intervalHour" = "Setiap jam";
+
+"hub.backup.intervalDay" = "Setiap hari";
+
+"hub.backup.intervalTwoDays" = "Setiap 2 hari";
+
+"hub.backup.intervalWeek" = "Setiap minggu";
+
+"hub.backup.intervalHours" = "Setiap %1$@ jam";
+
+"hub.backup.schedule" = "Jadwal";
+
+"hub.backup.keep" = "Simpan";
+
+"hub.backup.keepSuffix" = "cadangan";
+
+"hub.backup.folder" = "Folder";
+
+"hub.backup.passwordLabel" = "Kata sandi pemulihan";
+
+"hub.backup.problem.passwordShort" = "Kata sandi pemulihan minimal %1$@ karakter.";
+
+"hub.backup.problem.interval" = "Interval harus antara 1 dan 8784 jam.";
+
+"hub.backup.problem.keep" = "Jumlah cadangan yang disimpan harus antara 1 dan 1000.";
+
+"hub.backup.problem.chooseFolder" = "Pilih folder cadangan.";
+
+"hub.backup.problem.folderInside" = "Pilih folder cadangan di luar folder data Hub.";
+
+"hub.backup.problem.needsBoth" = "Cadangan terjadwal memerlukan folder cadangan dan kata sandi pemulihan.";
+
+"hub.backup.lastGoodNone" = "Belum ada";
+
+"hub.backup.nextOff" = "Cadangan terjadwal nonaktif";
+
+"hub.backup.nextNotScheduled" = "Belum dijadwalkan: pilih folder dan kata sandi";
+
+"hub.backup.nextPaused" = "Menunggu pemulihan kredensial";
+
+"hub.collection.notReported" = "Tidak dilaporkan";
+
+"hub.backup.blocked" = "Kredensial yang ditolak memblokir cadangan. Jalankan purge-refused-credentials untuk menghapusnya.";
+
+"hub.backup.lastFailedMessage" = "Percobaan terakhir gagal: %1$@";
+
+"hub.backup.lastFailedCode" = "Percobaan terakhir gagal (%1$@)";
+
+"hub.backup.row.lastGood" = "Cadangan terakhir yang berhasil";
+
+"hub.backup.row.next" = "Cadangan berikutnya";
+
+"hub.backup.row.running" = "Cadangan sedang berjalan";
+
+"hub.backup.row.lastAttempt" = "Percobaan terakhir";
+
+"hub.backup.run.running" = "Mencadangkan…";
+
+"hub.backup.run.stillRunning" = "Pencadangan masih berjalan di layanan Hub.";
+
+"hub.backup.run.finishedGeneration" = "Pencadangan selesai: %1$@";
+
+"hub.backup.run.finished" = "Pencadangan selesai";
+
+"hub.backup.run.failed" = "Pencadangan gagal: %1$@";
+
+"hub.backup.maint.unreadable" = "Jawaban Hub tidak dapat dibaca.";
+
+"hub.backup.maint.unwritable" = "Kata sandi pemulihan tidak dapat disimpan.";
+
+"hub.backup.maint.configMissing" = "Siapkan Hub sebelum mengubah cadangan.";
+
+"hub.devices.title" = "Perangkat yang dipasangkan";
+
+"hub.devices.detail" = "Ponsel dan aplikasi yang membaca Hub ini, beserta mobil yang boleh dibaca masing-masing.";
+
+"hub.devices.revokeTitle" = "Cabut akses %1$@?";
+
+"hub.devices.revokeInfo" = "Perangkat ini langsung berhenti membaca dari Hub. Untuk memakainya lagi, pasangkan lagi.";
+
+"hub.devices.revoke" = "Cabut";
+
+"hub.devices.revokeEllipsis" = "Cabut…";
+
+"hub.devices.revokeAccessibility" = "Cabut akses %1$@";
+
+"hub.devices.revokedDone" = "Akses %1$@ telah dicabut.";
+
+"hub.devices.none" = "Tidak ada perangkat yang dipasangkan.";
+
+"hub.devices.cars" = "Mobil: %1$@";
+
+"hub.devices.noCars" = "Tidak ada mobil";
+
+"hub.devices.carFallback" = "Mobil %1$@";
+
+"hub.devices.unnamed" = "Perangkat tanpa nama";
+
+"hub.devices.stateRevoked" = "Dicabut %1$@";
+
+"hub.devices.stateExpired" = "Kedaluwarsa %1$@";
+
+"hub.devices.stateLastSeen" = "Terakhir terlihat %1$@";
+
+"hub.devices.stateNeverSeen" = "Belum pernah terlihat";
+
+"hub.collection.loginOwn" = "Masuk dengan login milik Hub sendiri";
+
+"hub.collection.loginSignedOut" = "Keluar";
+
+"hub.collection.loginNotOwn" = "Login tersimpan bukan milik Hub sendiri";
+
+"hub.collection.credValidUntil" = "Berlaku sampai %1$@";
+
+"hub.collection.credValid" = "Berlaku";
+
+"hub.collection.credRelogin" = "Perlu login ulang: masuk lagi di jendela terbuka berikutnya";
+
+"hub.collection.credOwnerRefused" = "Owner API ditolak: Tesla menolak login ini";
+
+"hub.collection.credRefused" = "Ditolak (%1$@)";
+
+"hub.collection.credExposure" = "Dugaan paparan: masuk lagi di jendela terbuka berikutnya";
+
+"hub.collection.credAttention" = "Perlu perhatian (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Belum masuk";
+
+"hub.collection.windowOpenUntil" = "Terbuka sampai %1$@";
+
+"hub.collection.windowOpen" = "Terbuka";
+
+"hub.collection.windowPending" = "Menunggu";
+
+"hub.collection.windowPendingFrom" = "Menunggu mulai %1$@";
+
+"hub.collection.windowPendingUntil" = "Menunggu sampai %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Menunggu dari %1$@ sampai %2$@";
+
+"hub.collection.windowClosingExpiry" = "Menutup (berakhir %1$@)";
+
+"hub.collection.windowClosing" = "Menutup";
+
+"hub.collection.windowClosedReason" = "Ditutup (%1$@)";
+
+"hub.collection.windowClosed" = "Ditutup";
+
+"hub.collection.windowUntrusted" = "Ditutup (tidak ada penerbit tepercaya)";
+
+"hub.collection.windowFaulted" = "Ditutup (status jendela memerlukan dokumen kepercayaan baru)";
+
+"hub.collection.windowRecovery" = "Ditutup (menunggu pemulihan kredensial: jalankan restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Tidak diketahui: saluran kontrol bukan milik Hub ini";
+
+"hub.collection.windowNotRunning" = "Tidak diketahui: Hub tidak berjalan";
+
+"hub.collection.reasonExpired" = "kedaluwarsa";
+
+"hub.collection.reasonOperator" = "ditutup oleh operator";
+
+"hub.collection.reasonRelogin" = "perlu login ulang";
+
+"hub.collection.reasonOwnerRefused" = "Owner API ditolak";
+
+"hub.collection.reasonClock" = "pemeriksaan jam gagal";
+
+"hub.collection.reasonReboot" = "Mac dimulai ulang";
+
+"hub.collection.reasonUnverifiable" = "status tidak dapat diverifikasi";
+
+"hub.collection.reasonClaimLost" = "klaim pengumpulan hilang";
+
+"hub.collection.fleet" = "Ditangguhkan: tidak ada tindakan Fleet yang tersedia";
+
+"hub.collection.signInUnavailable" = "Login tidak tersedia di Hub ini";
+
+"hub.collection.labelLogin" = "Login Tesla";
+
+"hub.collection.labelCredential" = "Status kredensial";
+
+"hub.collection.labelWindow" = "Jendela pengumpulan";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Login";
+
+"hub.signIn.recoveryPending" = "Hub menunggu pemulihan kredensialnya: data Hub ini dipulihkan tanpa kuncinya. Jalankan restore-recovery-credentials, lalu masuk. Tidak ada yang diubah.";
+
+"hub.signIn.serviceUnauthenticated" = "Proses yang menjawab di saluran kontrol Hub bukan Hub ini, jadi tidak ada yang dikirim. Mulai ulang Hub, lalu masuk lagi.";
+
+"hub.signIn.busy" = "Hub sedang sibuk dengan permintaan lain. Tidak ada yang diubah; masuk lagi sebentar lagi.";

@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "स्कीमा तपासणीवरून हा डेटाबेस स्रोत अनुप्रयोगाच्या कोणत्या आवृत्तीने लिहिला हे कळू शकत नाही: अनेक आवृत्त्यांमध्ये समान स्कीमा आहे.";
 
 "hub.import.ackRelease" = "स्रोत अनुप्रयोगाची आवृत्ती 4.2.0 किंवा त्यानंतरची आहे आणि आयात सुरू असताना ती अद्ययावत केली जाणार नाही, याची मी खात्री देतो/देते.";
+
+"hub.backup.title" = "बॅकअप";
+
+"hub.backup.detail" = "Hub च्या इतिहासाच्या एन्क्रिप्ट केलेल्या प्रती. रिकव्हरी पासवर्ड या Mac वरील अशा फाइलमध्ये राहतो जी फक्त मालक वाचू शकतो.";
+
+"hub.backup.backUpNow" = "आता बॅकअप घ्या";
+
+"hub.backup.onSchedule" = "वेळापत्रकानुसार बॅकअप घ्या";
+
+"hub.backup.saveSchedule" = "वेळापत्रक जतन करा";
+
+"hub.backup.panelPrompt" = "निवडा";
+
+"hub.backup.panelMessage" = "एन्क्रिप्ट केलेल्या Hub बॅकअपसाठी Hub डेटा फोल्डरच्या बाहेरील एक फोल्डर निवडा.";
+
+"hub.backup.savedNote" = "जतन केले. Hub पुन्हा सुरू झाल्यावर वेळापत्रक लागू होते.";
+
+"hub.backup.noFolder" = "कोणतेही फोल्डर निवडलेले नाही";
+
+"hub.backup.passwordPlaceholder" = "रिकव्हरी पासवर्ड (किमान %1$@ अक्षरे)";
+
+"hub.backup.passwordSaved" = "जतन केला. बदलण्यासाठी नवीन पासवर्ड टाइप करा";
+
+"hub.backup.intervalHour" = "दर तासाला";
+
+"hub.backup.intervalDay" = "दररोज";
+
+"hub.backup.intervalTwoDays" = "दर 2 दिवसांनी";
+
+"hub.backup.intervalWeek" = "दर आठवड्याला";
+
+"hub.backup.intervalHours" = "दर %1$@ तासांनी";
+
+"hub.backup.schedule" = "वेळापत्रक";
+
+"hub.backup.keep" = "ठेवा";
+
+"hub.backup.keepSuffix" = "बॅकअप";
+
+"hub.backup.folder" = "फोल्डर";
+
+"hub.backup.passwordLabel" = "रिकव्हरी पासवर्ड";
+
+"hub.backup.problem.passwordShort" = "रिकव्हरी पासवर्डमध्ये किमान %1$@ अक्षरे असावीत.";
+
+"hub.backup.problem.interval" = "अंतर 1 ते 8784 तासांच्या दरम्यान असावे.";
+
+"hub.backup.problem.keep" = "ठेवायच्या बॅकअपची संख्या 1 ते 1000 च्या दरम्यान असावी.";
+
+"hub.backup.problem.chooseFolder" = "बॅकअप फोल्डर निवडा.";
+
+"hub.backup.problem.folderInside" = "Hub डेटा फोल्डरच्या बाहेरील बॅकअप फोल्डर निवडा.";
+
+"hub.backup.problem.needsBoth" = "वेळापत्रकानुसार बॅकअपसाठी बॅकअप फोल्डर आणि रिकव्हरी पासवर्ड लागतो.";
+
+"hub.backup.lastGoodNone" = "अजून एकही नाही";
+
+"hub.backup.nextOff" = "वेळापत्रकानुसार बॅकअप बंद आहेत";
+
+"hub.backup.nextNotScheduled" = "वेळापत्रक नाही: फोल्डर आणि पासवर्ड निवडा";
+
+"hub.backup.nextPaused" = "क्रेडेन्शियल रिकव्हरीची प्रतीक्षा आहे";
+
+"hub.collection.notReported" = "कळवलेले नाही";
+
+"hub.backup.blocked" = "नाकारलेली क्रेडेन्शियल बॅकअप थांबवतात. ती साफ करण्यासाठी purge-refused-credentials चालवा.";
+
+"hub.backup.lastFailedMessage" = "मागील प्रयत्न अयशस्वी झाला: %1$@";
+
+"hub.backup.lastFailedCode" = "मागील प्रयत्न अयशस्वी झाला (%1$@)";
+
+"hub.backup.row.lastGood" = "शेवटचा यशस्वी बॅकअप";
+
+"hub.backup.row.next" = "पुढील बॅकअप";
+
+"hub.backup.row.running" = "एक बॅकअप आता सुरू आहे";
+
+"hub.backup.row.lastAttempt" = "मागील प्रयत्न";
+
+"hub.backup.run.running" = "बॅकअप घेतला जात आहे…";
+
+"hub.backup.run.stillRunning" = "बॅकअप अजूनही Hub सेवेत सुरू आहे.";
+
+"hub.backup.run.finishedGeneration" = "बॅकअप पूर्ण झाला: %1$@";
+
+"hub.backup.run.finished" = "बॅकअप पूर्ण झाला";
+
+"hub.backup.run.failed" = "बॅकअप अयशस्वी झाला: %1$@";
+
+"hub.backup.maint.unreadable" = "Hub चे उत्तर वाचता आले नाही.";
+
+"hub.backup.maint.unwritable" = "रिकव्हरी पासवर्ड जतन करता आला नाही.";
+
+"hub.backup.maint.configMissing" = "बॅकअप बदलण्यापूर्वी Hub सेट करा.";
+
+"hub.devices.title" = "जोडलेली डिव्हाइस";
+
+"hub.devices.detail" = "हा Hub वाचणारे फोन आणि ॲप, आणि प्रत्येकाला वाचता येणाऱ्या कार.";
+
+"hub.devices.revokeTitle" = "%1$@ चा प्रवेश रद्द करायचा?";
+
+"hub.devices.revokeInfo" = "हे डिव्हाइस लगेच Hub मधून वाचणे थांबवते. पुन्हा वापरण्यासाठी ते पुन्हा जोडा.";
+
+"hub.devices.revoke" = "रद्द करा";
+
+"hub.devices.revokeEllipsis" = "रद्द करा…";
+
+"hub.devices.revokeAccessibility" = "%1$@ चा प्रवेश रद्द करा";
+
+"hub.devices.revokedDone" = "%1$@ चा प्रवेश रद्द केला.";
+
+"hub.devices.none" = "जोडलेली डिव्हाइस नाहीत.";
+
+"hub.devices.cars" = "कार: %1$@";
+
+"hub.devices.noCars" = "कार नाहीत";
+
+"hub.devices.carFallback" = "कार %1$@";
+
+"hub.devices.unnamed" = "नाव नसलेले डिव्हाइस";
+
+"hub.devices.stateRevoked" = "रद्द केले %1$@";
+
+"hub.devices.stateExpired" = "मुदत संपली %1$@";
+
+"hub.devices.stateLastSeen" = "शेवटचे दिसले %1$@";
+
+"hub.devices.stateNeverSeen" = "अजून दिसलेले नाही";
+
+"hub.collection.loginOwn" = "Hub च्या स्वतःच्या लॉगिनने साइन इन आहे";
+
+"hub.collection.loginSignedOut" = "साइन आउट आहे";
+
+"hub.collection.loginNotOwn" = "जतन केलेले लॉगिन Hub चे स्वतःचे नाही";
+
+"hub.collection.credValidUntil" = "%1$@ पर्यंत वैध";
+
+"hub.collection.credValid" = "वैध";
+
+"hub.collection.credRelogin" = "पुन्हा लॉगिन आवश्यक: पुढील उघड्या विंडोत पुन्हा साइन इन करा";
+
+"hub.collection.credOwnerRefused" = "Owner API नाकारले: Tesla ने हे लॉगिन नाकारले";
+
+"hub.collection.credRefused" = "नाकारले (%1$@)";
+
+"hub.collection.credExposure" = "उघड झाल्याचा संशय: पुढील उघड्या विंडोत पुन्हा साइन इन करा";
+
+"hub.collection.credAttention" = "लक्ष हवे (%1$@)";
+
+"hub.collection.credNotSignedIn" = "साइन इन नाही";
+
+"hub.collection.windowOpenUntil" = "%1$@ पर्यंत उघडे";
+
+"hub.collection.windowOpen" = "उघडे";
+
+"hub.collection.windowPending" = "प्रलंबित";
+
+"hub.collection.windowPendingFrom" = "%1$@ पासून प्रलंबित";
+
+"hub.collection.windowPendingUntil" = "%1$@ पर्यंत प्रलंबित";
+
+"hub.collection.windowPendingFromUntil" = "%1$@ ते %2$@ पर्यंत प्रलंबित";
+
+"hub.collection.windowClosingExpiry" = "बंद होत आहे (मुदत %1$@)";
+
+"hub.collection.windowClosing" = "बंद होत आहे";
+
+"hub.collection.windowClosedReason" = "बंद (%1$@)";
+
+"hub.collection.windowClosed" = "बंद";
+
+"hub.collection.windowUntrusted" = "बंद (विश्वासार्ह जारीकर्ता नाही)";
+
+"hub.collection.windowFaulted" = "बंद (विंडोच्या स्थितीला नवीन विश्वास दस्तऐवज हवा)";
+
+"hub.collection.windowRecovery" = "बंद (क्रेडेन्शियल रिकव्हरीची प्रतीक्षा आहे: restore-recovery-credentials चालवा)";
+
+"hub.collection.windowUnauthenticated" = "अज्ञात: कंट्रोल चॅनेल या Hub चे नाही";
+
+"hub.collection.windowNotRunning" = "अज्ञात: Hub चालू नाही";
+
+"hub.collection.reasonExpired" = "मुदत संपली";
+
+"hub.collection.reasonOperator" = "ऑपरेटरने बंद केले";
+
+"hub.collection.reasonRelogin" = "पुन्हा लॉगिन आवश्यक";
+
+"hub.collection.reasonOwnerRefused" = "Owner API नाकारले";
+
+"hub.collection.reasonClock" = "घड्याळ तपासणी अयशस्वी झाली";
+
+"hub.collection.reasonReboot" = "Mac पुन्हा सुरू झाला";
+
+"hub.collection.reasonUnverifiable" = "स्थिती पडताळता आली नाही";
+
+"hub.collection.reasonClaimLost" = "संकलन हक्क गमावला";
+
+"hub.collection.fleet" = "थांबवले: कोणतीही Fleet क्रिया उपलब्ध नाही";
+
+"hub.collection.signInUnavailable" = "या Hub वर साइन इन उपलब्ध नाही";
+
+"hub.collection.labelLogin" = "Tesla लॉगिन";
+
+"hub.collection.labelCredential" = "क्रेडेन्शियलची स्थिती";
+
+"hub.collection.labelWindow" = "संकलन विंडो";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "साइन इन";
+
+"hub.signIn.recoveryPending" = "Hub त्याच्या क्रेडेन्शियलच्या रिकव्हरीची प्रतीक्षा करत आहे: या Hub चा डेटा त्याच्या कीशिवाय पुनर्संचयित केला गेला होता. restore-recovery-credentials चालवा, मग साइन इन करा. काहीही बदललेले नाही.";
+
+"hub.signIn.serviceUnauthenticated" = "Hub च्या कंट्रोल चॅनेलवर उत्तर देणारी प्रक्रिया हा Hub नाही, म्हणून काहीही पाठवले नाही. Hub पुन्हा सुरू करा, मग पुन्हा साइन इन करा.";
+
+"hub.signIn.busy" = "Hub इतर विनंत्यांमध्ये व्यस्त आहे. काहीही बदललेले नाही; थोड्या वेळाने पुन्हा साइन इन करा.";
