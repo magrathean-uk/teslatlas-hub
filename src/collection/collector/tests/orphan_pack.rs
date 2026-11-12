@@ -67,6 +67,26 @@ fn orphan_pack_files(store: &HubStore) -> Vec<(String, bool)> {
     files
 }
 
+/// The modification time of the content directory. The writer stages elsewhere, so it
+/// changes only when a pack file is linked in or removed: a changed time over an
+/// unchanged listing shows that the failed call wrote a pack before the fault and
+/// removed it again, so the emptiness checks cannot pass vacuously (REV-M04-T06
+/// finding 2).
+fn orphan_pack_directory_time(store: &HubStore) -> std::time::SystemTime {
+    std::fs::metadata(store.packs_dir().join("sha256"))
+        .expect("pack directory")
+        .modified()
+        .expect("modification time")
+}
+
+fn assert_orphan_pack_written_before_the_fault(store: &HubStore, before: std::time::SystemTime) {
+    assert_ne!(
+        orphan_pack_directory_time(store),
+        before,
+        "the failed call wrote a pack before the fault (and removed it)"
+    );
+}
+
 fn assert_orphan_pack_original_error(result: Result<usize, CollectorError>) {
     match result {
         Err(CollectorError::Store(crate::db::StoreError::CatalogueDurability(source))) => {
@@ -85,6 +105,10 @@ fn orphan_pack_a_failed_publication_leaves_no_unretained_file() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
     let collection = orphan_pack_collection(9, "5YJ3E1EA7KF000001");
+    // The writer makes the content directory the same way; made here, its time
+    // before the call can be compared.
+    std::fs::create_dir_all(store.packs_dir().join("sha256")).expect("pack directory");
+    let before = orphan_pack_directory_time(&store);
 
     let result = {
         // The catalogue commit is the step after the pack write.
@@ -93,6 +117,7 @@ fn orphan_pack_a_failed_publication_leaves_no_unretained_file() {
     };
 
     assert_orphan_pack_original_error(result);
+    assert_orphan_pack_written_before_the_fault(&store, before);
     assert_eq!(
         orphan_pack_files(&store),
         Vec::<(String, bool)>::new(),
@@ -109,6 +134,7 @@ fn orphan_pack_an_earlier_publication_survives_a_later_failure() {
     let earlier = orphan_pack_files(&store);
     assert_eq!(earlier.len(), 1, "the earlier publication wrote one pack");
     assert!(earlier[0].1, "a catalogue row retains the earlier pack");
+    let before = orphan_pack_directory_time(&store);
 
     let result = {
         let _fault = inject(DurabilityFaultPoint::CatalogueBeforeCommit);
@@ -116,6 +142,7 @@ fn orphan_pack_an_earlier_publication_survives_a_later_failure() {
     };
 
     assert_orphan_pack_original_error(result);
+    assert_orphan_pack_written_before_the_fault(&store, before);
     assert_eq!(
         orphan_pack_files(&store),
         earlier,
@@ -276,28 +303,52 @@ fn orphan_pack_a_failed_removal_is_logged_and_does_not_panic() {
 const ORPHAN_PACK_CATALOGUE_FAULT: &str = "orphan pack injected catalogue fault";
 
 /// Every later lineage commit fails in its transaction, after the pack write: the
-/// delta and the compaction commits both insert a `sync_deltas` row.
+/// delta and the compaction commits both insert a `sync_deltas` row. The failure
+/// names the digest of the pack the commit carried, which exists only once the
+/// writer has published the file.
 fn orphan_pack_fail_lineage_commits(store: &HubStore) {
     store
         .open()
         .expect("database")
         .execute_batch(&format!(
             "CREATE TRIGGER orphan_pack_lineage_fault BEFORE INSERT ON sync_deltas
-             BEGIN SELECT RAISE(ABORT, '{ORPHAN_PACK_CATALOGUE_FAULT}'); END;"
+             BEGIN SELECT RAISE(ABORT, '{ORPHAN_PACK_CATALOGUE_FAULT} pack='
+                 || NEW.pack_digest); END;"
         ))
         .expect("lineage fault trigger");
 }
 
-fn assert_orphan_pack_lineage_error<T: std::fmt::Debug>(result: Result<T, CollectorError>) {
+/// The original lineage commit failure, and the digest of the pack it carried.
+fn assert_orphan_pack_lineage_error<T: std::fmt::Debug>(
+    result: Result<T, CollectorError>,
+) -> String {
     match result {
         Err(CollectorError::Store(crate::db::StoreError::LineageCatalog(source))) => {
+            let message = source.to_string();
             assert!(
-                source.to_string().contains(ORPHAN_PACK_CATALOGUE_FAULT),
-                "the lineage commit failure is returned unchanged: {source}"
+                message.contains(ORPHAN_PACK_CATALOGUE_FAULT),
+                "the lineage commit failure is returned unchanged: {message}"
             );
+            let digest = message
+                .split_once(" pack=")
+                .map(|(_, digest)| digest.chars().take(64).collect::<String>())
+                .unwrap_or_default();
+            assert!(
+                digest.len() == 64 && digest.chars().all(|c| c.is_ascii_hexdigit()),
+                "the failed commit names the pack it carried: {message}"
+            );
+            digest
         }
         other => panic!("expected the original lineage commit failure, got {other:?}"),
     }
+}
+
+/// The failed commit carried a pack the writer published, and that file is gone.
+fn assert_orphan_pack_failed_pack_removed(files: &[(String, bool)], failed_digest: &str) {
+    assert!(
+        files.iter().all(|(digest, _)| digest != failed_digest),
+        "the pack of the failed commit ({failed_digest}) is removed: {files:?}"
+    );
 }
 
 fn assert_orphan_pack_all_retained(files: &[(String, bool)]) {
@@ -351,6 +402,7 @@ fn orphan_pack_delta_a_failed_replay_leaves_no_unretained_file() {
         "the replay has a delta to publish"
     );
     orphan_pack_fail_lineage_commits(&rig.store);
+    let before = orphan_pack_directory_time(&rig.store);
     // The replay holds the publication gate and passes it down to the delta.
     let result = guard_block_on(replay_export_outbox(
         &rig.store,
@@ -359,10 +411,12 @@ fn orphan_pack_delta_a_failed_replay_leaves_no_unretained_file() {
         rig.now + 2,
     ));
 
-    assert_orphan_pack_lineage_error(result);
+    let failed_digest = assert_orphan_pack_lineage_error(result);
+    assert_orphan_pack_written_before_the_fault(&rig.store, before);
+    let files = orphan_pack_files(&rig.store);
+    assert_orphan_pack_failed_pack_removed(&files, &failed_digest);
     assert_eq!(
-        orphan_pack_files(&rig.store),
-        earlier,
+        files, earlier,
         "the retained packs survive and the failed delta pack is gone"
     );
 }
@@ -404,20 +458,23 @@ fn orphan_pack_compaction_a_failed_commit_leaves_no_unretained_file() {
         .expect("pack count");
 
     orphan_pack_fail_lineage_commits(&rig.store);
+    let before = orphan_pack_directory_time(&rig.store);
     let publication_gate = rig.store.try_acquire_publication_gate().expect("gate");
     let result = compact_v2_lineage_if_needed_with_limits_guarded(
         &rig.store,
-        Some(&publication_gate),
+        &publication_gate,
         &rig.cursor_key,
         rig.vehicle_id,
         tiny_limit,
         None,
     );
 
-    assert_orphan_pack_lineage_error(result);
+    let failed_digest = assert_orphan_pack_lineage_error(result);
+    assert_orphan_pack_written_before_the_fault(&rig.store, before);
+    let files = orphan_pack_files(&rig.store);
+    assert_orphan_pack_failed_pack_removed(&files, &failed_digest);
     assert_eq!(
-        orphan_pack_files(&rig.store),
-        earlier,
+        files, earlier,
         "the retained packs survive and the failed compaction pack is gone"
     );
     assert_eq!(
@@ -472,12 +529,15 @@ fn orphan_pack_drain_a_failed_turn_leaves_no_unretained_file() {
         "the drain has a delta to publish"
     );
     orphan_pack_fail_lineage_commits(&rig.store);
+    let before = orphan_pack_directory_time(&rig.store);
     let result = drain_turn(rig.now + 2);
 
-    assert_orphan_pack_lineage_error(result);
+    let failed_digest = assert_orphan_pack_lineage_error(result);
+    assert_orphan_pack_written_before_the_fault(&rig.store, before);
+    let files = orphan_pack_files(&rig.store);
+    assert_orphan_pack_failed_pack_removed(&files, &failed_digest);
     assert_eq!(
-        orphan_pack_files(&rig.store),
-        earlier,
+        files, earlier,
         "the retained packs survive and the failed drain pack is gone"
     );
     assert!(

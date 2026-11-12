@@ -178,12 +178,12 @@ pub(crate) fn publish_unpublished_sync_mutations(
             if store.instrumentation().take_publication_fault() {
                 Err(StoreError::InjectedStreamFault("publication-turn").into())
             } else {
-                publish_v2_delta_guarded(store, Some(publication_gate), cursor_key, &claim, None)
+                publish_v2_delta_guarded(store, publication_gate, cursor_key, &claim, None)
             }
         }
         #[cfg(not(test))]
         {
-            publish_v2_delta_guarded(store, Some(publication_gate), cursor_key, &claim, None)
+            publish_v2_delta_guarded(store, publication_gate, cursor_key, &claim, None)
         }
     };
     match outcome {

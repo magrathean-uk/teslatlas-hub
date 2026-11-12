@@ -982,7 +982,7 @@ fn publish_resolved_vehicle(
             store.claim_sync_mutations(identity.hub_id, published_at_ms, 10_000)?
             && let Err(error) = publish_v2_delta_guarded(
                 store,
-                Some(publication_gate),
+                publication_gate,
                 cursor_key,
                 &sync_claim,
                 guard,

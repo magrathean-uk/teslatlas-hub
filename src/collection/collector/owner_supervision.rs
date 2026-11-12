@@ -1886,7 +1886,7 @@ fn replay_export_outbox_blocking(
         };
         return match publish_v2_delta_guarded(
             store,
-            Some(publication_gate),
+            publication_gate,
             cursor_key,
             &sync_claim,
             guard,
@@ -1967,22 +1967,24 @@ fn replay_export_outbox_blocking(
     }
 }
 
-/// Tests only: every production publisher passes its publication gate (M04-T07).
+/// Tests only: the publication of a claim under a publication gate of its own
+/// (every production publisher passes the gate it holds, M04-T07).
 #[cfg(test)]
 fn publish_v2_delta(
     store: &HubStore,
     cursor_key: &CursorKey,
     claim: &crate::db::SyncMutationClaim,
 ) -> Result<(), CollectorError> {
-    publish_v2_delta_guarded(store, None, cursor_key, claim, None)
+    let publication_gate = store.try_acquire_publication_gate()?;
+    publish_v2_delta_guarded(store, &publication_gate, cursor_key, claim, None)
 }
 
-/// With the publication gate, a failure after the delta or compaction pack write
-/// removes the unretained pack it wrote (M04-T07, the rule of
-/// `discard_failed_publication_pack`); without it the file is left for repair.
+/// A failure after the delta or compaction pack write removes the unretained pack it
+/// wrote, under the publication gate the caller must hold (M04-T07, the rule of
+/// `discard_failed_publication_pack`): no caller can skip the cleanup.
 fn publish_v2_delta_guarded(
     store: &HubStore,
-    publication_gate: Option<&crate::db::PublicationGate>,
+    publication_gate: &crate::db::PublicationGate,
     cursor_key: &CursorKey,
     claim: &crate::db::SyncMutationClaim,
     guard: Option<&RunWriteGuard>,
@@ -2048,7 +2050,7 @@ fn publish_v2_delta_guarded(
         store.commit_v2_delta_claim(claim, &lineage_delta, cursor_key, &terminal_cursor)?;
         Ok(())
     })();
-    if let (Err(error), Some(publication_gate)) = (&committed, publication_gate) {
+    if let Err(error) = &committed {
         discard_failed_publication_pack(store, publication_gate, &built, error, guard);
     }
     committed
@@ -2056,7 +2058,7 @@ fn publish_v2_delta_guarded(
 
 fn compact_v2_lineage_if_needed_guarded(
     store: &HubStore,
-    publication_gate: Option<&crate::db::PublicationGate>,
+    publication_gate: &crate::db::PublicationGate,
     cursor_key: &CursorKey,
     vehicle_id: Uuid,
     guard: Option<&RunWriteGuard>,
@@ -2071,6 +2073,7 @@ fn compact_v2_lineage_if_needed_guarded(
     )
 }
 
+/// Tests only: a compaction under a publication gate of its own.
 #[cfg(test)]
 fn compact_v2_lineage_if_needed_with_limits(
     store: &HubStore,
@@ -2078,14 +2081,20 @@ fn compact_v2_lineage_if_needed_with_limits(
     vehicle_id: Uuid,
     limits: ProtocolLimits,
 ) -> Result<(), CollectorError> {
+    let publication_gate = store.try_acquire_publication_gate()?;
     compact_v2_lineage_if_needed_with_limits_guarded(
-        store, None, cursor_key, vehicle_id, limits, None,
+        store,
+        &publication_gate,
+        cursor_key,
+        vehicle_id,
+        limits,
+        None,
     )
 }
 
 fn compact_v2_lineage_if_needed_with_limits_guarded(
     store: &HubStore,
-    publication_gate: Option<&crate::db::PublicationGate>,
+    publication_gate: &crate::db::PublicationGate,
     cursor_key: &CursorKey,
     vehicle_id: Uuid,
     limits: ProtocolLimits,
@@ -2158,7 +2167,7 @@ fn compact_v2_lineage_if_needed_with_limits_guarded(
         Ok(())
     })();
     // A deferred commit fails too: the pack it wrote is not retained either.
-    if let (Err(error), Some(publication_gate)) = (&committed, publication_gate) {
+    if let Err(error) = &committed {
         discard_failed_publication_pack(store, publication_gate, &built, error, guard);
     }
     let replaced = plan.replaced_spans.len();
