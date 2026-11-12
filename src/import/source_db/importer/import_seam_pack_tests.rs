@@ -860,3 +860,108 @@ fn import_seam_unplanned_publication_paths_refuse() {
 // shares this fixture.
 #[path = "import_seam_charge_tests.rs"]
 mod charges;
+
+/// One pack's `hub_pack_metadata` as a map.
+fn pack_metadata(store: &HubStore, digest: Sha256Digest) -> BTreeMap<String, String> {
+    let path = ProjectionPackWriter::new(store.packs_dir()).content_path(digest);
+    let sqlite =
+        zstd::stream::decode_all(std::fs::File::open(&path).expect("pack")).expect("pack bytes");
+    let temporary = crate::private_tempdir().expect("inspection");
+    let file = temporary.path().join("pack.sqlite");
+    std::fs::write(&file, sqlite).expect("inspection copy");
+    let connection = Connection::open(&file).expect("pack database");
+    let mut statement = connection
+        .prepare("SELECT key, value FROM hub_pack_metadata")
+        .expect("metadata");
+    statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .expect("metadata rows")
+        .collect::<Result<_, _>>()
+        .expect("metadata rows")
+}
+
+/// The stop rule of M03-T05 (design M03-SEAM-R3, section 2): replacing
+/// the import base after a window keeps the Hub's rows on clients only if
+/// the live spans reach a fresh client independently of that base. They
+/// do not: each live span is a typed delta of the import base's own
+/// lineage (its snapshot, chained from its head, signed into the pack),
+/// a fresh client sees the Hub's rows only through those deltas, and the
+/// spans go with the lineage's deltas when the lineage is retired.
+#[test]
+fn import_seam_live_spans_are_bound_to_the_import_base() {
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    let before = fixture
+        .store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage")
+        .expect("import base");
+    assert!(before.deltas.is_empty());
+    let (h1, h2) = collect(&fixture);
+    let after = fixture
+        .store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage")
+        .expect("import base");
+
+    // The live spans are deltas of the import base, in the lineage and
+    // inside each signed pack.
+    assert_eq!(after.base, before.base);
+    assert!(!after.deltas.is_empty());
+    assert_eq!(after.deltas[0].parent_chain_digest, before.head_digest);
+    for delta in &after.deltas {
+        assert_eq!(delta.pack.snapshot_id, before.base.snapshot_id);
+        let metadata = pack_metadata(&fixture.store, delta.pack.sha256);
+        assert_eq!(metadata["snapshot_id"], before.base.snapshot_id.to_string());
+        assert_eq!(metadata["parent_digest"], delta.parent_chain_digest.to_string());
+        assert_eq!(metadata["external_base"], "true");
+    }
+    let vehicle = vehicle_id.to_string();
+    let mut connection = fixture.store.open().expect("catalogue");
+    let live_spans = |connection: &Connection| -> i64 {
+        connection
+            .query_row(
+                "SELECT count(*) FROM sync_live_delta_spans AS spans
+                 JOIN sync_deltas AS deltas
+                   ON deltas.vehicle_id = spans.vehicle_id
+                  AND deltas.from_sequence = spans.from_sequence
+                  AND deltas.to_sequence = spans.to_sequence
+                 WHERE spans.vehicle_id = ?1",
+                params![vehicle.as_str()],
+                |row| row.get(0),
+            )
+            .expect("live spans")
+    };
+    assert_eq!(
+        usize::try_from(live_spans(&connection)).expect("count"),
+        after.deltas.len()
+    );
+
+    // A fresh client holds the Hub's rows only through those deltas.
+    let all = heads(&fixture.store, vehicle_id);
+    let mut base_only = Client::default();
+    base_only.apply(&all[0].1);
+    assert!(!base_only.drives.contains_key(&h1) && !base_only.drives.contains_key(&h2));
+    let mut fresh = Client::default();
+    for (_, rows) in &all {
+        fresh.apply(rows);
+    }
+    assert!(fresh.drives.contains_key(&h1) && fresh.drives.contains_key(&h2));
+
+    // Retiring the import lineage deletes its deltas, as
+    // `retire_import_lineage_in_transaction` does; no live span is left
+    // for a new base to carry. Rolled back.
+    let transaction = connection.transaction().expect("transaction");
+    transaction
+        .execute(
+            "DELETE FROM sync_deltas WHERE vehicle_id = ?1",
+            params![vehicle.as_str()],
+        )
+        .expect("retire the deltas");
+    assert_eq!(live_spans(&*transaction), 0);
+    drop(transaction);
+    assert_eq!(
+        usize::try_from(live_spans(&connection)).expect("count"),
+        after.deltas.len()
+    );
+}
