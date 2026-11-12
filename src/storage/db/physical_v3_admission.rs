@@ -288,7 +288,6 @@ impl HubStore {
         candidate: &crate::sync::physical_fragments::StagedPhysicalProjectionV3,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
         let manifest = &candidate.manifest;
-        let limits = ProtocolLimits::hub_sync_v1_1_3_schema_2_2();
         if manifest.schema != HUB_PROJECTION_SCHEMA_V3
             || manifest.mode != crate::protocol::TransferMode::FullSnapshot
             || manifest.chunks.is_empty()
@@ -315,9 +314,13 @@ impl HubStore {
             if &built.metadata != expected || built.path != expected_path {
                 return Err(StoreError::PhysicalV3AdmissionInvalid);
             }
-            built
-                .verify_with_limits(limits)
-                .map_err(StoreError::PhysicalV3Pack)?;
+            // One full verification per pack (M03-T03): the purpose check opens
+            // the immutable bytes, verifies them against the schema-2.2 receiver
+            // profile and only then proves the physical-publication identity, so
+            // a separate profile verification here would decompress and hash
+            // every pack a second time for the same answer.
+            #[cfg(test)]
+            StoreInstrumentation::bump(&self.instrumentation.physical_v3_pack_verifications);
             built
                 .verify_hub_sync_v1_1_3_physical_purpose(manifest, &candidate.binding)
                 .map_err(StoreError::PhysicalV3Pack)?;
