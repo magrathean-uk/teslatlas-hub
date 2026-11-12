@@ -400,7 +400,7 @@ fn link(loser_id: i64, winner_id: i64) -> SeamLink {
 
 #[test]
 fn import_seam_plan_source_covering_hub_wins_across_an_edge() {
-    // TeslaMate drove on into the window and its drive crosses the opening
+    // The source drove on into the window and its drive crosses the opening
     // edge; the Hub's drive lies inside it.
     let coverage = coverage(&[WINDOW]);
     let hub = store(HubRows {
@@ -528,7 +528,7 @@ fn import_seam_plan_neither_covers_longer_wins_children_move() {
 
 #[test]
 fn import_seam_plan_abutting_handover_keeps_both() {
-    // TeslaMate closed its drive at the window opening; the Hub started its
+    // The source closed its drive at the window opening; the Hub started its
     // own drive there. They touch within the slack, so both stay.
     let coverage = coverage(&[WINDOW]);
     let hub = store(HubRows {
@@ -552,7 +552,7 @@ fn import_seam_plan_abutting_handover_keeps_both() {
 #[test]
 fn import_seam_plan_inherited_row_kept_when_hub_saw_more() {
     // The window opened mid-drive: drive 40 went on in the Hub to 1,800 while
-    // TeslaMate closed it at 1,000 when it stopped. Its stored, Hub-extended
+    // the source closed it at 1,000 when it stopped. Its stored, Hub-extended
     // row stays; the source's positions before the window are added.
     let coverage = coverage(&[WINDOW]);
     let hub = Store {
@@ -771,7 +771,7 @@ fn edge_case() -> (HubCoverage, Store, SourceRows) {
         charge_samples: children(hub_id(200), 1_900, 1_990, 30, Some(hub_id(1))),
         ..HubRows::default()
     });
-    // TeslaMate resumed at the handback and recorded the drive and the
+    // The source resumed at the handback and recorded the drive and the
     // charge across the closing edge.
     let source = SourceRows {
         drives: vec![session(20, 1_590, 2_300)],
@@ -874,7 +874,7 @@ fn restore_with_open_window_case() -> (HubCoverage, Store, SourceRows) {
         positions: children(hub_id(100), 1_100, 1_440, 10, Some(hub_id(1))),
         ..HubRows::default()
     });
-    // TeslaMate restarted after the restore and drove on.
+    // The source restarted after the restore and drove on.
     let source = SourceRows {
         drives: vec![session(50, 1_600, 1_900)],
         positions: children(1_000, 1_600, 1_900, 10, Some(50)),
