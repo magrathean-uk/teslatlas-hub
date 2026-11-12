@@ -2033,6 +2033,90 @@ final class HubAccountSignIn {
     }
 }
 
+/// The sign-in grant kept in memory after a failed car discovery, for the retry.
+struct HubOwnerDiscoveryRetry {
+    fileprivate let grant: TeslaAuthCodeGrant
+    fileprivate let vehicleID: Int64?
+    let deadline: Date
+}
+
+/// What `setup` reports after the owner sign-in (DEC-085, DEC-088): the keys `status`,
+/// `signIn`, `vehicleDiscovery`, `vehiclesConfigured`, `discoveryCode` and
+/// `discoveryMessage`. It names no token, code, VIN or car name.
+struct HubOwnerSignInReport: Equatable {
+    enum Discovery: Equatable {
+        case configured(Int?)
+        case failed(String)
+    }
+
+    let status: String?
+    let signIn: String?
+    let discovery: Discovery?
+    /// The service's English owner text; the app shows its own line per code instead.
+    let discoveryMessage: String?
+
+    /// Reads the report from `setup` output: one JSON object, whole or on one of its lines
+    /// (the last one wins). Output without one reads as no report.
+    static func parse(_ output: String) -> HubOwnerSignInReport? {
+        func object(_ text: Substring) -> [String: Any]? {
+            guard let data = text.data(using: .utf8) else { return nil }
+            return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        }
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let root = object(Substring(trimmed))
+                ?? output.split(whereSeparator: { $0.isNewline }).reversed().lazy.compactMap(object).first
+        else { return nil }
+        let discovery: Discovery?
+        switch root["vehicleDiscovery"] as? String {
+        case "configured":
+            discovery = .configured((root["vehiclesConfigured"] as? NSNumber)?.intValue)
+        case "failed":
+            let code = (root["discoveryCode"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            discovery = .failed(code ?? "discovery_failed")
+        case let other?:
+            // An unknown discovery state is never success.
+            discovery = .failed("discovery_\(other.isEmpty ? "failed" : "unknown")")
+        case nil:
+            discovery = nil
+        }
+        return HubOwnerSignInReport(status: root["status"] as? String,
+                                    signIn: root["signIn"] as? String,
+                                    discovery: discovery,
+                                    discoveryMessage: root["discoveryMessage"] as? String)
+    }
+}
+
+/// Signed in, but no car was configured: the app's own line for the service's fixed
+/// `discoveryCode` (DEC-090), and a general line for a code it does not know.
+struct HubOwnerDiscoveryFailure: LocalizedError, Equatable {
+    let code: String
+
+    var errorDescription: String? { Self.message(for: code) }
+
+    static func message(for code: String) -> String {
+        switch code {
+        case "discovery_vehicle_not_listed":
+            return HubL10n.text("hub.signIn.discovery.notListed", fallback: "You are signed in, but Tesla listed no car on this account. Check that the car belongs to this Tesla account, then retry finding cars.")
+        case "discovery_selection_required":
+            return HubL10n.text("hub.signIn.discovery.selectionRequired", fallback: "You are signed in, but Tesla lists more than one car and Hub needs to know which to collect. Retry finding cars.")
+        case "discovery_selection_invalid":
+            return HubL10n.text("hub.signIn.discovery.selectionInvalid", fallback: "You are signed in, but the chosen car is not on this Tesla account. Retry finding cars.")
+        case "discovery_answer_invalid":
+            return HubL10n.text("hub.signIn.discovery.answerInvalid", fallback: "You are signed in, but Hub could not read Tesla's list of cars. Retry finding cars.")
+        case "discovery_refused":
+            return HubL10n.text("hub.signIn.discovery.refused", fallback: "You are signed in, but Tesla refused the list of cars. Retry finding cars, or sign in with Tesla again.")
+        case "window_closed":
+            return HubL10n.text("hub.signIn.discovery.windowClosed", fallback: "You are signed in, but the collection window closed before Hub could find your cars. Open a window, then retry finding cars.")
+        case "provider_parked":
+            return HubL10n.text("hub.signIn.discovery.providerParked", fallback: "You are signed in, but this Hub collects with another provider, so it cannot find cars with this sign-in.")
+        case "discovery_settings_invalid":
+            return HubL10n.text("hub.signIn.discovery.settingsInvalid", fallback: "You are signed in, but this Hub's Owner API address is not Tesla's, so Hub did not ask for your cars. Correct the address, then sign in with Tesla again.")
+        default:
+            return HubL10n.text("hub.signIn.discovery.general", fallback: "You are signed in, but Hub could not find your cars. Retry finding cars, or sign in with Tesla again.")
+        }
+    }
+}
+
 // MARK: - Service lifecycle
 
 enum HubServiceAction: Equatable {
@@ -2944,6 +3028,14 @@ final class HubController {
     private let observesCollectionWindow: Bool
     /// The last sign-in refusal Status keeps showing (`sign_in_unavailable`); main thread.
     private var lastSignInRefusalCode: String?
+    /// The grant of a sign-in whose car discovery failed (DEC-090), held only in memory so
+    /// a retry can resume it without a new Tesla page; main thread. Never written to disk,
+    /// defaults, logs or the UI, and cleared on success, expiry, discard and a new sign-in.
+    private var ownerDiscoveryRetry: HubOwnerDiscoveryRetry?
+    /// The clock the discovery retry is measured on; tests replace it.
+    var ownerDiscoveryRetryClock: () -> Date = Date.init
+    /// How many cars the last owner sign-in configured, when its report said; main thread.
+    private(set) var lastVehiclesConfigured: Int?
     private let refreshRequestLock = NSLock()
     private var newestRefreshRequest: UInt64 = 0
 
@@ -4090,9 +4182,15 @@ final class HubController {
     fileprivate func performOwnerSignIn(_ op: HubLifecycleOperation,
                                         grant: TeslaAuthCodeGrant,
                                         vehicleID: Int64?,
+                                        resuming: HubOwnerDiscoveryRetry? = nil,
                                         completion: @escaping (Result<Void, Error>) -> Void) {
         let setupStarted = Date()
-        HubAppLog.shared.record("setup.requested", category: "account", fields: ["provider": "legacy"])
+        // A new sign-in supersedes any grant held for a retry.
+        if resuming == nil { ownerDiscoveryRetry = nil }
+        HubAppLog.shared.record("setup.requested", category: "account", fields: [
+            "provider": "legacy",
+            "resume": resuming == nil ? "false" : "true"
+        ])
         let invocation: HubSetupInvocation
         do {
             invocation = try Self.setupInvocation(configPath: configPath, grant: grant, vehicleID: vehicleID)
@@ -4105,23 +4203,45 @@ final class HubController {
             completion(.failure(error))
             return
         }
-        let finish: (Result<Void, Error>) -> Void = { [self] result in
+        // The service keeps a stored sign-in resumable for 10 minutes from its own store
+        // time; measuring from before setup ran keeps the app's offer inside that.
+        let retryDeadline = resuming?.deadline
+            ?? ownerDiscoveryRetryClock().addingTimeInterval(Self.ownerDiscoveryRetryLifetime)
+        let finish: (Result<HubOwnerSignInReport?, Error>) -> Void = { [self] result in
             DispatchQueue.main.async {
+                let durationMs = String(Int(Date().timeIntervalSince(setupStarted) * 1000))
                 switch result {
-                case .success:
-                    HubAppLog.shared.record("setup.completed", category: "account", fields: [
-                        "provider": "legacy",
-                        "duration_ms": String(Int(Date().timeIntervalSince(setupStarted) * 1000))
-                    ])
+                case let .success(report):
+                    self.ownerDiscoveryRetry = nil
+                    var fields = ["provider": "legacy", "duration_ms": durationMs]
+                    if case let .configured(count)? = report?.discovery {
+                        self.lastVehiclesConfigured = count
+                        if let count { fields["vehicles_configured"] = String(count) }
+                    } else {
+                        self.lastVehiclesConfigured = nil
+                    }
+                    HubAppLog.shared.record("setup.completed", category: "account", fields: fields)
                     self.refresh { _ in completion(.success(())) }
+                case let .failure(error as HubOwnerDiscoveryFailure):
+                    // Signed in, no car configured: the grant stays in memory for a retry.
+                    self.lastVehiclesConfigured = nil
+                    self.ownerDiscoveryRetry = HubOwnerDiscoveryRetry(grant: grant, vehicleID: vehicleID,
+                                                                      deadline: retryDeadline)
+                    HubAppLog.shared.record("setup.discovery_failed", category: "account", level: "WARN",
+                                            fields: [
+                                                "provider": "legacy",
+                                                "duration_ms": durationMs,
+                                                "discovery_code": error.code
+                                            ])
+                    self.refresh { _ in completion(.failure(error)) }
                 case let .failure(error):
                     HubAppLog.shared.record("setup.failed", category: "account", level: "ERROR",
                                             fields: [
                                                 "provider": "legacy",
-                                                "duration_ms": String(Int(Date().timeIntervalSince(setupStarted) * 1000)),
+                                                "duration_ms": durationMs,
                                                 "error_code": HubAppLog.errorCode(error)
                                             ])
-                    completion(result)
+                    completion(.failure(error))
                 }
             }
         }
@@ -4138,11 +4258,57 @@ final class HubController {
                 }
                 DispatchQueue.main.async { self.lastSignInRefusalCode = refusal }
                 switch setupResult {
-                case .success: finish(.success(()))
+                case let .success(output):
+                    let report = HubOwnerSignInReport.parse(output)
+                    if case let .failed(code)? = report?.discovery {
+                        finish(.failure(HubOwnerDiscoveryFailure(code: code)))
+                    } else {
+                        finish(.success(report))
+                    }
                 case let .failure(error): finish(.failure(Self.signInError(error)))
                 }
             }
         }
+    }
+
+    static let ownerDiscoveryRetryLifetime: TimeInterval = 10 * 60
+
+    /// Whether a failed car discovery can be retried now with the sign-in held in memory.
+    /// An expired grant is dropped here.
+    var canRetryOwnerDiscovery: Bool {
+        guard let retry = ownerDiscoveryRetry else { return false }
+        guard ownerDiscoveryRetryClock() < retry.deadline else {
+            ownerDiscoveryRetry = nil
+            return false
+        }
+        return true
+    }
+
+    /// When the held retry stops being offered, if one is held.
+    var ownerDiscoveryRetryDeadline: Date? { ownerDiscoveryRetry?.deadline }
+
+    /// Re-sends the held grant so the service resumes the stored sign-in and lists the cars
+    /// again (`"signIn": "resumed"`): no new Tesla page opens. Past its 10 minutes, or with
+    /// nothing held (after an app restart), it asks for a new sign-in.
+    func retryOwnerDiscovery(completion: @escaping (Result<Void, Error>) -> Void) {
+        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        guard canRetryOwnerDiscovery, let retry = ownerDiscoveryRetry else {
+            HubAppLog.shared.record("setup.resume_expired", category: "account", level: "WARN",
+                                    fields: ["provider": "legacy"])
+            completion(.failure(HubActionError.commandFailed(HubL10n.text(
+                "hub.signIn.discovery.expired",
+                fallback: "This sign-in can no longer be resumed. Sign in with Tesla again."))))
+            return
+        }
+        guard let op = admit(.account, phase: "validate", completion: completion) else { return }
+        performOwnerSignIn(op, grant: retry.grant, vehicleID: retry.vehicleID, resuming: retry) {
+            op.finish($0, completion: completion)
+        }
+    }
+
+    /// Drops the grant held for a retry (the owner cancelled or left onboarding).
+    func discardOwnerDiscoveryRetry() {
+        ownerDiscoveryRetry = nil
     }
 
     static func windowStatusArguments(configPath: URL) -> [String] {

@@ -229,6 +229,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var migrationSession: SourceServerImportSession?
     private var migrationPreparation: HubMigrationPreparation?
     private var accountSignIn: HubAccountSignIn?
+    /// Re-renders the sign-in page when the held discovery retry stops being offered.
+    private var discoveryRetryTimer: Timer?
+    /// How many cars the owner sign-in configured, shown on the verification page.
+    private var configuredCarsNote: String?
     private var lifecycleObservation: HubLifecycleAuthority.Observation?
     private var connectedMigrationIdentity: String?
     private var onboardingContainer: HubOnboardingContainerView!
@@ -392,6 +396,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     func windowWillClose(_ notification: Notification) {
         resetMigrationProgress()
         closeMigrationSession()
+        discardDiscoveryRetry()
         guard !didNotifyDismiss else { return }
         didNotifyDismiss = true
         onDismiss()
@@ -814,7 +819,19 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         let signIn = HubActionButton(title: HubL10n.text("hub.OnboardingWindowController.788.1970", fallback: "Sign in with Tesla"), target: self, action: #selector(startLegacySignIn))
         configurePrimaryButton(signIn, symbol: "person.crop.circle.badge.checkmark")
         // Sign-in is the code exchange only: no token field exists.
-        let stack = NSStackView(views: [signIn,
+        var actions: [NSView] = [signIn]
+        // A failed car discovery is resumed with the held sign-in, without a new Tesla page.
+        if controller.canRetryOwnerDiscovery {
+            let retry = HubActionButton(title: HubL10n.text("hub.signIn.discovery.retry", fallback: "Retry finding cars"),
+                                        target: self, action: #selector(retryOwnerDiscovery))
+            retry.identifier = NSUserInterfaceItemIdentifier("onboarding.legacy.retryDiscovery")
+            configureFlatButton(retry, symbol: "arrow.clockwise")
+            actions.append(retry)
+        }
+        let buttons = NSStackView(views: actions)
+        buttons.spacing = 12
+        buttons.alignment = .centerY
+        let stack = NSStackView(views: [buttons,
                                        featureRow(HubL10n.text("hub.OnboardingWindowController.798.1975", fallback: "Tokens are encrypted on this Mac"), "lock.fill")])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -1209,6 +1226,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 0
+        if let configuredCarsNote {
+            let note = featureRow(configuredCarsNote, "car.side")
+            note.identifier = NSUserInterfaceItemIdentifier("onboarding.verify.carsConfigured")
+            stack.addArrangedSubview(note)
+            stack.setCustomSpacing(12, after: note)
+        }
         if busy && checks.isEmpty {
             let row = NSStackView(views: [spinner, NSTextField(labelWithString: HubL10n.text("hub.DiagnosticsWindowController.210.227", fallback: "Running checks…"))])
             row.spacing = 10
@@ -1498,6 +1521,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         if !closesWindowOnCancel {
             resetMigrationProgress()
             closeMigrationSession()
+            discardDiscoveryRetry()
             guard !didNotifyDismiss else { return }
             didNotifyDismiss = true
             onDismiss()
@@ -1669,17 +1693,57 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
     }
 
+    @objc private func retryOwnerDiscovery() {
+        guard authWindow == nil, !busy else { return }
+        HubAppLog.shared.record("authentication.resumed", category: "account",
+                                fields: ["provider": "legacy"])
+        setBusy(true, operation: .setup)
+        controller.retryOwnerDiscovery { [weak self] result in
+            self?.setupFinished(result)
+        }
+    }
+
+    private func discardDiscoveryRetry() {
+        discoveryRetryTimer?.invalidate()
+        discoveryRetryTimer = nil
+        controller.discardOwnerDiscoveryRetry()
+    }
+
+    /// Hides the retry once its 10 minutes are over and asks for a new sign-in.
+    private func scheduleDiscoveryRetryExpiry() {
+        discoveryRetryTimer?.invalidate()
+        discoveryRetryTimer = nil
+        guard let deadline = controller.ownerDiscoveryRetryDeadline else { return }
+        let timer = Timer(fire: deadline, interval: 0, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.discoveryRetryTimer = nil
+            guard !self.busy, !self.controller.canRetryOwnerDiscovery else { return }
+            self.errorMessage = HubL10n.text("hub.signIn.discovery.expired",
+                                             fallback: "This sign-in can no longer be resumed. Sign in with Tesla again.")
+            self.render()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        discoveryRetryTimer = timer
+    }
+
     private func setupFinished(_ result: Result<Void, Error>) {
         resetMigrationProgress()
         setBusy(false)
         switch result {
         case .success:
+            discoveryRetryTimer?.invalidate()
+            discoveryRetryTimer = nil
+            configuredCarsNote = controller.lastVehiclesConfigured.map {
+                HubL10n.format("hub.signIn.discovery.configured", fallback: "Cars configured: %d", arguments: [$0])
+            }
             state.advance()
             checks = []
             verificationFinished = false
             render()
             runVerification()
         case let .failure(error):
+            // A failed car discovery is not success: the page stays, with the retry.
+            if error is HubOwnerDiscoveryFailure { scheduleDiscoveryRetryExpiry() }
             showInlineError(error.localizedDescription)
         }
     }

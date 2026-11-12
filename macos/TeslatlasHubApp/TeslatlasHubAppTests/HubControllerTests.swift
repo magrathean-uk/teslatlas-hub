@@ -2488,6 +2488,164 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(HubController.signInError(other).localizedDescription, other.localizedDescription)
     }
 
+    static let configuredReport = #"{"status":"signed_in","slot":"owner_api","origin":"hub_login","signIn":"exchanged","aftercare":"complete","vehicleDiscovery":"configured","vehiclesConfigured":2}"#
+    static func failedReport(_ code: String, signIn: String = "exchanged") -> String {
+        #"{"status":"signed_in","slot":"owner_api","origin":"hub_login","signIn":"\#(signIn)","aftercare":"complete","vehicleDiscovery":"failed","discoveryCode":"\#(code)","discoveryMessage":"Service English text"}"#
+    }
+
+    func testOwnerSignInReportParsesTheSetupKeys() throws {
+        let configured = try XCTUnwrap(HubOwnerSignInReport.parse(Self.configuredReport))
+        XCTAssertEqual(configured.status, "signed_in")
+        XCTAssertEqual(configured.signIn, "exchanged")
+        XCTAssertEqual(configured.discovery, .configured(2))
+        XCTAssertNil(configured.discoveryMessage)
+
+        // Pretty-printed, or after other lines: the report is still read.
+        let pretty = "{\n  \"status\": \"signed_in\",\n  \"signIn\": \"resumed\",\n  \"vehicleDiscovery\": \"failed\",\n"
+            + "  \"discoveryCode\": \"window_closed\",\n  \"discoveryMessage\": \"Open a window\"\n}\n"
+        let failed = try XCTUnwrap(HubOwnerSignInReport.parse(pretty))
+        XCTAssertEqual(failed.signIn, "resumed")
+        XCTAssertEqual(failed.discovery, .failed("window_closed"))
+        XCTAssertEqual(failed.discoveryMessage, "Open a window")
+        let lined = try XCTUnwrap(HubOwnerSignInReport.parse("note\n" + Self.failedReport("discovery_refused")))
+        XCTAssertEqual(lined.discovery, .failed("discovery_refused"))
+
+        // An unknown or empty discovery state is never success; no report is no report.
+        XCTAssertEqual(HubOwnerSignInReport.parse(#"{"status":"signed_in","vehicleDiscovery":"partial"}"#)?.discovery,
+                       .failed("discovery_unknown"))
+        XCTAssertEqual(HubOwnerSignInReport.parse(#"{"status":"signed_in","vehicleDiscovery":"failed"}"#)?.discovery,
+                       .failed("discovery_failed"))
+        XCTAssertNil(HubOwnerSignInReport.parse("{}")?.discovery)
+        XCTAssertNil(HubOwnerSignInReport.parse("not json"))
+    }
+
+    func testOwnerSignInConfiguredReportAdvancesWithTheCarCount() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.configuredReport))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        let finished = expectation(description: "configured")
+
+        controller.configureTeslaAccount(grant: Self.codeGrant) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(controller.lastVehiclesConfigured, 2)
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+    }
+
+    func testOwnerSignInFailedDiscoveryIsNotSuccessAndResumesTheSameGrant() throws {
+        // DEC-090: signed in but no car configured is a failure with the app's own line and a
+        // retry that re-sends the same grant; no new Tesla page, and success clears the grant.
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.failedReport("discovery_vehicle_not_listed")))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        let failed = expectation(description: "discovery failed")
+
+        controller.configureTeslaAccount(grant: Self.codeGrant) { result in
+            guard case let .failure(error) = result else { return XCTFail("a failed discovery was shown as success") }
+            XCTAssertEqual(error as? HubOwnerDiscoveryFailure, HubOwnerDiscoveryFailure(code: "discovery_vehicle_not_listed"))
+            XCTAssertEqual(error.localizedDescription,
+                           "You are signed in, but Tesla listed no car on this account. Check that the car belongs "
+                           + "to this Tesla account, then retry finding cars.")
+            XCTAssertFalse(error.localizedDescription.contains("Service English text"))
+            failed.fulfill()
+        }
+        wait(for: [failed], timeout: 2)
+        XCTAssertNil(controller.lastVehiclesConfigured)
+        XCTAssertTrue(controller.canRetryOwnerDiscovery)
+        let firstInput = try XCTUnwrap(runner.stdin)
+
+        runner.result = .success(Self.configuredReport.replacingOccurrences(of: "exchanged", with: "resumed"))
+        let resumed = expectation(description: "resumed")
+        controller.retryOwnerDiscovery { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            resumed.fulfill()
+        }
+        wait(for: [resumed], timeout: 2)
+        XCTAssertEqual(runner.stdin, firstInput)
+        XCTAssertEqual(Array(runner.arguments.last?.suffix(2) ?? []), ["setup", "--all-vehicles"])
+        XCTAssertEqual(events.values.filter { $0 == "setup" }.count, 2)
+        XCTAssertEqual(controller.lastVehiclesConfigured, 2)
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+
+        // Nothing of the grant reaches the log or the defaults.
+        let log = HubAppLog.shared.recentText()
+        XCTAssertTrue(log.contains("discovery_vehicle_not_listed"))
+        for secret in [Self.codeGrant.code, Self.codeGrant.codeVerifier] {
+            XCTAssertFalse(log.contains(secret))
+            XCTAssertFalse(UserDefaults.standard.dictionaryRepresentation().values.contains {
+                "\($0)".contains(secret)
+            })
+        }
+    }
+
+    func testOwnerSignInDiscoveryCodesShowTheAppsOwnLines() {
+        let general = "You are signed in, but Hub could not find your cars. Retry finding cars, or sign in with Tesla again."
+        XCTAssertEqual(HubOwnerDiscoveryFailure(code: "discovery_something_new").localizedDescription, general)
+        XCTAssertEqual(HubOwnerDiscoveryFailure(code: "discovery_unknown").localizedDescription, general)
+        for code in ["discovery_vehicle_not_listed", "discovery_selection_required", "discovery_selection_invalid",
+                     "discovery_answer_invalid", "discovery_refused", "window_closed", "provider_parked",
+                     "discovery_settings_invalid"] {
+            let line = HubOwnerDiscoveryFailure(code: code).localizedDescription
+            XCTAssertNotEqual(line, general, code)
+            XCTAssertTrue(line.hasPrefix("You are signed in"), code)
+            XCTAssertFalse(line.contains(code), code)
+        }
+    }
+
+    func testOwnerDiscoveryRetryEndsAfterTenMinutesDiscardAndRestart() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.failedReport("window_closed")))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        var now = Date(timeIntervalSince1970: 1_000_000)
+        controller.ownerDiscoveryRetryClock = { now }
+        func signIn() {
+            let failed = expectation(description: "discovery failed")
+            controller.configureTeslaAccount(grant: Self.codeGrant) { _ in failed.fulfill() }
+            wait(for: [failed], timeout: 2)
+        }
+
+        signIn()
+        XCTAssertEqual(controller.ownerDiscoveryRetryDeadline, now.addingTimeInterval(600))
+        now = now.addingTimeInterval(599)
+        XCTAssertTrue(controller.canRetryOwnerDiscovery)
+        now = now.addingTimeInterval(1)
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline)
+        let setupRuns = events.values.filter { $0 == "setup" }.count
+        let expired = expectation(description: "expired")
+        controller.retryOwnerDiscovery { result in
+            guard case let .failure(error) = result else { return XCTFail("an expired sign-in was resumed") }
+            XCTAssertEqual(error.localizedDescription, "This sign-in can no longer be resumed. Sign in with Tesla again.")
+            expired.fulfill()
+        }
+        wait(for: [expired], timeout: 2)
+        XCTAssertEqual(events.values.filter { $0 == "setup" }.count, setupRuns)
+
+        // A retry that fails again keeps the first deadline; cancel drops the grant.
+        signIn()
+        let deadline = controller.ownerDiscoveryRetryDeadline
+        now = now.addingTimeInterval(60)
+        let again = expectation(description: "failed again")
+        controller.retryOwnerDiscovery { _ in again.fulfill() }
+        wait(for: [again], timeout: 2)
+        XCTAssertEqual(controller.ownerDiscoveryRetryDeadline, deadline)
+        controller.discardOwnerDiscoveryRetry()
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+
+        // After an app restart nothing is held: the retry asks for a new sign-in.
+        let restarted = signInController(runner, events: events, home: home)
+        XCTAssertFalse(restarted.canRetryOwnerDiscovery)
+    }
+
     func testMigrationSourceAllowsUsernameButRejectsPassword() throws {
         XCTAssertNoThrow(try HubController.validateMigrationSource("postgresql://reader@127.0.0.1/sourcedb"))
         XCTAssertThrowsError(try HubController.validateMigrationSource("postgresql://reader:secret@localhost/sourcedb"))
@@ -3320,7 +3478,8 @@ private final class EventRecorder {
 
 private final class ScriptedRunner: HubCommandRunning {
     private let events: EventRecorder
-    private let result: Result<String, Error>
+    /// What any other command answers; a test may change it between runs.
+    var result: Result<String, Error>
     private var unsupportedAllVehiclesAttempts: Int
     private(set) var stdin: String?
     private(set) var arguments: [[String]] = []
