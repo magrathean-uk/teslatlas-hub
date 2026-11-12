@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "మూల అనువర్తనం యొక్క ఏ విడుదల ఈ డేటాబేస్‌ను రాసిందో స్కీమా తనిఖీ ద్వారా నిర్ధారించలేరు: పలు విడుదలలు ఒకే స్కీమాను పంచుకుంటాయి.";
 
 "hub.import.ackRelease" = "మూల అప్లికేషన్ 4.2.0 లేదా ఆ తర్వాతి విడుదలలో ఉందని, దిగుమతి సమయంలో దాన్ని నవీకరించరని నేను నిర్ధారిస్తున్నాను.";
+
+"hub.backup.title" = "బ్యాకప్‌లు";
+
+"hub.backup.detail" = "Hub చరిత్ర యొక్క ఎన్‌క్రిప్ట్ చేసిన కాపీలు. రికవరీ పాస్‌వర్డ్ ఈ Mac లో యజమాని మాత్రమే చదవగలిగే ఫైల్‌లో ఉంటుంది.";
+
+"hub.backup.backUpNow" = "ఇప్పుడే బ్యాకప్ చేయండి";
+
+"hub.backup.onSchedule" = "షెడ్యూల్ ప్రకారం బ్యాకప్ చేయండి";
+
+"hub.backup.saveSchedule" = "షెడ్యూల్‌ను సేవ్ చేయండి";
+
+"hub.backup.panelPrompt" = "ఎంచుకోండి";
+
+"hub.backup.panelMessage" = "ఎన్‌క్రిప్ట్ చేసిన Hub బ్యాకప్‌ల కోసం Hub డేటా ఫోల్డర్ వెలుపల ఒక ఫోల్డర్‌ను ఎంచుకోండి.";
+
+"hub.backup.savedNote" = "సేవ్ చేయబడింది. Hub మళ్లీ ప్రారంభమైనప్పుడు షెడ్యూల్ వర్తిస్తుంది.";
+
+"hub.backup.noFolder" = "ఫోల్డర్ ఎంచుకోలేదు";
+
+"hub.backup.passwordPlaceholder" = "రికవరీ పాస్‌వర్డ్ (కనీసం %1$@ అక్షరాలు)";
+
+"hub.backup.passwordSaved" = "సేవ్ చేయబడింది. మార్చడానికి కొత్తది టైప్ చేయండి";
+
+"hub.backup.intervalHour" = "ప్రతి గంటకు";
+
+"hub.backup.intervalDay" = "ప్రతి రోజు";
+
+"hub.backup.intervalTwoDays" = "ప్రతి 2 రోజులకు";
+
+"hub.backup.intervalWeek" = "ప్రతి వారం";
+
+"hub.backup.intervalHours" = "ప్రతి %1$@ గంటలకు";
+
+"hub.backup.schedule" = "షెడ్యూల్";
+
+"hub.backup.keep" = "ఉంచండి";
+
+"hub.backup.keepSuffix" = "బ్యాకప్‌లు";
+
+"hub.backup.folder" = "ఫోల్డర్";
+
+"hub.backup.passwordLabel" = "రికవరీ పాస్‌వర్డ్";
+
+"hub.backup.problem.passwordShort" = "రికవరీ పాస్‌వర్డ్‌లో కనీసం %1$@ అక్షరాలు ఉండాలి.";
+
+"hub.backup.problem.interval" = "విరామం 1 నుండి 8784 గంటల మధ్య ఉండాలి.";
+
+"hub.backup.problem.keep" = "ఉంచే బ్యాకప్‌ల సంఖ్య 1 నుండి 1000 మధ్య ఉండాలి.";
+
+"hub.backup.problem.chooseFolder" = "బ్యాకప్ ఫోల్డర్‌ను ఎంచుకోండి.";
+
+"hub.backup.problem.folderInside" = "Hub డేటా ఫోల్డర్ వెలుపల బ్యాకప్ ఫోల్డర్‌ను ఎంచుకోండి.";
+
+"hub.backup.problem.needsBoth" = "షెడ్యూల్ చేసిన బ్యాకప్‌లకు బ్యాకప్ ఫోల్డర్ మరియు రికవరీ పాస్‌వర్డ్ అవసరం.";
+
+"hub.backup.lastGoodNone" = "ఇంకా ఏవీ లేవు";
+
+"hub.backup.nextOff" = "షెడ్యూల్ చేసిన బ్యాకప్‌లు ఆఫ్‌లో ఉన్నాయి";
+
+"hub.backup.nextNotScheduled" = "షెడ్యూల్ చేయలేదు: ఫోల్డర్ మరియు పాస్‌వర్డ్‌ను ఎంచుకోండి";
+
+"hub.backup.nextPaused" = "ఆధారాల రికవరీ కోసం వేచి ఉంది";
+
+"hub.collection.notReported" = "నివేదించలేదు";
+
+"hub.backup.blocked" = "తిరస్కరించిన ఆధారాలు బ్యాకప్‌లను అడ్డుకుంటాయి. వాటిని క్లియర్ చేయడానికి purge-refused-credentials అమలు చేయండి.";
+
+"hub.backup.lastFailedMessage" = "చివరి ప్రయత్నం విఫలమైంది: %1$@";
+
+"hub.backup.lastFailedCode" = "చివరి ప్రయత్నం విఫలమైంది (%1$@)";
+
+"hub.backup.row.lastGood" = "చివరి విజయవంతమైన బ్యాకప్";
+
+"hub.backup.row.next" = "తదుపరి బ్యాకప్";
+
+"hub.backup.row.running" = "ఒక బ్యాకప్ ఇప్పుడు నడుస్తోంది";
+
+"hub.backup.row.lastAttempt" = "చివరి ప్రయత్నం";
+
+"hub.backup.run.running" = "బ్యాకప్ చేస్తోంది…";
+
+"hub.backup.run.stillRunning" = "బ్యాకప్ ఇంకా Hub సేవలో నడుస్తోంది.";
+
+"hub.backup.run.finishedGeneration" = "బ్యాకప్ పూర్తయింది: %1$@";
+
+"hub.backup.run.finished" = "బ్యాకప్ పూర్తయింది";
+
+"hub.backup.run.failed" = "బ్యాకప్ విఫలమైంది: %1$@";
+
+"hub.backup.maint.unreadable" = "Hub సమాధానాన్ని చదవలేకపోయింది.";
+
+"hub.backup.maint.unwritable" = "రికవరీ పాస్‌వర్డ్‌ను సేవ్ చేయలేకపోయింది.";
+
+"hub.backup.maint.configMissing" = "బ్యాకప్‌లను మార్చే ముందు Hub ను సెటప్ చేయండి.";
+
+"hub.devices.title" = "జత చేసిన పరికరాలు";
+
+"hub.devices.detail" = "ఈ Hub ను చదివే ఫోన్‌లు మరియు యాప్‌లు, మరియు ప్రతి ఒక్కటి చదవగలిగే కార్లు.";
+
+"hub.devices.revokeTitle" = "%1$@ యాక్సెస్‌ను రద్దు చేయాలా?";
+
+"hub.devices.revokeInfo" = "ఈ పరికరం వెంటనే Hub నుండి చదవడం ఆపేస్తుంది. మళ్లీ ఉపయోగించడానికి దాన్ని మళ్లీ జత చేయండి.";
+
+"hub.devices.revoke" = "రద్దు చేయండి";
+
+"hub.devices.revokeEllipsis" = "రద్దు చేయండి…";
+
+"hub.devices.revokeAccessibility" = "%1$@ యాక్సెస్‌ను రద్దు చేయండి";
+
+"hub.devices.revokedDone" = "%1$@ యాక్సెస్ రద్దు చేయబడింది.";
+
+"hub.devices.none" = "జత చేసిన పరికరాలు లేవు.";
+
+"hub.devices.cars" = "కార్లు: %1$@";
+
+"hub.devices.noCars" = "కార్లు లేవు";
+
+"hub.devices.carFallback" = "కారు %1$@";
+
+"hub.devices.unnamed" = "పేరు లేని పరికరం";
+
+"hub.devices.stateRevoked" = "రద్దు చేయబడింది %1$@";
+
+"hub.devices.stateExpired" = "గడువు ముగిసింది %1$@";
+
+"hub.devices.stateLastSeen" = "చివరిగా కనిపించింది %1$@";
+
+"hub.devices.stateNeverSeen" = "ఇంకా కనిపించలేదు";
+
+"hub.collection.loginOwn" = "Hub యొక్క సొంత లాగిన్‌తో సైన్ ఇన్ అయింది";
+
+"hub.collection.loginSignedOut" = "సైన్ అవుట్ అయింది";
+
+"hub.collection.loginNotOwn" = "సేవ్ చేసిన లాగిన్ Hub యొక్క సొంతం కాదు";
+
+"hub.collection.credValidUntil" = "%1$@ వరకు చెల్లుతుంది";
+
+"hub.collection.credValid" = "చెల్లుతుంది";
+
+"hub.collection.credRelogin" = "మళ్లీ లాగిన్ అవసరం: తదుపరి తెరిచిన విండోలో మళ్లీ సైన్ ఇన్ చేయండి";
+
+"hub.collection.credOwnerRefused" = "Owner API తిరస్కరించబడింది: Tesla ఈ లాగిన్‌ను తిరస్కరించింది";
+
+"hub.collection.credRefused" = "తిరస్కరించబడింది (%1$@)";
+
+"hub.collection.credExposure" = "బహిర్గతమైనట్లు అనుమానం: తదుపరి తెరిచిన విండోలో మళ్లీ సైన్ ఇన్ చేయండి";
+
+"hub.collection.credAttention" = "శ్రద్ధ అవసరం (%1$@)";
+
+"hub.collection.credNotSignedIn" = "సైన్ ఇన్ కాలేదు";
+
+"hub.collection.windowOpenUntil" = "%1$@ వరకు తెరిచి ఉంటుంది";
+
+"hub.collection.windowOpen" = "తెరిచి ఉంది";
+
+"hub.collection.windowPending" = "పెండింగ్‌లో ఉంది";
+
+"hub.collection.windowPendingFrom" = "%1$@ నుండి పెండింగ్‌లో ఉంది";
+
+"hub.collection.windowPendingUntil" = "%1$@ వరకు పెండింగ్‌లో ఉంది";
+
+"hub.collection.windowPendingFromUntil" = "%1$@ నుండి %2$@ వరకు పెండింగ్‌లో ఉంది";
+
+"hub.collection.windowClosingExpiry" = "మూసివేస్తోంది (గడువు %1$@)";
+
+"hub.collection.windowClosing" = "మూసివేస్తోంది";
+
+"hub.collection.windowClosedReason" = "మూసివేయబడింది (%1$@)";
+
+"hub.collection.windowClosed" = "మూసివేయబడింది";
+
+"hub.collection.windowUntrusted" = "మూసివేయబడింది (విశ్వసనీయ జారీదారు లేరు)";
+
+"hub.collection.windowFaulted" = "మూసివేయబడింది (విండో స్థితికి కొత్త విశ్వాస పత్రం అవసరం)";
+
+"hub.collection.windowRecovery" = "మూసివేయబడింది (ఆధారాల రికవరీ కోసం వేచి ఉంది: restore-recovery-credentials అమలు చేయండి)";
+
+"hub.collection.windowUnauthenticated" = "తెలియదు: కంట్రోల్ ఛానెల్ ఈ Hub కి చెందినది కాదు";
+
+"hub.collection.windowNotRunning" = "తెలియదు: Hub నడవడం లేదు";
+
+"hub.collection.reasonExpired" = "గడువు ముగిసింది";
+
+"hub.collection.reasonOperator" = "ఆపరేటర్ మూసివేశారు";
+
+"hub.collection.reasonRelogin" = "మళ్లీ లాగిన్ అవసరం";
+
+"hub.collection.reasonOwnerRefused" = "Owner API తిరస్కరించబడింది";
+
+"hub.collection.reasonClock" = "గడియారం తనిఖీ విఫలమైంది";
+
+"hub.collection.reasonReboot" = "Mac మళ్లీ ప్రారంభమైంది";
+
+"hub.collection.reasonUnverifiable" = "స్థితిని ధృవీకరించలేకపోయింది";
+
+"hub.collection.reasonClaimLost" = "సేకరణ హక్కు కోల్పోయింది";
+
+"hub.collection.fleet" = "నిలిపివేయబడింది: Fleet చర్యలు ఏవీ అందుబాటులో లేవు";
+
+"hub.collection.signInUnavailable" = "ఈ Hub లో సైన్ ఇన్ అందుబాటులో లేదు";
+
+"hub.collection.labelLogin" = "Tesla లాగిన్";
+
+"hub.collection.labelCredential" = "ఆధారాల స్థితి";
+
+"hub.collection.labelWindow" = "సేకరణ విండో";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "సైన్ ఇన్";
+
+"hub.signIn.recoveryPending" = "Hub తన ఆధారాల రికవరీ కోసం వేచి ఉంది: ఈ Hub డేటా దాని కీలు లేకుండా పునరుద్ధరించబడింది. restore-recovery-credentials అమలు చేసి, ఆపై సైన్ ఇన్ చేయండి. ఏదీ మార్చబడలేదు.";
+
+"hub.signIn.serviceUnauthenticated" = "Hub కంట్రోల్ ఛానెల్‌లో సమాధానం ఇస్తున్న ప్రక్రియ ఈ Hub కాదు, కాబట్టి ఏదీ పంపబడలేదు. Hub ను మళ్లీ ప్రారంభించి, ఆపై మళ్లీ సైన్ ఇన్ చేయండి.";
+
+"hub.signIn.busy" = "Hub ఇతర అభ్యర్థనలతో బిజీగా ఉంది. ఏదీ మార్చబడలేదు; కొద్ది సేపటి తర్వాత మళ్లీ సైన్ ఇన్ చేయండి.";

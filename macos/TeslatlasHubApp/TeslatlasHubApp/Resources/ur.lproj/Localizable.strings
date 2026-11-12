@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "اسکیما کی جانچ یہ نہیں بتا سکتی کہ ماخذ ایپلیکیشن کے کس اجرا نے یہ ڈیٹابیس لکھا: کئی اجرا ایک ہی اسکیما استعمال کرتے ہیں۔";
 
 "hub.import.ackRelease" = "میں تصدیق کرتا/کرتی ہوں کہ ماخذ ایپلیکیشن کا اجرا 4.2.0 یا اس کے بعد کا ہے اور درآمد کے دوران ماخذ ایپلیکیشن کو اپ ڈیٹ نہیں کیا جائے گا۔";
+
+"hub.backup.title" = "بیک اپس";
+
+"hub.backup.detail" = "Hub کی ہسٹری کی خفیہ کاری شدہ کاپیاں۔ بازیابی کا پاس ورڈ اس Mac پر ایسی فائل میں رہتا ہے جسے صرف مالک پڑھ سکتا ہے۔";
+
+"hub.backup.backUpNow" = "ابھی بیک اپ لیں";
+
+"hub.backup.onSchedule" = "شیڈول کے مطابق بیک اپ لیں";
+
+"hub.backup.saveSchedule" = "شیڈول محفوظ کریں";
+
+"hub.backup.panelPrompt" = "منتخب کریں";
+
+"hub.backup.panelMessage" = "خفیہ کاری شدہ Hub بیک اپس کے لیے Hub ڈیٹا فولڈر سے باہر کوئی فولڈر منتخب کریں۔";
+
+"hub.backup.savedNote" = "محفوظ ہو گیا۔ شیڈول Hub کے دوبارہ شروع ہونے پر لاگو ہوتا ہے۔";
+
+"hub.backup.noFolder" = "کوئی فولڈر منتخب نہیں کیا گیا";
+
+"hub.backup.passwordPlaceholder" = "بازیابی کا پاس ورڈ (کم از کم %1$@ حروف)";
+
+"hub.backup.passwordSaved" = "محفوظ ہو گیا۔ بدلنے کے لیے نیا پاس ورڈ ٹائپ کریں";
+
+"hub.backup.intervalHour" = "ہر گھنٹے";
+
+"hub.backup.intervalDay" = "ہر دن";
+
+"hub.backup.intervalTwoDays" = "ہر 2 دن";
+
+"hub.backup.intervalWeek" = "ہر ہفتے";
+
+"hub.backup.intervalHours" = "ہر %1$@ گھنٹے";
+
+"hub.backup.schedule" = "شیڈول";
+
+"hub.backup.keep" = "رکھیں";
+
+"hub.backup.keepSuffix" = "بیک اپس";
+
+"hub.backup.folder" = "فولڈر";
+
+"hub.backup.passwordLabel" = "بازیابی کا پاس ورڈ";
+
+"hub.backup.problem.passwordShort" = "بازیابی کے پاس ورڈ میں کم از کم %1$@ حروف ہونے چاہئیں۔";
+
+"hub.backup.problem.interval" = "وقفہ 1 اور 8784 گھنٹوں کے درمیان ہونا چاہیے۔";
+
+"hub.backup.problem.keep" = "رکھے جانے والے بیک اپس کی تعداد 1 اور 1000 کے درمیان ہونی چاہیے۔";
+
+"hub.backup.problem.chooseFolder" = "بیک اپ فولڈر منتخب کریں۔";
+
+"hub.backup.problem.folderInside" = "Hub ڈیٹا فولڈر سے باہر کوئی بیک اپ فولڈر منتخب کریں۔";
+
+"hub.backup.problem.needsBoth" = "شیڈول شدہ بیک اپس کو بیک اپ فولڈر اور بازیابی کا پاس ورڈ درکار ہے۔";
+
+"hub.backup.lastGoodNone" = "ابھی تک کوئی نہیں";
+
+"hub.backup.nextOff" = "شیڈول شدہ بیک اپس بند ہیں";
+
+"hub.backup.nextNotScheduled" = "شیڈول نہیں کیا گیا: فولڈر اور پاس ورڈ منتخب کریں";
+
+"hub.backup.nextPaused" = "اسناد کی بازیابی کا انتظار ہے";
+
+"hub.collection.notReported" = "رپورٹ نہیں کیا گیا";
+
+"hub.backup.blocked" = "مسترد شدہ اسناد بیک اپس کو روکتی ہیں۔ انہیں صاف کرنے کے لیے purge-refused-credentials چلائیں۔";
+
+"hub.backup.lastFailedMessage" = "آخری کوشش ناکام ہوئی: %1$@";
+
+"hub.backup.lastFailedCode" = "آخری کوشش ناکام ہوئی (%1$@)";
+
+"hub.backup.row.lastGood" = "آخری کامیاب بیک اپ";
+
+"hub.backup.row.next" = "اگلا بیک اپ";
+
+"hub.backup.row.running" = "ایک بیک اپ ابھی چل رہا ہے";
+
+"hub.backup.row.lastAttempt" = "آخری کوشش";
+
+"hub.backup.run.running" = "بیک اپ لیا جا رہا ہے…";
+
+"hub.backup.run.stillRunning" = "بیک اپ ابھی تک Hub سروس میں چل رہا ہے۔";
+
+"hub.backup.run.finishedGeneration" = "بیک اپ مکمل ہو گیا: %1$@";
+
+"hub.backup.run.finished" = "بیک اپ مکمل ہو گیا";
+
+"hub.backup.run.failed" = "بیک اپ ناکام ہو گیا: %1$@";
+
+"hub.backup.maint.unreadable" = "Hub کا جواب پڑھا نہیں جا سکا۔";
+
+"hub.backup.maint.unwritable" = "بازیابی کا پاس ورڈ محفوظ نہیں کیا جا سکا۔";
+
+"hub.backup.maint.configMissing" = "بیک اپس تبدیل کرنے سے پہلے Hub سیٹ اپ کریں۔";
+
+"hub.devices.title" = "جوڑے گئے آلات";
+
+"hub.devices.detail" = "وہ فون اور ایپس جو اس Hub کو پڑھتی ہیں، اور وہ گاڑیاں جنہیں ہر ایک پڑھ سکتا ہے۔";
+
+"hub.devices.revokeTitle" = "%1$@ کی رسائی منسوخ کریں؟";
+
+"hub.devices.revokeInfo" = "یہ آلہ فوراً Hub سے پڑھنا بند کر دیتا ہے۔ اسے دوبارہ استعمال کرنے کے لیے دوبارہ جوڑیں۔";
+
+"hub.devices.revoke" = "رسائی منسوخ کریں";
+
+"hub.devices.revokeEllipsis" = "رسائی منسوخ کریں…";
+
+"hub.devices.revokeAccessibility" = "%1$@ کی رسائی منسوخ کریں";
+
+"hub.devices.revokedDone" = "%1$@ کی رسائی منسوخ کر دی گئی۔";
+
+"hub.devices.none" = "کوئی جوڑا گیا آلہ نہیں ہے۔";
+
+"hub.devices.cars" = "گاڑیاں: %1$@";
+
+"hub.devices.noCars" = "کوئی گاڑی نہیں";
+
+"hub.devices.carFallback" = "گاڑی %1$@";
+
+"hub.devices.unnamed" = "بے نام آلہ";
+
+"hub.devices.stateRevoked" = "منسوخ کیا گیا %1$@";
+
+"hub.devices.stateExpired" = "میعاد ختم ہوئی %1$@";
+
+"hub.devices.stateLastSeen" = "آخری بار دیکھا گیا %1$@";
+
+"hub.devices.stateNeverSeen" = "ابھی تک نہیں دیکھا گیا";
+
+"hub.collection.loginOwn" = "Hub کے اپنے لاگ اِن سے سائن اِن ہے";
+
+"hub.collection.loginSignedOut" = "سائن آؤٹ ہے";
+
+"hub.collection.loginNotOwn" = "محفوظ کردہ لاگ اِن Hub کا اپنا نہیں ہے";
+
+"hub.collection.credValidUntil" = "%1$@ تک درست";
+
+"hub.collection.credValid" = "درست";
+
+"hub.collection.credRelogin" = "دوبارہ لاگ اِن درکار ہے: اگلی کھلی ونڈو میں دوبارہ سائن اِن کریں";
+
+"hub.collection.credOwnerRefused" = "Owner API مسترد: Tesla نے اس لاگ اِن کو مسترد کر دیا";
+
+"hub.collection.credRefused" = "مسترد (%1$@)";
+
+"hub.collection.credExposure" = "افشا ہونے کا شبہ: اگلی کھلی ونڈو میں دوبارہ سائن اِن کریں";
+
+"hub.collection.credAttention" = "توجہ درکار ہے (%1$@)";
+
+"hub.collection.credNotSignedIn" = "سائن اِن نہیں ہے";
+
+"hub.collection.windowOpenUntil" = "%1$@ تک کھلی ہے";
+
+"hub.collection.windowOpen" = "کھلی ہے";
+
+"hub.collection.windowPending" = "زیرِ التوا";
+
+"hub.collection.windowPendingFrom" = "%1$@ سے زیرِ التوا";
+
+"hub.collection.windowPendingUntil" = "%1$@ تک زیرِ التوا";
+
+"hub.collection.windowPendingFromUntil" = "%1$@ سے %2$@ تک زیرِ التوا";
+
+"hub.collection.windowClosingExpiry" = "بند ہو رہی ہے (میعاد %1$@)";
+
+"hub.collection.windowClosing" = "بند ہو رہی ہے";
+
+"hub.collection.windowClosedReason" = "بند (%1$@)";
+
+"hub.collection.windowClosed" = "بند";
+
+"hub.collection.windowUntrusted" = "بند (کوئی قابلِ اعتماد جاری کنندہ نہیں)";
+
+"hub.collection.windowFaulted" = "بند (ونڈو کی حالت کو نئی اعتماد دستاویز درکار ہے)";
+
+"hub.collection.windowRecovery" = "بند (اسناد کی بازیابی کا انتظار ہے: restore-recovery-credentials چلائیں)";
+
+"hub.collection.windowUnauthenticated" = "نامعلوم: کنٹرول چینل اس Hub کا نہیں ہے";
+
+"hub.collection.windowNotRunning" = "نامعلوم: Hub نہیں چل رہا";
+
+"hub.collection.reasonExpired" = "میعاد ختم ہو گئی";
+
+"hub.collection.reasonOperator" = "آپریٹر نے بند کیا";
+
+"hub.collection.reasonRelogin" = "دوبارہ لاگ اِن درکار ہے";
+
+"hub.collection.reasonOwnerRefused" = "Owner API مسترد";
+
+"hub.collection.reasonClock" = "گھڑی کی جانچ ناکام ہوئی";
+
+"hub.collection.reasonReboot" = "Mac دوبارہ شروع ہوا";
+
+"hub.collection.reasonUnverifiable" = "حالت کی تصدیق نہیں ہو سکی";
+
+"hub.collection.reasonClaimLost" = "جمع کاری کا دعویٰ ختم ہو گیا";
+
+"hub.collection.fleet" = "روکا گیا: کوئی Fleet عمل دستیاب نہیں ہے";
+
+"hub.collection.signInUnavailable" = "اس Hub پر سائن اِن دستیاب نہیں ہے";
+
+"hub.collection.labelLogin" = "Tesla لاگ اِن";
+
+"hub.collection.labelCredential" = "اسناد کی حالت";
+
+"hub.collection.labelWindow" = "جمع کاری ونڈو";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "سائن اِن";
+
+"hub.signIn.recoveryPending" = "Hub اپنی اسناد کی بازیابی کا انتظار کر رہا ہے: اس Hub کا ڈیٹا اس کی کلیدوں کے بغیر بحال کیا گیا تھا۔ restore-recovery-credentials چلائیں، پھر سائن اِن کریں۔ کچھ تبدیل نہیں کیا گیا۔";
+
+"hub.signIn.serviceUnauthenticated" = "Hub کے کنٹرول چینل پر جواب دینے والا عمل یہ Hub نہیں ہے، اس لیے کچھ نہیں بھیجا گیا۔ Hub دوبارہ شروع کریں، پھر دوبارہ سائن اِن کریں۔";
+
+"hub.signIn.busy" = "Hub دوسری درخواستوں میں مصروف ہے۔ کچھ تبدیل نہیں کیا گیا؛ تھوڑی دیر بعد دوبارہ سائن اِن کریں۔";

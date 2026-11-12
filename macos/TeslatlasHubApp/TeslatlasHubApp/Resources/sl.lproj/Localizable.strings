@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "Preverjanje sheme ne more pokazati, katera izdaja izvorne aplikacije je ustvarila to podatkovno zbirko: isto shemo uporablja več izdaj.";
 
 "hub.import.ackRelease" = "Potrjujem, da je izvorna aplikacija različice 4.2.0 ali novejše in da med uvozom ne bo posodobljena.";
+
+"hub.backup.title" = "Varnostne kopije";
+
+"hub.backup.detail" = "Šifrirane kopije zgodovine Huba. Geslo za obnovitev je shranjeno v datoteki na tem Macu, dostopni samo lastniku.";
+
+"hub.backup.backUpNow" = "Varnostno kopiraj zdaj";
+
+"hub.backup.onSchedule" = "Varnostno kopiraj po urniku";
+
+"hub.backup.saveSchedule" = "Shrani urnik";
+
+"hub.backup.panelPrompt" = "Izberi";
+
+"hub.backup.panelMessage" = "Izberite mapo za šifrirane varnostne kopije Huba zunaj podatkovne mape Huba.";
+
+"hub.backup.savedNote" = "Shranjeno. Urnik velja, ko se Hub znova zažene.";
+
+"hub.backup.noFolder" = "Mapa ni izbrana";
+
+"hub.backup.passwordPlaceholder" = "Geslo za obnovitev (vsaj %1$@ znakov)";
+
+"hub.backup.passwordSaved" = "Shranjeno. Vnesite novo, da ga zamenjate";
+
+"hub.backup.intervalHour" = "Vsako uro";
+
+"hub.backup.intervalDay" = "Vsak dan";
+
+"hub.backup.intervalTwoDays" = "Vsaka 2 dneva";
+
+"hub.backup.intervalWeek" = "Vsak teden";
+
+"hub.backup.intervalHours" = "Vsakih %1$@ h";
+
+"hub.backup.schedule" = "Urnik";
+
+"hub.backup.keep" = "Obdrži";
+
+"hub.backup.keepSuffix" = "kopij";
+
+"hub.backup.folder" = "Mapa";
+
+"hub.backup.passwordLabel" = "Geslo za obnovitev";
+
+"hub.backup.problem.passwordShort" = "Geslo za obnovitev mora imeti vsaj %1$@ znakov.";
+
+"hub.backup.problem.interval" = "Interval mora biti med 1 in 8784 urami.";
+
+"hub.backup.problem.keep" = "Število obdržanih kopij mora biti med 1 in 1000.";
+
+"hub.backup.problem.chooseFolder" = "Izberite mapo za varnostne kopije.";
+
+"hub.backup.problem.folderInside" = "Izberite mapo za varnostne kopije zunaj podatkovne mape Huba.";
+
+"hub.backup.problem.needsBoth" = "Načrtovane varnostne kopije potrebujejo mapo za kopije in geslo za obnovitev.";
+
+"hub.backup.lastGoodNone" = "Še nobene";
+
+"hub.backup.nextOff" = "Načrtovane varnostne kopije so izklopljene";
+
+"hub.backup.nextNotScheduled" = "Ni načrtovano: izberite mapo in geslo";
+
+"hub.backup.nextPaused" = "Čaka na obnovitev poverilnic";
+
+"hub.collection.notReported" = "Ni sporočeno";
+
+"hub.backup.blocked" = "Zavrnjene poverilnice blokirajo varnostne kopije. Zaženite purge-refused-credentials, da jih odstranite.";
+
+"hub.backup.lastFailedMessage" = "Zadnji poskus ni uspel: %1$@";
+
+"hub.backup.lastFailedCode" = "Zadnji poskus ni uspel (%1$@)";
+
+"hub.backup.row.lastGood" = "Zadnja uspešna kopija";
+
+"hub.backup.row.next" = "Naslednja kopija";
+
+"hub.backup.row.running" = "Kopija se trenutno ustvarja";
+
+"hub.backup.row.lastAttempt" = "Zadnji poskus";
+
+"hub.backup.run.running" = "Ustvarjanje kopije …";
+
+"hub.backup.run.stillRunning" = "Kopija se še vedno ustvarja v storitvi Hub.";
+
+"hub.backup.run.finishedGeneration" = "Kopija dokončana: %1$@";
+
+"hub.backup.run.finished" = "Kopija dokončana";
+
+"hub.backup.run.failed" = "Kopija ni uspela: %1$@";
+
+"hub.backup.maint.unreadable" = "Odgovora Huba ni bilo mogoče prebrati.";
+
+"hub.backup.maint.unwritable" = "Gesla za obnovitev ni bilo mogoče shraniti.";
+
+"hub.backup.maint.configMissing" = "Pred spreminjanjem varnostnih kopij nastavite Hub.";
+
+"hub.devices.title" = "Seznanjene naprave";
+
+"hub.devices.detail" = "Telefoni in aplikacije, ki berejo ta Hub, z avtomobili, ki jih lahko vsaka bere.";
+
+"hub.devices.revokeTitle" = "Prekličem dostop za %1$@?";
+
+"hub.devices.revokeInfo" = "Ta naprava takoj preneha brati iz Huba. Če jo želite znova uporabljati, jo znova seznanite.";
+
+"hub.devices.revoke" = "Prekliči";
+
+"hub.devices.revokeEllipsis" = "Prekliči …";
+
+"hub.devices.revokeAccessibility" = "Prekliči dostop za %1$@";
+
+"hub.devices.revokedDone" = "Dostop za %1$@ je bil preklican.";
+
+"hub.devices.none" = "Ni seznanjenih naprav.";
+
+"hub.devices.cars" = "Avtomobili: %1$@";
+
+"hub.devices.noCars" = "Ni avtomobilov";
+
+"hub.devices.carFallback" = "Avtomobil %1$@";
+
+"hub.devices.unnamed" = "Neimenovana naprava";
+
+"hub.devices.stateRevoked" = "Preklicano %1$@";
+
+"hub.devices.stateExpired" = "Poteklo %1$@";
+
+"hub.devices.stateLastSeen" = "Nazadnje videno %1$@";
+
+"hub.devices.stateNeverSeen" = "Še ni videno";
+
+"hub.collection.loginOwn" = "Prijavljeno z lastno prijavo Huba";
+
+"hub.collection.loginSignedOut" = "Odjavljeno";
+
+"hub.collection.loginNotOwn" = "Shranjena prijava ni lastna prijava Huba";
+
+"hub.collection.credValidUntil" = "Veljavno do %1$@";
+
+"hub.collection.credValid" = "Veljavno";
+
+"hub.collection.credRelogin" = "Potrebna je nova prijava: prijavite se znova v naslednjem odprtem oknu";
+
+"hub.collection.credOwnerRefused" = "Owner API zavrnjen: Tesla je zavrnila to prijavo";
+
+"hub.collection.credRefused" = "Zavrnjeno (%1$@)";
+
+"hub.collection.credExposure" = "Sum razkritja: prijavite se znova v naslednjem odprtem oknu";
+
+"hub.collection.credAttention" = "Zahteva pozornost (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Neprijavljeno";
+
+"hub.collection.windowOpenUntil" = "Odprto do %1$@";
+
+"hub.collection.windowOpen" = "Odprto";
+
+"hub.collection.windowPending" = "Čaka";
+
+"hub.collection.windowPendingFrom" = "Čaka od %1$@";
+
+"hub.collection.windowPendingUntil" = "Čaka do %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Čaka od %1$@ do %2$@";
+
+"hub.collection.windowClosingExpiry" = "Zapira se (poteče %1$@)";
+
+"hub.collection.windowClosing" = "Zapira se";
+
+"hub.collection.windowClosedReason" = "Zaprto (%1$@)";
+
+"hub.collection.windowClosed" = "Zaprto";
+
+"hub.collection.windowUntrusted" = "Zaprto (ni zaupanja vrednega izdajatelja)";
+
+"hub.collection.windowFaulted" = "Zaprto (stanje okna potrebuje nov dokument zaupanja)";
+
+"hub.collection.windowRecovery" = "Zaprto (čaka na obnovitev poverilnic: zaženite restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Neznano: nadzorni kanal ni od tega Huba";
+
+"hub.collection.windowNotRunning" = "Neznano: Hub ne deluje";
+
+"hub.collection.reasonExpired" = "poteklo";
+
+"hub.collection.reasonOperator" = "zaprl operater";
+
+"hub.collection.reasonRelogin" = "potrebna je nova prijava";
+
+"hub.collection.reasonOwnerRefused" = "Owner API zavrnjen";
+
+"hub.collection.reasonClock" = "preverjanje ure ni uspelo";
+
+"hub.collection.reasonReboot" = "Mac se je znova zagnal";
+
+"hub.collection.reasonUnverifiable" = "stanja ni bilo mogoče preveriti";
+
+"hub.collection.reasonClaimLost" = "pravica do zbiranja izgubljena";
+
+"hub.collection.fleet" = "Zaustavljeno: nobeno dejanje Fleet ni na voljo";
+
+"hub.collection.signInUnavailable" = "Prijava na tem Hubu ni na voljo";
+
+"hub.collection.labelLogin" = "Prijava v Teslo";
+
+"hub.collection.labelCredential" = "Stanje poverilnic";
+
+"hub.collection.labelWindow" = "Okno zbiranja";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Prijava";
+
+"hub.signIn.recoveryPending" = "Hub čaka na obnovitev svojih poverilnic: podatki tega Huba so bili obnovljeni brez njegovih ključev. Zaženite restore-recovery-credentials in se nato prijavite. Nič ni bilo spremenjeno.";
+
+"hub.signIn.serviceUnauthenticated" = "Postopek, ki odgovarja na nadzornem kanalu Huba, ni ta Hub, zato ni bilo nič poslano. Znova zaženite Hub in se nato znova prijavite.";
+
+"hub.signIn.busy" = "Hub je zaseden z drugimi zahtevami. Nič ni bilo spremenjeno; čez trenutek se prijavite znova.";

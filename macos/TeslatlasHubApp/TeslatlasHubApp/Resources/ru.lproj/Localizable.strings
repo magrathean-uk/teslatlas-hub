@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "Проверка схемы не позволяет определить, какая версия исходного приложения создала эту базу данных: одну и ту же схему используют несколько версий.";
 
 "hub.import.ackRelease" = "Подтверждаю, что исходное приложение работает в версии 4.2.0 или более новой и не будет обновляться во время импорта.";
+
+"hub.backup.title" = "Резервные копии";
+
+"hub.backup.detail" = "Зашифрованные копии истории Hub. Пароль восстановления хранится в файле на этом Mac, доступном только владельцу.";
+
+"hub.backup.backUpNow" = "Создать копию сейчас";
+
+"hub.backup.onSchedule" = "Создавать копии по расписанию";
+
+"hub.backup.saveSchedule" = "Сохранить расписание";
+
+"hub.backup.panelPrompt" = "Выбрать";
+
+"hub.backup.panelMessage" = "Выберите папку для зашифрованных резервных копий Hub вне папки данных Hub.";
+
+"hub.backup.savedNote" = "Сохранено. Расписание начнёт действовать после перезапуска Hub.";
+
+"hub.backup.noFolder" = "Папка не выбрана";
+
+"hub.backup.passwordPlaceholder" = "Пароль восстановления (не короче %1$@ символов)";
+
+"hub.backup.passwordSaved" = "Сохранён. Введите новый, чтобы заменить его";
+
+"hub.backup.intervalHour" = "Каждый час";
+
+"hub.backup.intervalDay" = "Каждый день";
+
+"hub.backup.intervalTwoDays" = "Каждые 2 дня";
+
+"hub.backup.intervalWeek" = "Каждую неделю";
+
+"hub.backup.intervalHours" = "Каждые %1$@ ч";
+
+"hub.backup.schedule" = "Расписание";
+
+"hub.backup.keep" = "Хранить";
+
+"hub.backup.keepSuffix" = "копий";
+
+"hub.backup.folder" = "Папка";
+
+"hub.backup.passwordLabel" = "Пароль восстановления";
+
+"hub.backup.problem.passwordShort" = "Пароль восстановления должен содержать не менее %1$@ символов.";
+
+"hub.backup.problem.interval" = "Интервал должен быть от 1 до 8784 часов.";
+
+"hub.backup.problem.keep" = "Число хранимых копий должно быть от 1 до 1000.";
+
+"hub.backup.problem.chooseFolder" = "Выберите папку для резервных копий.";
+
+"hub.backup.problem.folderInside" = "Выберите папку для резервных копий вне папки данных Hub.";
+
+"hub.backup.problem.needsBoth" = "Для копий по расписанию нужны папка и пароль восстановления.";
+
+"hub.backup.lastGoodNone" = "Пока нет";
+
+"hub.backup.nextOff" = "Копии по расписанию отключены";
+
+"hub.backup.nextNotScheduled" = "Не запланировано: выберите папку и пароль";
+
+"hub.backup.nextPaused" = "Ожидает восстановления учётных данных";
+
+"hub.collection.notReported" = "Не сообщается";
+
+"hub.backup.blocked" = "Отклонённые учётные данные блокируют копирование. Выполните purge-refused-credentials, чтобы удалить их.";
+
+"hub.backup.lastFailedMessage" = "Последняя попытка не удалась: %1$@";
+
+"hub.backup.lastFailedCode" = "Последняя попытка не удалась (%1$@)";
+
+"hub.backup.row.lastGood" = "Последняя успешная копия";
+
+"hub.backup.row.next" = "Следующая копия";
+
+"hub.backup.row.running" = "Копия создаётся сейчас";
+
+"hub.backup.row.lastAttempt" = "Последняя попытка";
+
+"hub.backup.run.running" = "Создание копии…";
+
+"hub.backup.run.stillRunning" = "Копия всё ещё создаётся в службе Hub.";
+
+"hub.backup.run.finishedGeneration" = "Копия создана: %1$@";
+
+"hub.backup.run.finished" = "Копия создана";
+
+"hub.backup.run.failed" = "Не удалось создать копию: %1$@";
+
+"hub.backup.maint.unreadable" = "Не удалось прочитать ответ Hub.";
+
+"hub.backup.maint.unwritable" = "Не удалось сохранить пароль восстановления.";
+
+"hub.backup.maint.configMissing" = "Настройте Hub, прежде чем менять копирование.";
+
+"hub.devices.title" = "Сопряжённые устройства";
+
+"hub.devices.detail" = "Телефоны и приложения, которые читают этот Hub, и автомобили, которые может читать каждое из них.";
+
+"hub.devices.revokeTitle" = "Отозвать доступ для «%1$@»?";
+
+"hub.devices.revokeInfo" = "Это устройство сразу перестанет читать данные из Hub. Чтобы снова его использовать, сопрягите его заново.";
+
+"hub.devices.revoke" = "Отозвать";
+
+"hub.devices.revokeEllipsis" = "Отозвать…";
+
+"hub.devices.revokeAccessibility" = "Отозвать доступ для «%1$@»";
+
+"hub.devices.revokedDone" = "Доступ для «%1$@» отозван.";
+
+"hub.devices.none" = "Нет сопряжённых устройств.";
+
+"hub.devices.cars" = "Автомобили: %1$@";
+
+"hub.devices.noCars" = "Нет автомобилей";
+
+"hub.devices.carFallback" = "Автомобиль %1$@";
+
+"hub.devices.unnamed" = "Устройство без названия";
+
+"hub.devices.stateRevoked" = "Отозвано %1$@";
+
+"hub.devices.stateExpired" = "Истекло %1$@";
+
+"hub.devices.stateLastSeen" = "Последний раз было на связи %1$@";
+
+"hub.devices.stateNeverSeen" = "Ещё не было на связи";
+
+"hub.collection.loginOwn" = "Выполнен вход с собственной учётной записью Hub";
+
+"hub.collection.loginSignedOut" = "Выход выполнен";
+
+"hub.collection.loginNotOwn" = "Сохранённый вход не принадлежит Hub";
+
+"hub.collection.credValidUntil" = "Действует до %1$@";
+
+"hub.collection.credValid" = "Действует";
+
+"hub.collection.credRelogin" = "Нужен повторный вход: войдите снова в следующем открытом окне";
+
+"hub.collection.credOwnerRefused" = "Owner API отклонён: Tesla отклонила этот вход";
+
+"hub.collection.credRefused" = "Отклонено (%1$@)";
+
+"hub.collection.credExposure" = "Подозрение на раскрытие: войдите снова в следующем открытом окне";
+
+"hub.collection.credAttention" = "Требует внимания (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Вход не выполнен";
+
+"hub.collection.windowOpenUntil" = "Открыто до %1$@";
+
+"hub.collection.windowOpen" = "Открыто";
+
+"hub.collection.windowPending" = "Ожидает";
+
+"hub.collection.windowPendingFrom" = "Ожидает с %1$@";
+
+"hub.collection.windowPendingUntil" = "Ожидает до %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Ожидает с %1$@ до %2$@";
+
+"hub.collection.windowClosingExpiry" = "Закрывается (срок до %1$@)";
+
+"hub.collection.windowClosing" = "Закрывается";
+
+"hub.collection.windowClosedReason" = "Закрыто (%1$@)";
+
+"hub.collection.windowClosed" = "Закрыто";
+
+"hub.collection.windowUntrusted" = "Закрыто (нет доверенного издателя)";
+
+"hub.collection.windowFaulted" = "Закрыто (состоянию окна нужен новый документ доверия)";
+
+"hub.collection.windowRecovery" = "Закрыто (ожидает восстановления учётных данных: выполните restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Неизвестно: канал управления принадлежит не этому Hub";
+
+"hub.collection.windowNotRunning" = "Неизвестно: Hub не запущен";
+
+"hub.collection.reasonExpired" = "истекло";
+
+"hub.collection.reasonOperator" = "закрыто оператором";
+
+"hub.collection.reasonRelogin" = "нужен повторный вход";
+
+"hub.collection.reasonOwnerRefused" = "Owner API отклонён";
+
+"hub.collection.reasonClock" = "проверка часов не удалась";
+
+"hub.collection.reasonReboot" = "Mac перезапущен";
+
+"hub.collection.reasonUnverifiable" = "не удалось проверить состояние";
+
+"hub.collection.reasonClaimLost" = "право на сбор утрачено";
+
+"hub.collection.fleet" = "Приостановлено: действия Fleet недоступны";
+
+"hub.collection.signInUnavailable" = "Вход недоступен в этом Hub";
+
+"hub.collection.labelLogin" = "Вход в Tesla";
+
+"hub.collection.labelCredential" = "Состояние учётных данных";
+
+"hub.collection.labelWindow" = "Окно сбора данных";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Вход";
+
+"hub.signIn.recoveryPending" = "Hub ожидает восстановления своих учётных данных: данные этого Hub были восстановлены без ключей. Выполните restore-recovery-credentials, затем войдите. Ничего не изменено.";
+
+"hub.signIn.serviceUnauthenticated" = "Процесс, отвечающий на канале управления Hub, не является этим Hub, поэтому ничего не отправлено. Перезапустите Hub, затем войдите снова.";
+
+"hub.signIn.busy" = "Hub занят другими запросами. Ничего не изменено; войдите снова через минуту.";

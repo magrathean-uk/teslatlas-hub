@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "架构检查无法确定是源应用程序的哪个版本写入了此数据库：多个版本共用此架构。";
 
 "hub.import.ackRelease" = "我确认源应用程序为 4.2.0 或更新版本，并且导入期间不会更新。";
+
+"hub.backup.title" = "备份";
+
+"hub.backup.detail" = "Hub 历史记录的加密副本。恢复密码保存在这台 Mac 上仅所有者可读的文件中。";
+
+"hub.backup.backUpNow" = "立即备份";
+
+"hub.backup.onSchedule" = "按计划备份";
+
+"hub.backup.saveSchedule" = "存储计划";
+
+"hub.backup.panelPrompt" = "选取";
+
+"hub.backup.panelMessage" = "请在 Hub 数据文件夹之外，选择用于存放加密 Hub 备份的文件夹。";
+
+"hub.backup.savedNote" = "已存储。计划将在 Hub 重新启动后生效。";
+
+"hub.backup.noFolder" = "未选择文件夹";
+
+"hub.backup.passwordPlaceholder" = "恢复密码（至少 %1$@ 个字符）";
+
+"hub.backup.passwordSaved" = "已存储。输入新密码以替换";
+
+"hub.backup.intervalHour" = "每小时";
+
+"hub.backup.intervalDay" = "每天";
+
+"hub.backup.intervalTwoDays" = "每 2 天";
+
+"hub.backup.intervalWeek" = "每周";
+
+"hub.backup.intervalHours" = "每 %1$@ 小时";
+
+"hub.backup.schedule" = "计划";
+
+"hub.backup.keep" = "保留";
+
+"hub.backup.keepSuffix" = "个备份";
+
+"hub.backup.folder" = "文件夹";
+
+"hub.backup.passwordLabel" = "恢复密码";
+
+"hub.backup.problem.passwordShort" = "恢复密码至少需要 %1$@ 个字符。";
+
+"hub.backup.problem.interval" = "间隔必须在 1 到 8784 小时之间。";
+
+"hub.backup.problem.keep" = "保留的备份数量必须在 1 到 1000 之间。";
+
+"hub.backup.problem.chooseFolder" = "请选择备份文件夹。";
+
+"hub.backup.problem.folderInside" = "请选择 Hub 数据文件夹之外的备份文件夹。";
+
+"hub.backup.problem.needsBoth" = "计划备份需要备份文件夹和恢复密码。";
+
+"hub.backup.lastGoodNone" = "暂无";
+
+"hub.backup.nextOff" = "计划备份已关闭";
+
+"hub.backup.nextNotScheduled" = "未安排：请选择文件夹和密码";
+
+"hub.backup.nextPaused" = "正在等待凭据恢复";
+
+"hub.collection.notReported" = "未报告";
+
+"hub.backup.blocked" = "被拒绝的凭据会阻止备份。运行 purge-refused-credentials 以清除它们。";
+
+"hub.backup.lastFailedMessage" = "上次尝试失败：%1$@";
+
+"hub.backup.lastFailedCode" = "上次尝试失败（%1$@）";
+
+"hub.backup.row.lastGood" = "上次成功的备份";
+
+"hub.backup.row.next" = "下次备份";
+
+"hub.backup.row.running" = "正在进行备份";
+
+"hub.backup.row.lastAttempt" = "上次尝试";
+
+"hub.backup.run.running" = "正在备份…";
+
+"hub.backup.run.stillRunning" = "备份仍在 Hub 服务中运行。";
+
+"hub.backup.run.finishedGeneration" = "备份已完成：%1$@";
+
+"hub.backup.run.finished" = "备份已完成";
+
+"hub.backup.run.failed" = "备份失败：%1$@";
+
+"hub.backup.maint.unreadable" = "无法读取 Hub 的响应。";
+
+"hub.backup.maint.unwritable" = "无法存储恢复密码。";
+
+"hub.backup.maint.configMissing" = "更改备份之前，请先设置 Hub。";
+
+"hub.devices.title" = "已配对的设备";
+
+"hub.devices.detail" = "读取此 Hub 的手机和 App，以及各自可以读取的车辆。";
+
+"hub.devices.revokeTitle" = "要撤销“%1$@”的访问权限吗？";
+
+"hub.devices.revokeInfo" = "此设备会立即停止读取 Hub。若要再次使用，请重新配对。";
+
+"hub.devices.revoke" = "撤销";
+
+"hub.devices.revokeEllipsis" = "撤销…";
+
+"hub.devices.revokeAccessibility" = "撤销“%1$@”的访问权限";
+
+"hub.devices.revokedDone" = "已撤销“%1$@”的访问权限。";
+
+"hub.devices.none" = "没有已配对的设备。";
+
+"hub.devices.cars" = "车辆：%1$@";
+
+"hub.devices.noCars" = "无车辆";
+
+"hub.devices.carFallback" = "车辆 %1$@";
+
+"hub.devices.unnamed" = "未命名的设备";
+
+"hub.devices.stateRevoked" = "已撤销 %1$@";
+
+"hub.devices.stateExpired" = "已过期 %1$@";
+
+"hub.devices.stateLastSeen" = "上次出现 %1$@";
+
+"hub.devices.stateNeverSeen" = "尚未出现";
+
+"hub.collection.loginOwn" = "已使用 Hub 自己的登录信息登录";
+
+"hub.collection.loginSignedOut" = "已退出登录";
+
+"hub.collection.loginNotOwn" = "存储的登录信息不是 Hub 自己的";
+
+"hub.collection.credValidUntil" = "有效期至 %1$@";
+
+"hub.collection.credValid" = "有效";
+
+"hub.collection.credRelogin" = "需要重新登录：请在下一个打开的窗口中再次登录";
+
+"hub.collection.credOwnerRefused" = "Owner API 被拒绝：Tesla 拒绝了此登录";
+
+"hub.collection.credRefused" = "已拒绝（%1$@）";
+
+"hub.collection.credExposure" = "疑似泄露：请在下一个打开的窗口中再次登录";
+
+"hub.collection.credAttention" = "需要注意（%1$@）";
+
+"hub.collection.credNotSignedIn" = "未登录";
+
+"hub.collection.windowOpenUntil" = "开放至 %1$@";
+
+"hub.collection.windowOpen" = "开放";
+
+"hub.collection.windowPending" = "待开始";
+
+"hub.collection.windowPendingFrom" = "自 %1$@ 起待开始";
+
+"hub.collection.windowPendingUntil" = "至 %1$@ 前待开始";
+
+"hub.collection.windowPendingFromUntil" = "自 %1$@ 至 %2$@ 待开始";
+
+"hub.collection.windowClosingExpiry" = "正在关闭（到期时间 %1$@）";
+
+"hub.collection.windowClosing" = "正在关闭";
+
+"hub.collection.windowClosedReason" = "已关闭（%1$@）";
+
+"hub.collection.windowClosed" = "已关闭";
+
+"hub.collection.windowUntrusted" = "已关闭（没有可信的签发方）";
+
+"hub.collection.windowFaulted" = "已关闭（窗口状态需要新的信任文档）";
+
+"hub.collection.windowRecovery" = "已关闭（正在等待凭据恢复：运行 restore-recovery-credentials）";
+
+"hub.collection.windowUnauthenticated" = "未知：控制通道不属于此 Hub";
+
+"hub.collection.windowNotRunning" = "未知：Hub 未运行";
+
+"hub.collection.reasonExpired" = "已过期";
+
+"hub.collection.reasonOperator" = "已由操作员关闭";
+
+"hub.collection.reasonRelogin" = "需要重新登录";
+
+"hub.collection.reasonOwnerRefused" = "Owner API 被拒绝";
+
+"hub.collection.reasonClock" = "时钟检查失败";
+
+"hub.collection.reasonReboot" = "Mac 已重新启动";
+
+"hub.collection.reasonUnverifiable" = "无法验证状态";
+
+"hub.collection.reasonClaimLost" = "采集权益已丢失";
+
+"hub.collection.fleet" = "已暂停：没有可用的 Fleet 操作";
+
+"hub.collection.signInUnavailable" = "此 Hub 上无法登录";
+
+"hub.collection.labelLogin" = "Tesla 登录";
+
+"hub.collection.labelCredential" = "凭据状态";
+
+"hub.collection.labelWindow" = "采集窗口";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "登录";
+
+"hub.signIn.recoveryPending" = "Hub 正在等待恢复其凭据：此 Hub 的数据在没有密钥的情况下被恢复。请运行 restore-recovery-credentials，然后登录。未更改任何内容。";
+
+"hub.signIn.serviceUnauthenticated" = "在 Hub 控制通道上响应的进程不是此 Hub，因此未发送任何内容。请重新启动 Hub，然后再次登录。";
+
+"hub.signIn.busy" = "Hub 正忙于处理其他请求。未更改任何内容；请稍后再次登录。";

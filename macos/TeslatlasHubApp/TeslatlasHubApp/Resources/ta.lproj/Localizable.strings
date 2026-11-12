@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "இந்தத் தரவுத்தளத்தை மூலப் பயன்பாட்டின் எந்த வெளியீடு எழுதியது என்பதை ஸ்கீமா சரிபார்ப்பு காட்டாது: பல வெளியீடுகள் ஒரே ஸ்கீமாவைப் பகிர்கின்றன.";
 
 "hub.import.ackRelease" = "மூலப் பயன்பாடு 4.2.0 அல்லது அதற்குப் பிந்தைய வெளியீட்டில் உள்ளது என்றும் இறக்குமதியின்போது புதுப்பிக்கப்படாது என்றும் உறுதிப்படுத்துகிறேன்.";
+
+"hub.backup.title" = "காப்புப்பிரதிகள்";
+
+"hub.backup.detail" = "Hub-இன் வரலாற்றின் குறியாக்கப்பட்ட நகல்கள். மீட்பு கடவுச்சொல், இந்த Mac-இல் உரிமையாளர் மட்டுமே படிக்கக்கூடிய கோப்பில் இருக்கும்.";
+
+"hub.backup.backUpNow" = "இப்போதே காப்புப்பிரதி எடு";
+
+"hub.backup.onSchedule" = "அட்டவணைப்படி காப்புப்பிரதி எடு";
+
+"hub.backup.saveSchedule" = "அட்டவணையைச் சேமி";
+
+"hub.backup.panelPrompt" = "தேர்வுசெய்";
+
+"hub.backup.panelMessage" = "குறியாக்கப்பட்ட Hub காப்புப்பிரதிகளுக்கு, Hub தரவு கோப்புறைக்கு வெளியே ஒரு கோப்புறையைத் தேர்வுசெய்யவும்.";
+
+"hub.backup.savedNote" = "சேமிக்கப்பட்டது. Hub மீண்டும் தொடங்கும்போது அட்டவணை பொருந்தும்.";
+
+"hub.backup.noFolder" = "கோப்புறை தேர்ந்தெடுக்கப்படவில்லை";
+
+"hub.backup.passwordPlaceholder" = "மீட்பு கடவுச்சொல் (குறைந்தது %1$@ எழுத்துகள்)";
+
+"hub.backup.passwordSaved" = "சேமிக்கப்பட்டது. மாற்ற புதியதை உள்ளிடவும்";
+
+"hub.backup.intervalHour" = "ஒவ்வொரு மணிநேரமும்";
+
+"hub.backup.intervalDay" = "ஒவ்வொரு நாளும்";
+
+"hub.backup.intervalTwoDays" = "ஒவ்வொரு 2 நாட்களுக்கும்";
+
+"hub.backup.intervalWeek" = "ஒவ்வொரு வாரமும்";
+
+"hub.backup.intervalHours" = "ஒவ்வொரு %1$@ மணிநேரத்திற்கும்";
+
+"hub.backup.schedule" = "அட்டவணை";
+
+"hub.backup.keep" = "வைத்திரு";
+
+"hub.backup.keepSuffix" = "காப்புப்பிரதிகள்";
+
+"hub.backup.folder" = "கோப்புறை";
+
+"hub.backup.passwordLabel" = "மீட்பு கடவுச்சொல்";
+
+"hub.backup.problem.passwordShort" = "மீட்பு கடவுச்சொல்லில் குறைந்தது %1$@ எழுத்துகள் இருக்க வேண்டும்.";
+
+"hub.backup.problem.interval" = "இடைவெளி 1 முதல் 8784 மணிநேரத்திற்குள் இருக்க வேண்டும்.";
+
+"hub.backup.problem.keep" = "வைத்திருக்கும் காப்புப்பிரதிகளின் எண்ணிக்கை 1 முதல் 1000 வரை இருக்க வேண்டும்.";
+
+"hub.backup.problem.chooseFolder" = "ஒரு காப்புப்பிரதி கோப்புறையைத் தேர்வுசெய்யவும்.";
+
+"hub.backup.problem.folderInside" = "Hub தரவு கோப்புறைக்கு வெளியே ஒரு காப்புப்பிரதி கோப்புறையைத் தேர்வுசெய்யவும்.";
+
+"hub.backup.problem.needsBoth" = "அட்டவணைப்படியான காப்புப்பிரதிகளுக்கு ஒரு காப்புப்பிரதி கோப்புறையும் மீட்பு கடவுச்சொல்லும் தேவை.";
+
+"hub.backup.lastGoodNone" = "இன்னும் இல்லை";
+
+"hub.backup.nextOff" = "அட்டவணைப்படியான காப்புப்பிரதிகள் அணைக்கப்பட்டுள்ளன";
+
+"hub.backup.nextNotScheduled" = "திட்டமிடப்படவில்லை: கோப்புறையையும் கடவுச்சொல்லையும் தேர்வுசெய்யவும்";
+
+"hub.backup.nextPaused" = "நற்சான்றுகள் மீட்புக்காகக் காத்திருக்கிறது";
+
+"hub.collection.notReported" = "தெரிவிக்கப்படவில்லை";
+
+"hub.backup.blocked" = "நிராகரிக்கப்பட்ட நற்சான்றுகள் காப்புப்பிரதிகளைத் தடுக்கின்றன. அவற்றை அழிக்க purge-refused-credentials இயக்கவும்.";
+
+"hub.backup.lastFailedMessage" = "கடைசி முயற்சி தோல்வியடைந்தது: %1$@";
+
+"hub.backup.lastFailedCode" = "கடைசி முயற்சி தோல்வியடைந்தது (%1$@)";
+
+"hub.backup.row.lastGood" = "கடைசி வெற்றிகரமான காப்புப்பிரதி";
+
+"hub.backup.row.next" = "அடுத்த காப்புப்பிரதி";
+
+"hub.backup.row.running" = "ஒரு காப்புப்பிரதி இப்போது நடந்துகொண்டிருக்கிறது";
+
+"hub.backup.row.lastAttempt" = "கடைசி முயற்சி";
+
+"hub.backup.run.running" = "காப்புப்பிரதி எடுக்கப்படுகிறது…";
+
+"hub.backup.run.stillRunning" = "காப்புப்பிரதி இன்னும் Hub சேவையில் நடந்துகொண்டிருக்கிறது.";
+
+"hub.backup.run.finishedGeneration" = "காப்புப்பிரதி முடிந்தது: %1$@";
+
+"hub.backup.run.finished" = "காப்புப்பிரதி முடிந்தது";
+
+"hub.backup.run.failed" = "காப்புப்பிரதி தோல்வியடைந்தது: %1$@";
+
+"hub.backup.maint.unreadable" = "Hub-இன் பதிலைப் படிக்க முடியவில்லை.";
+
+"hub.backup.maint.unwritable" = "மீட்பு கடவுச்சொல்லைச் சேமிக்க முடியவில்லை.";
+
+"hub.backup.maint.configMissing" = "காப்புப்பிரதிகளை மாற்றும் முன் Hub-ஐ அமைக்கவும்.";
+
+"hub.devices.title" = "இணைக்கப்பட்ட சாதனங்கள்";
+
+"hub.devices.detail" = "இந்த Hub-ஐப் படிக்கும் தொலைபேசிகளும் செயலிகளும், ஒவ்வொன்றும் படிக்கக்கூடிய கார்களும்.";
+
+"hub.devices.revokeTitle" = "%1$@ அணுகலைத் திரும்பப் பெறவா?";
+
+"hub.devices.revokeInfo" = "இந்தச் சாதனம் உடனே Hub-இலிருந்து படிப்பதை நிறுத்தும். மீண்டும் பயன்படுத்த, மீண்டும் இணைக்கவும்.";
+
+"hub.devices.revoke" = "திரும்பப் பெறு";
+
+"hub.devices.revokeEllipsis" = "திரும்பப் பெறு…";
+
+"hub.devices.revokeAccessibility" = "%1$@ அணுகலைத் திரும்பப் பெறு";
+
+"hub.devices.revokedDone" = "%1$@ அணுகல் திரும்பப் பெறப்பட்டது.";
+
+"hub.devices.none" = "இணைக்கப்பட்ட சாதனங்கள் இல்லை.";
+
+"hub.devices.cars" = "கார்கள்: %1$@";
+
+"hub.devices.noCars" = "கார்கள் இல்லை";
+
+"hub.devices.carFallback" = "கார் %1$@";
+
+"hub.devices.unnamed" = "பெயரற்ற சாதனம்";
+
+"hub.devices.stateRevoked" = "திரும்பப் பெறப்பட்டது %1$@";
+
+"hub.devices.stateExpired" = "காலாவதியானது %1$@";
+
+"hub.devices.stateLastSeen" = "கடைசியாகப் பார்த்தது %1$@";
+
+"hub.devices.stateNeverSeen" = "இன்னும் பார்க்கப்படவில்லை";
+
+"hub.collection.loginOwn" = "Hub-இன் சொந்த உள்நுழைவுடன் உள்நுழைந்துள்ளது";
+
+"hub.collection.loginSignedOut" = "வெளியேறியுள்ளது";
+
+"hub.collection.loginNotOwn" = "சேமித்த உள்நுழைவு Hub-இன் சொந்தம் அல்ல";
+
+"hub.collection.credValidUntil" = "%1$@ வரை செல்லுபடியாகும்";
+
+"hub.collection.credValid" = "செல்லுபடியாகும்";
+
+"hub.collection.credRelogin" = "மீண்டும் உள்நுழைவு தேவை: அடுத்த திறந்த சாளரத்தில் மீண்டும் உள்நுழையவும்";
+
+"hub.collection.credOwnerRefused" = "Owner API நிராகரிக்கப்பட்டது: Tesla இந்த உள்நுழைவை நிராகரித்தது";
+
+"hub.collection.credRefused" = "நிராகரிக்கப்பட்டது (%1$@)";
+
+"hub.collection.credExposure" = "வெளிப்பட்டிருக்கலாம் என சந்தேகம்: அடுத்த திறந்த சாளரத்தில் மீண்டும் உள்நுழையவும்";
+
+"hub.collection.credAttention" = "கவனம் தேவை (%1$@)";
+
+"hub.collection.credNotSignedIn" = "உள்நுழையவில்லை";
+
+"hub.collection.windowOpenUntil" = "%1$@ வரை திறந்திருக்கும்";
+
+"hub.collection.windowOpen" = "திறந்திருக்கிறது";
+
+"hub.collection.windowPending" = "நிலுவையில்";
+
+"hub.collection.windowPendingFrom" = "%1$@ முதல் நிலுவையில்";
+
+"hub.collection.windowPendingUntil" = "%1$@ வரை நிலுவையில்";
+
+"hub.collection.windowPendingFromUntil" = "%1$@ முதல் %2$@ வரை நிலுவையில்";
+
+"hub.collection.windowClosingExpiry" = "மூடப்படுகிறது (காலாவதி %1$@)";
+
+"hub.collection.windowClosing" = "மூடப்படுகிறது";
+
+"hub.collection.windowClosedReason" = "மூடப்பட்டது (%1$@)";
+
+"hub.collection.windowClosed" = "மூடப்பட்டது";
+
+"hub.collection.windowUntrusted" = "மூடப்பட்டது (நம்பகமான வழங்குநர் இல்லை)";
+
+"hub.collection.windowFaulted" = "மூடப்பட்டது (சாளர நிலைக்குப் புதிய நம்பிக்கை ஆவணம் தேவை)";
+
+"hub.collection.windowRecovery" = "மூடப்பட்டது (நற்சான்றுகள் மீட்புக்காகக் காத்திருக்கிறது: restore-recovery-credentials இயக்கவும்)";
+
+"hub.collection.windowUnauthenticated" = "தெரியாதது: கட்டுப்பாட்டு சேனல் இந்த Hub-இனுடையது அல்ல";
+
+"hub.collection.windowNotRunning" = "தெரியாதது: Hub இயங்கவில்லை";
+
+"hub.collection.reasonExpired" = "காலாவதியானது";
+
+"hub.collection.reasonOperator" = "இயக்குநரால் மூடப்பட்டது";
+
+"hub.collection.reasonRelogin" = "மீண்டும் உள்நுழைவு தேவை";
+
+"hub.collection.reasonOwnerRefused" = "Owner API நிராகரிக்கப்பட்டது";
+
+"hub.collection.reasonClock" = "கடிகார சோதனை தோல்வியடைந்தது";
+
+"hub.collection.reasonReboot" = "Mac மீண்டும் தொடங்கியது";
+
+"hub.collection.reasonUnverifiable" = "நிலையைச் சரிபார்க்க முடியவில்லை";
+
+"hub.collection.reasonClaimLost" = "சேகரிப்பு உரிமை இழக்கப்பட்டது";
+
+"hub.collection.fleet" = "நிறுத்திவைக்கப்பட்டது: Fleet செயல் எதுவும் கிடைக்கவில்லை";
+
+"hub.collection.signInUnavailable" = "இந்த Hub-இல் உள்நுழைவு கிடைக்கவில்லை";
+
+"hub.collection.labelLogin" = "Tesla உள்நுழைவு";
+
+"hub.collection.labelCredential" = "நற்சான்றுகளின் நிலை";
+
+"hub.collection.labelWindow" = "சேகரிப்பு சாளரம்";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "உள்நுழைவு";
+
+"hub.signIn.recoveryPending" = "Hub தன் நற்சான்றுகளின் மீட்புக்காகக் காத்திருக்கிறது: இந்த Hub-இன் தரவு அதன் விசைகள் இல்லாமல் மீட்டமைக்கப்பட்டது. restore-recovery-credentials இயக்கி, பிறகு உள்நுழையவும். எதுவும் மாற்றப்படவில்லை.";
+
+"hub.signIn.serviceUnauthenticated" = "Hub-இன் கட்டுப்பாட்டு சேனலில் பதிலளிக்கும் செயல்முறை இந்த Hub அல்ல, எனவே எதுவும் அனுப்பப்படவில்லை. Hub-ஐ மீண்டும் தொடங்கி, பிறகு மீண்டும் உள்நுழையவும்.";
+
+"hub.signIn.busy" = "Hub மற்ற கோரிக்கைகளில் பிஸியாக உள்ளது. எதுவும் மாற்றப்படவில்லை; சிறிது நேரத்தில் மீண்டும் உள்நுழையவும்.";

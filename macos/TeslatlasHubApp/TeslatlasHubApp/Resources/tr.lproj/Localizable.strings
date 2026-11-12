@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "Şema denetimi, kaynak uygulamanın hangi sürümünün bu veritabanını oluşturduğunu gösteremez: aynı şemayı birden fazla sürüm kullanır.";
 
 "hub.import.ackRelease" = "Kaynak uygulamanın 4.2.0 veya daha yeni bir sürümde olduğunu ve içe aktarma sırasında güncellenmeyeceğini onaylıyorum.";
+
+"hub.backup.title" = "Yedekler";
+
+"hub.backup.detail" = "Hub geçmişinin şifrelenmiş kopyaları. Kurtarma parolası bu Mac'te yalnızca sahibinin okuyabildiği bir dosyada durur.";
+
+"hub.backup.backUpNow" = "Şimdi yedekle";
+
+"hub.backup.onSchedule" = "Zamanlamaya göre yedekle";
+
+"hub.backup.saveSchedule" = "Zamanlamayı kaydet";
+
+"hub.backup.panelPrompt" = "Seç";
+
+"hub.backup.panelMessage" = "Şifrelenmiş Hub yedekleri için Hub veri klasörünün dışında bir klasör seçin.";
+
+"hub.backup.savedNote" = "Kaydedildi. Zamanlama, Hub yeniden başlatıldığında geçerli olur.";
+
+"hub.backup.noFolder" = "Klasör seçilmedi";
+
+"hub.backup.passwordPlaceholder" = "Kurtarma parolası (en az %1$@ karakter)";
+
+"hub.backup.passwordSaved" = "Kaydedildi. Değiştirmek için yenisini yazın";
+
+"hub.backup.intervalHour" = "Her saat";
+
+"hub.backup.intervalDay" = "Her gün";
+
+"hub.backup.intervalTwoDays" = "2 günde bir";
+
+"hub.backup.intervalWeek" = "Her hafta";
+
+"hub.backup.intervalHours" = "Her %1$@ saatte bir";
+
+"hub.backup.schedule" = "Zamanlama";
+
+"hub.backup.keep" = "Sakla";
+
+"hub.backup.keepSuffix" = "yedek";
+
+"hub.backup.folder" = "Klasör";
+
+"hub.backup.passwordLabel" = "Kurtarma parolası";
+
+"hub.backup.problem.passwordShort" = "Kurtarma parolası en az %1$@ karakter olmalıdır.";
+
+"hub.backup.problem.interval" = "Aralık 1 ile 8784 saat arasında olmalıdır.";
+
+"hub.backup.problem.keep" = "Saklanacak yedek sayısı 1 ile 1000 arasında olmalıdır.";
+
+"hub.backup.problem.chooseFolder" = "Bir yedek klasörü seçin.";
+
+"hub.backup.problem.folderInside" = "Hub veri klasörünün dışında bir yedek klasörü seçin.";
+
+"hub.backup.problem.needsBoth" = "Zamanlanmış yedekler için bir yedek klasörü ve bir kurtarma parolası gerekir.";
+
+"hub.backup.lastGoodNone" = "Henüz yok";
+
+"hub.backup.nextOff" = "Zamanlanmış yedekler kapalı";
+
+"hub.backup.nextNotScheduled" = "Zamanlanmadı: bir klasör ve bir parola seçin";
+
+"hub.backup.nextPaused" = "Kimlik bilgilerinin kurtarılması bekleniyor";
+
+"hub.collection.notReported" = "Bildirilmedi";
+
+"hub.backup.blocked" = "Reddedilen kimlik bilgileri yedeklemeyi engelliyor. Temizlemek için purge-refused-credentials komutunu çalıştırın.";
+
+"hub.backup.lastFailedMessage" = "Son deneme başarısız oldu: %1$@";
+
+"hub.backup.lastFailedCode" = "Son deneme başarısız oldu (%1$@)";
+
+"hub.backup.row.lastGood" = "Son başarılı yedek";
+
+"hub.backup.row.next" = "Sonraki yedek";
+
+"hub.backup.row.running" = "Şu anda bir yedek alınıyor";
+
+"hub.backup.row.lastAttempt" = "Son deneme";
+
+"hub.backup.run.running" = "Yedekleniyor…";
+
+"hub.backup.run.stillRunning" = "Yedek hâlâ Hub hizmetinde çalışıyor.";
+
+"hub.backup.run.finishedGeneration" = "Yedek tamamlandı: %1$@";
+
+"hub.backup.run.finished" = "Yedek tamamlandı";
+
+"hub.backup.run.failed" = "Yedek başarısız oldu: %1$@";
+
+"hub.backup.maint.unreadable" = "Hub'ın yanıtı okunamadı.";
+
+"hub.backup.maint.unwritable" = "Kurtarma parolası kaydedilemedi.";
+
+"hub.backup.maint.configMissing" = "Yedekleri değiştirmeden önce Hub'ı kurun.";
+
+"hub.devices.title" = "Eşlenmiş aygıtlar";
+
+"hub.devices.detail" = "Bu Hub'ı okuyan telefonlar ve uygulamalar ile her birinin okuyabileceği araçlar.";
+
+"hub.devices.revokeTitle" = "%1$@ erişimi iptal edilsin mi?";
+
+"hub.devices.revokeInfo" = "Bu aygıt Hub'dan okumayı hemen bırakır. Yeniden kullanmak için tekrar eşleyin.";
+
+"hub.devices.revoke" = "İptal et";
+
+"hub.devices.revokeEllipsis" = "İptal et…";
+
+"hub.devices.revokeAccessibility" = "%1$@ erişimini iptal et";
+
+"hub.devices.revokedDone" = "%1$@ erişimi iptal edildi.";
+
+"hub.devices.none" = "Eşlenmiş aygıt yok.";
+
+"hub.devices.cars" = "Araçlar: %1$@";
+
+"hub.devices.noCars" = "Araç yok";
+
+"hub.devices.carFallback" = "Araç %1$@";
+
+"hub.devices.unnamed" = "Adsız aygıt";
+
+"hub.devices.stateRevoked" = "İptal edildi: %1$@";
+
+"hub.devices.stateExpired" = "Süresi doldu: %1$@";
+
+"hub.devices.stateLastSeen" = "Son görülme: %1$@";
+
+"hub.devices.stateNeverSeen" = "Henüz görülmedi";
+
+"hub.collection.loginOwn" = "Hub'ın kendi girişiyle oturum açıldı";
+
+"hub.collection.loginSignedOut" = "Oturum kapatıldı";
+
+"hub.collection.loginNotOwn" = "Kayıtlı giriş Hub'ın kendi girişi değil";
+
+"hub.collection.credValidUntil" = "%1$@ tarihine kadar geçerli";
+
+"hub.collection.credValid" = "Geçerli";
+
+"hub.collection.credRelogin" = "Yeniden giriş gerekli: bir sonraki açık pencerede tekrar oturum açın";
+
+"hub.collection.credOwnerRefused" = "Owner API reddedildi: Tesla bu girişi reddetti";
+
+"hub.collection.credRefused" = "Reddedildi (%1$@)";
+
+"hub.collection.credExposure" = "Açığa çıkma şüphesi: bir sonraki açık pencerede tekrar oturum açın";
+
+"hub.collection.credAttention" = "Dikkat gerekiyor (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Oturum açılmadı";
+
+"hub.collection.windowOpenUntil" = "%1$@ tarihine kadar açık";
+
+"hub.collection.windowOpen" = "Açık";
+
+"hub.collection.windowPending" = "Beklemede";
+
+"hub.collection.windowPendingFrom" = "%1$@ tarihinden itibaren beklemede";
+
+"hub.collection.windowPendingUntil" = "%1$@ tarihine kadar beklemede";
+
+"hub.collection.windowPendingFromUntil" = "%1$@ ile %2$@ arasında beklemede";
+
+"hub.collection.windowClosingExpiry" = "Kapanıyor (bitiş %1$@)";
+
+"hub.collection.windowClosing" = "Kapanıyor";
+
+"hub.collection.windowClosedReason" = "Kapalı (%1$@)";
+
+"hub.collection.windowClosed" = "Kapalı";
+
+"hub.collection.windowUntrusted" = "Kapalı (güvenilir veren yok)";
+
+"hub.collection.windowFaulted" = "Kapalı (pencere durumu yeni bir güven belgesi gerektiriyor)";
+
+"hub.collection.windowRecovery" = "Kapalı (kimlik bilgilerinin kurtarılması bekleniyor: restore-recovery-credentials komutunu çalıştırın)";
+
+"hub.collection.windowUnauthenticated" = "Bilinmiyor: denetim kanalı bu Hub'a ait değil";
+
+"hub.collection.windowNotRunning" = "Bilinmiyor: Hub çalışmıyor";
+
+"hub.collection.reasonExpired" = "süresi doldu";
+
+"hub.collection.reasonOperator" = "operatör tarafından kapatıldı";
+
+"hub.collection.reasonRelogin" = "yeniden giriş gerekli";
+
+"hub.collection.reasonOwnerRefused" = "Owner API reddedildi";
+
+"hub.collection.reasonClock" = "saat denetimi başarısız oldu";
+
+"hub.collection.reasonReboot" = "Mac yeniden başlatıldı";
+
+"hub.collection.reasonUnverifiable" = "durum doğrulanamadı";
+
+"hub.collection.reasonClaimLost" = "toplama hakkı kaybedildi";
+
+"hub.collection.fleet" = "Askıda: kullanılabilir Fleet eylemi yok";
+
+"hub.collection.signInUnavailable" = "Bu Hub'da oturum açma kullanılamıyor";
+
+"hub.collection.labelLogin" = "Tesla girişi";
+
+"hub.collection.labelCredential" = "Kimlik bilgisi durumu";
+
+"hub.collection.labelWindow" = "Toplama penceresi";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Oturum açma";
+
+"hub.signIn.recoveryPending" = "Hub kimlik bilgilerinin kurtarılmasını bekliyor: bu Hub'ın verileri anahtarları olmadan geri yüklendi. restore-recovery-credentials komutunu çalıştırın, ardından oturum açın. Hiçbir şey değiştirilmedi.";
+
+"hub.signIn.serviceUnauthenticated" = "Hub'ın denetim kanalında yanıt veren işlem bu Hub değil, bu yüzden hiçbir şey gönderilmedi. Hub'ı yeniden başlatın, ardından tekrar oturum açın.";
+
+"hub.signIn.busy" = "Hub başka isteklerle meşgul. Hiçbir şey değiştirilmedi; birazdan tekrar oturum açın.";

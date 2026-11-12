@@ -616,3 +616,219 @@
 "hub.import.ackExplain" = "En schemakontroll kan inte visa vilken version av källprogrammet som skapade databasen: flera versioner delar samma schema.";
 
 "hub.import.ackRelease" = "Jag bekräftar att källprogrammet är version 4.2.0 eller senare och inte uppdateras under importen.";
+
+"hub.backup.title" = "Säkerhetskopior";
+
+"hub.backup.detail" = "Krypterade kopior av Hubbens historik. Återställningslösenordet ligger i en fil på den här Macen som bara ägaren kan läsa.";
+
+"hub.backup.backUpNow" = "Säkerhetskopiera nu";
+
+"hub.backup.onSchedule" = "Säkerhetskopiera enligt schema";
+
+"hub.backup.saveSchedule" = "Spara schema";
+
+"hub.backup.panelPrompt" = "Välj";
+
+"hub.backup.panelMessage" = "Välj en mapp för krypterade Hub-säkerhetskopior utanför Hubbens datamapp.";
+
+"hub.backup.savedNote" = "Sparat. Schemat gäller när Hubben startar om.";
+
+"hub.backup.noFolder" = "Ingen mapp vald";
+
+"hub.backup.passwordPlaceholder" = "Återställningslösenord (minst %1$@ tecken)";
+
+"hub.backup.passwordSaved" = "Sparat. Skriv ett nytt för att ersätta det";
+
+"hub.backup.intervalHour" = "Varje timme";
+
+"hub.backup.intervalDay" = "Varje dag";
+
+"hub.backup.intervalTwoDays" = "Varannan dag";
+
+"hub.backup.intervalWeek" = "Varje vecka";
+
+"hub.backup.intervalHours" = "Var %1$@:e timme";
+
+"hub.backup.schedule" = "Schema";
+
+"hub.backup.keep" = "Behåll";
+
+"hub.backup.keepSuffix" = "säkerhetskopior";
+
+"hub.backup.folder" = "Mapp";
+
+"hub.backup.passwordLabel" = "Återställningslösenord";
+
+"hub.backup.problem.passwordShort" = "Återställningslösenordet måste vara minst %1$@ tecken.";
+
+"hub.backup.problem.interval" = "Intervallet måste vara mellan 1 och 8784 timmar.";
+
+"hub.backup.problem.keep" = "Antalet säkerhetskopior som behålls måste vara mellan 1 och 1000.";
+
+"hub.backup.problem.chooseFolder" = "Välj en mapp för säkerhetskopior.";
+
+"hub.backup.problem.folderInside" = "Välj en mapp för säkerhetskopior utanför Hubbens datamapp.";
+
+"hub.backup.problem.needsBoth" = "Schemalagda säkerhetskopior kräver en mapp för säkerhetskopior och ett återställningslösenord.";
+
+"hub.backup.lastGoodNone" = "Inga ännu";
+
+"hub.backup.nextOff" = "Schemalagda säkerhetskopior är avstängda";
+
+"hub.backup.nextNotScheduled" = "Inte schemalagt: välj en mapp och ett lösenord";
+
+"hub.backup.nextPaused" = "Väntar på att inloggningsuppgifterna ska återställas";
+
+"hub.collection.notReported" = "Inte rapporterat";
+
+"hub.backup.blocked" = "Nekade inloggningsuppgifter blockerar säkerhetskopior. Kör purge-refused-credentials för att rensa dem.";
+
+"hub.backup.lastFailedMessage" = "Senaste försöket misslyckades: %1$@";
+
+"hub.backup.lastFailedCode" = "Senaste försöket misslyckades (%1$@)";
+
+"hub.backup.row.lastGood" = "Senaste lyckade säkerhetskopia";
+
+"hub.backup.row.next" = "Nästa säkerhetskopia";
+
+"hub.backup.row.running" = "En säkerhetskopiering pågår just nu";
+
+"hub.backup.row.lastAttempt" = "Senaste försök";
+
+"hub.backup.run.running" = "Säkerhetskopierar …";
+
+"hub.backup.run.stillRunning" = "Säkerhetskopieringen pågår fortfarande i Hub-tjänsten.";
+
+"hub.backup.run.finishedGeneration" = "Säkerhetskopiering klar: %1$@";
+
+"hub.backup.run.finished" = "Säkerhetskopiering klar";
+
+"hub.backup.run.failed" = "Säkerhetskopieringen misslyckades: %1$@";
+
+"hub.backup.maint.unreadable" = "Hubbens svar kunde inte läsas.";
+
+"hub.backup.maint.unwritable" = "Återställningslösenordet kunde inte sparas.";
+
+"hub.backup.maint.configMissing" = "Konfigurera Hubben innan du ändrar säkerhetskopior.";
+
+"hub.devices.title" = "Parkopplade enheter";
+
+"hub.devices.detail" = "Telefoner och appar som läser den här Hubben, med de bilar var och en får läsa.";
+
+"hub.devices.revokeTitle" = "Återkalla %1$@?";
+
+"hub.devices.revokeInfo" = "Den här enheten slutar läsa från Hubben direkt. Parkoppla den igen för att använda den igen.";
+
+"hub.devices.revoke" = "Återkalla";
+
+"hub.devices.revokeEllipsis" = "Återkalla …";
+
+"hub.devices.revokeAccessibility" = "Återkalla %1$@";
+
+"hub.devices.revokedDone" = "%1$@ återkallades.";
+
+"hub.devices.none" = "Inga parkopplade enheter.";
+
+"hub.devices.cars" = "Bilar: %1$@";
+
+"hub.devices.noCars" = "Inga bilar";
+
+"hub.devices.carFallback" = "Bil %1$@";
+
+"hub.devices.unnamed" = "Enhet utan namn";
+
+"hub.devices.stateRevoked" = "Återkallad %1$@";
+
+"hub.devices.stateExpired" = "Gick ut %1$@";
+
+"hub.devices.stateLastSeen" = "Senast sedd %1$@";
+
+"hub.devices.stateNeverSeen" = "Inte sedd ännu";
+
+"hub.collection.loginOwn" = "Inloggad med Hubbens egen inloggning";
+
+"hub.collection.loginSignedOut" = "Utloggad";
+
+"hub.collection.loginNotOwn" = "Den sparade inloggningen är inte Hubbens egen";
+
+"hub.collection.credValidUntil" = "Giltig till %1$@";
+
+"hub.collection.credValid" = "Giltig";
+
+"hub.collection.credRelogin" = "Ny inloggning behövs: logga in igen i nästa öppna fönster";
+
+"hub.collection.credOwnerRefused" = "Owner API nekades: Tesla nekade den här inloggningen";
+
+"hub.collection.credRefused" = "Nekad (%1$@)";
+
+"hub.collection.credExposure" = "Misstänkt exponering: logga in igen i nästa öppna fönster";
+
+"hub.collection.credAttention" = "Behöver uppmärksamhet (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Inte inloggad";
+
+"hub.collection.windowOpenUntil" = "Öppet till %1$@";
+
+"hub.collection.windowOpen" = "Öppet";
+
+"hub.collection.windowPending" = "Väntar";
+
+"hub.collection.windowPendingFrom" = "Väntar från %1$@";
+
+"hub.collection.windowPendingUntil" = "Väntar till %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Väntar från %1$@ till %2$@";
+
+"hub.collection.windowClosingExpiry" = "Stängs (går ut %1$@)";
+
+"hub.collection.windowClosing" = "Stängs";
+
+"hub.collection.windowClosedReason" = "Stängt (%1$@)";
+
+"hub.collection.windowClosed" = "Stängt";
+
+"hub.collection.windowUntrusted" = "Stängt (ingen betrodd utfärdare)";
+
+"hub.collection.windowFaulted" = "Stängt (fönstrets tillstånd behöver ett nytt förtroendedokument)";
+
+"hub.collection.windowRecovery" = "Stängt (väntar på att inloggningsuppgifterna ska återställas: kör restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Okänt: kontrollkanalen tillhör inte den här Hubben";
+
+"hub.collection.windowNotRunning" = "Okänt: Hubben körs inte";
+
+"hub.collection.reasonExpired" = "gick ut";
+
+"hub.collection.reasonOperator" = "stängdes av operatören";
+
+"hub.collection.reasonRelogin" = "ny inloggning behövs";
+
+"hub.collection.reasonOwnerRefused" = "Owner API nekades";
+
+"hub.collection.reasonClock" = "klockkontrollen misslyckades";
+
+"hub.collection.reasonReboot" = "Macen startades om";
+
+"hub.collection.reasonUnverifiable" = "tillståndet kunde inte verifieras";
+
+"hub.collection.reasonClaimLost" = "insamlingsanspråket förlorades";
+
+"hub.collection.fleet" = "Parkerad: ingen Fleet-åtgärd är tillgänglig";
+
+"hub.collection.signInUnavailable" = "Inloggning är inte tillgänglig på den här Hubben";
+
+"hub.collection.labelLogin" = "Tesla-inloggning";
+
+"hub.collection.labelCredential" = "Status för inloggningsuppgifter";
+
+"hub.collection.labelWindow" = "Insamlingsfönster";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Inloggning";
+
+"hub.signIn.recoveryPending" = "Hubben väntar på att dess inloggningsuppgifter ska återställas: den här Hubbens data återställdes utan dess nycklar. Kör restore-recovery-credentials och logga sedan in. Inget ändrades.";
+
+"hub.signIn.serviceUnauthenticated" = "Processen som svarar på Hubbens kontrollkanal är inte den här Hubben, så inget skickades. Starta om Hubben och logga sedan in igen.";
+
+"hub.signIn.busy" = "Hubben är upptagen med andra förfrågningar. Inget ändrades; logga in igen om en stund.";
