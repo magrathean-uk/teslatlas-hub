@@ -41,6 +41,18 @@ configuration, and service state. A restore does not need the excluded keys
 from the old host: it generates a new cursor-signing key itself (see
 [Restore](#restore)).
 
+A backup has no fixed limit on its number of files. The bundle streams them
+one at a time, each with its own path, size and SHA-256 digest; its manifest
+records only how many files and bytes follow, and `verify-backup` and
+`restore-data` check every file as it arrives and the totals at the end. So
+backup and restore use the same memory whether the Hub holds a few hundred
+packs or many thousands.
+
+Bundles made before this format list every file in their manifest. They still
+verify and restore unchanged; the manifest's format version tells the two
+apart. Such a bundle never held more than 4,096 files, and a listed manifest
+above that bound is refused.
+
 ### Older plaintext directory backups
 
 Before encrypted backups, `backup` wrote a plaintext directory whose
@@ -50,7 +62,8 @@ completion marker is an unkeyed digest, so it is not authenticated.
 `--plaintext-directory`; the flag is refused for an encrypted bundle. A new
 backup in the older format needs its own command,
 `backup-plaintext-directory --destination <new directory>`. Prefer the
-encrypted default.
+encrypted default. The directory's manifest lists every file, so this older
+format keeps its 4,096-file limit; a larger Hub needs the encrypted bundle.
 
 ## Export recovery credentials
 

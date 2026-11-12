@@ -23,8 +23,8 @@ use crate::{
         },
         create_encrypted_backup,
         encrypted_backup::{
-            HUB_PEAK_MEMORY_BYTES, HookAction, MAX_CATALOGUE_IMAGE_BYTES, SERVICE_RESERVE_BYTES,
-            STREAM_BUFFER_BYTES, clear_hook, copy_catalogue_into_memory, set_hook,
+            HUB_PEAK_MEMORY_BYTES, HookAction, MAX_CATALOGUE_IMAGE_BYTES, MAX_HELD_NOOP_BYTES,
+            SERVICE_RESERVE_BYTES, STREAM_BUFFER_BYTES, clear_hook, copy_catalogue_into_memory, set_hook,
         },
         generate_recovery_password, live_backup_pack_pins, restore_encrypted_backup,
         verify_encrypted_backup,
@@ -166,7 +166,7 @@ fn memory_budget_fits_the_hub_peak() {
     // copy exists; the noop bodies, the catalogue copy and the stream buffers
     // coexist. The rest of the Hub keeps its reserve beside either phase.
     let kdf_phase = u64::from(MAX_KDF_MEMORY_KIB) * 1024;
-    let noop_bodies = MAX_BACKUP_MEMBERS as u64 * MAX_SCHEMA_22_NOOP_BYTES;
+    let noop_bodies = MAX_HELD_NOOP_BYTES;
     let stream_phase = 2 * MAX_CATALOGUE_IMAGE_BYTES
         + noop_bodies
         + STREAM_BUFFER_BYTES as u64
