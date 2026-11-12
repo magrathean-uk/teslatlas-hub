@@ -15,8 +15,8 @@
 //!
 //! On macOS an extended ACL can let another account write a file, or add and
 //! delete entries in a directory, that its mode bits show as private. The ACL
-//! is read for the object the Hub holds open (the descriptor's current path,
-//! re-checked against the descriptor afterwards), and an `allow` entry that
+//! is read for the object the Hub holds open, addressed by its identity on
+//! its volume rather than by a pathname (M06-T11), and an `allow` entry that
 //! grants any write, add or delete right refuses the object.
 
 use std::{
@@ -289,20 +289,19 @@ pub(crate) fn acl_listing_grants_write(listing: &str) -> bool {
 
 /// Refuse the held object when its ACL lets anyone write, add or delete.
 /// macOS has no safe descriptor-based ACL call and the crate forbids unsafe
-/// code, so `ls -lde` lists the descriptor's current path (`F_GETPATH`); the
-/// path must still name the held object afterwards, otherwise the listing is
-/// not trusted and the object is refused.
+/// code, so `ls -lde` lists the held object by its identity on its volume,
+/// `/.vol/<device>/<inode>`. The kernel resolves that path by file ID, through
+/// no directory, so renaming an ancestor cannot put another object under it;
+/// the held descriptor keeps the inode allocated, so its number cannot pass to
+/// another file while it is listed. A volume without file-ID lookup fails the
+/// listing, and the object is refused.
 #[cfg(target_os = "macos")]
 fn refuse_foreign_write_acl(
     fd: BorrowedFd<'_>,
     held: &fs::Metadata,
     path: &Path,
 ) -> Result<(), DataRecoveryError> {
-    use std::{
-        ffi::OsStr,
-        os::unix::ffi::OsStrExt,
-        process::{Command, Stdio},
-    };
+    use std::process::{Command, Stdio};
 
     let refuse = || {
         invalid(format!(
@@ -311,18 +310,29 @@ fn refuse_foreign_write_acl(
             path.display()
         ))
     };
-    let current = rustix::fs::getpath(fd).map_err(|_| refuse())?;
-    let current = Path::new(OsStr::from_bytes(current.to_bytes()));
+    let same = |metadata: &fs::Metadata| metadata.dev() == held.dev() && metadata.ino() == held.ino();
+    // `held` describes the descriptor's object.
+    let now = File::from(fd.try_clone_to_owned().map_err(|_| refuse())?)
+        .metadata()
+        .map_err(|_| refuse())?;
+    if !same(&now) {
+        return Err(refuse());
+    }
+    let identity = PathBuf::from(format!("/.vol/{}/{}", held.dev(), held.ino()));
+    #[cfg(test)]
+    test_seam::acl_listing("before_listing");
     let output = Command::new("/bin/ls")
         .arg("-lde")
-        .arg(current)
+        .arg(&identity)
         .env("LC_ALL", "C")
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()
         .map_err(|_| refuse())?;
-    let listed = fs::symlink_metadata(current).map_err(|_| refuse())?;
-    if !output.status.success() || listed.dev() != held.dev() || listed.ino() != held.ino() {
+    #[cfg(test)]
+    test_seam::acl_listing("after_listing");
+    let listed = fs::symlink_metadata(&identity).map_err(|_| refuse())?;
+    if !output.status.success() || !same(&listed) {
         return Err(refuse());
     }
     if acl_listing_grants_write(&String::from_utf8_lossy(&output.stdout)) {
@@ -345,12 +355,32 @@ fn refuse_foreign_write_acl(
 
 #[cfg(test)]
 pub(crate) mod test_seam {
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
 
     use super::VolumeTrust;
 
+    type AclHook = Box<dyn FnMut(&str)>;
+
     thread_local! {
         static FORCED: Cell<Option<VolumeTrust>> = const { Cell::new(None) };
+        static ACL_HOOK: RefCell<Option<AclHook>> = const { RefCell::new(None) };
+    }
+
+    /// Run `hook` on this thread just before ("before_listing") and just
+    /// after ("after_listing") each ACL listing, until reset with `None`.
+    pub(crate) fn on_acl_listing<F: FnMut(&str) + 'static>(hook: Option<F>) {
+        ACL_HOOK.with(|slot| {
+            *slot.borrow_mut() = hook.map(|hook| Box::new(hook) as AclHook);
+        });
+    }
+
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub(super) fn acl_listing(stage: &str) {
+        ACL_HOOK.with(|slot| {
+            if let Some(hook) = slot.borrow_mut().as_mut() {
+                hook(stage);
+            }
+        });
     }
 
     /// Classify every volume as `trust` on this thread until reset.
