@@ -112,6 +112,23 @@ every open until `window trust` is run again.
    an Open window the service refuses with `window_closed`. Collection starts
    once Hub holds its own login. Confirm the latest observation advances.
 
+   The exchange uses Tesla's standard public owner client, the same values the
+   app's sign-in window sends: client `ownerapi`, redirect
+   `tesla://auth/callback`, scope `openid email offline_access`, and the global
+   owner token endpoint `https://auth.tesla.com/oauth2/v3/token`. The refresh
+   of the Hub's own pair uses the same client, under the one refresh fence.
+   The service checks the material before anything is sent: any other
+   redirect, a malformed verifier or code (`sign_in_material_invalid`) and a
+   code it has already tried (`sign_in_code_reused`) are refused locally. It
+   then asks the egress gate, sends one request and stores only a complete,
+   valid answer, as the Hub's own login (origin `hub_login`). An issuer
+   refusal (`sign_in_refused`), an unusable or oversized answer
+   (`sign_in_answer_invalid`) or an unreachable issuer (`sign_in_unavailable`)
+   stores nothing; start the sign-in again for a new code. Refusals name a
+   fixed code only, never the code, verifier or a token. Until vehicle
+   discovery is wired to the Hub's own login, `setup` reports
+   `"vehicleDiscovery": "not_run"`.
+
 ## Stop
 
 - *At expiry:* nothing to do. At the deadline Hub stops issuing Tesla traffic,

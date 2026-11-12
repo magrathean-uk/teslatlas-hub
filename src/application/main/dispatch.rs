@@ -469,13 +469,35 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
         vehicle_id: Option<i64>,
         all_vehicles: bool,
     ) -> Result<serde_json::Value, OperatorRefusal> {
-        // The Owner code exchange needs the owner's client values
-        // (G-OWNER-VALUES). Until they land the service refuses here, inside
-        // the window and before any send; vehicle discovery follows a
-        // successful exchange and so cannot run either.
-        drop((material, vehicle_id, all_vehicles));
-        let error = teslatlas_hub::auth::credential_sign_in::sign_in_unavailable();
-        Err(OperatorRefusal::new(error.code(), error.to_string()))
+        // DEC-088: the service exchanges the owner's code itself, with the
+        // standard public owner client, at the owner token endpoint. The
+        // window is Open here, and the exchange still asks the egress gate
+        // immediately before its one send. Only that exchange's answer is
+        // stored, with origin hub_login; any refusal leaves the store as it
+        // was and names a fixed code, never the material.
+        let entry = open_command_credential_vault(
+            self.store.clone(),
+            std::sync::Arc::clone(&self.admission),
+            &self.data_dir,
+        )
+        .map_err(|error| {
+            setup_refusal(teslatlas_hub::auth::credential_sign_in::credential_entry_error(error))
+        })?;
+        run_owner_exchange(|| {
+            teslatlas_hub::auth::credential_sign_in::exchange_owner_code(
+                &entry,
+                &material.code,
+                &material.code_verifier,
+                &material.redirect_uri,
+            )
+        })
+        .map_err(setup_refusal)?;
+        drop(material);
+        // Vehicle discovery follows inside the same window. Its entry
+        // (collector native setup) still refuses every pair and is rewired
+        // separately, so the selection is reported as not yet run.
+        let _ = (vehicle_id, all_vehicles);
+        Ok(owner_setup_report())
     }
 
     fn recovery_export(
@@ -541,6 +563,51 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
     fn backup_status(&self) -> Result<serde_json::Value, OperatorRefusal> {
         Ok(self.backup.status())
     }
+}
+
+/// The refusal `setup` returns: the fixed code and its fixed owner text.
+#[cfg(unix)]
+fn setup_refusal(
+    error: teslatlas_hub::auth::credential_sign_in::CredentialCommandError,
+) -> OperatorRefusal {
+    OperatorRefusal::new(error.code(), error.to_string())
+}
+
+/// What a successful `setup` reports: no token, code or account detail.
+#[cfg(unix)]
+fn owner_setup_report() -> serde_json::Value {
+    serde_json::json!({
+        "status": "signed_in",
+        "slot": "owner_api",
+        "origin": "hub_login",
+        "vehicleDiscovery": "not_run",
+    })
+}
+
+/// Runs one code exchange to completion on a thread and runtime of its own,
+/// so the channel's handler thread never blocks inside another runtime.
+#[cfg(unix)]
+fn run_owner_exchange<'a, F>(
+    exchange: impl FnOnce() -> F + Send + 'a,
+) -> Result<(), teslatlas_hub::auth::credential_sign_in::CredentialCommandError>
+where
+    F: std::future::Future<
+            Output = Result<(), teslatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+        > + 'a,
+{
+    use teslatlas_hub::auth::credential_sign_in::sign_in_unavailable;
+    std::thread::scope(|scope| {
+        scope
+            .spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|_| sign_in_unavailable())?;
+                runtime.block_on(exchange())
+            })
+            .join()
+    })
+    .unwrap_or_else(|_| Err(sign_in_unavailable()))
 }
 
 #[cfg(all(test, unix))]
