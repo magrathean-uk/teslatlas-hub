@@ -297,6 +297,11 @@ fn owner_discovery_logs_carry_no_token_vin_or_name() {
     let sink = Sink(Arc::clone(&logs));
     let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false).with_max_level(tracing::Level::TRACE)
         .with_writer(move || sink.clone()).finish();
+    // With one registered dispatcher, a callsite's interest is taken from the
+    // thread that reaches it first; a parallel test with no subscriber would
+    // cache it as never. A second registered dispatcher makes the interest
+    // the union over every live dispatcher, so this capture sees its events.
+    let _union = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
     let _default = tracing::subscriber::set_default(subscriber);
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime");
     runtime.block_on(async {
