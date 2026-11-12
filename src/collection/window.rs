@@ -18,6 +18,7 @@ pub mod anchor;
 pub mod claim;
 pub mod clock;
 pub mod controller;
+pub mod custody;
 pub mod gate;
 pub mod grant;
 pub mod issuer;
@@ -34,6 +35,7 @@ pub use claim::{FileLock, HostClaim, LockMode};
 pub use clock::{
     ClockGuard, ManualClock, ManualProbe, OffsetProbe, SntpProbe, SystemClock, WindowClock,
 };
+pub use custody::{CredentialCustody, CustodyGuard};
 pub use controller::{
     HandbackSource, ImportGuard, NoHighWater, ResumeOutcome, WindowConfig, WindowController,
     WindowDeps, WindowStatus,

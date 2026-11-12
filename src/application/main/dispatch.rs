@@ -446,6 +446,9 @@ struct HubServiceBackend {
     data_dir: PathBuf,
     admission: std::sync::Arc<AdmittedUserHub>,
     backup: std::sync::Arc<teslatlas_hub::runtime::backup_schedule::BackupScheduler>,
+    /// The vault custody the window supervisor honours, and its wake-up.
+    custody: teslatlas_hub::collection::window::CredentialCustody,
+    kick: Box<dyn Fn() + Send + Sync>,
 }
 
 #[cfg(unix)]
@@ -472,29 +475,29 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
         // immediately before its one send. Only that exchange's answer is
         // stored, with origin hub_login; any refusal leaves the store as it
         // was and names a fixed code, never the material.
-        let entry = open_command_credential_vault(
-            self.store.clone(),
-            std::sync::Arc::clone(&self.admission),
-            &self.data_dir,
-        )
-        .map_err(|error| {
-            setup_refusal(teslatlas_hub::auth::credential_sign_in::credential_entry_error(error))
-        })?;
-        run_owner_exchange(|| {
-            teslatlas_hub::auth::credential_sign_in::exchange_owner_code(
-                &entry,
-                &material.code,
-                &material.code_verifier,
-                &material.redirect_uri,
-            )
-        })
-        .map_err(setup_refusal)?;
+        let report = owner_setup(
+            &self.custody,
+            &*self.kick,
+            || open_command_credential_vault(
+                self.store.clone(),
+                std::sync::Arc::clone(&self.admission),
+                &self.data_dir,
+            ),
+            |entry| run_owner_exchange(|| {
+                teslatlas_hub::auth::credential_sign_in::exchange_owner_code(
+                    entry,
+                    &material.code,
+                    &material.code_verifier,
+                    &material.redirect_uri,
+                )
+            }),
+        );
         drop(material);
         // Vehicle discovery follows inside the same window. Its entry
         // (collector native setup) still refuses every pair and is rewired
         // separately, so the selection is reported as not yet run.
         let _ = (vehicle_id, all_vehicles);
-        Ok(owner_setup_report())
+        report
     }
 
     fn recovery_export(
@@ -560,6 +563,45 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
     fn backup_status(&self) -> Result<serde_json::Value, OperatorRefusal> {
         Ok(self.backup.status())
     }
+}
+
+/// The owner sign-in inside the service (DEC-088, review finding 2): the
+/// running collector holds the process's one credential vault, so the
+/// sign-in first takes custody of it. The window supervisor stops the
+/// collector and hands custody over once it has exited, so no refresh runs
+/// beside the exchange; the sign-in then opens the vault, exchanges and
+/// stores, and closes the vault before custody ends. The supervisor then
+/// starts the collector again, which opens the vault afresh and so loads the
+/// stored pair.
+#[cfg(unix)]
+fn owner_setup(
+    custody: &teslatlas_hub::collection::window::CredentialCustody,
+    kick: &dyn Fn(),
+    open_entry: impl FnOnce() -> Result<teslatlas_hub::CredentialVaultEntry, teslatlas_hub::CredentialVaultEntryError>,
+    exchange: impl FnOnce(&teslatlas_hub::CredentialVaultEntry)
+        -> Result<(), teslatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+) -> Result<serde_json::Value, OperatorRefusal> {
+    use teslatlas_hub::collection::window::custody::{CUSTODY_WAIT, SIGN_IN_BUSY};
+    let held = custody.acquire(CUSTODY_WAIT, kick).map_err(|code| {
+        let message = if code == SIGN_IN_BUSY {
+            "another sign-in is in progress"
+        } else {
+            "the collector did not stop for the sign-in; try again"
+        };
+        OperatorRefusal::new(code, message)
+    })?;
+    let result = open_entry()
+        .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)
+        .and_then(|entry| {
+            let result = exchange(&entry);
+            // The vault is closed before custody ends.
+            drop(entry);
+            result
+        });
+    drop(held);
+    kick();
+    result.map_err(setup_refusal)?;
+    Ok(owner_setup_report())
 }
 
 /// The refusal `setup` returns: the fixed code and its fixed owner text.
@@ -1160,6 +1202,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             data_dir: config.data_dir.clone(),
                             admission: std::sync::Arc::clone(&admission),
                             backup: std::sync::Arc::clone(&backup_schedule),
+                            custody: teslatlas_hub::collection::window::CredentialCustody::process_wide().clone(),
+                            kick: supervisor.kicker(),
                         }),
                         supervisor.kicker(),
                         operator::authority::service_trust_authority(authority.host_id()),

@@ -15,6 +15,7 @@ use std::sync::Arc;
 use super::{
     EXCHANGE_GRACE_SECONDS,
     controller::WindowController,
+    custody::CredentialCustody,
     refusal::Refusal,
     state::{CloseReason, Phase},
 };
@@ -49,6 +50,9 @@ pub struct Supervisor<S: CollectorSlot> {
     failures: u32,
     retry_at_mono: u64,
     gap_start: Option<i64>,
+    /// An owner sign-in's claim on the credential vault (M02-T12): while it
+    /// is requested the collector is stopped and not started.
+    custody: CredentialCustody,
 }
 
 impl<S: CollectorSlot> Supervisor<S> {
@@ -59,7 +63,14 @@ impl<S: CollectorSlot> Supervisor<S> {
             failures: 0,
             retry_at_mono: 0,
             gap_start: None,
+            custody: CredentialCustody::process_wide().clone(),
         }
+    }
+
+    /// The supervisor with a custody record of its own (tests).
+    pub fn with_custody(mut self, custody: CredentialCustody) -> Self {
+        self.custody = custody;
+        self
     }
 
     pub fn slot(&self) -> &S {
@@ -104,6 +115,14 @@ impl<S: CollectorSlot> Supervisor<S> {
                 self.failures = 0;
                 self.gap_start = None;
             }
+            Phase::Open if self.custody.requested() => {
+                // An owner sign-in needs the vault: the collector stops and
+                // stays stopped until the sign-in lets custody go.
+                if self.slot.is_running() {
+                    self.slot.stop();
+                }
+                self.gap_start.get_or_insert(wall);
+            }
             Phase::Open => {
                 if self.slot.is_running() {
                     self.end_gap(wall);
@@ -144,6 +163,11 @@ impl<S: CollectorSlot> Supervisor<S> {
                     }
                 }
             }
+        }
+        // Custody is handed over only once the collector has exited, and
+        // with it released the vault.
+        if self.custody.requested() && !self.slot.is_running() {
+            self.custody.grant_if_requested();
         }
         report
     }

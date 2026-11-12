@@ -111,3 +111,87 @@ fn sign_in_exchange_forwarded_setup_parser_admits_the_owner_redirect() {
     drop(entry);
     assert_no_pair(root.path());
 }
+
+/// A collector run as the service's slot keeps it: the vault opened on the
+/// service's one admission when it starts, held until it stops.
+#[derive(Clone)]
+struct HoldingSlot {
+    store: HubStore,
+    admission: Arc<AdmittedUserHub>,
+    root: std::path::PathBuf,
+    held: Arc<Mutex<Option<CredentialVaultEntry>>>,
+    starts: Arc<AtomicUsize>,
+}
+
+impl teslatlas_hub::collection::window::CollectorSlot for HoldingSlot {
+    fn start(&mut self, _deadline_wall: i64) -> Result<(), String> {
+        let entry = CredentialVaultEntry::open_for_test(self.store.clone(), Arc::clone(&self.admission), &self.root, true)
+            .map_err(|error| error.code().to_owned())?;
+        *self.held.lock().expect("held") = Some(entry);
+        self.starts.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn is_running(&mut self) -> bool { self.held.lock().expect("held").is_some() }
+    fn stop(&mut self) { self.held.lock().expect("held").take(); }
+    fn release_lease(&mut self) -> Result<(), String> {
+        if self.is_running() { Err("collector_stopping".to_owned()) } else { Ok(()) }
+    }
+}
+
+/// Round 2, finding 2: a sign-in while the collector holds the vault inside
+/// an Open window. The real `setup` path takes custody through the window
+/// supervisor, which stops the collector; the sign-in then opens the one
+/// vault (the collector's would refuse it) and reaches the exchange, here
+/// refused only by the closed process gate. Afterwards the supervisor starts
+/// the collector again on a fresh vault.
+#[test]
+fn sign_in_exchange_setup_takes_the_vault_from_an_active_collector() {
+    use teslatlas_hub::collection::window::{CollectorSlot as _, CredentialCustody, Supervisor};
+    let root = root();
+    let scratch = tempfile::tempdir().expect("scratch");
+    let store = HubStore::initialize(root.path()).expect("store");
+    let admission = AdmittedUserHub::admit(root.path()).expect("one service admission");
+    let window = operator_window::Window::new(scratch.path(), root.path());
+    window.controller.open(&window.grant(600)).expect("window opens");
+    let slot = HoldingSlot {
+        store: store.clone(), admission: Arc::clone(&admission), root: root.path().to_owned(),
+        held: Arc::default(), starts: Arc::default(),
+    };
+    let custody = CredentialCustody::new();
+    let supervisor = Arc::new(Mutex::new(
+        Supervisor::new(Arc::clone(&window.controller), slot.clone()).with_custody(custody.clone()),
+    ));
+    assert!(supervisor.lock().expect("supervisor").step().collector_running, "the collector runs inside the window");
+    // The reviewer's scenario: with the collector running, a second vault is refused.
+    assert!(CredentialVaultEntry::open_for_test(store.clone(), Arc::clone(&admission), root.path(), true).is_err());
+
+    let issuer = StubIssuer::valid();
+    let token = format!("{}/token", issuer.endpoint);
+    let kick = {
+        let supervisor = Arc::clone(&supervisor);
+        move || { supervisor.lock().expect("supervisor").step(); }
+    };
+    let mut probe = slot.clone();
+    let collector_ran_during_sign_in = Arc::new(Mutex::new(None));
+    let seen = Arc::clone(&collector_ran_during_sign_in);
+    let refusal = owner_setup(
+        &custody,
+        &kick,
+        || {
+            *seen.lock().expect("seen") = Some(probe.is_running());
+            CredentialVaultEntry::open_for_test(store.clone(), Arc::clone(&admission), root.path(), true)
+        },
+        |entry| run_owner_exchange(|| sign_in::exchange_owner_code_with_stub_for_test(
+            entry, "code-bin-custody-0001", EXCHANGE_VERIFIER, sign_in::OWNER_REDIRECT_URI, &token)),
+    )
+    .unwrap_err();
+    assert_eq!(refusal.code, "window_closed", "the sign-in opened the vault and reached the exchange");
+    assert_eq!(*collector_ran_during_sign_in.lock().expect("seen"), Some(false), "the collector was stopped first");
+    assert_eq!(issuer.calls(), 0, "nothing sent");
+    let mut after = slot.clone();
+    assert!(after.is_running(), "the collector started again once custody ended");
+    assert_eq!(slot.starts.load(Ordering::SeqCst), 2, "a fresh collector run reloads the stored state");
+    assert!(!custody.requested(), "custody released");
+    after.stop();
+    assert_no_pair(root.path());
+}
