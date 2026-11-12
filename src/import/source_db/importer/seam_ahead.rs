@@ -184,6 +184,103 @@ struct PlannedDirectSuccessor {
     remaining_delta_packs: usize,
 }
 
+/// How a direct successor goes on once its pack capacity is known.
+enum DirectSuccessorRoute {
+    /// Typed deltas on the current base; the seam is already applied.
+    Deltas(PlannedDirectSuccessor),
+    /// A new base: the deltas no longer fit and the vehicle has no seam
+    /// history.
+    NewBase(PlannedDirectSuccessor),
+}
+
+/// Decides how a direct successor goes on (DEC-103). Once the Hub has
+/// collected the vehicle its import base is never replaced: the Hub's rows
+/// reach clients only as deltas of that base's lineage, so a new base would
+/// drop them. A successor whose changes no longer fit in the lineage's packs
+/// is then refused, before the seam changes the store, so the store, the
+/// packs and the published head stay as they were. The decision comes from
+/// a dry run of the seam and an upper bound on the deltas that publishing
+/// the waiting sync mutations adds (one per claim).
+#[allow(clippy::too_many_arguments)]
+fn route_direct_successor(
+    store: &HubStore,
+    publication_gate: &PublicationGate,
+    cursor_key: &CursorKey,
+    vehicle_id: Uuid,
+    selected_car_id: i64,
+    drives: &[ProjectionDrive],
+    charges: &[ProjectionCharge],
+    capture: &mut SourceDbProjectionStateCapture,
+    binding: &ProjectionBinding,
+    selected_car: &ProjectionCar,
+    max_chunks: usize,
+) -> Result<DirectSuccessorRoute, SourceDbImportError> {
+    let seam_history = store.vehicle_has_import_seam_history(vehicle_id)?;
+    if seam_history {
+        let (ahead, unpublished) = store.dry_run_import_seam_ahead_of_packs(
+            publication_gate,
+            vehicle_id,
+            selected_car_id,
+            drives,
+            charges,
+        )?;
+        let existing = store
+            .lineage_manifest_for_vehicle(vehicle_id)?
+            .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
+        let used = existing
+            .base
+            .packs
+            .len()
+            .checked_add(existing.deltas.len())
+            .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
+        let live_deltas = usize::try_from(unpublished.div_ceil(SEAM_MUTATION_CLAIM_LIMIT as u64))
+            .map_err(|_| SourceDbImportError::DirectDeltaBatchOverflow)?;
+        let remaining = max_chunks.saturating_sub(used.saturating_add(live_deltas));
+        let seam = DeltaSeam::new(&ahead, drives, charges);
+        if direct_delta_capacity_exhausted_with_seam(
+            capture,
+            binding,
+            selected_car,
+            remaining,
+            Some(&seam),
+        )? {
+            return Err(SourceDbImportError::ImportBaseReplacementRefused {
+                used,
+                limit: max_chunks,
+            });
+        }
+    }
+    let planned = plan_direct_successor_with_limit(
+        store,
+        publication_gate,
+        cursor_key,
+        vehicle_id,
+        selected_car_id,
+        drives,
+        charges,
+        max_chunks,
+    )?;
+    if direct_delta_capacity_exhausted_with_seam(
+        capture,
+        binding,
+        selected_car,
+        planned.remaining_delta_packs,
+        Some(&planned.seam),
+    )? {
+        // The bound above makes this unreachable for a vehicle with seam
+        // history; the refusal stays in case the Hub collected meanwhile.
+        if seam_history || store.vehicle_has_import_seam_history(vehicle_id)? {
+            return Err(SourceDbImportError::ImportBaseReplacementRefused {
+                used: planned.existing_pack_count,
+                limit: max_chunks,
+            });
+        }
+        return Ok(DirectSuccessorRoute::NewBase(planned));
+    }
+    Ok(DirectSuccessorRoute::Deltas(planned))
+}
+
+#[cfg(test)]
 /// Applies the import seam ahead of a direct successor's packs (design
 /// M03-SEAM-R3, section 4) and publishes the sync mutations it made, so every
 /// head a client can read holds each session once: a Hub drive the source
@@ -198,6 +295,31 @@ fn plan_direct_successor(
     selected_car_id: i64,
     drives: &[ProjectionDrive],
     charges: &[ProjectionCharge],
+) -> Result<PlannedDirectSuccessor, SourceDbImportError> {
+    plan_direct_successor_with_limit(
+        store,
+        publication_gate,
+        cursor_key,
+        vehicle_id,
+        selected_car_id,
+        drives,
+        charges,
+        ProtocolLimits::default().max_chunks,
+    )
+}
+
+/// As [`plan_direct_successor`], against a lineage of at most `max_chunks`
+/// packs.
+#[allow(clippy::too_many_arguments)]
+fn plan_direct_successor_with_limit(
+    store: &HubStore,
+    publication_gate: &PublicationGate,
+    cursor_key: &CursorKey,
+    vehicle_id: Uuid,
+    selected_car_id: i64,
+    drives: &[ProjectionDrive],
+    charges: &[ProjectionCharge],
+    max_chunks: usize,
 ) -> Result<PlannedDirectSuccessor, SourceDbImportError> {
     let ahead = store.apply_import_seam_ahead_of_packs(
         publication_gate,
@@ -221,8 +343,7 @@ fn plan_direct_successor(
         .len()
         .checked_add(existing.deltas.len())
         .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
-    let remaining_delta_packs = ProtocolLimits::default()
-        .max_chunks
+    let remaining_delta_packs = max_chunks
         .checked_sub(existing_pack_count)
         .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
     Ok(PlannedDirectSuccessor {
@@ -236,6 +357,10 @@ fn plan_direct_successor(
     })
 }
 
+/// The most sync mutations one publication turn claims, and so publishes
+/// as one delta.
+const SEAM_MUTATION_CLAIM_LIMIT: usize = 10_000;
+
 /// Publishes every unpublished sync mutation of the vehicle, the seam's
 /// among them, as live deltas under the publication gate the importer holds.
 fn publish_sync_mutations_ahead_of_packs(
@@ -244,7 +369,6 @@ fn publish_sync_mutations_ahead_of_packs(
     cursor_key: &CursorKey,
     vehicle_id: Uuid,
 ) -> Result<(), SourceDbImportError> {
-    const CLAIM_LIMIT: usize = 10_000;
     loop {
         if !store.has_unpublished_sync_mutations(vehicle_id)? {
             return Ok(());
@@ -260,7 +384,7 @@ fn publish_sync_mutations_ahead_of_packs(
             vehicle_id,
             now_ms,
             publication_gate,
-            CLAIM_LIMIT,
+            SEAM_MUTATION_CLAIM_LIMIT,
         )
         .map_err(|error| match error {
             crate::collection::collector::CollectorError::Store(error) => error.into(),

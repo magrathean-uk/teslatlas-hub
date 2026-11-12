@@ -253,7 +253,7 @@ fn import_seam_inherited_session_keeps_its_id_children_get_hub_ids() {
     let store = HubStore::initialize(directory.path()).expect("store");
     let (source, vehicle) = seam_import_vehicle(&store, "seam-inherited");
     let v = vehicle.vehicle_id;
-    // TeslaMate stopped mid-drive: the open drive 40999 and its positions
+    // The source stopped mid-drive: the open drive 40999 and its positions
     // carry source ids.
     let mut session = seam_imported_session(10);
     session.drive = Some(

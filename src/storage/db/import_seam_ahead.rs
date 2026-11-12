@@ -41,6 +41,53 @@ impl HubStore {
         drives: &[ProjectionDrive],
         charges: &[crate::hub_pack::ProjectionCharge],
     ) -> Result<ImportSeamAhead, StoreError> {
+        self.import_seam_ahead_of_packs(vehicle_id, car_id, drives, charges, true)
+            .map(|(ahead, _)| ahead)
+    }
+
+    /// The seam [`HubStore::apply_import_seam_ahead_of_packs`] would apply,
+    /// worked out in a transaction that is rolled back (DEC-103): the plan
+    /// the packs would carry and how many sync mutations of the vehicle
+    /// would then wait for publication. Nothing in the store changes.
+    pub(crate) fn dry_run_import_seam_ahead_of_packs(
+        &self,
+        _publication_gate: &PublicationGate,
+        vehicle_id: Uuid,
+        car_id: i64,
+        drives: &[ProjectionDrive],
+        charges: &[crate::hub_pack::ProjectionCharge],
+    ) -> Result<(ImportSeamAhead, u64), StoreError> {
+        self.import_seam_ahead_of_packs(vehicle_id, car_id, drives, charges, false)
+    }
+
+    /// Whether the vehicle has seam history (DEC-103): coverage in the store,
+    /// a window still open, a Hub-range row, a recorded seam decision or a
+    /// live delta span. Such a vehicle's import base is never replaced.
+    pub(crate) fn vehicle_has_import_seam_history(&self, vehicle_id: Uuid) -> Result<bool, StoreError> {
+        let connection = self.open()?;
+        let vehicle_key = vehicle_id.to_string();
+        if import_seam_present_in_connection(&connection, &vehicle_key)? {
+            return Ok(true);
+        }
+        connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sync_live_delta_spans WHERE vehicle_id = ?1)",
+                params![vehicle_key.as_str()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)
+    }
+
+    /// The seam ahead of the packs and the vehicle's unpublished sync
+    /// mutations after it; committed only when `commit` is set.
+    fn import_seam_ahead_of_packs(
+        &self,
+        vehicle_id: Uuid,
+        car_id: i64,
+        drives: &[ProjectionDrive],
+        charges: &[crate::hub_pack::ProjectionCharge],
+        commit: bool,
+    ) -> Result<(ImportSeamAhead, u64), StoreError> {
         if vehicle_id.is_nil() || car_id <= 0 {
             return Err(StoreError::InvalidImportGeneration);
         }
@@ -94,13 +141,28 @@ impl HubStore {
             &packs,
         )?;
         let restated_charges = restated_import_charges(&before, &packs);
-        transaction.commit().map_err(StoreError::LifecycleWrite)?;
-        Ok(ImportSeamAhead {
-            packs,
-            restated_drives,
-            restated_charges,
-            changed_the_store,
-        })
+        let unpublished: i64 = transaction
+            .query_row(
+                "SELECT COUNT(*) FROM sync_mutations WHERE vehicle_id = ?1 AND published = 0",
+                params![vehicle_key.as_str()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)?;
+        let unpublished = u64::try_from(unpublished).map_err(|_| StoreError::InvalidStoredSequence)?;
+        if commit {
+            transaction.commit().map_err(StoreError::LifecycleWrite)?;
+        } else {
+            transaction.rollback().map_err(StoreError::LifecycleWrite)?;
+        }
+        Ok((
+            ImportSeamAhead {
+                packs,
+                restated_drives,
+                restated_charges,
+                changed_the_store,
+            },
+            unpublished,
+        ))
     }
 
     /// Refuses ([`StoreError::ImportGenerationConflict`]) a publication path
@@ -460,6 +522,18 @@ fn refuse_unplanned_import_seam_in_transaction(
     connection: &Connection,
     vehicle_key: &str,
 ) -> Result<(), StoreError> {
+    if import_seam_present_in_connection(connection, vehicle_key)? {
+        return Err(StoreError::ImportGenerationConflict);
+    }
+    Ok(())
+}
+
+/// Whether the vehicle has any of the seam: coverage in the store, a window
+/// still open, a Hub-range row, or a recorded seam decision.
+fn import_seam_present_in_connection(
+    connection: &Connection,
+    vehicle_key: &str,
+) -> Result<bool, StoreError> {
     use crate::db::hub_ids::{HUB_ID_BASE, HUB_ID_MAX};
     let covered = match crate::db::coverage_intervals_for_vehicle(connection, vehicle_key) {
         Ok(intervals) => !intervals.is_empty(),
@@ -480,8 +554,5 @@ fn refuse_unplanned_import_seam_in_transaction(
             |row| row.get(0),
         )
         .map_err(StoreError::Query)?;
-    if covered || hub_rows {
-        return Err(StoreError::ImportGenerationConflict);
-    }
-    Ok(())
+    Ok(covered || hub_rows)
 }

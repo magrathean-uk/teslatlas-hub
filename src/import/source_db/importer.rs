@@ -1239,7 +1239,10 @@ async fn import_from_postgres_with_updates_capture_policy(
             .ok_or(SourceDbImportError::ProjectionStateCaptureMissing)?;
         // The seam goes ahead of the packs: its Hub-side changes are applied
         // and published first, then the packs carry the planned rows only.
-        let mut planned = plan_direct_successor(
+        // Decide before discarding the complete capture or writing delta packs.
+        // Only pack-capacity exhaustion permits an explicit new base, and
+        // never once the Hub has collected the vehicle (DEC-103).
+        let route = match route_direct_successor(
             store,
             &publication_gate,
             cursor_key,
@@ -1247,16 +1250,22 @@ async fn import_from_postgres_with_updates_capture_policy(
             selected_car_id,
             &materialised_drives,
             &materialised_charges,
-        )?;
-        // Decide before discarding the complete capture or writing delta packs.
-        // Only pack-capacity exhaustion permits an explicit new base.
-        if direct_delta_capacity_exhausted_with_seam(
             &mut capture,
             &binding,
             &selected_car,
-            planned.remaining_delta_packs,
-            Some(&planned.seam),
-        )? {
+            ProtocolLimits::default().max_chunks,
+        ) {
+            Ok(route) => route,
+            Err(refused @ SourceDbImportError::ImportBaseReplacementRefused { .. }) => {
+                // The full-snapshot candidate is no base: remove it so the
+                // packs stay as they were. The run guard aborts the run.
+                direct.keep_chunks();
+                discard_unpublished_chunks(store, &publication_gate, &direct.chunks)?;
+                return Err(refused);
+            }
+            Err(error) => return Err(error),
+        };
+        if let DirectSuccessorRoute::NewBase(planned) = route {
             let mut event = crate::runtime::development_event_log::Event::new(
                 crate::runtime::development_event_log::Kind::CapacityFallback,
                 crate::runtime::development_event_log::Outcome::FullBase,
@@ -1265,7 +1274,7 @@ async fn import_from_postgres_with_updates_capture_policy(
             event.chunks = planned.existing_pack_count as u64;
             crate::runtime::development_event_log::record(event);
             replacement = Some(planned.existing);
-        } else {
+        } else if let DirectSuccessorRoute::Deltas(mut planned) = route {
             direct.keep_chunks();
             discard_unpublished_chunks(store, &publication_gate, &direct.chunks)?;
             let published = publish_planned_direct_successor(
@@ -2852,6 +2861,10 @@ pub enum SourceDbImportError {
     ProjectionState(#[from] SourceDbProjectionStateError),
     #[error("the import seam's own changes could not be published ahead of the import packs: {0}")]
     SeamPublication(String),
+    #[error(
+        "import refused: its changes no longer fit in the vehicle's sync history ({used} of {limit} packs in use), so it would need a new import base, and the import base of a vehicle the Hub has collected is never replaced because clients would lose the Hub's own rows; nothing was changed"
+    )]
+    ImportBaseReplacementRefused { used: usize, limit: usize },
 }
 
 #[cfg(test)]
@@ -2907,6 +2920,7 @@ mod n1_src_import_source_db_importer_rs_display_tests {
                 SourceDbImportError::Fragments(..) => (),
                 SourceDbImportError::ProjectionState(..) => (),
                 SourceDbImportError::SeamPublication(..) => (),
+                SourceDbImportError::ImportBaseReplacementRefused { .. } => (),
             }
             assert_name_free(&error);
         }
@@ -2955,6 +2969,10 @@ mod n1_src_import_source_db_importer_rs_display_tests {
         check_source_db_import_error(SourceDbImportError::SeamPublication(
             "the publication gate is held".to_owned(),
         ));
+        check_source_db_import_error(SourceDbImportError::ImportBaseReplacementRefused {
+            used: example(),
+            limit: example(),
+        });
     }
 }
 

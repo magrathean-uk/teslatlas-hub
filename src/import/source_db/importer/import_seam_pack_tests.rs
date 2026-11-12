@@ -368,6 +368,18 @@ fn publish(
     planned: &mut PlannedDirectSuccessor,
 ) -> Result<PublishedDirectSuccessor, SourceDbImportError> {
     let capture = capture(fixture, run_id, true, projected);
+    publish_captured(fixture, projected, run_id, capture, planned)
+}
+
+/// Writes and publishes the planned successor of `projected` from its
+/// sealed `capture`.
+fn publish_captured(
+    fixture: &Fixture,
+    projected: &SourceDbProjection,
+    run_id: Uuid,
+    capture: SourceDbProjectionStateCapture,
+    planned: &mut PlannedDirectSuccessor,
+) -> Result<PublishedDirectSuccessor, SourceDbImportError> {
     let base_snapshot_id = fixture
         .store
         .v2_head(fixture.binding.vehicle_id)
@@ -964,4 +976,322 @@ fn import_seam_live_spans_are_bound_to_the_import_base() {
         usize::try_from(live_spans(&connection)).expect("count"),
         after.deltas.len()
     );
+}
+
+/// One later import of `projected` the way the importer runs it: routed
+/// against a lineage of at most `max_chunks` packs, then published as
+/// deltas. A refused run is aborted, as the importer's run guard does.
+fn import_successor(
+    fixture: &Fixture,
+    projected: &SourceDbProjection,
+    at_ms: i64,
+    max_chunks: usize,
+) -> Result<PublishedDirectSuccessor, SourceDbImportError> {
+    let run_id = begin_run(fixture, at_ms);
+    let mut capture = capture(fixture, run_id, true, projected);
+    let route = route_direct_successor(
+        &fixture.store,
+        &fixture.gate,
+        &fixture.cursor_key,
+        fixture.binding.vehicle_id,
+        CAR,
+        &projected.snapshot.drives,
+        &projected.snapshot.charges,
+        &mut capture,
+        &fixture.binding,
+        &fixture.car,
+        max_chunks,
+    );
+    let mut planned = match route {
+        Ok(DirectSuccessorRoute::Deltas(planned)) => planned,
+        Ok(DirectSuccessorRoute::NewBase(_)) => panic!("the import asked for a new base"),
+        Err(error) => {
+            fixture.store.abort_import_generation(run_id).expect("abort");
+            return Err(error);
+        }
+    };
+    publish_captured(fixture, projected, run_id, capture, &mut planned)
+}
+
+/// Every file under the pack store, for "the packs did not change".
+fn pack_files(store: &HubStore) -> Vec<std::path::PathBuf> {
+    fn walk(path: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(path) else {
+            return;
+        };
+        for entry in entries {
+            let path = entry.expect("pack entry").path();
+            if path.is_dir() {
+                walk(&path, files);
+            } else {
+                files.push(path);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    walk(store.packs_dir(), &mut files);
+    files.sort();
+    files
+}
+
+/// Everything a refused import must leave as it was: the published lineage
+/// and head, the Hub's drives and positions, the sync journal, the seam's
+/// decisions and live spans, and the pack files.
+fn observable(fixture: &Fixture) -> String {
+    let store = &fixture.store;
+    let vehicle_id = fixture.binding.vehicle_id;
+    let lineage = store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage")
+        .expect("published lineage");
+    let count = |sql: &str| -> i64 {
+        store
+            .open()
+            .expect("catalogue")
+            .query_row(sql, params![vehicle_id.to_string()], |row| row.get(0))
+            .expect("count")
+    };
+    format!(
+        "{}|{:?}|{:?}|{:?}|{}|{}|{}|{}|{:?}",
+        serde_json::to_string(&lineage).expect("lineage json"),
+        store.v2_head(vehicle_id).expect("head"),
+        store_drives(store, vehicle_id),
+        store_hub_positions(store, vehicle_id),
+        mutation_count(store, vehicle_id),
+        count("SELECT COUNT(*) FROM sync_mutations WHERE vehicle_id = ?1 AND published = 0"),
+        count("SELECT COUNT(*) FROM import_seam_links WHERE vehicle_id = ?1"),
+        count("SELECT COUNT(*) FROM sync_live_delta_spans WHERE vehicle_id = ?1"),
+        pack_files(store),
+    )
+}
+
+/// DEC-103: after a window the import base is never replaced. A later
+/// import whose changes no longer fit in the lineage's packs would need a
+/// new base, so it is refused with a message that names the cause, before
+/// the seam changes anything: the store, the packs and the published head
+/// stay as they were. A later import that fits still succeeds on the same
+/// base, with the Hub's rows kept.
+#[test]
+fn import_seam_base_replacement_after_a_window_is_refused_clearly() {
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    let (h1, _) = collect(&fixture);
+    let base = fixture
+        .store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage")
+        .expect("import base");
+    let used = base.base.packs.len() + base.deltas.len();
+    let before = observable(&fixture);
+    let projected = project_vehicle(&successor_history(), CAR).expect("projection");
+
+    // One pack more than the lineage holds: the seam's own tombstones would
+    // take it, so the source rows need a new base. Refused, unchanged.
+    let refused = import_successor(&fixture, &projected, T + 3 * HOUR, used + 1)
+        .expect_err("a new base after a window is refused");
+    assert!(
+        matches!(
+            refused,
+            SourceDbImportError::ImportBaseReplacementRefused { used: reported, limit }
+                if reported == used && limit == used + 1
+        ),
+        "{refused:?}"
+    );
+    let message = refused.to_string();
+    for cause in [
+        "no longer fit in the vehicle's sync history",
+        "would need a new import base",
+        "a vehicle the Hub has collected is never replaced",
+        "nothing was changed",
+    ] {
+        assert!(message.contains(cause), "the message names the cause: {message}");
+    }
+    assert_eq!(observable(&fixture), before, "the refusal changed nothing");
+
+    // The same import with room on the lineage succeeds on the same base.
+    let published = import_successor(
+        &fixture,
+        &projected,
+        T + 4 * HOUR,
+        ProtocolLimits::default().max_chunks,
+    )
+    .expect("a later import that fits");
+    let after = fixture
+        .store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage")
+        .expect("import base");
+    assert_eq!(after.base, base.base, "the import base was not replaced");
+    assert_eq!(after.deltas[..base.deltas.len()], base.deltas[..]);
+    assert_eq!(published.sequence, after.head_sequence);
+    assert!(store_drives(&fixture.store, vehicle_id).contains_key(&h1));
+    assert!(store_drives(&fixture.store, vehicle_id).contains_key(&12));
+}
+
+/// The rows of every delta the lineage gained after `before`.
+fn new_delta_rows(
+    store: &HubStore,
+    vehicle_id: Uuid,
+    before: &crate::protocol::LineageManifestV2,
+) -> PackRows {
+    let after = store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage")
+        .expect("published lineage");
+    assert_eq!(after.base, before.base, "no new base");
+    assert_eq!(after.deltas[..before.deltas.len()], before.deltas[..], "earlier deltas kept");
+    let mut rows = PackRows::default();
+    for delta in &after.deltas[before.deltas.len()..] {
+        assert_eq!(delta.pack.snapshot_id, before.base.snapshot_id);
+        let pack = pack_rows(store, delta.pack.sha256);
+        rows.drives.extend(pack.drives);
+        rows.positions.extend(pack.positions);
+        rows.tombstones.extend(pack.tombstones);
+    }
+    rows
+}
+
+/// The store's materialised drives as stored (id, JSON).
+fn stored_drive_json(store: &HubStore, vehicle_id: Uuid) -> BTreeMap<i64, String> {
+    let connection = store.open().expect("catalogue");
+    let mut statement = connection
+        .prepare("SELECT drive_id, drive_json FROM materialised_drives WHERE vehicle_id = ?1")
+        .expect("drives");
+    statement
+        .query_map(params![vehicle_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?)))
+        .expect("drive rows")
+        .collect::<Result<_, _>>()
+        .expect("drive rows")
+}
+
+/// M03-T05: a later read-only import from a newer source snapshot adds only
+/// its new rows, as typed deltas on the same base; the history the base
+/// already holds is not transferred again.
+#[test]
+fn import_incremental_a_newer_snapshot_adds_only_its_new_rows() {
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    let before = fixture
+        .store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage")
+        .expect("import base");
+    let mut drives = base_history().drives;
+    drives.push(source_drive(12, T + 2 * HOUR, T + 2 * HOUR + 10 * MINUTE));
+    let newer = history(
+        drives,
+        vec![source_position(1201, Some(12), T + 2 * HOUR + 5 * MINUTE)],
+    );
+    let projected = project_vehicle(&newer, CAR).expect("projection");
+    let published = import_successor(
+        &fixture,
+        &projected,
+        T + 3 * HOUR,
+        ProtocolLimits::default().max_chunks,
+    )
+    .expect("incremental import");
+    let rows = new_delta_rows(&fixture.store, vehicle_id, &before);
+    assert_eq!(
+        rows.drives.iter().map(|row| row.0).collect::<Vec<_>>(),
+        vec![12],
+        "drive 10 is not sent again"
+    );
+    assert_eq!(rows.positions.iter().map(|row| row.0).collect::<Vec<_>>(), vec![1201]);
+    assert!(rows.tombstones.is_empty());
+    assert_eq!(published.projected_rows, 2, "the new drive and its position only");
+    assert_eq!(
+        store_drives(&fixture.store, vehicle_id).keys().copied().collect::<Vec<_>>(),
+        vec![10, 12]
+    );
+
+    // The same snapshot again adds nothing.
+    let unchanged = import_successor(
+        &fixture,
+        &projected,
+        T + 4 * HOUR,
+        ProtocolLimits::default().max_chunks,
+    )
+    .expect("repeat import");
+    let after = fixture
+        .store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage")
+        .expect("import base");
+    let repeated = new_delta_rows(&fixture.store, vehicle_id, &after);
+    assert!(repeated.drives.is_empty() && repeated.positions.is_empty());
+    assert!(unchanged.projected_rows <= 1, "at most the car's metadata row");
+}
+
+/// M03-T05: one corrected drive in a later import is the only row the
+/// import sends and the only drive the store rewrites; the unchanged
+/// history, its packs and the base stay as they were.
+#[test]
+fn rebuild_incremental_one_corrected_drive_is_the_only_row_sent_or_rewritten() {
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    let mut drives = base_history().drives;
+    drives.push(source_drive(12, T + 2 * HOUR, T + 2 * HOUR + 10 * MINUTE));
+    drives.push(source_drive(14, T + 4 * HOUR, T + 4 * HOUR + 10 * MINUTE));
+    let positions = vec![
+        source_position(1201, Some(12), T + 2 * HOUR + 5 * MINUTE),
+        source_position(1401, Some(14), T + 4 * HOUR + 5 * MINUTE),
+    ];
+    let first = project_vehicle(&history(drives.clone(), positions.clone()), CAR)
+        .expect("projection");
+    import_successor(
+        &fixture,
+        &first,
+        T + 5 * HOUR,
+        ProtocolLimits::default().max_chunks,
+    )
+    .expect("first later import");
+    let before = fixture
+        .store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage")
+        .expect("import base");
+    let stored_before = stored_drive_json(&fixture.store, vehicle_id);
+    let packs_before = pack_files(&fixture.store);
+
+    // The source corrects drive 12's distance.
+    let corrected = drives
+        .iter()
+        .cloned()
+        .map(|mut drive| {
+            if drive.id == 12 {
+                drive.end_km = Some(25.0);
+                drive.distance_km = Some(15.0);
+            }
+            drive
+        })
+        .collect();
+    let second = project_vehicle(&history(corrected, positions), CAR).expect("projection");
+    let published = import_successor(
+        &fixture,
+        &second,
+        T + 6 * HOUR,
+        ProtocolLimits::default().max_chunks,
+    )
+    .expect("corrected import");
+    let rows = new_delta_rows(&fixture.store, vehicle_id, &before);
+    assert_eq!(rows.drives.iter().map(|row| row.0).collect::<Vec<_>>(), vec![12]);
+    assert!(rows.positions.is_empty(), "no position is sent again");
+    assert!(rows.tombstones.is_empty());
+    assert_eq!(published.projected_rows, 1, "the corrected drive only");
+
+    let stored_after = stored_drive_json(&fixture.store, vehicle_id);
+    assert_eq!(stored_after.len(), stored_before.len());
+    for (id, json) in &stored_before {
+        if *id == 12 {
+            assert_ne!(stored_after[id], *json, "drive 12 is corrected");
+        } else {
+            assert_eq!(stored_after[id], *json, "drive {id} is not rewritten");
+        }
+    }
+    let packs_after = pack_files(&fixture.store);
+    assert!(
+        packs_before.iter().all(|path| packs_after.contains(path)),
+        "every earlier pack is kept"
+    );
+    assert!(packs_after.len() > packs_before.len(), "the delta adds its pack");
 }
