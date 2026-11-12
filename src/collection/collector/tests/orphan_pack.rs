@@ -428,3 +428,62 @@ fn orphan_pack_compaction_a_failed_commit_leaves_no_unretained_file() {
         "the lineage is unchanged"
     );
 }
+
+#[test]
+fn orphan_pack_drain_a_failed_turn_leaves_no_unretained_file() {
+    let rig = ExportRig::with_base();
+    let settings_change = |enabled: bool| {
+        rig.store
+            .upsert_car_settings(
+                rig.vehicle_id,
+                9,
+                &crate::hub_pack::ProjectionCarSettings {
+                    enabled,
+                    ..crate::hub_pack::ProjectionCarSettings::default()
+                },
+            )
+            .expect("settings mutation");
+    };
+    let drain_turn = |now_ms: i64| {
+        let publication_gate = rig.store.try_acquire_publication_gate().expect("gate");
+        publish_unpublished_sync_mutations(
+            &rig.store,
+            &rig.cursor_key,
+            rig.vehicle_id,
+            now_ms,
+            &publication_gate,
+            100,
+        )
+    };
+    // An earlier drain turn publishes a live delta: its pack is retained.
+    settings_change(true);
+    let earlier_turn = drain_turn(rig.now + 1).expect("the earlier drain turn");
+    assert!(earlier_turn.published > 0, "the earlier turn published a delta");
+    let earlier = orphan_pack_files(&rig.store);
+    assert!(earlier.len() >= 2, "the base and the earlier delta pack");
+    assert_orphan_pack_all_retained(&earlier);
+
+    // A second, different settings change; its lineage commit fails after the write.
+    settings_change(false);
+    assert!(
+        rig.store
+            .has_unpublished_sync_mutations(rig.vehicle_id)
+            .expect("pending mutations"),
+        "the drain has a delta to publish"
+    );
+    orphan_pack_fail_lineage_commits(&rig.store);
+    let result = drain_turn(rig.now + 2);
+
+    assert_orphan_pack_lineage_error(result);
+    assert_eq!(
+        orphan_pack_files(&rig.store),
+        earlier,
+        "the retained packs survive and the failed drain pack is gone"
+    );
+    assert!(
+        rig.store
+            .has_unpublished_sync_mutations(rig.vehicle_id)
+            .expect("pending mutations"),
+        "the failed turn released its claim"
+    );
+}
