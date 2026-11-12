@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Ez a bejelentkezés már nem folytatható. Jelentkezz be újra a Teslával.";
 
 "hub.signIn.discovery.configured" = "Beállított autók: %d";
+
+"hub.signIn.reportInvalid" = "A Hub nem tudta megerősíteni a bejelentkezést. Jelentkezz be újra a Teslával.";

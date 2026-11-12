@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Această autentificare nu mai poate fi reluată. Autentifică-te din nou cu Tesla.";
 
 "hub.signIn.discovery.configured" = "Mașini configurate: %d";
+
+"hub.signIn.reportInvalid" = "Hub nu a putut confirma autentificarea. Autentifică-te din nou cu Tesla.";

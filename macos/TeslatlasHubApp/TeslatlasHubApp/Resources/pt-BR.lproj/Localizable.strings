@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Este login não pode mais ser retomado. Entre de novo com a Tesla.";
 
 "hub.signIn.discovery.configured" = "Carros configurados: %d";
+
+"hub.signIn.reportInvalid" = "O Hub não conseguiu confirmar o login. Entre de novo com a Tesla.";

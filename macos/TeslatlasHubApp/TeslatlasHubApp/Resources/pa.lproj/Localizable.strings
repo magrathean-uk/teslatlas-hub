@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "ਇਹ ਸਾਈਨ ਇਨ ਹੁਣ ਮੁੜ ਸ਼ੁਰੂ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਦਾ। ਦੁਬਾਰਾ Tesla ਨਾਲ ਸਾਈਨ ਇਨ ਕਰੋ।";
 
 "hub.signIn.discovery.configured" = "ਸੰਰਚਿਤ ਕਾਰਾਂ: %d";
+
+"hub.signIn.reportInvalid" = "Hub ਸਾਈਨ ਇਨ ਦੀ ਪੁਸ਼ਟੀ ਨਹੀਂ ਕਰ ਸਕਿਆ। ਦੁਬਾਰਾ Tesla ਨਾਲ ਸਾਈਨ ਇਨ ਕਰੋ।";

@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "ఈ సైన్ ఇన్‌ను ఇకపై కొనసాగించలేము. మళ్లీ Teslaతో సైన్ ఇన్ చేయండి.";
 
 "hub.signIn.discovery.configured" = "కాన్ఫిగర్ చేసిన కార్లు: %d";
+
+"hub.signIn.reportInvalid" = "Hub సైన్ ఇన్‌ను నిర్ధారించలేకపోయింది. మళ్లీ Teslaతో సైన్ ఇన్ చేయండి.";

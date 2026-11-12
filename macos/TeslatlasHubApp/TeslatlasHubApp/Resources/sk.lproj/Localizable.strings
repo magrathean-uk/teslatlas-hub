@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Toto prihlásenie už nemožno obnoviť. Znova sa prihláste cez Teslu.";
 
 "hub.signIn.discovery.configured" = "Nakonfigurované autá: %d";
+
+"hub.signIn.reportInvalid" = "Hub nemohol potvrdiť prihlásenie. Znova sa prihláste cez Teslu.";

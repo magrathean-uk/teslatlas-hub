@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "لا يمكن استئناف تسجيل الدخول هذا بعد الآن. سجّل الدخول باستخدام Tesla مرة أخرى.";
 
 "hub.signIn.discovery.configured" = "السيارات المُعدّة: %d";
+
+"hub.signIn.reportInvalid" = "تعذّر على Hub تأكيد تسجيل الدخول. سجّل الدخول باستخدام Tesla مرة أخرى.";

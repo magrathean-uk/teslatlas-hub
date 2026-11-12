@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Tätä kirjautumista ei voi enää jatkaa. Kirjaudu sisään Teslan kautta uudelleen.";
 
 "hub.signIn.discovery.configured" = "Määritetyt autot: %d";
+
+"hub.signIn.reportInvalid" = "Hub ei voinut vahvistaa kirjautumista. Kirjaudu sisään Teslan kautta uudelleen.";

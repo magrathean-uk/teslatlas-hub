@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Log masuk ini tidak lagi boleh disambung semula. Log masuk semula dengan Tesla.";
 
 "hub.signIn.discovery.configured" = "Kereta yang dikonfigurasikan: %d";
+
+"hub.signIn.reportInvalid" = "Hub tidak dapat mengesahkan log masuk. Log masuk semula dengan Tesla.";

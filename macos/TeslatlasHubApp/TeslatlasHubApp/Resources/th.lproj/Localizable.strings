@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "การลงชื่อเข้าใช้นี้ไม่สามารถดำเนินการต่อได้อีกแล้ว ลงชื่อเข้าใช้ด้วย Tesla อีกครั้ง";
 
 "hub.signIn.discovery.configured" = "รถที่กำหนดค่าแล้ว: %d";
+
+"hub.signIn.reportInvalid" = "Hub ไม่สามารถยืนยันการลงชื่อเข้าใช้ได้ ลงชื่อเข้าใช้ด้วย Tesla อีกครั้ง";

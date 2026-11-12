@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Proses masuk ini tidak dapat dilanjutkan lagi. Masuk lagi dengan Tesla.";
 
 "hub.signIn.discovery.configured" = "Mobil yang dikonfigurasi: %d";
+
+"hub.signIn.reportInvalid" = "Hub tidak dapat mengonfirmasi proses masuk. Masuk lagi dengan Tesla.";

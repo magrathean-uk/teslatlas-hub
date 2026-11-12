@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Questo accesso non può più essere ripreso. Accedi di nuovo con Tesla.";
 
 "hub.signIn.discovery.configured" = "Auto configurate: %d";
+
+"hub.signIn.reportInvalid" = "Hub non è riuscito a confermare l'accesso. Accedi di nuovo con Tesla.";

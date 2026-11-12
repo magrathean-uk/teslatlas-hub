@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "یہ سائن اِن اب دوبارہ شروع نہیں کیا جا سکتا۔ دوبارہ Tesla کے ساتھ سائن اِن کریں۔";
 
 "hub.signIn.discovery.configured" = "ترتیب دی گئی گاڑیاں: %d";
+
+"hub.signIn.reportInvalid" = "Hub سائن اِن کی تصدیق نہیں کر سکا۔ دوبارہ Tesla کے ساتھ سائن اِن کریں۔";

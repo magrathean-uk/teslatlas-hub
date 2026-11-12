@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "此次登录已无法继续。请再次使用 Tesla 登录。";
 
 "hub.signIn.discovery.configured" = "已配置的车辆：%d";
+
+"hub.signIn.reportInvalid" = "Hub 无法确认此次登录。请再次使用 Tesla 登录。";

@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Không thể tiếp tục lần đăng nhập này nữa. Hãy đăng nhập lại bằng Tesla.";
 
 "hub.signIn.discovery.configured" = "Xe đã cấu hình: %d";
+
+"hub.signIn.reportInvalid" = "Hub không thể xác nhận lần đăng nhập. Hãy đăng nhập lại bằng Tesla.";

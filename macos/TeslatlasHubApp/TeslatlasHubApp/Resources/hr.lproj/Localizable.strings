@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Ova se prijava više ne može nastaviti. Ponovno se prijavite putem Tesle.";
 
 "hub.signIn.discovery.configured" = "Konfigurirani automobili: %d";
+
+"hub.signIn.reportInvalid" = "Hub nije mogao potvrditi prijavu. Ponovno se prijavite putem Tesle.";

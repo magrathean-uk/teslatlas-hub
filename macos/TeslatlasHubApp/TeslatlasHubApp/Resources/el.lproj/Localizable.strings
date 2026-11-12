@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Αυτή η σύνδεση δεν μπορεί πλέον να συνεχιστεί. Συνδεθείτε ξανά στην Tesla.";
 
 "hub.signIn.discovery.configured" = "Αυτοκίνητα που ρυθμίστηκαν: %d";
+
+"hub.signIn.reportInvalid" = "Το Hub δεν μπόρεσε να επιβεβαιώσει τη σύνδεση. Συνδεθείτε ξανά στην Tesla.";

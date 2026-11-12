@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Deze aanmelding kan niet meer worden hervat. Meld je opnieuw aan bij Tesla.";
 
 "hub.signIn.discovery.configured" = "Geconfigureerde auto’s: %d";
+
+"hub.signIn.reportInvalid" = "Hub kon de aanmelding niet bevestigen. Meld je opnieuw aan bij Tesla.";

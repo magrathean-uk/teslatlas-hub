@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "לא ניתן עוד להמשיך את ההתחברות הזו. התחברו שוב באמצעות Tesla.";
 
 "hub.signIn.discovery.configured" = "רכבים שהוגדרו: %d";
+
+"hub.signIn.reportInvalid" = "Hub לא הצליח לאשר את ההתחברות. התחברו שוב באמצעות Tesla.";

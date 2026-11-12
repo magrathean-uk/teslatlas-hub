@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "ഈ സൈൻ ഇൻ ഇനി തുടരാൻ കഴിയില്ല. Tesla ഉപയോഗിച്ച് വീണ്ടും സൈൻ ഇൻ ചെയ്യുക.";
 
 "hub.signIn.discovery.configured" = "കോൺഫിഗർ ചെയ്ത കാറുകൾ: %d";
+
+"hub.signIn.reportInvalid" = "Hub-ന് സൈൻ ഇൻ സ്ഥിരീകരിക്കാൻ കഴിഞ്ഞില്ല. Tesla ഉപയോഗിച്ച് വീണ്ടും സൈൻ ഇൻ ചെയ്യുക.";

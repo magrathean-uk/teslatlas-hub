@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Този вход вече не може да бъде продължен. Влезте отново с Tesla.";
 
 "hub.signIn.discovery.configured" = "Конфигурирани автомобили: %d";
+
+"hub.signIn.reportInvalid" = "Hub не можа да потвърди входа. Влезте отново с Tesla.";

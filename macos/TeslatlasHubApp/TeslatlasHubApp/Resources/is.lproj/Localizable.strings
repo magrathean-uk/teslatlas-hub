@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Ekki er lengur hægt að halda áfram með þessa innskráningu. Skráðu þig aftur inn með Tesla.";
 
 "hub.signIn.discovery.configured" = "Stilltir bílar: %d";
+
+"hub.signIn.reportInvalid" = "Hub gat ekki staðfest innskráninguna. Skráðu þig aftur inn með Tesla.";

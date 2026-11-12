@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Este inicio de sesión ya no se puede reanudar. Inicia sesión de nuevo con Tesla.";
 
 "hub.signIn.discovery.configured" = "Coches configurados: %d";
+
+"hub.signIn.reportInvalid" = "Hub no ha podido confirmar el inicio de sesión. Inicia sesión de nuevo con Tesla.";

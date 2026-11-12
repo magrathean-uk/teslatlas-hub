@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Dette login kan ikke længere genoptages. Log ind med Tesla igen.";
 
 "hub.signIn.discovery.configured" = "Konfigurerede biler: %d";
+
+"hub.signIn.reportInvalid" = "Hub kunne ikke bekræfte login. Log ind med Tesla igen.";

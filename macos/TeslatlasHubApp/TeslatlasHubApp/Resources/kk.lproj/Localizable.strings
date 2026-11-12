@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "Бұл кіруді енді жалғастыру мүмкін емес. Tesla арқылы қайта кіріңіз.";
 
 "hub.signIn.discovery.configured" = "Бапталған көліктер: %d";
+
+"hub.signIn.reportInvalid" = "Hub кіруді растай алмады. Tesla арқылы қайта кіріңіз.";

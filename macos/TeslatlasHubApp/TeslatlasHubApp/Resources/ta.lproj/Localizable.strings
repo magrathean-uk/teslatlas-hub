@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "இந்த உள்நுழைவைத் தொடர இனி முடியாது. Tesla மூலம் மீண்டும் உள்நுழையவும்.";
 
 "hub.signIn.discovery.configured" = "அமைக்கப்பட்ட கார்கள்: %d";
+
+"hub.signIn.reportInvalid" = "Hub உள்நுழைவை உறுதிப்படுத்த முடியவில்லை. Tesla மூலம் மீண்டும் உள்நுழையவும்.";

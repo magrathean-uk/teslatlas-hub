@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "આ સાઇન ઇન હવે ફરી શરૂ કરી શકાતું નથી. ફરી Tesla સાથે સાઇન ઇન કરો.";
 
 "hub.signIn.discovery.configured" = "ગોઠવેલી કાર: %d";
+
+"hub.signIn.reportInvalid" = "Hub સાઇન ઇનની પુષ્ટિ કરી શક્યું નથી. ફરી Tesla સાથે સાઇન ઇન કરો.";

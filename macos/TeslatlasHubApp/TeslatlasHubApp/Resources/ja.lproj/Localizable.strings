@@ -856,3 +856,5 @@
 "hub.signIn.discovery.expired" = "このサインインは再開できなくなりました。Teslaでもう一度サインインしてください。";
 
 "hub.signIn.discovery.configured" = "設定済みの車：%d";
+
+"hub.signIn.reportInvalid" = "Hubはサインインを確認できませんでした。Teslaでもう一度サインインしてください。";
