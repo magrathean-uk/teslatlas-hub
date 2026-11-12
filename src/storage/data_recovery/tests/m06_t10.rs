@@ -146,11 +146,16 @@ fn data_recovery_m06_t10_backup_verify_restore_above_the_old_ceiling() {
         "the child run above the old ceiling failed:\n{stdout}\n{stderr}"
     );
     let peak = peak_resident_bytes(&stderr).expect("peak resident set in the time report");
-    println!(
-        "M06T10 peak footprint: {peak} bytes ({} MiB) for {} members",
+    let line = format!(
+        "M06T10 peak footprint: {peak} bytes ({} MiB) for {} members\n",
         peak / (1024 * 1024),
         SYNTHETIC_PACKS + 3
     );
+    print!("{line}");
+    // A passing test's output is captured, so the measurement is also kept
+    // beside the run, in its temporary directory.
+    fs::write(std::env::temp_dir().join("m06-t10-peak-footprint.txt"), &line)
+        .expect("record the peak footprint");
     assert!(
         peak < PEAK_FOOTPRINT_LIMIT_BYTES,
         "peak footprint {peak} bytes is above {PEAK_FOOTPRINT_LIMIT_BYTES}"
