@@ -5,10 +5,18 @@ Hub separates ordinary data backup from credential disaster recovery.
 ## Create and verify a data backup
 
 The following commands are for a Debian package installation. Create a private
-parent directory owned by the service account; each backup destination itself
-must not already exist. Stop the Hub service first: backup and credential
-export take the exclusive Hub instance lock and will refuse to run while Serve
-owns it.
+destination folder owned by the service account; each `backup` run adds one
+encrypted file, `teslatlas-hub-backup-<time>-<generation>.tlbk`, to it. Stop
+the Hub service first: backup and credential export take the exclusive Hub
+instance lock and will refuse to run while Serve owns it. While the Hub runs,
+`backup-now` makes the same encrypted backup through the service instead.
+
+Backups are encrypted by default with a recovery password you keep (at least
+12 characters). The password is never a command argument or an environment
+variable. On a terminal, `backup` asks for it twice with echo off, and
+`verify-backup` and `restore-data` ask once. When standard input is not a
+terminal, the commands read one line from standard input instead, for example
+from a protected password file:
 
 ```sh
 sudo systemctl stop teslatlas-hub.service
@@ -16,10 +24,13 @@ sudo install -d -o teslatlas -g teslatlas -m 0700 \
   /srv/teslatlas-hub-backups
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \
   --config /etc/teslatlas-hub/config.toml backup \
-  --destination /srv/teslatlas-hub-backups/hub-data-2026-08-28
+  --destination /srv/teslatlas-hub-backups
 sudo -u teslatlas -- /usr/bin/teslatlas-hub verify-backup \
-  --source /srv/teslatlas-hub-backups/hub-data-2026-08-28
+  --source /srv/teslatlas-hub-backups/teslatlas-hub-backup-<time>-<generation>.tlbk
 ```
+
+`verify-backup` authenticates and reads the whole bundle without writing
+anything. A wrong password is refused.
 
 The data backup contains the catalogue, encrypted token row, pairing database,
 and all referenced immutable packs, including active or retained PhysicalV3,
@@ -27,6 +38,17 @@ changed-set, and prepared-map packs. Pairing invitations and active device
 authority are removed.
 It excludes the source application decryption key, cursor-signing key, TLS identity,
 configuration, and service state.
+
+### Older plaintext directory backups
+
+Before encrypted backups, `backup` wrote a plaintext directory whose
+completion marker is an unkeyed digest, so it is not authenticated.
+`verify-backup` and `restore-data` refuse such a directory
+(`plaintext_directory_refused`) unless you name that format with
+`--plaintext-directory`; the flag is refused for an encrypted bundle. A new
+backup in the older format needs its own command,
+`backup-plaintext-directory --destination <new directory>`. Prefer the
+encrypted default.
 
 ## Export recovery credentials
 
@@ -60,14 +82,16 @@ sudo journalctl -u teslatlas-hub.service -n 50 --no-pager
 
 ## Restore
 
-Stop the packaged service, then restore data into a new empty directory:
+Stop the packaged service, then restore data into a new directory that does
+not exist yet. The command asks for the recovery password as `backup` does; a
+wrong password is refused before anything is written:
 
 ```sh
 sudo systemctl stop teslatlas-hub.service
 sudo install -d -o teslatlas -g teslatlas -m 0700 \
   /srv/teslatlas-hub-restore
 sudo -u teslatlas -- /usr/bin/teslatlas-hub restore-data \
-  --source /srv/teslatlas-hub-backups/hub-data-2026-08-28 \
+  --source /srv/teslatlas-hub-backups/teslatlas-hub-backup-<time>-<generation>.tlbk \
   --destination /srv/teslatlas-hub-restore/hub-data
 ```
 

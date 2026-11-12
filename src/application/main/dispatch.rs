@@ -247,6 +247,10 @@ const SETUP_INPUT_MAX_BYTES: usize = 4096;
 const FORWARD_TIMEOUT: Duration = Duration::from_secs(180);
 
 fn operator_home() -> Result<PathBuf, OperatorRefusal> {
+    #[cfg(test)]
+    if let Some(home) = TEST_OPERATOR_HOME.with(|cell| cell.borrow().clone()) {
+        return Ok(home);
+    }
     std::env::var_os("HOME")
         .filter(|home| !home.is_empty())
         .map(PathBuf::from)
@@ -856,7 +860,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     // local instance lock. `control` uses short SQLite transactions so it can
     // intentionally operate while the collector is running.
     #[cfg(unix)]
-    let admitted_user_hub = if operator::admission::requires_user_hub_admission(&cli.command) {
+    let admitted_user_hub = if operator::admission::requires_user_hub_admission(&cli.command)
+        || matches!(&cli.command, Command::BackupPlaintextDirectory { .. })
+    {
         let config = HubConfig::load(&config_path)?;
         if matches!(
             &cli.command,
@@ -925,17 +931,40 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // The recovery flow takes the encrypted bundle by default; an older
+    // plaintext directory is refused before the password is read unless the
+    // operator names that format (M06-T08).
     match &cli.command {
-        Command::VerifyBackup { source } => {
-            let report = verify_data_backup(source)?;
+        Command::VerifyBackup {
+            source,
+            plaintext_directory,
+        } => {
+            let report = match admit_recovery_source(source, *plaintext_directory)? {
+                BackupSourceFormat::PlaintextDirectory => verify_data_backup(source)?,
+                BackupSourceFormat::Encrypted => {
+                    let password = recovery_password(false)?;
+                    teslatlas_hub::data_recovery::verify_encrypted_backup(source, &password)?
+                }
+            };
             println!("{}", serde_json::to_string(&report)?);
             return Ok(());
         }
         Command::RestoreData {
             source,
             destination,
+            plaintext_directory,
         } => {
-            let report = restore_data_backup(source, destination)?;
+            let report = match admit_recovery_source(source, *plaintext_directory)? {
+                BackupSourceFormat::PlaintextDirectory => restore_data_backup(source, destination)?,
+                BackupSourceFormat::Encrypted => {
+                    let password = recovery_password(false)?;
+                    teslatlas_hub::data_recovery::restore_encrypted_backup(
+                        source,
+                        &password,
+                        destination,
+                    )?
+                }
+            };
             println!("{}", serde_json::to_string(&report)?);
             return Ok(());
         }
@@ -1421,17 +1450,20 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let report = store.repair()?;
             println!("{}", serde_json::to_string(&report)?);
         }
+        // Encrypted by default (M06-T08): one authenticated bundle in the
+        // destination folder, keeping every earlier generation.
         Command::Backup { destination } => {
-            // A refusal caused by refused pre-upgrade credentials names the
-            // command that removes them (DEC-083).
-            let report = create_data_backup(&store, &destination).map_err(
-                |error| -> Box<dyn std::error::Error> {
-                    match teslatlas_hub::data_recovery::refused_credential_backup_message(&store, &error) {
-                        Some(message) => message.into(),
-                        None => error.into(),
-                    }
-                },
-            )?;
+            let password = recovery_password(true)?;
+            let report = teslatlas_hub::data_recovery::create_encrypted_backup(
+                &store,
+                &teslatlas_hub::data_recovery::EncryptedBackupRequest::new(&destination, &password),
+            )
+            .map_err(|error| backup_refusal(&store, error))?;
+            println!("{}", serde_json::to_string(&report)?);
+        }
+        Command::BackupPlaintextDirectory { destination } => {
+            let report = create_data_backup(&store, &destination)
+                .map_err(|error| backup_refusal(&store, error))?;
             println!("{}", serde_json::to_string(&report)?);
         }
         Command::ExportRecoveryCredentials { .. }
@@ -1447,4 +1479,66 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     }
     catalogue_checkpoint.finish()?;
     Ok(())
+}
+
+/// A refusal caused by refused pre-upgrade credentials names the command that
+/// removes them (DEC-083).
+fn backup_refusal(
+    store: &HubStore,
+    error: teslatlas_hub::data_recovery::DataRecoveryError,
+) -> Box<dyn std::error::Error> {
+    match teslatlas_hub::data_recovery::refused_credential_backup_message(store, &error) {
+        Some(message) => message.into(),
+        None => error.into(),
+    }
+}
+
+use teslatlas_hub::data_recovery::{BackupSourceFormat, admit_recovery_source};
+
+/// The recovery password for `backup`, `verify-backup` and `restore-data`:
+/// a no-echo prompt on a terminal (twice for a new backup), otherwise one line
+/// of standard input. Never an argument or an environment variable, never
+/// logged. Tests offer standard input through [`set_password_input`].
+fn recovery_password(
+    confirm: bool,
+) -> Result<zeroize::Zeroizing<String>, teslatlas_hub::data_recovery::DataRecoveryError> {
+    #[cfg(test)]
+    {
+        let _ = confirm;
+        let input = zeroize::Zeroizing::new(take_password_input().unwrap_or_default());
+        teslatlas_hub::data_recovery::recovery_password_from(input.as_slice())
+    }
+    #[cfg(not(test))]
+    {
+        teslatlas_hub::data_recovery::read_recovery_password(confirm)
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_PASSWORD_INPUT: std::cell::RefCell<Option<Vec<u8>>> = const { std::cell::RefCell::new(None) };
+    static TEST_OPERATOR_HOME: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Test seam: the bytes the next recovery-password read takes as standard input.
+#[cfg(test)]
+fn set_password_input(input: Option<Vec<u8>>) {
+    TEST_PASSWORD_INPUT.with(|cell| *cell.borrow_mut() = input);
+}
+
+/// Test seam: takes what [`set_password_input`] left unread.
+#[cfg(test)]
+fn take_password_input() -> Option<Vec<u8>> {
+    TEST_PASSWORD_INPUT.with(|cell| cell.borrow_mut().take())
+}
+
+/// Test seam: the operator home for import admission, inside the test's root.
+#[cfg(test)]
+fn set_operator_home(home: Option<PathBuf>) {
+    TEST_OPERATOR_HOME.with(|cell| *cell.borrow_mut() = home);
+}
+
+#[cfg(all(test, unix))]
+mod backup_command_tests {
+    include!("backup_command_tests.rs");
 }

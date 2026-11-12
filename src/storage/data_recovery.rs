@@ -111,6 +111,12 @@ pub enum DataRecoveryError {
     CorruptArchive(String),
     #[error("the backup was cancelled")]
     Cancelled,
+    #[error("cannot read the recovery password: {0}")]
+    PasswordInput(&'static str),
+    #[error(
+        "plaintext_directory_refused: {path} is an older plaintext directory backup, which is not authenticated; name that format with --plaintext-directory to use it"
+    )]
+    PlaintextDirectoryRefused { path: PathBuf },
     #[error("the backup destination is unavailable at {path}: {source}")]
     DestinationUnavailable {
         path: PathBuf,
@@ -393,6 +399,39 @@ fn create_data_backup_with_member_limit(
     let report = report("data_backup_created", &destination, &manifest)?;
     staging.publish(&destination)?;
     Ok(report)
+}
+
+/// The format of a backup offered to `verify-backup` or `restore-data`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackupSourceFormat {
+    /// One authenticated, encrypted bundle file (the default).
+    Encrypted,
+    /// The older plaintext directory generation, named explicitly.
+    PlaintextDirectory,
+}
+
+/// Admits a recovery source before any password is read or anything is
+/// written. An encrypted bundle is the default; a directory is the older
+/// plaintext format, whose completion marker is an unkeyed digest, so it is
+/// refused unless the operator names that format (`plaintext_directory`).
+/// Naming it for a source that is not a directory is refused too, so the flag
+/// can never downgrade an encrypted bundle.
+pub fn admit_recovery_source(
+    source: &Path,
+    plaintext_directory: bool,
+) -> Result<BackupSourceFormat, DataRecoveryError> {
+    let metadata = fs::symlink_metadata(source)
+        .map_err(|error| io_error("inspecting backup source", source, error))?;
+    match (metadata.file_type().is_dir(), plaintext_directory) {
+        (true, true) => Ok(BackupSourceFormat::PlaintextDirectory),
+        (true, false) => Err(DataRecoveryError::PlaintextDirectoryRefused {
+            path: source.to_path_buf(),
+        }),
+        (false, true) => Err(invalid(
+            "--plaintext-directory names an older directory backup, and this source is not a directory",
+        )),
+        (false, false) => Ok(BackupSourceFormat::Encrypted),
+    }
 }
 
 /// Verify a completed backup without opening any writable Hub connection or
@@ -2047,8 +2086,12 @@ mod archive_crypto;
 mod backup_admission;
 mod encrypted_backup;
 mod encrypted_scratch;
+mod recovery_password;
 
 pub use archive_crypto::generate_recovery_password;
+pub use recovery_password::{
+    RECOVERY_PASSWORD_MAX_BYTES, read_recovery_password, recovery_password_from,
+};
 pub(crate) use encrypted_backup::live_backup_pack_pins;
 pub use encrypted_backup::{
     EncryptedBackupReport, EncryptedBackupRequest, create_encrypted_backup,

@@ -533,28 +533,47 @@ pub enum Command {
     },
     /// Validate database integrity, report quarantined sessions, and clean orphaned packs.
     Repair,
-    /// Create a data-only catalogue and immutable-pack backup generation.
+    /// Create one encrypted backup generation (the default format). The
+    /// recovery password is typed at a prompt with echo off, or read from
+    /// standard input when that is not a terminal; it is never an argument.
     Backup {
-        /// New private directory that will contain the data-backup generation.
+        /// Existing private folder that receives the encrypted backup file.
         #[arg(long)]
         destination: PathBuf,
     },
-    /// Immutably verify one completed data-backup generation.
+    /// Create a backup in the older, unauthenticated plaintext directory
+    /// format. Prefer `backup`, which encrypts and authenticates the bundle.
+    #[command(name = "backup-plaintext-directory")]
+    BackupPlaintextDirectory {
+        /// New private directory that will contain the plaintext generation.
+        #[arg(long)]
+        destination: PathBuf,
+    },
+    /// Authenticate and fully read one encrypted backup without writing
+    /// anything. The recovery password is read as for `backup`.
     #[command(name = "verify-backup")]
     VerifyBackup {
-        /// Existing private data-backup generation to verify without mutation.
+        /// Encrypted backup file (or, with --plaintext-directory, an older directory backup).
         #[arg(long)]
         source: PathBuf,
+        /// The source is an older, unauthenticated plaintext directory backup.
+        #[arg(long)]
+        plaintext_directory: bool,
     },
-    /// Restore data and the pairing database into a new private directory.
+    /// Restore data and the pairing database from an encrypted backup into a
+    /// new private directory. The recovery password is read as for `backup`;
+    /// a wrong password is refused before anything is written.
     #[command(name = "restore-data")]
     RestoreData {
-        /// Existing verified data-backup generation.
+        /// Encrypted backup file (or, with --plaintext-directory, an older directory backup).
         #[arg(long)]
         source: PathBuf,
         /// New Hub data directory. Credentials and collector authority stay absent.
         #[arg(long)]
         destination: PathBuf,
+        /// The source is an older, unauthenticated plaintext directory backup.
+        #[arg(long)]
+        plaintext_directory: bool,
     },
     /// Export decryption/signing keys into a separately encrypted, secret-bearing file
     /// (forwarded to the running service).
