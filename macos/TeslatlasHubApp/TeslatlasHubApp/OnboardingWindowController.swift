@@ -229,8 +229,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var migrationSession: SourceServerImportSession?
     private var migrationPreparation: HubMigrationPreparation?
     private var accountSignIn: HubAccountSignIn?
-    /// Re-renders the sign-in page when the held discovery retry stops being offered.
-    private var discoveryRetryTimer: Timer?
+    /// Hears the controller drop the held discovery retry at its deadline, to update the page.
+    private var discoveryRetryExpiryObserver: NSObjectProtocol?
     /// How many cars the owner sign-in configured, shown on the verification page.
     private var configuredCarsNote: String?
     private var lifecycleObservation: HubLifecycleAuthority.Observation?
@@ -1704,26 +1704,35 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func discardDiscoveryRetry() {
-        discoveryRetryTimer?.invalidate()
-        discoveryRetryTimer = nil
+        stopObservingDiscoveryRetryExpiry()
         controller.discardOwnerDiscoveryRetry()
     }
 
-    /// Hides the retry once its 10 minutes are over and asks for a new sign-in.
-    private func scheduleDiscoveryRetryExpiry() {
-        discoveryRetryTimer?.invalidate()
-        discoveryRetryTimer = nil
-        guard let deadline = controller.ownerDiscoveryRetryDeadline else { return }
-        let timer = Timer(fire: deadline, interval: 0, repeats: false) { [weak self] _ in
+    private func stopObservingDiscoveryRetryExpiry() {
+        if let discoveryRetryExpiryObserver {
+            NotificationCenter.default.removeObserver(discoveryRetryExpiryObserver)
+        }
+        discoveryRetryExpiryObserver = nil
+    }
+
+    /// The controller drops the grant at its deadline by itself; the page only follows,
+    /// hiding the retry and asking for a new sign-in. While busy only the page update waits.
+    private func observeDiscoveryRetryExpiry() {
+        guard discoveryRetryExpiryObserver == nil else { return }
+        discoveryRetryExpiryObserver = NotificationCenter.default.addObserver(
+            forName: HubController.ownerDiscoveryRetryExpiredNotification, object: controller, queue: .main
+        ) { [weak self] _ in
             guard let self else { return }
-            self.discoveryRetryTimer = nil
-            guard !self.busy, !self.controller.canRetryOwnerDiscovery else { return }
-            self.errorMessage = HubL10n.text("hub.signIn.discovery.expired",
-                                             fallback: "This sign-in can no longer be resumed. Sign in with Tesla again.")
+            self.stopObservingDiscoveryRetryExpiry()
+            guard !self.busy else { return }
+            self.errorMessage = Self.discoveryRetryExpiredMessage
             self.render()
         }
-        RunLoop.main.add(timer, forMode: .common)
-        discoveryRetryTimer = timer
+    }
+
+    private static var discoveryRetryExpiredMessage: String {
+        HubL10n.text("hub.signIn.discovery.expired",
+                     fallback: "This sign-in can no longer be resumed. Sign in with Tesla again.")
     }
 
     private func setupFinished(_ result: Result<Void, Error>) {
@@ -1731,8 +1740,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         setBusy(false)
         switch result {
         case .success:
-            discoveryRetryTimer?.invalidate()
-            discoveryRetryTimer = nil
+            stopObservingDiscoveryRetryExpiry()
             configuredCarsNote = controller.lastVehiclesConfigured.map {
                 HubL10n.format("hub.signIn.discovery.configured", fallback: "Cars configured: %d", arguments: [$0])
             }
@@ -1742,8 +1750,16 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             render()
             runVerification()
         case let .failure(error):
-            // A failed car discovery is not success: the page stays, with the retry.
-            if error is HubOwnerDiscoveryFailure { scheduleDiscoveryRetryExpiry() }
+            // A failed car discovery is not success: the page stays, with the retry while the
+            // controller still holds the sign-in, and asks for a new one once it does not.
+            if error is HubOwnerDiscoveryFailure {
+                guard controller.canRetryOwnerDiscovery else {
+                    stopObservingDiscoveryRetryExpiry()
+                    showInlineError(Self.discoveryRetryExpiredMessage)
+                    return
+                }
+                observeDiscoveryRetryExpiry()
+            }
             showInlineError(error.localizedDescription)
         }
     }
