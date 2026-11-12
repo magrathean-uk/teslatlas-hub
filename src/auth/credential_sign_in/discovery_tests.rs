@@ -305,9 +305,13 @@ fn owner_discovery_logs_carry_no_token_vin_or_name() {
         let _route = window.route(&stub.url);
         let hub = hub();
         hub.seed_own_pair();
+        // Parallel tests reach the same log callsites with no subscriber; the
+        // interest cache is rebuilt so this thread's capture sees them.
+        tracing::callsite::rebuild_interest_cache();
         hub.discover(&stub, OwnerCarSelection::All).await.expect("configured");
         let other = self::hub();
         other.seed_own_pair();
+        tracing::callsite::rebuild_interest_cache();
         other.discover(&stub, OwnerCarSelection::Implicit).await.unwrap_err();
     });
     let logs = logs.lock().expect("log");
