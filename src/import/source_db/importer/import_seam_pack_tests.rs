@@ -262,6 +262,20 @@ fn fixture() -> Fixture {
 /// clients as live sync: drive H1 is the source's drive 11, drive H2 the
 /// part of the source's drive 13 inside the window.
 fn collect(fixture: &Fixture) -> (i64, i64) {
+    let hub_drives = collect_unpublished(fixture);
+    publish_sync_mutations_ahead_of_packs(
+        &fixture.store,
+        &fixture.gate,
+        &fixture.cursor_key,
+        fixture.binding.vehicle_id,
+    )
+    .expect("live sync of the Hub's collection");
+    hub_drives
+}
+
+/// The Hub's window of [`collect`], stored and journalled but not yet
+/// published to clients: what the collector writes before its publication.
+fn collect_unpublished(fixture: &Fixture) -> (i64, i64) {
     let (h1, h2) = (HUB_ID_BASE + 1, HUB_ID_BASE + 2);
     let projected = project_vehicle(&successor_history(), CAR).expect("projection");
     let template = projected.snapshot.drives[0].clone();
@@ -336,13 +350,6 @@ fn collect(fixture: &Fixture) -> (i64, i64) {
         journal("position", position.id, &json);
     }
     transaction.commit().expect("commit");
-    publish_sync_mutations_ahead_of_packs(
-        &fixture.store,
-        &fixture.gate,
-        &fixture.cursor_key,
-        fixture.binding.vehicle_id,
-    )
-    .expect("live sync of the Hub's collection");
     (h1, h2)
 }
 
@@ -1001,6 +1008,7 @@ fn import_successor(
         &fixture.binding,
         &fixture.car,
         max_chunks,
+        |_| Ok(()),
     );
     let mut planned = match route {
         Ok(DirectSuccessorRoute::Deltas(planned)) => planned,
@@ -1126,6 +1134,223 @@ fn import_seam_base_replacement_after_a_window_is_refused_clearly() {
     assert_eq!(published.sequence, after.head_sequence);
     assert!(store_drives(&fixture.store, vehicle_id).contains_key(&h1));
     assert!(store_drives(&fixture.store, vehicle_id).contains_key(&12));
+}
+
+/// The lineage's base and delta packs in use.
+fn packs_in_use(fixture: &Fixture) -> usize {
+    let lineage = fixture
+        .store
+        .lineage_manifest_for_vehicle(fixture.binding.vehicle_id)
+        .expect("lineage")
+        .expect("import base");
+    lineage.base.packs.len() + lineage.deltas.len()
+}
+
+/// DEC-103, the interleaving behind the old backstop: the Hub collects the
+/// vehicle (a window and its rows, not yet published) after the import
+/// decided, on a vehicle without seam history, that its changes need a new
+/// base, and before anything is applied. The decision is taken again on the
+/// store as it now is, so the import is refused before it changes
+/// anything: the store, the packs and the head are as the Hub's collection
+/// left them.
+#[test]
+fn import_seam_base_replacement_backstop_collection_after_the_decision_is_refused_unchanged() {
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    let used = packs_in_use(&fixture);
+    let projected = project_vehicle(&successor_history(), CAR).expect("projection");
+    let run_id = begin_run(&fixture, T + 3 * HOUR);
+    let mut capture = capture(&fixture, run_id, true, &projected);
+    let mut collected = None;
+    let mut after_collection = None;
+    let route = route_direct_successor(
+        &fixture.store,
+        &fixture.gate,
+        &fixture.cursor_key,
+        vehicle_id,
+        CAR,
+        &projected.snapshot.drives,
+        &projected.snapshot.charges,
+        &mut capture,
+        &fixture.binding,
+        &fixture.car,
+        used,
+        |_| {
+            if collected.is_none() {
+                collected = Some(collect_unpublished(&fixture));
+                after_collection = Some(observable(&fixture));
+            }
+            Ok(())
+        },
+    );
+    let (h1, h2) = collected.expect("the Hub collected between decision and seam");
+    match route {
+        Err(SourceDbImportError::ImportBaseReplacementRefused { used: reported, limit }) => {
+            assert_eq!((reported, limit), (used, used));
+        }
+        Err(error) => panic!("refused for another cause: {error:?}"),
+        Ok(_) => panic!("a new base after the Hub collected"),
+    }
+    assert_eq!(
+        Some(observable(&fixture)),
+        after_collection,
+        "the refusal changed nothing after the collection"
+    );
+    let drives = store_drives(&fixture.store, vehicle_id);
+    assert!(drives.contains_key(&h1) && drives.contains_key(&h2), "the Hub's rows are kept");
+}
+
+/// DEC-103, a vehicle with no seam history whose own seam would change the
+/// store: the source dropped drive 10, so the seam would tombstone it and
+/// publish that as a live span (seam history). When its changes need a new
+/// base, the decision comes before the seam and the new base applies none
+/// of it, so its own seam never writes history it could then be refused
+/// for: routing changes nothing.
+#[test]
+fn import_seam_base_replacement_backstop_own_seam_without_history_applies_nothing() {
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    let used = packs_in_use(&fixture);
+    let base = fixture
+        .store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage")
+        .expect("import base");
+    let newer = history(
+        vec![source_drive(12, T + 2 * HOUR, T + 2 * HOUR + 10 * MINUTE)],
+        vec![source_position(1201, Some(12), T + 2 * HOUR + 5 * MINUTE)],
+    );
+    let projected = project_vehicle(&newer, CAR).expect("projection");
+    let dry_run = fixture
+        .store
+        .dry_run_import_seam_ahead_of_packs(
+            &fixture.gate,
+            vehicle_id,
+            CAR,
+            &projected.snapshot.drives,
+            &projected.snapshot.charges,
+        )
+        .expect("dry run");
+    assert!(!dry_run.seam_history, "no seam history yet");
+    assert!(dry_run.ahead.changed_the_store, "its own seam would tombstone drive 10");
+    let before = observable(&fixture);
+    let run_id = begin_run(&fixture, T + 3 * HOUR);
+    let mut capture = capture(&fixture, run_id, true, &projected);
+    let mut decisions = 0;
+    let route = route_direct_successor(
+        &fixture.store,
+        &fixture.gate,
+        &fixture.cursor_key,
+        vehicle_id,
+        CAR,
+        &projected.snapshot.drives,
+        &projected.snapshot.charges,
+        &mut capture,
+        &fixture.binding,
+        &fixture.car,
+        used,
+        |_| {
+            decisions += 1;
+            Ok(())
+        },
+    );
+    let replaced = match route {
+        Ok(DirectSuccessorRoute::NewBase(replaced)) => replaced,
+        Ok(DirectSuccessorRoute::Deltas(_)) => panic!("deltas past the lineage's capacity"),
+        Err(error) => panic!("refused a vehicle without seam history: {error:?}"),
+    };
+    assert_eq!(decisions, 1);
+    assert_eq!(replaced.existing, base);
+    assert_eq!(replaced.existing_pack_count, used);
+    assert_eq!(observable(&fixture), before, "routing applied none of the seam");
+    assert!(store_drives(&fixture.store, vehicle_id).contains_key(&10));
+}
+
+/// DEC-103, the importer's refusal arm through its own successor step
+/// (`route_direct_successor_for_run`, which the PostgreSQL entry point
+/// calls): the full-snapshot candidate packs are removed, the run is
+/// aborted, and the store, the packs and the head are as they were.
+#[test]
+fn import_seam_base_replacement_refusal_discards_the_candidate_and_aborts_the_run() {
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    collect(&fixture);
+    let used = packs_in_use(&fixture);
+    let before = observable(&fixture);
+    let projected = project_vehicle(&successor_history(), CAR).expect("projection");
+    let run_id = begin_run(&fixture, T + 3 * HOUR);
+    let mut capture = capture(&fixture, run_id, true, &projected);
+    let head = fixture.store.v2_head(vehicle_id).expect("head").expect("base").1;
+    let sequence = u64::try_from(head).expect("sequence") + 100;
+    let candidate = ProjectionPackWriter::new(fixture.store.packs_dir())
+        .write_full_snapshot_with_states_and_updates(
+            &ProjectionPackRequest {
+                pack_id: Uuid::new_v4(),
+                snapshot_id: Uuid::new_v4(),
+                ordinal: 0,
+                binding: fixture.binding.clone(),
+                sequence: SequenceRange {
+                    from_exclusive: sequence,
+                    to_inclusive: sequence,
+                },
+                snapshot: &projected.snapshot,
+            },
+            &[],
+            &[],
+        )
+        .expect("candidate pack");
+    assert!(candidate.may_remove_unpublished_file());
+    let candidate_path = candidate.path.clone();
+    assert!(candidate_path.exists());
+    let mut direct = StagedProjectionPacks::new(
+        vec![candidate],
+        ProjectionReport::default(),
+        Sha256Digest::of_bytes(b"candidate"),
+        Vec::new(),
+    );
+    let mut run_guard = ImportGenerationGuard {
+        store: &fixture.store,
+        run_id: Some(run_id),
+    };
+    let refused = route_direct_successor_for_run(
+        &fixture.store,
+        &fixture.gate,
+        &fixture.cursor_key,
+        vehicle_id,
+        CAR,
+        &projected.snapshot.drives,
+        &projected.snapshot.charges,
+        &mut capture,
+        &fixture.binding,
+        &fixture.car,
+        used + 1,
+        &mut direct,
+        &mut run_guard,
+        |_| Ok(()),
+    );
+    match refused {
+        Err(SourceDbImportError::ImportBaseReplacementRefused { used: reported, limit }) => {
+            assert_eq!((reported, limit), (used, used + 1));
+        }
+        Err(error) => panic!("refused for another cause: {error:?}"),
+        Ok(_) => panic!("routed past the lineage's capacity"),
+    }
+    assert!(run_guard.run_id.is_none(), "the run guard's run is aborted");
+    drop(run_guard);
+    let runs: i64 = fixture
+        .store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            "SELECT COUNT(*) FROM import_generations WHERE run_id = ?1",
+            params![run_id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("runs");
+    assert_eq!(runs, 0, "the aborted run is gone");
+    assert!(!candidate_path.exists(), "the candidate pack is removed");
+    drop(direct);
+    assert_eq!(observable(&fixture), before, "the refusal changed nothing");
 }
 
 /// The rows of every delta the lineage gained after `before`.

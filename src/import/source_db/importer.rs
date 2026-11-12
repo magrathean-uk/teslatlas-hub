@@ -1242,7 +1242,7 @@ async fn import_from_postgres_with_updates_capture_policy(
         // Decide before discarding the complete capture or writing delta packs.
         // Only pack-capacity exhaustion permits an explicit new base, and
         // never once the Hub has collected the vehicle (DEC-103).
-        let route = match route_direct_successor(
+        let route = route_direct_successor_for_run(
             store,
             &publication_gate,
             cursor_key,
@@ -1254,23 +1254,16 @@ async fn import_from_postgres_with_updates_capture_policy(
             &binding,
             &selected_car,
             ProtocolLimits::default().max_chunks,
-        ) {
-            Ok(route) => route,
-            Err(refused @ SourceDbImportError::ImportBaseReplacementRefused { .. }) => {
-                // The full-snapshot candidate is no base: remove it so the
-                // packs stay as they were. The run guard aborts the run.
-                direct.keep_chunks();
-                discard_unpublished_chunks(store, &publication_gate, &direct.chunks)?;
-                return Err(refused);
-            }
-            Err(error) => return Err(error),
-        };
+            &mut direct,
+            &mut run_guard,
+            |_| Ok(()),
+        )?;
         if let DirectSuccessorRoute::NewBase(planned) = route {
             let mut event = crate::runtime::development_event_log::Event::new(
                 crate::runtime::development_event_log::Kind::CapacityFallback,
                 crate::runtime::development_event_log::Outcome::FullBase,
             );
-            event.base_sequence = Some(planned.from_sequence);
+            event.base_sequence = Some(planned.head_sequence);
             event.chunks = planned.existing_pack_count as u64;
             crate::runtime::development_event_log::record(event);
             replacement = Some(planned.existing);

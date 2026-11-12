@@ -19,6 +19,20 @@ pub(crate) struct ImportSeamAhead {
     pub(crate) changed_the_store: bool,
 }
 
+/// What a routing decision for a direct successor rests on (DEC-103): the
+/// seam the packs would carry, whether the vehicle had seam history before
+/// it, and how many of the vehicle's sync mutations would then wait for
+/// publication.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ImportSeamDryRun {
+    pub(crate) ahead: ImportSeamAhead,
+    /// Coverage in the store, a window still open, a Hub-range row, a seam
+    /// link or a live delta span: such a vehicle's import base is never
+    /// replaced.
+    pub(crate) seam_history: bool,
+    pub(crate) unpublished: u64,
+}
+
 impl HubStore {
     /// Applies the Hub's side of the import seam ahead of the packs (design
     /// M03-SEAM-R3, section 4), for drives and charges alike: Hub sessions
@@ -33,6 +47,12 @@ impl HubStore {
     /// The caller publishes the resulting sync mutations before it writes any
     /// pack, so a client never holds a replacement next to the row it
     /// replaces. The returned plan is the one publication must find again.
+    ///
+    /// With `decided`, the seam is applied only when the store still gives
+    /// the dry run a routing decision rested on (DEC-103): the same seam
+    /// history, plan and waiting sync mutations, worked out again in the
+    /// transaction that applies it. Otherwise the transaction is rolled back
+    /// and `None` comes back: nothing changed, and the caller decides again.
     pub(crate) fn apply_import_seam_ahead_of_packs(
         &self,
         _publication_gate: &PublicationGate,
@@ -40,15 +60,18 @@ impl HubStore {
         car_id: i64,
         drives: &[ProjectionDrive],
         charges: &[crate::hub_pack::ProjectionCharge],
-    ) -> Result<ImportSeamAhead, StoreError> {
-        self.import_seam_ahead_of_packs(vehicle_id, car_id, drives, charges, true)
-            .map(|(ahead, _)| ahead)
+        decided: Option<&ImportSeamDryRun>,
+    ) -> Result<Option<ImportSeamAhead>, StoreError> {
+        let (run, committed) =
+            self.import_seam_ahead_of_packs(vehicle_id, car_id, drives, charges, |run| {
+                decided.is_none_or(|decided| decided == run)
+            })?;
+        Ok(committed.then_some(run.ahead))
     }
 
     /// The seam [`HubStore::apply_import_seam_ahead_of_packs`] would apply,
-    /// worked out in a transaction that is rolled back (DEC-103): the plan
-    /// the packs would carry and how many sync mutations of the vehicle
-    /// would then wait for publication. Nothing in the store changes.
+    /// worked out in a transaction that is rolled back (DEC-103), with what
+    /// a routing decision rests on. Nothing in the store changes.
     pub(crate) fn dry_run_import_seam_ahead_of_packs(
         &self,
         _publication_gate: &PublicationGate,
@@ -56,38 +79,22 @@ impl HubStore {
         car_id: i64,
         drives: &[ProjectionDrive],
         charges: &[crate::hub_pack::ProjectionCharge],
-    ) -> Result<(ImportSeamAhead, u64), StoreError> {
-        self.import_seam_ahead_of_packs(vehicle_id, car_id, drives, charges, false)
+    ) -> Result<ImportSeamDryRun, StoreError> {
+        self.import_seam_ahead_of_packs(vehicle_id, car_id, drives, charges, |_| false)
+            .map(|(run, _)| run)
     }
 
-    /// Whether the vehicle has seam history (DEC-103): coverage in the store,
-    /// a window still open, a Hub-range row, a recorded seam decision or a
-    /// live delta span. Such a vehicle's import base is never replaced.
-    pub(crate) fn vehicle_has_import_seam_history(&self, vehicle_id: Uuid) -> Result<bool, StoreError> {
-        let connection = self.open()?;
-        let vehicle_key = vehicle_id.to_string();
-        if import_seam_present_in_connection(&connection, &vehicle_key)? {
-            return Ok(true);
-        }
-        connection
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM sync_live_delta_spans WHERE vehicle_id = ?1)",
-                params![vehicle_key.as_str()],
-                |row| row.get(0),
-            )
-            .map_err(StoreError::Query)
-    }
-
-    /// The seam ahead of the packs and the vehicle's unpublished sync
-    /// mutations after it; committed only when `commit` is set.
+    /// The seam ahead of the packs, with the vehicle's seam history before it
+    /// and its unpublished sync mutations after it, in one transaction that
+    /// commits only when `commit` accepts what it found.
     fn import_seam_ahead_of_packs(
         &self,
         vehicle_id: Uuid,
         car_id: i64,
         drives: &[ProjectionDrive],
         charges: &[crate::hub_pack::ProjectionCharge],
-        commit: bool,
-    ) -> Result<(ImportSeamAhead, u64), StoreError> {
+        commit: impl FnOnce(&ImportSeamDryRun) -> bool,
+    ) -> Result<(ImportSeamDryRun, bool), StoreError> {
         if vehicle_id.is_nil() || car_id <= 0 {
             return Err(StoreError::InvalidImportGeneration);
         }
@@ -107,6 +114,7 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
+        let seam_history = import_seam_history_in_connection(&transaction, &vehicle_key)?;
         let prior = durable_prior_imported_drive_ids_in_transaction(&transaction, &vehicle_key)?;
         let (coverage, before) =
             import_seam_plan_in_transaction(&transaction, vehicle_id, drives, charges, &prior)?;
@@ -149,20 +157,23 @@ impl HubStore {
             )
             .map_err(StoreError::Query)?;
         let unpublished = u64::try_from(unpublished).map_err(|_| StoreError::InvalidStoredSequence)?;
-        if commit {
-            transaction.commit().map_err(StoreError::LifecycleWrite)?;
-        } else {
-            transaction.rollback().map_err(StoreError::LifecycleWrite)?;
-        }
-        Ok((
-            ImportSeamAhead {
+        let run = ImportSeamDryRun {
+            ahead: ImportSeamAhead {
                 packs,
                 restated_drives,
                 restated_charges,
                 changed_the_store,
             },
+            seam_history,
             unpublished,
-        ))
+        };
+        let committed = commit(&run);
+        if committed {
+            transaction.commit().map_err(StoreError::LifecycleWrite)?;
+        } else {
+            transaction.rollback().map_err(StoreError::LifecycleWrite)?;
+        }
+        Ok((run, committed))
     }
 
     /// Refuses ([`StoreError::ImportGenerationConflict`]) a publication path
@@ -526,6 +537,24 @@ fn refuse_unplanned_import_seam_in_transaction(
         return Err(StoreError::ImportGenerationConflict);
     }
     Ok(())
+}
+
+/// Whether the vehicle has seam history (DEC-103): any of the seam, or a
+/// live delta span. Such a vehicle's import base is never replaced.
+fn import_seam_history_in_connection(
+    connection: &Connection,
+    vehicle_key: &str,
+) -> Result<bool, StoreError> {
+    if import_seam_present_in_connection(connection, vehicle_key)? {
+        return Ok(true);
+    }
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_live_delta_spans WHERE vehicle_id = ?1)",
+            params![vehicle_key],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::Query)
 }
 
 /// Whether the vehicle has any of the seam: coverage in the store, a window

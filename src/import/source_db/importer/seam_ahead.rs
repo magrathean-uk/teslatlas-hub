@@ -179,8 +179,6 @@ struct PlannedDirectSuccessor {
     seam_digest: [u8; 32],
     from_sequence: u64,
     parent_digest: Sha256Digest,
-    existing: crate::protocol::LineageManifestV2,
-    existing_pack_count: usize,
     remaining_delta_packs: usize,
 }
 
@@ -189,18 +187,89 @@ enum DirectSuccessorRoute {
     /// Typed deltas on the current base; the seam is already applied.
     Deltas(PlannedDirectSuccessor),
     /// A new base: the deltas no longer fit and the vehicle has no seam
-    /// history.
-    NewBase(PlannedDirectSuccessor),
+    /// history. The seam is not applied: the full snapshot carries the
+    /// source rows, and its publication refuses, in the transaction that
+    /// would retire the lineage, a vehicle that gained seam history since.
+    NewBase(ReplacedLineage),
+}
+
+/// The lineage a new base replaces.
+struct ReplacedLineage {
+    existing: crate::protocol::LineageManifestV2,
+    existing_pack_count: usize,
+    head_sequence: u64,
+}
+
+/// How many times a direct successor is decided again when the store
+/// changed between its decision and the seam (a window opened or the Hub
+/// collected meanwhile) before the import gives up, having changed nothing.
+const SUCCESSOR_DECISION_ATTEMPTS: usize = 3;
+
+/// The importer's successor step (DEC-103): routes the successor and, when
+/// it is refused, discards the full-snapshot candidate packs and aborts the
+/// run before the refusal is returned, so the store, the packs and the
+/// published head stay as they were.
+#[allow(clippy::too_many_arguments)]
+fn route_direct_successor_for_run(
+    store: &HubStore,
+    publication_gate: &PublicationGate,
+    cursor_key: &CursorKey,
+    vehicle_id: Uuid,
+    selected_car_id: i64,
+    drives: &[ProjectionDrive],
+    charges: &[ProjectionCharge],
+    capture: &mut SourceDbProjectionStateCapture,
+    binding: &ProjectionBinding,
+    selected_car: &ProjectionCar,
+    max_chunks: usize,
+    direct: &mut StagedProjectionPacks,
+    run_guard: &mut ImportGenerationGuard<'_>,
+    before_seam: impl FnMut(&HubStore) -> Result<(), SourceDbImportError>,
+) -> Result<DirectSuccessorRoute, SourceDbImportError> {
+    match route_direct_successor(
+        store,
+        publication_gate,
+        cursor_key,
+        vehicle_id,
+        selected_car_id,
+        drives,
+        charges,
+        capture,
+        binding,
+        selected_car,
+        max_chunks,
+        before_seam,
+    ) {
+        Err(refused @ SourceDbImportError::ImportBaseReplacementRefused { .. }) => {
+            // The full-snapshot candidate is no base: remove it so the
+            // packs stay as they were, and abort the run.
+            direct.keep_chunks();
+            discard_unpublished_chunks(store, publication_gate, &direct.chunks)?;
+            if let Some(run_id) = run_guard.run_id.take() {
+                store.abort_import_generation(run_id)?;
+            }
+            Err(refused)
+        }
+        other => other,
+    }
 }
 
 /// Decides how a direct successor goes on (DEC-103). Once the Hub has
 /// collected the vehicle its import base is never replaced: the Hub's rows
 /// reach clients only as deltas of that base's lineage, so a new base would
 /// drop them. A successor whose changes no longer fit in the lineage's packs
-/// is then refused, before the seam changes the store, so the store, the
-/// packs and the published head stay as they were. The decision comes from
-/// a dry run of the seam and an upper bound on the deltas that publishing
-/// the waiting sync mutations adds (one per claim).
+/// is then refused before the seam changes the store, so the store, the
+/// packs and the published head stay as they were.
+///
+/// The decision and the seam are one step. A dry run of the seam gives the
+/// vehicle's seam history, the plan and an upper bound on the deltas that
+/// publishing the waiting sync mutations adds (one per claim); the seam is
+/// then applied only if the transaction that applies it finds the same,
+/// and otherwise rolled back and decided again. So the seam history is the
+/// vehicle's before this import's own seam, a window opened or a Hub row
+/// collected after the dry run is seen, and no refusal follows a change.
+/// `before_seam` runs between the decision and the seam (tests use it to
+/// collect meanwhile).
 #[allow(clippy::too_many_arguments)]
 fn route_direct_successor(
     store: &HubStore,
@@ -214,16 +283,18 @@ fn route_direct_successor(
     binding: &ProjectionBinding,
     selected_car: &ProjectionCar,
     max_chunks: usize,
+    mut before_seam: impl FnMut(&HubStore) -> Result<(), SourceDbImportError>,
 ) -> Result<DirectSuccessorRoute, SourceDbImportError> {
-    let seam_history = store.vehicle_has_import_seam_history(vehicle_id)?;
-    if seam_history {
-        let (ahead, unpublished) = store.dry_run_import_seam_ahead_of_packs(
+    for _ in 0..SUCCESSOR_DECISION_ATTEMPTS {
+        let decided = store.dry_run_import_seam_ahead_of_packs(
             publication_gate,
             vehicle_id,
             selected_car_id,
             drives,
             charges,
         )?;
+        // The lineage changes only under the publication gate the importer
+        // holds, so it is the same when the seam is applied.
         let existing = store
             .lineage_manifest_for_vehicle(vehicle_id)?
             .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
@@ -233,51 +304,66 @@ fn route_direct_successor(
             .len()
             .checked_add(existing.deltas.len())
             .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
-        let live_deltas = usize::try_from(unpublished.div_ceil(SEAM_MUTATION_CLAIM_LIMIT as u64))
+        let live_deltas = usize::try_from(decided.unpublished.div_ceil(SEAM_MUTATION_CLAIM_LIMIT as u64))
             .map_err(|_| SourceDbImportError::DirectDeltaBatchOverflow)?;
         let remaining = max_chunks.saturating_sub(used.saturating_add(live_deltas));
-        let seam = DeltaSeam::new(&ahead, drives, charges);
-        if direct_delta_capacity_exhausted_with_seam(
+        let exhausted = direct_delta_capacity_exhausted_with_seam(
             capture,
             binding,
             selected_car,
             remaining,
-            Some(&seam),
-        )? {
+            Some(&DeltaSeam::new(&decided.ahead, drives, charges)),
+        )?;
+        if exhausted && decided.seam_history {
             return Err(SourceDbImportError::ImportBaseReplacementRefused {
                 used,
                 limit: max_chunks,
             });
         }
-    }
-    let planned = plan_direct_successor_with_limit(
-        store,
-        publication_gate,
-        cursor_key,
-        vehicle_id,
-        selected_car_id,
-        drives,
-        charges,
-        max_chunks,
-    )?;
-    if direct_delta_capacity_exhausted_with_seam(
-        capture,
-        binding,
-        selected_car,
-        planned.remaining_delta_packs,
-        Some(&planned.seam),
-    )? {
-        // The bound above makes this unreachable for a vehicle with seam
-        // history; the refusal stays in case the Hub collected meanwhile.
-        if seam_history || store.vehicle_has_import_seam_history(vehicle_id)? {
-            return Err(SourceDbImportError::ImportBaseReplacementRefused {
-                used: planned.existing_pack_count,
-                limit: max_chunks,
-            });
+        before_seam(store)?;
+        if exhausted {
+            // A new base applies no seam; it stands only if the store still
+            // gives the same decision.
+            if store.dry_run_import_seam_ahead_of_packs(
+                publication_gate,
+                vehicle_id,
+                selected_car_id,
+                drives,
+                charges,
+            )? != decided
+            {
+                continue;
+            }
+            let (_, head_sequence, _) = store
+                .v2_head(vehicle_id)?
+                .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
+            return Ok(DirectSuccessorRoute::NewBase(ReplacedLineage {
+                existing,
+                existing_pack_count: used,
+                head_sequence: u64::try_from(head_sequence)
+                    .map_err(|_| crate::db::StoreError::InvalidStoredSequence)?,
+            }));
         }
-        return Ok(DirectSuccessorRoute::NewBase(planned));
+        let Some(planned) = plan_direct_successor_with_limit(
+            store,
+            publication_gate,
+            cursor_key,
+            vehicle_id,
+            selected_car_id,
+            drives,
+            charges,
+            max_chunks,
+            Some(&decided),
+        )?
+        else {
+            continue;
+        };
+        // The deltas fit within the bound, so they fit the lineage the
+        // seam's publication left.
+        return Ok(DirectSuccessorRoute::Deltas(planned));
     }
-    Ok(DirectSuccessorRoute::Deltas(planned))
+    // The store kept changing between decision and seam; nothing was applied.
+    Err(crate::db::StoreError::ImportGenerationConflict.into())
 }
 
 #[cfg(test)]
@@ -305,11 +391,14 @@ fn plan_direct_successor(
         drives,
         charges,
         ProtocolLimits::default().max_chunks,
-    )
+        None,
+    )?
+    .ok_or_else(|| crate::db::StoreError::ImportGenerationConflict.into())
 }
 
 /// As [`plan_direct_successor`], against a lineage of at most `max_chunks`
-/// packs.
+/// packs. With `decided`, the seam is applied only on the store the
+/// decision saw; `None` when it changed, and then nothing was applied.
 #[allow(clippy::too_many_arguments)]
 fn plan_direct_successor_with_limit(
     store: &HubStore,
@@ -320,14 +409,19 @@ fn plan_direct_successor_with_limit(
     drives: &[ProjectionDrive],
     charges: &[ProjectionCharge],
     max_chunks: usize,
-) -> Result<PlannedDirectSuccessor, SourceDbImportError> {
-    let ahead = store.apply_import_seam_ahead_of_packs(
+    decided: Option<&crate::db::ImportSeamDryRun>,
+) -> Result<Option<PlannedDirectSuccessor>, SourceDbImportError> {
+    let Some(ahead) = store.apply_import_seam_ahead_of_packs(
         publication_gate,
         vehicle_id,
         selected_car_id,
         drives,
         charges,
-    )?;
+        decided,
+    )?
+    else {
+        return Ok(None);
+    };
     publish_sync_mutations_ahead_of_packs(store, publication_gate, cursor_key, vehicle_id)?;
     let (_, head_sequence, head_digest) = store
         .v2_head(vehicle_id)?
@@ -346,15 +440,13 @@ fn plan_direct_successor_with_limit(
     let remaining_delta_packs = max_chunks
         .checked_sub(existing_pack_count)
         .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
-    Ok(PlannedDirectSuccessor {
+    Ok(Some(PlannedDirectSuccessor {
         seam: DeltaSeam::new(&ahead, drives, charges),
         seam_digest: ahead.packs.digest(),
         from_sequence,
         parent_digest: head_digest,
-        existing,
-        existing_pack_count,
         remaining_delta_packs,
-    })
+    }))
 }
 
 /// The most sync mutations one publication turn claims, and so publishes
