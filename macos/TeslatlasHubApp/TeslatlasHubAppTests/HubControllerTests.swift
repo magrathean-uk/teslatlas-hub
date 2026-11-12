@@ -2626,7 +2626,10 @@ final class HubControllerTests: XCTestCase {
         }
         wait(for: [resumed], timeout: 2)
         XCTAssertEqual(runner.stdin, firstInput)
-        XCTAssertEqual(Array(runner.arguments.last?.suffix(2) ?? []), ["setup", "--all-vehicles"])
+        // The retry re-ran setup itself (a refresh follows it, so it is not the last command).
+        let setups = runner.arguments.filter { $0.contains("setup") }
+        XCTAssertEqual(setups.count, 2)
+        XCTAssertEqual(Array(setups.last?.suffix(2) ?? []), ["setup", "--all-vehicles"])
         XCTAssertEqual(events.values.filter { $0 == "setup" }.count, 2)
         XCTAssertEqual(controller.lastVehiclesConfigured, 2)
         XCTAssertFalse(controller.canRetryOwnerDiscovery)
@@ -2897,7 +2900,7 @@ final class HubControllerTests: XCTestCase {
         fireScheduled()
         spinUntil(2) { self.shownText(in: idle).contains(Self.expiredLine) }
         XCTAssertTrue(shownText(in: idle).contains(Self.expiredLine))
-        XCTAssertThrowsError(try retryButton(in: idle), "the retry is no longer offered")
+        XCTAssertNil(shownRetryButton(in: idle), "the retry is no longer offered")
     }
 
     func testHeldRetrySettlesOnceAndALateCallbackCannotRestoreTheGrant() throws {
@@ -2977,10 +2980,14 @@ final class HubControllerTests: XCTestCase {
         XCTAssertFalse(controller.canRetryOwnerDiscovery)
     }
 
+    private func shownRetryButton(in onboarding: OnboardingWindowController) -> NSButton? {
+        guard let root = onboarding.window?.contentView else { return nil }
+        return descendantViews(in: root).compactMap { $0 as? NSButton }
+            .first { $0.identifier?.rawValue == "onboarding.legacy.retryDiscovery" }
+    }
+
     private func retryButton(in onboarding: OnboardingWindowController) throws -> NSButton {
-        let root = try XCTUnwrap(onboarding.window?.contentView)
-        return try XCTUnwrap(descendantViews(in: root).compactMap { $0 as? NSButton }
-            .first { $0.identifier?.rawValue == "onboarding.legacy.retryDiscovery" }, "the retry is offered")
+        try XCTUnwrap(shownRetryButton(in: onboarding), "the retry is offered")
     }
 
     private func shownText(in onboarding: OnboardingWindowController) -> String {
