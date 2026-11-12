@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Proces, ktorý odpovedá na riadiacom kanáli Hubu, nie je tento Hub, preto sa nič neodoslalo. Reštartujte Hub a potom sa prihláste znova.";
 
 "hub.signIn.busy" = "Hub je zaneprázdnený inými požiadavkami. Nič sa nezmenilo; o chvíľu sa prihláste znova.";
+
+"hub.signIn.discovery.notListed" = "Ste prihlásení, ale Tesla v tomto účte neuviedla žiadne auto. Skontrolujte, či auto patrí k tomuto účtu Tesla, a potom skúste nájsť autá znova.";
+
+"hub.signIn.discovery.selectionRequired" = "Ste prihlásení, ale Tesla uvádza viac ako jedno auto a Hub potrebuje vedieť, z ktorého má zbierať údaje. Skúste nájsť autá znova.";
+
+"hub.signIn.discovery.selectionInvalid" = "Ste prihlásení, ale vybrané auto nie je v tomto účte Tesla. Skúste nájsť autá znova.";
+
+"hub.signIn.discovery.answerInvalid" = "Ste prihlásení, ale Hub nedokázal prečítať zoznam áut od Tesly. Skúste nájsť autá znova.";
+
+"hub.signIn.discovery.refused" = "Ste prihlásení, ale Tesla zoznam áut odmietla. Skúste nájsť autá znova alebo sa znova prihláste cez Teslu.";
+
+"hub.signIn.discovery.windowClosed" = "Ste prihlásení, ale okno zberu sa zatvorilo skôr, než Hub stihol nájsť vaše autá. Otvorte okno a potom skúste nájsť autá znova.";
+
+"hub.signIn.discovery.providerParked" = "Ste prihlásení, ale tento Hub zbiera údaje cez iného poskytovateľa, preto s týmto prihlásením nemôže nájsť autá.";
+
+"hub.signIn.discovery.settingsInvalid" = "Ste prihlásení, ale adresa Owner API tohto Hubu nie je adresa Tesly, preto Hub nevyžiadal vaše autá. Opravte adresu a potom sa znova prihláste cez Teslu.";
+
+"hub.signIn.discovery.general" = "Ste prihlásení, ale Hub nedokázal nájsť vaše autá. Skúste nájsť autá znova alebo sa znova prihláste cez Teslu.";
+
+"hub.signIn.discovery.retry" = "Skúsiť nájsť autá znova";
+
+"hub.signIn.discovery.expired" = "Toto prihlásenie už nemožno obnoviť. Znova sa prihláste cez Teslu.";
+
+"hub.signIn.discovery.configured" = "Nakonfigurované autá: %d";

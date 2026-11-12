@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Der Prozess, der auf dem Steuerkanal des Hubs antwortet, ist nicht dieser Hub, daher wurde nichts gesendet. Starte den Hub neu und melde dich dann erneut an.";
 
 "hub.signIn.busy" = "Der Hub ist mit anderen Anfragen beschäftigt. Es wurde nichts geändert; melde dich in einem Moment erneut an.";
+
+"hub.signIn.discovery.notListed" = "Du bist angemeldet, aber Tesla hat für dieses Konto kein Fahrzeug aufgeführt. Prüfe, ob das Fahrzeug zu diesem Tesla-Konto gehört, und versuche dann erneut, Fahrzeuge zu finden.";
+
+"hub.signIn.discovery.selectionRequired" = "Du bist angemeldet, aber Tesla führt mehr als ein Fahrzeug auf und der Hub muss wissen, von welchem er Daten erfassen soll. Versuche erneut, Fahrzeuge zu finden.";
+
+"hub.signIn.discovery.selectionInvalid" = "Du bist angemeldet, aber das gewählte Fahrzeug gehört nicht zu diesem Tesla-Konto. Versuche erneut, Fahrzeuge zu finden.";
+
+"hub.signIn.discovery.answerInvalid" = "Du bist angemeldet, aber der Hub konnte die Fahrzeugliste von Tesla nicht lesen. Versuche erneut, Fahrzeuge zu finden.";
+
+"hub.signIn.discovery.refused" = "Du bist angemeldet, aber Tesla hat die Fahrzeugliste verweigert. Versuche erneut, Fahrzeuge zu finden, oder melde dich noch einmal bei Tesla an.";
+
+"hub.signIn.discovery.windowClosed" = "Du bist angemeldet, aber das Erfassungsfenster wurde geschlossen, bevor der Hub deine Fahrzeuge finden konnte. Öffne ein Fenster und versuche dann erneut, Fahrzeuge zu finden.";
+
+"hub.signIn.discovery.providerParked" = "Du bist angemeldet, aber dieser Hub erfasst Daten über einen anderen Anbieter und kann mit dieser Anmeldung daher keine Fahrzeuge finden.";
+
+"hub.signIn.discovery.settingsInvalid" = "Du bist angemeldet, aber die Adresse der Owner API dieses Hubs gehört nicht zu Tesla, daher hat der Hub nicht nach deinen Fahrzeugen gefragt. Korrigiere die Adresse und melde dich dann noch einmal bei Tesla an.";
+
+"hub.signIn.discovery.general" = "Du bist angemeldet, aber der Hub konnte deine Fahrzeuge nicht finden. Versuche erneut, Fahrzeuge zu finden, oder melde dich noch einmal bei Tesla an.";
+
+"hub.signIn.discovery.retry" = "Fahrzeuge erneut suchen";
+
+"hub.signIn.discovery.expired" = "Diese Anmeldung kann nicht mehr fortgesetzt werden. Melde dich noch einmal bei Tesla an.";
+
+"hub.signIn.discovery.configured" = "Konfigurierte Fahrzeuge: %d";

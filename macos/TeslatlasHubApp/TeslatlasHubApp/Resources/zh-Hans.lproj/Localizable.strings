@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "在 Hub 控制通道上响应的进程不是此 Hub，因此未发送任何内容。请重新启动 Hub，然后再次登录。";
 
 "hub.signIn.busy" = "Hub 正忙于处理其他请求。未更改任何内容；请稍后再次登录。";
+
+"hub.signIn.discovery.notListed" = "已登录，但 Tesla 未在此账户中列出任何车辆。请确认车辆属于此 Tesla 账户，然后重新查找车辆。";
+
+"hub.signIn.discovery.selectionRequired" = "已登录，但 Tesla 列出了多辆车辆，Hub 需要知道从哪一辆收集数据。请重新查找车辆。";
+
+"hub.signIn.discovery.selectionInvalid" = "已登录，但所选车辆不在此 Tesla 账户中。请重新查找车辆。";
+
+"hub.signIn.discovery.answerInvalid" = "已登录，但 Hub 无法读取 Tesla 的车辆列表。请重新查找车辆。";
+
+"hub.signIn.discovery.refused" = "已登录，但 Tesla 拒绝了车辆列表。请重新查找车辆，或再次使用 Tesla 登录。";
+
+"hub.signIn.discovery.windowClosed" = "已登录，但采集窗口在 Hub 找到车辆之前就关闭了。请打开窗口，然后重新查找车辆。";
+
+"hub.signIn.discovery.providerParked" = "已登录，但此 Hub 使用其他提供方进行收集，因此无法通过此次登录查找车辆。";
+
+"hub.signIn.discovery.settingsInvalid" = "已登录，但此 Hub 的 Owner API 地址不是 Tesla 的，因此 Hub 未请求车辆列表。请更正地址，然后再次使用 Tesla 登录。";
+
+"hub.signIn.discovery.general" = "已登录，但 Hub 无法找到车辆。请重新查找车辆，或再次使用 Tesla 登录。";
+
+"hub.signIn.discovery.retry" = "重新查找车辆";
+
+"hub.signIn.discovery.expired" = "此次登录已无法继续。请再次使用 Tesla 登录。";
+
+"hub.signIn.discovery.configured" = "已配置的车辆：%d";

@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "התהליך שעונה בערוץ הבקרה של ה-Hub אינו ה-Hub הזה, ולכן שום דבר לא נשלח. הפעילו מחדש את ה-Hub ואז היכנסו שוב.";
 
 "hub.signIn.busy" = "ה-Hub עסוק בבקשות אחרות. שום דבר לא שונה; היכנסו שוב בעוד רגע.";
+
+"hub.signIn.discovery.notListed" = "התחברתם, אך Tesla לא רשמה אף רכב בחשבון הזה. ודאו שהרכב שייך לחשבון Tesla הזה ואז נסו שוב למצוא רכבים.";
+
+"hub.signIn.discovery.selectionRequired" = "התחברתם, אך Tesla רושמת יותר מרכב אחד וה-Hub צריך לדעת מאיזה לאסוף נתונים. נסו שוב למצוא רכבים.";
+
+"hub.signIn.discovery.selectionInvalid" = "התחברתם, אך הרכב שנבחר אינו בחשבון Tesla הזה. נסו שוב למצוא רכבים.";
+
+"hub.signIn.discovery.answerInvalid" = "התחברתם, אך ה-Hub לא הצליח לקרוא את רשימת הרכבים של Tesla. נסו שוב למצוא רכבים.";
+
+"hub.signIn.discovery.refused" = "התחברתם, אך Tesla דחתה את רשימת הרכבים. נסו שוב למצוא רכבים, או התחברו שוב באמצעות Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "התחברתם, אך חלון האיסוף נסגר לפני שה-Hub הצליח למצוא את הרכבים שלכם. פתחו חלון ואז נסו שוב למצוא רכבים.";
+
+"hub.signIn.discovery.providerParked" = "התחברתם, אך ה-Hub הזה אוסף נתונים עם ספק אחר, ולכן אינו יכול למצוא רכבים באמצעות ההתחברות הזו.";
+
+"hub.signIn.discovery.settingsInvalid" = "התחברתם, אך כתובת ה-Owner API של ה-Hub הזה אינה כתובת של Tesla, ולכן ה-Hub לא ביקש את הרכבים שלכם. תקנו את הכתובת ואז התחברו שוב באמצעות Tesla.";
+
+"hub.signIn.discovery.general" = "התחברתם, אך ה-Hub לא הצליח למצוא את הרכבים שלכם. נסו שוב למצוא רכבים, או התחברו שוב באמצעות Tesla.";
+
+"hub.signIn.discovery.retry" = "ניסיון חוזר למציאת רכבים";
+
+"hub.signIn.discovery.expired" = "לא ניתן עוד להמשיך את ההתחברות הזו. התחברו שוב באמצעות Tesla.";
+
+"hub.signIn.discovery.configured" = "רכבים שהוגדרו: %d";

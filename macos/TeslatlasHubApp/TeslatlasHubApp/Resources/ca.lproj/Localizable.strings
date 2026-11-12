@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "El procés que respon al canal de control del Hub no és aquest Hub, així que no s'ha enviat res. Reinicia el Hub i després torna a iniciar la sessió.";
 
 "hub.signIn.busy" = "El Hub està ocupat amb altres sol·licituds. No s'ha canviat res; torna a iniciar la sessió d'aquí a un moment.";
+
+"hub.signIn.discovery.notListed" = "Has iniciat la sessió, però Tesla no ha llistat cap cotxe en aquest compte. Comprova que el cotxe pertanyi a aquest compte de Tesla i torna a provar de trobar els cotxes.";
+
+"hub.signIn.discovery.selectionRequired" = "Has iniciat la sessió, però Tesla llista més d’un cotxe i el Hub ha de saber de quin ha de recollir dades. Torna a provar de trobar els cotxes.";
+
+"hub.signIn.discovery.selectionInvalid" = "Has iniciat la sessió, però el cotxe triat no és en aquest compte de Tesla. Torna a provar de trobar els cotxes.";
+
+"hub.signIn.discovery.answerInvalid" = "Has iniciat la sessió, però el Hub no ha pogut llegir la llista de cotxes de Tesla. Torna a provar de trobar els cotxes.";
+
+"hub.signIn.discovery.refused" = "Has iniciat la sessió, però Tesla ha rebutjat la llista de cotxes. Torna a provar de trobar els cotxes o torna a iniciar la sessió amb Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Has iniciat la sessió, però la finestra de recollida s’ha tancat abans que el Hub pogués trobar els teus cotxes. Obre una finestra i torna a provar de trobar els cotxes.";
+
+"hub.signIn.discovery.providerParked" = "Has iniciat la sessió, però aquest Hub recull dades amb un altre proveïdor, de manera que no pot trobar cotxes amb aquest inici de sessió.";
+
+"hub.signIn.discovery.settingsInvalid" = "Has iniciat la sessió, però l’adreça de l’Owner API d’aquest Hub no és la de Tesla, així que el Hub no ha demanat els teus cotxes. Corregeix l’adreça i torna a iniciar la sessió amb Tesla.";
+
+"hub.signIn.discovery.general" = "Has iniciat la sessió, però el Hub no ha pogut trobar els teus cotxes. Torna a provar de trobar els cotxes o torna a iniciar la sessió amb Tesla.";
+
+"hub.signIn.discovery.retry" = "Torna a provar de trobar els cotxes";
+
+"hub.signIn.discovery.expired" = "Aquest inici de sessió ja no es pot reprendre. Torna a iniciar la sessió amb Tesla.";
+
+"hub.signIn.discovery.configured" = "Cotxes configurats: %d";

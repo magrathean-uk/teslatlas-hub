@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Prosessen som svarer på Hubens kontrollkanal, er ikke denne Hub, så ingenting ble sendt. Start Hub på nytt, og logg deretter inn igjen.";
 
 "hub.signIn.busy" = "Hub er opptatt med andre forespørsler. Ingenting ble endret; logg inn igjen om et øyeblikk.";
+
+"hub.signIn.discovery.notListed" = "Du er logget inn, men Tesla oppførte ingen bil på denne kontoen. Kontroller at bilen tilhører denne Tesla-kontoen, og prøv deretter å finne biler på nytt.";
+
+"hub.signIn.discovery.selectionRequired" = "Du er logget inn, men Tesla oppfører mer enn én bil, og Hub må vite hvilken den skal samle inn fra. Prøv å finne biler på nytt.";
+
+"hub.signIn.discovery.selectionInvalid" = "Du er logget inn, men den valgte bilen finnes ikke på denne Tesla-kontoen. Prøv å finne biler på nytt.";
+
+"hub.signIn.discovery.answerInvalid" = "Du er logget inn, men Hub kunne ikke lese Teslas liste over biler. Prøv å finne biler på nytt.";
+
+"hub.signIn.discovery.refused" = "Du er logget inn, men Tesla avviste listen over biler. Prøv å finne biler på nytt, eller logg inn med Tesla igjen.";
+
+"hub.signIn.discovery.windowClosed" = "Du er logget inn, men innsamlingsvinduet ble lukket før Hub rakk å finne bilene dine. Åpne et vindu, og prøv deretter å finne biler på nytt.";
+
+"hub.signIn.discovery.providerParked" = "Du er logget inn, men denne Hub samler inn med en annen leverandør, så den kan ikke finne biler med denne påloggingen.";
+
+"hub.signIn.discovery.settingsInvalid" = "Du er logget inn, men Owner API-adressen til denne Hub er ikke Teslas, så Hub ba ikke om bilene dine. Rett opp adressen, og logg deretter inn med Tesla igjen.";
+
+"hub.signIn.discovery.general" = "Du er logget inn, men Hub kunne ikke finne bilene dine. Prøv å finne biler på nytt, eller logg inn med Tesla igjen.";
+
+"hub.signIn.discovery.retry" = "Prøv å finne biler på nytt";
+
+"hub.signIn.discovery.expired" = "Denne påloggingen kan ikke lenger gjenopptas. Logg inn med Tesla igjen.";
+
+"hub.signIn.discovery.configured" = "Konfigurerte biler: %d";

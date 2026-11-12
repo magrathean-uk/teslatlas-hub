@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Le processus qui répond sur le canal de contrôle du Hub n'est pas ce Hub, donc rien n'a été envoyé. Redémarrez le Hub, puis connectez-vous de nouveau.";
 
 "hub.signIn.busy" = "Le Hub est occupé par d'autres demandes. Rien n'a été modifié ; reconnectez-vous dans un instant.";
+
+"hub.signIn.discovery.notListed" = "Vous êtes connecté, mais Tesla n’a répertorié aucune voiture sur ce compte. Vérifiez que la voiture appartient à ce compte Tesla, puis relancez la recherche des voitures.";
+
+"hub.signIn.discovery.selectionRequired" = "Vous êtes connecté, mais Tesla répertorie plus d’une voiture et le Hub doit savoir laquelle collecter. Relancez la recherche des voitures.";
+
+"hub.signIn.discovery.selectionInvalid" = "Vous êtes connecté, mais la voiture choisie ne figure pas sur ce compte Tesla. Relancez la recherche des voitures.";
+
+"hub.signIn.discovery.answerInvalid" = "Vous êtes connecté, mais le Hub n’a pas pu lire la liste des voitures de Tesla. Relancez la recherche des voitures.";
+
+"hub.signIn.discovery.refused" = "Vous êtes connecté, mais Tesla a refusé la liste des voitures. Relancez la recherche des voitures ou connectez-vous de nouveau avec Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Vous êtes connecté, mais la fenêtre de collecte s’est fermée avant que le Hub puisse trouver vos voitures. Ouvrez une fenêtre, puis relancez la recherche des voitures.";
+
+"hub.signIn.discovery.providerParked" = "Vous êtes connecté, mais ce Hub collecte avec un autre fournisseur et ne peut donc pas trouver de voitures avec cette connexion.";
+
+"hub.signIn.discovery.settingsInvalid" = "Vous êtes connecté, mais l’adresse de l’Owner API de ce Hub n’est pas celle de Tesla, donc le Hub n’a pas demandé vos voitures. Corrigez l’adresse, puis connectez-vous de nouveau avec Tesla.";
+
+"hub.signIn.discovery.general" = "Vous êtes connecté, mais le Hub n’a pas pu trouver vos voitures. Relancez la recherche des voitures ou connectez-vous de nouveau avec Tesla.";
+
+"hub.signIn.discovery.retry" = "Relancer la recherche des voitures";
+
+"hub.signIn.discovery.expired" = "Cette connexion ne peut plus être reprise. Connectez-vous de nouveau avec Tesla.";
+
+"hub.signIn.discovery.configured" = "Voitures configurées : %d";

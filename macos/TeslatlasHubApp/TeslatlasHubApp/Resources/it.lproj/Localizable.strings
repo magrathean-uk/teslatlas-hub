@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Il processo che risponde sul canale di controllo dell'Hub non è questo Hub, quindi non è stato inviato nulla. Riavvia l'Hub, poi accedi di nuovo.";
 
 "hub.signIn.busy" = "L'Hub è occupato con altre richieste. Non è stato modificato nulla; accedi di nuovo tra un momento.";
+
+"hub.signIn.discovery.notListed" = "Hai effettuato l’accesso, ma Tesla non ha elencato nessuna auto in questo account. Controlla che l’auto appartenga a questo account Tesla, poi riprova a cercare le auto.";
+
+"hub.signIn.discovery.selectionRequired" = "Hai effettuato l’accesso, ma Tesla elenca più di un’auto e l’Hub deve sapere quale raccogliere. Riprova a cercare le auto.";
+
+"hub.signIn.discovery.selectionInvalid" = "Hai effettuato l’accesso, ma l’auto scelta non è in questo account Tesla. Riprova a cercare le auto.";
+
+"hub.signIn.discovery.answerInvalid" = "Hai effettuato l’accesso, ma l’Hub non è riuscito a leggere l’elenco delle auto di Tesla. Riprova a cercare le auto.";
+
+"hub.signIn.discovery.refused" = "Hai effettuato l’accesso, ma Tesla ha rifiutato l’elenco delle auto. Riprova a cercare le auto oppure accedi di nuovo con Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Hai effettuato l’accesso, ma la finestra di raccolta si è chiusa prima che l’Hub potesse trovare le tue auto. Apri una finestra, poi riprova a cercare le auto.";
+
+"hub.signIn.discovery.providerParked" = "Hai effettuato l’accesso, ma questo Hub raccoglie i dati con un altro provider, quindi non può cercare le auto con questo accesso.";
+
+"hub.signIn.discovery.settingsInvalid" = "Hai effettuato l’accesso, ma l’indirizzo Owner API di questo Hub non è quello di Tesla, quindi l’Hub non ha richiesto le tue auto. Correggi l’indirizzo, poi accedi di nuovo con Tesla.";
+
+"hub.signIn.discovery.general" = "Hai effettuato l’accesso, ma l’Hub non è riuscito a trovare le tue auto. Riprova a cercare le auto oppure accedi di nuovo con Tesla.";
+
+"hub.signIn.discovery.retry" = "Riprova a cercare le auto";
+
+"hub.signIn.discovery.expired" = "Questo accesso non può più essere ripreso. Accedi di nuovo con Tesla.";
+
+"hub.signIn.discovery.configured" = "Auto configurate: %d";

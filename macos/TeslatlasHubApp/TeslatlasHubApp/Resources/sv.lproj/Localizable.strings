@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Processen som svarar på Hubbens kontrollkanal är inte den här Hubben, så inget skickades. Starta om Hubben och logga sedan in igen.";
 
 "hub.signIn.busy" = "Hubben är upptagen med andra förfrågningar. Inget ändrades; logga in igen om en stund.";
+
+"hub.signIn.discovery.notListed" = "Du är inloggad, men Tesla listade ingen bil på det här kontot. Kontrollera att bilen tillhör det här Tesla-kontot och försök sedan hitta bilar igen.";
+
+"hub.signIn.discovery.selectionRequired" = "Du är inloggad, men Tesla listar fler än en bil och Hubben behöver veta vilken den ska samla in från. Försök hitta bilar igen.";
+
+"hub.signIn.discovery.selectionInvalid" = "Du är inloggad, men den valda bilen finns inte på det här Tesla-kontot. Försök hitta bilar igen.";
+
+"hub.signIn.discovery.answerInvalid" = "Du är inloggad, men Hubben kunde inte läsa Teslas lista över bilar. Försök hitta bilar igen.";
+
+"hub.signIn.discovery.refused" = "Du är inloggad, men Tesla avvisade listan över bilar. Försök hitta bilar igen eller logga in med Tesla igen.";
+
+"hub.signIn.discovery.windowClosed" = "Du är inloggad, men insamlingsfönstret stängdes innan Hubben hann hitta dina bilar. Öppna ett fönster och försök sedan hitta bilar igen.";
+
+"hub.signIn.discovery.providerParked" = "Du är inloggad, men den här Hubben samlar in via en annan leverantör och kan därför inte hitta bilar med den här inloggningen.";
+
+"hub.signIn.discovery.settingsInvalid" = "Du är inloggad, men Owner API-adressen för den här Hubben är inte Teslas, så Hubben bad inte om dina bilar. Rätta adressen och logga sedan in med Tesla igen.";
+
+"hub.signIn.discovery.general" = "Du är inloggad, men Hubben kunde inte hitta dina bilar. Försök hitta bilar igen eller logga in med Tesla igen.";
+
+"hub.signIn.discovery.retry" = "Försök hitta bilar igen";
+
+"hub.signIn.discovery.expired" = "Den här inloggningen kan inte längre återupptas. Logga in med Tesla igen.";
+
+"hub.signIn.discovery.configured" = "Konfigurerade bilar: %d";

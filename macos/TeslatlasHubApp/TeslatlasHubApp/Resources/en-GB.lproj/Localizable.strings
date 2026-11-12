@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "The process answering on the Hub's control channel is not this Hub, so nothing was sent. Restart Hub, then sign in again.";
 
 "hub.signIn.busy" = "Hub is busy with other requests. Nothing was changed; sign in again in a moment.";
+
+"hub.signIn.discovery.notListed" = "You are signed in, but Tesla listed no car on this account. Check that the car belongs to this Tesla account, then retry finding cars.";
+
+"hub.signIn.discovery.selectionRequired" = "You are signed in, but Tesla lists more than one car and Hub needs to know which to collect. Retry finding cars.";
+
+"hub.signIn.discovery.selectionInvalid" = "You are signed in, but the chosen car is not on this Tesla account. Retry finding cars.";
+
+"hub.signIn.discovery.answerInvalid" = "You are signed in, but Hub could not read Tesla's list of cars. Retry finding cars.";
+
+"hub.signIn.discovery.refused" = "You are signed in, but Tesla refused the list of cars. Retry finding cars, or sign in with Tesla again.";
+
+"hub.signIn.discovery.windowClosed" = "You are signed in, but the collection window closed before Hub could find your cars. Open a window, then retry finding cars.";
+
+"hub.signIn.discovery.providerParked" = "You are signed in, but this Hub collects with another provider, so it cannot find cars with this sign-in.";
+
+"hub.signIn.discovery.settingsInvalid" = "You are signed in, but this Hub's Owner API address is not Tesla's, so Hub did not ask for your cars. Correct the address, then sign in with Tesla again.";
+
+"hub.signIn.discovery.general" = "You are signed in, but Hub could not find your cars. Retry finding cars, or sign in with Tesla again.";
+
+"hub.signIn.discovery.retry" = "Retry finding cars";
+
+"hub.signIn.discovery.expired" = "This sign-in can no longer be resumed. Sign in with Tesla again.";
+
+"hub.signIn.discovery.configured" = "Cars configured: %d";

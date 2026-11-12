@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Prosessi, joka vastaa Hubin ohjauskanavalla, ei ole tämä Hub, joten mitään ei lähetetty. Käynnistä Hub uudelleen ja kirjaudu sitten uudelleen.";
 
 "hub.signIn.busy" = "Hub on varattu muihin pyyntöihin. Mitään ei muutettu; kirjaudu uudelleen hetken kuluttua.";
+
+"hub.signIn.discovery.notListed" = "Olet kirjautunut sisään, mutta Tesla ei listannut yhtään autoa tälle tilille. Tarkista, että auto kuuluu tähän Tesla-tiliin, ja yritä sitten etsiä autot uudelleen.";
+
+"hub.signIn.discovery.selectionRequired" = "Olet kirjautunut sisään, mutta Tesla listaa useamman kuin yhden auton, ja Hubin täytyy tietää, mistä se kerää tietoja. Yritä etsiä autot uudelleen.";
+
+"hub.signIn.discovery.selectionInvalid" = "Olet kirjautunut sisään, mutta valittu auto ei ole tällä Tesla-tilillä. Yritä etsiä autot uudelleen.";
+
+"hub.signIn.discovery.answerInvalid" = "Olet kirjautunut sisään, mutta Hub ei pystynyt lukemaan Teslan autoluetteloa. Yritä etsiä autot uudelleen.";
+
+"hub.signIn.discovery.refused" = "Olet kirjautunut sisään, mutta Tesla hylkäsi autoluettelon. Yritä etsiä autot uudelleen tai kirjaudu sisään Teslan kautta uudelleen.";
+
+"hub.signIn.discovery.windowClosed" = "Olet kirjautunut sisään, mutta keruuikkuna sulkeutui ennen kuin Hub ehti löytää autosi. Avaa ikkuna ja yritä sitten etsiä autot uudelleen.";
+
+"hub.signIn.discovery.providerParked" = "Olet kirjautunut sisään, mutta tämä Hub kerää tietoja toisen palveluntarjoajan kautta, joten se ei voi etsiä autoja tällä kirjautumisella.";
+
+"hub.signIn.discovery.settingsInvalid" = "Olet kirjautunut sisään, mutta tämän Hubin Owner API -osoite ei ole Teslan, joten Hub ei pyytänyt autojasi. Korjaa osoite ja kirjaudu sitten sisään Teslan kautta uudelleen.";
+
+"hub.signIn.discovery.general" = "Olet kirjautunut sisään, mutta Hub ei löytänyt autojasi. Yritä etsiä autot uudelleen tai kirjaudu sisään Teslan kautta uudelleen.";
+
+"hub.signIn.discovery.retry" = "Yritä etsiä autot uudelleen";
+
+"hub.signIn.discovery.expired" = "Tätä kirjautumista ei voi enää jatkaa. Kirjaudu sisään Teslan kautta uudelleen.";
+
+"hub.signIn.discovery.configured" = "Määritetyt autot: %d";

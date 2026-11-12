@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "O processo que responde no canal de controlo do Hub não é este Hub, por isso nada foi enviado. Reinicie o Hub e inicie sessão novamente.";
 
 "hub.signIn.busy" = "O Hub está ocupado com outros pedidos. Nada foi alterado; inicie sessão novamente dentro de momentos.";
+
+"hub.signIn.discovery.notListed" = "Iniciou sessão, mas a Tesla não listou nenhum carro nesta conta. Verifique se o carro pertence a esta conta Tesla e tente encontrar os carros novamente.";
+
+"hub.signIn.discovery.selectionRequired" = "Iniciou sessão, mas a Tesla lista mais do que um carro e o Hub precisa de saber de qual recolher dados. Tente encontrar os carros novamente.";
+
+"hub.signIn.discovery.selectionInvalid" = "Iniciou sessão, mas o carro escolhido não está nesta conta Tesla. Tente encontrar os carros novamente.";
+
+"hub.signIn.discovery.answerInvalid" = "Iniciou sessão, mas o Hub não conseguiu ler a lista de carros da Tesla. Tente encontrar os carros novamente.";
+
+"hub.signIn.discovery.refused" = "Iniciou sessão, mas a Tesla recusou a lista de carros. Tente encontrar os carros novamente ou inicie sessão novamente com a Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Iniciou sessão, mas a janela de recolha foi fechada antes de o Hub encontrar os seus carros. Abra uma janela e tente encontrar os carros novamente.";
+
+"hub.signIn.discovery.providerParked" = "Iniciou sessão, mas este Hub recolhe dados com outro fornecedor, por isso não consegue encontrar carros com este início de sessão.";
+
+"hub.signIn.discovery.settingsInvalid" = "Iniciou sessão, mas o endereço da Owner API deste Hub não é o da Tesla, por isso o Hub não pediu os seus carros. Corrija o endereço e inicie sessão novamente com a Tesla.";
+
+"hub.signIn.discovery.general" = "Iniciou sessão, mas o Hub não conseguiu encontrar os seus carros. Tente encontrar os carros novamente ou inicie sessão novamente com a Tesla.";
+
+"hub.signIn.discovery.retry" = "Tentar encontrar os carros novamente";
+
+"hub.signIn.discovery.expired" = "Este início de sessão já não pode ser retomado. Inicie sessão novamente com a Tesla.";
+
+"hub.signIn.discovery.configured" = "Carros configurados: %d";

@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "A Hub vezérlőcsatornáján válaszoló folyamat nem ez a Hub, ezért semmi sem lett elküldve. Indítsd újra a Hubot, majd jelentkezz be újra.";
 
 "hub.signIn.busy" = "A Hub más kérésekkel van elfoglalva. Semmi sem változott; jelentkezz be újra egy pillanat múlva.";
+
+"hub.signIn.discovery.notListed" = "Be vagy jelentkezve, de a Tesla nem listázott autót ezen a fiókon. Ellenőrizd, hogy az autó ehhez a Tesla-fiókhoz tartozik-e, majd keresd meg újra az autókat.";
+
+"hub.signIn.discovery.selectionRequired" = "Be vagy jelentkezve, de a Tesla egynél több autót listáz, és a Hubnak tudnia kell, melyikről gyűjtsön adatokat. Keresd meg újra az autókat.";
+
+"hub.signIn.discovery.selectionInvalid" = "Be vagy jelentkezve, de a kiválasztott autó nincs ezen a Tesla-fiókon. Keresd meg újra az autókat.";
+
+"hub.signIn.discovery.answerInvalid" = "Be vagy jelentkezve, de a Hub nem tudta beolvasni a Tesla autólistáját. Keresd meg újra az autókat.";
+
+"hub.signIn.discovery.refused" = "Be vagy jelentkezve, de a Tesla elutasította az autólistát. Keresd meg újra az autókat, vagy jelentkezz be újra a Teslával.";
+
+"hub.signIn.discovery.windowClosed" = "Be vagy jelentkezve, de a gyűjtési ablak bezárult, mielőtt a Hub megtalálhatta volna az autóidat. Nyiss meg egy ablakot, majd keresd meg újra az autókat.";
+
+"hub.signIn.discovery.providerParked" = "Be vagy jelentkezve, de ez a Hub másik szolgáltatóval gyűjt adatokat, ezért ezzel a bejelentkezéssel nem tud autókat keresni.";
+
+"hub.signIn.discovery.settingsInvalid" = "Be vagy jelentkezve, de ennek a Hubnak az Owner API címe nem a Teslaé, ezért a Hub nem kérte le az autóidat. Javítsd ki a címet, majd jelentkezz be újra a Teslával.";
+
+"hub.signIn.discovery.general" = "Be vagy jelentkezve, de a Hub nem találta meg az autóidat. Keresd meg újra az autókat, vagy jelentkezz be újra a Teslával.";
+
+"hub.signIn.discovery.retry" = "Autók újrakeresése";
+
+"hub.signIn.discovery.expired" = "Ez a bejelentkezés már nem folytatható. Jelentkezz be újra a Teslával.";
+
+"hub.signIn.discovery.configured" = "Beállított autók: %d";

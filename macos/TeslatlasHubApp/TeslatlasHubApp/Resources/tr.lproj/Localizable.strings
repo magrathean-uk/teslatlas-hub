@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Hub'ın denetim kanalında yanıt veren işlem bu Hub değil, bu yüzden hiçbir şey gönderilmedi. Hub'ı yeniden başlatın, ardından tekrar oturum açın.";
 
 "hub.signIn.busy" = "Hub başka isteklerle meşgul. Hiçbir şey değiştirilmedi; birazdan tekrar oturum açın.";
+
+"hub.signIn.discovery.notListed" = "Oturum açtınız, ancak Tesla bu hesapta hiçbir araç listelemedi. Aracın bu Tesla hesabına ait olduğunu kontrol edin, ardından araçları yeniden bulmayı deneyin.";
+
+"hub.signIn.discovery.selectionRequired" = "Oturum açtınız, ancak Tesla birden fazla araç listeliyor ve Hub'ın hangisinden veri toplayacağını bilmesi gerekiyor. Araçları yeniden bulmayı deneyin.";
+
+"hub.signIn.discovery.selectionInvalid" = "Oturum açtınız, ancak seçilen araç bu Tesla hesabında yok. Araçları yeniden bulmayı deneyin.";
+
+"hub.signIn.discovery.answerInvalid" = "Oturum açtınız, ancak Hub, Tesla'nın araç listesini okuyamadı. Araçları yeniden bulmayı deneyin.";
+
+"hub.signIn.discovery.refused" = "Oturum açtınız, ancak Tesla araç listesini reddetti. Araçları yeniden bulmayı deneyin veya Tesla ile yeniden oturum açın.";
+
+"hub.signIn.discovery.windowClosed" = "Oturum açtınız, ancak toplama penceresi, Hub araçlarınızı bulamadan önce kapandı. Bir pencere açın, ardından araçları yeniden bulmayı deneyin.";
+
+"hub.signIn.discovery.providerParked" = "Oturum açtınız, ancak bu Hub başka bir sağlayıcıyla veri topluyor, bu yüzden bu oturumla araçları bulamaz.";
+
+"hub.signIn.discovery.settingsInvalid" = "Oturum açtınız, ancak bu Hub'ın Owner API adresi Tesla'ya ait değil, bu yüzden Hub araçlarınızı istemedi. Adresi düzeltin, ardından Tesla ile yeniden oturum açın.";
+
+"hub.signIn.discovery.general" = "Oturum açtınız, ancak Hub araçlarınızı bulamadı. Araçları yeniden bulmayı deneyin veya Tesla ile yeniden oturum açın.";
+
+"hub.signIn.discovery.retry" = "Araçları yeniden bul";
+
+"hub.signIn.discovery.expired" = "Bu oturum artık sürdürülemez. Tesla ile yeniden oturum açın.";
+
+"hub.signIn.discovery.configured" = "Yapılandırılan araçlar: %d";

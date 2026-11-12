@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Het proces dat op het controlekanaal van de Hub antwoordt, is niet deze Hub, dus er is niets verzonden. Start de Hub opnieuw en log daarna opnieuw in.";
 
 "hub.signIn.busy" = "De Hub is bezig met andere verzoeken. Er is niets gewijzigd; log over een moment opnieuw in.";
+
+"hub.signIn.discovery.notListed" = "Je bent aangemeld, maar Tesla heeft geen auto vermeld voor dit account. Controleer of de auto bij dit Tesla-account hoort en probeer de auto’s daarna opnieuw te zoeken.";
+
+"hub.signIn.discovery.selectionRequired" = "Je bent aangemeld, maar Tesla vermeldt meer dan één auto en de Hub moet weten van welke hij gegevens moet verzamelen. Probeer de auto’s opnieuw te zoeken.";
+
+"hub.signIn.discovery.selectionInvalid" = "Je bent aangemeld, maar de gekozen auto staat niet in dit Tesla-account. Probeer de auto’s opnieuw te zoeken.";
+
+"hub.signIn.discovery.answerInvalid" = "Je bent aangemeld, maar de Hub kon de autolijst van Tesla niet lezen. Probeer de auto’s opnieuw te zoeken.";
+
+"hub.signIn.discovery.refused" = "Je bent aangemeld, maar Tesla heeft de autolijst geweigerd. Probeer de auto’s opnieuw te zoeken of meld je opnieuw aan bij Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Je bent aangemeld, maar het verzamelvenster is gesloten voordat de Hub je auto’s kon vinden. Open een venster en probeer de auto’s daarna opnieuw te zoeken.";
+
+"hub.signIn.discovery.providerParked" = "Je bent aangemeld, maar deze Hub verzamelt gegevens via een andere provider en kan met deze aanmelding dus geen auto’s zoeken.";
+
+"hub.signIn.discovery.settingsInvalid" = "Je bent aangemeld, maar het Owner API-adres van deze Hub is niet dat van Tesla, dus de Hub heeft je auto’s niet opgevraagd. Corrigeer het adres en meld je daarna opnieuw aan bij Tesla.";
+
+"hub.signIn.discovery.general" = "Je bent aangemeld, maar de Hub kon je auto’s niet vinden. Probeer de auto’s opnieuw te zoeken of meld je opnieuw aan bij Tesla.";
+
+"hub.signIn.discovery.retry" = "Auto’s opnieuw zoeken";
+
+"hub.signIn.discovery.expired" = "Deze aanmelding kan niet meer worden hervat. Meld je opnieuw aan bij Tesla.";
+
+"hub.signIn.discovery.configured" = "Geconfigureerde auto’s: %d";

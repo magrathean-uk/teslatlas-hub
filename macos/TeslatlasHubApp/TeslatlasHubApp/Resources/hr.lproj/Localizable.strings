@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Proces koji odgovara na kontrolnom kanalu Huba nije ovaj Hub, pa ništa nije poslano. Ponovno pokrenite Hub, a zatim se ponovno prijavite.";
 
 "hub.signIn.busy" = "Hub je zauzet drugim zahtjevima. Ništa nije promijenjeno; prijavite se ponovno za trenutak.";
+
+"hub.signIn.discovery.notListed" = "Prijavljeni ste, ali Tesla nije naveo nijedan automobil na ovom računu. Provjerite pripada li automobil ovom Tesla računu, a zatim ponovno pokušajte pronaći automobile.";
+
+"hub.signIn.discovery.selectionRequired" = "Prijavljeni ste, ali Tesla navodi više od jednog automobila, a Hub mora znati s kojeg prikupljati podatke. Ponovno pokušajte pronaći automobile.";
+
+"hub.signIn.discovery.selectionInvalid" = "Prijavljeni ste, ali odabrani automobil nije na ovom Tesla računu. Ponovno pokušajte pronaći automobile.";
+
+"hub.signIn.discovery.answerInvalid" = "Prijavljeni ste, ali Hub nije mogao pročitati Teslin popis automobila. Ponovno pokušajte pronaći automobile.";
+
+"hub.signIn.discovery.refused" = "Prijavljeni ste, ali je Tesla odbio popis automobila. Ponovno pokušajte pronaći automobile ili se ponovno prijavite putem Tesle.";
+
+"hub.signIn.discovery.windowClosed" = "Prijavljeni ste, ali se prozor prikupljanja zatvorio prije nego što je Hub uspio pronaći vaše automobile. Otvorite prozor, a zatim ponovno pokušajte pronaći automobile.";
+
+"hub.signIn.discovery.providerParked" = "Prijavljeni ste, ali ovaj Hub prikuplja podatke putem drugog pružatelja, pa s ovom prijavom ne može pronaći automobile.";
+
+"hub.signIn.discovery.settingsInvalid" = "Prijavljeni ste, ali Owner API adresa ovog Huba nije Teslina, pa Hub nije zatražio vaše automobile. Ispravite adresu, a zatim se ponovno prijavite putem Tesle.";
+
+"hub.signIn.discovery.general" = "Prijavljeni ste, ali Hub nije mogao pronaći vaše automobile. Ponovno pokušajte pronaći automobile ili se ponovno prijavite putem Tesle.";
+
+"hub.signIn.discovery.retry" = "Ponovno pokušaj pronaći automobile";
+
+"hub.signIn.discovery.expired" = "Ova se prijava više ne može nastaviti. Ponovno se prijavite putem Tesle.";
+
+"hub.signIn.discovery.configured" = "Konfigurirani automobili: %d";

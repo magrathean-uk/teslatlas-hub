@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "El proceso que responde en el canal de control del Hub no es este Hub, así que no se envió nada. Reinicia el Hub y vuelve a iniciar sesión.";
 
 "hub.signIn.busy" = "El Hub está ocupado con otras solicitudes. No se cambió nada; vuelve a iniciar sesión en un momento.";
+
+"hub.signIn.discovery.notListed" = "Has iniciado sesión, pero Tesla no listó ningún auto en esta cuenta. Comprueba que el auto pertenece a esta cuenta de Tesla y vuelve a intentar buscar autos.";
+
+"hub.signIn.discovery.selectionRequired" = "Has iniciado sesión, pero Tesla lista más de un auto y el Hub necesita saber de cuál recopilar datos. Vuelve a intentar buscar autos.";
+
+"hub.signIn.discovery.selectionInvalid" = "Has iniciado sesión, pero el auto elegido no está en esta cuenta de Tesla. Vuelve a intentar buscar autos.";
+
+"hub.signIn.discovery.answerInvalid" = "Has iniciado sesión, pero el Hub no pudo leer la lista de autos de Tesla. Vuelve a intentar buscar autos.";
+
+"hub.signIn.discovery.refused" = "Has iniciado sesión, pero Tesla rechazó la lista de autos. Vuelve a intentar buscar autos o inicia sesión de nuevo con Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Has iniciado sesión, pero la ventana de recopilación se cerró antes de que el Hub pudiera encontrar tus autos. Abre una ventana y vuelve a intentar buscar autos.";
+
+"hub.signIn.discovery.providerParked" = "Has iniciado sesión, pero este Hub recopila datos con otro proveedor, así que no puede buscar autos con este inicio de sesión.";
+
+"hub.signIn.discovery.settingsInvalid" = "Has iniciado sesión, pero la dirección de la Owner API de este Hub no es la de Tesla, así que el Hub no pidió tus autos. Corrige la dirección e inicia sesión de nuevo con Tesla.";
+
+"hub.signIn.discovery.general" = "Has iniciado sesión, pero el Hub no pudo encontrar tus autos. Vuelve a intentar buscar autos o inicia sesión de nuevo con Tesla.";
+
+"hub.signIn.discovery.retry" = "Reintentar buscar autos";
+
+"hub.signIn.discovery.expired" = "Este inicio de sesión ya no se puede reanudar. Inicia sesión de nuevo con Tesla.";
+
+"hub.signIn.discovery.configured" = "Autos configurados: %d";

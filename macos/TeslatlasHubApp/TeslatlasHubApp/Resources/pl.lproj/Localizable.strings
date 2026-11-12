@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Proces odpowiadający na kanale sterowania Huba nie jest tym Hubem, więc nic nie wysłano. Uruchom Hub ponownie, a potem zaloguj się jeszcze raz.";
 
 "hub.signIn.busy" = "Hub jest zajęty innymi żądaniami. Nic nie zmieniono; zaloguj się ponownie za chwilę.";
+
+"hub.signIn.discovery.notListed" = "Logowanie się powiodło, ale Tesla nie wyświetliła żadnego samochodu na tym koncie. Sprawdź, czy samochód należy do tego konta Tesla, a potem spróbuj ponownie znaleźć samochody.";
+
+"hub.signIn.discovery.selectionRequired" = "Logowanie się powiodło, ale Tesla wyświetla więcej niż jeden samochód, a Hub musi wiedzieć, z którego zbierać dane. Spróbuj ponownie znaleźć samochody.";
+
+"hub.signIn.discovery.selectionInvalid" = "Logowanie się powiodło, ale wybranego samochodu nie ma na tym koncie Tesla. Spróbuj ponownie znaleźć samochody.";
+
+"hub.signIn.discovery.answerInvalid" = "Logowanie się powiodło, ale Hub nie mógł odczytać listy samochodów od Tesli. Spróbuj ponownie znaleźć samochody.";
+
+"hub.signIn.discovery.refused" = "Logowanie się powiodło, ale Tesla odrzuciła listę samochodów. Spróbuj ponownie znaleźć samochody albo zaloguj się ponownie przez Teslę.";
+
+"hub.signIn.discovery.windowClosed" = "Logowanie się powiodło, ale okno zbierania zamknęło się, zanim Hub zdążył znaleźć Twoje samochody. Otwórz okno, a potem spróbuj ponownie znaleźć samochody.";
+
+"hub.signIn.discovery.providerParked" = "Logowanie się powiodło, ale ten Hub zbiera dane przez innego dostawcę, więc nie może znaleźć samochodów przy użyciu tego logowania.";
+
+"hub.signIn.discovery.settingsInvalid" = "Logowanie się powiodło, ale adres Owner API tego Huba nie należy do Tesli, więc Hub nie poprosił o Twoje samochody. Popraw adres, a potem zaloguj się ponownie przez Teslę.";
+
+"hub.signIn.discovery.general" = "Logowanie się powiodło, ale Hub nie mógł znaleźć Twoich samochodów. Spróbuj ponownie znaleźć samochody albo zaloguj się ponownie przez Teslę.";
+
+"hub.signIn.discovery.retry" = "Spróbuj ponownie znaleźć samochody";
+
+"hub.signIn.discovery.expired" = "Tego logowania nie można już wznowić. Zaloguj się ponownie przez Teslę.";
+
+"hub.signIn.discovery.configured" = "Skonfigurowane samochody: %d";

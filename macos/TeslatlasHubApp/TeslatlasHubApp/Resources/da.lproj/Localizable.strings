@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Processen, der svarer på Hubbens kontrolkanal, er ikke denne Hub, så intet blev sendt. Genstart Hubben, og log derefter ind igen.";
 
 "hub.signIn.busy" = "Hubben er optaget af andre anmodninger. Intet blev ændret; log ind igen om et øjeblik.";
+
+"hub.signIn.discovery.notListed" = "Du er logget ind, men Tesla viste ingen bil på denne konto. Kontrollér, at bilen tilhører denne Tesla-konto, og prøv derefter at finde biler igen.";
+
+"hub.signIn.discovery.selectionRequired" = "Du er logget ind, men Tesla viser mere end én bil, og Hubben skal vide, hvilken den skal indsamle fra. Prøv at finde biler igen.";
+
+"hub.signIn.discovery.selectionInvalid" = "Du er logget ind, men den valgte bil er ikke på denne Tesla-konto. Prøv at finde biler igen.";
+
+"hub.signIn.discovery.answerInvalid" = "Du er logget ind, men Hubben kunne ikke læse Teslas liste over biler. Prøv at finde biler igen.";
+
+"hub.signIn.discovery.refused" = "Du er logget ind, men Tesla afviste listen over biler. Prøv at finde biler igen, eller log ind med Tesla igen.";
+
+"hub.signIn.discovery.windowClosed" = "Du er logget ind, men indsamlingsvinduet lukkede, før Hubben kunne finde dine biler. Åbn et vindue, og prøv derefter at finde biler igen.";
+
+"hub.signIn.discovery.providerParked" = "Du er logget ind, men denne Hub indsamler via en anden udbyder, så den kan ikke finde biler med dette login.";
+
+"hub.signIn.discovery.settingsInvalid" = "Du er logget ind, men Owner API-adressen for denne Hub er ikke Teslas, så Hubben bad ikke om dine biler. Ret adressen, og log derefter ind med Tesla igen.";
+
+"hub.signIn.discovery.general" = "Du er logget ind, men Hubben kunne ikke finde dine biler. Prøv at finde biler igen, eller log ind med Tesla igen.";
+
+"hub.signIn.discovery.retry" = "Prøv at finde biler igen";
+
+"hub.signIn.discovery.expired" = "Dette login kan ikke længere genoptages. Log ind med Tesla igen.";
+
+"hub.signIn.discovery.configured" = "Konfigurerede biler: %d";

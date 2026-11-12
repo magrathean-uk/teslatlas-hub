@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Proses yang menjawab pada saluran kawalan Hub bukan Hub ini, jadi tiada apa yang dihantar. Mulakan semula Hub, kemudian log masuk semula.";
 
 "hub.signIn.busy" = "Hub sibuk dengan permintaan lain. Tiada apa yang diubah; log masuk semula sebentar lagi.";
+
+"hub.signIn.discovery.notListed" = "Anda telah log masuk, tetapi Tesla tidak menyenaraikan sebarang kereta pada akaun ini. Semak bahawa kereta itu milik akaun Tesla ini, kemudian cuba cari kereta semula.";
+
+"hub.signIn.discovery.selectionRequired" = "Anda telah log masuk, tetapi Tesla menyenaraikan lebih daripada satu kereta dan Hub perlu tahu kereta mana yang hendak dikumpulkan datanya. Cuba cari kereta semula.";
+
+"hub.signIn.discovery.selectionInvalid" = "Anda telah log masuk, tetapi kereta yang dipilih tiada pada akaun Tesla ini. Cuba cari kereta semula.";
+
+"hub.signIn.discovery.answerInvalid" = "Anda telah log masuk, tetapi Hub tidak dapat membaca senarai kereta Tesla. Cuba cari kereta semula.";
+
+"hub.signIn.discovery.refused" = "Anda telah log masuk, tetapi Tesla menolak senarai kereta. Cuba cari kereta semula, atau log masuk semula dengan Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Anda telah log masuk, tetapi tetingkap pengumpulan ditutup sebelum Hub dapat mencari kereta anda. Buka tetingkap, kemudian cuba cari kereta semula.";
+
+"hub.signIn.discovery.providerParked" = "Anda telah log masuk, tetapi Hub ini mengumpul data dengan penyedia lain, jadi ia tidak dapat mencari kereta dengan log masuk ini.";
+
+"hub.signIn.discovery.settingsInvalid" = "Anda telah log masuk, tetapi alamat Owner API Hub ini bukan milik Tesla, jadi Hub tidak meminta kereta anda. Betulkan alamat itu, kemudian log masuk semula dengan Tesla.";
+
+"hub.signIn.discovery.general" = "Anda telah log masuk, tetapi Hub tidak dapat mencari kereta anda. Cuba cari kereta semula, atau log masuk semula dengan Tesla.";
+
+"hub.signIn.discovery.retry" = "Cuba cari kereta semula";
+
+"hub.signIn.discovery.expired" = "Log masuk ini tidak lagi boleh disambung semula. Log masuk semula dengan Tesla.";
+
+"hub.signIn.discovery.configured" = "Kereta yang dikonfigurasikan: %d";

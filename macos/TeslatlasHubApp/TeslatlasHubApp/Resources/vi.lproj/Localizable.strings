@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Tiến trình trả lời trên kênh điều khiển của Hub không phải Hub này, nên chưa có gì được gửi. Hãy khởi động lại Hub rồi đăng nhập lại.";
 
 "hub.signIn.busy" = "Hub đang bận với các yêu cầu khác. Chưa có gì bị thay đổi; hãy đăng nhập lại sau ít phút.";
+
+"hub.signIn.discovery.notListed" = "Bạn đã đăng nhập, nhưng Tesla không liệt kê xe nào trong tài khoản này. Hãy kiểm tra xe có thuộc tài khoản Tesla này không, rồi thử tìm xe lại.";
+
+"hub.signIn.discovery.selectionRequired" = "Bạn đã đăng nhập, nhưng Tesla liệt kê nhiều hơn một xe và Hub cần biết thu thập từ xe nào. Hãy thử tìm xe lại.";
+
+"hub.signIn.discovery.selectionInvalid" = "Bạn đã đăng nhập, nhưng xe đã chọn không có trong tài khoản Tesla này. Hãy thử tìm xe lại.";
+
+"hub.signIn.discovery.answerInvalid" = "Bạn đã đăng nhập, nhưng Hub không đọc được danh sách xe của Tesla. Hãy thử tìm xe lại.";
+
+"hub.signIn.discovery.refused" = "Bạn đã đăng nhập, nhưng Tesla đã từ chối danh sách xe. Hãy thử tìm xe lại, hoặc đăng nhập lại bằng Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Bạn đã đăng nhập, nhưng cửa sổ thu thập đã đóng trước khi Hub tìm được xe của bạn. Hãy mở một cửa sổ, rồi thử tìm xe lại.";
+
+"hub.signIn.discovery.providerParked" = "Bạn đã đăng nhập, nhưng Hub này thu thập bằng nhà cung cấp khác nên không thể tìm xe bằng lần đăng nhập này.";
+
+"hub.signIn.discovery.settingsInvalid" = "Bạn đã đăng nhập, nhưng địa chỉ Owner API của Hub này không phải của Tesla nên Hub chưa yêu cầu danh sách xe của bạn. Hãy sửa địa chỉ, rồi đăng nhập lại bằng Tesla.";
+
+"hub.signIn.discovery.general" = "Bạn đã đăng nhập, nhưng Hub không tìm được xe của bạn. Hãy thử tìm xe lại, hoặc đăng nhập lại bằng Tesla.";
+
+"hub.signIn.discovery.retry" = "Thử tìm xe lại";
+
+"hub.signIn.discovery.expired" = "Không thể tiếp tục lần đăng nhập này nữa. Hãy đăng nhập lại bằng Tesla.";
+
+"hub.signIn.discovery.configured" = "Xe đã cấu hình: %d";

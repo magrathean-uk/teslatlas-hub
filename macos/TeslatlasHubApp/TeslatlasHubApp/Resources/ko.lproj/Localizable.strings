@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Hub의 제어 채널에서 응답하는 프로세스가 이 Hub가 아니므로 아무것도 전송되지 않았습니다. Hub를 다시 시작한 다음 다시 로그인하세요.";
 
 "hub.signIn.busy" = "Hub가 다른 요청을 처리 중입니다. 변경된 것은 없습니다. 잠시 후 다시 로그인하세요.";
+
+"hub.signIn.discovery.notListed" = "로그인했지만 Tesla가 이 계정에 차량을 하나도 표시하지 않았습니다. 차량이 이 Tesla 계정에 속해 있는지 확인한 다음 차량 찾기를 다시 시도하세요.";
+
+"hub.signIn.discovery.selectionRequired" = "로그인했지만 Tesla에 차량이 둘 이상 표시되며 Hub가 어느 차량에서 수집할지 알아야 합니다. 차량 찾기를 다시 시도하세요.";
+
+"hub.signIn.discovery.selectionInvalid" = "로그인했지만 선택한 차량이 이 Tesla 계정에 없습니다. 차량 찾기를 다시 시도하세요.";
+
+"hub.signIn.discovery.answerInvalid" = "로그인했지만 Hub가 Tesla의 차량 목록을 읽지 못했습니다. 차량 찾기를 다시 시도하세요.";
+
+"hub.signIn.discovery.refused" = "로그인했지만 Tesla가 차량 목록을 거부했습니다. 차량 찾기를 다시 시도하거나 Tesla로 다시 로그인하세요.";
+
+"hub.signIn.discovery.windowClosed" = "로그인했지만 Hub가 차량을 찾기 전에 수집 창이 닫혔습니다. 창을 연 다음 차량 찾기를 다시 시도하세요.";
+
+"hub.signIn.discovery.providerParked" = "로그인했지만 이 Hub는 다른 제공자로 수집하므로 이 로그인으로는 차량을 찾을 수 없습니다.";
+
+"hub.signIn.discovery.settingsInvalid" = "로그인했지만 이 Hub의 Owner API 주소가 Tesla의 주소가 아니므로 Hub가 차량을 요청하지 않았습니다. 주소를 바로잡은 다음 Tesla로 다시 로그인하세요.";
+
+"hub.signIn.discovery.general" = "로그인했지만 Hub가 차량을 찾지 못했습니다. 차량 찾기를 다시 시도하거나 Tesla로 다시 로그인하세요.";
+
+"hub.signIn.discovery.retry" = "차량 찾기 다시 시도";
+
+"hub.signIn.discovery.expired" = "이 로그인은 더 이상 재개할 수 없습니다. Tesla로 다시 로그인하세요.";
+
+"hub.signIn.discovery.configured" = "구성된 차량: %d";

@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Hub ની કંટ્રોલ ચૅનલ પર જવાબ આપતી પ્રક્રિયા આ Hub નથી, તેથી કંઈ મોકલાયું નથી. Hub ફરી શરૂ કરો, પછી ફરી સાઇન ઇન કરો.";
 
 "hub.signIn.busy" = "Hub બીજી વિનંતીઓમાં વ્યસ્ત છે. કંઈ બદલાયું નથી; થોડીવાર પછી ફરી સાઇન ઇન કરો.";
+
+"hub.signIn.discovery.notListed" = "તમે સાઇન ઇન છો, પરંતુ Tesla એ આ ખાતામાં કોઈ કાર સૂચિબદ્ધ કરી નથી. તપાસો કે કાર આ Tesla ખાતાની છે, પછી ફરી કાર શોધો.";
+
+"hub.signIn.discovery.selectionRequired" = "તમે સાઇન ઇન છો, પરંતુ Tesla એક કરતાં વધુ કાર સૂચિબદ્ધ કરે છે અને કઈ કારનો ડેટા એકત્રિત કરવો તે Hub ને જાણવું જરૂરી છે. ફરી કાર શોધો.";
+
+"hub.signIn.discovery.selectionInvalid" = "તમે સાઇન ઇન છો, પરંતુ પસંદ કરેલી કાર આ Tesla ખાતામાં નથી. ફરી કાર શોધો.";
+
+"hub.signIn.discovery.answerInvalid" = "તમે સાઇન ઇન છો, પરંતુ Hub Tesla ની કારની સૂચિ વાંચી શક્યું નથી. ફરી કાર શોધો.";
+
+"hub.signIn.discovery.refused" = "તમે સાઇન ઇન છો, પરંતુ Tesla એ કારની સૂચિ આપવાનો ઇનકાર કર્યો. ફરી કાર શોધો, અથવા ફરી Tesla સાથે સાઇન ઇન કરો.";
+
+"hub.signIn.discovery.windowClosed" = "તમે સાઇન ઇન છો, પરંતુ Hub તમારી કાર શોધે તે પહેલાં સંગ્રહ વિન્ડો બંધ થઈ ગઈ. એક વિન્ડો ખોલો, પછી ફરી કાર શોધો.";
+
+"hub.signIn.discovery.providerParked" = "તમે સાઇન ઇન છો, પરંતુ આ Hub બીજા પ્રદાતા સાથે ડેટા એકત્રિત કરે છે, તેથી આ સાઇન ઇન વડે કાર શોધી શકતું નથી.";
+
+"hub.signIn.discovery.settingsInvalid" = "તમે સાઇન ઇન છો, પરંતુ આ Hub નું Owner API સરનામું Tesla નું નથી, તેથી Hub એ તમારી કાર માંગી નથી. સરનામું સુધારો, પછી ફરી Tesla સાથે સાઇન ઇન કરો.";
+
+"hub.signIn.discovery.general" = "તમે સાઇન ઇન છો, પરંતુ Hub તમારી કાર શોધી શક્યું નથી. ફરી કાર શોધો, અથવા ફરી Tesla સાથે સાઇન ઇન કરો.";
+
+"hub.signIn.discovery.retry" = "ફરી કાર શોધો";
+
+"hub.signIn.discovery.expired" = "આ સાઇન ઇન હવે ફરી શરૂ કરી શકાતું નથી. ફરી Tesla સાથે સાઇન ઇન કરો.";
+
+"hub.signIn.discovery.configured" = "ગોઠવેલી કાર: %d";

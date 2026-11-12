@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Proces, který odpovídá na řídicím kanálu Hubu, není tento Hub, proto nebylo nic odesláno. Restartujte Hub a poté se přihlaste znovu.";
 
 "hub.signIn.busy" = "Hub je zaneprázdněn jinými požadavky. Nic se nezměnilo; za chvíli se přihlaste znovu.";
+
+"hub.signIn.discovery.notListed" = "Jste přihlášeni, ale Tesla v tomto účtu nevedla žádné auto. Zkontrolujte, že auto patří k tomuto účtu Tesla, a poté zkuste auta vyhledat znovu.";
+
+"hub.signIn.discovery.selectionRequired" = "Jste přihlášeni, ale Tesla vede více než jedno auto a Hub potřebuje vědět, ze kterého má sbírat data. Zkuste auta vyhledat znovu.";
+
+"hub.signIn.discovery.selectionInvalid" = "Jste přihlášeni, ale vybrané auto není v tomto účtu Tesla. Zkuste auta vyhledat znovu.";
+
+"hub.signIn.discovery.answerInvalid" = "Jste přihlášeni, ale Hub nedokázal přečíst seznam aut od Tesly. Zkuste auta vyhledat znovu.";
+
+"hub.signIn.discovery.refused" = "Jste přihlášeni, ale Tesla seznam aut odmítla. Zkuste auta vyhledat znovu, nebo se znovu přihlaste k Tesle.";
+
+"hub.signIn.discovery.windowClosed" = "Jste přihlášeni, ale okno sběru se zavřelo dříve, než Hub stihl najít vaše auta. Otevřete okno a poté zkuste auta vyhledat znovu.";
+
+"hub.signIn.discovery.providerParked" = "Jste přihlášeni, ale tento Hub sbírá data přes jiného poskytovatele, takže s tímto přihlášením nemůže auta vyhledat.";
+
+"hub.signIn.discovery.settingsInvalid" = "Jste přihlášeni, ale adresa Owner API tohoto Hubu není adresa Tesly, proto Hub vaše auta nevyžádal. Opravte adresu a poté se znovu přihlaste k Tesle.";
+
+"hub.signIn.discovery.general" = "Jste přihlášeni, ale Hub nedokázal vaše auta najít. Zkuste auta vyhledat znovu, nebo se znovu přihlaste k Tesle.";
+
+"hub.signIn.discovery.retry" = "Zkusit znovu vyhledat auta";
+
+"hub.signIn.discovery.expired" = "Toto přihlášení již nelze obnovit. Znovu se přihlaste k Tesle.";
+
+"hub.signIn.discovery.configured" = "Nakonfigurovaná auta: %d";

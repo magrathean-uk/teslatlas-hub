@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Procesas, atsakantis „Hub“ valdymo kanale, nėra šis „Hub“, todėl nieko neišsiųsta. Paleiskite „Hub“ iš naujo, tada prisijunkite dar kartą.";
 
 "hub.signIn.busy" = "„Hub“ užsiėmęs kitomis užklausomis. Nieko nepakeista; prisijunkite dar kartą po akimirkos.";
+
+"hub.signIn.discovery.notListed" = "Prisijungėte, tačiau „Tesla“ šioje paskyroje nenurodė jokio automobilio. Patikrinkite, ar automobilis priklauso šiai „Tesla“ paskyrai, tada dar kartą pabandykite rasti automobilius.";
+
+"hub.signIn.discovery.selectionRequired" = "Prisijungėte, tačiau „Tesla“ nurodo daugiau nei vieną automobilį, o „Hub“ turi žinoti, iš kurio rinkti duomenis. Dar kartą pabandykite rasti automobilius.";
+
+"hub.signIn.discovery.selectionInvalid" = "Prisijungėte, tačiau pasirinkto automobilio šioje „Tesla“ paskyroje nėra. Dar kartą pabandykite rasti automobilius.";
+
+"hub.signIn.discovery.answerInvalid" = "Prisijungėte, tačiau „Hub“ nepavyko perskaityti „Tesla“ automobilių sąrašo. Dar kartą pabandykite rasti automobilius.";
+
+"hub.signIn.discovery.refused" = "Prisijungėte, tačiau „Tesla“ atmetė automobilių sąrašą. Dar kartą pabandykite rasti automobilius arba prisijunkite per „Tesla“ iš naujo.";
+
+"hub.signIn.discovery.windowClosed" = "Prisijungėte, tačiau rinkimo langas užsidarė, kol „Hub“ dar nebuvo radęs jūsų automobilių. Atidarykite langą, tada dar kartą pabandykite rasti automobilius.";
+
+"hub.signIn.discovery.providerParked" = "Prisijungėte, tačiau šis „Hub“ duomenis renka per kitą teikėją, todėl su šiuo prisijungimu negali rasti automobilių.";
+
+"hub.signIn.discovery.settingsInvalid" = "Prisijungėte, tačiau šio „Hub“ Owner API adresas nėra „Tesla“ adresas, todėl „Hub“ neprašė jūsų automobilių. Pataisykite adresą, tada prisijunkite per „Tesla“ iš naujo.";
+
+"hub.signIn.discovery.general" = "Prisijungėte, tačiau „Hub“ nepavyko rasti jūsų automobilių. Dar kartą pabandykite rasti automobilius arba prisijunkite per „Tesla“ iš naujo.";
+
+"hub.signIn.discovery.retry" = "Bandyti rasti automobilius dar kartą";
+
+"hub.signIn.discovery.expired" = "Šio prisijungimo nebegalima tęsti. Prisijunkite per „Tesla“ iš naujo.";
+
+"hub.signIn.discovery.configured" = "Sukonfigūruoti automobiliai: %d";

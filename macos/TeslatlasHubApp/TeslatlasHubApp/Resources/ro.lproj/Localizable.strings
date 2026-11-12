@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Procesul care răspunde pe canalul de control al Hub nu este acest Hub, așa că nu s-a trimis nimic. Repornește Hub, apoi autentifică-te din nou.";
 
 "hub.signIn.busy" = "Hub este ocupat cu alte solicitări. Nu s-a modificat nimic; autentifică-te din nou peste un moment.";
+
+"hub.signIn.discovery.notListed" = "Te-ai autentificat, dar Tesla nu a listat nicio mașină în acest cont. Verifică dacă mașina aparține acestui cont Tesla, apoi încearcă din nou să găsești mașinile.";
+
+"hub.signIn.discovery.selectionRequired" = "Te-ai autentificat, dar Tesla listează mai multe mașini, iar Hub trebuie să știe de la care să colecteze date. Încearcă din nou să găsești mașinile.";
+
+"hub.signIn.discovery.selectionInvalid" = "Te-ai autentificat, dar mașina aleasă nu se află în acest cont Tesla. Încearcă din nou să găsești mașinile.";
+
+"hub.signIn.discovery.answerInvalid" = "Te-ai autentificat, dar Hub nu a putut citi lista de mașini a Tesla. Încearcă din nou să găsești mașinile.";
+
+"hub.signIn.discovery.refused" = "Te-ai autentificat, dar Tesla a refuzat lista de mașini. Încearcă din nou să găsești mașinile sau autentifică-te din nou cu Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Te-ai autentificat, dar fereastra de colectare s-a închis înainte ca Hub să-ți poată găsi mașinile. Deschide o fereastră, apoi încearcă din nou să găsești mașinile.";
+
+"hub.signIn.discovery.providerParked" = "Te-ai autentificat, dar acest Hub colectează date cu alt furnizor, deci nu poate găsi mașini cu această autentificare.";
+
+"hub.signIn.discovery.settingsInvalid" = "Te-ai autentificat, dar adresa Owner API a acestui Hub nu este cea a Tesla, deci Hub nu ți-a cerut mașinile. Corectează adresa, apoi autentifică-te din nou cu Tesla.";
+
+"hub.signIn.discovery.general" = "Te-ai autentificat, dar Hub nu ți-a putut găsi mașinile. Încearcă din nou să găsești mașinile sau autentifică-te din nou cu Tesla.";
+
+"hub.signIn.discovery.retry" = "Încearcă din nou să găsești mașinile";
+
+"hub.signIn.discovery.expired" = "Această autentificare nu mai poate fi reluată. Autentifică-te din nou cu Tesla.";
+
+"hub.signIn.discovery.configured" = "Mașini configurate: %d";

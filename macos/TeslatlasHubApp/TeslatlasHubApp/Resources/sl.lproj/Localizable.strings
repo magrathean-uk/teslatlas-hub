@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Postopek, ki odgovarja na nadzornem kanalu Huba, ni ta Hub, zato ni bilo nič poslano. Znova zaženite Hub in se nato znova prijavite.";
 
 "hub.signIn.busy" = "Hub je zaseden z drugimi zahtevami. Nič ni bilo spremenjeno; čez trenutek se prijavite znova.";
+
+"hub.signIn.discovery.notListed" = "Prijavljeni ste, vendar Tesla v tem računu ni navedla nobenega avtomobila. Preverite, ali avtomobil pripada temu računu Tesla, nato znova poskusite poiskati avtomobile.";
+
+"hub.signIn.discovery.selectionRequired" = "Prijavljeni ste, vendar Tesla navaja več kot en avtomobil in Hub mora vedeti, iz katerega naj zbira podatke. Znova poskusite poiskati avtomobile.";
+
+"hub.signIn.discovery.selectionInvalid" = "Prijavljeni ste, vendar izbranega avtomobila ni v tem računu Tesla. Znova poskusite poiskati avtomobile.";
+
+"hub.signIn.discovery.answerInvalid" = "Prijavljeni ste, vendar Hub ni mogel prebrati Teslinega seznama avtomobilov. Znova poskusite poiskati avtomobile.";
+
+"hub.signIn.discovery.refused" = "Prijavljeni ste, vendar je Tesla zavrnila seznam avtomobilov. Znova poskusite poiskati avtomobile ali se znova prijavite s Teslo.";
+
+"hub.signIn.discovery.windowClosed" = "Prijavljeni ste, vendar se je okno zbiranja zaprlo, preden je Hub lahko našel vaše avtomobile. Odprite okno in nato znova poskusite poiskati avtomobile.";
+
+"hub.signIn.discovery.providerParked" = "Prijavljeni ste, vendar ta Hub zbira podatke prek drugega ponudnika, zato s to prijavo ne more poiskati avtomobilov.";
+
+"hub.signIn.discovery.settingsInvalid" = "Prijavljeni ste, vendar naslov Owner API tega Huba ni Teslin, zato Hub ni zahteval vaših avtomobilov. Popravite naslov in se nato znova prijavite s Teslo.";
+
+"hub.signIn.discovery.general" = "Prijavljeni ste, vendar Hub ni mogel najti vaših avtomobilov. Znova poskusite poiskati avtomobile ali se znova prijavite s Teslo.";
+
+"hub.signIn.discovery.retry" = "Znova poskusi poiskati avtomobile";
+
+"hub.signIn.discovery.expired" = "Te prijave ni mogoče več nadaljevati. Znova se prijavite s Teslo.";
+
+"hub.signIn.discovery.configured" = "Konfigurirani avtomobili: %d";

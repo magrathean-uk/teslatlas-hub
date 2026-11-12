@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Hubのコントロールチャンネルで応答しているプロセスはこのHubではないため、何も送信されませんでした。Hubを再起動してから、もう一度サインインしてください。";
 
 "hub.signIn.busy" = "Hubは他のリクエストの処理中です。何も変更されていません。しばらくしてからもう一度サインインしてください。";
+
+"hub.signIn.discovery.notListed" = "サインインしましたが、Teslaはこのアカウントに車を一台も表示しませんでした。車がこのTeslaアカウントのものであることを確認してから、もう一度車を検索してください。";
+
+"hub.signIn.discovery.selectionRequired" = "サインインしましたが、Teslaが複数の車を表示しており、Hubはどの車から収集するかを知る必要があります。もう一度車を検索してください。";
+
+"hub.signIn.discovery.selectionInvalid" = "サインインしましたが、選択した車はこのTeslaアカウントにありません。もう一度車を検索してください。";
+
+"hub.signIn.discovery.answerInvalid" = "サインインしましたが、HubはTeslaの車のリストを読み取れませんでした。もう一度車を検索してください。";
+
+"hub.signIn.discovery.refused" = "サインインしましたが、Teslaが車のリストを拒否しました。もう一度車を検索するか、Teslaでもう一度サインインしてください。";
+
+"hub.signIn.discovery.windowClosed" = "サインインしましたが、Hubが車を見つける前にデータ収集ウィンドウが閉じました。ウィンドウを開いてから、もう一度車を検索してください。";
+
+"hub.signIn.discovery.providerParked" = "サインインしましたが、このHubは別のプロバイダで収集しているため、このサインインでは車を検索できません。";
+
+"hub.signIn.discovery.settingsInvalid" = "サインインしましたが、このHubのOwner APIのアドレスがTeslaのものではないため、Hubは車を要求しませんでした。アドレスを修正してから、Teslaでもう一度サインインしてください。";
+
+"hub.signIn.discovery.general" = "サインインしましたが、Hubは車を見つけられませんでした。もう一度車を検索するか、Teslaでもう一度サインインしてください。";
+
+"hub.signIn.discovery.retry" = "車をもう一度検索";
+
+"hub.signIn.discovery.expired" = "このサインインは再開できなくなりました。Teslaでもう一度サインインしてください。";
+
+"hub.signIn.discovery.configured" = "設定済みの車：%d";

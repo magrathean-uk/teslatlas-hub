@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Proses yang menjawab di saluran kontrol Hub bukan Hub ini, jadi tidak ada yang dikirim. Mulai ulang Hub, lalu masuk lagi.";
 
 "hub.signIn.busy" = "Hub sedang sibuk dengan permintaan lain. Tidak ada yang diubah; masuk lagi sebentar lagi.";
+
+"hub.signIn.discovery.notListed" = "Anda sudah masuk, tetapi Tesla tidak mencantumkan mobil apa pun di akun ini. Pastikan mobil tersebut milik akun Tesla ini, lalu coba cari mobil lagi.";
+
+"hub.signIn.discovery.selectionRequired" = "Anda sudah masuk, tetapi Tesla mencantumkan lebih dari satu mobil dan Hub perlu tahu mobil mana yang harus dikumpulkan datanya. Coba cari mobil lagi.";
+
+"hub.signIn.discovery.selectionInvalid" = "Anda sudah masuk, tetapi mobil yang dipilih tidak ada di akun Tesla ini. Coba cari mobil lagi.";
+
+"hub.signIn.discovery.answerInvalid" = "Anda sudah masuk, tetapi Hub tidak dapat membaca daftar mobil dari Tesla. Coba cari mobil lagi.";
+
+"hub.signIn.discovery.refused" = "Anda sudah masuk, tetapi Tesla menolak daftar mobil. Coba cari mobil lagi, atau masuk lagi dengan Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Anda sudah masuk, tetapi jendela pengumpulan tertutup sebelum Hub dapat menemukan mobil Anda. Buka jendela, lalu coba cari mobil lagi.";
+
+"hub.signIn.discovery.providerParked" = "Anda sudah masuk, tetapi Hub ini mengumpulkan data dengan penyedia lain, sehingga tidak dapat mencari mobil dengan masuk ini.";
+
+"hub.signIn.discovery.settingsInvalid" = "Anda sudah masuk, tetapi alamat Owner API Hub ini bukan milik Tesla, jadi Hub tidak meminta daftar mobil Anda. Perbaiki alamatnya, lalu masuk lagi dengan Tesla.";
+
+"hub.signIn.discovery.general" = "Anda sudah masuk, tetapi Hub tidak dapat menemukan mobil Anda. Coba cari mobil lagi, atau masuk lagi dengan Tesla.";
+
+"hub.signIn.discovery.retry" = "Coba cari mobil lagi";
+
+"hub.signIn.discovery.expired" = "Proses masuk ini tidak dapat dilanjutkan lagi. Masuk lagi dengan Tesla.";
+
+"hub.signIn.discovery.configured" = "Mobil yang dikonfigurasi: %d";

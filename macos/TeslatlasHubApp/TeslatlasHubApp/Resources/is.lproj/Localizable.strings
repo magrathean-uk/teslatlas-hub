@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "Ferlið sem svarar á stjórnrás Hub er ekki þetta Hub, svo engu var sent. Endurræstu Hub og skráðu þig svo inn aftur.";
 
 "hub.signIn.busy" = "Hub er upptekið við aðrar beiðnir. Engu var breytt; skráðu þig inn aftur eftir augnablik.";
+
+"hub.signIn.discovery.notListed" = "Innskráningin tókst, en Tesla birti engan bíl á þessum reikningi. Athugaðu hvort bíllinn tilheyri þessum Tesla-reikningi og reyndu svo aftur að finna bíla.";
+
+"hub.signIn.discovery.selectionRequired" = "Innskráningin tókst, en Tesla birtir fleiri en einn bíl og Hub þarf að vita frá hverjum það á að safna gögnum. Reyndu aftur að finna bíla.";
+
+"hub.signIn.discovery.selectionInvalid" = "Innskráningin tókst, en valinn bíll er ekki á þessum Tesla-reikningi. Reyndu aftur að finna bíla.";
+
+"hub.signIn.discovery.answerInvalid" = "Innskráningin tókst, en Hub gat ekki lesið bílalista Tesla. Reyndu aftur að finna bíla.";
+
+"hub.signIn.discovery.refused" = "Innskráningin tókst, en Tesla hafnaði bílalistanum. Reyndu aftur að finna bíla eða skráðu þig aftur inn með Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Innskráningin tókst, en söfnunarglugginn lokaðist áður en Hub gat fundið bílana þína. Opnaðu glugga og reyndu svo aftur að finna bíla.";
+
+"hub.signIn.discovery.providerParked" = "Innskráningin tókst, en þetta Hub safnar gögnum með öðrum þjónustuaðila og getur því ekki fundið bíla með þessari innskráningu.";
+
+"hub.signIn.discovery.settingsInvalid" = "Innskráningin tókst, en Owner API-vistfang þessa Hub er ekki vistfang Tesla, svo Hub bað ekki um bílana þína. Lagfærðu vistfangið og skráðu þig svo aftur inn með Tesla.";
+
+"hub.signIn.discovery.general" = "Innskráningin tókst, en Hub gat ekki fundið bílana þína. Reyndu aftur að finna bíla eða skráðu þig aftur inn með Tesla.";
+
+"hub.signIn.discovery.retry" = "Reyna aftur að finna bíla";
+
+"hub.signIn.discovery.expired" = "Ekki er lengur hægt að halda áfram með þessa innskráningu. Skráðu þig aftur inn með Tesla.";
+
+"hub.signIn.discovery.configured" = "Stilltir bílar: %d";

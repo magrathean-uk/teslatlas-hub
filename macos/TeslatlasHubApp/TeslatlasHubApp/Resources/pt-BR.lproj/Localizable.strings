@@ -832,3 +832,27 @@
 "hub.signIn.serviceUnauthenticated" = "O processo que responde no canal de controle do Hub não é este Hub, então nada foi enviado. Reinicie o Hub e entre de novo.";
 
 "hub.signIn.busy" = "O Hub está ocupado com outras solicitações. Nada foi alterado; entre de novo daqui a pouco.";
+
+"hub.signIn.discovery.notListed" = "Você entrou, mas a Tesla não listou nenhum carro nesta conta. Verifique se o carro pertence a esta conta Tesla e tente encontrar os carros novamente.";
+
+"hub.signIn.discovery.selectionRequired" = "Você entrou, mas a Tesla lista mais de um carro e o Hub precisa saber de qual coletar dados. Tente encontrar os carros novamente.";
+
+"hub.signIn.discovery.selectionInvalid" = "Você entrou, mas o carro escolhido não está nesta conta Tesla. Tente encontrar os carros novamente.";
+
+"hub.signIn.discovery.answerInvalid" = "Você entrou, mas o Hub não conseguiu ler a lista de carros da Tesla. Tente encontrar os carros novamente.";
+
+"hub.signIn.discovery.refused" = "Você entrou, mas a Tesla recusou a lista de carros. Tente encontrar os carros novamente ou entre de novo com a Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Você entrou, mas a janela de coleta foi fechada antes de o Hub encontrar seus carros. Abra uma janela e tente encontrar os carros novamente.";
+
+"hub.signIn.discovery.providerParked" = "Você entrou, mas este Hub coleta dados com outro provedor, então não consegue encontrar carros com este login.";
+
+"hub.signIn.discovery.settingsInvalid" = "Você entrou, mas o endereço da Owner API deste Hub não é o da Tesla, então o Hub não pediu seus carros. Corrija o endereço e entre de novo com a Tesla.";
+
+"hub.signIn.discovery.general" = "Você entrou, mas o Hub não conseguiu encontrar seus carros. Tente encontrar os carros novamente ou entre de novo com a Tesla.";
+
+"hub.signIn.discovery.retry" = "Tentar encontrar os carros novamente";
+
+"hub.signIn.discovery.expired" = "Este login não pode mais ser retomado. Entre de novo com a Tesla.";
+
+"hub.signIn.discovery.configured" = "Carros configurados: %d";
