@@ -61,13 +61,14 @@ pub(crate) const MAX_TOKEN_RESPONSE_BYTES: usize = 64 * 1024;
 /// (R24). It is refused as unusable instead, as row 4 of the outcome table.
 const MAX_TOKEN_BYTES: usize = MAX_TOKEN_PLAINTEXT_BYTES;
 
-/// The Owner API client id of the refresh grant (R10, F3).
-const CLIENT_ID: &str = "ownerapi";
+/// The Owner API client id of the refresh grant (R10, F3): the owner client's
+/// one definition (DEC-088), which the Hub's code exchange also uses.
+const CLIENT_ID: &str = crate::auth::credential_sign_in::OWNER_CLIENT_ID;
 
 /// The scope of the refresh grant (R10, F3). It equals the Owner API login's
 /// grant, so F6's rule that a refresh must not widen scope holds, and
 /// `offline_access` keeps a refresh token in the answer (F9).
-const REFRESH_SCOPE: &str = "openid email offline_access";
+const REFRESH_SCOPE: &str = crate::auth::credential_sign_in::OWNER_SCOPE;
 
 /// The Hub's own product token and version, in F10's `product/version` form
 /// (R11). A product token cannot contain a space, hence the hyphen.

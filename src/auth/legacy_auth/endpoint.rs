@@ -25,7 +25,9 @@ pub(super) const CHINA_ISSUER: &str = "https://auth.tesla.cn/oauth2/v3";
 
 /// The global token endpoint (R6, F1), written out in full because joining
 /// `token` onto the issuer without a trailing slash would drop `v3`.
-const GLOBAL_TOKEN_ENDPOINT: &str = "https://auth.tesla.com/oauth2/v3/token";
+/// It is the owner client's one definition (DEC-088), which the code exchange
+/// also uses.
+const GLOBAL_TOKEN_ENDPOINT: &str = crate::auth::credential_sign_in::OWNER_TOKEN_ENDPOINT;
 
 /// The China token endpoint (R6, F2), written out in full for the same reason.
 const CHINA_TOKEN_ENDPOINT: &str = "https://auth.tesla.cn/oauth2/v3/token";

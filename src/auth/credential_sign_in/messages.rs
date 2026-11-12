@@ -63,7 +63,10 @@ pub fn credential_owner_message(
         "sign_in_settings_invalid" => "The Fleet sign-in settings were missing, incomplete or too large. Nothing was changed. Check them and start again.",
         "sign_in_cancelled" => "The sign-in was cancelled before Tesla was asked for tokens. Start it again when you are ready.",
         "sign_in_service_pause_failed" => "The Hub could not pause collection for the sign-in, so the sign-in did not start. If the Hub shows as stopped, choose Start Hub, then try again.",
-        "sign_in_service_restart_failed" => "The sign-in has ended, but the Hub could not confirm that collection restarted. If the Hub shows as stopped, choose Start Hub.",
+        "sign_in_code_reused" => "This sign-in code was already used, so Tesla was not asked again. Start the sign-in again.",
+        "sign_in_material_invalid" => "The sign-in answer from the Tesla page could not be used, so Tesla was not asked for tokens. Start the sign-in again.",
+        "window_closed" => "Sign-in needs an open collection window, so Tesla was not asked for tokens. Open a window and start the sign-in again.",
+        "sign_in_service_restart_failed" =>"The sign-in has ended, but the Hub could not confirm that collection restarted. If the Hub shows as stopped, choose Start Hub.",
         "backup_waits_for_credential_cleanup" => {
             let mut text = "The backup will start once the Hub has finished updating its stored sign-ins.".to_owned();
             if matches!(blocked_reason, Some("blocked" | "keyring_missing")) {
