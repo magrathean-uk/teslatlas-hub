@@ -5,7 +5,15 @@ fn verify_projection_sqlite_2_2(
     request: &ProjectionPackRequestV2_2<'_>,
     row_count: u64,
     purpose: ProjectionPackPurposeV2_2,
+    source_set: &ReviewedSourceSet,
 ) -> Result<(), ProjectionPackError> {
+    // A pack is verified against the reviewed tuple of its own source
+    // revision; an unknown revision or a mixed tuple is refused.
+    if reviewed_source_set(source_set.source_revision) != Some(source_set) {
+        return Err(invalid(
+            "schema 2.2 source set is not a reviewed source set",
+        ));
+    }
     let connection = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -388,10 +396,10 @@ fn verify_projection_sqlite_2_2(
             "unreconciled_fields",
             THP2_2_UNRECONCILED_FIELD_COUNT.to_string(),
         ),
-        ("source_revision", SOURCE_DB_V4_SOURCE_REVISION.to_owned()),
+        ("source_revision", source_set.source_revision.to_owned()),
         (
             "migration_set_sha256",
-            SOURCE_DB_V4_MIGRATION_SET_SHA256.to_owned(),
+            source_set.migration_set_sha256.to_owned(),
         ),
         (
             "car_settings_slice_sha256",

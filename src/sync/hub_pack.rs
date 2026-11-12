@@ -30,7 +30,9 @@ use crate::protocol::{
     SQLITE_HUB_PROJECTION_APPLICATION_ID, SchemaVersion, SequenceRange, Sha256Digest, SyncManifest,
     TransportPack, VerifiedTransportPack,
 };
-use crate::source_db_schema::{SOURCE_DB_V4_MIGRATION_SET_SHA256, SOURCE_DB_V4_SOURCE_REVISION};
+use crate::source_db_schema::{
+    CURRENT_REVIEWED_SOURCE_SET, ReviewedSourceSet, reviewed_source_set,
+};
 
 // Schema 2.2 is a separate, full-snapshot-only protocol boundary.  Keep the
 // public identity here with the writer types, while leaving the byte-pinned

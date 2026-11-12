@@ -926,3 +926,54 @@ fn source_db_preferred_range_enum_rename_is_admitted_with_the_same_labels() {
         })
     );
 }
+
+/// Review REV-M03-T08 finding 1: source admission stays on the current set,
+/// while each earlier reviewed revision keeps its own hash, count and newest
+/// migration for verifying artefacts published before the upgrade.
+#[test]
+fn reviewed_source_sets_keep_their_own_tuples_and_admission_stays_current() {
+    let current = reviewed_source_set(SOURCE_DB_V4_SOURCE_REVISION).expect("current set");
+    assert!(current.is_current());
+    assert_eq!(current, &CURRENT_REVIEWED_SOURCE_SET);
+    assert_eq!(current.release, "4.4.0");
+    assert_eq!(current.migration_count, PINNED_MIGRATION_VERSIONS.len());
+    assert_eq!(current.newest_migration, 20_261_014_120_000);
+    assert_eq!(
+        migration_set_sha256(&PINNED_MIGRATION_VERSIONS),
+        current.migration_set_sha256
+    );
+
+    let earlier = reviewed_source_set(SOURCE_DB_V4_2_SOURCE_REVISION).expect("v4.2 set");
+    assert!(!earlier.is_current());
+    assert_eq!(earlier.release, "4.2.0");
+    assert_eq!(earlier.migration_count, 105);
+    assert_eq!(earlier.newest_migration, 20_260_808_090_000);
+    // The v4.2 list is the current list without its two newest migrations.
+    let v4_2_versions = &PINNED_MIGRATION_VERSIONS[..PINNED_MIGRATION_VERSIONS.len() - 2];
+    assert_eq!(v4_2_versions.last(), Some(&20_260_808_090_000));
+    assert_eq!(
+        migration_set_sha256(v4_2_versions),
+        earlier.migration_set_sha256
+    );
+    assert!(earlier.matches(earlier.migration_set_sha256, 105, 20_260_808_090_000));
+    assert!(!earlier.matches(current.migration_set_sha256, 105, 20_260_808_090_000));
+    assert!(!earlier.matches(earlier.migration_set_sha256, 107, 20_260_808_090_000));
+    assert!(!earlier.matches(earlier.migration_set_sha256, 105, 20_261_014_120_000));
+    let beta = reviewed_source_set(SOURCE_DB_V4_1_1_SOURCE_REVISION).expect("v4.1.1 set");
+    assert_eq!(beta.migration_set_sha256, earlier.migration_set_sha256);
+
+    assert!(reviewed_source_set("0000000000000000000000000000000000000000").is_none());
+    // Admission accepts only the current list: the v4.2 list is a legacy source.
+    assert!(matches!(
+        validate_migration_versions(v4_2_versions),
+        Err(SchemaCompatibilityError::LegacyMigration { .. })
+    ));
+}
+
+fn migration_set_sha256(versions: &[i64]) -> String {
+    let mut digest = Sha256::new();
+    for version in versions {
+        digest.update(format!("{version:014}\n").as_bytes());
+    }
+    hex::encode(digest.finalize())
+}

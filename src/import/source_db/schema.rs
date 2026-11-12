@@ -39,25 +39,107 @@ pub const SOURCE_DB_V4_2_SOURCE_REVISION: &str = "e8d24886f97f22469c2675f89be843
 /// Immutable v4.1.1 revision retained as legacy beta provenance.
 pub const SOURCE_DB_V4_1_1_SOURCE_REVISION: &str = "d6c43bc8c48784da8f0b701945b80b20911b3d1a";
 
-/// Accept only reviewed source revisions when verifying already-produced beta
-/// witnesses. New captures always write [`SOURCE_DB_V4_SOURCE_REVISION`].
-pub const fn is_supported_source_db_revision(revision: &str) -> bool {
-    matches!(
-        revision.as_bytes(),
-        b"42d187daadd0104fc9c4509785df47a26705845a"
-            | b"e8d24886f97f22469c2675f89be843f6d401c76a"
-            | b"d6c43bc8c48784da8f0b701945b80b20911b3d1a"
-    )
-}
-
 /// Number of migrations in the pinned source revision.
 pub const SOURCE_DB_V4_MIGRATION_COUNT: usize = 107;
 
 /// SHA-256 of the sorted, newline-delimited 14-digit migration versions in
-/// the pinned source revision. The exact list—not only its high-water mark—is
+/// the pinned source revision. The exact list, not only its high-water mark, is
 /// part of the read-only source admission contract.
 pub const SOURCE_DB_V4_MIGRATION_SET_SHA256: &str =
     "c497f904ef7426ea2468f7ed13044d6f74fe34e0c3e14e5c3360eea0ed35edea";
+
+/// One reviewed source migration set: the immutable source revision together
+/// with the hash, count and newest version of its exact migration list.
+///
+/// Source admission accepts only [`CURRENT_REVIEWED_SOURCE_SET`]. Artefacts
+/// produced by an earlier import (witnesses, captures and packs) keep naming
+/// the revision they were captured under, and are verified against the tuple
+/// of that revision, never against the current one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReviewedSourceSet {
+    /// Immutable source tag revision.
+    pub source_revision: &'static str,
+    /// Source application release the set was reviewed for.
+    pub release: &'static str,
+    /// SHA-256 of the sorted, newline-delimited 14-digit migration versions.
+    pub migration_set_sha256: &'static str,
+    /// Number of migrations in the set.
+    pub migration_count: usize,
+    /// Newest migration version in the set.
+    pub newest_migration: i64,
+}
+
+impl ReviewedSourceSet {
+    /// Whether an artefact's recorded migration facts are exactly this set.
+    pub fn matches(
+        &self,
+        migration_set_sha256: &str,
+        migration_count: u64,
+        newest_migration: i64,
+    ) -> bool {
+        self.migration_set_sha256 == migration_set_sha256
+            && u64::try_from(self.migration_count).ok() == Some(migration_count)
+            && self.newest_migration == newest_migration
+    }
+
+    /// Whether this is the set new imports admit and new artefacts record.
+    pub fn is_current(&self) -> bool {
+        self == &CURRENT_REVIEWED_SOURCE_SET
+    }
+}
+
+/// The v4.4.0 set: the only set source admission accepts.
+pub const CURRENT_REVIEWED_SOURCE_SET: ReviewedSourceSet = ReviewedSourceSet {
+    source_revision: SOURCE_DB_V4_SOURCE_REVISION,
+    release: "4.4.0",
+    migration_set_sha256: SOURCE_DB_V4_MIGRATION_SET_SHA256,
+    migration_count: SOURCE_DB_V4_MIGRATION_COUNT,
+    newest_migration: MAX_VALIDATED_MIGRATION,
+};
+
+/// Migration-set hash shared by the v4.1.1 and v4.2.0 revisions (105
+/// migrations, newest `20260808090000`).
+pub const SOURCE_DB_V4_2_MIGRATION_SET_SHA256: &str =
+    "ea850d1b038c4af950db32e7a0939aa5ebe8f1dcefe5e56dcd592f3451038868";
+
+/// The v4.2.0 set, retained to verify artefacts published before the upgrade.
+pub const V4_2_REVIEWED_SOURCE_SET: ReviewedSourceSet = ReviewedSourceSet {
+    source_revision: SOURCE_DB_V4_2_SOURCE_REVISION,
+    release: "4.2.0",
+    migration_set_sha256: SOURCE_DB_V4_2_MIGRATION_SET_SHA256,
+    migration_count: 105,
+    newest_migration: 20_260_808_090_000,
+};
+
+/// The v4.1.1 beta set; v4.2.0 kept the same migration list.
+pub const V4_1_1_REVIEWED_SOURCE_SET: ReviewedSourceSet = ReviewedSourceSet {
+    source_revision: SOURCE_DB_V4_1_1_SOURCE_REVISION,
+    release: "4.1.1",
+    migration_set_sha256: SOURCE_DB_V4_2_MIGRATION_SET_SHA256,
+    migration_count: 105,
+    newest_migration: 20_260_808_090_000,
+};
+
+/// Every reviewed set, newest first.
+pub const REVIEWED_SOURCE_SETS: [ReviewedSourceSet; 3] = [
+    CURRENT_REVIEWED_SOURCE_SET,
+    V4_2_REVIEWED_SOURCE_SET,
+    V4_1_1_REVIEWED_SOURCE_SET,
+];
+
+/// The reviewed set recorded under `revision`, or `None` for an unknown
+/// revision, which every artefact verifier refuses.
+pub fn reviewed_source_set(revision: &str) -> Option<&'static ReviewedSourceSet> {
+    REVIEWED_SOURCE_SETS
+        .iter()
+        .find(|set| set.source_revision == revision)
+}
+
+/// Accept only reviewed source revisions when verifying already-produced
+/// artefacts. New captures always write [`SOURCE_DB_V4_SOURCE_REVISION`].
+pub fn is_supported_source_db_revision(revision: &str) -> bool {
+    reviewed_source_set(revision).is_some()
+}
 
 /// Fixed read-only session statements. The COPY statement timeout is supplied
 /// separately from validated import limits so large historical reads can be

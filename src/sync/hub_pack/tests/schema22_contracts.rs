@@ -1034,6 +1034,7 @@ fn schema_2_2_verifier_rejects_table_metadata_and_foreign_key_tampering() {
                 &request,
                 built.metadata.row_count,
                 ProjectionPackPurposeV2_2::DraftLocal,
+                &CURRENT_REVIEWED_SOURCE_SET,
             )
             .is_err(),
             "verifier accepted a changed {table} table"
@@ -1066,6 +1067,7 @@ fn schema_2_2_verifier_rejects_table_metadata_and_foreign_key_tampering() {
             &request,
             built.metadata.row_count,
             ProjectionPackPurposeV2_2::DraftLocal,
+            &CURRENT_REVIEWED_SOURCE_SET,
         )
         .is_err(),
         "verifier accepted an extra metadata key"
