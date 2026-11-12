@@ -163,12 +163,12 @@ fn suffix_steps_run_once() {
     migrate(&fresh).unwrap();
     assert_eq!(
         schema_version(&predecessor).unwrap(),
-        79,
+        SCHEMA_VERSION,
         "F-SUFFIX: actual next-free C10 rung runs on the floor"
     );
     assert_eq!(
         schema_version(&fresh).unwrap(),
-        79,
+        SCHEMA_VERSION,
         "F-SUFFIX: actual next-free C10 rung runs on creation"
     );
     assert_eq!(

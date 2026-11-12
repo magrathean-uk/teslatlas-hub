@@ -457,8 +457,13 @@ impl HubStore {
         let version = schema_version(&connection)?;
         admit_store_version(version, SCHEMA_VERSION)?;
         // A newer head does not retire the supported floor on pre-rung opens.
+        // A v79 store (credential format complete, before the import seam
+        // rung) is what an updated Hub holds until its first writable open; it
+        // lacks only the two empty seam tables, which no read-only route reads,
+        // so status and diagnosis lanes open it rather than refuse it.
         if version != SCHEMA_VERSION
             && version != MIN_STORE_VERSION
+            && version != CREDENTIAL_FORMAT_SCHEMA_VERSION
             && !standalone_migration_candidate
         {
             return Err(StoreError::UnsupportedSchema(version));

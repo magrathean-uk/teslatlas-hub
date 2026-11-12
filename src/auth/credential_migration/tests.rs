@@ -27,7 +27,7 @@ use uuid::Uuid;
 
 const T0_MS: i64 = 1_800_000_000_000;
 const SCHEDULE: (i64, i64) = (1_800_028_800, 1_800_021_600);
-const RUNG: i32 = 79;
+const RUNG: i32 = crate::db::SCHEMA_VERSION;
 
 // Neutral candidate and cleanup names, spelled out here as an oracle that is
 // independent of the production lists (spec sections 0.2 and 5).

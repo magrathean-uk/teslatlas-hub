@@ -29,13 +29,13 @@ fn ct045_status_routes() {
     let store = HubStore::initialize(root.path()).expect("store");
     read_only_routes(root.path(), &store);
     let observer = store.open().expect("fixture SQL");
-    observer.execute_batch(&format!("PRAGMA user_version={}", crate::db::SCHEMA_VERSION - 1)).expect("below-rung image");
+    observer.execute_batch(&format!("PRAGMA user_version={}", crate::db::MIN_STORE_VERSION)).expect("below-rung image");
     let before = status(root.path(), &store);
     assert_eq!(before.credential_store.format_state, "pending");
     assert_eq!(before.credential_store.keyring, "ok");
     assert_eq!(before.credential_store.key_age_days, None);
     read_only_routes(root.path(), &store);
-    assert_eq!(observer.query_row::<i64, _, _>("PRAGMA user_version", [], |row| row.get(0)).expect("rung unchanged"), i64::from(crate::db::SCHEMA_VERSION - 1));
+    assert_eq!(observer.query_row::<i64, _, _>("PRAGMA user_version", [], |row| row.get(0)).expect("rung unchanged"), i64::from(crate::db::MIN_STORE_VERSION));
 }
 
 #[test]

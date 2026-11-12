@@ -575,3 +575,37 @@ fn import_seam_schema_v80_reopen_is_idempotent() {
         assert_eq!(super::g2_4_m1::schema_snapshot(&seam_raw(temporary.path())), snapshot);
     }
 }
+
+#[test]
+fn import_seam_schema_v80_read_only_opens_a_v79_store() {
+    let test = "import_seam_schema_v80_read_only_opens_a_v79_store";
+    // An updated Hub holds a v79 store until its first writable open; status
+    // and diagnosis lanes open it read-only and change nothing.
+    let temporary = seam_v79_store(|_, _| {});
+    let observer = seam_raw(temporary.path());
+    let data_version = |connection: &Connection| -> i64 {
+        connection.query_row("PRAGMA data_version", [], |row| row.get(0)).unwrap()
+    };
+    let before = data_version(&observer);
+    for _ in 0..2 {
+        drop(HubStore::open_read_only(temporary.path()).labelled_ok(test, "read-only lane opens v79"));
+        drop(HubStore::open_existing(temporary.path()).labelled_ok(test, "control lane opens v79"));
+    }
+    assert_eq!(data_version(&observer), before, "{test}: read-only opens write nothing");
+    assert_eq!(schema_version(&observer).unwrap(), V79, "{test}: version unchanged");
+    assert!(SEAM_TABLES.iter().all(|seam| !seam_table_present(&observer, seam)), "{test}: no seam table created");
+
+    // Outside the supported range the refusal stays the stable schema error.
+    observer.pragma_update(None, "user_version", SCHEMA_VERSION + 1).unwrap();
+    assert!(matches!(
+        HubStore::open_read_only(temporary.path()),
+        Err(StoreError::UnsupportedSchema(version)) if version == SCHEMA_VERSION + 1
+    ));
+    observer.pragma_update(None, "user_version", V79).unwrap();
+
+    // The first writable open migrates it to the head.
+    drop(HubStore::initialize(temporary.path()).labelled_ok(test, "writable open migrates"));
+    assert_eq!(schema_version(&observer).unwrap(), SCHEMA_VERSION);
+    assert!(SEAM_TABLES.iter().all(|seam| seam_table_present(&observer, seam)));
+    drop(HubStore::open_read_only(temporary.path()).labelled_ok(test, "read-only lane opens v80"));
+}
