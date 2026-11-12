@@ -2624,6 +2624,10 @@ final class HubControllerTests: XCTestCase {
 
         XCTAssertTrue(shownText(in: onboarding).contains(Self.unconfirmedLine))
         XCTAssertEqual(onboarding.currentRoute, .legacy)
+        // The held discovery retry is superseded: no grant, deadline or retry button remains.
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline)
+        XCTAssertNil(shownRetryButton(in: onboarding), "no retry is offered after an unconfirmed sign-in")
         XCTAssertGreaterThan(runner.statusRuns, statusRunsBefore, "the status was read again")
         XCTAssertEqual(controller.snapshot.accountState, .connected)
         XCTAssertNil(controller.lastVehiclesConfigured)

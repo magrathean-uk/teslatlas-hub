@@ -4290,7 +4290,10 @@ final class HubController {
                     self.refresh { _ in completion(.failure(error)) }
                 case let .failure(error as HubOwnerSignInUnconfirmed):
                     // No answer in time: the pair may be stored, so the status is read again and
-                    // no grant is held. Only the stable code is logged, never the code or verifier.
+                    // no grant is held. A discovery retry held from an earlier run is superseded, so
+                    // no grant, deadline or retry button remains. Only the stable code is logged,
+                    // never the code or verifier.
+                    self.supersedeOwnerDiscoveryRetry()
                     self.lastVehiclesConfigured = nil
                     HubAppLog.shared.record("setup.unconfirmed", category: "account", level: "WARN",
                                             fields: [
