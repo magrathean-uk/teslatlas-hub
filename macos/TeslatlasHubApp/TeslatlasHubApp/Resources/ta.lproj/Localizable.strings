@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "மூலப் பயன்பாடு இறக்குமதி தோல்வியடைந்தது; இறக்குமதியை மீண்டும் முயற்சிக்கவும்.";
 "hub.HubController.2457.838" = "Hub-ஐத் தொடங்குவதற்கு முன் மூலப் பயன்பாடு ஒப்படைப்பை முடிக்கவும்.";
 "hub.HubController.2479.850" = "Hub-ஐ மீண்டும் தொடங்குவதற்கு முன் மூலப் பயன்பாடு ஒப்படைப்பை முடிக்கவும்.";
-"hub.HubController.250.318" = "பழைய டோக்கன்";
+"hub.HubController.250.318" = "உரிமையாளர் உள்நுழைவு";
 "hub.HubController.2503.863" = "Hub தொடக்கம் ஏற்கனவே நடைபெறுகிறது.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Hub-ஐத் தொடங்குவதற்கு முன் இடமாற்றச் சரிபார்ப்புகளை முடிக்கவும்.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "முன்னோட்டத் தரவு";
 "hub.LogsWindowController.70.1725" = "தனிப்பட்ட தகவல்கள் மறைக்கப்பட்ட Hub மற்றும் செயலிப் பதிவுகளைப் பார்வையிடவும்.";
 "hub.MainWindowController.1152.1840" = "Fleet API-ஐப் பயன்படுத்து";
-"hub.MainWindowController.1153.1841" = "பழைய டோக்கனைப் பயன்படுத்து";
+"hub.MainWindowController.1153.1841" = "உரிமையாளர் உள்நுழைவைப் பயன்படுத்து";
 "hub.MainWindowController.1154.1842" = "வரலாற்றை இறக்குமதி செய்…";
 "hub.MainWindowController.1156.1843" = "Tesla இணைப்பைத் துண்டி…";
 "hub.MainWindowController.1158.1844" = "Tesla கணக்கை இணை…";
 "hub.MainWindowController.1428.1846" = "Hub-இலிருந்து Tesla-வைத் துண்டிக்கவா?";
-"hub.MainWindowController.1429.1847" = "Hub நிறுத்தப்பட்டு, சேமித்த Fleet மற்றும் பழைய டோக்கனுக்கான அணுகல் சான்றுகள் அகற்றப்படும். நீங்கள் சேகரித்த தரவு இந்த Mac-இல் இருக்கும்.";
+"hub.MainWindowController.1429.1847" = "Hub நிறுத்தப்பட்டு, சேமித்த Fleet மற்றும் உரிமையாளர் உள்நுழைவுக்கான அணுகல் சான்றுகள் அகற்றப்படும். நீங்கள் சேகரித்த தரவு இந்த Mac-இல் இருக்கும்.";
 "hub.MainWindowController.1431.1849" = "துண்டி";
 "hub.MainWindowController.15.1766" = "வாகனம்";
 "hub.MainWindowController.22.1768" = "Hub-ஐ நிறுத்து";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "தரவை இறக்குமதி செய்";
 "hub.OnboardingWindowController.1362.2047" = "சேவையகத்துடன் இணை";
 "hub.OnboardingWindowController.1471.2059" = "Fleet client ID, token, region, expiry புலங்கள் அனைத்தையும் நிரப்பவும்.";
-"hub.OnboardingWindowController.1500.2071" = "அணுகல் டோக்கனையும் புதுப்பிப்பு டோக்கனையும் உள்ளிடவும்.";
 "hub.OnboardingWindowController.1631.2105" = "மூலப் பயன்பாடு சேவையகம், SSH பயனர், போர்ட் ஆகியவற்றை உள்ளிடவும்.";
 "hub.OnboardingWindowController.168.1852" = "தொடர்";
 "hub.OnboardingWindowController.1691.2113" = "ஸ்கீமா சரிபார்ப்பால் மூலப் பயன்பாட்டின் வெளியீட்டை உறுதிப்படுத்த முடியாது. இயங்கும் சேவையகம் 4.4.0 அல்லது அதற்குப் பிந்தைய வெளியீட்டைப் பயன்படுத்துகிறது என்பதை உறுதிப்படுத்தி, பின்னர் தொடரவும்.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "எப்படித் தொடங்க விரும்புகிறீர்கள்?";
 "hub.OnboardingWindowController.590.1919" = "Hub எவ்வாறு இணைக்க வேண்டும் என்பதைத் தேர்ந்தெடுக்கவும்";
 "hub.OnboardingWindowController.591.1920" = "Fleet Telemetry-ஐ அமை";
-"hub.OnboardingWindowController.592.1921" = "டோக்கன் மூலம் இணை";
+"hub.OnboardingWindowController.592.1921" = "Tesla-வில் உள்நுழை";
 "hub.OnboardingWindowController.593.1922" = "வரலாற்றை இறக்குமதி செய்…";
 "hub.OnboardingWindowController.594.1923" = "உங்கள் Hub-ஐச் சரிபார்க்கிறது";
 "hub.OnboardingWindowController.595.1924" = "இடமாற்றம் முடிந்தது";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub தயாராக உள்ளது";
 "hub.OnboardingWindowController.602.1926" = "இந்த Mac-இல் தனிப்பட்ட முறையில் இயங்கும் உங்களுக்கான Tesla டெலிமெட்ரி சேகரிப்பி.";
 "hub.OnboardingWindowController.604.1927" = "புதிய Hub-ஐ அமைக்கவும் அல்லது மூலப் பயன்பாட்டிலிருந்து உங்கள் வரலாற்றைக் கொண்டு வரவும்.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry பரிந்துரைக்கப்படுகிறது. பழைய அமைப்புகளிலும் பழைய டோக்கன்கள் செயல்படும்.";
+"hub.OnboardingWindowController.606.1928" = "தொடங்க உங்கள் Tesla உரிமையாளர் கணக்கில் உள்நுழையவும். விரும்பினால் Fleet Telemetry கிடைக்கும்.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet செயலியை உருவாக்கி, அதன் அணுகல் சான்றுகளை கீழே உள்ளிடவும்.";
 "hub.OnboardingWindowController.610.1930" = "சேகரிப்பு சாளரம் திறந்திருக்கும்போது Tesla-வில் உள்நுழையவும். Hub ஒருபோதும் டோக்கனை ஏற்காது.";
 "hub.OnboardingWindowController.612.1931" = "வாகன வரலாற்றை இறக்குமதி செய்ய உங்கள் மூலப் பயன்பாடு சேவையகத்துடன் இணைக்கவும்.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "உங்கள் ஏற்கனவே உள்ள வாகன வரலாற்றைக் கொண்டு வாருங்கள்.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla-வின் அதிகாரப்பூர்வ ஸ்ட்ரீமிங் API. நேரடி வாகனக் கட்டளைகளை இது வழங்குகிறது.";
-"hub.OnboardingWindowController.752.1958" = "பழைய டோக்கன்";
+"hub.OnboardingWindowController.752.1958" = "உரிமையாளர் உள்நுழைவு";
 "hub.OnboardingWindowController.753.1959" = "Tesla-வில் உள்நுழையவும். Hub தனக்கான உள்நுழைவை வைத்திருக்கும்.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet செயலியை உருவாக்கு";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "விசையைத் தேர்ந்தெடு…";
 "hub.OnboardingWindowController.888.1990" = "வரலாறு மட்டும். Hub, Tesla அணுகல் சான்றுகளை ஆய்வு செய்யாது; இறக்குமதியும் செய்யாது. தரவு சேகரிப்பு முடக்கப்பட்டே இருக்கும். தரவுத்தள ஸ்கீமாவைச் சரிபார்க்கலாம்; மூலப் பயன்பாட்டின் பதிப்பு தெரியாது.";
 "hub.OnboardingWindowController.891.1991" = "உள்ளூர் PostgreSQL மூலம்";
-"hub.OnboardingWindowController.895.1994" = "இது v4.2-உடன் இணக்கமான தரவுத்தள ஸ்கீமா என்பதை ஏற்கிறேன்; இது செயலியின் பதிப்புக்கான சான்று அல்ல";
 "hub.OnboardingWindowController.915.1997" = "மூலப் பயன்பாடு %1$@";
 "hub.OnboardingWindowController.927.2001" = "சரிபார்க்கிறது…";
 "hub.OnboardingWindowController.935.2004" = "சேவையகத்தை மாற்று";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Tesla உள்நுழைவு நிலை பொருந்தவில்லை. மீண்டும் உள்நுழைவைத் தொடங்கவும்.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla தவறான கணக்கு வழங்குநரைத் திருப்பி அனுப்பியது.";
 "hub.TeslaAuthWindowController.358.html_progress" = "பாதுகாப்பான Tesla உள்நுழைவை நிறைவு செய்கிறது…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla செல்லாத டோக்கன் பதிலைத் திருப்பி அனுப்பியது.";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla டோக்கன் பரிமாற்றம் தோல்வியடைந்தது.";
 "hub.SourceServerImporter.34.2284" = "குறியீடு: %1$@";
 "hub.SourceServerImporter.428.2461" = "மூலப் பயன்பாடு சேவையகம் முழுமையற்ற அமைவு விவரங்களைத் திருப்பி அனுப்பியது.";
 "hub.SourceServerImporter.691.2530" = "சேவையக விவரங்களைச் சரிபார்க்கவும்";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Hub-இன் கட்டுப்பாட்டு சேனலில் பதிலளிக்கும் செயல்முறை இந்த Hub அல்ல, எனவே எதுவும் அனுப்பப்படவில்லை. Hub-ஐ மீண்டும் தொடங்கி, பிறகு மீண்டும் உள்நுழையவும்.";
 
 "hub.signIn.busy" = "Hub மற்ற கோரிக்கைகளில் பிஸியாக உள்ளது. எதுவும் மாற்றப்படவில்லை; சிறிது நேரத்தில் மீண்டும் உள்நுழையவும்.";
+
+"hub.signIn.discovery.notListed" = "நீங்கள் உள்நுழைந்துள்ளீர்கள், ஆனால் Tesla இந்தக் கணக்கில் எந்தக் காரையும் பட்டியலிடவில்லை. கார் இந்த Tesla கணக்கைச் சேர்ந்ததா என்பதைச் சரிபார்த்து, பிறகு மீண்டும் கார்களைத் தேடவும்.";
+
+"hub.signIn.discovery.selectionRequired" = "நீங்கள் உள்நுழைந்துள்ளீர்கள், ஆனால் Tesla ஒன்றுக்கு மேற்பட்ட கார்களைப் பட்டியலிடுகிறது; எதிலிருந்து தரவைச் சேகரிக்க வேண்டும் என்பதை Hub அறிய வேண்டும். மீண்டும் கார்களைத் தேடவும்.";
+
+"hub.signIn.discovery.selectionInvalid" = "நீங்கள் உள்நுழைந்துள்ளீர்கள், ஆனால் தேர்ந்தெடுத்த கார் இந்த Tesla கணக்கில் இல்லை. மீண்டும் கார்களைத் தேடவும்.";
+
+"hub.signIn.discovery.answerInvalid" = "நீங்கள் உள்நுழைந்துள்ளீர்கள், ஆனால் Tesla-வின் கார் பட்டியலை Hub-ஆல் படிக்க முடியவில்லை. மீண்டும் கார்களைத் தேடவும்.";
+
+"hub.signIn.discovery.refused" = "நீங்கள் உள்நுழைந்துள்ளீர்கள், ஆனால் Tesla கார் பட்டியலை மறுத்துவிட்டது. மீண்டும் கார்களைத் தேடவும், அல்லது Tesla மூலம் மீண்டும் உள்நுழையவும்.";
+
+"hub.signIn.discovery.windowClosed" = "நீங்கள் உள்நுழைந்துள்ளீர்கள், ஆனால் Hub உங்கள் கார்களைக் கண்டறியும் முன்பே சேகரிப்பு சாளரம் மூடப்பட்டது. ஒரு சாளரத்தைத் திறந்து, பிறகு மீண்டும் கார்களைத் தேடவும்.";
+
+"hub.signIn.discovery.providerParked" = "நீங்கள் உள்நுழைந்துள்ளீர்கள், ஆனால் இந்த Hub வேறொரு வழங்குநர் மூலம் தரவைச் சேகரிக்கிறது, எனவே இந்த உள்நுழைவு மூலம் கார்களைத் தேட முடியாது.";
+
+"hub.signIn.discovery.settingsInvalid" = "நீங்கள் உள்நுழைந்துள்ளீர்கள், ஆனால் இந்த Hub-இன் Owner API முகவரி Tesla-வுடையது அல்ல, எனவே Hub உங்கள் கார்களைக் கேட்கவில்லை. முகவரியைத் திருத்தி, பிறகு Tesla மூலம் மீண்டும் உள்நுழையவும்.";
+
+"hub.signIn.discovery.general" = "நீங்கள் உள்நுழைந்துள்ளீர்கள், ஆனால் Hub-ஆல் உங்கள் கார்களைக் கண்டறிய முடியவில்லை. மீண்டும் கார்களைத் தேடவும், அல்லது Tesla மூலம் மீண்டும் உள்நுழையவும்.";
+
+"hub.signIn.discovery.retry" = "மீண்டும் கார்களைத் தேடவும்";
+
+"hub.signIn.discovery.expired" = "இந்த உள்நுழைவைத் தொடர இனி முடியாது. Tesla மூலம் மீண்டும் உள்நுழையவும்.";
+
+"hub.signIn.discovery.configured" = "அமைக்கப்பட்ட கார்கள்: %d";
+
+"hub.signIn.reportInvalid" = "Hub உள்நுழைவை உறுதிப்படுத்த முடியவில்லை. Tesla மூலம் மீண்டும் உள்நுழையவும்.";

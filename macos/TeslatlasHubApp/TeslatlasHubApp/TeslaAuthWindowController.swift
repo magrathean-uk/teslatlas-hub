@@ -40,8 +40,7 @@ enum TeslaAuthError: LocalizedError, Equatable {
         case .invalidCallback: return HubL10n.text("hub.TeslaAuthWindowController.33.2238", fallback: "Tesla returned an incomplete login callback.")
         case .stateMismatch: return HubL10n.text("hub.TeslaAuthWindowController.34.2239", fallback: "Tesla login state did not match. Start login again.")
         case .invalidIssuer: return HubL10n.text("hub.TeslaAuthWindowController.35.2240", fallback: "Tesla returned an invalid account issuer.")
-        case .invalidResponse: return HubL10n.text("hub.TeslaAuthWindowController.36.2241", fallback: "Tesla returned an invalid token response.")
-        case .exchangeFailed: return HubL10n.text("hub.TeslaAuthWindowController.37.2242", fallback: "Tesla token exchange failed.")
+        case .invalidResponse, .exchangeFailed: return nil
         }
     }
 }

@@ -94,7 +94,7 @@ enum HubOnboardingRoute: Equatable {
 struct HubOnboardingState: Equatable {
     var route: HubOnboardingRoute = .welcome
     var path: HubOnboardingPath = .newInstallation
-    var provider: HubOnboardingProvider = .fleet
+    var provider: HubOnboardingProvider = .legacy
 
     var step: Int {
         switch route {
@@ -229,6 +229,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var migrationSession: SourceServerImportSession?
     private var migrationPreparation: HubMigrationPreparation?
     private var accountSignIn: HubAccountSignIn?
+    /// Hears the controller drop the held discovery retry at its deadline, to update the page.
+    private var discoveryRetryExpiryObserver: NSObjectProtocol?
+    /// How many cars the owner sign-in configured, shown on the verification page.
+    private var configuredCarsNote: String?
     private var lifecycleObservation: HubLifecycleAuthority.Observation?
     private var connectedMigrationIdentity: String?
     private var onboardingContainer: HubOnboardingContainerView!
@@ -349,7 +353,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case "choose": return HubOnboardingState(route: .choose)
         case "choose-migration": return HubOnboardingState(route: .choose, path: .migration)
         case "provider": return HubOnboardingState(route: .provider)
-        case "fleet": return HubOnboardingState(route: .fleet)
+        case "fleet": return HubOnboardingState(route: .fleet, provider: .fleet)
         case "legacy": return HubOnboardingState(route: .legacy, provider: .legacy)
         case "migration", "migration-error": return HubOnboardingState(route: .migration, path: .migration)
         case "migration-connected": return HubOnboardingState(route: .migration, path: .migration)
@@ -392,6 +396,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     func windowWillClose(_ notification: Notification) {
         resetMigrationProgress()
         closeMigrationSession()
+        discardDiscoveryRetry()
         guard !didNotifyDismiss else { return }
         didNotifyDismiss = true
         onDismiss()
@@ -615,7 +620,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case .choose: return HubL10n.text("hub.OnboardingWindowController.589.1918", fallback: "How would you like to start?")
         case .provider: return HubL10n.text("hub.OnboardingWindowController.590.1919", fallback: "Choose how Hub connects")
         case .fleet: return HubL10n.text("hub.OnboardingWindowController.591.1920", fallback: "Set up Fleet Telemetry")
-        case .legacy: return HubL10n.text("hub.OnboardingWindowController.592.1921", fallback: "Connect with a token")
+        case .legacy: return HubL10n.text("hub.OnboardingWindowController.592.1921", fallback: "Sign in with Tesla")
         case .migration: return HubL10n.text("hub.OnboardingWindowController.593.1922", fallback: "Import History…")
         case .verify: return HubL10n.text("hub.OnboardingWindowController.594.1923", fallback: "Checking your Hub")
         case .finish: return state.path == .migration ? HubL10n.text("hub.OnboardingWindowController.595.1924", fallback: "Migration complete") : HubL10n.text("hub.OnboardingWindowController.595.1925", fallback: "Teslatlas Hub is ready")
@@ -629,7 +634,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case .choose:
             return HubL10n.text("hub.OnboardingWindowController.604.1927", fallback: "Set up a fresh Hub or bring your history over from the source application.")
         case .provider:
-            return HubL10n.text("hub.OnboardingWindowController.606.1928", fallback: "Fleet Telemetry is recommended. Legacy tokens work with older setups.")
+            return HubL10n.text("hub.OnboardingWindowController.606.1928", fallback: "Sign in with your Tesla owner account to start. Fleet Telemetry is available if you prefer it.")
         case .fleet:
             return HubL10n.text("hub.OnboardingWindowController.608.1929", fallback: "Create a Tesla Fleet application, then paste its credentials below.")
         case .legacy:
@@ -771,15 +776,16 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func providerBody() -> NSView {
+        // The owner sign-in is offered first and is the default; Fleet stays one click away.
+        let legacy = choiceButton(title: HubL10n.text("hub.OnboardingWindowController.752.1958", fallback: "Owner sign-in"),
+                                  subtitle: HubL10n.text("hub.OnboardingWindowController.753.1959", fallback: "Sign in with Tesla. Hub keeps its own login."),
+                                  selected: state.provider == .legacy,
+                                  action: #selector(selectLegacy))
         let fleet = choiceButton(title: HubL10n.text("hub.OnboardingWindowController.748.1956", fallback: "Fleet Telemetry"),
                                  subtitle: HubL10n.text("hub.OnboardingWindowController.749.1957", fallback: "Tesla's official streaming API. Enables live vehicle commands."),
                                  selected: state.provider == .fleet,
                                  action: #selector(selectFleet))
-        let legacy = choiceButton(title: HubL10n.text("hub.OnboardingWindowController.752.1958", fallback: "Legacy Token"),
-                                  subtitle: HubL10n.text("hub.OnboardingWindowController.753.1959", fallback: "Sign in with Tesla. Hub keeps its own login."),
-                                  selected: state.provider == .legacy,
-                                  action: #selector(selectLegacy))
-        return verticalChoices([fleet, legacy])
+        return verticalChoices([legacy, fleet])
     }
 
     private func fleetBody() -> NSView {
@@ -814,7 +820,19 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         let signIn = HubActionButton(title: HubL10n.text("hub.OnboardingWindowController.788.1970", fallback: "Sign in with Tesla"), target: self, action: #selector(startLegacySignIn))
         configurePrimaryButton(signIn, symbol: "person.crop.circle.badge.checkmark")
         // Sign-in is the code exchange only: no token field exists.
-        let stack = NSStackView(views: [signIn,
+        var actions: [NSView] = [signIn]
+        // A failed car discovery is resumed with the held sign-in, without a new Tesla page.
+        if controller.canRetryOwnerDiscovery {
+            let retry = HubActionButton(title: HubL10n.text("hub.signIn.discovery.retry", fallback: "Retry finding cars"),
+                                        target: self, action: #selector(retryOwnerDiscovery))
+            retry.identifier = NSUserInterfaceItemIdentifier("onboarding.legacy.retryDiscovery")
+            configureFlatButton(retry, symbol: "arrow.clockwise")
+            actions.append(retry)
+        }
+        let buttons = NSStackView(views: actions)
+        buttons.spacing = 12
+        buttons.alignment = .centerY
+        let stack = NSStackView(views: [buttons,
                                        featureRow(HubL10n.text("hub.OnboardingWindowController.798.1975", fallback: "Tokens are encrypted on this Mac"), "lock.fill")])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -1209,6 +1227,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 0
+        if let configuredCarsNote {
+            let note = featureRow(configuredCarsNote, "car.side")
+            note.identifier = NSUserInterfaceItemIdentifier("onboarding.verify.carsConfigured")
+            stack.addArrangedSubview(note)
+            stack.setCustomSpacing(12, after: note)
+        }
         if busy && checks.isEmpty {
             let row = NSStackView(views: [spinner, NSTextField(labelWithString: HubL10n.text("hub.DiagnosticsWindowController.210.227", fallback: "Running checks…"))])
             row.spacing = 10
@@ -1498,6 +1522,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         if !closesWindowOnCancel {
             resetMigrationProgress()
             closeMigrationSession()
+            discardDiscoveryRetry()
             guard !didNotifyDismiss else { return }
             didNotifyDismiss = true
             onDismiss()
@@ -1669,17 +1694,73 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
     }
 
+    @objc private func retryOwnerDiscovery() {
+        guard authWindow == nil, !busy else { return }
+        HubAppLog.shared.record("authentication.resumed", category: "account",
+                                fields: ["provider": "legacy"])
+        setBusy(true, operation: .setup)
+        controller.retryOwnerDiscovery { [weak self] result in
+            self?.setupFinished(result)
+        }
+    }
+
+    private func discardDiscoveryRetry() {
+        stopObservingDiscoveryRetryExpiry()
+        controller.discardOwnerDiscoveryRetry()
+    }
+
+    private func stopObservingDiscoveryRetryExpiry() {
+        if let discoveryRetryExpiryObserver {
+            NotificationCenter.default.removeObserver(discoveryRetryExpiryObserver)
+        }
+        discoveryRetryExpiryObserver = nil
+    }
+
+    /// The controller drops the grant at its deadline by itself; the page only follows,
+    /// hiding the retry and asking for a new sign-in. While busy only the page update waits.
+    private func observeDiscoveryRetryExpiry() {
+        guard discoveryRetryExpiryObserver == nil else { return }
+        discoveryRetryExpiryObserver = NotificationCenter.default.addObserver(
+            forName: HubController.ownerDiscoveryRetryExpiredNotification, object: controller, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.stopObservingDiscoveryRetryExpiry()
+            guard !self.busy else { return }
+            self.errorMessage = Self.discoveryRetryExpiredMessage
+            self.render()
+        }
+    }
+
+    private static var discoveryRetryExpiredMessage: String {
+        HubL10n.text("hub.signIn.discovery.expired",
+                     fallback: "This sign-in can no longer be resumed. Sign in with Tesla again.")
+    }
+
     private func setupFinished(_ result: Result<Void, Error>) {
         resetMigrationProgress()
         setBusy(false)
         switch result {
         case .success:
+            stopObservingDiscoveryRetryExpiry()
+            configuredCarsNote = controller.lastVehiclesConfigured.map {
+                HubL10n.format("hub.signIn.discovery.configured", fallback: "Cars configured: %d", arguments: [$0])
+            }
             state.advance()
             checks = []
             verificationFinished = false
             render()
             runVerification()
         case let .failure(error):
+            // A failed car discovery is not success: the page stays, with the retry while the
+            // controller still holds the sign-in, and asks for a new one once it does not.
+            if error is HubOwnerDiscoveryFailure {
+                guard controller.canRetryOwnerDiscovery else {
+                    stopObservingDiscoveryRetryExpiry()
+                    showInlineError(Self.discoveryRetryExpiredMessage)
+                    return
+                }
+                observeDiscoveryRetryExpiry()
+            }
             showInlineError(error.localizedDescription)
         }
     }

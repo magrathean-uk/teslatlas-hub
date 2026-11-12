@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "De bronapplicatie-import is mislukt. Probeer de import opnieuw.";
 "hub.HubController.2457.838" = "Rond de bronapplicatie-overdracht af voordat je de Hub start.";
 "hub.HubController.2479.850" = "Rond de bronapplicatie-overdracht af voordat je de Hub opnieuw start.";
-"hub.HubController.250.318" = "Legacy-token";
+"hub.HubController.250.318" = "Aanmelden als eigenaar";
 "hub.HubController.2503.863" = "De Hub wordt al gestart.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Rond de migratiecontroles af voordat je de Hub start.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Voorbeeldlogboek";
 "hub.LogsWindowController.70.1725" = "Controleer de afgeschermde logboeken van de Hub en de app.";
 "hub.MainWindowController.1152.1840" = "Fleet API gebruiken";
-"hub.MainWindowController.1153.1841" = "Legacy-token gebruiken";
+"hub.MainWindowController.1153.1841" = "Aanmelden als eigenaar gebruiken";
 "hub.MainWindowController.1154.1842" = "Geschiedenis importeren…";
 "hub.MainWindowController.1156.1843" = "Verbinding met Tesla verbreken…";
 "hub.MainWindowController.1158.1844" = "Tesla-account verbinden…";
 "hub.MainWindowController.1428.1846" = "Verbinding met Tesla verbreken in de Hub?";
-"hub.MainWindowController.1429.1847" = "De Hub wordt gestopt en verwijdert de opgeslagen Fleet- en Legacy-toegangsgegevens. Je verzamelde gegevens blijven op deze Mac.";
+"hub.MainWindowController.1429.1847" = "De Hub wordt gestopt en verwijdert de opgeslagen toegangsgegevens voor Fleet en voor het aanmelden als eigenaar. Je verzamelde gegevens blijven op deze Mac.";
 "hub.MainWindowController.1431.1849" = "Verbinding verbreken";
 "hub.MainWindowController.15.1766" = "Voertuig";
 "hub.MainWindowController.22.1768" = "Hub stoppen";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Gegevens importeren";
 "hub.OnboardingWindowController.1362.2047" = "Verbinding maken met de server";
 "hub.OnboardingWindowController.1471.2059" = "Vul de velden voor Fleet-client-ID, token, regio en vervaldatum in.";
-"hub.OnboardingWindowController.1500.2071" = "Voer zowel het toegangstoken als het vernieuwingstoken in.";
 "hub.OnboardingWindowController.1631.2105" = "Voer de bronapplicatie-server, SSH-gebruiker en poort in.";
 "hub.OnboardingWindowController.168.1852" = "Doorgaan";
 "hub.OnboardingWindowController.1691.2113" = "Een schemacontrole kan niet vaststellen welke versie van de bronapplicatie wordt gebruikt. Bevestig dat de actieve server versie 4.4.0 of nieuwer gebruikt en ga daarna verder.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "Hoe wil je beginnen?";
 "hub.OnboardingWindowController.590.1919" = "Kies hoe de Hub verbinding maakt";
 "hub.OnboardingWindowController.591.1920" = "Fleet Telemetry instellen";
-"hub.OnboardingWindowController.592.1921" = "Verbinden met een token";
+"hub.OnboardingWindowController.592.1921" = "Aanmelden bij Tesla";
 "hub.OnboardingWindowController.593.1922" = "Geschiedenis importeren…";
 "hub.OnboardingWindowController.594.1923" = "Je Hub controleren";
 "hub.OnboardingWindowController.595.1924" = "Migratie voltooid";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub is klaar";
 "hub.OnboardingWindowController.602.1926" = "Je eigen Tesla-telemetrieverzamelaar draait privé op deze Mac.";
 "hub.OnboardingWindowController.604.1927" = "Stel een nieuwe Hub in of importeer je geschiedenis vanuit de bronapplicatie.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry wordt aanbevolen. Legacy-tokens werken met oudere installaties.";
+"hub.OnboardingWindowController.606.1928" = "Meld je om te beginnen aan met je Tesla-eigenaarsaccount. Fleet Telemetry is beschikbaar als je dat liever gebruikt.";
 "hub.OnboardingWindowController.608.1929" = "Maak een Tesla Fleet-app aan en plak de bijbehorende toegangsgegevens hieronder.";
 "hub.OnboardingWindowController.610.1930" = "Meld je aan bij Tesla terwijl een verzamelvenster open is. Hub accepteert nooit een token.";
 "hub.OnboardingWindowController.612.1931" = "Verbind met je bronapplicatie-server om de voertuiggeschiedenis te importeren.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "Importeer je bestaande voertuiggeschiedenis.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "De officiële streaming-API van Tesla. Hiermee kun je live opdrachten naar je voertuig sturen.";
-"hub.OnboardingWindowController.752.1958" = "Legacy-token";
+"hub.OnboardingWindowController.752.1958" = "Aanmelden als eigenaar";
 "hub.OnboardingWindowController.753.1959" = "Meld je aan bij Tesla. Hub houdt zijn eigen aanmelding.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet-app aanmaken";
 "hub.OnboardingWindowController.771.1964" = "Client-ID";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "Sleutel kiezen…";
 "hub.OnboardingWindowController.888.1990" = "Alleen geschiedenis. De Hub leest geen Tesla-inloggegevens en importeert deze ook niet. Gegevensverzameling blijft uitgeschakeld. Het databaseschema kan worden gecontroleerd; de versie van de bronapplicatie blijft onbekend.";
 "hub.OnboardingWindowController.891.1991" = "Lokale PostgreSQL-bron";
-"hub.OnboardingWindowController.895.1994" = "Ik bevestig dat dit een databaseschema is dat compatibel is met v4.2; dit bewijst niet welke applicatieversie wordt gebruikt";
 "hub.OnboardingWindowController.915.1997" = "Bronapplicatie %1$@";
 "hub.OnboardingWindowController.927.2001" = "Controleren…";
 "hub.OnboardingWindowController.935.2004" = "Server wijzigen";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "De Tesla-aanmeldstatus komt niet overeen. Start het aanmelden opnieuw.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla heeft een ongeldige URL van de accountuitgever teruggestuurd.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Beveiligd aanmelden bij Tesla wordt afgerond…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla heeft een ongeldig tokenantwoord teruggestuurd.";
-"hub.TeslaAuthWindowController.37.2242" = "Tokenuitwisseling met Tesla mislukt.";
 "hub.SourceServerImporter.34.2284" = "Code: %1$@";
 "hub.SourceServerImporter.428.2461" = "De bronapplicatie-server heeft onvolledige installatiegegevens teruggestuurd.";
 "hub.SourceServerImporter.691.2530" = "Controleer de servergegevens";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Het proces dat op het controlekanaal van de Hub antwoordt, is niet deze Hub, dus er is niets verzonden. Start de Hub opnieuw en log daarna opnieuw in.";
 
 "hub.signIn.busy" = "De Hub is bezig met andere verzoeken. Er is niets gewijzigd; log over een moment opnieuw in.";
+
+"hub.signIn.discovery.notListed" = "Je bent aangemeld, maar Tesla heeft geen auto vermeld voor dit account. Controleer of de auto bij dit Tesla-account hoort en probeer de auto’s daarna opnieuw te zoeken.";
+
+"hub.signIn.discovery.selectionRequired" = "Je bent aangemeld, maar Tesla vermeldt meer dan één auto en de Hub moet weten van welke hij gegevens moet verzamelen. Probeer de auto’s opnieuw te zoeken.";
+
+"hub.signIn.discovery.selectionInvalid" = "Je bent aangemeld, maar de gekozen auto staat niet in dit Tesla-account. Probeer de auto’s opnieuw te zoeken.";
+
+"hub.signIn.discovery.answerInvalid" = "Je bent aangemeld, maar de Hub kon de autolijst van Tesla niet lezen. Probeer de auto’s opnieuw te zoeken.";
+
+"hub.signIn.discovery.refused" = "Je bent aangemeld, maar Tesla heeft de autolijst geweigerd. Probeer de auto’s opnieuw te zoeken of meld je opnieuw aan bij Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Je bent aangemeld, maar het verzamelvenster is gesloten voordat de Hub je auto’s kon vinden. Open een venster en probeer de auto’s daarna opnieuw te zoeken.";
+
+"hub.signIn.discovery.providerParked" = "Je bent aangemeld, maar deze Hub verzamelt gegevens via een andere provider en kan met deze aanmelding dus geen auto’s zoeken.";
+
+"hub.signIn.discovery.settingsInvalid" = "Je bent aangemeld, maar het Owner API-adres van deze Hub is niet dat van Tesla, dus de Hub heeft je auto’s niet opgevraagd. Corrigeer het adres en meld je daarna opnieuw aan bij Tesla.";
+
+"hub.signIn.discovery.general" = "Je bent aangemeld, maar de Hub kon je auto’s niet vinden. Probeer de auto’s opnieuw te zoeken of meld je opnieuw aan bij Tesla.";
+
+"hub.signIn.discovery.retry" = "Auto’s opnieuw zoeken";
+
+"hub.signIn.discovery.expired" = "Deze aanmelding kan niet meer worden hervat. Meld je opnieuw aan bij Tesla.";
+
+"hub.signIn.discovery.configured" = "Geconfigureerde auto’s: %d";
+
+"hub.signIn.reportInvalid" = "Hub kon de aanmelding niet bevestigen. Meld je opnieuw aan bij Tesla.";

@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Бастапқы қолданбадан импорттау сәтсіз аяқталды; импортты қайталаңыз.";
 "hub.HubController.2457.838" = "Hub-ты іске қоспас бұрын бастапқы қолданбадан басқаруды тапсыруды аяқтаңыз.";
 "hub.HubController.2479.850" = "Hub-ты қайта іске қоспас бұрын бастапқы қолданбадан басқаруды тапсыруды аяқтаңыз.";
-"hub.HubController.250.318" = "Ескі токен";
+"hub.HubController.250.318" = "Иесі ретінде кіру";
 "hub.HubController.2503.863" = "Hub іске қосылып жатыр.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Hub-ты іске қоспас бұрын көшіру тексерулерін аяқтаңыз.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Алдын ала қарау үлгісі";
 "hub.LogsWindowController.70.1725" = "Бүркемеленген Hub және қолданба журналдарын қарап шығыңыз.";
 "hub.MainWindowController.1152.1840" = "Fleet API пайдалану";
-"hub.MainWindowController.1153.1841" = "Legacy токенін пайдалану";
+"hub.MainWindowController.1153.1841" = "Иесі ретінде кіруді пайдалану";
 "hub.MainWindowController.1154.1842" = "Тарихты импорттау…";
 "hub.MainWindowController.1156.1843" = "Tesla-ны ажырату…";
 "hub.MainWindowController.1158.1844" = "Tesla тіркелгісін қосу…";
 "hub.MainWindowController.1428.1846" = "Tesla-ны Hub-тен ажырату керек пе?";
-"hub.MainWindowController.1429.1847" = "Hub тоқтап, сақталған Fleet және Legacy тіркелгі деректерін жояды. Жиналған деректеріңіз осы Mac-та қалады.";
+"hub.MainWindowController.1429.1847" = "Hub тоқтап, сақталған Fleet және иесі ретінде кіру тіркелгі деректерін жояды. Жиналған деректеріңіз осы Mac-та қалады.";
 "hub.MainWindowController.1431.1849" = "Ажырату";
 "hub.MainWindowController.15.1766" = "Көлік";
 "hub.MainWindowController.22.1768" = "Hub-ті тоқтату";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Деректерді импорттау";
 "hub.OnboardingWindowController.1362.2047" = "Серверге қосылу";
 "hub.OnboardingWindowController.1471.2059" = "Fleet клиентінің ID-ін, токенді, аймақты және жарамдылық мерзімін толтырыңыз.";
-"hub.OnboardingWindowController.1500.2071" = "Қатынау токенін де, жаңарту токенін де енгізіңіз.";
 "hub.OnboardingWindowController.1631.2105" = "Бастапқы қолданба серверін, SSH пайдаланушысын және портты енгізіңіз.";
 "hub.OnboardingWindowController.168.1852" = "Жалғастыру";
 "hub.OnboardingWindowController.1691.2113" = "Схеманы тексеру бастапқы қолданбаның шығарылымын анықтай алмайды. Серверде бастапқы қолданбаның 4.4.0 немесе одан жаңарақ нұсқасы жұмыс істеп тұрғанын растаңыз, содан кейін жалғастырыңыз.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "Қалай бастағыңыз келеді?";
 "hub.OnboardingWindowController.590.1919" = "Hub қалай қосылатынын таңдаңыз";
 "hub.OnboardingWindowController.591.1920" = "Fleet Telemetry қызметін баптау";
-"hub.OnboardingWindowController.592.1921" = "Токенмен қосылу";
+"hub.OnboardingWindowController.592.1921" = "Tesla тіркелгісімен кіру";
 "hub.OnboardingWindowController.593.1922" = "Тарихты импорттау…";
 "hub.OnboardingWindowController.594.1923" = "Hub тексерілуде";
 "hub.OnboardingWindowController.595.1924" = "Көшіру аяқталды";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub дайын";
 "hub.OnboardingWindowController.602.1926" = "Осы Mac-та жеке іске қосылатын Tesla телеметрия жинағышыңыз.";
 "hub.OnboardingWindowController.604.1927" = "Жаңа Hub баптаңыз немесе бастапқы қолданбадағы тарихыңызды көшіріңіз.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry ұсынылады. Legacy токендері ескі конфигурациялармен жұмыс істейді.";
+"hub.OnboardingWindowController.606.1928" = "Бастау үшін Tesla иесінің тіркелгісімен кіріңіз. Қаласаңыз, Fleet Telemetry қолжетімді.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet қолданбасын жасап, тіркелгі деректерін төмендегі өрістерге қойыңыз.";
 "hub.OnboardingWindowController.610.1930" = "Жинау терезесі ашық кезде Tesla тіркелгісімен кіріңіз. Hub ешқашан токенді қабылдамайды.";
 "hub.OnboardingWindowController.612.1931" = "Көлік тарихын импорттау үшін бастапқы қолданба серверіне қосылыңыз.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "Бар көлік тарихыңызды көшіріп әкеліңіз.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla-ның ресми ағындық API-і. Көлікті нақты уақытта басқару пәрмендерін қосады.";
-"hub.OnboardingWindowController.752.1958" = "Legacy токені";
+"hub.OnboardingWindowController.752.1958" = "Иесі ретінде кіру";
 "hub.OnboardingWindowController.753.1959" = "Tesla тіркелгісімен кіріңіз. Hub өз кіру деректерін өзі сақтайды.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet қолданбасын жасау";
 "hub.OnboardingWindowController.771.1964" = "Клиент ID-і";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "Кілт таңдау…";
 "hub.OnboardingWindowController.888.1990" = "Тек тарих. Hub Tesla тіркелгі деректерін тексермейді де, импорттамайды. Дерек жинау өшірулі қалады. Дерекқор схемасын тексеруге болады; бастапқы қолданбаның нұсқасы белгісіз болып қалады.";
 "hub.OnboardingWindowController.891.1991" = "Жергілікті PostgreSQL дереккөзі";
-"hub.OnboardingWindowController.895.1994" = "Бұл — v4.2 нұсқасымен үйлесімді дерекқор схемасы екенін растаймын; бұл қолданба нұсқасын дәлелдемейді";
 "hub.OnboardingWindowController.915.1997" = "Бастапқы қолданба %1$@";
 "hub.OnboardingWindowController.927.2001" = "Тексерілуде…";
 "hub.OnboardingWindowController.935.2004" = "Серверді өзгерту";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Tesla кіру күйі сәйкес келмеді. Кіруді қайта бастаңыз.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla жүйесі тіркелгінің жарамсыз эмитентін қайтарды.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Қауіпсіз Tesla жүйесіне кіру аяқталуда…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla жүйесі жарамсыз токен жауабын қайтарды.";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla токендерін алмасу сәтсіз аяқталды.";
 "hub.SourceServerImporter.34.2284" = "Код: %1$@";
 "hub.SourceServerImporter.428.2461" = "Бастапқы қолданба сервері баптауға қажетті толық мәліметті қайтармады.";
 "hub.SourceServerImporter.691.2530" = "Сервер мәліметтерін тексеріңіз";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Hub басқару арнасында жауап беріп тұрған процесс осы Hub емес, сондықтан ештеңе жіберілмеді. Hub қайта іске қосып, содан кейін қайта кіріңіз.";
 
 "hub.signIn.busy" = "Hub басқа сұрауларға бос емес. Ештеңе өзгертілмеді; сәлден кейін қайта кіріңіз.";
+
+"hub.signIn.discovery.notListed" = "Сіз кірдіңіз, бірақ Tesla бұл тіркелгіде бірде-бір көлікті көрсетпеді. Көліктің осы Tesla тіркелгісіне тиесілі екенін тексеріп, көліктерді қайта іздеп көріңіз.";
+
+"hub.signIn.discovery.selectionRequired" = "Сіз кірдіңіз, бірақ Tesla бірнеше көлікті көрсетеді, ал Hub қайсысынан деректер жинау керегін білуі қажет. Көліктерді қайта іздеп көріңіз.";
+
+"hub.signIn.discovery.selectionInvalid" = "Сіз кірдіңіз, бірақ таңдалған көлік бұл Tesla тіркелгісінде жоқ. Көліктерді қайта іздеп көріңіз.";
+
+"hub.signIn.discovery.answerInvalid" = "Сіз кірдіңіз, бірақ Hub Tesla көліктер тізімін оқи алмады. Көліктерді қайта іздеп көріңіз.";
+
+"hub.signIn.discovery.refused" = "Сіз кірдіңіз, бірақ Tesla көліктер тізімінен бас тартты. Көліктерді қайта іздеп көріңіз немесе Tesla арқылы қайта кіріңіз.";
+
+"hub.signIn.discovery.windowClosed" = "Сіз кірдіңіз, бірақ Hub көліктеріңізді таба алмай тұрып, деректерді жинау терезесі жабылды. Терезені ашып, көліктерді қайта іздеп көріңіз.";
+
+"hub.signIn.discovery.providerParked" = "Сіз кірдіңіз, бірақ бұл Hub деректерді басқа провайдер арқылы жинайды, сондықтан осы кіру арқылы көліктерді іздей алмайды.";
+
+"hub.signIn.discovery.settingsInvalid" = "Сіз кірдіңіз, бірақ бұл Hub үшін Owner API мекенжайы Tesla мекенжайы емес, сондықтан Hub көліктеріңізді сұраған жоқ. Мекенжайды түзетіп, Tesla арқылы қайта кіріңіз.";
+
+"hub.signIn.discovery.general" = "Сіз кірдіңіз, бірақ Hub көліктеріңізді таба алмады. Көліктерді қайта іздеп көріңіз немесе Tesla арқылы қайта кіріңіз.";
+
+"hub.signIn.discovery.retry" = "Көліктерді қайта іздеу";
+
+"hub.signIn.discovery.expired" = "Бұл кіруді енді жалғастыру мүмкін емес. Tesla арқылы қайта кіріңіз.";
+
+"hub.signIn.discovery.configured" = "Бапталған көліктер: %d";
+
+"hub.signIn.reportInvalid" = "Hub кіруді растай алмады. Tesla арқылы қайта кіріңіз.";

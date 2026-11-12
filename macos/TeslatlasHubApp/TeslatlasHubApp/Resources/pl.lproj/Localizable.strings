@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Import z aplikacji źródłowej nie powiódł się; ponów go.";
 "hub.HubController.2457.838" = "Dokończ przekazanie z aplikacji źródłowej przed uruchomieniem Huba.";
 "hub.HubController.2479.850" = "Dokończ przekazanie z aplikacji źródłowej przed ponownym uruchomieniem Huba.";
-"hub.HubController.250.318" = "Token starszego typu";
+"hub.HubController.250.318" = "Logowanie właściciela";
 "hub.HubController.2503.863" = "Uruchamianie Huba już trwa.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Przed uruchomieniem Huba dokończ kontrole migracji.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Podgląd danych przykładowych";
 "hub.LogsWindowController.70.1725" = "Sprawdź dzienniki Huba i aplikacji z ukrytymi danymi.";
 "hub.MainWindowController.1152.1840" = "Użyj Fleet API";
-"hub.MainWindowController.1153.1841" = "Użyj tokenu starszego typu";
+"hub.MainWindowController.1153.1841" = "Użyj logowania właściciela";
 "hub.MainWindowController.1154.1842" = "Importuj historię…";
 "hub.MainWindowController.1156.1843" = "Odłącz konto Tesla…";
 "hub.MainWindowController.1158.1844" = "Połącz konto Tesla…";
 "hub.MainWindowController.1428.1846" = "Odłączyć konto Tesla od Huba?";
-"hub.MainWindowController.1429.1847" = "Hub zostanie zatrzymany i usunie zapisane dane uwierzytelniające Fleet oraz starszego typu. Zebrane dane pozostaną na tym Macu.";
+"hub.MainWindowController.1429.1847" = "Hub zostanie zatrzymany i usunie zapisane dane uwierzytelniające Fleet oraz logowania właściciela. Zebrane dane pozostaną na tym Macu.";
 "hub.MainWindowController.1431.1849" = "Odłącz";
 "hub.MainWindowController.15.1766" = "Pojazd";
 "hub.MainWindowController.22.1768" = "Zatrzymaj Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Importuj dane";
 "hub.OnboardingWindowController.1362.2047" = "Połącz z serwerem";
 "hub.OnboardingWindowController.1471.2059" = "Uzupełnij pola: ID klienta Fleet, token, region i termin ważności.";
-"hub.OnboardingWindowController.1500.2071" = "Wprowadź zarówno token dostępu, jak i token odświeżania.";
 "hub.OnboardingWindowController.1631.2105" = "Wprowadź serwer aplikacji źródłowej, użytkownika SSH i port.";
 "hub.OnboardingWindowController.168.1852" = "Kontynuuj";
 "hub.OnboardingWindowController.1691.2113" = "Sprawdzenie schematu bazy danych nie pozwala ustalić wersji aplikacji źródłowej. Potwierdź, że na serwerze działa aplikacja źródłowa w wersji 4.4.0 lub nowszej, a następnie kontynuuj.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "Jak chcesz rozpocząć?";
 "hub.OnboardingWindowController.590.1919" = "Wybierz sposób połączenia Huba";
 "hub.OnboardingWindowController.591.1920" = "Skonfiguruj Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Połącz za pomocą tokenu";
+"hub.OnboardingWindowController.592.1921" = "Zaloguj się do Tesli";
 "hub.OnboardingWindowController.593.1922" = "Importuj historię…";
 "hub.OnboardingWindowController.594.1923" = "Sprawdzanie Huba";
 "hub.OnboardingWindowController.595.1924" = "Migracja zakończona";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub jest gotowy";
 "hub.OnboardingWindowController.602.1926" = "Własny moduł zbierający telemetrię Tesli, działający prywatnie na tym Macu.";
 "hub.OnboardingWindowController.604.1927" = "Skonfiguruj nowy Hub lub przenieś do niego historię z aplikacji źródłowej.";
-"hub.OnboardingWindowController.606.1928" = "Zalecamy Fleet Telemetry. Tokeny starszego typu działają ze starszymi konfiguracjami.";
+"hub.OnboardingWindowController.606.1928" = "Aby zacząć, zaloguj się na konto właściciela Tesli. Fleet Telemetry jest dostępne, jeśli wolisz.";
 "hub.OnboardingWindowController.608.1929" = "Utwórz aplikację Tesla Fleet, a następnie wklej poniżej jej dane uwierzytelniające.";
 "hub.OnboardingWindowController.610.1930" = "Zaloguj się do Tesli, gdy okno zbierania danych jest otwarte. Hub nigdy nie przyjmuje tokena.";
 "hub.OnboardingWindowController.612.1931" = "Połącz się z serwerem aplikacji źródłowej, aby zaimportować historię pojazdu.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "Przenieś dotychczasową historię pojazdu.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Oficjalne strumieniowe API Tesli. Umożliwia wysyłanie poleceń do pojazdu w czasie rzeczywistym.";
-"hub.OnboardingWindowController.752.1958" = "Token starszego typu";
+"hub.OnboardingWindowController.752.1958" = "Logowanie właściciela";
 "hub.OnboardingWindowController.753.1959" = "Zaloguj się do Tesli. Hub zachowuje własne logowanie.";
 "hub.OnboardingWindowController.760.1960" = "Utwórz aplikację Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID klienta";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "Wybierz klucz…";
 "hub.OnboardingWindowController.888.1990" = "Tylko historia. Hub nie sprawdza ani nie importuje danych uwierzytelniających Tesli. Zbieranie danych pozostaje wyłączone. Można sprawdzić schemat bazy danych; wersja aplikacji źródłowej pozostaje nieznana.";
 "hub.OnboardingWindowController.891.1991" = "Lokalne źródło PostgreSQL";
-"hub.OnboardingWindowController.895.1994" = "Potwierdzam, że schemat bazy danych jest zgodny z v4.2; nie stanowi to potwierdzenia wersji aplikacji";
 "hub.OnboardingWindowController.915.1997" = "Aplikacja źródłowa %1$@";
 "hub.OnboardingWindowController.927.2001" = "Sprawdzanie…";
 "hub.OnboardingWindowController.935.2004" = "Zmień serwer";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Stan logowania do Tesli jest niezgodny. Rozpocznij logowanie ponownie.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla zwróciła nieprawidłową wartość wystawcy konta.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Kończenie bezpiecznego logowania do Tesli…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla zwróciła nieprawidłową odpowiedź z tokenem.";
-"hub.TeslaAuthWindowController.37.2242" = "Wymiana tokenu z Teslą nie powiodła się.";
 "hub.SourceServerImporter.34.2284" = "Kod: %1$@";
 "hub.SourceServerImporter.428.2461" = "Serwer aplikacji źródłowej zwrócił niekompletne dane konfiguracji.";
 "hub.SourceServerImporter.691.2530" = "Sprawdź dane serwera";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Proces odpowiadający na kanale sterowania Huba nie jest tym Hubem, więc nic nie wysłano. Uruchom Hub ponownie, a potem zaloguj się jeszcze raz.";
 
 "hub.signIn.busy" = "Hub jest zajęty innymi żądaniami. Nic nie zmieniono; zaloguj się ponownie za chwilę.";
+
+"hub.signIn.discovery.notListed" = "Logowanie się powiodło, ale Tesla nie wyświetliła żadnego samochodu na tym koncie. Sprawdź, czy samochód należy do tego konta Tesla, a potem spróbuj ponownie znaleźć samochody.";
+
+"hub.signIn.discovery.selectionRequired" = "Logowanie się powiodło, ale Tesla wyświetla więcej niż jeden samochód, a Hub musi wiedzieć, z którego zbierać dane. Spróbuj ponownie znaleźć samochody.";
+
+"hub.signIn.discovery.selectionInvalid" = "Logowanie się powiodło, ale wybranego samochodu nie ma na tym koncie Tesla. Spróbuj ponownie znaleźć samochody.";
+
+"hub.signIn.discovery.answerInvalid" = "Logowanie się powiodło, ale Hub nie mógł odczytać listy samochodów od Tesli. Spróbuj ponownie znaleźć samochody.";
+
+"hub.signIn.discovery.refused" = "Logowanie się powiodło, ale Tesla odrzuciła listę samochodów. Spróbuj ponownie znaleźć samochody albo zaloguj się ponownie przez Teslę.";
+
+"hub.signIn.discovery.windowClosed" = "Logowanie się powiodło, ale okno zbierania zamknęło się, zanim Hub zdążył znaleźć Twoje samochody. Otwórz okno, a potem spróbuj ponownie znaleźć samochody.";
+
+"hub.signIn.discovery.providerParked" = "Logowanie się powiodło, ale ten Hub zbiera dane przez innego dostawcę, więc nie może znaleźć samochodów przy użyciu tego logowania.";
+
+"hub.signIn.discovery.settingsInvalid" = "Logowanie się powiodło, ale adres Owner API tego Huba nie należy do Tesli, więc Hub nie poprosił o Twoje samochody. Popraw adres, a potem zaloguj się ponownie przez Teslę.";
+
+"hub.signIn.discovery.general" = "Logowanie się powiodło, ale Hub nie mógł znaleźć Twoich samochodów. Spróbuj ponownie znaleźć samochody albo zaloguj się ponownie przez Teslę.";
+
+"hub.signIn.discovery.retry" = "Spróbuj ponownie znaleźć samochody";
+
+"hub.signIn.discovery.expired" = "Tego logowania nie można już wznowić. Zaloguj się ponownie przez Teslę.";
+
+"hub.signIn.discovery.configured" = "Skonfigurowane samochody: %d";
+
+"hub.signIn.reportInvalid" = "Hub nie mógł potwierdzić logowania. Zaloguj się ponownie przez Teslę.";

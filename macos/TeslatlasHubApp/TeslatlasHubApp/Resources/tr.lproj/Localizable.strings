@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Kaynak uygulamadan içe aktarma başarısız oldu; içe aktarmayı yeniden deneyin.";
 "hub.HubController.2457.838" = "Hub'ı başlatmadan önce kaynak uygulama devrini tamamlayın.";
 "hub.HubController.2479.850" = "Hub'ı yeniden başlatmadan önce kaynak uygulama devrini tamamlayın.";
-"hub.HubController.250.318" = "Eski nesil belirteç";
+"hub.HubController.250.318" = "Sahip Girişi";
 "hub.HubController.2503.863" = "Hub başlatma işlemi zaten sürüyor.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Hub'ı başlatmadan önce geçiş denetimlerini tamamlayın.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Önizleme örneği";
 "hub.LogsWindowController.70.1725" = "Gizli bilgileri ayıklanmış Hub ve uygulama günlüklerini gözden geçirin.";
 "hub.MainWindowController.1152.1840" = "Fleet API'yi Kullan";
-"hub.MainWindowController.1153.1841" = "Eski Nesil Belirteci Kullan";
+"hub.MainWindowController.1153.1841" = "Sahip Girişini Kullan";
 "hub.MainWindowController.1154.1842" = "Geçmişi İçe Aktar…";
 "hub.MainWindowController.1156.1843" = "Tesla'nın Bağlantısını Kes…";
 "hub.MainWindowController.1158.1844" = "Tesla Hesabını Bağla…";
 "hub.MainWindowController.1428.1846" = "Tesla'nın Hub ile bağlantısı kesilsin mi?";
-"hub.MainWindowController.1429.1847" = "Hub durur ve saklanan Fleet ile eski nesil kimlik bilgilerini siler. Toplanan verileriniz bu Mac'te kalır.";
+"hub.MainWindowController.1429.1847" = "Hub durur ve saklanan Fleet ile sahip girişi kimlik bilgilerini siler. Toplanan verileriniz bu Mac'te kalır.";
 "hub.MainWindowController.1431.1849" = "Bağlantıyı Kes";
 "hub.MainWindowController.15.1766" = "Araç";
 "hub.MainWindowController.22.1768" = "Hub'ı Durdur";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Verileri İçe Aktar";
 "hub.OnboardingWindowController.1362.2047" = "Sunucuya Bağlan";
 "hub.OnboardingWindowController.1471.2059" = "Fleet istemci kimliği, belirteç, bölge ve son kullanma alanlarını doldurun.";
-"hub.OnboardingWindowController.1500.2071" = "Erişim belirtecini ve yenileme belirtecini girin.";
 "hub.OnboardingWindowController.1631.2105" = "Kaynak uygulama sunucusunu, SSH kullanıcısını ve bağlantı noktasını girin.";
 "hub.OnboardingWindowController.168.1852" = "Devam Et";
 "hub.OnboardingWindowController.1691.2113" = "Şema denetimi kaynak uygulamanın sürümünü belirleyemez. Devam etmeden önce sunucuda kaynak uygulamanın 4.4.0 veya daha yeni bir sürümünün çalıştığını doğrulayın.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "Nasıl başlamak istersiniz?";
 "hub.OnboardingWindowController.590.1919" = "Hub'ın nasıl bağlanacağını seçin";
 "hub.OnboardingWindowController.591.1920" = "Fleet Telemetry'yi Ayarlayın";
-"hub.OnboardingWindowController.592.1921" = "Bir belirteçle bağlanın";
+"hub.OnboardingWindowController.592.1921" = "Tesla ile Oturum Aç";
 "hub.OnboardingWindowController.593.1922" = "Geçmişi İçe Aktar…";
 "hub.OnboardingWindowController.594.1923" = "Hub'ınız Denetleniyor";
 "hub.OnboardingWindowController.595.1924" = "Geçiş tamamlandı";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub hazır";
 "hub.OnboardingWindowController.602.1926" = "Bu Mac'te size özel çalışan Tesla telemetri toplayıcınız.";
 "hub.OnboardingWindowController.604.1927" = "Yeni bir Hub kurun veya kaynak uygulama geçmişinizi aktarın.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry önerilir. Eski nesil belirteçler önceki kurulumlarda çalışır.";
+"hub.OnboardingWindowController.606.1928" = "Başlamak için Tesla sahibi hesabınızla oturum açın. Tercih ederseniz Fleet Telemetry de kullanılabilir.";
 "hub.OnboardingWindowController.608.1929" = "Bir Tesla Fleet uygulaması oluşturun, ardından kimlik bilgilerini aşağıya yapıştırın.";
 "hub.OnboardingWindowController.610.1930" = "Bir toplama penceresi açıkken Tesla’da oturum açın. Hub hiçbir zaman belirteç kabul etmez.";
 "hub.OnboardingWindowController.612.1931" = "Araç geçmişini içe aktarmak için kaynak uygulama sunucunuza bağlanın.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "Mevcut araç geçmişinizi aktarın.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla'nın resmî akış API'si. Araçlara canlı komutlar göndermeyi sağlar.";
-"hub.OnboardingWindowController.752.1958" = "Eski Nesil Belirteç";
+"hub.OnboardingWindowController.752.1958" = "Sahip Girişi";
 "hub.OnboardingWindowController.753.1959" = "Tesla’da oturum açın. Hub kendi oturum açma bilgilerini korur.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet Uygulaması Oluştur";
 "hub.OnboardingWindowController.771.1964" = "İstemci Kimliği";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "Anahtar Seç…";
 "hub.OnboardingWindowController.888.1990" = "Yalnızca geçmiş modu. Hub Tesla kimlik bilgilerini incelemez veya içe aktarmaz. Veri toplama kapalı kalır. Veritabanı şeması denetlenebilir; kaynak uygulamanın sürümü bilinmez.";
 "hub.OnboardingWindowController.891.1991" = "Yerel PostgreSQL kaynağı";
-"hub.OnboardingWindowController.895.1994" = "Bu veritabanı şemasının v4.2 ile uyumlu olduğunu, ancak bunun uygulama sürümünü kanıtlamadığını kabul ediyorum";
 "hub.OnboardingWindowController.915.1997" = "Kaynak uygulama %1$@";
 "hub.OnboardingWindowController.927.2001" = "Denetleniyor…";
 "hub.OnboardingWindowController.935.2004" = "Sunucuyu Değiştir";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Tesla oturum açma durumu eşleşmedi. Oturum açma işlemini yeniden başlatın.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla geçersiz bir hesap sağlayıcısı bilgisi döndürdü.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Güvenli Tesla oturumu tamamlanıyor…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla geçersiz bir belirteç yanıtı döndürdü.";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla belirteç değişimi başarısız oldu.";
 "hub.SourceServerImporter.34.2284" = "Kod: %1$@";
 "hub.SourceServerImporter.428.2461" = "Kaynak uygulama sunucusu eksik kurulum bilgileri döndürdü.";
 "hub.SourceServerImporter.691.2530" = "Sunucu ayrıntılarını denetleyin";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Hub'ın denetim kanalında yanıt veren işlem bu Hub değil, bu yüzden hiçbir şey gönderilmedi. Hub'ı yeniden başlatın, ardından tekrar oturum açın.";
 
 "hub.signIn.busy" = "Hub başka isteklerle meşgul. Hiçbir şey değiştirilmedi; birazdan tekrar oturum açın.";
+
+"hub.signIn.discovery.notListed" = "Oturum açtınız, ancak Tesla bu hesapta hiçbir araç listelemedi. Aracın bu Tesla hesabına ait olduğunu kontrol edin, ardından araçları yeniden bulmayı deneyin.";
+
+"hub.signIn.discovery.selectionRequired" = "Oturum açtınız, ancak Tesla birden fazla araç listeliyor ve Hub'ın hangisinden veri toplayacağını bilmesi gerekiyor. Araçları yeniden bulmayı deneyin.";
+
+"hub.signIn.discovery.selectionInvalid" = "Oturum açtınız, ancak seçilen araç bu Tesla hesabında yok. Araçları yeniden bulmayı deneyin.";
+
+"hub.signIn.discovery.answerInvalid" = "Oturum açtınız, ancak Hub, Tesla'nın araç listesini okuyamadı. Araçları yeniden bulmayı deneyin.";
+
+"hub.signIn.discovery.refused" = "Oturum açtınız, ancak Tesla araç listesini reddetti. Araçları yeniden bulmayı deneyin veya Tesla ile yeniden oturum açın.";
+
+"hub.signIn.discovery.windowClosed" = "Oturum açtınız, ancak toplama penceresi, Hub araçlarınızı bulamadan önce kapandı. Bir pencere açın, ardından araçları yeniden bulmayı deneyin.";
+
+"hub.signIn.discovery.providerParked" = "Oturum açtınız, ancak bu Hub başka bir sağlayıcıyla veri topluyor, bu yüzden bu oturumla araçları bulamaz.";
+
+"hub.signIn.discovery.settingsInvalid" = "Oturum açtınız, ancak bu Hub'ın Owner API adresi Tesla'ya ait değil, bu yüzden Hub araçlarınızı istemedi. Adresi düzeltin, ardından Tesla ile yeniden oturum açın.";
+
+"hub.signIn.discovery.general" = "Oturum açtınız, ancak Hub araçlarınızı bulamadı. Araçları yeniden bulmayı deneyin veya Tesla ile yeniden oturum açın.";
+
+"hub.signIn.discovery.retry" = "Araçları yeniden bul";
+
+"hub.signIn.discovery.expired" = "Bu oturum artık sürdürülemez. Tesla ile yeniden oturum açın.";
+
+"hub.signIn.discovery.configured" = "Yapılandırılan araçlar: %d";
+
+"hub.signIn.reportInvalid" = "Hub oturum açmayı doğrulayamadı. Tesla ile yeniden oturum açın.";

@@ -628,3 +628,70 @@ extension OnboardingWindowControllerTests {
         XCTAssertTrue(harness.controller.lifecycleCapabilities.isIdle)
     }
 }
+
+// MARK: - M02-T15: the provider page offers the owner sign-in first
+
+extension OnboardingWindowControllerTests {
+    private func providerChoices(in onboarding: OnboardingWindowController?) -> [(title: String, selected: Bool)] {
+        descendantViews(of: onboarding?.window?.contentView).compactMap { $0 as? HubCardView }.map { card in
+            let title = descendantViews(of: card).compactMap { $0 as? NSTextField }.first?.stringValue ?? ""
+            return (title, card.isSelected)
+        }
+    }
+
+    func testProviderPageOffersTheOwnerSignInFirstAndSelected() throws {
+        let harness = try WindowOwnerRig(.init(loaded: .loaded))
+        defer { harness.tearDown() }
+        let onboarding = try openOnboarding(harness, route: .provider)
+
+        let choices = providerChoices(in: onboarding)
+        XCTAssertEqual(choices.map(\.title), ["Owner sign-in", "Fleet Telemetry"],
+                       "the owner sign-in comes first and Fleet stays on the page")
+        XCTAssertEqual(choices.map(\.selected), [true, false], "the owner sign-in is the default")
+
+        let text = descendantViews(of: onboarding.window?.contentView)
+            .compactMap { ($0 as? NSTextField)?.stringValue }
+        XCTAssertFalse(text.contains { $0.localizedCaseInsensitiveContains("recommended") },
+                       "no choice is recommended over the other")
+        XCTAssertFalse(text.contains("Legacy Token"))
+        XCTAssertEqual(HubOnboardingState().provider, .legacy, "a fresh state defaults to the owner sign-in")
+    }
+
+    func testContinueFromTheDefaultProviderGoesToTheOwnerSignIn() throws {
+        let harness = try WindowOwnerRig(.init(loaded: .loaded))
+        defer { harness.tearDown() }
+        let onboarding = try openOnboarding(harness, route: .provider)
+
+        press(try primaryButton("Continue", in: onboarding))
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
+    }
+
+    func testTheFleetPathStaysReachableFromTheProviderPage() throws {
+        let harness = try WindowOwnerRig(.init(loaded: .loaded))
+        defer { harness.tearDown() }
+        let onboarding = try openOnboarding(harness, route: .provider)
+
+        _ = onboarding.perform(NSSelectorFromString("selectFleet"))
+        XCTAssertEqual(providerChoices(in: onboarding).map(\.selected), [false, true],
+                       "choosing Fleet moves the selection")
+        press(try primaryButton("Continue", in: onboarding))
+        XCTAssertEqual(onboarding.currentRoute, .fleet)
+        XCTAssertNotNil(findButton("Set Up Fleet", in: onboarding), "the Fleet page is unchanged")
+    }
+
+    func testTheFleetPreviewKeepsFleetSelectedAcrossBackAndContinue() throws {
+        let onboarding = OnboardingWindowController(
+            controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
+            previewRoute: "fleet",
+            onComplete: { _ in })
+        XCTAssertEqual(onboarding.currentRoute, .fleet)
+
+        press(try primaryButton("Back", in: onboarding))
+        XCTAssertEqual(onboarding.currentRoute, .provider)
+        XCTAssertEqual(providerChoices(in: onboarding).map(\.selected), [false, true],
+                       "Back from the Fleet preview leaves Fleet selected")
+
+        press(try primaryButton("Continue", in: onboarding))
+        XCTAssertEqual(onboarding.currentRoute, .fleet, "Continue returns to Fleet, not the owner sign-in")
+    }
+}

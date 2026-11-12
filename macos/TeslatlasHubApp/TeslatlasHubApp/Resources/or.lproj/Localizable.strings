@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "ଉତ୍ସ ଆପ୍ଲିକେସନ୍ ଆମଦାନି ବିଫଳ ହେଲା; ଆମଦାନି ପୁଣି ଚେଷ୍ଟା କରନ୍ତୁ।";
 "hub.HubController.2457.838" = "Hub ଆରମ୍ଭ କରିବା ପୂର୍ବରୁ ଉତ୍ସ ଆପ୍ଲିକେସନ୍ ହସ୍ତାନ୍ତର ସମାପ୍ତ କରନ୍ତୁ।";
 "hub.HubController.2479.850" = "Hub ପୁନଃଆରମ୍ଭ କରିବା ପୂର୍ବରୁ ଉତ୍ସ ଆପ୍ଲିକେସନ୍ ହସ୍ତାନ୍ତର ସମାପ୍ତ କରନ୍ତୁ।";
-"hub.HubController.250.318" = "Legacy token";
+"hub.HubController.250.318" = "ମାଲିକ ସାଇନ୍ ଇନ୍";
 "hub.HubController.2503.863" = "Hub ଆରମ୍ଭ ପ୍ରକ୍ରିୟା ପୂର୍ବରୁ ଚାଲୁଛି।";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Hub ଆରମ୍ଭ କରିବା ପୂର୍ବରୁ ମାଇଗ୍ରେସନ୍ ଯାଞ୍ଚଗୁଡ଼ିକ ସମାପ୍ତ କରନ୍ତୁ।";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "ପ୍ରିଭ୍ୟୁ ଫିକ୍ସଚର୍";
 "hub.LogsWindowController.70.1725" = "ସଂବେଦନଶୀଳ ତଥ୍ୟ ଲୁଚାଇଥିବା Hub ଓ ଆପ୍ ଲଗ୍ ଯାଞ୍ଚ କରନ୍ତୁ।";
 "hub.MainWindowController.1152.1840" = "Fleet API ବ୍ୟବହାର କରନ୍ତୁ";
-"hub.MainWindowController.1153.1841" = "Legacy token ବ୍ୟବହାର କରନ୍ତୁ";
+"hub.MainWindowController.1153.1841" = "ମାଲିକ ସାଇନ୍ ଇନ୍ ବ୍ୟବହାର କରନ୍ତୁ";
 "hub.MainWindowController.1154.1842" = "ଇତିହାସ ଆମଦାନି କରନ୍ତୁ…";
 "hub.MainWindowController.1156.1843" = "Tesla ବିଚ୍ଛିନ୍ନ କରନ୍ତୁ…";
 "hub.MainWindowController.1158.1844" = "Tesla ଖାତା ସଂଯୋଗ କରନ୍ତୁ…";
 "hub.MainWindowController.1428.1846" = "Hubରୁ Tesla ବିଚ୍ଛିନ୍ନ କରିବେ କି?";
-"hub.MainWindowController.1429.1847" = "Hub ବନ୍ଦ ହୋଇ ଏଥିରେ ସଞ୍ଚିତ Fleet ଓ Legacy ପ୍ରବେଶ ତଥ୍ୟ ଅପସାରଣ କରିବ। ଆପଣଙ୍କ ସଂଗ୍ରହ କରାଯାଇଥିବା ତଥ୍ୟ ଏହି Macରେ ରହିବ।";
+"hub.MainWindowController.1429.1847" = "Hub ବନ୍ଦ ହୋଇ ଏଥିରେ ସଞ୍ଚିତ Fleet ଓ ମାଲିକ ସାଇନ୍ ଇନ୍ ପାଇଁ ପ୍ରବେଶ ତଥ୍ୟ ଅପସାରଣ କରିବ। ଆପଣଙ୍କ ସଂଗ୍ରହ କରାଯାଇଥିବା ତଥ୍ୟ ଏହି Macରେ ରହିବ।";
 "hub.MainWindowController.1431.1849" = "ବିଚ୍ଛିନ୍ନ କରନ୍ତୁ";
 "hub.MainWindowController.15.1766" = "ଯାନ";
 "hub.MainWindowController.22.1768" = "Hub ବନ୍ଦ କରନ୍ତୁ";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "ତଥ୍ୟ ଆମଦାନି କରନ୍ତୁ";
 "hub.OnboardingWindowController.1362.2047" = "ସର୍ଭର ସହିତ ସଂଯୋଗ କରନ୍ତୁ";
 "hub.OnboardingWindowController.1471.2059" = "Fleet client ID, token, region ଏବଂ expiry କ୍ଷେତ୍ରଗୁଡ଼ିକ ପୂରଣ କରନ୍ତୁ।";
-"hub.OnboardingWindowController.1500.2071" = "Access token ଓ refresh token ଉଭୟ ଦିଅନ୍ତୁ।";
 "hub.OnboardingWindowController.1631.2105" = "ଉତ୍ସ ଆପ୍ଲିକେସନ୍ ସର୍ଭର, SSH ଉପଯୋଗକର୍ତ୍ତା ଓ ପୋର୍ଟ ଦିଅନ୍ତୁ।";
 "hub.OnboardingWindowController.168.1852" = "ଜାରି ରଖନ୍ତୁ";
 "hub.OnboardingWindowController.1691.2113" = "ସ୍କିମା ଯାଞ୍ଚରୁ ଉତ୍ସ ଆପ୍ଲିକେସନ୍‌ର ସଂସ୍କରଣ ନିର୍ଣ୍ଣୟ କରିହୁଏ ନାହିଁ। ଚାଲୁଥିବା ସର୍ଭର 4.4.0 କିମ୍ବା ତାଠାରୁ ନୂଆ ସଂସ୍କରଣ ବ୍ୟବହାର କରୁଛି ବୋଲି ନିଶ୍ଚିତ କରି ପରେ ଜାରି ରଖନ୍ତୁ।";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "ଆପଣ କିପରି ଆରମ୍ଭ କରିବାକୁ ଚାହାଁନ୍ତି?";
 "hub.OnboardingWindowController.590.1919" = "Hub କିପରି ସଂଯୋଗ କରିବ ତାହା ବାଛନ୍ତୁ";
 "hub.OnboardingWindowController.591.1920" = "Fleet Telemetry ସେଟଅପ୍ କରନ୍ତୁ";
-"hub.OnboardingWindowController.592.1921" = "ଏକ token ସହିତ ସଂଯୋଗ କରନ୍ତୁ";
+"hub.OnboardingWindowController.592.1921" = "Teslaରେ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ";
 "hub.OnboardingWindowController.593.1922" = "ଇତିହାସ ଆମଦାନି କରନ୍ତୁ…";
 "hub.OnboardingWindowController.594.1923" = "ଆପଣଙ୍କ Hub ଯାଞ୍ଚ କରାଯାଉଛି";
 "hub.OnboardingWindowController.595.1924" = "ମାଇଗ୍ରେସନ୍ ସମାପ୍ତ";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub ପ୍ରସ୍ତୁତ ଅଛି";
 "hub.OnboardingWindowController.602.1926" = "ଏହି Macରେ ବ୍ୟକ୍ତିଗତ ଭାବେ ଚାଲୁଥିବା ଆପଣଙ୍କ ନିଜ Tesla ଟେଲିମେଟ୍ରି କଲେକ୍ଟର୍।";
 "hub.OnboardingWindowController.604.1927" = "ନୂଆ Hub ସେଟଅପ୍ କରନ୍ତୁ କିମ୍ବା ଉତ୍ସ ଆପ୍ଲିକେସନ୍ରୁ ଆପଣଙ୍କ ଇତିହାସ ଆଣନ୍ତୁ।";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry ସୁପାରିଶ କରାଯାଏ। Legacy token ପୁରୁଣା ସେଟଅପ୍‌ରେ କାମ କରେ।";
+"hub.OnboardingWindowController.606.1928" = "ଆରମ୍ଭ କରିବାକୁ ଆପଣଙ୍କ Tesla ମାଲିକ ଖାତାରେ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ। ଆପଣ ଚାହିଁଲେ Fleet Telemetry ଉପଲବ୍ଧ ଅଛି।";
 "hub.OnboardingWindowController.608.1929" = "ଏକ Tesla Fleet ଆପ୍ଲିକେସନ୍ ତିଆରି କରି ତଳେ ଏହାର ପରିଚୟପତ୍ର ଦିଅନ୍ତୁ।";
 "hub.OnboardingWindowController.610.1930" = "ସଂଗ୍ରହ ୱିଣ୍ଡୋ ଖୋଲା ଥିବା ସମୟରେ Teslaରେ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ। Hub କେବେ ବି token ଗ୍ରହଣ କରେ ନାହିଁ।";
 "hub.OnboardingWindowController.612.1931" = "ଯାନ ଇତିହାସ ଆମଦାନି କରିବାକୁ ଆପଣଙ୍କ ଉତ୍ସ ଆପ୍ଲିକେସନ୍ ସର୍ଭର ସହିତ ସଂଯୋଗ କରନ୍ତୁ।";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "ଆପଣଙ୍କ ବର୍ତ୍ତମାନର ଯାନ ଇତିହାସ ଆଣନ୍ତୁ।";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Teslaର ଅଫିସିଆଲ୍ ଷ୍ଟ୍ରିମିଂ API। ଏହା ଯାନକୁ ସିଧାସଳଖ କମାଣ୍ଡ ପଠାଇବା ସକ୍ଷମ କରେ।";
-"hub.OnboardingWindowController.752.1958" = "Legacy Token";
+"hub.OnboardingWindowController.752.1958" = "ମାଲିକ ସାଇନ୍ ଇନ୍";
 "hub.OnboardingWindowController.753.1959" = "Teslaରେ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ। Hub ନିଜର ଲଗଇନ୍ ରଖେ।";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet ଆପ୍ ତିଆରି କରନ୍ତୁ";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "କୀ ବାଛନ୍ତୁ…";
 "hub.OnboardingWindowController.888.1990" = "କେବଳ ଇତିହାସ। Hub Tesla ପ୍ରବେଶ ତଥ୍ୟ ଯାଞ୍ଚ କିମ୍ବା ଆମଦାନି କରିବ ନାହିଁ। ତଥ୍ୟ ସଂଗ୍ରହ ବନ୍ଦ ରହିବ। ଡାଟାବେସ୍ ସ୍କିମା ଯାଞ୍ଚ କରାଯାଇପାରେ; ଉତ୍ସ ଆପ୍ଲିକେସନ୍‌ର ସଂସ୍କରଣ ଅଜ୍ଞାତ ରହିବ।";
 "hub.OnboardingWindowController.891.1991" = "ସ୍ଥାନୀୟ PostgreSQL ଉତ୍ସ";
-"hub.OnboardingWindowController.895.1994" = "ଏହା v4.2-ସୁସଙ୍ଗତ ଡାଟାବେସ୍ ସ୍କିମା ବୋଲି ମୁଁ ସ୍ୱୀକାର କରୁଛି; ଏହା ଆପ୍‌ର ସଂସ୍କରଣର ପ୍ରମାଣ ନୁହେଁ";
 "hub.OnboardingWindowController.915.1997" = "ଉତ୍ସ ଆପ୍ଲିକେସନ୍ %1$@";
 "hub.OnboardingWindowController.927.2001" = "ଯାଞ୍ଚ ହେଉଛି…";
 "hub.OnboardingWindowController.935.2004" = "ସର୍ଭର ବଦଳାନ୍ତୁ";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Tesla ଲଗଇନ୍ ସ୍ଥିତି ମେଳ ଖାଇଲା ନାହିଁ। ଲଗଇନ୍ ପୁଣି ଆରମ୍ଭ କରନ୍ତୁ।";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla ଅବୈଧ ଖାତା ଜାରିକର୍ତ୍ତା ଫେରାଇଛି।";
 "hub.TeslaAuthWindowController.358.html_progress" = "ସୁରକ୍ଷିତ Tesla ଲଗଇନ୍ ସମାପ୍ତ ହେଉଛି…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla ଅବୈଧ token ଉତ୍ତର ଫେରାଇଛି।";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla token ବିନିମୟ ବିଫଳ ହେଲା।";
 "hub.SourceServerImporter.34.2284" = "କୋଡ୍: %1$@";
 "hub.SourceServerImporter.428.2461" = "ଉତ୍ସ ଆପ୍ଲିକେସନ୍ ସର୍ଭର ଅସମ୍ପୂର୍ଣ୍ଣ ସେଟଅପ୍ ବିବରଣୀ ଫେରାଇଛି।";
 "hub.SourceServerImporter.691.2530" = "ସର୍ଭର ବିବରଣୀ ଯାଞ୍ଚ କରନ୍ତୁ";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Hub ର କଣ୍ଟ୍ରୋଲ୍ ଚ୍ୟାନେଲରେ ଉତ୍ତର ଦେଉଥିବା ପ୍ରକ୍ରିୟା ଏହି Hub ନୁହେଁ, ତେଣୁ କିଛି ପଠାଯାଇନାହିଁ। Hub କୁ ପୁଣି ଆରମ୍ଭ କରନ୍ତୁ, ତା'ପରେ ପୁଣି ସାଇନ୍ ଇନ୍ କରନ୍ତୁ।";
 
 "hub.signIn.busy" = "Hub ଅନ୍ୟ ଅନୁରୋଧରେ ବ୍ୟସ୍ତ ଅଛି। କିଛି ବଦଳାଯାଇନାହିଁ; କିଛି ସମୟ ପରେ ପୁଣି ସାଇନ୍ ଇନ୍ କରନ୍ତୁ।";
+
+"hub.signIn.discovery.notListed" = "ଆପଣ ସାଇନ୍ ଇନ୍ କରିଛନ୍ତି, କିନ୍ତୁ Tesla ଏହି ଖାତାରେ କୌଣସି ଗାଡ଼ି ତାଲିକାଭୁକ୍ତ କରିନାହିଁ। ଗାଡ଼ିଟି ଏହି Tesla ଖାତାର କି ନାହିଁ ଯାଞ୍ଚ କରନ୍ତୁ, ତା'ପରେ ପୁଣି ଗାଡ଼ି ଖୋଜନ୍ତୁ।";
+
+"hub.signIn.discovery.selectionRequired" = "ଆପଣ ସାଇନ୍ ଇନ୍ କରିଛନ୍ତି, କିନ୍ତୁ Tesla ଏକରୁ ଅଧିକ ଗାଡ଼ି ତାଲିକାଭୁକ୍ତ କରୁଛି ଏବଂ କେଉଁଟିରୁ ସଂଗ୍ରହ କରିବାକୁ ହେବ ତାହା Hub କୁ ଜାଣିବା ଆବଶ୍ୟକ। ପୁଣି ଗାଡ଼ି ଖୋଜନ୍ତୁ।";
+
+"hub.signIn.discovery.selectionInvalid" = "ଆପଣ ସାଇନ୍ ଇନ୍ କରିଛନ୍ତି, କିନ୍ତୁ ବଛାଯାଇଥିବା ଗାଡ଼ିଟି ଏହି Tesla ଖାତାରେ ନାହିଁ। ପୁଣି ଗାଡ଼ି ଖୋଜନ୍ତୁ।";
+
+"hub.signIn.discovery.answerInvalid" = "ଆପଣ ସାଇନ୍ ଇନ୍ କରିଛନ୍ତି, କିନ୍ତୁ Hub Tesla ର ଗାଡ଼ି ତାଲିକା ପଢ଼ିପାରିଲା ନାହିଁ। ପୁଣି ଗାଡ଼ି ଖୋଜନ୍ତୁ।";
+
+"hub.signIn.discovery.refused" = "ଆପଣ ସାଇନ୍ ଇନ୍ କରିଛନ୍ତି, କିନ୍ତୁ Tesla ଗାଡ଼ି ତାଲିକା ପ୍ରତ୍ୟାଖ୍ୟାନ କଲା। ପୁଣି ଗାଡ଼ି ଖୋଜନ୍ତୁ, କିମ୍ବା ପୁଣି Tesla ସହ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ।";
+
+"hub.signIn.discovery.windowClosed" = "ଆପଣ ସାଇନ୍ ଇନ୍ କରିଛନ୍ତି, କିନ୍ତୁ Hub ଆପଣଙ୍କ ଗାଡ଼ି ଖୋଜିବା ପୂର୍ବରୁ ସଂଗ୍ରହ ୱିଣ୍ଡୋ ବନ୍ଦ ହୋଇଗଲା। ଏକ ୱିଣ୍ଡୋ ଖୋଲନ୍ତୁ, ତା'ପରେ ପୁଣି ଗାଡ଼ି ଖୋଜନ୍ତୁ।";
+
+"hub.signIn.discovery.providerParked" = "ଆପଣ ସାଇନ୍ ଇନ୍ କରିଛନ୍ତି, କିନ୍ତୁ ଏହି Hub ଅନ୍ୟ ଏକ ପ୍ରଦାତା ମାଧ୍ୟମରେ ସଂଗ୍ରହ କରେ, ତେଣୁ ଏହି ସାଇନ୍ ଇନ୍ ଦ୍ୱାରା ଗାଡ଼ି ଖୋଜିପାରିବ ନାହିଁ।";
+
+"hub.signIn.discovery.settingsInvalid" = "ଆପଣ ସାଇନ୍ ଇନ୍ କରିଛନ୍ତି, କିନ୍ତୁ ଏହି Hub ର Owner API ଠିକଣା Tesla ର ନୁହେଁ, ତେଣୁ Hub ଆପଣଙ୍କ ଗାଡ଼ି ମାଗିଲା ନାହିଁ। ଠିକଣା ସଂଶୋଧନ କରନ୍ତୁ, ତା'ପରେ ପୁଣି Tesla ସହ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ।";
+
+"hub.signIn.discovery.general" = "ଆପଣ ସାଇନ୍ ଇନ୍ କରିଛନ୍ତି, କିନ୍ତୁ Hub ଆପଣଙ୍କ ଗାଡ଼ି ଖୋଜିପାରିଲା ନାହିଁ। ପୁଣି ଗାଡ଼ି ଖୋଜନ୍ତୁ, କିମ୍ବା ପୁଣି Tesla ସହ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ।";
+
+"hub.signIn.discovery.retry" = "ପୁଣି ଗାଡ଼ି ଖୋଜନ୍ତୁ";
+
+"hub.signIn.discovery.expired" = "ଏହି ସାଇନ୍ ଇନ୍ ଆଉ ପୁନଃଆରମ୍ଭ କରାଯାଇପାରିବ ନାହିଁ। ପୁଣି Tesla ସହ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ।";
+
+"hub.signIn.discovery.configured" = "କନ୍ଫିଗର୍ ହୋଇଥିବା ଗାଡ଼ି: %d";
+
+"hub.signIn.reportInvalid" = "Hub ସାଇନ୍ ଇନ୍ ନିଶ୍ଚିତ କରିପାରିଲା ନାହିଁ। ପୁଣି Tesla ସହ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ।";

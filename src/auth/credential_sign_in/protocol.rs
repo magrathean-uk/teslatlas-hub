@@ -257,8 +257,8 @@ impl<'a> SignInAttempt<'a> {
     }
 }
 
-struct TokenAnswer { access: WireSecret, refresh: WireSecret, expires_in: u64 }
-fn token_answer(bytes: &[u8]) -> Result<TokenAnswer, CredentialCommandError> {
+pub(super) struct TokenAnswer { pub(super) access: WireSecret, pub(super) refresh: WireSecret, pub(super) expires_in: u64 }
+pub(super) fn token_answer(bytes: &[u8]) -> Result<TokenAnswer, CredentialCommandError> {
     struct Answer;
     impl<'de> Visitor<'de> for Answer {
         type Value = TokenAnswer;

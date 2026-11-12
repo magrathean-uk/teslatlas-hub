@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Η εισαγωγή από την εφαρμογή προέλευσης απέτυχε· δοκιμάστε ξανά την εισαγωγή.";
 "hub.HubController.2457.838" = "Ολοκληρώστε τη διαδικασία μετάβασης της εφαρμογής προέλευσης πριν από την εκκίνηση του Hub.";
 "hub.HubController.2479.850" = "Ολοκληρώστε τη διαδικασία μετάβασης της εφαρμογής προέλευσης πριν από την επανεκκίνηση του Hub.";
-"hub.HubController.250.318" = "Διακριτικό παλαιού τύπου";
+"hub.HubController.250.318" = "Σύνδεση ιδιοκτήτη";
 "hub.HubController.2503.863" = "Η εκκίνηση του Hub βρίσκεται ήδη σε εξέλιξη.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Ολοκληρώστε τους ελέγχους μετεγκατάστασης πριν από την εκκίνηση του Hub.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Δοκιμαστικό δείγμα προεπισκόπησης";
 "hub.LogsWindowController.70.1725" = "Ελέγξτε τα αρχεία καταγραφής του Hub και της εφαρμογής, με απόκρυψη ευαίσθητων στοιχείων.";
 "hub.MainWindowController.1152.1840" = "Χρήση Fleet API";
-"hub.MainWindowController.1153.1841" = "Χρήση διακριτικού παλαιού τύπου";
+"hub.MainWindowController.1153.1841" = "Χρήση σύνδεσης ιδιοκτήτη";
 "hub.MainWindowController.1154.1842" = "Εισαγωγή ιστορικού…";
 "hub.MainWindowController.1156.1843" = "Αποσύνδεση Tesla…";
 "hub.MainWindowController.1158.1844" = "Σύνδεση λογαριασμού Tesla…";
 "hub.MainWindowController.1428.1846" = "Αποσύνδεση του Tesla από το Hub;";
-"hub.MainWindowController.1429.1847" = "Το Hub θα σταματήσει και θα αφαιρέσει τα αποθηκευμένα διαπιστευτήρια Fleet και παλαιού τύπου. Τα δεδομένα που συλλέξατε παραμένουν σε αυτό το Mac.";
+"hub.MainWindowController.1429.1847" = "Το Hub θα σταματήσει και θα αφαιρέσει τα αποθηκευμένα διαπιστευτήρια Fleet και σύνδεσης ιδιοκτήτη. Τα δεδομένα που συλλέξατε παραμένουν σε αυτό το Mac.";
 "hub.MainWindowController.1431.1849" = "Αποσύνδεση";
 "hub.MainWindowController.15.1766" = "Όχημα";
 "hub.MainWindowController.22.1768" = "Διακοπή Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Εισαγωγή δεδομένων";
 "hub.OnboardingWindowController.1362.2047" = "Σύνδεση με διακομιστή";
 "hub.OnboardingWindowController.1471.2059" = "Συμπληρώστε τα πεδία Fleet για το αναγνωριστικό πελάτη, το διακριτικό, την περιοχή και τη λήξη ισχύος.";
-"hub.OnboardingWindowController.1500.2071" = "Εισαγάγετε και το διακριτικό πρόσβασης και το διακριτικό ανανέωσης.";
 "hub.OnboardingWindowController.1631.2105" = "Εισαγάγετε τον διακομιστή της εφαρμογής προέλευσης, τον χρήστη SSH και τη θύρα.";
 "hub.OnboardingWindowController.168.1852" = "Συνέχεια";
 "hub.OnboardingWindowController.1691.2113" = "Ο έλεγχος σχήματος δεν μπορεί να προσδιορίσει την έκδοση της εφαρμογής προέλευσης. Επιβεβαιώστε ότι στον διακομιστή εκτελείται η εφαρμογή προέλευσης στην έκδοση 4.4.0 ή νεότερη και συνεχίστε.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "Πώς θέλετε να ξεκινήσετε;";
 "hub.OnboardingWindowController.590.1919" = "Επιλέξτε πώς θα συνδέεται το Hub";
 "hub.OnboardingWindowController.591.1920" = "Ρύθμιση Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Σύνδεση με διακριτικό";
+"hub.OnboardingWindowController.592.1921" = "Σύνδεση στην Tesla";
 "hub.OnboardingWindowController.593.1922" = "Εισαγωγή ιστορικού…";
 "hub.OnboardingWindowController.594.1923" = "Έλεγχος του Hub";
 "hub.OnboardingWindowController.595.1924" = "Η μετεγκατάσταση ολοκληρώθηκε";
 "hub.OnboardingWindowController.595.1925" = "Το Teslatlas Hub είναι έτοιμο";
 "hub.OnboardingWindowController.602.1926" = "Ο δικός σας συλλέκτης τηλεμετρίας Tesla, που εκτελείται ιδιωτικά σε αυτό το Mac.";
 "hub.OnboardingWindowController.604.1927" = "Ρυθμίστε ένα νέο Hub ή μεταφέρετε το ιστορικό σας από την εφαρμογή προέλευσης.";
-"hub.OnboardingWindowController.606.1928" = "Συνιστάται το Fleet Telemetry. Τα διακριτικά παλαιού τύπου λειτουργούν με παλαιότερες ρυθμίσεις.";
+"hub.OnboardingWindowController.606.1928" = "Για να ξεκινήσετε, συνδεθείτε με τον λογαριασμό ιδιοκτήτη σας στην Tesla. Το Fleet Telemetry είναι διαθέσιμο αν το προτιμάτε.";
 "hub.OnboardingWindowController.608.1929" = "Δημιουργήστε μια εφαρμογή Tesla Fleet και, στη συνέχεια, επικολλήστε παρακάτω τα διαπιστευτήριά της.";
 "hub.OnboardingWindowController.610.1930" = "Συνδεθείτε στην Tesla ενώ είναι ανοιχτό ένα παράθυρο συλλογής. Το Hub δεν δέχεται ποτέ διακριτικό.";
 "hub.OnboardingWindowController.612.1931" = "Συνδεθείτε με τον διακομιστή της εφαρμογής προέλευσης για να εισαγάγετε το ιστορικό των οχημάτων της.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "Μεταφέρετε το υπάρχον ιστορικό οχημάτων σας.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Το επίσημο API συνεχούς ροής της Tesla. Επιτρέπει εντολές οχήματος σε πραγματικό χρόνο.";
-"hub.OnboardingWindowController.752.1958" = "Διακριτικό παλαιού τύπου";
+"hub.OnboardingWindowController.752.1958" = "Σύνδεση ιδιοκτήτη";
 "hub.OnboardingWindowController.753.1959" = "Συνδεθείτε στην Tesla. Το Hub διατηρεί τη δική του σύνδεση.";
 "hub.OnboardingWindowController.760.1960" = "Δημιουργία εφαρμογής Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "Αναγνωριστικό πελάτη";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "Επιλογή κλειδιού…";
 "hub.OnboardingWindowController.888.1990" = "Μόνο ιστορικό. Το Hub δεν θα ελέγξει ούτε θα εισαγάγει διαπιστευτήρια Tesla. Η συλλογή παραμένει απενεργοποιημένη. Μπορεί να ελεγχθεί το σχήμα της βάσης δεδομένων· η έκδοση της εφαρμογής προέλευσης παραμένει άγνωστη.";
 "hub.OnboardingWindowController.891.1991" = "Τοπική πηγή PostgreSQL";
-"hub.OnboardingWindowController.895.1994" = "Αναγνωρίζω ότι πρόκειται για σχήμα βάσης δεδομένων συμβατό με την έκδοση 4.2 και όχι για απόδειξη της έκδοσης της εφαρμογής";
 "hub.OnboardingWindowController.915.1997" = "Εφαρμογή προέλευσης %1$@";
 "hub.OnboardingWindowController.927.2001" = "Έλεγχος…";
 "hub.OnboardingWindowController.935.2004" = "Αλλαγή διακομιστή";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Η κατάσταση σύνδεσης Tesla δεν ταίριαζε. Ξεκινήστε ξανά τη σύνδεση.";
 "hub.TeslaAuthWindowController.35.2240" = "Η Tesla επέστρεψε μη έγκυρο εκδότη λογαριασμού.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Ολοκλήρωση ασφαλούς σύνδεσης Tesla…";
-"hub.TeslaAuthWindowController.36.2241" = "Η Tesla επέστρεψε μη έγκυρη απόκριση διακριτικού.";
-"hub.TeslaAuthWindowController.37.2242" = "Η ανταλλαγή διακριτικών Tesla απέτυχε.";
 "hub.SourceServerImporter.34.2284" = "Κωδικός: %1$@";
 "hub.SourceServerImporter.428.2461" = "Ο διακομιστής της εφαρμογής προέλευσης επέστρεψε ελλιπή στοιχεία ρύθμισης.";
 "hub.SourceServerImporter.691.2530" = "Ελέγξτε τα στοιχεία διακομιστή";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Η διεργασία που απαντά στο κανάλι ελέγχου του Hub δεν είναι αυτό το Hub, οπότε δεν στάλθηκε τίποτα. Επανεκκινήστε το Hub και μετά συνδεθείτε ξανά.";
 
 "hub.signIn.busy" = "Το Hub είναι απασχολημένο με άλλα αιτήματα. Δεν άλλαξε τίποτα· συνδεθείτε ξανά σε λίγο.";
+
+"hub.signIn.discovery.notListed" = "Έχετε συνδεθεί, αλλά η Tesla δεν εμφάνισε κανένα αυτοκίνητο σε αυτόν τον λογαριασμό. Ελέγξτε ότι το αυτοκίνητο ανήκει σε αυτόν τον λογαριασμό Tesla και δοκιμάστε ξανά την εύρεση αυτοκινήτων.";
+
+"hub.signIn.discovery.selectionRequired" = "Έχετε συνδεθεί, αλλά η Tesla εμφανίζει περισσότερα από ένα αυτοκίνητα και το Hub πρέπει να ξέρει από ποιο να συλλέγει δεδομένα. Δοκιμάστε ξανά την εύρεση αυτοκινήτων.";
+
+"hub.signIn.discovery.selectionInvalid" = "Έχετε συνδεθεί, αλλά το επιλεγμένο αυτοκίνητο δεν ανήκει σε αυτόν τον λογαριασμό Tesla. Δοκιμάστε ξανά την εύρεση αυτοκινήτων.";
+
+"hub.signIn.discovery.answerInvalid" = "Έχετε συνδεθεί, αλλά το Hub δεν μπόρεσε να διαβάσει τη λίστα αυτοκινήτων της Tesla. Δοκιμάστε ξανά την εύρεση αυτοκινήτων.";
+
+"hub.signIn.discovery.refused" = "Έχετε συνδεθεί, αλλά η Tesla απέρριψε το αίτημα για τη λίστα αυτοκινήτων. Δοκιμάστε ξανά την εύρεση αυτοκινήτων ή συνδεθείτε ξανά στην Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Έχετε συνδεθεί, αλλά το παράθυρο συλλογής έκλεισε πριν το Hub προλάβει να βρει τα αυτοκίνητά σας. Ανοίξτε ένα παράθυρο και δοκιμάστε ξανά την εύρεση αυτοκινήτων.";
+
+"hub.signIn.discovery.providerParked" = "Έχετε συνδεθεί, αλλά αυτό το Hub συλλέγει δεδομένα με άλλον πάροχο, επομένως δεν μπορεί να βρει αυτοκίνητα με αυτή τη σύνδεση.";
+
+"hub.signIn.discovery.settingsInvalid" = "Έχετε συνδεθεί, αλλά η διεύθυνση Owner API αυτού του Hub δεν είναι της Tesla, γι' αυτό το Hub δεν ζήτησε τα αυτοκίνητά σας. Διορθώστε τη διεύθυνση και συνδεθείτε ξανά στην Tesla.";
+
+"hub.signIn.discovery.general" = "Έχετε συνδεθεί, αλλά το Hub δεν μπόρεσε να βρει τα αυτοκίνητά σας. Δοκιμάστε ξανά την εύρεση αυτοκινήτων ή συνδεθείτε ξανά στην Tesla.";
+
+"hub.signIn.discovery.retry" = "Νέα προσπάθεια εύρεσης αυτοκινήτων";
+
+"hub.signIn.discovery.expired" = "Αυτή η σύνδεση δεν μπορεί πλέον να συνεχιστεί. Συνδεθείτε ξανά στην Tesla.";
+
+"hub.signIn.discovery.configured" = "Αυτοκίνητα που ρυθμίστηκαν: %d";
+
+"hub.signIn.reportInvalid" = "Το Hub δεν μπόρεσε να επιβεβαιώσει τη σύνδεση. Συνδεθείτε ξανά στην Tesla.";

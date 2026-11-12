@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Lähdesovelluksen tuonti epäonnistui; yritä tuontia uudelleen.";
 "hub.HubController.2457.838" = "Viimeistele lähdesovelluksen siirron luovutus ennen Hubin käynnistämistä.";
 "hub.HubController.2479.850" = "Viimeistele lähdesovelluksen siirron luovutus ennen Hubin uudelleenkäynnistämistä.";
-"hub.HubController.250.318" = "Perinteinen Tesla-token";
+"hub.HubController.250.318" = "Omistajan kirjautuminen";
 "hub.HubController.2503.863" = "Hubin käynnistys on jo käynnissä.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Viimeistele siirron tarkistukset ennen Hubin käynnistämistä.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Esikatselun testiaineisto";
 "hub.LogsWindowController.70.1725" = "Tarkista Hubin ja sovelluksen lokit, joista tunnistetiedot on poistettu.";
 "hub.MainWindowController.1152.1840" = "Käytä Fleet API:a";
-"hub.MainWindowController.1153.1841" = "Käytä perinteistä Tesla-tokenia";
+"hub.MainWindowController.1153.1841" = "Käytä omistajan kirjautumista";
 "hub.MainWindowController.1154.1842" = "Tuo historia…";
 "hub.MainWindowController.1156.1843" = "Katkaise Tesla-yhteys…";
 "hub.MainWindowController.1158.1844" = "Yhdistä Tesla-tili…";
 "hub.MainWindowController.1428.1846" = "Katkaistaanko Teslan yhteys Hubiin?";
-"hub.MainWindowController.1429.1847" = "Hub pysähtyy ja poistaa tallennetut Fleet API -tunnistetiedot ja perinteisen Tesla-tokenin. Kerätyt tietosi säilyvät tässä Macissa.";
+"hub.MainWindowController.1429.1847" = "Hub pysähtyy ja poistaa tallennetut Fleet API -tunnistetiedot ja omistajan kirjautumisen tunnistetiedot. Kerätyt tietosi säilyvät tässä Macissa.";
 "hub.MainWindowController.1431.1849" = "Katkaise yhteys";
 "hub.MainWindowController.15.1766" = "Ajoneuvo";
 "hub.MainWindowController.22.1768" = "Pysäytä Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Tuo tiedot";
 "hub.OnboardingWindowController.1362.2047" = "Yhdistä palvelimeen";
 "hub.OnboardingWindowController.1471.2059" = "Täytä Fleet-asiakastunnuksen, tokenin, alueen ja voimassaolon päättymisajan kentät.";
-"hub.OnboardingWindowController.1500.2071" = "Anna sekä käyttöoikeustoken että päivitystoken.";
 "hub.OnboardingWindowController.1631.2105" = "Anna lähdesovelluksen palvelin, SSH-käyttäjä ja portti.";
 "hub.OnboardingWindowController.168.1852" = "Jatka";
 "hub.OnboardingWindowController.1691.2113" = "Skeeman tarkistus ei voi osoittaa lähdesovelluksen versiota. Vahvista, että käynnissä oleva palvelin käyttää versiota 4.4.0 tai uudempaa, ja jatka.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "Miten haluat aloittaa?";
 "hub.OnboardingWindowController.590.1919" = "Valitse, miten Hub muodostaa yhteyden";
 "hub.OnboardingWindowController.591.1920" = "Määritä Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Yhdistä tokenilla";
+"hub.OnboardingWindowController.592.1921" = "Kirjaudu sisään Teslan kautta";
 "hub.OnboardingWindowController.593.1922" = "Tuo historia…";
 "hub.OnboardingWindowController.594.1923" = "Tarkistetaan Hubin toimintaa";
 "hub.OnboardingWindowController.595.1924" = "Siirto valmis";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub on valmis";
 "hub.OnboardingWindowController.602.1926" = "Oma Tesla-telemetriakeräimesi toimii yksityisesti tässä Macissa.";
 "hub.OnboardingWindowController.604.1927" = "Määritä uusi Hub tai siirrä historiatiedot lähdesovelluksesta.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetryä suositellaan. Perinteiset tokenit toimivat vanhemmissa määrityksissä.";
+"hub.OnboardingWindowController.606.1928" = "Aloita kirjautumalla sisään Tesla-omistajan tililläsi. Fleet Telemetry on käytettävissä, jos haluat sen.";
 "hub.OnboardingWindowController.608.1929" = "Luo Tesla Fleet -sovellus ja liitä sen käyttöoikeustiedot alle.";
 "hub.OnboardingWindowController.610.1930" = "Kirjaudu sisään Teslan kautta, kun keruuikkuna on auki. Hub ei koskaan hyväksy tokenia.";
 "hub.OnboardingWindowController.612.1931" = "Muodosta yhteys lähdesovelluksen palvelimeen tuodaksesi sen ajoneuvohistorian.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "Siirrä aiempi ajoneuvohistoriasi.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Teslan virallinen suoratoistorajapinta. Mahdollistaa reaaliaikaiset ajoneuvokomennot.";
-"hub.OnboardingWindowController.752.1958" = "Perinteinen token";
+"hub.OnboardingWindowController.752.1958" = "Omistajan kirjautuminen";
 "hub.OnboardingWindowController.753.1959" = "Kirjaudu sisään Teslan kautta. Hub säilyttää oman kirjautumisensa.";
 "hub.OnboardingWindowController.760.1960" = "Luo Tesla Fleet -sovellus";
 "hub.OnboardingWindowController.771.1964" = "Asiakastunnus";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "Valitse avain…";
 "hub.OnboardingWindowController.888.1990" = "Vain historiatietoja varten. Hub ei tarkastele eikä tuo Teslan tunnistetietoja. Tiedonkeruu pysyy poissa käytöstä. Tietokannan skeeman voi tarkistaa; lähdesovelluksen versio jää tuntemattomaksi.";
 "hub.OnboardingWindowController.891.1991" = "Paikallinen PostgreSQL-lähde";
-"hub.OnboardingWindowController.895.1994" = "Vahvistan, että tämä tietokanta käyttää v4.2-yhteensopivaa skeemaa; tämä ei todista sovelluksen versiota";
 "hub.OnboardingWindowController.915.1997" = "Lähdesovellus %1$@";
 "hub.OnboardingWindowController.927.2001" = "Tarkistetaan…";
 "hub.OnboardingWindowController.935.2004" = "Vaihda palvelin";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Teslan kirjautumistilan tunniste ei täsmännyt. Aloita kirjautuminen uudelleen.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla palautti virheelliset tilin myöntäjätiedot.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Viimeistellään suojattua Tesla-kirjautumista…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla palautti virheellisen tokenvastauksen.";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla-tokenien vaihto epäonnistui.";
 "hub.SourceServerImporter.34.2284" = "Koodi: %1$@";
 "hub.SourceServerImporter.428.2461" = "Lähdesovelluksen palvelin palautti puutteelliset määritystiedot.";
 "hub.SourceServerImporter.691.2530" = "Tarkista palvelimen tiedot";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Prosessi, joka vastaa Hubin ohjauskanavalla, ei ole tämä Hub, joten mitään ei lähetetty. Käynnistä Hub uudelleen ja kirjaudu sitten uudelleen.";
 
 "hub.signIn.busy" = "Hub on varattu muihin pyyntöihin. Mitään ei muutettu; kirjaudu uudelleen hetken kuluttua.";
+
+"hub.signIn.discovery.notListed" = "Olet kirjautunut sisään, mutta Tesla ei listannut yhtään autoa tälle tilille. Tarkista, että auto kuuluu tähän Tesla-tiliin, ja yritä sitten etsiä autot uudelleen.";
+
+"hub.signIn.discovery.selectionRequired" = "Olet kirjautunut sisään, mutta Tesla listaa useamman kuin yhden auton, ja Hubin täytyy tietää, mistä se kerää tietoja. Yritä etsiä autot uudelleen.";
+
+"hub.signIn.discovery.selectionInvalid" = "Olet kirjautunut sisään, mutta valittu auto ei ole tällä Tesla-tilillä. Yritä etsiä autot uudelleen.";
+
+"hub.signIn.discovery.answerInvalid" = "Olet kirjautunut sisään, mutta Hub ei pystynyt lukemaan Teslan autoluetteloa. Yritä etsiä autot uudelleen.";
+
+"hub.signIn.discovery.refused" = "Olet kirjautunut sisään, mutta Tesla hylkäsi autoluettelon. Yritä etsiä autot uudelleen tai kirjaudu sisään Teslan kautta uudelleen.";
+
+"hub.signIn.discovery.windowClosed" = "Olet kirjautunut sisään, mutta keruuikkuna sulkeutui ennen kuin Hub ehti löytää autosi. Avaa ikkuna ja yritä sitten etsiä autot uudelleen.";
+
+"hub.signIn.discovery.providerParked" = "Olet kirjautunut sisään, mutta tämä Hub kerää tietoja toisen palveluntarjoajan kautta, joten se ei voi etsiä autoja tällä kirjautumisella.";
+
+"hub.signIn.discovery.settingsInvalid" = "Olet kirjautunut sisään, mutta tämän Hubin Owner API -osoite ei ole Teslan, joten Hub ei pyytänyt autojasi. Korjaa osoite ja kirjaudu sitten sisään Teslan kautta uudelleen.";
+
+"hub.signIn.discovery.general" = "Olet kirjautunut sisään, mutta Hub ei löytänyt autojasi. Yritä etsiä autot uudelleen tai kirjaudu sisään Teslan kautta uudelleen.";
+
+"hub.signIn.discovery.retry" = "Yritä etsiä autot uudelleen";
+
+"hub.signIn.discovery.expired" = "Tätä kirjautumista ei voi enää jatkaa. Kirjaudu sisään Teslan kautta uudelleen.";
+
+"hub.signIn.discovery.configured" = "Määritetyt autot: %d";
+
+"hub.signIn.reportInvalid" = "Hub ei voinut vahvistaa kirjautumista. Kirjaudu sisään Teslan kautta uudelleen.";

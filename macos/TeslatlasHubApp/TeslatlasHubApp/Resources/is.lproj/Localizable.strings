@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Innflutningur úr upprunaforritinu mistókst; reyndu innflutninginn aftur.";
 "hub.HubController.2457.838" = "Ljúktu afhendingu frá upprunaforritinu áður en þú ræsir Hub.";
 "hub.HubController.2479.850" = "Ljúktu afhendingu frá upprunaforritinu áður en þú endurræsir Hub.";
-"hub.HubController.250.318" = "Eldri aðgangslykill";
+"hub.HubController.250.318" = "Innskráning eiganda";
 "hub.HubController.2503.863" = "Ræsing Hub er þegar í gangi.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Ljúktu athugunum vegna yfirfærslunnar áður en þú ræsir Hub.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Forskoðun á prófunargögnum";
 "hub.LogsWindowController.70.1725" = "Yfirfarðu annála Hub og forritsins með afmáðum upplýsingum.";
 "hub.MainWindowController.1152.1840" = "Nota Fleet API";
-"hub.MainWindowController.1153.1841" = "Nota eldri aðgangslykil";
+"hub.MainWindowController.1153.1841" = "Nota innskráningu eiganda";
 "hub.MainWindowController.1154.1842" = "Flytja inn feril…";
 "hub.MainWindowController.1156.1843" = "Aftengja Tesla…";
 "hub.MainWindowController.1158.1844" = "Tengja Tesla-reikning…";
 "hub.MainWindowController.1428.1846" = "Aftengja Tesla frá Hub?";
-"hub.MainWindowController.1429.1847" = "Hub stöðvast og fjarlægir vistaðar Fleet- og Legacy-aðgangsupplýsingar. Gögn sem safnað hefur verið verða áfram á þessum Mac.";
+"hub.MainWindowController.1429.1847" = "Hub stöðvast og fjarlægir vistaðar Fleet-aðgangsupplýsingar og aðgangsupplýsingar fyrir innskráningu eiganda. Gögn sem safnað hefur verið verða áfram á þessum Mac.";
 "hub.MainWindowController.1431.1849" = "Aftengja";
 "hub.MainWindowController.15.1766" = "Ökutæki";
 "hub.MainWindowController.22.1768" = "Stöðva Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Flytja inn gögn";
 "hub.OnboardingWindowController.1362.2047" = "Tengjast þjóninum";
 "hub.OnboardingWindowController.1471.2059" = "Fylltu út reitina fyrir Fleet-viðskiptavinaauðkenni, aðgangslykil, svæði og gildistíma.";
-"hub.OnboardingWindowController.1500.2071" = "Sláðu inn bæði aðgangslykilinn og endurnýjunarlykilinn.";
 "hub.OnboardingWindowController.1631.2105" = "Sláðu inn upprunaþjón, SSH-notanda og gátt.";
 "hub.OnboardingWindowController.168.1852" = "Halda áfram";
 "hub.OnboardingWindowController.1691.2113" = "Skemaskoðun getur ekki staðfest útgáfu upprunaforritsins. Staðfestu að keyrandi þjónn noti útgáfu 4.4.0 eða nýrri og haltu svo áfram.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "Hvernig viltu byrja?";
 "hub.OnboardingWindowController.590.1919" = "Veldu hvernig Hub tengist";
 "hub.OnboardingWindowController.591.1920" = "Setja Fleet Telemetry upp";
-"hub.OnboardingWindowController.592.1921" = "Tengjast með aðgangslykli";
+"hub.OnboardingWindowController.592.1921" = "Skrá inn hjá Tesla";
 "hub.OnboardingWindowController.593.1922" = "Flytja inn feril…";
 "hub.OnboardingWindowController.594.1923" = "Athuga stöðu Hub";
 "hub.OnboardingWindowController.595.1924" = "Yfirfærslu lokið";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub er tilbúinn";
 "hub.OnboardingWindowController.602.1926" = "Þinn eigin Tesla-gagnasafnari fyrir fjarmælingar, sem keyrir staðbundið á þessum Mac.";
 "hub.OnboardingWindowController.604.1927" = "Settu upp nýjan Hub eða færðu ferilinn þinn úr upprunaforritinu.";
-"hub.OnboardingWindowController.606.1928" = "Mælt er með Fleet Telemetry. Eldri aðgangslyklar virka með eldri uppsetningum.";
+"hub.OnboardingWindowController.606.1928" = "Skráðu þig inn með Tesla-eigandareikningnum þínum til að byrja. Fleet Telemetry er í boði ef þú kýst það frekar.";
 "hub.OnboardingWindowController.608.1929" = "Búðu til Tesla Fleet-forrit og límdu síðan aðgangsupplýsingar þess hér að neðan.";
 "hub.OnboardingWindowController.610.1930" = "Skráðu þig inn hjá Tesla á meðan söfnunargluggi er opinn. Hub tekur aldrei við aðgangslykli.";
 "hub.OnboardingWindowController.612.1931" = "Tengstu upprunaþjóninum þínum til að flytja inn feril ökutækisins.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "Flytja inn fyrirliggjandi feril ökutækisins.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Opinbert streymisviðmót Tesla. Gerir rauntímaskipanir til ökutækis mögulegar.";
-"hub.OnboardingWindowController.752.1958" = "Eldri aðgangslykill";
+"hub.OnboardingWindowController.752.1958" = "Innskráning eiganda";
 "hub.OnboardingWindowController.753.1959" = "Skráðu þig inn hjá Tesla. Hub heldur sinni eigin innskráningu.";
 "hub.OnboardingWindowController.760.1960" = "Búa til Tesla Fleet-forrit";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "Velja lykil…";
 "hub.OnboardingWindowController.888.1990" = "Aðeins ferill. Hub skoðar hvorki né flytur inn Tesla-aðgangsupplýsingar. Gagnasöfnun helst óvirk. Athuga má skema gagnagrunnsins, en útgáfa upprunaforritsins verður áfram óþekkt.";
 "hub.OnboardingWindowController.891.1991" = "Staðbundinn PostgreSQL-gagnagjafi";
-"hub.OnboardingWindowController.895.1994" = "Ég staðfesti að ég hafi yfirfarið skema upprunagagnagrunnsins; það staðfestir ekki útgáfu upprunaforritsins.";
 "hub.OnboardingWindowController.915.1997" = "Upprunaforritið %1$@";
 "hub.OnboardingWindowController.927.2001" = "Athuga…";
 "hub.OnboardingWindowController.935.2004" = "Skipta um þjón";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Staðfesting Tesla-innskráningar stóðst ekki. Byrjaðu innskráningu aftur.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla skilaði ógildum útgefanda reiknings.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Lýk öruggri innskráningu hjá Tesla…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla skilaði ógildu aðgangslyklasvari.";
-"hub.TeslaAuthWindowController.37.2242" = "Ekki tókst að skipta á Tesla-aðgangslykli.";
 "hub.SourceServerImporter.34.2284" = "Kóði: %1$@";
 "hub.SourceServerImporter.428.2461" = "Upprunaþjónn skilaði ófullnægjandi uppsetningarupplýsingum.";
 "hub.SourceServerImporter.691.2530" = "Athugaðu upplýsingar um þjóninn";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Ferlið sem svarar á stjórnrás Hub er ekki þetta Hub, svo engu var sent. Endurræstu Hub og skráðu þig svo inn aftur.";
 
 "hub.signIn.busy" = "Hub er upptekið við aðrar beiðnir. Engu var breytt; skráðu þig inn aftur eftir augnablik.";
+
+"hub.signIn.discovery.notListed" = "Innskráningin tókst, en Tesla birti engan bíl á þessum reikningi. Athugaðu hvort bíllinn tilheyri þessum Tesla-reikningi og reyndu svo aftur að finna bíla.";
+
+"hub.signIn.discovery.selectionRequired" = "Innskráningin tókst, en Tesla birtir fleiri en einn bíl og Hub þarf að vita frá hverjum það á að safna gögnum. Reyndu aftur að finna bíla.";
+
+"hub.signIn.discovery.selectionInvalid" = "Innskráningin tókst, en valinn bíll er ekki á þessum Tesla-reikningi. Reyndu aftur að finna bíla.";
+
+"hub.signIn.discovery.answerInvalid" = "Innskráningin tókst, en Hub gat ekki lesið bílalista Tesla. Reyndu aftur að finna bíla.";
+
+"hub.signIn.discovery.refused" = "Innskráningin tókst, en Tesla hafnaði bílalistanum. Reyndu aftur að finna bíla eða skráðu þig aftur inn með Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Innskráningin tókst, en söfnunarglugginn lokaðist áður en Hub gat fundið bílana þína. Opnaðu glugga og reyndu svo aftur að finna bíla.";
+
+"hub.signIn.discovery.providerParked" = "Innskráningin tókst, en þetta Hub safnar gögnum með öðrum þjónustuaðila og getur því ekki fundið bíla með þessari innskráningu.";
+
+"hub.signIn.discovery.settingsInvalid" = "Innskráningin tókst, en Owner API-vistfang þessa Hub er ekki vistfang Tesla, svo Hub bað ekki um bílana þína. Lagfærðu vistfangið og skráðu þig svo aftur inn með Tesla.";
+
+"hub.signIn.discovery.general" = "Innskráningin tókst, en Hub gat ekki fundið bílana þína. Reyndu aftur að finna bíla eða skráðu þig aftur inn með Tesla.";
+
+"hub.signIn.discovery.retry" = "Reyna aftur að finna bíla";
+
+"hub.signIn.discovery.expired" = "Ekki er lengur hægt að halda áfram með þessa innskráningu. Skráðu þig aftur inn með Tesla.";
+
+"hub.signIn.discovery.configured" = "Stilltir bílar: %d";
+
+"hub.signIn.reportInvalid" = "Hub gat ekki staðfest innskráninguna. Skráðu þig aftur inn með Tesla.";

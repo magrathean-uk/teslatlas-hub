@@ -9,10 +9,17 @@
 //! permit, so a later clock rollback cannot reopen it; only the controller
 //! opens it again, for a new window. A refused request is never retried: each
 //! attempt needs a new permit.
+//!
+//! Local writes made under a window's authority (an owner sign-in's stored
+//! pair, the cars its discovery configures) go through the write fence
+//! ([`write_under_authority`]): the authority is checked and the write counted
+//! under one lock, so a close that has cancelled the permits sees every write
+//! that passed its check still running, and every later write refuses. The
+//! supervisor waits for those writes only up to its handback deadline.
 
 use std::{
     sync::{
-        Arc, Mutex, OnceLock,
+        Arc, Mutex, MutexGuard, OnceLock,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -69,6 +76,9 @@ struct OpenWindow {
 struct GateState {
     open: Option<OpenWindow>,
     cancellable: Vec<CancellationToken>,
+    /// The tokens of token-exchange permits: a close leaves them running for
+    /// the grace, and only [`EgressGate::lapse_exchanges`] cancels them.
+    exchanges: Vec<CancellationToken>,
     /// The wall time at which the gate saw a deadline reached; cleared only
     /// by `open`.
     expiry_observed: Option<i64>,
@@ -88,6 +98,8 @@ struct GateInner {
     clock: Arc<dyn WindowClock>,
     state: Mutex<GateState>,
     exchanges: Arc<AtomicUsize>,
+    /// Every permit not yet dropped, of any kind.
+    held: Arc<AtomicUsize>,
 }
 
 /// A cloneable handle; clones share one gate.
@@ -96,8 +108,16 @@ pub struct EgressGate {
     inner: Arc<GateInner>,
 }
 
+/// Counts a held permit while it lives.
 #[derive(Debug)]
 struct ExchangeGuard(Arc<AtomicUsize>);
+
+impl ExchangeGuard {
+    fn count(counter: &Arc<AtomicUsize>) -> Self {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Self(counter.clone())
+    }
+}
 
 impl Drop for ExchangeGuard {
     fn drop(&mut self) {
@@ -113,6 +133,7 @@ pub struct Permit {
     time_left: Duration,
     cancel: CancellationToken,
     _exchange: Option<ExchangeGuard>,
+    _held: ExchangeGuard,
 }
 
 impl Permit {
@@ -145,6 +166,7 @@ impl EgressGate {
                 clock,
                 state: Mutex::new(GateState::default()),
                 exchanges: Arc::new(AtomicUsize::new(0)),
+                held: Arc::new(AtomicUsize::new(0)),
             }),
         }
     }
@@ -175,8 +197,9 @@ impl EgressGate {
         let cancel = CancellationToken::new();
         let exchange = if kind == PermitKind::TokenExchange {
             left += EXCHANGE_GRACE_SECONDS as u64;
-            self.inner.exchanges.fetch_add(1, Ordering::SeqCst);
-            Some(ExchangeGuard(self.inner.exchanges.clone()))
+            state.exchanges.retain(|token| !token.is_cancelled());
+            state.exchanges.push(cancel.clone());
+            Some(ExchangeGuard::count(&self.inner.exchanges))
         } else {
             state.cancellable.retain(|token| !token.is_cancelled());
             state.cancellable.push(cancel.clone());
@@ -188,12 +211,31 @@ impl EgressGate {
             time_left: Duration::from_secs(left),
             cancel,
             _exchange: exchange,
+            _held: ExchangeGuard::count(&self.inner.held),
         })
     }
 
-    /// Whether a token exchange permitted before the deadline is still running.
+    /// Ends the grace of every token exchange still holding its permit: each
+    /// is cancelled, so one still sending is cut and every later write under
+    /// it refuses (each checks its permit through the write fence). A write
+    /// already past its check finishes; the supervisor waits for it only up
+    /// to its handback deadline (design 2.7, M02-T13 round 2).
+    pub fn lapse_exchanges(&self) {
+        for token in self.inner.state.lock().expect("gate lock").exchanges.drain(..) {
+            token.cancel();
+        }
+    }
+
+    /// Whether a token exchange permitted before the deadline still holds its
+    /// permit: sending, or storing its answer.
     pub fn exchange_in_flight(&self) -> bool {
         self.inner.exchanges.load(Ordering::SeqCst) > 0
+    }
+
+    /// Whether any permit of this gate, of any kind, is still held (a holder
+    /// may still be inside a write it began under that permit).
+    pub fn permits_held(&self) -> bool {
+        self.inner.held.load(Ordering::SeqCst) > 0
     }
 
     pub fn is_open(&self) -> bool {
@@ -233,4 +275,47 @@ impl EgressGate {
             state.shut();
         }
     }
+}
+
+/// The process-wide write fence (M02-T13 round 2): how many writes that
+/// passed their authority check are still running.
+static WRITE_FENCE: Mutex<usize> = Mutex::new(0);
+
+fn write_fence() -> MutexGuard<'static, usize> {
+    WRITE_FENCE.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Ends a counted write, also when it unwinds.
+struct FencedWrite;
+
+impl Drop for FencedWrite {
+    fn drop(&mut self) {
+        let mut writing = write_fence();
+        *writing = writing.saturating_sub(1);
+    }
+}
+
+/// Runs one local write under a window's authority: `live` (the holder's
+/// permit check) is asked and the write counted under the fence's lock, so
+/// once a close has cancelled the permit no write begins, and a close that
+/// reads [`writes_in_progress`] after cancelling sees every write that passed
+/// its check. `None` when the authority has ended: nothing was written.
+/// Each call is one mutation (one commit or one file publication); a caller
+/// that writes several times calls this before each.
+pub fn write_under_authority<T>(live: &dyn Fn() -> bool, write: impl FnOnce() -> T) -> Option<T> {
+    {
+        let mut writing = write_fence();
+        if !live() {
+            return None;
+        }
+        *writing += 1;
+    }
+    let _counted = FencedWrite;
+    Some(write())
+}
+
+/// How many writes that passed their authority check are still running, in
+/// this process.
+pub fn writes_in_progress() -> usize {
+    *write_fence()
 }

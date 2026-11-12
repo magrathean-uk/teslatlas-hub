@@ -172,6 +172,7 @@ final class OwnerRunner: HubCommandRunning {
     static let historyReady = #"{"status":"ready","credentialScope":"history-only","publishedVehicles":1,"collectorEnabled":false}"#
     static let imported = #"{"status":"imported","captureMode":"online-snapshot"}"#
     static let ready = #"{"status":"ok","ready":true}"#
+    static let signedIn = #"{"status":"signed_in","slot":"owner_api","origin":"hub_login","signIn":"exchanged","aftercare":"complete","vehicleDiscovery":"configured","vehiclesConfigured":1}"#
     static var runningFleetStatus: String {
         #"{"status":"ok","version":""# + HubRelease.bundledVersion
             + #"","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5","displayName":"Aurora"}],"credentials":{"present":true}}"#
@@ -229,6 +230,8 @@ final class OwnerRunner: HubCommandRunning {
         case "preflight:history": return .success(Self.historyReady)
         case "migrate", "migrate:history": return .success(Self.imported)
         case "status": return .success(Self.ready)
+        // The owner sign-in's report, as the service always prints it (M02-T14).
+        case "setup": return .success(Self.signedIn)
         default: return .success("{}")
         }
     }

@@ -6,7 +6,8 @@ use ed25519_dalek::SigningKey;
 
 use super::support::*;
 use crate::collection::window::{
-    AnchorStore, CloseReason, EgressGate, GRANT_GAP_SECONDS, GateRefusal, HostClaim, ManualClock,
+    AnchorStore, CloseReason, EXCHANGE_GRACE_SECONDS, EXCHANGE_WRITE_MARGIN_SECONDS, EgressGate,
+    GRANT_GAP_SECONDS, SUPERVISOR_POLL_SECONDS, WindowClock, write_under_authority, GateRefusal, HostClaim, ManualClock,
     ManualProbe, PermitKind, Phase, Provider, Refusal, SignedGrant, Supervisor,
     WINDOW_CEILING_SECONDS,
     clock::{sntp_offset, sntp_request},
@@ -336,7 +337,10 @@ fn collection_window_exchange_grace_holds_closing_then_releases() {
     assert_eq!(report.closed, Some(CloseReason::Expired));
     assert_eq!(slot.log.lock().unwrap().released, 1);
 
-    // An exchange that never finishes is waited out, then the close completes.
+    // An exchange that has not finished when its grace lapses (the grace
+    // less the write margin) is cancelled there, and the window is handed
+    // back at once although the exchange still holds its permit: no write
+    // can begin under a cancelled permit (M02-T13 round 2, design 2.7).
     let rig = Rig::new();
     let hub = Arc::new(rig.trusted_hub());
     hub.open(&rig.grant(0, 3600)).unwrap();
@@ -344,14 +348,92 @@ fn collection_window_exchange_grace_holds_closing_then_releases() {
     let mut supervisor = Supervisor::new(hub.clone(), slot.clone());
     supervisor.step();
     rig.clock.advance(3599);
-    let _held = hub
+    let held = hub
         .gate()
         .permit(Provider::Legacy, PermitKind::TokenExchange)
         .unwrap();
     rig.clock.advance(1);
     assert_eq!(supervisor.step().phase, Phase::Closing);
-    rig.clock.advance(61);
-    assert_eq!(supervisor.step().closed, Some(CloseReason::Expired));
+    assert!(!held.is_cancelled(), "the exchange keeps its grace");
+    rig.clock.advance((EXCHANGE_GRACE_SECONDS - EXCHANGE_WRITE_MARGIN_SECONDS) as u64);
+    let report = step_until_closed(&mut supervisor);
+    assert_eq!(report.closed, Some(CloseReason::Expired));
+    assert!(held.is_cancelled(), "the grace has lapsed");
+    assert!(hub.gate().exchange_in_flight(), "handed back with the permit still held");
+    drop(held);
+}
+
+/// Steps until the window is handed back, without moving the clock: a write
+/// of another test may hold the process's write fence for a moment.
+fn step_until_closed(supervisor: &mut Supervisor<FakeSlot>) -> crate::collection::window::StepReport {
+    for _ in 0..500 {
+        let report = supervisor.step();
+        if report.closed.is_some() {
+            return report;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    panic!("the window was not handed back");
+}
+
+/// M02-T13 round 2 (REV-M02-T13 finding 1): a write under an exchange's
+/// permit that passed its check before the lapse is waited for, but only up
+/// to the handback deadline, so the window is handed back within the grace
+/// however long the write stalls; and once the permit has lapsed no write
+/// begins under it. Before this round the close waited for the exchange's
+/// permit without bound.
+#[test]
+fn collection_window_close_hands_back_within_the_grace_while_a_write_stalls() {
+    use std::sync::{Barrier, mpsc};
+    let rig = Rig::new();
+    let hub = Arc::new(rig.trusted_hub());
+    hub.open(&rig.grant(0, 3600)).unwrap();
+    let slot = FakeSlot::default();
+    let mut supervisor = Supervisor::new(hub.clone(), slot.clone());
+    supervisor.step();
+    let permit = Arc::new(
+        hub.gate()
+            .permit(Provider::Legacy, PermitKind::TokenExchange)
+            .unwrap(),
+    );
+    hub.close(CloseReason::OperatorClose);
+    let closing_at = rig.clock.wall();
+    assert_eq!(supervisor.step().phase, Phase::Closing);
+
+    // A write passes its check and stalls inside its mutation.
+    let started = Arc::new(Barrier::new(2));
+    let (release, stalled) = mpsc::channel::<()>();
+    let writer = {
+        let (permit, started) = (Arc::clone(&permit), Arc::clone(&started));
+        thread::spawn(move || {
+            let live = || !permit.is_cancelled();
+            write_under_authority(&live, || {
+                started.wait();
+                stalled.recv().expect("released");
+            })
+        })
+    };
+    started.wait();
+    rig.clock.advance((EXCHANGE_GRACE_SECONDS - EXCHANGE_WRITE_MARGIN_SECONDS) as u64);
+    let report = supervisor.step();
+    assert_eq!(report.phase, Phase::Closing, "the running write is waited for");
+    assert!(permit.is_cancelled(), "the permit has lapsed");
+    let late = || !permit.is_cancelled();
+    assert!(
+        write_under_authority(&late, || ()).is_none(),
+        "no write begins after the lapse"
+    );
+    // The handback deadline: handed back while the write still stalls.
+    rig.clock.advance((EXCHANGE_WRITE_MARGIN_SECONDS - SUPERVISOR_POLL_SECONDS) as u64);
+    let report = supervisor.step();
+    assert_eq!(report.closed, Some(CloseReason::OperatorClose));
+    assert!(rig.clock.wall() < closing_at + EXCHANGE_GRACE_SECONDS, "within the grace");
+    assert!(
+        write_under_authority(&late, || ()).is_none(),
+        "and none after the handback"
+    );
+    release.send(()).expect("release");
+    assert_eq!(writer.join().expect("writer"), Some(()));
 }
 
 #[test]

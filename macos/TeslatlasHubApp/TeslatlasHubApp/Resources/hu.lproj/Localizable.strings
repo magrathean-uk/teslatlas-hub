@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "A forrásalkalmazásból történő importálás nem sikerült; próbáld meg újra az importálást.";
 "hub.HubController.2457.838" = "A Hub indítása előtt fejezd be a forrásalkalmazás átadás-átvételét.";
 "hub.HubController.2479.850" = "A Hub újraindítása előtt fejezd be a forrásalkalmazás átadás-átvételét.";
-"hub.HubController.250.318" = "Legacy token";
+"hub.HubController.250.318" = "Tulajdonosi bejelentkezés";
 "hub.HubController.2503.863" = "A Hub indítása már folyamatban van.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "A Hub indítása előtt fejezd be az áttelepítés ellenőrzéseit.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Előnézeti tesztadat";
 "hub.LogsWindowController.70.1725" = "Tekintsd át az anonimizált Hub- és alkalmazásnaplókat.";
 "hub.MainWindowController.1152.1840" = "Fleet API használata";
-"hub.MainWindowController.1153.1841" = "Legacy token használata";
+"hub.MainWindowController.1153.1841" = "Tulajdonosi bejelentkezés használata";
 "hub.MainWindowController.1154.1842" = "Előzmények importálása…";
 "hub.MainWindowController.1156.1843" = "Tesla leválasztása…";
 "hub.MainWindowController.1158.1844" = "Tesla-fiók csatlakoztatása…";
 "hub.MainWindowController.1428.1846" = "Leválasztod a Teslát a Hubról?";
-"hub.MainWindowController.1429.1847" = "A Hub leáll, és eltávolítja a mentett Fleet- és Legacy-hitelesítő adatokat. Az összegyűjtött adataid ezen a Macen maradnak.";
+"hub.MainWindowController.1429.1847" = "A Hub leáll, és eltávolítja a mentett Fleet- és tulajdonosi bejelentkezési hitelesítő adatokat. Az összegyűjtött adataid ezen a Macen maradnak.";
 "hub.MainWindowController.1431.1849" = "Leválasztás";
 "hub.MainWindowController.15.1766" = "Jármű";
 "hub.MainWindowController.22.1768" = "Hub leállítása";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Adatok importálása";
 "hub.OnboardingWindowController.1362.2047" = "Csatlakozás a kiszolgálóhoz";
 "hub.OnboardingWindowController.1471.2059" = "Töltsd ki a Fleet ügyfélazonosítóját, tokenjét, régióját és lejárati idejét.";
-"hub.OnboardingWindowController.1500.2071" = "Add meg a hozzáférési és a frissítési tokent is.";
 "hub.OnboardingWindowController.1631.2105" = "Add meg a forrásalkalmazás-kiszolgálót, az SSH-felhasználót és a portot.";
 "hub.OnboardingWindowController.168.1852" = "Tovább";
 "hub.OnboardingWindowController.1691.2113" = "A séma ellenőrzésével nem állapítható meg a forrásalkalmazás kiadása. Erősítsd meg, hogy a futó kiszolgáló a 4.4.0-s vagy újabb kiadást használja, majd folytasd.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "Hogyan szeretnéd elkezdeni?";
 "hub.OnboardingWindowController.590.1919" = "Válaszd ki, hogyan csatlakozzon a Hub";
 "hub.OnboardingWindowController.591.1920" = "Fleet Telemetry beállítása";
-"hub.OnboardingWindowController.592.1921" = "Csatlakozás tokennel";
+"hub.OnboardingWindowController.592.1921" = "Bejelentkezés a Teslával";
 "hub.OnboardingWindowController.593.1922" = "Előzmények importálása…";
 "hub.OnboardingWindowController.594.1923" = "A Hub ellenőrzése";
 "hub.OnboardingWindowController.595.1924" = "Áttelepítés befejezve";
 "hub.OnboardingWindowController.595.1925" = "A Teslatlas Hub használatra kész";
 "hub.OnboardingWindowController.602.1926" = "Saját Tesla-telemetria-adatgyűjtőd, amely privát módon ezen a Macen fut.";
 "hub.OnboardingWindowController.604.1927" = "Állíts be egy új Hubot, vagy hozd át a forrásalkalmazásból az előzményeket.";
-"hub.OnboardingWindowController.606.1928" = "A Fleet Telemetryt javasoljuk. A Legacy tokenek régebbi beállításokkal működnek.";
+"hub.OnboardingWindowController.606.1928" = "A kezdéshez jelentkezz be a Tesla tulajdonosi fiókoddal. A Fleet Telemetry is elérhető, ha azt szeretnéd.";
 "hub.OnboardingWindowController.608.1929" = "Hozz létre egy Tesla Fleet-alkalmazást, majd illeszd be alább a hitelesítő adatait.";
 "hub.OnboardingWindowController.610.1930" = "Jelentkezz be a Teslával, amíg egy gyűjtési ablak nyitva van. A Hub soha nem fogad el tokent.";
 "hub.OnboardingWindowController.612.1931" = "Csatlakozz a forrásalkalmazás-kiszolgálóhoz a járműelőzmények importálásához.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "Hozd át a meglévő járműelőzményeidet.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "A Tesla hivatalos adatfolyam-API-ja. Lehetővé teszi az élő járműparancsokat.";
-"hub.OnboardingWindowController.752.1958" = "Legacy Token";
+"hub.OnboardingWindowController.752.1958" = "Tulajdonosi bejelentkezés";
 "hub.OnboardingWindowController.753.1959" = "Jelentkezz be a Teslával. A Hub megtartja a saját bejelentkezését.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet-alkalmazás létrehozása";
 "hub.OnboardingWindowController.771.1964" = "Ügyfélazonosító";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "Kulcs kiválasztása…";
 "hub.OnboardingWindowController.888.1990" = "Csak előzmények. A Hub nem vizsgálja meg és nem importálja a Tesla hitelesítő adatait. Az adatgyűjtés kikapcsolva marad. Az adatbázisséma ellenőrizhető; a forrásalkalmazás verziója továbbra sem ismert.";
 "hub.OnboardingWindowController.891.1991" = "Helyi PostgreSQL-forrás";
-"hub.OnboardingWindowController.895.1994" = "Tudomásul veszem, hogy ez egy v4.2-kompatibilis adatbázisséma, nem pedig az alkalmazás verziójának bizonyítéka.";
 "hub.OnboardingWindowController.915.1997" = "Forrásalkalmazás %1$@";
 "hub.OnboardingWindowController.927.2001" = "Ellenőrzés…";
 "hub.OnboardingWindowController.935.2004" = "Kiszolgáló módosítása";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "A Tesla-bejelentkezési állapot nem egyezett. Indítsd el újra a bejelentkezést.";
 "hub.TeslaAuthWindowController.35.2240" = "A Tesla érvénytelen fiókkibocsátót adott vissza.";
 "hub.TeslaAuthWindowController.358.html_progress" = "A biztonságos Tesla-bejelentkezés befejezése…";
-"hub.TeslaAuthWindowController.36.2241" = "A Tesla érvénytelen tokenválaszt adott vissza.";
-"hub.TeslaAuthWindowController.37.2242" = "A Tesla-token cseréje nem sikerült.";
 "hub.SourceServerImporter.34.2284" = "Kód: %1$@";
 "hub.SourceServerImporter.428.2461" = "A forrásalkalmazás-kiszolgáló hiányos beállítási adatokat adott vissza.";
 "hub.SourceServerImporter.691.2530" = "Ellenőrizd a kiszolgáló adatait";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "A Hub vezérlőcsatornáján válaszoló folyamat nem ez a Hub, ezért semmi sem lett elküldve. Indítsd újra a Hubot, majd jelentkezz be újra.";
 
 "hub.signIn.busy" = "A Hub más kérésekkel van elfoglalva. Semmi sem változott; jelentkezz be újra egy pillanat múlva.";
+
+"hub.signIn.discovery.notListed" = "Be vagy jelentkezve, de a Tesla nem listázott autót ezen a fiókon. Ellenőrizd, hogy az autó ehhez a Tesla-fiókhoz tartozik-e, majd keresd meg újra az autókat.";
+
+"hub.signIn.discovery.selectionRequired" = "Be vagy jelentkezve, de a Tesla egynél több autót listáz, és a Hubnak tudnia kell, melyikről gyűjtsön adatokat. Keresd meg újra az autókat.";
+
+"hub.signIn.discovery.selectionInvalid" = "Be vagy jelentkezve, de a kiválasztott autó nincs ezen a Tesla-fiókon. Keresd meg újra az autókat.";
+
+"hub.signIn.discovery.answerInvalid" = "Be vagy jelentkezve, de a Hub nem tudta beolvasni a Tesla autólistáját. Keresd meg újra az autókat.";
+
+"hub.signIn.discovery.refused" = "Be vagy jelentkezve, de a Tesla elutasította az autólistát. Keresd meg újra az autókat, vagy jelentkezz be újra a Teslával.";
+
+"hub.signIn.discovery.windowClosed" = "Be vagy jelentkezve, de a gyűjtési ablak bezárult, mielőtt a Hub megtalálhatta volna az autóidat. Nyiss meg egy ablakot, majd keresd meg újra az autókat.";
+
+"hub.signIn.discovery.providerParked" = "Be vagy jelentkezve, de ez a Hub másik szolgáltatóval gyűjt adatokat, ezért ezzel a bejelentkezéssel nem tud autókat keresni.";
+
+"hub.signIn.discovery.settingsInvalid" = "Be vagy jelentkezve, de ennek a Hubnak az Owner API címe nem a Teslaé, ezért a Hub nem kérte le az autóidat. Javítsd ki a címet, majd jelentkezz be újra a Teslával.";
+
+"hub.signIn.discovery.general" = "Be vagy jelentkezve, de a Hub nem találta meg az autóidat. Keresd meg újra az autókat, vagy jelentkezz be újra a Teslával.";
+
+"hub.signIn.discovery.retry" = "Autók újrakeresése";
+
+"hub.signIn.discovery.expired" = "Ez a bejelentkezés már nem folytatható. Jelentkezz be újra a Teslával.";
+
+"hub.signIn.discovery.configured" = "Beállított autók: %d";
+
+"hub.signIn.reportInvalid" = "A Hub nem tudta megerősíteni a bejelentkezést. Jelentkezz be újra a Teslával.";

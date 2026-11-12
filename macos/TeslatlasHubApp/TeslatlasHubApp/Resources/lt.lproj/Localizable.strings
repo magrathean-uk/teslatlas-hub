@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Nepavyko importuoti iš šaltinio programos; bandykite importuoti dar kartą.";
 "hub.HubController.2457.838" = "Prieš paleisdami Hub užbaikite šaltinio programos perdavimą.";
 "hub.HubController.2479.850" = "Prieš paleisdami Hub iš naujo užbaikite šaltinio programos perdavimą.";
-"hub.HubController.250.318" = "Senasis prieigos raktas";
+"hub.HubController.250.318" = "Savininko prisijungimas";
 "hub.HubController.2503.863" = "Hub paleidimas jau vyksta.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Prieš paleisdami Hub užbaikite perkėlimo patikras.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Peržiūros duomenų rinkinys";
 "hub.LogsWindowController.70.1725" = "Peržiūrėkite nuasmenintus Hub ir programos žurnalus.";
 "hub.MainWindowController.1152.1840" = "Naudoti Fleet API";
-"hub.MainWindowController.1153.1841" = "Naudoti senąjį prieigos raktą";
+"hub.MainWindowController.1153.1841" = "Naudoti savininko prisijungimą";
 "hub.MainWindowController.1154.1842" = "Importuoti istoriją…";
 "hub.MainWindowController.1156.1843" = "Atjungti „Tesla“…";
 "hub.MainWindowController.1158.1844" = "Prijungti „Tesla“ paskyrą…";
 "hub.MainWindowController.1428.1846" = "Atjungti „Tesla“ nuo Hub?";
-"hub.MainWindowController.1429.1847" = "Hub sustos ir pašalins išsaugotus Fleet bei Legacy prisijungimo duomenis. Jūsų surinkti duomenys liks šiame Mac kompiuteryje.";
+"hub.MainWindowController.1429.1847" = "Hub sustos ir pašalins išsaugotus Fleet bei savininko prisijungimo duomenis. Jūsų surinkti duomenys liks šiame Mac kompiuteryje.";
 "hub.MainWindowController.1431.1849" = "Atjungti";
 "hub.MainWindowController.15.1766" = "Transporto priemonė";
 "hub.MainWindowController.22.1768" = "Sustabdyti Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Importuoti duomenis";
 "hub.OnboardingWindowController.1362.2047" = "Prisijungti prie serverio";
 "hub.OnboardingWindowController.1471.2059" = "Užpildykite Fleet kliento ID, prieigos rakto, regiono ir galiojimo pabaigos laukus.";
-"hub.OnboardingWindowController.1500.2071" = "Įveskite ir prieigos, ir atnaujinimo prieigos raktą.";
 "hub.OnboardingWindowController.1631.2105" = "Įveskite šaltinio programos serverį, SSH naudotoją ir prievadą.";
 "hub.OnboardingWindowController.168.1852" = "Tęsti";
 "hub.OnboardingWindowController.1691.2113" = "Schemos patikra negali nustatyti šaltinio programos versijos. Patvirtinkite, kad veikiančiame serveryje naudojama 4.4.0 arba naujesnė versija, tada tęskite.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "Kaip norėtumėte pradėti?";
 "hub.OnboardingWindowController.590.1919" = "Pasirinkite, kaip Hub jungiasi";
 "hub.OnboardingWindowController.591.1920" = "Sukonfigūruoti Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Prisijungti naudojant prieigos raktą";
+"hub.OnboardingWindowController.592.1921" = "Prisijungti prie „Tesla“";
 "hub.OnboardingWindowController.593.1922" = "Importuoti istoriją…";
 "hub.OnboardingWindowController.594.1923" = "Tikrinamas Hub";
 "hub.OnboardingWindowController.595.1924" = "Perkėlimas baigtas";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub paruoštas";
 "hub.OnboardingWindowController.602.1926" = "Jūsų privatus „Tesla“ telemetrijos rinktuvas, veikiantis šiame Mac kompiuteryje.";
 "hub.OnboardingWindowController.604.1927" = "Nustatykite naują Hub arba perkelkite istoriją iš šaltinio programos.";
-"hub.OnboardingWindowController.606.1928" = "Rekomenduojama naudoti Fleet Telemetry. Senieji prieigos raktai tinka senesnėms sąrankoms.";
+"hub.OnboardingWindowController.606.1928" = "Norėdami pradėti, prisijunkite su savo „Tesla“ savininko paskyra. Jei norite, galima naudoti ir Fleet Telemetry.";
 "hub.OnboardingWindowController.608.1929" = "Sukurkite Tesla Fleet programą ir įklijuokite jos prisijungimo duomenis žemiau.";
 "hub.OnboardingWindowController.610.1930" = "Prisijunkite prie „Tesla“, kol atidarytas rinkimo langas. Hub niekada nepriima prieigos rakto.";
 "hub.OnboardingWindowController.612.1931" = "Prisijunkite prie šaltinio programos serverio, kad importuotumėte transporto priemonių istoriją.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "Perkelkite esamą transporto priemonės istoriją.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Oficiali „Tesla“ srautinių duomenų API. Ji suteikia galimybę siųsti komandas transporto priemonei realiuoju laiku.";
-"hub.OnboardingWindowController.752.1958" = "Senasis prieigos raktas";
+"hub.OnboardingWindowController.752.1958" = "Savininko prisijungimas";
 "hub.OnboardingWindowController.753.1959" = "Prisijunkite prie „Tesla“. Hub išsaugo savo prisijungimą.";
 "hub.OnboardingWindowController.760.1960" = "Sukurti Tesla Fleet programą";
 "hub.OnboardingWindowController.771.1964" = "Kliento ID";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "Pasirinkti raktą…";
 "hub.OnboardingWindowController.888.1990" = "Tik istorija. Hub netikrins ir neimportuos „Tesla“ prisijungimo duomenų. Duomenų rinkimas liks išjungtas. Duomenų bazės schemą galima patikrinti, tačiau šaltinio programos versija liks nežinoma.";
 "hub.OnboardingWindowController.891.1991" = "Vietinis PostgreSQL šaltinis";
-"hub.OnboardingWindowController.895.1994" = "Patvirtinu, kad duomenų bazės schema suderinama su v4.2, tačiau tai neįrodo programos versijos";
 "hub.OnboardingWindowController.915.1997" = "Šaltinio programa %1$@";
 "hub.OnboardingWindowController.927.2001" = "Tikrinama…";
 "hub.OnboardingWindowController.935.2004" = "Keisti serverį";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "„Tesla“ prisijungimo būsena nesutapo. Pradėkite prisijungimą iš naujo.";
 "hub.TeslaAuthWindowController.35.2240" = "„Tesla“ grąžino netinkamą paskyros išdavėją.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Užbaigiamas saugus prisijungimas prie „Tesla“…";
-"hub.TeslaAuthWindowController.36.2241" = "„Tesla“ grąžino netinkamą prieigos rakto atsaką.";
-"hub.TeslaAuthWindowController.37.2242" = "Nepavyko apsikeisti „Tesla“ prieigos raktu.";
 "hub.SourceServerImporter.34.2284" = "Kodas: %1$@";
 "hub.SourceServerImporter.428.2461" = "Šaltinio programos serveris pateikė ne visą sąrankos informaciją.";
 "hub.SourceServerImporter.691.2530" = "Patikrinkite serverio duomenis";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Procesas, atsakantis „Hub“ valdymo kanale, nėra šis „Hub“, todėl nieko neišsiųsta. Paleiskite „Hub“ iš naujo, tada prisijunkite dar kartą.";
 
 "hub.signIn.busy" = "„Hub“ užsiėmęs kitomis užklausomis. Nieko nepakeista; prisijunkite dar kartą po akimirkos.";
+
+"hub.signIn.discovery.notListed" = "Prisijungėte, tačiau „Tesla“ šioje paskyroje nenurodė jokio automobilio. Patikrinkite, ar automobilis priklauso šiai „Tesla“ paskyrai, tada dar kartą pabandykite rasti automobilius.";
+
+"hub.signIn.discovery.selectionRequired" = "Prisijungėte, tačiau „Tesla“ nurodo daugiau nei vieną automobilį, o „Hub“ turi žinoti, iš kurio rinkti duomenis. Dar kartą pabandykite rasti automobilius.";
+
+"hub.signIn.discovery.selectionInvalid" = "Prisijungėte, tačiau pasirinkto automobilio šioje „Tesla“ paskyroje nėra. Dar kartą pabandykite rasti automobilius.";
+
+"hub.signIn.discovery.answerInvalid" = "Prisijungėte, tačiau „Hub“ nepavyko perskaityti „Tesla“ automobilių sąrašo. Dar kartą pabandykite rasti automobilius.";
+
+"hub.signIn.discovery.refused" = "Prisijungėte, tačiau „Tesla“ atmetė automobilių sąrašą. Dar kartą pabandykite rasti automobilius arba prisijunkite per „Tesla“ iš naujo.";
+
+"hub.signIn.discovery.windowClosed" = "Prisijungėte, tačiau rinkimo langas užsidarė, kol „Hub“ dar nebuvo radęs jūsų automobilių. Atidarykite langą, tada dar kartą pabandykite rasti automobilius.";
+
+"hub.signIn.discovery.providerParked" = "Prisijungėte, tačiau šis „Hub“ duomenis renka per kitą teikėją, todėl su šiuo prisijungimu negali rasti automobilių.";
+
+"hub.signIn.discovery.settingsInvalid" = "Prisijungėte, tačiau šio „Hub“ Owner API adresas nėra „Tesla“ adresas, todėl „Hub“ neprašė jūsų automobilių. Pataisykite adresą, tada prisijunkite per „Tesla“ iš naujo.";
+
+"hub.signIn.discovery.general" = "Prisijungėte, tačiau „Hub“ nepavyko rasti jūsų automobilių. Dar kartą pabandykite rasti automobilius arba prisijunkite per „Tesla“ iš naujo.";
+
+"hub.signIn.discovery.retry" = "Bandyti rasti automobilius dar kartą";
+
+"hub.signIn.discovery.expired" = "Šio prisijungimo nebegalima tęsti. Prisijunkite per „Tesla“ iš naujo.";
+
+"hub.signIn.discovery.configured" = "Sukonfigūruoti automobiliai: %d";
+
+"hub.signIn.reportInvalid" = "„Hub“ nepavyko patvirtinti prisijungimo. Prisijunkite per „Tesla“ iš naujo.";

@@ -15,6 +15,9 @@ mod control;
 mod input;
 mod protocol;
 mod supplied;
+mod owner_client;
+mod exchange;
+mod discovery;
 mod service;
 #[cfg_attr(not(any(test, debug_assertions)), allow(dead_code, reason = "Observer stubs are unexported in release builds."))]
 mod observe;
@@ -36,6 +39,16 @@ pub use status::{BlockedReasons, CredentialStatus, CredentialStoreStatus, SlotSt
 pub use control::{RotationResult, SignOutResult, rotate_credential_key, sign_out};
 pub use input::{SIGN_IN_LINE_CAP, SignInInput, SignInInputError};
 pub use scope::SignInScope;
+pub use owner_client::{OWNER_AUTHORIZATION_ENDPOINT, OWNER_CLIENT_ID, OWNER_REDIRECT_URI, OWNER_SCOPE, OWNER_TOKEN_ENDPOINT};
+pub use exchange::{ANSWER_CAP as OWNER_EXCHANGE_ANSWER_CAP, MAX_OWNER_CODE_BYTES, SIGN_IN_CODE_REUSED, SIGN_IN_MATERIAL_INVALID, WINDOW_CLOSED, OwnerSignIn, exchange_owner_code, sign_in_or_resume_owner_code};
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub use exchange::{exchange_owner_code_with_stub_for_test, sign_in_or_resume_owner_code_with_stub_for_test};
+pub use discovery::{OwnerDiscovery, discover_owner_cars, owner_car_selection};
+pub use crate::collection::collector::OwnerCarSelection;
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub use discovery::discover_owner_cars_with_stub_for_test;
 pub use protocol::{FLEET_SIGN_IN_SCOPE, SignInSettings, SignInAttempt, pkce_verifier, pkce_challenge};
 pub use entries::clear_owner_after_fleet;
 pub use entries::prepare_owner_tokens;

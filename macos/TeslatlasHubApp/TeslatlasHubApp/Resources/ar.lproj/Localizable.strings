@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "فشل الاستيراد من التطبيق المصدر؛ أعد محاولة الاستيراد.";
 "hub.HubController.2457.838" = "أكمل تسليم التطبيق المصدر قبل بدء Hub.";
 "hub.HubController.2479.850" = "أكمل تسليم التطبيق المصدر قبل إعادة تشغيل Hub.";
-"hub.HubController.250.318" = "الرمز المميّز القديم.";
+"hub.HubController.250.318" = "تسجيل دخول المالك";
 "hub.HubController.2503.863" = "بدأ Hub بالفعل.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "أكمل فحوص الترحيل قبل بدء Hub.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "معاينة بيانات الاختبار";
 "hub.LogsWindowController.70.1725" = "راجع سجلات Hub والتطبيق المنقّحة.";
 "hub.MainWindowController.1152.1840" = "استخدم Fleet API";
-"hub.MainWindowController.1153.1841" = "استخدم الرمز المميّز القديم";
+"hub.MainWindowController.1153.1841" = "استخدم تسجيل دخول المالك";
 "hub.MainWindowController.1154.1842" = "استيراد السجل…";
 "hub.MainWindowController.1156.1843" = "قطع الاتصال بـ Tesla…";
 "hub.MainWindowController.1158.1844" = "الاتصال بحساب Tesla…";
 "hub.MainWindowController.1428.1846" = "هل تريد فصل حساب Tesla عن Hub؟";
-"hub.MainWindowController.1429.1847" = "سيتوقف Hub ويحذف بيانات اعتماد Fleet والرموز المميّزة القديمة المخزّنة لديه. ستبقى البيانات التي جمعها على هذا الـ Mac.";
+"hub.MainWindowController.1429.1847" = "سيتوقف Hub ويحذف بيانات اعتماد Fleet وبيانات اعتماد تسجيل دخول المالك المخزّنة لديه. ستبقى البيانات التي جمعها على هذا الـ Mac.";
 "hub.MainWindowController.1431.1849" = "فصل الاتصال";
 "hub.MainWindowController.15.1766" = "المركبة";
 "hub.MainWindowController.22.1768" = "إيقاف Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "استيراد البيانات";
 "hub.OnboardingWindowController.1362.2047" = "الاتصال بالخادم";
 "hub.OnboardingWindowController.1471.2059" = "أكمل حقول معرّف عميل Fleet والرمز والمنطقة وتاريخ الانتهاء.";
-"hub.OnboardingWindowController.1500.2071" = "أدخل رمز الوصول ورمز التحديث كليهما.";
 "hub.OnboardingWindowController.1631.2105" = "أدخل خادم التطبيق المصدر ومستخدم SSH والمنفذ.";
 "hub.OnboardingWindowController.168.1852" = "متابعة";
 "hub.OnboardingWindowController.1691.2113" = "لا يمكن لفحص المخطط تحديد إصدار التطبيق المصدر. تأكد من أن الخادم يشغّل التطبيق المصدر بالإصدار 4.4.0 أو أحدث، ثم تابع.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "كيف تريد البدء؟";
 "hub.OnboardingWindowController.590.1919" = "اختر طريقة اتصال Hub.";
 "hub.OnboardingWindowController.591.1920" = "إعداد Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "الاتصال باستخدام رمز مميّز";
+"hub.OnboardingWindowController.592.1921" = "تسجيل الدخول باستخدام Tesla";
 "hub.OnboardingWindowController.593.1922" = "استيراد السجل…";
 "hub.OnboardingWindowController.594.1923" = "جارٍ التحقق من Hub";
 "hub.OnboardingWindowController.595.1924" = "اكتمل الترحيل";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub جاهز";
 "hub.OnboardingWindowController.602.1926" = "جامع بيانات القياس عن بُعد من Tesla، يعمل محليًا على هذا الـ Mac وبخصوصية.";
 "hub.OnboardingWindowController.604.1927" = "أعدّ Hub جديدًا أو انقل سجلك من التطبيق المصدر.";
-"hub.OnboardingWindowController.606.1928" = "يوصى باستخدام Fleet Telemetry. وتعمل الرموز المميّزة القديمة مع الإعدادات الأقدم.";
+"hub.OnboardingWindowController.606.1928" = "ابدأ بتسجيل الدخول باستخدام حساب مالك Tesla الخاص بك. يتوفر Fleet Telemetry إن كنت تفضّله.";
 "hub.OnboardingWindowController.608.1929" = "أنشئ تطبيق Tesla Fleet، ثم الصق بيانات اعتماده أدناه.";
 "hub.OnboardingWindowController.610.1930" = "سجّل الدخول باستخدام Tesla أثناء فتح نافذة جمع بيانات. لا يقبل Hub أي رمز مميّز أبدًا.";
 "hub.OnboardingWindowController.612.1931" = "اتصل بخادم التطبيق المصدر لاستيراد سجل المركبة منه.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "انقل سجل مركبتك الحالي.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "واجهة API الرسمية من Tesla لبث البيانات، وتتيح أوامر مباشرة للمركبة.";
-"hub.OnboardingWindowController.752.1958" = "الرمز المميّز القديم";
+"hub.OnboardingWindowController.752.1958" = "تسجيل دخول المالك";
 "hub.OnboardingWindowController.753.1959" = "سجّل الدخول باستخدام Tesla. يحتفظ Hub بتسجيل دخول خاص به.";
 "hub.OnboardingWindowController.760.1960" = "إنشاء تطبيق Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "معرّف العميل";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "اختيار مفتاح…";
 "hub.OnboardingWindowController.888.1990" = "للسجل فقط. لن يطّلع Hub على بيانات اعتماد Tesla أو يستوردها. سيظل جمع البيانات متوقفًا. يمكن فحص مخطط قاعدة البيانات، لكن يظل إصدار التطبيق المصدر غير معروف.";
 "hub.OnboardingWindowController.891.1991" = "مصدر PostgreSQL محلي";
-"hub.OnboardingWindowController.895.1994" = "أقرّ بأن مخطط قاعدة البيانات هذا متوافق مع v4.2، لكنه لا يثبت إصدار التطبيق.";
 "hub.OnboardingWindowController.915.1997" = "التطبيق المصدر %1$@";
 "hub.OnboardingWindowController.927.2001" = "جارٍ التحقق…";
 "hub.OnboardingWindowController.935.2004" = "تغيير الخادم";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "لم تتطابق قيمة حالة تسجيل الدخول إلى Tesla. ابدأ عملية تسجيل الدخول مجددًا.";
 "hub.TeslaAuthWindowController.35.2240" = "أعاد Tesla جهة إصدار حساب غير صالحة.";
 "hub.TeslaAuthWindowController.358.html_progress" = "جارٍ إكمال تسجيل الدخول الآمن إلى Tesla…";
-"hub.TeslaAuthWindowController.36.2241" = "أعاد Tesla استجابةً غير صالحة للرمز المميّز.";
-"hub.TeslaAuthWindowController.37.2242" = "فشل تبادل الرمز المميّز مع Tesla.";
 "hub.SourceServerImporter.34.2284" = "الرمز: %1$@";
 "hub.SourceServerImporter.428.2461" = "أعاد خادم التطبيق المصدر تفاصيل إعداد غير مكتملة.";
 "hub.SourceServerImporter.691.2530" = "تحقق من تفاصيل الخادم";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "العملية التي تردّ على قناة التحكم الخاصة بـ Hub ليست هذا الـ Hub، لذلك لم يُرسل شيء. أعد تشغيل Hub ثم سجّل الدخول مرة أخرى.";
 
 "hub.signIn.busy" = "Hub مشغول بطلبات أخرى. لم يتغير شيء؛ سجّل الدخول مرة أخرى بعد قليل.";
+
+"hub.signIn.discovery.notListed" = "تم تسجيل دخولك، لكن Tesla لم تُدرج أي سيارة في هذا الحساب. تأكد من أن السيارة تتبع حساب Tesla هذا، ثم أعد محاولة العثور على السيارات.";
+
+"hub.signIn.discovery.selectionRequired" = "تم تسجيل دخولك، لكن Tesla تُدرج أكثر من سيارة ويحتاج Hub إلى معرفة أيّها يجمع بياناته. أعد محاولة العثور على السيارات.";
+
+"hub.signIn.discovery.selectionInvalid" = "تم تسجيل دخولك، لكن السيارة المختارة ليست في حساب Tesla هذا. أعد محاولة العثور على السيارات.";
+
+"hub.signIn.discovery.answerInvalid" = "تم تسجيل دخولك، لكن تعذّرت على Hub قراءة قائمة السيارات من Tesla. أعد محاولة العثور على السيارات.";
+
+"hub.signIn.discovery.refused" = "تم تسجيل دخولك، لكن Tesla رفضت طلب قائمة السيارات. أعد محاولة العثور على السيارات، أو سجّل الدخول باستخدام Tesla مرة أخرى.";
+
+"hub.signIn.discovery.windowClosed" = "تم تسجيل دخولك، لكن نافذة الجمع أُغلقت قبل أن يتمكن Hub من العثور على سياراتك. افتح نافذة، ثم أعد محاولة العثور على السيارات.";
+
+"hub.signIn.discovery.providerParked" = "تم تسجيل دخولك، لكن هذا الـ Hub يجمع البيانات عبر مزوّد آخر، لذلك لا يمكنه العثور على السيارات بتسجيل الدخول هذا.";
+
+"hub.signIn.discovery.settingsInvalid" = "تم تسجيل دخولك، لكن عنوان Owner API الخاص بهذا الـ Hub ليس عنوان Tesla، لذلك لم يطلب Hub قائمة سياراتك. صحّح العنوان، ثم سجّل الدخول باستخدام Tesla مرة أخرى.";
+
+"hub.signIn.discovery.general" = "تم تسجيل دخولك، لكن تعذّر على Hub العثور على سياراتك. أعد محاولة العثور على السيارات، أو سجّل الدخول باستخدام Tesla مرة أخرى.";
+
+"hub.signIn.discovery.retry" = "إعادة محاولة العثور على السيارات";
+
+"hub.signIn.discovery.expired" = "لا يمكن استئناف تسجيل الدخول هذا بعد الآن. سجّل الدخول باستخدام Tesla مرة أخرى.";
+
+"hub.signIn.discovery.configured" = "السيارات المُعدّة: %d";
+
+"hub.signIn.reportInvalid" = "تعذّر على Hub تأكيد تسجيل الدخول. سجّل الدخول باستخدام Tesla مرة أخرى.";

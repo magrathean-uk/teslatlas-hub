@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "源应用程序导入失败；请重试导入。";
 "hub.HubController.2457.838" = "启动 Hub 前，请先完成源应用程序交接。";
 "hub.HubController.2479.850" = "重启 Hub 前，请先完成源应用程序交接。";
-"hub.HubController.250.318" = "旧版令牌";
+"hub.HubController.250.318" = "车主登录";
 "hub.HubController.2503.863" = "Hub 启动已在进行中。";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "启动 Hub 前，请先完成迁移检查。";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "预览样例";
 "hub.LogsWindowController.70.1725" = "查看经过脱敏的 Hub 和应用日志。";
 "hub.MainWindowController.1152.1840" = "使用 Fleet API";
-"hub.MainWindowController.1153.1841" = "使用 Legacy 令牌";
+"hub.MainWindowController.1153.1841" = "使用车主登录";
 "hub.MainWindowController.1154.1842" = "导入历史记录…";
 "hub.MainWindowController.1156.1843" = "断开 Tesla 连接…";
 "hub.MainWindowController.1158.1844" = "连接 Tesla 账号…";
 "hub.MainWindowController.1428.1846" = "要断开 Hub 与 Tesla 的连接吗？";
-"hub.MainWindowController.1429.1847" = "Hub 将停止运行并删除其保存的 Fleet 和 Legacy 凭据。您收集的数据仍保留在此 Mac 上。";
+"hub.MainWindowController.1429.1847" = "Hub 将停止运行并删除其保存的 Fleet 和车主登录凭据。您收集的数据仍保留在此 Mac 上。";
 "hub.MainWindowController.1431.1849" = "断开连接";
 "hub.MainWindowController.15.1766" = "车辆";
 "hub.MainWindowController.22.1768" = "停止 Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "导入数据";
 "hub.OnboardingWindowController.1362.2047" = "连接到服务器";
 "hub.OnboardingWindowController.1471.2059" = "请填写 Fleet 客户端 ID、令牌、区域和到期时间字段。";
-"hub.OnboardingWindowController.1500.2071" = "请输入访问令牌和刷新令牌。";
 "hub.OnboardingWindowController.1631.2105" = "请输入源应用程序服务器、SSH 用户和端口。";
 "hub.OnboardingWindowController.168.1852" = "继续";
 "hub.OnboardingWindowController.1691.2113" = "架构检查无法确定源应用程序的版本。请确认正在运行的服务器为 4.4.0 或更新版本，然后继续。";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "您想如何开始？";
 "hub.OnboardingWindowController.590.1919" = "选择 Hub 的连接方式";
 "hub.OnboardingWindowController.591.1920" = "设置 Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "使用令牌连接";
+"hub.OnboardingWindowController.592.1921" = "使用 Tesla 登录";
 "hub.OnboardingWindowController.593.1922" = "导入历史记录…";
 "hub.OnboardingWindowController.594.1923" = "正在检查 Hub";
 "hub.OnboardingWindowController.595.1924" = "迁移已完成";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub 已就绪";
 "hub.OnboardingWindowController.602.1926" = "在此 Mac 上私密运行的专属 Tesla 遥测采集器。";
 "hub.OnboardingWindowController.604.1927" = "全新设置 Hub，或从源应用程序导入现有历史记录。";
-"hub.OnboardingWindowController.606.1928" = "推荐使用 Fleet Telemetry。Legacy 令牌适用于较旧的设置。";
+"hub.OnboardingWindowController.606.1928" = "请先使用 Tesla 车主账户登录。如果你更喜欢，也可以使用 Fleet Telemetry。";
 "hub.OnboardingWindowController.608.1929" = "创建 Tesla Fleet 应用，然后在下方粘贴其凭据。";
 "hub.OnboardingWindowController.610.1930" = "请在采集窗口打开时使用 Tesla 登录。Hub 绝不接受令牌。";
 "hub.OnboardingWindowController.612.1931" = "连接到源应用程序服务器以导入其中的车辆历史记录。";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "导入现有车辆历史记录。";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla 官方的流式 API，可启用实时车辆指令。";
-"hub.OnboardingWindowController.752.1958" = "Legacy 令牌";
+"hub.OnboardingWindowController.752.1958" = "车主登录";
 "hub.OnboardingWindowController.753.1959" = "请使用 Tesla 登录。Hub 保留自己的登录。";
 "hub.OnboardingWindowController.760.1960" = "创建 Tesla Fleet 应用";
 "hub.OnboardingWindowController.771.1964" = "客户端 ID";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "选择密钥…";
 "hub.OnboardingWindowController.888.1990" = "仅历史记录模式。Hub 不会检查或导入 Tesla 凭据。数据采集保持关闭。可以检查数据库架构；源应用程序版本仍未知。";
 "hub.OnboardingWindowController.891.1991" = "本地 PostgreSQL 来源";
-"hub.OnboardingWindowController.895.1994" = "我确认这是兼容 v4.2 的数据库架构，但这不能证明应用版本";
 "hub.OnboardingWindowController.915.1997" = "源应用程序 %1$@";
 "hub.OnboardingWindowController.927.2001" = "正在检查…";
 "hub.OnboardingWindowController.935.2004" = "更改服务器";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Tesla 登录状态不匹配。请重新开始登录。";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla 返回的账户签发方无效。";
 "hub.TeslaAuthWindowController.358.html_progress" = "正在完成安全的 Tesla 登录…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla 返回的令牌响应无效。";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla 令牌交换失败。";
 "hub.SourceServerImporter.34.2284" = "代码：%1$@";
 "hub.SourceServerImporter.428.2461" = "源应用程序服务器返回的设置详情不完整。";
 "hub.SourceServerImporter.691.2530" = "检查服务器详情";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "在 Hub 控制通道上响应的进程不是此 Hub，因此未发送任何内容。请重新启动 Hub，然后再次登录。";
 
 "hub.signIn.busy" = "Hub 正忙于处理其他请求。未更改任何内容；请稍后再次登录。";
+
+"hub.signIn.discovery.notListed" = "已登录，但 Tesla 未在此账户中列出任何车辆。请确认车辆属于此 Tesla 账户，然后重新查找车辆。";
+
+"hub.signIn.discovery.selectionRequired" = "已登录，但 Tesla 列出了多辆车辆，Hub 需要知道从哪一辆收集数据。请重新查找车辆。";
+
+"hub.signIn.discovery.selectionInvalid" = "已登录，但所选车辆不在此 Tesla 账户中。请重新查找车辆。";
+
+"hub.signIn.discovery.answerInvalid" = "已登录，但 Hub 无法读取 Tesla 的车辆列表。请重新查找车辆。";
+
+"hub.signIn.discovery.refused" = "已登录，但 Tesla 拒绝了车辆列表。请重新查找车辆，或再次使用 Tesla 登录。";
+
+"hub.signIn.discovery.windowClosed" = "已登录，但采集窗口在 Hub 找到车辆之前就关闭了。请打开窗口，然后重新查找车辆。";
+
+"hub.signIn.discovery.providerParked" = "已登录，但此 Hub 使用其他提供方进行收集，因此无法通过此次登录查找车辆。";
+
+"hub.signIn.discovery.settingsInvalid" = "已登录，但此 Hub 的 Owner API 地址不是 Tesla 的，因此 Hub 未请求车辆列表。请更正地址，然后再次使用 Tesla 登录。";
+
+"hub.signIn.discovery.general" = "已登录，但 Hub 无法找到车辆。请重新查找车辆，或再次使用 Tesla 登录。";
+
+"hub.signIn.discovery.retry" = "重新查找车辆";
+
+"hub.signIn.discovery.expired" = "此次登录已无法继续。请再次使用 Tesla 登录。";
+
+"hub.signIn.discovery.configured" = "已配置的车辆：%d";
+
+"hub.signIn.reportInvalid" = "Hub 无法确认此次登录。请再次使用 Tesla 登录。";

@@ -768,6 +768,12 @@ impl CredentialVault {
     }
     /// TRANSITIONAL: the V2 sign-in scope calls this after its preconditions.
     pub(in crate::auth) fn begin_sign_in(&self, slot: CredentialSlot) -> Result<SignInSession, CredentialStoreError> {
+        self.begin_sign_in_under(slot, WriteAuthority::UNBOUNDED)
+    }
+    /// [`Self::begin_sign_in`] with its writes under `authority` (M02-T13
+    /// round 2): the binding is written only while it holds, and a binding
+    /// whose barrier fails is removed only while it still holds.
+    pub(in crate::auth) fn begin_sign_in_under(&self, slot: CredentialSlot, authority: WriteAuthority<'_>) -> Result<SignInSession, CredentialStoreError> {
         use sha2::{Digest, Sha256};
         let mut state = self.lock()?; state.writable(true)?;
         let mut grant_secret = Zeroizing::new([0u8; 32]); let mut nonce = Zeroizing::new([0u8; 32]);
@@ -777,31 +783,103 @@ impl CredentialVault {
         let binding: [u8; 32] = hash.finalize_reset().into();
         let now = self.now_ms()?;
         let expires_at_ms = now.checked_add(600_000).ok_or(CredentialStoreError::SignIn(SignInError::Expired))?;
-        let id = state.connection.insert_sign_in_binding(slot, binding, now)?;
-        state.barrier()?;
+        #[cfg(debug_assertions)] entry::test_boundary("sign_in_binding")?;
+        let id = authority.write(|| state.connection.insert_sign_in_binding(slot, binding, now).map_err(Into::into))?;
+        // M02-T12: a binding whose commit is not proven is removed again, so
+        // a refused attempt leaves no binding behind.
+        let proven = (|| {
+            #[cfg(debug_assertions)] entry::test_boundary("sign_in_binding_committed")?;
+            state.barrier()
+        })();
+        if let Err(error) = proven {
+            let _ = authority.write(|| { Self::discard_sign_in_binding(&mut state, id); Ok(()) });
+            return Err(error);
+        }
         Ok(SignInSession { id, slot, grant_secret, state: nonce, expires_at_ms,
             drop_observer: super::credential_sign_in::current_secret_observer() })
     }
+    /// Removes the binding of an attempt that stored nothing; best effort,
+    /// so the attempt's own error is what the caller sees.
+    fn discard_sign_in_binding(state: &mut VaultState, id: Uuid) {
+        // A vault that has lost durability writes nothing more; the binding
+        // then expires unused.
+        if state.read_only { return; }
+        let VaultState { connection, commits_issued, .. } = state;
+        if connection.discard_sign_in_binding_with_commit(id, &mut || *commits_issued += 1).is_ok() { let _ = state.barrier(); }
+    }
+    /// Removes a keyring this attempt created when no pair was committed
+    /// with it, so a refused sign-in leaves no key behind; best effort.
+    fn discard_attempt_keyring(state: &VaultState, keys: &mut Option<KeyringHandle>) {
+        let Some(secrets) = state.secrets.as_ref() else { return };
+        if secrets.remove(credential_keys::KEYRING_NAME).is_ok() {
+            *keys = None;
+            let _ = secrets.durable_sync();
+        }
+    }
+    /// Removes the binding of a sign-in abandoned before its grant was
+    /// stored (M02-T12); best effort, and only while `authority` holds.
+    pub(in crate::auth) fn abandon_sign_in_under(&self, id: Uuid, authority: WriteAuthority<'_>) {
+        if let Ok(mut state) = self.lock() {
+            let _ = authority.write(|| { Self::discard_sign_in_binding(&mut state, id); Ok(()) });
+        }
+    }
     /// TRANSITIONAL: V2 supplies a grant from its validated redemption only.
+    ///
+    /// M02-T12: failure-safe. A refusal before the pair's commit removes the
+    /// attempt's binding and any keyring this call created, so the store is
+    /// as it was and an existing pair is untouched; a pair committed whose
+    /// barrier then fails is `sign_in_stored_unconfirmed`, never a plain
+    /// refusal, because the commit may have replaced the stored pair.
     pub(in crate::auth) fn store_hub_grant(&self, grant: RedeemedGrant) -> Result<StoredHubGrant, CredentialStoreError> {
-        let mut state = self.lock()?; state.writable(true)?;
+        self.store_hub_grant_under(grant, WriteAuthority::UNBOUNDED)
+    }
+    /// [`Self::store_hub_grant`] with each mutation (a key's publication and
+    /// reservation, the pair's commit, the clean-up of a refused attempt)
+    /// under `authority` (M02-T13 round 2): committed or refused, and nothing
+    /// written once the authority has ended. The barrier after the commit is
+    /// a durability proof, not a write, and runs either way.
+    pub(in crate::auth) fn store_hub_grant_under(&self, grant: RedeemedGrant, authority: WriteAuthority<'_>) -> Result<StoredHubGrant, CredentialStoreError> {
+        let mut state = self.lock()?;
+        let mut keys = self.keys.write().map_err(|_| CredentialStoreError::LockPoisoned)?;
+        let sign_in_id = grant.session.id;
+        let (mut created_key, mut committed) = (false, false);
+        let result = self.store_hub_grant_locked(&mut state, &mut keys, grant, authority, &mut created_key, &mut committed);
+        match result {
+            Ok(stored) => Ok(stored),
+            Err(_) if committed => Err(CredentialStoreError::SignIn(SignInError::StoredUnconfirmed)),
+            Err(error) => {
+                let _ = authority.write(|| {
+                    if created_key { Self::discard_attempt_keyring(&state, &mut keys); }
+                    Self::discard_sign_in_binding(&mut state, sign_in_id);
+                    Ok(())
+                });
+                Err(error)
+            }
+        }
+    }
+    fn store_hub_grant_locked(&self, state: &mut VaultState, keys: &mut Option<KeyringHandle>, grant: RedeemedGrant,
+        authority: WriteAuthority<'_>, created_key: &mut bool, committed: &mut bool) -> Result<StoredHubGrant, CredentialStoreError> {
+        state.writable(true)?;
         let now = self.now_ms()?;
         if grant.session.expires_at_ms <= now { return Err(CredentialStoreError::SignIn(SignInError::Expired)); }
         let slot = grant.session.slot;
-        let mut keys = self.keys.write().map_err(|_| CredentialStoreError::LockPoisoned)?;
         // E56: only a genuine live binding can recover a missing keyring for a
         // pending slot. Authenticate it before publishing any replacement key.
         state.connection.validate_credential_grant(slot, grant.session.id, &grant.session.grant_secret)?;
-        match Self::slot_writable(&mut state, slot) {
+        match Self::slot_writable(state, slot) {
             Ok(()) => (),
             Err(CredentialStoreError::MigrationPending(_)) => {
-                if keys.is_none() {
-                    if !matches!(state.resume_error, Some(CredentialStoreError::Key(CredentialKeyError::KeyringMissing))) { return Err(CredentialStoreError::MigrationPending(slot)); }
-                    let created = credential_keys::create_keyring(state.secrets.as_ref().unwrap(), self.exclusion(), (now / 1000) as u64);
-                    *keys = Some(Self::key_result(&mut state, created)?);
+                if keys.is_none() && !matches!(state.resume_error, Some(CredentialStoreError::Key(CredentialKeyError::KeyringMissing))) {
+                    return Err(CredentialStoreError::MigrationPending(slot));
                 }
-                self.phase_b(&mut state, &mut keys)?;
-                Self::slot_writable(&mut state, slot)?;
+                authority.write(|| {
+                    if keys.is_none() {
+                        let created = credential_keys::create_keyring(state.secrets.as_ref().unwrap(), self.exclusion(), (now / 1000) as u64);
+                        *keys = Some(Self::key_result(state, created)?);
+                    }
+                    self.phase_b(state, keys)
+                })?;
+                Self::slot_writable(state, slot)?;
             }
             Err(error) => return Err(error),
         }
@@ -820,19 +898,34 @@ impl CredentialVault {
             refresh_fingerprint: None, expires_at, next_refresh_at,
             client_id: grant.client_id.clone(), region: grant.region.map(|region| region.storage_code().to_owned()), migrated: false, written_at_ms: 0 };
         let legacy = LegacyCandidates::for_successor(&grant.access, &grant.refresh)?;
-        self.reserve(&mut state, &mut keys, 2)?;
+        *created_key = keys.is_none();
+        #[cfg(debug_assertions)] entry::test_boundary("sign_in_key_publication")?;
+        authority.write(|| self.reserve(state, keys, 2))?;
+        #[cfg(debug_assertions)] if *created_key { entry::test_boundary("sign_in_key_published")?; }
         row.seal(keys.as_ref().unwrap(), grant.access.as_bytes(), grant.refresh.as_bytes(), &mut OsNonces)?;
         let provenance = EntryProvenance::HubGrant { sign_in_id: grant.session.id, grant_secret: &grant.session.grant_secret };
-        let VaultState { connection, commits_issued, .. } = &mut *state;
-        connection.replace_credential_pair_with_commit(&row, &provenance, &legacy, ReplacePolicy::ReplaceAny, &mut || *commits_issued += 1)?;
+        #[cfg(debug_assertions)] entry::test_boundary("sign_in_pair_commit")?;
+        authority.write(|| {
+            let VaultState { connection, commits_issued, .. } = &mut *state;
+            connection.replace_credential_pair_with_commit(&row, &provenance, &legacy, ReplacePolicy::ReplaceAny, &mut || *commits_issued += 1)
+                .map_err(Into::into)
+        })?;
+        *committed = true;
+        #[cfg(debug_assertions)] entry::test_boundary("sign_in_pair_committed")?;
         state.barrier()?; Ok(StoredHubGrant::new(slot, generation))
     }
     /// TRANSITIONAL: V2 owns release and service restart after this call.
     pub(in crate::auth) fn finish_hub_grant_aftercare(&self, stored: StoredHubGrant) -> Result<(), CredentialStoreError> {
+        self.finish_hub_grant_aftercare_under(stored, WriteAuthority::UNBOUNDED)
+    }
+    /// [`Self::finish_hub_grant_aftercare`] only while `authority` holds; once
+    /// it has ended the aftercare is left to the vault's next open.
+    pub(in crate::auth) fn finish_hub_grant_aftercare_under(&self, stored: StoredHubGrant, authority: WriteAuthority<'_>) -> Result<(), CredentialStoreError> {
         let mut state = self.lock()?; state.writable(false)?;
+        #[cfg(debug_assertions)] entry::test_boundary("sign_in_aftercare")?;
         let mut keys = self.keys.write().map_err(|_| CredentialStoreError::LockPoisoned)?;
         let _ = stored;
-        self.phase_b(&mut state, &mut keys)
+        authority.write(|| self.phase_b(&mut state, &mut keys))
     }
     /// TRANSITIONAL: V2 invokes the bounded WAL scrub after its clear completes.
     pub(crate) fn post_clear_scrub(&self) -> Result<bool, CredentialStoreError> {

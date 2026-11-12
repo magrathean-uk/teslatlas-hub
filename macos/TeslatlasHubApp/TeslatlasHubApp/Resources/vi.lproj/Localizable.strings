@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Nhập dữ liệu từ ứng dụng nguồn không thành công; hãy thử lại.";
 "hub.HubController.2457.838" = "Hoàn tất việc bàn giao ứng dụng nguồn trước khi khởi động Hub.";
 "hub.HubController.2479.850" = "Hoàn tất việc bàn giao ứng dụng nguồn trước khi khởi động lại Hub.";
-"hub.HubController.250.318" = "Token đời cũ";
+"hub.HubController.250.318" = "Đăng nhập chủ xe";
 "hub.HubController.2503.863" = "Quá trình khởi động Hub đang diễn ra.";
 "hub.HubController.251.319" = "API Fleet";
 "hub.HubController.2519.869" = "Hoàn tất các bước kiểm tra chuyển đổi trước khi khởi động Hub.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Xem trước fixture";
 "hub.LogsWindowController.70.1725" = "Xem lại nhật ký Hub và ứng dụng đã lược bỏ thông tin nhạy cảm.";
 "hub.MainWindowController.1152.1840" = "Dùng API Fleet";
-"hub.MainWindowController.1153.1841" = "Dùng token đời cũ";
+"hub.MainWindowController.1153.1841" = "Dùng đăng nhập chủ xe";
 "hub.MainWindowController.1154.1842" = "Nhập lịch sử…";
 "hub.MainWindowController.1156.1843" = "Ngắt kết nối Tesla…";
 "hub.MainWindowController.1158.1844" = "Kết nối tài khoản Tesla…";
 "hub.MainWindowController.1428.1846" = "Ngắt kết nối Tesla khỏi Hub?";
-"hub.MainWindowController.1429.1847" = "Hub sẽ dừng và xóa thông tin xác thực Fleet và token đời cũ đã lưu. Dữ liệu bạn đã thu thập vẫn được giữ trên máy Mac này.";
+"hub.MainWindowController.1429.1847" = "Hub sẽ dừng và xóa thông tin xác thực Fleet và thông tin xác thực đăng nhập chủ xe đã lưu. Dữ liệu bạn đã thu thập vẫn được giữ trên máy Mac này.";
 "hub.MainWindowController.1431.1849" = "Ngắt kết nối";
 "hub.MainWindowController.15.1766" = "Xe";
 "hub.MainWindowController.22.1768" = "Dừng Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Nhập dữ liệu";
 "hub.OnboardingWindowController.1362.2047" = "Kết nối máy chủ";
 "hub.OnboardingWindowController.1471.2059" = "Hãy điền đầy đủ ID máy khách Fleet, token, vùng và thời hạn hết hạn.";
-"hub.OnboardingWindowController.1500.2071" = "Nhập cả mã truy cập và mã làm mới.";
 "hub.OnboardingWindowController.1631.2105" = "Nhập máy chủ ứng dụng nguồn, tên người dùng SSH và cổng.";
 "hub.OnboardingWindowController.168.1852" = "Tiếp tục";
 "hub.OnboardingWindowController.1691.2113" = "Việc kiểm tra lược đồ không thể xác định bản phát hành của ứng dụng nguồn. Hãy xác nhận máy chủ đang chạy bản phát hành 4.4.0 trở lên rồi tiếp tục.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "Bạn muốn bắt đầu như thế nào?";
 "hub.OnboardingWindowController.590.1919" = "Chọn cách Hub kết nối";
 "hub.OnboardingWindowController.591.1920" = "Thiết lập Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Kết nối bằng token";
+"hub.OnboardingWindowController.592.1921" = "Đăng nhập bằng Tesla";
 "hub.OnboardingWindowController.593.1922" = "Nhập lịch sử…";
 "hub.OnboardingWindowController.594.1923" = "Đang kiểm tra Hub của bạn";
 "hub.OnboardingWindowController.595.1924" = "Chuyển đổi hoàn tất";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub đã sẵn sàng";
 "hub.OnboardingWindowController.602.1926" = "Bộ thu thập dữ liệu đo từ xa Tesla của riêng bạn, chạy riêng tư trên máy Mac này.";
 "hub.OnboardingWindowController.604.1927" = "Thiết lập Hub mới hoặc chuyển lịch sử từ ứng dụng nguồn sang.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry được khuyến nghị. Token đời cũ hoạt động với các thiết lập cũ hơn.";
+"hub.OnboardingWindowController.606.1928" = "Để bắt đầu, hãy đăng nhập bằng tài khoản chủ xe Tesla của bạn. Fleet Telemetry vẫn có sẵn nếu bạn muốn dùng.";
 "hub.OnboardingWindowController.608.1929" = "Tạo ứng dụng Tesla Fleet rồi dán thông tin xác thực vào bên dưới.";
 "hub.OnboardingWindowController.610.1930" = "Hãy đăng nhập bằng Tesla khi cửa sổ thu thập đang mở. Hub không bao giờ chấp nhận token.";
 "hub.OnboardingWindowController.612.1931" = "Kết nối với máy chủ ứng dụng nguồn để nhập lịch sử xe.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "Chuyển lịch sử xe hiện có của bạn sang.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "API truyền phát chính thức của Tesla. Cho phép gửi lệnh điều khiển xe theo thời gian thực.";
-"hub.OnboardingWindowController.752.1958" = "Token đời cũ";
+"hub.OnboardingWindowController.752.1958" = "Đăng nhập chủ xe";
 "hub.OnboardingWindowController.753.1959" = "Hãy đăng nhập bằng Tesla. Hub giữ đăng nhập riêng của mình.";
 "hub.OnboardingWindowController.760.1960" = "Tạo ứng dụng Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "Chọn khóa…";
 "hub.OnboardingWindowController.888.1990" = "Chỉ dùng lịch sử. Hub sẽ không kiểm tra hoặc nhập thông tin xác thực Tesla. Tính năng thu thập vẫn tắt. Có thể kiểm tra lược đồ cơ sở dữ liệu; chưa biết phiên bản ứng dụng nguồn.";
 "hub.OnboardingWindowController.891.1991" = "Nguồn PostgreSQL cục bộ";
-"hub.OnboardingWindowController.895.1994" = "Tôi xác nhận đây là lược đồ cơ sở dữ liệu tương thích với phiên bản 4.2, không phải bằng chứng về phiên bản ứng dụng.";
 "hub.OnboardingWindowController.915.1997" = "Ứng dụng nguồn %1$@";
 "hub.OnboardingWindowController.927.2001" = "Đang kiểm tra…";
 "hub.OnboardingWindowController.935.2004" = "Đổi máy chủ";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Trạng thái đăng nhập Tesla không khớp. Hãy bắt đầu lại quá trình đăng nhập.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla trả về thông tin nhà phát hành tài khoản không hợp lệ.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Đang hoàn tất đăng nhập Tesla an toàn…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla trả về phản hồi token không hợp lệ.";
-"hub.TeslaAuthWindowController.37.2242" = "Trao đổi token Tesla không thành công.";
 "hub.SourceServerImporter.34.2284" = "Mã: %1$@";
 "hub.SourceServerImporter.428.2461" = "Máy chủ ứng dụng nguồn trả về thông tin thiết lập chưa đầy đủ.";
 "hub.SourceServerImporter.691.2530" = "Kiểm tra thông tin máy chủ";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Tiến trình trả lời trên kênh điều khiển của Hub không phải Hub này, nên chưa có gì được gửi. Hãy khởi động lại Hub rồi đăng nhập lại.";
 
 "hub.signIn.busy" = "Hub đang bận với các yêu cầu khác. Chưa có gì bị thay đổi; hãy đăng nhập lại sau ít phút.";
+
+"hub.signIn.discovery.notListed" = "Bạn đã đăng nhập, nhưng Tesla không liệt kê xe nào trong tài khoản này. Hãy kiểm tra xe có thuộc tài khoản Tesla này không, rồi thử tìm xe lại.";
+
+"hub.signIn.discovery.selectionRequired" = "Bạn đã đăng nhập, nhưng Tesla liệt kê nhiều hơn một xe và Hub cần biết thu thập từ xe nào. Hãy thử tìm xe lại.";
+
+"hub.signIn.discovery.selectionInvalid" = "Bạn đã đăng nhập, nhưng xe đã chọn không có trong tài khoản Tesla này. Hãy thử tìm xe lại.";
+
+"hub.signIn.discovery.answerInvalid" = "Bạn đã đăng nhập, nhưng Hub không đọc được danh sách xe của Tesla. Hãy thử tìm xe lại.";
+
+"hub.signIn.discovery.refused" = "Bạn đã đăng nhập, nhưng Tesla đã từ chối danh sách xe. Hãy thử tìm xe lại, hoặc đăng nhập lại bằng Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Bạn đã đăng nhập, nhưng cửa sổ thu thập đã đóng trước khi Hub tìm được xe của bạn. Hãy mở một cửa sổ, rồi thử tìm xe lại.";
+
+"hub.signIn.discovery.providerParked" = "Bạn đã đăng nhập, nhưng Hub này thu thập bằng nhà cung cấp khác nên không thể tìm xe bằng lần đăng nhập này.";
+
+"hub.signIn.discovery.settingsInvalid" = "Bạn đã đăng nhập, nhưng địa chỉ Owner API của Hub này không phải của Tesla nên Hub chưa yêu cầu danh sách xe của bạn. Hãy sửa địa chỉ, rồi đăng nhập lại bằng Tesla.";
+
+"hub.signIn.discovery.general" = "Bạn đã đăng nhập, nhưng Hub không tìm được xe của bạn. Hãy thử tìm xe lại, hoặc đăng nhập lại bằng Tesla.";
+
+"hub.signIn.discovery.retry" = "Thử tìm xe lại";
+
+"hub.signIn.discovery.expired" = "Không thể tiếp tục lần đăng nhập này nữa. Hãy đăng nhập lại bằng Tesla.";
+
+"hub.signIn.discovery.configured" = "Xe đã cấu hình: %d";
+
+"hub.signIn.reportInvalid" = "Hub không thể xác nhận lần đăng nhập. Hãy đăng nhập lại bằng Tesla.";

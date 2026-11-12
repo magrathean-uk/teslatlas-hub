@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Källprogramimporten misslyckades. Försök importera igen.";
 "hub.HubController.2457.838" = "Slutför källprogramöverlämningen innan du startar Hub.";
 "hub.HubController.2479.850" = "Slutför källprogramöverlämningen innan du startar om Hub.";
-"hub.HubController.250.318" = "Äldre token";
+"hub.HubController.250.318" = "Ägarinloggning";
 "hub.HubController.2503.863" = "Hub startar redan.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Slutför migreringskontrollerna innan du startar Hub.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Förhandsvisningsdata";
 "hub.LogsWindowController.70.1725" = "Granska maskerade Hub- och apploggar.";
 "hub.MainWindowController.1152.1840" = "Använd Fleet API";
-"hub.MainWindowController.1153.1841" = "Använd äldre token";
+"hub.MainWindowController.1153.1841" = "Använd ägarinloggning";
 "hub.MainWindowController.1154.1842" = "Importera historik…";
 "hub.MainWindowController.1156.1843" = "Koppla från Tesla…";
 "hub.MainWindowController.1158.1844" = "Anslut Tesla-kontot…";
 "hub.MainWindowController.1428.1846" = "Koppla bort Tesla-kontot från Hub?";
-"hub.MainWindowController.1429.1847" = "Hub stoppas och tar bort sina sparade Fleet-inloggningsuppgifter och uppgifter för äldre token. Insamlade data blir kvar på den här Macen.";
+"hub.MainWindowController.1429.1847" = "Hub stoppas och tar bort sina sparade Fleet-inloggningsuppgifter och uppgifter för ägarinloggning. Insamlade data blir kvar på den här Macen.";
 "hub.MainWindowController.1431.1849" = "Koppla från";
 "hub.MainWindowController.15.1766" = "Fordon";
 "hub.MainWindowController.22.1768" = "Stoppa Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Importera data";
 "hub.OnboardingWindowController.1362.2047" = "Anslut till servern";
 "hub.OnboardingWindowController.1471.2059" = "Fyll i alla fält för Fleet-klient-ID, token, region och utgångstid.";
-"hub.OnboardingWindowController.1500.2071" = "Ange både åtkomsttoken och förnyelsetoken.";
 "hub.OnboardingWindowController.1631.2105" = "Ange källprogramservern, SSH-användaren och porten.";
 "hub.OnboardingWindowController.168.1852" = "Fortsätt";
 "hub.OnboardingWindowController.1691.2113" = "En schemakontroll kan inte fastställa källprogrammets version. Bekräfta att servern som körs använder version 4.4.0 eller senare och fortsätt sedan.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "Hur vill du börja?";
 "hub.OnboardingWindowController.590.1919" = "Välj hur Hub ska ansluta";
 "hub.OnboardingWindowController.591.1920" = "Konfigurera Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Anslut med en token";
+"hub.OnboardingWindowController.592.1921" = "Logga in med Tesla";
 "hub.OnboardingWindowController.593.1922" = "Importera historik…";
 "hub.OnboardingWindowController.594.1923" = "Kontrollerar Hub";
 "hub.OnboardingWindowController.595.1924" = "Migreringen är klar";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub är redo";
 "hub.OnboardingWindowController.602.1926" = "Din egen datainsamlare för Tesla-telemetri körs privat på den här Macen.";
 "hub.OnboardingWindowController.604.1927" = "Konfigurera en ny Hub eller för över historiken från källprogrammet.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry rekommenderas. Äldre token fungerar med äldre konfigurationer.";
+"hub.OnboardingWindowController.606.1928" = "Logga in med ditt Tesla-ägarkonto för att komma igång. Fleet Telemetry finns om du föredrar det.";
 "hub.OnboardingWindowController.608.1929" = "Skapa en Tesla Fleet-app och klistra sedan in autentiseringsuppgifterna nedan.";
 "hub.OnboardingWindowController.610.1930" = "Logga in med Tesla medan ett insamlingsfönster är öppet. Hub accepterar aldrig en token.";
 "hub.OnboardingWindowController.612.1931" = "Anslut till källprogramservern för att importera dess fordonshistorik.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "Ta med din befintliga fordonshistorik.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Teslas officiella strömnings-API. Aktiverar fordonskommandon i realtid.";
-"hub.OnboardingWindowController.752.1958" = "Äldre token";
+"hub.OnboardingWindowController.752.1958" = "Ägarinloggning";
 "hub.OnboardingWindowController.753.1959" = "Logga in med Tesla. Hub behåller sin egen inloggning.";
 "hub.OnboardingWindowController.760.1960" = "Skapa en Tesla Fleet-app";
 "hub.OnboardingWindowController.771.1964" = "Klient-ID";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "Välj nyckel…";
 "hub.OnboardingWindowController.888.1990" = "Endast historik. Hub kommer varken att granska eller importera Tesla-autentiseringsuppgifter. Datainsamlingen förblir inaktiverad. Databasschemat kan kontrolleras; källprogrammets version förblir okänd.";
 "hub.OnboardingWindowController.891.1991" = "Lokal PostgreSQL-källa";
-"hub.OnboardingWindowController.895.1994" = "Jag bekräftar att databasschemat är kompatibelt med v4.2, men att detta inte styrker appens version";
 "hub.OnboardingWindowController.915.1997" = "Källprogrammet %1$@";
 "hub.OnboardingWindowController.927.2001" = "Kontrollerar…";
 "hub.OnboardingWindowController.935.2004" = "Byt server";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Inloggningstillståndet från Tesla stämde inte. Starta inloggningen igen.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla returnerade en ogiltig utfärdare för kontot.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Slutför säker Tesla-inloggning…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla returnerade ett ogiltigt tokensvar.";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla-tokenutbytet misslyckades.";
 "hub.SourceServerImporter.34.2284" = "Kod: %1$@";
 "hub.SourceServerImporter.428.2461" = "Källprogramservern returnerade ofullständiga konfigurationsuppgifter.";
 "hub.SourceServerImporter.691.2530" = "Kontrollera serveruppgifterna";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Processen som svarar på Hubbens kontrollkanal är inte den här Hubben, så inget skickades. Starta om Hubben och logga sedan in igen.";
 
 "hub.signIn.busy" = "Hubben är upptagen med andra förfrågningar. Inget ändrades; logga in igen om en stund.";
+
+"hub.signIn.discovery.notListed" = "Du är inloggad, men Tesla listade ingen bil på det här kontot. Kontrollera att bilen tillhör det här Tesla-kontot och försök sedan hitta bilar igen.";
+
+"hub.signIn.discovery.selectionRequired" = "Du är inloggad, men Tesla listar fler än en bil och Hubben behöver veta vilken den ska samla in från. Försök hitta bilar igen.";
+
+"hub.signIn.discovery.selectionInvalid" = "Du är inloggad, men den valda bilen finns inte på det här Tesla-kontot. Försök hitta bilar igen.";
+
+"hub.signIn.discovery.answerInvalid" = "Du är inloggad, men Hubben kunde inte läsa Teslas lista över bilar. Försök hitta bilar igen.";
+
+"hub.signIn.discovery.refused" = "Du är inloggad, men Tesla avvisade listan över bilar. Försök hitta bilar igen eller logga in med Tesla igen.";
+
+"hub.signIn.discovery.windowClosed" = "Du är inloggad, men insamlingsfönstret stängdes innan Hubben hann hitta dina bilar. Öppna ett fönster och försök sedan hitta bilar igen.";
+
+"hub.signIn.discovery.providerParked" = "Du är inloggad, men den här Hubben samlar in via en annan leverantör och kan därför inte hitta bilar med den här inloggningen.";
+
+"hub.signIn.discovery.settingsInvalid" = "Du är inloggad, men Owner API-adressen för den här Hubben är inte Teslas, så Hubben bad inte om dina bilar. Rätta adressen och logga sedan in med Tesla igen.";
+
+"hub.signIn.discovery.general" = "Du är inloggad, men Hubben kunde inte hitta dina bilar. Försök hitta bilar igen eller logga in med Tesla igen.";
+
+"hub.signIn.discovery.retry" = "Försök hitta bilar igen";
+
+"hub.signIn.discovery.expired" = "Den här inloggningen kan inte längre återupptas. Logga in med Tesla igen.";
+
+"hub.signIn.discovery.configured" = "Konfigurerade bilar: %d";
+
+"hub.signIn.reportInvalid" = "Hub kunde inte bekräfta inloggningen. Logga in med Tesla igen.";

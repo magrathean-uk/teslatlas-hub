@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Uvoz iz izvorne aplikacije nije uspio; pokušajte ga ponovno.";
 "hub.HubController.2457.838" = "Dovršite predaju s izvorne aplikacije prije pokretanja Huba.";
 "hub.HubController.2479.850" = "Dovršite predaju s izvorne aplikacije prije ponovnog pokretanja Huba.";
-"hub.HubController.250.318" = "Naslijeđeni token";
+"hub.HubController.250.318" = "Prijava vlasnika";
 "hub.HubController.2503.863" = "Pokretanje Huba već je u tijeku.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Dovršite provjere migracije prije pokretanja Huba.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Probni zapis";
 "hub.LogsWindowController.70.1725" = "Pregledajte redigirane zapisnike Huba i aplikacije.";
 "hub.MainWindowController.1152.1840" = "Upotrijebi Fleet API";
-"hub.MainWindowController.1153.1841" = "Upotrijebi naslijeđeni token";
+"hub.MainWindowController.1153.1841" = "Upotrijebi prijavu vlasnika";
 "hub.MainWindowController.1154.1842" = "Uvezi povijest…";
 "hub.MainWindowController.1156.1843" = "Odspoji Teslu…";
 "hub.MainWindowController.1158.1844" = "Poveži Tesla račun…";
 "hub.MainWindowController.1428.1846" = "Odspojiti Teslu s Huba?";
-"hub.MainWindowController.1429.1847" = "Hub će se zaustaviti i ukloniti spremljene vjerodajnice za Fleet i naslijeđeni token. Prikupljeni podaci ostaju na ovom Macu.";
+"hub.MainWindowController.1429.1847" = "Hub će se zaustaviti i ukloniti spremljene vjerodajnice za Fleet i prijavu vlasnika. Prikupljeni podaci ostaju na ovom Macu.";
 "hub.MainWindowController.1431.1849" = "Odspoji";
 "hub.MainWindowController.15.1766" = "Vozilo";
 "hub.MainWindowController.22.1768" = "Zaustavi Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Uvezi podatke";
 "hub.OnboardingWindowController.1362.2047" = "Poveži se s poslužiteljem";
 "hub.OnboardingWindowController.1471.2059" = "Ispunite polja za ID klijenta za Fleet, token, regiju i istek valjanosti.";
-"hub.OnboardingWindowController.1500.2071" = "Unesite i token za pristup i token za osvježavanje.";
 "hub.OnboardingWindowController.1631.2105" = "Unesite poslužitelj izvorne aplikacije, SSH korisnika i port.";
 "hub.OnboardingWindowController.168.1852" = "Nastavi";
 "hub.OnboardingWindowController.1691.2113" = "Provjera sheme ne može utvrditi verziju izvorne aplikacije. Potvrdite da na poslužitelju radi izvorna aplikacija verzije 4.4.0 ili novije, a zatim nastavite.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "Kako želite započeti?";
 "hub.OnboardingWindowController.590.1919" = "Odaberite način povezivanja Huba";
 "hub.OnboardingWindowController.591.1920" = "Postavite Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Povežite se tokenom";
+"hub.OnboardingWindowController.592.1921" = "Prijavite se na Teslu";
 "hub.OnboardingWindowController.593.1922" = "Uvezi povijest…";
 "hub.OnboardingWindowController.594.1923" = "Provjera Huba";
 "hub.OnboardingWindowController.595.1924" = "Migracija je dovršena";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub je spreman";
 "hub.OnboardingWindowController.602.1926" = "Vaš vlastiti prikupljač Tesline telemetrije radi privatno na ovom Macu.";
 "hub.OnboardingWindowController.604.1927" = "Postavite novi Hub ili prenesite povijest iz izvorne aplikacije.";
-"hub.OnboardingWindowController.606.1928" = "Preporučujemo Fleet Telemetry. Naslijeđeni tokeni rade sa starijim postavkama.";
+"hub.OnboardingWindowController.606.1928" = "Za početak se prijavite svojim Tesla vlasničkim računom. Fleet Telemetry dostupan je ako ga više volite.";
 "hub.OnboardingWindowController.608.1929" = "Izradite aplikaciju Tesla Fleet, a zatim u nastavku zalijepite njezine vjerodajnice.";
 "hub.OnboardingWindowController.610.1930" = "Prijavite se na Teslu dok je otvoren prozor prikupljanja. Hub nikada ne prihvaća token.";
 "hub.OnboardingWindowController.612.1931" = "Povežite se s poslužiteljem izvorne aplikacije da biste uvezli njegovu povijest vozila.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "Prenesite postojeću povijest vozila.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Službeni Teslin API za prijenos podataka uživo. Omogućuje slanje naredbi vozilu.";
-"hub.OnboardingWindowController.752.1958" = "Naslijeđeni token";
+"hub.OnboardingWindowController.752.1958" = "Prijava vlasnika";
 "hub.OnboardingWindowController.753.1959" = "Prijavite se na Teslu. Hub zadržava vlastitu prijavu.";
 "hub.OnboardingWindowController.760.1960" = "Izradi aplikaciju Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID klijenta";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "Odaberi ključ…";
 "hub.OnboardingWindowController.888.1990" = "Samo povijest. Hub neće pregledati ni uvesti vjerodajnice za Teslu. Prikupljanje podataka ostaje isključeno. Može se provjeriti shema baze podataka; verzija izvorne aplikacije i dalje nije poznata.";
 "hub.OnboardingWindowController.891.1991" = "Lokalni izvor PostgreSQL";
-"hub.OnboardingWindowController.895.1994" = "Potvrđujem da je shema baze podataka kompatibilna s verzijom 4.2, ali to ne dokazuje verziju aplikacije";
 "hub.OnboardingWindowController.915.1997" = "Izvorna aplikacija %1$@";
 "hub.OnboardingWindowController.927.2001" = "Provjera…";
 "hub.OnboardingWindowController.935.2004" = "Promijeni poslužitelj";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Stanje prijave na Teslu ne podudara se. Pokrenite prijavu ponovno.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla je vratila nevaljanog izdavatelja računa.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Dovršavanje sigurne prijave na Teslu…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla je vratila nevaljan odgovor tokena.";
-"hub.TeslaAuthWindowController.37.2242" = "Razmjena tokena s Teslom nije uspjela.";
 "hub.SourceServerImporter.34.2284" = "Šifra: %1$@";
 "hub.SourceServerImporter.428.2461" = "Poslužitelj izvorne aplikacije vratio je nepotpune podatke za postavljanje.";
 "hub.SourceServerImporter.691.2530" = "Provjerite pojedinosti o poslužitelju";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Proces koji odgovara na kontrolnom kanalu Huba nije ovaj Hub, pa ništa nije poslano. Ponovno pokrenite Hub, a zatim se ponovno prijavite.";
 
 "hub.signIn.busy" = "Hub je zauzet drugim zahtjevima. Ništa nije promijenjeno; prijavite se ponovno za trenutak.";
+
+"hub.signIn.discovery.notListed" = "Prijavljeni ste, ali Tesla nije naveo nijedan automobil na ovom računu. Provjerite pripada li automobil ovom Tesla računu, a zatim ponovno pokušajte pronaći automobile.";
+
+"hub.signIn.discovery.selectionRequired" = "Prijavljeni ste, ali Tesla navodi više od jednog automobila, a Hub mora znati s kojeg prikupljati podatke. Ponovno pokušajte pronaći automobile.";
+
+"hub.signIn.discovery.selectionInvalid" = "Prijavljeni ste, ali odabrani automobil nije na ovom Tesla računu. Ponovno pokušajte pronaći automobile.";
+
+"hub.signIn.discovery.answerInvalid" = "Prijavljeni ste, ali Hub nije mogao pročitati Teslin popis automobila. Ponovno pokušajte pronaći automobile.";
+
+"hub.signIn.discovery.refused" = "Prijavljeni ste, ali je Tesla odbio popis automobila. Ponovno pokušajte pronaći automobile ili se ponovno prijavite putem Tesle.";
+
+"hub.signIn.discovery.windowClosed" = "Prijavljeni ste, ali se prozor prikupljanja zatvorio prije nego što je Hub uspio pronaći vaše automobile. Otvorite prozor, a zatim ponovno pokušajte pronaći automobile.";
+
+"hub.signIn.discovery.providerParked" = "Prijavljeni ste, ali ovaj Hub prikuplja podatke putem drugog pružatelja, pa s ovom prijavom ne može pronaći automobile.";
+
+"hub.signIn.discovery.settingsInvalid" = "Prijavljeni ste, ali Owner API adresa ovog Huba nije Teslina, pa Hub nije zatražio vaše automobile. Ispravite adresu, a zatim se ponovno prijavite putem Tesle.";
+
+"hub.signIn.discovery.general" = "Prijavljeni ste, ali Hub nije mogao pronaći vaše automobile. Ponovno pokušajte pronaći automobile ili se ponovno prijavite putem Tesle.";
+
+"hub.signIn.discovery.retry" = "Ponovno pokušaj pronaći automobile";
+
+"hub.signIn.discovery.expired" = "Ova se prijava više ne može nastaviti. Ponovno se prijavite putem Tesle.";
+
+"hub.signIn.discovery.configured" = "Konfigurirani automobili: %d";
+
+"hub.signIn.reportInvalid" = "Hub nije mogao potvrditi prijavu. Ponovno se prijavite putem Tesle.";

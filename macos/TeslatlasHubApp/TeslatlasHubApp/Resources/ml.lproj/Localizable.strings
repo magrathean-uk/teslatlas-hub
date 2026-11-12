@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "ഉറവിട ആപ്ലിക്കേഷൻ ഇറക്കുമതി പരാജയപ്പെട്ടു; ഇറക്കുമതി വീണ്ടും ശ്രമിക്കുക.";
 "hub.HubController.2457.838" = "Hub ആരംഭിക്കുന്നതിന് മുമ്പ് ഉറവിട ആപ്ലിക്കേഷൻ കൈമാറ്റം പൂർത്തിയാക്കുക.";
 "hub.HubController.2479.850" = "Hub പുനരാരംഭിക്കുന്നതിന് മുമ്പ് ഉറവിട ആപ്ലിക്കേഷൻ കൈമാറ്റം പൂർത്തിയാക്കുക.";
-"hub.HubController.250.318" = "ലീഗസി ടോക്കൺ";
+"hub.HubController.250.318" = "ഉടമയുടെ സൈൻ ഇൻ";
 "hub.HubController.2503.863" = "Hub ആരംഭിക്കൽ ഇതിനകം പുരോഗമിക്കുകയാണ്.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Hub ആരംഭിക്കുന്നതിന് മുമ്പ് മൈഗ്രേഷൻ പരിശോധനകൾ പൂർത്തിയാക്കുക.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "പ്രിവ്യൂ ഫിക്‌ചർ";
 "hub.LogsWindowController.70.1725" = "മറച്ച വിവരങ്ങളുള്ള Hub, ആപ്ലിക്കേഷൻ ലോഗുകൾ പരിശോധിക്കുക.";
 "hub.MainWindowController.1152.1840" = "Fleet API ഉപയോഗിക്കുക";
-"hub.MainWindowController.1153.1841" = "Legacy ടോക്കൺ ഉപയോഗിക്കുക";
+"hub.MainWindowController.1153.1841" = "ഉടമയുടെ സൈൻ ഇൻ ഉപയോഗിക്കുക";
 "hub.MainWindowController.1154.1842" = "ചരിത്രം ഇറക്കുമതി ചെയ്യുക…";
 "hub.MainWindowController.1156.1843" = "Tesla വിച്ഛേദിക്കുക…";
 "hub.MainWindowController.1158.1844" = "Tesla അക്കൗണ്ട് ബന്ധിപ്പിക്കുക…";
 "hub.MainWindowController.1428.1846" = "Hub-ൽ നിന്ന് Tesla വിച്ഛേദിക്കണോ?";
-"hub.MainWindowController.1429.1847" = "Hub നിർത്തി അതിൽ സംഭരിച്ചിരിക്കുന്ന Fleet, Legacy പ്രവേശനവിവരങ്ങൾ നീക്കും. ശേഖരിച്ച ഡാറ്റ ഈ Mac-ൽ തന്നെ തുടരും.";
+"hub.MainWindowController.1429.1847" = "Hub നിർത്തി അതിൽ സംഭരിച്ചിരിക്കുന്ന Fleet, ഉടമയുടെ സൈൻ ഇൻ പ്രവേശനവിവരങ്ങൾ നീക്കും. ശേഖരിച്ച ഡാറ്റ ഈ Mac-ൽ തന്നെ തുടരും.";
 "hub.MainWindowController.1431.1849" = "വിച്ഛേദിക്കുക";
 "hub.MainWindowController.15.1766" = "വാഹനം";
 "hub.MainWindowController.22.1768" = "Hub നിർത്തുക";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "ഡാറ്റ ഇറക്കുമതി ചെയ്യുക";
 "hub.OnboardingWindowController.1362.2047" = "സെർവറുമായി ബന്ധിപ്പിക്കുക";
 "hub.OnboardingWindowController.1471.2059" = "Fleet ക്ലയന്റ് ഐഡി, ടോക്കൺ, മേഖല, കാലാവധി തീരുന്ന സമയം എന്നീ ഫീൽഡുകൾ പൂരിപ്പിക്കുക.";
-"hub.OnboardingWindowController.1500.2071" = "ആക്‌സസ് ടോക്കണും പുതുക്കൽ ടോക്കണും നൽകുക.";
 "hub.OnboardingWindowController.1631.2105" = "ഉറവിട ആപ്ലിക്കേഷൻ സെർവർ, SSH ഉപയോക്താവ്, പോർട്ട് എന്നിവ നൽകുക.";
 "hub.OnboardingWindowController.168.1852" = "തുടരുക";
 "hub.OnboardingWindowController.1691.2113" = "സ്കീമ പരിശോധനയിലൂടെ ഉറവിട ആപ്ലിക്കേഷന്റെ പതിപ്പ് സ്ഥിരീകരിക്കാനാവില്ല. പ്രവർത്തിക്കുന്ന സെർവർ പതിപ്പ് 4.4.0 അല്ലെങ്കിൽ അതിനുശേഷമുള്ളത് ഉപയോഗിക്കുന്നുവെന്ന് സ്ഥിരീകരിച്ച ശേഷം തുടരുക.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "എങ്ങനെ തുടങ്ങണം?";
 "hub.OnboardingWindowController.590.1919" = "Hub ബന്ധിപ്പിക്കുന്ന രീതി തിരഞ്ഞെടുക്കുക";
 "hub.OnboardingWindowController.591.1920" = "Fleet Telemetry സജ്ജീകരിക്കുക";
-"hub.OnboardingWindowController.592.1921" = "ടോക്കൺ ഉപയോഗിച്ച് ബന്ധിപ്പിക്കുക";
+"hub.OnboardingWindowController.592.1921" = "Tesla-യിൽ സൈൻ ഇൻ ചെയ്യുക";
 "hub.OnboardingWindowController.593.1922" = "ചരിത്രം ഇറക്കുമതി ചെയ്യുക…";
 "hub.OnboardingWindowController.594.1923" = "നിങ്ങളുടെ Hub പരിശോധിക്കുന്നു";
 "hub.OnboardingWindowController.595.1924" = "മൈഗ്രേഷൻ പൂർത്തിയായി";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub തയ്യാറാണ്";
 "hub.OnboardingWindowController.602.1926" = "നിങ്ങളുടെ സ്വന്തം Tesla ടെലിമെട്രി ശേഖരണ സംവിധാനം ഈ Mac-ൽ സ്വകാര്യമായി പ്രവർത്തിക്കുന്നു.";
 "hub.OnboardingWindowController.604.1927" = "പുതിയ Hub സജ്ജീകരിക്കുകയോ ഉറവിട ആപ്ലിക്കേഷനിൽ നിന്നുള്ള നിങ്ങളുടെ ചരിത്രം കൊണ്ടുവരികയോ ചെയ്യുക.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry ശുപാർശ ചെയ്യുന്നു. പഴയ സജ്ജീകരണങ്ങളിൽ Legacy ടോക്കണുകൾ പ്രവർത്തിക്കും.";
+"hub.OnboardingWindowController.606.1928" = "ആരംഭിക്കാൻ നിങ്ങളുടെ Tesla ഉടമയുടെ അക്കൗണ്ട് ഉപയോഗിച്ച് സൈൻ ഇൻ ചെയ്യുക. താൽപ്പര്യമെങ്കിൽ Fleet Telemetry ലഭ്യമാണ്.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet ആപ്ലിക്കേഷൻ സൃഷ്ടിച്ച് അതിന്റെ പ്രവേശനവിവരങ്ങൾ താഴെ ഒട്ടിക്കുക.";
 "hub.OnboardingWindowController.610.1930" = "ശേഖരണ വിൻഡോ തുറന്നിരിക്കുമ്പോൾ Tesla-യിൽ സൈൻ ഇൻ ചെയ്യുക. Hub ഒരിക്കലും ടോക്കൺ സ്വീകരിക്കില്ല.";
 "hub.OnboardingWindowController.612.1931" = "വാഹന ചരിത്രം ഇറക്കുമതി ചെയ്യാൻ നിങ്ങളുടെ ഉറവിട ആപ്ലിക്കേഷൻ സെർവറുമായി ബന്ധിപ്പിക്കുക.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "നിങ്ങളുടെ നിലവിലുള്ള വാഹന ചരിത്രം കൊണ്ടുവരിക.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla-യുടെ ഔദ്യോഗിക സ്ട്രീമിംഗ് API. തത്സമയ വാഹന കമാൻഡുകൾ പ്രവർത്തനക്ഷമമാക്കുന്നു.";
-"hub.OnboardingWindowController.752.1958" = "Legacy ടോക്കൺ";
+"hub.OnboardingWindowController.752.1958" = "ഉടമയുടെ സൈൻ ഇൻ";
 "hub.OnboardingWindowController.753.1959" = "Tesla-യിൽ സൈൻ ഇൻ ചെയ്യുക. Hub സ്വന്തം ലോഗിൻ സൂക്ഷിക്കുന്നു.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet ആപ്പ് സൃഷ്ടിക്കുക";
 "hub.OnboardingWindowController.771.1964" = "ക്ലയന്റ് ഐഡി";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "കീ തിരഞ്ഞെടുക്കുക…";
 "hub.OnboardingWindowController.888.1990" = "ചരിത്രം മാത്രം. Hub Tesla പ്രവേശനവിവരങ്ങൾ പരിശോധിക്കുകയോ ഇറക്കുമതി ചെയ്യുകയോ ചെയ്യില്ല. ശേഖരണം ഓഫായിരിക്കും. ഡാറ്റാബേസ് സ്കീമ പരിശോധിക്കാം; ഉറവിട ആപ്ലിക്കേഷന്റെ പതിപ്പ് അജ്ഞാതമായി തുടരും.";
 "hub.OnboardingWindowController.891.1991" = "പ്രാദേശിക PostgreSQL ഉറവിടം";
-"hub.OnboardingWindowController.895.1994" = "ഇത് v4.2-നോട് പൊരുത്തപ്പെടുന്ന ഡാറ്റാബേസ് സ്കീമയാണെന്ന് ഞാൻ അംഗീകരിക്കുന്നു; ആപ്ലിക്കേഷന്റെ പതിപ്പിന് ഇത് തെളിവല്ല";
 "hub.OnboardingWindowController.915.1997" = "ഉറവിട ആപ്ലിക്കേഷൻ %1$@";
 "hub.OnboardingWindowController.927.2001" = "പരിശോധിക്കുന്നു…";
 "hub.OnboardingWindowController.935.2004" = "സെർവർ മാറ്റുക";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Tesla ലോഗിൻ നില പൊരുത്തപ്പെട്ടില്ല. വീണ്ടും ലോഗിൻ ആരംഭിക്കുക.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla അസാധുവായ അക്കൗണ്ട് ഇഷ്യൂവർ തിരികെ നൽകി.";
 "hub.TeslaAuthWindowController.358.html_progress" = "സുരക്ഷിത Tesla ലോഗിൻ പൂർത്തിയാക്കുന്നു…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla അസാധുവായ ടോക്കൺ പ്രതികരണം തിരികെ നൽകി.";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla ടോക്കൺ കൈമാറ്റം പരാജയപ്പെട്ടു.";
 "hub.SourceServerImporter.34.2284" = "കോഡ്: %1$@";
 "hub.SourceServerImporter.428.2461" = "ഉറവിട ആപ്ലിക്കേഷൻ സെർവർ സജ്ജീകരണത്തിന്റെ ചില വിവരങ്ങൾ ലഭ്യമല്ല.";
 "hub.SourceServerImporter.691.2530" = "സെർവർ വിശദാംശങ്ങൾ പരിശോധിക്കുക";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Hub-ന്റെ കൺട്രോൾ ചാനലിൽ മറുപടി നൽകുന്ന പ്രോസസ് ഈ Hub അല്ല, അതിനാൽ ഒന്നും അയച്ചിട്ടില്ല. Hub വീണ്ടും ആരംഭിച്ച ശേഷം വീണ്ടും സൈൻ ഇൻ ചെയ്യുക.";
 
 "hub.signIn.busy" = "Hub മറ്റ് അഭ്യർത്ഥനകളിൽ തിരക്കിലാണ്. ഒന്നും മാറ്റിയിട്ടില്ല; അൽപ്പം കഴിഞ്ഞ് വീണ്ടും സൈൻ ഇൻ ചെയ്യുക.";
+
+"hub.signIn.discovery.notListed" = "നിങ്ങൾ സൈൻ ഇൻ ചെയ്തിട്ടുണ്ട്, പക്ഷേ Tesla ഈ അക്കൗണ്ടിൽ ഒരു കാറും പട്ടികപ്പെടുത്തിയിട്ടില്ല. കാർ ഈ Tesla അക്കൗണ്ടിന്റേതാണോ എന്ന് പരിശോധിക്കുക, തുടർന്ന് വീണ്ടും കാറുകൾ കണ്ടെത്താൻ ശ്രമിക്കുക.";
+
+"hub.signIn.discovery.selectionRequired" = "നിങ്ങൾ സൈൻ ഇൻ ചെയ്തിട്ടുണ്ട്, പക്ഷേ Tesla ഒന്നിലധികം കാറുകൾ പട്ടികപ്പെടുത്തുന്നു, ഏതിൽ നിന്നാണ് ശേഖരിക്കേണ്ടതെന്ന് Hub അറിയണം. വീണ്ടും കാറുകൾ കണ്ടെത്താൻ ശ്രമിക്കുക.";
+
+"hub.signIn.discovery.selectionInvalid" = "നിങ്ങൾ സൈൻ ഇൻ ചെയ്തിട്ടുണ്ട്, പക്ഷേ തിരഞ്ഞെടുത്ത കാർ ഈ Tesla അക്കൗണ്ടിൽ ഇല്ല. വീണ്ടും കാറുകൾ കണ്ടെത്താൻ ശ്രമിക്കുക.";
+
+"hub.signIn.discovery.answerInvalid" = "നിങ്ങൾ സൈൻ ഇൻ ചെയ്തിട്ടുണ്ട്, പക്ഷേ Tesla-യുടെ കാറുകളുടെ പട്ടിക Hub-ന് വായിക്കാൻ കഴിഞ്ഞില്ല. വീണ്ടും കാറുകൾ കണ്ടെത്താൻ ശ്രമിക്കുക.";
+
+"hub.signIn.discovery.refused" = "നിങ്ങൾ സൈൻ ഇൻ ചെയ്തിട്ടുണ്ട്, പക്ഷേ Tesla കാറുകളുടെ പട്ടിക നിരസിച്ചു. വീണ്ടും കാറുകൾ കണ്ടെത്താൻ ശ്രമിക്കുക, അല്ലെങ്കിൽ Tesla ഉപയോഗിച്ച് വീണ്ടും സൈൻ ഇൻ ചെയ്യുക.";
+
+"hub.signIn.discovery.windowClosed" = "നിങ്ങൾ സൈൻ ഇൻ ചെയ്തിട്ടുണ്ട്, പക്ഷേ Hub നിങ്ങളുടെ കാറുകൾ കണ്ടെത്തുന്നതിന് മുമ്പ് ശേഖരണ വിൻഡോ അടഞ്ഞു. ഒരു വിൻഡോ തുറക്കുക, തുടർന്ന് വീണ്ടും കാറുകൾ കണ്ടെത്താൻ ശ്രമിക്കുക.";
+
+"hub.signIn.discovery.providerParked" = "നിങ്ങൾ സൈൻ ഇൻ ചെയ്തിട്ടുണ്ട്, പക്ഷേ ഈ Hub മറ്റൊരു ദാതാവ് വഴിയാണ് ശേഖരിക്കുന്നത്, അതിനാൽ ഈ സൈൻ ഇൻ ഉപയോഗിച്ച് കാറുകൾ കണ്ടെത്താനാകില്ല.";
+
+"hub.signIn.discovery.settingsInvalid" = "നിങ്ങൾ സൈൻ ഇൻ ചെയ്തിട്ടുണ്ട്, പക്ഷേ ഈ Hub-ന്റെ Owner API വിലാസം Tesla-യുടേതല്ല, അതിനാൽ Hub നിങ്ങളുടെ കാറുകൾ ആവശ്യപ്പെട്ടില്ല. വിലാസം ശരിയാക്കുക, തുടർന്ന് Tesla ഉപയോഗിച്ച് വീണ്ടും സൈൻ ഇൻ ചെയ്യുക.";
+
+"hub.signIn.discovery.general" = "നിങ്ങൾ സൈൻ ഇൻ ചെയ്തിട്ടുണ്ട്, പക്ഷേ Hub-ന് നിങ്ങളുടെ കാറുകൾ കണ്ടെത്താൻ കഴിഞ്ഞില്ല. വീണ്ടും കാറുകൾ കണ്ടെത്താൻ ശ്രമിക്കുക, അല്ലെങ്കിൽ Tesla ഉപയോഗിച്ച് വീണ്ടും സൈൻ ഇൻ ചെയ്യുക.";
+
+"hub.signIn.discovery.retry" = "വീണ്ടും കാറുകൾ കണ്ടെത്താൻ ശ്രമിക്കുക";
+
+"hub.signIn.discovery.expired" = "ഈ സൈൻ ഇൻ ഇനി തുടരാൻ കഴിയില്ല. Tesla ഉപയോഗിച്ച് വീണ്ടും സൈൻ ഇൻ ചെയ്യുക.";
+
+"hub.signIn.discovery.configured" = "കോൺഫിഗർ ചെയ്ത കാറുകൾ: %d";
+
+"hub.signIn.reportInvalid" = "Hub-ന് സൈൻ ഇൻ സ്ഥിരീകരിക്കാൻ കഴിഞ്ഞില്ല. Tesla ഉപയോഗിച്ച് വീണ്ടും സൈൻ ഇൻ ചെയ്യുക.";

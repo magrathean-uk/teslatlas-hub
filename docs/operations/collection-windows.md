@@ -112,6 +112,63 @@ every open until `window trust` is run again.
    an Open window the service refuses with `window_closed`. Collection starts
    once Hub holds its own login. Confirm the latest observation advances.
 
+   The exchange uses Tesla's standard public owner client, the same values the
+   app's sign-in window sends: client `ownerapi`, redirect
+   `tesla://auth/callback`, scope `openid email offline_access`, and the global
+   owner token endpoint `https://auth.tesla.com/oauth2/v3/token`. The refresh
+   of the Hub's own pair uses the same client, under the one refresh fence.
+   The service checks the material before anything is sent: any other
+   redirect, a malformed verifier or code (`sign_in_material_invalid`) and a
+   code it has already tried (`sign_in_code_reused`) are refused locally. It
+   then asks the egress gate, sends one request and stores only a complete,
+   valid answer, as the Hub's own login (origin `hub_login`). An issuer
+   refusal (`sign_in_refused`), an unusable or oversized answer
+   (`sign_in_answer_invalid`) or an unreachable issuer (`sign_in_unavailable`)
+   stores nothing; start the sign-in again for a new code. Refusals name a
+   fixed code only, never the code, verifier or a token.
+
+   Vehicle discovery follows in the same request, inside the same Open window,
+   with the pair just stored: one bounded products list over the Owner API,
+   through the egress gate with a permit of its own, and no vehicle-data read,
+   wake or command. `setup --vehicle-id ID` configures that listed car,
+   `setup --all-vehicles` every listed car, and plain `setup` the one listed
+   car (or the car this Hub already holds). The configured cars let collection
+   start when the collector restarts. The report then reads
+   `"vehicleDiscovery": "configured"` with `"vehiclesConfigured"`, and names
+   no VIN, car name or token. If discovery fails after the sign-in is stored,
+   `setup` still reports `"status": "signed_in"`, with
+   `"vehicleDiscovery": "failed"` and a fixed `discoveryCode`: for example
+   `discovery_vehicle_not_listed`, `discovery_selection_required`,
+   `discovery_answer_invalid`, `discovery_refused` or `window_closed`. The
+   stored login stays and no car is configured. To finish, run the same
+   `setup` again with the same sign-in material (and a corrected choice)
+   within 10 minutes, before the service restarts and while that login is
+   still stored: the service recognises the sign-in it stored, sends nothing
+   to Tesla's token endpoint (`"signIn": "resumed"`) and only lists the cars
+   again. After that, a new sign-in is needed. Fleet stays parked:
+   with `collector.provider = "fleet"` discovery refuses (`provider_parked`).
+   The Hub's own login is only sent to Tesla's Owner API: an
+   `owner_api_base_url` naming another host is refused
+   (`discovery_settings_invalid`).
+
+   While the window's collector runs it holds the Hub's credential store, so
+   `setup` first asks the service to stop it; collection pauses for the sign-in
+   and restarts on the new login once it ends. If the collector does not stop
+   within 30 seconds the sign-in is refused (`collector_still_running`); a
+   second sign-in while one runs is refused (`sign_in_busy`). A refusal before
+   the write leaves the stored login as it was. If the disk does not confirm
+   the write, `setup` reports `sign_in_stored_unconfirmed`: check
+   `teslatlas-hub status` before signing in again. A stored sign-in whose
+   follow-up cleanup failed reports `"aftercare": "pending"`; the service
+   finishes it when it next opens the credential store, as the collector's
+   restart does. A window closed during a sign-in stays Closing while the
+   sign-in may still finish, and is handed back within the 60-second grace
+   whatever the sign-in is doing: 40 seconds in, the sign-in's permit lapses
+   and nothing more is written under it (a write already under way has until
+   the handback). A sign-in cut off before its login was committed refuses
+   `window_closed` and leaves at most an unused binding, which expires; one cut
+   off after the commit is stored with `"aftercare": "pending"`.
+
 ## Stop
 
 - *At expiry:* nothing to do. At the deadline Hub stops issuing Tesla traffic,

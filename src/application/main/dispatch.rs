@@ -292,14 +292,11 @@ fn parse_setup_material(bytes: &[u8]) -> Result<SetupMaterial, OperatorRefusal> 
     {
         return Err(setup_input_invalid("the PKCE verifier is not 43 to 128 unreserved characters"));
     }
-    let redirect_valid = code_text_valid(redirect, 2048)
-        && url::Url::parse(redirect).is_ok_and(|url| {
-            url.scheme() == "https"
-                || (url.scheme() == "http"
-                    && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]")))
-        });
-    if !redirect_valid {
-        return Err(setup_input_invalid("the redirect URI is not an https or loopback address"));
+    // The one owner redirect the Mac app's sign-in window registers
+    // (DEC-088): the exchange sends exactly this value, so no other is
+    // forwarded to the service.
+    if redirect != teslatlas_hub::auth::credential_sign_in::OWNER_REDIRECT_URI {
+        return Err(setup_input_invalid("the redirect URI is not the owner sign-in redirect"));
     }
     Ok(SetupMaterial {
         code: code.to_owned(),
@@ -447,8 +444,14 @@ fn admit_import_command(
 struct HubServiceBackend {
     store: HubStore,
     data_dir: PathBuf,
+    /// The served configuration: setup's car discovery reads the Owner API
+    /// settings and the provider from it.
+    config: HubConfig,
     admission: std::sync::Arc<AdmittedUserHub>,
     backup: std::sync::Arc<teslatlas_hub::runtime::backup_schedule::BackupScheduler>,
+    /// The vault custody the window supervisor honours, and its wake-up.
+    custody: teslatlas_hub::collection::window::CredentialCustody,
+    kick: Box<dyn Fn() + Send + Sync>,
 }
 
 #[cfg(unix)]
@@ -469,13 +472,41 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
         vehicle_id: Option<i64>,
         all_vehicles: bool,
     ) -> Result<serde_json::Value, OperatorRefusal> {
-        // The Owner code exchange needs the owner's client values
-        // (G-OWNER-VALUES). Until they land the service refuses here, inside
-        // the window and before any send; vehicle discovery follows a
-        // successful exchange and so cannot run either.
-        drop((material, vehicle_id, all_vehicles));
-        let error = teslatlas_hub::auth::credential_sign_in::sign_in_unavailable();
-        Err(OperatorRefusal::new(error.code(), error.to_string()))
+        use teslatlas_hub::auth::credential_sign_in as sign_in;
+        // The car choice is checked first: a bad one refuses with nothing
+        // sent and the code unspent.
+        let selection = sign_in::owner_car_selection(vehicle_id, all_vehicles).map_err(setup_refusal)?;
+        // DEC-088: the service exchanges the owner's code itself, with the
+        // standard public owner client, at the owner token endpoint. The
+        // window is Open here, and the exchange still asks the egress gate
+        // immediately before its one send. Only that exchange's answer is
+        // stored, with origin hub_login; any refusal leaves the store as it
+        // was and names a fixed code, never the material. M02-T13: the same
+        // material again, while that pair is still stored, resumes the
+        // sign-in with no request to Tesla. Car discovery then runs inside
+        // the same custody and window, with the vault's own pair.
+        let report = owner_setup(
+            &self.custody,
+            &*self.kick,
+            || open_command_credential_vault(
+                self.store.clone(),
+                std::sync::Arc::clone(&self.admission),
+                &self.data_dir,
+            ),
+            |entry| run_owner_exchange(|| {
+                sign_in::sign_in_or_resume_owner_code(
+                    entry,
+                    &material.code,
+                    &material.code_verifier,
+                    &material.redirect_uri,
+                )
+            }),
+            |entry| run_owner_exchange(|| {
+                sign_in::discover_owner_cars(entry, &self.store, &self.config, selection)
+            }),
+        );
+        drop(material);
+        report
     }
 
     fn recovery_export(
@@ -541,6 +572,125 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
     fn backup_status(&self) -> Result<serde_json::Value, OperatorRefusal> {
         Ok(self.backup.status())
     }
+}
+
+/// The owner sign-in inside the service (DEC-088, review finding 2): the
+/// running collector holds the process's one credential vault, so the
+/// sign-in first takes custody of it. The window supervisor stops the
+/// collector and hands custody over once it has exited, so no refresh runs
+/// beside the exchange; the sign-in then opens the vault, exchanges and
+/// stores, lists and records the cars with that vault's own pair (M02-T13),
+/// and closes the vault before custody ends. The supervisor then starts the
+/// collector again, which opens the vault afresh and so loads the stored
+/// pair and the configured cars.
+///
+/// A refused sign-in refuses `setup`. A discovery failure after the pair is
+/// stored does not: the report says the sign-in is stored and discovery
+/// failed with its fixed code, and the same `setup` again resumes it.
+#[cfg(unix)]
+fn owner_setup(
+    custody: &teslatlas_hub::collection::window::CredentialCustody,
+    kick: &dyn Fn(),
+    open_entry: impl FnOnce() -> Result<teslatlas_hub::CredentialVaultEntry, teslatlas_hub::CredentialVaultEntryError>,
+    exchange: impl FnOnce(&teslatlas_hub::CredentialVaultEntry)
+        -> Result<teslatlas_hub::auth::credential_sign_in::OwnerSignIn, teslatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+    discover: impl FnOnce(&teslatlas_hub::CredentialVaultEntry)
+        -> Result<teslatlas_hub::auth::credential_sign_in::OwnerDiscovery, teslatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+) -> Result<serde_json::Value, OperatorRefusal> {
+    use teslatlas_hub::collection::window::custody::{CUSTODY_WAIT, SIGN_IN_BUSY};
+    let held = custody.acquire(CUSTODY_WAIT, kick).map_err(|code| {
+        let message = if code == SIGN_IN_BUSY {
+            "another sign-in is in progress"
+        } else {
+            "the collector did not stop for the sign-in; try again"
+        };
+        OperatorRefusal::new(code, message)
+    })?;
+    let result = open_entry()
+        .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)
+        .and_then(|entry| {
+            let result = exchange(&entry).map(|signed_in| (signed_in, discover(&entry)));
+            // The vault is closed before custody ends.
+            drop(entry);
+            result
+        });
+    drop(held);
+    kick();
+    let (signed_in, discovery) = result.map_err(setup_refusal)?;
+    Ok(owner_setup_report(signed_in, discovery))
+}
+
+/// The refusal `setup` returns: the fixed code and its fixed owner text.
+#[cfg(unix)]
+fn setup_refusal(
+    error: teslatlas_hub::auth::credential_sign_in::CredentialCommandError,
+) -> OperatorRefusal {
+    OperatorRefusal::new(error.code(), error.to_string())
+}
+
+/// What a successful `setup` reports: no token, code, VIN, name or account
+/// detail. The pair is stored either way; `signIn` says whether this request
+/// exchanged a code or resumed a stored sign-in, `aftercare` whether the
+/// cleanup behind the write completed or waits for the vault's next open,
+/// and `vehicleDiscovery` whether the cars were configured (with their
+/// count) or discovery failed (with its fixed code and owner text).
+#[cfg(unix)]
+fn owner_setup_report(
+    signed_in: teslatlas_hub::auth::credential_sign_in::OwnerSignIn,
+    discovery: Result<
+        teslatlas_hub::auth::credential_sign_in::OwnerDiscovery,
+        teslatlas_hub::auth::credential_sign_in::CredentialCommandError,
+    >,
+) -> serde_json::Value {
+    let mut report = serde_json::json!({
+        "status": "signed_in",
+        "slot": "owner_api",
+        "origin": "hub_login",
+        "signIn": signed_in.sign_in(),
+        "aftercare": signed_in.aftercare(),
+    });
+    match discovery {
+        Ok(discovery) => {
+            report["vehicleDiscovery"] = "configured".into();
+            report["vehiclesConfigured"] = discovery.vehicles_configured.into();
+        }
+        Err(error) => {
+            report["vehicleDiscovery"] = "failed".into();
+            report["discoveryCode"] = error.code().into();
+            report["discoveryMessage"] = teslatlas_hub::auth::credential_sign_in::credential_owner_message(error.code(), None, None, None)
+                .unwrap_or_default()
+                .into();
+        }
+    }
+    report
+}
+
+/// Runs one sign-in step (the code exchange or the car discovery) to
+/// completion on a thread and runtime of its own, so the channel's handler
+/// thread never blocks inside another runtime.
+#[cfg(unix)]
+fn run_owner_exchange<'a, T, F>(
+    exchange: impl FnOnce() -> F + Send + 'a,
+) -> Result<T, teslatlas_hub::auth::credential_sign_in::CredentialCommandError>
+where
+    T: Send,
+    F: std::future::Future<
+            Output = Result<T, teslatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+        > + 'a,
+{
+    use teslatlas_hub::auth::credential_sign_in::sign_in_unavailable;
+    std::thread::scope(|scope| {
+        scope
+            .spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|_| sign_in_unavailable())?;
+                runtime.block_on(exchange())
+            })
+            .join()
+    })
+    .unwrap_or_else(|_| Err(sign_in_unavailable()))
 }
 
 #[cfg(all(test, unix))]
@@ -1094,8 +1244,11 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         std::sync::Arc::new(HubServiceBackend {
                             store: store.clone(),
                             data_dir: config.data_dir.clone(),
+                            config: config.clone(),
                             admission: std::sync::Arc::clone(&admission),
                             backup: std::sync::Arc::clone(&backup_schedule),
+                            custody: teslatlas_hub::collection::window::CredentialCustody::process_wide().clone(),
+                            kick: supervisor.kicker(),
                         }),
                         supervisor.kicker(),
                         operator::authority::service_trust_authority(authority.host_id()),

@@ -18,6 +18,7 @@ pub mod anchor;
 pub mod claim;
 pub mod clock;
 pub mod controller;
+pub mod custody;
 pub mod gate;
 pub mod grant;
 pub mod issuer;
@@ -34,11 +35,12 @@ pub use claim::{FileLock, HostClaim, LockMode};
 pub use clock::{
     ClockGuard, ManualClock, ManualProbe, OffsetProbe, SntpProbe, SystemClock, WindowClock,
 };
+pub use custody::{CredentialCustody, CustodyGuard};
 pub use controller::{
     HandbackSource, ImportGuard, NoHighWater, ResumeOutcome, WindowConfig, WindowController,
     WindowDeps, WindowStatus,
 };
-pub use gate::{EgressGate, GateRefusal, Permit, PermitKind, Provider};
+pub use gate::{EgressGate, GateRefusal, Permit, PermitKind, Provider, write_under_authority, writes_in_progress};
 pub use grant::{GrantBody, SignedGrant, TrustDocument};
 pub use issuer::{IssueRequest, Issuer};
 pub use refusal::Refusal;
@@ -77,8 +79,15 @@ pub const NTP_MAX_OFFSET_SECONDS: f64 = 30.0;
 pub const DRIFT_TOLERANCE_SECONDS: i64 = 5;
 
 /// A token exchange that began before the deadline may finish within this
-/// time; the window stays Closing meanwhile.
+/// time; the window stays Closing meanwhile and is handed back within it,
+/// whatever a sign-in is doing (M02-T13 round 2).
 pub const EXCHANGE_GRACE_SECONDS: i64 = 60;
+
+/// The exchanges' grace ends this long before the grace does: the supervisor
+/// then cancels every exchange permit, so no further write begins, and a write
+/// already past its authority check has until the handback deadline (the
+/// grace less one supervisor poll) to finish. The handback is never later.
+pub const EXCHANGE_WRITE_MARGIN_SECONDS: i64 = 20;
 
 /// The supervisor notices a state change within this time.
 pub const SUPERVISOR_POLL_SECONDS: i64 = 5;

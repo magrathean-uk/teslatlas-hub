@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "ಮೂಲ ಅಪ್ಲಿಕೇಶನ್ ಆಮದು ವಿಫಲವಾಗಿದೆ; ಆಮದು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.";
 "hub.HubController.2457.838" = "Hub ಪ್ರಾರಂಭಿಸುವ ಮೊದಲು ಮೂಲ ಅಪ್ಲಿಕೇಶನ್ ಹಸ್ತಾಂತರವನ್ನು ಪೂರ್ಣಗೊಳಿಸಿ.";
 "hub.HubController.2479.850" = "Hub ಮರುಪ್ರಾರಂಭಿಸುವ ಮೊದಲು ಮೂಲ ಅಪ್ಲಿಕೇಶನ್ ಹಸ್ತಾಂತರವನ್ನು ಪೂರ್ಣಗೊಳಿಸಿ.";
-"hub.HubController.250.318" = "Legacy ಟೋಕನ್";
+"hub.HubController.250.318" = "ಮಾಲೀಕರ ಸೈನ್ ಇನ್";
 "hub.HubController.2503.863" = "Hub ಪ್ರಾರಂಭವಾಗುತ್ತಿದೆ.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Hub ಪ್ರಾರಂಭಿಸುವ ಮೊದಲು ವರ್ಗಾವಣೆಯ ಪರಿಶೀಲನೆಗಳನ್ನು ಪೂರ್ಣಗೊಳಿಸಿ.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "ಪೂರ್ವವೀಕ್ಷಣೆ ಮಾದರಿ";
 "hub.LogsWindowController.70.1725" = "ಮರೆಮಾಡಿದ Hub ಮತ್ತು ಆ್ಯಪ್ ಲಾಗ್‌ಗಳನ್ನು ಪರಿಶೀಲಿಸಿ.";
 "hub.MainWindowController.1152.1840" = "Fleet API ಬಳಸಿ";
-"hub.MainWindowController.1153.1841" = "Legacy ಟೋಕನ್ ಬಳಸಿ";
+"hub.MainWindowController.1153.1841" = "ಮಾಲೀಕರ ಸೈನ್ ಇನ್ ಬಳಸಿ";
 "hub.MainWindowController.1154.1842" = "ಇತಿಹಾಸವನ್ನು ಆಮದುಮಾಡಿ…";
 "hub.MainWindowController.1156.1843" = "Tesla ಸಂಪರ್ಕ ಕಡಿತಗೊಳಿಸಿ…";
 "hub.MainWindowController.1158.1844" = "Tesla ಖಾತೆಯನ್ನು ಸಂಪರ್ಕಿಸಿ…";
 "hub.MainWindowController.1428.1846" = "Hub‌ನಿಂದ Tesla ಸಂಪರ್ಕ ಕಡಿತಗೊಳಿಸುವುದೇ?";
-"hub.MainWindowController.1429.1847" = "Hub ನಿಲ್ಲುತ್ತದೆ ಮತ್ತು ಸಂಗ್ರಹಿಸಿದ Fleet ಹಾಗೂ Legacy ರುಜುವಾತುಗಳನ್ನು ತೆಗೆದುಹಾಕುತ್ತದೆ. ನಿಮ್ಮ ಸಂಗ್ರಹಿತ ಡೇಟಾ ಈ Mac‌ನಲ್ಲೇ ಉಳಿಯುತ್ತದೆ.";
+"hub.MainWindowController.1429.1847" = "Hub ನಿಲ್ಲುತ್ತದೆ ಮತ್ತು ಸಂಗ್ರಹಿಸಿದ Fleet ಹಾಗೂ ಮಾಲೀಕರ ಸೈನ್ ಇನ್ ರುಜುವಾತುಗಳನ್ನು ತೆಗೆದುಹಾಕುತ್ತದೆ. ನಿಮ್ಮ ಸಂಗ್ರಹಿತ ಡೇಟಾ ಈ Mac‌ನಲ್ಲೇ ಉಳಿಯುತ್ತದೆ.";
 "hub.MainWindowController.1431.1849" = "ಸಂಪರ್ಕ ಕಡಿತಗೊಳಿಸಿ";
 "hub.MainWindowController.15.1766" = "ವಾಹನ";
 "hub.MainWindowController.22.1768" = "Hub ನಿಲ್ಲಿಸಿ";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "ಡೇಟಾ ಆಮದುಮಾಡಿ";
 "hub.OnboardingWindowController.1362.2047" = "ಸರ್ವರ್‌ಗೆ ಸಂಪರ್ಕಿಸಿ";
 "hub.OnboardingWindowController.1471.2059" = "Fleet ಕ್ಲೈಂಟ್ ID, ಟೋಕನ್, ಪ್ರದೇಶ ಮತ್ತು ಮುಕ್ತಾಯದ ವಿವರಗಳನ್ನು ಪೂರ್ಣಗೊಳಿಸಿ.";
-"hub.OnboardingWindowController.1500.2071" = "ಪ್ರವೇಶ ಟೋಕನ್ ಮತ್ತು ರಿಫ್ರೆಶ್ ಟೋಕನ್ ಎರಡನ್ನೂ ನಮೂದಿಸಿ.";
 "hub.OnboardingWindowController.1631.2105" = "ಮೂಲ ಅಪ್ಲಿಕೇಶನ್ ಸರ್ವರ್, SSH ಬಳಕೆದಾರ ಮತ್ತು ಪೋರ್ಟ್ ನಮೂದಿಸಿ.";
 "hub.OnboardingWindowController.168.1852" = "ಮುಂದುವರಿಸಿ";
 "hub.OnboardingWindowController.1691.2113" = "ಸ್ಕೀಮಾ ಪರಿಶೀಲನೆಯಿಂದ ಮೂಲ ಅಪ್ಲಿಕೇಶನ್‌ನ ಆವೃತ್ತಿಯನ್ನು ನಿರ್ಧರಿಸಲಾಗುವುದಿಲ್ಲ. ಚಲಿಸುತ್ತಿರುವ ಸರ್ವರ್ 4.4.0 ಅಥವಾ ನಂತರದ ಆವೃತ್ತಿಯನ್ನು ಬಳಸುತ್ತಿದೆ ಎಂದು ದೃಢೀಕರಿಸಿ, ನಂತರ ಮುಂದುವರಿಸಿ.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "ನೀವು ಹೇಗೆ ಪ್ರಾರಂಭಿಸಲು ಬಯಸುತ್ತೀರಿ?";
 "hub.OnboardingWindowController.590.1919" = "Hub ಹೇಗೆ ಸಂಪರ್ಕಿಸಬೇಕೆಂದು ಆಯ್ಕೆಮಾಡಿ";
 "hub.OnboardingWindowController.591.1920" = "Fleet Telemetry ಸೆಟಪ್ ಮಾಡಿ";
-"hub.OnboardingWindowController.592.1921" = "ಟೋಕನ್‌ನೊಂದಿಗೆ ಸಂಪರ್ಕಿಸಿ";
+"hub.OnboardingWindowController.592.1921" = "Tesla ಮೂಲಕ ಸೈನ್ ಇನ್ ಮಾಡಿ";
 "hub.OnboardingWindowController.593.1922" = "ಇತಿಹಾಸವನ್ನು ಆಮದುಮಾಡಿ…";
 "hub.OnboardingWindowController.594.1923" = "ನಿಮ್ಮ Hub ಪರಿಶೀಲಿಸಲಾಗುತ್ತಿದೆ";
 "hub.OnboardingWindowController.595.1924" = "ವರ್ಗಾವಣೆ ಪೂರ್ಣಗೊಂಡಿದೆ";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub ಸಿದ್ಧವಾಗಿದೆ";
 "hub.OnboardingWindowController.602.1926" = "ನಿಮ್ಮದೇ Tesla ಟೆಲಿಮೆಟ್ರಿ ಸಂಗ್ರಾಹಕ; ಈ Mac‌ನಲ್ಲಿ ಖಾಸಗಿಯಾಗಿ ಚಲಿಸುತ್ತದೆ.";
 "hub.OnboardingWindowController.604.1927" = "ಹೊಸ Hub ಸೆಟಪ್ ಮಾಡಿ ಅಥವಾ ಮೂಲ ಅಪ್ಲಿಕೇಶನ್‌ನಿಂದ ನಿಮ್ಮ ಇತಿಹಾಸವನ್ನು ವರ್ಗಾಯಿಸಿ.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry ಶಿಫಾರಸು ಮಾಡಲಾಗಿದೆ. Legacy ಟೋಕನ್‌ಗಳು ಹಳೆಯ ಸೆಟಪ್‌ಗಳಲ್ಲಿಯೂ ಕಾರ್ಯನಿರ್ವಹಿಸುತ್ತವೆ.";
+"hub.OnboardingWindowController.606.1928" = "ಪ್ರಾರಂಭಿಸಲು ನಿಮ್ಮ Tesla ಮಾಲೀಕರ ಖಾತೆಯೊಂದಿಗೆ ಸೈನ್ ಇನ್ ಮಾಡಿ. ನೀವು ಬಯಸಿದರೆ Fleet Telemetry ಲಭ್ಯವಿದೆ.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet ಅಪ್ಲಿಕೇಶನ್ ರಚಿಸಿ, ನಂತರ ಅದರ ರುಜುವಾತುಗಳನ್ನು ಕೆಳಗೆ ಅಂಟಿಸಿ.";
 "hub.OnboardingWindowController.610.1930" = "ಸಂಗ್ರಹ ವಿಂಡೋ ತೆರೆದಿರುವಾಗ Tesla ಮೂಲಕ ಸೈನ್ ಇನ್ ಮಾಡಿ. Hub ಎಂದಿಗೂ ಟೋಕನ್ ಸ್ವೀಕರಿಸುವುದಿಲ್ಲ.";
 "hub.OnboardingWindowController.612.1931" = "ವಾಹನದ ಇತಿಹಾಸ ಆಮದುಮಾಡಲು ನಿಮ್ಮ ಮೂಲ ಅಪ್ಲಿಕೇಶನ್ ಸರ್ವರ್‌ಗೆ ಸಂಪರ್ಕಿಸಿ.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "ನಿಮ್ಮ ಈಗಿರುವ ವಾಹನದ ಇತಿಹಾಸವನ್ನು ವರ್ಗಾಯಿಸಿ.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Tesla ಅಧಿಕೃತ ಸ್ಟ್ರೀಮಿಂಗ್ API. ಇದು ಲೈವ್ ವಾಹನ ಆಜ್ಞೆಗಳನ್ನು ಸಕ್ರಿಯಗೊಳಿಸುತ್ತದೆ.";
-"hub.OnboardingWindowController.752.1958" = "Legacy ಟೋಕನ್";
+"hub.OnboardingWindowController.752.1958" = "ಮಾಲೀಕರ ಸೈನ್ ಇನ್";
 "hub.OnboardingWindowController.753.1959" = "Tesla ಮೂಲಕ ಸೈನ್ ಇನ್ ಮಾಡಿ. Hub ತನ್ನದೇ ಆದ ಲಾಗಿನ್ ಅನ್ನು ಉಳಿಸಿಕೊಳ್ಳುತ್ತದೆ.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet ಆ್ಯಪ್ ರಚಿಸಿ";
 "hub.OnboardingWindowController.771.1964" = "ಕ್ಲೈಂಟ್ ID";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "ಕೀ ಆಯ್ಕೆಮಾಡಿ…";
 "hub.OnboardingWindowController.888.1990" = "ಇತಿಹಾಸ ಮಾತ್ರ. Hub Tesla ರುಜುವಾತುಗಳನ್ನು ಪರಿಶೀಲಿಸುವುದಿಲ್ಲ ಅಥವಾ ಆಮದು ಮಾಡುವುದಿಲ್ಲ. ಸಂಗ್ರಹಣೆ ನಿಷ್ಕ್ರಿಯವಾಗಿಯೇ ಇರುತ್ತದೆ. ಡೇಟಾಬೇಸ್ ಸ್ಕೀಮಾವನ್ನು ಪರಿಶೀಲಿಸಬಹುದು; ಮೂಲ ಅಪ್ಲಿಕೇಶನ್‌ನ ಆವೃತ್ತಿ ತಿಳಿದಿಲ್ಲ.";
 "hub.OnboardingWindowController.891.1991" = "ಸ್ಥಳೀಯ PostgreSQL ಮೂಲ";
-"hub.OnboardingWindowController.895.1994" = "ಇದು v4.2ಕ್ಕೆ ಹೊಂದಿಕೊಳ್ಳುವ ಡೇಟಾಬೇಸ್ ಸ್ಕೀಮಾ ಎಂದು ಒಪ್ಪುತ್ತೇನೆ; ಇದು ಆ್ಯಪ್ ಆವೃತ್ತಿಯ ಪುರಾವೆಯಲ್ಲ";
 "hub.OnboardingWindowController.915.1997" = "ಮೂಲ ಅಪ್ಲಿಕೇಶನ್ %1$@";
 "hub.OnboardingWindowController.927.2001" = "ಪರಿಶೀಲಿಸಲಾಗುತ್ತಿದೆ…";
 "hub.OnboardingWindowController.935.2004" = "ಸರ್ವರ್ ಬದಲಾಯಿಸಿ";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Tesla ಸೈನ್-ಇನ್ ಸ್ಥಿತಿ ಹೊಂದಿಕೆಯಾಗಲಿಲ್ಲ. ಮತ್ತೆ ಸೈನ್ ಇನ್ ಪ್ರಾರಂಭಿಸಿ.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla ಅಮಾನ್ಯ ಖಾತೆ issuer ಅನ್ನು ಹಿಂತಿರುಗಿಸಿದೆ.";
 "hub.TeslaAuthWindowController.358.html_progress" = "ಸುರಕ್ಷಿತ Tesla ಸೈನ್-ಇನ್ ಪೂರ್ಣಗೊಳಿಸಲಾಗುತ್ತಿದೆ…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla ಅಮಾನ್ಯ ಟೋಕನ್ ಪ್ರತಿಕ್ರಿಯೆ ಹಿಂತಿರುಗಿಸಿದೆ.";
-"hub.TeslaAuthWindowController.37.2242" = "Tesla ಟೋಕನ್ ವಿನಿಮಯ ವಿಫಲವಾಗಿದೆ.";
 "hub.SourceServerImporter.34.2284" = "ಕೋಡ್: %1$@";
 "hub.SourceServerImporter.428.2461" = "ಮೂಲ ಅಪ್ಲಿಕೇಶನ್ ಸರ್ವರ್ ಅಪೂರ್ಣ ಸೆಟಪ್ ವಿವರಗಳನ್ನು ಹಿಂತಿರುಗಿಸಿದೆ.";
 "hub.SourceServerImporter.691.2530" = "ಸರ್ವರ್ ವಿವರಗಳನ್ನು ಪರಿಶೀಲಿಸಿ";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Hub ನ ಕಂಟ್ರೋಲ್ ಚಾನಲ್‌ನಲ್ಲಿ ಉತ್ತರಿಸುತ್ತಿರುವ ಪ್ರಕ್ರಿಯೆ ಈ Hub ಅಲ್ಲ, ಆದ್ದರಿಂದ ಏನನ್ನೂ ಕಳುಹಿಸಿಲ್ಲ. Hub ಅನ್ನು ಮರುಪ್ರಾರಂಭಿಸಿ, ನಂತರ ಮತ್ತೆ ಸೈನ್ ಇನ್ ಮಾಡಿ.";
 
 "hub.signIn.busy" = "Hub ಇತರ ವಿನಂತಿಗಳಲ್ಲಿ ನಿರತವಾಗಿದೆ. ಏನೂ ಬದಲಾಗಿಲ್ಲ; ಸ್ವಲ್ಪ ಸಮಯದ ನಂತರ ಮತ್ತೆ ಸೈನ್ ಇನ್ ಮಾಡಿ.";
+
+"hub.signIn.discovery.notListed" = "ನೀವು ಸೈನ್ ಇನ್ ಆಗಿದ್ದೀರಿ, ಆದರೆ Tesla ಈ ಖಾತೆಯಲ್ಲಿ ಯಾವುದೇ ಕಾರನ್ನು ಪಟ್ಟಿ ಮಾಡಿಲ್ಲ. ಕಾರು ಈ Tesla ಖಾತೆಗೆ ಸೇರಿದೆಯೇ ಎಂದು ಪರಿಶೀಲಿಸಿ, ನಂತರ ಮತ್ತೆ ಕಾರುಗಳನ್ನು ಹುಡುಕಿ.";
+
+"hub.signIn.discovery.selectionRequired" = "ನೀವು ಸೈನ್ ಇನ್ ಆಗಿದ್ದೀರಿ, ಆದರೆ Tesla ಒಂದಕ್ಕಿಂತ ಹೆಚ್ಚು ಕಾರುಗಳನ್ನು ಪಟ್ಟಿ ಮಾಡಿದೆ ಮತ್ತು ಯಾವ ಕಾರಿನಿಂದ ಡೇಟಾ ಸಂಗ್ರಹಿಸಬೇಕು ಎಂದು Hub ಗೆ ತಿಳಿಯಬೇಕು. ಮತ್ತೆ ಕಾರುಗಳನ್ನು ಹುಡುಕಿ.";
+
+"hub.signIn.discovery.selectionInvalid" = "ನೀವು ಸೈನ್ ಇನ್ ಆಗಿದ್ದೀರಿ, ಆದರೆ ಆಯ್ಕೆ ಮಾಡಿದ ಕಾರು ಈ Tesla ಖಾತೆಯಲ್ಲಿ ಇಲ್ಲ. ಮತ್ತೆ ಕಾರುಗಳನ್ನು ಹುಡುಕಿ.";
+
+"hub.signIn.discovery.answerInvalid" = "ನೀವು ಸೈನ್ ಇನ್ ಆಗಿದ್ದೀರಿ, ಆದರೆ Hub ಗೆ Tesla ಯ ಕಾರುಗಳ ಪಟ್ಟಿಯನ್ನು ಓದಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ಮತ್ತೆ ಕಾರುಗಳನ್ನು ಹುಡುಕಿ.";
+
+"hub.signIn.discovery.refused" = "ನೀವು ಸೈನ್ ಇನ್ ಆಗಿದ್ದೀರಿ, ಆದರೆ Tesla ಕಾರುಗಳ ಪಟ್ಟಿಯನ್ನು ನಿರಾಕರಿಸಿದೆ. ಮತ್ತೆ ಕಾರುಗಳನ್ನು ಹುಡುಕಿ, ಅಥವಾ ಮತ್ತೆ Tesla ಮೂಲಕ ಸೈನ್ ಇನ್ ಮಾಡಿ.";
+
+"hub.signIn.discovery.windowClosed" = "ನೀವು ಸೈನ್ ಇನ್ ಆಗಿದ್ದೀರಿ, ಆದರೆ Hub ನಿಮ್ಮ ಕಾರುಗಳನ್ನು ಹುಡುಕುವ ಮೊದಲೇ ಸಂಗ್ರಹ ವಿಂಡೋ ಮುಚ್ಚಿಹೋಯಿತು. ವಿಂಡೋ ತೆರೆಯಿರಿ, ನಂತರ ಮತ್ತೆ ಕಾರುಗಳನ್ನು ಹುಡುಕಿ.";
+
+"hub.signIn.discovery.providerParked" = "ನೀವು ಸೈನ್ ಇನ್ ಆಗಿದ್ದೀರಿ, ಆದರೆ ಈ Hub ಬೇರೆ ಪೂರೈಕೆದಾರರ ಮೂಲಕ ಡೇಟಾ ಸಂಗ್ರಹಿಸುತ್ತದೆ, ಆದ್ದರಿಂದ ಈ ಸೈನ್ ಇನ್ ಮೂಲಕ ಕಾರುಗಳನ್ನು ಹುಡುಕಲು ಸಾಧ್ಯವಿಲ್ಲ.";
+
+"hub.signIn.discovery.settingsInvalid" = "ನೀವು ಸೈನ್ ಇನ್ ಆಗಿದ್ದೀರಿ, ಆದರೆ ಈ Hub ನ Owner API ವಿಳಾಸ Tesla ದ್ದಲ್ಲ, ಆದ್ದರಿಂದ Hub ನಿಮ್ಮ ಕಾರುಗಳನ್ನು ಕೇಳಲಿಲ್ಲ. ವಿಳಾಸವನ್ನು ಸರಿಪಡಿಸಿ, ನಂತರ ಮತ್ತೆ Tesla ಮೂಲಕ ಸೈನ್ ಇನ್ ಮಾಡಿ.";
+
+"hub.signIn.discovery.general" = "ನೀವು ಸೈನ್ ಇನ್ ಆಗಿದ್ದೀರಿ, ಆದರೆ Hub ಗೆ ನಿಮ್ಮ ಕಾರುಗಳನ್ನು ಹುಡುಕಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ಮತ್ತೆ ಕಾರುಗಳನ್ನು ಹುಡುಕಿ, ಅಥವಾ ಮತ್ತೆ Tesla ಮೂಲಕ ಸೈನ್ ಇನ್ ಮಾಡಿ.";
+
+"hub.signIn.discovery.retry" = "ಮತ್ತೆ ಕಾರುಗಳನ್ನು ಹುಡುಕಿ";
+
+"hub.signIn.discovery.expired" = "ಈ ಸೈನ್ ಇನ್ ಅನ್ನು ಇನ್ನು ಮುಂದುವರಿಸಲು ಸಾಧ್ಯವಿಲ್ಲ. ಮತ್ತೆ Tesla ಮೂಲಕ ಸೈನ್ ಇನ್ ಮಾಡಿ.";
+
+"hub.signIn.discovery.configured" = "ಕಾನ್ಫಿಗರ್ ಮಾಡಿದ ಕಾರುಗಳು: %d";
+
+"hub.signIn.reportInvalid" = "Hub ಸೈನ್ ಇನ್ ಅನ್ನು ದೃಢೀಕರಿಸಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ಮತ್ತೆ Tesla ಮೂಲಕ ಸೈನ್ ಇನ್ ಮಾಡಿ.";

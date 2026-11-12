@@ -152,7 +152,7 @@
 "hub.HubController.2389.785" = "Импортирането от изходното приложение беше неуспешно; опитай отново.";
 "hub.HubController.2457.838" = "Завърши предаването при миграцията на изходното приложение, преди да стартираш Hub.";
 "hub.HubController.2479.850" = "Завърши предаването при миграцията на изходното приложение, преди да рестартираш Hub.";
-"hub.HubController.250.318" = "Наследен токен";
+"hub.HubController.250.318" = "Вход на собственика";
 "hub.HubController.2503.863" = "Стартирането на Hub вече тече.";
 "hub.HubController.251.319" = "Fleet API";
 "hub.HubController.2519.869" = "Завърши проверките за миграцията, преди да стартираш Hub.";
@@ -365,12 +365,12 @@
 "hub.LogsWindowController.49.1721" = "Преглед на примерните журнали";
 "hub.LogsWindowController.70.1725" = "Прегледай журналите на Hub и приложението със заличени данни.";
 "hub.MainWindowController.1152.1840" = "Използвай Fleet API";
-"hub.MainWindowController.1153.1841" = "Използвай наследен токен";
+"hub.MainWindowController.1153.1841" = "Използвай вход на собственика";
 "hub.MainWindowController.1154.1842" = "Импортиране на история…";
 "hub.MainWindowController.1156.1843" = "Прекъсни връзката с Tesla…";
 "hub.MainWindowController.1158.1844" = "Свържи акаунт в Tesla…";
 "hub.MainWindowController.1428.1846" = "Да се прекъсне ли връзката с Tesla в Hub?";
-"hub.MainWindowController.1429.1847" = "Hub ще бъде спрян и ще премахне запазените данни за достъп до Fleet API и Legacy. Събраните данни ще останат на този Mac.";
+"hub.MainWindowController.1429.1847" = "Hub ще бъде спрян и ще премахне запазените данни за достъп за Fleet и за входа на собственика. Събраните данни ще останат на този Mac.";
 "hub.MainWindowController.1431.1849" = "Прекъсни връзката";
 "hub.MainWindowController.15.1766" = "Автомобил";
 "hub.MainWindowController.22.1768" = "Спри Hub";
@@ -409,7 +409,6 @@
 "hub.OnboardingWindowController.1362.2046" = "Импортирай данни";
 "hub.OnboardingWindowController.1362.2047" = "Свържи се със сървър";
 "hub.OnboardingWindowController.1471.2059" = "Попълни ID на клиента, токена, региона и срока на валидност на Fleet.";
-"hub.OnboardingWindowController.1500.2071" = "Въведи и токена за достъп, и токена за обновяване.";
 "hub.OnboardingWindowController.1631.2105" = "Въведи сървъра на изходното приложение, SSH потребителя и порта.";
 "hub.OnboardingWindowController.168.1852" = "Продължи";
 "hub.OnboardingWindowController.1691.2113" = "Проверката на схемата не може да установи версията на изходното приложение. Потвърди, че на сървъра работи версия 4.4.0 или по-нова, после продължи.";
@@ -444,14 +443,14 @@
 "hub.OnboardingWindowController.589.1918" = "Как искаш да започнеш?";
 "hub.OnboardingWindowController.590.1919" = "Избери как Hub да се свързва";
 "hub.OnboardingWindowController.591.1920" = "Настрой Fleet Telemetry";
-"hub.OnboardingWindowController.592.1921" = "Свържи се с токен";
+"hub.OnboardingWindowController.592.1921" = "Влез в акаунта си в Tesla";
 "hub.OnboardingWindowController.593.1922" = "Импортиране на история…";
 "hub.OnboardingWindowController.594.1923" = "Проверка на Hub";
 "hub.OnboardingWindowController.595.1924" = "Миграцията завърши";
 "hub.OnboardingWindowController.595.1925" = "Teslatlas Hub е готов";
 "hub.OnboardingWindowController.602.1926" = "Твой личен събирач на телеметрия от Tesla, работещ локално на този Mac.";
 "hub.OnboardingWindowController.604.1927" = "Настрой нов Hub или прехвърли съществуващата си история от изходното приложение.";
-"hub.OnboardingWindowController.606.1928" = "Fleet Telemetry се препоръчва. Наследените токени работят с по-стари конфигурации.";
+"hub.OnboardingWindowController.606.1928" = "Започнете, като влезете с акаунта си на собственик в Tesla. Fleet Telemetry е на разположение, ако предпочитате него.";
 "hub.OnboardingWindowController.608.1929" = "Създай приложение Tesla Fleet, после постави данните му за достъп по-долу.";
 "hub.OnboardingWindowController.610.1930" = "Влез в акаунта си в Tesla, докато е отворен прозорец за събиране. Hub никога не приема токен.";
 "hub.OnboardingWindowController.612.1931" = "Свържи се със сървъра на изходното приложение, за да импортираш историята на автомобилите.";
@@ -469,7 +468,7 @@
 "hub.OnboardingWindowController.741.1955" = "Прехвърли съществуващата история на автомобила.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
 "hub.OnboardingWindowController.749.1957" = "Официалният API на Tesla за поточни данни. Дава възможност за команди към автомобила в реално време.";
-"hub.OnboardingWindowController.752.1958" = "Наследен токен";
+"hub.OnboardingWindowController.752.1958" = "Вход на собственика";
 "hub.OnboardingWindowController.753.1959" = "Влез в акаунта си в Tesla. Hub използва собствен вход.";
 "hub.OnboardingWindowController.760.1960" = "Създай приложение Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID на клиента";
@@ -483,7 +482,6 @@
 "hub.OnboardingWindowController.836.1982" = "Избери ключ…";
 "hub.OnboardingWindowController.888.1990" = "Само история. Hub няма да проверява или импортира данни за достъп до Tesla. Събирането остава изключено. Може да се провери схемата на базата данни; версията на изходното приложение остава неизвестна.";
 "hub.OnboardingWindowController.891.1991" = "Локален източник на PostgreSQL";
-"hub.OnboardingWindowController.895.1994" = "Потвърждавам, че схемата на базата данни е съвместима с v4.2; това не доказва версията на приложението";
 "hub.OnboardingWindowController.915.1997" = "Изходното приложение %1$@";
 "hub.OnboardingWindowController.927.2001" = "Проверка…";
 "hub.OnboardingWindowController.935.2004" = "Смени сървъра";
@@ -520,8 +518,6 @@
 "hub.TeslaAuthWindowController.34.2239" = "Състоянието на входа в Tesla не съвпадна. Стартирай входа отново.";
 "hub.TeslaAuthWindowController.35.2240" = "Tesla върна невалиден издател на акаунта.";
 "hub.TeslaAuthWindowController.358.html_progress" = "Приключване на сигурния вход в Tesla…";
-"hub.TeslaAuthWindowController.36.2241" = "Tesla върна невалиден отговор с токен.";
-"hub.TeslaAuthWindowController.37.2242" = "Обмяната на токена с Tesla беше неуспешна.";
 "hub.SourceServerImporter.34.2284" = "Код: %1$@";
 "hub.SourceServerImporter.428.2461" = "Сървърът на изходното приложение върна непълни данни за настройка.";
 "hub.SourceServerImporter.691.2530" = "Провери данните за сървъра";
@@ -832,3 +828,29 @@
 "hub.signIn.serviceUnauthenticated" = "Процесът, който отговаря на канала за управление на Hub, не е този Hub, затова нищо не е изпратено. Рестартирайте Hub и влезте отново.";
 
 "hub.signIn.busy" = "Hub е зает с други заявки. Нищо не е променено; влезте отново след малко.";
+
+"hub.signIn.discovery.notListed" = "Влязохте в профила си, но Tesla не показа нито един автомобил в този акаунт. Проверете дали автомобилът принадлежи на този акаунт в Tesla, след което опитайте отново да намерите автомобилите.";
+
+"hub.signIn.discovery.selectionRequired" = "Влязохте в профила си, но Tesla показва повече от един автомобил и Hub трябва да знае за кой да събира данни. Опитайте отново да намерите автомобилите.";
+
+"hub.signIn.discovery.selectionInvalid" = "Влязохте в профила си, но избраният автомобил не е в този акаунт в Tesla. Опитайте отново да намерите автомобилите.";
+
+"hub.signIn.discovery.answerInvalid" = "Влязохте в профила си, но Hub не успя да прочете списъка с автомобили на Tesla. Опитайте отново да намерите автомобилите.";
+
+"hub.signIn.discovery.refused" = "Влязохте в профила си, но Tesla отказа списъка с автомобили. Опитайте отново да намерите автомобилите или влезте отново с Tesla.";
+
+"hub.signIn.discovery.windowClosed" = "Влязохте в профила си, но прозорецът за събиране се затвори, преди Hub да намери автомобилите ви. Отворете прозорец и опитайте отново да намерите автомобилите.";
+
+"hub.signIn.discovery.providerParked" = "Влязохте в профила си, но този Hub събира данни чрез друг доставчик, затова не може да намира автомобили с този вход.";
+
+"hub.signIn.discovery.settingsInvalid" = "Влязохте в профила си, но адресът на Owner API на този Hub не е на Tesla, затова Hub не поиска автомобилите ви. Поправете адреса и влезте отново с Tesla.";
+
+"hub.signIn.discovery.general" = "Влязохте в профила си, но Hub не успя да намери автомобилите ви. Опитайте отново да намерите автомобилите или влезте отново с Tesla.";
+
+"hub.signIn.discovery.retry" = "Нов опит за намиране на автомобилите";
+
+"hub.signIn.discovery.expired" = "Този вход вече не може да бъде продължен. Влезте отново с Tesla.";
+
+"hub.signIn.discovery.configured" = "Конфигурирани автомобили: %d";
+
+"hub.signIn.reportInvalid" = "Hub не можа да потвърди входа. Влезте отново с Tesla.";

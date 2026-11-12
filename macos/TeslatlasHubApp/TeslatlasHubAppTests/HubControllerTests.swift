@@ -1214,7 +1214,7 @@ final class HubControllerTests: XCTestCase {
         var snapshot = HubSnapshot.previewRunning
         snapshot.provider = .legacy
         XCTAssertEqual(snapshot.account, "Connected")
-        XCTAssertEqual(snapshot.accountDisplay, "Connected · Legacy token")
+        XCTAssertEqual(snapshot.accountDisplay, "Connected · Owner sign-in")
 
         snapshot.account = "Not configured"
         snapshot.accountState = .notConfigured
@@ -1313,7 +1313,7 @@ final class HubControllerTests: XCTestCase {
             XCTAssertTrue(error.localizedDescription.contains("status was refreshed"))
             XCTAssertEqual(controller.snapshot.account, "Connected")
             XCTAssertEqual(controller.snapshot.provider, .legacy)
-            XCTAssertEqual(controller.snapshot.accountDisplay, "Connected · Legacy token")
+            XCTAssertEqual(controller.snapshot.accountDisplay, "Connected · Owner sign-in")
             finished.fulfill()
         }
 
@@ -1536,7 +1536,7 @@ final class HubControllerTests: XCTestCase {
         let visibleText = labels(in: dashboard.window?.contentView).map(\.stringValue)
         XCTAssertTrue(visibleText.contains("Starting Hub…"))
         XCTAssertFalse(visibleText.contains("Attention needed"))
-        XCTAssertFalse(visibleText.contains("Connected · Legacy token"))
+        XCTAssertFalse(visibleText.contains("Connected · Owner sign-in"))
         XCTAssertFalse(visibleText.contains("Healthy · 1 MB"))
     }
 
@@ -1697,7 +1697,7 @@ final class HubControllerTests: XCTestCase {
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
                 .contains { $0.stringValue == "Vehicle commands require Tesla Fleet API." })
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
-                .contains { $0.stringValue == "Connected · Legacy token" })
+                .contains { $0.stringValue == "Connected · Owner sign-in" })
             settled.fulfill()
         }
 
@@ -2354,7 +2354,7 @@ final class HubControllerTests: XCTestCase {
         // Sign-in accepts only the code exchange: setup receives the code, its verifier and
         // the redirect URI, never a token. The running service is not paused or reconfigured.
         let events = EventRecorder()
-        let runner = ScriptedRunner(events: events, result: .success("{}"))
+        let runner = ScriptedRunner(events: events, result: .success(Self.configuredReport))
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let original = try writeCollectorConfig(in: home, provider: "legacy")
@@ -2486,6 +2486,512 @@ final class HubControllerTests: XCTestCase {
         }
         let other = HubActionError.commandFailed("setup_input_invalid: bad input")
         XCTAssertEqual(HubController.signInError(other).localizedDescription, other.localizedDescription)
+    }
+
+    static let configuredReport = #"{"status":"signed_in","slot":"owner_api","origin":"hub_login","signIn":"exchanged","aftercare":"complete","vehicleDiscovery":"configured","vehiclesConfigured":2}"#
+    static func configuredReport(_ count: Int, signIn: String = "resumed") -> String {
+        #"{"status":"signed_in","slot":"owner_api","origin":"hub_login","signIn":"\#(signIn)","aftercare":"complete","vehicleDiscovery":"configured","vehiclesConfigured":\#(count)}"#
+    }
+    static func failedReport(_ code: String, signIn: String = "exchanged") -> String {
+        #"{"status":"signed_in","slot":"owner_api","origin":"hub_login","signIn":"\#(signIn)","aftercare":"complete","vehicleDiscovery":"failed","discoveryCode":"\#(code)","discoveryMessage":"Service English text"}"#
+    }
+    static let invalidReportLine = "Hub could not confirm the sign-in. Sign in with Tesla again."
+    static let expiredLine = "This sign-in can no longer be resumed. Sign in with Tesla again."
+    static let notListedLine = "You are signed in, but Tesla listed no car on this account. Check that the car belongs "
+        + "to this Tesla account, then retry finding cars."
+    /// Output `setup` must never be read as success: empty, truncated, non-object, incomplete,
+    /// null-field, wrongly typed and unknown-state answers.
+    static let incompleteReports: [String] = [
+        "", "   \n", "not json", #"{"status":"signed_in","signIn":"exchanged","vehicleDiscovery":"configured","vehiclesConfigured":2"#,
+        "[]", #"[{"status":"signed_in"}]"#, "{}", "null", "2", #""signed_in""#,
+        #"{"vehicleDiscovery":null}"#,
+        #"{"signIn":"exchanged","vehicleDiscovery":"configured","vehiclesConfigured":2}"#,
+        #"{"status":"needs_attention","signIn":"exchanged","vehicleDiscovery":"configured","vehiclesConfigured":2}"#,
+        #"{"status":null,"signIn":"exchanged","vehicleDiscovery":"configured","vehiclesConfigured":2}"#,
+        #"{"status":"signed_in","vehicleDiscovery":"configured","vehiclesConfigured":2}"#,
+        #"{"status":"signed_in","signIn":null,"vehicleDiscovery":"configured","vehiclesConfigured":2}"#,
+        #"{"status":"signed_in","signIn":"pending","vehicleDiscovery":"configured","vehiclesConfigured":2}"#,
+        #"{"status":"signed_in","signIn":"exchanged"}"#,
+        #"{"status":"signed_in","signIn":"exchanged","vehicleDiscovery":null}"#,
+        #"{"status":"signed_in","signIn":"exchanged","vehicleDiscovery":"configured"}"#,
+        #"{"status":"signed_in","signIn":"exchanged","vehicleDiscovery":"configured","vehiclesConfigured":null}"#,
+        #"{"status":"signed_in","signIn":"exchanged","vehicleDiscovery":"configured","vehiclesConfigured":"2"}"#,
+        #"{"status":"signed_in","signIn":"exchanged","vehicleDiscovery":"configured","vehiclesConfigured":true}"#,
+        #"{"status":"signed_in","signIn":"exchanged","vehicleDiscovery":"configured","vehiclesConfigured":1.5}"#,
+        #"{"status":"signed_in","signIn":"exchanged","vehicleDiscovery":"configured","vehiclesConfigured":-1}"#,
+        #"{"status":"signed_in","signIn":"exchanged","vehicleDiscovery":"failed"}"#,
+        #"{"status":"signed_in","signIn":"exchanged","vehicleDiscovery":"failed","discoveryCode":null}"#,
+        #"{"status":"signed_in","signIn":"exchanged","vehicleDiscovery":"failed","discoveryCode":""}"#,
+        #"{"status":"signed_in","signIn":"exchanged","vehicleDiscovery":"failed","discoveryCode":"window_closed","discoveryMessage":null}"#,
+        #"{"status":"signed_in","signIn":"exchanged","vehicleDiscovery":"partial","vehiclesConfigured":2}"#,
+        #"{"status":"signed_in","signIn":"exchanged","vehicleDiscovery":"","vehiclesConfigured":2}"#
+    ]
+
+    func testOwnerSignInReportReadsOnlyACompleteReport() throws {
+        let configured = try XCTUnwrap(HubOwnerSignInReport.parse(Self.configuredReport))
+        XCTAssertEqual(configured.status, "signed_in")
+        XCTAssertEqual(configured.signIn, "exchanged")
+        XCTAssertEqual(configured.discovery, .configured(2))
+        XCTAssertNil(configured.discoveryMessage)
+        XCTAssertEqual(HubOwnerSignInReport.parse(Self.configuredReport(0))?.discovery, .configured(0))
+
+        // Pretty-printed, or after other lines: the report is still read.
+        let pretty = "{\n  \"status\": \"signed_in\",\n  \"signIn\": \"resumed\",\n  \"vehicleDiscovery\": \"failed\",\n"
+            + "  \"discoveryCode\": \"window_closed\",\n  \"discoveryMessage\": \"Open a window\"\n}\n"
+        let failed = try XCTUnwrap(HubOwnerSignInReport.parse(pretty))
+        XCTAssertEqual(failed.signIn, "resumed")
+        XCTAssertEqual(failed.discovery, .failed("window_closed"))
+        XCTAssertEqual(failed.discoveryMessage, "Open a window")
+        let lined = try XCTUnwrap(HubOwnerSignInReport.parse("note\n" + Self.failedReport("discovery_refused")))
+        XCTAssertEqual(lined.discovery, .failed("discovery_refused"))
+        // A truncated pretty report is no report, even though its first line opens an object.
+        XCTAssertNil(HubOwnerSignInReport.parse(String(pretty.prefix(pretty.count - 3))))
+
+        for output in Self.incompleteReports {
+            XCTAssertNil(HubOwnerSignInReport.parse(output), output)
+        }
+    }
+
+    func testOwnerSignInRefusesAnIncompleteReportAndHoldsNoGrant() throws {
+        // Round 2, finding 1: only a complete report is success. Each answer below fails the
+        // sign-in with the app's own line, records no car count and holds nothing for a retry.
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(""))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+
+        for output in Self.incompleteReports {
+            runner.result = .success(output)
+            let refused = expectation(description: "refused \(output)")
+            controller.configureTeslaAccount(grant: Self.codeGrant) { result in
+                guard case let .failure(error) = result else { return XCTFail("success from: \(output)") }
+                XCTAssertEqual(error as? HubOwnerSignInReportInvalid, HubOwnerSignInReportInvalid(), output)
+                XCTAssertEqual(error.localizedDescription, Self.invalidReportLine, output)
+                refused.fulfill()
+            }
+            wait(for: [refused], timeout: 2)
+            XCTAssertNil(controller.lastVehiclesConfigured, output)
+            XCTAssertFalse(controller.canRetryOwnerDiscovery, output)
+            XCTAssertTrue(controller.lifecycleCapabilities.isIdle, output)
+        }
+        XCTAssertEqual(events.values.filter { $0 == "setup" }.count, Self.incompleteReports.count)
+    }
+
+    func testOwnerSignInConfiguredReportRecordsTheCarCount() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.configuredReport))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        let finished = expectation(description: "configured")
+
+        controller.configureTeslaAccount(grant: Self.codeGrant) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(controller.lastVehiclesConfigured, 2)
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+    }
+
+    func testOwnerSignInFailedDiscoveryIsNotSuccessAndResumesTheSameGrant() throws {
+        // DEC-090: signed in but no car configured is a failure with the app's own line and a
+        // retry that re-sends the same grant; no new Tesla page, and success clears the grant.
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.failedReport("discovery_vehicle_not_listed")))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        let failed = expectation(description: "discovery failed")
+
+        controller.configureTeslaAccount(grant: Self.codeGrant) { result in
+            guard case let .failure(error) = result else { return XCTFail("a failed discovery was shown as success") }
+            XCTAssertEqual(error as? HubOwnerDiscoveryFailure, HubOwnerDiscoveryFailure(code: "discovery_vehicle_not_listed"))
+            XCTAssertEqual(error.localizedDescription, Self.notListedLine)
+            XCTAssertFalse(error.localizedDescription.contains("Service English text"))
+            failed.fulfill()
+        }
+        wait(for: [failed], timeout: 2)
+        XCTAssertNil(controller.lastVehiclesConfigured)
+        XCTAssertTrue(controller.canRetryOwnerDiscovery)
+        let firstInput = try XCTUnwrap(runner.stdin)
+
+        runner.result = .success(Self.configuredReport(2))
+        let resumed = expectation(description: "resumed")
+        controller.retryOwnerDiscovery { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            resumed.fulfill()
+        }
+        wait(for: [resumed], timeout: 2)
+        XCTAssertEqual(runner.stdin, firstInput)
+        // The retry re-ran setup itself (a refresh follows it, so it is not the last command).
+        let setups = runner.arguments.filter { $0.contains("setup") }
+        XCTAssertEqual(setups.count, 2)
+        XCTAssertEqual(Array(setups.last?.suffix(2) ?? []), ["setup", "--all-vehicles"])
+        XCTAssertEqual(events.values.filter { $0 == "setup" }.count, 2)
+        XCTAssertEqual(controller.lastVehiclesConfigured, 2)
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+
+        // Nothing of the grant reaches the log or the defaults.
+        let log = HubAppLog.shared.recentText()
+        XCTAssertTrue(log.contains("discovery_vehicle_not_listed"))
+        for secret in [Self.codeGrant.code, Self.codeGrant.codeVerifier] {
+            XCTAssertFalse(log.contains(secret))
+            XCTAssertFalse(UserDefaults.standard.dictionaryRepresentation().values.contains {
+                "\($0)".contains(secret)
+            })
+        }
+    }
+
+    func testOwnerSignInDiscoveryCodesShowTheAppsOwnLines() {
+        let general = "You are signed in, but Hub could not find your cars. Retry finding cars, or sign in with Tesla again."
+        XCTAssertEqual(HubOwnerDiscoveryFailure(code: "discovery_something_new").localizedDescription, general)
+        XCTAssertEqual(HubOwnerDiscoveryFailure(code: "discovery_unknown").localizedDescription, general)
+        for code in ["discovery_vehicle_not_listed", "discovery_selection_required", "discovery_selection_invalid",
+                     "discovery_answer_invalid", "discovery_refused", "window_closed", "provider_parked",
+                     "discovery_settings_invalid"] {
+            let line = HubOwnerDiscoveryFailure(code: code).localizedDescription
+            XCTAssertNotEqual(line, general, code)
+            XCTAssertTrue(line.hasPrefix("You are signed in"), code)
+            XCTAssertFalse(line.contains(code), code)
+        }
+    }
+
+    func testOwnerDiscoveryRetryEndsAfterTenMinutesDiscardAndRestart() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.failedReport("window_closed")))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        var now = Date(timeIntervalSince1970: 1_000_000)
+        controller.ownerDiscoveryRetryClock = { now }
+        controller.ownerDiscoveryRetryScheduler = { _, _ in }
+        func signIn() {
+            let failed = expectation(description: "discovery failed")
+            controller.configureTeslaAccount(grant: Self.codeGrant) { _ in failed.fulfill() }
+            wait(for: [failed], timeout: 2)
+        }
+
+        signIn()
+        XCTAssertEqual(controller.ownerDiscoveryRetryDeadline, now.addingTimeInterval(600))
+        now = now.addingTimeInterval(599)
+        XCTAssertTrue(controller.canRetryOwnerDiscovery)
+        now = now.addingTimeInterval(1)
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline)
+        let setupRuns = events.values.filter { $0 == "setup" }.count
+        let expired = expectation(description: "expired")
+        controller.retryOwnerDiscovery { result in
+            guard case let .failure(error) = result else { return XCTFail("an expired sign-in was resumed") }
+            XCTAssertEqual(error.localizedDescription, Self.expiredLine)
+            expired.fulfill()
+        }
+        wait(for: [expired], timeout: 2)
+        XCTAssertEqual(events.values.filter { $0 == "setup" }.count, setupRuns)
+
+        // A retry that fails again keeps the first deadline; discard drops the grant.
+        signIn()
+        let deadline = controller.ownerDiscoveryRetryDeadline
+        now = now.addingTimeInterval(60)
+        let again = expectation(description: "failed again")
+        controller.retryOwnerDiscovery { _ in again.fulfill() }
+        wait(for: [again], timeout: 2)
+        XCTAssertEqual(controller.ownerDiscoveryRetryDeadline, deadline)
+        controller.discardOwnerDiscoveryRetry()
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+
+        // After an app restart nothing is held: the retry asks for a new sign-in.
+        let restarted = signInController(runner, events: events, home: home)
+        XCTAssertFalse(restarted.canRetryOwnerDiscovery)
+    }
+
+    func testNewSignInEndsTheHeldGrantBeforePreflightAndCancelCannotRestoreIt() throws {
+        // Round 2, finding 2: discovery A fails and its grant is held. Admitting sign-in B ends
+        // it at once, before B's window check or Tesla page; cancelling B leaves nothing to retry.
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.failedReport("window_closed")))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        let failed = expectation(description: "discovery A failed")
+        controller.configureTeslaAccount(grant: Self.codeGrant) { _ in failed.fulfill() }
+        wait(for: [failed], timeout: 2)
+        XCTAssertTrue(controller.canRetryOwnerDiscovery)
+        let commandsBefore = runner.arguments.count
+
+        guard case let .success(signInB) = controller.beginLegacySignIn() else { return XCTFail("B was not admitted") }
+        XCTAssertEqual(runner.arguments.count, commandsBefore, "nothing ran before the grant was ended")
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline, "B's admission ended A's grant")
+        signInB.cancel()
+        spinUntil(2) { controller.lifecycleCapabilities.isIdle }
+        XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline)
+        var late: Result<Void, Error>?
+        signInB.configure(grant: Self.codeGrant) { late = $0 }
+        guard case .failure? = late else { return XCTFail("the cancelled sign-in configured") }
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+
+        let setupRuns = events.values.filter { $0 == "setup" }.count
+        let refused = expectation(description: "A cannot be retried")
+        controller.retryOwnerDiscovery { result in
+            guard case let .failure(error) = result else { return XCTFail("A was retried after B") }
+            XCTAssertEqual(error.localizedDescription, Self.expiredLine)
+            refused.fulfill()
+        }
+        wait(for: [refused], timeout: 2)
+        XCTAssertEqual(events.values.filter { $0 == "setup" }.count, setupRuns)
+
+        // B refused at its window check: the grant held before it is gone as well.
+        let failedAgain = expectation(description: "discovery A2 failed")
+        controller.configureTeslaAccount(grant: Self.codeGrant) { _ in failedAgain.fulfill() }
+        wait(for: [failedAgain], timeout: 2)
+        XCTAssertTrue(controller.canRetryOwnerDiscovery)
+        runner.windowStatus = .success(#"{"phase":"closed","trusted":true}"#)
+        guard case let .success(signInC) = controller.beginLegacySignIn() else { return XCTFail("C was not admitted") }
+        let preflight = expectation(description: "C refused at the window check")
+        signInC.requireOpenWindow { _ in signInC.cancel { preflight.fulfill() } }
+        wait(for: [preflight], timeout: 2)
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+    }
+
+    func testOnboardingAdvancesOnlyOnAConfiguredReport() throws {
+        // Round 2, finding 4: the onboarding hand-off itself. A failed discovery and an
+        // unknown discovery state keep the sign-in page; only a configured report advances.
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.failedReport("discovery_vehicle_not_listed")))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        let failed = expectation(description: "discovery failed")
+        controller.configureTeslaAccount(grant: Self.codeGrant) { _ in failed.fulfill() }
+        wait(for: [failed], timeout: 2)
+        let onboarding = OnboardingWindowController(controller: controller, initialRoute: .legacy, onComplete: { _ in })
+        defer { onboarding.close() }
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
+
+        // Failed again: the page stays with the app's line and the retry.
+        try retryButton(in: onboarding).performClick(nil)
+        spinUntil(3) { self.shownText(in: onboarding).contains(Self.notListedLine) }
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
+        XCTAssertTrue(shownText(in: onboarding).contains(Self.notListedLine))
+        XCTAssertNoThrow(try retryButton(in: onboarding))
+
+        // An unknown discovery state is refused, never success.
+        runner.result = .success(#"{"status":"signed_in","signIn":"resumed","vehicleDiscovery":"partial","vehiclesConfigured":1}"#)
+        try retryButton(in: onboarding).performClick(nil)
+        spinUntil(3) { self.shownText(in: onboarding).contains(Self.invalidReportLine) }
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
+        XCTAssertTrue(shownText(in: onboarding).contains(Self.invalidReportLine))
+
+        // Configured: onboarding advances to verification and shows the count.
+        runner.result = .success(Self.configuredReport(3))
+        try retryButton(in: onboarding).performClick(nil)
+        spinUntil(3) { onboarding.currentRoute == .verify }
+        XCTAssertEqual(onboarding.currentRoute, .verify)
+        XCTAssertTrue(shownText(in: onboarding).contains("Cars configured: 3"))
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+        XCTAssertEqual(events.values.filter { $0 == "setup" }.count, 4)
+    }
+
+    func testOnboardingCancelAndWindowCloseDropTheHeldGrant() throws {
+        // Round 2, finding 4: the real cancel (Escape and the Cancel action) and window-close
+        // paths, not a direct discard call.
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.failedReport("window_closed")))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        func failDiscovery() {
+            let failed = expectation(description: "discovery failed")
+            controller.configureTeslaAccount(grant: Self.codeGrant) { _ in failed.fulfill() }
+            wait(for: [failed], timeout: 2)
+            XCTAssertTrue(controller.canRetryOwnerDiscovery)
+        }
+
+        failDiscovery()
+        let closing = OnboardingWindowController(controller: controller, initialRoute: .legacy, onComplete: { _ in })
+        XCTAssertNoThrow(try retryButton(in: closing))
+        closing.cancelOperation(nil)
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline, "cancel closes the window and drops the grant")
+
+        failDiscovery()
+        var dismissed = 0
+        let embedded = OnboardingWindowController(controller: controller, initialRoute: .legacy,
+                                                  closesWindowOnCancel: false, onDismiss: { dismissed += 1 },
+                                                  onComplete: { _ in })
+        defer { embedded.close() }
+        embedded.cancelOperation(nil)
+        XCTAssertEqual(dismissed, 1)
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline, "cancel without closing still drops the grant")
+
+        failDiscovery()
+        let closed = OnboardingWindowController(controller: controller, initialRoute: .legacy, onComplete: { _ in })
+        closed.window?.close()
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline, "closing the window drops the grant")
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+    }
+
+    func testControllerExpiresTheHeldGrantWhileOnboardingIsBusy() throws {
+        // Round 2, finding 3: the controller drops the grant at its deadline by itself, while
+        // onboarding is busy and without anyone reading canRetryOwnerDiscovery; only the page
+        // update waits. An early firing keeps the grant and schedules again.
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.failedReport("window_closed")))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        var now = Date(timeIntervalSince1970: 2_000_000)
+        var scheduled: [(TimeInterval, () -> Void)] = []
+        controller.ownerDiscoveryRetryClock = { now }
+        controller.ownerDiscoveryRetryScheduler = { scheduled.append(($0, $1)) }
+        func fireScheduled() {
+            let due = scheduled
+            scheduled = []
+            due.forEach { $0.1() }
+        }
+        let failed = expectation(description: "discovery failed")
+        controller.configureTeslaAccount(grant: Self.codeGrant) { _ in failed.fulfill() }
+        wait(for: [failed], timeout: 2)
+        let deadline = try XCTUnwrap(controller.ownerDiscoveryRetryDeadline)
+        XCTAssertEqual(scheduled.map(\.0), [600])
+
+        let onboarding = OnboardingWindowController(controller: controller, initialRoute: .legacy, onComplete: { _ in })
+        defer { onboarding.close() }
+        try retryButton(in: onboarding).performClick(nil)
+        spinUntil(3) { self.shownText(in: onboarding).contains(HubOwnerDiscoveryFailure(code: "window_closed").localizedDescription) }
+        XCTAssertEqual(controller.ownerDiscoveryRetryDeadline, deadline)
+
+        now = deadline.addingTimeInterval(-1)
+        fireScheduled()
+        XCTAssertEqual(controller.ownerDiscoveryRetryDeadline, deadline, "an early firing keeps the grant")
+        XCTAssertFalse(scheduled.isEmpty, "and schedules the expiry again")
+
+        let posted = expectation(forNotification: HubController.ownerDiscoveryRetryExpiredNotification, object: controller)
+        onboarding.setBusy(true, operation: .setup)
+        now = deadline
+        fireScheduled()
+        wait(for: [posted], timeout: 2)
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline, "the grant is dropped while onboarding is busy")
+        spinUntil(0.2) { false }
+        XCTAssertFalse(shownText(in: onboarding).contains(Self.expiredLine), "the busy page is not updated")
+        onboarding.setBusy(false)
+
+        let setupRuns = events.values.filter { $0 == "setup" }.count
+        let refused = expectation(description: "expired")
+        controller.retryOwnerDiscovery { result in
+            if case .success = result { XCTFail("an expired grant was resumed") }
+            refused.fulfill()
+        }
+        wait(for: [refused], timeout: 2)
+        XCTAssertEqual(events.values.filter { $0 == "setup" }.count, setupRuns)
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+
+        // Not busy: the page follows the controller, hides the retry and asks for a new sign-in.
+        let failedAgain = expectation(description: "discovery failed again")
+        controller.configureTeslaAccount(grant: Self.codeGrant) { _ in failedAgain.fulfill() }
+        wait(for: [failedAgain], timeout: 2)
+        let idle = OnboardingWindowController(controller: controller, initialRoute: .legacy, onComplete: { _ in })
+        defer { idle.close() }
+        try retryButton(in: idle).performClick(nil)
+        spinUntil(3) { self.shownText(in: idle).contains(HubOwnerDiscoveryFailure(code: "window_closed").localizedDescription) }
+        now = try XCTUnwrap(controller.ownerDiscoveryRetryDeadline)
+        fireScheduled()
+        spinUntil(2) { self.shownText(in: idle).contains(Self.expiredLine) }
+        XCTAssertTrue(shownText(in: idle).contains(Self.expiredLine))
+        XCTAssertNil(shownRetryButton(in: idle), "the retry is no longer offered")
+    }
+
+    func testHeldRetrySettlesOnceAndALateCallbackCannotRestoreTheGrant() throws {
+        // Round 2, finding 4: a held runner. A duplicate retry is refused while one runs; a
+        // duplicate delivery and a timeout each settle the retry once; and a callback arriving
+        // after the expiry or a discard cannot store the grant again.
+        let runner = HeldSetupRunner(setupResult: .success(Self.failedReport("discovery_refused")))
+        let events = EventRecorder()
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        var now = Date(timeIntervalSince1970: 3_000_000)
+        var scheduled: [() -> Void] = []
+        controller.ownerDiscoveryRetryClock = { now }
+        controller.ownerDiscoveryRetryScheduler = { scheduled.append($1) }
+        func failDiscovery() {
+            let failed = expectation(description: "discovery failed")
+            controller.configureTeslaAccount(grant: Self.codeGrant) { _ in failed.fulfill() }
+            wait(for: [failed], timeout: 2)
+            XCTAssertTrue(controller.canRetryOwnerDiscovery)
+        }
+        failDiscovery()
+        let deadline = try XCTUnwrap(controller.ownerDiscoveryRetryDeadline)
+
+        // Duplicate retry and duplicate delivery.
+        runner.holdsSetup = true
+        var first: [Result<Void, Error>] = []
+        controller.retryOwnerDiscovery { first.append($0) }
+        spinUntil(2) { runner.held.count == 1 }
+        XCTAssertEqual(runner.setupRuns, 2)
+        var duplicate: Result<Void, Error>?
+        controller.retryOwnerDiscovery { duplicate = $0 }
+        spinUntil(2) { duplicate != nil }
+        guard case .failure? = duplicate else { return XCTFail("a second retry ran beside the first") }
+        XCTAssertEqual(runner.setupRuns, 2)
+        runner.releaseHeld(.success(Self.failedReport("discovery_refused")), times: 2)
+        spinUntil(2) { !first.isEmpty && controller.lifecycleCapabilities.isIdle }
+        spinUntil(0.2) { false }
+        XCTAssertEqual(first.count, 1, "the retry settled once")
+        XCTAssertEqual(controller.ownerDiscoveryRetryDeadline, deadline)
+
+        // Timeout: settled once, the owner released, the offer kept until its deadline.
+        var timedOut: [Result<Void, Error>] = []
+        controller.retryOwnerDiscovery { timedOut.append($0) }
+        spinUntil(2) { runner.held.count == 1 }
+        runner.releaseHeld(.failure(HubActionError.commandTimedOut))
+        spinUntil(2) { !timedOut.isEmpty && controller.lifecycleCapabilities.isIdle }
+        XCTAssertEqual(timedOut.count, 1)
+        guard case .failure? = timedOut.first else { return XCTFail("a timed-out retry was success") }
+        XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
+        XCTAssertEqual(controller.ownerDiscoveryRetryDeadline, deadline)
+
+        // The expiry while a retry runs: its late failure cannot restore the grant.
+        var lateAfterExpiry: Result<Void, Error>?
+        controller.retryOwnerDiscovery { lateAfterExpiry = $0 }
+        spinUntil(2) { runner.held.count == 1 }
+        now = deadline
+        scheduled.forEach { $0() }
+        scheduled = []
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline)
+        runner.releaseHeld(.success(Self.failedReport("discovery_refused")))
+        spinUntil(2) { lateAfterExpiry != nil && controller.lifecycleCapabilities.isIdle }
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline, "the late callback did not restore the expired grant")
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+
+        // A discard (onboarding cancelled or closed) while a retry runs: the same.
+        runner.holdsSetup = false
+        failDiscovery()
+        runner.holdsSetup = true
+        var lateAfterDiscard: Result<Void, Error>?
+        controller.retryOwnerDiscovery { lateAfterDiscard = $0 }
+        spinUntil(2) { runner.held.count == 1 }
+        controller.discardOwnerDiscoveryRetry()
+        runner.releaseHeld(.success(Self.failedReport("discovery_refused")))
+        spinUntil(2) { lateAfterDiscard != nil && controller.lifecycleCapabilities.isIdle }
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline, "the late callback did not restore the discarded grant")
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+    }
+
+    private func shownRetryButton(in onboarding: OnboardingWindowController) -> NSButton? {
+        guard let root = onboarding.window?.contentView else { return nil }
+        return descendantViews(in: root).compactMap { $0 as? NSButton }
+            .first { $0.identifier?.rawValue == "onboarding.legacy.retryDiscovery" }
+    }
+
+    private func retryButton(in onboarding: OnboardingWindowController) throws -> NSButton {
+        try XCTUnwrap(shownRetryButton(in: onboarding), "the retry is offered")
+    }
+
+    private func shownText(in onboarding: OnboardingWindowController) -> String {
+        labels(in: onboarding.window?.contentView).map(\.stringValue).joined(separator: "\n")
     }
 
     func testMigrationSourceAllowsUsernameButRejectsPassword() throws {
@@ -3320,7 +3826,8 @@ private final class EventRecorder {
 
 private final class ScriptedRunner: HubCommandRunning {
     private let events: EventRecorder
-    private let result: Result<String, Error>
+    /// What any other command answers; a test may change it between runs.
+    var result: Result<String, Error>
     private var unsupportedAllVehiclesAttempts: Int
     private(set) var stdin: String?
     private(set) var arguments: [[String]] = []
@@ -3365,6 +3872,35 @@ private final class ScriptedRunner: HubCommandRunning {
     func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void) {
         self.stdin = stdin
         run(arguments: arguments, completion: completion)
+    }
+}
+
+/// Answers the window check as open and holds `setup` while asked, so a test can deliver
+/// its answer late, twice, or as a timeout.
+private final class HeldSetupRunner: HubCommandRunning {
+    var setupResult: Result<String, Error>
+    var holdsSetup = false
+    private(set) var held: [(Result<String, Error>) -> Void] = []
+    private(set) var setupRuns = 0
+
+    init(setupResult: Result<String, Error>) { self.setupResult = setupResult }
+
+    /// Delivers the held `setup` answer, `times` times (a duplicate delivery when 2).
+    func releaseHeld(_ result: Result<String, Error>, times: Int = 1) {
+        guard !held.isEmpty else { return XCTFail("no setup is held") }
+        let completion = held.removeFirst()
+        for _ in 0..<times { completion(result) }
+    }
+
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        if arguments.suffix(2) == ["window", "status"] {
+            completion(.success(#"{"phase":"open","trusted":true}"#))
+            return
+        }
+        guard arguments.contains("setup") else { completion(.success("{}")); return }
+        setupRuns += 1
+        if holdsSetup { held.append(completion); return }
+        completion(setupResult)
     }
 }
 

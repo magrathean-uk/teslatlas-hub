@@ -4,7 +4,13 @@ use zeroize::Zeroize;
 
 /// V2 displays these fixed codes, never issuer descriptions.
 #[derive(Debug)]
-pub(crate) enum SignInError { StateMismatch, Refused(SignInRefusalCode), Expired, AnswerInvalid, Unavailable, BindingInvalid, SettingsInvalid, Cancelled, ServicePauseFailed }
+pub(crate) enum SignInError { StateMismatch, Refused(SignInRefusalCode), Expired, AnswerInvalid, Unavailable, BindingInvalid, SettingsInvalid, Cancelled, ServicePauseFailed,
+    /// The grant's pair was committed but its durability barrier failed: the
+    /// sign-in may have replaced the stored pair (M02-T12).
+    StoredUnconfirmed,
+    /// The window the sign-in's writes were made under has ended: nothing
+    /// more was written (M02-T13 round 2).
+    WindowClosed }
 /// TRANSITIONAL: R69's complete RFC 6749 refusal allowlist.
 #[derive(Debug)]
 pub(crate) enum SignInRefusalCode { InvalidRequest, UnauthorizedClient, AccessDenied, UnsupportedResponseType, InvalidScope, ServerError, TemporarilyUnavailable, Other }
@@ -32,6 +38,32 @@ impl SignInError {
             Self::StateMismatch => "sign_in_state_mismatch", Self::Refused(_) => "sign_in_refused", Self::Expired => "sign_in_expired",
             Self::AnswerInvalid => "sign_in_answer_invalid", Self::Unavailable => "sign_in_unavailable", Self::BindingInvalid => "sign_in_binding_invalid",
             Self::SettingsInvalid => "sign_in_settings_invalid", Self::Cancelled => "sign_in_cancelled", Self::ServicePauseFailed => "sign_in_service_pause_failed",
+            Self::StoredUnconfirmed => "sign_in_stored_unconfirmed", Self::WindowClosed => "window_closed",
+        }
+    }
+}
+
+/// The authority a sign-in's writes are made under (M02-T13 round 2): the
+/// holder's window permit, asked through the window's write fence before each
+/// mutation, so that no write begins once the window has lapsed the permit
+/// and a close sees every write still running. Once it has ended nothing more
+/// is written, not even the clean-up of the attempt's own binding or key:
+/// the binding expires unused and a key is kept for the next sign-in.
+#[derive(Clone, Copy)]
+pub(crate) struct WriteAuthority<'a> {
+    live: Option<&'a dyn Fn() -> bool>,
+}
+impl<'a> WriteAuthority<'a> {
+    /// No window: the callers that predate windows and the vault's tests.
+    pub(crate) const UNBOUNDED: WriteAuthority<'static> = WriteAuthority { live: None };
+    pub(crate) fn of(live: &'a dyn Fn() -> bool) -> Self { Self { live: Some(live) } }
+    /// Runs one mutation if the authority still holds; else refuses with
+    /// `window_closed` and writes nothing.
+    pub(super) fn write<T>(&self, write: impl FnOnce() -> Result<T, CredentialStoreError>) -> Result<T, CredentialStoreError> {
+        match self.live {
+            None => write(),
+            Some(live) => crate::collection::window::write_under_authority(live, write)
+                .unwrap_or(Err(CredentialStoreError::SignIn(SignInError::WindowClosed))),
         }
     }
 }
