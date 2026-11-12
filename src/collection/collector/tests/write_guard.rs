@@ -951,6 +951,7 @@ fn p3bf2_export_compaction(point: &'static str) {
     bed.trip_at(point);
     let result = compact_v2_lineage_if_needed_with_limits_guarded(
         &rig.store,
+        None,
         &rig.cursor_key,
         rig.vehicle_id,
         tiny_limit,

@@ -980,7 +980,13 @@ fn publish_resolved_vehicle(
         check_optional_write(guard, "publication-sync-claim")?;
         if let Some(sync_claim) =
             store.claim_sync_mutations(identity.hub_id, published_at_ms, 10_000)?
-            && let Err(error) = publish_v2_delta_guarded(store, cursor_key, &sync_claim, guard)
+            && let Err(error) = publish_v2_delta_guarded(
+                store,
+                Some(publication_gate),
+                cursor_key,
+                &sync_claim,
+                guard,
+            )
         {
             check_optional_write(guard, "publication-sync-release")?;
             store.release_sync_mutations(&sync_claim)?;

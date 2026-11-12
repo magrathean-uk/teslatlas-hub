@@ -3,6 +3,7 @@
 //! M04-T06: a full-snapshot publication that fails after its pack write removes the
 //! pack it created, under the publication gate, unless a catalogue row (or an earlier
 //! publication of the same digest) retains it; the original error is returned.
+//! M04-T07: the same for the v2 delta and compaction packs.
 
 use super::*;
 use crate::durability_fault::{DurabilityFaultPoint, inject};
@@ -268,4 +269,157 @@ fn orphan_pack_a_failed_removal_is_logged_and_does_not_panic() {
         None,
     );
     assert!(created.path.is_file(), "the failed removal left the file");
+}
+
+// ---- M04-T07: the v2 delta and compaction packs ----------------------------------------
+
+const ORPHAN_PACK_CATALOGUE_FAULT: &str = "orphan pack injected catalogue fault";
+
+/// Every later lineage commit fails in its transaction, after the pack write: the
+/// delta and the compaction commits both insert a `sync_deltas` row.
+fn orphan_pack_fail_lineage_commits(store: &HubStore) {
+    store
+        .open()
+        .expect("database")
+        .execute_batch(&format!(
+            "CREATE TRIGGER orphan_pack_lineage_fault BEFORE INSERT ON sync_deltas
+             BEGIN SELECT RAISE(ABORT, '{ORPHAN_PACK_CATALOGUE_FAULT}'); END;"
+        ))
+        .expect("lineage fault trigger");
+}
+
+fn assert_orphan_pack_lineage_error<T: std::fmt::Debug>(result: Result<T, CollectorError>) {
+    match result {
+        Err(CollectorError::Store(crate::db::StoreError::LineageCatalog(source))) => {
+            assert!(
+                source.to_string().contains(ORPHAN_PACK_CATALOGUE_FAULT),
+                "the lineage commit failure is returned unchanged: {source}"
+            );
+        }
+        other => panic!("expected the original lineage commit failure, got {other:?}"),
+    }
+}
+
+fn assert_orphan_pack_all_retained(files: &[(String, bool)]) {
+    assert!(
+        files.iter().all(|(_, retained)| *retained),
+        "no unretained pack file: {files:?}"
+    );
+}
+
+#[test]
+fn orphan_pack_delta_a_failed_replay_leaves_no_unretained_file() {
+    let rig = ExportRig::with_base();
+    // An earlier live delta, published through the same replay: its pack is retained.
+    guard_block_on(replay_export_outbox(
+        &rig.store,
+        &rig.cursor_key,
+        std::slice::from_ref(&rig.vehicle),
+        rig.now + 1,
+    ))
+    .expect("the earlier delta");
+    let earlier = orphan_pack_files(&rig.store);
+    assert!(earlier.len() >= 2, "the base and the earlier delta pack");
+    assert_orphan_pack_all_retained(&earlier);
+
+    // A second, different settings change and its outbox row.
+    rig.store
+        .upsert_car_settings(
+            rig.vehicle_id,
+            9,
+            &crate::hub_pack::ProjectionCarSettings {
+                enabled: true,
+                ..crate::hub_pack::ProjectionCarSettings::default()
+            },
+        )
+        .expect("settings mutation");
+    rig.store
+        .open()
+        .expect("database")
+        .execute(
+            "INSERT OR IGNORE INTO export_outbox(
+                vehicle_id, dirty_revision, attempts, next_attempt_ms,
+                claimed_until_ms, last_error
+             ) VALUES (?1, 1, 0, 0, 0, NULL)",
+            rusqlite::params![rig.vehicle_id.to_string()],
+        )
+        .expect("outbox row");
+    assert!(
+        rig.store
+            .has_unpublished_sync_mutations(rig.vehicle_id)
+            .expect("pending mutations"),
+        "the replay has a delta to publish"
+    );
+    orphan_pack_fail_lineage_commits(&rig.store);
+    // The replay holds the publication gate and passes it down to the delta.
+    let result = guard_block_on(replay_export_outbox(
+        &rig.store,
+        &rig.cursor_key,
+        std::slice::from_ref(&rig.vehicle),
+        rig.now + 2,
+    ));
+
+    assert_orphan_pack_lineage_error(result);
+    assert_eq!(
+        orphan_pack_files(&rig.store),
+        earlier,
+        "the retained packs survive and the failed delta pack is gone"
+    );
+}
+
+#[test]
+fn orphan_pack_compaction_a_failed_commit_leaves_no_unretained_file() {
+    let rig = ExportRig::with_base();
+    // Two live deltas, as in the compaction proof; the tiny limit makes compaction due.
+    for index in 0..2_i64 {
+        rig.store
+            .upsert_car_settings(
+                rig.vehicle_id,
+                9,
+                &crate::hub_pack::ProjectionCarSettings {
+                    enabled: index == 1,
+                    ..crate::hub_pack::ProjectionCarSettings::default()
+                },
+            )
+            .expect("settings mutation");
+        while let Some(claim) = rig
+            .store
+            .claim_sync_mutations(rig.vehicle_id, rig.now + 100 + index, 100)
+            .expect("claim")
+        {
+            publish_v2_delta(&rig.store, &rig.cursor_key, &claim).expect("a live delta");
+        }
+    }
+    let earlier = orphan_pack_files(&rig.store);
+    assert!(earlier.len() >= 3, "the base and two delta packs");
+    assert_orphan_pack_all_retained(&earlier);
+    let tiny_limit = ProtocolLimits {
+        max_chunks: 4,
+        ..ProtocolLimits::default()
+    };
+
+    orphan_pack_fail_lineage_commits(&rig.store);
+    let publication_gate = rig.store.try_acquire_publication_gate().expect("gate");
+    let result = compact_v2_lineage_if_needed_with_limits_guarded(
+        &rig.store,
+        Some(&publication_gate),
+        &rig.cursor_key,
+        rig.vehicle_id,
+        tiny_limit,
+        None,
+    );
+
+    assert_orphan_pack_lineage_error(result);
+    assert_eq!(
+        orphan_pack_files(&rig.store),
+        earlier,
+        "the retained packs survive and the failed compaction pack is gone"
+    );
+    assert_eq!(
+        rig.store
+            .v2_lineage_pack_count(rig.vehicle_id)
+            .expect("pack count"),
+        3,
+        "the lineage is unchanged"
+    );
 }
