@@ -18,7 +18,7 @@ final class SourceReportModelTests: XCTestCase {
     func testSourceCheckReportRecognisedFixtureAdmits() throws {
         let report = try XCTUnwrap(HubSourceCheckResult.parse(output(fixture("source-check-recognised")), historyOnly: true))
         XCTAssertEqual(report.schemaRecognised, true)
-        XCTAssertEqual(report.schemaSetLabel, "ea850d1b038c")
+        XCTAssertEqual(report.schemaSetLabel, "c497f904ef74")
         XCTAssertEqual(report.recognitionKey, "hub.import.recognised")
         XCTAssertTrue(report.compatible)
         XCTAssertTrue(report.mayImport)
@@ -53,7 +53,7 @@ final class SourceReportModelTests: XCTestCase {
 
     func testSourceCheckReportWithInvalidLabelNeverAdmits() throws {
         let original = try fixture("source-check-recognised")
-        for invalid in [NSNull(), "ea850d1b", "EA850D1B038C", "ea850d1b038c\n", 123, "not-a-label"] as [Any] {
+        for invalid in [NSNull(), "c497f904", "C497F904EF74", "c497f904ef74\n", 123, "not-a-label"] as [Any] {
             var value = original
             value["schemaSetLabel"] = invalid
             XCTAssertFalse(try XCTUnwrap(HubSourceCheckResult.parse(output(value), historyOnly: true)).mayImport)
@@ -103,7 +103,7 @@ final class SourceReportModelTests: XCTestCase {
     func testRecognisedReportShowsTheSchemaSetLabel() throws {
         let value = try fixture("source-check-recognised")
         let report = try XCTUnwrap(HubSourceCheckResult.parse(output(value), historyOnly: true))
-        XCTAssertTrue(report.recognitionTitle.contains("ea850d1b038c"))
+        XCTAssertTrue(report.recognitionTitle.contains("c497f904ef74"))
         XCTAssertFalse(report.recognitionTitle.contains("%1$@"))
     }
 

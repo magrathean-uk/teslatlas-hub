@@ -10,7 +10,7 @@ fn synthetic_source_check_snapshot() -> SourceDbCheckSnapshot {
     SourceDbCheckSnapshot {
         schema: SourceDbSchemaInfo {
             observed_migration_version: MAX_VALIDATED_MIGRATION,
-            observed_migration_count: 105,
+            observed_migration_count: SOURCE_DB_V4_MIGRATION_COUNT,
             minimum_supported_migration_version: MAX_VALIDATED_MIGRATION,
             maximum_validated_migration_version: MAX_VALIDATED_MIGRATION,
             pinned_source_revision: SOURCE_DB_V4_SOURCE_REVISION,
@@ -54,7 +54,7 @@ fn synthetic_source_check_snapshot() -> SourceDbCheckSnapshot {
             charges: 3,
             states: 4,
             updates: 1,
-            schema_migrations: 105,
+            schema_migrations: u64::try_from(SOURCE_DB_V4_MIGRATION_COUNT).unwrap(),
         },
     }
 }
@@ -77,7 +77,7 @@ fn source_check_reports_neutral_keys_and_schema_recognised() {
     object.insert("credentialsInspected".to_owned(), serde_json::json!(false));
     assert_eq!(actual, expected);
     assert_eq!(actual["sourceSchemaRecognised"], true);
-    assert_eq!(actual["schemaSetLabel"], "ea850d1b038c");
+    assert_eq!(actual["schemaSetLabel"], "c497f904ef74");
     let forbidden = ["tesl", "amate"].concat();
     assert!(
         !serde_json::to_string(&actual)
@@ -88,7 +88,7 @@ fn source_check_reports_neutral_keys_and_schema_recognised() {
     let pending = source_check_success_report(42, &synthetic_source_check_snapshot(), true, false);
     assert_eq!(pending["status"], "confirmation_required");
     assert_eq!(pending["sourceSchemaRecognised"], true);
-    assert_eq!(pending["schemaSetLabel"], "ea850d1b038c");
+    assert_eq!(pending["schemaSetLabel"], "c497f904ef74");
 }
 
 #[test]
@@ -106,6 +106,60 @@ fn source_check_not_recognised_report_is_false_without_label() {
         "applicationVersionStatus",
     ] {
         assert!(actual.get(key).is_none());
+    }
+}
+
+/// Review REV-M03-T08 finding 2: both report paths and both shared app
+/// fixtures name the current reviewed set (revision, count, newest migration
+/// and set label) together, so the CLI and the app cannot drift apart.
+#[test]
+fn source_check_reports_and_fixtures_name_the_current_reviewed_set() {
+    use teslatlas_hub::source_db_schema::CURRENT_REVIEWED_SOURCE_SET as SET;
+    let label = &SET.migration_set_sha256[..12];
+    let recognised: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/source-check-recognised.json"
+    ))
+    .unwrap();
+    let refused: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/source-check-not-recognised.json"
+    ))
+    .unwrap();
+    for accept in [true, false] {
+        let success =
+            source_check_success_report(42, &synthetic_source_check_snapshot(), true, accept);
+        for report in [&success, &recognised] {
+            assert_eq!(report["pinnedSourceRevision"], SET.source_revision);
+            assert_eq!(report["observedMigrationCount"], SET.migration_count);
+            assert_eq!(report["observedMigrationVersion"], SET.newest_migration);
+            assert_eq!(
+                report["minimumSupportedMigrationVersion"],
+                SET.newest_migration
+            );
+            assert_eq!(
+                report["maximumValidatedMigrationVersion"],
+                SET.newest_migration
+            );
+            assert_eq!(
+                report["sourceTotals"]["schemaMigrations"],
+                SET.migration_count
+            );
+            assert_eq!(report["schemaSetLabel"], label);
+        }
+    }
+    for reason in [
+        "schema_mismatch",
+        "older_than_v4_2_compatible_schema",
+        "newer_than_v4_2_compatible_schema",
+    ] {
+        let failure = source_check_failure_report(42, "incompatible", reason, None, "guidance");
+        for report in [&failure, &refused] {
+            assert_eq!(report["pinnedSourceRevision"], SET.source_revision);
+            assert_eq!(report["expectedMigrationCount"], SET.migration_count);
+            assert_eq!(
+                report["maximumValidatedMigrationVersion"],
+                SET.newest_migration
+            );
+        }
     }
 }
 
