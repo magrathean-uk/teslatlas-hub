@@ -855,3 +855,8 @@ fn import_seam_unplanned_publication_paths_refuse() {
         Err(StoreError::ImportGenerationConflict)
     ));
 }
+
+// Charges and charge samples through the seam (M03-T17); a child module so it
+// shares this fixture.
+#[path = "import_seam_charge_tests.rs"]
+mod charges;
