@@ -23,7 +23,7 @@ database, do not import it with this release.
 
 1. Back up the source application and keep a recoverable copy. Do not remove the original
    installation after the first successful import.
-2. Update the source application to release 4.2.0 or later, start it once, and
+2. Update the source application to release 4.4.0 or later, start it once, and
    let its database changes finish. A newer release is not automatically
    supported: the check tells you.
 3. Prepare your server address, SSH port, user and authentication. The account
@@ -98,7 +98,9 @@ application releases can share one schema set, so the schema cannot establish
 the running release; the operator must acknowledge that limit explicitly.
 Extra tables and columns are allowed, but a missing or changed reviewed column,
 enum, relationship, or migration set fails closed. A later source application release
-that adds migrations remains blocked until its schema delta is reviewed.
+that adds migrations remains blocked until its schema delta is reviewed. The
+current contract and each review are in
+[Source schema compatibility](source-schema-compatibility.md).
 
 ### Imported records
 

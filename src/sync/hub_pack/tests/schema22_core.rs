@@ -1102,7 +1102,7 @@ fn schema_2_2_full_snapshot_has_exact_physical_rows_and_full_only_metadata() {
             ("mapped_fields".into(), "168".into()),
             (
                 "migration_set_sha256".into(),
-                SOURCE_DB_V4_MIGRATION_SET_SHA256.into(),
+                crate::source_db_schema::SOURCE_DB_V4_MIGRATION_SET_SHA256.into(),
             ),
             (
                 "positions_odometer_encoding".into(),
@@ -1129,7 +1129,7 @@ fn schema_2_2_full_snapshot_has_exact_physical_rows_and_full_only_metadata() {
             ("schema_support".into(), "full_snapshot_only".into()),
             (
                 "source_revision".into(),
-                SOURCE_DB_V4_SOURCE_REVISION.into()
+                crate::source_db_schema::SOURCE_DB_V4_SOURCE_REVISION.into()
             ),
             ("states_slice_sha256".into(), thp2_2_states_slice_sha256()),
             ("unreconciled_fields".into(), "1".into()),
@@ -1709,6 +1709,70 @@ fn schema_2_2_full_snapshot_has_exact_physical_rows_and_full_only_metadata() {
     assert!(!drive_columns.contains(&"end_geofence".into()));
 }
 
+/// Review REV-M03-T08 finding 1: a pack written under the earlier
+/// 20260808090000 set records that set and verifies against its own tuple
+/// after the upgrade; it does not verify as a current-set pack, and a source
+/// set outside the reviewed tuples is refused.
+#[test]
+fn schema_2_2_pack_verifies_against_the_reviewed_tuple_of_its_own_revision() {
+    use crate::source_db_schema::V4_2_REVIEWED_SOURCE_SET;
+    let temporary = crate::private_tempdir().expect("temporary root");
+    let source = snapshot_v2_2();
+    let request = request_v2_2(&source);
+    let row_count = source.row_count().expect("bounded rows");
+    let built = ProjectionPackWriter::new(temporary.path().join("packs"))
+        .with_source_set(&V4_2_REVIEWED_SOURCE_SET)
+        .write_full_snapshot_2_2(&request)
+        .expect("a v4.2 pack written before the upgrade");
+    let sqlite = zstd::stream::decode_all(File::open(&built.path).expect("pack file"))
+        .expect("decoded pack");
+    let path = temporary.path().join("v4_2.sqlite");
+    fs::write(&path, sqlite).expect("inspect SQLite");
+    let connection = Connection::open(&path).expect("metadata SQLite");
+    let recorded = |key: &str| {
+        connection
+            .query_row(
+                "SELECT value FROM hub_pack_metadata WHERE key = ?1",
+                [key],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("metadata value")
+    };
+    assert_eq!(
+        recorded("source_revision"),
+        V4_2_REVIEWED_SOURCE_SET.source_revision
+    );
+    assert_eq!(
+        recorded("migration_set_sha256"),
+        V4_2_REVIEWED_SOURCE_SET.migration_set_sha256
+    );
+    drop(connection);
+    let draft = ProjectionPackPurposeV2_2::DraftLocal;
+    verify_projection_sqlite_2_2(&path, &request, row_count, draft, &V4_2_REVIEWED_SOURCE_SET)
+        .expect("the v4.2 pack verifies against the v4.2 tuple");
+    assert!(matches!(
+        verify_projection_sqlite_2_2(&path, &request, row_count, draft, &CURRENT_REVIEWED_SOURCE_SET),
+        Err(ProjectionPackError::Invalid(message))
+            if message == "schema 2.2 metadata key/value set is invalid"
+    ));
+
+    static UNKNOWN: ReviewedSourceSet = ReviewedSourceSet {
+        source_revision: "0000000000000000000000000000000000000000",
+        ..V4_2_REVIEWED_SOURCE_SET
+    };
+    static MIXED: ReviewedSourceSet = ReviewedSourceSet {
+        migration_set_sha256: crate::source_db_schema::SOURCE_DB_V4_MIGRATION_SET_SHA256,
+        ..V4_2_REVIEWED_SOURCE_SET
+    };
+    for refused in [&UNKNOWN, &MIXED] {
+        assert!(matches!(
+            verify_projection_sqlite_2_2(&path, &request, row_count, draft, refused),
+            Err(ProjectionPackError::Invalid(message))
+                if message == "schema 2.2 source set is not a reviewed source set"
+        ));
+    }
+}
+
 #[test]
 fn schema_2_2_draft_and_physical_publication_metadata_are_not_interchangeable() {
     let temporary = crate::private_tempdir().expect("temporary root");
@@ -1741,10 +1805,16 @@ fn schema_2_2_draft_and_physical_publication_metadata_are_not_interchangeable() 
             .expect("decoded pack");
         let path = temporary.path().join(format!("{name}.sqlite"));
         fs::write(&path, sqlite).expect("inspect SQLite");
-        verify_projection_sqlite_2_2(&path, &request, row_count, expected)
-            .expect("matching purpose verifies");
+        verify_projection_sqlite_2_2(
+            &path,
+            &request,
+            row_count,
+            expected,
+            &CURRENT_REVIEWED_SOURCE_SET,
+        )
+        .expect("matching purpose verifies");
         assert!(matches!(
-            verify_projection_sqlite_2_2(&path, &request, row_count, rejected),
+            verify_projection_sqlite_2_2(&path, &request, row_count, rejected, &CURRENT_REVIEWED_SOURCE_SET),
             Err(ProjectionPackError::Invalid(message))
                 if message == "schema 2.2 metadata key/value set is invalid"
         ));

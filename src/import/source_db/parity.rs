@@ -126,7 +126,7 @@ pub const SOURCE_DB_PARITY_ENTRIES: [SourceDbParityEntry; 17] = [
     preserved(
         "states",
         "state enum (online/offline/asleep)",
-        "exact reviewed source database v4.2-compatible enum domain",
+        "exact reviewed source database v4.4-compatible enum domain",
     ),
 ];
 

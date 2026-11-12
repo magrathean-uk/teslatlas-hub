@@ -1633,3 +1633,17 @@ fn source_credential_disabled_import_never_names_source_credential_relations() {
     }
     assert!(scanned > 20, "the importer sources were scanned");
 }
+
+#[test]
+fn source_db_settings_read_decodes_preferred_range_by_label_not_type_name() {
+    // The enum type was renamed at source schema 20261014120000. The reader
+    // casts the column to text, so it reads the unchanged labels under either
+    // type name and never names the type itself.
+    assert!(SETTINGS_V2_2_SQL.contains("source.preferred_range::text AS preferred_range"));
+    assert!(!SETTINGS_V2_2_SQL.contains("::range"));
+    assert!(!SETTINGS_V2_2_SQL.contains("::preferred_range"));
+    for label in ["ideal", "rated"] {
+        assert!(label.parse::<ProjectionPreferredRangeV2_2>().is_ok());
+    }
+    assert!("full".parse::<ProjectionPreferredRangeV2_2>().is_err());
+}

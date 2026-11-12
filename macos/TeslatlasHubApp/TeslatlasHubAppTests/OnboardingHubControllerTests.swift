@@ -44,7 +44,7 @@ final class OnboardingHubControllerTests: XCTestCase {
         let session = SourceServerImportSession(
             source: "postgresql://reader@127.0.0.1:55439/sourcedb", carID: "1",
             passwordFile: owner.directory.appendingPathComponent("postgres-password"),
-            sourceVersion: "4.2.0", tunnel: Process(), temporaryDirectory: owner.directory,
+            sourceVersion: "4.4.0", tunnel: Process(), temporaryDirectory: owner.directory,
             directoryOwner: owner)
         defer { session.close() }
         let labels = Mirror(reflecting: session).children.compactMap(\.label)
@@ -183,15 +183,23 @@ final class OnboardingHubControllerTests: XCTestCase {
         XCTAssertNil(HubController.parseMigrationProgress("not json"))
     }
 
-    func testSourceCompatibilityParsingAcceptsOnlyAcknowledged42CompatibleSchema() throws {
+    func testSourceCompatibilityParsingAcceptsOnlyAcknowledged44CompatibleSchema() throws {
         let compatible = try XCTUnwrap(HubController.parseSourceCheckReport("""
         progress line
-        {"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready to import."}
+        {"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready to import."}
         """))
         XCTAssertTrue(compatible.compatible)
-        XCTAssertEqual(compatible.reasonCode, "v4_2_compatible_schema")
-        XCTAssertEqual(compatible.requiredVersion, "4.2.0")
+        XCTAssertTrue(compatible.mayImport)
+        XCTAssertEqual(compatible.reasonCode, "v4_4_compatible_schema")
+        XCTAssertEqual(compatible.requiredVersion, "4.4.0")
         XCTAssertEqual(compatible.message, "Ready to import.")
+
+        // A report naming the earlier reviewed set never enables import.
+        let earlierSet = try XCTUnwrap(HubController.parseSourceCheckReport("""
+        {"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready to import."}
+        """))
+        XCTAssertFalse(earlierSet.compatible)
+        XCTAssertFalse(earlierSet.mayImport)
 
         let mismatch = try XCTUnwrap(HubController.parseSourceCheckReport("""
         {"status":"compatible","reasonCode":"exact_4_2_0","requiredVersion":"4.2.0","guidance":"Invalid exactness claim."}
@@ -315,7 +323,7 @@ final class OnboardingHubControllerTests: XCTestCase {
             to: config, atomically: true, encoding: .utf8)
         let events = OnboardingEvents()
         let runner = OnboardingRunner(events: events, compatibilityResult: .success(
-            #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
+            #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
         ), preflightResults: [
             .success(Self.historyReadyPreflight), .success(Self.historyReadyPreflight),
             .failure(HubActionError.commandFailed("collection enabled"))
@@ -948,7 +956,7 @@ final class OnboardingHubControllerTests: XCTestCase {
                 return XCTFail("missing acknowledgement was accepted")
             }
             XCTAssertEqual(error.localizedDescription,
-                           "Confirm the source application's release is 4.2.0 or later before importing.")
+                           "Confirm the source application's release is 4.4.0 or later before importing.")
             rejected.fulfill()
         }
 
@@ -1100,7 +1108,7 @@ private final class OnboardingRunner: HubCommandRunning {
 
     init(events: OnboardingEvents? = nil,
          compatibilityResult: Result<String, Error> = .success(
-             #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
+             #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
          ),
          migrationResult: Result<String, Error> = .success(
              "{\"status\":\"imported\",\"captureMode\":\"online-snapshot\"}"

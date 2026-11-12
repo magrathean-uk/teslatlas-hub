@@ -5,6 +5,7 @@ pub struct ProjectionPackWriter {
     packs_dir: PathBuf,
     limits: ProtocolLimits,
     minimum_free_bytes: u64,
+    source_set: &'static ReviewedSourceSet,
 }
 
 impl ProjectionPackWriter {
@@ -13,7 +14,15 @@ impl ProjectionPackWriter {
             packs_dir: packs_dir.into(),
             limits: ProtocolLimits::default(),
             minimum_free_bytes: 0,
+            source_set: &CURRENT_REVIEWED_SOURCE_SET,
         }
+    }
+
+    /// Record and verify schema-2.2 packs under `source_set`, the reviewed
+    /// set their snapshot was captured under. Defaults to the current set.
+    pub fn with_source_set(mut self, source_set: &'static ReviewedSourceSet) -> Self {
+        self.source_set = source_set;
+        self
     }
 
     pub fn with_minimum_free_bytes(mut self, minimum_free_bytes: u64) -> Self {
@@ -26,6 +35,7 @@ impl ProjectionPackWriter {
             packs_dir: packs_dir.into(),
             limits,
             minimum_free_bytes: 0,
+            source_set: &CURRENT_REVIEWED_SOURCE_SET,
         }
     }
 
@@ -325,8 +335,21 @@ impl ProjectionPackWriter {
         })?;
 
         let sqlite_temp = StagedFile::create(&staging_dir, "projection-2-2.sqlite")?;
-        write_projection_sqlite_2_2(sqlite_temp.path(), request, self.limits, row_count, purpose)?;
-        verify_projection_sqlite_2_2(sqlite_temp.path(), request, row_count, purpose)?;
+        write_projection_sqlite_2_2(
+            sqlite_temp.path(),
+            request,
+            self.limits,
+            row_count,
+            purpose,
+            self.source_set,
+        )?;
+        verify_projection_sqlite_2_2(
+            sqlite_temp.path(),
+            request,
+            row_count,
+            purpose,
+            self.source_set,
+        )?;
         let uncompressed_bytes = fs::metadata(sqlite_temp.path())
             .map_err(|source| ProjectionPackError::Metadata {
                 path: sqlite_temp.path().to_path_buf(),

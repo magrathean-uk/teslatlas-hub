@@ -716,7 +716,7 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             suggestions = [HubL10n.text("hub.SourceServerImporter.744.2586", fallback: "Try again.")]
         case "source_version_too_old":
             title = HubL10n.text("hub.SourceServerImporter.746.2588", fallback: "Update the source application first")
-            summary = HubL10n.text("hub.SourceServerImporter.747.2589", fallback: "Guided migration requires release 4.2.0 or later of the source application.")
+            summary = HubL10n.text("hub.SourceServerImporter.747.2589", fallback: "Guided migration requires release 4.4.0 or later of the source application.")
             suggestions = [HubL10n.text("hub.SourceServerImporter.748.2590", fallback: "Back up the source application, update it, let its migrations finish, then connect again.")]
         default:
             title = HubL10n.text("hub.OnboardingWindowController.298.1866", fallback: "Source application connection failed")
@@ -746,7 +746,7 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
         case "docker_permission_denied": return HubL10n.text("hub.OnboardingWindowController.299.1867", fallback: "This account cannot access Docker.")
         case "docker_missing": return HubL10n.text("hub.SourceServerImporter.775.2618", fallback: "Docker was not found on the source application server.")
         case "docker_unavailable": return HubL10n.text("hub.SourceServerImporter.776.2620", fallback: "Docker is installed but unavailable.")
-        case "source_version_too_old": return HubL10n.text("hub.SourceServerImporter.747.2589", fallback: "Guided migration requires release 4.2.0 or later of the source application.")
+        case "source_version_too_old": return HubL10n.text("hub.SourceServerImporter.747.2589", fallback: "Guided migration requires release 4.4.0 or later of the source application.")
         default: return HubL10n.text("hub.SourceServerImporter.778.2623", fallback: "Hub could not read data from the source application over SSH.")
         }
     }
@@ -807,7 +807,7 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
         case "docker_unavailable":
             return HubL10n.text("hub.SourceServerImporter.836.2670", fallback: "Docker is installed but unavailable. Check that the Docker service is running.")
         case "source_version_too_old":
-            return HubL10n.text("hub.SourceServerImporter.838.2672", fallback: "Guided migration requires release 4.2.0 or later of the source application. Update the source application, then try again.")
+            return HubL10n.text("hub.SourceServerImporter.838.2672", fallback: "Guided migration requires release 4.4.0 or later of the source application. Update the source application, then try again.")
         case "ssh_authentication_or_connection":
             return HubL10n.text("hub.SourceServerImporter.840.2674", fallback: "SSH could not connect or authenticate. Check the server, port, account, and selected authentication method.")
         case "authentication_failed":

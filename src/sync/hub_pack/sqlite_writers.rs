@@ -276,6 +276,7 @@ fn write_projection_sqlite_2_2(
     limits: ProtocolLimits,
     row_count: u64,
     purpose: ProjectionPackPurposeV2_2,
+    source_set: &ReviewedSourceSet,
 ) -> Result<(), ProjectionPackError> {
     crate::platform::file_attempts::note(path);
     let connection = Connection::open_with_flags(
@@ -421,7 +422,7 @@ fn write_projection_sqlite_2_2(
     let transaction = connection
         .unchecked_transaction()
         .map_err(ProjectionPackError::BeginTransaction)?;
-    insert_metadata_v2_2(&transaction, request, row_count, purpose)?;
+    insert_metadata_v2_2(&transaction, request, row_count, purpose, source_set)?;
     insert_global_settings_v2_2(&transaction, &request.snapshot.global_settings)?;
     insert_car_settings_v2_2(&transaction, &request.snapshot.car_settings)?;
     insert_cars_v2_2(&transaction, &request.snapshot.cars)?;

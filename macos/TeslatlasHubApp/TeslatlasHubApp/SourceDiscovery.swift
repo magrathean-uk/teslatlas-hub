@@ -133,7 +133,7 @@ printf 'oci_version=%s\n' "$(encode "$src_oci_version")"
     static func admittedVersion(ociVersion: String?) throws -> String? {
         switch classifyVersion(ociVersion: ociVersion) {
         case let .supported(version): return version
-        case .tooOld: throw HubActionError.commandFailed(HubL10n.text("hub.SourceServerImporter.747.2589", fallback: "Guided import requires source application release 4.2.0 or later."))
+        case .tooOld: throw HubActionError.commandFailed(HubL10n.text("hub.SourceServerImporter.747.2589", fallback: "Guided import requires source application release 4.4.0 or later."))
         case .unknown: return nil
         }
     }
@@ -154,7 +154,7 @@ printf 'oci_version=%s\n' "$(encode "$src_oci_version")"
               let minor = Int(components[1]),
               let patch = patchValue, major >= 0, minor >= 0, patch >= 0 else { return .unknown }
         guard stable else { return .tooOld(displayedVersion) }
-        if major > 4 || (major == 4 && minor >= 2) {
+        if major > 4 || (major == 4 && minor >= 4) {
             return .supported(displayedVersion)
         }
         return .tooOld(displayedVersion)

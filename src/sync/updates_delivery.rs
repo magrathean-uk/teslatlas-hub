@@ -34,8 +34,8 @@ use crate::{
     source_db_direct::DirectUpdatesSourceV2_2,
     source_db_projection::SourceDbUpdatePhysicalV2_2,
     source_db_schema::{
-        MAX_VALIDATED_MIGRATION, SOURCE_DB_V4_MIGRATION_COUNT, SOURCE_DB_V4_MIGRATION_SET_SHA256,
-        SOURCE_DB_V4_SOURCE_REVISION, is_supported_source_db_revision,
+        CURRENT_REVIEWED_SOURCE_SET, ReviewedSourceSet, SOURCE_DB_V4_SOURCE_REVISION,
+        reviewed_source_set,
     },
     updates_logical::{
         APP_SCHEMA_VERSION, LOGICAL_STREAM_SCHEMA, LogicalUpdatesStream, LogicalUpdatesSummary,
@@ -1331,8 +1331,11 @@ fn write_verified_production_pack(
     request: &ProjectionPackRequestV2_2<'_>,
     source: &LogicalUpdatesStream,
     source_capture: &ProductionUpdatesCaptureProof,
+    source_set: &'static ReviewedSourceSet,
 ) -> Result<(BuiltProjectionPack, LogicalUpdatesStream), UpdatesDeliveryError> {
-    let built = ProjectionPackWriter::new(store.packs_dir()).write_full_snapshot_2_2(request)?;
+    let built = ProjectionPackWriter::new(store.packs_dir())
+        .with_source_set(source_set)
+        .write_full_snapshot_2_2(request)?;
     built
         .metadata
         .verify_reader(
@@ -1437,6 +1440,44 @@ fn production_publication_report(
     })
 }
 
+/// Verify a capture against the reviewed tuple of its own source revision.
+fn verify_capture_source_set(
+    source_capture: &DirectUpdatesSourceV2_2,
+) -> Result<&'static ReviewedSourceSet, UpdatesDeliveryError> {
+    let schema = &source_capture.schema;
+    reviewed_source_set(schema.pinned_source_revision)
+        .filter(|set| {
+            u64::try_from(schema.observed_migration_count).is_ok_and(|count| {
+                set.matches(
+                    schema.pinned_migration_set_sha256,
+                    count,
+                    schema.observed_migration_version,
+                )
+            })
+        })
+        .ok_or_else(|| {
+            reject(
+                "production schema-2.2 source capture contradicts its pinned source database v4 schema facts",
+            )
+        })
+}
+
+/// Admit a capture for a new publication: it must verify against its own
+/// reviewed tuple and that tuple must be the set this publication admits.
+fn admit_capture_source_set(
+    source_capture: &DirectUpdatesSourceV2_2,
+    admitted: &ReviewedSourceSet,
+) -> Result<&'static ReviewedSourceSet, UpdatesDeliveryError> {
+    let source_set = verify_capture_source_set(source_capture)?;
+    if source_set != admitted {
+        return Err(reject(format!(
+            "production schema-2.2 source capture uses the superseded reviewed source set {}; new publications need source application {}",
+            source_set.release, admitted.release
+        )));
+    }
+    Ok(source_set)
+}
+
 /// Prepare the first schema-2.2 snapshot without changing the catalogue.
 /// The caller commits this candidate together with the legacy schema-2.1
 /// import, closing the only mixed-schema crash window.
@@ -1448,17 +1489,9 @@ pub(crate) fn prepare_initial_production_updates_schema_22_with_gate(
     publication_gate: &PublicationGate,
     legacy_sequence: u64,
 ) -> Result<PreparedProductionUpdatesSchema22, UpdatesDeliveryError> {
-    // New captures must use the current reviewed source. Legacy beta revision
-    // acceptance is limited to verification of already-signed witnesses below.
-    if source_capture.schema.pinned_source_revision != SOURCE_DB_V4_SOURCE_REVISION
-        || source_capture.schema.pinned_migration_set_sha256 != SOURCE_DB_V4_MIGRATION_SET_SHA256
-        || source_capture.schema.observed_migration_count != SOURCE_DB_V4_MIGRATION_COUNT
-        || source_capture.schema.observed_migration_version != MAX_VALIDATED_MIGRATION
-    {
-        return Err(reject(
-            "production schema-2.2 source capture contradicts its pinned source database v4 schema facts",
-        ));
-    }
+    // New captures must use the current reviewed source. Earlier reviewed
+    // sets are accepted only when verifying already-signed artefacts.
+    let source_set = admit_capture_source_set(&source_capture, &CURRENT_REVIEWED_SOURCE_SET)?;
     if !is_canonical_sha256(&source_capture.postgres_snapshot_sha256)
         || !is_canonical_sha256(&source_capture.schema.fingerprint)
         || binding.selected_car_id <= 0
@@ -1499,8 +1532,14 @@ pub(crate) fn prepare_initial_production_updates_schema_22_with_gate(
         },
         snapshot: &snapshot,
     };
-    let (built, hub) =
-        write_verified_production_pack(store, publication_gate, &request, &source, &source_proof)?;
+    let (built, hub) = write_verified_production_pack(
+        store,
+        publication_gate,
+        &request,
+        &source,
+        &source_proof,
+        source_set,
+    )?;
     let manifest = match sign_updates_schema_22_manifest(&request, &built, cursor_key) {
         Ok(value) => value,
         Err(error) => {
@@ -1591,17 +1630,35 @@ pub(crate) fn publish_production_updates_schema_22_with_gate(
     expected_head: &Option<ProductionUpdatesHead>,
     admitted_legacy_head: Option<(Uuid, u64)>,
 ) -> Result<ProductionUpdatesPublication, UpdatesDeliveryError> {
-    // New captures must use the current reviewed source. Legacy beta revision
-    // acceptance is limited to verification of already-signed witnesses below.
-    if source_capture.schema.pinned_source_revision != SOURCE_DB_V4_SOURCE_REVISION
-        || source_capture.schema.pinned_migration_set_sha256 != SOURCE_DB_V4_MIGRATION_SET_SHA256
-        || source_capture.schema.observed_migration_count != SOURCE_DB_V4_MIGRATION_COUNT
-        || source_capture.schema.observed_migration_version != MAX_VALIDATED_MIGRATION
-    {
-        return Err(reject(
-            "production schema-2.2 source capture contradicts its pinned source database v4 schema facts",
-        ));
-    }
+    // New captures must use the current reviewed source. Earlier reviewed
+    // sets are accepted only when verifying already-signed artefacts.
+    publish_production_updates_schema_22_admitting(
+        store,
+        cursor_key,
+        binding,
+        source_capture,
+        publication_gate,
+        expected_head,
+        admitted_legacy_head,
+        &CURRENT_REVIEWED_SOURCE_SET,
+    )
+}
+
+/// Publish under an explicitly admitted reviewed set. Production always
+/// passes [`CURRENT_REVIEWED_SOURCE_SET`]; tests use an earlier set to build
+/// a store as an earlier release published it.
+#[allow(clippy::too_many_arguments)]
+fn publish_production_updates_schema_22_admitting(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    binding: &ProjectionBinding,
+    source_capture: DirectUpdatesSourceV2_2,
+    publication_gate: &PublicationGate,
+    expected_head: &Option<ProductionUpdatesHead>,
+    admitted_legacy_head: Option<(Uuid, u64)>,
+    admitted_source_set: &'static ReviewedSourceSet,
+) -> Result<ProductionUpdatesPublication, UpdatesDeliveryError> {
+    let source_set = admit_capture_source_set(&source_capture, admitted_source_set)?;
     if !is_canonical_sha256(&source_capture.postgres_snapshot_sha256)
         || !is_canonical_sha256(&source_capture.schema.fingerprint)
         || binding.selected_car_id <= 0
@@ -1718,6 +1775,7 @@ pub(crate) fn publish_production_updates_schema_22_with_gate(
             &current_request,
             &source,
             &source_proof,
+            source_set,
         )?;
         let candidate_manifest =
             sign_updates_schema_22_manifest(&current_request, &built, cursor_key)?;
@@ -1782,8 +1840,14 @@ pub(crate) fn publish_production_updates_schema_22_with_gate(
         },
         snapshot: &snapshot,
     };
-    let (built, hub) =
-        write_verified_production_pack(store, publication_gate, &request, &source, &source_proof)?;
+    let (built, hub) = write_verified_production_pack(
+        store,
+        publication_gate,
+        &request,
+        &source,
+        &source_proof,
+        source_set,
+    )?;
     let manifest = sign_updates_schema_22_manifest(&request, &built, cursor_key)?;
     let noop = sign_production_updates_schema_22_noop(
         binding,
@@ -2303,11 +2367,13 @@ fn validate_production_source_witness(
     );
     if witness.schema != "teslatlas-pg-source-witness-v1"
         || witness.source_transaction != "read_only_repeatable_read_exported_snapshot"
-        || !is_supported_source_db_revision(&witness.source_revision)
-        || witness.pinned_migration_set_sha256 != SOURCE_DB_V4_MIGRATION_SET_SHA256
-        || witness.observed_migration_count
-            != u64::try_from(SOURCE_DB_V4_MIGRATION_COUNT).expect("migration count fits u64")
-        || witness.observed_migration_version != MAX_VALIDATED_MIGRATION
+        || reviewed_source_set(&witness.source_revision).is_none_or(|set| {
+            !set.matches(
+                &witness.pinned_migration_set_sha256,
+                witness.observed_migration_count,
+                witness.observed_migration_version,
+            )
+        })
         || i16::try_from(witness.selected_car_id)
             .ok()
             .is_none_or(|selected_car_id| selected_car_id <= 0)
