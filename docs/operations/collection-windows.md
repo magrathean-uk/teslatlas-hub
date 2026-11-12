@@ -147,6 +147,9 @@ every open until `window trust` is run again.
    to Tesla's token endpoint (`"signIn": "resumed"`) and only lists the cars
    again. After that, a new sign-in is needed. Fleet stays parked:
    with `collector.provider = "fleet"` discovery refuses (`provider_parked`).
+   The Hub's own login is only sent to Tesla's Owner API: an
+   `owner_api_base_url` naming another host is refused
+   (`discovery_settings_invalid`).
 
    While the window's collector runs it holds the Hub's credential store, so
    `setup` first asks the service to stop it; collection pauses for the sign-in

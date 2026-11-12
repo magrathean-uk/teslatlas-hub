@@ -28,7 +28,7 @@ use crate::{
     config::{CollectorProvider, HubConfig},
     db::HubStore,
     fleet_api::egress::{self, PermitKind, Provider},
-    legacy_auth::{AuthEndpointConfig, LegacyAuth},
+    legacy_auth::{AuthEndpointConfig, AuthMode, LegacyAuth},
     owner_api::{OwnerApi, OwnerApiError},
 };
 use super::CredentialCommandError;
@@ -80,6 +80,11 @@ pub fn owner_car_selection(vehicle_id: Option<i64>, all_vehicles: bool) -> Resul
 /// selected ones. See the module notes for the order of checks.
 pub async fn discover_owner_cars(entry: &CredentialVaultEntry, store: &HubStore, config: &HubConfig, selection: OwnerCarSelection) -> Result<OwnerDiscovery, CredentialCommandError> {
     let base = config.collector.owner_api_base_url.clone().ok_or_else(|| CredentialCommandError::new(DISCOVERY_SETTINGS_INVALID))?;
+    // The Hub's own pair is a Tesla login: it is only ever sent to Tesla's
+    // Owner API. A provider host (Provider mode, parked) is refused here.
+    if crate::config::collector_mode(&config.collector) != crate::config::CollectorMode::Legacy {
+        return Err(CredentialCommandError::new(DISCOVERY_SETTINGS_INVALID));
+    }
     discover_with(entry, store, config, selection, &base, owner_discovery_client).await
 }
 
@@ -146,7 +151,10 @@ fn own_pair(entry: &CredentialVaultEntry, config: &HubConfig) -> Result<LegacyAu
     if pair.origin != Some(CredentialOrigin::HubLogin) || pair.refresh_owner != RefreshOwner::Hub || pair.access.is_empty() {
         return Err(unavailable());
     }
-    LegacyAuth::from_access_token(pair.access.as_str(), pair.refresh.as_str(), &AuthEndpointConfig::from_config(config, false))
+    // The own pair came from Tesla's owner token endpoint, so its issuer pin
+    // (and region) is Tesla's, whatever host serves the list in a test.
+    let endpoint = AuthEndpointConfig { mode: AuthMode::Tesla, region: config.collector.stream_region, token_url: None, allow_loopback_http: false };
+    LegacyAuth::from_access_token(pair.access.as_str(), pair.refresh.as_str(), &endpoint)
         .map_err(|_| unavailable())
 }
 

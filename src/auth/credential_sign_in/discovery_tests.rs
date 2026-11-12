@@ -269,6 +269,12 @@ async fn owner_discovery_uses_only_the_own_pair_and_refuses_locally() {
     let error = discover_with(&hub.entry, &hub.store, &fleet, OwnerCarSelection::Vehicle(7001), &stub.url, |_, _| unreachable!("no client for Fleet")).await.unwrap_err();
     assert_eq!(error.code(), "provider_parked");
     assert_eq!(hub.discover(&stub, OwnerCarSelection::Vehicle(0)).await.unwrap_err().code(), DISCOVERY_SELECTION_INVALID);
+    // The production entry sends the own pair only to Tesla's Owner API: a
+    // provider host (or this loopback stub) is refused before any send.
+    for base in ["https://owner-api.provider.invalid/", stub.url.as_str()] {
+        let error = discover_owner_cars(&hub.entry, &hub.store, &hub.config(base), OwnerCarSelection::Vehicle(7001)).await.unwrap_err();
+        assert_eq!(error.code(), DISCOVERY_SETTINGS_INVALID, "base {base}");
+    }
     assert_eq!(owner_car_selection(Some(7001), true).unwrap_err().code(), DISCOVERY_SELECTION_INVALID);
     assert_eq!(owner_car_selection(Some(-1), false).unwrap_err().code(), DISCOVERY_SELECTION_INVALID);
     assert_eq!(owner_car_selection(None, true).expect("all"), OwnerCarSelection::All);
