@@ -472,6 +472,88 @@ impl Drop for ImportGenerationGuard<'_> {
     }
 }
 
+/// Admit one source id (M03-T12): the Hub allocates its own rows from
+/// `HUB_ID_BASE` upwards, so a source id at or above the base would share an id
+/// with a row the Hub collects, and the import is refused, naming the source
+/// table and the id. Every source table keeps 4-byte ids, so the refusal needs
+/// a source with over 2^30 ids in one table.
+fn admit_source_id(table: &'static str, id: Option<i64>) -> Result<(), SourceDbImportError> {
+    match id {
+        Some(id) if id >= crate::db::hub_ids::HUB_ID_BASE => {
+            Err(SourceDbImportError::InvalidImportGeneration { table, id })
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Admit the ids of one captured open session and, through its watermarks,
+/// every row of the selected car in the six tables: each watermark is the
+/// largest id of its table for that car in the same source snapshot.
+pub(crate) fn admit_session_source_ids(
+    session: &SourceDbOpenSession,
+) -> Result<(), SourceDbImportError> {
+    let watermarks = &session.watermarks;
+    admit_source_id("drives", watermarks.drives.max_id)?;
+    admit_source_id("positions", watermarks.positions.max_id)?;
+    admit_source_id("charging_processes", watermarks.charging_processes.max_id)?;
+    admit_source_id("charges", watermarks.charges.max_id)?;
+    admit_source_id("states", watermarks.states.max_id)?;
+    admit_source_id("updates", watermarks.updates.max_id)?;
+    admit_source_id("drives", session.drive.as_ref().map(|row| row.id))?;
+    admit_source_id(
+        "charging_processes",
+        session.charge.as_ref().map(|row| row.id),
+    )?;
+    admit_source_id("states", session.state.as_ref().map(|row| row.id))?;
+    for row in session
+        .drive_positions
+        .iter()
+        .chain(session.standalone_positions.iter())
+    {
+        admit_source_id("positions", Some(row.id))?;
+    }
+    for row in &session.charge_samples {
+        admit_source_id("charges", Some(row.id))?;
+    }
+    Ok(())
+}
+
+/// Admit every row of a whole source history in the six tables.
+pub(crate) fn admit_history_source_ids(
+    history: &SourceDbHistory,
+) -> Result<(), SourceDbImportError> {
+    let drives = history.drives.iter().map(|row| row.id).max();
+    let positions = history.positions.iter().map(|row| row.id).max();
+    let processes = history.charging_processes.iter().map(|row| row.id).max();
+    let charges = history.charges.iter().map(|row| row.id).max();
+    let states = history.states.iter().map(|row| row.id).max();
+    let updates = history.updates.iter().map(|row| row.id).max();
+    admit_source_id("drives", drives)?;
+    admit_source_id("positions", positions)?;
+    admit_source_id("charging_processes", processes)?;
+    admit_source_id("charges", charges)?;
+    admit_source_id("states", states)?;
+    admit_source_id("updates", updates)
+}
+
+/// Admit every staged row of the six tables: one keyset seek per table for
+/// the first source id at or above the base.
+pub(crate) fn admit_stage_source_ids(stage: &SourceDbStage) -> Result<(), SourceDbImportError> {
+    for (table, name) in [
+        (SourceDbStageTable::Drives, "drives"),
+        (SourceDbStageTable::Positions, "positions"),
+        (SourceDbStageTable::ChargingProcesses, "charging_processes"),
+        (SourceDbStageTable::Charges, "charges"),
+        (SourceDbStageTable::States, "states"),
+        (SourceDbStageTable::Updates, "updates"),
+    ] {
+        let page =
+            stage.page::<serde_json::Value>(table, crate::db::hub_ids::HUB_ID_BASE - 1, 1)?;
+        admit_source_id(name, page.rows.first().map(|row| row.source_id))?;
+    }
+    Ok(())
+}
+
 fn selected_car_id(request: &SourceDbImportRequest) -> Result<i64, SourceDbImportError> {
     match request.scope {
         SourceDbImportScope::Selected(id) if id > 0 => Ok(id),
@@ -953,6 +1035,10 @@ async fn import_from_postgres_with_updates_capture_policy(
             return Err(error.into());
         }
     };
+    if let Err(error) = admit_session_source_ids(&first_capture.open_session) {
+        store.abort_import_generation(run_id)?;
+        return Err(error);
+    }
     if let Err(error) = validate_exported_vehicle_identity(&car, &first_capture.updates_v2_2) {
         store.abort_import_generation(run_id)?;
         identity_registration_guard.rollback()?;
@@ -1439,6 +1525,8 @@ fn publish_staged_history_with_limits(
     if stage.format()? != SourceDbStageFormat::CompatibilityV2 {
         return Err(crate::source_db_fragments::SourceDbFragmentError::WrongStageFormat.into());
     }
+    admit_session_source_ids(open_session)?;
+    admit_stage_source_ids(stage)?;
     let publication_gate = store.try_acquire_publication_gate()?;
     let selected_car_id = selected_car_id(request)?;
     let car = stage
@@ -1906,6 +1994,7 @@ pub fn publish_history(
     request: &SourceDbImportRequest,
     history: &SourceDbHistory,
 ) -> Result<SourceDbImportReport, SourceDbImportError> {
+    admit_history_source_ids(history)?;
     let publication_gate = store.try_acquire_publication_gate()?;
     let selected_car_id = selected_car_id(request)?;
     let projected = project_vehicle(history, selected_car_id)?;
@@ -2624,6 +2713,10 @@ pub enum SourceDbImportError {
     PhysicalPublication(#[from] crate::physical_publication::SourceDbPhysicalPublicationError),
     #[error("Source database selected car id must be positive")]
     InvalidSelectedCarId,
+    #[error(
+        "import generation is invalid: source {table} id {id} lies in the Hub's reserved id range"
+    )]
+    InvalidImportGeneration { table: &'static str, id: i64 },
     #[error("Source database selected car disappeared before publication")]
     SelectedCarMissing,
     #[error("direct source database capture did not retain its required projection state")]
@@ -2716,6 +2809,7 @@ mod n1_src_import_source_db_importer_rs_display_tests {
             match &error {
                 SourceDbImportError::PhysicalPublication(..) => (),
                 SourceDbImportError::InvalidSelectedCarId => (),
+                SourceDbImportError::InvalidImportGeneration { .. } => (),
                 SourceDbImportError::SelectedCarMissing => (),
                 SourceDbImportError::ProjectionStateCaptureMissing => (),
                 SourceDbImportError::LegacyDirectImportRebaseRequired => (),
@@ -2747,6 +2841,10 @@ mod n1_src_import_source_db_importer_rs_display_tests {
         }
         check_source_db_import_error(SourceDbImportError::PhysicalPublication(example()));
         check_source_db_import_error(SourceDbImportError::InvalidSelectedCarId);
+        check_source_db_import_error(SourceDbImportError::InvalidImportGeneration {
+            table: "drives",
+            id: crate::db::hub_ids::HUB_ID_BASE,
+        });
         check_source_db_import_error(SourceDbImportError::SelectedCarMissing);
         check_source_db_import_error(SourceDbImportError::ProjectionStateCaptureMissing);
         check_source_db_import_error(SourceDbImportError::LegacyDirectImportRebaseRequired);

@@ -454,11 +454,7 @@ fn update_state_interval(
         });
     }
 
-    let id = state.next_state_id;
-    state.next_state_id = state
-        .next_state_id
-        .checked_add(1)
-        .ok_or(LifecycleError::IdentifierExhausted)?;
+    let id = allocate_hub_id(&mut state.next_state_id)?;
     state.open_state = Some(OpenState {
         id,
         car_id,

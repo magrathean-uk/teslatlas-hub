@@ -629,9 +629,9 @@ fn materialise_vehicle_lifecycle_with(
         },
         None => OpenSessionState::new(),
     };
-    // After source database import, materialised_* already holds pack-local ids
-    // (position_id up to 10M+). Seed next_* so live Owner-API projection never
-    // collides with imported primary keys (R06 continuity UNIQUE constraint).
+    // Live rows take ids from the Hub's reserved range, above every imported
+    // source id; seed next_* above the Hub ids the store already holds so live
+    // projection never reuses one (M03-T12).
     seed_lifecycle_ids_from_materialised(store, vehicle_id, &mut state)?;
     // Incremental lifecycle: do not rehydrate full open child collections here.
     // Aggregates + lifecycle_open_rows keep close/materialization correct.
@@ -1115,15 +1115,11 @@ fn projection_car_id_for_vehicle(
     Ok(compatibility_car_id(source_vehicle_id))
 }
 
-/// Raise open-session id cursors above any durable materialised history for
-/// this vehicle so import-backed rows and live collection share one id space.
-///
-/// Source database import publishes the full history as V2 packs and may only
-/// materialise a subset (e.g. positions/states) into `materialised_*`. Drive /
-/// charge / sample / update ids still occupy pack-local primary keys. Live
-/// collection must not reuse those ids or the client V2 integrity check fails
-/// when a delta upserts drive id=1 over an imported drive with different times
-/// (positions fall outside the drive interval).
+/// The import catalogues' maximum-id seeks the cursor seed used before the
+/// Hub's id range (M03-T12). Source ids now lie below the range and bound no
+/// cursor, so production no longer runs them; the covering-index test keeps
+/// its plan check.
+#[cfg(test)]
 const LEGACY_IMPORT_MAX_ID_SQL: &str = concat!(
     "SELECT COALESCE(MAX(entity_id), 0)
        FROM ",
@@ -1131,6 +1127,7 @@ const LEGACY_IMPORT_MAX_ID_SQL: &str = concat!(
     "
       WHERE vehicle_id = ?1 AND entity = ?2"
 );
+#[cfg(test)]
 const CURRENT_IMPORT_MAX_ID_SQL: &str = concat!(
     "SELECT COALESCE(MAX(entity_id), 0)
        FROM ",
@@ -1139,86 +1136,25 @@ const CURRENT_IMPORT_MAX_ID_SQL: &str = concat!(
       WHERE vehicle_id = ?1 AND entity_ordinal = ?2"
 );
 
+/// Seed a lifecycle state's id cursors before it allocates (M03-T12). The
+/// cursors enter the Hub's reserved range and rise above the largest Hub-range
+/// id the store holds for the vehicle, materialised or recorded in
+/// `import_seam_links`, so a Hub id the seam superseded is never reused. Source
+/// ids, imported or catalogued, lie below the range and bound nothing. A state
+/// already seeded with every cursor in the range returns at once; one seeded
+/// before the range (restored or migrated, closed sessions included) is
+/// seeded again here.
 fn seed_lifecycle_ids_from_materialised(
     store: &HubStore,
     vehicle_id: Uuid,
     state: &mut OpenSessionState,
 ) -> Result<(), CollectorError> {
-    if state.id_cursors_seeded {
+    if state.id_cursors_seeded && state.id_cursors_in_hub_range() {
         return Ok(());
     }
-    let connection = store.open().map_err(CollectorError::from)?;
-    let max_i64 = |table: &str, column: &str| -> Result<i64, CollectorError> {
-        let sql = format!("SELECT COALESCE(MAX({column}), 0) FROM {table} WHERE vehicle_id = ?1");
-        connection
-            .query_row(&sql, rusqlite::params![vehicle_id.to_string()], |row| {
-                row.get(0)
-            })
-            .map_err(StoreError::Query)
-            .map_err(CollectorError::Store)
-    };
-    // Tables may be empty; COALESCE handles that.
-    let max_drive = max_i64("materialised_drives", "drive_id")?;
-    let max_position = max_i64("materialised_positions", "position_id")?;
-    let max_charge = max_i64("materialised_charges", "charge_id")?;
-    let max_sample = max_i64("materialised_charge_samples", "sample_id")?;
-    let max_state = max_i64("materialised_states", "state_id")?;
-    let max_update = max_i64("materialised_updates", "update_id")?;
-
-    // Both import catalogues have covering primary keys beginning with
-    // (vehicle_id, entity/ordinal, entity_id). Point-range MAX queries can seek
-    // directly to the final row. The former UNION/GROUP BY scanned and sorted
-    // millions of imported keys on every live telemetry sample.
-    let import_max = |entity: &str, ordinal: i64| -> Result<i64, CollectorError> {
-        let legacy = connection
-            .query_row(
-                LEGACY_IMPORT_MAX_ID_SQL,
-                rusqlite::params![vehicle_id.to_string(), entity],
-                |row| row.get::<_, i64>(0),
-            )
-            .map_err(StoreError::Query)
-            .map_err(CollectorError::Store)?;
-        let current = connection
-            .query_row(
-                CURRENT_IMPORT_MAX_ID_SQL,
-                rusqlite::params![vehicle_id.to_string(), ordinal],
-                |row| row.get::<_, i64>(0),
-            )
-            .map_err(StoreError::Query)
-            .map_err(CollectorError::Store)?;
-        Ok(legacy.max(current))
-    };
-    let import_drive = import_max("drive", 1)?;
-    let import_position = import_max("position", 2)?;
-    let import_charge = import_max("charge", 3)?;
-    let import_sample = import_max("charge_sample", 4)?;
-    let import_state = import_max("state", 5)?;
-    let import_update = import_max("update", 6)?;
-
-    let max_drive = max_drive.max(import_drive);
-    let max_position = max_position.max(import_position);
-    let max_charge = max_charge.max(import_charge);
-    let max_sample = max_sample.max(import_sample);
-    let max_state = max_state.max(import_state);
-    let max_update = max_update.max(import_update);
-
-    state.next_drive_id = state.next_drive_id.max(max_drive.saturating_add(1).max(1));
-    state.next_position_id = state
-        .next_position_id
-        .max(max_position.saturating_add(1).max(1));
-    state.next_charge_id = state
-        .next_charge_id
-        .max(max_charge.saturating_add(1).max(1));
-    state.next_charge_sample_id = state
-        .next_charge_sample_id
-        .max(max_sample.saturating_add(1).max(1));
-    state.next_state_id = state.next_state_id.max(max_state.saturating_add(1).max(1));
-    state.next_update_id = state
-        .next_update_id
-        .max(max_update.saturating_add(1).max(1));
-    // Imported rows need not be materialised or catalogued under these keys,
-    // so the import watermarks of every source also bound the cursors
-    // (C1 R84 point (a)); the maxima above are kept.
+    state.raise_id_cursors(&store.lifecycle_hub_range_id_floors(vehicle_id)?);
+    // A watermark inside the range, which the importer refuses, would still
+    // be skipped (C1 R84 point (a)).
     state.raise_id_cursors(&store.lifecycle_watermark_id_floors(vehicle_id)?);
     state.id_cursors_seeded = true;
     Ok(())

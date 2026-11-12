@@ -27,8 +27,9 @@ const TERRAIN_DUE_RETRIES_SQL: &str = "SELECT t.vehicle_id, t.position_id, t.att
       ON p.vehicle_id = t.vehicle_id AND p.position_id = t.position_id
     WHERE t.status = 'failed' AND t.retry_after_ms <= ?1
     ORDER BY t.retry_after_ms, t.vehicle_id, t.position_id LIMIT ?2";
+// M03-T12: the boundary stays below the Hub's id range (?3 is `HUB_ID_BASE`).
 const TERRAIN_WATERMARK_BOUNDARY_SQL: &str = "SELECT
-    MAX(0, COALESCE(MAX(w.max_source_row_id), 0)),
+    MIN(?3 - 1, MAX(0, COALESCE(MAX(w.max_source_row_id), 0))),
     MAX(0, COALESCE(MAX(w.max_timestamp_ms), 0))
     FROM lifecycle_source_watermarks w JOIN sources s ON s.source_id = w.source_id
     WHERE w.vehicle_id = ?1 AND w.domain = 'positions' AND s.source_kind = ?2";
@@ -60,7 +61,11 @@ fn terrain_watermark_boundary(
     connection
         .query_row(
             TERRAIN_WATERMARK_BOUNDARY_SQL,
-            params![vehicle_id.to_string(), IMPORT_SOURCE_KIND],
+            params![
+                vehicle_id.to_string(),
+                IMPORT_SOURCE_KIND,
+                hub_ids::HUB_ID_BASE
+            ],
             |row| {
                 Ok(ImportBoundary {
                     max_position_id: row.get(0)?,
@@ -92,9 +97,14 @@ fn terrain_stored_boundary(
         .map_err(StoreError::Query)
 }
 
+/// The merged boundary never reaches the Hub's id range (M03-T12): a position
+/// the Hub allocated is never imported, whatever an earlier boundary recorded.
 fn terrain_merged_boundary(stored: ImportBoundary, watermark: ImportBoundary) -> ImportBoundary {
     ImportBoundary {
-        max_position_id: stored.max_position_id.max(watermark.max_position_id),
+        max_position_id: stored
+            .max_position_id
+            .max(watermark.max_position_id)
+            .min(hub_ids::HUB_ID_BASE - 1),
         max_date_ms: stored.max_date_ms.max(watermark.max_date_ms),
     }
 }
@@ -150,6 +160,7 @@ fn raise_terrain_import_boundary_in_transaction(
 }
 
 /// C9 R5 to C9 R7: cache one eligibility decision per drive within a selection.
+/// A position in the Hub's id range is never imported (M03-T12).
 fn terrain_qualifies(
     connection: &Connection,
     vehicle_id: Uuid,
@@ -162,7 +173,9 @@ fn terrain_qualifies(
         return Ok(false);
     };
     if position.elevation.is_some()
-        || (position.id <= boundary.max_position_id && position.date_ms <= boundary.max_date_ms)
+        || (!hub_ids::is_hub_id(position.id)
+            && position.id <= boundary.max_position_id
+            && position.date_ms <= boundary.max_date_ms)
         || !position.latitude.is_finite()
         || !(-90.0..=90.0).contains(&position.latitude)
         || !position.longitude.is_finite()

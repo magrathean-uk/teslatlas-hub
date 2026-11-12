@@ -1555,13 +1555,9 @@ fn has_fresh_drive_facts(observation: &Observation<'_>) -> bool {
     observation.fresh.motion || observation.fresh.position
 }
 
-/// Allocate the next position id (C1 R10).
+/// Allocate the next position id (C1 R10) from the Hub's range (M03-T12).
 fn next_position_id(state: &mut OpenSessionState) -> Result<i64, LifecycleError> {
-    let id = state.next_position_id;
-    state.next_position_id = id
-        .checked_add(1)
-        .ok_or(LifecycleError::IdentifierExhausted)?;
-    Ok(id)
+    allocate_hub_id(&mut state.next_position_id)
 }
 
 /// The point this observation folds into an open drive (C1 R42), from the
@@ -1917,22 +1913,14 @@ impl OpenCharge {
     }
 }
 
-/// Allocate the next charge id (C1 R10).
+/// Allocate the next charge id (C1 R10) from the Hub's range (M03-T12).
 fn allocate_charge_id(state: &mut OpenSessionState) -> Result<i64, LifecycleError> {
-    let id = state.next_charge_id;
-    state.next_charge_id = id
-        .checked_add(1)
-        .ok_or(LifecycleError::IdentifierExhausted)?;
-    Ok(id)
+    allocate_hub_id(&mut state.next_charge_id)
 }
 
-/// Allocate the next charge-sample id (C1 R10).
+/// Allocate the next charge-sample id (C1 R10) from the Hub's range (M03-T12).
 fn allocate_charge_sample_id(state: &mut OpenSessionState) -> Result<i64, LifecycleError> {
-    let id = state.next_charge_sample_id;
-    state.next_charge_sample_id = id
-        .checked_add(1)
-        .ok_or(LifecycleError::IdentifierExhausted)?;
-    Ok(id)
+    allocate_hub_id(&mut state.next_charge_sample_id)
 }
 
 /// Whether this observation anchors a charge sample (C1 R62): its
@@ -2101,10 +2089,7 @@ fn drive_open_step(
         .chain(delta.charges.iter().filter_map(|charge| charge.end_date_ms))
         .max();
     let start = after_closed.map_or(t_drive, |end| end.max(t_drive));
-    let id = state.next_drive_id;
-    state.next_drive_id = id
-        .checked_add(1)
-        .ok_or(LifecycleError::IdentifierExhausted)?;
+    let id = allocate_hub_id(&mut state.next_drive_id)?;
     let mut open = OpenDrive::empty(id, observation.car_id, start);
     if let Some(snapshot) = state.parked_snapshot.as_ref()
         && t_drive.saturating_sub(snapshot.seen_at_ms) <= observation.t_gap_ms

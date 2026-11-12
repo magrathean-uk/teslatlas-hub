@@ -230,9 +230,10 @@ impl OpenSessionState {
     }
 }
 
-/// The largest id already in use in each id space of one vehicle (R84): the
-/// larger of the materialised maximum and the import watermark of the matching
-/// `lifecycle_source_watermarks` domain. Zero means none.
+/// The largest id already in use in each id space of one vehicle. Only an id
+/// in the Hub's reserved range (`crate::db::hub_ids`) bounds a cursor: every
+/// other id is a source id, which the importer keeps below the range. Zero
+/// means none.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct IdFloors {
     pub drives: i64,
@@ -244,16 +245,19 @@ pub(crate) struct IdFloors {
 }
 
 impl OpenSessionState {
-    /// Raise every `next_*_id` to at least `floor + 1`, saturating at
-    /// `i64::MAX`, and never lower one (R84). The next allocation is then the
-    /// first id above every key in use. Ids already allocated are not
-    /// renumbered. Reason: an id at or below an imported key would alias two
-    /// rows on the pages that serve imported rows, and would make a live
-    /// charge look imported (C2 R5); a cursor that is too high only skips
-    /// unused values.
+    /// Raise every `next_*_id` into the Hub's range and above every floor that
+    /// lies in the range, and never lower one (M03-T12). A floor outside the
+    /// range is a source id and bounds nothing: the Hub never allocates there.
+    /// Ids already allocated are not renumbered; a cursor that is too high only
+    /// skips unused values, and one past `HUB_ID_MAX` refuses the next
+    /// allocation.
     pub(crate) fn raise_id_cursors(&mut self, used: &IdFloors) {
-        let raise =
-            |next: &mut i64, floor: i64| *next = (*next).max(floor.max(0).saturating_add(1));
+        let raise = |next: &mut i64, floor: i64| {
+            *next = (*next).max(crate::db::hub_ids::HUB_ID_BASE);
+            if crate::db::hub_ids::is_hub_id(floor) {
+                *next = (*next).max(floor.saturating_add(1));
+            }
+        };
         raise(&mut self.next_drive_id, used.drives);
         raise(&mut self.next_position_id, used.positions);
         raise(&mut self.next_charge_id, used.charges);
@@ -261,6 +265,37 @@ impl OpenSessionState {
         raise(&mut self.next_state_id, used.states);
         raise(&mut self.next_update_id, used.updates);
     }
+
+    /// Whether every `next_*_id` already lies at or above `HUB_ID_BASE`. A
+    /// state seeded before the range (restored or migrated, closed sessions
+    /// included) does not, and is seeded again from the store's Hub-range
+    /// maxima before it allocates (M03-T12).
+    pub(crate) fn id_cursors_in_hub_range(&self) -> bool {
+        [
+            self.next_drive_id,
+            self.next_position_id,
+            self.next_charge_id,
+            self.next_charge_sample_id,
+            self.next_state_id,
+            self.next_update_id,
+        ]
+        .into_iter()
+        .all(|cursor| cursor >= crate::db::hub_ids::HUB_ID_BASE)
+    }
+}
+
+/// Allocate the next id of one id space from its cursor (M03-T12). Every row
+/// the Hub collects on the six tables takes its id here, from the reserved
+/// range through `next_hub_id`: a cursor below the range (fresh, restored,
+/// imported or migrated state) allocates `HUB_ID_BASE`, and a cursor past
+/// `HUB_ID_MAX` refuses with `IdentifierExhausted` and leaves the cursor as it
+/// was. The cursor then holds the next unallocated id.
+pub(crate) fn allocate_hub_id(cursor: &mut i64) -> Result<i64, LifecycleError> {
+    let id = crate::db::hub_ids::next_hub_id(*cursor)
+        .map_err(|_| LifecycleError::IdentifierExhausted)?;
+    // `id <= HUB_ID_MAX < i64::MAX`, so the cursor cannot overflow.
+    *cursor = id + 1;
+    Ok(id)
 }
 
 /// Seed only the open parents and bounded counters from an imported snapshot.
@@ -303,54 +338,12 @@ pub fn seed_imported_open_session_state(
     state.imported_state_watermark_ms = state
         .imported_state_watermark_ms
         .max(session.watermarks.states.max_timestamp_ms);
-    let max_drive = session
-        .watermarks
-        .drives
-        .max_id
-        .unwrap_or(0)
-        .max(session.drive.as_ref().map_or(0, |row| row.id));
-    let max_position = session
-        .drive_positions
-        .iter()
-        .chain(session.standalone_positions.iter())
-        .map(|row| row.id)
-        .max()
-        .unwrap_or(0)
-        .max(session.watermarks.positions.max_id.unwrap_or(0));
-    let max_charge = session
-        .watermarks
-        .charging_processes
-        .max_id
-        .unwrap_or(0)
-        .max(session.charge.as_ref().map_or(0, |row| row.id));
-    let max_sample = session
-        .charge_samples
-        .iter()
-        .map(|row| row.id)
-        .max()
-        .unwrap_or(0)
-        .max(session.watermarks.charges.max_id.unwrap_or(0));
-    let max_state = session
-        .watermarks
-        .states
-        .max_id
-        .unwrap_or(0)
-        .max(session.state.as_ref().map_or(0, |row| row.id));
-    state.next_drive_id = state.next_drive_id.max(max_drive.saturating_add(1));
-    state.next_position_id = state.next_position_id.max(max_position.saturating_add(1));
-    state.next_charge_id = state.next_charge_id.max(max_charge.saturating_add(1));
-    state.next_charge_sample_id = state
-        .next_charge_sample_id
-        .max(max_sample.saturating_add(1));
-    state.next_state_id = state.next_state_id.max(max_state.saturating_add(1));
-    state.next_update_id = state.next_update_id.max(
-        session
-            .watermarks
-            .updates
-            .max_id
-            .unwrap_or(0)
-            .saturating_add(1),
-    );
+    // M03-T12: the inherited open rows keep their source ids (above), and
+    // the Hub's own rows take ids from the reserved range, which lies above
+    // every source id the importer admits. Import watermarks therefore no
+    // longer raise the cursors; they enter the range here, and the seeding
+    // transaction raises them above the store's Hub-range maxima.
+    state.raise_id_cursors(&IdFloors::default());
     state.id_cursors_seeded = true;
     state.last_observed_at_ms = state
         .last_observed_at_ms

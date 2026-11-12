@@ -545,10 +545,7 @@ fn apply_version_facts(
             let (id, install_start) = match state.open_update.take() {
                 Some(open) => (open.id, Some(open.start_date_ms)),
                 None => {
-                    let id = state.next_update_id;
-                    state.next_update_id = id
-                        .checked_add(1)
-                        .ok_or(LifecycleError::IdentifierExhausted)?;
+                    let id = allocate_hub_id(&mut state.next_update_id)?;
                     (id, None)
                 }
             };
@@ -594,10 +591,7 @@ fn apply_update_status(
         UpdateStatusClass::Installing
             if state.open_update.is_none() && state.open_drive.is_none() =>
         {
-            let id = state.next_update_id;
-            state.next_update_id = id
-                .checked_add(1)
-                .ok_or(LifecycleError::IdentifierExhausted)?;
+            let id = allocate_hub_id(&mut state.next_update_id)?;
             state.open_update = Some(OpenUpdate {
                 id,
                 car_id: observation.car_id,
