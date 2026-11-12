@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Geconfigureerde auto’s: %d";
 
 "hub.signIn.reportInvalid" = "Hub kon de aanmelding niet bevestigen. Meld je opnieuw aan bij Tesla.";
+
+"hub.signIn.unconfirmed" = "Hub heeft de aanmelding niet op tijd bevestigd, maar die is mogelijk opgeslagen. Controleer de status van Hub voordat je je opnieuw aanmeldt.";

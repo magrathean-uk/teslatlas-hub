@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "רכבים שהוגדרו: %d";
 
 "hub.signIn.reportInvalid" = "Hub לא הצליח לאשר את ההתחברות. התחברו שוב באמצעות Tesla.";
+
+"hub.signIn.unconfirmed" = "Hub לא אישר את ההתחברות בזמן, אך ייתכן שהיא נשמרה. בדקו את מצב Hub לפני שתתחברו שוב.";

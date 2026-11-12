@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Skonfigurowane samochody: %d";
 
 "hub.signIn.reportInvalid" = "Hub nie mógł potwierdzić logowania. Zaloguj się ponownie przez Teslę.";
+
+"hub.signIn.unconfirmed" = "Hub nie potwierdził logowania na czas, ale mogło ono zostać zapisane. Sprawdź stan Hub, zanim zalogujesz się ponownie.";

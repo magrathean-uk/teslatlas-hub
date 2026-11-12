@@ -2113,6 +2113,16 @@ struct HubOwnerSignInReportInvalid: LocalizedError, Equatable {
     }
 }
 
+/// `setup` did not answer in time (the CLI's `control_channel_failed`, or the app's own command
+/// timeout): the service may still store the Hub's own pair, so this is neither a failure nor
+/// a success. Nothing advances, no grant is held, and the owner is told to check Hub's status.
+struct HubOwnerSignInUnconfirmed: LocalizedError, Equatable {
+    var errorDescription: String? {
+        HubL10n.text("hub.signIn.unconfirmed",
+                     fallback: "Hub did not confirm the sign-in in time. It may have been stored. Check Hub's status before signing in again.")
+    }
+}
+
 /// Signed in, but no car was configured: the app's own line for the service's fixed
 /// `discoveryCode` (DEC-090), and a general line for a code it does not know.
 struct HubOwnerDiscoveryFailure: LocalizedError, Equatable {
@@ -4278,6 +4288,17 @@ final class HubController {
                                                 "retry_held": held ? "true" : "false"
                                             ])
                     self.refresh { _ in completion(.failure(error)) }
+                case let .failure(error as HubOwnerSignInUnconfirmed):
+                    // No answer in time: the pair may be stored, so the status is read again and
+                    // no grant is held. Only the stable code is logged, never the code or verifier.
+                    self.lastVehiclesConfigured = nil
+                    HubAppLog.shared.record("setup.unconfirmed", category: "account", level: "WARN",
+                                            fields: [
+                                                "provider": "legacy",
+                                                "duration_ms": durationMs,
+                                                "error_code": "unconfirmed"
+                                            ])
+                    self.refresh { _ in completion(.failure(error)) }
                 case let .failure(error):
                     HubAppLog.shared.record("setup.failed", category: "account", level: "ERROR",
                                             fields: [
@@ -4309,7 +4330,7 @@ final class HubController {
                     case let .failed(code)?: finish(.failure(HubOwnerDiscoveryFailure(code: code)))
                     case nil: finish(.failure(HubOwnerSignInReportInvalid()))
                     }
-                case let .failure(error): finish(.failure(Self.signInError(error)))
+                case let .failure(error): finish(.failure(Self.signInError(error, afterSetup: true)))
                 }
             }
         }
@@ -4440,8 +4461,14 @@ final class HubController {
     }
 
     /// The service's stable refusal codes for sign-in, in plain words. Anything else is
-    /// reported as the command reported it.
-    static func signInError(_ error: Error) -> Error {
+    /// reported as the command reported it. After `setup` has run, a missing answer (the CLI's
+    /// `control_channel_failed` or the command's own timeout) is not a refusal: the service may
+    /// still store the pair, so it is reported as unconfirmed.
+    static func signInError(_ error: Error, afterSetup: Bool = false) -> Error {
+        if afterSetup {
+            if case HubActionError.commandTimedOut = error { return HubOwnerSignInUnconfirmed() }
+            if error.localizedDescription.contains("control_channel_failed") { return HubOwnerSignInUnconfirmed() }
+        }
         let text = error.localizedDescription
         for code in ["sign_in_unavailable", "window_closed", "credential_recovery_pending",
                      "service_unauthenticated", "control_channel_busy", "service_not_running"]

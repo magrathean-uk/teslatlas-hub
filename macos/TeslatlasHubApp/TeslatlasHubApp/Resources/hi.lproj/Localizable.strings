@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "कॉन्फ़िगर की गई कारें: %d";
 
 "hub.signIn.reportInvalid" = "Hub साइन इन की पुष्टि नहीं कर सका। फिर से Tesla में साइन इन करें।";
+
+"hub.signIn.unconfirmed" = "Hub ने समय पर साइन इन की पुष्टि नहीं की, लेकिन हो सकता है वह सहेजा गया हो। दोबारा साइन इन करने से पहले Hub की स्थिति जाँचें।";

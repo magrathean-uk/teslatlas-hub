@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "ਸੰਰਚਿਤ ਕਾਰਾਂ: %d";
 
 "hub.signIn.reportInvalid" = "Hub ਸਾਈਨ ਇਨ ਦੀ ਪੁਸ਼ਟੀ ਨਹੀਂ ਕਰ ਸਕਿਆ। ਦੁਬਾਰਾ Tesla ਨਾਲ ਸਾਈਨ ਇਨ ਕਰੋ।";
+
+"hub.signIn.unconfirmed" = "Hub ਨੇ ਸਮੇਂ ਸਿਰ ਸਾਈਨ ਇਨ ਦੀ ਪੁਸ਼ਟੀ ਨਹੀਂ ਕੀਤੀ, ਪਰ ਹੋ ਸਕਦਾ ਹੈ ਇਹ ਸੰਭਾਲਿਆ ਗਿਆ ਹੋਵੇ। ਦੁਬਾਰਾ ਸਾਈਨ ਇਨ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ Hub ਦੀ ਸਥਿਤੀ ਜਾਂਚੋ।";

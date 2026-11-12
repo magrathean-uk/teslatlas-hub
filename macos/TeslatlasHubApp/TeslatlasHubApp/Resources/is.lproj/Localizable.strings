@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Stilltir bílar: %d";
 
 "hub.signIn.reportInvalid" = "Hub gat ekki staðfest innskráninguna. Skráðu þig aftur inn með Tesla.";
+
+"hub.signIn.unconfirmed" = "Hub staðfesti ekki innskráninguna í tæka tíð, en hún kann að hafa vistast. Athugaðu stöðu Hub áður en þú skráir þig aftur inn.";

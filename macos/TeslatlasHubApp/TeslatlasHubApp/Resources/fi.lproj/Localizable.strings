@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Määritetyt autot: %d";
 
 "hub.signIn.reportInvalid" = "Hub ei voinut vahvistaa kirjautumista. Kirjaudu sisään Teslan kautta uudelleen.";
+
+"hub.signIn.unconfirmed" = "Hub ei vahvistanut kirjautumista ajoissa, mutta se on voitu tallentaa. Tarkista Hubin tila, ennen kuin kirjaudut sisään uudelleen.";

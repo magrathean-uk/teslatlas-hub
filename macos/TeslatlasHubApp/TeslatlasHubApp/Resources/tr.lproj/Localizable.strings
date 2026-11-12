@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Yapılandırılan araçlar: %d";
 
 "hub.signIn.reportInvalid" = "Hub oturum açmayı doğrulayamadı. Tesla ile yeniden oturum açın.";
+
+"hub.signIn.unconfirmed" = "Hub oturum açmayı zamanında doğrulamadı, ancak oturum açma kaydedilmiş olabilir. Yeniden oturum açmadan önce Hub durumunu kontrol edin.";

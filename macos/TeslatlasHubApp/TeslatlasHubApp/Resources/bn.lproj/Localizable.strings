@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "কনফিগার করা গাড়ি: %d";
 
 "hub.signIn.reportInvalid" = "Hub সাইন ইন নিশ্চিত করতে পারেনি। আবার Tesla দিয়ে সাইন ইন করুন।";
+
+"hub.signIn.unconfirmed" = "Hub সময়মতো সাইন ইন নিশ্চিত করেনি, তবে এটি সংরক্ষিত হয়ে থাকতে পারে। আবার সাইন ইন করার আগে Hub-এর স্ট্যাটাস দেখে নিন।";

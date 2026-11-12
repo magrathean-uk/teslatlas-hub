@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Sukonfigūruoti automobiliai: %d";
 
 "hub.signIn.reportInvalid" = "„Hub“ nepavyko patvirtinti prisijungimo. Prisijunkite per „Tesla“ iš naujo.";
+
+"hub.signIn.unconfirmed" = "„Hub“ laiku nepatvirtino prisijungimo, tačiau jis galėjo būti išsaugotas. Prieš prisijungdami iš naujo, patikrinkite „Hub“ būseną.";

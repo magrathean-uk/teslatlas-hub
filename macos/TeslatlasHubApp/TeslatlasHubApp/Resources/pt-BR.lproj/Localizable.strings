@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "Carros configurados: %d";
 
 "hub.signIn.reportInvalid" = "O Hub não conseguiu confirmar o login. Entre de novo com a Tesla.";
+
+"hub.signIn.unconfirmed" = "O Hub não confirmou o login a tempo, mas ele pode ter sido salvo. Verifique o status do Hub antes de entrar de novo.";

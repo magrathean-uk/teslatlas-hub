@@ -854,3 +854,5 @@
 "hub.signIn.discovery.configured" = "ગોઠવેલી કાર: %d";
 
 "hub.signIn.reportInvalid" = "Hub સાઇન ઇનની પુષ્ટિ કરી શક્યું નથી. ફરી Tesla સાથે સાઇન ઇન કરો.";
+
+"hub.signIn.unconfirmed" = "Hub એ સમયસર સાઇન ઇનની પુષ્ટિ કરી નથી, પરંતુ તે સંગ્રહિત થયું હોઈ શકે છે. ફરી સાઇન ઇન કરતા પહેલાં Hub ની સ્થિતિ તપાસો.";
