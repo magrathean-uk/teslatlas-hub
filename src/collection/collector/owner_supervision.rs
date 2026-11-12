@@ -1967,6 +1967,8 @@ fn replay_export_outbox_blocking(
     }
 }
 
+/// Tests only: every production publisher passes its publication gate (M04-T07).
+#[cfg(test)]
 fn publish_v2_delta(
     store: &HubStore,
     cursor_key: &CursorKey,
