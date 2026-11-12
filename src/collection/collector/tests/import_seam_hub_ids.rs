@@ -99,3 +99,95 @@ fn import_seam_restored_lifecycle_cursors_below_the_range_are_raised() {
     seed_lifecycle_ids_from_materialised(&store, v, &mut ahead).expect("kept");
     assert_eq!(ahead, before, "a state in the range is not seeded again");
 }
+
+/// The Hub's own collection is never refused by the seam guard (CHK-M03-SEAM
+/// group C): a vehicle that has collected rows in the Hub range, under
+/// coverage in the store and with no import base, publishes its first full
+/// snapshot, while an unplanned import publication on it still refuses.
+#[test]
+fn import_seam_the_collectors_own_publication_is_not_refused() {
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let t0 = 1_800_000_500_000_i64;
+    let vehicle = Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online");
+    let drive_state = |shift: &str, speed: i64, at_ms: i64| {
+        json!({
+            "drive_state": {
+                "shift_state": shift,
+                "speed": speed,
+                "latitude": 47.0,
+                "longitude": 19.0,
+                "timestamp": at_ms
+            },
+            "vehicle_state": {"odometer": 1000.0 + (at_ms - t0) as f64 / 60_000.0},
+            "charge_state": {"battery_level": 70, "battery_range": 200.0}
+        })
+    };
+    let collect = |snapshots: Vec<VehicleData>, at_ms: i64| {
+        let collection = ManualCollection {
+            vehicles: vec![vehicle.clone()],
+            snapshots,
+            failures: vec![],
+        };
+        persist_collection(&store, &collection, at_ms).expect("persist");
+        materialise_lifecycle_for_collection(&store, &collection, at_ms).expect("materialise");
+        collection
+    };
+    collect(
+        vec![
+            VehicleData::for_test(9, drive_state("D", 25, t0)),
+            VehicleData::for_test(9, drive_state("D", 30, t0 + 60_000)),
+        ],
+        t0,
+    );
+    let last = collect(
+        vec![VehicleData::for_test(9, drive_state("P", 0, t0 + 120_000))],
+        t0 + 120_000,
+    );
+    let vehicle_id = store
+        .open()
+        .expect("db")
+        .query_row("SELECT vehicle_id FROM vehicles", [], |row| {
+            row.get::<_, String>(0)
+        })
+        .expect("id")
+        .parse::<Uuid>()
+        .expect("uuid");
+    let history = store.materialised_history(vehicle_id).expect("history");
+    assert_eq!(history.drives.len(), 1);
+    assert!(crate::db::hub_ids::is_hub_id(history.drives[0].id));
+    store
+        .open()
+        .expect("db")
+        .execute(
+            "INSERT INTO collection_coverage(seq, grant_digest, opened_at_ms, closed_at_ms, gaps_json, sealed)
+             VALUES (1, 'grant-1', ?1, NULL, '[]', 'open')",
+            rusqlite::params![t0 - 60_000],
+        )
+        .expect("coverage");
+    assert!(
+        matches!(
+            store.refuse_unplanned_import_seam(vehicle_id),
+            Err(crate::db::StoreError::ImportGenerationConflict)
+        ),
+        "an unplanned import publication still refuses"
+    );
+
+    let publication_gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let published = publish_compatibility_snapshots(
+        &store,
+        &publication_gate,
+        &CursorKey::from_bytes([9; 32]),
+        &last,
+        t0 + 120_000,
+    )
+    .expect("the Hub's own collection publishes");
+    assert_eq!(published, 1);
+    let manifest = store
+        .manifest_for_vehicle(vehicle_id)
+        .expect("manifest")
+        .expect("published");
+    assert!(manifest.total_rows > 1);
+}

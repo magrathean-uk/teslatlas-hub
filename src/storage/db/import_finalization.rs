@@ -40,6 +40,15 @@ fn import_inventory_contains_closed_drive(
         .map_err(StoreError::Query)
 }
 
+/// Who publishes a full snapshot: a source import, which must plan the seam
+/// once the Hub has collected the vehicle, or the store's own materialised
+/// history, which is the seam's outcome and has nothing to plan.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SnapshotPublisher {
+    SourceImport,
+    OwnHistory,
+}
+
 impl HubStore {
     /// Publish a client-valid import successor under the immutable V2 base.
     ///
@@ -2318,6 +2327,8 @@ impl HubStore {
     /// binding that was used to write the immutable pack.  All production V2
     /// publishers must use this entry point; a later delta must never infer
     /// account, generation, or selected car from mutable local state.
+    /// Its producers publish the store's own materialised history (the
+    /// collector and terrain), which the seam guard does not refuse.
     pub fn finalize_import_snapshot_with_binding(
         &self,
         manifest: &SyncManifest,
@@ -2325,13 +2336,14 @@ impl HubStore {
         geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: &ProjectionBinding,
     ) -> Result<(), StoreError> {
-        self.finalize_import_snapshot_with_metadata(
+        self.finalize_snapshot_with_metadata(
             manifest,
             fingerprint,
             geofences,
             Some(binding),
             None,
             None,
+            SnapshotPublisher::OwnHistory,
         )
     }
 
@@ -2387,6 +2399,28 @@ impl HubStore {
         inventory: Option<&SourceDbImportProjectionInventory>,
         projection_state: Option<&SourceDbProjectionState>,
     ) -> Result<(), StoreError> {
+        self.finalize_snapshot_with_metadata(
+            manifest,
+            fingerprint,
+            geofences,
+            binding,
+            inventory,
+            projection_state,
+            SnapshotPublisher::SourceImport,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finalize_snapshot_with_metadata(
+        &self,
+        manifest: &SyncManifest,
+        fingerprint: Sha256Digest,
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
+        binding: Option<&ProjectionBinding>,
+        inventory: Option<&SourceDbImportProjectionInventory>,
+        projection_state: Option<&SourceDbProjectionState>,
+        publisher: SnapshotPublisher,
+    ) -> Result<(), StoreError> {
         if manifest.schema == HUB_PROJECTION_SCHEMA_V2 && binding.is_none() {
             return Err(StoreError::ImmutableBaseBindingMissing(manifest.vehicle_id));
         }
@@ -2404,9 +2438,16 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
-        // A publication that does not plan the seam may not publish over
-        // the Hub's own collection (design M03-SEAM-R3, section 4).
-        refuse_unplanned_import_seam_in_transaction(&transaction, &manifest.vehicle_id.to_string())?;
+        // An import publication that does not plan the seam may not publish
+        // over the Hub's own collection (design M03-SEAM-R3, section 4). The
+        // store's own history is not an import: it is what the seam left, so
+        // it has nothing to plan, and the Hub's collection must publish.
+        if publisher == SnapshotPublisher::SourceImport {
+            refuse_unplanned_import_seam_in_transaction(
+                &transaction,
+                &manifest.vehicle_id.to_string(),
+            )?;
+        }
         publish_manifest_in_transaction(&transaction, manifest, binding)?;
         if let Some(inventory) = inventory {
             replace_source_db_import_inventory_in_transaction(
