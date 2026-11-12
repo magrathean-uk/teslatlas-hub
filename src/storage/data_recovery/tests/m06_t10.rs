@@ -177,7 +177,11 @@ fn recovery_leftovers(parent: &Path) -> Vec<String> {
     fs::read_dir(parent)
         .expect("parent listing")
         .map(|entry| entry.expect("entry").file_name().to_string_lossy().into_owned())
-        .filter(|name| name.starts_with(".teslatlas-data-recovery-") || name == "restored")
+        .filter(|name| {
+            name.starts_with(".teslatlas-data-recovery-")
+                || name.starts_with(".teslatlas-encrypted-restore-")
+                || name == "restored"
+        })
         .collect()
 }
 

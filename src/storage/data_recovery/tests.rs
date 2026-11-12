@@ -1368,5 +1368,8 @@ mod m06_t09;
 #[path = "tests/m06_t10.rs"]
 mod m06_t10;
 
+#[path = "tests/m06_t11.rs"]
+mod m06_t11;
+
 #[path = "tests/g2_4_m1.rs"]
 mod g2_4_m1;

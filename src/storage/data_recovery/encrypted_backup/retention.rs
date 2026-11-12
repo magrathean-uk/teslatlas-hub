@@ -8,12 +8,16 @@
 //!
 //! - Every operation is relative to the destination descriptor admitted for
 //!   the run, never to a path looked up again.
-//! - The new generation counts towards retention only once the complete
-//!   published file has been authenticated (every chunk, every member digest
-//!   and the trailer) and is the very object the run wrote (same device and
-//!   inode, same manifest bytes). It stays open, and before every removal it
-//!   and every other kept generation must still be unchanged and still under
-//!   its own name; otherwise nothing more is removed.
+//! - On every destination, before the run reports anything, the complete
+//!   published file is authenticated (every chunk, every member digest, the
+//!   trailer and the end of the stream) and established as the object the
+//!   run wrote ([`confirm_publication`]). Otherwise the run fails with an
+//!   invalid publication: an error of its own, never a success with a
+//!   rotation warning, so no caller records it as the last good generation.
+//! - The confirmed generation stays open and counts towards retention.
+//!   Before every removal it and every other kept generation must still be
+//!   unchanged and still under its own name; otherwise nothing more is
+//!   removed, and the run fails when the new generation itself changed.
 //! - An older generation counts, or is removed, only after full
 //!   authentication. A damaged one is neither counted nor removed.
 //! - A removal first claims the candidate by an atomic no-replace rename into
@@ -183,7 +187,9 @@ fn hold_authenticated(
     let after = file
         .metadata()
         .map_err(|source| io_error("inspecting backup archive", &path, source))?;
-    if Stamp::of(&after) != Stamp::of(&before) {
+    // Where ownership is not enforced, times and numbers can be synthesised
+    // or refreshed by the server; the authenticated content is what counts.
+    if trust == VolumeTrust::Posix && Stamp::of(&after) != Stamp::of(&before) {
         return Err(invalid(format!(
             "{} changed while it was authenticated",
             path.display()
@@ -336,6 +342,93 @@ pub(super) fn publish(
             error.into(),
         )
     })
+}
+
+/// The prefix of the error that refuses a publication: the file under the
+/// generation's final name is not, complete and authenticated, the object
+/// the run wrote.
+pub(super) const INVALID_PUBLICATION: &str = "invalid_publication";
+
+fn invalid_publication(path: &Path, reason: impl std::fmt::Display) -> DataRecoveryError {
+    invalid(format!(
+        "{INVALID_PUBLICATION}: {} {reason}; the run did not produce a good generation and \
+         nothing older was removed",
+        path.display()
+    ))
+}
+
+/// What the run wrote, to be found again under the generation's final name.
+pub(super) struct Written<'a> {
+    pub(super) identity: FileIdentity,
+    pub(super) manifest_bytes: &'a [u8],
+    pub(super) archive_bytes: u64,
+}
+
+/// After publication and before the run reports anything, on every
+/// destination: open the final name through the held destination, admit it,
+/// read it whole (header, every chunk, every member digest, the trailer and
+/// the end of the stream) and establish that it is the object this run
+/// wrote. Everywhere that means the exact manifest bytes the run wrote (its
+/// generation is unique to the run and sealed under the password-derived
+/// key) and the exact length; on a volume that enforces ownership also the
+/// same device and inode, unchanged while it was read. A volume that does
+/// not enforce ownership can synthesise device and inode numbers and change
+/// them on a rename, so there the authenticated content is the identity, as
+/// decided: such destinations rely on the authenticated encryption.
+///
+/// Returns the generation held open, for rotation. A file that does not
+/// authenticate, or is not the run's, is an invalid publication; an I/O
+/// failure while reading stays an I/O failure. Neither is a success.
+pub(super) fn confirm_publication(
+    destination: &AdmittedDirectory,
+    final_name: &str,
+    written: &Written<'_>,
+    password: &str,
+) -> Result<Held, DataRecoveryError> {
+    let path = destination.path.join(final_name);
+    let (held, _, manifest_bytes) = match hold_authenticated(
+        &destination.fd,
+        &destination.path,
+        final_name,
+        destination.trust,
+        password,
+    ) {
+        Ok(found) => found,
+        Err(error @ (DataRecoveryError::Io { .. } | DataRecoveryError::DestinationUnavailable { .. })) => {
+            return Err(error);
+        }
+        Err(error) => {
+            return Err(invalid_publication(
+                &path,
+                format_args!("did not authenticate in full: {error}"),
+            ));
+        }
+    };
+    if manifest_bytes != written.manifest_bytes {
+        return Err(invalid_publication(&path, "is not the generation this run wrote"));
+    }
+    if held.stamp.len != written.archive_bytes {
+        return Err(invalid_publication(&path, "does not have the length this run wrote"));
+    }
+    if destination.trust == VolumeTrust::Posix && held.stamp.identity != written.identity {
+        return Err(invalid_publication(&path, "is not the object this run wrote"));
+    }
+    Ok(held)
+}
+
+/// The last step before success: on a volume that enforces ownership the
+/// confirmed generation must still be unchanged and under its own name.
+pub(super) fn confirm_still_published(
+    destination: &AdmittedDirectory,
+    newest: &Held,
+) -> Result<(), DataRecoveryError> {
+    if destination.trust == VolumeTrust::Posix && !newest.intact(&destination.fd) {
+        return Err(invalid_publication(
+            &destination.path.join(&newest.name),
+            "changed after it was authenticated",
+        ));
+    }
+    Ok(())
 }
 
 /// Record the run's partial as live state before anything is written to it.
@@ -590,50 +683,21 @@ struct Candidate {
     identity: FileIdentity,
 }
 
-/// After publication: confirm the new generation, then remove this Hub's
-/// generations beyond `keep` (the new one counts as one), oldest first.
-/// Returns how many went and the first failure or doubt, if any.
+/// After [`confirm_publication`]: remove this Hub's generations beyond `keep`
+/// (the confirmed new one counts as one), oldest first. Returns how many went
+/// and the first failure or doubt, if any; the new generation is good either
+/// way.
 pub(super) fn rotate_after_publish(
     destination: &AdmittedDirectory,
     keep: usize,
-    newest_name: &str,
-    written: FileIdentity,
-    manifest_bytes: &[u8],
+    newest: &Held,
     password: &str,
     installation_id: Uuid,
 ) -> (usize, Option<String>) {
     if destination.trust != VolumeTrust::Posix {
         return (0, Some(UNPROTECTED.to_owned()));
     }
-    let newest = match hold_authenticated(
-        &destination.fd,
-        &destination.path,
-        newest_name,
-        destination.trust,
-        password,
-    ) {
-        Ok((held, _, bytes)) if held.stamp.identity == written && bytes == manifest_bytes => held,
-        Ok(_) => {
-            return (
-                0,
-                Some(
-                    "older generations were kept: the published file is not the generation \
-                     this run wrote"
-                        .to_owned(),
-                ),
-            );
-        }
-        Err(error) => {
-            return (
-                0,
-                Some(format!(
-                    "older generations were kept: the new generation could not be \
-                     authenticated after publication: {error}"
-                )),
-            );
-        }
-    };
-    if let Err(error) = hook("rotate_confirmed", &destination.path.join(newest_name)) {
+    if let Err(error) = hook("rotate_confirmed", &destination.path.join(&newest.name)) {
         return (0, Some(error.to_string()));
     }
     rotate(destination, keep, newest, password, installation_id)
@@ -642,7 +706,7 @@ pub(super) fn rotate_after_publish(
 fn rotate(
     destination: &AdmittedDirectory,
     keep: usize,
-    newest: Held,
+    newest: &Held,
     password: &str,
     installation_id: Uuid,
 ) -> (usize, Option<String>) {
@@ -683,11 +747,11 @@ fn rotate(
         (right.created_at_ms, right.generation).cmp(&(left.created_at_ms, left.generation))
     });
 
-    let mut kept = vec![newest];
+    let mut kept: Vec<Held> = Vec::new();
     let mut removed = 0;
     let mut failure: Option<String> = None;
     for candidate in candidates {
-        if kept.len() < keep {
+        if kept.len() + 1 < keep {
             match hold_authenticated(
                 &destination.fd,
                 &destination.path,
@@ -709,7 +773,7 @@ fn rotate(
             }
             continue;
         }
-        if !kept.iter().all(|held| held.intact(&destination.fd)) {
+        if !(newest.intact(&destination.fd) && kept.iter().all(|held| held.intact(&destination.fd))) {
             note(
                 "a kept generation changed during rotation; no further generation was removed"
                     .to_owned(),

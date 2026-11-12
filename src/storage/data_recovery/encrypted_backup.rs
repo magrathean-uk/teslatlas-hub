@@ -86,7 +86,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
     num::NonZeroUsize,
-    os::unix::fs::{MetadataExt, OpenOptionsExt},
+    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -98,7 +98,8 @@ use std::{
 use super::{
     BACKUP_SCOPE, BUILD_VERSION, BackupFormat, BackupManifest, BackupMember, CATALOGUE_MEMBER,
     DataRecoveryError, DataRecoveryReport, HubStore, MAX_MANIFEST_BYTES,
-    MAX_SCHEMA_22_NOOP_BYTES, MemberKind, PACK_DIRECTORY, PRIVATE_FILE_MODE, RestoredMembers,
+    MAX_SCHEMA_22_NOOP_BYTES, MemberKind, PACK_DIRECTORY, PRIVATE_DIRECTORY_MODE,
+    PRIVATE_FILE_MODE, RestoredMembers,
     SCHEMA_22_NOOP_DIRECTORY, SCHEMA_VERSION, STREAMED_BACKUP_KIND, Sha256, StagingDirectory,
     StoreError, StreamedMembers, admit_staging_capacity, backup_format,
     backup_admission::{self, AdmittedDirectory},
@@ -113,7 +114,7 @@ use super::{
     immutable_database_identity_at_schema, invalid, io_error, manifest_copy_bytes,
     open_regular_nonblocking, parse_canonical_json, prepare_new_destination, report,
     schema_22_noop_member_filename, seal_backup_credentials, seal_backup_credentials_checked,
-    seal_host_authority,
+    seal_host_authority, set_mode,
     vacuum_sealed_catalogue, validate_manifest, validate_member, validate_restored_data_tree,
     validate_schema_22_noop_bytes,
 };
@@ -269,7 +270,8 @@ pub struct EncryptedBackupReport {
     pub archive_bytes: u64,
     /// Older generations removed by rotation after this run.
     pub rotated_generations: usize,
-    /// Set when rotation failed; the new generation is still good.
+    /// Set when rotation failed; the new generation is still good (it was
+    /// authenticated in full as the object the run wrote before rotation).
     pub rotation_error: Option<String>,
 }
 
@@ -900,7 +902,10 @@ fn take_snapshot(
     })
 }
 
-/// Create one encrypted backup generation.
+/// Create one encrypted backup generation. Success is reported only once the
+/// complete published file has authenticated as the object this run wrote,
+/// on every destination; otherwise the run fails with `InvalidBackup` whose
+/// message starts with `invalid_publication`, and nothing older is removed.
 pub fn create_encrypted_backup(
     store: &HubStore,
     request: &EncryptedBackupRequest<'_>,
@@ -1049,18 +1054,30 @@ pub fn create_encrypted_backup(
     // The packs are in the published generation: the pins go now.
     drop(pins);
 
+    // Nothing is reported, and nothing older is removed, until the complete
+    // published file has authenticated as the object this run wrote.
+    let newest = retention::confirm_publication(
+        &admitted,
+        &final_name,
+        &retention::Written {
+            identity: written.ok_or_else(|| invalid("the published generation has no identity"))?,
+            manifest_bytes: &manifest_bytes,
+            archive_bytes,
+        },
+        request.password,
+    )?;
     let (rotated_generations, rotation_error) = match request.keep {
         Some(keep) => retention::rotate_after_publish(
             &admitted,
             keep.get(),
-            &final_name,
-            written.ok_or_else(|| invalid("the published generation has no identity"))?,
-            &manifest_bytes,
+            &newest,
             request.password,
             source_installation_id,
         ),
         None => (0, None),
     };
+    retention::confirm_still_published(&admitted, &newest)?;
+    drop(newest);
     Ok(EncryptedBackupReport {
         status: "encrypted_backup_created",
         path: destination.join(&final_name),
@@ -1622,24 +1639,132 @@ pub fn verify_encrypted_backup(
     report("data_backup_verified", archive, &opened.manifest)
 }
 
+/// The staging directory of an encrypted restore, beside its target:
+/// `.teslatlas-encrypted-restore-<uuid>.staging`, mode `0700`.
+const RESTORE_STAGING_PREFIX: &str = ".teslatlas-encrypted-restore-";
+const RESTORE_STAGING_SUFFIX: &str = ".staging";
+
+fn is_restore_staging_name(name: &str) -> bool {
+    name.strip_prefix(RESTORE_STAGING_PREFIX)
+        .and_then(|rest| rest.strip_suffix(RESTORE_STAGING_SUFFIX))
+        .is_some_and(|id| Uuid::parse_str(id).is_ok())
+}
+
+/// Open `path` as a real directory, without following a link, take its
+/// exclusive lock without waiting, and confirm the path still names it.
+fn lock_directory(path: &Path) -> Option<(File, fs::Metadata)> {
+    let fd = rustix::fs::open(
+        path,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::DIRECTORY
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .ok()?;
+    rustix::fs::flock(&fd, rustix::fs::FlockOperation::NonBlockingLockExclusive).ok()?;
+    let directory = File::from(fd);
+    let held = directory.metadata().ok()?;
+    let named = fs::symlink_metadata(path).ok()?;
+    (named.dev() == held.dev() && named.ino() == held.ino()).then_some((directory, held))
+}
+
+/// Make the restore's staging directory and hold its lock for the whole
+/// restore. The lock belongs to the open descriptor and goes with the
+/// process, so a staging directory that nobody holds locked was left by an
+/// interrupted restore. When a concurrent restore's sweep takes the lock of a
+/// directory just made, that sweep removes it and another name is tried.
+fn create_restore_staging(parent: &Path) -> Result<(StagingDirectory, File), DataRecoveryError> {
+    for _ in 0..16 {
+        let path = parent.join(format!(
+            "{RESTORE_STAGING_PREFIX}{}{RESTORE_STAGING_SUFFIX}",
+            Uuid::new_v4()
+        ));
+        let mut builder = fs::DirBuilder::new();
+        builder.mode(PRIVATE_DIRECTORY_MODE);
+        match builder.create(&path) {
+            Ok(()) => {}
+            Err(source) if source.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(source) => return Err(io_error("creating staging directory", &path, source)),
+        }
+        let Some((lock, _)) = lock_directory(&path) else {
+            continue;
+        };
+        let staging = StagingDirectory {
+            path,
+            published: false,
+        };
+        set_mode(&staging.path, PRIVATE_DIRECTORY_MODE, "protecting staging directory")?;
+        return Ok((staging, lock));
+    }
+    Err(invalid("could not allocate a unique sibling staging directory"))
+}
+
+/// Before a restore: remove what interrupted encrypted restores left beside
+/// the target. Only an entry with the staging name (prefix, UUID, suffix)
+/// that is a real directory owned by this user and that no running restore
+/// holds locked is removed, while this restore holds its lock; anything
+/// else stays.
+fn clear_interrupted_restores(parent: &Path) {
+    let Ok(entries) = fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if !name.to_str().is_some_and(is_restore_staging_name) {
+            continue;
+        }
+        let path = parent.join(&name);
+        let Some((lock, held)) = lock_directory(&path) else {
+            continue;
+        };
+        if held.uid() == rustix::process::getuid().as_raw() {
+            let _ = fs::remove_dir_all(&path);
+        }
+        drop(lock);
+    }
+}
+
 /// Restore an archive into a new directory. The wrong password is refused
 /// before anything is written; any damage found while streaming discards the
 /// staged tree, so nothing partial is ever published.
+///
+/// When plaintext first touches disk (M06-T11): after the header has passed
+/// the password check, the first chunk has authenticated and yielded the
+/// manifest (canonical, valid, its generation matching the file name),
+/// capacity is admitted and the locked staging directory exists. Then the
+/// first member's record (path, size, digest) is read from authenticated
+/// plaintext and its file created in the staging directory; its bytes are
+/// written chunk by chunk, each only after that chunk's AES-256-GCM tag has
+/// verified under the nonce for its position (and the final-chunk flag). At
+/// that moment the member's digest, the later chunks, the final chunk, the
+/// declared totals and the trailer are not yet checked.
+///
+/// What guarantees nothing unauthenticated is adopted: the staging directory
+/// is published (one no-replace rename onto the target) only after the whole
+/// stream has authenticated, every member digest, the declared totals, the
+/// trailer binding the manifest and the end of the stream, and after the tree
+/// and installation checks. Any failure before that removes the staging
+/// directory; an interrupted restore's staging directory, no longer locked by
+/// any process, is removed when the next restore into the same parent starts.
 pub fn restore_encrypted_backup(
     archive: &Path,
     password: &str,
     destination: &Path,
 ) -> Result<DataRecoveryReport, DataRecoveryError> {
     let (destination, parent) = prepare_new_destination(destination)?;
+    clear_interrupted_restores(&parent);
     let mut opened = open_archive(archive, password)?;
     admit_staging_capacity(&parent, manifest_copy_bytes(&opened.manifest)?)?;
-    let staging = StagingDirectory::create(&parent)?;
+    // The lock lives until the restore returns, published or not.
+    let (staging, _staging_lock) = create_restore_staging(&parent)?;
     create_private_directory(&staging.path.join("packs"))?;
     create_private_directory(&staging.path.join("packs").join("sha256"))?;
     let root = staging.path.clone();
     let noop_directory = root.join("packs").join("noop");
     let mut noop_directory_made = false;
     let streamed = stream_members(&mut opened, |member| {
+        hook("restore_member", &root)?;
         if !noop_directory_made && schema_22_noop_member_filename(&member.path).is_some() {
             create_private_directory(&noop_directory)?;
             noop_directory_made = true;
@@ -1656,7 +1781,14 @@ pub fn restore_encrypted_backup(
             .open(&target)
             .map(Some)
             .map_err(|source| io_error("creating restored data member", &target, source))
-    })?;
+    });
+    #[cfg(test)]
+    if streamed.is_err() && test_hooks::CRASHED.with(|flag| flag.replace(false)) {
+        // A killed process removes nothing, and its lock goes with it.
+        std::mem::forget(staging);
+        return Err(streamed.err().expect("an error"));
+    }
+    let streamed = streamed?;
 
     let members = match backup_format(&opened.manifest)? {
         BackupFormat::Streamed => RestoredMembers::Streamed(&streamed),

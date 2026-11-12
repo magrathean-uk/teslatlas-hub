@@ -630,13 +630,15 @@ fn backup_path_substitution_newest_counts_only_as_the_authenticated_written_obje
             HookAction::Continue
         }
     });
-    let swapped = create_encrypted_backup(&hub.store, &rotating_request(&hub, &hub.destination, 1))
-        .expect("the run publishes what it finds");
+    // M06-T11: what it finds is an invalid publication, not a success.
+    let swapped = create_encrypted_backup(&hub.store, &rotating_request(&hub, &hub.destination, 1));
     clear_hook();
-    assert_eq!(swapped.rotated_generations, 0);
-    assert!(swapped.rotation_error.is_some(), "the doubt is reported");
+    assert!(
+        matches!(&swapped, Err(DataRecoveryError::InvalidBackup(message))
+            if message.starts_with("invalid_publication")),
+        "{swapped:?}"
+    );
     verify_encrypted_backup(&first.path, PASSWORD).expect("the last good generation stays");
-    assert!(verify_encrypted_backup(&swapped.path, PASSWORD).is_err());
     tick();
 
     // The published archive is truncated once it has authenticated.
@@ -648,11 +650,15 @@ fn backup_path_substitution_newest_counts_only_as_the_authenticated_written_obje
         }
         HookAction::Continue
     });
-    let truncated = create_encrypted_backup(&hub.store, &rotating_request(&hub, &hub.destination, 1))
-        .expect("backup despite the truncation");
+    // M06-T11: a new generation that changes before the run ends is not a
+    // success either, and nothing older goes.
+    let truncated = create_encrypted_backup(&hub.store, &rotating_request(&hub, &hub.destination, 1));
     clear_hook();
-    assert_eq!(truncated.rotated_generations, 0);
-    assert!(truncated.rotation_error.is_some());
+    assert!(
+        matches!(&truncated, Err(DataRecoveryError::InvalidBackup(message))
+            if message.starts_with("invalid_publication")),
+        "{truncated:?}"
+    );
     verify_encrypted_backup(&first.path, PASSWORD).expect("the last good generation stays");
     assert!(!hub.destination.join(PROTECTED).exists(), "nothing is left claimed");
 }
