@@ -2602,56 +2602,173 @@ final class HubControllerTests: XCTestCase {
     }
 
     func testSetupTimeoutWrappedAsNotQuiescentIsUnconfirmedAndKeepsItsChildTracked() throws {
-        // M02-T17: the executor reports a timed-out setup whose child may still run as
-        // commandNotQuiescent(commandTimedOut, ...). It is classified by the error underneath,
-        // gets the unconfirmed handling, and the owner stays held until the child is gone.
-        let quiescence = HubChildQuiescence()
-        quiescence.childMayRun()
-        let wrapped = HubActionError.commandNotQuiescent(HubActionError.commandTimedOut, quiescence)
-
-        let classified = HubController.signInError(wrapped, afterSetup: true)
-        guard case let HubActionError.commandNotQuiescent(inner, kept) = classified else {
-            return XCTFail("the child tracking is preserved: \(classified)")
+        // M02-T17: the executor reports a setup that got no answer and whose child may still run
+        // as commandNotQuiescent(commandTimedOut or control_channel_failed, ...). It is classified
+        // by the error underneath and its line is shown at once, while the child is still tracked:
+        // the owner stays held until the child is gone, but is never left without a line.
+        let noAnswers: [(String, Error)] = [
+            ("timed_out", HubActionError.commandTimedOut),
+            ("control_channel_failed", HubActionError.commandExited(
+                1, "control_channel_failed: the service's answer did not arrive"))
+        ]
+        for (name, underlying) in noAnswers {
+            let quiescence = HubChildQuiescence()
+            quiescence.childMayRun()
+            let wrapped = HubActionError.commandNotQuiescent(underlying, quiescence)
+            let classified = HubController.signInError(wrapped, afterSetup: true)
+            guard case let HubActionError.commandNotQuiescent(inner, kept) = classified else {
+                return XCTFail("\(name): the child tracking is preserved: \(classified)")
+            }
+            XCTAssertEqual(inner as? HubOwnerSignInUnconfirmed, HubOwnerSignInUnconfirmed(), name)
+            XCTAssertTrue(kept === quiescence, "\(name): the same quiescence is carried on")
+            // Before setup has run the same error is not unconfirmed and is left as it is.
+            guard case let HubActionError.commandNotQuiescent(untouched, _) = HubController.signInError(wrapped) else {
+                return XCTFail("\(name): a failure before setup keeps its wrapper")
+            }
+            XCTAssertNil(untouched as? HubOwnerSignInUnconfirmed, name)
         }
-        XCTAssertEqual(inner as? HubOwnerSignInUnconfirmed, HubOwnerSignInUnconfirmed())
-        XCTAssertTrue(kept === quiescence, "the same quiescence is carried on")
-        // Before setup has run the same error is not unconfirmed and is left as it is.
-        guard case let HubActionError.commandNotQuiescent(untouched, _) = HubController.signInError(wrapped) else {
-            return XCTFail("a failure before setup keeps its wrapper")
-        }
-        XCTAssertNil(untouched as? HubOwnerSignInUnconfirmed)
+        // A wrapped failure that is not a missing answer is not unconfirmed, and its child stays tracked.
+        let busyChild = HubChildQuiescence()
+        busyChild.childMayRun()
+        let busy = HubController.signInError(HubActionError.commandNotQuiescent(
+            HubActionError.commandExited(1, "control_channel_busy: another control request is running"), busyChild),
+                                              afterSetup: true)
+        XCTAssertNil(HubActionError.settingQuiescenceAside(busy) as? HubOwnerSignInUnconfirmed)
+        XCTAssertTrue(HubActionError.pendingQuiescence(of: busy) === busyChild)
 
+        // Both entry points of the owner's sign-in (the controller call and the onboarding's held
+        // sign-in context), each with both missing answers.
+        for (name, underlying) in noAnswers {
+            for entry in ["configure", "signIn"] {
+                let label = "\(entry) \(name)"
+                let quiescence = HubChildQuiescence()
+                quiescence.childMayRun()
+                let events = EventRecorder()
+                let runner = ScriptedRunner(
+                    events: events, result: .failure(HubActionError.commandNotQuiescent(underlying, quiescence)))
+                runner.statusResult = .success(Self.noPairStatus)
+                let home = try temporaryHome()
+                defer { try? FileManager.default.removeItem(at: home) }
+                let controller = signInController(runner, events: events, home: home)
+                let finished = expectation(description: label)
+                var delivered = 0
+                let completion: (Result<Void, Error>) -> Void = { result in
+                    delivered += 1
+                    defer { finished.fulfill() }
+                    guard case let .failure(error) = result else { return XCTFail("\(label): shown as success") }
+                    guard case let HubActionError.commandNotQuiescent(inner, _) = error else {
+                        return XCTFail("\(label): the child tracking reaches the caller: \(error)")
+                    }
+                    XCTAssertEqual(inner as? HubOwnerSignInUnconfirmed, HubOwnerSignInUnconfirmed(), label)
+                    XCTAssertTrue(error.localizedDescription.contains(Self.unconfirmedLine), label)
+                    // The line arrives while the child may still run: it is not held back until the
+                    // child is gone, and the owner is still held for it.
+                    XCTAssertFalse(quiescence.isQuiescent, label)
+                    XCTAssertFalse(controller.lifecycleCapabilities.isIdle, label)
+                    XCTAssertTrue(controller.lifecycleCapabilities.childHeld, label)
+                    // The status was read again before the owner saw the line.
+                    XCTAssertEqual(runner.statusRuns, 1, label)
+                }
+                if entry == "configure" {
+                    controller.configureTeslaAccount(grant: Self.codeGrant, completion: completion)
+                } else {
+                    guard case let .success(signIn) = controller.beginLegacySignIn() else {
+                        return XCTFail("\(label): the sign-in was not admitted")
+                    }
+                    signIn.configure(grant: Self.codeGrant, completion: completion)
+                }
+                wait(for: [finished], timeout: 2)
+                XCTAssertEqual(events.values.filter { $0 == "setup" }.count, 1, label)
+                XCTAssertNil(controller.lastVehiclesConfigured, label)
+                XCTAssertFalse(controller.canRetryOwnerDiscovery, label)
+                XCTAssertNil(controller.ownerDiscoveryRetryDeadline, label)
+                XCTAssertFalse(controller.lifecycleCapabilities.isIdle, "\(label): held while the child may still write")
+                XCTAssertTrue(controller.lifecycleCapabilities.preventsQuit, label)
+                XCTAssertTrue(HubAppLog.shared.recentText().contains("setup.unconfirmed"), label)
+
+                // The child is reaped: the owner is released and nothing is delivered a second time.
+                quiescence.childReaped()
+                spinUntil(3) { controller.lifecycleCapabilities.isIdle }
+                XCTAssertTrue(controller.lifecycleCapabilities.isIdle, "\(label): released once the child is gone")
+                XCTAssertFalse(controller.lifecycleCapabilities.childHeld, label)
+                spinBriefly()
+                XCTAssertEqual(delivered, 1, label)
+            }
+        }
+    }
+
+    func testOnboardingShowsTheUnconfirmedLineWhileTheTimedOutSetupChildMayStillRun() throws {
+        // M02-T17: the page's own retry; the resumed setup times out and its child cannot yet be
+        // shown gone. The page shows the line at once, stays on sign-in, and the owner is released
+        // only after the child has been reaped.
         let events = EventRecorder()
-        let runner = ScriptedRunner(events: events, result: .failure(wrapped))
+        let runner = ScriptedRunner(events: events, result: .success(Self.failedReport("window_closed")))
         runner.statusResult = .success(Self.noPairStatus)
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let controller = signInController(runner, events: events, home: home)
-        let finished = expectation(description: "wrapped setup timeout")
+        let failed = expectation(description: "discovery failed")
+        controller.configureTeslaAccount(grant: Self.codeGrant) { _ in failed.fulfill() }
+        wait(for: [failed], timeout: 2)
+        XCTAssertTrue(controller.canRetryOwnerDiscovery)
+        let onboarding = OnboardingWindowController(controller: controller, initialRoute: .legacy, onComplete: { _ in })
+        defer { onboarding.close() }
 
-        controller.configureTeslaAccount(grant: Self.codeGrant) { result in
-            guard case let .failure(error) = result else { return XCTFail("shown as success") }
-            guard case let HubActionError.commandNotQuiescent(inner, _) = error else {
-                return XCTFail("the child tracking reaches the caller: \(error)")
-            }
-            XCTAssertEqual(inner as? HubOwnerSignInUnconfirmed, HubOwnerSignInUnconfirmed())
-            XCTAssertTrue(error.localizedDescription.contains(Self.unconfirmedLine))
-            // The status was read again before the owner saw the line.
-            XCTAssertEqual(runner.statusRuns, 1)
-            finished.fulfill()
-        }
-        wait(for: [finished], timeout: 2)
-        XCTAssertEqual(events.values.filter { $0 == "setup" }.count, 1)
-        XCTAssertNil(controller.lastVehiclesConfigured)
+        let quiescence = HubChildQuiescence()
+        quiescence.childMayRun()
+        runner.result = .failure(HubActionError.commandNotQuiescent(HubActionError.commandTimedOut, quiescence))
+        try retryButton(in: onboarding).performClick(nil)
+        spinUntil(3) { self.shownText(in: onboarding).contains(Self.unconfirmedLine) }
+
+        XCTAssertTrue(shownText(in: onboarding).contains(Self.unconfirmedLine), "shown while the child may still run")
+        XCTAssertFalse(quiescence.isQuiescent)
+        XCTAssertTrue(controller.lifecycleCapabilities.childHeld)
+        XCTAssertFalse(controller.lifecycleCapabilities.isIdle)
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
         XCTAssertFalse(controller.canRetryOwnerDiscovery)
         XCTAssertNil(controller.ownerDiscoveryRetryDeadline)
-        XCTAssertFalse(controller.lifecycleCapabilities.isIdle, "the owner is held while the child may still write")
-        let log = HubAppLog.shared.recentText()
-        XCTAssertTrue(log.contains("setup.unconfirmed"))
 
         quiescence.childReaped()
         spinUntil(3) { controller.lifecycleCapabilities.isIdle }
-        XCTAssertTrue(controller.lifecycleCapabilities.isIdle, "released once the child is gone")
+        XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
+        XCTAssertTrue(shownText(in: onboarding).contains(Self.unconfirmedLine), "the line stays after the release")
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
+    }
+
+    func testAFailureThatIsNotUnconfirmedLeavesTheHeldRetryUntouched() throws {
+        // M02-T17 negative case: only a missing answer supersedes the held discovery retry. A
+        // resumed setup refused with another failure keeps the grant, its deadline and the retry,
+        // and the status is not read again for it.
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.failedReport("window_closed")))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        let failed = expectation(description: "discovery failed")
+        controller.configureTeslaAccount(grant: Self.codeGrant) { _ in failed.fulfill() }
+        wait(for: [failed], timeout: 2)
+        let deadline = try XCTUnwrap(controller.ownerDiscoveryRetryDeadline)
+
+        let others: [Error] = [
+            HubActionError.commandExited(1, "control_channel_busy: another control request is running"),
+            HubActionError.commandFailed("setup_input_invalid: bad input")
+        ]
+        for other in others {
+            let name = other.localizedDescription
+            let statusRunsBefore = runner.statusRuns
+            runner.result = .failure(other)
+            let retried = expectation(description: name)
+            controller.retryOwnerDiscovery { result in
+                defer { retried.fulfill() }
+                guard case let .failure(error) = result else { return XCTFail("\(name): shown as success") }
+                XCTAssertNil(HubActionError.settingQuiescenceAside(error) as? HubOwnerSignInUnconfirmed, name)
+            }
+            wait(for: [retried], timeout: 2)
+            XCTAssertTrue(controller.canRetryOwnerDiscovery, name)
+            XCTAssertEqual(controller.ownerDiscoveryRetryDeadline, deadline, name)
+            XCTAssertEqual(runner.statusRuns, statusRunsBefore, name)
+            XCTAssertTrue(controller.lifecycleCapabilities.isIdle, name)
+        }
     }
 
     func testOnboardingShowsTheUnconfirmedLineAndDoesNotAdvance() throws {
@@ -3140,15 +3257,25 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(first.count, 1, "the retry settled once")
         XCTAssertEqual(controller.ownerDiscoveryRetryDeadline, deadline)
 
-        // Timeout: settled once, the owner released, the offer kept until its deadline.
+        // Timeout: settled once, the owner released. Since M02-T17 a resumed setup that gets no
+        // answer is unconfirmed: the service may already have resumed the stored sign-in, so the
+        // held offer is withdrawn (no grant, deadline or retry) and the owner checks the status.
         var timedOut: [Result<Void, Error>] = []
         controller.retryOwnerDiscovery { timedOut.append($0) }
         spinUntil(2) { runner.held.count == 1 }
         runner.releaseHeld(.failure(HubActionError.commandTimedOut))
         spinUntil(2) { !timedOut.isEmpty && controller.lifecycleCapabilities.isIdle }
         XCTAssertEqual(timedOut.count, 1)
-        guard case .failure? = timedOut.first else { return XCTFail("a timed-out retry was success") }
+        guard case let .failure(timeout)? = timedOut.first else { return XCTFail("a timed-out retry was success") }
+        XCTAssertEqual(timeout as? HubOwnerSignInUnconfirmed, HubOwnerSignInUnconfirmed())
         XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline)
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+
+        // A new discovery failure holds the grant again (the clock has not moved, so the deadline is the same).
+        runner.holdsSetup = false
+        failDiscovery()
+        runner.holdsSetup = true
         XCTAssertEqual(controller.ownerDiscoveryRetryDeadline, deadline)
 
         // The expiry while a retry runs: its late failure cannot restore the grant.

@@ -2010,7 +2010,7 @@ final class HubAccountSignIn {
             return
         }
         controller.performOwnerSignIn(operation, grant: grant, vehicleID: vehicleID) { result in
-            operation.finish(result, completion: completion)
+            HubController.finishOwnerSignIn(operation, result, completion: completion)
         }
     }
 
@@ -4183,7 +4183,27 @@ final class HubController {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard let op = admit(.account, phase: "validate", completion: completion) else { return }
         supersedeOwnerDiscoveryRetry()
-        performOwnerSignIn(op, grant: grant, vehicleID: vehicleID) { op.finish($0, completion: completion) }
+        performOwnerSignIn(op, grant: grant, vehicleID: vehicleID) {
+            Self.finishOwnerSignIn(op, $0, completion: completion)
+        }
+    }
+
+    /// Settles an owner sign-in. An unconfirmed sign-in is shown as soon as it is classified:
+    /// when its timed-out `setup` child may still run, the owner stays held (Quit and new work
+    /// are refused, `childHeld` is published) until the child is gone, but the owner is not left
+    /// with nothing on screen while it stalls. Every other outcome is delivered after the release,
+    /// as before. A stale operation delivers nothing, as `finish` does.
+    fileprivate static func finishOwnerSignIn(_ op: HubLifecycleOperation,
+                                              _ result: Result<Void, Error>,
+                                              completion: @escaping (Result<Void, Error>) -> Void) {
+        guard case let .failure(error) = result,
+              HubActionError.settingQuiescenceAside(error) is HubOwnerSignInUnconfirmed,
+              op.isLive else {
+            op.finish(result, completion: completion)
+            return
+        }
+        op.settle {}
+        completion(result)
     }
 
     /// The Tesla sign-in's account context (R-E1F6-8): held before the authentication
@@ -4400,7 +4420,7 @@ final class HubController {
         }
         guard let op = admit(.account, phase: "validate", completion: completion) else { return }
         performOwnerSignIn(op, grant: retry.grant, vehicleID: retry.vehicleID, resuming: retry) {
-            op.finish($0, completion: completion)
+            Self.finishOwnerSignIn(op, $0, completion: completion)
         }
     }
 
