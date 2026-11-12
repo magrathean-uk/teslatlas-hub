@@ -405,8 +405,6 @@ fn import_seam_schema_v80_restores_a_v79_backup() {
     let test = "import_seam_schema_v80_restores_a_v79_backup";
     let temporary = crate::private_tempdir().unwrap();
     let data = temporary.path().join("live");
-    fs::create_dir(&data).unwrap();
-    fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
     let store = HubStore::initialize(&data).unwrap();
     let source = store
         .register_source(&SourceDescriptor::new("owner_api", "import-seam-backup"), 1_000)
@@ -491,14 +489,15 @@ fn import_seam_schema_v80_credentials_open_and_read_after_migration() {
     {
         let store = HubStore::initialize(temporary.path()).unwrap();
         s_test_with_credential_connection(&store, |connection| {
+            connection.set_test_now_ms(1_800_000_000_000);
             let pair = s_test_synthetic_pair(
                 connection,
-                CredentialSlot::FleetApi,
+                CredentialSlot::OwnerApi,
                 generation,
                 b"synthetic-v80-access",
                 b"synthetic-v80-refresh",
-                1_900_000_000,
-                1_899_990_000,
+                0,
+                0,
             )
             .expect("synthetic pair");
             connection
@@ -519,7 +518,7 @@ fn import_seam_schema_v80_credentials_open_and_read_after_migration() {
             store.credential_opaque_fence_count().unwrap(),
             s_test_with_credential_connection(store, |connection| {
                 connection
-                    .load_credential_pair(CredentialSlot::FleetApi)
+                    .load_credential_pair(CredentialSlot::OwnerApi)
                     .unwrap()
                     .map(|pair| pair.generation)
             }),

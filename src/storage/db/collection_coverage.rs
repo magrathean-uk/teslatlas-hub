@@ -5,7 +5,7 @@
 /// restore and a new host. `gaps_json` holds the window's collection gaps at
 /// handback; `vehicle_ends_json` and `sealed` record how a window left open in
 /// a restored store was sealed per vehicle.
-const COLLECTION_COVERAGE_SCHEMA: &str = "CREATE TABLE collection_coverage (
+const COLLECTION_COVERAGE_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS collection_coverage (
     seq INTEGER PRIMARY KEY,
     grant_digest TEXT NOT NULL,
     opened_at_ms INTEGER NOT NULL,

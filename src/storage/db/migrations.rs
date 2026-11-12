@@ -61,7 +61,8 @@ const SEAM_MATERIALISED_TABLES: [(&str, &str, &str); 6] = [
 /// Schema v80 (M03-T11): the import seam's decision table, the stored
 /// collection coverage and the guard commit in one transaction. A store that
 /// fails the guard is refused and keeps its version and every row; a rung that
-/// stops part way rolls back and runs again on the next open.
+/// stops part way rolls back and runs again on the next open. The tables are
+/// created only where absent, as a synthetic image rewound below v80 keeps them.
 fn seam_schema_rung(connection: &Connection) -> Result<(), StoreError> {
     if schema_version(connection)? != CREDENTIAL_FORMAT_SCHEMA_VERSION {
         return Ok(());
