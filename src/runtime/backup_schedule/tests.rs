@@ -107,7 +107,7 @@ fn backup_schedule_runs_when_due_and_waits_the_interval_after_a_success() {
     assert_eq!(script.count(), 1);
     let job = script.jobs.lock().unwrap()[0].clone();
     assert_eq!(job.destination, PathBuf::from("/backup/destination"));
-    assert_eq!(job.password_file, PathBuf::from("/backup/password"));
+    assert_eq!(job.password, PasswordSource::configured(Path::new("/backup/password")));
     assert_eq!(job.keep, NonZeroUsize::new(3));
     // Nothing until a whole interval has passed.
     match schedule.tick(first + 6 * HOUR - 1) {
@@ -262,7 +262,7 @@ fn backup_schedule_manual_trigger_uses_its_paths_refuses_relative_ones_and_needs
         .expect("overrides");
     let job = script.jobs.lock().unwrap()[0].clone();
     assert_eq!(job.destination, PathBuf::from("/elsewhere"));
-    assert_eq!(job.password_file, PathBuf::from("/pw"));
+    assert_eq!(job.password, PasswordSource::File(PathBuf::from("/pw")), "a given file is read as a file");
     let relative = schedule.run_now(Some(Path::new("relative")), None).expect_err("relative");
     assert_eq!(relative.code, BACKUP_PATH_INVALID);
     let mut bare = settings(false);
@@ -546,7 +546,11 @@ fn backup_schedule_real_runner_writes_a_verifiable_generation_and_leaks_no_passw
     live.destination = Some(destination.clone());
     live.password_file = Some(password.clone());
     live.keep = NonZeroUsize::new(2);
-    let schedule = scheduler(live, Arc::new(StoreBackupRunner::new(store)), &state_dir, 0);
+    // On the Mac the configured path names the Keychain item (an injected
+    // store here); elsewhere the file itself is read.
+    let keychain = Arc::new(FakeKeychain::holding(&password.to_string_lossy(), PASSWORD.as_bytes()));
+    let runner = StoreBackupRunner::with_keychain(store, keychain);
+    let schedule = scheduler(live, Arc::new(runner), &state_dir, 0);
     let mut paths = Vec::new();
     for _ in 0..3 {
         let report = schedule.run_now(None, None).expect("backup");
@@ -604,4 +608,147 @@ fn backup_schedule_status_reports_the_last_generation_next_run_and_a_block() {
     // Off: no next run.
     let off = scheduler(settings(false), Arc::new(Script::default()), dir.path(), 0);
     assert_eq!(off.status_at(0)["nextRunMs"], Value::Null);
+}
+
+// M06-T12: the unattended password comes from the Mac Keychain.
+
+/// An injected Keychain: one item, or one failure for every read.
+struct FakeKeychain {
+    account: String,
+    answer: Result<Vec<u8>, keychain::KeychainFailure>,
+    reads: AtomicUsize,
+}
+
+impl FakeKeychain {
+    fn holding(account: &str, password: &[u8]) -> Self {
+        Self { account: account.to_owned(), answer: Ok(password.to_vec()), reads: AtomicUsize::new(0) }
+    }
+
+    fn failing(failure: keychain::KeychainFailure) -> Self {
+        Self { account: String::new(), answer: Err(failure), reads: AtomicUsize::new(0) }
+    }
+}
+
+impl keychain::PasswordKeychain for FakeKeychain {
+    fn read(&self, account: &str) -> Result<zeroize::Zeroizing<Vec<u8>>, keychain::KeychainFailure> {
+        self.reads.fetch_add(1, Ordering::SeqCst);
+        match &self.answer {
+            Ok(bytes) if account == self.account => Ok(zeroize::Zeroizing::new(bytes.clone())),
+            Ok(_) => Err(keychain::KeychainFailure::Missing),
+            Err(failure) => Err(*failure),
+        }
+    }
+}
+
+#[test]
+fn backup_schedule_keychain_source_on_the_mac_and_a_file_elsewhere_or_when_given() {
+    let source = PasswordSource::configured(Path::new("/Users/me/Hub/backup-password"));
+    if cfg!(target_os = "macos") {
+        assert_eq!(source, PasswordSource::Keychain { account: "/Users/me/Hub/backup-password".to_owned() });
+    } else {
+        assert_eq!(source, PasswordSource::File(PathBuf::from("/Users/me/Hub/backup-password")));
+    }
+    // A scheduled run and a manual run without a file use the configured source.
+    let dir = tempfile::tempdir().unwrap();
+    let script = Arc::new(Script::default());
+    let schedule = scheduler(settings(true), script.clone(), dir.path(), 0);
+    assert!(matches!(schedule.tick(10 * 60 * 1000), Tick::Ran(Ok(()))));
+    schedule.run_now(None, None).expect("manual");
+    schedule.run_now(None, Some(Path::new("/given"))).expect("manual with a file");
+    let jobs = script.jobs.lock().unwrap().clone();
+    let configured = PasswordSource::configured(Path::new("/backup/password"));
+    assert_eq!(jobs[0].password, configured);
+    assert_eq!(jobs[1].password, configured);
+    assert_eq!(jobs[2].password, PasswordSource::File(PathBuf::from("/given")));
+}
+
+#[test]
+fn backup_schedule_the_keychain_password_runs_the_backup_and_an_unreadable_item_is_unavailable() {
+    use keychain::{BACKUP_PASSWORD_UNAVAILABLE, KeychainFailure, read_keychain_password};
+    let held = FakeKeychain::holding("/Hub/backup-password", PASSWORD.as_bytes());
+    assert_eq!(read_keychain_password(&held, "/Hub/backup-password").unwrap().as_str(), PASSWORD);
+    let dir = tempfile::tempdir().unwrap();
+    let waiting = password_file(dir.path(), "backup-password", PASSWORD.as_bytes(), 0o600);
+    let cases: Vec<(FakeKeychain, &str, &str)> = vec![
+        (FakeKeychain::failing(KeychainFailure::Missing), "/Hub/backup-password", "is not in the Keychain"),
+        (FakeKeychain::failing(KeychainFailure::Missing), waiting.to_str().unwrap(), "waiting to move into the Keychain"),
+        (FakeKeychain::failing(KeychainFailure::Refused), "/Hub/backup-password", "may not read"),
+        (FakeKeychain::failing(KeychainFailure::Unreadable), "/Hub/backup-password", "cannot be read"),
+        (FakeKeychain::holding("/Hub/backup-password", &[0xff, 0xfe]), "/Hub/backup-password", "cannot be read"),
+        (FakeKeychain::holding("/Hub/backup-password", &[b'a'; 2000]), "/Hub/backup-password", "cannot be read"),
+        (FakeKeychain::holding("/Hub/backup-password", b""), "/Hub/backup-password", "cannot be read"),
+    ];
+    for (keychain, account, words) in &cases {
+        let refusal = read_keychain_password(keychain, account).expect_err("refused");
+        assert_eq!(refusal.code, BACKUP_PASSWORD_UNAVAILABLE);
+        assert!(refusal.message.contains(words), "{}", refusal.message);
+        assert!(refusal.message.contains("save the recovery password again"), "{}", refusal.message);
+        assert!(!refusal.message.contains(PASSWORD));
+    }
+    // The waiting file is never read as a fallback.
+    assert!(waiting.exists());
+
+    // Through the service's runner: the run is refused, recorded with its
+    // code and message for the app, and retried at the retry wait.
+    let root = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(root.path().join("data")).expect("store");
+    let destination = root.path().join("destination");
+    fs::create_dir(&destination).unwrap();
+    fs::set_permissions(&destination, fs::Permissions::from_mode(0o700)).unwrap();
+    let state_dir = root.path().join("state");
+    fs::create_dir(&state_dir).unwrap();
+    let mut live = settings(true);
+    live.destination = Some(destination.clone());
+    let refused = Arc::new(FakeKeychain::failing(KeychainFailure::Refused));
+    let runner = StoreBackupRunner::with_keychain(store, refused.clone());
+    let schedule = scheduler(live.clone(), Arc::new(runner), &state_dir, 0);
+    if cfg!(target_os = "macos") {
+        let first = 10 * 60 * 1000;
+        match schedule.tick(first) {
+            Tick::Ran(Err(refusal)) => assert_eq!(refusal.code, BACKUP_PASSWORD_UNAVAILABLE),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(refused.reads.load(Ordering::SeqCst), 1);
+        let status = schedule.status_at(first);
+        assert_eq!(status["lastFailureCode"], BACKUP_PASSWORD_UNAVAILABLE);
+        assert!(status["lastFailureMessage"].as_str().unwrap().contains("save the recovery password again"));
+        assert_eq!(status["nextRunMs"], first + live.retry_ms);
+        assert_eq!(fs::read_dir(&destination).unwrap().count(), 0, "nothing was written");
+    } else {
+        // Elsewhere the configured file is read and the Keychain is never asked.
+        let refusal = schedule.run_now(None, None).expect_err("no such file");
+        assert_eq!(refusal.code, password::PASSWORD_FILE_INVALID);
+        assert_eq!(refused.reads.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn backup_schedule_the_service_reads_a_disposable_keychain_without_a_prompt() {
+    use keychain::{KEYCHAIN_SERVICE, KeychainFailure, PasswordKeychain, SystemKeychain, classify};
+    use security_framework::os::macos::keychain::CreateOptions;
+    // A disposable keychain in a private folder; the login keychain is never
+    // touched. Its own (random, unprinted) password unlocks it.
+    let root = crate::private_tempdir().unwrap();
+    let unlock = uuid::Uuid::new_v4().to_string();
+    let disposable = CreateOptions::new()
+        .password(&unlock)
+        .prompt_user(false)
+        .create(root.path().join("backup-test.keychain"))
+        .expect("disposable keychain");
+    let account = "/Users/fixture/Library/Application Support/Teslatlas Hub/backup-password";
+    disposable
+        .add_generic_password(KEYCHAIN_SERVICE, account, PASSWORD.as_bytes())
+        .expect("item");
+    let reader = SystemKeychain::only(disposable);
+    assert_eq!(keychain::read_keychain_password(&reader, account).unwrap().as_str(), PASSWORD);
+    assert_eq!(reader.read("/another/hub/backup-password").err(), Some(KeychainFailure::Missing));
+    assert!(
+        security_framework::os::macos::keychain::SecKeychain::user_interaction_allowed().unwrap(),
+        "the read gives the user interface back to the process"
+    );
+    assert_eq!(classify(-25300), KeychainFailure::Missing);
+    assert_eq!(classify(-25308), KeychainFailure::Refused);
+    assert_eq!(classify(-25293), KeychainFailure::Refused);
+    assert_eq!(classify(-50), KeychainFailure::Unreadable);
 }
