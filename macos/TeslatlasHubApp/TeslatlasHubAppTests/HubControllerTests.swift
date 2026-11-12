@@ -3257,15 +3257,25 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(first.count, 1, "the retry settled once")
         XCTAssertEqual(controller.ownerDiscoveryRetryDeadline, deadline)
 
-        // Timeout: settled once, the owner released, the offer kept until its deadline.
+        // Timeout: settled once, the owner released. Since M02-T17 a resumed setup that gets no
+        // answer is unconfirmed: the service may already have resumed the stored sign-in, so the
+        // held offer is withdrawn (no grant, deadline or retry) and the owner checks the status.
         var timedOut: [Result<Void, Error>] = []
         controller.retryOwnerDiscovery { timedOut.append($0) }
         spinUntil(2) { runner.held.count == 1 }
         runner.releaseHeld(.failure(HubActionError.commandTimedOut))
         spinUntil(2) { !timedOut.isEmpty && controller.lifecycleCapabilities.isIdle }
         XCTAssertEqual(timedOut.count, 1)
-        guard case .failure? = timedOut.first else { return XCTFail("a timed-out retry was success") }
+        guard case let .failure(timeout)? = timedOut.first else { return XCTFail("a timed-out retry was success") }
+        XCTAssertEqual(timeout as? HubOwnerSignInUnconfirmed, HubOwnerSignInUnconfirmed())
         XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
+        XCTAssertNil(controller.ownerDiscoveryRetryDeadline)
+        XCTAssertFalse(controller.canRetryOwnerDiscovery)
+
+        // A new discovery failure holds the grant again (the clock has not moved, so the deadline is the same).
+        runner.holdsSetup = false
+        failDiscovery()
+        runner.holdsSetup = true
         XCTAssertEqual(controller.ownerDiscoveryRetryDeadline, deadline)
 
         // The expiry while a retry runs: its late failure cannot restore the grant.
