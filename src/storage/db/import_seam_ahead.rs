@@ -10,6 +10,10 @@ pub(crate) struct ImportSeamAhead {
     /// drive skipped before and now packed, or one the plan widened): the
     /// packs carry them even when the source did not change them.
     pub(crate) restated_drives: Vec<i64>,
+    /// Packed source charges the packs carry even when the source did not
+    /// change them: a charge skipped before and now packed, or one the plan
+    /// widened. The store holds no source charge to compare with.
+    pub(crate) restated_charges: Vec<i64>,
     /// The plan changed the Hub's side of the store, so its sync mutations
     /// must be published before any pack that relies on them.
     pub(crate) changed_the_store: bool,
@@ -17,11 +21,12 @@ pub(crate) struct ImportSeamAhead {
 
 impl HubStore {
     /// Applies the Hub's side of the import seam ahead of the packs (design
-    /// M03-SEAM-R3, section 4): Hub drives that lost are removed with a
-    /// tombstone, an earlier import's copy of a skipped or stale source drive
+    /// M03-SEAM-R3, section 4), for drives and charges alike: Hub sessions
+    /// that lost are removed with a tombstone, an earlier import's copy of a skipped or stale source drive
     /// goes with a tombstone, Hub positions outside coverage go with a
     /// tombstone, kept Hub positions follow their drive's winner, kept Hub
-    /// drives widen, and the decisions are recorded in `import_seam_links`.
+    /// drives widen, charges and charge samples follow the same rules, and
+    /// the decisions are recorded in `import_seam_links`.
     /// The winning source drives are not written here: publication writes
     /// them in the transaction that publishes the packs carrying them.
     ///
@@ -34,6 +39,7 @@ impl HubStore {
         vehicle_id: Uuid,
         car_id: i64,
         drives: &[ProjectionDrive],
+        charges: &[crate::hub_pack::ProjectionCharge],
     ) -> Result<ImportSeamAhead, StoreError> {
         if vehicle_id.is_nil() || car_id <= 0 {
             return Err(StoreError::InvalidImportGeneration);
@@ -48,6 +54,7 @@ impl HubStore {
             }
             previous_id = drive.id;
         }
+        validate_import_seam_charges(charges, car_id)?;
         let vehicle_key = vehicle_id.to_string();
         let mut connection = self.open()?;
         let transaction = connection
@@ -55,25 +62,30 @@ impl HubStore {
             .map_err(StoreError::Begin)?;
         let prior = durable_prior_imported_drive_ids_in_transaction(&transaction, &vehicle_key)?;
         let (coverage, before) =
-            import_seam_plan_in_transaction(&transaction, vehicle_id, drives, &prior)?;
+            import_seam_plan_in_transaction(&transaction, vehicle_id, drives, charges, &prior)?;
         let changed_the_store = before.changes_the_store();
         let packs = if changed_the_store {
             apply_import_seam_hub_side_in_transaction(&transaction, vehicle_id, &before)?;
+            apply_import_seam_to_charges_in_transaction(
+                &transaction,
+                vehicle_id,
+                &before,
+                charges,
+                false,
+            )?;
             // Planned again, the applied plan must give the packs the same
             // decisions, or publication could never prove them.
             let (coverage_after, after) =
-                import_seam_plan_in_transaction(&transaction, vehicle_id, drives, &prior)?;
-            let packs =
-                crate::import::source_db::seam::SeamPackPlan::for_drives(&coverage_after, &after.drives);
+                import_seam_plan_in_transaction(&transaction, vehicle_id, drives, charges, &prior)?;
+            let packs = crate::import::source_db::seam::SeamPackPlan::for_plan(&coverage_after, &after);
             if packs.digest()
-                != crate::import::source_db::seam::SeamPackPlan::for_drives(&coverage, &before.drives)
-                    .digest()
+                != crate::import::source_db::seam::SeamPackPlan::for_plan(&coverage, &before).digest()
             {
                 return Err(StoreError::ImportGenerationConflict);
             }
             packs
         } else {
-            crate::import::source_db::seam::SeamPackPlan::for_drives(&coverage, &before.drives)
+            crate::import::source_db::seam::SeamPackPlan::for_plan(&coverage, &before)
         };
         let restated_drives = restated_import_drives_in_transaction(
             &transaction,
@@ -81,10 +93,12 @@ impl HubStore {
             drives,
             &packs,
         )?;
+        let restated_charges = restated_import_charges(&before, &packs);
         transaction.commit().map_err(StoreError::LifecycleWrite)?;
         Ok(ImportSeamAhead {
             packs,
             restated_drives,
+            restated_charges,
             changed_the_store,
         })
     }
@@ -103,6 +117,20 @@ fn durable_prior_imported_drive_ids_in_transaction(
     connection: &Connection,
     vehicle_key: &str,
 ) -> Result<HashSet<i64>, StoreError> {
+    durable_prior_imported_ids_in_connection(
+        connection,
+        vehicle_key,
+        SourceDbProjectionStateEntity::Drive,
+    )
+}
+
+/// The source ids of one entity the prior import listed, from its durable
+/// state.
+fn durable_prior_imported_ids_in_connection(
+    connection: &Connection,
+    vehicle_key: &str,
+    entity: SourceDbProjectionStateEntity,
+) -> Result<HashSet<i64>, StoreError> {
     let mut statement = connection
         .prepare(concat!(
             "SELECT entity_id
@@ -115,10 +143,7 @@ fn durable_prior_imported_drive_ids_in_transaction(
         .map_err(StoreError::LineageCatalog)?;
     let rows = statement
         .query_map(
-            params![
-                vehicle_key,
-                i64::from(SourceDbProjectionStateEntity::Drive.ordinal())
-            ],
+            params![vehicle_key, i64::from(entity.ordinal())],
             |row| row.get(0),
         )
         .map_err(StoreError::LineageCatalog)?;
@@ -126,16 +151,18 @@ fn durable_prior_imported_drive_ids_in_transaction(
         .map_err(StoreError::LineageCatalog)
 }
 
-/// Plans the import seam for one vehicle's drives and positions from the
-/// store, as publication applies it (design M03-SEAM-R3, section 4): the
-/// coverage, the stored drives (a Hub-range drive, or a source-id drive the
-/// prior import did not list or a Hub-range position belongs to, is the
-/// Hub's), the Hub-range positions, the source drives and the recorded
-/// links. Reads only.
+/// Plans the import seam for one vehicle's drives, positions, charges and
+/// charge samples from the store, as publication applies it (design
+/// M03-SEAM-R3, section 4): the coverage, the stored drives (a Hub-range
+/// drive, or a source-id drive the prior import did not list or a Hub-range
+/// position belongs to, is the Hub's), the Hub-range positions, the stored
+/// charges and Hub-range samples (see `import_seam_hub_charges_in_connection`),
+/// the source drives and charges and the recorded links. Reads only.
 fn import_seam_plan_in_transaction(
     connection: &Connection,
     vehicle_id: Uuid,
     drives: &[ProjectionDrive],
+    charges: &[crate::hub_pack::ProjectionCharge],
     prior_imported_drive_ids: &HashSet<i64>,
 ) -> Result<
     (
@@ -220,6 +247,17 @@ fn import_seam_plan_in_transaction(
             }
         }
     }
+    let prior_imported_charge_ids = durable_prior_imported_ids_in_connection(
+        connection,
+        &vehicle_key,
+        SourceDbProjectionStateEntity::Charge,
+    )?;
+    import_seam_hub_charges_in_connection(
+        connection,
+        &vehicle_key,
+        &prior_imported_charge_ids,
+        &mut hub,
+    )?;
     let source = SourceRows {
         drives: drives
             .iter()
@@ -229,11 +267,12 @@ fn import_seam_plan_in_transaction(
                 end_ms: Some(drive.end_date_ms),
             })
             .collect(),
+        charges: import_seam_source_charges(charges),
         ..SourceRows::default()
     };
     let links = SeamLinks {
         drives: seam_links_in_connection(connection, &vehicle_key, "drive")?,
-        ..SeamLinks::default()
+        charges: seam_links_in_connection(connection, &vehicle_key, "charge")?,
     };
     let plan = plan_seam(&coverage, &hub, &source, &links);
     Ok((coverage, plan))
@@ -381,6 +420,22 @@ fn restated_import_drives_in_transaction(
         }
     }
     Ok(restated)
+}
+
+/// The packed source charges the packs restate, ascending: those the plan
+/// widened, and those readmitted because the link that skipped them went.
+fn restated_import_charges(
+    plan: &crate::import::source_db::seam::SeamPlan,
+    packs: &crate::import::source_db::seam::SeamPackPlan,
+) -> Vec<i64> {
+    use crate::import::source_db::seam::PackedSession;
+    packs
+        .imported_charges()
+        .filter(|id| {
+            matches!(packs.charge(*id), Some(PackedSession::Keep { bounds: Some(_) }))
+                || plan.charges.links_dropped.binary_search(id).is_ok()
+        })
+        .collect()
 }
 
 /// The row a packed source drive is written as: its source copy with the

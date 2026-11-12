@@ -107,20 +107,25 @@ pub struct SourceDbImportReport {
 }
 
 /// Source rows an import publication leaves out of its packs because of the
-/// seam (design M03-SEAM-R3, section 4): drives the plan gave to another row
-/// (or an inherited session whose stored row stays) and positions inside the
-/// Hub's coverage. Every changed source row the publication read is either
-/// packed or counted here.
+/// seam (design M03-SEAM-R3, section 4): drives and charges the plan gave to
+/// another row (or an inherited session whose stored row stays), and
+/// positions and charge samples inside the Hub's coverage. Every changed
+/// source row the publication read is either packed or counted here.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SourceDbSeamSkipped {
     pub drives: u64,
     pub positions: u64,
+    pub charges: u64,
+    pub charge_samples: u64,
 }
 
 impl SourceDbSeamSkipped {
     /// All seam-skipped rows.
     pub fn total(&self) -> u64 {
-        self.drives.saturating_add(self.positions)
+        self.drives
+            .saturating_add(self.positions)
+            .saturating_add(self.charges)
+            .saturating_add(self.charge_samples)
     }
 }
 
@@ -1097,6 +1102,7 @@ async fn import_from_postgres_with_updates_capture_policy(
     let open_session = first_capture.open_session;
     let materialised_car = first_capture.materialised_car;
     let materialised_drives = first_capture.materialised_drives;
+    let materialised_charges = first_capture.materialised_charges;
     store.stage_import_generation_session(run_id, &open_session)?;
     let mut direct = first_capture.packs;
     let updates_v2_2 = first_capture.updates_v2_2;
@@ -1240,6 +1246,7 @@ async fn import_from_postgres_with_updates_capture_policy(
             vehicle.vehicle_id,
             selected_car_id,
             &materialised_drives,
+            &materialised_charges,
         )?;
         // Decide before discarding the complete capture or writing delta packs.
         // Only pack-capacity exhaustion permits an explicit new base.
@@ -1275,6 +1282,7 @@ async fn import_from_postgres_with_updates_capture_policy(
                     geofences: &direct.geofences,
                     materialised_car: &materialised_car,
                     materialised_drives: &materialised_drives,
+                    materialised_charges: &materialised_charges,
                 },
                 &binding,
                 &selected_car,
@@ -2491,37 +2499,15 @@ where
         }
     }
 
-    // Packed drives the source did not change but the store does not yet
-    // hold as planned.
-    if let Some(seam) = seam.as_deref_mut() {
-        for drive in &seam.restated {
-            if seam.emitted_drives.contains(&drive.id) {
-                continue;
-            }
-            let payload_bytes = u64::try_from(
-                serde_json::to_vec(drive)
-                    .map_err(SourceDbImportError::SerializeDirectDeltaRow)?
-                    .len(),
-            )
-            .map_err(|_| SourceDbImportError::DirectDeltaBatchOverflow)?;
-            if payload_bytes > DIRECT_DELTA_BATCH_PAYLOAD_BYTES {
-                return Err(SourceDbImportError::DirectDeltaRowTooLarge { payload_bytes });
-            }
-            if current.next_would_exceed(payload_bytes)? && !current.is_empty() {
-                emit_direct_delta_batch(
-                    &mut emitted_batches,
-                    maximum_batches,
-                    current,
-                    &mut visit,
-                )?;
-                current = DirectDeltaRows::default();
-            }
-            if drive.car_id != binding.selected_car_id || drive.id <= 0 {
-                return Err(SourceDbImportError::InvalidDirectDeltaRow);
-            }
-            current.reserve(payload_bytes)?;
-            current.drives.push(drive.clone());
-        }
+    // Packed sessions the source did not change but the plan restates.
+    if let Some(seam) = seam.as_deref() {
+        seam.append_restated(
+            &mut current,
+            &mut emitted_batches,
+            maximum_batches,
+            binding,
+            &mut visit,
+        )?;
     }
 
     let mut tombstone_after = None;
@@ -2654,16 +2640,22 @@ fn append_changed_direct_delta_row(
             batch.positions.push(value);
         }
         SourceDbProjectionStateEntity::Charge => {
-            let value: ProjectionCharge = serde_json::from_slice(&row.canonical_payload)
+            let mut value: ProjectionCharge = serde_json::from_slice(&row.canonical_payload)
                 .map_err(SourceDbImportError::DecodeDirectDeltaRow)?;
             validate_direct_delta_identity(value.id, value.car_id, row, binding)?;
+            if seam.map(|seam| seam.pack_charge(&mut value)).transpose()? == Some(false) {
+                return Ok(());
+            }
             batch.reserve(payload_bytes)?;
             batch.charges.push(value);
         }
         SourceDbProjectionStateEntity::ChargeSample => {
-            let value: ProjectionChargeSample = serde_json::from_slice(&row.canonical_payload)
+            let mut value: ProjectionChargeSample = serde_json::from_slice(&row.canonical_payload)
                 .map_err(SourceDbImportError::DecodeDirectDeltaRow)?;
             validate_direct_delta_identity(value.id, row.state.car_id, row, binding)?;
+            if seam.is_some_and(|seam| !seam.pack_charge_sample(&mut value)) {
+                return Ok(());
+            }
             batch.reserve(payload_bytes)?;
             batch.charge_samples.push(value);
         }

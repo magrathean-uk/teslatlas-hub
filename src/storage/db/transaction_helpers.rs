@@ -831,3 +831,370 @@ fn move_hub_position_in_transaction(
         &moved,
     )
 }
+
+/// Refuses source charges the seam cannot weigh: out of order, inside the
+/// Hub's id range or of another car.
+fn validate_import_seam_charges(
+    charges: &[crate::hub_pack::ProjectionCharge],
+    car_id: i64,
+) -> Result<(), StoreError> {
+    let mut previous_id = 0_i64;
+    for charge in charges {
+        if charge.id <= previous_id
+            || charge.id >= crate::db::hub_ids::HUB_ID_BASE
+            || charge.car_id != car_id
+        {
+            return Err(StoreError::InvalidImportGeneration);
+        }
+        previous_id = charge.id;
+    }
+    Ok(())
+}
+
+/// The source charges as sessions of the seam.
+fn import_seam_source_charges(
+    charges: &[crate::hub_pack::ProjectionCharge],
+) -> Vec<crate::import::source_db::seam::SessionRow> {
+    charges
+        .iter()
+        .map(|charge| crate::import::source_db::seam::SessionRow {
+            id: charge.id,
+            start_ms: charge.start_date_ms,
+            end_ms: charge.end_date_ms,
+        })
+        .collect()
+}
+
+/// Reads the store's side of one vehicle's charges into `hub` (design
+/// M03-SEAM-R3, section 4): the Hub-range charge samples by instant, and the
+/// stored charges. Import never stores a source charge of its own, so a
+/// stored charge with a source id is the Hub's inherited session (one id on
+/// both sides) unless the prior import listed it and no Hub-range sample
+/// belongs to it: then it is a source copy an earlier plan wrote over the
+/// inherited row, and the stale rule applies to it. Reads only.
+fn import_seam_hub_charges_in_connection(
+    connection: &Connection,
+    vehicle_key: &str,
+    prior_imported_charge_ids: &HashSet<i64>,
+    hub: &mut crate::import::source_db::seam::HubRows,
+) -> Result<(), StoreError> {
+    use crate::db::hub_ids::{HUB_ID_BASE, HUB_ID_MAX, is_hub_id};
+    use crate::import::source_db::seam::{ChildRow, SessionRow};
+    {
+        let mut statement = connection
+            .prepare(
+                "SELECT sample_id, charge_id,
+                        CAST(json_extract(sample_json, '$.timestamp_ms') AS INTEGER)
+                   FROM materialised_charge_samples
+                  WHERE vehicle_id = ?1 AND sample_id BETWEEN ?2 AND ?3
+                  ORDER BY sample_id ASC",
+            )
+            .map_err(StoreError::Query)?;
+        let rows = statement
+            .query_map(params![vehicle_key, HUB_ID_BASE, HUB_ID_MAX], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                ))
+            })
+            .map_err(StoreError::Query)?;
+        for row in rows {
+            let (id, parent, at_ms) = row.map_err(StoreError::Query)?;
+            // A Hub sample without an instant cannot be placed; it stays.
+            if let Some(at_ms) = at_ms {
+                hub.charge_samples.push(ChildRow {
+                    id,
+                    at_ms,
+                    parent: Some(parent),
+                });
+            }
+        }
+    }
+    let held_by_hub_sample: HashSet<i64> = hub
+        .charge_samples
+        .iter()
+        .filter_map(|row| row.parent)
+        .collect();
+    let mut statement = connection
+        .prepare(
+            "SELECT charge_id,
+                    CAST(json_extract(charge_json, '$.start_date_ms') AS INTEGER),
+                    CAST(json_extract(charge_json, '$.end_date_ms') AS INTEGER)
+               FROM materialised_charges WHERE vehicle_id = ?1 ORDER BY charge_id ASC",
+        )
+        .map_err(StoreError::Query)?;
+    let rows = statement
+        .query_map(params![vehicle_key], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<i64>>(1)?,
+                row.get::<_, Option<i64>>(2)?,
+            ))
+        })
+        .map_err(StoreError::Query)?;
+    for row in rows {
+        let (id, start_ms, end_ms) = row.map_err(StoreError::Query)?;
+        // A stored charge without a start cannot be weighed; it stays.
+        let Some(start_ms) = start_ms else { continue };
+        let inherited =
+            !prior_imported_charge_ids.contains(&id) || held_by_hub_sample.contains(&id);
+        if is_hub_id(id) || inherited {
+            hub.charges.push(SessionRow {
+                id,
+                start_ms,
+                end_ms,
+            });
+        } else {
+            hub.imported_charges.push(id);
+        }
+    }
+    Ok(())
+}
+
+/// The import seam applied to the charges and charge samples in the store
+/// (design M03-SEAM-R3, section 4), from a plan made by
+/// `import_seam_plan_in_transaction` in the same transaction.
+///
+/// Hub charges that lost are removed with a tombstone; a stored source-id
+/// charge that was skipped or is stale goes the same way; Hub samples go by
+/// instant (outside coverage removed with a tombstone, never because their
+/// charge lost) and kept ones whose charge lost move to the winner; kept Hub
+/// charges widen to hold the samples they gained; every loser is recorded in
+/// `import_seam_links`. With `write_source_copies`, a winning source charge
+/// whose id the store holds (an inherited session whose source copy now
+/// covers the stored extent) replaces the stored row, journalled; import
+/// writes no other source charge to the store. Applied again, the plan finds
+/// its links and removed rows and changes nothing.
+fn apply_import_seam_to_charges_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    plan: &crate::import::source_db::seam::SeamPlan,
+    charges: &[crate::hub_pack::ProjectionCharge],
+    write_source_copies: bool,
+) -> Result<(), StoreError> {
+    use crate::db::hub_ids::is_hub_id;
+    let vehicle_key = vehicle_id.to_string();
+    let charge_plan = &plan.charges;
+    let stored_charge = |id: i64| -> Result<Option<(i64, String)>, StoreError> {
+        transaction
+            .query_row(
+                "SELECT car_id, charge_json FROM materialised_charges
+                  WHERE vehicle_id = ?1 AND charge_id = ?2",
+                params![vehicle_key.as_str(), id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(StoreError::Query)
+    };
+    let remove = |id: i64, car_id: i64| -> Result<(), StoreError> {
+        transaction
+            .execute(
+                "DELETE FROM address_enrichment_jobs
+                  WHERE vehicle_id = ?1 AND target_type = 'charge' AND target_id = ?2",
+                params![vehicle_key.as_str(), id],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+        transaction
+            .execute(
+                "DELETE FROM materialised_charges WHERE vehicle_id = ?1 AND charge_id = ?2",
+                params![vehicle_key.as_str(), id],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+        record_sync_mutation_in_transaction(
+            transaction, vehicle_id, "charge", id, car_id, "tombstone", "{}",
+        )
+    };
+    // Hub charges that lost. Their samples follow the instant rule below.
+    for link in &charge_plan.superseded {
+        if let Some((car_id, _)) = stored_charge(link.loser_id)? {
+            remove(link.loser_id, car_id)?;
+        }
+    }
+    // A stored source copy of a skipped or stale charge; never a Hub row.
+    let source_gone = charge_plan
+        .skipped
+        .iter()
+        .map(|link| link.loser_id)
+        .chain(charge_plan.stale.iter().copied());
+    for id in source_gone {
+        if is_hub_id(id) {
+            return Err(StoreError::InvalidImportGeneration);
+        }
+        if let Some((car_id, _)) = stored_charge(id)? {
+            remove(id, car_id)?;
+        }
+    }
+    let widened: HashMap<i64, (i64, Option<i64>)> = charge_plan
+        .widened
+        .iter()
+        .map(|bounds| (bounds.id, (bounds.start_ms, bounds.end_ms)))
+        .collect();
+    // The source copy of an inherited charge replaces the stored row.
+    if write_source_copies {
+        let by_id: HashMap<i64, &crate::hub_pack::ProjectionCharge> =
+            charges.iter().map(|charge| (charge.id, charge)).collect();
+        for id in &charge_plan.imported {
+            let Some(charge) = by_id.get(id) else {
+                return Err(StoreError::InvalidImportGeneration);
+            };
+            let Some((_, stored_json)) = stored_charge(*id)? else {
+                continue;
+            };
+            let planned = planned_import_charge(charge, widened.get(id).copied());
+            let charge_json =
+                serde_json::to_string(&planned).map_err(StoreError::SerializeLifecycleRow)?;
+            if charge_json == stored_json {
+                continue;
+            }
+            transaction
+                .execute(
+                    "UPDATE materialised_charges SET car_id = ?3, charge_json = ?4
+                      WHERE vehicle_id = ?1 AND charge_id = ?2",
+                    params![vehicle_key.as_str(), id, planned.car_id, charge_json],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+            record_sync_mutation_in_transaction(
+                transaction,
+                vehicle_id,
+                "charge",
+                *id,
+                planned.car_id,
+                "upsert",
+                &charge_json,
+            )?;
+        }
+    }
+    // Kept Hub charges widen to hold the samples they gained; totals stay.
+    for id in &charge_plan.hub_kept {
+        let Some((start_ms, end_ms)) = widened.get(id).copied() else {
+            continue;
+        };
+        let Some((car_id, charge_json)) = stored_charge(*id)? else {
+            continue;
+        };
+        let mut value: Value =
+            serde_json::from_str(&charge_json).map_err(|_| StoreError::InvalidLifecycleSession)?;
+        let Some(object) = value.as_object_mut() else {
+            return Err(StoreError::InvalidLifecycleSession);
+        };
+        object.insert("start_date_ms".into(), Value::from(start_ms));
+        if let Some(end_ms) = end_ms {
+            object.insert("end_date_ms".into(), Value::from(end_ms));
+        }
+        let widened_json = value.to_string();
+        if widened_json == charge_json {
+            continue;
+        }
+        transaction
+            .execute(
+                "UPDATE materialised_charges SET charge_json = ?3
+                  WHERE vehicle_id = ?1 AND charge_id = ?2",
+                params![vehicle_key.as_str(), id, widened_json],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+        record_sync_mutation_in_transaction(
+            transaction, vehicle_id, "charge", *id, car_id, "upsert", &widened_json,
+        )?;
+    }
+    // Hub samples by instant: outside coverage they go with a tombstone.
+    // A sample row holds no car, so its tombstone names its charge's car.
+    let sample_car = |id: i64| -> Result<Option<i64>, StoreError> {
+        transaction
+            .query_row(
+                "SELECT COALESCE(
+                    (SELECT car_id FROM materialised_charges AS charge
+                      WHERE charge.vehicle_id = sample.vehicle_id
+                        AND charge.charge_id = sample.charge_id),
+                    (SELECT car_id FROM materialised_cars AS car
+                      WHERE car.vehicle_id = sample.vehicle_id))
+                   FROM materialised_charge_samples AS sample
+                  WHERE sample.vehicle_id = ?1 AND sample.sample_id = ?2",
+                params![vehicle_key.as_str(), id],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)
+            .map(Option::flatten)
+    };
+    for id in &plan.charge_samples.hub_removed {
+        let Some(car_id) = sample_car(*id)? else {
+            continue;
+        };
+        transaction
+            .execute(
+                "DELETE FROM materialised_charge_samples WHERE vehicle_id = ?1 AND sample_id = ?2",
+                params![vehicle_key.as_str(), id],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+        record_sync_mutation_in_transaction(
+            transaction, vehicle_id, "charge_sample", *id, car_id, "tombstone", "{}",
+        )?;
+    }
+    // Kept Hub samples whose charge lost move to the winner.
+    for moved in &plan.charge_samples.moved_hub {
+        let Some(car_id) = sample_car(moved.id)? else {
+            continue;
+        };
+        let sample_json: String = transaction
+            .query_row(
+                "SELECT sample_json FROM materialised_charge_samples
+                  WHERE vehicle_id = ?1 AND sample_id = ?2",
+                params![vehicle_key.as_str(), moved.id],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)?;
+        let mut value: Value =
+            serde_json::from_str(&sample_json).map_err(|_| StoreError::InvalidLifecycleSession)?;
+        let Some(object) = value.as_object_mut() else {
+            return Err(StoreError::InvalidLifecycleSession);
+        };
+        object.insert("charge_process_id".into(), Value::from(moved.to));
+        let moved_json = value.to_string();
+        transaction
+            .execute(
+                "UPDATE materialised_charge_samples SET charge_id = ?3, sample_json = ?4
+                  WHERE vehicle_id = ?1 AND sample_id = ?2",
+                params![vehicle_key.as_str(), moved.id, moved.to, moved_json],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+        record_sync_mutation_in_transaction(
+            transaction,
+            vehicle_id,
+            "charge_sample",
+            moved.id,
+            car_id,
+            "upsert",
+            &moved_json,
+        )?;
+    }
+    let decided: Vec<_> = charge_plan
+        .skipped
+        .iter()
+        .chain(&charge_plan.superseded)
+        .copied()
+        .collect();
+    record_seam_links_in_transaction(
+        transaction,
+        &vehicle_key,
+        "charge",
+        &decided,
+        &charge_plan.links_dropped,
+    )
+}
+
+/// The row a packed source charge is written as: its source copy with the
+/// bounds the plan widened it to.
+pub(crate) fn planned_import_charge(
+    charge: &crate::hub_pack::ProjectionCharge,
+    bounds: Option<(i64, Option<i64>)>,
+) -> crate::hub_pack::ProjectionCharge {
+    let mut planned = charge.clone();
+    if let Some((start_ms, end_ms)) = bounds {
+        planned.start_date_ms = start_ms;
+        if end_ms.is_some() {
+            planned.end_date_ms = end_ms;
+        }
+    }
+    planned
+}

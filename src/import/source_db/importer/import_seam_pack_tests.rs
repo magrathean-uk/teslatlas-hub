@@ -355,6 +355,7 @@ fn plan(fixture: &Fixture, projected: &SourceDbProjection) -> PlannedDirectSucce
         fixture.binding.vehicle_id,
         CAR,
         &projected.snapshot.drives,
+        &projected.snapshot.charges,
     )
     .expect("plan ahead of the packs")
 }
@@ -387,6 +388,7 @@ fn publish(
             geofences: &[],
             materialised_car: &fixture.car,
             materialised_drives: &projected.snapshot.drives,
+            materialised_charges: &projected.snapshot.charges,
         },
         &fixture.binding,
         &fixture.car,
@@ -616,7 +618,8 @@ fn import_seam_parity_accounts_for_seam_skipped_rows() {
         skipped,
         SourceDbSeamSkipped {
             drives: 1,
-            positions: 2
+            positions: 2,
+            ..SourceDbSeamSkipped::default()
         }
     );
     // Changed source rows: drives 11, 12, 13 and positions 1101, 1201,

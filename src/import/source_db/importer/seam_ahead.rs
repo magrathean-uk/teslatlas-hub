@@ -2,21 +2,29 @@
 
 /// The seam plan applied to one successor's delta rows (design M03-SEAM-R3,
 /// section 4): the packs carry the planned source rows only. A skipped drive
-/// is left out, a packed drive carries the bounds the store writes, a source
-/// position inside coverage is left out and one whose drive was skipped is
-/// packed under the drive that stands for it. Packed drives whose stored row
-/// is not yet the planned row are restated even when the source did not
-/// change them, so the packs and the store hold the same drives.
+/// or charge is left out, a packed one carries the bounds the plan gives it,
+/// a source position or charge sample inside coverage is left out and one
+/// whose session was skipped is packed under the session that stands for
+/// it. Packed drives whose stored row is not yet the planned row are
+/// restated even when the source did not change them, so the packs and the
+/// store hold the same drives; packed charges the plan widened or readmitted
+/// are restated the same way.
 #[derive(Debug, Clone)]
 struct DeltaSeam {
     packs: crate::import::source_db::seam::SeamPackPlan,
     restated: Vec<ProjectionDrive>,
     emitted_drives: HashSet<i64>,
+    restated_charges: Vec<ProjectionCharge>,
+    emitted_charges: HashSet<i64>,
     skipped: SourceDbSeamSkipped,
 }
 
 impl DeltaSeam {
-    fn new(ahead: &crate::db::ImportSeamAhead, drives: &[ProjectionDrive]) -> Self {
+    fn new(
+        ahead: &crate::db::ImportSeamAhead,
+        drives: &[ProjectionDrive],
+        charges: &[ProjectionCharge],
+    ) -> Self {
         use crate::import::source_db::seam::PackedSession;
         let restated_ids: HashSet<i64> = ahead.restated_drives.iter().copied().collect();
         let restated = drives
@@ -29,13 +37,140 @@ impl DeltaSeam {
                 _ => None,
             })
             .collect();
+        let restated_charge_ids: HashSet<i64> = ahead.restated_charges.iter().copied().collect();
+        let restated_charges = charges
+            .iter()
+            .filter(|charge| restated_charge_ids.contains(&charge.id))
+            .filter_map(|charge| match ahead.packs.charge(charge.id) {
+                Some(PackedSession::Keep { bounds }) => {
+                    Some(crate::db::planned_import_charge(charge, bounds))
+                }
+                _ => None,
+            })
+            .collect();
         Self {
             packs: ahead.packs.clone(),
             restated,
             emitted_drives: HashSet::new(),
+            restated_charges,
+            emitted_charges: HashSet::new(),
             skipped: SourceDbSeamSkipped::default(),
         }
     }
+
+    /// Applies the plan to one changed source charge; false when the packs
+    /// leave it out (counted as seam-skipped).
+    fn pack_charge(&mut self, charge: &mut ProjectionCharge) -> Result<bool, SourceDbImportError> {
+        use crate::import::source_db::seam::PackedSession;
+        match self.packs.charge(charge.id) {
+            None => Err(SourceDbImportError::InvalidDirectDeltaRow),
+            Some(PackedSession::Skip) => {
+                self.skipped.charges = self.skipped.charges.saturating_add(1);
+                Ok(false)
+            }
+            Some(PackedSession::Keep { bounds }) => {
+                *charge = crate::db::planned_import_charge(charge, bounds);
+                self.emitted_charges.insert(charge.id);
+                Ok(true)
+            }
+        }
+    }
+
+    /// Applies the instant rule to one changed source charge sample; false
+    /// when the packs leave it out (counted as seam-skipped).
+    fn pack_charge_sample(&mut self, sample: &mut ProjectionChargeSample) -> bool {
+        use crate::import::source_db::seam::{ChildRow, PackedChild};
+        let child = ChildRow {
+            id: sample.id,
+            at_ms: sample.timestamp_ms,
+            parent: Some(sample.charge_process_id),
+        };
+        match self.packs.charge_sample(child) {
+            PackedChild::Skip => {
+                self.skipped.charge_samples = self.skipped.charge_samples.saturating_add(1);
+                false
+            }
+            PackedChild::Keep { parent } => {
+                sample.charge_process_id = parent.unwrap_or(sample.charge_process_id);
+                true
+            }
+        }
+    }
+
+    /// Appends the packed sessions the source did not change but the plan
+    /// restates: drives the store does not yet hold as planned, and charges
+    /// the plan widened or readmitted.
+    fn append_restated<F>(
+        &self,
+        current: &mut DirectDeltaRows,
+        emitted_batches: &mut usize,
+        maximum_batches: usize,
+        binding: &ProjectionBinding,
+        visit: &mut F,
+    ) -> Result<(), SourceDbImportError>
+    where
+        F: FnMut(DirectDeltaRows) -> Result<(), SourceDbImportError>,
+    {
+        for drive in &self.restated {
+            if self.emitted_drives.contains(&drive.id) {
+                continue;
+            }
+            let bytes = serde_json::to_vec(drive).map_err(SourceDbImportError::SerializeDirectDeltaRow)?;
+            make_room_for_restated_row(
+                current,
+                emitted_batches,
+                maximum_batches,
+                visit,
+                bytes.len(),
+                drive.car_id != binding.selected_car_id || drive.id <= 0,
+            )?;
+            current.drives.push(drive.clone());
+        }
+        for charge in &self.restated_charges {
+            if self.emitted_charges.contains(&charge.id) {
+                continue;
+            }
+            let bytes =
+                serde_json::to_vec(charge).map_err(SourceDbImportError::SerializeDirectDeltaRow)?;
+            make_room_for_restated_row(
+                current,
+                emitted_batches,
+                maximum_batches,
+                visit,
+                bytes.len(),
+                charge.car_id != binding.selected_car_id || charge.id <= 0,
+            )?;
+            current.charges.push(charge.clone());
+        }
+        Ok(())
+    }
+}
+
+/// Reserves room in `current` for one restated row of `bytes`, emitting the
+/// batch first when the row does not fit.
+fn make_room_for_restated_row<F>(
+    current: &mut DirectDeltaRows,
+    emitted_batches: &mut usize,
+    maximum_batches: usize,
+    visit: &mut F,
+    bytes: usize,
+    invalid: bool,
+) -> Result<(), SourceDbImportError>
+where
+    F: FnMut(DirectDeltaRows) -> Result<(), SourceDbImportError>,
+{
+    let payload_bytes =
+        u64::try_from(bytes).map_err(|_| SourceDbImportError::DirectDeltaBatchOverflow)?;
+    if payload_bytes > DIRECT_DELTA_BATCH_PAYLOAD_BYTES {
+        return Err(SourceDbImportError::DirectDeltaRowTooLarge { payload_bytes });
+    }
+    if current.next_would_exceed(payload_bytes)? && !current.is_empty() {
+        emit_direct_delta_batch(emitted_batches, maximum_batches, std::mem::take(current), visit)?;
+    }
+    if invalid {
+        return Err(SourceDbImportError::InvalidDirectDeltaRow);
+    }
+    current.reserve(payload_bytes)
 }
 
 /// A direct successor after the seam went ahead of its packs.
@@ -62,9 +197,15 @@ fn plan_direct_successor(
     vehicle_id: Uuid,
     selected_car_id: i64,
     drives: &[ProjectionDrive],
+    charges: &[ProjectionCharge],
 ) -> Result<PlannedDirectSuccessor, SourceDbImportError> {
-    let ahead =
-        store.apply_import_seam_ahead_of_packs(publication_gate, vehicle_id, selected_car_id, drives)?;
+    let ahead = store.apply_import_seam_ahead_of_packs(
+        publication_gate,
+        vehicle_id,
+        selected_car_id,
+        drives,
+        charges,
+    )?;
     publish_sync_mutations_ahead_of_packs(store, publication_gate, cursor_key, vehicle_id)?;
     let (_, head_sequence, head_digest) = store
         .v2_head(vehicle_id)?
@@ -85,7 +226,7 @@ fn plan_direct_successor(
         .checked_sub(existing_pack_count)
         .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
     Ok(PlannedDirectSuccessor {
-        seam: DeltaSeam::new(&ahead, drives),
+        seam: DeltaSeam::new(&ahead, drives, charges),
         seam_digest: ahead.packs.digest(),
         from_sequence,
         parent_digest: head_digest,
@@ -146,6 +287,7 @@ struct PlannedSuccessorRun<'a> {
     geofences: &'a [crate::source_db_projection::SourceDbGeofence],
     materialised_car: &'a ProjectionCar,
     materialised_drives: &'a [ProjectionDrive],
+    materialised_charges: &'a [ProjectionCharge],
 }
 
 /// What a planned direct successor published.
@@ -252,6 +394,7 @@ fn publish_planned_direct_successor(
         &projection_state,
         run.materialised_car,
         run.materialised_drives,
+        run.materialised_charges,
         planned.seam_digest,
     )?;
     delta_packs.published();

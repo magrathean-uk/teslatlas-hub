@@ -116,6 +116,10 @@ pub(crate) struct DirectSnapshotCapture {
     /// model rather than immutable sync packs, so an initial import publishes
     /// these rows atomically with its catalogue entry.
     pub materialised_drives: Vec<ProjectionDrive>,
+    /// Charging processes retained by the same bounded reader, ascending by
+    /// id. The import seam weighs them against the Hub's own charges; import
+    /// writes none of them to the read model.
+    pub materialised_charges: Vec<ProjectionCharge>,
     pub updates_v2_2: DirectUpdatesSourceV2_2,
     pub open_session: SourceDbOpenSession,
     pub physical_stage: Option<crate::source_db_stage::OwnedSourceDbStage>,
@@ -1244,7 +1248,7 @@ async fn write_from_session(
     let completed_before_charges = completed_before_positions
         .checked_add(source_counts.positions)
         .ok_or(SourceDbDirectError::DirectRetentionAccountingOverflow)?;
-    write_charges(
+    let materialised_charges = write_charges(
         client,
         selected_car_id,
         selected_car_id_i16,
@@ -1329,6 +1333,7 @@ async fn write_from_session(
         ),
         materialised_car: projected_car,
         materialised_drives,
+        materialised_charges,
         updates_v2_2,
         open_session,
         physical_stage: None,
@@ -2045,7 +2050,7 @@ async fn write_charges(
     progress: &SourceDbMigrationProgressReporter,
     progress_base_rows: u64,
     progress_total_rows: u64,
-) -> Result<(), SourceDbDirectError> {
+) -> Result<Vec<ProjectionCharge>, SourceDbDirectError> {
     progress.report(
         SourceDbMigrationPhase::Charges,
         progress_base_rows,
@@ -2226,7 +2231,11 @@ async fn write_charges(
         duration_ms = elapsed_millis(phase_started),
         "finished source database charging history capture"
     );
-    Ok(())
+    // The projected parents are already held for the sample pass; hand them
+    // on, in id order, for the import seam.
+    let mut charges: Vec<ProjectionCharge> = projected_by_id.into_values().collect();
+    charges.sort_by_key(|charge| charge.id);
+    Ok(charges)
 }
 
 const RELATED_POSITION_BATCH_SIZE: usize = 256;

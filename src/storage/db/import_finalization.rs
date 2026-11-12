@@ -216,6 +216,7 @@ impl HubStore {
         projection_state: &SourceDbProjectionState,
         materialised_car: &ProjectionCar,
         materialised_drives: &[ProjectionDrive],
+        materialised_charges: &[crate::hub_pack::ProjectionCharge],
         seam_digest: [u8; 32],
     ) -> Result<(), StoreError> {
         self.finalize_import_generation_delta_successors_with_projection_state_inner(
@@ -232,7 +233,7 @@ impl HubStore {
             projection_state,
             Some((materialised_car, materialised_drives)),
             false,
-            Some(seam_digest),
+            Some((seam_digest, materialised_charges)),
         )
     }
 
@@ -252,7 +253,7 @@ impl HubStore {
         projection_state: &SourceDbProjectionState,
         materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
         retain_legacy_inventory: bool,
-        seam_digest: Option<[u8; 32]>,
+        seam: Option<([u8; 32], &[crate::hub_pack::ProjectionCharge])>,
     ) -> Result<(), StoreError> {
         if run_id.is_nil() || source_id.is_nil() || vehicle_id.is_nil() || car_id <= 0 {
             return Err(StoreError::InvalidImportGeneration);
@@ -435,7 +436,9 @@ impl HubStore {
                 Some((car, drives)) => {
                     // The packs were written from a plan; publication plans
                     // again from the same store and refuses another one.
-                    if let Some(expected) = seam_digest {
+                    let mut charge_seam = None;
+                    if let Some((expected, charges)) = seam {
+                        validate_import_seam_charges(charges, car_id)?;
                         let prior = durable_prior_imported_drive_ids_in_transaction(
                             &transaction,
                             &vehicle_key,
@@ -444,15 +447,15 @@ impl HubStore {
                             &transaction,
                             vehicle_id,
                             drives,
+                            charges,
                             &prior,
                         )?;
-                        let planned = crate::import::source_db::seam::SeamPackPlan::for_drives(
-                            &coverage,
-                            &plan.drives,
-                        );
+                        let planned =
+                            crate::import::source_db::seam::SeamPackPlan::for_plan(&coverage, &plan);
                         if planned.digest() != expected {
                             return Err(StoreError::ImportGenerationConflict);
                         }
+                        charge_seam = Some((plan, charges));
                     }
                     reconcile_imported_materialisation_in_transaction(
                         &transaction,
@@ -463,6 +466,11 @@ impl HubStore {
                         ImportedProjectionRows::Attached,
                         PriorImportedDriveRows::Durable,
                     )?;
+                    if let Some((plan, charges)) = charge_seam {
+                        apply_import_seam_to_charges_in_transaction(
+                            &transaction, vehicle_id, &plan, charges, true,
+                        )?;
+                    }
                 }
                 // A successor that does not plan the seam may not publish
                 // over the Hub's own collection.
