@@ -13,7 +13,8 @@
 use std::sync::Arc;
 
 use super::{
-    EXCHANGE_GRACE_SECONDS,
+    EXCHANGE_GRACE_SECONDS, EXCHANGE_WRITE_MARGIN_SECONDS, SUPERVISOR_POLL_SECONDS,
+    gate::writes_in_progress,
     controller::WindowController,
     custody::CredentialCustody,
     refusal::Refusal,
@@ -144,14 +145,23 @@ impl<S: CollectorSlot> Supervisor<S> {
             Phase::Closing => {
                 self.slot.stop();
                 let closing_at = status.closing_at.unwrap_or(wall);
-                // After the grace every exchange still holding its permit is
-                // cancelled; one already storing its answer finishes first,
-                // so the handback never precedes its durable write or its
-                // refusal (design 2.7).
-                if wall >= closing_at + EXCHANGE_GRACE_SECONDS {
-                    self.controller.gate().lapse_exchanges();
+                let gate = self.controller.gate();
+                // M02-T13 round 2: the window is handed back within the
+                // grace, whatever a sign-in is doing. At the lapse every
+                // exchange permit is cancelled, so no further write begins
+                // under it (each write checks its permit through the write
+                // fence); a write already past its check may finish until
+                // the handback deadline, and no later.
+                let lapse_at = closing_at + EXCHANGE_GRACE_SECONDS - EXCHANGE_WRITE_MARGIN_SECONDS;
+                let handback_by = closing_at + EXCHANGE_GRACE_SECONDS - SUPERVISOR_POLL_SECONDS;
+                if wall >= lapse_at {
+                    gate.lapse_exchanges();
                 }
-                if !self.controller.gate().exchange_in_flight() {
+                // Read after the permits are cancelled: a write counted here
+                // passed its check before, and none can begin after.
+                let writing = gate.permits_held() && writes_in_progress() > 0;
+                let exchanging = wall < lapse_at && gate.exchange_in_flight();
+                if (!exchanging && !writing) || wall >= handback_by {
                     if let Some(start) = self.gap_start.take() {
                         let _ = self.controller.record_gap(start, closing_at.max(start));
                     }

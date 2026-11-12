@@ -161,8 +161,13 @@ every open until `window trust` is run again.
    `teslatlas-hub status` before signing in again. A stored sign-in whose
    follow-up cleanup failed reports `"aftercare": "pending"`; the service
    finishes it when it next opens the credential store, as the collector's
-   restart does. A window closed during a sign-in stays Closing until the
-   answer is stored or, once the 60-second grace has passed, discarded.
+   restart does. A window closed during a sign-in stays Closing while the
+   sign-in may still finish, and is handed back within the 60-second grace
+   whatever the sign-in is doing: 40 seconds in, the sign-in's permit lapses
+   and nothing more is written under it (a write already under way has until
+   the handback). A sign-in cut off before its login was committed refuses
+   `window_closed` and leaves at most an unused binding, which expires; one cut
+   off after the commit is stored with `"aftercare": "pending"`.
 
 ## Stop
 

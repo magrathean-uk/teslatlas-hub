@@ -361,14 +361,18 @@ pub(super) mod persistence_pause {
     /// writes anything; blocks while a pause is armed on this thread.
     pub(crate) fn reached() {
         let Some(pause) = ARMED.with(|slot| slot.borrow_mut().take()) else { return };
-        let mut state = pause.state.lock().expect("pause");
-        state.0 = true;
-        pause.changed.notify_all();
-        let (_state, waited) = pause.changed.wait_timeout_while(state, Duration::from_secs(30), |state| !state.1).expect("pause");
-        assert!(!waited.timed_out(), "the paused write was released");
+        pause.hold();
     }
 
     impl Pause {
+        /// Blocks the calling thread here until released.
+        pub(crate) fn hold(&self) {
+            let mut state = self.state.lock().expect("pause");
+            state.0 = true;
+            self.changed.notify_all();
+            let (_state, waited) = self.changed.wait_timeout_while(state, Duration::from_secs(30), |state| !state.1).expect("pause");
+            assert!(!waited.timed_out(), "the paused write was released");
+        }
         pub(crate) fn wait_reached(&self) {
             let state = self.state.lock().expect("pause");
             let (_state, waited) = self.changed.wait_timeout_while(state, Duration::from_secs(30), |state| !state.0).expect("pause");
@@ -424,51 +428,128 @@ impl crate::collection::window::CollectorSlot for IdleSlot {
     fn release_lease(&mut self) -> Result<(), String> { Ok(()) }
 }
 
-/// Round 2, finding 4: the operator closes the window while an exchange,
-/// its answer in hand, is paused before its write. The window stays Closing
-/// with no handback while the exchange holds its permit: released within the
-/// grace, the write completes and only then is the window handed back;
-/// released after the grace has lapsed, the answer is dropped unstored, and
-/// again the handback follows the refusal.
+/// Where a stalled exchange is held: after its final permit check (before
+/// any write), at the binding (written, before its barrier), before a key's
+/// publication, before the pair's commit, and at the durability barrier
+/// after that commit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Stall { AfterPermitCheck, Binding, KeyPublication, Commit, DurabilityBarrier }
+
+/// Arms `stall` on this thread: the exchange blocks there until released.
+fn arm_stall(stall: Stall, pause: Arc<persistence_pause::Pause>) -> Box<dyn std::any::Any> {
+    if stall == Stall::AfterPermitCheck {
+        persistence_pause::arm(pause);
+        return Box::new(CredentialVaultEntry::test_faults(false, None, None, Box::new(|_| {})));
+    }
+    let mut after_commit = false;
+    let mut pause = Some(pause);
+    Box::new(CredentialVaultEntry::test_faults(false, None, None, Box::new(move |point| {
+        if point == "sign_in_pair_committed" { after_commit = true; }
+        let reached = match stall {
+            Stall::Binding => point == "sign_in_binding_committed",
+            Stall::KeyPublication => point == "sign_in_key_publication",
+            Stall::Commit => point == "sign_in_pair_commit",
+            Stall::DurabilityBarrier => after_commit && point == "credential_barrier",
+            Stall::AfterPermitCheck => false,
+        };
+        if reached && let Some(pause) = pause.take() { pause.hold(); }
+    })))
+}
+
+/// What a write would change: the store's commit counter as seen from a
+/// connection of its own (SQLite's `data_version` moves when any other
+/// connection commits), the sign-in bindings and the secrets directory.
+struct StoreWatch { connection: rusqlite::Connection, root: std::path::PathBuf }
+
+impl StoreWatch {
+    fn new(root: &std::path::Path) -> Self {
+        Self { connection: rusqlite::Connection::open(root.join("hub.sqlite")).expect("synthetic SQL"), root: root.to_path_buf() }
+    }
+    fn state(&self) -> (i64, i64, Vec<(String, u64)>) {
+        let version = self.connection.query_row("PRAGMA data_version", [], |row| row.get(0)).expect("data version");
+        let bindings = self.connection.query_row("SELECT count(*) FROM credential_sign_ins", [], |row| row.get(0)).expect("bindings");
+        let mut secrets = std::fs::read_dir(self.root.join("secrets")).map(|entries| entries.filter_map(Result::ok)
+            .map(|entry| (entry.file_name().to_string_lossy().into_owned(), entry.metadata().map(|meta| meta.len()).unwrap_or(0)))
+            .collect::<Vec<_>>()).unwrap_or_default();
+        secrets.sort();
+        (version, bindings, secrets)
+    }
+}
+
+/// Steps the supervisor until it hands the window back, without moving the
+/// clock (a write of another test may hold the process's write fence for a
+/// moment). Returns the step that closed it.
+fn step_until_closed<S: crate::collection::window::CollectorSlot>(supervisor: &mut crate::collection::window::Supervisor<S>) -> crate::collection::window::StepReport {
+    for _ in 0..500 {
+        let report = supervisor.step();
+        if report.closed.is_some() { return report; }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("the window was not handed back");
+}
+
+/// Round 2, finding 1 (REV-M02-T13; REV-M02-T12 finding 4): the operator
+/// closes the window while an exchange, its answer in hand, is stalled in its
+/// persistence: after its final permit check, at the binding, before a key's
+/// publication, before the pair's commit, or at the durability barrier after
+/// that commit. The window stays Closing while the exchange may still finish
+/// normally, and is handed back within the grace however long the stall
+/// lasts. Released after the handback, the exchange writes nothing more: a
+/// stall before the commit refuses `window_closed`, leaving at most what it
+/// wrote before the close; a stall after the commit is a stored sign-in whose
+/// aftercare is left pending. Before this round the close waited for the
+/// stalled write without bound.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn owner_exchange_close_waits_for_a_paused_persistence() {
-    use crate::collection::window::{CloseReason, Phase, Supervisor};
+async fn owner_exchange_window_closes_within_the_grace_whatever_the_write_does() {
+    use crate::collection::window::{CloseReason, EXCHANGE_GRACE_SECONDS, Phase, Supervisor, WindowClock};
     let stub = Stub::spawn(Reply::Pkce).await;
-    for (case, (code, past_grace)) in [("code-close-paused-0001", false), ("code-close-lapsed-0001", true)].into_iter().enumerate() {
+    let stalls = [Stall::AfterPermitCheck, Stall::Binding, Stall::KeyPublication, Stall::Commit, Stall::DurabilityBarrier];
+    for stall in stalls {
+        let code = format!("code-stall-{stall:?}-0001");
         let (root, _store, entry) = fixture();
         let window = SupervisedWindow::open(600);
         let _route = crate::fleet_api::egress::test_support::route_on(&stub.url, window.controller.gate().clone(), window.clock.clone());
         let mut supervisor = Supervisor::new(Arc::clone(&window.controller), IdleSlot).with_custody(crate::collection::window::CredentialCustody::new());
         let pause = Arc::new(persistence_pause::Pause::default());
-        let result = std::thread::scope(|scope| {
+        let watch = StoreWatch::new(root.path());
+        let (result, at_handback) = std::thread::scope(|scope| {
             let exchange = {
-                let (entry, pause, url) = (&entry, Arc::clone(&pause), stub.url.clone());
+                let (entry, pause, url, code) = (&entry, Arc::clone(&pause), stub.url.clone(), code.clone());
                 scope.spawn(move || {
-                    persistence_pause::arm(pause);
+                    let _stall = arm_stall(stall, pause);
                     tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime")
-                        .block_on(exchange_at_stub_for_test(entry, code, VERIFIER, OWNER_REDIRECT_URI, &url))
+                        .block_on(exchange_at_stub_for_test(entry, &code, VERIFIER, OWNER_REDIRECT_URI, &url))
                 })
             };
             pause.wait_reached();
+            let closing_at = window.clock.wall();
             window.controller.close(CloseReason::OperatorClose);
-            assert_eq!(supervisor.step().phase, Phase::Closing, "case {case}: Closing while the exchange holds its answer");
-            window.clock.advance(if past_grace { 61 } else { 30 });
-            let report = supervisor.step();
-            assert_eq!((report.phase, report.closed), (Phase::Closing, None), "case {case}: no handback while the write is paused");
-            assert!(window.controller.status().last_handback.is_none(), "case {case}: no handback recorded");
-            assert!(window.controller.gate().exchange_in_flight(), "case {case}");
+            assert_eq!(supervisor.step().phase, Phase::Closing, "{stall:?}: Closing while the exchange holds its permit");
+            window.clock.advance(30);
+            assert_eq!(supervisor.step().phase, Phase::Closing, "{stall:?}: the exchange keeps its grace");
+            window.clock.advance(15);
+            let report = step_until_closed(&mut supervisor);
+            assert_eq!(report.closed, Some(CloseReason::OperatorClose), "{stall:?}: handed back while the write is stalled");
+            assert!(window.clock.wall() < closing_at + EXCHANGE_GRACE_SECONDS, "{stall:?}: within the grace");
+            assert!(window.controller.status().last_handback.is_some(), "{stall:?}: handback recorded");
+            let at_handback = watch.state();
             pause.release();
-            exchange.join().expect("exchange thread")
+            (exchange.join().expect("exchange thread"), at_handback)
         });
-        if past_grace {
-            let error = result.unwrap_err();
-            assert_eq!(error.code(), WINDOW_CLOSED, "case {case}");
-            assert_untouched(root.path(), &entry);
-        } else {
-            result.expect("the paused write completes within the grace");
-            assert!(entry.vault().load(CredentialSlot::OwnerApi).expect("read").is_some(), "the pair is durable before the handback");
+        assert_eq!(watch.state(), at_handback, "{stall:?}: no write after the handback");
+        match stall {
+            Stall::DurabilityBarrier => {
+                assert_eq!(result.expect("committed before the close"), OwnerSignIn::AftercarePending, "{stall:?}");
+                assert!(entry.vault().load(CredentialSlot::OwnerApi).expect("read").is_some_and(|pair| pair.origin == Some(CredentialOrigin::HubLogin)));
+            }
+            _ => {
+                let error = result.unwrap_err();
+                assert_eq!(error.code(), WINDOW_CLOSED, "{stall:?}");
+                assert_secret_free(&error, &code);
+                assert!(entry.vault().credential_pair_presence(CredentialSlot::OwnerApi).expect("presence").is_none(), "{stall:?}: no pair");
+                if stall == Stall::AfterPermitCheck { assert_untouched(root.path(), &entry); }
+            }
         }
-        assert_eq!(supervisor.step().closed, Some(CloseReason::OperatorClose), "case {case}: then the window is handed back");
     }
 }
 
