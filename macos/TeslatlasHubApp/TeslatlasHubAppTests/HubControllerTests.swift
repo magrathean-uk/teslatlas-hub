@@ -2735,6 +2735,42 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(onboarding.currentRoute, .legacy)
     }
 
+    func testAFailureThatIsNotUnconfirmedLeavesTheHeldRetryUntouched() throws {
+        // M02-T17 negative case: only a missing answer supersedes the held discovery retry. A
+        // resumed setup refused with another failure keeps the grant, its deadline and the retry,
+        // and the status is not read again for it.
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.failedReport("window_closed")))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = signInController(runner, events: events, home: home)
+        let failed = expectation(description: "discovery failed")
+        controller.configureTeslaAccount(grant: Self.codeGrant) { _ in failed.fulfill() }
+        wait(for: [failed], timeout: 2)
+        let deadline = try XCTUnwrap(controller.ownerDiscoveryRetryDeadline)
+
+        let others: [Error] = [
+            HubActionError.commandExited(1, "control_channel_busy: another control request is running"),
+            HubActionError.commandFailed("setup_input_invalid: bad input")
+        ]
+        for other in others {
+            let name = other.localizedDescription
+            let statusRunsBefore = runner.statusRuns
+            runner.result = .failure(other)
+            let retried = expectation(description: name)
+            controller.retryOwnerDiscovery { result in
+                defer { retried.fulfill() }
+                guard case let .failure(error) = result else { return XCTFail("\(name): shown as success") }
+                XCTAssertNil(HubActionError.settingQuiescenceAside(error) as? HubOwnerSignInUnconfirmed, name)
+            }
+            wait(for: [retried], timeout: 2)
+            XCTAssertTrue(controller.canRetryOwnerDiscovery, name)
+            XCTAssertEqual(controller.ownerDiscoveryRetryDeadline, deadline, name)
+            XCTAssertEqual(runner.statusRuns, statusRunsBefore, name)
+            XCTAssertTrue(controller.lifecycleCapabilities.isIdle, name)
+        }
+    }
+
     func testOnboardingShowsTheUnconfirmedLineAndDoesNotAdvance() throws {
         // Driven through the page's own retry (the Tesla login window is never opened): the
         // resumed setup gets no answer, the page shows the app's line and stays on sign-in.
