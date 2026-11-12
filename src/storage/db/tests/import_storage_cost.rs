@@ -84,7 +84,10 @@ fn storage_import_cost_physical_admission_verifies_each_pack_once_and_keeps_byte
 }
 
 /// Item (a), safety kept: the single verification still rejects a pack whose
-/// bytes changed after it was built, and nothing is admitted.
+/// bytes changed after it was built, and nothing is admitted. The rejection
+/// comes from the first pack's verification; the failure cleanup then refuses
+/// to delete the created pack because its bytes no longer match the digest,
+/// and that cleanup error is the one reported.
 #[test]
 fn storage_import_cost_physical_admission_single_verification_rejects_tampering() {
     let (temporary, store) = try_test_store().expect("store");
@@ -95,13 +98,19 @@ fn storage_import_cost_physical_admission_single_verification_rejects_tampering(
         .expect("pack object")
         .write_all(b"tamper")
         .expect("append to pack");
+    let verifications_before = store.instrumentation().physical_v3_pack_verifications();
     let gate = store
         .try_acquire_publication_gate()
         .expect("publication gate");
     assert!(matches!(
         store.stage_pending_physical_v3_admission(&gate, candidate),
-        Err(StoreError::PhysicalV3Pack(_))
+        Err(StoreError::UnpublishedPackDigestMismatch(_))
     ));
+    assert_eq!(
+        store.instrumentation().physical_v3_pack_verifications() - verifications_before,
+        1,
+        "the first pack's verification rejects it and admission stops there"
+    );
     assert!(
         store
             .pending_physical_v3_admission_for_vehicle(binding.vehicle_id)
