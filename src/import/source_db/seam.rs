@@ -165,7 +165,9 @@ pub struct SourceRows {
 }
 
 /// The recorded seam decisions of one vehicle (`import_seam_links`), loser id
-/// to winner id per session entity.
+/// to winner id per session entity. A self-link (the same id on both sides)
+/// marks an inherited session whose stored copy the Hub kept; the store counts
+/// it as the Hub's, and the plan passes over it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SeamLinks {
     pub drives: BTreeMap<i64, i64>,
@@ -392,6 +394,12 @@ fn plan_sessions(
     // Recorded links first.
     let mut linked: Vec<(i64, i64)> = Vec::new();
     for (&loser, &winner) in links {
+        // A self-link marks an inherited session whose stored copy stood over
+        // its source copy (M03-T18): ownership, which the caller reads, not a
+        // decision between two rows. It is neither followed nor dropped here.
+        if loser == winner {
+            continue;
+        }
         let side = if is_hub_id(loser) {
             Side::Hub
         } else {

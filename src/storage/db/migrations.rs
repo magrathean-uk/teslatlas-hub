@@ -3,9 +3,11 @@
 fn migrate(connection: &Connection) -> Result<(), StoreError> {
     admit_writable_catalogue(connection)?;
     let credential_fresh = schema_version(connection)? == 0;
-    // A floor store passes the v80 guard before the credential rung changes it,
-    // so a store v80 refuses is left exactly as it was.
-    if schema_version(connection)? == MIN_STORE_VERSION {
+    // A floor or credential-format store (v78 or v79) passes the v80 guard
+    // before the credential rung changes it, its v79 column repair included,
+    // so a store v80 refuses is left exactly as it was (M03-T18). The guard
+    // inside the v80 transaction stays.
+    if (MIN_STORE_VERSION..=CREDENTIAL_FORMAT_SCHEMA_VERSION).contains(&schema_version(connection)?) {
         refuse_pre_seam_collected_rows(connection)?;
     }
     if schema_version(connection)? == 0 {

@@ -201,28 +201,63 @@ fn promote_imported_open_session_in_transaction(
                 .map_err(|_| StoreError::InvalidLifecycleSession)
         })
         .transpose()?;
-    let seeded = crate::lifecycle::seed_imported_open_session_state(
+    // M03-T18: once the vehicle has coverage, an import never discards the
+    // lifecycle's open drive the Hub owns. The seam settles it first when the
+    // source decides it, so one still open here is one the seam kept (or one
+    // a window still open is collecting): it stays open with its open rows,
+    // and the source's open drive is not taken over while it stands.
+    let vehicle_key = vehicle_id.to_string();
+    let kept_open = match previous_state.as_ref() {
+        Some(state) if state.open_drive.is_some() => {
+            match import_seam_open_drive_in_connection(transaction, &vehicle_key)? {
+                Some(open) => {
+                    let covered =
+                        match crate::db::coverage_intervals_for_vehicle(transaction, &vehicle_key) {
+                            Ok(intervals) => !intervals.is_empty(),
+                            Err(_) => true,
+                        };
+                    covered.then_some(open.session.id)
+                }
+                None => None,
+            }
+        }
+        _ => None,
+    };
+    let mut seeded = crate::lifecycle::seed_imported_open_session_state(
         source_id,
         session,
         previous_state.as_ref(),
     )
     .map_err(|_| StoreError::InvalidLifecycleSession)?;
+    if kept_open.is_some()
+        && let Some(previous) = previous_state.as_ref()
+    {
+        seeded.open_drive = previous.open_drive.clone();
+        seeded.phase = previous.phase;
+    }
     ensure_source_exists(transaction, source_id)?;
     ensure_vehicle_source(transaction, vehicle_id, source_id)?;
     let source = source_id.to_string();
     let vehicle = vehicle_id.to_string();
-    transaction
-        .execute(
+    let cleared = match kept_open {
+        None => transaction.execute(
             "DELETE FROM lifecycle_open_rows WHERE source_id=?1 AND vehicle_id=?2",
             params![source, vehicle],
-        )
-        .map_err(StoreError::LifecycleWrite)?;
+        ),
+        Some(drive_id) => transaction.execute(
+            "DELETE FROM lifecycle_open_rows WHERE source_id=?1 AND vehicle_id=?2
+                AND NOT ((domain = 'position' AND parent_source_row_id IS ?3)
+                      OR (domain = 'drive' AND source_row_id = ?3))",
+            params![source, vehicle, drive_id],
+        ),
+    };
+    cleared.map_err(StoreError::LifecycleWrite)?;
     // No watermark row of any domain is deleted (C2 R80 (b)): the writer below
     // only raises each pair, because a replacement or promotion must never
     // lower how far an imported class reaches (for `charging_processes`, C2
     // R5's import bound W(V)).
     let mut inserted = 0;
-    if let Some(row) = &session.drive {
+    if let Some(row) = session.drive.as_ref().filter(|_| kept_open.is_none()) {
         inserted += insert_open_row(
             transaction,
             &source,
@@ -235,7 +270,7 @@ fn promote_imported_open_session_in_transaction(
             row,
         )?;
     }
-    for row in &session.drive_positions {
+    for row in session.drive_positions.iter().filter(|_| kept_open.is_none()) {
         inserted += insert_open_row(
             transaction,
             &source,
@@ -389,8 +424,11 @@ struct StoredSeamPosition {
 ///
 /// Ownership is the id range: a Hub-range row is the Hub's. A stored drive
 /// with a source id is the Hub's inherited session (one id on both sides)
-/// when the prior import did not list it or a Hub-range position belongs to
-/// it; every other stored source-id drive is an earlier import's. The pure
+/// when the prior import did not list it, a Hub-range position belongs to it
+/// or a recorded self-link marks it; every other stored source-id drive is an
+/// earlier import's. The lifecycle's open drive the Hub owns, with its open
+/// positions, is weighed too and settled here (M03-T18,
+/// [`import_seam_hub_drives_in_connection`]). The pure
 /// [`plan_seam`](crate::import::source_db::seam::plan_seam) decides from the
 /// coverage in the store, those rows, the source drives and the recorded
 /// links, and this applies it: winning source drives are written, Hub drives
@@ -407,117 +445,27 @@ fn apply_import_seam_to_drives_in_transaction(
     drives: &[ProjectionDrive],
     prior_imported_drive_ids: &HashSet<i64>,
 ) -> Result<(), StoreError> {
-    use crate::db::hub_ids::{HUB_ID_BASE, HUB_ID_MAX, is_hub_id};
+    use crate::db::hub_ids::is_hub_id;
     use crate::import::source_db::seam::{
-        ChildRow, HubRows, SeamLinks, SessionRow, SourceRows, plan_seam,
+        InheritedCopy, SeamLinks, SessionRow, SourceRows, plan_seam,
     };
 
     let vehicle_key = vehicle_id.to_string();
     let coverage = import_seam_coverage_in_transaction(transaction, &vehicle_key)?;
-
-    let stored_drives: std::collections::BTreeMap<i64, StoredSeamDrive> = {
-        let mut statement = transaction
-            .prepare(
-                "SELECT drive_id, car_id,
-                        CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER),
-                        CAST(json_extract(drive_json, '$.end_date_ms') AS INTEGER)
-                   FROM materialised_drives WHERE vehicle_id = ?1 ORDER BY drive_id ASC",
-            )
-            .map_err(StoreError::Query)?;
-        let rows = statement
-            .query_map(params![vehicle_key.as_str()], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, Option<i64>>(2)?,
-                    row.get::<_, Option<i64>>(3)?,
-                ))
-            })
-            .map_err(StoreError::Query)?;
-        let mut stored = std::collections::BTreeMap::new();
-        for row in rows {
-            let (id, car_id, start_ms, end_ms) = row.map_err(StoreError::Query)?;
-            // A stored drive without a start cannot be weighed; it stays as
-            // it is and is never planned away.
-            let Some(start_ms) = start_ms else { continue };
-            stored.insert(
-                id,
-                StoredSeamDrive {
-                    car_id,
-                    start_ms,
-                    end_ms,
-                },
-            );
-        }
-        stored
-    };
-    let hub_positions: std::collections::BTreeMap<i64, StoredSeamPosition> = {
-        let mut statement = transaction
-            .prepare(
-                "SELECT position_id, car_id, drive_id,
-                        CAST(json_extract(position_json, '$.date_ms') AS INTEGER)
-                   FROM materialised_positions
-                  WHERE vehicle_id = ?1 AND position_id BETWEEN ?2 AND ?3
-                  ORDER BY position_id ASC",
-            )
-            .map_err(StoreError::Query)?;
-        let rows = statement
-            .query_map(
-                params![vehicle_key.as_str(), HUB_ID_BASE, HUB_ID_MAX],
-                |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, i64>(1)?,
-                        row.get::<_, Option<i64>>(2)?,
-                        row.get::<_, Option<i64>>(3)?,
-                    ))
-                },
-            )
-            .map_err(StoreError::Query)?;
-        let mut positions = std::collections::BTreeMap::new();
-        for row in rows {
-            let (id, car_id, drive_id, at_ms) = row.map_err(StoreError::Query)?;
-            // A Hub position without an instant cannot be placed; it stays.
-            let Some(at_ms) = at_ms else { continue };
-            positions.insert(
-                id,
-                StoredSeamPosition {
-                    car_id,
-                    at_ms,
-                    drive_id,
-                },
-            );
-        }
-        positions
-    };
-
-    let held_by_hub_position: HashSet<i64> = hub_positions
-        .values()
-        .filter_map(|position| position.drive_id)
-        .collect();
-    let mut hub = HubRows::default();
-    let mut hub_side: HashSet<i64> = HashSet::new();
-    for (id, drive) in &stored_drives {
-        let inherited = !prior_imported_drive_ids.contains(id) || held_by_hub_position.contains(id);
-        if is_hub_id(*id) || inherited {
-            hub.drives.push(SessionRow {
-                id: *id,
-                start_ms: drive.start_ms,
-                end_ms: drive.end_ms,
-            });
-            hub_side.insert(*id);
-        } else {
-            hub.imported_drives.push(*id);
-        }
-    }
-    hub.positions = hub_positions
-        .iter()
-        .map(|(id, position)| ChildRow {
-            id: *id,
-            at_ms: position.at_ms,
-            parent: position.drive_id,
-        })
-        .collect();
+    // The same reader as the planner ahead of the packs (M03-T18).
+    let SeamHubDrives {
+        rows: hub,
+        stored: stored_drives,
+        hub_positions,
+        open,
+        hub_side,
+        held_by_hub_position,
+    } = import_seam_hub_drives_in_connection(
+        transaction,
+        &vehicle_key,
+        &coverage,
+        prior_imported_drive_ids,
+    )?;
     let source = SourceRows {
         drives: drives
             .iter()
@@ -630,6 +578,12 @@ fn apply_import_seam_to_drives_in_transaction(
         move_hub_position_in_transaction(transaction, vehicle_id, moved.id, moved.to)?;
     }
 
+    // The lifecycle's open drive the Hub owns, decided like any Hub drive,
+    // is settled before promotion can clear its open rows (M03-T18).
+    if let Some(open) = &open {
+        settle_import_seam_open_drive_in_transaction(transaction, vehicle_id, open, &plan)?;
+    }
+
     let decided: Vec<_> = drive_plan
         .skipped
         .iter()
@@ -642,6 +596,187 @@ fn apply_import_seam_to_drives_in_transaction(
         "drive",
         &decided,
         &drive_plan.links_dropped,
+    )?;
+    // Inherited ownership that rests on nothing else durable is recorded, so
+    // it holds once the import lists the id (M03-T18): a stored copy kept that
+    // no Hub-range position holds. A mark goes when the source copy replaces
+    // the row or the row goes stale.
+    let kept: Vec<i64> = drive_plan
+        .inherited
+        .iter()
+        .filter(|(id, copy)| {
+            *copy == InheritedCopy::Stored
+                && stored_drives.contains_key(id)
+                && !held_by_hub_position.contains(id)
+        })
+        .map(|(id, _)| *id)
+        .collect();
+    let released: Vec<i64> = drive_plan
+        .inherited
+        .iter()
+        .filter(|(_, copy)| *copy == InheritedCopy::Source)
+        .map(|(id, _)| *id)
+        .chain(drive_plan.stale.iter().copied())
+        .collect();
+    record_seam_inherited_in_transaction(transaction, &vehicle_key, "drive", &kept, &released)
+}
+
+/// Settles the lifecycle's open drive the Hub owns once the seam has decided
+/// it (M03-T18). When it lost, or its source copy covers and replaces it (an
+/// inherited session, one id), its Hub positions inside coverage are written
+/// to `materialised_positions` under the drive the plan gives them (the
+/// winner, or the source copy) and journalled; those outside coverage are
+/// dropped; its open rows go and it leaves the lifecycle state, so neither
+/// promotion nor a later collection closes it again. It was never synced, so
+/// no tombstone is written; a lost drive's link is recorded by the caller.
+/// When the plan keeps it, it stays open with its positions inside coverage,
+/// and promotion keeps it; the lifecycle closes it when the Hub collects again.
+fn settle_import_seam_open_drive_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    open: &SeamOpenDrive,
+    plan: &crate::import::source_db::seam::SeamPlan,
+) -> Result<(), StoreError> {
+    use crate::db::hub_ids::{HUB_ID_BASE, HUB_ID_MAX};
+    use crate::import::source_db::seam::InheritedCopy;
+
+    let vehicle_key = vehicle_id.to_string();
+    let drive_id = open.session.id;
+    let drive_plan = &plan.drives;
+    let removed = |id: i64| plan.positions.hub_removed.binary_search(&id).is_ok();
+    let lost = drive_plan
+        .superseded
+        .iter()
+        .chain(&drive_plan.skipped)
+        .any(|link| link.loser_id == drive_id);
+    let replaced = drive_plan
+        .inherited
+        .contains(&(drive_id, InheritedCopy::Source));
+    if !lost && !replaced {
+        for id in open.positions.keys().filter(|id| removed(**id)) {
+            transaction
+                .execute(
+                    "DELETE FROM lifecycle_open_rows
+                      WHERE vehicle_id = ?1 AND domain = 'position' AND source_row_id = ?2",
+                    params![vehicle_key.as_str(), id],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+        }
+        return Ok(());
+    }
+
+    let moved: HashMap<i64, i64> = plan
+        .positions
+        .moved_hub
+        .iter()
+        .map(|moved| (moved.id, moved.to))
+        .collect();
+    let open_positions: Vec<(i64, i64, String)> = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT source_row_id, car_id, row_json FROM lifecycle_open_rows
+                  WHERE vehicle_id = ?1 AND domain = 'position' AND parent_source_row_id = ?2
+                    AND source_row_id BETWEEN ?3 AND ?4
+                  ORDER BY source_row_id ASC",
+            )
+            .map_err(StoreError::Query)?;
+        let rows = statement
+            .query_map(
+                params![vehicle_key.as_str(), drive_id, HUB_ID_BASE, HUB_ID_MAX],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(StoreError::Query)?;
+        let collected: Vec<(i64, i64, String)> =
+            rows.collect::<Result<_, _>>().map_err(StoreError::Query)?;
+        collected
+    };
+    for (id, car_id, row_json) in open_positions {
+        if !open.positions.contains_key(&id) || removed(id) {
+            continue;
+        }
+        let mut position: crate::hub_pack::ProjectionPosition =
+            serde_json::from_str(&row_json).map_err(|_| StoreError::InvalidLifecycleSession)?;
+        position.drive_id = if replaced {
+            Some(drive_id)
+        } else {
+            moved.get(&id).copied()
+        };
+        insert_settled_hub_position_in_transaction(transaction, vehicle_id, car_id, &position)?;
+    }
+    transaction
+        .execute(
+            "DELETE FROM lifecycle_open_rows
+              WHERE vehicle_id = ?1
+                AND ((domain = 'position' AND parent_source_row_id = ?2)
+                  OR (domain = 'drive' AND source_row_id = ?2))",
+            params![vehicle_key.as_str(), drive_id],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    let Some(record) = load_lifecycle_state_in_transaction(transaction, vehicle_id)? else {
+        return Ok(());
+    };
+    let mut state = crate::lifecycle::OpenSessionState::decode(&record.open_session_json)
+        .map_err(|_| StoreError::InvalidLifecycleSession)?;
+    if state.open_drive.as_ref().map(|drive| drive.id) != Some(drive_id) {
+        return Ok(());
+    }
+    state.open_drive = None;
+    if state.phase == crate::lifecycle::VehiclePhase::Driving {
+        state.phase = if state.open_charge.is_some() {
+            crate::lifecycle::VehiclePhase::Charging
+        } else {
+            crate::lifecycle::VehiclePhase::Online
+        };
+    }
+    let json = state
+        .encode()
+        .map_err(|_| StoreError::InvalidLifecycleSession)?;
+    transaction
+        .execute(
+            "UPDATE vehicle_lifecycle_state SET open_session_json = ?2 WHERE vehicle_id = ?1",
+            params![vehicle_key.as_str(), json],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    Ok(())
+}
+
+/// Writes one Hub position settled from an open drive and journals it
+/// (M03-T18). A row already stored under the same id is left as it is.
+fn insert_settled_hub_position_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    car_id: i64,
+    position: &crate::hub_pack::ProjectionPosition,
+) -> Result<(), StoreError> {
+    let json = serde_json::to_string(position).map_err(StoreError::SerializeLifecycleRow)?;
+    let inserted = transaction
+        .execute(
+            "INSERT INTO materialised_positions(vehicle_id, position_id, drive_id, car_id, position_json,
+                speed, power, est_battery_range_km, fan_status, driver_temp_setting, passenger_temp_setting,
+                is_climate_on, is_rear_defroster_on, is_front_defroster_on, battery_heater, battery_heater_on,
+                battery_heater_no_power, tpms_pressure_fl, tpms_pressure_fr, tpms_pressure_rl, tpms_pressure_rr)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+             ON CONFLICT(vehicle_id, position_id) DO NOTHING",
+            params![vehicle_id.to_string(), position.id, position.drive_id, car_id, json,
+                position.speed, position.power, position.est_battery_range_km,
+                position.fan_status, position.driver_temp_setting, position.passenger_temp_setting,
+                position.is_climate_on.map(i64::from), position.is_rear_defroster_on.map(i64::from),
+                position.is_front_defroster_on.map(i64::from), position.battery_heater.map(i64::from),
+                position.battery_heater_on.map(i64::from), position.battery_heater_no_power.map(i64::from),
+                position.tpms_pressure_fl, position.tpms_pressure_fr, position.tpms_pressure_rl, position.tpms_pressure_rr],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    if inserted == 0 {
+        return Ok(());
+    }
+    record_sync_mutation_in_transaction(
+        transaction,
+        vehicle_id,
+        "position",
+        position.id,
+        car_id,
+        "upsert",
+        &json,
     )
 }
 

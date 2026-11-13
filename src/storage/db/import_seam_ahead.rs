@@ -226,11 +226,11 @@ fn durable_prior_imported_ids_in_connection(
 
 /// Plans the import seam for one vehicle's drives, positions, charges and
 /// charge samples from the store, as publication applies it (design
-/// M03-SEAM-R3, section 4): the coverage, the stored drives (a Hub-range
-/// drive, or a source-id drive the prior import did not list or a Hub-range
-/// position belongs to, is the Hub's), the Hub-range positions, the stored
-/// charges and Hub-range samples (see `import_seam_hub_charges_in_connection`),
-/// the source drives and charges and the recorded links. Reads only.
+/// M03-SEAM-R3, section 4): the coverage, the store's side of the drives as
+/// [`import_seam_hub_drives_in_connection`] reads it, the stored charges and
+/// Hub-range samples (see `import_seam_hub_charges_in_connection`), the source
+/// drives and charges and the recorded links. Reads only. Both the planner
+/// ahead of the packs and publication plan through this one reader.
 fn import_seam_plan_in_transaction(
     connection: &Connection,
     vehicle_id: Uuid,
@@ -244,82 +244,20 @@ fn import_seam_plan_in_transaction(
     ),
     StoreError,
 > {
-    use crate::db::hub_ids::{HUB_ID_BASE, HUB_ID_MAX, is_hub_id};
     use crate::import::source_db::seam::{
-        ChildRow, HubCoverage, HubRows, SeamLinks, SessionRow, SourceRows, plan_seam,
+        HubCoverage, SeamLinks, SessionRow, SourceRows, plan_seam,
     };
 
     let vehicle_key = vehicle_id.to_string();
     let coverage = HubCoverage::for_store(connection, &vehicle_key)
         .map_err(|_| StoreError::ImportGenerationConflict)?;
-    let mut hub = HubRows::default();
-    {
-        let mut statement = connection
-            .prepare(
-                "SELECT position_id, drive_id,
-                        CAST(json_extract(position_json, '$.date_ms') AS INTEGER)
-                   FROM materialised_positions
-                  WHERE vehicle_id = ?1 AND position_id BETWEEN ?2 AND ?3
-                  ORDER BY position_id ASC",
-            )
-            .map_err(StoreError::Query)?;
-        let rows = statement
-            .query_map(
-                params![vehicle_key.as_str(), HUB_ID_BASE, HUB_ID_MAX],
-                |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, Option<i64>>(1)?,
-                        row.get::<_, Option<i64>>(2)?,
-                    ))
-                },
-            )
-            .map_err(StoreError::Query)?;
-        for row in rows {
-            let (id, parent, at_ms) = row.map_err(StoreError::Query)?;
-            // A Hub position without an instant cannot be placed; it stays.
-            if let Some(at_ms) = at_ms {
-                hub.positions.push(ChildRow { id, at_ms, parent });
-            }
-        }
-    }
-    let held_by_hub_position: HashSet<i64> =
-        hub.positions.iter().filter_map(|row| row.parent).collect();
-    {
-        let mut statement = connection
-            .prepare(
-                "SELECT drive_id,
-                        CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER),
-                        CAST(json_extract(drive_json, '$.end_date_ms') AS INTEGER)
-                   FROM materialised_drives WHERE vehicle_id = ?1 ORDER BY drive_id ASC",
-            )
-            .map_err(StoreError::Query)?;
-        let rows = statement
-            .query_map(params![vehicle_key.as_str()], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, Option<i64>>(1)?,
-                    row.get::<_, Option<i64>>(2)?,
-                ))
-            })
-            .map_err(StoreError::Query)?;
-        for row in rows {
-            let (id, start_ms, end_ms) = row.map_err(StoreError::Query)?;
-            // A stored drive without a start cannot be weighed; it stays.
-            let Some(start_ms) = start_ms else { continue };
-            let inherited =
-                !prior_imported_drive_ids.contains(&id) || held_by_hub_position.contains(&id);
-            if is_hub_id(id) || inherited {
-                hub.drives.push(SessionRow {
-                    id,
-                    start_ms,
-                    end_ms,
-                });
-            } else {
-                hub.imported_drives.push(id);
-            }
-        }
-    }
+    let mut hub = import_seam_hub_drives_in_connection(
+        connection,
+        &vehicle_key,
+        &coverage,
+        prior_imported_drive_ids,
+    )?
+    .rows;
     let prior_imported_charge_ids = durable_prior_imported_ids_in_connection(
         connection,
         &vehicle_key,
@@ -349,6 +287,253 @@ fn import_seam_plan_in_transaction(
     };
     let plan = plan_seam(&coverage, &hub, &source, &links);
     Ok((coverage, plan))
+}
+
+/// The lifecycle's open drive when the Hub owns it (M03-T18): a drive still
+/// open in the lifecycle state whose id is in the Hub's range or that holds a
+/// Hub-range position in `lifecycle_open_rows`. It weighs as a Hub session
+/// from its start to its last evidence (its latest fold or open position),
+/// with its Hub-range open positions as its children.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SeamOpenDrive {
+    session: crate::import::source_db::seam::SessionRow,
+    /// Hub-range open positions: id to instant.
+    positions: std::collections::BTreeMap<i64, i64>,
+}
+
+/// The store's side of the drive seam of one vehicle (M03-T18).
+struct SeamHubDrives {
+    /// What the plan weighs: the Hub's drives (Hub-range, inherited, and the
+    /// open drive the Hub owns), the Hub-range positions (stored and open) and
+    /// the source drives earlier imports stored.
+    rows: crate::import::source_db::seam::HubRows,
+    /// Every stored drive with a start.
+    stored: std::collections::BTreeMap<i64, StoredSeamDrive>,
+    /// The stored Hub-range positions.
+    hub_positions: std::collections::BTreeMap<i64, StoredSeamPosition>,
+    /// The open drive taking part in the seam, if any.
+    open: Option<SeamOpenDrive>,
+    /// The drive ids weighed on the Hub's side.
+    hub_side: HashSet<i64>,
+    /// The drives a stored Hub-range position belongs to.
+    held_by_hub_position: HashSet<i64>,
+}
+
+/// Reads the store's side of the drive seam of one vehicle, for the planner
+/// ahead of the packs and for publication alike (M03-T18).
+///
+/// A stored drive is the Hub's when its id is in the Hub's range, or it is an
+/// inherited session (one id on both sides): the prior import did not list it,
+/// a Hub-range position belongs to it, or a recorded self-link says the seam
+/// kept its stored copy. Every other stored drive is an earlier import's. When
+/// the vehicle has coverage, the lifecycle's open drive the Hub owns takes part
+/// too ([`SeamOpenDrive`]), so the positions of a drive still open when the
+/// window was handed back are weighed like any other Hub position.
+fn import_seam_hub_drives_in_connection(
+    connection: &Connection,
+    vehicle_key: &str,
+    coverage: &crate::import::source_db::seam::HubCoverage,
+    prior_imported_drive_ids: &HashSet<i64>,
+) -> Result<SeamHubDrives, StoreError> {
+    use crate::db::hub_ids::{HUB_ID_BASE, HUB_ID_MAX, is_hub_id};
+    use crate::import::source_db::seam::{ChildRow, HubRows, SessionRow};
+
+    let stored: std::collections::BTreeMap<i64, StoredSeamDrive> = {
+        let mut statement = connection
+            .prepare(
+                "SELECT drive_id, car_id,
+                        CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER),
+                        CAST(json_extract(drive_json, '$.end_date_ms') AS INTEGER)
+                   FROM materialised_drives WHERE vehicle_id = ?1 ORDER BY drive_id ASC",
+            )
+            .map_err(StoreError::Query)?;
+        let rows = statement
+            .query_map(params![vehicle_key], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                ))
+            })
+            .map_err(StoreError::Query)?;
+        let mut stored = std::collections::BTreeMap::new();
+        for row in rows {
+            let (id, car_id, start_ms, end_ms) = row.map_err(StoreError::Query)?;
+            // A stored drive without a start cannot be weighed; it stays as
+            // it is and is never planned away.
+            let Some(start_ms) = start_ms else { continue };
+            stored.insert(
+                id,
+                StoredSeamDrive {
+                    car_id,
+                    start_ms,
+                    end_ms,
+                },
+            );
+        }
+        stored
+    };
+    let hub_positions: std::collections::BTreeMap<i64, StoredSeamPosition> = {
+        let mut statement = connection
+            .prepare(
+                "SELECT position_id, car_id, drive_id,
+                        CAST(json_extract(position_json, '$.date_ms') AS INTEGER)
+                   FROM materialised_positions
+                  WHERE vehicle_id = ?1 AND position_id BETWEEN ?2 AND ?3
+                  ORDER BY position_id ASC",
+            )
+            .map_err(StoreError::Query)?;
+        let rows = statement
+            .query_map(params![vehicle_key, HUB_ID_BASE, HUB_ID_MAX], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                ))
+            })
+            .map_err(StoreError::Query)?;
+        let mut positions = std::collections::BTreeMap::new();
+        for row in rows {
+            let (id, car_id, drive_id, at_ms) = row.map_err(StoreError::Query)?;
+            // A Hub position without an instant cannot be placed; it stays.
+            let Some(at_ms) = at_ms else { continue };
+            positions.insert(
+                id,
+                StoredSeamPosition {
+                    car_id,
+                    at_ms,
+                    drive_id,
+                },
+            );
+        }
+        positions
+    };
+    let marked = seam_inherited_in_connection(connection, vehicle_key, "drive")?;
+    let open = if coverage.intervals().is_empty() {
+        None
+    } else {
+        import_seam_open_drive_in_connection(connection, vehicle_key)?
+            .filter(|open| !stored.contains_key(&open.session.id))
+    };
+
+    let held_by_hub_position: HashSet<i64> = hub_positions
+        .values()
+        .filter_map(|position| position.drive_id)
+        .collect();
+    let mut rows = HubRows::default();
+    let mut hub_side = HashSet::new();
+    for (id, drive) in &stored {
+        let inherited = !prior_imported_drive_ids.contains(id)
+            || held_by_hub_position.contains(id)
+            || marked.contains(id);
+        if is_hub_id(*id) || inherited {
+            rows.drives.push(SessionRow {
+                id: *id,
+                start_ms: drive.start_ms,
+                end_ms: drive.end_ms,
+            });
+            hub_side.insert(*id);
+        } else {
+            rows.imported_drives.push(*id);
+        }
+    }
+    rows.positions = hub_positions
+        .iter()
+        .map(|(id, position)| ChildRow {
+            id: *id,
+            at_ms: position.at_ms,
+            parent: position.drive_id,
+        })
+        .collect();
+    if let Some(open) = &open {
+        rows.drives.push(open.session);
+        hub_side.insert(open.session.id);
+        rows.positions
+            .extend(open.positions.iter().map(|(id, at_ms)| ChildRow {
+                id: *id,
+                at_ms: *at_ms,
+                parent: Some(open.session.id),
+            }));
+    }
+    Ok(SeamHubDrives {
+        rows,
+        stored,
+        hub_positions,
+        open,
+        hub_side,
+        held_by_hub_position,
+    })
+}
+
+/// The lifecycle's open drive of one vehicle when the Hub owns it (see
+/// [`SeamOpenDrive`]), whatever the coverage. Reads only.
+fn import_seam_open_drive_in_connection(
+    connection: &Connection,
+    vehicle_key: &str,
+) -> Result<Option<SeamOpenDrive>, StoreError> {
+    use crate::db::hub_ids::{HUB_ID_BASE, HUB_ID_MAX, is_hub_id};
+
+    let state: Option<Vec<u8>> = connection
+        .query_row(
+            "SELECT open_session_json FROM vehicle_lifecycle_state WHERE vehicle_id = ?1",
+            params![vehicle_key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(StoreError::Query)?;
+    let Some(state) = state else {
+        return Ok(None);
+    };
+    let state = crate::lifecycle::OpenSessionState::decode(&state)
+        .map_err(|_| StoreError::InvalidLifecycleSession)?;
+    let Some(open) = state.open_drive else {
+        return Ok(None);
+    };
+    let mut positions = std::collections::BTreeMap::new();
+    {
+        let mut statement = connection
+            .prepare(
+                "SELECT source_row_id, CAST(json_extract(row_json, '$.date_ms') AS INTEGER)
+                   FROM lifecycle_open_rows
+                  WHERE vehicle_id = ?1 AND domain = 'position' AND parent_source_row_id = ?2
+                    AND source_row_id BETWEEN ?3 AND ?4
+                  ORDER BY source_row_id ASC",
+            )
+            .map_err(StoreError::Query)?;
+        let rows = statement
+            .query_map(
+                params![vehicle_key, open.id, HUB_ID_BASE, HUB_ID_MAX],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?)),
+            )
+            .map_err(StoreError::Query)?;
+        for row in rows {
+            let (id, at_ms) = row.map_err(StoreError::Query)?;
+            // An open position without an instant cannot be placed; it stays.
+            if let Some(at_ms) = at_ms {
+                positions.insert(id, at_ms);
+            }
+        }
+    }
+    if !is_hub_id(open.id) && positions.is_empty() {
+        return Ok(None);
+    }
+    let end_ms = positions
+        .values()
+        .copied()
+        .chain([open.effective_last_folded_ms()])
+        .max()
+        .unwrap_or(open.start_date_ms)
+        .max(open.start_date_ms);
+    Ok(Some(SeamOpenDrive {
+        session: crate::import::source_db::seam::SessionRow {
+            id: open.id,
+            start_ms: open.start_date_ms,
+            end_ms: Some(end_ms),
+        },
+        positions,
+    }))
 }
 
 /// The recorded seam decisions of one vehicle and entity, read outside a

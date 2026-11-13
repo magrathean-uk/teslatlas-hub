@@ -259,8 +259,9 @@ pub fn record_coverage_handback(
 
 /// The end of a restored window for `vehicle`: the instant after the latest
 /// moment, from `opened_ms` on, of its Hub-range drives, charges and
-/// positions, so the half-open coverage holds that last row too;
-/// `opened_ms` when it has none.
+/// positions, and of the Hub-range positions and charge samples of sessions
+/// still open in the lifecycle (M03-T18), so the half-open coverage holds that
+/// last row too; `opened_ms` when it has none.
 fn last_hub_row_ms(
     connection: &Connection,
     vehicle: &str,
@@ -281,6 +282,12 @@ fn last_hub_row_ms(
              SELECT CAST(json_extract(position_json, '$.date_ms') AS INTEGER)
                FROM materialised_positions
               WHERE vehicle_id = ?1 AND position_id BETWEEN ?2 AND ?3
+             UNION ALL
+             SELECT CAST(COALESCE(json_extract(row_json, '$.date_ms'),
+                                  json_extract(row_json, '$.timestamp_ms')) AS INTEGER)
+               FROM lifecycle_open_rows
+              WHERE vehicle_id = ?1 AND domain IN ('position', 'charge_sample')
+                AND source_row_id BETWEEN ?2 AND ?3
          ) WHERE moment >= ?4",
         params![
             vehicle,

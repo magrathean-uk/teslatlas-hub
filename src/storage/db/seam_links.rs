@@ -37,6 +37,74 @@ fn seam_links_in_transaction(
     rows.collect::<Result<_, _>>().map_err(StoreError::Query)
 }
 
+/// The inherited sessions of one vehicle and entity the Hub owns by a recorded
+/// decision (M03-T18): self-links, whose stored copy stood over the source
+/// copy of the same id.
+fn seam_inherited_in_connection(
+    connection: &Connection,
+    vehicle_key: &str,
+    entity: &str,
+) -> Result<HashSet<i64>, StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT loser_id FROM import_seam_links
+              WHERE vehicle_id = ?1 AND entity = ?2 AND loser_id = winner_id",
+        )
+        .map_err(StoreError::Query)?;
+    let rows = statement
+        .query_map(params![vehicle_key, entity], |row| row.get::<_, i64>(0))
+        .map_err(StoreError::Query)?;
+    rows.collect::<Result<_, _>>().map_err(StoreError::Query)
+}
+
+/// Records which inherited sessions the Hub owns by decision (M03-T18). An
+/// inherited session (one id on both sides) whose stored, Hub-extended copy
+/// the seam kept, and which no Hub-range child holds, would read as an earlier
+/// import's row once the import lists it; the self-link keeps it the Hub's on
+/// every later plan. A mark goes when the source copy covers and replaces the
+/// row, or the row goes; a real link for the same id is never touched here.
+fn record_seam_inherited_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_key: &str,
+    entity: &str,
+    kept: &[i64],
+    released: &[i64],
+) -> Result<(), StoreError> {
+    for id in released {
+        transaction
+            .execute(
+                "DELETE FROM import_seam_links
+                  WHERE vehicle_id = ?1 AND entity = ?2 AND loser_id = ?3 AND winner_id = ?3",
+                params![vehicle_key, entity, id],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+    }
+    if kept.is_empty() {
+        return Ok(());
+    }
+    let next_seq: i64 = transaction
+        .query_row(
+            "SELECT COALESCE(MAX(decided_seq), 0) + 1 FROM import_seam_links WHERE vehicle_id = ?1",
+            params![vehicle_key],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::Query)?;
+    for id in kept {
+        if *id <= 0 || crate::db::hub_ids::is_hub_id(*id) {
+            return Err(StoreError::InvalidImportGeneration);
+        }
+        transaction
+            .execute(
+                "INSERT INTO import_seam_links(vehicle_id, entity, loser_id, winner_id, decided_seq)
+                 VALUES (?1, ?2, ?3, ?3, ?4)
+                 ON CONFLICT(vehicle_id, entity, loser_id) DO NOTHING",
+                params![vehicle_key, entity, id, next_seq],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+    }
+    Ok(())
+}
+
 /// Writes one publication's seam decisions for a vehicle and entity: the
 /// dropped links go, and each decided loser is linked to its winner. A link
 /// that already names the same winner keeps its sequence; a new or changed
