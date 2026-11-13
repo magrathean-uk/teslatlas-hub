@@ -761,3 +761,8 @@ fn import_seam_replay_after_a_window_keeps_every_charge() {
         vec![2101, 2301, 2501, H1, H2, H3]
     );
 }
+
+// The pack-side seam repair for charges (M03-T19); a child module so it
+// shares these helpers.
+#[path = "seam_repair_packs_charge_tests.rs"]
+mod seam_repair_packs;

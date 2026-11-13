@@ -880,6 +880,11 @@ fn import_seam_unplanned_publication_paths_refuse() {
 #[path = "import_seam_charge_tests.rs"]
 mod charges;
 
+// The pack-side seam repair (M03-T19); a child module so it shares this
+// fixture.
+#[path = "seam_repair_packs_tests.rs"]
+mod seam_repair_packs;
+
 /// One pack's `hub_pack_metadata` as a map.
 fn pack_metadata(store: &HubStore, digest: Sha256Digest) -> BTreeMap<String, String> {
     let path = ProjectionPackWriter::new(store.packs_dir()).content_path(digest);
