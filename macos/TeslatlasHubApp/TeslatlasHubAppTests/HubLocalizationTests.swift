@@ -18,7 +18,7 @@ final class HubLocalizationTests: XCTestCase {
         }
         let englishKeys = Set(try table(english, "Localizable.strings").keys)
         let pluralKeys = Set(try table(english, "Localizable.stringsdict").keys)
-        XCTAssertEqual(englishKeys.count, 731)
+        XCTAssertEqual(englishKeys.count, 732, "M02-T21 adds hub.signIn.startWithdrawFailed")
         XCTAssertEqual(pluralKeys.count, 6)
         for language in languages {
             let directory = resources.appendingPathComponent("\(language).lproj")
