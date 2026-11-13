@@ -211,7 +211,13 @@ impl Hub {
     fn http_status_line(&self, path: &str) -> String {
         let mut stream = TcpStream::connect(("127.0.0.1", self.port)).expect("loopback listener");
         stream.set_read_timeout(Some(Duration::from_secs(10))).expect("timeout");
-        write!(stream, "GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").expect("request");
+        // The loopback listener admits only its own exact host and port.
+        write!(
+            stream,
+            "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+            self.port
+        )
+        .expect("request");
         let mut response = String::new();
         let _ = stream.read_to_string(&mut response);
         response.lines().next().unwrap_or_default().to_owned()
@@ -355,7 +361,8 @@ fn idle_start_real_binary_starts_idle_and_is_configured_only_by_sign_in() {
     let mut serve = hub.spawn_serve("idle");
     let status = hub.await_window_status(&mut serve, "idle");
     assert_eq!(status["phase"], "closed", "{status}");
-    assert!(hub.http_status_line("/healthz").contains(" 200 "), "loopback health");
+    let health = hub.http_status_line("/healthz");
+    assert!(health.contains(" 200 "), "loopback health: {health}");
 
     // A sign-in with no Open window is refused before any connection.
     let refused = hub.run(&["setup", "--all-vehicles"], &sign_in_material());
