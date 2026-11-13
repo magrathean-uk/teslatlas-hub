@@ -81,6 +81,8 @@ pub(super) mod g2_4_m1;
 mod import_seam_schema;
 #[path = "tests/import_seam_hub_ids.rs"]
 mod import_seam_hub_ids;
+#[path = "tests/seam_repair_store.rs"]
+mod seam_repair_store;
 
 #[path = "tests/source_key_guards.rs"]
 mod source_key_guards;
