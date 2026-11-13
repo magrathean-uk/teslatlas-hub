@@ -856,3 +856,5 @@
 "hub.signIn.reportInvalid" = "Hub nije mogao potvrditi prijavu. Ponovno se prijavite putem Tesle.";
 
 "hub.signIn.unconfirmed" = "Hub nije na vrijeme potvrdio prijavu, ali je možda spremljena. Provjerite status Huba prije ponovne prijave.";
+
+"hub.signIn.startWithdrawFailed" = "Hub se nije pokrenuo, a uklanjanje njegova nedovršenog pokretanja nije uspjelo: %1$@ Kliknite „Poveži Teslu” da biste dovršili uklanjanje.";

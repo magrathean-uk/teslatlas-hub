@@ -856,3 +856,5 @@
 "hub.signIn.reportInvalid" = "A Hub nem tudta megerősíteni a bejelentkezést. Jelentkezz be újra a Teslával.";
 
 "hub.signIn.unconfirmed" = "A Hub nem erősítette meg időben a bejelentkezést, de lehet, hogy az elmentődött. Ellenőrizd a Hub állapotát, mielőtt újra bejelentkezel.";
+
+"hub.signIn.startWithdrawFailed" = "A Hub nem indult el, és a befejezetlen indítás eltávolítása nem sikerült: %1$@ Az eltávolítás befejezéséhez kattintson a „Tesla csatlakoztatása” gombra.";

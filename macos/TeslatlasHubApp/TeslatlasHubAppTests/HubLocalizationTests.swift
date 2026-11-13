@@ -133,14 +133,16 @@ final class HubLocalizationTests: XCTestCase {
     }
 
     func testTheFreshMacSignInStartLinesAreTranslatedInEveryLocale() throws {
-        // M02-T21: the owner sign-in on a fresh Mac shows only existing lines: the setup page,
-        // the open-window line, the startup deadline and the handover refusal.
+        // M02-T21: the owner sign-in on a fresh Mac shows the setup page, the open-window line,
+        // the startup deadline, the handover refusal and one new line, for a removal of an
+        // unfinished start that failed (round 2), in every locale with its placeholder.
         let resources = try XCTUnwrap(Bundle.main.resourceURL)
         let expected = [
             "hub.OnboardingWindowController.558.1914": "Setting up Hub…",
             "hub.HubController.1591.587": "Sign-in needs an open collection window. Open a window, then sign in again.",
             "hub.HubController.2678.902": "Hub did not become ready before the startup deadline.",
-            "hub.HubController.2457.838": "Finish the source application handover before starting Hub."
+            "hub.HubController.2457.838": "Finish the source application handover before starting Hub.",
+            "hub.signIn.startWithdrawFailed": "Hub did not start, and removing its unfinished start failed: %1$@ Press Connect Tesla to finish removing it."
         ]
         func table(_ language: String) throws -> [String: String] {
             let url = resources.appendingPathComponent("\(language).lproj/Localizable.strings")
@@ -160,6 +162,9 @@ final class HubLocalizationTests: XCTestCase {
                     XCTAssertNotEqual(value, english[key], "\(language): \(key) is not English copied in")
                 }
             }
+            let withdrawal = try XCTUnwrap(strings["hub.signIn.startWithdrawFailed"])
+            XCTAssertEqual(withdrawal.components(separatedBy: "%1$@").count, 2, "\(language): one placeholder")
+            XCTAssertEqual(withdrawal.filter { $0 == "%" }.count, 1, "\(language): no other format")
         }
     }
 

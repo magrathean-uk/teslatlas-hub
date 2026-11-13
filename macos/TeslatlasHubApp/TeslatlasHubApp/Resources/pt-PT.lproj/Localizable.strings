@@ -856,3 +856,5 @@
 "hub.signIn.reportInvalid" = "O Hub não conseguiu confirmar o início de sessão. Inicie sessão novamente com a Tesla.";
 
 "hub.signIn.unconfirmed" = "O Hub não confirmou o início de sessão a tempo, mas este pode ter sido guardado. Verifique o estado do Hub antes de iniciar sessão novamente.";
+
+"hub.signIn.startWithdrawFailed" = "O Hub não foi iniciado e a remoção do arranque incompleto falhou: %1$@ Clique em “Ligar à Tesla” para concluir a remoção.";

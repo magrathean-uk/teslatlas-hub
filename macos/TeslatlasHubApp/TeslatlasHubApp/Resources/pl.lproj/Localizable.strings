@@ -856,3 +856,5 @@
 "hub.signIn.reportInvalid" = "Hub nie mógł potwierdzić logowania. Zaloguj się ponownie przez Teslę.";
 
 "hub.signIn.unconfirmed" = "Hub nie potwierdził logowania na czas, ale mogło ono zostać zapisane. Sprawdź stan Hub, zanim zalogujesz się ponownie.";
+
+"hub.signIn.startWithdrawFailed" = "Hub nie uruchomił się, a usunięcie jego niedokończonego uruchomienia nie powiodło się: %1$@ Kliknij „Połącz konto Tesla”, aby dokończyć usuwanie.";

@@ -79,15 +79,28 @@ window verbs below have something to talk to:
 
 1. Open the app. In setup choose **Get Started**, **New installation**,
    **Continue**, **Owner sign-in**, **Continue**, then **Connect Tesla**.
-2. The app writes the default configuration, installs and starts the Hub
+2. The app confirms that no Hub LaunchAgent file exists and no Hub job is
+   loaded, writes the default configuration, installs and starts the Hub
    service and waits until it answers (the page shows **Setting up Hub…**).
    Nothing is sent to Tesla, nothing is imported and no account is created.
-3. With no Open window the page shows "Sign-in needs an open collection
+3. A Hub that was never configured (every collector path off, a loopback
+   bind, no car, no credential and no imported history) starts idle: its
+   start check prints `"state": "idle"`, `window status`, `window trust`,
+   `window open` and `window close` answer on the local control channel, and
+   the collector stays off. Any other state is checked as before, so a Hub
+   that is configured but broken still refuses to start.
+4. With no Open window the page shows "Sign-in needs an open collection
    window. Open a window, then sign in again." The service stays running and
-   idle. If the start fails, the page shows why and the app removes the service
-   again; press **Connect Tesla** to retry.
-4. Trust the issuer, issue a grant and open the window as described below.
-5. Press **Connect Tesla** again: the Tesla sign-in page opens.
+   idle. If the start fails, the page shows why and the app removes the
+   service it installed (only that one); press **Connect Tesla** to retry. A
+   removal that fails is reported and finished by the next press.
+5. Trust the issuer, issue a grant and open the window as described below.
+6. Press **Connect Tesla** again: the Tesla sign-in page opens. The sign-in
+   runs in the running service, inside the window; the service does not
+   restart.
+7. To collect, set `interval_seconds` in `[collector]` and restart the Hub:
+   the restart passes the usual checks (a car and the Hub's own login) and the
+   collector runs inside an Open window.
 
 ## Trust the issuer on a Hub
 

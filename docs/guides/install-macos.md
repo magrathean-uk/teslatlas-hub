@@ -36,15 +36,29 @@ Mac with no Hub service yet, the app starts the service itself:
 
 1. Choose **Get Started**, **New installation**, **Continue**, **Owner
    sign-in**, **Continue**, then **Connect Tesla**.
-2. The app writes the default configuration, installs and starts its per-user
-   LaunchAgent and waits until the service answers (**Setting up Hub…**).
-   Nothing is sent to Tesla and no account is created.
+2. The app checks that no Hub LaunchAgent file exists and no Hub job is
+   loaded, writes the default configuration (every collector path off),
+   installs and starts its per-user LaunchAgent and waits until the service
+   answers (**Setting up Hub…**). A Hub that was never configured starts
+   idle: it answers window commands on its local control channel and its
+   loopback listener, its collector stays off, and nothing is sent to Tesla.
+   No account is created and the App cannot pair with it.
 3. With no open window the page says "Sign-in needs an open collection window.
-   Open a window, then sign in again." Hub stays running and idle. A start that
-   fails shows its reason and is removed again; press **Connect Tesla** to retry.
+   Open a window, then sign in again." Hub stays running and idle, also after
+   a restart or login. A start that fails shows its reason and the app removes
+   the service it installed; press **Connect Tesla** to retry. If that removal
+   fails too, the page says so and the next **Connect Tesla** finishes it.
+   If the app cannot tell whether a Hub is already installed, it shows why
+   and changes nothing.
 4. Open a window as described in
    [Collection windows](../operations/collection-windows.md#first-start-on-a-fresh-mac),
    then press **Connect Tesla** again to reach the Tesla sign-in.
+5. After the sign-in the running service holds the Hub's own login and its
+   cars; collection is still off. Set `interval_seconds` in the `[collector]`
+   table ([Configuration](configuration.md)) and choose **Restart Hub**: the
+   restart checks the car and the login as usual, and the collector runs
+   inside an open window. Until the cadence is set, a stopped Hub with a login
+   does not start again.
 
 To bring existing history across, choose **Import History** and follow
 the [migration checklist](../releases/migration.md#before-you-start). Enter the

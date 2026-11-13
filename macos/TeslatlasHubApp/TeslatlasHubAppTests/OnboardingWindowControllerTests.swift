@@ -1382,9 +1382,10 @@ final class OnboardingWindowControllerTests: XCTestCase {
     }
 
     func testFreshMacConnectTeslaStartsHubThenShowsTheOpenWindowLine() throws {
-        // M02-T21 (DEC-112): with no Hub LaunchAgent, Connect Tesla writes the default
-        // configuration and starts Hub (fakes only: no launchd, no network), shows the setup
-        // page meanwhile, and then the existing open-window line. No Tesla page opens.
+        // M02-T21 (DEC-112, DEC-115): with the Hub LaunchAgent confirmed absent, Connect Tesla
+        // writes the default configuration and starts Hub, which the real start check admits
+        // idle (doubles only: no launchd, no network), shows the setup page meanwhile, and then
+        // the existing open-window line. No Tesla page opens.
         let home = HubTestScratch.directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
@@ -1392,8 +1393,16 @@ final class OnboardingWindowControllerTests: XCTestCase {
         runner.results["window"] = .success(OwnerRunner.windowClosed)
         let service = OwnerService()
         service.hold("start")
-        let agent = FakeLaunchAgent(events: LifecycleEvents())
-        agent.installed = false
+        // The real Start writes the LaunchAgent file, then runs the binary's start check, which
+        // admits a never-configured Hub idle and refuses anything else.
+        let agent = FirstStartLaunchAgent()
+        let configPath = home.appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml")
+        service.onCall = { [unowned service] call in
+            guard call == "run:start" else { return }
+            _ = try? agent.ensureInstalled(requireConfig: true)
+            service.results["start"] = FirstStartRealBinary.startCheck(configPath: configPath, storeConfigured: false)
+                .map { _ in "" }
+        }
         let controller = HubController(environment: [:], commandRunner: runner, serviceRunner: service,
                                        launchAgent: agent, dataRemover: nil, homeDirectory: home,
                                        initialSnapshot: .firstRun,
@@ -1422,6 +1431,8 @@ final class OnboardingWindowControllerTests: XCTestCase {
                        "the service stays running: not removed or stopped")
         XCTAssertEqual(runner.count("window"), 1)
         XCTAssertEqual(runner.count("setup"), 0, "nothing is sent to Tesla")
+        XCTAssertTrue(agent.isInstalled, "the Start installed the Hub")
+        XCTAssertNil(controller.ownerSignInStartStage, "the service answered: no unfinished start is left")
         spinUntil(3) { controller.lifecycleCapabilities.isIdle }
         XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
     }

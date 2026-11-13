@@ -856,3 +856,5 @@
 "hub.signIn.reportInvalid" = "Hub oturum açmayı doğrulayamadı. Tesla ile yeniden oturum açın.";
 
 "hub.signIn.unconfirmed" = "Hub oturum açmayı zamanında doğrulamadı, ancak oturum açma kaydedilmiş olabilir. Yeniden oturum açmadan önce Hub durumunu kontrol edin.";
+
+"hub.signIn.startWithdrawFailed" = "Hub başlamadı ve tamamlanmamış başlatmasının kaldırılması başarısız oldu: %1$@ Kaldırmayı tamamlamak için Tesla'yı Bağla'ya basın.";
