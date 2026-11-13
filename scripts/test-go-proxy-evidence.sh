@@ -104,7 +104,7 @@ assert policy["sdk"] == {
 }
 assert lock["subjects"]["darwin-arm64"] == {
     "name": "tesla-http-proxy",
-    "sha256": "ee4b5e51dcc90c309c057f7172dff45086265d570e1db629760124db21712c8e",
+    "sha256": "3997f646951d2e018c482bfb8ab3eaf386790a79ae2d7691cc62165e888e17d5",
     "size": 10595666,
 }
 
