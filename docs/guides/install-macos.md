@@ -29,6 +29,23 @@ your Tesla Developer application and the configuration described in
 [Fleet setup](fleet-setup.md). Legacy requires an existing Owner API token
 pair. Do not leave another service refreshing the same Legacy credentials.
 
+### Fresh Mac: owner sign-in
+
+Owner sign-in needs the running service with an open collection window. On a
+Mac with no Hub service yet, the app starts the service itself:
+
+1. Choose **Get Started**, **New installation**, **Continue**, **Owner
+   sign-in**, **Continue**, then **Connect Tesla**.
+2. The app writes the default configuration, installs and starts its per-user
+   LaunchAgent and waits until the service answers (**Setting up Hub…**).
+   Nothing is sent to Tesla and no account is created.
+3. With no open window the page says "Sign-in needs an open collection window.
+   Open a window, then sign in again." Hub stays running and idle. A start that
+   fails shows its reason and is removed again; press **Connect Tesla** to retry.
+4. Open a window as described in
+   [Collection windows](../operations/collection-windows.md#first-start-on-a-fresh-mac),
+   then press **Connect Tesla** again to reach the Tesla sign-in.
+
 To bring existing history across, choose **Import History** and follow
 the [migration checklist](../releases/migration.md#before-you-start). Enter the
 server, SSH port and user. Select **SSH key** and use **Choose Key…** to select

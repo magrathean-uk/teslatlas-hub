@@ -2350,6 +2350,189 @@ final class HubControllerTests: XCTestCase {
                       initialSnapshot: .previewRunning)
     }
 
+    // MARK: M02-T21 owner sign-in on a fresh Mac (DEC-112)
+
+    static let windowClosedLine = "Sign-in needs an open collection window. Open a window, then sign in again."
+    static let closedWindowStatus = #"{"phase":"closed","trusted":true}"#
+    static let notRunning = HubActionError.commandFailed("service_not_running: Hub is not running")
+
+    /// A Mac with no Hub LaunchAgent (the fake agent reports none) and fake launchd and CLI.
+    private func freshMacController(_ runner: ScriptedRunner, service: ScriptedService,
+                                    agent: FakeLaunchAgent, home: URL) -> HubController {
+        HubController(environment: [:],
+                      commandRunner: runner,
+                      serviceRunner: service,
+                      launchAgent: agent,
+                      dataRemover: nil,
+                      homeDirectory: home,
+                      initialSnapshot: .firstRun,
+                      migrationStartupReadinessPollInterval: 0.001,
+                      migrationStartupReadinessTimeout: 5,
+                      migrationStartupReadinessMaxAttempts: 3)
+    }
+
+    private func freshConfigPath(_ home: URL) -> URL {
+        home.appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml")
+    }
+
+    /// Begins an owner sign-in and runs its window check, as Connect Tesla does.
+    private func pressConnectTesla(_ controller: HubController, label: String) -> (HubAccountSignIn?, Result<Void, Error>?) {
+        guard case let .success(signIn) = controller.beginLegacySignIn() else {
+            XCTFail("\(label): the sign-in was not admitted")
+            return (nil, nil)
+        }
+        let checked = expectation(description: label)
+        var outcome: Result<Void, Error>?
+        signIn.requireOpenWindow { result in
+            outcome = result
+            checked.fulfill()
+        }
+        wait(for: [checked], timeout: 3)
+        return (signIn, outcome)
+    }
+
+    private func settle(_ signIn: HubAccountSignIn?, _ controller: HubController) {
+        signIn?.cancel()
+        spinUntil(3) { controller.lifecycleCapabilities.isIdle }
+    }
+
+    func testFreshMacOwnerSignInWritesConfigStartsHubAndReportsNoOpenWindow() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.configuredReport))
+        runner.windowStatusSequence = [.failure(Self.notRunning)]
+        runner.windowStatus = .success(Self.closedWindowStatus)
+        let service = ScriptedService(events: events)
+        let agent = FakeLaunchAgent(events: LifecycleEvents())
+        agent.installed = false
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = freshMacController(runner, service: service, agent: agent, home: home)
+        XCTAssertTrue(controller.ownerSignInStartsHub)
+
+        let (signIn, outcome) = pressConnectTesla(controller, label: "fresh, no window")
+        guard case let .failure(error)? = outcome else { return XCTFail("a closed window was shown as open") }
+        XCTAssertEqual(error.localizedDescription, Self.windowClosedLine)
+        // The configuration is written first, then the ordinary Start, then the check waits
+        // until the service answers.
+        XCTAssertEqual(events.values, ["service:start", "window", "window"])
+        let config = try String(contentsOf: freshConfigPath(home), encoding: .utf8)
+        XCTAssertTrue(config.contains("bind = \"127.0.0.1:8080\""))
+        XCTAssertFalse(config.contains("[collector]"), "the default configuration, no provider written")
+        let mode = try FileManager.default.attributesOfItem(atPath: freshConfigPath(home).path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(mode?.intValue, 0o600)
+        // Nothing reached Tesla or the account: no setup, no import, and the service stays.
+        XCTAssertFalse(events.values.contains("setup"))
+        XCTAssertFalse(events.values.contains("migrate"))
+        XCTAssertNil(runner.stdin)
+        XCTAssertFalse(events.values.contains { $0 == "service:remove" || $0 == "service:stop" })
+        XCTAssertTrue(HubAppLog.shared.recentText().contains("sign_in_start.completed"))
+        settle(signIn, controller)
+        XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
+    }
+
+    func testFreshMacThenWindowOpenGoesOnToTheTeslaSignIn() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.configuredReport))
+        runner.windowStatus = .success(Self.closedWindowStatus)
+        let service = ScriptedService(events: events)
+        let agent = FakeLaunchAgent(events: LifecycleEvents())
+        agent.installed = false
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = freshMacController(runner, service: service, agent: agent, home: home)
+
+        let (first, closed) = pressConnectTesla(controller, label: "fresh, no window")
+        guard case let .failure(error)? = closed else { return XCTFail("a closed window was shown as open") }
+        XCTAssertEqual(error.localizedDescription, Self.windowClosedLine)
+        settle(first, controller)
+
+        // The Start wrote the LaunchAgent; the owner opens a window and presses again.
+        agent.installed = true
+        runner.windowStatus = .success(#"{"phase":"open","trusted":true}"#)
+        XCTAssertFalse(controller.ownerSignInStartsHub)
+        let (second, open) = pressConnectTesla(controller, label: "window open")
+        guard case .success? = open else { return XCTFail("the open window was refused: \(String(describing: open))") }
+        XCTAssertEqual(events.values.filter { $0 == "service:start" }.count, 1, "started once, not again")
+        let signIn = try XCTUnwrap(second)
+        let finished = expectation(description: "signed in")
+        signIn.configure(grant: Self.codeGrant) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 3)
+        XCTAssertEqual(events.values.filter { $0 == "setup" }.count, 1)
+        XCTAssertEqual(controller.lastVehiclesConfigured, 2)
+        spinUntil(3) { controller.lifecycleCapabilities.isIdle }
+    }
+
+    func testFreshMacStartFailureIsWithdrawnAndTheNextPressRepairsIt() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.configuredReport))
+        runner.windowStatus = .success(Self.closedWindowStatus)
+        let service = ScriptedService(events: events)
+        let startFailure = "The Hub did not start because its checks failed: data folder"
+        service.actionResults["start"] = .failure(HubActionError.commandFailed(startFailure))
+        let agent = FakeLaunchAgent(events: LifecycleEvents())
+        agent.installed = false
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = freshMacController(runner, service: service, agent: agent, home: home)
+
+        // A Start that fails: its own line is shown and the service is removed again.
+        let (failed, outcome) = pressConnectTesla(controller, label: "start fails")
+        guard case let .failure(error)? = outcome else { return XCTFail("a failed start was shown as success") }
+        XCTAssertEqual(error.localizedDescription, startFailure)
+        XCTAssertEqual(events.values, ["service:start", "service:remove"])
+        XCTAssertTrue(HubAppLog.shared.recentText().contains("sign_in_start.failed"))
+        settle(failed, controller)
+
+        // A service that never answers in time: the startup line, and removed again.
+        service.actionResults["start"] = nil
+        runner.windowStatus = .failure(Self.notRunning)
+        let (unready, timedOut) = pressConnectTesla(controller, label: "never answers")
+        guard case let .failure(readiness)? = timedOut else { return XCTFail("an unready service was shown as ready") }
+        XCTAssertEqual(readiness.localizedDescription, "Hub did not become ready before the startup deadline.")
+        XCTAssertEqual(Array(events.values.suffix(5)),
+                       ["service:start", "window", "window", "window", "service:remove"])
+        settle(unready, controller)
+
+        // The next press starts again from the same place and reaches the window check.
+        runner.windowStatus = .success(Self.closedWindowStatus)
+        let (again, repaired) = pressConnectTesla(controller, label: "next press")
+        guard case let .failure(line)? = repaired else { return XCTFail("a closed window was shown as open") }
+        XCTAssertEqual(line.localizedDescription, Self.windowClosedLine)
+        XCTAssertEqual(Array(events.values.suffix(2)), ["service:start", "window"])
+        XCTAssertFalse(events.values.contains("setup"))
+        settle(again, controller)
+    }
+
+    func testInstalledHubOwnerSignInIsUnchanged() throws {
+        let cases: [(String, Result<String, Error>, String)] = [
+            ("closed", .success(Self.closedWindowStatus), Self.windowClosedLine),
+            ("not running", .failure(Self.notRunning),
+             "Hub is not running. Start Hub, open a collection window, then sign in.")
+        ]
+        for (label, answer, line) in cases {
+            let events = EventRecorder()
+            let runner = ScriptedRunner(events: events, result: .success(Self.configuredReport))
+            runner.windowStatus = answer
+            let service = ScriptedService(events: events, loadState: .loaded)
+            let agent = FakeLaunchAgent(events: LifecycleEvents())
+            let home = try temporaryHome()
+            defer { try? FileManager.default.removeItem(at: home) }
+            let controller = freshMacController(runner, service: service, agent: agent, home: home)
+            XCTAssertFalse(controller.ownerSignInStartsHub, label)
+
+            let (signIn, outcome) = pressConnectTesla(controller, label: label)
+            guard case let .failure(error)? = outcome else { return XCTFail("\(label): shown as open") }
+            XCTAssertEqual(error.localizedDescription, line, label)
+            XCTAssertEqual(events.values, ["window"], "\(label): one check, no service action")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: freshConfigPath(home).path),
+                           "\(label): no configuration written")
+            settle(signIn, controller)
+        }
+    }
+
     func testOwnerSignInChecksTheWindowThenHandsOnlyTheCodeExchangeToSetup() throws {
         // Sign-in accepts only the code exchange: setup receives the code, its verifier and
         // the redirect URI, never a token. The running service is not paused or reconfigured.
@@ -4204,6 +4387,8 @@ private final class ScriptedRunner: HubCommandRunning {
     private(set) var arguments: [[String]] = []
     /// What `window status` answers; the running service has an Open window by default.
     var windowStatus: Result<String, Error> = .success(#"{"phase":"open","trusted":true}"#)
+    /// Answers given, in order, before `windowStatus` (a service that is still starting).
+    var windowStatusSequence: [Result<String, Error>] = []
     /// What the Hub's `status` answers, when a test sets it; otherwise `result` answers it.
     var statusResult: Result<String, Error>?
     private(set) var statusRuns = 0
@@ -4227,7 +4412,7 @@ private final class ScriptedRunner: HubCommandRunning {
         }
         if arguments.suffix(2) == ["window", "status"] {
             events.append("window")
-            completion(windowStatus)
+            completion(windowStatusSequence.isEmpty ? windowStatus : windowStatusSequence.removeFirst())
             return
         }
         let event = arguments.contains("migrate") ? "migrate" :

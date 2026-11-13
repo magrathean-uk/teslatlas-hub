@@ -1381,6 +1381,51 @@ final class OnboardingWindowControllerTests: XCTestCase {
         }, "a later import must start with its own progress phase")
     }
 
+    func testFreshMacConnectTeslaStartsHubThenShowsTheOpenWindowLine() throws {
+        // M02-T21 (DEC-112): with no Hub LaunchAgent, Connect Tesla writes the default
+        // configuration and starts Hub (fakes only: no launchd, no network), shows the setup
+        // page meanwhile, and then the existing open-window line. No Tesla page opens.
+        let home = HubTestScratch.directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let runner = OwnerRunner()
+        runner.results["window"] = .success(OwnerRunner.windowClosed)
+        let service = OwnerService()
+        service.hold("start")
+        let agent = FakeLaunchAgent(events: LifecycleEvents())
+        agent.installed = false
+        let controller = HubController(environment: [:], commandRunner: runner, serviceRunner: service,
+                                       launchAgent: agent, dataRemover: nil, homeDirectory: home,
+                                       initialSnapshot: .firstRun,
+                                       migrationStartupReadinessPollInterval: 0.001,
+                                       migrationStartupReadinessTimeout: 5,
+                                       migrationStartupReadinessMaxAttempts: 3)
+        let onboarding = OnboardingWindowController(controller: controller, initialRoute: .legacy,
+                                                     onComplete: { _ in })
+        defer { onboarding.close() }
+        let connect = try XCTUnwrap(buttons(in: onboarding.window?.contentView).first { $0.title == "Connect Tesla" })
+
+        connect.performClick(nil)
+        spinUntil(3) { service.heldKeys == ["start"] }
+        XCTAssertEqual(service.calls.filter { $0.hasPrefix("run:") }, ["run:start"])
+        XCTAssertTrue(labels(in: onboarding.window?.contentView).contains { $0.stringValue == "Setting up Hub…" },
+                      "the page says Hub is being set up while it starts")
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: home.appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml").path))
+
+        service.release("start")
+        let line = "Sign-in needs an open collection window. Open a window, then sign in again."
+        spinUntil(3) { self.labels(in: onboarding.window?.contentView).contains { $0.stringValue == line } }
+        XCTAssertTrue(labels(in: onboarding.window?.contentView).contains { $0.stringValue == line })
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
+        XCTAssertEqual(service.calls.filter { $0.hasPrefix("run:") }, ["run:start"],
+                       "the service stays running: not removed or stopped")
+        XCTAssertEqual(runner.count("window"), 1)
+        XCTAssertEqual(runner.count("setup"), 0, "nothing is sent to Tesla")
+        spinUntil(3) { controller.lifecycleCapabilities.isIdle }
+        XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
+    }
+
     func testNewInstallationBusyStateShowsOnlyCleanSetupFlow() {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let onboarding = OnboardingWindowController(controller: controller,
