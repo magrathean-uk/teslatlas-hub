@@ -69,11 +69,11 @@ assert policy["go"] == sorted(
     )
 )
 reviewed_go = {
-    "path": "/opt/homebrew/Cellar/go/1.27.3/libexec/bin/go",
-    "sha256": "60fa7fbaac037e24462915e8c19a1c73b02f548df0098b323823d6fbcdd0c764",
-    "goroot": "/opt/homebrew/Cellar/go/1.27.3/libexec",
-    "binary_path": "/opt/homebrew/Cellar/go/1.27.3/libexec/bin/go",
-    "binary_sha256": "60fa7fbaac037e24462915e8c19a1c73b02f548df0098b323823d6fbcdd0c764",
+    "path": "/opt/homebrew/Cellar/go/1.27.4/libexec/bin/go",
+    "sha256": "05f88ad8cc1e19f455104bd936e255e9ac9acf7b7725df96fb59e7260b425252",
+    "goroot": "/opt/homebrew/Cellar/go/1.27.4/libexec",
+    "binary_path": "/opt/homebrew/Cellar/go/1.27.4/libexec/bin/go",
+    "binary_sha256": "05f88ad8cc1e19f455104bd936e255e9ac9acf7b7725df96fb59e7260b425252",
 }
 assert reviewed_go in policy["go"]
 assert policy["go"] == [reviewed_go]
@@ -90,17 +90,17 @@ binding_policy["go"] = sorted(
 module.validate_build_host_policy(binding_policy)
 assert policy["compiler"] == {
     "path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
-    "sha256": "ee029330bf58ab6e481385f4237cc54602eaa8b81526242e5c5ab5b76e8c5a7e",
-    "version": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+    "sha256": "fc5e3cbba6ad54059295cad716aacb05ace8235f5f7a6031f1d8c15d24bd6d66",
+    "version": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
 }
 assert policy["xcode"] == {
-    "version": "Xcode 27.1",
-    "build": "Build version 27A9275",
+    "version": "Xcode 27.2",
+    "build": "Build version 27B52",
 }
 assert policy["sdk"] == {
     "path": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
-    "version": "27.0",
-    "build": "26A425",
+    "version": "27.2",
+    "build": "26B118",
 }
 assert lock["subjects"]["darwin-arm64"] == {
     "name": "tesla-http-proxy",
@@ -263,11 +263,11 @@ evidence = Path(sys.argv[1])
 proxy = Path(sys.argv[2])
 digest = lambda data: hashlib.sha256(data).hexdigest()
 reviewed_go = {
-    "path": "/opt/homebrew/Cellar/go/1.27.3/libexec/bin/go",
-    "sha256": "60fa7fbaac037e24462915e8c19a1c73b02f548df0098b323823d6fbcdd0c764",
-    "goroot": "/opt/homebrew/Cellar/go/1.27.3/libexec",
-    "binary_path": "/opt/homebrew/Cellar/go/1.27.3/libexec/bin/go",
-    "binary_sha256": "60fa7fbaac037e24462915e8c19a1c73b02f548df0098b323823d6fbcdd0c764",
+    "path": "/opt/homebrew/Cellar/go/1.27.4/libexec/bin/go",
+    "sha256": "05f88ad8cc1e19f455104bd936e255e9ac9acf7b7725df96fb59e7260b425252",
+    "goroot": "/opt/homebrew/Cellar/go/1.27.4/libexec",
+    "binary_path": "/opt/homebrew/Cellar/go/1.27.4/libexec/bin/go",
+    "binary_sha256": "05f88ad8cc1e19f455104bd936e255e9ac9acf7b7725df96fb59e7260b425252",
 }
 
 manifest = json.loads((evidence / "go-component-manifest.json").read_text())
@@ -311,7 +311,7 @@ assert receipt["clean_rebuild_byte_identical"] is True
 assert receipt["target"] == "darwin-arm64"
 assert receipt["clean_rebuild_sha256"] == digest(proxy.read_bytes())
 assert receipt["strict_go_environment"]["GOFLAGS"] == ""
-assert receipt["toolchain"]["go_version"] == "go1.27.3"
+assert receipt["toolchain"]["go_version"] == "go1.27.4"
 assert receipt["toolchain"]["godebug_default"] == "go1.27"
 assert "DefaultGODEBUG" not in {
     item["Key"] for item in receipt["build_info"]["Settings"]
@@ -321,7 +321,7 @@ assert receipt["build_host"]["go"] == reviewed_go
 assert len(receipt["build_host"]["compiler"]["sha256"]) == 64
 assert receipt["build_host"]["go"]["goroot"]
 assert receipt["build_host"]["xcode"]["version"].startswith("Xcode ")
-assert receipt["build_host"]["sdk"]["version"] == "27.0"
+assert receipt["build_host"]["sdk"]["version"] == "27.2"
 assert receipt["source_configuration"]["archived_upstream_source_unchanged"] is True
 assert receipt["source_configuration"]["private_build_copy_go_mod_directive"] == "godebug default=go1.27"
 assert receipt["source_configuration"]["overlay_path"] == (
@@ -464,9 +464,9 @@ def foreign_go_binding(value):
     value["build_host"]["go"] = {
         "path": "/fixture/alternate/go",
         "sha256": "1" * 64,
-        "goroot": "/opt/homebrew/Cellar/go/1.27.3/libexec",
-        "binary_path": "/opt/homebrew/Cellar/go/1.27.3/libexec/bin/go",
-        "binary_sha256": "60fa7fbaac037e24462915e8c19a1c73b02f548df0098b323823d6fbcdd0c764",
+        "goroot": "/opt/homebrew/Cellar/go/1.27.4/libexec",
+        "binary_path": "/opt/homebrew/Cellar/go/1.27.4/libexec/bin/go",
+        "binary_sha256": "05f88ad8cc1e19f455104bd936e255e9ac9acf7b7725df96fb59e7260b425252",
     }
 
 json_forgery("forged-go-foreign", "go-build-receipt.json", foreign_go_binding)
@@ -556,7 +556,7 @@ fi
 test ! -e "$TMP/tampered-evidence"
 
 mkdir -p "$TMP/wrong-repo/scripts"
-sed 's/"go_version": "go1.27.3"/"go_version": "go1.26.0"/' "$LOCK" \
+sed 's/"go_version": "go1.27.4"/"go_version": "go1.26.0"/' "$LOCK" \
     >"$TMP/wrong-repo/scripts/tesla-proxy-lock.json"
 if python3 "$HELPER" --repo "$TMP/wrong-repo" --proxy-binary "$TMP/tesla-http-proxy" \
     --output-dir "$TMP/wrong-toolchain-evidence" >"$TMP/wrong-toolchain.out" 2>&1; then
