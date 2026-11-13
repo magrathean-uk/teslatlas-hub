@@ -228,7 +228,8 @@ fn durable_prior_imported_ids_in_connection(
 /// charge samples from the store, as publication applies it (design
 /// M03-SEAM-R3, section 4): the coverage, the store's side of the drives as
 /// [`import_seam_hub_drives_in_connection`] reads it, the stored charges and
-/// Hub-range samples (see `import_seam_hub_charges_in_connection`), the source
+/// Hub-range samples, with the open charge the Hub owns and the inherited
+/// marks (see `import_seam_hub_charges_in_connection`), the source
 /// drives and charges and the recorded links. Reads only. Both the planner
 /// ahead of the packs and publication plan through this one reader.
 fn import_seam_plan_in_transaction(
@@ -266,6 +267,7 @@ fn import_seam_plan_in_transaction(
     import_seam_hub_charges_in_connection(
         connection,
         &vehicle_key,
+        &coverage,
         &prior_imported_charge_ids,
         &mut hub,
     )?;
@@ -533,6 +535,114 @@ fn import_seam_open_drive_in_connection(
             end_ms: Some(end_ms),
         },
         positions,
+    }))
+}
+
+/// The lifecycle's open charge when the Hub owns it (M03-T18, second part):
+/// a charge still open in the lifecycle state whose id is in the Hub's range
+/// or that holds a Hub-range sample in `lifecycle_open_rows`. It weighs as a
+/// Hub session from its start to its latest sample, with its Hub-range open
+/// samples as its children.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SeamOpenCharge {
+    session: crate::import::source_db::seam::SessionRow,
+    /// Hub-range open samples: id to instant.
+    samples: std::collections::BTreeMap<i64, i64>,
+}
+
+/// The lifecycle's open charge as the seam weighs it (M03-T18, second part):
+/// when the vehicle has coverage, the Hub owns the charge (see
+/// [`SeamOpenCharge`]) and the store holds no charge under its id. The charge
+/// reader of both planners and publication's settling read it here, so they
+/// see the same charge. Reads only.
+fn import_seam_open_charge_in_connection(
+    connection: &Connection,
+    vehicle_key: &str,
+    coverage: &crate::import::source_db::seam::HubCoverage,
+) -> Result<Option<SeamOpenCharge>, StoreError> {
+    if coverage.intervals().is_empty() {
+        return Ok(None);
+    }
+    let Some(open) = import_seam_owned_open_charge_in_connection(connection, vehicle_key)? else {
+        return Ok(None);
+    };
+    let stored: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM materialised_charges
+                            WHERE vehicle_id = ?1 AND charge_id = ?2)",
+            params![vehicle_key, open.session.id],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::Query)?;
+    Ok((!stored).then_some(open))
+}
+
+/// The lifecycle's open charge of one vehicle when the Hub owns it (see
+/// [`SeamOpenCharge`]), whatever the coverage. Reads only.
+fn import_seam_owned_open_charge_in_connection(
+    connection: &Connection,
+    vehicle_key: &str,
+) -> Result<Option<SeamOpenCharge>, StoreError> {
+    use crate::db::hub_ids::{HUB_ID_BASE, HUB_ID_MAX, is_hub_id};
+
+    let state: Option<Vec<u8>> = connection
+        .query_row(
+            "SELECT open_session_json FROM vehicle_lifecycle_state WHERE vehicle_id = ?1",
+            params![vehicle_key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(StoreError::Query)?;
+    let Some(state) = state else {
+        return Ok(None);
+    };
+    let state = crate::lifecycle::OpenSessionState::decode(&state)
+        .map_err(|_| StoreError::InvalidLifecycleSession)?;
+    let Some(open) = state.open_charge else {
+        return Ok(None);
+    };
+    let mut samples = std::collections::BTreeMap::new();
+    {
+        let mut statement = connection
+            .prepare(
+                "SELECT source_row_id, CAST(json_extract(row_json, '$.timestamp_ms') AS INTEGER)
+                   FROM lifecycle_open_rows
+                  WHERE vehicle_id = ?1 AND domain = 'charge_sample' AND parent_source_row_id = ?2
+                    AND source_row_id BETWEEN ?3 AND ?4
+                  ORDER BY source_row_id ASC",
+            )
+            .map_err(StoreError::Query)?;
+        let rows = statement
+            .query_map(
+                params![vehicle_key, open.id, HUB_ID_BASE, HUB_ID_MAX],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?)),
+            )
+            .map_err(StoreError::Query)?;
+        for row in rows {
+            let (id, at_ms) = row.map_err(StoreError::Query)?;
+            // An open sample without an instant cannot be placed; it stays.
+            if let Some(at_ms) = at_ms {
+                samples.insert(id, at_ms);
+            }
+        }
+    }
+    if !is_hub_id(open.id) && samples.is_empty() {
+        return Ok(None);
+    }
+    let end_ms = samples
+        .values()
+        .copied()
+        .chain(open.last_sample_timestamp_ms)
+        .max()
+        .unwrap_or(open.start_date_ms)
+        .max(open.start_date_ms);
+    Ok(Some(SeamOpenCharge {
+        session: crate::import::source_db::seam::SessionRow {
+            id: open.id,
+            start_ms: open.start_date_ms,
+            end_ms: Some(end_ms),
+        },
+        samples,
     }))
 }
 

@@ -223,6 +223,26 @@ fn promote_imported_open_session_in_transaction(
         }
         _ => None,
     };
+    // The same for the lifecycle's open charge the Hub owns (M03-T18, second
+    // part): the seam settles it first when the source decides it, so one
+    // still open here stays open with its open rows, and the source's open
+    // charge is not taken over while it stands.
+    let kept_open_charge = match previous_state.as_ref() {
+        Some(state) if state.open_charge.is_some() => {
+            match import_seam_owned_open_charge_in_connection(transaction, &vehicle_key)? {
+                Some(open) => {
+                    let covered =
+                        match crate::db::coverage_intervals_for_vehicle(transaction, &vehicle_key) {
+                            Ok(intervals) => !intervals.is_empty(),
+                            Err(_) => true,
+                        };
+                    covered.then_some(open.session.id)
+                }
+                None => None,
+            }
+        }
+        _ => None,
+    };
     let mut seeded = crate::lifecycle::seed_imported_open_session_state(
         source_id,
         session,
@@ -235,20 +255,36 @@ fn promote_imported_open_session_in_transaction(
         seeded.open_drive = previous.open_drive.clone();
         seeded.phase = previous.phase;
     }
+    if kept_open_charge.is_some()
+        && let Some(previous) = previous_state.as_ref()
+    {
+        seeded.open_charge = previous.open_charge.clone();
+        seeded.phase = previous.phase;
+    }
     ensure_source_exists(transaction, source_id)?;
     ensure_vehicle_source(transaction, vehicle_id, source_id)?;
     let source = source_id.to_string();
     let vehicle = vehicle_id.to_string();
-    let cleared = match kept_open {
-        None => transaction.execute(
+    let cleared = match (kept_open, kept_open_charge) {
+        (None, None) => transaction.execute(
             "DELETE FROM lifecycle_open_rows WHERE source_id=?1 AND vehicle_id=?2",
             params![source, vehicle],
         ),
-        Some(drive_id) => transaction.execute(
+        (Some(drive_id), None) => transaction.execute(
             "DELETE FROM lifecycle_open_rows WHERE source_id=?1 AND vehicle_id=?2
                 AND NOT ((domain = 'position' AND parent_source_row_id IS ?3)
                       OR (domain = 'drive' AND source_row_id = ?3))",
             params![source, vehicle, drive_id],
+        ),
+        // A kept open charge keeps its rows too; -1 is never a row id, so a
+        // session that is not kept matches nothing (`IS` is null-safe).
+        (drive_id, Some(charge_id)) => transaction.execute(
+            "DELETE FROM lifecycle_open_rows WHERE source_id=?1 AND vehicle_id=?2
+                AND NOT ((domain = 'position' AND parent_source_row_id IS ?3)
+                      OR (domain = 'drive' AND source_row_id IS ?3)
+                      OR (domain = 'charge_sample' AND parent_source_row_id IS ?4)
+                      OR (domain = 'charge' AND source_row_id IS ?4))",
+            params![source, vehicle, drive_id.unwrap_or(-1), charge_id],
         ),
     };
     cleared.map_err(StoreError::LifecycleWrite)?;
@@ -283,7 +319,7 @@ fn promote_imported_open_session_in_transaction(
             row,
         )?;
     }
-    if let Some(row) = &session.charge {
+    if let Some(row) = session.charge.as_ref().filter(|_| kept_open_charge.is_none()) {
         inserted += insert_open_row(
             transaction,
             &source,
@@ -296,7 +332,11 @@ fn promote_imported_open_session_in_transaction(
             row,
         )?;
     }
-    for row in &session.charge_samples {
+    for row in session
+        .charge_samples
+        .iter()
+        .filter(|_| kept_open_charge.is_none())
+    {
         inserted += insert_open_row(
             transaction,
             &source,
@@ -1004,12 +1044,17 @@ fn import_seam_source_charges(
 /// M03-SEAM-R3, section 4): the Hub-range charge samples by instant, and the
 /// stored charges. Import never stores a source charge of its own, so a
 /// stored charge with a source id is the Hub's inherited session (one id on
-/// both sides) unless the prior import listed it and no Hub-range sample
-/// belongs to it: then it is a source copy an earlier plan wrote over the
-/// inherited row, and the stale rule applies to it. Reads only.
+/// both sides) unless the prior import listed it, no Hub-range sample belongs
+/// to it and no self-link marks it (M03-T18): then it is a source copy an
+/// earlier plan wrote over the inherited row, and the stale rule applies to
+/// it. When the vehicle has coverage, the lifecycle's open charge the Hub
+/// owns takes part too, with its open samples
+/// ([`import_seam_open_charge_in_connection`]). The one reader of both
+/// planners. Reads only.
 fn import_seam_hub_charges_in_connection(
     connection: &Connection,
     vehicle_key: &str,
+    coverage: &crate::import::source_db::seam::HubCoverage,
     prior_imported_charge_ids: &HashSet<i64>,
     hub: &mut crate::import::source_db::seam::HubRows,
 ) -> Result<(), StoreError> {
@@ -1051,6 +1096,7 @@ fn import_seam_hub_charges_in_connection(
         .iter()
         .filter_map(|row| row.parent)
         .collect();
+    let marked = seam_inherited_in_connection(connection, vehicle_key, "charge")?;
     let mut statement = connection
         .prepare(
             "SELECT charge_id,
@@ -1072,8 +1118,9 @@ fn import_seam_hub_charges_in_connection(
         let (id, start_ms, end_ms) = row.map_err(StoreError::Query)?;
         // A stored charge without a start cannot be weighed; it stays.
         let Some(start_ms) = start_ms else { continue };
-        let inherited =
-            !prior_imported_charge_ids.contains(&id) || held_by_hub_sample.contains(&id);
+        let inherited = !prior_imported_charge_ids.contains(&id)
+            || held_by_hub_sample.contains(&id)
+            || marked.contains(&id);
         if is_hub_id(id) || inherited {
             hub.charges.push(SessionRow {
                 id,
@@ -1083,6 +1130,15 @@ fn import_seam_hub_charges_in_connection(
         } else {
             hub.imported_charges.push(id);
         }
+    }
+    if let Some(open) = import_seam_open_charge_in_connection(connection, vehicle_key, coverage)? {
+        hub.charges.push(open.session);
+        hub.charge_samples
+            .extend(open.samples.iter().map(|(id, at_ms)| ChildRow {
+                id: *id,
+                at_ms: *at_ms,
+                parent: Some(open.session.id),
+            }));
     }
     Ok(())
 }
@@ -1101,6 +1157,12 @@ fn import_seam_hub_charges_in_connection(
 /// covers the stored extent) replaces the stored row, journalled; import
 /// writes no other source charge to the store. Applied again, the plan finds
 /// its links and removed rows and changes nothing.
+///
+/// Publication (`write_source_copies`) also settles the lifecycle's open
+/// charge the Hub owns ([`settle_import_seam_open_charge_in_transaction`]) and
+/// records which inherited charges the Hub owns by decision (M03-T18). Ahead
+/// of the packs neither happens: the removals and moves above look up
+/// materialised rows only, so the open charge stays as the plan read it.
 fn apply_import_seam_to_charges_in_transaction(
     transaction: &Transaction<'_>,
     vehicle_id: Uuid,
@@ -1109,6 +1171,7 @@ fn apply_import_seam_to_charges_in_transaction(
     write_source_copies: bool,
 ) -> Result<(), StoreError> {
     use crate::db::hub_ids::is_hub_id;
+    use crate::import::source_db::seam::InheritedCopy;
     let vehicle_key = vehicle_id.to_string();
     let charge_plan = &plan.charges;
     let stored_charge = |id: i64| -> Result<Option<(i64, String)>, StoreError> {
@@ -1303,6 +1366,16 @@ fn apply_import_seam_to_charges_in_transaction(
             &moved_json,
         )?;
     }
+    // The lifecycle's open charge the Hub owns, decided like any Hub charge,
+    // is settled before promotion can clear its open rows (M03-T18).
+    if write_source_copies {
+        let coverage = import_seam_coverage_in_transaction(transaction, &vehicle_key)?;
+        if let Some(open) =
+            import_seam_open_charge_in_connection(transaction, &vehicle_key, &coverage)?
+        {
+            settle_import_seam_open_charge_in_transaction(transaction, vehicle_id, &open, plan)?;
+        }
+    }
     let decided: Vec<_> = charge_plan
         .skipped
         .iter()
@@ -1315,6 +1388,193 @@ fn apply_import_seam_to_charges_in_transaction(
         "charge",
         &decided,
         &charge_plan.links_dropped,
+    )?;
+    if !write_source_copies {
+        return Ok(());
+    }
+    // Inherited ownership that rests on nothing else durable is recorded, so
+    // it holds once the import lists the id (M03-T18): a stored copy kept that
+    // no Hub-range sample holds once the plan is applied. A mark goes when the
+    // source copy replaces the row or the row goes stale.
+    let held_by_hub_sample = |id: i64| -> Result<bool, StoreError> {
+        transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM materialised_charge_samples
+                                WHERE vehicle_id = ?1 AND charge_id = ?2
+                                  AND sample_id BETWEEN ?3 AND ?4)",
+                params![
+                    vehicle_key.as_str(),
+                    id,
+                    crate::db::hub_ids::HUB_ID_BASE,
+                    crate::db::hub_ids::HUB_ID_MAX
+                ],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)
+    };
+    let mut kept = Vec::new();
+    let mut released = Vec::new();
+    for (id, copy) in &charge_plan.inherited {
+        match copy {
+            InheritedCopy::Stored => {
+                if stored_charge(*id)?.is_some() && !held_by_hub_sample(*id)? {
+                    kept.push(*id);
+                }
+            }
+            InheritedCopy::Source => released.push(*id),
+        }
+    }
+    released.extend(charge_plan.stale.iter().copied());
+    record_seam_inherited_in_transaction(transaction, &vehicle_key, "charge", &kept, &released)
+}
+
+/// Settles the lifecycle's open charge the Hub owns once the seam has decided
+/// it (M03-T18, second part), as the open drive is settled. When it lost, or
+/// its source copy covers and replaces it (an inherited session, one id), its
+/// Hub samples inside coverage are written to `materialised_charge_samples`
+/// under the charge the plan gives them (the winner, or the same id) and
+/// journalled; those outside coverage are dropped; its open rows go and it
+/// leaves the lifecycle state, so neither promotion nor a later collection
+/// closes it again. It was never synced, so no tombstone is written; a lost
+/// charge's link is recorded by the caller. When the plan keeps it, it stays
+/// open with its samples inside coverage, and promotion keeps it.
+fn settle_import_seam_open_charge_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    open: &SeamOpenCharge,
+    plan: &crate::import::source_db::seam::SeamPlan,
+) -> Result<(), StoreError> {
+    use crate::db::hub_ids::{HUB_ID_BASE, HUB_ID_MAX};
+    use crate::import::source_db::seam::InheritedCopy;
+
+    let vehicle_key = vehicle_id.to_string();
+    let charge_id = open.session.id;
+    let charge_plan = &plan.charges;
+    let removed: HashSet<i64> = plan.charge_samples.hub_removed.iter().copied().collect();
+    let link = charge_plan
+        .superseded
+        .iter()
+        .chain(&charge_plan.skipped)
+        .find(|link| link.loser_id == charge_id);
+    let replaced = charge_plan
+        .inherited
+        .contains(&(charge_id, InheritedCopy::Source));
+    if link.is_none() && !replaced {
+        for id in open.samples.keys().filter(|id| removed.contains(id)) {
+            transaction
+                .execute(
+                    "DELETE FROM lifecycle_open_rows
+                      WHERE vehicle_id = ?1 AND domain = 'charge_sample' AND source_row_id = ?2",
+                    params![vehicle_key.as_str(), id],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+        }
+        return Ok(());
+    }
+
+    // A kept sample of a charge that lost moves where the plan moves it, or
+    // to the charge's recorded winner; one of a replaced charge stays under
+    // the same id.
+    let planned_charge = link.map_or(charge_id, |link| link.winner_id);
+    let moved: HashMap<i64, i64> = plan
+        .charge_samples
+        .moved_hub
+        .iter()
+        .map(|moved| (moved.id, moved.to))
+        .collect();
+    let open_samples: Vec<(i64, i64, String)> = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT source_row_id, car_id, row_json FROM lifecycle_open_rows
+                  WHERE vehicle_id = ?1 AND domain = 'charge_sample' AND parent_source_row_id = ?2
+                    AND source_row_id BETWEEN ?3 AND ?4
+                  ORDER BY source_row_id ASC",
+            )
+            .map_err(StoreError::Query)?;
+        let rows = statement
+            .query_map(
+                params![vehicle_key.as_str(), charge_id, HUB_ID_BASE, HUB_ID_MAX],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(StoreError::Query)?;
+        let collected: Vec<(i64, i64, String)> =
+            rows.collect::<Result<_, _>>().map_err(StoreError::Query)?;
+        collected
+    };
+    for (id, car_id, row_json) in open_samples {
+        if !open.samples.contains_key(&id) || removed.contains(&id) {
+            continue;
+        }
+        let mut sample: crate::hub_pack::ProjectionChargeSample =
+            serde_json::from_str(&row_json).map_err(|_| StoreError::InvalidLifecycleSession)?;
+        sample.charge_process_id = moved.get(&id).copied().unwrap_or(planned_charge);
+        insert_settled_hub_sample_in_transaction(transaction, vehicle_id, car_id, &sample)?;
+    }
+    transaction
+        .execute(
+            "DELETE FROM lifecycle_open_rows
+              WHERE vehicle_id = ?1
+                AND ((domain = 'charge_sample' AND parent_source_row_id = ?2)
+                  OR (domain = 'charge' AND source_row_id = ?2))",
+            params![vehicle_key.as_str(), charge_id],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    let Some(record) = load_lifecycle_state_in_transaction(transaction, vehicle_id)? else {
+        return Ok(());
+    };
+    let mut state = crate::lifecycle::OpenSessionState::decode(&record.open_session_json)
+        .map_err(|_| StoreError::InvalidLifecycleSession)?;
+    if state.open_charge.as_ref().map(|charge| charge.id) != Some(charge_id) {
+        return Ok(());
+    }
+    state.open_charge = None;
+    if state.phase == crate::lifecycle::VehiclePhase::Charging {
+        state.phase = if state.open_drive.is_some() {
+            crate::lifecycle::VehiclePhase::Driving
+        } else {
+            crate::lifecycle::VehiclePhase::Online
+        };
+    }
+    let json = state
+        .encode()
+        .map_err(|_| StoreError::InvalidLifecycleSession)?;
+    transaction
+        .execute(
+            "UPDATE vehicle_lifecycle_state SET open_session_json = ?2 WHERE vehicle_id = ?1",
+            params![vehicle_key.as_str(), json],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    Ok(())
+}
+
+/// Writes one Hub charge sample settled from an open charge and journals it
+/// (M03-T18). A row already stored under the same id is left as it is.
+fn insert_settled_hub_sample_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    car_id: i64,
+    sample: &crate::hub_pack::ProjectionChargeSample,
+) -> Result<(), StoreError> {
+    let json = serde_json::to_string(sample).map_err(StoreError::SerializeLifecycleRow)?;
+    let inserted = transaction
+        .execute(
+            "INSERT INTO materialised_charge_samples(vehicle_id, sample_id, charge_id, sample_json)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(vehicle_id, sample_id) DO NOTHING",
+            params![vehicle_id.to_string(), sample.id, sample.charge_process_id, json],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    if inserted == 0 {
+        return Ok(());
+    }
+    record_sync_mutation_in_transaction(
+        transaction,
+        vehicle_id,
+        "charge_sample",
+        sample.id,
+        car_id,
+        "upsert",
+        &json,
     )
 }
 
