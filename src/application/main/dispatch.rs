@@ -1008,6 +1008,23 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 );
                 return Ok(());
             }
+            // A Hub that was never configured starts idle (M02-T21, DEC-115):
+            // the store is neither opened nor created here, and the serve
+            // admission applies the same rule. Anything else is checked below.
+            #[cfg(target_os = "macos")]
+            if teslatlas_hub::macos_launch_agent::hub_is_never_configured(&config)? {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "status": "ready",
+                        "state": "idle",
+                        "version": teslatlas_hub::BUILD_VERSION,
+                        "provider": config.collector.provider,
+                        "collectorEnabled": false,
+                    })
+                );
+                return Ok(());
+            }
             run_immutable_diagnostic(&config.data_dir, |store| {
                 store.catalogue_check()?;
                 let configured = store.configured_tesla_vehicles()?;

@@ -979,3 +979,88 @@ async fn installed_plist_identity_selects_the_served_snapshot() {
     assert!(installed_ready.unwrap());
     assert!(!other_ready.unwrap());
 }
+
+/// The configuration the Mac app writes on a fresh Mac: loopback bind, no TLS,
+/// every collector path off (M02-T21).
+fn idle_start_config(data_dir: &Path) -> HubConfig {
+    HubConfig {
+        data_dir: data_dir.to_owned(),
+        bind: "127.0.0.1:8080".parse().expect("loopback bind"),
+        tls: None,
+        collector: crate::config::CollectorConfig {
+            interval_seconds: 0,
+            ..Default::default()
+        },
+        geocoder: Default::default(),
+        import_source: Default::default(),
+        terrain: Default::default(),
+        http: Default::default(),
+        pairing: Default::default(),
+        backup: Default::default(),
+    }
+}
+
+/// DEC-115: a data folder that was never configured passes the production
+/// serve admission idle, before and after `serve` creates its empty store,
+/// while the full admission it bypasses still refuses that same state.
+#[test]
+fn idle_start_admits_a_never_configured_data_folder() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let config = idle_start_config(&data);
+    assert!(hub_is_never_configured(&config).expect("nothing to read"));
+    preflight_hub_for_serve(&config, None).expect("idle start before any store");
+    assert!(!data.join("hub.sqlite").exists(), "the check creates no store");
+
+    HubStore::initialize(&data).expect("the empty store serve creates");
+    assert!(hub_is_never_configured(&config).expect("empty store"));
+    preflight_hub_for_serve(&config, None).expect("idle start on the empty store");
+    assert!(preflight_hub_for_config(&config).is_err(), "the full admission is unchanged");
+}
+
+/// DEC-115: anything but never configured keeps today's admission, so a
+/// configured but broken Hub, or one outside the idle definition, is refused.
+#[test]
+fn idle_start_refuses_a_configured_but_broken_hub() {
+    let refused = |config: &HubConfig, label: &str| {
+        assert!(!hub_is_never_configured(config).unwrap_or(false), "{label}: not idle");
+        assert!(preflight_hub_for_serve(config, None).is_err(), "{label}: refused");
+    };
+
+    // A collector path on with nothing configured.
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    HubStore::initialize(&data).expect("empty store");
+    let mut config = idle_start_config(&data);
+    config.collector.interval_seconds = 30;
+    refused(&config, "cadence without car or credential");
+
+    // A non-loopback bind with nothing configured.
+    let mut config = idle_start_config(&data);
+    config.bind = "192.168.1.10:8080".parse().expect("LAN bind");
+    refused(&config, "LAN bind");
+
+    // A configured car with every collector path off.
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let _store = seed_selected_car(&data);
+    refused(&idle_start_config(&data), "car with the collector off");
+
+    // A stored credential with every collector path off.
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let store = HubStore::initialize(&data).expect("empty store");
+    load_or_create_cursor_key(&data).expect("cursor key");
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store, &data, "idle-access-0001", "idle-refresh-0001", None)
+        .expect("Owner entry");
+    refused(&idle_start_config(&data), "credential with the collector off");
+
+    // A store that cannot be read is an error, never idle.
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    fs::create_dir_all(&data).expect("data folder");
+    fs::write(data.join("hub.sqlite"), b"not a database").expect("damaged store");
+    let config = idle_start_config(&data);
+    assert!(hub_is_never_configured(&config).is_err(), "damaged store");
+    assert!(preflight_hub_for_serve(&config, None).is_err(), "damaged store refused");
+}
