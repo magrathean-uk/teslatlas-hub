@@ -10,6 +10,13 @@
 //! are rebuilt from each row's own identity fields, never decoded from the old
 //! cursor. Only the cursor string changes: history rows, packs, digests and
 //! sequences stay byte-identical, and an old cursor never verifies again.
+//!
+//! The physical sync state is re-keyed in the same transaction (M06-T16, see
+//! [`physical`]): its receipts are derived from the re-signed manifests, so
+//! they are renamed, the delta transitions are invalidated and the current
+//! heads' prepared months are re-issued.
+
+mod physical;
 
 use std::{
     collections::BTreeMap,
@@ -34,9 +41,10 @@ use crate::{
     updates_delivery::SignedNoOpState,
 };
 
-/// Whether the staged catalogue holds state a cursor key signed.
+/// Whether the staged catalogue holds state a cursor key signed: generic sync
+/// manifests, heads and retired lineages, or any physical signed state.
 fn holds_signed_sync_state(connection: &Connection) -> Result<bool, DataRecoveryError> {
-    connection
+    let generic: bool = connection
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM sync_manifests)
                  OR EXISTS(SELECT 1 FROM sync_heads)
@@ -44,7 +52,8 @@ fn holds_signed_sync_state(connection: &Connection) -> Result<bool, DataRecovery
             [],
             |row| row.get(0),
         )
-        .map_err(DataRecoveryError::CatalogueIdentity)
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    Ok(generic || physical::holds_signed_state(connection)?)
 }
 
 /// The claims a stored manifest's terminal cursor must carry, and that
@@ -136,11 +145,13 @@ fn replace_cursor(
     Ok(replaced)
 }
 
-/// Rewrites every manifest, retired-lineage and head cursor in one
-/// transaction. Returns each re-signed snapshot cursor by snapshot id.
+/// Rewrites every manifest, retired-lineage and head cursor, and applies the
+/// prepared physical re-keying, in one transaction. Returns each re-signed
+/// snapshot cursor by snapshot id.
 fn reissue_catalogue(
     connection: &mut Connection,
     key: &CursorKey,
+    physical: &physical::PhysicalRekey,
 ) -> Result<BTreeMap<String, OpaqueCursor>, DataRecoveryError> {
     let sql = DataRecoveryError::CatalogueIdentity;
     let transaction = connection
@@ -216,6 +227,7 @@ fn reissue_catalogue(
             )
             .map_err(sql)?;
     }
+    physical::apply(&transaction, physical)?;
     transaction.commit().map_err(sql)?;
     Ok(snapshot_cursors)
 }
@@ -343,8 +355,12 @@ pub(super) fn regenerate_cursor_key(root: &Path) -> Result<bool, DataRecoveryErr
     connection
         .execute_batch("PRAGMA secure_delete = ON;")
         .map_err(DataRecoveryError::CatalogueIdentity)?;
-    let snapshot_cursors = reissue_catalogue(&mut connection, &key)?;
+    // Re-issued prepared packs land in the staged tree before the one
+    // transaction below names them; nothing is published until it commits.
+    let physical = physical::prepare(root, &connection, &key)?;
+    let snapshot_cursors = reissue_catalogue(&mut connection, &key, &physical)?;
     verify_catalogue(&connection, &key)?;
+    physical::verify(root, &connection, &key)?;
     drop(connection);
     sync_file(&catalogue)?;
     reissue_noops(root, &snapshot_cursors)?;

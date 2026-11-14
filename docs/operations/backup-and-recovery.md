@@ -197,9 +197,17 @@ The restore needs no credential export from the old host. When the backup
 holds signed sync history, `restore-data` writes a new cursor-signing key into
 the restored directory (`secrets/hub-cursor.key`, mode 0600) and re-signs every
 stored sync cursor and schema 2.2 no-op body under it, with the same contents
-otherwise. History rows and packs are unchanged. This happens in the private
-staging directory before the restored directory appears, so an interrupted
-restore leaves no destination behind: run it again.
+otherwise. History rows and packs are unchanged. The physical (schema 2.2)
+snapshots are re-signed the same way; because a snapshot's receipt ID is
+derived from its signed manifest, each current and retained snapshot gets a
+new receipt ID, while its snapshot ID, sequence and packs stay the same. The
+stored changed-set (delta) answers name the old receipt IDs and are dropped: a
+request from a retained snapshot gets the signed full replacement instead. The
+prepared map month of each current snapshot is issued again under the new key,
+from its own rows, and is available as soon as a device has paired again; a
+prepared month of an older snapshot is dropped, as it is never served. This
+happens in the private staging directory before the restored directory
+appears, so an interrupted restore leaves no destination behind: run it again.
 
 The folder that will hold the restored directory must belong to the Hub's user
 and must not be writable by other accounts. The restore stages its work in a
@@ -215,8 +223,8 @@ interrupted restore left there (also `.teslatlas-data-recovery-<id>.staging`
 folders from earlier builds and directory-format restores), but never one that
 a running restore or backup holds locked. If such a folder cannot be listed,
 inspected or removed, the restore stops before it reads the bundle and names
-the folder: remove it, or fix its permissions, and run the restore again. A backup without sync
-history gets its key when the restored Hub first starts.
+the folder: remove it, or fix its permissions, and run the restore again. A backup without any signed
+sync state gets its key when the restored Hub first starts.
 
 Every device paired before the restore is refused afterwards: its bearer no
 longer exists and its sync cursor no longer verifies. Pair each device again;

@@ -1392,6 +1392,14 @@ pub(crate) fn insert_signed_month_fixture(
     (id, receipt)
 }
 
+// Restore re-issues the prepared months of a re-keyed head (M06-T16).
+mod restore_rekey;
+#[cfg(test)]
+pub(crate) use restore_rekey::month_stage_fixture;
+pub(crate) use restore_rekey::{
+    StoredPreparedMonth, rekey_prepared_month_for_restore, restored_prepared_month_is_current,
+};
+
 #[cfg(test)]
 #[path = "prepared_map/journey6_invalidation.rs"]
 mod journey6_invalidation;
