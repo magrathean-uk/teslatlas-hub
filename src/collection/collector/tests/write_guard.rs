@@ -158,6 +158,26 @@ struct GuardBed {
     admission: Arc<crate::hub_user_process::AdmittedUserHub>,
     guard: RunWriteGuard,
     at_trip: Arc<Mutex<Option<String>>>,
+    /// The content-addressed pack files at the trip (REV-M04-T06 finding 3).
+    packs_at_trip: Arc<Mutex<Vec<String>>>,
+}
+
+/// The digests of the content-addressed pack files, none while the directory is absent.
+fn guard_bed_pack_files(store: &HubStore) -> Vec<String> {
+    let mut files: Vec<String> = match std::fs::read_dir(store.packs_dir().join("sha256")) {
+        Ok(entries) => entries
+            .map(|entry| entry.expect("pack entry").file_name())
+            .filter_map(|name| {
+                name.to_str()
+                    .and_then(|name| name.strip_suffix(".sqlite.zst"))
+                    .map(str::to_owned)
+            })
+            .collect(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => panic!("pack directory: {error}"),
+    };
+    files.sort();
+    files
 }
 
 impl GuardBed {
@@ -180,6 +200,7 @@ impl GuardBed {
             admission,
             guard,
             at_trip: Arc::new(Mutex::new(None)),
+            packs_at_trip: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -188,8 +209,10 @@ impl GuardBed {
     fn trip_at_nth(&self, point: &'static str, nth: usize) {
         let store = self.store.clone();
         let slot = Arc::clone(&self.at_trip);
+        let packs = Arc::clone(&self.packs_at_trip);
         self.guard.audit().trip_at_nth(point, nth, move || {
             *slot.lock().expect("stamp") = Some(whole_store_stamp(&store));
+            *packs.lock().expect("pack files") = guard_bed_pack_files(&store);
         });
     }
 
@@ -214,6 +237,31 @@ impl GuardBed {
             whole_store_stamp(&self.store),
             at_trip,
             "{point}: a write followed the refused boundary"
+        );
+    }
+
+    /// The run wrote an unretained pack before the armed boundary, its failure handling
+    /// asked to remove it and the fence refused: the file is still there, and the pack
+    /// directory is as it was at the trip (REV-M04-T06 finding 3).
+    fn assert_pack_kept(&self, point: &str) {
+        let at_trip = self.packs_at_trip.lock().expect("pack files").clone();
+        assert!(
+            at_trip.iter().any(|digest| {
+                !self
+                    .store
+                    .pack_sha256_is_retained(digest)
+                    .expect("retention")
+            }),
+            "{point}: an unretained pack was written before the boundary: {at_trip:?}"
+        );
+        assert!(
+            self.guard.audit().refused("publication-pack-removal") >= 1,
+            "{point}: the removal of the pack met the refused guard"
+        );
+        assert_eq!(
+            guard_bed_pack_files(&self.store),
+            at_trip,
+            "{point}: the refused removal kept the pack file"
         );
     }
 
@@ -585,6 +633,9 @@ fn p3bf2_tick_publication(point: &'static str) {
     let result = p3bf2_commit(&mut tick, batch);
     refused_with_the_sensitive_failure(point, &result);
     bed.assert_held(point);
+    if point == "publication-finalize" {
+        bed.assert_pack_kept(point);
+    }
 }
 
 #[test]
@@ -687,6 +738,9 @@ fn p3bf2_tick_delta_publication(point: &'static str) {
             bed.guard.audit().refused("publication-sync-release") >= 1,
             "{point}: the release of the claim after the failure is a write too"
         );
+    }
+    if point == "export-delta-commit" {
+        bed.assert_pack_kept(point);
     }
 }
 
@@ -852,6 +906,9 @@ fn p3bf2_export_delta(point: &'static str) {
             "{point}: the cleanup of the failure is a write too"
         );
     }
+    if point == "export-delta-commit" {
+        bed.assert_pack_kept(point);
+    }
 }
 
 #[test]
@@ -947,10 +1004,15 @@ fn p3bf2_export_compaction(point: &'static str) {
         max_chunks: 4,
         ..ProtocolLimits::default()
     };
+    let publication_gate = rig
+        .store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
     let bed = GuardBed::over(&rig.store, rig.temporary.path());
     bed.trip_at(point);
     let result = compact_v2_lineage_if_needed_with_limits_guarded(
         &rig.store,
+        &publication_gate,
         &rig.cursor_key,
         rig.vehicle_id,
         tiny_limit,
@@ -958,6 +1020,9 @@ fn p3bf2_export_compaction(point: &'static str) {
     );
     refused_with_the_sensitive_failure(point, &result);
     bed.assert_held(point);
+    if point == "export-compaction-commit" {
+        bed.assert_pack_kept(point);
+    }
 }
 
 #[test]

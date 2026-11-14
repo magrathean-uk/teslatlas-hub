@@ -1884,7 +1884,13 @@ fn replay_export_outbox_blocking(
             store.complete_export_outbox(&claim)?;
             return Ok(0);
         };
-        return match publish_v2_delta_guarded(store, cursor_key, &sync_claim, guard) {
+        return match publish_v2_delta_guarded(
+            store,
+            publication_gate,
+            cursor_key,
+            &sync_claim,
+            guard,
+        ) {
             Ok(()) => {
                 // A single outbox revision can represent more mutations than
                 // one bounded claim. Keep it scheduled until every mutation
@@ -1961,21 +1967,35 @@ fn replay_export_outbox_blocking(
     }
 }
 
+/// Tests only: the publication of a claim under a publication gate of its own
+/// (every production publisher passes the gate it holds, M04-T07).
+#[cfg(test)]
 fn publish_v2_delta(
     store: &HubStore,
     cursor_key: &CursorKey,
     claim: &crate::db::SyncMutationClaim,
 ) -> Result<(), CollectorError> {
-    publish_v2_delta_guarded(store, cursor_key, claim, None)
+    let publication_gate = store.try_acquire_publication_gate()?;
+    publish_v2_delta_guarded(store, &publication_gate, cursor_key, claim, None)
 }
 
+/// A failure after the delta or compaction pack write removes the unretained pack it
+/// wrote, under the publication gate the caller must hold (M04-T07, the rule of
+/// `discard_failed_publication_pack`): no caller can skip the cleanup.
 fn publish_v2_delta_guarded(
     store: &HubStore,
+    publication_gate: &crate::db::PublicationGate,
     cursor_key: &CursorKey,
     claim: &crate::db::SyncMutationClaim,
     guard: Option<&RunWriteGuard>,
 ) -> Result<(), CollectorError> {
-    compact_v2_lineage_if_needed_guarded(store, cursor_key, claim.vehicle_id, guard)?;
+    compact_v2_lineage_if_needed_guarded(
+        store,
+        publication_gate,
+        cursor_key,
+        claim.vehicle_id,
+        guard,
+    )?;
     let (base_snapshot_id, head_sequence, parent_digest) = store
         .v2_head(claim.vehicle_id)?
         .ok_or_else(|| CollectorError::Store(StoreError::LineageCatalogConflict))?;
@@ -2003,41 +2023,49 @@ fn publish_v2_delta_guarded(
     // The pack file is output of the run: written only while the guard allows.
     check_optional_write(guard, "export-delta-pack")?;
     let built = ProjectionPackWriter::new(store.packs_dir()).write_delta(&request)?;
-    let chain_digest = canonical_delta_chain_digest(parent_digest, built.metadata.sha256);
-    let lineage_delta = LineageDelta {
-        from_sequence,
-        to_sequence,
-        parent_chain_digest: parent_digest,
-        chain_digest,
-        pack_digest: built.metadata.sha256,
-        pack: built.metadata,
-    };
-    let terminal_cursor = OpaqueCursor::issue(
-        cursor_key,
-        CursorClaims {
-            protocol: PROTOCOL_V1,
-            schema: HUB_PROJECTION_SCHEMA_V2,
-            installation_id: binding.installation_id,
-            account_id: binding.account_id,
-            vehicle_id: binding.vehicle_id,
-            generation: binding.generation,
-            sequence: to_sequence,
-        },
-    )
-    .map_err(StoreError::Manifest)?;
-    check_optional_write(guard, "export-delta-commit")?;
-    store.commit_v2_delta_claim(claim, &lineage_delta, cursor_key, &terminal_cursor)?;
-    Ok(())
+    let committed = (|| -> Result<(), CollectorError> {
+        let chain_digest = canonical_delta_chain_digest(parent_digest, built.metadata.sha256);
+        let lineage_delta = LineageDelta {
+            from_sequence,
+            to_sequence,
+            parent_chain_digest: parent_digest,
+            chain_digest,
+            pack_digest: built.metadata.sha256,
+            pack: built.metadata.clone(),
+        };
+        let terminal_cursor = OpaqueCursor::issue(
+            cursor_key,
+            CursorClaims {
+                protocol: PROTOCOL_V1,
+                schema: HUB_PROJECTION_SCHEMA_V2,
+                installation_id: binding.installation_id,
+                account_id: binding.account_id,
+                vehicle_id: binding.vehicle_id,
+                generation: binding.generation,
+                sequence: to_sequence,
+            },
+        )
+        .map_err(StoreError::Manifest)?;
+        check_optional_write(guard, "export-delta-commit")?;
+        store.commit_v2_delta_claim(claim, &lineage_delta, cursor_key, &terminal_cursor)?;
+        Ok(())
+    })();
+    if let Err(error) = &committed {
+        discard_failed_publication_pack(store, publication_gate, &built, error, guard);
+    }
+    committed
 }
 
 fn compact_v2_lineage_if_needed_guarded(
     store: &HubStore,
+    publication_gate: &crate::db::PublicationGate,
     cursor_key: &CursorKey,
     vehicle_id: Uuid,
     guard: Option<&RunWriteGuard>,
 ) -> Result<(), CollectorError> {
     compact_v2_lineage_if_needed_with_limits_guarded(
         store,
+        publication_gate,
         cursor_key,
         vehicle_id,
         ProtocolLimits::default(),
@@ -2045,6 +2073,7 @@ fn compact_v2_lineage_if_needed_guarded(
     )
 }
 
+/// Tests only: a compaction under a publication gate of its own.
 #[cfg(test)]
 fn compact_v2_lineage_if_needed_with_limits(
     store: &HubStore,
@@ -2052,11 +2081,20 @@ fn compact_v2_lineage_if_needed_with_limits(
     vehicle_id: Uuid,
     limits: ProtocolLimits,
 ) -> Result<(), CollectorError> {
-    compact_v2_lineage_if_needed_with_limits_guarded(store, cursor_key, vehicle_id, limits, None)
+    let publication_gate = store.try_acquire_publication_gate()?;
+    compact_v2_lineage_if_needed_with_limits_guarded(
+        store,
+        &publication_gate,
+        cursor_key,
+        vehicle_id,
+        limits,
+        None,
+    )
 }
 
 fn compact_v2_lineage_if_needed_with_limits_guarded(
     store: &HubStore,
+    publication_gate: &crate::db::PublicationGate,
     cursor_key: &CursorKey,
     vehicle_id: Uuid,
     limits: ProtocolLimits,
@@ -2101,33 +2139,41 @@ fn compact_v2_lineage_if_needed_with_limits_guarded(
         }
         Err(error) => return Err(error.into()),
     };
-    let chain_digest = canonical_delta_chain_digest(plan.anchor_digest, built.metadata.sha256);
-    let compacted = LineageDelta {
-        from_sequence: plan.anchor_sequence,
-        to_sequence: plan.head_sequence,
-        parent_chain_digest: plan.anchor_digest,
-        chain_digest,
-        pack_digest: built.metadata.sha256,
-        pack: built.metadata,
-    };
-    let terminal_cursor = OpaqueCursor::issue(
-        cursor_key,
-        CursorClaims {
-            protocol: PROTOCOL_V1,
-            schema: HUB_PROJECTION_SCHEMA_V2,
-            installation_id: binding.installation_id,
-            account_id: binding.account_id,
-            vehicle_id: binding.vehicle_id,
-            generation: binding.generation,
-            sequence: plan.head_sequence,
-        },
-    )
-    .map_err(StoreError::Manifest)?;
+    let committed = (|| -> Result<(), CollectorError> {
+        let chain_digest = canonical_delta_chain_digest(plan.anchor_digest, built.metadata.sha256);
+        let compacted = LineageDelta {
+            from_sequence: plan.anchor_sequence,
+            to_sequence: plan.head_sequence,
+            parent_chain_digest: plan.anchor_digest,
+            chain_digest,
+            pack_digest: built.metadata.sha256,
+            pack: built.metadata.clone(),
+        };
+        let terminal_cursor = OpaqueCursor::issue(
+            cursor_key,
+            CursorClaims {
+                protocol: PROTOCOL_V1,
+                schema: HUB_PROJECTION_SCHEMA_V2,
+                installation_id: binding.installation_id,
+                account_id: binding.account_id,
+                vehicle_id: binding.vehicle_id,
+                generation: binding.generation,
+                sequence: plan.head_sequence,
+            },
+        )
+        .map_err(StoreError::Manifest)?;
+        check_optional_write(guard, "export-compaction-commit")?;
+        store.commit_live_delta_compaction(&plan, &compacted, cursor_key, &terminal_cursor)?;
+        Ok(())
+    })();
+    // A deferred commit fails too: the pack it wrote is not retained either.
+    if let Err(error) = &committed {
+        discard_failed_publication_pack(store, publication_gate, &built, error, guard);
+    }
     let replaced = plan.replaced_spans.len();
-    check_optional_write(guard, "export-compaction-commit")?;
-    match store.commit_live_delta_compaction(&plan, &compacted, cursor_key, &terminal_cursor) {
+    match committed {
         Ok(()) => {}
-        Err(error)
+        Err(CollectorError::Store(error))
             if is_compaction_catalog_capacity_error(&error)
                 && pack_count.saturating_add(1) <= limits.max_chunks =>
         {
@@ -2139,10 +2185,10 @@ fn compact_v2_lineage_if_needed_with_limits_guarded(
             );
             return Ok(());
         }
-        Err(error) if is_compaction_catalog_capacity_error(&error) => {
+        Err(CollectorError::Store(error)) if is_compaction_catalog_capacity_error(&error) => {
             return Err(StoreError::LineageCapacityExhausted.into());
         }
-        Err(error) => return Err(error.into()),
+        Err(error) => return Err(error),
     }
     tracing::info!(
         vehicle_id = %vehicle_id,

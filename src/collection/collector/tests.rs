@@ -95,6 +95,9 @@ mod owner_api_refused;
 // M03-T12: the collector's seed of the Hub id range.
 #[path = "tests/import_seam_hub_ids.rs"]
 mod import_seam_hub_ids;
+// M04-T06: a failed publication removes the unretained pack it wrote.
+#[path = "tests/orphan_pack.rs"]
+mod orphan_pack;
 include!("tests/provider_secret_scrub.rs");
 include!("tests/loop_waiting.rs");
 include!("tests/loop_drain.rs");

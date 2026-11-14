@@ -153,13 +153,14 @@ pub(crate) struct PublicationTurn {
 /// publication gate for the whole turn and calls again while `more` is set, so a
 /// long backlog is never published in one unbounded loop. The turn neither claims,
 /// completes nor fails an export-outbox row: ordinary replay completes an empty
-/// row later.
+/// row later. A turn that fails after its delta or compaction pack write removes
+/// the unretained pack under the gate (M04-T07).
 pub(crate) fn publish_unpublished_sync_mutations(
     store: &HubStore,
     cursor_key: &CursorKey,
     vehicle_id: Uuid,
     now_ms: i64,
-    _publication_gate: &crate::db::PublicationGate,
+    publication_gate: &crate::db::PublicationGate,
     claim_limit: usize,
 ) -> Result<PublicationTurn, CollectorError> {
     if !store.vehicle_has_v2_base(vehicle_id)? {
@@ -177,12 +178,12 @@ pub(crate) fn publish_unpublished_sync_mutations(
             if store.instrumentation().take_publication_fault() {
                 Err(StoreError::InjectedStreamFault("publication-turn").into())
             } else {
-                publish_v2_delta(store, cursor_key, &claim)
+                publish_v2_delta_guarded(store, publication_gate, cursor_key, &claim, None)
             }
         }
         #[cfg(not(test))]
         {
-            publish_v2_delta(store, cursor_key, &claim)
+            publish_v2_delta_guarded(store, publication_gate, cursor_key, &claim, None)
         }
     };
     match outcome {
