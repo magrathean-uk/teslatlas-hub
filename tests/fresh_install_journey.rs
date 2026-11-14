@@ -367,8 +367,42 @@ impl Hub {
             .expect("serve starts")
     }
 
+    /// The service's log (it logs to standard output) and its standard error.
     fn serve_log(&self, label: &str) -> String {
-        fs::read_to_string(self.path(&format!("{label}.err"))).unwrap_or_default()
+        let read = |name: &str| fs::read_to_string(self.path(&format!("{label}.{name}"))).unwrap_or_default();
+        let out = read("out");
+        let tail: Vec<&str> = out.lines().rev().take(60).collect();
+        format!(
+            "{}\n{}",
+            tail.into_iter().rev().collect::<Vec<_>>().join("\n"),
+            read("err")
+        )
+    }
+
+    /// What the collection probe sees, for a failure message.
+    fn collection_probe(&self) -> String {
+        let status = self.run(&["status"], b"");
+        let watermark = self.run(&["observation-watermark", "--car-id", &PRODUCT_ID.to_string()], b"");
+        let observations = rusqlite::Connection::open_with_flags(
+            self.data().join("hub.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .and_then(|connection| {
+            let mut statement = connection.prepare(
+                "SELECT 'raw', COUNT(*) FROM raw_observations UNION ALL SELECT 'current', COUNT(*) FROM current_observations",
+            )?;
+            let rows = statement
+                .query_map([], |row| Ok(format!("{}={}", row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows.join(","))
+        });
+        format!(
+            "status: {} {}\nwatermark: {} {}\nobservations: {observations:?}",
+            stdout(&status),
+            stderr(&status),
+            stdout(&watermark),
+            stderr(&watermark)
+        )
     }
 
     fn await_window_status(&self, serve: &mut Child, label: &str) -> serde_json::Value {
@@ -462,20 +496,16 @@ impl Hub {
         assert_ne!(closed["phase"], "open", "{closed}");
     }
 
-    /// The stored vehicle-data observations, read-only.
-    fn vehicle_data_observations(&self) -> i64 {
-        let Ok(connection) = rusqlite::Connection::open_with_flags(
-            self.data().join("hub.sqlite"),
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-        ) else {
+    /// The latest durable observation id of the discovered car, through the
+    /// binary's read-only `observation-watermark` (0 when none is stored).
+    fn observation_watermark(&self) -> i64 {
+        let output = self.run(&["observation-watermark", "--car-id", &PRODUCT_ID.to_string()], b"");
+        if !output.status.success() {
             return 0;
-        };
-        connection
-            .query_row(
-                "SELECT COUNT(*) FROM raw_observations WHERE json_extract(payload_json, '$.record_type') = 'owner_api_vehicle_data_v1'",
-                [],
-                |row| row.get(0),
-            )
+        }
+        serde_json::from_slice::<serde_json::Value>(&output.stdout)
+            .ok()
+            .and_then(|answer| answer["watermark"].as_i64())
             .unwrap_or(0)
     }
 
@@ -550,13 +580,14 @@ fn fresh_install_journey_sign_in_sets_the_interval_and_collects_only_inside_the_
     let started = Instant::now();
     let lease = loop {
         let lease = hub.collector_lease();
-        if let Some(lease) = lease.filter(|_| hub.vehicle_data_observations() >= 1) {
+        if let Some(lease) = lease.filter(|_| hub.observation_watermark() > 0) {
             break lease;
         }
         assert!(
             started.elapsed() < COLLECTION_LIMIT,
-            "no collection inside the window: {:?}\n{}",
+            "no collection inside the window: {:?}\n{}\n{}",
             hub.tesla.requests(),
+            hub.collection_probe(),
             hub.serve_log("idle")
         );
         assert!(serve.try_wait().expect("serve state").is_none(), "{}", hub.serve_log("idle"));
