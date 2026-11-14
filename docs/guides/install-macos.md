@@ -53,12 +53,16 @@ Mac with no Hub service yet, the app starts the service itself:
 4. Open a window as described in
    [Collection windows](../operations/collection-windows.md#first-start-on-a-fresh-mac),
    then press **Connect Tesla** again to reach the Tesla sign-in.
-5. After the sign-in the running service holds the Hub's own login and its
-   cars; collection is still off. Set `interval_seconds` in the `[collector]`
-   table ([Configuration](configuration.md)) and choose **Restart Hub**: the
-   restart checks the car and the login as usual, and the collector runs
-   inside an open window. Until the cadence is set, a stopped Hub with a login
-   does not start again.
+5. The sign-in runs in the running service. It stores the Hub's own login
+   and its cars, sets the supported collection interval (300 seconds) in the
+   configuration and reloads the collector before the page reports
+   completion. The Hub then collects inside the open window, never outside
+   one, and after a stop, a login or a restart it starts again configured.
+   Nothing needs to be edited by hand.
+6. Once set up, the Hub keeps a marker, `hub-setup.json`, in its data folder.
+   If its catalogue `hub.sqlite` is later missing or emptied, the Hub refuses
+   to start and asks for a restore from a backup; it never starts again as a
+   new Hub.
 
 To bring existing history across, choose **Import History** and follow
 the [migration checklist](../releases/migration.md#before-you-start). Enter the

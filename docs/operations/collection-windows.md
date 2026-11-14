@@ -98,9 +98,14 @@ window verbs below have something to talk to:
 6. Press **Connect Tesla** again: the Tesla sign-in page opens. The sign-in
    runs in the running service, inside the window; the service does not
    restart.
-7. To collect, set `interval_seconds` in `[collector]` and restart the Hub:
-   the restart passes the usual checks (a car and the Hub's own login) and the
-   collector runs inside an Open window.
+7. Once a car is configured, the sign-in sets the collection interval (300
+   seconds) in the configuration and reloads the collector before it
+   reports completion: the collector runs inside the Open window at once and
+   stops when the window closes. After a stop or a restart the Hub passes the
+   usual checks (a car and the Hub's own login) and collects only inside an
+   Open window. The Hub records that it was set up in `hub-setup.json` beside
+   its catalogue; a set-up Hub whose `hub.sqlite` is missing or empty refuses
+   to start instead of starting as new.
 
 ## Trust the issuer on a Hub
 
