@@ -337,11 +337,15 @@ impl<'a> PromptMode<'a> {
         let held = terminal
             .try_clone()
             .map_err(|_| refused("the terminal cannot be used for the password prompt"))?;
+        #[cfg(test)]
+        test_seam::before_activation_lock();
         // Held from publishing the saved settings until the mode-changing
         // child has exited: a stopping signal's restoration takes the same
         // lock, so it waits for that child and only then puts the saved
         // settings back. No mode change can land after the restoration, and
-        // the process cannot end between the two.
+        // the process cannot end between the two. A signal handled first
+        // keeps the lock until the process has ended, so this waits for
+        // that end and no mode change starts at all.
         let mut active = active_prompt();
         *active = Some(ActivePrompt {
             terminal: held,
@@ -467,12 +471,17 @@ fn watch(ready: &mpsc::Sender<bool>) {
             _ = hangup.recv() => 129,
             _ = quit.recv() => 131,
         };
-        restore_after_signal();
-        std::process::exit(status);
+        restore_and_exit(status)
     });
 }
 
-fn restore_after_signal() {
+/// Restores an active prompt's terminal settings, then ends the process
+/// with `status`. The prompt lock is taken first and never released: the
+/// process ends holding it, so a prompt that starts after the signal cannot
+/// switch the hidden-typing mode on in the moment before the exit
+/// (REV2-CX-M06-T10 finding 11). Its activation waits on the lock until the
+/// process has gone.
+fn restore_and_exit(status: i32) -> ! {
     let mut active = active_prompt();
     if let Some(prompt) = active.take() {
         let mut terminal = &prompt.terminal;
@@ -481,6 +490,11 @@ fn restore_after_signal() {
             let _ = writeln!(io::stderr(), "teslatlas-hub: {error}");
         }
     }
+    #[cfg(test)]
+    test_seam::after_signal_restoration();
+    // `exit` does not return, so `active` is never dropped and the lock
+    // stays held until the process has ended.
+    std::process::exit(status)
 }
 
 #[cfg(test)]
@@ -495,6 +509,42 @@ pub(crate) mod test_seam {
 
     static RESTORE_FAILS: AtomicBool = AtomicBool::new(false);
     static ACTIVATION_DELAY_MS: AtomicU64 = AtomicU64::new(0);
+    static EXIT_DELAY_MS: AtomicU64 = AtomicU64::new(0);
+    static SIGNAL_RESTORED: AtomicBool = AtomicBool::new(false);
+
+    /// Raises SIGTERM after the prompt has read the terminal settings and
+    /// before it takes the prompt lock, waits until the signal thread has
+    /// finished its restoration, then lets the prompt take the lock; the
+    /// signal thread waits `exit_delay` before it ends the process (the PTY
+    /// child process only). REV2-CX-M06-T10 finding 11, made deterministic:
+    /// a signal handled before activation must keep activation out until
+    /// the process has ended.
+    pub(crate) fn race_termination_before_activation_lock(exit_delay: Duration) {
+        let millis = u64::try_from(exit_delay.as_millis()).unwrap_or(u64::MAX).max(1);
+        EXIT_DELAY_MS.store(millis, Ordering::SeqCst);
+    }
+
+    pub(super) fn before_activation_lock() {
+        if EXIT_DELAY_MS.load(Ordering::SeqCst) == 0 {
+            return;
+        }
+        let _ = rustix::process::kill_process(
+            rustix::process::getpid(),
+            rustix::process::Signal::TERM,
+        );
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !SIGNAL_RESTORED.load(Ordering::SeqCst) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    pub(super) fn after_signal_restoration() {
+        SIGNAL_RESTORED.store(true, Ordering::SeqCst);
+        match EXIT_DELAY_MS.load(Ordering::SeqCst) {
+            0 => {}
+            millis => std::thread::sleep(Duration::from_millis(millis)),
+        }
+    }
 
     /// Makes the prompt's mode change slow and sends this process SIGTERM
     /// while that change is pending (the PTY child process only): the

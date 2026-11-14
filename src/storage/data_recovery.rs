@@ -841,15 +841,22 @@ fn admit_member_capacity(
     admit_staging_capacity(parent, member_storage_bytes(payload_bytes, members, block)?)
 }
 
-/// A test seam for the free space a volume reports.
+/// A test seam for the free space a volume reports, and for a volume that
+/// fills part-way through a run.
 #[cfg(test)]
 pub(crate) mod space_seam {
-    use std::{cell::RefCell, path::Path};
+    use std::{
+        cell::{Cell, RefCell},
+        io,
+        path::Path,
+    };
 
     type Answer = Box<dyn FnMut(&Path) -> Option<u64>>;
 
     thread_local! {
         static AVAILABLE: RefCell<Option<Answer>> = const { RefCell::new(None) };
+        static WRITABLE: Cell<Option<u64>> = const { Cell::new(None) };
+        static FILLED: Cell<bool> = const { Cell::new(false) };
     }
 
     /// Answer free-space questions on this thread with `answer` (`None`
@@ -858,12 +865,65 @@ pub(crate) mod space_seam {
         AVAILABLE.with(|slot| *slot.borrow_mut() = Some(Box::new(answer)));
     }
 
+    /// Clears both seams on this thread.
     pub(crate) fn clear() {
         AVAILABLE.with(|slot| *slot.borrow_mut() = None);
+        fill_after(None);
     }
 
     pub(super) fn available(path: &Path) -> Option<u64> {
         AVAILABLE.with(|slot| slot.borrow_mut().as_mut().and_then(|answer| answer(path)))
+    }
+
+    /// From now on this thread's backup, restore and metadata writes take
+    /// `bytes` more in all, as a volume with that much room left (`None`
+    /// lifts the limit): a write that crosses it is short, every later one
+    /// fails with ENOSPC. Free-space answers are not changed, so a run is
+    /// admitted and then finds its volume full part-way.
+    pub(crate) fn fill_after(bytes: Option<u64>) {
+        WRITABLE.with(|slot| slot.set(bytes));
+        FILLED.with(|filled| filled.set(false));
+    }
+
+    /// Whether a write found the volume full (cut short or refused) since
+    /// [`fill_after`].
+    pub(crate) fn filled() -> bool {
+        FILLED.with(Cell::get)
+    }
+
+    /// How many of `wanted` bytes the volume takes now; ENOSPC when none.
+    pub(super) fn writable(wanted: usize) -> io::Result<usize> {
+        WRITABLE.with(|slot| {
+            let Some(room) = slot.get() else {
+                return Ok(wanted);
+            };
+            let taken = usize::try_from(room).map_or(wanted, |room| room.min(wanted));
+            if taken < wanted {
+                FILLED.with(|filled| filled.set(true));
+                if taken == 0 {
+                    return Err(rustix::io::Errno::NOSPC.into());
+                }
+            }
+            slot.set(Some(room - taken as u64));
+            Ok(taken)
+        })
+    }
+}
+
+/// A file that backups and restores write members and metadata through. In
+/// tests its writes pass the space seam, which can fill the volume part-way
+/// (one short write, then ENOSPC); otherwise it is the file itself.
+struct VolumeFile(File);
+
+impl Write for VolumeFile {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        #[cfg(test)]
+        let buffer = &buffer[..space_seam::writable(buffer.len())?];
+        self.0.write(buffer)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
     }
 }
 
@@ -1771,7 +1831,7 @@ fn copy_verified_member(
         .map_err(|source_error| {
             io_error("creating restored data member", destination, source_error)
         })?;
-    let mut output = BufWriter::with_capacity(COPY_BUFFER_BYTES, output);
+    let mut output = BufWriter::with_capacity(COPY_BUFFER_BYTES, VolumeFile(output));
     let mut digest = Sha256::new();
     let mut copied = 0_u64;
     let mut buffer = vec![0_u8; COPY_BUFFER_BYTES];
@@ -1799,7 +1859,7 @@ fn copy_verified_member(
     output.flush().map_err(|source_error| {
         io_error("flushing restored data member", destination, source_error)
     })?;
-    let output = output.into_inner().map_err(|error| {
+    let VolumeFile(output) = output.into_inner().map_err(|error| {
         io_error(
             "finishing restored data member",
             destination,
@@ -2067,9 +2127,11 @@ fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), DataRecoveryError
         .mode(PRIVATE_FILE_MODE)
         .open(path)
         .map_err(|source| io_error("creating data-backup metadata", path, source))?;
+    let mut file = VolumeFile(file);
     file.write_all(bytes)
         .map_err(|source| io_error("writing data-backup metadata", path, source))?;
-    file.sync_all()
+    file.0
+        .sync_all()
         .map_err(|source| io_error("syncing data-backup metadata", path, source))?;
     set_mode(path, PRIVATE_FILE_MODE, "protecting data-backup metadata")
 }

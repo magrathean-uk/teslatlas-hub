@@ -118,7 +118,7 @@ use super::{
     manifest_totals, member_storage_bytes, open_regular_nonblocking, parse_canonical_json,
     prepare_new_destination, report, schema_22_noop_member_filename, seal_backup_credentials, seal_backup_credentials_checked,
     seal_host_authority, staging_required_bytes, vacuum_sealed_catalogue, validate_manifest,
-    validate_member, validate_restored_data_tree, validate_schema_22_noop_bytes,
+    validate_member, validate_restored_data_tree, validate_schema_22_noop_bytes, VolumeFile,
 };
 use rusqlite::{
     Connection, MAIN_DB, OpenFlags, TransactionBehavior,
@@ -331,10 +331,10 @@ fn hook(_stage: &str, _path: &Path) -> Result<(), DataRecoveryError> {
     Ok(())
 }
 
-/// The destination file. Every write passes the test seam, which can inject a
-/// full disk or an I/O error.
+/// The destination file. Every write passes the test seams, which can inject a
+/// full disk, an I/O error or a volume that fills part-way.
 struct Sink {
-    file: File,
+    file: VolumeFile,
     #[cfg_attr(not(test), allow(dead_code))]
     path: PathBuf,
     /// SHA-256 of every byte written to the file, in order.
@@ -344,7 +344,7 @@ struct Sink {
 impl Sink {
     fn new(file: File, path: PathBuf) -> Self {
         Self {
-            file,
+            file: VolumeFile(file),
             path,
             digest: Sha256::new(),
         }
@@ -1392,10 +1392,12 @@ fn write_partial(
     writer.write_plain(&manifest_digest)?;
     let sink = writer.finish()?;
     sink.file
+        .0
         .sync_all()
         .map_err(|source| map_write_error(partial, source))?;
     let size = sink
         .file
+        .0
         .metadata()
         .map_err(|source| io_error("inspecting backup archive", partial, source))?
         .len();
@@ -1571,10 +1573,11 @@ fn read_record_path_and_size(
 fn read_member_body(
     reader: &mut ArchiveReader<File>,
     member: &BackupMember,
-    mut sink: Option<File>,
+    sink: Option<File>,
     buffer: &mut [u8],
     cancel: Option<&AtomicBool>,
 ) -> Result<(), DataRecoveryError> {
+    let mut sink = sink.map(VolumeFile);
     let mut digest = Sha256::new();
     let mut remaining = member.size;
     while remaining > 0 {
@@ -1599,7 +1602,7 @@ fn read_member_body(
             member.path
         )));
     }
-    if let Some(file) = sink {
+    if let Some(VolumeFile(file)) = sink {
         file.sync_all().map_err(|source| {
             io_error(
                 "syncing restored data member",
@@ -1932,6 +1935,7 @@ pub(super) fn write_test_archive(
     writer.write_plain(&sha256_digest_bytes(manifest_bytes))?;
     let sink = writer.finish()?;
     sink.file
+        .0
         .sync_all()
         .map_err(|source| io_error("syncing test archive", &path, source))?;
     Ok(path)

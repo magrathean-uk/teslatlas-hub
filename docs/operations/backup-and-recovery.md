@@ -70,7 +70,10 @@ anything. A wrong password is refused.
 
 Before it writes anything, `backup` checks that the destination can hold the
 whole bundle, including each file's record and the encryption overhead, and
-that the Hub's data folder can hold the run's short-lived pack records. A run
+that the Hub's data folder can hold the run's short-lived pack records. If the
+volume still fills during the run (another program took the space), the run
+fails with an error, removes its unfinished file and leaves the earlier
+generations and the Hub's data as they were. A run
 reports success only after it has read the published file back in full: on a
 volume that enforces ownership it must be the same file the run wrote,
 unchanged; on a network share or a volume that ignores ownership the file under
@@ -205,7 +208,9 @@ every file through folders it holds open, so renaming that folder or a parent
 during the restore cannot redirect a file; if either moves, the restore stops,
 removes what it wrote and publishes nothing. Before writing, the restore checks that the folder's volume can hold
 every file with its allocation and metadata overhead, and before each file that
-the rest still fits with a reserve to spare. Each restore first removes what an
+the rest still fits with a reserve to spare. If the volume still fills while
+the files are written, the restore fails with an error, removes what it wrote
+and publishes nothing; the backup is unchanged. Each restore first removes what an
 interrupted restore left there (also `.teslatlas-data-recovery-<id>.staging`
 folders from earlier builds and directory-format restores), but never one that
 a running restore or backup holds locked. If such a folder cannot be listed,

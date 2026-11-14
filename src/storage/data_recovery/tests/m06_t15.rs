@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // M06-T15: repairs of REV-CX-M06-T10 findings 1 to 4, REV-CX-M06-T11
-// findings 1 to 6 and REV2-CX-M06-T08 finding 6. Each test names its
-// finding. Tests that drive a seam added by this task (a hook stage, the
+// findings 1 to 6 and REV2-CX-M06-T08 finding 6; round 2 adds
+// REV2-CX-M06-T10 findings 2 and 11. Each test names its finding. Tests that drive a seam added by this task (a hook stage, the
 // free-space seam or the delayed terminal mode change) fail on 543c512 by
 // their assertions, because the seam is absent there and the guarded
 // behaviour with it; the notes say which. Synthetic data in temporary
@@ -966,4 +966,249 @@ fn data_recovery_m06_t15_pty_termination_during_activation_restores_the_terminal
     assert_eq!(status, "143", "ended by SIGTERM");
     let shown = super::m06_t14::finish_with_next_line(pty);
     super::m06_t14::assert_terminal_restored(&shown);
+}
+
+// REV2-CX-M06-T10 finding 11 -------------------------------------------------
+
+/// The child: SIGTERM is handled after its prompt has read the terminal
+/// settings and before the prompt takes its lock; the signal thread then
+/// waits a second before it ends the process. Outside the harness it does
+/// nothing.
+#[test]
+fn data_recovery_m06_t15_pty_child_signalled_before_activation() {
+    let Ok(_scenario) = std::env::var(super::m06_t14::PTY_SCENARIO) else {
+        return;
+    };
+    crate::data_recovery::recovery_password::test_seam::race_termination_before_activation_lock(
+        std::time::Duration::from_millis(1_000),
+    );
+    super::m06_t14::pty_child_report(crate::data_recovery::read_recovery_password(false));
+}
+
+/// Finding 11: a termination signal handled just before the prompt takes its
+/// lock keeps that lock until the process has ended, so the prompt cannot
+/// switch the hidden-typing mode on in the moment before the exit. Fails
+/// when the signal thread releases the lock before it exits: the prompt then
+/// turns echo off and the process ends with the terminal changed.
+#[cfg(target_os = "macos")]
+#[test]
+fn data_recovery_m06_t15_pty_signal_before_activation_keeps_the_terminal() {
+    let mut pty = super::m06_t14::Pty::start_with_shell(
+        "m06_t15::data_recovery_m06_t15_pty_child_signalled_before_activation",
+        "single",
+        RACE_SHELL,
+    );
+    let Some(status) = pty.line_after("CHILD-STATUS ") else {
+        pty.fail("the child did not end");
+    };
+    assert_eq!(status, "143", "ended by SIGTERM");
+    let shown = super::m06_t14::finish_with_next_line(pty);
+    super::m06_t14::assert_terminal_restored(&shown);
+}
+
+// REV2-CX-M06-T10 finding 2 --------------------------------------------------
+//
+// The bar (DEC-128): a volume that fills part-way through a run makes the
+// run fail, reported as an error and never as a success, and leaves the
+// previous good backup and the live data as they were. The space seam's
+// `fill_after` gives the volume a fixed room left: a write that crosses it is
+// short and every later one fails with ENOSPC, while free-space answers stay
+// as the volume gives them, so each run is admitted first.
+
+fn enospc() -> Option<i32> {
+    Some(rustix::io::Errno::NOSPC.raw_os_error())
+}
+
+/// What a failed run must leave as it was: the installation, every live pack
+/// file with its bytes, every pack reference, and a catalogue that checks,
+/// with no backup pin and a free publication gate.
+fn live_state(store: &HubStore) -> (Uuid, Vec<(PathBuf, Vec<u8>)>, Vec<String>) {
+    store.catalogue_check().expect("the live catalogue checks");
+    let connection = store.open().expect("live catalogue");
+    assert!(
+        crate::data_recovery::encrypted_backup::live_backup_pack_pins(&connection, 0)
+            .expect("pins")
+            .is_empty(),
+        "no backup pin is left"
+    );
+    let references = connection
+        .prepare("SELECT sha256 || ':' || snapshot_id || ':' || ordinal FROM sync_packs ORDER BY 1")
+        .expect("references")
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("references")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("references");
+    drop(store.try_acquire_publication_gate().expect("the publication gate is free"));
+    let mut packs: Vec<(PathBuf, Vec<u8>)> = regular_files(store.packs_dir())
+        .into_iter()
+        .map(|path| {
+            let bytes = fs::read(&path).expect("live pack");
+            (path, bytes)
+        })
+        .collect();
+    packs.sort();
+    (store.installation_id().expect("installation"), packs, references)
+}
+
+/// One large referenced pack in the live store; its file name.
+fn reference_large_pack(store: &HubStore, bytes: usize) -> String {
+    let content: Vec<u8> = (0..bytes).map(|index| (index * 31 % 251) as u8).collect();
+    let digest = sha256_bytes_hex(&content);
+    let name = format!("{digest}.sqlite.zst");
+    let directory = store.packs_dir().join("sha256");
+    let path = directory.join(&name);
+    fs::write(&path, &content).expect("large pack");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("pack mode");
+    let connection = Connection::open(store.database_path()).expect("live catalogue");
+    let snapshot_id: String = connection
+        .query_row("SELECT snapshot_id FROM sync_packs LIMIT 1", [], |row| row.get(0))
+        .expect("a published snapshot");
+    connection
+        .execute(
+            "INSERT INTO sync_packs(sha256, snapshot_id, ordinal, relative_path,
+                 compressed_bytes, uncompressed_bytes)
+             VALUES (?1, ?2, 1000000, ?3, ?4, ?4)",
+            rusqlite::params![
+                digest,
+                snapshot_id,
+                format!("/v1/packs/sha256/{name}"),
+                bytes as i64
+            ],
+        )
+        .expect("large pack reference");
+    name
+}
+
+/// Finding 2, encrypted: the volume fills part-way through the archive of a
+/// backup, and part-way through one large member of a restore. Each run
+/// fails with an error; the previous good generation is the only one left
+/// and still verifies, the live data are as they were, nothing is published
+/// at the restore target and no staging is left. With room again, the good
+/// generation restores.
+#[test]
+fn data_recovery_m06_t15_a_volume_filling_partway_fails_encrypted_runs_safely() {
+    const LARGE: usize = 8 * 1024 * 1024;
+    let hub = hub(VolumeTrust::Posix);
+    let large = reference_large_pack(&hub.store, LARGE);
+    let good = hub.backup(Some(1)).expect("the good generation");
+    let before = live_state(&hub.store);
+    let kept = entries(&hub.destination);
+
+    // Backup: room for half the archive.
+    tick();
+    space_seam::fill_after(Some(good.archive_bytes / 2));
+    let failed = hub.backup(Some(1));
+    let filled = space_seam::filled();
+    space_seam::clear();
+    assert!(
+        matches!(failed, Err(DataRecoveryError::DestinationFull { .. })),
+        "a full destination fails the backup: {failed:?}"
+    );
+    assert!(filled, "the volume filled part-way through the archive");
+    assert_eq!(entries(&hub.destination), kept, "no partial is left beside the good generation");
+    assert_eq!(
+        generations(&hub.destination).len(),
+        1,
+        "the good generation is the only one: {kept:?}"
+    );
+    verify_encrypted_backup(&good.path, PASSWORD).expect("the good generation verifies");
+    assert_eq!(live_state(&hub.store), before, "the live data are as they were");
+
+    // Restore: room runs out halfway through the large member (everything
+    // else in the bundle is far smaller than half of it).
+    let parent = hub.restores();
+    let target = parent.join("restored");
+    space_seam::fill_after(Some(good.payload_bytes - LARGE as u64 / 2));
+    let failed = restore_encrypted_backup(&good.path, PASSWORD, &target);
+    let filled = space_seam::filled();
+    space_seam::clear();
+    match &failed {
+        Err(DataRecoveryError::Io { path, source, .. }) => {
+            assert_eq!(
+                path.file_name().and_then(|name| name.to_str()),
+                Some(large.as_str()),
+                "the large member was being written"
+            );
+            assert_eq!(source.raw_os_error(), enospc(), "{failed:?}");
+        }
+        other => panic!("a full volume fails the restore with its error: {other:?}"),
+    }
+    assert!(filled, "the volume filled part-way through the member");
+    assert!(!target.exists(), "nothing is published at the target");
+    assert!(entries(&parent).is_empty(), "no staging is left: {:?}", entries(&parent));
+    verify_encrypted_backup(&good.path, PASSWORD).expect("the backup still verifies");
+    assert_eq!(live_state(&hub.store), before, "the live data are as they were");
+
+    restore_encrypted_backup(&good.path, PASSWORD, &target).expect("with room, it restores");
+    assert_eq!(
+        fs::read(target.join("packs").join("sha256").join(&large)).unwrap().len(),
+        LARGE
+    );
+}
+
+/// Finding 2, plaintext streamed directory: the volume fills part-way through
+/// a backup's envelope (after its payload is staged, the manifest written,
+/// the completion marker cut short) and part-way through a restore's pack
+/// copies. Each run fails with an error; the previous good backup is the
+/// only entry left and still verifies, the live data are as they were,
+/// nothing is published and no staging is left. With room again, the good
+/// backup restores.
+#[test]
+fn data_recovery_m06_t15_a_volume_filling_partway_fails_plaintext_streamed_runs_safely() {
+    let (temporary, store) = create_fixture();
+    let (manifest, _) = publish_schema_22_fixture(&store);
+    reference_synthetic_packs(&store, manifest.snapshot_id, 4_200);
+    let backups = temporary.path().join("backups");
+    fs::create_dir(&backups).unwrap();
+    fs::set_permissions(&backups, fs::Permissions::from_mode(0o700)).unwrap();
+    let good_path = backups.join("good");
+    let good = create_data_backup(&store, &good_path).expect("the good backup");
+    let good_manifest = good_path.join("backup-v5.json");
+    assert!(good_manifest.exists(), "the streamed directory format");
+    let before = live_state(&store);
+
+    // Backup: room for the manifest and a few bytes of the marker.
+    let manifest_bytes = fs::metadata(&good_manifest).unwrap().len();
+    space_seam::fill_after(Some(manifest_bytes + 10));
+    let failed = create_data_backup(&store, &backups.join("failed"));
+    let filled = space_seam::filled();
+    space_seam::clear();
+    assert!(
+        matches!(&failed, Err(DataRecoveryError::Io { source, .. }) if source.raw_os_error() == enospc()),
+        "a full destination fails the backup: {failed:?}"
+    );
+    assert!(filled, "the volume filled part-way through the envelope");
+    assert_eq!(entries(&backups), vec!["good".to_owned()], "only the good backup is left");
+    verify_data_backup(&good_path).expect("the good backup verifies");
+    assert_eq!(live_state(&store), before, "the live data are as they were");
+
+    // Restore: room for the catalogue and half of the packs' bytes.
+    let catalogue = fs::metadata(good_path.join("data").join("hub.sqlite")).unwrap().len();
+    let target = temporary.path().join("restored");
+    space_seam::fill_after(Some(catalogue + (good.total_bytes - catalogue) / 2));
+    let failed = restore_data_backup(&good_path, &target);
+    let filled = space_seam::filled();
+    space_seam::clear();
+    match &failed {
+        Err(DataRecoveryError::Io { path, source, .. }) => {
+            assert!(
+                path.parent().is_some_and(|parent| parent.ends_with("packs/sha256")),
+                "a pack was being copied: {}",
+                path.display()
+            );
+            assert_eq!(source.raw_os_error(), enospc(), "{failed:?}");
+        }
+        other => panic!("a full volume fails the restore with its error: {other:?}"),
+    }
+    assert!(filled, "the volume filled part-way through the packs");
+    assert!(!target.exists(), "nothing is published at the target");
+    assert!(
+        names_with_prefix(temporary.path(), SHARED_STAGING_PREFIX).is_empty(),
+        "no staging is left"
+    );
+    verify_data_backup(&good_path).expect("the backup still verifies");
+    assert_eq!(live_state(&store), before, "the live data are as they were");
+
+    let restored = restore_data_backup(&good_path, &target).expect("with room, it restores");
+    assert_eq!(restored.member_count, good.member_count);
 }
