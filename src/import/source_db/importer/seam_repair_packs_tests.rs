@@ -10,7 +10,7 @@ use super::*;
 
 /// Every entity of `projected` recorded into a successor capture, in the
 /// order the pack sink records a fragment, then sealed.
-fn capture_everything(
+pub(super) fn capture_everything(
     fixture: &Fixture,
     run_id: Uuid,
     projected: &SourceDbProjection,
@@ -27,6 +27,7 @@ fn capture_everything(
         state_limits(),
     )
     .expect("capture");
+    note_source_sessions(&mut capture, projected);
     for car in &projected.snapshot.cars {
         capture.record_car(car).expect("car");
     }
@@ -46,9 +47,39 @@ fn capture_everything(
     capture
 }
 
+/// Gives a successor capture every source drive and charge before any child
+/// is recorded, as the importer does once it holds them (M03-T21).
+pub(super) fn note_source_sessions(
+    capture: &mut SourceDbProjectionStateCapture,
+    projected: &SourceDbProjection,
+) {
+    use crate::import::source_db::seam::SessionRow;
+    let drives: Vec<SessionRow> = projected
+        .snapshot
+        .drives
+        .iter()
+        .map(|drive| SessionRow {
+            id: drive.id,
+            start_ms: drive.start_date_ms,
+            end_ms: Some(drive.end_date_ms),
+        })
+        .collect();
+    let charges: Vec<SessionRow> = projected
+        .snapshot
+        .charges
+        .iter()
+        .map(|charge| SessionRow {
+            id: charge.id,
+            start_ms: charge.start_date_ms,
+            end_ms: charge.end_date_ms,
+        })
+        .collect();
+    capture.note_seam_source_sessions(&drives, &charges);
+}
+
 /// One later import of `history`, planned, written and published as the
 /// importer does.
-fn import(
+pub(super) fn import(
     fixture: &Fixture,
     history: &SourceDbHistory,
     at_ms: i64,
@@ -62,7 +93,7 @@ fn import(
 }
 
 /// A window `[start, end)` handed back, as the store records it.
-fn window(fixture: &Fixture, seq: i64, start_ms: i64, end_ms: i64) {
+pub(super) fn window(fixture: &Fixture, seq: i64, start_ms: i64, end_ms: i64) {
     fixture
         .store
         .open()
@@ -77,7 +108,7 @@ fn window(fixture: &Fixture, seq: i64, start_ms: i64, end_ms: i64) {
 
 /// The Hub's drives (id, start, end) and positions (id, drive, instant), as
 /// the collector stores and journals them, then published as live sync.
-fn hub_rows(fixture: &Fixture, drives: &[(i64, i64, i64)], positions: &[(i64, i64, i64)]) {
+pub(super) fn hub_rows(fixture: &Fixture, drives: &[(i64, i64, i64)], positions: &[(i64, i64, i64)]) {
     let template = project_vehicle(&base_history(), CAR).expect("projection").snapshot.drives[0]
         .clone();
     let vehicle = fixture.binding.vehicle_id.to_string();
@@ -142,7 +173,7 @@ fn hub_rows(fixture: &Fixture, drives: &[(i64, i64, i64)], positions: &[(i64, i6
 }
 
 /// A client that applied every advertised head.
-fn client(fixture: &Fixture) -> Client {
+pub(super) fn client(fixture: &Fixture) -> Client {
     let mut client = Client::default();
     for (_, rows) in heads(&fixture.store, fixture.binding.vehicle_id) {
         client.apply(&rows);
@@ -151,7 +182,7 @@ fn client(fixture: &Fixture) -> Client {
 }
 
 /// Every position a client holds belongs to a drive the client holds.
-fn assert_positions_have_their_drives(client: &Client, at: &str) {
+pub(super) fn assert_positions_have_their_drives(client: &Client, at: &str) {
     for (id, (drive, _)) in &client.positions {
         if let Some(drive) = drive {
             assert!(
@@ -163,7 +194,7 @@ fn assert_positions_have_their_drives(client: &Client, at: &str) {
 }
 
 /// The rows of the heads from `from` on.
-fn rows_since(fixture: &Fixture, from: usize) -> PackRows {
+pub(super) fn rows_since(fixture: &Fixture, from: usize) -> PackRows {
     let mut all = PackRows::default();
     for (_, rows) in heads(&fixture.store, fixture.binding.vehicle_id)
         .into_iter()
@@ -178,7 +209,7 @@ fn rows_since(fixture: &Fixture, from: usize) -> PackRows {
 
 /// An unchanged replay of `history` publishes no drive, position or
 /// tombstone.
-fn assert_replay_publishes_nothing(fixture: &Fixture, history: &SourceDbHistory, at_ms: i64) {
+pub(super) fn assert_replay_publishes_nothing(fixture: &Fixture, history: &SourceDbHistory, at_ms: i64) {
     let before = heads(&fixture.store, fixture.binding.vehicle_id).len();
     let skipped = import(fixture, history, at_ms).expect("replay");
     let replayed = rows_since(fixture, before);
@@ -400,7 +431,7 @@ fn seam_repair_packs_refused_finalisation_keeps_the_previous_session() {
 }
 
 /// A request to the paired router, answered on `runtime`.
-fn served(
+pub(super) fn served(
     runtime: &tokio::runtime::Runtime,
     app: &axum::Router,
     bearer: &str,
@@ -692,4 +723,277 @@ fn seam_repair_packs_unchanged_source_after_a_window_still_publishes() {
     assert_eq!(folded(), first, "the same source and plan give the same fingerprint");
     window(&fixture, 2, T + 2 * HOUR - 5 * MINUTE, T + 3 * HOUR);
     assert_ne!(folded(), first, "a new window changes it");
+}
+
+/// The fingerprint the importer records for a source whose digest is
+/// `source`: folded with the seam's plan for a vehicle with the seam.
+pub(super) fn folded_fingerprint(
+    fixture: &Fixture,
+    projected: &SourceDbProjection,
+    source: Sha256Digest,
+) -> Sha256Digest {
+    seam_folded_fingerprint(
+        &fixture.store,
+        &fixture.gate,
+        fixture.binding.vehicle_id,
+        CAR,
+        &projected.snapshot.drives,
+        &projected.snapshot.charges,
+        source,
+    )
+}
+
+/// One later import of `history`, whose source digest is `source`, recorded
+/// under the fingerprint the importer folds for it, so that a replay of the
+/// same source can take the importer's fingerprint path.
+fn import_through_fingerprint(
+    fixture: &Fixture,
+    history: &SourceDbHistory,
+    source: Sha256Digest,
+    at_ms: i64,
+) {
+    let projected = project_vehicle(history, CAR).expect("projection");
+    let fingerprint = folded_fingerprint(fixture, &projected, source);
+    let mut planned = plan(fixture, &projected);
+    let run_id = begin_run(fixture, at_ms);
+    let capture = capture_everything(fixture, run_id, &projected);
+    let base_snapshot_id = fixture
+        .store
+        .v2_head(fixture.binding.vehicle_id)
+        .expect("head")
+        .expect("base")
+        .0;
+    publish_planned_direct_successor(
+        &fixture.store,
+        &fixture.gate,
+        &fixture.cursor_key,
+        PlannedSuccessorRun {
+            run_id,
+            source_id: fixture.binding.account_id,
+            imported_at_ms: at_ms,
+            base_snapshot_id,
+            minimum_free_bytes: 0,
+            fingerprint,
+            geofences: &[],
+            materialised_car: &fixture.car,
+            materialised_drives: &projected.snapshot.drives,
+            materialised_charges: &projected.snapshot.charges,
+        },
+        &fixture.binding,
+        &fixture.car,
+        capture,
+        &mut planned,
+    )
+    .expect("publication");
+}
+
+/// The review's three-session case (REV-CX-M03-T19 finding 2), for drives
+/// and positions: source drive B (-15 to +5 min, a position at -10) is
+/// packed first. The Hub then covers +10 to +60 with drive H, and the source
+/// adds drive A (0 to +20): B overlaps A, A overlaps H, and H wins the group
+/// although B comes nowhere near H or the coverage. B leaves the clients and
+/// its packed position follows H at once, on a fresh and on an existing
+/// client; an unchanged replay takes the fingerprint path and a forced one
+/// publishes nothing, so no change is left for later.
+#[test]
+fn seam_repair_packs_transitive_overlap_moves_a_packed_position_at_once() {
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    let (b, a, h) = (15, 16, HUB_ID_BASE + 15);
+    let mut drives = base_history().drives;
+    drives.push(source_drive(b, T - 15 * MINUTE, T + 5 * MINUTE));
+    let first = history(drives.clone(), vec![source_position(1501, Some(b), T - 10 * MINUTE)]);
+    import(&fixture, &first, T - 30 * MINUTE).expect("B packed before the window");
+    assert_eq!(
+        client(&fixture).positions.get(&1501),
+        Some(&(Some(b), T - 10 * MINUTE))
+    );
+    let existing_at = heads(&fixture.store, vehicle_id).len();
+
+    window(&fixture, 1, T + 10 * MINUTE, T + HOUR);
+    hub_rows(
+        &fixture,
+        &[(h, T + 10 * MINUTE, T + HOUR)],
+        &[(HUB_ID_BASE + 1501, h, T + 30 * MINUTE)],
+    );
+    drives.push(source_drive(a, T, T + 20 * MINUTE));
+    let second = history(
+        drives,
+        vec![
+            source_position(1501, Some(b), T - 10 * MINUTE),
+            source_position(1601, Some(a), T + 5 * MINUTE),
+        ],
+    );
+    let source = Sha256Digest::of_bytes(b"seam-repair-packs three sessions");
+    import_through_fingerprint(&fixture, &second, source, T + 3 * HOUR);
+
+    let fresh = client(&fixture);
+    assert!(fresh.drives.contains_key(&h), "H won the group");
+    assert!(
+        !fresh.drives.contains_key(&b) && !fresh.drives.contains_key(&a),
+        "B and A lost to H: {:?}",
+        fresh.drives
+    );
+    assert_eq!(
+        fresh.positions.get(&1501),
+        Some(&(Some(h), T - 10 * MINUTE)),
+        "B's packed position follows H at once"
+    );
+    assert_eq!(fresh.positions.get(&1601), Some(&(Some(h), T + 5 * MINUTE)));
+    assert_eq!(fresh.drives, store_drives(&fixture.store, vehicle_id));
+    assert_positions_have_their_drives(&fresh, "fresh client");
+    let all = heads(&fixture.store, vehicle_id);
+    let mut existing = Client::default();
+    for (_, rows) in &all[..existing_at] {
+        existing.apply(rows);
+    }
+    for (sequence, rows) in &all[existing_at..] {
+        existing.apply(rows);
+        existing.assert_each_session_once(&format!("existing client at head {sequence}"));
+    }
+    assert_eq!(existing, fresh, "the existing client ends where a fresh one does");
+
+    let projected = project_vehicle(&second, CAR).expect("projection");
+    assert!(
+        fixture
+            .store
+            .source_fingerprint_matches(vehicle_id, folded_fingerprint(&fixture, &projected, source))
+            .expect("fingerprint"),
+        "an unchanged replay takes the fingerprint path and publishes nothing"
+    );
+    assert_replay_publishes_nothing(&fixture, &second, T + 4 * HOUR);
+    assert_eq!(client(&fixture), fresh, "nothing was left for a later replay");
+}
+
+/// Review finding 4's guard, exercised where it stands (REV-CX-M03-T19):
+/// the seam is staged, then the Hub journals one more change that leaves
+/// the plan as it was. Publication applies the seam, finds a journal that
+/// is not the staged one and refuses, inside finalisation; the clients keep
+/// the previous complete session.
+#[test]
+fn seam_repair_packs_finalisation_refuses_a_journal_that_changed_after_staging() {
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    let (h1, _) = collect(&fixture);
+    let before = session_state(&fixture);
+    let projected = project_vehicle(&successor_history(), CAR).expect("projection");
+    let digest = |fixture: &Fixture| {
+        fixture
+            .store
+            .dry_run_import_seam_ahead_of_packs(
+                &fixture.gate,
+                vehicle_id,
+                CAR,
+                &projected.snapshot.drives,
+                &projected.snapshot.charges,
+            )
+            .expect("dry run")
+            .ahead
+            .packs
+            .digest()
+    };
+    let staged_plan = digest(&fixture);
+    let mut planned = plan(&fixture, &projected);
+    assert!(!planned.seam_sync.is_empty(), "the seam stages its sync");
+
+    // The Hub restates its own position H1 (another latitude): a new
+    // journal entry that changes neither coverage nor any session's extent.
+    let mut position = crate::lifecycle::imported_position(&source_position(
+        HUB_ID_BASE + 1,
+        Some(h1),
+        T + 15 * MINUTE,
+    ));
+    position.drive_id = Some(h1);
+    position.latitude = 47.6;
+    let json = serde_json::to_string(&position).expect("position json");
+    let vehicle = vehicle_id.to_string();
+    let connection = fixture.store.open().expect("catalogue");
+    connection
+        .execute(
+            "UPDATE materialised_positions SET position_json = ?3
+              WHERE vehicle_id = ?1 AND position_id = ?2",
+            params![vehicle.as_str(), position.id, json],
+        )
+        .expect("restated position");
+    let revision: i64 = connection
+        .query_row(
+            "UPDATE sync_mutation_sequences SET next_revision = next_revision + 1
+              WHERE vehicle_id = ?1 RETURNING next_revision - 1",
+            params![vehicle.as_str()],
+            |row| row.get(0),
+        )
+        .expect("revision");
+    connection
+        .execute(
+            "INSERT INTO sync_mutations(vehicle_id, revision, entity, entity_id, car_id,
+                operation, payload_json, published, claimed_until_ms)
+             VALUES (?1, ?2, 'position', ?3, ?4, 'upsert', ?5, 0, 0)",
+            params![vehicle.as_str(), revision, position.id, CAR, json],
+        )
+        .expect("journal");
+    drop(connection);
+    assert_eq!(digest(&fixture), staged_plan, "the plan itself did not change");
+
+    let run_id = begin_run(&fixture, T + 3 * HOUR);
+    let refused = publish(&fixture, &projected, run_id, &mut planned);
+    assert!(
+        matches!(
+            refused,
+            Err(SourceDbImportError::Store(StoreError::ImportGenerationConflict))
+        ),
+        "{refused:?}"
+    );
+    let after = session_state(&fixture);
+    assert_eq!(after.0, before.0, "clients keep the previous complete session");
+    assert_eq!(after.1, before.1, "the store's sessions are unchanged");
+}
+
+/// Review finding 1 on M03-T19: the snapshot and changed-set objects of a
+/// physical head advertised before the Hub collected the vehicle are served
+/// while the vehicle has none of the seam, and refused once it has, to a
+/// client that holds their manifest or receipt as to any other; the control
+/// route refuses as before.
+#[test]
+fn seam_repair_packs_1_4_objects_of_an_unplanned_head_are_refused() {
+    use super::seam_physical_route::{history_stage, paired, publish_physical};
+    let fixture = fixture();
+    let root = crate::private_tempdir().expect("stage root");
+    publish_physical(&fixture, history_stage(root.path(), "first", &base_history()), None)
+        .expect("first head");
+    let mut moved = base_history();
+    moved.drives[0].end_date_ms = Some(T - 5 * HOUR + 12 * MINUTE);
+    publish_physical(&fixture, history_stage(root.path(), "second", &moved), None)
+        .expect("second head");
+    let connection = fixture.store.open().expect("catalogue");
+    let digests = |sql: &str| -> Vec<String> {
+        let mut statement = connection.prepare(sql).expect("objects");
+        statement
+            .query_map([], |row| row.get(0))
+            .expect("object rows")
+            .collect::<Result<_, _>>()
+            .expect("object rows")
+    };
+    let snapshot = digests("SELECT sha256 FROM pending_physical_v3_packs ORDER BY ordinal");
+    let changed_set = digests("SELECT sha256 FROM physical_v3_delta_packs ORDER BY ordinal");
+    drop(connection);
+    assert!(!snapshot.is_empty() && !changed_set.is_empty(), "both kinds advertised");
+    let served_env = paired(&fixture);
+    let fetch = |digest: &str| served_env.get(&format!("/v1/packs/sha256/{digest}.sqlite.zst")).0;
+    for digest in snapshot.iter().chain(&changed_set) {
+        assert_eq!(fetch(digest), axum::http::StatusCode::OK, "served without the seam");
+    }
+
+    collect(&fixture);
+    for digest in snapshot.iter().chain(&changed_set) {
+        assert_eq!(
+            fetch(digest),
+            axum::http::StatusCode::NOT_FOUND,
+            "a source-only object is refused once the Hub has collected the vehicle"
+        );
+    }
+    let manifest = served_env.get(&format!(
+        "/v1/vehicles/{}/sync/manifest",
+        fixture.binding.vehicle_id
+    ));
+    assert_eq!(manifest.0, axum::http::StatusCode::NOT_ACCEPTABLE);
 }

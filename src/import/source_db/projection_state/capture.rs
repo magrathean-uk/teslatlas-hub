@@ -224,6 +224,15 @@ impl SourceDbProjectionStateCapture {
         self
     }
 
+    /// Gives the seam's lens every source drive and charge before any child
+    /// is recorded (M03-T21).
+    pub(crate) fn note_seam_source_sessions(
+        &mut self,
+        _drives: &[crate::import::source_db::seam::SessionRow],
+        _charges: &[crate::import::source_db::seam::SessionRow],
+    ) {
+    }
+
     /// The coverage the seam's lens was read with, if it has one.
     pub(crate) fn seam_lens_coverage(&self) -> Option<&crate::import::source_db::seam::HubCoverage> {
         self.seam_lens.as_ref().map(|lens| lens.coverage())

@@ -16,7 +16,7 @@ use super::*;
 use crate::source_db_projection::{SourceDbCharge, SourceDbChargingProcess};
 
 /// A source charging process.
-fn source_process(id: i64, start_ms: i64, end_ms: i64) -> SourceDbChargingProcess {
+pub(super) fn source_process(id: i64, start_ms: i64, end_ms: i64) -> SourceDbChargingProcess {
     serde_json::from_value(serde_json::json!({
         "id": id, "car_id": CAR, "start_date_ms": start_ms, "end_date_ms": end_ms,
         "charge_energy_added": 5.0, "start_battery_level": 40, "end_battery_level": 60
@@ -25,7 +25,7 @@ fn source_process(id: i64, start_ms: i64, end_ms: i64) -> SourceDbChargingProces
 }
 
 /// A source charge sample.
-fn source_sample(id: i64, process: i64, date_ms: i64) -> SourceDbCharge {
+pub(super) fn source_sample(id: i64, process: i64, date_ms: i64) -> SourceDbCharge {
     serde_json::from_value(serde_json::json!({
         "id": id, "charging_process_id": process, "date_ms": date_ms, "battery_level": 50
     }))
@@ -33,7 +33,7 @@ fn source_sample(id: i64, process: i64, date_ms: i64) -> SourceDbCharge {
 }
 
 /// The base's history with these charges added.
-fn charge_history(
+pub(super) fn charge_history(
     processes: Vec<SourceDbChargingProcess>,
     samples: Vec<SourceDbCharge>,
 ) -> SourceDbHistory {
@@ -44,7 +44,7 @@ fn charge_history(
 }
 
 /// The successor's projection state, every entity recorded.
-fn capture_all(
+pub(super) fn capture_all(
     fixture: &Fixture,
     run_id: Uuid,
     projected: &SourceDbProjection,
@@ -61,6 +61,7 @@ fn capture_all(
         state_limits(),
     )
     .expect("capture");
+    super::seam_repair_packs::note_source_sessions(&mut capture, projected);
     for car in &projected.snapshot.cars {
         capture.record_car(car).expect("car");
     }
@@ -79,7 +80,7 @@ fn capture_all(
 
 /// Plans, writes and publishes one successor of `history`, as the importer
 /// does; returns the publication's seam-skipped counts.
-fn import(fixture: &Fixture, history: &SourceDbHistory, at_ms: i64) -> SourceDbSeamSkipped {
+pub(super) fn import(fixture: &Fixture, history: &SourceDbHistory, at_ms: i64) -> SourceDbSeamSkipped {
     let projected = project_vehicle(history, CAR).expect("projection");
     let mut planned = plan(fixture, &projected);
     let run_id = begin_run(fixture, at_ms);
@@ -119,6 +120,21 @@ fn import(fixture: &Fixture, history: &SourceDbHistory, at_ms: i64) -> SourceDbS
 /// (id, start, end) and samples (id, charge, instant) as the collector
 /// stores and journals them, published to clients as live sync.
 fn collect(fixture: &Fixture, charges: &[(i64, i64, i64)], samples: &[(i64, i64, i64)]) {
+    hub_charges(fixture, (1, T, T + HOUR), charges, samples, &[]);
+}
+
+/// The Hub's window `(seq, start, end)`, handed back, with these charges
+/// (id, start, end), samples (id, charge, instant) and standalone positions
+/// (id, instant) as the collector stores and journals them, published to
+/// clients as live sync. Each sample carries the charger power, energy and
+/// range the collector reads while charging.
+pub(super) fn hub_charges(
+    fixture: &Fixture,
+    window: (i64, i64, i64),
+    charges: &[(i64, i64, i64)],
+    samples: &[(i64, i64, i64)],
+    positions: &[(i64, i64)],
+) {
     let template = project_vehicle(
         &charge_history(vec![source_process(1, T, T + MINUTE)], vec![]),
         CAR,
@@ -133,8 +149,8 @@ fn collect(fixture: &Fixture, charges: &[(i64, i64, i64)], samples: &[(i64, i64,
     transaction
         .execute(
             "INSERT INTO collection_coverage(seq, grant_digest, opened_at_ms, closed_at_ms, gaps_json, sealed)
-             VALUES (1, 'grant-1', ?1, ?2, '[]', 'handback')",
-            params![T, T + HOUR],
+             VALUES (?1, ?2, ?3, ?4, '[]', 'handback')",
+            params![window.0, format!("grant-{}", window.0), window.1, window.2],
         )
         .expect("coverage");
     let journal = |entity: &str, id: i64, json: &str| {
@@ -172,9 +188,12 @@ fn collect(fixture: &Fixture, charges: &[(i64, i64, i64)], samples: &[(i64, i64,
         journal("charge", *id, &json);
     }
     for (id, charge, at_ms) in samples {
-        let sample = crate::source_db_projection::project_charge_sample(&source_sample(
+        let mut sample = crate::source_db_projection::project_charge_sample(&source_sample(
             *id, *charge, *at_ms,
         ));
+        sample.charger_power_kw = Some(11.0);
+        sample.charge_energy_added_kwh = Some(2.5);
+        sample.ideal_range_km = Some(310.0);
         let json = serde_json::to_string(&sample).expect("sample json");
         transaction
             .execute(
@@ -184,6 +203,18 @@ fn collect(fixture: &Fixture, charges: &[(i64, i64, i64)], samples: &[(i64, i64,
             )
             .expect("Hub sample");
         journal("charge_sample", *id, &json);
+    }
+    for (id, at_ms) in positions {
+        let position = crate::lifecycle::imported_position(&source_position(*id, None, *at_ms));
+        let json = serde_json::to_string(&position).expect("position json");
+        transaction
+            .execute(
+                "INSERT INTO materialised_positions(vehicle_id, position_id, drive_id, car_id, position_json)
+                 VALUES (?1, ?2, NULL, ?3, ?4)",
+                params![vehicle.as_str(), id, CAR, json],
+            )
+            .expect("Hub position");
+        journal("position", *id, &json);
     }
     transaction.commit().expect("commit");
     publish_sync_mutations_ahead_of_packs(
@@ -198,13 +229,13 @@ fn collect(fixture: &Fixture, charges: &[(i64, i64, i64)], samples: &[(i64, i64,
 /// One pack's charges (id, start, end), samples (id, charge, instant) and
 /// tombstones (entity, id).
 #[derive(Debug, Default)]
-struct ChargeRows {
+pub(super) struct ChargeRows {
     charges: Vec<(i64, i64, Option<i64>)>,
     samples: Vec<(i64, i64, i64)>,
     tombstones: Vec<(String, i64)>,
 }
 
-fn charge_rows(store: &HubStore, digest: Sha256Digest) -> ChargeRows {
+pub(super) fn charge_rows(store: &HubStore, digest: Sha256Digest) -> ChargeRows {
     let path = ProjectionPackWriter::new(store.packs_dir()).content_path(digest);
     let sqlite =
         zstd::stream::decode_all(std::fs::File::open(&path).expect("pack")).expect("pack bytes");
@@ -257,7 +288,7 @@ fn charge_rows(store: &HubStore, digest: Sha256Digest) -> ChargeRows {
 
 /// Every advertised head of the vehicle in order: the base, then one entry
 /// per delta (the seam's live sync and the import's packs alike).
-fn charge_heads(store: &HubStore, vehicle_id: Uuid) -> Vec<ChargeRows> {
+pub(super) fn charge_heads(store: &HubStore, vehicle_id: Uuid) -> Vec<ChargeRows> {
     let lineage = store
         .lineage_manifest_for_vehicle(vehicle_id)
         .expect("lineage")
@@ -278,13 +309,13 @@ fn charge_heads(store: &HubStore, vehicle_id: Uuid) -> Vec<ChargeRows> {
 
 /// A client's mirror of one vehicle's charges and samples.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-struct ChargeClient {
-    charges: BTreeMap<i64, (i64, Option<i64>)>,
-    samples: BTreeMap<i64, (i64, i64)>,
+pub(super) struct ChargeClient {
+    pub(super) charges: BTreeMap<i64, (i64, Option<i64>)>,
+    pub(super) samples: BTreeMap<i64, (i64, i64)>,
 }
 
 impl ChargeClient {
-    fn apply(&mut self, rows: &ChargeRows) {
+    pub(super) fn apply(&mut self, rows: &ChargeRows) {
         for (id, start, end) in &rows.charges {
             self.charges.insert(*id, (*start, *end));
         }
@@ -301,7 +332,7 @@ impl ChargeClient {
     }
 
     /// No two charges overlap by more than the seam's slack.
-    fn assert_each_charge_once(&self, at: &str) {
+    pub(super) fn assert_each_charge_once(&self, at: &str) {
         let charges: Vec<_> = self.charges.iter().collect();
         for (index, (a, (a_start, a_end))) in charges.iter().enumerate() {
             for (b, (b_start, b_end)) in &charges[index + 1..] {
@@ -340,7 +371,7 @@ fn assert_every_head_holds_each_charge_once(fixture: &Fixture, existing_at: usiz
     client
 }
 
-fn store_charges(store: &HubStore, vehicle_id: Uuid) -> BTreeMap<i64, (i64, Option<i64>)> {
+pub(super) fn store_charges(store: &HubStore, vehicle_id: Uuid) -> BTreeMap<i64, (i64, Option<i64>)> {
     let connection = store.open().expect("catalogue");
     let mut statement = connection
         .prepare(
@@ -766,3 +797,8 @@ fn import_seam_replay_after_a_window_keeps_every_charge() {
 // shares these helpers.
 #[path = "seam_repair_packs_charge_tests.rs"]
 mod seam_repair_packs;
+
+// The negotiated 1.4 route for charges and samples (M03-T21); a child module
+// so it shares these helpers.
+#[path = "seam_physical_route_charge_tests.rs"]
+mod seam_physical_route;

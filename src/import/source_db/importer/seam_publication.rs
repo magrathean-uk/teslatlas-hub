@@ -175,3 +175,6 @@ fn seam_folded_fingerprint(
         _ => fingerprint,
     }
 }
+
+// The negotiated 1.4 route's physical publication (M03-T21).
+include!("physical_route.rs");

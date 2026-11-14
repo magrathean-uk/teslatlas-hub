@@ -918,6 +918,11 @@ mod charges;
 #[path = "seam_repair_packs_tests.rs"]
 mod seam_repair_packs;
 
+// The negotiated 1.4 route carrying the seam (M03-T21); a child module so it
+// shares this fixture.
+#[path = "seam_physical_route_tests.rs"]
+mod seam_physical_route;
+
 /// One pack's `hub_pack_metadata` as a map.
 fn pack_metadata(store: &HubStore, digest: Sha256Digest) -> BTreeMap<String, String> {
     let path = ProjectionPackWriter::new(store.packs_dir()).content_path(digest);
