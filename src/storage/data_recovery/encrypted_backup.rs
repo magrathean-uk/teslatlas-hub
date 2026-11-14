@@ -1798,7 +1798,9 @@ pub fn verify_encrypted_backup(
 /// any process, is removed when the next restore into the same parent starts.
 ///
 /// Binding and space (M06-T15): the parent is admitted and held, the staging
-/// works through held descriptors ([`restore_staging`]), and the parent must
+/// is made and written through held descriptors and its path is checked
+/// against them before every phase that uses it ([`restore_staging`]), and
+/// the parent must
 /// hold the members with their allocation and metadata overhead; before each
 /// member the space the rest of the bundle needs, plus a reserve, must still
 /// be free.
@@ -1855,6 +1857,9 @@ pub fn restore_encrypted_backup(
         return Err(streamed.err().expect("an error"));
     }
     let streamed = streamed?;
+    // From here the tree is reached by its path: it must still be the one
+    // the stream wrote through held descriptors.
+    staging.check_bound()?;
 
     let members = match backup_format(&opened.manifest)? {
         BackupFormat::Streamed => RestoredMembers::Streamed(&streamed),

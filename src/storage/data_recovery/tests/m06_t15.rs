@@ -731,8 +731,9 @@ fn assert_restored(path: &Path, expected_members: usize) {
 }
 
 /// Finding 2: the staging container moved and replaced by a decoy during
-/// extraction: every member still lands in the held tree, which is what is
-/// published; the decoy receives nothing.
+/// extraction: every later member still lands in the held tree, never in the
+/// decoy; the moved tree is then refused before any phase that reaches it by
+/// its path, and removed through its descriptor.
 #[test]
 fn data_recovery_m06_t15_staging_root_swap_during_extraction_cannot_redirect_writes() {
     let hub = hub(VolumeTrust::Posix);
@@ -754,8 +755,9 @@ fn data_recovery_m06_t15_staging_root_swap_during_extraction_cannot_redirect_wri
     let restored = parent.join("restored");
     let result = restore_encrypted_backup(&good.path, PASSWORD, &restored);
     clear_hook();
-    result.expect("the held tree is restored");
-    assert_restored(&restored, good.member_count);
+    let error = result.expect_err("a moved staging tree is not used by its path");
+    assert!(error.to_string().contains("moved"), "{error}");
+    assert!(!restored.exists(), "nothing was published");
     let decoy = only_child_with_prefix(&parent, ENCRYPTED_STAGING_PREFIX);
     assert!(regular_files(&decoy).is_empty(), "the decoy received nothing");
     assert!(regular_files(&parent.join("moved-staging")).is_empty(), "no plaintext stays behind");
@@ -795,9 +797,9 @@ fn data_recovery_m06_t15_ancestor_swap_during_extraction_publishes_nothing() {
 }
 
 /// Finding 2: the container moved and replaced just before publication:
-/// the held tree is published, never the decoy.
+/// the decoy is never published, and the held tree is removed.
 #[test]
-fn data_recovery_m06_t15_staging_root_swap_before_publication_publishes_the_held_tree() {
+fn data_recovery_m06_t15_staging_root_swap_before_publication_publishes_no_decoy() {
     let hub = hub(VolumeTrust::Posix);
     let good = hub.backup(None).expect("good generation");
     let parent = hub.restores();
@@ -814,9 +816,12 @@ fn data_recovery_m06_t15_staging_root_swap_before_publication_publishes_the_held
     let restored = parent.join("restored");
     let result = restore_encrypted_backup(&good.path, PASSWORD, &restored);
     clear_hook();
-    result.expect("the held tree is published");
-    assert_restored(&restored, good.member_count);
-    assert!(!restored.join("decoy-marker").exists(), "the decoy was not published");
+    let error = result.expect_err("a moved staging tree is not published");
+    assert!(error.to_string().contains("moved"), "{error}");
+    assert!(!restored.exists(), "neither the decoy nor anything else was published");
+    let decoy = only_child_with_prefix(&parent, ENCRYPTED_STAGING_PREFIX);
+    assert!(decoy.join("data").join("decoy-marker").exists(), "the decoy is left alone");
+    assert!(regular_files(&parent.join("moved-staging")).is_empty(), "no plaintext stays behind");
 }
 
 /// An abandoned staging directory named `name`, holding plaintext.

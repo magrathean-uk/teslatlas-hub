@@ -661,6 +661,10 @@ trait StagedTree {
     fn root(&self) -> &Path;
     /// Publish the staged tree as `destination`, never replacing anything.
     fn publish_as(self, destination: &Path) -> Result<(), DataRecoveryError>;
+    /// The path [`Self::root`] still leads to the staged tree.
+    fn check_bound(&self) -> Result<(), DataRecoveryError> {
+        Ok(())
+    }
 }
 
 impl StagedTree for StagingDirectory {
@@ -683,6 +687,7 @@ fn finalize_restore<S: StagedTree>(
     members: RestoredMembers<'_>,
 ) -> Result<DataRecoveryReport, DataRecoveryError> {
     let root = staging.root().to_path_buf();
+    staging.check_bound()?;
     let migrated = manifest.hub_schema != SCHEMA_VERSION;
     if migrated {
         let migrated_store = HubStore::initialize(&root)?;
@@ -719,6 +724,7 @@ fn finalize_restore<S: StagedTree>(
     // the re-signed data together or not at all.
     cursor_reissue::regenerate_cursor_key(&root)?;
     sync_restored_data(&root, members)?;
+    staging.check_bound()?;
 
     let report = report(STATUS_DATA_RESTORED, destination, manifest)?;
     staging.publish_as(destination)?;

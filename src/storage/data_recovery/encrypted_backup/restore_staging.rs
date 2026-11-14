@@ -6,15 +6,19 @@
 //! - The restore's parent is admitted and held open; every namespace
 //!   operation in it goes through that descriptor.
 //! - The staging is a locked container `.teslatlas-encrypted-restore-<uuid>
-//!   .staging` (mode `0700`) holding `data`, the tree being restored. Members
-//!   are created with `openat` on held directory descriptors, and SQLite and
-//!   the tree checks reach `data` by its own identity (`/.vol/<device>/
-//!   <inode>` on macOS, `/proc/self/fd/<n>` on Linux), through no directory
-//!   name, so renaming the container, its parent or an ancestor cannot
-//!   redirect a write or a check.
+//!   .staging` (mode `0700`) holding `data`, the tree being restored. Every
+//!   directory is made with `mkdirat` and every member file with `openat` on
+//!   held directory descriptors, so renaming the container, its parent or an
+//!   ancestor cannot redirect the extraction of plaintext.
+//! - The catalogue phases (SQLite opens files by name; it cannot use a
+//!   descriptor) use the tree's path, and that path must lead to the held
+//!   parent, container and tree before the first of them and again just
+//!   before publication ([`HeldStaging::check_bound`]); otherwise the restore
+//!   is refused and the held tree removed. Other accounts cannot rename
+//!   anything there: the parent is admitted as not writable by them.
 //! - Publication renames `data` out of the held container into the held
-//!   parent, never replacing anything, after checking that the parent's path
-//!   still leads to the held parent; the result must be the held tree.
+//!   parent, never replacing anything, after those checks; the result must
+//!   be the held tree.
 //! - Before a restore, the parent is swept: an entry with a staging name
 //!   (this restore's, or the `.teslatlas-data-recovery-<uuid>.staging` that
 //!   directory-format restores, plaintext backups and encrypted restores
@@ -99,35 +103,6 @@ fn named_identity(directory: &impl AsFd, name: &str) -> Option<Identity> {
     Some((stat.st_dev as u64, stat.st_ino as u64))
 }
 
-/// The path that reaches the held directory itself, through no directory
-/// name; it must lead back to the same object.
-fn held_path(fd: &OwnedFd, shown: &Path) -> Result<PathBuf, DataRecoveryError> {
-    let unreadable = |error: Errno| io_error("inspecting the restore staging directory", shown, error.into());
-    let (identity, _) = identity_of(fd).map_err(unreadable)?;
-    #[cfg(target_os = "macos")]
-    let path = PathBuf::from(format!("/.vol/{}/{}", identity.0, identity.1));
-    #[cfg(target_os = "linux")]
-    let path = {
-        use std::os::fd::AsRawFd;
-        PathBuf::from(format!("/proc/self/fd/{}", fd.as_raw_fd()))
-    };
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    return Err(invalid(
-        "this system cannot reach a restore staging directory by its identity",
-    ));
-    #[allow(unreachable_code)]
-    {
-        let reached = rustix::fs::stat(&path).map_err(unreadable)?;
-        #[allow(clippy::unnecessary_cast)]
-        if (reached.st_dev as u64, reached.st_ino as u64) != identity {
-            return Err(invalid(
-                "the restore staging directory cannot be reached by its identity on this volume",
-            ));
-        }
-        Ok(path)
-    }
-}
-
 /// Remove everything inside the held directory `directory`, through
 /// descriptors only: no path is resolved and no link is followed (a link is
 /// removed as an entry). Passes repeat until the directory reads empty.
@@ -179,6 +154,7 @@ pub(super) struct HeldStaging {
     container: OwnedFd,
     container_identity: Identity,
     data: Option<(OwnedFd, Identity)>,
+    parent_identity: Identity,
     sha256: Option<OwnedFd>,
     packs: Option<OwnedFd>,
     noop: Option<OwnedFd>,
@@ -211,7 +187,11 @@ impl HeldStaging {
             }
             let (container_identity, owner) =
                 identity_of(&container).map_err(failed("inspecting staging directory"))?;
+            let (parent_identity, _) =
+                identity_of(&parent.fd).map_err(failed("inspecting the restore target's folder"))?;
+            let root = parent.path.join(&name).join(STAGED_DATA);
             let mut staging = Self {
+                parent_identity,
                 parent,
                 name,
                 container,
@@ -220,7 +200,7 @@ impl HeldStaging {
                 sha256: None,
                 packs: None,
                 noop: None,
-                root: PathBuf::new(),
+                root,
                 done: false,
             };
             if owner != me
@@ -258,7 +238,6 @@ impl HeldStaging {
         let data = self.make_directory(&self.container, STAGED_DATA)?;
         let (identity, _) = identity_of(&data)
             .map_err(|error| io_error("inspecting staging directory", &shown, error.into()))?;
-        self.root = held_path(&data, &shown)?;
         let packs = self.make_directory(&data, "packs")?;
         self.sha256 = Some(self.make_directory(&packs, "sha256")?);
         self.packs = Some(packs);
@@ -300,6 +279,30 @@ impl HeldStaging {
         Ok(File::from(file))
     }
 
+    /// The tree's path still leads to the held parent, container and tree,
+    /// none of them a link. Checked before the catalogue phases, which reach
+    /// the tree by its path, and again just before publication.
+    pub(super) fn check_bound(&self) -> Result<(), DataRecoveryError> {
+        let named = |path: &Path| {
+            rustix::fs::lstat(path).ok().map(|stat| {
+                #[allow(clippy::unnecessary_cast)]
+                (stat.st_dev as u64, stat.st_ino as u64)
+            })
+        };
+        let data_identity = self.data.as_ref().map(|(_, identity)| *identity);
+        if named(&self.parent.path) != Some(self.parent_identity)
+            || named(&self.shown()) != Some(self.container_identity)
+            || data_identity.is_none()
+            || named(&self.root) != data_identity
+        {
+            return Err(invalid(
+                "the restore staging directory or its folder moved during the restore; nothing \
+                 was published",
+            ));
+        }
+        Ok(())
+    }
+
     /// What a killed process leaves: the tree stays, and the lock goes with
     /// the closed descriptors (tests only).
     #[cfg(test)]
@@ -327,6 +330,10 @@ impl StagedTree for HeldStaging {
         &self.root
     }
 
+    fn check_bound(&self) -> Result<(), DataRecoveryError> {
+        HeldStaging::check_bound(self)
+    }
+
     /// Rename the held `data` out of the held container into the held
     /// parent as `destination`, never replacing anything. The parent's path
     /// must still lead to the held parent first, and the result must be the
@@ -343,20 +350,10 @@ impl StagedTree for HeldStaging {
         };
         data_sync.map_err(|error| io_error("syncing the restored data directory", &self.root, error.into()))?;
         hook("restore_before_publish", &self.shown())?;
-        let parent_identity = identity_of(&self.parent.fd)
-            .map_err(|error| io_error("inspecting the restore parent", &self.parent.path, error.into()))?
-            .0;
-        let parent_named = rustix::fs::stat(&self.parent.path).ok().map(|stat| {
-            #[allow(clippy::unnecessary_cast)]
-            (stat.st_dev as u64, stat.st_ino as u64)
-        });
-        if destination.parent() != Some(self.parent.path.as_path())
-            || parent_named != Some(parent_identity)
-        {
-            return Err(invalid(
-                "the restore target's folder moved during the restore; nothing was published",
-            ));
+        if destination.parent() != Some(self.parent.path.as_path()) {
+            return Err(invalid("the restore target is not in the admitted folder"));
         }
+        self.check_bound()?;
         renameat_with(
             &self.container,
             STAGED_DATA,
