@@ -674,6 +674,78 @@ fn import_seam_parity_accounts_for_seam_skipped_rows() {
     assert_eq!(skipped.total(), 3);
 }
 
+fn drive_links(store: &HubStore, vehicle_id: Uuid) -> BTreeMap<i64, i64> {
+    let connection = store.open().expect("catalogue");
+    let mut statement = connection
+        .prepare(
+            "SELECT loser_id, winner_id FROM import_seam_links
+              WHERE vehicle_id = ?1 AND entity = 'drive'",
+        )
+        .expect("links");
+    statement
+        .query_map(params![vehicle_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?)))
+        .expect("link rows")
+        .collect::<Result<_, _>>()
+        .expect("link rows")
+}
+
+/// The drive side of `import_seam_charge_inside_a_window_is_the_hubs`: the
+/// source's drive 11 lost to the Hub's H1 inside the window and the decision
+/// is recorded. The source then corrects 11's times and its position inside
+/// coverage: the recorded link keeps 11 skipped, both changed rows are
+/// counted as seam-skipped again (the unchanged position 1301 is not), the
+/// store and clients keep H1, and an unchanged replay publishes nothing.
+#[test]
+fn import_seam_skipped_drive_stays_skipped_after_a_source_time_correction() {
+    use seam_repair_packs::{assert_positions_have_their_drives, assert_replay_publishes_nothing, client, import};
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    let (h1, _) = collect(&fixture);
+    let mut history = successor_history();
+    let skipped = import(&fixture, &history, T + 3 * HOUR).expect("import after the window");
+    assert_eq!(
+        skipped,
+        SourceDbSeamSkipped {
+            drives: 1,
+            positions: 2,
+            ..SourceDbSeamSkipped::default()
+        }
+    );
+    let drives = store_drives(&fixture.store, vehicle_id);
+    let links = drive_links(&fixture.store, vehicle_id);
+    assert_eq!(links.get(&11), Some(&h1), "the decision is recorded");
+    assert!(drives.contains_key(&h1) && !drives.contains_key(&11));
+
+    // The source corrects 11's times and its position inside coverage.
+    for drive in &mut history.drives {
+        if drive.id == 11 {
+            drive.start_date_ms = T + 12 * MINUTE;
+            drive.end_date_ms = Some(T + 23 * MINUTE);
+        }
+    }
+    for position in &mut history.positions {
+        if position.id == 1101 {
+            position.date_ms = T + 13 * MINUTE;
+        }
+    }
+    let skipped = import(&fixture, &history, T + 4 * HOUR).expect("the corrected source");
+    assert_eq!(
+        skipped,
+        SourceDbSeamSkipped {
+            drives: 1,
+            positions: 1,
+            ..SourceDbSeamSkipped::default()
+        }
+    );
+    assert_eq!(drive_links(&fixture.store, vehicle_id), links);
+    assert_eq!(store_drives(&fixture.store, vehicle_id), drives);
+    let client = client(&fixture);
+    assert_eq!(client.drives, drives);
+    assert!(!client.positions.contains_key(&1101), "inside coverage the Hub's rows stand");
+    assert_positions_have_their_drives(&client, "after the correction");
+    assert_replay_publishes_nothing(&fixture, &history, T + 5 * HOUR);
+}
+
 /// Sync carries the Hub's rows and the seam's tombstones, packs carry
 /// source rows only, and together they give the client the store's
 /// drives and the Hub's positions with the same ids.

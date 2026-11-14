@@ -1004,3 +1004,173 @@ fn seam_repair_packs_1_4_objects_of_an_unplanned_head_are_refused() {
     ));
     assert_eq!(manifest.0, axum::http::StatusCode::NOT_ACCEPTABLE);
 }
+
+/// Two physical heads of the source only, published before the Hub collects
+/// the vehicle: the first is retained, the second is the current head and
+/// carries the changed set from the first.
+fn two_unplanned_physical_heads(fixture: &Fixture, root: &std::path::Path) {
+    use super::seam_physical_route::{history_stage, publish_physical};
+    publish_physical(fixture, history_stage(root, "first", &base_history()), None).expect("first head");
+    let mut moved = base_history();
+    moved.drives[0].end_date_ms = Some(T - 5 * HOUR + 12 * MINUTE);
+    publish_physical(fixture, history_stage(root, "second", &moved), None).expect("second head");
+}
+
+/// The vehicle's planned set as stored, if any.
+fn planned_set_value(fixture: &Fixture) -> Option<String> {
+    use rusqlite::OptionalExtension;
+    fixture
+        .store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            "SELECT value FROM hub_metadata WHERE key = ?1",
+            params![format!("physical_v3_seam_planned:{}", fixture.binding.vehicle_id)],
+            |row| row.get(0),
+        )
+        .optional()
+        .expect("planned set")
+}
+
+/// The snapshot id of the vehicle's head in `table`.
+fn held_snapshot(fixture: &Fixture, table: &str) -> Uuid {
+    let id: String = fixture
+        .store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            &format!("SELECT snapshot_id FROM {table} WHERE vehicle_id = ?1"),
+            params![fixture.binding.vehicle_id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("one held head");
+    id.parse().expect("snapshot id")
+}
+
+/// The changed-set receipt resolver applies the served check itself
+/// (CHK-SEAM6; the route test reaches a refusal of the control head first):
+/// the receipt of an unplanned head is served while the vehicle has none of
+/// the seam, refused once the Hub has collected it, and served again once
+/// the importer records that head as planned with the seam.
+#[test]
+fn seam_repair_packs_1_4_receipt_of_an_unplanned_head_is_refused() {
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    let root = crate::private_tempdir().expect("stage root");
+    two_unplanned_physical_heads(&fixture, root.path());
+    let (base, target, snapshot, expires_at_ms): (String, String, String, i64) = fixture
+        .store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            "SELECT delta.base_receipt_id, delta.target_receipt_id, target.snapshot_id,
+                    base.expires_at_ms
+               FROM physical_v3_delta_transitions AS delta
+               JOIN pending_physical_v3_admissions AS target
+                 ON target.receipt_id = delta.target_receipt_id
+               JOIN retained_physical_v3_admissions AS base
+                 ON base.receipt_id = delta.base_receipt_id
+              WHERE delta.vehicle_id = ?1",
+            params![vehicle_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("one transition");
+    let receipt = || {
+        fixture
+            .store
+            .physical_v3_delta_receipt_for_base_at(vehicle_id, &base, &target, expires_at_ms - 1)
+            .expect("receipt lookup")
+    };
+    assert!(receipt().is_some(), "served without the seam");
+
+    collect(&fixture);
+    assert!(
+        receipt().is_none(),
+        "the receipt of a head not planned with the seam is refused once the Hub has collected the vehicle"
+    );
+    fixture
+        .store
+        .record_physical_v3_seam_planned(&fixture.gate, vehicle_id, snapshot.parse().expect("snapshot id"))
+        .expect("planned");
+    assert!(receipt().is_some(), "a head planned with the seam is served");
+}
+
+/// The planned set is read strictly (CHK-SEAM6): for a vehicle with the seam
+/// a malformed value refuses the served check and the next record with a
+/// conflict, and the record leaves the value as it was. Without the seam the
+/// set is never read, so the head is served as before.
+#[test]
+fn seam_repair_packs_malformed_planned_set_is_a_conflict() {
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    let root = crate::private_tempdir().expect("stage root");
+    two_unplanned_physical_heads(&fixture, root.path());
+    fixture
+        .store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "INSERT INTO hub_metadata(key, value) VALUES (?1, 'not a set')",
+            params![format!("physical_v3_seam_planned:{vehicle_id}")],
+        )
+        .expect("malformed planned set");
+    assert!(
+        fixture
+            .store
+            .pending_physical_v3_control_admission_for_vehicle(vehicle_id)
+            .expect("control head")
+            .is_some(),
+        "without the seam the planned set is not read"
+    );
+
+    collect(&fixture);
+    assert!(matches!(
+        fixture.store.pending_physical_v3_control_admission_for_vehicle(vehicle_id),
+        Err(StoreError::PhysicalV3AdmissionConflict)
+    ));
+    let pending = held_snapshot(&fixture, "pending_physical_v3_admissions");
+    assert!(matches!(
+        fixture.store.record_physical_v3_seam_planned(&fixture.gate, vehicle_id, pending),
+        Err(StoreError::PhysicalV3AdmissionConflict)
+    ));
+    assert_eq!(planned_set_value(&fixture).as_deref(), Some("not a set"));
+}
+
+/// The planned set keeps only the heads the store still holds, and the one
+/// being recorded (CHK-SEAM6): an id no head holds is dropped at the next
+/// record, while the retained and the current head stay.
+#[test]
+fn seam_repair_packs_planned_set_keeps_only_held_heads() {
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    let root = crate::private_tempdir().expect("stage root");
+    two_unplanned_physical_heads(&fixture, root.path());
+    let retained = held_snapshot(&fixture, "retained_physical_v3_admissions");
+    let pending = held_snapshot(&fixture, "pending_physical_v3_admissions");
+    let unheld = Uuid::new_v4();
+    let planned = || -> std::collections::BTreeSet<Uuid> {
+        serde_json::from_str::<std::collections::BTreeSet<String>>(
+            &planned_set_value(&fixture).expect("planned set"),
+        )
+        .expect("planned set json")
+        .iter()
+        .map(|id| id.parse().expect("snapshot id"))
+        .collect()
+    };
+    let record = |snapshot: Uuid| {
+        fixture
+            .store
+            .record_physical_v3_seam_planned(&fixture.gate, vehicle_id, snapshot)
+            .expect("record");
+    };
+
+    record(retained);
+    record(unheld);
+    assert_eq!(planned(), std::collections::BTreeSet::from([retained, unheld]));
+    record(pending);
+    assert_eq!(
+        planned(),
+        std::collections::BTreeSet::from([retained, pending]),
+        "the id no head holds is dropped; the retained and current heads stay"
+    );
+}

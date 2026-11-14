@@ -41,15 +41,53 @@ pub(crate) struct SeamFormsApplied {
     pub(crate) withdrawn: Vec<(SourceDbProjectionStateEntity, i64, i64)>,
 }
 
-/// The digest a left-out row holds in the durable state.
-pub(crate) fn seam_left_out_digest(entity: SourceDbProjectionStateEntity) -> Sha256Digest {
+/// The bytes of a left-out marker that say the row was left out.
+const SEAM_LEFT_OUT_PREFIX_BYTES: usize = 16;
+
+/// The digest a left-out row holds in the durable state: a prefix that says
+/// the row was left out, then a part bound to the source row's own digest.
+/// A later import tells an unchanged left-out row (the same marker) from one
+/// whose source changed (another marker with the same prefix), so a changed
+/// source row the seam still leaves out is counted as seam-skipped, and a row
+/// clients never held is never withdrawn from them. The prefix is the start
+/// of the earlier fixed marker, so a state that holds one still reads as left
+/// out.
+pub(crate) fn seam_left_out_digest(
+    entity: SourceDbProjectionStateEntity,
+    source: &Sha256Digest,
+) -> Sha256Digest {
+    let mut hasher = Sha256::new();
+    hasher.update(DIGEST_DOMAIN);
+    hasher.update([0]);
+    hasher.update(b"import seam: left out source");
+    hasher.update([0]);
+    hasher.update(entity.as_str().as_bytes());
+    hasher.update([0]);
+    hasher.update(source.as_bytes());
+    let bound: [u8; 32] = hasher.finalize().into();
+    let mut marker = seam_left_out_prefix(entity);
+    marker[SEAM_LEFT_OUT_PREFIX_BYTES..].copy_from_slice(&bound[..32 - SEAM_LEFT_OUT_PREFIX_BYTES]);
+    Sha256Digest::from_bytes(marker)
+}
+
+/// Whether `digest` is a left-out marker of `entity`, whatever source row it
+/// was bound to.
+fn is_seam_left_out_digest(
+    entity: SourceDbProjectionStateEntity,
+    digest: &Sha256Digest,
+) -> bool {
+    digest.as_bytes()[..SEAM_LEFT_OUT_PREFIX_BYTES]
+        == seam_left_out_prefix(entity)[..SEAM_LEFT_OUT_PREFIX_BYTES]
+}
+
+fn seam_left_out_prefix(entity: SourceDbProjectionStateEntity) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(DIGEST_DOMAIN);
     hasher.update([0]);
     hasher.update(b"import seam: left out");
     hasher.update([0]);
     hasher.update(entity.as_str().as_bytes());
-    Sha256Digest::from_bytes(hasher.finalize().into())
+    hasher.finalize().into()
 }
 
 /// The entities whose published form the seam can change.
@@ -223,10 +261,18 @@ impl SourceDbProjectionState {
                 match form {
                     SeamForm::Recorded => {}
                     SeamForm::LeftOut => {
-                        let marker = seam_left_out_digest(entity);
-                        if prior_digest.is_some_and(|digest| digest != marker) {
+                        // The current digest is still the source row's own.
+                        let (_, source) = self.current_seam_digest(ordinal, id)?;
+                        let marker = seam_left_out_digest(entity, &source);
+                        // Clients hold it only when an earlier import
+                        // published it.
+                        if prior_digest
+                            .is_some_and(|digest| !is_seam_left_out_digest(entity, &digest))
+                        {
                             applied.withdrawn.push((entity, id, car_id));
                         }
+                        // Counted when the source row is new or changed since
+                        // the last import, whether or not it was left out then.
                         if changed && prior_digest != Some(marker) {
                             match entity {
                                 SourceDbProjectionStateEntity::Position => {
