@@ -68,6 +68,20 @@ Standard input is read in one of two modes:
 `verify-backup` authenticates and reads the whole bundle without writing
 anything. A wrong password is refused.
 
+Before it writes anything, `backup` checks that the destination can hold the
+whole bundle, including each file's record and the encryption overhead, and
+that the Hub's data folder can hold the run's short-lived pack records. A run
+reports success only after it has read the published file back in full: on a
+volume that enforces ownership it must be the same file the run wrote,
+unchanged; on a network share or a volume that ignores ownership the file under
+the final name is read again after that and must match, byte for byte, what
+the run wrote. Otherwise the run fails with `invalid_publication`. Stopping a
+run (for example with the service) also stops that read-back, and a stopped run
+removes no older generation. When rotation keeps fewer generations, each older
+one is removed only after the newest and every other kept one are checked again
+just before the removal; if one of them has changed, nothing more is removed
+and the error says how many older generations had already gone.
+
 The data backup contains the catalogue, encrypted token row, pairing database,
 and all referenced immutable packs, including active or retained PhysicalV3,
 changed-set, and prepared-map packs. Pairing invitations and active device
@@ -98,8 +112,13 @@ completion marker is an unkeyed digest, so it is not authenticated.
 `--plaintext-directory`; the flag is refused for an encrypted bundle. A new
 backup in the older format needs its own command,
 `backup-plaintext-directory --destination <new directory>`. Prefer the
-encrypted default. The directory's manifest lists every file, so this older
-format keeps its 4,096-file limit; a larger Hub needs the encrypted bundle.
+encrypted default. This format has no file limit either: up to 4,096 files the
+directory's manifest (`backup-v4.json`) lists every file, as earlier builds
+expect; above that the manifest (`backup-v5.json`) names only the catalogue and
+records how many files and bytes the directory holds, and `verify-backup` and
+`restore-data` check every pack (named by its own digest), every no-op body and
+the totals by walking the directory. Earlier builds cannot read a
+`backup-v5.json` directory.
 
 ## Export recovery credentials
 
@@ -177,7 +196,21 @@ the restored directory (`secrets/hub-cursor.key`, mode 0600) and re-signs every
 stored sync cursor and schema 2.2 no-op body under it, with the same contents
 otherwise. History rows and packs are unchanged. This happens in the private
 staging directory before the restored directory appears, so an interrupted
-restore leaves no destination behind: run it again. A backup without sync
+restore leaves no destination behind: run it again.
+
+The folder that will hold the restored directory must belong to the Hub's user
+and must not be writable by other accounts. The restore stages its work in a
+locked `.teslatlas-encrypted-restore-<id>.staging` folder there and works
+through folders it holds open, so renaming that folder or a parent during the
+restore cannot redirect a file; if the target's folder moves, nothing is
+published. Before writing, the restore checks that the folder's volume can hold
+every file with its allocation and metadata overhead, and before each file that
+the rest still fits with a reserve to spare. Each restore first removes what an
+interrupted restore left there (also `.teslatlas-data-recovery-<id>.staging`
+folders from earlier builds and directory-format restores), but never one that
+a running restore or backup holds locked. If such a folder cannot be listed,
+inspected or removed, the restore stops before it reads the bundle and names
+the folder: remove it, or fix its permissions, and run the restore again. A backup without sync
 history gets its key when the restored Hub first starts.
 
 Every device paired before the restore is refused afterwards: its bearer no
