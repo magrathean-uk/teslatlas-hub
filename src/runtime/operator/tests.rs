@@ -746,7 +746,15 @@ async fn collection_window_operator_observation_is_supervised_for_its_whole_life
     assert_eq!(rig.controller.status().phase, crate::collection::window::Phase::Open);
     // The time server stops answering; the next check is due.
     rig.probe.set(Err(crate::collection::window::Refusal::ClockOffset));
+    // One miss is tolerated (DEC-131): the window stays Open until the third
+    // consecutive miss, each due after the retry interval.
     rig.clock.advance(crate::collection::window::NTP_RECHECK_SECONDS + 1);
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(rig.controller.status().phase, crate::collection::window::Phase::Open);
+    for _ in 1..crate::collection::window::clock::NTP_MAX_FAILURES {
+        rig.clock.advance(crate::collection::window::clock::NTP_RETRY_SECONDS + 1);
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
     let (result, handback) = tokio::time::timeout(std::time::Duration::from_secs(10), supervised)
         .await
         .expect("the observation was stopped by the supervision")
