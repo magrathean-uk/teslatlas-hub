@@ -4,6 +4,11 @@ This file records material changes to licensing, attribution, provenance, privac
 Historical entries describe what the documents asserted at that time; they are
 not evidence that a private instrument exists or remains sufficient.
 
+## 2026-11-14 - Go 1.27.4 pin and bridge patch digest recorded
+
+- Provenance text and manifest now name Go 1.27.4 (as the packaging lock does) and
+  the current bridge patch SHA-256. No licence or required attribution changes.
+
 ## 2026-10-26 - N1 Step 14 independence and provenance wording
 
 - Under the owner's pre-approval N1R-L (2026-10-26), updated the independence

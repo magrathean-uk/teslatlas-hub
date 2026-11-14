@@ -30,7 +30,7 @@ The macOS service and optional Debian Fleet package separately bundle Tesla's
 official `tesla-http-proxy` from
 `https://github.com/teslamotors/vehicle-command`, release `v0.4.1`, revision
 `49977a18fd68567501d59e16a6c9e4a8b9348544`. It is Apache-2.0 licensed and is
-built with Go 1.27.3 exactly. A private source copy receives the tracked
+built with Go 1.27.4 exactly. A private source copy receives the tracked
 `packaging/tesla-command-proxy/0001-go-1.27-runtime-defaults.patch`
 (SHA-256
 `93a464c0e3a276d6c2c379ac33bb92ab10301cda7ddfb13cd7b155c7da8f87bc`).
@@ -78,7 +78,7 @@ archive SHA-256 is
 The build applies
 `packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch`
 (SHA-256
-`33b3c1ab5597507cc4ddf78be57fa017c3b731a109559c9e6ec6e60f14ee3637`)
+`9b0332bd05793c329dac6203ae56905b79508585460c09c5ed40206dde7aff03`)
 to a temporary private source copy. That patch adds the bounded Teslatlas loopback dispatcher and its configuration, and changes the receiver's debug log to record the record type instead of the raw telemetry payload. It forwards decoded `V` and
 connectivity records to
 `http://127.0.0.1:8080/v1/internal/fleet-telemetry`; vehicle records are
@@ -89,7 +89,7 @@ acknowledged only after Hub accepts them. The build then replaces the upstream
 `go.sum` (SHA-256
 `e0a1c9ba5d8d53fe3be4e9b949350ebb92242a22b4f1b9778b8a5698ab8037c7`), which
 update the module requirements; the replacement `go.mod` carries a change notice. The bridge lock records both digests. The
-bridge is built with Go 1.27.3 exactly, `CGO_ENABLED=0`, `-trimpath`, and stripped symbols for Darwin amd64 and
+bridge is built with Go 1.27.4 exactly, `CGO_ENABLED=0`, `-trimpath`, and stripped symbols for Darwin amd64 and
 ARM64 plus Linux amd64 and ARM64. The CGO-only Kafka and ZMQ integrations are
 unavailable in this build; the Teslatlas runtime configuration selects only the
 fixed loopback dispatcher.
