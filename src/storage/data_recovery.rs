@@ -1749,6 +1749,9 @@ fn validate_streamed_data_tree(
             .file_name()
             .into_string()
             .map_err(|_| invalid("restored pack directory contains a non-UTF-8 name"))?;
+        if is_ignorable_finder_file(&entry.path(), &name) {
+            continue;
+        }
         let digest = name
             .strip_suffix(".sqlite.zst")
             .filter(|_| canonical_pack_filename(&name))
@@ -2377,6 +2380,9 @@ fn validate_schema_22_noop_directory(
             .file_name()
             .into_string()
             .map_err(|_| invalid("schema 2.2 no-op directory contains a non-UTF-8 name"))?;
+        if !expected.contains_key(&name) && is_ignorable_finder_file(&entry.path(), &name) {
+            continue;
+        }
         let Some(snapshot_id) = expected.get(&name) else {
             return Err(invalid(format!(
                 "schema 2.2 no-op directory has an unknown member: {name}"
@@ -2460,7 +2466,7 @@ fn require_directory_entry_set(
             .file_name()
             .into_string()
             .map_err(|_| invalid(format!("{description} contains a non-UTF-8 name")))?;
-        if is_finder_metadata(&name) && !expected.contains(&name) {
+        if !expected.contains(&name) && is_ignorable_finder_file(&entry.path(), &name) {
             continue;
         }
         if !actual.insert(name) {
@@ -2479,6 +2485,15 @@ fn require_directory_entry_set(
 /// into viewed folders; never a backup member, never copied or restored.
 fn is_finder_metadata(name: &str) -> bool {
     name == ".DS_Store" || (name.starts_with("._") && name.len() > 2)
+}
+
+/// True only for a regular file (not followed through symlinks) with a Finder
+/// metadata name; directories, symlinks and other types are never ignored.
+pub(super) fn is_ignorable_finder_file(path: &Path, name: &str) -> bool {
+    is_finder_metadata(name)
+        && fs::symlink_metadata(path)
+            .map(|metadata| metadata.file_type().is_file())
+            .unwrap_or(false)
 }
 
 fn read_directory(path: &Path) -> Result<Vec<fs::DirEntry>, DataRecoveryError> {
