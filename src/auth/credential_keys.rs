@@ -40,7 +40,7 @@ pub(crate) const FORCED_ROTATION_INVOCATIONS: u64 = 1 << 31;
         reason = "Part K backup-exclusion handoff; production integration belongs to V1."
     )
 )]
-pub(crate) const TMUTIL_RUN_LIMIT: Duration = Duration::from_secs(10);
+pub(crate) const TMUTIL_RUN_LIMIT: Duration = Duration::from_secs(30);
 #[cfg_attr(
     not(test),
     allow(

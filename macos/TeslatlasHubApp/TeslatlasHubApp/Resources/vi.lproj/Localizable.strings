@@ -856,3 +856,5 @@
 "hub.signIn.reportInvalid" = "Hub không thể xác nhận lần đăng nhập. Hãy đăng nhập lại bằng Tesla.";
 
 "hub.signIn.unconfirmed" = "Hub chưa xác nhận lần đăng nhập kịp thời, nhưng có thể nó đã được lưu. Hãy kiểm tra trạng thái của Hub trước khi đăng nhập lại.";
+
+"hub.signIn.startWithdrawFailed" = "Hub không khởi động được và việc xóa lần khởi động chưa hoàn tất đã thất bại: %1$@ Nhấn “Kết nối Tesla” để hoàn tất việc xóa.";

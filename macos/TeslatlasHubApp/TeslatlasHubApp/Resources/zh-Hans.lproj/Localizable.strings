@@ -856,3 +856,5 @@
 "hub.signIn.reportInvalid" = "Hub 无法确认此次登录。请再次使用 Tesla 登录。";
 
 "hub.signIn.unconfirmed" = "Hub 未能及时确认此次登录，但登录信息可能已保存。请先检查 Hub 的状态，再重新登录。";
+
+"hub.signIn.startWithdrawFailed" = "Hub 未启动，且移除其未完成的启动失败：%1$@ 请按“连接 Tesla”完成移除。";

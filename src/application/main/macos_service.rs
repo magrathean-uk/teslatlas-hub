@@ -671,6 +671,13 @@ impl ServiceCollectorSlot {
         }
     }
 
+    /// Replaces the configuration the next collector start reads: the
+    /// fresh-install setup's collection interval (M02-T21, DEC-116). A
+    /// collector already running keeps the configuration it started with.
+    fn reload(&self, config: HubConfig) {
+        self.lock().config = config;
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, ServiceCollectorSlotInner> {
         self.inner
             .lock()

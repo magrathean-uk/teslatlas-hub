@@ -856,3 +856,5 @@
 "hub.signIn.reportInvalid" = "Hub could not confirm the sign-in. Sign in with Tesla again.";
 
 "hub.signIn.unconfirmed" = "Hub did not confirm the sign-in in time, but it may have been stored. Check Hub's status before signing in again.";
+
+"hub.signIn.startWithdrawFailed" = "Hub did not start, and removing its unfinished start failed: %1$@ Press Connect Tesla to finish removing it.";

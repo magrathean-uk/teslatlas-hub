@@ -856,3 +856,5 @@
 "hub.signIn.reportInvalid" = "Hub kunne ikke bekræfte login. Log ind med Tesla igen.";
 
 "hub.signIn.unconfirmed" = "Hub bekræftede ikke login i tide, men det kan være gemt. Tjek status for Hub, før du logger ind igen.";
+
+"hub.signIn.startWithdrawFailed" = "Hub startede ikke, og fjernelsen af den ufuldførte start mislykkedes: %1$@ Klik på “Opret forbindelse til Tesla” for at fuldføre fjernelsen.";

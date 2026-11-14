@@ -5,3 +5,4 @@
 pub mod data_recovery;
 pub mod db;
 pub(crate) mod durability_fault;
+pub mod setup_marker;

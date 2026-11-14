@@ -636,10 +636,18 @@ protocol HubCommandRunning {
     func run(arguments: [String],
              onOutputLine: @escaping (String) -> Void,
              completion: @escaping (Result<String, Error>) -> Void)
+    /// One command bounded by `timeout` as well as its usual limit (M02-T21 readiness).
+    func run(arguments: [String], timeout: TimeInterval,
+             completion: @escaping (Result<String, Error>) -> Void)
 }
 
 extension HubCommandRunning {
     func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void) {
+        run(arguments: arguments, completion: completion)
+    }
+
+    func run(arguments: [String], timeout: TimeInterval,
+             completion: @escaping (Result<String, Error>) -> Void) {
         run(arguments: arguments, completion: completion)
     }
 
@@ -1147,9 +1155,16 @@ final class EmbeddedHubCommandRunner: HubCommandRunning {
         runProcess(arguments: arguments, stdin: nil, onOutputLine: onOutputLine, completion: completion)
     }
 
+    func run(arguments: [String], timeout: TimeInterval,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        runProcess(arguments: arguments, stdin: nil, onOutputLine: nil,
+                   timeout: min(max(0.001, timeout), Self.timeout(for: arguments)), completion: completion)
+    }
+
     private func runProcess(arguments: [String],
                             stdin: String?,
                             onOutputLine: ((String) -> Void)?,
+                            timeout: TimeInterval? = nil,
                             completion: @escaping (Result<String, Error>) -> Void) {
         guard let executable = Bundle.main.url(forResource: "teslatlas-hub", withExtension: nil) else {
             completion(.failure(HubActionError.missingResource("teslatlas-hub")))
@@ -1159,7 +1174,7 @@ final class EmbeddedHubCommandRunner: HubCommandRunning {
                                arguments: arguments,
                                stdin: stdin,
                                maximumOutputBytes: Self.maximumOutputBytes(for: arguments),
-                               timeout: Self.timeout(for: arguments),
+                               timeout: timeout ?? Self.timeout(for: arguments),
                                onOutputLine: onOutputLine,
                                completion: completion)
     }
@@ -1863,6 +1878,12 @@ final class HubLifecycleOperation {
               stale: Self.staleFailure, completion: completion)
     }
 
+    func run(_ arguments: [String], timeout: TimeInterval,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        child({ done in commandRunner.run(arguments: arguments, timeout: timeout, completion: done) },
+              stale: Self.staleFailure, completion: completion)
+    }
+
     func run(_ arguments: [String],
              onOutputLine: @escaping (String) -> Void,
              completion: @escaping (Result<String, Error>) -> Void) {
@@ -2017,7 +2038,8 @@ final class HubAccountSignIn {
     }
 
     /// Checks, before the Tesla login window opens, that the running service has an Open
-    /// collection window. A refusal leaves the context held: the caller cancels it.
+    /// collection window. On a Mac with no Hub service yet, the service is first set up and
+    /// started (DEC-112). A refusal leaves the context held: the caller cancels it.
     func requireOpenWindow(completion: @escaping (Result<Void, Error>) -> Void) {
         guard let operation else { completion(.failure(HubActionError.preview)); return }
         guard operation.isLive else {
@@ -2025,7 +2047,7 @@ final class HubAccountSignIn {
                 HubL10n.text("hub.lifecycle.stale", fallback: "That Hub operation had already finished. Nothing was changed."))))
             return
         }
-        controller.requireOpenCollectionWindow(operation, completion: completion)
+        controller.requireOpenCollectionWindowForOwnerSignIn(operation, completion: completion)
     }
 
     /// Authentication was cancelled or failed: the context is settled, nothing changed.
@@ -4229,19 +4251,326 @@ final class HubController {
                                                  completion: @escaping (Result<Void, Error>) -> Void) {
         op.phase("window")
         op.run(Self.windowStatusArguments(configPath: configPath)) { result in
-            DispatchQueue.main.async {
-                switch result {
-                case let .success(output) where Self.credentialRecoveryIsPending(output):
-                    completion(.failure(Self.signInRefusal(code: "credential_recovery_pending")))
-                case let .success(output) where Self.collectionWindowIsOpen(output):
-                    completion(.success(()))
-                case .success:
-                    completion(.failure(Self.signInRefusal(code: "window_closed")))
-                case let .failure(error):
-                    completion(.failure(Self.signInError(error)))
+            DispatchQueue.main.async { completion(Self.signInWindowCheck(result)) }
+        }
+    }
+
+    /// What one `window status` answer means for a sign-in.
+    static func signInWindowCheck(_ result: Result<String, Error>) -> Result<Void, Error> {
+        switch result {
+        case let .success(output) where credentialRecoveryIsPending(output):
+            return .failure(signInRefusal(code: "credential_recovery_pending"))
+        case let .success(output) where collectionWindowIsOpen(output):
+            return .success(())
+        case .success:
+            return .failure(signInRefusal(code: "window_closed"))
+        case let .failure(error):
+            return .failure(signInError(error))
+        }
+    }
+
+    // MARK: Owner sign-in on a fresh Mac (DEC-112, DEC-115)
+
+    /// How far a first start this app made itself has gone. The receipt is written after
+    /// absence was confirmed and before the Start: it is the only proof that this app created
+    /// the installation, so only with it is the service ever removed again (M02-T21 review
+    /// findings 2 and 3). It is deleted once the service answers or its removal completes.
+    enum OwnerSignInStartStage: String {
+        case starting
+        case withdrawing
+    }
+
+    private var ownerSignInStartReceiptURL: URL {
+        configPath.deletingLastPathComponent().appendingPathComponent("owner-sign-in-start.json")
+    }
+
+    /// The stage of an unfinished first start, if this app left one. A receipt that cannot be
+    /// read is still this app's own: its removal is finished first.
+    var ownerSignInStartStage: OwnerSignInStartStage? {
+        let url = ownerSignInStartReceiptURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        guard let data = try? Data(contentsOf: url),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let raw = object["stage"] as? String,
+              let stage = OwnerSignInStartStage(rawValue: raw) else { return .withdrawing }
+        return stage
+    }
+
+    private func writeOwnerSignInStartReceipt(_ stage: OwnerSignInStartStage) throws {
+        let data = try JSONSerialization.data(withJSONObject: ["stage": stage.rawValue], options: [.sortedKeys])
+        try data.write(to: ownerSignInStartReceiptURL, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)],
+                                              ofItemAtPath: ownerSignInStartReceiptURL.path)
+    }
+
+    private func removeOwnerSignInStartReceipt() throws {
+        guard FileManager.default.fileExists(atPath: ownerSignInStartReceiptURL.path) else { return }
+        try FileManager.default.removeItem(at: ownerSignInStartReceiptURL)
+    }
+
+    /// Whether the owner sign-in may set up and start the Hub here: only the installed app (not
+    /// a development or preview run, and never a test host's real LaunchAgent writer), and only
+    /// for its own unfinished start or a LaunchAgent confirmed absent. The loaded job is checked
+    /// as well before anything is written.
+    var ownerSignInStartsHub: Bool {
+        guard ownerSignInStartIsPossible, let launchAgent else { return false }
+        if ownerSignInStartStage != nil { return true }
+        if case .absent = launchAgent.installation { return true }
+        return false
+    }
+
+    private var ownerSignInStartIsPossible: Bool {
+        guard !previewMode, developmentConfiguration == nil, serviceInstalledOverride != true,
+              let launchAgent else { return false }
+        if isTestHost, launchAgent is HubLaunchAgentWriter { return false }
+        return true
+    }
+
+    /// The owner sign-in's window check. An installed Hub goes straight to the check, as before.
+    /// With the LaunchAgent confirmed absent and no job loaded, the default configuration and the
+    /// receipt are written and the ordinary Start installs and starts the service, which starts
+    /// idle (DEC-115); once it answers, the window is checked. Nothing is sent to Tesla, nothing
+    /// is imported and no account or credential is created here. An inspection that fails is
+    /// shown and nothing is started or removed. A start that fails, or a service that never
+    /// answers, is removed again only under the receipt; a removal that fails is reported and
+    /// finished by the next press.
+    fileprivate func requireOpenCollectionWindowForOwnerSignIn(
+        _ op: HubLifecycleOperation,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        guard ownerSignInStartIsPossible, let launchAgent else {
+            requireOpenCollectionWindow(op, completion: completion)
+            return
+        }
+        if let stage = ownerSignInStartStage {
+            resumeOwnerSignInStart(op, stage: stage, completion: completion)
+            return
+        }
+        switch launchAgent.installation {
+        case .present:
+            requireOpenCollectionWindow(op, completion: completion)
+        case let .unknown(error):
+            refuseOwnerSignInStart(error, reason: "launch_agent_unknown", completion: completion)
+        case .absent:
+            op.phase("inspect")
+            op.loadedState { [self] state in
+                DispatchQueue.main.async { [self] in
+                    switch state {
+                    case .loaded:
+                        // A job is loaded without its file: not this app's to start or remove.
+                        requireOpenCollectionWindow(op, completion: completion)
+                    case let .unknown(error):
+                        refuseOwnerSignInStart(error, reason: "service_state_unknown", completion: completion)
+                    case .unloaded:
+                        beginOwnerSignInStart(op, completion: completion)
+                    }
                 }
             }
         }
+    }
+
+    private func refuseOwnerSignInStart(_ error: Error, reason: String,
+                                        completion: @escaping (Result<Void, Error>) -> Void) {
+        HubAppLog.shared.record("sign_in_start.refused", category: "service", level: "WARN",
+                                fields: ["reason": reason, "error_code": HubAppLog.errorCode(error)])
+        completion(.failure(error))
+    }
+
+    private func handoverRefusal() -> Error? {
+        guard hasPendingMigrationHandover else { return nil }
+        HubAppLog.shared.record("service.rejected", category: "service", level: "WARN",
+                                fields: ["action": "start", "reason": "handover_pending"])
+        return HubActionError.commandFailed(
+            HubL10n.text("hub.HubController.2457.838", fallback: "Finish the source application handover before starting Hub."))
+    }
+
+    /// Confirmed absence: the configuration, then the receipt, then the Start.
+    private func beginOwnerSignInStart(_ op: HubLifecycleOperation,
+                                       completion: @escaping (Result<Void, Error>) -> Void) {
+        if let refusal = handoverRefusal() { completion(.failure(refusal)); return }
+        HubAppLog.shared.record("sign_in_start.requested", category: "service",
+                                fields: ["provider": "legacy"])
+        op.phase("configuration")
+        do {
+            try ensureConfig()
+            try writeOwnerSignInStartReceipt(.starting)
+        } catch {
+            HubAppLog.shared.record("sign_in_start.failed", category: "service", level: "ERROR",
+                                    fields: ["reason": "configuration", "error_code": HubAppLog.errorCode(error)])
+            try? removeOwnerSignInStartReceipt()
+            completion(.failure(error))
+            return
+        }
+        startOwnerSignInHub(op, completion: completion)
+    }
+
+    /// The next press after an unfinished first start of this app: a removal still owed is
+    /// finished, then the start begins again from confirmed absence; a start the app did not
+    /// see through is repeated (the Start is idempotent) and waited for.
+    private func resumeOwnerSignInStart(_ op: HubLifecycleOperation, stage: OwnerSignInStartStage,
+                                        completion: @escaping (Result<Void, Error>) -> Void) {
+        HubAppLog.shared.record("sign_in_start.resumed", category: "service", fields: ["stage": stage.rawValue])
+        switch stage {
+        case .starting:
+            if let refusal = handoverRefusal() { completion(.failure(refusal)); return }
+            op.phase("configuration")
+            do { try ensureConfig() } catch {
+                completion(.failure(error))
+                return
+            }
+            startOwnerSignInHub(op, completion: completion)
+        case .withdrawing:
+            op.phase("withdraw")
+            op.service(["service", "remove"]) { [self] removed in
+                DispatchQueue.main.async { [self] in
+                    switch removed {
+                    case let .failure(removeError):
+                        completion(.failure(withdrawalFailure(removeError)))
+                    case .success:
+                        do { try removeOwnerSignInStartReceipt() } catch {
+                            completion(.failure(error))
+                            return
+                        }
+                        HubAppLog.shared.record("sign_in_start.withdrawn", category: "service")
+                        requireOpenCollectionWindowForOwnerSignIn(op, completion: completion)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The history-only policy, the ordinary Start and the wait for the first answer.
+    private func startOwnerSignInHub(_ op: HubLifecycleOperation,
+                                     completion: @escaping (Result<Void, Error>) -> Void) {
+        op.phase("policy")
+        verifyHistoryOnlyStartPolicy(op) { [self] policy in
+            if case let .failure(error) = policy {
+                withdrawOwnerSignInStart(op, error, reason: "policy", completion: completion)
+                return
+            }
+            op.phase("start")
+            runServiceCommand(op, ["service", "start"]) { [self] started in
+                if case let .failure(error) = started {
+                    withdrawOwnerSignInStart(op, error, reason: "start", completion: completion)
+                    return
+                }
+                op.phase("readiness")
+                let deadline = migrationStartupReadinessNow()
+                    .addingTimeInterval(migrationStartupReadinessTimeout)
+                awaitOwnerSignInWindowAnswer(op, deadline: deadline,
+                                             attemptsRemaining: migrationStartupReadinessMaxAttempts) { [self] answer in
+                    switch answer {
+                    case let .answered(.success(output)):
+                        // The service answered: the installation is the owner's from here on.
+                        do { try removeOwnerSignInStartReceipt() } catch {
+                            HubAppLog.shared.record("sign_in_start.receipt_kept", category: "service", level: "WARN",
+                                                    fields: ["error_code": HubAppLog.errorCode(error)])
+                        }
+                        let result = Self.signInWindowCheck(.success(output))
+                        HubAppLog.shared.record("sign_in_start.completed", category: "service",
+                                                fields: ["window_open": (try? result.get()) != nil ? "true" : "false"])
+                        completion(result)
+                    case let .answered(.failure(error)):
+                        // Busy or no answer in its own time: the receipt stays, the next press resumes.
+                        HubAppLog.shared.record("sign_in_start.unconfirmed", category: "service", level: "WARN",
+                                                fields: ["error_code": HubAppLog.errorCode(error)])
+                        completion(Self.signInWindowCheck(.failure(error)))
+                    case let .unanswered(error):
+                        withdrawOwnerSignInStart(op, error, reason: "readiness", completion: completion)
+                    }
+                }
+            }
+        }
+    }
+
+    private enum OwnerSignInWindowAnswer {
+        case answered(Result<String, Error>)
+        case unanswered(Error)
+    }
+
+    /// Asks `window status` until the started service answers, within the startup deadline.
+    /// Each request is sent only before the deadline and is bounded by what is left of it; an
+    /// answer that arrives after the deadline counts as none. Only "not running" and "no control
+    /// channel" mean the service has not answered yet.
+    private func awaitOwnerSignInWindowAnswer(_ op: HubLifecycleOperation,
+                                              deadline: Date,
+                                              attemptsRemaining: Int,
+                                              completion: @escaping (OwnerSignInWindowAnswer) -> Void) {
+        let notReady = HubActionError.commandFailed(
+            HubL10n.text("hub.HubController.2678.902", fallback: "Hub did not become ready before the startup deadline."))
+        guard op.isLive else {
+            completion(.answered(.failure(HubActionError.commandFailed(
+                HubL10n.text("hub.lifecycle.stale", fallback: "That Hub operation had already finished. Nothing was changed.")))))
+            return
+        }
+        let remaining = deadline.timeIntervalSince(migrationStartupReadinessNow())
+        guard remaining > 0 else { completion(.unanswered(notReady)); return }
+        op.run(Self.windowStatusArguments(configPath: configPath), timeout: remaining) { [self] result in
+            DispatchQueue.main.async { [self] in
+                guard migrationStartupReadinessNow() < deadline else {
+                    completion(.unanswered(notReady))
+                    return
+                }
+                if case let .failure(error) = result {
+                    let text = HubActionError.settingQuiescenceAside(error).localizedDescription
+                    if text.contains("service_not_running") || text.contains("control_channel_failed") {
+                        guard attemptsRemaining > 1 else {
+                            completion(.unanswered(notReady))
+                            return
+                        }
+                        let left = deadline.timeIntervalSince(migrationStartupReadinessNow())
+                        migrationStartupReadinessSchedule(min(migrationStartupReadinessPollInterval, max(0, left))) { [self] in
+                            DispatchQueue.main.async { [self] in
+                                awaitOwnerSignInWindowAnswer(op, deadline: deadline,
+                                                             attemptsRemaining: attemptsRemaining - 1,
+                                                             completion: completion)
+                            }
+                        }
+                        return
+                    }
+                }
+                completion(.answered(result))
+            }
+        }
+    }
+
+    /// A first start of this app that failed is removed again (the LaunchAgent file and any
+    /// loaded job), under the receipt; the configuration holds no credential and stays. The
+    /// start's own failure is what the owner reads. A removal that fails keeps the receipt at
+    /// `withdrawing`, is reported, and is finished by the next press.
+    private func withdrawOwnerSignInStart(_ op: HubLifecycleOperation, _ error: Error, reason: String,
+                                          completion: @escaping (Result<Void, Error>) -> Void) {
+        HubAppLog.shared.record("sign_in_start.failed", category: "service", level: "ERROR",
+                                fields: ["reason": reason, "error_code": HubAppLog.errorCode(error)])
+        do { try writeOwnerSignInStartReceipt(.withdrawing) } catch {
+            HubAppLog.shared.record("sign_in_start.receipt_unchanged", category: "service", level: "WARN",
+                                    fields: ["error_code": HubAppLog.errorCode(error)])
+        }
+        op.phase("withdraw")
+        op.service(["service", "remove"]) { [self] removed in
+            DispatchQueue.main.async { [self] in
+                switch removed {
+                case let .failure(removeError):
+                    completion(.failure(withdrawalFailure(removeError)))
+                case .success:
+                    do { try removeOwnerSignInStartReceipt() } catch {
+                        HubAppLog.shared.record("sign_in_start.receipt_kept", category: "service", level: "WARN",
+                                                fields: ["error_code": HubAppLog.errorCode(error)])
+                    }
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
+    /// The removal of an unfinished first start failed: reported, remembered by the receipt.
+    private func withdrawalFailure(_ removeError: Error) -> Error {
+        HubAppLog.shared.record("sign_in_start.withdraw_failed", category: "service", level: "ERROR",
+                                fields: ["error_code": HubAppLog.errorCode(removeError)])
+        return HubActionError.keepingQuiescence(of: removeError, in: HubActionError.commandFailed(
+            HubL10n.format("hub.signIn.startWithdrawFailed",
+                           fallback: "Hub did not start, and removing its unfinished start failed: %1$@ Press Connect Tesla to finish removing it.",
+                           arguments: [HubActionError.settingQuiescenceAside(removeError).localizedDescription])))
     }
 
     /// The Hub's own sign-in. The app never exchanges the code and never holds a token:

@@ -856,3 +856,5 @@
 "hub.signIn.reportInvalid" = "Hub nemohol potvrdiť prihlásenie. Znova sa prihláste cez Teslu.";
 
 "hub.signIn.unconfirmed" = "Hub včas nepotvrdil prihlásenie, ale mohlo byť uložené. Pred opätovným prihlásením skontrolujte stav Hubu.";
+
+"hub.signIn.startWithdrawFailed" = "Hub sa nespustil a odstránenie jeho nedokončeného spustenia zlyhalo: %1$@ Odstránenie dokončíte kliknutím na „Pripojiť Teslu“.";

@@ -29,6 +29,41 @@ your Tesla Developer application and the configuration described in
 [Fleet setup](fleet-setup.md). Legacy requires an existing Owner API token
 pair. Do not leave another service refreshing the same Legacy credentials.
 
+### Fresh Mac: owner sign-in
+
+Owner sign-in needs the running service with an open collection window. On a
+Mac with no Hub service yet, the app starts the service itself:
+
+1. Choose **Get Started**, **New installation**, **Continue**, **Owner
+   sign-in**, **Continue**, then **Connect Tesla**.
+2. The app checks that no Hub LaunchAgent file exists and no Hub job is
+   loaded, writes the default configuration (every collector path off),
+   installs and starts its per-user LaunchAgent and waits until the service
+   answers (**Setting up Hub…**). A Hub that was never configured starts
+   idle: it answers window commands on its local control channel and its
+   loopback listener, its collector stays off, and nothing is sent to Tesla.
+   No account is created and the App cannot pair with it.
+3. With no open window the page says "Sign-in needs an open collection window.
+   Open a window, then sign in again." Hub stays running and idle, also after
+   a restart or login. A start that fails shows its reason and the app removes
+   the service it installed; press **Connect Tesla** to retry. If that removal
+   fails too, the page says so and the next **Connect Tesla** finishes it.
+   If the app cannot tell whether a Hub is already installed, it shows why
+   and changes nothing.
+4. Open a window as described in
+   [Collection windows](../operations/collection-windows.md#first-start-on-a-fresh-mac),
+   then press **Connect Tesla** again to reach the Tesla sign-in.
+5. The sign-in runs in the running service. It stores the Hub's own login
+   and its cars, sets the supported collection interval (300 seconds) in the
+   configuration and reloads the collector before the page reports
+   completion. The Hub then collects inside the open window, never outside
+   one, and after a stop, a login or a restart it starts again configured.
+   Nothing needs to be edited by hand.
+6. Once set up, the Hub keeps a marker, `hub-setup.json`, in its data folder.
+   If its catalogue `hub.sqlite` is later missing or emptied, the Hub refuses
+   to start and asks for a restore from a backup; it never starts again as a
+   new Hub.
+
 To bring existing history across, choose **Import History** and follow
 the [migration checklist](../releases/migration.md#before-you-start). Enter the
 server, SSH port and user. Select **SSH key** and use **Choose Key…** to select

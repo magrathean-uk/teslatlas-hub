@@ -856,3 +856,5 @@
 "hub.signIn.reportInvalid" = "Hub tidak dapat mengonfirmasi proses masuk. Masuk lagi dengan Tesla.";
 
 "hub.signIn.unconfirmed" = "Hub tidak mengonfirmasi proses masuk tepat waktu, tetapi mungkin sudah tersimpan. Periksa status Hub sebelum masuk lagi.";
+
+"hub.signIn.startWithdrawFailed" = "Hub tidak dimulai, dan penghapusan proses mulai yang belum selesai gagal: %1$@ Tekan “Hubungkan Tesla” untuk menyelesaikan penghapusan.";

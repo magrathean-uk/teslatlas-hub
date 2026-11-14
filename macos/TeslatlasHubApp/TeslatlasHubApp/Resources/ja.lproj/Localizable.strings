@@ -856,3 +856,5 @@
 "hub.signIn.reportInvalid" = "Hubはサインインを確認できませんでした。Teslaでもう一度サインインしてください。";
 
 "hub.signIn.unconfirmed" = "Hubが時間内にサインインを確認できませんでしたが、保存されている可能性があります。もう一度サインインする前に、Hubのステータスを確認してください。";
+
+"hub.signIn.startWithdrawFailed" = "Hubは起動せず、未完了の起動の削除にも失敗しました: %1$@ 「Teslaに接続」を押して削除を完了してください。";

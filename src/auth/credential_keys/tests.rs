@@ -533,16 +533,16 @@ fn ct018_exclusion_helper() {
             (
                 "addexclusion".into(),
                 directory.path().into(),
-                Duration::from_secs(10)
+                Duration::from_secs(30)
             ),
             (
                 "isexcluded".into(),
                 directory.path().into(),
-                Duration::from_secs(10)
+                Duration::from_secs(30)
             )
         ]
     );
-    assert_eq!(TMUTIL_RUN_LIMIT, Duration::from_secs(10));
+    assert_eq!(TMUTIL_RUN_LIMIT, Duration::from_secs(30));
 
     for (answers, expected_calls) in [
         (vec![output(false, b"", false)], 1),
@@ -591,7 +591,7 @@ fn ct018_exclusion_helper() {
         assert!(
             runs.borrow()
                 .iter()
-                .all(|(_, _, limit)| *limit == Duration::from_secs(10))
+                .all(|(_, _, limit)| *limit == Duration::from_secs(30))
         );
     }
 
@@ -1145,4 +1145,86 @@ fn fix_exclusion_and_runner() {
             && child_is_reaped(bad[0].pid),
     );
     finish_fix_assertions(failures);
+}
+
+#[test]
+fn tmutil_limit_is_thirty_seconds_for_each_call() {
+    // DEC-119: one `tmutil addexclusion` call takes about 11 s on Darwin 27.2,
+    // so each exclusion command is allowed 30 s. Both calls receive this fixed
+    // limit; nothing else about the exclusion changes.
+    assert_eq!(TMUTIL_RUN_LIMIT, Duration::from_secs(30));
+    let root = temp();
+    let directory = secrets(&root);
+    let (exclusion, runs) = tmutil(vec![
+        output(true, b"", false),
+        output(true, b"[Excluded] test secrets\n", false),
+    ]);
+    assert_eq!(
+        exclusion.ensure_excluded(directory.path()),
+        Ok(ExclusionState::Verified)
+    );
+    let limits = runs
+        .borrow()
+        .iter()
+        .map(|(operation, _, limit)| (operation.clone(), *limit))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        limits,
+        [
+            ("addexclusion".to_owned(), Duration::from_secs(30)),
+            ("isexcluded".to_owned(), Duration::from_secs(30)),
+        ]
+    );
+}
+
+#[test]
+fn tmutil_limit_timeout_or_failure_still_refuses_the_sign_in() {
+    // The first stored credential pair creates the keyring through the
+    // production adapter (`SystemBackupExclusion` on macOS). A timed-out or
+    // failed exclusion command still refuses before any key is written, and
+    // the sign-in reports `secrets_backup_exclusion_failed`. Only scoped fakes
+    // in this test's own temporary folder run, never the real tmutil.
+    let root = temp();
+    let directory = secrets(&root);
+    let hang = fake_tmutil(
+        &root,
+        "hang",
+        "printf '[Excluded] fixture\\n'\nexec /bin/sleep 30",
+    );
+    let fail = fake_tmutil(&root, "fail", "printf '[Excluded] fixture\\n'\nexit 1");
+    let system = SystemBackupExclusion;
+    let runner = TmutilExclusion(SystemTmutil);
+    let exclusion: &dyn BackupExclusion = if cfg!(target_os = "macos") {
+        &system
+    } else {
+        &runner
+    };
+    for (program, limit, timed_out) in [
+        (&hang, Duration::from_millis(150), true),
+        (&fail, Duration::from_secs(1), false),
+    ] {
+        let refused = with_tmutil_test(program, limit, || {
+            create_keyring(&directory, exclusion, T0)
+        });
+        let observations = take_tmutil_observations();
+        let Err(error) = refused else {
+            panic!("exclusion_refusal_expected");
+        };
+        assert_eq!(error, CredentialKeyError::BackupExclusionFailed);
+        assert_eq!(
+            crate::auth::credential_vault::CredentialStoreError::from(error).code(),
+            "secrets_backup_exclusion_failed"
+        );
+        assert!(listing(&directory).is_empty(), "refusal_stores_nothing");
+        assert_eq!(observations.len(), 1);
+        let observed = &observations[0];
+        assert_eq!(observed.operation, "addexclusion");
+        assert_eq!(observed.timed_out, timed_out);
+        if timed_out {
+            assert!(observed.kill_attempted && observed.exit_signal == Some(9));
+        } else {
+            assert_eq!(observed.exit_code, Some(1));
+        }
+        assert!(observed.waited && child_is_reaped(observed.pid));
+    }
 }

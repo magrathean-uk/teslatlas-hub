@@ -72,6 +72,41 @@ without a service.
   approval reference is empty; the expiry is not after the start, is already
   past or exceeds the ceiling; or the interval overlaps another grant.
 
+## First start on a fresh Mac
+
+On a Mac with no Hub service yet, the owner sign-in starts the service, so the
+window verbs below have something to talk to:
+
+1. Open the app. In setup choose **Get Started**, **New installation**,
+   **Continue**, **Owner sign-in**, **Continue**, then **Connect Tesla**.
+2. The app confirms that no Hub LaunchAgent file exists and no Hub job is
+   loaded, writes the default configuration, installs and starts the Hub
+   service and waits until it answers (the page shows **Setting up Hub…**).
+   Nothing is sent to Tesla, nothing is imported and no account is created.
+3. A Hub that was never configured (every collector path off, a loopback
+   bind, no car, no credential and no imported history) starts idle: its
+   start check prints `"state": "idle"`, `window status`, `window trust`,
+   `window open` and `window close` answer on the local control channel, and
+   the collector stays off. Any other state is checked as before, so a Hub
+   that is configured but broken still refuses to start.
+4. With no Open window the page shows "Sign-in needs an open collection
+   window. Open a window, then sign in again." The service stays running and
+   idle. If the start fails, the page shows why and the app removes the
+   service it installed (only that one); press **Connect Tesla** to retry. A
+   removal that fails is reported and finished by the next press.
+5. Trust the issuer, issue a grant and open the window as described below.
+6. Press **Connect Tesla** again: the Tesla sign-in page opens. The sign-in
+   runs in the running service, inside the window; the service does not
+   restart.
+7. Once a car is configured, the sign-in sets the collection interval (300
+   seconds) in the configuration and reloads the collector before it
+   reports completion: the collector runs inside the Open window at once and
+   stops when the window closes. After a stop or a restart the Hub passes the
+   usual checks (a car and the Hub's own login) and collects only inside an
+   Open window. The Hub records that it was set up in `hub-setup.json` beside
+   its catalogue; a set-up Hub whose `hub.sqlite` is missing or empty refuses
+   to start instead of starting as new.
+
 ## Trust the issuer on a Hub
 
 1. Copy the issuer trust document to the Hub host.

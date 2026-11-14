@@ -856,3 +856,5 @@
 "hub.signIn.reportInvalid" = "Hub non è riuscito a confermare l'accesso. Accedi di nuovo con Tesla.";
 
 "hub.signIn.unconfirmed" = "Hub non ha confermato l'accesso in tempo, ma potrebbe essere stato salvato. Controlla lo stato di Hub prima di accedere di nuovo.";
+
+"hub.signIn.startWithdrawFailed" = "L’Hub non si è avviato e la rimozione del suo avvio incompleto non è riuscita: %1$@ Premi «Connetti Tesla» per completare la rimozione.";

@@ -856,3 +856,5 @@
 "hub.signIn.reportInvalid" = "Hub tidak dapat mengesahkan log masuk. Log masuk semula dengan Tesla.";
 
 "hub.signIn.unconfirmed" = "Hub tidak mengesahkan log masuk dalam masa yang ditetapkan, tetapi ia mungkin telah disimpan. Semak status Hub sebelum log masuk semula.";
+
+"hub.signIn.startWithdrawFailed" = "Hub tidak bermula, dan pengalihan permulaan yang belum selesai gagal: %1$@ Tekan “Sambungkan Tesla” untuk menyelesaikan pengalihan.";

@@ -67,6 +67,61 @@ pub fn preflight_hub_for_config(config: &crate::config::HubConfig) -> io::Result
     preflight_hub_for_provider(&config.data_dir, config.collector.provider)
 }
 
+/// Whether this Hub was never configured, so it starts idle (M02-T21, DEC-115).
+///
+/// Never configured means every collector path is off (no cadence, no Fleet
+/// Telemetry, no source-database producer), the bind is loopback, and the data
+/// folder has no Hub database, or one whose catalogue holds no configured car,
+/// no published vehicle and no credential in either slot. Idle serves the
+/// operator channel and the loopback listener only: no collector can start
+/// (it needs a cadence, a car and the Hub's own pair) and nothing is sent to
+/// Tesla. `Ok(false)` is any other state, which keeps today's admission; a
+/// store that cannot be read is an error, never idle.
+pub fn hub_is_never_configured(config: &crate::config::HubConfig) -> io::Result<bool> {
+    if config.collector.interval_seconds != 0
+        || config.collector.fleet_telemetry.is_some()
+        || config.import_source.current.is_some()
+        || !config.bind.ip().is_loopback()
+    {
+        return Ok(false);
+    }
+    // A Hub that was set up before is never new, whatever its catalogue
+    // holds now (M02-T21, DEC-116): a lost or emptied catalogue is refused by
+    // the marker check, never started idle.
+    let marker = crate::storage::setup_marker::read(&config.data_dir)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
+    if marker.is_some() {
+        return Ok(false);
+    }
+    match fs::symlink_metadata(config.data_dir.join("hub.sqlite")) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
+        Err(error) => return Err(error),
+        Ok(_) => {}
+    }
+    let unavailable =
+        |error: &dyn std::fmt::Display| io::Error::new(io::ErrorKind::InvalidData, format!("Hub data is unavailable: {error}"));
+    let store = crate::db::HubStore::open_read_only(&config.data_dir).map_err(|error| unavailable(&error))?;
+    store.catalogue_check().map_err(|error| unavailable(&error))?;
+    if !store.configured_tesla_vehicles().map_err(|error| unavailable(&error))?.is_empty()
+        || !store.published_vehicles().map_err(|error| unavailable(&error))?.is_empty()
+    {
+        return Ok(false);
+    }
+    for slot in [
+        crate::auth::credential_envelope::CredentialSlot::OwnerApi,
+        crate::auth::credential_envelope::CredentialSlot::FleetApi,
+    ] {
+        let present = store
+            .credential_pair_presence(slot)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "credential presence unavailable"))?
+            .is_some();
+        if present {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DevelopmentServeMode {
     Fixture,
@@ -119,6 +174,12 @@ pub fn preflight_hub_for_serve(
     development_mode: Option<DevelopmentServeMode>,
 ) -> io::Result<()> {
     let Some(development_mode) = development_mode else {
+        // A Hub that was never configured is admitted idle (DEC-115); any
+        // other production state keeps the full admission below.
+        if hub_is_never_configured(config)? {
+            tracing::info!(state = "idle", "nothing is configured: Hub serves idle with every collector path off");
+            return Ok(());
+        }
         return preflight_hub_for_config(config);
     };
     if development_mode == DevelopmentServeMode::PrivateLan {

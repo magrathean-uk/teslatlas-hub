@@ -80,15 +80,33 @@ enum HubLaunchAgentChange: Equatable {
     case replaced
 }
 
+/// What the LaunchAgents folder says about the Hub's plist (M02-T21): confirmed absent,
+/// present, or unknown because inspecting it failed. Only `absent` lets the owner sign-in
+/// treat the Hub as not installed; an inspection error is never read as absence.
+enum HubLaunchAgentInstallation {
+    case absent
+    case present
+    case unknown(Error)
+}
+
 protocol HubLaunchAgentManaging: AnyObject {
     /// A regular, single-link, owner file that parses with `Label` equal to the contract label.
     var isInstalled: Bool { get }
+    /// Absent only when the plist, or the folder that would hold it, is confirmed missing.
+    var installation: HubLaunchAgentInstallation { get }
     func ensureInstalled(requireConfig: Bool) throws -> HubLaunchAgentChange
     func prepareLogsForBootstrap() throws
     /// Read-only: the checks of `removeInstalled` without the unlink (Delete Hub and Data).
     func validateRemovable() throws
     /// Unlinks the plist only; never touches data, logs or the app.
     func removeInstalled() throws
+}
+
+extension HubLaunchAgentManaging {
+    /// A conformer that cannot tell absence from an inspection error never reports absence.
+    var installation: HubLaunchAgentInstallation {
+        isInstalled ? .present : .unknown(HubActionError.preview)
+    }
 }
 
 /// Pure admission rules for the bundle path, testable with fabricated `stat` values.
@@ -158,6 +176,23 @@ final class HubLaunchAgentWriter: HubLaunchAgentManaging {
                                                        requireLabel: true),
               existing != nil else { return false }
         return true
+    }
+
+    /// Any file at the plist's name counts as present, whatever its label or contents; a
+    /// missing LaunchAgents or Library folder counts as absent; every other failure (an unsafe
+    /// folder, a link, another owner, an unreadable file, a test host aimed at the real home)
+    /// is unknown.
+    var installation: HubLaunchAgentInstallation {
+        do {
+            let configuration = try guardedConfiguration()
+            guard let directory = try openLaunchAgents(configuration, create: false) else { return .absent }
+            defer { close(directory) }
+            let existing = try inspectExistingPlist(directory: directory, configuration: configuration,
+                                                    requireLabel: false)
+            return existing == nil ? .absent : .present
+        } catch {
+            return .unknown(error)
+        }
     }
 
     func ensureInstalled(requireConfig: Bool) throws -> HubLaunchAgentChange {
