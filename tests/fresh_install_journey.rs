@@ -685,6 +685,83 @@ fn fresh_install_journey_lost_catalogue_is_refused() {
     assert_eq!(hub.proxied.load(Ordering::SeqCst), 0, "nothing left the Mac");
 }
 
+/// DEC-120 (a): a Hub signed in before the marker existed (the Hub's own
+/// login in its catalogue, its credential keyring beside it, collection still
+/// off, no marker). Its catalogue removed, truncated to an empty database or
+/// replaced by an empty catalogue is refused by the start check and the
+/// serve admission, which create nothing and leave the catalogue identity as
+/// it is. The same once the marker written from its intact catalogue is lost
+/// with the catalogue: the surviving keyring still tells it was set up.
+#[test]
+fn fresh_install_journey_pre_marker_catalogue_loss_is_refused() {
+    use teslatlas_hub::db::HubStore;
+    let identity = |data: &Path| {
+        HubStore::open_read_only(data)
+            .and_then(|store| store.installation_id())
+            .expect("catalogue identity")
+    };
+    for marker_lost in [false, true] {
+        for loss in ["removed", "truncated", "replaced"] {
+            let label = format!("{loss}{}", if marker_lost { "-marker-lost" } else { "" });
+            let hub = Hub::new();
+            let data = hub.data();
+            teslatlas_hub::auth::credential_sign_in::seed_owner_pair_for_test(
+                &data,
+                "pre-marker-access-0001",
+                "pre-marker-refresh-0001",
+                None,
+            )
+            .expect("the Hub's own login");
+            let catalogue = data.join("hub.sqlite");
+            let marker = data.join("hub-setup.json");
+            assert!(data.join("secrets").join("credential-keys").exists(), "{label}: the keyring");
+            assert!(!marker.exists(), "{label}: a Hub from before the marker");
+            if marker_lost {
+                // The intact catalogue gets its marker written from it.
+                let installation = identity(&data);
+                let check = hub.run(&["preflight"], b"");
+                let recorded = fs::read(&marker).unwrap_or_else(|_| {
+                    panic!("{label}: no marker from the intact catalogue: {} {}", stdout(&check), stderr(&check))
+                });
+                let recorded: serde_json::Value = serde_json::from_slice(&recorded).expect("marker JSON");
+                assert_eq!(recorded["installationId"], installation.to_string(), "{label}");
+                fs::remove_file(&marker).expect("the marker is lost");
+            }
+            for name in ["hub.sqlite-wal", "hub.sqlite-shm"] {
+                let _ = fs::remove_file(data.join(name));
+            }
+            let replacement = match loss {
+                "removed" => {
+                    fs::remove_file(&catalogue).expect("remove");
+                    None
+                }
+                "truncated" => {
+                    fs::OpenOptions::new().write(true).open(&catalogue).expect("catalogue").set_len(0).expect("truncate");
+                    None
+                }
+                _ => {
+                    fs::remove_file(&catalogue).expect("remove");
+                    drop(HubStore::initialize(&data).expect("an empty catalogue"));
+                    Some(identity(&data))
+                }
+            };
+
+            let check = hub.run(&["preflight"], b"");
+            assert!(!check.status.success(), "{label}: start check passes: {}", stdout(&check));
+            assert!(stderr(&check).contains("set up before"), "{label}: {}", stderr(&check));
+            let log = hub.expect_serve_refused(&label);
+            assert!(log.contains("set up before"), "{label}: {log}");
+            match replacement {
+                Some(replacement) => assert_eq!(identity(&data), replacement, "{label}: identity unchanged"),
+                None if loss == "removed" => assert!(!catalogue.exists(), "{label}: nothing created"),
+                None => assert_eq!(fs::metadata(&catalogue).expect("catalogue").len(), 0, "{label}: nothing initialised"),
+            }
+            assert!(!marker.exists(), "{label}: no marker for a lost catalogue");
+            assert_eq!(hub.proxied.load(Ordering::SeqCst), 0, "{label}: nothing left the Mac");
+        }
+    }
+}
+
 /// DEC-116 condition 4: the build check. A plain `cargo build`, debug or
 /// release (features do not vary by profile), resolves the Hub without the
 /// test-only `journey-doubles` feature, which only the dev-dependency edge

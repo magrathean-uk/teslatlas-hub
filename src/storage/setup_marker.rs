@@ -10,6 +10,8 @@
 //! with a marker, the catalogue must exist, open read-only and hold the same
 //! installation id, or the command refuses and creates nothing. A Hub with a
 //! marker is never treated as never configured, so it never starts idle.
+//! Without a marker (a Hub from before it, or one that lost it), what
+//! survives outside the catalogue tells an earlier set-up (DEC-120).
 
 use std::{
     fs,
@@ -50,6 +52,12 @@ pub enum SetupMarkerError {
     CatalogueReplaced,
     #[error("the Hub setup marker (hub-setup.json) cannot be read or written: {0}")]
     MarkerUnavailable(String),
+    #[error(
+        "this Hub was set up before (its credential keyring secrets/credential-keys remains), but its catalogue hub.sqlite is missing, empty or new; restore the data folder from a backup (restore-data); nothing was created or changed"
+    )]
+    CatalogueLostWithoutMarker,
+    #[error("whether this Hub was set up before cannot be checked (secrets/credential-keys): {0}; nothing was created or changed")]
+    EarlierSetupUnknown(String),
 }
 
 pub fn marker_path(data_dir: &Path) -> PathBuf {
@@ -115,10 +123,11 @@ pub fn record(data_dir: &Path, installation_id: Uuid) -> Result<(), SetupMarkerE
 
 /// The check before `hub.sqlite` is created or initialised: with a marker,
 /// the catalogue must exist, be readable and hold the marker's installation
-/// id. It only reads; without a marker it passes.
+/// id. Without a marker, see [`check_unmarked_catalogue`]. It writes nothing
+/// but a marker taken from an intact catalogue that was set up.
 pub fn check_catalogue(data_dir: &Path) -> Result<(), SetupMarkerError> {
     let Some(recorded) = read(data_dir)? else {
-        return Ok(());
+        return check_unmarked_catalogue(data_dir);
     };
     let catalogue = data_dir.join("hub.sqlite");
     match fs::symlink_metadata(&catalogue) {
@@ -136,6 +145,45 @@ pub fn check_catalogue(data_dir: &Path) -> Result<(), SetupMarkerError> {
         return Err(SetupMarkerError::CatalogueReplaced);
     }
     Ok(())
+}
+
+/// Without a marker (DEC-120): a Hub from before the marker, or one that lost
+/// it. An intact catalogue that was set up (a configured car, a published
+/// vehicle or a credential pair) gets its marker written from it. A missing
+/// or empty catalogue, or an intact one holding no set-up, beside the
+/// credential keyring (written outside the catalogue only when a credential
+/// pair is stored) is refused and left as it is. Anything else is a Hub never
+/// set up. A catalogue that does not open as a current one (an older schema
+/// the start migrates, or damage the start reports) is left to the start.
+fn check_unmarked_catalogue(data_dir: &Path) -> Result<(), SetupMarkerError> {
+    let keyring = data_dir
+        .join("secrets")
+        .join(crate::auth::credential_keys::KEYRING_NAME);
+    let lost = match fs::symlink_metadata(keyring) {
+        Ok(_) => Err(SetupMarkerError::CatalogueLostWithoutMarker),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => return Err(SetupMarkerError::EarlierSetupUnknown(error.kind().to_string())),
+    };
+    match fs::symlink_metadata(data_dir.join("hub.sqlite")) {
+        Ok(metadata) if metadata.file_type().is_file() && metadata.len() > 0 => {}
+        _ => return lost,
+    }
+    let set_up = crate::db::HubStore::open_read_only(data_dir).and_then(|store| {
+        let held = !store.configured_tesla_vehicles()?.is_empty()
+            || !store.published_vehicles()?.is_empty()
+            || store
+                .credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::OwnerApi)?
+                .is_some()
+            || store
+                .credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::FleetApi)?
+                .is_some();
+        held.then(|| store.installation_id()).transpose()
+    });
+    match set_up {
+        Ok(Some(installation)) => record(data_dir, installation),
+        Ok(None) => lost,
+        Err(_) => Ok(()),
+    }
 }
 
 #[cfg(test)]
