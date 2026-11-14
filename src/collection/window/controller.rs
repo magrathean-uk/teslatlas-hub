@@ -15,9 +15,9 @@ use std::{
 };
 
 use crate::db::{
-    CoverageError, WindowCoverage, coverage_gaps_from_seconds, coverage_unreconciled_pending,
-    mark_coverage_unreconciled, open_coverage_store, record_coverage_handback,
-    record_coverage_open, seal_restored_open_windows,
+    CoverageError, WindowCoverage, coverage_gaps_from_seconds, coverage_unreconciled_in,
+    coverage_unreconciled_pending, mark_coverage_unreconciled, open_coverage_store,
+    record_coverage_handback, record_coverage_open, seal_restored_open_windows,
 };
 
 use super::{
@@ -264,9 +264,14 @@ impl WindowController {
         };
         // The ledger's handbacks reach the store before a window left open
         // in it is sealed as a restore's (M03-T22); one that cannot keeps the
-        // store's heads refused and is retried by the supervisor.
-        if outcome != ResumeOutcome::Faulted && controller.reconcile_coverage() {
-            controller.seal_restored_coverage();
+        // store's heads refused and is retried by the supervisor. A window
+        // resumed Pending or Open defers both until it closes (DEC-140).
+        if outcome != ResumeOutcome::Faulted {
+            if controller.window_active() {
+                controller.defer_coverage_reconciliation();
+            } else if controller.reconcile_coverage() {
+                controller.seal_restored_coverage();
+            }
         }
         (controller, outcome)
     }
@@ -678,12 +683,18 @@ impl WindowController {
 
     /// Writes into the store's coverage every handback the ledger holds and
     /// the store lacks (M03-T22); each is idempotent. Returns whether all
-    /// reached it; a failed one keeps the store's heads refused.
+    /// reached it; a failed one keeps the store's heads refused. While a
+    /// window is Pending or Open nothing is written and `false` is returned:
+    /// the write closes the drives and charges still open, which would be the
+    /// running window's, so the retry waits for its close (DEC-140).
     pub fn reconcile_coverage(&self) -> bool {
         let Some(dir) = self.data_dir() else {
             return true;
         };
-        let _inner = self.lock();
+        let inner = self.lock();
+        if matches!(inner.state.phase, Phase::Pending | Phase::Open) {
+            return false;
+        }
         let Ok(loaded) = self.store.load() else {
             return false;
         };
@@ -696,6 +707,36 @@ impl WindowController {
             }
         }
         reconciled
+    }
+
+    /// Whether a window is Pending or Open on this host.
+    fn window_active(&self) -> bool {
+        matches!(self.lock().state.phase, Phase::Pending | Phase::Open)
+    }
+
+    /// A start inside a window writes no handback: each ledger handback the
+    /// store's coverage does not hold closed is recorded unreconciled, so the
+    /// heads stay refused and the supervisor retries after the close
+    /// (DEC-140).
+    fn defer_coverage_reconciliation(&self) {
+        let Some(dir) = self.data_dir() else {
+            return;
+        };
+        let _inner = self.lock();
+        let Ok(loaded) = self.store.load() else {
+            return;
+        };
+        for line in &loaded.ledger {
+            if let HubEntry::Closed { handback } = &line.entry
+                && let Some(window) = handback_coverage(handback)
+            {
+                mark_coverage_unreconciled(&dir, window.seq);
+            }
+        }
+        // Forgets the handbacks the store already holds closed.
+        if let Ok(Some(connection)) = open_coverage_store(&dir) {
+            let _ = coverage_unreconciled_in(&connection, &dir.join("hub.sqlite"));
+        }
     }
 
     /// Whether a handback of this host did not reach the store's coverage
