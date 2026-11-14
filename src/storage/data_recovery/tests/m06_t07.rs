@@ -21,8 +21,8 @@ use crate::data_recovery::{
     backup_admission::test_seam,
     create_encrypted_backup,
     encrypted_backup::{
-        HUB_PEAK_MEMORY_BYTES, HookAction, MAX_CATALOGUE_IMAGE_BYTES, SCRATCH_CACHE_KIB,
-        SCRATCH_THRESHOLD_BYTES, SERVICE_RESERVE_BYTES, STREAM_BUFFER_BYTES, archive_plaintext,
+        HUB_PEAK_MEMORY_BYTES, HookAction, MAX_CATALOGUE_IMAGE_BYTES, MAX_HELD_NOOP_BYTES,
+        SCRATCH_CACHE_KIB, SCRATCH_THRESHOLD_BYTES, SERVICE_RESERVE_BYTES, STREAM_BUFFER_BYTES, archive_plaintext,
         clear_hook, force_scratch_above, set_hook,
     },
     encrypted_scratch::{EncryptedScratch, test_support},
@@ -196,7 +196,7 @@ fn backup_large_catalogue_scratch_phase_fits_the_hub_peak() {
     // The scratch path holds three page caches (copy, seal, rebuilt file),
     // the no-op bodies and the stream buffers, whatever the catalogue's size.
     let scratch_phase = 3 * SCRATCH_CACHE_KIB * 1024
-        + MAX_BACKUP_MEMBERS as u64 * MAX_SCHEMA_22_NOOP_BYTES
+        + MAX_HELD_NOOP_BYTES
         + 2 * STREAM_BUFFER_BYTES as u64;
     assert!(SERVICE_RESERVE_BYTES + scratch_phase + 16 * 1024 * 1024 <= HUB_PEAK_MEMORY_BYTES);
     // The volume is prepared below the cap, so growth before the gate still

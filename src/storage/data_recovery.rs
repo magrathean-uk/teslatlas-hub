@@ -7,7 +7,23 @@
 //! every immutable pack referenced by that catalogue, and each current
 //! schema-2.2 manifest's signed no-op body. Decryption and signing keys are
 //! deliberately excluded. TLS/configuration/service state is also omitted, so
-//! restore leaves the service stopped and collector authority absent.
+//! restore leaves the service stopped and collector authority absent. Restore
+//! generates a fresh cursor key and re-signs the restored sync state under it
+//! (M06-T09), so no key from the old host is needed and no old cursor verifies.
+//!
+//! Member count (M06-T10, M06-T15). No format refuses a backup for its
+//! number of members. The encrypted bundle (v5) streams its members, each
+//! record carrying its own path, size and digest, and its manifest declares
+//! only the count and bytes, so neither backup nor restore holds the member
+//! list. A new plaintext directory backup is written in the listed format
+//! (v4) while its members fit [`LISTED_FORMAT_MAX_MEMBERS`], so earlier
+//! builds can read it, and above that in the streamed directory format (v5):
+//! its manifest names only the catalogue member and declares the count and
+//! bytes, packs are named by their digest and no-ops are checked against the
+//! catalogue, so every check walks the tree. A listed manifest is held in
+//! memory, so reading one stays bounded by the bound it was written under.
+//! The schema 2.2 no-op selection reads the catalogue one manifest row at a
+//! time and keeps one identity per vehicle, never a manifest.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -36,6 +52,13 @@ use crate::{
 };
 
 const BACKUP_KIND: &str = "teslatlas-hub-data-backup-v4";
+/// The streamed encrypted bundle (M06-T10): its manifest lists no member.
+const STREAMED_BACKUP_KIND: &str = "teslatlas-hub-data-backup-v5";
+/// The streamed plaintext directory (M06-T15): its manifest names only the
+/// catalogue member and declares the member count and bytes.
+const STREAMED_DIRECTORY_KIND: &str = "teslatlas-hub-data-backup-directory-v5";
+const STREAMED_DIRECTORY_COMPLETION_KIND: &str = "teslatlas-hub-data-backup-complete-v5";
+const STREAMED_DIRECTORY_MANIFEST_NAME: &str = "backup-v5.json";
 const COMPLETION_KIND: &str = "teslatlas-hub-data-backup-complete-v4";
 const BACKUP_SCOPE: &str = "hub_data_without_pairing_or_keys";
 const MANIFEST_NAME: &str = "backup-v4.json";
@@ -57,12 +80,18 @@ const PRIVATE_FILE_MODE: u32 = 0o600;
 const MAX_SCHEMA_22_NOOP_BYTES: u64 = 16 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_COMPLETION_BYTES: u64 = 4 * 1024;
-const MAX_BACKUP_MEMBERS: usize = 4_096;
+/// The bound of a format whose manifest lists every member: that list is
+/// held in memory whole, so it is bounded. The streamed bundle has no list
+/// and no member bound.
+const LISTED_FORMAT_MAX_MEMBERS: usize = 4_096;
 const COPY_BUFFER_BYTES: usize = 1024 * 1024;
 // Admission reserves only metadata/write-amplification headroom. It does not
 // allocate a second copy: the staged backup/restore remains one payload copy.
 const COPY_CAPACITY_HEADROOM_DIVISOR: u64 = 20;
 const COPY_CAPACITY_FIXED_HEADROOM_BYTES: u64 = 8 * 1024 * 1024;
+/// Per member, beyond its bytes and its partly used last block: the inode
+/// and directory entry the filesystem keeps for it (M06-T15).
+const MEMBER_METADATA_BYTES: u64 = 4 * 1024;
 const MIN_RESTORABLE_SCHEMA_VERSION: i32 = crate::db::MIN_STORE_VERSION;
 /// The first schema whose catalogue always holds the per-device vehicle grant
 /// tables (and, with them, every pairing table). A backup of an older schema
@@ -111,6 +140,12 @@ pub enum DataRecoveryError {
     CorruptArchive(String),
     #[error("the backup was cancelled")]
     Cancelled,
+    #[error("cannot read the recovery password: {0}")]
+    PasswordInput(&'static str),
+    #[error(
+        "plaintext_directory_refused: {path} is an older plaintext directory backup, which is not authenticated; name that format with --plaintext-directory to use it"
+    )]
+    PlaintextDirectoryRefused { path: PathBuf },
     #[error("the backup destination is unavailable at {path}: {source}")]
     DestinationUnavailable {
         path: PathBuf,
@@ -160,7 +195,51 @@ struct BackupManifest {
     installation_id: Uuid,
     scope: String,
     excluded_host_state: Vec<String>,
+    /// Every member, in a listed format; empty in a streamed bundle.
     members: Vec<BackupMember>,
+    /// A streamed bundle's declared member count; absent in a listed format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    member_count: Option<u64>,
+    /// A streamed bundle's declared payload bytes; absent in a listed format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    payload_bytes: Option<u64>,
+}
+
+/// What a streamed read of a bundle established about its members, without
+/// keeping them: the catalogue member and the pack and no-op counts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StreamedMembers {
+    catalogue: BackupMember,
+    packs: u64,
+    noops: u64,
+}
+
+/// The members a restore checks its staged tree against.
+#[derive(Debug, Clone, Copy)]
+enum RestoredMembers<'a> {
+    /// A listed format: its manifest's whole (bounded) member list.
+    Listed(&'a [BackupMember]),
+    /// A streamed bundle: only what its stream established.
+    Streamed(&'a StreamedMembers),
+}
+
+impl RestoredMembers<'_> {
+    fn has_noops(self) -> bool {
+        match self {
+            Self::Listed(members) => members
+                .iter()
+                .any(|member| schema_22_noop_member_filename(&member.path).is_some()),
+            Self::Streamed(streamed) => streamed.noops > 0,
+        }
+    }
+}
+
+/// The kind of one member, by its canonical path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MemberKind {
+    Catalogue,
+    Noop,
+    Pack,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -175,26 +254,32 @@ struct CompletionMarker {
 enum BackupFormat {
     Current,
     LegacyV3,
+    /// The streamed encrypted bundle (M06-T10); never a directory.
+    Streamed,
+    /// The streamed plaintext directory (M06-T15); never a bundle.
+    StreamedDirectory,
 }
 
 impl BackupFormat {
     fn manifest_name(self) -> &'static str {
         match self {
-            Self::Current => MANIFEST_NAME,
+            Self::Current | Self::Streamed => MANIFEST_NAME,
             Self::LegacyV3 => LEGACY_MANIFEST_NAME,
+            Self::StreamedDirectory => STREAMED_DIRECTORY_MANIFEST_NAME,
         }
     }
 
     fn completion_kind(self) -> &'static str {
         match self {
-            Self::Current => COMPLETION_KIND,
+            Self::Current | Self::Streamed => COMPLETION_KIND,
             Self::LegacyV3 => LEGACY_COMPLETION_KIND,
+            Self::StreamedDirectory => STREAMED_DIRECTORY_COMPLETION_KIND,
         }
     }
 
     fn scope(self) -> &'static str {
         match self {
-            Self::Current => BACKUP_SCOPE,
+            Self::Current | Self::Streamed | Self::StreamedDirectory => BACKUP_SCOPE,
             Self::LegacyV3 => LEGACY_BACKUP_SCOPE,
         }
     }
@@ -222,9 +307,31 @@ pub struct DataRecoveryReport {
     pub fleet_request_counts_notice: Option<&'static str>,
 }
 
+/// The staging directory of a plaintext backup or a directory-format
+/// restore. It is held under an exclusive lock from creation until it is
+/// published or dropped (M06-T15), so a staging directory nobody holds locked
+/// was left by an interrupted run, whichever build made it, and an encrypted
+/// restore's sweep can tell it from an active one.
 struct StagingDirectory {
     path: PathBuf,
     published: bool,
+    _lock: Option<File>,
+}
+
+/// Open `path` as a real directory, without following a link, take its
+/// exclusive lock without waiting, and confirm the path still names it.
+fn lock_directory(path: &Path) -> Option<(File, fs::Metadata)> {
+    let fd = open(
+        path,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .ok()?;
+    rustix::fs::flock(&fd, rustix::fs::FlockOperation::NonBlockingLockExclusive).ok()?;
+    let directory = File::from(fd);
+    let held = directory.metadata().ok()?;
+    let named = fs::symlink_metadata(path).ok()?;
+    (named.dev() == held.dev() && named.ino() == held.ino()).then_some((directory, held))
 }
 
 impl StagingDirectory {
@@ -238,6 +345,10 @@ impl StagingDirectory {
             builder.mode(PRIVATE_DIRECTORY_MODE);
             match builder.create(&path) {
                 Ok(()) => {
+                    // A concurrent sweep that locked it first removes it.
+                    let Some((lock, _)) = lock_directory(&path) else {
+                        continue;
+                    };
                     set_mode(
                         &path,
                         PRIVATE_DIRECTORY_MODE,
@@ -246,6 +357,7 @@ impl StagingDirectory {
                     return Ok(Self {
                         path,
                         published: false,
+                        _lock: Some(lock),
                     });
                 }
                 Err(source) if source.kind() == io::ErrorKind::AlreadyExists => continue,
@@ -278,18 +390,31 @@ impl Drop for StagingDirectory {
     }
 }
 
-/// Create and atomically publish one private data-backup generation.
+/// Create and atomically publish one private data-backup generation. No
+/// member count refuses it: above the listed bound it is written in the
+/// streamed directory format (M06-T15).
 pub fn create_data_backup(
     store: &HubStore,
     destination: &Path,
 ) -> Result<DataRecoveryReport, DataRecoveryError> {
-    create_data_backup_with_member_limit(store, destination, MAX_BACKUP_MEMBERS)
+    create_data_backup_admitted(store, destination, None)
 }
 
+/// A test-only admission: refuse a backup above `member_limit` members
+/// before anything is staged.
+#[cfg(test)]
 fn create_data_backup_with_member_limit(
     store: &HubStore,
     destination: &Path,
     member_limit: usize,
+) -> Result<DataRecoveryReport, DataRecoveryError> {
+    create_data_backup_admitted(store, destination, Some(member_limit))
+}
+
+fn create_data_backup_admitted(
+    store: &HubStore,
+    destination: &Path,
+    member_limit: Option<usize>,
 ) -> Result<DataRecoveryReport, DataRecoveryError> {
     let (destination, parent) = prepare_new_destination(destination)?;
     let live_data = store
@@ -315,11 +440,11 @@ fn create_data_backup_with_member_limit(
     let backup_snapshot = store.begin_backup_snapshot()?;
     check_backup_admission(&backup_snapshot)?;
     let (copy_bytes, members) = backup_snapshot.copy_admission()?;
-    if members > member_limit {
+    if member_limit.is_some_and(|limit| members > limit) {
         return Err(invalid("backup contains too many members"));
     }
     remove_unpublished_leftovers(&parent)?;
-    admit_staging_capacity(&parent, copy_bytes)?;
+    admit_member_capacity(&parent, copy_bytes, members as u64)?;
     let staging = StagingDirectory::create(&parent)?;
     let payload = staging.path.join(DATA_DIRECTORY);
     let sealed = backup_snapshot
@@ -347,6 +472,9 @@ fn create_data_backup_with_member_limit(
     }
     copied_store.verify_immutable_snapshot_unchanged()?;
 
+    if streamed_directory::count_payload_members(&payload)? > LISTED_FORMAT_MAX_MEMBERS as u64 {
+        return streamed_directory::publish_streamed_directory(staging, &destination, &payload, source_installation_id);
+    }
     let members = inventory_payload(&payload)?;
     let manifest = BackupManifest {
         kind: BACKUP_KIND.to_owned(),
@@ -359,6 +487,8 @@ fn create_data_backup_with_member_limit(
         scope: BACKUP_SCOPE.to_owned(),
         excluded_host_state: excluded_host_state_strings(),
         members,
+        member_count: None,
+        payload_bytes: None,
     };
     validate_manifest(&manifest)?;
 
@@ -393,6 +523,39 @@ fn create_data_backup_with_member_limit(
     let report = report("data_backup_created", &destination, &manifest)?;
     staging.publish(&destination)?;
     Ok(report)
+}
+
+/// The format of a backup offered to `verify-backup` or `restore-data`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackupSourceFormat {
+    /// One authenticated, encrypted bundle file (the default).
+    Encrypted,
+    /// The older plaintext directory generation, named explicitly.
+    PlaintextDirectory,
+}
+
+/// Admits a recovery source before any password is read or anything is
+/// written. An encrypted bundle is the default; a directory is the older
+/// plaintext format, whose completion marker is an unkeyed digest, so it is
+/// refused unless the operator names that format (`plaintext_directory`).
+/// Naming it for a source that is not a directory is refused too, so the flag
+/// can never downgrade an encrypted bundle.
+pub fn admit_recovery_source(
+    source: &Path,
+    plaintext_directory: bool,
+) -> Result<BackupSourceFormat, DataRecoveryError> {
+    let metadata = fs::symlink_metadata(source)
+        .map_err(|error| io_error("inspecting backup source", source, error))?;
+    match (metadata.file_type().is_dir(), plaintext_directory) {
+        (true, true) => Ok(BackupSourceFormat::PlaintextDirectory),
+        (true, false) => Err(DataRecoveryError::PlaintextDirectoryRefused {
+            path: source.to_path_buf(),
+        }),
+        (false, true) => Err(invalid(
+            "--plaintext-directory names an older directory backup, and this source is not a directory",
+        )),
+        (false, false) => Ok(BackupSourceFormat::Encrypted),
+    }
 }
 
 /// Verify a completed backup without opening any writable Hub connection or
@@ -448,28 +611,38 @@ pub fn restore_data_backup(
         source_store.verify_immutable_snapshot_unchanged()?;
     }
 
-    admit_staging_capacity(&parent, manifest_copy_bytes(&manifest)?)?;
+    let (member_count, payload_bytes) = manifest_totals(&manifest)?;
+    admit_member_capacity(&parent, payload_bytes, member_count as u64)?;
     let staging = StagingDirectory::create(&parent)?;
     create_private_directory(&staging.path.join("packs"))?;
     create_private_directory(&staging.path.join("packs").join("sha256"))?;
-    if manifest
-        .members
-        .iter()
-        .any(|member| schema_22_noop_member_filename(&member.path).is_some())
-    {
-        create_private_directory(&staging.path.join("packs").join("noop"))?;
-    }
-    for member in &manifest.members {
-        let relative = member
-            .path
-            .strip_prefix("data/")
-            .ok_or_else(|| invalid("backup member is outside the data payload"))?;
-        let from = source.join(&member.path);
-        let to = staging.path.join(relative);
-        copy_verified_member(&from, &to, member)?;
-    }
+    let streamed = if backup_format(&manifest)? == BackupFormat::StreamedDirectory {
+        Some(streamed_directory::copy_streamed_directory(&source, &staging.path, &manifest)?)
+    } else {
+        if manifest
+            .members
+            .iter()
+            .any(|member| schema_22_noop_member_filename(&member.path).is_some())
+        {
+            create_private_directory(&staging.path.join("packs").join("noop"))?;
+        }
+        for member in &manifest.members {
+            let relative = member
+                .path
+                .strip_prefix("data/")
+                .ok_or_else(|| invalid("backup member is outside the data payload"))?;
+            let from = source.join(&member.path);
+            let to = staging.path.join(relative);
+            copy_verified_member(&from, &to, member)?;
+        }
+        None
+    };
 
-    validate_restored_data_tree(&staging.path, &manifest.members, false)?;
+    let members = match &streamed {
+        Some(streamed) => RestoredMembers::Streamed(streamed),
+        None => RestoredMembers::Listed(&manifest.members),
+    };
+    validate_restored_data_tree(&staging.path, members, false)?;
     validate_backup_tree(&source, &manifest, &manifest_bytes, &marker)?;
     if immutable_database_identity_at_schema(&source_data, manifest.hub_schema)?
         != manifest.installation_id
@@ -479,20 +652,45 @@ pub fn restore_data_backup(
         ));
     }
 
-    finalize_restore(staging, &destination, &manifest)
+    finalize_restore(staging, &destination, &manifest, members)
+}
+
+/// A staged restore tree: where it is reached, and how it is published.
+trait StagedTree {
+    /// The path every check and SQLite connection uses for the staged tree.
+    fn root(&self) -> &Path;
+    /// Publish the staged tree as `destination`, never replacing anything.
+    fn publish_as(self, destination: &Path) -> Result<(), DataRecoveryError>;
+    /// The path [`Self::root`] still leads to the staged tree.
+    fn check_bound(&self) -> Result<(), DataRecoveryError> {
+        Ok(())
+    }
+}
+
+impl StagedTree for StagingDirectory {
+    fn root(&self) -> &Path {
+        &self.path
+    }
+
+    fn publish_as(self, destination: &Path) -> Result<(), DataRecoveryError> {
+        self.publish(destination)
+    }
 }
 
 /// The shared tail of every restore: migrate when the catalogue is older, seal
 /// out host authority, re-verify the staged tree and publish it without
 /// replacement. The staged tree already holds every verified member.
-fn finalize_restore(
-    staging: StagingDirectory,
+fn finalize_restore<S: StagedTree>(
+    staging: S,
     destination: &Path,
     manifest: &BackupManifest,
+    members: RestoredMembers<'_>,
 ) -> Result<DataRecoveryReport, DataRecoveryError> {
+    let root = staging.root().to_path_buf();
+    staging.check_bound()?;
     let migrated = manifest.hub_schema != SCHEMA_VERSION;
     if migrated {
-        let migrated_store = HubStore::initialize(&staging.path)?;
+        let migrated_store = HubStore::initialize(&root)?;
         migrated_store.catalogue_check()?;
         if migrated_store.installation_id()? != manifest.installation_id {
             return Err(invalid(
@@ -500,28 +698,36 @@ fn finalize_restore(
             ));
         }
         drop(migrated_store);
-        remove_migration_host_state(&staging.path, &manifest.members)?;
+        remove_migration_host_state(&root, members.has_noops())?;
     }
     // Legacy v3 generations can contain live pairing challenges and bearer
     // digests. Sanitize every restored catalogue after its exact source copy
     // has been verified and before the staging directory can be published.
-    seal_restored_payload(&staging.path)?;
+    seal_restored_payload(&root)?;
     // Sealed and, if need be, migrated: the staged catalogue is current.
-    validate_pairing_tables(&staging.path, SCHEMA_VERSION, true)?;
+    validate_pairing_tables(&root, SCHEMA_VERSION, true)?;
 
-    let restored_store = HubStore::open_immutable_read_only(&staging.path)?;
+    let restored_store = HubStore::open_immutable_read_only(&root)?;
     restored_store.catalogue_check()?;
-    if immutable_database_identity(&staging.path)? != manifest.installation_id {
+    if immutable_database_identity(&root)? != manifest.installation_id {
         return Err(invalid(
             "restored catalogue installation ID does not match the backup manifest",
         ));
     }
     restored_store.verify_immutable_snapshot_unchanged()?;
-    validate_restored_data_tree(&staging.path, &manifest.members, true)?;
-    sync_restored_data(&staging.path, &manifest.members)?;
+    validate_restored_data_tree(&root, members, true)?;
+    drop(restored_store);
+    // The bundle carries no cursor key. With the tree verified against it,
+    // write a fresh key into the staged tree and re-sign every stored cursor
+    // the old key signed (M06-T09): the restored Hub starts its API without
+    // the old host's key export, and the rename below publishes the key and
+    // the re-signed data together or not at all.
+    cursor_reissue::regenerate_cursor_key(&root)?;
+    sync_restored_data(&root, members)?;
+    staging.check_bound()?;
 
     let report = report(STATUS_DATA_RESTORED, destination, manifest)?;
-    staging.publish(destination)?;
+    staging.publish_as(destination)?;
     Ok(report)
 }
 
@@ -545,17 +751,13 @@ fn report(
     path: &Path,
     manifest: &BackupManifest,
 ) -> Result<DataRecoveryReport, DataRecoveryError> {
-    let total_bytes = manifest.members.iter().try_fold(0_u64, |total, member| {
-        total
-            .checked_add(member.size)
-            .ok_or_else(|| invalid("backup member byte total overflowed"))
-    })?;
+    let (member_count, total_bytes) = manifest_totals(manifest)?;
     Ok(DataRecoveryReport {
         status,
         path: path.to_path_buf(),
         generation: manifest.generation,
         installation_id: manifest.installation_id,
-        member_count: manifest.members.len(),
+        member_count,
         total_bytes,
         scope: backup_format(manifest)?.scope(),
         clean_host_ready: false,
@@ -566,15 +768,20 @@ fn report(
     })
 }
 
-/// Calculate the bytes a completed backup can copy from a validated manifest.
-/// Manifest members are checked before this is called, so the sum is bounded,
-/// canonical, and cannot name symlinked data outside the backup root.
-fn manifest_copy_bytes(manifest: &BackupManifest) -> Result<u64, DataRecoveryError> {
-    manifest.members.iter().try_fold(0_u64, |total, member| {
+/// The member count and payload bytes of a validated manifest: declared by a
+/// streamed bundle (its stream is checked against them), summed from the list
+/// of a listed format.
+fn manifest_totals(manifest: &BackupManifest) -> Result<(usize, u64), DataRecoveryError> {
+    if let (Some(count), Some(bytes)) = (manifest.member_count, manifest.payload_bytes) {
+        let count = usize::try_from(count).map_err(|_| DataRecoveryError::CapacityOverflow)?;
+        return Ok((count, bytes));
+    }
+    let bytes = manifest.members.iter().try_fold(0_u64, |total, member| {
         total
             .checked_add(member.size)
             .ok_or(DataRecoveryError::CapacityOverflow)
-    })
+    })?;
+    Ok((manifest.members.len(), bytes))
 }
 
 fn checked_capacity_add(total: u64, additional: u64) -> Result<u64, DataRecoveryError> {
@@ -600,7 +807,131 @@ fn admit_staging_capacity(parent: &Path, copy_bytes: u64) -> Result<(), DataReco
     admit_known_capacity(parent, required, available)
 }
 
+/// The volume's allocation unit at `path`: every file takes whole units.
+fn allocation_block_bytes(path: &Path) -> Result<u64, DataRecoveryError> {
+    let stats = statvfs(path).map_err(|source| DataRecoveryError::FilesystemSpace {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    Ok(stats.f_frsize.clamp(512, 1024 * 1024))
+}
+
+/// What `members` files of `payload_bytes` in all can take on a volume that
+/// allocates `block` bytes at a time: the bytes, a partly used last block
+/// and the metadata of each member (REV-CX-M06-T10 finding 2).
+fn member_storage_bytes(
+    payload_bytes: u64,
+    members: u64,
+    block: u64,
+) -> Result<u64, DataRecoveryError> {
+    let per_member = checked_capacity_add(block, MEMBER_METADATA_BYTES)?;
+    let overhead = members
+        .checked_mul(per_member)
+        .ok_or(DataRecoveryError::CapacityOverflow)?;
+    checked_capacity_add(payload_bytes, overhead)
+}
+
+/// Admit staging `members` files of `payload_bytes` in all under `parent`.
+fn admit_member_capacity(
+    parent: &Path,
+    payload_bytes: u64,
+    members: u64,
+) -> Result<(), DataRecoveryError> {
+    let block = allocation_block_bytes(parent)?;
+    admit_staging_capacity(parent, member_storage_bytes(payload_bytes, members, block)?)
+}
+
+/// A test seam for the free space a volume reports, and for a volume that
+/// fills part-way through a run.
+#[cfg(test)]
+pub(crate) mod space_seam {
+    use std::{
+        cell::{Cell, RefCell},
+        io,
+        path::Path,
+    };
+
+    type Answer = Box<dyn FnMut(&Path) -> Option<u64>>;
+
+    thread_local! {
+        static AVAILABLE: RefCell<Option<Answer>> = const { RefCell::new(None) };
+        static WRITABLE: Cell<Option<u64>> = const { Cell::new(None) };
+        static FILLED: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// Answer free-space questions on this thread with `answer` (`None`
+    /// from it, or no seam, asks the volume).
+    pub(crate) fn set(answer: impl FnMut(&Path) -> Option<u64> + 'static) {
+        AVAILABLE.with(|slot| *slot.borrow_mut() = Some(Box::new(answer)));
+    }
+
+    /// Clears both seams on this thread.
+    pub(crate) fn clear() {
+        AVAILABLE.with(|slot| *slot.borrow_mut() = None);
+        fill_after(None);
+    }
+
+    pub(super) fn available(path: &Path) -> Option<u64> {
+        AVAILABLE.with(|slot| slot.borrow_mut().as_mut().and_then(|answer| answer(path)))
+    }
+
+    /// From now on this thread's backup, restore and metadata writes take
+    /// `bytes` more in all, as a volume with that much room left (`None`
+    /// lifts the limit): a write that crosses it is short, every later one
+    /// fails with ENOSPC. Free-space answers are not changed, so a run is
+    /// admitted and then finds its volume full part-way.
+    pub(crate) fn fill_after(bytes: Option<u64>) {
+        WRITABLE.with(|slot| slot.set(bytes));
+        FILLED.with(|filled| filled.set(false));
+    }
+
+    /// Whether a write found the volume full (cut short or refused) since
+    /// [`fill_after`].
+    pub(crate) fn filled() -> bool {
+        FILLED.with(Cell::get)
+    }
+
+    /// How many of `wanted` bytes the volume takes now; ENOSPC when none.
+    pub(super) fn writable(wanted: usize) -> io::Result<usize> {
+        WRITABLE.with(|slot| {
+            let Some(room) = slot.get() else {
+                return Ok(wanted);
+            };
+            let taken = usize::try_from(room).map_or(wanted, |room| room.min(wanted));
+            if taken < wanted {
+                FILLED.with(|filled| filled.set(true));
+                if taken == 0 {
+                    return Err(rustix::io::Errno::NOSPC.into());
+                }
+            }
+            slot.set(Some(room - taken as u64));
+            Ok(taken)
+        })
+    }
+}
+
+/// A file that backups and restores write members and metadata through. In
+/// tests its writes pass the space seam, which can fill the volume part-way
+/// (one short write, then ENOSPC); otherwise it is the file itself.
+struct VolumeFile(File);
+
+impl Write for VolumeFile {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        #[cfg(test)]
+        let buffer = &buffer[..space_seam::writable(buffer.len())?];
+        self.0.write(buffer)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
+    }
+}
+
 fn available_bytes(path: &Path) -> Result<u64, DataRecoveryError> {
+    #[cfg(test)]
+    if let Some(available) = space_seam::available(path) {
+        return Ok(available);
+    }
     let stats = statvfs(path).map_err(|source| DataRecoveryError::FilesystemSpace {
         path: path.to_path_buf(),
         source,
@@ -708,11 +1039,6 @@ fn protect_payload_tree(payload: &Path) -> Result<(), DataRecoveryError> {
             "protecting backup schema 2.2 no-op directory",
         )?;
         require_directory_entries(&packs, ["noop", "sha256"], "backup packs directory")?;
-        require_directory_entry_set(
-            &noop_directory,
-            &expected_noops.keys().cloned().collect(),
-            "backup schema 2.2 no-op directory",
-        )?;
         for name in expected_noops.keys() {
             let path = noop_directory.join(name);
             let metadata = require_regular_file(&path, "backup schema 2.2 no-op")?;
@@ -733,7 +1059,12 @@ fn protect_payload_tree(payload: &Path) -> Result<(), DataRecoveryError> {
     let catalogue = payload.join("hub.sqlite");
     require_regular_file(&catalogue, "backup catalogue")?;
     set_mode(&catalogue, PRIVATE_FILE_MODE, "protecting backup catalogue")?;
-    for entry in read_directory(&sha_directory)? {
+    // One entry at a time: the pack directory has no entry bound.
+    for entry in fs::read_dir(&sha_directory)
+        .map_err(|source| io_error("reading backup pack directory", &sha_directory, source))?
+    {
+        let entry = entry
+            .map_err(|source| io_error("reading backup pack directory entry", &sha_directory, source))?;
         let name = entry
             .file_name()
             .into_string()
@@ -948,7 +1279,7 @@ fn inventory_payload(payload: &Path) -> Result<Vec<BackupMember>, DataRecoveryEr
             &entry.path(),
             format!("{PACK_DIRECTORY}/{name}"),
         )?);
-        if members.len() > MAX_BACKUP_MEMBERS {
+        if members.len() > LISTED_FORMAT_MAX_MEMBERS {
             return Err(invalid("backup contains too many members"));
         }
     }
@@ -957,7 +1288,7 @@ fn inventory_payload(payload: &Path) -> Result<Vec<BackupMember>, DataRecoveryEr
             &payload.join("packs").join("noop").join(name),
             format!("{SCHEMA_22_NOOP_DIRECTORY}/{name}"),
         )?);
-        if members.len() > MAX_BACKUP_MEMBERS {
+        if members.len() > LISTED_FORMAT_MAX_MEMBERS {
             return Err(invalid("backup contains too many members"));
         }
     }
@@ -978,13 +1309,15 @@ fn inventory_file(path: &Path, member_path: String) -> Result<BackupMember, Data
 fn backup_format(manifest: &BackupManifest) -> Result<BackupFormat, DataRecoveryError> {
     match (manifest.kind.as_str(), manifest.scope.as_str()) {
         (BACKUP_KIND, BACKUP_SCOPE) => Ok(BackupFormat::Current),
+        (STREAMED_BACKUP_KIND, BACKUP_SCOPE) => Ok(BackupFormat::Streamed),
+        (STREAMED_DIRECTORY_KIND, BACKUP_SCOPE) => Ok(BackupFormat::StreamedDirectory),
         (LEGACY_BACKUP_KIND, LEGACY_BACKUP_SCOPE) => Ok(BackupFormat::LegacyV3),
         _ => Err(invalid("unsupported data-backup kind or scope")),
     }
 }
 
 fn validate_manifest(manifest: &BackupManifest) -> Result<(), DataRecoveryError> {
-    let _ = backup_format(manifest)?;
+    let format = backup_format(manifest)?;
     if manifest.generation.is_nil() {
         return Err(invalid("data-backup generation is nil"));
     }
@@ -1022,7 +1355,48 @@ fn validate_manifest(manifest: &BackupManifest) -> Result<(), DataRecoveryError>
             "data-backup excluded-host-state declaration changed",
         ));
     }
-    if manifest.members.is_empty() || manifest.members.len() > MAX_BACKUP_MEMBERS {
+    if format == BackupFormat::Streamed {
+        // The stream carries the members; the manifest declares their count
+        // and bytes, which the reader checks before it trusts the trailer.
+        if !manifest.members.is_empty() {
+            return Err(invalid("a streamed data-backup manifest lists no members"));
+        }
+        if manifest.member_count.is_none_or(|count| count == 0) || manifest.payload_bytes.is_none()
+        {
+            return Err(invalid(
+                "a streamed data-backup manifest must declare its member count and bytes",
+            ));
+        }
+        return Ok(());
+    }
+    if format == BackupFormat::StreamedDirectory {
+        // The tree carries the members; the manifest names the catalogue
+        // member (its digest binds the catalogue) and declares the totals.
+        let [catalogue] = manifest.members.as_slice() else {
+            return Err(invalid(
+                "a streamed directory manifest names exactly its catalogue member",
+            ));
+        };
+        if validate_member(catalogue)? != MemberKind::Catalogue {
+            return Err(invalid(
+                "a streamed directory manifest names exactly its catalogue member",
+            ));
+        }
+        if manifest.member_count.is_none_or(|count| count == 0)
+            || manifest.payload_bytes.is_none_or(|bytes| bytes < catalogue.size)
+        {
+            return Err(invalid(
+                "a streamed directory manifest must declare its member count and bytes",
+            ));
+        }
+        return Ok(());
+    }
+    if manifest.member_count.is_some() || manifest.payload_bytes.is_some() {
+        return Err(invalid(
+            "a listed data-backup manifest must not declare streamed totals",
+        ));
+    }
+    if manifest.members.is_empty() || manifest.members.len() > LISTED_FORMAT_MAX_MEMBERS {
         return Err(invalid(
             "data-backup member count is outside the supported bound",
         ));
@@ -1043,44 +1417,8 @@ fn validate_manifest(manifest: &BackupManifest) -> Result<(), DataRecoveryError>
         total_bytes = total_bytes
             .checked_add(member.size)
             .ok_or_else(|| invalid("data-backup member byte total overflowed"))?;
-        if member.mode != PRIVATE_FILE_MODE {
-            return Err(invalid(format!(
-                "data-backup member {} is not private mode 0600",
-                member.path
-            )));
-        }
-        validate_sha256(&member.sha256)?;
-        if member.path == CATALOGUE_MEMBER {
+        if validate_member(member)? == MemberKind::Catalogue {
             catalogue_count += 1;
-            continue;
-        }
-        if schema_22_noop_member_filename(&member.path).is_some() {
-            if member.size == 0 || member.size > MAX_SCHEMA_22_NOOP_BYTES {
-                return Err(invalid(format!(
-                    "schema 2.2 no-op member size is outside its bound: {}",
-                    member.path
-                )));
-            }
-            continue;
-        }
-        let filename = member
-            .path
-            .strip_prefix(&format!("{PACK_DIRECTORY}/"))
-            .ok_or_else(|| invalid(format!("unsafe data-backup member path: {}", member.path)))?;
-        if filename.contains('/') || !canonical_pack_filename(filename) {
-            return Err(invalid(format!(
-                "unsafe data-backup pack path: {}",
-                member.path
-            )));
-        }
-        let path_digest = filename
-            .strip_suffix(".sqlite.zst")
-            .ok_or_else(|| invalid("backup pack suffix is invalid"))?;
-        if path_digest != member.sha256 {
-            return Err(invalid(format!(
-                "backup pack path digest does not match member digest: {}",
-                member.path
-            )));
         }
     }
     if catalogue_count != 1 {
@@ -1088,23 +1426,73 @@ fn validate_manifest(manifest: &BackupManifest) -> Result<(), DataRecoveryError>
             "data-backup must contain exactly one Hub catalogue",
         ));
     }
-    let _ = total_bytes;
     Ok(())
+}
+
+/// Check one member on its own: private mode, a SHA-256 digest and a
+/// canonical path (the catalogue, a bounded schema 2.2 no-op, or a pack named
+/// by its digest). A listed manifest checks each entry with it; a streamed
+/// bundle checks each record as it arrives.
+fn validate_member(member: &BackupMember) -> Result<MemberKind, DataRecoveryError> {
+    if member.mode != PRIVATE_FILE_MODE {
+        return Err(invalid(format!(
+            "data-backup member {} is not private mode 0600",
+            member.path
+        )));
+    }
+    validate_sha256(&member.sha256)?;
+    if member.path == CATALOGUE_MEMBER {
+        return Ok(MemberKind::Catalogue);
+    }
+    if schema_22_noop_member_filename(&member.path).is_some() {
+        if member.size == 0 || member.size > MAX_SCHEMA_22_NOOP_BYTES {
+            return Err(invalid(format!(
+                "schema 2.2 no-op member size is outside its bound: {}",
+                member.path
+            )));
+        }
+        return Ok(MemberKind::Noop);
+    }
+    let filename = member
+        .path
+        .strip_prefix(&format!("{PACK_DIRECTORY}/"))
+        .ok_or_else(|| invalid(format!("unsafe data-backup member path: {}", member.path)))?;
+    if filename.contains('/') || !canonical_pack_filename(filename) {
+        return Err(invalid(format!(
+            "unsafe data-backup pack path: {}",
+            member.path
+        )));
+    }
+    let path_digest = filename
+        .strip_suffix(".sqlite.zst")
+        .ok_or_else(|| invalid("backup pack suffix is invalid"))?;
+    if path_digest != member.sha256 {
+        return Err(invalid(format!(
+            "backup pack path digest does not match member digest: {}",
+            member.path
+        )));
+    }
+    Ok(MemberKind::Pack)
 }
 
 fn read_backup_envelope(
     source: &Path,
 ) -> Result<(BackupManifest, Vec<u8>, CompletionMarker), DataRecoveryError> {
-    let manifest_name = match fs::symlink_metadata(source.join(MANIFEST_NAME)) {
-        Ok(_) => MANIFEST_NAME,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => LEGACY_MANIFEST_NAME,
-        Err(error) => {
-            return Err(io_error(
-                "inspecting data-backup manifest",
-                source.join(MANIFEST_NAME),
-                error,
-            ));
-        }
+    let present = |name: &str| match fs::symlink_metadata(source.join(name)) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(io_error(
+            "inspecting data-backup manifest",
+            source.join(name),
+            error,
+        )),
+    };
+    let manifest_name = if present(STREAMED_DIRECTORY_MANIFEST_NAME)? {
+        STREAMED_DIRECTORY_MANIFEST_NAME
+    } else if present(MANIFEST_NAME)? {
+        MANIFEST_NAME
+    } else {
+        LEGACY_MANIFEST_NAME
     };
     require_directory_entries(
         source,
@@ -1116,6 +1504,11 @@ fn read_backup_envelope(
     let manifest: BackupManifest = parse_canonical_json(&manifest_bytes)?;
     validate_manifest(&manifest)?;
     let format = backup_format(&manifest)?;
+    if format == BackupFormat::Streamed {
+        return Err(invalid(
+            "a streamed manifest belongs in an encrypted bundle, not a directory backup",
+        ));
+    }
     if manifest_name != format.manifest_name() {
         return Err(invalid(
             "data-backup manifest filename does not match its format",
@@ -1145,6 +1538,11 @@ fn validate_backup_tree(
 ) -> Result<(), DataRecoveryError> {
     validate_manifest(manifest)?;
     let format = backup_format(manifest)?;
+    if format == BackupFormat::Streamed {
+        return Err(invalid(
+            "a streamed manifest belongs in an encrypted bundle, not a directory backup",
+        ));
+    }
     if marker.kind != format.completion_kind()
         || marker.generation != manifest.generation
         || marker.manifest_sha256 != sha256_bytes_hex(manifest_bytes)
@@ -1164,7 +1562,14 @@ fn validate_backup_tree(
     // or a restore would fail when it empties them. Only a Current backup must
     // also hold no authority: a legacy v3 generation may carry live pairing
     // rows, which the restore revokes before it publishes anything.
-    validate_pairing_tables(&data, manifest.hub_schema, format == BackupFormat::Current)?;
+    validate_pairing_tables(
+        &data,
+        manifest.hub_schema,
+        matches!(format, BackupFormat::Current | BackupFormat::StreamedDirectory),
+    )?;
+    if format == BackupFormat::StreamedDirectory {
+        return streamed_directory::validate_streamed_directory_payload(&data, manifest);
+    }
     let expected_noops = current_schema_22_noop_pairs(&data)?;
     if expected_noops.is_empty() {
         require_directory_entries(
@@ -1234,7 +1639,7 @@ fn validate_backup_tree(
 
 fn validate_restored_data_tree(
     root: &Path,
-    members: &[BackupMember],
+    members: RestoredMembers<'_>,
     catalogue_migrated: bool,
 ) -> Result<(), DataRecoveryError> {
     require_directory_entries(root, ["hub.sqlite", "packs"], "restored data root")?;
@@ -1248,6 +1653,17 @@ fn validate_restored_data_tree(
             "restored packs directory",
         )?;
     }
+    let members = match members {
+        RestoredMembers::Listed(members) => members,
+        RestoredMembers::Streamed(streamed) => {
+            return validate_streamed_data_tree(
+                root,
+                streamed,
+                &expected_noops,
+                catalogue_migrated,
+            );
+        }
+    };
     let expected_packs: BTreeSet<String> = members
         .iter()
         .filter_map(|member| {
@@ -1294,10 +1710,75 @@ fn validate_restored_data_tree(
     Ok(())
 }
 
-fn remove_migration_host_state(
+/// The staged tree of a streamed bundle, checked without its member list
+/// (M06-T10): the pack directory is read one entry at a time, each pack must
+/// be a private regular file whose content digest is its name, and their
+/// number must be the streamed one; the no-ops must be exactly the current
+/// catalogue's, as many as streamed; the catalogue must match its streamed
+/// size and digest unless the restore has since changed it.
+fn validate_streamed_data_tree(
     root: &Path,
-    members: &[BackupMember],
+    streamed: &StreamedMembers,
+    expected_noops: &BTreeMap<String, Uuid>,
+    catalogue_migrated: bool,
 ) -> Result<(), DataRecoveryError> {
+    if expected_noops.len() as u64 != streamed.noops {
+        return Err(invalid(
+            "restored schema 2.2 no-op members do not match the current catalogue",
+        ));
+    }
+    validate_schema_22_noop_directory(root, expected_noops)?;
+    let packs = root.join("packs").join("sha256");
+    let metadata = require_real_directory(&packs, "restored SHA-256 pack directory")?;
+    if permission_mode(&metadata) != PRIVATE_DIRECTORY_MODE {
+        return Err(invalid(
+            "restored SHA-256 pack directory must have mode 0700",
+        ));
+    }
+    let entries = fs::read_dir(&packs)
+        .map_err(|source| io_error("reading restored pack directory", &packs, source))?;
+    let mut count = 0_u64;
+    for entry in entries {
+        let entry =
+            entry.map_err(|source| io_error("reading restored pack entry", &packs, source))?;
+        let name = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| invalid("restored pack directory contains a non-UTF-8 name"))?;
+        let digest = name
+            .strip_suffix(".sqlite.zst")
+            .filter(|_| canonical_pack_filename(&name))
+            .ok_or_else(|| invalid(format!("unexpected restored pack: {name}")))?;
+        let path = entry.path();
+        let metadata = require_regular_file(&path, "restored pack")?;
+        if permission_mode(&metadata) != PRIVATE_FILE_MODE || sha256_file_hex(&path)? != digest {
+            return Err(invalid(format!(
+                "restored data member differs from its bundle: {PACK_DIRECTORY}/{name}"
+            )));
+        }
+        count += 1;
+    }
+    if count != streamed.packs {
+        return Err(invalid(format!(
+            "restored pack directory holds {count} packs, the bundle streamed {}",
+            streamed.packs
+        )));
+    }
+    let catalogue = root.join("hub.sqlite");
+    let metadata = require_regular_file(&catalogue, "restored data member")?;
+    if permission_mode(&metadata) != PRIVATE_FILE_MODE
+        || (!catalogue_migrated
+            && (metadata.len() != streamed.catalogue.size
+                || sha256_file_hex(&catalogue)? != streamed.catalogue.sha256))
+    {
+        return Err(invalid(format!(
+            "restored data member differs from its bundle: {CATALOGUE_MEMBER}"
+        )));
+    }
+    Ok(())
+}
+
+fn remove_migration_host_state(root: &Path, has_noops: bool) -> Result<(), DataRecoveryError> {
     let publication_lock = root.join(".publication.lock");
     let metadata = require_regular_file(&publication_lock, "migration publication lock")?;
     if permission_mode(&metadata) != PRIVATE_FILE_MODE || metadata.nlink() != 1 {
@@ -1311,10 +1792,7 @@ fn remove_migration_host_state(
         )
     })?;
 
-    if !members
-        .iter()
-        .any(|member| schema_22_noop_member_filename(&member.path).is_some())
-    {
+    if !has_noops {
         let noop = root.join("packs").join("noop");
         require_directory_entries(&noop, [], "migration-created no-op directory")?;
         fs::remove_dir(&noop).map_err(|source| {
@@ -1353,7 +1831,7 @@ fn copy_verified_member(
         .map_err(|source_error| {
             io_error("creating restored data member", destination, source_error)
         })?;
-    let mut output = BufWriter::with_capacity(COPY_BUFFER_BYTES, output);
+    let mut output = BufWriter::with_capacity(COPY_BUFFER_BYTES, VolumeFile(output));
     let mut digest = Sha256::new();
     let mut copied = 0_u64;
     let mut buffer = vec![0_u8; COPY_BUFFER_BYTES];
@@ -1381,7 +1859,7 @@ fn copy_verified_member(
     output.flush().map_err(|source_error| {
         io_error("flushing restored data member", destination, source_error)
     })?;
-    let output = output.into_inner().map_err(|error| {
+    let VolumeFile(output) = output.into_inner().map_err(|error| {
         io_error(
             "finishing restored data member",
             destination,
@@ -1424,19 +1902,25 @@ fn sync_payload(payload: &Path, members: &[BackupMember]) -> Result<(), DataReco
     sync_directory(payload)
 }
 
-fn sync_restored_data(root: &Path, members: &[BackupMember]) -> Result<(), DataRecoveryError> {
-    for member in members {
-        let relative = member
-            .path
-            .strip_prefix("data/")
-            .ok_or_else(|| invalid("restored member is outside the data scope"))?;
-        sync_file(&root.join(relative))?;
+fn sync_restored_data(root: &Path, members: RestoredMembers<'_>) -> Result<(), DataRecoveryError> {
+    match members {
+        RestoredMembers::Listed(members) => {
+            for member in members {
+                let relative = member
+                    .path
+                    .strip_prefix("data/")
+                    .ok_or_else(|| invalid("restored member is outside the data scope"))?;
+                sync_file(&root.join(relative))?;
+            }
+        }
+        RestoredMembers::Streamed(_) => {
+            // Each pack and no-op was synced as it was written and nothing
+            // has changed it since; the catalogue was sealed and re-signed.
+            sync_file(&root.join("hub.sqlite"))?;
+        }
     }
     sync_directory(&root.join("packs").join("sha256"))?;
-    if members
-        .iter()
-        .any(|member| schema_22_noop_member_filename(&member.path).is_some())
-    {
+    if members.has_noops() {
         sync_directory(&root.join("packs").join("noop"))?;
     }
     sync_directory(&root.join("packs"))?;
@@ -1637,15 +2121,17 @@ fn read_bounded_private_file(path: &Path, maximum: u64) -> Result<Vec<u8>, DataR
 }
 
 fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), DataRecoveryError> {
-    let mut file = OpenOptions::new()
+    let file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(PRIVATE_FILE_MODE)
         .open(path)
         .map_err(|source| io_error("creating data-backup metadata", path, source))?;
+    let mut file = VolumeFile(file);
     file.write_all(bytes)
         .map_err(|source| io_error("writing data-backup metadata", path, source))?;
-    file.sync_all()
+    file.0
+        .sync_all()
         .map_err(|source| io_error("syncing data-backup metadata", path, source))?;
     set_mode(path, PRIVATE_FILE_MODE, "protecting data-backup metadata")
 }
@@ -1720,47 +2206,50 @@ fn schema_22_noop_member_filename(path: &str) -> Option<&str> {
     (!name.contains('/') && canonical_schema_22_noop_filename(name)).then_some(name)
 }
 
-fn current_schema_22_noop_pairs(
-    data: &Path,
-) -> Result<BTreeMap<String, SyncManifest>, DataRecoveryError> {
+/// The current schema 2.2 full snapshots of the catalogue at `data`, by
+/// no-op file name (`<vehicle>.<snapshot>.json`) and snapshot id.
+fn current_schema_22_noop_pairs(data: &Path) -> Result<BTreeMap<String, Uuid>, DataRecoveryError> {
     current_schema_22_noop_pairs_in(&open_immutable_catalogue(data)?)
 }
 
+/// One vehicle's current full snapshot, by identity only.
+#[derive(Debug, Clone, Copy)]
+struct CurrentSnapshot {
+    head_sequence: u64,
+    snapshot_id: Uuid,
+    schema_22: bool,
+}
+
+/// Select each vehicle's current full snapshot and keep those of schema 2.2
+/// (REV-CX-M06-T10 finding 1): the manifest rows are read one at a time,
+/// straight from SQLite's row buffer, each parsed and dropped before the next
+/// is read, and only one identity per vehicle is kept. Memory is one row and
+/// one entry per vehicle, never one per retained manifest; each selected
+/// manifest is read again by its snapshot id where its no-op is checked
+/// ([`current_noop_manifest`]).
 fn current_schema_22_noop_pairs_in(
     connection: &Connection,
-) -> Result<BTreeMap<String, SyncManifest>, DataRecoveryError> {
-    let rows = connection
+) -> Result<BTreeMap<String, Uuid>, DataRecoveryError> {
+    let mut statement = connection
         .prepare(
             "SELECT snapshot_id, vehicle_id, head_sequence, manifest_json
              FROM sync_manifests",
         )
-        .map_err(DataRecoveryError::CatalogueIdentity)?
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, Vec<u8>>(3)?,
-            ))
-        })
-        .map_err(DataRecoveryError::CatalogueIdentity)?
-        .collect::<Result<Vec<_>, _>>()
         .map_err(DataRecoveryError::CatalogueIdentity)?;
-    let mut current = BTreeMap::<Uuid, SyncManifest>::new();
-    for (snapshot_id, vehicle_id, head_sequence, payload) in rows {
-        let manifest: SyncManifest = match serde_json::from_slice(&payload) {
-            Ok(manifest) => manifest,
-            Err(_)
-                if serde_json::from_slice::<LineageManifestV2>(&payload).is_ok()
-                    || serde_json::from_slice::<LineageDelta>(&payload).is_ok() =>
-            {
-                continue;
-            }
-            Err(error) => return Err(DataRecoveryError::Decode(error)),
+    let mut rows = statement
+        .query([])
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    let mut current = BTreeMap::<Uuid, CurrentSnapshot>::new();
+    while let Some(row) = rows.next().map_err(DataRecoveryError::CatalogueIdentity)? {
+        let column = |index: usize| row.get_ref(index).map_err(DataRecoveryError::CatalogueIdentity);
+        let unreadable = |_| invalid("backup catalogue manifest row has an unexpected type");
+        let snapshot_id = column(0)?.as_str().map_err(unreadable)?;
+        let vehicle_id = column(1)?.as_str().map_err(unreadable)?;
+        let head_sequence = column(2)?.as_i64().map_err(unreadable)?;
+        let payload = column(3)?.as_blob().map_err(unreadable)?;
+        let Some(manifest) = parse_catalogue_manifest(payload)? else {
+            continue;
         };
-        manifest
-            .validate()
-            .map_err(|error| invalid(format!("invalid manifest in backup catalogue: {error}")))?;
         if manifest.snapshot_id.to_string() != snapshot_id
             || manifest.vehicle_id.to_string() != vehicle_id
             || i64::try_from(manifest.head_sequence).ok() != Some(head_sequence)
@@ -1772,38 +2261,88 @@ fn current_schema_22_noop_pairs_in(
         if manifest.mode != TransferMode::FullSnapshot {
             continue;
         }
+        let candidate = CurrentSnapshot {
+            head_sequence: manifest.head_sequence,
+            snapshot_id: manifest.snapshot_id,
+            schema_22: manifest.schema == HUB_PROJECTION_SCHEMA_V3,
+        };
         match current.get(&manifest.vehicle_id) {
-            Some(existing) if existing.head_sequence > manifest.head_sequence => {}
+            Some(existing) if existing.head_sequence > candidate.head_sequence => {}
             Some(existing)
-                if existing.head_sequence == manifest.head_sequence
-                    && existing.snapshot_id != manifest.snapshot_id =>
+                if existing.head_sequence == candidate.head_sequence
+                    && existing.snapshot_id != candidate.snapshot_id =>
             {
                 return Err(invalid(
                     "backup catalogue has conflicting current full snapshots",
                 ));
             }
-            Some(existing) if existing.head_sequence == manifest.head_sequence => {}
+            Some(existing) if existing.head_sequence == candidate.head_sequence => {}
             _ => {
-                current.insert(manifest.vehicle_id, manifest);
+                current.insert(manifest.vehicle_id, candidate);
             }
         }
     }
     let mut pairs = BTreeMap::new();
-    for manifest in current.into_values() {
-        if manifest.schema != HUB_PROJECTION_SCHEMA_V3 {
+    for (vehicle_id, snapshot) in current {
+        if !snapshot.schema_22 {
             continue;
         }
-        let name = format!("{}.{}.json", manifest.vehicle_id, manifest.snapshot_id);
-        if pairs.insert(name, manifest).is_some() {
+        let name = format!("{vehicle_id}.{}.json", snapshot.snapshot_id);
+        if pairs.insert(name, snapshot.snapshot_id).is_some() {
             return Err(invalid("duplicate schema 2.2 no-op backup identity"));
         }
     }
     Ok(pairs)
 }
 
+/// One catalogue manifest row: a validated sync manifest, or `None` for a
+/// lineage manifest or delta (which select no no-op).
+fn parse_catalogue_manifest(payload: &[u8]) -> Result<Option<SyncManifest>, DataRecoveryError> {
+    let manifest: SyncManifest = match serde_json::from_slice(payload) {
+        Ok(manifest) => manifest,
+        Err(_)
+            if serde_json::from_slice::<LineageManifestV2>(payload).is_ok()
+                || serde_json::from_slice::<LineageDelta>(payload).is_ok() =>
+        {
+            return Ok(None);
+        }
+        Err(error) => return Err(DataRecoveryError::Decode(error)),
+    };
+    manifest
+        .validate()
+        .map_err(|error| invalid(format!("invalid manifest in backup catalogue: {error}")))?;
+    Ok(Some(manifest))
+}
+
+/// The manifest of one selected current snapshot, read by its id.
+fn current_noop_manifest(
+    connection: &Connection,
+    snapshot_id: Uuid,
+) -> Result<SyncManifest, DataRecoveryError> {
+    let payload: Vec<u8> = connection
+        .query_row(
+            "SELECT manifest_json FROM sync_manifests WHERE snapshot_id = ?1",
+            [snapshot_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    match parse_catalogue_manifest(&payload)? {
+        Some(manifest) if manifest.snapshot_id == snapshot_id => Ok(manifest),
+        _ => Err(invalid(
+            "a current schema 2.2 snapshot is missing from the backup catalogue",
+        )),
+    }
+}
+
+/// The no-op directory must hold exactly one body per current schema 2.2
+/// snapshot of the catalogue at `data`, each checked against its manifest.
+/// The directory is read one entry at a time with no entry bound
+/// (REV-CX-M06-T10 finding 3): each entry must name a current snapshot,
+/// whose manifest is read by id, and the count must equal the catalogue's,
+/// so the correspondence is exact without listing the directory.
 fn validate_schema_22_noop_directory(
     data: &Path,
-    expected: &BTreeMap<String, SyncManifest>,
+    expected: &BTreeMap<String, Uuid>,
 ) -> Result<(), DataRecoveryError> {
     let directory = data.join("packs").join("noop");
     if expected.is_empty() {
@@ -1819,10 +2358,28 @@ fn validate_schema_22_noop_directory(
             )),
         };
     }
-    let expected_names = expected.keys().cloned().collect();
-    require_directory_entry_set(&directory, &expected_names, "schema 2.2 no-op directory")?;
-    for (name, manifest) in expected {
-        let path = directory.join(name);
+    let metadata = require_real_directory(&directory, "schema 2.2 no-op directory")?;
+    if permission_mode(&metadata) != PRIVATE_DIRECTORY_MODE {
+        return Err(invalid("schema 2.2 no-op directory must have mode 0700"));
+    }
+    let connection = open_immutable_catalogue(data)?;
+    let entries = fs::read_dir(&directory)
+        .map_err(|source| io_error("reading schema 2.2 no-op directory", &directory, source))?;
+    let mut seen = 0_usize;
+    for entry in entries {
+        let entry = entry
+            .map_err(|source| io_error("reading schema 2.2 no-op directory", &directory, source))?;
+        let name = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| invalid("schema 2.2 no-op directory contains a non-UTF-8 name"))?;
+        let Some(snapshot_id) = expected.get(&name) else {
+            return Err(invalid(format!(
+                "schema 2.2 no-op directory has an unknown member: {name}"
+            )));
+        };
+        seen += 1;
+        let path = directory.join(&name);
         let metadata = require_regular_file(&path, "schema 2.2 no-op member")?;
         if metadata.nlink() != 1
             || permission_mode(&metadata) != PRIVATE_FILE_MODE
@@ -1834,7 +2391,14 @@ fn validate_schema_22_noop_directory(
             )));
         }
         let bytes = read_bounded_private_file(&path, MAX_SCHEMA_22_NOOP_BYTES)?;
-        validate_schema_22_noop_bytes(name, manifest, &bytes)?;
+        let manifest = current_noop_manifest(&connection, *snapshot_id)?;
+        validate_schema_22_noop_bytes(&name, &manifest, &bytes)?;
+    }
+    if seen != expected.len() {
+        return Err(invalid(format!(
+            "schema 2.2 no-op directory holds {seen} members, the catalogue has {} current",
+            expected.len()
+        )));
     }
     Ok(())
 }
@@ -1913,7 +2477,7 @@ fn read_directory(path: &Path) -> Result<Vec<fs::DirEntry>, DataRecoveryError> {
             entry
                 .map_err(|source| io_error("reading data-backup directory entry", path, source))?,
         );
-        if entries.len() > MAX_BACKUP_MEMBERS + 16 {
+        if entries.len() > LISTED_FORMAT_MAX_MEMBERS + 16 {
             return Err(invalid(
                 "data-backup directory entry count exceeds its bound",
             ));
@@ -2045,10 +2609,16 @@ fn io_error(
 
 mod archive_crypto;
 mod backup_admission;
+mod cursor_reissue;
 mod encrypted_backup;
 mod encrypted_scratch;
+mod recovery_password;
+mod streamed_directory;
 
 pub use archive_crypto::generate_recovery_password;
+pub use recovery_password::{
+    RECOVERY_PASSWORD_MAX_BYTES, read_recovery_password, recovery_password_from,
+};
 pub(crate) use encrypted_backup::live_backup_pack_pins;
 pub use encrypted_backup::{
     EncryptedBackupReport, EncryptedBackupRequest, create_encrypted_backup,
@@ -2196,6 +2766,12 @@ fn remove_unpublished_leftovers(parent: &Path) -> Result<(), DataRecoveryError> 
         if !metadata.file_type().is_dir() {
             continue;
         }
+        // A staging directory held locked belongs to a running backup or
+        // restore (M06-T15): it is left alone. The lock is held while this
+        // one is cleared.
+        let Some((_lock, _)) = lock_directory(&path) else {
+            continue;
+        };
         // The data child is inspected without following links: a symbolic link
         // (or anything that is not a directory) is skipped, never entered.
         let payload = path.join(DATA_DIRECTORY);

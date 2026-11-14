@@ -64,6 +64,17 @@
 //! that enforces ownership, removable or not, the folder and the archives must
 //! also pass POSIX and ACL admission ([`super::backup_admission`]).
 //!
+//! Member count (M06-T10). A run has no member bound and holds nothing per
+//! member. Under the gate the pack directory is read one entry at a time
+//! straight into the run's pin rows, counting packs and bytes; the stream then
+//! pages through those rows in digest order. The manifest (the first record)
+//! declares the member count and payload bytes instead of listing members, and
+//! each member record carries its own path, size and digest (format v5). The
+//! reader checks every record as it arrives, holding only the previous path,
+//! and the totals against the declared ones before the trailer. Bundles
+//! written before v5 list their members in the manifest; they still verify and
+//! restore, with that list bounded as when they were written.
+//!
 //! Secret exclusion (M06-T02). The seal removes credential rows, the
 //! credential unit's status row, pairing and collector authority, then
 //! vacuums the copy, so free pages copied from the live catalogue cannot
@@ -71,11 +82,13 @@
 //! files (credential keys, the Fleet virtual-key private key, TLS identity,
 //! cursor key) are never members.
 
+#[cfg(test)]
+use std::{fs::OpenOptions, os::unix::fs::OpenOptionsExt};
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io::{self, Read, Seek, SeekFrom, Write},
     num::NonZeroUsize,
-    os::unix::fs::{MetadataExt, OpenOptionsExt},
+    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -85,24 +98,27 @@ use std::{
 };
 
 use super::{
-    BACKUP_KIND, BACKUP_SCOPE, BUILD_VERSION, BackupManifest, BackupMember, CATALOGUE_MEMBER,
-    DataRecoveryError, DataRecoveryReport, HubStore, MAX_BACKUP_MEMBERS, MAX_MANIFEST_BYTES,
-    MAX_SCHEMA_22_NOOP_BYTES, PACK_DIRECTORY, PRIVATE_FILE_MODE, SCHEMA_22_NOOP_DIRECTORY,
-    SCHEMA_VERSION, Sha256, StagingDirectory, StoreError, admit_staging_capacity,
+    BACKUP_SCOPE, BUILD_VERSION, BackupFormat, BackupManifest, BackupMember, CATALOGUE_MEMBER,
+    COPY_CAPACITY_FIXED_HEADROOM_BYTES, DataRecoveryError, DataRecoveryReport, HubStore,
+    MAX_MANIFEST_BYTES, MAX_SCHEMA_22_NOOP_BYTES, MemberKind, PACK_DIRECTORY,
+    PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE, RestoredMembers, SCHEMA_22_NOOP_DIRECTORY,
+    SCHEMA_VERSION, STREAMED_BACKUP_KIND, Sha256, StagedTree, StoreError, StreamedMembers,
+    admit_known_capacity, admit_staging_capacity, allocation_block_bytes, available_bytes,
+    backup_format,
     backup_admission::{self, AdmittedDirectory},
     encrypted_scratch::EncryptedScratch,
     archive_crypto::{
-        ArchiveReader, ArchiveWriter, DEFAULT_CHUNK_BYTES, DEFAULT_KDF, KdfParams, MAX_CHUNK_BYTES,
-        MAX_KDF_MEMORY_KIB, SealingKey, TAG_BYTES, map_write_error,
+        ArchiveReader, ArchiveWriter, DEFAULT_CHUNK_BYTES, DEFAULT_KDF, HEADER_BYTES, KdfParams,
+        MAX_CHUNK_BYTES, MAX_KDF_MEMORY_KIB, SealingKey, TAG_BYTES, map_write_error,
     },
     canonical_json, canonical_pack_filename, catalogue_identity, check_backup_admission,
-    create_private_directory, current_epoch_ms, current_schema_22_noop_pairs_in,
-    excluded_host_state_strings, expected_protocol, finalize_restore,
-    immutable_database_identity_at_schema, invalid, io_error, manifest_copy_bytes,
-    open_regular_nonblocking, parse_canonical_json, prepare_new_destination, read_directory,
-    report, seal_backup_credentials, seal_backup_credentials_checked, seal_host_authority,
-    vacuum_sealed_catalogue, validate_manifest, validate_restored_data_tree,
-    validate_schema_22_noop_bytes,
+    checked_capacity_add, current_epoch_ms, current_noop_manifest,
+    current_schema_22_noop_pairs_in, excluded_host_state_strings, expected_protocol,
+    finalize_restore, immutable_database_identity_at_schema, invalid, io_error,
+    manifest_totals, member_storage_bytes, open_regular_nonblocking, parse_canonical_json,
+    prepare_new_destination, report, schema_22_noop_member_filename, seal_backup_credentials, seal_backup_credentials_checked,
+    seal_host_authority, staging_required_bytes, vacuum_sealed_catalogue, validate_manifest,
+    validate_member, validate_restored_data_tree, validate_schema_22_noop_bytes, VolumeFile,
 };
 use rusqlite::{
     Connection, MAIN_DB, OpenFlags, TransactionBehavior,
@@ -114,6 +130,7 @@ use serde::Serialize;
 use sha2::Digest;
 use uuid::Uuid;
 
+mod restore_staging;
 mod retention;
 
 const ARCHIVE_PREFIX: &str = "teslatlas-hub-backup-";
@@ -121,9 +138,27 @@ const ARCHIVE_SUFFIX: &str = ".tlbk";
 const PARTIAL_PREFIX: &str = ".teslatlas-hub-backup-";
 const PARTIAL_SUFFIX: &str = ".partial";
 const MANIFEST_RECORD: &str = "manifest.json";
+/// The manifest record, and every member record of a bundle before v5.
 const RECORD_FILE: u8 = 1;
+/// A member record of a streamed (v5) bundle: it carries its own digest.
+const RECORD_MEMBER: u8 = 2;
 const RECORD_END: u8 = 0xFE;
+/// Pinned packs read from the live catalogue per page while streaming.
+const PACK_PAGE_ROWS: i64 = 256;
 const MAX_RECORD_PATH_BYTES: usize = 1024;
+/// The longest member path a bundle writes (a no-op body's, 94 bytes),
+/// rounded up: what a member record carries besides its bytes is the tag,
+/// the path length, the path, the size and the digest.
+const MAX_MEMBER_PATH_BYTES: u64 = 128;
+const MEMBER_RECORD_OVERHEAD_BYTES: u64 = 1 + 2 + MAX_MEMBER_PATH_BYTES + 8 + 32;
+/// The manifest size counted before the manifest exists.
+const MANIFEST_ESTIMATE_BYTES: u64 = 64 * 1024;
+/// What one pin row can add to the live catalogue and its WAL: the row and
+/// its index entry, each written again as a WAL frame copy, with room to
+/// spare (REV-CX-M06-T10 finding 2).
+const PIN_ROW_BYTES: u64 = 1024;
+/// Pin rows admitted at a time beyond the pre-count.
+const PIN_ADMISSION_ROWS: u64 = 1024;
 pub(super) const STREAM_BUFFER_BYTES: usize = 1024 * 1024;
 
 /// The Hub's whole-process peak (Backups decision, 2026-10-08).
@@ -134,6 +169,10 @@ pub(super) const SERVICE_RESERVE_BYTES: u64 = 384 * 1024 * 1024;
 /// serialised image coexist briefly, so the budget counts it twice; the vacuum
 /// of the sealed copy (its rebuilt image beside the copy) fits the same two.
 pub(super) const MAX_CATALOGUE_IMAGE_BYTES: u64 = 256 * 1024 * 1024;
+/// The signed no-op bodies a run holds: one per vehicle with a current
+/// schema 2.2 snapshot, so they follow the number of vehicles, not history.
+/// 4,096 vehicles at the largest body size; a run above it is refused.
+pub(super) const MAX_HELD_NOOP_BYTES: u64 = 4_096 * MAX_SCHEMA_22_NOOP_BYTES;
 // The memory budget holds at compile time (the tests spell it out): the key
 // derivation phase, then the copy, no-op bodies and stream buffers, each beside
 // the service reserve.
@@ -141,7 +180,7 @@ const _: () = assert!(
     SERVICE_RESERVE_BYTES + MAX_KDF_MEMORY_KIB as u64 * 1024 <= HUB_PEAK_MEMORY_BYTES
         && SERVICE_RESERVE_BYTES
             + 2 * MAX_CATALOGUE_IMAGE_BYTES
-            + MAX_BACKUP_MEMBERS as u64 * MAX_SCHEMA_22_NOOP_BYTES
+            + MAX_HELD_NOOP_BYTES
             + STREAM_BUFFER_BYTES as u64
             + (MAX_CHUNK_BYTES + TAG_BYTES) as u64
             <= HUB_PEAK_MEMORY_BYTES
@@ -155,7 +194,7 @@ pub(super) const SCRATCH_CACHE_KIB: u64 = 8 * 1024;
 const _: () = assert!(
     SERVICE_RESERVE_BYTES
         + 3 * SCRATCH_CACHE_KIB * 1024
-        + MAX_BACKUP_MEMBERS as u64 * MAX_SCHEMA_22_NOOP_BYTES
+        + MAX_HELD_NOOP_BYTES
         + 2 * STREAM_BUFFER_BYTES as u64
         + (MAX_CHUNK_BYTES + TAG_BYTES) as u64
         <= HUB_PEAK_MEMORY_BYTES
@@ -218,6 +257,11 @@ pub struct EncryptedBackupRequest<'a> {
     pub keep: Option<NonZeroUsize>,
     /// Set by the caller to stop the run; checked per chunk and per member.
     pub cancel: Option<Arc<AtomicBool>>,
+    /// Require a private destination where the volume enforces ownership:
+    /// no access at all for other accounts, by mode or by ACL (M06-T14). The
+    /// shipped `backup` command sets it; the service's schedule keeps the
+    /// rule that no other account may write there.
+    pub private_destination: bool,
     pub(crate) kdf: KdfParams,
     pub(crate) chunk_bytes: usize,
 }
@@ -229,6 +273,7 @@ impl<'a> EncryptedBackupRequest<'a> {
             password,
             keep: None,
             cancel: None,
+            private_destination: false,
             kdf: DEFAULT_KDF,
             chunk_bytes: DEFAULT_CHUNK_BYTES,
         }
@@ -247,7 +292,8 @@ pub struct EncryptedBackupReport {
     pub archive_bytes: u64,
     /// Older generations removed by rotation after this run.
     pub rotated_generations: usize,
-    /// Set when rotation failed; the new generation is still good.
+    /// Set when rotation failed; the new generation is still good (it was
+    /// authenticated in full as the object the run wrote before rotation).
     pub rotation_error: Option<String>,
 }
 
@@ -285,12 +331,24 @@ fn hook(_stage: &str, _path: &Path) -> Result<(), DataRecoveryError> {
     Ok(())
 }
 
-/// The destination file. Every write passes the test seam, which can inject a
-/// full disk or an I/O error.
+/// The destination file. Every write passes the test seams, which can inject a
+/// full disk, an I/O error or a volume that fills part-way.
 struct Sink {
-    file: File,
+    file: VolumeFile,
     #[cfg_attr(not(test), allow(dead_code))]
     path: PathBuf,
+    /// SHA-256 of every byte written to the file, in order.
+    digest: Sha256,
+}
+
+impl Sink {
+    fn new(file: File, path: PathBuf) -> Self {
+        Self {
+            file: VolumeFile(file),
+            path,
+            digest: Sha256::new(),
+        }
+    }
 }
 
 impl Write for Sink {
@@ -304,7 +362,9 @@ impl Write for Sink {
                 return Err(io::Error::other("simulated crash"));
             }
         }
-        self.file.write(buffer)
+        let written = self.file.write(buffer)?;
+        self.digest.update(&buffer[..written]);
+        Ok(written)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -312,18 +372,18 @@ impl Write for Sink {
     }
 }
 
-enum Source {
-    /// The sealed in-memory catalogue copy.
-    Catalogue,
-    /// A pack in the live store, content-addressed by its own name and pinned.
-    Pack(PathBuf),
-    /// A small body held in memory (a signed schema 2.2 no-op).
-    Bytes(Vec<u8>),
+/// A signed schema 2.2 no-op body, read under the gate and held in memory.
+struct NoopBody {
+    member: BackupMember,
+    bytes: Vec<u8>,
 }
 
-struct Planned {
-    member: BackupMember,
-    source: Source,
+/// The packs a run pinned: how many and their bytes. The pin rows themselves
+/// are the list; nothing per pack is held in memory.
+#[derive(Debug, Clone, Copy)]
+struct PackPlan {
+    count: u64,
+    bytes: u64,
 }
 
 /// Pin rows that keep GC from removing the packs a run is streaming. They are
@@ -340,11 +400,17 @@ fn pin_error(error: rusqlite::Error) -> DataRecoveryError {
 }
 
 impl<'a> PackPins<'a> {
-    /// Pin `digests`; the caller holds the publication gate.
-    fn take<'d>(
-        store: &'a HubStore,
-        digests: impl Iterator<Item = &'d str>,
-    ) -> Result<Self, DataRecoveryError> {
+    /// List the live packs and pin every one of them in one transaction; the
+    /// caller holds the publication gate. The directory is read one entry at a
+    /// time straight into the pin rows, counting packs and bytes, so the list
+    /// is never held in memory. Packs are immutable and content-addressed:
+    /// the file name is the digest, which the stream re-checks while it reads.
+    ///
+    /// `admitted_rows` pin rows were admitted on the live data volume before
+    /// the gate; every further [`PIN_ADMISSION_ROWS`] are admitted before
+    /// they are written, so the pins never fill the volume.
+    fn take(store: &'a HubStore, admitted_rows: u64) -> Result<(Self, PackPlan), DataRecoveryError> {
+        let mut admitted_rows = admitted_rows;
         let now = current_epoch_ms()?;
         let expires_at_ms = now
             .checked_add(PACK_PIN_LEASE_MS)
@@ -360,21 +426,83 @@ impl<'a> PackPins<'a> {
                 params![now],
             )
             .map_err(pin_error)?;
-        for digest in digests {
-            transaction
-                .execute(
-                    "INSERT INTO backup_pack_pins(pin_id, sha256, expires_at_ms)
-                     VALUES (?1, ?2, ?3)",
-                    params![pin_id.to_string(), digest, expires_at_ms],
-                )
+        let mut plan = PackPlan { count: 0, bytes: 0 };
+        let pack_directory = store.packs_dir().join("sha256");
+        let entries = match fs::read_dir(&pack_directory) {
+            Ok(entries) => Some(entries),
+            Err(source) if source.kind() == io::ErrorKind::NotFound => None,
+            Err(source) => {
+                return Err(io_error("reading the live pack directory", &pack_directory, source));
+            }
+        };
+        let mut insert = transaction
+            .prepare(
+                "INSERT INTO backup_pack_pins(pin_id, sha256, expires_at_ms)
+                 VALUES (?1, ?2, ?3)",
+            )
+            .map_err(pin_error)?;
+        for entry in entries.into_iter().flatten() {
+            let entry = entry.map_err(|source| {
+                io_error("reading the live pack directory", &pack_directory, source)
+            })?;
+            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            if !canonical_pack_filename(&name) {
+                continue;
+            }
+            let path = entry.path();
+            let metadata = fs::symlink_metadata(&path)
+                .map_err(|source| io_error("inspecting live pack", &path, source))?;
+            if !metadata.file_type().is_file() {
+                return Err(invalid(format!("live pack is not a regular file: {name}")));
+            }
+            let digest = name.trim_end_matches(".sqlite.zst");
+            if plan.count >= admitted_rows {
+                admit_pin_rows(store, PIN_ADMISSION_ROWS)?;
+                admitted_rows += PIN_ADMISSION_ROWS;
+            }
+            insert
+                .execute(params![pin_id.to_string(), digest, expires_at_ms])
                 .map_err(pin_error)?;
+            plan.count += 1;
+            plan.bytes = plan
+                .bytes
+                .checked_add(metadata.len())
+                .ok_or(DataRecoveryError::CapacityOverflow)?;
         }
+        drop(insert);
         transaction.commit().map_err(pin_error)?;
-        Ok(Self {
-            store,
-            pin_id,
-            expires_at_ms,
-        })
+        Ok((
+            Self {
+                store,
+                pin_id,
+                expires_at_ms,
+            },
+            plan,
+        ))
+    }
+
+    /// This run's pinned digests after `after`, in order, one page at a
+    /// time; each page is a short read of the live catalogue.
+    fn page_after(&self, after: &str) -> Result<Vec<String>, DataRecoveryError> {
+        let connection = self.store.open()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT sha256 FROM backup_pack_pins
+                 WHERE pin_id = ?1 AND sha256 > ?2
+                 ORDER BY sha256 LIMIT ?3",
+            )
+            .map_err(pin_error)?;
+        let page = statement
+            .query_map(
+                params![self.pin_id.to_string(), after, PACK_PAGE_ROWS],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(pin_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(pin_error)?;
+        Ok(page)
     }
 
     /// Extend the lease once half of it has passed.
@@ -415,6 +543,85 @@ impl Drop for PackPins<'_> {
         // depends on it.
         let _ = self.release_rows();
     }
+}
+
+/// The live catalogue's folder: where pin rows and their WAL frames land.
+fn live_data_directory(store: &HubStore) -> Result<&Path, DataRecoveryError> {
+    store
+        .database_path()
+        .parent()
+        .ok_or_else(|| invalid("live Hub catalogue has no data-directory parent"))
+}
+
+/// Admit `rows` pin rows on the live data volume, keeping the fixed reserve.
+fn admit_pin_rows(store: &HubStore, rows: u64) -> Result<(), DataRecoveryError> {
+    let live = live_data_directory(store)?;
+    let required = rows
+        .checked_mul(PIN_ROW_BYTES)
+        .ok_or(DataRecoveryError::CapacityOverflow)
+        .and_then(|bytes| checked_capacity_add(bytes, COPY_CAPACITY_FIXED_HEADROOM_BYTES))?;
+    admit_known_capacity(live, required, available_bytes(live)?)
+}
+
+/// The live packs, counted one directory entry at a time: their number and
+/// bytes, before the gate, for admission.
+fn count_live_packs(store: &HubStore) -> Result<(u64, u64), DataRecoveryError> {
+    let directory = store.packs_dir().join("sha256");
+    let entries = match fs::read_dir(&directory) {
+        Ok(entries) => entries,
+        Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok((0, 0)),
+        Err(source) => return Err(io_error("reading the live pack directory", &directory, source)),
+    };
+    let (mut count, mut bytes) = (0_u64, 0_u64);
+    for entry in entries {
+        let entry =
+            entry.map_err(|source| io_error("reading the live pack directory", &directory, source))?;
+        if !entry.file_name().to_str().is_some_and(canonical_pack_filename) {
+            continue;
+        }
+        let Ok(metadata) = fs::symlink_metadata(entry.path()) else {
+            continue;
+        };
+        count += 1;
+        bytes = checked_capacity_add(bytes, metadata.len())?;
+    }
+    Ok((count, bytes))
+}
+
+/// An upper bound on an archive's bytes: the container header, the manifest
+/// record, each member record's header and bytes, the end tag and trailer,
+/// and one authentication tag per chunk (REV-CX-M06-T10 finding 2).
+fn archive_bytes_bound(
+    members: u64,
+    payload_bytes: u64,
+    manifest_bytes: u64,
+    chunk_bytes: usize,
+) -> Result<u64, DataRecoveryError> {
+    let overflow = || DataRecoveryError::CapacityOverflow;
+    let records = members
+        .checked_mul(MEMBER_RECORD_OVERHEAD_BYTES)
+        .ok_or_else(overflow)?;
+    let plain = (1 + 2 + MANIFEST_RECORD.len() as u64 + 8)
+        .checked_add(manifest_bytes)
+        .and_then(|total| total.checked_add(records))
+        .and_then(|total| total.checked_add(payload_bytes))
+        .and_then(|total| total.checked_add(1 + 32))
+        .ok_or_else(overflow)?;
+    let chunk = u64::try_from(chunk_bytes.max(1)).map_err(|_| overflow())?;
+    (plain / chunk + 1)
+        .checked_mul(TAG_BYTES as u64)
+        .and_then(|tags| tags.checked_add(plain))
+        .and_then(|total| total.checked_add(HEADER_BYTES as u64))
+        .ok_or_else(overflow)
+}
+
+/// Admit an archive of at most `bound` bytes into the destination.
+fn admit_archive(destination: &Path, bound: u64) -> Result<(), DataRecoveryError> {
+    admit_known_capacity(
+        destination,
+        staging_required_bytes(bound)?,
+        available_bytes(destination)?,
+    )
 }
 
 /// The packs that live backups have pinned, for GC. An expired pin protects
@@ -737,26 +944,6 @@ fn seal_catalogue(
     })
 }
 
-fn resolve_destination(destination: &Path) -> Result<PathBuf, DataRecoveryError> {
-    let unavailable = |source: io::Error| DataRecoveryError::DestinationUnavailable {
-        path: destination.to_path_buf(),
-        source,
-    };
-    let metadata = fs::metadata(destination).map_err(unavailable)?;
-    if !metadata.is_dir() {
-        return Err(DataRecoveryError::DestinationUnavailable {
-            path: destination.to_path_buf(),
-            source: io::Error::new(io::ErrorKind::NotADirectory, "not a directory"),
-        });
-    }
-    destination
-        .canonicalize()
-        .map_err(|source| DataRecoveryError::DestinationUnavailable {
-            path: destination.to_path_buf(),
-            source,
-        })
-}
-
 fn generation_stamp(created_at_ms: i64) -> Result<String, DataRecoveryError> {
     let moment = time::OffsetDateTime::from_unix_timestamp(created_at_ms / 1000)
         .map_err(|_| invalid("backup timestamp is out of range"))?;
@@ -783,17 +970,18 @@ fn canonical_archive_name(manifest: &BackupManifest) -> Result<String, DataRecov
 }
 
 /// What the publication gate protects: the catalogue copy, the no-op bodies
-/// it selects, the pack list and the pins on those packs.
+/// it selects, and the pins on the packs (with their count and bytes).
 struct Snapshot<'a> {
     catalogue: CatalogueCopy,
-    noops: Vec<Planned>,
-    packs: Vec<Planned>,
+    noops: Vec<NoopBody>,
+    packs: PackPlan,
     pins: PackPins<'a>,
 }
 
 fn take_snapshot(
     store: &HubStore,
     scratch: Option<EncryptedScratch>,
+    admitted_pin_rows: u64,
 ) -> Result<Snapshot<'_>, DataRecoveryError> {
     let gate = store.begin_backup_snapshot()?;
     check_backup_admission(&gate)?;
@@ -807,8 +995,7 @@ fn take_snapshot(
         None => CatalogueCopy::Memory(copy_catalogue_into_memory(store)?),
     };
     let noops = plan_noops(store, catalogue.connection())?;
-    let packs = plan_packs(store)?;
-    let pins = PackPins::take(store, packs.iter().map(|item| item.member.sha256.as_str()))?;
+    let (pins, packs) = PackPins::take(store, admitted_pin_rows)?;
     hook("catalogue_copied", store.database_path())?;
     // The gate goes as soon as the catalogue is copied and the packs pinned.
     drop(gate);
@@ -820,33 +1007,30 @@ fn take_snapshot(
     })
 }
 
-/// Create one encrypted backup generation.
+/// Create one encrypted backup generation. Success is reported only once the
+/// complete published file has authenticated as the object this run wrote,
+/// on every destination; otherwise the run fails with `InvalidBackup` whose
+/// message starts with `invalid_publication`, and nothing older is removed.
 pub fn create_encrypted_backup(
     store: &HubStore,
     request: &EncryptedBackupRequest<'_>,
 ) -> Result<EncryptedBackupReport, DataRecoveryError> {
     let cancel = request.cancel.as_deref();
     cancelled(cancel)?;
-    let admitted: AdmittedDirectory =
-        backup_admission::admit_destination(&resolve_destination(request.destination)?)?;
+    // The destination is opened as named (never through a link at its end)
+    // and every check applies to the directory opened (M06-T14).
+    let access = if request.private_destination {
+        backup_admission::DestinationAccess::OwnerOnly
+    } else {
+        backup_admission::DestinationAccess::NoForeignWrite
+    };
+    let admitted: AdmittedDirectory = backup_admission::admit_destination(request.destination, access)?;
     let destination = admitted.path.clone();
     let live_data = store
         .database_path()
         .parent()
-        .ok_or_else(|| invalid("live Hub catalogue has no data-directory parent"))?
-        .canonicalize()
-        .map_err(|source| {
-            io_error(
-                "resolving live Hub data directory",
-                store.database_path(),
-                source,
-            )
-        })?;
-    if destination.starts_with(&live_data) {
-        return Err(invalid(
-            "backup destination must not be inside the live Hub data directory",
-        ));
-    }
+        .ok_or_else(|| invalid("live Hub catalogue has no data-directory parent"))?;
+    backup_admission::refuse_inside(&admitted, live_data)?;
     // The memory-hard derivation runs, and frees its memory, before the run
     // takes the gate or copies anything.
     let key = SealingKey::derive(request.password, request.kdf, request.chunk_bytes)?;
@@ -869,12 +1053,27 @@ pub fn create_encrypted_backup(
         None
     };
     cancelled(cancel)?;
+    // Before the gate and before any pin row or archive byte: the live
+    // packs, counted one entry at a time, must fit the destination as an
+    // archive (with the catalogue as it is now), and their pin rows the live
+    // data volume (REV-CX-M06-T10 finding 2).
+    let (live_packs, live_pack_bytes) = count_live_packs(store)?;
+    admit_archive(
+        &destination,
+        archive_bytes_bound(
+            live_packs.saturating_add(1),
+            checked_capacity_add(live_pack_bytes, image_bytes)?,
+            MANIFEST_ESTIMATE_BYTES,
+            request.chunk_bytes,
+        )?,
+    )?;
+    admit_pin_rows(store, live_packs)?;
     let Snapshot {
         catalogue,
         noops,
         packs,
         mut pins,
-    } = take_snapshot(store, scratch)?;
+    } = take_snapshot(store, scratch, live_packs)?;
     let generation = Uuid::new_v4();
     let partial_name = format!("{PARTIAL_PREFIX}{generation}{PARTIAL_SUFFIX}");
     let partial = destination.join(&partial_name);
@@ -890,26 +1089,20 @@ pub fn create_encrypted_backup(
             }
         };
         hook("catalogue_sealed", &destination)?;
-        let mut planned = vec![Planned {
-            member: catalogue.member.clone(),
-            source: Source::Catalogue,
-        }];
-        planned.extend(packs);
-        planned.extend(noops);
-        if planned.len() > MAX_BACKUP_MEMBERS {
-            return Err(invalid("backup contains too many members"));
-        }
-        planned.sort_by(|left, right| left.member.path.cmp(&right.member.path));
-        let payload_bytes = planned.iter().try_fold(0_u64, |total, item| {
-            total
-                .checked_add(item.member.size)
-                .ok_or(DataRecoveryError::CapacityOverflow)
-        })?;
-        admit_staging_capacity(&destination, payload_bytes)?;
-
+        let noop_count = u64::try_from(noops.len()).map_err(|_| DataRecoveryError::CapacityOverflow)?;
+        let member_count = packs
+            .count
+            .checked_add(noop_count)
+            .and_then(|count| count.checked_add(1))
+            .ok_or(DataRecoveryError::CapacityOverflow)?;
+        let payload_bytes = noops
+            .iter()
+            .try_fold(catalogue.member.size, |total, noop| total.checked_add(noop.member.size))
+            .and_then(|total| total.checked_add(packs.bytes))
+            .ok_or(DataRecoveryError::CapacityOverflow)?;
         let created_at_ms = current_epoch_ms()?;
         let manifest = BackupManifest {
-            kind: BACKUP_KIND.to_owned(),
+            kind: STREAMED_BACKUP_KIND.to_owned(),
             generation,
             created_at_ms,
             build: BUILD_VERSION.to_owned(),
@@ -918,23 +1111,38 @@ pub fn create_encrypted_backup(
             installation_id: source_installation_id,
             scope: BACKUP_SCOPE.to_owned(),
             excluded_host_state: excluded_host_state_strings(),
-            members: planned.iter().map(|item| item.member.clone()).collect(),
+            members: Vec::new(),
+            member_count: Some(member_count),
+            payload_bytes: Some(payload_bytes),
         };
         validate_manifest(&manifest)?;
         let manifest_bytes = canonical_json(&manifest)?;
+        // The whole archive, record headers and authentication tags
+        // included, must fit before its partial file exists.
+        admit_archive(
+            &destination,
+            archive_bytes_bound(
+                member_count,
+                payload_bytes,
+                manifest_bytes.len() as u64,
+                request.chunk_bytes,
+            )?,
+        )?;
         let final_name = canonical_archive_name(&manifest)?;
         let (file, identity) =
             retention::create_partial(&admitted, &partial_name)?;
         written = Some(identity);
         retention::record_run(store, generation, &admitted, identity)?;
-        let archive_bytes = write_partial(
+        let (archive_bytes, archive_sha256) = write_partial(
             request,
             key,
+            store,
             &partial,
             file,
             &manifest_bytes,
-            &planned,
-            Some(catalogue),
+            catalogue,
+            &noops,
+            (member_count, payload_bytes),
             &mut pins,
         )?;
         hook("before_publish", &partial)?;
@@ -944,12 +1152,13 @@ pub fn create_encrypted_backup(
         Ok((
             final_name,
             manifest_bytes,
-            manifest.members.len(),
+            usize::try_from(member_count).map_err(|_| DataRecoveryError::CapacityOverflow)?,
             payload_bytes,
-            archive_bytes,
+            (archive_bytes, archive_sha256),
         ))
     })();
-    let (final_name, manifest_bytes, member_count, payload_bytes, archive_bytes) = match run {
+    let (final_name, manifest_bytes, member_count, payload_bytes, (archive_bytes, archive_sha256)) =
+        match run {
         Ok(done) => done,
         Err(error) => {
             #[cfg(test)]
@@ -969,18 +1178,36 @@ pub fn create_encrypted_backup(
     // The packs are in the published generation: the pins go now.
     drop(pins);
 
+    // Nothing is reported, and nothing older is removed, until the complete
+    // published file has authenticated as the object this run wrote. The
+    // read observes cancellation; a cancelled run reports no success and
+    // removes nothing (REV-CX-M06-T11 finding 6).
+    let newest = retention::confirm_publication(
+        &admitted,
+        &final_name,
+        &retention::Written {
+            identity: written.ok_or_else(|| invalid("the published generation has no identity"))?,
+            manifest_bytes: &manifest_bytes,
+            archive_bytes,
+            archive_sha256,
+        },
+        request.password,
+        cancel,
+    )?;
+    cancelled(cancel)?;
     let (rotated_generations, rotation_error) = match request.keep {
         Some(keep) => retention::rotate_after_publish(
             &admitted,
             keep.get(),
-            &final_name,
-            written.ok_or_else(|| invalid("the published generation has no identity"))?,
-            &manifest_bytes,
+            &newest,
             request.password,
             source_installation_id,
+            cancel,
         ),
         None => (0, None),
     };
+    retention::confirm_still_published(&admitted, &newest, rotated_generations)?;
+    drop(newest);
     Ok(EncryptedBackupReport {
         status: "encrypted_backup_created",
         path: destination.join(&final_name),
@@ -995,168 +1222,186 @@ pub fn create_encrypted_backup(
 }
 
 /// The signed no-op body of each current schema 2.2 snapshot in the copy,
-/// read while the gate still holds publication off.
-fn plan_noops(store: &HubStore, catalogue: &Connection) -> Result<Vec<Planned>, DataRecoveryError> {
+/// read while the gate still holds publication off, in path order. They are
+/// one per vehicle; their bytes are bounded by [`MAX_HELD_NOOP_BYTES`].
+fn plan_noops(store: &HubStore, catalogue: &Connection) -> Result<Vec<NoopBody>, DataRecoveryError> {
     let mut planned = Vec::new();
-    for (name, manifest) in current_schema_22_noop_pairs_in(catalogue)? {
+    let mut held = 0_u64;
+    for (name, snapshot_id) in current_schema_22_noop_pairs_in(catalogue)? {
+        let manifest = current_noop_manifest(catalogue, snapshot_id)?;
         let bytes = store
             .schema_22_noop_for_snapshot(manifest.vehicle_id, manifest.snapshot_id)?
             .ok_or(StoreError::Schema22NoOpNotFound)?;
         validate_schema_22_noop_bytes(&name, &manifest, &bytes)?;
-        planned.push(Planned {
+        held += bytes.len() as u64;
+        if held > MAX_HELD_NOOP_BYTES {
+            return Err(invalid(
+                "the current schema 2.2 no-op bodies exceed what a backup holds in memory",
+            ));
+        }
+        planned.push(NoopBody {
             member: BackupMember {
                 path: format!("{SCHEMA_22_NOOP_DIRECTORY}/{name}"),
                 size: bytes.len() as u64,
                 mode: PRIVATE_FILE_MODE,
                 sha256: hex::encode(Sha256::digest(&bytes)),
             },
-            source: Source::Bytes(bytes),
+            bytes,
         });
-        if planned.len() > MAX_BACKUP_MEMBERS {
-            return Err(invalid("backup contains too many members"));
-        }
     }
     Ok(planned)
 }
 
-/// Packs are immutable and content-addressed: the file name is the digest,
-/// which the stream re-checks while it reads.
-fn plan_packs(store: &HubStore) -> Result<Vec<Planned>, DataRecoveryError> {
-    let mut planned = Vec::new();
-    let pack_directory = store.packs_dir().join("sha256");
-    match read_directory(&pack_directory) {
-        Ok(entries) => {
-            for entry in entries {
-                let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-                    continue;
-                };
-                if !canonical_pack_filename(&name) {
-                    continue;
-                }
-                let path = entry.path();
-                let metadata = fs::symlink_metadata(&path)
-                    .map_err(|source| io_error("inspecting live pack", &path, source))?;
-                if !metadata.file_type().is_file() {
-                    return Err(invalid(format!("live pack is not a regular file: {name}")));
-                }
-                let digest = name.trim_end_matches(".sqlite.zst").to_owned();
-                planned.push(Planned {
-                    member: BackupMember {
-                        path: format!("{PACK_DIRECTORY}/{name}"),
-                        size: metadata.len(),
-                        mode: PRIVATE_FILE_MODE,
-                        sha256: digest,
-                    },
-                    source: Source::Pack(path),
-                });
-                if planned.len() > MAX_BACKUP_MEMBERS {
-                    return Err(invalid("backup contains too many members"));
-                }
-            }
-        }
-        Err(DataRecoveryError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
-    }
-    Ok(planned)
+/// The running count and bytes of the members a stream has written.
+#[derive(Default)]
+struct Streamed {
+    count: u64,
+    bytes: u64,
 }
 
+impl Streamed {
+    fn add(&mut self, member: &BackupMember) -> Result<(), DataRecoveryError> {
+        self.count += 1;
+        self.bytes = self
+            .bytes
+            .checked_add(member.size)
+            .ok_or(DataRecoveryError::CapacityOverflow)?;
+        Ok(())
+    }
+}
+
+/// Stream the bundle in path order: the manifest, the catalogue, the no-op
+/// bodies, then the pinned packs a page at a time. The written count and
+/// bytes must equal the manifest's declared ones before the trailer goes.
+#[allow(clippy::too_many_arguments)]
 fn write_partial(
     request: &EncryptedBackupRequest<'_>,
     key: SealingKey,
+    store: &HubStore,
     partial: &Path,
     file: File,
     manifest_bytes: &[u8],
-    planned: &[Planned],
-    mut catalogue: Option<SealedCatalogue>,
+    catalogue: SealedCatalogue,
+    noops: &[NoopBody],
+    (declared_count, declared_bytes): (u64, u64),
     pins: &mut PackPins<'_>,
-) -> Result<u64, DataRecoveryError> {
+) -> Result<(u64, [u8; 32]), DataRecoveryError> {
     let cancel = request.cancel.as_deref();
-    let sink = Sink {
-        file,
-        path: partial.to_path_buf(),
-    };
+    let sink = Sink::new(file, partial.to_path_buf());
     let mut writer = ArchiveWriter::start(sink, partial.to_path_buf(), key)?;
 
     hook("record", partial)?;
     put_file_header(&mut writer, MANIFEST_RECORD, manifest_bytes.len() as u64)?;
     writer.write_plain(manifest_bytes)?;
     let mut buffer = vec![0_u8; STREAM_BUFFER_BYTES];
-    for item in planned {
+    let mut streamed = Streamed::default();
+
+    cancelled(cancel)?;
+    pins.renew_if_due()?;
+    hook("record", partial)?;
+    let SealedCatalogue {
+        image,
+        header,
+        member: catalogue_member,
+    } = catalogue;
+    match image {
+        SealedImage::Memory(image) => {
+            stream_member(
+                &mut writer,
+                &catalogue_member,
+                header.as_slice().chain(&image[SQLITE_HEADER_BYTES..]),
+                &mut buffer,
+                cancel,
+            )?;
+            // The copy's memory goes before the packs stream.
+            drop(image);
+        }
+        SealedImage::Scratch { mut file, _scratch } => {
+            file.seek(SeekFrom::Start(SQLITE_HEADER_BYTES as u64))
+                .map_err(|source| {
+                    io_error("reading the sealed catalogue", &catalogue_member.path, source)
+                })?;
+            stream_member(
+                &mut writer,
+                &catalogue_member,
+                header.as_slice().chain(&mut file),
+                &mut buffer,
+                cancel,
+            )?;
+            // The scratch volume goes before the packs stream.
+            drop(file);
+            drop(_scratch);
+        }
+    }
+    streamed.add(&catalogue_member)?;
+
+    for noop in noops {
         cancelled(cancel)?;
         pins.renew_if_due()?;
         hook("record", partial)?;
-        match &item.source {
-            Source::Catalogue => {
-                let SealedCatalogue { image, header, .. } = catalogue
-                    .take()
-                    .ok_or_else(|| invalid("the catalogue member appears twice"))?;
-                match image {
-                    SealedImage::Memory(image) => {
-                        stream_member(
-                            &mut writer,
-                            &item.member,
-                            header.as_slice().chain(&image[SQLITE_HEADER_BYTES..]),
-                            &mut buffer,
-                            cancel,
-                        )?;
-                        // The copy's memory goes before the packs stream.
-                        drop(image);
-                    }
-                    SealedImage::Scratch { mut file, _scratch } => {
-                        file.seek(SeekFrom::Start(SQLITE_HEADER_BYTES as u64))
-                            .map_err(|source| {
-                                io_error("reading the sealed catalogue", &item.member.path, source)
-                            })?;
-                        stream_member(
-                            &mut writer,
-                            &item.member,
-                            header.as_slice().chain(&mut file),
-                            &mut buffer,
-                            cancel,
-                        )?;
-                        // The scratch volume goes before the packs stream.
-                        drop(file);
-                        drop(_scratch);
-                    }
-                }
-            }
-            Source::Bytes(bytes) => {
-                stream_member(
-                    &mut writer,
-                    &item.member,
-                    bytes.as_slice(),
-                    &mut buffer,
-                    cancel,
-                )?;
-            }
-            Source::Pack(path) => {
-                let input = open_regular_nonblocking(path, "opening backup source member")?;
-                let metadata = input
-                    .metadata()
-                    .map_err(|source| io_error("inspecting backup source member", path, source))?;
-                if metadata.len() != item.member.size || metadata.nlink() == 0 {
-                    return Err(invalid(format!(
-                        "backup source member changed before it was streamed: {}",
-                        item.member.path
-                    )));
-                }
-                stream_member(&mut writer, &item.member, input, &mut buffer, cancel)?;
-            }
+        stream_member(
+            &mut writer,
+            &noop.member,
+            noop.bytes.as_slice(),
+            &mut buffer,
+            cancel,
+        )?;
+        streamed.add(&noop.member)?;
+    }
+
+    let pack_directory = store.packs_dir().join("sha256");
+    let mut after = String::new();
+    loop {
+        let page = pins.page_after(&after)?;
+        if page.is_empty() {
+            break;
         }
+        for digest in page {
+            cancelled(cancel)?;
+            pins.renew_if_due()?;
+            hook("record", partial)?;
+            let name = format!("{digest}.sqlite.zst");
+            let path = pack_directory.join(&name);
+            let input = open_regular_nonblocking(&path, "opening backup source member")?;
+            let metadata = input
+                .metadata()
+                .map_err(|source| io_error("inspecting backup source member", &path, source))?;
+            if metadata.nlink() == 0 {
+                return Err(invalid(format!(
+                    "backup source member was removed before it was streamed: {PACK_DIRECTORY}/{name}"
+                )));
+            }
+            let member = BackupMember {
+                path: format!("{PACK_DIRECTORY}/{name}"),
+                size: metadata.len(),
+                mode: PRIVATE_FILE_MODE,
+                sha256: digest,
+            };
+            stream_member(&mut writer, &member, input, &mut buffer, cancel)?;
+            streamed.add(&member)?;
+            after = member.sha256;
+        }
+    }
+    if streamed.count != declared_count || streamed.bytes != declared_bytes {
+        return Err(invalid(
+            "the backup's members changed between the snapshot and the stream",
+        ));
     }
     writer.write_plain(&[RECORD_END])?;
     let manifest_digest: [u8; 32] = Sha256::digest(manifest_bytes).into();
     writer.write_plain(&manifest_digest)?;
     let sink = writer.finish()?;
     sink.file
+        .0
         .sync_all()
         .map_err(|source| map_write_error(partial, source))?;
     let size = sink
         .file
+        .0
         .metadata()
         .map_err(|source| io_error("inspecting backup archive", partial, source))?
         .len();
-    Ok(size)
+    Ok((size, sink.digest.finalize().into()))
 }
 
 fn put_file_header(
@@ -1171,6 +1416,23 @@ fn put_file_header(
     writer.write_plain(&size.to_be_bytes())
 }
 
+/// A v5 member record header: tag, path, size and the member's digest.
+fn put_member_header(
+    writer: &mut ArchiveWriter<Sink>,
+    member: &BackupMember,
+) -> Result<(), DataRecoveryError> {
+    let path_length =
+        u16::try_from(member.path.len()).map_err(|_| invalid("record path is too long"))?;
+    let mut digest = [0_u8; 32];
+    hex::decode_to_slice(&member.sha256, &mut digest)
+        .map_err(|_| invalid("backup member digest is not SHA-256 hex"))?;
+    writer.write_plain(&[RECORD_MEMBER])?;
+    writer.write_plain(&path_length.to_be_bytes())?;
+    writer.write_plain(member.path.as_bytes())?;
+    writer.write_plain(&member.size.to_be_bytes())?;
+    writer.write_plain(&digest)
+}
+
 fn stream_member(
     writer: &mut ArchiveWriter<Sink>,
     member: &BackupMember,
@@ -1179,7 +1441,7 @@ fn stream_member(
     cancel: Option<&AtomicBool>,
 ) -> Result<(), DataRecoveryError> {
     let source_path = Path::new(&member.path);
-    put_file_header(writer, &member.path, member.size)?;
+    put_member_header(writer, member)?;
     let mut digest = Sha256::new();
     let mut streamed = 0_u64;
     loop {
@@ -1258,7 +1520,12 @@ fn open_archive_file(
     reader.read_exact_plain(&mut manifest_bytes)?;
     let manifest: BackupManifest = parse_canonical_json(&manifest_bytes)?;
     validate_manifest(&manifest)?;
-    if manifest.kind != BACKUP_KIND || manifest.scope != BACKUP_SCOPE {
+    // v5 streams its members; a bundle written before it lists them (v4).
+    if !matches!(
+        backup_format(&manifest)?,
+        BackupFormat::Streamed | BackupFormat::Current
+    ) || manifest.scope != BACKUP_SCOPE
+    {
         return Err(DataRecoveryError::CorruptArchive(
             "the archive manifest is not a current Hub backup".into(),
         ));
@@ -1278,6 +1545,13 @@ fn read_file_header(reader: &mut ArchiveReader<File>) -> Result<(String, u64), D
             "unexpected record in the archive".into(),
         ));
     }
+    read_record_path_and_size(reader)
+}
+
+/// The path and size that follow a record tag.
+fn read_record_path_and_size(
+    reader: &mut ArchiveReader<File>,
+) -> Result<(String, u64), DataRecoveryError> {
     let mut length = [0_u8; 2];
     reader.read_exact_plain(&mut length)?;
     let length = usize::from(u16::from_be_bytes(length));
@@ -1295,15 +1569,85 @@ fn read_file_header(reader: &mut ArchiveReader<File>) -> Result<(String, u64), D
     Ok((path, u64::from_be_bytes(size)))
 }
 
-/// Read every member record in manifest order, verify size and digest, and
-/// hand each member's bytes to `sink_for` when it returns a file. Ends with the
-/// trailer, which must bind the manifest, and then the end of the stream.
+/// Read one member's bytes, verify its digest and hand them to `sink`.
+fn read_member_body(
+    reader: &mut ArchiveReader<File>,
+    member: &BackupMember,
+    sink: Option<File>,
+    buffer: &mut [u8],
+    cancel: Option<&AtomicBool>,
+) -> Result<(), DataRecoveryError> {
+    let mut sink = sink.map(VolumeFile);
+    let mut digest = Sha256::new();
+    let mut remaining = member.size;
+    while remaining > 0 {
+        cancelled(cancel)?;
+        let take = usize::try_from(remaining).map_or(buffer.len(), |left| left.min(buffer.len()));
+        reader.read_exact_plain(&mut buffer[..take])?;
+        digest.update(&buffer[..take]);
+        if let Some(file) = sink.as_mut() {
+            file.write_all(&buffer[..take]).map_err(|source| {
+                io_error(
+                    "writing restored data member",
+                    Path::new(&member.path),
+                    source,
+                )
+            })?;
+        }
+        remaining -= take as u64;
+    }
+    if hex::encode(digest.finalize()) != member.sha256 {
+        return Err(DataRecoveryError::CorruptArchive(format!(
+            "the archive member digest does not match its manifest: {}",
+            member.path
+        )));
+    }
+    if let Some(VolumeFile(file)) = sink {
+        file.sync_all().map_err(|source| {
+            io_error(
+                "syncing restored data member",
+                Path::new(&member.path),
+                source,
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// Read every member record, verify size and digest, and hand each member's
+/// bytes to `sink_for` when it returns a file. Ends with the trailer, which
+/// must bind the manifest, and then the end of the stream. Returns what the
+/// stream established about the members.
 fn stream_members(
     opened: &mut OpenedArchive,
+    cancel: Option<&AtomicBool>,
+    sink_for: impl FnMut(&BackupMember) -> Result<Option<File>, DataRecoveryError>,
+) -> Result<StreamedMembers, DataRecoveryError> {
+    let streamed = match backup_format(&opened.manifest)? {
+        BackupFormat::Streamed => stream_streamed_members(opened, cancel, sink_for)?,
+        _ => stream_listed_members(opened, cancel, sink_for)?,
+    };
+    let mut digest = [0_u8; 32];
+    opened.reader.read_exact_plain(&mut digest)?;
+    if digest != sha256_digest_bytes(&opened.manifest_bytes) {
+        return Err(DataRecoveryError::CorruptArchive(
+            "the archive trailer does not match its manifest".into(),
+        ));
+    }
+    opened.reader.expect_end()?;
+    Ok(streamed)
+}
+
+/// A bundle before v5: the records follow the manifest's (bounded) member
+/// list one for one, then the end tag.
+fn stream_listed_members(
+    opened: &mut OpenedArchive,
+    cancel: Option<&AtomicBool>,
     mut sink_for: impl FnMut(&BackupMember) -> Result<Option<File>, DataRecoveryError>,
-) -> Result<(), DataRecoveryError> {
+) -> Result<StreamedMembers, DataRecoveryError> {
     let mut buffer = vec![0_u8; STREAM_BUFFER_BYTES];
     for member in &opened.manifest.members {
+        cancelled(cancel)?;
         let (path, size) = read_file_header(&mut opened.reader)?;
         if path != member.path || size != member.size {
             return Err(DataRecoveryError::CorruptArchive(format!(
@@ -1311,49 +1655,111 @@ fn stream_members(
                 member.path
             )));
         }
-        let mut sink = sink_for(member)?;
-        let mut digest = Sha256::new();
-        let mut remaining = size;
-        while remaining > 0 {
-            let take =
-                usize::try_from(remaining).map_or(buffer.len(), |left| left.min(buffer.len()));
-            opened.reader.read_exact_plain(&mut buffer[..take])?;
-            digest.update(&buffer[..take]);
-            if let Some(file) = sink.as_mut() {
-                file.write_all(&buffer[..take]).map_err(|source| {
-                    io_error(
-                        "writing restored data member",
-                        Path::new(&member.path),
-                        source,
-                    )
-                })?;
-            }
-            remaining -= take as u64;
-        }
-        if hex::encode(digest.finalize()) != member.sha256 {
-            return Err(DataRecoveryError::CorruptArchive(format!(
-                "the archive member digest does not match its manifest: {}",
-                member.path
-            )));
-        }
-        if let Some(file) = sink {
-            file.sync_all().map_err(|source| {
-                io_error(
-                    "syncing restored data member",
-                    Path::new(&member.path),
-                    source,
-                )
-            })?;
-        }
+        let sink = sink_for(member)?;
+        read_member_body(&mut opened.reader, member, sink, &mut buffer, cancel)?;
     }
-    let mut trailer = [0_u8; 33];
-    opened.reader.read_exact_plain(&mut trailer)?;
-    if trailer[0] != RECORD_END || trailer[1..] != sha256_digest_bytes(&opened.manifest_bytes) {
+    let mut tag = [0_u8; 1];
+    opened.reader.read_exact_plain(&mut tag)?;
+    if tag[0] != RECORD_END {
         return Err(DataRecoveryError::CorruptArchive(
             "the archive trailer does not match its manifest".into(),
         ));
     }
-    opened.reader.expect_end()
+    let members = &opened.manifest.members;
+    let catalogue = members
+        .iter()
+        .find(|member| member.path == CATALOGUE_MEMBER)
+        .cloned()
+        .ok_or_else(|| invalid("data-backup must contain exactly one Hub catalogue"))?;
+    let noops = members
+        .iter()
+        .filter(|member| schema_22_noop_member_filename(&member.path).is_some())
+        .count() as u64;
+    Ok(StreamedMembers {
+        catalogue,
+        packs: members.len() as u64 - 1 - noops,
+        noops,
+    })
+}
+
+/// A v5 bundle: member records until the end tag, each checked as it
+/// arrives, in strictly ascending path order, holding only the previous path;
+/// the count and bytes must equal the manifest's declared ones.
+fn stream_streamed_members(
+    opened: &mut OpenedArchive,
+    cancel: Option<&AtomicBool>,
+    mut sink_for: impl FnMut(&BackupMember) -> Result<Option<File>, DataRecoveryError>,
+) -> Result<StreamedMembers, DataRecoveryError> {
+    let corrupt = |message: &str| DataRecoveryError::CorruptArchive(message.to_owned());
+    let declared_count = opened
+        .manifest
+        .member_count
+        .ok_or_else(|| corrupt("the archive manifest declares no member count"))?;
+    let declared_bytes = opened
+        .manifest
+        .payload_bytes
+        .ok_or_else(|| corrupt("the archive manifest declares no payload bytes"))?;
+    let mut buffer = vec![0_u8; STREAM_BUFFER_BYTES];
+    let mut previous: Option<String> = None;
+    let mut catalogue: Option<BackupMember> = None;
+    let (mut count, mut bytes, mut packs, mut noops) = (0_u64, 0_u64, 0_u64, 0_u64);
+    loop {
+        cancelled(cancel)?;
+        let mut tag = [0_u8; 1];
+        opened.reader.read_exact_plain(&mut tag)?;
+        match tag[0] {
+            RECORD_END => break,
+            RECORD_MEMBER => {}
+            _ => return Err(corrupt("unexpected record in the archive")),
+        }
+        let (path, size) = read_record_path_and_size(&mut opened.reader)?;
+        let mut digest = [0_u8; 32];
+        opened.reader.read_exact_plain(&mut digest)?;
+        let member = BackupMember {
+            path,
+            size,
+            mode: PRIVATE_FILE_MODE,
+            sha256: hex::encode(digest),
+        };
+        if previous
+            .as_deref()
+            .is_some_and(|previous| previous >= member.path.as_str())
+        {
+            return Err(corrupt(
+                "the archive members are not uniquely sorted by canonical path",
+            ));
+        }
+        let kind = validate_member(&member).map_err(|error| corrupt(&error.to_string()))?;
+        count += 1;
+        bytes = bytes
+            .checked_add(member.size)
+            .ok_or_else(|| corrupt("the archive member byte total overflowed"))?;
+        if count > declared_count || bytes > declared_bytes {
+            return Err(corrupt(
+                "the archive holds more members or bytes than its manifest declares",
+            ));
+        }
+        match kind {
+            MemberKind::Catalogue => catalogue = Some(member.clone()),
+            MemberKind::Noop => noops += 1,
+            MemberKind::Pack => packs += 1,
+        }
+        let sink = sink_for(&member)?;
+        read_member_body(&mut opened.reader, &member, sink, &mut buffer, cancel)?;
+        previous = Some(member.path);
+    }
+    if count != declared_count || bytes != declared_bytes {
+        return Err(corrupt(
+            "the archive holds fewer members or bytes than its manifest declares",
+        ));
+    }
+    let catalogue =
+        catalogue.ok_or_else(|| corrupt("the archive must contain exactly one Hub catalogue"))?;
+    Ok(StreamedMembers {
+        catalogue,
+        packs,
+        noops,
+    })
 }
 
 fn sha256_digest_bytes(bytes: &[u8]) -> [u8; 32] {
@@ -1367,56 +1773,172 @@ pub fn verify_encrypted_backup(
     password: &str,
 ) -> Result<DataRecoveryReport, DataRecoveryError> {
     let mut opened = open_archive(archive, password)?;
-    stream_members(&mut opened, |_| Ok(None))?;
+    stream_members(&mut opened, None, |_| Ok(None))?;
     report("data_backup_verified", archive, &opened.manifest)
 }
 
 /// Restore an archive into a new directory. The wrong password is refused
 /// before anything is written; any damage found while streaming discards the
 /// staged tree, so nothing partial is ever published.
+///
+/// When plaintext first touches disk (M06-T11): after the header has passed
+/// the password check, the first chunk has authenticated and yielded the
+/// manifest (canonical, valid, its generation matching the file name),
+/// capacity is admitted and the locked staging directory exists. Then the
+/// first member's record (path, size, digest) is read from authenticated
+/// plaintext and its file created in the staging directory; its bytes are
+/// written chunk by chunk, each only after that chunk's AES-256-GCM tag has
+/// verified under the nonce for its position (and the final-chunk flag). At
+/// that moment the member's digest, the later chunks, the final chunk, the
+/// declared totals and the trailer are not yet checked.
+///
+/// What guarantees nothing unauthenticated is adopted: the staged tree is
+/// published (one no-replace rename onto the target) only after the whole
+/// stream has authenticated, every member digest, the declared totals, the
+/// trailer binding the manifest and the end of the stream, and after the tree
+/// and installation checks. Any failure before that removes the staging
+/// directory; an interrupted restore's staging directory, no longer locked by
+/// any process, is removed when the next restore into the same parent starts.
+///
+/// Binding and space (M06-T15): the parent is admitted and held, the staging
+/// is made and written through held descriptors and its path is checked
+/// against them before every phase that uses it ([`restore_staging`]), and
+/// the parent must
+/// hold the members with their allocation and metadata overhead; before each
+/// member the space the rest of the bundle needs, plus a reserve, must still
+/// be free.
 pub fn restore_encrypted_backup(
     archive: &Path,
     password: &str,
     destination: &Path,
 ) -> Result<DataRecoveryReport, DataRecoveryError> {
-    let (destination, parent) = prepare_new_destination(destination)?;
-    let mut opened = open_archive(archive, password)?;
-    admit_staging_capacity(&parent, manifest_copy_bytes(&opened.manifest)?)?;
-    let staging = StagingDirectory::create(&parent)?;
-    create_private_directory(&staging.path.join("packs"))?;
-    create_private_directory(&staging.path.join("packs").join("sha256"))?;
-    if opened.manifest.members.iter().any(|member| {
-        member
-            .path
-            .starts_with(&format!("{SCHEMA_22_NOOP_DIRECTORY}/"))
-    }) {
-        create_private_directory(&staging.path.join("packs").join("noop"))?;
-    }
-    let root = staging.path.clone();
-    stream_members(&mut opened, |member| {
-        let relative = member
-            .path
-            .strip_prefix("data/")
-            .ok_or_else(|| invalid("backup member is outside the data payload"))?;
-        let target = root.join(relative);
-        OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(PRIVATE_FILE_MODE)
-            .open(&target)
-            .map(Some)
-            .map_err(|source| io_error("creating restored data member", &target, source))
+    let (destination, parent_path) = prepare_new_destination(destination)?;
+    let parent = backup_admission::admit_destination(
+        &parent_path,
+        backup_admission::DestinationAccess::NoForeignWrite,
+    )
+    .map_err(|error| match error {
+        DataRecoveryError::InvalidBackup(_) => invalid(
+            "the restore target's folder must be owned by the Hub's user and not writable by \
+             other accounts, by its mode or by an access control list",
+        ),
+        other => other,
     })?;
+    restore_staging::clear_interrupted_restores(&parent)?;
+    let mut opened = open_archive(archive, password)?;
+    let (member_count, payload_bytes) = manifest_totals(&opened.manifest)?;
+    let (member_count, payload_bytes) = (member_count as u64, payload_bytes);
+    let block = allocation_block_bytes(&parent.path)?;
+    admit_staging_capacity(
+        &parent.path,
+        member_storage_bytes(payload_bytes, member_count, block)?,
+    )?;
+    let space = parent.path.clone();
+    let mut staging = restore_staging::HeldStaging::create(parent)?;
+    let root = staging.root().to_path_buf();
+    let (mut created, mut created_bytes) = (0_u64, 0_u64);
+    let streamed = stream_members(&mut opened, None, |member| {
+        hook("restore_member", &root)?;
+        // The rest of the bundle, with its overhead, plus the reserve must
+        // still fit before another file is made.
+        let remaining = member_storage_bytes(
+            payload_bytes.saturating_sub(created_bytes),
+            member_count.saturating_sub(created),
+            block,
+        )
+        .and_then(|bytes| checked_capacity_add(bytes, COPY_CAPACITY_FIXED_HEADROOM_BYTES))?;
+        admit_known_capacity(&space, remaining, available_bytes(&space)?)?;
+        let file = staging.create_member(member)?;
+        created += 1;
+        created_bytes = created_bytes.saturating_add(member.size);
+        Ok(Some(file))
+    });
+    #[cfg(test)]
+    if streamed.is_err() && test_hooks::CRASHED.with(|flag| flag.replace(false)) {
+        // A killed process removes nothing, and its lock goes with it.
+        staging.leave_as_killed();
+        return Err(streamed.err().expect("an error"));
+    }
+    let streamed = streamed?;
+    // From here the tree is reached by its path: it must still be the one
+    // the stream wrote through held descriptors.
+    staging.check_bound()?;
 
-    validate_restored_data_tree(&staging.path, &opened.manifest.members, false)?;
-    if immutable_database_identity_at_schema(&staging.path, opened.manifest.hub_schema)?
+    let members = match backup_format(&opened.manifest)? {
+        BackupFormat::Streamed => RestoredMembers::Streamed(&streamed),
+        _ => RestoredMembers::Listed(&opened.manifest.members),
+    };
+    validate_restored_data_tree(&root, members, false)?;
+    if immutable_database_identity_at_schema(&root, opened.manifest.hub_schema)?
         != opened.manifest.installation_id
     {
         return Err(invalid(
             "manifest installation ID does not match the restored catalogue",
         ));
     }
-    finalize_restore(staging, &destination, &opened.manifest)
+    finalize_restore(staging, &destination, &opened.manifest, members)
+}
+
+/// The authenticated manifest of an archive, for tests.
+#[cfg(test)]
+pub(super) fn archive_manifest(
+    archive: &Path,
+    password: &str,
+) -> Result<BackupManifest, DataRecoveryError> {
+    let file = open_regular_nonblocking(archive, "opening backup archive")?;
+    Ok(open_archive_file(file, archive, password)?.manifest)
+}
+
+/// Write an archive by hand into `directory` under the name its manifest
+/// implies, for tests: `streamed` false writes the layout of bundles before
+/// v5 (file records, as the manifest lists them), true writes v5 member
+/// records in the order given, faults included. The trailer binds the
+/// manifest either way.
+#[cfg(test)]
+pub(super) fn write_test_archive(
+    directory: &Path,
+    password: &str,
+    kdf: KdfParams,
+    manifest_bytes: &[u8],
+    members: &[(&str, &[u8])],
+    streamed: bool,
+) -> Result<PathBuf, DataRecoveryError> {
+    let manifest: BackupManifest = parse_canonical_json(manifest_bytes)?;
+    let path = directory.join(canonical_archive_name(&manifest)?);
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(PRIVATE_FILE_MODE)
+        .open(&path)
+        .map_err(|source| io_error("creating test archive", &path, source))?;
+    let key = SealingKey::derive(password, kdf, 4096)?;
+    let mut writer = ArchiveWriter::start(Sink::new(file, path.clone()), path.clone(), key)?;
+    put_file_header(&mut writer, MANIFEST_RECORD, manifest_bytes.len() as u64)?;
+    writer.write_plain(manifest_bytes)?;
+    for (member_path, bytes) in members {
+        if streamed {
+            put_member_header(
+                &mut writer,
+                &BackupMember {
+                    path: (*member_path).to_owned(),
+                    size: bytes.len() as u64,
+                    mode: PRIVATE_FILE_MODE,
+                    sha256: hex::encode(Sha256::digest(bytes)),
+                },
+            )?;
+        } else {
+            put_file_header(&mut writer, member_path, bytes.len() as u64)?;
+        }
+        writer.write_plain(bytes)?;
+    }
+    writer.write_plain(&[RECORD_END])?;
+    writer.write_plain(&sha256_digest_bytes(manifest_bytes))?;
+    let sink = writer.finish()?;
+    sink.file
+        .0
+        .sync_all()
+        .map_err(|source| io_error("syncing test archive", &path, source))?;
+    Ok(path)
 }
 
 /// The whole authenticated plaintext stream of an archive, for tests that

@@ -247,6 +247,10 @@ const SETUP_INPUT_MAX_BYTES: usize = 4096;
 const FORWARD_TIMEOUT: Duration = Duration::from_secs(180);
 
 fn operator_home() -> Result<PathBuf, OperatorRefusal> {
+    #[cfg(test)]
+    if let Some(home) = TEST_OPERATOR_HOME.with(|cell| cell.borrow().clone()) {
+        return Ok(home);
+    }
     std::env::var_os("HOME")
         .filter(|home| !home.is_empty())
         .map(PathBuf::from)
@@ -1042,7 +1046,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     // local instance lock. `control` uses short SQLite transactions so it can
     // intentionally operate while the collector is running.
     #[cfg(unix)]
-    let admitted_user_hub = if operator::admission::requires_user_hub_admission(&cli.command) {
+    let admitted_user_hub = if operator::admission::requires_user_hub_admission(&cli.command)
+        || matches!(&cli.command, Command::BackupPlaintextDirectory { .. })
+    {
         let config = HubConfig::load(&config_path)?;
         if matches!(
             &cli.command,
@@ -1111,17 +1117,40 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // The recovery flow takes the encrypted bundle by default; an older
+    // plaintext directory is refused before the password is read unless the
+    // operator names that format (M06-T08).
     match &cli.command {
-        Command::VerifyBackup { source } => {
-            let report = verify_data_backup(source)?;
+        Command::VerifyBackup {
+            source,
+            plaintext_directory,
+        } => {
+            let report = match admit_recovery_source(source, *plaintext_directory)? {
+                BackupSourceFormat::PlaintextDirectory => verify_data_backup(source)?,
+                BackupSourceFormat::Encrypted => {
+                    let password = recovery_password(false)?;
+                    teslatlas_hub::data_recovery::verify_encrypted_backup(source, &password)?
+                }
+            };
             println!("{}", serde_json::to_string(&report)?);
             return Ok(());
         }
         Command::RestoreData {
             source,
             destination,
+            plaintext_directory,
         } => {
-            let report = restore_data_backup(source, destination)?;
+            let report = match admit_recovery_source(source, *plaintext_directory)? {
+                BackupSourceFormat::PlaintextDirectory => restore_data_backup(source, destination)?,
+                BackupSourceFormat::Encrypted => {
+                    let password = recovery_password(false)?;
+                    teslatlas_hub::data_recovery::restore_encrypted_backup(
+                        source,
+                        &password,
+                        destination,
+                    )?
+                }
+            };
             println!("{}", serde_json::to_string(&report)?);
             return Ok(());
         }
@@ -1658,17 +1687,22 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let report = store.repair()?;
             println!("{}", serde_json::to_string(&report)?);
         }
+        // Encrypted by default (M06-T08): one authenticated bundle in the
+        // destination folder, keeping every earlier generation.
         Command::Backup { destination } => {
-            // A refusal caused by refused pre-upgrade credentials names the
-            // command that removes them (DEC-083).
-            let report = create_data_backup(&store, &destination).map_err(
-                |error| -> Box<dyn std::error::Error> {
-                    match teslatlas_hub::data_recovery::refused_credential_backup_message(&store, &error) {
-                        Some(message) => message.into(),
-                        None => error.into(),
-                    }
-                },
-            )?;
+            let password = recovery_password(true)?;
+            let mut request =
+                teslatlas_hub::data_recovery::EncryptedBackupRequest::new(&destination, &password);
+            // The command's existing private folder: owner-only, by mode and
+            // by ACL, where the volume enforces ownership (M06-T14).
+            request.private_destination = true;
+            let report = teslatlas_hub::data_recovery::create_encrypted_backup(&store, &request)
+                .map_err(|error| backup_refusal(&store, error))?;
+            println!("{}", serde_json::to_string(&report)?);
+        }
+        Command::BackupPlaintextDirectory { destination } => {
+            let report = create_data_backup(&store, &destination)
+                .map_err(|error| backup_refusal(&store, error))?;
             println!("{}", serde_json::to_string(&report)?);
         }
         Command::ExportRecoveryCredentials { .. }
@@ -1684,4 +1718,319 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     }
     catalogue_checkpoint.finish()?;
     Ok(())
+}
+
+/// A refusal caused by refused pre-upgrade credentials names the command that
+/// removes them (DEC-083).
+fn backup_refusal(
+    store: &HubStore,
+    error: teslatlas_hub::data_recovery::DataRecoveryError,
+) -> Box<dyn std::error::Error> {
+    match teslatlas_hub::data_recovery::refused_credential_backup_message(store, &error) {
+        Some(message) => message.into(),
+        None => error.into(),
+    }
+}
+
+use teslatlas_hub::data_recovery::{BackupSourceFormat, admit_recovery_source};
+
+/// The recovery password for `backup`, `verify-backup` and `restore-data`:
+/// a no-echo prompt on a terminal (twice for a new backup), otherwise one line
+/// of standard input. Never an argument or an environment variable, never
+/// logged. Tests offer standard input through [`set_password_input`].
+fn recovery_password(
+    confirm: bool,
+) -> Result<zeroize::Zeroizing<String>, teslatlas_hub::data_recovery::DataRecoveryError> {
+    #[cfg(test)]
+    {
+        let _ = confirm;
+        let input = zeroize::Zeroizing::new(take_password_input().unwrap_or_default());
+        teslatlas_hub::data_recovery::recovery_password_from(input.as_slice())
+    }
+    #[cfg(not(test))]
+    {
+        teslatlas_hub::data_recovery::read_recovery_password(confirm)
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_PASSWORD_INPUT: std::cell::RefCell<Option<Vec<u8>>> = const { std::cell::RefCell::new(None) };
+    static TEST_OPERATOR_HOME: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Test seam: the bytes the next recovery-password read takes as standard input.
+#[cfg(test)]
+fn set_password_input(input: Option<Vec<u8>>) {
+    TEST_PASSWORD_INPUT.with(|cell| *cell.borrow_mut() = input);
+}
+
+/// Test seam: takes what [`set_password_input`] left unread.
+#[cfg(test)]
+fn take_password_input() -> Option<Vec<u8>> {
+    TEST_PASSWORD_INPUT.with(|cell| cell.borrow_mut().take())
+}
+
+/// Test seam: the operator home for import admission, inside the test's root.
+#[cfg(test)]
+fn set_operator_home(home: Option<PathBuf>) {
+    TEST_OPERATOR_HOME.with(|cell| *cell.borrow_mut() = home);
+}
+
+#[cfg(all(test, unix))]
+mod backup_command_tests {
+    include!("backup_command_tests.rs");
+}
+
+// M06-T14: REV-CX-M06-T08 findings 1, 2 and 4 through the shipped commands.
+// Each test drives the real dispatcher (`run`) on a small synthetic Hub in its
+// own temporary root, with standard input offered through the test seam and
+// parsed exactly as standard input is. Synthetic passwords only.
+#[cfg(all(test, unix))]
+mod backup_recovery_repair_tests {
+    use std::{
+        fs,
+        os::unix::fs::PermissionsExt,
+        path::{Path, PathBuf},
+        sync::{Arc, atomic::AtomicBool},
+    };
+
+    use teslatlas_hub::{
+        db::HubStore,
+        runtime::backup_schedule::{BackupJob, BackupRunner, StoreBackupRunner},
+    };
+
+    use crate::{Cli, Command, run, set_operator_home, set_password_input};
+
+    const PASSWORD: &str = "correct horse battery staple";
+    /// A password file the schedule accepts today that one line cannot
+    /// carry: LF, CR and NUL inside, and a trailing line end it keeps.
+    const SCHEDULED_PASSWORD_FILE: &[u8] = b"line one\nline two\rcarriage\0nul end\n\n";
+    /// The first line that selects the password-file mode.
+    const FILE_HEADER: &[u8] = b"#pw-file\n";
+
+    fn private_directory(path: &Path) {
+        fs::create_dir_all(path).expect("directory");
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).expect("private directory");
+    }
+
+    fn line(password: &str) -> Vec<u8> {
+        format!("{password}\n").into_bytes()
+    }
+
+    struct Fixture {
+        _temporary: tempfile::TempDir,
+        root: PathBuf,
+        data: PathBuf,
+        config: PathBuf,
+        installation_id: uuid::Uuid,
+    }
+
+    /// A synthetic Hub under `base` (the configured temporary folder when
+    /// `None`).
+    fn fixture_in(base: Option<&Path>) -> Fixture {
+        let temporary = match base {
+            Some(base) => tempfile::Builder::new().prefix("m06-t14-").tempdir_in(base),
+            None => tempfile::tempdir(),
+        }
+        .expect("temporary root");
+        let root = temporary.path().canonicalize().expect("canonical root");
+        private_directory(&root);
+        let data = root.join("data");
+        private_directory(&data);
+        let installation_id = HubStore::initialize(&data)
+            .expect("store")
+            .installation_id()
+            .expect("installation");
+        let config = root.join("config.toml");
+        fs::write(&config, format!("data_dir = {data:?}\nbind = '127.0.0.1:18443'\n")).expect("config");
+        fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).expect("private config");
+        private_directory(&root.join("home"));
+        Fixture {
+            _temporary: temporary,
+            root,
+            data,
+            config,
+            installation_id,
+        }
+    }
+
+    impl Fixture {
+        /// Runs one command with `input` offered as standard input.
+        async fn run(&self, command: Command, input: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
+            set_password_input(Some(input));
+            set_operator_home(Some(self.root.join("home")));
+            let outcome = run(Cli {
+                config: Some(self.config.clone()),
+                command,
+            })
+            .await;
+            set_operator_home(None);
+            set_password_input(None);
+            outcome
+        }
+
+        fn bundles(&self, destination: &Path) -> usize {
+            fs::read_dir(destination)
+                .expect("destination listing")
+                .filter(|entry| {
+                    entry
+                        .as_ref()
+                        .is_ok_and(|entry| entry.path().extension().is_some_and(|extension| extension == "tlbk"))
+                })
+                .count()
+        }
+    }
+
+    fn verify(source: &Path) -> Command {
+        Command::VerifyBackup {
+            source: source.to_path_buf(),
+            plaintext_directory: false,
+        }
+    }
+
+    /// Finding 1: a bundle the scheduled runner wrote with a password holding
+    /// LF, CR and NUL verifies and restores through the shipped commands in
+    /// the password-file mode; the line mode refuses that input, it does not
+    /// guess at it.
+    #[tokio::test]
+    async fn backup_f1_scheduled_bundle_with_line_ends_verifies_and_restores() {
+        let hub = fixture_in(None);
+        let destination = hub.root.join("backups");
+        private_directory(&destination);
+        let password_file = hub.root.join("backup-password");
+        fs::write(&password_file, SCHEDULED_PASSWORD_FILE).expect("password file");
+        fs::set_permissions(&password_file, fs::Permissions::from_mode(0o600)).expect("mode 0600");
+        let report = StoreBackupRunner::new(HubStore::initialize(&hub.data).expect("store"))
+            .run(&BackupJob {
+                destination: destination.clone(),
+                password_file,
+                keep: None,
+                cancel: Arc::new(AtomicBool::new(false)),
+            })
+            .expect("the scheduled runner writes a bundle");
+        let bundle = PathBuf::from(report["path"].as_str().expect("bundle path"));
+        let mut input = FILE_HEADER.to_vec();
+        input.extend_from_slice(SCHEDULED_PASSWORD_FILE);
+
+        hub.run(verify(&bundle), input.clone())
+            .await
+            .expect("verify-backup takes the schedule's password");
+        let restored = hub.root.join("restored");
+        hub.run(
+            Command::RestoreData {
+                source: bundle.clone(),
+                destination: restored.clone(),
+                plaintext_directory: false,
+            },
+            input,
+        )
+        .await
+        .expect("restore-data takes the schedule's password");
+        let store = HubStore::initialize(&restored).expect("restored Hub opens");
+        assert_eq!(store.installation_id().expect("installation"), hub.installation_id);
+
+        let error = hub
+            .run(verify(&bundle), SCHEDULED_PASSWORD_FILE.to_vec())
+            .await
+            .expect_err("the line mode refuses input after the first line");
+        assert!(!error.to_string().contains("line one"), "the password is never echoed");
+    }
+
+    /// Finding 2: `backup` refuses a destination that is a symbolic link to a
+    /// private folder, and writes nothing behind it.
+    #[tokio::test]
+    async fn backup_f2_command_refuses_a_destination_link() {
+        let hub = fixture_in(None);
+        let target = hub.root.join("private-target");
+        private_directory(&target);
+        let link = hub.root.join("backups-link");
+        std::os::unix::fs::symlink(&target, &link).expect("link");
+        let error = hub
+            .run(Command::Backup { destination: link }, line(PASSWORD))
+            .await
+            .expect_err("a destination link is refused");
+        assert!(error.to_string().contains("symbolic link"), "{error}");
+        assert_eq!(hub.bundles(&target), 0, "nothing written behind the link");
+        hub.run(Command::Backup { destination: target.clone() }, line(PASSWORD))
+            .await
+            .expect("the folder itself");
+        assert_eq!(hub.bundles(&target), 1);
+    }
+
+    /// Finding 4: on a volume that enforces ownership, `backup` refuses a
+    /// destination that other accounts can read, list or search, by mode or
+    /// by an ACL, and admits an owner-only folder.
+    #[tokio::test]
+    async fn backup_f4_command_destination_must_be_owner_only() {
+        let Some(base) = ownership_enforcing_base() else {
+            eprintln!("skipped: no temporary folder on a volume that enforces ownership");
+            return;
+        };
+        let hub = fixture_in(Some(&base));
+        for mode in [0o755, 0o750, 0o711] {
+            let destination = hub.root.join(format!("mode-{mode:o}"));
+            fs::create_dir(&destination).expect("folder");
+            fs::set_permissions(&destination, fs::Permissions::from_mode(mode)).expect("mode");
+            let error = hub
+                .run(Command::Backup { destination: destination.clone() }, line(PASSWORD))
+                .await
+                .expect_err("foreign access is refused");
+            assert!(error.to_string().contains("private folder"), "{mode:o}: {error}");
+            assert_eq!(hub.bundles(&destination), 0, "{mode:o}: nothing written");
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let listed = hub.root.join("acl-list");
+            private_directory(&listed);
+            let status = std::process::Command::new("/bin/chmod")
+                .args(["+a", "group:everyone allow list,search"])
+                .arg(&listed)
+                .status()
+                .expect("chmod");
+            assert!(status.success(), "ACL set");
+            let error = hub
+                .run(Command::Backup { destination: listed.clone() }, line(PASSWORD))
+                .await
+                .expect_err("an ACL grant is refused");
+            assert!(error.to_string().contains("private folder"), "{error}");
+            assert_eq!(hub.bundles(&listed), 0, "nothing written");
+        }
+        let private = hub.root.join("private");
+        private_directory(&private);
+        hub.run(Command::Backup { destination: private.clone() }, line(PASSWORD))
+            .await
+            .expect("an owner-only folder");
+        assert_eq!(hub.bundles(&private), 1);
+    }
+
+    /// A temporary base on a local volume that enforces ownership: the
+    /// configured temporary folder may be on one that ignores it, where the
+    /// POSIX checks rightly do not apply.
+    fn ownership_enforcing_base() -> Option<PathBuf> {
+        let mut candidates = vec![std::env::temp_dir()];
+        #[cfg(target_os = "macos")]
+        if let Ok(output) = std::process::Command::new("/usr/bin/getconf")
+            .arg("DARWIN_USER_TEMP_DIR")
+            .output()
+            && output.status.success()
+        {
+            candidates.push(PathBuf::from(String::from_utf8_lossy(&output.stdout).trim()));
+        }
+        candidates.into_iter().find(|candidate| enforces_ownership(candidate))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn enforces_ownership(path: &Path) -> bool {
+        // <sys/mount.h> flags as statfs(2) reports them.
+        const MNT_LOCAL: u32 = 0x0000_1000;
+        const MNT_IGNORE_OWNERSHIP: u32 = 0x0020_0000;
+        rustix::fs::statfs(path)
+            .is_ok_and(|stats| stats.f_flags & MNT_LOCAL != 0 && stats.f_flags & MNT_IGNORE_OWNERSHIP == 0)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn enforces_ownership(path: &Path) -> bool {
+        path.is_dir()
+    }
 }

@@ -14,7 +14,11 @@
 //! block backups is refused with the refusal that names
 //! `purge-refused-credentials`. Rotation (keep count) is the operation's own:
 //! on a destination that does not enforce ownership it keeps every
-//! generation and says so in the report.
+//! generation and says so in the report. A run counts as the last good
+//! backup only when the operation succeeds, which it does only once the
+//! complete published file has authenticated as the object it wrote (M06-T11);
+//! an invalid publication is refused with its own code and records no
+//! success and no generation.
 
 pub mod password;
 pub mod state;
@@ -51,6 +55,12 @@ pub const BACKUP_PATH_INVALID: &str = "backup_path_invalid";
 pub const BACKUP_BLOCKED: &str = "backup_blocked_by_refused_credentials";
 pub const BACKUP_CANCELLED: &str = "backup_cancelled";
 pub const BACKUP_FAILED: &str = "backup_failed";
+/// The published file did not authenticate as the generation the run wrote.
+pub const BACKUP_PUBLICATION_INVALID: &str = "backup_publication_invalid";
+
+/// How the operation's error for an invalid publication begins (the
+/// operation's `invalid_publication` prefix).
+const INVALID_PUBLICATION_PREFIX: &str = "invalid_publication:";
 
 const MS_PER_HOUR: i64 = 60 * 60 * 1000;
 /// After a failed attempt the schedule tries again after this long (never
@@ -116,6 +126,11 @@ pub fn refusal_from(error: &DataRecoveryError, blocked: Option<&'static str>) ->
     match error {
         DataRecoveryError::Cancelled => {
             OperatorRefusal::new(BACKUP_CANCELLED, "the backup was cancelled")
+        }
+        DataRecoveryError::InvalidBackup(message)
+            if message.starts_with(INVALID_PUBLICATION_PREFIX) =>
+        {
+            OperatorRefusal::new(BACKUP_PUBLICATION_INVALID, error.to_string())
         }
         other => OperatorRefusal::new(BACKUP_FAILED, other.to_string()),
     }

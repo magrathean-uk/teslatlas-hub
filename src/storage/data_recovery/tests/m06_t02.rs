@@ -249,7 +249,8 @@ fn backup_secret_exclusion_no_refresh_token_or_key_bytes_reach_an_encrypted_arch
     for name in CAR_CONTROL_SECRET_FILES {
         assert!(!restored.join(name).exists(), "{name} is not restored");
     }
-    assert!(!restored.join("secrets").exists());
+    // Only the cursor key restore generated (M06-T09), no restored key file.
+    assert_only_a_fresh_cursor_key(&restored, None);
     let image = fs::read(restored.join("hub.sqlite")).unwrap();
     assert!(!holds(&image, &deleted) && !holds(&image, &live));
 }
@@ -297,7 +298,7 @@ fn backup_secret_exclusion_restore_requires_a_fresh_hub_login_and_a_new_virtual_
     // No Fleet virtual-key private key or credential key: a new virtual key
     // is generated and enrolled after restore.
     assert!(!restored.join("fleet-command-key.pem").exists());
-    assert!(!restored.join("secrets").exists());
+    assert_only_a_fresh_cursor_key(&restored, None);
 }
 
 // ---------------------------------------------------------------------------
@@ -351,9 +352,11 @@ fn restore_revocation_a_pre_revocation_backup_does_not_resurrect_access() {
     ] {
         assert_eq!(table_rows(&restored, table), 0, "{table} is empty after restore");
     }
-    // TLS identity and cursor key are host state the restored Hub generates.
+    // TLS identity is host state the restored Hub generates on first serve;
+    // restore itself regenerates the cursor key and re-signs (M06-T09).
     assert!(!restored.join("tls").exists());
-    assert!(!crate::legacy_owner_credentials::cursor_key_path(&restored).exists());
+    let old_key = fs::read(crate::legacy_owner_credentials::cursor_key_path(&hub.data())).unwrap();
+    assert_only_a_fresh_cursor_key(&restored, Some(&old_key));
 }
 
 #[test]
@@ -627,13 +630,15 @@ fn backup_path_substitution_newest_counts_only_as_the_authenticated_written_obje
             HookAction::Continue
         }
     });
-    let swapped = create_encrypted_backup(&hub.store, &rotating_request(&hub, &hub.destination, 1))
-        .expect("the run publishes what it finds");
+    // M06-T11: what it finds is an invalid publication, not a success.
+    let swapped = create_encrypted_backup(&hub.store, &rotating_request(&hub, &hub.destination, 1));
     clear_hook();
-    assert_eq!(swapped.rotated_generations, 0);
-    assert!(swapped.rotation_error.is_some(), "the doubt is reported");
+    assert!(
+        matches!(&swapped, Err(DataRecoveryError::InvalidBackup(message))
+            if message.starts_with("invalid_publication")),
+        "{swapped:?}"
+    );
     verify_encrypted_backup(&first.path, PASSWORD).expect("the last good generation stays");
-    assert!(verify_encrypted_backup(&swapped.path, PASSWORD).is_err());
     tick();
 
     // The published archive is truncated once it has authenticated.
@@ -645,11 +650,15 @@ fn backup_path_substitution_newest_counts_only_as_the_authenticated_written_obje
         }
         HookAction::Continue
     });
-    let truncated = create_encrypted_backup(&hub.store, &rotating_request(&hub, &hub.destination, 1))
-        .expect("backup despite the truncation");
+    // M06-T11: a new generation that changes before the run ends is not a
+    // success either, and nothing older goes.
+    let truncated = create_encrypted_backup(&hub.store, &rotating_request(&hub, &hub.destination, 1));
     clear_hook();
-    assert_eq!(truncated.rotated_generations, 0);
-    assert!(truncated.rotation_error.is_some());
+    assert!(
+        matches!(&truncated, Err(DataRecoveryError::InvalidBackup(message))
+            if message.starts_with("invalid_publication")),
+        "{truncated:?}"
+    );
     verify_encrypted_backup(&first.path, PASSWORD).expect("the last good generation stays");
     assert!(!hub.destination.join(PROTECTED).exists(), "nothing is left claimed");
 }
