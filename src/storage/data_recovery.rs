@@ -2460,6 +2460,9 @@ fn require_directory_entry_set(
             .file_name()
             .into_string()
             .map_err(|_| invalid(format!("{description} contains a non-UTF-8 name")))?;
+        if is_finder_metadata(&name) && !expected.contains(&name) {
+            continue;
+        }
         if !actual.insert(name) {
             return Err(invalid(format!("{description} contains a duplicate name")));
         }
@@ -2470,6 +2473,12 @@ fn require_directory_entry_set(
         )));
     }
     Ok(())
+}
+
+/// macOS Finder metadata (`.DS_Store`, AppleDouble `._*`) that the OS writes
+/// into viewed folders; never a backup member, never copied or restored.
+fn is_finder_metadata(name: &str) -> bool {
+    name == ".DS_Store" || (name.starts_with("._") && name.len() > 2)
 }
 
 fn read_directory(path: &Path) -> Result<Vec<fs::DirEntry>, DataRecoveryError> {
