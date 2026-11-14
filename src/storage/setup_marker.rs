@@ -228,7 +228,8 @@ mod tests {
 
     #[test]
     fn fresh_install_journey_marker_refuses_a_missing_empty_or_replaced_catalogue() {
-        let folder = tempfile::tempdir().expect("folder");
+        // The store admits only a 0700 data folder; a plain tempdir follows the umask.
+        let folder = crate::private_tempdir().expect("folder");
         let store = crate::db::HubStore::initialize(folder.path()).expect("store");
         let id = store.installation_id().expect("id");
         drop(store);
