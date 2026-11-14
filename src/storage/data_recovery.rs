@@ -2121,7 +2121,7 @@ fn read_bounded_private_file(path: &Path, maximum: u64) -> Result<Vec<u8>, DataR
 }
 
 fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), DataRecoveryError> {
-    let mut file = OpenOptions::new()
+    let file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(PRIVATE_FILE_MODE)
