@@ -19,7 +19,10 @@ use super::{
     NTP_MAX_OFFSET_SECONDS, NTP_RECHECK_SECONDS, SUPERVISOR_POLL_SECONDS,
     anchor::AnchorStore,
     claim::{FileLock, HostClaim, LockMode},
-    clock::{ClockGuard, ClockVerdict, OffsetProbe, WindowClock, deadline_mono_for},
+    clock::{
+        ClockGuard, ClockVerdict, NTP_FAILURE_SPAN_SECONDS, NTP_MAX_FAILURES, NTP_RETRY_SECONDS,
+        OffsetProbe, ProbeFailure, WindowClock, deadline_mono_for,
+    },
     gate::EgressGate,
     grant::{SignedGrant, TrustDocument},
     ledger::Line,
@@ -104,7 +107,12 @@ struct Inner {
     trust: Option<TrustRecord>,
     guard: Option<ClockGuard>,
     claim: Option<HostClaim>,
+    /// The last time probe attempt, measured or not.
     last_ntp_mono: Option<u64>,
+    /// Missed time probes in a row since the last good measurement.
+    ntp_failures: u32,
+    /// When the current run of missed probes began.
+    ntp_failing_since: Option<u64>,
     fault: bool,
     last_handback: Option<Handback>,
 }
@@ -119,6 +127,25 @@ pub struct WindowController {
     gate: EgressGate,
     handback: Arc<dyn HandbackSource>,
     inner: Mutex<Inner>,
+}
+
+/// One time probe, read against the offset limit.
+#[derive(Debug, Clone, Copy)]
+enum Reading {
+    Good,
+    /// A measured offset over the limit: refuses or closes at once.
+    Bad(f64),
+    /// No measurement: tolerated a few times in a row (DEC-131).
+    Missed(ProbeFailure),
+}
+
+fn read_probe(result: Result<f64, ProbeFailure>) -> Reading {
+    match result {
+        Ok(offset) if !offset.is_finite() => Reading::Missed(ProbeFailure::BadReply),
+        Ok(offset) if offset.abs() <= NTP_MAX_OFFSET_SECONDS => Reading::Good,
+        Ok(offset) => Reading::Bad(offset),
+        Err(failure) => Reading::Missed(failure),
+    }
 }
 
 fn parse_anchor(value: &str) -> Option<(u64, u64)> {
@@ -160,6 +187,8 @@ impl WindowController {
                 guard: None,
                 claim: None,
                 last_ntp_mono: None,
+                ntp_failures: 0,
+                ntp_failing_since: None,
                 fault: false,
                 last_handback: None,
             }),
@@ -265,6 +294,8 @@ impl WindowController {
             guard: None,
             claim: None,
             last_ntp_mono: None,
+            ntp_failures: 0,
+            ntp_failing_since: None,
             fault: false,
             last_handback: None,
         };
@@ -274,10 +305,71 @@ impl WindowController {
 
     // ---- open ------------------------------------------------------------
 
+    /// The strict check at restart: nothing reopens without a good
+    /// measurement (R4), so a missed probe closes there as a bad offset does.
     fn check_offset(&self) -> Result<(), Refusal> {
-        match self.probe.offset_seconds() {
-            Ok(offset) if offset.is_finite() && offset.abs() <= NTP_MAX_OFFSET_SECONDS => Ok(()),
-            _ => Err(Refusal::ClockOffset),
+        match read_probe(self.probe.measure()) {
+            Reading::Good => Ok(()),
+            Reading::Bad(offset) => {
+                tracing::warn!(
+                    offset_s = offset,
+                    "collection window closing clock_invalid at restart: time offset over the limit"
+                );
+                Err(Refusal::ClockOffset)
+            }
+            Reading::Missed(failure) => {
+                tracing::warn!(
+                    probe = %failure.code(),
+                    "collection window closing clock_invalid at restart: time probe missed"
+                );
+                Err(Refusal::ClockOffset)
+            }
+        }
+    }
+
+    /// Runs a due time probe inside a window and applies the miss tolerance
+    /// (DEC-131). Returns false when the window must close `clock_invalid`:
+    /// a measured offset over the limit at once, or missed probes that reach
+    /// `NTP_MAX_FAILURES` in a row or have lasted `NTP_FAILURE_SPAN_SECONDS`.
+    /// A good measurement resets the run. The tolerance never extends a
+    /// window: expiry is enforced by the clock guard and the gate.
+    fn probe_offset(&self, inner: &mut Inner, mono: u64) -> bool {
+        inner.last_ntp_mono = Some(mono);
+        match read_probe(self.probe.measure()) {
+            Reading::Good => {
+                inner.ntp_failures = 0;
+                inner.ntp_failing_since = None;
+                true
+            }
+            Reading::Bad(offset) => {
+                tracing::warn!(
+                    offset_s = offset,
+                    "collection window closing clock_invalid: time offset over the limit"
+                );
+                false
+            }
+            Reading::Missed(failure) => {
+                inner.ntp_failures = inner.ntp_failures.saturating_add(1);
+                let since = *inner.ntp_failing_since.get_or_insert(mono);
+                let span_s = mono.saturating_sub(since);
+                let failures = inner.ntp_failures;
+                if failures >= NTP_MAX_FAILURES || span_s >= NTP_FAILURE_SPAN_SECONDS {
+                    tracing::warn!(
+                        probe = %failure.code(),
+                        failures,
+                        span_s,
+                        "collection window closing clock_invalid: time probe kept missing"
+                    );
+                    false
+                } else {
+                    tracing::warn!(
+                        probe = %failure.code(),
+                        failures,
+                        "collection window time probe missed; retrying"
+                    );
+                    true
+                }
+            }
         }
     }
 
@@ -346,7 +438,13 @@ impl WindowController {
             .ok_or(Refusal::ImportRunning)?;
         let claim = HostClaim::acquire(&self.claim_path)?;
         let boot_time = self.clock.boot_time()?;
-        self.check_offset()?;
+        // A measured offset over the limit refuses; a probe that fails to
+        // measure does not, and is retried under the tick's tolerance.
+        let missed = match read_probe(self.probe.measure()) {
+            Reading::Good => None,
+            Reading::Bad(_) => return Err(Refusal::ClockOffset),
+            Reading::Missed(failure) => Some(failure),
+        };
 
         // Commit. The consumed line is synced before any state change, and the
         // anchor outside the data directory follows it at once.
@@ -381,6 +479,15 @@ impl WindowController {
         inner.guard = Some(guard);
         inner.claim = Some(claim);
         inner.last_ntp_mono = Some(mono);
+        inner.ntp_failures = u32::from(missed.is_some());
+        inner.ntp_failing_since = missed.map(|_| mono);
+        if let Some(failure) = missed {
+            tracing::warn!(
+                probe = %failure.code(),
+                failures = 1,
+                "collection window time probe missed at open; retrying"
+            );
+        }
         if let Err(refusal) = self.store.write_state(&inner.state) {
             self.abandon(&mut inner, body.seq, &digest, wall);
             return Err(refusal);
@@ -486,15 +593,17 @@ impl WindowController {
             ClockVerdict::Ok => {}
         }
         inner.guard = Some(guard);
+        let interval = if inner.ntp_failures > 0 {
+            NTP_RETRY_SECONDS
+        } else {
+            NTP_RECHECK_SECONDS
+        };
         let due = inner
             .last_ntp_mono
-            .is_none_or(|last| mono.saturating_sub(last) >= NTP_RECHECK_SECONDS);
-        if due {
-            inner.last_ntp_mono = Some(mono);
-            if self.check_offset().is_err() {
-                self.begin_close(&mut inner, CloseReason::ClockInvalid, wall);
-                return Ok(inner.state.phase);
-            }
+            .is_none_or(|last| mono.saturating_sub(last) >= interval);
+        if due && !self.probe_offset(&mut inner, mono) {
+            self.begin_close(&mut inner, CloseReason::ClockInvalid, wall);
+            return Ok(inner.state.phase);
         }
         inner.state.watermark = guard.watermark;
         let starts_at = inner
@@ -893,6 +1002,8 @@ impl WindowController {
         }
         inner.guard = Some(guard);
         inner.last_ntp_mono = Some(mono);
+        inner.ntp_failures = 0;
+        inner.ntp_failing_since = None;
         inner.state.watermark = guard.watermark;
         if phase == Phase::Open {
             let resumed = self.store.append(HubEntry::Resumed {
