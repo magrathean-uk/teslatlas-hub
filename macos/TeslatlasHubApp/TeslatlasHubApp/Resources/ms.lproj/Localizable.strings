@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Kata laluan Tesla anda hanya dihantar kepada Tesla. Hub menyimpan log masuknya sendiri, disulitkan pada Mac ini.";
 "hub.signIn.fleetDetail" = "API penstriman rasmi Tesla, dengan aplikasi Fleet API anda sendiri.";
 "hub.signIn.done" = "Selesai";
+
+"hub.signIn.windowFaulted" = "Tetingkap pengumpulan Hub memerlukan dokumen kepercayaan baharu sebelum boleh dibuka, jadi log masuk Tesla tidak tersedia. Tiada apa-apa yang diubah.";
+"hub.signIn.windowStatusInvalid" = "Jawapan Hub tentang tetingkap pengumpulannya tidak dapat dibaca, jadi log masuk Tesla tidak tersedia. Tiada apa-apa yang diubah; cuba lagi sebentar lagi.";
+"hub.setup.closeKeepsRunning" = "Menutup tetingkap ini membiarkan Hub terus berjalan.";

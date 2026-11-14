@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "ਤੁਹਾਡਾ Tesla ਪਾਸਵਰਡ ਸਿਰਫ਼ Tesla ਕੋਲ ਜਾਂਦਾ ਹੈ। Hub ਆਪਣਾ ਲੌਗਇਨ ਰੱਖਦਾ ਹੈ, ਜੋ ਇਸ Mac ਉੱਤੇ ਇਨਕ੍ਰਿਪਟ ਕੀਤਾ ਹੋਇਆ ਹੈ।";
 "hub.signIn.fleetDetail" = "Tesla ਦੀ ਅਧਿਕਾਰਤ streaming API, ਤੁਹਾਡੀ ਆਪਣੀ Fleet API ਐਪ ਨਾਲ।";
 "hub.signIn.done" = "ਹੋ ਗਿਆ";
+
+"hub.signIn.windowFaulted" = "Hub ਦੀ ਸੰਗ੍ਰਹਿ ਵਿੰਡੋ ਨੂੰ ਖੁੱਲ੍ਹਣ ਤੋਂ ਪਹਿਲਾਂ ਨਵੇਂ ਭਰੋਸੇ ਦਸਤਾਵੇਜ਼ ਦੀ ਲੋੜ ਹੈ, ਇਸ ਲਈ Tesla ਸਾਈਨ-ਇਨ ਉਪਲਬਧ ਨਹੀਂ ਹੈ। ਕੁਝ ਵੀ ਨਹੀਂ ਬਦਲਿਆ ਗਿਆ।";
+"hub.signIn.windowStatusInvalid" = "ਸੰਗ੍ਰਹਿ ਵਿੰਡੋ ਬਾਰੇ Hub ਦਾ ਜਵਾਬ ਪੜ੍ਹਿਆ ਨਹੀਂ ਜਾ ਸਕਿਆ, ਇਸ ਲਈ Tesla ਸਾਈਨ-ਇਨ ਉਪਲਬਧ ਨਹੀਂ ਹੈ। ਕੁਝ ਵੀ ਨਹੀਂ ਬਦਲਿਆ ਗਿਆ; ਥੋੜ੍ਹੀ ਦੇਰ ਬਾਅਦ ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।";
+"hub.setup.closeKeepsRunning" = "ਇਸ ਵਿੰਡੋ ਨੂੰ ਬੰਦ ਕਰਨ ਨਾਲ Hub ਚੱਲਦਾ ਰਹਿੰਦਾ ਹੈ।";

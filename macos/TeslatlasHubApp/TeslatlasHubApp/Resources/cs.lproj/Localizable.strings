@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Vaše heslo k Tesle jde jen Tesle. Hub si ponechává vlastní přihlášení, šifrované na tomto Macu.";
 "hub.signIn.fleetDetail" = "Oficiální streamovací API společnosti Tesla s vaší vlastní aplikací Fleet API.";
 "hub.signIn.done" = "Hotovo";
+
+"hub.signIn.windowFaulted" = "Sběrné okno Hubu potřebuje před otevřením nový dokument důvěry, proto přihlášení k Tesle není k dispozici. Nic se nezměnilo.";
+"hub.signIn.windowStatusInvalid" = "Odpověď Hubu o jeho sběrném okně se nepodařilo přečíst, proto přihlášení k Tesle není k dispozici. Nic se nezměnilo; zkuste to za chvíli znovu.";
+"hub.setup.closeKeepsRunning" = "Zavřením tohoto okna Hub zůstane spuštěný.";

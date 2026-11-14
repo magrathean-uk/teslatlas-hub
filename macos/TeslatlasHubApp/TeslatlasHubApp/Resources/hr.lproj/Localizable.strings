@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Vaša Tesla lozinka ide samo Tesli. Hub čuva vlastitu prijavu, šifriranu na ovom Macu.";
 "hub.signIn.fleetDetail" = "Službeni Teslin API za prijenos podataka uživo, s vašom vlastitom aplikacijom Fleet API.";
 "hub.signIn.done" = "Gotovo";
+
+"hub.signIn.windowFaulted" = "Hubov prozor za prikupljanje treba novi dokument o povjerenju prije nego što se može otvoriti, pa prijava na Teslu nije dostupna. Ništa nije promijenjeno.";
+"hub.signIn.windowStatusInvalid" = "Hubov odgovor o njegovu prozoru za prikupljanje nije se mogao pročitati, pa prijava na Teslu nije dostupna. Ništa nije promijenjeno; pokušajte ponovno za trenutak.";
+"hub.setup.closeKeepsRunning" = "Zatvaranjem ovog prozora Hub ostaje pokrenut.";

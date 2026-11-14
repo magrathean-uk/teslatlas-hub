@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Kata sandi Tesla Anda hanya dikirim ke Tesla. Hub menyimpan login sendiri, dienkripsi di Mac ini.";
 "hub.signIn.fleetDetail" = "API streaming resmi Tesla, dengan aplikasi Fleet API milik Anda sendiri.";
 "hub.signIn.done" = "Selesai";
+
+"hub.signIn.windowFaulted" = "Jendela pengumpulan Hub memerlukan dokumen kepercayaan baru sebelum dapat dibuka, sehingga masuk ke Tesla tidak tersedia. Tidak ada yang diubah.";
+"hub.signIn.windowStatusInvalid" = "Jawaban Hub tentang jendela pengumpulannya tidak dapat dibaca, sehingga masuk ke Tesla tidak tersedia. Tidak ada yang diubah; coba lagi sebentar lagi.";
+"hub.setup.closeKeepsRunning" = "Menutup jendela ini membuat Hub tetap berjalan.";

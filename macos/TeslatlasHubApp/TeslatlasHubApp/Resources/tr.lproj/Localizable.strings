@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Tesla parolanız yalnızca Tesla’ya gider. Hub kendi oturum açma bilgisini bu Mac’te şifrelenmiş olarak tutar.";
 "hub.signIn.fleetDetail" = "Tesla’nın resmî akış API’si, kendi Fleet API uygulamanızla.";
 "hub.signIn.done" = "Bitti";
+
+"hub.signIn.windowFaulted" = "Hub'ın toplama penceresinin açılabilmesi için yeni bir güven belgesine ihtiyacı var, bu yüzden Tesla girişi kullanılamıyor. Hiçbir şey değiştirilmedi.";
+"hub.signIn.windowStatusInvalid" = "Hub'ın toplama penceresi hakkındaki yanıtı okunamadı, bu yüzden Tesla girişi kullanılamıyor. Hiçbir şey değiştirilmedi; birazdan tekrar deneyin.";
+"hub.setup.closeKeepsRunning" = "Bu pencereyi kapatmak Hub'ı çalışır durumda bırakır.";

@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Tu contraseña de Tesla solo se envía a Tesla. Hub conserva su propio acceso, cifrado en este Mac.";
 "hub.signIn.fleetDetail" = "La API oficial de streaming de Tesla, con tu propia aplicación de la API Fleet.";
 "hub.signIn.done" = "Listo";
+
+"hub.signIn.windowFaulted" = "La ventana de recopilación del Hub necesita un documento de confianza nuevo antes de poder abrirse, así que el inicio de sesión de Tesla no está disponible. No se ha cambiado nada.";
+"hub.signIn.windowStatusInvalid" = "No se pudo leer la respuesta del Hub sobre su ventana de recopilación, así que el inicio de sesión de Tesla no está disponible. No se ha cambiado nada; inténtalo de nuevo en un momento.";
+"hub.setup.closeKeepsRunning" = "Al cerrar esta ventana, el Hub sigue en ejecución.";

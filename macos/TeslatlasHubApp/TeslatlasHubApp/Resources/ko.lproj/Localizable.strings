@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Tesla 비밀번호는 Tesla로만 전달됩니다. Hub는 자체 로그인을 유지하며, 이 Mac에서 암호화됩니다.";
 "hub.signIn.fleetDetail" = "Tesla의 공식 스트리밍 API이며, 직접 만든 Fleet API 앱을 사용합니다.";
 "hub.signIn.done" = "완료";
+
+"hub.signIn.windowFaulted" = "Hub의 수집 창은 열리기 전에 새 신뢰 문서가 필요하므로 Tesla 로그인을 사용할 수 없습니다. 변경된 것은 없습니다.";
+"hub.signIn.windowStatusInvalid" = "수집 창에 대한 Hub의 응답을 읽을 수 없어 Tesla 로그인을 사용할 수 없습니다. 변경된 것은 없습니다. 잠시 후 다시 시도하세요.";
+"hub.setup.closeKeepsRunning" = "이 창을 닫아도 Hub는 계속 실행됩니다.";

@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "ଆପଣଙ୍କ Tesla ପାସୱାର୍ଡ କେବଳ Teslaକୁ ଯାଏ। Hub ନିଜର ଲଗଇନ୍ ରଖେ, ଯାହା ଏହି Macରେ ଏନକ୍ରିପ୍ଟ ହୋଇଥାଏ।";
 "hub.signIn.fleetDetail" = "Teslaର ଅଫିସିଆଲ୍ ଷ୍ଟ୍ରିମିଂ API, ଆପଣଙ୍କ ନିଜ Fleet API ଆପ୍ ସହିତ।";
 "hub.signIn.done" = "ସମାପ୍ତ";
+
+"hub.signIn.windowFaulted" = "Hub ର ସଂଗ୍ରହ ୱିଣ୍ଡୋ ଖୋଲିବା ପୂର୍ବରୁ ଏକ ନୂଆ ଟ୍ରଷ୍ଟ ଡକ୍ୟୁମେଣ୍ଟ ଆବଶ୍ୟକ, ତେଣୁ Tesla ସାଇନ୍ ଇନ୍ ଉପଲବ୍ଧ ନାହିଁ। କିଛି ବଦଳାଯାଇ ନାହିଁ।";
+"hub.signIn.windowStatusInvalid" = "ସଂଗ୍ରହ ୱିଣ୍ଡୋ ବିଷୟରେ Hub ର ଉତ୍ତର ପଢ଼ାଯାଇପାରିଲା ନାହିଁ, ତେଣୁ Tesla ସାଇନ୍ ଇନ୍ ଉପଲବ୍ଧ ନାହିଁ। କିଛି ବଦଳାଯାଇ ନାହିଁ; କିଛି ସମୟ ପରେ ପୁଣି ଚେଷ୍ଟା କରନ୍ତୁ।";
+"hub.setup.closeKeepsRunning" = "ଏହି ୱିଣ୍ଡୋ ବନ୍ଦ କଲେ ମଧ୍ୟ Hub ଚାଲୁ ରହେ।";

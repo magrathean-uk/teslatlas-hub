@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "你的 Tesla 密碼只會傳送給 Tesla。Hub 保留自己的登入資訊，並在這部 Mac 上加密。";
 "hub.signIn.fleetDetail" = "Tesla 官方串流 API，使用你自己的 Fleet API App。";
 "hub.signIn.done" = "完成";
+
+"hub.signIn.windowFaulted" = "Hub 的收集視窗需要新的信任文件才能開啟，因此無法使用 Tesla 登入。未變更任何內容。";
+"hub.signIn.windowStatusInvalid" = "無法讀取 Hub 對其收集視窗的回應，因此無法使用 Tesla 登入。未變更任何內容；請稍後再試。";
+"hub.setup.closeKeepsRunning" = "關閉此視窗後，Hub 會繼續執行。";

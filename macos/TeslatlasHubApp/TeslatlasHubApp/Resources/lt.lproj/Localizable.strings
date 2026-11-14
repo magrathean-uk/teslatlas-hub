@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Jūsų „Tesla“ slaptažodis siunčiamas tik „Tesla“. Hub saugo savo prisijungimą, užšifruotą šiame Mac kompiuteryje.";
 "hub.signIn.fleetDetail" = "Oficiali „Tesla“ srautinių duomenų API su jūsų pačių „Fleet API“ programa.";
 "hub.signIn.done" = "Atlikta";
+
+"hub.signIn.windowFaulted" = "Hub rinkimo langui prieš atsidarant reikia naujo pasitikėjimo dokumento, todėl prisijungti prie Tesla negalima. Nieko nepakeista.";
+"hub.signIn.windowStatusInvalid" = "Hub atsakymo apie rinkimo langą nepavyko perskaityti, todėl prisijungti prie Tesla negalima. Nieko nepakeista; po akimirkos bandykite dar kartą.";
+"hub.setup.closeKeepsRunning" = "Uždarius šį langą, Hub toliau veikia.";

@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Mật khẩu Tesla của bạn chỉ được gửi đến Tesla. Hub giữ thông tin đăng nhập riêng, được mã hóa trên máy Mac này.";
 "hub.signIn.fleetDetail" = "API truyền phát chính thức của Tesla, với ứng dụng Fleet API của riêng bạn.";
 "hub.signIn.done" = "Xong";
+
+"hub.signIn.windowFaulted" = "Cửa sổ thu thập của Hub cần một tài liệu tin cậy mới trước khi mở được, nên không thể đăng nhập Tesla. Không có gì bị thay đổi.";
+"hub.signIn.windowStatusInvalid" = "Không đọc được phản hồi của Hub về cửa sổ thu thập, nên không thể đăng nhập Tesla. Không có gì bị thay đổi; hãy thử lại sau giây lát.";
+"hub.setup.closeKeepsRunning" = "Đóng cửa sổ này vẫn để Hub tiếp tục chạy.";

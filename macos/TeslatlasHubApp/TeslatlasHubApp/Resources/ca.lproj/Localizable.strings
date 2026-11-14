@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "La teva contrasenya de Tesla només va a Tesla. El Hub conserva el seu propi accés, encriptat en aquest Mac.";
 "hub.signIn.fleetDetail" = "API oficial de transmissió en temps real de Tesla, amb la teva pròpia aplicació de l’API Fleet.";
 "hub.signIn.done" = "Fet";
+
+"hub.signIn.windowFaulted" = "La finestra de recollida del Hub necessita un document de confiança nou abans de poder obrir-se, de manera que l'inici de sessió a Tesla no està disponible. No s'ha canviat res.";
+"hub.signIn.windowStatusInvalid" = "No s'ha pogut llegir la resposta del Hub sobre la seva finestra de recollida, de manera que l'inici de sessió a Tesla no està disponible. No s'ha canviat res; torna-ho a provar d'aquí a un moment.";
+"hub.setup.closeKeepsRunning" = "Si tanques aquesta finestra, el Hub continua en execució.";

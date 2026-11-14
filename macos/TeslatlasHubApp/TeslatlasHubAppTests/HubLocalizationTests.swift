@@ -18,7 +18,7 @@ final class HubLocalizationTests: XCTestCase {
         }
         let englishKeys = Set(try table(english, "Localizable.strings").keys)
         let pluralKeys = Set(try table(english, "Localizable.stringsdict").keys)
-        XCTAssertEqual(englishKeys.count, 734, "M02-T22 adds six first-start lines and drops four")
+        XCTAssertEqual(englishKeys.count, 737, "M02-T22 adds six first-start lines and drops four, then three window-state lines")
         XCTAssertEqual(pluralKeys.count, 6)
         for language in languages {
             let directory = resources.appendingPathComponent("\(language).lproj")
@@ -176,7 +176,11 @@ final class HubLocalizationTests: XCTestCase {
             "hub.signIn.pageSubtitle": "Sign in with Tesla while a collection window is open.",
             "hub.signIn.privacy": "Your Tesla password goes only to Tesla. Hub keeps its own login, encrypted on this Mac.",
             "hub.signIn.fleetDetail": "Tesla's official streaming API, with your own Fleet API app.",
-            "hub.signIn.done": "Done"
+            "hub.signIn.done": "Done",
+            // Repair round: a faulted or unreadable window and the close note, each in every locale.
+            "hub.signIn.windowFaulted": "Hub's collection window needs a new trust document before it can open, so Tesla sign-in is not available. Nothing was changed.",
+            "hub.signIn.windowStatusInvalid": "Hub's answer about its collection window could not be read, so Tesla sign-in is not available. Nothing was changed; try again in a moment.",
+            "hub.setup.closeKeepsRunning": "Closing this window leaves Hub running."
         ]
         let replaced = ["hub.OnboardingWindowController.610.1930", "hub.OnboardingWindowController.798.1975",
                         "hub.OnboardingWindowController.749.1957", "hub.OnboardingWindowController.788.1970"]

@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "A Tesla-jelszavad csak a Teslához kerül. A Hub saját bejelentkezést tart fenn, ezen a Macen titkosítva.";
 "hub.signIn.fleetDetail" = "A Tesla hivatalos adatfolyam-API-ja, a saját Fleet API-alkalmazásoddal.";
 "hub.signIn.done" = "Kész";
+
+"hub.signIn.windowFaulted" = "A Hub gyűjtési ablakának új megbízhatósági dokumentumra van szüksége a megnyitás előtt, ezért a Tesla-bejelentkezés nem érhető el. Semmi sem változott.";
+"hub.signIn.windowStatusInvalid" = "A Hub válaszát a gyűjtési ablakáról nem sikerült elolvasni, ezért a Tesla-bejelentkezés nem érhető el. Semmi sem változott; próbáld újra egy pillanat múlva.";
+"hub.setup.closeKeepsRunning" = "Az ablak bezárása után a Hub tovább fut.";

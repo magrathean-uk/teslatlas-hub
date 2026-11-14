@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Tesla-lykilorðið þitt fer aðeins til Tesla. Hub heldur eigin innskráningu, dulkóðaðri á þessum Mac.";
 "hub.signIn.fleetDetail" = "Opinbert streymisviðmót Tesla með þínu eigin Fleet API-forriti.";
 "hub.signIn.done" = "Lokið";
+
+"hub.signIn.windowFaulted" = "Söfnunargluggi Hub þarf nýtt traustskjal áður en hann getur opnast, svo innskráning hjá Tesla er ekki í boði. Engu var breytt.";
+"hub.signIn.windowStatusInvalid" = "Ekki tókst að lesa svar Hub um söfnunargluggann, svo innskráning hjá Tesla er ekki í boði. Engu var breytt; reyndu aftur eftir augnablik.";
+"hub.setup.closeKeepsRunning" = "Ef þú lokar þessum glugga heldur Hub áfram að keyra.";

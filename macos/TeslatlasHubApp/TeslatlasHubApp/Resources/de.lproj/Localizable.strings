@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Dein Tesla-Passwort geht nur an Tesla. Der Hub behält sein eigenes Login, verschlüsselt auf diesem Mac.";
 "hub.signIn.fleetDetail" = "Teslas offizielle Streaming-API mit deiner eigenen Fleet-API-App.";
 "hub.signIn.done" = "Fertig";
+
+"hub.signIn.windowFaulted" = "Das Erfassungsfenster des Hubs braucht ein neues Vertrauensdokument, bevor es sich öffnen kann, daher ist die Tesla-Anmeldung nicht verfügbar. Es wurde nichts geändert.";
+"hub.signIn.windowStatusInvalid" = "Die Antwort des Hubs zu seinem Erfassungsfenster konnte nicht gelesen werden, daher ist die Tesla-Anmeldung nicht verfügbar. Es wurde nichts geändert; versuche es gleich noch einmal.";
+"hub.setup.closeKeepsRunning" = "Wenn du dieses Fenster schließt, läuft der Hub weiter.";

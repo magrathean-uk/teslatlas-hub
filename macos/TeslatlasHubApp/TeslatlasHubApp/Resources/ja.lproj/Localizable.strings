@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "TeslaのパスワードはTeslaにのみ送信されます。Hubは独自のログインを保持し、このMac上で暗号化します。";
 "hub.signIn.fleetDetail" = "Teslaの公式ストリーミングAPIです。ご自身のFleet APIアプリを使用します。";
 "hub.signIn.done" = "完了";
+
+"hub.signIn.windowFaulted" = "Hubのデータ収集ウィンドウは、開く前に新しい信頼ドキュメントが必要なため、Teslaサインインは利用できません。何も変更されていません。";
+"hub.signIn.windowStatusInvalid" = "データ収集ウィンドウに関するHubの応答を読み取れなかったため、Teslaサインインは利用できません。何も変更されていません。しばらくしてからもう一度お試しください。";
+"hub.setup.closeKeepsRunning" = "このウィンドウを閉じても、Hubは実行され続けます。";

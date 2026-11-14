@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "סיסמת Tesla שלכם נשלחת רק ל-Tesla. Hub שומר התחברות משלו, מוצפנת ב-Mac הזה.";
 "hub.signIn.fleetDetail" = "ממשק הזרמת הנתונים הרשמי של Tesla, עם אפליקציית Fleet API משלכם.";
 "hub.signIn.done" = "סיום";
+
+"hub.signIn.windowFaulted" = "חלון האיסוף של Hub זקוק למסמך אמון חדש לפני שיוכל להיפתח, ולכן כניסה ל-Tesla אינה זמינה. לא שונה דבר.";
+"hub.signIn.windowStatusInvalid" = "לא ניתן היה לקרוא את תשובת Hub על חלון האיסוף שלו, ולכן כניסה ל-Tesla אינה זמינה. לא שונה דבר; נסו שוב בעוד רגע.";
+"hub.setup.closeKeepsRunning" = "סגירת החלון הזה משאירה את Hub פועל.";

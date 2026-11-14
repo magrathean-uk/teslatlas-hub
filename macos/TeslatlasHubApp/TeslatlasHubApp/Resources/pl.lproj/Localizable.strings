@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Twoje hasło do Tesli trafia tylko do Tesli. Hub ma własne logowanie, zaszyfrowane na tym Macu.";
 "hub.signIn.fleetDetail" = "Oficjalne strumieniowe API Tesli, z Twoją własną aplikacją Fleet API.";
 "hub.signIn.done" = "Gotowe";
+
+"hub.signIn.windowFaulted" = "Okno zbierania Huba potrzebuje nowego dokumentu zaufania, zanim będzie mogło się otworzyć, więc logowanie do Tesli jest niedostępne. Nic nie zostało zmienione.";
+"hub.signIn.windowStatusInvalid" = "Nie udało się odczytać odpowiedzi Huba o jego oknie zbierania, więc logowanie do Tesli jest niedostępne. Nic nie zostało zmienione; spróbuj ponownie za chwilę.";
+"hub.setup.closeKeepsRunning" = "Zamknięcie tego okna pozostawia Huba uruchomionego.";

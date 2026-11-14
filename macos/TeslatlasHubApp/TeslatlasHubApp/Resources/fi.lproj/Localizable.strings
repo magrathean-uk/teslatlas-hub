@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Tesla-salasanasi menee vain Teslalle. Hub pitää oman kirjautumisensa salattuna tässä Macissa.";
 "hub.signIn.fleetDetail" = "Teslan virallinen suoratoistorajapinta omalla Fleet API -sovelluksellasi.";
 "hub.signIn.done" = "Valmis";
+
+"hub.signIn.windowFaulted" = "Hubin keruuikkuna tarvitsee uuden luottamusasiakirjan ennen kuin se voi avautua, joten Teslan kirjautuminen ei ole käytettävissä. Mitään ei muutettu.";
+"hub.signIn.windowStatusInvalid" = "Hubin vastausta sen keruuikkunasta ei voitu lukea, joten Teslan kirjautuminen ei ole käytettävissä. Mitään ei muutettu; yritä hetken kuluttua uudelleen.";
+"hub.setup.closeKeepsRunning" = "Kun suljet tämän ikkunan, Hub jatkaa toimintaansa.";

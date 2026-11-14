@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Je Tesla-wachtwoord gaat alleen naar Tesla. Hub bewaart een eigen login, versleuteld op deze Mac.";
 "hub.signIn.fleetDetail" = "De officiële streaming-API van Tesla, met je eigen Fleet API-app.";
 "hub.signIn.done" = "Gereed";
+
+"hub.signIn.windowFaulted" = "Het verzamelvenster van de Hub heeft een nieuw vertrouwensdocument nodig voordat het kan openen, dus inloggen bij Tesla is niet beschikbaar. Er is niets gewijzigd.";
+"hub.signIn.windowStatusInvalid" = "Het antwoord van de Hub over zijn verzamelvenster kon niet worden gelezen, dus inloggen bij Tesla is niet beschikbaar. Er is niets gewijzigd; probeer het zo opnieuw.";
+"hub.setup.closeKeepsRunning" = "Als je dit venster sluit, blijft de Hub actief.";

@@ -100,11 +100,13 @@ extension OnboardingWindowControllerTests {
         press(try primaryButton("Set Up Fleet", in: onboarding))
     }
 
-    /// Presses the legacy route's sign-in. The service reports a closed collection window, so
-    /// the sign-in stops at the window check: no Tesla login window opens and nothing reaches
-    /// the network. The route has no token field to fill.
+    /// Presses the legacy route's sign-in. The service reports a faulted collection window, so
+    /// the page keeps its sign-in action (a closed window would make it the idle page, whose only
+    /// action is Done) and the sign-in stops at the window check: no Tesla login window opens and
+    /// nothing reaches the network. The route has no token field to fill. The page's own read-only
+    /// window check when it shows is one `window` call; the sign-in's check is the second.
     func submitLegacySignIn(_ onboarding: OnboardingWindowController, _ harness: WindowOwnerRig) throws {
-        harness.runner.results["window"] = .success(OwnerRunner.windowClosed)
+        harness.runner.results["window"] = .success(#"{"phase":"closed","trusted":true,"faulted":true,"closeReason":"expired","seq":1}"#)
         let placeholders = descendantViews(of: onboarding.window?.contentView)
             .compactMap { ($0 as? NSTextField)?.placeholderString }
         XCTAssertFalse(placeholders.contains("Access token") || placeholders.contains("Refresh token"),
@@ -432,7 +434,7 @@ extension OnboardingWindowControllerTests {
 
     func testEntryAccountUseLegacyUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "AccountUseLegacy", family: .account, options: connectedOptions(),
-                              effect: { $0.runner.count("window") >= 1 }) { test, h, _ in
+                              effect: { $0.runner.count("window") >= 2 }) { test, h, _ in
             try test.chooseMenuItem("Use owner sign-in", h)
             let onboarding = try XCTUnwrap(test.currentOnboarding(h))
             XCTAssertEqual(onboarding.currentRoute, .legacy)
@@ -480,7 +482,7 @@ extension OnboardingWindowControllerTests {
 
     func testEntryLegacySignInFirstRunUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "LegacySignInFirstRun", family: .account, options: .init(installed: false),
-                              effect: { $0.runner.count("window") >= 1 && $0.runner.count("setup") == 0 }) { test, h, _ in
+                              effect: { $0.runner.count("window") >= 2 && $0.runner.count("setup") == 0 }) { test, h, _ in
             let onboarding = try test.openOnboarding(h, route: .legacy)
             try test.submitLegacySignIn(onboarding, h)
         })
@@ -488,7 +490,7 @@ extension OnboardingWindowControllerTests {
 
     func testEntryLegacySignInReconfigurationUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "LegacySignInReconfiguration", family: .account,
-                              effect: { $0.runner.count("window") >= 1 && !$0.service.calls.contains("run:pause") }) { test, h, _ in
+                              effect: { $0.runner.count("window") >= 2 && !$0.service.calls.contains("run:pause") }) { test, h, _ in
             let onboarding = try test.openOnboarding(h, route: .legacy)
             try test.submitLegacySignIn(onboarding, h)
         })

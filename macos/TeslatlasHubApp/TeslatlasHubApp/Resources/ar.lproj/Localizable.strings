@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "كلمة مرور Tesla الخاصة بك تُرسل إلى Tesla فقط. يحتفظ Hub بتسجيل دخول خاص به، مشفّر على هذا الـ Mac.";
 "hub.signIn.fleetDetail" = "واجهة API الرسمية من Tesla لبث البيانات، مع تطبيق Fleet API الخاص بك.";
 "hub.signIn.done" = "تم";
+
+"hub.signIn.windowFaulted" = "تحتاج نافذة الجمع في Hub إلى مستند ثقة جديد قبل أن تُفتح، لذا فإن تسجيل الدخول إلى Tesla غير متاح. لم يتم تغيير أي شيء.";
+"hub.signIn.windowStatusInvalid" = "تعذّرت قراءة إجابة Hub عن نافذة الجمع، لذا فإن تسجيل الدخول إلى Tesla غير متاح. لم يتم تغيير أي شيء؛ حاول مرة أخرى بعد قليل.";
+"hub.setup.closeKeepsRunning" = "إغلاق هذه النافذة يُبقي Hub قيد التشغيل.";

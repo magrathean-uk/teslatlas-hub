@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "Your Tesla password goes only to Tesla. Hub keeps its own login, encrypted on this Mac.";
 "hub.signIn.fleetDetail" = "Tesla's official streaming API, with your own Fleet API app.";
 "hub.signIn.done" = "Done";
+
+"hub.signIn.windowFaulted" = "Hub's collection window needs a new trust document before it can open, so Tesla sign-in is not available. Nothing was changed.";
+"hub.signIn.windowStatusInvalid" = "Hub's answer about its collection window could not be read, so Tesla sign-in is not available. Nothing was changed; try again in a moment.";
+"hub.setup.closeKeepsRunning" = "Closing this window leaves Hub running.";

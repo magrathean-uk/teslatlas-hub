@@ -861,3 +861,7 @@
 "hub.signIn.privacy" = "آپ کا Tesla پاس ورڈ صرف Tesla کو جاتا ہے۔ Hub اپنا لاگ اِن رکھتا ہے، جو اس Mac پر خفیہ کاری کے ساتھ محفوظ ہے۔";
 "hub.signIn.fleetDetail" = "Tesla کا سرکاری streaming API، آپ کی اپنی Fleet API ایپ کے ساتھ۔";
 "hub.signIn.done" = "مکمل";
+
+"hub.signIn.windowFaulted" = "Hub کی جمع آوری کی ونڈو کو کھلنے سے پہلے نئی اعتماد دستاویز درکار ہے، اس لیے Tesla میں سائن اِن دستیاب نہیں ہے۔ کچھ تبدیل نہیں کیا گیا۔";
+"hub.signIn.windowStatusInvalid" = "جمع آوری کی ونڈو کے بارے میں Hub کا جواب پڑھا نہیں جا سکا، اس لیے Tesla میں سائن اِن دستیاب نہیں ہے۔ کچھ تبدیل نہیں کیا گیا؛ تھوڑی دیر بعد دوبارہ کوشش کریں۔";
+"hub.setup.closeKeepsRunning" = "اس ونڈو کو بند کرنے سے Hub چلتا رہتا ہے۔";
