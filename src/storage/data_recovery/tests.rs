@@ -1379,3 +1379,6 @@ mod m06_t14_seams;
 
 #[path = "tests/g2_4_m1.rs"]
 mod g2_4_m1;
+
+#[path = "tests/m06_t15.rs"]
+mod m06_t15;

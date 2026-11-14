@@ -209,12 +209,18 @@ impl Pty {
     /// Starts the child test `child` (its path below the data-recovery
     /// `tests` module) with `scenario` on a fresh pseudo-terminal.
     pub(super) fn start(child: &str, scenario: &str) -> Self {
+        Self::start_with_shell(child, scenario, PTY_SHELL)
+    }
+
+    /// As [`Self::start`], with `shell` run on the pseudo-terminal instead
+    /// of [`PTY_SHELL`] (it receives the child command as `"$@"`).
+    pub(super) fn start_with_shell(child: &str, scenario: &str, shell: &str) -> Self {
         let module = module_path!();
         let module = module.split_once("::").map_or(module, |(_, rest)| rest);
         let parent = module.rsplit_once("::").map_or(module, |(parent, _)| parent);
         let test = format!("{parent}::{child}");
         let mut script = Command::new("/usr/bin/script")
-            .args(["-q", "/dev/null", "/bin/sh", "-c", PTY_SHELL, "sh"])
+            .args(["-q", "/dev/null", "/bin/sh", "-c", shell, "sh"])
             .arg(std::env::current_exe().expect("this test binary"))
             .args(["--exact", &test, "--nocapture", "--test-threads", "1"])
             .env(PTY_SCENARIO, scenario)

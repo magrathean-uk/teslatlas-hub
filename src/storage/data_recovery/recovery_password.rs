@@ -337,19 +337,28 @@ impl<'a> PromptMode<'a> {
         let held = terminal
             .try_clone()
             .map_err(|_| refused("the terminal cannot be used for the password prompt"))?;
-        *active_prompt() = Some(ActivePrompt {
+        // Held from publishing the saved settings until the mode-changing
+        // child has exited: a stopping signal's restoration takes the same
+        // lock, so it waits for that child and only then puts the saved
+        // settings back. No mode change can land after the restoration, and
+        // the process cannot end between the two.
+        let mut active = active_prompt();
+        *active = Some(ActivePrompt {
             terminal: held,
             saved: saved.clone(),
         });
-        let mut mode = Self {
-            terminal,
-            saved: Some(saved),
-        };
-        if stty(terminal, &PROMPT_MODE).is_err() {
-            mode.restore_now()?;
+        if change_to_prompt_mode(terminal).is_err() {
+            let restored = restore_settings(terminal, &saved);
+            *active = None;
+            drop(active);
+            restored?;
             return Err(refused("terminal echo cannot be turned off for the password prompt"));
         }
-        Ok(mode)
+        drop(active);
+        Ok(Self {
+            terminal,
+            saved: Some(saved),
+        })
     }
 
     fn restore(mut self) -> Result<(), DataRecoveryError> {
@@ -385,6 +394,16 @@ fn restore_settings(terminal: &File, saved: &str) -> Result<(), DataRecoveryErro
         saved
     };
     stty(terminal, &[saved]).map(drop).map_err(|()| not_restored())
+}
+
+/// Turns echo, canonical input and signals off; returns once the child that
+/// changes the mode has exited.
+fn change_to_prompt_mode(terminal: &File) -> Result<(), ()> {
+    #[cfg(test)]
+    if let Some(delay) = test_seam::activation_delay() {
+        return test_seam::delayed_mode_change(terminal, delay, &PROMPT_MODE);
+    }
+    stty(terminal, &PROMPT_MODE).map(drop)
 }
 
 /// Runs `stty` on `terminal`; its output, or `Err` when it cannot run or
@@ -466,9 +485,56 @@ fn restore_after_signal() {
 
 #[cfg(test)]
 pub(crate) mod test_seam {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::{
+        fs::File,
+        path::Path,
+        process::{Command, Stdio},
+        sync::atomic::{AtomicBool, AtomicU64, Ordering},
+        time::Duration,
+    };
 
     static RESTORE_FAILS: AtomicBool = AtomicBool::new(false);
+    static ACTIVATION_DELAY_MS: AtomicU64 = AtomicU64::new(0);
+
+    /// Makes the prompt's mode change slow and sends this process SIGTERM
+    /// while that change is pending (the PTY child process only): the
+    /// activation race of REV2-CX-M06-T08 finding 6, made deterministic.
+    pub(crate) fn race_activation_with_termination(delay: Duration) {
+        let millis = u64::try_from(delay.as_millis()).unwrap_or(u64::MAX).max(1);
+        ACTIVATION_DELAY_MS.store(millis, Ordering::SeqCst);
+    }
+
+    pub(super) fn activation_delay() -> Option<Duration> {
+        match ACTIVATION_DELAY_MS.load(Ordering::SeqCst) {
+            0 => None,
+            millis => Some(Duration::from_millis(millis)),
+        }
+    }
+
+    /// Starts a shell that waits `delay`, then runs `stty` with `arguments`
+    /// on `terminal`; signals SIGTERM to this process once the shell is
+    /// running, then waits for the shell to exit.
+    pub(super) fn delayed_mode_change(
+        terminal: &File,
+        delay: Duration,
+        arguments: &[&str],
+    ) -> Result<(), ()> {
+        let input = terminal.try_clone().map_err(drop)?;
+        let seconds = format!("{}.{:03}", delay.as_secs(), delay.subsec_millis());
+        let mut child = Command::new(Path::new("/bin/sh"))
+            .args(["-c", "sleep \"$1\"; shift; exec /bin/stty \"$@\"", "sh", &seconds])
+            .args(arguments)
+            .stdin(Stdio::from(input))
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(drop)?;
+        let _ = rustix::process::kill_process(
+            rustix::process::getpid(),
+            rustix::process::Signal::TERM,
+        );
+        let status = child.wait().map_err(drop)?;
+        if status.success() { Ok(()) } else { Err(()) }
+    }
 
     /// Makes every later restoration of saved terminal settings in this
     /// process fail (the PTY child process only).
