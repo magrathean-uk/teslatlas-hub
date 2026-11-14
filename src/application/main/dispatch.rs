@@ -497,6 +497,9 @@ struct HubServiceBackend {
     /// The vault custody the window supervisor honours, and its wake-up.
     custody: teslatlas_hub::collection::window::CredentialCustody,
     kick: Box<dyn Fn() + Send + Sync>,
+    /// Wakes the supervisor after a collection reload and clears its start
+    /// backoff (M02-T24).
+    reload_kick: Box<dyn Fn() + Send + Sync>,
     /// The configuration file the setup completes (M02-T21, DEC-116).
     config_path: PathBuf,
     /// Whether this service was admitted idle (never configured at its start).
@@ -625,7 +628,7 @@ impl HubServiceBackend {
         let seconds = config.collector.interval_seconds;
         tracing::info!(interval_seconds = seconds, "setup completed the fresh install: collection reloaded");
         self.collector.reload(config);
-        (self.kick)();
+        (self.reload_kick)();
         Ok(seconds)
     }
 }
@@ -1512,6 +1515,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             backup: std::sync::Arc::clone(&backup_schedule),
                             custody: teslatlas_hub::collection::window::CredentialCustody::process_wide().clone(),
                             kick: supervisor.kicker(),
+                            reload_kick: supervisor.reload_kicker(),
                             config_path: config_path.clone(),
                             admitted_idle,
                             collector: collector_slot,

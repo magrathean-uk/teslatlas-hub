@@ -468,6 +468,9 @@ impl OperatorHandler for OperatorService {
 
 enum Signal {
     Kick,
+    /// The collection configuration was reloaded: the supervisor forgets its
+    /// start backoff and tries at once (M02-T24).
+    Reloaded,
     Stop,
 }
 
@@ -488,6 +491,7 @@ impl SupervisorThread {
         S: CollectorSlot + Clone + Send + 'static,
     {
         let mut shutdown_slot = slot.clone();
+        let reloaded_slot = slot.clone();
         let (sender, receiver) = mpsc::channel();
         let thread = std::thread::Builder::new()
             .name("hub-window-supervisor".to_owned())
@@ -504,6 +508,12 @@ impl SupervisorThread {
                     let wait = controller.next_wakeup_seconds().max(1) as u64;
                     match receiver.recv_timeout(Duration::from_secs(wait)) {
                         Ok(Signal::Kick) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+                        // A start refused before the reload (an idle Hub's
+                        // `collector_not_ready`) left a backoff of up to a
+                        // minute; the reload makes the start possible now.
+                        Ok(Signal::Reloaded) => {
+                            supervisor = Supervisor::new(controller.clone(), reloaded_slot.clone());
+                        }
                         Ok(Signal::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     }
                 }
@@ -522,6 +532,17 @@ impl SupervisorThread {
         Box::new(move || {
             if let Ok(sender) = sender.lock() {
                 let _ = sender.send(Signal::Kick);
+            }
+        })
+    }
+
+    /// A wake-up for after the collector slot's configuration was reloaded:
+    /// like [`Self::kicker`], and the supervisor's start backoff is cleared.
+    pub fn reload_kicker(&self) -> Box<dyn Fn() + Send + Sync> {
+        let sender = Mutex::new(self.sender.clone());
+        Box::new(move || {
+            if let Ok(sender) = sender.lock() {
+                let _ = sender.send(Signal::Reloaded);
             }
         })
     }

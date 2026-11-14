@@ -181,4 +181,69 @@ mod operator_window {
         assert!(second.is_err(), "a second concurrent vault is refused");
         drop(first);
     }
+    /// A slot that refuses to start until the Hub is configured, as an idle
+    /// service's does, and counts the refusals.
+    #[derive(Clone, Default)]
+    struct ConfiguredSlot {
+        configured: Arc<std::sync::atomic::AtomicBool>,
+        running: Arc<std::sync::atomic::AtomicBool>,
+        refusals: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl CollectorSlot for ConfiguredSlot {
+        fn start(&mut self, _deadline_wall: i64) -> Result<(), String> {
+            use std::sync::atomic::Ordering::SeqCst;
+            if !self.configured.load(SeqCst) {
+                self.refusals.fetch_add(1, SeqCst);
+                return Err("collector_not_ready".to_owned());
+            }
+            self.running.store(true, SeqCst);
+            Ok(())
+        }
+        fn is_running(&mut self) -> bool {
+            self.running.load(std::sync::atomic::Ordering::SeqCst)
+        }
+        fn stop(&mut self) {
+            self.running.store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+        fn release_lease(&mut self) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    /// M02-T24 (DEC-141): an idle service in an Open window has had its start
+    /// refused, so the supervisor holds a start backoff. The first sign-in's
+    /// reload must start the collector at once, not wait out that backoff
+    /// (the manual clock never advances, so a held backoff never expires).
+    #[test]
+    fn collection_window_reload_after_sign_in_starts_the_collector_without_a_restart() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let root = root();
+        let scratch = tempfile::tempdir().expect("scratch");
+        let window = Window::new(scratch.path(), root.path());
+        window.controller.open(&window.grant(600)).expect("window opens");
+        let slot = ConfiguredSlot::default();
+        let thread = teslatlas_hub::runtime::operator::authority::SupervisorThread::spawn(
+            Arc::clone(&window.controller),
+            slot.clone(),
+        )
+        .expect("supervisor thread");
+        let wait_for = |what: &str, done: &dyn Fn() -> bool| {
+            let began = std::time::Instant::now();
+            while !done() {
+                assert!(began.elapsed() < std::time::Duration::from_secs(10), "{what}");
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        };
+        wait_for("the idle start is refused", &|| slot.refusals.load(SeqCst) >= 1);
+        // A kick alone leaves the backoff in place: nothing starts.
+        slot.configured.store(true, SeqCst);
+        (thread.kicker())();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(!slot.running.load(SeqCst), "a plain kick waits out the backoff");
+        // The reload clears it.
+        (thread.reload_kicker())();
+        wait_for("the collector starts after the reload", &|| slot.running.load(SeqCst));
+        thread.stop();
+    }
 }
