@@ -6,10 +6,7 @@
 
 use std::{
     ffi::OsString,
-    os::{
-        fd::AsFd,
-        unix::fs::FileExt,
-    },
+    os::{fd::AsFd, unix::fs::FileExt},
     path::Path,
 };
 

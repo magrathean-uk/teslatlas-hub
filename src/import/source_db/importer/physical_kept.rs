@@ -45,7 +45,9 @@ fn physical_kept_dir(store: &HubStore) -> std::path::PathBuf {
 /// The kept raw stage: a private sealed stage under `.staging`, as
 /// [`SourceDbStage::open_sealed`] requires.
 fn kept_stage_path(store: &HubStore, vehicle_id: Uuid) -> std::path::PathBuf {
-    physical_kept_dir(store).join(".staging").join(format!("{vehicle_id}.sqlite"))
+    physical_kept_dir(store)
+        .join(".staging")
+        .join(format!("{vehicle_id}.sqlite"))
 }
 
 fn kept_source_path(store: &HubStore, vehicle_id: Uuid) -> std::path::PathBuf {
