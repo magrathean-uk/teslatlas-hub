@@ -231,18 +231,20 @@ fn seam_repair_handback_restored_window_closes_once_on_either_path() {
     check(&restored, "new host restarted");
     drop(again);
 
-    // Import admission seals a restored store no service has started on.
-    let other = restore_elsewhere(&rig, &store, "admission");
-    drop(admit_import(Some(&other), &home(&rig)).unwrap());
-    check(&other, "admission");
-    drop(admit_import(Some(&other), &home(&rig)).unwrap());
-    check(&other, "second admission");
-
-    // The original host keeps its own window open, and its drive with it.
+    // The original host restarts on its own open window: it seals nothing and
+    // its drive stays open.
     drop(hub);
     let (resumed, _) = rig.start_hub();
     assert_eq!(resumed.status().phase, Phase::Open);
     let connection = store.open().unwrap();
     assert_eq!(coverage_row(&connection, 1).0, "open");
     assert_eq!(closed(&connection, &vehicle, true), still_open());
+    drop(resumed);
+
+    // Import admission seals a restored store no service has started on.
+    let other = restore_elsewhere(&rig, &store, "admission");
+    drop(admit_import(Some(&other), &home(&rig)).unwrap());
+    check(&other, "admission");
+    drop(admit_import(Some(&other), &home(&rig)).unwrap());
+    check(&other, "second admission");
 }
