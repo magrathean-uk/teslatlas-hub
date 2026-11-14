@@ -1622,6 +1622,45 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(buttons(in: onboarding.window?.contentView).map(\.title).contains("Connect Tesla"))
     }
 
+    func testAWindowAnswerHeldFromAnEarlierVisitCannotRestoreTheIdleState() throws {
+        // M02-T22 re-check finding 2: a check asked while the window was closed is still
+        // outstanding when the owner goes Back, a collection window opens and he returns. That
+        // answer predates the change: it is discarded and one fresh read-only check runs, so
+        // Connect Tesla comes back without another navigation or focus change. No polling.
+        let rig = try idleFirstRunRig()
+        defer { try? FileManager.default.removeItem(at: rig.home) }
+        let (onboarding, runner) = (rig.onboarding, rig.runner)
+        defer { onboarding.close() }
+        let root = { onboarding.window?.contentView }
+        let asked = runner.count("window")
+        runner.hold("window")
+        onboarding.refreshCollectionWindowState()
+        spinUntil(3) { runner.heldKeys == ["window"] }
+        XCTAssertEqual(runner.count("window"), asked + 1, "the earlier check is outstanding")
+
+        try XCTUnwrap(buttons(in: root()).first { $0.title == "Back" }).performClick(nil)
+        XCTAssertEqual(onboarding.currentRoute, .provider)
+        runner.results["window"] = .success(OwnerRunner.windowOpen)
+        try XCTUnwrap(buttons(in: root()).first { $0.title == "Continue" || $0.title == "Next" }).performClick(nil)
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
+        spinBriefly()
+        XCTAssertEqual(runner.count("window"), asked + 1, "no second check while the first is outstanding")
+
+        // The earlier answer (a closed window) lands now.
+        XCTAssertTrue(runner.release("window"))
+        spinUntil(3) { runner.count("window") == asked + 2 }
+        spinBriefly()
+        XCTAssertEqual(runner.count("window"), asked + 2, "exactly one fresh read-only check")
+        XCTAssertFalse(onboarding.signInIsIdle, "the stale closed answer does not restore the idle state")
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
+        let titles = buttons(in: root()).map(\.title)
+        XCTAssertTrue(titles.contains("Connect Tesla"), "the open window offers sign-in")
+        XCTAssertFalse(titles.contains("Done"))
+        XCTAssertFalse(labels(in: root()).map(\.stringValue).contains(Self.healthyLine))
+        XCTAssertNil(view(in: try XCTUnwrap(root()), identifier: "onboarding.signin.idle"))
+        XCTAssertEqual(runner.count("setup"), 0, "nothing is sent to Tesla")
+    }
+
     func testAFaultedOrUnreadableWindowIsNeverTheHealthyNotice() throws {
         // M02-T22 review finding 3: by the service's own fields, never by text. A faulted window,
         // an answer that cannot be read and a pending credential recovery each show their own line
@@ -1751,7 +1790,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
     func testAClickAnywhereOnAChoiceRowSelectsItTheFirstTime() throws {
         // M02-T22 review finding 1 (G's report): on "Choose how Hub connects" a click on the row
         // often did nothing. The native radio's cell tracked only its own radio and title. One
-        // click on the middle, the icon, the description, the empty space or the indicator of
+        // click on the middle, the icon, the title, the description, the empty space or the indicator of
         // either row now selects it, every time, alternating from the other row.
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let onboarding = OnboardingWindowController(controller: controller, previewRoute: "provider",
@@ -1766,6 +1805,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
             let row = try radio(title)
             let card = try XCTUnwrap(row.superview)
             let icon = try XCTUnwrap(allViews(in: card).first { $0 is HubIconTileView })
+            let titleLabel = try XCTUnwrap(labels(in: card).first { $0.stringValue == title })
             let description = try XCTUnwrap(labels(in: card).first { $0.stringValue == subtitle })
             let indicator = try XCTUnwrap(allViews(in: card).last { $0 is HubIconTileView })
             let bounds = row.bounds
@@ -1773,6 +1813,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
             return [
                 ("middle", NSPoint(x: bounds.midX, y: bounds.midY)),
                 ("icon", centre(icon)),
+                ("title", centre(titleLabel)),
                 ("description", centre(description)),
                 ("empty space", NSPoint(x: bounds.minX + bounds.width * 0.72, y: bounds.midY)),
                 ("corner", NSPoint(x: bounds.minX + 3, y: bounds.minY + 3)),

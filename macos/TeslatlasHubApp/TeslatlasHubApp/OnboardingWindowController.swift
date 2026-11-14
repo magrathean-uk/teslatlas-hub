@@ -209,9 +209,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     /// the page: Back does not clear it; a service that stops answering does.
     private var serviceConfirmedRunning = false
     /// Which refresh of the window state the page still waits for, so a late answer for an
-    /// earlier page visit cannot overwrite a newer one.
+    /// earlier page visit cannot overwrite a newer one. Leaving the page moves it on.
     private var windowObservation: UInt64 = 0
     private var windowObservationInFlight = false
+    /// A page visit or a return to the window asked while a check was still outstanding: that
+    /// answer may predate the change, so it is discarded and one fresh check runs instead.
+    private var windowObservationPending = false
     private var errorFromWindowCheck = false
     private var lastRenderedRoute: HubOnboardingRoute?
     private var migrationDiagnostic: SourceSSHDiagnostic?
@@ -634,7 +637,13 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                                  forward: previousStep == state.step ? nil : state.step > previousStep)
         }
         let entering = state.route == .legacy && lastRenderedRoute != .legacy
+        let leaving = state.route != .legacy && lastRenderedRoute == .legacy
         lastRenderedRoute = state.route
+        if leaving {
+            // An answer still outstanding belongs to the visit that just ended.
+            windowObservation &+= 1
+            windowObservationPending = false
+        }
         if entering { refreshCollectionWindowState() }
     }
 
@@ -1763,14 +1772,24 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     /// returns to the window; no timer.
     func refreshCollectionWindowState() {
         // Nothing to ask while no Hub is installed: the first Connect Tesla starts it.
-        guard state.route == .legacy, !controller.previewMode, !windowObservationInFlight,
+        guard state.route == .legacy, !controller.previewMode,
               !controller.ownerSignInStartsHub else { return }
+        guard !windowObservationInFlight else {
+            // The outstanding answer may predate this visit or return: ask again once it lands.
+            windowObservationPending = true
+            return
+        }
         windowObservationInFlight = true
         windowObservation &+= 1
         let observation = windowObservation
         controller.observeCollectionWindow { [weak self] outcome in
             guard let self else { return }
             self.windowObservationInFlight = false
+            if self.windowObservationPending {
+                self.windowObservationPending = false
+                self.refreshCollectionWindowState()
+                return
+            }
             guard observation == self.windowObservation, self.state.route == .legacy,
                   !self.busy, self.authWindow == nil else { return }
             self.applyWindowOutcome(outcome)
