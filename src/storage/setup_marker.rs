@@ -152,9 +152,11 @@ pub fn check_catalogue(data_dir: &Path) -> Result<(), SetupMarkerError> {
 /// vehicle or a credential pair) gets its marker written from it. A missing
 /// or empty catalogue, or an intact one holding no set-up, beside the
 /// credential keyring (written outside the catalogue only when a credential
-/// pair is stored) is refused and left as it is. Anything else is a Hub never
-/// set up. A catalogue that does not open as a current one (an older schema
-/// the start migrates, or damage the start reports) is left to the start.
+/// pair is stored) is refused and left as it is, and so is a SQLite file with
+/// nothing in it beside the keyring (DEC-121). Anything else is a Hub never
+/// set up. Any other catalogue that does not open as a current one (an older
+/// schema the start migrates, or damage the start reports) is left to the
+/// start.
 fn check_unmarked_catalogue(data_dir: &Path) -> Result<(), SetupMarkerError> {
     let keyring = data_dir
         .join("secrets")
@@ -164,7 +166,8 @@ fn check_unmarked_catalogue(data_dir: &Path) -> Result<(), SetupMarkerError> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(error) => return Err(SetupMarkerError::EarlierSetupUnknown(error.kind().to_string())),
     };
-    match fs::symlink_metadata(data_dir.join("hub.sqlite")) {
+    let catalogue = data_dir.join("hub.sqlite");
+    match fs::symlink_metadata(&catalogue) {
         Ok(metadata) if metadata.file_type().is_file() && metadata.len() > 0 => {}
         _ => return lost,
     }
@@ -182,8 +185,33 @@ fn check_unmarked_catalogue(data_dir: &Path) -> Result<(), SetupMarkerError> {
     match set_up {
         Ok(Some(installation)) => record(data_dir, installation),
         Ok(None) => lost,
+        // It does not open as a catalogue, but initialisation would take it
+        // as a new one and give it a new installation identity (DEC-121).
+        Err(_) if lost.is_err() && is_schema_empty(&catalogue) => lost,
         Err(_) => Ok(()),
     }
+}
+
+/// Whether `catalogue` is a SQLite file with nothing in it: application_id 0,
+/// user_version 0 and an empty schema, the state that `HubStore::initialize`
+/// admits as a new catalogue. Read-only. `false` when the file cannot be read
+/// as SQLite; initialisation refuses such a file itself.
+fn is_schema_empty(catalogue: &Path) -> bool {
+    let Ok(connection) = rusqlite::Connection::open_with_flags(
+        catalogue,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return false;
+    };
+    let read = |sql: &str| connection.query_row(sql, [], |row| row.get::<_, i64>(0));
+    matches!(
+        (
+            read("PRAGMA application_id"),
+            read("PRAGMA user_version"),
+            read("SELECT count(*) FROM sqlite_schema"),
+        ),
+        (Ok(0), Ok(0), Ok(0))
+    )
 }
 
 #[cfg(test)]

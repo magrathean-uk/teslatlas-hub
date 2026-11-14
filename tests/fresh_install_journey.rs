@@ -687,21 +687,33 @@ fn fresh_install_journey_lost_catalogue_is_refused() {
 
 /// DEC-120 (a): a Hub signed in before the marker existed (the Hub's own
 /// login in its catalogue, its credential keyring beside it, collection still
-/// off, no marker). Its catalogue removed, truncated to an empty database or
-/// replaced by an empty catalogue is refused by the start check and the
-/// serve admission, which create nothing and leave the catalogue identity as
-/// it is. The same once the marker written from its intact catalogue is lost
-/// with the catalogue: the surviving keyring still tells it was set up.
+/// off, no marker). Its catalogue removed, truncated to an empty database,
+/// replaced by an empty catalogue or replaced by a SQLite file with nothing in
+/// it (DEC-121: application_id 0, user_version 0, no schema, not zero-length)
+/// is refused by the start check and by a direct serve, which create nothing
+/// and leave the catalogue identity as it is. The same once the marker
+/// written from its intact catalogue is lost with the catalogue: the
+/// surviving keyring still tells it was set up.
 #[test]
 fn fresh_install_journey_pre_marker_catalogue_loss_is_refused() {
+    use std::os::unix::fs::OpenOptionsExt as _;
     use teslatlas_hub::db::HubStore;
     let identity = |data: &Path| {
         HubStore::open_read_only(data)
             .and_then(|store| store.installation_id())
             .expect("catalogue identity")
     };
+    let schema_empty = |catalogue: &Path| {
+        let sqlite = rusqlite::Connection::open_with_flags(catalogue, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .expect("the SQLite replacement");
+        let read = |sql: &str| sqlite.query_row(sql, [], |row| row.get::<_, i64>(0)).expect(sql);
+        fs::metadata(catalogue).expect("the SQLite replacement").len() > 0
+            && read("PRAGMA application_id") == 0
+            && read("PRAGMA user_version") == 0
+            && read("SELECT count(*) FROM sqlite_schema") == 0
+    };
     for marker_lost in [false, true] {
-        for loss in ["removed", "truncated", "replaced"] {
+        for loss in ["removed", "truncated", "replaced", "schema-empty"] {
             let label = format!("{loss}{}", if marker_lost { "-marker-lost" } else { "" });
             let hub = Hub::new();
             let data = hub.data();
@@ -739,21 +751,36 @@ fn fresh_install_journey_pre_marker_catalogue_loss_is_refused() {
                     fs::OpenOptions::new().write(true).open(&catalogue).expect("catalogue").set_len(0).expect("truncate");
                     None
                 }
-                _ => {
+                "replaced" => {
                     fs::remove_file(&catalogue).expect("remove");
                     drop(HubStore::initialize(&data).expect("an empty catalogue"));
                     Some(identity(&data))
                 }
+                _ => {
+                    // An owner-only SQLite file whose one table was dropped:
+                    // a database with nothing in it, which initialisation
+                    // would take as a new catalogue.
+                    fs::remove_file(&catalogue).expect("remove");
+                    drop(fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&catalogue).expect("file"));
+                    let sqlite = rusqlite::Connection::open(&catalogue).expect("SQLite");
+                    sqlite.execute_batch("CREATE TABLE emptied (x); DROP TABLE emptied;").expect("emptied");
+                    drop(sqlite);
+                    assert!(schema_empty(&catalogue), "{label}: a non-empty, schema-empty SQLite file");
+                    None
+                }
             };
 
+            // Both entry points run before either is judged, so a direct
+            // serve that is not refused shows even when the start check is.
             let check = hub.run(&["preflight"], b"");
+            let log = hub.expect_serve_refused(&label);
             assert!(!check.status.success(), "{label}: start check passes: {}", stdout(&check));
             assert!(stderr(&check).contains("set up before"), "{label}: {}", stderr(&check));
-            let log = hub.expect_serve_refused(&label);
             assert!(log.contains("set up before"), "{label}: {log}");
             match replacement {
                 Some(replacement) => assert_eq!(identity(&data), replacement, "{label}: identity unchanged"),
                 None if loss == "removed" => assert!(!catalogue.exists(), "{label}: nothing created"),
+                None if loss == "schema-empty" => assert!(schema_empty(&catalogue), "{label}: nothing initialised"),
                 None => assert_eq!(fs::metadata(&catalogue).expect("catalogue").len(), 0, "{label}: nothing initialised"),
             }
             assert!(!marker.exists(), "{label}: no marker for a lost catalogue");
