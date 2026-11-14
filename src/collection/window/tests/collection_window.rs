@@ -904,8 +904,13 @@ fn collection_window_time_probe_measured_31s_offset_closes_at_once() {
 fn collection_window_time_probe_miss_is_tolerated_at_open_and_while_pending() {
     let rig = Rig::new();
     let hub = rig.trusted_hub();
+    // The refused grant is a later window so the issuer does not see it
+    // overlap the grant opened next.
     rig.probe.set(Ok(31.0));
-    assert_eq!(hub.open(&rig.grant(0, 3600)).unwrap_err(), Refusal::ClockOffset);
+    assert_eq!(
+        hub.open(&rig.grant(7200, 600)).unwrap_err(),
+        Refusal::ClockOffset
+    );
     rig.probe.set(Err(Refusal::ClockOffset));
     hub.open(&rig.grant(0, 3600)).unwrap();
     assert_eq!(hub.status().phase, Phase::Open);
