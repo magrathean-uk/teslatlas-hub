@@ -111,8 +111,8 @@ fn published(kind: PhysicalV3PublicationKind) -> HandbackPhysicalOutcome {
 
 /// Drives and positions collected in a first and in a second window reach a
 /// fresh and an existing 1.4 client after each handback, with no import in
-/// between: the head the window left is refused until the handback plans
-/// it. The next import of the unchanged source publishes no new head.
+/// between or after: the head each window left is refused until its handback
+/// plans it. The next import of the unchanged source publishes no new head.
 #[test]
 fn seam_physical_route_handback_drives_reach_clients_after_each_window() {
     let fixture = fixture();
@@ -161,12 +161,7 @@ fn seam_physical_route_handback_drives_reach_clients_after_each_window() {
         "a second run plans nothing"
     );
 
-    // The next import of the unchanged source.
-    let replay = import_drives(&fixture, root.path(), "unchanged", &base, T + 3 * HOUR);
-    assert_eq!(replay.kind, PhysicalV3PublicationKind::Unchanged);
-    assert_eq!(existing.sync(&env, &fixture), "no_op");
-
-    // The second window.
+    // The second window, with no import since the first.
     let h3 = HUB_ID_BASE + 30;
     window(&fixture, 2, T + 2 * HOUR - 5 * MINUTE, T + 3 * HOUR);
     hub_rows(
@@ -193,19 +188,17 @@ fn seam_physical_route_handback_drives_reach_clients_after_each_window() {
         Some(&(Some(h3), T + 2 * HOUR + 15 * MINUTE))
     );
     assert_eq!(existing.mirror, fresh.mirror);
-    let replay = import_drives(
-        &fixture,
-        root.path(),
-        "unchanged-again",
-        &base,
-        T + 4 * HOUR,
-    );
+
+    // The next import of the unchanged source.
+    let replay = import_drives(&fixture, root.path(), "unchanged", &base, T + 4 * HOUR);
     assert_eq!(replay.kind, PhysicalV3PublicationKind::Unchanged);
+    assert_eq!(existing.sync(&env, &fixture), "no_op");
 }
 
-/// Charges with their samples collected in a window reach a fresh and an
-/// existing 1.4 client after the handback, beside the imported charge, with
-/// no import in between; the unchanged replay publishes no new head.
+/// Charges with their samples collected in a first and in a second window
+/// reach a fresh and an existing 1.4 client after each handback, beside the
+/// imported charge, with no import in between or after; the unchanged replay
+/// publishes no new head.
 #[test]
 fn seam_physical_route_handback_charges_and_samples_reach_clients() {
     let fixture = fixture();
@@ -265,9 +258,130 @@ fn seam_physical_route_handback_charges_and_samples_reach_clients() {
         "the existing client ends where a fresh one does"
     );
 
-    let replay = import_charges(&fixture, root.path(), "unchanged", &history, T + 3 * HOUR);
+    // The second window, with no import since the first.
+    let second_charge = HUB_ID_BASE + 23;
+    hub_charges(
+        &fixture,
+        (2, T + 2 * HOUR, T + 3 * HOUR),
+        &[(second_charge, T + 2 * HOUR, T + 2 * HOUR + 40 * MINUTE)],
+        &[
+            (HUB_ID_BASE + 23, second_charge, T + 2 * HOUR + 10 * MINUTE),
+            (HUB_ID_BASE + 24, second_charge, T + 2 * HOUR + 30 * MINUTE),
+        ],
+        &[],
+    );
+    assert_eq!(
+        PhysicalClient::bootstrap(&env, &fixture).err(),
+        Some(axum::http::StatusCode::NOT_ACCEPTABLE),
+        "the first window's head is refused after the second window"
+    );
+    assert_eq!(
+        handback(&fixture),
+        published(PhysicalV3PublicationKind::Rotation)
+    );
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("served after the second window");
+    assert_eq!(
+        fresh.mirror.charges.keys().copied().collect::<Vec<_>>(),
+        vec![21, hub_charge, second_charge]
+    );
+    assert_eq!(
+        fresh.mirror.samples.get(&(HUB_ID_BASE + 23)),
+        Some(&(second_charge, T + 2 * HOUR + 10 * MINUTE))
+    );
+    assert_eq!(
+        fresh.mirror.samples.get(&(HUB_ID_BASE + 24)),
+        Some(&(second_charge, T + 2 * HOUR + 30 * MINUTE))
+    );
+    assert_eq!(
+        fresh.mirror.samples.get(&(HUB_ID_BASE + 21)),
+        Some(&(hub_charge, T + 10 * MINUTE)),
+        "the first window's samples stay"
+    );
+    assert_eq!(existing.sync(&env, &fixture), "physical_changed_set");
+    assert_eq!(existing.mirror, fresh.mirror);
+
+    // The next import of the unchanged source.
+    let replay = import_charges(&fixture, root.path(), "unchanged", &history, T + 4 * HOUR);
     assert_eq!(replay.kind, PhysicalV3PublicationKind::Unchanged);
     assert_eq!(existing.sync(&env, &fixture), "no_op");
+}
+
+/// The second window's handback does not reach the store's coverage (its
+/// write fails, the window's row stays open): the first window's head is
+/// refused to a fresh and an existing client, nothing is planned, and once
+/// the handback is written again (the supervisor's retry) the second
+/// window's drive is published with no import in between.
+#[test]
+fn seam_physical_route_handback_failed_coverage_write_refuses_until_reconciled() {
+    use crate::collection::window::controller::{
+        fail_next_coverage_handback, write_coverage_handback,
+    };
+    let fixture = fixture();
+    let root = crate::private_tempdir().expect("stage root");
+    publish_kept(&fixture, root.path(), "base", &base_history(), None);
+    let env = paired(&fixture);
+    let mut existing = PhysicalClient::bootstrap(&env, &fixture).expect("served before the window");
+    let (h1, h2) = collect(&fixture);
+    assert_eq!(
+        handback(&fixture),
+        published(PhysicalV3PublicationKind::Rotation)
+    );
+    assert_eq!(existing.sync(&env, &fixture), "physical_changed_set");
+
+    // The second window opens, collects, and its handback write fails.
+    let opened_at_ms = T + 2 * HOUR - 5 * MINUTE;
+    crate::db::record_coverage_open(
+        &fixture.store.open().expect("catalogue"),
+        2,
+        "grant-2",
+        opened_at_ms,
+    )
+    .expect("open row");
+    let h3 = HUB_ID_BASE + 30;
+    hub_rows(
+        &fixture,
+        &[(h3, T + 2 * HOUR, T + 2 * HOUR + 30 * MINUTE)],
+        &[(HUB_ID_BASE + 30, h3, T + 2 * HOUR + 15 * MINUTE)],
+    );
+    let second = crate::db::WindowCoverage {
+        seq: 2,
+        grant_digest: "grant-2".to_owned(),
+        opened_at_ms,
+        closed_at_ms: T + 3 * HOUR,
+        gaps: Vec::new(),
+    };
+    let data_dir = fixture._temporary.path();
+    fail_next_coverage_handback();
+    assert!(!write_coverage_handback(data_dir, &second), "the forced failure");
+    assert_eq!(
+        PhysicalClient::bootstrap(&env, &fixture).err(),
+        Some(axum::http::StatusCode::NOT_ACCEPTABLE),
+        "the first window's head is never served after the second handback"
+    );
+    let refused = existing.sync(&env, &fixture);
+    assert!(
+        refused != "no_op" && refused != "physical_changed_set",
+        "the existing client is refused, not told it is current: {refused}"
+    );
+    assert!(
+        matches!(handback(&fixture), HandbackPhysicalOutcome::Withheld(_)),
+        "nothing is planned from coverage that lacks the handback"
+    );
+
+    // The supervisor writes the handback again; the window then reaches both
+    // clients with no import in between.
+    assert!(write_coverage_handback(data_dir, &second), "the retry");
+    assert_eq!(
+        handback(&fixture),
+        published(PhysicalV3PublicationKind::Rotation)
+    );
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("served once reconciled");
+    assert_eq!(
+        fresh.mirror.drives.keys().copied().collect::<Vec<_>>(),
+        vec![10, h1, h2, h3]
+    );
+    assert_eq!(existing.sync(&env, &fixture), "physical_changed_set");
+    assert_eq!(existing.mirror, fresh.mirror);
 }
 
 /// The store's drives as (id, start, end).
