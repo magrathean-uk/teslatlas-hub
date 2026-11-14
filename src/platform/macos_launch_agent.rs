@@ -85,6 +85,14 @@ pub fn hub_is_never_configured(config: &crate::config::HubConfig) -> io::Result<
     {
         return Ok(false);
     }
+    // A Hub that was set up before is never new, whatever its catalogue
+    // holds now (M02-T21, DEC-116): a lost or emptied catalogue is refused by
+    // the marker check, never started idle.
+    let marker = crate::storage::setup_marker::read(&config.data_dir)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
+    if marker.is_some() {
+        return Ok(false);
+    }
     match fs::symlink_metadata(config.data_dir.join("hub.sqlite")) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
         Err(error) => return Err(error),

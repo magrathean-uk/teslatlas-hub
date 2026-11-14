@@ -439,6 +439,47 @@ fn admit_import_command(
     Ok(Some(operator::admission::admit_import(Some(&config.data_dir), &home)?))
 }
 
+/// Test doubles of the fresh-install journey (M02-T21, DEC-116): test builds
+/// only, see the module.
+#[cfg(all(unix, feature = "journey-doubles"))]
+#[path = "journey_doubles.rs"]
+mod journey_doubles;
+
+/// The service's window authority. In a test build whose test named journey
+/// doubles, it keeps its anchor in the test's folder and reads a fixed time
+/// offset; every other build has only the production authority.
+#[cfg(unix)]
+fn start_window_authority(
+    data_dir: &Path,
+    home: &Path,
+) -> Result<
+    (
+        std::sync::Arc<teslatlas_hub::collection::window::WindowController>,
+        teslatlas_hub::collection::window::ResumeOutcome,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    #[cfg(feature = "journey-doubles")]
+    if let Some(doubles) = journey_doubles::active()? {
+        return Ok(doubles.start_authority(data_dir, home)?);
+    }
+    Ok(operator::authority::start_service_authority(data_dir, home)?)
+}
+
+/// The service's trust authority (the issuer pin and the owner's
+/// confirmation), with the same test-build exception as
+/// [`start_window_authority`].
+#[cfg(unix)]
+fn window_trust_authority(
+    host_id: &str,
+) -> Result<teslatlas_hub::runtime::operator::trust::TrustAuthority, Box<dyn std::error::Error>> {
+    #[cfg(feature = "journey-doubles")]
+    if let Some(doubles) = journey_doubles::active()? {
+        return Ok(doubles.trust_authority(host_id));
+    }
+    Ok(operator::authority::service_trust_authority(host_id))
+}
+
 /// What only the binary does inside the running service.
 #[cfg(unix)]
 struct HubServiceBackend {
@@ -452,6 +493,96 @@ struct HubServiceBackend {
     /// The vault custody the window supervisor honours, and its wake-up.
     custody: teslatlas_hub::collection::window::CredentialCustody,
     kick: Box<dyn Fn() + Send + Sync>,
+    /// The configuration file the setup completes (M02-T21, DEC-116).
+    config_path: PathBuf,
+    /// Whether this service was admitted idle (never configured at its start).
+    admitted_idle: bool,
+    /// The collector slot the setup reloads with the completed configuration.
+    collector: ServiceCollectorSlot,
+}
+
+/// The collection interval the fresh-install setup sets (M02-T21, DEC-116):
+/// the `[collector] interval_seconds` value the configuration guide documents.
+#[cfg(unix)]
+const SUPPORTED_COLLECTION_INTERVAL_SECONDS: u64 = 300;
+
+/// Sets `[collector] interval_seconds` line by line, by the same rule as the
+/// Mac app's `settingCollectorInterval`, so every other line stays as written.
+#[cfg(unix)]
+fn setting_collector_interval(content: &str, seconds: u64) -> String {
+    fn uncommented(line: &str) -> &str {
+        line.split('#').next().unwrap_or_default().trim()
+    }
+    fn is_table_header(line: &str) -> bool {
+        let value = uncommented(line);
+        value.starts_with('[') && value.contains(']')
+    }
+    fn is_interval(line: &str) -> bool {
+        uncommented(line)
+            .split_once('=')
+            .is_some_and(|(key, _)| key.trim() == "interval_seconds")
+    }
+    let mut lines: Vec<String> = content.split('\n').map(str::to_owned).collect();
+    let setting = format!("interval_seconds = {seconds}");
+    if let Some(table) = lines.iter().position(|line| uncommented(line) == "[collector]") {
+        let end = lines[table + 1..]
+            .iter()
+            .position(|line| is_table_header(line))
+            .map_or(lines.len(), |offset| table + 1 + offset);
+        match lines[table + 1..end].iter().position(|line| is_interval(line)) {
+            Some(offset) => {
+                let line = &mut lines[table + 1 + offset];
+                let indentation: String = line.chars().take_while(|c| *c == ' ' || *c == '\t').collect();
+                *line = format!("{indentation}{setting}");
+            }
+            None => lines.insert(table + 1, setting),
+        }
+    } else {
+        if lines.last().is_some_and(|line| !line.is_empty()) {
+            lines.push(String::new());
+        }
+        lines.push("[collector]".to_owned());
+        lines.push(setting);
+    }
+    if content.ends_with('\n') && lines.last().is_some_and(|line| !line.is_empty()) {
+        lines.push(String::new());
+    }
+    lines.join("\n")
+}
+
+/// Writes the collection interval into the configuration file: the result is
+/// parsed as a Hub configuration before it replaces the file, written 0600
+/// through a synced temporary file beside it, and returned.
+#[cfg(unix)]
+fn write_collector_interval(
+    config_path: &Path,
+    seconds: u64,
+) -> Result<HubConfig, Box<dyn std::error::Error>> {
+    use std::os::unix::fs::OpenOptionsExt as _;
+    let content = fs::read_to_string(config_path)?;
+    let updated = setting_collector_interval(&content, seconds);
+    let folder = config_path
+        .parent()
+        .filter(|folder| !folder.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let staged = folder.join(format!(".config.{}.tmp", uuid::Uuid::new_v4()));
+    let written = (|| -> Result<HubConfig, Box<dyn std::error::Error>> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&staged)?;
+        file.write_all(updated.as_bytes())?;
+        file.sync_all()?;
+        let config = HubConfig::load(&staged)?;
+        fs::rename(&staged, config_path)?;
+        fs::File::open(folder)?.sync_all()?;
+        Ok(config)
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&staged);
+    }
+    written
 }
 
 #[cfg(unix)]
@@ -461,6 +592,37 @@ impl HubServiceBackend {
     ) -> Result<zeroize::Zeroizing<[u8; RECOVERY_ENCRYPTION_KEY_BYTES]>, OperatorRefusal> {
         read_recovery_encryption_key(path)
             .map_err(|error| OperatorRefusal::new("recovery_key_invalid", error.to_string()))
+    }
+
+    /// Completes a fresh install (M02-T21, DEC-116, finding 1): a service
+    /// admitted idle whose sign-in configured a car sets the supported
+    /// collection interval in its configuration file (only while it is 0) and
+    /// reloads the collector slot with the written configuration before the
+    /// setup answers. The collector then starts inside the Open window, and
+    /// only there; after a stop or a reboot the full admission passes.
+    fn complete_fresh_install(&self) -> Result<u64, OperatorRefusal> {
+        let refusal = |message: String| OperatorRefusal::new("collection_interval_unavailable", message);
+        let current = HubConfig::load(&self.config_path)
+            .map_err(|error| refusal(format!("the configuration cannot be read: {error}")))?;
+        if current.data_dir != self.data_dir {
+            return Err(refusal("the configuration names another data folder".to_owned()));
+        }
+        #[allow(unused_mut)]
+        let mut config = if current.collector.interval_seconds == 0 {
+            write_collector_interval(&self.config_path, SUPPORTED_COLLECTION_INTERVAL_SECONDS)
+                .map_err(|error| refusal(format!("the collection interval could not be written: {error}")))?
+        } else {
+            current
+        };
+        #[cfg(feature = "journey-doubles")]
+        if let Some(doubles) = journey_doubles::active().ok().flatten() {
+            doubles.apply(&mut config);
+        }
+        let seconds = config.collector.interval_seconds;
+        tracing::info!(interval_seconds = seconds, "setup completed the fresh install: collection reloaded");
+        self.collector.reload(config);
+        (self.kick)();
+        Ok(seconds)
     }
 }
 
@@ -493,20 +655,44 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
                 std::sync::Arc::clone(&self.admission),
                 &self.data_dir,
             ),
-            |entry| run_owner_exchange(|| {
+            |entry| run_owner_exchange(|| async {
+                // A test build's journey doubles name a loopback token
+                // endpoint; every other build exchanges at Tesla's.
+                #[cfg(feature = "journey-doubles")]
+                if let Some(endpoint) = journey_doubles::token_endpoint() {
+                    return sign_in::sign_in_or_resume_owner_code_with_stub_for_test(
+                        entry,
+                        &material.code,
+                        &material.code_verifier,
+                        &material.redirect_uri,
+                        endpoint,
+                    )
+                    .await;
+                }
                 sign_in::sign_in_or_resume_owner_code(
                     entry,
                     &material.code,
                     &material.code_verifier,
                     &material.redirect_uri,
                 )
+                .await
             }),
             |entry| run_owner_exchange(|| {
                 sign_in::discover_owner_cars(entry, &self.store, &self.config, selection)
             }),
         );
         drop(material);
-        report
+        let mut report = report?;
+        // The Hub's own login is stored: this Hub is set up (finding 2).
+        let installation = self.store.installation_id().map_err(|error| {
+            OperatorRefusal::new("setup_marker_unavailable", error.to_string())
+        })?;
+        teslatlas_hub::storage::setup_marker::record(&self.data_dir, installation)
+            .map_err(|error| OperatorRefusal::new("setup_marker_unavailable", error.to_string()))?;
+        if self.admitted_idle && report["vehicleDiscovery"] == "configured" {
+            report["collectionIntervalSeconds"] = self.complete_fresh_install()?.into();
+        }
+        Ok(report)
     }
 
     fn recovery_export(
@@ -988,6 +1174,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(unix)]
         Command::Preflight { history_only } => {
             let config = HubConfig::load(&config_path)?;
+            // A Hub that was set up and lost its catalogue is refused, never
+            // idle and never new (M02-T21, DEC-116).
+            teslatlas_hub::storage::setup_marker::check_catalogue(&config.data_dir)?;
             if *history_only {
                 validate_history_only_config(&config)?;
                 let published = run_immutable_diagnostic(&config.data_dir, |store| {
@@ -1126,6 +1315,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(admission) = admitted_user_hub.as_ref() {
         admission.assert_store_path(&config.data_dir)?;
     }
+    // M02-T21 (DEC-116, finding 2): a Hub that was set up keeps its
+    // catalogue. A missing, emptied or replaced one is refused here, before
+    // `hub.sqlite` is created or initialised, so it never comes up as new.
+    teslatlas_hub::storage::setup_marker::check_catalogue(&config.data_dir)?;
     let store = HubStore::initialize(&config.data_dir)?;
     let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
     match cli.command {
@@ -1179,7 +1372,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(unix)]
             {
                 #[cfg(target_os = "macos")]
-                let summary_now_ms = {
+                let (summary_now_ms, admitted_idle) = {
                     store.checkpoint_catalogue_for_immutable_read()?;
                     let development_mode =
                         teslatlas_hub::macos_launch_agent::development_serve_mode(
@@ -1192,19 +1385,44 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             )
                             .as_deref(),
                         )?;
+                    // M02-T21: whether the production admission starts this
+                    // Hub idle (never configured).
+                    let admitted_idle = development_mode.is_none()
+                        && teslatlas_hub::macos_launch_agent::hub_is_never_configured(&config)?;
                     teslatlas_hub::macos_launch_agent::preflight_hub_for_serve(
                         &config,
                         development_mode,
                     )?;
+                    // A Hub the full production admission passed is set up:
+                    // recorded outside its catalogue (DEC-116, finding 2).
+                    if development_mode.is_none() && !admitted_idle {
+                        teslatlas_hub::storage::setup_marker::record(
+                            &config.data_dir,
+                            store.installation_id()?,
+                        )?;
+                    }
                     // The Fixture mode serves the fixture's own measurement
                     // time (C6 R28 (c)); every other mode keeps the system clock.
-                    teslatlas_hub::macos_launch_agent::fixture_summary_now_ms(
-                        development_mode,
-                        &config.data_dir,
-                    )?
+                    (
+                        teslatlas_hub::macos_launch_agent::fixture_summary_now_ms(
+                            development_mode,
+                            &config.data_dir,
+                        )?,
+                        admitted_idle,
+                    )
                 };
                 #[cfg(not(target_os = "macos"))]
-                let summary_now_ms: Option<i64> = None;
+                let (summary_now_ms, admitted_idle): (Option<i64>, bool) = (None, false);
+                // A test build's journey doubles put the stream double in the
+                // served configuration (test builds only).
+                #[cfg(feature = "journey-doubles")]
+                let config = {
+                    let mut config = config;
+                    if let Some(doubles) = journey_doubles::active()? {
+                        doubles.apply(&mut config);
+                    }
+                    config
+                };
                 let admission =
                     admitted_user_hub.ok_or("Serve reached runtime without user admission")?;
                 admission.assert_sensitive_access()?;
@@ -1229,10 +1447,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let recovery = operator::authority::RecoveryGate::new(
                     operator::authority::credential_recovery_pending(&config.data_dir),
                 );
-                let (authority, resumed) = operator::authority::start_service_authority(
-                    &config.data_dir,
-                    &operator_home()?,
-                )?;
+                let (authority, resumed) =
+                    start_window_authority(&config.data_dir, &operator_home()?)?;
                 tracing::info!(
                     collector_ready,
                     window = ?authority.status().phase,
@@ -1244,15 +1460,16 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     "Hub serve starting"
                 );
                 let backup_schedule = start_backup_schedule(&config, &store, &recovery)?;
+                let collector_slot = ServiceCollectorSlot::new(
+                    tokio::runtime::Handle::current(),
+                    store.clone(),
+                    config.clone(),
+                    std::sync::Arc::clone(&admission),
+                    std::sync::Arc::clone(&recovery),
+                );
                 let supervisor = operator::authority::SupervisorThread::spawn(
                     std::sync::Arc::clone(&authority),
-                    ServiceCollectorSlot::new(
-                        tokio::runtime::Handle::current(),
-                        store.clone(),
-                        config.clone(),
-                        std::sync::Arc::clone(&admission),
-                        std::sync::Arc::clone(&recovery),
-                    ),
+                    collector_slot.clone(),
                 )?;
                 let channel = operator::channel::ChannelServer::bind(
                     &config.data_dir,
@@ -1266,9 +1483,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             backup: std::sync::Arc::clone(&backup_schedule),
                             custody: teslatlas_hub::collection::window::CredentialCustody::process_wide().clone(),
                             kick: supervisor.kicker(),
+                            config_path: config_path.clone(),
+                            admitted_idle,
+                            collector: collector_slot,
                         }),
                         supervisor.kicker(),
-                        operator::authority::service_trust_authority(authority.host_id()),
+                        window_trust_authority(authority.host_id())?,
                         &config.data_dir,
                     )
                     .with_recovery(std::sync::Arc::clone(&recovery))),
