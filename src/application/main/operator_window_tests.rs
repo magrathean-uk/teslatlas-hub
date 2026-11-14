@@ -181,4 +181,101 @@ mod operator_window {
         assert!(second.is_err(), "a second concurrent vault is refused");
         drop(first);
     }
+    /// A slot that refuses to start until the Hub is configured, as an idle
+    /// service's does, and counts the refusals.
+    #[derive(Clone, Default)]
+    struct ConfiguredSlot {
+        configured: Arc<std::sync::atomic::AtomicBool>,
+        running: Arc<std::sync::atomic::AtomicBool>,
+        refusals: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl CollectorSlot for ConfiguredSlot {
+        fn start(&mut self, _deadline_wall: i64) -> Result<(), String> {
+            use std::sync::atomic::Ordering::SeqCst;
+            if !self.configured.load(SeqCst) {
+                self.refusals.fetch_add(1, SeqCst);
+                return Err("collector_not_ready".to_owned());
+            }
+            self.running.store(true, SeqCst);
+            Ok(())
+        }
+        fn is_running(&mut self) -> bool {
+            self.running.load(std::sync::atomic::Ordering::SeqCst)
+        }
+        fn stop(&mut self) {
+            self.running.store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+        fn release_lease(&mut self) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    /// M02-T24 (DEC-141): an idle service in an Open window has had its start
+    /// refused, so the supervisor holds a start backoff. The first sign-in's
+    /// reload must start the collector at once, not wait out that backoff
+    /// (the manual clock never advances, so a held backoff never expires).
+    #[test]
+    fn collection_window_reload_after_sign_in_starts_the_collector_without_a_restart() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let root = root();
+        let scratch = tempfile::tempdir().expect("scratch");
+        let window = Window::new(scratch.path(), root.path());
+        window.controller.open(&window.grant(600)).expect("window opens");
+        let slot = ConfiguredSlot::default();
+        let thread = teslatlas_hub::runtime::operator::authority::SupervisorThread::spawn(
+            Arc::clone(&window.controller),
+            slot.clone(),
+        )
+        .expect("supervisor thread");
+        let wait_for = |what: &str, done: &dyn Fn() -> bool| {
+            let began = std::time::Instant::now();
+            while !done() {
+                assert!(began.elapsed() < std::time::Duration::from_secs(10), "{what}");
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        };
+        wait_for("the idle start is refused", &|| slot.refusals.load(SeqCst) >= 1);
+        // A kick alone leaves the backoff in place: nothing starts.
+        slot.configured.store(true, SeqCst);
+        (thread.kicker())();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(!slot.running.load(SeqCst), "a plain kick waits out the backoff");
+        // The reload clears it.
+        (thread.reload_kicker())();
+        wait_for("the collector starts after the reload", &|| slot.running.load(SeqCst));
+        thread.stop();
+    }
+
+    /// M02-T24 review: the reload clears the start backoff but keeps the
+    /// pending gap. With the clock advancing, the idle time before the first
+    /// sign-in stays recorded as a gap in the handback, so import still
+    /// fills it from the source.
+    #[test]
+    fn collection_window_reload_keeps_the_gap_from_before_the_sign_in() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let root = root();
+        let scratch = tempfile::tempdir().expect("scratch");
+        let window = Window::new(scratch.path(), root.path());
+        window.controller.open(&window.grant(600)).expect("window opens");
+        let slot = ConfiguredSlot::default();
+        let mut supervisor = Supervisor::new(Arc::clone(&window.controller), slot.clone());
+        assert!(!supervisor.step().collector_running, "the idle start is refused");
+        assert_eq!(slot.refusals.load(SeqCst), 1);
+        slot.configured.store(true, SeqCst);
+        // Inside the backoff (4 s after one refusal) nothing starts.
+        window.clock.advance(3);
+        assert!(!supervisor.step().collector_running, "the backoff holds");
+        window.clock.advance(27);
+        supervisor.reset_start_backoff();
+        assert!(supervisor.step().collector_running, "the reload starts the collector");
+        window.clock.advance(10);
+        window.controller.close(CloseReason::OperatorClose);
+        assert_eq!(supervisor.step().phase, Phase::Closed);
+        let handback = window.controller.status().last_handback.expect("handback");
+        assert_eq!(handback.gaps.len(), 1, "{:?}", handback.gaps);
+        assert_eq!(handback.gaps[0].start, T0);
+        assert_eq!(handback.gaps[0].end, T0 + 30);
+        assert_eq!(handback.coverage_seconds, 10);
+    }
 }
