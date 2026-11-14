@@ -10,10 +10,10 @@ use super::*;
 use crate::db::hub_ids::HUB_ID_BASE;
 use crate::test_assertions::LabelledResult;
 
-const OPEN_DRIVE: i64 = HUB_ID_BASE + 1;
+pub(super) const OPEN_DRIVE: i64 = HUB_ID_BASE + 1;
 
 /// Whether the v79 credential table has its keyring exposure column.
-fn seam_repair_keyring_column(connection: &Connection) -> bool {
+pub(super) fn seam_repair_keyring_column(connection: &Connection) -> bool {
     connection
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM pragma_table_info('credential_format_state')
@@ -25,7 +25,7 @@ fn seam_repair_keyring_column(connection: &Connection) -> bool {
 }
 
 #[test]
-fn seam_repair_store_refused_v79_store_is_unchanged_twice() {
+pub(super) fn seam_repair_store_refused_v79_store_is_unchanged_twice() {
     let test = "seam_repair_store_refused_v79_store_is_unchanged_twice";
     // A supported v79 store written before the keyring exposure column, which
     // holds a row the Hub collected before the seam (in neither catalogue).
@@ -85,7 +85,7 @@ fn seam_repair_store_refused_v79_store_is_unchanged_twice() {
 }
 
 /// A Hub position as the lifecycle buffers it for an open drive.
-fn seam_repair_open_position(
+pub(super) fn seam_repair_open_position(
     id: i64,
     car_id: i64,
     drive_id: i64,
@@ -101,7 +101,7 @@ fn seam_repair_open_position(
 /// The lifecycle commits an open drive `drive_id` and its positions, as the
 /// collector leaves them when the window is handed back mid-drive: the drive
 /// in the open session, its positions in `lifecycle_open_rows`.
-fn seam_repair_collect_open_drive(
+pub(super) fn seam_repair_collect_open_drive(
     store: &HubStore,
     vehicle: &VehicleRecord,
     car_id: i64,
@@ -123,11 +123,14 @@ fn seam_repair_collect_open_drive(
         Some(open) => open,
         None => serde_json::from_value(serde_json::json!({
             "id": drive_id, "car_id": car_id, "start_date_ms": start_ms,
-            "outside_temp_sum": 0.0, "outside_temp_count": 0
+            "outside_temp_sum": 0.0, "outside_temp_count": 0, "first_odometer": 1000.0
         }))
         .expect("open drive"),
     };
     open.position_count += u32::try_from(positions.len()).expect("count");
+    // The car moves half a kilometre a position, so a close keeps the drive
+    // (M03-T20: restore sealing closes it at its last evidence).
+    open.last_odometer = Some(1000.0 + f64::from(open.position_count) * 0.5);
     open.last_position_date_ms = last.or(open.last_position_date_ms);
     open.last_folded_at_ms = last.or(open.last_folded_at_ms);
     open.last_motion_at_ms = last.or(open.last_motion_at_ms);
@@ -151,7 +154,7 @@ fn seam_repair_collect_open_drive(
 }
 
 /// The open rows of the vehicle: id, domain and parent.
-fn seam_repair_open_rows(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, String, Option<i64>)> {
+pub(super) fn seam_repair_open_rows(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, String, Option<i64>)> {
     let connection = store.open().expect("catalogue");
     let mut statement = connection
         .prepare(
@@ -169,7 +172,7 @@ fn seam_repair_open_rows(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64,
 }
 
 /// The id of the lifecycle's open drive, if any.
-fn seam_repair_open_drive(store: &HubStore, vehicle: &VehicleRecord) -> Option<i64> {
+pub(super) fn seam_repair_open_drive(store: &HubStore, vehicle: &VehicleRecord) -> Option<i64> {
     let record = store
         .load_lifecycle_state(vehicle.vehicle_id)
         .expect("lifecycle state")?;
@@ -180,7 +183,7 @@ fn seam_repair_open_drive(store: &HubStore, vehicle: &VehicleRecord) -> Option<i
 }
 
 /// The Hub's positions of one open drive: one a minute from `first_ms`.
-fn seam_repair_hub_positions(
+pub(super) fn seam_repair_hub_positions(
     car_id: i64,
     drive_id: i64,
     first_ms: i64,
@@ -199,7 +202,7 @@ fn seam_repair_hub_positions(
 }
 
 #[test]
-fn seam_repair_store_open_drive_positions_survive_handback() {
+pub(super) fn seam_repair_store_open_drive_positions_survive_handback() {
     let (_temporary, store, vehicle, binding, car) = seam_store();
     let car_id = binding.selected_car_id;
     // The window is handed back at minute 60 while the Hub's drive, opened at
@@ -257,7 +260,7 @@ fn seam_repair_store_open_drive_positions_survive_handback() {
 }
 
 #[test]
-fn seam_repair_store_open_drive_kept_stays_open_with_its_positions() {
+pub(super) fn seam_repair_store_open_drive_kept_stays_open_with_its_positions() {
     let (_temporary, store, vehicle, binding, car) = seam_store();
     let car_id = binding.selected_car_id;
     seam_window(&store, 1, SEAM_T, Some(SEAM_T + 60 * SEAM_MINUTE));
@@ -295,7 +298,7 @@ fn seam_repair_store_open_drive_kept_stays_open_with_its_positions() {
 }
 
 #[test]
-fn seam_repair_store_open_drive_positions_survive_restore() {
+pub(super) fn seam_repair_store_open_drive_positions_survive_restore() {
     let (_temporary, store, vehicle, binding, car) = seam_store();
     let car_id = binding.selected_car_id;
     // A backup taken inside the window, mid-drive: the store shows the window
@@ -352,7 +355,7 @@ fn seam_repair_store_open_drive_positions_survive_restore() {
 }
 
 /// The stored drive rows, whole.
-fn seam_repair_drive_rows(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, String)> {
+pub(super) fn seam_repair_drive_rows(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, String)> {
     let connection = store.open().expect("catalogue");
     let mut statement = connection
         .prepare("SELECT drive_id, drive_json FROM materialised_drives WHERE vehicle_id = ?1 ORDER BY drive_id")
@@ -367,7 +370,7 @@ fn seam_repair_drive_rows(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64
 }
 
 /// Every sync mutation of the vehicle, whole.
-fn seam_repair_journal(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, String, i64, String, String)> {
+pub(super) fn seam_repair_journal(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, String, i64, String, String)> {
     let connection = store.open().expect("catalogue");
     let mut statement = connection
         .prepare(
@@ -385,7 +388,7 @@ fn seam_repair_journal(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, S
 }
 
 #[test]
-fn seam_repair_store_inherited_drive_stays_the_hubs_on_replay() {
+pub(super) fn seam_repair_store_inherited_drive_stays_the_hubs_on_replay() {
     use crate::import::source_db::seam::InheritedCopy;
     let (_temporary, store, vehicle, binding, car) = seam_store();
     let car_id = binding.selected_car_id;
@@ -444,11 +447,11 @@ fn seam_repair_store_inherited_drive_stays_the_hubs_on_replay() {
 // samples. Charges reach the store only through a plan made ahead of the
 // packs and proved again by publication, so these tests publish that way.
 
-const OPEN_CHARGE: i64 = HUB_ID_BASE + 1;
+pub(super) const OPEN_CHARGE: i64 = HUB_ID_BASE + 1;
 
 /// A source charge (or the Hub's stored copy of one) from `start_ms` to
 /// `end_ms`.
-fn seam_repair_charge(
+pub(super) fn seam_repair_charge(
     id: i64,
     car_id: i64,
     start_ms: i64,
@@ -462,7 +465,7 @@ fn seam_repair_charge(
 }
 
 /// The Hub's samples of one open charge: one a minute from `first_ms`.
-fn seam_repair_hub_samples(
+pub(super) fn seam_repair_hub_samples(
     charge_id: i64,
     first_ms: i64,
     count: i64,
@@ -481,7 +484,7 @@ fn seam_repair_hub_samples(
 /// The lifecycle commits an open charge `charge_id` and its samples, as the
 /// collector leaves them when the window is handed back mid-charge: the
 /// charge in the open session, its samples in `lifecycle_open_rows`.
-fn seam_repair_collect_open_charge(
+pub(super) fn seam_repair_collect_open_charge(
     store: &HubStore,
     vehicle: &VehicleRecord,
     car_id: i64,
@@ -531,7 +534,7 @@ fn seam_repair_collect_open_charge(
 }
 
 /// The id of the lifecycle's open charge, if any.
-fn seam_repair_open_charge(store: &HubStore, vehicle: &VehicleRecord) -> Option<i64> {
+pub(super) fn seam_repair_open_charge(store: &HubStore, vehicle: &VehicleRecord) -> Option<i64> {
     let record = store
         .load_lifecycle_state(vehicle.vehicle_id)
         .expect("lifecycle state")?;
@@ -544,7 +547,7 @@ fn seam_repair_open_charge(store: &HubStore, vehicle: &VehicleRecord) -> Option<
 /// Publishes one import successor of `charges` (ascending ids) as the
 /// importer does: the seam is applied ahead of the packs, and publication
 /// plans it again and proves it by its digest.
-fn seam_repair_publish_charges(
+pub(super) fn seam_repair_publish_charges(
     store: &HubStore,
     vehicle: &VehicleRecord,
     binding: &ProjectionBinding,
@@ -624,7 +627,7 @@ fn seam_repair_publish_charges(
 }
 
 /// The stored charges, whole.
-fn seam_repair_charge_rows(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, String)> {
+pub(super) fn seam_repair_charge_rows(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, String)> {
     let connection = store.open().expect("catalogue");
     let mut statement = connection
         .prepare(
@@ -642,7 +645,7 @@ fn seam_repair_charge_rows(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i6
 }
 
 /// The stored charge samples: id, charge (column and JSON agree) and instant.
-fn seam_repair_stored_samples(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, i64, i64)> {
+pub(super) fn seam_repair_stored_samples(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, i64, i64)> {
     let connection = store.open().expect("catalogue");
     let mut statement = connection
         .prepare(
@@ -665,7 +668,7 @@ fn seam_repair_stored_samples(store: &HubStore, vehicle: &VehicleRecord) -> Vec<
 }
 
 /// The charge and charge sample mutations journalled for sync, whole.
-fn seam_repair_charge_journal(
+pub(super) fn seam_repair_charge_journal(
     store: &HubStore,
     vehicle: &VehicleRecord,
 ) -> Vec<(i64, String, i64, String, String)> {
@@ -675,7 +678,7 @@ fn seam_repair_charge_journal(
 }
 
 /// The recorded charge decisions: loser and winner.
-fn seam_repair_charge_links(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, i64)> {
+pub(super) fn seam_repair_charge_links(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i64, i64)> {
     let connection = store.open().expect("catalogue");
     let mut statement = connection
         .prepare(
@@ -693,7 +696,7 @@ fn seam_repair_charge_links(store: &HubStore, vehicle: &VehicleRecord) -> Vec<(i
 }
 
 #[test]
-fn seam_repair_store_charge_open_samples_survive_handback() {
+pub(super) fn seam_repair_store_charge_open_samples_survive_handback() {
     let (_temporary, store, vehicle, binding, car) = seam_store();
     let car_id = binding.selected_car_id;
     // The window is handed back at minute 60 while the Hub's charge, opened at
@@ -747,7 +750,7 @@ fn seam_repair_store_charge_open_samples_survive_handback() {
 }
 
 #[test]
-fn seam_repair_store_charge_open_kept_stays_open_with_its_samples() {
+pub(super) fn seam_repair_store_charge_open_kept_stays_open_with_its_samples() {
     let (_temporary, store, vehicle, binding, car) = seam_store();
     let car_id = binding.selected_car_id;
     seam_window(&store, 1, SEAM_T, Some(SEAM_T + 60 * SEAM_MINUTE));
@@ -780,7 +783,7 @@ fn seam_repair_store_charge_open_kept_stays_open_with_its_samples() {
 }
 
 #[test]
-fn seam_repair_store_charge_open_samples_survive_restore() {
+pub(super) fn seam_repair_store_charge_open_samples_survive_restore() {
     let (_temporary, store, vehicle, binding, car) = seam_store();
     let car_id = binding.selected_car_id;
     // A backup taken inside the window, mid-charge: the store shows the window
@@ -837,7 +840,7 @@ fn seam_repair_store_charge_open_samples_survive_restore() {
 }
 
 #[test]
-fn seam_repair_store_charge_inherited_stays_the_hubs_on_replay() {
+pub(super) fn seam_repair_store_charge_inherited_stays_the_hubs_on_replay() {
     use crate::import::source_db::seam::InheritedCopy;
     let (_temporary, store, vehicle, binding, car) = seam_store();
     let car_id = binding.selected_car_id;

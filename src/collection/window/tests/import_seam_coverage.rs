@@ -21,16 +21,16 @@ use crate::runtime::operator::admission::admit_import;
 
 const SECOND: i64 = 1000;
 
-fn data_dir(rig: &Rig) -> PathBuf {
+pub(super) fn data_dir(rig: &Rig) -> PathBuf {
     rig.tmp.path().join("data")
 }
 
-fn home(rig: &Rig) -> PathBuf {
+pub(super) fn home(rig: &Rig) -> PathBuf {
     rig.tmp.path().join("home")
 }
 
 /// A store in the rig's data directory with two registered vehicles.
-fn store_with_vehicles(rig: &Rig) -> (HubStore, String, String) {
+pub(super) fn store_with_vehicles(rig: &Rig) -> (HubStore, String, String) {
     // The controller made the data directory on the way to its window
     // directory; the store wants it private to the user.
     std::fs::create_dir_all(data_dir(rig)).unwrap();
@@ -62,7 +62,7 @@ fn coverage_of(connection: &Connection, vehicle: &str) -> Vec<(i64, i64)> {
         .to_vec()
 }
 
-fn coverage_row(connection: &Connection, seq: i64) -> (String, Option<i64>, String) {
+pub(super) fn coverage_row(connection: &Connection, seq: i64) -> (String, Option<i64>, String) {
     connection
         .query_row(
             "SELECT sealed, closed_at_ms, gaps_json FROM collection_coverage WHERE seq = ?1",
@@ -97,7 +97,7 @@ fn add_hub_position(connection: &Connection, vehicle: &str, offset: i64, date_ms
 }
 
 /// Backs the store up and restores it into a data directory of its own.
-fn restore_elsewhere(rig: &Rig, store: &HubStore, name: &str) -> PathBuf {
+pub(super) fn restore_elsewhere(rig: &Rig, store: &HubStore, name: &str) -> PathBuf {
     let backup = rig.tmp.path().join(format!("backup-{name}"));
     create_data_backup(store, &backup).unwrap();
     let restored = rig.tmp.path().join(format!("restored-{name}"));
@@ -105,12 +105,12 @@ fn restore_elsewhere(rig: &Rig, store: &HubStore, name: &str) -> PathBuf {
     restored
 }
 
-fn raw(directory: &Path) -> Connection {
+pub(super) fn raw(directory: &Path) -> Connection {
     Connection::open(directory.join("hub.sqlite")).unwrap()
 }
 
 /// A controller on a window directory of its own (a new host).
-fn controller_at(rig: &Rig, data: &Path) -> WindowController {
+pub(super) fn controller_at(rig: &Rig, data: &Path) -> WindowController {
     let (hub, _) = WindowController::start(
         crate::collection::window::WindowConfig {
             dir: data.join("window"),
