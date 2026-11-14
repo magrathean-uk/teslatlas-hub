@@ -6,6 +6,7 @@
 //! and the boot time independently.
 
 use std::{
+    io::ErrorKind,
     net::{ToSocketAddrs, UdpSocket},
     process::Command,
     sync::Mutex,
@@ -249,10 +250,55 @@ impl ClockGuard {
     }
 }
 
+/// How long after a missed time probe the next attempt runs (DEC-131).
+pub const NTP_RETRY_SECONDS: u64 = 30;
+
+/// Missed probes in a row that close a window `clock_invalid` (DEC-131).
+pub const NTP_MAX_FAILURES: u32 = 3;
+
+/// A run of missed probes that has lasted this long closes the window
+/// `clock_invalid`, however few attempts it held (DEC-131).
+pub const NTP_FAILURE_SPAN_SECONDS: u64 = 300;
+
+/// Why a time probe produced no measurement. A failure to measure is not a
+/// bad offset: the window tolerates a few in a row (DEC-131).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProbeFailure {
+    /// The server name did not resolve to an IPv4 address.
+    Resolve,
+    /// The socket could not be set up, or the request was not sent.
+    Transport,
+    /// No reply arrived within the probe's timeout.
+    Timeout,
+    /// A reply arrived but was not a usable time reply.
+    BadReply,
+}
+
+impl ProbeFailure {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Resolve => "resolve",
+            Self::Transport => "transport",
+            Self::Timeout => "timeout",
+            Self::BadReply => "bad_reply",
+        }
+    }
+}
+
 /// Measures the clock offset (seconds, positive when this host is behind)
 /// against a network time server. No Tesla endpoint is involved.
 pub trait OffsetProbe: Send + Sync {
     fn offset_seconds(&self) -> Result<f64, Refusal>;
+
+    /// The offset, or why none was measured. A non-finite offset is a bad
+    /// reply. Implementations that can tell the causes apart override this.
+    fn measure(&self) -> Result<f64, ProbeFailure> {
+        match self.offset_seconds() {
+            Ok(offset) if offset.is_finite() => Ok(offset),
+            Ok(_) => Err(ProbeFailure::BadReply),
+            Err(_) => Err(ProbeFailure::Transport),
+        }
+    }
 }
 
 /// An injected offset or failure.
@@ -357,25 +403,35 @@ impl SntpProbe {
 
 impl OffsetProbe for SntpProbe {
     fn offset_seconds(&self) -> Result<f64, Refusal> {
+        self.measure().map_err(|_| Refusal::ClockOffset)
+    }
+
+    fn measure(&self) -> Result<f64, ProbeFailure> {
         let address = self
             .server
             .to_socket_addrs()
-            .map_err(|_| Refusal::ClockOffset)?
+            .map_err(|_| ProbeFailure::Resolve)?
             .find(|address| address.is_ipv4())
-            .ok_or(Refusal::ClockOffset)?;
-        let socket = UdpSocket::bind("0.0.0.0:0").map_err(|_| Refusal::ClockOffset)?;
+            .ok_or(ProbeFailure::Resolve)?;
+        let socket = UdpSocket::bind("0.0.0.0:0").map_err(|_| ProbeFailure::Transport)?;
         socket
             .set_read_timeout(Some(self.timeout))
             .and_then(|()| socket.set_write_timeout(Some(self.timeout)))
-            .map_err(|_| Refusal::ClockOffset)?;
-        socket.connect(address).map_err(|_| Refusal::ClockOffset)?;
+            .map_err(|_| ProbeFailure::Transport)?;
+        socket.connect(address).map_err(|_| ProbeFailure::Transport)?;
         let sent = Self::now();
         socket
             .send(&sntp_request(sent))
-            .map_err(|_| Refusal::ClockOffset)?;
+            .map_err(|_| ProbeFailure::Transport)?;
         let mut reply = [0u8; 128];
-        let length = socket.recv(&mut reply).map_err(|_| Refusal::ClockOffset)?;
-        sntp_offset(sent, &reply[..length], Self::now())
+        let length = socket.recv(&mut reply).map_err(|error| match error.kind() {
+            ErrorKind::WouldBlock | ErrorKind::TimedOut => ProbeFailure::Timeout,
+            _ => ProbeFailure::Transport,
+        })?;
+        match sntp_offset(sent, &reply[..length], Self::now()) {
+            Ok(offset) if offset.is_finite() => Ok(offset),
+            _ => Err(ProbeFailure::BadReply),
+        }
     }
 }
 

@@ -10,7 +10,10 @@ use crate::collection::window::{
     GRANT_GAP_SECONDS, SUPERVISOR_POLL_SECONDS, WindowClock, write_under_authority, GateRefusal, HostClaim, ManualClock,
     ManualProbe, PermitKind, Phase, Provider, Refusal, SignedGrant, Supervisor,
     WINDOW_CEILING_SECONDS,
-    clock::{sntp_offset, sntp_request},
+    NTP_RECHECK_SECONDS,
+    clock::{
+        NTP_FAILURE_SPAN_SECONDS, NTP_MAX_FAILURES, NTP_RETRY_SECONDS, sntp_offset, sntp_request,
+    },
     grant::{GRANT_FORMAT, GrantBody, TrustDocument},
 };
 
@@ -162,10 +165,9 @@ fn collection_window_refusals_change_nothing() {
         assert!(!hub.gate().is_open(), "{name}");
     }
 
-    // Clock offset: too large, and unmeasurable.
+    // Clock offset: a measured offset over the limit refuses. A probe that
+    // fails to measure does not (DEC-131); see the tolerance tests.
     rig.probe.set(Ok(31.0));
-    assert_eq!(hub.open(&good).unwrap_err(), Refusal::ClockOffset);
-    rig.probe.set(Err(Refusal::ClockOffset));
     assert_eq!(hub.open(&good).unwrap_err(), Refusal::ClockOffset);
     rig.probe.set(Ok(-30.0));
     // (the exact limit is accepted; reset below before the real open)
@@ -778,7 +780,8 @@ fn collection_window_time_offset_is_measured_at_open_and_every_five_minutes() {
     rig.clock.advance(200);
     hub.tick().unwrap();
     assert_eq!(rig.probe.calls(), 2);
-    // An offset over the limit closes the window; so does a failed measurement.
+    // An offset over the limit closes the window; one failed measurement
+    // does not (DEC-131): it is retried after NTP_RETRY_SECONDS.
     rig.probe.set(Ok(31.0));
     rig.clock.advance(301);
     assert_eq!(hub.tick().unwrap(), Phase::Closing);
@@ -789,8 +792,166 @@ fn collection_window_time_offset_is_measured_at_open_and_every_five_minutes() {
     hub.open(&rig.grant(0, 3600)).unwrap();
     rig.probe.set(Err(Refusal::ClockOffset));
     rig.clock.advance(301);
-    assert_eq!(hub.tick().unwrap(), Phase::Closing);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    assert_eq!(rig.probe.calls(), 2);
+    assert!(hub.gate().is_open());
     let _ = ManualProbe::new(0.0);
+}
+
+/// DEC-131: a missed probe is retried after about 30 s and a good reading
+/// resets the run and returns to the five-minute cadence.
+#[test]
+fn collection_window_time_probe_one_miss_then_good_reading_stays_open_and_resets() {
+    let rig = Rig::new();
+    let hub = rig.trusted_hub();
+    hub.open(&rig.grant(0, 3600)).unwrap();
+    assert_eq!(rig.probe.calls(), 1);
+    rig.probe.set(Err(Refusal::ClockOffset));
+    rig.clock.advance(301);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    assert_eq!(rig.probe.calls(), 2);
+    // The retry is not due before NTP_RETRY_SECONDS.
+    rig.clock.advance(NTP_RETRY_SECONDS - 1);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    assert_eq!(rig.probe.calls(), 2);
+    rig.clock.advance(1);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    assert_eq!(rig.probe.calls(), 3);
+    // A good reading: the run resets and the cadence is five minutes again.
+    rig.probe.set(Ok(0.0));
+    rig.clock.advance(NTP_RETRY_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    assert_eq!(rig.probe.calls(), 4);
+    rig.clock.advance(NTP_RETRY_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    assert_eq!(rig.probe.calls(), 4);
+    rig.clock.advance(NTP_RECHECK_SECONDS - NTP_RETRY_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    assert_eq!(rig.probe.calls(), 5);
+    // The earlier two misses no longer count: two new ones stay Open.
+    rig.probe.set(Err(Refusal::ClockOffset));
+    rig.clock.advance(NTP_RECHECK_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    rig.clock.advance(NTP_RETRY_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    assert_eq!(rig.probe.calls(), 7);
+    assert!(hub.gate().is_open());
+}
+
+/// DEC-131: three missed probes in a row close the window `clock_invalid`.
+#[test]
+fn collection_window_time_probe_three_misses_in_a_row_close() {
+    let rig = Rig::new();
+    let hub = rig.trusted_hub();
+    hub.open(&rig.grant(0, 3600)).unwrap();
+    rig.probe.set(Err(Refusal::ClockOffset));
+    rig.clock.advance(301);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    rig.clock.advance(NTP_RETRY_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    rig.clock.advance(NTP_RETRY_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Closing);
+    assert_eq!(rig.probe.calls(), NTP_MAX_FAILURES + 1);
+    assert_eq!(hub.status().close_reason, Some(CloseReason::ClockInvalid));
+    assert!(!hub.gate().is_open());
+}
+
+/// DEC-131: misses that have lasted NTP_FAILURE_SPAN_SECONDS close the
+/// window, however few attempts ran (here the host slept between them).
+#[test]
+fn collection_window_time_probe_misses_spanning_five_minutes_close() {
+    let rig = Rig::new();
+    let hub = rig.trusted_hub();
+    hub.open(&rig.grant(0, 3600)).unwrap();
+    rig.probe.set(Err(Refusal::ClockOffset));
+    rig.clock.advance(301);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    rig.clock.advance(NTP_FAILURE_SPAN_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Closing);
+    assert_eq!(rig.probe.calls(), 3);
+    assert_eq!(hub.status().close_reason, Some(CloseReason::ClockInvalid));
+    assert!(!hub.gate().is_open());
+}
+
+/// DEC-131: a measured offset over 30 s still closes at once, also in the
+/// middle of a run of misses.
+#[test]
+fn collection_window_time_probe_measured_31s_offset_closes_at_once() {
+    let rig = Rig::new();
+    let hub = rig.trusted_hub();
+    hub.open(&rig.grant(0, 3600)).unwrap();
+    rig.probe.set(Ok(31.0));
+    rig.clock.advance(301);
+    assert_eq!(hub.tick().unwrap(), Phase::Closing);
+    assert_eq!(hub.status().close_reason, Some(CloseReason::ClockInvalid));
+
+    let rig = Rig::new();
+    let hub = rig.trusted_hub();
+    hub.open(&rig.grant(0, 3600)).unwrap();
+    rig.probe.set(Err(Refusal::ClockOffset));
+    rig.clock.advance(301);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    rig.probe.set(Ok(-31.0));
+    rig.clock.advance(NTP_RETRY_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Closing);
+    assert_eq!(hub.status().close_reason, Some(CloseReason::ClockInvalid));
+    assert!(!hub.gate().is_open());
+}
+
+/// DEC-131: at open and while Pending a probe that fails to measure is
+/// tolerated the same way; a measured bad offset at open still refuses.
+#[test]
+fn collection_window_time_probe_miss_is_tolerated_at_open_and_while_pending() {
+    let rig = Rig::new();
+    let hub = rig.trusted_hub();
+    rig.probe.set(Ok(31.0));
+    assert_eq!(hub.open(&rig.grant(0, 3600)).unwrap_err(), Refusal::ClockOffset);
+    rig.probe.set(Err(Refusal::ClockOffset));
+    hub.open(&rig.grant(0, 3600)).unwrap();
+    assert_eq!(hub.status().phase, Phase::Open);
+    rig.clock.advance(NTP_RETRY_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    rig.clock.advance(NTP_RETRY_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Closing);
+    assert_eq!(hub.status().close_reason, Some(CloseReason::ClockInvalid));
+
+    let rig = Rig::new();
+    let hub = rig.trusted_hub();
+    rig.probe.set(Err(Refusal::ClockOffset));
+    hub.open(&rig.grant(600, 3600)).unwrap();
+    assert_eq!(hub.status().phase, Phase::Pending);
+    rig.clock.advance(NTP_RETRY_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Pending);
+    rig.probe.set(Ok(0.2));
+    rig.clock.advance(NTP_RETRY_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Pending);
+    rig.probe.set(Err(Refusal::ClockOffset));
+    rig.clock.advance(NTP_RECHECK_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Pending);
+    rig.clock.advance(NTP_RETRY_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Pending);
+    rig.clock.advance(NTP_RETRY_SECONDS);
+    assert_eq!(hub.tick().unwrap(), Phase::Closing);
+    assert_eq!(hub.status().close_reason, Some(CloseReason::ClockInvalid));
+}
+
+/// DEC-131: the tolerance never extends a window past its end.
+#[test]
+fn collection_window_time_probe_tolerance_never_extends_the_window() {
+    let rig = Rig::new();
+    let hub = rig.trusted_hub();
+    hub.open(&rig.grant(0, 3600)).unwrap();
+    rig.clock.advance(3000);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    rig.probe.set(Err(Refusal::ClockOffset));
+    rig.clock.advance(300);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    // A run of misses is in progress at the end: the window ends on time,
+    // and as expired, not by the probe.
+    rig.clock.advance(301);
+    assert_eq!(hub.tick().unwrap(), Phase::Closing);
+    assert_eq!(hub.status().close_reason, Some(CloseReason::Expired));
+    assert!(!hub.gate().is_open());
 }
 
 #[test]
