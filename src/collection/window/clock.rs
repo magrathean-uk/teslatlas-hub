@@ -418,16 +418,20 @@ impl OffsetProbe for SntpProbe {
             .set_read_timeout(Some(self.timeout))
             .and_then(|()| socket.set_write_timeout(Some(self.timeout)))
             .map_err(|_| ProbeFailure::Transport)?;
-        socket.connect(address).map_err(|_| ProbeFailure::Transport)?;
+        socket
+            .connect(address)
+            .map_err(|_| ProbeFailure::Transport)?;
         let sent = Self::now();
         socket
             .send(&sntp_request(sent))
             .map_err(|_| ProbeFailure::Transport)?;
         let mut reply = [0u8; 128];
-        let length = socket.recv(&mut reply).map_err(|error| match error.kind() {
-            ErrorKind::WouldBlock | ErrorKind::TimedOut => ProbeFailure::Timeout,
-            _ => ProbeFailure::Transport,
-        })?;
+        let length = socket
+            .recv(&mut reply)
+            .map_err(|error| match error.kind() {
+                ErrorKind::WouldBlock | ErrorKind::TimedOut => ProbeFailure::Timeout,
+                _ => ProbeFailure::Transport,
+            })?;
         match sntp_offset(sent, &reply[..length], Self::now()) {
             Ok(offset) if offset.is_finite() => Ok(offset),
             _ => Err(ProbeFailure::BadReply),
