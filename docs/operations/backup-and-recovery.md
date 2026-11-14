@@ -200,10 +200,10 @@ restore leaves no destination behind: run it again.
 
 The folder that will hold the restored directory must belong to the Hub's user
 and must not be writable by other accounts. The restore stages its work in a
-locked `.teslatlas-encrypted-restore-<id>.staging` folder there and works
-through folders it holds open, so renaming that folder or a parent during the
-restore cannot redirect a file; if the target's folder moves, nothing is
-published. Before writing, the restore checks that the folder's volume can hold
+locked `.teslatlas-encrypted-restore-<id>.staging` folder there and writes
+every file through folders it holds open, so renaming that folder or a parent
+during the restore cannot redirect a file; if either moves, the restore stops,
+removes what it wrote and publishes nothing. Before writing, the restore checks that the folder's volume can hold
 every file with its allocation and metadata overhead, and before each file that
 the rest still fits with a reserve to spare. Each restore first removes what an
 interrupted restore left there (also `.teslatlas-data-recovery-<id>.staging`
