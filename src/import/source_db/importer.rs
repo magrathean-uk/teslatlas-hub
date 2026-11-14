@@ -827,6 +827,7 @@ struct CapturedSourceDbImport {
     updates_v2_2: DirectUpdatesSourceV2_2,
     atomic_schema_22: Option<ProductionUpdatesPublication>,
     physical_stage: Option<crate::source_db_stage::OwnedSourceDbStage>,
+    physical_seam: Option<crate::import::source_db::seam::SeamPackPlan>,
     publication_gate: PublicationGate,
 }
 
@@ -835,76 +836,6 @@ pub struct SourceDbSelectedImportReport {
     pub import: SourceDbImportReport,
     pub updates_schema_22: ProductionUpdatesPublication,
     pub physical_v3: Option<crate::physical_publication::PhysicalV3Publication>,
-}
-
-fn finish_selected_schema_22_publication(
-    store: &HubStore,
-    cursor_key: &CursorKey,
-    captured: CapturedSourceDbImport,
-) -> Result<SourceDbSelectedImportReport, SourceDbImportError> {
-    let CapturedSourceDbImport {
-        report,
-        binding,
-        updates_v2_2,
-        atomic_schema_22,
-        physical_stage,
-        publication_gate,
-    } = captured;
-    let vehicle_id = report.vehicle_id;
-    let physical_stage = physical_stage_for_publication(store, vehicle_id, physical_stage)?;
-    let legacy_snapshot_id = report.snapshot_id;
-    // Observe the schema-2.2 head only after this command's legacy transaction
-    // has committed. The same retained gate has covered source capture and the
-    // legacy commit, so no other publisher can interleave before this check.
-    let updates_schema_22 = if let Some(publication) = atomic_schema_22 {
-        publication
-    } else {
-        let expected_schema_22_head =
-            production_updates_head(store, vehicle_id).map_err(|source| {
-                SourceDbImportError::Schema22PostCommit {
-                    vehicle_id,
-                    legacy_snapshot_id,
-                    source,
-                }
-            })?;
-
-        publish_production_updates_schema_22_with_gate(
-            store,
-            cursor_key,
-            &binding,
-            updates_v2_2,
-            &publication_gate,
-            &expected_schema_22_head,
-            Some((legacy_snapshot_id, report.sequence)),
-        )
-        .map_err(|source| SourceDbImportError::Schema22PostCommit {
-            vehicle_id,
-            legacy_snapshot_id,
-            source,
-        })?
-    };
-    let physical_v3 = physical_stage
-        .map(|stage| {
-            let now_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .ok()
-                .and_then(|value| i64::try_from(value.as_millis()).ok())
-                .ok_or(crate::physical_publication::SourceDbPhysicalPublicationError::Clock)?;
-            crate::physical_publication::publish_sealed_physical_v3_stage_with_gate_at(
-                store,
-                cursor_key,
-                binding,
-                stage.take(),
-                &publication_gate,
-                now_ms,
-            )
-        })
-        .transpose()?;
-    Ok(SourceDbSelectedImportReport {
-        import: report,
-        updates_schema_22,
-        physical_v3,
-    })
 }
 
 async fn import_from_postgres_with_updates_capture(
@@ -1122,8 +1053,9 @@ async fn import_from_postgres_with_updates_capture_policy(
     // publication needs no ownership transfer or later source observation.
     store.stage_import_generation_session(run_id, &cutover.session)?;
     direct.fingerprint = direct_snapshot_fingerprint(&direct.fingerprint, &direct.geofences)?;
+    let mut physical_seam = None;
     if successor {
-        direct.fingerprint = seam_folded_fingerprint(
+        (direct.fingerprint, physical_seam) = seam_folded_fingerprint_and_plan(
             store,
             &publication_gate,
             vehicle.vehicle_id,
@@ -1175,6 +1107,7 @@ async fn import_from_postgres_with_updates_capture_policy(
             updates_v2_2,
             atomic_schema_22: None,
             physical_stage,
+            physical_seam,
             publication_gate,
         });
     }
@@ -1210,6 +1143,7 @@ async fn import_from_postgres_with_updates_capture_policy(
                 updates_v2_2,
                 atomic_schema_22: None,
                 physical_stage,
+                physical_seam,
                 publication_gate,
             });
         }
@@ -1232,6 +1166,7 @@ async fn import_from_postgres_with_updates_capture_policy(
                 updates_v2_2,
                 atomic_schema_22: None,
                 physical_stage,
+                physical_seam,
                 publication_gate,
             });
         }
@@ -1302,6 +1237,7 @@ async fn import_from_postgres_with_updates_capture_policy(
                 &mut planned,
             )?;
             run_guard.disarm();
+            let physical_seam = Some(planned.seam.packs.clone());
             return Ok(CapturedSourceDbImport {
                 report: SourceDbImportReport {
                     source_id: registered_source.source_id,
@@ -1318,6 +1254,7 @@ async fn import_from_postgres_with_updates_capture_policy(
                 updates_v2_2,
                 atomic_schema_22: None,
                 physical_stage,
+                physical_seam,
                 publication_gate,
             });
         }
@@ -1443,6 +1380,7 @@ async fn import_from_postgres_with_updates_capture_policy(
         updates_v2_2,
         atomic_schema_22: prepared_schema_22.map(|prepared| prepared.publication),
         physical_stage,
+        physical_seam,
         publication_gate,
     })
 }

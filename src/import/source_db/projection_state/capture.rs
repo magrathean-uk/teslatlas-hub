@@ -228,9 +228,12 @@ impl SourceDbProjectionStateCapture {
     /// is recorded (M03-T21).
     pub(crate) fn note_seam_source_sessions(
         &mut self,
-        _drives: &[crate::import::source_db::seam::SessionRow],
-        _charges: &[crate::import::source_db::seam::SessionRow],
+        drives: &[crate::import::source_db::seam::SessionRow],
+        charges: &[crate::import::source_db::seam::SessionRow],
     ) {
+        if let Some(lens) = self.seam_lens.as_mut() {
+            lens.close_over_source(drives, charges);
+        }
     }
 
     /// The coverage the seam's lens was read with, if it has one.

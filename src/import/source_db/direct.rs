@@ -1180,7 +1180,27 @@ async fn write_from_session(
             .with_synchronous_pack_builds(),
         DirectCaptureMode::LegacyBridgeCapture => sink.capture_only(),
     };
-    if let Some(projection_state) = projection_state {
+    if let Some(mut projection_state) = projection_state {
+        // Every source drive and charge is held before any child streams, so
+        // the seam's lens can take all of them now (M03-T21).
+        let sessions = |rows: Vec<(i64, i64, Option<i64>)>| {
+            rows.into_iter()
+                .map(|(id, start_ms, end_ms)| crate::import::source_db::seam::SessionRow {
+                    id,
+                    start_ms,
+                    end_ms,
+                })
+                .collect::<Vec<_>>()
+        };
+        projection_state.note_seam_source_sessions(
+            &sessions(drives.iter().map(|row| (row.id, row.start_date_ms, row.end_date_ms)).collect()),
+            &sessions(
+                processes
+                    .iter()
+                    .map(|row| (row.id, row.start_date_ms, row.end_date_ms))
+                    .collect(),
+            ),
+        );
         sink = sink.with_projection_state_capture(projection_state);
     }
     let mut report = ProjectionReport {

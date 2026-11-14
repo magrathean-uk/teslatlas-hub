@@ -646,29 +646,36 @@ fn physical_stage(path: std::path::PathBuf) -> crate::source_db_stage::OwnedSour
     crate::source_db_stage::OwnedSourceDbStage::new(stage)
 }
 
-/// Review finding 1, the importer's side: the physical stage the 1.4 route
-/// would publish is withheld, and discarded, once the Hub has collected the
-/// vehicle; before that it is published as it is.
+/// Review finding 1, the importer's side: before the Hub collects the
+/// vehicle its physical stage is published as captured; once it has, a stage
+/// that reaches publication without a seam plan cannot be planned, so it is
+/// withheld and discarded (M03-T21 keeps this refusal for exactly that case).
 #[test]
 fn seam_repair_packs_physical_stage_is_withheld_for_a_seam_vehicle() {
     let fixture = fixture();
-    let vehicle_id = fixture.binding.vehicle_id;
     let root = crate::private_tempdir().expect("stage root");
-    let kept = physical_stage_for_publication(
-        &fixture.store,
-        vehicle_id,
-        Some(physical_stage(root.path().join("before"))),
-    )
-    .expect("route");
-    assert!(kept.is_some(), "before the Hub collects, the stage is published");
-    drop(kept);
+    let route = |stage| {
+        publish_physical_route(
+            &fixture.store,
+            &fixture.cursor_key,
+            fixture.binding.clone(),
+            Some(stage),
+            &fixture.gate,
+            None,
+        )
+        .expect("route")
+    };
+    assert!(
+        route(physical_stage(root.path().join("before"))).is_some(),
+        "before the Hub collects, the stage is published"
+    );
 
     collect(&fixture);
     let path = root.path().join("after");
-    let withheld =
-        physical_stage_for_publication(&fixture.store, vehicle_id, Some(physical_stage(path.clone())))
-            .expect("route");
-    assert!(withheld.is_none(), "after the Hub collects, the stage is withheld");
+    assert!(
+        route(physical_stage(path.clone())).is_none(),
+        "after the Hub collects, a stage without a plan is withheld"
+    );
     assert!(
         stage_files(&path).is_empty(),
         "the withheld stage is discarded: {:?}",

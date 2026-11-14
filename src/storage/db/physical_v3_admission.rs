@@ -686,18 +686,83 @@ impl HubStore {
     /// bounded body before serving bytes.
     ///
     /// This is the served head of the negotiated 1.4 route (and of 1.3 on a
-    /// 2.2 base). It is a raw copy of the source with no Hub row and no seam
-    /// decision, so it is not served while the vehicle has any of the import
-    /// seam (M03-T19): clients then find no physical base and use the planned
-    /// lineage.
+    /// 2.2 base). Once the vehicle has any of the import seam, only a head
+    /// the importer planned with the seam is served (M03-T21); a raw copy of
+    /// the source is not, and clients then find no physical base.
     pub(crate) fn pending_physical_v3_control_admission_for_vehicle(
         &self,
         vehicle_id: Uuid,
     ) -> Result<Option<PendingPhysicalV3Admission>, StoreError> {
-        if self.import_seam_present(vehicle_id)? {
+        let Some(admission) = self.unserved_physical_v3_control_admission_for_vehicle(vehicle_id)?
+        else {
+            return Ok(None);
+        };
+        if !self.physical_v3_admission_served(vehicle_id, admission.snapshot_id)? {
             return Ok(None);
         }
-        self.unserved_physical_v3_control_admission_for_vehicle(vehicle_id)
+        Ok(Some(admission))
+    }
+
+    /// Whether a physical head may be served (M03-T21, review REV-CX-M03-T19
+    /// finding 1): always for a vehicle without the import seam; for a
+    /// vehicle with any of it only when the importer planned the head with
+    /// the seam. The control head, the snapshot packs and the changed sets
+    /// (by their target) all apply this one check.
+    fn physical_v3_admission_served(
+        &self,
+        vehicle_id: Uuid,
+        snapshot_id: Uuid,
+    ) -> Result<bool, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        if !import_seam_present_in_connection(&connection, &vehicle_id.to_string())? {
+            return Ok(true);
+        }
+        Ok(physical_v3_seam_planned_in_connection(&connection, vehicle_id)?
+            .contains(&snapshot_id.to_string()))
+    }
+
+    /// Records `snapshot_id` as a physical head of the vehicle that the
+    /// importer planned with the import seam (M03-T21), before it publishes
+    /// it, so a crash leaves at most an unused id. The list keeps only the
+    /// heads the store still holds, and this one.
+    pub(crate) fn record_physical_v3_seam_planned(
+        &self,
+        _publication_gate: &PublicationGate,
+        vehicle_id: Uuid,
+        snapshot_id: Uuid,
+    ) -> Result<(), StoreError> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let new = snapshot_id.to_string();
+        let mut planned = physical_v3_seam_planned_in_connection(&transaction, vehicle_id)?;
+        planned.insert(new.clone());
+        let mut kept = std::collections::BTreeSet::new();
+        for id in planned {
+            let held: bool = transaction
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM pending_physical_v3_admissions
+                                    WHERE vehicle_id = ?1 AND snapshot_id = ?2)
+                         OR EXISTS(SELECT 1 FROM retained_physical_v3_admissions
+                                    WHERE vehicle_id = ?1 AND snapshot_id = ?2)",
+                    params![vehicle_id.to_string(), id],
+                    |row| row.get(0),
+                )
+                .map_err(StoreError::Query)?;
+            if held || id == new {
+                kept.insert(id);
+            }
+        }
+        let value = serde_json::to_string(&kept).map_err(StoreError::SerializeLifecycleRow)?;
+        transaction
+            .execute(
+                "INSERT INTO hub_metadata(key, value) VALUES(?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![physical_v3_seam_planned_key(vehicle_id), value],
+            )
+            .map_err(StoreError::Query)?;
+        transaction.commit().map_err(StoreError::LifecycleWrite)
     }
 
     /// The current physical head as its publisher checks it, served or not.
@@ -895,7 +960,9 @@ impl HubStore {
         let admission = self
             .pending_physical_v3_admission_for_vehicle_with_file_digests(vehicle_id, false, true)?
             .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
-        if !physical_v3_admission_is_public(&admission) {
+        if !physical_v3_admission_is_public(&admission)
+            || !self.physical_v3_admission_served(vehicle_id, admission.snapshot_id)?
+        {
             return Ok(None);
         }
         let pack = admission
@@ -1204,10 +1271,11 @@ impl HubStore {
         target_receipt_id: &str,
         now_ms: i64,
     ) -> Result<Option<(String, String, Vec<u8>)>, StoreError> {
-        self.open_read_only_connection()?
+        let row: Option<(String, String, Vec<u8>, String)> = self
+            .open_read_only_connection()?
             .query_row(
                 "SELECT delta.base_manifest_signed_sha256,
-                        delta.target_manifest_signed_sha256,delta.receipt_json
+                        delta.target_manifest_signed_sha256,delta.receipt_json,target.snapshot_id
                    FROM physical_v3_delta_transitions AS delta
                    JOIN pending_physical_v3_admissions AS target
                      ON target.receipt_id=delta.target_receipt_id
@@ -1219,10 +1287,20 @@ impl HubStore {
                     AND base.vehicle_id=?1 AND base.expires_at_ms>?4
                     AND base.head_sequence+1=target.head_sequence",
                 params![vehicle_id.to_string(),base_receipt_id,target_receipt_id,now_ms],
-                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?)),
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)),
             )
             .optional()
-            .map_err(StoreError::Query)
+            .map_err(StoreError::Query)?;
+        let Some((base_sha, target_sha, receipt, target_snapshot)) = row else {
+            return Ok(None);
+        };
+        let target_snapshot = target_snapshot
+            .parse::<Uuid>()
+            .map_err(|_| StoreError::PhysicalV3AdmissionConflict)?;
+        if !self.physical_v3_admission_served(vehicle_id, target_snapshot)? {
+            return Ok(None);
+        }
+        Ok(Some((base_sha, target_sha, receipt)))
     }
 
     /// The delta pack a digest names, served only to a scope that can see the
@@ -1234,10 +1312,10 @@ impl HubStore {
         now_ms: i64,
         scope: VehicleScope,
     ) -> Result<Option<StoredPack>, StoreError> {
-        let row: Option<(String, i64)> = self
+        let row: Option<(String, i64, String, String)> = self
             .open_read_only_connection()?
             .query_row(
-                "SELECT packs.relative_path,packs.compressed_bytes
+                "SELECT packs.relative_path,packs.compressed_bytes,delta.vehicle_id,target.snapshot_id
                    FROM physical_v3_delta_packs AS packs
                    JOIN physical_v3_delta_transitions AS delta
                      ON delta.target_receipt_id=packs.target_receipt_id
@@ -1252,13 +1330,21 @@ impl HubStore {
                                                   AND grants.vehicle_id=delta.vehicle_id))
                   LIMIT 1",
                 params![digest.to_string(), now_ms, scope.grant_device_param()],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .optional()
             .map_err(StoreError::Query)?;
-        let Some((relative_path, bytes)) = row else {
+        let Some((relative_path, bytes, vehicle_id, target_snapshot)) = row else {
             return Ok(None);
         };
+        let (Ok(vehicle_id), Ok(target_snapshot)) =
+            (vehicle_id.parse::<Uuid>(), target_snapshot.parse::<Uuid>())
+        else {
+            return Err(StoreError::PhysicalV3AdmissionConflict);
+        };
+        if !self.physical_v3_admission_served(vehicle_id, target_snapshot)? {
+            return Ok(None);
+        }
         if relative_path != format!("/v1/packs/sha256/{digest}.sqlite.zst")
             || !(1..=16_777_216).contains(&bytes)
         {
@@ -1269,6 +1355,34 @@ impl HubStore {
             compressed_bytes: bytes as u64,
             path: self.packs_dir.join("sha256").join(format!("{digest}.sqlite.zst")),
         }))
+    }
+}
+
+/// The `hub_metadata` key of a vehicle's physical heads planned with the
+/// import seam (M03-T21).
+fn physical_v3_seam_planned_key(vehicle_id: Uuid) -> String {
+    format!("physical_v3_seam_planned:{vehicle_id}")
+}
+
+/// The snapshot ids of the vehicle's physical heads planned with the import
+/// seam; none recorded is an empty set.
+fn physical_v3_seam_planned_in_connection(
+    connection: &Connection,
+    vehicle_id: Uuid,
+) -> Result<std::collections::BTreeSet<String>, StoreError> {
+    let value: Option<String> = connection
+        .query_row(
+            "SELECT value FROM hub_metadata WHERE key = ?1",
+            params![physical_v3_seam_planned_key(vehicle_id)],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(StoreError::Query)?;
+    match value {
+        Some(value) => {
+            serde_json::from_str(&value).map_err(|_| StoreError::PhysicalV3AdmissionConflict)
+        }
+        None => Ok(std::collections::BTreeSet::new()),
     }
 }
 

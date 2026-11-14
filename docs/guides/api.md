@@ -89,15 +89,29 @@ full-head rebase; an unknown or expired base is rejected. Full schema-2.2 packs
 remain the bootstrap and capacity fallback. The Protocol 1.4 profile defines
 the exact wire fields, signatures, and pack limits.
 
-The physical head is a copy of the source alone: it holds no row the Hub
-collected and none of the import seam's decisions. Once the Hub has collected a
-vehicle (it has a collection window, a Hub-collected row or a recorded seam
-decision), Hub no longer serves that vehicle's physical route and the importer
-publishes no physical head for it. A 1.4 bootstrap then answers `406` as for a
-vehicle without a physical base, a 1.4 `changes-since` answers
-`schema_range_unsupported`, and prepared-map artifacts are withheld. A 1.3
-client is served the schema-2.1 lineage, which carries the seam and the Hub's
-rows.
+For a vehicle the Hub has also collected (it has a collection window, a
+Hub-collected row or a recorded seam decision), each import plans the physical
+head with the import seam before publishing it: the source rows carry the seam's
+decisions (a session that lost is left out, a kept session takes its widened
+bounds, a child inside the Hub's coverage is left out and any other follows the
+session that stands for its own) and the Hub's own drives, charges, positions
+and charge samples are added in the same physical form. A fresh 1.4 client
+therefore bootstraps exactly the sessions and children the Hub holds, and an
+existing client receives the seam's changes as one signed changed set (or a
+full-head rebase); an unchanged import publishes nothing. Hub rows carry no
+address or geofence reference, a Hub charge stands at the Hub position nearest
+its start, and a Hub charge sample without charger power, energy added or ideal
+range has no physical form and is left out.
+
+Only a head planned this way is served for such a vehicle: a head published
+before the Hub collected it, its packs and its changed sets are no longer
+served, also to a client holding its manifest or receipt. Until the next import
+plans the head, or when a head cannot be planned (a Hub charge with no position
+anywhere, or a value outside the physical range), a 1.4 bootstrap answers `406`
+as for a vehicle without a physical base, a 1.4 `changes-since` answers
+`schema_range_unsupported`, packs answer `404`, and prepared-map artifacts are
+withheld; the importer logs why the head was withheld. A 1.3 client is served
+the schema-2.1 lineage, which carries the seam and the Hub's rows.
 
 An eligible completed UTC month may have a prepared-map artifact derived from
 the same signed head. Its deterministic ID includes the source receipt and

@@ -44,6 +44,18 @@ pub(crate) struct ImportSeamPublication<'a> {
     pub(crate) staged: Option<&'a [StagedSeamSync]>,
 }
 
+/// The stored rows a vehicle's physical 1.4 target takes from the Hub's
+/// side once the seam is applied (M03-T21): every stored drive and charge
+/// (the importer keeps those the plan does not pack from the source) and
+/// every Hub-range position and charge sample.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(crate) struct ImportSeamStoredRows {
+    pub(crate) drives: Vec<ProjectionDrive>,
+    pub(crate) charges: Vec<crate::hub_pack::ProjectionCharge>,
+    pub(crate) positions: Vec<crate::hub_pack::ProjectionPosition>,
+    pub(crate) charge_samples: Vec<crate::hub_pack::ProjectionChargeSample>,
+}
+
 /// The most sync mutations one staged live delta publishes, as one live
 /// publication turn claims.
 const STAGED_SEAM_SYNC_LIMIT: usize = 10_000;
@@ -78,6 +90,59 @@ impl HubStore {
             Ok(false)
         })?;
         Ok(staged)
+    }
+
+    /// The rows of [`ImportSeamStoredRows`] for one vehicle, as the store
+    /// holds them now, in id order.
+    pub(crate) fn import_seam_stored_rows(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<ImportSeamStoredRows, StoreError> {
+        use crate::db::hub_ids::{HUB_ID_BASE, HUB_ID_MAX};
+        fn rows<T: DeserializeOwned>(
+            connection: &Connection,
+            sql: &str,
+            vehicle: &str,
+        ) -> Result<Vec<T>, StoreError> {
+            let mut statement = connection.prepare(sql).map_err(StoreError::Query)?;
+            let payloads = statement
+                .query_map(params![vehicle, HUB_ID_BASE, HUB_ID_MAX], |row| row.get::<_, String>(0))
+                .map_err(StoreError::Query)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(StoreError::Query)?;
+            payloads
+                .iter()
+                .map(|json| serde_json::from_str(json).map_err(StoreError::DeserializeLifecycleRow))
+                .collect()
+        }
+        let connection = self.open_read_only_connection()?;
+        let vehicle = vehicle_id.to_string();
+        Ok(ImportSeamStoredRows {
+            drives: rows(
+                &connection,
+                "SELECT drive_json FROM materialised_drives
+                  WHERE vehicle_id = ?1 AND ?2 <= ?3 ORDER BY drive_id",
+                &vehicle,
+            )?,
+            charges: rows(
+                &connection,
+                "SELECT charge_json FROM materialised_charges
+                  WHERE vehicle_id = ?1 AND ?2 <= ?3 ORDER BY charge_id",
+                &vehicle,
+            )?,
+            positions: rows(
+                &connection,
+                "SELECT position_json FROM materialised_positions
+                  WHERE vehicle_id = ?1 AND position_id BETWEEN ?2 AND ?3 ORDER BY position_id",
+                &vehicle,
+            )?,
+            charge_samples: rows(
+                &connection,
+                "SELECT sample_json FROM materialised_charge_samples
+                  WHERE vehicle_id = ?1 AND sample_id BETWEEN ?2 AND ?3 ORDER BY sample_id",
+                &vehicle,
+            )?,
+        })
     }
 
     /// Whether the vehicle has any of the seam: coverage, a window, a

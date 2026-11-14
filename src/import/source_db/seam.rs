@@ -1028,6 +1028,22 @@ impl SeamCaptureLens {
         sessions.iter().any(near) || self.coverage.intervals().iter().any(near)
     }
 
+    /// Takes every source drive and charge of the snapshot before any child
+    /// is recorded (M03-T21, review REV-CX-M03-T19 finding 2), so a source
+    /// session that can join a group with a Hub session only through other
+    /// source sessions is a candidate too. Source sessions, the Hub's
+    /// sessions and the covered intervals are swept in order of start into
+    /// chains, each next start within the slack of the chain's furthest end:
+    /// the components of the lens's nearness, which hold every overlap group
+    /// the plan can form (its groups need more than the slack). Every source
+    /// session in a chain with a Hub session, a covered interval or a
+    /// recorded loser becomes a candidate.
+    pub fn close_over_source(&mut self, drives: &[SessionRow], charges: &[SessionRow]) {
+        let coverage = self.coverage.intervals().to_vec();
+        close_chains(&self.hub_drives, &coverage, drives, &mut self.drives);
+        close_chains(&self.hub_charges, &coverage, charges, &mut self.charges);
+    }
+
     /// Notes one recorded source drive.
     pub fn note_drive(&mut self, id: i64, start_ms: i64, end_ms: i64) {
         if self.near(&self.hub_drives, start_ms, Some(end_ms)) {
@@ -1052,6 +1068,51 @@ impl SeamCaptureLens {
     /// candidate.
     pub fn charge_sample(&self, at_ms: i64, charge: i64) -> bool {
         self.coverage.contains(at_ms) || self.charges.contains(&charge)
+    }
+}
+
+/// The chains of [`SeamCaptureLens::close_over_source`] for one session
+/// entity: `candidates` gains every source session in a chain that holds a
+/// Hub session, a covered interval or a candidate already.
+fn close_chains(
+    hub: &[(i64, i64)],
+    coverage: &[(i64, i64)],
+    source: &[SessionRow],
+    candidates: &mut BTreeSet<i64>,
+) {
+    let mut entries: Vec<(i64, i64, Option<i64>)> = hub
+        .iter()
+        .chain(coverage)
+        .map(|(start, end)| (*start, *end, None))
+        .chain(source.iter().map(|row| {
+            let (start, end) = row.extent();
+            (start, end, Some(row.id))
+        }))
+        .collect();
+    entries.sort_unstable();
+    let mut chain: Vec<i64> = Vec::new();
+    let mut seeded = false;
+    let mut reach = i64::MIN;
+    for (start, end, id) in entries {
+        if reach != i64::MIN && start > reach.saturating_add(SEAM_SLACK_MS) {
+            if seeded {
+                candidates.extend(chain.drain(..));
+            }
+            chain.clear();
+            seeded = false;
+            reach = i64::MIN;
+        }
+        reach = reach.max(end);
+        match id {
+            None => seeded = true,
+            Some(id) => {
+                seeded |= candidates.contains(&id);
+                chain.push(id);
+            }
+        }
+    }
+    if seeded {
+        candidates.extend(chain);
     }
 }
 

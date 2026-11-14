@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // The pack side of the seam repair (M03-T19, review REV-CX-M03-T16): the
-// published forms a successor's state holds, the negotiated 1.4 route while
-// the seam is unplanned there, and the source fingerprint of a vehicle with
-// the seam.
+// published forms a successor's state holds and the source fingerprint of a
+// vehicle with the seam.
 
 /// What the packs publish of one source position, charge or charge sample
 /// under `packs` (findings 2 and 3): left out, as recorded, or in the form
@@ -122,33 +121,12 @@ fn apply_seam_forms_to_capture(
     Ok(())
 }
 
-/// The physical stage the negotiated 1.4 route would publish (finding 1). It
-/// is a raw copy of the source with no Hub row and no seam decision, so it is
-/// withheld, and discarded, while the vehicle has any of the seam; the store
-/// does not serve that route for such a vehicle either.
-fn physical_stage_for_publication(
-    store: &HubStore,
-    vehicle_id: Uuid,
-    stage: Option<crate::source_db_stage::OwnedSourceDbStage>,
-) -> Result<Option<crate::source_db_stage::OwnedSourceDbStage>, SourceDbImportError> {
-    match stage {
-        Some(stage) if store.import_seam_present(vehicle_id)? => {
-            drop(stage);
-            tracing::info!(
-                %vehicle_id,
-                "physical 1.4 publication withheld: the Hub has collected this vehicle"
-            );
-            Ok(None)
-        }
-        other => Ok(other),
-    }
-}
-
 /// The source fingerprint a successor compares and records (finding 2): for
 /// a vehicle with seam history it also covers the seam's pack plan, so an
 /// unchanged source still publishes when the plan changed (a new window) and
 /// an unchanged source and plan publish nothing. A plan that cannot be worked
 /// out leaves the source fingerprint as it is; the publication refuses later.
+#[cfg(test)]
 fn seam_folded_fingerprint(
     store: &HubStore,
     publication_gate: &PublicationGate,
@@ -158,6 +136,30 @@ fn seam_folded_fingerprint(
     charges: &[ProjectionCharge],
     fingerprint: Sha256Digest,
 ) -> Sha256Digest {
+    seam_folded_fingerprint_and_plan(
+        store,
+        publication_gate,
+        vehicle_id,
+        selected_car_id,
+        drives,
+        charges,
+        fingerprint,
+    )
+    .0
+}
+
+/// [`seam_folded_fingerprint`], with the pack plan it folded in: the plan an
+/// unchanged source's physical 1.4 head is planned with (M03-T21), since the
+/// same digest means the plan the last publication proved.
+fn seam_folded_fingerprint_and_plan(
+    store: &HubStore,
+    publication_gate: &PublicationGate,
+    vehicle_id: Uuid,
+    selected_car_id: i64,
+    drives: &[ProjectionDrive],
+    charges: &[ProjectionCharge],
+    fingerprint: Sha256Digest,
+) -> (Sha256Digest, Option<crate::import::source_db::seam::SeamPackPlan>) {
     match store.dry_run_import_seam_ahead_of_packs(
         publication_gate,
         vehicle_id,
@@ -170,9 +172,12 @@ fn seam_folded_fingerprint(
             hash.update(b"teslatlas-hub source fingerprint with the import seam v1\n");
             hash.update(fingerprint.as_bytes());
             hash.update(decided.ahead.packs.digest());
-            Sha256Digest::from_bytes(hash.finalize().into())
+            (
+                Sha256Digest::from_bytes(hash.finalize().into()),
+                Some(decided.ahead.packs),
+            )
         }
-        _ => fingerprint,
+        _ => (fingerprint, None),
     }
 }
 
