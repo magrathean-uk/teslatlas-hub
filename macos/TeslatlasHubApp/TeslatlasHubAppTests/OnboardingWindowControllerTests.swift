@@ -1381,20 +1381,26 @@ final class OnboardingWindowControllerTests: XCTestCase {
         }, "a later import must start with its own progress phase")
     }
 
-    func testFreshMacConnectTeslaStartsHubThenShowsTheOpenWindowLine() throws {
-        // M02-T21 (DEC-112, DEC-115): with the Hub LaunchAgent confirmed absent, Connect Tesla
-        // writes the default configuration and starts Hub, which the real start check admits
-        // idle (doubles only: no launchd, no network), shows the setup page meanwhile, and then
-        // the existing open-window line. No Tesla page opens.
+    private struct FreshMacRig {
+        let onboarding: OnboardingWindowController
+        let controller: HubController
+        let runner: OwnerRunner
+        let service: OwnerService
+        let agent: FirstStartLaunchAgent
+        let home: URL
+    }
+
+    /// A Mac with the Hub LaunchAgent confirmed absent and a service whose `window status`
+    /// reports a closed collection window; Start installs the Hub through the real start check
+    /// (doubles only: no launchd, no network) and is held until the test releases it.
+    private func freshMacRig(policy: HubOnboardingDismissalPolicy = .accountManagement,
+                             onComplete: @escaping (HubOnboardingCompletion) -> Void = { _ in }) throws -> FreshMacRig {
         let home = HubTestScratch.directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: home) }
         let runner = OwnerRunner()
         runner.results["window"] = .success(OwnerRunner.windowClosed)
         let service = OwnerService()
         service.hold("start")
-        // The real Start writes the LaunchAgent file, then runs the binary's start check, which
-        // admits a never-configured Hub idle and refuses anything else.
         let agent = FirstStartLaunchAgent()
         let configPath = home.appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml")
         service.onCall = { [unowned service] call in
@@ -1410,7 +1416,21 @@ final class OnboardingWindowControllerTests: XCTestCase {
                                        migrationStartupReadinessTimeout: 5,
                                        migrationStartupReadinessMaxAttempts: 3)
         let onboarding = OnboardingWindowController(controller: controller, initialRoute: .legacy,
-                                                     onComplete: { _ in })
+                                                     dismissalPolicy: policy, onComplete: onComplete)
+        return FreshMacRig(onboarding: onboarding, controller: controller, runner: runner,
+                           service: service, agent: agent, home: home)
+    }
+
+    func testFreshMacConnectTeslaStartsHubThenShowsTheIdleNotice() throws {
+        // M02-T21 (DEC-112, DEC-115) and M02-T22 (DEC-125): with the Hub LaunchAgent confirmed
+        // absent, Connect Tesla writes the default configuration and starts Hub, shows the setup
+        // page meanwhile, and then says plainly that Hub runs and waits for a collection window:
+        // no error line, no sign-in action, Done as the primary. No Tesla page opens.
+        var completions: [HubOnboardingCompletion] = []
+        let rig = try freshMacRig(onComplete: { completions.append($0) })
+        defer { try? FileManager.default.removeItem(at: rig.home) }
+        let (onboarding, runner, service, agent, controller) =
+            (rig.onboarding, rig.runner, rig.service, rig.agent, rig.controller)
         defer { onboarding.close() }
         let connect = try XCTUnwrap(buttons(in: onboarding.window?.contentView).first { $0.title == "Connect Tesla" })
 
@@ -1420,21 +1440,128 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(labels(in: onboarding.window?.contentView).contains { $0.stringValue == "Setting up Hub…" },
                       "the page says Hub is being set up while it starts")
         XCTAssertTrue(FileManager.default.fileExists(
-            atPath: home.appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml").path))
+            atPath: rig.home.appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml").path))
 
         service.release("start")
-        let line = "Sign-in needs an open collection window. Open a window, then sign in again."
-        spinUntil(3) { self.labels(in: onboarding.window?.contentView).contains { $0.stringValue == line } }
-        XCTAssertTrue(labels(in: onboarding.window?.contentView).contains { $0.stringValue == line })
+        let heading = "Hub is set up and running on this Mac"
+        spinUntil(3) { onboarding.signInIsIdle }
+        spinUntil(3) { controller.lifecycleCapabilities.isIdle }
+        let root = onboarding.window?.contentView
+        XCTAssertTrue(onboarding.signInIsIdle)
         XCTAssertEqual(onboarding.currentRoute, .legacy)
+        let shown = labels(in: root).map(\.stringValue)
+        XCTAssertTrue(shown.contains(heading))
+        XCTAssertTrue(shown.contains("Tesla sign-in opens only during a collection window, and you will be told when one opens. Closing this window leaves Hub running."))
+        XCTAssertFalse(shown.contains("Sign-in needs an open collection window. Open a window, then sign in again."),
+                       "no error line")
+        XCTAssertNil(view(in: try XCTUnwrap(root), identifier: "onboarding.notice.error"))
+        XCTAssertNotNil(view(in: try XCTUnwrap(root), identifier: "onboarding.signin.idle"))
+        let titles = buttons(in: root).map(\.title)
+        XCTAssertFalse(titles.contains("Connect Tesla"), "the sign-in action is unavailable")
+        XCTAssertFalse(titles.contains("Sign in with Tesla"))
+        XCTAssertEqual(titles.filter { $0 == "Done" }.count, 1)
+        let done = try XCTUnwrap(buttons(in: root).first { $0.title == "Done" })
+        XCTAssertTrue(done.isEnabled)
+
         XCTAssertEqual(service.calls.filter { $0.hasPrefix("run:") }, ["run:start"],
                        "the service stays running: not removed or stopped")
         XCTAssertEqual(runner.count("window"), 1)
         XCTAssertEqual(runner.count("setup"), 0, "nothing is sent to Tesla")
         XCTAssertTrue(agent.isInstalled, "the Start installed the Hub")
         XCTAssertNil(controller.ownerSignInStartStage, "the service answered: no unfinished start is left")
-        spinUntil(3) { controller.lifecycleCapabilities.isIdle }
-        XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
+
+        done.performClick(nil)
+        XCTAssertEqual(completions, [.configured], "Done closes set-up")
+        XCTAssertEqual(service.calls.filter { $0.hasPrefix("run:") }, ["run:start"],
+                       "Done leaves the service untouched")
+        XCTAssertEqual(runner.count("window"), 1)
+        XCTAssertEqual(runner.count("setup"), 0)
+    }
+
+    func testIdleFirstStartEnablesTheCloseButtonAndBackLeavesTheIdleState() throws {
+        // M02-T22: set-up cannot be closed before the service runs; once the idle page shows, the
+        // window's close button works (its text says Hub keeps running). Going back clears it.
+        let rig = try freshMacRig(policy: .firstRun)
+        defer { try? FileManager.default.removeItem(at: rig.home) }
+        let (onboarding, service) = (rig.onboarding, rig.service)
+        defer { onboarding.close() }
+        let close = try XCTUnwrap(onboarding.window?.standardWindowButton(.closeButton))
+        XCTAssertFalse(close.isEnabled)
+        XCTAssertFalse(onboarding.canCancel)
+
+        try XCTUnwrap(buttons(in: onboarding.window?.contentView).first { $0.title == "Connect Tesla" }).performClick(nil)
+        spinUntil(3) { service.heldKeys == ["start"] }
+        XCTAssertFalse(close.isEnabled, "not while Hub is still being set up")
+        service.release("start")
+        spinUntil(3) { onboarding.signInIsIdle && rig.controller.lifecycleCapabilities.isIdle }
+        XCTAssertTrue(onboarding.signInIsIdle)
+        XCTAssertTrue(close.isEnabled)
+        XCTAssertTrue(onboarding.canCancel)
+        XCTAssertTrue(onboarding.windowShouldClose(try XCTUnwrap(onboarding.window)))
+        XCTAssertTrue(buttons(in: onboarding.window?.contentView).filter { $0.title == "Cancel" }.allSatisfy(\.isHidden),
+                      "Done is the one way out")
+
+        try XCTUnwrap(buttons(in: onboarding.window?.contentView).first { $0.title == "Back" }).performClick(nil)
+        XCTAssertFalse(onboarding.signInIsIdle)
+        XCTAssertEqual(onboarding.currentRoute, .provider)
+        XCTAssertFalse(close.isEnabled, "first-run set-up is closable only on the idle page")
+        XCTAssertEqual(service.calls.filter { $0.hasPrefix("run:") }, ["run:start"])
+    }
+
+    func testSignInPageHasOneSignInActionAndNoJargonAndACentredHeader() throws {
+        // M02-T22: the open-window page is as before (Connect Tesla in the footer, nothing idle);
+        // the inline duplicate is gone; the wording has no token jargon; the header is centred
+        // like the other pages; the one Back style is the same on every page.
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let onboarding = OnboardingWindowController(controller: controller, previewRoute: "legacy",
+                                                     onComplete: { _ in })
+        let root = try XCTUnwrap(onboarding.window?.contentView)
+        XCTAssertFalse(onboarding.signInIsIdle)
+        let titles = buttons(in: root).map(\.title)
+        XCTAssertEqual(titles.filter { $0 == "Connect Tesla" }.count, 1)
+        XCTAssertFalse(titles.contains("Sign in with Tesla"), "one sign-in action, not two")
+        XCTAssertNil(view(in: root, identifier: "onboarding.signin.idle"))
+        let shown = labels(in: root).map(\.stringValue)
+        XCTAssertTrue(shown.contains("Sign in with Tesla while a collection window is open."))
+        XCTAssertTrue(shown.contains("Your Tesla password goes only to Tesla. Hub keeps its own login, encrypted on this Mac."))
+        XCTAssertFalse(shown.contains { $0.localizedCaseInsensitiveContains("token") }, "no token jargon")
+        let title = try XCTUnwrap(labels(in: root).first { $0.stringValue == "Sign in with Tesla" })
+        XCTAssertEqual(title.alignment, .center, "the header is centred like the provider page's")
+
+        for route in ["welcome", "choose", "provider", "fleet", "legacy", "migration", "verify", "finish"] {
+            let page = OnboardingWindowController(controller: controller, previewRoute: route, onComplete: { _ in })
+            let back = buttons(in: page.window?.contentView).first { $0.title == "Back" }
+            if let back = back as? HubActionButton { XCTAssertEqual(back.hubStyle, .neutral, route) }
+        }
+    }
+
+    func testChooseHowHubConnectsDrawsNoStrayFocusRingAndNamesNoVehicleCommands() throws {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let onboarding = OnboardingWindowController(controller: controller, previewRoute: "provider",
+                                                     onComplete: { _ in })
+        let root = onboarding.window?.contentView
+        let radios = buttons(in: root).filter { $0.title == "Owner sign-in" || $0.title == "Fleet Telemetry" }
+        XCTAssertEqual(radios.count, 2)
+        for radio in radios { XCTAssertEqual(radio.focusRingType, .none, radio.title) }
+        let shown = labels(in: root).map(\.stringValue)
+        XCTAssertTrue(shown.contains("Tesla's official streaming API, with your own Fleet API app."))
+        XCTAssertFalse(shown.contains { $0.localizedCaseInsensitiveContains("command") }, "Hub sends none")
+    }
+
+    func testAnInlineErrorUsesTheNoticeStyleWithAnIcon() throws {
+        // M02-T22: the start-failure and other inline lines are notice cards with a status icon.
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let onboarding = OnboardingWindowController(controller: controller, previewRoute: "legacy",
+                                                     onComplete: { _ in })
+        try XCTUnwrap(buttons(in: onboarding.window?.contentView).first { $0.title == "Connect Tesla" }).performClick(nil)
+        let root = try XCTUnwrap(onboarding.window?.contentView)
+        spinUntil(3) { self.view(in: root, identifier: "onboarding.notice.error") != nil }
+        let notice = try XCTUnwrap(view(in: root, identifier: "onboarding.notice.error"))
+        XCTAssertTrue(notice is HubCardView)
+        XCTAssertFalse(imageViews(in: notice).isEmpty, "the notice carries its icon")
+        XCTAssertFalse(labels(in: notice).isEmpty)
+        XCTAssertFalse(onboarding.signInIsIdle, "a preview refusal is an error, not the idle state")
+        XCTAssertTrue(buttons(in: root).contains { $0.title == "Connect Tesla" }, "the action stays")
     }
 
     func testNewInstallationBusyStateShowsOnlyCleanSetupFlow() {

@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Set up a fresh Hub or bring your history over from the source application.";
 "hub.OnboardingWindowController.606.1928" = "Sign in with your Tesla owner account to start. Fleet Telemetry is available if you prefer it.";
 "hub.OnboardingWindowController.608.1929" = "Create a Tesla Fleet application, then paste its credentials below.";
-"hub.OnboardingWindowController.610.1930" = "Sign in with Tesla while a collection window is open. Hub never accepts a token.";
 "hub.OnboardingWindowController.612.1931" = "Connect to your source application server to import its vehicle history.";
 "hub.OnboardingWindowController.614.1932" = "Making sure everything is wired up correctly.";
 "hub.OnboardingWindowController.617.1933" = "Your vehicle history has been imported into Hub.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Start with a fresh database.";
 "hub.OnboardingWindowController.741.1955" = "Bring your existing vehicle history.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Tesla's official streaming API. Enables live vehicle commands.";
 "hub.OnboardingWindowController.752.1958" = "Owner sign-in";
 "hub.OnboardingWindowController.753.1959" = "Sign in with Tesla. Hub keeps its own login.";
 "hub.OnboardingWindowController.760.1960" = "Create Tesla Fleet App";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
 "hub.OnboardingWindowController.774.1967" = "Expires in";
 "hub.OnboardingWindowController.776.1968" = "Credentials are encrypted on this Mac";
-"hub.OnboardingWindowController.788.1970" = "Sign in with Tesla";
 "hub.OnboardingWindowController.790.1972" = "Sign-in is not available yet: this Hub has no Owner API sign-in values. Nothing was changed.";
-"hub.OnboardingWindowController.798.1975" = "Tokens are encrypted on this Mac";
 "hub.OnboardingWindowController.822.1978" = "Port";
 "hub.OnboardingWindowController.832.1980" = "SSH user";
 "hub.OnboardingWindowController.836.1982" = "Choose Key…";
@@ -858,3 +854,10 @@
 "hub.signIn.unconfirmed" = "Hub did not confirm the sign-in in time, but it may have been stored. Check Hub's status before signing in again.";
 
 "hub.signIn.startWithdrawFailed" = "Hub did not start, and removing its unfinished start failed: %1$@ Press Connect Tesla to finish removing it.";
+
+"hub.signIn.idle.title" = "Hub is set up and running on this Mac";
+"hub.signIn.idle.detail" = "Tesla sign-in opens only during a collection window, and you will be told when one opens. Closing this window leaves Hub running.";
+"hub.signIn.pageSubtitle" = "Sign in with Tesla while a collection window is open.";
+"hub.signIn.privacy" = "Your Tesla password goes only to Tesla. Hub keeps its own login, encrypted on this Mac.";
+"hub.signIn.fleetDetail" = "Tesla's official streaming API, with your own Fleet API app.";
+"hub.signIn.done" = "Done";

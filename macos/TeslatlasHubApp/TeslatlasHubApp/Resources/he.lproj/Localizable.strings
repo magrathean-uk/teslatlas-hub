@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "הגדירו Hub חדש או העבירו אליו את ההיסטוריה שלכם מיישום המקור.";
 "hub.OnboardingWindowController.606.1928" = "כדי להתחיל, התחברו עם חשבון הבעלים שלכם ב-Tesla. Fleet Telemetry זמין אם תעדיפו אותו.";
 "hub.OnboardingWindowController.608.1929" = "צרו יישום Tesla Fleet והדביקו את פרטי ההתחברות שלו למטה.";
-"hub.OnboardingWindowController.610.1930" = "התחברו ל-Tesla כשחלון איסוף פתוח. Hub לעולם אינו מקבל אסימון.";
 "hub.OnboardingWindowController.612.1931" = "התחברו לשרת יישום המקור כדי לייבא את היסטוריית הרכב שלו.";
 "hub.OnboardingWindowController.614.1932" = "מוודא שכל החלקים מוגדרים כראוי.";
 "hub.OnboardingWindowController.617.1933" = "היסטוריית הרכב שלכם יובאה אל ה-Hub.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "התחילו עם מסד נתונים חדש.";
 "hub.OnboardingWindowController.741.1955" = "העבירו את היסטוריית הרכב הקיימת שלכם.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "ממשק הזרמת הנתונים הרשמי של Tesla. מאפשר פקודות לרכב בזמן אמת.";
 "hub.OnboardingWindowController.752.1958" = "התחברות הבעלים";
 "hub.OnboardingWindowController.753.1959" = "התחברו ל-Tesla. Hub שומר על ההתחברות שלו.";
 "hub.OnboardingWindowController.760.1960" = "צרו יישום Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "מזהה לקוח";
 "hub.OnboardingWindowController.774.1967" = "תוקף";
 "hub.OnboardingWindowController.776.1968" = "פרטי ההתחברות מוצפנים ב-Mac הזה";
-"hub.OnboardingWindowController.788.1970" = "התחברות ל-Tesla";
 "hub.OnboardingWindowController.790.1972" = "ההתחברות עדיין אינה זמינה: ל-Hub זה אין ערכי התחברות של Owner API. דבר לא שונה.";
-"hub.OnboardingWindowController.798.1975" = "האסימונים מוצפנים ב-Mac הזה";
 "hub.OnboardingWindowController.822.1978" = "יציאה";
 "hub.OnboardingWindowController.832.1980" = "משתמש SSH";
 "hub.OnboardingWindowController.836.1982" = "בחירת מפתח…";
@@ -858,3 +854,10 @@
 "hub.signIn.unconfirmed" = "Hub לא אישר את ההתחברות בזמן, אך ייתכן שהיא נשמרה. בדקו את מצב Hub לפני שתתחברו שוב.";
 
 "hub.signIn.startWithdrawFailed" = "Hub לא הופעל, והסרת ההפעלה שלא הושלמה נכשלה: %1$@ יש ללחוץ על ״חיבור חשבון Tesla״ כדי להשלים את ההסרה.";
+
+"hub.signIn.idle.title" = "Hub הוגדר ופועל ב-Mac הזה";
+"hub.signIn.idle.detail" = "ההתחברות ל-Tesla נפתחת רק בזמן חלון איסוף, ותקבלו הודעה כשחלון ייפתח. סגירת החלון הזה משאירה את Hub פועל.";
+"hub.signIn.pageSubtitle" = "התחברו ל-Tesla כשחלון איסוף פתוח.";
+"hub.signIn.privacy" = "סיסמת Tesla שלכם נשלחת רק ל-Tesla. Hub שומר התחברות משלו, מוצפנת ב-Mac הזה.";
+"hub.signIn.fleetDetail" = "ממשק הזרמת הנתונים הרשמי של Tesla, עם אפליקציית Fleet API משלכם.";
+"hub.signIn.done" = "סיום";

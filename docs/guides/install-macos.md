@@ -43,16 +43,20 @@ Mac with no Hub service yet, the app starts the service itself:
    idle: it answers window commands on its local control channel and its
    loopback listener, its collector stays off, and nothing is sent to Tesla.
    No account is created and the App cannot pair with it.
-3. With no open window the page says "Sign-in needs an open collection window.
-   Open a window, then sign in again." Hub stays running and idle, also after
-   a restart or login. A start that fails shows its reason and the app removes
+3. With no open window the page says "Hub is set up and running on this
+   Mac": Tesla sign-in opens only during a collection window and you are told
+   when one opens. It is a notice, not an error. Both sign-in actions are
+   unavailable, and the bottom button becomes **Done**, which closes set-up.
+   Closing the window the same way leaves Hub running, idle, also after a
+   restart or login. A start that fails shows its reason and the app removes
    the service it installed; press **Connect Tesla** to retry. If that removal
    fails too, the page says so and the next **Connect Tesla** finishes it.
    If the app cannot tell whether a Hub is already installed, it shows why
    and changes nothing.
 4. Open a window as described in
    [Collection windows](../operations/collection-windows.md#first-start-on-a-fresh-mac),
-   then press **Connect Tesla** again to reach the Tesla sign-in.
+   then open set-up again from the app's Tesla account menu and press
+   **Connect Tesla** to reach the Tesla sign-in.
 5. The sign-in runs in the running service. It stores the Hub's own login
    and its cars, sets the supported collection interval (300 seconds) in the
    configuration and reloads the collector before the page reports

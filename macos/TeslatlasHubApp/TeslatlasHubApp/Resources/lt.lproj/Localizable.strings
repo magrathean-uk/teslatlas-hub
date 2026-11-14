@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Nustatykite naują Hub arba perkelkite istoriją iš šaltinio programos.";
 "hub.OnboardingWindowController.606.1928" = "Norėdami pradėti, prisijunkite su savo „Tesla“ savininko paskyra. Jei norite, galima naudoti ir Fleet Telemetry.";
 "hub.OnboardingWindowController.608.1929" = "Sukurkite Tesla Fleet programą ir įklijuokite jos prisijungimo duomenis žemiau.";
-"hub.OnboardingWindowController.610.1930" = "Prisijunkite prie „Tesla“, kol atidarytas rinkimo langas. Hub niekada nepriima prieigos rakto.";
 "hub.OnboardingWindowController.612.1931" = "Prisijunkite prie šaltinio programos serverio, kad importuotumėte transporto priemonių istoriją.";
 "hub.OnboardingWindowController.614.1932" = "Tikrinama, ar viskas tinkamai paruošta.";
 "hub.OnboardingWindowController.617.1933" = "Jūsų šaltinio programos istorija importuota į Hub.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Pradėkite nuo naujos duomenų bazės.";
 "hub.OnboardingWindowController.741.1955" = "Perkelkite esamą transporto priemonės istoriją.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Oficiali „Tesla“ srautinių duomenų API. Ji suteikia galimybę siųsti komandas transporto priemonei realiuoju laiku.";
 "hub.OnboardingWindowController.752.1958" = "Savininko prisijungimas";
 "hub.OnboardingWindowController.753.1959" = "Prisijunkite prie „Tesla“. Hub išsaugo savo prisijungimą.";
 "hub.OnboardingWindowController.760.1960" = "Sukurti Tesla Fleet programą";
 "hub.OnboardingWindowController.771.1964" = "Kliento ID";
 "hub.OnboardingWindowController.774.1967" = "Galiojimo laikas";
 "hub.OnboardingWindowController.776.1968" = "Prisijungimo duomenys užšifruojami šiame Mac kompiuteryje";
-"hub.OnboardingWindowController.788.1970" = "Prisijungti prie „Tesla“";
 "hub.OnboardingWindowController.790.1972" = "Prisijungti dar negalima: šiame Hub nėra Owner API prisijungimo reikšmių. Niekas nebuvo pakeista.";
-"hub.OnboardingWindowController.798.1975" = "Prieigos raktai užšifruojami šiame Mac kompiuteryje";
 "hub.OnboardingWindowController.822.1978" = "Prievadas";
 "hub.OnboardingWindowController.832.1980" = "SSH naudotojas";
 "hub.OnboardingWindowController.836.1982" = "Pasirinkti raktą…";
@@ -858,3 +854,10 @@
 "hub.signIn.unconfirmed" = "„Hub“ laiku nepatvirtino prisijungimo, tačiau jis galėjo būti išsaugotas. Prieš prisijungdami iš naujo, patikrinkite „Hub“ būseną.";
 
 "hub.signIn.startWithdrawFailed" = "Hub nepasileido, o nebaigto paleidimo pašalinti nepavyko: %1$@ Norėdami užbaigti šalinimą, paspauskite mygtuką Prijungti „Tesla“.";
+
+"hub.signIn.idle.title" = "Hub nustatytas ir veikia šiame Mac kompiuteryje";
+"hub.signIn.idle.detail" = "Prisijungimas prie „Tesla“ atsidaro tik veikiant rinkimo langui, o kai jis atsidarys, būsite informuoti. Uždarius šį langą, Hub toliau veikia.";
+"hub.signIn.pageSubtitle" = "Prisijunkite prie „Tesla“, kol atidarytas rinkimo langas.";
+"hub.signIn.privacy" = "Jūsų „Tesla“ slaptažodis siunčiamas tik „Tesla“. Hub saugo savo prisijungimą, užšifruotą šiame Mac kompiuteryje.";
+"hub.signIn.fleetDetail" = "Oficiali „Tesla“ srautinių duomenų API su jūsų pačių „Fleet API“ programa.";
+"hub.signIn.done" = "Atlikta";

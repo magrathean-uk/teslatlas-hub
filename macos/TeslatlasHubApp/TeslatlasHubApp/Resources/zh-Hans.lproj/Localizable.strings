@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "全新设置 Hub，或从源应用程序导入现有历史记录。";
 "hub.OnboardingWindowController.606.1928" = "请先使用 Tesla 车主账户登录。如果你更喜欢，也可以使用 Fleet Telemetry。";
 "hub.OnboardingWindowController.608.1929" = "创建 Tesla Fleet 应用，然后在下方粘贴其凭据。";
-"hub.OnboardingWindowController.610.1930" = "请在采集窗口打开时使用 Tesla 登录。Hub 绝不接受令牌。";
 "hub.OnboardingWindowController.612.1931" = "连接到源应用程序服务器以导入其中的车辆历史记录。";
 "hub.OnboardingWindowController.614.1932" = "正在检查各项配置是否正确连接。";
 "hub.OnboardingWindowController.617.1933" = "您的车辆历史记录已导入 Hub。";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "从全新的数据库开始。";
 "hub.OnboardingWindowController.741.1955" = "导入现有车辆历史记录。";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Tesla 官方的流式 API，可启用实时车辆指令。";
 "hub.OnboardingWindowController.752.1958" = "车主登录";
 "hub.OnboardingWindowController.753.1959" = "请使用 Tesla 登录。Hub 保留自己的登录。";
 "hub.OnboardingWindowController.760.1960" = "创建 Tesla Fleet 应用";
 "hub.OnboardingWindowController.771.1964" = "客户端 ID";
 "hub.OnboardingWindowController.774.1967" = "有效期";
 "hub.OnboardingWindowController.776.1968" = "凭据已在此 Mac 上加密";
-"hub.OnboardingWindowController.788.1970" = "使用 Tesla 登录";
 "hub.OnboardingWindowController.790.1972" = "暂时无法登录：此 Hub 没有 Owner API 登录值。未更改任何内容。";
-"hub.OnboardingWindowController.798.1975" = "令牌已在此 Mac 上加密";
 "hub.OnboardingWindowController.822.1978" = "端口";
 "hub.OnboardingWindowController.832.1980" = "SSH 用户";
 "hub.OnboardingWindowController.836.1982" = "选择密钥…";
@@ -858,3 +854,10 @@
 "hub.signIn.unconfirmed" = "Hub 未能及时确认此次登录，但登录信息可能已保存。请先检查 Hub 的状态，再重新登录。";
 
 "hub.signIn.startWithdrawFailed" = "Hub 未启动，且移除其未完成的启动失败：%1$@ 请按“连接 Tesla”完成移除。";
+
+"hub.signIn.idle.title" = "Hub 已在此 Mac 上设置完成并正在运行";
+"hub.signIn.idle.detail" = "仅在采集窗口打开期间才可使用 Tesla 登录，窗口打开时会通知你。关闭此窗口后，Hub 会继续运行。";
+"hub.signIn.pageSubtitle" = "请在采集窗口打开时使用 Tesla 登录。";
+"hub.signIn.privacy" = "你的 Tesla 密码只会发送给 Tesla。Hub 保留自己的登录信息，并在此 Mac 上加密。";
+"hub.signIn.fleetDetail" = "Tesla 官方的流式 API，使用你自己的 Fleet API 应用。";
+"hub.signIn.done" = "完成";

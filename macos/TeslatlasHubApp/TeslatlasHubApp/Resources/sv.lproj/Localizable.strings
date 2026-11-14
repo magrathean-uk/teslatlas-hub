@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Konfigurera en ny Hub eller för över historiken från källprogrammet.";
 "hub.OnboardingWindowController.606.1928" = "Logga in med ditt Tesla-ägarkonto för att komma igång. Fleet Telemetry finns om du föredrar det.";
 "hub.OnboardingWindowController.608.1929" = "Skapa en Tesla Fleet-app och klistra sedan in autentiseringsuppgifterna nedan.";
-"hub.OnboardingWindowController.610.1930" = "Logga in med Tesla medan ett insamlingsfönster är öppet. Hub accepterar aldrig en token.";
 "hub.OnboardingWindowController.612.1931" = "Anslut till källprogramservern för att importera dess fordonshistorik.";
 "hub.OnboardingWindowController.614.1932" = "Kontrollerar att allt är korrekt konfigurerat.";
 "hub.OnboardingWindowController.617.1933" = "Källprogramhistoriken har importerats till Hub.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Börja med en ny databas.";
 "hub.OnboardingWindowController.741.1955" = "Ta med din befintliga fordonshistorik.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Teslas officiella strömnings-API. Aktiverar fordonskommandon i realtid.";
 "hub.OnboardingWindowController.752.1958" = "Ägarinloggning";
 "hub.OnboardingWindowController.753.1959" = "Logga in med Tesla. Hub behåller sin egen inloggning.";
 "hub.OnboardingWindowController.760.1960" = "Skapa en Tesla Fleet-app";
 "hub.OnboardingWindowController.771.1964" = "Klient-ID";
 "hub.OnboardingWindowController.774.1967" = "Löper ut om";
 "hub.OnboardingWindowController.776.1968" = "Autentiseringsuppgifter krypteras på den här Macen";
-"hub.OnboardingWindowController.788.1970" = "Logga in med Tesla";
 "hub.OnboardingWindowController.790.1972" = "Inloggning är inte tillgänglig än: den här Hub har inga inloggningsvärden för Owner API. Ingenting ändrades.";
-"hub.OnboardingWindowController.798.1975" = "Token krypteras på den här Macen";
 "hub.OnboardingWindowController.822.1978" = "Port";
 "hub.OnboardingWindowController.832.1980" = "SSH-användare";
 "hub.OnboardingWindowController.836.1982" = "Välj nyckel…";
@@ -858,3 +854,10 @@
 "hub.signIn.unconfirmed" = "Hub bekräftade inte inloggningen i tid, men den kan ha sparats. Kontrollera Hubs status innan du loggar in igen.";
 
 "hub.signIn.startWithdrawFailed" = "Hub startade inte, och borttagningen av den ofullständiga starten misslyckades: %1$@ Klicka på ”Anslut Tesla” för att slutföra borttagningen.";
+
+"hub.signIn.idle.title" = "Hub är konfigurerat och körs på den här Macen";
+"hub.signIn.idle.detail" = "Inloggning hos Tesla öppnas bara medan ett insamlingsfönster är öppet, och du får ett meddelande när ett öppnas. Om du stänger det här fönstret fortsätter Hub att köras.";
+"hub.signIn.pageSubtitle" = "Logga in med Tesla medan ett insamlingsfönster är öppet.";
+"hub.signIn.privacy" = "Ditt Tesla-lösenord går bara till Tesla. Hub har sin egen inloggning, krypterad på den här Macen.";
+"hub.signIn.fleetDetail" = "Teslas officiella strömnings-API, med din egen Fleet API-app.";
+"hub.signIn.done" = "Klart";

@@ -172,6 +172,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
     }
     private var errorMessage: String?
+    /// The service is set up and running but no collection window is open: the sign-in page
+    /// shows the idle notice, not an error, and its only action is Done. Cleared on leaving
+    /// the page, so a later visit asks the service again.
+    private var signInIdle = false
     private var migrationDiagnostic: SourceSSHDiagnostic?
     private var compatibility: HubSourceCheckResult?
     private var checks: [HubOnboardingCheck] = []
@@ -383,7 +387,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     var currentRoute: HubOnboardingRoute { state.route }
     var operationPreventsQuit: Bool { interactionBlocked }
-    var canCancel: Bool { dismissalPolicy == .accountManagement && !closeBlocked }
+    var canCancel: Bool {
+        (dismissalPolicy == .accountManagement || signInIdle) && !closeBlocked
+    }
+    var signInIsIdle: Bool { signInIdle }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard canCancel else {
@@ -428,6 +435,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
         state = Self.initialState(route: route)
         errorMessage = nil
+        signInIdle = false
         compatibility = nil
         migrationVersionAcknowledgement.state = .off
         closeMigrationSession()
@@ -638,7 +646,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case .fleet:
             return HubL10n.text("hub.OnboardingWindowController.608.1929", fallback: "Create a Tesla Fleet application, then paste its credentials below.")
         case .legacy:
-            return HubL10n.text("hub.OnboardingWindowController.610.1930", fallback: "Sign in with Tesla while a collection window is open. Hub never accepts a token.")
+            return HubL10n.text("hub.signIn.pageSubtitle", fallback: "Sign in with Tesla while a collection window is open.")
         case .migration:
             return HubL10n.text("hub.OnboardingWindowController.612.1931", fallback: "Connect to your source application server to import its vehicle history.")
         case .verify:
@@ -682,7 +690,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         copy.orientation = .vertical
         copy.alignment = .leading
         copy.spacing = 2
-        if [.welcome, .choose, .provider, .finish].contains(state.route) {
+        if [.welcome, .choose, .provider, .legacy, .finish].contains(state.route) {
             title.alignment = .center
             subtitle.alignment = .center
             copy.alignment = .centerX
@@ -782,7 +790,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                                   selected: state.provider == .legacy,
                                   action: #selector(selectLegacy))
         let fleet = choiceButton(title: HubL10n.text("hub.OnboardingWindowController.748.1956", fallback: "Fleet Telemetry"),
-                                 subtitle: HubL10n.text("hub.OnboardingWindowController.749.1957", fallback: "Tesla's official streaming API. Enables live vehicle commands."),
+                                 subtitle: HubL10n.text("hub.signIn.fleetDetail", fallback: "Tesla's official streaming API, with your own Fleet API app."),
                                  selected: state.provider == .fleet,
                                  action: #selector(selectFleet))
         return verticalChoices([legacy, fleet])
@@ -817,30 +825,41 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func legacyBody() -> NSView {
-        let signIn = HubActionButton(title: HubL10n.text("hub.OnboardingWindowController.788.1970", fallback: "Sign in with Tesla"), target: self, action: #selector(startLegacySignIn))
-        configurePrimaryButton(signIn, symbol: "person.crop.circle.badge.checkmark")
-        // Sign-in is the code exchange only: no token field exists.
-        var actions: [NSView] = [signIn]
-        // A failed car discovery is resumed with the held sign-in, without a new Tesla page.
-        if controller.canRetryOwnerDiscovery {
+        // One sign-in action: the footer's primary. Sign-in is the code exchange only: no
+        // token field exists.
+        let privacy = featureRow(HubL10n.text("hub.signIn.privacy", fallback: "Your Tesla password goes only to Tesla. Hub keeps its own login, encrypted on this Mac."), "lock.fill")
+        var views: [NSView] = []
+        if signInIdle {
+            views.append(signInIdleNotice())
+        } else if controller.canRetryOwnerDiscovery {
+            // A failed car discovery is resumed with the held sign-in, without a new Tesla page.
             let retry = HubActionButton(title: HubL10n.text("hub.signIn.discovery.retry", fallback: "Retry finding cars"),
                                         target: self, action: #selector(retryOwnerDiscovery))
             retry.identifier = NSUserInterfaceItemIdentifier("onboarding.legacy.retryDiscovery")
             configureFlatButton(retry, symbol: "arrow.clockwise")
-            actions.append(retry)
+            let buttons = NSStackView(views: [retry])
+            buttons.spacing = 12
+            buttons.alignment = .centerY
+            views.append(buttons)
         }
-        let buttons = NSStackView(views: actions)
-        buttons.spacing = 12
-        buttons.alignment = .centerY
-        let stack = NSStackView(views: [buttons,
-                                       featureRow(HubL10n.text("hub.OnboardingWindowController.798.1975", fallback: "Tokens are encrypted on this Mac"), "lock.fill")])
+        views.append(privacy)
+        let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 14
-        for field in stack.arrangedSubviews.dropFirst() {
-            field.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        if signInIdle {
+            views[0].widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
+        privacy.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         return withError(stack)
+    }
+
+    /// No open window, nothing wrong: the service runs and waits for one.
+    private func signInIdleNotice() -> NSView {
+        noticeView(symbol: "checkmark.circle.fill", tone: .success,
+                   title: HubL10n.text("hub.signIn.idle.title", fallback: "Hub is set up and running on this Mac"),
+                   message: HubL10n.text("hub.signIn.idle.detail", fallback: "Tesla sign-in opens only during a collection window, and you will be told when one opens. Closing this window leaves Hub running."),
+                   identifier: "onboarding.signin.idle")
     }
 
     private func sourceImportIntroduction() -> NSView {
@@ -1392,7 +1411,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         let blocked = interactionBlocked || lifecycleHeldElsewhere
         let focused = focusedOperation != nil
         let importing = focusedOperation == .importing
-        cancelButton.isHidden = dismissalPolicy != .accountManagement
+        cancelButton.isHidden = dismissalPolicy != .accountManagement || signInIdle
         cancelButton.isEnabled = !closeBlocked
         backButton.isHidden = state.route == .welcome
             || state.route == .finish
@@ -1460,6 +1479,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         updatePrimaryAppearance(continueButton)
         backWidthConstraint?.constant = HubMetrics.actionMinimumWidth
         continueWidthConstraint?.constant = 240
+        updateWindowCloseAvailability()
         window?.defaultButtonCell = blocked || continueButton.isHidden || !continueButton.isEnabled
             ? nil
             : continueButton.cell as? NSButtonCell
@@ -1469,7 +1489,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         switch state.route {
         case .welcome: return HubL10n.text("hub.OnboardingWindowController.1354.2041", fallback: "Get Started")
         case .fleet: return HubL10n.text("hub.OnboardingWindowController.1355.2042", fallback: "Set Up Fleet")
-        case .legacy: return HubL10n.text("hub.MainWindowController.26.1772", fallback: "Connect Tesla")
+        case .legacy:
+            return signInIdle ? HubL10n.text("hub.signIn.done", fallback: "Done")
+                : HubL10n.text("hub.MainWindowController.26.1772", fallback: "Connect Tesla")
         case .migration:
             if migrationUseLocalHistory.state == .on {
                 return compatibility?.mayImport == true ? HubL10n.text("hub.OnboardingWindowController.1359.2044", fallback: "Import History") : HubL10n.text("hub.OnboardingWindowController.1359.2045", fallback: "Check Snapshot")
@@ -1510,6 +1532,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             return
         }
         errorMessage = nil
+        signInIdle = false
         state.back()
         render()
     }
@@ -1548,7 +1571,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case .fleet:
             configureFleet()
         case .legacy:
-            configureLegacy()
+            if signInIdle {
+                // Done closes set-up; the service is not touched and keeps running.
+                onComplete(.configured)
+            } else {
+                configureLegacy()
+            }
         case .migration:
             if migrationUseLocalHistory.state == .on {
                 if compatibility?.mayImport == true {
@@ -1638,9 +1666,26 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                                             "provider": "legacy",
                                             "error_code": HubAppLog.errorCode(error)
                                         ])
-                self.showInlineError(error.localizedDescription)
+                if Self.isWindowClosedRefusal(error) {
+                    self.showSignInIdle()
+                } else {
+                    self.showInlineError(error.localizedDescription)
+                }
             }
         }
+    }
+
+    /// The window check's "no open window" answer: the service runs, so this is the idle state.
+    private static func isWindowClosedRefusal(_ error: Error) -> Bool {
+        error.localizedDescription == HubController.signInRefusal(code: "window_closed").localizedDescription
+    }
+
+    private func showSignInIdle() {
+        setBusy(false)
+        errorMessage = nil
+        signInIdle = true
+        render()
+        updateWindowCloseAvailability()
     }
 
     private func openTeslaLogin(_ signIn: HubAccountSignIn) {
@@ -2240,9 +2285,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     private func withError(_ view: NSView) -> NSView {
         guard let errorMessage else { return view }
-        let error = NSTextField(wrappingLabelWithString: errorMessage)
-        error.textColor = .systemRed
-        error.maximumNumberOfLines = 0
+        let error = noticeView(symbol: "exclamationmark.triangle.fill", tone: .warning, title: nil,
+                               message: errorMessage, identifier: "onboarding.notice.error")
         let stack = NSStackView(views: [view, error])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -2250,6 +2294,50 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         error.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         return stack
+    }
+
+    /// The app's notice: a card with a status icon, an optional heading and the message.
+    private func noticeView(symbol: String, tone: HubStatusTone, title: String?,
+                            message: String, identifier: String) -> NSView {
+        let icon = NSImageView(image: symbolImage(symbol, description: nil))
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 18, weight: .medium)
+        icon.contentTintColor = tone.color
+        icon.setAccessibilityElement(false)
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+        icon.widthAnchor.constraint(equalToConstant: 20).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        var labels: [NSTextField] = []
+        if let title {
+            let heading = NSTextField(wrappingLabelWithString: title)
+            heading.font = HubTypography.emphasis
+            heading.textColor = HubPalette.foreground
+            heading.maximumNumberOfLines = 0
+            labels.append(heading)
+        }
+        let body = NSTextField(wrappingLabelWithString: message)
+        body.font = HubTypography.body
+        body.textColor = title == nil ? HubPalette.foreground : HubPalette.mutedForeground
+        body.maximumNumberOfLines = 0
+        labels.append(body)
+        let copy = NSStackView(views: labels)
+        copy.orientation = .vertical
+        copy.alignment = .leading
+        copy.spacing = 3
+        for label in labels { label.widthAnchor.constraint(equalTo: copy.widthAnchor).isActive = true }
+        let row = NSStackView(views: [icon, copy])
+        row.alignment = .top
+        row.spacing = 12
+        row.translatesAutoresizingMaskIntoConstraints = false
+        let card = HubCardView()
+        card.identifier = NSUserInterfaceItemIdentifier(identifier)
+        card.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
+            row.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
+            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -12)
+        ])
+        return card
     }
 
     private func verticalChoices(_ choices: [NSView]) -> NSView {
@@ -2298,6 +2386,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         let radio = NSButton(radioButtonWithTitle: title, target: self, action: action)
         radio.state = selected ? .on : .off
         radio.isTransparent = true
+        // The selected card shows its own highlight; the transparent radio draws no ring of its own.
+        radio.focusRingType = .none
         radio.setAccessibilityHelp(subtitle)
         radio.setAccessibilityValue(selected ? "Selected" : "Not selected")
         radio.translatesAutoresizingMaskIntoConstraints = false

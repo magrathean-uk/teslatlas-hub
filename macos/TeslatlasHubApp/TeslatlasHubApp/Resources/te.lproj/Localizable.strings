@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "కొత్త Hubను సెటప్ చేయండి లేదా మూల అనువర్తనం నుంచి మీ చరిత్రను తీసుకురండి.";
 "hub.OnboardingWindowController.606.1928" = "ప్రారంభించడానికి మీ Tesla యజమాని ఖాతాతో సైన్ ఇన్ చేయండి. మీరు కోరుకుంటే Fleet Telemetry అందుబాటులో ఉంది.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet అప్లికేషన్‌ను సృష్టించి, దాని ప్రవేశ వివరాలను క్రింద అతికించండి.";
-"hub.OnboardingWindowController.610.1930" = "సేకరణ విండో తెరిచి ఉన్నప్పుడు Teslaతో సైన్ ఇన్ చేయండి. Hub ఎప్పుడూ టోకెన్‌ను అంగీకరించదు.";
 "hub.OnboardingWindowController.612.1931" = "వాహన చరిత్రను దిగుమతి చేయడానికి మీ మూల అనువర్తనం సర్వర్‌కు కనెక్ట్ చేయండి.";
 "hub.OnboardingWindowController.614.1932" = "అన్నీ సరిగ్గా అమర్చబడ్డాయో తనిఖీ చేస్తోంది.";
 "hub.OnboardingWindowController.617.1933" = "మీ మూల అనువర్తనం చరిత్ర Hubలోకి దిగుమతి చేయబడింది.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "కొత్త డేటాబేస్‌తో ప్రారంభించండి.";
 "hub.OnboardingWindowController.741.1955" = "మీ ప్రస్తుత వాహన చరిత్రను తీసుకురండి.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Tesla అధికారిక స్ట్రీమింగ్ API. ఇది లైవ్ వాహన ఆదేశాలను అందుబాటులోకి తెస్తుంది.";
 "hub.OnboardingWindowController.752.1958" = "యజమాని సైన్ ఇన్";
 "hub.OnboardingWindowController.753.1959" = "Teslaతో సైన్ ఇన్ చేయండి. Hub తన సొంత లాగిన్‌ను ఉంచుకుంటుంది.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet యాప్‌ను సృష్టించండి";
 "hub.OnboardingWindowController.771.1964" = "క్లయింట్ ID";
 "hub.OnboardingWindowController.774.1967" = "గడువు";
 "hub.OnboardingWindowController.776.1968" = "ప్రవేశ వివరాలు ఈ Macలో ఎన్‌క్రిప్ట్ చేయబడతాయి";
-"hub.OnboardingWindowController.788.1970" = "Teslaతో సైన్ ఇన్ చేయండి";
 "hub.OnboardingWindowController.790.1972" = "సైన్ ఇన్ ఇంకా అందుబాటులో లేదు: ఈ Hubలో Owner API సైన్ ఇన్ విలువలు లేవు. ఏదీ మార్చబడలేదు.";
-"hub.OnboardingWindowController.798.1975" = "టోకెన్‌లు ఈ Macలో ఎన్‌క్రిప్ట్ చేయబడతాయి";
 "hub.OnboardingWindowController.822.1978" = "పోర్ట్";
 "hub.OnboardingWindowController.832.1980" = "SSH వినియోగదారు";
 "hub.OnboardingWindowController.836.1982" = "కీని ఎంచుకోండి…";
@@ -858,3 +854,10 @@
 "hub.signIn.unconfirmed" = "Hub సైన్ ఇన్‌ను సమయానికి నిర్ధారించలేదు, కానీ అది నిల్వ అయి ఉండవచ్చు. మళ్లీ సైన్ ఇన్ చేసే ముందు Hub స్థితిని తనిఖీ చేయండి.";
 
 "hub.signIn.startWithdrawFailed" = "Hub ప్రారంభం కాలేదు, దాని అసంపూర్ణ ప్రారంభాన్ని తీసివేయడం విఫలమైంది: %1$@ తీసివేయడాన్ని పూర్తి చేయడానికి “Teslaను కనెక్ట్ చేయండి” నొక్కండి.";
+
+"hub.signIn.idle.title" = "Hub ఈ Macలో సెటప్ అయ్యి నడుస్తోంది";
+"hub.signIn.idle.detail" = "Tesla సైన్ ఇన్ సేకరణ విండో తెరిచి ఉన్నప్పుడు మాత్రమే తెరుచుకుంటుంది, విండో తెరుచుకున్నప్పుడు మీకు తెలియజేయబడుతుంది. ఈ విండోను మూసివేసినా Hub నడుస్తూనే ఉంటుంది.";
+"hub.signIn.pageSubtitle" = "సేకరణ విండో తెరిచి ఉన్నప్పుడు Teslaతో సైన్ ఇన్ చేయండి.";
+"hub.signIn.privacy" = "మీ Tesla పాస్‌వర్డ్ Teslaకు మాత్రమే వెళ్తుంది. Hub తన స్వంత లాగిన్‌ను ఉంచుకుంటుంది, అది ఈ Macలో ఎన్‌క్రిప్ట్ చేయబడి ఉంటుంది.";
+"hub.signIn.fleetDetail" = "Tesla అధికారిక స్ట్రీమింగ్ API, మీ స్వంత Fleet API యాప్‌తో.";
+"hub.signIn.done" = "పూర్తయింది";

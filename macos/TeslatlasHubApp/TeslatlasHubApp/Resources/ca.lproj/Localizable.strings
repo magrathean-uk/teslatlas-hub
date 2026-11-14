@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Configura un Hub nou o importa-hi l’historial de l’aplicació d’origen.";
 "hub.OnboardingWindowController.606.1928" = "Per començar, inicia la sessió amb el teu compte de propietari de Tesla. Fleet Telemetry està disponible si ho prefereixes.";
 "hub.OnboardingWindowController.608.1929" = "Crea una aplicació Tesla Fleet i, després, enganxa’n les credencials a continuació.";
-"hub.OnboardingWindowController.610.1930" = "Inicia la sessió amb Tesla mentre hi hagi una finestra de recollida oberta. El Hub no accepta mai cap token.";
 "hub.OnboardingWindowController.612.1931" = "Connecta’t al servidor de l’aplicació d’origen per importar-ne l’historial dels vehicles.";
 "hub.OnboardingWindowController.614.1932" = "Comprovem que tot estigui ben configurat.";
 "hub.OnboardingWindowController.617.1933" = "L’historial de l’aplicació d’origen s’ha importat al Hub.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Comença amb una base de dades nova.";
 "hub.OnboardingWindowController.741.1955" = "Importa l’historial existent del vehicle.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "API oficial de transmissió en temps real de Tesla. Permet enviar ordres al vehicle en temps real.";
 "hub.OnboardingWindowController.752.1958" = "Inici de sessió del propietari";
 "hub.OnboardingWindowController.753.1959" = "Inicia la sessió amb Tesla. El Hub conserva el seu propi inici de sessió.";
 "hub.OnboardingWindowController.760.1960" = "Crea una aplicació Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "Identificador de client";
 "hub.OnboardingWindowController.774.1967" = "Caduca en";
 "hub.OnboardingWindowController.776.1968" = "Les credencials s’encripten en aquest Mac";
-"hub.OnboardingWindowController.788.1970" = "Inicia la sessió amb Tesla";
 "hub.OnboardingWindowController.790.1972" = "L’inici de sessió encara no està disponible: aquest Hub no té valors d’inici de sessió de l’Owner API. No s’ha canviat res.";
-"hub.OnboardingWindowController.798.1975" = "Els tokens s’encripten en aquest Mac";
 "hub.OnboardingWindowController.822.1978" = "Port";
 "hub.OnboardingWindowController.832.1980" = "Usuari SSH";
 "hub.OnboardingWindowController.836.1982" = "Tria una clau…";
@@ -858,3 +854,10 @@
 "hub.signIn.unconfirmed" = "Hub no ha confirmat l'inici de sessió a temps, però és possible que s'hagi desat. Comprova l'estat de Hub abans de tornar a iniciar la sessió.";
 
 "hub.signIn.startWithdrawFailed" = "El Hub no s’ha iniciat i no s’ha pogut eliminar l’inici inacabat: %1$@ Premeu «Connecta Tesla» per acabar d’eliminar-lo.";
+
+"hub.signIn.idle.title" = "El Hub està configurat i funcionant en aquest Mac";
+"hub.signIn.idle.detail" = "L’inici de sessió amb Tesla només s’obre durant una finestra de recollida, i se t’avisarà quan s’obri una. Si tanques aquesta finestra, el Hub continua funcionant.";
+"hub.signIn.pageSubtitle" = "Inicia la sessió amb Tesla mentre hi hagi una finestra de recollida oberta.";
+"hub.signIn.privacy" = "La teva contrasenya de Tesla només va a Tesla. El Hub conserva el seu propi accés, encriptat en aquest Mac.";
+"hub.signIn.fleetDetail" = "API oficial de transmissió en temps real de Tesla, amb la teva pròpia aplicació de l’API Fleet.";
+"hub.signIn.done" = "Fet";

@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Állíts be egy új Hubot, vagy hozd át a forrásalkalmazásból az előzményeket.";
 "hub.OnboardingWindowController.606.1928" = "A kezdéshez jelentkezz be a Tesla tulajdonosi fiókoddal. A Fleet Telemetry is elérhető, ha azt szeretnéd.";
 "hub.OnboardingWindowController.608.1929" = "Hozz létre egy Tesla Fleet-alkalmazást, majd illeszd be alább a hitelesítő adatait.";
-"hub.OnboardingWindowController.610.1930" = "Jelentkezz be a Teslával, amíg egy gyűjtési ablak nyitva van. A Hub soha nem fogad el tokent.";
 "hub.OnboardingWindowController.612.1931" = "Csatlakozz a forrásalkalmazás-kiszolgálóhoz a járműelőzmények importálásához.";
 "hub.OnboardingWindowController.614.1932" = "Ellenőrizzük, hogy minden megfelelően működik-e.";
 "hub.OnboardingWindowController.617.1933" = "A forrásalkalmazás-előzményeid importálva a Hubba.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Kezdés új adatbázissal.";
 "hub.OnboardingWindowController.741.1955" = "Hozd át a meglévő járműelőzményeidet.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "A Tesla hivatalos adatfolyam-API-ja. Lehetővé teszi az élő járműparancsokat.";
 "hub.OnboardingWindowController.752.1958" = "Tulajdonosi bejelentkezés";
 "hub.OnboardingWindowController.753.1959" = "Jelentkezz be a Teslával. A Hub megtartja a saját bejelentkezését.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet-alkalmazás létrehozása";
 "hub.OnboardingWindowController.771.1964" = "Ügyfélazonosító";
 "hub.OnboardingWindowController.774.1967" = "Lejárat";
 "hub.OnboardingWindowController.776.1968" = "A hitelesítő adatok ezen a Macen titkosítva vannak.";
-"hub.OnboardingWindowController.788.1970" = "Bejelentkezés a Teslával";
 "hub.OnboardingWindowController.790.1972" = "A bejelentkezés még nem érhető el: ez a Hub nem rendelkezik Owner API bejelentkezési értékekkel. Semmi sem változott.";
-"hub.OnboardingWindowController.798.1975" = "A tokenek ezen a Macen titkosítva vannak.";
 "hub.OnboardingWindowController.822.1978" = "Port";
 "hub.OnboardingWindowController.832.1980" = "SSH-felhasználó";
 "hub.OnboardingWindowController.836.1982" = "Kulcs kiválasztása…";
@@ -858,3 +854,10 @@
 "hub.signIn.unconfirmed" = "A Hub nem erősítette meg időben a bejelentkezést, de lehet, hogy az elmentődött. Ellenőrizd a Hub állapotát, mielőtt újra bejelentkezel.";
 
 "hub.signIn.startWithdrawFailed" = "A Hub nem indult el, és a befejezetlen indítás eltávolítása nem sikerült: %1$@ Az eltávolítás befejezéséhez kattintson a „Tesla csatlakoztatása” gombra.";
+
+"hub.signIn.idle.title" = "A Hub be van állítva, és fut ezen a Macen";
+"hub.signIn.idle.detail" = "A Teslába való bejelentkezés csak gyűjtési ablak idején nyílik meg, és értesítünk, amikor megnyílik egy. Az ablak bezárása után a Hub tovább fut.";
+"hub.signIn.pageSubtitle" = "Jelentkezz be a Teslával, amíg egy gyűjtési ablak nyitva van.";
+"hub.signIn.privacy" = "A Tesla-jelszavad csak a Teslához kerül. A Hub saját bejelentkezést tart fenn, ezen a Macen titkosítva.";
+"hub.signIn.fleetDetail" = "A Tesla hivatalos adatfolyam-API-ja, a saját Fleet API-alkalmazásoddal.";
+"hub.signIn.done" = "Kész";

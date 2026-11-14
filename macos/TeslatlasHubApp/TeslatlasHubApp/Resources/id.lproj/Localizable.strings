@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Siapkan Hub baru atau pindahkan riwayat Anda dari aplikasi sumber.";
 "hub.OnboardingWindowController.606.1928" = "Untuk memulai, masuk dengan akun pemilik Tesla. Fleet Telemetry tersedia jika lebih disukai.";
 "hub.OnboardingWindowController.608.1929" = "Buat aplikasi Tesla Fleet, lalu tempelkan kredensialnya di bawah ini.";
-"hub.OnboardingWindowController.610.1930" = "Masuk dengan Tesla selagi jendela pengumpulan terbuka. Hub tidak pernah menerima token.";
 "hub.OnboardingWindowController.612.1931" = "Hubungkan ke server aplikasi sumber untuk mengimpor riwayat kendaraannya.";
 "hub.OnboardingWindowController.614.1932" = "Memastikan semuanya tersambung dengan benar.";
 "hub.OnboardingWindowController.617.1933" = "Riwayat kendaraan Anda telah diimpor ke Hub.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Mulai dengan basis data baru.";
 "hub.OnboardingWindowController.741.1955" = "Pindahkan riwayat kendaraan Anda yang sudah ada.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "API streaming resmi Tesla. Mengaktifkan perintah kendaraan secara langsung.";
 "hub.OnboardingWindowController.752.1958" = "Masuk sebagai pemilik";
 "hub.OnboardingWindowController.753.1959" = "Masuk dengan Tesla. Hub menyimpan login-nya sendiri.";
 "hub.OnboardingWindowController.760.1960" = "Buat Aplikasi Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID klien";
 "hub.OnboardingWindowController.774.1967" = "Kedaluwarsa dalam";
 "hub.OnboardingWindowController.776.1968" = "Kredensial dienkripsi di Mac ini";
-"hub.OnboardingWindowController.788.1970" = "Masuk dengan Tesla";
 "hub.OnboardingWindowController.790.1972" = "Masuk belum tersedia: Hub ini tidak memiliki nilai masuk Owner API. Tidak ada yang diubah.";
-"hub.OnboardingWindowController.798.1975" = "Token dienkripsi di Mac ini";
 "hub.OnboardingWindowController.822.1978" = "Port";
 "hub.OnboardingWindowController.832.1980" = "Pengguna SSH";
 "hub.OnboardingWindowController.836.1982" = "Pilih Kunci…";
@@ -858,3 +854,10 @@
 "hub.signIn.unconfirmed" = "Hub tidak mengonfirmasi proses masuk tepat waktu, tetapi mungkin sudah tersimpan. Periksa status Hub sebelum masuk lagi.";
 
 "hub.signIn.startWithdrawFailed" = "Hub tidak dimulai, dan penghapusan proses mulai yang belum selesai gagal: %1$@ Tekan “Hubungkan Tesla” untuk menyelesaikan penghapusan.";
+
+"hub.signIn.idle.title" = "Hub sudah disiapkan dan berjalan di Mac ini";
+"hub.signIn.idle.detail" = "Masuk ke Tesla hanya dibuka selama jendela pengumpulan, dan Anda akan diberi tahu saat jendela dibuka. Menutup jendela ini membuat Hub tetap berjalan.";
+"hub.signIn.pageSubtitle" = "Masuk dengan Tesla selagi jendela pengumpulan terbuka.";
+"hub.signIn.privacy" = "Kata sandi Tesla Anda hanya dikirim ke Tesla. Hub menyimpan login sendiri, dienkripsi di Mac ini.";
+"hub.signIn.fleetDetail" = "API streaming resmi Tesla, dengan aplikasi Fleet API milik Anda sendiri.";
+"hub.signIn.done" = "Selesai";
