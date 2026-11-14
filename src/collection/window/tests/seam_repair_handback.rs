@@ -302,12 +302,24 @@ fn seam_repair_handback_retry_waits_for_a_later_window_to_close() {
     hub.close(CloseReason::OperatorClose);
     hub.finish_close().unwrap().expect("a handback");
     assert_eq!(coverage_row(&connection, 2).0, "handback");
-    assert_eq!(closed(&connection, &driving, true), expected(first_ms, drive_last_ms));
-    assert_eq!(closed(&connection, &charging, false), expected(first_ms, charge_last_ms));
+    // One handback event per vehicle; the observation ids are store-wide, so
+    // the second vehicle's cursor is 3.
+    let drive = closed(&connection, &driving, true);
+    let charge = closed(&connection, &charging, false);
+    for (path, after, last_ms) in [
+        ("drive", &drive, drive_last_ms),
+        ("charge", &charge, charge_last_ms),
+    ] {
+        let mut want = expected(first_ms, last_ms);
+        assert!(matches!(after.cursor, 2 | 3), "{path}: {after:?}");
+        want.cursor = after.cursor;
+        assert_eq!(after, &want, "{path}");
+    }
+    assert_ne!(drive.cursor, charge.cursor);
 
     // After the close the retry writes the older handback and closes nothing.
     assert!(hub.reconcile_coverage());
     assert_eq!(coverage_row(&connection, 1).0, "handback");
-    assert_eq!(closed(&connection, &driving, true), expected(first_ms, drive_last_ms));
-    assert_eq!(closed(&connection, &charging, false), expected(first_ms, charge_last_ms));
+    assert_eq!(closed(&connection, &driving, true), drive);
+    assert_eq!(closed(&connection, &charging, false), charge);
 }
