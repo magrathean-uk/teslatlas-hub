@@ -254,7 +254,9 @@ pub fn admit_import_observed(
 /// an import reads it: every handback the ledger holds and the store lacks is
 /// mirrored into the store, and a window left open in the store (a restore of
 /// a backup taken inside a window; none is open on this host here) is sealed
-/// per vehicle at that vehicle's last Hub-range row. Both are idempotent. A
+/// per vehicle at that vehicle's last Hub-range row. Either write closes the
+/// drives and charges still open at their last evidence (M03-T20), only when
+/// it records the handback or seals the window. Both are idempotent. A
 /// data directory with no store, or a store older than schema v80, has no
 /// coverage to bring level; the migration creates the table and the next
 /// admission mirrors.

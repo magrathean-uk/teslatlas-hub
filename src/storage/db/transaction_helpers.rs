@@ -253,13 +253,21 @@ fn promote_imported_open_session_in_transaction(
         && let Some(previous) = previous_state.as_ref()
     {
         seeded.open_drive = previous.open_drive.clone();
-        seeded.phase = previous.phase;
     }
     if kept_open_charge.is_some()
         && let Some(previous) = previous_state.as_ref()
     {
         seeded.open_charge = previous.open_charge.clone();
-        seeded.phase = previous.phase;
+    }
+    // M03-T20: the phase follows the final open session, kept and imported
+    // together, with the seeding's precedence (an open drive, then an open
+    // charge); the previous phase is never restored.
+    if kept_open.is_some() || kept_open_charge.is_some() {
+        if seeded.open_drive.is_some() {
+            seeded.phase = crate::lifecycle::VehiclePhase::Driving;
+        } else if seeded.open_charge.is_some() {
+            seeded.phase = crate::lifecycle::VehiclePhase::Charging;
+        }
     }
     ensure_source_exists(transaction, source_id)?;
     ensure_vehicle_source(transaction, vehicle_id, source_id)?;

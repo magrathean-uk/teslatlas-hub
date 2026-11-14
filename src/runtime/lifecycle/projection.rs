@@ -816,6 +816,10 @@ fn apply_hub_event(
 /// It enters the projection as a stored observation so replay stays exact.
 const HUB_EVENT_RECORD_TYPE: &str = "hub_lifecycle_event_v1";
 
+/// The event a handback of coverage stores for a vehicle with an open drive or
+/// charge (M03-T20), so the close at its last evidence is replayable.
+pub(crate) const HUB_EVENT_HANDBACK: &str = "handback";
+
 /// What kind of record an observation is (C1 R3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum SourceKind {
@@ -850,6 +854,10 @@ enum HubEventKind {
     NoData,
     /// Tesla refused `vehicle_data` as "in service": service mode.
     ServiceRefused,
+    /// The collection window was handed back (M03-T20): the Hub collects no
+    /// more, so the open drive and the open charge close at their last
+    /// evidence.
+    Handback,
 }
 
 /// A set of fact families (C1 R6), used for "carried" and for "fresh".
@@ -1073,6 +1081,7 @@ fn parse_sample(sample: &LifecycleSample) -> Result<ParsedSample, LifecycleError
             parsed.hub_event = match root.get("event").and_then(Value::as_str) {
                 Some("no_data") => Some(HubEventKind::NoData),
                 Some("service_refused") => Some(HubEventKind::ServiceRefused),
+                Some(HUB_EVENT_HANDBACK) => Some(HubEventKind::Handback),
                 _ => None,
             };
             (SourceKind::HubEvent, None)

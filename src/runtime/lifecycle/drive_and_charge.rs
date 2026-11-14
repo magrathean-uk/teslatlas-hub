@@ -1835,7 +1835,10 @@ fn drive_close_step(
         || state.service_mode == Some(true)
         || (drive_facts && t_drive.saturating_sub(last_folded) > gap)
         || (!drive_facts && observation.t_obs().saturating_sub(last_folded) > gap)
-        || observation.event() == Some(HubEventKind::NoData)
+        || matches!(
+            observation.event(),
+            Some(HubEventKind::NoData | HubEventKind::Handback)
+        )
         || (drive_facts
             && observation.drive == DriveEvidence::NoInfo
             && t_drive.saturating_sub(last_motion) > gap);
@@ -1981,13 +1984,14 @@ fn charge_continues_across_gap(open: &OpenCharge, observation: &Observation<'_>)
 ///
 /// Triggers, in order: reach `asleep` (R26); service mode (R25, including the
 /// `service_refused` event); Motion drive evidence that survived R22, because
-/// a car cannot drive with the cable connected; for a sample-anchoring
-/// observation, a counter that restarted against the open session's last one
+/// a car cannot drive with the cable connected; the `handback` event (M03-T20:
+/// the Hub collects no more, so no next sample can continue the charge); for a
+/// sample-anchoring observation, a counter that restarted against the open session's last one
 /// (`counter_restarted`, C1 R66, C1 R91: a new Tesla session began; a dip is not a
 /// restart and follows the other rows); and a sample-anchoring observation
 /// after a gap that fails continuity (C1 R65). An observation without a
 /// sample-anchoring charge fact (a discovery, a stream frame, drive-only data,
-/// a `no_data` event) closes a charge only by the first three triggers,
+/// a `no_data` event) closes a charge only by the first four triggers,
 /// however late it comes: a charge, unlike a drive, can be shown continuous by
 /// its next sample, and a wake-up discovery or a battery-only frame arriving
 /// before that sample must not cut a no-signal garage charge in two.
@@ -2002,7 +2006,8 @@ fn charge_close_step(
     let parsed = observation.parsed;
     let lost_evidence = observation.reach == Some(Reach::Asleep)
         || state.service_mode == Some(true)
-        || observation.drive == DriveEvidence::Motion;
+        || observation.drive == DriveEvidence::Motion
+        || observation.event() == Some(HubEventKind::Handback);
     let close = lost_evidence
         || (anchors_charge_sample(state, observation) && {
             let counter_fell = matches!(

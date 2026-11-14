@@ -510,7 +510,10 @@ impl WindowController {
         write().map_err(|_| Refusal::StateUnverifiable)
     }
 
-    /// Writes the handback beside the ledger line, best effort.
+    /// Writes the handback beside the ledger line, best effort. The same store
+    /// write closes the drives and charges still open at their last evidence
+    /// (M03-T20), so a window that expires or is closed mid-session leaves
+    /// none open; when this write fails, import admission repeats it, once.
     fn coverage_handback(&self, handback: &Handback) {
         let (Some(dir), Some(window)) = (self.data_dir(), handback_coverage(handback)) else {
             return;
@@ -525,7 +528,8 @@ impl WindowController {
 
     /// A window open in the store with no window open on this host is the
     /// mark of a restore taken inside a window: it is sealed per vehicle at
-    /// that vehicle's last Hub-range row.
+    /// that vehicle's last Hub-range row, and the sessions still open close at
+    /// their last evidence (M03-T20). A window running here closes nothing.
     fn seal_restored_coverage(&self) {
         let Some(dir) = self.data_dir() else {
             return;

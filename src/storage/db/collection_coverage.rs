@@ -36,6 +36,9 @@ pub enum CoverageError {
     /// A window is still open in the store: the cutoff is not recorded.
     #[error("collection window {seq} is open in the store")]
     WindowOpen { seq: i64 },
+    /// The sessions still open at a handback could not be closed.
+    #[error("the open sessions could not be closed at the handback: {0}")]
+    Lifecycle(String),
 }
 
 /// An interval of one window in which the collector was not running.
@@ -187,8 +190,10 @@ fn store_gaps_within(
 /// Records a window's handback: closes its row, or inserts the closed row when
 /// the store lacks it (the mirror of a ledger handback). The gaps are the
 /// handback's own plus the collection gaps the store holds inside the window.
-/// Idempotent: a window already sealed is left as it is. Returns `false` when
-/// the store has no coverage table yet.
+/// The same transaction closes the drives and charges still open at their last
+/// evidence (M03-T20, `close_open_sessions_at_handback`). Idempotent: a
+/// window already sealed is left as it is and closes nothing again. Returns
+/// `false` when the store has no coverage table yet.
 pub fn record_coverage_handback(
     connection: &Connection,
     window: &WindowCoverage,
@@ -253,8 +258,121 @@ pub fn record_coverage_handback(
             ],
         )?;
     }
+    close_open_sessions_at_handback(&transaction, &|_| window.closed_at_ms)?;
     transaction.commit()?;
     Ok(true)
+}
+
+/// Closes, at their last evidence, the drives and charges the lifecycle still
+/// holds open when coverage is handed back (M03-T20). The Hub collects no more
+/// after a handback, so a session left open would never reach the
+/// materialised tables, sync or the packs. For each vehicle with an open drive
+/// or charge, one `handback` Hub event dated `at_ms(vehicle)` is stored and
+/// applied through the ordinary intake, as the collector stores its `no_data`
+/// event, so the close is replayable. The drive ends at its last fold and the
+/// charge at its newest sample, never at the handback; their open children are
+/// materialised under them with their sync upserts. A vehicle with nothing
+/// open gets no event. Returns how many vehicles were closed.
+fn close_open_sessions_at_handback(
+    transaction: &Transaction<'_>,
+    at_ms: &dyn Fn(&str) -> i64,
+) -> Result<usize, CoverageError> {
+    let lifecycle = |error: &dyn std::fmt::Display| CoverageError::Lifecycle(error.to_string());
+    let vehicles: Vec<(String, String)> = {
+        let mut statement = transaction.prepare(
+            "SELECT state.vehicle_id, vehicles.source_id
+               FROM vehicle_lifecycle_state AS state
+               JOIN vehicles ON vehicles.vehicle_id = state.vehicle_id
+              ORDER BY state.vehicle_id",
+        )?;
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<_, _>>()?
+    };
+    let mut closed = 0;
+    for (vehicle, source) in vehicles {
+        let (Ok(vehicle_id), Ok(source_id)) = (vehicle.parse::<Uuid>(), source.parse::<Uuid>())
+        else {
+            continue;
+        };
+        let Some(record) = load_lifecycle_state_in_transaction(transaction, vehicle_id)
+            .map_err(|error| lifecycle(&error))?
+        else {
+            continue;
+        };
+        let Ok(mut state) = crate::lifecycle::OpenSessionState::decode(&record.open_session_json)
+        else {
+            continue;
+        };
+        if state.open_drive.is_none() && state.open_charge.is_none() {
+            continue;
+        }
+        let at = at_ms(&vehicle);
+        append_observation_in_transaction(
+            transaction,
+            &ObservationInput {
+                source_id,
+                vehicle_id,
+                observed_at_ms: at,
+                payload: serde_json::json!({
+                    "record_type": "hub_lifecycle_event_v1",
+                    "event": crate::lifecycle::HUB_EVENT_HANDBACK,
+                }),
+            },
+            at,
+        )
+        .map_err(|error| lifecycle(&error))?;
+        // The ordinary intake: every stored observation after the cursor.
+        let observations = observations_after_id_in_transaction(
+            transaction,
+            vehicle_id,
+            state.last_observation_id,
+            MAX_OBSERVATION_QUERY_LIMIT,
+        )
+        .map_err(|error| lifecycle(&error))?;
+        let mut delta = crate::lifecycle::LifecycleDelta::default();
+        let mut quarantined = record.quarantined;
+        for observation in observations {
+            let sample = crate::lifecycle::LifecycleSample {
+                observation_id: observation.observation_id,
+                observed_at_ms: observation.observed_at_ms,
+                vehicle_state: observation_vehicle_state(&observation.payload),
+                payload: observation.payload,
+            };
+            let step = crate::lifecycle::apply_sample_with_offline_drive_timeout(
+                state,
+                record.car_id,
+                &sample,
+                crate::lifecycle::DEFAULT_OFFLINE_DRIVE_TIMEOUT,
+            )
+            .map_err(|error| lifecycle(&error))?;
+            state = step.state;
+            quarantined |= step.quarantined;
+            crate::lifecycle::merge_step_delta(&mut delta, step.delta);
+        }
+        if let Some(open) = state.open_drive.as_mut() {
+            open.positions.clear();
+        }
+        if let Some(open) = state.open_charge.as_mut() {
+            open.samples.clear();
+        }
+        let encoded = state.encode().map_err(|error| lifecycle(&error))?;
+        HubStore::commit_lifecycle_delta_in_transaction(
+            transaction,
+            &LifecycleCommit {
+                vehicle_id,
+                car_id: record.car_id,
+                open_session_json: &encoded,
+                last_observation_id: state.last_observation_id,
+                quarantined,
+                updated_at_ms: at.max(record.updated_at_ms),
+                delta: &delta,
+            },
+        )
+        .map_err(|error| lifecycle(&error))?;
+        closed += 1;
+    }
+    Ok(closed)
 }
 
 /// The end of a restored window for `vehicle`: the instant after the latest
@@ -308,7 +426,10 @@ fn last_hub_row_ms(
 /// this host, so the window is closed per vehicle just after that vehicle's
 /// last Hub-range row (`sealed = 'restore'`, `vehicle_ends_json`, the end
 /// excluded), and the Hub's rows inside it, the last one included, stand, as
-/// in a closed window. Returns how many were sealed.
+/// in a closed window. When it seals one and no window runs here, the drives
+/// and charges still open close at their last evidence, the event dated at
+/// that vehicle's end (M03-T20); a window running here owns them and closes
+/// them by its own evidence. Returns how many were sealed.
 pub fn seal_restored_open_windows(
     connection: &Connection,
     running: Option<(i64, &str)>,
@@ -333,6 +454,7 @@ pub fn seal_restored_open_windows(
             .collect::<Result<_, _>>()?
     };
     let mut sealed = 0;
+    let mut last_ends: Option<(serde_json::Map<String, Value>, i64)> = None;
     for (seq, digest, opened_ms) in open {
         if running.is_some_and(|(running_seq, running_digest)| {
             running_seq == seq && running_digest == digest
@@ -353,11 +475,19 @@ pub fn seal_restored_open_windows(
             params![
                 seq,
                 closed_ms,
-                Value::Object(ends).to_string(),
+                Value::Object(ends.clone()).to_string(),
                 COVERAGE_SEALED_RESTORE
             ],
         )?;
         sealed += 1;
+        last_ends = Some((ends, closed_ms));
+    }
+    if running.is_none()
+        && let Some((ends, closed_ms)) = last_ends
+    {
+        close_open_sessions_at_handback(&transaction, &|vehicle| {
+            ends.get(vehicle).and_then(Value::as_i64).unwrap_or(closed_ms)
+        })?;
     }
     transaction.commit()?;
     Ok(sealed)
