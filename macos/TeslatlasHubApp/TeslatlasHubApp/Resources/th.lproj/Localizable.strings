@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "ตั้งค่า Hub ใหม่หรือย้ายประวัติของคุณจากแอปพลิเคชันต้นทาง";
 "hub.OnboardingWindowController.606.1928" = "ลงชื่อเข้าใช้ด้วยบัญชีเจ้าของ Tesla ของคุณเพื่อเริ่มต้น หากต้องการ ยังใช้ Fleet Telemetry ได้";
 "hub.OnboardingWindowController.608.1929" = "สร้างแอป Tesla Fleet แล้ววางข้อมูลเข้าสู่ระบบด้านล่าง";
-"hub.OnboardingWindowController.610.1930" = "ลงชื่อเข้าใช้ด้วย Tesla ขณะที่หน้าต่างการเก็บข้อมูลเปิดอยู่ Hub ไม่รับโทเค็นไม่ว่ากรณีใด";
 "hub.OnboardingWindowController.612.1931" = "เชื่อมต่อกับเซิร์ฟเวอร์แอปพลิเคชันต้นทางเพื่อนำเข้าประวัติรถ";
 "hub.OnboardingWindowController.614.1932" = "กำลังตรวจสอบว่าทุกอย่างเชื่อมต่อถูกต้อง";
 "hub.OnboardingWindowController.617.1933" = "นำเข้าประวัติรถของคุณไปยัง Hub แล้ว";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "เริ่มด้วยฐานข้อมูลใหม่";
 "hub.OnboardingWindowController.741.1955" = "ย้ายประวัติรถที่มีอยู่มา";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "API สตรีมมิงอย่างเป็นทางการของ Tesla ซึ่งเปิดใช้คำสั่งควบคุมรถแบบเรียลไทม์";
 "hub.OnboardingWindowController.752.1958" = "การลงชื่อเข้าใช้ของเจ้าของ";
 "hub.OnboardingWindowController.753.1959" = "ลงชื่อเข้าใช้ด้วย Tesla Hub เก็บการเข้าสู่ระบบของตัวเอง";
 "hub.OnboardingWindowController.760.1960" = "สร้าง Tesla Fleet App";
 "hub.OnboardingWindowController.771.1964" = "รหัสไคลเอ็นต์";
 "hub.OnboardingWindowController.774.1967" = "หมดอายุใน";
 "hub.OnboardingWindowController.776.1968" = "ข้อมูลเข้าสู่ระบบถูกเข้ารหัสบน Mac เครื่องนี้";
-"hub.OnboardingWindowController.788.1970" = "ลงชื่อเข้าใช้ด้วย Tesla";
 "hub.OnboardingWindowController.790.1972" = "ยังลงชื่อเข้าใช้ไม่ได้: Hub นี้ไม่มีค่าสำหรับลงชื่อเข้าใช้ Owner API ไม่มีการเปลี่ยนแปลงใด ๆ";
-"hub.OnboardingWindowController.798.1975" = "โทเค็นถูกเข้ารหัสบน Mac เครื่องนี้";
 "hub.OnboardingWindowController.822.1978" = "พอร์ต";
 "hub.OnboardingWindowController.832.1980" = "ผู้ใช้ SSH";
 "hub.OnboardingWindowController.836.1982" = "เลือกคีย์…";
@@ -858,3 +854,14 @@
 "hub.signIn.unconfirmed" = "Hub ไม่ได้ยืนยันการลงชื่อเข้าใช้ภายในเวลาที่กำหนด แต่อาจมีการบันทึกไว้แล้ว ตรวจสอบสถานะของ Hub ก่อนลงชื่อเข้าใช้อีกครั้ง";
 
 "hub.signIn.startWithdrawFailed" = "Hub ไม่ได้เริ่มทำงาน และการลบการเริ่มที่ยังไม่เสร็จล้มเหลว: %1$@ กด “เชื่อมต่อ Tesla” เพื่อลบให้เสร็จ";
+
+"hub.signIn.idle.title" = "ตั้งค่า Hub แล้วและกำลังทำงานบน Mac เครื่องนี้";
+"hub.signIn.idle.detail" = "การลงชื่อเข้าใช้ Tesla จะเปิดเฉพาะในช่วงที่หน้าต่างการเก็บข้อมูลเปิดอยู่ และคุณจะได้รับแจ้งเมื่อหน้าต่างเปิด การปิดหน้าต่างนี้จะไม่หยุด Hub";
+"hub.signIn.pageSubtitle" = "ลงชื่อเข้าใช้ด้วย Tesla ขณะที่หน้าต่างการเก็บข้อมูลเปิดอยู่";
+"hub.signIn.privacy" = "รหัสผ่าน Tesla ของคุณจะส่งไปยัง Tesla เท่านั้น Hub เก็บการเข้าสู่ระบบของตัวเองไว้ โดยเข้ารหัสบน Mac เครื่องนี้";
+"hub.signIn.fleetDetail" = "API สตรีมมิงอย่างเป็นทางการของ Tesla พร้อมแอป Fleet API ของคุณเอง";
+"hub.signIn.done" = "เสร็จสิ้น";
+
+"hub.signIn.windowFaulted" = "หน้าต่างการเก็บข้อมูลของ Hub ต้องมีเอกสารความน่าเชื่อถือฉบับใหม่ก่อนจึงจะเปิดได้ ดังนั้นจึงไม่สามารถลงชื่อเข้าใช้ Tesla ได้ ไม่มีการเปลี่ยนแปลงใด ๆ";
+"hub.signIn.windowStatusInvalid" = "อ่านคำตอบของ Hub เกี่ยวกับหน้าต่างการเก็บข้อมูลไม่ได้ ดังนั้นจึงไม่สามารถลงชื่อเข้าใช้ Tesla ได้ ไม่มีการเปลี่ยนแปลงใด ๆ ลองอีกครั้งในอีกสักครู่";
+"hub.setup.closeKeepsRunning" = "การปิดหน้าต่างนี้จะทำให้ Hub ทำงานต่อไป";

@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Ρυθμίστε ένα νέο Hub ή μεταφέρετε το ιστορικό σας από την εφαρμογή προέλευσης.";
 "hub.OnboardingWindowController.606.1928" = "Για να ξεκινήσετε, συνδεθείτε με τον λογαριασμό ιδιοκτήτη σας στην Tesla. Το Fleet Telemetry είναι διαθέσιμο αν το προτιμάτε.";
 "hub.OnboardingWindowController.608.1929" = "Δημιουργήστε μια εφαρμογή Tesla Fleet και, στη συνέχεια, επικολλήστε παρακάτω τα διαπιστευτήριά της.";
-"hub.OnboardingWindowController.610.1930" = "Συνδεθείτε στην Tesla ενώ είναι ανοιχτό ένα παράθυρο συλλογής. Το Hub δεν δέχεται ποτέ διακριτικό.";
 "hub.OnboardingWindowController.612.1931" = "Συνδεθείτε με τον διακομιστή της εφαρμογής προέλευσης για να εισαγάγετε το ιστορικό των οχημάτων της.";
 "hub.OnboardingWindowController.614.1932" = "Βεβαιωνόμαστε ότι όλα έχουν συνδεθεί σωστά.";
 "hub.OnboardingWindowController.617.1933" = "Το ιστορικό της εφαρμογής προέλευσης έχει εισαχθεί στο Hub.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Ξεκινήστε με μια νέα βάση δεδομένων.";
 "hub.OnboardingWindowController.741.1955" = "Μεταφέρετε το υπάρχον ιστορικό οχημάτων σας.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Το επίσημο API συνεχούς ροής της Tesla. Επιτρέπει εντολές οχήματος σε πραγματικό χρόνο.";
 "hub.OnboardingWindowController.752.1958" = "Σύνδεση ιδιοκτήτη";
 "hub.OnboardingWindowController.753.1959" = "Συνδεθείτε στην Tesla. Το Hub διατηρεί τη δική του σύνδεση.";
 "hub.OnboardingWindowController.760.1960" = "Δημιουργία εφαρμογής Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "Αναγνωριστικό πελάτη";
 "hub.OnboardingWindowController.774.1967" = "Λήγει σε";
 "hub.OnboardingWindowController.776.1968" = "Τα διαπιστευτήρια κρυπτογραφούνται σε αυτό το Mac";
-"hub.OnboardingWindowController.788.1970" = "Σύνδεση στην Tesla";
 "hub.OnboardingWindowController.790.1972" = "Η σύνδεση δεν είναι ακόμη διαθέσιμη: αυτό το Hub δεν έχει τιμές σύνδεσης για το Owner API. Δεν άλλαξε τίποτα.";
-"hub.OnboardingWindowController.798.1975" = "Τα διακριτικά κρυπτογραφούνται σε αυτό το Mac";
 "hub.OnboardingWindowController.822.1978" = "Θύρα";
 "hub.OnboardingWindowController.832.1980" = "Χρήστης SSH";
 "hub.OnboardingWindowController.836.1982" = "Επιλογή κλειδιού…";
@@ -858,3 +854,14 @@
 "hub.signIn.unconfirmed" = "Το Hub δεν επιβεβαίωσε εγκαίρως τη σύνδεση, αλλά ενδέχεται να έχει αποθηκευτεί. Ελέγξτε την κατάσταση του Hub πριν συνδεθείτε ξανά.";
 
 "hub.signIn.startWithdrawFailed" = "Το Hub δεν ξεκίνησε και η αφαίρεση της ημιτελούς εκκίνησής του απέτυχε: %1$@ Πατήστε «Σύνδεση Tesla» για να ολοκληρωθεί η αφαίρεση.";
+
+"hub.signIn.idle.title" = "Το Hub έχει ρυθμιστεί και λειτουργεί σε αυτό το Mac";
+"hub.signIn.idle.detail" = "Η σύνδεση στην Tesla ανοίγει μόνο κατά τη διάρκεια ενός παραθύρου συλλογής και θα ειδοποιηθείτε όταν ανοίξει ένα. Αν κλείσετε αυτό το παράθυρο, το Hub συνεχίζει να λειτουργεί.";
+"hub.signIn.pageSubtitle" = "Συνδεθείτε στην Tesla ενώ είναι ανοιχτό ένα παράθυρο συλλογής.";
+"hub.signIn.privacy" = "Ο κωδικός σας Tesla πηγαίνει μόνο στην Tesla. Το Hub διατηρεί τη δική του σύνδεση, κρυπτογραφημένη σε αυτό το Mac.";
+"hub.signIn.fleetDetail" = "Το επίσημο API συνεχούς ροής της Tesla, με τη δική σας εφαρμογή Fleet API.";
+"hub.signIn.done" = "Τέλος";
+
+"hub.signIn.windowFaulted" = "Το παράθυρο συλλογής του Hub χρειάζεται νέο έγγραφο εμπιστοσύνης για να ανοίξει, επομένως η σύνδεση στην Tesla δεν είναι διαθέσιμη. Δεν άλλαξε τίποτα.";
+"hub.signIn.windowStatusInvalid" = "Η απάντηση του Hub για το παράθυρο συλλογής του δεν μπόρεσε να διαβαστεί, επομένως η σύνδεση στην Tesla δεν είναι διαθέσιμη. Δεν άλλαξε τίποτα· δοκιμάστε ξανά σε λίγο.";
+"hub.setup.closeKeepsRunning" = "Αν κλείσετε αυτό το παράθυρο, το Hub συνεχίζει να εκτελείται.";

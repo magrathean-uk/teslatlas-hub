@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "ନୂଆ Hub ସେଟଅପ୍ କରନ୍ତୁ କିମ୍ବା ଉତ୍ସ ଆପ୍ଲିକେସନ୍ରୁ ଆପଣଙ୍କ ଇତିହାସ ଆଣନ୍ତୁ।";
 "hub.OnboardingWindowController.606.1928" = "ଆରମ୍ଭ କରିବାକୁ ଆପଣଙ୍କ Tesla ମାଲିକ ଖାତାରେ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ। ଆପଣ ଚାହିଁଲେ Fleet Telemetry ଉପଲବ୍ଧ ଅଛି।";
 "hub.OnboardingWindowController.608.1929" = "ଏକ Tesla Fleet ଆପ୍ଲିକେସନ୍ ତିଆରି କରି ତଳେ ଏହାର ପରିଚୟପତ୍ର ଦିଅନ୍ତୁ।";
-"hub.OnboardingWindowController.610.1930" = "ସଂଗ୍ରହ ୱିଣ୍ଡୋ ଖୋଲା ଥିବା ସମୟରେ Teslaରେ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ। Hub କେବେ ବି token ଗ୍ରହଣ କରେ ନାହିଁ।";
 "hub.OnboardingWindowController.612.1931" = "ଯାନ ଇତିହାସ ଆମଦାନି କରିବାକୁ ଆପଣଙ୍କ ଉତ୍ସ ଆପ୍ଲିକେସନ୍ ସର୍ଭର ସହିତ ସଂଯୋଗ କରନ୍ତୁ।";
 "hub.OnboardingWindowController.614.1932" = "ସବୁକିଛି ଠିକ୍ ଭାବେ ସଂଯୁକ୍ତ ଅଛି କି ନିଶ୍ଚିତ କରାଯାଉଛି।";
 "hub.OnboardingWindowController.617.1933" = "ଆପଣଙ୍କ ଉତ୍ସ ଆପ୍ଲିକେସନ୍ ଇତିହାସ Hubକୁ ଆମଦାନି ହୋଇଛି।";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "ଏକ ନୂଆ ଡାଟାବେସ୍‌ରୁ ଆରମ୍ଭ କରନ୍ତୁ।";
 "hub.OnboardingWindowController.741.1955" = "ଆପଣଙ୍କ ବର୍ତ୍ତମାନର ଯାନ ଇତିହାସ ଆଣନ୍ତୁ।";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Teslaର ଅଫିସିଆଲ୍ ଷ୍ଟ୍ରିମିଂ API। ଏହା ଯାନକୁ ସିଧାସଳଖ କମାଣ୍ଡ ପଠାଇବା ସକ୍ଷମ କରେ।";
 "hub.OnboardingWindowController.752.1958" = "ମାଲିକ ସାଇନ୍ ଇନ୍";
 "hub.OnboardingWindowController.753.1959" = "Teslaରେ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ। Hub ନିଜର ଲଗଇନ୍ ରଖେ।";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet ଆପ୍ ତିଆରି କରନ୍ତୁ";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
 "hub.OnboardingWindowController.774.1967" = "ମିଆଦ ଶେଷ ହେବାକୁ";
 "hub.OnboardingWindowController.776.1968" = "ଏହି Macରେ ପ୍ରବେଶ ତଥ୍ୟ ଏନକ୍ରିପ୍ଟ ହୋଇଛି";
-"hub.OnboardingWindowController.788.1970" = "Teslaରେ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ";
 "hub.OnboardingWindowController.790.1972" = "ସାଇନ୍ ଇନ୍ ଏପର୍ଯ୍ୟନ୍ତ ଉପଲବ୍ଧ ନାହିଁ: ଏହି Hub ରେ Owner API ସାଇନ୍ ଇନ୍ ମୂଲ୍ୟ ନାହିଁ। କିଛି ବଦଳାଯାଇ ନାହିଁ।";
-"hub.OnboardingWindowController.798.1975" = "ଏହି Macରେ tokenଗୁଡ଼ିକ ଏନକ୍ରିପ୍ଟ ହୋଇଛି";
 "hub.OnboardingWindowController.822.1978" = "ପୋର୍ଟ";
 "hub.OnboardingWindowController.832.1980" = "SSH ଉପଯୋଗକର୍ତ୍ତା";
 "hub.OnboardingWindowController.836.1982" = "କୀ ବାଛନ୍ତୁ…";
@@ -858,3 +854,14 @@
 "hub.signIn.unconfirmed" = "Hub ସମୟ ମଧ୍ୟରେ ସାଇନ୍ ଇନ୍ ନିଶ୍ଚିତ କରିନାହିଁ, କିନ୍ତୁ ଏହା ସଞ୍ଚିତ ହୋଇଥାଇପାରେ। ପୁଣି ସାଇନ୍ ଇନ୍ କରିବା ପୂର୍ବରୁ Hubର ସ୍ଥିତି ଯାଞ୍ଚ କରନ୍ତୁ।";
 
 "hub.signIn.startWithdrawFailed" = "Hub ଆରମ୍ଭ ହେଲା ନାହିଁ, ଏବଂ ଏହାର ଅସମ୍ପୂର୍ଣ୍ଣ ଆରମ୍ଭକୁ ହଟାଇବା ବିଫଳ ହେଲା: %1$@ ହଟାଇବା ସମ୍ପୂର୍ଣ୍ଣ କରିବାକୁ “Tesla ସଂଯୋଗ କରନ୍ତୁ” ଦବାନ୍ତୁ।";
+
+"hub.signIn.idle.title" = "Hub ଏହି Macରେ ସେଟ୍ ଅପ୍ ହୋଇଛି ଏବଂ ଚାଲୁଛି";
+"hub.signIn.idle.detail" = "Tesla ସାଇନ୍ ଇନ୍ କେବଳ ସଂଗ୍ରହ ୱିଣ୍ଡୋ ଖୋଲା ଥିବା ସମୟରେ ଖୋଲେ, ଏବଂ ୱିଣ୍ଡୋ ଖୋଲିଲେ ଆପଣଙ୍କୁ ଜଣାଯିବ। ଏହି ୱିଣ୍ଡୋ ବନ୍ଦ କଲେ ମଧ୍ୟ Hub ଚାଲୁ ରହେ।";
+"hub.signIn.pageSubtitle" = "ସଂଗ୍ରହ ୱିଣ୍ଡୋ ଖୋଲା ଥିବା ସମୟରେ Teslaରେ ସାଇନ୍ ଇନ୍ କରନ୍ତୁ।";
+"hub.signIn.privacy" = "ଆପଣଙ୍କ Tesla ପାସୱାର୍ଡ କେବଳ Teslaକୁ ଯାଏ। Hub ନିଜର ଲଗଇନ୍ ରଖେ, ଯାହା ଏହି Macରେ ଏନକ୍ରିପ୍ଟ ହୋଇଥାଏ।";
+"hub.signIn.fleetDetail" = "Teslaର ଅଫିସିଆଲ୍ ଷ୍ଟ୍ରିମିଂ API, ଆପଣଙ୍କ ନିଜ Fleet API ଆପ୍ ସହିତ।";
+"hub.signIn.done" = "ସମାପ୍ତ";
+
+"hub.signIn.windowFaulted" = "Hub ର ସଂଗ୍ରହ ୱିଣ୍ଡୋ ଖୋଲିବା ପୂର୍ବରୁ ଏକ ନୂଆ ଟ୍ରଷ୍ଟ ଡକ୍ୟୁମେଣ୍ଟ ଆବଶ୍ୟକ, ତେଣୁ Tesla ସାଇନ୍ ଇନ୍ ଉପଲବ୍ଧ ନାହିଁ। କିଛି ବଦଳାଯାଇ ନାହିଁ।";
+"hub.signIn.windowStatusInvalid" = "ସଂଗ୍ରହ ୱିଣ୍ଡୋ ବିଷୟରେ Hub ର ଉତ୍ତର ପଢ଼ାଯାଇପାରିଲା ନାହିଁ, ତେଣୁ Tesla ସାଇନ୍ ଇନ୍ ଉପଲବ୍ଧ ନାହିଁ। କିଛି ବଦଳାଯାଇ ନାହିଁ; କିଛି ସମୟ ପରେ ପୁଣି ଚେଷ୍ଟା କରନ୍ତୁ।";
+"hub.setup.closeKeepsRunning" = "ଏହି ୱିଣ୍ଡୋ ବନ୍ଦ କଲେ ମଧ୍ୟ Hub ଚାଲୁ ରହେ।";

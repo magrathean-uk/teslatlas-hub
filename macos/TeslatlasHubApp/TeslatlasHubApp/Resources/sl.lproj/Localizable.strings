@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Nastavite nov Hub ali prenesite svojo zgodovino iz izvorne aplikacije.";
 "hub.OnboardingWindowController.606.1928" = "Za začetek se prijavite z lastniškim računom Tesla. Fleet Telemetry je na voljo, če ga imate raje.";
 "hub.OnboardingWindowController.608.1929" = "Ustvarite aplikacijo Tesla Fleet in spodaj prilepite njene poverilnice.";
-"hub.OnboardingWindowController.610.1930" = "Prijavite se s Teslo, medtem ko je okno zbiranja odprto. Hub nikoli ne sprejme žetona.";
 "hub.OnboardingWindowController.612.1931" = "Povežite se s strežnikom izvorne aplikacije, da uvozite njegovo zgodovino vozil.";
 "hub.OnboardingWindowController.614.1932" = "Preverjamo, ali je vse pravilno povezano.";
 "hub.OnboardingWindowController.617.1933" = "Vaša zgodovina izvorne aplikacije je bila uvožena v Hub.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Začnite z novo podatkovno zbirko.";
 "hub.OnboardingWindowController.741.1955" = "Prenesite obstoječo zgodovino vozil.";
 "hub.OnboardingWindowController.748.1956" = "Tesla Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Uradni pretočni API podjetja Tesla. Omogoča pošiljanje ukazov vozilu v živo.";
 "hub.OnboardingWindowController.752.1958" = "Prijava lastnika";
 "hub.OnboardingWindowController.753.1959" = "Prijavite se s Teslo. Hub ohrani lastno prijavo.";
 "hub.OnboardingWindowController.760.1960" = "Ustvarite aplikacijo Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID odjemalca";
 "hub.OnboardingWindowController.774.1967" = "Poteče čez";
 "hub.OnboardingWindowController.776.1968" = "Poverilnice so v tem Macu šifrirane";
-"hub.OnboardingWindowController.788.1970" = "Prijava s Teslo";
 "hub.OnboardingWindowController.790.1972" = "Prijava še ni na voljo: ta Hub nima vrednosti za prijavo prek Owner API. Nič ni bilo spremenjeno.";
-"hub.OnboardingWindowController.798.1975" = "Žetoni so v tem Macu šifrirani";
 "hub.OnboardingWindowController.822.1978" = "Vrata";
 "hub.OnboardingWindowController.832.1980" = "Uporabnik SSH";
 "hub.OnboardingWindowController.836.1982" = "Izberite ključ…";
@@ -858,3 +854,14 @@
 "hub.signIn.unconfirmed" = "Hub prijave ni pravočasno potrdil, vendar je morda shranjena. Pred ponovno prijavo preverite stanje Huba.";
 
 "hub.signIn.startWithdrawFailed" = "Hub se ni zagnal, odstranitev njegovega nedokončanega zagona pa ni uspela: %1$@ Za dokončanje odstranitve kliknite »Poveži Teslo«.";
+
+"hub.signIn.idle.title" = "Hub je nastavljen in deluje na tem Macu";
+"hub.signIn.idle.detail" = "Prijava s Teslo se odpre samo med oknom zbiranja, o odprtju pa boste obveščeni. Če zaprete to okno, Hub še naprej deluje.";
+"hub.signIn.pageSubtitle" = "Prijavite se s Teslo, medtem ko je okno zbiranja odprto.";
+"hub.signIn.privacy" = "Vaše geslo za Teslo gre samo Tesli. Hub hrani svojo prijavo, šifrirano na tem Macu.";
+"hub.signIn.fleetDetail" = "Uradni pretočni API podjetja Tesla z vašo lastno aplikacijo Fleet API.";
+"hub.signIn.done" = "Končano";
+
+"hub.signIn.windowFaulted" = "Okno zbiranja Huba potrebuje nov dokument zaupanja, preden se lahko odpre, zato prijava v Teslo ni na voljo. Nič ni bilo spremenjeno.";
+"hub.signIn.windowStatusInvalid" = "Odgovora Huba o oknu zbiranja ni bilo mogoče prebrati, zato prijava v Teslo ni na voljo. Nič ni bilo spremenjeno; poskusite znova čez trenutek.";
+"hub.setup.closeKeepsRunning" = "Če zaprete to okno, Hub ostane zagnan.";

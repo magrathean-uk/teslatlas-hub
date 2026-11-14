@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Stel een nieuwe Hub in of importeer je geschiedenis vanuit de bronapplicatie.";
 "hub.OnboardingWindowController.606.1928" = "Meld je om te beginnen aan met je Tesla-eigenaarsaccount. Fleet Telemetry is beschikbaar als je dat liever gebruikt.";
 "hub.OnboardingWindowController.608.1929" = "Maak een Tesla Fleet-app aan en plak de bijbehorende toegangsgegevens hieronder.";
-"hub.OnboardingWindowController.610.1930" = "Meld je aan bij Tesla terwijl een verzamelvenster open is. Hub accepteert nooit een token.";
 "hub.OnboardingWindowController.612.1931" = "Verbind met je bronapplicatie-server om de voertuiggeschiedenis te importeren.";
 "hub.OnboardingWindowController.614.1932" = "Controleren of alles goed is ingesteld.";
 "hub.OnboardingWindowController.617.1933" = "Je bronapplicatie-geschiedenis is geïmporteerd in de Hub.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Begin met een nieuwe database.";
 "hub.OnboardingWindowController.741.1955" = "Importeer je bestaande voertuiggeschiedenis.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "De officiële streaming-API van Tesla. Hiermee kun je live opdrachten naar je voertuig sturen.";
 "hub.OnboardingWindowController.752.1958" = "Aanmelden als eigenaar";
 "hub.OnboardingWindowController.753.1959" = "Meld je aan bij Tesla. Hub houdt zijn eigen aanmelding.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet-app aanmaken";
 "hub.OnboardingWindowController.771.1964" = "Client-ID";
 "hub.OnboardingWindowController.774.1967" = "Verloopt over";
 "hub.OnboardingWindowController.776.1968" = "Toegangsgegevens zijn versleuteld op deze Mac";
-"hub.OnboardingWindowController.788.1970" = "Aanmelden bij Tesla";
 "hub.OnboardingWindowController.790.1972" = "Aanmelden is nog niet beschikbaar: deze Hub heeft geen aanmeldwaarden voor de Owner API. Er is niets gewijzigd.";
-"hub.OnboardingWindowController.798.1975" = "Tokens worden op deze Mac versleuteld";
 "hub.OnboardingWindowController.822.1978" = "Poort";
 "hub.OnboardingWindowController.832.1980" = "SSH-gebruiker";
 "hub.OnboardingWindowController.836.1982" = "Sleutel kiezen…";
@@ -858,3 +854,14 @@
 "hub.signIn.unconfirmed" = "Hub heeft de aanmelding niet op tijd bevestigd, maar die is mogelijk opgeslagen. Controleer de status van Hub voordat je je opnieuw aanmeldt.";
 
 "hub.signIn.startWithdrawFailed" = "Hub is niet gestart en het verwijderen van de onvoltooide start is mislukt: %1$@ Klik op ‘Verbinden met Tesla’ om het verwijderen af te ronden.";
+
+"hub.signIn.idle.title" = "Hub is ingesteld en draait op deze Mac";
+"hub.signIn.idle.detail" = "Aanmelden bij Tesla kan alleen tijdens een verzamelvenster en je krijgt een melding wanneer er een opent. Als je dit venster sluit, blijft Hub draaien.";
+"hub.signIn.pageSubtitle" = "Meld je aan bij Tesla terwijl een verzamelvenster open is.";
+"hub.signIn.privacy" = "Je Tesla-wachtwoord gaat alleen naar Tesla. Hub bewaart een eigen login, versleuteld op deze Mac.";
+"hub.signIn.fleetDetail" = "De officiële streaming-API van Tesla, met je eigen Fleet API-app.";
+"hub.signIn.done" = "Gereed";
+
+"hub.signIn.windowFaulted" = "Het verzamelvenster van de Hub heeft een nieuw vertrouwensdocument nodig voordat het kan openen, dus inloggen bij Tesla is niet beschikbaar. Er is niets gewijzigd.";
+"hub.signIn.windowStatusInvalid" = "Het antwoord van de Hub over zijn verzamelvenster kon niet worden gelezen, dus inloggen bij Tesla is niet beschikbaar. Er is niets gewijzigd; probeer het zo opnieuw.";
+"hub.setup.closeKeepsRunning" = "Als je dit venster sluit, blijft de Hub actief.";

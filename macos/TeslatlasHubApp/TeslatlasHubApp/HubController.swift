@@ -472,6 +472,14 @@ struct HubSnapshot {
     )
 }
 
+/// A sign-in refusal with the service's stable code. The page branches on the code, never on
+/// the line the owner reads.
+struct HubSignInRefusal: LocalizedError, Equatable {
+    let code: String
+    let message: String
+    var errorDescription: String? { message }
+}
+
 enum HubActionError: LocalizedError {
     case preview
     case missingResource(String)
@@ -4258,14 +4266,71 @@ final class HubController {
     /// What one `window status` answer means for a sign-in.
     static func signInWindowCheck(_ result: Result<String, Error>) -> Result<Void, Error> {
         switch result {
-        case let .success(output) where credentialRecoveryIsPending(output):
-            return .failure(signInRefusal(code: "credential_recovery_pending"))
-        case let .success(output) where collectionWindowIsOpen(output):
-            return .success(())
-        case .success:
-            return .failure(signInRefusal(code: "window_closed"))
+        case let .success(output):
+            switch collectionWindowOutcome(output) {
+            case .open: return .success(())
+            case .closed: return .failure(signInRefusal(code: "window_closed"))
+            case let .refused(code): return .failure(signInRefusal(code: code))
+            }
         case let .failure(error):
             return .failure(signInError(error))
+        }
+    }
+
+    /// What a successful `window status` answer says about the collection window, by the
+    /// service's own fields and never by any presentation text. `closed` is the one ordinary
+    /// no-open-window answer (closed, pending or closing, trusted, not faulted); a faulted
+    /// window, a pending credential recovery and an answer that cannot be read are each
+    /// their own refusal code.
+    enum CollectionWindowOutcome: Equatable {
+        case open
+        case closed
+        case refused(code: String)
+    }
+
+    static func collectionWindowOutcome(_ output: String) -> CollectionWindowOutcome {
+        if credentialRecoveryIsPending(output) { return .refused(code: "credential_recovery_pending") }
+        let root = output.split(whereSeparator: { $0.isNewline }).lazy.compactMap { line -> [String: Any]? in
+            guard let data = String(line).data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  object["phase"] is String else { return nil }
+            return object
+        }.first
+        guard let root, let phase = root["phase"] as? String else {
+            for code in ["service_not_running", "service_unauthenticated", "control_channel_busy"]
+            where output.contains(code) {
+                return .refused(code: code)
+            }
+            return .refused(code: "window_status_invalid")
+        }
+        if root["faulted"] as? Bool == true { return .refused(code: "window_faulted") }
+        switch phase {
+        case "open": return .open
+        case "closed", "pending", "closing": return .closed
+        default: return .refused(code: "window_status_invalid")
+        }
+    }
+
+    /// The stable refusal code of a sign-in refusal, when the error is one.
+    static func signInRefusalCode(_ error: Error) -> String? {
+        (error as? HubSignInRefusal)?.code
+    }
+
+    /// A read-only look at the collection window for the set-up page: nothing is opened, closed,
+    /// started or signed in, and no Tesla traffic happens. A service that does not answer is
+    /// reported by its refusal code. The completion runs on the main queue.
+    func observeCollectionWindow(completion: @escaping (CollectionWindowOutcome) -> Void) {
+        guard !previewMode else { return }
+        commandRunner.run(arguments: Self.windowStatusArguments(configPath: configPath)) { result in
+            let outcome: CollectionWindowOutcome
+            switch result {
+            case let .success(output):
+                outcome = Self.collectionWindowOutcome(output)
+            case let .failure(error):
+                let refusal = Self.signInError(error)
+                outcome = .refused(code: Self.signInRefusalCode(refusal) ?? "service_not_running")
+            }
+            DispatchQueue.main.async { completion(outcome) }
         }
     }
 
@@ -4841,30 +4906,39 @@ final class HubController {
     }
 
     static func signInRefusal(code: String) -> Error {
+        HubSignInRefusal(code: code, message: signInRefusalText(code: code))
+    }
+
+    private static func signInRefusalText(code: String) -> String {
         switch code {
         case "sign_in_unavailable":
-            return HubActionError.commandFailed(HubL10n.text(
+            return HubL10n.text(
                 "hub.OnboardingWindowController.790.1972",
-                fallback: "Sign-in is not available yet: this Hub has no Owner API sign-in values. Nothing was changed."))
+                fallback: "Sign-in is not available yet: this Hub has no Owner API sign-in values. Nothing was changed.")
         case "window_closed":
-            return HubActionError.commandFailed(HubL10n.text(
+            return HubL10n.text(
                 "hub.HubController.1591.587",
-                fallback: "Sign-in needs an open collection window. Open a window, then sign in again."))
+                fallback: "Sign-in needs an open collection window. Open a window, then sign in again.")
+        case "window_faulted":
+            return HubL10n.text(
+                "hub.signIn.windowFaulted",
+                fallback: "Hub's collection window needs a new trust document before it can open, so Tesla sign-in is not available. Nothing was changed.")
+        case "window_status_invalid":
+            return HubL10n.text(
+                "hub.signIn.windowStatusInvalid",
+                fallback: "Hub's answer about its collection window could not be read, so Tesla sign-in is not available. Nothing was changed; try again in a moment.")
         case "credential_recovery_pending":
-            return HubActionError.commandFailed(
-                HubL10n.text("hub.signIn.recoveryPending", fallback: "Hub is waiting for its credential recovery: this Hub's data was restored without its keys. "
-                + "Run restore-recovery-credentials, then sign in. Nothing was changed."))
+            return HubL10n.text("hub.signIn.recoveryPending", fallback: "Hub is waiting for its credential recovery: this Hub's data was restored without its keys. "
+                + "Run restore-recovery-credentials, then sign in. Nothing was changed.")
         case "service_unauthenticated":
-            return HubActionError.commandFailed(
-                HubL10n.text("hub.signIn.serviceUnauthenticated", fallback: "The process answering on the Hub's control channel is not this Hub, so nothing was sent. "
-                + "Restart Hub, then sign in again."))
+            return HubL10n.text("hub.signIn.serviceUnauthenticated", fallback: "The process answering on the Hub's control channel is not this Hub, so nothing was sent. "
+                + "Restart Hub, then sign in again.")
         case "control_channel_busy":
-            return HubActionError.commandFailed(
-                HubL10n.text("hub.signIn.busy", fallback: "Hub is busy with other requests. Nothing was changed; sign in again in a moment."))
+            return HubL10n.text("hub.signIn.busy", fallback: "Hub is busy with other requests. Nothing was changed; sign in again in a moment.")
         default:
-            return HubActionError.commandFailed(HubL10n.text(
+            return HubL10n.text(
                 "hub.ImportSheetController.73.1699",
-                fallback: "Hub is not running. Start Hub, open a collection window, then sign in."))
+                fallback: "Hub is not running. Start Hub, open a collection window, then sign in.")
         }
     }
 

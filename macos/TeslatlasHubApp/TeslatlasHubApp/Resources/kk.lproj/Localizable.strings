@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Жаңа Hub баптаңыз немесе бастапқы қолданбадағы тарихыңызды көшіріңіз.";
 "hub.OnboardingWindowController.606.1928" = "Бастау үшін Tesla иесінің тіркелгісімен кіріңіз. Қаласаңыз, Fleet Telemetry қолжетімді.";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet қолданбасын жасап, тіркелгі деректерін төмендегі өрістерге қойыңыз.";
-"hub.OnboardingWindowController.610.1930" = "Жинау терезесі ашық кезде Tesla тіркелгісімен кіріңіз. Hub ешқашан токенді қабылдамайды.";
 "hub.OnboardingWindowController.612.1931" = "Көлік тарихын импорттау үшін бастапқы қолданба серверіне қосылыңыз.";
 "hub.OnboardingWindowController.614.1932" = "Барлығының дұрыс қосылғанын тексеру.";
 "hub.OnboardingWindowController.617.1933" = "Бастапқы қолданба тарихы Hub-ке импортталды.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Жаңа дерекқормен бастаңыз.";
 "hub.OnboardingWindowController.741.1955" = "Бар көлік тарихыңызды көшіріп әкеліңіз.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Tesla-ның ресми ағындық API-і. Көлікті нақты уақытта басқару пәрмендерін қосады.";
 "hub.OnboardingWindowController.752.1958" = "Иесі ретінде кіру";
 "hub.OnboardingWindowController.753.1959" = "Tesla тіркелгісімен кіріңіз. Hub өз кіру деректерін өзі сақтайды.";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet қолданбасын жасау";
 "hub.OnboardingWindowController.771.1964" = "Клиент ID-і";
 "hub.OnboardingWindowController.774.1967" = "Жарамдылық мерзімі";
 "hub.OnboardingWindowController.776.1968" = "Тіркелгі деректері осы Mac-та шифрланады";
-"hub.OnboardingWindowController.788.1970" = "Tesla тіркелгісімен кіру";
 "hub.OnboardingWindowController.790.1972" = "Кіру әлі қолжетімді емес: бұл Hub-та Owner API кіру мәндері жоқ. Ештеңе өзгертілген жоқ.";
-"hub.OnboardingWindowController.798.1975" = "Токендер осы Mac-та шифрланады";
 "hub.OnboardingWindowController.822.1978" = "Порт";
 "hub.OnboardingWindowController.832.1980" = "SSH пайдаланушысы";
 "hub.OnboardingWindowController.836.1982" = "Кілт таңдау…";
@@ -858,3 +854,14 @@
 "hub.signIn.unconfirmed" = "Hub кіруді уақытында растамады, бірақ ол сақталған болуы мүмкін. Қайта кірмес бұрын Hub күйін тексеріңіз.";
 
 "hub.signIn.startWithdrawFailed" = "Hub іске қосылмады, ал оның аяқталмаған іске қосылуын жою сәтсіз болды: %1$@ Жоюды аяқтау үшін «Tesla-ны қосу» түймесін басыңыз.";
+
+"hub.signIn.idle.title" = "Hub осы Mac-та бапталған және жұмыс істеп тұр";
+"hub.signIn.idle.detail" = "Tesla тіркелгісімен кіру тек жинау терезесі ашық кезде ғана қолжетімді, ал терезе ашылғанда сізге хабарланады. Осы терезені жапқанда Hub жұмысын жалғастырады.";
+"hub.signIn.pageSubtitle" = "Жинау терезесі ашық кезде Tesla тіркелгісімен кіріңіз.";
+"hub.signIn.privacy" = "Tesla құпиясөзіңіз тек Tesla-ға жіберіледі. Hub өз кіру деректерін осы Mac-та шифрлап сақтайды.";
+"hub.signIn.fleetDetail" = "Tesla-ның ресми ағындық API-і, өзіңіздің Fleet API қолданбаңызбен.";
+"hub.signIn.done" = "Дайын";
+
+"hub.signIn.windowFaulted" = "Hub-тың жинау терезесі ашылу алдында жаңа сенім құжатын қажет етеді, сондықтан Tesla-ға кіру қолжетімсіз. Ешнәрсе өзгертілмеді.";
+"hub.signIn.windowStatusInvalid" = "Hub-тың жинау терезесі туралы жауабын оқу мүмкін болмады, сондықтан Tesla-ға кіру қолжетімсіз. Ешнәрсе өзгертілмеді; сәлден кейін қайталап көріңіз.";
+"hub.setup.closeKeepsRunning" = "Бұл терезені жапқанда Hub жұмысын жалғастырады.";

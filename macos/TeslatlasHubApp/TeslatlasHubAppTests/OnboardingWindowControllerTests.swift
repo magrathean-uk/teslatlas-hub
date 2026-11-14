@@ -1381,20 +1381,26 @@ final class OnboardingWindowControllerTests: XCTestCase {
         }, "a later import must start with its own progress phase")
     }
 
-    func testFreshMacConnectTeslaStartsHubThenShowsTheOpenWindowLine() throws {
-        // M02-T21 (DEC-112, DEC-115): with the Hub LaunchAgent confirmed absent, Connect Tesla
-        // writes the default configuration and starts Hub, which the real start check admits
-        // idle (doubles only: no launchd, no network), shows the setup page meanwhile, and then
-        // the existing open-window line. No Tesla page opens.
+    private struct FreshMacRig {
+        let onboarding: OnboardingWindowController
+        let controller: HubController
+        let runner: OwnerRunner
+        let service: OwnerService
+        let agent: FirstStartLaunchAgent
+        let home: URL
+    }
+
+    /// A Mac with the Hub LaunchAgent confirmed absent and a service whose `window status`
+    /// reports a closed collection window; Start installs the Hub through the real start check
+    /// (doubles only: no launchd, no network) and is held until the test releases it.
+    private func freshMacRig(policy: HubOnboardingDismissalPolicy = .accountManagement,
+                             onComplete: @escaping (HubOnboardingCompletion) -> Void = { _ in }) throws -> FreshMacRig {
         let home = HubTestScratch.directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: home) }
         let runner = OwnerRunner()
         runner.results["window"] = .success(OwnerRunner.windowClosed)
         let service = OwnerService()
         service.hold("start")
-        // The real Start writes the LaunchAgent file, then runs the binary's start check, which
-        // admits a never-configured Hub idle and refuses anything else.
         let agent = FirstStartLaunchAgent()
         let configPath = home.appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml")
         service.onCall = { [unowned service] call in
@@ -1410,7 +1416,21 @@ final class OnboardingWindowControllerTests: XCTestCase {
                                        migrationStartupReadinessTimeout: 5,
                                        migrationStartupReadinessMaxAttempts: 3)
         let onboarding = OnboardingWindowController(controller: controller, initialRoute: .legacy,
-                                                     onComplete: { _ in })
+                                                     dismissalPolicy: policy, onComplete: onComplete)
+        return FreshMacRig(onboarding: onboarding, controller: controller, runner: runner,
+                           service: service, agent: agent, home: home)
+    }
+
+    func testFreshMacConnectTeslaStartsHubThenShowsTheIdleNotice() throws {
+        // M02-T21 (DEC-112, DEC-115) and M02-T22 (DEC-125): with the Hub LaunchAgent confirmed
+        // absent, Connect Tesla writes the default configuration and starts Hub, shows the setup
+        // page meanwhile, and then says plainly that Hub runs and waits for a collection window:
+        // no error line, no sign-in action, Done as the primary. No Tesla page opens.
+        var completions: [HubOnboardingCompletion] = []
+        let rig = try freshMacRig(onComplete: { completions.append($0) })
+        defer { try? FileManager.default.removeItem(at: rig.home) }
+        let (onboarding, runner, service, agent, controller) =
+            (rig.onboarding, rig.runner, rig.service, rig.agent, rig.controller)
         defer { onboarding.close() }
         let connect = try XCTUnwrap(buttons(in: onboarding.window?.contentView).first { $0.title == "Connect Tesla" })
 
@@ -1420,21 +1440,436 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(labels(in: onboarding.window?.contentView).contains { $0.stringValue == "Setting up Hub…" },
                       "the page says Hub is being set up while it starts")
         XCTAssertTrue(FileManager.default.fileExists(
-            atPath: home.appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml").path))
+            atPath: rig.home.appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml").path))
 
         service.release("start")
-        let line = "Sign-in needs an open collection window. Open a window, then sign in again."
-        spinUntil(3) { self.labels(in: onboarding.window?.contentView).contains { $0.stringValue == line } }
-        XCTAssertTrue(labels(in: onboarding.window?.contentView).contains { $0.stringValue == line })
+        let heading = "Hub is set up and running on this Mac"
+        spinUntil(3) { onboarding.signInIsIdle }
+        spinUntil(3) { controller.lifecycleCapabilities.isIdle }
+        let root = onboarding.window?.contentView
+        XCTAssertTrue(onboarding.signInIsIdle)
         XCTAssertEqual(onboarding.currentRoute, .legacy)
+        let shown = labels(in: root).map(\.stringValue)
+        XCTAssertTrue(shown.contains(heading))
+        XCTAssertTrue(shown.contains("Tesla sign-in opens only during a collection window, and you will be told when one opens. Closing this window leaves Hub running."))
+        XCTAssertFalse(shown.contains("Sign-in needs an open collection window. Open a window, then sign in again."),
+                       "no error line")
+        XCTAssertNil(view(in: try XCTUnwrap(root), identifier: "onboarding.notice.error"))
+        XCTAssertNotNil(view(in: try XCTUnwrap(root), identifier: "onboarding.signin.idle"))
+        let titles = buttons(in: root).map(\.title)
+        XCTAssertFalse(titles.contains("Connect Tesla"), "the sign-in action is unavailable")
+        XCTAssertFalse(titles.contains("Sign in with Tesla"))
+        XCTAssertEqual(titles.filter { $0 == "Done" }.count, 1)
+        let done = try XCTUnwrap(buttons(in: root).first { $0.title == "Done" })
+        XCTAssertTrue(done.isEnabled)
+
         XCTAssertEqual(service.calls.filter { $0.hasPrefix("run:") }, ["run:start"],
                        "the service stays running: not removed or stopped")
         XCTAssertEqual(runner.count("window"), 1)
         XCTAssertEqual(runner.count("setup"), 0, "nothing is sent to Tesla")
         XCTAssertTrue(agent.isInstalled, "the Start installed the Hub")
         XCTAssertNil(controller.ownerSignInStartStage, "the service answered: no unfinished start is left")
-        spinUntil(3) { controller.lifecycleCapabilities.isIdle }
-        XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
+
+        done.performClick(nil)
+        XCTAssertEqual(completions, [.configured], "Done closes set-up")
+        XCTAssertEqual(service.calls.filter { $0.hasPrefix("run:") }, ["run:start"],
+                       "Done leaves the service untouched")
+        XCTAssertEqual(runner.count("window"), 1)
+        XCTAssertEqual(runner.count("setup"), 0)
+    }
+
+    /// A first-run set-up on a Mac whose Hub has just been started by Connect Tesla and now
+    /// shows the idle page (window closed).
+    private func idleFirstRunRig(policy: HubOnboardingDismissalPolicy = .firstRun) throws -> FreshMacRig {
+        let rig = try freshMacRig(policy: policy)
+        try XCTUnwrap(buttons(in: rig.onboarding.window?.contentView).first { $0.title == "Connect Tesla" }).performClick(nil)
+        spinUntil(3) { rig.service.heldKeys == ["start"] }
+        rig.service.release("start")
+        spinUntil(3) { rig.onboarding.signInIsIdle && rig.controller.lifecycleCapabilities.isIdle }
+        return rig
+    }
+
+    private static let windowFaulted = #"{"phase":"closed","trusted":true,"faulted":true,"closeReason":"fault","seq":2}"#
+    private static let healthyLine = "Hub is set up and running on this Mac"
+    private static let faultedLine = "Hub's collection window needs a new trust document before it can open, so Tesla sign-in is not available. Nothing was changed."
+    private static let invalidLine = "Hub's answer about its collection window could not be read, so Tesla sign-in is not available. Nothing was changed; try again in a moment."
+
+    private func refreshWindowState(_ rig: FreshMacRig, until condition: () -> Bool) {
+        rig.onboarding.refreshCollectionWindowState()
+        spinUntil(3, condition)
+    }
+
+    func testIdleFirstStartEnablesTheCloseButtonAndBackKeepsItWhileHubRuns() throws {
+        // M02-T22: set-up cannot be closed before the service runs; once the service answered, the
+        // window's close button works, also after Back, and its text says Hub keeps running.
+        let rig = try freshMacRig(policy: .firstRun)
+        defer { try? FileManager.default.removeItem(at: rig.home) }
+        let (onboarding, service) = (rig.onboarding, rig.service)
+        defer { onboarding.close() }
+        let close = try XCTUnwrap(onboarding.window?.standardWindowButton(.closeButton))
+        XCTAssertFalse(close.isEnabled)
+        XCTAssertFalse(onboarding.canCancel)
+        XCTAssertFalse(onboarding.serviceIsConfirmedRunning)
+
+        try XCTUnwrap(buttons(in: onboarding.window?.contentView).first { $0.title == "Connect Tesla" }).performClick(nil)
+        spinUntil(3) { service.heldKeys == ["start"] }
+        XCTAssertFalse(close.isEnabled, "not while Hub is still being set up")
+        service.release("start")
+        spinUntil(3) { onboarding.signInIsIdle && rig.controller.lifecycleCapabilities.isIdle }
+        XCTAssertTrue(onboarding.signInIsIdle)
+        XCTAssertTrue(close.isEnabled)
+        XCTAssertTrue(onboarding.canCancel)
+        XCTAssertEqual(close.toolTip, "Closing this window leaves Hub running.")
+        XCTAssertTrue(onboarding.windowShouldClose(try XCTUnwrap(onboarding.window)))
+        XCTAssertTrue(buttons(in: onboarding.window?.contentView).filter { $0.title == "Cancel" }.allSatisfy(\.isHidden),
+                      "Done is the one way out")
+
+        try XCTUnwrap(buttons(in: onboarding.window?.contentView).first { $0.title == "Back" }).performClick(nil)
+        XCTAssertFalse(onboarding.signInIsIdle)
+        XCTAssertEqual(onboarding.currentRoute, .provider)
+        XCTAssertTrue(onboarding.serviceIsConfirmedRunning, "Back does not forget that Hub runs")
+        XCTAssertTrue(close.isEnabled, "the close button stays enabled while Hub runs")
+        XCTAssertTrue(onboarding.canCancel)
+        XCTAssertTrue(onboarding.windowShouldClose(try XCTUnwrap(onboarding.window)))
+        XCTAssertEqual(service.calls.filter { $0.hasPrefix("run:") }, ["run:start"],
+                       "closing is allowed without stopping or removing the service")
+
+        // Going forward again shows the page with the service state asked afresh; still closable.
+        try XCTUnwrap(buttons(in: onboarding.window?.contentView).first { $0.title == "Continue" || $0.title == "Next" }).performClick(nil)
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
+        XCTAssertTrue(close.isEnabled)
+    }
+
+    func testBusyOperationsStillBlockClosingWhileHubRuns() throws {
+        let rig = try idleFirstRunRig()
+        defer { try? FileManager.default.removeItem(at: rig.home) }
+        let onboarding = rig.onboarding
+        defer { onboarding.close() }
+        let close = try XCTUnwrap(onboarding.window?.standardWindowButton(.closeButton))
+        XCTAssertTrue(close.isEnabled)
+        onboarding.setBusy(true, operation: .setup)
+        XCTAssertFalse(close.isEnabled, "a running operation still blocks closing")
+        XCTAssertFalse(onboarding.windowShouldClose(try XCTUnwrap(onboarding.window)))
+        onboarding.setBusy(false)
+        XCTAssertTrue(close.isEnabled)
+    }
+
+    func testTheIdleStateFollowsTheWindowWithoutRecreatingThePage() throws {
+        // M02-T22 review finding 2: the page asks the service, read-only, when it shows and when
+        // the owner returns to it. A window that opens clears the idle notice; one that closes
+        // brings it back; a service that stops answering leaves it. Nothing is polled.
+        let rig = try idleFirstRunRig()
+        defer { try? FileManager.default.removeItem(at: rig.home) }
+        let (onboarding, runner) = (rig.onboarding, rig.runner)
+        defer { onboarding.close() }
+        let root = { onboarding.window?.contentView }
+        let close = try XCTUnwrap(onboarding.window?.standardWindowButton(.closeButton))
+        XCTAssertTrue(labels(in: root()).map(\.stringValue).contains(Self.healthyLine))
+
+        runner.results["window"] = .success(OwnerRunner.windowOpen)
+        refreshWindowState(rig) { !onboarding.signInIsIdle }
+        XCTAssertFalse(onboarding.signInIsIdle, "a window opened while the page was showing")
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
+        var titles = buttons(in: root()).map(\.title)
+        XCTAssertTrue(titles.contains("Connect Tesla"), "sign-in is offered again")
+        XCTAssertFalse(titles.contains("Done"))
+        XCTAssertFalse(labels(in: root()).map(\.stringValue).contains(Self.healthyLine))
+        XCTAssertNil(view(in: try XCTUnwrap(root()), identifier: "onboarding.signin.idle"))
+        XCTAssertTrue(close.isEnabled, "closing stays possible while Hub runs")
+
+        runner.results["window"] = .success(OwnerRunner.windowClosed)
+        refreshWindowState(rig) { onboarding.signInIsIdle }
+        XCTAssertTrue(onboarding.signInIsIdle, "the window closed again")
+        titles = buttons(in: root()).map(\.title)
+        XCTAssertTrue(titles.contains("Done"))
+        XCTAssertFalse(titles.contains("Connect Tesla"))
+
+        runner.results["window"] = .failure(HubActionError.commandFailed("service_not_running: Hub is not running"))
+        refreshWindowState(rig) { !onboarding.signInIsIdle }
+        XCTAssertFalse(onboarding.signInIsIdle, "a service that is not running is not the idle state")
+        XCTAssertFalse(onboarding.serviceIsConfirmedRunning)
+        XCTAssertFalse(close.isEnabled, "first-run set-up cannot be closed on a service that does not answer")
+        XCTAssertFalse(labels(in: root()).map(\.stringValue).contains(Self.healthyLine))
+        XCTAssertTrue(buttons(in: root()).map(\.title).contains("Connect Tesla"))
+        XCTAssertEqual(rig.service.calls.filter { $0.hasPrefix("run:") }, ["run:start"],
+                       "observing never starts, stops or removes the service")
+        XCTAssertEqual(runner.count("setup"), 0, "nothing is sent to Tesla")
+    }
+
+    func testEnteringTheSignInPageOfARunningHubWithAClosedWindowIsIdleAtOnce() throws {
+        // M02-T22 review finding 2: no need to press Connect Tesla first.
+        let rig = try idleFirstRunRig()
+        defer { try? FileManager.default.removeItem(at: rig.home) }
+        let (onboarding, runner) = (rig.onboarding, rig.runner)
+        defer { onboarding.close() }
+        try XCTUnwrap(buttons(in: onboarding.window?.contentView).first { $0.title == "Back" }).performClick(nil)
+        XCTAssertEqual(onboarding.currentRoute, .provider)
+        let asked = runner.count("window")
+        try XCTUnwrap(buttons(in: onboarding.window?.contentView).first { $0.title == "Continue" || $0.title == "Next" }).performClick(nil)
+        spinUntil(3) { onboarding.signInIsIdle }
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
+        XCTAssertTrue(onboarding.signInIsIdle, "the closed window shows the idle notice on entry")
+        XCTAssertEqual(runner.count("window"), asked + 1, "one read-only check on entry")
+        XCTAssertEqual(runner.count("setup"), 0)
+
+        // And an open window shows the normal page on entry.
+        try XCTUnwrap(buttons(in: onboarding.window?.contentView).first { $0.title == "Back" }).performClick(nil)
+        runner.results["window"] = .success(OwnerRunner.windowOpen)
+        try XCTUnwrap(buttons(in: onboarding.window?.contentView).first { $0.title == "Continue" || $0.title == "Next" }).performClick(nil)
+        spinUntil(3) { runner.count("window") == asked + 2 }
+        spinBriefly()
+        XCTAssertFalse(onboarding.signInIsIdle)
+        XCTAssertTrue(buttons(in: onboarding.window?.contentView).map(\.title).contains("Connect Tesla"))
+    }
+
+    func testAWindowAnswerHeldFromAnEarlierVisitCannotRestoreTheIdleState() throws {
+        // M02-T22 re-check finding 2: a check asked while the window was closed is still
+        // outstanding when the owner goes Back, a collection window opens and he returns. That
+        // answer predates the change: it is discarded and one fresh read-only check runs, so
+        // Connect Tesla comes back without another navigation or focus change. No polling.
+        let rig = try idleFirstRunRig()
+        defer { try? FileManager.default.removeItem(at: rig.home) }
+        let (onboarding, runner) = (rig.onboarding, rig.runner)
+        defer { onboarding.close() }
+        let root = { onboarding.window?.contentView }
+        let asked = runner.count("window")
+        runner.hold("window")
+        onboarding.refreshCollectionWindowState()
+        spinUntil(3) { runner.heldKeys == ["window"] }
+        XCTAssertEqual(runner.count("window"), asked + 1, "the earlier check is outstanding")
+
+        try XCTUnwrap(buttons(in: root()).first { $0.title == "Back" }).performClick(nil)
+        XCTAssertEqual(onboarding.currentRoute, .provider)
+        runner.results["window"] = .success(OwnerRunner.windowOpen)
+        try XCTUnwrap(buttons(in: root()).first { $0.title == "Continue" || $0.title == "Next" }).performClick(nil)
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
+        spinBriefly()
+        XCTAssertEqual(runner.count("window"), asked + 1, "no second check while the first is outstanding")
+
+        // The earlier answer (a closed window) lands now.
+        XCTAssertTrue(runner.release("window"))
+        spinUntil(3) { runner.count("window") == asked + 2 }
+        spinBriefly()
+        XCTAssertEqual(runner.count("window"), asked + 2, "exactly one fresh read-only check")
+        XCTAssertFalse(onboarding.signInIsIdle, "the stale closed answer does not restore the idle state")
+        XCTAssertEqual(onboarding.currentRoute, .legacy)
+        let titles = buttons(in: root()).map(\.title)
+        XCTAssertTrue(titles.contains("Connect Tesla"), "the open window offers sign-in")
+        XCTAssertFalse(titles.contains("Done"))
+        XCTAssertFalse(labels(in: root()).map(\.stringValue).contains(Self.healthyLine))
+        XCTAssertNil(view(in: try XCTUnwrap(root()), identifier: "onboarding.signin.idle"))
+        XCTAssertEqual(runner.count("setup"), 0, "nothing is sent to Tesla")
+    }
+
+    func testAFaultedOrUnreadableWindowIsNeverTheHealthyNotice() throws {
+        // M02-T22 review finding 3: by the service's own fields, never by text. A faulted window,
+        // an answer that cannot be read and a pending credential recovery each show their own line
+        // and keep Connect Tesla out of the idle state; a refused service stays an error too.
+        let rig = try idleFirstRunRig()
+        defer { try? FileManager.default.removeItem(at: rig.home) }
+        let (onboarding, runner) = (rig.onboarding, rig.runner)
+        defer { onboarding.close() }
+        let root = { onboarding.window?.contentView }
+        let cases: [(String, Result<String, Error>, String)] = [
+            ("faulted", .success(Self.windowFaulted), Self.faultedLine),
+            ("malformed", .success("not json at all"), Self.invalidLine),
+            ("no phase", .success("{}"), Self.invalidLine),
+            ("unknown phase", .success(#"{"phase":"sideways"}"#), Self.invalidLine),
+            ("recovery pending", .success(#"{"phase":"closed","trusted":true,"faulted":false,"credentialRecoveryPending":true}"#),
+             "Hub is waiting for its credential recovery: this Hub's data was restored without its keys. Run restore-recovery-credentials, then sign in. Nothing was changed.")
+        ]
+        for (label, answer, line) in cases {
+            runner.results["window"] = .success(OwnerRunner.windowOpen)
+            refreshWindowState(rig) { !onboarding.signInIsIdle }
+            runner.results["window"] = answer
+            refreshWindowState(rig) { labels(in: root()).map(\.stringValue).contains(line) }
+            let shown = labels(in: root()).map(\.stringValue)
+            XCTAssertTrue(shown.contains(line), "\(label): its own line")
+            XCTAssertFalse(shown.contains(Self.healthyLine), "\(label): never the healthy notice")
+            XCTAssertFalse(onboarding.signInIsIdle, label)
+            XCTAssertNotNil(view(in: try XCTUnwrap(root()), identifier: "onboarding.notice.error"), label)
+            let titles = buttons(in: root()).map(\.title)
+            XCTAssertFalse(titles.contains("Done"), "\(label): no Done in the idle sense")
+            XCTAssertTrue(titles.contains("Connect Tesla"), label)
+
+            // The window recovering brings the right page back and removes the line.
+            runner.results["window"] = .success(OwnerRunner.windowClosed)
+            refreshWindowState(rig) { onboarding.signInIsIdle }
+            XCTAssertTrue(onboarding.signInIsIdle, label)
+            XCTAssertNil(view(in: try XCTUnwrap(root()), identifier: "onboarding.notice.error"), "\(label): the line is gone")
+        }
+
+        // The same by pressing Connect Tesla with a faulted window.
+        runner.results["window"] = .success(OwnerRunner.windowOpen)
+        refreshWindowState(rig) { !onboarding.signInIsIdle }
+        runner.results["window"] = .success(Self.windowFaulted)
+        try XCTUnwrap(buttons(in: root()).first { $0.title == "Connect Tesla" }).performClick(nil)
+        spinUntil(3) { labels(in: root()).map(\.stringValue).contains(Self.faultedLine) }
+        XCTAssertTrue(labels(in: root()).map(\.stringValue).contains(Self.faultedLine))
+        XCTAssertFalse(onboarding.signInIsIdle)
+        XCTAssertFalse(labels(in: root()).map(\.stringValue).contains(Self.healthyLine))
+    }
+
+    func testTheWindowOutcomeIsReadFromTheServiceFieldsAndRefusalsCarryTheirCode() {
+        func outcome(_ text: String) -> HubController.CollectionWindowOutcome { HubController.collectionWindowOutcome(text) }
+        XCTAssertEqual(outcome(OwnerRunner.windowOpen), .open)
+        XCTAssertEqual(outcome(OwnerRunner.windowClosed), .closed)
+        XCTAssertEqual(outcome(#"{"phase":"pending","trusted":true}"#), .closed)
+        XCTAssertEqual(outcome(#"{"phase":"closing","trusted":true}"#), .closed)
+        XCTAssertEqual(outcome(Self.windowFaulted), .refused(code: "window_faulted"))
+        XCTAssertEqual(outcome(#"{"phase":"closed","faulted":true,"credentialRecoveryPending":true}"#),
+                       .refused(code: "credential_recovery_pending"))
+        XCTAssertEqual(outcome(""), .refused(code: "window_status_invalid"))
+        XCTAssertEqual(outcome("{}"), .refused(code: "window_status_invalid"))
+        XCTAssertEqual(outcome("garbage"), .refused(code: "window_status_invalid"))
+        XCTAssertEqual(outcome(#"{"phase":"sideways"}"#), .refused(code: "window_status_invalid"))
+        XCTAssertEqual(outcome("service_not_running"), .refused(code: "service_not_running"))
+
+        func code(_ result: Result<String, Error>) -> String? {
+            guard case let .failure(error) = HubController.signInWindowCheck(result) else { return nil }
+            return HubController.signInRefusalCode(error)
+        }
+        XCTAssertNil(code(.success(OwnerRunner.windowOpen)))
+        XCTAssertEqual(code(.success(OwnerRunner.windowClosed)), "window_closed")
+        XCTAssertEqual(code(.success(Self.windowFaulted)), "window_faulted")
+        XCTAssertEqual(code(.success("{}")), "window_status_invalid")
+        XCTAssertEqual(code(.failure(HubActionError.commandFailed("service_not_running: Hub is not running"))), "service_not_running")
+        XCTAssertEqual(code(.failure(HubActionError.commandFailed("control_channel_busy"))), "control_channel_busy")
+        // A failure that is not a known refusal keeps its own words and has no code to mistake.
+        guard case let .failure(other) = HubController.signInWindowCheck(.failure(HubActionError.commandFailed("disk on fire"))) else {
+            return XCTFail("expected a failure")
+        }
+        XCTAssertNil(HubController.signInRefusalCode(other))
+        XCTAssertEqual(other.localizedDescription, "disk on fire")
+    }
+
+    func testSignInPageHasOneSignInActionAndNoJargonAndACentredHeader() throws {
+        // M02-T22: the open-window page is as before (Connect Tesla in the footer, nothing idle);
+        // the inline duplicate is gone; the wording has no token jargon; the header is centred
+        // like the other pages; the one Back style is the same on every page.
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let onboarding = OnboardingWindowController(controller: controller, previewRoute: "legacy",
+                                                     onComplete: { _ in })
+        let root = try XCTUnwrap(onboarding.window?.contentView)
+        XCTAssertFalse(onboarding.signInIsIdle)
+        let titles = buttons(in: root).map(\.title)
+        XCTAssertEqual(titles.filter { $0 == "Connect Tesla" }.count, 1)
+        XCTAssertFalse(titles.contains("Sign in with Tesla"), "one sign-in action, not two")
+        XCTAssertNil(view(in: root, identifier: "onboarding.signin.idle"))
+        let shown = labels(in: root).map(\.stringValue)
+        XCTAssertTrue(shown.contains("Sign in with Tesla while a collection window is open."))
+        XCTAssertTrue(shown.contains("Your Tesla password goes only to Tesla. Hub keeps its own login, encrypted on this Mac."))
+        XCTAssertFalse(shown.contains { $0.localizedCaseInsensitiveContains("token") }, "no token jargon")
+        let title = try XCTUnwrap(labels(in: root).first { $0.stringValue == "Sign in with Tesla" })
+        XCTAssertEqual(title.alignment, .center, "the header is centred like the provider page's")
+
+        for route in ["welcome", "choose", "provider", "fleet", "legacy", "migration", "verify", "finish"] {
+            let page = OnboardingWindowController(controller: controller, previewRoute: route, onComplete: { _ in })
+            let back = buttons(in: page.window?.contentView).first { $0.title == "Back" }
+            if let back = back as? HubActionButton { XCTAssertEqual(back.hubStyle, .neutral, route) }
+        }
+    }
+
+    /// A left click at a point of the radio's own bounds, delivered the way the window does: the
+    /// view under the point (found by hit testing from the content view) gets mouse down and up.
+    private func click(_ radio: NSView, at point: NSPoint, in window: NSWindow) -> NSView? {
+        window.contentView?.layoutSubtreeIfNeeded()
+        guard let content = window.contentView, let frame = content.superview else { return nil }
+        guard let target = content.hitTest(frame.convert(point, from: radio)) else { return nil }
+        let location = radio.convert(point, to: nil)
+        func event(_ type: NSEvent.EventType, _ number: Int) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: location, modifierFlags: [], timestamp: 0,
+                               windowNumber: window.windowNumber, context: nil, eventNumber: number,
+                               clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0)!
+        }
+        target.mouseDown(with: event(.leftMouseDown, 1))
+        target.mouseUp(with: event(.leftMouseUp, 2))
+        return target
+    }
+
+    func testAClickAnywhereOnAChoiceRowSelectsItTheFirstTime() throws {
+        // M02-T22 review finding 1 (G's report): on "Choose how Hub connects" a click on the row
+        // often did nothing. The native radio's cell tracked only its own radio and title. One
+        // click on the middle, the icon, the title, the description, the empty space or the indicator of
+        // either row now selects it, every time, alternating from the other row.
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let onboarding = OnboardingWindowController(controller: controller, previewRoute: "provider",
+                                                     onComplete: { _ in })
+        let window = try XCTUnwrap(onboarding.window)
+        func radio(_ title: String) throws -> HubChoiceRowButton {
+            window.contentView?.layoutSubtreeIfNeeded()
+            return try XCTUnwrap(buttons(in: window.contentView).compactMap { $0 as? HubChoiceRowButton }
+                .first { $0.title == title }, title)
+        }
+        func points(_ title: String, subtitle: String) throws -> [(String, NSPoint)] {
+            let row = try radio(title)
+            let card = try XCTUnwrap(row.superview)
+            let icon = try XCTUnwrap(allViews(in: card).first { $0 is HubIconTileView })
+            let titleLabel = try XCTUnwrap(labels(in: card).first { $0.stringValue == title })
+            let description = try XCTUnwrap(labels(in: card).first { $0.stringValue == subtitle })
+            let indicator = try XCTUnwrap(allViews(in: card).last { $0 is HubIconTileView })
+            let bounds = row.bounds
+            func centre(_ view: NSView) -> NSPoint { row.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), from: view) }
+            return [
+                ("middle", NSPoint(x: bounds.midX, y: bounds.midY)),
+                ("icon", centre(icon)),
+                ("title", centre(titleLabel)),
+                ("description", centre(description)),
+                ("empty space", NSPoint(x: bounds.minX + bounds.width * 0.72, y: bounds.midY)),
+                ("corner", NSPoint(x: bounds.minX + 3, y: bounds.minY + 3)),
+                ("indicator", centre(indicator)),
+            ]
+        }
+        let owner = ("Owner sign-in", "Sign in with Tesla. Hub keeps its own login.")
+        let fleet = ("Fleet Telemetry", "Tesla's official streaming API, with your own Fleet API app.")
+        for (index, (target, other)) in [(fleet, owner), (owner, fleet), (fleet, owner), (owner, fleet)].enumerated() {
+            for (label, point) in try points(target.0, subtitle: target.1) {
+                // Put the other row in front, then click the target at this point: first click wins.
+                _ = click(try radio(other.0), at: NSPoint(x: try radio(other.0).bounds.midX, y: try radio(other.0).bounds.midY), in: window)
+                XCTAssertEqual(try radio(other.0).state, .on, "round \(index) \(label): the other row is selected first")
+                let hit = click(try radio(target.0), at: point, in: window)
+                XCTAssertTrue(hit is HubChoiceRowButton, "round \(index) \(label) of \(target.0): the row takes the click")
+                XCTAssertEqual(try radio(target.0).state, .on, "round \(index) \(label) of \(target.0): selected on the first click")
+                XCTAssertEqual(try radio(other.0).state, .off, "round \(index) \(label): the other row is cleared")
+            }
+        }
+    }
+
+    func testAChoiceRowIgnoresAReleaseOutsideItAndAcceptsTheFirstClickOfAnInactiveWindow() throws {
+        let row = HubChoiceRowButton(radioButtonWithTitle: "Row", target: nil, action: nil)
+        row.frame = NSRect(x: 0, y: 0, width: 200, height: 64)
+        XCTAssertTrue(row.acceptsFirstMouse(for: nil), "a click that activates the window also selects")
+        XCTAssertTrue(row.hitTest(NSPoint(x: 199, y: 63)) === row, "the whole frame, corners included")
+        XCTAssertNil(row.hitTest(NSPoint(x: 201, y: 10)))
+    }
+
+    func testChooseHowHubConnectsDrawsNoStrayFocusRingAndNamesNoVehicleCommands() throws {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let onboarding = OnboardingWindowController(controller: controller, previewRoute: "provider",
+                                                     onComplete: { _ in })
+        let root = onboarding.window?.contentView
+        let radios = buttons(in: root).filter { $0.title == "Owner sign-in" || $0.title == "Fleet Telemetry" }
+        XCTAssertEqual(radios.count, 2)
+        for radio in radios { XCTAssertEqual(radio.focusRingType, .none, radio.title) }
+        let shown = labels(in: root).map(\.stringValue)
+        XCTAssertTrue(shown.contains("Tesla's official streaming API, with your own Fleet API app."))
+        XCTAssertFalse(shown.contains { $0.localizedCaseInsensitiveContains("command") }, "Hub sends none")
+    }
+
+    func testAnInlineErrorUsesTheNoticeStyleWithAnIcon() throws {
+        // M02-T22: the start-failure and other inline lines are notice cards with a status icon.
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let onboarding = OnboardingWindowController(controller: controller, previewRoute: "legacy",
+                                                     onComplete: { _ in })
+        try XCTUnwrap(buttons(in: onboarding.window?.contentView).first { $0.title == "Connect Tesla" }).performClick(nil)
+        let root = try XCTUnwrap(onboarding.window?.contentView)
+        spinUntil(3) { self.view(in: root, identifier: "onboarding.notice.error") != nil }
+        let notice = try XCTUnwrap(view(in: root, identifier: "onboarding.notice.error"))
+        XCTAssertTrue(notice is HubCardView)
+        XCTAssertFalse(imageViews(in: notice).isEmpty, "the notice carries its icon")
+        XCTAssertFalse(labels(in: notice).isEmpty)
+        XCTAssertFalse(onboarding.signInIsIdle, "a preview refusal is an error, not the idle state")
+        XCTAssertTrue(buttons(in: root).contains { $0.title == "Connect Tesla" }, "the action stays")
     }
 
     func testNewInstallationBusyStateShowsOnlyCleanSetupFlow() {

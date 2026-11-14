@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Määritä uusi Hub tai siirrä historiatiedot lähdesovelluksesta.";
 "hub.OnboardingWindowController.606.1928" = "Aloita kirjautumalla sisään Tesla-omistajan tililläsi. Fleet Telemetry on käytettävissä, jos haluat sen.";
 "hub.OnboardingWindowController.608.1929" = "Luo Tesla Fleet -sovellus ja liitä sen käyttöoikeustiedot alle.";
-"hub.OnboardingWindowController.610.1930" = "Kirjaudu sisään Teslan kautta, kun keruuikkuna on auki. Hub ei koskaan hyväksy tokenia.";
 "hub.OnboardingWindowController.612.1931" = "Muodosta yhteys lähdesovelluksen palvelimeen tuodaksesi sen ajoneuvohistorian.";
 "hub.OnboardingWindowController.614.1932" = "Tarkistetaan, että kaikki on määritetty oikein.";
 "hub.OnboardingWindowController.617.1933" = "Lähdesovelluksen historiatiedot on tuotu Hubiin.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Aloita uudella tietokannalla.";
 "hub.OnboardingWindowController.741.1955" = "Siirrä aiempi ajoneuvohistoriasi.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Teslan virallinen suoratoistorajapinta. Mahdollistaa reaaliaikaiset ajoneuvokomennot.";
 "hub.OnboardingWindowController.752.1958" = "Omistajan kirjautuminen";
 "hub.OnboardingWindowController.753.1959" = "Kirjaudu sisään Teslan kautta. Hub säilyttää oman kirjautumisensa.";
 "hub.OnboardingWindowController.760.1960" = "Luo Tesla Fleet -sovellus";
 "hub.OnboardingWindowController.771.1964" = "Asiakastunnus";
 "hub.OnboardingWindowController.774.1967" = "Vanhenee";
 "hub.OnboardingWindowController.776.1968" = "Käyttöoikeustiedot salataan tässä Macissa";
-"hub.OnboardingWindowController.788.1970" = "Kirjaudu sisään Teslan kautta";
 "hub.OnboardingWindowController.790.1972" = "Kirjautuminen ei ole vielä käytettävissä: tällä Hubilla ei ole Owner API -kirjautumisarvoja. Mitään ei muutettu.";
-"hub.OnboardingWindowController.798.1975" = "Tokenit salataan tässä Macissa";
 "hub.OnboardingWindowController.822.1978" = "Portti";
 "hub.OnboardingWindowController.832.1980" = "SSH-käyttäjä";
 "hub.OnboardingWindowController.836.1982" = "Valitse avain…";
@@ -858,3 +854,14 @@
 "hub.signIn.unconfirmed" = "Hub ei vahvistanut kirjautumista ajoissa, mutta se on voitu tallentaa. Tarkista Hubin tila, ennen kuin kirjaudut sisään uudelleen.";
 
 "hub.signIn.startWithdrawFailed" = "Hub ei käynnistynyt, ja sen keskeneräisen käynnistyksen poistaminen epäonnistui: %1$@ Viimeistele poisto valitsemalla Yhdistä Tesla.";
+
+"hub.signIn.idle.title" = "Hub on otettu käyttöön ja käynnissä tässä Macissa";
+"hub.signIn.idle.detail" = "Teslan kirjautuminen avautuu vain keruuikkunan ollessa auki, ja saat ilmoituksen, kun ikkuna avautuu. Tämän ikkunan sulkeminen jättää Hubin käyntiin.";
+"hub.signIn.pageSubtitle" = "Kirjaudu sisään Teslan kautta, kun keruuikkuna on auki.";
+"hub.signIn.privacy" = "Tesla-salasanasi menee vain Teslalle. Hub pitää oman kirjautumisensa salattuna tässä Macissa.";
+"hub.signIn.fleetDetail" = "Teslan virallinen suoratoistorajapinta omalla Fleet API -sovelluksellasi.";
+"hub.signIn.done" = "Valmis";
+
+"hub.signIn.windowFaulted" = "Hubin keruuikkuna tarvitsee uuden luottamusasiakirjan ennen kuin se voi avautua, joten Teslan kirjautuminen ei ole käytettävissä. Mitään ei muutettu.";
+"hub.signIn.windowStatusInvalid" = "Hubin vastausta sen keruuikkunasta ei voitu lukea, joten Teslan kirjautuminen ei ole käytettävissä. Mitään ei muutettu; yritä hetken kuluttua uudelleen.";
+"hub.setup.closeKeepsRunning" = "Kun suljet tämän ikkunan, Hub jatkaa toimintaansa.";

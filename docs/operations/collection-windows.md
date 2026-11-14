@@ -89,15 +89,25 @@ window verbs below have something to talk to:
    `window open` and `window close` answer on the local control channel, and
    the collector stays off. Any other state is checked as before, so a Hub
    that is configured but broken still refuses to start.
-4. With no Open window the page shows "Sign-in needs an open collection
-   window. Open a window, then sign in again." The service stays running and
-   idle. If the start fails, the page shows why and the app removes the
-   service it installed (only that one); press **Connect Tesla** to retry. A
-   removal that fails is reported and finished by the next press.
+4. With no Open window the page shows "Hub is set up and running on this
+   Mac" as a notice, not an error: the service stays running and idle, both
+   Tesla sign-in actions are unavailable and the bottom button is **Done**,
+   which closes set-up without touching the service. The page asks the
+   service again, read-only, whenever it shows and whenever you return to the
+   set-up window, so it follows the window: with a window open it is the
+   ordinary page with **Connect Tesla**. A faulted window (its state needs a
+   new trust document), an answer the app cannot read, a pending credential
+   recovery or a service that does not answer are never shown as the healthy
+   notice: each has its own line. The window's close button works once the
+   service answers, also after **Back**, and closing leaves Hub running. If
+   the start fails, the page shows why and the app removes the service it
+   installed (only that one); press **Connect Tesla** to retry. A removal that
+   fails is reported and finished by the next press.
 5. Trust the issuer, issue a grant and open the window as described below.
-6. Press **Connect Tesla** again: the Tesla sign-in page opens. The sign-in
-   runs in the running service, inside the window; the service does not
-   restart.
+6. Return to the set-up window (or open set-up again from the app's Tesla
+   account menu): the page shows **Connect Tesla** and the Tesla sign-in page
+   opens when you press it. The sign-in runs in the running service, inside
+   the window; the service does not restart.
 7. Once a car is configured, the sign-in sets the collection interval (300
    seconds) in the configuration and reloads the collector before it
    reports completion: the collector runs inside the Open window at once and

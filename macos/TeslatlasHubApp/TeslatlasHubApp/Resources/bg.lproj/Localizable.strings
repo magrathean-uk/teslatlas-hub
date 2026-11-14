@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Настрой нов Hub или прехвърли съществуващата си история от изходното приложение.";
 "hub.OnboardingWindowController.606.1928" = "Започнете, като влезете с акаунта си на собственик в Tesla. Fleet Telemetry е на разположение, ако предпочитате него.";
 "hub.OnboardingWindowController.608.1929" = "Създай приложение Tesla Fleet, после постави данните му за достъп по-долу.";
-"hub.OnboardingWindowController.610.1930" = "Влез в акаунта си в Tesla, докато е отворен прозорец за събиране. Hub никога не приема токен.";
 "hub.OnboardingWindowController.612.1931" = "Свържи се със сървъра на изходното приложение, за да импортираш историята на автомобилите.";
 "hub.OnboardingWindowController.614.1932" = "Проверяваме дали всичко е настроено правилно.";
 "hub.OnboardingWindowController.617.1933" = "Историята от изходното приложение е импортирана в Hub.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Започни с празна база данни.";
 "hub.OnboardingWindowController.741.1955" = "Прехвърли съществуващата история на автомобила.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Официалният API на Tesla за поточни данни. Дава възможност за команди към автомобила в реално време.";
 "hub.OnboardingWindowController.752.1958" = "Вход на собственика";
 "hub.OnboardingWindowController.753.1959" = "Влез в акаунта си в Tesla. Hub използва собствен вход.";
 "hub.OnboardingWindowController.760.1960" = "Създай приложение Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID на клиента";
 "hub.OnboardingWindowController.774.1967" = "Изтича след";
 "hub.OnboardingWindowController.776.1968" = "Данните за достъп се криптират на този Mac";
-"hub.OnboardingWindowController.788.1970" = "Влез в акаунта си в Tesla";
 "hub.OnboardingWindowController.790.1972" = "Входът още не е наличен: този Hub няма стойности за вход през Owner API. Нищо не е променено.";
-"hub.OnboardingWindowController.798.1975" = "Токените се криптират на този Mac";
 "hub.OnboardingWindowController.822.1978" = "Порт";
 "hub.OnboardingWindowController.832.1980" = "SSH потребител";
 "hub.OnboardingWindowController.836.1982" = "Избери ключ…";
@@ -858,3 +854,14 @@
 "hub.signIn.unconfirmed" = "Hub не потвърди входа навреме, но е възможно той да е запазен. Проверете състоянието на Hub, преди да влезете отново.";
 
 "hub.signIn.startWithdrawFailed" = "Hub не се стартира, а премахването на незавършеното стартиране не успя: %1$@ Натиснете „Свържи Tesla“, за да завършите премахването.";
+
+"hub.signIn.idle.title" = "Hub е настроен и работи на този Mac";
+"hub.signIn.idle.detail" = "Входът в Tesla се отваря само по време на прозорец за събиране и ще бъдеш уведомен, когато се отвори такъв. Затварянето на този прозорец оставя Hub да работи.";
+"hub.signIn.pageSubtitle" = "Влез в акаунта си в Tesla, докато е отворен прозорец за събиране.";
+"hub.signIn.privacy" = "Паролата ти за Tesla отива само при Tesla. Hub пази собствен вход, криптиран на този Mac.";
+"hub.signIn.fleetDetail" = "Официалният API на Tesla за поточни данни, с твоето собствено приложение Fleet API.";
+"hub.signIn.done" = "Готово";
+
+"hub.signIn.windowFaulted" = "Прозорецът за събиране на Hub се нуждае от нов документ за доверие, преди да може да се отвори, затова влизането в Tesla не е достъпно. Нищо не е променено.";
+"hub.signIn.windowStatusInvalid" = "Отговорът на Hub за прозореца за събиране не можа да бъде прочетен, затова влизането в Tesla не е достъпно. Нищо не е променено; опитайте отново след малко.";
+"hub.setup.closeKeepsRunning" = "Затварянето на този прозорец оставя Hub да работи.";

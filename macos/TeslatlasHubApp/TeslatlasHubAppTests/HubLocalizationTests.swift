@@ -18,7 +18,7 @@ final class HubLocalizationTests: XCTestCase {
         }
         let englishKeys = Set(try table(english, "Localizable.strings").keys)
         let pluralKeys = Set(try table(english, "Localizable.stringsdict").keys)
-        XCTAssertEqual(englishKeys.count, 732, "M02-T21 adds hub.signIn.startWithdrawFailed")
+        XCTAssertEqual(englishKeys.count, 737, "M02-T22 adds six first-start lines and drops four, then three window-state lines")
         XCTAssertEqual(pluralKeys.count, 6)
         for language in languages {
             let directory = resources.appendingPathComponent("\(language).lproj")
@@ -97,8 +97,8 @@ final class HubLocalizationTests: XCTestCase {
         let menu = "hub.MainWindowController.1153.1841"
         let removal = "hub.MainWindowController.1429.1847"
         let pageTitle = "hub.OnboardingWindowController.592.1921"
-        let signIn = "hub.OnboardingWindowController.788.1970"
-        let removed = ["hub.OnboardingWindowController.1500.2071",
+        let removed = ["hub.OnboardingWindowController.788.1970",
+                       "hub.OnboardingWindowController.1500.2071",
                        "hub.TeslaAuthWindowController.36.2241",
                        "hub.TeslaAuthWindowController.37.2242"]
         func table(_ language: String) throws -> [String: String] {
@@ -113,13 +113,11 @@ final class HubLocalizationTests: XCTestCase {
         XCTAssertEqual(english[removal],
                        "Hub will stop and remove its stored Fleet and owner sign-in credentials. Your collected data stays on this Mac.")
         XCTAssertEqual(english[pageTitle], "Sign in with Tesla")
-        XCTAssertEqual(english[signIn], "Sign in with Tesla")
         let languages = Bundle.main.localizations.filter { $0 != "Base" }
         XCTAssertEqual(languages.count, 56)
         for language in languages {
             let strings = try table(language)
             for key in removed { XCTAssertNil(strings[key], "\(language): \(key) is gone") }
-            XCTAssertEqual(strings[pageTitle], strings[signIn], "\(language): the page is titled as its button")
             XCTAssertEqual(strings[name], strings[card], "\(language): one name for the provider")
             for key in [name, menu, removal, pageTitle] {
                 let value = try XCTUnwrap(strings[key], "\(language): \(key)")
@@ -165,6 +163,49 @@ final class HubLocalizationTests: XCTestCase {
             let withdrawal = try XCTUnwrap(strings["hub.signIn.startWithdrawFailed"])
             XCTAssertEqual(withdrawal.components(separatedBy: "%1$@").count, 2, "\(language): one placeholder")
             XCTAssertEqual(withdrawal.filter { $0 == "%" }.count, 1, "\(language): no other format")
+        }
+    }
+
+    func testTheFirstStartSignInPageLinesAreTranslatedInEveryLocale() throws {
+        // M02-T22 (DEC-125): the idle notice, the Done action, the jargon-free sign-in page and the
+        // Fleet line without vehicle commands, each in every locale; the four lines they replace are gone.
+        let resources = try XCTUnwrap(Bundle.main.resourceURL)
+        let expected = [
+            "hub.signIn.idle.title": "Hub is set up and running on this Mac",
+            "hub.signIn.idle.detail": "Tesla sign-in opens only during a collection window, and you will be told when one opens. Closing this window leaves Hub running.",
+            "hub.signIn.pageSubtitle": "Sign in with Tesla while a collection window is open.",
+            "hub.signIn.privacy": "Your Tesla password goes only to Tesla. Hub keeps its own login, encrypted on this Mac.",
+            "hub.signIn.fleetDetail": "Tesla's official streaming API, with your own Fleet API app.",
+            "hub.signIn.done": "Done",
+            // Repair round: a faulted or unreadable window and the close note, each in every locale.
+            "hub.signIn.windowFaulted": "Hub's collection window needs a new trust document before it can open, so Tesla sign-in is not available. Nothing was changed.",
+            "hub.signIn.windowStatusInvalid": "Hub's answer about its collection window could not be read, so Tesla sign-in is not available. Nothing was changed; try again in a moment.",
+            "hub.setup.closeKeepsRunning": "Closing this window leaves Hub running."
+        ]
+        let replaced = ["hub.OnboardingWindowController.610.1930", "hub.OnboardingWindowController.798.1975",
+                        "hub.OnboardingWindowController.749.1957", "hub.OnboardingWindowController.788.1970"]
+        func table(_ language: String) throws -> [String: String] {
+            let url = resources.appendingPathComponent("\(language).lproj/Localizable.strings")
+            let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil)
+            return try XCTUnwrap(plist as? [String: String])
+        }
+        let english = try table("en")
+        for (key, text) in expected { XCTAssertEqual(english[key], text, key) }
+        let languages = Bundle.main.localizations.filter { $0 != "Base" }
+        XCTAssertEqual(languages.count, 56)
+        for language in languages {
+            let strings = try table(language)
+            for key in replaced { XCTAssertNil(strings[key], "\(language): \(key) is replaced") }
+            for key in expected.keys {
+                let value = try XCTUnwrap(strings[key], "\(language): \(key)")
+                XCTAssertFalse(value.isEmpty, "\(language): \(key)")
+                XCTAssertFalse(value.contains("%"), "\(language): \(key) has no format")
+                if language.hasPrefix("en") {
+                    XCTAssertEqual(value, english[key], "\(language) follows English in its own spelling")
+                } else {
+                    XCTAssertNotEqual(value, english[key], "\(language): \(key) is not English copied in")
+                }
+            }
         }
     }
 

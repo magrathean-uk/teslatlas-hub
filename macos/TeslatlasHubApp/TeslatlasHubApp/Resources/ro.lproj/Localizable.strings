@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Configurează un Hub nou sau transferă aici istoricul din aplicația sursă.";
 "hub.OnboardingWindowController.606.1928" = "Pentru a începe, autentifică-te cu contul tău de proprietar Tesla. Fleet Telemetry este disponibil dacă preferi.";
 "hub.OnboardingWindowController.608.1929" = "Creează o aplicație Tesla Fleet, apoi lipește mai jos datele de autentificare.";
-"hub.OnboardingWindowController.610.1930" = "Autentifică-te cu Tesla cât timp este deschisă o fereastră de colectare. Hub nu acceptă niciodată un token.";
 "hub.OnboardingWindowController.612.1931" = "Conectează-te la serverul aplicației sursă pentru a importa istoricul vehiculelor.";
 "hub.OnboardingWindowController.614.1932" = "Se verifică dacă toate componentele sunt conectate corect.";
 "hub.OnboardingWindowController.617.1933" = "Istoricul aplicației sursă a fost importat în Hub.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Începe cu o bază de date nouă.";
 "hub.OnboardingWindowController.741.1955" = "Transferă-ți istoricul existent al vehiculelor.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "API-ul oficial de streaming al Tesla. Permite trimiterea în timp real a comenzilor către vehicul.";
 "hub.OnboardingWindowController.752.1958" = "Autentificare proprietar";
 "hub.OnboardingWindowController.753.1959" = "Autentifică-te cu Tesla. Hub își păstrează propria autentificare.";
 "hub.OnboardingWindowController.760.1960" = "Creează aplicația Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID client";
 "hub.OnboardingWindowController.774.1967" = "Expiră în";
 "hub.OnboardingWindowController.776.1968" = "Datele de autentificare sunt criptate pe acest Mac";
-"hub.OnboardingWindowController.788.1970" = "Autentifică-te cu Tesla";
 "hub.OnboardingWindowController.790.1972" = "Autentificarea nu este încă disponibilă: acest Hub nu are valori de autentificare pentru Owner API. Nu s-a modificat nimic.";
-"hub.OnboardingWindowController.798.1975" = "Tokenurile sunt criptate pe acest Mac";
 "hub.OnboardingWindowController.822.1978" = "Port";
 "hub.OnboardingWindowController.832.1980" = "Utilizator SSH";
 "hub.OnboardingWindowController.836.1982" = "Alege cheia…";
@@ -858,3 +854,14 @@
 "hub.signIn.unconfirmed" = "Hub nu a confirmat autentificarea la timp, dar este posibil să fi fost salvată. Verifică starea Hub înainte să te autentifici din nou.";
 
 "hub.signIn.startWithdrawFailed" = "Hub nu a pornit, iar eliminarea pornirii neterminate a eșuat: %1$@ Apăsați „Conectează Tesla” pentru a finaliza eliminarea.";
+
+"hub.signIn.idle.title" = "Hub este configurat și rulează pe acest Mac";
+"hub.signIn.idle.detail" = "Autentificarea la Tesla se deschide doar în timpul unei ferestre de colectare și vei fi anunțat când se deschide una. Dacă închizi această fereastră, Hub continuă să ruleze.";
+"hub.signIn.pageSubtitle" = "Autentifică-te cu Tesla cât timp este deschisă o fereastră de colectare.";
+"hub.signIn.privacy" = "Parola ta Tesla ajunge doar la Tesla. Hub își păstrează propria autentificare, criptată pe acest Mac.";
+"hub.signIn.fleetDetail" = "API-ul oficial de streaming al Tesla, cu propria ta aplicație Fleet API.";
+"hub.signIn.done" = "Gata";
+
+"hub.signIn.windowFaulted" = "Fereastra de colectare a Hub-ului are nevoie de un nou document de încredere înainte de a se putea deschide, deci autentificarea la Tesla nu este disponibilă. Nu s-a modificat nimic.";
+"hub.signIn.windowStatusInvalid" = "Răspunsul Hub-ului despre fereastra de colectare nu a putut fi citit, deci autentificarea la Tesla nu este disponibilă. Nu s-a modificat nimic; încearcă din nou peste un moment.";
+"hub.setup.closeKeepsRunning" = "Dacă închizi această fereastră, Hub-ul rămâne în funcțiune.";

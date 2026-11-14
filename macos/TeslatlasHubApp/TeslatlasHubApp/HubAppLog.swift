@@ -148,6 +148,7 @@ final class HubAppLog: HubAppLogging {
             case .exchangeFailed: return "exchange_failed"
             }
         }
+        if let error = error as? HubSignInRefusal { return error.code }
         if let error = error as? HubActionError {
             switch error {
             case .preview: return "preview_read_only"

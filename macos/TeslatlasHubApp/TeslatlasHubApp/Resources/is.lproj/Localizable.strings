@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Settu upp nýjan Hub eða færðu ferilinn þinn úr upprunaforritinu.";
 "hub.OnboardingWindowController.606.1928" = "Skráðu þig inn með Tesla-eigandareikningnum þínum til að byrja. Fleet Telemetry er í boði ef þú kýst það frekar.";
 "hub.OnboardingWindowController.608.1929" = "Búðu til Tesla Fleet-forrit og límdu síðan aðgangsupplýsingar þess hér að neðan.";
-"hub.OnboardingWindowController.610.1930" = "Skráðu þig inn hjá Tesla á meðan söfnunargluggi er opinn. Hub tekur aldrei við aðgangslykli.";
 "hub.OnboardingWindowController.612.1931" = "Tengstu upprunaþjóninum þínum til að flytja inn feril ökutækisins.";
 "hub.OnboardingWindowController.614.1932" = "Athuga hvort allt sé rétt tengt.";
 "hub.OnboardingWindowController.617.1933" = "Ferill upprunaforritsins hefur verið fluttur inn í Hub.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Byrjaðu með nýjum gagnagrunni.";
 "hub.OnboardingWindowController.741.1955" = "Flytja inn fyrirliggjandi feril ökutækisins.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Opinbert streymisviðmót Tesla. Gerir rauntímaskipanir til ökutækis mögulegar.";
 "hub.OnboardingWindowController.752.1958" = "Innskráning eiganda";
 "hub.OnboardingWindowController.753.1959" = "Skráðu þig inn hjá Tesla. Hub heldur sinni eigin innskráningu.";
 "hub.OnboardingWindowController.760.1960" = "Búa til Tesla Fleet-forrit";
 "hub.OnboardingWindowController.771.1964" = "Client ID";
 "hub.OnboardingWindowController.774.1967" = "Rennur út eftir";
 "hub.OnboardingWindowController.776.1968" = "Aðgangsupplýsingar eru dulkóðaðar á þessum Mac";
-"hub.OnboardingWindowController.788.1970" = "Skrá inn hjá Tesla";
 "hub.OnboardingWindowController.790.1972" = "Innskráning er ekki tiltæk enn: þessi Hub er ekki með innskráningargildi fyrir Owner API. Engu var breytt.";
-"hub.OnboardingWindowController.798.1975" = "Aðgangslyklar eru dulkóðaðir á þessum Mac";
 "hub.OnboardingWindowController.822.1978" = "Gátt";
 "hub.OnboardingWindowController.832.1980" = "SSH-notandi";
 "hub.OnboardingWindowController.836.1982" = "Velja lykil…";
@@ -858,3 +854,14 @@
 "hub.signIn.unconfirmed" = "Hub staðfesti ekki innskráninguna í tæka tíð, en hún kann að hafa vistast. Athugaðu stöðu Hub áður en þú skráir þig aftur inn.";
 
 "hub.signIn.startWithdrawFailed" = "Hub ræstist ekki og ekki tókst að fjarlægja ókláraða ræsingu: %1$@ Smelltu á „Tengja Tesla“ til að ljúka við að fjarlægja hana.";
+
+"hub.signIn.idle.title" = "Hub er uppsett og í gangi á þessum Mac";
+"hub.signIn.idle.detail" = "Innskráning hjá Tesla opnast aðeins meðan söfnunargluggi er opinn og þú færð tilkynningu þegar hann opnast. Ef þú lokar þessum glugga heldur Hub áfram að keyra.";
+"hub.signIn.pageSubtitle" = "Skráðu þig inn hjá Tesla á meðan söfnunargluggi er opinn.";
+"hub.signIn.privacy" = "Tesla-lykilorðið þitt fer aðeins til Tesla. Hub heldur eigin innskráningu, dulkóðaðri á þessum Mac.";
+"hub.signIn.fleetDetail" = "Opinbert streymisviðmót Tesla með þínu eigin Fleet API-forriti.";
+"hub.signIn.done" = "Lokið";
+
+"hub.signIn.windowFaulted" = "Söfnunargluggi Hub þarf nýtt traustskjal áður en hann getur opnast, svo innskráning hjá Tesla er ekki í boði. Engu var breytt.";
+"hub.signIn.windowStatusInvalid" = "Ekki tókst að lesa svar Hub um söfnunargluggann, svo innskráning hjá Tesla er ekki í boði. Engu var breytt; reyndu aftur eftir augnablik.";
+"hub.setup.closeKeepsRunning" = "Ef þú lokar þessum glugga heldur Hub áfram að keyra.";

@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Configure um Hub novo ou transfira seu histórico do aplicativo de origem.";
 "hub.OnboardingWindowController.606.1928" = "Para começar, entre com sua conta de proprietário da Tesla. O Fleet Telemetry está disponível se você preferir.";
 "hub.OnboardingWindowController.608.1929" = "Crie um aplicativo Tesla Fleet e cole as credenciais abaixo.";
-"hub.OnboardingWindowController.610.1930" = "Entre com a Tesla enquanto uma janela de coleta estiver aberta. O Hub nunca aceita um token.";
 "hub.OnboardingWindowController.612.1931" = "Conecte-se ao servidor do aplicativo de origem para importar o histórico dos veículos.";
 "hub.OnboardingWindowController.614.1932" = "Verificando se tudo está configurado corretamente.";
 "hub.OnboardingWindowController.617.1933" = "O histórico do aplicativo de origem foi importado para o Hub.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Comece com um banco de dados novo.";
 "hub.OnboardingWindowController.741.1955" = "Traga seu histórico de veículo existente.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "A API oficial de streaming da Tesla. Permite comandos ao veículo em tempo real.";
 "hub.OnboardingWindowController.752.1958" = "Login do proprietário";
 "hub.OnboardingWindowController.753.1959" = "Entre com a Tesla. O Hub mantém o próprio login.";
 "hub.OnboardingWindowController.760.1960" = "Criar aplicativo Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID do cliente";
 "hub.OnboardingWindowController.774.1967" = "Expira em";
 "hub.OnboardingWindowController.776.1968" = "As credenciais são criptografadas neste Mac";
-"hub.OnboardingWindowController.788.1970" = "Entrar com a Tesla";
 "hub.OnboardingWindowController.790.1972" = "O login ainda não está disponível: este Hub não tem valores de login da Owner API. Nada foi alterado.";
-"hub.OnboardingWindowController.798.1975" = "Os tokens são criptografados neste Mac";
 "hub.OnboardingWindowController.822.1978" = "Porta";
 "hub.OnboardingWindowController.832.1980" = "Usuário SSH";
 "hub.OnboardingWindowController.836.1982" = "Escolher chave…";
@@ -858,3 +854,14 @@
 "hub.signIn.unconfirmed" = "O Hub não confirmou o login a tempo, mas ele pode ter sido salvo. Verifique o status do Hub antes de entrar de novo.";
 
 "hub.signIn.startWithdrawFailed" = "O Hub não foi iniciado e a remoção da inicialização incompleta falhou: %1$@ Clique em “Conectar à Tesla” para concluir a remoção.";
+
+"hub.signIn.idle.title" = "O Hub está configurado e em execução neste Mac";
+"hub.signIn.idle.detail" = "O login da Tesla só abre durante uma janela de coleta, e você será avisado quando uma abrir. Fechar esta janela mantém o Hub em execução.";
+"hub.signIn.pageSubtitle" = "Entre com a Tesla enquanto uma janela de coleta estiver aberta.";
+"hub.signIn.privacy" = "Sua senha da Tesla vai somente para a Tesla. O Hub mantém um login próprio, criptografado neste Mac.";
+"hub.signIn.fleetDetail" = "A API oficial de streaming da Tesla, com o seu próprio app da Fleet API.";
+"hub.signIn.done" = "Concluir";
+
+"hub.signIn.windowFaulted" = "A janela de coleta do Hub precisa de um novo documento de confiança antes de poder abrir, então o login na Tesla não está disponível. Nada foi alterado.";
+"hub.signIn.windowStatusInvalid" = "Não foi possível ler a resposta do Hub sobre a janela de coleta, então o login na Tesla não está disponível. Nada foi alterado; tente novamente em instantes.";
+"hub.setup.closeKeepsRunning" = "Fechar esta janela mantém o Hub em execução.";

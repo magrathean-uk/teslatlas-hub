@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "नया Hub सेट अप करें या स्रोत अनुप्रयोग से अपना इतिहास लाएँ।";
 "hub.OnboardingWindowController.606.1928" = "शुरू करने के लिए अपने Tesla मालिक खाते से साइन इन करें। अगर आप चाहें, तो Fleet Telemetry उपलब्ध है।";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleet ऐप्लिकेशन बनाएँ, फिर नीचे उसके क्रेडेंशियल चिपकाएँ।";
-"hub.OnboardingWindowController.610.1930" = "संग्रह विंडो खुली होने पर Tesla में साइन इन करें। Hub कभी टोकन स्वीकार नहीं करता।";
 "hub.OnboardingWindowController.612.1931" = "वाहन इतिहास इंपोर्ट करने के लिए अपने स्रोत अनुप्रयोग सर्वर से कनेक्ट करें।";
 "hub.OnboardingWindowController.614.1932" = "सेटअप की सभी चीज़ें सही तरह काम कर रही हैं या नहीं, यह जाँचा जा रहा है।";
 "hub.OnboardingWindowController.617.1933" = "आपका स्रोत अनुप्रयोग इतिहास Hub में इंपोर्ट कर दिया गया है।";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "नए डेटाबेस से शुरू करें।";
 "hub.OnboardingWindowController.741.1955" = "अपना मौजूदा वाहन इतिहास लाएँ।";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Tesla का आधिकारिक स्ट्रीमिंग API। इससे लाइव वाहन कमांड उपलब्ध होती हैं।";
 "hub.OnboardingWindowController.752.1958" = "मालिक साइन-इन";
 "hub.OnboardingWindowController.753.1959" = "Tesla में साइन इन करें। Hub अपना अलग लॉगिन रखता है।";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleet ऐप बनाएँ";
 "hub.OnboardingWindowController.771.1964" = "क्लाइंट ID";
 "hub.OnboardingWindowController.774.1967" = "समाप्ति अवधि";
 "hub.OnboardingWindowController.776.1968" = "क्रेडेंशियल इस Mac पर एन्क्रिप्टेड हैं";
-"hub.OnboardingWindowController.788.1970" = "Tesla में साइन इन करें";
 "hub.OnboardingWindowController.790.1972" = "साइन इन अभी उपलब्ध नहीं है: इस Hub में Owner API साइन-इन मान नहीं हैं। कुछ भी नहीं बदला गया।";
-"hub.OnboardingWindowController.798.1975" = "टोकन इस Mac पर एन्क्रिप्टेड हैं";
 "hub.OnboardingWindowController.822.1978" = "पोर्ट";
 "hub.OnboardingWindowController.832.1980" = "SSH उपयोगकर्ता";
 "hub.OnboardingWindowController.836.1982" = "कुंजी चुनें…";
@@ -858,3 +854,14 @@
 "hub.signIn.unconfirmed" = "Hub ने समय पर साइन इन की पुष्टि नहीं की, लेकिन हो सकता है वह सहेजा गया हो। दोबारा साइन इन करने से पहले Hub की स्थिति जाँचें।";
 
 "hub.signIn.startWithdrawFailed" = "Hub शुरू नहीं हुआ, और उसकी अधूरी शुरुआत को हटाना विफल रहा: %1$@ हटाना पूरा करने के लिए “Tesla कनेक्ट करें” दबाएँ।";
+
+"hub.signIn.idle.title" = "Hub इस Mac पर सेट अप हो गया है और चल रहा है";
+"hub.signIn.idle.detail" = "Tesla साइन इन केवल संग्रह विंडो के दौरान खुलता है, और विंडो खुलने पर आपको सूचित किया जाएगा। इस विंडो को बंद करने पर भी Hub चलता रहता है।";
+"hub.signIn.pageSubtitle" = "संग्रह विंडो खुली होने पर Tesla में साइन इन करें।";
+"hub.signIn.privacy" = "आपका Tesla पासवर्ड केवल Tesla के पास जाता है। Hub अपना अलग लॉगिन रखता है, जो इस Mac पर एन्क्रिप्टेड है।";
+"hub.signIn.fleetDetail" = "Tesla का आधिकारिक स्ट्रीमिंग API, आपके अपने Fleet API ऐप के साथ।";
+"hub.signIn.done" = "पूर्ण";
+
+"hub.signIn.windowFaulted" = "Hub की संग्रह विंडो को खुलने से पहले एक नए ट्रस्ट दस्तावेज़ की ज़रूरत है, इसलिए Tesla साइन-इन उपलब्ध नहीं है। कुछ भी नहीं बदला गया।";
+"hub.signIn.windowStatusInvalid" = "संग्रह विंडो के बारे में Hub का उत्तर पढ़ा नहीं जा सका, इसलिए Tesla साइन-इन उपलब्ध नहीं है। कुछ भी नहीं बदला गया; थोड़ी देर बाद फिर कोशिश करें।";
+"hub.setup.closeKeepsRunning" = "इस विंडो को बंद करने पर Hub चलता रहता है।";

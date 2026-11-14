@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "新しいHubをセットアップするか、移行元アプリケーションから履歴を移行してください。";
 "hub.OnboardingWindowController.606.1928" = "はじめに、Teslaのオーナーアカウントでサインインしてください。ご希望であればFleet Telemetryも利用できます。";
 "hub.OnboardingWindowController.608.1929" = "Tesla Fleetアプリケーションを作成し、その認証情報を下に貼り付けてください。";
-"hub.OnboardingWindowController.610.1930" = "データ収集ウィンドウが開いている間に、Teslaでサインインしてください。Hubはトークンを一切受け付けません。";
 "hub.OnboardingWindowController.612.1931" = "車両履歴をインポートするには、移行元アプリケーションのサーバーに接続してください。";
 "hub.OnboardingWindowController.614.1932" = "すべてが正しく設定されていることを確認しています。";
 "hub.OnboardingWindowController.617.1933" = "車両履歴がHubにインポートされました。";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "新しいデータベースで開始します。";
 "hub.OnboardingWindowController.741.1955" = "既存の車両履歴を移行します。";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Teslaの公式ストリーミングAPIです。リアルタイムの車両コマンドを利用できます。";
 "hub.OnboardingWindowController.752.1958" = "オーナーとしてサインイン";
 "hub.OnboardingWindowController.753.1959" = "Teslaでサインインしてください。Hubは独自のログインを保持します。";
 "hub.OnboardingWindowController.760.1960" = "Tesla Fleetアプリを作成";
 "hub.OnboardingWindowController.771.1964" = "クライアントID";
 "hub.OnboardingWindowController.774.1967" = "有効期限";
 "hub.OnboardingWindowController.776.1968" = "認証情報はこのMac上で暗号化されます";
-"hub.OnboardingWindowController.788.1970" = "Teslaでサインイン";
 "hub.OnboardingWindowController.790.1972" = "サインインはまだ利用できません。このHubにはOwner APIのサインイン値がありません。何も変更されていません。";
-"hub.OnboardingWindowController.798.1975" = "トークンはこのMac上で暗号化されます";
 "hub.OnboardingWindowController.822.1978" = "ポート";
 "hub.OnboardingWindowController.832.1980" = "SSHユーザー";
 "hub.OnboardingWindowController.836.1982" = "キーを選択…";
@@ -858,3 +854,14 @@
 "hub.signIn.unconfirmed" = "Hubが時間内にサインインを確認できませんでしたが、保存されている可能性があります。もう一度サインインする前に、Hubのステータスを確認してください。";
 
 "hub.signIn.startWithdrawFailed" = "Hubは起動せず、未完了の起動の削除にも失敗しました: %1$@ 「Teslaに接続」を押して削除を完了してください。";
+
+"hub.signIn.idle.title" = "HubはこのMacでセットアップ済みで、実行中です";
+"hub.signIn.idle.detail" = "Teslaサインインは、データ収集ウィンドウが開いている間だけ利用できます。ウィンドウが開いたらお知らせします。このウィンドウを閉じても、Hubは実行され続けます。";
+"hub.signIn.pageSubtitle" = "データ収集ウィンドウが開いている間に、Teslaでサインインしてください。";
+"hub.signIn.privacy" = "TeslaのパスワードはTeslaにのみ送信されます。Hubは独自のログインを保持し、このMac上で暗号化します。";
+"hub.signIn.fleetDetail" = "Teslaの公式ストリーミングAPIです。ご自身のFleet APIアプリを使用します。";
+"hub.signIn.done" = "完了";
+
+"hub.signIn.windowFaulted" = "Hubのデータ収集ウィンドウは、開く前に新しい信頼ドキュメントが必要なため、Teslaサインインは利用できません。何も変更されていません。";
+"hub.signIn.windowStatusInvalid" = "データ収集ウィンドウに関するHubの応答を読み取れなかったため、Teslaサインインは利用できません。何も変更されていません。しばらくしてからもう一度お試しください。";
+"hub.setup.closeKeepsRunning" = "このウィンドウを閉じても、Hubは実行され続けます。";

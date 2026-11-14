@@ -452,7 +452,6 @@
 "hub.OnboardingWindowController.604.1927" = "Nastavte nový Hub alebo preneste svoju históriu zo zdrojovej aplikácie.";
 "hub.OnboardingWindowController.606.1928" = "Začnite prihlásením do účtu majiteľa Tesly. Fleet Telemetry je k dispozícii, ak ho uprednostňujete.";
 "hub.OnboardingWindowController.608.1929" = "Vytvorte aplikáciu Tesla Fleet a nižšie vložte jej prihlasovacie údaje.";
-"hub.OnboardingWindowController.610.1930" = "Prihláste sa cez Teslu, kým je otvorené okno zberu. Hub nikdy neprijíma token.";
 "hub.OnboardingWindowController.612.1931" = "Pripojte sa k serveru zdrojovej aplikácie a importujte históriu vozidla.";
 "hub.OnboardingWindowController.614.1932" = "Overuje sa, či je všetko správne nastavené.";
 "hub.OnboardingWindowController.617.1933" = "História zo zdrojovej aplikácie bola importovaná do Hubu.";
@@ -467,16 +466,13 @@
 "hub.OnboardingWindowController.737.1953" = "Začnite s novou databázou.";
 "hub.OnboardingWindowController.741.1955" = "Preneste existujúcu históriu vozidla.";
 "hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
-"hub.OnboardingWindowController.749.1957" = "Oficiálne streamovacie API Tesly. Umožňuje odosielať príkazy vozidlu v reálnom čase.";
 "hub.OnboardingWindowController.752.1958" = "Prihlásenie majiteľa";
 "hub.OnboardingWindowController.753.1959" = "Prihláste sa cez Teslu. Hub si ponecháva vlastné prihlásenie.";
 "hub.OnboardingWindowController.760.1960" = "Vytvoriť aplikáciu Tesla Fleet";
 "hub.OnboardingWindowController.771.1964" = "ID klienta";
 "hub.OnboardingWindowController.774.1967" = "Platnosť do";
 "hub.OnboardingWindowController.776.1968" = "Prihlasovacie údaje sú na tomto Macu šifrované.";
-"hub.OnboardingWindowController.788.1970" = "Prihlásiť sa cez Teslu";
 "hub.OnboardingWindowController.790.1972" = "Prihlásenie zatiaľ nie je dostupné: tento Hub nemá prihlasovacie hodnoty pre Owner API. Nič sa nezmenilo.";
-"hub.OnboardingWindowController.798.1975" = "Tokeny sú na tomto Macu šifrované.";
 "hub.OnboardingWindowController.822.1978" = "Port";
 "hub.OnboardingWindowController.832.1980" = "Používateľ SSH";
 "hub.OnboardingWindowController.836.1982" = "Vybrať kľúč…";
@@ -858,3 +854,14 @@
 "hub.signIn.unconfirmed" = "Hub včas nepotvrdil prihlásenie, ale mohlo byť uložené. Pred opätovným prihlásením skontrolujte stav Hubu.";
 
 "hub.signIn.startWithdrawFailed" = "Hub sa nespustil a odstránenie jeho nedokončeného spustenia zlyhalo: %1$@ Odstránenie dokončíte kliknutím na „Pripojiť Teslu“.";
+
+"hub.signIn.idle.title" = "Hub je nastavený a beží na tomto Macu";
+"hub.signIn.idle.detail" = "Prihlásenie cez Teslu sa otvorí len počas okna zberu a keď sa otvorí, dostanete upozornenie. Zatvorením tohto okna Hub zostane spustený.";
+"hub.signIn.pageSubtitle" = "Prihláste sa cez Teslu, kým je otvorené okno zberu.";
+"hub.signIn.privacy" = "Vaše heslo k Tesle ide len Tesle. Hub si ponecháva vlastné prihlásenie, šifrované na tomto Macu.";
+"hub.signIn.fleetDetail" = "Oficiálne streamovacie API Tesly s vašou vlastnou aplikáciou Fleet API.";
+"hub.signIn.done" = "Hotovo";
+
+"hub.signIn.windowFaulted" = "Zberné okno Hubu potrebuje pred otvorením nový dokument dôvery, preto prihlásenie do Tesly nie je k dispozícii. Nič sa nezmenilo.";
+"hub.signIn.windowStatusInvalid" = "Odpoveď Hubu o jeho zbernom okne sa nepodarilo prečítať, preto prihlásenie do Tesly nie je k dispozícii. Nič sa nezmenilo; skúste to o chvíľu znova.";
+"hub.setup.closeKeepsRunning" = "Zatvorením tohto okna Hub zostane spustený.";
