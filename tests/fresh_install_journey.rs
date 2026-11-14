@@ -805,6 +805,14 @@ fn fresh_install_journey_release_configuration_has_no_doubles() {
     assert!(guard.contains(
         "#[cfg(all(feature = \"journey-doubles\", not(debug_assertions)))]\ncompile_error!"
     ));
+    let build_script = fs::read_to_string(manifest.join("build.rs")).expect("build script source");
+    assert!(
+        build_script.contains(
+            "if std::env::var_os(\"CARGO_FEATURE_JOURNEY_DOUBLES\").is_some()\n        \
+             && std::env::var(\"PROFILE\").as_deref() == Ok(\"release\")\n    {\n        panic!("
+        ),
+        "build.rs no longer refuses the doubles in a release-profile build"
+    );
 
     use teslatlas_hub::owner_api::OwnerApiBase;
     for base in ["http://127.0.0.1:9/", "http://localhost:9/", "http://owner-api.example/"] {
