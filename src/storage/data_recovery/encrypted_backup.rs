@@ -241,6 +241,11 @@ pub struct EncryptedBackupRequest<'a> {
     pub keep: Option<NonZeroUsize>,
     /// Set by the caller to stop the run; checked per chunk and per member.
     pub cancel: Option<Arc<AtomicBool>>,
+    /// Require a private destination where the volume enforces ownership:
+    /// no access at all for other accounts, by mode or by ACL (M06-T14). The
+    /// shipped `backup` command sets it; the service's schedule keeps the
+    /// rule that no other account may write there.
+    pub private_destination: bool,
     pub(crate) kdf: KdfParams,
     pub(crate) chunk_bytes: usize,
 }
@@ -252,6 +257,7 @@ impl<'a> EncryptedBackupRequest<'a> {
             password,
             keep: None,
             cancel: None,
+            private_destination: false,
             kdf: DEFAULT_KDF,
             chunk_bytes: DEFAULT_CHUNK_BYTES,
         }
@@ -820,26 +826,6 @@ fn seal_catalogue(
     })
 }
 
-fn resolve_destination(destination: &Path) -> Result<PathBuf, DataRecoveryError> {
-    let unavailable = |source: io::Error| DataRecoveryError::DestinationUnavailable {
-        path: destination.to_path_buf(),
-        source,
-    };
-    let metadata = fs::metadata(destination).map_err(unavailable)?;
-    if !metadata.is_dir() {
-        return Err(DataRecoveryError::DestinationUnavailable {
-            path: destination.to_path_buf(),
-            source: io::Error::new(io::ErrorKind::NotADirectory, "not a directory"),
-        });
-    }
-    destination
-        .canonicalize()
-        .map_err(|source| DataRecoveryError::DestinationUnavailable {
-            path: destination.to_path_buf(),
-            source,
-        })
-}
-
 fn generation_stamp(created_at_ms: i64) -> Result<String, DataRecoveryError> {
     let moment = time::OffsetDateTime::from_unix_timestamp(created_at_ms / 1000)
         .map_err(|_| invalid("backup timestamp is out of range"))?;
@@ -912,26 +898,20 @@ pub fn create_encrypted_backup(
 ) -> Result<EncryptedBackupReport, DataRecoveryError> {
     let cancel = request.cancel.as_deref();
     cancelled(cancel)?;
-    let admitted: AdmittedDirectory =
-        backup_admission::admit_destination(&resolve_destination(request.destination)?)?;
+    // The destination is opened as named (never through a link at its end)
+    // and every check applies to the directory opened (M06-T14).
+    let access = if request.private_destination {
+        backup_admission::DestinationAccess::OwnerOnly
+    } else {
+        backup_admission::DestinationAccess::NoForeignWrite
+    };
+    let admitted: AdmittedDirectory = backup_admission::admit_destination(request.destination, access)?;
     let destination = admitted.path.clone();
     let live_data = store
         .database_path()
         .parent()
-        .ok_or_else(|| invalid("live Hub catalogue has no data-directory parent"))?
-        .canonicalize()
-        .map_err(|source| {
-            io_error(
-                "resolving live Hub data directory",
-                store.database_path(),
-                source,
-            )
-        })?;
-    if destination.starts_with(&live_data) {
-        return Err(invalid(
-            "backup destination must not be inside the live Hub data directory",
-        ));
-    }
+        .ok_or_else(|| invalid("live Hub catalogue has no data-directory parent"))?;
+    backup_admission::refuse_inside(&admitted, live_data)?;
     // The memory-hard derivation runs, and frees its memory, before the run
     // takes the gate or copies anything.
     let key = SealingKey::derive(request.password, request.kdf, request.chunk_bytes)?;
