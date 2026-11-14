@@ -6,17 +6,31 @@ Hub separates ordinary data backup from credential disaster recovery.
 
 The following commands are for a Debian package installation. Create a private
 destination folder owned by the service account; each `backup` run adds one
-encrypted file, `teslatlas-hub-backup-<time>-<generation>.tlbk`, to it. Stop
-the Hub service first: backup and credential export take the exclusive Hub
+encrypted file, `teslatlas-hub-backup-<time>-<generation>.tlbk`, to it. On a
+volume that enforces ownership, `backup` refuses a folder that other accounts
+can read, list or enter (any group or other mode bit, or an access control
+list entry that allows anything; use mode 0700), and it refuses a destination
+that is a symbolic link: name the folder itself. The checks apply to the folder
+actually opened, so renaming a parent folder during the run cannot redirect it.
+Scheduled backups and `backup-now` keep their own rule: no other account may
+write to the folder.
+
+Stop the Hub service first: backup and credential export take the exclusive Hub
 instance lock and will refuse to run while Serve owns it. While the Hub runs,
 `backup-now` makes the same encrypted backup through the service instead.
 
 Backups are encrypted by default with a recovery password you keep (at least
-12 characters). The password is never a command argument or an environment
-variable. On a terminal, `backup` asks for it twice with echo off, and
-`verify-backup` and `restore-data` ask once. When standard input is not a
-terminal, the commands read one line from standard input instead, for example
-from a protected password file:
+12 characters, at most 1 KiB). The password is never a command argument or an
+environment variable. On a terminal, `backup` asks for it twice with echo off,
+and `verify-backup` and `restore-data` ask once. Delete or Backspace, Ctrl-W
+and Ctrl-U edit the line; Ctrl-C (also Ctrl-\, Ctrl-Z, Ctrl-Y or Ctrl-D)
+cancels the prompt. A line longer than 1 KiB is refused whole, never shortened.
+The terminal settings are restored when the prompt ends, is cancelled or the
+command is stopped by SIGINT, SIGTERM, SIGHUP or SIGQUIT; if they cannot be
+restored the command says so, and `stty sane` restores them.
+
+When standard input is not a terminal, the commands read the password from it
+instead, for example from a protected password file:
 
 ```sh
 sudo systemctl stop teslatlas-hub.service
@@ -26,6 +40,28 @@ sudo -u teslatlas -- /usr/bin/teslatlas-hub \
   --config /etc/teslatlas-hub/config.toml backup \
   --destination /srv/teslatlas-hub-backups
 sudo -u teslatlas -- /usr/bin/teslatlas-hub verify-backup \
+  --source /srv/teslatlas-hub-backups/teslatlas-hub-backup-<time>-<generation>.tlbk
+```
+
+Standard input is read in one of two modes:
+
+- One line (the default): the first line is the password. It ends at the first
+  line end (a CR before it is dropped) or at the end of the input, and the
+  command continues as soon as that line end arrives, even if the sender keeps
+  the pipe open. Input that arrives together with the line, after its end, is
+  refused rather than ignored. An empty line, or a CR or NUL inside the line,
+  is refused.
+- A password file: when the first line is exactly `#pw-file`, everything after
+  it up to the end of the input is read as the content of a backup password
+  file, by the rule scheduled backups apply to their `password_file`: at most
+  1 KiB, one trailing line end ignored, and any line ends or NUL inside kept.
+  Use this mode for a password that scheduled backups accepted but one line
+  cannot carry. The command waits for the end of the input, so close it after
+  the file:
+
+```sh
+{ printf '#pw-file\n'; sudo -u teslatlas cat /etc/teslatlas-hub/backup-password; } | \
+  sudo -u teslatlas -- /usr/bin/teslatlas-hub verify-backup \
   --source /srv/teslatlas-hub-backups/teslatlas-hub-backup-<time>-<generation>.tlbk
 ```
 
