@@ -177,6 +177,7 @@ pub(super) fn publish_physical(
         Some(stage),
         &fixture.gate,
         seam,
+        None,
     )
 }
 
@@ -523,3 +524,7 @@ fn seam_physical_route_transitive_overlap_reaches_the_existing_client_at_once() 
     assert_eq!(fresh.mirror.drives, lineage.drives);
     assert_eq!(fresh.mirror.positions, lineage.positions);
 }
+
+// A window's data reaches 1.4 clients after its handback (M03-T22).
+#[path = "seam_physical_route_handback_tests.rs"]
+mod handback;

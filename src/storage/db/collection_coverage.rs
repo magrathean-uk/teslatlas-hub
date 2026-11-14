@@ -516,6 +516,124 @@ pub fn coverage_intervals_for_vehicle(
     connection: &Connection,
     vehicle: &str,
 ) -> Result<Vec<(i64, i64)>, CoverageError> {
+    coverage_intervals_in(connection, vehicle, false)
+}
+
+/// The digest of a vehicle's coverage intervals (M03-T22): what a planned
+/// physical head is bound to, so it is served only while the coverage it was
+/// planned with is the vehicle's coverage.
+pub fn coverage_digest(intervals: &[(i64, i64)]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    hash.update(b"teslatlas-hub collection coverage v1\n");
+    for (start, end) in intervals {
+        hash.update(format!("{start} {end}\n"));
+    }
+    crate::protocol::Sha256Digest::from_bytes(hash.finalize().into()).to_string()
+}
+
+/// The digest of the vehicle's coverage from its closed windows (M03-T22): a
+/// window still open adds nothing until it is handed back, so a head planned
+/// before it is served while the window runs.
+pub fn closed_coverage_digest_for_vehicle(
+    connection: &Connection,
+    vehicle: &str,
+) -> Result<String, CoverageError> {
+    Ok(coverage_digest(&coverage_intervals_in(connection, vehicle, true)?))
+}
+
+/// The windows the window ledger has handed back whose coverage write failed
+/// in this process, per store (M03-T22). While a store has one its coverage
+/// lacks a handback, so none of its planned physical heads is served (a head
+/// planned before the window would be stale) and none is planned from it,
+/// until a write of that handback (the supervisor's retry, the next start or
+/// import admission) closes the window's row. In memory only: a start
+/// reconciles the ledger with the store before anything is served.
+static UNRECONCILED_COVERAGE: std::sync::Mutex<UnreconciledCoverage> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+type UnreconciledCoverage = std::collections::BTreeMap<PathBuf, std::collections::BTreeSet<i64>>;
+
+fn unreconciled_coverage() -> std::sync::MutexGuard<'static, UnreconciledCoverage> {
+    UNRECONCILED_COVERAGE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn unreconciled_coverage_key(database: &Path) -> PathBuf {
+    std::fs::canonicalize(database).unwrap_or_else(|_| database.to_path_buf())
+}
+
+/// Records that the handback of window `seq` did not reach the coverage of
+/// the store in `data_dir` (M03-T22).
+pub fn mark_coverage_unreconciled(data_dir: &Path, seq: i64) {
+    let key = unreconciled_coverage_key(&data_dir.join("hub.sqlite"));
+    unreconciled_coverage().entry(key).or_default().insert(seq);
+}
+
+/// Whether this process holds a handback of the store in `data_dir` that its
+/// coverage may still lack (M03-T22); it reads no store.
+pub fn coverage_unreconciled_pending(data_dir: &Path) -> bool {
+    let registry = unreconciled_coverage();
+    !registry.is_empty()
+        && registry
+            .get(&unreconciled_coverage_key(&data_dir.join("hub.sqlite")))
+            .is_some_and(|seqs| !seqs.is_empty())
+}
+
+/// Whether the coverage of the store at `database` still lacks a handback
+/// this process failed to write (M03-T22). A window whose row the store now
+/// holds closed is forgotten.
+pub fn coverage_unreconciled_in(
+    connection: &Connection,
+    database: &Path,
+) -> Result<bool, CoverageError> {
+    let key = {
+        let registry = unreconciled_coverage();
+        if registry.is_empty() {
+            return Ok(false);
+        }
+        let key = unreconciled_coverage_key(database);
+        if registry.get(&key).is_none_or(|seqs| seqs.is_empty()) {
+            return Ok(false);
+        }
+        key
+    };
+    let seqs = unreconciled_coverage().get(&key).cloned().unwrap_or_default();
+    let mut closed = Vec::new();
+    if coverage_table_present(connection)? {
+        for seq in &seqs {
+            let closed_at: Option<Option<i64>> = connection
+                .query_row(
+                    "SELECT closed_at_ms FROM collection_coverage WHERE seq = ?1",
+                    [seq],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if matches!(closed_at, Some(Some(_))) {
+                closed.push(*seq);
+            }
+        }
+    }
+    let mut registry = unreconciled_coverage();
+    let Some(pending) = registry.get_mut(&key) else {
+        return Ok(false);
+    };
+    for seq in closed {
+        pending.remove(&seq);
+    }
+    let unreconciled = !pending.is_empty();
+    if !unreconciled {
+        registry.remove(&key);
+    }
+    Ok(unreconciled)
+}
+
+fn coverage_intervals_in(
+    connection: &Connection,
+    vehicle: &str,
+    skip_open: bool,
+) -> Result<Vec<(i64, i64)>, CoverageError> {
     if !coverage_table_present(connection)? {
         return Ok(Vec::new());
     }
@@ -536,6 +654,9 @@ pub fn coverage_intervals_for_vehicle(
     for row in rows {
         let (seq, opened_ms, closed_ms, gaps_json, ends_json) = row?;
         let Some(closed_ms) = closed_ms else {
+            if skip_open {
+                continue;
+            }
             return Err(CoverageError::WindowOpen { seq });
         };
         let end_ms = match ends_json {

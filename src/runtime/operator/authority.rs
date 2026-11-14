@@ -471,6 +471,85 @@ enum Signal {
     Stop,
 }
 
+/// How often a handback's physical publication asks for a busy publication
+/// gate before it leaves the refusal to the next handback, start or import.
+const HANDBACK_GATE_ATTEMPTS: u32 = 20;
+const HANDBACK_GATE_RETRY: Duration = Duration::from_millis(250);
+
+/// After a handback, and once at service start (M03-T22): the physical 1.4
+/// heads a window left refused are planned again, under the publication
+/// gate, from what each vehicle's last import kept, so the window's data
+/// reaches 1.4 clients without another import. It needs the store and the
+/// cursor key the data directory already holds and never creates a key (a
+/// data-only restore waits for its credential recovery). A gate that stays
+/// busy, or a vehicle that cannot be planned, leaves the refusal.
+pub fn publish_window_after_handback(data_dir: &Path) {
+    let present = |path: PathBuf| std::fs::symlink_metadata(path).is_ok();
+    if !present(crate::legacy_owner_credentials::cursor_key_path(data_dir))
+        || !present(data_dir.join("hub.sqlite"))
+    {
+        return;
+    }
+    let store = match crate::db::HubStore::open_existing(data_dir) {
+        Ok(store) => store,
+        Err(error) => {
+            tracing::warn!(%error, "handback publication: the store did not open");
+            return;
+        }
+    };
+    let cursor_key = match crate::legacy_owner_credentials::load_or_create_cursor_key(data_dir) {
+        Ok(key) => key,
+        Err(error) => {
+            tracing::warn!(%error, "handback publication: the cursor key did not load");
+            return;
+        }
+    };
+    let mut attempts = 0;
+    let gate = loop {
+        match store.try_acquire_publication_gate() {
+            Ok(gate) => break gate,
+            Err(crate::db::StoreError::PublicationGateBusy) if attempts < HANDBACK_GATE_ATTEMPTS => {
+                attempts += 1;
+                std::thread::sleep(HANDBACK_GATE_RETRY);
+            }
+            Err(error) => {
+                tracing::info!(
+                    %error,
+                    "handback publication: the publication gate is busy; the 1.4 head stays \
+                     refused until the next handback, start or import"
+                );
+                return;
+            }
+        }
+    };
+    match crate::import::source_db::importer::publish_physical_after_handback(
+        &store,
+        &cursor_key,
+        &gate,
+    ) {
+        Ok(outcomes) => {
+            for (vehicle_id, outcome) in outcomes {
+                tracing::info!(%vehicle_id, ?outcome, "handback publication of the 1.4 head");
+            }
+        }
+        Err(error) => tracing::warn!(%error, "handback publication failed"),
+    }
+}
+
+/// Runs [`publish_window_after_handback`] off the calling thread, so a
+/// window's supervision never waits for a publication.
+fn spawn_handback_publication(data_dir: Option<PathBuf>) {
+    let Some(data_dir) = data_dir else {
+        return;
+    };
+    let spawned = std::thread::Builder::new()
+        .name("hub-handback-publication".to_owned())
+        .spawn(move || publish_window_after_handback(&data_dir));
+    if let Err(error) = spawned {
+        tracing::warn!(%error, "handback publication did not start");
+    }
+}
+
 /// The supervisor thread: it steps the window supervisor at least every
 /// `next_wakeup_seconds` and at once after a kick, and stops the collector
 /// when the service stops (the window itself survives a restart; design 2.9).
@@ -492,11 +571,22 @@ impl SupervisorThread {
         let thread = std::thread::Builder::new()
             .name("hub-window-supervisor".to_owned())
             .spawn(move || {
+                // Once at service start: a handback whose publication did not
+                // finish is planned again (M03-T22).
+                spawn_handback_publication(controller.data_dir());
                 let mut supervisor = Supervisor::new(controller.clone(), slot);
                 loop {
                     let report = supervisor.step();
                     if let Some(reason) = report.closed {
                         tracing::info!(reason = reason.code(), "collection window closed");
+                        spawn_handback_publication(controller.data_dir());
+                    }
+                    // A handback that did not reach the store's coverage is
+                    // written again; the heads stay refused until it is, and
+                    // then the window's data is published (M03-T22).
+                    if controller.coverage_unreconciled() && controller.reconcile_coverage() {
+                        tracing::info!("the window's handback reached the store's coverage");
+                        spawn_handback_publication(controller.data_dir());
                     }
                     if let Some(fault) = report.fault {
                         tracing::warn!(code = fault.code(), "collection window fault");
@@ -589,7 +679,13 @@ where
     let closed = tokio::task::spawn_blocking(move || {
         let _ = closing.tick();
         if closing.status().phase == Phase::Closing {
-            closing.finish_close().map_err(OperatorRefusal::window)
+            let closed = closing.finish_close().map_err(OperatorRefusal::window);
+            if matches!(closed, Ok(Some(_)))
+                && let Some(data_dir) = closing.data_dir()
+            {
+                publish_window_after_handback(&data_dir);
+            }
+            closed
         } else {
             Ok(None)
         }

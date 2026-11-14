@@ -247,3 +247,79 @@ fn seam_repair_handback_restored_window_closes_once_on_either_path() {
     drop(admit_import(Some(&other), &home(&rig)).unwrap());
     check(&other, "second admission");
 }
+
+/// M03-T22 (DEC-140): an older handback whose coverage write failed is
+/// retried only while no window is Pending or Open. A later window that
+/// collects an active drive and charge meanwhile keeps both open, through the
+/// retry and a service restart, until its own handback closes them at their
+/// last evidence; the older handback then reaches the store and closes nothing.
+#[test]
+fn seam_repair_handback_retry_waits_for_a_later_window_to_close() {
+    use crate::collection::window::controller::fail_next_coverage_handback;
+    let rig = Rig::new();
+    let hub = rig.trusted_hub();
+    let (store, driving, charging) = store_with_vehicles(&rig);
+    let connection = store.open().unwrap();
+
+    // The first window's handback does not reach the store's coverage.
+    assert_eq!(hub.open(&rig.grant(0, 600)).unwrap().phase, Phase::Open);
+    rig.clock.advance(60);
+    hub.close(CloseReason::OperatorClose);
+    fail_next_coverage_handback();
+    hub.finish_close().unwrap().expect("a handback");
+    assert_eq!(coverage_row(&connection, 1).0, "open");
+    assert!(hub.coverage_unreconciled());
+
+    // A later window opens (past the issuer's gap) and collects a drive and
+    // a charge.
+    rig.clock.advance(1440);
+    assert_eq!(hub.open(&rig.grant(0, 3000)).unwrap().phase, Phase::Open);
+    let first_ms = (T0 + 1560) * SECOND;
+    let drive_last_ms = collect_open_session(&store, &driving, true, first_ms);
+    let charge_last_ms = collect_open_session(&store, &charging, false, first_ms);
+    rig.clock.advance(300);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+
+    // The retry waits: the older handback stays unwritten, the sessions open.
+    assert!(!hub.reconcile_coverage(), "no retry while a window is open");
+    assert!(hub.coverage_unreconciled());
+    assert_eq!(coverage_row(&connection, 1).0, "open");
+    assert_eq!(closed(&connection, &driving, true), still_open());
+    assert_eq!(closed(&connection, &charging, false), still_open());
+
+    // A restart inside the later window defers the retry the same way.
+    drop(hub);
+    let (hub, _) = rig.start_hub();
+    assert_eq!(hub.status().phase, Phase::Open);
+    assert!(hub.coverage_unreconciled());
+    assert!(!hub.reconcile_coverage());
+    assert_eq!(coverage_row(&connection, 1).0, "open");
+    assert_eq!(closed(&connection, &driving, true), still_open());
+    assert_eq!(closed(&connection, &charging, false), still_open());
+
+    // The later window's own handback closes them at their last evidence.
+    rig.clock.advance(60);
+    hub.close(CloseReason::OperatorClose);
+    hub.finish_close().unwrap().expect("a handback");
+    assert_eq!(coverage_row(&connection, 2).0, "handback");
+    // One handback event per vehicle; the observation ids are store-wide, so
+    // the second vehicle's cursor is 3.
+    let drive = closed(&connection, &driving, true);
+    let charge = closed(&connection, &charging, false);
+    for (path, after, last_ms) in [
+        ("drive", &drive, drive_last_ms),
+        ("charge", &charge, charge_last_ms),
+    ] {
+        let mut want = expected(first_ms, last_ms);
+        assert!(matches!(after.cursor, 2 | 3), "{path}: {after:?}");
+        want.cursor = after.cursor;
+        assert_eq!(after, &want, "{path}");
+    }
+    assert_ne!(drive.cursor, charge.cursor);
+
+    // After the close the retry writes the older handback and closes nothing.
+    assert!(hub.reconcile_coverage());
+    assert_eq!(coverage_row(&connection, 1).0, "handback");
+    assert_eq!(closed(&connection, &driving, true), drive);
+    assert_eq!(closed(&connection, &charging, false), charge);
+}

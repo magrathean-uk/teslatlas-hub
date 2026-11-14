@@ -47,6 +47,7 @@ fn finish_selected_schema_22_publication(
         atomic_schema_22,
         physical_stage,
         physical_seam,
+        physical_source,
         publication_gate,
     } = captured;
     let vehicle_id = report.vehicle_id;
@@ -90,6 +91,9 @@ fn finish_selected_schema_22_publication(
         physical_stage,
         &publication_gate,
         physical_seam.as_ref(),
+        physical_source
+            .as_ref()
+            .map(|(drives, charges)| (drives.as_slice(), charges.as_slice())),
     )?;
     Ok(SourceDbSelectedImportReport {
         import: report,
@@ -104,6 +108,10 @@ fn finish_selected_schema_22_publication(
 /// proved; the head is recorded as planned before it is published, so the
 /// store serves it. Without a plan, or with a row the physical schema cannot
 /// hold, the head is withheld and the stage discarded.
+///
+/// With `keep` (an import's source sessions), the raw stage and those
+/// sessions are kept first, so a later handback can plan the head again
+/// without another import (M03-T22).
 fn publish_physical_route(
     store: &HubStore,
     cursor_key: &CursorKey,
@@ -111,11 +119,15 @@ fn publish_physical_route(
     stage: Option<crate::source_db_stage::OwnedSourceDbStage>,
     publication_gate: &PublicationGate,
     seam: Option<&crate::import::source_db::seam::SeamPackPlan>,
+    keep: Option<(&[ProjectionDrive], &[ProjectionCharge])>,
 ) -> Result<Option<crate::physical_publication::PhysicalV3Publication>, SourceDbImportError> {
     let Some(mut stage) = stage else {
         return Ok(None);
     };
     let vehicle_id = binding.vehicle_id;
+    if let Some((drives, charges)) = keep {
+        keep_physical_source(store, publication_gate, &binding, stage.stage_mut(), drives, charges);
+    }
     let planned = store.import_seam_present(vehicle_id)?;
     if planned {
         let outcome = match seam {
@@ -147,12 +159,18 @@ fn publish_physical_route(
         .ok()
         .and_then(|value| i64::try_from(value.as_millis()).ok())
         .ok_or(crate::physical_publication::SourceDbPhysicalPublicationError::Clock)?;
-    let record = |snapshot_id: Uuid| {
-        if planned {
-            store.record_physical_v3_seam_planned(publication_gate, vehicle_id, snapshot_id)
-        } else {
-            Ok(())
-        }
+    // The head is bound to the coverage its plan was made with (M03-T22).
+    let coverage = seam.map(|packs| {
+        crate::db::coverage_digest(packs.coverage().intervals())
+    });
+    let record = |snapshot_id: Uuid| match (planned, coverage.as_deref()) {
+        (true, Some(coverage)) => store.record_physical_v3_seam_planned_with_coverage(
+            publication_gate,
+            vehicle_id,
+            snapshot_id,
+            coverage,
+        ),
+        _ => Ok(()),
     };
     Ok(Some(
         crate::physical_publication::publish_recorded_physical_v3_stage_with_gate_at(
@@ -566,3 +584,7 @@ fn physical_charge_sample(
         outside_temp_e1: fixed(sample.outside_temp_c, 1),
     }))
 }
+
+// The raw stage and source sessions kept for a handback, and the handback's
+// publication (M03-T22).
+include!("physical_kept.rs");

@@ -828,6 +828,9 @@ struct CapturedSourceDbImport {
     atomic_schema_22: Option<ProductionUpdatesPublication>,
     physical_stage: Option<crate::source_db_stage::OwnedSourceDbStage>,
     physical_seam: Option<crate::import::source_db::seam::SeamPackPlan>,
+    /// The import's source sessions, kept with the raw physical stage for a
+    /// later handback (M03-T22).
+    physical_source: Option<(Vec<ProjectionDrive>, Vec<ProjectionCharge>)>,
     publication_gate: PublicationGate,
 }
 
@@ -1037,6 +1040,9 @@ async fn import_from_postgres_with_updates_capture_policy(
     let mut direct = first_capture.packs;
     let updates_v2_2 = first_capture.updates_v2_2;
     let physical_stage = first_capture.physical_stage;
+    let physical_source = physical_stage
+        .as_ref()
+        .map(|_| (materialised_drives.clone(), materialised_charges.clone()));
     let cutover = match settle_captured_session(open_session, cutover_policy, || {
         read_open_session(source, password, selected_car_id, limits)
     })
@@ -1108,6 +1114,7 @@ async fn import_from_postgres_with_updates_capture_policy(
             atomic_schema_22: None,
             physical_stage,
             physical_seam,
+            physical_source,
             publication_gate,
         });
     }
@@ -1144,6 +1151,7 @@ async fn import_from_postgres_with_updates_capture_policy(
                 atomic_schema_22: None,
                 physical_stage,
                 physical_seam,
+                physical_source,
                 publication_gate,
             });
         }
@@ -1167,6 +1175,7 @@ async fn import_from_postgres_with_updates_capture_policy(
                 atomic_schema_22: None,
                 physical_stage,
                 physical_seam,
+                physical_source,
                 publication_gate,
             });
         }
@@ -1255,6 +1264,7 @@ async fn import_from_postgres_with_updates_capture_policy(
                 atomic_schema_22: None,
                 physical_stage,
                 physical_seam,
+                physical_source,
                 publication_gate,
             });
         }
@@ -1381,6 +1391,7 @@ async fn import_from_postgres_with_updates_capture_policy(
         atomic_schema_22: prepared_schema_22.map(|prepared| prepared.publication),
         physical_stage,
         physical_seam,
+        physical_source,
         publication_gate,
     })
 }
