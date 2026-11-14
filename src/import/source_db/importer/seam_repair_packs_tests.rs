@@ -638,7 +638,31 @@ fn seam_repair_packs_physical_stage_is_withheld_for_a_seam_vehicle() {
         physical_stage_for_publication(&fixture.store, vehicle_id, Some(physical_stage(path.clone())))
             .expect("route");
     assert!(withheld.is_none(), "after the Hub collects, the stage is withheld");
-    assert!(!path.exists(), "the withheld stage is discarded");
+    assert!(
+        stage_files(&path).is_empty(),
+        "the withheld stage is discarded: {:?}",
+        stage_files(&path)
+    );
+}
+
+/// Every file left under a stage's imports directory.
+fn stage_files(path: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    let mut pending = vec![path.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries {
+            let path = entry.expect("stage entry").path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                files.push(path);
+            }
+        }
+    }
+    files
 }
 
 /// Review finding 2, the importer's side: for a vehicle with the seam, the
