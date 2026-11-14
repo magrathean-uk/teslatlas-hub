@@ -138,6 +138,9 @@ pub(super) fn walk_pack_directory(directory: &Path) -> Result<(u64, u64), DataRe
             .file_name()
             .into_string()
             .map_err(|_| invalid("pack directory contains a non-UTF-8 name"))?;
+        if is_ignorable_finder_file(&entry.path(), &name) {
+            continue;
+        }
         let digest = name
             .strip_suffix(".sqlite.zst")
             .filter(|_| canonical_pack_filename(&name))
@@ -201,6 +204,9 @@ pub(super) fn copy_streamed_directory(
             .file_name()
             .into_string()
             .map_err(|_| invalid("backup pack filename is not UTF-8"))?;
+        if is_ignorable_finder_file(&entry.path(), &name) {
+            continue;
+        }
         let digest = name
             .strip_suffix(".sqlite.zst")
             .filter(|_| canonical_pack_filename(&name))

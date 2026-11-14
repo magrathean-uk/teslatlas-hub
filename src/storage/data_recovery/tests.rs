@@ -1385,3 +1385,6 @@ mod g2_4_m1;
 
 #[path = "tests/m06_t15.rs"]
 mod m06_t15;
+
+#[path = "tests/m06_t18.rs"]
+mod m06_t18;

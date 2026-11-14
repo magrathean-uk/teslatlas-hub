@@ -101,6 +101,7 @@ fn entries(directory: &Path) -> Vec<String> {
     let mut names: Vec<String> = fs::read_dir(directory)
         .expect("listing")
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name != ".DS_Store" && !name.starts_with("._"))
         .collect();
     names.sort();
     names
