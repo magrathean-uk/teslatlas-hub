@@ -1314,7 +1314,9 @@ fn live_publication_includes_v2_state_and_update_history() {
     // C1 R7: a `vehicle_data` answer with a fresh group is evidence that the
     // car is connected and online, whatever the vehicle list's envelope says,
     // so the asleep envelope of the second collection opens no asleep interval.
-    assert_eq!(states, vec![(1, "online".to_owned(), t0, None)]);
+    // The Hub allocates the state and update ids from its own range.
+    let hub = crate::db::hub_ids::HUB_ID_BASE;
+    assert_eq!(states, vec![(hub, "online".to_owned(), t0, None)]);
     let update: (i64, i64, i64, String) = connection
         .query_row(
             "SELECT id, start_date_ms, end_date_ms, version FROM updates",
@@ -1322,7 +1324,7 @@ fn live_publication_includes_v2_state_and_update_history() {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .expect("update row");
-    assert_eq!(update, (1, t2, t3, "2026.20.1".to_owned()));
+    assert_eq!(update, (hub, t2, t3, "2026.20.1".to_owned()));
 }
 
 #[test]
@@ -1532,7 +1534,8 @@ fn service_refusal_is_appended_as_a_hub_lifecycle_event() {
 /// ST93 (d), C1 R84: a vehicle whose lifecycle state is new, as after a
 /// quarantined blob, but whose import watermarks lie above its materialised
 /// and catalogue maxima. The collector's first projection allocates every live
-/// id above them.
+/// id from the Hub range (M03-T12), which lies above every watermark, so no
+/// live id collides with an imported one.
 #[test]
 fn st93_the_collector_seed_allocates_live_ids_above_the_import_watermarks() {
     let temp = crate::private_tempdir().expect("temporary store");
@@ -1608,13 +1611,25 @@ fn st93_the_collector_seed_allocates_live_ids_above_the_import_watermarks() {
     let history = store
         .materialised_history(vehicle_id.parse().expect("uuid"))
         .expect("history");
-    assert_eq!(history.drives.iter().map(|d| d.id).collect::<Vec<_>>(), vec![41]);
+    assert_eq!(
+        history.drives.iter().map(|d| d.id).collect::<Vec<_>>(),
+        vec![crate::db::hub_ids::HUB_ID_BASE]
+    );
     assert!(
-        !history.positions.is_empty() && history.positions.iter().all(|p| p.id > 800),
+        !history.positions.is_empty()
+            && history
+                .positions
+                .iter()
+                .all(|p| crate::db::hub_ids::is_hub_id(p.id) && p.id > 800),
         "{:?}",
         history.positions.iter().map(|p| p.id).collect::<Vec<_>>()
     );
-    assert!(history.states.iter().all(|state| state.id > 30));
+    assert!(
+        history
+            .states
+            .iter()
+            .all(|state| crate::db::hub_ids::is_hub_id(state.id) && state.id > 30)
+    );
 }
 
 // ---- retirement cover and collector-less publication (G2-6 6A S9) ----

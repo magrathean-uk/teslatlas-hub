@@ -85,6 +85,29 @@ pub(crate) fn publish_sealed_physical_v3_stage_with_gate_at(
     gate: &PublicationGate,
     now_ms: i64,
 ) -> Result<PhysicalV3Publication, SourceDbPhysicalPublicationError> {
+    publish_recorded_physical_v3_stage_with_gate_at(
+        store,
+        cursor_key,
+        binding,
+        stage,
+        gate,
+        now_ms,
+        &|_| Ok(()),
+    )
+}
+
+/// As [`publish_sealed_physical_v3_stage_with_gate_at`], telling `record`
+/// the head's snapshot id before anything is published (M03-T21: the
+/// importer records a head it planned with the import seam).
+pub(crate) fn publish_recorded_physical_v3_stage_with_gate_at(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    binding: ProjectionBinding,
+    stage: SourceDbStage,
+    gate: &PublicationGate,
+    now_ms: i64,
+    record: &dyn Fn(Uuid) -> Result<(), StoreError>,
+) -> Result<PhysicalV3Publication, SourceDbPhysicalPublicationError> {
     let result = publish_sealed_physical_v3_stage_inner(
         store,
         cursor_key,
@@ -93,6 +116,7 @@ pub(crate) fn publish_sealed_physical_v3_stage_with_gate_at(
         gate,
         now_ms,
         SourceDbPhysicalFragmentLimits::default(),
+        record,
     );
     if let Ok(publication) = &result
         && let Err(error) = crate::sync::prepared_map::publish_selected_month(
@@ -144,12 +168,14 @@ fn publish_sealed_physical_v3_stage_inner(
     publication_gate: &PublicationGate,
     now_ms: i64,
     fragment_limits: SourceDbPhysicalFragmentLimits,
+    record: &dyn Fn(Uuid) -> Result<(), StoreError>,
 ) -> Result<PhysicalV3Publication, SourceDbPhysicalPublicationError> {
     if stage.format()? != SourceDbStageFormat::PhysicalV3 {
         return Err(SourceDbPhysicalPublicationError::WrongStageFormat);
     }
     let stage_digest = stage.sealed_content_digest()?;
     let snapshot_id = physical_v3_snapshot_id(stage_digest, &binding);
+    record(snapshot_id)?;
     let state = store.physical_v3_publication_state_for_vehicle_at(binding.vehicle_id, now_ms)?;
     // Recover the already committed, fully verified successor before deciding
     // what to do with a fresh source snapshot. The source may have advanced

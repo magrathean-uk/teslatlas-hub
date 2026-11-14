@@ -693,12 +693,15 @@ fn t35e_a_live_charge_after_a_seeded_cutover_is_filled_as_a_hub_row() {
     feed_owner_samples(&store, &source, &vehicle, &live);
     let history = store.materialised_history(v).expect("history");
     let ids = history.charges.iter().map(|row| row.id).collect::<Vec<_>>();
+    // The live charge is a Hub row: the first Hub id, distinct from the
+    // imported cutover row 7 (C1 R10 with amendment A5, M03-T12).
+    let hub = crate::db::hub_ids::HUB_ID_BASE;
     assert_eq!(
         ids,
-        vec![7, 51],
-        "the live charge must be allocated above the import watermark (C1 R10 with amendment A5)"
+        vec![7, hub],
+        "the live charge must be allocated from the Hub id range, apart from the imported row"
     );
-    let live_charge = fill_read(&store, v, 51);
+    let live_charge = fill_read(&store, v, hub);
     assert_eq!(live_charge.charge_energy_added, Some(2.16));
     assert_eq!(live_charge.charge_energy_used_kwh, Some(2.40));
     assert_eq!(live_charge.cost, None);
@@ -746,7 +749,7 @@ fn t35e_a_live_charge_after_a_seeded_cutover_is_filled_as_a_hub_row() {
         store.recalculate_missing_charge_costs(v, 3).expect("fill"),
         1
     );
-    let priced = fill_read(&store, v, 51);
+    let priced = fill_read(&store, v, hub);
     assert_eq!(priced.cost, Some(0.72));
     assert_eq!(fill_copy(&priced), (Some(kwh()), Some(0.30), None));
     assert_eq!(fill_read(&store, v, 7).cost, None);

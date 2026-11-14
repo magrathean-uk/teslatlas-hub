@@ -1405,6 +1405,7 @@ fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
             updates_v2_2: source.clone(),
             atomic_schema_22: None,
             physical_stage: Some(physical_stage(&[])),
+            physical_seam: None,
             publication_gate,
         },
     )
@@ -1437,6 +1438,7 @@ fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
             updates_v2_2: source.clone(),
             atomic_schema_22: None,
             physical_stage: Some(physical_stage(&[])),
+            physical_seam: None,
             publication_gate,
         },
     )
@@ -1487,6 +1489,7 @@ fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
                 updates_v2_2: source.clone(),
                 atomic_schema_22: Some(completed.updates_schema_22.clone()),
                 physical_stage: Some(physical_stage(&updates)),
+                physical_seam: None,
                 publication_gate: store.try_acquire_publication_gate().unwrap(),
             },
         )
@@ -1568,6 +1571,7 @@ fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
             updates_v2_2: delta_updates,
             atomic_schema_22: None,
             physical_stage: None,
+            physical_seam: None,
             publication_gate,
         },
     )

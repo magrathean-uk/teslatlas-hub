@@ -40,6 +40,15 @@ fn import_inventory_contains_closed_drive(
         .map_err(StoreError::Query)
 }
 
+/// Who publishes a full snapshot: a source import, which must plan the seam
+/// once the Hub has collected the vehicle, or the store's own materialised
+/// history, which is the seam's outcome and has nothing to plan.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SnapshotPublisher {
+    SourceImport,
+    OwnHistory,
+}
+
 impl HubStore {
     /// Publish a client-valid import successor under the immutable V2 base.
     ///
@@ -151,11 +160,15 @@ impl HubStore {
             projection_state,
             None,
             retain_legacy_inventory,
+            None,
         )
     }
 
     /// Direct PostgreSQL successor publication also reconciles the bounded
     /// car/drive query projection inside the same catalogue transaction.
+    /// Without a seam digest, publication applies the seam to the store but
+    /// cannot prove the packs carry the same plan; only tests use it.
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn finalize_import_generation_delta_successors_with_projection_state_and_materialisation(
         &self,
@@ -187,6 +200,52 @@ impl HubStore {
             projection_state,
             Some((materialised_car, materialised_drives)),
             false,
+            None,
+        )
+    }
+
+    /// The importer's successor publication: as the materialising variant,
+    /// and the seam is planned again inside the transaction. The publication
+    /// refuses with [`StoreError::ImportGenerationConflict`] unless that plan
+    /// is the one the packs were written from (`seam_digest`, from
+    /// [`Self::apply_import_seam_ahead_of_packs`]).
+    /// The importer publishes with its staged seam; this remains for the
+    /// store's own tests of the seam applied ahead.
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn finalize_import_generation_delta_successors_with_projection_state_and_seam_plan(
+        &self,
+        run_id: Uuid,
+        source_id: Uuid,
+        vehicle_id: Uuid,
+        car_id: i64,
+        updated_at_ms: i64,
+        deltas: &[LineageDelta],
+        cursor_key: &CursorKey,
+        terminal_cursor: &OpaqueCursor,
+        fingerprint: Sha256Digest,
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
+        projection_state: &SourceDbProjectionState,
+        materialised_car: &ProjectionCar,
+        materialised_drives: &[ProjectionDrive],
+        materialised_charges: &[crate::hub_pack::ProjectionCharge],
+        seam_digest: [u8; 32],
+    ) -> Result<(), StoreError> {
+        self.finalize_import_generation_delta_successors_with_projection_state_inner(
+            run_id,
+            source_id,
+            vehicle_id,
+            car_id,
+            updated_at_ms,
+            deltas,
+            cursor_key,
+            terminal_cursor,
+            fingerprint,
+            geofences,
+            projection_state,
+            Some((materialised_car, materialised_drives)),
+            false,
+            Some(ImportSeamPublication { digest: seam_digest, charges: materialised_charges, staged: None }),
         )
     }
 
@@ -206,6 +265,7 @@ impl HubStore {
         projection_state: &SourceDbProjectionState,
         materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
         retain_legacy_inventory: bool,
+        seam: Option<ImportSeamPublication<'_>>,
     ) -> Result<(), StoreError> {
         if run_id.is_nil() || source_id.is_nil() || vehicle_id.is_nil() || car_id <= 0 {
             return Err(StoreError::InvalidImportGeneration);
@@ -347,6 +407,9 @@ impl HubStore {
                 .checked_add(1)
                 .and_then(|ordinal| u32::try_from(ordinal).ok())
                 .ok_or(StoreError::LineageCatalogConflict)?;
+            if let (Some(seam), Some((_, drives))) = (seam, materialisation) {
+                apply_staged_import_seam_in_transaction(&transaction, vehicle_id, drives, seam, deltas, &binding)?;
+            }
             let mut expected_sequence = first_delta.from_sequence;
             let mut expected_digest = first_delta.parent_chain_digest;
             for delta in deltas {
@@ -384,16 +447,31 @@ impl HubStore {
             if updated != 1 {
                 return Err(StoreError::LineageCatalogConflict);
             }
-            if let Some((car, drives)) = materialisation {
-                reconcile_imported_materialisation_in_transaction(
-                    &transaction,
-                    vehicle_id,
-                    car_id,
-                    car,
-                    drives,
-                    ImportedProjectionRows::Attached,
-                    PriorImportedDriveRows::Durable,
-                )?;
+            publish_staged_import_seam_in_transaction(&transaction, vehicle_id, seam, deltas)?;
+            match materialisation {
+                Some((car, drives)) => {
+                    // The packs were written from a plan; publication plans
+                    // again from the same store and refuses another one.
+                    let charge_seam =
+                        replan_import_seam_in_transaction(&transaction, vehicle_id, car_id, drives, seam)?;
+                    reconcile_imported_materialisation_in_transaction(
+                        &transaction,
+                        vehicle_id,
+                        car_id,
+                        car,
+                        drives,
+                        ImportedProjectionRows::Attached,
+                        PriorImportedDriveRows::Durable,
+                    )?;
+                    if let Some((plan, charges)) = charge_seam {
+                        apply_import_seam_to_charges_in_transaction(
+                            &transaction, vehicle_id, &plan, charges, true,
+                        )?;
+                    }
+                }
+                // A successor that does not plan the seam may not publish
+                // over the Hub's own collection.
+                None => refuse_unplanned_import_seam_in_transaction(&transaction, &vehicle_key)?,
             }
             replace_source_db_import_projection_state_from_attached_in_transaction(
                 &transaction,
@@ -544,6 +622,9 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
+        // A publication that does not plan the seam may not publish over
+        // the Hub's own collection (design M03-SEAM-R3, section 4).
+        refuse_unplanned_import_seam_in_transaction(&transaction, &vehicle_id.to_string())?;
         let base_snapshot: String = transaction
             .query_row(
                 "SELECT snapshot_id FROM sync_bases WHERE vehicle_id = ?1",
@@ -1125,6 +1206,9 @@ impl HubStore {
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(StoreError::Begin)?;
+            // A publication that does not plan the seam may not publish over
+            // the Hub's own collection (design M03-SEAM-R3, section 4).
+            refuse_unplanned_import_seam_in_transaction(&transaction, &vehicle_id.to_string())?;
             let generation_is_staging: bool = transaction
                 .query_row(
                     "SELECT EXISTS(
@@ -1800,6 +1884,9 @@ impl HubStore {
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(StoreError::Begin)?;
+            // A publication that does not plan the seam may not publish over
+            // the Hub's own collection (design M03-SEAM-R3, section 4).
+            refuse_unplanned_import_seam_in_transaction(&transaction, &vehicle_id.to_string())?;
             let (encoded, base_last_observation_id, base_updated_at_ms): (String, i64, i64) =
                 transaction
                     .query_row(
@@ -2035,6 +2122,9 @@ impl HubStore {
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(StoreError::Begin)?;
+            // A publication that does not plan the seam may not publish over
+            // the Hub's own collection (design M03-SEAM-R3, section 4).
+            refuse_unplanned_import_seam_in_transaction(&transaction, &vehicle_id.to_string())?;
             let (encoded, base_last_observation_id, base_updated_at_ms): (String, i64, i64) =
                 transaction
                     .query_row(
@@ -2146,6 +2236,9 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
+        // A publication that does not plan the seam may not publish over
+        // the Hub's own collection (design M03-SEAM-R3, section 4).
+        refuse_unplanned_import_seam_in_transaction(&transaction, &vehicle_id.to_string())?;
         let (encoded, base_last_observation_id, base_updated_at_ms): (String, i64, i64) =
             transaction
                 .query_row(
@@ -2222,6 +2315,8 @@ impl HubStore {
     /// binding that was used to write the immutable pack.  All production V2
     /// publishers must use this entry point; a later delta must never infer
     /// account, generation, or selected car from mutable local state.
+    /// Its producers publish the store's own materialised history (the
+    /// collector and terrain), which the seam guard does not refuse.
     pub fn finalize_import_snapshot_with_binding(
         &self,
         manifest: &SyncManifest,
@@ -2229,13 +2324,14 @@ impl HubStore {
         geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: &ProjectionBinding,
     ) -> Result<(), StoreError> {
-        self.finalize_import_snapshot_with_metadata(
+        self.finalize_snapshot_with_metadata(
             manifest,
             fingerprint,
             geofences,
             Some(binding),
             None,
             None,
+            SnapshotPublisher::OwnHistory,
         )
     }
 
@@ -2291,6 +2387,28 @@ impl HubStore {
         inventory: Option<&SourceDbImportProjectionInventory>,
         projection_state: Option<&SourceDbProjectionState>,
     ) -> Result<(), StoreError> {
+        self.finalize_snapshot_with_metadata(
+            manifest,
+            fingerprint,
+            geofences,
+            binding,
+            inventory,
+            projection_state,
+            SnapshotPublisher::SourceImport,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finalize_snapshot_with_metadata(
+        &self,
+        manifest: &SyncManifest,
+        fingerprint: Sha256Digest,
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
+        binding: Option<&ProjectionBinding>,
+        inventory: Option<&SourceDbImportProjectionInventory>,
+        projection_state: Option<&SourceDbProjectionState>,
+        publisher: SnapshotPublisher,
+    ) -> Result<(), StoreError> {
         if manifest.schema == HUB_PROJECTION_SCHEMA_V2 && binding.is_none() {
             return Err(StoreError::ImmutableBaseBindingMissing(manifest.vehicle_id));
         }
@@ -2308,6 +2426,16 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
+        // An import publication that does not plan the seam may not publish
+        // over the Hub's own collection (design M03-SEAM-R3, section 4). The
+        // store's own history is not an import: it is what the seam left, so
+        // it has nothing to plan, and the Hub's collection must publish.
+        if publisher == SnapshotPublisher::SourceImport {
+            refuse_unplanned_import_seam_in_transaction(
+                &transaction,
+                &manifest.vehicle_id.to_string(),
+            )?;
+        }
         publish_manifest_in_transaction(&transaction, manifest, binding)?;
         if let Some(inventory) = inventory {
             replace_source_db_import_inventory_in_transaction(
@@ -2639,7 +2767,11 @@ fn reconcile_imported_materialisation_in_transaction(
 
     let mut previous_id = 0_i64;
     for drive in drives {
-        if drive.id <= previous_id || drive.car_id != car_id {
+        // A source id inside the Hub's range would be taken for a Hub row.
+        if drive.id <= previous_id
+            || drive.id >= crate::db::hub_ids::HUB_ID_BASE
+            || drive.car_id != car_id
+        {
             return Err(StoreError::InvalidImportGeneration);
         }
         previous_id = drive.id;
@@ -2669,27 +2801,9 @@ fn reconcile_imported_materialisation_in_transaction(
     let prior_imported_drive_ids = match prior_rows {
         PriorImportedDriveRows::None => Vec::new(),
         PriorImportedDriveRows::Durable => {
-            let mut statement = transaction
-                .prepare(concat!(
-                    "SELECT entity_id
-                       FROM ",
-                    crate::db::import_table_names::import_projection_state_rows_table!(),
-                    "
-                      WHERE vehicle_id = ?1 AND entity_ordinal = ?2
-                      ORDER BY entity_id ASC"
-                ))
-                .map_err(StoreError::LineageCatalog)?;
-            let rows = statement
-                .query_map(
-                    params![
-                        vehicle_key.as_str(),
-                        i64::from(SourceDbProjectionStateEntity::Drive.ordinal())
-                    ],
-                    |row| row.get(0),
-                )
-                .map_err(StoreError::LineageCatalog)?;
-            rows.collect::<Result<Vec<i64>, _>>()
-                .map_err(StoreError::LineageCatalog)?
+            durable_prior_imported_drive_ids_in_transaction(transaction, &vehicle_key)?
+                .into_iter()
+                .collect()
         }
         PriorImportedDriveRows::Legacy => {
             let mut statement = transaction
@@ -2710,30 +2824,6 @@ fn reconcile_imported_materialisation_in_transaction(
         }
     };
     let prior_imported_drive_ids = prior_imported_drive_ids.into_iter().collect::<HashSet<_>>();
-    let current_drive_ids = drives.iter().map(|drive| drive.id).collect::<HashSet<_>>();
-
-    // A numeric source database drive ID is not a durable ownership marker. Live
-    // collection can allocate the same next ID after the preceding import.
-    // Only a row listed by the preceding imported projection is replaceable;
-    // rejecting every other collision keeps the transaction (and the live
-    // history) intact for an explicit reconciliation.
-    for drive in drives {
-        if !prior_imported_drive_ids.contains(&drive.id) {
-            let collision: bool = transaction
-                .query_row(
-                    "SELECT EXISTS(
-                        SELECT 1 FROM materialised_drives
-                         WHERE vehicle_id = ?1 AND drive_id = ?2
-                     )",
-                    params![vehicle_key.as_str(), drive.id],
-                    |row| row.get(0),
-                )
-                .map_err(StoreError::LifecycleWrite)?;
-            if collision {
-                return Err(StoreError::LineageCatalogConflict);
-            }
-        }
-    }
 
     let car_json = serde_json::to_string(car).map_err(StoreError::SerializeLifecycleRow)?;
     transaction
@@ -2749,62 +2839,15 @@ fn reconcile_imported_materialisation_in_transaction(
         )
         .map_err(StoreError::LifecycleWrite)?;
 
-    for drive in drives {
-        let drive_json = serde_json::to_string(drive).map_err(StoreError::SerializeLifecycleRow)?;
-        transaction
-            .execute(
-                "INSERT INTO materialised_drives(
-                    vehicle_id, drive_id, car_id, drive_json,
-                    inside_temp_avg, power_max, power_min,
-                    start_ideal_range_km, end_ideal_range_km, ascent, descent
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-                 ON CONFLICT(vehicle_id, drive_id) DO UPDATE SET
-                    car_id = excluded.car_id,
-                    drive_json = excluded.drive_json,
-                    inside_temp_avg = excluded.inside_temp_avg,
-                    power_max = excluded.power_max,
-                    power_min = excluded.power_min,
-                    start_ideal_range_km = excluded.start_ideal_range_km,
-                    end_ideal_range_km = excluded.end_ideal_range_km,
-                    ascent = excluded.ascent,
-                    descent = excluded.descent
-                 WHERE materialised_drives.car_id IS NOT excluded.car_id
-                    OR materialised_drives.drive_json IS NOT excluded.drive_json
-                    OR materialised_drives.inside_temp_avg IS NOT excluded.inside_temp_avg
-                    OR materialised_drives.power_max IS NOT excluded.power_max
-                    OR materialised_drives.power_min IS NOT excluded.power_min
-                    OR materialised_drives.start_ideal_range_km IS NOT excluded.start_ideal_range_km
-                    OR materialised_drives.end_ideal_range_km IS NOT excluded.end_ideal_range_km
-                    OR materialised_drives.ascent IS NOT excluded.ascent
-                    OR materialised_drives.descent IS NOT excluded.descent",
-                params![
-                    vehicle_key.as_str(),
-                    drive.id,
-                    car_id,
-                    drive_json,
-                    drive.inside_temp_avg,
-                    drive.power_max,
-                    drive.power_min,
-                    drive.start_ideal_range_km,
-                    drive.end_ideal_range_km,
-                    drive.ascent,
-                    drive.descent,
-                ],
-            )
-            .map_err(StoreError::LifecycleWrite)?;
-    }
-    for drive_id in prior_imported_drive_ids {
-        if !current_drive_ids.contains(&drive_id) {
-            transaction
-                .execute(
-                    "DELETE FROM materialised_drives
-                      WHERE vehicle_id = ?1 AND drive_id = ?2",
-                    params![vehicle_key.as_str(), drive_id],
-                )
-                .map_err(StoreError::LifecycleWrite)?;
-        }
-    }
-    Ok(())
+    // Ownership is the id range, not the prior inventory or a digest: the
+    // seam plan decides which side keeps each drive and position, and writes
+    // its losers to `import_seam_links` with tombstones for the Hub's.
+    apply_import_seam_to_drives_in_transaction(
+        transaction,
+        vehicle_id,
+        drives,
+        &prior_imported_drive_ids,
+    )
 }
 
 /// Preserve the exact import checkpoint before changing its active base.
@@ -2936,3 +2979,7 @@ fn retire_import_lineage_in_transaction(
     .map_err(StoreError::LineageCatalog)?;
     Ok(())
 }
+
+
+// The import seam ahead of the packs (M03-T16).
+include!("import_seam_ahead.rs");

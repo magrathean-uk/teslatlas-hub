@@ -1777,6 +1777,11 @@ pub enum SourceDbStageError {
     InvalidPageSize,
 }
 
+// Editing a sealed physical stage before publication (M03-T21).
+#[path = "stage/sealed_edit.rs"]
+mod sealed_edit;
+pub(crate) use sealed_edit::StageChildTable;
+
 #[cfg(test)]
 #[path = "stage/tests.rs"]
 mod tests;

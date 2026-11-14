@@ -4,6 +4,7 @@
 //! to keep each source file under the repository line limit.
 
 use super::*;
+use crate::db::hub_ids::HUB_ID_BASE;
 
 fn imported_online_state() -> OpenSessionState {
     let mut session = SourceDbOpenSession {
@@ -25,7 +26,9 @@ fn imported_online_state() -> OpenSessionState {
 fn st80_imported_state_interval_continues_when_the_text_matches() {
     let seeded = imported_online_state();
     assert_eq!(seeded.imported_state_watermark_ms, Some(T0 - MIN));
-    assert_eq!(seeded.next_state_id, 6);
+    // The watermark does not raise the cursor: the next new state is the
+    // first Hub id, and the imported open state keeps its source id 5.
+    assert_eq!(seeded.next_state_id, HUB_ID_BASE);
     let result = step(
         seeded,
         &v(
@@ -56,7 +59,7 @@ fn st80_imported_state_interval_closes_with_its_imported_id() {
                 end_date_ms: Some(T0),
             },
             ProjectionState {
-                id: 6,
+                id: HUB_ID_BASE,
                 car_id: 1,
                 state: "asleep".to_owned(),
                 start_date_ms: T0,
@@ -89,8 +92,8 @@ fn st81_a_stream_wake_between_two_asleep_discoveries() {
     assert_eq!(
         closed_states(&result.delta),
         vec![
-            (1, "asleep".to_owned(), T0, T0 + MIN),
-            (2, "online".to_owned(), T0 + MIN, T0 + 5 * MIN),
+            (HUB_ID_BASE, "asleep".to_owned(), T0, T0 + MIN),
+            (HUB_ID_BASE + 1, "online".to_owned(), T0 + MIN, T0 + 5 * MIN),
         ]
     );
     assert_eq!(
@@ -98,7 +101,7 @@ fn st81_a_stream_wake_between_two_asleep_discoveries() {
             .state
             .open_state
             .map(|open| (open.id, open.state, open.start_date_ms)),
-        Some((3, "asleep".to_owned(), T0 + 5 * MIN))
+        Some((HUB_ID_BASE + 2, "asleep".to_owned(), T0 + 5 * MIN))
     );
 }
 

@@ -353,6 +353,7 @@ async fn unchanged_publication_reuses_exact_reconstruction_without_fragment_capa
         &gate,
         1_001,
         limits,
+        &|_| Ok(()),
     )
     .unwrap();
     assert_eq!(result.kind, PhysicalV3PublicationKind::Unchanged);

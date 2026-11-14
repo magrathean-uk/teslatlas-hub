@@ -43,7 +43,16 @@ without a service.
   exceeds 30 seconds or cannot be measured.
 - On close Hub writes a handback record: grant id, opened and closed times,
   reason, coverage (the open interval minus recorded gaps) and per-table
-  high-water marks for drives, charges and positions.
+  high-water marks for drives, charges and positions. The same write closes a
+  drive or charge still open at its last evidence: a drive ends at its last
+  recorded movement and a charge at its newest sample, never at the handback.
+  The session then reaches the local API, sync and the next import once, even
+  if Hub never collects again. This applies at expiry, after `window close`,
+  when import admission records a handback the store lacks, and when a
+  restored store whose window was left open is sealed with no window open on
+  this host. A window that is still open closes nothing. A local write already
+  under way may finish after the handback (see the sign-in notes below); a
+  session it opens is taken up when the next window opens.
 
 ## Issuer key custody
 

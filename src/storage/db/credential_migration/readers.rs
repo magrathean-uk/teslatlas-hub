@@ -757,7 +757,7 @@ fn credential_pre_upgrade_reader_version(connection: &Connection) -> Result<(), 
     let version: i32 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(StoreError::CredentialPairStore)?;
-    if version != CREDENTIAL_FORMAT_SCHEMA_VERSION {
+    if !credential_format_schema(version) {
         return Err(StoreError::UnsupportedSchema(version));
     }
     Ok(())

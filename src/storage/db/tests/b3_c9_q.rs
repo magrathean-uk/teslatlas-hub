@@ -680,8 +680,14 @@ fn c9_st42_query_plans() {
         (TERRAIN_DRIVE_ELIGIBLE_SQL, vec![&v, &1_i64]),
         (TERRAIN_DUE_RETRIES_SQL, vec![&C9_T0, &K_RETRY_SLICE]),
         (
+            // M03-T12: the boundary binds the Hub id base as ?3, as
+            // `terrain_watermark_boundary` does.
             TERRAIN_WATERMARK_BOUNDARY_SQL,
-            vec![&v, &IMPORT_SOURCE_KIND],
+            vec![
+                &v,
+                &IMPORT_SOURCE_KIND,
+                &crate::db::hub_ids::HUB_ID_BASE,
+            ],
         ),
     ] {
         let plan = c9_plan(&connection, sql, &parameters);

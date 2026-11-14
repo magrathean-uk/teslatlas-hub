@@ -64,6 +64,13 @@ receipts can request a signed full rebase. Hub optionally prepares one completed
 UTC month of map tiles bound to the current signed source head; an unavailable
 artifact leaves client-side map generation available.
 
+For a vehicle Hub has collected itself, the importer plans the physical head
+with the import seam before publishing it: the source rows carry the seam's
+decisions and Hub's own sessions and children are added in physical form, so the
+physical route and the schema-2.1 lineage hold the same sessions. Only a head
+planned this way is served for such a vehicle; between its first window and the
+next import, or when a head cannot be planned, the physical route is not served.
+
 The client receives signed receipts and manifests and downloads only referenced,
 content-addressed packs. Device pairing and bearer rotation are separate from
 provider credentials.

@@ -445,6 +445,11 @@ pub enum StoreError {
     QuarantinedLifecycle(usize),
     #[error("{}", unsupported_schema_message(*.0))]
     UnsupportedSchema(i32),
+    #[error(
+        "schema v80 refuses this store: {table} holds {count} row(s) collected before the import seam; \
+         rebuild the store with a fresh import"
+    )]
+    PreSeamCollectedRows { table: &'static str, count: u64 },
     #[error("unexpected hub SQLite application id {0}")]
     InvalidApplicationId(i32),
     #[error("database integrity check failed: {0}")]
@@ -772,6 +777,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
                 StoreError::InvalidStoredCount => (),
                 StoreError::QuarantinedLifecycle(..) => (),
                 StoreError::UnsupportedSchema(..) => (),
+                StoreError::PreSeamCollectedRows { .. } => (),
                 StoreError::InvalidApplicationId(..) => (),
                 StoreError::Integrity(..) => (),
                 StoreError::InvalidLifecycleCarId => (),
@@ -1059,6 +1065,10 @@ mod n1_src_storage_db_errors_rs_display_tests {
         check_store_error(StoreError::InvalidStoredCount);
         check_store_error(StoreError::QuarantinedLifecycle(example()));
         check_store_error(StoreError::UnsupportedSchema(example()));
+        check_store_error(StoreError::PreSeamCollectedRows {
+            table: example(),
+            count: example(),
+        });
         check_store_error(StoreError::InvalidApplicationId(example()));
         check_store_error(StoreError::Integrity(example()));
         check_store_error(StoreError::InvalidLifecycleCarId);

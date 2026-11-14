@@ -200,16 +200,18 @@ fn address_lookup_key(
 pub const IMPORT_SOURCE_KIND: &str = "source_db";
 pub const DEFAULT_IMPORT_SOURCE_KEY: &str = "default";
 
-/// Which charge rows of one vehicle are imported (C2 R5): those with
-/// `charge_id <= max_imported_charge_id`, the vehicle's `W(V)`; zero means
-/// none. Every other row is a Hub row.
+/// Which charge rows of one vehicle are imported (C2 R5): those outside the
+/// Hub's id range with `charge_id <= max_imported_charge_id`, the vehicle's
+/// `W(V)`; zero means none. Every other row is a Hub row.
 ///
 /// The test is per row, as C9 R6 is for positions, because one vehicle holds
 /// imported and live rows together (seeding links the live vehicle to the
 /// import source and the imported open process continues live in it), so the
 /// vehicle's own source says nothing about a row. The id alone is exact
-/// because C1 R10 with amendment A5 allocates every live charge id above
-/// `W(V)`.
+/// because the Hub allocates every live charge id in its reserved range and
+/// the importer refuses a source id there (M03-T12): a Hub-range row is the
+/// Hub's whatever `W(V)` a later import records, and an imported open process
+/// that continues live keeps its source id and stays imported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ChargeImportBound {
     max_imported_charge_id: i64,
@@ -218,7 +220,7 @@ struct ChargeImportBound {
 impl ChargeImportBound {
     /// True when the charge row with this id was imported (C2 R5).
     fn is_imported(&self, charge_id: i64) -> bool {
-        charge_id <= self.max_imported_charge_id
+        !hub_ids::is_hub_id(charge_id) && charge_id <= self.max_imported_charge_id
     }
 }
 
@@ -740,17 +742,81 @@ fn watermark_id_floors(
     Ok(floors)
 }
 
-/// Raise a state's id cursors above the vehicle's import watermarks as they
-/// stand in this transaction (C1 R84 point (b)). It runs whether or not the
-/// state was seeded before.
+/// The largest id in the Hub's reserved range of each id space of one vehicle
+/// (M03-T12): the larger of the materialised maximum and the largest id
+/// `import_seam_links` records, as loser or winner, in the range. A Hub row the
+/// seam superseded is gone from the materialised table but stays in the links,
+/// so its id is never allocated again. Each maximum is a seek on the table's
+/// `(vehicle_id, id)` key; zero means none.
+fn hub_range_id_floors(
+    connection: &Connection,
+    vehicle_id: Uuid,
+) -> Result<crate::lifecycle::IdFloors, StoreError> {
+    let vehicle = vehicle_id.to_string();
+    let mut floors = crate::lifecycle::IdFloors::default();
+    for (table, entity, column) in SEAM_MATERIALISED_TABLES {
+        let materialised: i64 = connection
+            .query_row(
+                &format!(
+                    "SELECT COALESCE(MAX({column}), 0) FROM {table}
+                     WHERE vehicle_id = ?1 AND {column} BETWEEN ?2 AND ?3"
+                ),
+                params![vehicle, hub_ids::HUB_ID_BASE, hub_ids::HUB_ID_MAX],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)?;
+        let linked: i64 = connection
+            .query_row(
+                "SELECT COALESCE(MAX(id), 0) FROM (
+                     SELECT MAX(loser_id) AS id FROM import_seam_links
+                      WHERE vehicle_id = ?1 AND entity = ?2 AND loser_id BETWEEN ?3 AND ?4
+                     UNION ALL
+                     SELECT MAX(winner_id) FROM import_seam_links
+                      WHERE vehicle_id = ?1 AND entity = ?2 AND winner_id BETWEEN ?3 AND ?4)",
+                params![vehicle, entity, hub_ids::HUB_ID_BASE, hub_ids::HUB_ID_MAX],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)?;
+        let largest = materialised.max(linked);
+        match entity {
+            "drive" => floors.drives = largest,
+            "position" => floors.positions = largest,
+            "charge" => floors.charges = largest,
+            "charge_sample" => floors.charge_samples = largest,
+            "state" => floors.states = largest,
+            "update" => floors.updates = largest,
+            _ => {}
+        }
+    }
+    Ok(floors)
+}
+
+/// Raise a state's id cursors into the Hub's range and above every Hub id the
+/// vehicle's store holds, as it stands in this transaction (M03-T12), whether
+/// or not the state was seeded before. Both import seeding transactions run
+/// it, so import seeding never leaves a cursor below the range or at an id the
+/// Hub used. The import watermarks still count (C1 R84 point (b)), but only an
+/// id in the range bounds a cursor, and the importer admits none there.
 fn raise_id_cursors_above_watermarks(
     connection: &Connection,
     vehicle_id: Uuid,
     state: &mut crate::lifecycle::OpenSessionState,
 ) -> Result<(), StoreError> {
-    let floors = watermark_id_floors(connection, vehicle_id)?;
-    state.raise_id_cursors(&floors);
+    state.raise_id_cursors(&watermark_id_floors(connection, vehicle_id)?);
+    state.raise_id_cursors(&hub_range_id_floors(connection, vehicle_id)?);
     Ok(())
+}
+
+impl HubStore {
+    /// [`hub_range_id_floors`] of one vehicle, for the collector's seeding of
+    /// a lifecycle state (M03-T12).
+    pub(crate) fn lifecycle_hub_range_id_floors(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<crate::lifecycle::IdFloors, StoreError> {
+        let connection = self.open()?;
+        hub_range_id_floors(&connection, vehicle_id)
+    }
 }
 
 /// Seed the installed version of a freshly seeded lifecycle state from the

@@ -108,18 +108,33 @@ impl StoreHighWater {
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .ok()?;
-        let greatest = |table: &str| -> Option<i64> {
+        // The high water is the largest row id the Hub allocated itself: an
+        // id in its reserved range (M03-T12). SQLite's rowid counts insertions
+        // and imported rows keep their source ids, so neither is it. Each
+        // vehicle's maximum is a seek on the table's (vehicle_id, id) key.
+        let greatest = |table: &str, column: &str| -> Option<i64> {
             connection
-                .query_row(&format!("SELECT MAX(rowid) FROM {table}"), [], |row| {
-                    row.get::<_, Option<i64>>(0)
-                })
+                .query_row(
+                    &format!(
+                        "SELECT MAX((SELECT MAX(t.{column}) FROM {table} AS t
+                                      WHERE t.vehicle_id = v.vehicle_id
+                                        AND t.{column} BETWEEN ?1 AND ?2))
+                           FROM vehicles AS v"
+                    ),
+                    [
+                        crate::db::hub_ids::HUB_ID_BASE,
+                        crate::db::hub_ids::HUB_ID_MAX,
+                    ],
+                    |row| row.get::<_, Option<i64>>(0),
+                )
                 .ok()
                 .flatten()
+                .filter(|id| crate::db::hub_ids::is_hub_id(*id))
         };
         Some(HighWater {
-            drives: greatest("materialised_drives"),
-            charges: greatest("materialised_charges"),
-            positions: greatest("materialised_positions"),
+            drives: greatest("materialised_drives", "drive_id"),
+            charges: greatest("materialised_charges", "charge_id"),
+            positions: greatest("materialised_positions", "position_id"),
         })
     }
 }

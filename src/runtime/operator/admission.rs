@@ -24,7 +24,11 @@ use rustix::{
 use super::cli::{Command, WindowCommand};
 use crate::collection::window::{
     HostClaim, Phase, Refusal,
+    controller::handback_coverage,
     state::{HubEntry, WindowStore},
+};
+use crate::db::{
+    CoverageError, open_coverage_store, record_coverage_handback, seal_restored_open_windows,
 };
 
 /// Where a command runs.
@@ -239,8 +243,37 @@ pub fn admit_import_observed(
     if loaded.trust.is_some() && !ledger_synced(&loaded.ledger) {
         return Err(OperatorRefusal::window(Refusal::HandbackPending));
     }
+    mirror_coverage(data_dir, &loaded.ledger).map_err(|_| OperatorRefusal::window(Refusal::StateUnverifiable))?;
     Ok(ImportAdmission {
         _claim: claim,
         _window: Some(window),
     })
+}
+
+/// Brings the store's collection coverage level with this host's ledger before
+/// an import reads it: every handback the ledger holds and the store lacks is
+/// mirrored into the store, and a window left open in the store (a restore of
+/// a backup taken inside a window; none is open on this host here) is sealed
+/// per vehicle at that vehicle's last Hub-range row. Either write closes the
+/// drives and charges still open at their last evidence (M03-T20), only when
+/// it records the handback or seals the window. Both are idempotent. A
+/// data directory with no store, or a store older than schema v80, has no
+/// coverage to bring level; the migration creates the table and the next
+/// admission mirrors.
+fn mirror_coverage(
+    data_dir: &Path,
+    ledger: &[crate::collection::window::ledger::Line<HubEntry>],
+) -> Result<(), CoverageError> {
+    let Some(connection) = open_coverage_store(data_dir)? else {
+        return Ok(());
+    };
+    for line in ledger {
+        if let HubEntry::Closed { handback } = &line.entry
+            && let Some(window) = handback_coverage(handback)
+        {
+            record_coverage_handback(&connection, &window)?;
+        }
+    }
+    seal_restored_open_windows(&connection, None)?;
+    Ok(())
 }

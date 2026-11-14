@@ -116,6 +116,10 @@ pub(crate) struct DirectSnapshotCapture {
     /// model rather than immutable sync packs, so an initial import publishes
     /// these rows atomically with its catalogue entry.
     pub materialised_drives: Vec<ProjectionDrive>,
+    /// Charging processes retained by the same bounded reader, ascending by
+    /// id. The import seam weighs them against the Hub's own charges; import
+    /// writes none of them to the read model.
+    pub materialised_charges: Vec<ProjectionCharge>,
     pub updates_v2_2: DirectUpdatesSourceV2_2,
     pub open_session: SourceDbOpenSession,
     pub physical_stage: Option<crate::source_db_stage::OwnedSourceDbStage>,
@@ -1176,7 +1180,27 @@ async fn write_from_session(
             .with_synchronous_pack_builds(),
         DirectCaptureMode::LegacyBridgeCapture => sink.capture_only(),
     };
-    if let Some(projection_state) = projection_state {
+    if let Some(mut projection_state) = projection_state {
+        // Every source drive and charge is held before any child streams, so
+        // the seam's lens can take all of them now (M03-T21).
+        let sessions = |rows: Vec<(i64, i64, Option<i64>)>| {
+            rows.into_iter()
+                .map(|(id, start_ms, end_ms)| crate::import::source_db::seam::SessionRow {
+                    id,
+                    start_ms,
+                    end_ms,
+                })
+                .collect::<Vec<_>>()
+        };
+        projection_state.note_seam_source_sessions(
+            &sessions(drives.iter().map(|row| (row.id, row.start_date_ms, row.end_date_ms)).collect()),
+            &sessions(
+                processes
+                    .iter()
+                    .map(|row| (row.id, row.start_date_ms, row.end_date_ms))
+                    .collect(),
+            ),
+        );
         sink = sink.with_projection_state_capture(projection_state);
     }
     let mut report = ProjectionReport {
@@ -1244,7 +1268,7 @@ async fn write_from_session(
     let completed_before_charges = completed_before_positions
         .checked_add(source_counts.positions)
         .ok_or(SourceDbDirectError::DirectRetentionAccountingOverflow)?;
-    write_charges(
+    let materialised_charges = write_charges(
         client,
         selected_car_id,
         selected_car_id_i16,
@@ -1329,6 +1353,7 @@ async fn write_from_session(
         ),
         materialised_car: projected_car,
         materialised_drives,
+        materialised_charges,
         updates_v2_2,
         open_session,
         physical_stage: None,
@@ -2045,7 +2070,7 @@ async fn write_charges(
     progress: &SourceDbMigrationProgressReporter,
     progress_base_rows: u64,
     progress_total_rows: u64,
-) -> Result<(), SourceDbDirectError> {
+) -> Result<Vec<ProjectionCharge>, SourceDbDirectError> {
     progress.report(
         SourceDbMigrationPhase::Charges,
         progress_base_rows,
@@ -2226,7 +2251,11 @@ async fn write_charges(
         duration_ms = elapsed_millis(phase_started),
         "finished source database charging history capture"
     );
-    Ok(())
+    // The projected parents are already held for the sample pass; hand them
+    // on, in id order, for the import seam.
+    let mut charges: Vec<ProjectionCharge> = projected_by_id.into_values().collect();
+    charges.sort_by_key(|charge| charge.id);
+    Ok(charges)
 }
 
 const RELATED_POSITION_BATCH_SIZE: usize = 256;

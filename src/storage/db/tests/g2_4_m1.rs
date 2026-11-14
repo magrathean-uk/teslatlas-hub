@@ -79,6 +79,67 @@ pub(super) fn schema_snapshot(connection: &Connection) -> (i32, Schema, Rows) {
     )
 }
 
+/// Schema v80 (M03-T11) refuses a store whose materialised rows are in neither
+/// import catalogue: rows the Hub collected before the import seam. The floor
+/// fixture's synthetic witnesses include such rows, so a test that takes the
+/// populated floor to the head first lists each of them in the current import
+/// catalogue, as an import would, giving a vehicle without a state head one on
+/// the fixture's import base. Returns how many rows it listed.
+pub(crate) fn catalogue_floor_witnesses(connection: &Connection) -> usize {
+    let mut listed = 0;
+    for (table, entity, ordinal, column) in [
+        ("materialised_drives", "drive", 1, "drive_id"),
+        ("materialised_positions", "position", 2, "position_id"),
+        ("materialised_charges", "charge", 3, "charge_id"),
+        ("materialised_charge_samples", "charge_sample", 4, "sample_id"),
+        ("materialised_states", "state", 5, "state_id"),
+        ("materialised_updates", "update", 6, "update_id"),
+    ] {
+        let orphans: Vec<(String, i64)> = connection
+            .prepare(&format!(
+                "SELECT m.vehicle_id, m.{column} FROM {table} AS m
+                 WHERE NOT EXISTS(SELECT 1 FROM import_projection_rows AS l
+                                  WHERE l.vehicle_id = m.vehicle_id AND l.entity = ?1
+                                    AND l.entity_id = m.{column})
+                   AND NOT EXISTS(SELECT 1 FROM import_projection_state_rows AS c
+                                  WHERE c.vehicle_id = m.vehicle_id AND c.entity = ?1
+                                    AND c.entity_id = m.{column})
+                 ORDER BY 1, 2"
+            ))
+            .unwrap()
+            .query_map([entity], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for (vehicle, id) in orphans {
+            connection
+                .execute(
+                    "INSERT INTO import_projection_state_heads(vehicle_id, source_id,
+                         base_snapshot_id, selected_car_id, head_sequence)
+                     SELECT v.vehicle_id, v.source_id,
+                            (SELECT base_snapshot_id FROM import_projection_state_heads
+                              ORDER BY vehicle_id LIMIT 1), 1, 0
+                       FROM vehicles AS v
+                      WHERE v.vehicle_id = ?1
+                        AND NOT EXISTS(SELECT 1 FROM import_projection_state_heads AS h
+                                        WHERE h.vehicle_id = v.vehicle_id)",
+                    [&vehicle],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO import_projection_state_rows(vehicle_id, entity,
+                         entity_ordinal, entity_id, car_id, projection_sha256)
+                     VALUES (?1, ?2, ?3, ?4, 1, zeroblob(32))",
+                    params![vehicle, entity, ordinal, id],
+                )
+                .unwrap();
+            listed += 1;
+        }
+    }
+    listed
+}
+
 fn previous_position_type() -> String {
     let directory = copied_store(PRE_FLOOR_STORE);
     let connection = connection(&directory);
@@ -216,6 +277,11 @@ fn m1_t3_floor_fixture_rows_survive_to_head() {
                 .all(|(table, count)| *count > 0 && before[table].len() == *count),
         "assertion failed: {test}: every application table is populated"
     );
+    assert!(
+        catalogue_floor_witnesses(&connection) > 0,
+        "assertion failed: {test}: the floor witnesses are listed as imported rows"
+    );
+    let before = rows(&connection);
     migrate(&connection).labelled_ok(test, "the floor fixture reaches HEAD");
     assert!(
         schema_version(&connection).unwrap() == SCHEMA_VERSION,
@@ -238,6 +304,7 @@ fn m1_t3_floor_fixture_rows_survive_to_head() {
             == vec![
                 "backup_pack_pins",
                 "backup_runs",
+                "collection_coverage",
                 "credential_format_state",
                 "credential_key_usage",
                 "credential_legacy_fences",
@@ -245,11 +312,12 @@ fn m1_t3_floor_fixture_rows_survive_to_head() {
                 "credential_refresh_attempts",
                 "credential_refresh_fences",
                 "credential_sign_ins",
+                "import_seam_links",
             ]
             && added_tables.iter().all(|table| {
                 after[*table].len() == usize::from(*table == "credential_format_state")
             }),
-        "assertion failed: {test}: only the seven C10 tables and the two empty backup live-state tables (M06-T07, M06-T02) are added, with one state row and no converted credentials"
+        "assertion failed: {test}: only the seven C10 tables, the two empty backup live-state tables (M06-T07, M06-T02) and the two empty v80 seam tables (M03-T11) are added, with one state row and no converted credentials"
     );
     let state: (
         i64,
@@ -388,6 +456,12 @@ fn m1_t4_import_readers_equal_stepwise_store() {
     assert!(
         actual == classifications(&mut stepwise),
         "assertion failed: {test}: C2 C9 and C6 readers agree across the baseline"
+    );
+    assert!(
+        catalogue_floor_witnesses(&baseline) > 0
+            && catalogue_floor_witnesses(&stepwise) > 0
+            && rows(&baseline) == rows(&stepwise),
+        "assertion failed: {test}: both floors list their witnesses as imported rows alike"
     );
     let retained = rows(&baseline);
     migrate(&baseline).labelled_ok(test, "the seeded baseline floor reaches C10 head");

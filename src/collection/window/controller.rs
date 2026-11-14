@@ -14,6 +14,11 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
+use crate::db::{
+    CoverageError, WindowCoverage, coverage_gaps_from_seconds, open_coverage_store,
+    record_coverage_handback, record_coverage_open, seal_restored_open_windows,
+};
+
 use super::{
     BOOT_TIME_TOLERANCE_SECONDS, CLOCK_FLOOR_EPOCH_SECONDS, DRIFT_TOLERANCE_SECONDS,
     NTP_MAX_OFFSET_SECONDS, NTP_RECHECK_SECONDS, SUPERVISOR_POLL_SECONDS,
@@ -160,6 +165,23 @@ fn ledger_synced(ledger: &[Line<HubEntry>]) -> bool {
     )
 }
 
+/// The store's record of a handback, in milliseconds. A window that never
+/// opened (`opened_at` absent) covers nothing and has no record.
+pub fn handback_coverage(handback: &Handback) -> Option<WindowCoverage> {
+    let opened_at = handback.opened_at?;
+    let milliseconds = |seconds: i64| seconds.checked_mul(1000);
+    Some(WindowCoverage {
+        seq: i64::try_from(handback.seq).ok()?,
+        grant_digest: handback.grant_digest.clone(),
+        opened_at_ms: milliseconds(opened_at)?,
+        closed_at_ms: milliseconds(handback.closed_at)?,
+        gaps: coverage_gaps_from_seconds(
+            handback.gaps.iter().map(|gap| (gap.start, gap.end)),
+        )
+        .ok()?,
+    })
+}
+
 fn last_handback(ledger: &[Line<HubEntry>]) -> Option<Handback> {
     ledger.iter().rev().find_map(|line| match &line.entry {
         HubEntry::Closed { handback } => Some(handback.clone()),
@@ -197,6 +219,9 @@ impl WindowController {
             let mut inner = controller.lock();
             controller.resume_locked(&mut inner)
         };
+        if outcome != ResumeOutcome::Faulted {
+            controller.seal_restored_coverage();
+        }
         (controller, outcome)
     }
 
@@ -510,6 +535,13 @@ impl WindowController {
             .as_ref()
             .map(|grant| grant.body.clone())
             .ok_or(Refusal::StateUnverifiable)?;
+        // The store records the window first: a window never runs without its
+        // coverage row (a row left by a failed ledger line is sealed at start).
+        self.coverage_open(
+            grant.seq,
+            inner.state.grant_digest.as_deref().unwrap_or_default(),
+            wall,
+        )?;
         self.store.append(HubEntry::Opened {
             seq: grant.seq,
             at: wall,
@@ -550,7 +582,88 @@ impl WindowController {
             gaps: Vec::new(),
             high_water: self.handback.high_water(),
         };
-        let _ = self.store.append(HubEntry::Closed { handback });
+        let _ = self.store.append(HubEntry::Closed {
+            handback: handback.clone(),
+        });
+        self.coverage_handback(&handback);
+    }
+
+    // ---- coverage in the store ---------------------------------------------
+
+    /// The data directory the window directory sits in, which holds the store.
+    fn data_dir(&self) -> Option<PathBuf> {
+        self.store.dir().parent().map(PathBuf::from)
+    }
+
+    /// Writes the open row of a window that is starting. A data directory with
+    /// no store has none to write; a store that cannot be written refuses the
+    /// open.
+    fn coverage_open(&self, seq: u64, digest: &str, opened_at: i64) -> Result<(), Refusal> {
+        let Some(dir) = self.data_dir() else {
+            return Ok(());
+        };
+        let write = || -> Result<(), CoverageError> {
+            let Some(connection) = open_coverage_store(&dir)? else {
+                return Ok(());
+            };
+            let opened_at_ms = opened_at.checked_mul(1000).ok_or_else(|| {
+                CoverageError::Malformed("the open time is out of range".to_owned())
+            })?;
+            let seq = i64::try_from(seq)
+                .map_err(|_| CoverageError::Malformed("the sequence is out of range".to_owned()))?;
+            record_coverage_open(&connection, seq, digest, opened_at_ms)?;
+            Ok(())
+        };
+        write().map_err(|_| Refusal::StateUnverifiable)
+    }
+
+    /// Writes the handback beside the ledger line, best effort. The same store
+    /// write closes the drives and charges still open at their last evidence
+    /// (M03-T20), so a window that expires or is closed mid-session leaves
+    /// none open; when this write fails, import admission repeats it, once.
+    fn coverage_handback(&self, handback: &Handback) {
+        let (Some(dir), Some(window)) = (self.data_dir(), handback_coverage(handback)) else {
+            return;
+        };
+        let _ = (|| -> Result<(), CoverageError> {
+            if let Some(connection) = open_coverage_store(&dir)? {
+                record_coverage_handback(&connection, &window)?;
+            }
+            Ok(())
+        })();
+    }
+
+    /// A window open in the store with no window open on this host is the
+    /// mark of a restore taken inside a window: it is sealed per vehicle at
+    /// that vehicle's last Hub-range row, and the sessions still open close at
+    /// their last evidence (M03-T20). A window running here closes nothing.
+    fn seal_restored_coverage(&self) {
+        let Some(dir) = self.data_dir() else {
+            return;
+        };
+        let running = {
+            let inner = self.lock();
+            match inner.state.phase {
+                Phase::Pending | Phase::Open | Phase::Closing => {
+                    inner.state.grant.as_ref().and_then(|grant| {
+                        Some((
+                            i64::try_from(grant.body.seq).ok()?,
+                            inner.state.grant_digest.clone().unwrap_or_default(),
+                        ))
+                    })
+                }
+                Phase::Closed => None,
+            }
+        };
+        let _ = (|| -> Result<(), CoverageError> {
+            if let Some(connection) = open_coverage_store(&dir)? {
+                seal_restored_open_windows(
+                    &connection,
+                    running.as_ref().map(|(seq, digest)| (*seq, digest.as_str())),
+                )?;
+            }
+            Ok(())
+        })();
     }
 
     // ---- tick ------------------------------------------------------------
@@ -729,6 +842,9 @@ impl WindowController {
             })?;
             handback
         };
+        // Beside the ledger line. A failure here is not fatal: import
+        // admission mirrors a ledger handback the store lacks.
+        self.coverage_handback(&handback);
         let mut closed = WindowState::closed();
         closed.close_reason = Some(reason);
         inner.state = closed;

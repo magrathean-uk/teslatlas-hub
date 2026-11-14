@@ -3,6 +3,13 @@
 fn migrate(connection: &Connection) -> Result<(), StoreError> {
     admit_writable_catalogue(connection)?;
     let credential_fresh = schema_version(connection)? == 0;
+    // A floor or credential-format store (v78 or v79) passes the v80 guard
+    // before the credential rung changes it, its v79 column repair included,
+    // so a store v80 refuses is left exactly as it was (M03-T18). The guard
+    // inside the v80 transaction stays.
+    if (MIN_STORE_VERSION..=CREDENTIAL_FORMAT_SCHEMA_VERSION).contains(&schema_version(connection)?) {
+        refuse_pre_seam_collected_rows(connection)?;
+    }
     if schema_version(connection)? == 0 {
         let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
             .map_err(StoreError::Migrate)?;
@@ -26,12 +33,91 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         transaction.commit().map_err(StoreError::Migrate)?;
     }
     credential_schema_rung(connection, credential_fresh)?;
+    seam_schema_rung(connection)?;
     let version = schema_version(connection)?;
     if version == SCHEMA_VERSION {
         backup_pack_pins_table(connection)
     } else {
         Err(StoreError::UnsupportedSchema(version))
     }
+}
+
+/// The version whose rung adds the import seam's tables and its guard.
+const SEAM_SCHEMA_VERSION: i32 = 80;
+const _: () = assert!(
+    SEAM_SCHEMA_VERSION == CREDENTIAL_FORMAT_SCHEMA_VERSION + 1
+        && SEAM_SCHEMA_VERSION <= SCHEMA_VERSION
+);
+
+/// The materialised tables whose ids the import seam owns, with each one's
+/// entity name in the import catalogues and its id column.
+const SEAM_MATERIALISED_TABLES: [(&str, &str, &str); 6] = [
+    ("materialised_drives", "drive", "drive_id"),
+    ("materialised_charges", "charge", "charge_id"),
+    ("materialised_charge_samples", "charge_sample", "sample_id"),
+    ("materialised_positions", "position", "position_id"),
+    ("materialised_states", "state", "state_id"),
+    ("materialised_updates", "update", "update_id"),
+];
+
+/// Schema v80 (M03-T11): the import seam's decision table, the stored
+/// collection coverage and the guard commit in one transaction. A store that
+/// fails the guard is refused and keeps its version and every row; a rung that
+/// stops part way rolls back and runs again on the next open. The tables are
+/// created only where absent, as a synthetic image rewound below v80 keeps them.
+fn seam_schema_rung(connection: &Connection) -> Result<(), StoreError> {
+    if schema_version(connection)? != CREDENTIAL_FORMAT_SCHEMA_VERSION {
+        return Ok(());
+    }
+    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
+        .map_err(StoreError::Migrate)?;
+    admit_writable_catalogue(&transaction)?;
+    if schema_version(&transaction)? == CREDENTIAL_FORMAT_SCHEMA_VERSION {
+        refuse_pre_seam_collected_rows(&transaction)?;
+        transaction
+            .execute_batch(IMPORT_SEAM_LINKS_SCHEMA)
+            .map_err(StoreError::Migrate)?;
+        transaction
+            .execute_batch(COLLECTION_COVERAGE_SCHEMA)
+            .map_err(StoreError::Migrate)?;
+        transaction
+            .pragma_update(None, "user_version", SEAM_SCHEMA_VERSION)
+            .map_err(StoreError::Migrate)?;
+    }
+    transaction.commit().map_err(StoreError::Migrate)
+}
+
+/// The v80 guard. A materialised row with an id at or above `HUB_ID_BASE`
+/// (such as a row an earlier build moved by 2^50) or one absent from both
+/// import catalogues (a row the Hub collected before the seam) cannot be told
+/// apart from the ids the range now gives the Hub, so the store is refused,
+/// naming the first such table and its count. The count is streamed SQL over
+/// each table's key and the catalogues' covering keys.
+fn refuse_pre_seam_collected_rows(connection: &Connection) -> Result<(), StoreError> {
+    for (table, entity, column) in SEAM_MATERIALISED_TABLES {
+        let sql = format!(
+            "SELECT COUNT(*) FROM {table} AS m
+             WHERE m.{column} >= ?1
+                OR (NOT EXISTS(SELECT 1 FROM {legacy} AS l
+                               WHERE l.vehicle_id = m.vehicle_id AND l.entity = ?2
+                                 AND l.entity_id = m.{column})
+                    AND NOT EXISTS(SELECT 1 FROM {current} AS c
+                                   WHERE c.vehicle_id = m.vehicle_id AND c.entity = ?2
+                                     AND c.entity_id = m.{column}))",
+            legacy = crate::db::import_table_names::import_projection_rows_table!(),
+            current = crate::db::import_table_names::import_projection_state_rows_table!(),
+        );
+        let count: i64 = connection
+            .query_row(&sql, params![hub_ids::HUB_ID_BASE, entity], |row| row.get(0))
+            .map_err(StoreError::Migrate)?;
+        if count != 0 {
+            return Err(StoreError::PreSeamCollectedRows {
+                table,
+                count: u64::try_from(count).map_err(|_| StoreError::InvalidStoredCount)?,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// M06-T07: the pin rows of running encrypted backups

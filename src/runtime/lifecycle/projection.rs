@@ -545,10 +545,7 @@ fn apply_version_facts(
             let (id, install_start) = match state.open_update.take() {
                 Some(open) => (open.id, Some(open.start_date_ms)),
                 None => {
-                    let id = state.next_update_id;
-                    state.next_update_id = id
-                        .checked_add(1)
-                        .ok_or(LifecycleError::IdentifierExhausted)?;
+                    let id = allocate_hub_id(&mut state.next_update_id)?;
                     (id, None)
                 }
             };
@@ -594,10 +591,7 @@ fn apply_update_status(
         UpdateStatusClass::Installing
             if state.open_update.is_none() && state.open_drive.is_none() =>
         {
-            let id = state.next_update_id;
-            state.next_update_id = id
-                .checked_add(1)
-                .ok_or(LifecycleError::IdentifierExhausted)?;
+            let id = allocate_hub_id(&mut state.next_update_id)?;
             state.open_update = Some(OpenUpdate {
                 id,
                 car_id: observation.car_id,
@@ -822,6 +816,10 @@ fn apply_hub_event(
 /// It enters the projection as a stored observation so replay stays exact.
 const HUB_EVENT_RECORD_TYPE: &str = "hub_lifecycle_event_v1";
 
+/// The event a handback of coverage stores for a vehicle with an open drive or
+/// charge (M03-T20), so the close at its last evidence is replayable.
+pub(crate) const HUB_EVENT_HANDBACK: &str = "handback";
+
 /// What kind of record an observation is (C1 R3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum SourceKind {
@@ -856,6 +854,10 @@ enum HubEventKind {
     NoData,
     /// Tesla refused `vehicle_data` as "in service": service mode.
     ServiceRefused,
+    /// The collection window was handed back (M03-T20): the Hub collects no
+    /// more, so the open drive and the open charge close at their last
+    /// evidence.
+    Handback,
 }
 
 /// A set of fact families (C1 R6), used for "carried" and for "fresh".
@@ -1079,6 +1081,7 @@ fn parse_sample(sample: &LifecycleSample) -> Result<ParsedSample, LifecycleError
             parsed.hub_event = match root.get("event").and_then(Value::as_str) {
                 Some("no_data") => Some(HubEventKind::NoData),
                 Some("service_refused") => Some(HubEventKind::ServiceRefused),
+                Some(HUB_EVENT_HANDBACK) => Some(HubEventKind::Handback),
                 _ => None,
             };
             (SourceKind::HubEvent, None)
@@ -1376,6 +1379,7 @@ mod stream_fixture_tests {
 
     #[test]
     fn stream_drive_closes_before_owner_poll_and_duplicate_is_idempotent() {
+        let hub = crate::db::hub_ids::HUB_ID_BASE;
         let state = OpenSessionState::new();
         let parked = sample(1, 1_700_000_000_000, 100.0, "P");
         let driving_one = sample(2, 1_700_000_001_000, 100.0, "D");
@@ -1394,7 +1398,7 @@ mod stream_fixture_tests {
                 .delta
                 .open_drive_positions
                 .iter()
-                .filter(|position| position.drive_id == Some(1))
+                .filter(|position| position.drive_id == Some(hub))
                 .count(),
             1
         );
@@ -1404,7 +1408,7 @@ mod stream_fixture_tests {
                 .open_drive_positions
                 .iter()
                 .chain(third.delta.open_drive_positions.iter())
-                .filter(|position| position.drive_id == Some(1))
+                .filter(|position| position.drive_id == Some(hub))
                 .count(),
             2
         );

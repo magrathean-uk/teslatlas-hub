@@ -101,6 +101,32 @@ pub struct SourceDbImportReport {
     pub projected_rows: u64,
     pub skipped: bool,
     pub cutover_unsettled: bool,
+    /// Source rows this publication did not pack because the import seam
+    /// gave them to the Hub's own collection.
+    pub seam_skipped: SourceDbSeamSkipped,
+}
+
+/// Source rows an import publication leaves out of its packs because of the
+/// seam (design M03-SEAM-R3, section 4): drives and charges the plan gave to
+/// another row (or an inherited session whose stored row stays), and
+/// positions and charge samples inside the Hub's coverage. Every changed
+/// source row the publication read is either packed or counted here.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SourceDbSeamSkipped {
+    pub drives: u64,
+    pub positions: u64,
+    pub charges: u64,
+    pub charge_samples: u64,
+}
+
+impl SourceDbSeamSkipped {
+    /// All seam-skipped rows.
+    pub fn total(&self) -> u64 {
+        self.drives
+            .saturating_add(self.positions)
+            .saturating_add(self.charges)
+            .saturating_add(self.charge_samples)
+    }
 }
 
 impl SourceDbImportReport {
@@ -472,6 +498,88 @@ impl Drop for ImportGenerationGuard<'_> {
     }
 }
 
+/// Admit one source id (M03-T12): the Hub allocates its own rows from
+/// `HUB_ID_BASE` upwards, so a source id at or above the base would share an id
+/// with a row the Hub collects, and the import is refused, naming the source
+/// table and the id. Every source table keeps 4-byte ids, so the refusal needs
+/// a source with over 2^30 ids in one table.
+fn admit_source_id(table: &'static str, id: Option<i64>) -> Result<(), SourceDbImportError> {
+    match id {
+        Some(id) if id >= crate::db::hub_ids::HUB_ID_BASE => {
+            Err(SourceDbImportError::InvalidImportGeneration { table, id })
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Admit the ids of one captured open session and, through its watermarks,
+/// every row of the selected car in the six tables: each watermark is the
+/// largest id of its table for that car in the same source snapshot.
+pub(crate) fn admit_session_source_ids(
+    session: &SourceDbOpenSession,
+) -> Result<(), SourceDbImportError> {
+    let watermarks = &session.watermarks;
+    admit_source_id("drives", watermarks.drives.max_id)?;
+    admit_source_id("positions", watermarks.positions.max_id)?;
+    admit_source_id("charging_processes", watermarks.charging_processes.max_id)?;
+    admit_source_id("charges", watermarks.charges.max_id)?;
+    admit_source_id("states", watermarks.states.max_id)?;
+    admit_source_id("updates", watermarks.updates.max_id)?;
+    admit_source_id("drives", session.drive.as_ref().map(|row| row.id))?;
+    admit_source_id(
+        "charging_processes",
+        session.charge.as_ref().map(|row| row.id),
+    )?;
+    admit_source_id("states", session.state.as_ref().map(|row| row.id))?;
+    for row in session
+        .drive_positions
+        .iter()
+        .chain(session.standalone_positions.iter())
+    {
+        admit_source_id("positions", Some(row.id))?;
+    }
+    for row in &session.charge_samples {
+        admit_source_id("charges", Some(row.id))?;
+    }
+    Ok(())
+}
+
+/// Admit every row of a whole source history in the six tables.
+pub(crate) fn admit_history_source_ids(
+    history: &SourceDbHistory,
+) -> Result<(), SourceDbImportError> {
+    let drives = history.drives.iter().map(|row| row.id).max();
+    let positions = history.positions.iter().map(|row| row.id).max();
+    let processes = history.charging_processes.iter().map(|row| row.id).max();
+    let charges = history.charges.iter().map(|row| row.id).max();
+    let states = history.states.iter().map(|row| row.id).max();
+    let updates = history.updates.iter().map(|row| row.id).max();
+    admit_source_id("drives", drives)?;
+    admit_source_id("positions", positions)?;
+    admit_source_id("charging_processes", processes)?;
+    admit_source_id("charges", charges)?;
+    admit_source_id("states", states)?;
+    admit_source_id("updates", updates)
+}
+
+/// Admit every staged row of the six tables: one keyset seek per table for
+/// the first source id at or above the base.
+pub(crate) fn admit_stage_source_ids(stage: &SourceDbStage) -> Result<(), SourceDbImportError> {
+    for (table, name) in [
+        (SourceDbStageTable::Drives, "drives"),
+        (SourceDbStageTable::Positions, "positions"),
+        (SourceDbStageTable::ChargingProcesses, "charging_processes"),
+        (SourceDbStageTable::Charges, "charges"),
+        (SourceDbStageTable::States, "states"),
+        (SourceDbStageTable::Updates, "updates"),
+    ] {
+        let page =
+            stage.page::<serde_json::Value>(table, crate::db::hub_ids::HUB_ID_BASE - 1, 1)?;
+        admit_source_id(name, page.rows.first().map(|row| row.source_id))?;
+    }
+    Ok(())
+}
+
 fn selected_car_id(request: &SourceDbImportRequest) -> Result<i64, SourceDbImportError> {
     match request.scope {
         SourceDbImportScope::Selected(id) if id > 0 => Ok(id),
@@ -504,10 +612,8 @@ fn direct_projection_state_capture(
     }
     let prior =
         store.source_db_import_projection_state_lookup(vehicle_id, source_id, selected_car_id)?;
-    Ok(SourceDbProjectionStateCapture::for_successor(
-        state,
-        Box::new(prior),
-    ))
+    Ok(SourceDbProjectionStateCapture::for_successor(state, Box::new(prior))
+        .with_seam_lens(store.import_seam_capture_lens(vehicle_id)?))
 }
 
 /// Capture one direct source snapshot for either the normal import path or
@@ -721,6 +827,7 @@ struct CapturedSourceDbImport {
     updates_v2_2: DirectUpdatesSourceV2_2,
     atomic_schema_22: Option<ProductionUpdatesPublication>,
     physical_stage: Option<crate::source_db_stage::OwnedSourceDbStage>,
+    physical_seam: Option<crate::import::source_db::seam::SeamPackPlan>,
     publication_gate: PublicationGate,
 }
 
@@ -729,75 +836,6 @@ pub struct SourceDbSelectedImportReport {
     pub import: SourceDbImportReport,
     pub updates_schema_22: ProductionUpdatesPublication,
     pub physical_v3: Option<crate::physical_publication::PhysicalV3Publication>,
-}
-
-fn finish_selected_schema_22_publication(
-    store: &HubStore,
-    cursor_key: &CursorKey,
-    captured: CapturedSourceDbImport,
-) -> Result<SourceDbSelectedImportReport, SourceDbImportError> {
-    let CapturedSourceDbImport {
-        report,
-        binding,
-        updates_v2_2,
-        atomic_schema_22,
-        physical_stage,
-        publication_gate,
-    } = captured;
-    let vehicle_id = report.vehicle_id;
-    let legacy_snapshot_id = report.snapshot_id;
-    // Observe the schema-2.2 head only after this command's legacy transaction
-    // has committed. The same retained gate has covered source capture and the
-    // legacy commit, so no other publisher can interleave before this check.
-    let updates_schema_22 = if let Some(publication) = atomic_schema_22 {
-        publication
-    } else {
-        let expected_schema_22_head =
-            production_updates_head(store, vehicle_id).map_err(|source| {
-                SourceDbImportError::Schema22PostCommit {
-                    vehicle_id,
-                    legacy_snapshot_id,
-                    source,
-                }
-            })?;
-
-        publish_production_updates_schema_22_with_gate(
-            store,
-            cursor_key,
-            &binding,
-            updates_v2_2,
-            &publication_gate,
-            &expected_schema_22_head,
-            Some((legacy_snapshot_id, report.sequence)),
-        )
-        .map_err(|source| SourceDbImportError::Schema22PostCommit {
-            vehicle_id,
-            legacy_snapshot_id,
-            source,
-        })?
-    };
-    let physical_v3 = physical_stage
-        .map(|stage| {
-            let now_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .ok()
-                .and_then(|value| i64::try_from(value.as_millis()).ok())
-                .ok_or(crate::physical_publication::SourceDbPhysicalPublicationError::Clock)?;
-            crate::physical_publication::publish_sealed_physical_v3_stage_with_gate_at(
-                store,
-                cursor_key,
-                binding,
-                stage.take(),
-                &publication_gate,
-                now_ms,
-            )
-        })
-        .transpose()?;
-    Ok(SourceDbSelectedImportReport {
-        import: report,
-        updates_schema_22,
-        physical_v3,
-    })
 }
 
 async fn import_from_postgres_with_updates_capture(
@@ -904,6 +942,11 @@ async fn import_from_postgres_with_updates_capture_policy(
         false
     };
     let successor = prior_v2_head.is_some() && !legacy_bridge;
+    // Only a successor plans the import seam ahead of its packs; a base or
+    // the legacy bridge may not publish over the Hub's own collection.
+    if !successor {
+        store.refuse_unplanned_import_seam(vehicle.vehicle_id)?;
+    }
     let capture_snapshot_id = Uuid::new_v4();
     let capture_sequence = match prior_v2_head {
         Some((_, head_sequence, _)) if legacy_bridge => u64::try_from(head_sequence)
@@ -953,6 +996,10 @@ async fn import_from_postgres_with_updates_capture_policy(
             return Err(error.into());
         }
     };
+    if let Err(error) = admit_session_source_ids(&first_capture.open_session) {
+        store.abort_import_generation(run_id)?;
+        return Err(error);
+    }
     if let Err(error) = validate_exported_vehicle_identity(&car, &first_capture.updates_v2_2) {
         store.abort_import_generation(run_id)?;
         identity_registration_guard.rollback()?;
@@ -985,6 +1032,7 @@ async fn import_from_postgres_with_updates_capture_policy(
     let open_session = first_capture.open_session;
     let materialised_car = first_capture.materialised_car;
     let materialised_drives = first_capture.materialised_drives;
+    let materialised_charges = first_capture.materialised_charges;
     store.stage_import_generation_session(run_id, &open_session)?;
     let mut direct = first_capture.packs;
     let updates_v2_2 = first_capture.updates_v2_2;
@@ -1005,6 +1053,18 @@ async fn import_from_postgres_with_updates_capture_policy(
     // publication needs no ownership transfer or later source observation.
     store.stage_import_generation_session(run_id, &cutover.session)?;
     direct.fingerprint = direct_snapshot_fingerprint(&direct.fingerprint, &direct.geofences)?;
+    let mut physical_seam = None;
+    if successor {
+        (direct.fingerprint, physical_seam) = seam_folded_fingerprint_and_plan(
+            store,
+            &publication_gate,
+            vehicle.vehicle_id,
+            selected_car_id,
+            &materialised_drives,
+            &materialised_charges,
+            direct.fingerprint,
+        );
+    }
     if legacy_bridge {
         let legacy_physical_fingerprint = direct
             .legacy_physical_fingerprint
@@ -1041,11 +1101,13 @@ async fn import_from_postgres_with_updates_capture_policy(
                 projected_rows: bridged.total_rows,
                 skipped: true,
                 cutover_unsettled: cutover.cutover_unsettled,
+                seam_skipped: SourceDbSeamSkipped::default(),
             },
             binding: binding.clone(),
             updates_v2_2,
             atomic_schema_22: None,
             physical_stage,
+            physical_seam,
             publication_gate,
         });
     }
@@ -1075,11 +1137,13 @@ async fn import_from_postgres_with_updates_capture_policy(
                     projected_rows: transport_rows,
                     skipped: true,
                     cutover_unsettled: cutover.cutover_unsettled,
+                    seam_skipped: SourceDbSeamSkipped::default(),
                 },
                 binding: binding.clone(),
                 updates_v2_2,
                 atomic_schema_22: None,
                 physical_stage,
+                physical_seam,
                 publication_gate,
             });
         }
@@ -1096,11 +1160,13 @@ async fn import_from_postgres_with_updates_capture_policy(
                     projected_rows: current.total_rows,
                     skipped: true,
                     cutover_unsettled: cutover.cutover_unsettled,
+                    seam_skipped: SourceDbSeamSkipped::default(),
                 },
                 binding: binding.clone(),
                 updates_v2_2,
                 atomic_schema_22: None,
                 physical_stage,
+                physical_seam,
                 publication_gate,
             });
         }
@@ -1111,155 +1177,84 @@ async fn import_from_postgres_with_updates_capture_policy(
         .ok_or(SourceDbImportError::ProjectionStateCaptureMissing)?;
     capture.seal()?;
     let mut replacement = None;
-    if let Some((base_snapshot_id, head_sequence, head_digest)) = prior_v2_head {
+    if let Some((base_snapshot_id, _, _)) = prior_v2_head {
         let selected_car = direct
             .selected_car
             .clone()
             .ok_or(SourceDbImportError::ProjectionStateCaptureMissing)?;
-        let from_sequence = u64::try_from(head_sequence)
-            .map_err(|_| crate::db::StoreError::InvalidStoredSequence)?;
-        let existing = store
-            .lineage_manifest_for_vehicle(vehicle.vehicle_id)?
-            .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
-        let existing_pack_count = existing
-            .base
-            .packs
-            .len()
-            .checked_add(existing.deltas.len())
-            .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
-        let remaining_delta_packs = ProtocolLimits::default()
-            .max_chunks
-            .checked_sub(existing_pack_count)
-            .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
+        // The seam goes ahead of the packs: its Hub-side changes are applied
+        // and published first, then the packs carry the planned rows only.
         // Decide before discarding the complete capture or writing delta packs.
-        // Only pack-capacity exhaustion permits an explicit new base.
-        if direct_delta_capacity_exhausted(
+        // Only pack-capacity exhaustion permits an explicit new base, and
+        // never once the Hub has collected the vehicle (DEC-103).
+        let route = route_direct_successor_for_run(
+            store,
+            &publication_gate,
+            cursor_key,
+            vehicle.vehicle_id,
+            selected_car_id,
+            &materialised_drives,
+            &materialised_charges,
             &mut capture,
             &binding,
             &selected_car,
-            remaining_delta_packs,
-        )? {
+            ProtocolLimits::default().max_chunks,
+            &mut direct,
+            &mut run_guard,
+            |_| Ok(()),
+        )?;
+        if let DirectSuccessorRoute::NewBase(planned) = route {
             let mut event = crate::runtime::development_event_log::Event::new(
                 crate::runtime::development_event_log::Kind::CapacityFallback,
                 crate::runtime::development_event_log::Outcome::FullBase,
             );
-            event.base_sequence = Some(from_sequence);
-            event.chunks = existing_pack_count as u64;
+            event.base_sequence = Some(planned.head_sequence);
+            event.chunks = planned.existing_pack_count as u64;
             crate::runtime::development_event_log::record(event);
-            replacement = Some(existing);
-        } else {
+            replacement = Some(planned.existing);
+        } else if let DirectSuccessorRoute::Deltas(mut planned) = route {
             direct.keep_chunks();
             discard_unpublished_chunks(store, &publication_gate, &direct.chunks)?;
-            let mut next_ordinal = store.next_v2_pack_ordinal(base_snapshot_id)?;
-            let mut parent_digest = head_digest;
-            let mut prior_sequence = from_sequence;
-            // Keep one decoded delta batch at a time.  The projection-state spool
-            // owns the complete current history; retaining every decoded sparse
-            // row here would turn a changed multi-million-row import back into an
-            // in-memory history.
-            let mut deltas = Vec::new();
-            let mut delta_packs = UnpublishedDirectDeltaPacks::new(store, &publication_gate);
-            direct_delta_rows_from_capture(
-                &mut capture,
+            let published = publish_planned_direct_successor(
+                store,
+                &publication_gate,
+                cursor_key,
+                PlannedSuccessorRun {
+                    run_id,
+                    source_id: registered_source.source_id,
+                    imported_at_ms: request.imported_at_ms,
+                    base_snapshot_id,
+                    minimum_free_bytes: limits.minimum_free_bytes,
+                    fingerprint: direct.fingerprint,
+                    geofences: &direct.geofences,
+                    materialised_car: &materialised_car,
+                    materialised_drives: &materialised_drives,
+                    materialised_charges: &materialised_charges,
+                },
                 &binding,
                 &selected_car,
-                remaining_delta_packs,
-                |batch| {
-                    let to_sequence = store.reserve_next_full_snapshot_sequence(
-                        &publication_gate,
-                        vehicle.vehicle_id,
-                    )?;
-                    if to_sequence <= prior_sequence {
-                        return Err(crate::db::StoreError::LineageCatalogConflict.into());
-                    }
-                    let delta = batch.into_delta(
-                        binding.clone(),
-                        SequenceRange {
-                            from_exclusive: prior_sequence,
-                            to_inclusive: to_sequence,
-                        },
-                        parent_digest,
-                    );
-                    let built = ProjectionPackWriter::new(store.packs_dir())
-                        .with_minimum_free_bytes(limits.minimum_free_bytes)
-                        .write_delta(&ProjectionDeltaPackRequest {
-                            pack_id: Uuid::new_v4(),
-                            snapshot_id: base_snapshot_id,
-                            ordinal: next_ordinal,
-                            delta: &delta,
-                        })?;
-                    let chain_digest =
-                        canonical_delta_chain_digest(parent_digest, built.metadata.sha256);
-                    deltas.push(LineageDelta {
-                        from_sequence: prior_sequence,
-                        to_sequence,
-                        parent_chain_digest: parent_digest,
-                        chain_digest,
-                        pack_digest: built.metadata.sha256,
-                        pack: built.metadata.clone(),
-                    });
-                    delta_packs.push(built);
-                    prior_sequence = to_sequence;
-                    parent_digest = chain_digest;
-                    next_ordinal = next_ordinal
-                        .checked_add(1)
-                        .ok_or(crate::db::StoreError::PackOrdinalTooLarge)?;
-                    Ok(())
-                },
+                capture,
+                &mut planned,
             )?;
-            let projection_state = capture.into_state();
-            let terminal_cursor = OpaqueCursor::issue(
-                cursor_key,
-                CursorClaims {
-                    protocol: PROTOCOL_V1,
-                    schema: HUB_PROJECTION_SCHEMA_V2,
-                    installation_id: binding.installation_id,
-                    account_id: binding.account_id,
-                    vehicle_id: binding.vehicle_id,
-                    generation: binding.generation,
-                    sequence: prior_sequence,
-                },
-            )
-            .map_err(crate::db::StoreError::Manifest)?;
-            store
-            .finalize_import_generation_delta_successors_with_projection_state_and_materialisation(
-                run_id,
-                registered_source.source_id,
-                vehicle.vehicle_id,
-                selected_car_id,
-                request.imported_at_ms,
-                &deltas,
-                cursor_key,
-                &terminal_cursor,
-                direct.fingerprint,
-                &direct.geofences,
-                &projection_state,
-                &materialised_car,
-                &materialised_drives,
-            )?;
-            delta_packs.published();
-            drop(delta_packs);
             run_guard.disarm();
-            let projected_rows = deltas.iter().try_fold(0_u64, |total, delta| {
-                total
-                    .checked_add(delta.pack.row_count)
-                    .ok_or(SourceDbImportError::DirectDeltaBatchOverflow)
-            })?;
+            let physical_seam = Some(planned.seam.packs.clone());
             return Ok(CapturedSourceDbImport {
                 report: SourceDbImportReport {
                     source_id: registered_source.source_id,
                     vehicle_id: vehicle.vehicle_id,
                     snapshot_id: base_snapshot_id,
-                    sequence: prior_sequence,
+                    sequence: published.sequence,
                     projection: direct.report,
-                    projected_rows,
+                    projected_rows: published.projected_rows,
                     skipped: false,
                     cutover_unsettled: cutover.cutover_unsettled,
+                    seam_skipped: planned.seam.skipped,
                 },
                 binding: binding.clone(),
                 updates_v2_2,
                 atomic_schema_22: None,
                 physical_stage,
+                physical_seam,
                 publication_gate,
             });
         }
@@ -1379,14 +1374,19 @@ async fn import_from_postgres_with_updates_capture_policy(
             projected_rows: manifest.total_rows,
             skipped: false,
             cutover_unsettled: cutover.cutover_unsettled,
+            seam_skipped: SourceDbSeamSkipped::default(),
         },
         binding,
         updates_v2_2,
         atomic_schema_22: prepared_schema_22.map(|prepared| prepared.publication),
         physical_stage,
+        physical_seam,
         publication_gate,
     })
 }
+
+// The import seam ahead of a direct successor's packs (M03-T16).
+include!("importer/seam_ahead.rs");
 
 #[cfg(test)]
 fn publish_staged_history(
@@ -1439,6 +1439,8 @@ fn publish_staged_history_with_limits(
     if stage.format()? != SourceDbStageFormat::CompatibilityV2 {
         return Err(crate::source_db_fragments::SourceDbFragmentError::WrongStageFormat.into());
     }
+    admit_session_source_ids(open_session)?;
+    admit_stage_source_ids(stage)?;
     let publication_gate = store.try_acquire_publication_gate()?;
     let selected_car_id = selected_car_id(request)?;
     let car = stage
@@ -1470,6 +1472,9 @@ fn publish_staged_history_with_limits(
     store.persist_materialised_car_if_absent(vehicle.vehicle_id, &projected_car)?;
     store.upsert_car_settings(vehicle.vehicle_id, selected_car_id, &car.settings)?;
     let prior_v2_head = store.v2_head(vehicle.vehicle_id)?;
+    // Staged publication does not plan the import seam, so it may not publish
+    // over the Hub's own collection; refuse before any pack is written.
+    store.refuse_unplanned_import_seam(vehicle.vehicle_id)?;
     let sequence = match prior_v2_head.as_ref() {
         Some((_, head_sequence, _)) => u64::try_from(*head_sequence)
             .map_err(|_| crate::db::StoreError::InvalidStoredSequence)?,
@@ -1585,6 +1590,7 @@ fn publish_staged_history_with_limits(
                 projected_rows: transport_rows,
                 skipped: true,
                 cutover_unsettled: false,
+                seam_skipped: SourceDbSeamSkipped::default(),
             });
         }
         if let Some(current) =
@@ -1599,6 +1605,7 @@ fn publish_staged_history_with_limits(
                 projected_rows: current.total_rows,
                 skipped: true,
                 cutover_unsettled: false,
+                seam_skipped: SourceDbSeamSkipped::default(),
             });
         }
     }
@@ -1667,6 +1674,7 @@ fn publish_staged_history_with_limits(
         projected_rows: manifest.total_rows,
         skipped: false,
         cutover_unsettled: false,
+        seam_skipped: SourceDbSeamSkipped::default(),
     })
 }
 
@@ -1810,6 +1818,7 @@ fn publish_staged_history_successor(
         })?,
         skipped: false,
         cutover_unsettled: false,
+        seam_skipped: SourceDbSeamSkipped::default(),
     })
 }
 
@@ -1906,6 +1915,7 @@ pub fn publish_history(
     request: &SourceDbImportRequest,
     history: &SourceDbHistory,
 ) -> Result<SourceDbImportReport, SourceDbImportError> {
+    admit_history_source_ids(history)?;
     let publication_gate = store.try_acquire_publication_gate()?;
     let selected_car_id = selected_car_id(request)?;
     let projected = project_vehicle(history, selected_car_id)?;
@@ -1970,6 +1980,7 @@ pub fn publish_history(
                 projected_rows: projected.report.logical_row_count().unwrap_or(0),
                 skipped: true,
                 cutover_unsettled: false,
+                seam_skipped: SourceDbSeamSkipped::default(),
             });
         }
         if let Some(current) =
@@ -1984,9 +1995,13 @@ pub fn publish_history(
                 projected_rows: current.total_rows,
                 skipped: true,
                 cutover_unsettled: false,
+                seam_skipped: SourceDbSeamSkipped::default(),
             });
         }
     }
+    // An in-memory history does not plan the import seam, so it may not
+    // publish over the Hub's own collection; refuse before any pack is written.
+    store.refuse_unplanned_import_seam(vehicle.vehicle_id)?;
     if store.vehicle_has_v2_base(vehicle.vehicle_id)? {
         return publish_history_as_import_delta(
             store,
@@ -2057,6 +2072,7 @@ pub fn publish_history(
         projected_rows: manifest.total_rows,
         skipped: false,
         cutover_unsettled: false,
+        seam_skipped: SourceDbSeamSkipped::default(),
     })
 }
 
@@ -2129,6 +2145,7 @@ fn publish_history_as_import_delta(
             projected_rows: projected.report.logical_row_count().unwrap_or(0),
             skipped: true,
             cutover_unsettled: false,
+            seam_skipped: SourceDbSeamSkipped::default(),
         });
     }
     let ordinal = store.next_v2_pack_ordinal(base_snapshot_id)?;
@@ -2179,6 +2196,7 @@ fn publish_history_as_import_delta(
         projected_rows: projected.report.logical_row_count().unwrap_or(0),
         skipped: false,
         cutover_unsettled: false,
+        seam_skipped: SourceDbSeamSkipped::default(),
     })
 }
 
@@ -2328,13 +2346,33 @@ impl DirectDeltaRows {
 /// importer bounded even when every source row changed. It also enforces the
 /// remaining protocol pack capacity before an unbounded number of candidate
 /// pack files can be constructed.
+#[cfg(test)]
 fn direct_delta_capacity_exhausted(
     capture: &mut SourceDbProjectionStateCapture,
     binding: &ProjectionBinding,
     car: &ProjectionCar,
     maximum_batches: usize,
 ) -> Result<bool, SourceDbImportError> {
-    match direct_delta_rows_from_capture(capture, binding, car, maximum_batches, |_| Ok(())) {
+    direct_delta_capacity_exhausted_with_seam(capture, binding, car, maximum_batches, None)
+}
+
+fn direct_delta_capacity_exhausted_with_seam(
+    capture: &mut SourceDbProjectionStateCapture,
+    binding: &ProjectionBinding,
+    car: &ProjectionCar,
+    maximum_batches: usize,
+    seam: Option<&DeltaSeam>,
+) -> Result<bool, SourceDbImportError> {
+    // A dry run: the seam's counts belong to the real run.
+    let mut seam = seam.cloned();
+    match direct_delta_rows_from_capture_with_seam(
+        capture,
+        binding,
+        car,
+        maximum_batches,
+        seam.as_mut(),
+        |_| Ok(()),
+    ) {
         Ok(()) => Ok(false),
         Err(SourceDbImportError::DirectDeltaBatchLimitExceeded { .. }) => Ok(true),
         Err(error) => Err(error),
@@ -2346,6 +2384,29 @@ fn direct_delta_rows_from_capture<F>(
     binding: &ProjectionBinding,
     metadata_only_car: &ProjectionCar,
     maximum_batches: usize,
+    visit: F,
+) -> Result<(), SourceDbImportError>
+where
+    F: FnMut(DirectDeltaRows) -> Result<(), SourceDbImportError>,
+{
+    direct_delta_rows_from_capture_with_seam(
+        capture,
+        binding,
+        metadata_only_car,
+        maximum_batches,
+        None,
+        visit,
+    )
+}
+
+/// As [`direct_delta_rows_from_capture`], with the seam plan applied to the
+/// rows when one is given.
+fn direct_delta_rows_from_capture_with_seam<F>(
+    capture: &mut SourceDbProjectionStateCapture,
+    binding: &ProjectionBinding,
+    metadata_only_car: &ProjectionCar,
+    maximum_batches: usize,
+    mut seam: Option<&mut DeltaSeam>,
     mut visit: F,
 ) -> Result<(), SourceDbImportError>
 where
@@ -2380,7 +2441,7 @@ where
                 )?;
                 current = DirectDeltaRows::default();
             }
-            append_changed_direct_delta_row(&mut current, &row, binding)?;
+            append_changed_direct_delta_row(&mut current, &row, binding, seam.as_deref_mut())?;
         }
         match page.next_after {
             Some(next_after) => changed_after = Some(next_after),
@@ -2388,9 +2449,29 @@ where
         }
     }
 
+    // Packed sessions the source did not change but the plan restates.
+    if let Some(seam) = seam.as_deref() {
+        seam.append_restated(
+            &mut current,
+            &mut emitted_batches,
+            maximum_batches,
+            binding,
+            &mut visit,
+        )?;
+    }
+
     let mut tombstone_after = None;
+    let withdrawn = seam.as_deref().map(|seam| seam.withdrawn.clone()).unwrap_or_default();
+    let mut withdrawn = withdrawn.into_iter();
     loop {
-        let (rows, next_after) = capture.tombstone_page(tombstone_after, DIRECT_DELTA_PAGE_ROWS)?;
+        let (mut rows, next_after) =
+            capture.tombstone_page(tombstone_after, DIRECT_DELTA_PAGE_ROWS)?;
+        if next_after.is_none() {
+            // Rows the seam withdrew from clients, then (M03-T19) never a
+            // session the store keeps on the Hub's side.
+            rows.extend(withdrawn.by_ref());
+        }
+        rows.retain(|row| !seam.as_deref().is_some_and(|seam| seam.retains(row)));
         for row in rows {
             let payload_bytes = u64::try_from(
                 serde_json::to_vec(&row)
@@ -2463,7 +2544,9 @@ fn append_changed_direct_delta_row(
     batch: &mut DirectDeltaRows,
     row: &crate::import_projection_state::SourceDbProjectionStateChangedRow,
     binding: &ProjectionBinding,
+    seam: Option<&mut DeltaSeam>,
 ) -> Result<(), SourceDbImportError> {
+    use crate::import::source_db::seam::{ChildRow, PackedChild, PackedSession};
     let payload_bytes = u64::try_from(row.canonical_payload.len())
         .map_err(|_| SourceDbImportError::DirectDeltaBatchOverflow)?;
     match row.state.entity {
@@ -2475,30 +2558,63 @@ fn append_changed_direct_delta_row(
             batch.cars.push(value);
         }
         SourceDbProjectionStateEntity::Drive => {
-            let value: ProjectionDrive = serde_json::from_slice(&row.canonical_payload)
+            let mut value: ProjectionDrive = serde_json::from_slice(&row.canonical_payload)
                 .map_err(SourceDbImportError::DecodeDirectDeltaRow)?;
             validate_direct_delta_identity(value.id, value.car_id, row, binding)?;
+            if let Some(seam) = seam {
+                match seam.packs.drive(value.id) {
+                    None => return Err(SourceDbImportError::InvalidDirectDeltaRow),
+                    Some(PackedSession::Skip) => {
+                        seam.skipped.drives = seam.skipped.drives.saturating_add(1);
+                        return Ok(());
+                    }
+                    Some(PackedSession::Keep { bounds }) => {
+                        value = crate::db::planned_import_drive(&value, bounds);
+                        seam.emitted_drives.insert(value.id);
+                    }
+                }
+            }
             batch.reserve(payload_bytes)?;
             batch.drives.push(value);
         }
         SourceDbProjectionStateEntity::Position => {
-            let value: ProjectionPosition = serde_json::from_slice(&row.canonical_payload)
+            let mut value: ProjectionPosition = serde_json::from_slice(&row.canonical_payload)
                 .map_err(SourceDbImportError::DecodeDirectDeltaRow)?;
             validate_direct_delta_identity(value.id, value.car_id, row, binding)?;
+            if let Some(seam) = seam {
+                let child = ChildRow {
+                    id: value.id,
+                    at_ms: value.date_ms,
+                    parent: value.drive_id,
+                };
+                match seam.packs.position(child) {
+                    PackedChild::Skip => {
+                        seam.skipped.positions = seam.skipped.positions.saturating_add(1);
+                        return Ok(());
+                    }
+                    PackedChild::Keep { parent } => value.drive_id = parent,
+                }
+            }
             batch.reserve(payload_bytes)?;
             batch.positions.push(value);
         }
         SourceDbProjectionStateEntity::Charge => {
-            let value: ProjectionCharge = serde_json::from_slice(&row.canonical_payload)
+            let mut value: ProjectionCharge = serde_json::from_slice(&row.canonical_payload)
                 .map_err(SourceDbImportError::DecodeDirectDeltaRow)?;
             validate_direct_delta_identity(value.id, value.car_id, row, binding)?;
+            if seam.map(|seam| seam.pack_charge(&mut value)).transpose()? == Some(false) {
+                return Ok(());
+            }
             batch.reserve(payload_bytes)?;
             batch.charges.push(value);
         }
         SourceDbProjectionStateEntity::ChargeSample => {
-            let value: ProjectionChargeSample = serde_json::from_slice(&row.canonical_payload)
+            let mut value: ProjectionChargeSample = serde_json::from_slice(&row.canonical_payload)
                 .map_err(SourceDbImportError::DecodeDirectDeltaRow)?;
             validate_direct_delta_identity(value.id, row.state.car_id, row, binding)?;
+            if seam.is_some_and(|seam| !seam.pack_charge_sample(&mut value)) {
+                return Ok(());
+            }
             batch.reserve(payload_bytes)?;
             batch.charge_samples.push(value);
         }
@@ -2624,6 +2740,10 @@ pub enum SourceDbImportError {
     PhysicalPublication(#[from] crate::physical_publication::SourceDbPhysicalPublicationError),
     #[error("Source database selected car id must be positive")]
     InvalidSelectedCarId,
+    #[error(
+        "import generation is invalid: source {table} id {id} lies in the Hub's reserved id range"
+    )]
+    InvalidImportGeneration { table: &'static str, id: i64 },
     #[error("Source database selected car disappeared before publication")]
     SelectedCarMissing,
     #[error("direct source database capture did not retain its required projection state")]
@@ -2689,6 +2809,12 @@ pub enum SourceDbImportError {
     Fragments(#[from] crate::source_db_fragments::SourceDbFragmentError),
     #[error(transparent)]
     ProjectionState(#[from] SourceDbProjectionStateError),
+    #[error("the import seam's own changes could not be published ahead of the import packs: {0}")]
+    SeamPublication(String),
+    #[error(
+        "import refused: its changes no longer fit in the vehicle's sync history ({used} of {limit} packs in use), so it would need a new import base, and the import base of a vehicle the Hub has collected is never replaced because clients would lose the Hub's own rows; nothing was changed"
+    )]
+    ImportBaseReplacementRefused { used: usize, limit: usize },
 }
 
 #[cfg(test)]
@@ -2716,6 +2842,7 @@ mod n1_src_import_source_db_importer_rs_display_tests {
             match &error {
                 SourceDbImportError::PhysicalPublication(..) => (),
                 SourceDbImportError::InvalidSelectedCarId => (),
+                SourceDbImportError::InvalidImportGeneration { .. } => (),
                 SourceDbImportError::SelectedCarMissing => (),
                 SourceDbImportError::ProjectionStateCaptureMissing => (),
                 SourceDbImportError::LegacyDirectImportRebaseRequired => (),
@@ -2742,11 +2869,17 @@ mod n1_src_import_source_db_importer_rs_display_tests {
                 SourceDbImportError::Pack(..) => (),
                 SourceDbImportError::Fragments(..) => (),
                 SourceDbImportError::ProjectionState(..) => (),
+                SourceDbImportError::SeamPublication(..) => (),
+                SourceDbImportError::ImportBaseReplacementRefused { .. } => (),
             }
             assert_name_free(&error);
         }
         check_source_db_import_error(SourceDbImportError::PhysicalPublication(example()));
         check_source_db_import_error(SourceDbImportError::InvalidSelectedCarId);
+        check_source_db_import_error(SourceDbImportError::InvalidImportGeneration {
+            table: "drives",
+            id: crate::db::hub_ids::HUB_ID_BASE,
+        });
         check_source_db_import_error(SourceDbImportError::SelectedCarMissing);
         check_source_db_import_error(SourceDbImportError::ProjectionStateCaptureMissing);
         check_source_db_import_error(SourceDbImportError::LegacyDirectImportRebaseRequired);
@@ -2783,5 +2916,16 @@ mod n1_src_import_source_db_importer_rs_display_tests {
         check_source_db_import_error(SourceDbImportError::Pack(example()));
         check_source_db_import_error(SourceDbImportError::Fragments(example()));
         check_source_db_import_error(SourceDbImportError::ProjectionState(example()));
+        check_source_db_import_error(SourceDbImportError::SeamPublication(
+            "the publication gate is held".to_owned(),
+        ));
+        check_source_db_import_error(SourceDbImportError::ImportBaseReplacementRefused {
+            used: example(),
+            limit: example(),
+        });
     }
 }
+
+#[cfg(test)]
+#[path = "importer/import_seam_pack_tests.rs"]
+mod import_seam_pack_tests;

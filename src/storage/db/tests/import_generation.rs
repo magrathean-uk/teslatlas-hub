@@ -280,7 +280,12 @@ fn import_generation_staging_survives_active_state_and_promotes_once() {
         .expect("promoted lifecycle state");
     let lifecycle = crate::lifecycle::OpenSessionState::decode(&lifecycle.open_session_json)
         .expect("promoted lifecycle decode");
-    assert_eq!(lifecycle.next_position_id, 13);
+    // The watermark (12) no longer raises the cursor: new Hub rows start at
+    // the Hub range base, clear of every imported id.
+    assert_eq!(
+        lifecycle.next_position_id,
+        crate::db::hub_ids::HUB_ID_BASE
+    );
     assert!(lifecycle.id_cursors_seeded);
 }
 

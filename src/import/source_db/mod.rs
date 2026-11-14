@@ -14,5 +14,6 @@ pub mod projection;
 pub mod projection_state;
 pub mod reader;
 pub mod schema;
+pub mod seam;
 pub mod source;
 pub mod stage;

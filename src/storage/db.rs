@@ -59,7 +59,7 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 79;
+pub const SCHEMA_VERSION: i32 = 80;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -1444,6 +1444,10 @@ include!("db/catalogue_helpers.rs");
 include!("db/receiver_state.rs");
 #[path = "db/import_table_names.rs"]
 pub(crate) mod import_table_names;
+#[path = "db/hub_ids.rs"]
+pub mod hub_ids;
+include!("db/seam_links.rs");
+include!("db/collection_coverage.rs");
 include!("db/migrations.rs");
 include!("db/catalogue_maintenance.rs");
 include!("db/observation_persistence.rs");

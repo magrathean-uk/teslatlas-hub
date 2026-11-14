@@ -1104,8 +1104,10 @@ fn c8_t29_open_drive() {
     feed_owner_samples(&store, &source, &vehicle, &samples[2..]);
     let drives = raw_rows(&store, key, "materialised_drives");
     assert_eq!(drives.len(), 1);
+    // The drive is a Hub-allocated row, so it takes the first Hub id.
+    let hub = crate::db::hub_ids::HUB_ID_BASE;
     assert_eq!(
-        drive_labels(&store, key, 1),
+        drive_labels(&store, key, hub),
         (Some("Home".to_owned()), Some("Home".to_owned()))
     );
     let closed: Vec<String> = mutation_log(&store, key)[log.len()..]
@@ -1113,7 +1115,11 @@ fn c8_t29_open_drive() {
         .filter(|entry| entry.starts_with("drive "))
         .cloned()
         .collect();
-    assert_eq!(closed, ["drive 1"], "only the close wrote the row");
+    assert_eq!(
+        closed,
+        [format!("drive {hub}")],
+        "only the close wrote the row"
+    );
 }
 
 #[test]

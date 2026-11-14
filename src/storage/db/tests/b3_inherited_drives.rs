@@ -231,8 +231,9 @@ fn assert_same_rows(left: &InheritedStore, right: &InheritedStore, label: &str) 
 
 #[test]
 fn c1_st111_recompute_and_replay() {
-    // (b) Stored positions 11 to 13 (100, 101, 104), next position id 14, new
-    // positions 14 and 15 (110, 108). The closing row carries the inherited
+    // (b) Stored positions 11 to 13 (100, 101, 104) keep their source ids and
+    // the drive keeps id 1; the two new positions (110, 108) take the first two
+    // Hub ids. The closing row carries the inherited
     // walk (43, 7); the recompute over the five stored positions gives (10, 2).
     let run = InheritedStore::new(STORED_B, false);
     run.feed(&[st111_obs1(), st111_obs2()]);
@@ -248,8 +249,8 @@ fn c1_st111_recompute_and_replay() {
             (11, Some(1), T0 - 3 * MIN),
             (12, Some(1), T0 - 2 * MIN),
             (13, Some(1), T0 - MIN),
-            (14, Some(1), T0),
-            (15, Some(1), T0 + MIN),
+            (crate::db::hub_ids::HUB_ID_BASE, Some(1), T0),
+            (crate::db::hub_ids::HUB_ID_BASE + 1, Some(1), T0 + MIN),
         ]
     );
     let mutations = drive_mutations(&run.store, &run.vehicle, 1);
@@ -718,7 +719,9 @@ fn close_seeded(
 fn c1_st111_discarded_inherited_drive_stored() {
     // (d) at storage level: the blob's last odometer is 1000.0 mi and obs 1 and
     // 2 carry 1000.0, so the drive is discarded (R47). There is no
-    // `materialised_drives` row 1, positions 11 to 15 are standalone (R48), and
+    // `materialised_drives` row 1, the three inherited positions 11 to 13 keep
+    // their source ids and the two new ones take Hub ids; all five are
+    // standalone (R48), and
     // R93 records no drive mutation: the recompute list is empty.
     let run = InheritedStore::with_last_odometer(STORED_B, false, 1000.0);
     run.feed(&[st111_discard_obs1(), st111_discard_obs2()]);
@@ -730,10 +733,10 @@ fn c1_st111_discarded_inherited_drive_stored() {
             (11, None, T0 - 3 * MIN),
             (12, None, T0 - 2 * MIN),
             (13, None, T0 - MIN),
-            (14, None, T0),
-            (15, None, T0 + MIN),
+            (crate::db::hub_ids::HUB_ID_BASE, None, T0),
+            (crate::db::hub_ids::HUB_ID_BASE + 1, None, T0 + MIN),
         ],
-        "positions 11 to 15 are standalone"
+        "the five positions are standalone"
     );
     let drive_rows: i64 = run
         .store

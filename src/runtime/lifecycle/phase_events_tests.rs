@@ -455,3 +455,47 @@ fn shared_constants_have_their_specified_values() {
     // 2012-01-01T00:00:00Z.
     assert_eq!(K_EARLIEST_MS, 15_340 * 86_400 * 1_000);
 }
+
+#[test]
+fn seam_repair_handback_event_closes_the_drive_and_the_charge_at_their_last_evidence() {
+    // M03-T20: the collection window was handed back, so no later observation
+    // can continue either session. The `handback` event closes both, at their
+    // last evidence whatever its own time, and is replayable like `no_data`.
+    let folds = |state: OpenSessionState| {
+        all(
+            state,
+            &[
+                v(
+                    1,
+                    T0,
+                    json!({"drive_state": {"timestamp": T0, "shift_state": "D", "speed": 20,
+                                           "latitude": 10.0, "longitude": 20.0}}),
+                ),
+                v(
+                    2,
+                    T0 + MIN,
+                    json!({"drive_state": {"timestamp": T0 + MIN, "shift_state": "D", "speed": 20,
+                                           "latitude": 10.01, "longitude": 20.0}}),
+                ),
+            ],
+        )
+        .state
+    };
+    for event_time in [T0 - HOUR, T0 + 2 * MIN, T0 + 5 * HOUR] {
+        let result = step(folds(OpenSessionState::new()), &e(3, event_time, "handback"));
+        assert!(result.state.open_drive.is_none(), "{event_time}");
+        assert_eq!(result.delta.drives.len(), 1, "{event_time}");
+        assert_eq!(result.delta.drives[0].end_date_ms, T0 + MIN, "{event_time}");
+        assert_eq!(result.state.last_observation_id, 3, "{event_time}");
+        assert_eq!(result.state.last_reach.as_deref(), Some("online"), "{event_time}");
+    }
+    let mut charging = OpenSessionState::new();
+    charging.open_charge = Some(open_charge(1, T0, T0 + 5 * MIN));
+    charging.last_observation_id = 2;
+    let kept = step(charging.clone(), &e(3, T0 + 3 * HOUR, "no_data"));
+    assert!(kept.state.open_charge.is_some(), "no_data still leaves a charge open");
+    let result = step(charging, &e(3, T0 + 3 * HOUR, "handback"));
+    assert!(result.state.open_charge.is_none());
+    assert_eq!(result.delta.charges.len(), 1);
+    assert_eq!(result.delta.charges[0].end_date_ms, Some(T0 + 5 * MIN));
+}
