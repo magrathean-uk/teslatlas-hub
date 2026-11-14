@@ -11,11 +11,11 @@
 //! the same binary passes the full admission; a configured but broken Hub is
 //! still refused.
 //!
-//! The binary's window authority keeps its anchor in the login Keychain and
-//! checks the clock against an SNTP server, so no test opens a window in the
-//! binary. The binary's test
-//! `idle_start_collection_begins_only_after_sign_in_inside_the_window` opens
-//! one in process for the service's own collector slot.
+//! No test touches the login Keychain or the time server: the test build's
+//! compile-time journey doubles (`journey-doubles`) keep the binary's window
+//! anchor in the test's own folder and read a fixed time offset. The journey
+//! through an open window and a real collection is
+//! `tests/fresh_install_journey.rs`.
 #![cfg(target_os = "macos")]
 
 use std::{
@@ -87,7 +87,7 @@ struct Hub {
 impl Hub {
     fn new() -> Self {
         let tmp = short_tempdir();
-        for dir in ["home", "data"] {
+        for dir in ["home", "data", "anchor"] {
             fs::create_dir(tmp.path().join(dir)).expect("dir");
             fs::set_permissions(tmp.path().join(dir), fs::Permissions::from_mode(0o700))
                 .expect("private dir");
@@ -101,6 +101,9 @@ impl Hub {
             endpoint: CountingEndpoint::spawn(),
             port,
         };
+        // The window anchor in the test's folder, never the login Keychain.
+        let doubles = serde_json::json!({ "anchorDir": hub.path("anchor") });
+        fs::write(hub.path("doubles.json"), doubles.to_string()).expect("doubles");
         hub.write_config("");
         hub
     }
@@ -136,7 +139,8 @@ impl Hub {
             .env("HOME", self.path("home"))
             .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
             .env("TMPDIR", self.tmp.path())
-            .env("RUST_LOG", "info");
+            .env("RUST_LOG", "info")
+            .env("TESLATLAS_HUB_JOURNEY_DOUBLES", self.path("doubles.json"));
         for variable in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"] {
             command.env(variable, &self.endpoint.address);
         }

@@ -31,6 +31,12 @@ required-features = ["interop-fixture"]
 default = []
 interop-fixture = []
 credential-relocation-fixture = []
+# Test doubles for the fresh-install journey (M02-T21, DEC-116): a file-backed
+# window anchor, a fixed time offset, an accepting owner confirmation and
+# loopback Tesla doubles. Only the self dev-dependency below enables it, so
+# `cargo test` builds have it and `cargo build` (debug or release) never do;
+# it refuses to compile without debug assertions.
+journey-doubles = []
 
 [dependencies]
 teslatlas-compute = { path = "compute" }
@@ -88,6 +94,7 @@ zstd = { version = "0.14", features = ["zstdmt"] }
 zeroize = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
+teslatlas-hub = { path = ".", features = ["journey-doubles"] }
 http-body-util = "0.1"
 # The authorizer and update hooks of SQLite (no commit hook), installed by the store in tests only:
 # the zero-write proofs of the collector count the mutations a connection attempts,

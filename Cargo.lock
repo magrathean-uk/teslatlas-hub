@@ -2436,6 +2436,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "teslatlas-compute",
+ "teslatlas-hub",
  "thiserror",
  "time",
  "tokio",

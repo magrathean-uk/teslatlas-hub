@@ -218,8 +218,48 @@ fn is_loopback_owner_api_host(host: Option<&str>) -> bool {
         .is_some_and(|address| address.is_loopback())
 }
 
+// The journey doubles exist only in a test build (M02-T21, DEC-116): a build
+// without debug assertions refuses the feature.
+#[cfg(all(feature = "journey-doubles", not(debug_assertions)))]
+compile_error!("the journey-doubles feature is for test builds only");
+
+/// The loopback Owner API double of the fresh-install journey (M02-T21,
+/// DEC-116). It exists only with the test-only `journey-doubles` feature,
+/// which only the crate's own test build enables (never `cargo build`, debug
+/// or release). Installed once by the binary's journey doubles, it is where
+/// every Owner API client of the process sends instead of the configured
+/// Tesla base; the configuration, its mode and every egress-gate check are
+/// unchanged.
+#[cfg(feature = "journey-doubles")]
+static JOURNEY_OWNER_API_DOUBLE: std::sync::OnceLock<OwnerApiBase> = std::sync::OnceLock::new();
+
+/// Installs the journey's loopback plain-HTTP Owner API double (test builds
+/// only). Anything but a loopback `http` base is refused.
+#[cfg(feature = "journey-doubles")]
+#[doc(hidden)]
+pub fn install_journey_owner_api_double(value: &str) -> Result<(), OwnerApiConfigError> {
+    let url = Url::parse(value).map_err(|_| OwnerApiConfigError::InvalidBaseUrl)?;
+    let base = OwnerApiBase::from_url(url, false)?;
+    if !base.is_loopback_http() {
+        return Err(OwnerApiConfigError::HttpsRequired);
+    }
+    JOURNEY_OWNER_API_DOUBLE
+        .set(base)
+        .map_err(|_| OwnerApiConfigError::InvalidBaseUrl)
+}
+
 impl OwnerApi {
     pub(crate) fn new(options: OwnerApiOptions) -> Result<Self, OwnerApiConfigError> {
+        #[cfg(feature = "journey-doubles")]
+        if let Some(double) = JOURNEY_OWNER_API_DOUBLE.get() {
+            return Self::build(
+                OwnerApiOptions {
+                    base_url: double.clone(),
+                    ..options
+                },
+                true,
+            );
+        }
         Self::build(options, false)
     }
 
