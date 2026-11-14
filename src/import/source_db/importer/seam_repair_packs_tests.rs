@@ -662,6 +662,7 @@ fn seam_repair_packs_physical_stage_is_withheld_for_a_seam_vehicle() {
             Some(stage),
             &fixture.gate,
             None,
+            None,
         )
         .expect("route")
     };

@@ -714,22 +714,80 @@ impl HubStore {
         snapshot_id: Uuid,
     ) -> Result<bool, StoreError> {
         let connection = self.open_read_only_connection()?;
-        if !import_seam_present_in_connection(&connection, &vehicle_id.to_string())? {
+        let vehicle_key = vehicle_id.to_string();
+        if !import_seam_present_in_connection(&connection, &vehicle_key)? {
             return Ok(true);
         }
-        Ok(physical_v3_seam_planned_in_connection(&connection, vehicle_id)?
-            .contains(&snapshot_id.to_string()))
+        let snapshot = snapshot_id.to_string();
+        if !physical_v3_seam_planned_in_connection(&connection, vehicle_id)?.contains(&snapshot) {
+            return Ok(false);
+        }
+        // M03-T22: only while the coverage it was planned with is the
+        // vehicle's coverage; a window handed back since refuses it until a
+        // handback or an import plans the head again.
+        let planned_with = physical_v3_seam_coverage_in_connection(&connection, vehicle_id)?
+            .remove(&snapshot);
+        let current = closed_coverage_digest_for_vehicle(&connection, &vehicle_key)
+            .map_err(|_| StoreError::PhysicalV3AdmissionConflict)?;
+        let served = planned_with.as_deref() == Some(current.as_str());
+        if !served {
+            tracing::info!(
+                %vehicle_id,
+                %snapshot_id,
+                "physical 1.4 head refused: it was planned with other coverage than the \
+                 vehicle's; a handback or the next import plans it again"
+            );
+        }
+        Ok(served)
+    }
+
+    /// Whether the vehicle's current physical head is served (M03-T22).
+    pub(crate) fn physical_v3_current_head_served(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<Option<bool>, StoreError> {
+        let Some(admission) = self.unserved_physical_v3_control_admission_for_vehicle(vehicle_id)?
+        else {
+            return Ok(None);
+        };
+        self.physical_v3_admission_served(vehicle_id, admission.snapshot_id)
+            .map(Some)
+    }
+
+    /// Records `snapshot_id` as planned with the coverage the store holds now
+    /// (closed windows): the store's own tests record heads this way.
+    #[cfg(test)]
+    pub(crate) fn record_physical_v3_seam_planned(
+        &self,
+        publication_gate: &PublicationGate,
+        vehicle_id: Uuid,
+        snapshot_id: Uuid,
+    ) -> Result<(), StoreError> {
+        let coverage = {
+            let connection = self.open_read_only_connection()?;
+            closed_coverage_digest_for_vehicle(&connection, &vehicle_id.to_string())
+                .map_err(|_| StoreError::PhysicalV3AdmissionConflict)?
+        };
+        self.record_physical_v3_seam_planned_with_coverage(
+            publication_gate,
+            vehicle_id,
+            snapshot_id,
+            &coverage,
+        )
     }
 
     /// Records `snapshot_id` as a physical head of the vehicle that the
     /// importer planned with the import seam (M03-T21), before it publishes
     /// it, so a crash leaves at most an unused id. The list keeps only the
-    /// heads the store still holds, and this one.
-    pub(crate) fn record_physical_v3_seam_planned(
+    /// heads the store still holds, and this one. `coverage` is the digest of
+    /// the coverage the plan was made with (M03-T22): the head is served only
+    /// while the vehicle's coverage has that digest.
+    pub(crate) fn record_physical_v3_seam_planned_with_coverage(
         &self,
         _publication_gate: &PublicationGate,
         vehicle_id: Uuid,
         snapshot_id: Uuid,
+        coverage: &str,
     ) -> Result<(), StoreError> {
         let mut connection = self.open()?;
         let transaction = connection
@@ -754,15 +812,110 @@ impl HubStore {
                 kept.insert(id);
             }
         }
+        let mut coverages = physical_v3_seam_coverage_in_connection(&transaction, vehicle_id)?;
+        coverages.retain(|id, _| kept.contains(id));
+        coverages.insert(new, coverage.to_owned());
         let value = serde_json::to_string(&kept).map_err(StoreError::SerializeLifecycleRow)?;
-        transaction
-            .execute(
-                "INSERT INTO hub_metadata(key, value) VALUES(?1, ?2)
-                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                params![physical_v3_seam_planned_key(vehicle_id), value],
-            )
-            .map_err(StoreError::Query)?;
+        let coverages =
+            serde_json::to_string(&coverages).map_err(StoreError::SerializeLifecycleRow)?;
+        for (key, value) in [
+            (physical_v3_seam_planned_key(vehicle_id), value),
+            (physical_v3_seam_coverage_key(vehicle_id), coverages),
+        ] {
+            transaction
+                .execute(
+                    "INSERT INTO hub_metadata(key, value) VALUES(?1, ?2)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    params![key, value],
+                )
+                .map_err(StoreError::Query)?;
+        }
         transaction.commit().map_err(StoreError::LifecycleWrite)
+    }
+
+    /// The digests of the raw physical stage and the source sessions kept for
+    /// the vehicle's handback (M03-T22), if any.
+    pub(crate) fn physical_v3_kept(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<Option<PhysicalV3Kept>, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        let value: Option<String> = connection
+            .query_row(
+                "SELECT value FROM hub_metadata WHERE key = ?1",
+                params![physical_v3_kept_key(vehicle_id)],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        value
+            .map(|value| {
+                serde_json::from_str(&value).map_err(|_| StoreError::PhysicalV3AdmissionConflict)
+            })
+            .transpose()
+    }
+
+    /// The vehicles with a kept physical stage (M03-T22).
+    pub(crate) fn physical_v3_kept_vehicles(&self) -> Result<Vec<Uuid>, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        let mut statement = connection
+            .prepare("SELECT key FROM hub_metadata WHERE key LIKE 'physical_v3_kept:%' ORDER BY key")
+            .map_err(StoreError::Query)?;
+        let keys = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(StoreError::Query)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Query)?;
+        Ok(keys
+            .iter()
+            .filter_map(|key| key.strip_prefix("physical_v3_kept:")?.parse().ok())
+            .collect())
+    }
+
+    /// Records (or with `None` forgets) the stage and source kept for the
+    /// vehicle's handback (M03-T22); replaced on each import.
+    pub(crate) fn record_physical_v3_kept(
+        &self,
+        _publication_gate: &PublicationGate,
+        vehicle_id: Uuid,
+        kept: Option<&PhysicalV3Kept>,
+    ) -> Result<(), StoreError> {
+        let connection = self.open()?;
+        match kept {
+            Some(kept) => {
+                let value =
+                    serde_json::to_string(kept).map_err(StoreError::SerializeLifecycleRow)?;
+                connection.execute(
+                    "INSERT INTO hub_metadata(key, value) VALUES(?1, ?2)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    params![physical_v3_kept_key(vehicle_id), value],
+                )
+            }
+            None => connection.execute(
+                "DELETE FROM hub_metadata WHERE key = ?1",
+                params![physical_v3_kept_key(vehicle_id)],
+            ),
+        }
+        .map_err(StoreError::Query)?;
+        Ok(())
+    }
+
+    /// The import seam planned at a handback from the kept source sessions
+    /// and the coverage now (M03-T22), in one IMMEDIATE transaction. It
+    /// commits the Hub's side of the plan only when the plan restates no
+    /// source row; otherwise nothing is applied. Returns the plan and
+    /// whether it committed.
+    pub(crate) fn import_seam_for_handback(
+        &self,
+        _publication_gate: &PublicationGate,
+        vehicle_id: Uuid,
+        car_id: i64,
+        drives: &[ProjectionDrive],
+        charges: &[crate::hub_pack::ProjectionCharge],
+    ) -> Result<(ImportSeamDryRun, bool), StoreError> {
+        self.import_seam_ahead_of_packs(vehicle_id, car_id, drives, charges, |_, run| {
+            Ok(run.ahead.restated_drives.is_empty() && run.ahead.restated_charges.is_empty())
+        })
     }
 
     /// The current physical head as its publisher checks it, served or not.
@@ -1362,6 +1515,48 @@ impl HubStore {
 /// import seam (M03-T21).
 fn physical_v3_seam_planned_key(vehicle_id: Uuid) -> String {
     format!("physical_v3_seam_planned:{vehicle_id}")
+}
+
+/// The `hub_metadata` key of the coverage digests the vehicle's planned
+/// physical heads were planned with (M03-T22).
+fn physical_v3_seam_coverage_key(vehicle_id: Uuid) -> String {
+    format!("physical_v3_seam_coverage:{vehicle_id}")
+}
+
+/// The `hub_metadata` key of the stage and source kept for the vehicle's
+/// handback (M03-T22).
+fn physical_v3_kept_key(vehicle_id: Uuid) -> String {
+    format!("physical_v3_kept:{vehicle_id}")
+}
+
+/// What is kept for a vehicle's handback (M03-T22): the digests of the raw
+/// physical stage and of the import's source sessions.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PhysicalV3Kept {
+    pub(crate) stage: String,
+    pub(crate) source: String,
+}
+
+/// The coverage digest each planned head was planned with; none recorded is
+/// an empty map (M03-T22).
+fn physical_v3_seam_coverage_in_connection(
+    connection: &Connection,
+    vehicle_id: Uuid,
+) -> Result<std::collections::BTreeMap<String, String>, StoreError> {
+    let value: Option<String> = connection
+        .query_row(
+            "SELECT value FROM hub_metadata WHERE key = ?1",
+            params![physical_v3_seam_coverage_key(vehicle_id)],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(StoreError::Query)?;
+    match value {
+        Some(value) => {
+            serde_json::from_str(&value).map_err(|_| StoreError::PhysicalV3AdmissionConflict)
+        }
+        None => Ok(std::collections::BTreeMap::new()),
+    }
 }
 
 /// The snapshot ids of the vehicle's physical heads planned with the import

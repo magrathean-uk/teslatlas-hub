@@ -591,7 +591,7 @@ impl WindowController {
     // ---- coverage in the store ---------------------------------------------
 
     /// The data directory the window directory sits in, which holds the store.
-    fn data_dir(&self) -> Option<PathBuf> {
+    pub fn data_dir(&self) -> Option<PathBuf> {
         self.store.dir().parent().map(PathBuf::from)
     }
 

@@ -516,6 +516,37 @@ pub fn coverage_intervals_for_vehicle(
     connection: &Connection,
     vehicle: &str,
 ) -> Result<Vec<(i64, i64)>, CoverageError> {
+    coverage_intervals_in(connection, vehicle, false)
+}
+
+/// The digest of a vehicle's coverage intervals (M03-T22): what a planned
+/// physical head is bound to, so it is served only while the coverage it was
+/// planned with is the vehicle's coverage.
+pub fn coverage_digest(intervals: &[(i64, i64)]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    hash.update(b"teslatlas-hub collection coverage v1\n");
+    for (start, end) in intervals {
+        hash.update(format!("{start} {end}\n"));
+    }
+    crate::protocol::Sha256Digest::from_bytes(hash.finalize().into()).to_string()
+}
+
+/// The digest of the vehicle's coverage from its closed windows (M03-T22): a
+/// window still open adds nothing until it is handed back, so a head planned
+/// before it is served while the window runs.
+pub fn closed_coverage_digest_for_vehicle(
+    connection: &Connection,
+    vehicle: &str,
+) -> Result<String, CoverageError> {
+    Ok(coverage_digest(&coverage_intervals_in(connection, vehicle, true)?))
+}
+
+fn coverage_intervals_in(
+    connection: &Connection,
+    vehicle: &str,
+    skip_open: bool,
+) -> Result<Vec<(i64, i64)>, CoverageError> {
     if !coverage_table_present(connection)? {
         return Ok(Vec::new());
     }
@@ -536,6 +567,9 @@ pub fn coverage_intervals_for_vehicle(
     for row in rows {
         let (seq, opened_ms, closed_ms, gaps_json, ends_json) = row?;
         let Some(closed_ms) = closed_ms else {
+            if skip_open {
+                continue;
+            }
             return Err(CoverageError::WindowOpen { seq });
         };
         let end_ms = match ends_json {

@@ -1782,6 +1782,10 @@ pub enum SourceDbStageError {
 mod sealed_edit;
 pub(crate) use sealed_edit::StageChildTable;
 
+// A private copy of a sealed physical stage, kept for a handback (M03-T22).
+#[path = "stage/sealed_copy.rs"]
+mod sealed_copy;
+
 #[cfg(test)]
 #[path = "stage/tests.rs"]
 mod tests;

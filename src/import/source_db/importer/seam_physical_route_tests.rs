@@ -177,6 +177,7 @@ pub(super) fn publish_physical(
         Some(stage),
         &fixture.gate,
         seam,
+        None,
     )
 }
 
