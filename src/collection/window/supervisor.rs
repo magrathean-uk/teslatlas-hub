@@ -82,6 +82,14 @@ impl<S: CollectorSlot> Supervisor<S> {
         &self.controller
     }
 
+    /// Clears the start backoff (failure count and retry deadline) so the next
+    /// step may start the collector at once. The pending gap and the custody
+    /// record are kept: time without a collector stays recorded (M02-T24).
+    pub fn reset_start_backoff(&mut self) {
+        self.failures = 0;
+        self.retry_at_mono = 0;
+    }
+
     fn note_failure(&mut self, wall: i64, mono: u64) {
         self.failures = self.failures.saturating_add(1);
         let delay = (BACKOFF_BASE_SECONDS << self.failures.min(5)).min(BACKOFF_CAP_SECONDS);

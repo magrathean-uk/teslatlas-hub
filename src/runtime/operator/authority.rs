@@ -491,7 +491,6 @@ impl SupervisorThread {
         S: CollectorSlot + Clone + Send + 'static,
     {
         let mut shutdown_slot = slot.clone();
-        let reloaded_slot = slot.clone();
         let (sender, receiver) = mpsc::channel();
         let thread = std::thread::Builder::new()
             .name("hub-window-supervisor".to_owned())
@@ -512,7 +511,7 @@ impl SupervisorThread {
                         // `collector_not_ready`) left a backoff of up to a
                         // minute; the reload makes the start possible now.
                         Ok(Signal::Reloaded) => {
-                            supervisor = Supervisor::new(controller.clone(), reloaded_slot.clone());
+                            supervisor.reset_start_backoff();
                         }
                         Ok(Signal::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     }
