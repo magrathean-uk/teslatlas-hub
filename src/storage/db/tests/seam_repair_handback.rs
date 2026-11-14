@@ -206,20 +206,11 @@ fn seam_repair_handback_hub_journal(
     journal
 }
 
-/// The number of stored `handback` Hub events of the vehicle.
-fn seam_repair_handback_events(store: &HubStore, vehicle: &VehicleRecord) -> i64 {
-    store
-        .open()
-        .expect("catalogue")
-        .query_row(
-            "SELECT COUNT(*) FROM raw_observations
-              WHERE vehicle_id = ?1
-                AND json_extract(payload_json, '$.record_type') = 'hub_lifecycle_event_v1'
-                AND json_extract(payload_json, '$.event') = 'handback'",
-            params![vehicle.vehicle_id.to_string()],
-            |row| row.get(0),
-        )
-        .expect("handback events")
+/// The lifecycle's observation cursor. The `handback` event is applied
+/// through the ordinary intake, which prunes an observation once applied, so
+/// the cursor is what records that the event was applied, and how often.
+fn seam_repair_handback_cursor(store: &HubStore, vehicle: &VehicleRecord) -> i64 {
+    seam_repair_handback_lifecycle(store, vehicle).0.last_observation_id
 }
 
 /// The stored charges: id, start and end.
@@ -320,8 +311,9 @@ fn seam_repair_handback_scenario(session: SeamRepairHandbackSession, path: SeamR
         assert_eq!(seam_repair_open_drive(&store, &vehicle), None, "{test}, {round}");
         assert_eq!(seam_repair_open_charge(&store, &vehicle), None, "{test}, {round}");
         assert!(seam_repair_open_rows(&store, &vehicle).is_empty(), "{test}, {round}: no open row is left");
-        assert_eq!(seam_repair_handback_events(&store, &vehicle), 1, "{test}, {round}: one handback event");
     };
+    let before = seam_repair_handback_cursor(&store, &vehicle);
+    let mut handed_back = None;
     let (parent, child) = match session {
         SeamRepairHandbackSession::Drive => (("drive", OPEN_DRIVE), "position"),
         SeamRepairHandbackSession::Charge => (("charge", OPEN_CHARGE), "charge_sample"),
@@ -351,6 +343,9 @@ fn seam_repair_handback_scenario(session: SeamRepairHandbackSession, path: SeamR
             expected,
             "{test}, {attempt}: the session and its children are journalled once"
         );
+        let cursor = seam_repair_handback_cursor(&store, &vehicle);
+        assert!(cursor > before, "{test}, {attempt}: the handback event was applied");
+        assert_eq!(*handed_back.get_or_insert(cursor), cursor, "{test}, {attempt}: and only once");
     }
     // Later imports, disjoint from the handed-back session, repeatedly.
     for round in ["first import", "second import"] {
@@ -380,6 +375,7 @@ fn seam_repair_handback_scenario(session: SeamRepairHandbackSession, path: SeamR
             expected,
             "{test}, {round}: nothing is journalled again"
         );
+        assert_eq!(handed_back, Some(seam_repair_handback_cursor(&store, &vehicle)), "{test}, {round}");
     }
 }
 
@@ -420,12 +416,13 @@ fn seam_repair_handback_a_window_still_open_closes_nothing() {
         &positions,
     );
     let open_rows = seam_repair_open_rows(&store, &vehicle);
+    let cursor = seam_repair_handback_cursor(&store, &vehicle);
     let unchanged = |step: &str| {
         assert_eq!(seam_repair_open_drive(&store, &vehicle), Some(OPEN_DRIVE), "{step}");
         assert_eq!(seam_repair_open_rows(&store, &vehicle), open_rows, "{step}");
         assert!(seam_stored_drives(&store, &vehicle).is_empty(), "{step}");
         assert!(seam_repair_handback_hub_journal(&store, &vehicle).is_empty(), "{step}");
-        assert_eq!(seam_repair_handback_events(&store, &vehicle), 0, "{step}");
+        assert_eq!(seam_repair_handback_cursor(&store, &vehicle), cursor, "{step}: no event applied");
     };
     // The running window is not sealed.
     assert_eq!(seal_restored_open_windows(&connection, Some((2, "grant-2"))).expect("seal"), 0);

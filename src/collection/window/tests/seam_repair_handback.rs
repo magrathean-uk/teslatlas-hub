@@ -92,13 +92,15 @@ fn collect_open_session(store: &HubStore, vehicle: &str, drive: bool, first_ms: 
 }
 
 /// The vehicle's closed Hub session (id, start, end), the parent of each
-/// stored child, its open rows, and the handback events stored for it.
+/// stored child, its open rows, and the lifecycle's observation cursor (the
+/// applied `handback` event is pruned like any applied observation; the
+/// cursor moving from 1 to 2 shows it was applied once).
 #[derive(Debug, PartialEq, Eq)]
 struct Closed {
     sessions: Vec<(i64, i64, i64)>,
     children: Vec<Option<i64>>,
     open_rows: i64,
-    events: i64,
+    cursor: i64,
 }
 
 fn closed(connection: &Connection, vehicle: &str, drive: bool) -> Closed {
@@ -138,10 +140,7 @@ fn closed(connection: &Connection, vehicle: &str, drive: bool) -> Closed {
         sessions: rows(sessions),
         children: parents(children),
         open_rows: count("SELECT COUNT(*) FROM lifecycle_open_rows WHERE vehicle_id = ?1"),
-        events: count(
-            "SELECT COUNT(*) FROM raw_observations WHERE vehicle_id = ?1
-                AND json_extract(payload_json, '$.event') = 'handback'",
-        ),
+        cursor: count("SELECT last_observation_id FROM vehicle_lifecycle_state WHERE vehicle_id = ?1"),
     }
 }
 
@@ -150,7 +149,7 @@ fn expected(first_ms: i64, last_ms: i64) -> Closed {
         sessions: vec![(SESSION, first_ms, last_ms)],
         children: vec![Some(SESSION); 10],
         open_rows: 0,
-        events: 1,
+        cursor: 2,
     }
 }
 
@@ -160,7 +159,7 @@ fn still_open() -> Closed {
         sessions: Vec::new(),
         children: Vec::new(),
         open_rows: 10,
-        events: 0,
+        cursor: 1,
     }
 }
 
