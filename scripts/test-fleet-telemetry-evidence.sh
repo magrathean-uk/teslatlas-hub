@@ -69,8 +69,8 @@ print(
 )
 PY
 )
-GO=$(python3 "$REPO/scripts/go_toolchain.py" --expected-version go1.27.3) \
-  || die 'Go 1.27.3 is required for offline Fleet Telemetry evidence'
+GO=$(python3 "$REPO/scripts/go_toolchain.py" --expected-version go1.27.4) \
+  || die 'Go 1.27.4 is required for offline Fleet Telemetry evidence'
 TESLATLAS_GO=$GO
 export TESLATLAS_GO
 MODULE_CACHE=$("$GO" env GOMODCACHE) || die 'cannot locate the offline Go module cache'

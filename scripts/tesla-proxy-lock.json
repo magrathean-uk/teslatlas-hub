@@ -4,47 +4,47 @@
   "subjects": {
     "darwin-arm64": {
       "name": "tesla-http-proxy",
-      "sha256": "ee4b5e51dcc90c309c057f7172dff45086265d570e1db629760124db21712c8e",
+      "sha256": "3997f646951d2e018c482bfb8ab3eaf386790a79ae2d7691cc62165e888e17d5",
       "size": 10595666
     },
     "linux-amd64": {
       "name": "tesla-http-proxy",
-      "sha256": "ffb49fe2e799f3be65bf404b9c2ecac2845d191bd8522a8cd91f84fc80bc8441",
+      "sha256": "d30779983e5d0ca5c68450032dd22fcc07421e6e13a183d46f1aa758a23b48bd",
       "size": 11305120
     },
     "linux-arm64": {
       "name": "tesla-http-proxy",
-      "sha256": "4326a7dd4b122c284042bfc5c1a7e4228ad4b5ebb57e54e390f3eff3a5f0a1e3",
+      "sha256": "75bfa13c73ee97855021f4148ed0168d426e4957f5d0907b1dbbcfee4601e2a5",
       "size": 10616992
     }
   },
   "build_host": {
     "go": [
       {
-        "path": "/opt/homebrew/Cellar/go/1.27.3/libexec/bin/go",
-        "sha256": "60fa7fbaac037e24462915e8c19a1c73b02f548df0098b323823d6fbcdd0c764",
-        "goroot": "/opt/homebrew/Cellar/go/1.27.3/libexec",
-        "binary_path": "/opt/homebrew/Cellar/go/1.27.3/libexec/bin/go",
-        "binary_sha256": "60fa7fbaac037e24462915e8c19a1c73b02f548df0098b323823d6fbcdd0c764"
+        "path": "/opt/homebrew/Cellar/go/1.27.4/libexec/bin/go",
+        "sha256": "05f88ad8cc1e19f455104bd936e255e9ac9acf7b7725df96fb59e7260b425252",
+        "goroot": "/opt/homebrew/Cellar/go/1.27.4/libexec",
+        "binary_path": "/opt/homebrew/Cellar/go/1.27.4/libexec/bin/go",
+        "binary_sha256": "05f88ad8cc1e19f455104bd936e255e9ac9acf7b7725df96fb59e7260b425252"
       }
     ],
     "compiler": {
       "path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
-      "sha256": "ee029330bf58ab6e481385f4237cc54602eaa8b81526242e5c5ab5b76e8c5a7e",
-      "version": "Apple clang version 21.0.0 (clang-2100.3.34.2)"
+      "sha256": "fc5e3cbba6ad54059295cad716aacb05ace8235f5f7a6031f1d8c15d24bd6d66",
+      "version": "Apple clang version 21.0.0 (clang-2100.4.1.1)"
     },
     "xcode": {
-      "version": "Xcode 27.1",
-      "build": "Build version 27A9275"
+      "version": "Xcode 27.2",
+      "build": "Build version 27B52"
     },
     "sdk": {
       "path": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
-      "version": "27.0",
-      "build": "26A425"
+      "version": "27.2",
+      "build": "26B118"
     }
   },
   "toolchain": {
-    "go_version": "go1.27.3",
+    "go_version": "go1.27.4",
     "trimpath": true,
     "buildvcs": false,
     "ldflags": "-s -w",

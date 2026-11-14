@@ -1,6 +1,6 @@
 {
   "schema": "teslatlas.fleet-telemetry-legal-lock/v1",
-  "bridge_lock_sha256": "6fae8b6ad6d93bd188b4d99fb31196c1a2dae2b84fc1f7cebfbe607e1e7fedf6",
+  "bridge_lock_sha256": "199d411a8ba2b98581ea53ceed3dda7b02223193ff55e66aa0cf1449f6075547",
   "main": {
     "archive_sha256": "a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9",
     "commit": "d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
