@@ -574,6 +574,32 @@ fn store_hub_positions(store: &HubStore, vehicle_id: Uuid) -> BTreeMap<i64, (Opt
         .expect("position rows")
 }
 
+/// The head sequences of the vehicle's live deltas: the Hub's sync, the
+/// seam's among it, which publication makes visible with the packs that
+/// carry its replacements (M03-T19).
+fn live_heads(store: &HubStore, vehicle_id: Uuid) -> HashSet<u64> {
+    let connection = store.open().expect("catalogue");
+    let mut statement = connection
+        .prepare("SELECT to_sequence FROM sync_live_delta_spans WHERE vehicle_id = ?1")
+        .expect("live spans");
+    statement
+        .query_map(params![vehicle_id.to_string()], |row| row.get::<_, i64>(0))
+        .expect("live span rows")
+        .map(|row| u64::try_from(row.expect("live span row")).expect("sequence"))
+        .collect()
+}
+
+/// The import's own heads from `before` on: every head that is not live
+/// sync.
+fn import_heads(store: &HubStore, vehicle_id: Uuid, before: usize) -> Vec<(u64, PackRows)> {
+    let live = live_heads(store, vehicle_id);
+    heads(store, vehicle_id)
+        .split_off(before)
+        .into_iter()
+        .filter(|(sequence, _)| !live.contains(sequence))
+        .collect()
+}
+
 fn mutation_count(store: &HubStore, vehicle_id: Uuid) -> i64 {
     store
         .open()
@@ -598,7 +624,7 @@ fn import_seam_skipped_source_drive_is_not_in_the_pack() {
     let before = heads(&fixture.store, vehicle_id).len();
     let run_id = begin_run(&fixture, T + 3 * HOUR);
     publish(&fixture, &projected, run_id, &mut planned).expect("publication");
-    let import: Vec<_> = heads(&fixture.store, vehicle_id).split_off(before);
+    let import = import_heads(&fixture.store, vehicle_id, before);
     assert!(!import.is_empty(), "the import published its packs");
     let packed: Vec<i64> = import
         .iter()
@@ -626,7 +652,7 @@ fn import_seam_parity_accounts_for_seam_skipped_rows() {
     let before = heads(&fixture.store, vehicle_id).len();
     let run_id = begin_run(&fixture, T + 3 * HOUR);
     publish(&fixture, &projected, run_id, &mut planned).expect("publication");
-    let import: Vec<_> = heads(&fixture.store, vehicle_id).split_off(before);
+    let import = import_heads(&fixture.store, vehicle_id, before);
     let packed_drives: u64 = import.iter().map(|(_, rows)| rows.drives.len() as u64).sum();
     let packed_positions: u64 = import
         .iter()
@@ -663,13 +689,20 @@ fn import_seam_sync_ids_against_pack_ids() {
     let run_id = begin_run(&fixture, T + 3 * HOUR);
     publish(&fixture, &projected, run_id, &mut planned).expect("publication");
     let all = heads(&fixture.store, vehicle_id);
-    let seam_sync = &all[collected..planned_heads];
-    let packs = &all[planned_heads..];
-    assert!(!seam_sync.is_empty(), "the seam's changes went out as sync first");
+    assert_eq!(planned_heads, collected, "nothing goes ahead of the publication");
+    let live = live_heads(&fixture.store, vehicle_id);
+    let (seam_sync, packs): (Vec<_>, Vec<_>) = all[collected..]
+        .iter()
+        .partition(|(sequence, _)| live.contains(sequence));
+    assert!(!seam_sync.is_empty(), "the seam's changes go out as live sync");
+    assert!(
+        seam_sync.iter().all(|(seam, _)| packs.iter().all(|(pack, _)| seam < pack)),
+        "the seam's sync comes ahead of the packs, under the same publication"
+    );
 
     // Sync: Hub-range upserts and the tombstone of the Hub drive the
     // source replaced; never a source row.
-    for (_, rows) in seam_sync {
+    for (_, rows) in &seam_sync {
         assert!(rows.drives.iter().all(|row| row.0 >= HUB_ID_BASE));
         assert!(rows.positions.iter().all(|row| row.0 >= HUB_ID_BASE));
     }
@@ -684,7 +717,7 @@ fn import_seam_sync_ids_against_pack_ids() {
         .collect();
     assert_eq!(moved, vec![(HUB_ID_BASE + 2, Some(13), T + 55 * MINUTE)]);
     // Packs: source rows only, and no tombstone of a Hub row.
-    for (_, rows) in packs {
+    for (_, rows) in &packs {
         assert!(rows.drives.iter().all(|row| row.0 < HUB_ID_BASE));
         assert!(rows.positions.iter().all(|row| row.0 < HUB_ID_BASE));
         assert!(rows.tombstones.iter().all(|row| row.1 < HUB_ID_BASE));

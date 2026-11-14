@@ -89,6 +89,16 @@ full-head rebase; an unknown or expired base is rejected. Full schema-2.2 packs
 remain the bootstrap and capacity fallback. The Protocol 1.4 profile defines
 the exact wire fields, signatures, and pack limits.
 
+The physical head is a copy of the source alone: it holds no row the Hub
+collected and none of the import seam's decisions. Once the Hub has collected a
+vehicle (it has a collection window, a Hub-collected row or a recorded seam
+decision), Hub no longer serves that vehicle's physical route and the importer
+publishes no physical head for it. A 1.4 bootstrap then answers `406` as for a
+vehicle without a physical base, a 1.4 `changes-since` answers
+`schema_range_unsupported`, and prepared-map artifacts are withheld. A 1.3
+client is served the schema-2.1 lineage, which carries the seam and the Hub's
+rows.
+
 An eligible completed UTC month may have a prepared-map artifact derived from
 the same signed head. Its deterministic ID includes the source receipt and
 window, style, geometry, and algorithm identity. The authenticated artifact

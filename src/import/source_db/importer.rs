@@ -612,10 +612,8 @@ fn direct_projection_state_capture(
     }
     let prior =
         store.source_db_import_projection_state_lookup(vehicle_id, source_id, selected_car_id)?;
-    Ok(SourceDbProjectionStateCapture::for_successor(
-        state,
-        Box::new(prior),
-    ))
+    Ok(SourceDbProjectionStateCapture::for_successor(state, Box::new(prior))
+        .with_seam_lens(store.import_seam_capture_lens(vehicle_id)?))
 }
 
 /// Capture one direct source snapshot for either the normal import path or
@@ -853,6 +851,7 @@ fn finish_selected_schema_22_publication(
         publication_gate,
     } = captured;
     let vehicle_id = report.vehicle_id;
+    let physical_stage = physical_stage_for_publication(store, vehicle_id, physical_stage)?;
     let legacy_snapshot_id = report.snapshot_id;
     // Observe the schema-2.2 head only after this command's legacy transaction
     // has committed. The same retained gate has covered source capture and the
@@ -1123,6 +1122,17 @@ async fn import_from_postgres_with_updates_capture_policy(
     // publication needs no ownership transfer or later source observation.
     store.stage_import_generation_session(run_id, &cutover.session)?;
     direct.fingerprint = direct_snapshot_fingerprint(&direct.fingerprint, &direct.geofences)?;
+    if successor {
+        direct.fingerprint = seam_folded_fingerprint(
+            store,
+            &publication_gate,
+            vehicle.vehicle_id,
+            selected_car_id,
+            &materialised_drives,
+            &materialised_charges,
+            direct.fingerprint,
+        );
+    }
     if legacy_bridge {
         let legacy_physical_fingerprint = direct
             .legacy_physical_fingerprint
@@ -2513,8 +2523,17 @@ where
     }
 
     let mut tombstone_after = None;
+    let withdrawn = seam.as_deref().map(|seam| seam.withdrawn.clone()).unwrap_or_default();
+    let mut withdrawn = withdrawn.into_iter();
     loop {
-        let (rows, next_after) = capture.tombstone_page(tombstone_after, DIRECT_DELTA_PAGE_ROWS)?;
+        let (mut rows, next_after) =
+            capture.tombstone_page(tombstone_after, DIRECT_DELTA_PAGE_ROWS)?;
+        if next_after.is_none() {
+            // Rows the seam withdrew from clients, then (M03-T19) never a
+            // session the store keeps on the Hub's side.
+            rows.extend(withdrawn.by_ref());
+        }
+        rows.retain(|row| !seam.as_deref().is_some_and(|seam| seam.retains(row)));
         for row in rows {
             let payload_bytes = u64::try_from(
                 serde_json::to_vec(&row)

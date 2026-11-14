@@ -95,6 +95,7 @@ include!("projection_state/store.rs");
 include!("projection_state/capture.rs");
 include!("projection_state/spool.rs");
 include!("projection_state/transfer_validation.rs");
+include!("projection_state/seam_forms.rs");
 
 #[cfg(test)]
 #[path = "projection_state/tests.rs"]

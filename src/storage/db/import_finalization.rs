@@ -209,6 +209,9 @@ impl HubStore {
     /// refuses with [`StoreError::ImportGenerationConflict`] unless that plan
     /// is the one the packs were written from (`seam_digest`, from
     /// [`Self::apply_import_seam_ahead_of_packs`]).
+    /// The importer publishes with its staged seam; this remains for the
+    /// store's own tests of the seam applied ahead.
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn finalize_import_generation_delta_successors_with_projection_state_and_seam_plan(
         &self,
@@ -242,7 +245,7 @@ impl HubStore {
             projection_state,
             Some((materialised_car, materialised_drives)),
             false,
-            Some((seam_digest, materialised_charges)),
+            Some(ImportSeamPublication { digest: seam_digest, charges: materialised_charges, staged: None }),
         )
     }
 
@@ -262,7 +265,7 @@ impl HubStore {
         projection_state: &SourceDbProjectionState,
         materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
         retain_legacy_inventory: bool,
-        seam: Option<([u8; 32], &[crate::hub_pack::ProjectionCharge])>,
+        seam: Option<ImportSeamPublication<'_>>,
     ) -> Result<(), StoreError> {
         if run_id.is_nil() || source_id.is_nil() || vehicle_id.is_nil() || car_id <= 0 {
             return Err(StoreError::InvalidImportGeneration);
@@ -404,6 +407,9 @@ impl HubStore {
                 .checked_add(1)
                 .and_then(|ordinal| u32::try_from(ordinal).ok())
                 .ok_or(StoreError::LineageCatalogConflict)?;
+            if let (Some(seam), Some((_, drives))) = (seam, materialisation) {
+                apply_staged_import_seam_in_transaction(&transaction, vehicle_id, drives, seam, deltas, &binding)?;
+            }
             let mut expected_sequence = first_delta.from_sequence;
             let mut expected_digest = first_delta.parent_chain_digest;
             for delta in deltas {
@@ -441,31 +447,13 @@ impl HubStore {
             if updated != 1 {
                 return Err(StoreError::LineageCatalogConflict);
             }
+            publish_staged_import_seam_in_transaction(&transaction, vehicle_id, seam, deltas)?;
             match materialisation {
                 Some((car, drives)) => {
                     // The packs were written from a plan; publication plans
                     // again from the same store and refuses another one.
-                    let mut charge_seam = None;
-                    if let Some((expected, charges)) = seam {
-                        validate_import_seam_charges(charges, car_id)?;
-                        let prior = durable_prior_imported_drive_ids_in_transaction(
-                            &transaction,
-                            &vehicle_key,
-                        )?;
-                        let (coverage, plan) = import_seam_plan_in_transaction(
-                            &transaction,
-                            vehicle_id,
-                            drives,
-                            charges,
-                            &prior,
-                        )?;
-                        let planned =
-                            crate::import::source_db::seam::SeamPackPlan::for_plan(&coverage, &plan);
-                        if planned.digest() != expected {
-                            return Err(StoreError::ImportGenerationConflict);
-                        }
-                        charge_seam = Some((plan, charges));
-                    }
+                    let charge_seam =
+                        replan_import_seam_in_transaction(&transaction, vehicle_id, car_id, drives, seam)?;
                     reconcile_imported_materialisation_in_transaction(
                         &transaction,
                         vehicle_id,

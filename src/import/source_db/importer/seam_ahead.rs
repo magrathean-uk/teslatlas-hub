@@ -17,6 +17,9 @@ struct DeltaSeam {
     restated_charges: Vec<ProjectionCharge>,
     emitted_charges: HashSet<i64>,
     skipped: SourceDbSeamSkipped,
+    /// Rows an earlier import published that the seam now leaves out
+    /// (M03-T19): the packs tombstone them.
+    withdrawn: Vec<ProjectionTombstone>,
 }
 
 impl DeltaSeam {
@@ -55,6 +58,17 @@ impl DeltaSeam {
             restated_charges,
             emitted_charges: HashSet::new(),
             skipped: SourceDbSeamSkipped::default(),
+            withdrawn: Vec::new(),
+        }
+    }
+
+    /// Whether a source tombstone would remove a session the store keeps on
+    /// the Hub's side (M03-T19): the packs never carry it.
+    fn retains(&self, tombstone: &ProjectionTombstone) -> bool {
+        match tombstone.entity {
+            ProjectionDeltaEntity::Drive => self.packs.retains_drive(tombstone.id),
+            ProjectionDeltaEntity::Charge => self.packs.retains_charge(tombstone.id),
+            _ => false,
         }
     }
 
@@ -173,10 +187,13 @@ where
     current.reserve(payload_bytes)
 }
 
-/// A direct successor after the seam went ahead of its packs.
+/// A direct successor with its seam staged ahead of its packs.
 struct PlannedDirectSuccessor {
     seam: DeltaSeam,
     seam_digest: [u8; 32],
+    /// The sync the seam publishes with the packs, as live deltas ahead of
+    /// them (M03-T19).
+    seam_sync: Vec<crate::db::StagedSeamSync>,
     from_sequence: u64,
     parent_digest: Sha256Digest,
     remaining_delta_packs: usize,
@@ -367,12 +384,12 @@ fn route_direct_successor(
 }
 
 #[cfg(test)]
-/// Applies the import seam ahead of a direct successor's packs (design
-/// M03-SEAM-R3, section 4) and publishes the sync mutations it made, so every
-/// head a client can read holds each session once: a Hub drive the source
-/// replaces is tombstoned at a head before the packs that carry its
-/// replacement, and an earlier import's copy of a skipped drive goes the
-/// same way. The packs then chain onto the head that publication left.
+/// Stages the import seam ahead of a direct successor's packs (design
+/// M03-SEAM-R3, section 4; M03-T19): nothing is applied or published yet.
+/// Publication applies the seam and makes its sync visible together with the
+/// packs that carry the replacements, under one head, so every head a client
+/// can read holds each session once and a failed import leaves the previous
+/// one in sync.
 fn plan_direct_successor(
     store: &HubStore,
     publication_gate: &PublicationGate,
@@ -397,13 +414,13 @@ fn plan_direct_successor(
 }
 
 /// As [`plan_direct_successor`], against a lineage of at most `max_chunks`
-/// packs. With `decided`, the seam is applied only on the store the
-/// decision saw; `None` when it changed, and then nothing was applied.
+/// packs. With `decided`, the seam is staged only on the store the decision
+/// saw; `None` when it changed.
 #[allow(clippy::too_many_arguments)]
 fn plan_direct_successor_with_limit(
     store: &HubStore,
     publication_gate: &PublicationGate,
-    cursor_key: &CursorKey,
+    _cursor_key: &CursorKey,
     vehicle_id: Uuid,
     selected_car_id: i64,
     drives: &[ProjectionDrive],
@@ -411,7 +428,7 @@ fn plan_direct_successor_with_limit(
     max_chunks: usize,
     decided: Option<&crate::db::ImportSeamDryRun>,
 ) -> Result<Option<PlannedDirectSuccessor>, SourceDbImportError> {
-    let Some(ahead) = store.apply_import_seam_ahead_of_packs(
+    let Some(staged) = store.stage_import_seam_ahead_of_packs(
         publication_gate,
         vehicle_id,
         selected_car_id,
@@ -422,7 +439,6 @@ fn plan_direct_successor_with_limit(
     else {
         return Ok(None);
     };
-    publish_sync_mutations_ahead_of_packs(store, publication_gate, cursor_key, vehicle_id)?;
     let (_, head_sequence, head_digest) = store
         .v2_head(vehicle_id)?
         .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
@@ -439,10 +455,12 @@ fn plan_direct_successor_with_limit(
         .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
     let remaining_delta_packs = max_chunks
         .checked_sub(existing_pack_count)
+        .and_then(|remaining| remaining.checked_sub(staged.sync.len()))
         .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
     Ok(Some(PlannedDirectSuccessor {
-        seam: DeltaSeam::new(&ahead, drives, charges),
-        seam_digest: ahead.packs.digest(),
+        seam: DeltaSeam::new(&staged.ahead, drives, charges),
+        seam_digest: staged.ahead.packs.digest(),
+        seam_sync: staged.sync,
         from_sequence,
         parent_digest: head_digest,
         remaining_delta_packs,
@@ -453,8 +471,9 @@ fn plan_direct_successor_with_limit(
 /// as one delta.
 const SEAM_MUTATION_CLAIM_LIMIT: usize = 10_000;
 
-/// Publishes every unpublished sync mutation of the vehicle, the seam's
-/// among them, as live deltas under the publication gate the importer holds.
+/// Publishes every unpublished sync mutation of the vehicle as live deltas
+/// under the publication gate the importer holds (the tests' collector).
+#[cfg(test)]
 fn publish_sync_mutations_ahead_of_packs(
     store: &HubStore,
     publication_gate: &PublicationGate,
@@ -528,6 +547,7 @@ fn publish_planned_direct_successor(
     planned: &mut PlannedDirectSuccessor,
 ) -> Result<PublishedDirectSuccessor, SourceDbImportError> {
     let vehicle_id = binding.vehicle_id;
+    apply_seam_forms_to_capture(&mut capture, &mut planned.seam)?;
     let mut next_ordinal = store.next_v2_pack_ordinal(run.base_snapshot_id)?;
     let mut parent_digest = planned.parent_digest;
     let mut prior_sequence = planned.from_sequence;
@@ -537,6 +557,43 @@ fn publish_planned_direct_successor(
     // in-memory history.
     let mut deltas = Vec::new();
     let mut delta_packs = UnpublishedDirectDeltaPacks::new(store, publication_gate);
+    // The seam's sync first, as live deltas published with the packs.
+    for staged in &planned.seam_sync {
+        let to_sequence = prior_sequence
+            .checked_add(staged.mutation_count())
+            .ok_or(crate::db::StoreError::SequenceTooLarge)?;
+        let mut delta = staged.rows.clone();
+        delta.binding = binding.clone();
+        delta.sequence = SequenceRange {
+            from_exclusive: prior_sequence,
+            to_inclusive: to_sequence,
+        };
+        delta.parent_digest = parent_digest;
+        let built = ProjectionPackWriter::new(store.packs_dir())
+            .with_minimum_free_bytes(run.minimum_free_bytes)
+            .write_delta(&ProjectionDeltaPackRequest {
+                pack_id: Uuid::new_v4(),
+                snapshot_id: run.base_snapshot_id,
+                ordinal: next_ordinal,
+                delta: &delta,
+            })?;
+        let chain_digest = canonical_delta_chain_digest(parent_digest, built.metadata.sha256);
+        deltas.push(LineageDelta {
+            from_sequence: prior_sequence,
+            to_sequence,
+            parent_chain_digest: parent_digest,
+            chain_digest,
+            pack_digest: built.metadata.sha256,
+            pack: built.metadata.clone(),
+        });
+        delta_packs.push(built);
+        prior_sequence = to_sequence;
+        parent_digest = chain_digest;
+        next_ordinal = next_ordinal
+            .checked_add(1)
+            .ok_or(crate::db::StoreError::PackOrdinalTooLarge)?;
+    }
+    let seam_sequence = prior_sequence;
     direct_delta_rows_from_capture_with_seam(
         &mut capture,
         binding,
@@ -544,7 +601,8 @@ fn publish_planned_direct_successor(
         planned.remaining_delta_packs,
         Some(&mut planned.seam),
         |batch| {
-            let to_sequence = store.reserve_next_full_snapshot_sequence(publication_gate, vehicle_id)?;
+            let to_sequence =
+                store.reserve_full_snapshot_sequence_after(publication_gate, vehicle_id, seam_sequence)?;
             if to_sequence <= prior_sequence {
                 return Err(crate::db::StoreError::LineageCatalogConflict.into());
             }
@@ -596,7 +654,7 @@ fn publish_planned_direct_successor(
         },
     )
     .map_err(crate::db::StoreError::Manifest)?;
-    store.finalize_import_generation_delta_successors_with_projection_state_and_seam_plan(
+    store.finalize_import_generation_delta_successors_with_staged_seam(
         run.run_id,
         run.source_id,
         vehicle_id,
@@ -612,10 +670,12 @@ fn publish_planned_direct_successor(
         run.materialised_drives,
         run.materialised_charges,
         planned.seam_digest,
+        &planned.seam_sync,
     )?;
     delta_packs.published();
     drop(delta_packs);
-    let projected_rows = deltas.iter().try_fold(0_u64, |total, delta| {
+    // The import's own rows; the seam's live sync is the Hub's.
+    let projected_rows = deltas[planned.seam_sync.len()..].iter().try_fold(0_u64, |total, delta| {
         total
             .checked_add(delta.pack.row_count)
             .ok_or(SourceDbImportError::DirectDeltaBatchOverflow)
@@ -625,3 +685,7 @@ fn publish_planned_direct_successor(
         projected_rows,
     })
 }
+
+// The seam's published forms, the 1.4 route and the folded fingerprint
+// (M03-T19).
+include!("seam_publication.rs");

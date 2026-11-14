@@ -9,6 +9,12 @@ pub struct SourceDbProjectionStateCapture {
     state: SourceDbProjectionState,
     prior: Option<Box<dyn PriorProjectionStateLookup>>,
     mode: SourceDbProjectionStateCaptureMode,
+    /// The import seam's lens (M03-T19): which unchanged rows keep their
+    /// payload because the seam may publish them in another form.
+    seam_lens: Option<crate::import::source_db::seam::SeamCaptureLens>,
+    seam_retained: bool,
+    /// The pack plan whose published forms the state holds.
+    seam_forms: Option<[u8; 32]>,
 }
 
 impl std::fmt::Debug for SourceDbProjectionStateCapture {
@@ -29,6 +35,9 @@ impl SourceDbProjectionStateCapture {
             state,
             prior: None,
             mode: SourceDbProjectionStateCaptureMode::InitialBase,
+            seam_lens: None,
+            seam_retained: false,
+            seam_forms: None,
         }
     }
 
@@ -42,6 +51,9 @@ impl SourceDbProjectionStateCapture {
             state,
             prior: Some(prior),
             mode: SourceDbProjectionStateCaptureMode::Successor,
+            seam_lens: None,
+            seam_retained: false,
+            seam_forms: None,
         }
     }
 
@@ -88,6 +100,9 @@ impl SourceDbProjectionStateCapture {
         &mut self,
         row: &ProjectionDrive,
     ) -> Result<SourceDbProjectionStateChange, SourceDbProjectionStateError> {
+        if let Some(lens) = self.seam_lens.as_mut() {
+            lens.note_drive(row.id, row.start_date_ms, row.end_date_ms);
+        }
         self.record(
             SourceDbProjectionStateEntity::Drive,
             row.id,
@@ -100,6 +115,13 @@ impl SourceDbProjectionStateCapture {
         &mut self,
         row: &ProjectionPosition,
     ) -> Result<SourceDbProjectionStateChange, SourceDbProjectionStateError> {
+        if self
+            .seam_lens
+            .as_ref()
+            .is_some_and(|lens| lens.position(row.date_ms, row.drive_id))
+        {
+            self.retain_seam_candidate(SourceDbProjectionStateEntity::Position, row.id, row.car_id, row)?;
+        }
         self.record(
             SourceDbProjectionStateEntity::Position,
             row.id,
@@ -112,6 +134,13 @@ impl SourceDbProjectionStateCapture {
         &mut self,
         row: &ProjectionCharge,
     ) -> Result<SourceDbProjectionStateChange, SourceDbProjectionStateError> {
+        if self
+            .seam_lens
+            .as_mut()
+            .is_some_and(|lens| lens.note_charge(row.id, row.start_date_ms, row.end_date_ms))
+        {
+            self.retain_seam_candidate(SourceDbProjectionStateEntity::Charge, row.id, row.car_id, row)?;
+        }
         self.record(
             SourceDbProjectionStateEntity::Charge,
             row.id,
@@ -125,6 +154,13 @@ impl SourceDbProjectionStateCapture {
         car_id: i64,
         row: &ProjectionChargeSample,
     ) -> Result<SourceDbProjectionStateChange, SourceDbProjectionStateError> {
+        if self
+            .seam_lens
+            .as_ref()
+            .is_some_and(|lens| lens.charge_sample(row.timestamp_ms, row.charge_process_id))
+        {
+            self.retain_seam_candidate(SourceDbProjectionStateEntity::ChargeSample, row.id, car_id, row)?;
+        }
         self.record(
             SourceDbProjectionStateEntity::ChargeSample,
             row.id,
@@ -175,6 +211,68 @@ impl SourceDbProjectionStateCapture {
 
     pub fn seal(&mut self) -> Result<SourceDbProjectionStateStats, SourceDbProjectionStateError> {
         self.state.seal()
+    }
+
+    /// Gives a successor capture the import seam's lens (M03-T19).
+    pub(crate) fn with_seam_lens(
+        mut self,
+        lens: crate::import::source_db::seam::SeamCaptureLens,
+    ) -> Self {
+        if self.prior.is_some() {
+            self.seam_lens = Some(lens);
+        }
+        self
+    }
+
+    /// The coverage the seam's lens was read with, if it has one.
+    pub(crate) fn seam_lens_coverage(&self) -> Option<&crate::import::source_db::seam::HubCoverage> {
+        self.seam_lens.as_ref().map(|lens| lens.coverage())
+    }
+
+    /// The pack plan digest whose published forms the state holds, if any.
+    pub(crate) fn seam_forms(&self) -> Option<[u8; 32]> {
+        self.seam_forms
+    }
+
+    /// Holds the seam's published forms (see `apply_seam_forms` on the state)
+    /// for the pack plan with digest `plan`; a base capture has nothing to
+    /// hold. Applied once per capture.
+    pub(crate) fn apply_seam_forms(
+        &mut self,
+        plan: [u8; 32],
+        scan: bool,
+        form: &mut dyn FnMut(
+            SourceDbProjectionStateEntity,
+            i64,
+            i64,
+            &[u8],
+        ) -> Result<SeamForm, SourceDbProjectionStateError>,
+    ) -> Result<SeamFormsApplied, SourceDbProjectionStateError> {
+        if self.seam_forms.is_some() {
+            return Err(SourceDbProjectionStateError::InvalidStoredAccounting);
+        }
+        let Some(prior) = self.prior.as_mut() else {
+            self.seam_forms = Some(plan);
+            return Ok(SeamFormsApplied::default());
+        };
+        let applied = self.state.apply_seam_forms(scan, prior.as_mut(), form)?;
+        self.seam_forms = Some(plan);
+        Ok(applied)
+    }
+
+    fn retain_seam_candidate<T: Serialize>(
+        &mut self,
+        entity: SourceDbProjectionStateEntity,
+        id: i64,
+        car_id: i64,
+        value: &T,
+    ) -> Result<(), SourceDbProjectionStateError> {
+        let (payload, _) = canonical_payload_and_digest(entity, id, car_id, value)?;
+        let create = !self.seam_retained;
+        self.state
+            .retain_seam_candidate(create, entity, id, car_id, &payload)?;
+        self.seam_retained = true;
+        Ok(())
     }
 
     pub fn page(

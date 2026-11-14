@@ -36,7 +36,7 @@ impl HubStore {
             candidate,
             retained_at_ms,
         )?;
-        match self.pending_physical_v3_control_admission_for_vehicle(rotated.vehicle_id) {
+        match self.unserved_physical_v3_control_admission_for_vehicle(rotated.vehicle_id) {
             Err(StoreError::PhysicalV3SecondHeadUnsupported(vehicle_id))
                 if vehicle_id == rotated.vehicle_id => {}
             _ => return Err(StoreError::PhysicalV3AdmissionConflict),
@@ -48,7 +48,7 @@ impl HubStore {
             retained_at_ms,
         )?;
         if self
-            .pending_physical_v3_control_admission_for_vehicle(active.vehicle_id)?
+            .unserved_physical_v3_control_admission_for_vehicle(active.vehicle_id)?
             .as_ref()
             != Some(&active)
         {
@@ -224,7 +224,7 @@ impl HubStore {
             .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
         if next == prior {
             if serve_state == "public_first"
-                && self.pending_physical_v3_control_admission_for_vehicle(next.vehicle_id)?.as_ref() != Some(&prior)
+                && self.unserved_physical_v3_control_admission_for_vehicle(next.vehicle_id)?.as_ref() != Some(&prior)
             {
                 return Err(StoreError::PhysicalV3AdmissionConflict);
             }
@@ -684,7 +684,24 @@ impl HubStore {
     /// Load the currently bound marker and exact pack metadata for a control
     /// response without reading every pack body. Pack GET verifies its one
     /// bounded body before serving bytes.
+    ///
+    /// This is the served head of the negotiated 1.4 route (and of 1.3 on a
+    /// 2.2 base). It is a raw copy of the source with no Hub row and no seam
+    /// decision, so it is not served while the vehicle has any of the import
+    /// seam (M03-T19): clients then find no physical base and use the planned
+    /// lineage.
     pub(crate) fn pending_physical_v3_control_admission_for_vehicle(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<Option<PendingPhysicalV3Admission>, StoreError> {
+        if self.import_seam_present(vehicle_id)? {
+            return Ok(None);
+        }
+        self.unserved_physical_v3_control_admission_for_vehicle(vehicle_id)
+    }
+
+    /// The current physical head as its publisher checks it, served or not.
+    fn unserved_physical_v3_control_admission_for_vehicle(
         &self,
         vehicle_id: Uuid,
     ) -> Result<Option<PendingPhysicalV3Admission>, StoreError> {

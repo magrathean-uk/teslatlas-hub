@@ -773,12 +773,15 @@ pub enum PackedChild {
 
 /// The packed part of one session entity's plan: the source sessions packed
 /// (with the bounds the plan widened them to), the skipped ones and the row
-/// that stands for each, and the inherited sessions whose stored row stays.
+/// that stands for each, the inherited sessions whose stored row stays, and
+/// the source-id sessions the store keeps on the Hub's side (a source
+/// deletion never tombstones those, M03-T19).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct PackedSessions {
     imported: BTreeMap<i64, Option<(i64, Option<i64>)>>,
     skipped: BTreeMap<i64, i64>,
     held: BTreeSet<i64>,
+    kept: BTreeSet<i64>,
 }
 
 impl PackedSessions {
@@ -804,6 +807,12 @@ impl PackedSessions {
                 .iter()
                 .filter(|(_, copy)| *copy == InheritedCopy::Stored)
                 .map(|(id, _)| *id)
+                .collect(),
+            kept: plan
+                .hub_kept
+                .iter()
+                .copied()
+                .filter(|id| !is_hub_id(*id))
                 .collect(),
         }
     }
@@ -839,6 +848,9 @@ impl PackedSessions {
         }
         for id in &self.held {
             hash.update(format!("{held} {id}\n"));
+        }
+        for id in &self.kept {
+            hash.update(format!("{entity}-kept {id}\n"));
         }
     }
 }
@@ -889,6 +901,33 @@ impl SeamPackPlan {
         self.charges.imported.keys().copied()
     }
 
+    /// The coverage that decides source children by instant.
+    pub fn coverage(&self) -> &HubCoverage {
+        &self.coverage
+    }
+
+    /// Whether the packs can publish any source position, charge or charge
+    /// sample in another form than its source row (M03-T19): only with
+    /// coverage, a skipped or held session, or a widened charge.
+    pub fn changes_published_forms(&self) -> bool {
+        !self.coverage.intervals().is_empty()
+            || !self.drives.skipped.is_empty()
+            || !self.charges.skipped.is_empty()
+            || !self.charges.held.is_empty()
+            || self.charges.imported.values().any(Option::is_some)
+    }
+
+    /// Whether the store keeps source-id drive `id` on the Hub's side, so a
+    /// source deletion must not remove it from clients (M03-T19).
+    pub fn retains_drive(&self, id: i64) -> bool {
+        self.drives.kept.contains(&id)
+    }
+
+    /// Whether the store keeps source-id charge `id` on the Hub's side.
+    pub fn retains_charge(&self, id: i64) -> bool {
+        self.charges.kept.contains(&id)
+    }
+
     /// What the packs do with source drive `id`; `None` for an id the plan
     /// never saw.
     pub fn drive(&self, id: i64) -> Option<PackedSession> {
@@ -925,6 +964,94 @@ impl SeamPackPlan {
         self.charges
             .digest_into(&mut hash, "charge", "charge-skip", "charge-held");
         hash.finalize().into()
+    }
+}
+
+/// Which source children (positions, charge samples) and charges a
+/// successor capture keeps whole even when their source row is unchanged
+/// (M03-T19): those whose published form may differ from the form an earlier
+/// import published, because the seam may leave them out or give them
+/// another parent.
+///
+/// It is read from the store before the source is, so it can only know the
+/// Hub's side: the coverage, the Hub's sessions and the recorded losers. A
+/// source session is a candidate when it is a recorded loser or when its
+/// extent comes within the slack of a Hub session or of coverage (only such
+/// a session can join a group with a Hub session and lose); a child is a
+/// candidate when its instant is covered or its parent is a candidate. A
+/// session is noted when it is recorded, which is before its children are.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SeamCaptureLens {
+    coverage: HubCoverage,
+    hub_drives: Vec<(i64, i64)>,
+    hub_charges: Vec<(i64, i64)>,
+    drives: BTreeSet<i64>,
+    charges: BTreeSet<i64>,
+}
+
+impl SeamCaptureLens {
+    /// The lens for one vehicle's store side: its coverage, its Hub sessions
+    /// and its recorded seam decisions.
+    pub fn new(coverage: &HubCoverage, hub: &HubRows, links: &SeamLinks) -> Self {
+        let extents = |rows: &[SessionRow]| rows.iter().map(SessionRow::extent).collect();
+        let losers = |links: &BTreeMap<i64, i64>| {
+            links
+                .iter()
+                .filter(|(loser, winner)| loser != winner)
+                .map(|(loser, _)| *loser)
+                .collect()
+        };
+        Self {
+            coverage: coverage.clone(),
+            hub_drives: extents(&hub.drives),
+            hub_charges: extents(&hub.charges),
+            drives: losers(&links.drives),
+            charges: losers(&links.charges),
+        }
+    }
+
+    /// The coverage the lens was read with.
+    pub fn coverage(&self) -> &HubCoverage {
+        &self.coverage
+    }
+
+    fn near(&self, sessions: &[(i64, i64)], start_ms: i64, end_ms: Option<i64>) -> bool {
+        let (start, end) = SessionRow {
+            id: 0,
+            start_ms,
+            end_ms,
+        }
+        .extent();
+        let near = |(a, b): &(i64, i64)| {
+            start <= b.saturating_add(SEAM_SLACK_MS) && *a <= end.saturating_add(SEAM_SLACK_MS)
+        };
+        sessions.iter().any(near) || self.coverage.intervals().iter().any(near)
+    }
+
+    /// Notes one recorded source drive.
+    pub fn note_drive(&mut self, id: i64, start_ms: i64, end_ms: i64) {
+        if self.near(&self.hub_drives, start_ms, Some(end_ms)) {
+            self.drives.insert(id);
+        }
+    }
+
+    /// Notes one recorded source charge; true when it is a candidate itself.
+    pub fn note_charge(&mut self, id: i64, start_ms: i64, end_ms: Option<i64>) -> bool {
+        if self.near(&self.hub_charges, start_ms, end_ms) {
+            self.charges.insert(id);
+        }
+        self.charges.contains(&id)
+    }
+
+    /// Whether a source position at `at_ms` under `drive` is a candidate.
+    pub fn position(&self, at_ms: i64, drive: Option<i64>) -> bool {
+        self.coverage.contains(at_ms) || drive.is_some_and(|drive| self.drives.contains(&drive))
+    }
+
+    /// Whether a source charge sample at `at_ms` under `charge` is a
+    /// candidate.
+    pub fn charge_sample(&self, at_ms: i64, charge: i64) -> bool {
+        self.coverage.contains(at_ms) || self.charges.contains(&charge)
     }
 }
 

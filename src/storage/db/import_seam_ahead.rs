@@ -53,6 +53,11 @@ impl HubStore {
     /// history, plan and waiting sync mutations, worked out again in the
     /// transaction that applies it. Otherwise the transaction is rolled back
     /// and `None` comes back: nothing changed, and the caller decides again.
+    ///
+    /// The importer no longer applies the seam ahead of its packs (M03-T19):
+    /// it stages it ([`HubStore::stage_import_seam_ahead_of_packs`]) and
+    /// publication applies it. This remains for the store's own tests.
+    #[cfg(test)]
     pub(crate) fn apply_import_seam_ahead_of_packs(
         &self,
         _publication_gate: &PublicationGate,
@@ -63,8 +68,8 @@ impl HubStore {
         decided: Option<&ImportSeamDryRun>,
     ) -> Result<Option<ImportSeamAhead>, StoreError> {
         let (run, committed) =
-            self.import_seam_ahead_of_packs(vehicle_id, car_id, drives, charges, |run| {
-                decided.is_none_or(|decided| decided == run)
+            self.import_seam_ahead_of_packs(vehicle_id, car_id, drives, charges, |_, run| {
+                Ok(decided.is_none_or(|decided| decided == run))
             })?;
         Ok(committed.then_some(run.ahead))
     }
@@ -80,20 +85,21 @@ impl HubStore {
         drives: &[ProjectionDrive],
         charges: &[crate::hub_pack::ProjectionCharge],
     ) -> Result<ImportSeamDryRun, StoreError> {
-        self.import_seam_ahead_of_packs(vehicle_id, car_id, drives, charges, |_| false)
+        self.import_seam_ahead_of_packs(vehicle_id, car_id, drives, charges, |_, _| Ok(false))
             .map(|(run, _)| run)
     }
 
     /// The seam ahead of the packs, with the vehicle's seam history before it
     /// and its unpublished sync mutations after it, in one transaction that
-    /// commits only when `commit` accepts what it found.
+    /// commits only when `commit` accepts what it found; `commit` may read
+    /// the applied store first.
     fn import_seam_ahead_of_packs(
         &self,
         vehicle_id: Uuid,
         car_id: i64,
         drives: &[ProjectionDrive],
         charges: &[crate::hub_pack::ProjectionCharge],
-        commit: impl FnOnce(&ImportSeamDryRun) -> bool,
+        commit: impl FnOnce(&Transaction<'_>, &ImportSeamDryRun) -> Result<bool, StoreError>,
     ) -> Result<(ImportSeamDryRun, bool), StoreError> {
         if vehicle_id.is_nil() || car_id <= 0 {
             return Err(StoreError::InvalidImportGeneration);
@@ -167,7 +173,7 @@ impl HubStore {
             seam_history,
             unpublished,
         };
-        let committed = commit(&run);
+        let committed = commit(&transaction, &run)?;
         if committed {
             transaction.commit().map_err(StoreError::LifecycleWrite)?;
         } else {
@@ -880,3 +886,6 @@ fn import_seam_present_in_connection(
         .map_err(StoreError::Query)?;
     Ok(covered || hub_rows)
 }
+
+// The seam staged ahead of the packs and published with them (M03-T19).
+include!("import_seam_publication.rs");

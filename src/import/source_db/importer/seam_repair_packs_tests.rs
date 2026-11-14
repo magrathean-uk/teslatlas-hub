@@ -602,3 +602,70 @@ fn seam_repair_packs_1_4_route_refuses_while_unplanned() {
     assert!(client.drives.contains_key(&h1) && !client.drives.contains_key(&11));
     assert_eq!(client.drives, store_drives(&fixture.store, vehicle_id));
 }
+
+/// A sealed physical stage at `path`, as the source capture leaves it.
+fn physical_stage(path: std::path::PathBuf) -> crate::source_db_stage::OwnedSourceDbStage {
+    let mut stage = crate::source_db_stage::SourceDbStage::create_physical_v3(
+        path,
+        crate::sync::physical_fragments::tests::stage_limits(),
+    )
+    .expect("physical stage");
+    crate::sync::physical_fragments::tests::seed_roots(&mut stage);
+    stage.seal().expect("seal");
+    crate::source_db_stage::OwnedSourceDbStage::new(stage)
+}
+
+/// Review finding 1, the importer's side: the physical stage the 1.4 route
+/// would publish is withheld, and discarded, once the Hub has collected the
+/// vehicle; before that it is published as it is.
+#[test]
+fn seam_repair_packs_physical_stage_is_withheld_for_a_seam_vehicle() {
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    let root = crate::private_tempdir().expect("stage root");
+    let kept = physical_stage_for_publication(
+        &fixture.store,
+        vehicle_id,
+        Some(physical_stage(root.path().join("before"))),
+    )
+    .expect("route");
+    assert!(kept.is_some(), "before the Hub collects, the stage is published");
+    drop(kept);
+
+    collect(&fixture);
+    let path = root.path().join("after");
+    let withheld =
+        physical_stage_for_publication(&fixture.store, vehicle_id, Some(physical_stage(path.clone())))
+            .expect("route");
+    assert!(withheld.is_none(), "after the Hub collects, the stage is withheld");
+    assert!(!path.exists(), "the withheld stage is discarded");
+}
+
+/// Review finding 2, the importer's side: for a vehicle with the seam, the
+/// fingerprint an unchanged source is compared by also covers the seam's
+/// plan, so a new window publishes and an unchanged source and plan do not.
+#[test]
+fn seam_repair_packs_unchanged_source_after_a_window_still_publishes() {
+    let fixture = fixture();
+    let vehicle_id = fixture.binding.vehicle_id;
+    let projected = project_vehicle(&successor_history(), CAR).expect("projection");
+    let source = Sha256Digest::of_bytes(b"seam-repair-packs source");
+    let folded = || {
+        seam_folded_fingerprint(
+            &fixture.store,
+            &fixture.gate,
+            vehicle_id,
+            CAR,
+            &projected.snapshot.drives,
+            &projected.snapshot.charges,
+            source,
+        )
+    };
+    assert_eq!(folded(), source, "without the seam the source fingerprint stands");
+    collect(&fixture);
+    let first = folded();
+    assert_ne!(first, source, "the seam's plan is part of the fingerprint");
+    assert_eq!(folded(), first, "the same source and plan give the same fingerprint");
+    window(&fixture, 2, T + 2 * HOUR - 5 * MINUTE, T + 3 * HOUR);
+    assert_ne!(folded(), first, "a new window changes it");
+}
