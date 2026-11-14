@@ -722,6 +722,19 @@ impl HubStore {
         if !physical_v3_seam_planned_in_connection(&connection, vehicle_id)?.contains(&snapshot) {
             return Ok(false);
         }
+        // M03-T22: a handback the store's coverage lacks (its write failed)
+        // refuses every planned head until the coverage is reconciled.
+        if coverage_unreconciled_in(&connection, &self.database_path)
+            .map_err(|_| StoreError::PhysicalV3AdmissionConflict)?
+        {
+            tracing::info!(
+                %vehicle_id,
+                %snapshot_id,
+                "physical 1.4 head refused: a window's handback has not reached the store's \
+                 coverage yet"
+            );
+            return Ok(false);
+        }
         // M03-T22: only while the coverage it was planned with is the
         // vehicle's coverage; a window handed back since refuses it until a
         // handback or an import plans the head again.
@@ -739,6 +752,14 @@ impl HubStore {
             );
         }
         Ok(served)
+    }
+
+    /// Whether the store's coverage still lacks a handback this process
+    /// failed to write (M03-T22): nothing may be planned from it.
+    pub(crate) fn collection_coverage_unreconciled(&self) -> Result<bool, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        coverage_unreconciled_in(&connection, &self.database_path)
+            .map_err(|_| StoreError::PhysicalV3AdmissionConflict)
     }
 
     /// Whether the vehicle's current physical head is served (M03-T22).

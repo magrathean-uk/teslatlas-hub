@@ -10,13 +10,14 @@
 //! a new grant with a new sequence number.
 
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
 };
 
 use crate::db::{
-    CoverageError, WindowCoverage, coverage_gaps_from_seconds, open_coverage_store,
-    record_coverage_handback, record_coverage_open, seal_restored_open_windows,
+    CoverageError, WindowCoverage, coverage_gaps_from_seconds, coverage_unreconciled_pending,
+    mark_coverage_unreconciled, open_coverage_store, record_coverage_handback,
+    record_coverage_open, seal_restored_open_windows,
 };
 
 use super::{
@@ -182,6 +183,48 @@ pub fn handback_coverage(handback: &Handback) -> Option<WindowCoverage> {
     })
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Fails the next coverage handback write on this thread (tests).
+    static FAIL_COVERAGE_HANDBACK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Fails the next coverage handback write on the calling thread (tests).
+#[cfg(test)]
+pub(crate) fn fail_next_coverage_handback() {
+    FAIL_COVERAGE_HANDBACK.with(|fail| fail.set(true));
+}
+
+/// Writes a window's handback into the coverage of the store in `dir`. When
+/// the write fails the window is recorded unreconciled for that store, which
+/// refuses every planned physical head until a later write succeeds
+/// (M03-T22): a head planned before the window is never served after its
+/// handback. Returns whether the write succeeded.
+pub(crate) fn write_coverage_handback(dir: &Path, window: &WindowCoverage) -> bool {
+    let written = (|| -> Result<(), CoverageError> {
+        #[cfg(test)]
+        if FAIL_COVERAGE_HANDBACK.with(|fail| fail.replace(false)) {
+            return Err(CoverageError::Malformed(
+                "a forced coverage handback failure".to_owned(),
+            ));
+        }
+        if let Some(connection) = open_coverage_store(dir)? {
+            record_coverage_handback(&connection, window)?;
+        }
+        Ok(())
+    })();
+    if let Err(error) = &written {
+        mark_coverage_unreconciled(dir, window.seq);
+        tracing::warn!(
+            seq = window.seq,
+            %error,
+            "the window's handback did not reach the store's coverage; the 1.4 heads are \
+             refused until it does"
+        );
+    }
+    written.is_ok()
+}
+
 fn last_handback(ledger: &[Line<HubEntry>]) -> Option<Handback> {
     ledger.iter().rev().find_map(|line| match &line.entry {
         HubEntry::Closed { handback } => Some(handback.clone()),
@@ -219,7 +262,10 @@ impl WindowController {
             let mut inner = controller.lock();
             controller.resume_locked(&mut inner)
         };
-        if outcome != ResumeOutcome::Faulted {
+        // The ledger's handbacks reach the store before a window left open
+        // in it is sealed as a restore's (M03-T22); one that cannot keeps the
+        // store's heads refused and is retried by the supervisor.
+        if outcome != ResumeOutcome::Faulted && controller.reconcile_coverage() {
             controller.seal_restored_coverage();
         }
         (controller, outcome)
@@ -620,17 +666,43 @@ impl WindowController {
     /// Writes the handback beside the ledger line, best effort. The same store
     /// write closes the drives and charges still open at their last evidence
     /// (M03-T20), so a window that expires or is closed mid-session leaves
-    /// none open; when this write fails, import admission repeats it, once.
+    /// none open. When this write fails the store's planned physical heads
+    /// are refused until [`Self::reconcile_coverage`] or import admission
+    /// repeats it (M03-T22).
     fn coverage_handback(&self, handback: &Handback) {
         let (Some(dir), Some(window)) = (self.data_dir(), handback_coverage(handback)) else {
             return;
         };
-        let _ = (|| -> Result<(), CoverageError> {
-            if let Some(connection) = open_coverage_store(&dir)? {
-                record_coverage_handback(&connection, &window)?;
+        write_coverage_handback(&dir, &window);
+    }
+
+    /// Writes into the store's coverage every handback the ledger holds and
+    /// the store lacks (M03-T22); each is idempotent. Returns whether all
+    /// reached it; a failed one keeps the store's heads refused.
+    pub fn reconcile_coverage(&self) -> bool {
+        let Some(dir) = self.data_dir() else {
+            return true;
+        };
+        let _inner = self.lock();
+        let Ok(loaded) = self.store.load() else {
+            return false;
+        };
+        let mut reconciled = true;
+        for line in &loaded.ledger {
+            if let HubEntry::Closed { handback } = &line.entry
+                && let Some(window) = handback_coverage(handback)
+            {
+                reconciled &= write_coverage_handback(&dir, &window);
             }
-            Ok(())
-        })();
+        }
+        reconciled
+    }
+
+    /// Whether a handback of this host did not reach the store's coverage
+    /// (M03-T22); the supervisor then calls [`Self::reconcile_coverage`].
+    pub fn coverage_unreconciled(&self) -> bool {
+        self.data_dir()
+            .is_some_and(|dir| coverage_unreconciled_pending(&dir))
     }
 
     /// A window open in the store with no window open on this host is the

@@ -581,6 +581,13 @@ impl SupervisorThread {
                         tracing::info!(reason = reason.code(), "collection window closed");
                         spawn_handback_publication(controller.data_dir());
                     }
+                    // A handback that did not reach the store's coverage is
+                    // written again; the heads stay refused until it is, and
+                    // then the window's data is published (M03-T22).
+                    if controller.coverage_unreconciled() && controller.reconcile_coverage() {
+                        tracing::info!("the window's handback reached the store's coverage");
+                        spawn_handback_publication(controller.data_dir());
+                    }
                     if let Some(fault) = report.fault {
                         tracing::warn!(code = fault.code(), "collection window fault");
                     }

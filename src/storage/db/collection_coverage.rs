@@ -542,6 +542,93 @@ pub fn closed_coverage_digest_for_vehicle(
     Ok(coverage_digest(&coverage_intervals_in(connection, vehicle, true)?))
 }
 
+/// The windows the window ledger has handed back whose coverage write failed
+/// in this process, per store (M03-T22). While a store has one its coverage
+/// lacks a handback, so none of its planned physical heads is served (a head
+/// planned before the window would be stale) and none is planned from it,
+/// until a write of that handback (the supervisor's retry, the next start or
+/// import admission) closes the window's row. In memory only: a start
+/// reconciles the ledger with the store before anything is served.
+static UNRECONCILED_COVERAGE: std::sync::Mutex<UnreconciledCoverage> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+type UnreconciledCoverage = std::collections::BTreeMap<PathBuf, std::collections::BTreeSet<i64>>;
+
+fn unreconciled_coverage() -> std::sync::MutexGuard<'static, UnreconciledCoverage> {
+    UNRECONCILED_COVERAGE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn unreconciled_coverage_key(database: &Path) -> PathBuf {
+    std::fs::canonicalize(database).unwrap_or_else(|_| database.to_path_buf())
+}
+
+/// Records that the handback of window `seq` did not reach the coverage of
+/// the store in `data_dir` (M03-T22).
+pub fn mark_coverage_unreconciled(data_dir: &Path, seq: i64) {
+    let key = unreconciled_coverage_key(&data_dir.join("hub.sqlite"));
+    unreconciled_coverage().entry(key).or_default().insert(seq);
+}
+
+/// Whether this process holds a handback of the store in `data_dir` that its
+/// coverage may still lack (M03-T22); it reads no store.
+pub fn coverage_unreconciled_pending(data_dir: &Path) -> bool {
+    let registry = unreconciled_coverage();
+    !registry.is_empty()
+        && registry
+            .get(&unreconciled_coverage_key(&data_dir.join("hub.sqlite")))
+            .is_some_and(|seqs| !seqs.is_empty())
+}
+
+/// Whether the coverage of the store at `database` still lacks a handback
+/// this process failed to write (M03-T22). A window whose row the store now
+/// holds closed is forgotten.
+pub fn coverage_unreconciled_in(
+    connection: &Connection,
+    database: &Path,
+) -> Result<bool, CoverageError> {
+    let key = {
+        let registry = unreconciled_coverage();
+        if registry.is_empty() {
+            return Ok(false);
+        }
+        let key = unreconciled_coverage_key(database);
+        if registry.get(&key).is_none_or(|seqs| seqs.is_empty()) {
+            return Ok(false);
+        }
+        key
+    };
+    let seqs = unreconciled_coverage().get(&key).cloned().unwrap_or_default();
+    let mut closed = Vec::new();
+    if coverage_table_present(connection)? {
+        for seq in &seqs {
+            let closed_at: Option<Option<i64>> = connection
+                .query_row(
+                    "SELECT closed_at_ms FROM collection_coverage WHERE seq = ?1",
+                    [seq],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if matches!(closed_at, Some(Some(_))) {
+                closed.push(*seq);
+            }
+        }
+    }
+    let mut registry = unreconciled_coverage();
+    let Some(pending) = registry.get_mut(&key) else {
+        return Ok(false);
+    };
+    for seq in closed {
+        pending.remove(&seq);
+    }
+    let unreconciled = !pending.is_empty();
+    if !unreconciled {
+        registry.remove(&key);
+    }
+    Ok(unreconciled)
+}
+
 fn coverage_intervals_in(
     connection: &Connection,
     vehicle: &str,

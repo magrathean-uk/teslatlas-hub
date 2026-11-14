@@ -192,6 +192,11 @@ fn publish_vehicle_after_handback(
     let Some(kept) = store.physical_v3_kept(vehicle_id)? else {
         return Ok(HandbackPhysicalOutcome::Pruned);
     };
+    if store.collection_coverage_unreconciled()? {
+        return Ok(HandbackPhysicalOutcome::Withheld(
+            "a window's handback has not reached the store's coverage yet".into(),
+        ));
+    }
     match store.physical_v3_current_head_served(vehicle_id)? {
         None => {
             forget_physical_kept(store, publication_gate, vehicle_id);
