@@ -454,6 +454,10 @@ fn create_data_backup_admitted(
     if let Err(error) = sealed {
         #[cfg(test)]
         if crate::auth::credential_migration::seam::take_crash() {
+            // A real crash ends the process, which releases the staging lock
+            // (M06-T15) and leaves the directory; the simulated one does both.
+            let mut staging = staging;
+            drop(staging._lock.take());
             std::mem::forget(staging);
             return Err(error);
         }
