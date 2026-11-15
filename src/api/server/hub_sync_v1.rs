@@ -672,8 +672,9 @@ fn serve_changes_since(
 /// has more than one pack (DEC-150: the first import onto a window-only Hub
 /// retires the window lineage). The 1.3.0 rebase hint admits a 2.2
 /// replacement: the public physical checkpoint of the same vehicle and
-/// source, as its chunks, with a 2.2 retry. Until that checkpoint is public
-/// the answer is a retryable 503.
+/// source, as its chunks, with a 2.2 retry. A requested range that excludes
+/// 2.2 keeps 406, as its retry would be refused. Until that checkpoint is
+/// public the answer is a retryable 503.
 fn retired_21_checkpoint_physical_rebase(
     state: &AppState,
     vehicle_id: Uuid,
@@ -681,6 +682,13 @@ fn retired_21_checkpoint_physical_rebase(
     request: ChangesSinceRequest,
     signing: &ManifestSigning,
 ) -> Response {
+    // The retry names 2.2, so a range that excludes it gets no migration
+    // offer (REV2-CX-M03-T23).
+    let admits_22 = WireSchemaVersion::parse(&request.schema_version_range.maximum)
+        .is_some_and(|maximum| maximum >= WireSchemaVersion::MAXIMUM_SUPPORTED);
+    if !admits_22 {
+        return schema_range_unsupported();
+    }
     let admission = match state
         .store
         .pending_physical_v3_control_admission_for_vehicle(vehicle_id)

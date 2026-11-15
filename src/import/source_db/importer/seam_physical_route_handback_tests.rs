@@ -814,73 +814,28 @@ fn rebind_capture(fixture: &Fixture, run_id: Uuid, projected: &SourceDbProjectio
     capture
 }
 
-/// The rebind's first commit: the import's base in the window base's place,
-/// its generation left open for the seam. Returns that generation, the
-/// projection and the rebind's capture.
-fn rebind_window_base(
+/// The window rebind as the importer runs it (`publish_window_rebind`, the
+/// importer's own step after its capture): the import's base in the window
+/// base's place and the seam on it from the rebind's capture, in one
+/// catalogue transaction. Returns the seam, or what interrupted it.
+fn rebind_window(
     fixture: &Fixture,
     history: &SourceDbHistory,
     at_ms: i64,
     two_packs: bool,
-) -> (Uuid, SourceDbProjection, SourceDbProjectionStateCapture) {
+) -> Result<DeltaSeam, SourceDbImportError> {
     let Ok(DirectImportRoute::WindowRebind(expected)) = route(fixture) else {
         panic!("a window-only base is rebound");
     };
     let projected = project_vehicle(history, CAR).expect("projection");
     let run_id = begin_run(fixture, at_ms);
-    let mut capture = rebind_capture(fixture, run_id, &projected);
-    let held = capture.take_seam_retained().expect("seam rows aside");
+    let capture = rebind_capture(fixture, run_id, &projected);
     let sequence = fixture
         .store
         .reserve_next_full_snapshot_sequence(&fixture.gate, fixture.binding.vehicle_id)
         .expect("base sequence");
     let manifest = import_base_manifest(fixture, &projected.snapshot, sequence, two_packs);
-    fixture
-        .store
-        .finalize_import_generation_rebinding_window_base_with_materialisation(
-            &fixture.gate,
-            &expected,
-            run_id,
-            fixture.binding.account_id,
-            fixture.binding.vehicle_id,
-            CAR,
-            at_ms,
-            &manifest,
-            Sha256Digest::of_bytes(b"import base after windows"),
-            &[],
-            &fixture.binding,
-            capture.state(),
-            &fixture.car,
-            &projected.snapshot.drives,
-        )
-        .expect("rebind finalisation");
-    capture.restore_seam_retained(held).expect("seam rows back");
-    assert!(
-        matches!(route(fixture), Ok(DirectImportRoute::Successor)),
-        "after the rebind the vehicle is a successor"
-    );
-    (run_id, projected, capture)
-}
-
-/// The first import onto the window-only base, as the importer runs it
-/// under one gate: the rebind, then the seam from the same capture, then the
-/// 1.4 head.
-fn first_import_after_windows(
-    fixture: &Fixture,
-    root: &Path,
-    history: &SourceDbHistory,
-    at_ms: i64,
-    physical: bool,
-    two_packs: bool,
-) -> Result<(), crate::db::StoreError> {
-    let (run_id, projected, capture) = rebind_window_base(fixture, history, at_ms, two_packs);
-    let base_snapshot_id = fixture
-        .store
-        .v2_head(fixture.binding.vehicle_id)
-        .expect("head")
-        .expect("base")
-        .0;
-    let seam = match publish_rebound_window_seam(
+    publish_window_rebind(
         &fixture.store,
         &fixture.gate,
         &fixture.cursor_key,
@@ -888,7 +843,7 @@ fn first_import_after_windows(
             run_id,
             source_id: fixture.binding.account_id,
             imported_at_ms: at_ms,
-            base_snapshot_id,
+            base_snapshot_id: manifest.snapshot_id,
             minimum_free_bytes: 0,
             fingerprint: Sha256Digest::of_bytes(b"import base after windows"),
             geofences: &[],
@@ -896,13 +851,31 @@ fn first_import_after_windows(
             materialised_drives: &projected.snapshot.drives,
             materialised_charges: &projected.snapshot.charges,
         },
+        &expected,
+        &manifest,
         &fixture.binding,
         &fixture.car,
         capture,
-    ) {
-        Ok((_, seam)) => seam,
-        Err(error) => panic!("rebound seam: {error:?}"),
-    };
+    )
+    .map(|(_, seam)| seam)
+}
+
+/// The first import onto the window-only base, as the importer runs it
+/// under one gate: the rebind and its seam in one transaction, then the 1.4
+/// head.
+fn first_import_after_windows(
+    fixture: &Fixture,
+    root: &Path,
+    history: &SourceDbHistory,
+    at_ms: i64,
+    physical: bool,
+    two_packs: bool,
+) -> Result<(), SourceDbImportError> {
+    let seam = rebind_window(fixture, history, at_ms, two_packs)?;
+    assert!(
+        matches!(route(fixture), Ok(DirectImportRoute::Successor)),
+        "after the rebind the vehicle is a successor"
+    );
     if physical {
         publish_physical(fixture, history_stage(root, "after-windows", history), Some(&seam.packs))
             .expect("physical publication")
@@ -1005,7 +978,7 @@ fn seam_physical_route_import_after_windows_second_import_is_a_normal_successor(
 /// Only the collector's base on a Hub that never imported is rebound: a
 /// direct-import base without projection state that the bridge cannot prove
 /// unchanged keeps `rebase_required`, an import base with projection state
-/// is a successor, and the rebind's own finalisation refuses an import
+/// is a successor, and the rebind's own planning refuses an import
 /// lineage.
 #[test]
 fn seam_physical_route_import_after_windows_rebinds_only_a_window_only_base() {
@@ -1084,21 +1057,23 @@ fn seam_physical_route_import_after_windows_rebinds_only_a_window_only_base() {
     let manifest = request
         .signed_manifest_with_states_and_updates(&pack, &[], &[], &fixture.cursor_key)
         .expect("manifest");
-    let refused = fixture.store.finalize_import_generation_rebinding_window_base_with_materialisation(
+    let refused = fixture.store.stage_window_rebind_seam(
         &fixture.gate,
-        &expected,
-        run_id,
-        fixture.binding.account_id,
-        fixture.binding.vehicle_id,
-        CAR,
-        T + 3 * HOUR,
-        &manifest,
-        Sha256Digest::of_bytes(b"not a window base"),
-        &[],
-        &fixture.binding,
+        &crate::db::WindowRebindBase {
+            expected: &expected,
+            run_id,
+            source_id: fixture.binding.account_id,
+            vehicle_id: fixture.binding.vehicle_id,
+            car_id: CAR,
+            updated_at_ms: T + 3 * HOUR,
+            manifest: &manifest,
+            geofences: &[],
+            binding: &fixture.binding,
+            car: &fixture.car,
+            drives: &projected.snapshot.drives,
+            charges: &projected.snapshot.charges,
+        },
         &state,
-        &fixture.car,
-        &projected.snapshot.drives,
     );
     assert!(
         matches!(refused, Err(crate::db::StoreError::LineageCatalogConflict)),
@@ -1271,7 +1246,8 @@ fn seam_physical_route_import_after_windows_restates_a_widened_source_drive() {
 /// 2.1 base admits. A 2.1 client of the retired window lineage still gets
 /// the signed `rebase_required`, with the public 2.2 checkpoint as its
 /// replacement and a 2.2 retry, never 406; that retry is served. A receipt
-/// the Hub never issued keeps 406 on such a base.
+/// the Hub never issued keeps 406 on such a base, and so does a 2.1-only
+/// requested range (REV2-CX-M03-T23).
 #[test]
 fn seam_physical_route_import_after_windows_rebases_a_window_client_onto_a_multi_pack_base() {
     let (fixture, window_lineage) = window_only_fixture();
@@ -1285,7 +1261,7 @@ fn seam_physical_route_import_after_windows_rebases_a_window_client_onto_a_multi
         .expect("import lineage");
     assert_eq!(lineage.base.packs.len(), 2, "the replacement base has two packs");
     let env = paired(&fixture);
-    let ask = |receipt: String, from_sequence: u64| {
+    let ask_in = |receipt: String, from_sequence: u64, maximum: &str| {
         served(
             &env.runtime,
             &env.app,
@@ -1295,10 +1271,11 @@ fn seam_physical_route_import_after_windows_rebases_a_window_client_onto_a_multi
             Some(serde_json::json!({
                 "base_receipt_id": receipt, "base_manifest_schema": "2.1",
                 "from_sequence": from_sequence,
-                "schema_version_range": {"minimum": "2.1", "maximum": "2.2"},
+                "schema_version_range": {"minimum": "2.1", "maximum": maximum},
             })),
         )
     };
+    let ask = |receipt: String, from_sequence: u64| ask_in(receipt, from_sequence, "2.2");
     let (status, raw) = ask(window_lineage.head_digest.to_string(), window_lineage.head_sequence);
     let answer: serde_json::Value = serde_json::from_slice(&raw).unwrap_or_default();
     assert_eq!(status, axum::http::StatusCode::CONFLICT, "{answer}");
@@ -1321,54 +1298,334 @@ fn seam_physical_route_import_after_windows_rebases_a_window_client_onto_a_multi
     assert_eq!(fresh.mirror.drives, client(&fixture).drives, "the replacement holds the lineage");
     let (status, _) = ask(Sha256Digest::of_bytes(b"never issued").to_string(), window_lineage.head_sequence);
     assert_eq!(status, axum::http::StatusCode::NOT_ACCEPTABLE, "an unknown receipt keeps 406");
+    // REV2-CX-M03-T23: a client that accepts only 2.1 is never offered the
+    // 2.2 replacement, whose retry its own range would refuse.
+    let (status, raw) = ask_in(window_lineage.head_digest.to_string(), window_lineage.head_sequence, "2.1");
+    let answer: serde_json::Value = serde_json::from_slice(&raw).unwrap_or_default();
+    assert_eq!(status, axum::http::StatusCode::NOT_ACCEPTABLE, "{answer}");
+    assert_eq!(answer["code"], "schema_range_unsupported");
 }
 
-/// Review finding 3: the rebind publishes its seam from its own capture, so
-/// no second source read lies between its two commits. If the seam
-/// publication still fails after the rebind's commit, its generation is
-/// aborted; the Hub goes on collecting, and the next import, a successor
-/// whose source fingerprint the rebind left pending, publishes the seam:
-/// the clients end as after an uninterrupted first import.
+
+/// DEC-151 follow-up (M03-T24): the rebind and its seam publish in one
+/// catalogue transaction. Interrupted at any step (the seam planned on the
+/// uncommitted rebind, its packs written, the base or both in the
+/// publication transaction, or the commit itself failing), with no cleanup
+/// of its generation as after a process exit, the store holds the old window
+/// lineage exactly: clients keep it, the Hub still collects, and the next
+/// import rebinds again, keeps the rows collected meanwhile and ends as an
+/// uninterrupted first import.
 #[test]
-fn seam_physical_route_import_after_windows_interrupted_rebind_is_completed_by_the_next_import() {
-    let (fixture, _) = window_only_fixture();
-    let history = successor_history();
-    let (run_id, _, capture) = rebind_window_base(&fixture, &history, T + 3 * HOUR, false);
-    drop(capture);
-    fixture
-        .store
-        .abort_import_generation(run_id)
-        .expect("the failed seam publication's generation is aborted");
-    assert!(
-        !fixture
-            .store
-            .source_fingerprint_matches(
-                fixture.binding.vehicle_id,
-                Sha256Digest::of_bytes(b"import base after windows"),
-            )
-            .expect("fingerprint"),
-        "the rebind left its fingerprint pending: the next import is no unchanged skip"
-    );
-    // The Hub still collects.
-    let h4 = HUB_ID_BASE + 40;
-    window(&fixture, 2, T + 4 * HOUR, T + 5 * HOUR);
-    hub_rows(&fixture, &[(h4, T + 4 * HOUR, T + 4 * HOUR + 10 * MINUTE)], &[]);
-    assert!(client(&fixture).drives.contains_key(&h4), "the next window reaches clients");
-    // The Hub still imports, and that import publishes the seam.
-    assert!(matches!(route(&fixture), Ok(DirectImportRoute::Successor)));
-    let root = crate::private_tempdir().expect("stage root");
-    import_both(&fixture, root.path(), "after-interruption", &history, T + 6 * HOUR);
-    let lineage = client(&fixture);
-    for id in [10, 12, 13, HUB_ID_BASE + 1, h4] {
-        assert!(lineage.drives.contains_key(&id), "clients hold drive {id}");
+fn seam_physical_route_import_after_windows_interrupted_rebind_leaves_the_window_lineage() {
+    use crate::db::WindowRebindStep;
+    enum Interruption {
+        Step(WindowRebindStep),
+        Commit,
     }
-    assert!(!lineage.drives.contains_key(&11), "drive 11 lost to H1");
-    assert!(!lineage.drives.contains_key(&(HUB_ID_BASE + 2)), "H2 lost to drive 13");
-    assert!(!lineage.positions.contains_key(&1101), "the seam withdrew the covered source position");
-    assert!(lineage.positions.contains_key(&(HUB_ID_BASE + 1)), "H1's position is kept");
-    assert!(lineage.positions.contains_key(&(HUB_ID_BASE + 2)), "H2's position is kept");
-    let env = paired(&fixture);
-    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("the 1.4 head is served");
-    assert_eq!(fresh.mirror.drives, lineage.drives);
-    assert_eq!(fresh.mirror.positions, lineage.positions);
+    let history = successor_history();
+    for (index, interruption) in [
+        Interruption::Step(WindowRebindStep::SeamStaged),
+        Interruption::Step(WindowRebindStep::SeamPacksWritten),
+        Interruption::Step(WindowRebindStep::BaseInTransaction),
+        Interruption::Step(WindowRebindStep::SeamInTransaction),
+        Interruption::Commit,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (fixture, window_lineage) = window_only_fixture();
+        let before = client(&fixture);
+        let fault = match interruption {
+            Interruption::Step(step) => {
+                crate::db::interrupt_window_rebind_at(step);
+                None
+            }
+            Interruption::Commit => Some(crate::durability_fault::inject(
+                crate::durability_fault::DurabilityFaultPoint::CatalogueBeforeCommit,
+            )),
+        };
+        let interrupted = rebind_window(&fixture, &history, T + 3 * HOUR, false);
+        drop(fault);
+        assert!(interrupted.is_err(), "interruption {index} stops the rebind");
+        assert_eq!(
+            fixture.store.lineage_manifest_for_vehicle(fixture.binding.vehicle_id).expect("lineage"),
+            Some(window_lineage.clone()),
+            "interruption {index}: the window lineage stands"
+        );
+        assert!(
+            !fixture
+                .store
+                .source_db_import_projection_state_exists(fixture.binding.vehicle_id)
+                .expect("state"),
+            "interruption {index}: no import state"
+        );
+        let after = client(&fixture);
+        assert_eq!(after.drives, before.drives, "interruption {index}: clients keep the window drives");
+        assert_eq!(after.positions, before.positions, "interruption {index}: and positions");
+        assert!(matches!(route(&fixture), Ok(DirectImportRoute::WindowRebind(_))));
+        // The Hub still collects (stored as the collector keeps them).
+        let h4 = HUB_ID_BASE + 40;
+        window(&fixture, 2, T + 4 * HOUR, T + 5 * HOUR);
+        window_rows(&fixture, h4, T + 4 * HOUR, T + 4 * HOUR + 10 * MINUTE, T + 4 * HOUR + 5 * MINUTE);
+        // The next import rebinds and publishes the seam.
+        let root = crate::private_tempdir().expect("stage root");
+        first_import_after_windows(&fixture, root.path(), &history, T + 6 * HOUR, true, false)
+            .expect("the next import completes the rebind");
+        let lineage = client(&fixture);
+        for id in [10, 12, 13, HUB_ID_BASE + 1, h4] {
+            assert!(lineage.drives.contains_key(&id), "interruption {index}: clients hold drive {id}");
+        }
+        assert!(!lineage.drives.contains_key(&11), "drive 11 lost to H1");
+        assert!(!lineage.drives.contains_key(&(HUB_ID_BASE + 2)), "H2 lost to drive 13");
+        assert!(!lineage.positions.contains_key(&1101), "the seam withdrew the covered source position");
+        assert!(lineage.positions.contains_key(&(HUB_ID_BASE + 1)), "H1's position is kept");
+        let env = paired(&fixture);
+        let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("the 1.4 head is served");
+        assert_eq!(fresh.mirror.drives, lineage.drives);
+        assert_eq!(fresh.mirror.positions, lineage.positions);
+    }
+}
+
+const REBIND_KILL_CHILD: &str = "TESLATLAS_M03_T24_REBIND_KILL_CHILD";
+
+/// The points at which the hard-interruption test kills the rebind: the
+/// rehearsal transaction open, the frozen prior copied, the seam staged,
+/// its packs written, the publication transaction holding the base or both,
+/// and the publication committed.
+const REBIND_KILL_STEPS: [crate::db::WindowRebindStep; 7] = [
+    crate::db::WindowRebindStep::RehearsalInTransaction,
+    crate::db::WindowRebindStep::PriorCopied,
+    crate::db::WindowRebindStep::SeamStaged,
+    crate::db::WindowRebindStep::SeamPacksWritten,
+    crate::db::WindowRebindStep::BaseInTransaction,
+    crate::db::WindowRebindStep::SeamInTransaction,
+    crate::db::WindowRebindStep::Committed,
+];
+
+/// The libtest name of `name` in this module.
+fn this_module_test(name: &str) -> String {
+    let module = module_path!();
+    let module = module.split_once("::").map_or(module, |(_, rest)| rest);
+    format!("{module}::{name}")
+}
+
+/// Every catalogue table's rows, sorted, as text.
+fn catalogue_rows(store: &HubStore) -> std::collections::BTreeMap<String, Vec<String>> {
+    let connection = store.open().expect("catalogue");
+    let tables: Vec<String> = connection
+        .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+        .expect("tables")
+        .query_map([], |row| row.get(0))
+        .expect("tables")
+        .collect::<Result<_, _>>()
+        .expect("tables");
+    tables
+        .into_iter()
+        .map(|table| {
+            let mut statement = connection.prepare(&format!("SELECT * FROM \"{table}\"")).expect("rows");
+            let columns = statement.column_count();
+            let mut rows: Vec<String> = statement
+                .query_map([], |row| {
+                    (0..columns)
+                        .map(|column| row.get_ref(column).map(|value| format!("{value:?}")))
+                        .collect::<Result<Vec<_>, _>>()
+                        .map(|values| values.join("|"))
+                })
+                .expect("rows")
+                .collect::<Result<_, _>>()
+                .expect("rows");
+            rows.sort();
+            (table, rows)
+        })
+        .collect()
+}
+
+/// The process the hard-interruption test kills: it reopens the parent's
+/// store and runs the importer's window rebind until it holds at the armed
+/// step. Without the parent's specification it does nothing.
+#[test]
+fn seam_physical_route_window_rebind_kill_child() {
+    let Ok(spec) = std::env::var(REBIND_KILL_CHILD) else {
+        return;
+    };
+    let spec: serde_json::Value = serde_json::from_str(&spec).expect("child specification");
+    let text = |key: &str| spec[key].as_str().expect(key).to_owned();
+    let step = REBIND_KILL_STEPS
+        .into_iter()
+        .find(|step| format!("{step:?}") == text("step"))
+        .expect("armed step");
+    let store = HubStore::initialize(text("data")).expect("store");
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let fixture = Fixture {
+        _temporary: tempfile::Builder::new().tempdir_in(text("scratch")).expect("placeholder"),
+        store,
+        binding: serde_json::from_value(spec["binding"].clone()).expect("binding"),
+        car: project_vehicle(&base_history(), CAR).expect("projection").snapshot.cars[0].clone(),
+        gate,
+        cursor_key: CursorKey::from_bytes([43; 32]),
+    };
+    crate::db::hold_window_rebind_at(step, std::path::PathBuf::from(text("marker")));
+    let outcome = rebind_window(&fixture, &successor_history(), T + 3 * HOUR, false);
+    panic!("the rebind was never held at {step:?}: {:?}", outcome.map(|_| ()));
+}
+
+/// DEC-151 follow-up (M03-T24, REV-CX-M03-T24 findings 1 and 2): the
+/// importer's window rebind runs in a child process that is killed (SIGKILL,
+/// no unwinding) at each step, then the store is reopened as the Hub starts.
+/// SQLite recovers the open transaction and startup recovery reclaims the
+/// killed generation's staging; the frozen prior leaves no file. Killed
+/// before the commit, the store holds the old window lineage and catalogue
+/// exactly, and the next import rebinds; killed after it, the store holds
+/// the complete new base and seam, and the next import is a successor.
+/// Either way the Hub still collects and 1.4 clients are served.
+#[test]
+fn seam_physical_route_import_after_windows_killed_rebind_recovers_on_reopening() {
+    use std::os::unix::process::ExitStatusExt;
+    let history = successor_history();
+    for step in REBIND_KILL_STEPS {
+        let (fixture, window_lineage) = window_only_fixture();
+        let before = client(&fixture);
+        let catalogue_before = catalogue_rows(&fixture.store);
+        let Fixture { _temporary: temporary, store, binding, car, gate, cursor_key } = fixture;
+        drop(gate);
+        drop(store);
+        let scratch = crate::private_tempdir().expect("scratch");
+        let child_temporary = scratch.path().join("tmp");
+        std::fs::create_dir(&child_temporary).expect("child temporary directory");
+        let marker = scratch.path().join("held");
+        let log_path = scratch.path().join("child.log");
+        let log = std::fs::File::create(&log_path).expect("child log");
+        let spec = serde_json::json!({
+            "step": format!("{step:?}"),
+            "data": temporary.path(),
+            "binding": &binding,
+            "marker": &marker,
+            "scratch": scratch.path(),
+        });
+        let mut child = std::process::Command::new(std::env::current_exe().expect("test executable"))
+            .args([
+                "--exact",
+                &this_module_test("seam_physical_route_window_rebind_kill_child"),
+                "--test-threads=1",
+                "--nocapture",
+            ])
+            .env(REBIND_KILL_CHILD, spec.to_string())
+            .env("TMPDIR", &child_temporary)
+            .env("SQLITE_TMPDIR", &child_temporary)
+            .stdin(std::process::Stdio::null())
+            .stdout(log.try_clone().expect("child log"))
+            .stderr(log)
+            .spawn()
+            .expect("child");
+        let started = std::time::Instant::now();
+        while !marker.exists() {
+            if let Some(status) = child.try_wait().expect("child") {
+                panic!(
+                    "{step:?}: the child ended ({status}) before the hold:\n{}",
+                    std::fs::read_to_string(&log_path).unwrap_or_default()
+                );
+            }
+            assert!(started.elapsed() < std::time::Duration::from_secs(600), "{step:?}: never held");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        child.kill().expect("kill");
+        let status = child.wait().expect("child");
+        assert_eq!(status.signal(), Some(9), "{step:?}: killed without unwinding");
+        let left: Vec<_> = std::fs::read_dir(&child_temporary)
+            .expect("child temporary directory")
+            .map(|entry| entry.expect("entry").file_name())
+            .collect();
+        assert!(left.is_empty(), "{step:?}: the killed process left {left:?} in its temporary directory");
+
+        // The Hub starts again on the same store.
+        let store = HubStore::initialize(temporary.path()).expect("the store reopens");
+        let gate = store.try_acquire_publication_gate().expect("gate");
+        let fixture = Fixture { _temporary: temporary, store, binding, car, gate, cursor_key };
+        {
+            let connection = fixture.store.open().expect("catalogue");
+            let integrity: String =
+                connection.query_row("PRAGMA integrity_check", [], |row| row.get(0)).expect("integrity");
+            assert_eq!(integrity, "ok", "{step:?}");
+            let staging: i64 = connection
+                .query_row("SELECT COUNT(*) FROM import_generations WHERE status = 'staging'", [], |row| {
+                    row.get(0)
+                })
+                .expect("generations");
+            assert_eq!(staging, 0, "{step:?}: the killed generation is recovered");
+        }
+        let spool = fixture._temporary.path().join("import-spool/.projection-state/v1");
+        let runs: Vec<_> = std::fs::read_dir(&spool)
+            .map(|entries| entries.map(|entry| entry.expect("entry").file_name()).collect())
+            .unwrap_or_default();
+        assert!(runs.is_empty(), "{step:?}: no staging run survives: {runs:?}");
+
+        let root = crate::private_tempdir().expect("stage root");
+        let h4 = HUB_ID_BASE + 40;
+        if step == crate::db::WindowRebindStep::Committed {
+            // The complete new base and seam.
+            assert!(matches!(route(&fixture), Ok(DirectImportRoute::Successor)), "{step:?}");
+            let rebound = client(&fixture);
+            for id in [10, 12, 13, HUB_ID_BASE + 1] {
+                assert!(rebound.drives.contains_key(&id), "{step:?}: clients hold drive {id}");
+            }
+            assert!(!rebound.drives.contains_key(&11), "drive 11 lost to H1");
+            assert!(!rebound.drives.contains_key(&(HUB_ID_BASE + 2)), "H2 lost to drive 13");
+            assert!(!rebound.positions.contains_key(&1101), "the seam withdrew the covered position");
+            // The Hub still collects, and the next import is a successor.
+            window(&fixture, 2, T + 4 * HOUR, T + 5 * HOUR);
+            hub_rows(&fixture, &[(h4, T + 4 * HOUR, T + 4 * HOUR + 10 * MINUTE)], &[]);
+            publish_sync_mutations_ahead_of_packs(
+                &fixture.store,
+                &fixture.gate,
+                &fixture.cursor_key,
+                fixture.binding.vehicle_id,
+            )
+            .expect("the collector publishes after the killed import");
+            assert!(client(&fixture).drives.contains_key(&h4), "{step:?}: the window reaches clients");
+            import_both(&fixture, root.path(), "after-kill", &history, T + 6 * HOUR);
+        } else {
+            // The old window lineage and catalogue, exactly.
+            assert_eq!(
+                fixture.store.lineage_manifest_for_vehicle(fixture.binding.vehicle_id).expect("lineage"),
+                Some(window_lineage.clone()),
+                "{step:?}: the window lineage stands"
+            );
+            assert!(
+                !fixture
+                    .store
+                    .source_db_import_projection_state_exists(fixture.binding.vehicle_id)
+                    .expect("state"),
+                "{step:?}: no import state"
+            );
+            let after = client(&fixture);
+            assert_eq!(after.drives, before.drives, "{step:?}: clients keep the window drives");
+            assert_eq!(after.positions, before.positions, "{step:?}: and positions");
+            // The import reserves its base sequence and commits that before
+            // the rebind begins, as the importer does; a reserved sequence is
+            // never reused. Nothing else differs.
+            let catalogue_after = catalogue_rows(&fixture.store);
+            let changed: Vec<_> = catalogue_after
+                .iter()
+                .filter(|(table, _)| table.as_str() != "vehicle_snapshot_sequences")
+                .filter(|(table, rows)| catalogue_before.get(*table) != Some(*rows))
+                .map(|(table, _)| table.as_str())
+                .collect();
+            assert!(changed.is_empty(), "{step:?}: the killed rebind changed {changed:?}");
+            assert!(matches!(route(&fixture), Ok(DirectImportRoute::WindowRebind(_))), "{step:?}");
+            // The Hub still collects, and the next import rebinds.
+            window(&fixture, 2, T + 4 * HOUR, T + 5 * HOUR);
+            window_rows(&fixture, h4, T + 4 * HOUR, T + 4 * HOUR + 10 * MINUTE, T + 4 * HOUR + 5 * MINUTE);
+            first_import_after_windows(&fixture, root.path(), &history, T + 6 * HOUR, true, false)
+                .expect("the next import completes the rebind");
+        }
+        let lineage = client(&fixture);
+        for id in [10, 12, 13, HUB_ID_BASE + 1, h4] {
+            assert!(lineage.drives.contains_key(&id), "{step:?}: clients hold drive {id}");
+        }
+        assert!(lineage.positions.contains_key(&(HUB_ID_BASE + 1)), "{step:?}: H1's position is kept");
+        let env = paired(&fixture);
+        let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("the 1.4 head is served");
+        assert_eq!(fresh.mirror.drives, lineage.drives, "{step:?}");
+        assert_eq!(fresh.mirror.positions, lineage.positions, "{step:?}");
+    }
 }
