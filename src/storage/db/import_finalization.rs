@@ -1839,7 +1839,76 @@ impl HubStore {
             projection_state,
             Some((car, drives)),
             false,
-            Some(expected),
+            Some(BaseReplacement::Import(expected)),
+        )
+    }
+
+    /// Whether the vehicle's V2 base is one the collector made before any
+    /// import (DEC-150): bound to the `owner_api_compat` source, with no
+    /// import projection state, no legacy import inventory and no recorded
+    /// seam decision. The first import may rebind such a base once.
+    pub(crate) fn window_only_v2_base_is_rebindable(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<bool, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let connection = self.open()?;
+        window_only_v2_base_in_connection(&connection, &vehicle_id.to_string())
+    }
+
+    /// The first import onto a window-only base (DEC-150): retires the
+    /// collector's lineage `expected` and publishes the import's base in its
+    /// place, in one transaction. The Hub's rows are kept: their car id
+    /// becomes the import's, and every Hub-range row is journalled again as
+    /// an unpublished upsert, so the successor publication that follows under
+    /// the same gate plans the seam and re-sends them as deltas on this base.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn finalize_import_generation_rebinding_window_base_with_materialisation(
+        &self,
+        _gate: &PublicationGate,
+        expected: &LineageManifestV2,
+        run_id: Uuid,
+        source_id: Uuid,
+        vehicle_id: Uuid,
+        car_id: i64,
+        updated_at_ms: i64,
+        manifest: &SyncManifest,
+        fingerprint: Sha256Digest,
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
+        binding: &ProjectionBinding,
+        projection_state: &SourceDbProjectionState,
+        car: &ProjectionCar,
+        drives: &[ProjectionDrive],
+    ) -> Result<(), StoreError> {
+        let current = self
+            .lineage_manifest_for_vehicle(vehicle_id)?
+            .ok_or(StoreError::LineageCatalogConflict)?;
+        if serde_json::to_vec(&current).map_err(StoreError::SerializeManifest)?
+            != serde_json::to_vec(expected).map_err(StoreError::SerializeManifest)?
+            || expected.schema != HUB_PROJECTION_SCHEMA_V2
+            || expected.installation_id != binding.installation_id
+            || expected.vehicle_id != binding.vehicle_id
+            || manifest.snapshot_id == expected.base.snapshot_id
+            || manifest.head_sequence <= expected.head_sequence
+        {
+            return Err(StoreError::LineageCatalogConflict);
+        }
+        self.finalize_import_generation_with_projection_state_inner(
+            run_id,
+            source_id,
+            vehicle_id,
+            car_id,
+            updated_at_ms,
+            manifest,
+            fingerprint,
+            geofences,
+            binding,
+            projection_state,
+            Some((car, drives)),
+            false,
+            Some(BaseReplacement::Window(expected)),
         )
     }
 
@@ -1858,7 +1927,7 @@ impl HubStore {
         projection_state: &SourceDbProjectionState,
         materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
         retain_legacy_inventory: bool,
-        replacement: Option<&LineageManifestV2>,
+        replacement: Option<BaseReplacement<'_>>,
     ) -> Result<(), StoreError> {
         if run_id.is_nil()
             || source_id.is_nil()
@@ -1884,9 +1953,18 @@ impl HubStore {
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(StoreError::Begin)?;
-            // A publication that does not plan the seam may not publish over
-            // the Hub's own collection (design M03-SEAM-R3, section 4).
-            refuse_unplanned_import_seam_in_transaction(&transaction, &vehicle_id.to_string())?;
+            if let Some(BaseReplacement::Window(_)) = replacement {
+                // The rebind keeps the Hub's collection for the successor
+                // that plans the seam under the same gate (DEC-150).
+                if !window_only_v2_base_in_connection(&transaction, &vehicle_id.to_string())? {
+                    return Err(StoreError::LineageCatalogConflict);
+                }
+                rebind_window_rows_in_transaction(&transaction, vehicle_id, car_id)?;
+            } else {
+                // A publication that does not plan the seam may not publish
+                // over the Hub's own collection (design M03-SEAM-R3, section 4).
+                refuse_unplanned_import_seam_in_transaction(&transaction, &vehicle_id.to_string())?;
+            }
             let (encoded, base_last_observation_id, base_updated_at_ms): (String, i64, i64) =
                 transaction
                     .query_row(
@@ -1918,15 +1996,24 @@ impl HubStore {
                     car,
                     drives,
                     ImportedProjectionRows::Attached,
-                    if replacement.is_some() {
+                    if let Some(BaseReplacement::Import(_)) = replacement {
                         PriorImportedDriveRows::Durable
                     } else {
                         PriorImportedDriveRows::None
                     },
                 )?;
+                if let Some(BaseReplacement::Window(_)) = replacement {
+                    withdraw_rebound_seam_losers_in_transaction(&transaction, vehicle_id, drives)?;
+                }
             }
-            if let Some(expected) = replacement {
-                retire_import_lineage_in_transaction(&transaction, expected, binding)?;
+            match replacement {
+                Some(BaseReplacement::Import(expected)) => {
+                    retire_import_lineage_in_transaction(&transaction, expected, binding)?;
+                }
+                Some(BaseReplacement::Window(expected)) => {
+                    retire_lineage_in_transaction(&transaction, expected, None)?;
+                }
+                None => {}
             }
             publish_manifest_in_transaction(&transaction, manifest, Some(binding))?;
             promote_imported_open_session_in_transaction(
@@ -2850,11 +2937,172 @@ fn reconcile_imported_materialisation_in_transaction(
     )
 }
 
+/// The base an import finalisation retires.
+#[derive(Clone, Copy)]
+enum BaseReplacement<'a> {
+    /// A verified import lineage past its pack capacity.
+    Import(&'a LineageManifestV2),
+    /// The collector's base on a Hub that never imported (DEC-150).
+    Window(&'a LineageManifestV2),
+}
+
+/// The rebinding base carries every source drive, but its materialisation
+/// applied the seam to the Hub's rows (DEC-150): a source drive that lost is
+/// not stored. Clients of the new base hold it, so it is journalled as an
+/// unpublished tombstone, published ahead of the successor's packs like the
+/// seam's other removals.
+fn withdraw_rebound_seam_losers_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    drives: &[ProjectionDrive],
+) -> Result<(), StoreError> {
+    let vehicle_key = vehicle_id.to_string();
+    let mut stored = transaction
+        .prepare("SELECT 1 FROM materialised_drives WHERE vehicle_id = ?1 AND drive_id = ?2")
+        .map_err(StoreError::Query)?;
+    for drive in drives {
+        if !stored
+            .exists(params![vehicle_key.as_str(), drive.id])
+            .map_err(StoreError::Query)?
+        {
+            record_sync_mutation_in_transaction(
+                transaction,
+                vehicle_id,
+                "drive",
+                drive.id,
+                drive.car_id,
+                "tombstone",
+                "{}",
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// See [`HubStore::window_only_v2_base_is_rebindable`].
+fn window_only_v2_base_in_connection(
+    connection: &Connection,
+    vehicle_key: &str,
+) -> Result<bool, StoreError> {
+    connection
+        .query_row(
+            concat!(
+                "SELECT EXISTS(SELECT 1 FROM v2_base_bindings AS bindings
+                                 JOIN sources ON sources.source_id = bindings.account_id
+                                WHERE bindings.vehicle_id = ?1
+                                  AND sources.source_kind = 'owner_api_compat')
+                    AND NOT EXISTS(SELECT 1 FROM ",
+                crate::db::import_table_names::import_projection_state_heads_table!(),
+                " WHERE vehicle_id = ?1)
+                    AND NOT EXISTS(SELECT 1 FROM ",
+                crate::db::import_table_names::import_projection_rows_table!(),
+                " WHERE vehicle_id = ?1)
+                    AND NOT EXISTS(SELECT 1 FROM import_seam_links WHERE vehicle_id = ?1)"
+            ),
+            params![vehicle_key],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::LineageCatalog)
+}
+
+/// Keeps the Hub's rows of a window-only vehicle for the import that rebinds
+/// its base (DEC-150): every stored row takes the import's car id, and every
+/// Hub-range row is journalled again as an unpublished upsert. Mutations the
+/// retired lineage never published are superseded by those upserts.
+fn rebind_window_rows_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    car_id: i64,
+) -> Result<(), StoreError> {
+    use crate::db::hub_ids::{HUB_ID_BASE, HUB_ID_MAX};
+    let vehicle_key = vehicle_id.to_string();
+    transaction
+        .execute(
+            "UPDATE sync_mutations SET published = 1, claimed_until_ms = 0
+              WHERE vehicle_id = ?1 AND published = 0",
+            params![vehicle_key.as_str()],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    // Parents before their children, as the collector journals them.
+    for (table, id_column, json_column, entity, has_car_id) in [
+        ("materialised_drives", "drive_id", "drive_json", "drive", true),
+        ("materialised_charges", "charge_id", "charge_json", "charge", true),
+        ("materialised_positions", "position_id", "position_json", "position", true),
+        ("materialised_charge_samples", "sample_id", "sample_json", "charge_sample", false),
+        ("materialised_states", "state_id", "state_json", "state", true),
+        ("materialised_updates", "update_id", "update_json", "update", true),
+    ] {
+        let rows = {
+            let mut statement = transaction
+                .prepare(&format!(
+                    "SELECT {id_column}, {json_column} FROM {table}
+                      WHERE vehicle_id = ?1 ORDER BY {id_column} ASC"
+                ))
+                .map_err(StoreError::Query)?;
+            statement
+                .query_map(params![vehicle_key.as_str()], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(StoreError::Query)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(StoreError::Query)?
+        };
+        for (id, json) in rows {
+            let json = if has_car_id {
+                let mut value: serde_json::Value =
+                    serde_json::from_str(&json).map_err(StoreError::DeserializeLifecycleRow)?;
+                value
+                    .as_object_mut()
+                    .ok_or(StoreError::InvalidLifecycleSession)?
+                    .insert("car_id".to_owned(), serde_json::Value::from(car_id));
+                let json =
+                    serde_json::to_string(&value).map_err(StoreError::SerializeLifecycleRow)?;
+                transaction
+                    .execute(
+                        &format!(
+                            "UPDATE {table} SET car_id = ?3, {json_column} = ?4
+                              WHERE vehicle_id = ?1 AND {id_column} = ?2"
+                        ),
+                        params![vehicle_key.as_str(), id, car_id, json],
+                    )
+                    .map_err(StoreError::LifecycleWrite)?;
+                json
+            } else {
+                json
+            };
+            if (HUB_ID_BASE..=HUB_ID_MAX).contains(&id) {
+                record_sync_mutation_in_transaction(
+                    transaction,
+                    vehicle_id,
+                    entity,
+                    id,
+                    car_id,
+                    "upsert",
+                    &json,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Preserve the exact import checkpoint before changing its active base.
 fn retire_import_lineage_in_transaction(
     tx: &Transaction<'_>,
     expected: &LineageManifestV2,
     binding: &ProjectionBinding,
+) -> Result<(), StoreError> {
+    retire_lineage_in_transaction(tx, expected, Some(binding))
+}
+
+/// Retires the lineage `expected` into an expiring checkpoint. With
+/// `binding`, an import lineage whose binding it must match and which no
+/// collector span may extend; without, the collector's window-only lineage
+/// (DEC-150), bound as `expected` says, whose live spans go with it.
+fn retire_lineage_in_transaction(
+    tx: &Transaction<'_>,
+    expected: &LineageManifestV2,
+    binding: Option<&ProjectionBinding>,
 ) -> Result<(), StoreError> {
     let vehicle = expected.vehicle_id.to_string();
     let current: Option<(String, i64, String)> = tx
@@ -2911,6 +3159,19 @@ fn retire_import_lineage_in_transaction(
         "SELECT snapshot_id,installation_id,account_id,generation,selected_car_id FROM v2_base_bindings WHERE vehicle_id=?1",
         params![&vehicle], |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)),
     ).map_err(StoreError::LineageCatalog)?;
+    let Some(binding) = binding else {
+        if (&stored.0, &stored.1, &stored.2, stored.3)
+            != (
+                &expected.base.snapshot_id.to_string(),
+                &expected.installation_id.to_string(),
+                &expected.account_id.to_string(),
+                i64::try_from(expected.generation).map_err(|_| StoreError::SequenceTooLarge)?,
+            )
+        {
+            return Err(StoreError::LineageCatalogConflict);
+        }
+        return retire_checked_lineage_in_transaction(tx, expected);
+    };
     if stored
         != (
             expected.base.snapshot_id.to_string(),
@@ -2933,6 +3194,16 @@ fn retire_import_lineage_in_transaction(
     if live {
         return Err(StoreError::LineageCatalogConflict);
     }
+    retire_checked_lineage_in_transaction(tx, expected)
+}
+
+/// Moves a lineage the caller has matched against the catalogue into an
+/// expiring checkpoint and removes it; its live spans cascade with its deltas.
+fn retire_checked_lineage_in_transaction(
+    tx: &Transaction<'_>,
+    expected: &LineageManifestV2,
+) -> Result<(), StoreError> {
+    let vehicle = expected.vehicle_id.to_string();
     let now = retired_lineage_clock_ms()?;
     let expires = now
         .checked_add(RETIRED_LINEAGE_PACK_RETENTION_MS)
