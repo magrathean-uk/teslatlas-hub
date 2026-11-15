@@ -635,6 +635,7 @@ async fn capture_direct_import_snapshot(
     source_id: Uuid,
     vehicle_id: Uuid,
     successor: bool,
+    window_rebind: bool,
     legacy_bridge: bool,
     capture_physical: bool,
     progress: SourceDbMigrationProgressReporter,
@@ -672,7 +673,7 @@ async fn capture_direct_import_snapshot(
     }
     let capture_factory =
         |state_limits| -> Result<SourceDbProjectionStateCapture, SourceDbDirectError> {
-            direct_projection_state_capture(
+            let capture = direct_projection_state_capture(
                 store,
                 publication_gate,
                 run_id,
@@ -681,7 +682,11 @@ async fn capture_direct_import_snapshot(
                 selected_car_id,
                 successor,
                 state_limits,
-            )
+            )?;
+            if window_rebind {
+                return Ok(capture.with_rebind_seam_lens(store.import_seam_capture_lens(vehicle_id)?));
+            }
+            Ok(capture)
         };
     if successor {
         capture_direct_successor_diff_with_projection_state(
@@ -877,31 +882,23 @@ async fn import_from_postgres_with_updates_capture_policy(
     progress: SourceDbMigrationProgressReporter,
     cutover_policy: CaptureCutoverPolicy,
 ) -> Result<CapturedSourceDbImport, SourceDbImportError> {
-    let mut publication_gate = store.acquire_publication_gate().await?;
-    // The first import onto a window-only base rebinds it, then runs again,
-    // under the same gate, as the successor that plans the seam and re-sends
-    // the Hub's rows as deltas on the new base (DEC-150). It rebinds once.
-    for after_rebind in [false, true] {
-        match import_pass(
-            store,
-            source,
-            password,
-            cursor_key,
-            request,
-            limits,
-            prepare_schema_22,
-            progress.clone(),
-            cutover_policy,
-            publication_gate,
-            after_rebind,
-        )
-        .await?
-        {
-            ImportPass::Captured(captured) => return Ok(*captured),
-            ImportPass::Rebound(gate) => publication_gate = gate,
-        }
+    let publication_gate = store.acquire_publication_gate().await?;
+    match import_pass(
+        store,
+        source,
+        password,
+        cursor_key,
+        request,
+        limits,
+        prepare_schema_22,
+        progress,
+        cutover_policy,
+        publication_gate,
+    )
+    .await?
+    {
+        ImportPass::Captured(captured) => Ok(*captured),
     }
-    Err(crate::db::StoreError::ImportGenerationConflict.into())
 }
 
 /// How a direct import goes on from the vehicle's V2 head.
@@ -914,8 +911,8 @@ enum DirectImportRoute {
     /// The exact legacy direct-import shape, upgraded in place.
     LegacyBridge,
     /// The collector's base on a Hub that never imported (DEC-150): the
-    /// import publishes its base in that one's place, keeping the Hub's rows
-    /// for the successor pass that follows under the same gate.
+    /// import publishes its base in that one's place, then the seam on it
+    /// from the same capture, under the same gate.
     WindowRebind(Box<crate::protocol::LineageManifestV2>),
 }
 
@@ -946,11 +943,59 @@ fn direct_import_route(
     Err(SourceDbImportError::LegacyDirectImportRebaseRequired)
 }
 
-/// One pass of an import: what it published, or the gate back after it
-/// rebound a window-only base (DEC-150).
+/// The seam on a base the first import rebound (DEC-150), from the
+/// rebind's own sealed capture (base capture with the seam's lens): that
+/// capture becomes the successor of the base it published, so the seam's
+/// forms and the Hub's rows are its only deltas. Published under the
+/// rebind's open generation `run.run_id`.
+fn publish_rebound_window_seam(
+    store: &HubStore,
+    publication_gate: &PublicationGate,
+    cursor_key: &CursorKey,
+    run: PlannedSuccessorRun<'_>,
+    binding: &ProjectionBinding,
+    selected_car: &ProjectionCar,
+    capture: SourceDbProjectionStateCapture,
+) -> Result<(PublishedDirectSuccessor, DeltaSeam), SourceDbImportError> {
+    let prior = store.source_db_import_projection_state_lookup(
+        binding.vehicle_id,
+        binding.account_id,
+        binding.selected_car_id,
+    )?;
+    let mut capture = capture.into_rebound_successor(Box::new(prior));
+    let route = route_direct_successor(
+        store,
+        publication_gate,
+        cursor_key,
+        binding.vehicle_id,
+        binding.selected_car_id,
+        run.materialised_drives,
+        run.materialised_charges,
+        &mut capture,
+        binding,
+        selected_car,
+        ProtocolLimits::default().max_chunks,
+        |_| Ok(()),
+    )?;
+    let DirectSuccessorRoute::Deltas(mut planned) = route else {
+        return Err(crate::db::StoreError::ImportGenerationConflict.into());
+    };
+    let published = publish_planned_direct_successor(
+        store,
+        publication_gate,
+        cursor_key,
+        run,
+        binding,
+        selected_car,
+        capture,
+        &mut planned,
+    )?;
+    Ok((published, planned.seam))
+}
+
+/// What one import published.
 enum ImportPass {
     Captured(Box<CapturedSourceDbImport>),
-    Rebound(PublicationGate),
 }
 
 impl From<CapturedSourceDbImport> for ImportPass {
@@ -971,7 +1016,6 @@ async fn import_pass(
     progress: SourceDbMigrationProgressReporter,
     cutover_policy: CaptureCutoverPolicy,
     publication_gate: PublicationGate,
-    after_rebind: bool,
 ) -> Result<ImportPass, SourceDbImportError> {
     tracing::info!(
         host = source.host(),
@@ -1040,7 +1084,7 @@ async fn import_pass(
     let successor = prior_v2_head.is_some() && !legacy_bridge && !window_rebind;
     // Only a successor plans the import seam ahead of its packs; a base or
     // the legacy bridge may not publish over the Hub's own collection. A
-    // rebind leaves it to the successor pass under the same gate.
+    // rebind plans it on its new base before the import returns.
     if !successor && !window_rebind {
         store.refuse_unplanned_import_seam(vehicle.vehicle_id)?;
     }
@@ -1081,6 +1125,7 @@ async fn import_pass(
         registered_source.source_id,
         vehicle.vehicle_id,
         successor,
+        window_rebind,
         legacy_bridge,
         prepare_schema_22,
         progress,
@@ -1213,10 +1258,7 @@ async fn import_pass(
         }));
     }
     let transport_rows = transport_row_count(&direct.chunks)?;
-    // The pass after a rebind always publishes: the source it re-reads is
-    // the one the rebind recorded, but the Hub's rows still wait for it.
     if !window_rebind
-        && !after_rebind
         && store.source_fingerprint_matches(vehicle.vehicle_id, direct.fingerprint)?
     {
         promote_unchanged_direct_import(
@@ -1368,7 +1410,14 @@ async fn import_pass(
             }));
         }
     }
-    let projection_state = capture.into_state();
+    // The rebind transfers its base state before its seam: the seam rows
+    // its lens held wait outside it (DEC-150).
+    let seam_held = if window_rebind {
+        Some(capture.take_seam_retained()?)
+    } else {
+        None
+    };
+    let projection_state = capture.state();
     let manifest = match signed_full_snapshot_manifest(
         &binding,
         capture_snapshot_id,
@@ -1489,10 +1538,70 @@ async fn import_pass(
         return Err(error.into());
     }
     direct.keep_chunks();
-    run_guard.disarm();
-    if window_rebind {
-        return Ok(ImportPass::Rebound(publication_gate));
+    if let Some(held) = seam_held {
+        capture.restore_seam_retained(held)?;
+        // The rebound base is published and its generation stays open: the
+        // seam on it goes out from this capture now (DEC-150). If this
+        // fails, the generation is aborted and the next import, a successor
+        // whose source fingerprint the rebind left pending, publishes it.
+        let selected_car = direct
+            .selected_car
+            .clone()
+            .ok_or(SourceDbImportError::ProjectionStateCaptureMissing)?;
+        let (fingerprint, _) = seam_folded_fingerprint_and_plan(
+            store,
+            &publication_gate,
+            vehicle.vehicle_id,
+            selected_car_id,
+            &materialised_drives,
+            &materialised_charges,
+            direct.fingerprint,
+        );
+        let (published, seam) = publish_rebound_window_seam(
+            store,
+            &publication_gate,
+            cursor_key,
+            PlannedSuccessorRun {
+                run_id,
+                source_id: registered_source.source_id,
+                imported_at_ms: request.imported_at_ms,
+                base_snapshot_id: capture_snapshot_id,
+                minimum_free_bytes: limits.minimum_free_bytes,
+                fingerprint,
+                geofences: &direct.geofences,
+                materialised_car: &materialised_car,
+                materialised_drives: &materialised_drives,
+                materialised_charges: &materialised_charges,
+            },
+            &binding,
+            &selected_car,
+            capture,
+        )?;
+        run_guard.disarm();
+        return Ok(ImportPass::from(CapturedSourceDbImport {
+            report: SourceDbImportReport {
+                source_id: registered_source.source_id,
+                vehicle_id: vehicle.vehicle_id,
+                snapshot_id: capture_snapshot_id,
+                sequence: published.sequence,
+                projection: direct.report,
+                projected_rows: transport_rows
+                    .checked_add(published.projected_rows)
+                    .ok_or(SourceDbImportError::DirectDeltaBatchOverflow)?,
+                skipped: false,
+                cutover_unsettled: cutover.cutover_unsettled,
+                seam_skipped: seam.skipped,
+            },
+            binding: binding.clone(),
+            updates_v2_2,
+            atomic_schema_22: None,
+            physical_stage,
+            physical_seam: Some(seam.packs),
+            physical_source,
+            publication_gate,
+        }));
     }
+    run_guard.disarm();
     Ok(ImportPass::from(CapturedSourceDbImport {
         report: SourceDbImportReport {
             source_id: registered_source.source_id,

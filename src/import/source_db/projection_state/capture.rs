@@ -224,6 +224,46 @@ impl SourceDbProjectionStateCapture {
         self
     }
 
+    /// Gives the base capture of the first import onto a window-only Hub
+    /// the import seam's lens (DEC-150), so the rows the seam may withdraw
+    /// or re-form are held for [`Self::into_rebound_successor`].
+    pub(crate) fn with_rebind_seam_lens(
+        mut self,
+        lens: crate::import::source_db::seam::SeamCaptureLens,
+    ) -> Self {
+        self.seam_lens = Some(lens);
+        self
+    }
+
+    /// Sets the held seam rows aside while the rebind transfers its base
+    /// state (DEC-150); [`Self::restore_seam_retained`] puts them back.
+    pub(crate) fn take_seam_retained(
+        &mut self,
+    ) -> Result<SeamRetainedRows, SourceDbProjectionStateError> {
+        self.state.take_seam_retained()
+    }
+
+    /// Puts the rows [`Self::take_seam_retained`] set aside back.
+    pub(crate) fn restore_seam_retained(
+        &mut self,
+        rows: SeamRetainedRows,
+    ) -> Result<(), SourceDbProjectionStateError> {
+        self.state.restore_seam_retained(rows)
+    }
+
+    /// The rebind's sealed base capture as the successor of the base it
+    /// published (DEC-150): the same state and held seam rows, compared with
+    /// `prior` (that base's durable state), so the seam's forms are its only
+    /// changes and no second source read is needed.
+    pub(crate) fn into_rebound_successor(
+        mut self,
+        prior: Box<dyn PriorProjectionStateLookup>,
+    ) -> Self {
+        self.prior = Some(prior);
+        self.mode = SourceDbProjectionStateCaptureMode::Successor;
+        self
+    }
+
     /// Gives the seam's lens every source drive and charge before any child
     /// is recorded (M03-T21).
     pub(crate) fn note_seam_source_sessions(

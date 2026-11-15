@@ -778,10 +778,93 @@ fn import_base_manifest(
     .expect("import base manifest")
 }
 
-/// The first import onto the window-only base, as the importer's two passes
-/// run it under one gate: the base in the window base's place, then the
-/// successor that plans the seam and re-sends the Hub's rows; then the 1.4
-/// head from the second pass's stage.
+/// The rebind's base capture of `projected`, as the importer takes it: a
+/// base capture holding the seam's lens (DEC-150).
+fn rebind_capture(fixture: &Fixture, run_id: Uuid, projected: &SourceDbProjection) -> SourceDbProjectionStateCapture {
+    let binding = &fixture.binding;
+    let mut capture = direct_projection_state_capture(
+        &fixture.store,
+        &fixture.gate,
+        run_id,
+        binding.vehicle_id,
+        binding.account_id,
+        CAR,
+        false,
+        state_limits(),
+    )
+    .expect("capture")
+    .with_rebind_seam_lens(fixture.store.import_seam_capture_lens(binding.vehicle_id).expect("lens"));
+    super::super::seam_repair_packs::note_source_sessions(&mut capture, projected);
+    for car in &projected.snapshot.cars {
+        capture.record_car(car).expect("car");
+    }
+    for drive in &projected.snapshot.drives {
+        capture.record_drive(drive).expect("drive");
+    }
+    for position in &projected.snapshot.positions {
+        capture.record_position(position).expect("position");
+    }
+    for charge in &projected.snapshot.charges {
+        capture.record_charge(charge).expect("charge");
+    }
+    for sample in &projected.snapshot.charge_samples {
+        capture.record_charge_sample(CAR, sample).expect("charge sample");
+    }
+    capture.seal().expect("seal");
+    capture
+}
+
+/// The rebind's first commit: the import's base in the window base's place,
+/// its generation left open for the seam. Returns that generation, the
+/// projection and the rebind's capture.
+fn rebind_window_base(
+    fixture: &Fixture,
+    history: &SourceDbHistory,
+    at_ms: i64,
+    two_packs: bool,
+) -> (Uuid, SourceDbProjection, SourceDbProjectionStateCapture) {
+    let Ok(DirectImportRoute::WindowRebind(expected)) = route(fixture) else {
+        panic!("a window-only base is rebound");
+    };
+    let projected = project_vehicle(history, CAR).expect("projection");
+    let run_id = begin_run(fixture, at_ms);
+    let mut capture = rebind_capture(fixture, run_id, &projected);
+    let held = capture.take_seam_retained().expect("seam rows aside");
+    let sequence = fixture
+        .store
+        .reserve_next_full_snapshot_sequence(&fixture.gate, fixture.binding.vehicle_id)
+        .expect("base sequence");
+    let manifest = import_base_manifest(fixture, &projected.snapshot, sequence, two_packs);
+    fixture
+        .store
+        .finalize_import_generation_rebinding_window_base_with_materialisation(
+            &fixture.gate,
+            &expected,
+            run_id,
+            fixture.binding.account_id,
+            fixture.binding.vehicle_id,
+            CAR,
+            at_ms,
+            &manifest,
+            Sha256Digest::of_bytes(b"import base after windows"),
+            &[],
+            &fixture.binding,
+            capture.state(),
+            &fixture.car,
+            &projected.snapshot.drives,
+        )
+        .expect("rebind finalisation");
+    capture.restore_seam_retained(held).expect("seam rows back");
+    assert!(
+        matches!(route(fixture), Ok(DirectImportRoute::Successor)),
+        "after the rebind the vehicle is a successor"
+    );
+    (run_id, projected, capture)
+}
+
+/// The first import onto the window-only base, as the importer runs it
+/// under one gate: the rebind, then the seam from the same capture, then the
+/// 1.4 head.
 fn first_import_after_windows(
     fixture: &Fixture,
     root: &Path,
@@ -790,45 +873,38 @@ fn first_import_after_windows(
     physical: bool,
     two_packs: bool,
 ) -> Result<(), crate::db::StoreError> {
-    let Ok(DirectImportRoute::WindowRebind(expected)) = route(fixture) else {
-        panic!("a window-only base is rebound");
-    };
-    let projected = project_vehicle(history, CAR).expect("projection");
-    let run_id = begin_run(fixture, at_ms);
-    let state = capture(fixture, run_id, false, &projected).into_state();
-    let sequence = fixture
+    let (run_id, projected, capture) = rebind_window_base(fixture, history, at_ms, two_packs);
+    let base_snapshot_id = fixture
         .store
-        .reserve_next_full_snapshot_sequence(&fixture.gate, fixture.binding.vehicle_id)
-        .expect("base sequence");
-    let manifest = import_base_manifest(fixture, &projected.snapshot, sequence, two_packs);
-    fixture.store.finalize_import_generation_rebinding_window_base_with_materialisation(
+        .v2_head(fixture.binding.vehicle_id)
+        .expect("head")
+        .expect("base")
+        .0;
+    let seam = match publish_rebound_window_seam(
+        &fixture.store,
         &fixture.gate,
-        &expected,
-        run_id,
-        fixture.binding.account_id,
-        fixture.binding.vehicle_id,
-        CAR,
-        at_ms,
-        &manifest,
-        Sha256Digest::of_bytes(b"import base after windows"),
-        &[],
+        &fixture.cursor_key,
+        PlannedSuccessorRun {
+            run_id,
+            source_id: fixture.binding.account_id,
+            imported_at_ms: at_ms,
+            base_snapshot_id,
+            minimum_free_bytes: 0,
+            fingerprint: Sha256Digest::of_bytes(b"import base after windows"),
+            geofences: &[],
+            materialised_car: &fixture.car,
+            materialised_drives: &projected.snapshot.drives,
+            materialised_charges: &projected.snapshot.charges,
+        },
         &fixture.binding,
-        &state,
         &fixture.car,
-        &projected.snapshot.drives,
-    )
-    .map_err(|error| panic!("rebind finalisation: {error:?}"))
-    .ok();
-    assert!(
-        matches!(route(fixture), Ok(DirectImportRoute::Successor)),
-        "the second pass is the successor"
-    );
-    let mut planned = plan(fixture, &projected);
-    let run_id = begin_run(fixture, at_ms);
-    let capture = capture_everything(fixture, run_id, &projected);
-    publish_captured(fixture, &projected, run_id, capture, &mut planned).expect("planned lineage");
+        capture,
+    ) {
+        Ok((_, seam)) => seam,
+        Err(error) => panic!("rebound seam: {error:?}"),
+    };
     if physical {
-        publish_physical(fixture, history_stage(root, "after-windows", history), Some(&planned.seam.packs))
+        publish_physical(fixture, history_stage(root, "after-windows", history), Some(&seam.packs))
             .expect("physical publication")
             .expect("physical head");
     }
@@ -1245,4 +1321,54 @@ fn seam_physical_route_import_after_windows_rebases_a_window_client_onto_a_multi
     assert_eq!(fresh.mirror.drives, client(&fixture).drives, "the replacement holds the lineage");
     let (status, _) = ask(Sha256Digest::of_bytes(b"never issued").to_string(), window_lineage.head_sequence);
     assert_eq!(status, axum::http::StatusCode::NOT_ACCEPTABLE, "an unknown receipt keeps 406");
+}
+
+/// Review finding 3: the rebind publishes its seam from its own capture, so
+/// no second source read lies between its two commits. If the seam
+/// publication still fails after the rebind's commit, its generation is
+/// aborted; the Hub goes on collecting, and the next import, a successor
+/// whose source fingerprint the rebind left pending, publishes the seam:
+/// the clients end as after an uninterrupted first import.
+#[test]
+fn seam_physical_route_import_after_windows_interrupted_rebind_is_completed_by_the_next_import() {
+    let (fixture, _) = window_only_fixture();
+    let history = successor_history();
+    let (run_id, _, capture) = rebind_window_base(&fixture, &history, T + 3 * HOUR, false);
+    drop(capture);
+    fixture
+        .store
+        .abort_import_generation(run_id)
+        .expect("the failed seam publication's generation is aborted");
+    assert!(
+        !fixture
+            .store
+            .source_fingerprint_matches(
+                fixture.binding.vehicle_id,
+                Sha256Digest::of_bytes(b"import base after windows"),
+            )
+            .expect("fingerprint"),
+        "the rebind left its fingerprint pending: the next import is no unchanged skip"
+    );
+    // The Hub still collects.
+    let h4 = HUB_ID_BASE + 40;
+    window(&fixture, 2, T + 4 * HOUR, T + 5 * HOUR);
+    hub_rows(&fixture, &[(h4, T + 4 * HOUR, T + 4 * HOUR + 10 * MINUTE)], &[]);
+    assert!(client(&fixture).drives.contains_key(&h4), "the next window reaches clients");
+    // The Hub still imports, and that import publishes the seam.
+    assert!(matches!(route(&fixture), Ok(DirectImportRoute::Successor)));
+    let root = crate::private_tempdir().expect("stage root");
+    import_both(&fixture, root.path(), "after-interruption", &history, T + 6 * HOUR);
+    let lineage = client(&fixture);
+    for id in [10, 12, 13, HUB_ID_BASE + 1, h4] {
+        assert!(lineage.drives.contains_key(&id), "clients hold drive {id}");
+    }
+    assert!(!lineage.drives.contains_key(&11), "drive 11 lost to H1");
+    assert!(!lineage.drives.contains_key(&(HUB_ID_BASE + 2)), "H2 lost to drive 13");
+    assert!(!lineage.positions.contains_key(&1101), "the seam withdrew the covered source position");
+    assert!(lineage.positions.contains_key(&(HUB_ID_BASE + 1)), "H1's position is kept");
+    assert!(lineage.positions.contains_key(&(HUB_ID_BASE + 2)), "H2's position is kept");
+    let env = paired(&fixture);
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("the 1.4 head is served");
+    assert_eq!(fresh.mirror.drives, lineage.drives);
+    assert_eq!(fresh.mirror.positions, lineage.positions);
 }

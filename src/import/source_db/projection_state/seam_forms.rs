@@ -14,6 +14,11 @@
 /// dropped when the forms are applied, before the spool is transferred.
 const SEAM_RETAINED_TABLE: &str = "seam_retained";
 
+/// Held seam rows taken out of a state: entity ordinal, id, car id and
+/// canonical payload.
+#[derive(Debug)]
+pub(crate) struct SeamRetainedRows(Vec<(i64, i64, i64, String)>);
+
 /// What the import seam makes of one retained row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SeamForm {
@@ -295,6 +300,73 @@ impl SourceDbProjectionState {
         }
         self.drop_seam_retained(retained)?;
         Ok(applied)
+    }
+
+    /// Takes the held seam rows out of the state, so the state's transfer
+    /// sees only its own tables, for [`Self::restore_seam_retained`]: a
+    /// window rebind (DEC-150) transfers its base state before its seam.
+    pub(crate) fn take_seam_retained(&mut self) -> Result<SeamRetainedRows, SourceDbProjectionStateError> {
+        let retained: bool = self
+            .connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1)",
+                params![SEAM_RETAINED_TABLE],
+                |row| row.get(0),
+            )
+            .map_err(SourceDbProjectionStateError::Sqlite)?;
+        if !retained {
+            return Ok(SeamRetainedRows(Vec::new()));
+        }
+        let rows = {
+            let mut statement = self
+                .connection
+                .prepare(&format!(
+                    "SELECT entity_ordinal, entity_id, car_id, payload_json FROM {SEAM_RETAINED_TABLE}
+                      ORDER BY entity_ordinal, entity_id"
+                ))
+                .map_err(SourceDbProjectionStateError::Sqlite)?;
+            statement
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
+                .map_err(SourceDbProjectionStateError::Sqlite)?
+                .collect::<Result<Vec<(i64, i64, i64, String)>, _>>()
+                .map_err(SourceDbProjectionStateError::Sqlite)?
+        };
+        self.drop_seam_retained(true)?;
+        Ok(SeamRetainedRows(rows))
+    }
+
+    /// Puts rows [`Self::take_seam_retained`] took back.
+    pub(crate) fn restore_seam_retained(
+        &mut self,
+        rows: SeamRetainedRows,
+    ) -> Result<(), SourceDbProjectionStateError> {
+        if rows.0.is_empty() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(&&format!(
+                    "CREATE TABLE IF NOT EXISTS {SEAM_RETAINED_TABLE} (
+                         entity_ordinal INTEGER NOT NULL,
+                         entity_id INTEGER NOT NULL,
+                         car_id INTEGER NOT NULL,
+                         payload_json TEXT NOT NULL,
+                         PRIMARY KEY(entity_ordinal, entity_id)
+                     ) STRICT, WITHOUT ROWID"
+                ))
+            .map_err(SourceDbProjectionStateError::Sqlite)?;
+        let mut insert = self
+            .connection
+            .prepare(&format!(
+                "INSERT INTO {SEAM_RETAINED_TABLE}(entity_ordinal, entity_id, car_id, payload_json)
+                 VALUES (?1, ?2, ?3, ?4)"
+            ))
+            .map_err(SourceDbProjectionStateError::Sqlite)?;
+        for (ordinal, id, car_id, payload) in rows.0 {
+            insert
+                .execute(params![ordinal, id, car_id, payload])
+                .map_err(SourceDbProjectionStateError::Sqlite)?;
+        }
+        Ok(())
     }
 
     fn drop_seam_retained(&self, retained: bool) -> Result<(), SourceDbProjectionStateError> {

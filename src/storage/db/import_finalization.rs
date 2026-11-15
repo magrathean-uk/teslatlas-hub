@@ -1861,9 +1861,10 @@ impl HubStore {
     /// The first import onto a window-only base (DEC-150): retires the
     /// collector's lineage `expected` and publishes the import's base in its
     /// place, in one transaction. The Hub's rows are kept: their car id
-    /// becomes the import's, and every Hub-range row is journalled again as
-    /// an unpublished upsert, so the successor publication that follows under
-    /// the same gate plans the seam and re-sends them as deltas on this base.
+    /// becomes the import's and they are journalled again from the final
+    /// reconciled rows, so the seam publication that follows under the same
+    /// gate and the same generation `run_id` (left open here) re-sends them
+    /// as deltas on this base.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn finalize_import_generation_rebinding_window_base_with_materialisation(
         &self,
@@ -2024,15 +2025,19 @@ impl HubStore {
                 None => {}
             }
             publish_manifest_in_transaction(&transaction, manifest, Some(binding))?;
-            promote_imported_open_session_in_transaction(
-                &transaction,
-                source_id,
-                vehicle_id,
-                car_id,
-                &session,
-                updated_at_ms,
-                Some((base_last_observation_id, base_updated_at_ms)),
-            )?;
+            // A rebind's seam publication promotes the open session under
+            // the same generation, against the state this one began from.
+            if !matches!(replacement, Some(BaseReplacement::Window(_))) {
+                promote_imported_open_session_in_transaction(
+                    &transaction,
+                    source_id,
+                    vehicle_id,
+                    car_id,
+                    &session,
+                    updated_at_ms,
+                    Some((base_last_observation_id, base_updated_at_ms)),
+                )?;
+            }
             replace_source_db_import_projection_state_from_attached_in_transaction(
                 &transaction,
                 vehicle_id,
@@ -2056,14 +2061,25 @@ impl HubStore {
                 )?;
             }
             upsert_geofences_in_transaction(&transaction, vehicle_id, geofences)?;
+            let rebinding = matches!(replacement, Some(BaseReplacement::Window(_)));
+            // A rebind's seam follows in its own publication under the same
+            // generation (DEC-150): until it is out, the source fingerprint
+            // is a pending one no source matches, so an import after an
+            // interrupted rebind publishes the seam instead of skipping.
+            let fingerprint = if rebinding {
+                pending_rebind_fingerprint(fingerprint)
+            } else {
+                fingerprint
+            };
             record_snapshot_fingerprint_in_transaction(&transaction, manifest, fingerprint)?;
-            if transaction
-                .execute(
-                    "DELETE FROM import_generations WHERE run_id = ?1 AND status = 'staging'",
-                    params![run_id.to_string()],
-                )
-                .map_err(StoreError::ImportGeneration)?
-                != 1
+            if !rebinding
+                && transaction
+                    .execute(
+                        "DELETE FROM import_generations WHERE run_id = ?1 AND status = 'staging'",
+                        params![run_id.to_string()],
+                    )
+                    .map_err(StoreError::ImportGeneration)?
+                    != 1
             {
                 return Err(StoreError::ImportGenerationNotFound);
             }
@@ -2952,6 +2968,16 @@ enum BaseReplacement<'a> {
     Import(&'a LineageManifestV2),
     /// The collector's base on a Hub that never imported (DEC-150).
     Window(&'a LineageManifestV2),
+}
+
+/// The source fingerprint a window rebind records until its seam is
+/// published (DEC-150): derived from the source's, never equal to one.
+fn pending_rebind_fingerprint(fingerprint: Sha256Digest) -> Sha256Digest {
+    use sha2::{Digest as _, Sha256};
+    let mut hash = Sha256::new();
+    hash.update(b"teslatlas-hub window rebind pending its seam v1\n");
+    hash.update(fingerprint.as_bytes());
+    Sha256Digest::from_bytes(hash.finalize().into())
 }
 
 /// See [`HubStore::window_only_v2_base_is_rebindable`].
