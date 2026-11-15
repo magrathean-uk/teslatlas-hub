@@ -378,6 +378,44 @@ fn fault_matrix_never_leaves_a_partial_content_pack() {
     }
 }
 
+/// M04-T08: a final directory sync that fails after the write installed a new
+/// content object names that object in its error, for the caller's guarded cleanup;
+/// the same failure over a reused object names nothing, so the object is kept.
+#[test]
+fn a_failed_final_directory_sync_names_only_a_newly_installed_object() {
+    use crate::durability_fault::{DurabilityFaultPoint, inject};
+
+    let temporary = crate::private_tempdir().expect("fault store");
+    let source = snapshot();
+    let writer = ProjectionPackWriter::new(temporary.path());
+    let error = {
+        let _fault = inject(DurabilityFaultPoint::PackFinalDirectoryFsync);
+        writer
+            .write_full_snapshot(&request(&source))
+            .expect_err("the final directory sync fails")
+    };
+    let (sha256, path) = error.installed_object().expect("the new object is named");
+    assert!(path.is_file(), "the writer itself leaves the installed object");
+    assert_eq!(
+        path,
+        temporary.path().join("sha256").join(format!("{sha256}.sqlite.zst")).as_path()
+    );
+    assert!(
+        error.to_string().contains("durability fault"),
+        "the original failure is kept: {error}"
+    );
+    let installed = path.to_path_buf();
+
+    let reused = {
+        let _fault = inject(DurabilityFaultPoint::PackFinalDirectoryFsync);
+        writer
+            .write_full_snapshot(&request(&source))
+            .expect_err("the final directory sync fails again")
+    };
+    assert!(reused.installed_object().is_none(), "a reused object is not named");
+    assert!(installed.is_file(), "the reused object is kept");
+}
+
 #[test]
 fn startup_cleanup_removes_only_owned_staging_files() {
     let temporary = crate::private_tempdir().expect("pack root");

@@ -176,11 +176,23 @@ fn publish_immutable(
     // failed before syncing its parent directory. Reuse proves the bytes, not
     // the directory entry's durability, so both paths must cross the same
     // checkpoint and sync before publication can be reported complete.
-    crate::durability_fault::check(
+    let synced = crate::durability_fault::check(
         crate::durability_fault::DurabilityFaultPoint::PackFinalDirectoryFsync,
     )
-    .map_err(ProjectionPackError::Durability)?;
-    sync_parent_directory(final_path)?;
+    .map_err(ProjectionPackError::Durability)
+    .and_then(|()| sync_parent_directory(final_path));
+    if let Err(error) = synced {
+        // A content object this write created is named in the error, so the caller
+        // can remove it under its publication gate (M04-T08); a reused one is kept.
+        return Err(match ownership {
+            ProjectionPackOwnership::Created => ProjectionPackError::InstalledThenFailed {
+                path: final_path.to_path_buf(),
+                sha256: metadata.sha256,
+                source: Box::new(error),
+            },
+            ProjectionPackOwnership::ReusedExisting => error,
+        });
+    }
     // Once a final content name exists (or a verified identical object was
     // reused), an error in staging cleanup is a restart-repairable orphan.
     // Do not let `Drop` erase the evidence or pretend its directory entry was

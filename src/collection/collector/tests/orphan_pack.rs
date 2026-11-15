@@ -547,3 +547,144 @@ fn orphan_pack_drain_a_failed_turn_leaves_no_unretained_file() {
         "the failed turn released its claim"
     );
 }
+
+// ---- M04-T08: a writer failure after the final file is installed ------------------------
+
+/// The writer's own failure after it installed its content object (the final directory
+/// sync), returned unchanged.
+fn assert_orphan_pack_install_fault<T: std::fmt::Debug>(result: Result<T, CollectorError>) {
+    match result {
+        Err(CollectorError::Projection(error)) => {
+            assert!(
+                error.installed_object().is_some(),
+                "the writer named the object it installed: {error}"
+            );
+            assert!(
+                error.to_string().contains("pack_final_directory_fsync"),
+                "the final directory sync failure is returned unchanged: {error}"
+            );
+        }
+        other => panic!("expected the writer's install failure, got {other:?}"),
+    }
+}
+
+#[test]
+fn orphan_pack_a_final_directory_sync_failure_leaves_no_unretained_full_snapshot() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let collection = orphan_pack_collection(9, "5YJ3E1EA7KF000001");
+    std::fs::create_dir_all(store.packs_dir().join("sha256")).expect("pack directory");
+    let before = orphan_pack_directory_time(&store);
+
+    let result = {
+        let _fault = inject(DurabilityFaultPoint::PackFinalDirectoryFsync);
+        orphan_pack_publish(&store, &collection)
+    };
+
+    assert_orphan_pack_install_fault(result);
+    assert_orphan_pack_written_before_the_fault(&store, before);
+    assert_eq!(
+        orphan_pack_files(&store),
+        Vec::<(String, bool)>::new(),
+        "the installed pack of the failed write is removed"
+    );
+}
+
+#[test]
+fn orphan_pack_a_final_directory_sync_failure_leaves_no_unretained_delta() {
+    let rig = ExportRig::with_base();
+    let earlier = orphan_pack_files(&rig.store);
+    assert_orphan_pack_all_retained(&earlier);
+    rig.store
+        .upsert_car_settings(
+            rig.vehicle_id,
+            9,
+            &crate::hub_pack::ProjectionCarSettings {
+                enabled: true,
+                ..crate::hub_pack::ProjectionCarSettings::default()
+            },
+        )
+        .expect("settings mutation");
+    let claim = rig
+        .store
+        .claim_sync_mutations(rig.vehicle_id, rig.now + 100, 100)
+        .expect("claim")
+        .expect("a mutation to publish");
+    let before = orphan_pack_directory_time(&rig.store);
+
+    let result = {
+        let _fault = inject(DurabilityFaultPoint::PackFinalDirectoryFsync);
+        publish_v2_delta(&rig.store, &rig.cursor_key, &claim)
+    };
+
+    assert_orphan_pack_install_fault(result);
+    assert_orphan_pack_written_before_the_fault(&rig.store, before);
+    assert_eq!(
+        orphan_pack_files(&rig.store),
+        earlier,
+        "the retained packs survive and the installed delta pack is removed"
+    );
+}
+
+#[test]
+fn orphan_pack_a_final_directory_sync_failure_leaves_no_unretained_compaction() {
+    let rig = ExportRig::with_base();
+    for index in 0..2_i64 {
+        rig.store
+            .upsert_car_settings(
+                rig.vehicle_id,
+                9,
+                &crate::hub_pack::ProjectionCarSettings {
+                    enabled: index == 1,
+                    ..crate::hub_pack::ProjectionCarSettings::default()
+                },
+            )
+            .expect("settings mutation");
+        while let Some(claim) = rig
+            .store
+            .claim_sync_mutations(rig.vehicle_id, rig.now + 100 + index, 100)
+            .expect("claim")
+        {
+            publish_v2_delta(&rig.store, &rig.cursor_key, &claim).expect("a live delta");
+        }
+    }
+    let earlier = orphan_pack_files(&rig.store);
+    assert!(earlier.len() >= 3, "the base and two delta packs");
+    assert_orphan_pack_all_retained(&earlier);
+    let lineage_packs = rig
+        .store
+        .v2_lineage_pack_count(rig.vehicle_id)
+        .expect("pack count");
+    let before = orphan_pack_directory_time(&rig.store);
+    let publication_gate = rig.store.try_acquire_publication_gate().expect("gate");
+
+    let result = {
+        let _fault = inject(DurabilityFaultPoint::PackFinalDirectoryFsync);
+        compact_v2_lineage_if_needed_with_limits_guarded(
+            &rig.store,
+            &publication_gate,
+            &rig.cursor_key,
+            rig.vehicle_id,
+            ProtocolLimits {
+                max_chunks: 4,
+                ..ProtocolLimits::default()
+            },
+            None,
+        )
+    };
+
+    assert_orphan_pack_install_fault(result);
+    assert_orphan_pack_written_before_the_fault(&rig.store, before);
+    assert_eq!(
+        orphan_pack_files(&rig.store),
+        earlier,
+        "the retained packs survive and the installed compaction pack is removed"
+    );
+    assert_eq!(
+        rig.store
+            .v2_lineage_pack_count(rig.vehicle_id)
+            .expect("pack count"),
+        lineage_packs,
+        "the lineage is unchanged"
+    );
+}

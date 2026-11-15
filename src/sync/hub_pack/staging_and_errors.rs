@@ -165,6 +165,28 @@ pub enum ProjectionPackError {
     Publish { path: PathBuf, source: io::Error },
     #[error("projection protocol validation failed: {0}")]
     Protocol(#[from] ProtocolError),
+    /// The write installed a new content object under its final name, then failed
+    /// before its publication was durable (the final directory sync, M04-T08). The
+    /// object is named here so the caller, which still holds its publication gate,
+    /// can remove it while no catalogue row retains it; a reused object never takes
+    /// this form.
+    #[error("{source}")]
+    InstalledThenFailed {
+        path: PathBuf,
+        sha256: crate::protocol::Sha256Digest,
+        source: Box<ProjectionPackError>,
+    },
+}
+
+impl ProjectionPackError {
+    /// The content object this failed write newly installed, when it did
+    /// ([`Self::InstalledThenFailed`]).
+    pub(crate) fn installed_object(&self) -> Option<(crate::protocol::Sha256Digest, &std::path::Path)> {
+        match self {
+            Self::InstalledThenFailed { path, sha256, .. } => Some((*sha256, path.as_path())),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -214,6 +236,7 @@ mod n1_src_sync_hub_pack_staging_and_errors_rs_display_tests {
                 ProjectionPackError::Durability(..) => (),
                 ProjectionPackError::OpenCompressed { .. } => (),
                 ProjectionPackError::Publish { .. } => (),
+                ProjectionPackError::InstalledThenFailed { .. } => (),
                 ProjectionPackError::Protocol(..) => (),
             }
             assert_name_free(&error);
@@ -287,5 +310,10 @@ mod n1_src_sync_hub_pack_staging_and_errors_rs_display_tests {
             source: example(),
         });
         check_projection_pack_error(ProjectionPackError::Protocol(example()));
+        check_projection_pack_error(ProjectionPackError::InstalledThenFailed {
+            path: example(),
+            sha256: crate::protocol::Sha256Digest::of_bytes(b"example"),
+            source: Box::new(ProjectionPackError::Durability(example())),
+        });
     }
 }

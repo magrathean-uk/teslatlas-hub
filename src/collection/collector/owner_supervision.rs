@@ -2022,7 +2022,9 @@ fn publish_v2_delta_guarded(
     };
     // The pack file is output of the run: written only while the guard allows.
     check_optional_write(guard, "export-delta-pack")?;
-    let built = ProjectionPackWriter::new(store.packs_dir()).write_delta(&request)?;
+    let built = ProjectionPackWriter::new(store.packs_dir())
+        .write_delta(&request)
+        .map_err(|error| discard_installed_pack_of_failed_write(store, publication_gate, error, guard))?;
     let committed = (|| -> Result<(), CollectorError> {
         let chain_digest = canonical_delta_chain_digest(parent_digest, built.metadata.sha256);
         let lineage_delta = LineageDelta {
@@ -2137,7 +2139,14 @@ fn compact_v2_lineage_if_needed_with_limits_guarded(
         Err(error) if is_compaction_pack_capacity_error(&error) => {
             return Err(StoreError::LineageCapacityExhausted.into());
         }
-        Err(error) => return Err(error.into()),
+        Err(error) => {
+            return Err(discard_installed_pack_of_failed_write(
+                store,
+                publication_gate,
+                error,
+                guard,
+            ));
+        }
     };
     let committed = (|| -> Result<(), CollectorError> {
         let chain_digest = canonical_delta_chain_digest(plan.anchor_digest, built.metadata.sha256);

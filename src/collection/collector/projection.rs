@@ -1047,7 +1047,9 @@ fn publish_resolved_vehicle(
         snapshot: &snapshot,
     };
     check_optional_write(guard, "publication-pack")?;
-    let built = writer.write_full_snapshot_with_states_and_updates(&request, &states, &updates)?;
+    let built = writer
+        .write_full_snapshot_with_states_and_updates(&request, &states, &updates)
+        .map_err(|error| discard_installed_pack_of_failed_write(store, publication_gate, error, guard))?;
     let finalized = (|| {
         let manifest = request
             .signed_manifest_with_states_and_updates(&built, &states, &updates, cursor_key)?;
@@ -1095,6 +1097,27 @@ fn discard_failed_publication_pack(
     {
         tracing::warn!(path = %built.path.display(), %removal, "could not remove the pack of a failed publication");
     }
+}
+
+/// A pack write that failed after it installed a new content object (the final
+/// directory sync, M04-T08): the object is removed under the publication gate the
+/// caller holds, as [`discard_failed_publication_pack`] removes a written pack, unless
+/// a catalogue row retains it or the run's guard refuses writes. A reused object
+/// never reaches here. The original error is returned either way.
+fn discard_installed_pack_of_failed_write(
+    store: &HubStore,
+    publication_gate: &crate::db::PublicationGate,
+    error: ProjectionPackError,
+    guard: Option<&RunWriteGuard>,
+) -> CollectorError {
+    if let Some((sha256, path)) = error.installed_object() {
+        if let Err(refusal) = check_optional_write(guard, "publication-pack-removal") {
+            tracing::warn!(path = %path.display(), %refusal, "kept the pack of a failed write: the run may no longer write");
+        } else if let Err(removal) = store.remove_unretained_pack(publication_gate, sha256, path) {
+            tracing::warn!(path = %path.display(), %removal, "could not remove the pack of a failed write");
+        }
+    }
+    error.into()
 }
 
 /// The car a live vehicle's first materialisation stores (C6 R14).
