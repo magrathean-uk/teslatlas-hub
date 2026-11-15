@@ -877,6 +877,102 @@ async fn import_from_postgres_with_updates_capture_policy(
     progress: SourceDbMigrationProgressReporter,
     cutover_policy: CaptureCutoverPolicy,
 ) -> Result<CapturedSourceDbImport, SourceDbImportError> {
+    let mut publication_gate = store.acquire_publication_gate().await?;
+    // The first import onto a window-only base rebinds it, then runs again,
+    // under the same gate, as the successor that plans the seam and re-sends
+    // the Hub's rows as deltas on the new base (DEC-150). It rebinds once.
+    for after_rebind in [false, true] {
+        match import_pass(
+            store,
+            source,
+            password,
+            cursor_key,
+            request,
+            limits,
+            prepare_schema_22,
+            progress.clone(),
+            cutover_policy,
+            publication_gate,
+            after_rebind,
+        )
+        .await?
+        {
+            ImportPass::Captured(captured) => return Ok(*captured),
+            ImportPass::Rebound(gate) => publication_gate = gate,
+        }
+    }
+    Err(crate::db::StoreError::ImportGenerationConflict.into())
+}
+
+/// How a direct import goes on from the vehicle's V2 head.
+#[derive(Debug)]
+enum DirectImportRoute {
+    /// No V2 head yet: the import publishes the first base.
+    Base,
+    /// An import base with its projection state: typed deltas on it.
+    Successor,
+    /// The exact legacy direct-import shape, upgraded in place.
+    LegacyBridge,
+    /// The collector's base on a Hub that never imported (DEC-150): the
+    /// import publishes its base in that one's place, keeping the Hub's rows
+    /// for the successor pass that follows under the same gate.
+    WindowRebind(Box<crate::protocol::LineageManifestV2>),
+}
+
+/// Decides [`DirectImportRoute`]. Any other base without projection state,
+/// such as a direct-import base the bridge cannot prove unchanged, is
+/// refused with `rebase_required`.
+fn direct_import_route(
+    store: &HubStore,
+    vehicle_id: Uuid,
+    source_id: Uuid,
+    selected_car_id: i64,
+) -> Result<DirectImportRoute, SourceDbImportError> {
+    if store.v2_head(vehicle_id)?.is_none() {
+        return Ok(DirectImportRoute::Base);
+    }
+    if store.source_db_import_projection_state_exists(vehicle_id)? {
+        return Ok(DirectImportRoute::Successor);
+    }
+    if store.legacy_source_db_direct_bridge_is_eligible(vehicle_id, source_id, selected_car_id)? {
+        return Ok(DirectImportRoute::LegacyBridge);
+    }
+    if store.window_only_v2_base_is_rebindable(vehicle_id)? {
+        let expected = store
+            .lineage_manifest_for_vehicle(vehicle_id)?
+            .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
+        return Ok(DirectImportRoute::WindowRebind(Box::new(expected)));
+    }
+    Err(SourceDbImportError::LegacyDirectImportRebaseRequired)
+}
+
+/// One pass of an import: what it published, or the gate back after it
+/// rebound a window-only base (DEC-150).
+enum ImportPass {
+    Captured(Box<CapturedSourceDbImport>),
+    Rebound(PublicationGate),
+}
+
+impl From<CapturedSourceDbImport> for ImportPass {
+    fn from(captured: CapturedSourceDbImport) -> Self {
+        Self::Captured(Box::new(captured))
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn import_pass(
+    store: &HubStore,
+    source: &ReadOnlySource,
+    password: &SourceDbPassword,
+    cursor_key: &CursorKey,
+    request: &SourceDbImportRequest,
+    limits: SourceDbReadLimits,
+    prepare_schema_22: bool,
+    progress: SourceDbMigrationProgressReporter,
+    cutover_policy: CaptureCutoverPolicy,
+    publication_gate: PublicationGate,
+    after_rebind: bool,
+) -> Result<ImportPass, SourceDbImportError> {
     tracing::info!(
         host = source.host(),
         port = source.port(),
@@ -884,7 +980,6 @@ async fn import_from_postgres_with_updates_capture_policy(
         prepare_schema_22,
         "Source database import opening a read-only PostgreSQL snapshot; source rows are never deleted"
     );
-    let publication_gate = store.acquire_publication_gate().await?;
     let selected_car_id = selected_car_id(request)?;
     let car = read_selected_car(source, password, selected_car_id, limits).await?;
     let source_vehicle_key = stable_vehicle_key_for_car(&car)?;
@@ -930,24 +1025,23 @@ async fn import_from_postgres_with_updates_capture_policy(
     // an immutable V2 base exists. Their identity must remain fresh so an
     // unneeded capture can never share a catalogued base object's path.
     let prior_v2_head = store.v2_head(vehicle.vehicle_id)?;
-    let legacy_bridge = if prior_v2_head.is_some()
-        && !store.source_db_import_projection_state_exists(vehicle.vehicle_id)?
-    {
-        if !store.legacy_source_db_direct_bridge_is_eligible(
-            vehicle.vehicle_id,
-            registered_source.source_id,
-            selected_car_id,
-        )? {
-            return Err(SourceDbImportError::LegacyDirectImportRebaseRequired);
-        }
-        true
-    } else {
-        false
+    let route = direct_import_route(
+        store,
+        vehicle.vehicle_id,
+        registered_source.source_id,
+        selected_car_id,
+    )?;
+    let legacy_bridge = matches!(route, DirectImportRoute::LegacyBridge);
+    let window_lineage = match route {
+        DirectImportRoute::WindowRebind(expected) => Some(*expected),
+        _ => None,
     };
-    let successor = prior_v2_head.is_some() && !legacy_bridge;
+    let window_rebind = window_lineage.is_some();
+    let successor = prior_v2_head.is_some() && !legacy_bridge && !window_rebind;
     // Only a successor plans the import seam ahead of its packs; a base or
-    // the legacy bridge may not publish over the Hub's own collection.
-    if !successor {
+    // the legacy bridge may not publish over the Hub's own collection. A
+    // rebind leaves it to the successor pass under the same gate.
+    if !successor && !window_rebind {
         store.refuse_unplanned_import_seam(vehicle.vehicle_id)?;
     }
     let capture_snapshot_id = Uuid::new_v4();
@@ -1097,7 +1191,7 @@ async fn import_from_postgres_with_updates_capture_policy(
             )
             .map_err(legacy_direct_bridge_error)?;
         run_guard.disarm();
-        return Ok(CapturedSourceDbImport {
+        return Ok(ImportPass::from(CapturedSourceDbImport {
             report: SourceDbImportReport {
                 source_id: registered_source.source_id,
                 vehicle_id: vehicle.vehicle_id,
@@ -1116,10 +1210,15 @@ async fn import_from_postgres_with_updates_capture_policy(
             physical_seam,
             physical_source,
             publication_gate,
-        });
+        }));
     }
     let transport_rows = transport_row_count(&direct.chunks)?;
-    if store.source_fingerprint_matches(vehicle.vehicle_id, direct.fingerprint)? {
+    // The pass after a rebind always publishes: the source it re-reads is
+    // the one the rebind recorded, but the Hub's rows still wait for it.
+    if !window_rebind
+        && !after_rebind
+        && store.source_fingerprint_matches(vehicle.vehicle_id, direct.fingerprint)?
+    {
         promote_unchanged_direct_import(
             store,
             &publication_gate,
@@ -1133,7 +1232,7 @@ async fn import_from_postgres_with_updates_capture_policy(
         )?;
         run_guard.disarm();
         if let Some((snapshot_id, head_sequence, _)) = store.v2_head(vehicle.vehicle_id)? {
-            return Ok(CapturedSourceDbImport {
+            return Ok(ImportPass::from(CapturedSourceDbImport {
                 report: SourceDbImportReport {
                     source_id: registered_source.source_id,
                     vehicle_id: vehicle.vehicle_id,
@@ -1153,12 +1252,12 @@ async fn import_from_postgres_with_updates_capture_policy(
                 physical_seam,
                 physical_source,
                 publication_gate,
-            });
+            }));
         }
         if let Some(current) =
             store.manifest_for_snapshot_fingerprint(vehicle.vehicle_id, direct.fingerprint)?
         {
-            return Ok(CapturedSourceDbImport {
+            return Ok(ImportPass::from(CapturedSourceDbImport {
                 report: SourceDbImportReport {
                     source_id: registered_source.source_id,
                     vehicle_id: vehicle.vehicle_id,
@@ -1177,7 +1276,7 @@ async fn import_from_postgres_with_updates_capture_policy(
                 physical_seam,
                 physical_source,
                 publication_gate,
-            });
+            }));
         }
     }
     let mut capture = direct
@@ -1186,7 +1285,7 @@ async fn import_from_postgres_with_updates_capture_policy(
         .ok_or(SourceDbImportError::ProjectionStateCaptureMissing)?;
     capture.seal()?;
     let mut replacement = None;
-    if let Some((base_snapshot_id, _, _)) = prior_v2_head {
+    if let Some((base_snapshot_id, _, _)) = prior_v2_head.filter(|_| !window_rebind) {
         let selected_car = direct
             .selected_car
             .clone()
@@ -1247,7 +1346,7 @@ async fn import_from_postgres_with_updates_capture_policy(
             )?;
             run_guard.disarm();
             let physical_seam = Some(planned.seam.packs.clone());
-            return Ok(CapturedSourceDbImport {
+            return Ok(ImportPass::from(CapturedSourceDbImport {
                 report: SourceDbImportReport {
                     source_id: registered_source.source_id,
                     vehicle_id: vehicle.vehicle_id,
@@ -1266,7 +1365,7 @@ async fn import_from_postgres_with_updates_capture_policy(
                 physical_seam,
                 physical_source,
                 publication_gate,
-            });
+            }));
         }
     }
     let projection_state = capture.into_state();
@@ -1284,7 +1383,7 @@ async fn import_from_postgres_with_updates_capture_policy(
             return Err(error.into());
         }
     };
-    let prepared_schema_22 = if prepare_schema_22 && replacement.is_none() {
+    let prepared_schema_22 = if prepare_schema_22 && replacement.is_none() && !window_rebind {
         match prepare_initial_production_updates_schema_22_with_gate(
             store,
             cursor_key,
@@ -1304,7 +1403,24 @@ async fn import_from_postgres_with_updates_capture_policy(
     };
     // A pre-commit failure can leave only unreferenced candidate packs; repair
     // may remove those safely. After the transaction commits they are catalogued.
-    let finalization = if let Some(expected) = replacement.as_ref() {
+    let finalization = if let Some(expected) = window_lineage.as_ref() {
+        store.finalize_import_generation_rebinding_window_base_with_materialisation(
+            &publication_gate,
+            expected,
+            run_id,
+            registered_source.source_id,
+            vehicle.vehicle_id,
+            selected_car_id,
+            request.imported_at_ms,
+            &manifest,
+            direct.fingerprint,
+            &direct.geofences,
+            &binding,
+            &projection_state,
+            &materialised_car,
+            &materialised_drives,
+        )
+    } else if let Some(expected) = replacement.as_ref() {
         store.finalize_import_generation_replacing_base_with_materialisation(
             &publication_gate,
             expected,
@@ -1374,7 +1490,10 @@ async fn import_from_postgres_with_updates_capture_policy(
     }
     direct.keep_chunks();
     run_guard.disarm();
-    Ok(CapturedSourceDbImport {
+    if window_rebind {
+        return Ok(ImportPass::Rebound(publication_gate));
+    }
+    Ok(ImportPass::from(CapturedSourceDbImport {
         report: SourceDbImportReport {
             source_id: registered_source.source_id,
             vehicle_id: vehicle.vehicle_id,
@@ -1393,7 +1512,7 @@ async fn import_from_postgres_with_updates_capture_policy(
         physical_seam,
         physical_source,
         publication_gate,
-    })
+    }))
 }
 
 // The import seam ahead of a direct successor's packs (M03-T16).
