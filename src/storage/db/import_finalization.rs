@@ -250,7 +250,6 @@ impl HubStore {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::too_many_arguments)]
     fn finalize_import_generation_delta_successors_with_projection_state_inner(
         &self,
         run_id: Uuid,

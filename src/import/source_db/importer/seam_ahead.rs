@@ -199,7 +199,9 @@ struct PlannedDirectSuccessor {
     remaining_delta_packs: usize,
 }
 
-/// How a direct successor goes on once its pack capacity is known.
+/// How a direct successor goes on once its pack capacity is known. One value
+/// exists per import, so the variants' size difference does not matter.
+#[allow(clippy::large_enum_variant)]
 enum DirectSuccessorRoute {
     /// Typed deltas on the current base; the seam is already applied.
     Deltas(PlannedDirectSuccessor),

@@ -344,7 +344,7 @@ impl SourceDbProjectionState {
             return Ok(());
         }
         self.connection
-            .execute_batch(&&format!(
+            .execute_batch(&format!(
                     "CREATE TABLE IF NOT EXISTS {SEAM_RETAINED_TABLE} (
                          entity_ordinal INTEGER NOT NULL,
                          entity_id INTEGER NOT NULL,
