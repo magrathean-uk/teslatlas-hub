@@ -525,6 +525,19 @@ struct PlannedSuccessorRun<'a> {
     materialised_charges: &'a [ProjectionCharge],
 }
 
+/// Where a planned direct successor's packs are catalogued.
+#[derive(Clone, Copy)]
+enum SuccessorTarget<'a, 'b> {
+    /// On the vehicle's committed head.
+    Head,
+    /// With the window rebind that publishes their base, in one catalogue
+    /// transaction (M03-T24); the packs take the ordinals from `next_ordinal`.
+    WindowRebind {
+        base: &'a crate::db::WindowRebindBase<'b>,
+        next_ordinal: u32,
+    },
+}
+
 /// What a planned direct successor published.
 #[derive(Debug)]
 struct PublishedDirectSuccessor {
@@ -533,8 +546,8 @@ struct PublishedDirectSuccessor {
 }
 
 /// Writes a planned direct successor's delta packs (the planned source rows
-/// only) and publishes them; publication plans the seam again and refuses a
-/// different plan.
+/// only) and publishes them on the vehicle's head; publication plans the
+/// seam again and refuses a different plan.
 #[allow(clippy::too_many_arguments)]
 fn publish_planned_direct_successor(
     store: &HubStore,
@@ -543,12 +556,41 @@ fn publish_planned_direct_successor(
     run: PlannedSuccessorRun<'_>,
     binding: &ProjectionBinding,
     selected_car: &ProjectionCar,
+    capture: SourceDbProjectionStateCapture,
+    planned: &mut PlannedDirectSuccessor,
+) -> Result<PublishedDirectSuccessor, SourceDbImportError> {
+    publish_planned_direct_successor_to(
+        store,
+        publication_gate,
+        cursor_key,
+        run,
+        binding,
+        selected_car,
+        capture,
+        planned,
+        SuccessorTarget::Head,
+    )
+}
+
+/// As [`publish_planned_direct_successor`], catalogued at `target`.
+#[allow(clippy::too_many_arguments)]
+fn publish_planned_direct_successor_to(
+    store: &HubStore,
+    publication_gate: &PublicationGate,
+    cursor_key: &CursorKey,
+    run: PlannedSuccessorRun<'_>,
+    binding: &ProjectionBinding,
+    selected_car: &ProjectionCar,
     mut capture: SourceDbProjectionStateCapture,
     planned: &mut PlannedDirectSuccessor,
+    target: SuccessorTarget<'_, '_>,
 ) -> Result<PublishedDirectSuccessor, SourceDbImportError> {
     let vehicle_id = binding.vehicle_id;
     apply_seam_forms_to_capture(&mut capture, &mut planned.seam)?;
-    let mut next_ordinal = store.next_v2_pack_ordinal(run.base_snapshot_id)?;
+    let mut next_ordinal = match target {
+        SuccessorTarget::Head => store.next_v2_pack_ordinal(run.base_snapshot_id)?,
+        SuccessorTarget::WindowRebind { next_ordinal, .. } => next_ordinal,
+    };
     let mut parent_digest = planned.parent_digest;
     let mut prior_sequence = planned.from_sequence;
     // Keep one decoded delta batch at a time.  The projection-state spool
@@ -654,24 +696,42 @@ fn publish_planned_direct_successor(
         },
     )
     .map_err(crate::db::StoreError::Manifest)?;
-    store.finalize_import_generation_delta_successors_with_staged_seam(
-        run.run_id,
-        run.source_id,
-        vehicle_id,
-        binding.selected_car_id,
-        run.imported_at_ms,
-        &deltas,
-        cursor_key,
-        &terminal_cursor,
-        run.fingerprint,
-        run.geofences,
-        &projection_state,
-        run.materialised_car,
-        run.materialised_drives,
-        run.materialised_charges,
-        planned.seam_digest,
-        &planned.seam_sync,
-    )?;
+    match target {
+        SuccessorTarget::Head => store.finalize_import_generation_delta_successors_with_staged_seam(
+            run.run_id,
+            run.source_id,
+            vehicle_id,
+            binding.selected_car_id,
+            run.imported_at_ms,
+            &deltas,
+            cursor_key,
+            &terminal_cursor,
+            run.fingerprint,
+            run.geofences,
+            &projection_state,
+            run.materialised_car,
+            run.materialised_drives,
+            run.materialised_charges,
+            planned.seam_digest,
+            &planned.seam_sync,
+        )?,
+        SuccessorTarget::WindowRebind { base, .. } => {
+            crate::db::window_rebind_step(crate::db::WindowRebindStep::SeamPacksWritten)?;
+            store.finalize_window_rebind_with_staged_seam(
+                publication_gate,
+                base,
+                crate::db::WindowRebindSeam {
+                    deltas: &deltas,
+                    cursor_key,
+                    terminal_cursor: &terminal_cursor,
+                    fingerprint: run.fingerprint,
+                    projection_state: &projection_state,
+                    seam_digest: planned.seam_digest,
+                    staged: &planned.seam_sync,
+                },
+            )?;
+        }
+    }
     delta_packs.published();
     drop(delta_packs);
     // The import's own rows; the seam's live sync is the Hub's.

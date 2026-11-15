@@ -167,18 +167,28 @@ fn seam_folded_fingerprint_and_plan(
         drives,
         charges,
     ) {
-        Ok(decided) if decided.seam_history => {
-            let mut hash = Sha256::new();
-            hash.update(b"teslatlas-hub source fingerprint with the import seam v1\n");
-            hash.update(fingerprint.as_bytes());
-            hash.update(decided.ahead.packs.digest());
-            (
-                Sha256Digest::from_bytes(hash.finalize().into()),
-                Some(decided.ahead.packs),
-            )
-        }
-        _ => (fingerprint, None),
+        Ok(decided) => fold_seam_fingerprint(fingerprint, &decided),
+        Err(_) => (fingerprint, None),
     }
+}
+
+/// The source fingerprint folded with the seam `decided` plans, when the
+/// vehicle has seam history, and that plan.
+fn fold_seam_fingerprint(
+    fingerprint: Sha256Digest,
+    decided: &crate::db::ImportSeamDryRun,
+) -> (Sha256Digest, Option<crate::import::source_db::seam::SeamPackPlan>) {
+    if !decided.seam_history {
+        return (fingerprint, None);
+    }
+    let mut hash = Sha256::new();
+    hash.update(b"teslatlas-hub source fingerprint with the import seam v1\n");
+    hash.update(fingerprint.as_bytes());
+    hash.update(decided.ahead.packs.digest());
+    (
+        Sha256Digest::from_bytes(hash.finalize().into()),
+        Some(decided.ahead.packs.clone()),
+    )
 }
 
 // The negotiated 1.4 route's physical publication (M03-T21).
