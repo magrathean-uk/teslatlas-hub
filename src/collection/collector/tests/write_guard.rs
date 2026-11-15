@@ -626,9 +626,27 @@ fn p3bf2_snapshot_batch(tick: &mut TickBed) -> TickBatch {
     batch
 }
 
+/// [`p3bf2_snapshot_batch`] with a second scheduled car that is read nothing this
+/// tick: the tick writes its seed car and settings for the publication (M04-T08).
+fn p3bf2_snapshot_batch_with_an_unchanged_car(tick: &mut TickBed) -> TickBatch {
+    let vehicle = core_vehicle(1, "online");
+    let unchanged = core_vehicle(2, "asleep");
+    let now = tick.now();
+    tick.scheduler.begin_tick();
+    tick.scheduler
+        .accept_discovery(vec![vehicle.clone(), unchanged.clone()], now);
+    tick.register(&vehicle);
+    tick.register(&unchanged);
+    let item = tick.read_item(1, parked_fields());
+    let mut batch = TickBatch::default();
+    batch.snapshots.push(item);
+    batch.note_result(now);
+    batch
+}
+
 fn p3bf2_tick_publication(point: &'static str) {
     let (mut tick, bed) = p3bf2_tick_rig();
-    let batch = p3bf2_snapshot_batch(&mut tick);
+    let batch = p3bf2_snapshot_batch_with_an_unchanged_car(&mut tick);
     bed.trip_at(point);
     let result = p3bf2_commit(&mut tick, batch);
     refused_with_the_sensitive_failure(point, &result);
@@ -640,10 +658,27 @@ fn p3bf2_tick_publication(point: &'static str) {
 
 #[test]
 fn p3bf2_the_publication_of_a_tick_writes_nothing_after_the_fence() {
+    // M04-T08 (REV-CX-M04-T05 finding 2): a tick publishes with the identities it
+    // committed, so the registering boundaries (source, vehicle, car id) are never
+    // consulted by it; the seed car and the settings of the unchanged car are now
+    // written, and refused, inside the tick transaction.
+    {
+        let (mut tick, bed) = p3bf2_tick_rig();
+        let batch = p3bf2_snapshot_batch_with_an_unchanged_car(&mut tick);
+        assert!(p3bf2_commit(&mut tick, batch).is_ok(), "the unfenced tick commits");
+        for point in ["publication-source", "publication-vehicle", "publication-car-id"] {
+            let audit = bed.guard.audit();
+            assert_eq!(
+                (audit.passed(point), audit.refused(point)),
+                (0, 0),
+                "{point}: the tick registers nothing after its commit"
+            );
+        }
+        for point in ["publication-seed-car", "publication-settings"] {
+            assert!(bed.guard.audit().passed(point) >= 1, "{point}: the boundary was reached");
+        }
+    }
     for point in [
-        "publication-source",
-        "publication-vehicle",
-        "publication-car-id",
         "publication-seed-car",
         "publication-settings",
         "publication-sequence",

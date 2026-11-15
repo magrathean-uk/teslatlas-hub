@@ -165,9 +165,15 @@ where
     let runtime_admission = Arc::clone(&admission);
     let runtime_loss = Some(write_guard.observer("credential"));
     let startup_fence = write_guard.startup_observer("credential-startup");
-    crate::auth::credential_vault::CredentialVault::open_for_runtime(
-        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, Some(&startup_fence),
-    )
+    // The unit's own first consultation stays in front of everything the opening
+    // writes; the startup fence then holds the window at each startup mutation.
+    if runtime_loss.as_ref().is_some_and(|lost| lost()) {
+        Err(crate::auth::credential_vault::CredentialStoreError::SensitiveAccessUnavailable)
+    } else {
+        crate::auth::credential_vault::CredentialVault::open_for_runtime(
+            runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, Some(&startup_fence),
+        )
+    }
     .map_err(|error| crate::credentials::LegacyAuthManagerError::from(crate::credentials::CredentialError::from(error)))
     .and_then(|vault| LegacyAuthManager::from_hub_source_db_store_for_admitted_user(runtime_store, runtime_path, runtime_endpoint, runtime_admission, runtime_loss, vault))
 }
@@ -455,9 +461,15 @@ where
     let runtime_admission = Arc::clone(&admission);
     let runtime_loss = Some(write_guard.observer("credential"));
     let startup_fence = write_guard.startup_observer("credential-startup");
-    crate::auth::credential_vault::CredentialVault::open_for_runtime(
-        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, Some(&startup_fence),
-    )
+    // The unit's own first consultation stays in front of everything the opening
+    // writes; the startup fence then holds the window at each startup mutation.
+    if runtime_loss.as_ref().is_some_and(|lost| lost()) {
+        Err(crate::auth::credential_vault::CredentialStoreError::SensitiveAccessUnavailable)
+    } else {
+        crate::auth::credential_vault::CredentialVault::open_for_runtime(
+            runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, Some(&startup_fence),
+        )
+    }
     .map_err(|error| crate::credentials::LegacyAuthManagerError::from(crate::credentials::CredentialError::from(error)))
     .and_then(|vault| LegacyAuthManager::from_hub_source_db_store_observer_for_admitted_user(runtime_store, runtime_path, runtime_endpoint, runtime_admission, runtime_loss, vault))
 }
@@ -528,9 +540,15 @@ where
     let runtime_admission = Arc::clone(&admission);
     let runtime_loss = Some(write_guard.observer("credential"));
     let startup_fence = write_guard.startup_observer("credential-startup");
-    crate::auth::credential_vault::CredentialVault::open_for_runtime(
-        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, Some(&startup_fence),
-    )
+    // The unit's own first consultation stays in front of everything the opening
+    // writes; the startup fence then holds the window at each startup mutation.
+    if runtime_loss.as_ref().is_some_and(|lost| lost()) {
+        Err(crate::auth::credential_vault::CredentialStoreError::SensitiveAccessUnavailable)
+    } else {
+        crate::auth::credential_vault::CredentialVault::open_for_runtime(
+            runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, Some(&startup_fence),
+        )
+    }
     .map_err(crate::fleet_credentials::FleetCredentialError::from)
     .and_then(|vault| FleetAuthManager::from_store_for_supervised_start(vault, runtime_path, runtime_admission, runtime_loss))
 }.map_err(|error| write_guard.window_refusal_or(CollectorError::from(error)))?;
