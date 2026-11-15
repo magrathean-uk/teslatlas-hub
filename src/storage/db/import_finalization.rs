@@ -1953,13 +1953,15 @@ impl HubStore {
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(StoreError::Begin)?;
+            let mut rebind_journal_from = None;
             if let Some(BaseReplacement::Window(_)) = replacement {
                 // The rebind keeps the Hub's collection for the successor
                 // that plans the seam under the same gate (DEC-150).
                 if !window_only_v2_base_in_connection(&transaction, &vehicle_id.to_string())? {
                     return Err(StoreError::LineageCatalogConflict);
                 }
-                rebind_window_rows_in_transaction(&transaction, vehicle_id, car_id)?;
+                rebind_journal_from =
+                    Some(rebind_window_rows_in_transaction(&transaction, vehicle_id, car_id)?);
             } else {
                 // A publication that does not plan the seam may not publish
                 // over the Hub's own collection (design M03-SEAM-R3, section 4).
@@ -2002,8 +2004,14 @@ impl HubStore {
                         PriorImportedDriveRows::None
                     },
                 )?;
-                if let Some(BaseReplacement::Window(_)) = replacement {
-                    withdraw_rebound_seam_losers_in_transaction(&transaction, vehicle_id, drives)?;
+                if let Some(from_revision) = rebind_journal_from {
+                    journal_rebound_rows_in_transaction(
+                        &transaction,
+                        vehicle_id,
+                        car_id,
+                        drives,
+                        from_revision,
+                    )?;
                 }
             }
             match replacement {
@@ -2946,39 +2954,6 @@ enum BaseReplacement<'a> {
     Window(&'a LineageManifestV2),
 }
 
-/// The rebinding base carries every source drive, but its materialisation
-/// applied the seam to the Hub's rows (DEC-150): a source drive that lost is
-/// not stored. Clients of the new base hold it, so it is journalled as an
-/// unpublished tombstone, published ahead of the successor's packs like the
-/// seam's other removals.
-fn withdraw_rebound_seam_losers_in_transaction(
-    transaction: &Transaction<'_>,
-    vehicle_id: Uuid,
-    drives: &[ProjectionDrive],
-) -> Result<(), StoreError> {
-    let vehicle_key = vehicle_id.to_string();
-    let mut stored = transaction
-        .prepare("SELECT 1 FROM materialised_drives WHERE vehicle_id = ?1 AND drive_id = ?2")
-        .map_err(StoreError::Query)?;
-    for drive in drives {
-        if !stored
-            .exists(params![vehicle_key.as_str(), drive.id])
-            .map_err(StoreError::Query)?
-        {
-            record_sync_mutation_in_transaction(
-                transaction,
-                vehicle_id,
-                "drive",
-                drive.id,
-                drive.car_id,
-                "tombstone",
-                "{}",
-            )?;
-        }
-    }
-    Ok(())
-}
-
 /// See [`HubStore::window_only_v2_base_is_rebindable`].
 fn window_only_v2_base_in_connection(
     connection: &Connection,
@@ -3005,16 +2980,29 @@ fn window_only_v2_base_in_connection(
         .map_err(StoreError::LineageCatalog)
 }
 
+/// The materialised tables whose rows a rebind journals (DEC-150), parents
+/// before their children: entity, table, id column, JSON column and whether
+/// the table has a car id column.
+const REBOUND_TABLES: [(&str, &str, &str, &str, bool); 6] = [
+    ("drive", "materialised_drives", "drive_id", "drive_json", true),
+    ("charge", "materialised_charges", "charge_id", "charge_json", true),
+    ("position", "materialised_positions", "position_id", "position_json", true),
+    ("charge_sample", "materialised_charge_samples", "sample_id", "sample_json", false),
+    ("state", "materialised_states", "state_id", "state_json", true),
+    ("update", "materialised_updates", "update_id", "update_json", true),
+];
+
 /// Keeps the Hub's rows of a window-only vehicle for the import that rebinds
-/// its base (DEC-150): every stored row takes the import's car id, and every
-/// Hub-range row is journalled again as an unpublished upsert. Mutations the
-/// retired lineage never published are superseded by those upserts.
+/// its base (DEC-150): every stored row takes the import's car id.
+/// Mutations the retired lineage never published are superseded: the
+/// rebind's journal, rebuilt from the final rows once the import is
+/// reconciled ([`journal_rebound_rows_in_transaction`]), re-sends them.
+/// Returns the revision that journal starts at.
 fn rebind_window_rows_in_transaction(
     transaction: &Transaction<'_>,
     vehicle_id: Uuid,
     car_id: i64,
-) -> Result<(), StoreError> {
-    use crate::db::hub_ids::{HUB_ID_BASE, HUB_ID_MAX};
+) -> Result<i64, StoreError> {
     let vehicle_key = vehicle_id.to_string();
     transaction
         .execute(
@@ -3023,20 +3011,14 @@ fn rebind_window_rows_in_transaction(
             params![vehicle_key.as_str()],
         )
         .map_err(StoreError::LifecycleWrite)?;
-    // Parents before their children, as the collector journals them.
-    for (table, id_column, json_column, entity, has_car_id) in [
-        ("materialised_drives", "drive_id", "drive_json", "drive", true),
-        ("materialised_charges", "charge_id", "charge_json", "charge", true),
-        ("materialised_positions", "position_id", "position_json", "position", true),
-        ("materialised_charge_samples", "sample_id", "sample_json", "charge_sample", false),
-        ("materialised_states", "state_id", "state_json", "state", true),
-        ("materialised_updates", "update_id", "update_json", "update", true),
-    ] {
+    for (_, table, id_column, json_column, has_car_id) in REBOUND_TABLES {
+        if !has_car_id {
+            continue;
+        }
         let rows = {
             let mut statement = transaction
                 .prepare(&format!(
-                    "SELECT {id_column}, {json_column} FROM {table}
-                      WHERE vehicle_id = ?1 ORDER BY {id_column} ASC"
+                    "SELECT {id_column}, {json_column} FROM {table} WHERE vehicle_id = ?1"
                 ))
                 .map_err(StoreError::Query)?;
             statement
@@ -3048,37 +3030,192 @@ fn rebind_window_rows_in_transaction(
                 .map_err(StoreError::Query)?
         };
         for (id, json) in rows {
-            let json = if has_car_id {
-                let mut value: serde_json::Value =
-                    serde_json::from_str(&json).map_err(StoreError::DeserializeLifecycleRow)?;
-                value
-                    .as_object_mut()
-                    .ok_or(StoreError::InvalidLifecycleSession)?
-                    .insert("car_id".to_owned(), serde_json::Value::from(car_id));
-                let json =
-                    serde_json::to_string(&value).map_err(StoreError::SerializeLifecycleRow)?;
-                transaction
-                    .execute(
-                        &format!(
-                            "UPDATE {table} SET car_id = ?3, {json_column} = ?4
-                              WHERE vehicle_id = ?1 AND {id_column} = ?2"
-                        ),
-                        params![vehicle_key.as_str(), id, car_id, json],
-                    )
-                    .map_err(StoreError::LifecycleWrite)?;
-                json
-            } else {
-                json
-            };
-            if (HUB_ID_BASE..=HUB_ID_MAX).contains(&id) {
+            let mut value: serde_json::Value =
+                serde_json::from_str(&json).map_err(StoreError::DeserializeLifecycleRow)?;
+            value
+                .as_object_mut()
+                .ok_or(StoreError::InvalidLifecycleSession)?
+                .insert("car_id".to_owned(), serde_json::Value::from(car_id));
+            let json = serde_json::to_string(&value).map_err(StoreError::SerializeLifecycleRow)?;
+            transaction
+                .execute(
+                    &format!(
+                        "UPDATE {table} SET car_id = ?3, {json_column} = ?4
+                          WHERE vehicle_id = ?1 AND {id_column} = ?2"
+                    ),
+                    params![vehicle_key.as_str(), id, car_id, json],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+        }
+    }
+    transaction
+        .query_row(
+            "SELECT COALESCE(
+                 (SELECT next_revision FROM sync_mutation_sequences WHERE vehicle_id = ?1), 1)",
+            params![vehicle_key.as_str()],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::LineageCatalog)
+}
+
+/// The rebind's journal (DEC-150), rebuilt from the final reconciled rows
+/// so that publication in bounded batches never reads a row a later
+/// mutation removes (review finding 1). The mutations the reconciliation
+/// journalled from `from_revision` on are replaced, at the same revisions,
+/// by one mutation per row, parents first:
+/// - every Hub-range row as it is stored, as an upsert;
+/// - every source drive of the new base that the seam left out, as a
+///   tombstone, and every one whose stored row is no longer the base's row
+///   (a source drive that won and widened), as an upsert of the stored row
+///   (review finding 2);
+/// - every other row the reconciliation journalled, as stored, or as a
+///   tombstone once it is gone.
+fn journal_rebound_rows_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    car_id: i64,
+    drives: &[ProjectionDrive],
+    from_revision: i64,
+) -> Result<(), StoreError> {
+    use crate::db::hub_ids::{HUB_ID_BASE, HUB_ID_MAX};
+    use std::collections::BTreeMap;
+    let vehicle_key = vehicle_id.to_string();
+    // What the reconciliation journalled: its last mutation per row.
+    let journalled: Vec<(String, i64, i64, String, String)> = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT entity, entity_id, car_id, operation, payload_json FROM sync_mutations
+                  WHERE vehicle_id = ?1 AND published = 0 AND revision >= ?2
+                  ORDER BY revision",
+            )
+            .map_err(StoreError::Query)?;
+        statement
+            .query_map(params![vehicle_key.as_str(), from_revision], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+            })
+            .map_err(StoreError::Query)?
+            .collect::<Result<_, _>>()
+            .map_err(StoreError::Query)?
+    };
+    transaction
+        .execute(
+            "DELETE FROM sync_mutations WHERE vehicle_id = ?1 AND revision >= ?2",
+            params![vehicle_key.as_str(), from_revision],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    transaction
+        .execute(
+            "INSERT INTO sync_mutation_sequences(vehicle_id, next_revision) VALUES (?1, ?2)
+             ON CONFLICT(vehicle_id) DO UPDATE SET next_revision = excluded.next_revision",
+            params![vehicle_key.as_str(), from_revision],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    let rank = |entity: &str| match entity {
+        "car" | "car_setting" | "car_settings" => 0,
+        other => REBOUND_TABLES
+            .iter()
+            .position(|(name, ..)| *name == other)
+            .map_or(REBOUND_TABLES.len() + 1, |index| index + 1),
+    };
+    // Each row once, in parent order, with the reconciliation's last
+    // mutation of it when there is one.
+    let mut rows: BTreeMap<(usize, String, i64), Option<(i64, String, String)>> = BTreeMap::new();
+    for (entity, id, row_car_id, operation, payload) in journalled {
+        rows.insert(
+            (rank(&entity), entity, id),
+            Some((row_car_id, operation, payload)),
+        );
+    }
+    for (entity, table, id_column, _, _) in REBOUND_TABLES {
+        let ids: Vec<i64> = {
+            let mut statement = transaction
+                .prepare(&format!(
+                    "SELECT {id_column} FROM {table}
+                      WHERE vehicle_id = ?1 AND {id_column} BETWEEN ?2 AND ?3"
+                ))
+                .map_err(StoreError::Query)?;
+            statement
+                .query_map(params![vehicle_key.as_str(), HUB_ID_BASE, HUB_ID_MAX], |row| {
+                    row.get(0)
+                })
+                .map_err(StoreError::Query)?
+                .collect::<Result<_, _>>()
+                .map_err(StoreError::Query)?
+        };
+        for id in ids {
+            rows.entry((rank(entity), entity.to_owned(), id)).or_insert(None);
+        }
+    }
+    let base_drives: HashMap<i64, &ProjectionDrive> =
+        drives.iter().map(|drive| (drive.id, drive)).collect();
+    for drive in drives {
+        rows.entry((rank("drive"), "drive".to_owned(), drive.id)).or_insert(None);
+    }
+    for ((_, entity, id), journalled) in rows {
+        let Some((_, table, id_column, json_column, _)) =
+            REBOUND_TABLES.iter().find(|(name, ..)| *name == entity)
+        else {
+            // A row without a rebound table (the car): as journalled.
+            if let Some((row_car_id, operation, payload)) = journalled {
                 record_sync_mutation_in_transaction(
                     transaction,
                     vehicle_id,
-                    entity,
+                    &entity,
+                    id,
+                    row_car_id,
+                    &operation,
+                    &payload,
+                )?;
+            }
+            continue;
+        };
+        let stored: Option<String> = transaction
+            .query_row(
+                &format!(
+                    "SELECT {json_column} FROM {table} WHERE vehicle_id = ?1 AND {id_column} = ?2"
+                ),
+                params![vehicle_key.as_str(), id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        let base_drive = (entity == "drive").then(|| base_drives.get(&id)).flatten();
+        match stored {
+            Some(json) => {
+                if let Some(base) = base_drive {
+                    // A source drive the base carries: only a changed one.
+                    let stored: serde_json::Value =
+                        serde_json::from_str(&json).map_err(StoreError::DeserializeLifecycleRow)?;
+                    let base =
+                        serde_json::to_value(base).map_err(StoreError::SerializeLifecycleRow)?;
+                    if stored == base {
+                        continue;
+                    }
+                }
+                record_sync_mutation_in_transaction(
+                    transaction,
+                    vehicle_id,
+                    &entity,
                     id,
                     car_id,
                     "upsert",
                     &json,
+                )?;
+            }
+            None => {
+                let row_car_id = journalled
+                    .as_ref()
+                    .map(|(row_car_id, ..)| *row_car_id)
+                    .or_else(|| base_drive.map(|drive| drive.car_id))
+                    .unwrap_or(car_id);
+                record_sync_mutation_in_transaction(
+                    transaction,
+                    vehicle_id,
+                    &entity,
+                    id,
+                    row_car_id,
+                    "tombstone",
+                    "{}",
                 )?;
             }
         }

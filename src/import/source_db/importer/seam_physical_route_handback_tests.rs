@@ -739,6 +739,7 @@ fn first_import_after_windows(
     root: &Path,
     history: &SourceDbHistory,
     at_ms: i64,
+    physical: bool,
 ) -> Result<(), crate::db::StoreError> {
     let Ok(DirectImportRoute::WindowRebind(expected)) = route(fixture) else {
         panic!("a window-only base is rebound");
@@ -790,9 +791,11 @@ fn first_import_after_windows(
     let run_id = begin_run(fixture, at_ms);
     let capture = capture_everything(fixture, run_id, &projected);
     publish_captured(fixture, &projected, run_id, capture, &mut planned).expect("planned lineage");
-    publish_physical(fixture, history_stage(root, "after-windows", history), Some(&planned.seam.packs))
-        .expect("physical publication")
-        .expect("physical head");
+    if physical {
+        publish_physical(fixture, history_stage(root, "after-windows", history), Some(&planned.seam.packs))
+            .expect("physical publication")
+            .expect("physical head");
+    }
     Ok(())
 }
 
@@ -806,7 +809,7 @@ fn seam_physical_route_import_after_windows_keeps_the_window_rows() {
     let (fixture, window_lineage) = window_only_fixture();
     let (h1, h2) = (HUB_ID_BASE + 1, HUB_ID_BASE + 2);
     let root = crate::private_tempdir().expect("stage root");
-    first_import_after_windows(&fixture, root.path(), &successor_history(), T + 3 * HOUR)
+    first_import_after_windows(&fixture, root.path(), &successor_history(), T + 3 * HOUR, true)
         .expect("first import after windows");
 
     let binding = fixture.store.v2_projection_binding(fixture.binding.vehicle_id).expect("binding");
@@ -863,7 +866,7 @@ fn seam_physical_route_import_after_windows_second_import_is_a_normal_successor(
     let (fixture, _) = window_only_fixture();
     let root = crate::private_tempdir().expect("stage root");
     let history = successor_history();
-    first_import_after_windows(&fixture, root.path(), &history, T + 3 * HOUR)
+    first_import_after_windows(&fixture, root.path(), &history, T + 3 * HOUR, true)
         .expect("first import after windows");
     let env = paired(&fixture);
     let mut existing = PhysicalClient::bootstrap(&env, &fixture).expect("served after the rebind");
@@ -994,4 +997,160 @@ fn seam_physical_route_import_after_windows_rebinds_only_a_window_only_base() {
         Some(expected),
         "the refused rebind changed nothing"
     );
+}
+
+/// A Hub drive and one position under it, inside the window, stored as the
+/// collector keeps them (window car id) and not yet published.
+fn window_rows(fixture: &Fixture, drive_id: i64, start_ms: i64, end_ms: i64, position_ms: i64) {
+    let mut drive = project_vehicle(&base_history(), CAR).expect("projection").snapshot.drives[0].clone();
+    drive.id = drive_id;
+    drive.car_id = WINDOW_CAR;
+    drive.start_date_ms = start_ms;
+    drive.end_date_ms = end_ms;
+    let mut position =
+        crate::lifecycle::imported_position(&source_position(drive_id, Some(drive_id), position_ms));
+    position.car_id = WINDOW_CAR;
+    position.drive_id = Some(drive_id);
+    let connection = fixture.store.open().expect("catalogue");
+    let vehicle = fixture.binding.vehicle_id.to_string();
+    connection
+        .execute(
+            "INSERT INTO materialised_drives(vehicle_id, drive_id, car_id, drive_json) VALUES (?1, ?2, ?3, ?4)",
+            params![vehicle, drive_id, WINDOW_CAR, serde_json::to_string(&drive).expect("drive")],
+        )
+        .expect("Hub drive");
+    connection
+        .execute(
+            "INSERT INTO materialised_positions(vehicle_id, position_id, drive_id, car_id, position_json)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![vehicle, drive_id, drive_id, WINDOW_CAR, serde_json::to_string(&position).expect("position")],
+        )
+        .expect("Hub position");
+}
+
+/// Hub positions under H1, inside the window, straight into the store as
+/// the collector keeps them (window car id, ids after `first`).
+fn many_window_positions(fixture: &Fixture, first: i64, count: i64) {
+    let mut connection = fixture.store.open().expect("catalogue");
+    let transaction = connection.transaction().expect("transaction");
+    let vehicle = fixture.binding.vehicle_id.to_string();
+    let h1 = HUB_ID_BASE + 1;
+    for offset in 0..count {
+        let id = first + offset;
+        let mut position = crate::lifecycle::imported_position(&source_position(
+            id,
+            Some(h1),
+            T + 10 * MINUTE + offset % (10 * MINUTE),
+        ));
+        position.car_id = WINDOW_CAR;
+        position.drive_id = Some(h1);
+        transaction
+            .execute(
+                "INSERT INTO materialised_positions(vehicle_id, position_id, drive_id, car_id, position_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![vehicle, id, h1, WINDOW_CAR, serde_json::to_string(&position).expect("position")],
+            )
+            .expect("Hub position");
+    }
+    transaction.commit().expect("commit");
+}
+
+/// Review finding 1: a rebind whose journal is longer than one publication
+/// batch (10,000 mutations) still publishes. The losing Hub drive H2 is
+/// journalled once, as a tombstone, never as an upsert in an earlier batch
+/// that reads a row the later batch removes; the import and the next
+/// collector publication both go through.
+#[test]
+fn seam_physical_route_import_after_windows_publishes_a_journal_over_one_batch() {
+    let (fixture, _) = window_only_fixture();
+    let first = HUB_ID_BASE + 100;
+    many_window_positions(&fixture, first, 10_050);
+    let root = crate::private_tempdir().expect("stage root");
+    first_import_after_windows(&fixture, root.path(), &successor_history(), T + 3 * HOUR, false)
+        .expect("first import after windows");
+    let lineage = client(&fixture);
+    assert!(!lineage.drives.contains_key(&(HUB_ID_BASE + 2)), "H2 lost to drive 13");
+    for id in [first, first + 9_999, first + 10_049] {
+        assert_eq!(
+            lineage.positions.get(&id).map(|(drive, _)| *drive),
+            Some(Some(HUB_ID_BASE + 1)),
+            "Hub position {id} reached clients under H1"
+        );
+    }
+    let h2_journal: Vec<String> = {
+        let connection = fixture.store.open().expect("catalogue");
+        let mut statement = connection
+            .prepare(
+                "SELECT operation FROM sync_mutations
+                  WHERE vehicle_id = ?1 AND entity = 'drive' AND entity_id = ?2
+                    AND car_id = ?3 ORDER BY revision",
+            )
+            .expect("journal");
+        statement
+            .query_map(params![fixture.binding.vehicle_id.to_string(), HUB_ID_BASE + 2, CAR], |row| {
+                row.get(0)
+            })
+            .expect("journal rows")
+            .collect::<Result<_, _>>()
+            .expect("journal rows")
+    };
+    assert_eq!(h2_journal, ["tombstone"], "the rebind journals H2 once");
+    // The collector publishes after the import.
+    let h4 = HUB_ID_BASE + 40;
+    window(&fixture, 2, T + 4 * HOUR, T + 5 * HOUR);
+    hub_rows(&fixture, &[(h4, T + 4 * HOUR, T + 4 * HOUR + 10 * MINUTE)], &[]);
+    publish_sync_mutations_ahead_of_packs(
+        &fixture.store,
+        &fixture.gate,
+        &fixture.cursor_key,
+        fixture.binding.vehicle_id,
+    )
+    .expect("the collector publishes after the import");
+    assert!(client(&fixture).drives.contains_key(&h4), "the next window reaches clients");
+}
+
+/// Review finding 2: a source drive that wins over a Hub drive and widens
+/// around a kept Hub position reaches 2.1 clients as stored. Source drive
+/// 14 [30, 44] outlasts H3 [35, 46]; H3's position at 45 is kept and moves
+/// under drive 14, whose end becomes 45 in the store, the 2.1 lineage and
+/// the 1.4 head alike.
+#[test]
+fn seam_physical_route_import_after_windows_restates_a_widened_source_drive() {
+    let (fixture, _) = window_only_fixture();
+    let h3 = HUB_ID_BASE + 3;
+    window_rows(&fixture, h3, T + 35 * MINUTE, T + 46 * MINUTE, T + 45 * MINUTE);
+    let mut history = successor_history();
+    history.drives.push(source_drive(14, T + 30 * MINUTE, T + 44 * MINUTE));
+    let root = crate::private_tempdir().expect("stage root");
+    first_import_after_windows(&fixture, root.path(), &history, T + 3 * HOUR, true)
+        .expect("first import after windows");
+    let stored: ProjectionDrive = {
+        let json: String = fixture
+            .store
+            .open()
+            .expect("catalogue")
+            .query_row(
+                "SELECT drive_json FROM materialised_drives WHERE vehicle_id = ?1 AND drive_id = 14",
+                params![fixture.binding.vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("drive 14 is stored");
+        serde_json::from_str(&json).expect("drive 14")
+    };
+    assert_eq!(stored.end_date_ms, T + 45 * MINUTE, "drive 14 widened over H3's position");
+    let lineage = client(&fixture);
+    assert!(!lineage.drives.contains_key(&h3), "H3 lost to drive 14");
+    assert_eq!(
+        lineage.drives.get(&14),
+        Some(&(stored.start_date_ms, stored.end_date_ms)),
+        "2.1 clients hold drive 14 as stored"
+    );
+    assert_eq!(
+        lineage.positions.get(&(HUB_ID_BASE + 3)).map(|(drive, _)| *drive),
+        Some(Some(14)),
+        "H3's position is kept under drive 14"
+    );
+    let env = paired(&fixture);
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("the 1.4 head is served");
+    assert_eq!(fresh.mirror.drives, lineage.drives, "1.4 and 2.1 clients agree");
 }
