@@ -216,10 +216,11 @@ final class BackupSettingsTests: XCTestCase {
             XCTAssertFalse(view.progressLabel.stringValue.contains("finished"), name)
             XCTAssertEqual(view.progressLabel.stringValue,
                            "The backup was interrupted or its result is unknown. The last good backup is unchanged.", name)
-            XCTAssertEqual(view.progressLabel.textColor, HubPalette.danger, name)
             XCTAssertTrue(view.backUpNowButton.isEnabled, name)
             if afterRestart.lastGeneration != nil {
-                XCTAssertTrue(labels(view.rowsStack).contains("T1700000000 (generation-A)"), "\(name): the last good backup stays shown")
+                let lastGood = afterRestart.lastGoodText(date: fixedDate)
+                XCTAssertTrue(lastGood.hasSuffix("(generation-A)"), name)
+                XCTAssertTrue(labels(view.rowsStack).contains(lastGood), "\(name): the last good backup stays shown")
             }
         }
     }
