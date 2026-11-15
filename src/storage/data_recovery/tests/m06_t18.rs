@@ -92,3 +92,59 @@ fn data_recovery_m06_t18_pack_and_noop_walkers_skip_regular_finder_files_only() 
     std::os::unix::fs::symlink("/etc/hosts", &link).unwrap();
     assert!(verify_data_backup(&backup).is_err(), "pack-directory symlink refused");
 }
+
+/// REV2-CX-M06-T06 finding 2: regular Finder metadata does not count against the
+/// directory entry bound, so a valid listed backup whose pack directory carries an
+/// AppleDouble sidecar per pack (and more) is verified and restored, without them.
+#[test]
+fn data_recovery_m06_t19_finder_sidecars_beyond_the_entry_bound_are_ignored() {
+    let (temporary, store) = create_fixture();
+    publish_schema_22_fixture(&store);
+    let backup = temporary.path().join("backup");
+    // A small catalogue is written in the listed (v4) directory format.
+    let created = create_data_backup(&store, &backup).expect("backup");
+    assert!(created.member_count <= LISTED_FORMAT_MAX_MEMBERS);
+    let packs = backup.join("data").join("packs").join("sha256");
+    let pack_names: Vec<String> = fs::read_dir(&packs)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    assert!(!pack_names.is_empty());
+    for name in &pack_names {
+        fs::write(packs.join(format!("._{name}")), b"appledouble").unwrap();
+    }
+    let sidecars = LISTED_FORMAT_MAX_MEMBERS + 32;
+    for index in pack_names.len()..sidecars {
+        fs::write(packs.join(format!("._sidecar-{index}")), b"appledouble").unwrap();
+    }
+    fs::write(packs.join(".DS_Store"), b"finder").unwrap();
+    assert!(fs::read_dir(&packs).unwrap().count() > LISTED_FORMAT_MAX_MEMBERS + 16);
+
+    let verified = verify_data_backup(&backup).expect("verify ignores the sidecars");
+    assert_eq!(verified.member_count, created.member_count);
+    let restored_path = temporary.path().join("restored");
+    let restored = restore_data_backup(&backup, &restored_path).expect("restore ignores them");
+    assert_eq!(restored.member_count, created.member_count);
+    let mut restored_names: Vec<String> = fs::read_dir(restored_path.join("packs").join("sha256"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    restored_names.sort();
+    let mut expected = pack_names.clone();
+    expected.sort();
+    assert_eq!(restored_names, expected, "no sidecar is restored");
+
+    // An unknown real member is still refused, and so is a metadata-shaped symlink.
+    fs::write(packs.join("unknown"), b"x").unwrap();
+    let error = verify_data_backup(&backup).expect_err("unknown member refused");
+    assert!(
+        error.to_string().contains("unknown or missing members"),
+        "{error}"
+    );
+    fs::remove_file(packs.join("unknown")).unwrap();
+    std::os::unix::fs::symlink("/etc/hosts", packs.join("._symlink")).unwrap();
+    assert!(
+        verify_data_backup(&backup).is_err(),
+        "metadata-shaped symlink refused"
+    );
+}
