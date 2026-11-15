@@ -1,16 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Reads the unattended backup password from the Mac Keychain (M06-T12).
+//! Keeps the unattended backup password in the Mac Keychain (M06-T12, M06-T17).
 //!
-//! On the Mac the app stores the recovery password as a generic password in
-//! the owner's login keychain: service [`KEYCHAIN_SERVICE`], account the
-//! `backup.password_file` path the configuration names (so each Hub
-//! configuration has its own item; no file is written there), or
-//! [`DEFAULT_ACCOUNT`] when `backup.password_source = "keychain"` names no
-//! path (M06-T13). The item's
-//! access list trusts exactly the app and its bundled service. The service is
-//! the per-user LaunchAgent, so it runs while the owner is logged in and the
-//! login keychain is open to it.
+//! The item is a generic password in the owner's login keychain: service
+//! [`KEYCHAIN_SERVICE`], account the `backup.password_file` path the
+//! configuration names (so each Hub configuration has its own item; no file is
+//! written there), or [`DEFAULT_ACCOUNT`] when `backup.password_source =
+//! "keychain"` names no path (M06-T13).
+//!
+//! The service binary creates and owns the item (DEC-123, option A): the app
+//! hands it the password on standard input (`backup-password store`) and never
+//! stores it itself. Created by this binary, the item trusts this binary only,
+//! and the Keychain's partition is this binary's signing team, so the
+//! LaunchAgent (the same binary) reads it without a prompt, a Hub update signed
+//! with the same identity keeps reading it, and the app and other programs
+//! are refused. A replacement changes the item's data in place, so the old
+//! password stays until the new one commits, and is read back before it counts.
 //!
 //! The service reads with the Keychain's user interface disallowed: it never
 //! shows a prompt. A missing item, a refused read (a locked keychain, or a
@@ -37,6 +42,13 @@ pub const DEFAULT_ACCOUNT: &str = "unattended-backup";
 /// The run is refused because the service cannot read the password item.
 pub const BACKUP_PASSWORD_UNAVAILABLE: &str = "backup_password_unavailable";
 
+/// A password offered to `backup-password store` is not one the recovery
+/// commands can take, or the account is unusable.
+pub const BACKUP_PASSWORD_INVALID: &str = "backup_password_invalid";
+
+/// The fewest characters a stored password has (the archive's own minimum).
+pub const MINIMUM_PASSWORD_CHARS: usize = 12;
+
 /// Why the Keychain gave no password.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeychainFailure {
@@ -54,21 +66,150 @@ pub enum KeychainFailure {
 /// keychain, never the login keychain.
 pub trait PasswordKeychain: Send + Sync {
     fn read(&self, account: &str) -> Result<Zeroizing<Vec<u8>>, KeychainFailure>;
+    /// Sets the item's data in place, or adds the item when there is none:
+    /// one Keychain write, so the old password stays until the new one
+    /// commits. A store that cannot write says so.
+    fn write(&self, _account: &str, _password: &[u8]) -> Result<(), KeychainFailure> {
+        Err(KeychainFailure::Unreadable)
+    }
 }
 
-/// Reads the password item for `account` (the configured path): UTF-8 of at
-/// most 1 KiB, as a password file holds.
+/// Whether `password` is one the recovery commands take as a typed line
+/// (`verify-backup`, `restore-data`; REV-CX-M06-T08 finding 1) and the
+/// archive accepts: UTF-8, no CR, LF or NUL, at most 1 KiB and at least
+/// [`MINIMUM_PASSWORD_CHARS`] characters.
+pub fn password_acceptable(password: &[u8]) -> bool {
+    password.len() <= PASSWORD_FILE_MAX_BYTES
+        && !password.iter().any(|byte| matches!(byte, b'\r' | b'\n' | 0))
+        && std::str::from_utf8(password)
+            .is_ok_and(|text| text.chars().count() >= MINIMUM_PASSWORD_CHARS)
+}
+
+/// Reads the password item for `account` (the configured path). A value the
+/// recovery commands could not take (see [`password_acceptable`]), such as a
+/// short or altered item, is refused as unavailable, never used.
 pub fn read_keychain_password(
     keychain: &dyn PasswordKeychain,
     account: &str,
 ) -> Result<Zeroizing<String>, OperatorRefusal> {
     let bytes = keychain.read(account).map_err(|failure| unavailable(failure, account))?;
-    if bytes.is_empty() || bytes.len() > PASSWORD_FILE_MAX_BYTES {
+    if !password_acceptable(&bytes) {
         return Err(unavailable(KeychainFailure::Unreadable, account));
     }
     let text = std::str::from_utf8(&bytes)
         .map_err(|_| unavailable(KeychainFailure::Unreadable, account))?;
     Ok(Zeroizing::new(text.to_owned()))
+}
+
+/// What the item holds compared with a password the app offers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Comparison {
+    /// There is no item for this account.
+    Missing,
+    /// The item holds exactly these bytes.
+    Equal,
+    /// The item holds another password.
+    Different,
+}
+
+fn invalid(message: &'static str) -> OperatorRefusal {
+    OperatorRefusal::new(BACKUP_PASSWORD_INVALID, message)
+}
+
+fn check_account(account: &str) -> Result<(), OperatorRefusal> {
+    if account.is_empty() || account.len() > 4096 || account.contains('\0') {
+        return Err(invalid("the Keychain account must be the configured password path or unattended-backup"));
+    }
+    Ok(())
+}
+
+/// Equality that takes the same time wherever the bytes differ.
+fn same_bytes(left: &[u8], right: &[u8]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).fold(0_u8, |difference, (a, b)| difference | (a ^ b)) == 0
+}
+
+/// One password from standard input: at most 1 KiB and one line end, which
+/// is dropped. Nothing else is read and nothing is echoed.
+pub fn password_from_input(mut reader: impl std::io::Read) -> Result<Zeroizing<Vec<u8>>, OperatorRefusal> {
+    use std::io::Read as _;
+    let mut bytes = Zeroizing::new(Vec::with_capacity(PASSWORD_FILE_MAX_BYTES + 3));
+    (&mut reader)
+        .take(u64::try_from(PASSWORD_FILE_MAX_BYTES + 3).expect("cap fits"))
+        .read_to_end(&mut bytes)
+        .map_err(|_| invalid("standard input cannot be read"))?;
+    if bytes.last() == Some(&b'\n') {
+        bytes.pop();
+        if bytes.last() == Some(&b'\r') {
+            bytes.pop();
+        }
+    }
+    if bytes.is_empty() || bytes.len() > PASSWORD_FILE_MAX_BYTES {
+        return Err(invalid("send one password of at most 1 KiB on standard input"));
+    }
+    Ok(bytes)
+}
+
+/// Saves `password` as the item for `account` and reads it back through this
+/// binary's own access before it counts (`backup-password store`). The
+/// password must be one the recovery commands can take. The item's data
+/// changes in place: a failure before the write commits leaves the old
+/// password; a read-back that differs is reported, never hidden.
+pub fn store_password(
+    keychain: &dyn PasswordKeychain,
+    account: &str,
+    password: &[u8],
+) -> Result<(), OperatorRefusal> {
+    check_account(account)?;
+    if !password_acceptable(password) {
+        return Err(invalid(
+            "the recovery password needs at least 12 characters, at most 1 KiB, and no line ends or NUL bytes",
+        ));
+    }
+    keychain.write(account, password).map_err(|failure| match failure {
+        KeychainFailure::Refused => OperatorRefusal::new(
+            BACKUP_PASSWORD_UNAVAILABLE,
+            "the Keychain refused to save the backup password (the keychain is locked, or another program owns the item); unlock the login keychain and save again",
+        ),
+        _ => OperatorRefusal::new(BACKUP_PASSWORD_UNAVAILABLE, "the backup password could not be saved in the Keychain"),
+    })?;
+    let saved = keychain.read(account).map_err(|failure| unavailable(failure, account))?;
+    if !same_bytes(&saved, password) {
+        return Err(OperatorRefusal::new(
+            BACKUP_PASSWORD_UNAVAILABLE,
+            "the Keychain gave back a different backup password after saving; save the recovery password again",
+        ));
+    }
+    Ok(())
+}
+
+/// Compares `password` with the item for `account` through this binary's own
+/// access (`backup-password compare`): the app uses it to finish or refuse
+/// moving an old password file. A refused or unreadable item is a refusal.
+pub fn compare_password(
+    keychain: &dyn PasswordKeychain,
+    account: &str,
+    password: &[u8],
+) -> Result<Comparison, OperatorRefusal> {
+    check_account(account)?;
+    match keychain.read(account) {
+        Ok(saved) if same_bytes(&saved, password) => Ok(Comparison::Equal),
+        Ok(_) => Ok(Comparison::Different),
+        Err(KeychainFailure::Missing) => Ok(Comparison::Missing),
+        Err(failure) => Err(unavailable(failure, account)),
+    }
+}
+
+/// Whether the item for `account` holds a password the service can use
+/// (`backup-password status`): the app's schedule keeps counting a saved
+/// password through ordinary edits. Missing is `Ok(false)`.
+pub fn password_status(keychain: &dyn PasswordKeychain, account: &str) -> Result<bool, OperatorRefusal> {
+    check_account(account)?;
+    match read_keychain_password(keychain, account) {
+        Ok(_) => Ok(true),
+        Err(_) if keychain.read(account).err() == Some(KeychainFailure::Missing) => Ok(false),
+        Err(refusal) => Err(refusal),
+    }
 }
 
 /// The refusal the owner sees in the app (its last failure). It names no
@@ -153,6 +294,27 @@ mod mac {
                 Ok((password, _item)) => Ok(Zeroizing::new(password.to_vec())),
                 Err(error) => Err(classify(error.code())),
             }
+        }
+
+        /// Writes into the first keychain of the list, or the owner's default
+        /// one. An item this binary may not open is never replaced or deleted
+        /// (that would need a prompt): the write is refused.
+        fn write(&self, account: &str, password: &[u8]) -> Result<(), KeychainFailure> {
+            let _turn = NO_PROMPT.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _no_prompt =
+                SecKeychain::disable_user_interaction().map_err(|_| KeychainFailure::Unreadable)?;
+            let keychain = match &self.keychains {
+                Some(list) => list.first().cloned().ok_or(KeychainFailure::Unreadable)?,
+                None => SecKeychain::default().map_err(|error| classify(error.code()))?,
+            };
+            match keychain.find_generic_password(KEYCHAIN_SERVICE, account) {
+                Ok((_, mut item)) => item.set_password(password),
+                Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => {
+                    keychain.add_generic_password(KEYCHAIN_SERVICE, account, password)
+                }
+                Err(error) => return Err(classify(error.code())),
+            }
+            .map_err(|error| classify(error.code()))
         }
     }
 }

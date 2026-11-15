@@ -97,6 +97,11 @@ pub fn read_password_file(path: &Path) -> Result<Zeroizing<String>, OperatorRefu
             bytes.pop();
         }
     }
+    // What `#pw-file` recovery takes (REV-CX-M06-T08 finding 1): an empty
+    // password could never be given back to `verify-backup` or `restore-data`.
+    if bytes.is_empty() {
+        return Err(invalid("the backup password file holds no password"));
+    }
     let text = std::str::from_utf8(&bytes)
         .map_err(|_| invalid("the backup password file must hold UTF-8 text"))?;
     Ok(Zeroizing::new(text.to_owned()))
@@ -114,32 +119,72 @@ fn acl_grants_access(descriptor: &impl AsFd, _path: &Path) -> Result<bool, Opera
     }
 }
 
+/// Lists the ACL of the opened file itself: `/.vol/<device>/<inode>` names
+/// the held file, so a file swapped in at the pathname is never the one
+/// inspected (REV-CX-M06-T12 finding 8; the pattern of M06-T11).
 #[cfg(target_os = "macos")]
 fn acl_grants_access(descriptor: &impl AsFd, path: &Path) -> Result<bool, OperatorRefusal> {
     use std::process::{Command, Stdio};
+    #[cfg(not(test))]
+    let _ = path;
     let unreadable = || invalid("the backup password file's access control list cannot be read");
+    let open = fstat(descriptor).map_err(|_| unreadable())?;
+    let held = format!("/.vol/{}/{}", open.st_dev, open.st_ino);
+    #[cfg(test)]
+    acl_listing_seam::run(acl_listing_seam::Stage::Before, path);
     let output = Command::new("/bin/ls")
         .arg("-l")
         .arg("-e")
         .arg("-d")
         .arg("--")
-        .arg(path)
+        .arg(&held)
         .env_clear()
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()
         .map_err(|_| unreadable())?;
+    #[cfg(test)]
+    acl_listing_seam::run(acl_listing_seam::Stage::After, path);
     if !output.status.success() {
         return Err(unreadable());
     }
-    // The listing must describe the file that is open, not a replacement.
-    let open = fstat(descriptor).map_err(|_| unreadable())?;
-    let named = fs::symlink_metadata(path).map_err(|_| unreadable())?;
-    if named.dev() != u64::try_from(open.st_dev).unwrap_or(u64::MAX) || named.ino() != open.st_ino {
-        return Err(invalid("the backup password file changed while it was read"));
+    let listed = fs::symlink_metadata(&held).map_err(|_| unreadable())?;
+    if listed.dev() != u64::try_from(open.st_dev).unwrap_or(u64::MAX) || listed.ino() != open.st_ino {
+        return Err(unreadable());
     }
     let listing = std::str::from_utf8(&output.stdout).map_err(|_| unreadable())?;
     Ok(macos_acl_listing_grants_access(listing))
+}
+
+/// Test seam: runs around the ACL listing, so a test can swap the pathname
+/// while the listing runs.
+#[cfg(all(test, target_os = "macos"))]
+pub(crate) mod acl_listing_seam {
+    use std::{cell::RefCell, path::Path};
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) enum Stage {
+        Before,
+        After,
+    }
+
+    type Hook = Box<dyn Fn(Stage, &Path)>;
+
+    thread_local! {
+        static HOOK: RefCell<Option<Hook>> = const { RefCell::new(None) };
+    }
+
+    pub(crate) fn set(hook: Option<Hook>) {
+        HOOK.with(|cell| *cell.borrow_mut() = hook);
+    }
+
+    pub(super) fn run(stage: Stage, path: &Path) {
+        HOOK.with(|cell| {
+            if let Some(hook) = cell.borrow().as_ref() {
+                hook(stage, path);
+            }
+        });
+    }
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
