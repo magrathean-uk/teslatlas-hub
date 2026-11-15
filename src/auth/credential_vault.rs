@@ -280,13 +280,19 @@ impl CredentialVault {
         admission.assert_store_path(data_dir).map_err(|_|CredentialStoreError::SensitiveAccessUnavailable)?;
         if loss.is_some_and(|lost|lost()) { return Err(CredentialStoreError::SensitiveAccessUnavailable); }
         #[cfg(test)]
-        { fixtures::open_runtime_fixture_vault(store, data_dir, admission) }
+        { fixtures::open_runtime_fixture_vault(store, data_dir, admission, loss) }
         #[cfg(not(test))]
-        { Self::open(store, admission, data_dir, VaultOptions::default()) }
+        { Self::open_fenced(store, admission, data_dir, VaultOptions::default(), loss) }
     }
     #[cfg(test)]
     pub(crate) fn test_admission(&self)->Arc<AdmittedUserHub>{Arc::clone(&self.admission)}
     pub(crate) fn open(store: HubStore, admission: Arc<AdmittedUserHub>, data_dir: &Path, options: VaultOptions) -> Result<Arc<Self>, CredentialStoreError> {
+        Self::open_fenced(store, admission, data_dir, options, None)
+    }
+    /// [`Self::open`] under a startup fence (M04-T08): `fence` is consulted again
+    /// before each independent startup mutation of [`Self::open_unregistered_fenced`].
+    fn open_fenced(store: HubStore, admission: Arc<AdmittedUserHub>, data_dir: &Path, options: VaultOptions,
+        fence: Option<&crate::credentials::LossObserver>) -> Result<Arc<Self>, CredentialStoreError> {
         #[cfg(test)]
         let registry = Arc::clone(&store.fixture_vault);
         #[cfg(test)]
@@ -299,7 +305,7 @@ impl CredentialVault {
         if retained.as_ref().is_some_and(|retained| !Arc::ptr_eq(retained, &admission)) {
             return Err(CredentialStoreError::SensitiveAccessUnavailable);
         }
-        let vault = Self::open_unregistered(store, admission, data_dir, options)?;
+        let vault = Self::open_unregistered_fenced(store, admission, data_dir, options, fence)?;
         #[cfg(test)]
         {
             *retained = Some(Arc::clone(&vault.admission));
@@ -307,7 +313,19 @@ impl CredentialVault {
         }
         Ok(vault)
     }
+    #[cfg(test)]
     fn open_unregistered(store: HubStore, admission: Arc<AdmittedUserHub>, data_dir: &Path, options: VaultOptions) -> Result<Arc<Self>, CredentialStoreError> {
+        Self::open_unregistered_fenced(store, admission, data_dir, options, None)
+    }
+    /// The opening sequence. A runtime start passes its run's startup fence, which
+    /// also holds the collection window (M04-T08): it is consulted again before each
+    /// independent mutation (the durability probe, the secrets directory, the backup
+    /// exclusion and, after its wait, its record, the repairing key load, the exposure
+    /// and barrier records, Phase B and a resumed rotation), so a window that ends
+    /// during the sequence, or during a wait inside it, stops it before the next one.
+    fn open_unregistered_fenced(store: HubStore, admission: Arc<AdmittedUserHub>, data_dir: &Path, options: VaultOptions,
+        fence: Option<&crate::credentials::LossObserver>) -> Result<Arc<Self>, CredentialStoreError> {
+        let fenced = || if fence.is_some_and(|refused| refused()) { Err(CredentialStoreError::SensitiveAccessUnavailable) } else { Ok(()) };
         admission.assert_sensitive_access().map_err(|_| CredentialStoreError::SensitiveAccessUnavailable)?;
         admission.assert_store_path(data_dir).map_err(|_| CredentialStoreError::SensitiveAccessUnavailable)?;
         let admission_lease = admission.take_credential_vault().ok_or(StoreError::CredentialConnectionTaken)?;
@@ -326,6 +344,7 @@ impl CredentialVault {
             #[cfg(test)]
             if vault.options.probe_failure { state.connection.set_test_barrier_failure(true); }
             #[cfg(test)] PROBE_CONTROL.with(|control|{if let Some(control)=control.borrow_mut().as_mut(){control(&mut state.connection);}});
+            fenced()?;
             if let Err(error)=state.connection.probe_credential_durability(){state.read_only=true;state.resume_error=Some(error.into());}
             #[cfg(debug_assertions)]
             if entry::test_probe_failure() {
@@ -338,6 +357,7 @@ impl CredentialVault {
             #[cfg(test)]
             if vault.options.probe_failure { state.connection.set_test_barrier_failure(false); }
             let secrets_path = data_dir.join("secrets");
+            fenced()?;
             state.secrets = if state.read_only { private_directory::open_validated_read_only(&secrets_path) }
                 else { private_directory::open_validated(&secrets_path, true).map(Some) }
                 .map_err(|error| {
@@ -345,10 +365,14 @@ impl CredentialVault {
                     #[cfg(not(test))] let _ = error;
                     CredentialStoreError::Key(CredentialKeyError::Io { operation: "secrets_directory" })
                 })?;
+            fenced()?;
             let exclusion = match &state.secrets {
                 Some(secrets) => vault.exclusion().ensure_excluded(secrets.path()),
                 None => Err(CredentialKeyError::BackupExclusionFailed),
             };
+            // The exclusion may wait (tmutil, up to its run limit): the window is
+            // asked again before its result is recorded.
+            fenced()?;
             state.exclusion_verified = match exclusion {
                 Ok(ExclusionState::Verified) => true,
                 Ok(ExclusionState::NotApplicable) => !cfg!(target_os = "macos"),
@@ -360,6 +384,7 @@ impl CredentialVault {
                     Err(_) => CredentialSecretsExclusion::Failed };
                 state.connection.record_credential_secrets_exclusion(status)?;
             }
+            fenced()?;
             let mut keys = vault.keys.write().map_err(|_| CredentialStoreError::LockPoisoned)?;
             *keys = match &state.secrets {
                 None => None,
@@ -368,17 +393,20 @@ impl CredentialVault {
             };
             // R16: the repairing load made an exposed keyring private; the finding
             // stays recorded until a rotation begun after it completes.
+            fenced()?;
             if !state.read_only && keys.as_ref().is_some_and(|handle| handle.exposure_suspected)
                 && let Err(error) = state.connection.record_credential_keyring_exposure(true) {
                 state.read_only = true; state.resume_error.get_or_insert(error.into());
             }
             // R55/R73: a failed keyring or secrets/ barrier is recorded like a failed probe.
+            fenced()?;
             if keys.is_some() && let Err(error) = vault.prove_keyring(&state) {
                 if matches!(error, CredentialStoreError::DurabilityUnavailable) {
                     state.connection.record_credential_keyring_barrier_failure();
                 }
                 state.read_only = true; state.resume_error.get_or_insert(error);
             }
+            fenced()?;
             if !state.read_only && state.exclusion_verified {
                 #[cfg(test)] OPEN_CONTROL.with(|control| {
                     if let Some(control) = control.borrow_mut().as_mut() { control(&mut state.connection); }
@@ -388,6 +416,7 @@ impl CredentialVault {
                     state.resume_error = Some(error);
                 }
             }
+            fenced()?;
             if !state.read_only && keys.as_ref().is_some_and(|k| k.keyring().previous.is_some())
                 && let Err(error) = vault.rotate_locked(&mut state, &mut keys) {
                 if matches!(error, CredentialStoreError::DurabilityUnavailable) { state.read_only = true; }

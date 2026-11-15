@@ -194,6 +194,9 @@ struct SupervisedCollectorTestSeam {
     /// The tick-commit hook (C3 section 8 item 9): the tick transactions that
     /// wrote and committed.
     tick_commits: AtomicUsize,
+    /// Run right after a tick transaction committed, before anything after it (the
+    /// publication) has begun (M04-T08).
+    tick_committed: std::sync::Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     /// The tick transactions that reached their commit, whether or not a fault
     /// stopped them.
     tick_commit_attempts: AtomicUsize,
@@ -695,6 +698,12 @@ impl SupervisedCollectorTestSeam {
         }
     }
 
+    /// Run `hook` right after every tick transaction committed, before the tick's
+    /// publication begins.
+    fn set_tick_committed_hook(&self, hook: Arc<dyn Fn() + Send + Sync>) {
+        *self.tick_committed.lock().expect("tick hook") = Some(hook);
+    }
+
     fn tick_commits(&self) -> usize {
         self.tick_commits.load(Ordering::SeqCst)
     }
@@ -886,9 +895,16 @@ fn supervised_test_lone_reservation_commit() {
 /// A tick transaction committed (the counter of the tick-commit hook).
 #[cfg(test)]
 fn supervised_tick_committed() {
-    let _ = SUPERVISED_COLLECTOR_TEST_SEAM.try_with(|seam| {
-        seam.tick_commits.fetch_add(1, Ordering::SeqCst);
-    });
+    let hook = SUPERVISED_COLLECTOR_TEST_SEAM
+        .try_with(|seam| {
+            seam.tick_commits.fetch_add(1, Ordering::SeqCst);
+            seam.tick_committed.lock().expect("tick hook").clone()
+        })
+        .ok()
+        .flatten();
+    if let Some(hook) = hook {
+        hook();
+    }
 }
 
 /// Signal every run, then wait for all of them together: the five-second deadlines

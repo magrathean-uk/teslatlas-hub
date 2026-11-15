@@ -1455,3 +1455,200 @@ async fn collector_resilience_network_loss_and_restart_keep_every_committed_obse
     keeps(&committed, &committed_ids(&reopened), "after the restart");
     assert!(fake.assert_no_wake_or_command().is_ok());
 }
+
+/// M04-T08 (REV-CX-M04-T05 finding 1): the window ends while the credential vault of
+/// an admitted start waits in its backup-exclusion check (tmutil may take up to its
+/// run limit). The run had asked the gate and holds its permit; the vault asks the
+/// window again after the wait, so the changed exclusion result is never recorded,
+/// and no later startup transaction or file mutation begins: no key material, no
+/// cursor key, no lease, nothing sent. The start ends with the window's code.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn collector_resilience_window_expiry_during_vault_startup_stops_its_mutations() {
+    crate::crypto::install_default_provider();
+    let tripwire = Tripwire::spawn().await;
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("Hub store");
+    seed_supervised_restart_import(&store);
+    let now = current_epoch_millis().expect("clock").div_euclid(1_000);
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(
+        &store,
+        temporary.path(),
+        "window-access",
+        "window-refresh",
+        Some((now + 28_800, now + 14_400)),
+    )
+    .expect("supplied pair");
+    let window = TestWindow::open(60);
+    // The configured stream endpoint must pass the production override rule (TLS),
+    // so the run asks the gate for this routed endpoint; nothing connects to it.
+    let (endpoint, _port) = reserved_stream_endpoint();
+    let endpoint = endpoint.replacen("ws://", "wss://", 1);
+    let _route = window.route(&endpoint);
+    let mut config = supervised_restart_test_config(temporary.path());
+    config.collector.stream_endpoint_override = Some(endpoint);
+    let secrets = temporary.path().join("secrets");
+    let listing = |path: &std::path::Path| -> Vec<(String, u64)> {
+        let mut names: Vec<(String, u64)> = std::fs::read_dir(path)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .map(|entry| {
+                        let length = entry.metadata().map(|meta| meta.len()).unwrap_or_default();
+                        (entry.file_name().to_string_lossy().into_owned(), length)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort();
+        names
+    };
+    let exclusion_before = store
+        .credential_format_state()
+        .expect("format state")
+        .expect("converted store")
+        .secrets_exclusion;
+    let secrets_before = listing(&secrets);
+    let waited = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let clock = Arc::clone(&window.clock);
+    let waited_in = Arc::clone(&waited);
+    // The wait outlasts the window and then reports a changed result, which the
+    // vault would record in a transaction of its own.
+    crate::auth::credential_vault::fixtures::wait_in_next_exclusion(
+        &secrets,
+        Box::new(move || {
+            clock.advance(61);
+            waited_in.store(true, Ordering::SeqCst);
+            Err(crate::auth::credential_keys::CredentialKeyError::BackupExclusionFailed)
+        }),
+    );
+    let admission =
+        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let client_url = tripwire.url.clone();
+    let result = timeout(
+        SUPERVISED_RESTART_WAIT,
+        run_supervised_with_clients_for_admitted_user(
+            &store,
+            &config,
+            admission,
+            ready_tx,
+            move |_| Ok(OwnerApi::for_fake_http(client_url, Duration::from_secs(2))?),
+            |_| -> Result<FleetClients, CollectorError> {
+                panic!("Fleet clients were built by an Owner-wire start")
+            },
+            std::future::pending::<()>(),
+        ),
+    )
+    .await
+    .expect("the start ends by itself");
+    assert!(waited.load(Ordering::SeqCst), "the vault reached its exclusion wait");
+    assert!(
+        matches!(result, Err(CollectorError::CollectionWindowClosed("window_closed"))),
+        "{result:?}"
+    );
+    assert!(ready_rx.await.is_err(), "no cursor key is handed over");
+    assert_eq!(
+        store
+            .credential_format_state()
+            .expect("format state")
+            .expect("converted store")
+            .secrets_exclusion,
+        exclusion_before,
+        "no exclusion record after the window ended"
+    );
+    assert_eq!(listing(&secrets), secrets_before, "no key or cursor-key file change");
+    assert_nothing_started(&store, "window ended during vault startup");
+    assert_eq!(tripwire.requests(), 0, "nothing is sent");
+}
+
+/// M04-T08 (REV-CX-M04-T05 finding 2): a tick with an actual snapshot publishes
+/// every scheduled car, here the read car and another, unchanged one. Their
+/// identities, seed cars and settings commit with the tick; after that commit the
+/// publication writes no vehicle, source, car or settings row of its own and runs
+/// no standalone registration. A failed tick publishes nothing.
+#[tokio::test]
+async fn collector_resilience_snapshot_tick_publishes_with_its_committed_identities() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam.clone(), async {
+            let mut bed = TickBed::owner();
+            assert!(matches!(
+                bed.list(vec![core_vehicle(3, "online"), core_vehicle(4, "asleep")])
+                    .await,
+                TickOutcome::Committed { wrote: true, .. }
+            ));
+            bed.advance(Duration::from_secs(1));
+            let commits = seam.tick_commits();
+            bed.store.instrumentation().reset();
+            // From the tick's commit on, every identity, car or settings write is
+            // logged: none may follow the tick's own transaction.
+            let observer = bed.store.clone();
+            seam.set_tick_committed_hook(Arc::new(move || {
+                observer
+                    .open()
+                    .expect("observer")
+                    .execute_batch(
+                        "CREATE TABLE IF NOT EXISTS t08_after_tick(name TEXT NOT NULL);
+                         CREATE TRIGGER IF NOT EXISTS t08_vehicles_update AFTER UPDATE ON vehicles
+                           BEGIN INSERT INTO t08_after_tick VALUES ('vehicles'); END;
+                         CREATE TRIGGER IF NOT EXISTS t08_vehicles_insert AFTER INSERT ON vehicles
+                           BEGIN INSERT INTO t08_after_tick VALUES ('vehicles'); END;
+                         CREATE TRIGGER IF NOT EXISTS t08_sources_insert AFTER INSERT ON sources
+                           BEGIN INSERT INTO t08_after_tick VALUES ('sources'); END;
+                         CREATE TRIGGER IF NOT EXISTS t08_settings_insert AFTER INSERT ON car_settings
+                           BEGIN INSERT INTO t08_after_tick VALUES ('car_settings'); END;
+                         CREATE TRIGGER IF NOT EXISTS t08_settings_update AFTER UPDATE ON car_settings
+                           BEGIN INSERT INTO t08_after_tick VALUES ('car_settings'); END;
+                         CREATE TRIGGER IF NOT EXISTS t08_cars_insert AFTER INSERT ON materialised_cars
+                           BEGIN INSERT INTO t08_after_tick VALUES ('materialised_cars'); END;",
+                    )
+                    .expect("after-tick log");
+            }));
+            let snapshot_tick = |bed: &mut TickBed| {
+                let now = bed.now();
+                bed.scheduler.begin_tick();
+                let mut batch = TickBatch::default();
+                batch.snapshots.push(bed.read_item(3, parked_fields()));
+                batch.note_result(now);
+                batch
+            };
+            // A failed snapshot tick: nothing committed, nothing published.
+            let batch = snapshot_tick(&mut bed);
+            seam.set_tick_commit_fault(true);
+            assert!(matches!(bed.commit(batch).await, TickOutcome::Failed));
+            assert_eq!(seam.tick_commits(), commits, "the failed tick committed nothing");
+            seam.set_tick_commit_fault(false);
+            bed.advance(Duration::from_secs(30));
+            let batch = snapshot_tick(&mut bed);
+            let outcome = bed.commit(batch).await;
+            let TickOutcome::Committed {
+                wrote: true,
+                report: Some(report),
+            } = outcome
+            else {
+                panic!("the snapshot tick commits: {outcome:?}");
+            };
+            assert!(report.snapshots_published >= 1, "the tick published");
+            assert_eq!(seam.tick_commits(), commits + 1, "one tick commit");
+            let after: i64 = bed.query("SELECT COUNT(*) FROM t08_after_tick");
+            let names: Vec<String> = {
+                let connection = bed.store.open().expect("connection");
+                let mut statement = connection
+                    .prepare("SELECT name FROM t08_after_tick")
+                    .expect("statement");
+                statement
+                    .query_map([], |row| row.get(0))
+                    .expect("rows")
+                    .collect::<Result<_, _>>()
+                    .expect("names")
+            };
+            assert_eq!(after, 0, "no identity, car or settings write after the tick: {names:?}");
+            let counts = bed.store.instrumentation().snapshot();
+            assert_eq!(counts.source_registration_calls, 0, "no standalone source write");
+            assert_eq!(counts.vehicle_registration_calls, 0, "no standalone vehicle write");
+            let settings: i64 = bed.query("SELECT COUNT(*) FROM car_settings");
+            let cars: i64 = bed.query("SELECT COUNT(*) FROM materialised_cars");
+            assert_eq!((settings, cars), (2, 2), "both scheduled cars are set up by the tick");
+        })
+        .await;
+}

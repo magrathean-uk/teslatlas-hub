@@ -907,7 +907,21 @@ async fn commit_tick(
     // registered inside the tick's transaction below (M04-T01).
     let mut registered: HashMap<VehicleId, Registered> = HashMap::new();
     let mut unregistered: Vec<Vehicle> = Vec::new();
-    for vehicle in batch_vehicles(&batch) {
+    // A tick with snapshots publishes every scheduled car after its commit (M04-T08,
+    // REV-CX-M04-T05 finding 2): their identities are resolved here too, so the
+    // publication registers nothing of its own.
+    let published: Vec<Vehicle> = if batch.snapshots.is_empty() {
+        Vec::new()
+    } else {
+        scheduler.vehicles()
+    };
+    let mut needed = batch_vehicles(&batch);
+    for vehicle in &published {
+        if !needed.iter().any(|known| known.id == vehicle.id) {
+            needed.push(vehicle.clone());
+        }
+    }
+    for vehicle in needed {
         match identities.known(commit.store, commit.provider, &vehicle) {
             Ok(Some(identity)) => {
                 registered.insert(vehicle.id, identity);
@@ -961,12 +975,41 @@ async fn commit_tick(
                 &batch,
                 &rows,
             )?;
-            let wrote = wrote || output.wrote;
-            Ok::<_, CollectorError>(((output, fresh, wrote), wrote))
+            let mut wrote = wrote || output.wrote;
+            // The publication's car and settings writes join the tick (M04-T08):
+            // the snapshot cars got theirs from the intake above; every other
+            // scheduled car gets its seed car, when absent, and its settings here.
+            let mut identities_published = Vec::new();
+            if output.report.is_some() {
+                for vehicle in &published {
+                    let identity = registered
+                        .get(&vehicle.id)
+                        .ok_or(CollectorError::SnapshotWithoutListedVehicle)?;
+                    if !batch.snapshots.iter().any(|item| item.vehicle.id == vehicle.id) {
+                        let seed_car = compatibility_car(vehicle, None, identity.pack_car_id);
+                        check_optional_write(guard, "publication-seed-car")?;
+                        HubStore::persist_materialised_car_if_absent_in_transaction(
+                            transaction,
+                            identity.hub_id,
+                            &seed_car,
+                        )?;
+                        check_optional_write(guard, "publication-settings")?;
+                        HubStore::upsert_car_settings_in_transaction(
+                            transaction,
+                            identity.hub_id,
+                            identity.pack_car_id,
+                            &vehicle.settings,
+                        )?;
+                        wrote = true;
+                    }
+                    identities_published.push(identity.clone());
+                }
+            }
+            Ok::<_, CollectorError>(((output, fresh, wrote, identities_published), wrote))
         },
         supervised_tick_commit_hook,
     );
-    let (output, fresh, wrote) = match result {
+    let (output, fresh, wrote, identities_published) = match result {
         Ok(output) => output,
         // A refused write is the run's end, not a store fault of the tick.
         Err(error) if ends_the_run(&error) => return Err(error),
@@ -1023,22 +1066,14 @@ async fn commit_tick(
     if let Some(report) = report.as_mut()
         && let Some(publication_gate) = publication_gate.as_ref()
     {
-        let collection = ManualCollection {
-            vehicles: scheduler.vehicles(),
-            snapshots: batch
-                .snapshots
-                .iter()
-                .map(|item| item.snapshot.clone())
-                .collect(),
-            failures: batch.failures.clone(),
-        };
-        report.snapshots_published = publish_compatibility_snapshots_for_provider_guarded(
+        // The identities, cars and settings committed with the tick: the
+        // publication is the claim, the packs and the catalogue only (M04-T08).
+        report.snapshots_published = publish_compatibility_snapshots_with_identities(
             commit.store,
             publication_gate,
             commit.cursor_key,
-            &collection,
+            &identities_published,
             now_ms,
-            commit.provider,
             scheduler.write_guard(),
         )?;
     }
@@ -1710,6 +1745,22 @@ impl RunWriteGuard {
     fn observer(&self, point: &'static str) -> crate::credentials::LossObserver {
         let guard = self.clone();
         Arc::new(move || guard.refused(point))
+    }
+
+    /// The credential unit's startup fence (M04-T08): unlike [`Self::observer`] it
+    /// also holds the collection window, so the vault's opening sequence asks the
+    /// window again before each of its independent mutations, waits included. The
+    /// admission-only observer stays with the unit for the settlement of an exchange
+    /// the gate already permitted.
+    fn startup_observer(&self, point: &'static str) -> crate::credentials::LossObserver {
+        let guard = self.clone();
+        Arc::new(move || guard.check(point).is_err())
+    }
+
+    /// `error` of a credential startup, or the window's own refusal when the window
+    /// the run holds has ended meanwhile: a start the window stopped ends with its code.
+    fn window_refusal_or(&self, error: CollectorError) -> CollectorError {
+        self.window.check().err().unwrap_or(error)
     }
 
     /// Test only: the boundaries this guard has been consulted at.

@@ -38,6 +38,17 @@ pub(in crate::auth) fn power_observer(observer: Option<Box<dyn FnMut(&str, Optio
 
 #[cfg(test)]
 pub(crate) struct FixtureExclusion;
+/// The outcome of the fixture exclusion's next check of one secrets directory, in
+/// place of the immediate answer: a test stands in for the wait of tmutil there
+/// (M04-T08). Keyed by the directory, so parallel tests do not see each other's.
+#[cfg(test)]
+pub(crate) type ExclusionWait = Box<dyn FnOnce() -> Result<ExclusionState, CredentialKeyError> + Send>;
+#[cfg(test)]
+static EXCLUSION_WAITS: Mutex<std::collections::BTreeMap<std::path::PathBuf, ExclusionWait>> = Mutex::new(std::collections::BTreeMap::new());
+#[cfg(test)]
+pub(crate) fn wait_in_next_exclusion(secrets: &Path, wait: ExclusionWait) {
+    EXCLUSION_WAITS.lock().expect("exclusion waits").insert(secrets.to_owned(), wait);
+}
 #[cfg(test)]
 pub(crate) fn replace_legacy_supplied_pair(store: &HubStore, data: &Path, access: &str, refresh: &str, schedule: Option<(i64,i64)>) -> Result<Uuid,CredentialStoreError> {
     let mut entry = CredentialEntry::own_login_fixture(Zeroizing::new(access.into()),Zeroizing::new(refresh.into()))?;
@@ -53,7 +64,9 @@ pub(crate) fn replace_legacy_supplied_pair(store: &HubStore, data: &Path, access
 pub(crate) fn legacy_vault(store: &HubStore, data: &Path) -> Arc<CredentialVault> { open_fixture_vault(store.clone(),data) }
 #[cfg(test)]
 impl BackupExclusion for FixtureExclusion {
-    fn ensure_excluded(&self, _: &Path) -> Result<ExclusionState, CredentialKeyError> {
+    fn ensure_excluded(&self, secrets: &Path) -> Result<ExclusionState, CredentialKeyError> {
+        let wait = EXCLUSION_WAITS.lock().expect("exclusion waits").remove(secrets);
+        if let Some(wait) = wait { return wait(); }
         #[cfg(target_os = "macos")] { Ok(ExclusionState::Verified) }
         #[cfg(not(target_os = "macos"))] { Ok(ExclusionState::NotApplicable) }
     }
@@ -168,14 +181,14 @@ pub(crate) fn open_fixture_vault(store: HubStore, data: &Path) -> Arc<Credential
 }
 #[cfg(test)]
 pub(crate) fn open_admitted_fixture_vault(store: HubStore, data: &Path, admission: Arc<AdmittedUserHub>) -> Result<Arc<CredentialVault>, CredentialStoreError> {
-    open_admitted_fixture_vault_inner(store, data, admission, true)
+    open_admitted_fixture_vault_inner(store, data, admission, true, None)
 }
 #[cfg(test)]
-pub(crate) fn open_runtime_fixture_vault(store: HubStore, data: &Path, admission: Arc<AdmittedUserHub>) -> Result<Arc<CredentialVault>, CredentialStoreError> {
-    open_admitted_fixture_vault_inner(store, data, admission, false)
+pub(crate) fn open_runtime_fixture_vault(store: HubStore, data: &Path, admission: Arc<AdmittedUserHub>, fence: Option<&crate::credentials::LossObserver>) -> Result<Arc<CredentialVault>, CredentialStoreError> {
+    open_admitted_fixture_vault_inner(store, data, admission, false, fence)
 }
 #[cfg(test)]
-fn open_admitted_fixture_vault_inner(store: HubStore, data: &Path, admission: Arc<AdmittedUserHub>, reuse: bool) -> Result<Arc<CredentialVault>, CredentialStoreError> {
+fn open_admitted_fixture_vault_inner(store: HubStore, data: &Path, admission: Arc<AdmittedUserHub>, reuse: bool, fence: Option<&crate::credentials::LossObserver>) -> Result<Arc<CredentialVault>, CredentialStoreError> {
     let registry = Arc::clone(&store.fixture_vault);
     let mut registered = registry.current.lock().map_err(|_|CredentialStoreError::LockPoisoned)?;
     if let Some(vault) = registered.upgrade() {
@@ -188,7 +201,7 @@ fn open_admitted_fixture_vault_inner(store: HubStore, data: &Path, admission: Ar
     if retained.as_ref().is_some_and(|retained| !Arc::ptr_eq(retained, &admission)) {
         return Err(CredentialStoreError::SensitiveAccessUnavailable);
     }
-    let vault = CredentialVault::open_unregistered(store, admission, data, VaultOptions { exclusion: Some(Arc::new(FixtureExclusion)), ..VaultOptions::default() })?;
+    let vault = CredentialVault::open_unregistered_fenced(store, admission, data, VaultOptions { exclusion: Some(Arc::new(FixtureExclusion)), ..VaultOptions::default() }, fence)?;
     assert_ne!(registered.as_ptr(), Arc::as_ptr(&vault), "fixture restart constructs a new vault");
     *retained = Some(Arc::clone(&vault.admission));
     *registered = Arc::downgrade(&vault);

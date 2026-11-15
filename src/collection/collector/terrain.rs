@@ -164,14 +164,16 @@ where
     let runtime_endpoint = &AuthEndpointConfig::from_config(config, false);
     let runtime_admission = Arc::clone(&admission);
     let runtime_loss = Some(write_guard.observer("credential"));
+    let startup_fence = write_guard.startup_observer("credential-startup");
     crate::auth::credential_vault::CredentialVault::open_for_runtime(
-        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, Some(&startup_fence),
     )
     .map_err(|error| crate::credentials::LegacyAuthManagerError::from(crate::credentials::CredentialError::from(error)))
     .and_then(|vault| LegacyAuthManager::from_hub_source_db_store_for_admitted_user(runtime_store, runtime_path, runtime_endpoint, runtime_admission, runtime_loss, vault))
 }
     .map_err(CollectorError::from)
-    .map_err(normalize_sensitive_access_error)?;
+    .map_err(normalize_sensitive_access_error)
+    .map_err(|error| write_guard.window_refusal_or(error))?;
     let region = manager.region();
     let allow_refresh = manager.allows_refresh();
     let client = client_for(region)?;
@@ -452,14 +454,16 @@ where
     let runtime_endpoint = &AuthEndpointConfig::from_config(config, false);
     let runtime_admission = Arc::clone(&admission);
     let runtime_loss = Some(write_guard.observer("credential"));
+    let startup_fence = write_guard.startup_observer("credential-startup");
     crate::auth::credential_vault::CredentialVault::open_for_runtime(
-        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, Some(&startup_fence),
     )
     .map_err(|error| crate::credentials::LegacyAuthManagerError::from(crate::credentials::CredentialError::from(error)))
     .and_then(|vault| LegacyAuthManager::from_hub_source_db_store_observer_for_admitted_user(runtime_store, runtime_path, runtime_endpoint, runtime_admission, runtime_loss, vault))
 }
     .map_err(CollectorError::from)
-    .map_err(normalize_sensitive_access_error)?;
+    .map_err(normalize_sensitive_access_error)
+    .map_err(|error| write_guard.window_refusal_or(error))?;
     let region = manager.region();
     let client = owner_client_for(region)?;
     write_guard.check("cursor-key")?;
@@ -523,12 +527,13 @@ where
     let runtime_path = &config.data_dir;
     let runtime_admission = Arc::clone(&admission);
     let runtime_loss = Some(write_guard.observer("credential"));
+    let startup_fence = write_guard.startup_observer("credential-startup");
     crate::auth::credential_vault::CredentialVault::open_for_runtime(
-        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, runtime_loss.as_ref(),
+        runtime_store.clone(), std::sync::Arc::clone(&runtime_admission), runtime_path, Some(&startup_fence),
     )
     .map_err(crate::fleet_credentials::FleetCredentialError::from)
     .and_then(|vault| FleetAuthManager::from_store_for_supervised_start(vault, runtime_path, runtime_admission, runtime_loss))
-}?;
+}.map_err(|error| write_guard.window_refusal_or(CollectorError::from(error)))?;
     let FleetClients {
         api,
         auth_api,
