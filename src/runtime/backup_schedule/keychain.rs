@@ -225,7 +225,7 @@ pub fn unavailable(failure: KeychainFailure, account: &str) -> OperatorRefusal {
             "the backup password is not in the Keychain; save the recovery password again in Teslatlas Hub (Service details, Backups)"
         }
         KeychainFailure::Refused => {
-            "the service may not read the backup password in the Keychain (the keychain is locked, or the Hub was updated or rebuilt since the password was saved); save the recovery password again in Teslatlas Hub (Service details, Backups)"
+            "the service may not read the backup password in the Keychain (the keychain is locked, or this Hub build is signed differently from the one that saved it); save the recovery password again in Teslatlas Hub (Service details, Backups)"
         }
         KeychainFailure::Unreadable => {
             "the backup password in the Keychain cannot be read; save the recovery password again in Teslatlas Hub (Service details, Backups)"
