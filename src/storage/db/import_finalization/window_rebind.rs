@@ -70,6 +70,12 @@ pub(crate) struct WindowRebindSeam<'a> {
 /// The steps of a window rebind at which tests interrupt it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WindowRebindStep {
+    /// The rehearsal transaction holds the rebound base and the planned
+    /// seam; it has not been rolled back (tests hold here, never fail).
+    RehearsalInTransaction,
+    /// The frozen prior holds the base's digests (tests hold here, never
+    /// fail).
+    PriorCopied,
     /// The seam is planned; the rehearsal transaction is rolled back.
     SeamStaged,
     /// The seam's delta packs are written; nothing is catalogued.
@@ -78,12 +84,17 @@ pub(crate) enum WindowRebindStep {
     BaseInTransaction,
     /// The publication transaction holds both and has not committed.
     SeamInTransaction,
+    /// The publication transaction has committed; its state transfer is
+    /// still attached (tests hold here, never fail).
+    Committed,
 }
 
 #[cfg(test)]
 thread_local! {
     static WINDOW_REBIND_INTERRUPTION: std::cell::Cell<Option<WindowRebindStep>> =
         const { std::cell::Cell::new(None) };
+    static WINDOW_REBIND_HOLD: std::cell::RefCell<Option<(WindowRebindStep, PathBuf)>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// Interrupts this thread's next window rebind at `step` (tests only).
@@ -92,8 +103,33 @@ pub(crate) fn interrupt_window_rebind_at(step: WindowRebindStep) {
     WINDOW_REBIND_INTERRUPTION.with(|armed| armed.set(Some(step)));
 }
 
-/// Fails when a test interrupts the window rebind at `step`.
+/// Holds this thread's next window rebind at `step` for ever, after writing
+/// `marker`, so that a test process can be killed there (tests only).
+#[cfg(test)]
+pub(crate) fn hold_window_rebind_at(step: WindowRebindStep, marker: PathBuf) {
+    WINDOW_REBIND_HOLD.with(|armed| *armed.borrow_mut() = Some((step, marker)));
+}
+
+/// Holds the window rebind at `step` when a test armed it there: the test
+/// process is then killed with the rebind's state exactly as it is.
+pub(crate) fn window_rebind_hold(step: WindowRebindStep) {
+    #[cfg(test)]
+    if let Some(marker) = WINDOW_REBIND_HOLD.with(|armed| {
+        armed.borrow().as_ref().filter(|(held, _)| *held == step).map(|(_, marker)| marker.clone())
+    }) {
+        std::fs::write(&marker, format!("{step:?}")).expect("hold marker");
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+        }
+    }
+    #[cfg(not(test))]
+    let _ = step;
+}
+
+/// Fails when a test interrupts the window rebind at `step`, and holds there
+/// when a test armed a hold.
 pub(crate) fn window_rebind_step(step: WindowRebindStep) -> Result<(), StoreError> {
+    window_rebind_hold(step);
     #[cfg(test)]
     if WINDOW_REBIND_INTERRUPTION.with(|armed| armed.get() == Some(step)) {
         WINDOW_REBIND_INTERRUPTION.with(|armed| armed.set(None));
@@ -101,8 +137,6 @@ pub(crate) fn window_rebind_step(step: WindowRebindStep) -> Result<(), StoreErro
             "window rebind interrupted: {step:?}"
         ))));
     }
-    #[cfg(not(test))]
-    let _ = step;
     Ok(())
 }
 
@@ -168,6 +202,7 @@ impl HubStore {
                 .map_err(StoreError::Begin)?;
             publish_import_base_in_transaction(&transaction, &publication, &transfer)?;
             let stage = stage_rebound_seam_in_transaction(&transaction, base)?;
+            window_rebind_hold(WindowRebindStep::RehearsalInTransaction);
             transaction.rollback().map_err(StoreError::LifecycleWrite)?;
             Ok(stage)
         })();
@@ -236,7 +271,9 @@ impl HubStore {
                 base.vehicle_id,
                 final_delta.pack.snapshot_id,
                 StoreError::ImportGeneration,
-            )
+            )?;
+            window_rebind_hold(WindowRebindStep::Committed);
+            Ok(())
         })();
         finish_source_db_projection_state_transfer(
             result,

@@ -1385,3 +1385,247 @@ fn seam_physical_route_import_after_windows_interrupted_rebind_leaves_the_window
         assert_eq!(fresh.mirror.positions, lineage.positions);
     }
 }
+
+const REBIND_KILL_CHILD: &str = "TESLATLAS_M03_T24_REBIND_KILL_CHILD";
+
+/// The points at which the hard-interruption test kills the rebind: the
+/// rehearsal transaction open, the frozen prior copied, the seam staged,
+/// its packs written, the publication transaction holding the base or both,
+/// and the publication committed.
+const REBIND_KILL_STEPS: [crate::db::WindowRebindStep; 7] = [
+    crate::db::WindowRebindStep::RehearsalInTransaction,
+    crate::db::WindowRebindStep::PriorCopied,
+    crate::db::WindowRebindStep::SeamStaged,
+    crate::db::WindowRebindStep::SeamPacksWritten,
+    crate::db::WindowRebindStep::BaseInTransaction,
+    crate::db::WindowRebindStep::SeamInTransaction,
+    crate::db::WindowRebindStep::Committed,
+];
+
+/// The libtest name of `name` in this module.
+fn this_module_test(name: &str) -> String {
+    let module = module_path!();
+    let module = module.split_once("::").map_or(module, |(_, rest)| rest);
+    format!("{module}::{name}")
+}
+
+/// Every catalogue table's rows, sorted, as text.
+fn catalogue_rows(store: &HubStore) -> std::collections::BTreeMap<String, Vec<String>> {
+    let connection = store.open().expect("catalogue");
+    let tables: Vec<String> = connection
+        .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+        .expect("tables")
+        .query_map([], |row| row.get(0))
+        .expect("tables")
+        .collect::<Result<_, _>>()
+        .expect("tables");
+    tables
+        .into_iter()
+        .map(|table| {
+            let mut statement = connection.prepare(&format!("SELECT * FROM \"{table}\"")).expect("rows");
+            let columns = statement.column_count();
+            let mut rows: Vec<String> = statement
+                .query_map([], |row| {
+                    (0..columns)
+                        .map(|column| row.get_ref(column).map(|value| format!("{value:?}")))
+                        .collect::<Result<Vec<_>, _>>()
+                        .map(|values| values.join("|"))
+                })
+                .expect("rows")
+                .collect::<Result<_, _>>()
+                .expect("rows");
+            rows.sort();
+            (table, rows)
+        })
+        .collect()
+}
+
+/// The process the hard-interruption test kills: it reopens the parent's
+/// store and runs the importer's window rebind until it holds at the armed
+/// step. Without the parent's specification it does nothing.
+#[test]
+fn seam_physical_route_window_rebind_kill_child() {
+    let Ok(spec) = std::env::var(REBIND_KILL_CHILD) else {
+        return;
+    };
+    let spec: serde_json::Value = serde_json::from_str(&spec).expect("child specification");
+    let text = |key: &str| spec[key].as_str().expect(key).to_owned();
+    let step = REBIND_KILL_STEPS
+        .into_iter()
+        .find(|step| format!("{step:?}") == text("step"))
+        .expect("armed step");
+    let store = HubStore::initialize(text("data")).expect("store");
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let fixture = Fixture {
+        _temporary: tempfile::Builder::new().tempdir_in(text("scratch")).expect("placeholder"),
+        store,
+        binding: serde_json::from_value(spec["binding"].clone()).expect("binding"),
+        car: project_vehicle(&base_history(), CAR).expect("projection").snapshot.cars[0].clone(),
+        gate,
+        cursor_key: CursorKey::from_bytes([43; 32]),
+    };
+    crate::db::hold_window_rebind_at(step, std::path::PathBuf::from(text("marker")));
+    let outcome = rebind_window(&fixture, &successor_history(), T + 3 * HOUR, false);
+    panic!("the rebind was never held at {step:?}: {:?}", outcome.map(|_| ()));
+}
+
+/// DEC-151 follow-up (M03-T24, REV-CX-M03-T24 findings 1 and 2): the
+/// importer's window rebind runs in a child process that is killed (SIGKILL,
+/// no unwinding) at each step, then the store is reopened as the Hub starts.
+/// SQLite recovers the open transaction and startup recovery reclaims the
+/// killed generation's staging; the frozen prior leaves no file. Killed
+/// before the commit, the store holds the old window lineage and catalogue
+/// exactly, and the next import rebinds; killed after it, the store holds
+/// the complete new base and seam, and the next import is a successor.
+/// Either way the Hub still collects and 1.4 clients are served.
+#[test]
+fn seam_physical_route_import_after_windows_killed_rebind_recovers_on_reopening() {
+    use std::os::unix::process::ExitStatusExt;
+    let history = successor_history();
+    for step in REBIND_KILL_STEPS {
+        let (fixture, window_lineage) = window_only_fixture();
+        let before = client(&fixture);
+        let catalogue_before = catalogue_rows(&fixture.store);
+        let Fixture { _temporary: temporary, store, binding, car, gate, cursor_key } = fixture;
+        drop(gate);
+        drop(store);
+        let scratch = crate::private_tempdir().expect("scratch");
+        let child_temporary = scratch.path().join("tmp");
+        std::fs::create_dir(&child_temporary).expect("child temporary directory");
+        let marker = scratch.path().join("held");
+        let log_path = scratch.path().join("child.log");
+        let log = std::fs::File::create(&log_path).expect("child log");
+        let spec = serde_json::json!({
+            "step": format!("{step:?}"),
+            "data": temporary.path(),
+            "binding": &binding,
+            "marker": &marker,
+            "scratch": scratch.path(),
+        });
+        let mut child = std::process::Command::new(std::env::current_exe().expect("test executable"))
+            .args([
+                "--exact",
+                &this_module_test("seam_physical_route_window_rebind_kill_child"),
+                "--test-threads=1",
+                "--nocapture",
+            ])
+            .env(REBIND_KILL_CHILD, spec.to_string())
+            .env("TMPDIR", &child_temporary)
+            .env("SQLITE_TMPDIR", &child_temporary)
+            .stdin(std::process::Stdio::null())
+            .stdout(log.try_clone().expect("child log"))
+            .stderr(log)
+            .spawn()
+            .expect("child");
+        let started = std::time::Instant::now();
+        while !marker.exists() {
+            if let Some(status) = child.try_wait().expect("child") {
+                panic!(
+                    "{step:?}: the child ended ({status}) before the hold:\n{}",
+                    std::fs::read_to_string(&log_path).unwrap_or_default()
+                );
+            }
+            assert!(started.elapsed() < std::time::Duration::from_secs(600), "{step:?}: never held");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        child.kill().expect("kill");
+        let status = child.wait().expect("child");
+        assert_eq!(status.signal(), Some(9), "{step:?}: killed without unwinding");
+        let left: Vec<_> = std::fs::read_dir(&child_temporary)
+            .expect("child temporary directory")
+            .map(|entry| entry.expect("entry").file_name())
+            .collect();
+        assert!(left.is_empty(), "{step:?}: the killed process left {left:?} in its temporary directory");
+
+        // The Hub starts again on the same store.
+        let store = HubStore::initialize(temporary.path()).expect("the store reopens");
+        let gate = store.try_acquire_publication_gate().expect("gate");
+        let fixture = Fixture { _temporary: temporary, store, binding, car, gate, cursor_key };
+        {
+            let connection = fixture.store.open().expect("catalogue");
+            let integrity: String =
+                connection.query_row("PRAGMA integrity_check", [], |row| row.get(0)).expect("integrity");
+            assert_eq!(integrity, "ok", "{step:?}");
+            let staging: i64 = connection
+                .query_row("SELECT COUNT(*) FROM import_generations WHERE status = 'staging'", [], |row| {
+                    row.get(0)
+                })
+                .expect("generations");
+            assert_eq!(staging, 0, "{step:?}: the killed generation is recovered");
+        }
+        let spool = fixture._temporary.path().join("import-spool/.projection-state/v1");
+        let runs: Vec<_> = std::fs::read_dir(&spool)
+            .map(|entries| entries.map(|entry| entry.expect("entry").file_name()).collect())
+            .unwrap_or_default();
+        assert!(runs.is_empty(), "{step:?}: no staging run survives: {runs:?}");
+
+        let root = crate::private_tempdir().expect("stage root");
+        let h4 = HUB_ID_BASE + 40;
+        if step == crate::db::WindowRebindStep::Committed {
+            // The complete new base and seam.
+            assert!(matches!(route(&fixture), Ok(DirectImportRoute::Successor)), "{step:?}");
+            let rebound = client(&fixture);
+            for id in [10, 12, 13, HUB_ID_BASE + 1] {
+                assert!(rebound.drives.contains_key(&id), "{step:?}: clients hold drive {id}");
+            }
+            assert!(!rebound.drives.contains_key(&11), "drive 11 lost to H1");
+            assert!(!rebound.drives.contains_key(&(HUB_ID_BASE + 2)), "H2 lost to drive 13");
+            assert!(!rebound.positions.contains_key(&1101), "the seam withdrew the covered position");
+            // The Hub still collects, and the next import is a successor.
+            window(&fixture, 2, T + 4 * HOUR, T + 5 * HOUR);
+            hub_rows(&fixture, &[(h4, T + 4 * HOUR, T + 4 * HOUR + 10 * MINUTE)], &[]);
+            publish_sync_mutations_ahead_of_packs(
+                &fixture.store,
+                &fixture.gate,
+                &fixture.cursor_key,
+                fixture.binding.vehicle_id,
+            )
+            .expect("the collector publishes after the killed import");
+            assert!(client(&fixture).drives.contains_key(&h4), "{step:?}: the window reaches clients");
+            import_both(&fixture, root.path(), "after-kill", &history, T + 6 * HOUR);
+        } else {
+            // The old window lineage and catalogue, exactly.
+            assert_eq!(
+                fixture.store.lineage_manifest_for_vehicle(fixture.binding.vehicle_id).expect("lineage"),
+                Some(window_lineage.clone()),
+                "{step:?}: the window lineage stands"
+            );
+            assert!(
+                !fixture
+                    .store
+                    .source_db_import_projection_state_exists(fixture.binding.vehicle_id)
+                    .expect("state"),
+                "{step:?}: no import state"
+            );
+            let after = client(&fixture);
+            assert_eq!(after.drives, before.drives, "{step:?}: clients keep the window drives");
+            assert_eq!(after.positions, before.positions, "{step:?}: and positions");
+            // The import reserves its base sequence and commits that before
+            // the rebind begins, as the importer does; a reserved sequence is
+            // never reused. Nothing else differs.
+            let catalogue_after = catalogue_rows(&fixture.store);
+            let changed: Vec<_> = catalogue_after
+                .iter()
+                .filter(|(table, _)| table.as_str() != "vehicle_snapshot_sequences")
+                .filter(|(table, rows)| catalogue_before.get(*table) != Some(*rows))
+                .map(|(table, _)| table.as_str())
+                .collect();
+            assert!(changed.is_empty(), "{step:?}: the killed rebind changed {changed:?}");
+            assert!(matches!(route(&fixture), Ok(DirectImportRoute::WindowRebind(_))), "{step:?}");
+            // The Hub still collects, and the next import rebinds.
+            window(&fixture, 2, T + 4 * HOUR, T + 5 * HOUR);
+            window_rows(&fixture, h4, T + 4 * HOUR, T + 4 * HOUR + 10 * MINUTE, T + 4 * HOUR + 5 * MINUTE);
+            first_import_after_windows(&fixture, root.path(), &history, T + 6 * HOUR, true, false)
+                .expect("the next import completes the rebind");
+        }
+        let lineage = client(&fixture);
+        for id in [10, 12, 13, HUB_ID_BASE + 1, h4] {
+            assert!(lineage.drives.contains_key(&id), "{step:?}: clients hold drive {id}");
+        }
+        assert!(lineage.positions.contains_key(&(HUB_ID_BASE + 1)), "{step:?}: H1's position is kept");
+        let env = paired(&fixture);
+        let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("the 1.4 head is served");
+        assert_eq!(fresh.mirror.drives, lineage.drives, "{step:?}");
+        assert_eq!(fresh.mirror.positions, lineage.positions, "{step:?}");
+    }
+}

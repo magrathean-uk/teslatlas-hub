@@ -3,10 +3,14 @@
 /// A frozen copy of a projection state's current digests, read as a prior
 /// lookup (M03-T24): a window rebind's base state is the prior of the seam
 /// published on that base in the same catalogue transaction, before the
-/// store holds it. The copy is a private temporary file, removed on drop.
+/// store holds it.
+///
+/// The copy is SQLite's private temporary database (an empty file name): it
+/// lives in the process temporary directory (`SQLITE_TMPDIR`, then
+/// `TMPDIR`), and SQLite unlinks its file as soon as it opens it. Only the
+/// open connection reaches it, so a killed process leaves nothing behind.
 pub(crate) struct FrozenProjectionStatePrior {
     connection: Connection,
-    _file: tempfile::TempPath,
 }
 
 const FROZEN_PRIOR_ALIAS: &str = "frozen_prior_source";
@@ -15,16 +19,7 @@ impl SourceDbProjectionState {
     /// Freezes the state's current digests as they are now; later changes
     /// to the state do not reach the copy.
     pub(crate) fn frozen_prior(&self) -> Result<FrozenProjectionStatePrior, SourceDbProjectionStateError> {
-        let file = tempfile::Builder::new()
-            .prefix("projection-prior-")
-            .suffix(".sqlite")
-            .tempfile()
-            .map_err(|source| SourceDbProjectionStateError::CreateFile {
-                path: std::env::temp_dir(),
-                source,
-            })?
-            .into_temp_path();
-        let connection = Connection::open(&file).map_err(SourceDbProjectionStateError::Sqlite)?;
+        let connection = Connection::open("").map_err(SourceDbProjectionStateError::Sqlite)?;
         connection
             .execute_batch(
                 "PRAGMA journal_mode=OFF;
@@ -49,9 +44,10 @@ impl SourceDbProjectionState {
              SELECT entity_ordinal, entity_id, car_id, projection_sha256
                FROM {FROZEN_PRIOR_ALIAS}.current_rows ORDER BY entity_ordinal, entity_id;"
         ));
+        crate::db::window_rebind_hold(crate::db::WindowRebindStep::PriorCopied);
         let detached = connection.execute_batch(&format!("DETACH DATABASE {FROZEN_PRIOR_ALIAS}"));
         copied.and(detached).map_err(SourceDbProjectionStateError::Sqlite)?;
-        Ok(FrozenProjectionStatePrior { connection, _file: file })
+        Ok(FrozenProjectionStatePrior { connection })
     }
 }
 
