@@ -450,6 +450,37 @@ final class CollectionStatusTests: XCTestCase {
         XCTAssertEqual(snapshot.health, .stopped)
     }
 
+    func testServiceDetailsSaysWaitingBetweenWindowsNotThatTheCollectorIsRunning() throws {
+        let running = "The background collector is running on this Mac."
+        XCTAssertEqual(ServiceDetailsWindowController.runningDetail(idle: nil), running)
+        let closed = try idleSnapshot(window: Self.window("closed", reason: "expired"))
+        XCTAssertEqual(ServiceDetailsWindowController.runningDetail(idle: closed.betweenWindows),
+                       "Hub is waiting for its next collection window.")
+        let pending = try idleSnapshot(window: Self.window("pending"))
+        XCTAssertEqual(ServiceDetailsWindowController.runningDetail(idle: pending.betweenWindows),
+                       pending.betweenWindows?.subtitle())
+        XCTAssertTrue(ServiceDetailsWindowController.runningDetail(idle: pending.betweenWindows)
+            .contains("which starts"))
+    }
+
+    func testAReadyHubWithCollectionAttentionShowsAttentionNeededButStaysHealthy() throws {
+        let snapshot = try idleSnapshot(
+            status: Self.status(attention: "collector_cap_reached", ready: true),
+            window: Self.window("closed", reason: "expired"))
+        XCTAssertNil(snapshot.betweenWindows)
+        XCTAssertEqual(snapshot.health, .running)
+        XCTAssertTrue(snapshot.needsCollectionAttention)
+        XCTAssertEqual(snapshot.statusTitle, "Attention needed")
+        XCTAssertEqual(snapshot.statusColor, NSColor.systemRed)
+        XCTAssertTrue(snapshot.diagnosticLines.contains(
+            "Collection attention: The local monthly cap has been reached"))
+        // No attention: still the plain running headline.
+        let plain = try idleSnapshot(status: Self.status(), window: Self.window("open"))
+        XCTAssertFalse(plain.needsCollectionAttention)
+        XCTAssertEqual(plain.statusTitle, "Hub is running")
+        XCTAssertEqual(plain.statusColor, NSColor.systemGreen)
+    }
+
     func testAReadyHubIsRunningNotIdle() throws {
         let snapshot = try idleSnapshot(status: Self.status(),
                                         window: Self.window("closed", reason: "expired"))

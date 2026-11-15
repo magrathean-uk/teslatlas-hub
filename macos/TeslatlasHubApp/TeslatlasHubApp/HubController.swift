@@ -440,12 +440,20 @@ struct HubSnapshot {
     /// `health` stays `.running`; only the words and colours change.
     var betweenWindows: HubBetweenWindows?
 
+    /// The service is ready but reports a collection attention condition that needs the
+    /// owner. Only the headline and colour change: `health` stays as `ready` set it (B2).
+    var needsCollectionAttention: Bool {
+        health == .running && betweenWindows == nil && collectionAttention != nil
+    }
+
     var statusTitle: String {
-        betweenWindows == nil ? health.title : HubBetweenWindows.title
+        if let _ = betweenWindows { return HubBetweenWindows.title }
+        return needsCollectionAttention ? HubHealth.degraded.title : health.title
     }
 
     var statusColor: NSColor {
-        betweenWindows == nil ? health.color : HubBetweenWindows.color
+        if let _ = betweenWindows { return HubBetweenWindows.color }
+        return needsCollectionAttention ? HubHealth.degraded.color : health.color
     }
 
     var accountDisplay: String {

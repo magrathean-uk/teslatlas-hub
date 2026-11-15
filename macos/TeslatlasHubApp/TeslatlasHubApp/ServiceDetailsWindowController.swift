@@ -58,6 +58,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     private var maintenanceReady = false
     private var embeddedBody: NSView?
     private var serviceHealth: HubHealth
+    private var serviceIdle: HubBetweenWindows?
 
     init(snapshot: HubSnapshot,
          controller: HubController,
@@ -77,6 +78,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         self.errorPresenter = errorPresenter
         self.confirmationPresenter = confirmationPresenter
         self.serviceHealth = snapshot.health
+        self.serviceIdle = snapshot.betweenWindows
         if let maintenance {
             backupSettings = BackupSettingsView(backend: maintenance, mutationAllowed: mutationAllowed)
             deviceList = DeviceListView(backend: maintenance, mutationAllowed: mutationAllowed,
@@ -159,6 +161,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
 
     func update(snapshot: HubSnapshot) {
         serviceHealth = snapshot.health
+        serviceIdle = snapshot.betweenWindows
         maintenanceReady = !snapshot.checkingStatus && snapshot.health != .needsInstall
         defer { loadMaintenanceIfReady() }
         rowsStack.arrangedSubviews.forEach {
@@ -421,6 +424,12 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         restartButton.isEnabled = available
     }
 
+    /// The running-state line: the waiting text, with the pending start when known,
+    /// while the Hub is between windows and no collector is running (M02-T26).
+    static func runningDetail(idle: HubBetweenWindows?) -> String {
+        idle?.subtitle() ?? HubL10n.text("hub.ServiceDetailsWindowController.463.2218", fallback: "The background collector is running on this Mac.")
+    }
+
     private func updateLifecycleButtons() {
         let available = lifecycleActions != nil && serviceHealth != .needsInstall
         lifecycleCard.isHidden = !available
@@ -433,7 +442,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
             startStopButton.hubStyle = .primary
             restartButton.isHidden = true
         case .running:
-            lifecycleDetail.stringValue = HubL10n.text("hub.ServiceDetailsWindowController.463.2218", fallback: "The background collector is running on this Mac.")
+            lifecycleDetail.stringValue = Self.runningDetail(idle: serviceIdle)
             startStopButton.title = HubL10n.text("hub.HubDashboardView.96.1352", fallback: "Stop Hub…")
             startStopButton.image = NSImage(systemSymbolName: "stop.fill",
                                             accessibilityDescription: "Stop Hub")

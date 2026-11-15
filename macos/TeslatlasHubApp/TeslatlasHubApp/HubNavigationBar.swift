@@ -494,6 +494,7 @@ final class HubSettingsView: HubCompactPageView {
         }
         serviceRow.value = snapshot.checkingStatus ? "Checking Hub" : snapshot.statusTitle
         serviceRow.tone = snapshot.betweenWindows != nil ? .neutral
+            : snapshot.needsCollectionAttention ? .danger
             : snapshot.health == .running ? .success
             : (snapshot.health == .degraded ? .danger : .warning)
     }

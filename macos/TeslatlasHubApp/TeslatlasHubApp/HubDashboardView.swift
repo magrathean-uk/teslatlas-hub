@@ -539,7 +539,8 @@ final class HubDashboardView: HubSurfaceView {
     }
 
     private func tone(for snapshot: HubSnapshot) -> HubStatusTone {
-        snapshot.betweenWindows == nil ? tone(for: snapshot.health) : .neutral
+        if snapshot.betweenWindows != nil { return .neutral }
+        return snapshot.needsCollectionAttention ? tone(for: .degraded) : tone(for: snapshot.health)
     }
 
     private func subtitle(for health: HubHealth) -> String {
