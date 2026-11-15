@@ -574,11 +574,10 @@ fn serve_changes_since(
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
-    let Some(base_pack) = admitted_schema_21_base(&lineage) else {
-        return schema_range_unsupported();
-    };
-
-    if let Some(checkpoint) = resolve_current_checkpoint(&lineage, &request) {
+    // A base too large for one 2.1 pack serves no 2.1 checkpoint of its
+    // own, but a retired 2.1 checkpoint still gets its signed rebase.
+    let base_pack = admitted_schema_21_base(&lineage);
+    if let Some(checkpoint) = base_pack.and_then(|_| resolve_current_checkpoint(&lineage, &request)) {
         return match checkpoint {
             CurrentCheckpoint::Changed(delta) => {
                 if !pack_is_admitted(&delta.pack) || !sequence_is_admitted(delta.to_sequence) {
@@ -618,6 +617,7 @@ fn serve_changes_since(
 
     let receipt = match request.base_receipt_id.parse::<Sha256Digest>() {
         Ok(receipt) => receipt,
+        Err(_) if base_pack.is_none() => return schema_range_unsupported(),
         Err(_) => return unknown_base_receipt(),
     };
     match state.store.retired_lineage_contains_checkpoint(
@@ -625,7 +625,14 @@ fn serve_changes_since(
         request.from_sequence,
         receipt,
     ) {
+        Ok(true) if base_pack.is_none() => {
+            retired_21_checkpoint_physical_rebase(state, vehicle_id, &lineage, request, signing)
+        }
+        Ok(false) if base_pack.is_none() => schema_range_unsupported(),
         Ok(true) => {
+            let Some(base_pack) = base_pack else {
+                return schema_range_unsupported();
+            };
             let replacement_receipt = lineage.base.digest.to_string();
             signed_control_response(
                 StatusCode::CONFLICT,
@@ -659,6 +666,68 @@ fn serve_changes_since(
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
     }
+}
+
+/// The signed rebase for a retired 2.1 checkpoint whose replacement base
+/// has more than one pack (DEC-150: the first import onto a window-only Hub
+/// retires the window lineage). The 1.3.0 rebase hint admits a 2.2
+/// replacement: the public physical checkpoint of the same vehicle and
+/// source, as its chunks, with a 2.2 retry. Until that checkpoint is public
+/// the answer is a retryable 503.
+fn retired_21_checkpoint_physical_rebase(
+    state: &AppState,
+    vehicle_id: Uuid,
+    lineage: &LineageManifestV2,
+    request: ChangesSinceRequest,
+    signing: &ManifestSigning,
+) -> Response {
+    let admission = match state
+        .store
+        .pending_physical_v3_control_admission_for_vehicle(vehicle_id)
+    {
+        Ok(Some(admission)) if crate::db::physical_v3_admission_is_public(&admission) => admission,
+        Ok(Some(_)) | Ok(None) => {
+            tracing::warn!(%vehicle_id, "retired 2.1 checkpoint waits for a public physical replacement");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot load admitted physical checkpoint");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    if admission.installation_id != lineage.installation_id
+        || admission.account_id != lineage.account_id
+        || admission.vehicle_id != lineage.vehicle_id
+    {
+        tracing::error!(%vehicle_id, "physical checkpoint does not bind the active lineage");
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+    let replacement_receipt = admission.receipt_id.clone();
+    signed_control_response(
+        StatusCode::CONFLICT,
+        &RebasePayload {
+            kind: "rebase_required",
+            vehicle_id,
+            requested_base_receipt_id: request.base_receipt_id,
+            requested_base_manifest_schema: "2.1",
+            requested_from_sequence: request.from_sequence,
+            reason: "compacted",
+            replacement: Replacement22 {
+                manifest_id: admission.snapshot_id.to_string(),
+                receipt_id: replacement_receipt.clone(),
+                sequence: admission.head_sequence,
+                manifest_schema: "2.2",
+                chunks: admission.manifest.chunks.iter().map(wire_chunk).collect(),
+            },
+            retry_request: RetryRequest {
+                base_receipt_id: replacement_receipt,
+                base_manifest_schema: "2.2",
+                from_sequence: admission.head_sequence,
+                schema_version_range: request.schema_version_range,
+            },
+        },
+        signing,
+    )
 }
 
 fn serve_physical_changes_since(

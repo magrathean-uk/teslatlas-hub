@@ -730,6 +730,54 @@ fn route(fixture: &Fixture) -> Result<DirectImportRoute, SourceDbImportError> {
     direct_import_route(&fixture.store, fixture.binding.vehicle_id, fixture.binding.account_id, CAR)
 }
 
+/// The import's signed base: one pack, or two (drive 10 alone, then the
+/// rest), each repeating the car, as a large history's base has several.
+fn import_base_manifest(
+    fixture: &Fixture,
+    snapshot: &crate::hub_pack::ProjectionSnapshot,
+    sequence: u64,
+    two_packs: bool,
+) -> crate::protocol::SyncManifest {
+    let snapshot_id = Uuid::new_v4();
+    let range = SequenceRange { from_exclusive: sequence, to_inclusive: sequence };
+    let parts = if two_packs {
+        let (first, rest): (Vec<_>, Vec<_>) =
+            snapshot.drives.iter().cloned().partition(|drive| drive.id == 10);
+        vec![
+            crate::hub_pack::ProjectionSnapshot { drives: first, positions: vec![], ..snapshot.clone() },
+            crate::hub_pack::ProjectionSnapshot { drives: rest, ..snapshot.clone() },
+        ]
+    } else {
+        vec![snapshot.clone()]
+    };
+    let mut built = Vec::new();
+    for (ordinal, part) in parts.iter().enumerate() {
+        let request = ProjectionPackRequest {
+            pack_id: Uuid::new_v4(),
+            snapshot_id,
+            ordinal: u32::try_from(ordinal).expect("ordinal"),
+            binding: fixture.binding.clone(),
+            sequence: range,
+            snapshot: part,
+        };
+        built.push(
+            ProjectionPackWriter::new(fixture.store.packs_dir())
+                .write_full_snapshot_with_states_and_updates(&request, &[], &[])
+                .expect("import base pack"),
+        );
+    }
+    let rows = built.iter().map(|pack| pack.metadata.row_count).sum();
+    crate::hub_pack::signed_full_snapshot_manifest(
+        &fixture.binding,
+        snapshot_id,
+        range,
+        &built,
+        rows,
+        &fixture.cursor_key,
+    )
+    .expect("import base manifest")
+}
+
 /// The first import onto the window-only base, as the importer's two passes
 /// run it under one gate: the base in the window base's place, then the
 /// successor that plans the seam and re-sends the Hub's rows; then the 1.4
@@ -740,6 +788,7 @@ fn first_import_after_windows(
     history: &SourceDbHistory,
     at_ms: i64,
     physical: bool,
+    two_packs: bool,
 ) -> Result<(), crate::db::StoreError> {
     let Ok(DirectImportRoute::WindowRebind(expected)) = route(fixture) else {
         panic!("a window-only base is rebound");
@@ -751,20 +800,7 @@ fn first_import_after_windows(
         .store
         .reserve_next_full_snapshot_sequence(&fixture.gate, fixture.binding.vehicle_id)
         .expect("base sequence");
-    let request = ProjectionPackRequest {
-        pack_id: Uuid::new_v4(),
-        snapshot_id: Uuid::new_v4(),
-        ordinal: 0,
-        binding: fixture.binding.clone(),
-        sequence: SequenceRange { from_exclusive: sequence, to_inclusive: sequence },
-        snapshot: &projected.snapshot,
-    };
-    let pack = ProjectionPackWriter::new(fixture.store.packs_dir())
-        .write_full_snapshot_with_states_and_updates(&request, &[], &[])
-        .expect("import base pack");
-    let manifest = request
-        .signed_manifest_with_states_and_updates(&pack, &[], &[], &fixture.cursor_key)
-        .expect("import base manifest");
+    let manifest = import_base_manifest(fixture, &projected.snapshot, sequence, two_packs);
     fixture.store.finalize_import_generation_rebinding_window_base_with_materialisation(
         &fixture.gate,
         &expected,
@@ -809,7 +845,7 @@ fn seam_physical_route_import_after_windows_keeps_the_window_rows() {
     let (fixture, window_lineage) = window_only_fixture();
     let (h1, h2) = (HUB_ID_BASE + 1, HUB_ID_BASE + 2);
     let root = crate::private_tempdir().expect("stage root");
-    first_import_after_windows(&fixture, root.path(), &successor_history(), T + 3 * HOUR, true)
+    first_import_after_windows(&fixture, root.path(), &successor_history(), T + 3 * HOUR, true, false)
         .expect("first import after windows");
 
     let binding = fixture.store.v2_projection_binding(fixture.binding.vehicle_id).expect("binding");
@@ -866,7 +902,7 @@ fn seam_physical_route_import_after_windows_second_import_is_a_normal_successor(
     let (fixture, _) = window_only_fixture();
     let root = crate::private_tempdir().expect("stage root");
     let history = successor_history();
-    first_import_after_windows(&fixture, root.path(), &history, T + 3 * HOUR, true)
+    first_import_after_windows(&fixture, root.path(), &history, T + 3 * HOUR, true, false)
         .expect("first import after windows");
     let env = paired(&fixture);
     let mut existing = PhysicalClient::bootstrap(&env, &fixture).expect("served after the rebind");
@@ -1066,7 +1102,7 @@ fn seam_physical_route_import_after_windows_publishes_a_journal_over_one_batch()
     let first = HUB_ID_BASE + 100;
     many_window_positions(&fixture, first, 10_050);
     let root = crate::private_tempdir().expect("stage root");
-    first_import_after_windows(&fixture, root.path(), &successor_history(), T + 3 * HOUR, false)
+    first_import_after_windows(&fixture, root.path(), &successor_history(), T + 3 * HOUR, false, false)
         .expect("first import after windows");
     let lineage = client(&fixture);
     assert!(!lineage.drives.contains_key(&(HUB_ID_BASE + 2)), "H2 lost to drive 13");
@@ -1122,7 +1158,7 @@ fn seam_physical_route_import_after_windows_restates_a_widened_source_drive() {
     let mut history = successor_history();
     history.drives.push(source_drive(14, T + 30 * MINUTE, T + 44 * MINUTE));
     let root = crate::private_tempdir().expect("stage root");
-    first_import_after_windows(&fixture, root.path(), &history, T + 3 * HOUR, true)
+    first_import_after_windows(&fixture, root.path(), &history, T + 3 * HOUR, true, false)
         .expect("first import after windows");
     let stored: ProjectionDrive = {
         let json: String = fixture
@@ -1153,4 +1189,60 @@ fn seam_physical_route_import_after_windows_restates_a_widened_source_drive() {
     let env = paired(&fixture);
     let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("the 1.4 head is served");
     assert_eq!(fresh.mirror.drives, lineage.drives, "1.4 and 2.1 clients agree");
+}
+
+/// Review finding 4: a large history's base has several packs, more than a
+/// 2.1 base admits. A 2.1 client of the retired window lineage still gets
+/// the signed `rebase_required`, with the public 2.2 checkpoint as its
+/// replacement and a 2.2 retry, never 406; that retry is served. A receipt
+/// the Hub never issued keeps 406 on such a base.
+#[test]
+fn seam_physical_route_import_after_windows_rebases_a_window_client_onto_a_multi_pack_base() {
+    let (fixture, window_lineage) = window_only_fixture();
+    let root = crate::private_tempdir().expect("stage root");
+    first_import_after_windows(&fixture, root.path(), &successor_history(), T + 3 * HOUR, true, true)
+        .expect("first import after windows");
+    let lineage = fixture
+        .store
+        .lineage_manifest_for_vehicle(fixture.binding.vehicle_id)
+        .expect("lineage")
+        .expect("import lineage");
+    assert_eq!(lineage.base.packs.len(), 2, "the replacement base has two packs");
+    let env = paired(&fixture);
+    let ask = |receipt: String, from_sequence: u64| {
+        served(
+            &env.runtime,
+            &env.app,
+            &env.bearer,
+            "hub-sync-v1@1.3.0",
+            &format!("/v1/vehicles/{}/sync/changes-since", fixture.binding.vehicle_id),
+            Some(serde_json::json!({
+                "base_receipt_id": receipt, "base_manifest_schema": "2.1",
+                "from_sequence": from_sequence,
+                "schema_version_range": {"minimum": "2.1", "maximum": "2.2"},
+            })),
+        )
+    };
+    let (status, raw) = ask(window_lineage.head_digest.to_string(), window_lineage.head_sequence);
+    let answer: serde_json::Value = serde_json::from_slice(&raw).unwrap_or_default();
+    assert_eq!(status, axum::http::StatusCode::CONFLICT, "{answer}");
+    assert_eq!(answer["kind"], "rebase_required");
+    assert!(answer["signature"].is_object(), "the rebase is signed");
+    let admission = fixture
+        .store
+        .pending_physical_v3_admission_for_vehicle(fixture.binding.vehicle_id)
+        .expect("head")
+        .expect("public physical head");
+    assert_eq!(answer["replacement"]["manifest_schema"], "2.2");
+    assert_eq!(answer["replacement"]["receipt_id"], admission.receipt_id.as_str());
+    assert_eq!(
+        answer["replacement"]["chunks"].as_array().map(Vec::len),
+        Some(admission.manifest.chunks.len())
+    );
+    assert_eq!(answer["retry_request"]["base_manifest_schema"], "2.2");
+    assert_eq!(answer["retry_request"]["from_sequence"], admission.head_sequence);
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("the replacement is served");
+    assert_eq!(fresh.mirror.drives, client(&fixture).drives, "the replacement holds the lineage");
+    let (status, _) = ask(Sha256Digest::of_bytes(b"never issued").to_string(), window_lineage.head_sequence);
+    assert_eq!(status, axum::http::StatusCode::NOT_ACCEPTABLE, "an unknown receipt keeps 406");
 }
