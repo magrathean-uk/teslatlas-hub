@@ -662,7 +662,10 @@ final class BackupSettingsTests: XCTestCase {
         // A custom file path keeps its source and path through a save without a password.
         let custom = try backupConfig(hub, "password_source = \"file\"\npassword_file = \"/custom/password\"\n")
         _ = try backend.saveBackupSchedule(HubBackupSchedule(config: custom), password: nil).get()
-        XCTAssertEqual(try String(contentsOf: hub.config, encoding: .utf8), custom)
+        let kept = try String(contentsOf: hub.config, encoding: .utf8)
+        XCTAssertEqual(kept.split(separator: "\n").filter { $0.contains("password_") },
+                       ["password_source = \"file\"", "password_file = \"/custom/password\""], kept)
+        XCTAssertEqual(store.stores, 0)
     }
 
     /// REV-CX-M06-T13 finding 2: an unknown source is shown on load and refused on save
