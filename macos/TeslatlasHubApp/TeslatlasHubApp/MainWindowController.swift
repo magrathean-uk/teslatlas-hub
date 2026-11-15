@@ -2,6 +2,17 @@
 
 import AppKit
 
+/// When the Overview window refreshes itself. The cadence does not depend on the application
+/// being active; only a hidden or minimised window stops it.
+enum HubOverviewRefreshPolicy {
+    static let interval: TimeInterval = 15
+    static let settleDelay: TimeInterval = 20
+
+    static func isShown(visible: Bool, miniaturized: Bool) -> Bool {
+        visible && !miniaturized
+    }
+}
+
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let controller: HubController
     private let heroDot = NSImageView()
@@ -45,6 +56,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private(set) var activeOnboardingIdentifier: UUID?
     private var onInitialRefresh: ((HubSnapshot) -> Void)?
     private var refreshTimer: Timer?
+    private var settleRefreshTimer: Timer?
+    private var refreshObservers: [NSObjectProtocol] = []
+    private let refreshNotificationCenter: NotificationCenter
+    private let settleRefreshDelay: TimeInterval
+    private let windowShownOverride: (() -> Bool)?
     private var dashboardRefreshToken: UUID?
     private var refreshPending = false
     private var initialRefreshPending = true
@@ -101,7 +117,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
              FileManager.default.fileExists(atPath: "/Library/Application Support/Teslatlas Hub")
          },
          appearancePreference: HubAppearancePreference = HubAppearancePreference(),
-         onInitialRefresh: ((HubSnapshot) -> Void)? = nil) {
+         onInitialRefresh: ((HubSnapshot) -> Void)? = nil,
+         refreshNotificationCenter: NotificationCenter = .default,
+         settleRefreshDelay: TimeInterval = HubOverviewRefreshPolicy.settleDelay,
+         windowShownOverride: (() -> Bool)? = nil) {
+        self.refreshNotificationCenter = refreshNotificationCenter
+        self.settleRefreshDelay = max(0.001, settleRefreshDelay)
+        self.windowShownOverride = windowShownOverride
         self.appearancePreference = appearancePreference
         self.controller = controller
         self.confirmationPresenter = confirmationPresenter
@@ -171,18 +193,30 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         applySnapshotPresentation(firstFrame)
         update()
-        let refreshTimer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
-            guard let self,
-                  NSApp.isActive,
-                  self.window?.isVisible == true,
-                  self.serviceTransition == nil,
-                  !self.accountWorkflowActive,
-                  !self.serviceDetailsMutationPending,
-                  !self.diagnosticsOperationPending else { return }
-            self.update()
+        // The Overview keeps its own cadence while its window is shown, whether or not the
+        // application is active: a window opened in the background must not stay stale.
+        let refreshTimer = Timer(timeInterval: HubOverviewRefreshPolicy.interval, repeats: true) { [weak self] _ in
+            self?.refreshOverviewIfShown()
         }
         RunLoop.main.add(refreshTimer, forMode: .common)
         self.refreshTimer = refreshTimer
+        // Refresh at once when the window becomes key or the application becomes active, and
+        // once more after the launch-time Hub restart has had time to settle.
+        refreshObservers = [
+            refreshNotificationCenter.addObserver(forName: NSWindow.didBecomeKeyNotification,
+                                                  object: window, queue: .main) { [weak self] _ in
+                self?.refreshOverviewIfShown()
+            },
+            refreshNotificationCenter.addObserver(forName: NSApplication.didBecomeActiveNotification,
+                                                  object: nil, queue: .main) { [weak self] _ in
+                self?.refreshOverviewIfShown()
+            }
+        ]
+        let settleTimer = Timer(timeInterval: self.settleRefreshDelay, repeats: false) { [weak self] _ in
+            self?.refreshOverviewIfShown()
+        }
+        RunLoop.main.add(settleTimer, forMode: .common)
+        settleRefreshTimer = settleTimer
         // Enablement follows the lifecycle owner, not a status refresh (R-E1F6-15).
         lifecycleObservation = controller.observeLifecycle { [weak self] _ in
             self?.lifecycleChanged()
@@ -213,8 +247,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         detailsWindow?.setMutationsEnabled(actionsAvailable)
     }
 
+    /// The Overview window is on screen: visible and not minimised.
+    private var overviewWindowShown: Bool {
+        if let windowShownOverride { return windowShownOverride() }
+        guard let window else { return false }
+        return HubOverviewRefreshPolicy.isShown(visible: window.isVisible, miniaturized: window.isMiniaturized)
+    }
+
+    /// One status refresh for the shown Overview, skipped while an operation owns the window.
+    private func refreshOverviewIfShown() {
+        guard overviewWindowShown,
+              serviceTransition == nil,
+              !accountWorkflowActive,
+              !serviceDetailsMutationPending,
+              !diagnosticsOperationPending else { return }
+        update()
+    }
+
     deinit {
         refreshTimer?.invalidate()
+        settleRefreshTimer?.invalidate()
+        refreshObservers.forEach { refreshNotificationCenter.removeObserver($0) }
         serviceTransitionDeadlineWorkItem?.cancel()
         if let displayOptionsObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(displayOptionsObserver)
