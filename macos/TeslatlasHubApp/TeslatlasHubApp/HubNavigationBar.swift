@@ -82,7 +82,7 @@ final class HubNavigationBar: NSView {
     func apply(snapshot: HubSnapshot, enabled: Bool) {
         for button in buttons {
             button.isEnabled = enabled
-            button.setAccessibilityHelp("\(snapshot.health.title). Show \(button.title).")
+            button.setAccessibilityHelp("\(snapshot.statusTitle). Show \(button.title).")
         }
     }
 
@@ -492,8 +492,9 @@ final class HubSettingsView: HubCompactPageView {
            let index = stack.arrangedSubviews.firstIndex(of: importRow), index > 0 {
             stack.arrangedSubviews[index - 1].isHidden = hideImport
         }
-        serviceRow.value = snapshot.checkingStatus ? "Checking Hub" : snapshot.health.title
-        serviceRow.tone = snapshot.health == .running ? .success
+        serviceRow.value = snapshot.checkingStatus ? "Checking Hub" : snapshot.statusTitle
+        serviceRow.tone = snapshot.betweenWindows != nil ? .neutral
+            : snapshot.health == .running ? .success
             : (snapshot.health == .degraded ? .danger : .warning)
     }
 

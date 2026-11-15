@@ -114,6 +114,46 @@ enum HubHealth: Equatable {
     }
 }
 
+/// The Hub between collection windows: no window open, no fault, a usable login.
+/// Under the token guard this is the normal state, so it is neutral, not red.
+struct HubBetweenWindows: Equatable {
+    /// When the pending window starts, if one is pending.
+    var startsAt: Date?
+
+    static var title: String { HubL10n.text("hub.HubController.idleTitle", fallback: "Waiting for the next window") }
+    static var color: NSColor { .systemGray }
+    static var service: String { HubL10n.text("hub.HubController.idleService", fallback: "Installed · waiting for the next window") }
+
+    func subtitle(date: (Date) -> String = HubCollectionStatus.defaultDateText) -> String {
+        guard let startsAt else {
+            return HubL10n.text("hub.HubController.idleSubtitle", fallback: "Hub is waiting for its next collection window.")
+        }
+        return HubL10n.format("hub.HubController.idleSubtitleStarts", fallback: "Hub is waiting for its next collection window, which starts %1$@.", arguments: [date(startsAt)])
+    }
+
+    /// Close reasons that are the ordinary end of a window rather than a fault.
+    static let ordinaryCloseReasons: Set<String> = ["expired", "operator_close", "reboot"]
+
+    /// The idle state for a loaded, current-version service whose only gap is the
+    /// collector between windows; nil when anything real needs attention.
+    static func from(_ snapshot: HubSnapshot) -> HubBetweenWindows? {
+        guard snapshot.health == .degraded,
+              snapshot.version == HubRelease.bundledVersion,
+              snapshot.readinessReason == "collector_absent",
+              snapshot.collectionAttention == nil,
+              let collection = snapshot.collection,
+              collection.login == .own,
+              case .valid = collection.credential else { return nil }
+        switch collection.window {
+        case let .pending(startsAt, _): return HubBetweenWindows(startsAt: startsAt)
+        case let .closed(reason):
+            guard reason.map(ordinaryCloseReasons.contains) ?? true else { return nil }
+            return HubBetweenWindows(startsAt: nil)
+        default: return nil
+        }
+    }
+}
+
 struct HubActivity {
     let message: String
     let age: String
@@ -392,6 +432,21 @@ struct HubSnapshot {
     /// The Hub's own login, credential state and collection window, when the
     /// controller observes them (M04-T03); nil when not read.
     var collection: HubCollectionStatus?
+    /// `status` `readinessReason` and `collectionAttention` as the service reported them
+    /// (M02-T26); nil when the field was absent.
+    var readinessReason: String?
+    var collectionAttention: String?
+    /// Set when the Hub is healthy and waiting between collection windows (M02-T26).
+    /// `health` stays `.running`; only the words and colours change.
+    var betweenWindows: HubBetweenWindows?
+
+    var statusTitle: String {
+        betweenWindows == nil ? health.title : HubBetweenWindows.title
+    }
+
+    var statusColor: NSColor {
+        betweenWindows == nil ? health.color : HubBetweenWindows.color
+    }
 
     var accountDisplay: String {
         guard accountState == .connected, let provider else { return account }
@@ -3334,6 +3389,14 @@ final class HubController {
                                     self.snapshot.controlVehicleID = nil
                                     self.snapshot.diagnosticLines.insert("The selected process has not returned a trusted HTTPS readiness response. Stored data remains available.", at: 0)
                                 }
+                                if liveReady, case .loaded = loaded,
+                                   let idle = HubBetweenWindows.from(self.snapshot) {
+                                    self.snapshot.betweenWindows = idle
+                                    self.snapshot.health = .running
+                                    self.snapshot.service = self.developmentConfiguration == nil
+                                        ? HubBetweenWindows.service
+                                        : Self.developmentServiceDescription(.idle)
+                                }
                             } else {
                                 self.recordStatusFailure("invalid_status_output", installed: installed)
                                 self.snapshot = self.fallbackSnapshot(installed: installed, loaded: loaded)
@@ -5930,7 +5993,7 @@ final class HubController {
         let provider = snapshot.provider?.displayName ?? "Not configured"
         let serviceState: String
         switch snapshot.health {
-        case .running: serviceState = "running"
+        case .running: serviceState = snapshot.betweenWindows == nil ? "running" : "idle between windows"
         case .stopped: serviceState = "stopped"
         case .needsInstall: serviceState = "not installed"
         case .degraded: serviceState = "needs attention"
@@ -6665,7 +6728,7 @@ final class HubController {
             diagnosticLines.insert("Collection attention: \(Self.collectionAttentionLabel(attention))",
                                    at: readinessIndex + 1)
         }
-        return HubSnapshot(health: ready ? .running : .degraded,
+        var parsed = HubSnapshot(health: ready ? .running : .degraded,
                            service: service,
                            account: account,
                            accountState: selectedPresent || legacyPresent || fleetPresent
@@ -6682,6 +6745,9 @@ final class HubController {
                            version: root["version"] as? String ?? HubRelease.fallbackVersion,
                            dataDirectory: dataDirectory,
                            diagnosticLines: diagnosticLines)
+        parsed.readinessReason = root["readinessReason"] as? String
+        parsed.collectionAttention = root["collectionAttention"] as? String
+        return parsed
     }
 
     private func statusSnapshot(_ status: HubSnapshot, installed: Bool, loaded: HubServiceLoadState) -> HubSnapshot {
@@ -6728,7 +6794,7 @@ final class HubController {
     }
 
     private enum ServiceDescriptionState {
-        case running, stopped, attention, serviceStateUnavailable, versionMismatch, statusUnavailable
+        case running, stopped, attention, serviceStateUnavailable, versionMismatch, statusUnavailable, idle
     }
 
     private static func developmentServiceDescription(_ state: ServiceDescriptionState) -> String {
@@ -6739,6 +6805,7 @@ final class HubController {
         case .serviceStateUnavailable: return HubL10n.text("hub.HubController.3880.1307", fallback: "Development Hub · service state unavailable")
         case .versionMismatch: return HubL10n.text("hub.HubController.3881.1309", fallback: "Development Hub · version mismatch")
         case .statusUnavailable: return HubL10n.text("hub.HubController.3882.1311", fallback: "Development Hub · status unavailable")
+        case .idle: return HubL10n.text("hub.HubController.idleDevelopmentService", fallback: "Development Hub · waiting for the next window")
         }
     }
 

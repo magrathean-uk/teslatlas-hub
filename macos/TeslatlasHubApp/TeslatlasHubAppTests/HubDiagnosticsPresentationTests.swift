@@ -119,10 +119,12 @@ final class CollectionStatusTests: XCTestCase {
 
     private static func status(present: Bool = true, storeState: String = "ok",
                                expiresAt: String = "1800003600", exposure: Bool = false,
-                               attention: String? = nil) -> String {
+                               attention: String? = nil, ready: Bool = true,
+                               reason: String? = nil, version: String = HubRelease.bundledVersion) -> String {
         let attentionJSON = attention.map { "\"\($0)\"" } ?? "null"
+        let reasonJSON = reason.map { "\"\($0)\"" } ?? "null"
         return """
-        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":true,"collectionAttention":\(attentionJSON),"provider":"legacy","vehicles":[],"credentials":{"present":\(present)},"legacyCredentials":{"present":\(present),"expiresAt":\(present ? expiresAt : "null"),"nextRefreshAt":null,"origin":null,"refreshOwner":null,"storeState":"\(storeState)"},"fleetCredentials":{"present":false,"storeState":"ok"},"credentialStore":{"formatState":"complete","keyring":"ok","exposureSuspected":\(exposure)}}
+        {"status":"ok","version":"\(version)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":\(ready),"readinessReason":\(reasonJSON),"collectionAttention":\(attentionJSON),"provider":"legacy","vehicles":[],"credentials":{"present":\(present)},"legacyCredentials":{"present":\(present),"expiresAt":\(present ? expiresAt : "null"),"nextRefreshAt":null,"origin":null,"refreshOwner":null,"storeState":"\(storeState)"},"fleetCredentials":{"present":false,"storeState":"ok"},"credentialStore":{"formatState":"complete","keyring":"ok","exposureSuspected":\(exposure)}}
         """
     }
 
@@ -352,6 +354,116 @@ final class CollectionStatusTests: XCTestCase {
         let refused = Runner(status: Self.status(), window: .failure(HubActionError.commandExited(
             1, "service_not_running: the Hub service is not running")))
         XCTAssertEqual(refreshed(controller(refused))?.collection?.window, .serviceNotRunning)
+    }
+
+    // M02-T26: between windows the Hub is idle, not "Attention needed".
+
+    private func idleSnapshot(status: String = CollectionStatusTests.status(ready: false, reason: "collector_absent"),
+                              window: String, loaded: HubServiceLoadState = .loaded) throws -> HubSnapshot {
+        try XCTUnwrap(refreshed(controller(Runner(status: status, window: .success(window)), loaded: loaded)))
+    }
+
+    func testClosedWindowWithAGoodLoginIsIdleNotAttention() throws {
+        for reason in [nil, "expired", "operator_close", "reboot"] as [String?] {
+            let snapshot = try idleSnapshot(window: Self.window("closed", reason: reason))
+            XCTAssertNotNil(snapshot.betweenWindows, "closed \(reason ?? "nil")")
+            XCTAssertNil(snapshot.betweenWindows?.startsAt)
+            XCTAssertEqual(snapshot.health, .running)
+            XCTAssertEqual(snapshot.statusTitle, "Waiting for the next window")
+            XCTAssertNotEqual(snapshot.statusTitle, HubHealth.degraded.title)
+            XCTAssertNotEqual(snapshot.statusColor, NSColor.systemRed)
+            XCTAssertEqual(snapshot.service, "Installed · waiting for the next window")
+            XCTAssertEqual(snapshot.betweenWindows?.subtitle(), "Hub is waiting for its next collection window.")
+        }
+    }
+
+    func testPendingWindowIsIdleAndSaysWhenItStarts() throws {
+        let snapshot = try idleSnapshot(window: Self.window("pending"))
+        let start = Date(timeIntervalSince1970: TimeInterval(Self.start))
+        XCTAssertEqual(snapshot.betweenWindows, HubBetweenWindows(startsAt: start))
+        XCTAssertEqual(snapshot.betweenWindows?.subtitle(date: Self.text),
+                       "Hub is waiting for its next collection window, which starts t\(Self.start).")
+        XCTAssertEqual(snapshot.health, .running)
+    }
+
+    func testIdleKeepsTheReadinessLineInDiagnostics() throws {
+        let snapshot = try idleSnapshot(window: Self.window("closed", reason: "expired"))
+        XCTAssertTrue(snapshot.diagnosticLines.contains("Readiness: collector_absent"))
+    }
+
+    func testARealFaultStillShowsAttentionNeeded() throws {
+        let absent = Self.status(ready: false, reason: "collector_absent")
+        struct Fault { let name: String; let status: String; let window: String; let loaded: HubServiceLoadState }
+        let faults = [
+            Fault(name: "open window, collector absent", status: absent,
+                  window: Self.window("open"), loaded: .loaded),
+            Fault(name: "closing window, collector absent", status: absent,
+                  window: Self.window("closing"), loaded: .loaded),
+            Fault(name: "faulted window", status: absent,
+                  window: Self.window("closed", reason: "expired", faulted: true), loaded: .loaded),
+            Fault(name: "untrusted window", status: absent,
+                  window: Self.window("closed", reason: "expired", trusted: false), loaded: .loaded),
+            Fault(name: "recovery pending", status: absent,
+                  window: #"{"phase":"closed","trusted":true,"credentialRecoveryPending":true}"#, loaded: .loaded),
+            Fault(name: "clock check failed", status: absent,
+                  window: Self.window("closed", reason: "clock_invalid"), loaded: .loaded),
+            Fault(name: "state unverifiable", status: absent,
+                  window: Self.window("closed", reason: "state_unverifiable"), loaded: .loaded),
+            Fault(name: "claim lost", status: absent,
+                  window: Self.window("closed", reason: "claim_lost"), loaded: .loaded),
+            Fault(name: "unknown close reason", status: absent,
+                  window: Self.window("closed", reason: "a_newer_reason"), loaded: .loaded),
+            Fault(name: "window unreadable", status: absent, window: "not json", loaded: .loaded),
+            Fault(name: "re-login needed", status: Self.status(storeState: "fresh_sign_in_required", ready: false, reason: "collector_absent"),
+                  window: Self.window("closed", reason: "expired"), loaded: .loaded),
+            Fault(name: "owner API refused", status: Self.status(ready: false, reason: "collector_absent"),
+                  window: Self.window("closed", reason: "owner_api_refused"), loaded: .loaded),
+            Fault(name: "login absent", status: Self.status(present: false, ready: false, reason: "collector_absent"),
+                  window: Self.window("closed", reason: "expired"), loaded: .loaded),
+            Fault(name: "credential store refuses the login", status: Self.status(storeState: "unknown_origin", ready: false, reason: "collector_absent"),
+                  window: Self.window("closed", reason: "expired"), loaded: .loaded),
+            Fault(name: "credential exposure suspected", status: Self.status(exposure: true, ready: false, reason: "collector_absent"),
+                  window: Self.window("closed", reason: "expired"), loaded: .loaded),
+            Fault(name: "collection attention", status: Self.status(attention: "collector_stalled", ready: false, reason: "collector_absent"),
+                  window: Self.window("closed", reason: "expired"), loaded: .loaded),
+            Fault(name: "other readiness reason", status: Self.status(ready: false, reason: "database_unavailable"),
+                  window: Self.window("closed", reason: "expired"), loaded: .loaded),
+            Fault(name: "readiness reason absent", status: Self.status(ready: false),
+                  window: Self.window("closed", reason: "expired"), loaded: .loaded),
+            Fault(name: "version mismatch", status: Self.status(ready: false, reason: "collector_absent", version: "0.0.0-other"),
+                  window: Self.window("closed", reason: "expired"), loaded: .loaded),
+            Fault(name: "service state unknown", status: absent,
+                  window: Self.window("closed", reason: "expired"), loaded: .unknown(HubActionError.commandTimedOut))
+        ]
+        for fault in faults {
+            let snapshot = try idleSnapshot(status: fault.status, window: fault.window, loaded: fault.loaded)
+            XCTAssertNil(snapshot.betweenWindows, fault.name)
+            XCTAssertEqual(snapshot.health, .degraded, fault.name)
+            XCTAssertEqual(snapshot.statusTitle, "Attention needed", fault.name)
+            XCTAssertEqual(snapshot.statusColor, NSColor.systemRed, fault.name)
+        }
+    }
+
+    func testAStoppedServiceIsStoppedNotIdle() throws {
+        let snapshot = try idleSnapshot(window: Self.window("closed", reason: "expired"), loaded: .unloaded)
+        XCTAssertNil(snapshot.betweenWindows)
+        XCTAssertEqual(snapshot.health, .stopped)
+    }
+
+    func testAReadyHubIsRunningNotIdle() throws {
+        let snapshot = try idleSnapshot(status: Self.status(),
+                                        window: Self.window("closed", reason: "expired"))
+        XCTAssertNil(snapshot.betweenWindows)
+        XCTAssertEqual(snapshot.health, .running)
+        XCTAssertEqual(snapshot.statusTitle, "Hub is running")
+    }
+
+    func testAHubWithoutAWindowReadIsNeverIdle() throws {
+        let runner = Runner(status: Self.status(ready: false, reason: "collector_absent"),
+                            window: .success(Self.window("closed", reason: "expired")))
+        let snapshot = try XCTUnwrap(refreshed(controller(runner, observes: false)))
+        XCTAssertNil(snapshot.betweenWindows)
+        XCTAssertEqual(snapshot.health, .degraded)
     }
 
     func testAControllerThatDoesNotObserveTheWindowKeepsItsCommands() throws {

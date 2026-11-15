@@ -275,13 +275,13 @@ final class HubDashboardView: HubSurfaceView {
     func apply(snapshot: HubSnapshot,
                transition: HubServiceTransition?,
                activity: [HubActivity]) {
-        let title = transition?.title ?? (snapshot.checkingStatus ? "Checking Hub" : snapshot.health.title)
+        let title = transition?.title ?? (snapshot.checkingStatus ? "Checking Hub" : snapshot.statusTitle)
         if !heroTitle.stringValue.isEmpty, heroTitle.stringValue != title { HubMotion.transition(hero) }
         heroTitle.stringValue = title
-        heroSubtitle.stringValue = transition?.subtitle ?? (snapshot.checkingStatus ? "Waiting for the initial Hub status report." : subtitle(for: snapshot.health))
-        heroSymbol.image = NSImage(systemSymbolName: transition?.symbol ?? symbol(for: snapshot.health),
+        heroSubtitle.stringValue = transition?.subtitle ?? (snapshot.checkingStatus ? "Waiting for the initial Hub status report." : subtitle(for: snapshot))
+        heroSymbol.image = NSImage(systemSymbolName: transition?.symbol ?? symbol(for: snapshot),
                                    accessibilityDescription: nil)
-        let tone: HubStatusTone = snapshot.checkingStatus ? .neutral : tone(for: snapshot.health)
+        let tone: HubStatusTone = snapshot.checkingStatus ? .neutral : tone(for: snapshot)
         heroTile.tone = tone
         heroSymbol.contentTintColor = tone.color
         let waiting = transition != nil || snapshot.checkingStatus
@@ -526,7 +526,20 @@ final class HubDashboardView: HubSurfaceView {
     }
 
     private func compactServiceValue(_ snapshot: HubSnapshot) -> String {
-        snapshot.health == .running ? HubL10n.text("hub.ServiceDetailsWindowController.114.2185", fallback: "Active") : snapshot.service
+        snapshot.health == .running && snapshot.betweenWindows == nil ? HubL10n.text("hub.ServiceDetailsWindowController.114.2185", fallback: "Active") : snapshot.service
+    }
+
+    private func subtitle(for snapshot: HubSnapshot) -> String {
+        if let idle = snapshot.betweenWindows { return idle.subtitle() }
+        return subtitle(for: snapshot.health)
+    }
+
+    private func symbol(for snapshot: HubSnapshot) -> String {
+        snapshot.betweenWindows == nil ? symbol(for: snapshot.health) : "moon.zzz"
+    }
+
+    private func tone(for snapshot: HubSnapshot) -> HubStatusTone {
+        snapshot.betweenWindows == nil ? tone(for: snapshot.health) : .neutral
     }
 
     private func subtitle(for health: HubHealth) -> String {

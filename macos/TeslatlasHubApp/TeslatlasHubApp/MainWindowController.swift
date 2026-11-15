@@ -467,9 +467,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         heroProgress.stopAnimation(nil)
         heroProgress.isHidden = true
         heroStateIcon.isHidden = false
-        heroTitle.stringValue = snapshot.health.title
+        heroTitle.stringValue = snapshot.statusTitle
         switch snapshot.health {
         case .running:
+            if let idle = snapshot.betweenWindows {
+                heroStateIcon.image = NSImage(systemSymbolName: "moon.zzz",
+                                              accessibilityDescription: "Idle between windows")
+                heroStateIcon.contentTintColor = .secondaryLabelColor
+                heroSubtitle.stringValue = idle.subtitle()
+                break
+            }
             heroStateIcon.image = NSImage(systemSymbolName: "checkmark.shield",
                                           accessibilityDescription: "Running")
             heroStateIcon.contentTintColor = .secondaryLabelColor
@@ -510,7 +517,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                                && lifecycleIdle)
         databaseValue.stringValue = snapshot.database
         versionLabel.stringValue = HubRelease.bundledVersion
-        serviceDot.contentTintColor = snapshot.health.color
+        serviceDot.contentTintColor = snapshot.statusColor
 
         stopButton.isHidden = snapshot.health == .needsInstall
         installButton.isHidden = snapshot.health != .needsInstall
