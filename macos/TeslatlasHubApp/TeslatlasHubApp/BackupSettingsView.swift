@@ -73,7 +73,12 @@ final class BackupSettingsView: NSView {
     /// Reads the configuration and asks the service for its backup state.
     func reload() {
         switch backend.loadBackupSchedule() {
-        case let .success(loaded): show(settings: loaded)
+        case let .success(loaded):
+            show(settings: loaded)
+            if let notice = loaded.passwordNotice {
+                noteLabel.stringValue = notice
+                noteLabel.textColor = HubPalette.danger
+            }
         case let .failure(error): noteLabel.stringValue = error.localizedDescription
         }
         refreshStatus()
@@ -218,8 +223,9 @@ final class BackupSettingsView: NSView {
         case let .success(saved):
             passwordField.stringValue = ""
             show(settings: saved)
-            noteLabel.stringValue = HubL10n.text("hub.backup.savedNote", fallback: "Saved. The schedule applies when the Hub restarts.")
-            noteLabel.textColor = HubPalette.mutedForeground
+            noteLabel.stringValue = saved.passwordNotice
+                ?? HubL10n.text("hub.backup.savedNote", fallback: "Saved. The schedule applies when the Hub restarts.")
+            noteLabel.textColor = saved.passwordNotice == nil ? HubPalette.mutedForeground : HubPalette.danger
         case let .failure(error):
             passwordField.stringValue = ""
             noteLabel.stringValue = error.localizedDescription
@@ -255,7 +261,7 @@ final class BackupSettingsView: NSView {
         keepField.integerValue = loaded.keep
         destinationLabel.stringValue = loaded.destination.map { ($0 as NSString).abbreviatingWithTildeInPath }
             ?? HubL10n.text("hub.backup.noFolder", fallback: "No folder chosen")
-        passwordField.placeholderString = loaded.passwordFile == nil
+        passwordField.placeholderString = !loaded.hasPassword
             ? Self.passwordPlaceholder
             : HubL10n.text("hub.backup.passwordSaved", fallback: "Saved. Type a new one to replace it")
     }

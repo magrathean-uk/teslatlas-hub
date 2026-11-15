@@ -12,6 +12,18 @@ struct HubBackupSchedule: Equatable {
     var passwordFile: String?
     var intervalHours = 24
     var keep = 7
+    /// `password_source` as configured (M06-T13): nil, "keychain", "file" or a value the
+    /// app does not know, which it never rewrites unasked (M06-T17).
+    var passwordSource: String?
+    /// Whether a password is already saved for this schedule (the Keychain item the
+    /// service can read, or a configured file), so editing it never demands it again.
+    var passwordStored = false
+    /// A password problem to show with the schedule: a move of an earlier file that failed
+    /// or stopped half way, a conflict, or an unknown source (M06-T17).
+    var passwordNotice: String?
+
+    /// A saved or configured password the service will use.
+    var hasPassword: Bool { passwordStored || passwordFile != nil }
 
     /// The service's own limits (`backup.interval_hours`, `backup.keep`).
     static let intervalRange = 1...8784
@@ -41,6 +53,7 @@ struct HubBackupSchedule: Equatable {
             case "keep": if let count = Int(value) { keep = count }
             case "destination": destination = Self.tomlString(value)
             case "password_file": passwordFile = Self.tomlString(value)
+            case "password_source": passwordSource = Self.tomlString(value) ?? value
             default: break
             }
         }
@@ -65,7 +78,7 @@ struct HubBackupSchedule: Equatable {
                 return HubL10n.text("hub.backup.problem.folderInside", fallback: "Choose a backup folder outside the Hub data folder.")
             }
         }
-        if enabled && (destination == nil || (passwordFile == nil && newPassword == nil)) {
+        if enabled && (destination == nil || (!hasPassword && newPassword == nil)) {
             return HubL10n.text("hub.backup.problem.needsBoth", fallback: "Scheduled backups need a backup folder and a recovery password.")
         }
         return nil
@@ -144,9 +157,22 @@ struct HubBackupSchedule: Equatable {
     private static func key(of line: String) -> String? {
         let value = uncommented(line)
         guard let equals = value.firstIndex(of: "=") else { return nil }
-        let key = value[..<equals].trimmingCharacters(in: .whitespaces)
+        let key = bareKey(value[..<equals].trimmingCharacters(in: .whitespaces))
         return key.isEmpty ? nil : key
     }
+
+    /// A TOML key with its quotes removed: `"name"` and `'name'` are the key `name`.
+    private static func bareKey(_ key: String) -> String {
+        if key.count >= 2, let first = key.first, first == "\"" || first == "'", key.last == first {
+            return String(key.dropFirst().dropLast())
+        }
+        return key
+    }
+
+    /// The key of a `key = value` line, quotes removed (M06-T17), or nil.
+    static func keyName(of line: String) -> String? { key(of: line) }
+    static func isBackupHeader(_ line: String) -> Bool { uncommented(line) == "[backup]" }
+    static func isTableHeaderLine(_ line: String) -> Bool { isTableHeader(line) }
 
     /// The `key = raw value` pairs of the `[backup]` table, values untrimmed of quotes.
     static func tableEntries(in config: String) -> [(String, String)] {
@@ -156,7 +182,7 @@ struct HubBackupSchedule: Equatable {
         return lines[(table + 1)..<end].compactMap { line in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.hasPrefix("#"), let equals = trimmed.firstIndex(of: "=") else { return nil }
-            let key = trimmed[..<equals].trimmingCharacters(in: .whitespaces)
+            let key = bareKey(trimmed[..<equals].trimmingCharacters(in: .whitespaces))
             var value = trimmed[trimmed.index(after: equals)...].trimmingCharacters(in: .whitespaces)
             if !value.hasPrefix("\""), !value.hasPrefix("'") {
                 value = uncommented(value)
