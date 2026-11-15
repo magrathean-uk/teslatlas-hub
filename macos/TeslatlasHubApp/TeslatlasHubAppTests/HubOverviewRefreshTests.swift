@@ -85,4 +85,26 @@ final class HubOverviewRefreshTests: XCTestCase {
         spinUntil(5) { rig.runner.count("status") > afterInitial }
         XCTAssertGreaterThan(rig.runner.count("status"), afterInitial, "the settle refresh ran without the app being active")
     }
+
+    func testQueuedAutomaticRefreshIsDroppedWhenWindowIsHiddenBeforeCompletion() throws {
+        let rig = try OwnerRig(.init(loaded: .loaded))
+        defer { rig.tearDown() }
+        let centre = NotificationCenter()
+        let shown = Shown()
+        let window = makeWindow(rig, centre: centre, shown: shown)
+        defer { window.close() }
+        // A refresh is in flight (held) when a key notification queues another one.
+        rig.runner.hold("status")
+        let before = rig.runner.count("status")
+        centre.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+        spinUntil(5) { rig.runner.count("status") > before }
+        let inFlight = rig.runner.count("status")
+        XCTAssertGreaterThan(inFlight, before)
+        centre.post(name: NSWindow.didBecomeKeyNotification, object: window.window)
+        // The window is hidden before the in-flight refresh completes.
+        shown.value = false
+        XCTAssertTrue(rig.runner.release("status"))
+        spinBriefly(0.6)
+        XCTAssertEqual(rig.runner.count("status"), inFlight, "no second status read for a refresh queued while shown")
+    }
 }

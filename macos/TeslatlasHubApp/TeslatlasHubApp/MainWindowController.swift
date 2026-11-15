@@ -63,6 +63,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let windowShownOverride: (() -> Bool)?
     private var dashboardRefreshToken: UUID?
     private var refreshPending = false
+    /// A queued automatic refresh; replayed only if the Overview is still shown.
+    private var automaticRefreshPending = false
     private var initialRefreshPending = true
     private var presentationGeneration: UInt64 = 0
     private var serviceTransition: HubServiceTransition?
@@ -261,7 +263,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
               !accountWorkflowActive,
               !serviceDetailsMutationPending,
               !diagnosticsOperationPending else { return }
-        update()
+        update(automatic: true)
     }
 
     deinit {
@@ -458,13 +460,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    private func update() {
-        guard serviceTransition == nil else {
-            refreshPending = true
-            return
-        }
-        guard dashboardRefreshToken == nil else {
-            refreshPending = true
+    private func update(automatic: Bool = false) {
+        guard serviceTransition == nil, dashboardRefreshToken == nil else {
+            if automatic { automaticRefreshPending = true } else { refreshPending = true }
             return
         }
         let refreshToken = UUID()
@@ -476,9 +474,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             defer {
                 if self.dashboardRefreshToken == refreshToken {
                     self.dashboardRefreshToken = nil
-                    if self.refreshPending {
-                        self.refreshPending = false
+                    let explicit = self.refreshPending
+                    let automatic = self.automaticRefreshPending
+                    self.refreshPending = false
+                    self.automaticRefreshPending = false
+                    if explicit {
                         DispatchQueue.main.async { [weak self] in self?.update() }
+                    } else if automatic {
+                        DispatchQueue.main.async { [weak self] in self?.refreshOverviewIfShown() }
                     }
                 }
             }
@@ -1019,6 +1022,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         serviceTransition = nil
         dashboardRefreshToken = nil
         refreshPending = false
+        automaticRefreshPending = false
         detailsWindow?.setMutationsEnabled(!initialRefreshPending && !accountWorkflowActive
                                            && !serviceDetailsMutationPending)
         detailsWindow?.setServiceTransition(nil)
