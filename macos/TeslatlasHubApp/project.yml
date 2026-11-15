@@ -18,6 +18,12 @@ settings:
     TESLATLAS_HUB_VERSION: "$(MARKETING_VERSION)"
     TESLATLAS_HUB_SOURCE_COMMIT: "UNBOUND"
     CURRENT_PROJECT_VERSION: "20260905.1"
+    # The embedded Hub service binary (Resources/teslatlas-hub) owns the backup
+    # password's Keychain item; scripts/build-macos-app.sh signs it with this
+    # stable identity so a rebuilt or updated binary keeps reading it (M06-T17).
+    TESLATLAS_HUB_SERVICE_SIGNING_IDENTITY: "Apple Development: Created via API"
+    TESLATLAS_HUB_SERVICE_SIGNING_TEAM: NPSQV9WYS5
+    TESLATLAS_HUB_SERVICE_IDENTIFIER: uk.magrathean.teslatlas.hub.service
 
 targets:
   TeslatlasHubApp:
