@@ -316,7 +316,7 @@ final class CollectionStatusTests: XCTestCase {
         }
     }
 
-    private func controller(_ runner: Runner, loaded: HubServiceLoadState = .loaded,
+    private func controller(_ runner: HubCommandRunning, loaded: HubServiceLoadState = .loaded,
                             observes: Bool = true) -> HubController {
         let service = OwnerService()
         service.loaded = loaded
@@ -523,5 +523,70 @@ final class CollectionStatusTests: XCTestCase {
         XCTAssertEqual(ServiceDetailsWindowController.details(for: snapshot).first { $0.label == "Sign-in" }?.value,
                        "Sign-in unavailable on this Hub")
         XCTAssertFalse(runner.commands.joined().contains { $0.contains("token") }, "no token is passed")
+    }
+
+    // M02-T27: the installed Hub's own `status` and `window status` output, byte for byte
+    // (the data path anonymised), run through the app's real process executor and refresh.
+
+    private static let installedStatus = #"""
+{"collectionAttention":null,"collector":null,"collectorRunning":false,"credentialStore":{"backupsWaiting":false,"blockedReason":{"fleetApi":null,"ownerApi":null},"cleanupNeededBytes":null,"durability":"ok","exposureSuspected":false,"formatState":"complete","keyAgeDays":0,"keyring":"ok","legacyFences":0,"opaqueLegacyFences":0,"secretsBackupExcluded":true,"tokenEntryRequiresSignIn":false},"credentials":{"present":true},"database":{"bytes":2347008,"path":"/tmp/hub/hub.sqlite"},"fleetCredentials":{"expiresAt":null,"nextRefreshAt":null,"origin":null,"present":false,"refreshOwner":null,"scopeStatus":null,"scopes":null,"storeState":"ok"},"fleetTelemetry":{"configured":false,"deliveryPolicy":null,"enabled":false,"mode":"disabled","operationalState":"disabled","paidVehicleDataPolling":false},"legacyCredentials":{"expiresAt":1794728708,"nextRefreshAt":1794721582,"origin":"hub_login","present":true,"refreshOwner":"hub","storeState":"ok"},"provider":"legacy","readinessDetail":["collector_gap_unnotified"],"readinessReason":"collector_absent","ready":false,"status":"ok","vehicle":{"activityState":"offline","batteryLevel":42,"displayName":"Athena","latestObservationId":681,"latestObservedAtMs":1794700221057,"latestReceivedAtMs":1794700221057,"locationName":null,"sourceCarId":1493114796524256,"telemetryStatus":"cached","teslaEid":1493114796524256,"vehicleId":"b26ced23-b09d-430b-8760-b712b12d3aa8"},"vehicles":[{"activityState":"offline","batteryLevel":42,"displayName":"Athena","latestObservationId":681,"latestObservedAtMs":1794700221057,"latestReceivedAtMs":1794700221057,"locationName":null,"sourceCarId":1493114796524256,"telemetryStatus":"cached","teslaEid":1493114796524256,"vehicleId":"b26ced23-b09d-430b-8760-b712b12d3aa8"}],"version":"2026.36.2"}
+"""#
+    private static let installedWindow = #"""
+{"closeReason":"expired","closingAt":null,"credentialRecoveryPending":false,"deadline":null,"faulted":false,"grantDigest":null,"lastHandback":{"closed_at":1794703800,"coverage_seconds":3600,"gaps":[],"grant_digest":"bc41684a9481188b18e21d46720e97dddfcfd21126b97b1ee312283d630a2b5f","high_water":{"charges":null,"drives":1073741824,"positions":1073742283},"opened_at":1794700200,"reason":"expired","seq":4},"openedAt":null,"phase":"closed","seq":null,"startsAt":null,"trusted":true}
+"""#
+
+    /// The app's own process executor, with `/bin/cat` standing in for the Hub binary.
+    private final class ExecutorRunner: HubCommandRunning {
+        let statusFile: URL, windowFile: URL
+        init(status: URL, window: URL) { statusFile = status; windowFile = window }
+        func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+            let file = arguments.contains("window") ? windowFile : statusFile
+            HubProcessExecutor.run(executable: URL(fileURLWithPath: "/bin/cat"), arguments: [file.path],
+                                   timeout: 10, completion: completion)
+        }
+    }
+
+    func testTheInstalledHubsOwnOutputBetweenWindowsIsIdle() throws {
+        let directory = HubTestScratch.directory
+        let statusFile = directory.appendingPathComponent("installed-status.json")
+        let windowFile = directory.appendingPathComponent("installed-window.json")
+        try Self.installedStatus.write(to: statusFile, atomically: true, encoding: .utf8)
+        try Self.installedWindow.write(to: windowFile, atomically: true, encoding: .utf8)
+        let runners: [(String, HubCommandRunning)] = [
+            ("string runner", Runner(status: Self.installedStatus, window: .success(Self.installedWindow))),
+            ("process executor", ExecutorRunner(status: statusFile, window: windowFile))
+        ]
+        for (name, runner) in runners {
+            let snapshot = try XCTUnwrap(refreshed(controller(runner)), name)
+            XCTAssertEqual(snapshot.version, HubRelease.bundledVersion, name)
+            XCTAssertEqual(snapshot.readinessReason, "collector_absent", name)
+            XCTAssertNil(snapshot.collectionAttention, name)
+            XCTAssertEqual(snapshot.collection?.login, .own, name)
+            XCTAssertEqual(snapshot.collection?.window, .closed(reason: "expired"), name)
+            XCTAssertNotNil(snapshot.betweenWindows, name)
+            XCTAssertEqual(snapshot.health, .running, name)
+            XCTAssertEqual(snapshot.statusTitle, "Waiting for the next window", name)
+            XCTAssertEqual(snapshot.service, "Installed · waiting for the next window", name)
+        }
+    }
+
+    func testTheMainWindowShowsTheIdleStateForTheInstalledHubsOutput() throws {
+        let runner = Runner(status: Self.installedStatus, window: .success(Self.installedWindow))
+        let hub = controller(runner)
+        let window = MainWindowController(controller: hub)
+        func labels(_ view: NSView?) -> [String] {
+            guard let view else { return [] }
+            return ((view as? NSTextField).map { [$0.stringValue] } ?? []) + view.subviews.flatMap { labels($0) }
+        }
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline, !labels(window.window?.contentView).contains("Waiting for the next window") {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        let shown = labels(window.window?.contentView)
+        XCTAssertTrue(shown.contains("Waiting for the next window"), "\(shown)")
+        XCTAssertTrue(shown.contains("Installed · waiting for the next window"), "\(shown)")
+        XCTAssertFalse(shown.contains("Attention needed"), "\(shown)")
+        XCTAssertFalse(shown.contains("Installed · needs attention"), "\(shown)")
+        withExtendedLifetime(window) {}
     }
 }
