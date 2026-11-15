@@ -110,11 +110,16 @@ done
 TARGET_DIRECTORY=$(cargo metadata --locked --format-version 1 --no-deps | \
     /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])') \
     || die "cannot read the Cargo target directory from cargo metadata"
-CLEAN_DEVELOPMENT_COMMAND=${CLEAN_DEVELOPMENT:-$(command -v clean-development)} \
-    || die "cannot find clean-development"
-MANAGED_BUILD_ROOT=$("$CLEAN_DEVELOPMENT_COMMAND" status --json | \
-    /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("buildRoot", ""))') \
-    || die "cannot read clean-development status"
+# clean-development 0.7.0 dropped `status`; without it there is no managed build
+# root and the Cargo target must be the checkout's own git-ignored target/.
+MANAGED_BUILD_ROOT=""
+CLEAN_DEVELOPMENT_COMMAND=${CLEAN_DEVELOPMENT:-$(command -v clean-development || true)}
+if [ -n "$CLEAN_DEVELOPMENT_COMMAND" ] && \
+    CLEAN_DEVELOPMENT_STATUS=$("$CLEAN_DEVELOPMENT_COMMAND" status --json 2>/dev/null); then
+    MANAGED_BUILD_ROOT=$(printf '%s' "$CLEAN_DEVELOPMENT_STATUS" | \
+        /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("buildRoot", ""))') \
+        || die "cannot read clean-development status"
+fi
 case "$MANAGED_BUILD_ROOT" in
     '') [ "$TARGET_DIRECTORY" = "$ROOT/target" ] \
         || die "clean-development reports no buildRoot; the Cargo target must be $ROOT/target, not $TARGET_DIRECTORY (do not set CARGO_TARGET_DIR around the runner)" ;;
