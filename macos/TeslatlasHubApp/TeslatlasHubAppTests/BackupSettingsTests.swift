@@ -79,7 +79,11 @@ final class FakePasswordStore: HubBackupPasswordStore {
         items[account] = password
     }
 
+    /// Thrown by `compare`, as the service refuses an equal but unusable item.
+    var compareFailure: Error?
+
     func compare(_ password: [UInt8], account: String) throws -> HubBackupPasswordComparison {
+        if let compareFailure { throw compareFailure }
         guard let item = items[account] else { return .missing }
         return item == password ? .equal : .different
     }
@@ -852,6 +856,186 @@ final class BackupSettingsTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: name, encoding: .utf8), "someone else's file", "the other file stays")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: hub.folder.path).sorted(),
                        ["backup-password", "config.toml"], "nothing is left aside")
+    }
+
+    /// REV-CX-M06-T17 CR-2: a basic quoted key with escapes is the same TOML key, as the
+    /// service's loader reads it: an escaped file source is never migrated, an escaped
+    /// unknown source is refused before anything changes, and a save leaves one key.
+    func testEscapedSourceKeysAreTheSameKeyAsTheServiceReads() throws {
+        let hub = try hubFolder("BackupEscapedSource")
+        defer { try? FileManager.default.removeItem(at: hub.home) }
+        let name = hub.folder.appendingPathComponent(HubControllerMaintenance.passwordFileName)
+        let store = FakePasswordStore()
+        let backend = HubControllerMaintenance(controller: hub.controller, passwordStore: store)
+        let escaped = #""password_source""#
+        XCTAssertEqual(HubBackupSchedule.keyName(of: "\(escaped) = \"file\""), "password_source")
+        XCTAssertEqual(HubBackupSchedule.keyName(of: #""pass\x77ord_source" = 1"#), "password_source")
+        XCTAssertEqual(HubBackupSchedule.keyName(of: #""password\q_source" = 1"#), #""password\q_source""#)
+
+        let config = try backupConfig(hub, "\(escaped) = \"file\"\npassword_file = \(HubController.tomlBasicString(name.path))\n")
+        try legacyFile(name)
+        let loaded = try backend.loadBackupSchedule().get()
+        XCTAssertEqual(loaded.passwordSource, "file")
+        XCTAssertNil(loaded.passwordNotice)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: name.path), "an explicit file source is never moved")
+        XCTAssertEqual(store.stores, 0)
+        XCTAssertEqual(try String(contentsOf: hub.config, encoding: .utf8), config)
+        var edited = loaded
+        edited.intervalHours = 12
+        _ = try backend.saveBackupSchedule(edited, password: nil).get()
+        var written = try String(contentsOf: hub.config, encoding: .utf8)
+        XCTAssertEqual(written.split(separator: "\n").filter { HubBackupSchedule.keyName(of: String($0)) == "password_source" },
+                       ["\(escaped) = \"file\""], written)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: name.path))
+        // Typing a password is the owner's switch: still one source key, now the Keychain.
+        _ = try backend.saveBackupSchedule(edited, password: "correct horse battery staple").get()
+        written = try String(contentsOf: hub.config, encoding: .utf8)
+        XCTAssertEqual(written.split(separator: "\n").filter { HubBackupSchedule.keyName(of: String($0)) == "password_source" },
+                       ["password_source = \"keychain\""], written)
+
+        let unknown = try backupConfig(hub, "\(escaped) = \"vault\"\n")
+        XCTAssertTrue(try backend.loadBackupSchedule().get().passwordNotice?.contains("vault") == true)
+        let refused = backend.saveBackupSchedule(HubBackupSchedule(config: unknown), password: "correct horse battery staple")
+        XCTAssertEqual(refused.failureError as? HubMaintenanceError, .passwordSourceUnknown("vault"))
+        XCTAssertEqual(try String(contentsOf: hub.config, encoding: .utf8), unknown)
+    }
+
+    /// REV-CX-M06-T17 CR-3: a writer that changes the file between the rename aside and the
+    /// removal is caught: the changed file is put back and kept, and the change is shown.
+    func testAChangeAtTheRenameBoundaryKeepsTheFile() throws {
+        let hub = try hubFolder("BackupRenameBoundary")
+        defer {
+            HubHeldPasswordFile.afterRenameAside = nil
+            try? FileManager.default.removeItem(at: hub.home)
+        }
+        let name = hub.folder.appendingPathComponent(HubControllerMaintenance.passwordFileName)
+        _ = try backupConfig(hub, "password_file = \(HubController.tomlBasicString(name.path))\n")
+        let store = FakePasswordStore()
+        let backend = HubControllerMaintenance(controller: hub.controller, passwordStore: store)
+        for change in ["append", "rewrite"] {
+            store.items = [:]
+            try legacyFile(name)
+            HubHeldPasswordFile.afterRenameAside = { path in
+                let handle = FileHandle(forUpdatingAtPath: path)!
+                if change == "append" { handle.seekToEndOfFile() }
+                handle.write(Data((change == "append" ? "more" : "CORRECT").utf8))
+                handle.closeFile()
+            }
+            XCTAssertEqual(try backend.loadBackupSchedule().get().passwordNotice,
+                           HubMaintenanceError.passwordFileChanged.localizedDescription, change)
+            let kept = try String(contentsOf: name, encoding: .utf8)
+            XCTAssertEqual(kept, change == "append" ? "correct horse battery staple\nmore" : "CORRECT horse battery staple\n", change)
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: hub.folder.path).sorted(),
+                           ["backup-password", "config.toml"], change)
+        }
+    }
+
+    /// REV-CX-M06-T17 CR-4: a move interrupted after the rename aside is found on the next
+    /// open and finished with the same checks; one that cannot finish, or a rename back that
+    /// fails, is shown with the path of the file left aside.
+    func testAnInterruptedMoveIsFoundAndFinishedOrShown() throws {
+        let hub = try hubFolder("BackupInterruptedMove")
+        defer {
+            HubHeldPasswordFile.afterRenameAside = nil
+            try? FileManager.default.removeItem(at: hub.home)
+        }
+        let name = hub.folder.appendingPathComponent(HubControllerMaintenance.passwordFileName)
+        _ = try backupConfig(hub, "password_file = \(HubController.tomlBasicString(name.path))\n")
+        let store = FakePasswordStore()
+        let backend = HubControllerMaintenance(controller: hub.controller, passwordStore: store)
+        let aside = hub.folder.appendingPathComponent(".backup-password.removing-0F0F0F0F-1111-2222-3333-444455556666")
+        func listing() throws -> [String] { try FileManager.default.contentsOfDirectory(atPath: hub.folder.path).sorted() }
+
+        // Stopped after the rename, the item saved: the next open removes the aside file.
+        store.items[name.path] = Array("correct horse battery staple".utf8)
+        try legacyFile(aside)
+        var loaded = try backend.loadBackupSchedule().get()
+        XCTAssertNil(loaded.passwordNotice)
+        XCTAssertTrue(loaded.passwordStored)
+        XCTAssertEqual(try listing(), ["config.toml"])
+
+        // An aside file that differs from the item stays and is named.
+        store.items[name.path] = Array("the newer saved password".utf8)
+        try legacyFile(aside)
+        loaded = try backend.loadBackupSchedule().get()
+        XCTAssertEqual(loaded.passwordNotice, HubMaintenanceError.passwordFileLeftAside(aside.path).localizedDescription)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: aside.path))
+        try FileManager.default.removeItem(at: aside)
+
+        // A rename back that fails (the name taken meanwhile) names where the file is.
+        store.items = [:]
+        try legacyFile(name)
+        HubHeldPasswordFile.afterRenameAside = { path in
+            let handle = FileHandle(forUpdatingAtPath: path)!
+            handle.seekToEndOfFile()
+            handle.write(Data("more".utf8))
+            handle.closeFile()
+            FileManager.default.createFile(atPath: name.path, contents: Data("new".utf8))
+        }
+        loaded = try backend.loadBackupSchedule().get()
+        HubHeldPasswordFile.afterRenameAside = nil
+        let left = try listing().filter { $0.hasPrefix(".backup-password.removing-") }
+        XCTAssertEqual(left.count, 1)
+        XCTAssertTrue(loaded.passwordNotice?.contains(left[0]) == true, loaded.passwordNotice ?? "")
+        XCTAssertEqual(try String(contentsOf: hub.folder.appendingPathComponent(left[0]), encoding: .utf8),
+                       "correct horse battery staple\nmore", "the changed file is kept")
+        try FileManager.default.removeItem(at: name)
+
+        // The next open finds it again; under a file source it is only shown, never moved.
+        _ = try backupConfig(hub, "password_source = \"file\"\npassword_file = \"/custom/password\"\n")
+        loaded = try backend.loadBackupSchedule().get()
+        XCTAssertTrue(loaded.passwordNotice?.contains(left[0]) == true, loaded.passwordNotice ?? "")
+        XCTAssertEqual(try listing().filter { $0.hasPrefix(".backup-password.removing-") }, left)
+    }
+
+    /// REV-CX-M06-T17 CR-6: an item equal to the file but refused by the service as unusable
+    /// keeps the file and shows the refusal.
+    func testAnEqualButUnusableItemKeepsTheFile() throws {
+        let hub = try hubFolder("BackupEqualUnusable")
+        defer { try? FileManager.default.removeItem(at: hub.home) }
+        let name = hub.folder.appendingPathComponent(HubControllerMaintenance.passwordFileName)
+        _ = try backupConfig(hub, "password_file = \(HubController.tomlBasicString(name.path))\n")
+        let store = FakePasswordStore()
+        store.items[name.path] = Array("short".utf8)
+        store.compareFailure = HubMaintenanceError.passwordNotSaved("the backup password in the Keychain cannot be read")
+        let backend = HubControllerMaintenance(controller: hub.controller, passwordStore: store)
+        try legacyFile(name, "short\n")
+        let loaded = try backend.loadBackupSchedule().get()
+        XCTAssertTrue(loaded.passwordNotice?.contains("cannot be read") == true, loaded.passwordNotice ?? "")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: name.path))
+        XCTAssertEqual(store.stores, 0)
+    }
+
+    /// REV-CX-M06-T17 CR-7: a password in use with a CR, LF or NUL inside moves with its exact
+    /// bytes, and the standard input the service reads gives those bytes back.
+    func testALegacyPasswordWithLineEndsOrNulMovesExactly() throws {
+        let hub = try hubFolder("BackupLegacyControl")
+        defer { try? FileManager.default.removeItem(at: hub.home) }
+        let name = hub.folder.appendingPathComponent(HubControllerMaintenance.passwordFileName)
+        _ = try backupConfig(hub, "password_file = \(HubController.tomlBasicString(name.path))\n")
+        let store = FakePasswordStore()
+        let backend = HubControllerMaintenance(controller: hub.controller, passwordStore: store)
+        for password in ["correct horse\nbattery staple", "correct horse\rbattery staple", "correct horse\u{0}battery staple",
+                         "correct horse battery staple\n"] {
+            store.items = [:]
+            try legacyFile(name, password + "\n")
+            XCTAssertNil(try backend.loadBackupSchedule().get().passwordNotice, password)
+            XCTAssertEqual(store.items[name.path], Array(password.utf8), password)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: name.path), password)
+        }
+        // The service drops one final LF or CR LF from standard input.
+        func served(_ input: String) -> [UInt8] {
+            var bytes = Array(input.utf8)
+            if bytes.last == UInt8(ascii: "\n") {
+                bytes.removeLast()
+                if bytes.last == UInt8(ascii: "\r") { bytes.removeLast() }
+            }
+            return bytes
+        }
+        for password in ["plain recovery words", "ends in CR\r", "ends in LF\n", "ends in CR LF\r\n", "inner\nline\u{0}"] {
+            let input = try XCTUnwrap(HubServiceBackupPasswordStore.standardInput(for: Array(password.utf8)))
+            XCTAssertEqual(served(input), Array(password.utf8), password.debugDescription)
+        }
     }
 
     func testTheControllerRunsTheForwardedBackupVerbs() throws {

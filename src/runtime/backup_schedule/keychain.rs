@@ -74,13 +74,15 @@ pub trait PasswordKeychain: Send + Sync {
     }
 }
 
-/// Whether `password` is one the recovery commands take as a typed line
-/// (`verify-backup`, `restore-data`; REV-CX-M06-T08 finding 1) and the
-/// archive accepts: UTF-8, no CR, LF or NUL, at most 1 KiB and at least
-/// [`MINIMUM_PASSWORD_CHARS`] characters.
+/// Whether `password` is one the recovery commands can be given back and the
+/// archive accepts (REV-CX-M06-T08 finding 1, REV-CX-M06-T17 CR-7): UTF-8, at
+/// most 1 KiB and at least [`MINIMUM_PASSWORD_CHARS`] characters. CR, LF and
+/// NUL are kept exactly: the scheduled file reader always took them, and
+/// `verify-backup` and `restore-data` take them as a password file after a
+/// `#pw-file` line, so a password already in use moves into the Keychain and
+/// keeps working unchanged. A newly typed password is one line in the app.
 pub fn password_acceptable(password: &[u8]) -> bool {
     password.len() <= PASSWORD_FILE_MAX_BYTES
-        && !password.iter().any(|byte| matches!(byte, b'\r' | b'\n' | 0))
         && std::str::from_utf8(password)
             .is_ok_and(|text| text.chars().count() >= MINIMUM_PASSWORD_CHARS)
 }
@@ -129,8 +131,11 @@ fn same_bytes(left: &[u8], right: &[u8]) -> bool {
         && left.iter().zip(right).fold(0_u8, |difference, (a, b)| difference | (a ^ b)) == 0
 }
 
-/// One password from standard input: at most 1 KiB and one line end, which
-/// is dropped. Nothing else is read and nothing is echoed.
+/// One password from standard input: at most 1 KiB and one final line end
+/// (LF or CR LF), which is dropped, the rule of the scheduled password file.
+/// Every other byte is the password's own, so a password that ends in CR is
+/// sent without a final LF and one that ends in LF is sent with one more (the
+/// app's framing). Nothing else is read and nothing is echoed.
 pub fn password_from_input(mut reader: impl std::io::Read) -> Result<Zeroizing<Vec<u8>>, OperatorRefusal> {
     use std::io::Read as _;
     let mut bytes = Zeroizing::new(Vec::with_capacity(PASSWORD_FILE_MAX_BYTES + 3));
@@ -163,7 +168,7 @@ pub fn store_password(
     check_account(account)?;
     if !password_acceptable(password) {
         return Err(invalid(
-            "the recovery password needs at least 12 characters, at most 1 KiB, and no line ends or NUL bytes",
+            "the recovery password needs at least 12 characters of UTF-8 text and at most 1 KiB",
         ));
     }
     keychain.write(account, password).map_err(|failure| match failure {
@@ -185,7 +190,9 @@ pub fn store_password(
 
 /// Compares `password` with the item for `account` through this binary's own
 /// access (`backup-password compare`): the app uses it to finish or refuse
-/// moving an old password file. A refused or unreadable item is a refusal.
+/// moving an old password file. A refused or unreadable item is a refusal,
+/// and so is an item that holds the same bytes but is not a password the
+/// service can use (REV-CX-M06-T17 CR-6): the app then keeps the file.
 pub fn compare_password(
     keychain: &dyn PasswordKeychain,
     account: &str,
@@ -193,7 +200,8 @@ pub fn compare_password(
 ) -> Result<Comparison, OperatorRefusal> {
     check_account(account)?;
     match keychain.read(account) {
-        Ok(saved) if same_bytes(&saved, password) => Ok(Comparison::Equal),
+        Ok(saved) if same_bytes(&saved, password) && password_acceptable(&saved) => Ok(Comparison::Equal),
+        Ok(saved) if same_bytes(&saved, password) => Err(unavailable(KeychainFailure::Unreadable, account)),
         Ok(_) => Ok(Comparison::Different),
         Err(KeychainFailure::Missing) => Ok(Comparison::Missing),
         Err(failure) => Err(unavailable(failure, account)),

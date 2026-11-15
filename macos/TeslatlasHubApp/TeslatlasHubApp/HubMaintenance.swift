@@ -35,6 +35,8 @@ enum HubMaintenanceError: LocalizedError, Equatable {
     case passwordFileConflict
     case passwordFileChanged
     case passwordFileNotRemoved
+    /// An earlier password file stays under this other name after a move stopped part way.
+    case passwordFileLeftAside(String)
 
     var errorDescription: String? {
         switch self {
@@ -55,6 +57,8 @@ enum HubMaintenanceError: LocalizedError, Equatable {
             return HubL10n.text("hub.backup.maint.fileChanged", fallback: "The earlier backup password file changed while it was being moved, so it was left in place. Open Backups again to try once more.")
         case .passwordFileNotRemoved:
             return HubL10n.text("hub.backup.maint.fileNotRemoved", fallback: "The password is in the Keychain, but the earlier backup password file could not be removed. Delete backup-password beside the Hub configuration yourself.")
+        case let .passwordFileLeftAside(path):
+            return HubL10n.format("hub.backup.maint.fileLeftAside", fallback: "An earlier backup password file was left at %1$@ when moving it into the Keychain stopped part way. Check that Backups shows the recovery password as saved, then delete that file.", arguments: [path])
         }
     }
 }
@@ -120,8 +124,8 @@ final class HubServiceBackupPasswordStore: HubBackupPasswordStore {
     private func outcome(_ action: String, account: String, password: [UInt8]?) throws -> String {
         var input: String?
         if let password {
-            guard let text = String(bytes: password, encoding: .utf8) else { throw HubMaintenanceError.passwordFileRefused }
-            input = text + "\n"
+            guard let text = Self.standardInput(for: password) else { throw HubMaintenanceError.passwordFileRefused }
+            input = text
         }
         switch run(["backup-password", action, "--account", account], input) {
         case let .success(output):
@@ -135,6 +139,14 @@ final class HubServiceBackupPasswordStore: HubBackupPasswordStore {
             let text = error.localizedDescription
             throw HubMaintenanceError.passwordNotSaved(HubServiceRefusal.parse(text)?.message ?? text)
         }
+    }
+
+    /// The password as `backup-password` reads it back exactly (REV-CX-M06-T17 CR-7): the
+    /// service drops one final LF or CR LF, so a final LF is added unless the password
+    /// itself ends in CR. Every CR, LF and NUL inside is the password's own.
+    static func standardInput(for password: [UInt8]) -> String? {
+        guard let text = String(bytes: password, encoding: .utf8) else { return nil }
+        return password.last == UInt8(ascii: "\r") ? text : text + "\n"
     }
 
     /// The bundled `teslatlas-hub`, the same file the LaunchAgent runs.
@@ -164,14 +176,24 @@ final class HubHeldPasswordFile {
     private let directory: Int32
     private let descriptor: Int32
     private let name: String
+    private let asideBase: String
     private let checked: stat
+    /// The file's bytes as read and checked, before the final line end is dropped.
+    private var raw: [UInt8]
     private(set) var bytes: [UInt8]
+
+    /// The prefix of the name a file has while it is being removed (see
+    /// `removeIfUnchanged`): `.backup-password.removing-` for the app's own file.
+    static func asidePrefix(for base: String) -> String { ".\(base).removing-" }
+
+    /// Tests: runs right after the file is renamed aside, with the aside path.
+    static var afterRenameAside: ((String) -> Void)?
 
     /// Opens `url`; nil when there is no such file. Refuses a link, a non-regular file, a
     /// file of another owner, any group or other mode bit, an ACL `allow` entry (the
     /// service's own rule), an empty file, one over 1 KiB, text that is not UTF-8, and a
     /// file that changes while it is read. One trailing line end is dropped.
-    static func open(_ url: URL) throws -> HubHeldPasswordFile? {
+    static func open(_ url: URL, asideBase: String? = nil) throws -> HubHeldPasswordFile? {
         let directory = Darwin.open(url.deletingLastPathComponent().path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         guard directory >= 0 else { throw HubMaintenanceError.passwordFileRefused }
         let name = url.lastPathComponent
@@ -200,9 +222,11 @@ final class HubHeldPasswordFile {
                 filled += count
             }
             bytes.removeSubrange(filled...)
+            var raw = bytes
             var after = stat()
             guard fstat(descriptor, &after) == 0, Self.same(info, after), filled == Int(info.st_size) else {
                 for index in bytes.indices { bytes[index] = 0 }
+                for index in raw.indices { raw[index] = 0 }
                 throw HubMaintenanceError.passwordFileChanged
             }
             if bytes.last == UInt8(ascii: "\n") {
@@ -211,9 +235,11 @@ final class HubHeldPasswordFile {
             }
             guard !bytes.isEmpty, String(bytes: bytes, encoding: .utf8) != nil else {
                 for index in bytes.indices { bytes[index] = 0 }
+                for index in raw.indices { raw[index] = 0 }
                 throw HubMaintenanceError.passwordFileRefused
             }
-            return HubHeldPasswordFile(directory: directory, descriptor: descriptor, name: name, checked: info, bytes: bytes)
+            return HubHeldPasswordFile(directory: directory, descriptor: descriptor, name: name,
+                                       asideBase: asideBase ?? name, checked: info, raw: raw, bytes: bytes)
         } catch {
             close(descriptor)
             close(directory)
@@ -221,44 +247,80 @@ final class HubHeldPasswordFile {
         }
     }
 
-    private init(directory: Int32, descriptor: Int32, name: String, checked: stat, bytes: [UInt8]) {
+    private init(directory: Int32, descriptor: Int32, name: String, asideBase: String, checked: stat,
+                 raw: [UInt8], bytes: [UInt8]) {
         self.directory = directory
         self.descriptor = descriptor
         self.name = name
+        self.asideBase = asideBase
         self.checked = checked
+        self.raw = raw
         self.bytes = bytes
     }
 
     deinit {
         for index in bytes.indices { bytes[index] = 0 }
+        for index in raw.indices { raw[index] = 0 }
         close(descriptor)
         close(directory)
     }
 
     /// Removes the name only while it still refers to the held, unchanged file. macOS has
     /// no unlink-by-descriptor, so the name is first renamed aside in the same folder and
-    /// removed only when the entry moved is the held file; anything else is put back and
-    /// refused. A file changed since its checks is refused and left; a removal the system
-    /// refuses is reported.
+    /// removed only when the entry moved is the held file and still holds exactly the
+    /// checked bytes (REV-CX-M06-T17 CR-3: a writer with the file open may change it up to
+    /// the rename); anything else is put back and refused. An aside name that cannot be put
+    /// back is reported by its path (CR-4), and the app finds such names on its next open.
     func removeIfUnchanged() throws {
         var now = stat()
         guard fstat(descriptor, &now) == 0, Self.same(checked, now) else {
             throw HubMaintenanceError.passwordFileChanged
         }
-        let aside = ".\(name).removing-\(UUID().uuidString)"
+        let aside = Self.asidePrefix(for: asideBase) + UUID().uuidString
         guard renameatx_np(directory, name, directory, aside, UInt32(RENAME_EXCL)) == 0 else {
             throw errno == ENOENT ? HubMaintenanceError.passwordFileChanged : HubMaintenanceError.passwordFileNotRemoved
         }
+        Self.afterRenameAside?(asidePath(aside))
         var moved = stat()
+        var held = stat()
         guard fstatat(directory, aside, &moved, AT_SYMLINK_NOFOLLOW) == 0,
-              moved.st_dev == now.st_dev, moved.st_ino == now.st_ino else {
-            _ = renameatx_np(directory, aside, directory, name, UInt32(RENAME_EXCL))
+              moved.st_dev == now.st_dev, moved.st_ino == now.st_ino,
+              fstat(descriptor, &held) == 0, Self.same(checked, held), heldBytesUnchanged() else {
+            try putBack(aside)
             throw HubMaintenanceError.passwordFileChanged
         }
         guard unlinkat(directory, aside, 0) == 0 else {
-            _ = renameatx_np(directory, aside, directory, name, UInt32(RENAME_EXCL))
+            try putBack(aside)
             throw HubMaintenanceError.passwordFileNotRemoved
         }
+    }
+
+    /// Renames `aside` back to the file's name; a refusal names where the file is.
+    private func putBack(_ aside: String) throws {
+        guard renameatx_np(directory, aside, directory, name, UInt32(RENAME_EXCL)) == 0 else {
+            throw HubMaintenanceError.passwordFileLeftAside(asidePath(aside))
+        }
+    }
+
+    private func asidePath(_ aside: String) -> String {
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard fcntl(directory, F_GETPATH, &buffer) == 0 else { return aside }
+        return URL(fileURLWithPath: String(cString: buffer)).appendingPathComponent(aside).path
+    }
+
+    /// Whether the held file still holds exactly the checked bytes, read again from the start.
+    private func heldBytesUnchanged() -> Bool {
+        var again = [UInt8](repeating: 0, count: raw.count + 1)
+        defer { for index in again.indices { again[index] = 0 } }
+        var filled = 0
+        while filled < again.count {
+            let count = again.withUnsafeMutableBytes { pread(descriptor, $0.baseAddress! + filled, $0.count - filled, off_t(filled)) }
+            if count < 0 && errno == EINTR { continue }
+            guard count >= 0 else { return false }
+            if count == 0 { break }
+            filled += count
+        }
+        return filled == raw.count && again[..<filled].elementsEqual(raw)
     }
 
     private static func same(_ first: stat, _ second: stat) -> Bool {
@@ -350,6 +412,7 @@ final class HubControllerMaintenance: HubMaintenanceBackend {
         guard fileManager.fileExists(atPath: configPath.path) else { return .success(HubBackupSchedule()) }
         do {
             var schedule = HubBackupSchedule(config: try String(contentsOf: configPath, encoding: .utf8))
+            var keychainAccount: String?
             switch Self.passwordSource(of: schedule) {
             case let .unknown(value):
                 schedule.passwordNotice = HubMaintenanceError.passwordSourceUnknown(value).localizedDescription
@@ -358,12 +421,18 @@ final class HubControllerMaintenance: HubMaintenanceBackend {
             case .unset:
                 schedule.passwordStored = false
             case let .keychain(account):
+                keychainAccount = account
                 do {
                     try migratePasswordFile(account: account)
                 } catch {
                     schedule.passwordNotice = error.localizedDescription
                 }
-                schedule.passwordStored = storedPassword(account: account, notice: &schedule.passwordNotice)
+            }
+            if let notice = finishAsideMoves(account: keychainAccount), schedule.passwordNotice == nil {
+                schedule.passwordNotice = notice
+            }
+            if let keychainAccount {
+                schedule.passwordStored = storedPassword(account: keychainAccount, notice: &schedule.passwordNotice)
             }
             return .success(schedule)
         } catch {
@@ -390,14 +459,44 @@ final class HubControllerMaintenance: HubMaintenanceBackend {
     /// (conflict). Otherwise the service saves and reads back the password, and only then
     /// is the same unchanged file removed. With no file there is nothing to do.
     func migratePasswordFile(account: String) throws {
-        let file = passwordName
-        guard account == file.path, let held = try HubHeldPasswordFile.open(file) else { return }
+        guard account == passwordName.path else { return }
+        try migrate(passwordName, account: account)
+    }
+
+    private func migrate(_ file: URL, account: String) throws {
+        guard let held = try HubHeldPasswordFile.open(file, asideBase: Self.passwordFileName) else { return }
         switch try passwordStore.compare(held.bytes, account: account) {
         case .equal: break
         case .different: throw HubMaintenanceError.passwordFileConflict
         case .missing: try passwordStore.store(held.bytes, account: account)
         }
         try held.removeIfUnchanged()
+    }
+
+    /// Earlier password files a move left under the aside name (`removeIfUnchanged`) when the
+    /// app stopped between the rename and the removal (REV-CX-M06-T17 CR-4).
+    private func asideFiles() -> [URL] {
+        let folder = passwordName.deletingLastPathComponent()
+        let prefix = HubHeldPasswordFile.asidePrefix(for: Self.passwordFileName)
+        let names = (try? fileManager.contentsOfDirectory(atPath: folder.path)) ?? []
+        return names.filter { $0.hasPrefix(prefix) }.sorted().map { folder.appendingPathComponent($0) }
+    }
+
+    /// Finishes a move that stopped after the rename aside, with the same checks as any
+    /// move, when the configuration names the app's own Keychain account; otherwise, or
+    /// when finishing is refused, the notice names the file left aside. Nil when none is.
+    func finishAsideMoves(account: String?) -> String? {
+        for aside in asideFiles() {
+            do {
+                guard account == passwordName.path else { throw HubMaintenanceError.passwordFileLeftAside(aside.path) }
+                try migrate(aside, account: passwordName.path)
+            } catch let HubMaintenanceError.passwordFileLeftAside(path) {
+                return HubMaintenanceError.passwordFileLeftAside(path).localizedDescription
+            } catch {
+                return HubMaintenanceError.passwordFileLeftAside(aside.path).localizedDescription
+            }
+        }
+        return nil
     }
 
     func saveBackupSchedule(_ schedule: HubBackupSchedule, password: String?) -> Result<HubBackupSchedule, Error> {

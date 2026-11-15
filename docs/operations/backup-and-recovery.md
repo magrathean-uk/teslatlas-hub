@@ -157,7 +157,8 @@ How each source behaves:
   path or `unattended-backup` (no file is written there). The bundled service
   binary creates and owns it: the app runs
   `teslatlas-hub backup-password store --account <account>` and writes the
-  password as one line on its standard input, never as an argument. The item
+  password on its standard input, never as an argument (one final line end
+  is dropped; every other byte is the password's own). The item
   therefore trusts the service binary only; the LaunchAgent (the same binary)
   reads it without a prompt, and the app and other programs are refused. A
   replacement changes the item's data in place, so the old password stays
@@ -172,27 +173,35 @@ How each source behaves:
   shows the message as the last failure. Save the recovery password again in
   Service details, Backups, to recreate the item.
 - Stored and scheduled passwords are ones the recovery commands can take: a
-  Keychain password has at least 12 characters, at most 1 KiB of UTF-8 and no
-  line end or NUL byte (typed back to `verify-backup` and `restore-data` as
-  one line); a password file holds at most 1 KiB of UTF-8 and is not empty
-  (given back after a `#pw-file` line). A password already in use keeps
-  working.
+  Keychain password has at least 12 characters and at most 1 KiB of UTF-8; a
+  password file holds at most 1 KiB of UTF-8 and is not empty. A password with
+  a line end or NUL byte inside is kept exactly and given back to
+  `verify-backup` and `restore-data` as a password file after a `#pw-file`
+  line. A password already in use keeps working, also after it moves into the
+  Keychain. A newly typed password is one line.
 - A `backup-password` file left by an earlier version beside `config.toml` is
   moved when the app opens or saves the Backups section and the configuration
   names it as the Keychain account. The app holds the file open, applies the
   service's checks (owner, mode 0600, no access control list entry that allows
   another account), and asks the service first: when the item already holds
-  the same password the move is finished; when it holds another password the
-  item wins, the file stays and the app says so. Otherwise the service saves
-  and reads back the password, and only then is the same, unchanged file
-  removed. A file that changed or was replaced meanwhile, or one that cannot
-  be removed, stays and the app shows why. Until the move the service says
-  the password is waiting to move and does not read the file.
+  the same, usable password the move is finished; when it holds another
+  password the item wins, the file stays and the app says so. Otherwise the
+  service saves and reads back the password, and only then is the same,
+  unchanged file removed: it is renamed aside to
+  `.backup-password.removing-<id>`, checked again (the same file, holding the
+  same bytes) and deleted, or put back. A file that changed or was replaced
+  meanwhile, or one that cannot be removed, stays and the app shows why. If
+  the app stops between the rename and the deletion, the next open finds the
+  aside file and finishes the move with the same checks, or names the file's
+  path. Until the move the service says the password is waiting to move and
+  does not read the file.
 - Signing: a Hub update keeps reading the item without a prompt only when the
   service binary is signed with the same Apple Development identity (team
-  `NPSQV9WYS5`); an unsigned or ad-hoc signed build is refused
-  (`backup_password_unavailable`) until the password is saved again from that
-  build.
+  `NPSQV9WYS5`, identifier `uk.magrathean.teslatlas.hub.service`);
+  `scripts/build-macos-app.sh` signs the embedded binary that way, with the
+  identity `macos/TeslatlasHubApp/project.yml` names. An unsigned or ad-hoc
+  signed build is refused (`backup_password_unavailable`) until the password
+  is saved again from that build.
 - Linux and Docker (`password_source = "file"`): `backup.password_file` names
   an absolute path to a regular file the service account owns, mode 0600 or
   tighter, at most 1 KiB of UTF-8.

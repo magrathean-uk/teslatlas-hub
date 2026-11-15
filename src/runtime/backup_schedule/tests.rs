@@ -487,7 +487,11 @@ fn backup_schedule_password_file_with_a_foreign_acl_is_refused() {
         assert_eq!(fs::metadata(&shared).unwrap().permissions().mode() & 0o777, expected);
         let refusal = password::read_password_file(&shared).expect_err("an ACL grant is refused");
         assert_eq!(refusal.code, password::PASSWORD_FILE_INVALID);
-        assert!(refusal.message.contains("access control list"), "{refusal}");
+        // On Linux the recalculated mask makes the group bits r, so the mode
+        // rule refuses first (REV-CX-M06-T17 CR-5); the ACL rule itself is
+        // exercised with a zero mask in the next test.
+        let refused_by = if cfg!(target_os = "macos") { "access control list" } else { "mode 0600" };
+        assert!(refusal.message.contains(refused_by), "{refusal}");
         assert!(!refusal.message.contains(PASSWORD), "{refusal}");
     } else {
         assert!(!cfg!(target_os = "macos"), "chmod +a must work on macOS");
@@ -1029,9 +1033,9 @@ fn backup_password_source_store_replaces_in_place_reads_back_and_keeps_the_old_p
     let refusal = store_password(&altering, account, PASSWORD.as_bytes()).expect_err("read-back differs");
     assert_eq!(refusal.code, BACKUP_PASSWORD_UNAVAILABLE);
     assert!(refusal.message.contains("different"), "{refusal}");
-    // Only passwords the recovery commands take as a typed line are stored.
+    // Only passwords the recovery commands can be given back are stored.
     let long = vec![b'a'; 1025];
-    for bad in [&b"short"[..], b"correct horse\nbattery", b"correct horse\rbattery", b"correct horse\0battery", &[0xff; 20], &long] {
+    for bad in [&b"short"[..], b"short\nline", &[0xff; 20], &long] {
         let refusal = store_password(&memory, account, bad).expect_err("refused");
         assert_eq!(refusal.code, BACKUP_PASSWORD_INVALID);
         assert!(!refusal.message.contains(PASSWORD), "{refusal}");
@@ -1124,6 +1128,30 @@ fn backup_schedule_the_acl_check_inspects_the_opened_file_not_the_pathname() {
     assert!(shared.exists() && clean.exists() && !aside.exists(), "the seam put both files back");
 }
 
+/// REV-CX-M06-T17 CR-5: on Linux a named grant under an explicit zero mask
+/// leaves mode 0600, so only the descriptor's ACL check can refuse the file.
+#[cfg(target_os = "linux")]
+#[test]
+fn backup_schedule_linux_a_zero_mask_acl_grant_is_refused_by_the_acl_check() {
+    let dir = crate::private_tempdir().unwrap();
+    let shared = password_file(dir.path(), "masked", PASSWORD.as_bytes(), 0o600);
+    let granted = std::process::Command::new("setfacl")
+        .arg("--no-mask")
+        .arg("--modify")
+        .arg("user:nobody:r,mask::---")
+        .arg(&shared)
+        .status()
+        .is_ok_and(|status| status.success());
+    if !granted {
+        eprintln!("setfacl is not available here; the zero-mask file case is not run");
+        return;
+    }
+    assert_eq!(fs::metadata(&shared).unwrap().permissions().mode() & 0o777, 0o600);
+    let refusal = password::read_password_file(&shared).expect_err("the grant is refused");
+    assert_eq!(refusal.code, password::PASSWORD_FILE_INVALID);
+    assert!(refusal.message.contains("access control list"), "{refusal}");
+}
+
 /// REV-CX-M06-T12 finding 10: the Linux parser on an explicit zero mask. A
 /// named entry with permissions counts as a grant even when the mask would
 /// cut it to nothing: the reader fails closed.
@@ -1165,4 +1193,87 @@ fn backup_schedule_the_missing_password_source_refusal_names_the_keychain_and_th
     let refusal = schedule.run_now(None, None).expect_err("no source");
     assert!(refusal.message.contains("password_source"), "{refusal}");
     assert!(refusal.message.contains("--password-file"), "{refusal}");
+}
+
+/// REV-CX-M06-T17 CR-7: a scheduled password file in use with a CR, LF or NUL
+/// inside moves into the Keychain with its exact bytes (as the app frames it
+/// on standard input), the service's runner backs up with it, and the
+/// recovery commands open that backup from the original file's bytes after a
+/// `#pw-file` line.
+#[test]
+fn backup_password_source_a_legacy_password_with_line_ends_or_nul_migrates_and_recovers() {
+    use keychain::{Comparison, compare_password, password_from_input, read_keychain_password, store_password};
+    let root = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(root.path().join("data")).expect("store");
+    store.create_pairing("Schedule fixture", 1_000, 10_000).expect("pairing");
+    let account = "/Hub/backup-password";
+    let cases: [&[u8]; 5] = [
+        b"correct horse\nbattery staple",
+        b"correct horse\rbattery staple",
+        b"correct horse\0battery staple",
+        b"correct horse battery staple\r",
+        b"correct horse battery staple\n",
+    ];
+    for (index, original) in cases.into_iter().enumerate() {
+        // The file as the scheduled reader took it: one final LF dropped (a
+        // password that ends in CR was written without one).
+        let mut body = original.to_vec();
+        if original.last() != Some(&b'\r') {
+            body.push(b'\n');
+        }
+        let file = password_file(root.path(), &format!("legacy-{index}"), &body, 0o600);
+        let in_use = password::read_password_file(&file).expect("the file was a usable password");
+        assert_eq!(in_use.as_bytes(), original);
+        // The app's framing: one more LF unless the password ends in CR.
+        let mut framed = original.to_vec();
+        if original.last() != Some(&b'\r') {
+            framed.push(b'\n');
+        }
+        let sent = password_from_input(&framed[..]).unwrap();
+        assert_eq!(sent.as_slice(), original, "case {index}");
+        let memory = Arc::new(MemoryKeychain::default());
+        store_password(memory.as_ref(), account, &sent).expect("the password in use moves");
+        assert_eq!(compare_password(memory.as_ref(), account, original).unwrap(), Comparison::Equal);
+        assert_eq!(read_keychain_password(memory.as_ref(), account).unwrap().as_bytes(), original);
+        let destination = root.path().join(format!("destination-{index}"));
+        fs::create_dir(&destination).unwrap();
+        fs::set_permissions(&destination, fs::Permissions::from_mode(0o700)).unwrap();
+        let state_dir = root.path().join(format!("state-{index}"));
+        fs::create_dir(&state_dir).unwrap();
+        let mut live = settings(false);
+        live.destination = Some(destination);
+        live.password = Some(PasswordSource::Keychain { account: account.to_owned() });
+        let runner = StoreBackupRunner::with_keychain(store.clone(), memory);
+        let report = scheduler(live, Arc::new(runner), &state_dir, 0).run_now(None, None).expect("backup");
+        let bundle = PathBuf::from(report["path"].as_str().unwrap());
+        let mut recovery_input = b"#pw-file\n".to_vec();
+        recovery_input.extend_from_slice(&body);
+        let recovered = data_recovery::recovery_password_from(&recovery_input[..]).expect("recovery input");
+        assert_eq!(recovered.as_bytes(), original, "case {index}");
+        verify_encrypted_backup(&bundle, &recovered).expect("the backup opens with the original bytes");
+    }
+}
+
+/// REV-CX-M06-T17 CR-2: the service's loader reads a basic quoted key with
+/// escapes as the same key, so the app must too (its tests use this spelling).
+#[test]
+fn backup_password_source_an_escaped_source_key_is_the_same_key() {
+    let table = "enabled = true\ndestination = \"/Volumes/B\"\n\"password\\u005fsource\" = \"file\"\npassword_file = \"/Users/fixture/backup-password\"\n";
+    let backup = backup_table(table, true).expect("loads");
+    let settings = BackupSettings::from_config_on(&backup, true);
+    assert_eq!(settings.password, Some(PasswordSource::File(PathBuf::from("/Users/fixture/backup-password"))));
+}
+
+/// REV-CX-M06-T17 CR-6: an item holding the same bytes as an old file but not
+/// a password the service can use is a refusal, never `equal`, so the app
+/// keeps the file.
+#[test]
+fn backup_password_source_an_equal_but_unusable_item_is_not_equal() {
+    use keychain::{BACKUP_PASSWORD_UNAVAILABLE, compare_password};
+    let account = "/Hub/backup-password";
+    for unusable in [&b"short"[..], &[0xff; 20]] {
+        let memory = MemoryKeychain::holding(account, unusable);
+        let refusal = compare_password(&memory, account, unusable).expect_err("not a usable password");
+        assert_eq!(refusal.code, BACKUP_PASSWORD_UNAVAILABLE);
+    }
 }

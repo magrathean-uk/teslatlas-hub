@@ -161,12 +161,31 @@ struct HubBackupSchedule: Equatable {
         return key.isEmpty ? nil : key
     }
 
-    /// A TOML key with its quotes removed: `"name"` and `'name'` are the key `name`.
+    /// A TOML key as the service's loader reads it: `"name"` and `'name'` are the key
+    /// `name`, and a basic quoted key's escapes are decoded (`"password\u005fsource"` is
+    /// `password_source`; REV-CX-M06-T17 CR-2). A quoted key that does not decode is kept
+    /// with its quotes, so it never matches a key the app reads or writes.
     private static func bareKey(_ key: String) -> String {
-        if key.count >= 2, let first = key.first, first == "\"" || first == "'", key.last == first {
-            return String(key.dropFirst().dropLast())
+        guard key.count >= 2, let first = key.first, first == "\"" || first == "'", key.last == first else {
+            return key
         }
-        return key
+        if first == "'" { return String(key.dropFirst().dropLast()) }
+        guard let decoded = tomlString(key), tomlBasicStringLength(key) == key.unicodeScalars.count else {
+            return key
+        }
+        return decoded
+    }
+
+    /// How many scalars the basic string at the start of `raw` spans, quotes included.
+    private static func tomlBasicStringLength(_ raw: String) -> Int? {
+        var count = 1
+        var escaped = false
+        for scalar in raw.unicodeScalars.dropFirst() {
+            count += 1
+            if escaped { escaped = false; continue }
+            if scalar == "\\" { escaped = true } else if scalar == "\"" { return count }
+        }
+        return nil
     }
 
     /// The key of a `key = value` line, quotes removed (M06-T17), or nil.
@@ -214,9 +233,10 @@ struct HubBackupSchedule: Equatable {
                 case "r": result.append("\r")
                 case "\"": result.append("\"")
                 case "\\": result.append("\\")
-                case "u", "U":
+                case "e": result.append("\u{1B}")
+                case "x", "u", "U":
                     var digits = ""
-                    for _ in 0..<(escape == "u" ? 4 : 8) {
+                    for _ in 0..<(escape == "x" ? 2 : escape == "u" ? 4 : 8) {
                         guard let digit = iterator.next() else { return nil }
                         digits.unicodeScalars.append(digit)
                     }
