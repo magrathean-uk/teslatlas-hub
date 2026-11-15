@@ -186,6 +186,83 @@ final class BackupSettingsTests: XCTestCase {
         XCTAssertTrue(view.backUpNowButton.isEnabled)
     }
 
+    /// REV2-CX-M06-T06 finding 1: the command times out, the service restarts during the
+    /// run and reports only the earlier generation (or nothing). That is not a success.
+    func testATimedOutRunLostToAServiceRestartIsUnconfirmedNotFinished() throws {
+        let earlier = Date(timeIntervalSince1970: 1_700_000_000)
+        var previous = HubBackupStatus()
+        previous.lastAttempt = earlier
+        previous.lastSuccess = earlier
+        previous.lastGeneration = "generation-A"
+        var staleFailure = previous
+        staleFailure.lastFailureCode = "backup_failed"
+        staleFailure.lastFailureMessage = "the destination is full"
+        staleFailure.lastSuccess = earlier.addingTimeInterval(-3600)
+
+        for (name, afterRestart) in [("earlier generation", previous), ("no state", HubBackupStatus()),
+                                     ("earlier failure", staleFailure)] {
+            let backend = FakeMaintenanceBackend()
+            var pending: [() -> Void] = []
+            let view = makeView(backend, scheduled: { _, work in pending.append(work) })
+            view.backUpNowButton.performClick(nil)
+            try XCTUnwrap(backend.backUpNowCompletion)(.stillRunning)
+            backend.statusAnswers = [.failure(HubActionError.commandTimedOut), .success(afterRestart)]
+            for _ in 0..<2 {
+                XCTAssertEqual(pending.count, 1, name)
+                pending.removeFirst()()
+            }
+            XCTAssertTrue(pending.isEmpty, name)
+            XCTAssertEqual(view.runState, .unconfirmed, name)
+            XCTAssertFalse(view.progressLabel.stringValue.contains("finished"), name)
+            XCTAssertEqual(view.progressLabel.stringValue,
+                           "The backup was interrupted or its result is unknown. The last good backup is unchanged.", name)
+            XCTAssertEqual(view.progressLabel.textColor, HubPalette.danger, name)
+            XCTAssertTrue(view.backUpNowButton.isEnabled, name)
+            if afterRestart.lastGeneration != nil {
+                XCTAssertTrue(labels(view.rowsStack).contains("T1700000000 (generation-A)"), "\(name): the last good backup stays shown")
+            }
+        }
+    }
+
+    func testOnlyTheWatchedRunsOwnSuccessEndsTheWaitAsFinished() {
+        let earlier = Date(timeIntervalSince1970: 1_700_000_000)
+        let requested = earlier.addingTimeInterval(600)
+        let later = requested.addingTimeInterval(5)
+        func status(attempt: Date?, success: Date?, generation: String?, failure: String? = nil) -> HubBackupStatus {
+            var status = HubBackupStatus()
+            status.lastAttempt = attempt
+            status.lastSuccess = success
+            status.lastGeneration = generation
+            status.lastFailureCode = failure
+            return status
+        }
+        let mine = HubBackupRunWatch(requestedAt: requested)
+        XCTAssertEqual(mine.endState(of: status(attempt: later, success: later, generation: "generation-B")),
+                       .finished(generation: "generation-B"))
+        XCTAssertEqual(mine.endState(of: status(attempt: earlier, success: earlier, generation: "generation-A")), .unconfirmed)
+        XCTAssertEqual(mine.endState(of: status(attempt: later, success: earlier, generation: "generation-A", failure: "backup_failed")),
+                       .failed(message: "backup_failed"))
+        XCTAssertEqual(mine.endState(of: status(attempt: later, success: later, generation: nil)), .unconfirmed,
+                       "success needs the run's generation")
+
+        // A run already going on (a scheduled one, or one that held the slot): its outcome is
+        // an attempt later than the one reported while it ran.
+        var scheduled = HubBackupRunWatch()
+        var running = status(attempt: earlier, success: earlier, generation: "generation-A")
+        running.running = true
+        scheduled.observe(running)
+        XCTAssertEqual(scheduled.endState(of: status(attempt: earlier, success: earlier, generation: "generation-A")), .unconfirmed)
+        XCTAssertEqual(scheduled.endState(of: status(attempt: later, success: later, generation: "generation-C")),
+                       .finished(generation: "generation-C"))
+        var overlapped = HubBackupRunWatch(requestedAt: requested)
+        overlapped.observe(running)
+        XCTAssertEqual(overlapped.endState(of: status(attempt: requested.addingTimeInterval(-60), success: requested.addingTimeInterval(-60),
+                                                      generation: "generation-D")),
+                       .finished(generation: "generation-D"), "the run that held the slot finished")
+        XCTAssertEqual(HubBackupRunWatch().endState(of: status(attempt: later, success: later, generation: "generation-E")),
+                       .unconfirmed, "no run was seen")
+    }
+
     func testAScheduledRunInProgressIsShownWhenTheSectionOpens() {
         let backend = FakeMaintenanceBackend()
         var running = HubBackupStatus()
