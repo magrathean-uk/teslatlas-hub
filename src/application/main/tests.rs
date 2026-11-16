@@ -2682,6 +2682,15 @@ mod lan_tls_setup {
         assert!(matches!(params.is_ca, rcgen::IsCa::ExplicitNoCa));
     }
 
+    fn identity_files(directory: &std::path::Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(directory)
+            .expect("folder")
+            .map(|entry| entry.expect("entry").file_name().into_string().expect("name"))
+            .collect();
+        names.sort();
+        names
+    }
+
     #[test]
     fn lan_tls_creates_a_private_p256_identity_and_a_lan_listener() {
         let (_root, config_path, data) = hub_fixture();
@@ -2695,19 +2704,22 @@ mod lan_tls_setup {
 
         let directory = data.join("tls");
         assert_eq!(mode(&directory), 0o700);
-        let certificate = directory.join("certificate.pem");
-        let private_key = directory.join("private-key.pem");
+        let config = HubConfig::load(&config_path).expect("new config loads");
+        assert_eq!(config.bind.to_string(), "0.0.0.0:8443");
+        let tls = config.tls.as_ref().expect("[tls]");
+        let certificate = tls.certificate_path.clone();
+        let private_key = tls.private_key_path.clone();
+        assert_eq!(certificate.parent(), Some(directory.as_path()));
+        assert_eq!(private_key.parent(), Some(directory.as_path()));
+        // Exactly the run's two files remain: the pending marker is retired.
+        let names = identity_files(&directory);
+        assert_eq!(names.len(), 2, "{names:?}");
+        assert!(names.iter().all(|name| name.starts_with("lan-tls-") && name.ends_with(".pem")));
         assert_eq!(mode(&certificate), 0o600);
         assert_eq!(mode(&private_key), 0o600);
         let key_pem = fs::read_to_string(&private_key).expect("key");
         let key = rcgen::KeyPair::from_pem(&key_pem).expect("PEM key");
         assert_eq!(key.algorithm(), &rcgen::PKCS_ECDSA_P256_SHA256);
-
-        let config = HubConfig::load(&config_path).expect("new config loads");
-        assert_eq!(config.bind.to_string(), "0.0.0.0:8443");
-        let tls = config.tls.as_ref().expect("[tls]");
-        assert_eq!(tls.certificate_path, certificate);
-        assert_eq!(tls.private_key_path, private_key);
         assert_eq!(tls.public_url, "https://office-mac.local:8443/");
         teslatlas_hub::server::validate_tls_identity(tls).expect("Serve admits the identity");
         assert_eq!(config.collector.interval_seconds, 60, "other settings are kept");
@@ -2734,20 +2746,9 @@ mod lan_tls_setup {
         assert_eq!(fs::read(&config_path).expect("config bytes"), before);
         assert!(!data.join("tls").exists());
 
-        // A key left by an earlier run is never replaced or adopted.
+        // A folder open to others is refused before anything is generated.
         let directory = data.join("tls");
         fs::create_dir(&directory).expect("tls folder");
-        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).expect("private");
-        fs::write(directory.join("private-key.pem"), "stale").expect("stale key");
-        let error = setup_lan_tls(&config_path, HOST, SystemTime::now())
-            .expect_err("stale identity refused");
-        assert!(error.to_string().contains("move it aside"));
-        assert_eq!(fs::read(&config_path).expect("config bytes"), before);
-        assert_eq!(fs::read_to_string(directory.join("private-key.pem")).expect("key"), "stale");
-        assert!(!directory.join("certificate.pem").exists());
-        fs::remove_file(directory.join("private-key.pem")).expect("remove stale");
-
-        // A folder open to others is refused before anything is generated.
         fs::set_permissions(&directory, fs::Permissions::from_mode(0o755)).expect("open folder");
         setup_lan_tls(&config_path, HOST, SystemTime::now()).expect_err("open folder refused");
         assert_eq!(fs::read(&config_path).expect("config bytes"), before);
@@ -2759,6 +2760,129 @@ mod lan_tls_setup {
         std::os::unix::fs::symlink(&config_path, &link).expect("link");
         setup_lan_tls(&link, HOST, SystemTime::now()).expect_err("linked config refused");
         assert!(fs::read_dir(&directory).expect("folder").next().is_none());
+    }
+
+    #[test]
+    fn lan_tls_refuses_a_configuration_serve_would_refuse() {
+        let (_root, config_path, data) = hub_fixture();
+        let before = fs::read(&config_path).expect("config bytes");
+        // Group-writable: Serve refuses it, so lan-tls never rewrites it as 0600.
+        fs::set_permissions(&config_path, fs::Permissions::from_mode(0o620)).expect("open config");
+        let error = setup_lan_tls(&config_path, HOST, SystemTime::now())
+            .expect_err("group-writable config refused");
+        assert!(error.to_string().contains("private file"), "{error}");
+        assert_eq!(fs::read(&config_path).expect("config bytes"), before);
+        assert_eq!(mode(&config_path), 0o620);
+        assert!(!data.join("tls").exists());
+
+        // A FIFO at the configuration path is refused without blocking on open.
+        let fifo = config_path.with_file_name("fifo.toml");
+        let made = std::process::Command::new("/usr/bin/mkfifo")
+            .arg("-m")
+            .arg("600")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo");
+        assert!(made.success());
+        setup_lan_tls(&fifo, HOST, SystemTime::now()).expect_err("FIFO refused");
+        assert!(!data.join("tls").exists());
+    }
+
+    #[test]
+    fn lan_tls_never_overwrites_a_concurrent_configuration_change() {
+        let (_root, config_path, data) = hub_fixture();
+        let edited = format!(
+            "{}\n[backup]\nenabled = false\n",
+            fs::read_to_string(&config_path).expect("config")
+        );
+        let error = super::super::setup_lan_tls_observed(
+            &config_path,
+            HOST,
+            SystemTime::now(),
+            &mut || {
+                // Another writer replaces the file while the identity is prepared.
+                let other = config_path.with_file_name("other.toml");
+                fs::write(&other, &edited).expect("other");
+                fs::set_permissions(&other, fs::Permissions::from_mode(0o600)).expect("private");
+                fs::rename(&other, &config_path).expect("replace");
+            },
+        )
+        .expect_err("conflict reported");
+        assert!(error.to_string().contains("changed"), "{error}");
+        assert_eq!(fs::read_to_string(&config_path).expect("config"), edited);
+        // The run removed its own identity files and marker.
+        assert!(identity_files(&data.join("tls")).is_empty());
+        let folder = identity_files(config_path.parent().expect("folder"));
+        assert!(folder.iter().all(|name| !name.ends_with(".tmp")), "{folder:?}");
+    }
+
+    #[test]
+    fn lan_tls_settles_an_interrupted_run_and_never_adopts_a_stray_file() {
+        let (_root, config_path, data) = hub_fixture();
+        let directory = data.join("tls");
+        fs::create_dir(&directory).expect("tls folder");
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).expect("private");
+        // A run lost before its configuration was published: marker, key, partial certificate.
+        let lost = "0123456789abcdef0123456789abcdef";
+        fs::write(directory.join(format!("lan-tls-{lost}.pending")), "").expect("marker");
+        fs::write(directory.join(format!("lan-tls-{lost}-private-key.pem")), "lost key").expect("key");
+        fs::write(directory.join(format!("lan-tls-{lost}-certificate.pem")), "par").expect("cert");
+        // A file no run of ours claimed.
+        fs::write(directory.join("private-key.pem"), "stray").expect("stray");
+
+        let report = setup_lan_tls(&config_path, HOST, SystemTime::now()).expect("retry works");
+        assert_eq!(report.status, "created");
+        let names = identity_files(&directory);
+        assert!(!names.iter().any(|name| name.contains(lost)), "{names:?}");
+        assert!(!names.iter().any(|name| name.ends_with(".pending")), "{names:?}");
+        assert_eq!(fs::read_to_string(directory.join("private-key.pem")).expect("stray"), "stray");
+        let config = HubConfig::load(&config_path).expect("config");
+        let tls = config.tls.expect("[tls]");
+        assert_ne!(tls.private_key_path, directory.join("private-key.pem"));
+
+        // A run lost after its configuration was published keeps its files; only the
+        // marker goes.
+        let published = tls
+            .private_key_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.strip_prefix("lan-tls-"))
+            .and_then(|name| name.strip_suffix("-private-key.pem"))
+            .expect("run id")
+            .to_owned();
+        fs::write(directory.join(format!("lan-tls-{published}.pending")), "").expect("marker");
+        let again = setup_lan_tls(&config_path, HOST, SystemTime::now()).expect("existing");
+        assert_eq!(again.status, "existing");
+        assert!(tls.private_key_path.exists());
+        assert!(tls.certificate_path.exists());
+        assert!(!directory.join(format!("lan-tls-{published}.pending")).exists());
+    }
+
+    #[test]
+    fn serving_answer_names_only_this_process_and_configuration() {
+        use super::super::serving_answer;
+        let digest = "a".repeat(64);
+        let ready = br#"{"status":"ready"}"#;
+        let idle = br#"{"status":"not_ready","reason":"collector_absent"}"#;
+        assert_eq!(serving_answer(200, Some("42"), Some(&digest), ready, 42, &digest), Some("ready"));
+        // Between windows the Hub still serves.
+        assert_eq!(serving_answer(503, Some("42"), Some(&digest), idle, 42, &digest), Some("not_ready"));
+        // Another process, another configuration or no headers is not this Hub serving.
+        assert_eq!(serving_answer(200, Some("43"), Some(&digest), ready, 42, &digest), None);
+        assert_eq!(serving_answer(200, Some("42"), Some(&"b".repeat(64)), ready, 42, &digest), None);
+        assert_eq!(serving_answer(200, None, None, ready, 42, &digest), None);
+        assert_eq!(serving_answer(500, Some("42"), Some(&digest), ready, 42, &digest), None);
+        assert_eq!(serving_answer(200, Some("42"), Some(&digest), idle, 42, &digest), None);
+        assert_eq!(serving_answer(200, Some("42"), Some(&digest), b"not json", 42, &digest), None);
+    }
+
+    #[test]
+    fn launchctl_pid_is_read_only_from_a_running_job() {
+        use super::super::launchctl_running_pid;
+        assert_eq!(launchctl_running_pid("\tstate = running\n\tpid = 812\n"), Some(812));
+        assert_eq!(launchctl_running_pid("\tstate = waiting\n\tpid = 812\n"), None);
+        assert_eq!(launchctl_running_pid("\tstate = running\n"), None);
+        assert_eq!(launchctl_running_pid("\tstate = running\n\tpid = 0\n"), None);
     }
 }
 

@@ -522,6 +522,15 @@ pub enum Command {
         #[arg(long)]
         host: String,
     },
+    /// Confirm that the installed Hub service's process serves the configuration on
+    /// disk on its listener (process, lifetime lock, configuration digest), waiting up
+    /// to --wait-seconds. Valid between collection windows; never contacts Tesla.
+    #[command(name = "serving-check", hide = true)]
+    ServingCheck {
+        /// How long to wait for the service to serve, 1 to 150 seconds.
+        #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..=150))]
+        wait_seconds: u64,
+    },
     /// Print one short-lived, single-use device pairing link to paste in the App.
     #[command(alias = "create-pairing")]
     Pair {

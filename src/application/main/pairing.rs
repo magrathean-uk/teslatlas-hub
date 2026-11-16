@@ -444,10 +444,8 @@ const LAN_TLS_BIND: &str = "0.0.0.0:8443";
 const LAN_TLS_PORT: u16 = 8443;
 /// The self-signed identity's lifetime: within the 398-day ceiling clients apply.
 const LAN_TLS_VALIDITY_DAYS: i64 = 397;
-/// The folder inside the Hub data folder that holds the identity, and its files.
+/// The folder inside the Hub data folder that holds the identity.
 const LAN_TLS_DIRECTORY: &str = "tls";
-const LAN_TLS_CERTIFICATE_FILE: &str = "certificate.pem";
-const LAN_TLS_PRIVATE_KEY_FILE: &str = "private-key.pem";
 
 /// What `lan-tls` reports. It names no secret: the public URL and the certificate
 /// expiry only.
@@ -495,15 +493,15 @@ fn lan_tls_certificate_params(
     Ok(params)
 }
 
-/// Creates the owner-only `tls/` folder, or admits an existing one only when it is a
-/// real folder owned by this user and closed to group and others.
+/// Creates the owner-only `tls/` folder (true), or admits an existing one (false)
+/// only when it is a real folder owned by this user and closed to group and others.
 #[cfg(unix)]
-fn prepare_lan_tls_directory(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn prepare_lan_tls_directory(directory: &Path) -> Result<bool, Box<dyn std::error::Error>> {
     use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
     match fs::DirBuilder::new().mode(0o700).create(directory) {
         Ok(()) => {
             fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
-            Ok(())
+            Ok(true)
         }
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
             let metadata = fs::symlink_metadata(directory)?;
@@ -513,38 +511,197 @@ fn prepare_lan_tls_directory(directory: &Path) -> Result<(), Box<dyn std::error:
             {
                 return Err("the Hub TLS folder is not a private folder of this user".into());
             }
-            Ok(())
+            Ok(false)
         }
         Err(error) => Err(error.into()),
     }
 }
 
-/// Writes one new owner-only file. `create_new` (O_CREAT | O_EXCL) refuses an
-/// existing file or link, so nothing is replaced or followed.
+/// The `tls/` file names of one `lan-tls` run. Every run has its own id, so a
+/// retry never meets, replaces or adopts a file an earlier run left behind.
+const LAN_TLS_FILE_PREFIX: &str = "lan-tls-";
+const LAN_TLS_PENDING_SUFFIX: &str = ".pending";
+const LAN_TLS_CERTIFICATE_SUFFIX: &str = "-certificate.pem";
+const LAN_TLS_PRIVATE_KEY_SUFFIX: &str = "-private-key.pem";
+
+/// The certificate, private key and pending marker of the run `id`.
+fn lan_tls_run_paths(directory: &Path, id: &str) -> [PathBuf; 3] {
+    [
+        directory.join(format!(
+            "{LAN_TLS_FILE_PREFIX}{id}{LAN_TLS_CERTIFICATE_SUFFIX}"
+        )),
+        directory.join(format!(
+            "{LAN_TLS_FILE_PREFIX}{id}{LAN_TLS_PRIVATE_KEY_SUFFIX}"
+        )),
+        directory.join(format!("{LAN_TLS_FILE_PREFIX}{id}{LAN_TLS_PENDING_SUFFIX}")),
+    ]
+}
+
+/// The run id of a pending marker name, when the name is exactly one.
+fn lan_tls_pending_id(name: &str) -> Option<&str> {
+    let id = name
+        .strip_prefix(LAN_TLS_FILE_PREFIX)?
+        .strip_suffix(LAN_TLS_PENDING_SUFFIX)?;
+    (id.len() == 32
+        && id
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')))
+    .then_some(id)
+}
+
 #[cfg(unix)]
-fn write_new_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+fn sync_directory(directory: &Path) -> std::io::Result<()> {
+    fs::File::open(directory)?.sync_all()
+}
+
+/// Creates one new owner-only file and records it in `created` as soon as the
+/// exclusive create succeeds, before anything is written: a failed write or sync
+/// still leaves the file in the list this run removes. `create_new` (O_CREAT |
+/// O_EXCL) refuses an existing file or link, so nothing is replaced or followed.
+#[cfg(unix)]
+fn write_new_private_file(
+    path: &Path,
+    bytes: &[u8],
+    created: &mut Vec<PathBuf>,
+) -> std::io::Result<()> {
     use std::os::unix::fs::OpenOptionsExt as _;
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
         .open(path)?;
+    created.push(path.to_path_buf());
     file.write_all(bytes)?;
     file.sync_all()
 }
 
+/// The configuration bytes as `Serve` admits them, with the identity they were read
+/// from: a no-follow, non-blocking open (a FIFO never blocks), a regular file owned
+/// by this user or root and not writable by group or others, one bounded read, and
+/// the same file still at the path afterwards.
+#[cfg(unix)]
+struct AdmittedConfigBytes {
+    bytes: Vec<u8>,
+    device: u64,
+    inode: u64,
+}
+
+#[cfg(unix)]
+fn read_admitted_config(path: &Path) -> Result<AdmittedConfigBytes, Box<dyn std::error::Error>> {
+    const MAX_CONFIG_BYTES: usize = 1024 * 1024;
+    let descriptor = open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+        Mode::empty(),
+    )
+    .map_err(|_| "the Hub configuration cannot be opened")?;
+    let held = fstat(&descriptor).map_err(|_| "the Hub configuration cannot be read")?;
+    if !FileType::from_raw_mode(held.st_mode).is_file()
+        || (held.st_uid != getuid().as_raw() && held.st_uid != 0)
+        || (held.st_mode as u32 & 0o022) != 0
+    {
+        return Err("the Hub configuration is not a private file of this user".into());
+    }
+    let flags = fcntl_getfl(&descriptor).map_err(|_| "the Hub configuration cannot be read")?;
+    fcntl_setfl(&descriptor, flags & !OFlags::NONBLOCK)
+        .map_err(|_| "the Hub configuration cannot be read")?;
+    let mut bytes = Vec::new();
+    fs::File::from(descriptor)
+        .take(MAX_CONFIG_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_CONFIG_BYTES {
+        return Err("the Hub configuration is too large".into());
+    }
+    let current = fs::symlink_metadata(path)?;
+    if current.file_type().is_symlink()
+        || !current.file_type().is_file()
+        || current.uid() != held.st_uid
+        || current.dev() != held.st_dev as u64
+        || current.ino() != held.st_ino
+        || (current.mode() & 0o022) != 0
+    {
+        return Err("the Hub configuration changed while it was read".into());
+    }
+    Ok(AdmittedConfigBytes {
+        bytes,
+        device: current.dev(),
+        inode: current.ino(),
+    })
+}
+
+/// Settles what earlier runs left in `tls/`: a run whose files the configuration
+/// does not name lost before its configuration was published, so its files and
+/// marker go; a run the configuration names only loses its marker. A file without a
+/// marker of ours is never touched.
+#[cfg(unix)]
+fn recover_lan_tls_runs(
+    directory: &Path,
+    referenced: &[&Path],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let mut changed = false;
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(id) = name.to_str().and_then(lan_tls_pending_id) else {
+            continue;
+        };
+        let [certificate, private_key, marker] = lan_tls_run_paths(directory, id);
+        let named = referenced
+            .iter()
+            .any(|path| *path == certificate.as_path() || *path == private_key.as_path());
+        if !named {
+            for path in [&certificate, &private_key] {
+                match fs::remove_file(path) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
+        }
+        fs::remove_file(&marker)?;
+        changed = true;
+    }
+    if changed {
+        sync_directory(directory)?;
+    }
+    Ok(())
+}
+
 /// `lan-tls` (DEC-152): when the configuration has no `[tls]`, makes a self-signed
 /// P-256 identity for `host` in the data folder's `tls/` (folder 0700, files 0600),
-/// then sets `bind = "0.0.0.0:8443"` and `[tls]` with `https://<host>:8443/`. The
-/// new configuration is parsed and its identity checked as `Serve` checks it before
-/// it replaces the file; on any failure the files this run wrote are removed and the
-/// configuration is unchanged. With `[tls]` already set the identity is checked and
-/// nothing is written. The private key is never printed.
+/// then sets `bind = "0.0.0.0:8443"` and `[tls]` with `https://<host>:8443/`.
+///
+/// It is one recoverable transaction: a pending marker claims the run's own file
+/// names before any identity file exists; the key and certificate are written and
+/// synced, with their folder, before the configuration names them; the new
+/// configuration is parsed and its identity checked as `Serve` checks it, and it
+/// replaces the file only when the file still holds the bytes that were read. On
+/// any failure before that the run's files are removed and the configuration is
+/// unchanged; a run lost to a crash is settled by the next run. With `[tls]`
+/// already set the identity is checked and nothing is written. The private key is
+/// never printed.
 #[cfg(unix)]
 fn setup_lan_tls(
     config_path: &Path,
     host: &str,
     now: SystemTime,
+) -> Result<LanTlsReport, Box<dyn std::error::Error>> {
+    setup_lan_tls_observed(config_path, host, now, &mut || {})
+}
+
+/// `setup_lan_tls` with `before_replace` run just before the final check of the
+/// configuration file (a test seam for a concurrent writer).
+#[cfg(unix)]
+fn setup_lan_tls_observed(
+    config_path: &Path,
+    host: &str,
+    now: SystemTime,
+    before_replace: &mut dyn FnMut(),
 ) -> Result<LanTlsReport, Box<dyn std::error::Error>> {
     use std::os::unix::fs::OpenOptionsExt as _;
     if !valid_lan_host(host) {
@@ -552,20 +709,21 @@ fn setup_lan_tls(
             "--host must be this Mac's lowercase .local name, such as office-mac.local".into(),
         );
     }
-    // One no-follow read: the bytes that are checked are the bytes that are edited.
-    let descriptor = open(
-        config_path,
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-        Mode::empty(),
-    )
-    .map_err(|_| "the Hub configuration cannot be opened")?;
-    let mut source = Vec::new();
-    fs::File::from(descriptor)
-        .take(1024 * 1024 + 1)
-        .read_to_end(&mut source)?;
-    let (config, _) = HubConfig::from_exact_bytes(&source)?;
+    // One admitted read: the bytes that are checked are the bytes that are edited.
+    let admitted = read_admitted_config(config_path)?;
+    let (config, _) = HubConfig::from_exact_bytes(&admitted.bytes)?;
+    let directory = config.data_dir.join(LAN_TLS_DIRECTORY);
     if let Some(tls) = &config.tls {
         server::validate_tls_identity(tls)?;
+        // Markers of a run whose configuration was published are retired; this is
+        // housekeeping only and never blocks the check.
+        let _ = recover_lan_tls_runs(
+            &directory,
+            &[
+                tls.certificate_path.as_path(),
+                tls.private_key_path.as_path(),
+            ],
+        );
         return Ok(LanTlsReport {
             status: "existing",
             public_url: tls.public_url.clone(),
@@ -573,21 +731,15 @@ fn setup_lan_tls(
             certificate_expires_at_ms: None,
         });
     }
-    let mut table: toml::Table = std::str::from_utf8(&source)?.parse()?;
+    let mut table: toml::Table = std::str::from_utf8(&admitted.bytes)?.parse()?;
 
-    let directory = config.data_dir.join(LAN_TLS_DIRECTORY);
-    prepare_lan_tls_directory(&directory)?;
-    let certificate_path = directory.join(LAN_TLS_CERTIFICATE_FILE);
-    let private_key_path = directory.join(LAN_TLS_PRIVATE_KEY_FILE);
-    for path in [&certificate_path, &private_key_path] {
-        if fs::symlink_metadata(path).is_ok() {
-            return Err(format!(
-                "{} already exists but the configuration names no TLS identity; move it aside and try again",
-                path.display()
-            )
-            .into());
-        }
+    let created_directory = prepare_lan_tls_directory(&directory)?;
+    if created_directory {
+        sync_directory(&config.data_dir)?;
     }
+    recover_lan_tls_runs(&directory, &[])?;
+    let id = uuid::Uuid::new_v4().simple().to_string();
+    let [certificate_path, private_key_path, marker_path] = lan_tls_run_paths(&directory, &id);
     let (Some(certificate_text), Some(private_key_text)) =
         (certificate_path.to_str(), private_key_path.to_str())
     else {
@@ -626,17 +778,24 @@ fn setup_lan_tls(
         .filter(|folder| !folder.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     let staged = folder.join(format!(".config.{}.tmp", uuid::Uuid::new_v4()));
-    let mut created: Vec<&Path> = Vec::with_capacity(2);
-    let written = (|| -> Result<(), Box<dyn std::error::Error>> {
-        write_new_private_file(&private_key_path, private_key_pem.as_bytes())?;
-        created.push(&private_key_path);
-        write_new_private_file(&certificate_path, certificate.pem().as_bytes())?;
-        created.push(&certificate_path);
+    let mut created: Vec<PathBuf> = Vec::with_capacity(3);
+    let prepared = (|| -> Result<(), Box<dyn std::error::Error>> {
+        // The marker claims the run before any identity file exists.
+        write_new_private_file(&marker_path, b"", &mut created)?;
+        sync_directory(&directory)?;
+        write_new_private_file(&private_key_path, private_key_pem.as_bytes(), &mut created)?;
+        write_new_private_file(
+            &certificate_path,
+            certificate.pem().as_bytes(),
+            &mut created,
+        )?;
+        sync_directory(&directory)?;
         let mut file = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .mode(0o600)
             .open(&staged)?;
+        created.push(staged.clone());
         file.write_all(updated.as_bytes())?;
         file.sync_all()?;
         let staged_config = HubConfig::load(&staged)?;
@@ -645,23 +804,268 @@ fn setup_lan_tls(
             .as_ref()
             .ok_or("the new configuration names no TLS identity")?;
         server::validate_tls_identity(staged_tls)?;
+        // Another writer's change is never lost: the file must still be the one
+        // read, with the same bytes, immediately before it is replaced.
+        before_replace();
+        let current = read_admitted_config(config_path)?;
+        if current.device != admitted.device
+            || current.inode != admitted.inode
+            || current.bytes != admitted.bytes
+        {
+            return Err(
+                "the Hub configuration changed while the LAN identity was prepared; nothing was changed, try again"
+                    .into(),
+            );
+        }
         fs::rename(&staged, config_path)?;
         Ok(())
     })();
-    if let Err(error) = written {
-        let _ = fs::remove_file(&staged);
-        for path in created {
+    if let Err(error) = prepared {
+        for path in created.iter().rev() {
             let _ = fs::remove_file(path);
         }
+        let _ = sync_directory(&directory);
         return Err(error);
     }
-    // The new configuration is in place and names the identity: a failed folder sync
-    // is not undone by removing the files it names.
-    let _ = fs::File::open(folder).and_then(|folder| folder.sync_all());
+    // The configuration now names the identity, whose files are already durable. A
+    // failed sync of its folder is reported; the files stay, and the next run
+    // retires the marker.
+    sync_directory(folder)
+        .map_err(|_| "the new Hub configuration could not be confirmed on disk; check the disk, then try again")?;
+    if fs::remove_file(&marker_path).is_ok() {
+        let _ = sync_directory(&directory);
+    }
     Ok(LanTlsReport {
         status: "created",
         public_url,
         bind: LAN_TLS_BIND.to_owned(),
         certificate_expires_at_ms: expires_at_ms,
     })
+}
+
+/// What `serving-check` reports: the installed Hub's process serves the
+/// configuration on disk on its configured listener. `readiness` is the process's
+/// own answer; `not_ready` (for example between collection windows) still serves.
+#[cfg(any(test, target_os = "macos"))]
+#[derive(Debug, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ServingReport {
+    status: &'static str,
+    readiness: &'static str,
+}
+
+#[cfg(any(test, target_os = "macos"))]
+/// Consecutive matching observations of one process that count as serving.
+const SERVING_STABLE_OBSERVATIONS: usize = 3;
+#[cfg(any(test, target_os = "macos"))]
+const SERVING_POLL: Duration = Duration::from_millis(200);
+#[cfg(any(test, target_os = "macos"))]
+/// The longest `serving-check --wait-seconds` accepts.
+const SERVING_MAX_WAIT_SECONDS: u64 = 150;
+
+#[cfg(any(test, target_os = "macos"))]
+/// The running process of a `launchctl print` answer: `state = running` and a
+/// positive `pid`.
+fn launchctl_running_pid(output: &str) -> Option<u32> {
+    let running = output.lines().any(|line| line.trim() == "state = running");
+    let pid = output.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("pid = ")
+            .and_then(|value| value.parse::<u32>().ok())
+            .filter(|pid| *pid > 0)
+    });
+    running.then_some(pid).flatten()
+}
+
+#[cfg(any(test, target_os = "macos"))]
+/// The readiness answer of `pid` serving the configuration `digest`: a 200 `ready`
+/// or a 503 `not_ready` whose native headers name exactly that process and
+/// configuration. Anything else is not that Hub serving that configuration.
+fn serving_answer(
+    status: u16,
+    process_id: Option<&str>,
+    config_digest: Option<&str>,
+    body: &[u8],
+    pid: u32,
+    digest: &str,
+) -> Option<&'static str> {
+    #[derive(serde::Deserialize)]
+    struct Answer {
+        status: String,
+    }
+    if process_id != Some(pid.to_string().as_str()) || config_digest != Some(digest) {
+        return None;
+    }
+    let answer: Answer = serde_json::from_slice(body).ok()?;
+    match (status, answer.status.as_str()) {
+        (200, "ready") => Some("ready"),
+        (503, "not_ready") => Some("not_ready"),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn installed_service_pid() -> Result<Option<u32>, Box<dyn std::error::Error>> {
+    let service = format!(
+        "gui/{}/com.teslatlas.hub",
+        rustix::process::geteuid().as_raw()
+    );
+    let output = std::process::Command::new("/bin/launchctl")
+        .arg("print")
+        .arg(&service)
+        .stdin(Stdio::null())
+        .output()?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    Ok(launchctl_running_pid(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
+}
+
+/// One bounded `/readyz` request to the configured listener (loopback for an
+/// all-interfaces bind), trusting only the configured certificate over TLS.
+#[cfg(target_os = "macos")]
+async fn serving_observation(
+    config: &HubConfig,
+    digest: &str,
+    pid: u32,
+) -> Result<Option<&'static str>, Box<dyn std::error::Error>> {
+    let address = match config.bind {
+        std::net::SocketAddr::V4(bind) if bind.ip().is_unspecified() => {
+            std::net::SocketAddr::from(([127, 0, 0, 1], bind.port()))
+        }
+        std::net::SocketAddr::V6(bind) if bind.ip().is_unspecified() => {
+            std::net::SocketAddr::from(([0, 0, 0, 0, 0, 0, 0, 1], bind.port()))
+        }
+        bind => bind,
+    };
+    let mut builder = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_millis(500))
+        .timeout(Duration::from_secs(2));
+    let endpoint = if let Some(tls) = &config.tls {
+        let mut pem = Vec::new();
+        fs::File::open(&tls.certificate_path)?
+            .take(MAX_TLS_CERTIFICATE_CHAIN_BYTES as u64 + 1)
+            .read_to_end(&mut pem)?;
+        if pem.len() > MAX_TLS_CERTIFICATE_CHAIN_BYTES {
+            return Err("the Hub certificate is too large".into());
+        }
+        let certificates = reqwest::Certificate::from_pem_bundle(&pem)?;
+        if certificates.is_empty() {
+            return Err("the Hub certificate is empty".into());
+        }
+        let mut endpoint = reqwest::Url::parse(&tls.public_url)?;
+        let host = endpoint
+            .host_str()
+            .ok_or("the Hub public URL has no host")?
+            .to_owned();
+        builder = builder
+            .https_only(true)
+            .tls_certs_only(certificates)
+            .resolve(&host, address);
+        endpoint
+            .set_port(Some(address.port()))
+            .map_err(|_| "the Hub public URL port is invalid")?;
+        endpoint.set_path("/readyz");
+        endpoint
+    } else {
+        if !address.ip().is_loopback() {
+            return Err("a plain listener must be loopback".into());
+        }
+        reqwest::Url::parse(&format!("http://{address}/readyz"))?
+    };
+    let client = builder.build()?;
+    let Ok(response) = client
+        .get(endpoint)
+        .header("accept-encoding", "identity")
+        .send()
+        .await
+    else {
+        return Ok(None);
+    };
+    let status = response.status().as_u16();
+    let header = |name: &str| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned)
+    };
+    let process_id = header("x-teslatlas-native-process-id");
+    let config_digest = header(server::NATIVE_CONFIG_DIGEST_HEADER);
+    let Ok(body) = response.bytes().await else {
+        return Ok(None);
+    };
+    if body.len() > 16 * 1024 {
+        return Ok(None);
+    }
+    Ok(serving_answer(
+        status,
+        process_id.as_deref(),
+        config_digest.as_deref(),
+        &body,
+        pid,
+        digest,
+    ))
+}
+
+/// `serving-check`: waits up to `wait` for the installed Hub job's process to hold
+/// the Hub lifetime lock and answer on its configured listener for exactly the
+/// configuration on disk, the same process in consecutive observations. It never
+/// needs an open collection window or any Tesla request.
+#[cfg(target_os = "macos")]
+async fn check_serving(
+    config_path: &Path,
+    wait: Duration,
+) -> Result<ServingReport, Box<dyn std::error::Error>> {
+    teslatlas_hub::crypto::install_default_provider();
+    let (config, digest) = HubConfig::load_with_digest(config_path)?;
+    let digest = digest.to_string();
+    let deadline = Instant::now() + wait;
+    let mut last: Option<u32> = None;
+    let mut consecutive = 0;
+    loop {
+        let observed = match installed_service_pid()? {
+            None => None,
+            Some(pid) => match AdmittedUserHub::admit(&config.data_dir) {
+                Err(teslatlas_hub::hub_user_process::UserLifetimeLockError::AlreadyRunning) => {
+                    serving_observation(&config, &digest, pid)
+                        .await?
+                        .map(|readiness| (pid, readiness))
+                }
+                Ok(admission) => {
+                    drop(admission);
+                    None
+                }
+                Err(error) => return Err(error.into()),
+            },
+        };
+        match observed {
+            Some((pid, readiness)) => {
+                consecutive = if last == Some(pid) {
+                    consecutive + 1
+                } else {
+                    1
+                };
+                last = Some(pid);
+                if consecutive >= SERVING_STABLE_OBSERVATIONS {
+                    return Ok(ServingReport {
+                        status: "serving",
+                        readiness,
+                    });
+                }
+            }
+            None => {
+                consecutive = 0;
+                last = None;
+            }
+        }
+        if Instant::now() + SERVING_POLL >= deadline {
+            return Err("the Hub service is not serving its configuration on its listener".into());
+        }
+        tokio::time::sleep(SERVING_POLL).await;
+    }
 }
