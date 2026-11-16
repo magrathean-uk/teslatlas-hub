@@ -115,9 +115,11 @@ impl Hub {
     }
 
     fn config(&self, base: &str) -> HubConfig {
-        let mut collector = CollectorConfig::default();
-        collector.owner_api_base_url = Some(base.to_owned());
-        collector.stream_region = Some(StreamRegion::Global);
+        let collector = CollectorConfig {
+            owner_api_base_url: Some(base.to_owned()),
+            stream_region: Some(StreamRegion::Global),
+            ..CollectorConfig::default()
+        };
         HubConfig {
             data_dir: self.root.path().to_path_buf(),
             bind: "127.0.0.1:8080".parse().expect("bind"),
