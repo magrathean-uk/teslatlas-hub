@@ -935,6 +935,20 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         return run_container_healthcheck(ca_file, server_name).await;
     }
 
+    if let Command::LanTls { host } = &cli.command {
+        #[cfg(unix)]
+        {
+            let report = setup_lan_tls(&config_path, host, SystemTime::now())?;
+            println!("{}", serde_json::to_string(&report)?);
+            return Ok(());
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = host;
+            return Err("LAN TLS setup needs a Unix host".into());
+        }
+    }
+
     #[cfg(unix)]
     if let Command::SourceCheck {
         source,
@@ -1379,6 +1393,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Legal
         | Command::Source
         | Command::Healthcheck { .. }
+        | Command::LanTls { .. }
         | Command::Doctor
         | Command::Status
         | Command::SourceCheck { .. }

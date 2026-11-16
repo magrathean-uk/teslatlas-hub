@@ -143,7 +143,7 @@ pub enum ControlCommand {
     /// List paired devices and the vehicles each may read, without exposing bearer material.
     #[command(name = "paired-devices")]
     PairedDevices,
-    /// Display one short-lived, single-use device pairing QR while the Hub is running.
+    /// Print one short-lived, single-use device pairing link while the Hub is running.
     Pair {
         /// Human label shown only to the Hub owner, such as "Bolyki iPhone".
         #[arg(long, default_value = "Teslatlas iPhone")]
@@ -512,7 +512,17 @@ pub enum Command {
         #[arg(long, required = true, alias = "acknowledge-v4-2-compatible-schema")]
         accept_schema_evidence: bool,
     },
-    /// Display one short-lived, single-use device pairing QR.
+    /// Set up a self-signed LAN TLS identity for phone pairing when none is configured:
+    /// P-256, valid 397 days, written to the data folder's `tls/`, and the Hub then
+    /// listens on 0.0.0.0:8443. Restart the Hub afterwards. Does nothing when `[tls]`
+    /// is already configured.
+    #[command(name = "lan-tls")]
+    LanTls {
+        /// This Mac's lowercase Bonjour name, such as "office-mac.local".
+        #[arg(long)]
+        host: String,
+    },
+    /// Print one short-lived, single-use device pairing link to paste in the App.
     #[command(alias = "create-pairing")]
     Pair {
         /// Human label shown only to the Hub owner, such as "Bolyki iPhone".

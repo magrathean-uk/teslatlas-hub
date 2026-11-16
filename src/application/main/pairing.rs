@@ -17,16 +17,10 @@ fn observation_command_error(
     Box::new(std::io::Error::other(error.to_string()))
 }
 
-fn render_pairing_qr(
-    pairing_uri: &str,
-) -> Result<zeroize::Zeroizing<String>, qrcode::types::QrError> {
-    Ok(zeroize::Zeroizing::new(
-        QrCode::new(pairing_uri.as_bytes())?
-            .render::<Dense1x2>()
-            .quiet_zone(true)
-            .build(),
-    ))
-}
+/// The longest pairing link the text presentation prints. The App takes the link
+/// pasted into one field, so an endpoint that makes it longer is refused before any
+/// invitation is stored.
+const MAX_PAIRING_LINK_BYTES: usize = 4 * 1024;
 
 const MAX_TLS_CERTIFICATE_CHAIN_BYTES: usize = server::MAX_TLS_CERTIFICATE_CHAIN_BYTES;
 const MAX_TLS_PRIVATE_KEY_BYTES: usize = server::MAX_TLS_PRIVATE_KEY_BYTES;
@@ -296,19 +290,20 @@ fn build_pairing_presentation(
             .map_err(|_| PairingCommandError::Presentation)?;
         output.push(b'\n');
     } else {
-        let qr = render_pairing_qr(pairing_uri).map_err(|_| PairingCommandError::Presentation)?;
+        if pairing_uri.len() > MAX_PAIRING_LINK_BYTES {
+            return Err(PairingCommandError::Presentation);
+        }
         output
             .try_reserve_exact(
-                qr.len()
-                    .saturating_add(pairing_uri.len())
+                pairing_uri
+                    .len()
                     .saturating_add(grants_text.len())
                     .saturating_add(128),
             )
             .map_err(|_| PairingCommandError::Presentation)?;
         write!(
             output,
-            "Scan with Teslatlas:\n{}\nPairing link: {pairing_uri}\n{grants_text}\nExpires in {expires_in_seconds} seconds.\n",
-            qr.as_str(),
+            "Paste this link in Tesatlas:\n{pairing_uri}\n{grants_text}\nExpires in {expires_in_seconds} seconds.\n",
         )
         .map_err(|_| PairingCommandError::Presentation)?;
     }
@@ -442,4 +437,223 @@ fn current_epoch_ms() -> Result<i64, std::io::Error> {
         .map_err(std::io::Error::other)?;
     i64::try_from(elapsed.as_millis())
         .map_err(|_| std::io::Error::other("system clock exceeds epoch milliseconds"))
+}
+
+/// The LAN listener the `lan-tls` verb sets up (DEC-152): every interface, port 8443.
+const LAN_TLS_BIND: &str = "0.0.0.0:8443";
+const LAN_TLS_PORT: u16 = 8443;
+/// The self-signed identity's lifetime: within the 398-day ceiling clients apply.
+const LAN_TLS_VALIDITY_DAYS: i64 = 397;
+/// The folder inside the Hub data folder that holds the identity, and its files.
+const LAN_TLS_DIRECTORY: &str = "tls";
+const LAN_TLS_CERTIFICATE_FILE: &str = "certificate.pem";
+const LAN_TLS_PRIVATE_KEY_FILE: &str = "private-key.pem";
+
+/// What `lan-tls` reports. It names no secret: the public URL and the certificate
+/// expiry only.
+#[derive(Debug, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct LanTlsReport {
+    /// `created` when this run made the identity, `existing` when `[tls]` was set.
+    status: &'static str,
+    public_url: String,
+    bind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    certificate_expires_at_ms: Option<i64>,
+}
+
+/// A single-label Bonjour name: lowercase letters, digits and hyphens, then `.local`.
+fn valid_lan_host(host: &str) -> bool {
+    let Some(label) = host.strip_suffix(".local") else {
+        return false;
+    };
+    !label.is_empty()
+        && label.len() <= 63
+        && !label.starts_with('-')
+        && !label.ends_with('-')
+        && label
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
+/// The certificate parameters for `host`: the name as subject and only SAN, a
+/// server-authentication leaf that is not a CA, valid from `now` for 397 days.
+fn lan_tls_certificate_params(
+    host: &str,
+    now: SystemTime,
+) -> Result<rcgen::CertificateParams, Box<dyn std::error::Error>> {
+    let mut params = rcgen::CertificateParams::new(vec![host.to_owned()])?;
+    let mut name = rcgen::DistinguishedName::new();
+    name.push(rcgen::DnType::CommonName, host);
+    params.distinguished_name = name;
+    params.is_ca = rcgen::IsCa::ExplicitNoCa;
+    params.key_usages = vec![rcgen::KeyUsagePurpose::DigitalSignature];
+    params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ServerAuth];
+    let not_before = time::OffsetDateTime::from(now);
+    params.not_before = not_before;
+    params.not_after = not_before + time::Duration::days(LAN_TLS_VALIDITY_DAYS);
+    Ok(params)
+}
+
+/// Creates the owner-only `tls/` folder, or admits an existing one only when it is a
+/// real folder owned by this user and closed to group and others.
+#[cfg(unix)]
+fn prepare_lan_tls_directory(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
+    match fs::DirBuilder::new().mode(0o700).create(directory) {
+        Ok(()) => {
+            fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            let metadata = fs::symlink_metadata(directory)?;
+            if !metadata.file_type().is_dir()
+                || metadata.uid() != getuid().as_raw()
+                || metadata.mode() & 0o077 != 0
+            {
+                return Err("the Hub TLS folder is not a private folder of this user".into());
+            }
+            Ok(())
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Writes one new owner-only file. `create_new` (O_CREAT | O_EXCL) refuses an
+/// existing file or link, so nothing is replaced or followed.
+#[cfg(unix)]
+fn write_new_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt as _;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
+/// `lan-tls` (DEC-152): when the configuration has no `[tls]`, makes a self-signed
+/// P-256 identity for `host` in the data folder's `tls/` (folder 0700, files 0600),
+/// then sets `bind = "0.0.0.0:8443"` and `[tls]` with `https://<host>:8443/`. The
+/// new configuration is parsed and its identity checked as `Serve` checks it before
+/// it replaces the file; on any failure the files this run wrote are removed and the
+/// configuration is unchanged. With `[tls]` already set the identity is checked and
+/// nothing is written. The private key is never printed.
+#[cfg(unix)]
+fn setup_lan_tls(
+    config_path: &Path,
+    host: &str,
+    now: SystemTime,
+) -> Result<LanTlsReport, Box<dyn std::error::Error>> {
+    use std::os::unix::fs::OpenOptionsExt as _;
+    if !valid_lan_host(host) {
+        return Err("--host must be this Mac's lowercase .local name, such as office-mac.local".into());
+    }
+    // One no-follow read: the bytes that are checked are the bytes that are edited.
+    let descriptor = open(
+        config_path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|_| "the Hub configuration cannot be opened")?;
+    let mut source = Vec::new();
+    fs::File::from(descriptor)
+        .take(1024 * 1024 + 1)
+        .read_to_end(&mut source)?;
+    let (config, _) = HubConfig::from_exact_bytes(&source)?;
+    if let Some(tls) = &config.tls {
+        server::validate_tls_identity(tls)?;
+        return Ok(LanTlsReport {
+            status: "existing",
+            public_url: tls.public_url.clone(),
+            bind: config.bind.to_string(),
+            certificate_expires_at_ms: None,
+        });
+    }
+    let mut table: toml::Table = std::str::from_utf8(&source)?.parse()?;
+
+    let directory = config.data_dir.join(LAN_TLS_DIRECTORY);
+    prepare_lan_tls_directory(&directory)?;
+    let certificate_path = directory.join(LAN_TLS_CERTIFICATE_FILE);
+    let private_key_path = directory.join(LAN_TLS_PRIVATE_KEY_FILE);
+    for path in [&certificate_path, &private_key_path] {
+        if fs::symlink_metadata(path).is_ok() {
+            return Err(format!(
+                "{} already exists but the configuration names no TLS identity; move it aside and try again",
+                path.display()
+            )
+            .into());
+        }
+    }
+    let (Some(certificate_text), Some(private_key_text)) =
+        (certificate_path.to_str(), private_key_path.to_str())
+    else {
+        return Err("the Hub data folder path must be UTF-8".into());
+    };
+
+    let key = rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)?;
+    let params = lan_tls_certificate_params(host, now)?;
+    let expires_at_ms = params.not_after.unix_timestamp().checked_mul(1_000);
+    let certificate = params.self_signed(&key)?;
+    let private_key_pem = zeroize::Zeroizing::new(key.serialize_pem());
+
+    let public_url = format!("https://{host}:{LAN_TLS_PORT}/");
+    table.insert("bind".to_owned(), toml::Value::String(LAN_TLS_BIND.to_owned()));
+    let mut tls = toml::Table::new();
+    tls.insert(
+        "certificate_path".to_owned(),
+        toml::Value::String(certificate_text.to_owned()),
+    );
+    tls.insert(
+        "private_key_path".to_owned(),
+        toml::Value::String(private_key_text.to_owned()),
+    );
+    tls.insert("public_url".to_owned(), toml::Value::String(public_url.clone()));
+    table.insert("tls".to_owned(), toml::Value::Table(tls));
+    let updated = toml::to_string(&table)?;
+
+    let folder = config_path
+        .parent()
+        .filter(|folder| !folder.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let staged = folder.join(format!(".config.{}.tmp", uuid::Uuid::new_v4()));
+    let mut created: Vec<&Path> = Vec::with_capacity(2);
+    let written = (|| -> Result<(), Box<dyn std::error::Error>> {
+        write_new_private_file(&private_key_path, private_key_pem.as_bytes())?;
+        created.push(&private_key_path);
+        write_new_private_file(&certificate_path, certificate.pem().as_bytes())?;
+        created.push(&certificate_path);
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&staged)?;
+        file.write_all(updated.as_bytes())?;
+        file.sync_all()?;
+        let staged_config = HubConfig::load(&staged)?;
+        let staged_tls = staged_config
+            .tls
+            .as_ref()
+            .ok_or("the new configuration names no TLS identity")?;
+        server::validate_tls_identity(staged_tls)?;
+        fs::rename(&staged, config_path)?;
+        Ok(())
+    })();
+    if let Err(error) = written {
+        let _ = fs::remove_file(&staged);
+        for path in created {
+            let _ = fs::remove_file(path);
+        }
+        return Err(error);
+    }
+    // The new configuration is in place and names the identity: a failed folder sync
+    // is not undone by removing the files it names.
+    let _ = fs::File::open(folder).and_then(|folder| folder.sync_all());
+    Ok(LanTlsReport {
+        status: "created",
+        public_url,
+        bind: LAN_TLS_BIND.to_owned(),
+        certificate_expires_at_ms: expires_at_ms,
+    })
 }

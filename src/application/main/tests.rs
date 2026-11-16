@@ -30,7 +30,7 @@ use super::{
     MAX_TLS_PRIVATE_KEY_BYTES, PairingCommandError, PairingCommandInput,
     build_pairing_presentation, current_vehicle_status_fields, execute_pairing_at,
     leaf_certificate_sha256, leaf_certificate_sha256_after_open, pairing_uri,
-    persist_and_present_pairing, read_tls_identity_file, render_pairing_qr, run,
+    persist_and_present_pairing, read_tls_identity_file, run,
     run_immutable_diagnostic_with,
 };
 #[cfg(target_os = "macos")]
@@ -2584,20 +2584,6 @@ fn leaf_certificate_pin_uses_rustls_line_aware_first_certificate() {
 }
 
 #[test]
-fn pairing_qr_renders_without_printing_the_raw_secret() {
-    let uri = pairing_uri(
-        "https://192.168.1.10:8443",
-        &"a".repeat(64),
-        Uuid::nil(),
-        "0123456789abcdef",
-    )
-    .expect("pairing URI");
-    let qr = render_pairing_qr(&uri).expect("render QR");
-    assert!(qr.contains('█') || qr.contains('▀') || qr.contains('▄'));
-    assert!(!qr.contains("0123456789abcdef"));
-}
-
-#[test]
 fn default_pairing_presentation_includes_a_plain_link() {
     let temporary = tempfile::tempdir().expect("temporary root");
     let store = HubStore::initialize(temporary.path().join("hub")).expect("Hub store");
@@ -2622,8 +2608,158 @@ fn default_pairing_presentation_includes_a_plain_link() {
     )
     .expect("terminal presentation");
     let text = std::str::from_utf8(&presentation).expect("terminal UTF-8");
-    assert!(text.contains("Scan with Teslatlas:"));
-    assert!(text.contains(&format!("Pairing link: {}", uri.as_str())));
+    assert!(text.starts_with(&format!("Paste this link in Tesatlas:\n{}\n", uri.as_str())));
+    assert!(!text.contains("Scan"));
+    assert!(!text.chars().any(|c| matches!(c, '█' | '▀' | '▄')));
+    assert!(text.ends_with("Expires in 900 seconds.\n"));
+}
+
+#[cfg(unix)]
+mod lan_tls_setup {
+    use std::{
+        fs,
+        os::unix::fs::PermissionsExt as _,
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
+
+    use super::super::{
+        HubConfig, LAN_TLS_VALIDITY_DAYS, lan_tls_certificate_params, setup_lan_tls,
+        valid_lan_host,
+    };
+
+    const HOST: &str = "office-mac.local";
+
+    fn hub_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+        let root = tempfile::tempdir().expect("temporary Hub");
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).expect("private root");
+        let data = root.path().join("data");
+        fs::create_dir(&data).expect("data folder");
+        fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).expect("private data");
+        let config = root.path().join("config.toml");
+        fs::write(
+            &config,
+            format!(
+                "data_dir = {:?}\nbind = \"127.0.0.1:8080\"\n\n[collector]\ninterval_seconds = 60\n\n[geocoder]\nenabled = false\n",
+                data.to_str().expect("UTF-8 path")
+            ),
+        )
+        .expect("config");
+        fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).expect("private config");
+        (root, config, data)
+    }
+
+    fn mode(path: &std::path::Path) -> u32 {
+        fs::symlink_metadata(path).expect("metadata").permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn lan_host_is_one_lowercase_bonjour_label() {
+        for host in ["office-mac.local", "a.local", "mac2.local"] {
+            assert!(valid_lan_host(host), "{host}");
+        }
+        for host in [
+            "", ".local", "Office-Mac.local", "office mac.local", "office.mac.local",
+            "-mac.local", "mac-.local", "office-mac", "office-mac.lan", "mac.local.",
+            "192.168.1.10", "mac_1.local",
+        ] {
+            assert!(!valid_lan_host(host), "{host:?}");
+        }
+        assert!(!valid_lan_host(&format!("{}.local", "a".repeat(64))));
+        assert!(valid_lan_host(&format!("{}.local", "a".repeat(63))));
+    }
+
+    #[test]
+    fn lan_identity_lives_397_days_for_the_named_host() {
+        let now = UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+        let params = lan_tls_certificate_params(HOST, now).expect("parameters");
+        assert_eq!(LAN_TLS_VALIDITY_DAYS, 397);
+        assert_eq!(params.not_before.unix_timestamp(), 1_800_000_000);
+        assert_eq!(
+            params.not_after - params.not_before,
+            time::Duration::days(397)
+        );
+        assert_eq!(params.subject_alt_names.len(), 1);
+        assert!(matches!(params.is_ca, rcgen::IsCa::ExplicitNoCa));
+    }
+
+    #[test]
+    fn lan_tls_creates_a_private_p256_identity_and_a_lan_listener() {
+        let (_root, config_path, data) = hub_fixture();
+        let report = setup_lan_tls(&config_path, HOST, SystemTime::now()).expect("set up");
+        assert_eq!(report.status, "created");
+        assert_eq!(report.public_url, "https://office-mac.local:8443/");
+        assert_eq!(report.bind, "0.0.0.0:8443");
+        assert!(report.certificate_expires_at_ms.is_some());
+        let text = serde_json::to_string(&report).expect("report JSON");
+        assert!(!text.contains("PRIVATE"));
+
+        let directory = data.join("tls");
+        assert_eq!(mode(&directory), 0o700);
+        let certificate = directory.join("certificate.pem");
+        let private_key = directory.join("private-key.pem");
+        assert_eq!(mode(&certificate), 0o600);
+        assert_eq!(mode(&private_key), 0o600);
+        let key_pem = fs::read_to_string(&private_key).expect("key");
+        let key = rcgen::KeyPair::from_pem(&key_pem).expect("PEM key");
+        assert_eq!(key.algorithm(), &rcgen::PKCS_ECDSA_P256_SHA256);
+
+        let config = HubConfig::load(&config_path).expect("new config loads");
+        assert_eq!(config.bind.to_string(), "0.0.0.0:8443");
+        let tls = config.tls.as_ref().expect("[tls]");
+        assert_eq!(tls.certificate_path, certificate);
+        assert_eq!(tls.private_key_path, private_key);
+        assert_eq!(tls.public_url, "https://office-mac.local:8443/");
+        teslatlas_hub::server::validate_tls_identity(tls).expect("Serve admits the identity");
+        assert_eq!(config.collector.interval_seconds, 60, "other settings are kept");
+        assert_eq!(mode(&config_path), 0o600);
+
+        // A second run finds [tls] and writes nothing.
+        let before = fs::read(&config_path).expect("config bytes");
+        let key_before = fs::read(&private_key).expect("key bytes");
+        let again = setup_lan_tls(&config_path, HOST, SystemTime::now()).expect("existing");
+        assert_eq!(again.status, "existing");
+        assert_eq!(again.public_url, "https://office-mac.local:8443/");
+        assert_eq!(fs::read(&config_path).expect("config bytes"), before);
+        assert_eq!(fs::read(&private_key).expect("key bytes"), key_before);
+    }
+
+    #[test]
+    fn lan_tls_refusals_leave_the_configuration_and_folder_unchanged() {
+        let (_root, config_path, data) = hub_fixture();
+        let before = fs::read(&config_path).expect("config bytes");
+
+        let error = setup_lan_tls(&config_path, "Office-Mac.local", SystemTime::now())
+            .expect_err("uppercase host refused");
+        assert!(error.to_string().contains(".local"));
+        assert_eq!(fs::read(&config_path).expect("config bytes"), before);
+        assert!(!data.join("tls").exists());
+
+        // A key left by an earlier run is never replaced or adopted.
+        let directory = data.join("tls");
+        fs::create_dir(&directory).expect("tls folder");
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).expect("private");
+        fs::write(directory.join("private-key.pem"), "stale").expect("stale key");
+        let error = setup_lan_tls(&config_path, HOST, SystemTime::now())
+            .expect_err("stale identity refused");
+        assert!(error.to_string().contains("move it aside"));
+        assert_eq!(fs::read(&config_path).expect("config bytes"), before);
+        assert_eq!(fs::read_to_string(directory.join("private-key.pem")).expect("key"), "stale");
+        assert!(!directory.join("certificate.pem").exists());
+        fs::remove_file(directory.join("private-key.pem")).expect("remove stale");
+
+        // A folder open to others is refused before anything is generated.
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o755)).expect("open folder");
+        setup_lan_tls(&config_path, HOST, SystemTime::now()).expect_err("open folder refused");
+        assert_eq!(fs::read(&config_path).expect("config bytes"), before);
+        assert!(fs::read_dir(&directory).expect("folder").next().is_none());
+
+        // A link in place of the configuration is not followed.
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).expect("private");
+        let link = config_path.with_file_name("linked.toml");
+        std::os::unix::fs::symlink(&config_path, &link).expect("link");
+        setup_lan_tls(&link, HOST, SystemTime::now()).expect_err("linked config refused");
+        assert!(fs::read_dir(&directory).expect("folder").next().is_none());
+    }
 }
 
 #[path = "n1_cli_report_tests.rs"]
