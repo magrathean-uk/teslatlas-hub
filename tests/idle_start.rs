@@ -63,11 +63,9 @@ impl CountingEndpoint {
         let counter = accepted.clone();
         std::thread::spawn(move || {
             let mut held = Vec::new();
-            for stream in listener.incoming() {
-                if let Ok(stream) = stream {
-                    counter.fetch_add(1, Ordering::SeqCst);
-                    held.push(stream);
-                }
+            for stream in listener.incoming().flatten() {
+                counter.fetch_add(1, Ordering::SeqCst);
+                held.push(stream);
             }
         });
         Self { address, accepted }
@@ -425,7 +423,7 @@ fn idle_start_real_binary_refuses_a_car_with_the_collector_off() {
         source_db_projection::{SourceDbCar, SourceDbHistory},
     };
     let hub = Hub::new();
-    let store = HubStore::initialize(&hub.data()).expect("store");
+    let store = HubStore::initialize(hub.data()).expect("store");
     publish_history(
         &store,
         &teslatlas_hub::protocol::CursorKey::from_bytes([0x5A; 32]),

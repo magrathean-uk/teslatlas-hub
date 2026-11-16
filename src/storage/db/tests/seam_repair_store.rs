@@ -117,7 +117,7 @@ pub(super) fn seam_repair_collect_open_drive(
         .map(|record| {
             crate::lifecycle::OpenSessionState::decode(&record.open_session_json).expect("decode")
         })
-        .unwrap_or_else(crate::lifecycle::OpenSessionState::new);
+        .unwrap_or_default();
     let last = positions.last().map(|position| position.date_ms);
     let mut open: crate::lifecycle::OpenDrive = match state.open_drive.take() {
         Some(open) => open,
@@ -500,7 +500,7 @@ pub(super) fn seam_repair_collect_open_charge(
         .map(|record| {
             crate::lifecycle::OpenSessionState::decode(&record.open_session_json).expect("decode")
         })
-        .unwrap_or_else(crate::lifecycle::OpenSessionState::new);
+        .unwrap_or_default();
     let mut open: crate::lifecycle::OpenCharge = match state.open_charge.take() {
         Some(open) => open,
         None => serde_json::from_value(serde_json::json!({

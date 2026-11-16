@@ -829,7 +829,7 @@ fn import_seam_source_id_at_the_base_is_refused() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
     let retained = import_materialised_test_drive(7, 10, 4.0);
-    let (vehicle, binding, car, base) = direct_materialised_base(&store, &[retained.clone()]);
+    let (vehicle, binding, car, base) = direct_materialised_base(&store, std::slice::from_ref(&retained));
     let car_id = binding.selected_car_id;
     let below = import_materialised_test_drive(HUB_ID_BASE - 1, car_id, 5.0);
     let at_base = import_materialised_test_drive(HUB_ID_BASE, car_id, 6.0);
@@ -866,7 +866,7 @@ fn import_seam_source_id_at_the_base_is_refused() {
         &vehicle,
         &binding,
         &car,
-        &[retained.clone()],
+        std::slice::from_ref(&retained),
         vec![seam_position(HUB_ID_BASE, car_id, SEAM_T)],
     );
     assert!(
