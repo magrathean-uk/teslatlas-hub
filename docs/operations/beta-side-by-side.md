@@ -93,13 +93,25 @@ Repeat between windows to keep history current.
 
 On a Hub that is already signed in and has collected in windows, the Mac app runs this
 import from **File > Import History…**. It uses the history-only path: the source must be
-a PostgreSQL database on this Mac (127.0.0.1 or ::1), read with a password file. The app
-stops the Hub, sets the configuration to history-only for the run (collection interval 0,
-Legacy login path off), imports, puts the configuration back exactly as it was and starts
-the Hub again if it was running. The data the Hub collected in its windows is kept; history
-from before it is added beside it. Phones already paired download the car's history again
-once. If the import fails, the configuration is still put back and the Hub is started
-again if it was running.
+a PostgreSQL database on this Mac (127.0.0.1 or ::1), read with a password file. The Hub's
+own `config.toml` is never edited: the import runs against a private history-only copy
+of it (collection interval 0, Legacy login path off, no Fleet Telemetry). The app checks
+that copy before it touches the Hub, and refuses a configuration that writes collector
+settings in a form it cannot rewrite safely (dotted keys or inline tables). It then pauses
+the Hub (it stays enabled at login), imports, and starts the Hub again if it was running,
+once the importer can no longer write. The import counts as finished only when the Hub's
+process is confirmed serving its configuration again (`teslatlas-hub serving-check`,
+which works between windows and never contacts Tesla). The data the Hub collected in its
+windows is kept; history from before it is added beside it. Phones already paired
+download the car's history again once.
+
+- If the import fails, the Hub is still started again if it was running, and the app
+  says so. If the restart also fails, the app shows both errors and asks you to choose
+  **Start Hub**.
+- If the app quits or the Mac loses power during the import, the app finishes the job
+  at its next launch: it removes the private copy, starts the Hub if it was running and
+  confirms it serving. Until that, or a confirmed **Start Hub**, a new import is
+  refused.
 
 ## 5. Backups and restore
 
@@ -130,9 +142,14 @@ time.
 3. The app runs `teslatlas-hub lan-tls --host <name>.local` with this Mac's local
    hostname (System Settings, General, Sharing). The first time, it makes a
    self-signed P-256 certificate valid for 397 days in the Hub data folder's `tls/`
-   (folder 0700, files 0600), sets `bind = "0.0.0.0:8443"` and a `[tls]` table with
-   `https://<name>.local:8443/`, and restarts the Hub. With `[tls]` already set it
-   changes nothing.
+   (folder 0700, files 0600, named after the run), sets `bind = "0.0.0.0:8443"` and a
+   `[tls]` table with `https://<name>.local:8443/`, and restarts the Hub. With `[tls]`
+   already set it changes nothing. It refuses a configuration file the Hub itself would
+   refuse, and reports a change made to that file meanwhile instead of overwriting it;
+   a setup interrupted before it finished is cleaned up by the next one.
+   Before asking for a link the app confirms that the running Hub serves the configured
+   identity (`teslatlas-hub serving-check`). If it still serves an older configuration,
+   for example after a restart that failed, the app restarts it first.
 4. The app shows a one-time pairing link with **Copy** and the time it expires
    (15 minutes). Copy it to the phone, for example with Universal Clipboard, and paste
    it in Tesatlas. The App pins the certificate named in the link.
