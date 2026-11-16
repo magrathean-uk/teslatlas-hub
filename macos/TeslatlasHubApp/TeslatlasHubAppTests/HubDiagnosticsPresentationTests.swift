@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import AppKit
 import XCTest
 @testable import Teslatlas_Hub
 
@@ -98,6 +99,36 @@ final class HubDiagnosticsPresentationTests: XCTestCase {
         XCTAssertEqual(rows.map(\.outcome), [.failed, .passed], "the report tokens still parse")
         XCTAssertEqual(HubDiagnosticsPresentation.rows(from: report).map(\.title), ["Service recovery", "Service recovery"],
                        "without a translation the English label is shown")
+    }
+
+    /// M08-T10: in Service Details at its default width (and at its minimum), no row
+    /// label is cut: "Collection window" is wider than the old fixed 104 points.
+    func testServiceDetailsLabelsAreNotTruncatedAtTheDefaultWidth() throws {
+        var snapshot = HubSnapshot.previewRunning
+        snapshot.collection = HubCollectionStatus(login: .own, credential: .valid(expiresAt: nil),
+                                                  window: .closed(reason: "operator_close"))
+        let details = ServiceDetailsWindowController(
+            snapshot: snapshot,
+            controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        )
+        let window = try XCTUnwrap(details.window)
+        defer { window.close() }
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        for width in [HubMetrics.serviceDetailsSheetSize.width, window.contentMinSize.width] {
+            window.setContentSize(NSSize(width: width, height: HubMetrics.serviceDetailsSheetSize.height))
+            let root = try XCTUnwrap(window.contentView)
+            root.layoutSubtreeIfNeeded()
+            let labels = descendants(root).compactMap { $0 as? NSTextField }
+                .filter { $0.identifier?.rawValue == "hub.service.detail.label" }
+            XCTAssertTrue(labels.map(\.stringValue).contains("Collection window"), "\(width)")
+            for label in labels {
+                XCTAssertGreaterThanOrEqual(label.frame.width + 0.5, ceil(label.intrinsicContentSize.width),
+                                            "\(label.stringValue) is cut at \(width) points")
+            }
+            let collection = try XCTUnwrap(labels.first { $0.stringValue == "Collection window" })
+            XCTAssertGreaterThan(collection.intrinsicContentSize.width, 104,
+                                 "the old fixed 104-point label would have cut it")
+        }
     }
 
     func testServiceDiagnosticLinePrefixIsLocalised() throws {

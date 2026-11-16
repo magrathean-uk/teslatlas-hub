@@ -23,6 +23,15 @@ protocol HubMaintenanceBackend: AnyObject {
     func backUpNow(completion: @escaping (HubBackupRunState) -> Void)
     func listPairedDevices(completion: @escaping (Result<[HubPairedDevice], Error>) -> Void)
     func revokeDevice(_ id: UUID, completion: @escaping (Result<Void, Error>) -> Void)
+    /// Pair a phone (DEC-152): sets up the LAN TLS identity when missing, then one
+    /// single-use pairing link. The link is never logged or written.
+    func pairPhone(completion: @escaping (Result<HubPairingInvitation, Error>) -> Void)
+}
+
+extension HubMaintenanceBackend {
+    func pairPhone(completion: @escaping (Result<HubPairingInvitation, Error>) -> Void) {
+        completion(.failure(HubMaintenanceError.unreadableReport))
+    }
 }
 
 enum HubMaintenanceError: LocalizedError, Equatable {
@@ -634,5 +643,9 @@ final class HubControllerMaintenance: HubMaintenanceBackend {
         controller.runMaintenanceCommand(["control", "revoke-device", id.uuidString.lowercased()]) { result in
             completion(result.map { _ in () })
         }
+    }
+
+    func pairPhone(completion: @escaping (Result<HubPairingInvitation, Error>) -> Void) {
+        controller.pairPhone(completion: completion)
     }
 }

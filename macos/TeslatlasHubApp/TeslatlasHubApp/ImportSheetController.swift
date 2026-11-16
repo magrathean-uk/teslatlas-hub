@@ -166,3 +166,167 @@ final class ImportSheetController: NSWindowController {
         }
     }
 }
+
+/// Import History on a signed-in Hub that has collected in windows (DEC-149). It runs
+/// the history-only import: Hub stops, imports, puts its configuration back and starts
+/// again. The window data is kept. Presented as a sheet of the main window.
+final class ImportAfterWindowsSheetController: NSWindowController {
+    static let windowDataDetail =
+        HubL10n.text("hub.importAfterWindows.windowData", fallback: "The data Hub collected in its collection windows is kept. History from before it is added beside it; nothing is replaced. Phones already paired download the car's history again once.")
+    static let serviceDetail =
+        HubL10n.text("hub.importAfterWindows.service", fallback: "Hub stops while it imports and starts again afterwards. Your Hub sign-in stays as it is. The source database must be on this Mac (127.0.0.1) and is only read.")
+    static let importedMessage =
+        HubL10n.text("hub.importAfterWindows.done", fallback: "History imported. The data from the collection windows is kept.")
+
+    private let controller: HubController
+    private let onFinish: (Result<Void, Error>) -> Void
+    let sourceField = NSTextField(string: "")
+    let carField = NSTextField(string: "1")
+    let passwordField = NSTextField(string: "")
+    let statusLabel = NSTextField(wrappingLabelWithString: "")
+    let versionAcknowledgement = NSButton(
+        checkboxWithTitle: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.4.0 or later and will not be updated during the import."),
+        target: nil,
+        action: nil
+    )
+    private(set) var importButton: NSButton!
+    private(set) var cancelButton: NSButton!
+    private(set) var running = false
+
+    init(controller: HubController, onFinish: @escaping (Result<Void, Error>) -> Void = { _ in }) {
+        self.controller = controller
+        self.onFinish = onFinish
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 470),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.title = HubL10n.text("hub.ImportSheetController.26.1691", fallback: "Import History")
+        super.init(window: window)
+        window.contentView = contentView()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func contentView() -> NSView {
+        let root = NSView()
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 28),
+            stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
+            stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 24),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor, constant: -24)
+        ])
+        for (text, emphasised) in [(Self.windowDataDetail, true), (Self.serviceDetail, false),
+                                   (ImportSheetController.sourceVersionRequirement, false)] {
+            let label = NSTextField(wrappingLabelWithString: text)
+            label.textColor = emphasised ? .labelColor : .secondaryLabelColor
+            if emphasised { label.font = .systemFont(ofSize: 13, weight: .semibold) }
+            label.widthAnchor.constraint(equalToConstant: 504).isActive = true
+            stack.addArrangedSubview(label)
+        }
+        sourceField.placeholderString = "postgresql://reader@127.0.0.1/database"
+        stack.addArrangedSubview(labeled(HubL10n.text("hub.ImportSheetController.64.1694", fallback: "PostgreSQL source"), sourceField))
+        stack.addArrangedSubview(labeled(HubL10n.text("hub.ImportSheetController.65.1695", fallback: "Car ID"), carField))
+        let choose = HubActionButton(title: HubL10n.text("hub.ImportSheetController.110.1702", fallback: "Choose…"), target: self, action: #selector(choosePassword))
+        choose.hubStyle = .flat
+        let passwordRow = NSStackView(views: [passwordField, choose])
+        passwordRow.spacing = 8
+        passwordRow.widthAnchor.constraint(equalToConstant: 504).isActive = true
+        stack.addArrangedSubview(labeled(HubL10n.text("hub.ImportSheetController.69.1697", fallback: "Password file"), passwordRow))
+        stack.addArrangedSubview(versionAcknowledgement)
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.isHidden = true
+        statusLabel.widthAnchor.constraint(equalToConstant: 504).isActive = true
+        stack.addArrangedSubview(statusLabel)
+        cancelButton = HubActionButton(title: HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"), target: self, action: #selector(cancelPressed))
+        importButton = HubActionButton(title: HubL10n.text("hub.ImportSheetController.111.1704", fallback: "Import"), target: self, action: #selector(importPressed))
+        importButton.keyEquivalent = "\r"
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let buttons = NSStackView(views: [spacer, cancelButton, importButton])
+        buttons.spacing = 8
+        buttons.widthAnchor.constraint(equalToConstant: 504).isActive = true
+        stack.addArrangedSubview(buttons)
+        return root
+    }
+
+    private func labeled(_ title: String, _ view: NSView) -> NSView {
+        if let field = view as? NSTextField { field.widthAnchor.constraint(equalToConstant: 504).isActive = true }
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        let stack = NSStackView(views: [label, view])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 4
+        return stack
+    }
+
+    @objc private func choosePassword() {
+        guard let window else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.beginSheetModal(for: window) { [weak self] response in
+            if response == .OK { self?.passwordField.stringValue = panel.url?.path ?? "" }
+        }
+    }
+
+    private func close(with result: Result<Void, Error>?) {
+        if let window, let parent = window.sheetParent { parent.endSheet(window) }
+        if let result { onFinish(result) }
+    }
+
+    @objc private func cancelPressed() {
+        guard !running else { NSSound.beep(); return }
+        close(with: nil)
+    }
+
+    @objc func importPressed() {
+        guard !running else { return }
+        guard !sourceField.stringValue.isEmpty, !carField.stringValue.isEmpty, !passwordField.stringValue.isEmpty else {
+            showStatus(HubL10n.text("hub.ImportSheetController.149.1710", fallback: "Source, car ID and password file are required."), isError: true)
+            return
+        }
+        guard versionAcknowledgement.state == .on else {
+            showStatus(ImportSheetController.sourceVersionRequirement, isError: true)
+            return
+        }
+        setRunning(true)
+        showStatus(HubL10n.text("hub.importAfterWindows.running", fallback: "Importing. Hub is stopped until the import finishes."), isError: false)
+        controller.importHistoryAfterWindows(source: sourceField.stringValue,
+                                             carID: carField.stringValue,
+                                             passwordFile: passwordField.stringValue,
+                                             acceptSchemaEvidence: true,
+                                             progress: { [weak self] update in
+            self?.showStatus(HubL10n.format("hub.importAfterWindows.progress", fallback: "Importing: %1$@ of %2$@ rows.", arguments: [String(update.completedRows), String(update.totalRows)]), isError: false)
+        }) { [weak self] result in
+            guard let self else { return }
+            self.setRunning(false)
+            switch result {
+            case .success:
+                self.close(with: result)
+            case let .failure(error):
+                self.showStatus(error.localizedDescription, isError: true)
+            }
+        }
+    }
+
+    private func setRunning(_ value: Bool) {
+        running = value
+        importButton.isEnabled = !value
+        cancelButton.isEnabled = !value
+        [sourceField, carField, passwordField].forEach { $0.isEnabled = !value }
+        versionAcknowledgement.isEnabled = !value
+    }
+
+    private func showStatus(_ text: String, isError: Bool) {
+        statusLabel.stringValue = text
+        statusLabel.textColor = isError ? .systemRed : .secondaryLabelColor
+        statusLabel.isHidden = false
+    }
+}

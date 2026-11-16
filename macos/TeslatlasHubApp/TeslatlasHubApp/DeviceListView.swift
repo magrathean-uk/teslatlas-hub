@@ -16,6 +16,16 @@ final class DeviceListView: NSView {
 
     let rowsStack = NSStackView()
     let messageLabel = NSTextField(wrappingLabelWithString: "")
+    /// Pair a phone (DEC-152) and the one-time link it shows: selectable, with Copy and
+    /// its expiry, cleared on Done. The link is never logged.
+    let pairButton = HubActionButton(title: HubL10n.text("hub.pairing.button", fallback: "Pair a phone…"), target: nil, action: nil)
+    let pairingPanel = NSStackView()
+    let pairingLinkField = NSTextField(labelWithString: "")
+    let pairingExpiryLabel = NSTextField(wrappingLabelWithString: "")
+    let copyLinkButton = HubActionButton(title: HubL10n.text("hub.pairing.copy", fallback: "Copy"), target: nil, action: nil)
+    let pairingDoneButton = HubActionButton(title: HubL10n.text("hub.pairing.done", fallback: "Done"), target: nil, action: nil)
+    private let pasteboard: NSPasteboard
+    private(set) var pairing = false
     private(set) var devices: [HubPairedDevice] = []
     private var mutationsEnabled = true
     private var revoking: Set<UUID> = []
@@ -25,11 +35,13 @@ final class DeviceListView: NSView {
          confirmationPresenter: @escaping ConfirmationPresenter = { alert, silentResponse in
              HubUIPresentation.response(to: alert, silentResponse: silentResponse)
          },
-         date: @escaping (Date) -> String = HubCollectionStatus.defaultDateText) {
+         date: @escaping (Date) -> String = HubCollectionStatus.defaultDateText,
+         pasteboard: NSPasteboard = .general) {
         self.backend = backend
         self.mutationAllowed = mutationAllowed
         self.confirmationPresenter = confirmationPresenter
         self.date = date
+        self.pasteboard = pasteboard
         super.init(frame: .zero)
         identifier = NSUserInterfaceItemIdentifier("hub.devices")
         translatesAutoresizingMaskIntoConstraints = false
@@ -56,6 +68,7 @@ final class DeviceListView: NSView {
 
     func setMutationsEnabled(_ enabled: Bool) {
         mutationsEnabled = enabled
+        pairButton.isEnabled = enabled && !pairing
         revokeButtons().forEach { button in
             button.isEnabled = enabled && !revoking.contains(where: { Self.revokeIdentifier($0) == button.identifier?.rawValue })
         }
@@ -101,6 +114,61 @@ final class DeviceListView: NSView {
                                  ?? error.localizedDescription, isError: true)
             }
         }
+    }
+
+    // MARK: Pair a phone
+
+    @objc func pairPressed(_ sender: Any?) {
+        guard mutationsEnabled, mutationAllowed(), !pairing else {
+            NSSound.beep()
+            return
+        }
+        pairing = true
+        pairButton.isEnabled = false
+        hidePairingLink()
+        showMessage(HubL10n.text("hub.pairing.preparing", fallback: "Preparing a pairing link. The first time, Hub sets up its local network identity and restarts."), isError: false)
+        backend.pairPhone { [weak self] result in
+            guard let self else { return }
+            self.pairing = false
+            self.pairButton.isEnabled = self.mutationsEnabled
+            switch result {
+            case let .success(invitation):
+                self.messageLabel.isHidden = true
+                self.showPairingLink(invitation)
+            case let .failure(error):
+                self.showMessage(HubServiceRefusal.parse(error.localizedDescription)?.message
+                                 ?? error.localizedDescription, isError: true)
+            }
+        }
+    }
+
+    @objc func copyLinkPressed(_ sender: Any?) {
+        let link = pairingLinkField.stringValue
+        guard !pairingPanel.isHidden, link.hasPrefix(HubPairingInvitation.linkPrefix) else { return }
+        pasteboard.clearContents()
+        pasteboard.setString(link, forType: .string)
+        pairingExpiryLabel.stringValue = pairingExpiryText + " " + HubL10n.text("hub.pairing.copied", fallback: "Copied.")
+    }
+
+    @objc func pairingDonePressed(_ sender: Any?) {
+        hidePairingLink()
+        reload()
+    }
+
+    private var pairingExpiryText = ""
+
+    private func showPairingLink(_ invitation: HubPairingInvitation) {
+        pairingLinkField.stringValue = invitation.link
+        pairingExpiryText = HubL10n.format("hub.pairing.expiry", fallback: "Paste this link in Tesatlas on the phone. It works once and expires %1$@.", arguments: [date(invitation.expiresAt)])
+        pairingExpiryLabel.stringValue = pairingExpiryText
+        pairingPanel.isHidden = false
+    }
+
+    private func hidePairingLink() {
+        pairingLinkField.stringValue = ""
+        pairingExpiryText = ""
+        pairingExpiryLabel.stringValue = ""
+        pairingPanel.isHidden = true
     }
 
     // MARK: Showing
@@ -191,11 +259,46 @@ final class DeviceListView: NSView {
         messageLabel.identifier = NSUserInterfaceItemIdentifier("hub.devices.message")
         messageLabel.font = HubTypography.caption
         messageLabel.isHidden = true
-        let contents = NSStackView(views: [title, detail, rowsStack, messageLabel])
+        pairButton.target = self
+        pairButton.action = #selector(pairPressed(_:))
+        pairButton.identifier = NSUserInterfaceItemIdentifier("hub.devices.pair")
+        pairButton.hubStyle = .flat
+        pairButton.hubFont = HubTypography.action
+        pairButton.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
+        let header = NSStackView(views: [title, NSView(), pairButton])
+        header.alignment = .centerY
+        pairingLinkField.identifier = NSUserInterfaceItemIdentifier("hub.devices.pairingLink")
+        pairingLinkField.isSelectable = true
+        pairingLinkField.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        pairingLinkField.lineBreakMode = .byTruncatingMiddle
+        pairingLinkField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        copyLinkButton.target = self
+        copyLinkButton.action = #selector(copyLinkPressed(_:))
+        copyLinkButton.identifier = NSUserInterfaceItemIdentifier("hub.devices.pairingCopy")
+        copyLinkButton.hubFont = HubTypography.action
+        pairingDoneButton.target = self
+        pairingDoneButton.action = #selector(pairingDonePressed(_:))
+        pairingDoneButton.identifier = NSUserInterfaceItemIdentifier("hub.devices.pairingDone")
+        pairingDoneButton.hubStyle = .flat
+        pairingDoneButton.hubFont = HubTypography.action
+        let linkRow = NSStackView(views: [pairingLinkField, copyLinkButton, pairingDoneButton])
+        linkRow.alignment = .centerY
+        pairingExpiryLabel.identifier = NSUserInterfaceItemIdentifier("hub.devices.pairingExpiry")
+        pairingExpiryLabel.font = HubTypography.caption
+        pairingExpiryLabel.textColor = HubPalette.mutedForeground
+        pairingPanel.orientation = .vertical
+        pairingPanel.alignment = .leading
+        pairingPanel.spacing = 4
+        pairingPanel.identifier = NSUserInterfaceItemIdentifier("hub.devices.pairingPanel")
+        pairingPanel.addArrangedSubview(linkRow)
+        pairingPanel.addArrangedSubview(pairingExpiryLabel)
+        pairingPanel.isHidden = true
+        linkRow.widthAnchor.constraint(equalTo: pairingPanel.widthAnchor).isActive = true
+        let contents = NSStackView(views: [header, detail, pairingPanel, rowsStack, messageLabel])
         contents.orientation = .vertical
         contents.alignment = .leading
         contents.spacing = 8
-        contents.setCustomSpacing(4, after: title)
+        contents.setCustomSpacing(4, after: header)
         contents.translatesAutoresizingMaskIntoConstraints = false
         let card = HubCardView()
         card.translatesAutoresizingMaskIntoConstraints = false
@@ -210,9 +313,11 @@ final class DeviceListView: NSView {
             contents.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -HubMetrics.rowHorizontalInset),
             contents.topAnchor.constraint(equalTo: card.topAnchor, constant: 14),
             contents.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
-            rowsStack.widthAnchor.constraint(equalTo: contents.widthAnchor)
+            rowsStack.widthAnchor.constraint(equalTo: contents.widthAnchor),
+            header.widthAnchor.constraint(equalTo: contents.widthAnchor),
+            pairingPanel.widthAnchor.constraint(equalTo: contents.widthAnchor)
         ])
-        for view in [detail, messageLabel] {
+        for view in [detail, messageLabel, pairingExpiryLabel] {
             view.widthAnchor.constraint(lessThanOrEqualTo: contents.widthAnchor).isActive = true
         }
     }

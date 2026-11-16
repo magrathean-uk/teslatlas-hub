@@ -4238,6 +4238,338 @@ final class HubControllerTests: XCTestCase {
         XCTAssertNil(HubController.logTail(of: log, maximumBytes: 0))
     }
 
+    // MARK: M08-T10 Import History after windows (DEC-149)
+
+    private static let fixtureSource = "postgresql://reader@127.0.0.1/sourcedb"
+
+    private func signedInSnapshot(health: HubHealth = .running) -> HubSnapshot {
+        var snapshot = HubSnapshot.previewRunning
+        snapshot.health = health
+        snapshot.accountState = .connected
+        snapshot.databaseState = .healthy
+        return snapshot
+    }
+
+    private func writeSignedInConfig(in home: URL) throws -> String {
+        let config = home.appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml")
+        try FileManager.default.createDirectory(at: config.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        let content = """
+        data_dir = "/tmp/hub"
+        bind = "127.0.0.1:8080"
+
+        [collector]
+        provider = "legacy"
+        interval_seconds = 60
+
+        [collector.legacy_auth]
+        enabled = true
+
+        [geocoder]
+        enabled = false
+
+        """
+        try content.write(to: config, atomically: true, encoding: .utf8)
+        return content
+    }
+
+    func testImportHistoryIsOfferedOnASignedInHubThroughTheHistoryOnlyPath() throws {
+        for health: HubHealth in [.running, .stopped, .degraded] {
+            let snapshot = signedInSnapshot(health: health)
+            XCTAssertTrue(snapshot.shouldOfferImportAfterWindows, "\(health)")
+            XCTAssertFalse(snapshot.shouldOfferSourceImport, "first-run setup stays first-run only")
+        }
+        XCTAssertFalse(HubSnapshot.firstRun.shouldOfferImportAfterWindows)
+        var unknown = signedInSnapshot()
+        unknown.databaseState = .unknown
+        XCTAssertFalse(unknown.shouldOfferImportAfterWindows)
+        var signedOut = signedInSnapshot()
+        signedOut.accountState = .notConfigured
+        XCTAssertFalse(signedOut.shouldOfferImportAfterWindows)
+
+        let sheet = ImportAfterWindowsSheetController(controller: HubController(
+            environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]
+        ))
+        let text = labels(in: sheet.window?.contentView).map(\.stringValue).joined(separator: " ")
+        XCTAssertTrue(text.contains("collection windows is kept"))
+        XCTAssertTrue(text.contains("nothing is replaced"))
+        XCTAssertTrue(text.contains("Hub stops while it imports and starts again afterwards"))
+        XCTAssertTrue(text.contains("update it to release 4.4.0 or later"))
+    }
+
+    func testHistoryOnlyImportConfigTurnsEveryCollectorPathOffAndKeepsTheRest() {
+        let original = """
+        data_dir = "/tmp/hub"
+        bind = "127.0.0.1:8080"
+
+        [collector]
+        provider = "legacy"
+        interval_seconds = 60
+
+        [collector.legacy_auth]
+        enabled = true
+        token_url = "https://provider.example/token"
+
+        [collector.fleet_telemetry]
+        hostname = "fixture.example"
+
+        [collector.fleet_telemetry.ingress]
+        port = 4443
+
+        [geocoder]
+        enabled = false
+
+        """
+        let updated = HubController.historyOnlyImportConfig(original)
+        XCTAssertEqual(HubController.collectorIntervalSeconds(in: updated), 0)
+        XCTAssertTrue(updated.contains("[collector.legacy_auth]\nenabled = false\ntoken_url"))
+        XCTAssertFalse(updated.contains("fleet_telemetry"))
+        XCTAssertFalse(updated.contains("fixture.example"))
+        XCTAssertTrue(updated.contains("[geocoder]\nenabled = false"))
+        XCTAssertTrue(updated.contains("provider = \"legacy\""))
+
+        let bare = HubController.historyOnlyImportConfig("data_dir = \"/tmp/hub\"\n")
+        XCTAssertEqual(HubController.collectorIntervalSeconds(in: bare), 0)
+        XCTAssertTrue(bare.contains("[collector.legacy_auth]\nenabled = false\n"))
+    }
+
+    func testImportAfterWindowsStopsImportsHistoryOnlyThenRestoresConfigAndStarts() throws {
+        let events = EventRecorder()
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let original = try writeSignedInConfig(in: home)
+        let runner = AfterWindowsRunner(events: events)
+        runner.onMigrate = { [weak runner, unowned self] in runner?.configDuringImport = try? self.configContents(in: home) }
+        let service = ScriptedService(events: events)
+        let controller = HubController(commandRunner: runner, serviceRunner: service,
+                                       homeDirectory: home, serviceInstalledOverride: true,
+                                       initialSnapshot: signedInSnapshot())
+        let finished = expectation(description: "import after windows finished")
+        controller.importHistoryAfterWindows(source: Self.fixtureSource, carID: "1",
+                                             passwordFile: "/private/password",
+                                             acceptSchemaEvidence: true) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+
+        XCTAssertEqual(events.values, ["check", "service:stop", "migrate", "service:start"])
+        let migrate = try XCTUnwrap(runner.arguments.first { $0.contains("migrate") })
+        for flag in ["--online-snapshot", "--history-only", "--accept-schema-evidence"] {
+            XCTAssertTrue(migrate.contains(flag), flag)
+        }
+        XCTAssertFalse(migrate.contains("--preserve-existing-credentials"))
+        let during = try XCTUnwrap(runner.configDuringImport)
+        XCTAssertEqual(HubController.collectorIntervalSeconds(in: during), 0)
+        XCTAssertTrue(during.contains("[collector.legacy_auth]\nenabled = false"))
+        XCTAssertEqual(try configContents(in: home), original, "the configuration is back as it was")
+        XCTAssertFalse(controller.hasPendingMigrationHandover, "a signed-in Hub writes no handover gate")
+        XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
+    }
+
+    func testImportAfterWindowsFailureRestoresConfigAndStartsTheHubAgain() throws {
+        for (label, migrateResult) in [
+            ("refused", Result<String, Error>.failure(HubActionError.commandFailed("rebase_required"))),
+            ("no report", .success("{}"))
+        ] {
+            let events = EventRecorder()
+            let home = try temporaryHome()
+            defer { try? FileManager.default.removeItem(at: home) }
+            let original = try writeSignedInConfig(in: home)
+            let runner = AfterWindowsRunner(events: events)
+            runner.migrateResult = migrateResult
+            let controller = HubController(commandRunner: runner,
+                                           serviceRunner: ScriptedService(events: events),
+                                           homeDirectory: home, serviceInstalledOverride: true,
+                                           initialSnapshot: signedInSnapshot())
+            let finished = expectation(description: label)
+            var failure: Error?
+            controller.importHistoryAfterWindows(source: Self.fixtureSource, carID: "1",
+                                                 passwordFile: "/private/password",
+                                                 acceptSchemaEvidence: true) { result in
+                if case let .failure(error) = result { failure = error }
+                finished.fulfill()
+            }
+            wait(for: [finished], timeout: 2)
+            XCTAssertNotNil(failure, label)
+            XCTAssertEqual(events.values, ["check", "service:stop", "migrate", "service:start"], label)
+            XCTAssertEqual(try configContents(in: home), original, label)
+        }
+    }
+
+    func testImportAfterWindowsLeavesAStoppedHubStoppedAndRefusesBadInputBeforeCommands() throws {
+        let events = EventRecorder()
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeSignedInConfig(in: home)
+        let runner = AfterWindowsRunner(events: events)
+        let controller = HubController(commandRunner: runner,
+                                       serviceRunner: ScriptedService(events: events),
+                                       homeDirectory: home, serviceInstalledOverride: true,
+                                       initialSnapshot: signedInSnapshot(health: .stopped))
+        let finished = expectation(description: "stopped Hub import")
+        controller.importHistoryAfterWindows(source: Self.fixtureSource, carID: "1",
+                                             passwordFile: "/private/password",
+                                             acceptSchemaEvidence: true) { _ in finished.fulfill() }
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(events.values, ["check", "service:stop", "migrate"])
+
+        let refused = expectation(description: "remote source refused")
+        controller.importHistoryAfterWindows(source: "postgresql://reader@192.0.2.1/sourcedb", carID: "1",
+                                             passwordFile: "/private/password",
+                                             acceptSchemaEvidence: true) { result in
+            if case .success = result { XCTFail("a remote source was accepted") }
+            refused.fulfill()
+        }
+        wait(for: [refused], timeout: 1)
+        XCTAssertEqual(events.values.count, 3, "nothing ran for the refused source")
+    }
+
+    // MARK: M08-T10 Pair a phone (DEC-152)
+
+    private static let fixtureLink = "teslatlas-hub://pair?endpoint=https%3A%2F%2Ffixture.local%3A8443%2F&pairing_id=00000000-0000-4000-8000-000000000000&secret=fixture-one-time-value&tls_pin=00"
+
+    private func pairingController(_ runner: PairingRunner, events: EventRecorder,
+                                   health: HubHealth = .running,
+                                   restart: Result<String, Error> = .success("")) throws -> (HubController, URL) {
+        let home = try temporaryHome()
+        _ = try writeSignedInConfig(in: home)
+        let service = ScriptedService(events: events)
+        service.actionResults["restart"] = restart
+        let controller = HubController(commandRunner: runner, serviceRunner: service,
+                                       homeDirectory: home, serviceInstalledOverride: true,
+                                       initialSnapshot: signedInSnapshot(health: health))
+        controller.localHostNameProvider = { "Office-Mac" }
+        return (controller, home)
+    }
+
+    private func pair(_ controller: HubController) -> Result<HubPairingInvitation, Error> {
+        let done = expectation(description: "pairing finished")
+        var outcome: Result<HubPairingInvitation, Error> = .failure(HubActionError.commandFailed("not run"))
+        controller.pairPhone { result in
+            outcome = result
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 2)
+        return outcome
+    }
+
+    func testPairAPhoneSetsUpTheLanIdentityRestartsAndReturnsTheOneTimeLink() throws {
+        let events = EventRecorder()
+        let runner = PairingRunner(events: events, link: Self.fixtureLink)
+        let (controller, home) = try pairingController(runner, events: events)
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let invitation = try pair(controller).get()
+        XCTAssertEqual(events.values, ["lan-tls", "service:restart", "pair"])
+        XCTAssertEqual(invitation.link, Self.fixtureLink)
+        XCTAssertEqual(invitation.expiresAt, Date(timeIntervalSince1970: 1_800_000_000))
+        let tls = try XCTUnwrap(runner.arguments.first { $0.contains("lan-tls") })
+        XCTAssertEqual(Array(tls.suffix(3)), ["lan-tls", "--host", "office-mac.local"])
+        XCTAssertEqual(Array(try XCTUnwrap(runner.arguments.last).suffix(3)), ["control", "pair", "--json"])
+        XCTAssertFalse(String(describing: invitation).contains("fixture-one-time-value"))
+        XCTAssertFalse(String(reflecting: invitation).contains("fixture-one-time-value"))
+        XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
+
+        // With [tls] already configured nothing restarts.
+        let existingEvents = EventRecorder()
+        let existing = PairingRunner(events: existingEvents, link: Self.fixtureLink, tlsStatus: "existing")
+        let (second, secondHome) = try pairingController(existing, events: existingEvents)
+        defer { try? FileManager.default.removeItem(at: secondHome) }
+        XCTAssertNoThrow(try pair(second).get())
+        XCTAssertEqual(existingEvents.values, ["lan-tls", "pair"])
+    }
+
+    func testPairAPhoneFailuresStopBeforeTheLinkIsRequested() throws {
+        // The Hub is not running: nothing runs.
+        let stoppedEvents = EventRecorder()
+        let (stopped, stoppedHome) = try pairingController(PairingRunner(events: stoppedEvents, link: Self.fixtureLink),
+                                                           events: stoppedEvents, health: .stopped)
+        defer { try? FileManager.default.removeItem(at: stoppedHome) }
+        XCTAssertThrowsError(try pair(stopped).get())
+        XCTAssertEqual(stoppedEvents.values, [])
+
+        // No usable local name: nothing runs.
+        let namelessEvents = EventRecorder()
+        let (nameless, namelessHome) = try pairingController(PairingRunner(events: namelessEvents, link: Self.fixtureLink),
+                                                             events: namelessEvents)
+        defer { try? FileManager.default.removeItem(at: namelessHome) }
+        nameless.localHostNameProvider = { "Owner’s Mac" }
+        XCTAssertThrowsError(try pair(nameless).get())
+        XCTAssertEqual(namelessEvents.values, [])
+
+        // The identity setup fails: no restart, no link.
+        let tlsEvents = EventRecorder()
+        let failing = PairingRunner(events: tlsEvents, link: Self.fixtureLink)
+        failing.tlsResult = .failure(HubActionError.commandFailed("the Hub TLS folder is not a private folder of this user"))
+        let (tlsFailure, tlsHome) = try pairingController(failing, events: tlsEvents)
+        defer { try? FileManager.default.removeItem(at: tlsHome) }
+        XCTAssertThrowsError(try pair(tlsFailure).get())
+        XCTAssertEqual(tlsEvents.values, ["lan-tls"])
+
+        // The restart fails: no link.
+        let restartEvents = EventRecorder()
+        let (restartFailure, restartHome) = try pairingController(
+            PairingRunner(events: restartEvents, link: Self.fixtureLink), events: restartEvents,
+            restart: .failure(HubActionError.commandFailed("preflight failed")))
+        defer { try? FileManager.default.removeItem(at: restartHome) }
+        XCTAssertThrowsError(try pair(restartFailure).get())
+        XCTAssertEqual(restartEvents.values, ["lan-tls", "service:restart"])
+
+        // The Hub's answer is not a pairing link.
+        let oddEvents = EventRecorder()
+        let (odd, oddHome) = try pairingController(PairingRunner(events: oddEvents, link: "https://example.invalid/"),
+                                                   events: oddEvents)
+        defer { try? FileManager.default.removeItem(at: oddHome) }
+        XCTAssertThrowsError(try pair(odd).get())
+        XCTAssertTrue(odd.lifecycleCapabilities.isIdle)
+
+        XCTAssertEqual(HubController.lanHostName(from: "Office-Mac"), "office-mac.local")
+        for name in [nil, "", "Owner’s Mac", "-mac", "mac-", "mac.local", String(repeating: "a", count: 64)] {
+            XCTAssertNil(HubController.lanHostName(from: name), String(describing: name))
+        }
+        XCTAssertNil(HubPairingInvitation.parse(#"{"pairingUri":"teslatlas-hub://pair?x=1"}"#), "no expiry")
+        XCTAssertNil(HubController.lanTLSStatus(from: #"{"status":"maybe"}"#))
+    }
+
+    func testPairAPhoneShowsTheLinkWithCopyAndExpiryAndClearsItOnDone() throws {
+        let backend = PairingMaintenanceBackend()
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("hub.tests.pairing.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        let view = DeviceListView(backend: backend, confirmationPresenter: { _, _ in .alertFirstButtonReturn },
+                                  date: { "T\(Int($0.timeIntervalSince1970))" }, pasteboard: pasteboard)
+        XCTAssertTrue(view.pairingPanel.isHidden)
+        XCTAssertEqual(view.pairButton.title, "Pair a phone…")
+
+        backend.pairResult = .success(HubPairingInvitation(link: Self.fixtureLink,
+                                                           expiresAt: Date(timeIntervalSince1970: 1_800_000_000)))
+        view.pairButton.performClick(nil)
+        XCTAssertEqual(backend.pairCalls, 1)
+        XCTAssertFalse(view.pairingPanel.isHidden)
+        XCTAssertEqual(view.pairingLinkField.stringValue, Self.fixtureLink)
+        XCTAssertTrue(view.pairingLinkField.isSelectable)
+        XCTAssertTrue(view.pairingExpiryLabel.stringValue.contains("Paste this link in Tesatlas"))
+        XCTAssertTrue(view.pairingExpiryLabel.stringValue.contains("T1800000000"))
+
+        view.copyLinkButton.performClick(nil)
+        XCTAssertEqual(pasteboard.string(forType: .string), Self.fixtureLink)
+        XCTAssertTrue(view.pairingExpiryLabel.stringValue.hasSuffix("Copied."))
+
+        view.pairingDoneButton.performClick(nil)
+        XCTAssertTrue(view.pairingPanel.isHidden)
+        XCTAssertEqual(view.pairingLinkField.stringValue, "")
+
+        backend.pairResult = .failure(HubActionError.commandFailed("Start Hub before pairing a phone."))
+        view.pairButton.performClick(nil)
+        XCTAssertTrue(view.pairingPanel.isHidden)
+        XCTAssertFalse(view.messageLabel.isHidden)
+        XCTAssertEqual(view.messageLabel.stringValue, "Start Hub before pairing a phone.")
+        XCTAssertTrue(view.pairButton.isEnabled)
+
+        view.setMutationsEnabled(false)
+        XCTAssertFalse(view.pairButton.isEnabled)
+    }
+
     private func temporaryHome() throws -> URL {
         let url = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-tests-\(UUID().uuidString)", isDirectory: true)
@@ -5914,5 +6246,95 @@ final class FirstStartModel {
     func windowStatus(open: Bool = false) -> Result<String, Error> {
         guard loaded else { return .failure(HubActionError.commandFailed("service_not_running: Hub is not running")) }
         return .success(open ? #"{"phase":"open","trusted":true}"# : #"{"phase":"closed","trusted":true}"#)
+    }
+}
+
+/// M08-T10: answers the history-only source check and the import; the import's
+/// answer and what the configuration said while it ran are kept for the test.
+private final class AfterWindowsRunner: HubCommandRunning {
+    private let events: EventRecorder
+    var migrateResult: Result<String, Error> = .success(
+        #"{"status":"imported","captureMode":"online-snapshot","credentialScope":"history-only"}"#
+    )
+    var onMigrate: (() -> Void)?
+    var configDuringImport: String?
+    private(set) var arguments: [[String]] = []
+
+    init(events: EventRecorder) { self.events = events }
+
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        self.arguments.append(arguments)
+        if arguments.contains("source-check") {
+            events.append("check")
+            completion(.success(
+                #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
+            ))
+            return
+        }
+        if arguments.contains("migrate") {
+            events.append("migrate")
+            onMigrate?()
+            completion(migrateResult)
+            return
+        }
+        events.append("command")
+        completion(.failure(HubActionError.commandFailed("unexpected command")))
+    }
+}
+
+/// M08-T10: answers `lan-tls` and `control pair --json` with fixture values only.
+private final class PairingRunner: HubCommandRunning {
+    private let events: EventRecorder
+    private let link: String
+    var tlsResult: Result<String, Error>
+    private(set) var arguments: [[String]] = []
+
+    init(events: EventRecorder, link: String, tlsStatus: String = "created") {
+        self.events = events
+        self.link = link
+        tlsResult = .success(#"{"status":"\#(tlsStatus)","publicUrl":"https://fixture.local:8443/","bind":"0.0.0.0:8443"}"#)
+    }
+
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        self.arguments.append(arguments)
+        if arguments.contains("lan-tls") {
+            events.append("lan-tls")
+            completion(tlsResult)
+            return
+        }
+        if arguments.suffix(3) == ["control", "pair", "--json"] {
+            events.append("pair")
+            completion(.success(#"{"pairingId":"00000000-0000-4000-8000-000000000000","secret":"fixture-one-time-value","expiresAtMs":1800000000000,"endpoint":"https://fixture.local:8443/","tlsPin":"00","pairingUri":"\#(link)"}"#))
+            return
+        }
+        events.append("command")
+        completion(.failure(HubActionError.commandFailed("unexpected command")))
+    }
+}
+
+/// M08-T10: a maintenance backend whose only real answer is Pair a phone.
+private final class PairingMaintenanceBackend: HubMaintenanceBackend {
+    var dataDirectory: URL? = nil
+    var vehicleNames: [UUID: String] = [:]
+    var pairResult: Result<HubPairingInvitation, Error> = .failure(HubActionError.commandFailed("unset"))
+    private(set) var pairCalls = 0
+
+    func loadBackupSchedule() -> Result<HubBackupSchedule, Error> { .success(HubBackupSchedule()) }
+    func saveBackupSchedule(_ schedule: HubBackupSchedule, password: String?) -> Result<HubBackupSchedule, Error> {
+        .success(schedule)
+    }
+    func readBackupStatus(completion: @escaping (Result<HubBackupStatus, Error>) -> Void) {
+        completion(.success(HubBackupStatus()))
+    }
+    func backUpNow(completion: @escaping (HubBackupRunState) -> Void) {}
+    func listPairedDevices(completion: @escaping (Result<[HubPairedDevice], Error>) -> Void) {
+        completion(.success([]))
+    }
+    func revokeDevice(_ id: UUID, completion: @escaping (Result<Void, Error>) -> Void) {
+        completion(.success(()))
+    }
+    func pairPhone(completion: @escaping (Result<HubPairingInvitation, Error>) -> Void) {
+        pairCalls += 1
+        completion(pairResult)
     }
 }

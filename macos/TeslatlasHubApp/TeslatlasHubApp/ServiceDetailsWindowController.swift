@@ -510,20 +510,26 @@ private final class ServiceDetailRowView: NSView {
     init(detail: HubServiceDetail) {
         super.init(frame: .zero)
         let label = NSTextField(labelWithString: detail.label)
+        label.identifier = NSUserInterfaceItemIdentifier("hub.service.detail.label")
         label.font = HubTypography.emphasis
         label.textColor = HubPalette.foreground
+        // The label keeps its full width ("Collection window" is wider than the old fixed
+        // 104 points); the value gives way and truncates in the middle instead.
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        label.setContentHuggingPriority(.required, for: .horizontal)
         let value = NSTextField(labelWithString: detail.value)
         value.font = HubTypography.action
         value.textColor = HubPalette.mutedForeground
         value.lineBreakMode = .byTruncatingMiddle
         value.alignment = .right
         value.toolTip = detail.value
+        value.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let stack = NSStackView(views: [label, NSView(), value])
         stack.alignment = .centerY
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
-            label.widthAnchor.constraint(equalToConstant: 104),
+            label.widthAnchor.constraint(greaterThanOrEqualToConstant: 104),
             value.widthAnchor.constraint(lessThanOrEqualToConstant: 286),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: HubMetrics.rowHorizontalInset),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -HubMetrics.rowHorizontalInset),

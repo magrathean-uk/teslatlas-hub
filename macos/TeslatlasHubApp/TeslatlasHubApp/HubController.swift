@@ -3,6 +3,7 @@
 import AppKit
 import Darwin
 import Foundation
+import SystemConfiguration
 
 enum HubRelease {
     static let fallbackVersion = "2026.36.2"
@@ -403,6 +404,33 @@ struct HubControlVehicle: Equatable {
     }
 }
 
+/// One single-use pairing link from `control pair --json` and when it stops working.
+/// Never logged or written; the description hides the link.
+struct HubPairingInvitation: Equatable, CustomStringConvertible, CustomDebugStringConvertible {
+    static let linkPrefix = "teslatlas-hub://pair?"
+
+    let link: String
+    let expiresAt: Date
+
+    var description: String { "HubPairingInvitation(expiresAt: \(expiresAt))" }
+    var debugDescription: String { description }
+
+    /// The last JSON line that carries a pairing link and its expiry.
+    static func parse(_ output: String) -> HubPairingInvitation? {
+        for line in output.split(whereSeparator: { $0.isNewline }).reversed() {
+            guard let data = String(line).data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let link = root["pairingUri"] as? String,
+                  link.hasPrefix(linkPrefix), link.count <= 4096,
+                  let expiresAtMs = (root["expiresAtMs"] as? NSNumber)?.int64Value,
+                  expiresAtMs > 0 else { continue }
+            return HubPairingInvitation(link: link,
+                                        expiresAt: Date(timeIntervalSince1970: TimeInterval(expiresAtMs) / 1000))
+        }
+        return nil
+    }
+}
+
 struct HubSnapshot {
     enum AccountState {
         case connected, notConfigured, historyOnly, unknown
@@ -468,6 +496,12 @@ struct HubSnapshot {
     var shouldOfferSourceImport: Bool {
         health != .running && accountState == .notConfigured
             && databaseState == .awaitingSetup
+    }
+
+    /// DEC-149: a signed-in Hub with a working database (one that has collected in
+    /// windows) imports history through the history-only path, not first-run setup.
+    var shouldOfferImportAfterWindows: Bool {
+        accountState == .connected && databaseState == .healthy
     }
 
     static let previewRunning = HubSnapshot(
@@ -3880,6 +3914,334 @@ final class HubController {
                 op.finish(.failure(HubActionError.commandFailed(report.message)), completion: completion)
             case let .failure(error):
                 op.finish(.failure(error), completion: completion)
+            }
+        }
+    }
+
+    /// DEC-149: Import History on a Hub that is signed in and has collected in windows.
+    /// The import is the CLI's history-only path, which M03-T23 accepts on such a Hub:
+    /// the service is stopped, the configuration is set to history-only for the run
+    /// (every collector and the Legacy login path off), `migrate --online-snapshot
+    /// --history-only` runs, then the configuration goes back exactly as it was and the
+    /// service starts again when it was running before. The Hub's own sign-in and the
+    /// data it collected in its windows are kept; no handover gate is written.
+    func importHistoryAfterWindows(source: String,
+                                   carID: String,
+                                   passwordFile: String,
+                                   acceptSchemaEvidence: Bool,
+                                   progress: @escaping (HubMigrationProgress) -> Void = { _ in },
+                                   completion: @escaping (Result<Void, Error>) -> Void) {
+        HubAppLog.shared.record("import.requested", category: "history_import",
+                                fields: ["capture_mode": "after_windows"])
+        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        guard !hasPendingMigrationHandover else {
+            completion(.failure(HubActionError.commandFailed(
+                HubL10n.text("hub.importAfterWindows.handoverPending", fallback: "Finish the source application handover before importing history again.")
+            )))
+            return
+        }
+        let checkArguments: [String]
+        do {
+            checkArguments = try compatibilityArguments(source: source, carID: carID,
+                                                        passwordFile: passwordFile,
+                                                        acceptSchemaEvidence: acceptSchemaEvidence,
+                                                        historyOnly: true)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+        guard let op = admit(.migration, phase: "compatibility", completion: completion) else { return }
+        let startAfterwards = snapshot.health == .running || snapshot.health == .degraded
+        runCompatibilityCheck(op, arguments: checkArguments, historyOnly: true) { [self] result in
+            switch result {
+            case let .success(report) where report.mayImport:
+                op.phase("import")
+                runImportAfterWindows(op, source: source, carID: carID,
+                                      passwordFile: passwordFile,
+                                      startAfterwards: startAfterwards,
+                                      progress: progress,
+                                      completion: { op.finish($0, completion: completion) })
+            case let .success(report):
+                op.finish(.failure(HubActionError.commandFailed(report.message)), completion: completion)
+            case let .failure(error):
+                op.finish(.failure(error), completion: completion)
+            }
+        }
+    }
+
+    private func runImportAfterWindows(_ op: HubLifecycleOperation,
+                                       source: String,
+                                       carID: String,
+                                       passwordFile: String,
+                                       startAfterwards: Bool,
+                                       progress: @escaping (HubMigrationProgress) -> Void,
+                                       completion: @escaping (Result<Void, Error>) -> Void) {
+        let originalConfig: String
+        do {
+            guard let content = try readConfigIfPresent() else {
+                throw HubActionError.commandFailed(
+                    HubL10n.text("hub.importAfterWindows.notSetUp", fallback: "Set up Hub before importing history.")
+                )
+            }
+            originalConfig = content
+        } catch {
+            completion(.failure(error))
+            return
+        }
+        let arguments = ["--config", configPath.path, "migrate",
+                         "--source", source, "--car-id", carID,
+                         "--postgres-password-file", passwordFile,
+                         "--online-snapshot",
+                         "--accept-schema-evidence",
+                         "--history-only"]
+        let finish: (Result<Void, Error>) -> Void = { result in
+            DispatchQueue.main.async { completion(result) }
+        }
+        // Whatever the import did, the configuration goes back first; Hub starts again
+        // only on the configuration it had.
+        let settle: (Result<Void, Error>) -> Void = { [self] outcome in
+            do {
+                try restoreConfig(originalConfig)
+            } catch {
+                HubAppLog.shared.record("import.config_restore.failed", category: "history_import",
+                                        level: "ERROR", fields: ["error_code": HubAppLog.errorCode(error)])
+                finish(.failure(HubActionError.commandFailed(
+                    HubL10n.format("hub.importAfterWindows.restoreFailed", fallback: "Hub could not put its configuration back after the import: %1$@ Hub stays stopped.", arguments: [String(describing: error.localizedDescription)])
+                )))
+                return
+            }
+            guard startAfterwards else { finish(outcome); return }
+            op.phase("start")
+            op.service(["service", "start"]) { startResult in
+                switch (outcome, startResult) {
+                case (.success, .success):
+                    finish(.success(()))
+                case let (.success, .failure(error)):
+                    finish(.failure(HubActionError.commandFailed(
+                        HubL10n.format("hub.importAfterWindows.startFailed", fallback: "History was imported, but Hub did not start again: %1$@ Start Hub from the dashboard.", arguments: [String(describing: error.localizedDescription)])
+                    )))
+                case (.failure, _):
+                    finish(outcome)
+                }
+            }
+        }
+        let runImport = { [self] in
+            do {
+                try restoreConfig(Self.historyOnlyImportConfig(originalConfig))
+            } catch {
+                settle(.failure(error))
+                return
+            }
+            op.phase("migrate")
+            let progressDelivery = HubMigrationProgressDelivery()
+            HubAppLog.shared.record("import.process.started", category: "history_import",
+                                    fields: ["capture_mode": "after_windows"])
+            op.run(arguments, onOutputLine: { line in
+                guard let update = Self.parseMigrationProgress(line) else { return }
+                progressDelivery.deliver(update, to: progress)
+            }) { result in
+                progressDelivery.cancel()
+                switch result {
+                case let .success(output):
+                    guard Self.containsOnlineMigrationReport(output) else {
+                        HubAppLog.shared.record("import.process.invalid_report", category: "history_import",
+                                                level: "ERROR")
+                        settle(.failure(HubActionError.commandFailed(
+                            HubL10n.text("hub.importAfterWindows.noReport", fallback: "The import returned no valid completion report.")
+                        )))
+                        return
+                    }
+                    HubAppLog.shared.record("import.completed", category: "history_import",
+                                            fields: ["capture_mode": "after_windows"])
+                    settle(.success(()))
+                case let .failure(error):
+                    HubAppLog.shared.record("import.process.failed", category: "history_import",
+                                            level: "ERROR",
+                                            fields: ["error_code": HubAppLog.errorCode(error)])
+                    settle(.failure(error))
+                }
+            }
+        }
+        guard isServiceInstalled else {
+            runImport()
+            return
+        }
+        // This controls Teslatlas Hub only. The source application is never stopped or changed.
+        op.phase("stop")
+        op.service(["service", "stop"]) { stopResult in
+            switch stopResult {
+            case .success: runImport()
+            case let .failure(error): finish(.failure(error))
+            }
+        }
+    }
+
+    /// The configuration a history-only import needs, for the length of the import:
+    /// collection interval 0, `[collector.legacy_auth] enabled = false`, and no
+    /// `[collector.fleet_telemetry]` table. Everything else is kept as written.
+    static func historyOnlyImportConfig(_ content: String) -> String {
+        var updated = settingCollectorInterval(0, in: content)
+        updated = removingTables(named: "collector.fleet_telemetry", in: updated)
+        updated = settingTableKey("enabled", to: "false", table: "collector.legacy_auth", in: updated)
+        return updated
+    }
+
+    /// Removes the table `name` and its subtables (`[name.*]`).
+    static func removingTables(named name: String, in content: String) -> String {
+        var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        func header(_ line: String) -> String? {
+            let value = String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard value.hasPrefix("["), value.hasSuffix("]") else { return nil }
+            return value.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).trimmingCharacters(in: .whitespaces)
+        }
+        var index = 0
+        while index < lines.count {
+            guard let table = header(lines[index]), table == name || table.hasPrefix(name + ".") else {
+                index += 1
+                continue
+            }
+            let end = lines[(index + 1)...].firstIndex { header($0) != nil } ?? lines.endIndex
+            lines.removeSubrange(index..<end)
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Sets `key = value` in the table `[table]`, adding the key or the table when missing.
+    static func settingTableKey(_ key: String, to value: String, table: String, in content: String) -> String {
+        var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        func uncommented(_ line: String) -> String {
+            String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func isTableHeader(_ line: String) -> Bool {
+            let value = uncommented(line)
+            return value.hasPrefix("[") && value.contains("]")
+        }
+        if let start = lines.firstIndex(where: { uncommented($0) == "[\(table)]" }) {
+            let end = lines[(start + 1)...].firstIndex(where: isTableHeader) ?? lines.endIndex
+            if let setting = lines[(start + 1)..<end].firstIndex(where: { line in
+                let value = uncommented(line)
+                guard let equals = value.firstIndex(of: "=") else { return false }
+                return value[..<equals].trimmingCharacters(in: .whitespaces) == key
+            }) {
+                let indentation = String(lines[setting].prefix { $0 == " " || $0 == "\t" })
+                lines[setting] = "\(indentation)\(key) = \(value)"
+            } else {
+                lines.insert("\(key) = \(value)", at: start + 1)
+            }
+        } else {
+            if !lines.isEmpty && lines.last != "" { lines.append("") }
+            lines.append("[\(table)]")
+            lines.append("\(key) = \(value)")
+            if content.hasSuffix("\n") { lines.append("") }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: Pair a phone (DEC-152)
+
+    /// This Mac's Bonjour name; tests replace it.
+    var localHostNameProvider: () -> String? = {
+        SCDynamicStoreCopyLocalHostName(nil) as String?
+    }
+
+    /// `<name>.local` for a Bonjour name the Hub accepts: one label of lowercase
+    /// letters, digits and hyphens. Anything else is nil.
+    static func lanHostName(from localHostName: String?) -> String? {
+        guard let name = localHostName?.lowercased(), !name.isEmpty, name.count <= 63,
+              !name.hasPrefix("-"), !name.hasSuffix("-"),
+              name.unicodeScalars.allSatisfy({ ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "-" })
+        else { return nil }
+        return name + ".local"
+    }
+
+    /// The `status` of a `lan-tls` report: `created` or `existing`.
+    static func lanTLSStatus(from output: String) -> String? {
+        for line in output.split(whereSeparator: { $0.isNewline }).reversed() {
+            guard let data = String(line).data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let status = root["status"] as? String,
+                  status == "created" || status == "existing" else { continue }
+            return status
+        }
+        return nil
+    }
+
+    /// Pair a phone: sets up the LAN TLS identity when none is configured (`lan-tls`,
+    /// then a restart so the Hub listens on it), then asks the running Hub for one
+    /// single-use pairing link. The link is handed to the caller only: it is never
+    /// logged, written or kept by the controller.
+    func pairPhone(completion: @escaping (Result<HubPairingInvitation, Error>) -> Void) {
+        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        guard snapshot.health == .running else {
+            completion(.failure(HubActionError.commandFailed(
+                HubL10n.text("hub.pairing.notRunning", fallback: "Start Hub before pairing a phone.")
+            )))
+            return
+        }
+        guard let host = Self.lanHostName(from: localHostNameProvider()) else {
+            completion(.failure(HubActionError.commandFailed(
+                HubL10n.text("hub.pairing.noLocalName", fallback: "This Mac has no usable local network name. Set one in System Settings, General, Sharing, Local hostname.")
+            )))
+            return
+        }
+        guard let op = admit(.restart, phase: "tls", completion: completion) else { return }
+        HubAppLog.shared.record("pairing.requested", category: "pairing")
+        let finish: (Result<HubPairingInvitation, Error>) -> Void = { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    HubAppLog.shared.record("pairing.link_ready", category: "pairing")
+                case let .failure(error):
+                    HubAppLog.shared.record("pairing.failed", category: "pairing", level: "ERROR",
+                                            fields: ["error_code": HubAppLog.errorCode(error)])
+                }
+                op.finish(result, completion: completion)
+            }
+        }
+        let requestLink = { [self] in
+            op.phase("pair")
+            op.run(["--config", configPath.path, "control", "pair", "--json"]) { result in
+                switch result {
+                case let .success(output):
+                    guard let invitation = HubPairingInvitation.parse(output) else {
+                        finish(.failure(HubActionError.commandFailed(
+                            HubL10n.text("hub.pairing.unreadable", fallback: "Hub did not return a pairing link. Try again.")
+                        )))
+                        return
+                    }
+                    finish(.success(invitation))
+                case let .failure(error):
+                    finish(.failure(error))
+                }
+            }
+        }
+        op.run(["--config", configPath.path, "lan-tls", "--host", host]) { result in
+            switch result {
+            case let .success(output):
+                switch Self.lanTLSStatus(from: output) {
+                case "existing":
+                    requestLink()
+                case "created":
+                    HubAppLog.shared.record("pairing.lan_tls_created", category: "pairing")
+                    op.phase("restart")
+                    op.service(["service", "restart"]) { restart in
+                        switch restart {
+                        case .success: requestLink()
+                        case let .failure(error):
+                            finish(.failure(HubActionError.commandFailed(
+                                HubL10n.format("hub.pairing.restartFailed", fallback: "The local network identity is set up, but Hub did not restart: %1$@", arguments: [String(describing: error.localizedDescription)])
+                            )))
+                        }
+                    }
+                default:
+                    finish(.failure(HubActionError.commandFailed(
+                        HubL10n.text("hub.pairing.tlsUnreadable", fallback: "Hub could not report its local network identity.")
+                    )))
+                }
+            case let .failure(error):
+                finish(.failure(error))
             }
         }
     }
