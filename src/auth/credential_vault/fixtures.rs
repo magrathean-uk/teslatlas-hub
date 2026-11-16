@@ -49,6 +49,25 @@ static EXCLUSION_WAITS: Mutex<std::collections::BTreeMap<std::path::PathBuf, Exc
 pub(crate) fn wait_in_next_exclusion(secrets: &Path, wait: ExclusionWait) {
     EXCLUSION_WAITS.lock().expect("exclusion waits").insert(secrets.to_owned(), wait);
 }
+/// The wait of the next durability sync of `path`, in place of the sync's own
+/// (M04-T09): the catalogue path for the credential connection's barrier, the
+/// `secrets/` path for the keyring proof at open. The closure stands in for the
+/// wait and returns whether the sync then fails. Keyed by the path, so parallel
+/// tests do not see each other's.
+#[cfg(test)]
+pub(crate) type SyncWait = Box<dyn FnOnce() -> bool + Send>;
+#[cfg(test)]
+static SYNC_WAITS: Mutex<std::collections::BTreeMap<std::path::PathBuf, SyncWait>> = Mutex::new(std::collections::BTreeMap::new());
+#[cfg(test)]
+pub(crate) fn wait_in_next_sync(path: &Path, wait: SyncWait) {
+    SYNC_WAITS.lock().expect("sync waits").insert(path.to_owned(), wait);
+}
+/// Runs the registered wait of `path`, if any: `true` when the sync then fails.
+#[cfg(test)]
+pub(crate) fn sync_wait(path: &Path) -> bool {
+    let wait = SYNC_WAITS.lock().expect("sync waits").remove(path);
+    wait.is_some_and(|wait| wait())
+}
 #[cfg(test)]
 pub(crate) fn replace_legacy_supplied_pair(store: &HubStore, data: &Path, access: &str, refresh: &str, schedule: Option<(i64,i64)>) -> Result<Uuid,CredentialStoreError> {
     let mut entry = CredentialEntry::own_login_fixture(Zeroizing::new(access.into()),Zeroizing::new(refresh.into()))?;

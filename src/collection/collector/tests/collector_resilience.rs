@@ -1561,6 +1561,84 @@ async fn collector_resilience_window_expiry_during_vault_startup_stops_its_mutat
     assert_eq!(tripwire.requests(), 0, "nothing is sent");
 }
 
+/// M04-T09 (REV2-CX-M04-T05 finding 1): the routed window ends while the vault's
+/// durability probe waits in its barrier, and the barrier then fails. The probe's
+/// `unavailable` record would be a new transaction after that wait; the connection
+/// holds the startup fence, so it does not begin. The start ends with the window's
+/// code, and nothing else starts.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn collector_resilience_window_expiry_during_probe_barrier_records_nothing() {
+    crate::crypto::install_default_provider();
+    let tripwire = Tripwire::spawn().await;
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("Hub store");
+    seed_supervised_restart_import(&store);
+    let now = current_epoch_millis().expect("clock").div_euclid(1_000);
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(
+        &store,
+        temporary.path(),
+        "window-access",
+        "window-refresh",
+        Some((now + 28_800, now + 14_400)),
+    )
+    .expect("supplied pair");
+    let window = TestWindow::open(60);
+    let (endpoint, _port) = reserved_stream_endpoint();
+    let endpoint = endpoint.replacen("ws://", "wss://", 1);
+    let _route = window.route(&endpoint);
+    let mut config = supervised_restart_test_config(temporary.path());
+    config.collector.stream_endpoint_override = Some(endpoint);
+    let durability = |store: &HubStore| {
+        store
+            .credential_format_state()
+            .expect("format state")
+            .expect("converted store")
+            .durability
+    };
+    let durability_before = durability(&store);
+    let waited = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let clock = Arc::clone(&window.clock);
+    let waited_in = Arc::clone(&waited);
+    // The barrier's wait outlasts the window, then the barrier fails.
+    crate::auth::credential_vault::fixtures::wait_in_next_sync(
+        store.database_path(),
+        Box::new(move || {
+            clock.advance(61);
+            waited_in.store(true, Ordering::SeqCst);
+            true
+        }),
+    );
+    let admission =
+        crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let client_url = tripwire.url.clone();
+    let result = timeout(
+        SUPERVISED_RESTART_WAIT,
+        run_supervised_with_clients_for_admitted_user(
+            &store,
+            &config,
+            admission,
+            ready_tx,
+            move |_| Ok(OwnerApi::for_fake_http(client_url, Duration::from_secs(2))?),
+            |_| -> Result<FleetClients, CollectorError> {
+                panic!("Fleet clients were built by an Owner-wire start")
+            },
+            std::future::pending::<()>(),
+        ),
+    )
+    .await
+    .expect("the start ends by itself");
+    assert!(waited.load(Ordering::SeqCst), "the probe reached its barrier");
+    assert!(
+        matches!(result, Err(CollectorError::CollectionWindowClosed("window_closed"))),
+        "{result:?}"
+    );
+    assert!(ready_rx.await.is_err(), "no cursor key is handed over");
+    assert_eq!(durability(&store), durability_before, "no durability record after the window ended");
+    assert_nothing_started(&store, "window ended during the probe barrier");
+    assert_eq!(tripwire.requests(), 0, "nothing is sent");
+}
+
 /// M04-T08 (REV-CX-M04-T05 finding 2): a tick with an actual snapshot publishes
 /// every scheduled car, here the read car and another, unchanged one. Their
 /// identities, seed cars and settings commit with the tick; after that commit the

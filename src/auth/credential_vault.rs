@@ -270,6 +270,20 @@ pub(crate) struct CredentialVault {
     #[cfg(test)] lock_seam: Mutex<Option<Arc<VaultLockSeam>>>,
     #[cfg(test)] read_pause: Mutex<Option<Arc<ReadPauseSeam>>>,
 }
+/// See [`CredentialVault::startup_exclusion`].
+struct FencedExclusion<'a> {
+    inner: &'a dyn BackupExclusion,
+    fence: Option<crate::credentials::LossObserver>,
+}
+impl BackupExclusion for FencedExclusion<'_> {
+    fn ensure_excluded(&self, secrets_path: &Path) -> Result<ExclusionState, CredentialKeyError> {
+        let refused = || self.fence.as_ref().is_some_and(|refused| refused());
+        if refused() { return Err(CredentialKeyError::BackupExclusionFailed); }
+        let result = self.inner.ensure_excluded(secrets_path);
+        if refused() { return Err(CredentialKeyError::BackupExclusionFailed); }
+        result
+    }
+}
 impl CredentialVault {
     /// Open once at the runtime composition boundary, before building managers.
     pub(crate) fn open_for_runtime(
@@ -323,6 +337,11 @@ impl CredentialVault {
     /// exclusion and, after its wait, its record, the repairing key load, the exposure
     /// and barrier records, Phase B and a resumed rotation), so a window that ends
     /// during the sequence, or during a wait inside it, stops it before the next one.
+    /// The connection holds the same fence for the whole sequence (M04-T09), so every
+    /// transaction inside a composite step asks it too: the failure record after a
+    /// probe or keyring barrier, and each commit, purge, marker, reservation and
+    /// reseal of Phase B and a resumed rotation. A key file change follows a fenced
+    /// exclusion or barrier. A start the fence stopped ends with its refusal.
     fn open_unregistered_fenced(store: HubStore, admission: Arc<AdmittedUserHub>, data_dir: &Path, options: VaultOptions,
         fence: Option<&crate::credentials::LossObserver>) -> Result<Arc<Self>, CredentialStoreError> {
         let fenced = || if fence.is_some_and(|refused| refused()) { Err(CredentialStoreError::SensitiveAccessUnavailable) } else { Ok(()) };
@@ -339,8 +358,9 @@ impl CredentialVault {
             keys: RwLock::new(None), lock: Mutex::new(VaultState { connection, commits_issued: 0,
                 commits_proven: 0, read_only: false, exclusion_verified: false, secrets: None, resume_error: None,
                 #[cfg(test)] block_completion_barriers: false }) });
-        {
+        let opened = (|| -> Result<(), CredentialStoreError> {
             let mut state = vault.lock()?;
+            state.connection.set_startup_fence(fence.cloned());
             #[cfg(test)]
             if vault.options.probe_failure { state.connection.set_test_barrier_failure(true); }
             #[cfg(test)] PROBE_CONTROL.with(|control|{if let Some(control)=control.borrow_mut().as_mut(){control(&mut state.connection);}});
@@ -348,6 +368,7 @@ impl CredentialVault {
             if let Err(error)=state.connection.probe_credential_durability(){state.read_only=true;state.resume_error=Some(error.into());}
             #[cfg(debug_assertions)]
             if entry::test_probe_failure() {
+                fenced()?;
                 state.read_only = true; state.resume_error = Some(CredentialStoreError::DurabilityUnavailable);
                 vault.store.open()?.execute(
                     "UPDATE credential_format_state SET durability='unavailable', durability_probed_at_ms=?1 WHERE singleton_id=1",
@@ -422,8 +443,21 @@ impl CredentialVault {
                 if matches!(error, CredentialStoreError::DurabilityUnavailable) { state.read_only = true; }
                 state.resume_error = Some(error);
             }
+            fenced()?;
+            state.connection.set_startup_fence(None);
+            Ok(())
+        })();
+        if let Err(error) = opened {
+            fenced()?;
+            return Err(error);
         }
         Ok(vault)
+    }
+    /// The backup exclusion of a composite startup step under the connection's
+    /// startup fence (M04-T09): the exclusion may wait (tmutil), and a key file is
+    /// published after it, so the fence is asked before and again after the wait.
+    fn startup_exclusion(&self, connection: &CredentialConnection) -> FencedExclusion<'_> {
+        FencedExclusion { inner: self.exclusion(), fence: connection.startup_fence() }
     }
     fn exclusion(&self) -> &dyn BackupExclusion {
         #[cfg(any(test, debug_assertions))]
@@ -446,6 +480,8 @@ impl CredentialVault {
     fn prove_keyring(&self, state: &VaultState) -> Result<(), CredentialStoreError> {
         use std::os::fd::AsFd;
         let secrets = state.secrets.as_ref().unwrap();
+        #[cfg(test)]
+        if fixtures::sync_wait(secrets.path()) { return Err(CredentialStoreError::DurabilityUnavailable); }
         match secrets.inspect_entry(credential_keys::KEYRING_NAME).map_err(|_| CredentialStoreError::DurabilityUnavailable)? {
             EntryState::Regular(fd) => durable_sync_fd(fd.as_fd()).map_err(|_| CredentialStoreError::DurabilityUnavailable)?,
             _ => return Err(CredentialKeyError::KeyringMissing.into()),
@@ -457,9 +493,10 @@ impl CredentialVault {
         // pre-upgrade pairs, so no open loads the cursor key or any
         // pre-upgrade key material for them.
         let VaultState { connection, commits_issued, secrets, .. } = state;
+        let exclusion = self.startup_exclusion(connection);
         let mut context = CredentialPhaseB { data_dir: &self.data_dir, sqlite_temp_dir: &self.data_dir,
             admission: &self.admission, secrets: secrets.as_ref().unwrap(), keys,
-            exclusion: self.exclusion(), now_ms: self.now_ms()? };
+            exclusion: &exclusion, now_ms: self.now_ms()? };
         credential_migration::run_phase_b(connection, &mut context, &mut || *commits_issued += 1)?;
         // M has passed the barriers of every counted commit before returning.
         state.commits_proven = state.commits_issued;
@@ -649,7 +686,9 @@ impl CredentialVault {
         // exposure; a resumed one may hold a key the exposed file carried.
         let fresh = keys.as_ref().ok_or(CredentialKeyError::KeyringMissing)?.keyring().previous.is_none();
         if fresh {
-            let rotated = credential_keys::begin_rotation(state.secrets.as_ref().unwrap(), self.exclusion(), keys.as_ref().unwrap(), (self.now_ms()? / 1000) as u64);
+            state.connection.startup_fenced()?;
+            let exclusion = self.startup_exclusion(&state.connection);
+            let rotated = credential_keys::begin_rotation(state.secrets.as_ref().unwrap(), &exclusion, keys.as_ref().unwrap(), (self.now_ms()? / 1000) as u64);
             #[cfg(test)] rotation_key_events();
             *keys = Some(Self::key_result(state, rotated)?);
         }
@@ -715,6 +754,8 @@ impl CredentialVault {
         let rotating = keys.as_mut().unwrap();
         // Already recorded above; the finished handle then reports only its own reload.
         rotating.exposure_suspected = false;
+        // M04-T09: the barrier waited; the keyring file change is a later mutation.
+        state.connection.startup_fenced()?;
         let finished = credential_keys::finish_rotation(state.secrets.as_ref().unwrap(), rotating);
         #[cfg(test)] rotation_key_events();
         *keys = Some(Self::key_result(state, finished)?);

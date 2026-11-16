@@ -417,8 +417,63 @@ impl std::fmt::Debug for CredentialPairPresence {
             .finish()
     }
 }
-pub struct CredentialConnection {
+/// The vault's startup fence (M04-T08, M04-T09): `true` once the opening must
+/// stop, for example because the collection window it runs in has ended.
+pub(crate) type CredentialStartupFence = std::sync::Arc<dyn Fn() -> bool + Send + Sync>;
+/// The credential connection's SQLite handle with the vault's startup fence
+/// (M04-T09). While a fenced vault opening holds a fence, every write transaction,
+/// autocommit write and batch begun on this handle asks it first, so a window that
+/// ended during an earlier wait (a barrier, a key file sync, a backup exclusion)
+/// stops the next independent transaction before it begins: the failure records
+/// after a barrier, Phase B's commits, purge and markers, and a resumed rotation's
+/// reservation and reseal included. Reads are not fenced, and the opening clears
+/// the fence when it ends, so the settlement of a permitted exchange keeps its own
+/// authority.
+struct StartupFencedConnection {
     connection: Connection,
+    fence: Option<CredentialStartupFence>,
+}
+impl StartupFencedConnection {
+    fn new(connection: Connection) -> Self {
+        Self { connection, fence: None }
+    }
+    fn startup_refusal(&self) -> rusqlite::Result<()> {
+        if self.fence.as_ref().is_some_and(|refused| refused()) {
+            return Err(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ABORT),
+                Some("credential startup fence refused the transaction".to_owned()),
+            ));
+        }
+        Ok(())
+    }
+    fn transaction_with_behavior(&mut self, behavior: TransactionBehavior) -> rusqlite::Result<Transaction<'_>> {
+        if !matches!(behavior, TransactionBehavior::Deferred) {
+            self.startup_refusal()?;
+        }
+        self.connection.transaction_with_behavior(behavior)
+    }
+    fn execute<P: rusqlite::Params>(&self, sql: &str, params: P) -> rusqlite::Result<usize> {
+        self.startup_refusal()?;
+        self.connection.execute(sql, params)
+    }
+    fn execute_batch(&self, sql: &str) -> rusqlite::Result<()> {
+        self.startup_refusal()?;
+        self.connection.execute_batch(sql)
+    }
+}
+impl std::ops::Deref for StartupFencedConnection {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        &self.connection
+    }
+}
+impl std::ops::DerefMut for StartupFencedConnection {
+    fn deref_mut(&mut self) -> &mut Connection {
+        &mut self.connection
+    }
+}
+pub struct CredentialConnection {
+    connection: StartupFencedConnection,
     database_path: PathBuf,
     barrier_directory: File,
     migration_state: CredentialMigrationRuntime,
@@ -517,7 +572,7 @@ impl HubStore {
                     #[cfg(test)]
                     fixture: self.fixture_vault.clone(),
                 },
-                connection,
+                connection: StartupFencedConnection::new(connection),
                 database_path: self.database_path.clone(),
                 barrier_directory,
                 migration_state: CredentialMigrationRuntime::default(),
@@ -1463,10 +1518,34 @@ impl CredentialConnection {
         self.events.push("reservation_barrier");
         Ok(())
     }
+    /// Installs (or, with `None`, clears) the vault's startup fence (M04-T09); see
+    /// [`StartupFencedConnection`]. Only a fenced vault opening sets it, under its lock.
+    pub(crate) fn set_startup_fence(&mut self, fence: Option<CredentialStartupFence>) {
+        self.connection.fence = fence;
+    }
+    /// The installed startup fence, for a wait that is not on this connection.
+    pub(crate) fn startup_fence(&self) -> Option<CredentialStartupFence> {
+        self.connection.fence.clone()
+    }
+    /// The startup fence's refusal, for an independent mutation that is not a
+    /// transaction on this connection (a file change, a WAL checkpoint).
+    pub(crate) fn startup_fenced(&self) -> Result<(), StoreError> {
+        self.connection.startup_refusal().map_err(StoreError::Begin)
+    }
+    /// The barrier, then the startup fence: the sync may wait, and whatever follows
+    /// a passed barrier (a file removal, a key file change) is a later mutation.
     pub(crate) fn credential_durability_barrier(&mut self) -> Result<(), StoreError> {
+        self.credential_durability_sync()?;
+        self.startup_fenced()
+    }
+    fn credential_durability_sync(&mut self) -> Result<(), StoreError> {
         #[cfg(test)]
         {
             self.barrier_calls += 1;
+        }
+        #[cfg(test)]
+        if crate::auth::credential_vault::fixtures::sync_wait(&self.database_path) {
+            return Err(StoreError::CatalogueDurability(std::io::Error::from_raw_os_error(5)));
         }
         #[cfg(test)]
         if self.barrier_failure || self.barrier_failure_at == Some(self.barrier_calls) {
@@ -1541,6 +1620,8 @@ impl CredentialConnection {
         let mut wal = self.database_path.as_os_str().to_os_string();
         wal.push("-wal");
         for attempt in 0..5 {
+            // The checkpoint rewrites the catalogue; a retry follows a wait.
+            self.startup_fenced()?;
             #[cfg(test)] crate::auth::credential_vault::fixtures::power_event("wal_scrub_attempt", None);
             let (busy, _, _): (i64, i64, i64) = self
                 .connection
@@ -2218,10 +2299,11 @@ impl CredentialConnection {
             self.events.push("probe_stamp_commit");
         }
         #[cfg(test)] before_barrier();
-        if let Err(error) = self.credential_durability_barrier() {
+        if let Err(error) = self.credential_durability_sync() {
             self.record_unavailable_after_barrier_failure();
             return Err(error);
         }
+        self.startup_fenced()?;
         #[cfg(test)]
         self.events.push("probe_barrier");
         #[cfg(test)] crate::auth::credential_vault::fixtures::probe_event("after_probe_barrier");
@@ -2237,16 +2319,23 @@ impl CredentialConnection {
             self.record_credential_durability("ok")?;
             #[cfg(test)]
             self.events.push("probe_ok_commit");
-            if let Err(error) = self.credential_durability_barrier() {
+            if let Err(error) = self.credential_durability_sync() {
                 self.record_unavailable_after_barrier_failure();
                 return Err(error);
             }
+            self.startup_fenced()?;
             #[cfg(test)]
             self.events.push("probe_ok_barrier");
         }
         Ok(())
     }
     fn record_unavailable_after_barrier_failure(&mut self) {
+        // M04-T09: the failed barrier may have waited past the end of the startup
+        // window; the record is a new transaction, so the fence is asked first.
+        if self.startup_fenced().is_err() {
+            tracing::warn!("credential durability not recorded: the startup fence refused it");
+            return;
+        }
         if let Err(error) = self.record_credential_durability("unavailable") {
             // The diagnostic must not replace the failed barrier's primary error.
             tracing::warn!(
