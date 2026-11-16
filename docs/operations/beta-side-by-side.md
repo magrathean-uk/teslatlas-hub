@@ -91,6 +91,16 @@ tested and independently approved. The steps describe the intended behaviour.
 
 Repeat between windows to keep history current.
 
+On a Hub that is already signed in and has collected in windows, the Mac app runs this
+import from **File > Import History…**. It uses the history-only path: the source must be
+a PostgreSQL database on this Mac (127.0.0.1 or ::1), read with a password file. The app
+stops the Hub, sets the configuration to history-only for the run (collection interval 0,
+Legacy login path off), imports, puts the configuration back exactly as it was and starts
+the Hub again if it was running. The data the Hub collected in its windows is kept; history
+from before it is added beside it. Phones already paired download the car's history again
+once. If the import fails, the configuration is still put back and the Hub is started
+again if it was running.
+
 ## 5. Backups and restore
 
 Planned behaviour (M06; not yet implemented): backups are encrypted, written to a
@@ -109,7 +119,37 @@ folder you choose, and kept as the last few generations.
 - A failed or interrupted backup keeps the last good generation. A wrong password or
   a corrupt bundle is refused without changing the Hub.
 
-## 6. Stopping or removing the Hub
+## 6. Pair a phone
+
+Pairing gives the Tesatlas App on a phone read access to this Hub over the local
+network. The Hub needs a LAN TLS identity for that; the Mac app sets it up the first
+time.
+
+1. Start the Hub and wait until the app shows it running.
+2. Open **Service Details** and choose **Pair a phone…** under Paired devices.
+3. The app runs `teslatlas-hub lan-tls --host <name>.local` with this Mac's local
+   hostname (System Settings, General, Sharing). The first time, it makes a
+   self-signed P-256 certificate valid for 397 days in the Hub data folder's `tls/`
+   (folder 0700, files 0600), sets `bind = "0.0.0.0:8443"` and a `[tls]` table with
+   `https://<name>.local:8443/`, and restarts the Hub. With `[tls]` already set it
+   changes nothing.
+4. The app shows a one-time pairing link with **Copy** and the time it expires
+   (15 minutes). Copy it to the phone, for example with Universal Clipboard, and paste
+   it in Tesatlas. The App pins the certificate named in the link.
+5. Choose **Done**. The new phone appears under Paired devices once it has claimed the
+   link. An unused link stops working at its expiry; choose **Pair a phone…** again
+   for a new one.
+
+The link is a single-use secret: the app never logs or stores it, and it is not
+shown again after **Done**. From a terminal, `teslatlas-hub control pair` prints a
+new link the same way, under "Paste this link in Tesatlas".
+
+The phone and the Mac must be on the same local network, and the Mac firewall must
+allow incoming connections to the Hub. To undo, stop the Hub, restore the previous
+`config.toml` (its `bind` and no `[tls]`) and start the Hub again; revoke paired
+phones under Paired devices.
+
+## 7. Stopping or removing the Hub
 
 Stop: choose **Stop Hub…** in the app (or unload its LaunchAgent) and confirm
 collection has ended. Quitting the app alone leaves the background Hub running. The
