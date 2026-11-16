@@ -771,11 +771,14 @@ final class HubControllerTests: XCTestCase {
         let controller = HubController(commandRunner: runner,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        serviceInstalledOverride: false)
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("hub.tests.redaction.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
         let diagnostics = DiagnosticsWindowController(
             controller: controller,
             savePanelPresenter: { _, _, completion in
                 completion(diagnosticsOutput)
-            }
+            },
+            pasteboard: pasteboard
         )
         let root = try XCTUnwrap(diagnostics.window?.contentView)
         try XCTUnwrap(buttons(in: root).first { $0.title == "Run Again" }).performClick(nil)
@@ -798,7 +801,7 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(raw.string.contains("\"status\":\"ready\""))
         XCTAssertTrue(raw.string.contains("mode=live"))
         try XCTUnwrap(buttons(in: root).first { $0.title == "Copy Report" }).performClick(nil)
-        let diagnosticsCopy = try XCTUnwrap(NSPasteboard.general.string(forType: .string))
+        let diagnosticsCopy = try XCTUnwrap(pasteboard.string(forType: .string))
         try XCTUnwrap(buttons(in: root).first { $0.title == "Save Report…" }).performClick(nil)
         let diagnosticsSaved = try String(contentsOf: diagnosticsOutput, encoding: .utf8)
         for shared in [diagnosticsCopy, diagnosticsSaved] {
@@ -812,7 +815,8 @@ final class HubControllerTests: XCTestCase {
             controller: controller,
             savePanelPresenter: { _, _, completion in
                 completion(logsOutput)
-            }
+            },
+            pasteboard: pasteboard
         )
         logs.renderLogs("locationName=North Annex status=ready\ngeofence=Private Yard; mode=live")
         XCTAssertTrue(logs.textViewForTesting.string.contains("[redacted-location]"))
@@ -821,9 +825,11 @@ final class HubControllerTests: XCTestCase {
         }
         XCTAssertTrue(logs.textViewForTesting.string.contains("status=ready"))
         XCTAssertTrue(logs.textViewForTesting.string.contains("mode=live"))
+        // The logs copy is read from a cleared board, so it cannot be the diagnostics copy.
+        pasteboard.clearContents()
         try XCTUnwrap(buttons(in: logs.window?.contentView).first { $0.title == "Copy" })
             .performClick(nil)
-        let copied = try XCTUnwrap(NSPasteboard.general.string(forType: .string))
+        let copied = try XCTUnwrap(pasteboard.string(forType: .string))
         try XCTUnwrap(buttons(in: logs.window?.contentView).first { $0.title == "Save…" })
             .performClick(nil)
         let logsSaved = try String(contentsOf: logsOutput, encoding: .utf8)
@@ -4297,10 +4303,12 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(text.contains("update it to release 4.4.0 or later"))
     }
 
-    func testHistoryOnlyImportConfigTurnsEveryCollectorPathOffAndKeepsTheRest() {
+    func testHistoryOnlyImportConfigTurnsEveryCollectorPathOffAndKeepsTheRest() throws {
         let original = """
         data_dir = "/tmp/hub"
         bind = "127.0.0.1:8080"
+        notes = ["a", # comment
+          "[collector.fleet_telemetry]"]
 
         [collector]
         provider = "legacy"
@@ -4312,6 +4320,9 @@ final class HubControllerTests: XCTestCase {
 
         [collector.fleet_telemetry]
         hostname = "fixture.example"
+        allowed = [
+          "x",
+        ]
 
         [collector.fleet_telemetry.ingress]
         port = 4443
@@ -4320,54 +4331,111 @@ final class HubControllerTests: XCTestCase {
         enabled = false
 
         """
-        let updated = HubController.historyOnlyImportConfig(original)
+        let updated = try HubController.historyOnlyImportConfig(original)
         XCTAssertEqual(HubController.collectorIntervalSeconds(in: updated), 0)
         XCTAssertTrue(updated.contains("[collector.legacy_auth]\nenabled = false\ntoken_url"))
-        XCTAssertFalse(updated.contains("fleet_telemetry"))
         XCTAssertFalse(updated.contains("fixture.example"))
+        XCTAssertFalse(updated.contains("4443"))
+        XCTAssertFalse(updated.contains("\"x\""))
+        XCTAssertTrue(updated.contains("\"[collector.fleet_telemetry]\"]"), "a string in an array is not a header")
         XCTAssertTrue(updated.contains("[geocoder]\nenabled = false"))
         XCTAssertTrue(updated.contains("provider = \"legacy\""))
 
-        let bare = HubController.historyOnlyImportConfig("data_dir = \"/tmp/hub\"\n")
-        XCTAssertEqual(HubController.collectorIntervalSeconds(in: bare), 0)
-        XCTAssertTrue(bare.contains("[collector.legacy_auth]\nenabled = false\n"))
+        let bare = try HubController.historyOnlyImportConfig("data_dir = \"/tmp/hub\"\n")
+        XCTAssertEqual(bare, "data_dir = \"/tmp/hub\"\n\n[collector]\ninterval_seconds = 0\n\n[collector.legacy_auth]\nenabled = false\n")
+
+        // Quoted and spaced headers are the same tables: no second definition is added.
+        let quoted = try HubController.historyOnlyImportConfig("""
+        [ "collector" ]
+        interval_seconds = 30
+        [collector."legacy_auth"] # owner login
+        enabled = true
+        [ collector . 'fleet_telemetry' ]
+        hostname = "fixture.example"
+        [terrain]
+        enabled = false
+        """)
+        XCTAssertEqual(quoted, "[ \"collector\" ]\ninterval_seconds = 0\n[collector.\"legacy_auth\"] # owner login\nenabled = false\n[terrain]\nenabled = false\n")
+        let missingKeys = try HubController.historyOnlyImportConfig("[collector]\nprovider = \"legacy\"\n[collector.legacy_auth]\ntoken_url = \"u\"\n")
+        XCTAssertEqual(missingKeys, "[collector]\ninterval_seconds = 0\nprovider = \"legacy\"\n[collector.legacy_auth]\nenabled = false\ntoken_url = \"u\"\n")
     }
 
-    func testImportAfterWindowsStopsImportsHistoryOnlyThenRestoresConfigAndStarts() throws {
+    func testHistoryOnlyImportConfigRefusesFormsItCannotRewrite() {
+        for content in [
+            "collector.interval_seconds = 60\n",
+            "[collector]\nlegacy_auth.enabled = true\n",
+            "[collector]\nlegacy_auth = { enabled = true }\n",
+            "[collector]\nfleet_telemetry = { hostname = \"h\" }\n",
+            "collector = { interval_seconds = 60 }\n",
+            "[[collector.legacy_auth]]\nenabled = true\n",
+            "[collector]\nnote = \"\"\"\n[collector.legacy_auth]\n\"\"\"\n",
+            "[collector.\"legacy\\u005fauth\"]\nenabled = true\n",
+            "[collector\nenabled = true\n",
+        ] {
+            XCTAssertThrowsError(try HubController.historyOnlyImportConfig(content), content)
+        }
+    }
+
+    private func afterWindowsController(_ runner: AfterWindowsRunner, service: ScriptedService,
+                                        home: URL, health: HubHealth = .running) -> HubController {
+        HubController(commandRunner: runner, serviceRunner: service,
+                      homeDirectory: home, serviceInstalledOverride: true,
+                      initialSnapshot: signedInSnapshot(health: health))
+    }
+
+    private func importAfterWindows(_ controller: HubController) -> Result<Void, Error> {
+        let finished = expectation(description: "import after windows finished")
+        var outcome: Result<Void, Error> = .failure(HubActionError.commandFailed("not run"))
+        controller.importHistoryAfterWindows(source: Self.fixtureSource, carID: "1",
+                                             passwordFile: "/private/password",
+                                             acceptSchemaEvidence: true) { result in
+            outcome = result
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 3)
+        return outcome
+    }
+
+    func testImportAfterWindowsPausesImportsAPrivateCopyThenRestartsConfirmedServing() throws {
         let events = EventRecorder()
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let original = try writeSignedInConfig(in: home)
         let runner = AfterWindowsRunner(events: events)
-        runner.onMigrate = { [weak runner, unowned self] in runner?.configDuringImport = try? self.configContents(in: home) }
-        let service = ScriptedService(events: events)
-        let controller = HubController(commandRunner: runner, serviceRunner: service,
-                                       homeDirectory: home, serviceInstalledOverride: true,
-                                       initialSnapshot: signedInSnapshot())
-        let finished = expectation(description: "import after windows finished")
-        controller.importHistoryAfterWindows(source: Self.fixtureSource, carID: "1",
-                                             passwordFile: "/private/password",
-                                             acceptSchemaEvidence: true) { result in
-            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
-            finished.fulfill()
+        let service = ScriptedService(events: events, loadState: .loaded)
+        let controller = afterWindowsController(runner, service: service, home: home)
+        var recordDuringImport: HubController.HubImportRecoveryRecord?
+        var importCopy: String?
+        var liveDuringImport: String?
+        runner.onMigrate = { [unowned self] in
+            recordDuringImport = controller.pendingImportRecovery
+            importCopy = try? String(contentsOf: controller.importConfigPath, encoding: .utf8)
+            liveDuringImport = try? self.configContents(in: home)
         }
-        wait(for: [finished], timeout: 2)
 
-        XCTAssertEqual(events.values, ["check", "service:stop", "migrate", "service:start"])
+        XCTAssertNoThrow(try importAfterWindows(controller).get())
+        XCTAssertEqual(events.values, ["check", "service:pause", "migrate", "service:recover", "serving"])
         let migrate = try XCTUnwrap(runner.arguments.first { $0.contains("migrate") })
+        XCTAssertEqual(Array(migrate.prefix(2)), ["--config", controller.importConfigPath.path])
         for flag in ["--online-snapshot", "--history-only", "--accept-schema-evidence"] {
             XCTAssertTrue(migrate.contains(flag), flag)
         }
         XCTAssertFalse(migrate.contains("--preserve-existing-credentials"))
-        let during = try XCTUnwrap(runner.configDuringImport)
-        XCTAssertEqual(HubController.collectorIntervalSeconds(in: during), 0)
-        XCTAssertTrue(during.contains("[collector.legacy_auth]\nenabled = false"))
-        XCTAssertEqual(try configContents(in: home), original, "the configuration is back as it was")
+        let copy = try XCTUnwrap(importCopy)
+        XCTAssertEqual(HubController.collectorIntervalSeconds(in: copy), 0)
+        XCTAssertTrue(copy.contains("[collector.legacy_auth]\nenabled = false"))
+        XCTAssertEqual(liveDuringImport, original, "the Hub's own configuration is never edited")
+        XCTAssertEqual(recordDuringImport, HubController.HubImportRecoveryRecord(phase: "import", serviceWasLoaded: true))
+        XCTAssertEqual(try configContents(in: home), original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: controller.importConfigPath.path))
+        XCTAssertFalse(controller.hasPendingImportRecovery, "retired after the confirmed restart")
         XCTAssertFalse(controller.hasPendingMigrationHandover, "a signed-in Hub writes no handover gate")
+        let serving = try XCTUnwrap(runner.arguments.last)
+        XCTAssertEqual(Array(serving.suffix(3)), ["serving-check", "--wait-seconds", "45"])
         XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
     }
 
-    func testImportAfterWindowsFailureRestoresConfigAndStartsTheHubAgain() throws {
+    func testImportAfterWindowsFailureRestartsTheHubAndReportsBothFailures() throws {
         for (label, migrateResult) in [
             ("refused", Result<String, Error>.failure(HubActionError.commandFailed("rebase_required"))),
             ("no report", .success("{}"))
@@ -4378,23 +4446,92 @@ final class HubControllerTests: XCTestCase {
             let original = try writeSignedInConfig(in: home)
             let runner = AfterWindowsRunner(events: events)
             runner.migrateResult = migrateResult
-            let controller = HubController(commandRunner: runner,
-                                           serviceRunner: ScriptedService(events: events),
-                                           homeDirectory: home, serviceInstalledOverride: true,
-                                           initialSnapshot: signedInSnapshot())
-            let finished = expectation(description: label)
-            var failure: Error?
-            controller.importHistoryAfterWindows(source: Self.fixtureSource, carID: "1",
-                                                 passwordFile: "/private/password",
-                                                 acceptSchemaEvidence: true) { result in
-                if case let .failure(error) = result { failure = error }
-                finished.fulfill()
-            }
-            wait(for: [finished], timeout: 2)
-            XCTAssertNotNil(failure, label)
-            XCTAssertEqual(events.values, ["check", "service:stop", "migrate", "service:start"], label)
+            let controller = afterWindowsController(runner, service: ScriptedService(events: events, loadState: .loaded),
+                                                    home: home)
+            XCTAssertThrowsError(try importAfterWindows(controller).get(), label)
+            XCTAssertEqual(events.values, ["check", "service:pause", "migrate", "service:recover", "serving"], label)
             XCTAssertEqual(try configContents(in: home), original, label)
+            XCTAssertFalse(controller.hasPendingImportRecovery, label)
         }
+
+        // The import and the restart both fail: both are said, and Start Hub is named.
+        let events = EventRecorder()
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeSignedInConfig(in: home)
+        let runner = AfterWindowsRunner(events: events)
+        runner.migrateResult = .failure(HubActionError.commandFailed("rebase_required"))
+        let service = ScriptedService(events: events, loadState: .loaded)
+        service.recoverResult = .failure(HubActionError.commandFailed("bootstrap refused"))
+        let controller = afterWindowsController(runner, service: service, home: home)
+        let error = try XCTUnwrap(importAfterWindows(controller).failureValue)
+        XCTAssertTrue(error.localizedDescription.contains("rebase_required"), error.localizedDescription)
+        XCTAssertTrue(error.localizedDescription.contains("bootstrap refused"), error.localizedDescription)
+        XCTAssertTrue(error.localizedDescription.contains("Choose Start Hub"), error.localizedDescription)
+        XCTAssertEqual(events.values, ["check", "service:pause", "migrate", "service:recover"])
+        XCTAssertTrue(controller.hasPendingImportRecovery, "the owed start is kept for the next launch")
+    }
+
+    func testImportAfterWindowsNeverReportsSuccessWithoutAConfirmedServingHub() throws {
+        // The job loads but its process does not serve (for example the port was taken).
+        let events = EventRecorder()
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeSignedInConfig(in: home)
+        let runner = AfterWindowsRunner(events: events)
+        runner.servingResult = .failure(HubActionError.commandFailed("the Hub service is not serving its configuration on its listener"))
+        let controller = afterWindowsController(runner, service: ScriptedService(events: events, loadState: .loaded),
+                                                home: home)
+        let error = try XCTUnwrap(importAfterWindows(controller).failureValue)
+        XCTAssertTrue(error.localizedDescription.hasPrefix("History was imported, but Hub is not confirmed running again"),
+                      error.localizedDescription)
+        XCTAssertTrue(controller.hasPendingImportRecovery)
+        XCTAssertEqual(controller.pendingImportRecovery?.phase, "restart")
+
+        // While it is owed, a new import is refused before any command.
+        let before = events.values.count
+        XCTAssertThrowsError(try importAfterWindows(controller).get())
+        XCTAssertEqual(events.values.count, before)
+    }
+
+    func testImportAfterWindowsRecoversAPartlyFailedPauseInsteadOfAbandoningIt() throws {
+        let events = EventRecorder()
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let original = try writeSignedInConfig(in: home)
+        let runner = AfterWindowsRunner(events: events)
+        let service = ScriptedService(events: events, loadState: .loaded)
+        service.actionResults["pause"] = .failure(HubActionError.commandFailed("Hub service did not finish stopping."))
+        let controller = afterWindowsController(runner, service: service, home: home)
+        let error = try XCTUnwrap(importAfterWindows(controller).failureValue)
+        XCTAssertTrue(error.localizedDescription.contains("did not finish stopping"), error.localizedDescription)
+        // No import ran; the paused job's owed start ran and was confirmed.
+        XCTAssertEqual(events.values, ["check", "service:pause", "service:recover", "serving"])
+        XCTAssertEqual(try configContents(in: home), original)
+        XCTAssertFalse(controller.hasPendingImportRecovery)
+    }
+
+    func testImportAfterWindowsWaitsForAnImporterThatMayStillWriteBeforeRestarting() throws {
+        let events = EventRecorder()
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeSignedInConfig(in: home)
+        let runner = AfterWindowsRunner(events: events)
+        let quiescence = HubChildQuiescence()
+        quiescence.childMayRun()
+        runner.migrateResult = .failure(HubActionError.commandNotQuiescent(HubActionError.commandTimedOut, quiescence))
+        let controller = afterWindowsController(runner, service: ScriptedService(events: events, loadState: .loaded),
+                                                home: home)
+        let finished = expectation(description: "import settled")
+        controller.importHistoryAfterWindows(source: Self.fixtureSource, carID: "1",
+                                             passwordFile: "/private/password",
+                                             acceptSchemaEvidence: true) { _ in finished.fulfill() }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertEqual(events.values, ["check", "service:pause", "migrate"],
+                       "nothing restarts while the importer may still write")
+        quiescence.childReaped()
+        wait(for: [finished], timeout: 3)
+        XCTAssertEqual(events.values, ["check", "service:pause", "migrate", "service:recover", "serving"])
     }
 
     func testImportAfterWindowsLeavesAStoppedHubStoppedAndRefusesBadInputBeforeCommands() throws {
@@ -4403,16 +4540,12 @@ final class HubControllerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeSignedInConfig(in: home)
         let runner = AfterWindowsRunner(events: events)
-        let controller = HubController(commandRunner: runner,
-                                       serviceRunner: ScriptedService(events: events),
-                                       homeDirectory: home, serviceInstalledOverride: true,
-                                       initialSnapshot: signedInSnapshot(health: .stopped))
-        let finished = expectation(description: "stopped Hub import")
-        controller.importHistoryAfterWindows(source: Self.fixtureSource, carID: "1",
-                                             passwordFile: "/private/password",
-                                             acceptSchemaEvidence: true) { _ in finished.fulfill() }
-        wait(for: [finished], timeout: 2)
-        XCTAssertEqual(events.values, ["check", "service:stop", "migrate"])
+        let controller = afterWindowsController(runner, service: ScriptedService(events: events), home: home,
+                                                health: .stopped)
+        XCTAssertNoThrow(try importAfterWindows(controller).get())
+        XCTAssertEqual(events.values, ["check", "service:pause", "migrate", "service:recover"],
+                       "no start is owed and none is confirmed")
+        XCTAssertFalse(controller.hasPendingImportRecovery)
 
         let refused = expectation(description: "remote source refused")
         controller.importHistoryAfterWindows(source: "postgresql://reader@192.0.2.1/sourcedb", carID: "1",
@@ -4422,7 +4555,63 @@ final class HubControllerTests: XCTestCase {
             refused.fulfill()
         }
         wait(for: [refused], timeout: 1)
-        XCTAssertEqual(events.values.count, 3, "nothing ran for the refused source")
+        XCTAssertEqual(events.values.count, 4, "nothing ran for the refused source")
+
+        // A configuration the import cannot rewrite is refused before anything is paused.
+        let config = home.appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml")
+        try "data_dir = \"/tmp/hub\"\n[collector]\nlegacy_auth = { enabled = true }\n"
+            .write(to: config, atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try importAfterWindows(controller).get())
+        XCTAssertEqual(events.values.count, 4, "no check, pause or import for an unsupported configuration")
+        XCTAssertFalse(controller.hasPendingImportRecovery)
+    }
+
+    func testAnInterruptedImportIsRecoveredAtLaunchOnlyOnceTheHubIsConfirmedServing() throws {
+        for (label, serving, kept) in [
+            ("confirmed", Result<String, Error>.success(#"{"status":"serving","readiness":"not_ready"}"#), false),
+            ("not serving", .failure(HubActionError.commandFailed("not serving")), true)
+        ] {
+            let events = EventRecorder()
+            let home = try temporaryHome()
+            defer { try? FileManager.default.removeItem(at: home) }
+            let original = try writeSignedInConfig(in: home)
+            let runner = AfterWindowsRunner(events: events)
+            runner.servingResult = serving
+            let controller = afterWindowsController(runner, service: ScriptedService(events: events), home: home,
+                                                    health: .stopped)
+            // What a crash during the import leaves: the record and the private copy.
+            try HubController.writeDurablePrivateFile(
+                JSONEncoder().encode(HubController.HubImportRecoveryRecord(phase: "import", serviceWasLoaded: true)),
+                to: controller.importRecoveryPath)
+            try HubController.writeDurablePrivateFile(Data("interval".utf8), to: controller.importConfigPath)
+            let mode = try FileManager.default.attributesOfItem(atPath: controller.importRecoveryPath.path)[.posixPermissions] as? NSNumber
+            XCTAssertEqual(mode?.intValue, 0o600, label)
+
+            let recovered = expectation(description: label)
+            controller.recoverInterruptedImport { recovered.fulfill() }
+            wait(for: [recovered], timeout: 3)
+            XCTAssertEqual(events.values, ["service:start", "serving"], label)
+            XCTAssertEqual(controller.hasPendingImportRecovery, kept, label)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: controller.importConfigPath.path), label)
+            XCTAssertEqual(try configContents(in: home), original, label)
+            XCTAssertTrue(controller.lifecycleCapabilities.isIdle, label)
+        }
+
+        // A Hub that was not loaded is owed nothing: the record is retired with no command.
+        let events = EventRecorder()
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeSignedInConfig(in: home)
+        let controller = afterWindowsController(AfterWindowsRunner(events: events),
+                                                service: ScriptedService(events: events), home: home)
+        try HubController.writeDurablePrivateFile(
+            JSONEncoder().encode(HubController.HubImportRecoveryRecord(phase: "restart", serviceWasLoaded: false)),
+            to: controller.importRecoveryPath)
+        let recovered = expectation(description: "not loaded")
+        controller.recoverInterruptedImport { recovered.fulfill() }
+        wait(for: [recovered], timeout: 3)
+        XCTAssertEqual(events.values, [])
+        XCTAssertFalse(controller.hasPendingImportRecovery)
     }
 
     // MARK: M08-T10 Pair a phone (DEC-152)
@@ -4461,7 +4650,7 @@ final class HubControllerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: home) }
 
         let invitation = try pair(controller).get()
-        XCTAssertEqual(events.values, ["lan-tls", "service:restart", "pair"])
+        XCTAssertEqual(events.values, ["lan-tls", "service:restart", "serving", "pair"])
         XCTAssertEqual(invitation.link, Self.fixtureLink)
         XCTAssertEqual(invitation.expiresAt, Date(timeIntervalSince1970: 1_800_000_000))
         let tls = try XCTUnwrap(runner.arguments.first { $0.contains("lan-tls") })
@@ -4471,13 +4660,39 @@ final class HubControllerTests: XCTestCase {
         XCTAssertFalse(String(reflecting: invitation).contains("fixture-one-time-value"))
         XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
 
-        // With [tls] already configured nothing restarts.
+        // With [tls] already configured and served, nothing restarts.
         let existingEvents = EventRecorder()
         let existing = PairingRunner(events: existingEvents, link: Self.fixtureLink, tlsStatus: "existing")
         let (second, secondHome) = try pairingController(existing, events: existingEvents)
         defer { try? FileManager.default.removeItem(at: secondHome) }
         XCTAssertNoThrow(try pair(second).get())
-        XCTAssertEqual(existingEvents.values, ["lan-tls", "pair"])
+        XCTAssertEqual(existingEvents.values, ["lan-tls", "serving", "pair"])
+        let quick = try XCTUnwrap(existing.arguments.first { $0.contains("serving-check") })
+        XCTAssertEqual(Array(quick.suffix(2)), ["--wait-seconds", "5"])
+    }
+
+    func testPairAPhoneRestartsAHubStillServingAnOlderConfigurationBeforeTheLink() throws {
+        // An earlier TLS restart failed: the identity exists but the running Hub serves the
+        // old loopback configuration. The retry restarts and confirms before any link.
+        let events = EventRecorder()
+        let runner = PairingRunner(events: events, link: Self.fixtureLink, tlsStatus: "existing")
+        runner.servingResults = [.failure(HubActionError.commandFailed("not serving")),
+                                 .success(#"{"status":"serving","readiness":"ready"}"#)]
+        let (controller, home) = try pairingController(runner, events: events)
+        defer { try? FileManager.default.removeItem(at: home) }
+        XCTAssertNoThrow(try pair(controller).get())
+        XCTAssertEqual(events.values, ["lan-tls", "serving", "service:restart", "serving", "pair"])
+
+        // The restart loads the job but its process never serves: no link.
+        let staleEvents = EventRecorder()
+        let stale = PairingRunner(events: staleEvents, link: Self.fixtureLink)
+        stale.servingResults = [.failure(HubActionError.commandFailed("not serving"))]
+        let (staleController, staleHome) = try pairingController(stale, events: staleEvents)
+        defer { try? FileManager.default.removeItem(at: staleHome) }
+        let error = try XCTUnwrap(pair(staleController).failureValue)
+        XCTAssertTrue(error.localizedDescription.contains("did not confirm"), error.localizedDescription)
+        XCTAssertEqual(staleEvents.values, ["lan-tls", "service:restart", "serving"])
+        XCTAssertTrue(staleController.lifecycleCapabilities.isIdle)
     }
 
     func testPairAPhoneFailuresStopBeforeTheLinkIsRequested() throws {
@@ -6257,7 +6472,7 @@ private final class AfterWindowsRunner: HubCommandRunning {
         #"{"status":"imported","captureMode":"online-snapshot","credentialScope":"history-only"}"#
     )
     var onMigrate: (() -> Void)?
-    var configDuringImport: String?
+    var servingResult: Result<String, Error> = .success(#"{"status":"serving","readiness":"ready"}"#)
     private(set) var arguments: [[String]] = []
 
     init(events: EventRecorder) { self.events = events }
@@ -6277,6 +6492,11 @@ private final class AfterWindowsRunner: HubCommandRunning {
             completion(migrateResult)
             return
         }
+        if arguments.contains("serving-check") {
+            events.append("serving")
+            completion(servingResult)
+            return
+        }
         events.append("command")
         completion(.failure(HubActionError.commandFailed("unexpected command")))
     }
@@ -6287,6 +6507,8 @@ private final class PairingRunner: HubCommandRunning {
     private let events: EventRecorder
     private let link: String
     var tlsResult: Result<String, Error>
+    /// Consumed one per serving check; the last entry repeats.
+    var servingResults: [Result<String, Error>] = [.success(#"{"status":"serving","readiness":"not_ready"}"#)]
     private(set) var arguments: [[String]] = []
 
     init(events: EventRecorder, link: String, tlsStatus: String = "created") {
@@ -6300,6 +6522,11 @@ private final class PairingRunner: HubCommandRunning {
         if arguments.contains("lan-tls") {
             events.append("lan-tls")
             completion(tlsResult)
+            return
+        }
+        if arguments.contains("serving-check") {
+            events.append("serving")
+            completion(servingResults.count > 1 ? servingResults.removeFirst() : servingResults[0])
             return
         }
         if arguments.suffix(3) == ["control", "pair", "--json"] {
@@ -6336,5 +6563,13 @@ private final class PairingMaintenanceBackend: HubMaintenanceBackend {
     func pairPhone(completion: @escaping (Result<HubPairingInvitation, Error>) -> Void) {
         pairCalls += 1
         completion(pairResult)
+    }
+}
+
+private extension Result {
+    /// The error of a failure, nil for a success.
+    var failureValue: Failure? {
+        if case let .failure(error) = self { return error }
+        return nil
     }
 }

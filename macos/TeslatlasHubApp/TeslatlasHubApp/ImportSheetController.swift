@@ -168,8 +168,8 @@ final class ImportSheetController: NSWindowController {
 }
 
 /// Import History on a signed-in Hub that has collected in windows (DEC-149). It runs
-/// the history-only import: Hub stops, imports, puts its configuration back and starts
-/// again. The window data is kept. Presented as a sheet of the main window.
+/// the history-only import against a private copy of the configuration: Hub pauses,
+/// imports and starts again once confirmed. The window data is kept. A sheet of the main window.
 final class ImportAfterWindowsSheetController: NSWindowController {
     static let windowDataDetail =
         HubL10n.text("hub.importAfterWindows.windowData", fallback: "The data Hub collected in its collection windows is kept. History from before it is added beside it; nothing is replaced. Phones already paired download the car's history again once.")
@@ -218,7 +218,9 @@ final class ImportAfterWindowsSheetController: NSWindowController {
             stack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 28),
             stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
             stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 24),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor, constant: -24)
+            // The sheet grows with its content, so a long two-part error never pushes
+            // the buttons out of view.
+            stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -24)
         ])
         for (text, emphasised) in [(Self.windowDataDetail, true), (Self.serviceDetail, false),
                                    (ImportSheetController.sourceVersionRequirement, false)] {
