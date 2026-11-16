@@ -16,8 +16,16 @@ fn main() {
 
     const VARIABLE: &str = "TESLATLAS_HUB_SOURCE_COMMIT";
     println!("cargo:rerun-if-env-changed={VARIABLE}");
+    // After the rename (DEC-160) the earlier spelling is read when the current
+    // name is unset, for one release; before it the two names are the same.
+    let earlier = VARIABLE.replace("TESATLAS", "TESLATLAS"); // rename:keep
+    println!("cargo:rerun-if-env-changed={earlier}");
+    let value = match std::env::var(VARIABLE) {
+        Err(std::env::VarError::NotPresent) => std::env::var(&earlier),
+        other => other,
+    };
 
-    let source_commit = match std::env::var(VARIABLE) {
+    let source_commit = match value {
         Ok(value) if source_identity::is_exact_commit(&value) => value,
         Ok(_) => panic!("{VARIABLE} must be exactly 40 lowercase hexadecimal characters"),
         Err(std::env::VarError::NotPresent) => source_identity::UNBOUND_SOURCE_COMMIT.to_owned(),

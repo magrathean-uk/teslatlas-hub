@@ -678,7 +678,7 @@ pub fn sign_updates_schema_22_noop(
     )
     .map_err(|error| reject(error.to_string()))?;
     Ok(SignedNoOpState {
-        schema: "teslatlas-hub-schema-22-noop-v1".into(),
+        schema: "teslatlas-hub-schema-22-noop-v1".into(), // rename:keep
         projection_schema: "2.2".into(),
         installation_id: binding.installation_id,
         account_id: binding.account_id,
@@ -1052,7 +1052,7 @@ fn read_bounded_pack_bytes(
 impl PrivateTempDir {
     fn create() -> Result<Self, UpdatesDeliveryError> {
         let root = std::env::temp_dir().join(format!(
-            "teslatlas-updates-hub-{}-{}",
+            "teslatlas-updates-hub-{}-{}", // rename:keep
             std::process::id(),
             Uuid::new_v4()
         ));
@@ -1222,7 +1222,7 @@ fn production_source_capture_sha256(
     capture: &ProductionUpdatesCaptureProof,
 ) -> Result<String, UpdatesDeliveryError> {
     let canonical = serde_json::to_vec(capture).map_err(|error| reject(error.to_string()))?;
-    let mut bytes = b"teslatlas-hub/production-source-capture/v2\n".to_vec();
+    let mut bytes = b"teslatlas-hub/production-source-capture/v2\n".to_vec(); // rename:keep
     bytes.extend_from_slice(&canonical);
     Ok(hex_sha256(&bytes))
 }
@@ -1250,7 +1250,7 @@ fn production_source_witness(
     let observed_migration_count = u64::try_from(source_capture.schema.observed_migration_count)
         .map_err(|_| reject("observed migration count exceeds the witness domain"))?;
     Ok(ProductionUpdatesSourceWitness {
-        schema: "teslatlas-pg-source-witness-v1".into(),
+        schema: "teslatlas-pg-source-witness-v1".into(), // rename:keep
         selected_car_id: i64::from(source_capture.car.id),
         postgres_snapshot_sha256: source_capture.postgres_snapshot_sha256.clone(),
         source_transaction: "read_only_repeatable_read_exported_snapshot".into(),
@@ -2137,7 +2137,7 @@ fn canonical_cargo_target_dir(
 }
 
 fn shipping_source_root() -> Result<PathBuf, UpdatesDeliveryError> {
-    let Some(source_root) = std::env::var_os("TESLATLAS_HUB_SOURCE_ROOT") else {
+    let Some(source_root) = crate::platform::name_migration::env::var_os("TESLATLAS_HUB_SOURCE_ROOT") else {
         return Err(reject(
             "Hub source root is unavailable; set TESLATLAS_HUB_SOURCE_ROOT to the absolute source checkout path",
         ));
@@ -2162,7 +2162,7 @@ pub fn receipt_identity_hashes() -> Result<ReceiptIdentityHashes, UpdatesDeliver
     let manifest_dir = shipping_source_root()?;
     let config_toml = fs::read(manifest_dir.join("packaging/config.toml"))
         .map_err(|error| reject(error.to_string()))?;
-    let mut config_document = b"teslatlas-hub-shipping-config-v1\n".to_vec();
+    let mut config_document = b"teslatlas-hub-shipping-config-v1\n".to_vec(); // rename:keep
     config_document
         .extend_from_slice(&(u64::try_from(config_toml.len()).unwrap_or(0)).to_be_bytes());
     config_document.extend_from_slice(&config_toml);
@@ -2174,7 +2174,7 @@ pub fn receipt_identity_hashes() -> Result<ReceiptIdentityHashes, UpdatesDeliver
         return Err(reject("rustc -vV failed"));
     }
     let rust_version = option_env!("CARGO_PKG_RUST_VERSION").unwrap_or("1.97");
-    let mut toolchain_document = b"teslatlas-hub-toolchain-v1\n".to_vec();
+    let mut toolchain_document = b"teslatlas-hub-toolchain-v1\n".to_vec(); // rename:keep
     toolchain_document.extend_from_slice(env!("CARGO_PKG_NAME").as_bytes());
     toolchain_document.push(b'\n');
     toolchain_document.extend_from_slice(env!("CARGO_PKG_VERSION").as_bytes());
@@ -2262,7 +2262,7 @@ pub(crate) fn validate_schema_22_pair(
         _ => return Err(reject("schema 2.2 manifest must contain exactly one pack")),
     };
     if manifest.schema != HUB_PROJECTION_SCHEMA_V3
-        || noop.schema != "teslatlas-hub-schema-22-noop-v1"
+        || noop.schema != "teslatlas-hub-schema-22-noop-v1" // rename:keep
         || noop.projection_schema != "2.2"
         || noop.installation_id != manifest.installation_id
         || noop.account_id != manifest.account_id
@@ -2365,7 +2365,7 @@ fn validate_production_source_witness(
         witness.hub_end_min_pg_us,
         witness.hub_end_max_pg_us,
     );
-    if witness.schema != "teslatlas-pg-source-witness-v1"
+    if witness.schema != "teslatlas-pg-source-witness-v1" // rename:keep
         || witness.source_transaction != "read_only_repeatable_read_exported_snapshot"
         || reviewed_source_set(&witness.source_revision).is_none_or(|set| {
             !set.matches(

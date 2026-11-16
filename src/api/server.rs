@@ -513,7 +513,7 @@ async fn require_local_loopback_access(
     if matches!(
         request.uri().path(),
         "/healthz" | "/readyz" | "/.well-known/teslatlas-hub" | "/v1/internal/fleet-telemetry"
-    ) {
+    ) || crate::platform::name_migration::wire::is_discovery_path(request.uri().path()) {
         return next.run(request).await;
     }
     if request
@@ -901,6 +901,7 @@ fn router_for_state(state: AppState, cors: CorsPolicy) -> Router {
         .route("/healthz", get(health))
         .route("/readyz", get(ready))
         .route("/.well-known/teslatlas-hub", get(capabilities))
+        .route(crate::platform::name_migration::wire::other_discovery_path("/.well-known/teslatlas-hub").expect("discovery path"), get(capabilities))
         .route("/v1/pairings/{pairing_id}/claim", post(claim_pairing))
         .route("/v1/device/rotate", post(rotate_device))
         .route("/v1/device/revoke", post(device_revoke::revoke_device))
@@ -946,6 +947,7 @@ fn router_for_state(state: AppState, cors: CorsPolicy) -> Router {
         .route("/v1/vehicles/{vehicle_id}/sync/noop", get(schema_22_noop))
         .route("/v1/packs/sha256/{object_name}", get(pack))
         .layer(DefaultBodyLimit::max(4 * 1024))
+        .layer(axum::middleware::from_fn(crate::platform::name_migration::wire::accept_both_header_spellings))
         .layer(axum::middleware::from_fn_with_state(
             cors.clone(),
             browser_cors::apply,

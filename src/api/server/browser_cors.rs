@@ -81,6 +81,9 @@ fn route_policy(path: &str) -> Option<RoutePolicy> {
         "/healthz" | "/readyz" | "/.well-known/teslatlas-hub" | "/v1/vehicles" => {
             return Some(get(BASIC_REQUEST_HEADERS));
         }
+        renamed if crate::platform::name_migration::wire::is_discovery_path(renamed) => {
+            return Some(get(BASIC_REQUEST_HEADERS));
+        }
         "/v1/device/rotate" | "/v1/device/revoke" => {
             return Some(RoutePolicy {
                 method: "POST",

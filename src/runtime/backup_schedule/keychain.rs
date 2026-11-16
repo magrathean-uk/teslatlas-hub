@@ -72,6 +72,11 @@ pub trait PasswordKeychain: Send + Sync {
     fn write(&self, _account: &str, _password: &[u8]) -> Result<(), KeychainFailure> {
         Err(KeychainFailure::Unreadable)
     }
+    /// Removes the item; only the rename step retires an earlier item with it
+    /// (DEC-160), best effort. A store that cannot remove keeps the item.
+    fn delete(&self, _account: &str) -> Result<(), KeychainFailure> {
+        Err(KeychainFailure::Unreadable)
+    }
 }
 
 /// Whether `password` is one the recovery commands can be given back and the
@@ -258,9 +263,18 @@ pub fn unavailable(failure: KeychainFailure, account: &str) -> OperatorRefusal {
     OperatorRefusal::new(BACKUP_PASSWORD_UNAVAILABLE, message)
 }
 
-/// The service's Keychain: the owner's default keychain search list.
+/// The service's Keychain: the owner's default keychain search list. After
+/// the rename (DEC-160) an item still under the earlier service name is moved
+/// to the current one on first read (`platform::name_migration::keychain`).
 pub fn system_keychain() -> std::sync::Arc<dyn PasswordKeychain> {
-    std::sync::Arc::new(SystemKeychain::search_list())
+    let current: std::sync::Arc<dyn PasswordKeychain> = std::sync::Arc::new(SystemKeychain::search_list());
+    match crate::platform::name_migration::spelling::earlier(KEYCHAIN_SERVICE) {
+        Some(earlier) => std::sync::Arc::new(crate::platform::name_migration::keychain::MigratingPasswordKeychain::new(
+            current,
+            std::sync::Arc::new(SystemKeychain::search_list_for(earlier)),
+        )),
+        None => current,
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -288,16 +302,24 @@ mod mac {
     pub struct SystemKeychain {
         /// None searches the owner's default list (the login keychain).
         keychains: Option<Vec<SecKeychain>>,
+        /// The item's service attribute: [`KEYCHAIN_SERVICE`], or its
+        /// earlier spelling while the rename step reads an earlier item.
+        service: String,
     }
 
     impl SystemKeychain {
         pub fn search_list() -> Self {
-            Self { keychains: None }
+            Self::search_list_for(KEYCHAIN_SERVICE.to_owned())
+        }
+
+        /// The owner's default list under another service name.
+        pub fn search_list_for(service: String) -> Self {
+            Self { keychains: None, service }
         }
 
         /// Searches only `keychain` (tests use a disposable one).
         pub fn only(keychain: SecKeychain) -> Self {
-            Self { keychains: Some(vec![keychain]) }
+            Self { keychains: Some(vec![keychain]), service: KEYCHAIN_SERVICE.to_owned() }
         }
     }
 
@@ -314,8 +336,22 @@ mod mac {
             let _turn = NO_PROMPT.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let _no_prompt =
                 SecKeychain::disable_user_interaction().map_err(|_| KeychainFailure::Unreadable)?;
-            match find_generic_password(self.keychains.as_deref(), KEYCHAIN_SERVICE, account) {
+            match find_generic_password(self.keychains.as_deref(), &self.service, account) {
                 Ok((password, _item)) => Ok(Zeroizing::new(password.to_vec())),
+                Err(error) => Err(classify(error.code())),
+            }
+        }
+
+        /// Deletes the item this binary may open; never prompts.
+        fn delete(&self, account: &str) -> Result<(), KeychainFailure> {
+            let _turn = NO_PROMPT.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _no_prompt =
+                SecKeychain::disable_user_interaction().map_err(|_| KeychainFailure::Unreadable)?;
+            match find_generic_password(self.keychains.as_deref(), &self.service, account) {
+                Ok((_, item)) => {
+                    item.delete();
+                    Ok(())
+                }
                 Err(error) => Err(classify(error.code())),
             }
         }
@@ -331,10 +367,10 @@ mod mac {
                 Some(list) => list.first().cloned().ok_or(KeychainFailure::Unreadable)?,
                 None => SecKeychain::default().map_err(|error| classify(error.code()))?,
             };
-            match keychain.find_generic_password(KEYCHAIN_SERVICE, account) {
+            match keychain.find_generic_password(&self.service, account) {
                 Ok((_, mut item)) => item.set_password(password),
                 Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => {
-                    keychain.add_generic_password(KEYCHAIN_SERVICE, account, password)
+                    keychain.add_generic_password(&self.service, account, password)
                 }
                 Err(error) => return Err(classify(error.code())),
             }
@@ -353,6 +389,10 @@ pub struct SystemKeychain;
 #[cfg(not(target_os = "macos"))]
 impl SystemKeychain {
     pub fn search_list() -> Self {
+        Self
+    }
+
+    pub fn search_list_for(_service: String) -> Self {
         Self
     }
 }

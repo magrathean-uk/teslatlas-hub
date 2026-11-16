@@ -26,7 +26,7 @@ mod fixture_clock;
 pub use fixture_clock::fixture_summary_now_ms;
 
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]
-const LABEL: &str = "com.teslatlas.hub";
+pub(crate) const LABEL: &str = "com.teslatlas.hub";
 #[cfg(not(feature = "credential-relocation-fixture"))]
 const PLIST_NAME: &str = "com.teslatlas.hub.plist";
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]
@@ -1024,7 +1024,7 @@ fn expected_launchctl_absence(action: &str, status: Option<i32>, detail: &str) -
 
 const INHERITED_LOG_COMPACT_ABOVE: u64 = 1 << 20;
 const INHERITED_LOG_KEEP: u64 = 512 << 10;
-const INHERITED_LOG_DIRECTORY: &str = "Library/Logs/Teslatlas Hub";
+pub(crate) const INHERITED_LOG_DIRECTORY: &str = "Library/Logs/Teslatlas Hub";
 const INHERITED_STDOUT_LOG: &str = "hub.out.log";
 const INHERITED_STDERR_LOG: &str = "hub.err.log";
 

@@ -10,7 +10,7 @@ const MAX_CHANGES_SINCE_REQUEST_BYTES: usize = 8_192;
 const MAX_PROFILE_PACK_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_I_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 pub(super) const HUB_SYNC_PROFILE_14: &str = "hub-sync-v1@1.4.0";
-pub(super) const PHYSICAL_DELTA_FORMAT: &str = "teslatlas-physical-v3-delta-v1";
+pub(super) const PHYSICAL_DELTA_FORMAT: &str = "teslatlas-physical-v3-delta-v1"; // rename:keep (the App switches in lockstep, DEC-160)
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -447,7 +447,7 @@ fn parse_physical_changes_since_request(
     if request.base_manifest_schema != "2.2"
         || request.schema_version_range.minimum != "2.2"
         || request.schema_version_range.maximum != "2.2"
-        || request.accepted_changed_set_formats != [PHYSICAL_DELTA_FORMAT]
+        || !crate::platform::name_migration::wire::is_only_token(&request.accepted_changed_set_formats, PHYSICAL_DELTA_FORMAT)
         || request.base_receipt_id.is_empty()
         || request.base_receipt_id.len() > 4096
         || !request.base_receipt_id.bytes().all(is_receipt_token_byte)

@@ -911,6 +911,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "credential-relocation-fixture")]
     credential_relocation_fixture::require_dispatch(&cli)?;
     let config_path = cli.config.unwrap_or_else(default_config_path);
+    #[cfg(unix)]
+    teslatlas_hub::platform::name_migration::prepare_config_path(&config_path)?; // rename hand-over backstop (DEC-160)
     // Admission (M02-T10, rulings R5 and R6): every command is routed before
     // it reads a secret path, standard input or the network.
     let route = operator::admission::route(&cli.command);
@@ -1440,11 +1442,11 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     store.checkpoint_catalogue_for_immutable_read()?;
                     let development_mode =
                         teslatlas_hub::macos_launch_agent::development_serve_mode(
-                            std::env::var_os(
+                            teslatlas_hub::platform::name_migration::env::var_os(
                                 teslatlas_hub::macos_launch_agent::DEVELOPMENT_SERVE_ENV,
                             )
                             .as_deref(),
-                            std::env::var_os(
+                            teslatlas_hub::platform::name_migration::env::var_os(
                                 teslatlas_hub::macos_launch_agent::DEVELOPMENT_SERVE_MODE_ENV,
                             )
                             .as_deref(),

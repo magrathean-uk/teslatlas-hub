@@ -57,7 +57,7 @@ pub(crate) fn active() -> Result<Option<&'static JourneyDoubles>, Box<dyn std::e
     if let Some(doubles) = DOUBLES.get() {
         return Ok(doubles.as_ref());
     }
-    let loaded = match std::env::var_os(ENV) {
+    let loaded = match teslatlas_hub::platform::name_migration::env::var_os(ENV) {
         None => None,
         Some(path) => {
             let doubles: JourneyDoubles = serde_json::from_slice(&std::fs::read(path)?)?;

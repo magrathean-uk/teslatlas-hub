@@ -9,6 +9,7 @@ pub mod hub_user_process;
 pub mod linux_systemd;
 #[cfg(target_os = "macos")]
 pub mod macos_launch_agent;
+pub mod name_migration;
 #[cfg(unix)]
 pub(crate) mod private_directory;
 pub mod r78_lifecycle;

@@ -6,6 +6,8 @@ async fn main() -> ExitCode {
     { return credential_relocation_fixture::entry().await; }
     #[cfg(not(feature = "credential-relocation-fixture"))]
     {
+    #[cfg(unix)]
+    if let Some(code) = teslatlas_hub::platform::name_migration::run_if_requested() { return code; }
     let cli = Cli::parse();
     use teslatlas_hub::runtime::development_event_log as dev;
     if dev::initialize().is_err() {

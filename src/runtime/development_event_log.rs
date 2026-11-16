@@ -81,6 +81,7 @@ impl Endpoint {
             "/health" | "/healthz" => Self::Health,
             "/ready" | "/readyz" => Self::Readiness,
             "/v1/discovery" | "/.well-known/teslatlas-hub" => Self::Discovery,
+            renamed if crate::platform::name_migration::wire::is_discovery_path(renamed) => Self::Discovery,
             "/v1/vehicles/{vehicle_id}/sync/changes-since" => Self::ChangesSince,
             "/v1/vehicles/{vehicle_id}/sync/manifest" => Self::Manifest,
             "/v1/packs/sha256/{object_name}" => Self::Pack,
@@ -168,14 +169,14 @@ pub fn enabled() -> bool {
     JOURNAL.get().is_some_and(Option::is_some)
 }
 pub fn development_requested() -> bool {
-    std::env::var("TESLATLAS_HUB_DEVELOPMENT").as_deref() == Ok("1")
+    crate::platform::name_migration::env::var("TESLATLAS_HUB_DEVELOPMENT").as_deref() == Ok("1")
 }
 pub fn initialize() -> io::Result<bool> {
     if !development_requested() {
         let _ = JOURNAL.set(None);
         return Ok(false);
     }
-    let Some(path) = std::env::var_os(DIRECTORY_ENV) else {
+    let Some(path) = crate::platform::name_migration::env::var_os(DIRECTORY_ENV) else {
         let _ = JOURNAL.set(None);
         return Ok(false);
     };
