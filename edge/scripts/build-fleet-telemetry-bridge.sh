@@ -101,7 +101,7 @@ esac
 script_directory=$(CDPATH='' cd "$(dirname "$0")" && pwd -P)
 repository_root=$(CDPATH='' cd "$script_directory/.." && pwd -P)
 lock_file="$repository_root/packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json"
-overlay_patch="$repository_root/packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch"
+overlay_patch="$repository_root/packaging/fleet-telemetry-bridge/0001-tesatlas-http-dispatcher.patch"
 [ -f "$lock_file" ] && [ ! -L "$lock_file" ] || die "lock file is missing or unsafe"
 [ -f "$overlay_patch" ] && [ ! -L "$overlay_patch" ] || die "overlay patch is missing or unsafe"
 
@@ -146,10 +146,10 @@ expected = {
     "commit": commit,
     "archive_url": archive_url,
     "archive_sha256": archive_sha,
-    "patch": "0001-teslatlas-http-dispatcher.patch",
+    "patch": "0001-tesatlas-http-dispatcher.patch",
     "patch_sha256": patch_sha,
     "endpoint": "http://127.0.0.1:8080/v1/internal/fleet-telemetry",
-    "bearer_file_env": "TESLATLAS_FLEET_TELEMETRY_BEARER_FILE",
+    "bearer_file_env": "TESATLAS_FLEET_TELEMETRY_BEARER_FILE",
     "envelope_version": 1,
     "max_envelope_bytes": 262144,
     "default_timeout_ms": 2000,
@@ -216,10 +216,10 @@ GOCACHE="$work/go-build-cache"
 export GOCACHE
 /bin/mkdir -p "$GOCACHE"
 
-if [ -n "${TESLATLAS_LAB-}" ]; then
-    [ -d "$TESLATLAS_LAB" ] && [ ! -L "$TESLATLAS_LAB" ] \
-        || die "TESLATLAS_LAB must be an existing real directory"
-    cache_directory="$TESLATLAS_LAB/build/teslatlas-edge/upstream-cache"
+if [ -n "${TESATLAS_LAB-}" ]; then
+    [ -d "$TESATLAS_LAB" ] && [ ! -L "$TESATLAS_LAB" ] \
+        || die "TESATLAS_LAB must be an existing real directory"
+    cache_directory="$TESATLAS_LAB/build/tesatlas-edge/upstream-cache"
     /usr/bin/python3 - "$repository_root" "$cache_directory" <<'PY' || die "upstream cache path is unsafe"
 import os
 import sys
@@ -253,7 +253,7 @@ PY
         "$repository_root"|"$repository_root"/*) die "upstream cache would enter the Edge checkout" ;;
     esac
 else
-    ephemeral_cache=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/teslatlas-edge-upstream-cache.XXXXXX") \
+    ephemeral_cache=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/tesatlas-edge-upstream-cache.XXXXXX") \
         || die "cannot create an ephemeral upstream cache"
     cache_directory="$ephemeral_cache"
 fi
@@ -293,12 +293,12 @@ archive_root=$("$TAR" -tzf "$archive" | /usr/bin/awk -F/ 'NF {print $1}' | /usr/
 (
     cd "$source_directory"
     "$PATCH" -p1 --batch --forward <"$overlay_patch"
-) || die "cannot apply Teslatlas overlay"
+) || die "cannot apply Tesatlas overlay"
 
 (
     cd "$source_directory"
-    CGO_ENABLED=0 "$GO" test ./datastore/teslatlas
-) || die "Teslatlas bridge tests failed"
+    CGO_ENABLED=0 "$GO" test ./datastore/tesatlas
+) || die "Tesatlas bridge tests failed"
 
 if [ "$target_arch" = arm64 ]; then
     (

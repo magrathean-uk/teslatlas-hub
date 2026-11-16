@@ -1,5 +1,5 @@
 {
-  "schema": "teslatlas.fleet-telemetry-legal-lock/v1",
+  "schema": "tesatlas.fleet-telemetry-legal-lock/v1",
   "bridge_lock_sha256": "199d411a8ba2b98581ea53ceed3dda7b02223193ff55e66aa0cf1449f6075547",
   "main": {
     "archive_sha256": "a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9",

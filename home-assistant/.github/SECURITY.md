@@ -4,7 +4,7 @@ How to report a vulnerability in this integration privately, and the trust bound
 
 ## Report privately
 
-Email [contact@magrathean.uk](mailto:contact@magrathean.uk) with subject `SECURITY: teslatlas-home-assistant`. This route is published in the [organisation security policy](https://github.com/magrathean-uk/.github/blob/main/SECURITY.md), which also describes handling and disclosure. Use GitHub's private vulnerability reporting option only if it is available for this repository.
+Email [contact@magrathean.uk](mailto:contact@magrathean.uk) with subject `SECURITY: tesatlas-home-assistant`. This route is published in the [organisation security policy](https://github.com/magrathean-uk/.github/blob/main/SECURITY.md), which also describes handling and disclosure. Use GitHub's private vulnerability reporting option only if it is available for this repository.
 
 Do not post vulnerability details in a public issue or pull request. Include the affected commit or component version, deployment context, reproduction steps and impact. Use synthetic or redacted evidence. Do not send live credentials, invitations, private keys, personal data or production database extracts.
 

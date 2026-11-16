@@ -2555,7 +2555,7 @@ pub(crate) enum BackupWait {
 /// The backup refusal while refused pre-upgrade credentials block it
 /// (M02-T11, DEC-083): it names the command that lists and removes them,
 /// because a refused slot is never replaced by itself.
-pub const BACKUP_BLOCKED_BY_REFUSED_CREDENTIALS: &str = "backup_blocked_by_refused_credentials: data backups are blocked by refused credentials kept from before the upgrade; list them with `teslatlas-hub purge-refused-credentials` and remove them with `teslatlas-hub purge-refused-credentials --confirm`";
+pub const BACKUP_BLOCKED_BY_REFUSED_CREDENTIALS: &str = "backup_blocked_by_refused_credentials: data backups are blocked by refused credentials kept from before the upgrade; list them with `tesatlas-hub purge-refused-credentials` and remove them with `tesatlas-hub purge-refused-credentials --confirm`";
 
 /// The refusal text for a backup that waits because a refused pre-upgrade
 /// slot blocks the credential cleanup; `None` for any other outcome.

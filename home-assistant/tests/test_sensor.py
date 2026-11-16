@@ -1,4 +1,4 @@
-"""Tests for Teslatlas Hub devices and read-only sensors."""
+"""Tests for Tesatlas Hub devices and read-only sensors."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from homeassistant.helpers.entity_registry import RegistryEntryDisabler
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.teslatlas_hub.const import (
+from custom_components.tesatlas_hub.const import (
     CONF_ACCESS_TOKEN,
     CONF_DEVICE_ID,
     CONF_HUB_ID,
@@ -34,8 +34,8 @@ from custom_components.teslatlas_hub.const import (
     CONF_USE_TLS,
     DOMAIN,
 )
-from custom_components.teslatlas_hub.models import HubSnapshot, VehicleState
-from custom_components.teslatlas_hub.sensor import (
+from custom_components.tesatlas_hub.models import HubSnapshot, VehicleState
+from custom_components.tesatlas_hub.sensor import (
     HUB_SENSOR_DESCRIPTIONS,
     VEHICLE_SENSOR_DESCRIPTIONS,
 )
@@ -50,7 +50,7 @@ async def _setup_http(hass: HomeAssistant, aiohttp_server):
     """Exercise normal setup, real client decoding and actual HA publication."""
     example = (
         Path(__file__).parents[1]
-        / "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/examples"
+        / "custom_components/tesatlas_hub/profile/hub-http-v1/1.0.0/examples"
         / "current.json"
     )
     template = json.loads(example.read_text())
@@ -263,7 +263,7 @@ async def _setup(
 ) -> MockConfigEntry:
     entry = _entry(hass)
     with patch(
-        "custom_components.teslatlas_hub.create_client",
+        "custom_components.tesatlas_hub.create_client",
         return_value=client,
     ):
         assert await hass.config_entries.async_setup(entry.entry_id) is True
@@ -544,7 +544,7 @@ async def test_dynamic_vehicle_survives_restart_while_absent_without_duplicates(
     restart_client = FixtureHubClient()
     restart_client.snapshot = without_dynamic
     with patch(
-        "custom_components.teslatlas_hub.create_client",
+        "custom_components.tesatlas_hub.create_client",
         return_value=restart_client,
     ):
         assert await hass.config_entries.async_setup(entry.entry_id) is True
@@ -623,7 +623,7 @@ async def test_retired_registry_entries_are_scoped_to_their_config_entry(
     )
 
     with patch(
-        "custom_components.teslatlas_hub.create_client",
+        "custom_components.tesatlas_hub.create_client",
         return_value=FixtureHubClient(),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id) is True
@@ -665,7 +665,7 @@ async def test_existing_registry_customizations_survive_component_reload(
     )
 
     with patch(
-        "custom_components.teslatlas_hub.create_client",
+        "custom_components.tesatlas_hub.create_client",
         return_value=FixtureHubClient(),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id) is True

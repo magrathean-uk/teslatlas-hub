@@ -33,7 +33,7 @@ use super::password::PASSWORD_FILE_MAX_BYTES;
 use crate::runtime::operator::admission::OperatorRefusal;
 
 /// The Keychain item's service attribute; the app writes the same string.
-pub const KEYCHAIN_SERVICE: &str = "uk.magrathean.teslatlas.hub.backup";
+pub const KEYCHAIN_SERVICE: &str = "uk.magrathean.tesatlas.hub.backup";
 
 /// The item's account when the configuration names the Keychain source and
 /// no `backup.password_file` (the app always names the path it writes).
@@ -248,16 +248,16 @@ pub fn unavailable(failure: KeychainFailure, account: &str) -> OperatorRefusal {
         KeychainFailure::Missing
             if Path::new(account).is_absolute() && Path::new(account).exists() =>
         {
-            "the backup password is still in a file waiting to move into the Keychain; open Teslatlas Hub to move it, or save the recovery password again in Service details, Backups"
+            "the backup password is still in a file waiting to move into the Keychain; open Tesatlas Hub to move it, or save the recovery password again in Service details, Backups"
         }
         KeychainFailure::Missing => {
-            "the backup password is not in the Keychain; save the recovery password again in Teslatlas Hub (Service details, Backups)"
+            "the backup password is not in the Keychain; save the recovery password again in Tesatlas Hub (Service details, Backups)"
         }
         KeychainFailure::Refused => {
-            "the service may not read the backup password in the Keychain (the keychain is locked, or this Hub build is signed differently from the one that saved it); save the recovery password again in Teslatlas Hub (Service details, Backups)"
+            "the service may not read the backup password in the Keychain (the keychain is locked, or this Hub build is signed differently from the one that saved it); save the recovery password again in Tesatlas Hub (Service details, Backups)"
         }
         KeychainFailure::Unreadable => {
-            "the backup password in the Keychain cannot be read; save the recovery password again in Teslatlas Hub (Service details, Backups)"
+            "the backup password in the Keychain cannot be read; save the recovery password again in Tesatlas Hub (Service details, Backups)"
         }
     };
     OperatorRefusal::new(BACKUP_PASSWORD_UNAVAILABLE, message)

@@ -1,7 +1,7 @@
 import {
   asSafeRequestId,
   ProtocolValidationError,
-  TeslatlasError,
+  TesatlasError,
   TransportError,
 } from "../core/errors.js";
 import { FetchTransport, type FetchImplementation } from "../http/fetch-transport.js";
@@ -84,7 +84,7 @@ interface PendingDiscovery {
   waiters: number;
 }
 
-export class HubIdentityMismatchError extends TeslatlasError<"hub_identity_mismatch"> {
+export class HubIdentityMismatchError extends TesatlasError<"hub_identity_mismatch"> {
   constructor() {
     super("Hub identity does not match the expected installation", {
       code: "hub_identity_mismatch",
@@ -92,7 +92,7 @@ export class HubIdentityMismatchError extends TeslatlasError<"hub_identity_misma
   }
 }
 
-export class VehicleIdentityMismatchError extends TeslatlasError<"vehicle_identity_mismatch"> {
+export class VehicleIdentityMismatchError extends TesatlasError<"vehicle_identity_mismatch"> {
   constructor() {
     super("Hub response vehicle identity does not match the requested vehicle", {
       code: "vehicle_identity_mismatch",
@@ -100,7 +100,7 @@ export class VehicleIdentityMismatchError extends TeslatlasError<"vehicle_identi
   }
 }
 
-export class UnsupportedHubMethodError extends TeslatlasError<"unsupported_method"> {
+export class UnsupportedHubMethodError extends TesatlasError<"unsupported_method"> {
   readonly capability: HubCapability;
 
   constructor(capability: HubCapability) {
@@ -111,19 +111,19 @@ export class UnsupportedHubMethodError extends TeslatlasError<"unsupported_metho
   }
 }
 
-export class HubHttpError extends TeslatlasError<HubErrorCode | "hub_http_error"> {
+export class HubHttpError extends TesatlasError<HubErrorCode | "hub_http_error"> {
   constructor(status: number, code: HubErrorCode | "hub_http_error", message?: string) {
     super(message ?? "Hub request failed", { code, status });
   }
 }
 
-export class HubClientDisposedError extends TeslatlasError<"client_disposed"> {
+export class HubClientDisposedError extends TesatlasError<"client_disposed"> {
   constructor() {
     super("Hub client has been disposed", { code: "client_disposed" });
   }
 }
 
-export class HubTlsPinUnavailableError extends TeslatlasError<"hub_tls_pin_unavailable"> {
+export class HubTlsPinUnavailableError extends TesatlasError<"hub_tls_pin_unavailable"> {
   constructor() {
     super("No transport capable of enforcing the invitation TLS leaf pin is available", {
       code: "hub_tls_pin_unavailable",
@@ -131,7 +131,7 @@ export class HubTlsPinUnavailableError extends TeslatlasError<"hub_tls_pin_unava
   }
 }
 
-export class HubTlsPinMismatchError extends TeslatlasError<"hub_tls_pin_mismatch"> {
+export class HubTlsPinMismatchError extends TesatlasError<"hub_tls_pin_mismatch"> {
   constructor() {
     super("Hub TLS leaf certificate does not match the invitation pin", {
       code: "hub_tls_pin_mismatch",
@@ -320,7 +320,7 @@ class StaticHubClient implements HubClient {
         signal: operation.signal,
       });
     } catch (error) {
-      if (error instanceof TeslatlasError) throw error;
+      if (error instanceof TesatlasError) throw error;
       if (operation.signal.aborted) throw operation.signal.reason ?? error;
       if (error instanceof DOMException && error.name === "AbortError") throw error;
       throw new TransportError();
@@ -956,7 +956,7 @@ function validateInvitation(invitation: HubInvitation, endpoint: URL): void {
     ["tls_pin", invitation.tlsPin],
   ]);
   if (
-    pairingUri.protocol !== "teslatlas-hub:" ||
+    pairingUri.protocol !== "tesatlas-hub:" ||
     pairingUri.hostname !== "pair" ||
     pairingUri.searchParams.size !== expected.size ||
     [...expected].some(([key, value]) => pairingUri.searchParams.get(key) !== value)

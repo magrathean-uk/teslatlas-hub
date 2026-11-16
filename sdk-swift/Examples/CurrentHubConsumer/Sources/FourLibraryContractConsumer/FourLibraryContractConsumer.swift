@@ -1,12 +1,12 @@
-import TeslatlasCommands
-import TeslatlasCurrentHub
-import TeslatlasHubSDK
-import TeslatlasHubV1Compatibility
+import TesatlasCommands
+import TesatlasCurrentHub
+import TesatlasHubSDK
+import TesatlasHubV1Compatibility
 
 @main
 struct FourLibraryContractConsumer {
   static func main() {
-    guard let richProtocol = TeslatlasProtocolVersion("1.2.0") else {
+    guard let richProtocol = TesatlasProtocolVersion("1.2.0") else {
       fatalError("the released rich Protocol version is invalid")
     }
     let commandClass = CommandClass.vehicleState
@@ -18,15 +18,15 @@ struct FourLibraryContractConsumer {
       fatalError("the public query initializers discarded their limits")
     }
 
-    print("TeslatlasHubSDK=rich-protocol-\(richProtocol)")
+    print("TesatlasHubSDK=rich-protocol-\(richProtocol)")
     print(
-      "TeslatlasCommands=rich-protocol-\(richProtocol) command-class=\(commandClass.rawValue)"
+      "TesatlasCommands=rich-protocol-\(richProtocol) command-class=\(commandClass.rawValue)"
     )
     print(
-      "TeslatlasHubV1Compatibility=deployed-hub-v1.0.0 query-limit=\(compatibilityLimit)"
+      "TesatlasHubV1Compatibility=deployed-hub-v1.0.0 query-limit=\(compatibilityLimit)"
     )
     print(
-      "TeslatlasCurrentHub=hub-http-v1@1.0.0 query-limit=\(currentHubLimit)"
+      "TesatlasCurrentHub=hub-http-v1@1.0.0 query-limit=\(currentHubLimit)"
     )
   }
 }

@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.redact import REDACTED
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.teslatlas_hub.const import (
+from custom_components.tesatlas_hub.const import (
     CONF_ACCESS_TOKEN,
     CONF_HUB_ID,
     CONF_PAIRING_SECRET,
@@ -19,8 +19,8 @@ from custom_components.teslatlas_hub.const import (
     CONF_USE_TLS,
     DOMAIN,
 )
-from custom_components.teslatlas_hub.coordinator import TeslatlasDataCoordinator
-from custom_components.teslatlas_hub.diagnostics import (
+from custom_components.tesatlas_hub.coordinator import TesatlasDataCoordinator
+from custom_components.tesatlas_hub.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 from tests.helpers import FixtureHubClient
@@ -49,7 +49,7 @@ async def test_diagnostics_redact_secrets_endpoints_identity_and_location(
     client = FixtureHubClient()
 
     with patch(
-        "custom_components.teslatlas_hub.create_client",
+        "custom_components.tesatlas_hub.create_client",
         return_value=client,
     ):
         assert await hass.config_entries.async_setup(entry.entry_id) is True
@@ -99,7 +99,7 @@ async def test_diagnostics_before_first_refresh_returns_safe_empty_runtime(
         },
     )
     entry.add_to_hass(hass)
-    coordinator = TeslatlasDataCoordinator(hass, entry, FixtureHubClient())
+    coordinator = TesatlasDataCoordinator(hass, entry, FixtureHubClient())
     entry.runtime_data = coordinator
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
@@ -165,7 +165,7 @@ async def test_diagnostics_after_outage_keeps_last_snapshot_but_marks_unavailabl
     )
     entry.add_to_hass(hass)
     client = FixtureHubClient()
-    coordinator = TeslatlasDataCoordinator(hass, entry, client)
+    coordinator = TesatlasDataCoordinator(hass, entry, client)
     coordinator.data = client.snapshot
     coordinator.last_update_success = False
     entry.runtime_data = coordinator
@@ -186,7 +186,7 @@ async def test_diagnostics_count_failed_current_reads_without_vehicle_identity(
     client = FixtureHubClient()
     snapshot = client.snapshot
     failed = replace(snapshot.vehicles["vehicle-alpha"], current_read_failed=True)
-    coordinator = TeslatlasDataCoordinator(hass, entry, client)
+    coordinator = TesatlasDataCoordinator(hass, entry, client)
     coordinator.data = snapshot.with_vehicle(failed, snapshot.received_at)
     coordinator.last_update_success = True
     entry.runtime_data = coordinator

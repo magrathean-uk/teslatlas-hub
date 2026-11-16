@@ -20,19 +20,19 @@ from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-import custom_components.teslatlas_hub.current_hub_client as current_hub_client_module
-from custom_components.teslatlas_hub.client import (
+import custom_components.tesatlas_hub.current_hub_client as current_hub_client_module
+from custom_components.tesatlas_hub.client import (
     HubAuthenticationError,
     HubConnectionError,
     HubContractError,
     HubPairingError,
 )
-from custom_components.teslatlas_hub.current_hub_client import (
+from custom_components.tesatlas_hub.current_hub_client import (
     MAX_RESPONSE_BYTES,
     CurrentHubClient,
     pinned_request_class,
 )
-from custom_components.teslatlas_hub.models import HubEndpoint
+from custom_components.tesatlas_hub.models import HubEndpoint
 
 HUB_ID = "11111111-1111-4111-8111-111111111111"
 OTHER_HUB_ID = "22222222-2222-4222-8222-222222222222"

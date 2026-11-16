@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // The service's backup schedule (M06-T03). The schedule, the one-run slot and
-// the operation live in `teslatlas_hub::runtime::backup_schedule`; this only
+// the operation live in `tesatlas_hub::runtime::backup_schedule`; this only
 // builds it for `serve` from the `[backup]` configuration. The recovery
 // password stays in the source `backup.password_source` names (the Mac
 // Keychain, or an owned file) and is read at each run; `backup-password`
@@ -16,10 +16,10 @@ fn start_backup_schedule(
     store: &HubStore,
     recovery: &std::sync::Arc<operator::authority::RecoveryGate>,
 ) -> Result<
-    std::sync::Arc<teslatlas_hub::runtime::backup_schedule::BackupScheduler>,
+    std::sync::Arc<tesatlas_hub::runtime::backup_schedule::BackupScheduler>,
     Box<dyn std::error::Error>,
 > {
-    use teslatlas_hub::runtime::backup_schedule::{
+    use tesatlas_hub::runtime::backup_schedule::{
         BackupScheduler, BackupSettings, StoreBackupRunner, state::STATE_FILE,
     };
     let paused = std::sync::Arc::clone(recovery);
@@ -43,7 +43,7 @@ fn run_backup_password(
 ) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
     {
-        use teslatlas_hub::runtime::backup_schedule::keychain::{self, Comparison};
+        use tesatlas_hub::runtime::backup_schedule::keychain::{self, Comparison};
         let store = keychain::system_keychain();
         let outcome = match action {
             BackupPasswordAction::Store => {
@@ -70,7 +70,7 @@ fn run_backup_password(
     {
         let _ = (action, account);
         Err(OperatorRefusal::new(
-            teslatlas_hub::runtime::backup_schedule::keychain::BACKUP_PASSWORD_INVALID,
+            tesatlas_hub::runtime::backup_schedule::keychain::BACKUP_PASSWORD_INVALID,
             "the Keychain is on the Mac only; elsewhere set backup.password_source = \"file\" with backup.password_file",
         )
         .into())

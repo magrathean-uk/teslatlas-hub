@@ -1,21 +1,21 @@
 #!/bin/sh
 set -eu
 
-service=teslatlas-edge.service
-receiver_service=teslatlas-fleet-telemetry.service
-state_file=${TESLATLAS_EDGE_MAINTAINER_STATE_FILE:-/run/teslatlas-edge-maintainer.state}
-backup_dir=${TESLATLAS_EDGE_UPGRADE_BACKUP_DIR:-/run/teslatlas-edge-package-upgrade}
+service=tesatlas-edge.service
+receiver_service=tesatlas-fleet-telemetry.service
+state_file=${TESATLAS_EDGE_MAINTAINER_STATE_FILE:-/run/tesatlas-edge-maintainer.state}
+backup_dir=${TESATLAS_EDGE_UPGRADE_BACKUP_DIR:-/run/tesatlas-edge-package-upgrade}
 
 restore_upgrade() {
     [ -d "$backup_dir" ] && [ ! -L "$backup_dir" ] || return 0
-    install -o root -g root -m 0755 "$backup_dir/teslatlas-edge" /usr/bin/teslatlas-edge
-    install -o root -g root -m 0755 "$backup_dir/fleet-telemetry" /usr/lib/teslatlas-edge/fleet-telemetry
+    install -o root -g root -m 0755 "$backup_dir/tesatlas-edge" /usr/bin/tesatlas-edge
+    install -o root -g root -m 0755 "$backup_dir/fleet-telemetry" /usr/lib/tesatlas-edge/fleet-telemetry
     install -o root -g root -m 0755 "$backup_dir/run-with-spool-format-guard.sh" \
-        /usr/lib/teslatlas-edge/run-with-spool-format-guard.sh
-    install -o root -g root -m 0644 "$backup_dir/teslatlas-edge.service" \
-        /lib/systemd/system/teslatlas-edge.service
-    install -o root -g root -m 0644 "$backup_dir/teslatlas-fleet-telemetry.service" \
-        /lib/systemd/system/teslatlas-fleet-telemetry.service
+        /usr/lib/tesatlas-edge/run-with-spool-format-guard.sh
+    install -o root -g root -m 0644 "$backup_dir/tesatlas-edge.service" \
+        /lib/systemd/system/tesatlas-edge.service
+    install -o root -g root -m 0644 "$backup_dir/tesatlas-fleet-telemetry.service" \
+        /lib/systemd/system/tesatlas-fleet-telemetry.service
     if [ -f "$state_file" ] && [ ! -L "$state_file" ] && [ -d /run/systemd/system ]; then
         IFS=' ' read -r _ edge_active edge_enabled _ receiver_active receiver_enabled < "$state_file"
         systemctl daemon-reload

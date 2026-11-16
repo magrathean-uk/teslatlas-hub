@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 set -eu
 
-service=teslatlas-hub.service
-command_proxy_service=teslatlas-command-proxy.service
-fleet_telemetry_service=teslatlas-fleet-telemetry.service
-state_file=${TESLATLAS_HUB_MAINTAINER_STATE_FILE:-/run/teslatlas-hub-maintainer.state}
+service=tesatlas-hub.service
+command_proxy_service=tesatlas-command-proxy.service
+fleet_telemetry_service=tesatlas-fleet-telemetry.service
+state_file=${TESATLAS_HUB_MAINTAINER_STATE_FILE:-/run/tesatlas-hub-maintainer.state}
 
 unit_available() {
     systemctl cat "$1" >/dev/null 2>&1

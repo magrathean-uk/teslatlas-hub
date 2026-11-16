@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use crate::*;
-use teslatlas_hub::source_db_reader::{
+use tesatlas_hub::source_db_reader::{
     SourceDbConnectionDiagnostics, SourceDbOpenSessionCounts, SourceDbSchemaInfo,
     SourceDbSelectedCarCounts, SourceDbSelectedCarDiagnostics, SourceDbTotals,
 };
@@ -15,7 +15,7 @@ fn synthetic_source_check_snapshot() -> SourceDbCheckSnapshot {
             maximum_validated_migration_version: MAX_VALIDATED_MIGRATION,
             pinned_source_revision: SOURCE_DB_V4_SOURCE_REVISION,
             pinned_migration_set_sha256:
-                teslatlas_hub::source_db_schema::SOURCE_DB_V4_MIGRATION_SET_SHA256,
+                tesatlas_hub::source_db_schema::SOURCE_DB_V4_MIGRATION_SET_SHA256,
             fingerprint: "synthetic-schema-fingerprint".to_owned(),
         },
         connection: SourceDbConnectionDiagnostics {
@@ -63,7 +63,7 @@ fn synthetic_source_check_snapshot() -> SourceDbCheckSnapshot {
 fn source_check_reports_neutral_keys_and_schema_recognised() {
     let actual = source_check_success_report(42, &synthetic_source_check_snapshot(), true, true);
     let mut expected: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/source-check-recognised.json"
+        "../../../macos/TesatlasHubApp/TesatlasHubAppTests/Fixtures/source-check-recognised.json"
     ))
     .unwrap();
     // The report no longer carries the source-token keys (M02-T02): the
@@ -97,7 +97,7 @@ fn source_check_not_recognised_report_is_false_without_label() {
         source_check_failure_details(&SourceDbReaderError::MissingMigrationVersion);
     let actual =
         source_check_failure_report(42, "incompatible", "schema_mismatch", observed, guidance);
-    let expected:serde_json::Value=serde_json::from_str(include_str!("../../../macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/source-check-not-recognised.json")).unwrap();
+    let expected:serde_json::Value=serde_json::from_str(include_str!("../../../macos/TesatlasHubApp/TesatlasHubAppTests/Fixtures/source-check-not-recognised.json")).unwrap();
     assert_eq!(actual, expected);
     assert_eq!(actual["sourceSchemaRecognised"], false);
     for key in [
@@ -114,14 +114,14 @@ fn source_check_not_recognised_report_is_false_without_label() {
 /// and set label) together, so the CLI and the app cannot drift apart.
 #[test]
 fn source_check_reports_and_fixtures_name_the_current_reviewed_set() {
-    use teslatlas_hub::source_db_schema::CURRENT_REVIEWED_SOURCE_SET as SET;
+    use tesatlas_hub::source_db_schema::CURRENT_REVIEWED_SOURCE_SET as SET;
     let label = &SET.migration_set_sha256[..12];
     let recognised: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/source-check-recognised.json"
+        "../../../macos/TesatlasHubApp/TesatlasHubAppTests/Fixtures/source-check-recognised.json"
     ))
     .unwrap();
     let refused: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/source-check-not-recognised.json"
+        "../../../macos/TesatlasHubApp/TesatlasHubAppTests/Fixtures/source-check-not-recognised.json"
     ))
     .unwrap();
     for accept in [true, false] {
@@ -171,7 +171,7 @@ fn source_check_reports_and_fixtures_name_the_current_reviewed_set() {
 /// refused with guidance to update the source application to 4.4.0 first.
 #[test]
 fn source_check_names_release_4_4_0_and_guides_an_earlier_set_source() {
-    use teslatlas_hub::source_db_schema::{
+    use tesatlas_hub::source_db_schema::{
         CURRENT_REVIEWED_SOURCE_SET as SET, V4_2_REVIEWED_SOURCE_SET,
     };
     assert_eq!(SET.release, "4.4.0");
@@ -240,7 +240,7 @@ fn source_check_unreached_comparison_reports_null() {
 
 #[test]
 fn unknown_subcommand_names_source_check() {
-    let error = Cli::try_parse_from(["teslatlas-hub", "unlisted-action"])
+    let error = Cli::try_parse_from(["tesatlas-hub", "unlisted-action"])
         .unwrap_err()
         .to_string();
     assert!(!error.contains("error: error:"), "{error}");
@@ -263,25 +263,25 @@ fn explicit_and_configured_import_source_keys_share_validation() {
     ] {
         let explicit = migration_source_key(Some(invalid), Some("home-source"));
         let configured = migration_source_key(None, Some(invalid));
-        assert!(teslatlas_hub::config::validate_import_source_key(explicit).is_err());
-        assert!(teslatlas_hub::config::validate_import_source_key(configured).is_err());
+        assert!(tesatlas_hub::config::validate_import_source_key(explicit).is_err());
+        assert!(tesatlas_hub::config::validate_import_source_key(configured).is_err());
     }
     assert!(
-        teslatlas_hub::config::validate_import_source_key(migration_source_key(None, None)).is_ok()
+        tesatlas_hub::config::validate_import_source_key(migration_source_key(None, None)).is_ok()
     );
     for key in ["a".repeat(256), "é".repeat(128)] {
         for selected in [
             migration_source_key(Some(&key), None),
             migration_source_key(None, Some(&key)),
         ] {
-            assert!(teslatlas_hub::config::validate_import_source_key(selected).is_ok());
+            assert!(tesatlas_hub::config::validate_import_source_key(selected).is_ok());
         }
     }
 }
 
 fn schema_arguments(command: &str, flag: &str) -> Vec<String> {
     let mut args = [
-        "teslatlas-hub",
+        "tesatlas-hub",
         command,
         "--source",
         "postgresql://reader@source.example/sourcedb",
@@ -327,7 +327,7 @@ fn old_schema_flag_alias_works_warns_and_is_hidden() {
         assert_eq!(warnings.lines().count(), 1);
         assert!(warnings.contains("--accept-schema-evidence"));
         assert!(warnings.contains("a later version"));
-        let help = Cli::try_parse_from(["teslatlas-hub", command, "--help"])
+        let help = Cli::try_parse_from(["tesatlas-hub", command, "--help"])
             .unwrap_err()
             .to_string();
         assert!(help.contains("--accept-schema-evidence"));
@@ -406,14 +406,14 @@ fn current_import_fixture() -> (tempfile::TempDir, HubStore, uuid::Uuid, uuid::U
         .unwrap();
     let first = store
         .register_vehicle(
-            &teslatlas_hub::db::VehicleDescriptor::new(source.source_id, "car-1"),
+            &tesatlas_hub::db::VehicleDescriptor::new(source.source_id, "car-1"),
             1000,
         )
         .unwrap();
     for index in 2..=66 {
         store
             .register_vehicle(
-                &teslatlas_hub::db::VehicleDescriptor::new(
+                &tesatlas_hub::db::VehicleDescriptor::new(
                     source.source_id,
                     format!("car-{index}"),
                 ),
@@ -451,7 +451,7 @@ fn assert_migration_argument_identity(arguments: Vec<String>) {
     assert_eq!(source.kind, "source_db");
     let vehicle = store
         .register_vehicle(
-            &teslatlas_hub::db::VehicleDescriptor::new(source.source_id, "car-1"),
+            &tesatlas_hub::db::VehicleDescriptor::new(source.source_id, "car-1"),
             3000,
         )
         .unwrap();
@@ -467,7 +467,7 @@ fn mt4_1_keyless_migrate_reuses_the_existing_source() {
 #[test]
 fn mt4_2_gui_argument_vector_reuses_the_existing_source() {
     let arguments: Vec<String> = serde_json::from_str(include_str!(
-        "../../../macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/import-history-argv.json"
+        "../../../macos/TesatlasHubApp/TesatlasHubAppTests/Fixtures/import-history-argv.json"
     ))
     .unwrap();
     assert_migration_argument_identity(arguments);
@@ -493,7 +493,7 @@ async fn mt4_3_cli_refusal_preserves_abandoned_generation_before_initialisation(
             .unwrap();
         let vehicle = store
             .register_vehicle(
-                &teslatlas_hub::db::VehicleDescriptor::new(source.source_id, "car-1"),
+                &tesatlas_hub::db::VehicleDescriptor::new(source.source_id, "car-1"),
                 1000,
             )
             .unwrap();

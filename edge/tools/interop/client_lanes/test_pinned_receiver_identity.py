@@ -56,7 +56,7 @@ func TestGeneratedSyntheticIdentityIsAccepted(t *testing.T) {
 
 func TestWrongIssuerIsRejected(t *testing.T) {
 	certificate := readCertificate(t)
-	certificate.Issuer.CommonName = "Teslatlas Synthetic Vehicle CA"
+	certificate.Issuer.CommonName = "Tesatlas Synthetic Vehicle CA"
 	_, _, err := CreateIdentityFromCert(certificate)
 	if !errors.Is(err, ErrUnauthorizedCert) {
 		t.Fatalf("wrong issuer returned %v, want ErrUnauthorizedCert", err)
@@ -120,7 +120,7 @@ def main() -> int:
         messages.mkdir()
         shutil.copyfile(verifier, messages / "identity.go")
         (root / "go.mod").write_text(
-            "module teslatlas-pinned-receiver-identity-regression\n\ngo 1.23.0\n",
+            "module tesatlas-pinned-receiver-identity-regression\n\ngo 1.23.0\n",
             encoding="ascii",
         )
         (messages / "identity_test.go").write_text(GO_TEST, encoding="ascii")

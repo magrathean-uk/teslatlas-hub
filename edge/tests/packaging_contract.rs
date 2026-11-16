@@ -60,7 +60,7 @@ mod unix {
         fs::write(spool.join("FORMAT"), b"2\n").unwrap();
 
         let output = Command::new(guard())
-            .arg(env!("CARGO_BIN_EXE_teslatlas-edge"))
+            .arg(env!("CARGO_BIN_EXE_tesatlas-edge"))
             .arg(&spool)
             .arg("--")
             .arg("storage-format")
@@ -95,7 +95,7 @@ mod unix {
         fs::create_dir(&spool).unwrap();
         fs::write(spool.join("FORMAT"), b"3\n").unwrap();
         let output = Command::new(guard())
-            .arg(env!("CARGO_BIN_EXE_teslatlas-edge"))
+            .arg(env!("CARGO_BIN_EXE_tesatlas-edge"))
             .arg(&spool)
             .arg("--")
             .arg("storage-format")
@@ -124,24 +124,24 @@ mod unix {
     #[test]
     fn native_supervisors_allow_application_drain_and_final_sync() {
         let edge_unit = fs::read_to_string(format!(
-            "{}/packaging/linux/teslatlas-edge.service",
+            "{}/packaging/linux/tesatlas-edge.service",
             env!("CARGO_MANIFEST_DIR")
         ))
         .unwrap();
         let receiver_unit = fs::read_to_string(format!(
-            "{}/packaging/linux/teslatlas-fleet-telemetry.service",
+            "{}/packaging/linux/tesatlas-fleet-telemetry.service",
             env!("CARGO_MANIFEST_DIR")
         ))
         .unwrap();
         assert!(edge_unit.contains("TimeoutStopSec=10"));
         assert!(
-            !edge_unit.contains("Wants=network-online.target teslatlas-fleet-telemetry.service")
+            !edge_unit.contains("Wants=network-online.target tesatlas-fleet-telemetry.service")
         );
         assert!(receiver_unit.contains("TimeoutStopSec=10"));
 
         for path in [
-            "packaging/macos/uk.co.magrathean.teslatlas-edge.plist",
-            "packaging/macos/uk.co.magrathean.teslatlas-fleet-telemetry.plist",
+            "packaging/macos/uk.co.magrathean.tesatlas-edge.plist",
+            "packaging/macos/uk.co.magrathean.tesatlas-fleet-telemetry.plist",
         ] {
             let plist =
                 fs::read_to_string(format!("{}/{}", env!("CARGO_MANIFEST_DIR"), path)).unwrap();
@@ -172,36 +172,36 @@ mod unix {
         assert!(compose.contains("${EDGE_RECEIVER_PORT:-443}:8444"));
         assert!(compose.contains("entrypoint: [\"/usr/bin/fleet-telemetry\"]"));
         assert!(
-            compose.contains("command: [\"-config=/etc/teslatlas-edge/fleet-telemetry.json\"]")
+            compose.contains("command: [\"-config=/etc/tesatlas-edge/fleet-telemetry.json\"]")
         );
-        assert!(compose.contains("TESLATLAS_FLEET_TELEMETRY_BEARER_FILE"));
+        assert!(compose.contains("TESATLAS_FLEET_TELEMETRY_BEARER_FILE"));
         assert!(compose.contains("condition: service_healthy"));
-        assert!(compose.contains("/var/lib/teslatlas-edge"));
-        assert!(compose.contains("/run/teslatlas-edge-vehicle-tls:ro"));
+        assert!(compose.contains("/var/lib/tesatlas-edge"));
+        assert!(compose.contains("/run/tesatlas-edge-vehicle-tls:ro"));
 
         let edge_config =
             fs::read_to_string(format!("{root}/packaging/docker/config.toml.example")).unwrap();
         assert!(
             edge_config
-                .contains("receiver_bearer_path = \"/run/teslatlas-edge-receiver/receiver-token\"")
+                .contains("receiver_bearer_path = \"/run/tesatlas-edge-receiver/receiver-token\"")
         );
         assert!(edge_config.contains(
-            "hub_server_private_key_path = \"/run/teslatlas-edge-hub-tls/hub-server.key\""
+            "hub_server_private_key_path = \"/run/tesatlas-edge-hub-tls/hub-server.key\""
         ));
         let receiver_config = fs::read_to_string(format!(
             "{root}/packaging/docker/fleet-telemetry.json.example"
         ))
         .unwrap();
         assert!(receiver_config.contains("\"port\": 8444"));
-        assert!(receiver_config.contains("/run/teslatlas-edge-vehicle-tls/vehicle-tls.crt"));
-        assert!(receiver_config.contains("/run/teslatlas-edge-vehicle-tls/vehicle-tls.key"));
-        assert!(receiver_config.contains("/run/teslatlas-edge-vehicle-tls/vehicle-client-ca.crt"));
+        assert!(receiver_config.contains("/run/tesatlas-edge-vehicle-tls/vehicle-tls.crt"));
+        assert!(receiver_config.contains("/run/tesatlas-edge-vehicle-tls/vehicle-tls.key"));
+        assert!(receiver_config.contains("/run/tesatlas-edge-vehicle-tls/vehicle-client-ca.crt"));
 
         let native_receiver_config =
             fs::read_to_string(format!("{root}/packaging/fleet-telemetry.json.example")).unwrap();
         assert!(
             native_receiver_config
-                .contains("\"ca_file\": \"/etc/teslatlas-edge/vehicle-client-ca.crt\"")
+                .contains("\"ca_file\": \"/etc/tesatlas-edge/vehicle-client-ca.crt\"")
         );
 
         let docker_docs = fs::read_to_string(format!("{root}/docs/operations/docker.md")).unwrap();
@@ -230,28 +230,28 @@ mod unix {
         assert!(build.contains("--architecture"));
         assert!(build.contains("readelf"));
         assert!(build.contains("dpkg-deb --root-owner-group --build"));
-        assert!(build.contains("usr/bin/teslatlas-edge"));
-        assert!(build.contains("usr/lib/teslatlas-edge/fleet-telemetry"));
+        assert!(build.contains("usr/bin/tesatlas-edge"));
+        assert!(build.contains("usr/lib/tesatlas-edge/fleet-telemetry"));
         assert!(!build.contains("rm -rf"));
 
         let control = fs::read_to_string(format!("{root}/packaging/linux/control.in")).unwrap();
-        assert!(control.contains("Package: teslatlas-edge"));
+        assert!(control.contains("Package: tesatlas-edge"));
         assert!(control.contains("Architecture: @ARCHITECTURE@"));
         assert!(control.contains("Depends:"));
 
         for hook in ["preinst", "postinst", "prerm", "postrm"] {
             let script = fs::read_to_string(format!("{root}/packaging/linux/{hook}")).unwrap();
             assert!(script.starts_with("#!/bin/sh"));
-            assert!(script.contains("teslatlas-fleet-telemetry.service"));
-            assert!(script.contains("teslatlas-edge.service"));
+            assert!(script.contains("tesatlas-fleet-telemetry.service"));
+            assert!(script.contains("tesatlas-edge.service"));
             assert!(!script.contains("rm -rf"));
         }
         assert!(
             fs::read_to_string(format!(
-                "{root}/packaging/linux/teslatlas-fleet-telemetry.service"
+                "{root}/packaging/linux/tesatlas-fleet-telemetry.service"
             ))
             .unwrap()
-            .contains("ConditionPathExists=/etc/teslatlas-edge/vehicle-client-ca.crt")
+            .contains("ConditionPathExists=/etc/tesatlas-edge/vehicle-client-ca.crt")
         );
         let preinst = fs::read_to_string(format!("{root}/packaging/linux/preinst")).unwrap();
         assert!(
@@ -285,33 +285,33 @@ mod unix {
         assert!(build.contains("--receiver-binary"));
         assert!(build.contains("pkgbuild"));
         assert!(build.contains("productbuild --distribution"));
-        assert!(build.contains("teslatlas-edge.core"));
-        assert!(build.contains("teslatlas-edge.receiver"));
+        assert!(build.contains("tesatlas-edge.core"));
+        assert!(build.contains("tesatlas-edge.receiver"));
 
         let distribution =
             fs::read_to_string(format!("{root}/packaging/macos/Distribution.xml")).unwrap();
-        assert!(distribution.contains("choice id=\"teslatlas-edge.core\""));
-        assert!(distribution.contains("choice id=\"teslatlas-edge.receiver\""));
+        assert!(distribution.contains("choice id=\"tesatlas-edge.core\""));
+        assert!(distribution.contains("choice id=\"tesatlas-edge.receiver\""));
         assert!(distribution.contains("customize=\"always\""));
         let welcome =
             fs::read_to_string(format!("{root}/packaging/macos/resources/Welcome.html")).unwrap();
         assert!(welcome.contains("Development only"));
 
         let service = fs::read_to_string(format!(
-            "{root}/packaging/macos/scripts/teslatlas-edge-service.sh"
+            "{root}/packaging/macos/scripts/tesatlas-edge-service.sh"
         ))
         .unwrap();
         assert!(service.contains("launchctl bootstrap"));
         assert!(service.contains("launchctl bootout"));
-        assert!(service.contains("/Users/Shared/TeslatlasEdge"));
+        assert!(service.contains("/Users/Shared/TesatlasEdge"));
 
         let uninstall = fs::read_to_string(format!(
-            "{root}/packaging/macos/scripts/uninstall-teslatlas-edge.sh"
+            "{root}/packaging/macos/scripts/uninstall-tesatlas-edge.sh"
         ))
         .unwrap();
         assert!(uninstall.contains("--delete-data"));
         assert!(uninstall.contains("launchctl bootout"));
-        assert!(uninstall.contains("/Users/Shared/TeslatlasEdge"));
+        assert!(uninstall.contains("/Users/Shared/TesatlasEdge"));
         assert!(uninstall.contains("safe_payload"));
         assert!(uninstall.contains("stat -f '%u:%g'"));
         assert!(!uninstall.contains("rm -rf"));

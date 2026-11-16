@@ -1,6 +1,6 @@
 # Contributing
 
-How to propose and submit a change to teslatlas-sdk-swift.
+How to propose and submit a change to tesatlas-sdk-swift.
 
 Start by identifying the library and contract your change affects. The [architecture](../docs/architecture/overview.md) explains the three contract boundaries; the [development guide](../docs/guides/development.md) lists local checks.
 

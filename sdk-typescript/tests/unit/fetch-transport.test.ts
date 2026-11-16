@@ -127,7 +127,7 @@ describe("fetch transport", () => {
 
     expect(error).toMatchObject({
       name: "TransportError",
-      message: "Teslatlas transport request failed",
+      message: "Tesatlas transport request failed",
     });
     expect(error).not.toHaveProperty("cause");
     expect(String(error)).not.toContain("secret-value");

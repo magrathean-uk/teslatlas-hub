@@ -464,7 +464,7 @@ async fn production_caller_publishes_noops_and_rotates_under_one_gate() {
         .physical_v3_delta_pack_for_digest_at(pack_digest, 2_001, VehicleScope::Unrestricted)
         .expect("delta pack catalogue")
         .expect("published delta pack");
-    if let Some(output) = std::env::var_os("TESLATLAS_HUB_SYNTHETIC_DELTA_FIXTURE_DIR") {
+    if let Some(output) = std::env::var_os("TESATLAS_HUB_SYNTHETIC_DELTA_FIXTURE_DIR") {
         let output = std::path::PathBuf::from(output);
         std::fs::create_dir_all(&output).expect("synthetic fixture output directory");
         std::fs::write(output.join("receipt.json"), &delta_json).expect("synthetic signed receipt");
@@ -691,7 +691,7 @@ async fn physical_delta_pack_is_found_only_for_a_device_granted_the_owning_vehic
         .expect("content type");
     assert_eq!(
         content_type,
-        b"application/vnd.teslatlas.physical-delta+sqlite+zstd;version=1"
+        b"application/vnd.tesatlas.physical-delta+sqlite+zstd;version=1"
     );
     assert!(!body.is_empty());
     let ungranted = fetch(digest, other_bearer.clone()).await;

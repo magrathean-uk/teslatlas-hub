@@ -86,7 +86,7 @@ def openssl_identity(root: Path) -> dict[str, Path]:
 
     run(
         "openssl", "req", "-x509", "-newkey", "rsa:2048", "-sha256", "-nodes",
-        "-days", "1", "-subj", "/O=Teslatlas Synthetic/CN=Tesla Motors Products CA",
+        "-days", "1", "-subj", "/O=Tesatlas Synthetic/CN=Tesla Motors Products CA",
         "-addext", "basicConstraints=critical,CA:TRUE,pathlen:1",
         "-addext", "keyUsage=critical,keyCertSign,cRLSign",
         "-keyout", str(vehicle_ca_key), "-out", str(vehicle_ca),
@@ -97,7 +97,7 @@ def openssl_identity(root: Path) -> dict[str, Path]:
     )
     run(
         "openssl", "req", "-new", "-newkey", "rsa:2048", "-sha256", "-nodes",
-        "-subj", f"/O=Teslatlas Synthetic/CN={VIN}", "-keyout", str(vehicle_key),
+        "-subj", f"/O=Tesatlas Synthetic/CN={VIN}", "-keyout", str(vehicle_key),
         "-out", str(vehicle_csr),
     )
     run(
@@ -107,7 +107,7 @@ def openssl_identity(root: Path) -> dict[str, Path]:
     )
     run(
         "openssl", "req", "-x509", "-newkey", "rsa:2048", "-sha256", "-nodes",
-        "-days", "1", "-subj", "/O=Teslatlas Synthetic/CN=Receiver Integration CA",
+        "-days", "1", "-subj", "/O=Tesatlas Synthetic/CN=Receiver Integration CA",
         "-addext", "basicConstraints=critical,CA:TRUE,pathlen:1",
         "-addext", "keyUsage=critical,keyCertSign,cRLSign",
         "-keyout", str(receiver_ca_key), "-out", str(receiver_ca),
@@ -118,7 +118,7 @@ def openssl_identity(root: Path) -> dict[str, Path]:
     )
     run(
         "openssl", "req", "-new", "-newkey", "rsa:2048", "-sha256", "-nodes",
-        "-subj", "/O=Teslatlas Synthetic/CN=127.0.0.1", "-keyout", str(receiver_key),
+        "-subj", "/O=Tesatlas Synthetic/CN=127.0.0.1", "-keyout", str(receiver_key),
         "-out", str(receiver_csr),
     )
     run(
@@ -177,7 +177,7 @@ def main() -> int:
     thread.start()
     receiver_process: subprocess.Popen[bytes] | None = None
     try:
-        with tempfile.TemporaryDirectory(prefix="teslatlas-one-event-bridge-") as name:
+        with tempfile.TemporaryDirectory(prefix="tesatlas-one-event-bridge-") as name:
             root = Path(name)
             root.chmod(0o700)
             identities = openssl_identity(root)
@@ -195,10 +195,10 @@ def main() -> int:
                         "status_port": status_port,
                         "log_level": "info",
                         "json_log_enable": True,
-                        "namespace": "teslatlas-edge-integration",
-                        "teslatlas": {"timeout_ms": 2000},
-                        "reliable_ack_sources": {"V": "teslatlas"},
-                        "records": {"V": ["teslatlas"]},
+                        "namespace": "tesatlas-edge-integration",
+                        "tesatlas": {"timeout_ms": 2000},
+                        "reliable_ack_sources": {"V": "tesatlas"},
+                        "records": {"V": ["tesatlas"]},
                         "tls": {
                             "server_cert": str(identities["receiver_crt"]),
                             "server_key": str(identities["receiver_key"]),
@@ -213,7 +213,7 @@ def main() -> int:
             )
             config.chmod(0o600)
             environment = dict(os.environ)
-            environment["TESLATLAS_FLEET_TELEMETRY_BEARER_FILE"] = str(bearer_file)
+            environment["TESATLAS_FLEET_TELEMETRY_BEARER_FILE"] = str(bearer_file)
             receiver_process = subprocess.Popen(
                 [str(receiver), "-config", str(config)],
                 cwd=root,

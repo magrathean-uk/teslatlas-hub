@@ -1,11 +1,11 @@
 # Corresponding Source availability
 
-Teslatlas Hub 2026.36.1 is distributed under `AGPL-3.0-only`. Its corresponding
+Tesatlas Hub 2026.36.1 is distributed under `AGPL-3.0-only`. Its corresponding
 source boundary is the annotated Git tag `v2026.36.1`:
 
 ```sh
-git clone https://github.com/magrathean-uk/teslatlas-hub.git
-cd teslatlas-hub
+git clone https://github.com/magrathean-uk/tesatlas-hub.git
+cd tesatlas-hub
 git checkout --detach v2026.36.1
 git status --short
 ```
@@ -14,12 +14,12 @@ The final command should print nothing. The tag contains the Hub source,
 platform packaging, lockfiles, interface definitions, licence texts, notices,
 and the inputs needed by the documented build helpers.
 
-## Teslatlas Compute
+## Tesatlas Compute
 
-Current `main` links the Teslatlas Compute library (`teslatlas-compute`),
+Current `main` links the Tesatlas Compute library (`tesatlas-compute`),
 licensed under Apache-2.0 and kept in this repository's `compute/` directory as
 a Cargo workspace member (imported with its history from
-<https://github.com/magrathean-uk/teslatlas-compute> on 2026-10-08). `Cargo.toml`
+<https://github.com/magrathean-uk/tesatlas-compute> on 2026-10-08). `Cargo.toml`
 names it as a path dependency, so a Hub commit contains the library source. A Hub commit therefore identifies the exact library source, in
 the same way as every other locked dependency.
 
@@ -44,7 +44,7 @@ evidence for components that are distributed must match those exact components.
 
 There is no GitHub Release page and no downloadable GitHub release asset for
 v1.0.0. The repository distributes source. A combined macOS package can be
-built locally as `dist/TeslatlasHub.pkg`; Debian packages can be built locally
+built locally as `dist/TesatlasHub.pkg`; Debian packages can be built locally
 for their target architecture.
 
 Anyone who distributes those packages or another object-code build must make
@@ -72,7 +72,7 @@ Fleet evidence includes the pinned upstream source and the source ZIP plus
 `go.mod` for each locked runtime module. Go command-proxy evidence includes the
 locked upstream module sources and tracked overlay. Rust dependency evidence is
 generated with `scripts/rust-source-evidence.py` from `Cargo.lock`. It holds
-every locked crate archive and, for a Git dependency such as Teslatlas Compute,
+every locked crate archive and, for a Git dependency such as Tesatlas Compute,
 the locked commit object and the source tree of that commit. Verification checks
 the tree against the commit without network access.
 
@@ -89,14 +89,14 @@ python3 scripts/rust-source-evidence.py --repo . \
 The CLI exposes the licence and source information used by the running build:
 
 ```text
-teslatlas-hub legal
-teslatlas-hub licence
-teslatlas-hub source
+tesatlas-hub legal
+tesatlas-hub licence
+tesatlas-hub source
 ```
 
 For a bound build, `source` and the macOS menu identify the exact
 `/tree/<40-hex-commit>` URL embedded by the build. The `Cargo.lock` in that
-tree pins the Teslatlas Compute commit the build uses. An unbound developer build
+tree pins the Tesatlas Compute commit the build uses. An unbound developer build
 keeps the discovery schema valid by reporting the repository root, but the
 `source` command fails and the legal notice marks the build non-distributable.
 The macOS app omits its Corresponding Source menu item when unbound.

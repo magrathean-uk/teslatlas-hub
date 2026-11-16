@@ -4,20 +4,20 @@ set -eu
 
 [ "${1:-}" = upgrade ] || exit 0
 
-service=teslatlas-hub.service
-command_proxy_service=teslatlas-command-proxy.service
-fleet_telemetry_service=teslatlas-fleet-telemetry.service
-state_file=${TESLATLAS_HUB_MAINTAINER_STATE_FILE:-/run/teslatlas-hub-maintainer.state}
-backup_dir=${TESLATLAS_HUB_UPGRADE_BACKUP_DIR:-/run/teslatlas-hub-package-upgrade}
-hub_binary=${TESLATLAS_HUB_BINARY:-/usr/bin/teslatlas-hub}
-unit_file=${TESLATLAS_HUB_UNIT_FILE:-/lib/systemd/system/teslatlas-hub.service}
-terminal_failure_target_file=${TESLATLAS_HUB_TERMINAL_FAILURE_TARGET_FILE:-/lib/systemd/system/teslatlas-hub-terminal-failure.target}
-command_proxy_binary=${TESLATLAS_COMMAND_PROXY_BINARY:-/usr/lib/teslatlas-hub/tesla-http-proxy}
-fleet_telemetry_binary=${TESLATLAS_FLEET_TELEMETRY_BINARY:-/usr/lib/teslatlas-hub/fleet-telemetry}
-command_proxy_unit_file=${TESLATLAS_COMMAND_PROXY_UNIT_FILE:-/lib/systemd/system/teslatlas-command-proxy.service}
-fleet_telemetry_unit_file=${TESLATLAS_FLEET_TELEMETRY_UNIT_FILE:-/lib/systemd/system/teslatlas-fleet-telemetry.service}
-command_proxy_config=${TESLATLAS_COMMAND_PROXY_CONFIG:-/etc/teslatlas-hub/command-proxy.env}
-fleet_telemetry_config=${TESLATLAS_FLEET_TELEMETRY_CONFIG:-/etc/teslatlas-hub/fleet-telemetry.json}
+service=tesatlas-hub.service
+command_proxy_service=tesatlas-command-proxy.service
+fleet_telemetry_service=tesatlas-fleet-telemetry.service
+state_file=${TESATLAS_HUB_MAINTAINER_STATE_FILE:-/run/tesatlas-hub-maintainer.state}
+backup_dir=${TESATLAS_HUB_UPGRADE_BACKUP_DIR:-/run/tesatlas-hub-package-upgrade}
+hub_binary=${TESATLAS_HUB_BINARY:-/usr/bin/tesatlas-hub}
+unit_file=${TESATLAS_HUB_UNIT_FILE:-/lib/systemd/system/tesatlas-hub.service}
+terminal_failure_target_file=${TESATLAS_HUB_TERMINAL_FAILURE_TARGET_FILE:-/lib/systemd/system/tesatlas-hub-terminal-failure.target}
+command_proxy_binary=${TESATLAS_COMMAND_PROXY_BINARY:-/usr/lib/tesatlas-hub/tesla-http-proxy}
+fleet_telemetry_binary=${TESATLAS_FLEET_TELEMETRY_BINARY:-/usr/lib/tesatlas-hub/fleet-telemetry}
+command_proxy_unit_file=${TESATLAS_COMMAND_PROXY_UNIT_FILE:-/lib/systemd/system/tesatlas-command-proxy.service}
+fleet_telemetry_unit_file=${TESATLAS_FLEET_TELEMETRY_UNIT_FILE:-/lib/systemd/system/tesatlas-fleet-telemetry.service}
+command_proxy_config=${TESATLAS_COMMAND_PROXY_CONFIG:-/etc/tesatlas-hub/command-proxy.env}
+fleet_telemetry_config=${TESATLAS_FLEET_TELEMETRY_CONFIG:-/etc/tesatlas-hub/fleet-telemetry.json}
 
 unit_available() {
     systemctl cat "$1" >/dev/null 2>&1
@@ -77,7 +77,7 @@ backup_optional_file() {
     backup_mode=$3
     if [ -e "$source_file" ] || [ -L "$source_file" ]; then
         [ -f "$source_file" ] && [ ! -L "$source_file" ] || {
-            echo "Installed Teslatlas sidecar payload is unsafe: $source_file" >&2
+            echo "Installed Tesatlas sidecar payload is unsafe: $source_file" >&2
             return 1
         }
         install -o root -g root -m "$backup_mode" "$source_file" "$backup_dir/$backup_name"
@@ -87,11 +87,11 @@ backup_optional_file() {
 }
 
 [ ! -e "$backup_dir" ] && [ ! -L "$backup_dir" ] || {
-    echo "Teslatlas Hub upgrade backup already exists: $backup_dir" >&2
+    echo "Tesatlas Hub upgrade backup already exists: $backup_dir" >&2
     exit 1
 }
 [ ! -e "$state_file" ] && [ ! -L "$state_file" ] || {
-    echo "Teslatlas Hub maintainer state already exists: $state_file" >&2
+    echo "Tesatlas Hub maintainer state already exists: $state_file" >&2
     exit 1
 }
 install -d -o root -g root -m 0700 "$backup_dir"
@@ -114,7 +114,7 @@ cleanup_on_failure() {
             rm -f "$state_file"
             find "$backup_dir" -depth -delete 2>/dev/null || true
         else
-            echo "Teslatlas Hub upgrade preparation failed; retained rollback state at $state_file" >&2
+            echo "Tesatlas Hub upgrade preparation failed; retained rollback state at $state_file" >&2
         fi
     fi
     exit "$status"
@@ -123,20 +123,20 @@ trap cleanup_on_failure EXIT
 trap 'exit 1' HUP INT TERM
 
 [ -f "$hub_binary" ] && [ ! -L "$hub_binary" ] || {
-    echo "Installed Teslatlas Hub binary is unsafe or missing" >&2
+    echo "Installed Tesatlas Hub binary is unsafe or missing" >&2
     exit 1
 }
 [ -f "$unit_file" ] && [ ! -L "$unit_file" ] || {
-    echo "Installed Teslatlas Hub unit is unsafe or missing" >&2
+    echo "Installed Tesatlas Hub unit is unsafe or missing" >&2
     exit 1
 }
-install -o root -g root -m 0755 "$hub_binary" "$backup_dir/teslatlas-hub"
-install -o root -g root -m 0644 "$unit_file" "$backup_dir/teslatlas-hub.service"
-backup_optional_file "$terminal_failure_target_file" teslatlas-hub-terminal-failure.target 0644
+install -o root -g root -m 0755 "$hub_binary" "$backup_dir/tesatlas-hub"
+install -o root -g root -m 0644 "$unit_file" "$backup_dir/tesatlas-hub.service"
+backup_optional_file "$terminal_failure_target_file" tesatlas-hub-terminal-failure.target 0644
 backup_optional_file "$command_proxy_binary" tesla-http-proxy 0755
 backup_optional_file "$fleet_telemetry_binary" fleet-telemetry 0755
-backup_optional_file "$command_proxy_unit_file" teslatlas-command-proxy.service 0644
-backup_optional_file "$fleet_telemetry_unit_file" teslatlas-fleet-telemetry.service 0644
+backup_optional_file "$command_proxy_unit_file" tesatlas-command-proxy.service 0644
+backup_optional_file "$fleet_telemetry_unit_file" tesatlas-fleet-telemetry.service 0644
 backup_optional_file "$command_proxy_config" command-proxy.env 0644
 backup_optional_file "$fleet_telemetry_config" fleet-telemetry.json 0644
 

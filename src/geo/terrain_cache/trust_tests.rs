@@ -125,13 +125,13 @@ fn a_root_that_is_a_file_is_rejected() {
 #[test]
 fn a_relative_root_is_rejected_without_creating_anything() {
     let (_data, store) = test_store();
-    let relative = Path::new("teslatlas-terrain-relative-root-test/terrain");
+    let relative = Path::new("tesatlas-terrain-relative-root-test/terrain");
 
     assert!(matches!(
         unusable(relative, &store),
         TerrainCacheError::UntrustedRoot(PrivateDirectoryError::InvalidPath)
     ));
-    assert!(!Path::new("teslatlas-terrain-relative-root-test").exists());
+    assert!(!Path::new("tesatlas-terrain-relative-root-test").exists());
 }
 
 #[test]
@@ -207,17 +207,17 @@ fn a_wide_root_owned_by_the_user_is_tightened_to_0700_and_works() {
 
 #[test]
 fn a_missing_root_is_created_private_below_an_existing_ancestor() {
-    // The default roots have two missing levels: `TeslatlasHub/terrain` below
+    // The default roots have two missing levels: `TesatlasHub/terrain` below
     // the user cache directory and `cache/terrain` below the data directory.
     let base = tempdir().unwrap();
     let (_data, store) = test_store();
-    let root = base.path().join("TeslatlasHub/terrain");
+    let root = base.path().join("TesatlasHub/terrain");
 
     let cache = TerrainCache::new(options(&root, "http://127.0.0.1:1/", &store)).unwrap();
 
-    assert_eq!(mode_of(&base.path().join("TeslatlasHub")), 0o700);
+    assert_eq!(mode_of(&base.path().join("TesatlasHub")), 0o700);
     assert_eq!(mode_of(&root), 0o700);
-    assert!(cache.root_path().ends_with("TeslatlasHub/terrain"));
+    assert!(cache.root_path().ends_with("TesatlasHub/terrain"));
 }
 
 #[test]

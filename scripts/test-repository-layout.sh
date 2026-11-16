@@ -4,7 +4,7 @@ set -eu
 
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 VERIFIER="$ROOT/scripts/verify-repository-layout.py"
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-layout-test.XXXXXX")
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-layout-test.XXXXXX")
 cleanup() {
     find "$TMP" -depth -delete 2>/dev/null || true
 }

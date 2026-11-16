@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Dependency-free deterministic compute kernels shared by Teslatlas products.
+//! Dependency-free deterministic compute kernels shared by Tesatlas products.
 
 mod cleaner;
 mod raster;

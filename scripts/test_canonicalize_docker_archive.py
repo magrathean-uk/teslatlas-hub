@@ -20,9 +20,9 @@ SCRIPT = ROOT / "scripts/canonicalize-docker-archive.py"
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
 EPOCH = 1_700_000_000
 VERSION = "2026.36.2"
-INPUT_TAG = "teslatlas-hub-build-cohort:test"
-OUTPUT_TAG = "teslatlas-hub:test"
-SOURCE_URL = "https://github.com/magrathean-uk/teslatlas-hub"
+INPUT_TAG = "tesatlas-hub-build-cohort:test"
+OUTPUT_TAG = "tesatlas-hub:test"
+SOURCE_URL = "https://github.com/magrathean-uk/tesatlas-hub"
 EMPTY_LAYER = b"\0" * 1024
 EMPTY_DIGEST = hashlib.sha256(EMPTY_LAYER).hexdigest()
 OCI_LAYER = "application/vnd.oci.image.layer.v1.tar"
@@ -77,7 +77,7 @@ class Fixture:
     @staticmethod
     def labels() -> dict[str, str]:
         return {
-            "org.opencontainers.image.title": "Teslatlas Hub",
+            "org.opencontainers.image.title": "Tesatlas Hub",
             "org.opencontainers.image.version": VERSION,
             "org.opencontainers.image.source": SOURCE_URL,
             "org.opencontainers.image.revision": COMMIT,
@@ -101,10 +101,10 @@ class Fixture:
                 "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                 "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
             ],
-            "Cmd": ["--config", "/etc/teslatlas-hub/config.toml", "serve"],
+            "Cmd": ["--config", "/etc/tesatlas-hub/config.toml", "serve"],
             "ArgsEscaped": True,
-            "WorkingDir": "/var/lib/teslatlas-hub",
-            "Entrypoint": ["/usr/local/bin/teslatlas-hub"],
+            "WorkingDir": "/var/lib/tesatlas-hub",
+            "Entrypoint": ["/usr/local/bin/tesatlas-hub"],
             "Labels": self.labels(),
         }
 
@@ -117,9 +117,9 @@ class Fixture:
                     "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                     "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
                 ],
-                "Entrypoint": ["/usr/local/bin/teslatlas-hub"],
-                "Cmd": ["--config", "/etc/teslatlas-hub/config.toml", "serve"],
-                "WorkingDir": "/var/lib/teslatlas-hub", "Labels": self.labels(),
+                "Entrypoint": ["/usr/local/bin/tesatlas-hub"],
+                "Cmd": ["--config", "/etc/tesatlas-hub/config.toml", "serve"],
+                "WorkingDir": "/var/lib/tesatlas-hub", "Labels": self.labels(),
                 "ArgsEscaped": True,
             },
             "rootfs": {"type": "layers", "diff_ids": [
@@ -254,7 +254,7 @@ class CanonicalizeDockerArchiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root, fixture = Path(temporary), Fixture(Path(temporary))
             first, second = root / "first.tar", root / "second.tar"
-            first_tag, second_tag = "teslatlas-hub-build-cohort:first", "teslatlas-hub-build-cohort:second"
+            first_tag, second_tag = "tesatlas-hub-build-cohort:first", "tesatlas-hub-build-cohort:second"
             first_id = fixture.write(first, mtime=EPOCH + 10, repository_tag=first_tag)
             second_id = fixture.write(second, mtime=EPOCH + 99, reverse=True, repository_tag=second_tag)
             first_output, second_output = root / "first-out.tar", root / "second-out.tar"
@@ -272,7 +272,7 @@ class CanonicalizeDockerArchiveTests(unittest.TestCase):
                         manifest[0]["Config"], *manifest[0]["Layers"]}
             self.assertEqual(names, expected)
             self.assertEqual(manifest[0]["RepoTags"], [OUTPUT_TAG])
-            self.assertEqual(repositories, {"teslatlas-hub": {"test": EMPTY_DIGEST}})
+            self.assertEqual(repositories, {"tesatlas-hub": {"test": EMPTY_DIGEST}})
 
     def test_rejects_wrong_config_bindings_and_unknown_runtime_fields(self) -> None:
         cases = {
@@ -337,7 +337,7 @@ class CanonicalizeDockerArchiveTests(unittest.TestCase):
             image_id = fixture.write(source, mtime=EPOCH)
             mismatch = root / "mismatch.tar"
             result = fixture.run(source, mismatch, image_id,
-                                 input_tag="teslatlas-hub-build-cohort:foreign")
+                                 input_tag="tesatlas-hub-build-cohort:foreign")
             self.assertNotEqual(result.returncode, 0)
             existing = root / "existing.tar"
             existing.write_bytes(b"preserve")

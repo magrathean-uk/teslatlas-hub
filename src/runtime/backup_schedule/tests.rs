@@ -170,7 +170,7 @@ fn backup_schedule_refused_credentials_refuse_the_run_and_name_the_purge_command
         Some(data_recovery::BACKUP_BLOCKED_BY_REFUSED_CREDENTIALS),
     );
     assert_eq!(refusal.code, BACKUP_BLOCKED);
-    assert!(refusal.message.contains("teslatlas-hub purge-refused-credentials --confirm"));
+    assert!(refusal.message.contains("tesatlas-hub purge-refused-credentials --confirm"));
     let other = refusal_from(&DataRecoveryError::Cancelled, None);
     assert_eq!(other.code, BACKUP_CANCELLED);
     // The schedule records the refusal and retries; it never runs a backup around it.
@@ -744,10 +744,10 @@ fn backup_schedule_the_service_reads_a_disposable_keychain_without_a_prompt() {
     use keychain::{KEYCHAIN_SERVICE, KeychainFailure, PasswordKeychain, SystemKeychain, classify};
     use security_framework::os::macos::keychain::CreateOptions;
     // DEC-156: this test makes real Keychain calls, so it is skipped unless
-    // `TESLATLAS_HUB_KEYCHAIN_GUEST=1` is set, which marks a disposable-keychain
+    // `TESATLAS_HUB_KEYCHAIN_GUEST=1` is set, which marks a disposable-keychain
     // environment; elsewhere the injected stores above cover the same rules.
-    if std::env::var_os("TESLATLAS_HUB_KEYCHAIN_GUEST").is_none() {
-        eprintln!("skipped here: needs TESLATLAS_HUB_KEYCHAIN_GUEST=1 (a disposable-keychain environment)");
+    if std::env::var_os("TESATLAS_HUB_KEYCHAIN_GUEST").is_none() {
+        eprintln!("skipped here: needs TESATLAS_HUB_KEYCHAIN_GUEST=1 (a disposable-keychain environment)");
         return;
     }
     // A disposable keychain in a private folder under the temp folder; the
@@ -761,7 +761,7 @@ fn backup_schedule_the_service_reads_a_disposable_keychain_without_a_prompt() {
         .prompt_user(false)
         .create(root.path().join("backup-test.keychain"))
         .expect("disposable keychain");
-    let account = "/Users/fixture/Library/Application Support/Teslatlas Hub/backup-password";
+    let account = "/Users/fixture/Library/Application Support/Tesatlas Hub/backup-password";
     disposable
         .add_generic_password(KEYCHAIN_SERVICE, account, PASSWORD.as_bytes())
         .expect("item");

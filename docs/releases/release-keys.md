@@ -1,6 +1,6 @@
 # Historical release-key notes
 
-Teslatlas Hub v1.0.0 uses an annotated source tag. It has no GitHub Release,
+Tesatlas Hub v1.0.0 uses an annotated source tag. It has no GitHub Release,
 downloadable release assets, checksum bundle, or active release-key workflow.
 The tag itself is the public source boundary.
 

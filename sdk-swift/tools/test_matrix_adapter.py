@@ -571,7 +571,7 @@ class _CompositionFixture:
             "swift_product", self.root / "product-root.bin", self.root / "product-local.bin", product_raw
         )
         product_member = {
-            "path": "Products/TeslatlasCurrentHub.swiftmodule",
+            "path": "Products/TesatlasCurrentHub.swiftmodule",
             "bytes": 1,
             "mode": 0o644,
             "sha256": DIGEST,

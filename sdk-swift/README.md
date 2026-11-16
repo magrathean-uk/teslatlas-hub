@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/magrathean-uk/magrathean-uk/main/assets/icons/teslatlas.png" width="96" height="96" alt="">
+  <img src="https://raw.githubusercontent.com/magrathean-uk/magrathean-uk/main/assets/icons/tesatlas.png" width="96" height="96" alt="">
 </p>
 
-<h1 align="center">Teslatlas Swift SDK</h1>
+<h1 align="center">Tesatlas Swift SDK</h1>
 
-<p align="center">A Swift Package Manager source package for the Teslatlas Hub protocol, command and compatibility surfaces.</p>
+<p align="center">A Swift Package Manager source package for the Tesatlas Hub protocol, command and compatibility surfaces.</p>
 
 <p align="center">
   <a href="docs/architecture/overview.md">Documentation</a> ·
@@ -13,9 +13,9 @@
 
 ## Overview
 
-Teslatlas Swift SDK is a Swift Package Manager source package with four public
-products across three contract families. `TeslatlasCommands` builds on the
-strict `TeslatlasHubSDK` models, while the deployed-Hub and current-Hub
+Tesatlas Swift SDK is a Swift Package Manager source package with four public
+products across three contract families. `TesatlasCommands` builds on the
+strict `TesatlasHubSDK` models, while the deployed-Hub and current-Hub
 products remain separate. Consume it from a source checkout or a reviewed
 source snapshot.
 
@@ -23,10 +23,10 @@ source snapshot.
 
 | Product | Use it for |
 | --- | --- |
-| `TeslatlasHubSDK` | The strict Teslatlas public protocol profile 1.2.0: discovery, conditional reads, history, events, and typed protocol models. |
-| `TeslatlasCommands` | The strict protocol command surface, using `TeslatlasHubSDK` protocol models. It submits an advertised command once with an idempotency key and returns the accepted job. |
-| `TeslatlasHubV1Compatibility` | The deployed Hub v1.0.0 compatibility surface: discovery, vehicles, current state, and drive pages using an existing bearer. |
-| `TeslatlasCurrentHub` | The approved `hub-http-v1@1.0.0` current-Hub surface: discovery, health, readiness, claim, rotation, vehicles, current state, and bounded drive pages. |
+| `TesatlasHubSDK` | The strict Tesatlas public protocol profile 1.2.0: discovery, conditional reads, history, events, and typed protocol models. |
+| `TesatlasCommands` | The strict protocol command surface, using `TesatlasHubSDK` protocol models. It submits an advertised command once with an idempotency key and returns the accepted job. |
+| `TesatlasHubV1Compatibility` | The deployed Hub v1.0.0 compatibility surface: discovery, vehicles, current state, and drive pages using an existing bearer. |
+| `TesatlasCurrentHub` | The approved `hub-http-v1@1.0.0` current-Hub surface: discovery, health, readiness, claim, rotation, vehicles, current state, and bounded drive pages. |
 
 The three contract families are intentionally separate. Do not use a type,
 route, capability, or conformance claim from one contract as evidence for
@@ -46,7 +46,7 @@ For a local source checkout:
 
 ```swift
 dependencies: [
-  .package(path: "../teslatlas-sdk-swift")
+  .package(path: "../tesatlas-sdk-swift")
 ]
 ```
 
@@ -54,22 +54,22 @@ For a moving source dependency, select the repository branch explicitly:
 
 ```swift
 .package(
-  url: "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
+  url: "https://github.com/magrathean-uk/tesatlas-sdk-swift.git",
   branch: "main"
 )
 ```
 
 Choose a reviewed source snapshot when reproducibility matters. The calendar
-product version in `VERSION` and `teslatlasProductVersion` is separate from the Swift
+product version in `VERSION` and `tesatlasProductVersion` is separate from the Swift
 tools version and every wire-contract identity. See
 [product versioning](docs/reference/product-versioning.md) and
 [source distribution](docs/guides/source-distribution.md).
 
 ## Strict protocol client
 
-`TeslatlasHubSDK` discovers a Hub, negotiates the highest protocol version up
+`TesatlasHubSDK` discovers a Hub, negotiates the highest protocol version up
 to the caller's maximum, and validates endpoint trust before sending bearer
-credentials. `TeslatlasClient` provides typed conditional reads for vehicles,
+credentials. `TesatlasClient` provides typed conditional reads for vehicles,
 current state, drives, positions, charges, charge samples, state intervals,
 software updates, and data quality. Responses preserve ETags and typed
 `304 Not Modified` results. Cursors are opaque and query bounds are checked
@@ -77,11 +77,11 @@ before network I/O.
 
 ```swift
 import Foundation
-import TeslatlasHubSDK
+import TesatlasHubSDK
 
-let client = try await TeslatlasClient.connect(
+let client = try await TesatlasClient.connect(
   discoveryURL: URL(string: "https://hub.example/.well-known/teslatlas-hub")!,
-  maximumProtocolVersion: TeslatlasProtocolVersion("1.2.0")!,
+  maximumProtocolVersion: TesatlasProtocolVersion("1.2.0")!,
   authorization: try BearerCredential("provisioned-device-token")
 )
 
@@ -93,7 +93,7 @@ case .notModified(let entityTag):
 }
 ```
 
-Use `TeslatlasCommands` with a discovered command descriptor and a caller
+Use `TesatlasCommands` with a discovered command descriptor and a caller
 chosen UUID idempotency key. The client checks the advertised command class,
 confirmation requirement, request size, and protocol metadata in the `202`
 response. Submission is deliberately one attempt. Reconcile an uncertain
@@ -101,7 +101,7 @@ result before issuing another command.
 
 ## Deployed Hub v1 compatibility
 
-`TeslatlasHubV1Compatibility` is for an unchanged deployed Hub v1.0.0. It
+`TesatlasHubV1Compatibility` is for an unchanged deployed Hub v1.0.0. It
 requires a caller-pinned Hub UUID and an existing 64-character lowercase
 hexadecimal bearer. It exposes only discovery, vehicles, current state, and
 drive pagination. It does not pair devices, rotate credentials, submit
@@ -111,7 +111,7 @@ Supply `expectedHubID` and `existingBearer` from your application’s trusted co
 
 ```swift
 import Foundation
-import TeslatlasHubV1Compatibility
+import TesatlasHubV1Compatibility
 
 let hub = try await HubV1Client.connect(
   discoveryURL: URL(string: "https://hub.example/.well-known/teslatlas-hub")!,
@@ -132,7 +132,7 @@ deliberately narrow route set are described in
 
 ## Current Hub client
 
-`TeslatlasCurrentHub` loads and verifies the bundled
+`TesatlasCurrentHub` loads and verifies the bundled
 `hub-http-v1@1.0.0` profile before discovery. The caller supplies an HTTPS
 origin, expected Hub UUID, and a `Sendable` credential store. The client
 validates the discovery identity, product version, capabilities, same-origin

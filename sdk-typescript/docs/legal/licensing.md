@@ -1,6 +1,6 @@
 # Licensing
 
-The Teslatlas TypeScript SDK is licensed under the Apache License, Version
+The Tesatlas TypeScript SDK is licensed under the Apache License, Version
 2.0. The complete, controlling licence text is in the repository root at
 [`LICENSE`](../../LICENSE). The package metadata identifies the same licence as
 `Apache-2.0`.

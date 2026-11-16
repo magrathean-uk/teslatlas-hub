@@ -11,7 +11,7 @@ The retained `2026.36.1-1` ARM64 package is a real predecessor for the current
 candidate; keep its exact package, source commit and matching data backup if
 you need that recovery route.
 
-On macOS, replace Teslatlas Hub.app in `/Applications` or `~/Applications` and
+On macOS, replace Tesatlas Hub.app in `/Applications` or `~/Applications` and
 open it. The app rewrites an older per-user agent after preflight, including an
 installer-era or Rust-installed agent. It leaves the root-owned installer-era
 payload alone. Follow the [administrator cleanup](../guides/install-macos.md#installer-era-administrator-cleanup)
@@ -23,7 +23,7 @@ Local apps are ad-hoc signed and unnotarised.
 1. Record the installed version, platform, configuration location, and current
    service status. Save the previous app or Debian package.
 2. Stop the existing Hub service through the Mac app or
-   `sudo systemctl stop teslatlas-hub.service` on Debian. Prevent simultaneous
+   `sudo systemctl stop tesatlas-hub.service` on Debian. Prevent simultaneous
    collectors from owning the same refresh credentials. Backup and credential
    export require the same exclusive Hub instance lock as the service.
 3. Create a data backup and retain separately recoverable credentials using
@@ -38,7 +38,7 @@ Local apps are ad-hoc signed and unnotarised.
 Copy the replacement app or install the Debian package following the [macOS](../guides/install-macos.md)
 or [Debian](../guides/install-debian.md) guide. Preserve existing data and
 configuration. For the current Debian candidate, confirm the installed binary
-reports `teslatlas-hub 2026.36.2`; use the version matching the selected package
+reports `tesatlas-hub 2026.36.2`; use the version matching the selected package
 on other platforms. Run `doctor` and `status` against the existing
 configuration, and inspect logs.
 Start collection only after configuration and diagnostics are usable. On Mac,

@@ -3,7 +3,7 @@
 use std::fs;
 
 use tempfile::TempDir;
-use teslatlas_edge::credentials::{CredentialError, CredentialStore};
+use tesatlas_edge::credentials::{CredentialError, CredentialStore};
 
 const T0: i64 = 1_800_000_000_000;
 
@@ -102,17 +102,17 @@ fn duplicate_json_keys_in_credential_state_fail_closed() {
 
 #[test]
 fn credential_process_worker() {
-    let Ok(root) = std::env::var("TESLATLAS_TEST_CREDENTIAL_ROOT") else {
+    let Ok(root) = std::env::var("TESATLAS_TEST_CREDENTIAL_ROOT") else {
         return;
     };
     let root = std::path::PathBuf::from(root);
-    let operation = std::env::var("TESLATLAS_TEST_CREDENTIAL_OPERATION").unwrap();
+    let operation = std::env::var("TESATLAS_TEST_CREDENTIAL_OPERATION").unwrap();
     fs::write(root.join(format!("{operation}.ready")), b"ready").unwrap();
     let store = CredentialStore::open(root.join("credentials.json")).unwrap();
     if operation == "revoke" {
         store
             .revoke(
-                &std::env::var("TESLATLAS_TEST_CREDENTIAL_ID").unwrap(),
+                &std::env::var("TESATLAS_TEST_CREDENTIAL_ID").unwrap(),
                 T0 + 1,
             )
             .unwrap();
@@ -140,9 +140,9 @@ fn independent_processes_wait_for_stable_lock_and_preserve_revocation() {
     let mut children = ["revoke", "enrol"].map(|operation| {
         Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "credential_process_worker", "--nocapture"])
-            .env("TESLATLAS_TEST_CREDENTIAL_ROOT", temp.path())
-            .env("TESLATLAS_TEST_CREDENTIAL_OPERATION", operation)
-            .env("TESLATLAS_TEST_CREDENTIAL_ID", issued.credential_id())
+            .env("TESATLAS_TEST_CREDENTIAL_ROOT", temp.path())
+            .env("TESATLAS_TEST_CREDENTIAL_OPERATION", operation)
+            .env("TESATLAS_TEST_CREDENTIAL_ID", issued.credential_id())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()

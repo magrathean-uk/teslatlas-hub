@@ -1,6 +1,6 @@
 """Fixture builders for integration tests.
 
-These shapes are local test inputs, not released Teslatlas protocol schemas.
+These shapes are local test inputs, not released Tesatlas protocol schemas.
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from custom_components.teslatlas_hub.client import HubClientError
-from custom_components.teslatlas_hub.models import (
+from custom_components.tesatlas_hub.client import HubClientError
+from custom_components.tesatlas_hub.models import (
     HubEvent,
     HubInfo,
     HubSnapshot,

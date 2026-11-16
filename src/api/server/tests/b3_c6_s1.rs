@@ -359,7 +359,7 @@ async fn fx1_tls_router_applies_the_pinned_summary_clock() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
     let vehicle_id = fx1_seed(&store);
-    let source = "data_dir = '/var/lib/teslatlas-test'\nbind = '127.0.0.1:8443'\n";
+    let source = "data_dir = '/var/lib/tesatlas-test'\nbind = '127.0.0.1:8443'\n";
     let (config, _) = HubConfig::from_exact_bytes(source.as_bytes()).expect("configuration");
     for (pin, served_speed) in [
         (Some(FX1_OBSERVED_AT_MS + FX1_GAP_MS), true),

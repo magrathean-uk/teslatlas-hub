@@ -1,4 +1,4 @@
-import { containsControlCharacters, TeslatlasError } from "./errors.js";
+import { containsControlCharacters, TesatlasError } from "./errors.js";
 
 const capabilityIdBrand: unique symbol = Symbol("CapabilityId");
 
@@ -8,7 +8,7 @@ export type CapabilityId = string & {
 
 export type CapabilitySet = ReadonlySet<CapabilityId>;
 
-export class InvalidCapabilityError extends TeslatlasError<"invalid_capability"> {
+export class InvalidCapabilityError extends TesatlasError<"invalid_capability"> {
   constructor() {
     super("Capability identifier must be non-empty and contain no control characters", {
       code: "invalid_capability",
@@ -16,11 +16,11 @@ export class InvalidCapabilityError extends TeslatlasError<"invalid_capability">
   }
 }
 
-export class MissingCapabilitiesError extends TeslatlasError<"missing_capabilities"> {
+export class MissingCapabilitiesError extends TesatlasError<"missing_capabilities"> {
   readonly missing: readonly CapabilityId[];
 
   constructor(missing: readonly CapabilityId[]) {
-    super("Required Teslatlas capabilities are unavailable", {
+    super("Required Tesatlas capabilities are unavailable", {
       code: "missing_capabilities",
     });
     this.missing = Object.freeze([...missing]);

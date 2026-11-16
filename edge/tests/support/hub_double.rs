@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use teslatlas_edge::protocol::{HubAckV1, HubBatchV1};
+use tesatlas_edge::protocol::{HubAckV1, HubBatchV1};
 use uuid::Uuid;
 
 #[derive(Debug)]

@@ -6,7 +6,7 @@ This document is operational guidance for self-hosting organisations. Replace br
 
 **Controller:** [organisation and contact]  
 **Data-protection contact:** [contact]  
-**System:** Teslatlas Hub vehicle telemetry platform
+**System:** Tesatlas Hub vehicle telemetry platform
 
 We process vehicle and user data to [state purposes]. Data may include account and vehicle identifiers, precise location, journeys, timestamps, charging records, diagnostic state, network information, audit logs and user-selected labels.
 
@@ -69,4 +69,4 @@ Complete a DPIA before large-scale tracking, employee monitoring, systematic loc
 
 ## Software limitations
 
-Teslatlas Hub provides technical controls but does not select the deployer's lawful basis, write its final privacy notice, obtain employment consent or answer data-subject requests automatically.
+Tesatlas Hub provides technical controls but does not select the deployer's lawful basis, write its final privacy notice, obtain employment consent or answer data-subject requests automatically.

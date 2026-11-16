@@ -20,20 +20,20 @@ def test_forward_helper_requests_only_the_existing_ha_ui_port(
     capture = tmp_path / "ssh-args"
     fake_ssh = fake_bin / "ssh"
     fake_ssh.write_text(
-        '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$TESLATLAS_TEST_CAPTURE"\n',
+        '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$TESATLAS_TEST_CAPTURE"\n',
         encoding="utf-8",
     )
     fake_ssh.chmod(fake_ssh.stat().st_mode | stat.S_IXUSR)
     ssh_config = tmp_path / "ssh_config"
-    ssh_config.write_text("Host teslatlas-debian13-arm64\n", encoding="utf-8")
+    ssh_config.write_text("Host tesatlas-debian13-arm64\n", encoding="utf-8")
     environment = os.environ.copy()
     environment.update(
         {
             "PATH": f"{fake_bin}:{environment['PATH']}",
-            "TESLATLAS_TEST_CAPTURE": str(capture),
-            "TESLATLAS_MAC_SSH_CONFIG": str(ssh_config),
-            "TESLATLAS_MAC_SSH_ALIAS": "teslatlas-debian13-arm64",
-            "TESLATLAS_MAC_HA_PORT": "18125",
+            "TESATLAS_TEST_CAPTURE": str(capture),
+            "TESATLAS_MAC_SSH_CONFIG": str(ssh_config),
+            "TESATLAS_MAC_SSH_ALIAS": "tesatlas-debian13-arm64",
+            "TESATLAS_MAC_HA_PORT": "18125",
         }
     )
 
@@ -53,4 +53,4 @@ def test_forward_helper_requests_only_the_existing_ha_ui_port(
     assert arguments[arguments.index("-F") + 1] == str(ssh_config)
     assert "-L" in arguments
     assert arguments[arguments.index("-L") + 1] == "127.0.0.1:18125:127.0.0.1:8123"
-    assert arguments[-1] == "teslatlas-debian13-arm64"
+    assert arguments[-1] == "tesatlas-debian13-arm64"

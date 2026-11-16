@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Teslatlas Sync Protocol v1.
+//! Tesatlas Sync Protocol v1.
 //!
 //! The manifest is deliberately small and JSON serialisable.  History never
 //! travels as a JSON array: every chunk is an immutable, zstd-compressed
@@ -32,7 +32,7 @@ pub const TRANSPORT_SCHEMA_V1: SchemaVersion = SchemaVersion { major: 1, minor: 
 
 /// The first typed Hub projection layout.  Unlike the generic transport
 /// layout, this has fixed `cars`, `drives`, `positions`, `charges`, and
-/// `charge_samples` tables for the Teslatlas core importer.
+/// `charge_samples` tables for the Tesatlas core importer.
 pub const HUB_PROJECTION_SCHEMA_V1: SchemaVersion = SchemaVersion { major: 2, minor: 0 };
 
 /// Additive typed Hub projection layout with state history.
@@ -44,7 +44,7 @@ pub const HUB_PROJECTION_SCHEMA_V2: SchemaVersion = SchemaVersion { major: 2, mi
 /// existing typed delta/lineage protocol.
 pub const HUB_PROJECTION_SCHEMA_V3: SchemaVersion = SchemaVersion { major: 2, minor: 2 };
 
-/// SQLite `application_id` for a Teslatlas Sync Protocol v1 transport pack.
+/// SQLite `application_id` for a Tesatlas Sync Protocol v1 transport pack.
 ///
 /// This is distinct from the Hub database application id.  A pack is an
 /// interchange file, not a copy of either server or client state.
@@ -1134,7 +1134,7 @@ pub enum ProtocolError {
     PackHashMismatch,
     #[error("uncompressed size mismatch: expected {expected}, found {actual}")]
     UncompressedSizeMismatch { expected: u64, actual: u64 },
-    #[error("transport pack is not a valid Teslatlas SQLite database")]
+    #[error("transport pack is not a valid Tesatlas SQLite database")]
     InvalidSqliteHeader,
     #[error("transport pack SQLite application id is wrong")]
     InvalidSqliteApplicationId,

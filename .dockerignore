@@ -29,5 +29,5 @@ vendor/
 upstream/
 repository-roots/
 fixtures/*-postgres/
-TeslatlasCore.xcframework/
+TesatlasCore.xcframework/
 macos/

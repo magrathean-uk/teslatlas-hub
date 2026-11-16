@@ -1,8 +1,8 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
 # Builds the fleet-telemetry receiver for darwin-arm64 in scratch from the pinned,
-# cached upstream archive under TESLATLAS_LAB, offline, then checks its evidence.
-# TESLATLAS_FLEET_RECEIVER (a regular file built for darwin-arm64) skips the build;
+# cached upstream archive under TESATLAS_LAB, offline, then checks its evidence.
+# TESATLAS_FLEET_RECEIVER (a regular file built for darwin-arm64) skips the build;
 # the cached archive is still required. The build steps copy those of
 # scripts/build-fleet-telemetry-bridge.sh and must stay in step with it.
 set -eu
@@ -25,7 +25,7 @@ die() {
 
 REPO=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
 SCRIPT="$REPO/scripts/fleet-telemetry-evidence.py"
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-fleet-evidence.XXXXXX")
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-fleet-evidence.XXXXXX")
 
 cleanup() {
   chmod -R u+w "$TMP" 2>/dev/null || true
@@ -47,9 +47,9 @@ import pathlib
 import sys
 
 repo = pathlib.Path(sys.argv[1])
-lab = os.environ.get("TESLATLAS_LAB")
+lab = os.environ.get("TESATLAS_LAB")
 if not lab:
-    raise SystemExit("TESLATLAS_LAB is required")
+    raise SystemExit("TESATLAS_LAB is required")
 lock = json.loads(
     (repo / "packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json").read_text()
 )
@@ -71,13 +71,13 @@ PY
 )
 GO=$(python3 "$REPO/scripts/go_toolchain.py" --expected-version go1.27.4) \
   || die 'Go 1.27.4 is required for offline Fleet Telemetry evidence'
-TESLATLAS_GO=$GO
-export TESLATLAS_GO
+TESATLAS_GO=$GO
+export TESATLAS_GO
 MODULE_CACHE=$("$GO" env GOMODCACHE) || die 'cannot locate the offline Go module cache'
-if [ -n "${TESLATLAS_FLEET_RECEIVER:-}" ]; then
-  [ -f "$TESLATLAS_FLEET_RECEIVER" ] && [ ! -L "$TESLATLAS_FLEET_RECEIVER" ] \
-    || die 'TESLATLAS_FLEET_RECEIVER must name a regular receiver binary, not a symlink'
-  cp "$TESLATLAS_FLEET_RECEIVER" "$TMP/receiver"
+if [ -n "${TESATLAS_FLEET_RECEIVER:-}" ]; then
+  [ -f "$TESATLAS_FLEET_RECEIVER" ] && [ ! -L "$TESATLAS_FLEET_RECEIVER" ] \
+    || die 'TESATLAS_FLEET_RECEIVER must name a regular receiver binary, not a symlink'
+  cp "$TESATLAS_FLEET_RECEIVER" "$TMP/receiver"
 else
   # Use the builder's pinned archive, patch and module graph without its downloads.
   SOURCE_DIRECTORY=$(python3 - "$REPO" "$SOURCE" "$TMP" <<'PY'
@@ -122,14 +122,14 @@ shutil.copyfile(go_mod, directory / "go.mod")
 shutil.copyfile(go_sum, directory / "go.sum")
 print(directory)
 PY
-  ) || die 'cannot prepare the offline receiver build; populate the pinned source cache or set TESLATLAS_FLEET_RECEIVER'
+  ) || die 'cannot prepare the offline receiver build; populate the pinned source cache or set TESATLAS_FLEET_RECEIVER'
   (
     cd "$SOURCE_DIRECTORY" || exit 1
-    GOCACHE="$TMP/go-build-cache" CGO_ENABLED=0 "$GO" test ./datastore/teslatlas &&
+    GOCACHE="$TMP/go-build-cache" CGO_ENABLED=0 "$GO" test ./datastore/tesatlas &&
     # Match the reviewed Darwin dependency closure in the evidence lock.
     GOCACHE="$TMP/go-build-cache" CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 GOARM64=v8.0 \
       "$GO" build -trimpath -buildvcs=false -ldflags='-s -w' -o "$TMP/receiver" ./cmd
-  ) || die 'cannot build the receiver offline; populate the pinned Go module cache or set TESLATLAS_FLEET_RECEIVER'
+  ) || die 'cannot build the receiver offline; populate the pinned Go module cache or set TESATLAS_FLEET_RECEIVER'
 fi
 RECEIVER="$TMP/receiver"
 [ -n "$RECEIVER" ] && [ -f "$RECEIVER" ] && [ ! -L "$RECEIVER" ] || {
@@ -225,7 +225,7 @@ module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 import os
-go = subprocess.check_output([os.environ["TESLATLAS_GO"], "version", "-m", "-json", str(evidence / "fleet-telemetry.unsigned")], text=True)
+go = subprocess.check_output([os.environ["TESATLAS_GO"], "version", "-m", "-json", str(evidence / "fleet-telemetry.unsigned")], text=True)
 info = json.loads(go)
 module.validate_binary_modules(info, legal)
 changed = json.loads(json.dumps(info))

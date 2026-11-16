@@ -491,7 +491,7 @@ fn startup_cleanup_rejects_unsafe_physical_scratch_entries() {
 
 #[test]
 fn staging_directory_creation_is_private_under_a_group_writable_umask() {
-    const PROBE: &str = "TESLATLAS_HUB_STAGING_UMASK_PROBE";
+    const PROBE: &str = "TESATLAS_HUB_STAGING_UMASK_PROBE";
     if env::var_os(PROBE).is_some() {
         rustix::process::umask(rustix::fs::Mode::from_bits_retain(0o002));
         let temporary = crate::private_tempdir().expect("pack root");

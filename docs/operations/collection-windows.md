@@ -8,7 +8,7 @@ from the other logger's database. Hub never reads, stores, uses or refreshes a
 token held by another application, and no setting or flag changes that.
 
 This guide covers issuing a grant, trusting the issuer, issuer key custody,
-opening, stopping, rolling back, restarting and removing refused credentials. `teslatlas-hub window --help`
+opening, stopping, rolling back, restarting and removing refused credentials. `tesatlas-hub window --help`
 lists the verbs.
 
 `window status`, `window trust`, `window open`, `window close`, `setup`, the
@@ -61,13 +61,13 @@ without a service.
   passed by path. It is never stored in a repository, the data directory, a
   backup, the lab or the login keychain.
 - Create the key pair and the issuer ledger once with
-  `teslatlas-hub window issuer-init --key-out KEY --trust-out TRUST`. Store the
+  `tesatlas-hub window issuer-init --key-out KEY --trust-out TRUST`. Store the
   private key in 1Password, then discard the local copy. The trust document
   (the public key, its id and the trust epoch) goes to each Hub with
   `window trust`. `window issuer-trust --key-file KEY --trust-out TRUST` writes
   it again; add `--new-epoch` to start a new trust epoch.
 - The ledger is a hash-chained file in
-  `~/dev/machine/records/teslatlas/hub-evidence/window-issuer/` (directory mode
+  `~/dev/machine/records/tesatlas/hub-evidence/window-issuer/` (directory mode
   0700, internal drive). After each issuance the ledger head digest and
   sequence are pinned in the login keychain; a ledger that neither matches nor
   extends the pin refuses issuance, which detects a restored older ledger.
@@ -130,7 +130,7 @@ window verbs below have something to talk to:
 
 1. Copy the issuer trust document to the Hub host.
 2. With the Hub service running and the window Closed, run
-   `teslatlas-hub window trust FILE`. Hub stores the key and key id in its data
+   `tesatlas-hub window trust FILE`. Hub stores the key and key id in its data
    directory and starts a fresh window ledger with the document's trust epoch.
    The epoch must be newer than the one Hub last trusted; a document from
    `window issuer-trust --new-epoch` invalidates every earlier grant.
@@ -141,8 +141,8 @@ every open until `window trust` is run again.
 ## Issue a grant
 
 1. Agree the window with the owner and record the approval reference. Read the
-   target Hub's host id with `teslatlas-hub window host-id` on that host.
-2. On the issuer Mac, run `teslatlas-hub window issue --key-file KEY
+   target Hub's host id with `tesatlas-hub window host-id` on that host.
+2. On the issuer Mac, run `tesatlas-hub window issue --key-file KEY
    --host-id HOST --starts-at START --expires-at EXPIRY --approver G
    --reason TEXT --approval-ref REF --out GRANT`. Times are UTC, as RFC 3339
    (`2026-11-12T09:30:00Z`) or Unix seconds. The key is read from 1Password for
@@ -151,9 +151,9 @@ every open until `window trust` is run again.
 
 ## Open
 
-1. Confirm the state is Closed with `teslatlas-hub window status`, and that no
+1. Confirm the state is Closed with `tesatlas-hub window status`, and that no
    import is running.
-2. Run `teslatlas-hub window open --grant FILE`. A refusal
+2. Run `tesatlas-hub window open --grant FILE`. A refusal
    returns a stable reason code and changes no state. Typical codes:
    `host_mismatch`, `import_running`, `collector_busy`, a clock refusal, or a
    grant at or below the consumption anchor.
@@ -161,7 +161,7 @@ every open until `window trust` is run again.
    start time.
 4. Sign in with the Hub app while `window status` reports Open. The app passes
    the authorisation code, its PKCE verifier and the redirect URI to
-   `teslatlas-hub setup` on standard input; `setup` forwards them to the
+   `tesatlas-hub setup` on standard input; `setup` forwards them to the
    running service, which performs the exchange and vehicle discovery. Outside
    an Open window the service refuses with `window_closed`. Collection starts
    once Hub holds its own login. Confirm the latest observation advances.
@@ -212,7 +212,7 @@ every open until `window trust` is run again.
    second sign-in while one runs is refused (`sign_in_busy`). A refusal before
    the write leaves the stored login as it was. If the disk does not confirm
    the write, `setup` reports `sign_in_stored_unconfirmed`: check
-   `teslatlas-hub status` before signing in again. A stored sign-in whose
+   `tesatlas-hub status` before signing in again. A stored sign-in whose
    follow-up cleanup failed reports `"aftercare": "pending"`; the service
    finishes it when it next opens the credential store, as the collector's
    restart does. A window closed during a sign-in stays Closing while the
@@ -241,7 +241,7 @@ every open until `window trust` is run again.
   seconds; a local write already under way may finish later, see the sign-in
   notes above), releases the collector lease and host claim, syncs the handback
   record and moves to Closed.
-- *Early:* run `teslatlas-hub window close`. The same closing sequence
+- *Early:* run `tesatlas-hub window close`. The same closing sequence
   applies with reason `operator_close`.
 - Hub also closes itself on `relogin_needed`, `owner_api_refused`,
   `clock_invalid`, `reboot` and `state_unverifiable`. After `relogin_needed`
@@ -257,7 +257,7 @@ time you want Hub to stop collecting.
    Closed with the handback record written.
 2. **Revoke Hub's own grant.** Hub's login belongs to Hub alone, so revoking
    does not touch any other application:
-   - sign Hub out (`teslatlas-hub control sign-out`) to remove its stored
+   - sign Hub out (`tesatlas-hub control sign-out`) to remove its stored
      Tesla credential generations locally;
    - optionally revoke Hub's application from Tesla Account Security;
    - on the issuer Mac write a new-epoch trust document
@@ -288,8 +288,8 @@ time you want Hub to stop collecting.
 - If the state is unreadable it closes with `state_unverifiable`. A crash during
   Closing completes the close at the next start.
 - Backups and restores never carry the window directory.
-  `teslatlas-hub backup-now` runs one encrypted backup through the running
-  service and `teslatlas-hub backup-status` shows the schedule; neither sends
+  `tesatlas-hub backup-now` runs one encrypted backup through the running
+  service and `tesatlas-hub backup-status` shows the schedule; neither sends
   anything to Tesla.
 
 ## Remove refused credentials
@@ -299,7 +299,7 @@ sign-in stored by an earlier version (the `pre_upgrade` origin), a stored Fleet
 pair, or any pair the Hub's own login did not make. Nothing is deleted on
 upgrade. While such a credential is kept, `status` and `doctor` show a
 `refusedCredentialPurge` entry naming the command, and while a refused
-pre-upgrade credential blocks backups, `teslatlas-hub backup` is refused with
+pre-upgrade credential blocks backups, `tesatlas-hub backup` is refused with
 `backup_blocked_by_refused_credentials`, naming the same command. A refused
 Fleet slot is never replaced while Fleet is parked, so only this command ends
 that wait.
@@ -307,7 +307,7 @@ that wait.
 1. With the Hub service running, list what would be removed:
 
    ```sh
-   teslatlas-hub purge-refused-credentials
+   tesatlas-hub purge-refused-credentials
    ```
 
    The listing names each refused slot, its origin and the table that holds it,
@@ -317,7 +317,7 @@ that wait.
 2. Remove them:
 
    ```sh
-   teslatlas-hub purge-refused-credentials --confirm
+   tesatlas-hub purge-refused-credentials --confirm
    ```
 
    The service deletes the refused rows, their encrypted values and the old

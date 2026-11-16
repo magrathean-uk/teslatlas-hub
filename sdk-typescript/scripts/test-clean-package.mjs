@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { normalizeNpmPackReport } from "./npm-pack-report.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const temporaryRoot = await mkdtemp(join(tmpdir(), "teslatlas-clean-package-"));
+const temporaryRoot = await mkdtemp(join(tmpdir(), "tesatlas-clean-package-"));
 const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
 const validatorNames = [
   "validateHubClaim",
@@ -60,14 +60,14 @@ try {
     run(process.execPath, ["scripts/build.mjs"], source);
     const report = normalizeNpmPackReport(
       JSON.parse(run(npmExecutable, ["pack", "--json"], source)),
-      "@teslatlas/sdk",
+      "@tesatlas/sdk",
     );
     const tarball = join(source, report.filename);
     tarballPaths.push(tarball);
     tarballs.push(await readFile(tarball));
 
     const consumer = join(temporaryRoot, `consumer-${variant}`);
-    const installed = join(consumer, "node_modules/@teslatlas/sdk");
+    const installed = join(consumer, "node_modules/@tesatlas/sdk");
     await mkdir(installed, { recursive: true });
     run("tar", ["-xzf", tarball, "--strip-components=1", "-C", installed], consumer);
     await writeFile(join(consumer, "package.json"), '{"private":true,"type":"module"}\n');
@@ -77,9 +77,9 @@ try {
     );
     await writeFile(
       join(consumer, "validators.ts"),
-      `import type { HubClient } from "@teslatlas/sdk";
-import { createHubClient as createNodeHubClient } from "@teslatlas/sdk/node";
-import { ${validatorNames.join(", ")} } from "./node_modules/@teslatlas/sdk/dist/generated/hub-validators.js";
+      `import type { HubClient } from "@tesatlas/sdk";
+import { createHubClient as createNodeHubClient } from "@tesatlas/sdk/node";
+import { ${validatorNames.join(", ")} } from "./node_modules/@tesatlas/sdk/dist/generated/hub-validators.js";
 declare const options: Parameters<typeof createNodeHubClient>[0];
 const clients: HubClient[] = [createNodeHubClient(options)];
 void clients;
@@ -104,7 +104,7 @@ for (const validate of [${validatorNames.join(", ")}]) {
           moduleResolution: "NodeNext",
           types: [],
         },
-        include: ["*.ts", "node_modules/@teslatlas/sdk/dist/**/*.d.ts"],
+        include: ["*.ts", "node_modules/@tesatlas/sdk/dist/**/*.d.ts"],
       }),
     );
     run(
@@ -144,7 +144,7 @@ console.log(JSON.stringify(Object.keys(validators).sort()));`,
   await mkdir(lifecycleConsumer);
   await writeFile(
     join(lifecycleConsumer, "package.json"),
-    '{"name":"teslatlas-clean-consumer","private":true,"type":"module"}\n',
+    '{"name":"tesatlas-clean-consumer","private":true,"type":"module"}\n',
   );
   const installArguments = [
     "install",
@@ -157,9 +157,9 @@ console.log(JSON.stringify(Object.keys(validators).sort()));`,
   ];
   run(npmExecutable, installArguments, lifecycleConsumer);
   const importCheck = `
-    const root = await import("@teslatlas/sdk");
-    const node = await import("@teslatlas/sdk/node");
-    if (typeof root.TeslatlasError !== "function" || typeof root.createHubClient !== "undefined") throw new Error("invalid root exports");
+    const root = await import("@tesatlas/sdk");
+    const node = await import("@tesatlas/sdk/node");
+    if (typeof root.TesatlasError !== "function" || typeof root.createHubClient !== "undefined") throw new Error("invalid root exports");
     if (typeof node.createHubClient !== "function") throw new Error("invalid Node exports");
   `;
   run(process.execPath, ["--input-type=module", "--eval", importCheck], lifecycleConsumer);
@@ -174,11 +174,11 @@ console.log(JSON.stringify(Object.keys(validators).sort()));`,
       "--ignore-scripts",
       "--no-audit",
       "--no-fund",
-      "@teslatlas/sdk",
+      "@tesatlas/sdk",
     ],
     lifecycleConsumer,
   );
-  await assert.rejects(access(join(lifecycleConsumer, "node_modules/@teslatlas/sdk")));
+  await assert.rejects(access(join(lifecycleConsumer, "node_modules/@tesatlas/sdk")));
   assert.throws(() =>
     run(process.execPath, ["--input-type=module", "--eval", importCheck], lifecycleConsumer),
   );

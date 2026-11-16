@@ -1,6 +1,6 @@
 # Troubleshooting and support
 
-Where to look before reporting a problem with Teslatlas Edge.
+Where to look before reporting a problem with Tesatlas Edge.
 
 Start with the guide for your installation:
 

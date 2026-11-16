@@ -35,7 +35,7 @@ fn c7_t64_defaults() {
 
     // The same defaults reach a loaded file. The base text is the one the kept
     // configuration tests parse (`valid_config`).
-    let base = valid_config(Path::new("/var/lib/teslatlas"));
+    let base = valid_config(Path::new("/var/lib/tesatlas"));
     let (parsed, _) = HubConfig::from_exact_bytes(base.as_bytes()).expect("the base parses");
     assert!(parsed.geocoder.enabled);
     assert!(parsed.geocoder.endpoint.is_none());

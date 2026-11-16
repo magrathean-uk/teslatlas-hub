@@ -1,4 +1,4 @@
-# Teslatlas protocol
+# Tesatlas protocol
 
 Follow `../../AGENTS.md` and `../../docs/development/MASTER_PLAN.md`; the plan wins on
 process, model, scope and commit policy. This product's dated `docs/development/PLAN.md`
@@ -9,14 +9,14 @@ Run commands through `../../scripts/dev/run.sh hub-protocol COMMAND...` from thi
 package directory, following the Hub's output and cache policy below.
 
 This repository owns public contracts, not Hub implementation. It moves into the
-`magrathean-uk/teslatlas-hub` Cargo workspace as the `protocol/` package, keeping its
+`magrathean-uk/tesatlas-hub` Cargo workspace as the `protocol/` package, keeping its
 Apache-2.0 licence, after an Authorisations row in the plan.
 
 - Use lowercase, hyphenated documentation names and lowercase `snake_case` schema fields.
 - Keep schemas source-neutral and independently implementable.
 - Preserve semantic versioning, capability negotiation, opaque cursors, UTC timestamps, ETags and stable errors.
 - Fixtures must be deterministic and redacted.
-- Do not copy AGPL Hub implementation or proprietary Teslatlas source here.
+- Do not copy AGPL Hub implementation or proprietary Tesatlas source here.
 - Legal files (`LICENSE`, `NOTICE`, `docs/legal/`, contributor terms, copyright and
   attribution strings) are owner-controlled: change them only on the owner's explicit
   instruction.
@@ -57,5 +57,5 @@ Apache-2.0 licence, after an Authorisations row in the plan.
 Follow the [Hub clean-development policy](../AGENTS.md#clean-development-mandatory).
 The Hub root `../.clean-development.json` (schema v2) governs this package. Cargo
 output stays in the Hub's git-ignored `target/`; caches and scratch follow
-`~/dev/machine/env.zsh`. Use the Hub runner shown above; the Hub's macOS app goes under `$TESLATLAS_LAB/build/hub/dist` and its Xcode
-staging under `$TESLATLAS_DERIVED_DATA`.
+`~/dev/machine/env.zsh`. Use the Hub runner shown above; the Hub's macOS app goes under `$TESATLAS_LAB/build/hub/dist` and its Xcode
+staging under `$TESATLAS_DERIVED_DATA`.

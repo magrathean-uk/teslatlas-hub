@@ -13,7 +13,7 @@ fn valid_config(data_dir: &Path) -> String {
 
 #[test]
 fn cors_configuration_accepts_only_canonical_explicit_origins() {
-    let base = valid_config(Path::new("/var/lib/teslatlas"));
+    let base = valid_config(Path::new("/var/lib/tesatlas"));
     let allowed = format!(
         "{base}[http]\nallowed_origins = ['https://client.example', 'http://localhost:5173']\n"
     );
@@ -48,7 +48,7 @@ fn cors_configuration_accepts_only_canonical_explicit_origins() {
 
 #[test]
 fn pairing_lifetime_defaults_to_180_days_and_is_limited_to_1_through_3650() {
-    let base = valid_config(Path::new("/var/lib/teslatlas"));
+    let base = valid_config(Path::new("/var/lib/tesatlas"));
     let parse = |table: &str| HubConfig::from_exact_bytes(format!("{base}{table}").as_bytes());
 
     // No table, an empty table and an explicit 180 are the one default, and
@@ -193,7 +193,7 @@ fn load_rejects_a_fifo_without_waiting_for_a_writer() {
 #[test]
 fn rejects_unknown_configuration_keys() {
     let error = toml::from_str::<HubConfig>(
-        "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\nunknown = true",
+        "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\nunknown = true",
     )
     .expect_err("unknown config must fail");
     assert!(error.to_string().contains("unknown"));
@@ -202,15 +202,15 @@ fn rejects_unknown_configuration_keys() {
 #[test]
 fn derives_storage_paths() {
     let config: HubConfig =
-        toml::from_str("data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'")
+        toml::from_str("data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'")
             .expect("valid config");
     assert_eq!(
         config.database_path(),
-        PathBuf::from("/var/lib/teslatlas/hub.sqlite")
+        PathBuf::from("/var/lib/tesatlas/hub.sqlite")
     );
     assert_eq!(
         config.packs_dir(),
-        PathBuf::from("/var/lib/teslatlas/packs")
+        PathBuf::from("/var/lib/tesatlas/packs")
     );
 }
 
@@ -225,7 +225,7 @@ fn rejects_relative_data_directory() {
 #[test]
 fn collector_uses_the_legacy_owner_api_by_default() {
     let config: HubConfig =
-        toml::from_str("data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'")
+        toml::from_str("data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'")
             .expect("valid config");
     assert_eq!(
         config
@@ -338,7 +338,7 @@ fn source_db_read_limits_only_apply_a_non_raising_parallel_lane_cap() {
 #[test]
 fn explicit_zero_disables_the_default_supervised_collector() {
     let config: HubConfig = toml::from_str(
-        "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+        "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
          [collector]\ninterval_seconds = 0\n",
     )
     .expect("config");
@@ -352,7 +352,7 @@ fn explicit_zero_disables_the_default_supervised_collector() {
 fn loaded_config_digest_binds_every_exact_source_byte() {
     let temporary = tempfile::tempdir().expect("temporary config root");
     let path = temporary.path().join("config.toml");
-    let first = "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+    let first = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
                  [collector]\nowner_api_base_url = 'https://owner.example.test'\n";
     fs::write(&path, first).expect("write first config");
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
@@ -377,7 +377,7 @@ fn collector_rejects_insecure_or_secret_bearing_bases() {
         "https://owner.example.test/?token=secret",
     ] {
         let config = format!(
-            "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+            "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
              [collector]\nowner_api_base_url = '{base}'"
         );
         let parsed = toml::from_str::<HubConfig>(&config).expect("parse before validation");
@@ -414,13 +414,13 @@ fn collector_debug_redacts_owner_and_stream_endpoint_values() {
 
 #[test]
 fn fleet_telemetry_requires_fleet_proxy_and_safe_paths() {
-    let valid = "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+    let valid = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
                  [collector]\nprovider = 'fleet'\n\
                  fleet_command_proxy_url = 'https://127.0.0.1:4443'\n\
                  [collector.fleet_telemetry]\n\
                  hostname = 'telemetry.example.test'\n\
-                 ca_certificate_path = '/etc/teslatlas-hub/telemetry/ca.pem'\n\
-                 ingest_token_path = '/var/lib/teslatlas-hub/secrets/telemetry-token'\n";
+                 ca_certificate_path = '/etc/tesatlas-hub/telemetry/ca.pem'\n\
+                 ingest_token_path = '/var/lib/tesatlas-hub/secrets/telemetry-token'\n";
     HubConfig::from_exact_bytes(valid.as_bytes()).expect("valid Fleet Telemetry config");
 
     for invalid in [
@@ -430,7 +430,7 @@ fn fleet_telemetry_requires_fleet_proxy_and_safe_paths() {
         valid.replace("127.0.0.1:8080", "[::1]:8080"),
         valid.replace("telemetry.example.test", "https://telemetry.example.test"),
         valid.replace(
-            "/var/lib/teslatlas-hub/secrets/telemetry-token",
+            "/var/lib/tesatlas-hub/secrets/telemetry-token",
             "relative-token",
         ),
     ] {
@@ -443,18 +443,18 @@ fn fleet_telemetry_requires_fleet_proxy_and_safe_paths() {
 
 #[test]
 fn fleet_telemetry_accepts_public_tls_with_a_private_loopback_ingress() {
-    let loopback = "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+    let loopback = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
                  [collector]\nprovider = 'fleet'\n\
                  fleet_command_proxy_url = 'https://127.0.0.1:4443'\n\
                  [collector.fleet_telemetry]\n\
                  hostname = 'telemetry.example.test'\n\
-                 ca_certificate_path = '/etc/teslatlas-hub/telemetry/ca.pem'\n\
-                 ingest_token_path = '/var/lib/teslatlas-hub/secrets/telemetry-token'\n";
+                 ca_certificate_path = '/etc/tesatlas-hub/telemetry/ca.pem'\n\
+                 ingest_token_path = '/var/lib/tesatlas-hub/secrets/telemetry-token'\n";
 
     for bind in ["127.0.0.1:8443", "0.0.0.0:8443", "192.0.2.10:8080"] {
         let config = format!(
-            "{}[tls]\ncertificate_path = '/etc/teslatlas/tls/cert.pem'\n\
-             private_key_path = '/etc/teslatlas/tls/key.pem'\n\
+            "{}[tls]\ncertificate_path = '/etc/tesatlas/tls/cert.pem'\n\
+             private_key_path = '/etc/tesatlas/tls/key.pem'\n\
              public_url = 'https://hub.example.test'\n",
             loopback.replace("127.0.0.1:8080", bind)
         );
@@ -466,18 +466,18 @@ fn fleet_telemetry_accepts_public_tls_with_a_private_loopback_ingress() {
 
 #[test]
 fn fleet_telemetry_rejects_a_public_tls_listener_collision_with_private_ingress() {
-    let loopback = "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+    let loopback = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
                  [collector]\nprovider = 'fleet'\n\
                  fleet_command_proxy_url = 'https://127.0.0.1:4443'\n\
                  [collector.fleet_telemetry]\n\
                  hostname = 'telemetry.example.test'\n\
-                 ca_certificate_path = '/etc/teslatlas-hub/telemetry/ca.pem'\n\
-                 ingest_token_path = '/var/lib/teslatlas-hub/secrets/telemetry-token'\n";
+                 ca_certificate_path = '/etc/tesatlas-hub/telemetry/ca.pem'\n\
+                 ingest_token_path = '/var/lib/tesatlas-hub/secrets/telemetry-token'\n";
 
     for bind in ["127.0.0.1:8080", "0.0.0.0:8080", "[::]:8080"] {
         let config = format!(
-            "{}[tls]\ncertificate_path = '/etc/teslatlas/tls/cert.pem'\n\
-             private_key_path = '/etc/teslatlas/tls/key.pem'\n\
+            "{}[tls]\ncertificate_path = '/etc/tesatlas/tls/cert.pem'\n\
+             private_key_path = '/etc/tesatlas/tls/key.pem'\n\
              public_url = 'https://hub.example.test'\n",
             loopback.replace("127.0.0.1:8080", bind)
         );
@@ -490,13 +490,13 @@ fn fleet_telemetry_rejects_a_public_tls_listener_collision_with_private_ingress(
 
 #[test]
 fn fleet_telemetry_still_rejects_public_plaintext() {
-    let config = "data_dir = '/var/lib/teslatlas'\nbind = '0.0.0.0:8443'\n\
+    let config = "data_dir = '/var/lib/tesatlas'\nbind = '0.0.0.0:8443'\n\
                   [collector]\nprovider = 'fleet'\n\
                   fleet_command_proxy_url = 'https://127.0.0.1:4443'\n\
                   [collector.fleet_telemetry]\n\
                   hostname = 'telemetry.example.test'\n\
-                  ca_certificate_path = '/etc/teslatlas-hub/telemetry/ca.pem'\n\
-                  ingest_token_path = '/var/lib/teslatlas-hub/secrets/telemetry-token'\n";
+                  ca_certificate_path = '/etc/tesatlas-hub/telemetry/ca.pem'\n\
+                  ingest_token_path = '/var/lib/tesatlas-hub/secrets/telemetry-token'\n";
     assert!(matches!(
         HubConfig::from_exact_bytes(config.as_bytes()),
         Err(ConfigError::NonLoopbackBind)
@@ -520,7 +520,7 @@ fn fleet_telemetry_debug_redacts_secret_path() {
 #[test]
 fn retired_edge_table_fails_with_the_retirement_error() {
     const EXPECTED: &str = "[collector.edge] is no longer supported: Edge delivery was retired. Remove the table; to stream telemetry, configure the self-hosted receiver in [collector.fleet_telemetry].";
-    let base = "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n";
+    let base = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n";
     // The configuration without the retired key loads.
     HubConfig::from_exact_bytes(
         format!("{base}[collector]\nprovider = 'fleet'\ninterval_seconds = 0\n").as_bytes(),
@@ -568,7 +568,7 @@ fn retired_edge_table_fails_with_the_retirement_error() {
 #[test]
 fn source_db_debug_redacts_nested_plain_and_encoded_userinfo() {
     let accepted: HubConfig = toml::from_str(
-        "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+        "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
          [import_source]\n\
          source_url = 'postgresql://plain-user-marker%40encoded-user-marker@db.example:5433/sourcedb'\n\
          source_key = 'garage-source'",
@@ -598,7 +598,7 @@ fn source_db_debug_redacts_nested_plain_and_encoded_userinfo() {
     assert!(import_debug.contains("garage-source"));
 
     let rejected: HubConfig = toml::from_str(
-        "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+        "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
          [import_source]\n\
          source_url = 'postgresql://password-user-marker:percent%2Dencoded%2Dpassword@db.example/sourcedb'\n\
          source_key = 'garage-source'",
@@ -626,7 +626,7 @@ fn source_db_debug_redacts_nested_plain_and_encoded_userinfo() {
 #[test]
 fn rejects_network_exposure_without_tls() {
     let config: HubConfig =
-        toml::from_str("data_dir = '/var/lib/teslatlas'\nbind = '0.0.0.0:8080'")
+        toml::from_str("data_dir = '/var/lib/tesatlas'\nbind = '0.0.0.0:8080'")
             .expect("parse configuration");
     assert!(matches!(
         config.validate(),
@@ -637,18 +637,18 @@ fn rejects_network_exposure_without_tls() {
 #[test]
 fn permits_remote_tls_only_with_safe_public_origin() {
     let config: HubConfig = toml::from_str(
-        "data_dir = '/var/lib/teslatlas'\nbind = '0.0.0.0:8443'\n\
-         [tls]\ncertificate_path = '/etc/teslatlas/tls/cert.pem'\n\
-         private_key_path = '/etc/teslatlas/tls/key.pem'\n\
+        "data_dir = '/var/lib/tesatlas'\nbind = '0.0.0.0:8443'\n\
+         [tls]\ncertificate_path = '/etc/tesatlas/tls/cert.pem'\n\
+         private_key_path = '/etc/tesatlas/tls/key.pem'\n\
          public_url = 'https://hub.example.test'",
     )
     .expect("parse configuration");
     config.validate().expect("safe remote TLS configuration");
 
     let invalid: HubConfig = toml::from_str(
-        "data_dir = '/var/lib/teslatlas'\nbind = '0.0.0.0:8443'\n\
-         [tls]\ncertificate_path = '/etc/teslatlas/tls/cert.pem'\n\
-         private_key_path = '/etc/teslatlas/tls/key.pem'\n\
+        "data_dir = '/var/lib/tesatlas'\nbind = '0.0.0.0:8443'\n\
+         [tls]\ncertificate_path = '/etc/tesatlas/tls/cert.pem'\n\
+         private_key_path = '/etc/tesatlas/tls/key.pem'\n\
          public_url = 'http://hub.example.test?token=secret'",
     )
     .expect("parse unsafe configuration");
@@ -661,7 +661,7 @@ fn permits_remote_tls_only_with_safe_public_origin() {
 #[test]
 fn source_db_import_requires_a_complete_safe_source_configuration() {
     let incomplete: HubConfig = toml::from_str(
-        "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+        "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
          [import_source]\nsource_url = 'postgresql://reader@127.0.0.1/sourcedb'",
     )
     .expect("parse");
@@ -671,7 +671,7 @@ fn source_db_import_requires_a_complete_safe_source_configuration() {
     ));
 
     let complete: HubConfig = toml::from_str(
-        "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+        "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
          [import_source]\nsource_url = 'postgresql://reader@127.0.0.1/sourcedb'\n\
          source_key = 'garage-source'",
     )
@@ -683,7 +683,7 @@ fn source_db_import_requires_a_complete_safe_source_configuration() {
     );
 
     let unsafe_stage: HubConfig = toml::from_str(
-        "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+        "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
          [import_source]\nsource_url = 'postgresql://reader@127.0.0.1/sourcedb'\n\
          source_key = 'garage-source'\nmaximum_stage_bytes = 1",
     )
@@ -770,9 +770,9 @@ fn ct1_collector_defaults_follow_the_cadence_tables() {
 fn ct1_fleet_polling_table_defaults_depend_on_whether_state_checks_are_billed() {
     // An absent table and an empty table are the same thing.
     let absent: HubConfig =
-        toml::from_str("data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'").unwrap();
+        toml::from_str("data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'").unwrap();
     let empty: HubConfig = toml::from_str(
-        "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n[collector.fleet_polling]\n",
+        "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n[collector.fleet_polling]\n",
     )
     .unwrap();
     assert_eq!(
@@ -826,7 +826,7 @@ fn ct1_published_fleet_rates_are_the_ones_of_2026_10_11() {
 #[test]
 fn ct1_an_owner_set_fleet_state_interval_wins_over_the_pricing_default() {
     let config: HubConfig = toml::from_str(
-        "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+        "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
          [collector]\nprovider = 'fleet'\n\
          [collector.fleet_polling]\ndriving_poll_seconds = 20\n\
          state_poll_seconds = 90\ninventory_poll_seconds = 7200\nmonthly_cap_cents = 0\n",
@@ -1082,7 +1082,7 @@ fn ct2_driving_and_request_timeout_boundaries_report_exact_errors() {
     // which only the cadence view reports.
     let load = |seconds: u64| {
         let config: HubConfig = toml::from_str(&format!(
-            "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+            "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
              [collector]\nrequest_timeout_seconds = {seconds}\n"
         ))
         .expect("parse");
@@ -1296,7 +1296,7 @@ fn ct3_an_old_configuration_with_a_newly_invalid_cadence_still_loads() {
     // below it with one notice, so the file collects (B2 apply, R3C-04: the default
     // is clamped too).
     let config: HubConfig = toml::from_str(
-        "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+        "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
          [collector]\noffline_drive_timeout_seconds = 300\n",
     )
     .expect("parse");
@@ -1317,7 +1317,7 @@ fn ct3_an_old_configuration_with_a_newly_invalid_cadence_still_loads() {
     );
     // A bound that stays an error still gives the cadence error the wait reports.
     let faulty: HubConfig = toml::from_str(
-        "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+        "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
          [collector]\noffline_drive_timeout_seconds = 300\nrequest_timeout_seconds = 121\n",
     )
     .expect("parse");
@@ -1335,7 +1335,7 @@ fn ct3_an_old_configuration_with_a_newly_invalid_cadence_still_loads() {
     );
     // With the back-off set to 240 s the first file is valid and says nothing.
     let fixed: HubConfig = toml::from_str(
-        "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+        "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
          [collector]\noffline_drive_timeout_seconds = 300\nmax_backoff_seconds = 240\n",
     )
     .expect("parse");
@@ -1753,7 +1753,7 @@ fn ct2_lower_bounds_zero_values_and_the_back_off_cap_are_rejected() {
     // A negative cap cannot be written: the key is unsigned.
     assert!(
         toml::from_str::<HubConfig>(
-            "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+            "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
              [collector.fleet_polling]\nmonthly_cap_cents = -1\n"
         )
         .is_err()
@@ -1814,7 +1814,7 @@ fn ct2_stream_health_timeout_is_clamped_into_sixty_to_three_hundred_seconds() {
     }
     // It loads: a clamped value is never a configuration error.
     let loaded = HubConfig::from_exact_bytes(
-        b"data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+        b"data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
           [collector]\nstream_health_timeout_seconds = 30\n",
     )
     .expect("a short timeout still loads")
@@ -1827,7 +1827,7 @@ fn ct2_stream_health_timeout_is_clamped_into_sixty_to_three_hundred_seconds() {
 
 #[test]
 fn ct3_an_old_configuration_with_every_collector_key_still_loads() {
-    let old = "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+    let old = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
         [collector]\n\
         provider = 'legacy'\n\
         owner_api_base_url = 'https://owner-api.teslamotors.com/'\n\
@@ -1845,7 +1845,7 @@ fn ct3_an_old_configuration_with_every_collector_key_still_loads() {
         stream_endpoint_override = 'wss://stream.provider.example.test/streaming/'\n\
         stream_region = 'global'\n\
         fleet_command_proxy_url = 'https://127.0.0.1:4445/'\n\
-        fleet_command_proxy_root_certificate_path = '/etc/teslatlas-hub/command-proxy-cert.pem'\n\
+        fleet_command_proxy_root_certificate_path = '/etc/tesatlas-hub/command-proxy-cert.pem'\n\
         stream_health_timeout_seconds = 120\n\
         [collector.legacy_auth]\nenabled = true\n";
     let (config, _digest) = HubConfig::from_exact_bytes(old.as_bytes()).expect("old config loads");
@@ -1876,7 +1876,7 @@ fn ct3_an_old_configuration_with_every_collector_key_still_loads() {
         "[collector]\nunknown_collector_key = 1\n",
         "[collector.fleet_polling]\nunknown_fleet_key = 1\n",
     ] {
-        let text = format!("data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n{unknown}");
+        let text = format!("data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n{unknown}");
         assert!(toml::from_str::<HubConfig>(&text).is_err(), "{unknown}");
     }
 }
@@ -1960,7 +1960,7 @@ fn cmp3_01_the_last_releases_guide_example_loads_logs_one_notice_and_collects() 
     // enforces. For one release an explicit value at or above the timeout is moved to
     // the largest valid one, 599 s, with one `config_value_clamped` notice, so the
     // upgrade collects instead of waiting in the cadence wait (G2-10).
-    let old = "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+    let old = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
         [collector]\n\
         provider = 'legacy'\n\
         interval_seconds = 60\n\

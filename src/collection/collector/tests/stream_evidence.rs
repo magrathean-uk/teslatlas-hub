@@ -1149,7 +1149,7 @@ async fn r9_the_stream_frame_path_logs_the_hub_id_and_never_a_tesla_id() {
     let text = log.contents();
     let own: Vec<&str> = text
         .lines()
-        .filter(|line| line.contains(" teslatlas_hub::") || line.contains(" collector."))
+        .filter(|line| line.contains(" tesatlas_hub::") || line.contains(" collector."))
         .collect();
     for reason in [
         "upstream_stream_gap",

@@ -6,7 +6,7 @@ This file records sources and treatment. It is **not** a blanket clean-room decl
 
 ## Original implementation
 
-Teslatlas Hub is a Rust self-hosted collector, local store, sync service, CLI and platform controller maintained by MAGRATHEAN UK LTD.
+Tesatlas Hub is a Rust self-hosted collector, local store, sync service, CLI and platform controller maintained by MAGRATHEAN UK LTD.
 
 ## Interoperability modules
 
@@ -76,10 +76,10 @@ archive SHA-256 is
 `a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9`.
 
 The build applies
-`packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch`
+`packaging/fleet-telemetry-bridge/0001-tesatlas-http-dispatcher.patch`
 (SHA-256
 `9b0332bd05793c329dac6203ae56905b79508585460c09c5ed40206dde7aff03`)
-to a temporary private source copy. That patch adds the bounded Teslatlas loopback dispatcher and its configuration, and changes the receiver's debug log to record the record type instead of the raw telemetry payload. It forwards decoded `V` and
+to a temporary private source copy. That patch adds the bounded Tesatlas loopback dispatcher and its configuration, and changes the receiver's debug log to record the record type instead of the raw telemetry payload. It forwards decoded `V` and
 connectivity records to
 `http://127.0.0.1:8080/v1/internal/fleet-telemetry`; vehicle records are
 acknowledged only after Hub accepts them. The build then replaces the upstream
@@ -91,10 +91,10 @@ acknowledged only after Hub accepts them. The build then replaces the upstream
 update the module requirements; the replacement `go.mod` carries a change notice. The bridge lock records both digests. The
 bridge is built with Go 1.27.4 exactly, `CGO_ENABLED=0`, `-trimpath`, and stripped symbols for Darwin amd64 and
 ARM64 plus Linux amd64 and ARM64. The CGO-only Kafka and ZMQ integrations are
-unavailable in this build; the Teslatlas runtime configuration selects only the
+unavailable in this build; the Tesatlas runtime configuration selects only the
 fixed loopback dispatcher.
 
-Every Go source file the patch changes carries a dated Teslatlas change notice. Release Fleet
+Every Go source file the patch changes carries a dated Tesatlas change notice. Release Fleet
 evidence includes the exact upstream archive and the exact source zip and
 `go.mod` for every locked runtime module, including the EPL-2.0 Paho MQTT
 component, with directions in the generated third-party notice.

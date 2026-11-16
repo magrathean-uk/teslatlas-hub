@@ -396,7 +396,7 @@ impl<R: Read> ArchiveReader<R> {
             })?;
         if &header[..8] != MAGIC {
             return Err(DataRecoveryError::CorruptArchive(
-                "the file is not a Teslatlas Hub backup archive".into(),
+                "the file is not a Tesatlas Hub backup archive".into(),
             ));
         }
         if header[8] != FORMAT_VERSION

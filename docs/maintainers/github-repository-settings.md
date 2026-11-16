@@ -1,6 +1,6 @@
 # GitHub repository settings
 
-GitHub is source storage for Teslatlas Hub. Do not add build, test, release or
+GitHub is source storage for Tesatlas Hub. Do not add build, test, release or
 security automation without an explicit owner request. Current distribution is
 source-only; existing tags are historical snapshots. See
 [Source publishing and local builds](../releases/releasing.md).
@@ -14,9 +14,9 @@ Local agent guidance is separate from tracked public documentation.
 
 A suitable About description is:
 
-> Self-hosted Tesla telemetry collector and local Teslatlas sync hub, written in Rust.
+> Self-hosted Tesla telemetry collector and local Tesatlas sync hub, written in Rust.
 
-Website: [teslatlas.eu](https://teslatlas.eu).
+Website: [tesatlas.eu](https://tesatlas.eu).
 Suggested topics: `tesla`, `telemetry`, `self-hosted`, `rust`, `sqlite`, `data-import`,
 `macos`, `debian`.
 

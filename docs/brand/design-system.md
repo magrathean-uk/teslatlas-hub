@@ -1,16 +1,16 @@
-# Teslatlas Hub design system
+# Tesatlas Hub design system
 
 <!-- impeccable:design-schema 1 -->
 
 ## Direction
 
-Teslatlas Hub is a calm native Mac operations workspace. Four stable toolbar
+Tesatlas Hub is a calm native Mac operations workspace. Four stable toolbar
 destinations—Overview, Vehicles, Activity, and Settings—provide place without turning
 the app into an administration sidebar. Health is legible first; technical depth is
 progressively disclosed inside the same window.
 
 The authoritative composition reference is
-`/Users/bolyki/dev/teslatlas-lab/build/hub/target/design-review-20260921/approved-direction.png`.
+`/Users/bolyki/dev/tesatlas-lab/build/hub/target/design-review-20260921/approved-direction.png`.
 Its companion `design-brief.md` governs behavior, state coverage, and motion. The
 reference is directional rather than a literal pixel contract; native control
 behavior, product truth, and the measured source tokens below take precedence.

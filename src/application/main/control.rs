@@ -7,11 +7,11 @@ async fn main() -> ExitCode {
     #[cfg(not(feature = "credential-relocation-fixture"))]
     {
     #[cfg(unix)]
-    if let Some(code) = teslatlas_hub::platform::name_migration::run_if_requested() { return code; }
+    if let Some(code) = tesatlas_hub::platform::name_migration::run_if_requested() { return code; }
     let cli = Cli::parse();
-    use teslatlas_hub::runtime::development_event_log as dev;
+    use tesatlas_hub::runtime::development_event_log as dev;
     if dev::initialize().is_err() {
-        eprintln!("teslatlas-hub: development journal unavailable");
+        eprintln!("tesatlas-hub: development journal unavailable");
         return ExitCode::FAILURE;
     }
     let logging = tracing_subscriber::fmt()
@@ -30,7 +30,7 @@ async fn main() -> ExitCode {
     } else { logging.init(); }
     #[cfg(target_os = "macos")]
     if matches!(&cli.command, Command::Serve) {
-        teslatlas_hub::macos_launch_agent::compact_inherited_logs();
+        tesatlas_hub::macos_launch_agent::compact_inherited_logs();
     }
     let kind = match &cli.command {
         Command::Migrate { .. } => dev::Kind::Import,
@@ -51,7 +51,7 @@ async fn main() -> ExitCode {
     event.duration_ms = started.elapsed().as_millis().min(u64::MAX as u128) as u64;
     dev::record(event);
     if !dev::flush() {
-        eprintln!("teslatlas-hub: development journal incomplete");
+        eprintln!("tesatlas-hub: development journal incomplete");
     }
     ExitCode::from(report_outcome(result, &mut std::io::stderr()))
     }
@@ -66,7 +66,7 @@ fn report_outcome(
     match result {
         Ok(()) => 0,
         Err(error) => {
-            let _ = writeln!(stderr, "teslatlas-hub: {error}");
+            let _ = writeln!(stderr, "tesatlas-hub: {error}");
             let mut source = error.source();
             while let Some(cause) = source {
                 let _ = writeln!(stderr, "caused by: {cause}");
@@ -141,14 +141,14 @@ fn validate_streaming_setting(
 }
 
 fn clear_provider_credentials(
-    entry: &teslatlas_hub::CredentialVaultEntry,
+    entry: &tesatlas_hub::CredentialVaultEntry,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let result = teslatlas_hub::auth::credential_sign_in::sign_out(entry);
+    let result = tesatlas_hub::auth::credential_sign_in::sign_out(entry);
     if result.scrub_pending { tracing::warn!(operation = "post_clear_scrub", outcome = "pending", "credential scrub"); }
     let mut failures = Vec::new();
     for (slot, code) in [("owner_api", result.owner_api), ("fleet_api", result.fleet_api)] {
         if let Some(code) = code {
-            let text = teslatlas_hub::auth::credential_sign_in::credential_owner_message(code, None, None, None).unwrap_or_default();
+            let text = tesatlas_hub::auth::credential_sign_in::credential_owner_message(code, None, None, None).unwrap_or_default();
             failures.push(format!("{slot}: {code}: {text}"));
         }
     }
@@ -157,7 +157,7 @@ fn clear_provider_credentials(
 }
 
 #[cfg(unix)]
-const MIGRATION_OUTCOME_AMBIGUOUS: &str = "TESLATLAS_MIGRATION_OUTCOME_AMBIGUOUS";
+const MIGRATION_OUTCOME_AMBIGUOUS: &str = "TESATLAS_MIGRATION_OUTCOME_AMBIGUOUS";
 
 #[cfg(unix)]
 fn migration_outcome_ambiguous(
@@ -179,7 +179,7 @@ const CONTROL_PAIR_VEHICLE_ID_USAGE: &str = "--vehicle-id does not apply to `con
 /// The one deprecation line of an old `--mode` value (C2 R53a).
 fn deprecated_charge_cost_mode_line(alias: &str, mode: ChargeCostMode) -> String {
     format!(
-        "teslatlas-hub: --mode {alias} is deprecated and will stop working in the next \
+        "tesatlas-hub: --mode {alias} is deprecated and will stop working in the next \
          release; use --mode {}",
         mode.as_str()
     )
@@ -193,7 +193,7 @@ fn set_charge_cost_by_mode(
     charge_id: i64,
     value: f64,
     mode: ChargeCostMode,
-) -> Result<teslatlas_hub::hub_pack::ProjectionCharge, StoreError> {
+) -> Result<tesatlas_hub::hub_pack::ProjectionCharge, StoreError> {
     match mode {
         ChargeCostMode::Total => store.set_charge_cost(vehicle_id, charge_id, value),
         ChargeCostMode::PerKwh => {
@@ -283,7 +283,7 @@ fn run_set_geofence(
     let geofence = store.save_geofence(
         vehicle_id,
         *id,
-        teslatlas_hub::source_db_projection::SourceDbGeofence {
+        tesatlas_hub::source_db_projection::SourceDbGeofence {
             id: id.unwrap_or_default(),
             name: name.clone(),
             latitude: Some(*latitude),
@@ -359,7 +359,7 @@ fn run_credential_control_with(
     config: &HubConfig,
     command: &ControlCommand,
     stop: impl FnOnce() -> Result<(), Box<dyn std::error::Error>>,
-    open: impl FnOnce(HubStore, std::sync::Arc<AdmittedUserHub>, &Path) -> Result<teslatlas_hub::CredentialVaultEntry, teslatlas_hub::CredentialVaultEntryError>,
+    open: impl FnOnce(HubStore, std::sync::Arc<AdmittedUserHub>, &Path) -> Result<tesatlas_hub::CredentialVaultEntry, tesatlas_hub::CredentialVaultEntryError>,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     stop()?;
     let admission = AdmittedUserHub::admit(&config.data_dir)?;
@@ -368,7 +368,7 @@ fn run_credential_control_with(
     drop(HubStore::open_existing(&config.data_dir)?);
     let store = HubStore::initialize(&config.data_dir)?;
     let entry = open(store.clone(), admission, &config.data_dir)
-        .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)?;
+        .map_err(tesatlas_hub::auth::credential_sign_in::credential_entry_error)?;
     match command {
         ControlCommand::SignOut => {
             let mut checkpoint = CatalogueCheckpointGuard::new(store);
@@ -376,16 +376,16 @@ fn run_credential_control_with(
             checkpoint.finish()?;
             Ok(serde_json::json!({"status":"signed_out","service":"stopped"}))
         }
-        ControlCommand::RotateCredentialKey => Ok(serde_json::to_value(teslatlas_hub::auth::credential_sign_in::rotate_credential_key(&entry)?)?),
+        ControlCommand::RotateCredentialKey => Ok(serde_json::to_value(tesatlas_hub::auth::credential_sign_in::rotate_credential_key(&entry)?)?),
         _ => unreachable!("credential controls are selected before this boundary"),
     }
 }
 
-fn open_control_credential_vault(store: HubStore, admission: std::sync::Arc<AdmittedUserHub>, data: &Path) -> Result<teslatlas_hub::CredentialVaultEntry, teslatlas_hub::CredentialVaultEntryError> {
+fn open_control_credential_vault(store: HubStore, admission: std::sync::Arc<AdmittedUserHub>, data: &Path) -> Result<tesatlas_hub::CredentialVaultEntry, tesatlas_hub::CredentialVaultEntryError> {
     #[cfg(feature = "credential-relocation-fixture")]
-    { teslatlas_hub::CredentialVaultEntry::open_for_test(store, admission, data, true) }
+    { tesatlas_hub::CredentialVaultEntry::open_for_test(store, admission, data, true) }
     #[cfg(not(feature = "credential-relocation-fixture"))]
-    { teslatlas_hub::open_credential_vault_for_entry(store, admission, data) }
+    { tesatlas_hub::open_credential_vault_for_entry(store, admission, data) }
 }
 
 async fn run_control(
@@ -404,11 +404,11 @@ async fn run_control(
         credential_relocation_fixture::require_entry_path(&config.data_dir)?;
         let result = run_credential_control_with(&config, command, || {
             #[cfg(feature = "credential-relocation-fixture")]
-            teslatlas_hub::platform::r78_recording::with_fixture_backend(|backend| backend.persistent_stop())?;
+            tesatlas_hub::platform::r78_recording::with_fixture_backend(|backend| backend.persistent_stop())?;
             #[cfg(all(target_os = "macos", not(feature = "credential-relocation-fixture")))]
-            teslatlas_hub::macos_launch_agent::stop_installed()?;
+            tesatlas_hub::macos_launch_agent::stop_installed()?;
             #[cfg(all(target_os = "linux", not(feature = "credential-relocation-fixture")))]
-            teslatlas_hub::linux_systemd::apply(teslatlas_hub::linux_systemd::ServiceAction::Stop)?;
+            tesatlas_hub::linux_systemd::apply(tesatlas_hub::linux_systemd::ServiceAction::Stop)?;
             Ok(())
         }, open_control_credential_vault)?;
         println!("{}", serde_json::to_string(&result)?);

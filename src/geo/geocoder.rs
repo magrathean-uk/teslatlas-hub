@@ -43,7 +43,7 @@ use request::{
     reverse_request_url,
 };
 
-pub const FIXED_USER_AGENT: &str = concat!("teslatlas-hub/", env!("CARGO_PKG_VERSION"));
+pub const FIXED_USER_AGENT: &str = concat!("tesatlas-hub/", env!("CARGO_PKG_VERSION"));
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
 const MAX_RAW_JSON_BYTES: usize = 64 * 1024;
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);

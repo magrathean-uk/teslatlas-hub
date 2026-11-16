@@ -11,8 +11,8 @@ use std::{
     path::{Path, PathBuf},
 };
 #[cfg(feature = "interop-fixture")]
-use teslatlas_hub::protocol::HUB_PROJECTION_SCHEMA_V3;
-use teslatlas_hub::{
+use tesatlas_hub::protocol::HUB_PROJECTION_SCHEMA_V3;
+use tesatlas_hub::{
     credentials::OwnerTokens,
     db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor},
     hub_pack::{
@@ -28,7 +28,7 @@ use teslatlas_hub::{
     },
 };
 #[cfg(feature = "interop-fixture")]
-use teslatlas_hub::{
+use tesatlas_hub::{
     hub_pack::{
         ProjectionFixedNumericV2_2, ProjectionFloat64BitsV2_2, ProjectionPreferredRangeV2_2,
         ProjectionUnitOfLengthV2_2, ProjectionUnitOfPressureV2_2, ProjectionUnitOfTemperatureV2_2,
@@ -266,7 +266,7 @@ fn prepare_with_vehicle_identities(
     // fixture's observations are fixed past times. A Fixture-mode source run
     // serves the summary at this time, so every pinned value stays served.
     write_private(
-        &data_dir.join(teslatlas_hub::server::FIXTURE_SUMMARY_CLOCK_FILE),
+        &data_dir.join(tesatlas_hub::server::FIXTURE_SUMMARY_CLOCK_FILE),
         format!("{LATER_OBSERVED_AT_MS}\n").as_bytes(),
     )?;
     let key = load_or_create_cursor_key(&data_dir)?;
@@ -470,7 +470,7 @@ fn prepare_with_vehicle_identities(
     // Native macOS preflight requires encrypted account material even with
     // collection disabled. These fixed test strings have no provider authority.
     if !matches!(scenario, FixtureScenario::PhysicalV3Public513) {
-        use teslatlas_hub::auth::credential_sign_in as credentials;
+        use tesatlas_hub::auth::credential_sign_in as credentials;
         credentials::seed_owner_pair_for_test(root, "access-0001", "refresh-0001", None)?;
         if !credentials::record_provider_admission_for_test(root)? { return Err("fixture_credentials_not_admitted".into()); }
     }
@@ -531,7 +531,7 @@ fn prepare_with_vehicle_identities(
 fn build_physical_v3_candidate(
     root: &Path,
     store: &HubStore,
-    cursor_key: &teslatlas_hub::protocol::CursorKey,
+    cursor_key: &tesatlas_hub::protocol::CursorKey,
     vehicle_id: Uuid,
     snapshot_id: Uuid,
     stage_directory: &str,
@@ -769,7 +769,7 @@ fn build_physical_v3_candidate(
 fn prepare_physical_v3_public_admission(
     root: &Path,
     store: &HubStore,
-    cursor_key: &teslatlas_hub::protocol::CursorKey,
+    cursor_key: &tesatlas_hub::protocol::CursorKey,
     vehicle_id: Uuid,
 ) -> Result<PreparedPhysicalV3Admission> {
     let (candidate, logical_source_rows) = build_physical_v3_candidate(
@@ -880,7 +880,7 @@ pub fn rotate_physical_v3_public_admission(root: &Path) -> Result<RotatedPhysica
         retained_receipt_id,
         retained_at_ms,
         retained_expires_at_ms: retained_at_ms
-            .checked_add(teslatlas_hub::db::RETIRED_LINEAGE_PACK_RETENTION_MS)
+            .checked_add(tesatlas_hub::db::RETIRED_LINEAGE_PACK_RETENTION_MS)
             .ok_or("physical fixture retention overflow")?,
         active_snapshot_id: active.snapshot_id,
         active_head_sequence: active.head_sequence,
@@ -981,7 +981,7 @@ pub fn expose_dynamic_vehicle(root: &Path) -> Result<DynamicVehicleMutation> {
     if let Some(manifest) = store.manifest_for_vehicle(DYNAMIC_VEHICLE_ID)?
         && manifest.schema == HUB_PROJECTION_SCHEMA_V3
     {
-        teslatlas_hub::updates_delivery::schema_22_signed_artifacts(
+        tesatlas_hub::updates_delivery::schema_22_signed_artifacts(
             &store,
             DYNAMIC_VEHICLE_ID,
             &key,

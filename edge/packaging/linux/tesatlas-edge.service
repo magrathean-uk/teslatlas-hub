@@ -1,0 +1,36 @@
+[Unit]
+Description=Tesatlas Edge Fleet Telemetry ingress
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=tesatlas-edge
+Group=tesatlas-edge
+StateDirectory=tesatlas-edge
+StateDirectoryMode=0700
+ExecStart=/usr/lib/tesatlas-edge/run-with-spool-format-guard.sh /usr/bin/tesatlas-edge /var/lib/tesatlas-edge/spool -- --config /etc/tesatlas-edge/config.toml serve
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+KillMode=mixed
+UMask=0077
+CapabilityBoundingSet=
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/tesatlas-edge
+InaccessiblePaths=/etc/tesatlas-edge/vehicle-tls.key /etc/tesatlas-edge/fleet-telemetry.json
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

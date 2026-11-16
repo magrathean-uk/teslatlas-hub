@@ -23,6 +23,6 @@
   ],
   "test_receipt_paths": [
     "hub/docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
-    "teslatlas-sdk-swift/docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json"
+    "tesatlas-sdk-swift/docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json"
   ]
 }

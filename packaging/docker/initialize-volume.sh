@@ -3,7 +3,7 @@
 set -eu
 
 if [ "$#" -eq 0 ]; then
-    volume_root=/var/lib/teslatlas-hub
+    volume_root=/var/lib/tesatlas-hub
     volume_uid=10001
     volume_gid=10001
     install_command=install
@@ -12,7 +12,7 @@ if [ "$#" -eq 0 ]; then
     guard_uid=0
     guard_gid=0
     test_mode=0
-elif [ "$#" -eq 4 ] && [ "$1" = "--test-only" ] && [ "${TESLATLAS_HUB_VOLUME_INIT_TEST_ONLY:-}" = 1 ]; then
+elif [ "$#" -eq 4 ] && [ "$1" = "--test-only" ] && [ "${TESATLAS_HUB_VOLUME_INIT_TEST_ONLY:-}" = 1 ]; then
     volume_root=$2
     volume_uid=$3
     volume_gid=$4
@@ -35,7 +35,7 @@ case "$volume_uid:$volume_gid" in
     *[!0-9:]* | :* | *:) echo "volume uid/gid must be numeric" >&2; exit 2 ;;
 esac
 
-sentinel="$volume_root/.teslatlas-volume-initialized"
+sentinel="$volume_root/.tesatlas-volume-initialized"
 temporary=
 cleanup() {
     if [ -n "$temporary" ]; then
@@ -60,14 +60,14 @@ else
     # Prepare and verify the private inode completely before publishing it.
     # The hard link is the final sentinel mutation and -T refuses to follow or
     # replace an entry that appears at the destination.
-    temporary=$(mktemp "$volume_root/.teslatlas-volume-initialized.tmp.XXXXXX")
+    temporary=$(mktemp "$volume_root/.tesatlas-volume-initialized.tmp.XXXXXX")
     chmod 0600 "$temporary"
     chown "$volume_uid:$volume_gid" "$temporary"
     [ ! -L "$temporary" ]
     [ -f "$temporary" ]
     [ "$("$stat_command" -c '%u:%g:%a:%s:%h' "$temporary")" = "$volume_uid:$volume_gid:600:0:1" ]
-    if [ "$test_mode" -eq 1 ] && [ -n "${TESLATLAS_HUB_VOLUME_INIT_TEST_RACE_TARGET:-}" ]; then
-        "$link_command" -s -- "$TESLATLAS_HUB_VOLUME_INIT_TEST_RACE_TARGET" "$sentinel"
+    if [ "$test_mode" -eq 1 ] && [ -n "${TESATLAS_HUB_VOLUME_INIT_TEST_RACE_TARGET:-}" ]; then
+        "$link_command" -s -- "$TESATLAS_HUB_VOLUME_INIT_TEST_RACE_TARGET" "$sentinel"
     fi
     "$link_command" -T -- "$temporary" "$sentinel"
     [ "$("$stat_command" -c '%d:%i' "$temporary")" = "$("$stat_command" -c '%d:%i' "$sentinel")" ]

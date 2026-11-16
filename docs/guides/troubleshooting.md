@@ -6,9 +6,9 @@ a first diagnostic step. Review logs before sharing them.
 
 ## An older Mac app opens after installation
 
-Quit the control app, then open **Teslatlas Hub.app** directly from
+Quit the control app, then open **Tesatlas Hub.app** directly from
 `/Applications` in Finder. Do not open a copy from Downloads, a development
-build folder or an old Dock shortcut. Check **About Teslatlas Hub** for the app
+build folder or an old Dock shortcut. Check **About Tesatlas Hub** for the app
 version and **Service Details** for service information. Opening the intended
 app allows its per-user agent to be reconciled with the embedded Hub.
 
@@ -59,12 +59,12 @@ Fleet checks below before changing credentials.
 Run the read-only checks first:
 
 ```sh
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml doctor
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml preflight
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml status
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml doctor
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml preflight
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml status
 ```
 
 Those are Debian package commands. On macOS, use the control app or run its
@@ -90,7 +90,7 @@ Check the owning process instead of assuming it is Hub:
 
 ```sh
 sudo lsof -nP -iTCP:8080 -sTCP:LISTEN
-sudo /usr/bin/teslatlas-hub service status
+sudo /usr/bin/tesatlas-hub service status
 ```
 
 The second command is for Debian. On macOS, check service state in the control

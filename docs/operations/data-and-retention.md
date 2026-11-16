@@ -1,6 +1,6 @@
 # Data and retention
 
-Teslatlas Hub processes precise location, journeys, charging, vehicle state,
+Tesatlas Hub processes precise location, journeys, charging, vehicle state,
 vehicle identifiers, provider credentials, client pairing authority, and
 security diagnostics.
 

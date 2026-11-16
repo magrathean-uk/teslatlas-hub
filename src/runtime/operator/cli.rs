@@ -10,9 +10,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "teslatlas-hub",
+    name = "tesatlas-hub",
     version,
-    about = "Native Teslatlas Hub service"
+    about = "Native Tesatlas Hub service"
 )]
 pub struct Cli {
     #[arg(long, global = true)]
@@ -146,7 +146,7 @@ pub enum ControlCommand {
     /// Print one short-lived, single-use device pairing link while the Hub is running.
     Pair {
         /// Human label shown only to the Hub owner, such as "Bolyki iPhone".
-        #[arg(long, default_value = "Teslatlas iPhone")]
+        #[arg(long, default_value = "Tesatlas iPhone")]
         label: String,
         /// Lifetime before the invitation becomes unusable.
         #[arg(long, default_value_t = 900)]
@@ -535,7 +535,7 @@ pub enum Command {
     #[command(alias = "create-pairing")]
     Pair {
         /// Human label shown only to the Hub owner, such as "Bolyki iPhone".
-        #[arg(long, default_value = "Teslatlas iPhone")]
+        #[arg(long, default_value = "Tesatlas iPhone")]
         label: String,
         /// Lifetime before the invitation becomes unusable.
         #[arg(long, default_value_t = 900)]

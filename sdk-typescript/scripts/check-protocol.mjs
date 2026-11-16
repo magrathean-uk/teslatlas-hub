@@ -72,11 +72,11 @@ if (profile.profile_id !== "hub-http-v1@1.3.0" || profile.contract_version !== "
 if (JSON.stringify((await readdir(generatedRoot)).sort()) !== JSON.stringify(generatedFiles)) {
   throw new Error("src/generated must hold exactly the generated Hub files");
 }
-const temporaryOutput = await mkdtemp(join(tmpdir(), "teslatlas-sdk-protocol-"));
+const temporaryOutput = await mkdtemp(join(tmpdir(), "tesatlas-sdk-protocol-"));
 try {
   execFileSync(process.execPath, ["scripts/generate-protocol.mjs"], {
     cwd: repositoryRoot,
-    env: { ...process.env, TESLATLAS_PROTOCOL_OUTPUT_DIR: temporaryOutput },
+    env: { ...process.env, TESATLAS_PROTOCOL_OUTPUT_DIR: temporaryOutput },
     stdio: "pipe",
   });
   for (const file of generatedFiles) {

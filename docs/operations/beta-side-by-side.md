@@ -100,7 +100,7 @@ that copy before it touches the Hub, and refuses a configuration that writes col
 settings in a form it cannot rewrite safely (dotted keys or inline tables). It then pauses
 the Hub (it stays enabled at login), imports, and starts the Hub again if it was running,
 once the importer can no longer write. The import counts as finished only when the Hub's
-process is confirmed serving its configuration again (`teslatlas-hub serving-check`,
+process is confirmed serving its configuration again (`tesatlas-hub serving-check`,
 which works between windows and never contacts Tesla). A Hub that answers but reports a
 fault (credential store, catalogue, quarantine or history it cannot serve) is not
 confirmed, and the app shows the reason. The data the Hub collected in its
@@ -143,7 +143,7 @@ time.
 
 1. Start the Hub and wait until the app shows it running.
 2. Open **Service Details** and choose **Pair a phone…** under Paired devices.
-3. The app runs `teslatlas-hub lan-tls --host <name>.local` with this Mac's local
+3. The app runs `tesatlas-hub lan-tls --host <name>.local` with this Mac's local
    hostname (System Settings, General, Sharing). The first time, it makes a
    self-signed P-256 certificate valid for 397 days in the Hub data folder's `tls/`
    (folder 0700, files 0600, named after the run), sets `bind = "0.0.0.0:8443"` and a
@@ -154,7 +154,7 @@ time.
    overlap: each holds a lock beside the configuration file (`.config-writer.lock`)
    from its first read to publication, and a second waits up to 30 seconds for it.
    Before asking for a link the app confirms that the running Hub serves the configured
-   identity (`teslatlas-hub serving-check`). If it still serves an older configuration,
+   identity (`tesatlas-hub serving-check`). If it still serves an older configuration,
    for example after a restart that failed, the app restarts it first.
 4. The app shows a one-time pairing link with **Copy** and the time it expires
    (15 minutes). Copy it to the phone, for example with Universal Clipboard, and paste
@@ -164,7 +164,7 @@ time.
    for a new one.
 
 The link is a single-use secret: the app never logs or stores it, and it is not
-shown again after **Done**. From a terminal, `teslatlas-hub control pair` prints a
+shown again after **Done**. From a terminal, `tesatlas-hub control pair` prints a
 new link the same way, under "Paste this link in Tesatlas".
 
 The phone and the Mac must be on the same local network, and the Mac firewall must

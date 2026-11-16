@@ -13,7 +13,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use teslatlas_hub::{
+use tesatlas_hub::{
     data_recovery::{EncryptedBackupRequest, create_encrypted_backup},
     db::HubStore,
 };
@@ -264,12 +264,12 @@ async fn backup_plaintext_directory_needs_the_explicit_flag() {
 #[test]
 fn backup_commands_take_no_password_argument() {
     for arguments in [
-        ["teslatlas-hub", "backup", "--destination", "d", "--password", "x"].as_slice(),
-        ["teslatlas-hub", "verify-backup", "--source", "s", "--password", "x"].as_slice(),
-        ["teslatlas-hub", "restore-data", "--source", "s", "--destination", "d", "--password", "x"].as_slice(),
+        ["tesatlas-hub", "backup", "--destination", "d", "--password", "x"].as_slice(),
+        ["tesatlas-hub", "verify-backup", "--source", "s", "--password", "x"].as_slice(),
+        ["tesatlas-hub", "restore-data", "--source", "s", "--destination", "d", "--password", "x"].as_slice(),
     ] {
         assert!(Cli::try_parse_from(arguments).is_err(), "{arguments:?}");
     }
-    let parsed = Cli::try_parse_from(["teslatlas-hub", "backup", "--destination", "d"]).expect("backup");
+    let parsed = Cli::try_parse_from(["tesatlas-hub", "backup", "--destination", "d"]).expect("backup");
     assert!(matches!(parsed.command, Command::Backup { .. }));
 }

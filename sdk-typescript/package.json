@@ -1,13 +1,13 @@
 {
-  "name": "@teslatlas/sdk",
+  "name": "@tesatlas/sdk",
   "version": "2026.36.2",
-  "description": "Private protocol-derived Teslatlas client for Node.js development",
+  "description": "Private protocol-derived Tesatlas client for Node.js development",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
   "packageManager": "npm@12.1.0",
-  "teslatlasSupport": {
+  "tesatlasSupport": {
     "policy": "evidence-only",
     "reproducibilityToolchain": {
       "node": "26.10.0",

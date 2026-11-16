@@ -310,7 +310,7 @@ def validate_contract(files: dict[str, bytes], source_commit: str) -> dict[str, 
     if not SHA_LINE.fullmatch(files["database-sha256.txt"]):
         fail("database SHA-256 record is invalid")
     expected_url = (
-        "https://github.com/magrathean-uk/teslatlas-hub/tree/" + source_commit
+        "https://github.com/magrathean-uk/tesatlas-hub/tree/" + source_commit
     )
     if files["source-output.txt"].decode().strip() != expected_url:
         fail("runtime source output does not match the requested commit")

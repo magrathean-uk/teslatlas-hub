@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Reproduces the Teslatlas Protocol hub-sync-v1@1.4.0 contract physical-delta-pack-v1.sql, published under Apache-2.0.
+-- Reproduces the Tesatlas Protocol hub-sync-v1@1.4.0 contract physical-delta-pack-v1.sql, published under Apache-2.0.
 -- Source-neutral PhysicalV3 changed-set pack format v1.
 
 -- The field catalog defines full source rows; this schema adds operation and closure evidence.

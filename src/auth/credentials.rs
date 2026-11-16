@@ -127,7 +127,7 @@ fn permitted_sensitive_access() -> SensitiveAccessGuard {
 ///
 /// ```compile_fail
 /// fn requires_clone<T: Clone>() {}
-/// requires_clone::<teslatlas_hub::credentials::OwnerTokens>();
+/// requires_clone::<tesatlas_hub::credentials::OwnerTokens>();
 /// ```
 #[derive(PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
 pub struct OwnerTokens {

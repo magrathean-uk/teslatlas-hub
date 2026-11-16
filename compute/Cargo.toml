@@ -1,11 +1,11 @@
 [package]
-name = "teslatlas-compute"
+name = "tesatlas-compute"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.98.1"
 license = "Apache-2.0"
-description = "Deterministic shared compute kernels for Teslatlas"
-repository = "https://github.com/magrathean-uk/teslatlas-compute"
+description = "Deterministic shared compute kernels for Tesatlas"
+repository = "https://github.com/magrathean-uk/tesatlas-compute"
 
 [lib]
 path = "src/lib.rs"

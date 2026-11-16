@@ -50,7 +50,7 @@ add own-code . "python3 scripts/verify-own-code.py"
 add gitleaks . "gitleaks git --no-banner --redact ."
 add cargo-check . "cargo check --locked"
 add clippy . "cargo clippy --locked --all-targets -- -D warnings"
-add compute-tests . "cargo test --locked -p teslatlas-compute"
+add compute-tests . "cargo test --locked -p tesatlas-compute"
 add protocol-check protocol "tools/check"
 add sdk-protocol sdk-typescript "npm run protocol:check"
 add sdk-typecheck sdk-typescript "npm run typecheck"
@@ -70,7 +70,7 @@ fi
 
 # Workspace that owns the heavy-build lock and the toolchain environment.
 workspace=
-for base in "$root/.." "${TESLATLAS_WORKSPACE:-$HOME/dev/source/teslatlas-service}"; do
+for base in "$root/.." "${TESATLAS_WORKSPACE:-$HOME/dev/source/tesatlas-service}"; do
     if [ -x "$base/scripts/dev/with-heavy-build-lock.sh" ] && [ -r "$base/scripts/dev/env.sh" ]; then
         workspace=$(CDPATH='' cd -- "$base" && pwd)
         break

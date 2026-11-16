@@ -1,4 +1,4 @@
-import { containsControlCharacters, TeslatlasError } from "./errors.js";
+import { containsControlCharacters, TesatlasError } from "./errors.js";
 
 const opaqueCursorBrand: unique symbol = Symbol("OpaqueCursor");
 const entityTagBrand: unique symbol = Symbol("EntityTag");
@@ -12,7 +12,7 @@ export type EntityTag = string & {
   readonly [entityTagBrand]: true;
 };
 
-export class InvalidOpaqueCursorError extends TeslatlasError<"invalid_opaque_cursor"> {
+export class InvalidOpaqueCursorError extends TesatlasError<"invalid_opaque_cursor"> {
   constructor() {
     super("Opaque cursor must be non-empty and contain no control characters", {
       code: "invalid_opaque_cursor",
@@ -20,7 +20,7 @@ export class InvalidOpaqueCursorError extends TeslatlasError<"invalid_opaque_cur
   }
 }
 
-export class InvalidEntityTagError extends TeslatlasError<"invalid_entity_tag"> {
+export class InvalidEntityTagError extends TesatlasError<"invalid_entity_tag"> {
   constructor() {
     super("Entity tag must use the protocol ETag syntax", {
       code: "invalid_entity_tag",

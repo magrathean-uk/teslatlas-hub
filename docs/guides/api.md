@@ -11,7 +11,7 @@ SHA-256
 `b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`.
 The accepted binding does not add routes beyond those advertised by discovery.
 That record is historical: discovery now names the profile the Hub serves,
-`hub-http-v1@1.3.0` (see Discovery below). The root `teslatlas-v1` contract,
+`hub-http-v1@1.3.0` (see Discovery below). The root `tesatlas-v1` contract,
 with its separate specification and event stream, and the `hub-http-v1` 1.0.0
 and 1.1.0 profiles have been retired and are no longer part of the protocol package.
 
@@ -54,7 +54,7 @@ where `R` is `catalogue_unavailable`, `lifecycle_quarantined`,
 `collector_auth_terminal`. Conditions you can fix while the Hub stays up (a refusal from
 Tesla or a provider, a sign-in that still works but must be renewed, a Fleet refresh whose
 outcome is unknown, a broken collector cadence and the like) are collection attention: they
-appear in `teslatlas-hub status`, `doctor` and the Mac app, never in this body, and never
+appear in `tesatlas-hub status`, `doctor` and the Mac app, never in this body, and never
 change the status code. The body and its headers keep the shape published since `hub-http-v1@1.2.0`, unchanged in 1.3.0; an
 optional detail member and a cadence diagnostic are held for the next protocol
 declaration. See [Configuration](configuration.md#sign-in-status).
@@ -186,9 +186,9 @@ completeness after raw-data pruning.
 Create a short-lived invitation on the Hub host:
 
 ```sh
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml pair \
-  --label "Teslatlas iPhone" --expires-in-seconds 900
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml pair \
+  --label "Tesatlas iPhone" --expires-in-seconds 900
 ```
 
 The displayed QR contains secret-bearing claim material. Do not screenshot,
@@ -208,11 +208,11 @@ payloads, precise locations, or pack contents to a public issue.
 
 ## Accepted evidence boundary
 
-G3 r2 (`teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json`)
+G3 r2 (`tesatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json`)
 admitted the exact product/profile records using accepted
-G4 TypeScript (`teslatlas-sdk-typescript/docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json`),
-G5 Edge (`teslatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json`),
-and G6 Swift (`teslatlas-sdk-swift/docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json`)
+G4 TypeScript (`tesatlas-sdk-typescript/docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json`),
+G5 Edge (`tesatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json`),
+and G6 Swift (`tesatlas-sdk-swift/docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json`)
 receipts. The G3 receipt SHA-256 is
 `5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865`.
 Those receipts cover source-built synthetic

@@ -3,35 +3,35 @@
 import PackageDescription
 
 let package = Package(
-  name: "teslatlas-sdk-swift",
+  name: "tesatlas-sdk-swift",
   platforms: [
     .iOS(.v17),
     .macOS(.v14),
   ],
   products: [
-    .library(name: "TeslatlasHubSDK", targets: ["TeslatlasHubSDK"]),
-    .library(name: "TeslatlasCommands", targets: ["TeslatlasCommands"]),
+    .library(name: "TesatlasHubSDK", targets: ["TesatlasHubSDK"]),
+    .library(name: "TesatlasCommands", targets: ["TesatlasCommands"]),
     .library(
-      name: "TeslatlasHubV1Compatibility",
-      targets: ["TeslatlasHubV1Compatibility"]
+      name: "TesatlasHubV1Compatibility",
+      targets: ["TesatlasHubV1Compatibility"]
     ),
     .library(
-      name: "TeslatlasCurrentHub",
-      targets: ["TeslatlasCurrentHub"]
+      name: "TesatlasCurrentHub",
+      targets: ["TesatlasCurrentHub"]
     ),
     .executable(
-      name: "TeslatlasHubSDKExample",
-      targets: ["TeslatlasHubSDKExample"]
+      name: "TesatlasHubSDKExample",
+      targets: ["TesatlasHubSDKExample"]
     ),
   ],
   targets: [
-    .target(name: "TeslatlasHubSDK"),
+    .target(name: "TesatlasHubSDK"),
     .target(
-      name: "TeslatlasHubV1Compatibility",
+      name: "TesatlasHubV1Compatibility",
       resources: [.copy("Binding")]
     ),
     .target(
-      name: "TeslatlasCurrentHub",
+      name: "TesatlasCurrentHub",
       dependencies: [
         .target(name: "CurrentHubCurlShim", condition: .when(platforms: [.linux]))
       ],
@@ -48,27 +48,27 @@ let package = Package(
       ]
     ),
     .target(
-      name: "TeslatlasCommands",
-      dependencies: ["TeslatlasHubSDK"]
+      name: "TesatlasCommands",
+      dependencies: ["TesatlasHubSDK"]
     ),
     .executableTarget(
-      name: "TeslatlasHubSDKExample",
-      dependencies: ["TeslatlasHubSDK"],
-      path: "Examples/TeslatlasHubSDKExample"
+      name: "TesatlasHubSDKExample",
+      dependencies: ["TesatlasHubSDK"],
+      path: "Examples/TesatlasHubSDKExample"
     ),
     .testTarget(
-      name: "TeslatlasHubSDKTests",
-      dependencies: ["TeslatlasHubSDK", "TeslatlasCommands"],
+      name: "TesatlasHubSDKTests",
+      dependencies: ["TesatlasHubSDK", "TesatlasCommands"],
       resources: [.copy("Fixtures")]
     ),
     .testTarget(
-      name: "TeslatlasHubV1CompatibilityTests",
-      dependencies: ["TeslatlasHubV1Compatibility"],
+      name: "TesatlasHubV1CompatibilityTests",
+      dependencies: ["TesatlasHubV1Compatibility"],
       resources: [.copy("Fixtures")]
     ),
     .testTarget(
-      name: "TeslatlasCurrentHubTests",
-      dependencies: ["TeslatlasCurrentHub"],
+      name: "TesatlasCurrentHubTests",
+      dependencies: ["TesatlasCurrentHub"],
       resources: [.copy("Fixtures")]
     ),
   ]

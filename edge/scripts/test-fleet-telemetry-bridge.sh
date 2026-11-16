@@ -5,7 +5,7 @@ set -eu
 
 script_directory=$(CDPATH='' cd "$(dirname "$0")" && pwd -P)
 repository_root=$(CDPATH='' cd "$script_directory/.." && pwd -P)
-work=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/teslatlas-edge-bridge-test.XXXXXX")
+work=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/tesatlas-edge-bridge-test.XXXXXX")
 cleanup() {
     /usr/bin/find "$work" -depth -delete >/dev/null 2>&1 || true
 }
@@ -24,6 +24,6 @@ esac
 
 "$repository_root/scripts/build-fleet-telemetry-bridge.sh" \
     --target "$target" \
-    --output "$work/teslatlas-fleet-telemetry" >/dev/null
-test -x "$work/teslatlas-fleet-telemetry"
+    --output "$work/tesatlas-fleet-telemetry" >/dev/null
+test -x "$work/tesatlas-fleet-telemetry"
 printf '%s\n' 'fleet telemetry bridge contract: ok'

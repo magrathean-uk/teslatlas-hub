@@ -19,9 +19,9 @@ the narrowest owning domain; `src/lib.rs` is the only Rust file permitted at the
 | Storage | `src/storage/` | SQLite catalogue, recovery, transactions, and durable models |
 | Sync | `src/sync/` | Immutable packs, publication, prepared maps, physical-row scanning, manifests, delivery and logical updates |
 
-The crate keeps compatibility exports such as `teslatlas_hub::db` and
-`teslatlas_hub::collector`. New code should use domain paths such as
-`teslatlas_hub::storage::db` and `teslatlas_hub::collection::collector`.
+The crate keeps compatibility exports such as `tesatlas_hub::db` and
+`tesatlas_hub::collector`. New code should use domain paths such as
+`tesatlas_hub::storage::db` and `tesatlas_hub::collection::collector`.
 
 ## Add or change code
 

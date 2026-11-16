@@ -1,6 +1,6 @@
 # CurrentHubConsumer
 
-This directory contains a small SwiftPM consumer for `TeslatlasCurrentHub`.
+This directory contains a small SwiftPM consumer for `TesatlasCurrentHub`.
 It also contains `FourLibraryContractConsumer`, a reference-only executable
 that imports all four public products across the three contract families
 and does not use a network connection.
@@ -10,7 +10,7 @@ and does not use a network connection.
 Build from this directory after checking out the parent package:
 
 ```sh
-CONSUMER_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-sdk-consumer.XXXXXX")"
+CONSUMER_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-sdk-consumer.XXXXXX")"
 swift build -c release --scratch-path "$CONSUMER_SCRATCH"
 swift test --scratch-path "$CONSUMER_SCRATCH"
 swift run --scratch-path "$CONSUMER_SCRATCH" FourLibraryContractConsumer
@@ -67,7 +67,7 @@ and omit `caPath`.
 
 ## What the journey checks
 
-The executable imports only `TeslatlasCurrentHub`. It checks the approved
+The executable imports only `TesatlasCurrentHub`. It checks the approved
 discovery profile, claims once with invitation leaf-pin validation, rejects an
 invitation replay, checks health and readiness, reads vehicles and current
 state, walks bounded drive pages, and exercises ETags. It rotates the bearer

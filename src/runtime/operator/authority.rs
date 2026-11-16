@@ -34,9 +34,9 @@ use crate::collection::window::{
 };
 
 /// Login-keychain service holding the Hub's consumption anchor (ruling R3).
-pub const HUB_ANCHOR_SERVICE: &str = "Teslatlas Hub Window";
+pub const HUB_ANCHOR_SERVICE: &str = "Tesatlas Hub Window";
 /// Login-keychain service holding the issuer's ledger pin (ruling R2).
-pub const ISSUER_ANCHOR_SERVICE: &str = "Teslatlas Window Issuer";
+pub const ISSUER_ANCHOR_SERVICE: &str = "Tesatlas Window Issuer";
 /// The network time server of ruling R4 (not a Tesla endpoint).
 pub const NTP_SERVER: &str = "time.apple.com:123";
 const NTP_TIMEOUT: Duration = Duration::from_secs(5);

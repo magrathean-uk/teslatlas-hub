@@ -74,7 +74,7 @@
  
  replace github.com/JuulLabs-OSS/cbgo => github.com/tinygo-org/cbgo v0.0.4
 +
-+// Modified by MAGRATHEAN UK LTD for Teslatlas Hub on 2026-08-28.
++// Modified by MAGRATHEAN UK LTD for Tesatlas Hub on 2026-08-28.
 +// Based on Tesla vehicle-command revision 49977a18fd68567501d59e16a6c9e4a8b9348544.
 +godebug default=go1.27
 --- a/go.sum

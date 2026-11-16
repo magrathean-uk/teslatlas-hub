@@ -1,6 +1,6 @@
 # Licensing
 
-Teslatlas Edge is licensed under the GNU Affero General Public License version 3 only
+Tesatlas Edge is licensed under the GNU Affero General Public License version 3 only
 (`AGPL-3.0-only`).
 
 ## Controlling licence
@@ -16,13 +16,13 @@ ownership grant.
 
 ## Tesla Fleet Telemetry sidecar
 
-The optional `teslatlas-fleet-telemetry` sidecar is built from Tesla Fleet
+The optional `tesatlas-fleet-telemetry` sidecar is built from Tesla Fleet
 Telemetry v0.9.4 at revision
 `d64c73ab65e7c5fb5fc12b35fe507e2c6054227b`. It retains its upstream Apache
 License 2.0 terms. The repository includes the corresponding Apache licence at
 [Apache-2.0-fleet-telemetry.txt](Apache-2.0-fleet-telemetry.txt) and documents
-the Teslatlas overlay at
-`packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch`.
+the Tesatlas overlay at
+`packaging/fleet-telemetry-bridge/0001-tesatlas-http-dispatcher.patch`.
 
 When distributing the sidecar, preserve its upstream and modified-file notices
 and provide the pinned upstream source and overlay patch as required by the

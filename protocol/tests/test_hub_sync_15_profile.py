@@ -630,7 +630,7 @@ class LiveOverlayProfileTests(unittest.TestCase):
                 ("string live sequence", lambda value: value.update(base_live_sequence="0")),
                 ("fractional live sequence", lambda value: value.update(base_live_sequence=0.5)),
                 ("null live sequence", lambda value: value.update(base_live_sequence=None)),
-                ("other format", lambda value: value.update(accepted_changed_set_formats=["teslatlas-physical-v3-delta-v2"])),
+                ("other format", lambda value: value.update(accepted_changed_set_formats=["tesatlas-physical-v3-delta-v2"])),
                 ("two formats", lambda value: value.update(accepted_changed_set_formats=["teslatlas-physical-v3-delta-v1"] * 2))):
             with self.subTest(case=label):
                 with self.assertRaisesRegex(self.contract.ContractError, "request violates 1.5 schema"):

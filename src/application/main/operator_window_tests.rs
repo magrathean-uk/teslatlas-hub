@@ -10,7 +10,7 @@ mod operator_window {
         sync::{Arc, Mutex},
     };
 
-    use teslatlas_hub::{
+    use tesatlas_hub::{
         CredentialVaultEntry,
         collection::window::{
             CloseReason, CollectorSlot, EgressGate, IssueRequest, Issuer, ManualClock,
@@ -223,7 +223,7 @@ mod operator_window {
         let window = Window::new(scratch.path(), root.path());
         window.controller.open(&window.grant(600)).expect("window opens");
         let slot = ConfiguredSlot::default();
-        let thread = teslatlas_hub::runtime::operator::authority::SupervisorThread::spawn(
+        let thread = tesatlas_hub::runtime::operator::authority::SupervisorThread::spawn(
             Arc::clone(&window.controller),
             slot.clone(),
         )

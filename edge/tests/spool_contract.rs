@@ -12,10 +12,10 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
-use teslatlas_edge::protocol::{
+use tesatlas_edge::protocol::{
     GapReasonV2, HubAckV1, HubAckV2, HubBatchV2, ReceiverEnvelope, RecordId,
 };
-use teslatlas_edge::spool::{EnqueueOutcome, Spool, SpoolConfig, SpoolError, SpoolKey};
+use tesatlas_edge::spool::{EnqueueOutcome, Spool, SpoolConfig, SpoolError, SpoolKey};
 
 use support::{T0, VIN, receiver_envelope};
 
@@ -69,7 +69,7 @@ fn expected_v2_batch_id(batch: &HubBatchV2) -> String {
     items.sort_by_key(|item| item.0);
 
     let mut digest = Sha256::new();
-    digest.update(b"teslatlas-edge-batch-v2\0");
+    digest.update(b"tesatlas-edge-batch-v2\0");
     for (spool_seq, kind, id) in items {
         digest.update([kind]);
         digest.update(spool_seq.to_be_bytes());
@@ -629,10 +629,10 @@ fn second_spool_opener_fails_in_a_separate_process() {
         .arg("--exact")
         .arg("second_spool_opener_child")
         .arg("--nocapture")
-        .env("TESLATLAS_EDGE_LOCK_CHILD", "1")
-        .env("TESLATLAS_EDGE_LOCK_SPOOL", &spool_config.directory)
-        .env("TESLATLAS_EDGE_LOCK_READY", &ready)
-        .env("TESLATLAS_EDGE_LOCK_RELEASE", &release)
+        .env("TESATLAS_EDGE_LOCK_CHILD", "1")
+        .env("TESATLAS_EDGE_LOCK_SPOOL", &spool_config.directory)
+        .env("TESATLAS_EDGE_LOCK_READY", &ready)
+        .env("TESATLAS_EDGE_LOCK_RELEASE", &release)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -678,11 +678,11 @@ fn second_spool_opener_fails_in_a_separate_process() {
 
 #[test]
 fn second_spool_opener_child() {
-    let Some(spool_directory) = std::env::var_os("TESLATLAS_EDGE_LOCK_SPOOL") else {
+    let Some(spool_directory) = std::env::var_os("TESATLAS_EDGE_LOCK_SPOOL") else {
         return;
     };
-    let ready = PathBuf::from(std::env::var_os("TESLATLAS_EDGE_LOCK_READY").unwrap());
-    let release = PathBuf::from(std::env::var_os("TESLATLAS_EDGE_LOCK_RELEASE").unwrap());
+    let ready = PathBuf::from(std::env::var_os("TESATLAS_EDGE_LOCK_READY").unwrap());
+    let release = PathBuf::from(std::env::var_os("TESATLAS_EDGE_LOCK_RELEASE").unwrap());
     let attempted = Spool::open(
         config_for_directory(PathBuf::from(spool_directory)),
         key(),
@@ -695,7 +695,7 @@ fn second_spool_opener_child() {
     }
     let reopened = Spool::open(
         config_for_directory(PathBuf::from(
-            std::env::var_os("TESLATLAS_EDGE_LOCK_SPOOL").unwrap(),
+            std::env::var_os("TESATLAS_EDGE_LOCK_SPOOL").unwrap(),
         )),
         key(),
         T0 + 2,

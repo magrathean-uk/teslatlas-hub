@@ -183,7 +183,7 @@ impl Issuer {
     /// The one canonical ledger directory (ruling R2); the operator verb takes
     /// no path argument.
     pub fn canonical_dir(home: &Path) -> PathBuf {
-        home.join("dev/machine/records/teslatlas/hub-evidence/window-issuer")
+        home.join("dev/machine/records/tesatlas/hub-evidence/window-issuer")
     }
 
     pub fn ledger_path(&self) -> PathBuf {

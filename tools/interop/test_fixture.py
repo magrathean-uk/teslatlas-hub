@@ -124,7 +124,7 @@ class ConfigTests(unittest.TestCase):
         sentinel = "preserved-parent-value"
         with mock.patch.dict(os.environ, {
             fixture.DEVELOPMENT_SERVE_ENV: parent_value,
-            "TESLATLAS_FIXTURE_PARENT_SENTINEL": sentinel,
+            "TESATLAS_FIXTURE_PARENT_SENTINEL": sentinel,
         }, clear=False):
             child = object()
             with mock.patch.object(fixture.subprocess, "Popen", return_value=child) as popen:
@@ -141,7 +141,7 @@ class ConfigTests(unittest.TestCase):
                 options["env"][fixture.DEVELOPMENT_SERVE_MODE_ENV],
                 "fixture",
             )
-            self.assertEqual(options["env"]["TESLATLAS_FIXTURE_PARENT_SENTINEL"], sentinel)
+            self.assertEqual(options["env"]["TESATLAS_FIXTURE_PARENT_SENTINEL"], sentinel)
             self.assertIsNot(options["env"], os.environ)
             self.assertEqual(os.environ[fixture.DEVELOPMENT_SERVE_ENV], parent_value)
 

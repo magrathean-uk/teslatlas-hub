@@ -1,4 +1,4 @@
-# Teslatlas Hub
+# Tesatlas Hub
 
 <!-- impeccable:product-schema 1 -->
 
@@ -12,11 +12,11 @@ The primary user runs a private Tesla telemetry Hub on their own Mac and needs t
 
 ## Product Purpose
 
-Teslatlas Hub collects and stores the user's Tesla telemetry locally, exposes it to trusted companion products, and gives the owner a clear native control surface for setup, status, vehicle commands, diagnostics, logs, import, and recovery.
+Tesatlas Hub collects and stores the user's Tesla telemetry locally, exposes it to trusted companion products, and gives the owner a clear native control surface for setup, status, vehicle commands, diagnostics, logs, import, and recovery.
 
 ## Positioning
 
-Hub is a local-first, user-owned telemetry service whose native Mac control app operates the same private service and durable data used by the Teslatlas ecosystem.
+Hub is a local-first, user-owned telemetry service whose native Mac control app operates the same private service and durable data used by the Tesatlas ecosystem.
 
 ## Operating Context
 
@@ -31,7 +31,7 @@ Hub runs as a background service. The control app is opened for setup, quick hea
 
 ## Brand Commitments
 
-Keep the Teslatlas Hub name, app icon, restrained status colours, private/local language, and precise operational tone. The owner requires a contemporary desktop Mac experience rather than an iOS-style card dashboard.
+Keep the Tesatlas Hub name, app icon, restrained status colours, private/local language, and precise operational tone. The owner requires a contemporary desktop Mac experience rather than an iOS-style card dashboard.
 
 ## Evidence on Hand
 

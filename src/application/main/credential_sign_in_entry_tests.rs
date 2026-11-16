@@ -7,7 +7,7 @@
 fn store_owner(root: &Path, access: &str, refresh: &str) {
     sign_in::seed_owner_pair_for_test(root, access, refresh, None).expect("own-login pair");
 }
-fn test_bridge(store: HubStore, admission: Arc<AdmittedUserHub>, root: &Path) -> Result<CredentialVaultEntry, teslatlas_hub::CredentialVaultEntryError> {
+fn test_bridge(store: HubStore, admission: Arc<AdmittedUserHub>, root: &Path) -> Result<CredentialVaultEntry, tesatlas_hub::CredentialVaultEntryError> {
     CredentialVaultEntry::open_for_test(store, admission, root, true)
 }
 fn count(root: &Path, query: &str) -> i64 { sql(root).query_row(query, [], |row| row.get(0)).expect("synthetic count") }

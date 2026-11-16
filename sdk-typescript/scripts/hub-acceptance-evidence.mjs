@@ -11,8 +11,8 @@ export async function verifyPackedSdk({
 }) {
   if (entryKind !== "node") throw new Error("invalid SDK entry kind");
   const root = await realpath(resolve(packageRoot));
-  if (!root.endsWith(`${sep}node_modules${sep}@teslatlas${sep}sdk`)) {
-    throw new Error("SDK package root must be an installed @teslatlas/sdk package");
+  if (!root.endsWith(`${sep}node_modules${sep}@tesatlas${sep}sdk`)) {
+    throw new Error("SDK package root must be an installed @tesatlas/sdk package");
   }
   const tarball = await realpath(resolve(tarballPath));
   const tarballSha256 = sha256(await readFile(tarball));
@@ -39,7 +39,7 @@ export async function verifyPackedSdk({
     readPacked(tarball, "package/package.json").toString("utf8"),
   );
   if (
-    packageJson.name !== "@teslatlas/sdk" ||
+    packageJson.name !== "@tesatlas/sdk" ||
     packageJson.version !== packedPackageJson.version ||
     packedPackageJson.name !== packageJson.name
   ) {

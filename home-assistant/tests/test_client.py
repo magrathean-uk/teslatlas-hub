@@ -10,19 +10,19 @@ import pytest
 from aiohttp import ClientRequest
 from homeassistant.core import HomeAssistant
 
-from custom_components.teslatlas_hub.client import HubContractError, create_client
-from custom_components.teslatlas_hub.credentials import (
+from custom_components.tesatlas_hub.client import HubContractError, create_client
+from custom_components.tesatlas_hub.credentials import (
     SIGNED64_MAX,
     HubCredentialExpiredError,
     epoch_milliseconds,
     validate_current_hub_credential,
 )
-from custom_components.teslatlas_hub.current_hub_client import (
+from custom_components.tesatlas_hub.current_hub_client import (
     CurrentHubClient,
     _telemetry_age,
     tls_pin_bytes,
 )
-from custom_components.teslatlas_hub.models import HubEndpoint
+from custom_components.tesatlas_hub.models import HubEndpoint
 from tests.helpers import FIXTURE_ACCESS_TOKEN, FIXTURE_DEVICE_ID
 
 

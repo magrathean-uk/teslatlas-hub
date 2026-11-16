@@ -10,14 +10,14 @@ set -eu
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 if [ -z "${DEV_ENV_LOADED:-}" ] && [ -r "$HOME/dev/machine/env.zsh" ]; then . "$HOME/dev/machine/env.zsh" || exit 1; fi
 : "${TMPDIR:?Load ~/dev/machine/env.zsh to select scratch storage}"
-source_root="$root/macos/TeslatlasHubApp"
-stage=$(mktemp -d "$TMPDIR/teslatlas-appkit-test.XXXXXX")
-# R-E1F6-22: test fixtures live in <per-user Darwin temp dir>/teslatlas-hub-tests (never under the home);
+source_root="$root/macos/TesatlasHubApp"
+stage=$(mktemp -d "$TMPDIR/tesatlas-appkit-test.XXXXXX")
+# R-E1F6-22: test fixtures live in <per-user Darwin temp dir>/tesatlas-hub-tests (never under the home);
 # remove exactly that folder after every run, including an interrupted one, unless another run is alive.
-# Another live run has its private volume (/Volumes/TeslatlasHubTests-<its script pid>) mounted and shares the
+# Another live run has its private volume (/Volumes/TesatlasHubTests-<its script pid>) mounted and shares the
 # folder until it detaches: leave the folder for that run to remove.
 other_hub_test_run_alive() {
-    for candidate in $(mount | sed -n 's|^.* on /Volumes/TeslatlasHubTests-\([0-9][0-9]*\) (apfs,.*$|\1|p'); do
+    for candidate in $(mount | sed -n 's|^.* on /Volumes/TesatlasHubTests-\([0-9][0-9]*\) (apfs,.*$|\1|p'); do
         [ "$candidate" = "$$" ] && continue
         kill -0 "$candidate" 2>/dev/null && return 0
     done
@@ -27,7 +27,7 @@ clean_hub_test_scratch() {
     other_hub_test_run_alive && return 0
     darwin_tmp=$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null) || return 0
     [ -n "$darwin_tmp" ] && [ -d "$darwin_tmp" ] || return 0
-    scratch="$(CDPATH='' cd -- "$darwin_tmp" && pwd -P)/teslatlas-hub-tests" || return 0
+    scratch="$(CDPATH='' cd -- "$darwin_tmp" && pwd -P)/tesatlas-hub-tests" || return 0
     if [ -L "$scratch" ]; then
         rm -f "$scratch"
     elif [ -d "$scratch" ]; then
@@ -48,7 +48,7 @@ detach_hub_test_volume() {
     hub_test_volume=
 }
 trap 'detach_hub_test_volume; find "$stage" -depth -delete 2>/dev/null || true; clean_hub_test_scratch' EXIT HUP INT TERM
-project_root="$stage/TeslatlasHubApp"
+project_root="$stage/TesatlasHubApp"
 derived_data="$stage/DerivedData"
 mkdir -p "$project_root"
 
@@ -62,8 +62,8 @@ fi
 }
 DEVELOPER_DIR="$developer_dir"
 export DEVELOPER_DIR
-TESLATLAS_HUB_TEST_MODE=1
-export TESLATLAS_HUB_TEST_MODE
+TESATLAS_HUB_TEST_MODE=1
+export TESATLAS_HUB_TEST_MODE
 PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 export PATH
 command -v xcodegen >/dev/null 2>&1 || {
@@ -76,20 +76,20 @@ command -v xcodebuild >/dev/null 2>&1 || {
 }
 
 cp "$source_root/project.yml" "$project_root/project.yml"
-cp -R "$source_root/TeslatlasHubApp" "$project_root/TeslatlasHubApp"
-cp -R "$source_root/TeslatlasHubAppTests" "$project_root/TeslatlasHubAppTests"
+cp -R "$source_root/TesatlasHubApp" "$project_root/TesatlasHubApp"
+cp -R "$source_root/TesatlasHubAppTests" "$project_root/TesatlasHubAppTests"
 xcodegen generate --quiet --spec "$project_root/project.yml" --project "$project_root"
 
 command -v hdiutil >/dev/null 2>&1 || {
     echo 'test-macos-appkit: hdiutil is required' >&2
     exit 69
 }
-volume="/Volumes/TeslatlasHubTests-$$"
+volume="/Volumes/TesatlasHubTests-$$"
 [ ! -e "$volume" ] || {
     echo "test-macos-appkit: $volume already exists" >&2
     exit 69
 }
-hdiutil create -size 64m -type SPARSE -fs APFS -volname "TeslatlasHubTests-$$" -quiet "$stage/hub-tests" &&
+hdiutil create -size 64m -type SPARSE -fs APFS -volname "TesatlasHubTests-$$" -quiet "$stage/hub-tests" &&
     hdiutil attach -nobrowse -noautoopen -noverify -quiet "$stage/hub-tests.sparseimage" || {
     echo 'test-macos-appkit: cannot mount the private test volume' >&2
     exit 69
@@ -99,14 +99,14 @@ hub_test_volume=$volume
     echo 'test-macos-appkit: the private test volume is not mounted' >&2
     exit 69
 }
-TEST_RUNNER_TESLATLAS_HUB_TEST_VOLUME=$hub_test_volume
-export TEST_RUNNER_TESLATLAS_HUB_TEST_VOLUME
-TEST_RUNNER_TESLATLAS_HUB_ADDITIONAL_TERMS="$root/docs/legal/additional-terms.md"
-export TEST_RUNNER_TESLATLAS_HUB_ADDITIONAL_TERMS
+TEST_RUNNER_TESATLAS_HUB_TEST_VOLUME=$hub_test_volume
+export TEST_RUNNER_TESATLAS_HUB_TEST_VOLUME
+TEST_RUNNER_TESATLAS_HUB_ADDITIONAL_TERMS="$root/docs/legal/additional-terms.md"
+export TEST_RUNNER_TESATLAS_HUB_ADDITIONAL_TERMS
 xcodebuild \
     -quiet \
-    -project "$project_root/TeslatlasHubApp.xcodeproj" \
-    -scheme TeslatlasHubApp \
+    -project "$project_root/TesatlasHubApp.xcodeproj" \
+    -scheme TesatlasHubApp \
     -configuration Debug \
     -derivedDataPath "$derived_data" \
     -destination 'platform=macOS,arch=arm64' \

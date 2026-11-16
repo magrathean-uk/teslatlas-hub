@@ -8,14 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		20B37F758F9B7AB4497679B2 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85CB5D102744EEEBA3919EFE /* AppDelegate.swift */; };
-		3609C9487E3D152600443D50 /* TeslatlasHubV1Compatibility in Frameworks */ = {isa = PBXBuildFile; productRef = BF91B2D1BD937ED303467EE1 /* TeslatlasHubV1Compatibility */; };
-		37EED69E80D51F862D2685BB /* TeslatlasHubSDK in Frameworks */ = {isa = PBXBuildFile; productRef = D07B5D4750D07A422AB26AC4 /* TeslatlasHubSDK */; };
-		3F85F7BA523E1AA308EFF7FA /* TeslatlasHubSDK in Frameworks */ = {isa = PBXBuildFile; productRef = EB8031791F7B83A054772825 /* TeslatlasHubSDK */; };
-		5267A211A1946FFEE56E4D85 /* TeslatlasCurrentHub in Frameworks */ = {isa = PBXBuildFile; productRef = 65C3470339B95FA57B15F3CC /* TeslatlasCurrentHub */; };
+		3609C9487E3D152600443D50 /* TesatlasHubV1Compatibility in Frameworks */ = {isa = PBXBuildFile; productRef = BF91B2D1BD937ED303467EE1 /* TesatlasHubV1Compatibility */; };
+		37EED69E80D51F862D2685BB /* TesatlasHubSDK in Frameworks */ = {isa = PBXBuildFile; productRef = D07B5D4750D07A422AB26AC4 /* TesatlasHubSDK */; };
+		3F85F7BA523E1AA308EFF7FA /* TesatlasHubSDK in Frameworks */ = {isa = PBXBuildFile; productRef = EB8031791F7B83A054772825 /* TesatlasHubSDK */; };
+		5267A211A1946FFEE56E4D85 /* TesatlasCurrentHub in Frameworks */ = {isa = PBXBuildFile; productRef = 65C3470339B95FA57B15F3CC /* TesatlasCurrentHub */; };
 		5B79DFAB9F735242B914018E /* claim.json in Resources */ = {isa = PBXBuildFile; fileRef = 09E4C7B89BC9C1AB2E6D1DA6 /* claim.json */; };
 		6BEB3D1124C90F42557DDFE1 /* drives.json in Resources */ = {isa = PBXBuildFile; fileRef = C1FA5E66F031A4D5FC20C516 /* drives.json */; };
 		6D29DEE22D4592E5708B2A9E /* ready.json in Resources */ = {isa = PBXBuildFile; fileRef = 15CCB8E7D51F6F177BD716A3 /* ready.json */; };
-		76097EE6CD8B9C7AF6218736 /* TeslatlasCommands in Frameworks */ = {isa = PBXBuildFile; productRef = 1DEB7109EF6B9C0C58BF7F7F /* TeslatlasCommands */; };
+		76097EE6CD8B9C7AF6218736 /* TesatlasCommands in Frameworks */ = {isa = PBXBuildFile; productRef = 1DEB7109EF6B9C0C58BF7F7F /* TesatlasCommands */; };
 		764F84C8D91004242EE77DC1 /* vehicles.json in Resources */ = {isa = PBXBuildFile; fileRef = 7F24E5EE2E347765906D3233 /* vehicles.json */; };
 		78033B9F10124437A476EA4E /* PlatformSurfaceProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = D015519EF7C7CA7AAD7334D1 /* PlatformSurfaceProbe.swift */; };
 		780F43DDB2E951076D8CF092 /* invitation.json in Resources */ = {isa = PBXBuildFile; fileRef = CB0BF908301B134AC440F2B2 /* invitation.json */; };
@@ -23,10 +23,10 @@
 		7D963149CB6E81BCD5FB56E0 /* discovery.json in Resources */ = {isa = PBXBuildFile; fileRef = CFDC6D86477EFB917963F71B /* discovery.json */; };
 		8E72828A4D4F755239A594D4 /* health.json in Resources */ = {isa = PBXBuildFile; fileRef = EC4A0166BFA44B97D08D5AE5 /* health.json */; };
 		98CE7F5A9332061E1AC420FA /* current.json in Resources */ = {isa = PBXBuildFile; fileRef = 9D580784A7F1816A5659CD2F /* current.json */; };
-		CF32E7FFE8052DDDBA10E8C7 /* TeslatlasCurrentHub in Frameworks */ = {isa = PBXBuildFile; productRef = 0430BFDF72713CC6913F5FFC /* TeslatlasCurrentHub */; };
+		CF32E7FFE8052DDDBA10E8C7 /* TesatlasCurrentHub in Frameworks */ = {isa = PBXBuildFile; productRef = 0430BFDF72713CC6913F5FFC /* TesatlasCurrentHub */; };
 		D20CF1ADCFBB734FE222C461 /* CurrentHubAppleConsumerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1F09CA75AFA76A40921F403 /* CurrentHubAppleConsumerTests.swift */; };
-		EFFA6C3E3F5B6B233F9F061C /* TeslatlasHubV1Compatibility in Frameworks */ = {isa = PBXBuildFile; productRef = F05F4BC484262353B82EB8C9 /* TeslatlasHubV1Compatibility */; };
-		FA0B74EBD7A46B81C59091F2 /* TeslatlasCommands in Frameworks */ = {isa = PBXBuildFile; productRef = F2DD4A69989E3DEFE24B4CE8 /* TeslatlasCommands */; };
+		EFFA6C3E3F5B6B233F9F061C /* TesatlasHubV1Compatibility in Frameworks */ = {isa = PBXBuildFile; productRef = F05F4BC484262353B82EB8C9 /* TesatlasHubV1Compatibility */; };
+		FA0B74EBD7A46B81C59091F2 /* TesatlasCommands in Frameworks */ = {isa = PBXBuildFile; productRef = F2DD4A69989E3DEFE24B4CE8 /* TesatlasCommands */; };
 		FD60AF0460CA2A02A9F7BEF9 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21B38CE18D714579BCB85A04 /* SceneDelegate.swift */; };
 /* End PBXBuildFile section */
 
@@ -56,7 +56,7 @@
 		D015519EF7C7CA7AAD7334D1 /* PlatformSurfaceProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformSurfaceProbe.swift; sourceTree = "<group>"; };
 		E0477F293DD30117E5D46A96 /* CurrentHubTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrentHubTestSupport.swift; sourceTree = "<group>"; };
 		EC4A0166BFA44B97D08D5AE5 /* health.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = health.json; sourceTree = "<group>"; };
-		EF06796FF37D6C51085B56E4 /* teslatlas-sdk-swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "teslatlas-sdk-swift"; path = ..; sourceTree = SOURCE_ROOT; };
+		EF06796FF37D6C51085B56E4 /* tesatlas-sdk-swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "tesatlas-sdk-swift"; path = ..; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,10 +64,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				37EED69E80D51F862D2685BB /* TeslatlasHubSDK in Frameworks */,
-				FA0B74EBD7A46B81C59091F2 /* TeslatlasCommands in Frameworks */,
-				3609C9487E3D152600443D50 /* TeslatlasHubV1Compatibility in Frameworks */,
-				5267A211A1946FFEE56E4D85 /* TeslatlasCurrentHub in Frameworks */,
+				37EED69E80D51F862D2685BB /* TesatlasHubSDK in Frameworks */,
+				FA0B74EBD7A46B81C59091F2 /* TesatlasCommands in Frameworks */,
+				3609C9487E3D152600443D50 /* TesatlasHubV1Compatibility in Frameworks */,
+				5267A211A1946FFEE56E4D85 /* TesatlasCurrentHub in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -75,10 +75,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3F85F7BA523E1AA308EFF7FA /* TeslatlasHubSDK in Frameworks */,
-				76097EE6CD8B9C7AF6218736 /* TeslatlasCommands in Frameworks */,
-				EFFA6C3E3F5B6B233F9F061C /* TeslatlasHubV1Compatibility in Frameworks */,
-				CF32E7FFE8052DDDBA10E8C7 /* TeslatlasCurrentHub in Frameworks */,
+				3F85F7BA523E1AA308EFF7FA /* TesatlasHubSDK in Frameworks */,
+				76097EE6CD8B9C7AF6218736 /* TesatlasCommands in Frameworks */,
+				EFFA6C3E3F5B6B233F9F061C /* TesatlasHubV1Compatibility in Frameworks */,
+				CF32E7FFE8052DDDBA10E8C7 /* TesatlasCurrentHub in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -101,7 +101,7 @@
 				ABA1F341D7E3ADE40A04D14F /* Fixtures */,
 				7EBFE0782964FD373A2F0F49 /* Packages */,
 				251E63599F31481BF49622E6 /* Sources */,
-				726C0A442907ECA89D9184B7 /* TeslatlasCurrentHubTests */,
+				726C0A442907ECA89D9184B7 /* TesatlasCurrentHubTests */,
 				6372C170A52FF398D68E1C73 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -115,20 +115,20 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		726C0A442907ECA89D9184B7 /* TeslatlasCurrentHubTests */ = {
+		726C0A442907ECA89D9184B7 /* TesatlasCurrentHubTests */ = {
 			isa = PBXGroup;
 			children = (
 				B1F09CA75AFA76A40921F403 /* CurrentHubAppleConsumerTests.swift */,
 				E0477F293DD30117E5D46A96 /* CurrentHubTestSupport.swift */,
 			);
-			name = TeslatlasCurrentHubTests;
-			path = ../Tests/TeslatlasCurrentHubTests;
+			name = TesatlasCurrentHubTests;
+			path = ../Tests/TesatlasCurrentHubTests;
 			sourceTree = "<group>";
 		};
 		7EBFE0782964FD373A2F0F49 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				EF06796FF37D6C51085B56E4 /* teslatlas-sdk-swift */,
+				EF06796FF37D6C51085B56E4 /* tesatlas-sdk-swift */,
 			);
 			name = Packages;
 			sourceTree = "<group>";
@@ -146,7 +146,7 @@
 				7F24E5EE2E347765906D3233 /* vehicles.json */,
 			);
 			name = Fixtures;
-			path = ../Tests/TeslatlasCurrentHubTests/Fixtures;
+			path = ../Tests/TesatlasCurrentHubTests/Fixtures;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -165,10 +165,10 @@
 			);
 			name = CurrentHubRuntimeHost;
 			packageProductDependencies = (
-				EB8031791F7B83A054772825 /* TeslatlasHubSDK */,
-				1DEB7109EF6B9C0C58BF7F7F /* TeslatlasCommands */,
-				F05F4BC484262353B82EB8C9 /* TeslatlasHubV1Compatibility */,
-				0430BFDF72713CC6913F5FFC /* TeslatlasCurrentHub */,
+				EB8031791F7B83A054772825 /* TesatlasHubSDK */,
+				1DEB7109EF6B9C0C58BF7F7F /* TesatlasCommands */,
+				F05F4BC484262353B82EB8C9 /* TesatlasHubV1Compatibility */,
+				0430BFDF72713CC6913F5FFC /* TesatlasCurrentHub */,
 			);
 			productName = CurrentHubRuntimeHost;
 			productReference = 588B8AF7DDE52CA33DD864E6 /* CurrentHubRuntimeHost.app */;
@@ -189,10 +189,10 @@
 			);
 			name = CurrentHubRuntimeTests;
 			packageProductDependencies = (
-				D07B5D4750D07A422AB26AC4 /* TeslatlasHubSDK */,
-				F2DD4A69989E3DEFE24B4CE8 /* TeslatlasCommands */,
-				BF91B2D1BD937ED303467EE1 /* TeslatlasHubV1Compatibility */,
-				65C3470339B95FA57B15F3CC /* TeslatlasCurrentHub */,
+				D07B5D4750D07A422AB26AC4 /* TesatlasHubSDK */,
+				F2DD4A69989E3DEFE24B4CE8 /* TesatlasCommands */,
+				BF91B2D1BD937ED303467EE1 /* TesatlasHubV1Compatibility */,
+				65C3470339B95FA57B15F3CC /* TesatlasCurrentHub */,
 			);
 			productName = CurrentHubRuntimeTests;
 			productReference = 26369CE91CB86DBEFEE6C7D9 /* CurrentHubRuntimeTests.xctest */;
@@ -291,7 +291,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "eu.teslatlas.sdk.currenthub.runtime-tests";
+				PRODUCT_BUNDLE_IDENTIFIER = "eu.tesatlas.sdk.currenthub.runtime-tests";
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -365,7 +365,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "eu.teslatlas.sdk.currenthub.runtime-host";
+				PRODUCT_BUNDLE_IDENTIFIER = "eu.tesatlas.sdk.currenthub.runtime-host";
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -382,7 +382,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "eu.teslatlas.sdk.currenthub.runtime-tests";
+				PRODUCT_BUNDLE_IDENTIFIER = "eu.tesatlas.sdk.currenthub.runtime-tests";
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -400,7 +400,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "eu.teslatlas.sdk.currenthub.runtime-host";
+				PRODUCT_BUNDLE_IDENTIFIER = "eu.tesatlas.sdk.currenthub.runtime-host";
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -510,37 +510,37 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		0430BFDF72713CC6913F5FFC /* TeslatlasCurrentHub */ = {
+		0430BFDF72713CC6913F5FFC /* TesatlasCurrentHub */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = TeslatlasCurrentHub;
+			productName = TesatlasCurrentHub;
 		};
-		1DEB7109EF6B9C0C58BF7F7F /* TeslatlasCommands */ = {
+		1DEB7109EF6B9C0C58BF7F7F /* TesatlasCommands */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = TeslatlasCommands;
+			productName = TesatlasCommands;
 		};
-		65C3470339B95FA57B15F3CC /* TeslatlasCurrentHub */ = {
+		65C3470339B95FA57B15F3CC /* TesatlasCurrentHub */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = TeslatlasCurrentHub;
+			productName = TesatlasCurrentHub;
 		};
-		BF91B2D1BD937ED303467EE1 /* TeslatlasHubV1Compatibility */ = {
+		BF91B2D1BD937ED303467EE1 /* TesatlasHubV1Compatibility */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = TeslatlasHubV1Compatibility;
+			productName = TesatlasHubV1Compatibility;
 		};
-		D07B5D4750D07A422AB26AC4 /* TeslatlasHubSDK */ = {
+		D07B5D4750D07A422AB26AC4 /* TesatlasHubSDK */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = TeslatlasHubSDK;
+			productName = TesatlasHubSDK;
 		};
-		EB8031791F7B83A054772825 /* TeslatlasHubSDK */ = {
+		EB8031791F7B83A054772825 /* TesatlasHubSDK */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = TeslatlasHubSDK;
+			productName = TesatlasHubSDK;
 		};
-		F05F4BC484262353B82EB8C9 /* TeslatlasHubV1Compatibility */ = {
+		F05F4BC484262353B82EB8C9 /* TesatlasHubV1Compatibility */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = TeslatlasHubV1Compatibility;
+			productName = TesatlasHubV1Compatibility;
 		};
-		F2DD4A69989E3DEFE24B4CE8 /* TeslatlasCommands */ = {
+		F2DD4A69989E3DEFE24B4CE8 /* TesatlasCommands */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = TeslatlasCommands;
+			productName = TesatlasCommands;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

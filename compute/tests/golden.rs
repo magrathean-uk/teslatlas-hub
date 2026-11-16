@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use teslatlas_compute::{
+use tesatlas_compute::{
     Drive, Error, TileOutput, generate_tile_payload_v1, generate_tile_payload_v1_from_pages,
     parse_position_page_v1,
 };
@@ -109,7 +109,7 @@ fn empty_input_is_the_typed_empty_golden() {
         output,
         TileOutput::ReadyEmpty {
             drive_count: 0,
-            diagnostics: teslatlas_compute::Diagnostics {
+            diagnostics: tesatlas_compute::Diagnostics {
                 visitor_invocations: 1,
                 ..Default::default()
             },
@@ -162,7 +162,7 @@ fn position_page_v1_and_page_splits_preserve_order_independent_bytes() {
         &paged_output,
         TileOutput::ReadyData {
             drive_count: 2,
-            diagnostics: teslatlas_compute::Diagnostics {
+            diagnostics: tesatlas_compute::Diagnostics {
                 visitor_invocations: 1,
                 drive_count: 2,
                 input_point_count: 4,

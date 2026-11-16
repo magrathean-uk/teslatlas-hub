@@ -4,7 +4,7 @@ set -eu
 
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 VERIFY="$ROOT/scripts/verify-provenance.py"
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-provenance-test.XXXXXX")
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-provenance-test.XXXXXX")
 cleanup() {
     find "$TMP" -depth -delete 2>/dev/null || true
 }
@@ -27,7 +27,7 @@ make_repo() {
     printf '%s\n' historical >"$destination/archive/deep/history.json"
     cat >"$destination/provenance-manifest.json" <<'EOF'
 {
-  "schema": "teslatlas.provenance-classification/v1",
+  "schema": "tesatlas.provenance-classification/v1",
   "scope_note": "Classification fixture only; no chain-of-title conclusion.",
   "declared_classes": [
     "MAGRATHEAN-ORIGINAL",
@@ -191,8 +191,8 @@ grep -Fq 'must document exactly:' "$TMP/undocumented.out"
 
 for source_root in \
     "$ROOT/src" "$ROOT/tests" \
-    "$ROOT/macos/TeslatlasHubApp/TeslatlasHubApp" \
-    "$ROOT/macos/TeslatlasHubApp/TeslatlasHubAppTests"; do
+    "$ROOT/macos/TesatlasHubApp/TesatlasHubApp" \
+    "$ROOT/macos/TesatlasHubApp/TesatlasHubAppTests"; do
     find "$source_root" -type f \( -name '*.rs' -o -name '*.swift' \) -print |
         while IFS= read -r source_file; do
             grep -Eq '^// SPDX-License-Identifier: (AGPL-3.0-only|MIT)$' "$source_file" || {

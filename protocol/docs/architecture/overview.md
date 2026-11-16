@@ -10,7 +10,7 @@ The goal is a stable, versioned, source-neutral boundary that an unaffiliated
 client can implement from public files alone, with executable evidence for
 compatibility.
 
-This repository does not define Hub internals, proprietary Teslatlas App
+This repository does not define Hub internals, proprietary Tesatlas App
 behavior, generated SDK implementations, hosted automation, or deployment
 instructions.
 
@@ -46,7 +46,7 @@ conflict is resolved and the local validation gate passes.
 
 ## Boundaries
 
-The protocol is permissively licensed. It contains schemas, fixtures, specifications, and independently authored examples only. It does not contain AGPL Hub implementation code or proprietary Teslatlas product code.
+The protocol is permissively licensed. It contains schemas, fixtures, specifications, and independently authored examples only. It does not contain AGPL Hub implementation code or proprietary Tesatlas product code.
 
 ## Current-Hub surface
 

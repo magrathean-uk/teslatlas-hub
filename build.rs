@@ -14,7 +14,7 @@ fn main() {
         );
     }
 
-    const VARIABLE: &str = "TESLATLAS_HUB_SOURCE_COMMIT";
+    const VARIABLE: &str = "TESATLAS_HUB_SOURCE_COMMIT";
     println!("cargo:rerun-if-env-changed={VARIABLE}");
     // After the rename (DEC-160) the earlier spelling is read when the current
     // name is unset, for one release; before it the two names are the same.

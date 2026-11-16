@@ -1,6 +1,6 @@
-# Teslatlas Home Assistant
+# Tesatlas Home Assistant
 
-This repository owns `custom_components/teslatlas_hub`, a read-only Home Assistant
+This repository owns `custom_components/tesatlas_hub`, a read-only Home Assistant
 integration for the public Hub HTTP profile. Follow `../AGENTS.md` and
 `../docs/development/MASTER_PLAN.md`; the plan wins on process, model, scope and commit
 policy. Parked until the Hub is ready (owner). It is the reference third-party consumer
@@ -31,7 +31,7 @@ when development resumes.
 ## Checks
 
 See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the pinned environment. Run the
-checks that cover the changed behaviour through `../scripts/dev/run.sh teslatlas-home-assistant ...`:
+checks that cover the changed behaviour through `../scripts/dev/run.sh tesatlas-home-assistant ...`:
 
 ```sh
 uv run --locked pytest tests/test_config_flow.py tests/test_coordinator.py tests/test_diagnostics.py

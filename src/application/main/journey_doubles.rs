@@ -6,7 +6,7 @@
 //! test build enables it through its self dev-dependency, and `cargo build`,
 //! debug or release, never does (a build without debug assertions refuses
 //! it). Even in a test build nothing changes unless a test names a doubles
-//! file in `TESLATLAS_HUB_JOURNEY_DOUBLES`. That file names a folder that holds
+//! file in `TESATLAS_HUB_JOURNEY_DOUBLES`. That file names a folder that holds
 //! the window anchor and the issuer pin in place of the login Keychain, and
 //! optionally the loopback Tesla doubles: the owner token endpoint, the Owner
 //! API base and the stream. The window's network time check then reads a
@@ -21,7 +21,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use teslatlas_hub::{
+use tesatlas_hub::{
     collection::window::{AnchorStore, ManualProbe, Refusal, ResumeOutcome, WindowController},
     config::HubConfig,
     runtime::operator::{
@@ -32,7 +32,7 @@ use teslatlas_hub::{
 };
 
 /// The variable a test sets to the path of its doubles file.
-pub(crate) const ENV: &str = "TESLATLAS_HUB_JOURNEY_DOUBLES";
+pub(crate) const ENV: &str = "TESATLAS_HUB_JOURNEY_DOUBLES";
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -57,7 +57,7 @@ pub(crate) fn active() -> Result<Option<&'static JourneyDoubles>, Box<dyn std::e
     if let Some(doubles) = DOUBLES.get() {
         return Ok(doubles.as_ref());
     }
-    let loaded = match teslatlas_hub::platform::name_migration::env::var_os(ENV) {
+    let loaded = match tesatlas_hub::platform::name_migration::env::var_os(ENV) {
         None => None,
         Some(path) => {
             let doubles: JourneyDoubles = serde_json::from_slice(&std::fs::read(path)?)?;
@@ -69,7 +69,7 @@ pub(crate) fn active() -> Result<Option<&'static JourneyDoubles>, Box<dyn std::e
     };
     let doubles = DOUBLES.get_or_init(|| loaded).as_ref();
     if let Some(base) = doubles.and_then(|doubles| doubles.owner_api_base.as_deref()) {
-        teslatlas_hub::owner_api::install_journey_owner_api_double(base)
+        tesatlas_hub::owner_api::install_journey_owner_api_double(base)
             .map_err(|_| "the journey Owner API double must be a loopback http base")?;
     }
     Ok(doubles)
@@ -103,7 +103,7 @@ impl JourneyDoubles {
         data_dir: &Path,
         home: &Path,
     ) -> Result<(Arc<WindowController>, ResumeOutcome), OperatorRefusal> {
-        let host_id = teslatlas_hub::runtime::operator::host::this_host_id()?;
+        let host_id = tesatlas_hub::runtime::operator::host::this_host_id()?;
         let (controller, outcome) = WindowController::start(
             authority::service_window_config(data_dir, home, host_id),
             authority::service_window_deps(

@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use teslatlas_hub::platform::r78_lifecycle;
+use tesatlas_hub::platform::r78_lifecycle;
 
 use r78_lifecycle::{
     Completion, PrimaryFailure, ServiceBudgets, ServiceEffects, ServiceFailure, Stage,

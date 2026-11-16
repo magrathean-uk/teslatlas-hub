@@ -478,7 +478,7 @@ impl BackupScheduler {
             .ok_or_else(|| {
                 OperatorRefusal::new(
                     BACKUP_NOT_CONFIGURED,
-                    "no backup password source: save the recovery password in Teslatlas Hub (Service details, Backups), set backup.password_source (\"keychain\" on the Mac, or \"file\" with backup.password_file), or pass --password-file",
+                    "no backup password source: save the recovery password in Tesatlas Hub (Service details, Backups), set backup.password_source (\"keychain\" on the Mac, or \"file\" with backup.password_file), or pass --password-file",
                 )
             })?;
         let file_is_relative =

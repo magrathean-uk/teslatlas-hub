@@ -7,7 +7,7 @@ use super::*;
 use rustix::fs::{fstat as descriptor_stat, openat};
 use serde::Deserialize;
 use std::{ffi::OsString, fs::File, os::fd::OwnedFd};
-use teslatlas_hub::platform::r78_recording::{
+use tesatlas_hub::platform::r78_recording::{
     FixtureBackendGuard, RecordingBackend, RecordingState, SyntheticServiceIdentity,
     with_fixture_backend,
 };
@@ -230,7 +230,7 @@ fn prepare_for_kind(arguments: Vec<OsString>, kind: &str) -> Result<Prepared, Re
         return Err(reject("fixture_context_unsafe"));
     }
     let context: Context = serde_json::from_slice(&bounded_bytes(file)?).map_err(malformed)?;
-    if context.contract != "teslatlas-hub credential-relocation-fixture"
+    if context.contract != "tesatlas-hub credential-relocation-fixture"
         || context.contract_version != 1
         || context.contract_digest != CONTRACT_DIGEST
         || context.synthetic_root != root
@@ -249,7 +249,7 @@ fn prepare_for_kind(arguments: Vec<OsString>, kind: &str) -> Result<Prepared, Re
     {
         return Err(reject("fixture_context_malformed"));
     }
-    if context.service_identity.label != format!("fixture.teslatlas-relocation.{}", context.run_id)
+    if context.service_identity.label != format!("fixture.tesatlas-relocation.{}", context.run_id)
         || context.service_identity.domain != format!("fixture/{}", context.run_id)
         || context.service_identity.plist_path
             != root
@@ -392,7 +392,7 @@ pub(super) async fn execute(operation: Operation) -> Result<(), Box<dyn std::err
     let _paths = PathsReset;
     let trace_failure = std::rc::Rc::new(std::cell::Cell::new(false));
     let failed = std::rc::Rc::clone(&trace_failure);
-    let _faults = teslatlas_hub::CredentialVaultEntry::test_faults(
+    let _faults = tesatlas_hub::CredentialVaultEntry::test_faults(
         context.permitted_faults == ["durability_probe_failure"],
         None,
         None,

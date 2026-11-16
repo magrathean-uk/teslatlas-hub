@@ -445,7 +445,7 @@ mod tests {
 
     use super::*;
 
-    const PROBE_ENV: &str = "TESLATLAS_WINDOW_CLOCK_PROBE";
+    const PROBE_ENV: &str = "TESATLAS_WINDOW_CLOCK_PROBE";
     /// Wall stepping by NTP since boot stays far inside this; a clock that
     /// did not count sleep, or a process-scoped origin, misses it by the
     /// whole time asleep or the whole uptime.

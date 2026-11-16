@@ -1,7 +1,7 @@
 [project]
-name = "teslatlas-protocol-conformance"
+name = "tesatlas-protocol-conformance"
 version = "2026.36.2"
-description = "Local validation and conformance tooling for the Teslatlas protocol"
+description = "Local validation and conformance tooling for the Tesatlas protocol"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 dependencies = [

@@ -40,15 +40,15 @@ use super::{
 };
 
 /// The LaunchAgent label; the same value as the service module's own.
-pub const LAUNCH_AGENT_LABEL: &str = "com.teslatlas.hub";
+pub const LAUNCH_AGENT_LABEL: &str = "com.tesatlas.hub";
 /// The Hub folder in `~/Library/Application Support`.
-pub const DATA_FOLDER: &str = "Teslatlas Hub";
+pub const DATA_FOLDER: &str = "Tesatlas Hub";
 /// The Hub log folder, relative to the home folder (the agent's own logs).
-pub const LOG_FOLDER: &str = "Library/Logs/Teslatlas Hub";
+pub const LOG_FOLDER: &str = "Library/Logs/Tesatlas Hub";
 /// The terrain cache folder in `~/Library/Caches` (see `TerrainConfig`).
-pub const TERRAIN_CACHE_FOLDER: &str = "TeslatlasHub";
+pub const TERRAIN_CACHE_FOLDER: &str = "TesatlasHub";
 /// The app's cache folder in `~/Library/Caches` (its bundle identifier).
-pub const APP_CACHE_FOLDER: &str = "eu.teslatlas.hub.app";
+pub const APP_CACHE_FOLDER: &str = "eu.tesatlas.hub.app";
 /// The lifetime lock of a serving Hub, relative to the data folder.
 pub const LIFETIME_LOCK: &str = "data/.hub-instance.lock";
 /// The window host claim, relative to its folder.

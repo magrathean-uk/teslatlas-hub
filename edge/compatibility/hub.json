@@ -26,6 +26,6 @@
   "optional_capabilities": [],
   "test_receipt_paths": [
     "hub/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
-    "teslatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json"
+    "tesatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json"
   ]
 }

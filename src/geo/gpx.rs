@@ -42,7 +42,7 @@ pub fn export_drive_gpx<W: Write>(
     writeln!(writer, "<?xml version=\"1.0\"?>")?;
     writeln!(
         writer,
-        "<gpx xmlns=\"http://www.topografix.com/GPX/1/1\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" version=\"1.1\" creator=\"Teslatlas Hub\" xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd\">"
+        "<gpx xmlns=\"http://www.topografix.com/GPX/1/1\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" version=\"1.1\" creator=\"Tesatlas Hub\" xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd\">"
     )?;
     writeln!(writer, "  <trk>")?;
     writeln!(writer, "    <name>{name}</name>")?;

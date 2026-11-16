@@ -1,14 +1,14 @@
 # Current Hub Swift product
 
-`TeslatlasCurrentHub` is the independent Swift client for
+`TesatlasCurrentHub` is the independent Swift client for
 `hub-http-v1@1.0.0`. It embeds the complete protocol-owned profile and verifies
 the exact `SHA256SUMS` bytes against
 `b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`
 before connecting. It currently admits only Hub product `2026.36.2`.
 
-This binding does not change or reuse the richer `TeslatlasHubSDK` and
-`TeslatlasCommands` wire contract. It also does not change the historical
-`TeslatlasHubV1Compatibility` adapter or broaden its exact Hub `v1.0.0`
+This binding does not change or reuse the richer `TesatlasHubSDK` and
+`TesatlasCommands` wire contract. It also does not change the historical
+`TesatlasHubV1Compatibility` adapter or broaden its exact Hub `v1.0.0`
 release check.
 
 ## Security boundary
@@ -68,7 +68,7 @@ I/O.
 
 ## Live acceptance
 
-`CurrentHubLiveTests` requires `TESLATLAS_CURRENT_HUB_LIVE_CONFIG`. The JSON
+`CurrentHubLiveTests` requires `TESATLAS_CURRENT_HUB_LIVE_CONFIG`. The JSON
 file names the endpoint, expected Hub and selected vehicle UUIDs, private
 invitation and certificate paths, receipt path, client platform, and on Linux
 an untrusted TLS endpoint. A selected run fails if these inputs, expected
@@ -84,7 +84,7 @@ The [2026-09-19 G6 receipt](../development/g6-macos-arm64-external-consumer-acce
 
 ## External consumer and caller lifecycle
 
-The [external consumer](../../Examples/CurrentHubConsumer/README.md) imports `TeslatlasCurrentHub` and demonstrates the caller lifecycle. Follow its guide for configuration and commands. It uses the production transport and an in-memory actor credential store; applications must supply their own durable storage and sign-out policy.
+The [external consumer](../../Examples/CurrentHubConsumer/README.md) imports `TesatlasCurrentHub` and demonstrates the caller lifecycle. Follow its guide for configuration and commands. It uses the production transport and an in-memory actor credential store; applications must supply their own durable storage and sign-out policy.
 
 Create a new store and client after changing Hub identity. Never carry credentials or cursors between identities.
 

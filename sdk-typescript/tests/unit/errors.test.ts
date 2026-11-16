@@ -27,7 +27,7 @@ describe("stable SDK errors", () => {
       code: "rate_limited",
       status: 429,
       requestId: "safe-request-id",
-      message: "Teslatlas protocol request failed",
+      message: "Tesatlas protocol request failed",
     });
   });
 
@@ -45,17 +45,17 @@ describe("stable SDK errors", () => {
   it("exposes only safe protocol negotiation and validation fields", () => {
     expect(new IncompatibleProtocolError()).toMatchObject({
       code: "incompatible_protocol",
-      message: "Teslatlas protocol versions are incompatible",
+      message: "Tesatlas protocol versions are incompatible",
     });
     expect(new MissingCapabilityError(asCapabilityId("commands.async"))).toMatchObject({
       code: "missing_capability",
       capability: "commands.async",
-      message: "Teslatlas capability is unavailable",
+      message: "Tesatlas capability is unavailable",
     });
     expect(new ProtocolValidationError("validateDiscovery")).toMatchObject({
       code: "protocol_validation",
       validator: "validateDiscovery",
-      message: "Teslatlas protocol response is invalid",
+      message: "Tesatlas protocol response is invalid",
     });
   });
 
@@ -74,7 +74,7 @@ describe("stable SDK errors", () => {
       requestId: "safe-request-id",
       retryable: true,
       retryAfterSeconds: 30,
-      message: "Teslatlas protocol request failed",
+      message: "Tesatlas protocol request failed",
     });
     expect(error).not.toHaveProperty("body");
     expect(error).not.toHaveProperty("headers");
@@ -86,11 +86,11 @@ describe("stable SDK errors", () => {
       code: "event_replay_expired",
       status: 409,
       requestId: "safe-request-id",
-      message: "Teslatlas event replay point expired",
+      message: "Tesatlas event replay point expired",
     });
     expect(new CommandUncertainError()).toMatchObject({
       code: "command_uncertain",
-      message: "Teslatlas command submission outcome is uncertain",
+      message: "Tesatlas command submission outcome is uncertain",
     });
   });
 });

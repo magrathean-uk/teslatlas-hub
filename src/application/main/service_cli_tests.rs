@@ -12,7 +12,7 @@ fn macos_has_no_install_or_service_verb() {
         vec!["service", "start"],
     ] {
         let error =
-            Cli::try_parse_from(std::iter::once("teslatlas-hub").chain(arguments)).unwrap_err();
+            Cli::try_parse_from(std::iter::once("tesatlas-hub").chain(arguments)).unwrap_err();
         assert_eq!(error.kind(), ErrorKind::InvalidSubcommand);
     }
 }
@@ -20,7 +20,7 @@ fn macos_has_no_install_or_service_verb() {
 #[test]
 fn macos_keeps_preflight_for_the_app_start_check() {
     let cli = Cli::try_parse_from([
-        "teslatlas-hub",
+        "tesatlas-hub",
         "--config",
         "/private/tmp/c.toml",
         "preflight",
@@ -44,7 +44,7 @@ fn macos_migration_start_points_to_the_app() {
         macos_migration_start_request(),
         serde_json::json!({
             "serviceStartRequested": true,
-            "next": "open Teslatlas Hub.app and choose Start Hub",
+            "next": "open Tesatlas Hub.app and choose Start Hub",
         })
     );
 }
@@ -60,7 +60,7 @@ fn macos_migration_start_points_to_the_app() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn idle_start_collection_begins_only_after_sign_in_inside_the_window() {
     use std::{os::unix::fs::PermissionsExt as _, sync::Arc};
-    use teslatlas_hub::{
+    use tesatlas_hub::{
         collection::window::{
             CollectorSlot as _, EgressGate, IssueRequest, Issuer, ManualClock, ManualProbe,
             MemoryAnchor, NoHighWater, Phase, Supervisor, WindowClock as _, WindowConfig,
@@ -162,9 +162,9 @@ async fn idle_start_collection_begins_only_after_sign_in_inside_the_window() {
     }
 
     // Sign in and configure through the doubles, with the service stopped.
-    teslatlas_hub::auth::credential_sign_in::seed_owner_pair_for_test(&data, "idle-start-access-0002", "idle-start-refresh-0002", None)
+    tesatlas_hub::auth::credential_sign_in::seed_owner_pair_for_test(&data, "idle-start-access-0002", "idle-start-refresh-0002", None)
         .expect("the Hub's own pair");
-    assert!(teslatlas_hub::auth::credential_sign_in::record_provider_admission_for_test(&data).expect("provider admission"));
+    assert!(tesatlas_hub::auth::credential_sign_in::record_provider_admission_for_test(&data).expect("provider admission"));
     let history = SourceDbHistory {
         cars: vec![SourceDbCar {
             id: 1,

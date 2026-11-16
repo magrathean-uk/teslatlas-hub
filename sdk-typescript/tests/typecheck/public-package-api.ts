@@ -1,5 +1,5 @@
-import type { HubClient, HubCredential, HubDiscovery } from "@teslatlas/sdk";
-import { createHubClient as createNodeHubClient } from "@teslatlas/sdk/node";
+import type { HubClient, HubCredential, HubDiscovery } from "@tesatlas/sdk";
+import { createHubClient as createNodeHubClient } from "@tesatlas/sdk/node";
 
 const credential: HubCredential = {
   accessToken: "0".repeat(64),

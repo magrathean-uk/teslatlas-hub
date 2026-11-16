@@ -32,7 +32,7 @@ use std::{
 
 use tempfile::TempDir;
 
-const BIN: &str = env!("CARGO_BIN_EXE_teslatlas-hub");
+const BIN: &str = env!("CARGO_BIN_EXE_tesatlas-hub");
 
 /// A temporary directory short enough for a Unix socket path.
 fn short_tempdir() -> TempDir {
@@ -383,7 +383,7 @@ mod authority {
 
     use std::sync::Arc;
 
-    use teslatlas_hub::{
+    use tesatlas_hub::{
         collection::window::{
             CloseReason, EgressGate, HostClaim, IssueRequest, Issuer, ManualProbe, MemoryAnchor, NoHighWater,
             Phase, PermitKind, Provider, SystemClock, WindowClock, WindowConfig, WindowController,

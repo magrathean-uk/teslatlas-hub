@@ -11,9 +11,9 @@ use rcgen::{
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use tempfile::TempDir;
-use teslatlas_edge::config::EdgeConfig;
-use teslatlas_edge::runtime::run_until_shutdown;
-use teslatlas_edge::spool::{Spool, SpoolKey};
+use tesatlas_edge::config::EdgeConfig;
+use tesatlas_edge::runtime::run_until_shutdown;
+use tesatlas_edge::spool::{Spool, SpoolKey};
 use tokio::sync::oneshot;
 
 fn unused_port() -> u16 {
@@ -178,7 +178,7 @@ async fn bounded_shutdown_closes_idle_connection_and_keeps_admitted_record() {
     }
     let config = make_config(&temp, receiver_port, hub_port);
     let spool_config = config.spool_config().unwrap();
-    let doctor = tokio::process::Command::new(env!("CARGO_BIN_EXE_teslatlas-edge"))
+    let doctor = tokio::process::Command::new(env!("CARGO_BIN_EXE_tesatlas-edge"))
         .arg("--config")
         .arg(temp.path().join("config.toml"))
         .arg("doctor")

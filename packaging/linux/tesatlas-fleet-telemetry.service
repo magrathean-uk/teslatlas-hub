@@ -1,0 +1,39 @@
+[Unit]
+Description=Tesatlas Fleet Telemetry bridge
+After=network-online.target tesatlas-hub.service
+Wants=network-online.target
+PartOf=tesatlas-hub.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+ConditionPathExists=/var/lib/tesatlas-hub/fleet-telemetry-bearer
+ConditionPathExists=/etc/tesatlas-hub/tls.crt
+ConditionPathExists=/etc/tesatlas-hub/tls.key
+
+[Service]
+Type=simple
+User=tesatlas
+Group=tesatlas
+Environment=TESATLAS_FLEET_TELEMETRY_BEARER_FILE=/var/lib/tesatlas-hub/fleet-telemetry-bearer
+StateDirectory=tesatlas-hub
+StateDirectoryMode=0700
+ExecStart=/usr/lib/tesatlas-hub/fleet-telemetry -config=/etc/tesatlas-hub/fleet-telemetry.json
+Restart=on-failure
+RestartSec=5
+UMask=0077
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/tesatlas-hub
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

@@ -34,7 +34,7 @@ class CandidateSourceManifestTests(unittest.TestCase):
         manifest.write_text(
             json.dumps(
                 {
-                    "schema": "teslatlas.candidate-source-manifest/v1",
+                    "schema": "tesatlas.candidate-source-manifest/v1",
                     "files": files,
                 }
             )
@@ -76,7 +76,7 @@ class CandidateSourceManifestTests(unittest.TestCase):
             manifest.write_text(
                 json.dumps(
                     {
-                        "schema": "teslatlas.candidate-source-manifest/v1",
+                        "schema": "tesatlas.candidate-source-manifest/v1",
                         "files": [
                             {
                                 "path": "link",
@@ -115,7 +115,7 @@ class CandidateSourceManifestTests(unittest.TestCase):
             manifest.write_text(
                 json.dumps(
                     {
-                        "schema": "teslatlas.candidate-source-manifest/v1",
+                        "schema": "tesatlas.candidate-source-manifest/v1",
                         "files": [
                             {
                                 "path": "candidate.fifo",

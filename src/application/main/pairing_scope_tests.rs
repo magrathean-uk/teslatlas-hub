@@ -3,7 +3,7 @@
 //! The pairing scope flags of `pair` and `control pair`, the scope in the
 //! presentation, and `control pair` beside a running Hub.
 
-use teslatlas_hub::{
+use tesatlas_hub::{
     config::TlsListenerConfig,
     db::{HubStore, PairingScope, PublishedVehicle, SourceDescriptor, VehicleDescriptor},
 };
@@ -15,7 +15,7 @@ use crate::{
     paired_devices_json, pairing_grants_text, pairing_scope_from_flags, run_control,
 };
 
-use teslatlas_hub::runtime::operator::admission::requires_user_hub_admission as command_requires_user_hub_admission;
+use tesatlas_hub::runtime::operator::admission::requires_user_hub_admission as command_requires_user_hub_admission;
 
 const ALPHA: &str = "11111111-1111-4111-8111-111111111111";
 const BETA: &str = "22222222-2222-4222-8222-222222222222";
@@ -25,7 +25,7 @@ fn uuid(value: &str) -> Uuid {
 }
 
 fn parse(arguments: &[&str]) -> Result<Cli, clap::Error> {
-    let mut all = vec!["teslatlas-hub"];
+    let mut all = vec!["tesatlas-hub"];
     all.extend_from_slice(arguments);
     Cli::try_parse_from(all)
 }
@@ -45,7 +45,7 @@ fn fixture() -> Fixture {
     let store = HubStore::initialize(temporary.path().join("hub")).expect("Hub store");
     let source = store
         .register_source(
-            &SourceDescriptor::new(teslatlas_hub::db::IMPORT_SOURCE_KIND, "pairing-scope"),
+            &SourceDescriptor::new(tesatlas_hub::db::IMPORT_SOURCE_KIND, "pairing-scope"),
             1_000,
         )
         .expect("source");
@@ -355,7 +355,7 @@ async fn control_vehicle_id_is_refused_for_pair_before_anything_is_opened() {
     };
     assert_eq!(vehicle_id, Some(uuid(ALPHA)));
     // The configuration does not exist: the refusal comes before it is read.
-    let missing = std::path::Path::new("/nonexistent/teslatlas-hub-config.toml");
+    let missing = std::path::Path::new("/nonexistent/tesatlas-hub-config.toml");
     let error = run_control(missing, vehicle_id, &command)
         .await
         .expect_err("--vehicle-id must not be ignored by pair");
@@ -509,7 +509,7 @@ async fn an_unknown_or_retired_vehicle_is_rejected_before_anything_is_persisted(
             .expect_err("a vehicle that cannot be granted");
         assert!(
             matches!(&error, PairingCommandError::Scope(source)
-                if matches!(**source, teslatlas_hub::db::StoreError::PairingVehicleUnavailable(rejected) if rejected == bad)),
+                if matches!(**source, tesatlas_hub::db::StoreError::PairingVehicleUnavailable(rejected) if rejected == bad)),
             "{error:?}"
         );
         assert_eq!(fixture.count("pairing_challenges"), 0);
@@ -547,7 +547,7 @@ async fn an_unknown_or_retired_vehicle_is_rejected_before_anything_is_persisted(
 
 #[tokio::test]
 async fn control_pair_works_while_another_process_holds_the_instance_lock() {
-    use teslatlas_hub::hub_user_process::AdmittedUserHub;
+    use tesatlas_hub::hub_user_process::AdmittedUserHub;
 
     let fixture = fixture();
     let data_dir = fixture.temporary.path().join("hub");

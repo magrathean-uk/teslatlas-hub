@@ -3,26 +3,26 @@
 ## Responsibility
 
 Provide idiomatic Swift boundaries over three explicit contracts without
-importing the Teslatlas app or Hub implementation.
+importing the Tesatlas app or Hub implementation.
 
 ## Package boundaries
 
 | Unit | Responsibility |
 | --- | --- |
-| `TeslatlasHubSDK` | Strict protocol-1.2 discovery, version negotiation, endpoint trust, typed reads, ETags, problems, and event decoding |
-| `TeslatlasCommands` | Strict protocol-1.2 asynchronous commands with explicit confirmation and idempotency |
-| `TeslatlasHubV1Compatibility` | Isolated deployed-Hub v1.0.0 discovery, existing bearer, vehicles, current state, and drives |
-| `TeslatlasCurrentHub` | Isolated `hub-http-v1@1.0.0` discovery, pairing and rotation, health/readiness, vehicles, current state, and bounded drives |
+| `TesatlasHubSDK` | Strict protocol-1.2 discovery, version negotiation, endpoint trust, typed reads, ETags, problems, and event decoding |
+| `TesatlasCommands` | Strict protocol-1.2 asynchronous commands with explicit confirmation and idempotency |
+| `TesatlasHubV1Compatibility` | Isolated deployed-Hub v1.0.0 discovery, existing bearer, vehicles, current state, and drives |
+| `TesatlasCurrentHub` | Isolated `hub-http-v1@1.0.0` discovery, pairing and rotation, health/readiness, vehicles, current state, and bounded drives |
 | Internal mechanics | Atomic JSON state, bounded SSE framing, generic HTTP range validation, binding hash validation, and isolated transports |
 
-`TeslatlasCommands` depends on `TeslatlasHubSDK`. The Hub-v1 compatibility
+`TesatlasCommands` depends on `TesatlasHubSDK`. The Hub-v1 compatibility
 target depends on neither strict target. It owns separate models, errors,
 routes, transport, fixtures, and tests. This prevents deployed behaviour from
 silently weakening or expanding the public protocol-1.2 API.
 
 ## Strict protocol trust model
 
-`TeslatlasClient.connect` obtains public discovery without authorization. It
+`TesatlasClient.connect` obtains public discovery without authorization. It
 then applies two independent checks before any authenticated request:
 
 1. every advertised endpoint origin must be the discovery origin or an origin

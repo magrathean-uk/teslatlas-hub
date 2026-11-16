@@ -1,7 +1,7 @@
 [project]
-name = "teslatlas-home-assistant"
+name = "tesatlas-home-assistant"
 version = "2026.36.2"
-description = "Home Assistant integration for the public Teslatlas Hub protocol"
+description = "Home Assistant integration for the public Tesatlas Hub protocol"
 readme = "README.md"
 requires-python = ">=3.14.2"
 license = "Apache-2.0"

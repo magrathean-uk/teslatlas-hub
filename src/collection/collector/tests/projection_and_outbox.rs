@@ -546,11 +546,11 @@ fn near_limit_collection_compacts_live_suffix_before_consuming_the_next_slot() {
 }
 
 #[test]
-#[ignore = "requires TESLATLAS_REAL_CORPUS_ROOT pointing to a disposable clone"]
+#[ignore = "requires TESATLAS_REAL_CORPUS_ROOT pointing to a disposable clone"]
 fn real_imported_corpus_crosses_the_production_compaction_trigger() {
-    let root = std::env::var_os("TESLATLAS_REAL_CORPUS_ROOT")
+    let root = std::env::var_os("TESATLAS_REAL_CORPUS_ROOT")
         .map(std::path::PathBuf::from)
-        .expect("set TESLATLAS_REAL_CORPUS_ROOT to a disposable store clone");
+        .expect("set TESATLAS_REAL_CORPUS_ROOT to a disposable store clone");
     let store = HubStore::initialize(&root).expect("open and migrate corpus clone");
     let connection = store.open().expect("catalogue");
     let (vehicle_key, car_id): (String, i64) = connection

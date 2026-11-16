@@ -58,7 +58,7 @@ impl PriorProjectionStateLookup for DirectTestPrior {
 }
 
 fn configured_native_postgres_source() -> Option<(ReadOnlySource, SourceDbPassword)> {
-    let url = std::env::var("TESLATLAS_HUB_TEST_POSTGRES_URL").ok()?;
+    let url = std::env::var("TESATLAS_HUB_TEST_POSTGRES_URL").ok()?;
     let source = ReadOnlySource::parse(&url).expect("credential-free source URL");
     Some((source, configured_native_postgres_password()))
 }
@@ -66,7 +66,7 @@ fn configured_native_postgres_source() -> Option<(ReadOnlySource, SourceDbPasswo
 /// Read an explicitly supplied password file using the production parser.
 fn configured_native_postgres_password() -> SourceDbPassword {
     if let Some(credentials_directory) =
-        std::env::var_os("TESLATLAS_HUB_TEST_POSTGRES_CREDENTIALS_DIRECTORY")
+        std::env::var_os("TESATLAS_HUB_TEST_POSTGRES_CREDENTIALS_DIRECTORY")
     {
         let path = PathBuf::from(credentials_directory).join("teslamate-postgres-password");
         return SourceDbPassword::from_bytes(
@@ -78,7 +78,7 @@ fn configured_native_postgres_password() -> SourceDbPassword {
         .expect("test PostgreSQL credential");
     }
 
-    let password_file = std::env::var_os("TESLATLAS_HUB_TEST_POSTGRES_PASSWORD_FILE")
+    let password_file = std::env::var_os("TESATLAS_HUB_TEST_POSTGRES_PASSWORD_FILE")
         .map(PathBuf::from)
         .expect("a private PostgreSQL password-file environment value");
     let metadata =
@@ -1020,10 +1020,10 @@ fn selected_car_output_admission_rejects_overflow() {
 }
 
 #[tokio::test]
-#[ignore = "needs PostgreSQL: set TESLATLAS_HUB_TEST_POSTGRES_URL and TESLATLAS_HUB_TEST_POSTGRES_PASSWORD_FILE or TESLATLAS_HUB_TEST_POSTGRES_CREDENTIALS_DIRECTORY (run with --ignored)"]
+#[ignore = "needs PostgreSQL: set TESATLAS_HUB_TEST_POSTGRES_URL and TESATLAS_HUB_TEST_POSTGRES_PASSWORD_FILE or TESATLAS_HUB_TEST_POSTGRES_CREDENTIALS_DIRECTORY (run with --ignored)"]
 async fn native_complete_corpus_direct_import_projects_every_kind_when_configured() {
     let (source, password) = configured_native_postgres_source()
-        .expect("set TESLATLAS_HUB_TEST_POSTGRES_URL to run this ignored test");
+        .expect("set TESATLAS_HUB_TEST_POSTGRES_URL to run this ignored test");
     let packs = tempfile::tempdir().expect("pack directory");
     let result = write_direct_full_snapshot(
         &source,

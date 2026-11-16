@@ -103,7 +103,7 @@ impl HostClaim {
 
     /// The fixed per-user path, outside the Hub data directory.
     pub fn default_path(home: &Path) -> PathBuf {
-        home.join("Library/Application Support/Teslatlas Hub Window/host-claim.lock")
+        home.join("Library/Application Support/Tesatlas Hub Window/host-claim.lock")
     }
 }
 

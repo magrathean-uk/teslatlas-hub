@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="../docs/assets/teslatlas-hub-icon.png" width="120" alt="Teslatlas Hub icon">
+  <img src="../docs/assets/tesatlas-hub-icon.png" width="120" alt="Tesatlas Hub icon">
 </p>
 
-<h1 align="center">Teslatlas Hub</h1>
+<h1 align="center">Tesatlas Hub</h1>
 
-<p align="center">A self-hosted vehicle telemetry collector and local Teslatlas sync hub.</p>
+<p align="center">A self-hosted vehicle telemetry collector and local Tesatlas sync hub.</p>
 
 <p align="center">
   <a href="../docs/guides/build-from-source.md">Build from source</a> ·
@@ -13,8 +13,8 @@
   <a href="SUPPORT.md">Support</a>
 </p>
 
-Teslatlas Hub collects vehicle telemetry, stores history locally, and synchronises
-it with the separately distributed Teslatlas client and with independent clients
+Tesatlas Hub collects vehicle telemetry, stores history locally, and synchronises
+it with the separately distributed Tesatlas client and with independent clients
 through its read API. The repository contains the Rust Hub service, a native macOS
 control app and interoperability fixtures. Hub runs as a standalone service with
 direct collection and local storage.
@@ -35,7 +35,7 @@ Hub is complete. Local builds do not automatically have trusted signing or notar
 - Multiple-vehicle status for one household. No vehicle commands.
 - Guided history import over SSH without modifying the source database.
 - Diagnostics, health endpoints, logs, backup and recovery commands; optional encrypted backups.
-- Pairing for the Teslatlas client and for independent clients of the read API.
+- Pairing for the Tesatlas client and for independent clients of the read API.
 - Optional Fleet Telemetry receiver on the Hub host.
 
 The Mac app controls the background service. Closing the app window does not stop
@@ -90,7 +90,7 @@ and [security policy](SECURITY.md).
 
 ## Licence
 
-Teslatlas Hub is free software under the [GNU AGPL version 3 only](../LICENSE),
+Tesatlas Hub is free software under the [GNU AGPL version 3 only](../LICENSE),
 with [attribution terms](../docs/legal/additional-terms.md) under its section 7.
 See [NOTICE](../NOTICE), [third-party notices](../docs/legal/third-party-notices.md),
 [Corresponding Source](../docs/legal/source-availability.md) and
@@ -105,7 +105,7 @@ See [NOTICE](../NOTICE), [third-party notices](../docs/legal/third-party-notices
 - Only the maintainer changes the official Hub, through reviewed pull
   requests. See [CONTRIBUTING](CONTRIBUTING.md).
 
-Teslatlas Hub was created by György Bolyki and is published by MAGRATHEAN UK
+Tesatlas Hub was created by György Bolyki and is published by MAGRATHEAN UK
 LTD. It is developed independently: Tesla, Inc. and the makers of the software
 it works with did not make, approve or sponsor it.
 

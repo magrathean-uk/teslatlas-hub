@@ -2,20 +2,20 @@
 
 How to propose and validate a change to the read-only Hub integration.
 
-Keep changes focused on the public Hub integration. Report a reproducible bug through the [issue tracker](https://github.com/magrathean-uk/teslatlas-home-assistant/issues); use [SECURITY.md](SECURITY.md) for sensitive reports. Explain the user-visible behavior and the checks that establish it.
+Keep changes focused on the public Hub integration. Report a reproducible bug through the [issue tracker](https://github.com/magrathean-uk/tesatlas-home-assistant/issues); use [SECURITY.md](SECURITY.md) for sensitive reports. Explain the user-visible behavior and the checks that establish it.
 
 ## Local environment
 
-[pyproject.toml](../pyproject.toml) requires Python `>=3.14.2` and uses `uv`. The locked development environment uses Home Assistant `2026.9.4`, `pytest-homeassistant-custom-component` `0.13.367` and Ruff `0.16.9`. For a standalone checkout, run these from the repository root. In the coordinated Teslatlas workspace, use its current parent execution rules for these commands:
+[pyproject.toml](../pyproject.toml) requires Python `>=3.14.2` and uses `uv`. The locked development environment uses Home Assistant `2026.9.4`, `pytest-homeassistant-custom-component` `0.13.367` and Ruff `0.16.9`. For a standalone checkout, run these from the repository root. In the coordinated Tesatlas workspace, use its current parent execution rules for these commands:
 
 ```sh
 uv sync --locked --group dev
 uv run --locked pytest
-uv run --locked pytest --cov=custom_components/teslatlas_hub --cov-report=term-missing
+uv run --locked pytest --cov=custom_components/tesatlas_hub --cov-report=term-missing
 uv run --locked ruff check .
 ```
 
-These are contributor commands, not a record that they passed on your machine. If working in the coordinated Teslatlas workspace, follow its current environment and execution rules.
+These are contributor commands, not a record that they passed on your machine. If working in the coordinated Tesatlas workspace, follow its current environment and execution rules.
 
 Consider [Clean Development](https://github.com/magrathean-uk/clean-development) for managing development caches and supported build output.
 
@@ -52,4 +52,4 @@ GitHub is used for source storage. Do not add CI, hosted builds, release publish
 
 ## Licensing
 
-Preserve the [Apache-2.0 licence](../LICENSE) and existing attribution. Identify the origin and licence of new third-party code or assets. Do not import another Teslatlas repository's licence, contributor assignment process or commercial terms. See [licensing and attribution](../docs/legal/licensing.md).
+Preserve the [Apache-2.0 licence](../LICENSE) and existing attribution. Identify the origin and licence of new third-party code or assets. Do not import another Tesatlas repository's licence, contributor assignment process or commercial terms. See [licensing and attribution](../docs/legal/licensing.md).

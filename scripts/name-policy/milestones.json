@@ -1,5 +1,5 @@
 {
-  "schema": "teslatlas.name-policy-milestones/v1",
+  "schema": "tesatlas.name-policy-milestones/v1",
   "enabled_classes": [
     "frozen-history",
     "g2-4-recorded",

@@ -28,8 +28,8 @@ import zipfile
 from go_toolchain import select_go
 
 
-SCHEMA = "teslatlas.go-proxy-evidence/v2"
-LOCK_SCHEMA = "teslatlas.tesla-proxy-lock/v3"
+SCHEMA = "tesatlas.go-proxy-evidence/v2"
+LOCK_SCHEMA = "tesatlas.tesla-proxy-lock/v3"
 PACKAGE = "github.com/teslamotors/vehicle-command/cmd/tesla-http-proxy"
 MAX_LOCK_BYTES = 128 * 1024
 MAX_BINARY_BYTES = 128 * 1024 * 1024
@@ -1390,11 +1390,11 @@ def spdx_document(lock: dict[str, Any], sources: list[dict[str, Any]], lock_sha:
         "spdxVersion": "SPDX-2.3",
         "dataLicense": "CC0-1.0",
         "SPDXID": "SPDXRef-DOCUMENT",
-        "name": "teslatlas-tesla-http-proxy-go-components",
-        "documentNamespace": f"https://teslatlas.eu/spdx/go-proxy/{lock_sha}",
+        "name": "tesatlas-tesla-http-proxy-go-components",
+        "documentNamespace": f"https://tesatlas.eu/spdx/go-proxy/{lock_sha}",
         "creationInfo": {
             "created": "1970-01-01T00:00:00Z",
-            "creators": ["Tool: teslatlas-go-proxy-evidence"],
+            "creators": ["Tool: tesatlas-go-proxy-evidence"],
         },
         "documentDescribes": ["SPDXRef-GoModule-00"],
         "packages": packages,
@@ -1735,7 +1735,7 @@ def evidence(
         raise GateError("unsigned Tesla proxy does not match the reviewed locked subject")
     go, base_environment, go_environment = strict_go_environment()
 
-    temporary = Path(tempfile.mkdtemp(prefix="teslatlas-go-evidence.", dir=str(output.parent)))
+    temporary = Path(tempfile.mkdtemp(prefix="tesatlas-go-evidence.", dir=str(output.parent)))
     stage = temporary / "published"
     stage.mkdir(mode=0o700)
     try:
@@ -1844,7 +1844,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate deterministic Tesla Go proxy source and dependency evidence."
     )
-    parser.add_argument("--repo", required=True, help="Teslatlas Hub repository root")
+    parser.add_argument("--repo", required=True, help="Tesatlas Hub repository root")
     inputs = parser.add_mutually_exclusive_group()
     inputs.add_argument("--proxy-binary", help="unsigned linker-built proxy")
     inputs.add_argument("--verify-dir", help="verify an existing evidence directory")

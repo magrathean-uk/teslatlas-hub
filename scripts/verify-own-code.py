@@ -28,7 +28,7 @@ VERBS = (r"(?i:ported|porting|adapted|translated|transliterated|copied|lifted|"
 SOURCE = (r"(?:[`'\"\u2018\u201c]\s*(?!(?:first|last|next|self|none|null|true|false)\b)[A-Za-z][\w.+/-]{3,}|https?://|www\.|git@|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+|(?![A-Za-z]*\.(?:lock|toml|json|md|rs|sh|py)\b)[A-Z][A-Za-z][\w.+-]+|"
           r"(?i:(?:the\s+)?(?:upstream\b|original\s+(?:project|source|implementation|code)|"
           r"another\s+project|other\s+project|open[- ]source|third[- ]party|external\s+(?:project|code|source))))")
-OWN = r"(?:magrathean|teslatlas|bolyki)"
+OWN = r"(?:magrathean|tesatlas|bolyki)"
 # One own-project copyright notice, up to the next ';' or line end, is blanked
 # on its own so it never masks another marker on the same line.
 OWN_NOTICE = re.compile(
@@ -63,7 +63,7 @@ def tracked():
 
 # Exact authorised texts that are not in the name-policy table (which is growth-guarded).
 LOCAL_ALLOWED = {
-    "macos/TeslatlasHubApp/TeslatlasHubApp/TeslaAuthWindowController.swift":
+    "macos/TesatlasHubApp/TesatlasHubApp/TeslaAuthWindowController.swift":
         ["// SPDX-FileCopyrightText: 2021 Adrian Kumpf"],  # MIT notice, DEC-072 item 1
     "src/geo/geocoder_cache_tests.rs":
         ["Data \u00a9 OpenStreetMap contributors, ODbL 1.0"],  # ODbL attribution string
@@ -113,7 +113,7 @@ def main():
 
 
 def self_test():
-    auth = ("macos/TeslatlasHubApp/TeslatlasHubApp/TeslaAuthWindowController.swift")
+    auth = ("macos/TesatlasHubApp/TesatlasHubApp/TeslaAuthWindowController.swift")
     allow = allowances().get(auth, ())
     approved = next(e for e in json.loads(
         (ROOT / "scripts/name-policy/allow.json").read_text())["entries"]

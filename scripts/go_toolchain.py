@@ -13,7 +13,7 @@ import subprocess
 import sys
 
 
-SELECTION_ENV = "TESLATLAS_GO"
+SELECTION_ENV = "TESATLAS_GO"
 
 
 class GoToolchainError(RuntimeError):

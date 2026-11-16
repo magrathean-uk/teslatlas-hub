@@ -19,7 +19,7 @@ block = begin + source.split(begin, 1)[1].split(end, 1)[0]
 fake = '''#!/usr/bin/env python3
 import json,os,sys
 from pathlib import Path
-record={'argv':sys.argv[1:],'target':os.environ['CARGO_TARGET_DIR'],'source_commit':os.environ['TESLATLAS_HUB_SOURCE_COMMIT']}
+record={'argv':sys.argv[1:],'target':os.environ['CARGO_TARGET_DIR'],'source_commit':os.environ['TESATLAS_HUB_SOURCE_COMMIT']}
 Path(os.environ['FAKE_CARGO_LOG']).write_text(json.dumps(record))
 target=Path(record['target']).resolve();owned=Path(os.environ['FAKE_CASE_ROOT']).resolve()
 if os.path.commonpath([str(owned),str(target)])!=str(owned):raise SystemExit(97)
@@ -60,7 +60,7 @@ with tempfile.TemporaryDirectory(prefix='source-packaging-routing-') as temporar
             expected_root={'managed':case/'managed-target','session-builds':case/'session-builds','fallback':context/'target'}[name]
             expected=expected_root/'docker-context-check'
             assert Path(record['target'])==expected.resolve(),(name,record)
-            assert record['argv']==['check','--locked','--offline','--manifest-path',str(context/'Cargo.toml'),'--bin','teslatlas-hub','--quiet'],record
+            assert record['argv']==['check','--locked','--offline','--manifest-path',str(context/'Cargo.toml'),'--bin','tesatlas-hub','--quiet'],record
             assert record['source_commit']=='0123456789abcdef0123456789abcdef01234567',record
             assert (expected/'fake-cargo-output').is_file()
         results.append({'case':name,'refused_before_cargo':refused,'exit_code':result.returncode})

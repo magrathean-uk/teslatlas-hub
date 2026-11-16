@@ -52,7 +52,7 @@ async fn run_container_healthcheck_at(
         return Err("healthcheck CA bundle is empty".into());
     }
 
-    teslatlas_hub::crypto::install_default_provider();
+    tesatlas_hub::crypto::install_default_provider();
     let client = reqwest::Client::builder()
         .no_proxy()
         .https_only(true)
@@ -107,7 +107,7 @@ fn validate_container_health_server_name(
 
 fn validate_container_health(body: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let health: ContainerHealth = serde_json::from_slice(body)?;
-    if health.status != "ok" || health.version != teslatlas_hub::BUILD_VERSION {
+    if health.status != "ok" || health.version != tesatlas_hub::BUILD_VERSION {
         return Err("Hub health response does not match this binary".into());
     }
     Ok(())
@@ -121,12 +121,12 @@ mod container_healthcheck_tests {
     fn response_requires_ok_and_this_binary_version() {
         let valid = serde_json::json!({
             "status": "ok",
-            "version": teslatlas_hub::BUILD_VERSION,
+            "version": tesatlas_hub::BUILD_VERSION,
         });
         validate_container_health(valid.to_string().as_bytes()).expect("valid health response");
 
         for invalid in [
-            serde_json::json!({"status": "ready", "version": teslatlas_hub::BUILD_VERSION}),
+            serde_json::json!({"status": "ready", "version": tesatlas_hub::BUILD_VERSION}),
             serde_json::json!({"status": "ok", "version": "0.0.0"}),
             serde_json::json!({"status": "ok"}),
         ] {
@@ -160,7 +160,7 @@ mod container_healthcheck_tests {
 
     #[tokio::test]
     async fn healthcheck_validates_hostname_over_real_loopback_tls() {
-        teslatlas_hub::crypto::install_default_provider();
+        tesatlas_hub::crypto::install_default_provider();
         let identity = rcgen::generate_simple_self_signed(vec!["health.hub.test".to_owned()])
             .expect("test identity");
         let temporary = tempfile::tempdir().expect("temporary CA directory");
@@ -182,7 +182,7 @@ mod container_healthcheck_tests {
             axum::routing::get(|| async {
                 axum::Json(serde_json::json!({
                     "status": "ok",
-                    "version": teslatlas_hub::BUILD_VERSION,
+                    "version": tesatlas_hub::BUILD_VERSION,
                 }))
             }),
         );

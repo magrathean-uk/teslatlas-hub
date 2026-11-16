@@ -1,0 +1,1246 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+import Foundation
+import XCTest
+@testable import Tesatlas_Hub
+
+final class OnboardingHubControllerTests: XCTestCase {
+    func testMigrationPreflightFailureHidesCommandOutput() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let secret = "preflight-secret-\(UUID().uuidString)"
+        let runner = OnboardingRunner(compatibilityResult: .failure(
+            HubActionError.commandExited(1, "SSH failed: \(secret)")
+        ))
+        let controller = HubController(commandRunner: runner,
+                                       serviceRunner: OnboardingService(),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: false)
+        let finished = expectation(description: "preflight failure presented safely")
+
+        controller.importSourceOnline(source: "postgresql://reader@127.0.0.1/sourcedb",
+                                         carID: "1",
+                                         passwordFile: "/private/password",
+                                         acceptSchemaEvidence: true) { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("failed preflight unexpectedly imported")
+            }
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Could not verify the source database. Check the server connection and try again."
+            )
+            XCTAssertFalse(error.localizedDescription.contains(secret))
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertFalse(HubAppLog.shared.recentText().contains(secret))
+    }
+
+    func testGuidedImportSessionCarriesNoSourceKey() throws {
+        // The SSH session holds the source, car and database password file only.
+        let owner = try SourceImportDirectoryOwner.create(in: HubTestScratch.directory)
+        defer { try? FileManager.default.removeItem(at: owner.directory) }
+        let session = SourceServerImportSession(
+            source: "postgresql://reader@127.0.0.1:55439/sourcedb", carID: "1",
+            passwordFile: owner.directory.appendingPathComponent("postgres-password"),
+            sourceVersion: "4.4.0", tunnel: Process(), temporaryDirectory: owner.directory,
+            directoryOwner: owner)
+        defer { session.close() }
+        let labels = Mirror(reflecting: session).children.compactMap(\.label)
+        XCTAssertTrue(labels.contains("passwordFile"))
+        XCTAssertFalse(labels.contains { $0.lowercased().contains("key") || $0.lowercased().contains("token") },
+                       "\(labels)")
+    }
+
+    func testLocalAndManualSourceChecksRequireNumericLoopback() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let runner = OnboardingRunner()
+        let controller = HubController(commandRunner: runner, serviceRunner: OnboardingService(),
+                                       homeDirectory: home, serviceInstalledOverride: false)
+        for source in ["postgresql://reader@server.local/sourcedb", "postgresql://reader@localhost/sourcedb"] {
+            let refused = expectation(description: source)
+            controller.checkSourceCompatibility(source: source, carID: "1", passwordFile: "/p",
+                                                acceptSchemaEvidence: true) { result in
+                guard case let .failure(error) = result else { return XCTFail("checked \(source)") }
+                XCTAssertEqual(error.localizedDescription, "Choose a local PostgreSQL source on 127.0.0.1 or ::1.")
+                refused.fulfill()
+            }
+            wait(for: [refused], timeout: 1)
+        }
+        XCTAssertTrue(runner.argumentCalls.isEmpty, "the refusal launches nothing")
+    }
+
+    func testMigrationFailurePresentsOnlyActionableCredentialRecovery() {
+        let rawDiagnostic = """
+        {"event":"migration_progress","completedRows":11000000,"totalRows":11063752,"phase":"copy_positions"}
+        INFO imported position batch 10999
+        ERROR legacy refresh outcome is unresolved; explicit re-login is required
+        """
+        let commandError = HubActionError.commandExited(1, rawDiagnostic)
+
+        let presented = HubController.migrationStoppedError(commandError).localizedDescription
+
+        XCTAssertEqual(
+            presented,
+            "Sign in to Tesla again in the source application, then retry the import."
+        )
+        XCTAssertFalse(presented.contains("migration_progress"))
+        XCTAssertFalse(presented.contains("11000000"))
+        XCTAssertEqual(commandError.localizedDescription, rawDiagnostic)
+    }
+
+    func testMigrationFailureReasonCodesAreBoundedAndDeterministic() {
+        let cases: [(Error, String)] = [
+            (HubActionError.commandTimedOut, "timeout"),
+            (HubActionError.commandExited(1, "SQLite error: database or disk is full"),
+             "disk_space"),
+            (HubActionError.commandExited(1, "source database schema version is incompatible"),
+             "schema_version"),
+            (HubActionError.commandExited(255, "ssh tunnel: connection refused"),
+             "ssh_tunnel"),
+            (HubActionError.commandExited(
+                1,
+                "cannot store source database token pair: legacy refresh outcome is unresolved"
+            ), "credentials"),
+            (HubActionError.commandExited(1, "SQLite database is locked"), "sqlite_database"),
+            (HubActionError.commandExited(1, "unexpected secret-passphrase=do-not-log"),
+             "generic")
+        ]
+
+        for (error, expected) in cases {
+            XCTAssertEqual(HubController.migrationFailureReasonCode(error), expected)
+            XCTAssertLessThanOrEqual(expected.utf8.count, 32)
+        }
+    }
+
+    func testMigrationProcessFailureLogsOnlyBoundedReasonCode() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let secret = "migration-secret-\(UUID().uuidString)"
+        let runner = OnboardingRunner(migrationResult: .failure(
+            HubActionError.commandExited(
+                1,
+                "cannot store source database token pair: legacy refresh outcome is unresolved \(secret)"
+            )
+        ))
+        let controller = HubController(commandRunner: runner,
+                                       serviceRunner: OnboardingService(),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: false)
+        let finished = expectation(description: "migration failure recorded")
+
+        controller.importSourceOnline(source: "postgresql://reader@127.0.0.1/sourcedb",
+                                         carID: "1",
+                                         passwordFile: "/private/password",
+                                         acceptSchemaEvidence: true) { result in
+            guard case .failure = result else { return XCTFail("expected migration failure") }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        let diagnostics = HubAppLog.shared.recentText()
+        XCTAssertTrue(diagnostics.contains("history_import import.process.failed"))
+        XCTAssertTrue(diagnostics.contains("reason_code=credentials"))
+        XCTAssertFalse(diagnostics.contains(secret))
+    }
+
+    func testMigrationFailureHidesGenericCommandOutput() {
+        let rawDiagnostic = """
+        {"event":"migration_progress","completedRows":42,"totalRows":100,"phase":"copy_positions"}
+        INFO internal import detail
+        ERROR unexpected private diagnostic
+        """
+        let commandError = HubActionError.commandExited(1, rawDiagnostic)
+
+        let presented = HubController.migrationStoppedError(commandError).localizedDescription
+
+        XCTAssertEqual(presented, "Source application import failed; retry the import.")
+        XCTAssertFalse(presented.contains("migration_progress"))
+        XCTAssertFalse(presented.contains("private diagnostic"))
+        XCTAssertEqual(commandError.localizedDescription, rawDiagnostic)
+    }
+
+    func testMigrationProgressParsingAcceptsOnlyStructuredEvents() throws {
+        let progress = try XCTUnwrap(HubController.parseMigrationProgress(
+            #"{"event":"migration_progress","completedRows":123,"totalRows":456,"phase":"copy_positions"}"#
+        ))
+        XCTAssertEqual(progress.completedRows, 123)
+        XCTAssertEqual(progress.totalRows, 456)
+        XCTAssertEqual(progress.phase, "copy_positions")
+
+        let clamped = try XCTUnwrap(HubController.parseMigrationProgress(
+            #"{"event":"migration_progress","completedRows":5,"totalRows":4}"#
+        ))
+        XCTAssertEqual(clamped.completedRows, 4)
+        XCTAssertNil(HubController.parseMigrationProgress(
+            #"{"event":"other","completedRows":1,"totalRows":2}"#
+        ))
+        XCTAssertNil(HubController.parseMigrationProgress(
+            #"{"event":"migration_progress","completedRows":0,"totalRows":0}"#
+        ))
+        XCTAssertNil(HubController.parseMigrationProgress("not json"))
+    }
+
+    func testSourceCompatibilityParsingAcceptsOnlyAcknowledged44CompatibleSchema() throws {
+        let compatible = try XCTUnwrap(HubController.parseSourceCheckReport("""
+        progress line
+        {"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready to import."}
+        """))
+        XCTAssertTrue(compatible.compatible)
+        XCTAssertTrue(compatible.mayImport)
+        XCTAssertEqual(compatible.reasonCode, "v4_4_compatible_schema")
+        XCTAssertEqual(compatible.requiredVersion, "4.4.0")
+        XCTAssertEqual(compatible.message, "Ready to import.")
+
+        // A report naming the earlier reviewed set never enables import.
+        let earlierSet = try XCTUnwrap(HubController.parseSourceCheckReport("""
+        {"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready to import."}
+        """))
+        XCTAssertFalse(earlierSet.compatible)
+        XCTAssertFalse(earlierSet.mayImport)
+
+        let mismatch = try XCTUnwrap(HubController.parseSourceCheckReport("""
+        {"status":"compatible","reasonCode":"exact_4_2_0","requiredVersion":"4.2.0","guidance":"Invalid exactness claim."}
+        """))
+        XCTAssertFalse(mismatch.compatible)
+        XCTAssertEqual(mismatch.reasonCode, "exact_4_2_0")
+        XCTAssertNil(HubController.parseSourceCheckReport("not JSON"))
+    }
+
+    func testFleetInvocationPutsCredentialsOnlyOnStandardInput() throws {
+        let credentials = HubFleetSetupCredentials(accessToken: "access-secret",
+                                                   refreshToken: "refresh-secret",
+                                                   clientID: "client-id",
+                                                   region: "europe_middle_east_and_africa",
+                                                   expiresInSeconds: 7_200)
+        let invocation = try HubController.fleetSetupInvocation(
+            configPath: URL(fileURLWithPath: "/tmp/hub-config.toml"),
+            credentials: credentials
+        )
+
+        XCTAssertEqual(invocation.arguments, [
+            "--config", "/tmp/hub-config.toml", "setup-fleet", "--all-vehicles"
+        ])
+        XCTAssertFalse(invocation.arguments.joined(separator: " ").contains("access-secret"))
+        XCTAssertFalse(invocation.arguments.joined(separator: " ").contains("refresh-secret"))
+
+        let payload = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(invocation.standardInput.utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(payload["accessToken"] as? String, "access-secret")
+        XCTAssertEqual(payload["refreshToken"] as? String, "refresh-secret")
+        XCTAssertEqual(payload["clientId"] as? String, "client-id")
+        XCTAssertEqual(payload["region"] as? String, "europe_middle_east_and_africa")
+        XCTAssertEqual(payload["expiresInSeconds"] as? NSNumber, 7_200)
+    }
+
+    func testFleetProviderTOMLUpdateReplacesOnlyCollectorProvider() {
+        let original = """
+        data_dir = "/tmp/hub"
+
+        [collector]
+          provider = "legacy"
+        interval_seconds = 30
+
+        [terrain]
+        enabled = false
+        """ + "\n"
+
+        XCTAssertEqual(HubController.settingCollectorProvider("fleet", in: original), """
+        data_dir = "/tmp/hub"
+
+        [collector]
+          provider = "fleet"
+        interval_seconds = 30
+
+        [terrain]
+        enabled = false
+        """ + "\n")
+    }
+
+    func testOnboardingDecisionRequiresConfigAndConnectedSnapshot() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = HubController(commandRunner: OnboardingRunner(),
+                                       serviceRunner: OnboardingService(),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+
+        XCTAssertTrue(controller.shouldShowOnboardingBeforeInitialRefresh)
+        XCTAssertTrue(controller.shouldShowOnboarding(for: .previewRunning))
+        let configuration = home
+            .appendingPathComponent("Library/Application Support/Tesatlas Hub", isDirectory: true)
+            .appendingPathComponent("config.toml")
+        try FileManager.default.createDirectory(at: configuration.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try "data_dir = \"/tmp/hub\"\n".write(to: configuration, atomically: true, encoding: .utf8)
+
+        XCTAssertFalse(controller.shouldShowOnboardingBeforeInitialRefresh)
+        XCTAssertFalse(controller.shouldShowOnboarding(for: .previewRunning))
+        XCTAssertTrue(controller.shouldShowOnboarding(for: .firstRun))
+    }
+
+    func testSourceRunControlModesDoNotBlockEmptyHubBehindAccountOnboarding() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        for mode in [DevelopmentHubMode.standalone] {
+            let configuration = DevelopmentHubConfiguration(
+                binary: home.appendingPathComponent("tesatlas-hub"),
+                config: home.appendingPathComponent("config.toml"),
+                stateDirectory: home.appendingPathComponent("state", isDirectory: true),
+                logDirectory: home.appendingPathComponent("logs", isDirectory: true),
+                controlDirectory: home.appendingPathComponent("dev/machine/runtime", isDirectory: true),
+                ownerUID: 0,
+                mode: mode
+            )
+            let controller = HubController(
+                commandRunner: OnboardingRunner(),
+                serviceRunner: OnboardingService(),
+                homeDirectory: home,
+                serviceInstalledOverride: true,
+                developmentConfiguration: configuration
+            )
+
+            XCTAssertFalse(controller.shouldShowOnboardingBeforeInitialRefresh, "mode=\(mode)")
+            XCTAssertFalse(controller.shouldShowOnboarding(for: .firstRun), "mode=\(mode)")
+        }
+    }
+
+    func testImportHistoryArgumentVectorIsPinned() throws {
+        let argvURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/import-history-argv.json")
+        let expectedArgv = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: argvURL)) as? [String])
+        XCTAssertEqual(expectedArgv.first, "tesatlas-hub")
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let folder = home.appendingPathComponent("Library/Application Support/Tesatlas Hub")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let config = folder.appendingPathComponent("config.toml")
+        try "data_dir = \"/Volumes/4TB/history-test\"\n[collector]\ninterval_seconds = 0\n[collector.legacy_auth]\nenabled = false\n".write(
+            to: config, atomically: true, encoding: .utf8)
+        let events = OnboardingEvents()
+        let runner = OnboardingRunner(events: events, compatibilityResult: .success(
+            #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
+        ), preflightResults: [
+            .success(Self.historyReadyPreflight), .success(Self.historyReadyPreflight),
+            .failure(HubActionError.commandFailed("collection enabled"))
+        ])
+        let controller = HubController(commandRunner: runner,
+                                       serviceRunner: OnboardingService(events: events),
+                                       homeDirectory: home, serviceInstalledOverride: false)
+        let imported = expectation(description: "history imported")
+        controller.importSourceHistoryOnlyOnline(
+            source: expectedArgv[3], carID: expectedArgv[5],
+            passwordFile: expectedArgv[7], acceptSchemaEvidence: true
+        ) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            imported.fulfill()
+        }
+        wait(for: [imported], timeout: 2)
+        XCTAssertEqual(events.values, ["check", "service:stop", "migrate"])
+        let migrate = try XCTUnwrap(runner.argumentCalls.first { $0.contains("migrate") })
+        let migrateStart = try XCTUnwrap(migrate.firstIndex(of: "migrate"))
+        XCTAssertEqual(Array(migrate[migrateStart...]), Array(expectedArgv.dropFirst()))
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertTrue(controller.historyOnlyControlActive)
+        XCTAssertTrue(runner.argumentCalls.filter { $0.contains("source-check") }
+            .allSatisfy { !$0.contains("--history-only") })
+        XCTAssertTrue(runner.argumentCalls.filter { $0.contains("migrate") }
+            .allSatisfy { $0.contains("--history-only") })
+        XCTAssertTrue(runner.argumentCalls.allSatisfy { !$0.contains("--encryption-key-file")
+            && !$0.contains("--preserve-existing-credentials") && !$0.contains("--tokens-stdin") })
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 0"))
+
+        let verified = expectation(description: "history verified")
+        controller.runOnboardingChecks(expectRunning: false) { result in
+            switch result {
+            case let .success(checks): XCTAssertTrue(checks.allSatisfy(\.passed))
+            case let .failure(error): XCTFail(error.localizedDescription)
+            }
+            verified.fulfill()
+        }
+        wait(for: [verified], timeout: 2)
+        XCTAssertEqual(events.values, ["check", "service:stop", "migrate", "service:stop", "preflight"])
+        let started = expectation(description: "history Hub started")
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            started.fulfill()
+        }
+        wait(for: [started], timeout: 2)
+        XCTAssertFalse(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(events.values.last, "service:start")
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 0"))
+        try String(contentsOf: config).replacingOccurrences(
+            of: "interval_seconds = 0", with: "interval_seconds = 60"
+        ).write(to: config, atomically: true, encoding: .utf8)
+        let blockedRestart = expectation(description: "changed history configuration blocks restart")
+        controller.restartHub { result in
+            guard case .failure = result else { return XCTFail("unsafe restart was allowed") }
+            blockedRestart.fulfill()
+        }
+        wait(for: [blockedRestart], timeout: 2)
+        XCTAssertTrue(controller.historyOnlyControlActive)
+        XCTAssertEqual(events.values.last, "preflight")
+        XCTAssertFalse(events.values.contains("service:restart"))
+    }
+
+    func testHistoryOnlyHandoverRechecksConfigAfterVerificationBeforeStart() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let config = try prepareAwaitingHistoryOnlyHandover(in: home)
+        let events = OnboardingEvents()
+        let runner = OnboardingRunner(events: events, preflightResults: [
+            .success(Self.historyReadyPreflight),
+            .failure(HubActionError.commandFailed("collection enabled"))
+        ])
+        let controller = HubController(commandRunner: runner,
+                                       serviceRunner: OnboardingService(events: events),
+                                       homeDirectory: home, serviceInstalledOverride: false)
+        let verified = expectation(description: "history checked while collection is off")
+        controller.runOnboardingChecks(expectRunning: false) { result in
+            switch result {
+            case let .success(checks): XCTAssertTrue(checks.allSatisfy(\.passed))
+            case let .failure(error): XCTFail(error.localizedDescription)
+            }
+            verified.fulfill()
+        }
+        wait(for: [verified], timeout: 2)
+        try String(contentsOf: config).replacingOccurrences(
+            of: "interval_seconds = 0", with: "interval_seconds = 60"
+        ).write(to: config, atomically: true, encoding: .utf8)
+        let rejected = expectation(description: "changed configuration blocks handover")
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            guard case .failure = result else { return XCTFail("unsafe start was allowed") }
+            rejected.fulfill()
+        }
+        wait(for: [rejected], timeout: 2)
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(events.values, ["service:stop", "preflight", "preflight"])
+        XCTAssertFalse(events.values.contains("service:start"))
+    }
+
+    func testHistoryOnlyVerificationReturnsToMainThreadAfterBackgroundPreflight() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try prepareAwaitingHistoryOnlyHandover(in: home)
+        let runner = OnboardingRunner(backgroundPreflight: true)
+        let controller = HubController(commandRunner: runner,
+                                       serviceRunner: OnboardingService(),
+                                       homeDirectory: home, serviceInstalledOverride: false)
+        let verified = expectation(description: "history verification completed on main thread")
+        controller.runOnboardingChecks(expectRunning: false) { result in
+            XCTAssertTrue(Thread.isMainThread)
+            switch result {
+            case let .success(checks): XCTAssertTrue(checks.allSatisfy(\.passed))
+            case let .failure(error): XCTFail(error.localizedDescription)
+            }
+            verified.fulfill()
+        }
+        wait(for: [verified], timeout: 2)
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+    }
+
+    func testOnlineMigrationStaysStoppedUntilHandoverAcknowledgement() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let events = OnboardingEvents()
+        let runner = OnboardingRunner(events: events, statusResults: [
+            .success(readinessStatus(ready: false, collectorInstanceID: nil)),
+            .success(readinessStatus(ready: false, collectorInstanceID: nil)),
+            .success(readinessStatus(
+                ready: true,
+                collectorInstanceID: "22222222-2222-4222-8222-222222222222",
+                startedAtMs: 4_000_000_000_000
+            ))
+        ])
+        let service = OnboardingService(events: events)
+        let controller = HubController(commandRunner: runner,
+                                       serviceRunner: service,
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let migration = expectation(description: "online migration completes")
+
+        controller.importSourceOnline(source: "postgresql://reader@127.0.0.1/sourcedb",
+                                         carID: "1",
+                                         passwordFile: "/private/password",
+                                         acceptSchemaEvidence: true) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            migration.fulfill()
+        }
+
+        wait(for: [migration], timeout: 2)
+        XCTAssertEqual(events.values, ["check", "service:stop", "migrate"])
+        XCTAssertEqual(runner.argumentCalls.filter { $0.contains("source-check") }.count, 1)
+        XCTAssertEqual(runner.argumentCalls.filter { $0.contains("migrate") }.count, 1)
+        XCTAssertTrue(runner.argumentCalls
+            .filter { $0.contains("source-check") || $0.contains("migrate") }
+            .allSatisfy { $0.contains("--accept-schema-evidence") })
+        // The guided import runs without the source key: no key, token or credential flag.
+        let migrate = try XCTUnwrap(runner.argumentCalls.first { $0.contains("migrate") })
+        XCTAssertEqual(Array(migrate.drop { $0 != "migrate" }), [
+            "migrate", "--source", "postgresql://reader@127.0.0.1/sourcedb", "--car-id", "1",
+            "--postgres-password-file", "/private/password", "--online-snapshot", "--accept-schema-evidence"
+        ])
+        let check = try XCTUnwrap(runner.argumentCalls.first { $0.contains("source-check") })
+        XCTAssertEqual(Array(check.drop { $0 != "source-check" }), [
+            "source-check", "--source", "postgresql://reader@127.0.0.1/sourcedb", "--car-id", "1",
+            "--postgres-password-file", "/private/password", "--accept-schema-evidence"
+        ])
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        let config = home.appendingPathComponent(
+            "Library/Application Support/Tesatlas Hub/config.toml"
+        )
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 0"))
+
+        let blocked = expectation(description: "marker blocks start")
+        controller.startHub { result in
+            guard case let .failure(error) = result else { return XCTFail("start unexpectedly allowed") }
+            XCTAssertTrue(error.localizedDescription.contains("handover"))
+            blocked.fulfill()
+        }
+        wait(for: [blocked], timeout: 1)
+        XCTAssertEqual(events.values, ["check", "service:stop", "migrate"])
+
+        let verified = expectation(description: "migration checks pass")
+        controller.runOnboardingChecks(expectRunning: false) { result in
+            switch result {
+            case let .success(checks): XCTAssertTrue(checks.allSatisfy(\.passed))
+            case let .failure(error): XCTFail(error.localizedDescription)
+            }
+            verified.fulfill()
+        }
+        wait(for: [verified], timeout: 2)
+        XCTAssertEqual(events.values, [
+            "check", "service:stop", "migrate", "service:stop", "doctor", "status"
+        ])
+
+        let acknowledged = expectation(description: "acknowledgement starts Hub")
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            acknowledged.fulfill()
+        }
+        wait(for: [acknowledged], timeout: 1)
+        XCTAssertFalse(controller.hasPendingMigrationHandover)
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 60"))
+        XCTAssertEqual(events.values, [
+            "check", "service:stop", "migrate", "service:stop", "doctor", "status",
+            "status", "service:start", "status"
+        ])
+    }
+
+    func testHandoverRejectsStaleReadyLeaseUntilANewCollectorIsReady() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let config = try prepareAwaitingHandover(in: home, previousIntervalSeconds: 60)
+        let events = OnboardingEvents()
+        let scheduler = ManualOnboardingScheduler()
+        let oldInstance = "11111111-1111-4111-8111-111111111111"
+        let newInstance = "22222222-2222-4222-8222-222222222222"
+        let runner = OnboardingRunner(events: events, statusResults: [
+            .success(readinessStatus(
+                ready: true,
+                collectorInstanceID: oldInstance,
+                startedAtMs: 50_000
+            )),
+            .success(readinessStatus(
+                ready: true,
+                collectorInstanceID: oldInstance,
+                startedAtMs: 50_000
+            )),
+            .success(readinessStatus(
+                ready: false,
+                collectorInstanceID: oldInstance,
+                startedAtMs: 50_000
+            )),
+            .success(readinessStatus(
+                ready: true,
+                collectorInstanceID: newInstance,
+                startedAtMs: 101_000
+            ))
+        ])
+        let controller = HubController(
+            commandRunner: runner,
+            serviceRunner: OnboardingService(events: events),
+            homeDirectory: home,
+            serviceInstalledOverride: true,
+            migrationStartupReadinessPollInterval: 1,
+            migrationStartupReadinessMaxAttempts: 3,
+            migrationStartupReadinessNow: { Date(timeIntervalSince1970: 100) },
+            migrationStartupReadinessSchedule: scheduler.schedule
+        )
+        let finished = expectation(description: "fresh collector becomes ready")
+        var completed = false
+
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            completed = true
+            finished.fulfill()
+        }
+
+        XCTAssertFalse(completed)
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(scheduler.pendingCount, 1)
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 60"))
+
+        scheduler.runNext()
+        XCTAssertFalse(completed)
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(scheduler.pendingCount, 1)
+
+        scheduler.runNext()
+        wait(for: [finished], timeout: 1)
+        XCTAssertFalse(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(events.values, [
+            "status", "service:start", "status", "status", "status"
+        ])
+    }
+
+    func testHandoverReadyWithAttentionStillRequiresNewCollectorLease() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let config = try prepareAwaitingHandover(in: home, previousIntervalSeconds: 60)
+        let events = OnboardingEvents()
+        let scheduler = ManualOnboardingScheduler()
+        let oldInstance = "11111111-1111-4111-8111-111111111111"
+        let newInstance = "22222222-2222-4222-8222-222222222222"
+        let attention = "collector_cap_reached"
+        // A ready status that carries collection attention is still ready, but a
+        // reused lease (and a stale one) is rejected until a new collector's lease
+        // appears; only then does the handover complete.
+        let runner = OnboardingRunner(events: events, statusResults: [
+            .success(readinessStatus(ready: true, collectorInstanceID: oldInstance,
+                                     startedAtMs: 50_000, attention: attention)),
+            .success(readinessStatus(ready: true, collectorInstanceID: oldInstance,
+                                     startedAtMs: 50_000, attention: attention)),
+            .success(readinessStatus(ready: true, collectorInstanceID: oldInstance,
+                                     startedAtMs: 50_000, attention: attention)),
+            .success(readinessStatus(ready: true, collectorInstanceID: newInstance,
+                                     startedAtMs: 101_000, attention: attention))
+        ])
+        let controller = HubController(
+            commandRunner: runner,
+            serviceRunner: OnboardingService(events: events),
+            homeDirectory: home,
+            serviceInstalledOverride: true,
+            migrationStartupReadinessPollInterval: 1,
+            migrationStartupReadinessMaxAttempts: 3,
+            migrationStartupReadinessNow: { Date(timeIntervalSince1970: 100) },
+            migrationStartupReadinessSchedule: scheduler.schedule
+        )
+        let finished = expectation(description: "fresh collector becomes ready with attention")
+        var completed = false
+
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            completed = true
+            finished.fulfill()
+        }
+
+        XCTAssertFalse(completed, "the old lease is rejected although the status is ready")
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(scheduler.pendingCount, 1)
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 60"))
+
+        scheduler.runNext()
+        XCTAssertFalse(completed, "a reused lease is still not a new collector")
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(scheduler.pendingCount, 1)
+
+        scheduler.runNext()
+        wait(for: [finished], timeout: 1)
+        XCTAssertFalse(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(events.values, [
+            "status", "service:start", "status", "status", "status"
+        ])
+    }
+
+    func testHandoverStartRejectsConcurrentInvocationBeforeStartingAnotherService() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let config = try prepareAwaitingHandover(in: home, previousIntervalSeconds: 60)
+        let events = OnboardingEvents()
+        let runner = OnboardingRunner(events: events, statusResults: [
+            .success(readinessStatus(ready: false, collectorInstanceID: nil)),
+            .success(readinessStatus(ready: false, collectorInstanceID: nil))
+        ])
+        let service = OnboardingService(events: events, holdStartCompletions: true)
+        let controller = HubController(
+            commandRunner: runner,
+            serviceRunner: service,
+            homeDirectory: home,
+            serviceInstalledOverride: true,
+            migrationStartupReadinessMaxAttempts: 1
+        )
+        let firstFinished = expectation(description: "first start reports its held failure")
+        let duplicateFinished = expectation(description: "duplicate start is rejected")
+
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            guard case .failure = result else {
+                return XCTFail("held first start unexpectedly succeeded")
+            }
+            firstFinished.fulfill()
+        }
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("duplicate handover start unexpectedly succeeded")
+            }
+            XCTAssertEqual(error.localizedDescription, "Hub startup is already in progress.")
+            duplicateFinished.fulfill()
+        }
+
+        XCTAssertEqual(service.startCallCount, 1)
+        XCTAssertEqual(events.values, ["status", "service:start"])
+        service.completeHeldStarts(with: .failure(
+            HubActionError.commandFailed("held service start failure")
+        ))
+        wait(for: [duplicateFinished, firstFinished], timeout: 1)
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 0"))
+    }
+
+    func testHandoverFallsBackToPostRequestStartTimeWhenBaselineStatusIsUnavailable() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try prepareAwaitingHandover(in: home, previousIntervalSeconds: 60)
+        let events = OnboardingEvents()
+        let scheduler = ManualOnboardingScheduler()
+        let runner = OnboardingRunner(events: events, statusResults: [
+            .success(#"{"status":"ok","ready":false}"#),
+            .success(readinessStatus(
+                ready: true,
+                collectorInstanceID: "33333333-3333-4333-8333-333333333333",
+                startedAtMs: 99_999
+            )),
+            .success(readinessStatus(
+                ready: true,
+                collectorInstanceID: "33333333-3333-4333-8333-333333333333",
+                startedAtMs: 100_000
+            ))
+        ])
+        let controller = HubController(
+            commandRunner: runner,
+            serviceRunner: OnboardingService(events: events),
+            homeDirectory: home,
+            serviceInstalledOverride: true,
+            migrationStartupReadinessPollInterval: 1,
+            migrationStartupReadinessMaxAttempts: 2,
+            migrationStartupReadinessNow: { Date(timeIntervalSince1970: 100) },
+            migrationStartupReadinessSchedule: scheduler.schedule
+        )
+        let finished = expectation(description: "timestamp witness becomes fresh")
+
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(scheduler.pendingCount, 1)
+        scheduler.runNext()
+        wait(for: [finished], timeout: 1)
+        XCTAssertFalse(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(events.values, ["status", "service:start", "status", "status"])
+    }
+
+    func testHandoverReadinessFailuresStopHubRestorePauseAndKeepGate() throws {
+        let failureCases: [(name: String, status: Result<String, Error>)] = [
+            (
+                "process failure",
+                .failure(HubActionError.commandFailed("private status diagnostic"))
+            ),
+            ("malformed status", .success("not JSON")),
+            (
+                "not ready before timeout",
+                .success(readinessStatus(ready: false, collectorInstanceID: nil))
+            )
+        ]
+
+        for failureCase in failureCases {
+            let home = try temporaryHome()
+            defer { try? FileManager.default.removeItem(at: home) }
+            let config = try prepareAwaitingHandover(in: home, previousIntervalSeconds: 60)
+            let events = OnboardingEvents()
+            let runner = OnboardingRunner(events: events, statusResults: [
+                .success(readinessStatus(ready: false, collectorInstanceID: nil)),
+                failureCase.status
+            ])
+            let controller = HubController(
+                commandRunner: runner,
+                serviceRunner: OnboardingService(events: events),
+                homeDirectory: home,
+                serviceInstalledOverride: true,
+                migrationStartupReadinessPollInterval: 1,
+                migrationStartupReadinessMaxAttempts: 1,
+                migrationStartupReadinessNow: { Date(timeIntervalSince1970: 100) },
+                migrationStartupReadinessSchedule: { _, _ in
+                    XCTFail("\(failureCase.name) scheduled beyond the bounded final attempt")
+                }
+            )
+            let finished = expectation(description: failureCase.name)
+
+            controller.acknowledgeMigrationHandoverAndStart { result in
+                guard case let .failure(error) = result else {
+                    return XCTFail("\(failureCase.name) cleared the handover gate")
+                }
+                XCTAssertFalse(error.localizedDescription.contains("private status diagnostic"))
+                finished.fulfill()
+            }
+
+            wait(for: [finished], timeout: 1)
+            XCTAssertTrue(controller.hasPendingMigrationHandover, failureCase.name)
+            XCTAssertTrue(
+                try String(contentsOf: config).contains("interval_seconds = 0"),
+                failureCase.name
+            )
+            XCTAssertEqual(
+                events.values,
+                ["status", "service:start", "status", "service:stop"],
+                failureCase.name
+            )
+        }
+    }
+
+    func testHandoverReadinessDeadlineStopsBeforeIssuingAnotherStatusCommand() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let config = try prepareAwaitingHandover(in: home, previousIntervalSeconds: 60)
+        let events = OnboardingEvents()
+        let scheduler = ManualOnboardingScheduler()
+        var now = Date(timeIntervalSince1970: 100)
+        let runner = OnboardingRunner(events: events, statusResults: [
+            .success(readinessStatus(ready: false, collectorInstanceID: nil)),
+            .success(readinessStatus(ready: false, collectorInstanceID: nil)),
+            .success(readinessStatus(
+                ready: true,
+                collectorInstanceID: "44444444-4444-4444-8444-444444444444",
+                startedAtMs: 101_000
+            ))
+        ])
+        let controller = HubController(
+            commandRunner: runner,
+            serviceRunner: OnboardingService(events: events),
+            homeDirectory: home,
+            serviceInstalledOverride: true,
+            migrationStartupReadinessPollInterval: 1,
+            migrationStartupReadinessTimeout: 1,
+            migrationStartupReadinessMaxAttempts: 3,
+            migrationStartupReadinessNow: { now },
+            migrationStartupReadinessSchedule: scheduler.schedule
+        )
+        let finished = expectation(description: "readiness deadline expires")
+
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            guard case .failure = result else {
+                return XCTFail("deadline cleared the handover gate")
+            }
+            finished.fulfill()
+        }
+
+        XCTAssertEqual(scheduler.pendingCount, 1)
+        now = Date(timeIntervalSince1970: 101)
+        scheduler.runNext()
+        wait(for: [finished], timeout: 1)
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 0"))
+        XCTAssertEqual(events.values, ["status", "service:start", "status", "service:stop"])
+    }
+
+    func testHandoverWithCollectorDisabledAcceptsReadyWithoutCollectorLease() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let config = try prepareAwaitingHandover(in: home, previousIntervalSeconds: 0)
+        let events = OnboardingEvents()
+        let runner = OnboardingRunner(events: events, statusResults: [
+            .success(readinessStatus(ready: true, collectorInstanceID: nil)),
+            .success(readinessStatus(ready: true, collectorInstanceID: nil))
+        ])
+        let controller = HubController(
+            commandRunner: runner,
+            serviceRunner: OnboardingService(events: events),
+            homeDirectory: home,
+            serviceInstalledOverride: true,
+            migrationStartupReadinessMaxAttempts: 1
+        )
+        let finished = expectation(description: "collector-disabled Hub is ready")
+
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 1)
+        XCTAssertFalse(controller.hasPendingMigrationHandover)
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 0"))
+        XCTAssertEqual(events.values, ["status", "service:start", "status"])
+    }
+
+    func testOnlineMigrationForwardsStructuredProgressOnMainThread() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let runner = OnboardingRunner(progressLines: [
+            #"{"event":"migration_progress","completedRows":0,"totalRows":10,"phase":"preparing"}"#,
+            "unrelated output",
+            #"{"event":"migration_progress","completedRows":7,"totalRows":10,"phase":"copy_positions"}"#
+        ])
+        let controller = HubController(commandRunner: runner,
+                                       serviceRunner: OnboardingService(),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: false)
+        let finished = expectation(description: "progress import completes")
+        var updates: [HubMigrationProgress] = []
+
+        controller.importSourceOnline(source: "postgresql://reader@127.0.0.1/sourcedb",
+                                         carID: "1",
+                                         passwordFile: "/private/password",
+                                         acceptSchemaEvidence: true,
+                                         progress: {
+                                             XCTAssertTrue(Thread.isMainThread)
+                                             updates.append($0)
+                                         }) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(updates.map(\.completedRows), [0, 7])
+        XCTAssertEqual(updates.map(\.totalRows), [10, 10])
+        XCTAssertEqual(updates.compactMap(\.phase), ["preparing", "copy_positions"])
+    }
+
+    func testOnlineMigrationSuppressesProgressDeliveredAfterCompletion() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let lateProgress = expectation(description: "no progress after terminal completion")
+        lateProgress.isInverted = true
+        let runner = OnboardingRunner(lateProgressLines: [
+            #"{"event":"migration_progress","completedRows":9,"totalRows":10,"phase":"copy_positions"}"#
+        ])
+        let controller = HubController(commandRunner: runner,
+                                       serviceRunner: OnboardingService(),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: false)
+        let finished = expectation(description: "import completed")
+
+        controller.importSourceOnline(source: "postgresql://reader@127.0.0.1/sourcedb",
+                                         carID: "1",
+                                         passwordFile: "/private/password",
+                                         acceptSchemaEvidence: true,
+                                         progress: { _ in lateProgress.fulfill() }) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        wait(for: [lateProgress], timeout: 0.2)
+    }
+
+    func testOnlineMigrationRejectsMissingVersionAcknowledgementBeforeCommands() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let events = OnboardingEvents()
+        let runner = OnboardingRunner(events: events)
+        let controller = HubController(commandRunner: runner,
+                                       serviceRunner: OnboardingService(events: events),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let rejected = expectation(description: "missing acknowledgement rejected")
+
+        controller.importSourceOnline(source: "postgresql://reader@127.0.0.1/sourcedb",
+                                         carID: "1",
+                                         passwordFile: "/private/password",
+                                         acceptSchemaEvidence: false) { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("missing acknowledgement was accepted")
+            }
+            XCTAssertEqual(error.localizedDescription,
+                           "Confirm the source application's release is 4.4.0 or later before importing.")
+            rejected.fulfill()
+        }
+
+        wait(for: [rejected], timeout: 1)
+        XCTAssertTrue(events.values.isEmpty)
+        XCTAssertTrue(runner.argumentCalls.isEmpty)
+    }
+
+    func testOnlineMigrationWithoutCompletionReportKeepsHandoverGateAndHubStopped() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let events = OnboardingEvents()
+        let runner = OnboardingRunner(
+            events: events,
+            migrationResult: .success("{\"status\":\"ok\"}")
+        )
+        let controller = HubController(commandRunner: runner,
+                                       serviceRunner: OnboardingService(events: events),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let migration = expectation(description: "missing report rejected")
+
+        controller.importSourceOnline(source: "postgresql://reader@127.0.0.1/sourcedb",
+                                         carID: "1",
+                                         passwordFile: "/private/password",
+                                         acceptSchemaEvidence: true) { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("expected missing report failure")
+            }
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Source application import failed; retry the import."
+            )
+            migration.fulfill()
+        }
+
+        wait(for: [migration], timeout: 2)
+        XCTAssertEqual(events.values, ["check", "service:stop", "migrate"])
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        let config = home.appendingPathComponent(
+            "Library/Application Support/Tesatlas Hub/config.toml"
+        )
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 0"))
+    }
+
+    private func temporaryHome() throws -> URL {
+        let home = HubTestScratch.directory
+            .appendingPathComponent("tesatlas-hub-onboarding-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: false)
+        return home
+    }
+
+    private static let historyReadyPreflight =
+        #"{"status":"ready","credentialScope":"history-only","publishedVehicles":1,"collectorEnabled":false}"#
+
+    private func prepareAwaitingHistoryOnlyHandover(in home: URL) throws -> URL {
+        let folder = home.appendingPathComponent("Library/Application Support/Tesatlas Hub")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let config = folder.appendingPathComponent("config.toml")
+        try "data_dir = \"/Volumes/4TB/history-test\"\n[collector]\ninterval_seconds = 0\n[collector.legacy_auth]\nenabled = false\n".write(
+            to: config, atomically: true, encoding: .utf8)
+        try #"{"phase":"awaiting_verification","previousIntervalSeconds":0,"historyOnly":true}"#.write(
+            to: folder.appendingPathComponent(".teslamate-handover-pending"),
+            atomically: true, encoding: .utf8)
+        try HistoryOnlyControl.write(for: config)
+        return config
+    }
+
+    private func prepareAwaitingHandover(in home: URL,
+                                         previousIntervalSeconds: Int) throws -> URL {
+        let folder = home.appendingPathComponent(
+            "Library/Application Support/Tesatlas Hub",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let config = folder.appendingPathComponent("config.toml")
+        try """
+        data_dir = "\(folder.appendingPathComponent("data").path)"
+
+        [collector]
+        provider = "legacy"
+        interval_seconds = 0
+        """.write(to: config, atomically: true, encoding: .utf8)
+        try """
+        {"phase":"awaiting_handover","previousIntervalSeconds":\(previousIntervalSeconds),"previousProvider":"legacy"}
+        """.write(
+            to: folder.appendingPathComponent(".teslamate-handover-pending"),
+            atomically: true,
+            encoding: .utf8
+        )
+        return config
+    }
+
+    private func readinessStatus(ready: Bool,
+                                 collectorInstanceID: String?,
+                                 startedAtMs: Int64 = 50_000,
+                                 attention: String? = nil) -> String {
+        let attentionMember = attention.map { #","collectionAttention":"\#($0)""# } ?? ""
+        let collector: String
+        if let collectorInstanceID {
+            collector = """
+            {"instanceId":"\(collectorInstanceID)","startedAtMs":\(startedAtMs),"heartbeatAtMs":\(startedAtMs + 1_000),"leaseUntilMs":\(startedAtMs + 31_000)}
+            """
+        } else {
+            collector = "null"
+        }
+        return """
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":\(ready),"readinessReason":\(ready ? "null" : "\"collector_absent\"")\(attentionMember),"provider":"legacy","vehicle":{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Test Vehicle","sourceCarId":1,"teslaEid":1,"latestObservationId":1,"latestObservedAtMs":1000,"latestReceivedAtMs":1000},"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Test Vehicle","sourceCarId":1,"teslaEid":1,"latestObservationId":1,"latestObservedAtMs":1000,"latestReceivedAtMs":1000}],"credentials":{"present":true},"legacyCredentials":{"present":true,"expiresAt":null,"nextRefreshAt":null},"fleetCredentials":{"present":false,"expiresAt":null,"nextRefreshAt":null,"scopes":null,"scopeStatus":null},"fleetTelemetry":{"enabled":false,"configured":false,"mode":"disabled","operationalState":"disabled","paidVehicleDataPolling":false,"deliveryPolicy":null},"collector":\(collector)}
+        """
+    }
+}
+
+private final class OnboardingEvents {
+    private(set) var values: [String] = []
+
+    func append(_ value: String) {
+        values.append(value)
+    }
+}
+
+private final class ManualOnboardingScheduler {
+    private var pending: [() -> Void] = []
+
+    var pendingCount: Int { pending.count }
+
+    func schedule(after _: TimeInterval, action: @escaping () -> Void) {
+        pending.append(action)
+    }
+
+    func runNext() {
+        guard !pending.isEmpty else {
+            XCTFail("no scheduled readiness poll")
+            return
+        }
+        pending.removeFirst()()
+    }
+}
+
+private final class OnboardingRunner: HubCommandRunning {
+    private let events: OnboardingEvents?
+    private let compatibilityResult: Result<String, Error>
+    private let migrationResult: Result<String, Error>
+    private let progressLines: [String]
+    private let lateProgressLines: [String]
+    private let backgroundPreflight: Bool
+    private var statusResults: [Result<String, Error>]
+    private var preflightResults: [Result<String, Error>]
+    private(set) var argumentCalls: [[String]] = []
+
+    init(events: OnboardingEvents? = nil,
+         compatibilityResult: Result<String, Error> = .success(
+             #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
+         ),
+         migrationResult: Result<String, Error> = .success(
+             "{\"status\":\"imported\",\"captureMode\":\"online-snapshot\"}"
+         ),
+         progressLines: [String] = [],
+         lateProgressLines: [String] = [],
+         statusResults: [Result<String, Error>] = [],
+         preflightResults: [Result<String, Error>] = [],
+         backgroundPreflight: Bool = false) {
+        self.events = events
+        self.compatibilityResult = compatibilityResult
+        self.migrationResult = migrationResult
+        self.progressLines = progressLines
+        self.lateProgressLines = lateProgressLines
+        self.backgroundPreflight = backgroundPreflight
+        self.statusResults = statusResults
+        self.preflightResults = preflightResults
+    }
+
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        argumentCalls.append(arguments)
+        if arguments.contains("source-check") {
+            events?.append("check")
+            completion(compatibilityResult)
+        } else if arguments.contains("migrate") {
+            events?.append("migrate")
+            completion(migrationResult)
+        } else if arguments.contains("preflight") {
+            events?.append("preflight")
+            let result = preflightResults.isEmpty
+                ? .success(#"{"status":"ready","credentialScope":"history-only","publishedVehicles":1,"collectorEnabled":false}"#)
+                : preflightResults.removeFirst()
+            if backgroundPreflight {
+                DispatchQueue.global().async { completion(result) }
+            } else {
+                completion(result)
+            }
+        } else if arguments.contains("status") {
+            events?.append("status")
+            if statusResults.isEmpty {
+                completion(.success("""
+                {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":false,"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Test Vehicle"}],"credentials":{"present":true}}
+                """))
+            } else {
+                completion(statusResults.removeFirst())
+            }
+        } else if arguments.contains("doctor") {
+            events?.append("doctor")
+            completion(.success("{\"status\":\"ok\"}"))
+        } else {
+            completion(.failure(HubActionError.commandFailed("unexpected command")))
+        }
+    }
+
+    func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void) {
+        run(arguments: arguments, completion: completion)
+    }
+
+    func run(arguments: [String],
+             onOutputLine: @escaping (String) -> Void,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        if arguments.contains("migrate") {
+            progressLines.forEach(onOutputLine)
+        }
+        run(arguments: arguments, completion: completion)
+        if arguments.contains("migrate") {
+            DispatchQueue.main.async {
+                self.lateProgressLines.forEach(onOutputLine)
+            }
+        }
+    }
+}
+
+private final class OnboardingService: HubServiceControlling {
+    private let events: OnboardingEvents?
+    private let holdStartCompletions: Bool
+    private var heldStartCompletions: [(Result<String, Error>) -> Void] = []
+    private(set) var startCallCount = 0
+
+    init(events: OnboardingEvents? = nil, holdStartCompletions: Bool = false) {
+        self.events = events
+        self.holdStartCompletions = holdStartCompletions
+    }
+
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        let action = arguments.last ?? "unknown"
+        events?.append("service:\(action)")
+        if action == "start" {
+            startCallCount += 1
+            if holdStartCompletions {
+                heldStartCompletions.append(completion)
+                return
+            }
+        }
+        completion(.success(""))
+    }
+    func run(arguments: [String], owner: HubLifecycleToken,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        run(arguments: arguments, completion: completion)
+    }
+    func restartRecordHeld(by owner: HubLifecycleToken) -> Bool { false }
+
+    func completeHeldStarts(with result: Result<String, Error>) {
+        let completions = heldStartCompletions
+        heldStartCompletions.removeAll()
+        completions.forEach { $0(result) }
+    }
+
+    func loadedState(completion: @escaping (HubServiceLoadState) -> Void) {
+        completion(.unloaded)
+    }
+
+    // New lifecycle requirements, implemented explicitly (no protocol-extension defaults).
+    private(set) var recoverCalls = 0
+    private(set) var releaseCalls = 0
+    private(set) var deleteCalls = 0
+    var restartDutyOutstanding: Bool { false }
+    func whenRestartDutySettled(_ callback: @escaping () -> Void) { callback() }
+    func recoverAfterPause(owner: HubLifecycleToken, completion: @escaping (Result<String, Error>) -> Void) {
+        events?.append("service:recover")
+        recoverCalls += 1
+        completion(.success(""))
+    }
+    func releaseRestartRecord(owner: HubLifecycleToken) {
+        events?.append("service:release")
+        releaseCalls += 1
+    }
+
+    func reconcile(owner: HubLifecycleToken, ensure: @escaping () throws -> HubLaunchAgentChange,
+                   completion: @escaping (HubReconcileOutcome) -> Void) { completion(.completed) }
+    func deleteHubAndData(owner: HubLifecycleToken, completion: @escaping (Result<HubDataRemovalReport, Error>) -> Void) {
+        deleteCalls += 1
+        completion(.failure(HubActionError.preview))
+    }
+}

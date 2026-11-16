@@ -1847,13 +1847,13 @@ fn gap_notice_for_identity(
         GapReasonV2::IntegrityQuarantine => b"integrity_quarantine".as_slice(),
     };
     let mut evidence_digest = Sha256::new();
-    evidence_digest.update(b"teslatlas-edge-gap-evidence-v2\0");
+    evidence_digest.update(b"tesatlas-edge-gap-evidence-v2\0");
     evidence_digest.update(spool_seq.to_be_bytes());
     evidence_digest.update(stable_record_id.as_str().as_bytes());
     evidence_digest.update(reason_label);
     let evidence_sha256 = hex::encode(evidence_digest.finalize());
     let mut notice_digest = Sha256::new();
-    notice_digest.update(b"teslatlas-edge-gap-notice-v2\0");
+    notice_digest.update(b"tesatlas-edge-gap-notice-v2\0");
     notice_digest.update(spool_seq.to_be_bytes());
     notice_digest.update(reason_label);
     notice_digest.update(evidence_sha256.as_bytes());
@@ -1906,7 +1906,7 @@ fn valid_gap_notice(notice: &GapNoticeV2) -> bool {
         GapReasonV2::IntegrityQuarantine => b"integrity_quarantine".as_slice(),
     };
     let mut digest = Sha256::new();
-    digest.update(b"teslatlas-edge-gap-notice-v2\0");
+    digest.update(b"tesatlas-edge-gap-notice-v2\0");
     digest.update(notice.spool_seq.to_be_bytes());
     digest.update(reason_label);
     digest.update(notice.evidence_sha256.as_bytes());
@@ -1931,7 +1931,7 @@ fn parse_v2_pending_file_name(path: &Path) -> Option<(u64, RecordId)> {
 
 fn batch_id(records: &[HubBatchRecordV1]) -> String {
     let mut digest = Sha256::new();
-    digest.update(b"teslatlas-edge-batch-v1\0");
+    digest.update(b"tesatlas-edge-batch-v1\0");
     for record in records {
         digest.update(record.record_id.as_str().as_bytes());
         digest.update([0]);
@@ -1951,7 +1951,7 @@ fn batch_id_v2(records: &[HubBatchRecordV2], gaps: &[GapNoticeV2]) -> String {
     items.sort_by_key(|item| item.0);
 
     let mut digest = Sha256::new();
-    digest.update(b"teslatlas-edge-batch-v2\0");
+    digest.update(b"tesatlas-edge-batch-v2\0");
     for (spool_seq, kind, id) in items {
         digest.update([kind]);
         digest.update(spool_seq.to_be_bytes());

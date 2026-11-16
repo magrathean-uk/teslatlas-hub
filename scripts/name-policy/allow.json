@@ -1,5 +1,5 @@
 {
-  "schema": "teslatlas.name-policy-allow/v1",
+  "schema": "tesatlas.name-policy-allow/v1",
   "entries": [
     {
       "id": "frozen-format-car_identity_v1",
@@ -5023,7 +5023,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-edge/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-edge/docs/development/PLAN.md"
       ]
     },
     {
@@ -5036,7 +5036,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-edge/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-edge/docs/development/PLAN.md"
       ]
     },
     {
@@ -5049,7 +5049,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-edge/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-edge/docs/development/STATUS.json"
       ]
     },
     {
@@ -5062,7 +5062,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-edge/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-edge/docs/development/STATUS.json"
       ]
     },
     {
@@ -5075,7 +5075,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-edge/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-edge/docs/development/STATUS.json"
       ]
     },
     {
@@ -5088,7 +5088,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-edge/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-edge/docs/development/STATUS.json"
       ]
     },
     {
@@ -5101,7 +5101,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-home-assistant/docs/development/PLAN.md"
       ]
     },
     {
@@ -5114,7 +5114,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-home-assistant/docs/development/PLAN.md"
       ]
     },
     {
@@ -5127,7 +5127,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-home-assistant/docs/development/PLAN.md"
       ]
     },
     {
@@ -5140,7 +5140,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-home-assistant/docs/development/PLAN.md"
       ]
     },
     {
@@ -5153,7 +5153,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-home-assistant/docs/development/STATUS.json"
       ]
     },
     {
@@ -5166,7 +5166,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-home-assistant/docs/development/STATUS.json"
       ]
     },
     {
@@ -5179,7 +5179,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-home-assistant/docs/development/STATUS.json"
       ]
     },
     {
@@ -5192,7 +5192,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-home-assistant/docs/development/STATUS.json"
       ]
     },
     {
@@ -5205,7 +5205,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-home-assistant/docs/development/STATUS.json"
       ]
     },
     {
@@ -5218,7 +5218,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/PLAN.md"
       ]
     },
     {
@@ -5231,7 +5231,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/PLAN.md"
       ]
     },
     {
@@ -5244,7 +5244,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/PLAN.md"
       ]
     },
     {
@@ -5257,7 +5257,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/PLAN.md"
       ]
     },
     {
@@ -5270,7 +5270,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5283,7 +5283,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5296,7 +5296,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5309,7 +5309,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5322,7 +5322,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5335,7 +5335,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5348,7 +5348,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5361,7 +5361,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5374,7 +5374,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5387,7 +5387,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5400,7 +5400,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5413,7 +5413,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5426,7 +5426,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5439,7 +5439,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5452,7 +5452,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5465,7 +5465,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5478,7 +5478,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5491,7 +5491,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json"
       ]
     },
     {
@@ -5504,7 +5504,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-swift/docs/development/PLAN.md"
       ]
     },
     {
@@ -5517,7 +5517,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-swift/docs/development/PLAN.md"
       ]
     },
     {
@@ -5530,7 +5530,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-swift/docs/development/PLAN.md"
       ]
     },
     {
@@ -5543,7 +5543,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-swift/docs/development/PLAN.md"
       ]
     },
     {
@@ -5556,7 +5556,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-swift/docs/development/STATUS.json"
       ]
     },
     {
@@ -5569,7 +5569,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-swift/docs/development/STATUS.json"
       ]
     },
     {
@@ -5582,7 +5582,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/PLAN.md"
       ]
     },
     {
@@ -5595,7 +5595,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/PLAN.md"
       ]
     },
     {
@@ -5608,7 +5608,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/PLAN.md"
       ]
     },
     {
@@ -5621,7 +5621,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/PLAN.md"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/PLAN.md"
       ]
     },
     {
@@ -5634,7 +5634,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/STATUS.json"
       ]
     },
     {
@@ -5647,7 +5647,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/STATUS.json"
       ]
     },
     {
@@ -5660,7 +5660,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/STATUS.json"
       ]
     },
     {
@@ -5673,7 +5673,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/STATUS.json"
       ]
     },
     {
@@ -5686,7 +5686,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/STATUS.json"
       ]
     },
     {
@@ -5699,7 +5699,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/STATUS.json"
       ]
     },
     {
@@ -5712,7 +5712,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/STATUS.json"
       ]
     },
     {
@@ -5725,7 +5725,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/STATUS.json"
       ]
     },
     {
@@ -5738,7 +5738,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/STATUS.json"
       ]
     },
     {
@@ -5751,7 +5751,7 @@
       "reason": "Frozen released/archive material, exact full-file digest pinned; no interpretation or clearance change.",
       "authority": "N1 v4 Steps12-13 and design4.13; mirror draft placement, coordinator review at apply",
       "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json"
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/STATUS.json"
       ]
     },
     {
@@ -6053,7 +6053,7 @@
       "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
       "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubController.swift"
+        "macos/TesatlasHubApp/TesatlasHubApp/HubController.swift"
       ],
       "review_by": "2027-01-31",
       "recorded_row": "2026-10-12 Independence: folds into G2-4",
@@ -6069,7 +6069,7 @@
       "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
       "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubAppTests/HubControllerTests.swift"
+        "macos/TesatlasHubApp/TesatlasHubAppTests/HubControllerTests.swift"
       ],
       "review_by": "2027-01-31",
       "recorded_row": "2026-10-12 Independence: folds into G2-4",
@@ -6085,7 +6085,7 @@
       "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
       "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubAppTests/HubControllerTests.swift"
+        "macos/TesatlasHubApp/TesatlasHubAppTests/HubControllerTests.swift"
       ],
       "review_by": "2027-01-31",
       "recorded_row": "2026-10-12 Independence: folds into G2-4",
@@ -6101,7 +6101,7 @@
       "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
       "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubAppTests/HubControllerTests.swift"
+        "macos/TesatlasHubApp/TesatlasHubAppTests/HubControllerTests.swift"
       ],
       "review_by": "2027-01-31",
       "recorded_row": "2026-10-12 Independence: folds into G2-4",
@@ -6117,7 +6117,7 @@
       "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
       "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubAppTests/HubControllerTests.swift"
+        "macos/TesatlasHubApp/TesatlasHubAppTests/HubControllerTests.swift"
       ],
       "review_by": "2027-01-31",
       "recorded_row": "2026-10-12 Independence: folds into G2-4",
@@ -6133,7 +6133,7 @@
       "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
       "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubAppTests/HubLifecycleOwnerSupport.swift"
+        "macos/TesatlasHubApp/TesatlasHubAppTests/HubLifecycleOwnerSupport.swift"
       ],
       "review_by": "2027-01-31",
       "recorded_row": "2026-10-12 Independence: folds into G2-4",
@@ -6149,7 +6149,7 @@
       "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
       "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubAppTests/OnboardingHubControllerTests.swift"
+        "macos/TesatlasHubApp/TesatlasHubAppTests/OnboardingHubControllerTests.swift"
       ],
       "review_by": "2027-01-31",
       "recorded_row": "2026-10-12 Independence: folds into G2-4",
@@ -6165,7 +6165,7 @@
       "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
       "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubAppTests/OnboardingWindowControllerTests.swift"
+        "macos/TesatlasHubApp/TesatlasHubAppTests/OnboardingWindowControllerTests.swift"
       ],
       "review_by": "2027-01-31",
       "recorded_row": "2026-10-12 Independence: folds into G2-4",
@@ -6181,7 +6181,7 @@
       "reason": "Deferred credential-envelope, artefact or handover-marker range; naming changes establish no clean-room clearance.",
       "authority": "2026-10-12 Independence: folds into G2-4; C10, G2-4-M2",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubAppTests/OnboardingWindowControllerTests.swift"
+        "macos/TesatlasHubApp/TesatlasHubAppTests/OnboardingWindowControllerTests.swift"
       ],
       "review_by": "2027-01-31",
       "recorded_row": "2026-10-12 Independence: folds into G2-4",
@@ -6429,7 +6429,7 @@
       "id": "tesla-auth-mit-attribution",
       "class": "g2-4-recorded",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubApp/TeslaAuthWindowController.swift"
+        "macos/TesatlasHubApp/TesatlasHubApp/TeslaAuthWindowController.swift"
       ],
       "match_b64": "Ly8gT0F1dGggcGFyYW1ldGVycyBhbmQgY2FsbGJhY2sgc2VtYW50aWNzIGFyZSBkZXJpdmVkIGZyb20gVGVzbGEgQXV0aCB2MC4xNS4w",
       "max_count": 0,
@@ -6516,7 +6516,7 @@
       "id": "imported-509d8c85b674ccb03324",
       "class": "frozen-history",
       "paths": [
-        "home-assistant/custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/field-semantics.json"
+        "home-assistant/custom_components/tesatlas_hub/profile/hub-http-v1/1.0.0/field-semantics.json"
       ],
       "match_b64": "Ikh1YiBpbXBvcnQvdGVzbGFtYXRlIHByb2plY3Rpb246IHN0b3JlZCBrbSwgbWludXRlcywgQ2Vsc2l1cyBhbmQga1cgcGFzc2VkIHRocm91Z2g7IGVmZmljaWVuY3kgaXMgYWJzZW50IGluIGxpdmUvaW1wb3J0IHByb2plY3Rpb25zIg==",
       "max_count": 1,
@@ -6542,7 +6542,7 @@
       "id": "imported-189323baf9baf6887dd6",
       "class": "frozen-history",
       "paths": [
-        "sdk-swift/Sources/TeslatlasCurrentHub/Binding/field-semantics.json"
+        "sdk-swift/Sources/TesatlasCurrentHub/Binding/field-semantics.json"
       ],
       "match_b64": "Ikh1YiBpbXBvcnQvdGVzbGFtYXRlIHByb2plY3Rpb246IHN0b3JlZCBrbSwgbWludXRlcywgQ2Vsc2l1cyBhbmQga1cgcGFzc2VkIHRocm91Z2g7IGVmZmljaWVuY3kgaXMgYWJzZW50IGluIGxpdmUvaW1wb3J0IHByb2plY3Rpb25zIg==",
       "max_count": 1,
@@ -6556,7 +6556,7 @@
       "id": "imported-294e9054c1a6e4acb8bf",
       "class": "frozen-history",
       "paths": [
-        "sdk-swift/Sources/TeslatlasHubSDK/RichRepresentationValidator.swift"
+        "sdk-swift/Sources/TesatlasHubSDK/RichRepresentationValidator.swift"
       ],
       "match_b64": "ImNvbW1vbi5zb3VyY2UiOiAudmFsdWVzKFsuc3RyaW5nKCJvd25lcl9hcGkiKSwgLnN0cmluZygibGVnYWN5X3N0cmVhbSIpLCAuc3RyaW5nKCJmbGVldF9hcGkiKSwgLnN0cmluZygiZmxlZXRfdGVsZW1ldHJ5IiksIC5zdHJpbmcoInRlc2xhbWF0ZV9taXJyb3IiKSwgLnN0cmluZygidGVzbGFtYXRlX2ltcG9ydCIpLCAuc3RyaW5nKCJtYW51YWxfaW1wb3J0IiksIC5zdHJpbmcoImJsZV9nYXBfZmlsbCIpXSks",
       "max_count": 2,

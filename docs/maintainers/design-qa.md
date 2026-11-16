@@ -1,4 +1,4 @@
-# Teslatlas Hub native fidelity correction QA
+# Tesatlas Hub native fidelity correction QA
 
 ## Current result
 

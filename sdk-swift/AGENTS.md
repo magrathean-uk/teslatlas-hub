@@ -1,6 +1,6 @@
-# Teslatlas Swift SDK
+# Tesatlas Swift SDK
 
-Retired from active scope (owner, 2026-10-08). Nothing in Teslatlas consumes this
+Retired from active scope (owner, 2026-10-08). Nothing in Tesatlas consumes this
 package; App v7 keeps its in-tree Hub client as the only Swift transport, and
 independent Apple developers use the published OpenAPI contract with a generator.
 Source and history are preserved; the repository is archived read-only after the

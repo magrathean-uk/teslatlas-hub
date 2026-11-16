@@ -14,10 +14,10 @@ describe("Hub acceptance evidence admission", () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "hub-packed-proof-")));
     roots.push(root);
     const packed = join(root, "package");
-    const installed = join(root, "node_modules/@teslatlas/sdk");
+    const installed = join(root, "node_modules/@tesatlas/sdk");
     await mkdir(join(packed, "dist"), { recursive: true });
     await mkdir(join(installed, "dist"), { recursive: true });
-    const metadata = JSON.stringify({ name: "@teslatlas/sdk", version: "2026.36.2" });
+    const metadata = JSON.stringify({ name: "@tesatlas/sdk", version: "2026.36.2" });
     await writeFile(join(packed, "package.json"), metadata);
     await mkdir(join(packed, "dist/hub"), { recursive: true });
     await mkdir(join(installed, "dist/hub"), { recursive: true });

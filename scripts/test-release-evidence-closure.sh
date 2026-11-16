@@ -11,7 +11,7 @@ set -eu
 
 ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
 HELPER="$ROOT/scripts/release-evidence.py"
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-release-evidence-closure.XXXXXX")
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-release-evidence-closure.XXXXXX")
 PYTHONDONTWRITEBYTECODE=1
 export PYTHONDONTWRITEBYTECODE
 

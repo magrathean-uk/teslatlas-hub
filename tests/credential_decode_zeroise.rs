@@ -5,8 +5,8 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use teslatlas_hub::credentials::{CredentialError, OwnerTokens};
-use teslatlas_hub::auth::credential_sign_in::observe_file_token_drops;
+use tesatlas_hub::credentials::{CredentialError, OwnerTokens};
+use tesatlas_hub::auth::credential_sign_in::observe_file_token_drops;
 use zeroize::{Zeroize, Zeroizing};
 
 struct DropWitness {

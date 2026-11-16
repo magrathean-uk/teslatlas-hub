@@ -3,7 +3,7 @@
 set -eu
 
 ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-legal-bundle-test.XXXXXX")
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-legal-bundle-test.XXXXXX")
 cleanup() {
     find "$TMP" -depth -delete 2>/dev/null || true
 }

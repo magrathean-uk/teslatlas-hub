@@ -485,9 +485,9 @@ fn installed_service_start_uses_bounded_launchctl_sequence() {
         (run, calls)
     }
 
-    let plist = Path::new("/private/tmp/com.teslatlas.hub.plist");
+    let plist = Path::new("/private/tmp/com.tesatlas.hub.plist");
     let domain = "gui/501";
-    let service = "gui/501/com.teslatlas.hub";
+    let service = "gui/501/com.tesatlas.hub";
 
     let (mut start_runner, start_calls) = runner(vec![false, true, true, true]);
     start_installed_with_runner(plist, domain, service, &mut start_runner).expect("start service");
@@ -536,19 +536,19 @@ fn admission_lock_wait_is_bounded() {
 fn launchctl_running_state_requires_a_live_pid() {
     assert_eq!(
         launchctl_print_running_pid(
-            "gui/501/com.teslatlas.hub = {\n\tstate = running\n\tpid = 4312\n}"
+            "gui/501/com.tesatlas.hub = {\n\tstate = running\n\tpid = 4312\n}"
         ),
         Some(4312)
     );
     assert_eq!(
         launchctl_print_running_pid(
-            "gui/501/com.teslatlas.hub = {\n\tstate = exited\n\tlast exit code = 1\n}"
+            "gui/501/com.tesatlas.hub = {\n\tstate = exited\n\tlast exit code = 1\n}"
         ),
         None
     );
     assert_eq!(
         launchctl_print_running_pid(
-            "gui/501/com.teslatlas.hub = {\n\tstate = running\n\tpid = 0\n}"
+            "gui/501/com.tesatlas.hub = {\n\tstate = running\n\tpid = 0\n}"
         ),
         None
     );
@@ -745,7 +745,7 @@ fn service_stop_fails_after_bounded_unload_poll() {
             .next()
             .ok_or_else(|| io::Error::other("unexpected launchctl call"))
     };
-    let error = stop_installed_with_runner("gui/501/com.teslatlas.hub", &mut runner).unwrap_err();
+    let error = stop_installed_with_runner("gui/501/com.tesatlas.hub", &mut runner).unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::TimedOut);
     assert!(error.to_string().contains("still loaded after stop"));
     assert_eq!(calls[0], "disable");
@@ -811,7 +811,7 @@ fn stop_disables_then_boots_out_and_waits_for_unload() {
     ] {
         let mut responses = responses.into_iter();
         let mut calls = Vec::new();
-        stop_installed_with_runner("gui/501/com.teslatlas.hub", &mut |arguments| {
+        stop_installed_with_runner("gui/501/com.tesatlas.hub", &mut |arguments| {
             calls.push(
                 arguments
                     .iter()
@@ -831,7 +831,7 @@ fn stop_disables_then_boots_out_and_waits_for_unload() {
         assert!(
             calls
                 .iter()
-                .all(|call| call.last().unwrap() == "gui/501/com.teslatlas.hub")
+                .all(|call| call.last().unwrap() == "gui/501/com.tesatlas.hub")
         );
         assert!(responses.next().is_none());
     }
@@ -864,11 +864,11 @@ fn stop_does_not_boot_out_when_disable_fails() {
 
 #[test]
 fn label_and_service_target_are_fixed() {
-    assert_eq!(LABEL, "com.teslatlas.hub");
+    assert_eq!(LABEL, "com.tesatlas.hub");
     let domain = format!("gui/{}", rustix::process::geteuid().as_raw());
     assert_eq!(
         service_identifiers(),
-        (domain.clone(), format!("{domain}/com.teslatlas.hub"))
+        (domain.clone(), format!("{domain}/com.tesatlas.hub"))
     );
 }
 
@@ -890,7 +890,7 @@ fn service_readiness_wait_is_bounded() {
 #[test]
 fn real_launchctl_is_refused_in_unit_tests() {
     let target = format!(
-        "gui/{}/com.teslatlas.absent-test",
+        "gui/{}/com.tesatlas.absent-test",
         rustix::process::geteuid().as_raw()
     );
     let error = real_launchctl(&[OsStr::new("print"), OsStr::new(&target)]).unwrap_err();
@@ -901,7 +901,7 @@ fn real_launchctl_is_refused_in_unit_tests() {
 #[test]
 fn real_service_running_pid_is_refused_in_unit_tests() {
     let target = format!(
-        "gui/{}/com.teslatlas.absent-test",
+        "gui/{}/com.tesatlas.absent-test",
         rustix::process::geteuid().as_raw()
     );
     let error = real_service_running_pid(&target).unwrap_err();
@@ -942,7 +942,7 @@ async fn installed_plist_identity_selects_the_served_snapshot() {
         .unwrap()
         .replace('&', "&amp;")
         .replace('<', "&lt;");
-    fs::write(&plist, format!("<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>ProgramArguments</key><array><string>/Applications/Teslatlas Hub.app/Contents/Resources/teslatlas-hub</string><string>--config</string><string>{config_path}</string><string>serve</string></array></dict></plist>")).unwrap();
+    fs::write(&plist, format!("<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>ProgramArguments</key><array><string>/Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub</string><string>--config</string><string>{config_path}</string><string>serve</string></array></dict></plist>")).unwrap();
     let (installed, installed_digest) = configured_identity_from_plist(&plist).unwrap();
     assert_eq!(installed_digest, digest);
     assert_eq!(installed.data_dir, served.data_dir);

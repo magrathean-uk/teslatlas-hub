@@ -10,10 +10,10 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use axum::body::Body;
 use http::{Request, StatusCode};
 use tempfile::TempDir;
-use teslatlas_edge::admission::{AdmissionService, Clock, ReceiverBearer};
-use teslatlas_edge::credentials::CredentialStore;
-use teslatlas_edge::delivery::DeliveryService;
-use teslatlas_edge::spool::{Spool, SpoolConfig, SpoolError, SpoolKey};
+use tesatlas_edge::admission::{AdmissionService, Clock, ReceiverBearer};
+use tesatlas_edge::credentials::CredentialStore;
+use tesatlas_edge::delivery::DeliveryService;
+use tesatlas_edge::spool::{Spool, SpoolConfig, SpoolError, SpoolKey};
 use tower::ServiceExt;
 
 use support::hub_double::HubDouble;
@@ -153,7 +153,7 @@ async fn normalized_numeric_expansion_is_rejected_before_http_acceptance() {
         r#"{{"version":1,"vin":"5YJ3E1EA7KF000001","txid":"float-expansion","tx_type":"V","received_at_ms":{T0},"timestamp_ms":{T0},"payload":{{"values":[{floats}]}}}}"#
     );
     assert!(body.len() < 262_144);
-    let parsed = teslatlas_edge::protocol::ReceiverEnvelope::parse(body.as_bytes()).unwrap();
+    let parsed = tesatlas_edge::protocol::ReceiverEnvelope::parse(body.as_bytes()).unwrap();
     assert!(serde_json::to_vec(&parsed).unwrap().len() > 384 * 1_024);
     let sequence_path = temp.path().join("spool/sequence.tlem");
     let sequence = std::fs::read(&sequence_path).unwrap();

@@ -429,7 +429,7 @@ fn schema_22_noop_directory_is_shared_setgid_and_rejects_mode_or_symlink_substit
 
 #[test]
 fn import_spool_and_publication_gate_are_private_children() {
-    let root = Path::new("/tmp/teslatlas-user-hub");
+    let root = Path::new("/tmp/tesatlas-user-hub");
     assert_eq!(
         private_import_spool_root(root),
         root.join(PRIVATE_IMPORT_SPOOL_DIRECTORY_NAME)

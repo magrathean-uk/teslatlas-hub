@@ -15,7 +15,7 @@ struct Logs {
 impl Logs {
     fn new(len: usize) -> Self {
         let root = crate::private_tempdir().unwrap();
-        let directory = root.path().join("Library/Logs/Teslatlas Hub");
+        let directory = root.path().join("Library/Logs/Tesatlas Hub");
         fs::create_dir_all(&directory).unwrap();
         let paths = [directory.join("hub.out.log"), directory.join("hub.err.log")];
         let mut original = Vec::with_capacity(len);
@@ -600,8 +600,8 @@ fn agent_log_paths_are_fixed() {
     assert_eq!(
         inherited_agent_log_paths(Some(Path::new("/Users/example"))),
         Some([
-            PathBuf::from("/Users/example/Library/Logs/Teslatlas Hub/hub.out.log"),
-            PathBuf::from("/Users/example/Library/Logs/Teslatlas Hub/hub.err.log"),
+            PathBuf::from("/Users/example/Library/Logs/Tesatlas Hub/hub.out.log"),
+            PathBuf::from("/Users/example/Library/Logs/Tesatlas Hub/hub.err.log"),
         ])
     );
     assert_eq!(inherited_agent_log_paths(None), None);

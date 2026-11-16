@@ -37,7 +37,7 @@ release or observable source behaviour, not an intended future state.
 
 ## Legal and project identity
 
-- Use **Teslatlas**, **Teslatlas Hub**, **György Bolyki** and
+- Use **Tesatlas**, **Tesatlas Hub**, **György Bolyki** and
   **MAGRATHEAN UK LTD** exactly as written.
 - Describe creator credit as fact, not as an advertising condition or implied
   endorsement.

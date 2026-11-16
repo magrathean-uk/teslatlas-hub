@@ -3,20 +3,20 @@
 The authoritative command list is emitted by the exact binary:
 
 ```sh
-teslatlas-hub --help
-teslatlas-hub COMMAND --help
+tesatlas-hub --help
+tesatlas-hub COMMAND --help
 ```
 
 ## Platform invocation
 
-`teslatlas-hub` in the reference tables is shorthand, not a promise that every
+`tesatlas-hub` in the reference tables is shorthand, not a promise that every
 package adds the binary to `PATH`. Use the installed platform form:
 
 | Platform | Data/config commands | Service commands |
 |---|---|---|
-| Debian package | `sudo -u teslatlas -- /usr/bin/teslatlas-hub` | `sudo /usr/bin/teslatlas-hub` |
-| macOS app | `"/Applications/Teslatlas Hub.app/Contents/Resources/teslatlas-hub"` as the signed-in user; use `~/Applications` if installed there | Start, Stop and Restart in the app |
-| Source checkout | `./target/release/teslatlas-hub` | Depends on the operator's supervisor |
+| Debian package | `sudo -u tesatlas -- /usr/bin/tesatlas-hub` | `sudo /usr/bin/tesatlas-hub` |
+| macOS app | `"/Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub"` as the signed-in user; use `~/Applications` if installed there | Start, Stop and Restart in the app |
+| Source checkout | `./target/release/tesatlas-hub` | Depends on the operator's supervisor |
 
 Pass `--config ABSOLUTE_PATH` before or after the command. Commands that need
 credentials accept private files or bounded standard input; secrets must never
@@ -94,8 +94,8 @@ and explicit vehicle actions. Vehicle actions require `--confirm`; multiple
 vehicles also require `--vehicle-id UUID`.
 
 ```sh
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml control \
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml control \
   --vehicle-id 11111111-1111-4111-8111-111111111111 wake --confirm
 ```
 
@@ -111,12 +111,12 @@ and `control paired-devices` lists each device with its granted vehicle ids.
 
 ```sh
 # One car only; repeat --vehicle for more. Unknown or retired ids are refused.
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml control pair \
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml control pair \
   --vehicle 11111111-1111-4111-8111-111111111111
 # Every vehicle that is active when the invitation is claimed (the default).
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml control pair --all-vehicles
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml control pair --all-vehicles
 ```
 
 The control-level `--vehicle-id` picks the car of a vehicle action and does not
@@ -131,9 +131,9 @@ as it answers an unknown vehicle, and `GET /v1/vehicles` is empty.
 ## Legal and source
 
 ```sh
-teslatlas-hub legal
-teslatlas-hub licence
-teslatlas-hub source
+tesatlas-hub legal
+tesatlas-hub licence
+tesatlas-hub source
 ```
 
 These commands identify the exact version, licence, notices, and source route

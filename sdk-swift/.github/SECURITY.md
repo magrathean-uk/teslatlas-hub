@@ -1,6 +1,6 @@
 # Security Policy
 
-Security boundaries and vulnerability reporting for teslatlas-sdk-swift.
+Security boundaries and vulnerability reporting for tesatlas-sdk-swift.
 
 ## Scope
 
@@ -40,7 +40,7 @@ following:
 
 ## Reporting
 
-Report suspected vulnerabilities privately using the [published Magrathean UK organisation policy](https://raw.githubusercontent.com/magrathean-uk/.github/main/SECURITY.md): email [contact@magrathean.uk](mailto:contact@magrathean.uk) with the subject `SECURITY: teslatlas-sdk-swift`.
+Report suspected vulnerabilities privately using the [published Magrathean UK organisation policy](https://raw.githubusercontent.com/magrathean-uk/.github/main/SECURITY.md): email [contact@magrathean.uk](mailto:contact@magrathean.uk) with the subject `SECURITY: tesatlas-sdk-swift`.
 
 Do not open a public issue, discussion or pull request for a suspected vulnerability. Include the affected revision and product, impact, a synthetic reproduction and relevant redacted output. Never send live credentials, bearer values, invitation links, claim secrets, private certificates or vehicle data.
 

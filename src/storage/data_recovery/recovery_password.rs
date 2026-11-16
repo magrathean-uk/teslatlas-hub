@@ -385,7 +385,7 @@ impl<'a> PromptMode<'a> {
 impl Drop for PromptMode<'_> {
     fn drop(&mut self) {
         if let Err(error) = self.restore_now() {
-            let _ = writeln!(io::stderr(), "teslatlas-hub: {error}");
+            let _ = writeln!(io::stderr(), "tesatlas-hub: {error}");
         }
     }
 }
@@ -393,7 +393,7 @@ impl Drop for PromptMode<'_> {
 fn restore_settings(terminal: &File, saved: &str) -> Result<(), DataRecoveryError> {
     #[cfg(test)]
     let saved = if test_seam::restore_fails() {
-        "teslatlas-test-unknown-setting"
+        "tesatlas-test-unknown-setting"
     } else {
         saved
     };
@@ -487,7 +487,7 @@ fn restore_and_exit(status: i32) -> ! {
         let mut terminal = &prompt.terminal;
         let _ = terminal.write_all(b"\n");
         if let Err(error) = restore_settings(&prompt.terminal, &prompt.saved) {
-            let _ = writeln!(io::stderr(), "teslatlas-hub: {error}");
+            let _ = writeln!(io::stderr(), "tesatlas-hub: {error}");
         }
     }
     #[cfg(test)]

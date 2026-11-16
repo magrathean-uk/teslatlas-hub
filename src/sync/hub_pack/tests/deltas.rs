@@ -681,7 +681,7 @@ fn delta_v2_fixtures_regenerate_deterministically_and_validate_lineage() {
 fn write_delta_v2_fixtures() {
     let hub_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/delta-v2");
     write_fixture_set(&hub_root);
-    if let Ok(client_root) = env::var("TESLATLAS_CLIENT_FIXTURES") {
+    if let Ok(client_root) = env::var("TESATLAS_CLIENT_FIXTURES") {
         write_fixture_set(Path::new(&client_root));
     }
 }

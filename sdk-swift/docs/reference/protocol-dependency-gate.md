@@ -2,8 +2,8 @@
 
 ## Strict protocol 1.2 authority
 
-`TeslatlasHubSDK` and `TeslatlasCommands` continue to consume
-`teslatlas-protocol` commit
+`TesatlasHubSDK` and `TesatlasCommands` continue to consume
+`tesatlas-protocol` commit
 `53b5c6483990db84e5214176755f398e93d87b1b`, profile `1.2.0`, with public
 compatibility profiles `1.0.0`, `1.1.0`, and `1.2.0`.
 
@@ -12,7 +12,7 @@ That commit is the accepted Protocol runtime-source identity. Its
 only and does not replace the runtime-source pin.
 
 Those profiles remain public protocol definitions. They are not evidence that
-Teslatlas Hub v1.0.0 implements any one of them. The strict SDK surface and its
+Tesatlas Hub v1.0.0 implements any one of them. The strict SDK surface and its
 pinned protocol fixtures were not rewritten to match deployed Hub behaviour.
 
 ## Deployed-Hub dependency finding (historical activation record)
@@ -32,7 +32,7 @@ The local authority is pinned to:
 | Hub annotated tag | `v1.0.0` / `4b45708a00f14f76306f6cb37375eb0c538643d7` |
 | Hub commit | `a5e6c5c4f86776da96c9946f7e45b2080c571f86` |
 | Binding SHA-256 | `78aca4b6014625420efb66fbe35f6ea10d72a7f596210dac80964c33e0f04f65` |
-| Binding path | `Sources/TeslatlasHubV1Compatibility/Binding/deployed-hub-v1.0.0.json` |
+| Binding path | `Sources/TesatlasHubV1Compatibility/Binding/deployed-hub-v1.0.0.json` |
 
 The binding itself records the exact Hub Git blob identities used for each
 wire-contract fact. Runtime loading checks both its content hash and critical
@@ -61,7 +61,7 @@ fixtures and test transports. It does not prove a live Hub journey. The opt-in
 `LiveHubBlackBoxTests` suite is separate and requires an unchanged Hub v1.0.0,
 its pinned UUID, and an existing paired-device bearer.
 
-The protocol-governance blocker remains: `teslatlas-protocol` should publish a
+The protocol-governance blocker remains: `tesatlas-protocol` should publish a
 released, separately named deployed-Hub v1.0.0 binding. This local binding must
 not be relabelled as protocol authority. When an official binding appears, it
 must be compared with the vendored bytes, fields, limits, errors, and fixtures

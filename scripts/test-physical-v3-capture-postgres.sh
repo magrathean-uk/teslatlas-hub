@@ -3,8 +3,8 @@
 set -euo pipefail
 
 postgres_bin=/opt/homebrew/opt/postgresql@18/bin
-schema_dump=${TESLATLAS_TEST_SOURCE_SCHEMA_DUMP:?set TESLATLAS_TEST_SOURCE_SCHEMA_DUMP to the private source custom dump}
-lab_tmp_root=${TESLATLAS_TEST_PRIVATE_TMP_ROOT:-${TESLATLAS_LAB:?set TESLATLAS_LAB or TESLATLAS_TEST_PRIVATE_TMP_ROOT}/tmp}
+schema_dump=${TESATLAS_TEST_SOURCE_SCHEMA_DUMP:?set TESATLAS_TEST_SOURCE_SCHEMA_DUMP to the private source custom dump}
+lab_tmp_root=${TESATLAS_TEST_PRIVATE_TMP_ROOT:-${TESATLAS_LAB:?set TESATLAS_LAB or TESATLAS_TEST_PRIVATE_TMP_ROOT}/tmp}
 hub_root=${0:A:h:h}
 workspace_root=${hub_root:h}
 
@@ -67,8 +67,8 @@ GRANT USAGE ON SCHEMA public TO fixture_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO fixture_reader;
 SQL
 
-export TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_URL="postgresql://fixture_reader@127.0.0.1:${fixture_port}/source_fixture"
-export TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_ADMIN_URL="postgresql://fixture_owner@127.0.0.1:${fixture_port}/source_fixture"
+export TESATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_URL="postgresql://fixture_reader@127.0.0.1:${fixture_port}/source_fixture"
+export TESATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_ADMIN_URL="postgresql://fixture_owner@127.0.0.1:${fixture_port}/source_fixture"
 # The test is #[ignore]d, so a cargo exit of zero is not enough: a filter that
 # matches nothing would also exit zero. Require exactly one test run and passed.
 test_log=${fixture_root}/cargo-test.log

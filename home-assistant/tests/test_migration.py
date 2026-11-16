@@ -8,8 +8,8 @@ from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.teslatlas_hub import async_migrate_entry
-from custom_components.teslatlas_hub.const import (
+from custom_components.tesatlas_hub import async_migrate_entry
+from custom_components.tesatlas_hub.const import (
     CONF_ACCESS_TOKEN,
     CONF_HUB_ID,
     CONF_PORT,
@@ -101,7 +101,7 @@ async def test_older_complete_entry_migrates_and_loads_without_losing_unknown_da
     client = FixtureHubClient()
 
     with patch(
-        "custom_components.teslatlas_hub.create_client",
+        "custom_components.tesatlas_hub.create_client",
         return_value=client,
     ):
         assert await hass.config_entries.async_setup(entry.entry_id) is True

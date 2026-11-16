@@ -43,7 +43,7 @@ MAX_ARCHIVE_BYTES = 4 * 1024 * 1024 * 1024
 MAX_JSON_BYTES = 8 * 1024 * 1024
 MAX_MEMBERS = 4096
 MAX_LAYER_MEMBERS = 100_000
-SOURCE_URL = "https://github.com/magrathean-uk/teslatlas-hub"
+SOURCE_URL = "https://github.com/magrathean-uk/tesatlas-hub"
 
 
 class ArchiveError(ValueError):
@@ -211,7 +211,7 @@ def validate_config(
         fail("image runtime config contains missing or unsupported fields")
     labels = runtime.get("Labels")
     expected_labels = {
-        "org.opencontainers.image.title": "Teslatlas Hub",
+        "org.opencontainers.image.title": "Tesatlas Hub",
         "org.opencontainers.image.version": version,
         "org.opencontainers.image.source": SOURCE_URL,
         "org.opencontainers.image.revision": commit,
@@ -227,9 +227,9 @@ def validate_config(
     expected_runtime = {
         "User": "10001:10001",
         "Env": expected_environment,
-        "Entrypoint": ["/usr/local/bin/teslatlas-hub"],
-        "Cmd": ["--config", "/etc/teslatlas-hub/config.toml", "serve"],
-        "WorkingDir": "/var/lib/teslatlas-hub",
+        "Entrypoint": ["/usr/local/bin/tesatlas-hub"],
+        "Cmd": ["--config", "/etc/tesatlas-hub/config.toml", "serve"],
+        "WorkingDir": "/var/lib/tesatlas-hub",
     }
     for key, value in expected_runtime.items():
         if runtime.get(key) != value:
@@ -401,7 +401,7 @@ def validate_legacy_metadata_chain(
     if parse_legacy_timestamp(ordered[2]["created"], "legacy final metadata created").timestamp() != epoch:
         fail("legacy final metadata timestamp does not equal SOURCE_DATE_EPOCH")
     expected_labels = {
-        "org.opencontainers.image.title": "Teslatlas Hub",
+        "org.opencontainers.image.title": "Tesatlas Hub",
         "org.opencontainers.image.version": version,
         "org.opencontainers.image.source": SOURCE_URL,
         "org.opencontainers.image.revision": commit,
@@ -413,10 +413,10 @@ def validate_legacy_metadata_chain(
             "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
         ],
-        "Cmd": ["--config", "/etc/teslatlas-hub/config.toml", "serve"],
+        "Cmd": ["--config", "/etc/tesatlas-hub/config.toml", "serve"],
         "ArgsEscaped": True,
-        "WorkingDir": "/var/lib/teslatlas-hub",
-        "Entrypoint": ["/usr/local/bin/teslatlas-hub"],
+        "WorkingDir": "/var/lib/tesatlas-hub",
+        "Entrypoint": ["/usr/local/bin/tesatlas-hub"],
         "Labels": expected_labels,
     }
     if ordered[2].get("architecture") != "arm64" or ordered[2].get("config") != expected_final_config:

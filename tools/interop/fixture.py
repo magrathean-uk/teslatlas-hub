@@ -28,8 +28,8 @@ import urllib.request
 import urllib.parse
 
 MAX_CONFIG_BYTES = 64 * 1024
-DEVELOPMENT_SERVE_ENV = "TESLATLAS_HUB_DEVELOPMENT"
-DEVELOPMENT_SERVE_MODE_ENV = "TESLATLAS_HUB_DEVELOPMENT_MODE"
+DEVELOPMENT_SERVE_ENV = "TESATLAS_HUB_DEVELOPMENT"
+DEVELOPMENT_SERVE_MODE_ENV = "TESATLAS_HUB_DEVELOPMENT_MODE"
 DEVELOPMENT_SERVE_MODE = "fixture"
 DEFAULT_SCENARIO_ID = "b1-five-drives"
 PHYSICAL_V3_SCENARIO_ID = "physical-v3-public-513"
@@ -396,7 +396,7 @@ def run(config):
     process = None
     try:
         staging = Path(tempfile.mkdtemp(prefix=Path(config["output_dir"]).name + "-executables-", dir=Path(config["output_dir"]).parent))
-        binary, binary_hash = stage_executable(config["binary"], staging / "teslatlas-hub")
+        binary, binary_hash = stage_executable(config["binary"], staging / "tesatlas-hub")
         seed_binary, seed_hash = stage_executable(config["seed_binary"], staging / "interop_fixture")
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", config.get("port", 0)))

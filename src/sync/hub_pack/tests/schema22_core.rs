@@ -2174,7 +2174,7 @@ fn physical_delta_pack_preserves_surviving_soft_child_of_deleted_drive() {
         0,
     )
     .expect("truthful soft-reference changed set");
-    if let Some(output) = std::env::var_os("TESLATLAS_HUB_SYNTHETIC_SOFTREF_FIXTURE_DIR") {
+    if let Some(output) = std::env::var_os("TESATLAS_HUB_SYNTHETIC_SOFTREF_FIXTURE_DIR") {
         let output = std::path::PathBuf::from(output);
         std::fs::create_dir_all(&output).expect("synthetic fixture output directory");
         std::fs::write(output.join("receipt.json"), &delta.receipt_json)

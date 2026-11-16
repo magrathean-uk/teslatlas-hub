@@ -1839,7 +1839,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "teslatlas-edge"
+name = "tesatlas-edge"
 version = "2026.36.2"
 dependencies = [
  "axum",

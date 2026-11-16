@@ -17,7 +17,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, params, types::ValueRef
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
-use teslatlas_compute::{
+use tesatlas_compute::{
     ALGORITHM_VERSION, Drive, MAX_RAW_MAP_POSITIONS_PER_DRIVE, RawMapPosition,
     TILE_GEOMETRY_VERSION, TileOutput, generate_tile_payload_v1_from_pages_with_rdp_limit,
     prepare_positions_for_tile_rendering_v1,
@@ -251,7 +251,7 @@ fn compute_month(
                     Ok(drive) => drive,
                     Err(error) => {
                         failure = Some(error);
-                        return Err(teslatlas_compute::Error::InvalidData(
+                        return Err(tesatlas_compute::Error::InvalidData(
                             "prepared map drive is unavailable".into(),
                         ));
                     }
@@ -263,7 +263,7 @@ fn compute_month(
                     page_bytes = 8;
                 }
                 if page_bytes + bytes > MAX_MONTH_BYTES {
-                    return Err(teslatlas_compute::Error::InvalidData(
+                    return Err(tesatlas_compute::Error::InvalidData(
                         "prepared drive exceeds bounded page".into(),
                     ));
                 }
@@ -2028,11 +2028,11 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires TESLATLAS_PREPARED_REAL_PACK and TESLATLAS_PREPARED_PROTOCOL_VALIDATOR; run explicitly with --ignored"]
+    #[ignore = "requires TESATLAS_PREPARED_REAL_PACK and TESATLAS_PREPARED_PROTOCOL_VALIDATOR; run explicitly with --ignored"]
     fn real_prepared_pack_pointer_gap_cleanup_preserves_rows() {
-        let pack_path = std::env::var_os("TESLATLAS_PREPARED_REAL_PACK")
-            .expect("required real-pack acceptance needs TESLATLAS_PREPARED_REAL_PACK");
-        let python = std::env::var_os("TESLATLAS_PREPARED_PROTOCOL_VALIDATOR")
+        let pack_path = std::env::var_os("TESATLAS_PREPARED_REAL_PACK")
+            .expect("required real-pack acceptance needs TESATLAS_PREPARED_REAL_PACK");
+        let python = std::env::var_os("TESATLAS_PREPARED_PROTOCOL_VALIDATOR")
             .expect("real pack check requires the independent Protocol Python validator");
         let pack_path = PathBuf::from(pack_path);
         let mut decoder = zstd::stream::read::Decoder::new(File::open(&pack_path).unwrap())
@@ -2647,10 +2647,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires TESLATLAS_PREPARED_PROTOCOL_VALIDATOR; run explicitly with --ignored"]
+    #[ignore = "requires TESATLAS_PREPARED_PROTOCOL_VALIDATOR; run explicitly with --ignored"]
     async fn required_protocol_validator_accepts_signed_prepared_month() {
-        std::env::var_os("TESLATLAS_PREPARED_PROTOCOL_VALIDATOR")
-            .expect("required Protocol acceptance needs TESLATLAS_PREPARED_PROTOCOL_VALIDATOR");
+        std::env::var_os("TESATLAS_PREPARED_PROTOCOL_VALIDATOR")
+            .expect("required Protocol acceptance needs TESATLAS_PREPARED_PROTOCOL_VALIDATOR");
         signed_month_contract(true).await;
     }
 
@@ -2702,7 +2702,7 @@ mod tests {
             fs::metadata(&stored.path).unwrap().len()
         );
         if require_protocol {
-            let python = std::env::var_os("TESLATLAS_PREPARED_PROTOCOL_VALIDATOR")
+            let python = std::env::var_os("TESATLAS_PREPARED_PROTOCOL_VALIDATOR")
                 .expect("required Protocol validator gate");
             let receipt_file = NamedTempFile::new_in(temporary.path()).unwrap();
             fs::write(receipt_file.path(), &receipt).unwrap();

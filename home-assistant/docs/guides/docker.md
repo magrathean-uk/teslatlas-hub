@@ -12,8 +12,8 @@ Use an existing Linux host with Docker Engine and Compose. Check the [Home Assis
 docker version
 docker compose version
 mkdir -p ha-config/custom_components
-test -f custom_components/teslatlas_hub/manifest.json
-test -f custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/profile.json
+test -f custom_components/tesatlas_hub/manifest.json
+test -f custom_components/tesatlas_hub/profile/hub-http-v1/1.0.0/profile.json
 docker compose config --quiet
 ```
 
@@ -28,8 +28,8 @@ Use a reachable HTTPS Hub endpoint with a certificate trusted by Home Assistant 
 For a private CA, prepare a combined PEM bundle with the normal public roots and the intended Hub CA inside the owner-controlled `ha-config` directory. Add both variables under the existing service's `environment` mapping, using the same container path:
 
 ```yaml
-SSL_CERT_FILE: /config/teslatlas-private/ca-bundle.pem
-REQUESTS_CA_BUNDLE: /config/teslatlas-private/ca-bundle.pem
+SSL_CERT_FILE: /config/tesatlas-private/ca-bundle.pem
+REQUESTS_CA_BUNDLE: /config/tesatlas-private/ca-bundle.pem
 ```
 
 The recorded Home Assistant 2026.8.3 setup uses `REQUESTS_CA_BUNDLE` for its managed HTTP context. Setting only `SSL_CERT_FILE` for a command-line probe does not establish that Home Assistant trusts the Hub. Do not replace the host trust store or use a bundle that drops the public roots.
@@ -41,7 +41,7 @@ docker compose up -d
 docker compose logs --follow homeassistant
 ```
 
-Open Home Assistant, finish its onboarding and add **Teslatlas Hub** under **Settings > Devices & services**. Use a fresh invitation and complete the authenticated validation step. Review logs locally; do not publish credentials or raw state.
+Open Home Assistant, finish its onboarding and add **Tesatlas Hub** under **Settings > Devices & services**. Use a fresh invitation and complete the authenticated validation step. Review logs locally; do not publish credentials or raw state.
 
 ## Stop, back up and update
 
@@ -50,7 +50,7 @@ Stop before making a private backup:
 ```sh
 docker compose stop
 umask 077
-tar -C ha-config -czf ../teslatlas-ha-config-backup.tgz .
+tar -C ha-config -czf ../tesatlas-ha-config-backup.tgz .
 ```
 
 Choose a unique private backup filename for each backup. Retain the exact previous component bytes with the matching configuration backup. Do not use `docker compose down --volumes` as a shutdown or cleanup step.

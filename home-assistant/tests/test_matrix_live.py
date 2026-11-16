@@ -27,8 +27,8 @@ import pytest
 from homeassistant.const import CONF_HOST
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.teslatlas_hub.current_hub_client import CurrentHubClient
-from custom_components.teslatlas_hub.models import HubEndpoint
+from custom_components.tesatlas_hub.current_hub_client import CurrentHubClient
+from custom_components.tesatlas_hub.models import HubEndpoint
 from tests.helpers import FixtureHubClient
 from tests.integration import test_live_hub as live_gate
 from tools.matrix_contract import (
@@ -121,7 +121,7 @@ def _session(tmp_path: Path) -> tuple[Path, dict]:
         _write_private(path, payload)
     profile_source = (
         Path(__file__).parents[1]
-        / "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0"
+        / "custom_components/tesatlas_hub/profile/hub-http-v1/1.0.0"
     )
     certificate_path.write_bytes(TEST_CERTIFICATE)
     certificate_path.chmod(0o600)
@@ -877,20 +877,20 @@ OPERATION_FACTS = {
         "module_path": "__init__.py",
         "module_sha256": INITIALIZER_SHA256,
         "loaded_modules": {
-            "custom_components.teslatlas_hub": "__init__.py",
-            "custom_components.teslatlas_hub.client": "client.py",
-            "custom_components.teslatlas_hub.config_flow": "config_flow.py",
-            "custom_components.teslatlas_hub.const": "const.py",
-            "custom_components.teslatlas_hub.coordinator": "coordinator.py",
-            "custom_components.teslatlas_hub.credentials": "credentials.py",
-            "custom_components.teslatlas_hub.current_hub_client": (
+            "custom_components.tesatlas_hub": "__init__.py",
+            "custom_components.tesatlas_hub.client": "client.py",
+            "custom_components.tesatlas_hub.config_flow": "config_flow.py",
+            "custom_components.tesatlas_hub.const": "const.py",
+            "custom_components.tesatlas_hub.coordinator": "coordinator.py",
+            "custom_components.tesatlas_hub.credentials": "credentials.py",
+            "custom_components.tesatlas_hub.current_hub_client": (
                 "current_hub_client.py"
             ),
-            "custom_components.teslatlas_hub.entity": "entity.py",
-            "custom_components.teslatlas_hub.models": "models.py",
-            "custom_components.teslatlas_hub.sensor": "sensor.py",
+            "custom_components.tesatlas_hub.entity": "entity.py",
+            "custom_components.tesatlas_hub.models": "models.py",
+            "custom_components.tesatlas_hub.sensor": "sensor.py",
         },
-        "manifest_domain": "teslatlas_hub",
+        "manifest_domain": "tesatlas_hub",
         "config_entry_loaded": True,
         "entity_registry_count": 26,
     },
@@ -1134,7 +1134,7 @@ def _context() -> tuple[AdmissionContext, dict[str, dict]]:
                 "artifact": {
                     "role": "home_assistant_integration_archive",
                     "sha256": "d" * 64,
-                    "installed_root": "/work/product/custom_components/teslatlas_hub",
+                    "installed_root": "/work/product/custom_components/tesatlas_hub",
                     "installed_manifest_sha256": "9" * 64,
                     "installed_members": copy.deepcopy(INSTALLED_MEMBERS),
                 },
@@ -1550,13 +1550,13 @@ def test_flow_records_fit_schema_request_budget_without_losing_census(
 
 
 def _receipt_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    package = "custom_components.teslatlas_hub"
+    package = "custom_components.tesatlas_hub"
     for name in list(sys.modules):
         if name == package or name.startswith(package + "."):
             monkeypatch.delitem(sys.modules, name)
-    integration_root = tmp_path / "custom_components/teslatlas_hub"
+    integration_root = tmp_path / "custom_components/tesatlas_hub"
     integration_root.mkdir(parents=True)
-    manifest = {"domain": "teslatlas_hub", "version": "receipt-fixture-version"}
+    manifest = {"domain": "tesatlas_hub", "version": "receipt-fixture-version"}
     (integration_root / "manifest.json").write_text(json.dumps(manifest))
     origins = {}
     for suffix in (
@@ -1617,7 +1617,7 @@ def test_receipt_runtime_rejects_unadmitted_source(
         outside = tmp_path / "outside.py"
         outside.write_text("def outside_source():\n    return True\n")
         spec = importlib.util.spec_from_file_location(
-            "custom_components.teslatlas_hub.client", outside
+            "custom_components.tesatlas_hub.client", outside
         )
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
@@ -1625,7 +1625,7 @@ def test_receipt_runtime_rejects_unadmitted_source(
         monkeypatch.setitem(sys.modules, spec.name, module)
         message = "outside the candidate"
     else:
-        module = sys.modules["custom_components.teslatlas_hub.client"]
+        module = sys.modules["custom_components.tesatlas_hub.client"]
         cache = Path(module.__cached__)
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_bytes(b"unadmitted-bytecode")
@@ -1649,7 +1649,7 @@ async def _receipt_config_entry(hass):
     )
     entry.add_to_hass(hass)
     with patch(
-        "custom_components.teslatlas_hub.create_client",
+        "custom_components.tesatlas_hub.create_client",
         return_value=FixtureHubClient(),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
@@ -2001,7 +2001,7 @@ async def test_initial_barrier_does_not_invent_internal_verify_observation() -> 
 
 
 def _installed_runtime(tmp_path: Path) -> MatrixRuntime:
-    root = tmp_path / "product/custom_components/teslatlas_hub"
+    root = tmp_path / "product/custom_components/tesatlas_hub"
     root.mkdir(parents=True)
     module_paths = INSTALLED_MEMBER_PATHS
     rows = []
@@ -2038,7 +2038,7 @@ def test_installed_inventory_rejects_valid_looking_cached_code(tmp_path: Path) -
 def test_loaded_submodule_origin_must_match_installed_inventory(tmp_path: Path) -> None:
     """Every executed integration module is bound, not only package __init__."""
     runtime = _installed_runtime(tmp_path)
-    package = "custom_components.teslatlas_hub"
+    package = "custom_components.tesatlas_hub"
     suffixes = (
         "",
         ".client",
@@ -2075,7 +2075,7 @@ def test_loaded_submodule_origin_must_match_installed_inventory(tmp_path: Path) 
 
 def test_current_package_inventory_matches_admission_and_closed_schema() -> None:
     """Current source, independent fixture and closed module evidence agree."""
-    component = Path(__file__).parents[1] / "custom_components/teslatlas_hub"
+    component = Path(__file__).parents[1] / "custom_components/tesatlas_hub"
     actual = tuple(
         str(path.relative_to(component))
         for path in sorted(component.rglob("*"))
@@ -2093,7 +2093,7 @@ def test_current_package_inventory_matches_admission_and_closed_schema() -> None
     assert set(declared["required"]) == set(expected)
     assert set(declared["properties"]) == {
         *expected,
-        "custom_components.teslatlas_hub.diagnostics",
+        "custom_components.tesatlas_hub.diagnostics",
     }
     assert declared["additionalProperties"] is False
 
@@ -2133,7 +2133,7 @@ def test_current_loaded_modules_preserve_strict_admission(
 ) -> None:
     """Require credentials and bind every module name, origin and executed bytes."""
     runtime = _installed_runtime(tmp_path)
-    package = "custom_components.teslatlas_hub"
+    package = "custom_components.tesatlas_hub"
     for name in tuple(sys.modules):
         if name == package or name.startswith(package + "."):
             monkeypatch.delitem(sys.modules, name)
@@ -2503,7 +2503,7 @@ def test_contract_rejects_coherent_child_hub_and_module_substitutions() -> None:
 
     context, raw = _context()
     raw["raw-observe_installed_runtime"]["facts"]["loaded_modules"][
-        "custom_components.teslatlas_hub.client"
+        "custom_components.tesatlas_hub.client"
     ] = "config_flow.py"
     assert (
         admit_case(_case("candidate_artifact_identity", context), context).status
@@ -2584,9 +2584,9 @@ def test_main_composes_authentic_loading_all_cases_and_close_lifetime(
     inputs = session_path.parent
     outputs = Path(session["outputs"]["normalized"]).parent
     source_root = Path(__file__).parents[1]
-    installed_root = inputs / "product/custom_components/teslatlas_hub"
+    installed_root = inputs / "product/custom_components/tesatlas_hub"
     for relative in INSTALLED_MEMBER_PATHS:
-        source = source_root / "custom_components/teslatlas_hub" / relative
+        source = source_root / "custom_components/tesatlas_hub" / relative
         destination = installed_root / relative
         destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
@@ -2727,7 +2727,7 @@ def framework_main(_arguments,plugins):
     runtime=plugins[0].matrix_runtime()
     # Execute the real imports after main isolates the broker descriptors.
     for suffix in ("", ".config_flow", ".current_hub_client", ".sensor"):
-        importlib.import_module("custom_components.teslatlas_hub"+suffix)
+        importlib.import_module("custom_components.tesatlas_hub"+suffix)
     asyncio.run(runtime.verify())
     for operation,row in fixture["operations"].items():
         runtime.record_operation(operation,actor_id=row["actor_id"],before=row["before"],after=row["after"],facts=row["facts"],requests=row["requests"])

@@ -19,7 +19,7 @@ impl Drop for Reap {
 fn startup_compaction(readable: bool) {
     let home = tempfile::tempdir().unwrap();
     fs::set_permissions(home.path(), fs::Permissions::from_mode(0o700)).unwrap();
-    let logs = home.path().join("Library/Logs/Teslatlas Hub");
+    let logs = home.path().join("Library/Logs/Tesatlas Hub");
     fs::create_dir_all(&logs).unwrap();
     fs::set_permissions(&logs, fs::Permissions::from_mode(0o700)).unwrap();
     let paths = [logs.join("hub.out.log"), logs.join("hub.err.log")];
@@ -56,13 +56,13 @@ fn startup_compaction(readable: bool) {
     let stderr = descriptors.pop().unwrap();
     let stdout = descriptors.pop().unwrap();
     let mut child = Reap(
-        Command::new(env!("CARGO_BIN_EXE_teslatlas-hub"))
+        Command::new(env!("CARGO_BIN_EXE_tesatlas-hub"))
             .args(["--config"])
             .arg(home.path().join("absent/config.toml"))
             .arg("serve")
             .env("HOME", home.path())
-            .env_remove("TESLATLAS_HUB_DEVELOPMENT")
-            .env_remove("TESLATLAS_HUB_DEVELOPMENT_MODE")
+            .env_remove("TESATLAS_HUB_DEVELOPMENT")
+            .env_remove("TESATLAS_HUB_DEVELOPMENT_MODE")
             .env_remove("RUST_LOG")
             .stdin(Stdio::null())
             .stdout(stdout)
@@ -95,7 +95,7 @@ fn startup_compaction(readable: bool) {
         if index == 1 {
             let diagnostics = String::from_utf8_lossy(&bytes[512 * 1024..]);
             assert_eq!(
-                diagnostics, "teslatlas-hub: cannot safely read configuration\n",
+                diagnostics, "tesatlas-hub: cannot safely read configuration\n",
                 "ordinary missing-config failure"
             );
         }

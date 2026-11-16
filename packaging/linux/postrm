@@ -2,22 +2,22 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 set -eu
 
-service=teslatlas-hub.service
-command_proxy_service=teslatlas-command-proxy.service
-fleet_telemetry_service=teslatlas-fleet-telemetry.service
-state_file=${TESLATLAS_HUB_MAINTAINER_STATE_FILE:-/run/teslatlas-hub-maintainer.state}
-backup_dir=${TESLATLAS_HUB_UPGRADE_BACKUP_DIR:-/run/teslatlas-hub-package-upgrade}
-hub_binary=${TESLATLAS_HUB_BINARY:-/usr/bin/teslatlas-hub}
-unit_file=${TESLATLAS_HUB_UNIT_FILE:-/lib/systemd/system/teslatlas-hub.service}
-terminal_failure_target_file=${TESLATLAS_HUB_TERMINAL_FAILURE_TARGET_FILE:-/lib/systemd/system/teslatlas-hub-terminal-failure.target}
-command_proxy_binary=${TESLATLAS_COMMAND_PROXY_BINARY:-/usr/lib/teslatlas-hub/tesla-http-proxy}
-fleet_telemetry_binary=${TESLATLAS_FLEET_TELEMETRY_BINARY:-/usr/lib/teslatlas-hub/fleet-telemetry}
-command_proxy_unit_file=${TESLATLAS_COMMAND_PROXY_UNIT_FILE:-/lib/systemd/system/teslatlas-command-proxy.service}
-fleet_telemetry_unit_file=${TESLATLAS_FLEET_TELEMETRY_UNIT_FILE:-/lib/systemd/system/teslatlas-fleet-telemetry.service}
-command_proxy_config=${TESLATLAS_COMMAND_PROXY_CONFIG:-/etc/teslatlas-hub/command-proxy.env}
-fleet_telemetry_config=${TESLATLAS_FLEET_TELEMETRY_CONFIG:-/etc/teslatlas-hub/fleet-telemetry.json}
-health_attempts=${TESLATLAS_HUB_HEALTH_ATTEMPTS:-10}
-health_delay=${TESLATLAS_HUB_HEALTH_DELAY_SECONDS:-1}
+service=tesatlas-hub.service
+command_proxy_service=tesatlas-command-proxy.service
+fleet_telemetry_service=tesatlas-fleet-telemetry.service
+state_file=${TESATLAS_HUB_MAINTAINER_STATE_FILE:-/run/tesatlas-hub-maintainer.state}
+backup_dir=${TESATLAS_HUB_UPGRADE_BACKUP_DIR:-/run/tesatlas-hub-package-upgrade}
+hub_binary=${TESATLAS_HUB_BINARY:-/usr/bin/tesatlas-hub}
+unit_file=${TESATLAS_HUB_UNIT_FILE:-/lib/systemd/system/tesatlas-hub.service}
+terminal_failure_target_file=${TESATLAS_HUB_TERMINAL_FAILURE_TARGET_FILE:-/lib/systemd/system/tesatlas-hub-terminal-failure.target}
+command_proxy_binary=${TESATLAS_COMMAND_PROXY_BINARY:-/usr/lib/tesatlas-hub/tesla-http-proxy}
+fleet_telemetry_binary=${TESATLAS_FLEET_TELEMETRY_BINARY:-/usr/lib/tesatlas-hub/fleet-telemetry}
+command_proxy_unit_file=${TESATLAS_COMMAND_PROXY_UNIT_FILE:-/lib/systemd/system/tesatlas-command-proxy.service}
+fleet_telemetry_unit_file=${TESATLAS_FLEET_TELEMETRY_UNIT_FILE:-/lib/systemd/system/tesatlas-fleet-telemetry.service}
+command_proxy_config=${TESATLAS_COMMAND_PROXY_CONFIG:-/etc/tesatlas-hub/command-proxy.env}
+fleet_telemetry_config=${TESATLAS_FLEET_TELEMETRY_CONFIG:-/etc/tesatlas-hub/fleet-telemetry.json}
+health_attempts=${TESATLAS_HUB_HEALTH_ATTEMPTS:-10}
+health_delay=${TESATLAS_HUB_HEALTH_DELAY_SECONDS:-1}
 
 unit_available() {
     systemctl cat "$1" >/dev/null 2>&1
@@ -127,16 +127,16 @@ restore_optional_file() {
 
 restore_upgrade_payload() {
     [ -d "$backup_dir" ] && [ ! -L "$backup_dir" ] || return 0
-    [ -f "$backup_dir/teslatlas-hub" ] && [ ! -L "$backup_dir/teslatlas-hub" ] || return 1
-    [ -f "$backup_dir/teslatlas-hub.service" ] \
-        && [ ! -L "$backup_dir/teslatlas-hub.service" ] || return 1
-    install -o root -g root -m 0755 "$backup_dir/teslatlas-hub" "$hub_binary"
-    install -o root -g root -m 0644 "$backup_dir/teslatlas-hub.service" "$unit_file"
-    restore_optional_file teslatlas-hub-terminal-failure.target "$terminal_failure_target_file" 0644
+    [ -f "$backup_dir/tesatlas-hub" ] && [ ! -L "$backup_dir/tesatlas-hub" ] || return 1
+    [ -f "$backup_dir/tesatlas-hub.service" ] \
+        && [ ! -L "$backup_dir/tesatlas-hub.service" ] || return 1
+    install -o root -g root -m 0755 "$backup_dir/tesatlas-hub" "$hub_binary"
+    install -o root -g root -m 0644 "$backup_dir/tesatlas-hub.service" "$unit_file"
+    restore_optional_file tesatlas-hub-terminal-failure.target "$terminal_failure_target_file" 0644
     restore_optional_file tesla-http-proxy "$command_proxy_binary" 0755
     restore_optional_file fleet-telemetry "$fleet_telemetry_binary" 0755
-    restore_optional_file teslatlas-command-proxy.service "$command_proxy_unit_file" 0644
-    restore_optional_file teslatlas-fleet-telemetry.service "$fleet_telemetry_unit_file" 0644
+    restore_optional_file tesatlas-command-proxy.service "$command_proxy_unit_file" 0644
+    restore_optional_file tesatlas-fleet-telemetry.service "$fleet_telemetry_unit_file" 0644
     restore_optional_file command-proxy.env "$command_proxy_config" 0644
     restore_optional_file fleet-telemetry.json "$fleet_telemetry_config" 0644
     find "$backup_dir" -depth -delete

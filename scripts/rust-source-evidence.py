@@ -21,7 +21,7 @@ import tempfile
 from typing import Any
 
 
-SCHEMA = "teslatlas.rust-source-evidence/v1"
+SCHEMA = "tesatlas.rust-source-evidence/v1"
 ARCHIVE_NAME = "rust-vendored-sources.tar.gz"
 INVENTORY_NAME = "rust-source-inventory.json"
 MANIFEST_NAME = "rust-source-evidence-manifest.json"
@@ -1151,7 +1151,7 @@ def validate_directory(repo: Path, directory: Path, rebuild: bool = False) -> di
     expected_manifest = manifest_value(lock_data, inventory_data, archive_data, receipt)
     if manifest != expected_manifest or manifest_data != json_bytes(manifest):
         raise GateError("Rust source evidence manifest does not bind exact components")
-    work = Path(tempfile.mkdtemp(prefix="teslatlas-rust-source-verify-"))
+    work = Path(tempfile.mkdtemp(prefix="tesatlas-rust-source-verify-"))
     try:
         extracted = work / "source"
         extracted.mkdir()
@@ -1274,7 +1274,7 @@ def generate(repo: Path, cargo: Path, cargo_home: Path, output: Path, binary: st
     expected_metadata.update((name, version, None) for name, version in workspace)
     if metadata != expected_metadata:
         raise GateError("offline locked Cargo metadata package set differs from Cargo.lock")
-    work = Path(tempfile.mkdtemp(prefix="teslatlas-rust-source-generate-", dir=parent))
+    work = Path(tempfile.mkdtemp(prefix="tesatlas-rust-source-generate-", dir=parent))
     try:
         source = work / "source"
         vendor = source / "vendor"
@@ -1352,7 +1352,7 @@ def main() -> int:
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--cargo", type=Path, default=Path(shutil.which("cargo") or "cargo"))
     parser.add_argument("--cargo-home", type=Path, default=default_cargo_home())
-    parser.add_argument("--bin", default="teslatlas-hub")
+    parser.add_argument("--bin", default="tesatlas-hub")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--output-dir", type=Path)
     mode.add_argument("--verify-dir", type=Path)
@@ -1364,7 +1364,7 @@ def main() -> int:
     args = parser.parse_args()
     repo = real_directory(Path(os.path.abspath(args.repo)), "repository")
     if args.verify_dir is not None:
-        if args.bin != "teslatlas-hub" or args.cargo_home != default_cargo_home():
+        if args.bin != "tesatlas-hub" or args.cargo_home != default_cargo_home():
             raise GateError("verification cannot be combined with generation overrides")
         validate_directory(repo, Path(os.path.abspath(args.verify_dir)), rebuild=args.rebuild)
         return 0

@@ -69,7 +69,7 @@ fn build_status_report(
             store,
             vehicle.vehicle_id,
             now_ms,
-            teslatlas_hub::current_state::offline_drive_timeout_ms(
+            tesatlas_hub::current_state::offline_drive_timeout_ms(
                 config.collector.offline_drive_timeout_seconds,
             ),
         )?;
@@ -91,7 +91,7 @@ fn build_status_report(
         }));
     }
     let vehicle = (vehicle_summaries.len() == 1).then(|| vehicle_summaries[0].clone());
-    let credentials = teslatlas_hub::auth::credential_sign_in::credential_status(store, &config.data_dir, now_ms)?;
+    let credentials = tesatlas_hub::auth::credential_sign_in::credential_status(store, &config.data_dir, now_ms)?;
     let legacy_credentials = &credentials.legacy_credentials;
     let fleet_credentials = &credentials.fleet_credentials;
     let selected_credentials_present = match config.collector.provider {
@@ -114,14 +114,14 @@ fn build_status_report(
     ));
     let collector = store.supervised_collector_lease_status()?;
     let database_bytes = fs::metadata(store.database_path())?.len();
-    let credential_error = teslatlas_hub::auth::credential_sign_in::credential_store_unhealthy(&credentials,
+    let credential_error = tesatlas_hub::auth::credential_sign_in::credential_store_unhealthy(&credentials,
         collector_required && config.collector.provider == CollectorProvider::Legacy,
         collector_required && config.collector.provider == CollectorProvider::Fleet);
     let readiness_reason = if credential_error { Some("credential_store_error") } else { view.service.as_ref().err().map(|failure| failure.code.code()) };
 
     let mut report = serde_json::json!({
         "status": "ok",
-        "version": teslatlas_hub::BUILD_VERSION,
+        "version": tesatlas_hub::BUILD_VERSION,
         "database": {
             "path": store.database_path(),
             "bytes": database_bytes,
@@ -190,7 +190,7 @@ fn build_status_report(
 async fn run_observe_orchestration<Control>(
     store: HubStore,
     config: HubConfig,
-    config_sha256: teslatlas_hub::protocol::Sha256Digest,
+    config_sha256: tesatlas_hub::protocol::Sha256Digest,
     admission: std::sync::Arc<AdmittedUserHub>,
     control: Control,
 ) -> std::io::Result<()>
@@ -235,7 +235,7 @@ where
     .await
 }
 
-use teslatlas_hub::runtime::operator::{
+use tesatlas_hub::runtime::operator::{
     self as operator,
     admission::{OperatorRefusal, Route},
     channel::{OperatorRequest, SetupMaterial},
@@ -274,7 +274,7 @@ fn parse_setup_material(bytes: &[u8]) -> Result<SetupMaterial, OperatorRefusal> 
     let object: serde_json::Map<String, serde_json::Value> = serde_json::from_slice(bytes)
         .map_err(|_| setup_input_invalid("setup reads one JSON object with code, codeVerifier and redirectUri"))?;
     if object.keys().any(|key| key.to_ascii_lowercase().contains("token")) {
-        let error = teslatlas_hub::auth::credential_sign_in::source_credential_disabled();
+        let error = tesatlas_hub::auth::credential_sign_in::source_credential_disabled();
         return Err(OperatorRefusal::new(error.code(), error.to_string()));
     }
     let field = |name: &str| object.get(name).and_then(serde_json::Value::as_str);
@@ -299,7 +299,7 @@ fn parse_setup_material(bytes: &[u8]) -> Result<SetupMaterial, OperatorRefusal> 
     // The one owner redirect the Mac app's sign-in window registers
     // (DEC-088): the exchange sends exactly this value, so no other is
     // forwarded to the service.
-    if redirect != teslatlas_hub::auth::credential_sign_in::OWNER_REDIRECT_URI {
+    if redirect != tesatlas_hub::auth::credential_sign_in::OWNER_REDIRECT_URI {
         return Err(setup_input_invalid("the redirect URI is not the owner sign-in redirect"));
     }
     Ok(SetupMaterial {
@@ -374,7 +374,7 @@ fn run_forwarded(config_path: &Path, command: &Command) -> Result<(), Box<dyn st
             WindowCommand::Open { grant } => OperatorRequest::WindowOpen {
                 grant: encoded(&read_bounded_input(
                     grant,
-                    teslatlas_hub::collection::window::GRANT_MAX_BYTES,
+                    tesatlas_hub::collection::window::GRANT_MAX_BYTES,
                     "grant",
                 )?),
             },
@@ -458,8 +458,8 @@ fn start_window_authority(
     home: &Path,
 ) -> Result<
     (
-        std::sync::Arc<teslatlas_hub::collection::window::WindowController>,
-        teslatlas_hub::collection::window::ResumeOutcome,
+        std::sync::Arc<tesatlas_hub::collection::window::WindowController>,
+        tesatlas_hub::collection::window::ResumeOutcome,
     ),
     Box<dyn std::error::Error>,
 > {
@@ -476,7 +476,7 @@ fn start_window_authority(
 #[cfg(unix)]
 fn window_trust_authority(
     host_id: &str,
-) -> Result<teslatlas_hub::runtime::operator::trust::TrustAuthority, Box<dyn std::error::Error>> {
+) -> Result<tesatlas_hub::runtime::operator::trust::TrustAuthority, Box<dyn std::error::Error>> {
     #[cfg(feature = "journey-doubles")]
     if let Some(doubles) = journey_doubles::active()? {
         return Ok(doubles.trust_authority(host_id));
@@ -493,9 +493,9 @@ struct HubServiceBackend {
     /// settings and the provider from it.
     config: HubConfig,
     admission: std::sync::Arc<AdmittedUserHub>,
-    backup: std::sync::Arc<teslatlas_hub::runtime::backup_schedule::BackupScheduler>,
+    backup: std::sync::Arc<tesatlas_hub::runtime::backup_schedule::BackupScheduler>,
     /// The vault custody the window supervisor honours, and its wake-up.
-    custody: teslatlas_hub::collection::window::CredentialCustody,
+    custody: tesatlas_hub::collection::window::CredentialCustody,
     kick: Box<dyn Fn() + Send + Sync>,
     /// Wakes the supervisor after a collection reload and clears its start
     /// backoff (M02-T24).
@@ -641,7 +641,7 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
         vehicle_id: Option<i64>,
         all_vehicles: bool,
     ) -> Result<serde_json::Value, OperatorRefusal> {
-        use teslatlas_hub::auth::credential_sign_in as sign_in;
+        use tesatlas_hub::auth::credential_sign_in as sign_in;
         // The car choice is checked first: a bad one refuses with nothing
         // sent and the code unspent.
         let selection = sign_in::owner_car_selection(vehicle_id, all_vehicles).map_err(setup_refusal)?;
@@ -694,7 +694,7 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
         let installation = self.store.installation_id().map_err(|error| {
             OperatorRefusal::new("setup_marker_unavailable", error.to_string())
         })?;
-        teslatlas_hub::storage::setup_marker::record(&self.data_dir, installation)
+        tesatlas_hub::storage::setup_marker::record(&self.data_dir, installation)
             .map_err(|error| OperatorRefusal::new("setup_marker_unavailable", error.to_string()))?;
         if self.admitted_idle && report["vehicleDiscovery"] == "configured" {
             report["collectionIntervalSeconds"] = self.complete_fresh_install()?.into();
@@ -726,10 +726,10 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
             &self.data_dir,
         )
         .map_err(|error| {
-            let error = teslatlas_hub::auth::credential_sign_in::credential_entry_error(error);
+            let error = tesatlas_hub::auth::credential_sign_in::credential_entry_error(error);
             OperatorRefusal::new(error.code(), error.to_string())
         })?;
-        let report = teslatlas_hub::credential_recovery::restore_credentials_from_entry(
+        let report = tesatlas_hub::credential_recovery::restore_credentials_from_entry(
             &entry, source, &key[..],
         )
         .map_err(|error| OperatorRefusal::new("recovery_failed", error.to_string()))?;
@@ -748,7 +748,7 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
             &self.data_dir,
         )
         .map_err(|error| {
-            let error = teslatlas_hub::auth::credential_sign_in::credential_entry_error(error);
+            let error = tesatlas_hub::auth::credential_sign_in::credential_entry_error(error);
             OperatorRefusal::new(error.code(), error.to_string())
         })?;
         operator::purge::purge(&entry)
@@ -782,15 +782,15 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
 /// failed with its fixed code, and the same `setup` again resumes it.
 #[cfg(unix)]
 fn owner_setup(
-    custody: &teslatlas_hub::collection::window::CredentialCustody,
+    custody: &tesatlas_hub::collection::window::CredentialCustody,
     kick: &dyn Fn(),
-    open_entry: impl FnOnce() -> Result<teslatlas_hub::CredentialVaultEntry, teslatlas_hub::CredentialVaultEntryError>,
-    exchange: impl FnOnce(&teslatlas_hub::CredentialVaultEntry)
-        -> Result<teslatlas_hub::auth::credential_sign_in::OwnerSignIn, teslatlas_hub::auth::credential_sign_in::CredentialCommandError>,
-    discover: impl FnOnce(&teslatlas_hub::CredentialVaultEntry)
-        -> Result<teslatlas_hub::auth::credential_sign_in::OwnerDiscovery, teslatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+    open_entry: impl FnOnce() -> Result<tesatlas_hub::CredentialVaultEntry, tesatlas_hub::CredentialVaultEntryError>,
+    exchange: impl FnOnce(&tesatlas_hub::CredentialVaultEntry)
+        -> Result<tesatlas_hub::auth::credential_sign_in::OwnerSignIn, tesatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+    discover: impl FnOnce(&tesatlas_hub::CredentialVaultEntry)
+        -> Result<tesatlas_hub::auth::credential_sign_in::OwnerDiscovery, tesatlas_hub::auth::credential_sign_in::CredentialCommandError>,
 ) -> Result<serde_json::Value, OperatorRefusal> {
-    use teslatlas_hub::collection::window::custody::{CUSTODY_WAIT, SIGN_IN_BUSY};
+    use tesatlas_hub::collection::window::custody::{CUSTODY_WAIT, SIGN_IN_BUSY};
     let held = custody.acquire(CUSTODY_WAIT, kick).map_err(|code| {
         let message = if code == SIGN_IN_BUSY {
             "another sign-in is in progress"
@@ -800,7 +800,7 @@ fn owner_setup(
         OperatorRefusal::new(code, message)
     })?;
     let result = open_entry()
-        .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)
+        .map_err(tesatlas_hub::auth::credential_sign_in::credential_entry_error)
         .and_then(|entry| {
             let result = exchange(&entry).map(|signed_in| (signed_in, discover(&entry)));
             // The vault is closed before custody ends.
@@ -816,7 +816,7 @@ fn owner_setup(
 /// The refusal `setup` returns: the fixed code and its fixed owner text.
 #[cfg(unix)]
 fn setup_refusal(
-    error: teslatlas_hub::auth::credential_sign_in::CredentialCommandError,
+    error: tesatlas_hub::auth::credential_sign_in::CredentialCommandError,
 ) -> OperatorRefusal {
     OperatorRefusal::new(error.code(), error.to_string())
 }
@@ -829,10 +829,10 @@ fn setup_refusal(
 /// count) or discovery failed (with its fixed code and owner text).
 #[cfg(unix)]
 fn owner_setup_report(
-    signed_in: teslatlas_hub::auth::credential_sign_in::OwnerSignIn,
+    signed_in: tesatlas_hub::auth::credential_sign_in::OwnerSignIn,
     discovery: Result<
-        teslatlas_hub::auth::credential_sign_in::OwnerDiscovery,
-        teslatlas_hub::auth::credential_sign_in::CredentialCommandError,
+        tesatlas_hub::auth::credential_sign_in::OwnerDiscovery,
+        tesatlas_hub::auth::credential_sign_in::CredentialCommandError,
     >,
 ) -> serde_json::Value {
     let mut report = serde_json::json!({
@@ -850,7 +850,7 @@ fn owner_setup_report(
         Err(error) => {
             report["vehicleDiscovery"] = "failed".into();
             report["discoveryCode"] = error.code().into();
-            report["discoveryMessage"] = teslatlas_hub::auth::credential_sign_in::credential_owner_message(error.code(), None, None, None)
+            report["discoveryMessage"] = tesatlas_hub::auth::credential_sign_in::credential_owner_message(error.code(), None, None, None)
                 .unwrap_or_default()
                 .into();
         }
@@ -864,14 +864,14 @@ fn owner_setup_report(
 #[cfg(unix)]
 fn run_owner_exchange<'a, T, F>(
     exchange: impl FnOnce() -> F + Send + 'a,
-) -> Result<T, teslatlas_hub::auth::credential_sign_in::CredentialCommandError>
+) -> Result<T, tesatlas_hub::auth::credential_sign_in::CredentialCommandError>
 where
     T: Send,
     F: std::future::Future<
-            Output = Result<T, teslatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+            Output = Result<T, tesatlas_hub::auth::credential_sign_in::CredentialCommandError>,
         > + 'a,
 {
-    use teslatlas_hub::auth::credential_sign_in::sign_in_unavailable;
+    use tesatlas_hub::auth::credential_sign_in::sign_in_unavailable;
     std::thread::scope(|scope| {
         scope
             .spawn(move || {
@@ -888,22 +888,22 @@ where
 
 #[cfg(all(test, unix))]
 type CommandEntryOpener = fn(HubStore, std::sync::Arc<AdmittedUserHub>, &Path)
-    -> Result<teslatlas_hub::CredentialVaultEntry, teslatlas_hub::CredentialVaultEntryError>;
+    -> Result<tesatlas_hub::CredentialVaultEntry, tesatlas_hub::CredentialVaultEntryError>;
 #[cfg(all(test, unix))]
 thread_local! {
     static COMMAND_ENTRY_OPENER: std::cell::Cell<Option<CommandEntryOpener>> = const { std::cell::Cell::new(None) };
 }
 #[cfg(unix)]
 fn open_command_credential_vault(store: HubStore, admission: std::sync::Arc<AdmittedUserHub>, data: &Path)
-    -> Result<teslatlas_hub::CredentialVaultEntry, teslatlas_hub::CredentialVaultEntryError>
+    -> Result<tesatlas_hub::CredentialVaultEntry, tesatlas_hub::CredentialVaultEntryError>
 {
     #[cfg(test)]
     if let Some(open) = COMMAND_ENTRY_OPENER.with(std::cell::Cell::get) { return open(store, admission, data); }
     #[cfg(feature = "credential-relocation-fixture")]
-    { return teslatlas_hub::CredentialVaultEntry::open_for_test(store, admission, data, true); }
+    { return tesatlas_hub::CredentialVaultEntry::open_for_test(store, admission, data, true); }
     #[cfg(not(feature = "credential-relocation-fixture"))]
     {
-    teslatlas_hub::open_credential_vault_for_entry(store, admission, data)
+    tesatlas_hub::open_credential_vault_for_entry(store, admission, data)
     }
 }
 
@@ -912,7 +912,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     credential_relocation_fixture::require_dispatch(&cli)?;
     let config_path = cli.config.unwrap_or_else(default_config_path);
     #[cfg(unix)]
-    teslatlas_hub::platform::name_migration::prepare_config_path(&config_path)?; // rename hand-over backstop (DEC-160)
+    tesatlas_hub::platform::name_migration::prepare_config_path(&config_path)?; // rename hand-over backstop (DEC-160)
     // Admission (M02-T10, rulings R5 and R6): every command is routed before
     // it reads a secret path, standard input or the network.
     let route = operator::admission::route(&cli.command);
@@ -1016,7 +1016,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             }
             validate_history_only_config(&config)?;
         }
-        teslatlas_hub::macos_launch_agent::preflight_hub_for_serve(
+        tesatlas_hub::macos_launch_agent::preflight_hub_for_serve(
             &config,
             Some(mode.serve_mode()),
         )?;
@@ -1033,15 +1033,15 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "linux")]
     if let Command::Service { command } = &cli.command {
         let status = match command {
-            ServiceCommand::Status => teslatlas_hub::linux_systemd::status()?,
-            ServiceCommand::Start => teslatlas_hub::linux_systemd::apply(
-                teslatlas_hub::linux_systemd::ServiceAction::Start,
+            ServiceCommand::Status => tesatlas_hub::linux_systemd::status()?,
+            ServiceCommand::Start => tesatlas_hub::linux_systemd::apply(
+                tesatlas_hub::linux_systemd::ServiceAction::Start,
             )?,
-            ServiceCommand::Stop => teslatlas_hub::linux_systemd::apply(
-                teslatlas_hub::linux_systemd::ServiceAction::Stop,
+            ServiceCommand::Stop => tesatlas_hub::linux_systemd::apply(
+                tesatlas_hub::linux_systemd::ServiceAction::Stop,
             )?,
-            ServiceCommand::Restart => teslatlas_hub::linux_systemd::apply(
-                teslatlas_hub::linux_systemd::ServiceAction::Restart,
+            ServiceCommand::Restart => tesatlas_hub::linux_systemd::apply(
+                tesatlas_hub::linux_systemd::ServiceAction::Restart,
             )?,
         };
         println!(
@@ -1144,7 +1144,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 "{}",
                 serde_json::json!({
                     "serviceStartRequested": true,
-                    "next": "sudo systemctl start teslatlas-hub.service",
+                    "next": "sudo systemctl start tesatlas-hub.service",
                 })
             );
         }
@@ -1163,7 +1163,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 BackupSourceFormat::PlaintextDirectory => verify_data_backup(source)?,
                 BackupSourceFormat::Encrypted => {
                     let password = recovery_password(false)?;
-                    teslatlas_hub::data_recovery::verify_encrypted_backup(source, &password)?
+                    tesatlas_hub::data_recovery::verify_encrypted_backup(source, &password)?
                 }
             };
             println!("{}", serde_json::to_string(&report)?);
@@ -1178,7 +1178,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 BackupSourceFormat::PlaintextDirectory => restore_data_backup(source, destination)?,
                 BackupSourceFormat::Encrypted => {
                     let password = recovery_password(false)?;
-                    teslatlas_hub::data_recovery::restore_encrypted_backup(
+                    tesatlas_hub::data_recovery::restore_encrypted_backup(
                         source,
                         &password,
                         destination,
@@ -1194,12 +1194,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
 
     match &cli.command {
         Command::Legal => {
-            println!("{}", teslatlas_hub::legal_notice());
+            println!("{}", tesatlas_hub::legal_notice());
             return Ok(());
         }
         Command::Source => {
-            let source = teslatlas_hub::corresponding_source_url()
-                .ok_or(teslatlas_hub::UNBOUND_SOURCE_ERROR)?;
+            let source = tesatlas_hub::corresponding_source_url()
+                .ok_or(tesatlas_hub::UNBOUND_SOURCE_ERROR)?;
             println!("{source}");
             return Ok(());
         }
@@ -1223,7 +1223,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Status => {
             #[cfg(feature = "credential-relocation-fixture")]
-            teslatlas_hub::platform::r78_recording::with_fixture_backend(|backend| {
+            tesatlas_hub::platform::r78_recording::with_fixture_backend(|backend| {
                 backend.loaded_query()?;
                 backend.pid_query()?;
                 backend.plist_decode()?;
@@ -1240,7 +1240,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let config = HubConfig::load(&config_path)?;
             // A Hub that was set up and lost its catalogue is refused, never
             // idle and never new (M02-T21, DEC-116).
-            teslatlas_hub::storage::setup_marker::check_catalogue(&config.data_dir)?;
+            tesatlas_hub::storage::setup_marker::check_catalogue(&config.data_dir)?;
             if *history_only {
                 validate_history_only_config(&config)?;
                 let published = run_immutable_diagnostic(&config.data_dir, |store| {
@@ -1265,13 +1265,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             // the store is neither opened nor created here, and the serve
             // admission applies the same rule. Anything else is checked below.
             #[cfg(target_os = "macos")]
-            if teslatlas_hub::macos_launch_agent::hub_is_never_configured(&config)? {
+            if tesatlas_hub::macos_launch_agent::hub_is_never_configured(&config)? {
                 println!(
                     "{}",
                     serde_json::json!({
                         "status": "ready",
                         "state": "idle",
-                        "version": teslatlas_hub::BUILD_VERSION,
+                        "version": tesatlas_hub::BUILD_VERSION,
                         "provider": config.collector.provider,
                         "collectorEnabled": false,
                     })
@@ -1290,8 +1290,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     CollectorProvider::Fleet => report.credentials.fleet.present,
                 };
                 if !present || !report.checks.iter().any(|check| check.name == "selectedProviderCredentials" && check.passed) {
-                    let status = teslatlas_hub::auth::credential_sign_in::credential_status(store, &config.data_dir, current_epoch_ms()?)?;
-                    return Err(teslatlas_hub::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == CollectorProvider::Fleet).into());
+                    let status = tesatlas_hub::auth::credential_sign_in::credential_status(store, &config.data_dir, current_epoch_ms()?)?;
+                    return Err(tesatlas_hub::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == CollectorProvider::Fleet).into());
                 }
                 Ok(())
             })?;
@@ -1299,7 +1299,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 "{}",
                 serde_json::json!({
                     "status": "ready",
-                    "version": teslatlas_hub::BUILD_VERSION,
+                    "version": tesatlas_hub::BUILD_VERSION,
                     "provider": config.collector.provider,
                 })
             );
@@ -1382,7 +1382,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     // M02-T21 (DEC-116, finding 2): a Hub that was set up keeps its
     // catalogue. A missing, emptied or replaced one is refused here, before
     // `hub.sqlite` is created or initialised, so it never comes up as new.
-    teslatlas_hub::storage::setup_marker::check_catalogue(&config.data_dir)?;
+    tesatlas_hub::storage::setup_marker::check_catalogue(&config.data_dir)?;
     let store = HubStore::initialize(&config.data_dir)?;
     let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
     match cli.command {
@@ -1393,12 +1393,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Bootstrap => {
             let admission = admitted_user_hub.as_ref().cloned().ok_or("Bootstrap reached runtime without user admission")?;
             let _entry = open_command_credential_vault(store.clone(), admission, &config.data_dir)
-                .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)?;
+                .map_err(tesatlas_hub::auth::credential_sign_in::credential_entry_error)?;
             println!(
                 "{}",
                 serde_json::json!({
                     "status": "bootstrapped",
-                    "version": teslatlas_hub::BUILD_VERSION,
+                    "version": tesatlas_hub::BUILD_VERSION,
                     "database": store.database_path(),
                 })
             );
@@ -1441,28 +1441,28 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let (summary_now_ms, admitted_idle) = {
                     store.checkpoint_catalogue_for_immutable_read()?;
                     let development_mode =
-                        teslatlas_hub::macos_launch_agent::development_serve_mode(
-                            teslatlas_hub::platform::name_migration::env::var_os(
-                                teslatlas_hub::macos_launch_agent::DEVELOPMENT_SERVE_ENV,
+                        tesatlas_hub::macos_launch_agent::development_serve_mode(
+                            tesatlas_hub::platform::name_migration::env::var_os(
+                                tesatlas_hub::macos_launch_agent::DEVELOPMENT_SERVE_ENV,
                             )
                             .as_deref(),
-                            teslatlas_hub::platform::name_migration::env::var_os(
-                                teslatlas_hub::macos_launch_agent::DEVELOPMENT_SERVE_MODE_ENV,
+                            tesatlas_hub::platform::name_migration::env::var_os(
+                                tesatlas_hub::macos_launch_agent::DEVELOPMENT_SERVE_MODE_ENV,
                             )
                             .as_deref(),
                         )?;
                     // M02-T21: whether the production admission starts this
                     // Hub idle (never configured).
                     let admitted_idle = development_mode.is_none()
-                        && teslatlas_hub::macos_launch_agent::hub_is_never_configured(&config)?;
-                    teslatlas_hub::macos_launch_agent::preflight_hub_for_serve(
+                        && tesatlas_hub::macos_launch_agent::hub_is_never_configured(&config)?;
+                    tesatlas_hub::macos_launch_agent::preflight_hub_for_serve(
                         &config,
                         development_mode,
                     )?;
                     // A Hub the full production admission passed is set up:
                     // recorded outside its catalogue (DEC-116, finding 2).
                     if development_mode.is_none() && !admitted_idle {
-                        teslatlas_hub::storage::setup_marker::record(
+                        tesatlas_hub::storage::setup_marker::record(
                             &config.data_dir,
                             store.installation_id()?,
                         )?;
@@ -1470,7 +1470,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     // The Fixture mode serves the fixture's own measurement
                     // time (C6 R28 (c)); every other mode keeps the system clock.
                     (
-                        teslatlas_hub::macos_launch_agent::fixture_summary_now_ms(
+                        tesatlas_hub::macos_launch_agent::fixture_summary_now_ms(
                             development_mode,
                             &config.data_dir,
                         )?,
@@ -1547,7 +1547,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             config: config.clone(),
                             admission: std::sync::Arc::clone(&admission),
                             backup: std::sync::Arc::clone(&backup_schedule),
-                            custody: teslatlas_hub::collection::window::CredentialCustody::process_wide().clone(),
+                            custody: tesatlas_hub::collection::window::CredentialCustody::process_wide().clone(),
                             kick: supervisor.kicker(),
                             reload_kick: supervisor.reload_kicker(),
                             config_path: config_path.clone(),
@@ -1641,7 +1641,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 &operator_home()?,
             )?;
             let window = authority.status();
-            if window.phase != teslatlas_hub::collection::window::Phase::Open {
+            if window.phase != tesatlas_hub::collection::window::Phase::Open {
                 return Err(OperatorRefusal::new(
                     operator::authority::WINDOW_CLOSED,
                     "observe needs an open collection window",
@@ -1662,7 +1662,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             // the observation has released its collector lease.
             let (observe_result, handback) = operator::authority::supervise_observation(
                 std::sync::Arc::clone(&authority),
-                Duration::from_secs(teslatlas_hub::collection::window::SUPERVISOR_POLL_SECONDS as u64),
+                Duration::from_secs(tesatlas_hub::collection::window::SUPERVISOR_POLL_SECONDS as u64),
                 |window_left| {
                     run_observe_orchestration(
                         store,
@@ -1730,11 +1730,11 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Backup { destination } => {
             let password = recovery_password(true)?;
             let mut request =
-                teslatlas_hub::data_recovery::EncryptedBackupRequest::new(&destination, &password);
+                tesatlas_hub::data_recovery::EncryptedBackupRequest::new(&destination, &password);
             // The command's existing private folder: owner-only, by mode and
             // by ACL, where the volume enforces ownership (M06-T14).
             request.private_destination = true;
-            let report = teslatlas_hub::data_recovery::create_encrypted_backup(&store, &request)
+            let report = tesatlas_hub::data_recovery::create_encrypted_backup(&store, &request)
                 .map_err(|error| backup_refusal(&store, error))?;
             println!("{}", serde_json::to_string(&report)?);
         }
@@ -1762,15 +1762,15 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
 /// removes them (DEC-083).
 fn backup_refusal(
     store: &HubStore,
-    error: teslatlas_hub::data_recovery::DataRecoveryError,
+    error: tesatlas_hub::data_recovery::DataRecoveryError,
 ) -> Box<dyn std::error::Error> {
-    match teslatlas_hub::data_recovery::refused_credential_backup_message(store, &error) {
+    match tesatlas_hub::data_recovery::refused_credential_backup_message(store, &error) {
         Some(message) => message.into(),
         None => error.into(),
     }
 }
 
-use teslatlas_hub::data_recovery::{BackupSourceFormat, admit_recovery_source};
+use tesatlas_hub::data_recovery::{BackupSourceFormat, admit_recovery_source};
 
 /// The recovery password for `backup`, `verify-backup` and `restore-data`:
 /// a no-echo prompt on a terminal (twice for a new backup), otherwise one line
@@ -1778,16 +1778,16 @@ use teslatlas_hub::data_recovery::{BackupSourceFormat, admit_recovery_source};
 /// logged. Tests offer standard input through [`set_password_input`].
 fn recovery_password(
     confirm: bool,
-) -> Result<zeroize::Zeroizing<String>, teslatlas_hub::data_recovery::DataRecoveryError> {
+) -> Result<zeroize::Zeroizing<String>, tesatlas_hub::data_recovery::DataRecoveryError> {
     #[cfg(test)]
     {
         let _ = confirm;
         let input = zeroize::Zeroizing::new(take_password_input().unwrap_or_default());
-        teslatlas_hub::data_recovery::recovery_password_from(input.as_slice())
+        tesatlas_hub::data_recovery::recovery_password_from(input.as_slice())
     }
     #[cfg(not(test))]
     {
-        teslatlas_hub::data_recovery::read_recovery_password(confirm)
+        tesatlas_hub::data_recovery::read_recovery_password(confirm)
     }
 }
 
@@ -1833,7 +1833,7 @@ mod backup_recovery_repair_tests {
         sync::{Arc, atomic::AtomicBool},
     };
 
-    use teslatlas_hub::{
+    use tesatlas_hub::{
         db::HubStore,
         runtime::backup_schedule::{BackupJob, BackupRunner, StoreBackupRunner},
     };
@@ -1942,7 +1942,7 @@ mod backup_recovery_repair_tests {
         let report = StoreBackupRunner::new(HubStore::initialize(&hub.data).expect("store"))
             .run(&BackupJob {
                 destination: destination.clone(),
-                password: teslatlas_hub::runtime::backup_schedule::PasswordSource::File(password_file),
+                password: tesatlas_hub::runtime::backup_schedule::PasswordSource::File(password_file),
                 keep: None,
                 cancel: Arc::new(AtomicBool::new(false)),
             })

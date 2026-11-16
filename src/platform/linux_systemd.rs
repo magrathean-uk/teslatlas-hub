@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, io, process::Command};
 
-pub const UNIT_NAME: &str = "teslatlas-hub.service";
+pub const UNIT_NAME: &str = "tesatlas-hub.service";
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]

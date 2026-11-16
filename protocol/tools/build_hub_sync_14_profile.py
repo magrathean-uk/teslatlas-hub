@@ -265,7 +265,7 @@ def build(check):
         "joint_body_admission": "Individual schema member maxima are not independently combinable. Every request and the exact retry_request MUST fit 8192 raw UTF-8 JSON bytes; each signed control response and exact replacement manifest MUST fit 2097152 raw UTF-8 JSON bytes. A replacement MUST satisfy these limits jointly before it is published. Producers MUST choose bounded checkpoint IDs and chunk references so the complete signed rebase and mandatory exact retry both fit. Receivers MUST enforce raw limits before parsing, including whitespace and numeric lexemes. A schema-valid over-bound value is not an admitted wire document.",
     }
     contract = {
-        "format": FORMAT, "media_type": "application/vnd.teslatlas.physical-delta+sqlite+zstd;version=1",
+        "format": FORMAT, "media_type": "application/vnd.tesatlas.physical-delta+sqlite+zstd;version=1",
         "field_catalog": "physical-field-catalog.json", "value_semantics": "physical-value-semantics.json",
         "sql": "physical-delta-pack-v1.sql",
         "full_row_rule": "All 205 wire columns representing the 168 mapped source fields are present for every changed/context row; absent columns, partial updates, and addresses.raw are forbidden.",
@@ -486,7 +486,7 @@ def build(check):
         {"id": "physical-absent-drive-missing-detach-scope", "response_fixture": "changes-since-physical-absent-drive-missing-detach-scope-v1", "status": 200, "expected_errors": ["missing surviving-child recomputation scope"]},
     ]}
     files["cases.json"] = cases
-    openapi = {"openapi": "3.1.0", "info": {"title": "Teslatlas PhysicalV3 changed-set extension", "version": "1.4.0"},
+    openapi = {"openapi": "3.1.0", "info": {"title": "Tesatlas PhysicalV3 changed-set extension", "version": "1.4.0"},
                "paths": {"/v1/vehicles/{vehicle_id}/sync/changes-since": {"post": {
                    "operationId": "changesSincePhysicalV14", "parameters": [{"name": "vehicle_id", "in": "path", "required": True, "schema": UUID}],
                    "requestBody": {"required": True, "content": {"application/json": {"schema": {"$ref": "changes-since-request.schema.json#/$defs/request"}}}, "x-max-body-bytes": 8192},

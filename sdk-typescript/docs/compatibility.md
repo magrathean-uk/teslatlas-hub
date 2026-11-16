@@ -1,4 +1,4 @@
-# Teslatlas SDK compatibility
+# Tesatlas SDK compatibility
 
 ## Contract input and regeneration
 
@@ -119,7 +119,7 @@ The closed `HubClient` surface contains exactly these named operations:
 | Reads | `vehicles`, `current`, `drives` |
 | Lifecycle | `logout` (best-effort Hub revoke, then local clear), `dispose` (local) |
 
-The Node.js factory is available from `@teslatlas/sdk/node`. The root entry point
+The Node.js factory is available from `@tesatlas/sdk/node`. The root entry point
 exports public types and safe constructors only; it does not export an arbitrary
 route executor or a factory.
 

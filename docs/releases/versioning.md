@@ -5,7 +5,7 @@ upload prebuilt packages. When authorised, ordinary fixes may be pushed without 
 or tag; version changes require an explicit decision. Existing tags
 remain immutable. See [source publishing](releasing.md).
 
-Accepted on 5 September 2026. Future Teslatlas Hub releases use the
+Accepted on 5 September 2026. Future Tesatlas Hub releases use the
 calendar format **`YEAR.WEEK.REVISION`**.
 
 The first calendar version, **`2026.36.1`**, has the immutable source tag
@@ -66,7 +66,7 @@ Keep the existing `v1.0.0` and prerelease tags unchanged. Calendar versioning
 supersedes them for future Hub releases; it does not rename old releases or
 authorize attaching newer binaries to their tags. The cohort policy applies to
 the Hub ecosystem repositories listed above. It does not apply to the separate
-Teslatlas app repository.
+Tesatlas app repository.
 
 Document database migrations, API and sync compatibility, minimum supported
 platforms, upgrade/rollback restrictions, and breaking changes explicitly in

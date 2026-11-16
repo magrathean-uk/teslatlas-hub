@@ -1,6 +1,6 @@
 # Product versioning
 
-This repository carries the shared Teslatlas Hub ecosystem product version
+This repository carries the shared Tesatlas Hub ecosystem product version
 `2026.36.2` in `YEAR.WEEK.REVISION` form. The number alone does not imply a
 tag, package publication, release artifact, or support.
 

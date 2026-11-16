@@ -1,4 +1,4 @@
-Teslatlas Edge
+Tesatlas Edge
 Copyright © 2026 MAGRATHEAN UK LTD
 Created by György Bolyki
 
@@ -14,4 +14,4 @@ Third-party components are listed in docs/legal/third-party-notices.md: the Rust
 crates, under their own permissive licences, and the optional Fleet Telemetry sidecar,
 a patched build of Tesla's fleet-telemetry (Apache-2.0).
 
-Teslatlas is independent. It is not affiliated with, endorsed by or supported by Tesla, Inc.
+Tesatlas is independent. It is not affiliated with, endorsed by or supported by Tesla, Inc.

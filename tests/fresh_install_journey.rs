@@ -44,9 +44,9 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use tempfile::TempDir;
-use teslatlas_hub::collection::window::{IssueRequest, Issuer, MemoryAnchor, SystemClock};
+use tesatlas_hub::collection::window::{IssueRequest, Issuer, MemoryAnchor, SystemClock};
 
-const BIN: &str = env!("CARGO_BIN_EXE_teslatlas-hub");
+const BIN: &str = env!("CARGO_BIN_EXE_tesatlas-hub");
 const SERVE_START_LIMIT: Duration = Duration::from_secs(90);
 const COLLECTION_LIMIT: Duration = Duration::from_secs(90);
 const QUIET_PERIOD: Duration = Duration::from_secs(4);
@@ -321,7 +321,7 @@ impl Hub {
             .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
             .env("TMPDIR", self.tmp.path())
             .env("RUST_LOG", "info")
-            .env("TESLATLAS_HUB_JOURNEY_DOUBLES", self.path("doubles.json"))
+            .env("TESATLAS_HUB_JOURNEY_DOUBLES", self.path("doubles.json"))
             .env("NO_PROXY", "127.0.0.1,localhost")
             .env("no_proxy", "127.0.0.1,localhost");
         for variable in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"] {
@@ -456,7 +456,7 @@ impl Hub {
     /// Trusts the issuer and opens a one-hour window for this host, through
     /// the running service's operator channel.
     fn open_window(&self) {
-        let host_id = teslatlas_hub::runtime::operator::host::this_host_id().expect("host id");
+        let host_id = tesatlas_hub::runtime::operator::host::this_host_id().expect("host id");
         let issuer = Issuer::new(
             &self.path("issuer"),
             &host_id,
@@ -697,7 +697,7 @@ fn fresh_install_journey_lost_catalogue_is_refused() {
 #[test]
 fn fresh_install_journey_pre_marker_catalogue_loss_is_refused() {
     use std::os::unix::fs::OpenOptionsExt as _;
-    use teslatlas_hub::db::HubStore;
+    use tesatlas_hub::db::HubStore;
     let identity = |data: &Path| {
         HubStore::open_read_only(data)
             .and_then(|store| store.installation_id())
@@ -717,7 +717,7 @@ fn fresh_install_journey_pre_marker_catalogue_loss_is_refused() {
             let label = format!("{loss}{}", if marker_lost { "-marker-lost" } else { "" });
             let hub = Hub::new();
             let data = hub.data();
-            teslatlas_hub::auth::credential_sign_in::seed_owner_pair_for_test(
+            tesatlas_hub::auth::credential_sign_in::seed_owner_pair_for_test(
                 &data,
                 "pre-marker-access-0001",
                 "pre-marker-refresh-0001",
@@ -803,7 +803,7 @@ fn fresh_install_journey_release_configuration_has_no_doubles() {
         let output = Command::new(&cargo)
             .current_dir(manifest)
             .args([
-                "tree", "--offline", "--locked", "--package", "teslatlas-hub", "--edges", edges,
+                "tree", "--offline", "--locked", "--package", "tesatlas-hub", "--edges", edges,
                 "--target", "all", "--depth", "0", "--format", "{p} features=[{f}]",
             ])
             .output()
@@ -825,7 +825,7 @@ fn fresh_install_journey_release_configuration_has_no_doubles() {
     assert!(default.is_empty(), "{default:?}");
     for table in ["dependencies", "build-dependencies"] {
         if let Some(dependencies) = toml.get(table).and_then(toml::Value::as_table) {
-            assert!(!dependencies.contains_key("teslatlas-hub"), "{table} enables the doubles");
+            assert!(!dependencies.contains_key("tesatlas-hub"), "{table} enables the doubles");
         }
     }
     let guard = fs::read_to_string(manifest.join("src/api/owner_api.rs")).expect("owner API source");
@@ -841,7 +841,7 @@ fn fresh_install_journey_release_configuration_has_no_doubles() {
         "build.rs no longer refuses the doubles in a release-profile build"
     );
 
-    use teslatlas_hub::owner_api::OwnerApiBase;
+    use tesatlas_hub::owner_api::OwnerApiBase;
     for base in ["http://127.0.0.1:9/", "http://localhost:9/", "http://owner-api.example/"] {
         assert!(OwnerApiBase::parse(base).is_err(), "{base} is accepted as a configured base");
     }

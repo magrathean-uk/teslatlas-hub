@@ -1,6 +1,6 @@
 # Code of conduct
 
-Teslatlas Hub contributors and maintainers must keep project interaction safe,
+Tesatlas Hub contributors and maintainers must keep project interaction safe,
 professional, and focused on verifiable technical work.
 
 ## Expected conduct

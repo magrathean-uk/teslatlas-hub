@@ -1,8 +1,8 @@
-Teslatlas Hub
+Tesatlas Hub
 Copyright © 2026 MAGRATHEAN UK LTD
 Created by György Bolyki
 
-Teslatlas Hub is free software. You can redistribute and modify it under the
+Tesatlas Hub is free software. You can redistribute and modify it under the
 terms of the GNU Affero General Public License, version 3 only, as published
 by the Free Software Foundation (SPDX: AGPL-3.0-only). Additional terms apply
 under section 7 of that licence. They are in docs/legal/additional-terms.md,
@@ -13,19 +13,19 @@ Required attribution
 --------------------
 The additional terms require this notice to be kept:
 
-  Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
+  Tesatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/tesatlas-hub
 
 Independence
 ------------
-Teslatlas Hub is developed and published independently by MAGRATHEAN UK LTD.
+Tesatlas Hub is developed and published independently by MAGRATHEAN UK LTD.
 Tesla, Inc. did not make, approve or sponsor it, and neither did the makers of
 any software whose data it can read or import. Other product names are used
-only to say what Teslatlas Hub works with.
+only to say what Tesatlas Hub works with.
 
 Packages in this repository
 ---------------------------
-The directories compute/, protocol/ and sdk-typescript/ contain Teslatlas
-Compute, Teslatlas Protocol and the Teslatlas TypeScript client. They are
+The directories compute/, protocol/ and sdk-typescript/ contain Tesatlas
+Compute, Tesatlas Protocol and the Tesatlas TypeScript client. They are
 separate packages under the Apache License, Version 2.0, with their own LICENSE
 and NOTICE files. The GNU Affero General Public License and the additional
 terms do not apply to them.
@@ -38,5 +38,5 @@ package.
 
 Names
 -----
-The licence grants no right to use the names Teslatlas or Magrathean. See
+The licence grants no right to use the names Tesatlas or Magrathean. See
 docs/legal/trademarks.md, or TRADEMARKS.md in an installed package.

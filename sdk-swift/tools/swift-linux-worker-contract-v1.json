@@ -17,7 +17,7 @@
       "own the Unix broker, deadline, process generation, exit and cleanup evidence"
     ],
     "worker": [
-      "read only TESLATLAS_CURRENT_HUB_MATRIX_WORKER_CONFIG",
+      "read only TESATLAS_CURRENT_HUB_MATRIX_WORKER_CONFIG",
       "run only swift_current_linux_test from the registered product",
       "write phase-ready, witness, evidence and actor-log files",
       "never select commands, Docker objects, broker operations or credentials"
@@ -207,7 +207,7 @@
           "host": "root-owned worker-config-v1 {path,sha256} binding",
           "container_path": "canonical absolute path below the fresh container run root",
           "environment_key": {
-            "const": "TESLATLAS_CURRENT_HUB_MATRIX_WORKER_CONFIG"
+            "const": "TESATLAS_CURRENT_HUB_MATRIX_WORKER_CONFIG"
           },
           "mode": {
             "const": 384
@@ -379,7 +379,7 @@
       ],
       "properties": {
         "environment_key": {
-          "const": "TESLATLAS_CURRENT_HUB_MATRIX_WORKER_CONFIG"
+          "const": "TESATLAS_CURRENT_HUB_MATRIX_WORKER_CONFIG"
         },
         "container_path": "{container_run_root}/worker-config.json",
         "host_binding": "runner-generated worker-config-v1 binding",

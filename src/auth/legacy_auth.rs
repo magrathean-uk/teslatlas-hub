@@ -50,7 +50,7 @@ pub(crate) use wire::{
 // leaves the pre-response durable marker fenced on restart.
 #[cfg(all(test, unix))]
 pub(crate) const TEST_KILL_AFTER_VALIDATED_ROTATION_ENV: &str =
-    "TESLATLAS_HUB_TEST_KILL_AFTER_VALIDATED_ROTATION";
+    "TESATLAS_HUB_TEST_KILL_AFTER_VALIDATED_ROTATION";
 #[cfg(all(test, unix))]
 pub(crate) const TEST_KILL_AFTER_VALIDATED_ROTATION_VALUE: &str =
     "phase2-response-before-first-persist-v1";
@@ -242,7 +242,7 @@ impl LegacyAuthError {
 ///
 /// ```compile_fail
 /// fn requires_clone<T: Clone>() {}
-/// requires_clone::<teslatlas_hub::legacy_auth::LegacyAuth>();
+/// requires_clone::<tesatlas_hub::legacy_auth::LegacyAuth>();
 /// ```
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct LegacyAuth {

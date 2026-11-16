@@ -22,23 +22,23 @@ test -x scripts/normalize-tree-mtimes.py
 # Compose is optional on source-build hosts; when present, validate the
 # resolved service definition without creating containers or touching volumes.
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
+    TESATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
     SOURCE_DATE_EPOCH=1700000000 \
-    TESLATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
+    TESATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
         docker compose -f compose.yaml config --quiet
-    TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
+    TESATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
     SOURCE_DATE_EPOCH=1700000000 \
-    TESLATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
+    TESATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
         docker compose -f compose.yaml config --format json \
         | python3 scripts/check-docker-compose-render.py
 elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
-    TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
+    TESATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
     SOURCE_DATE_EPOCH=1700000000 \
-    TESLATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
+    TESATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
         docker-compose -f compose.yaml config --quiet
-    TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
+    TESATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
     SOURCE_DATE_EPOCH=1700000000 \
-    TESLATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
+    TESATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
         docker-compose -f compose.yaml config --format json \
         | python3 scripts/check-docker-compose-render.py
 fi
@@ -107,10 +107,10 @@ if os.path.commonpath([checkout, target]) == checkout:
 print(target)
 PY_GUARD
 )
-TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
+TESATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
     CARGO_TARGET_DIR="$docker_context_target" \
     cargo check --locked --offline --manifest-path "$context_root/Cargo.toml" \
-    --bin teslatlas-hub --quiet
+    --bin tesatlas-hub --quiet
 
 # Repository-selection variables must not redirect the wrapper into an
 # alternate checkout even when that checkout advertises the official URL.
@@ -118,11 +118,11 @@ alternate_repository="$context_root/alternate-repository"
 mkdir "$alternate_repository"
 git -C "$alternate_repository" init -q
 git -C "$alternate_repository" remote add origin \
-    https://github.com/magrathean-uk/teslatlas-hub.git
+    https://github.com/magrathean-uk/tesatlas-hub.git
 if GIT_DIR="$alternate_repository/.git" GIT_WORK_TREE="$alternate_repository" \
     ./scripts/build-container-image.sh \
         --output "$context_root/redirected.tar" \
-        --tag teslatlas-hub:redirected \
+        --tag tesatlas-hub:redirected \
         2>"$context_root/redirected.err"; then
     printf '%s\n' 'container artifact builder accepted redirected Git repository state' >&2
     exit 1
@@ -133,7 +133,7 @@ test ! -e "$context_root/redirected.tar"
 if GIT_EXEC_PATH="$alternate_repository" \
     ./scripts/build-container-image.sh \
         --output "$context_root/fabricated-remote.tar" \
-        --tag teslatlas-hub:fabricated-remote \
+        --tag tesatlas-hub:fabricated-remote \
         2>"$context_root/fabricated-remote.err"; then
     printf '%s\n' 'container artifact builder accepted redirected Git helper path' >&2
     exit 1
@@ -147,13 +147,13 @@ grep -F 'COPY compute ./compute' Dockerfile >/dev/null
 grep -F 'COPY LICENSE NOTICE ./' Dockerfile >/dev/null
 grep -F 'COPY fixtures/source-corpus/v1/updates-lossless-selected-car.sql ./fixtures/source-corpus/v1/updates-lossless-selected-car.sql' Dockerfile >/dev/null
 grep -F 'COPY packaging/docker/initialize-volume.sh ./packaging/docker/initialize-volume.sh' Dockerfile >/dev/null
-grep -F 'TESLATLAS_HUB_SOURCE_COMMIT="${TESLATLAS_HUB_SOURCE_COMMIT}"' Dockerfile >/dev/null
+grep -F 'TESATLAS_HUB_SOURCE_COMMIT="${TESATLAS_HUB_SOURCE_COMMIT}"' Dockerfile >/dev/null
 grep -F 'ARG SOURCE_DATE_EPOCH' Dockerfile >/dev/null
-grep -F -- 'RUN --mount=type=tmpfs,target=/tmp/teslatlas-buildkit-required' Dockerfile >/dev/null
+grep -F -- 'RUN --mount=type=tmpfs,target=/tmp/tesatlas-buildkit-required' Dockerfile >/dev/null
 grep -F 'SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}"' Dockerfile >/dev/null
-grep -F 'org.opencontainers.image.revision="${TESLATLAS_HUB_SOURCE_COMMIT}"' Dockerfile >/dev/null
-grep -F 'cargo build --locked --release --bin teslatlas-hub' Dockerfile >/dev/null
-grep -F 'official_repository=https://github.com/magrathean-uk/teslatlas-hub.git' scripts/build-container-image.sh >/dev/null
+grep -F 'org.opencontainers.image.revision="${TESATLAS_HUB_SOURCE_COMMIT}"' Dockerfile >/dev/null
+grep -F 'cargo build --locked --release --bin tesatlas-hub' Dockerfile >/dev/null
+grep -F 'official_repository=https://github.com/magrathean-uk/tesatlas-hub.git' scripts/build-container-image.sh >/dev/null
 grep -F 'cd -P -- "$(dirname -- "$0")/.." && pwd -P' scripts/build-container-image.sh >/dev/null
 grep -F 'git rev-parse --show-toplevel' scripts/build-container-image.sh >/dev/null
 grep -F 'GIT_ALTERNATE_OBJECT_DIRECTORIES' scripts/build-container-image.sh >/dev/null
@@ -178,7 +178,7 @@ if grep -F -- '--chmod=' Dockerfile >/dev/null; then
     printf '%s\n' 'Dockerfile must keep explicit reviewed runtime ownership and mode steps' >&2
     exit 1
 fi
-grep -F 'install -d -o 10001 -g 10001 -m 0755 /image-root/var/lib/teslatlas-hub' Dockerfile >/dev/null
+grep -F 'install -d -o 10001 -g 10001 -m 0755 /image-root/var/lib/tesatlas-hub' Dockerfile >/dev/null
 grep -F 'the reproducible artifact path requires Docker Engine 26' scripts/build-container-image.sh >/dev/null
 grep -F 'docker buildx version' scripts/build-container-image.sh >/dev/null
 grep -F 'DOCKER_BUILDKIT=1 docker buildx build' scripts/build-container-image.sh >/dev/null
@@ -210,22 +210,22 @@ if grep -E 'docker image (inspect|rm|save).*(^|[^a-z_])"?\$tag"?' scripts/build-
     printf '%s\n' 'container artifact builder must not touch the requested tag in Docker' >&2
     exit 1
 fi
-grep -F 'TESLATLAS_HUB_SOURCE_COMMIT: ${TESLATLAS_HUB_SOURCE_COMMIT:?' compose.yaml >/dev/null
+grep -F 'TESATLAS_HUB_SOURCE_COMMIT: ${TESATLAS_HUB_SOURCE_COMMIT:?' compose.yaml >/dev/null
 grep -F 'SOURCE_DATE_EPOCH: ${SOURCE_DATE_EPOCH:?' compose.yaml >/dev/null
 grep -F 'USER ${HUB_UID}:${HUB_GID}' Dockerfile >/dev/null
 grep -F 'read_only: true' compose.yaml >/dev/null
 grep -F 'cap_drop: ["ALL"]' compose.yaml >/dev/null
 grep -F 'no-new-privileges:true' compose.yaml >/dev/null
 grep -F '127.0.0.1:8443:8443' compose.yaml >/dev/null
-grep -F './config.toml:/etc/teslatlas-hub/config.toml:ro' compose.yaml >/dev/null
-grep -F './tls:/etc/teslatlas-hub/tls:ro' compose.yaml >/dev/null
-grep -F 'hub-data:/var/lib/teslatlas-hub' compose.yaml >/dev/null
+grep -F './config.toml:/etc/tesatlas-hub/config.toml:ro' compose.yaml >/dev/null
+grep -F './tls:/etc/tesatlas-hub/tls:ro' compose.yaml >/dev/null
+grep -F 'hub-data:/var/lib/tesatlas-hub' compose.yaml >/dev/null
 grep -F -- '- CMD' compose.yaml >/dev/null
-grep -F -- '- /usr/local/bin/teslatlas-hub' compose.yaml >/dev/null
+grep -F -- '- /usr/local/bin/tesatlas-hub' compose.yaml >/dev/null
 grep -F -- '- healthcheck' compose.yaml >/dev/null
 grep -F -- '- --ca-file' compose.yaml >/dev/null
 grep -F -- '- --server-name' compose.yaml >/dev/null
-grep -F 'TESLATLAS_HUB_TLS_SERVER_NAME:?' compose.yaml >/dev/null
+grep -F 'TESATLAS_HUB_TLS_SERVER_NAME:?' compose.yaml >/dev/null
 grep -F '127, 0, 0, 1' src/application/main/healthcheck.rs >/dev/null
 if grep -Eq 'CMD-SHELL|\bcurl\b' compose.yaml; then
     printf '%s\n' 'compose healthcheck must use the Hub binary without a shell or curl' >&2
@@ -235,7 +235,7 @@ grep -F '0.0.0.0:8443' packaging/docker/config.toml >/dev/null
 grep -F 'volume-init' packaging/docker/prepare-volumes.sh >/dev/null
 grep -F 'cap_add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]' compose.yaml >/dev/null
 grep -F 'condition: service_completed_successfully' compose.yaml >/dev/null
-grep -F '/usr/local/libexec/teslatlas-hub-initialize-volume' compose.yaml >/dev/null
+grep -F '/usr/local/libexec/tesatlas-hub-initialize-volume' compose.yaml >/dev/null
 test "$(grep -Fc 'cap_drop: ["ALL"]' compose.yaml)" -eq 2
 
 sh scripts/test-docker-volume-init.sh

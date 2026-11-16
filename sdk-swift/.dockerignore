@@ -9,8 +9,8 @@
 !Tests/
 !Tests/**
 !Examples/
-!Examples/TeslatlasHubSDKExample/
-!Examples/TeslatlasHubSDKExample/**
+!Examples/TesatlasHubSDKExample/
+!Examples/TesatlasHubSDKExample/**
 !Examples/CurrentHubConsumer/
 !Examples/CurrentHubConsumer/Package.swift
 !Examples/CurrentHubConsumer/Sources/

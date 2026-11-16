@@ -22,9 +22,9 @@ describe("package surface", () => {
 
   it("runtime-imports only the closed package entry points", async () => {
     const script = `
-      const root = await import("@teslatlas/sdk");
-      const node = await import("@teslatlas/sdk/node");
-      if (typeof root.TeslatlasError !== "function" || typeof root.asOpaqueCursor !== "function") throw new Error("root exports missing");
+      const root = await import("@tesatlas/sdk");
+      const node = await import("@tesatlas/sdk/node");
+      if (typeof root.TesatlasError !== "function" || typeof root.asOpaqueCursor !== "function") throw new Error("root exports missing");
       if (typeof root.createHubClient !== "undefined") throw new Error("root Hub factory leaked");
       for (const api of [root, node]) {
         for (const name of ["FetchTransport", "createClient", "parseSseStream", "subscribeToSse"]) {
@@ -33,8 +33,8 @@ describe("package surface", () => {
       }
       if (typeof node.createHubClient !== "function") throw new Error("Hub runtime factory missing");
       const paths = [
-        import.meta.resolve("@teslatlas/sdk"),
-        import.meta.resolve("@teslatlas/sdk/node"),
+        import.meta.resolve("@tesatlas/sdk"),
+        import.meta.resolve("@tesatlas/sdk/node"),
       ];
       process.stdout.write(JSON.stringify(paths));
     `;
@@ -57,10 +57,10 @@ describe("package surface", () => {
   });
 
   it.each([
-    "@teslatlas/sdk/browser",
-    "@teslatlas/sdk/http/fetch-transport",
-    "@teslatlas/sdk/generated/hub-protocol",
-    "@teslatlas/sdk/hub/client",
+    "@tesatlas/sdk/browser",
+    "@tesatlas/sdk/http/fetch-transport",
+    "@tesatlas/sdk/generated/hub-protocol",
+    "@tesatlas/sdk/hub/client",
   ])("rejects the retired or private import %s", async (specifier) => {
     await expect(import(specifier)).rejects.toThrow("is not exported");
   });
@@ -75,11 +75,11 @@ describe("package surface", () => {
       | Record<string, { name?: string; files?: Array<{ path?: string }> }>;
     const reports = Array.isArray(parsed)
       ? parsed
-      : Object.keys(parsed).length === 1 && Object.hasOwn(parsed, "@teslatlas/sdk")
-        ? [parsed["@teslatlas/sdk"]]
+      : Object.keys(parsed).length === 1 && Object.hasOwn(parsed, "@tesatlas/sdk")
+        ? [parsed["@tesatlas/sdk"]]
         : [];
     expect(reports).toHaveLength(1);
-    expect(reports[0]?.name).toBe("@teslatlas/sdk");
+    expect(reports[0]?.name).toBe("@tesatlas/sdk");
     const files = new Set(reports[0]?.files?.map((entry) => entry.path).filter(isString));
 
     expect(files.has("docs/compatibility.md")).toBe(true);

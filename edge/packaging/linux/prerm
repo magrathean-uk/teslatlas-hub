@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-service=teslatlas-edge.service
-receiver_service=teslatlas-fleet-telemetry.service
+service=tesatlas-edge.service
+receiver_service=tesatlas-fleet-telemetry.service
 
 if [ "${1:-}" = remove ] || [ "${1:-}" = deconfigure ]; then
     if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then

@@ -6,13 +6,13 @@ import hashlib
 import json
 from pathlib import Path
 
-from custom_components.teslatlas_hub.current_hub_client import (
+from custom_components.tesatlas_hub.current_hub_client import (
     PROFILE_ID,
     PROFILE_SHA256,
 )
 
 ROOT = Path(__file__).parents[1]
-INTEGRATION = ROOT / "custom_components" / "teslatlas_hub"
+INTEGRATION = ROOT / "custom_components" / "tesatlas_hub"
 
 
 def _load_json(path: Path) -> dict[str, object]:
@@ -23,8 +23,8 @@ def test_manifest_declares_local_poll_hub() -> None:
     """Catch packaging that no longer advertises the approved HA contract."""
     manifest = _load_json(INTEGRATION / "manifest.json")
 
-    assert manifest["domain"] == "teslatlas_hub"
-    assert manifest["name"] == "Teslatlas Hub"
+    assert manifest["domain"] == "tesatlas_hub"
+    assert manifest["name"] == "Tesatlas Hub"
     assert manifest["version"] == "2026.36.2"
     assert manifest["integration_type"] == "hub"
     assert manifest["iot_class"] == "local_poll"
@@ -38,7 +38,7 @@ def test_hacs_metadata_targets_one_integration() -> None:
     hacs = _load_json(ROOT / "hacs.json")
 
     assert hacs == {
-        "name": "Teslatlas Hub",
+        "name": "Tesatlas Hub",
         "homeassistant": "2026.8.3",
     }
 

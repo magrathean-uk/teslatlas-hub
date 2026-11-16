@@ -1,12 +1,12 @@
 name: CurrentHubRuntimeHost
 
 options:
-  bundleIdPrefix: eu.teslatlas.sdk
+  bundleIdPrefix: eu.tesatlas.sdk
   deploymentTarget:
     iOS: "17.0"
 
 packages:
-  TeslatlasSDK:
+  TesatlasSDK:
     path: ..
 
 targets:
@@ -17,60 +17,60 @@ targets:
       - path: Sources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: eu.teslatlas.sdk.currenthub.runtime-host
+        PRODUCT_BUNDLE_IDENTIFIER: eu.tesatlas.sdk.currenthub.runtime-host
         GENERATE_INFOPLIST_FILE: YES
         SWIFT_VERSION: "6.0"
     dependencies:
-      - package: TeslatlasSDK
-        product: TeslatlasHubSDK
-      - package: TeslatlasSDK
-        product: TeslatlasCommands
-      - package: TeslatlasSDK
-        product: TeslatlasHubV1Compatibility
-      - package: TeslatlasSDK
-        product: TeslatlasCurrentHub
+      - package: TesatlasSDK
+        product: TesatlasHubSDK
+      - package: TesatlasSDK
+        product: TesatlasCommands
+      - package: TesatlasSDK
+        product: TesatlasHubV1Compatibility
+      - package: TesatlasSDK
+        product: TesatlasCurrentHub
 
   CurrentHubRuntimeTests:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - path: ../Tests/TeslatlasCurrentHubTests
+      - path: ../Tests/TesatlasCurrentHubTests
         includes:
           - CurrentHubTestSupport.swift
           - CurrentHubAppleConsumerTests.swift
-      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/discovery.json
+      - path: ../Tests/TesatlasCurrentHubTests/Fixtures/discovery.json
         buildPhase: resources
-      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/claim.json
+      - path: ../Tests/TesatlasCurrentHubTests/Fixtures/claim.json
         buildPhase: resources
-      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/health.json
+      - path: ../Tests/TesatlasCurrentHubTests/Fixtures/health.json
         buildPhase: resources
-      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/invitation.json
+      - path: ../Tests/TesatlasCurrentHubTests/Fixtures/invitation.json
         buildPhase: resources
-      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/ready.json
+      - path: ../Tests/TesatlasCurrentHubTests/Fixtures/ready.json
         buildPhase: resources
-      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/vehicles.json
+      - path: ../Tests/TesatlasCurrentHubTests/Fixtures/vehicles.json
         buildPhase: resources
-      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/current.json
+      - path: ../Tests/TesatlasCurrentHubTests/Fixtures/current.json
         buildPhase: resources
-      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/drives.json
+      - path: ../Tests/TesatlasCurrentHubTests/Fixtures/drives.json
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: eu.teslatlas.sdk.currenthub.runtime-tests
+        PRODUCT_BUNDLE_IDENTIFIER: eu.tesatlas.sdk.currenthub.runtime-tests
         GENERATE_INFOPLIST_FILE: YES
         SWIFT_VERSION: "6.0"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/CurrentHubRuntimeHost.app/CurrentHubRuntimeHost"
         BUNDLE_LOADER: "$(TEST_HOST)"
     dependencies:
       - target: CurrentHubRuntimeHost
-      - package: TeslatlasSDK
-        product: TeslatlasHubSDK
-      - package: TeslatlasSDK
-        product: TeslatlasCommands
-      - package: TeslatlasSDK
-        product: TeslatlasHubV1Compatibility
-      - package: TeslatlasSDK
-        product: TeslatlasCurrentHub
+      - package: TesatlasSDK
+        product: TesatlasHubSDK
+      - package: TesatlasSDK
+        product: TesatlasCommands
+      - package: TesatlasSDK
+        product: TesatlasHubV1Compatibility
+      - package: TesatlasSDK
+        product: TesatlasCurrentHub
 
 schemes:
   CurrentHubRuntimeHost:

@@ -160,7 +160,7 @@ impl DialogConfirmation {
             .map(|old| format!(" It replaces the trusted issuer {}.", clean(old)))
             .unwrap_or_default();
         format!(
-            "display dialog \"Trust window issuer {} (trust epoch {trust_epoch}) for this Hub?{replacing} Choose Trust only if you started this.\" buttons {{\"Don't Trust\", \"Trust\"}} default button \"Don't Trust\" with title \"Teslatlas Hub\" with icon caution giving up after {}",
+            "display dialog \"Trust window issuer {} (trust epoch {trust_epoch}) for this Hub?{replacing} Choose Trust only if you started this.\" buttons {{\"Don't Trust\", \"Trust\"}} default button \"Don't Trust\" with title \"Tesatlas Hub\" with icon caution giving up after {}",
             clean(key_id),
             CONFIRMATION_TIMEOUT.as_secs()
         )

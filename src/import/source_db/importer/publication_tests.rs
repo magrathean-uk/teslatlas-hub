@@ -271,10 +271,10 @@ fn staged_publication_adapts_before_the_protocol_chunk_ceiling() {
 }
 
 #[tokio::test]
-#[ignore = "needs PostgreSQL: set TESLATLAS_HUB_TEST_POSTGRES_URL (run with --ignored)"]
+#[ignore = "needs PostgreSQL: set TESATLAS_HUB_TEST_POSTGRES_URL (run with --ignored)"]
 async fn native_complete_corpus_publishes_a_durable_manifest_when_configured() {
-    let url = std::env::var("TESLATLAS_HUB_TEST_POSTGRES_URL")
-        .expect("set TESLATLAS_HUB_TEST_POSTGRES_URL to run this ignored test");
+    let url = std::env::var("TESATLAS_HUB_TEST_POSTGRES_URL")
+        .expect("set TESATLAS_HUB_TEST_POSTGRES_URL to run this ignored test");
     let source = ReadOnlySource::parse(&url).expect("credential-free source URL");
     let password = SourceDbPassword::from_bytes(b"fixture-password").expect("fixture password");
     let data = crate::private_tempdir().expect("Hub data directory");

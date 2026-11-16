@@ -35,28 +35,28 @@ ENV GO_BINARY=/usr/local/go/bin/go \
 RUN mkdir -p /out \
     && scripts/build-fleet-telemetry-bridge.sh \
       --target "linux-${TARGETARCH}" \
-      --output /out/teslatlas-fleet-telemetry
+      --output /out/tesatlas-fleet-telemetry
 
 FROM debian:13-slim AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install --no-install-recommends --yes ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --gid 10001 teslatlas-edge \
-    && useradd --uid 10001 --gid 10001 --create-home --no-log-init teslatlas-edge
-COPY --from=edge-build /src/target/release/teslatlas-edge /usr/bin/teslatlas-edge
-COPY --from=bridge-build /out/teslatlas-fleet-telemetry /usr/bin/fleet-telemetry
-COPY scripts/run-with-spool-format-guard.sh /usr/local/libexec/teslatlas-edge/run-with-spool-format-guard.sh
-COPY LICENSE /usr/share/doc/teslatlas-edge/LICENSE
-COPY docs/legal/third-party-notices.md /usr/share/doc/teslatlas-edge/third-party-notices.md
-RUN chmod 0755 /usr/bin/teslatlas-edge /usr/bin/fleet-telemetry \
-      /usr/local/libexec/teslatlas-edge/run-with-spool-format-guard.sh \
-    && mkdir -p /etc/teslatlas-edge /var/lib/teslatlas-edge \
-      /run/teslatlas-edge-receiver /run/teslatlas-edge-hub-tls \
-      /run/teslatlas-edge-vehicle-tls \
-    && chown -R 10001:10001 /var/lib/teslatlas-edge /run/teslatlas-edge-receiver \
-      /run/teslatlas-edge-hub-tls /run/teslatlas-edge-vehicle-tls \
-    && chmod 0700 /var/lib/teslatlas-edge /run/teslatlas-edge-receiver \
-      /run/teslatlas-edge-hub-tls /run/teslatlas-edge-vehicle-tls
+    && groupadd --gid 10001 tesatlas-edge \
+    && useradd --uid 10001 --gid 10001 --create-home --no-log-init tesatlas-edge
+COPY --from=edge-build /src/target/release/tesatlas-edge /usr/bin/tesatlas-edge
+COPY --from=bridge-build /out/tesatlas-fleet-telemetry /usr/bin/fleet-telemetry
+COPY scripts/run-with-spool-format-guard.sh /usr/local/libexec/tesatlas-edge/run-with-spool-format-guard.sh
+COPY LICENSE /usr/share/doc/tesatlas-edge/LICENSE
+COPY docs/legal/third-party-notices.md /usr/share/doc/tesatlas-edge/third-party-notices.md
+RUN chmod 0755 /usr/bin/tesatlas-edge /usr/bin/fleet-telemetry \
+      /usr/local/libexec/tesatlas-edge/run-with-spool-format-guard.sh \
+    && mkdir -p /etc/tesatlas-edge /var/lib/tesatlas-edge \
+      /run/tesatlas-edge-receiver /run/tesatlas-edge-hub-tls \
+      /run/tesatlas-edge-vehicle-tls \
+    && chown -R 10001:10001 /var/lib/tesatlas-edge /run/tesatlas-edge-receiver \
+      /run/tesatlas-edge-hub-tls /run/tesatlas-edge-vehicle-tls \
+    && chmod 0700 /var/lib/tesatlas-edge /run/tesatlas-edge-receiver \
+      /run/tesatlas-edge-hub-tls /run/tesatlas-edge-vehicle-tls
 USER 10001:10001
-ENTRYPOINT ["/usr/local/libexec/teslatlas-edge/run-with-spool-format-guard.sh", "/usr/bin/teslatlas-edge", "/var/lib/teslatlas-edge/spool", "--", "--config", "/etc/teslatlas-edge/config.toml", "serve"]
+ENTRYPOINT ["/usr/local/libexec/tesatlas-edge/run-with-spool-format-guard.sh", "/usr/bin/tesatlas-edge", "/var/lib/tesatlas-edge/spool", "--", "--config", "/etc/tesatlas-edge/config.toml", "serve"]

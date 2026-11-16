@@ -1,6 +1,6 @@
 # Edge architecture
 
-Teslatlas Edge is a narrow, optional ingress between Tesla Fleet Telemetry and
+Tesatlas Edge is a narrow, optional ingress between Tesla Fleet Telemetry and
 a user's home Hub. The public host receives vehicle telemetry; the home Hub
 initiates the delivery connection.
 
@@ -17,7 +17,7 @@ flowchart LR
 ```
 
 The pinned Tesla Fleet Telemetry v0.9.4 sidecar owns Tesla's WebSocket,
-protobuf, vehicle certificate, and reliable-ack protocol. Its Teslatlas patch
+protobuf, vehicle certificate, and reliable-ack protocol. Its Tesatlas patch
 posts a decoded envelope only to
 `http://127.0.0.1:8080/v1/internal/fleet-telemetry`. It acknowledges a vehicle
 record only after Edge returns an HTTP 2xx response.

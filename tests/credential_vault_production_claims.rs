@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use std::{os::unix::fs::PermissionsExt, sync::Arc};
-use teslatlas_hub::{db::{HubStore, StoreError}, hub_user_process::AdmittedUserHub, open_credential_vault_for_entry};
+use tesatlas_hub::{db::{HubStore, StoreError}, hub_user_process::AdmittedUserHub, open_credential_vault_for_entry};
 
 /// Integration tests link the library without cfg(test), including both leases.
 /// M02-T10: each claim is refused while held and released when its holder drops.

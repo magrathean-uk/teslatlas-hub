@@ -60,7 +60,7 @@ def run_actual_hub(command: list[str], timeout_seconds: float) -> int:
 
 
 def run() -> int:
-    parser = argparse.ArgumentParser(description="Run Teslatlas conformance cases")
+    parser = argparse.ArgumentParser(description="Run Tesatlas conformance cases")
     parser.add_argument("--profile", action="append", help="protocol profile; repeatable")
     parser.add_argument("--adapter", help="refused: conformance runs use no adapter executable")
     parser.add_argument("--config", help="private actual-Hub connection descriptor (hub-http-v1@1.2.0 or hub-http-v1@1.3.0)")

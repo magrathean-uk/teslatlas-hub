@@ -14,7 +14,7 @@ pub const MAX_HUB_ACK_BODY_BYTES: usize = 128 * 1024;
 const MIN_TIMESTAMP_MS: i64 = 946_684_800_000;
 const MAX_EVENT_CLOCK_LEAD_MS: i64 = 5 * 60 * 1_000;
 const MAX_RECEIVER_CLOCK_LEAD_MS: i64 = 5 * 60 * 1_000;
-const DUPLICATE_KEY_MARKER: &str = "teslatlas_duplicate_json_key";
+const DUPLICATE_KEY_MARKER: &str = "tesatlas_duplicate_json_key";
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ProtocolError {
@@ -90,7 +90,7 @@ impl ReceiverEnvelope {
         let canonical =
             serde_jcs::to_vec(&value).expect("receiver envelope serialization cannot fail");
         let mut digest = Sha256::new();
-        digest.update(b"teslatlas-edge-record-v1\0");
+        digest.update(b"tesatlas-edge-record-v1\0");
         digest.update(canonical);
         RecordId(hex::encode(digest.finalize()))
     }
@@ -123,7 +123,7 @@ impl ReceiverEnvelope {
         let canonical =
             serde_jcs::to_vec(&identity).expect("receiver identity serialization cannot fail");
         let mut digest = Sha256::new();
-        digest.update(b"teslatlas-edge-record-v2\0");
+        digest.update(b"tesatlas-edge-record-v2\0");
         digest.update(canonical);
         RecordId(hex::encode(digest.finalize()))
     }

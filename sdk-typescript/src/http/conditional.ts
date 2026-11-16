@@ -1,7 +1,7 @@
-import { containsControlCharacters, TeslatlasError } from "../core/errors.js";
+import { containsControlCharacters, TesatlasError } from "../core/errors.js";
 import { asEntityTag, type EntityTag, type OpaqueCursor } from "../core/opaque-values.js";
 
-export class InvalidQueryParameterNameError extends TeslatlasError<"invalid_query_parameter_name"> {
+export class InvalidQueryParameterNameError extends TesatlasError<"invalid_query_parameter_name"> {
   constructor() {
     super("Query parameter name must be non-empty and contain no control characters", {
       code: "invalid_query_parameter_name",

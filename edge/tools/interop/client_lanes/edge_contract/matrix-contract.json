@@ -311,42 +311,42 @@
     {
       "id": "edge_fixture_v1",
       "schema": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/tools/interop/client_lanes/edge_contract/edge_fixture_v1.schema.json",
+        "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-edge/tools/interop/client_lanes/edge_contract/edge_fixture_v1.schema.json",
         "sha256": "5f65a6a91e8a580ffe81bb5ee922ef39505ebaa19c232a80603efe822c9c9db6"
       }
     },
     {
       "id": "edge_checkpoint_v1",
       "schema": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/tools/interop/client_lanes/edge_contract/edge_checkpoint_v1.schema.json",
+        "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-edge/tools/interop/client_lanes/edge_contract/edge_checkpoint_v1.schema.json",
         "sha256": "859d2a6f90a8c610c6810608e9bf63cf1e0f0670e6e50262c88f7190a31d2f41"
       }
     },
     {
       "id": "edge_http_v1",
       "schema": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/tools/interop/client_lanes/edge_contract/edge_http_v1.schema.json",
+        "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-edge/tools/interop/client_lanes/edge_contract/edge_http_v1.schema.json",
         "sha256": "bb4e3c87df84053fe7a298ca5fc42c99424533b5da83d89372a50dcd75d2be0a"
       }
     },
     {
       "id": "edge_fault_v1",
       "schema": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/tools/interop/client_lanes/edge_contract/edge_fault_v1.schema.json",
+        "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-edge/tools/interop/client_lanes/edge_contract/edge_fault_v1.schema.json",
         "sha256": "9eba37bec670157bd9641be14ee8cea446162c4c822ed503f95cf8b2909e4152"
       }
     },
     {
       "id": "edge_snapshot_v1",
       "schema": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/tools/interop/client_lanes/edge_contract/edge_snapshot_v1.schema.json",
+        "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-edge/tools/interop/client_lanes/edge_contract/edge_snapshot_v1.schema.json",
         "sha256": "6279358ff76721ca0b97bba86bfc5573bf83e4dd88779b5c94d375d0ebf7b19e"
       }
     },
     {
       "id": "edge_cleanup_v1",
       "schema": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/tools/interop/client_lanes/edge_contract/edge_cleanup_v1.schema.json",
+        "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-edge/tools/interop/client_lanes/edge_contract/edge_cleanup_v1.schema.json",
         "sha256": "3d6d1fcece6772bb1125c5a79027caab7b2a12726063a291b231317b10ce1ce8"
       }
     }
@@ -540,7 +540,7 @@
     }
   ],
   "validator": {
-    "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/tools/interop/client_lanes/edge_contract/matrix_contract.py",
+    "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-edge/tools/interop/client_lanes/edge_contract/matrix_contract.py",
     "sha256": "bf1219b1766e3f2af0f90d45903e961117bcce3275fc2e0424dd6e146851605f"
   }
 }

@@ -1,6 +1,6 @@
 # Hub plan pointer
 
-In the maintained Teslatlas workspace, the programme plan is
+In the maintained Tesatlas workspace, the programme plan is
 `../docs/development/MASTER_PLAN.md` relative to the Hub root. That plan holds
 current decisions, phase order, status and acceptance evidence.
 

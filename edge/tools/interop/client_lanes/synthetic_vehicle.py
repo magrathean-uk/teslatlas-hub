@@ -22,7 +22,7 @@ class InvocationError(ValueError):
 
 VIN = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
 TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-HELPER_CONTRACT_MARKER = b"teslatlas-synthetic-vehicle-identity-v2"
+HELPER_CONTRACT_MARKER = b"tesatlas-synthetic-vehicle-identity-v2"
 EMBEDDED_VIN = re.compile(rb"5YJ[A-HJ-NPR-Z0-9]{14}")
 
 

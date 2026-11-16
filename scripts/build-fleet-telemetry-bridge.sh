@@ -109,7 +109,7 @@ fi
 script_directory=$(CDPATH='' cd "$(dirname "$0")" && pwd -P)
 repository_root=$(CDPATH='' cd "$script_directory/.." && pwd -P)
 lock_file="$repository_root/packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json"
-overlay_patch="$repository_root/packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch"
+overlay_patch="$repository_root/packaging/fleet-telemetry-bridge/0001-tesatlas-http-dispatcher.patch"
 module_graph_directory="$repository_root/packaging/fleet-telemetry-bridge/module-graph"
 module_graph_go_mod="$module_graph_directory/go.mod"
 module_graph_go_sum="$module_graph_directory/go.sum"
@@ -128,10 +128,10 @@ GO_TOOLCHAIN_HELPER="$repository_root/scripts/go_toolchain.py"
     || die "Go toolchain selector is missing or unsafe"
 GO=$(/usr/bin/python3 "$GO_TOOLCHAIN_HELPER" --expected-version "$GO_VERSION") \
     || die "cannot select the pinned Go toolchain"
-TESLATLAS_GO=$GO
-export TESLATLAS_GO
+TESATLAS_GO=$GO
+export TESATLAS_GO
 if [ "$check_go_toolchain" -eq 1 ]; then
-    printf '%s\n' "$TESLATLAS_GO"
+    printf '%s\n' "$TESATLAS_GO"
     exit 0
 fi
 CURL=$(command -v curl) || die "curl is required"
@@ -153,10 +153,10 @@ expected = {
     "commit": commit,
     "archive_url": archive_url,
     "archive_sha256": archive_sha,
-    "patch": "0001-teslatlas-http-dispatcher.patch",
+    "patch": "0001-tesatlas-http-dispatcher.patch",
     "patch_sha256": patch_sha,
     "endpoint": "http://127.0.0.1:8080/v1/internal/fleet-telemetry",
-    "bearer_file_env": "TESLATLAS_FLEET_TELEMETRY_BEARER_FILE",
+    "bearer_file_env": "TESATLAS_FLEET_TELEMETRY_BEARER_FILE",
     "envelope_version": 1,
     "max_envelope_bytes": 262144,
     "default_timeout_ms": 2000,
@@ -235,13 +235,13 @@ GOCACHE="$work/go-build-cache"
 export GOCACHE
 /bin/mkdir -p "$GOCACHE"
 
-[ -n "${TESLATLAS_LAB-}" ] \
+[ -n "${TESATLAS_LAB-}" ] \
     || die "run through ../scripts/dev/run.sh hub so the upstream cache stays outside the checkout"
-resolved_lab=$(/usr/bin/python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$TESLATLAS_LAB")
+resolved_lab=$(/usr/bin/python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$TESATLAS_LAB")
 case "$resolved_lab" in
     "$repository_root"|"$repository_root"/*) die "upstream cache would enter the Hub checkout" ;;
 esac
-cache_directory="$TESLATLAS_LAB/build/hub/upstream-cache"
+cache_directory="$TESATLAS_LAB/build/hub/upstream-cache"
 if [ -e "$cache_directory" ] || [ -L "$cache_directory" ]; then
     [ -d "$cache_directory" ] && [ ! -L "$cache_directory" ] \
         || die "upstream cache is not a real directory"
@@ -278,7 +278,7 @@ archive_root=$("$TAR" -tzf "$archive" | /usr/bin/awk -F/ 'NF {print $1}' | /usr/
 (
     cd "$source_directory"
     "$PATCH" -p1 --batch --forward <"$overlay_patch"
-) || die "cannot apply Teslatlas overlay"
+) || die "cannot apply Tesatlas overlay"
 /bin/cp "$module_graph_go_mod" "$source_directory/go.mod" \
     || die "cannot apply locked Go module graph go.mod"
 /bin/cp "$module_graph_go_sum" "$source_directory/go.sum" \
@@ -290,8 +290,8 @@ archive_root=$("$TAR" -tzf "$archive" | /usr/bin/awk -F/ 'NF {print $1}' | /usr/
 
 (
     cd "$source_directory"
-    CGO_ENABLED=0 "$GO" test ./datastore/teslatlas
-) || die "Teslatlas bridge tests failed"
+    CGO_ENABLED=0 "$GO" test ./datastore/tesatlas
+) || die "Tesatlas bridge tests failed"
 
 if [ "$target_arch" = arm64 ]; then
     (

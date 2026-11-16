@@ -16,14 +16,14 @@ use rustix::fs::{FileType, Mode, OFlags, fcntl_getfl, fcntl_setfl, fstat, open};
 use rustix::process::getuid;
 use sha2::{Digest, Sha256};
 #[cfg(unix)]
-use teslatlas_hub::hub_user_process::AdmittedUserHub;
+use tesatlas_hub::hub_user_process::AdmittedUserHub;
 #[cfg(unix)]
-use teslatlas_hub::protocol::CursorKey;
+use tesatlas_hub::protocol::CursorKey;
 #[cfg(unix)]
-use teslatlas_hub::source_db_import::derive_effective_import_profile;
+use tesatlas_hub::source_db_import::derive_effective_import_profile;
 #[cfg(test)]
-use teslatlas_hub::{fleet_api::FleetRegion, fleet_credentials::FleetSetupCredentials};
-use teslatlas_hub::{
+use tesatlas_hub::{fleet_api::FleetRegion, fleet_credentials::FleetSetupCredentials};
+use tesatlas_hub::{
     collector,
     config::{CollectorProvider, HubConfig, collector_mode},
     credential_recovery::{RECOVERY_ENCRYPTION_KEY_BYTES, export_credentials},

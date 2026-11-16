@@ -7,7 +7,7 @@
 //! usage error), T47 (a) to (d) and T35 (the `--recalculate-missing-costs`
 //! wiring). Synthetic data only.
 
-use teslatlas_hub::db::{HubStore, SourceDescriptor, VehicleDescriptor};
+use tesatlas_hub::db::{HubStore, SourceDescriptor, VehicleDescriptor};
 use uuid::Uuid;
 
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
 };
 
 fn parse(arguments: &[&str]) -> Result<Cli, clap::Error> {
-    let mut all = vec!["teslatlas-hub", "control"];
+    let mut all = vec!["tesatlas-hub", "control"];
     all.extend_from_slice(arguments);
     Cli::try_parse_from(all)
 }
@@ -433,7 +433,7 @@ fn t47_d_a_deprecated_alias_means_its_new_mode_and_says_so_once() {
     // The exact line of the deprecation rule (R72).
     assert_eq!(
         deprecated_charge_cost_mode_line("synthetic-kwh", ChargeCostMode::PerKwh),
-        "teslatlas-hub: --mode synthetic-kwh is deprecated and will stop working in the next \
+        "tesatlas-hub: --mode synthetic-kwh is deprecated and will stop working in the next \
          release; use --mode per_kwh"
     );
     // An old value with no such meaning is a usage error naming the modes.
@@ -476,7 +476,7 @@ fn t47_d_an_alias_makes_the_store_call_of_its_new_mode_with_one_stderr_line() {
     let text = String::from_utf8(diagnostics).expect("UTF-8");
     assert_eq!(
         text,
-        "teslatlas-hub: --mode synthetic-kwh is deprecated and will stop working in the next \
+        "tesatlas-hub: --mode synthetic-kwh is deprecated and will stop working in the next \
          release; use --mode per_kwh\n"
     );
 }

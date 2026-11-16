@@ -1,6 +1,6 @@
 # Third-party notices
 
-Teslatlas Edge is built from the third-party Rust crates listed below and can run
+Tesatlas Edge is built from the third-party Rust crates listed below and can run
 with the optional Tesla Fleet Telemetry sidecar described at the end of this page.
 
 ## Rust crates
@@ -154,7 +154,7 @@ notice files included in each crate's source at the listed version.
 
 ## Tesla Fleet Telemetry receiver
 
-The optional `teslatlas-fleet-telemetry` sidecar is built from Tesla Fleet
+The optional `tesatlas-fleet-telemetry` sidecar is built from Tesla Fleet
 Telemetry v0.9.4, revision
 `d64c73ab65e7c5fb5fc12b35fe507e2c6054227b`, under the Apache License 2.0.
 
@@ -162,8 +162,8 @@ Source: <https://github.com/teslamotors/fleet-telemetry>
 
 Bundled upstream licence: [Apache License 2.0](Apache-2.0-fleet-telemetry.txt)
 
-Teslatlas changes are recorded in
-`packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch`.
+Tesatlas changes are recorded in
+`packaging/fleet-telemetry-bridge/0001-tesatlas-http-dispatcher.patch`.
 They add a fixed loopback HTTP datastore and reliable acknowledgement tests;
 they do not add Tesla account authentication or vehicle commands.
 

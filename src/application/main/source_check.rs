@@ -13,7 +13,7 @@ impl CatalogueCheckpointGuard {
         Self { store, armed: true }
     }
 
-    fn finish(&mut self) -> Result<(), teslatlas_hub::db::StoreError> {
+    fn finish(&mut self) -> Result<(), tesatlas_hub::db::StoreError> {
         let result = self.store.checkpoint_catalogue_for_immutable_read();
         self.armed = false;
         result
@@ -30,7 +30,7 @@ impl Drop for CatalogueCheckpointGuard {
 
 #[cfg(unix)]
 const SOURCE_DB_REQUIRED_VERSION: &str =
-    teslatlas_hub::source_db_schema::CURRENT_REVIEWED_SOURCE_SET.release;
+    tesatlas_hub::source_db_schema::CURRENT_REVIEWED_SOURCE_SET.release;
 
 #[cfg(unix)]
 fn schema_set_label(digest: &str) -> Option<String> {

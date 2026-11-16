@@ -14,11 +14,11 @@ WORKDIR /workspace
 # These are the separately checksummed canonical package and external consumer.
 # SwiftPM preserves resource ownership while copying bundles, so the unprivileged
 # build user must own the admitted inputs even though every input remains read-only.
-COPY --chown=swiftuser:swiftuser teslatlas-sdk-swift/ /workspace/teslatlas-sdk-swift/
+COPY --chown=swiftuser:swiftuser tesatlas-sdk-swift/ /workspace/tesatlas-sdk-swift/
 COPY --chown=swiftuser:swiftuser external-four-library-consumer/ /workspace/external-four-library-consumer/
-RUN chmod -R a-w /workspace/teslatlas-sdk-swift /workspace/external-four-library-consumer
+RUN chmod -R a-w /workspace/tesatlas-sdk-swift /workspace/external-four-library-consumer
 
 ENV HOME=/home/swiftuser
 USER swiftuser
 
-CMD ["swift", "run", "--package-path", "/workspace/external-four-library-consumer", "--scratch-path", "/tmp/teslatlas-platform-gate-build", "ExternalFourLibraryConsumer"]
+CMD ["swift", "run", "--package-path", "/workspace/external-four-library-consumer", "--scratch-path", "/tmp/tesatlas-platform-gate-build", "ExternalFourLibraryConsumer"]

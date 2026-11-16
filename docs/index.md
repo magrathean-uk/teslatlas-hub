@@ -1,6 +1,6 @@
-# Teslatlas Hub documentation
+# Tesatlas Hub documentation
 
-Teslatlas Hub candidate 2026.36.2 targets Apple-silicon macOS 13 or later and
+Tesatlas Hub candidate 2026.36.2 targets Apple-silicon macOS 13 or later and
 Debian 13 on amd64 or ARM64. These are development targets; source and packaging
 files do not establish current platform acceptance.
 

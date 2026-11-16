@@ -20,7 +20,7 @@ use reqwest::{
     redirect::Policy,
 };
 use sha2::{Digest, Sha256};
-use teslatlas_hub::{
+use tesatlas_hub::{
     db::{HubStore, SourceDescriptor, VehicleDescriptor},
     hub_pack::{
         ProjectionBinding, ProjectionCar, ProjectionDrive, ProjectionPackRequest,
@@ -336,12 +336,12 @@ fn claim_lifetime_ms(claim: &serde_json::Value) -> i64 {
 
 /// Run the source-binary standalone-mode smoke for the seeded schema-2.1
 /// snapshot against Cargo's real executable, or a separately built Hub binary:
-/// TESLATLAS_HUB_SMOKE_BINARY=/absolute/path/teslatlas-hub cargo test --test
+/// TESATLAS_HUB_SMOKE_BINARY=/absolute/path/tesatlas-hub cargo test --test
 /// tls_import_e2e source_binary_standalone_mode_serves_seeded_schema_21_snapshot -- --exact
 #[tokio::test]
 async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
     use std::os::unix::fs::PermissionsExt;
-    use teslatlas_hub::{
+    use tesatlas_hub::{
         
         legacy_owner_credentials::{load_or_create_cursor_key, },
         
@@ -354,7 +354,7 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
     let published = publish_typed_snapshot(&store, &cursor_key).expect("synthetic snapshot");
     // macOS Serve preflight requires a usable encrypted pair even when the
     // collector is disabled. These literals have no authority at any provider.
-    use teslatlas_hub::auth::credential_sign_in as credentials;
+    use tesatlas_hub::auth::credential_sign_in as credentials;
     credentials::seed_owner_pair_for_test(&data_dir, "access-0001", "refresh-0001", None).expect("synthetic own-login pair");
     assert!(credentials::record_provider_admission_for_test(&data_dir).expect("previous C5 process records its admission"));
     let invitation = store
@@ -392,8 +392,8 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
     fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).expect("private config");
     #[cfg(target_os = "macos")]
     {
-        let production_rejection = teslatlas_hub::macos_launch_agent::preflight_hub_for_config(
-            &teslatlas_hub::config::HubConfig::load(&config).expect("smoke config loads"),
+        let production_rejection = tesatlas_hub::macos_launch_agent::preflight_hub_for_config(
+            &tesatlas_hub::config::HubConfig::load(&config).expect("smoke config loads"),
         )
         .expect_err("collector-disabled smoke config is not admitted for production Serve");
         assert!(
@@ -403,9 +403,9 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
             "unexpected production admission failure: {production_rejection}"
         );
     }
-    let binary = std::env::var_os("TESLATLAS_HUB_SMOKE_BINARY")
+    let binary = std::env::var_os("TESATLAS_HUB_SMOKE_BINARY")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_teslatlas-hub")));
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_tesatlas-hub")));
     let log_path = root.path().join("serve.log");
     let log = fs::File::create(&log_path).expect("process log");
     drop(port_reservation);
@@ -414,8 +414,8 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
             .arg("--config")
             .arg(&config)
             .arg("serve")
-            .env("TESLATLAS_HUB_DEVELOPMENT", "1")
-            .env("TESLATLAS_HUB_DEVELOPMENT_MODE", "standalone")
+            .env("TESATLAS_HUB_DEVELOPMENT", "1")
+            .env("TESATLAS_HUB_DEVELOPMENT_MODE", "standalone")
             .stdin(Stdio::null())
             .stdout(Stdio::from(log.try_clone().expect("log clone")))
             .stderr(Stdio::from(log))
@@ -708,7 +708,7 @@ async fn spawn_tls_server(
     listener: std::net::TcpListener,
     shutdown_rx: oneshot::Receiver<()>,
 ) -> tokio::task::JoinHandle<()> {
-    teslatlas_hub::crypto::install_default_provider();
+    tesatlas_hub::crypto::install_default_provider();
     let tls = RustlsConfig::from_pem_file(cert_path, key_path)
         .await
         .expect("tls config");
@@ -753,7 +753,7 @@ async fn wait_until_ready(client: &Client, base: &str) {
 }
 
 fn pinned_https_client(cert_path: &Path) -> Client {
-    teslatlas_hub::crypto::install_default_provider();
+    tesatlas_hub::crypto::install_default_provider();
     // For this Mac e2e proof we accept the generated local leaf. Production
     // iOS pins the SHA-256 fingerprint from the pairing URI instead.
     let pem = fs::read(cert_path).expect("read cert");

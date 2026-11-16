@@ -1,6 +1,6 @@
 # How Hub gets data from your car
 
-This guide explains the four ways Teslatlas Hub can receive data from a Tesla, what each one needs from you, what it costs, and how to set it up step by step. Hub runs on your own computer; it never sends your vehicle data through Magrathean. Provider modes and the setup screens described here are the v7 design (plan group G2-6); until they ship, the Hub supports the Legacy path and self-hosted Fleet Telemetry.
+This guide explains the four ways Tesatlas Hub can receive data from a Tesla, what each one needs from you, what it costs, and how to set it up step by step. Hub runs on your own computer; it never sends your vehicle data through Magrathean. Provider modes and the setup screens described here are the v7 design (plan group G2-6); until they ship, the Hub supports the Legacy path and self-hosted Fleet Telemetry.
 
 ## The short version
 
@@ -21,7 +21,7 @@ Tessie, Teslemetry and Owner-API-compatible providers are such registered applic
 
 So "no domain needed" means "the provider owns the domain". Hub's provider mode connects outward from your computer to that provider; nothing on your network has to accept connections. Tesla allows a car to stream to at most five third-party applications at once (Teslemetry documents three), so a car already used with other services may need one removed.
 
-Teslatlas itself is not a Tesla partner application and does not operate such a relay. That is a deliberate privacy choice: Magrathean never sees your car's data. You bring your own provider account, exactly as users of the source application do.
+Tesatlas itself is not a Tesla partner application and does not operate such a relay. That is a deliberate privacy choice: Magrathean never sees your car's data. You bring your own provider account, exactly as users of the source application do.
 
 The Mac app shows this guide, with screenshots, as the Collection step of its setup, and again from the Collection screen later.
 

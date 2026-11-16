@@ -77,14 +77,14 @@ ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd -P)
 # would be refused. Only codesign touches the signing identity here.
 project_setting() {
     /usr/bin/sed -n "s/^[[:space:]]*$1:[[:space:]]*\"\{0,1\}\([^\"]*\)\"\{0,1\}[[:space:]]*\$/\1/p" \
-        "$ROOT/macos/TeslatlasHubApp/project.yml" | /usr/bin/head -n 1
+        "$ROOT/macos/TesatlasHubApp/project.yml" | /usr/bin/head -n 1
 }
 
 sign_service_binary() {
     service_binary=$1
-    service_identity=${TESLATLAS_HUB_SERVICE_SIGNING_IDENTITY:-$(project_setting TESLATLAS_HUB_SERVICE_SIGNING_IDENTITY)}
-    service_team=$(project_setting TESLATLAS_HUB_SERVICE_SIGNING_TEAM)
-    service_identifier=$(project_setting TESLATLAS_HUB_SERVICE_IDENTIFIER)
+    service_identity=${TESATLAS_HUB_SERVICE_SIGNING_IDENTITY:-$(project_setting TESATLAS_HUB_SERVICE_SIGNING_IDENTITY)}
+    service_team=$(project_setting TESATLAS_HUB_SERVICE_SIGNING_TEAM)
+    service_identifier=$(project_setting TESATLAS_HUB_SERVICE_IDENTIFIER)
     [ -n "$service_identity" ] && [ -n "$service_team" ] && [ -n "$service_identifier" ] \
         || die "the service signing settings are missing from project.yml"
     [ -f "$service_binary" ] && [ ! -L "$service_binary" ] \
@@ -109,27 +109,27 @@ fi
 GO_TOOLCHAIN_HELPER="$ROOT/scripts/go_toolchain.py"
 [ -f "$GO_TOOLCHAIN_HELPER" ] && [ ! -L "$GO_TOOLCHAIN_HELPER" ] \
     || die "Go toolchain selector is missing or unsafe"
-TESLATLAS_GO=$(/usr/bin/python3 "$GO_TOOLCHAIN_HELPER" \
+TESATLAS_GO=$(/usr/bin/python3 "$GO_TOOLCHAIN_HELPER" \
     --expected-version go1.27.4) \
     || die "cannot select the pinned Go toolchain"
-export TESLATLAS_GO
+export TESATLAS_GO
 
 probe_go_toolchain() {
     probe_label=$1
     shift
     probe_selection=$("$@") || die "$probe_label Go toolchain probe failed"
-    [ "$probe_selection" = "$TESLATLAS_GO" ] \
+    [ "$probe_selection" = "$TESATLAS_GO" ] \
         || die "$probe_label selected a different Go executable"
     printf '%s\n' "$probe_label=$probe_selection"
 }
 
 case "$check_go_toolchain" in
     single)
-        printf '%s\n' "$TESLATLAS_GO"
+        printf '%s\n' "$TESATLAS_GO"
         exit 0
         ;;
     chain)
-        printf '%s\n' "parent=$TESLATLAS_GO"
+        printf '%s\n' "parent=$TESATLAS_GO"
         probe_go_toolchain tesla-command-proxy \
             "$ROOT/scripts/build-tesla-command-proxy.sh" --check-go-toolchain
         probe_go_toolchain fleet-telemetry \
@@ -143,9 +143,9 @@ case "$check_go_toolchain" in
         ;;
 esac
 
-[ -n "${TESLATLAS_DERIVED_DATA-}" ] && [ -n "${TESLATLAS_LAB-}" ] \
+[ -n "${TESATLAS_DERIVED_DATA-}" ] && [ -n "${TESATLAS_LAB-}" ] \
     || die "run through ../scripts/dev/run.sh hub so the app and Xcode staging go to the lab and routed DerivedData"
-for output_root in "$TESLATLAS_LAB" "$TESLATLAS_DERIVED_DATA"; do
+for output_root in "$TESATLAS_LAB" "$TESATLAS_DERIVED_DATA"; do
     resolved_root=$(/usr/bin/python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$output_root")
     case "$resolved_root" in
         "$ROOT"|"$ROOT"/*) die "build output would enter the Hub checkout" ;;
@@ -176,24 +176,24 @@ case "$TARGET_DIRECTORY" in
     *) die "Cargo target $TARGET_DIRECTORY is neither $ROOT/target nor $MANAGED_BUILD_ROOT/hub-*/cargo/target" ;;
 esac
 
-SOURCE_COMMIT=${TESLATLAS_HUB_SOURCE_COMMIT-}
+SOURCE_COMMIT=${TESATLAS_HUB_SOURCE_COMMIT-}
 /usr/bin/printf '%s\n' "$SOURCE_COMMIT" | /usr/bin/grep -Eq '^[0-9a-f]{40}$' \
-    || die "TESLATLAS_HUB_SOURCE_COMMIT must be exactly 40 lowercase hexadecimal characters"
-export TESLATLAS_HUB_SOURCE_COMMIT
+    || die "TESATLAS_HUB_SOURCE_COMMIT must be exactly 40 lowercase hexadecimal characters"
+export TESATLAS_HUB_SOURCE_COMMIT
 
-APP_SOURCE="$ROOT/macos/TeslatlasHubApp"
-DERIVED="$TESLATLAS_DERIVED_DATA/macos-app"
+APP_SOURCE="$ROOT/macos/TesatlasHubApp"
+DERIVED="$TESATLAS_DERIVED_DATA/macos-app"
 GENERATED="$DERIVED/generated"
 PROJECT_DIR="$DERIVED/project"
-PROJECT="$PROJECT_DIR/TeslatlasHubApp.xcodeproj"
-RUST_BINARY="$TARGET_DIRECTORY/release/teslatlas-hub"
+PROJECT="$PROJECT_DIR/TesatlasHubApp.xcodeproj"
+RUST_BINARY="$TARGET_DIRECTORY/release/tesatlas-hub"
 PROXY_BINARY="$GENERATED/tesla-http-proxy"
 FLEET_TELEMETRY_BINARY="$GENERATED/fleet-telemetry"
-PRODUCT="$DERIVED/Build/Products/Release/Teslatlas Hub.app"
-DIST="$TESLATLAS_LAB/build/hub/dist"
-DIST_APP="$DIST/Teslatlas Hub.app"
-DIST_PACKAGE="$DIST/TeslatlasHub.pkg"
-STALE_DIST_SERVICE_PACKAGE="$DIST/TeslatlasHubService.pkg"
+PRODUCT="$DERIVED/Build/Products/Release/Tesatlas Hub.app"
+DIST="$TESATLAS_LAB/build/hub/dist"
+DIST_APP="$DIST/Tesatlas Hub.app"
+DIST_PACKAGE="$DIST/TesatlasHub.pkg"
+STALE_DIST_SERVICE_PACKAGE="$DIST/TesatlasHubService.pkg"
 GO_EVIDENCE="$GENERATED/go-proxy-evidence"
 FLEET_TELEMETRY_EVIDENCE="$GENERATED/fleet-telemetry-evidence"
 LEGAL_BUNDLE="$GENERATED/dependency-legal"
@@ -201,8 +201,8 @@ DIST_GO_EVIDENCE="$DIST/go-proxy-evidence"
 DIST_FLEET_TELEMETRY_EVIDENCE="$DIST/fleet-telemetry-evidence"
 DIST_LEGAL_BUNDLE="$DIST/dependency-legal"
 
-[ -f "$APP_SOURCE/TeslatlasHubApp/Resources/AppIcon.icns" ] \
-    && [ ! -L "$APP_SOURCE/TeslatlasHubApp/Resources/AppIcon.icns" ] \
+[ -f "$APP_SOURCE/TesatlasHubApp/Resources/AppIcon.icns" ] \
+    && [ ! -L "$APP_SOURCE/TesatlasHubApp/Resources/AppIcon.icns" ] \
     || die "tracked app icon is missing or unsafe"
 
 ensure_real_directory() {
@@ -290,7 +290,7 @@ esac
 ensure_real_directory "$DERIVED"
 ensure_real_directory "$GENERATED"
 case "$PROJECT_DIR" in
-    "$TESLATLAS_DERIVED_DATA/macos-app/project") ;;
+    "$TESATLAS_DERIVED_DATA/macos-app/project") ;;
     *) die "refusing unsafe generated project directory" ;;
 esac
 if [ -e "$PROJECT_DIR" ] || [ -L "$PROJECT_DIR" ]; then
@@ -301,9 +301,9 @@ fi
 ensure_real_directory "$PROJECT_DIR"
 ensure_real_directory "$DIST"
 /usr/bin/ditto --noextattr --norsrc \
-    "$APP_SOURCE/TeslatlasHubApp" "$PROJECT_DIR/TeslatlasHubApp"
+    "$APP_SOURCE/TesatlasHubApp" "$PROJECT_DIR/TesatlasHubApp"
 /usr/bin/ditto --noextattr --norsrc \
-    "$APP_SOURCE/TeslatlasHubAppTests" "$PROJECT_DIR/TeslatlasHubAppTests"
+    "$APP_SOURCE/TesatlasHubAppTests" "$PROJECT_DIR/TesatlasHubAppTests"
 /usr/bin/install -m 0644 "$APP_SOURCE/project.yml" "$PROJECT_DIR/project.yml"
 
 (
@@ -312,7 +312,7 @@ ensure_real_directory "$DIST"
     # build-time helpers unoptimized; the shipped Hub binary remains optimized.
     DYLD_FALLBACK_LIBRARY_PATH="$RUST_TOOLCHAIN_LIB" RUSTC="$RUST_COMPILER" \
         CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_OPT_LEVEL=0 \
-        cargo build --locked --release --bin teslatlas-hub
+        cargo build --locked --release --bin tesatlas-hub
 )
 
 "$ROOT/scripts/build-tesla-command-proxy.sh" \
@@ -336,7 +336,7 @@ done
     --proxy-binary "$PROXY_BINARY" --output-dir "$GO_EVIDENCE" >/dev/null
 "$ROOT/scripts/fleet-telemetry-evidence.py" --repo "$ROOT" \
     --receiver-binary "$FLEET_TELEMETRY_BINARY" \
-    --source-archive "$TESLATLAS_LAB/build/hub/upstream-cache/fleet-telemetry-d64c73ab65e7c5fb5fc12b35fe507e2c6054227b-a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9.tar.gz" \
+    --source-archive "$TESATLAS_LAB/build/hub/upstream-cache/fleet-telemetry-d64c73ab65e7c5fb5fc12b35fe507e2c6054227b-a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9.tar.gz" \
     --output-dir "$FLEET_TELEMETRY_EVIDENCE" >/dev/null
 "$ROOT/scripts/legal-bundle.py" --repo "$ROOT" \
     --go-proxy-evidence "$GO_EVIDENCE" \
@@ -348,13 +348,13 @@ xcodegen generate --quiet \
     --project "$PROJECT_DIR"
 xcodebuild \
     -project "$PROJECT" \
-    -scheme TeslatlasHubApp \
+    -scheme TesatlasHubApp \
     -configuration Release \
     -derivedDataPath "$DERIVED" \
     clean >/dev/null
 xcodebuild \
     -project "$PROJECT" \
-    -scheme TeslatlasHubApp \
+    -scheme TesatlasHubApp \
     -configuration Release \
     -derivedDataPath "$DERIVED" \
     ARCHS=arm64 \
@@ -362,8 +362,8 @@ xcodebuild \
     MACOSX_DEPLOYMENT_TARGET=13.0 \
     MARKETING_VERSION="$marketing_version" \
     CURRENT_PROJECT_VERSION="$bundle_version" \
-    TESLATLAS_HUB_VERSION="$version" \
-    TESLATLAS_HUB_SOURCE_COMMIT="$SOURCE_COMMIT" \
+    TESATLAS_HUB_VERSION="$version" \
+    TESATLAS_HUB_SOURCE_COMMIT="$SOURCE_COMMIT" \
     CODE_SIGNING_ALLOWED=NO \
     build >/dev/null
 
@@ -374,7 +374,7 @@ resources="$PRODUCT/Contents/Resources"
     || die "App icon resource is missing or unsafe"
 [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$PRODUCT/Contents/Info.plist")" = AppIcon ] \
     || die "App icon Info.plist value is missing"
-/usr/bin/install -m 0755 "$RUST_BINARY" "$resources/teslatlas-hub"
+/usr/bin/install -m 0755 "$RUST_BINARY" "$resources/tesatlas-hub"
 # The command proxy must stay beside the Hub binary: Serve starts it from its own directory.
 /usr/bin/install -m 0755 "$PROXY_BINARY" "$resources/tesla-http-proxy"
 /usr/bin/install -m 0755 "$FLEET_TELEMETRY_BINARY" "$resources/fleet-telemetry"
@@ -414,11 +414,11 @@ for legal_entry in \
 done
 /usr/bin/xattr -cr "$resources" >/dev/null 2>&1 \
     || die "cannot clear resource metadata"
-[ "$(/usr/bin/lipo -archs "$resources/teslatlas-hub")" = arm64 ] \
+[ "$(/usr/bin/lipo -archs "$resources/tesatlas-hub")" = arm64 ] \
     || die "embedded Hub binary is not arm64-only"
-is_executable_macho "$resources/teslatlas-hub" \
+is_executable_macho "$resources/tesatlas-hub" \
     || die "embedded Hub binary is not a Mach-O executable"
-require_macos_13_or_earlier "$resources/teslatlas-hub"
+require_macos_13_or_earlier "$resources/tesatlas-hub"
 [ "$(/usr/bin/lipo -archs "$resources/tesla-http-proxy")" = arm64 ] \
     || die "embedded Tesla command proxy is not arm64-only"
 is_executable_macho "$resources/tesla-http-proxy" \
@@ -443,7 +443,7 @@ esac
 [ "$proxy_minimum_major" -le 13 ] \
     || die "embedded Tesla command proxy requires macOS $proxy_minimum_macos"
 reject_appledouble "$resources"
-app_binary="$PRODUCT/Contents/MacOS/Teslatlas Hub"
+app_binary="$PRODUCT/Contents/MacOS/Tesatlas Hub"
 [ "$(/usr/bin/lipo -archs "$app_binary")" = arm64 ] \
     || die "App binary is not arm64-only"
 is_executable_macho "$app_binary" || die "App binary is not a Mach-O executable"
@@ -454,7 +454,7 @@ require_macos_13_or_earlier "$app_binary"
 # already emits valid ad-hoc signatures for the two Go binaries: preserve their
 # exact evidence-bound bytes here, since re-signing them would change the
 # subjects bound to the clean-build evidence.
-sign_service_binary "$resources/teslatlas-hub"
+sign_service_binary "$resources/tesatlas-hub"
 for evidence_bound_binary in \
     "$resources/tesla-http-proxy" \
     "$resources/fleet-telemetry"; do
@@ -482,7 +482,7 @@ embedded_fleet_telemetry_sha256=$(/usr/bin/shasum -a 256 \
     || die "app Fleet Telemetry receiver changed after evidence generation"
 
 case "$DIST_APP" in
-    "$TESLATLAS_LAB/build/hub/dist/Teslatlas Hub.app") ;;
+    "$TESATLAS_LAB/build/hub/dist/Tesatlas Hub.app") ;;
     *) die "refusing unsafe distribution destination" ;;
 esac
 if [ -e "$DIST_APP" ] || [ -L "$DIST_APP" ]; then
@@ -503,7 +503,7 @@ reject_appledouble "$DIST_APP"
 
 for distribution_package in "$DIST_PACKAGE" "$STALE_DIST_SERVICE_PACKAGE"; do
     case "$distribution_package" in
-        "$TESLATLAS_LAB/build/hub/dist/TeslatlasHub.pkg"|"$TESLATLAS_LAB/build/hub/dist/TeslatlasHubService.pkg") ;;
+        "$TESATLAS_LAB/build/hub/dist/TesatlasHub.pkg"|"$TESATLAS_LAB/build/hub/dist/TesatlasHubService.pkg") ;;
         *) die "refusing unsafe distribution package destination" ;;
     esac
     if [ -e "$distribution_package" ] || [ -L "$distribution_package" ]; then
@@ -539,7 +539,7 @@ done
 # Drop the exact Xcode staging tree so repeated builds do not retain hundreds
 # of megabytes. Failed builds intentionally keep it for diagnosis.
 case "$DERIVED" in
-    "$TESLATLAS_DERIVED_DATA/macos-app") ;;
+    "$TESATLAS_DERIVED_DATA/macos-app") ;;
     *) die "refusing unsafe Xcode staging cleanup" ;;
 esac
 [ -d "$DERIVED" ] && [ ! -L "$DERIVED" ] \

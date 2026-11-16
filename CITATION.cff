@@ -1,6 +1,6 @@
 cff-version: 1.2.0
-message: "Please cite the specific Teslatlas Hub release or commit you used."
-title: "Teslatlas Hub"
+message: "Please cite the specific Tesatlas Hub release or commit you used."
+title: "Tesatlas Hub"
 type: software
 authors:
   - family-names: "Bolyki"
@@ -10,8 +10,8 @@ authors:
 abstract: >-
   A self-hosted, multi-vehicle Tesla telemetry collector and local sync hub
   with macOS and Debian packaging sources.
-repository-code: "https://github.com/magrathean-uk/teslatlas-hub"
-url: "https://teslatlas.eu"
+repository-code: "https://github.com/magrathean-uk/tesatlas-hub"
+url: "https://tesatlas.eu"
 license: "AGPL-3.0-only"
 keywords:
   - self-hosted

@@ -114,7 +114,7 @@
     "phase_cap": "sum-fixed-operation-deadlines-plus-10000ms-transfer"
   },
   "linux_worker_contract": {
-    "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/swift-linux-worker-contract-v1.json",
+    "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-sdk-swift/tools/swift-linux-worker-contract-v1.json",
     "sha256": "d3f7a0ab940d18388694d89896fb1bf9974cacaa21d26faeda77a43a53bac764",
     "binding": "The fixed Linux Docker worker registration and relay contract is root-owned; this interface does not grant worker broker, Docker or command authority."
   },
@@ -134,21 +134,21 @@
     {
       "id": "matrix-worker-config-v1",
       "binding": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/matrix-worker-config-v1.schema.json",
+        "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-sdk-swift/tools/matrix-worker-config-v1.schema.json",
         "sha256": "cc761bbb4a0c38a4378dff119cfabdfbb1d288f2d626acd8e0a9c114c0bef582"
       }
     },
     {
       "id": "swift-worker-v1",
       "binding": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/swift-worker-v1.schema.json",
+        "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-sdk-swift/tools/swift-worker-v1.schema.json",
         "sha256": "34a8176e28162f425353f4ba4d0f3dd1a00375a2c54b8829178aa754af2ac486"
       }
     },
     {
       "id": "swift-runtime-v1",
       "binding": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/swift-runtime-v1.schema.json",
+        "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-sdk-swift/tools/swift-runtime-v1.schema.json",
         "sha256": "d608f1e4c31548fbf7005e66a8997d5f0a65cee8685f60c096745ced278d24f2"
       }
     }

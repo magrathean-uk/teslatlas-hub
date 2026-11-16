@@ -1,0 +1,41 @@
+[Unit]
+Description=Tesatlas Tesla command proxy
+After=network-online.target
+Before=tesatlas-hub.service
+Wants=network-online.target
+PartOf=tesatlas-hub.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+ConditionPathExists=/etc/tesatlas-hub/command-auth-private.pem
+ConditionPathExists=/etc/tesatlas-hub/command-proxy-cert.pem
+ConditionPathExists=/etc/tesatlas-hub/command-proxy-tls-key.pem
+
+[Service]
+Type=simple
+User=tesatlas
+Group=tesatlas
+EnvironmentFile=/etc/tesatlas-hub/command-proxy.env
+StateDirectory=tesatlas-hub
+StateDirectoryMode=0700
+ExecStart=/usr/lib/tesatlas-hub/tesla-http-proxy
+ExecStartPost=/bin/bash -ec 'test "$${TESLA_HTTP_PROXY_HOST}" = 127.0.0.1; case "$${TESLA_HTTP_PROXY_PORT}" in ""|*[!0-9]*) exit 1;; esac; for attempt in {1..10}; do if exec 3<>"/dev/tcp/$${TESLA_HTTP_PROXY_HOST}/$${TESLA_HTTP_PROXY_PORT}"; then exec 3>&-; exit 0; fi; sleep 1; done; exit 1'
+TimeoutStartSec=20
+Restart=on-failure
+RestartSec=5
+UMask=0077
+CapabilityBoundingSet=
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/tesatlas-hub
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

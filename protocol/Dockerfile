@@ -13,7 +13,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin gate
 
-WORKDIR /workspace/teslatlas-protocol
+WORKDIR /workspace/tesatlas-protocol
 
 COPY --from=uv /uv /uvx /bin/
 COPY pyproject.toml uv.lock ./
@@ -27,7 +27,7 @@ COPY tools ./tools
 COPY docs ./docs
 COPY Dockerfile VERSION LICENSE NOTICE README.md ./
 
-ENV PATH="/workspace/teslatlas-protocol/.venv/bin:${PATH}" \
+ENV PATH="/workspace/tesatlas-protocol/.venv/bin:${PATH}" \
     UV_OFFLINE=1
 USER gate
 

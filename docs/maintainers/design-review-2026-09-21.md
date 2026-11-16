@@ -2,9 +2,9 @@
 
 ## Scope and direction
 
-Implemented in `codex/hub-macos-sidebar-redesign`, preserving the existing branch work. Native AppKit only. No separate Teslatlas app source, backend changes, commits, pushes, signing, or deployment.
+Implemented in `codex/hub-macos-sidebar-redesign`, preserving the existing branch work. Native AppKit only. No separate Tesatlas app source, backend changes, commits, pushes, signing, or deployment.
 
-Approved reference: `/Users/bolyki/dev/teslatlas-lab/build/hub/target/design-review-20260921/approved-direction.png`. The full brief and visually captured Teslatlas references are in that directory. The reference relationships are preserved: health-first overview, unboxed row symbols, aligned grouped content, four toolbar destinations, embedded utilities, and a focused full-window onboarding flow. Removed repeated helper copy where it added no information.
+Approved reference: `/Users/bolyki/dev/tesatlas-lab/build/hub/target/design-review-20260921/approved-direction.png`. The full brief and visually captured Tesatlas references are in that directory. The reference relationships are preserved: health-first overview, unboxed row symbols, aligned grouped content, four toolbar destinations, embedded utilities, and a focused full-window onboarding flow. Removed repeated helper copy where it added no information.
 
 ## Implemented
 
@@ -19,7 +19,7 @@ Approved reference: `/Users/bolyki/dev/teslatlas-lab/build/hub/target/design-rev
 
 ## Evidence
 
-All evidence is local under `/Users/bolyki/dev/teslatlas-lab/build/hub/target/design-polish-20260921`.
+All evidence is local under `/Users/bolyki/dev/tesatlas-lab/build/hub/target/design-polish-20260921`.
 
 - `tests-r5.xcresult`: full native suite, **253 passed, zero failed/skipped**, current application source.
 - `tests-r6.xcresult`: three visual tests passed after correcting the snapshot harness to finish AppKit window layout before capturing resized windows. No application source changed between r5 and r6.
@@ -31,7 +31,7 @@ All evidence is local under `/Users/bolyki/dev/teslatlas-lab/build/hub/target/de
 
 ## Visual review and limits
 
-Native renders were compared against the approved sketch and Teslatlas references. This pass found and corrected zero-inset utility rows, clipped button text measurement, the old footer width override, duplicate busy indicators, duplicate service links and double-painted press feedback. Independent read-only review found no high-priority routing regression.
+Native renders were compared against the approved sketch and Tesatlas references. This pass found and corrected zero-inset utility rows, clipped button text measurement, the old footer width override, duplicate busy indicators, duplicate service links and double-painted press feedback. Independent read-only review found no high-priority routing regression.
 
 The UI checks use deterministic fixture data, not live Tesla connections or real import/setup/service mutations. Those operations are outside this design acceptance. No high-frame-rate motion recording was obtained: the computer-use screenshot sampler captured settled frames after the short transition. Motion is implemented and routes were exercised, but these still images do not establish frame pacing or the subjective feel of every animation. Reduce Motion behavior was source-reviewed; an OS accessibility-setting change was not performed.
 

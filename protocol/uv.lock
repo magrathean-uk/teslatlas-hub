@@ -768,7 +768,7 @@ wheels = [
 ]
 
 [[package]]
-name = "teslatlas-protocol-conformance"
+name = "tesatlas-protocol-conformance"
 version = "2026.36.2"
 source = { virtual = "." }
 dependencies = [

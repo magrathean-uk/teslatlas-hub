@@ -1,4 +1,4 @@
-# Working on Teslatlas Edge
+# Working on Tesatlas Edge
 
 Edge is an optional Fleet Telemetry ingress for a user-operated Hub. Keep it
 narrow: receiver admission, encrypted bounded storage, and authenticated Hub
@@ -44,7 +44,7 @@ remaining acceptance gap.
 
 ## Workspace context
 
-When this checkout is inside the maintained Teslatlas workspace, the parent
+When this checkout is inside the maintained Tesatlas workspace, the parent
 `AGENTS.md` and `docs/development/MASTER_PLAN.md` govern programme scope and
 status. Follow its existing execution wrapper and build lock when running
 heavy work. Do not reproduce private lab details in public docs. Edge's old

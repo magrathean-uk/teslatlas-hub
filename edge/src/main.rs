@@ -5,20 +5,20 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
-use teslatlas_edge::config::{EdgeConfig, initialize, rotate_receiver_token};
-use teslatlas_edge::credentials::CredentialStore;
-use teslatlas_edge::runtime::{doctor, run_until_shutdown};
-use teslatlas_edge::spool::SPOOL_FORMAT_VERSION;
+use tesatlas_edge::config::{EdgeConfig, initialize, rotate_receiver_token};
+use tesatlas_edge::credentials::CredentialStore;
+use tesatlas_edge::runtime::{doctor, run_until_shutdown};
+use tesatlas_edge::spool::SPOOL_FORMAT_VERSION;
 
 const DEFAULT_CREDENTIAL_TTL_SECONDS: u64 = 90 * 24 * 60 * 60;
 
 #[derive(Debug, Parser)]
-#[command(version, about = "Teslatlas user-operated Fleet Telemetry ingress")]
+#[command(version, about = "Tesatlas user-operated Fleet Telemetry ingress")]
 struct Cli {
     #[arg(
         long,
         value_name = "PATH",
-        default_value = "/etc/teslatlas-edge/config.toml"
+        default_value = "/etc/tesatlas-edge/config.toml"
     )]
     config: PathBuf,
     #[command(subcommand)]

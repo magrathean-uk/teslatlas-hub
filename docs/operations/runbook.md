@@ -1,4 +1,4 @@
-# Operate Teslatlas Hub
+# Operate Tesatlas Hub
 
 ## Daily health
 
@@ -6,10 +6,10 @@ For a Debian package installation, run data and configuration commands as the
 dedicated service account:
 
 ```sh
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml status
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml doctor
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml status
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml doctor
 ```
 
 `status` is a bounded redacted summary. `doctor` validates database integrity,
@@ -19,8 +19,8 @@ a vehicle action.
 Also inspect the Debian supervisor:
 
 ```sh
-sudo systemctl status teslatlas-hub.service --no-pager
-sudo journalctl -u teslatlas-hub -n 200 --no-pager
+sudo systemctl status tesatlas-hub.service --no-pager
+sudo journalctl -u tesatlas-hub -n 200 --no-pager
 ```
 
 On macOS, press **Command-L** for the bounded combined log and diagnostics view.
@@ -32,10 +32,10 @@ see [CLI reference](../guides/cli.md#platform-invocation).
 On Debian, service-management commands require administrator authority:
 
 ```sh
-sudo /usr/bin/teslatlas-hub service status
-sudo /usr/bin/teslatlas-hub service start
-sudo /usr/bin/teslatlas-hub service stop
-sudo /usr/bin/teslatlas-hub service restart
+sudo /usr/bin/tesatlas-hub service status
+sudo /usr/bin/tesatlas-hub service start
+sudo /usr/bin/tesatlas-hub service stop
+sudo /usr/bin/tesatlas-hub service restart
 ```
 
 On macOS, use **Start Hub**, **Stop Hub** and **Restart Hub** in the app. Stop
@@ -59,7 +59,7 @@ for all network-owning processes.
 ## Upgrade
 
 On macOS, retain a backup, use **Stop Hub** in the app, then quit it. Replace
-**Teslatlas Hub.app** in `/Applications` or `~/Applications` and open the new
+**Tesatlas Hub.app** in `/Applications` or `~/Applications` and open the new
 copy. Run diagnostics before choosing **Start Hub**. The app replaces an older
 per-user agent after preflight; see [Upgrade and rollback](../releases/upgrade.md)
 for installer-era administrator cleanup.
@@ -81,10 +81,10 @@ restoring an older, schema-incompatible binary.
 For a Debian package installation:
 
 ```sh
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml repair
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml doctor
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml repair
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml doctor
 ```
 
 Repair validates the catalogue and packs, reports quarantined sessions,

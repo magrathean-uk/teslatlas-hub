@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 use std::{cell::Cell, fs, io::Write, os::unix::fs::{OpenOptionsExt, PermissionsExt, symlink}, path::Path};
-use teslatlas_hub::auth::credential_sign_in::{FileCustodyError, read_credential_file, read_credential_file_with_hooks};
+use tesatlas_hub::auth::credential_sign_in::{FileCustodyError, read_credential_file, read_credential_file_with_hooks};
 
 fn root() -> tempfile::TempDir {
     tempfile::Builder::new().prefix("v2-custody-").permissions(fs::Permissions::from_mode(0o700)).tempdir().expect("synthetic root")

@@ -714,7 +714,7 @@ class ProfileContentTests(unittest.TestCase):
     def test_unsupported_limits_and_error_codes(self):
         unsupported = self.profile['unsupported']
         self.assertEqual(sorted(unsupported), ['commands', 'metadata', 'protocol_version_header', 'revisions', 'rich_protocol_versions', 'sse'])
-        self.assertEqual(unsupported['rich_protocol_versions'], 'the root teslatlas-v1 family is not served')
+        self.assertEqual(unsupported['rich_protocol_versions'], 'the root tesatlas-v1 family is not served')
         self.assertEqual(unsupported['commands'], 'no public vehicle command route')
         limits = self.profile['limits']
         self.assertEqual((limits['ordinary_request_body_bytes'], limits['changes_since_request_body_bytes']), (4096, 8192))
@@ -1431,7 +1431,7 @@ class DiscoveryTests(unittest.TestCase):
             'no profile': lambda value: value.pop('profile'),
             'other profile family': lambda value: value.update(profile='hub-sync-v1@1.4.0'),
             'profile 2.0.0': lambda value: value.update(profile='hub-http-v2@2.0.0'),
-            'protocol': lambda value: value.update(protocol='teslatlas-v1'),
+            'protocol': lambda value: value.update(protocol='tesatlas-v1'),
             'protocol_major': lambda value: value.update(protocol_major=2),
             'pack_format': lambda value: value.update(pack_format='zip'),
             'duplicate token': lambda value: value.update(capabilities=['query.vehicles', 'query.current', 'query.current']),
@@ -1501,7 +1501,7 @@ class DiscoveryTests(unittest.TestCase):
 # Cursors
 # ---------------------------------------------------------------------------
 KEY = bytes(range(32))
-DOMAIN = b'teslatlas-hub/public-query-cursor/v1\x00'
+DOMAIN = b'tesatlas-hub/public-query-cursor/v1\x00'
 
 
 def cursor_text(kind, vehicle, scope, from_ms, to_ms, key_a, key_b, *, key=KEY, version=1):
@@ -1528,7 +1528,7 @@ class CursorTests(unittest.TestCase):
         self.assertEqual(sum(item['bytes'] for item in cursor['payload']['layout']), 58)
         self.assertEqual(cursor['payload']['layout'][1]['values'], {'drives': 1, 'charges': 2, 'positions': 3, 'charge_samples': 4})
         self.assertEqual((cursor['tag']['bytes'], cursor['tag']['algorithm']), (32, 'HMAC-SHA256'))
-        self.assertEqual(cursor['tag']['domain_prefix'], 'teslatlas-hub/public-query-cursor/v1 followed by one NUL byte')
+        self.assertEqual(cursor['tag']['domain_prefix'], 'tesatlas-hub/public-query-cursor/v1 followed by one NUL byte')
         self.assertEqual(cursor['binding'], ['Hub installation cursor key', 'cursor kind', 'vehicle UUID', 'scope id', 'exact from_ms', 'exact to_ms'])
         self.assertEqual(cursor['legacy'], {
             'format': 'tqd1', 'accepted_on': ['drives'], 'issued': False, 'accepted_for': 'one release', 'payload_bytes': 49, 'tag_bytes': 32,
@@ -1920,7 +1920,7 @@ class OfflineConformanceTests(Scratch):
     def test_main_prints_json_and_succeeds_offline(self):
         output, text = io.StringIO(), io.StringIO()
         # The native cases include destructive ones: a variable in the environment must never start them.
-        with mock.patch.dict(os.environ, {'TESLATLAS_HUB_HTTP_12_CONFIG': '/nonexistent/synthetic-descriptor.json'}):
+        with mock.patch.dict(os.environ, {'TESATLAS_HUB_HTTP_12_CONFIG': '/nonexistent/synthetic-descriptor.json'}):
             with contextlib.redirect_stdout(output):
                 code = conf.main(['--json'])
             with contextlib.redirect_stdout(text):
@@ -2276,7 +2276,7 @@ class FakeHub:
         parts = urllib.parse.urlsplit(path)
         segments = [urllib.parse.unquote(item) for item in parts.path.split('/')[1:]]
         query = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
-        if segments == ['.well-known', 'teslatlas-hub'] and method == 'GET':
+        if segments == ['.well-known', 'tesatlas-hub'] and method == 'GET':
             value = example('discovery-unsigned' if 'base_capabilities' in self.quirks else 'discovery')
             if 'discovery_old_profile' in self.quirks:
                 value['profile'] = 'hub-http-v1@1.1.0'
@@ -4190,8 +4190,8 @@ class DocumentationTests(unittest.TestCase):
             self.assertNotIn(phrase, flat)
         # the walkthrough reads the served profile through the 1.3.0 validator and no other directory or module
         walkthrough = text[text.index('## Choose the profile'):]
-        profile_variable = 'TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0"'
-        self.assertEqual(walkthrough.count('TESLATLAS_PROFILE='), walkthrough.count(profile_variable))
+        profile_variable = 'TESATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0"'
+        self.assertEqual(walkthrough.count('TESATLAS_PROFILE='), walkthrough.count(profile_variable))
         self.assertEqual(walkthrough.count(profile_variable), 7)
         self.assertEqual(walkthrough.count('from conformance import hub_http_13\n'), 7)
         self.assertNotRegex(text, r'profiles/hub-http-v1/1\.[01]\.0')

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Typed, bounded SQLite packs for the Teslatlas Hub source.
+//! Typed, bounded SQLite packs for the Tesatlas Hub source.
 //!
 //! This deliberately does not turn arbitrary Hub observations into rows for a
 //! phone. A producer must first create this checked projection. The resulting
-//! SQLite file has the five source-owned tables that the Teslatlas core mirror
+//! SQLite file has the five source-owned tables that the Tesatlas core mirror
 //! understands, plus a small binding record that prevents cross-account or
 //! cross-vehicle activation.
 

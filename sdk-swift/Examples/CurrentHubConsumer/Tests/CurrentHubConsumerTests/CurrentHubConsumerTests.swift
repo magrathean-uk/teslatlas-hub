@@ -6,7 +6,7 @@ import CryptoKit
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import TeslatlasCurrentHub
+import TesatlasCurrentHub
 
 @testable import CurrentHubConsumer
 

@@ -1,0 +1,867 @@
+"hub.AppDelegate.103.34" = "दृश्य";
+"hub.AppDelegate.106.35" = "आढावा";
+"hub.AppDelegate.110.36" = "वाहने";
+"hub.AppDelegate.114.37" = "क्रियाकलाप";
+"hub.AppDelegate.118.38" = "सेटिंग्ज";
+"hub.AppDelegate.12.1" = "Hub चे एक कार्य पूर्ण होत आहे";
+"hub.AppDelegate.123.39" = "निदान";
+"hub.AppDelegate.128.41" = "क्रियाकलाप आणि नोंदी";
+"hub.AppDelegate.13.2" = "सध्याची सेटअप, सेवा, वाहन किंवा निदान प्रक्रिया पूर्ण होईपर्यंत थांबा आणि मग अ‍ॅप बंद करा. अ‍ॅप बंद केल्याने पार्श्वभूमीतील Hub सेवा थांबत नाही.";
+"hub.AppDelegate.132.43" = "सेवा तपशील";
+"hub.AppDelegate.139.45" = "विंडो";
+"hub.AppDelegate.14.3" = "ठीक";
+"hub.AppDelegate.145.46" = "बंद करा";
+"hub.AppDelegate.147.48" = "लहान करा";
+"hub.AppDelegate.148.50" = "झूम करा";
+"hub.AppDelegate.151.51" = "मदत";
+"hub.AppDelegate.154.52" = "Tesatlas Hub मदत";
+"hub.AppDelegate.227.53" = "स्थानिक Hub विकास कॉन्फिगरेशन नाकारले गेले";
+"hub.AppDelegate.229.54" = "बाहेर पडा";
+"hub.AppDelegate.332.71" = "आढाव्यात Hub ची स्थिती एका नजरेत दिसते. वाहन विभागात स्थिती आणि आदेश आहेत. क्रियाकलाप विभागात अलीकडील घटना एकत्र दिसतात, तर सेटिंग्जमध्ये कनेक्शन, निदान, आयात आणि सेवा तपशील आहेत.";
+"hub.AppDelegate.344.73" = "Tesatlas Hub v%1$@";
+"hub.AppDelegate.347.75" = "परवाना पाहा";
+"hub.AppDelegate.349.76" = "संबंधित स्रोत कोड";
+"hub.AppDelegate.44.5" = "Tesatlas Hub विषयी";
+"hub.AppDelegate.48.6" = "कायदेशीर माहिती आणि परवाना…";
+"hub.AppDelegate.55.7" = "संबंधित स्रोत कोड…";
+"hub.AppDelegate.62.8" = "Tesatlas Hub लपवा";
+"hub.AppDelegate.65.10" = "इतर लपवा";
+"hub.AppDelegate.69.12" = "सर्व दाखवा";
+"hub.AppDelegate.73.13" = "Tesatlas Hub मधून बाहेर पडा";
+"hub.AppDelegate.79.15" = "संपादन";
+"hub.AppDelegate.82.16" = "पूर्ववत करा";
+"hub.AppDelegate.83.19" = "पुन्हा करा";
+"hub.AppDelegate.86.22" = "कापा";
+"hub.AppDelegate.87.24" = "कॉपी करा";
+"hub.AppDelegate.88.26" = "पेस्ट करा";
+"hub.AppDelegate.89.28" = "हटवा";
+"hub.AppDelegate.91.29" = "सर्व निवडा";
+"hub.AppDelegate.94.31" = "फाइल";
+"hub.AppDelegate.97.32" = "इतिहास आयात करा…";
+"hub.DevelopmentHubRuntime.109.98" = "स्थानिक विकास मोड सक्षम नव्हता. सर्व चार विकास मार्गांसह %1$@=1 सेट करा.";
+"hub.DevelopmentHubRuntime.115.99" = "%1$@ हा रिकामा नसलेला निरपेक्ष मार्ग असणे आवश्यक आहे.";
+"hub.DevelopmentHubRuntime.119.100" = "%1$@ मध्ये सापेक्ष मार्गाचे घटक नसावेत.";
+"hub.DevelopmentHubRuntime.128.101" = "%1$@ हा fixture, standalone किंवा edge असणे आवश्यक आहे.";
+"hub.DevelopmentHubRuntime.172.102" = "विकास नोंदींची निर्देशिका सुरक्षितपणे उघडता आली नाही: %1$@";
+"hub.DevelopmentHubRuntime.18.82" = "इतिहासापुरती नियंत्रण फाइल असुरक्षित आहे किंवा उपलब्ध नाही.";
+"hub.DevelopmentHubRuntime.182.103" = "तयारीदरम्यान विकास नोंदींची निर्देशिका बदलली: %1$@";
+"hub.DevelopmentHubRuntime.202.106" = "विकास नोंद सुरक्षितपणे उघडता आली नाही: %1$@";
+"hub.DevelopmentHubRuntime.213.107" = "विकास नोंद सध्याच्या वापरकर्त्याच्या मालकीची सामान्य फाइल असावी आणि तिची हार्ड लिंक एकच असावी: %1$@";
+"hub.DevelopmentHubRuntime.219.108" = "विकास नोंदीसाठीच्या परवानग्या समर्थित नाहीत: %1$@";
+"hub.DevelopmentHubRuntime.224.109" = "विकास नोंदींच्या परवानग्या दुरुस्त करता आल्या नाहीत: %1$@";
+"hub.DevelopmentHubRuntime.236.110" = "तयारीदरम्यान विकास नोंदीची ओळख बदलली: %1$@";
+"hub.DevelopmentHubRuntime.248.111" = "विकास सेवा सध्याच्या वापरकर्त्याची असणे आवश्यक आहे.";
+"hub.DevelopmentHubRuntime.256.112" = "विकास सेवा ओळखीमध्ये असुरक्षित मार्ग आहे.";
+"hub.DevelopmentHubRuntime.262.116" = "विकास सेवा लेबल असुरक्षित आहे.";
+"hub.DevelopmentHubRuntime.28.83" = "इतिहासापुरती नियंत्रण फाइल फक्त मालकाला वापरता येणारी सामान्य फाइल असणे आवश्यक आहे.";
+"hub.DevelopmentHubRuntime.281.117" = "विकास मार्ग उपलब्ध नाही: %1$@";
+"hub.DevelopmentHubRuntime.284.118" = "विकास मार्गाची मालकी सध्याच्या वापरकर्त्याकडे नाही: %1$@";
+"hub.DevelopmentHubRuntime.292.119" = "विकास बायनरी सामान्य एक्झिक्यूटेबल फाइल असावी; गटाला किंवा इतरांना तिच्यावर लिहिण्याची परवानगी नसावी: %1$@";
+"hub.DevelopmentHubRuntime.298.120" = "विकास फाइल सामान्य असावी आणि फक्त तिच्या मालकाला वापरता यावी: %1$@";
+"hub.DevelopmentHubRuntime.304.121" = "विकास निर्देशिका मालकाच्या मालकीची असावी आणि फक्त मालकाला वापरता यावी: %1$@";
+"hub.DevelopmentHubRuntime.323.123" = "विकास मार्गांमध्ये प्रतीकात्मक दुवे असू नयेत: %1$@";
+"hub.DevelopmentHubRuntime.327.124" = "विकास मार्गाचा पालक घटक निर्देशिका नाही: %1$@";
+"hub.DevelopmentHubRuntime.330.125" = "विकास मार्गाच्या पालक घटकाचा मालक अपेक्षित मालक नाही: %1$@";
+"hub.DevelopmentHubRuntime.333.126" = "विकास मार्गाचा पालक घटक गटाला किंवा इतरांना लिहिता येतो: %1$@";
+"hub.DevelopmentHubRuntime.39.84" = "इतिहासापुरती नियंत्रण फाइल वाचता आली नाही.";
+"hub.DevelopmentHubRuntime.44.85" = "इतिहासापुरत्या नियंत्रण फाइलमधील मजकूर अनपेक्षित आहे.";
+"hub.DevelopmentHubRuntime.472.142" = "अज्ञात सेवा क्रिया.";
+"hub.DevelopmentHubRuntime.58.86" = "इतिहासापुरती नियंत्रण फाइल जतन झाली नाही.";
+"hub.DevelopmentHubRuntime.692.174" = "विकास Hub थांबण्याची प्रक्रिया पूर्ण झाली नाही.";
+"hub.DevelopmentHubRuntime.713.175" = "तयार स्थितीची अंतिम मुदत संपली.";
+"hub.DevelopmentHubRuntime.730.177" = "मालकीचा LaunchAgent लोड झाला आहे, पण तो अपेक्षित बायनरी आणि कॉन्फिगरेशन चालवत नाही.";
+"hub.DevelopmentHubRuntime.737.178" = "स्थिती तपासण्यापूर्वी तयार स्थितीची अंतिम मुदत संपली.";
+"hub.DevelopmentHubRuntime.751.181" = "विकास Hub PID %1$@ म्हणून चालू आहे.";
+"hub.DevelopmentHubRuntime.757.182" = "अपेक्षित प्रक्रिया सलग दोन तयार-स्थिती तपासण्यांपर्यंत स्थिर राहिली नाही.";
+"hub.DevelopmentHubRuntime.766.183" = "अपेक्षित प्रक्रियेने अवैध स्थिती प्रतिसाद दिला: %1$@";
+"hub.DevelopmentHubRuntime.774.184" = "अपेक्षित प्रक्रियेची स्थिती तपासता आली नाही: %1$@";
+"hub.DevelopmentHubRuntime.784.185" = "मालकीचा LaunchAgent चालू नाही: %1$@";
+"hub.DevelopmentHubRuntime.852.187" = "%1$@. अयशस्वी विकास LaunchAgent अनलोड करता आले नाही: %2$@";
+"hub.DevelopmentHubRuntime.857.188" = "विकास Hub %1$@ सेवेसाठी तयार झाला नाही. %2$@";
+"hub.DiagnosticsWindowController.149.220" = "दाखवलेल्या, कॉपी केलेल्या आणि जतन केलेल्या अहवालांतून प्रवेश माहिती आणि खाजगी ओळखचिन्हे लपवली जातात. शेअर करण्यापूर्वी तपासा.";
+"hub.DiagnosticsWindowController.189.224" = "गोपनीय माहिती वगळलेला अहवाल गोळा करण्यासाठी निदान चालवा.";
+"hub.DiagnosticsWindowController.192.225" = "निदान अहवाल अद्याप तयार केलेला नाही.";
+"hub.DiagnosticsWindowController.20.203" = "गोपनीय माहिती वगळलेला मूळ अहवाल दाखवा";
+"hub.DiagnosticsWindowController.21.204" = "पुन्हा चालवा";
+"hub.DiagnosticsWindowController.210.227" = "तपासण्या चालू आहेत…";
+"hub.DiagnosticsWindowController.22.205" = "अहवाल कॉपी करा";
+"hub.DiagnosticsWindowController.227.230" = "रचनाबद्ध तपासण्यांचे निकाल परत आले नाहीत.";
+"hub.DiagnosticsWindowController.23.206" = "अहवाल जतन करा…";
+"hub.DiagnosticsWindowController.246.232" = "पूर्ण झालेल्या तपासण्या पाहण्यासाठी निदान चालवा.";
+"hub.DiagnosticsWindowController.283.236" = "अधिक तपशील नाहीत.";
+"hub.DiagnosticsWindowController.311.237" = "गोपनीय माहिती वगळलेला मूळ अहवाल लपवा";
+"hub.DiagnosticsWindowController.321.239" = "गोपनीय माहिती वगळलेला अहवाल कॉपी केला.";
+"hub.DiagnosticsWindowController.335.241" = "गोपनीय माहिती वगळलेला अहवाल जतन केला.";
+"hub.DiagnosticsWindowController.371.242" = "पर्यावरण तपासणी";
+"hub.DiagnosticsWindowController.371.243" = "रनटाइम आणि परवानग्या ठीक आहेत";
+"hub.DiagnosticsWindowController.372.244" = "पूर्वतपासणी";
+"hub.DiagnosticsWindowController.372.245" = "कॉन्फिगरेशन वैध आहे";
+"hub.DiagnosticsWindowController.373.246" = "सेवेची स्थिती";
+"hub.DiagnosticsWindowController.373.247" = "चालू आहे";
+"hub.DiagnosticsWindowController.374.248" = "डेटाबेस";
+"hub.DiagnosticsWindowController.374.249" = "अखंडता तपासणी यशस्वी झाली";
+"hub.DiagnosticsWindowController.375.250" = "प्रवेश तपशील";
+"hub.DiagnosticsWindowController.375.251" = "Fleet टोकन वैध आहे";
+"hub.DiagnosticsWindowController.376.252" = "जोडणी";
+"hub.DiagnosticsWindowController.376.253" = "Tesla Fleet एंडपॉइंटशी संपर्क झाला";
+"hub.DiagnosticsWindowController.377.254" = "अलीकडील नोंदी";
+"hub.DiagnosticsWindowController.377.255" = "गेल्या तासात त्रुटी नाहीत";
+"hub.DiagnosticsWindowController.70.212" = "Hub, त्याचा डेटाबेस आणि त्याच्या जोडण्या तपासा.";
+"hub.HubController.100.306" = "Hub चालू आहे";
+"hub.HubController.101.307" = "Hub थांबलेला आहे";
+"hub.HubController.102.308" = "सेटअप आवश्यक";
+"hub.HubController.103.309" = "लक्ष देणे आवश्यक";
+"hub.HubController.1151.476" = "Hub सेवा थांबण्याची प्रक्रिया पूर्ण झाली नाही.";
+"hub.HubController.1161.477" = "सेवा";
+"hub.HubController.1161.478" = "LaunchAgent स्थापित आहे आणि प्रतिसाद देत आहे.";
+"hub.HubController.1162.479" = "Tesla खाते";
+"hub.HubController.1162.480" = "प्रवेश तपशील जतन केले आहेत आणि वैध आहेत.";
+"hub.HubController.1163.481" = "वाहन";
+"hub.HubController.1163.482" = "1 वाहनाशी संपर्क होतो आहे";
+"hub.HubController.1164.484" = "SQLite स्कीमा आवृत्ती 42 वर आहे";
+"hub.HubController.1165.486" = "पूर्वतपासण्या यशस्वी झाल्या";
+"hub.HubController.1166.487" = "नोंदी";
+"hub.HubController.1486.555" = "साइन आउट करण्यापूर्वी स्रोत अनुप्रयोग स्थलांतराचे हस्तांतरण पूर्ण करा किंवा रद्द करा.";
+"hub.HubController.1504.567" = "जोडणी तोडण्याची प्रक्रिया पूर्णपणे यशस्वी झाली नाही. Hub ची स्थिती पुन्हा तपासली आहे; खाते अजून जोडलेले आहे का ते तपासा. %1$@";
+"hub.HubController.1522.568" = "सुसंगतता तपासण्यापूर्वी स्रोत डेटाबेस स्कीमाचा आढावा घेतल्याची पुष्टी करा.";
+"hub.HubController.1523.569" = "सुसंगतता तपासण्यापूर्वी स्रोत अनुप्रयोग 4.4.0 किंवा त्यानंतरची आवृत्ती असल्याची पुष्टी करा.";
+"hub.HubController.1532.570" = "127.0.0.1 किंवा ::1 वरील स्थानिक PostgreSQL स्रोत निवडा.";
+"hub.HubController.1536.571" = "स्रोत अनुप्रयोग कार ID धन संख्या असणे आवश्यक आहे.";
+"hub.HubController.1539.572" = "संरक्षित PostgreSQL पासवर्ड फाइल निवडा.";
+"hub.HubController.1552.580" = "स्रोत अनुप्रयोग सुसंगतता तपासणीचा वैध अहवाल मिळाला नाही.";
+"hub.HubController.1562.581" = "स्रोत डेटाबेसची पडताळणी करता आली नाही. सर्व्हर जोडणी तपासून पुन्हा प्रयत्न करा.";
+"hub.HubController.1585.586" = "आयात करण्यापूर्वी स्रोत अनुप्रयोग 4.4.0 किंवा त्यानंतरची आवृत्ती असल्याची पुष्टी करा.";
+"hub.HubController.1591.587" = "साइन इन करण्यासाठी उघडी संकलन विंडो आवश्यक आहे. एक विंडो उघडा, मग पुन्हा साइन इन करा.";
+"hub.HubController.1718.615" = "स्रोत अनुप्रयोग आयात प्रक्रियेने पूर्णतेचा वैध अहवाल दिला नाही. Hub थांबलेलाच आहे.";
+"hub.HubController.1742.624" = "आयात पूर्ण झाली, पण सुरक्षित हस्तांतरणाची अट Hub मध्ये नोंदवता आली नाही: %1$@. Hub थांबलेलाच आहे.";
+"hub.HubController.1846.655" = "थेट PostgreSQL स्रोतावरून आयात करण्यापूर्वी स्रोत अनुप्रयोग 4.4.0 किंवा त्यानंतरची आवृत्ती असल्याची पुष्टी करा.";
+"hub.HubController.1865.658" = "PostgreSQL स्रोतामध्ये postgres किंवा postgresql स्कीम, होस्ट आणि डेटाबेसचे नाव असणे आवश्यक आहे.";
+"hub.HubController.1869.659" = "PostgreSQL स्रोतामध्ये पासवर्ड ठेवू नका. पासवर्ड फाइलचे फील्ड वापरा.";
+"hub.HubController.1966.689" = "Fleet सेटअप अयशस्वी झाले: %1$@. Hub कॉन्फिगरेशन पुनर्प्राप्तीही अयशस्वी झाली: %2$@";
+"hub.HubController.2051.701" = "Fleet सेटअप अयशस्वी झाले: %1$@. Hub पुन्हा सुरू करतानाही त्रुटी आली: %2$@";
+"hub.HubController.2096.708" = "Fleet प्रवेश तपशील अपूर्ण किंवा अवैध आहेत.";
+"hub.HubController.2107.714" = "Fleet प्रवेश तपशील एन्कोड करता आले नाहीत.";
+"hub.HubController.2200.747" = "Tesla सेटअप अयशस्वी झाले: %1$@. Hub कॉन्फिगरेशन पुनर्प्राप्तीही अयशस्वी झाली: %2$@";
+"hub.HubController.2268.756" = "%1$@: %2$@. Hub कॉन्फिगरेशन पुनर्प्राप्तीही अयशस्वी झाली: %3$@";
+"hub.HubController.2282.759" = "%1$@: %2$@. Hub पुन्हा सुरू करतानाही त्रुटी आली: %3$@";
+"hub.HubController.2292.760" = "Tesla सेटअप अयशस्वी झाले";
+"hub.HubController.2341.768" = "Tesla लॉगिन प्रवेश तपशील एन्कोड करता आले नाहीत.";
+"hub.HubController.2346.772" = "Tesla वाहन ID धन असणे आवश्यक आहे.";
+"hub.HubController.2374.779" = "Tesla प्रदाता बदलल्याचा परिणाम पडताळणे आवश्यक आहे. Hub थांबलेलाच आहे; पुन्हा प्रयत्न करण्यापूर्वी निदान चालवा. %1$@";
+"hub.HubController.2385.784" = "स्रोत अनुप्रयोगात Tesla मध्ये पुन्हा साइन इन करा, मग आयात पुन्हा करा.";
+"hub.HubController.2389.785" = "स्रोत अनुप्रयोग आयात अयशस्वी झाली; आयात पुन्हा करा.";
+"hub.HubController.2457.838" = "Hub सुरू करण्यापूर्वी स्रोत अनुप्रयोग हस्तांतरण पूर्ण करा.";
+"hub.HubController.2479.850" = "Hub पुन्हा सुरू करण्यापूर्वी स्रोत अनुप्रयोग हस्तांतरण पूर्ण करा.";
+"hub.HubController.250.318" = "मालक साइन-इन";
+"hub.HubController.2503.863" = "Hub सुरू होण्याची प्रक्रिया आधीच सुरू आहे.";
+"hub.HubController.251.319" = "Fleet API";
+"hub.HubController.2519.869" = "Hub सुरू करण्यापूर्वी स्थलांतराच्या तपासण्या पूर्ण करा.";
+"hub.HubController.2610.896" = "Hub सुरू झाले नाही: %1$@. डेटा संकलनावरील विराम पूर्ववत करता आला नाही: %2$@";
+"hub.HubController.2678.902" = "स्टार्टअपची अंतिम मुदत संपण्यापूर्वी Hub तयार स्थितीत आले नाही.";
+"hub.HubController.2689.905" = "Hub तयार असल्याची स्थिती वाचता आली नाही.";
+"hub.HubController.2698.907" = "Hub तयार असल्याची स्थिती अवैध होती.";
+"hub.HubController.2717.908" = "Hub तयार असल्याच्या स्थितीत वैध डेटा-संकलक लीज नव्हता.";
+"hub.HubController.2798.927" = "स्थलांतर हस्तांतरणाची अट काढता आली नाही म्हणून Hub थांबवला: %1$@";
+"hub.HubController.2832.942" = "Hub तयार स्थितीत आले नाही आणि थांबवले गेले. स्थलांतर हस्तांतरण अजून प्रलंबित आहे.";
+"hub.HubController.2834.943" = "स्टार्टअप अयशस्वी झाल्यानंतर Hub थांबवला, पण डेटा संकलनावरील विराम पूर्ववत करता आला नाही. स्रोत अनुप्रयोग बंदच ठेवा आणि पुन्हा प्रयत्न करा.";
+"hub.HubController.2836.944" = "Hub तयार झाला नाही आणि तो थांबला आहे याची पुष्टी करता आली नाही. स्रोत अनुप्रयोग बंदच ठेवा, Hub थांबवा आणि पुन्हा प्रयत्न करा.";
+"hub.HubController.2905.957" = "Hub";
+"hub.HubController.2905.958" = "इतिहासाची पडताळणी करण्यासाठी थांबवले";
+"hub.HubController.2906.959" = "स्वाक्षरीत इतिहास";
+"hub.HubController.2906.960" = "प्रकाशित झाले आहे आणि तयार आहे";
+"hub.HubController.2906.961" = "तयार नाही";
+"hub.HubController.2907.962" = "डेटा संकलन";
+"hub.HubController.2907.963" = "बंद";
+"hub.HubController.2907.964" = "स्थानिक Hub कॉन्फिगरेशन तपासा";
+"hub.HubController.2908.966" = "जोडलेले नाही; इतिहास ऑफलाइन उपलब्ध आहे";
+"hub.HubController.2932.967" = "स्थापित आहे आणि सुरक्षितपणे थांबवले आहे";
+"hub.HubController.2943.972" = "लाइव्ह तयार-स्थिती तपासणी यशस्वी झाली; संपूर्ण अखंडता तपासणी निदान विभागात उपलब्ध आहे";
+"hub.HubController.2944.973" = "Hub अजून तयार नाही. क्षणभर थांबा आणि पुन्हा चालवा.";
+"hub.HubController.2953.976" = "अद्याप नोंदी नाहीत";
+"hub.HubController.2953.977" = "सेवा थांबलेली असताना सेवेच्या नोंदी उपलब्ध नाहीत";
+"hub.HubController.2954.978" = "उपलब्ध नाही";
+"hub.HubController.2954.979" = "वाचता येते";
+"hub.HubController.3010.1006" = "अयशस्वी";
+"hub.HubController.3026.1019" = "वाहनाला आदेश देण्यापूर्वी Hub चालू असणे आवश्यक आहे.";
+"hub.HubController.3032.1027" = "वाहनाला आदेश देण्यापूर्वी Tesla शी जोडणी करा.";
+"hub.HubController.3040.1034" = "वाहन नियंत्रणे वापरण्यास Tesla Fleet API आवश्यक आहे.";
+"hub.HubController.3047.1041" = "आदेश देण्यापूर्वी वाहन निवडा.";
+"hub.HubController.3053.1048" = "निवडलेले वाहन आता कॉन्फिगर केलेले नाही.";
+"hub.HubController.314.326" = "वाहन जागे करा";
+"hub.HubController.315.327" = "हवामान नियंत्रण सुरू करा";
+"hub.HubController.316.328" = "हवामान नियंत्रण बंद करा";
+"hub.HubController.317.329" = "दरवाजे लॉक करा";
+"hub.HubController.318.330" = "दरवाजे अनलॉक करा";
+"hub.HubController.319.331" = "दिवे चमकवा";
+"hub.HubController.320.332" = "हॉर्न वाजवा";
+"hub.HubController.326.333" = "वाहन जागे झाले आहे याची खात्री करण्यासाठी ते तपासा.";
+"hub.HubController.327.334" = "हवामान नियंत्रण बदलले आहे याची खात्री करण्यासाठी वाहन तपासा.";
+"hub.HubController.328.335" = "दरवाजांची स्थिती बदलली आहे याची खात्री करण्यासाठी वाहन तपासा.";
+"hub.HubController.329.336" = "दिवे चमकवण्याचा आदेश स्वीकारला गेला.";
+"hub.HubController.330.337" = "हॉर्न वाजवण्याचा आदेश स्वीकारला गेला.";
+"hub.HubController.3323.1158" = "इतिहासापुरते Hub कॉन्फिगरेशन किंवा प्रकाशित इतिहास अजून तयार नाही. डेटा संकलन बंद ठेवा आणि पडताळणी पुन्हा चालवा.";
+"hub.HubController.342.338" = "सध्याचे";
+"hub.HubController.343.339" = "कॅश केलेले";
+"hub.HubController.3430.1177" = "Hub कॉन्फिगरेशन सामान्य फाइल नाही.";
+"hub.HubController.344.340" = "अज्ञात";
+"hub.HubController.3441.1179" = "Hub कॉन्फिगरेशन फाइल खूप मोठी आहे.";
+"hub.HubController.3452.1180" = "Hub कॉन्फिगरेशन वाचता आले नाही.";
+"hub.HubController.3460.1182" = "Hub कॉन्फिगरेशन UTF-8 मजकूरात असणे आवश्यक आहे.";
+"hub.HubController.3527.1187" = "बदली कॉन्फिगरेशन मार्ग काढण्यास Hub कॉन्फिगरेशन पुनर्प्राप्तीने नकार दिला.";
+"hub.HubController.3543.1188" = "स्थलांतर सुरक्षितता खूण अजून आहे; Hub थांबलेलाच ठेवणे आवश्यक आहे.";
+"hub.HubController.3544.1189" = "कॉन्फिगरेशन दुरुस्त होईपर्यंत Hub थांबलेलाच ठेवणे आवश्यक आहे.";
+"hub.HubController.3546.1190" = "स्रोत अनुप्रयोग आयात अयशस्वी: %1$@. कॉन्फिगरेशन पुनर्प्राप्तीही अयशस्वी: %2$@ %3$@";
+"hub.HubController.3752.1247" = "शेवटचे निरीक्षण: %1$@";
+"hub.HubController.3754.1249" = "अद्याप निरीक्षणे नाहीत";
+"hub.HubController.3787.1262" = "स्थिती ठीक · %1$@ MB";
+"hub.HubController.3789.1265" = "स्थापित आणि चालू";
+"hub.HubController.3789.1266" = "स्थापित · लक्ष देणे आवश्यक";
+"hub.HubController.3807.1275" = "इतिहास उपलब्ध · Tesla जोडलेले नाही";
+"hub.HubController.3846.1290" = "स्थापित आहे, पण थांबलेली आहे";
+"hub.HubController.3849.1291" = "स्थापित · सेवेची स्थिती उपलब्ध नाही";
+"hub.HubController.3858.1293" = "स्थापित · आवृत्ती जुळत नाही";
+"hub.HubController.3877.1301" = "विकास Hub चालू आहे";
+"hub.HubController.3878.1303" = "विकास Hub थांबलेला आहे";
+"hub.HubController.3879.1305" = "विकास Hub · लक्ष देणे आवश्यक";
+"hub.HubController.3880.1307" = "विकास Hub · सेवेची स्थिती उपलब्ध नाही";
+"hub.HubController.3881.1309" = "विकास Hub · आवृत्ती जुळत नाही";
+"hub.HubController.3882.1310" = "स्थापित · स्थिती उपलब्ध नाही";
+"hub.HubController.3882.1311" = "विकास Hub · स्थिती उपलब्ध नाही";
+"hub.HubController.389.342" = "%1$@ · %2$@";
+"hub.HubController.3905.1332" = "आत्ताच";
+"hub.HubController.393.343" = "कॉन्फिगर केलेले नाही";
+"hub.HubController.394.344" = "सेटअप किंवा आयातीची प्रतीक्षा आहे";
+"hub.HubController.441.368" = "स्थापित नाही";
+"hub.HubController.445.371" = "कॉन्फिगर केलेले वाहन नाही";
+"hub.HubController.452.374" = "Hub कॉन्फिगर किंवा स्थापित केलेले नाही.";
+"hub.HubController.467.375" = "पूर्वदृश्य मोडमध्ये फक्त वाचन करता येते. कोणतीही प्रक्रिया, इंस्टॉलर किंवा launchctl क्रिया चालवलेली नाही.";
+"hub.HubController.469.376" = "एम्बेड केलेला संसाधन घटक उपलब्ध नाही: %1$@";
+"hub.HubController.477.378" = "Hub आदेशाची वेळ संपली.";
+"hub.HubController.775.379" = "Hub आदेशाचा आउटपुट प्रवाह बंद झाला नाही.";
+"hub.HubController.781.380" = "Hub आदेशाचा आउटपुट वाचता आला नाही.";
+"hub.HubController.791.381" = "Hub आदेश अयशस्वी झाला.";
+"hub.HubController.connected_state" = "जोडलेले";
+"hub.HubDashboardView.101.1357" = "Hub सेवा";
+"hub.HubDashboardView.105.1361" = "स्थानिक डेटाबेस";
+"hub.HubDashboardView.119.1362" = "Hub सुरू करा";
+"hub.HubDashboardView.12.1336" = "Hub सुरू होत आहे…";
+"hub.HubDashboardView.13.1337" = "Hub थांबत आहे…";
+"hub.HubDashboardView.14.1338" = "Hub पुन्हा सुरू होत आहे…";
+"hub.HubDashboardView.166.1366" = "अलीकडील क्रियाकलाप";
+"hub.HubDashboardView.192.1369" = "डेटा फोल्डर";
+"hub.HubDashboardView.20.1339" = "वाहनांचा डेटा संकलित करण्याची तयारी करत आहे.";
+"hub.HubDashboardView.201.1372" = "तुमचा डेटा या Mac वरच राहतो.";
+"hub.HubDashboardView.21.1340" = "सध्याचे काम पूर्ण करून सुरक्षितपणे थांबत आहे.";
+"hub.HubDashboardView.22.1341" = "पार्श्वभूमी सेवा पुन्हा सुरू करत आहे.";
+"hub.HubDashboardView.279.1374" = "Tesatlas Hub %1$@";
+"hub.HubDashboardView.28.1342" = "सुरू होत आहे…";
+"hub.HubDashboardView.29.1343" = "थांबत आहे…";
+"hub.HubDashboardView.30.1344" = "पुन्हा सुरू होत आहे…";
+"hub.HubDashboardView.36.1345" = "Hub सुरू झाला.";
+"hub.HubDashboardView.37.1346" = "Hub थांबला.";
+"hub.HubDashboardView.38.1347" = "Hub पुन्हा सुरू झाला.";
+"hub.HubDashboardView.399.1383" = "अलीकडील अ‍ॅप क्रिया नाहीत. डेटा-संकलकाच्या क्रियाकलापासाठी नोंदी पाहा.";
+"hub.HubDashboardView.430.1384" = "अद्याप वाहने नाहीत";
+"hub.HubDashboardView.431.1385" = "येथे वाहने पाहण्यासाठी Tesla खाते जोडा.";
+"hub.HubDashboardView.514.1389" = "Hub पार्श्वभूमीत चालतो. तुम्ही ही विंडो बंद करू शकता.";
+"hub.HubDashboardView.515.1390" = "वाहनांचा डेटा संकलित होत नाही.";
+"hub.HubDashboardView.516.1391" = "Hub Tesla शी कसा जोडायचा ते निवडा.";
+"hub.HubDashboardView.517.1392" = "तपशीलांसाठी निदान उघडा.";
+"hub.HubDashboardView.96.1352" = "Hub थांबवा…";
+"hub.HubDashboardView.97.1353" = "Hub पुन्हा सुरू करा";
+"hub.HubDashboardView.98.1354" = "Hub सेट अप करा";
+"hub.HubDashboardView.99.1355" = "निदान चालवा";
+"hub.HubDiagnosticsPresentation.51.1418" = "रचनाबद्ध अहवाल कच्च्या तपशीलांमध्ये उपलब्ध आहे.";
+"hub.HubDiagnosticsPresentation.58.1427" = "%1$@: %2$@";
+"hub.HubDiagnosticsPresentation.81.1444" = "सेवा थांबवणे";
+"hub.HubDiagnosticsPresentation.82.1446" = "सेवेची स्थिती तपासणे";
+"hub.HubDiagnosticsPresentation.83.1448" = "सेवा पुन्हा सुरू करणे";
+"hub.HubDiagnosticsPresentation.84.1450" = "समर्थन मेटाडेटा";
+"hub.HubDiagnosticsPresentation.boolean_no" = "नाही";
+"hub.HubDiagnosticsPresentation.boolean_yes" = "होय";
+"hub.HubDiagnosticsPresentation.compatible_label" = "सुसंगत";
+"hub.HubDiagnosticsPresentation.message_label" = "संदेश";
+"hub.HubDiagnosticsPresentation.preflight_label" = "पूर्वतपासणी";
+"hub.HubDiagnosticsPresentation.ready_label" = "तयार";
+"hub.HubDiagnosticsPresentation.status_label" = "स्थिती";
+"hub.HubNavigationBar.346.1478" = "या Mac वरील Hub च्या अलीकडील घटना.";
+"hub.HubNavigationBar.349.1479" = "क्रियाकलाप शोधा";
+"hub.HubNavigationBar.354.1480" = "नोंदी उघडा…";
+"hub.HubNavigationBar.378.1483" = "अलीकडील";
+"hub.HubNavigationBar.385.1485" = "नोंदींमधून संवेदनशील मूल्ये लपवली जातात.";
+"hub.HubNavigationBar.418.1488" = "अलीकडील क्रियाकलाप नाहीत";
+"hub.HubNavigationBar.418.1489" = "जुळणाऱ्या घटना नाहीत";
+"hub.HubNavigationBar.419.1490" = "घटना घडतील तशा येथे दिसतील.";
+"hub.HubNavigationBar.419.1491" = "दुसरा शोध करून पाहा.";
+"hub.HubNavigationBar.454.1496" = "हा Hub आणि त्याच्या जोडण्या व्यवस्थापित करा.";
+"hub.HubNavigationBar.463.1502" = "इतिहास आयात करा";
+"hub.HubNavigationBar.464.1503" = "तुमचा विद्यमान स्रोत अनुप्रयोग डेटा आयात करा.";
+"hub.HubNavigationBar.467.1505" = "जोडण्या आणि डेटा";
+"hub.HubNavigationBar.469.1507" = "पार्श्वभूमी सेवा";
+"hub.HubNavigationBar.473.1510" = "सिस्टमची स्थिती आणि नोंदी तपासा.";
+"hub.HubNavigationBar.475.1511" = "हा Mac";
+"hub.HubNavigationBar.481.1516" = "आवृत्ती %1$@";
+"hub.HubNavigationBar.53.1462" = "%1$@ दाखवा";
+"hub.HubNavigationBar.appearance_label" = "दिसणे";
+"hub.HubNavigationBar.navigation_label" = "नेव्हिगेशन";
+"hub.HubNavigationBar.setup_label" = "सेटअप";
+"hub.HubPresentationState.69.1522" = "Hub सेट अप केला आणि सुरू केला";
+"hub.HubPresentationState.70.1523" = "स्रोत अनुप्रयोग इतिहास आयात केला";
+"hub.HubPresentationState.71.1524" = "Hub सेवा सुरू केली";
+"hub.HubPresentationState.72.1525" = "Hub सेवा थांबवली";
+"hub.HubPresentationState.73.1526" = "Hub सेवा पुन्हा सुरू केली";
+"hub.HubPresentationState.74.1527" = "आता %1$@ वापरत आहे";
+"hub.HubPresentationState.75.1528" = "Tesla खात्याची जोडणी तोडली";
+"hub.HubPresentationState.77.1529" = "वाहन %2$@ साठी %1$@ आदेश स्वीकारला गेला";
+"hub.HubUtilityWindow.107.1609" = "Tesatlas Hub";
+"hub.HubUtilityWindow.24.1603" = "मागे";
+"hub.HubVehicleViews.102.1640" = "केबिनचे हवामान नियंत्रण सुरू किंवा बंद करा.";
+"hub.HubVehicleViews.103.1642" = "तुमचे वाहन लॉक किंवा अनलॉक करा.";
+"hub.HubVehicleViews.104.1643" = "वाहन जागे करा, दिवे चमकवा किंवा हॉर्न वाजवा.";
+"hub.HubVehicleViews.106.1645" = "इतर आदेश";
+"hub.HubVehicleViews.128.1647" = "वाहन नियंत्रणे";
+"hub.HubVehicleViews.205.1653" = "अज्ञात";
+"hub.HubVehicleViews.28.1622" = "साठवलेल्या टेलीमेट्रीची स्थिती सध्याची, कॅश केलेली की अज्ञात आहे";
+"hub.HubVehicleViews.31.1623" = "Hub Fleet Telemetry द्वारे जोडलेला असताना वाहन आदेश उपलब्ध असतात.";
+"hub.HubVehicleViews.376.1673" = "कॉन्फिगर केलेली वाहने नाहीत";
+"hub.HubVehicleViews.410.1679" = "आदेश पाठवण्यापूर्वी नेहमी पुष्टी मागितली जाते.";
+"hub.HubVehicleViews.469.1683" = "तुमची कॉन्फिगर केलेली वाहने.";
+"hub.HubVehicleViews.500.1685" = "येथे वाहने पाहण्यासाठी Tesla खाते जोडा आणि Hub सुरू करा.";
+"hub.HubVehicleViews.access_group" = "प्रवेश";
+"hub.HubVehicleViews.battery_label" = "बॅटरी";
+"hub.HubVehicleViews.climate_group" = "हवामान नियंत्रण";
+"hub.HubVehicleViews.location_label" = "स्थान";
+"hub.HubVehicleViews.state_label" = "स्थिती";
+"hub.HubVehicleViews.telemetry_label" = "टेलीमेट्री";
+"hub.ImportSheetController.110.1702" = "निवडा…";
+"hub.ImportSheetController.111.1704" = "आयात करा";
+"hub.ImportSheetController.112.1706" = "रद्द करा";
+"hub.ImportSheetController.148.1709" = "सर्व फील्ड भरा";
+"hub.ImportSheetController.149.1710" = "स्रोत, कार ID आणि पासवर्ड फाइल आवश्यक आहेत.";
+"hub.ImportSheetController.156.1711" = "स्रोत अनुप्रयोग आवृत्तीची पुष्टी करा";
+"hub.ImportSheetController.17.1690" = "हा डेटाबेस स्रोत अनुप्रयोग 4.4.0 किंवा त्यानंतरच्या आवृत्तीचा आहे याची मी पुष्टी करतो.";
+"hub.ImportSheetController.26.1691" = "इतिहास आयात करा";
+"hub.ImportSheetController.49.1693" = "स्रोत डेटाबेसमधून डेटा Tesatlas Hub मध्ये कॉपी करा.";
+"hub.ImportSheetController.64.1694" = "PostgreSQL स्रोत";
+"hub.ImportSheetController.65.1695" = "कार ID";
+"hub.ImportSheetController.69.1697" = "पासवर्ड फाइल";
+"hub.ImportSheetController.7.1687" = "Hub स्रोत डेटाबेस वाचतो; तो स्रोत अनुप्रयोगाला थांबवत किंवा बदलत नाही. आयातीनंतर स्रोत अनुप्रयोगात Tesla प्रवेश स्वतः कधी बंद करायचा हे Hub तुम्हाला सांगेल.";
+"hub.ImportSheetController.73.1699" = "Hub चालू नाही. Hub सुरू करा, संकलन विंडो उघडा, मग साइन इन करा.";
+"hub.ImportSheetController.9.1688" = "आयात करण्यापूर्वी: स्रोत अनुप्रयोगाचा बॅकअप घ्या, आवृत्ती 4.4.0 किंवा त्यानंतरची करा, तो एकदा सुरू करा आणि डेटाबेस स्थलांतर पूर्ण होईपर्यंत थांबा. थेट डेटाबेस कनेक्शनवरून चालू अ‍ॅपची आवृत्ती सिद्ध करता येत नाही.";
+"hub.LogsWindowController.113.1730" = "अधिक नोंदी क्रिया";
+"hub.LogsWindowController.123.1732" = "दाखवलेल्या, कॉपी केलेल्या आणि जतन केलेल्या नोंदींमधून प्रवेश तपशील आणि खाजगी ओळखचिन्हे लपवली जातात. शेअर करण्यापूर्वी तपासा.";
+"hub.LogsWindowController.17.1712" = "नोंदी लोड होत आहेत…";
+"hub.LogsWindowController.175.1743" = "फाइल्स आत्ताच वाचल्या · नोंदी जुन्या असू शकतात";
+"hub.LogsWindowController.18.1713" = "नोंदी क्रिया";
+"hub.LogsWindowController.19.1714" = "अधिक";
+"hub.LogsWindowController.20.1715" = "रीफ्रेश करा";
+"hub.LogsWindowController.208.1750" = "निदान चालू आहे…";
+"hub.LogsWindowController.211.1753" = "डेटाबेस, प्रवेश तपशील, जोडणी आणि सेवा तपासण्या चालू आहेत…";
+"hub.LogsWindowController.23.1718" = "जतन करा…";
+"hub.LogsWindowController.235.1757" = "गोपनीय माहिती वगळलेल्या नोंदी कॉपी केल्या";
+"hub.LogsWindowController.250.1759" = "गोपनीय माहिती वगळलेल्या नोंदी जतन केल्या";
+"hub.LogsWindowController.286.1764" = "निदानात समस्या आढळल्या";
+"hub.LogsWindowController.286.1765" = "निदान पूर्ण झाले";
+"hub.LogsWindowController.49.1721" = "पूर्वदृश्यासाठीचा चाचणी नमुना";
+"hub.LogsWindowController.70.1725" = "गोपनीय माहिती वगळलेल्या Hub आणि अ‍ॅप नोंदींचे पुनरावलोकन करा.";
+"hub.MainWindowController.1152.1840" = "Fleet API वापरा";
+"hub.MainWindowController.1153.1841" = "मालक साइन-इन वापरा";
+"hub.MainWindowController.1154.1842" = "इतिहास आयात करा…";
+"hub.MainWindowController.1156.1843" = "Tesla ची जोडणी तोडा…";
+"hub.MainWindowController.1158.1844" = "Tesla खाते जोडा…";
+"hub.MainWindowController.1428.1846" = "Hub मधून Tesla ची जोडणी तोडायची?";
+"hub.MainWindowController.1429.1847" = "Hub थांबेल आणि त्यात साठवलेले Fleet व मालक साइन-इनचे प्रवेश तपशील काढले जातील. तुम्ही संकलित केलेला डेटा या Mac वरच राहील.";
+"hub.MainWindowController.1431.1849" = "जोडणी तोडा";
+"hub.MainWindowController.15.1766" = "वाहन";
+"hub.MainWindowController.22.1768" = "Hub थांबवा";
+"hub.MainWindowController.23.1769" = "पुन्हा सुरू करा";
+"hub.MainWindowController.26.1772" = "Tesla खाते जोडा";
+"hub.MainWindowController.27.1773" = "आयात करा";
+"hub.MainWindowController.441.1792" = "Tesla व्यवस्थापित करा";
+"hub.MainWindowController.710.1816" = "वाहनांचा डेटा संकलित करणे थांबवायचे?";
+"hub.MainWindowController.711.1817" = "Hub ची सेवा थांबेल. तुमचा सध्याचा इतिहास सुरक्षित राहील आणि तुम्ही Hub कधीही पुन्हा सुरू करू शकता.";
+"hub.MainWindowController.800.1821" = "%1$@ अयशस्वी: %2$@";
+"hub.MainWindowController.849.1824" = "Hub ची %1$@ प्रक्रिया पूर्ण झाली नाही. त्याची सध्याची स्थिती दाखवली आहे; तपशीलांसाठी निदान उघडा.";
+"hub.MainWindowController.894.1825" = "%2$@ साठी %1$@ करायचे?";
+"hub.MainWindowController.895.1826" = "Tesatlas Hub हा आदेश एकदाच पाठवेल.";
+"hub.MainWindowController.913.1830" = "आदेशाचा परिणाम अज्ञात आहे";
+"hub.MainWindowController.914.1831" = "वाहन तपासा. या अ‍ॅप सत्रातून आदेश पुन्हा पाठवू नका.";
+"hub.MainWindowController.960.1835" = "आदेश स्वीकारला";
+"hub.OnboardingWindowController.1016.2012" = "तुमचा स्रोत अनुप्रयोग इतिहास Hub मध्ये कॉपी करत आहे.";
+"hub.OnboardingWindowController.1070.2015" = "• %1$@";
+"hub.OnboardingWindowController.1082.2016" = "दुसरी की निवडा…";
+"hub.OnboardingWindowController.1085.2017" = "पासवर्ड वापरा";
+"hub.OnboardingWindowController.1088.2018" = "SSH की वापरा";
+"hub.OnboardingWindowController.1091.2019" = "नोंदी उघडा";
+"hub.OnboardingWindowController.1096.2020" = "तपशील कॉपी करा";
+"hub.OnboardingWindowController.1165.2025" = "यशस्वी";
+"hub.OnboardingWindowController.1165.2026" = "अयशस्वी";
+"hub.OnboardingWindowController.1198.2028" = "डेटा संकलन बंदच राहील आणि हा Hub फक्त आयात केलेला इतिहास दाखवेल, हे मला समजले आहे.";
+"hub.OnboardingWindowController.1199.2029" = "दुबार विनंत्या टाळण्यासाठी मी स्रोत अनुप्रयोगात Tesla प्रवेश बंद केला आहे.";
+"hub.OnboardingWindowController.1250.2034" = "Hub सेटअप सुरू आहे";
+"hub.OnboardingWindowController.1251.2035" = "नोंदी पाहा";
+"hub.OnboardingWindowController.1323.2037" = "जोडणी होत आहे…";
+"hub.OnboardingWindowController.1324.2038" = "स्रोत अनुप्रयोगाशी सुरक्षित जोडणी होत आहे";
+"hub.OnboardingWindowController.1354.2041" = "सुरू करा";
+"hub.OnboardingWindowController.1355.2042" = "Fleet सेट अप करा";
+"hub.OnboardingWindowController.1359.2044" = "इतिहास आयात करा";
+"hub.OnboardingWindowController.1359.2045" = "स्नॅपशॉट तपासा";
+"hub.OnboardingWindowController.1362.2046" = "डेटा आयात करा";
+"hub.OnboardingWindowController.1362.2047" = "सर्व्हरशी जोडा";
+"hub.OnboardingWindowController.1471.2059" = "Fleet client ID, टोकन, प्रदेश आणि कालबाह्यता फील्ड पूर्ण करा.";
+"hub.OnboardingWindowController.1631.2105" = "स्रोत अनुप्रयोग सर्व्हर, SSH वापरकर्ता आणि पोर्ट द्या.";
+"hub.OnboardingWindowController.168.1852" = "पुढे चला";
+"hub.OnboardingWindowController.1691.2113" = "स्कीमा तपासणीवरून स्रोत अनुप्रयोगाची आवृत्ती निश्चित करता येत नाही. चालू सर्व्हर 4.4.0 किंवा त्यानंतरची आवृत्ती चालवत असल्याची पुष्टी करा, मग पुढे चला.";
+"hub.OnboardingWindowController.1740.2131" = "आयात करण्यापूर्वी स्रोत अनुप्रयोग सर्व्हरशी जोडा.";
+"hub.OnboardingWindowController.1750.2137" = "सर्व्हर सेटिंग्ज बदलल्या आहेत. आयात करण्यापूर्वी स्रोत अनुप्रयोग सर्व्हरशी पुन्हा जोडा.";
+"hub.OnboardingWindowController.1820.2143" = "एक किंवा अधिक तपासण्यांकडे लक्ष देणे आवश्यक आहे.";
+"hub.OnboardingWindowController.195.1856" = "Docker प्रवेशासाठी पासवर्डविरहित sudo वापरा";
+"hub.OnboardingWindowController.1980.2147" = "SSH की निवडा";
+"hub.OnboardingWindowController.1981.2148" = "की निवडा";
+"hub.OnboardingWindowController.200.1857" = "स्थानिक PostgreSQL स्नॅपशॉट वापरा (फक्त इतिहास)";
+"hub.OnboardingWindowController.203.1858" = "हा सर्व्हर स्रोत अनुप्रयोग 4.4.0 किंवा त्यानंतरची आवृत्ती चालवतो, याची मी पुष्टी करतो.";
+"hub.OnboardingWindowController.252.1859" = "मागील आयात पूर्ण झाली नाही. स्रोत अनुप्रयोग तपासा आणि आयात पुन्हा चालवा.";
+"hub.OnboardingWindowController.292.1862" = "आयात करण्यास तयार.";
+"hub.OnboardingWindowController.298.1866" = "स्रोत अनुप्रयोगाशी जोडणी अयशस्वी झाली";
+"hub.OnboardingWindowController.299.1867" = "या खात्याला Docker वापरण्याची परवानगी नाही.";
+"hub.OnboardingWindowController.300.1868" = "सर्व्हर खाते आणि Docker प्रवेश तपासा, मग पुन्हा प्रयत्न करा.";
+"hub.OnboardingWindowController.304.1870" = "डेटा आयात होत आहे…";
+"hub.OnboardingWindowController.437.1892" = "युरोप, मध्य पूर्व आणि आफ्रिका";
+"hub.OnboardingWindowController.438.1893" = "उत्तर अमेरिका आणि आशिया-पॅसिफिक";
+"hub.OnboardingWindowController.441.1895" = "SSH की";
+"hub.OnboardingWindowController.446.1897" = "स्रोत डेटाबेस वाचण्यासाठी या वापरकर्त्याला sudo आवश्यक आहे";
+"hub.OnboardingWindowController.474.1900" = "Access token";
+"hub.OnboardingWindowController.475.1901" = "पासवर्ड नसलेला स्थानिक PostgreSQL URL";
+"hub.OnboardingWindowController.477.1903" = "फक्त मालकाला प्रवेश असलेली PostgreSQL पासवर्ड फाइल";
+"hub.OnboardingWindowController.481.1904" = "Refresh token";
+"hub.OnboardingWindowController.482.1905" = "Tesla अ‍ॅप्लिकेशन client ID";
+"hub.OnboardingWindowController.486.1909" = "ऐच्छिक — रिकामे ठेवल्यास SSH agent किंवा डीफॉल्ट की वापरल्या जातील";
+"hub.OnboardingWindowController.487.1910" = "SSH पासवर्ड";
+"hub.OnboardingWindowController.558.1914" = "Hub सेट अप होत आहे…";
+"hub.OnboardingWindowController.573.1916" = "तुमची जोडणी जतन करून Hub तयार करत आहे.";
+"hub.OnboardingWindowController.588.1917" = "Tesatlas Hub मध्ये आपले स्वागत आहे";
+"hub.OnboardingWindowController.589.1918" = "तुम्हाला कसे सुरू करायचे आहे?";
+"hub.OnboardingWindowController.590.1919" = "Hub कसा जोडायचा ते निवडा";
+"hub.OnboardingWindowController.591.1920" = "Fleet Telemetry सेट अप करा";
+"hub.OnboardingWindowController.592.1921" = "Tesla मध्ये साइन इन करा";
+"hub.OnboardingWindowController.593.1922" = "इतिहास आयात करा…";
+"hub.OnboardingWindowController.594.1923" = "तुमचा Hub तपासत आहे";
+"hub.OnboardingWindowController.595.1924" = "स्थलांतर पूर्ण झाले";
+"hub.OnboardingWindowController.595.1925" = "Tesatlas Hub तयार आहे";
+"hub.OnboardingWindowController.602.1926" = "तुमचा स्वतःचा Tesla टेलीमेट्री संग्राहक, या Mac वर खाजगीपणे चालतो.";
+"hub.OnboardingWindowController.604.1927" = "नवीन Hub सेट अप करा किंवा स्रोत अनुप्रयोगातून तुमचा इतिहास आणा.";
+"hub.OnboardingWindowController.606.1928" = "सुरू करण्यासाठी तुमच्या Tesla मालक खात्याने साइन इन करा. तुम्हाला हवे असल्यास Fleet Telemetry उपलब्ध आहे.";
+"hub.OnboardingWindowController.608.1929" = "Tesla Fleet अ‍ॅप्लिकेशन तयार करा, मग त्याचे प्रवेश तपशील खाली पेस्ट करा.";
+"hub.OnboardingWindowController.612.1931" = "वाहनांचा इतिहास आयात करण्यासाठी तुमच्या स्रोत अनुप्रयोग सर्व्हरशी जोडा.";
+"hub.OnboardingWindowController.614.1932" = "सर्व जोडण्या योग्यरीत्या कार्यरत आहेत याची खात्री करत आहे.";
+"hub.OnboardingWindowController.617.1933" = "तुमचा स्रोत अनुप्रयोग इतिहास Hub मध्ये आयात केला आहे.";
+"hub.OnboardingWindowController.618.1934" = "Hub सेट अप आहे आणि वाहनांचा डेटा गोळा करण्यास तयार आहे.";
+"hub.OnboardingWindowController.687.1943" = "Tesla खाते जोडा";
+"hub.OnboardingWindowController.688.1944" = "पार्श्वभूमीत वाहनांचा डेटा गोळा करा.";
+"hub.OnboardingWindowController.689.1946" = "तुमचा इतिहास येथे ठेवा";
+"hub.OnboardingWindowController.690.1947" = "डेटा या Mac वर स्थानिकरीत्या साठवा.";
+"hub.OnboardingWindowController.691.1949" = "तुमचा विद्यमान इतिहास आणा";
+"hub.OnboardingWindowController.692.1950" = "तयार झाल्यावर स्रोत अनुप्रयोगातून आयात करा.";
+"hub.OnboardingWindowController.736.1952" = "नवीन स्थापना";
+"hub.OnboardingWindowController.737.1953" = "नवीन डेटाबेसने सुरुवात करा.";
+"hub.OnboardingWindowController.741.1955" = "तुमचा विद्यमान वाहन इतिहास आणा.";
+"hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
+"hub.OnboardingWindowController.752.1958" = "मालक साइन-इन";
+"hub.OnboardingWindowController.753.1959" = "Tesla मध्ये साइन इन करा. Hub स्वतःचे लॉगिन ठेवतो.";
+"hub.OnboardingWindowController.760.1960" = "Tesla Fleet अ‍ॅप तयार करा";
+"hub.OnboardingWindowController.771.1964" = "Client ID";
+"hub.OnboardingWindowController.774.1967" = "कालबाह्य होण्यास";
+"hub.OnboardingWindowController.776.1968" = "प्रवेश तपशील या Mac वर एन्क्रिप्ट केले जातात";
+"hub.OnboardingWindowController.790.1972" = "साइन इन अद्याप उपलब्ध नाही: या Hub मध्ये Owner API साइन-इन मूल्ये नाहीत. काहीही बदलले नाही.";
+"hub.OnboardingWindowController.822.1978" = "पोर्ट";
+"hub.OnboardingWindowController.832.1980" = "SSH वापरकर्ता";
+"hub.OnboardingWindowController.836.1982" = "की निवडा…";
+"hub.OnboardingWindowController.888.1990" = "इतिहासापुरते. Hub Tesla प्रवेश तपशील तपासणार किंवा आयात करणार नाही. डेटा संकलन बंदच राहील. डेटाबेस स्कीमा तपासता येईल; स्रोत अनुप्रयोगाची आवृत्ती मात्र अज्ञात राहील.";
+"hub.OnboardingWindowController.891.1991" = "स्थानिक PostgreSQL स्रोत";
+"hub.OnboardingWindowController.915.1997" = "स्रोत अनुप्रयोग %1$@";
+"hub.OnboardingWindowController.927.2001" = "तपासत आहे…";
+"hub.OnboardingWindowController.935.2004" = "सर्व्हर बदला";
+"hub.OnboardingWindowController.983.2008" = "%1$@ शी जोडले आहे";
+"hub.OnboardingWindowController.985.2009" = "आयात करण्यास तयार स्रोत डेटाबेस सापडला.";
+"hub.OnboardingWindowController.authentication_label" = "प्रमाणीकरण";
+"hub.OnboardingWindowController.busy_checking_compatibility" = "सुसंगतता तपासत आहे…";
+"hub.OnboardingWindowController.china_region" = "चीन";
+"hub.OnboardingWindowController.password_label" = "पासवर्ड";
+"hub.OnboardingWindowController.region_label" = "प्रदेश";
+"hub.OnboardingWindowController.seconds_unit" = "सेकंद";
+"hub.OnboardingWindowController.server_label" = "सर्व्हर";
+"hub.ServiceDetailsWindowController.104.2180" = "सेवा तपशील";
+"hub.ServiceDetailsWindowController.105.2181" = "स्थानिक Hub सेवाची तपासणी करा आणि ती व्यवस्थापित करा.";
+"hub.ServiceDetailsWindowController.113.2182" = "आवृत्ती";
+"hub.ServiceDetailsWindowController.114.2184" = "सेवा";
+"hub.ServiceDetailsWindowController.114.2185" = "सक्रिय";
+"hub.ServiceDetailsWindowController.115.2186" = "प्रदाता";
+"hub.ServiceDetailsWindowController.118.2190" = "डेटा फोल्डर";
+"hub.ServiceDetailsWindowController.121.2191" = "उपलब्ध नाही";
+"hub.ServiceDetailsWindowController.177.2193" = "सेवा नियंत्रणे";
+"hub.ServiceDetailsWindowController.38.2169" = "Hub आणि डेटा हटवा…";
+"hub.ServiceDetailsWindowController.456.2214" = "पार्श्वभूमी डेटा-संकलक थांबलेला आहे. संकलन पुन्हा सुरू करण्यासाठी तो सुरू करा.";
+"hub.ServiceDetailsWindowController.463.2218" = "पार्श्वभूमी डेटा-संकलक या Mac वर चालू आहे.";
+"hub.ServiceDetailsWindowController.471.2222" = "Hub कडे लक्ष देणे आवश्यक आहे. निदान तपासल्यानंतर तो पुन्हा सुरू करा.";
+"hub.ServiceDetailsWindowController.479.2226" = "सेवा नियंत्रणे वापरण्यापूर्वी Hub सेट अप करा.";
+"hub.ServiceDetailsWindowController.490.2228" = "Hub डेटा कायमचा हटवायचा?";
+"hub.ServiceDetailsWindowController.491.2229" = "यामुळे Hub डेटाबेस आणि कॉन्फिगरेशन हटवले जातील. ही कृती पूर्ववत करता येणार नाही.";
+"hub.TeslaAuthWindowController.296.2280" = "Tesla खाते जोडा";
+"hub.TeslaAuthWindowController.30.2235" = "Tesla लॉगिन रद्द केले.";
+"hub.TeslaAuthWindowController.31.2236" = "सुरक्षित Tesla लॉगिन स्थिती तयार करता आली नाही.";
+"hub.TeslaAuthWindowController.32.2237" = "Tesla अधिकृतता URL तयार करता आला नाही.";
+"hub.TeslaAuthWindowController.33.2238" = "Tesla कडून अपूर्ण लॉगिन कॉलबॅक मिळाला.";
+"hub.TeslaAuthWindowController.34.2239" = "Tesla लॉगिन स्थिती जुळली नाही. लॉगिन पुन्हा सुरू करा.";
+"hub.TeslaAuthWindowController.35.2240" = "Tesla कडून अवैध खाते issuer मिळाला.";
+"hub.TeslaAuthWindowController.358.html_progress" = "सुरक्षित Tesla लॉगिन पूर्ण करत आहे…";
+"hub.SourceServerImporter.34.2284" = "कोड: %1$@";
+"hub.SourceServerImporter.428.2461" = "स्रोत अनुप्रयोग सर्व्हरकडून अपूर्ण सेटअप तपशील मिळाले.";
+"hub.SourceServerImporter.691.2530" = "सर्व्हरचे तपशील तपासा";
+"hub.SourceServerImporter.692.2531" = "वैध सर्व्हर, SSH वापरकर्ता आणि पोर्ट द्या.";
+"hub.SourceServerImporter.693.2532" = "सर्व्हरचे नाव, IP पत्ता किंवा SSH config उपनाव स्वीकारले जाते.";
+"hub.SourceServerImporter.695.2534" = "वापरता येणारी खाजगी की निवडा";
+"hub.SourceServerImporter.696.2535" = "निवडलेली SSH की Hub सुरक्षितपणे वापरू शकला नाही.";
+"hub.SourceServerImporter.697.2536" = "या Mac वापरकर्त्याच्या मालकीची खाजगी की निवडा.";
+"hub.SourceServerImporter.697.2537" = ".pub फाइल निवडू नका.";
+"hub.SourceServerImporter.699.2539" = "SSH पासवर्ड द्या";
+"hub.SourceServerImporter.700.2540" = "पासवर्ड प्रमाणीकरण निवडले आहे, पण पासवर्ड दिलेला नाही.";
+"hub.SourceServerImporter.701.2541" = "सर्व्हर खात्याचा पासवर्ड द्या किंवा SSH config, agent अथवा की प्रमाणीकरण वापरा.";
+"hub.SourceServerImporter.703.2544" = "SSH प्रमाणीकरण अयशस्वी झाले";
+"hub.SourceServerImporter.704.2545" = "सर्व्हरने निवडलेले खाते किंवा प्रमाणीकरण पद्धत स्वीकारली नाही.";
+"hub.SourceServerImporter.706.2546" = "~/.ssh/config, ssh-agent आणि मानक की वापरण्यासाठी कीचे फील्ड रिकामे ठेवा.";
+"hub.SourceServerImporter.707.2547" = "Terminal मध्ये चालणारी खाजगी की निवडा किंवा पासवर्ड पद्धत वापरा.";
+"hub.SourceServerImporter.708.2548" = "खात्याचा पासवर्ड तपासा किंवा SSH config, agent अथवा की पद्धतीवर बदला.";
+"hub.SourceServerImporter.710.2550" = "सर्व्हरची ओळख पडताळणे आवश्यक आहे";
+"hub.SourceServerImporter.711.2551" = "OpenSSH ने सर्व्हरची ओळख नाकारली.";
+"hub.SourceServerImporter.712.2552" = "विश्वासार्ह माध्यमातून सर्व्हरचा फिंगरप्रिंट पडताळा, मग ~/.ssh/known_hosts मधील नोंद जोडा किंवा अद्ययावत करा.";
+"hub.SourceServerImporter.714.2554" = "SSH जोडणी नाकारली गेली";
+"hub.SourceServerImporter.715.2555" = "सर्व्हर उपलब्ध आहे, पण तो ही SSH जोडणी स्वीकारत नाही.";
+"hub.SourceServerImporter.716.2556" = "SSH चालू आहे आणि पोर्ट योग्य आहे याची खात्री करा.";
+"hub.SourceServerImporter.718.2558" = "सर्व्हर सापडला नाही";
+"hub.SourceServerImporter.719.2559" = "सर्व्हरचे नाव शोधता आले नाही.";
+"hub.SourceServerImporter.720.2560" = "सर्व्हरचा पत्ता, SSH config उपनाव, DNS आणि VPN तपासा.";
+"hub.SourceServerImporter.722.2562" = "सर्व्हरशी संपर्क होऊ शकत नाही";
+"hub.SourceServerImporter.723.2563" = "या Mac कडे स्रोत अनुप्रयोग सर्व्हरपर्यंत जाणारा नेटवर्क मार्ग नाही.";
+"hub.SourceServerImporter.724.2564" = "नेटवर्क, VPN आणि फायरवॉल तपासा.";
+"hub.SourceServerImporter.726.2567" = "SSH जोडणीची वेळ संपली";
+"hub.SourceServerImporter.727.2568" = "स्रोत अनुप्रयोग सर्व्हरने वेळेत प्रतिसाद दिला नाही.";
+"hub.SourceServerImporter.728.2569" = "पत्ता, पोर्ट, नेटवर्क, VPN आणि फायरवॉल तपासा.";
+"hub.SourceServerImporter.730.2571" = "SSH जोडणी बंद झाली";
+"hub.SourceServerImporter.731.2572" = "सर्व्हरने जोडणी बंद केली.";
+"hub.SourceServerImporter.732.2573" = "सर्व्हरच्या SSH नोंदी आणि खाते धोरण तपासा.";
+"hub.SourceServerImporter.734.2575" = "SSH फॉरवर्डिंग बंद आहे";
+"hub.SourceServerImporter.735.2576" = "Hub जोडला गेला, पण सर्व्हरने संरक्षित डेटाबेस टनेल नाकारला.";
+"hub.SourceServerImporter.736.2577" = "या SSH खात्यासाठी TCP फॉरवर्डिंगला परवानगी द्या.";
+"hub.SourceServerImporter.738.2580" = "डेटाबेस टनेल अयशस्वी झाला";
+"hub.SourceServerImporter.739.2581" = "Hub जोडला गेला, पण संरक्षित डेटाबेस टनेल तयार झाला नाही.";
+"hub.SourceServerImporter.740.2582" = "पुन्हा प्रयत्न करा, मग सुरक्षित कारण कोडसाठी नोंदी उघडा.";
+"hub.SourceServerImporter.742.2584" = "स्थानिक टनेल पोर्ट उपलब्ध नाही";
+"hub.SourceServerImporter.743.2585" = "स्थानिक डेटाबेस टनेलसाठी पोर्ट राखून ठेवता आला नाही.";
+"hub.SourceServerImporter.744.2586" = "पुन्हा प्रयत्न करा.";
+"hub.SourceServerImporter.746.2588" = "आधी स्रोत अनुप्रयोग अद्ययावत करा";
+"hub.SourceServerImporter.747.2589" = "मार्गदर्शित स्थलांतरासाठी स्रोत अनुप्रयोग 4.4.0 किंवा त्यानंतरची आवृत्ती आवश्यक आहे.";
+"hub.SourceServerImporter.748.2590" = "स्रोत अनुप्रयोगाचा बॅकअप घ्या, तो अद्ययावत करा, डेटाबेस स्कीमा अद्ययावत करण्याची प्रक्रिया पूर्ण होऊ द्या, मग पुन्हा जोडा.";
+"hub.SourceServerImporter.763.2594" = "स्रोत अनुप्रयोग चालू नाही किंवा त्याचा कंटेनर सापडला नाही.";
+"hub.SourceServerImporter.764.2596" = "स्रोत अनुप्रयोग Docker Compose प्रकल्प ओळखता आला नाही.";
+"hub.SourceServerImporter.765.2598" = "स्रोत अनुप्रयोग डेटाबेस कंटेनर चालू नाही किंवा सापडला नाही.";
+"hub.SourceServerImporter.766.2600" = "स्रोत अनुप्रयोग डेटाबेस किंवा एन्क्रिप्शन प्रवेश तपशील अपूर्ण आहेत.";
+"hub.SourceServerImporter.767.2602" = "स्रोत अनुप्रयोग डेटाबेसचे नेटवर्क सुरक्षितपणे ओळखता आले नाही.";
+"hub.SourceServerImporter.768.2604" = "सध्या मार्गदर्शित आयातीसाठी एका वाहनाचा स्रोत अनुप्रयोग डेटाबेस आवश्यक आहे.";
+"hub.SourceServerImporter.769.2606" = "स्रोत अनुप्रयोगात आयात करण्यासाठी वाहन उपलब्ध नाही.";
+"hub.SourceServerImporter.770.2608" = "एकापेक्षा जास्त स्रोत अनुप्रयोग इन्स्टन्स चालू आहेत.";
+"hub.SourceServerImporter.771.2610" = "स्रोत अनुप्रयोग प्रकल्पात एकापेक्षा जास्त डेटाबेस कंटेनर आहेत.";
+"hub.SourceServerImporter.772.2612" = "या खात्याला पासवर्डविरहित sudo वापरून Docker चालवता येत नाही.";
+"hub.SourceServerImporter.773.2614" = "या खात्याला sudo वापरून Docker चालवण्याची परवानगी नाही.";
+"hub.SourceServerImporter.775.2618" = "स्रोत अनुप्रयोग सर्व्हरवर Docker सापडले नाही.";
+"hub.SourceServerImporter.776.2620" = "Docker स्थापित आहे, पण उपलब्ध नाही.";
+"hub.SourceServerImporter.778.2623" = "Hub ला SSH द्वारे स्रोत अनुप्रयोगातून डेटा वाचता आला नाही.";
+"hub.SourceServerImporter.785.2625" = "SSH सर्व्हर डेटाबेस फॉरवर्डिंगला परवानगी देत नाही. या खात्यासाठी TCP फॉरवर्डिंग सक्षम करा.";
+"hub.SourceServerImporter.787.2627" = "डेटाबेस टनेल उघडताना SSH प्रमाणीकरण अयशस्वी झाले.";
+"hub.SourceServerImporter.789.2629" = "SSH होस्टची ओळख पडताळता आली नाही. SSH known-hosts फाइलमध्ये हा सर्व्हर पडताळा किंवा अद्ययावत करा.";
+"hub.SourceServerImporter.791.2631" = "SSH सर्व्हरने जोडणी नाकारली. SSH चालू आहे आणि पोर्ट योग्य आहे याची खात्री करा.";
+"hub.SourceServerImporter.793.2633" = "SSH सर्व्हरचे नाव शोधता आले नाही. सर्व्हरचा पत्ता आणि नेटवर्क तपासा.";
+"hub.SourceServerImporter.795.2635" = "या Mac वरून SSH सर्व्हरशी संपर्क होऊ शकत नाही. नेटवर्क, VPN आणि फायरवॉल तपासा.";
+"hub.SourceServerImporter.797.2637" = "SSH जोडणीची वेळ संपली. सर्व्हरचा पत्ता, पोर्ट, नेटवर्क आणि फायरवॉल तपासा.";
+"hub.SourceServerImporter.799.2639" = "डेटाबेस टनेल उघडताना SSH सर्व्हरने जोडणी बंद केली.";
+"hub.SourceServerImporter.801.2641" = "स्थानिक डेटाबेस टनेलसाठी पोर्ट उपलब्ध नव्हता. पुन्हा प्रयत्न करा.";
+"hub.SourceServerImporter.803.2642" = "संरक्षित स्रोत अनुप्रयोग डेटाबेस टनेल उघडता आला नाही.";
+"hub.SourceServerImporter.824.2658" = "एकापेक्षा जास्त स्रोत अनुप्रयोग इन्स्टन्स चालू आहेत. आयात नको असलेला इन्स्टन्स थांबवा, मग पुन्हा प्रयत्न करा.";
+"hub.SourceServerImporter.826.2660" = "निवडलेल्या स्रोत अनुप्रयोग प्रकल्पात एकापेक्षा जास्त डेटाबेस कंटेनर आहेत. अतिरिक्त कंटेनर थांबवा, मग पुन्हा प्रयत्न करा.";
+"hub.SourceServerImporter.828.2662" = "या खात्याला पासवर्डविरहित sudo वापरून Docker चालवता येत नाही. Docker प्रवेश द्या किंवा पासवर्डविरहित sudo बंद करून Docker ला थेट प्रवेश असलेले खाते वापरा.";
+"hub.SourceServerImporter.830.2664" = "या खात्याला sudo वापरून Docker चालवण्याची परवानगी नाही. Docker प्रवेश द्या किंवा दुसरे सर्व्हर खाते वापरा.";
+"hub.SourceServerImporter.832.2666" = "या खात्याला Docker वापरता येत नाही. थेट Docker प्रवेश द्या किंवा Docker साठी पासवर्डविरहित sudo ला परवानगी द्या.";
+"hub.SourceServerImporter.834.2668" = "स्रोत अनुप्रयोग सर्व्हरवर Docker सापडले नाही. सर्व्हर आणि खात्याचा PATH तपासा.";
+"hub.SourceServerImporter.836.2670" = "Docker स्थापित आहे, पण उपलब्ध नाही. Docker सेवा चालू आहे याची खात्री करा.";
+"hub.SourceServerImporter.838.2672" = "मार्गदर्शित स्थलांतरासाठी स्रोत अनुप्रयोग 4.4.0 किंवा त्यानंतरची आवृत्ती आवश्यक आहे. स्रोत अनुप्रयोग अद्ययावत करा, मग पुन्हा प्रयत्न करा.";
+"hub.SourceServerImporter.840.2674" = "SSH जोडणी किंवा प्रमाणीकरण होऊ शकले नाही. सर्व्हर, पोर्ट, खाते आणि निवडलेली प्रमाणीकरण पद्धत तपासा.";
+"hub.SourceServerImporter.842.2676" = "SSH प्रमाणीकरण अयशस्वी झाले. खाते आणि निवडलेली प्रमाणीकरण पद्धत तपासा.";
+"hub.SourceServerImporter.854.2688" = "SSH सर्व्हरने जोडणी बंद केली. सर्व्हरच्या नोंदी आणि SSH धोरण तपासा.";
+"hub.SourceServerImporter.856.2690" = "SSH जोडणीची वेळ संपली. सर्व्हरचा पत्ता, पोर्ट आणि नेटवर्क तपासा.";
+"hub.SourceServerImporter.858.2691" = "SSH द्वारे स्रोत अनुप्रयोगातून डेटा वाचता आला नाही. प्रमाणीकरण आणि Docker प्रवेश तपासा.";
+
+"hub.import.intro" = "तुम्ही आधी वापरत असलेल्या वाहन-माहिती सॉफ्टवेअरच्या PostgreSQL डेटाबेसमधून इतिहास आयात करा (स्रोत डेटाबेस). Hub प्रथम डेटाबेस तपासतो आणि या आवृत्तीत तो आयात करता येईल का ते सांगतो. आयात प्रक्रियेत स्रोत डेटाबेस फक्त वाचला जातो; त्यात बदल होत नाही.";
+
+"hub.import.recognised" = "Hub हा डेटाबेस ओळखतो (स्कीमा संच %1$@).";
+
+"hub.import.notRecognised" = "Hub ला या डेटाबेसची स्कीमा ओळखता येत नाही, त्यामुळे हा डेटाबेस आयात करता येत नाही. काय तपासायचे ते स्थलांतर मार्गदर्शक सांगते.";
+
+"hub.import.ackExplain" = "स्कीमा तपासणीवरून हा डेटाबेस स्रोत अनुप्रयोगाच्या कोणत्या आवृत्तीने लिहिला हे कळू शकत नाही: अनेक आवृत्त्यांमध्ये समान स्कीमा आहे.";
+
+"hub.import.ackRelease" = "स्रोत अनुप्रयोगाची आवृत्ती 4.4.0 किंवा त्यानंतरची आहे आणि आयात सुरू असताना ती अद्ययावत केली जाणार नाही, याची मी खात्री देतो/देते.";
+
+"hub.backup.title" = "बॅकअप";
+
+"hub.backup.detail" = "Hub च्या इतिहासाच्या एन्क्रिप्ट केलेल्या प्रती. रिकव्हरी पासवर्ड या Mac वरील अशा फाइलमध्ये राहतो जी फक्त मालक वाचू शकतो.";
+
+"hub.backup.backUpNow" = "आता बॅकअप घ्या";
+
+"hub.backup.onSchedule" = "वेळापत्रकानुसार बॅकअप घ्या";
+
+"hub.backup.saveSchedule" = "वेळापत्रक जतन करा";
+
+"hub.backup.panelPrompt" = "निवडा";
+
+"hub.backup.panelMessage" = "एन्क्रिप्ट केलेल्या Hub बॅकअपसाठी Hub डेटा फोल्डरच्या बाहेरील एक फोल्डर निवडा.";
+
+"hub.backup.savedNote" = "जतन केले. Hub पुन्हा सुरू झाल्यावर वेळापत्रक लागू होते.";
+
+"hub.backup.noFolder" = "कोणतेही फोल्डर निवडलेले नाही";
+
+"hub.backup.passwordPlaceholder" = "रिकव्हरी पासवर्ड (किमान %1$@ अक्षरे)";
+
+"hub.backup.passwordSaved" = "जतन केला. बदलण्यासाठी नवीन पासवर्ड टाइप करा";
+
+"hub.backup.intervalHour" = "दर तासाला";
+
+"hub.backup.intervalDay" = "दररोज";
+
+"hub.backup.intervalTwoDays" = "दर 2 दिवसांनी";
+
+"hub.backup.intervalWeek" = "दर आठवड्याला";
+
+"hub.backup.intervalHours" = "दर %1$@ तासांनी";
+
+"hub.backup.schedule" = "वेळापत्रक";
+
+"hub.backup.keep" = "ठेवा";
+
+"hub.backup.keepSuffix" = "बॅकअप";
+
+"hub.backup.folder" = "फोल्डर";
+
+"hub.backup.passwordLabel" = "रिकव्हरी पासवर्ड";
+
+"hub.backup.problem.passwordShort" = "रिकव्हरी पासवर्डमध्ये किमान %1$@ अक्षरे असावीत.";
+
+"hub.backup.problem.interval" = "अंतर 1 ते 8784 तासांच्या दरम्यान असावे.";
+
+"hub.backup.problem.keep" = "ठेवायच्या बॅकअपची संख्या 1 ते 1000 च्या दरम्यान असावी.";
+
+"hub.backup.problem.chooseFolder" = "बॅकअप फोल्डर निवडा.";
+
+"hub.backup.problem.folderInside" = "Hub डेटा फोल्डरच्या बाहेरील बॅकअप फोल्डर निवडा.";
+
+"hub.backup.problem.needsBoth" = "वेळापत्रकानुसार बॅकअपसाठी बॅकअप फोल्डर आणि रिकव्हरी पासवर्ड लागतो.";
+
+"hub.backup.lastGoodNone" = "अजून एकही नाही";
+
+"hub.backup.nextOff" = "वेळापत्रकानुसार बॅकअप बंद आहेत";
+
+"hub.backup.nextNotScheduled" = "वेळापत्रक नाही: फोल्डर आणि पासवर्ड निवडा";
+
+"hub.backup.nextPaused" = "क्रेडेन्शियल रिकव्हरीची प्रतीक्षा आहे";
+
+"hub.collection.notReported" = "कळवलेले नाही";
+
+"hub.backup.blocked" = "नाकारलेली क्रेडेन्शियल बॅकअप थांबवतात. ती साफ करण्यासाठी purge-refused-credentials चालवा.";
+
+"hub.backup.lastFailedMessage" = "मागील प्रयत्न अयशस्वी झाला: %1$@";
+
+"hub.backup.lastFailedCode" = "मागील प्रयत्न अयशस्वी झाला (%1$@)";
+
+"hub.backup.row.lastGood" = "शेवटचा यशस्वी बॅकअप";
+
+"hub.backup.row.next" = "पुढील बॅकअप";
+
+"hub.backup.row.running" = "एक बॅकअप आता सुरू आहे";
+
+"hub.backup.row.lastAttempt" = "मागील प्रयत्न";
+
+"hub.backup.run.running" = "बॅकअप घेतला जात आहे…";
+
+"hub.backup.run.stillRunning" = "बॅकअप अजूनही Hub सेवेत सुरू आहे.";
+
+"hub.backup.run.finishedGeneration" = "बॅकअप पूर्ण झाला: %1$@";
+
+"hub.backup.run.finished" = "बॅकअप पूर्ण झाला";
+
+"hub.backup.run.failed" = "बॅकअप अयशस्वी झाला: %1$@";
+
+"hub.backup.maint.unreadable" = "Hub चे उत्तर वाचता आले नाही.";
+
+"hub.backup.maint.unwritable" = "रिकव्हरी पासवर्ड जतन करता आला नाही.";
+
+"hub.backup.maint.configMissing" = "बॅकअप बदलण्यापूर्वी Hub सेट करा.";
+
+"hub.devices.title" = "जोडलेली डिव्हाइस";
+
+"hub.devices.detail" = "हा Hub वाचणारे फोन आणि ॲप, आणि प्रत्येकाला वाचता येणाऱ्या कार.";
+
+"hub.devices.revokeTitle" = "%1$@ चा प्रवेश रद्द करायचा?";
+
+"hub.devices.revokeInfo" = "हे डिव्हाइस लगेच Hub मधून वाचणे थांबवते. पुन्हा वापरण्यासाठी ते पुन्हा जोडा.";
+
+"hub.devices.revoke" = "रद्द करा";
+
+"hub.devices.revokeEllipsis" = "रद्द करा…";
+
+"hub.devices.revokeAccessibility" = "%1$@ चा प्रवेश रद्द करा";
+
+"hub.devices.revokedDone" = "%1$@ चा प्रवेश रद्द केला.";
+
+"hub.devices.none" = "जोडलेली डिव्हाइस नाहीत.";
+
+"hub.devices.cars" = "कार: %1$@";
+
+"hub.devices.noCars" = "कार नाहीत";
+
+"hub.devices.carFallback" = "कार %1$@";
+
+"hub.devices.unnamed" = "नाव नसलेले डिव्हाइस";
+
+"hub.devices.stateRevoked" = "रद्द केले %1$@";
+
+"hub.devices.stateExpired" = "मुदत संपली %1$@";
+
+"hub.devices.stateLastSeen" = "शेवटचे दिसले %1$@";
+
+"hub.devices.stateNeverSeen" = "अजून दिसलेले नाही";
+
+"hub.collection.loginOwn" = "Hub च्या स्वतःच्या लॉगिनने साइन इन आहे";
+
+"hub.collection.loginSignedOut" = "साइन आउट आहे";
+
+"hub.collection.loginNotOwn" = "जतन केलेले लॉगिन Hub चे स्वतःचे नाही";
+
+"hub.collection.credValidUntil" = "%1$@ पर्यंत वैध";
+
+"hub.collection.credValid" = "वैध";
+
+"hub.collection.credRelogin" = "पुन्हा लॉगिन आवश्यक: पुढील उघड्या विंडोत पुन्हा साइन इन करा";
+
+"hub.collection.credOwnerRefused" = "Owner API नाकारले: Tesla ने हे लॉगिन नाकारले";
+
+"hub.collection.credRefused" = "नाकारले (%1$@)";
+
+"hub.collection.credExposure" = "उघड झाल्याचा संशय: पुढील उघड्या विंडोत पुन्हा साइन इन करा";
+
+"hub.collection.credAttention" = "लक्ष हवे (%1$@)";
+
+"hub.collection.credNotSignedIn" = "साइन इन नाही";
+
+"hub.collection.windowOpenUntil" = "%1$@ पर्यंत उघडे";
+
+"hub.collection.windowOpen" = "उघडे";
+
+"hub.collection.windowPending" = "प्रलंबित";
+
+"hub.collection.windowPendingFrom" = "%1$@ पासून प्रलंबित";
+
+"hub.collection.windowPendingUntil" = "%1$@ पर्यंत प्रलंबित";
+
+"hub.collection.windowPendingFromUntil" = "%1$@ ते %2$@ पर्यंत प्रलंबित";
+
+"hub.collection.windowClosingExpiry" = "बंद होत आहे (मुदत %1$@)";
+
+"hub.collection.windowClosing" = "बंद होत आहे";
+
+"hub.collection.windowClosedReason" = "बंद (%1$@)";
+
+"hub.collection.windowClosed" = "बंद";
+
+"hub.collection.windowUntrusted" = "बंद (विश्वासार्ह जारीकर्ता नाही)";
+
+"hub.collection.windowFaulted" = "बंद (विंडोच्या स्थितीला नवीन विश्वास दस्तऐवज हवा)";
+
+"hub.collection.windowRecovery" = "बंद (क्रेडेन्शियल रिकव्हरीची प्रतीक्षा आहे: restore-recovery-credentials चालवा)";
+
+"hub.collection.windowUnauthenticated" = "अज्ञात: कंट्रोल चॅनेल या Hub चे नाही";
+
+"hub.collection.windowNotRunning" = "अज्ञात: Hub चालू नाही";
+
+"hub.collection.reasonExpired" = "मुदत संपली";
+
+"hub.collection.reasonOperator" = "ऑपरेटरने बंद केले";
+
+"hub.collection.reasonRelogin" = "पुन्हा लॉगिन आवश्यक";
+
+"hub.collection.reasonOwnerRefused" = "Owner API नाकारले";
+
+"hub.collection.reasonClock" = "घड्याळ तपासणी अयशस्वी झाली";
+
+"hub.collection.reasonReboot" = "Mac पुन्हा सुरू झाला";
+
+"hub.collection.reasonUnverifiable" = "स्थिती पडताळता आली नाही";
+
+"hub.collection.reasonClaimLost" = "संकलन हक्क गमावला";
+
+"hub.collection.fleet" = "थांबवले: कोणतीही Fleet क्रिया उपलब्ध नाही";
+
+"hub.collection.signInUnavailable" = "या Hub वर साइन इन उपलब्ध नाही";
+
+"hub.collection.labelLogin" = "Tesla लॉगिन";
+
+"hub.collection.labelCredential" = "क्रेडेन्शियलची स्थिती";
+
+"hub.collection.labelWindow" = "संकलन विंडो";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "साइन इन";
+
+"hub.signIn.recoveryPending" = "Hub त्याच्या क्रेडेन्शियलच्या रिकव्हरीची प्रतीक्षा करत आहे: या Hub चा डेटा त्याच्या कीशिवाय पुनर्संचयित केला गेला होता. restore-recovery-credentials चालवा, मग साइन इन करा. काहीही बदललेले नाही.";
+
+"hub.signIn.serviceUnauthenticated" = "Hub च्या कंट्रोल चॅनेलवर उत्तर देणारी प्रक्रिया हा Hub नाही, म्हणून काहीही पाठवले नाही. Hub पुन्हा सुरू करा, मग पुन्हा साइन इन करा.";
+
+"hub.signIn.busy" = "Hub इतर विनंत्यांमध्ये व्यस्त आहे. काहीही बदललेले नाही; थोड्या वेळाने पुन्हा साइन इन करा.";
+
+"hub.signIn.discovery.notListed" = "तुम्ही साइन इन केले आहे, परंतु Tesla ने या खात्यात एकही कार सूचीबद्ध केली नाही. कार या Tesla खात्याची आहे का ते तपासा, मग पुन्हा कार शोधा.";
+
+"hub.signIn.discovery.selectionRequired" = "तुम्ही साइन इन केले आहे, परंतु Tesla एकापेक्षा जास्त कार सूचीबद्ध करते आणि कोणत्या कारचा डेटा संकलित करायचा हे Hub ला माहीत असणे आवश्यक आहे. पुन्हा कार शोधा.";
+
+"hub.signIn.discovery.selectionInvalid" = "तुम्ही साइन इन केले आहे, परंतु निवडलेली कार या Tesla खात्यात नाही. पुन्हा कार शोधा.";
+
+"hub.signIn.discovery.answerInvalid" = "तुम्ही साइन इन केले आहे, परंतु Hub ला Tesla ची कारची यादी वाचता आली नाही. पुन्हा कार शोधा.";
+
+"hub.signIn.discovery.refused" = "तुम्ही साइन इन केले आहे, परंतु Tesla ने कारची यादी नाकारली. पुन्हा कार शोधा, किंवा पुन्हा Tesla मध्ये साइन इन करा.";
+
+"hub.signIn.discovery.windowClosed" = "तुम्ही साइन इन केले आहे, परंतु Hub ला तुमच्या कार सापडण्यापूर्वी संकलन विंडो बंद झाली. एक विंडो उघडा, मग पुन्हा कार शोधा.";
+
+"hub.signIn.discovery.providerParked" = "तुम्ही साइन इन केले आहे, परंतु हा Hub दुसऱ्या प्रदात्याद्वारे संकलन करतो, त्यामुळे या साइन इनने कार शोधू शकत नाही.";
+
+"hub.signIn.discovery.settingsInvalid" = "तुम्ही साइन इन केले आहे, परंतु या Hub चा Owner API पत्ता Tesla चा नाही, म्हणून Hub ने तुमच्या कार मागितल्या नाहीत. पत्ता दुरुस्त करा, मग पुन्हा Tesla मध्ये साइन इन करा.";
+
+"hub.signIn.discovery.general" = "तुम्ही साइन इन केले आहे, परंतु Hub ला तुमच्या कार सापडल्या नाहीत. पुन्हा कार शोधा, किंवा पुन्हा Tesla मध्ये साइन इन करा.";
+
+"hub.signIn.discovery.retry" = "पुन्हा कार शोधा";
+
+"hub.signIn.discovery.expired" = "हे साइन इन आता पुन्हा सुरू करता येणार नाही. पुन्हा Tesla मध्ये साइन इन करा.";
+
+"hub.signIn.discovery.configured" = "कॉन्फिगर केलेल्या कार: %d";
+
+"hub.signIn.reportInvalid" = "Hub साइन इनची पुष्टी करू शकले नाही. पुन्हा Tesla मध्ये साइन इन करा.";
+
+"hub.signIn.unconfirmed" = "Hub ने वेळेत साइन इनची पुष्टी केली नाही, परंतु ते साठवले गेले असू शकते. पुन्हा साइन इन करण्यापूर्वी Hub ची स्थिती तपासा.";
+
+"hub.signIn.startWithdrawFailed" = "Hub सुरू झाले नाही, आणि त्याची अपूर्ण सुरुवात काढून टाकणे अयशस्वी झाले: %1$@ काढून टाकणे पूर्ण करण्यासाठी “Tesla खाते जोडा” दाबा.";
+
+"hub.signIn.idle.title" = "Hub या Mac वर सेट अप झाले आहे आणि चालू आहे";
+"hub.signIn.idle.detail" = "Tesla साइन इन फक्त संकलन विंडो उघडी असतानाच उघडते, आणि विंडो उघडल्यावर तुम्हाला कळवले जाईल. ही विंडो बंद केल्यास Hub चालू राहते.";
+"hub.signIn.pageSubtitle" = "संकलन विंडो उघडी असताना Tesla मध्ये साइन इन करा.";
+"hub.signIn.privacy" = "तुमचा Tesla पासवर्ड फक्त Tesla कडे जातो. Hub स्वतःचे लॉगिन ठेवते, जे या Mac वर एन्क्रिप्ट केलेले असते.";
+"hub.signIn.fleetDetail" = "Tesla चे अधिकृत स्ट्रीमिंग API, तुमच्या स्वतःच्या Fleet API अ‍ॅपसह.";
+"hub.signIn.done" = "पूर्ण";
+
+"hub.signIn.windowFaulted" = "Hub च्या संकलन विंडोला उघडण्यापूर्वी नवीन विश्वास दस्तऐवज हवा आहे, त्यामुळे Tesla साइन-इन उपलब्ध नाही. काहीही बदललेले नाही.";
+"hub.signIn.windowStatusInvalid" = "संकलन विंडोबद्दल Hub चे उत्तर वाचता आले नाही, त्यामुळे Tesla साइन-इन उपलब्ध नाही. काहीही बदललेले नाही; थोड्या वेळाने पुन्हा प्रयत्न करा.";
+"hub.setup.closeKeepsRunning" = "ही विंडो बंद केल्यावरही Hub चालू राहतो.";

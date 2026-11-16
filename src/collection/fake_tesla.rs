@@ -299,7 +299,7 @@ pub enum FakeTeslaError {
     Io(#[from] std::io::Error),
     #[error("server failed")]
     Server,
-    #[error("invalid TESLATLAS_FAKE_TESLA_ODOMETER_OFFSET_MILES: {0}")]
+    #[error("invalid TESATLAS_FAKE_TESLA_ODOMETER_OFFSET_MILES: {0}")]
     InvalidOdometerOffset(String),
 }
 
@@ -1242,7 +1242,7 @@ fn fake_refresh_headers_valid(headers: &HeaderMap) -> bool {
     let value = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
     value("content-type") == Some("application/json")
         && value("accept") == Some("application/json")
-        && value("user-agent").is_some_and(|agent| agent.starts_with("Teslatlas-Hub/"))
+        && value("user-agent").is_some_and(|agent| agent.starts_with("Tesatlas-Hub/"))
 }
 
 /// Deterministic local stand-in for Tesla's legacy refresh endpoint. It

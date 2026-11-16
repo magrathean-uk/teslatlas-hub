@@ -1,0 +1,35 @@
+[Unit]
+Description=Tesatlas Hub
+After=network-online.target
+Wants=network-online.target tesatlas-command-proxy.service tesatlas-fleet-telemetry.service
+OnFailure=tesatlas-hub-terminal-failure.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=tesatlas
+Group=tesatlas
+StateDirectory=tesatlas-hub
+StateDirectoryMode=0700
+ExecStart=/usr/bin/tesatlas-hub --config /etc/tesatlas-hub/config.toml serve
+Restart=always
+RestartMode=direct
+RestartSec=5
+UMask=0077
+CapabilityBoundingSet=
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/tesatlas-hub
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

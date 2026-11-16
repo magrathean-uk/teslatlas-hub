@@ -10,13 +10,13 @@ import { _ } from "ajv/dist/compile/codegen/index.js";
 const installedRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 if (process.argv.length !== 2) {
   throw new Error(
-    "Usage: generate-protocol.mjs (TESLATLAS_PROTOCOL_OUTPUT_DIR selects a staging directory)",
+    "Usage: generate-protocol.mjs (TESATLAS_PROTOCOL_OUTPUT_DIR selects a staging directory)",
   );
 }
 // The contract is read in place from the Protocol package of this repository. Nothing is vendored.
 const sourceRoot = resolve(installedRoot, "../protocol/profiles/hub-http-v1/1.3.0");
 const outputRoot = resolve(
-  process.env.TESLATLAS_PROTOCOL_OUTPUT_DIR ?? join(installedRoot, "src/generated"),
+  process.env.TESATLAS_PROTOCOL_OUTPUT_DIR ?? join(installedRoot, "src/generated"),
 );
 const openapiExecutable = join(installedRoot, "node_modules/openapi-typescript/bin/cli.js");
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://teslatlas.dev/schemas/edge-snapshot-v1.json",
+  "$id": "https://tesatlas.dev/schemas/edge-snapshot-v1.json",
   "type": "object", "additionalProperties": false,
   "required": ["schema_version", "session_id", "cell_id", "instance_nonce", "session_input_sha256", "actor_id", "invocation_id", "stage", "observation", "payload"],
   "properties": {

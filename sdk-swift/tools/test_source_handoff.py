@@ -67,7 +67,7 @@ class SourceHandoffTests(unittest.TestCase):
             self.assertEqual(metadata_snapshot(first), metadata_snapshot(second))
             self.assertEqual(
                 first_manifest["source_package"]["canonical_root"],
-                "teslatlas-sdk-swift",
+                "tesatlas-sdk-swift",
             )
             self.assertEqual(
                 first_manifest["public_products"],

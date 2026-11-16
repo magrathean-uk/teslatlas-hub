@@ -5,14 +5,14 @@
 
 use std::{fs, os::unix::fs::PermissionsExt};
 
-use teslatlas_hub::db::HubStore;
+use tesatlas_hub::db::HubStore;
 use uuid::Uuid;
 
 use crate::{Cli, CollectorCommand, CollectorGapsCommand, Command, run};
 
 #[test]
 fn collector_actions_parse_with_their_arguments() {
-    let retry = Cli::try_parse_from(["teslatlas-hub", "collector", "retry"]).expect("retry CLI");
+    let retry = Cli::try_parse_from(["tesatlas-hub", "collector", "retry"]).expect("retry CLI");
     assert!(matches!(
         retry.command,
         Command::Collector {
@@ -20,7 +20,7 @@ fn collector_actions_parse_with_their_arguments() {
         }
     ));
     let resume = Cli::try_parse_from([
-        "teslatlas-hub",
+        "tesatlas-hub",
         "collector",
         "resume",
         "00000000-0000-0000-0000-000000000001",
@@ -32,7 +32,7 @@ fn collector_actions_parse_with_their_arguments() {
             command: CollectorCommand::Resume { .. }
         }
     ));
-    let acknowledge = Cli::try_parse_from(["teslatlas-hub", "collector", "gaps", "acknowledge"])
+    let acknowledge = Cli::try_parse_from(["tesatlas-hub", "collector", "gaps", "acknowledge"])
         .expect("acknowledge CLI");
     assert!(matches!(
         acknowledge.command,
@@ -43,9 +43,9 @@ fn collector_actions_parse_with_their_arguments() {
         }
     ));
     // A car is named by its Hub UUID, and the action needs one.
-    assert!(Cli::try_parse_from(["teslatlas-hub", "collector", "resume"]).is_err());
-    assert!(Cli::try_parse_from(["teslatlas-hub", "collector", "resume", "not-a-uuid"]).is_err());
-    assert!(Cli::try_parse_from(["teslatlas-hub", "collector", "gaps"]).is_err());
+    assert!(Cli::try_parse_from(["tesatlas-hub", "collector", "resume"]).is_err());
+    assert!(Cli::try_parse_from(["tesatlas-hub", "collector", "resume", "not-a-uuid"]).is_err());
+    assert!(Cli::try_parse_from(["tesatlas-hub", "collector", "gaps"]).is_err());
 }
 
 #[tokio::test]

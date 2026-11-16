@@ -392,7 +392,7 @@ async fn the_tls_router_takes_the_claim_lifetime_from_the_configuration() {
     // The router both TLS serve paths build from the loaded configuration.
     let router = |pairing: &str| {
         let source =
-            format!("data_dir = '/var/lib/teslatlas-test'\nbind = '127.0.0.1:8443'\n{pairing}");
+            format!("data_dir = '/var/lib/tesatlas-test'\nbind = '127.0.0.1:8443'\n{pairing}");
         let (config, _) = HubConfig::from_exact_bytes(source.as_bytes()).expect("configuration");
         tls_router_for_config(
             store.clone(),

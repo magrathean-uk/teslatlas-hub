@@ -42,7 +42,7 @@ const LARGE_CATALOGUE_TARGET_BYTES: u64 = MAX_CATALOGUE_IMAGE_BYTES + 48 * 1024 
 /// run that held the catalogue in memory (the in-memory path holds it twice)
 /// cannot pass, while the Hub's 1 GiB peak holds with room to spare.
 const LARGE_RUN_MEMORY_LIMIT_BYTES: u64 = MAX_CATALOGUE_IMAGE_BYTES;
-const CHILD_ENV: &str = "TESLATLAS_HUB_M06_T07_LARGE_RUN_REPORT";
+const CHILD_ENV: &str = "TESATLAS_HUB_M06_T07_LARGE_RUN_REPORT";
 
 struct Hub {
     temporary: tempfile::TempDir,

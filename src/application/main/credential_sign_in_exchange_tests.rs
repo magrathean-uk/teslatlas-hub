@@ -35,7 +35,7 @@ fn assert_no_pair(root: &Path) {
 /// the production gate before any connection, and nothing is stored.
 #[test]
 fn sign_in_exchange_setup_refuses_while_the_gate_is_closed() {
-    assert!(!teslatlas_hub::collection::window::EgressGate::process_wide().is_open(), "no test opens the process gate");
+    assert!(!tesatlas_hub::collection::window::EgressGate::process_wide().is_open(), "no test opens the process gate");
     let root = root();
     let entry = exchange_entry(root.path());
     let issuer = StubIssuer::valid();
@@ -126,7 +126,7 @@ struct HoldingSlot {
     starts: Arc<AtomicUsize>,
 }
 
-impl teslatlas_hub::collection::window::CollectorSlot for HoldingSlot {
+impl tesatlas_hub::collection::window::CollectorSlot for HoldingSlot {
     fn start(&mut self, _deadline_wall: i64) -> Result<(), String> {
         let entry = CredentialVaultEntry::open_for_test(self.store.clone(), Arc::clone(&self.admission), &self.root, true)
             .map_err(|error| error.code().to_owned())?;
@@ -149,7 +149,7 @@ impl teslatlas_hub::collection::window::CollectorSlot for HoldingSlot {
 /// the collector again on a fresh vault.
 #[test]
 fn sign_in_exchange_setup_takes_the_vault_from_an_active_collector() {
-    use teslatlas_hub::collection::window::{CollectorSlot as _, CredentialCustody, Supervisor};
+    use tesatlas_hub::collection::window::{CollectorSlot as _, CredentialCustody, Supervisor};
     let root = root();
     let scratch = tempfile::tempdir().expect("scratch");
     let store = HubStore::initialize(root.path()).expect("store");
@@ -206,7 +206,7 @@ fn sign_in_exchange_setup_takes_the_vault_from_an_active_collector() {
 /// configured.
 #[test]
 fn sign_in_discovery_setup_refuses_while_the_gate_is_closed() {
-    assert!(!teslatlas_hub::collection::window::EgressGate::process_wide().is_open(), "no test opens the process gate");
+    assert!(!tesatlas_hub::collection::window::EgressGate::process_wide().is_open(), "no test opens the process gate");
     let root = root();
     sign_in::seed_owner_pair_for_test(root.path(), "bin-discovery-access-0001", "bin-discovery-refresh-0001", None).expect("own pair");
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback listener");
@@ -215,7 +215,7 @@ fn sign_in_discovery_setup_refuses_while_the_gate_is_closed() {
     let entry = exchange_entry(root.path());
     let store = HubStore::initialize(root.path()).expect("store");
     let mut config = command_config(root.path());
-    config.collector.stream_region = Some(teslatlas_hub::tesla_stream::StreamRegion::Global);
+    config.collector.stream_region = Some(tesatlas_hub::tesla_stream::StreamRegion::Global);
     let error = run_owner_exchange(|| sign_in::discover_owner_cars_with_stub_for_test(
         &entry, &store, &config, sign_in::OwnerCarSelection::Vehicle(7001), &stub)).unwrap_err();
     assert_eq!(error.code(), "window_closed");
@@ -238,7 +238,7 @@ fn sign_in_discovery_setup_refuses_while_the_gate_is_closed() {
 /// sign-in runs no discovery. A bad car choice refuses before anything else.
 #[test]
 fn sign_in_discovery_setup_runs_inside_custody_and_reports_its_outcome() {
-    use teslatlas_hub::collection::window::{CollectorSlot as _, CredentialCustody, Supervisor};
+    use tesatlas_hub::collection::window::{CollectorSlot as _, CredentialCustody, Supervisor};
     let root = root();
     let scratch = tempfile::tempdir().expect("scratch");
     let store = HubStore::initialize(root.path()).expect("store");

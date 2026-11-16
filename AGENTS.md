@@ -1,4 +1,4 @@
-# Teslatlas Hub
+# Tesatlas Hub
 
 Rust telemetry and sync service, with an AppKit control app. See `Cargo.toml` and
 [Source layout](docs/architecture/source-layout.md) for ownership boundaries.
@@ -12,7 +12,7 @@ The crate forbids unsafe Rust.
   (Apache-2.0): retired, source preserved, not built or tested by the hub gates.
   Their imported history is kept unchanged.
 
-- In the Teslatlas workspace, follow `../AGENTS.md` and the programme plan at
+- In the Tesatlas workspace, follow `../AGENTS.md` and the programme plan at
   `../docs/development/MASTER_PLAN.md`; the plan wins on process, model, scope and
   commit policy. Keep status there; old plans and receipts are background.
 - Goal 2 (see the plan): complete the Mac Hub. Ships as the GUI app with its per-user
@@ -78,15 +78,15 @@ then Xcode, unless `DEVELOPER_DIR` is explicitly set.
 
 ## Runtime and evidence
 
-Unsigned source runs need `TESLATLAS_HUB_DEVELOPMENT=1` and an explicit
-`TESLATLAS_HUB_DEVELOPMENT_MODE` of `fixture`, `standalone` or `private-lan`. Follow
-[Source-run control app](macos/TeslatlasHubApp/DEVELOPMENT.md) for owned absolute
+Unsigned source runs need `TESATLAS_HUB_DEVELOPMENT=1` and an explicit
+`TESATLAS_HUB_DEVELOPMENT_MODE` of `fixture`, `standalone` or `private-lan`. Follow
+[Source-run control app](macos/TesatlasHubApp/DEVELOPMENT.md) for owned absolute
 paths and TLS. Bind loopback by default; `private-lan` needs an exact RFC1918 IPv4
 bind, a matching HTTPS URL and port, TLS and existing authentication. Use an identified
 binary outside the product tree, never a `target/` symlink. `serve` holds a lifetime
 lock; stop it before `pair`, `backup` or `repair`. While serving, use `/healthz` and
 `/readyz`. Large-history measurements use the release CLI built through the managed
-wrapper (`cargo build --locked --release --bin teslatlas-hub`); the history refresh
+wrapper (`cargo build --locked --release --bin tesatlas-hub`); the history refresh
 procedure is in that DEVELOPMENT.md. Runtime identities and ports of the lab Hubs are
 in the plan's Goal 2 "Reference".
 

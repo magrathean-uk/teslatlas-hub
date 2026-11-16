@@ -34,13 +34,13 @@ enum PairingCommandError {
     #[error("pairing presentation cannot be constructed")]
     Presentation,
     #[error("pairing scope is invalid")]
-    Scope(#[source] Box<teslatlas_hub::db::StoreError>),
+    Scope(#[source] Box<tesatlas_hub::db::StoreError>),
     #[error("pairing invitation cannot be persisted")]
-    Persist(#[source] Box<teslatlas_hub::db::StoreError>),
+    Persist(#[source] Box<tesatlas_hub::db::StoreError>),
     #[error("pairing invitation persistence failed and revocation could not be confirmed")]
     PersistAndRevoke {
-        persist: Box<teslatlas_hub::db::StoreError>,
-        revoke: Box<teslatlas_hub::db::StoreError>,
+        persist: Box<tesatlas_hub::db::StoreError>,
+        revoke: Box<tesatlas_hub::db::StoreError>,
     },
     #[error("pairing presentation failed; invitation was revoked ({kind:?})")]
     Present { kind: std::io::ErrorKind },
@@ -48,7 +48,7 @@ enum PairingCommandError {
     PresentAndRevoke {
         kind: std::io::ErrorKind,
         #[source]
-        revoke: Box<teslatlas_hub::db::StoreError>,
+        revoke: Box<tesatlas_hub::db::StoreError>,
     },
 }
 
@@ -60,7 +60,7 @@ struct PairingCommandInput<'a> {
     certificate_path: &'a Path,
     private_key_path: &'a Path,
     created_at_ms: i64,
-    scope: teslatlas_hub::db::PairingScope,
+    scope: tesatlas_hub::db::PairingScope,
 }
 
 /// `pair` and `control pair`: one invitation against the configured TLS
@@ -69,11 +69,11 @@ struct PairingCommandInput<'a> {
 /// migrating, `control pair` through `open_existing` while the Hub serves).
 async fn pair_with_configured_tls<W: Write>(
     store: &HubStore,
-    tls: Option<&teslatlas_hub::config::TlsListenerConfig>,
+    tls: Option<&tesatlas_hub::config::TlsListenerConfig>,
     label: &str,
     expires_in_seconds: u64,
     json: bool,
-    scope: teslatlas_hub::db::PairingScope,
+    scope: tesatlas_hub::db::PairingScope,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let tls = tls.ok_or("device pairing requires configured TLS")?;
@@ -102,11 +102,11 @@ async fn pair_with_configured_tls<W: Write>(
 fn pairing_scope_from_flags(
     vehicles: Vec<uuid::Uuid>,
     all_vehicles: bool,
-) -> teslatlas_hub::db::PairingScope {
+) -> tesatlas_hub::db::PairingScope {
     if all_vehicles || vehicles.is_empty() {
-        teslatlas_hub::db::PairingScope::AllVehicles
+        tesatlas_hub::db::PairingScope::AllVehicles
     } else {
-        teslatlas_hub::db::PairingScope::Vehicles(vehicles)
+        tesatlas_hub::db::PairingScope::Vehicles(vehicles)
     }
 }
 
@@ -146,7 +146,7 @@ fn hidden_in_terminal(c: char) -> bool {
 
 /// The scope line of the text presentation. The invitation URI and the JSON
 /// payload never carry the scope.
-fn pairing_grants_text(named: Option<&[teslatlas_hub::db::PublishedVehicle]>) -> String {
+fn pairing_grants_text(named: Option<&[tesatlas_hub::db::PublishedVehicle]>) -> String {
     let Some(vehicles) = named else {
         return "Grants: every vehicle that is active when this invitation is claimed.".to_owned();
     };
@@ -200,7 +200,7 @@ async fn execute_pairing_at<W: Write>(
             .map_err(PairingCommandError::Certificate)?;
     let tls_pin = leaf_certificate_sha256_from_pem(&certificate_pem)
         .map_err(PairingCommandError::Certificate)?;
-    teslatlas_hub::server::rustls_config_from_pem_identity(certificate_pem, private_key_pem)
+    tesatlas_hub::server::rustls_config_from_pem_identity(certificate_pem, private_key_pem)
         .await
         .map_err(|_| {
             PairingCommandError::Certificate(std::io::Error::other(
@@ -222,8 +222,8 @@ async fn execute_pairing_at<W: Write>(
     // Named vehicles must exist and be active before any one-time secret is
     // generated; persisting checks retirement again inside its transaction.
     let named = match &input.scope {
-        teslatlas_hub::db::PairingScope::AllVehicles => None,
-        teslatlas_hub::db::PairingScope::Vehicles(vehicles) => Some(
+        tesatlas_hub::db::PairingScope::AllVehicles => None,
+        tesatlas_hub::db::PairingScope::Vehicles(vehicles) => Some(
             store
                 .pairing_scope_vehicles(vehicles)
                 .map_err(|error| PairingCommandError::Scope(Box::new(error)))?,
@@ -262,7 +262,7 @@ fn build_pairing_presentation(
     public_url: &str,
     tls_pin: &str,
     pairing_uri: &str,
-    invitation: &teslatlas_hub::db::PairingInvitation,
+    invitation: &tesatlas_hub::db::PairingInvitation,
     expires_in_seconds: u64,
     grants_text: &str,
 ) -> Result<zeroize::Zeroizing<Vec<u8>>, PairingCommandError> {
@@ -318,8 +318,8 @@ fn persist_and_present_pairing<W, P, R>(
 ) -> Result<(), PairingCommandError>
 where
     W: Write,
-    P: FnOnce() -> Result<(), teslatlas_hub::db::StoreError>,
-    R: FnOnce() -> Result<(), teslatlas_hub::db::StoreError>,
+    P: FnOnce() -> Result<(), tesatlas_hub::db::StoreError>,
+    R: FnOnce() -> Result<(), tesatlas_hub::db::StoreError>,
 {
     if let Err(persist) = persist() {
         return match revoke() {
@@ -996,7 +996,7 @@ fn serving_answer(
 #[cfg(target_os = "macos")]
 fn installed_service_pid() -> Result<Option<u32>, Box<dyn std::error::Error>> {
     let service = format!(
-        "gui/{}/com.teslatlas.hub",
+        "gui/{}/com.tesatlas.hub",
         rustix::process::geteuid().as_raw()
     );
     let output = std::process::Command::new("/bin/launchctl")
@@ -1110,7 +1110,7 @@ async fn check_serving(
     config_path: &Path,
     wait: Duration,
 ) -> Result<ServingReport, Box<dyn std::error::Error>> {
-    teslatlas_hub::crypto::install_default_provider();
+    tesatlas_hub::crypto::install_default_provider();
     let (config, digest) = HubConfig::load_with_digest(config_path)?;
     let digest = digest.to_string();
     let deadline = Instant::now() + wait;
@@ -1121,7 +1121,7 @@ async fn check_serving(
         let observed = match installed_service_pid()? {
             None => None,
             Some(pid) => match AdmittedUserHub::admit(&config.data_dir) {
-                Err(teslatlas_hub::hub_user_process::UserLifetimeLockError::AlreadyRunning) => {
+                Err(tesatlas_hub::hub_user_process::UserLifetimeLockError::AlreadyRunning) => {
                     serving_observation(&config, &digest, pid)
                         .await?
                         .map(|readiness| (pid, readiness))

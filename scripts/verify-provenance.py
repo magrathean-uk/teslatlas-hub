@@ -16,7 +16,7 @@ from typing import Any
 from candidate_source_manifest import CandidateManifestError, load_candidate_paths
 
 
-SCHEMA = "teslatlas.provenance-classification/v1"
+SCHEMA = "tesatlas.provenance-classification/v1"
 CLASSES = {
     "MAGRATHEAN-ORIGINAL",
     "COMPANY-ASSIGNED-CONTRIBUTION",

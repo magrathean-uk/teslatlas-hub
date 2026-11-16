@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/magrathean-uk/magrathean-uk/main/assets/icons/teslatlas.png" width="96" height="96" alt="">
+  <img src="https://raw.githubusercontent.com/magrathean-uk/magrathean-uk/main/assets/icons/tesatlas.png" width="96" height="96" alt="">
 </p>
 
-<h1 align="center">Teslatlas Home Assistant</h1>
+<h1 align="center">Tesatlas Home Assistant</h1>
 
-<p align="center">Read-only vehicle sensors for Home Assistant, using the public Teslatlas Hub HTTP API.</p>
+<p align="center">Read-only vehicle sensors for Home Assistant, using the public Tesatlas Hub HTTP API.</p>
 
 <p align="center">
   <a href="docs/architecture/overview.md">Documentation</a> ·
@@ -13,7 +13,7 @@
 
 ## Overview
 
-Read-only vehicle sensors for Home Assistant, using the public Teslatlas Hub HTTP API. The integration connects to your Hub; it does not contact Tesla or ask for Tesla credentials.
+Read-only vehicle sensors for Home Assistant, using the public Tesatlas Hub HTTP API. The integration connects to your Hub; it does not contact Tesla or ask for Tesla credentials.
 
 ## Status
 
@@ -36,8 +36,8 @@ Missing fields remain unknown; numeric zero remains zero. There are no vehicle c
 The locked development environment uses Home Assistant `2026.9.4`. The minimum version declared in [hacs.json](hacs.json) is `2026.8.3`, and the Compose example below pins that version. `uv run --locked --no-default-groups --group floor pytest` runs the tests against that minimum. Use a compatible Hub that implements the checked profile, a reachable HTTPS endpoint with a trusted certificate, and a fresh pairing invitation. A certificate pin supplements normal certificate and hostname validation.
 
 1. Back up the Home Assistant configuration and the previous component before replacing an installation.
-2. From this repository, copy only `custom_components/teslatlas_hub` to `/config/custom_components/teslatlas_hub`, including its `profile` and `translations` directories. Exclude generated caches. Restart Home Assistant.
-3. Open **Settings > Devices & services > Add integration > Teslatlas Hub**.
+2. From this repository, copy only `custom_components/tesatlas_hub` to `/config/custom_components/tesatlas_hub`, including its `profile` and `translations` directories. Exclude generated caches. Restart Home Assistant.
+3. Open **Settings > Devices & services > Add integration > Tesatlas Hub**.
 4. Enter the Hub host, port and TLS settings. Keep TLS enabled; supply the certificate fingerprint when provided with the invitation.
 5. Enter the pairing ID, secret and device name. Complete the validation step so the integration can confirm authenticated access before saving the credential.
 
@@ -66,6 +66,6 @@ Start with [contributing](.github/CONTRIBUTING.md) for local setup and targeted 
 
 ## Licence
 
-Teslatlas Home Assistant is licensed under the Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). See [licensing and attribution](docs/legal/licensing.md) for the distinction between this integration, its protocol bundle and third-party dependencies. Contributions: see [CONTRIBUTING](.github/CONTRIBUTING.md).
+Tesatlas Home Assistant is licensed under the Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). See [licensing and attribution](docs/legal/licensing.md) for the distinction between this integration, its protocol bundle and third-party dependencies. Contributions: see [CONTRIBUTING](.github/CONTRIBUTING.md).
 
 <sub>© 2026 MAGRATHEAN UK LTD · [Legal](https://github.com/magrathean-uk/.github/blob/main/LEGAL.md)</sub>

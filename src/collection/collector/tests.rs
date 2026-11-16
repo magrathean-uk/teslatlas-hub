@@ -51,7 +51,7 @@ fn collector_unresolved(store: &HubStore, fleet: bool) -> Result<bool,crate::db:
 // Opt-in step measurements keep ordinary test output quiet.
 macro_rules! terrain_test_timing {
     ($($arg:tt)*) => {
-        if std::env::var_os("TESLATLAS_TEST_TIMING").is_some() {
+        if std::env::var_os("TESATLAS_TEST_TIMING").is_some() {
             eprintln!($($arg)*);
         }
     };

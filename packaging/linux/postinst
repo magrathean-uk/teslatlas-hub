@@ -2,28 +2,28 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 set -eu
 
-service=teslatlas-hub.service
-command_proxy_service=teslatlas-command-proxy.service
-fleet_telemetry_service=teslatlas-fleet-telemetry.service
-state_file=${TESLATLAS_HUB_MAINTAINER_STATE_FILE:-/run/teslatlas-hub-maintainer.state}
-backup_dir=${TESLATLAS_HUB_UPGRADE_BACKUP_DIR:-/run/teslatlas-hub-package-upgrade}
-health_attempts=${TESLATLAS_HUB_HEALTH_ATTEMPTS:-10}
-health_delay=${TESLATLAS_HUB_HEALTH_DELAY_SECONDS:-1}
-health_timeout=${TESLATLAS_HUB_HEALTH_TIMEOUT_SECONDS:-5}
-preflight_timeout=${TESLATLAS_HUB_PREFLIGHT_TIMEOUT_SECONDS:-120}
-bootstrap_timeout=${TESLATLAS_HUB_BOOTSTRAP_TIMEOUT_SECONDS:-300}
-hub_binary=${TESLATLAS_HUB_BINARY:-/usr/bin/teslatlas-hub}
-unit_file=${TESLATLAS_HUB_UNIT_FILE:-/lib/systemd/system/teslatlas-hub.service}
-terminal_failure_target_file=${TESLATLAS_HUB_TERMINAL_FAILURE_TARGET_FILE:-/lib/systemd/system/teslatlas-hub-terminal-failure.target}
-command_proxy_binary=${TESLATLAS_COMMAND_PROXY_BINARY:-/usr/lib/teslatlas-hub/tesla-http-proxy}
-fleet_telemetry_binary=${TESLATLAS_FLEET_TELEMETRY_BINARY:-/usr/lib/teslatlas-hub/fleet-telemetry}
-command_proxy_unit_file=${TESLATLAS_COMMAND_PROXY_UNIT_FILE:-/lib/systemd/system/teslatlas-command-proxy.service}
-fleet_telemetry_unit_file=${TESLATLAS_FLEET_TELEMETRY_UNIT_FILE:-/lib/systemd/system/teslatlas-fleet-telemetry.service}
-command_proxy_config=${TESLATLAS_COMMAND_PROXY_CONFIG:-/etc/teslatlas-hub/command-proxy.env}
-fleet_telemetry_config=${TESLATLAS_FLEET_TELEMETRY_CONFIG:-/etc/teslatlas-hub/fleet-telemetry.json}
-config_file=${TESLATLAS_HUB_CONFIG:-/etc/teslatlas-hub/config.toml}
-runuser_binary=${TESLATLAS_HUB_RUNUSER:-/usr/sbin/runuser}
-timeout_binary=${TESLATLAS_HUB_TIMEOUT:-/usr/bin/timeout}
+service=tesatlas-hub.service
+command_proxy_service=tesatlas-command-proxy.service
+fleet_telemetry_service=tesatlas-fleet-telemetry.service
+state_file=${TESATLAS_HUB_MAINTAINER_STATE_FILE:-/run/tesatlas-hub-maintainer.state}
+backup_dir=${TESATLAS_HUB_UPGRADE_BACKUP_DIR:-/run/tesatlas-hub-package-upgrade}
+health_attempts=${TESATLAS_HUB_HEALTH_ATTEMPTS:-10}
+health_delay=${TESATLAS_HUB_HEALTH_DELAY_SECONDS:-1}
+health_timeout=${TESATLAS_HUB_HEALTH_TIMEOUT_SECONDS:-5}
+preflight_timeout=${TESATLAS_HUB_PREFLIGHT_TIMEOUT_SECONDS:-120}
+bootstrap_timeout=${TESATLAS_HUB_BOOTSTRAP_TIMEOUT_SECONDS:-300}
+hub_binary=${TESATLAS_HUB_BINARY:-/usr/bin/tesatlas-hub}
+unit_file=${TESATLAS_HUB_UNIT_FILE:-/lib/systemd/system/tesatlas-hub.service}
+terminal_failure_target_file=${TESATLAS_HUB_TERMINAL_FAILURE_TARGET_FILE:-/lib/systemd/system/tesatlas-hub-terminal-failure.target}
+command_proxy_binary=${TESATLAS_COMMAND_PROXY_BINARY:-/usr/lib/tesatlas-hub/tesla-http-proxy}
+fleet_telemetry_binary=${TESATLAS_FLEET_TELEMETRY_BINARY:-/usr/lib/tesatlas-hub/fleet-telemetry}
+command_proxy_unit_file=${TESATLAS_COMMAND_PROXY_UNIT_FILE:-/lib/systemd/system/tesatlas-command-proxy.service}
+fleet_telemetry_unit_file=${TESATLAS_FLEET_TELEMETRY_UNIT_FILE:-/lib/systemd/system/tesatlas-fleet-telemetry.service}
+command_proxy_config=${TESATLAS_COMMAND_PROXY_CONFIG:-/etc/tesatlas-hub/command-proxy.env}
+fleet_telemetry_config=${TESATLAS_FLEET_TELEMETRY_CONFIG:-/etc/tesatlas-hub/fleet-telemetry.json}
+config_file=${TESATLAS_HUB_CONFIG:-/etc/tesatlas-hub/config.toml}
+runuser_binary=${TESATLAS_HUB_RUNUSER:-/usr/sbin/runuser}
+timeout_binary=${TESATLAS_HUB_TIMEOUT:-/usr/bin/timeout}
 forward_only=0
 
 unit_available() {
@@ -121,43 +121,43 @@ stop_all_services() {
 
 hub_is_ready() {
     status=$(
-        "$timeout_binary" "$health_timeout" "$runuser_binary" -u teslatlas -- \
+        "$timeout_binary" "$health_timeout" "$runuser_binary" -u tesatlas -- \
             "$hub_binary" --config "$config_file" status 2>/dev/null
     ) || return 1
     printf '%s' "$status" | grep -Fq '"ready":true'
 }
 
 hub_preflight() {
-    "$timeout_binary" "$preflight_timeout" "$runuser_binary" -u teslatlas -- \
+    "$timeout_binary" "$preflight_timeout" "$runuser_binary" -u tesatlas -- \
         "$hub_binary" --config "$config_file" preflight >/dev/null 2>&1
 }
 
 hub_is_unconfigured() {
     status=$(
-        "$timeout_binary" "$health_timeout" "$runuser_binary" -u teslatlas -- \
+        "$timeout_binary" "$health_timeout" "$runuser_binary" -u tesatlas -- \
             "$hub_binary" --config "$config_file" status 2>/dev/null
     ) || return 1
     printf '%s' "$status" | grep -Fq '"vehicles":[]' || return 1
-    "$timeout_binary" "$preflight_timeout" "$runuser_binary" -u teslatlas -- \
+    "$timeout_binary" "$preflight_timeout" "$runuser_binary" -u tesatlas -- \
         "$hub_binary" --config "$config_file" doctor >/dev/null 2>&1
 }
 
 hub_is_active_unconfigured() {
     status=$(
-        "$timeout_binary" "$health_timeout" "$runuser_binary" -u teslatlas -- \
+        "$timeout_binary" "$health_timeout" "$runuser_binary" -u tesatlas -- \
             "$hub_binary" --config "$config_file" status 2>/dev/null
     ) || return 1
     printf '%s' "$status" | grep -Fq '"vehicles":[]'
 }
 
 hub_bootstrap() {
-    "$timeout_binary" "$bootstrap_timeout" "$runuser_binary" -u teslatlas -- \
+    "$timeout_binary" "$bootstrap_timeout" "$runuser_binary" -u tesatlas -- \
         "$hub_binary" --config "$config_file" bootstrap >/dev/null 2>&1
 }
 
 ensure_offline_defaults() {
     [ -f "$config_file" ] && [ ! -L "$config_file" ] || return 0
-    offline_tmp="${config_file}.teslatlas.$$"
+    offline_tmp="${config_file}.tesatlas.$$"
     awk '
         function flush_default() {
             if (current != "" && !has_enabled) {
@@ -223,16 +223,16 @@ restore_optional_file() {
 }
 
 restore_upgrade_payload() {
-    [ -f "$backup_dir/teslatlas-hub" ] && [ ! -L "$backup_dir/teslatlas-hub" ] || return 1
-    [ -f "$backup_dir/teslatlas-hub.service" ] \
-        && [ ! -L "$backup_dir/teslatlas-hub.service" ] || return 1
-    install -o root -g root -m 0755 "$backup_dir/teslatlas-hub" "$hub_binary"
-    install -o root -g root -m 0644 "$backup_dir/teslatlas-hub.service" "$unit_file"
-    restore_optional_file teslatlas-hub-terminal-failure.target "$terminal_failure_target_file" 0644
+    [ -f "$backup_dir/tesatlas-hub" ] && [ ! -L "$backup_dir/tesatlas-hub" ] || return 1
+    [ -f "$backup_dir/tesatlas-hub.service" ] \
+        && [ ! -L "$backup_dir/tesatlas-hub.service" ] || return 1
+    install -o root -g root -m 0755 "$backup_dir/tesatlas-hub" "$hub_binary"
+    install -o root -g root -m 0644 "$backup_dir/tesatlas-hub.service" "$unit_file"
+    restore_optional_file tesatlas-hub-terminal-failure.target "$terminal_failure_target_file" 0644
     restore_optional_file tesla-http-proxy "$command_proxy_binary" 0755
     restore_optional_file fleet-telemetry "$fleet_telemetry_binary" 0755
-    restore_optional_file teslatlas-command-proxy.service "$command_proxy_unit_file" 0644
-    restore_optional_file teslatlas-fleet-telemetry.service "$fleet_telemetry_unit_file" 0644
+    restore_optional_file tesatlas-command-proxy.service "$command_proxy_unit_file" 0644
+    restore_optional_file tesatlas-fleet-telemetry.service "$fleet_telemetry_unit_file" 0644
     restore_optional_file command-proxy.env "$command_proxy_config" 0644
     restore_optional_file fleet-telemetry.json "$fleet_telemetry_config" 0644
 }
@@ -272,7 +272,7 @@ rollback_upgrade() {
     stop_all_services
     if restore_upgrade_payload && restore_service_state; then
         remove_upgrade_backup || true
-        echo "$reason; restored the installed Teslatlas Hub" >&2
+        echo "$reason; restored the installed Tesatlas Hub" >&2
     else
         echo "$reason; automatic rollback failed, retained $backup_dir" >&2
     fi
@@ -305,9 +305,9 @@ retain_forward_only_stopped() {
 fail_forward_only() {
     reason=$1
     if retain_forward_only_stopped; then
-        echo "TESLATLAS_FORWARD_ONLY_UPGRADE: $reason; new Hub retained stopped" >&2
+        echo "TESATLAS_FORWARD_ONLY_UPGRADE: $reason; new Hub retained stopped" >&2
     else
-        echo "TESLATLAS_FORWARD_ONLY_UPGRADE: $reason; cleanup incomplete at $backup_dir" >&2
+        echo "TESATLAS_FORWARD_ONLY_UPGRADE: $reason; cleanup incomplete at $backup_dir" >&2
     fi
     exit 1
 }
@@ -348,19 +348,19 @@ case "${1:-}" in
         ;;
 esac
 
-if ! getent passwd teslatlas >/dev/null 2>&1; then
-    adduser --system --group --home /var/lib/teslatlas-hub --no-create-home teslatlas
+if ! getent passwd tesatlas >/dev/null 2>&1; then
+    adduser --system --group --home /var/lib/tesatlas-hub --no-create-home tesatlas
 fi
 
-install -d -o teslatlas -g teslatlas -m 0700 /var/lib/teslatlas-hub
-install -d -o root -g teslatlas -m 0750 /etc/teslatlas-hub
+install -d -o tesatlas -g tesatlas -m 0700 /var/lib/tesatlas-hub
+install -d -o root -g tesatlas -m 0750 /etc/tesatlas-hub
 if [ -e "$config_file" ] || [ -L "$config_file" ]; then
     [ -f "$config_file" ] && [ ! -L "$config_file" ] || {
-        echo "Teslatlas Hub configuration is not a regular file" >&2
+        echo "Tesatlas Hub configuration is not a regular file" >&2
         exit 1
     }
     ensure_offline_defaults
-    chown root:teslatlas "$config_file"
+    chown root:tesatlas "$config_file"
     chmod 0640 "$config_file"
 fi
 

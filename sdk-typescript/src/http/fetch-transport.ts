@@ -1,5 +1,5 @@
 import type { AuthorizationProvider } from "../auth/credential-store.js";
-import { containsControlCharacters, TeslatlasError, TransportError } from "../core/errors.js";
+import { containsControlCharacters, TesatlasError, TransportError } from "../core/errors.js";
 import type { EntityTag } from "../core/opaque-values.js";
 import { applyIfNoneMatch } from "./conditional.js";
 
@@ -23,7 +23,7 @@ export interface ProtocolRequestInit extends Omit<RequestInit, "headers"> {
   readonly onDispatch?: () => void;
 }
 
-export class InvalidBaseUrlError extends TeslatlasError<"invalid_base_url"> {
+export class InvalidBaseUrlError extends TesatlasError<"invalid_base_url"> {
   constructor() {
     super("Base URL must be an HTTP or HTTPS URL without embedded credentials", {
       code: "invalid_base_url",
@@ -31,7 +31,7 @@ export class InvalidBaseUrlError extends TeslatlasError<"invalid_base_url"> {
   }
 }
 
-export class InvalidRequestPathError extends TeslatlasError<"invalid_request_path"> {
+export class InvalidRequestPathError extends TesatlasError<"invalid_request_path"> {
   constructor() {
     super("Protocol request target must be a root-relative path", {
       code: "invalid_request_path",
@@ -39,7 +39,7 @@ export class InvalidRequestPathError extends TeslatlasError<"invalid_request_pat
   }
 }
 
-export class ReservedAuthorizationHeaderError extends TeslatlasError<"reserved_authorization_header"> {
+export class ReservedAuthorizationHeaderError extends TesatlasError<"reserved_authorization_header"> {
   constructor() {
     super("Authorization header must come from the caller authorization provider", {
       code: "reserved_authorization_header",
@@ -47,7 +47,7 @@ export class ReservedAuthorizationHeaderError extends TeslatlasError<"reserved_a
   }
 }
 
-export class InvalidAuthorizationValueError extends TeslatlasError<"invalid_authorization_value"> {
+export class InvalidAuthorizationValueError extends TesatlasError<"invalid_authorization_value"> {
   constructor() {
     super("Authorization value must be non-empty and contain no control characters", {
       code: "invalid_authorization_value",
@@ -55,7 +55,7 @@ export class InvalidAuthorizationValueError extends TeslatlasError<"invalid_auth
   }
 }
 
-export class MissingFetchError extends TeslatlasError<"missing_fetch"> {
+export class MissingFetchError extends TesatlasError<"missing_fetch"> {
   constructor() {
     super("A Fetch API implementation is required", { code: "missing_fetch" });
   }
@@ -112,7 +112,7 @@ export class FetchTransport {
         headers,
       });
     } catch (error) {
-      if (error instanceof TeslatlasError) {
+      if (error instanceof TesatlasError) {
         throw error;
       }
       if (init.signal?.aborted === true) {

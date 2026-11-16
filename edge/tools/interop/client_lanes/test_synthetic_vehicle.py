@@ -23,7 +23,7 @@ class SyntheticVehicleInvocationTests(unittest.TestCase):
                 json.dumps({"producer": {"vin": VIN}}), encoding="utf-8"
             )
             helper = root / "synthetic-vehicle"
-            helper.write_bytes(b"teslatlas-synthetic-vehicle-identity-v2")
+            helper.write_bytes(b"tesatlas-synthetic-vehicle-identity-v2")
             helper.chmod(0o700)
             cert = root / "vehicle-client.crt"
             key = root / "vehicle-client.key"

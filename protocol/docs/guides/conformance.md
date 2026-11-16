@@ -89,10 +89,10 @@ To run the native cases as well, pass a private descriptor supplied by the Hub
 owner:
 
 ```sh
-TESLATLAS_HUB_HTTP_CONFIG=/absolute/private/ready.json
+TESATLAS_HUB_HTTP_CONFIG=/absolute/private/ready.json
 ./conformance/run \
   --profile hub-http-v1@1.3.0 \
-  --config "$TESLATLAS_HUB_HTTP_CONFIG" \
+  --config "$TESATLAS_HUB_HTTP_CONFIG" \
   --timeout-seconds 120 \
   --json
 ```

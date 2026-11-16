@@ -1070,7 +1070,7 @@ fn c7_t62_seed() {
 async fn c7_t63_agent() {
     assert_eq!(
         FIXED_USER_AGENT,
-        concat!("teslatlas-hub/", env!("CARGO_PKG_VERSION"))
+        concat!("tesatlas-hub/", env!("CARGO_PKG_VERSION"))
     );
     within(1, async {
         let stub = Stub::start(reply(200, F1)).await;

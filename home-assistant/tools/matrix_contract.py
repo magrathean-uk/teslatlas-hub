@@ -86,19 +86,19 @@ CURRENT_MEMBER_PATHS = (
     "translations/en.json",
 )
 REQUIRED_LOADED_MODULES = {
-    "custom_components.teslatlas_hub": "__init__.py",
-    "custom_components.teslatlas_hub.client": "client.py",
-    "custom_components.teslatlas_hub.config_flow": "config_flow.py",
-    "custom_components.teslatlas_hub.const": "const.py",
-    "custom_components.teslatlas_hub.coordinator": "coordinator.py",
-    "custom_components.teslatlas_hub.credentials": "credentials.py",
-    "custom_components.teslatlas_hub.current_hub_client": "current_hub_client.py",
-    "custom_components.teslatlas_hub.entity": "entity.py",
-    "custom_components.teslatlas_hub.models": "models.py",
-    "custom_components.teslatlas_hub.sensor": "sensor.py",
+    "custom_components.tesatlas_hub": "__init__.py",
+    "custom_components.tesatlas_hub.client": "client.py",
+    "custom_components.tesatlas_hub.config_flow": "config_flow.py",
+    "custom_components.tesatlas_hub.const": "const.py",
+    "custom_components.tesatlas_hub.coordinator": "coordinator.py",
+    "custom_components.tesatlas_hub.credentials": "credentials.py",
+    "custom_components.tesatlas_hub.current_hub_client": "current_hub_client.py",
+    "custom_components.tesatlas_hub.entity": "entity.py",
+    "custom_components.tesatlas_hub.models": "models.py",
+    "custom_components.tesatlas_hub.sensor": "sensor.py",
 }
 OPTIONAL_LOADED_MODULES = {
-    "custom_components.teslatlas_hub.diagnostics": "diagnostics.py",
+    "custom_components.tesatlas_hub.diagnostics": "diagnostics.py",
 }
 
 DECISION_CODES = frozenset(
@@ -1016,7 +1016,7 @@ def _expected_operation_facts(
             or module_sha256 != members_by_path.get("__init__.py", {}).get("sha256")
             or not isinstance(python_executable, str)
             or not python_executable.startswith("/")
-            or runtime_facts.get("manifest_domain") != "teslatlas_hub"
+            or runtime_facts.get("manifest_domain") != "tesatlas_hub"
             or runtime_facts.get("config_entry_loaded") is not True
             or runtime_facts.get("entity_registry_count") != 26
             or not isinstance(loaded_modules, Mapping)
@@ -1048,7 +1048,7 @@ def _expected_operation_facts(
             "module_path": module_path,
             "module_sha256": module_sha256,
             "loaded_modules": runtime_facts.get("loaded_modules"),
-            "manifest_domain": "teslatlas_hub",
+            "manifest_domain": "tesatlas_hub",
             "config_entry_loaded": True,
             "entity_registry_count": 26,
         }

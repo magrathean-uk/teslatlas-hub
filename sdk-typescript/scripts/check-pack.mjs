@@ -56,10 +56,10 @@ if (missing.length > 0 || forbidden.length > 0) {
 
 if (
   packageManifest?.packageManager !== "npm@12.1.0" ||
-  packageManifest?.teslatlasSupport?.policy !== "evidence-only" ||
-  packageManifest?.teslatlasSupport?.reproducibilityToolchain?.node !== "26.10.0" ||
-  packageManifest?.teslatlasSupport?.reproducibilityToolchain?.npm !== "12.1.0" ||
-  Object.values(packageManifest?.teslatlasSupport?.declaredFloors ?? {}).some(
+  packageManifest?.tesatlasSupport?.policy !== "evidence-only" ||
+  packageManifest?.tesatlasSupport?.reproducibilityToolchain?.node !== "26.10.0" ||
+  packageManifest?.tesatlasSupport?.reproducibilityToolchain?.npm !== "12.1.0" ||
+  Object.values(packageManifest?.tesatlasSupport?.declaredFloors ?? {}).some(
     (value) => value !== null,
   )
 ) {

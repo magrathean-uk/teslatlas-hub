@@ -1,6 +1,6 @@
 # Contributing
 
-Teslatlas Protocol owns public contracts and their local validation tools. Keep
+Tesatlas Protocol owns public contracts and their local validation tools. Keep
 changes implementable by an independent client using only this repository.
 Start with the [architecture](../docs/architecture/overview.md) and the profile
 you intend to change.

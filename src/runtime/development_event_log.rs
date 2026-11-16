@@ -16,7 +16,7 @@ use std::{
 };
 use uuid::Uuid;
 
-pub const DIRECTORY_ENV: &str = "TESLATLAS_HUB_DEVELOPMENT_LOG_DIRECTORY";
+pub const DIRECTORY_ENV: &str = "TESATLAS_HUB_DEVELOPMENT_LOG_DIRECTORY";
 const SEGMENT_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_AGE: Duration = Duration::from_secs(7 * 86400);
 static JOURNAL: OnceLock<Option<Journal>> = OnceLock::new();
@@ -169,7 +169,7 @@ pub fn enabled() -> bool {
     JOURNAL.get().is_some_and(Option::is_some)
 }
 pub fn development_requested() -> bool {
-    crate::platform::name_migration::env::var("TESLATLAS_HUB_DEVELOPMENT").as_deref() == Ok("1")
+    crate::platform::name_migration::env::var("TESATLAS_HUB_DEVELOPMENT").as_deref() == Ok("1")
 }
 pub fn initialize() -> io::Result<bool> {
     if !development_requested() {
@@ -477,7 +477,7 @@ mod tests {
     }
     #[test]
     fn development_journal_accepts_owner_directory_read_only() {
-        if let Some(path) = std::env::var_os("TESLATLAS_HUB_LOG_POLICY_DIRECTORY") {
+        if let Some(path) = std::env::var_os("TESATLAS_HUB_LOG_POLICY_DIRECTORY") {
             let directory = validated_directory(Path::new(&path)).unwrap();
             assert!(directory.metadata().unwrap().is_dir());
         } else {

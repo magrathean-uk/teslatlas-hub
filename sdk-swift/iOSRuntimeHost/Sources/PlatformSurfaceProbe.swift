@@ -1,11 +1,11 @@
-import TeslatlasCommands
-import TeslatlasCurrentHub
-import TeslatlasHubSDK
-import TeslatlasHubV1Compatibility
+import TesatlasCommands
+import TesatlasCurrentHub
+import TesatlasHubSDK
+import TesatlasHubV1Compatibility
 
 enum PlatformSurfaceProbe {
   static func exercisesAllPublicLibraries() -> Bool {
-    guard TeslatlasProtocolVersion("1.2.0")?.description == "1.2.0" else {
+    guard TesatlasProtocolVersion("1.2.0")?.description == "1.2.0" else {
       return false
     }
 

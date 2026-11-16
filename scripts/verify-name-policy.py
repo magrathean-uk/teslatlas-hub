@@ -25,7 +25,7 @@ EXPIRIES = {'none', 'G2-4-M1', 'G2-4-M2', 'G2-4-M3', 'G2-4-M5', 'G2-4', 'G2-5',
 DATA_PATHS = ['scripts/name-policy/' + name + '.json' for name in ('allow', 'pins', 'milestones')]
 SCRIPT_PATH = 'scripts/verify-name-policy.py'
 REQUIRED_INPUTS = [SCRIPT_PATH, 'scripts/test-name-policy.sh'] + DATA_PATHS
-FORBIDDEN = {'vendor', 'upstream', 'repository-roots', 'node_modules', 'TeslatlasCore.xcframework'}
+FORBIDDEN = {'vendor', 'upstream', 'repository-roots', 'node_modules', 'TesatlasCore.xcframework'}
 ARCHIVES = ('docs/development/archive/', 'protocol/docs/development/archive/', 'sdk-typescript/docs/development/archive/')
 IMAGE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.icns', '.pdf'}
 BINARY_SUFFIXES = IMAGE_SUFFIXES | {'.zst', '.gz', '.sqlite', '.tar', '.zip'}
@@ -418,7 +418,7 @@ def verify(args):
             errors.append('entry count mismatch: %s expected %s actual %s' % (entry['id'], expected, actual))
         elif actual < expected:
             warnings.append('entry count decreased: ' + entry['id'])
-    summary = dict(schema='teslatlas.name-policy-report/v1', paths=len(paths), matches=findings,
+    summary = dict(schema='tesatlas.name-policy-report/v1', paths=len(paths), matches=findings,
         counts_by_file=dict(by_file), counts_by_class=dict(by_class), entry_counts=dict(counts),
         errors=sorted(set(errors)), warnings=warnings, count_only=opaque,
         accepted_growth=args.accept_growth, growth=growth, first_introduction=introduction,

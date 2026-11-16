@@ -90,10 +90,10 @@ command -v tar >/dev/null 2>&1 || {
     exit 69
 }
 
-official_repository=https://github.com/magrathean-uk/teslatlas-hub.git
+official_repository=https://github.com/magrathean-uk/tesatlas-hub.git
 origin_url=$(git config --get remote.origin.url || true)
 [ "$origin_url" = "$official_repository" ] || {
-    echo "origin must be the official Teslatlas Hub GitHub repository" >&2
+    echo "origin must be the official Tesatlas Hub GitHub repository" >&2
     exit 65
 }
 if git config --get-regexp '^url\..*\.insteadof$' >/dev/null 2>&1; then
@@ -157,8 +157,8 @@ version=$(sed -nE 's/^version = "([^"]+)"$/\1/p' Cargo.toml | head -n 1)
     exit 65
 }
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-container-build.XXXXXX")
-cohort_tag="teslatlas-hub-build-cohort:${source_commit}-$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+work=$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-container-build.XXXXXX")
+cohort_tag="tesatlas-hub-build-cohort:${source_commit}-$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
 owned_image_id=
 remove_owned_cohort() {
     current_image_id=$(docker image inspect --format '{{.Id}}' "$cohort_tag" 2>/dev/null) || {
@@ -233,7 +233,7 @@ DOCKER_BUILDKIT=1 docker buildx build \
     --load \
     --no-cache \
     --platform linux/arm64 \
-    --build-arg "TESLATLAS_HUB_SOURCE_COMMIT=$source_commit" \
+    --build-arg "TESATLAS_HUB_SOURCE_COMMIT=$source_commit" \
     --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" \
     --iidfile "$iidfile" \
     --tag "$cohort_tag" \

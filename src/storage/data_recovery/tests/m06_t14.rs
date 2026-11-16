@@ -167,7 +167,7 @@ fn data_recovery_f2_stable_destination_link_is_refused() {
 // The terminal tests (macOS: `/usr/bin/script -q /dev/null command...`).
 
 /// Names the scenario for the child; holds no password.
-pub(super) const PTY_SCENARIO: &str = "TESLATLAS_M06_T14_PTY_SCENARIO";
+pub(super) const PTY_SCENARIO: &str = "TESATLAS_M06_T14_PTY_SCENARIO";
 /// How long the parent waits for any one step of the child.
 const PTY_STEP: Duration = Duration::from_secs(60);
 /// Run by the shell on the pseudo-terminal: the child, then its exit status,

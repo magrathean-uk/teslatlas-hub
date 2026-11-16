@@ -1,7 +1,7 @@
 # Getting started
 
-Teslatlas Hub collects vehicle history on your own host. The native Mac app
-controls the background service; the separately distributed Teslatlas client
+Tesatlas Hub collects vehicle history on your own host. The native Mac app
+controls the background service; the separately distributed Tesatlas client
 connects to Hub to synchronise history.
 
 ## Choose your host
@@ -54,7 +54,7 @@ collector or let the source application and Hub refresh the same Legacy credenti
 
 ## Pair your client
 
-Pairing is separate from connecting Hub to Tesla. It authorises a Teslatlas
+Pairing is separate from connecting Hub to Tesla. It authorises a Tesatlas
 client to access this Hub's history.
 
 1. Choose how the client will reach the host. Plaintext HTTP must remain on
@@ -66,7 +66,7 @@ client to access this Hub's history.
    Stop the serving process first: it holds a lifetime lock that prevents the
    standalone pairing command from running. Create the short-lived, single-use
    invitation, then restart the service before the client claims it.
-3. Complete pairing in the separately distributed Teslatlas client using its
+3. Complete pairing in the separately distributed Tesatlas client using its
    connection flow. Treat the invitation as a secret; do not paste it into
    issues or screenshots. Create a new invitation if the old one expires.
 4. Check that history synchronises. Revoke retired or unknown devices using

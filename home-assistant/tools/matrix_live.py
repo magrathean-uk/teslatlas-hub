@@ -442,7 +442,7 @@ class MatrixRuntime:
             raise MatrixWireError("installed integration member inventory is invalid")
         installed_root = Path(product["local_root"])
         if (
-            installed_root.name != "teslatlas_hub"
+            installed_root.name != "tesatlas_hub"
             or installed_root.parent.name != "custom_components"
         ):
             raise MatrixWireError("installed integration root layout is invalid")
@@ -474,7 +474,7 @@ class MatrixRuntime:
 
     def validate_loaded_modules(self) -> dict[str, str]:
         """Bind every executed integration module to admitted source bytes."""
-        package = "custom_components.teslatlas_hub"
+        package = "custom_components.tesatlas_hub"
         admitted_modules = {**REQUIRED_LOADED_MODULES, **OPTIONAL_LOADED_MODULES}
         installed_by_path = {
             row["path"]: row for row in self.installed_manifest["files"]
@@ -1200,7 +1200,7 @@ class MatrixRuntime:
             or platform.python_version() != "3.14.2"
             or manifest.get("version") != "2026.36.2"
             or manifest.get("iot_class") != "local_poll"
-            or manifest.get("domain") != "teslatlas_hub"
+            or manifest.get("domain") != "tesatlas_hub"
             or len(registry_ids) != 26
         ):
             raise MatrixWireError(
@@ -1224,11 +1224,11 @@ class MatrixRuntime:
             "entry_id": entry_id,
             "registry_ids": registry_ids,
             "python_executable": sys.executable,
-            "module_path": loaded_modules["custom_components.teslatlas_hub"],
+            "module_path": loaded_modules["custom_components.tesatlas_hub"],
             "module_sha256": next(
                 row["sha256"]
                 for row in self.installed_manifest["files"]
-                if row["path"] == loaded_modules["custom_components.teslatlas_hub"]
+                if row["path"] == loaded_modules["custom_components.tesatlas_hub"]
             ),
             "loaded_modules": loaded_modules,
             "manifest_domain": manifest["domain"],
@@ -1286,7 +1286,7 @@ def main(argv: list[str] | None = None) -> int:
         # are isolated from the saved broker descriptors.
         import pytest
 
-        os.environ["TESLATLAS_HA_LIVE"] = "1"
+        os.environ["TESATLAS_HA_LIVE"] = "1"
 
         class AdapterPlugin:
             @pytest.fixture

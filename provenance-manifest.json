@@ -1,5 +1,5 @@
 {
-  "schema": "teslatlas.provenance-classification/v1",
+  "schema": "tesatlas.provenance-classification/v1",
   "scope_note": "This is an administrative classification of the current tracked tree, not evidence of authorship, employment scope, assignment, or any private deed. MAGRATHEAN-ORIGINAL means the repository currently treats the file as project-created. COMPANY-ASSIGNED-CONTRIBUTION is used only when file-specific title evidence has been checked; no current rule uses it. A release signer must verify authority and private records separately.",
   "declared_classes": [
     "MAGRATHEAN-ORIGINAL",
@@ -154,7 +154,7 @@
         "docs/legal/third-party-notices.md"
       ],
       "exception": {
-        "origin": "Compilation of notices for Tesla Auth, Tesla Vehicle Command, Tesla Fleet Telemetry, Teslatlas Compute, data and service providers, and release dependencies.",
+        "origin": "Compilation of notices for Tesla Auth, Tesla Vehicle Command, Tesla Fleet Telemetry, Tesatlas Compute, data and service providers, and release dependencies.",
         "licensing": "Each embedded notice and licence remains governed by its named rightsholder and terms; compilation treatment does not replace generated release notices.",
         "release_treatment": "Ship this policy notice and also generate candidate-specific dependency and bundled-component notices."
       }
@@ -164,7 +164,7 @@
       "class": "THIRD-PARTY",
       "rationale": "Native implementation adapts endpoint, PKCE, callback, issuer-routing, and token-exchange behaviour from Tesla Auth.",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubApp/TeslaAuthWindowController.swift"
+        "macos/TesatlasHubApp/TesatlasHubApp/TeslaAuthWindowController.swift"
       ],
       "exception": {
         "origin": "Tesla Auth v0.15.0, revision 68da1f850e9cb87ac0e54c608d5a2e90d3ad1608, by Adrian Kumpf.",
@@ -180,7 +180,7 @@
         "packaging/tesla-command-proxy/0001-go-1.27-runtime-defaults.patch"
       ],
       "exception": {
-        "origin": "Tesla vehicle-command v0.4.1, revision 49977a18fd68567501d59e16a6c9e4a8b9348544, plus the dated Teslatlas Go 1.27 runtime-default modification identified by the patch.",
+        "origin": "Tesla vehicle-command v0.4.1, revision 49977a18fd68567501d59e16a6c9e4a8b9348544, plus the dated Tesatlas Go 1.27 runtime-default modification identified by the patch.",
         "licensing": "Apache-2.0 for the upstream source and distributed modified command proxy; the modified go.mod carries a prominent change notice.",
         "release_treatment": "Ship the patch, pinned upstream module sources, Apache-2.0 text, notices, checksums, and clean-rebuild evidence with bundled proxy releases."
       }
@@ -190,10 +190,10 @@
       "class": "THIRD-PARTY",
       "rationale": "Patch contains context and modifications against Tesla's Fleet Telemetry receiver source.",
       "paths": [
-        "packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch"
+        "packaging/fleet-telemetry-bridge/0001-tesatlas-http-dispatcher.patch"
       ],
       "exception": {
-        "origin": "Tesla Fleet Telemetry v0.9.4, revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b, plus the Teslatlas loopback-dispatcher modifications identified by the patch.",
+        "origin": "Tesla Fleet Telemetry v0.9.4, revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b, plus the Tesatlas loopback-dispatcher modifications identified by the patch.",
         "licensing": "Apache-2.0 for the upstream receiver and the distributed modified receiver; upstream notices remain required.",
         "release_treatment": "Ship the patch, pinned upstream identity, Apache-2.0 text, notices, source archive, and modification record with bundled receiver releases."
       }
@@ -207,7 +207,7 @@
         "packaging/fleet-telemetry-bridge/module-graph/go.sum"
       ],
       "exception": {
-        "origin": "Tesla Fleet Telemetry v0.9.4, revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b, go.mod and go.sum, with the go directive and module requirements updated for the Teslatlas Go 1.27.4 build. packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json records the SHA-256 of each file.",
+        "origin": "Tesla Fleet Telemetry v0.9.4, revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b, go.mod and go.sum, with the go directive and module requirements updated for the Tesatlas Go 1.27.4 build. packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json records the SHA-256 of each file.",
         "licensing": "Apache-2.0 for the upstream files and the distributed modified receiver. The go.sum lines are checksum facts about the named modules.",
         "release_treatment": "Ship both files with the patch, pinned upstream identity, Apache-2.0 text, notices and source evidence. Add a prominent change notice to the modified go.mod before a modified receiver is distributed."
       }
@@ -243,7 +243,7 @@
       "class": "MAGRATHEAN-ORIGINAL",
       "rationale": "Canonical editable raster iconset used to generate the macOS icon container and documentation preview. This treatment does not prove creator, assignment, or brand clearance.",
       "globs": [
-        "macos/TeslatlasHubApp/Artwork/AppIcon.iconset/*.png"
+        "macos/TesatlasHubApp/Artwork/AppIcon.iconset/*.png"
       ]
     },
     {
@@ -251,10 +251,10 @@
       "class": "GENERATED",
       "rationale": "Compiled macOS icon container generated from the tracked canonical raster iconset.",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubApp/Resources/AppIcon.icns"
+        "macos/TesatlasHubApp/TesatlasHubApp/Resources/AppIcon.icns"
       ],
       "exception": {
-        "origin": "Generated by scripts/build-app-icon.sh from macos/TeslatlasHubApp/Artwork/AppIcon.iconset; candidate SHA-256 fda5f0d9a7fd2d81ef0afd1ef5a2d757e19237ac3ad37b6089f81479bf6ebe6a.",
+        "origin": "Generated by scripts/build-app-icon.sh from macos/TesatlasHubApp/Artwork/AppIcon.iconset; candidate SHA-256 fda5f0d9a7fd2d81ef0afd1ef5a2d757e19237ac3ad37b6089f81479bf6ebe6a.",
         "licensing": "Current repository treatment is project artwork. This manifest does not establish its creator, assignment, or trademark clearance.",
         "release_treatment": "Regenerate from the tracked iconset, verify the committed digest and appearance, and verify source-art authority and brand clearance from private records."
       }
@@ -264,10 +264,10 @@
       "class": "GENERATED",
       "rationale": "Documentation PNG copied without artistic changes from the tracked canonical iconset.",
       "paths": [
-        "docs/assets/teslatlas-hub-icon.png"
+        "docs/assets/tesatlas-hub-icon.png"
       ],
       "exception": {
-        "origin": "Generated by scripts/build-app-icon.sh from macos/TeslatlasHubApp/Artwork/AppIcon.iconset/icon_512x512.png; SHA-256 c91b1c9d47791be8835b2fea2dc256c2836372fd0f7c2d73b3e46c9f3fb76225.",
+        "origin": "Generated by scripts/build-app-icon.sh from macos/TesatlasHubApp/Artwork/AppIcon.iconset/icon_512x512.png; SHA-256 c91b1c9d47791be8835b2fea2dc256c2836372fd0f7c2d73b3e46c9f3fb76225.",
         "licensing": "Copy of the tracked project icon source. It carries the same unresolved creator, assignment, and trademark-clearance evidence scope as the iconset.",
         "release_treatment": "Regenerate from the tracked iconset and verify source-art authority and brand clearance from private records."
       }
@@ -462,9 +462,9 @@
       ]
     },
     {
-      "id": "teslatlas-protocol-pack-contracts",
+      "id": "tesatlas-protocol-pack-contracts",
       "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Pack schemas reproduced verbatim, apart from their header comments, from the Apache-2.0 Teslatlas Protocol hub-sync-v1 contracts: physical-delta-pack-v1.sql from profile 1.4.0 and prepared-pack-v1.sql from profile 1.3.0. They are source-neutral protocol material, not derived from another program's code. This treatment does not prove chain of title.",
+      "rationale": "Pack schemas reproduced verbatim, apart from their header comments, from the Apache-2.0 Tesatlas Protocol hub-sync-v1 contracts: physical-delta-pack-v1.sql from profile 1.4.0 and prepared-pack-v1.sql from profile 1.3.0. They are source-neutral protocol material, not derived from another program's code. This treatment does not prove chain of title.",
       "paths": [
         "src/import/source_db/physical_delta_pack_v1.sql",
         "src/sync/prepared_pack_v1.sql"
@@ -475,41 +475,41 @@
       "class": "MAGRATHEAN-ORIGINAL",
       "rationale": "Native macOS controller, UI, service integration, and tests currently treated as project-created, excluding separately classified adaptations and assets.",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubApp/AppDelegate.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/BackupSettingsView.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/DeviceListView.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/DiagnosticsWindowController.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubAppLog.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubBackupPresentation.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubController.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubDashboardView.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubDesignSystem.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubDiagnosticsPresentation.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubMaintenance.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubModalChrome.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubNavigationBar.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubOnboardingContainerView.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubPresentationState.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubPreviewCatalog.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubRenameMigration.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubTestUI.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubUtilityWindow.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubVehicleViews.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/ImportSheetController.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/Info.plist",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/LogsWindowController.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/MainWindowController.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/OnboardingWindowController.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/ServiceDetailsWindowController.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/main.swift",
-        "macos/TeslatlasHubApp/project.yml",
-        "macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/import-history-argv.json",
-        "macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/source-check-not-recognised.json",
-        "macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/source-check-recognised.json",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubSourceCheckResult.swift"
+        "macos/TesatlasHubApp/TesatlasHubApp/AppDelegate.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/BackupSettingsView.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/DeviceListView.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/DiagnosticsWindowController.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubAppLog.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubBackupPresentation.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubController.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubDashboardView.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubDesignSystem.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubDiagnosticsPresentation.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubMaintenance.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubModalChrome.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubNavigationBar.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubOnboardingContainerView.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubPresentationState.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubPreviewCatalog.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubRenameMigration.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubTestUI.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubUtilityWindow.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubVehicleViews.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/ImportSheetController.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/Info.plist",
+        "macos/TesatlasHubApp/TesatlasHubApp/LogsWindowController.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/MainWindowController.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/OnboardingWindowController.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/ServiceDetailsWindowController.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/main.swift",
+        "macos/TesatlasHubApp/project.yml",
+        "macos/TesatlasHubApp/TesatlasHubAppTests/Fixtures/import-history-argv.json",
+        "macos/TesatlasHubApp/TesatlasHubAppTests/Fixtures/source-check-not-recognised.json",
+        "macos/TesatlasHubApp/TesatlasHubAppTests/Fixtures/source-check-recognised.json",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubSourceCheckResult.swift"
       ],
       "globs": [
-        "macos/TeslatlasHubApp/TeslatlasHubAppTests/*.swift"
+        "macos/TesatlasHubApp/TesatlasHubAppTests/*.swift"
       ]
     },
     {
@@ -517,9 +517,9 @@
       "class": "IMPORT-COMPATIBILITY",
       "rationale": "Native macOS import adapter that finds and reads another program's database on the user's server.",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubApp/SourceServerImporter.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/SourceDiscovery.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/SourceDeploymentFacts.swift"
+        "macos/TesatlasHubApp/TesatlasHubApp/SourceServerImporter.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/SourceDiscovery.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/SourceDeploymentFacts.swift"
       ]
     },
     {
@@ -535,10 +535,10 @@
         "packaging/linux/postrm",
         "packaging/linux/preinst",
         "packaging/linux/prerm",
-        "packaging/linux/teslatlas-command-proxy.service",
-        "packaging/linux/teslatlas-fleet-telemetry.service",
-        "packaging/linux/teslatlas-hub-terminal-failure.target",
-        "packaging/linux/teslatlas-hub.service"
+        "packaging/linux/tesatlas-command-proxy.service",
+        "packaging/linux/tesatlas-fleet-telemetry.service",
+        "packaging/linux/tesatlas-hub-terminal-failure.target",
+        "packaging/linux/tesatlas-hub.service"
       ]
     },
     {
@@ -580,8 +580,8 @@
         "docs/brand/product.md",
         "docs/guides/install-docker.md",
         "docs/maintainers/design-review-2026-09-21.md",
-        "macos/TeslatlasHubApp/DEVELOPMENT.md",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/DevelopmentHubRuntime.swift",
+        "macos/TesatlasHubApp/DEVELOPMENT.md",
+        "macos/TesatlasHubApp/TesatlasHubApp/DevelopmentHubRuntime.swift",
         "packaging/docker/base-images.json",
         "packaging/docker/config.toml",
         "packaging/docker/config.toml.example",
@@ -683,7 +683,7 @@
       "class": "MAGRATHEAN-ORIGINAL",
       "rationale": "Localised string tables of the macOS control app, authored and maintained in this repository. This treatment does not prove chain of title.",
       "globs": [
-        "macos/TeslatlasHubApp/TeslatlasHubApp/Resources/*.lproj/*"
+        "macos/TesatlasHubApp/TesatlasHubApp/Resources/*.lproj/*"
       ]
     },
     {
@@ -701,11 +701,11 @@
         "docs/development/v7/hub-http-v1-profile.md",
         "docs/development/v7/live-sync-wire.md",
         "docs/guides/collection-paths.md",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/DevelopmentEventLog.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubApplicationActivation.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubDataRemoval.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubL10n.swift",
-        "macos/TeslatlasHubApp/TeslatlasHubApp/HubLaunchAgent.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/DevelopmentEventLog.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubApplicationActivation.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubDataRemoval.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubL10n.swift",
+        "macos/TesatlasHubApp/TesatlasHubApp/HubLaunchAgent.swift",
         "src/api/server/tests/b3_c6_c1.rs",
         "src/api/server/tests/b3_c6_c2.rs",
         "src/api/server/tests/b3_c6_s1.rs",
@@ -740,7 +740,7 @@
     {
       "id": "compute-imported",
       "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Teslatlas Compute package imported with its full history on 2026-10-08 (Apache-2.0, own LICENSE and NOTICE). This treatment does not prove chain of title.",
+      "rationale": "Tesatlas Compute package imported with its full history on 2026-10-08 (Apache-2.0, own LICENSE and NOTICE). This treatment does not prove chain of title.",
       "globs": [
         "compute/**"
       ]
@@ -748,7 +748,7 @@
     {
       "id": "protocol-imported",
       "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Teslatlas Protocol package imported with its full history on 2026-10-08 (Apache-2.0, own LICENSE and NOTICE). This treatment does not prove chain of title.",
+      "rationale": "Tesatlas Protocol package imported with its full history on 2026-10-08 (Apache-2.0, own LICENSE and NOTICE). This treatment does not prove chain of title.",
       "globs": [
         "protocol/**"
       ]
@@ -756,7 +756,7 @@
     {
       "id": "sdk-typescript-imported",
       "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Teslatlas TypeScript client package imported with its full history on 2026-10-08 (Apache-2.0, own LICENSE and NOTICE). This treatment does not prove chain of title.",
+      "rationale": "Tesatlas TypeScript client package imported with its full history on 2026-10-08 (Apache-2.0, own LICENSE and NOTICE). This treatment does not prove chain of title.",
       "globs": [
         "sdk-typescript/**"
       ]
@@ -775,7 +775,7 @@
     {
       "id": "home-assistant-imported",
       "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Teslatlas Home Assistant integration imported with its full history on 2026-11-11 (Apache-2.0, own LICENSE and NOTICE), excluding the third-party files classified separately. This treatment does not prove chain of title.",
+      "rationale": "Tesatlas Home Assistant integration imported with its full history on 2026-11-11 (Apache-2.0, own LICENSE and NOTICE), excluding the third-party files classified separately. This treatment does not prove chain of title.",
       "globs": [
         "home-assistant/.github/**",
         "home-assistant/compatibility/**",
@@ -800,7 +800,7 @@
     {
       "id": "edge-imported",
       "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Teslatlas Edge package imported with its full history on 2026-11-11 (AGPL-3.0-only, own LICENSE and NOTICE), excluding the third-party files classified separately. This treatment does not prove chain of title.",
+      "rationale": "Tesatlas Edge package imported with its full history on 2026-11-11 (AGPL-3.0-only, own LICENSE and NOTICE), excluding the third-party files classified separately. This treatment does not prove chain of title.",
       "globs": [
         "edge/.github/**",
         "edge/compatibility/**",
@@ -839,7 +839,7 @@
     {
       "id": "sdk-swift-imported",
       "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Teslatlas Swift SDK package imported with its full history on 2026-11-11 (Apache-2.0, own LICENSE and NOTICE), excluding the third-party files classified separately. This treatment does not prove chain of title.",
+      "rationale": "Tesatlas Swift SDK package imported with its full history on 2026-11-11 (Apache-2.0, own LICENSE and NOTICE), excluding the third-party files classified separately. This treatment does not prove chain of title.",
       "globs": [
         "sdk-swift/.github/**",
         "sdk-swift/Examples/**",
@@ -866,7 +866,7 @@
     {
       "id": "viewer-imported",
       "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Teslatlas Viewer package imported with its full history on 2026-11-11 (Apache-2.0, own LICENSE and NOTICE), excluding the third-party files classified separately. This treatment does not prove chain of title.",
+      "rationale": "Tesatlas Viewer package imported with its full history on 2026-11-11 (Apache-2.0, own LICENSE and NOTICE), excluding the third-party files classified separately. This treatment does not prove chain of title.",
       "globs": [
         "viewer/.github/**",
         "viewer/bin/**",
@@ -888,7 +888,7 @@
         "viewer/CLAUDE.md",
         "viewer/Dockerfile",
         "viewer/NOTICE",
-        "viewer/artifacts/teslatlas-sdk.json",
+        "viewer/artifacts/tesatlas-sdk.json",
         "viewer/README.md",
         "viewer/compose.yaml",
         "viewer/index.html",
@@ -906,12 +906,12 @@
     {
       "id": "viewer-bundled-sdk-archive",
       "class": "GENERATED",
-      "rationale": "Built npm package archive of the project's own TypeScript SDK (@teslatlas/sdk 2026.36.2), bundled in the imported Viewer package; it embeds package/LICENSE.",
+      "rationale": "Built npm package archive of the project's own TypeScript SDK (@tesatlas/sdk 2026.36.2), bundled in the imported Viewer package; it embeds package/LICENSE.",
       "paths": [
-        "viewer/artifacts/teslatlas-sdk-2026.36.2.tgz"
+        "viewer/artifacts/tesatlas-sdk-2026.36.2.tgz"
       ],
       "exception": {
-        "origin": "Built from the project's own TypeScript SDK (@teslatlas/sdk) as recorded in viewer/artifacts/teslatlas-sdk.json (source commit 2afc5f99ab1a58662570c695618512d4e8e975d8).",
+        "origin": "Built from the project's own TypeScript SDK (@tesatlas/sdk) as recorded in viewer/artifacts/tesatlas-sdk.json (source commit 2afc5f99ab1a58662570c695618512d4e8e975d8).",
         "licensing": "Embeds package/LICENSE, the Apache License 2.0 text. This treatment does not prove chain of title.",
         "release_treatment": "Preserved as imported; not rebuilt or edited here."
       }
@@ -962,10 +962,10 @@
       "class": "THIRD-PARTY",
       "rationale": "Edge copy of the patch against Tesla Fleet Telemetry; it contains upstream context and modifications.",
       "paths": [
-        "edge/packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch"
+        "edge/packaging/fleet-telemetry-bridge/0001-tesatlas-http-dispatcher.patch"
       ],
       "exception": {
-        "origin": "Tesla Fleet Telemetry v0.9.4, revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b, plus the Teslatlas loopback-dispatcher modifications (a fixed loopback HTTP datastore and reliable acknowledgement tests) identified by the patch; see edge/NOTICE and edge/docs/legal/third-party-notices.md.",
+        "origin": "Tesla Fleet Telemetry v0.9.4, revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b, plus the Tesatlas loopback-dispatcher modifications (a fixed loopback HTTP datastore and reliable acknowledgement tests) identified by the patch; see edge/NOTICE and edge/docs/legal/third-party-notices.md.",
         "licensing": "Apache-2.0 for the upstream receiver and the distributed modified receiver; upstream notices remain required.",
         "release_treatment": "Ship the patch, pinned upstream identity, Apache-2.0 text, notices and corresponding source with bundled sidecar releases."
       }

@@ -51,7 +51,7 @@ def test_container_candidate_and_manual_install_boundaries_stay_explicit() -> No
     assert "ghcr.io/home-assistant/home-assistant:2026.8.3" in compose
     assert "stop_grace_period: 60s" in compose
     assert (
-        "custom_components/teslatlas_hub:/config/custom_components/teslatlas_hub:ro"
+        "custom_components/tesatlas_hub:/config/custom_components/tesatlas_hub:ro"
         in compose
     )
     assert "selected Debian 13 ARM64 lane" in docker

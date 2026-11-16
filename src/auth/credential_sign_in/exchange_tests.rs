@@ -163,7 +163,7 @@ async fn owner_exchange_stores_one_own_pair_and_nothing_else() {
     let (head, body) = request.split_once("\r\n\r\n").expect("request parts");
     assert!(head.starts_with("POST /oauth2/v3/token HTTP/1.1\r\n"));
     let head = head.to_ascii_lowercase();
-    assert!(head.contains("\r\ncontent-type: application/json") && head.contains("\r\naccept: application/json") && head.contains("\r\nuser-agent: teslatlas-hub/"));
+    assert!(head.contains("\r\ncontent-type: application/json") && head.contains("\r\naccept: application/json") && head.contains("\r\nuser-agent: tesatlas-hub/"));
     let sent: serde_json::Value = serde_json::from_str(body).expect("JSON body");
     assert_eq!(sent, serde_json::json!({
         "grant_type": "authorization_code", "client_id": OWNER_CLIENT_ID, "code": "code-stores-one-pair",
@@ -332,7 +332,7 @@ fn owner_exchange_logs_carry_no_secret() {
 /// The refresh path's values are the same constants.
 #[test]
 fn owner_exchange_client_matches_the_mac_sign_in_window() {
-    let swift = include_str!("../../../macos/TeslatlasHubApp/TeslatlasHubApp/TeslaAuthWindowController.swift");
+    let swift = include_str!("../../../macos/TesatlasHubApp/TesatlasHubApp/TeslaAuthWindowController.swift");
     for line in [
         format!("static let clientID = \"{OWNER_CLIENT_ID}\""),
         format!("static let redirectURI = \"{OWNER_REDIRECT_URI}\""),

@@ -122,7 +122,7 @@ version_output=$("$binary" --version 2>&1) || {
     echo "Edge binary version query failed" >&2
     exit 65
 }
-[ "$version_output" = "teslatlas-edge $version" ] || {
+[ "$version_output" = "tesatlas-edge $version" ] || {
     echo "Edge binary version does not match package version" >&2
     exit 65
 }
@@ -139,36 +139,36 @@ validate_elf "$binary" 'Edge binary'
 validate_elf "$receiver_binary" 'receiver binary'
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-stage=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-edge-deb.XXXXXX")
+stage=$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-edge-deb.XXXXXX")
 trap 'find "$stage" -depth -delete' EXIT HUP INT TERM
-package_root="$stage/teslatlas-edge"
+package_root="$stage/tesatlas-edge"
 
 install -d -m 0755 \
     "$package_root/DEBIAN" \
-    "$package_root/etc/teslatlas-edge" \
+    "$package_root/etc/tesatlas-edge" \
     "$package_root/lib/systemd/system" \
     "$package_root/usr/bin" \
-    "$package_root/usr/lib/teslatlas-edge" \
-    "$package_root/usr/share/doc/teslatlas-edge"
-install -m 0755 "$binary" "$package_root/usr/bin/teslatlas-edge"
-install -m 0755 "$receiver_binary" "$package_root/usr/lib/teslatlas-edge/fleet-telemetry"
+    "$package_root/usr/lib/tesatlas-edge" \
+    "$package_root/usr/share/doc/tesatlas-edge"
+install -m 0755 "$binary" "$package_root/usr/bin/tesatlas-edge"
+install -m 0755 "$receiver_binary" "$package_root/usr/lib/tesatlas-edge/fleet-telemetry"
 install -m 0755 "$root/scripts/run-with-spool-format-guard.sh" \
-    "$package_root/usr/lib/teslatlas-edge/run-with-spool-format-guard.sh"
-install -m 0644 "$root/packaging/linux/teslatlas-edge.service" \
-    "$package_root/lib/systemd/system/teslatlas-edge.service"
-install -m 0644 "$root/packaging/linux/teslatlas-fleet-telemetry.service" \
-    "$package_root/lib/systemd/system/teslatlas-fleet-telemetry.service"
+    "$package_root/usr/lib/tesatlas-edge/run-with-spool-format-guard.sh"
+install -m 0644 "$root/packaging/linux/tesatlas-edge.service" \
+    "$package_root/lib/systemd/system/tesatlas-edge.service"
+install -m 0644 "$root/packaging/linux/tesatlas-fleet-telemetry.service" \
+    "$package_root/lib/systemd/system/tesatlas-fleet-telemetry.service"
 install -m 0644 "$root/packaging/config.toml.example" \
-    "$package_root/etc/teslatlas-edge/config.toml"
+    "$package_root/etc/tesatlas-edge/config.toml"
 install -m 0644 "$root/packaging/fleet-telemetry.json.example" \
-    "$package_root/etc/teslatlas-edge/fleet-telemetry.json"
-install -m 0644 "$root/LICENSE" "$package_root/usr/share/doc/teslatlas-edge/copyright"
+    "$package_root/etc/tesatlas-edge/fleet-telemetry.json"
+install -m 0644 "$root/LICENSE" "$package_root/usr/share/doc/tesatlas-edge/copyright"
 install -m 0644 "$root/docs/legal/third-party-notices.md" \
-    "$package_root/usr/share/doc/teslatlas-edge/THIRD_PARTY_NOTICES.md"
+    "$package_root/usr/share/doc/tesatlas-edge/THIRD_PARTY_NOTICES.md"
 install -m 0644 "$root/docs/operations/native-installation.md" \
-    "$package_root/usr/share/doc/teslatlas-edge/NATIVE_INSTALLATION.md"
+    "$package_root/usr/share/doc/tesatlas-edge/NATIVE_INSTALLATION.md"
 install -m 0644 "$root/docs/operations/upgrade-backup-recovery.md" \
-    "$package_root/usr/share/doc/teslatlas-edge/UPGRADE_BACKUP_RECOVERY.md"
+    "$package_root/usr/share/doc/tesatlas-edge/UPGRADE_BACKUP_RECOVERY.md"
 
 case "$version" in
     *-*) debian_version=${version%%-*}~${version#*-}-1 ;;
@@ -182,8 +182,8 @@ for hook in preinst postinst prerm postrm; do
     install -m 0755 "$root/packaging/linux/$hook" "$package_root/DEBIAN/$hook"
 done
 printf '%s\n' \
-    '/etc/teslatlas-edge/config.toml' \
-    '/etc/teslatlas-edge/fleet-telemetry.json' > "$package_root/DEBIAN/conffiles"
+    '/etc/tesatlas-edge/config.toml' \
+    '/etc/tesatlas-edge/fleet-telemetry.json' > "$package_root/DEBIAN/conffiles"
 
 mkdir -p "$(dirname -- "$output")"
 dpkg-deb --root-owner-group --build "$package_root" "$output"

@@ -19,22 +19,22 @@ import owned_command
 
 
 SCHEMA_VERSION = 1
-CANONICAL_ROOT = "teslatlas-sdk-swift"
+CANONICAL_ROOT = "tesatlas-sdk-swift"
 CONSUMER_ROOT = "external-four-library-consumer"
 HANDOFF_MANIFEST = "source-handoff.json"
 PROTOCOL_SOURCE_COMMIT = "53b5c6483990db84e5214176755f398e93d87b1b"
 PUBLIC_PRODUCTS = (
-    "TeslatlasHubSDK",
-    "TeslatlasCommands",
-    "TeslatlasHubV1Compatibility",
-    "TeslatlasCurrentHub",
+    "TesatlasHubSDK",
+    "TesatlasCommands",
+    "TesatlasHubV1Compatibility",
+    "TesatlasCurrentHub",
 )
 LEGACY_ROOT_FILES = ("Package.swift", "VERSION", "LICENSE", "README.md")
 ROOT_FILES = LEGACY_ROOT_FILES + ("NOTICE",)
 SOURCE_DIRECTORIES = (
     "Sources",
     "Tests",
-    "Examples/TeslatlasHubSDKExample",
+    "Examples/TesatlasHubSDKExample",
     "Examples/CurrentHubConsumer",
 )
 PUBLIC_DOCUMENTS = (
@@ -60,32 +60,32 @@ let package = Package(
   name: "ExternalFourLibraryConsumer",
   platforms: [.macOS(.v14), .iOS(.v17)],
   dependencies: [
-    .package(path: "../teslatlas-sdk-swift")
+    .package(path: "../tesatlas-sdk-swift")
   ],
   targets: [
     .executableTarget(
       name: "ExternalFourLibraryConsumer",
       dependencies: [
-        .product(name: "TeslatlasHubSDK", package: "teslatlas-sdk-swift"),
-        .product(name: "TeslatlasCommands", package: "teslatlas-sdk-swift"),
-        .product(name: "TeslatlasHubV1Compatibility", package: "teslatlas-sdk-swift"),
-        .product(name: "TeslatlasCurrentHub", package: "teslatlas-sdk-swift"),
+        .product(name: "TesatlasHubSDK", package: "tesatlas-sdk-swift"),
+        .product(name: "TesatlasCommands", package: "tesatlas-sdk-swift"),
+        .product(name: "TesatlasHubV1Compatibility", package: "tesatlas-sdk-swift"),
+        .product(name: "TesatlasCurrentHub", package: "tesatlas-sdk-swift"),
       ]
     )
   ]
 )
 """
 
-CONSUMER_MAIN = """import TeslatlasCommands
-import TeslatlasCurrentHub
-import TeslatlasHubSDK
-import TeslatlasHubV1Compatibility
+CONSUMER_MAIN = """import TesatlasCommands
+import TesatlasCurrentHub
+import TesatlasHubSDK
+import TesatlasHubV1Compatibility
 
 let importedProducts = [
-  "TeslatlasHubSDK",
-  "TeslatlasCommands",
-  "TeslatlasHubV1Compatibility",
-  "TeslatlasCurrentHub",
+  "TesatlasHubSDK",
+  "TesatlasCommands",
+  "TesatlasHubV1Compatibility",
+  "TesatlasCurrentHub",
 ]
 
 print(importedProducts.joined(separator: ","))
@@ -288,7 +288,7 @@ def prepare(source_root: Path, output: Path, *, root_files=ROOT_FILES) -> dict[s
         identity_payload = _identity_payload(source_files)
         manifest = {
             "schema_version": SCHEMA_VERSION,
-            "kind": "teslatlas-swift-source-handoff",
+            "kind": "tesatlas-swift-source-handoff",
             "source_only": True,
             "runtime_acceptance": False,
             "protocol_runtime_source_commit": PROTOCOL_SOURCE_COMMIT,
@@ -490,7 +490,7 @@ def verify(handoff_root: Path, *, allow_legacy=False) -> dict[str, Any]:
     )
     if manifest["schema_version"] != SCHEMA_VERSION:
         raise HandoffError("unsupported schema version")
-    if manifest["kind"] != "teslatlas-swift-source-handoff":
+    if manifest["kind"] != "tesatlas-swift-source-handoff":
         raise HandoffError("unexpected handoff kind")
     if manifest["source_only"] is not True or manifest["runtime_acceptance"] is not False:
         raise HandoffError("handoff claim boundary changed")
@@ -631,7 +631,7 @@ def smoke(handoff_root: Path) -> dict[str, Any]:
                 f"got {library_products}"
             )
 
-        with tempfile.TemporaryDirectory(prefix="teslatlas-swift-smoke-") as scratch:
+        with tempfile.TemporaryDirectory(prefix="tesatlas-swift-smoke-") as scratch:
             _run(
                 [
                     "swift",
@@ -664,7 +664,7 @@ def smoke(handoff_root: Path) -> dict[str, Any]:
 
 
 def exercise(source_root: Path) -> dict[str, Any]:
-    with tempfile.TemporaryDirectory(prefix="teslatlas-swift-handoff-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="tesatlas-swift-handoff-") as temporary:
         handoff = Path(temporary) / "handoff"
         prepare(source_root, handoff)
         result = smoke(handoff)

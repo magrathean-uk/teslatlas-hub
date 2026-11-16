@@ -1,6 +1,6 @@
 // External disposable public-API discriminator; coordinator owns compilation/run.
 // Refuses an existing root. No raw SQL, listener, wire replacement, or live data.
-// Dependencies: teslatlas-hub, axum, http-body-util, serde_json, tokio, tower, uuid.
+// Dependencies: tesatlas-hub, axum, http-body-util, serde_json, tokio, tower, uuid.
 // The direct PostgreSQL importer is traced separately, not executed by this probe.
 use crate::{
     db::{HubStore, LifecycleCommit, SourceDescriptor, VehicleDescriptor},

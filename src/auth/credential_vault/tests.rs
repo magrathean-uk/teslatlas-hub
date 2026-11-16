@@ -914,7 +914,7 @@ fn refused_credential_purge_listing_names_what_it_removes_and_deletes_nothing() 
         "only the refused Fleet slot; the admitted own-login pair is not listed");
     assert!(report.old_key_files.contains(&FLEET_KEY_FILE), "{:?}", report.old_key_files);
     assert!(report.old_tables.contains(&"fleet_tokens") && report.old_tables.contains(&"legacy_owner_tokens"), "{:?}", report.old_tables);
-    assert_eq!(report.confirm_command.as_deref(), Some("teslatlas-hub purge-refused-credentials --confirm"));
+    assert_eq!(report.confirm_command.as_deref(), Some("tesatlas-hub purge-refused-credentials --confirm"));
     let text = serde_json::to_string(&report).expect("json");
     for secret in ["fleet-access-0001", "fleet-refresh-0001", "access-0003", "refresh-0003", "access-0001"] {
         assert!(!text.contains(secret), "no secret value in the listing: {text}");
@@ -1045,13 +1045,13 @@ fn refused_credential_purge_status_doctor_and_backup_name_the_command_until_the_
     let (root, _) = refused_purge_blocked_fixture();
     let store = HubStore::initialize(root.path()).expect("store");
     let hint = crate::runtime::operator::purge::hint(&store).expect("hint").expect("refused credentials are kept");
-    assert_eq!(hint["command"], "teslatlas-hub purge-refused-credentials");
+    assert_eq!(hint["command"], "tesatlas-hub purge-refused-credentials");
     assert_eq!(hint["refusedSlots"], serde_json::json!(["fleet_api"]));
-    assert!(hint["message"].as_str().is_some_and(|text| text.contains("teslatlas-hub purge-refused-credentials --confirm")), "{hint}");
+    assert!(hint["message"].as_str().is_some_and(|text| text.contains("tesatlas-hub purge-refused-credentials --confirm")), "{hint}");
     let destination = crate::private_tempdir().expect("destination");
     let error = crate::data_recovery::create_data_backup(&store, &destination.path().join("backup")).expect_err("backup refused");
     let message = crate::data_recovery::refused_credential_backup_message(&store, &error).expect("the blocked refusal names the command");
-    assert!(message.contains("teslatlas-hub purge-refused-credentials --confirm"), "{message}");
+    assert!(message.contains("tesatlas-hub purge-refused-credentials --confirm"), "{message}");
     let vault = open(root.path());
     vault.purge_refused_credentials().expect("purge");
     drop(vault);

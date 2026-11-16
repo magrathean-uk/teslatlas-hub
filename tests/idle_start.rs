@@ -34,7 +34,7 @@ use std::{
 
 use tempfile::TempDir;
 
-const BIN: &str = env!("CARGO_BIN_EXE_teslatlas-hub");
+const BIN: &str = env!("CARGO_BIN_EXE_tesatlas-hub");
 const SERVE_START_LIMIT: Duration = Duration::from_secs(90);
 const QUIET_PERIOD: Duration = Duration::from_secs(3);
 
@@ -138,7 +138,7 @@ impl Hub {
             .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
             .env("TMPDIR", self.tmp.path())
             .env("RUST_LOG", "info")
-            .env("TESLATLAS_HUB_JOURNEY_DOUBLES", self.path("doubles.json"));
+            .env("TESATLAS_HUB_JOURNEY_DOUBLES", self.path("doubles.json"));
         for variable in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"] {
             command.env(variable, &self.endpoint.address);
         }
@@ -272,7 +272,7 @@ fn expect_serve_refused(hub: &Hub, label: &str) {
 /// through the existing doubles: the Hub's own pair, one imported car and a
 /// collector cadence. The service is stopped, as it is for a restart.
 fn sign_in_and_configure(hub: &Hub) {
-    use teslatlas_hub::{
+    use tesatlas_hub::{
         db::HubStore,
         hub_pack::ProjectionCarSettings,
         legacy_owner_credentials::load_or_create_cursor_key,
@@ -280,7 +280,7 @@ fn sign_in_and_configure(hub: &Hub) {
         source_db_projection::{SourceDbCar, SourceDbHistory},
     };
     let data = hub.data();
-    teslatlas_hub::auth::credential_sign_in::seed_owner_pair_for_test(
+    tesatlas_hub::auth::credential_sign_in::seed_owner_pair_for_test(
         &data,
         "idle-start-access-0001",
         "idle-start-refresh-0001",
@@ -288,7 +288,7 @@ fn sign_in_and_configure(hub: &Hub) {
     )
     .expect("the Hub's own pair");
     assert!(
-        teslatlas_hub::auth::credential_sign_in::record_provider_admission_for_test(&data)
+        tesatlas_hub::auth::credential_sign_in::record_provider_admission_for_test(&data)
             .expect("provider admission record")
     );
     let store = HubStore::initialize(&data).expect("store");
@@ -416,7 +416,7 @@ fn idle_start_real_binary_starts_idle_and_is_configured_only_by_sign_in() {
 /// stored car without a credential is not idle.
 #[test]
 fn idle_start_real_binary_refuses_a_car_with_the_collector_off() {
-    use teslatlas_hub::{
+    use tesatlas_hub::{
         db::HubStore,
         hub_pack::ProjectionCarSettings,
         source_db_import::{SourceDbImportRequest, SourceDbImportScope, publish_history},
@@ -426,7 +426,7 @@ fn idle_start_real_binary_refuses_a_car_with_the_collector_off() {
     let store = HubStore::initialize(hub.data()).expect("store");
     publish_history(
         &store,
-        &teslatlas_hub::protocol::CursorKey::from_bytes([0x5A; 32]),
+        &tesatlas_hub::protocol::CursorKey::from_bytes([0x5A; 32]),
         &SourceDbImportRequest {
             new_import_source: false,
             source_key: "idle-start-broken".to_owned(),

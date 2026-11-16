@@ -53,10 +53,10 @@ pub(crate) use storage::durability_fault;
 pub(crate) use sync::manifest_signing;
 
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const SOURCE_URL: &str = "https://github.com/magrathean-uk/teslatlas-hub";
+pub const SOURCE_URL: &str = "https://github.com/magrathean-uk/tesatlas-hub";
 pub const UNBOUND_SOURCE_ERROR: &str = "this non-distributable developer build has no exact \
-source identity; rebuild with TESLATLAS_HUB_SOURCE_COMMIT set to a pushed 40-hex commit";
-const SOURCE_COMMIT_RAW: &str = env!("TESLATLAS_HUB_SOURCE_COMMIT");
+source identity; rebuild with TESATLAS_HUB_SOURCE_COMMIT set to a pushed 40-hex commit";
+const SOURCE_COMMIT_RAW: &str = env!("TESATLAS_HUB_SOURCE_COMMIT");
 
 /// Exact source commit embedded by an explicit build input.
 pub fn source_commit() -> Option<&'static str> {
@@ -217,17 +217,17 @@ pub(crate) mod test_log_capture {
     }
 }
 
-/// Interactive legal notice printed by `teslatlas-hub legal`.
+/// Interactive legal notice printed by `tesatlas-hub legal`.
 pub fn legal_notice() -> String {
     let corresponding_source = corresponding_source_url().unwrap_or_else(|| {
-        "UNBOUND DEVELOPMENT BUILD; rebuild with TESLATLAS_HUB_SOURCE_COMMIT before distribution"
+        "UNBOUND DEVELOPMENT BUILD; rebuild with TESATLAS_HUB_SOURCE_COMMIT before distribution"
             .to_owned()
     });
     format!(
-        "Teslatlas Hub {BUILD_VERSION}\n\
+        "Tesatlas Hub {BUILD_VERSION}\n\
          Copyright © 2026 MAGRATHEAN UK LTD\n\
          License: AGPL-3.0-only\n\
-         Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: {SOURCE_URL}\n\
+         Tesatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: {SOURCE_URL}\n\
          Corresponding Source: {corresponding_source}\n\
          Unofficial; not affiliated with Tesla, Inc. or with the makers of software it can import from; no warranty."
     )
@@ -305,7 +305,7 @@ mod legal_notice_tests {
         let notice = legal_notice();
         let actual = notice
             .lines()
-            .find(|line| line.starts_with("Teslatlas Hub ") && line.contains("Source: "))
+            .find(|line| line.starts_with("Tesatlas Hub ") && line.contains("Source: "))
             .expect("interactive notice has an attribution line");
         assert_eq!(actual.as_bytes(), expected.as_bytes());
     }
@@ -314,7 +314,7 @@ mod legal_notice_tests {
     fn legal_notice_identifies_agpl_only_and_notice_facts() {
         let notice = legal_notice();
         assert!(
-            notice.starts_with(&format!("Teslatlas Hub {BUILD_VERSION}\n")),
+            notice.starts_with(&format!("Tesatlas Hub {BUILD_VERSION}\n")),
             "notice must identify the running package version: {notice}"
         );
         assert!(

@@ -68,10 +68,10 @@ require_hub_version() {
     version_output=$(
         version_status=0
         "$version_binary" --version 2>&1 || version_status=$?
-        printf '%s' "__TESLATLAS_HUB_VERSION_STATUS_${version_status}__"
+        printf '%s' "__TESATLAS_HUB_VERSION_STATUS_${version_status}__"
     )
-    expected_output=$(printf 'teslatlas-hub %s\n%s' \
-        "$expected_version" '__TESLATLAS_HUB_VERSION_STATUS_0__')
+    expected_output=$(printf 'tesatlas-hub %s\n%s' \
+        "$expected_version" '__TESATLAS_HUB_VERSION_STATUS_0__')
     [ "$version_output" = "$expected_output" ]
 }
 require_hub_source_commit() {
@@ -80,11 +80,11 @@ require_hub_source_commit() {
     source_output=$(
         source_status=0
         "$source_binary" source 2>&1 || source_status=$?
-        printf '%s' "__TESLATLAS_HUB_SOURCE_STATUS_${source_status}__"
+        printf '%s' "__TESATLAS_HUB_SOURCE_STATUS_${source_status}__"
     )
     expected_output=$(printf '%s/tree/%s\n%s' \
-        'https://github.com/magrathean-uk/teslatlas-hub' "$expected_commit" \
-        '__TESLATLAS_HUB_SOURCE_STATUS_0__')
+        'https://github.com/magrathean-uk/tesatlas-hub' "$expected_commit" \
+        '__TESATLAS_HUB_SOURCE_STATUS_0__')
     [ "$source_output" = "$expected_output" ]
 }
 binary=$(regular_binary_path "$binary" 'binary')
@@ -280,38 +280,38 @@ if [ "$include_fleet_sidecars" = true ]; then
     fleet_telemetry_is_dynamic=$validated_binary_is_dynamic
 fi
 
-stage=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-hub-deb.XXXXXX")
+stage=$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-hub-deb.XXXXXX")
 trap 'find "$stage" -depth -delete' EXIT HUP INT TERM
-package_root="$stage/debian/teslatlas-hub"
+package_root="$stage/debian/tesatlas-hub"
 
-install -D -m 0755 "$binary" "$package_root/usr/bin/teslatlas-hub"
+install -D -m 0755 "$binary" "$package_root/usr/bin/tesatlas-hub"
 if [ "$include_fleet_sidecars" = true ]; then
     install -D -m 0755 "$command_proxy_binary" \
-        "$package_root/usr/lib/teslatlas-hub/tesla-http-proxy"
+        "$package_root/usr/lib/tesatlas-hub/tesla-http-proxy"
     install -D -m 0755 "$fleet_telemetry_binary" \
-        "$package_root/usr/lib/teslatlas-hub/fleet-telemetry"
-    [ "$(sha256_file "$package_root/usr/lib/teslatlas-hub/tesla-http-proxy")" \
+        "$package_root/usr/lib/tesatlas-hub/fleet-telemetry"
+    [ "$(sha256_file "$package_root/usr/lib/tesatlas-hub/tesla-http-proxy")" \
         = "$command_proxy_sha256" ] \
         || { echo "staged command proxy digest changed" >&2; exit 65; }
-    [ "$(sha256_file "$package_root/usr/lib/teslatlas-hub/fleet-telemetry")" \
+    [ "$(sha256_file "$package_root/usr/lib/tesatlas-hub/fleet-telemetry")" \
         = "$fleet_telemetry_sha256" ] \
         || { echo "staged Fleet Telemetry receiver digest changed" >&2; exit 65; }
-    mkdir -p "$package_root/usr/share/doc/teslatlas-hub"
+    mkdir -p "$package_root/usr/share/doc/tesatlas-hub"
     printf '%s  %s\n%s  %s\n' \
         "$command_proxy_sha256" tesla-http-proxy \
         "$fleet_telemetry_sha256" fleet-telemetry \
-        > "$package_root/usr/share/doc/teslatlas-hub/SIDECAR_SHA256SUMS"
+        > "$package_root/usr/share/doc/tesatlas-hub/SIDECAR_SHA256SUMS"
     install -m 0644 "$sidecar_lock" \
-        "$package_root/usr/share/doc/teslatlas-hub/SIDECAR_BUILD_LOCK"
+        "$package_root/usr/share/doc/tesatlas-hub/SIDECAR_BUILD_LOCK"
 fi
 mkdir -p "$stage/debian"
 printf '%s\n' \
-    'Source: teslatlas-hub' \
+    'Source: tesatlas-hub' \
     'Section: utils' \
     'Priority: optional' \
     'Maintainer: György Bolyki <contact@magrathean.uk>' \
     '' \
-    'Package: teslatlas-hub' \
+    'Package: tesatlas-hub' \
     "Architecture: $architecture" \
     'Description: Self-hosted multi-car Tesla telemetry hub' > "$stage/debian/control"
 runtime_dependencies=
@@ -324,11 +324,11 @@ if [ "$binary_is_dynamic" = true ] \
     }
     set -- -O
     [ "$binary_is_dynamic" = false ] \
-        || set -- "$@" -e "debian/teslatlas-hub/usr/bin/teslatlas-hub"
+        || set -- "$@" -e "debian/tesatlas-hub/usr/bin/tesatlas-hub"
     [ "$command_proxy_is_dynamic" = false ] \
-        || set -- "$@" -e "debian/teslatlas-hub/usr/lib/teslatlas-hub/tesla-http-proxy"
+        || set -- "$@" -e "debian/tesatlas-hub/usr/lib/tesatlas-hub/tesla-http-proxy"
     [ "$fleet_telemetry_is_dynamic" = false ] \
-        || set -- "$@" -e "debian/teslatlas-hub/usr/lib/teslatlas-hub/fleet-telemetry"
+        || set -- "$@" -e "debian/tesatlas-hub/usr/lib/tesatlas-hub/fleet-telemetry"
     if ! shlib_substvars=$(CDPATH='' cd -- "$stage" && dpkg-shlibdeps "$@"); then
         echo "failed to determine shared-library dependencies" >&2
         exit 65
@@ -360,35 +360,35 @@ if [ -n "$runtime_dependencies" ]; then
 fi
 escaped_runtime_dependency_suffix=$(printf '%s' "$runtime_dependency_suffix" | sed 's/[&|\\]/\\&/g')
 
-install -D -m 0644 "$root/packaging/linux/teslatlas-hub.service" \
-    "$package_root/lib/systemd/system/teslatlas-hub.service"
-install -D -m 0644 "$root/packaging/linux/teslatlas-hub-terminal-failure.target" \
-    "$package_root/lib/systemd/system/teslatlas-hub-terminal-failure.target"
+install -D -m 0644 "$root/packaging/linux/tesatlas-hub.service" \
+    "$package_root/lib/systemd/system/tesatlas-hub.service"
+install -D -m 0644 "$root/packaging/linux/tesatlas-hub-terminal-failure.target" \
+    "$package_root/lib/systemd/system/tesatlas-hub-terminal-failure.target"
 install -D -m 0644 "$root/packaging/linux/config.toml" \
-    "$package_root/etc/teslatlas-hub/config.toml"
+    "$package_root/etc/tesatlas-hub/config.toml"
 if [ "$include_fleet_sidecars" = true ]; then
-    install -D -m 0644 "$root/packaging/linux/teslatlas-command-proxy.service" \
-        "$package_root/lib/systemd/system/teslatlas-command-proxy.service"
-    install -D -m 0644 "$root/packaging/linux/teslatlas-fleet-telemetry.service" \
-        "$package_root/lib/systemd/system/teslatlas-fleet-telemetry.service"
+    install -D -m 0644 "$root/packaging/linux/tesatlas-command-proxy.service" \
+        "$package_root/lib/systemd/system/tesatlas-command-proxy.service"
+    install -D -m 0644 "$root/packaging/linux/tesatlas-fleet-telemetry.service" \
+        "$package_root/lib/systemd/system/tesatlas-fleet-telemetry.service"
     install -D -m 0644 "$root/packaging/linux/command-proxy.env" \
-        "$package_root/etc/teslatlas-hub/command-proxy.env"
+        "$package_root/etc/tesatlas-hub/command-proxy.env"
     install -D -m 0644 "$root/packaging/linux/fleet-telemetry.json" \
-        "$package_root/etc/teslatlas-hub/fleet-telemetry.json"
+        "$package_root/etc/tesatlas-hub/fleet-telemetry.json"
 fi
-install -D -m 0644 "$root/LICENSE" "$package_root/usr/share/doc/teslatlas-hub/copyright"
-install -D -m 0644 "$root/NOTICE" "$package_root/usr/share/doc/teslatlas-hub/NOTICE"
+install -D -m 0644 "$root/LICENSE" "$package_root/usr/share/doc/tesatlas-hub/copyright"
+install -D -m 0644 "$root/NOTICE" "$package_root/usr/share/doc/tesatlas-hub/NOTICE"
 install -D -m 0644 "$root/docs/legal/third-party-notices.md" \
-    "$package_root/usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md"
+    "$package_root/usr/share/doc/tesatlas-hub/THIRD_PARTY_NOTICES.md"
 install -D -m 0644 "$root/docs/legal/provenance.md" \
-    "$package_root/usr/share/doc/teslatlas-hub/PROVENANCE.md"
+    "$package_root/usr/share/doc/tesatlas-hub/PROVENANCE.md"
 install -D -m 0644 "$root/docs/legal/additional-terms.md" \
-    "$package_root/usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md"
+    "$package_root/usr/share/doc/tesatlas-hub/ADDITIONAL_TERMS.md"
 install -D -m 0644 "$root/docs/legal/source-availability.md" \
-    "$package_root/usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md"
+    "$package_root/usr/share/doc/tesatlas-hub/SOURCE_AVAILABILITY.md"
 install -D -m 0644 "$root/docs/releases/verification.md" \
-    "$package_root/usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md"
-dependency_legal="$package_root/usr/share/doc/teslatlas-hub/dependency-legal"
+    "$package_root/usr/share/doc/tesatlas-hub/RELEASE_VERIFICATION.md"
+dependency_legal="$package_root/usr/share/doc/tesatlas-hub/dependency-legal"
 mkdir -p "$dependency_legal"
 for legal_component in RUST_THIRD_PARTY_NOTICES.generated.md \
     rust-dependency-inventory.json rust-sbom.spdx.json legal-bundle-manifest.json; do
@@ -419,11 +419,11 @@ sed \
     -e "s/@ARCHITECTURE@/$architecture/g" \
     -e "s|@RUNTIME_DEPENDS@|$escaped_runtime_dependency_suffix|g" \
     "$root/packaging/linux/control.in" > "$package_root/DEBIAN/control"
-printf '%s\n' '/etc/teslatlas-hub/config.toml' > "$package_root/DEBIAN/conffiles"
+printf '%s\n' '/etc/tesatlas-hub/config.toml' > "$package_root/DEBIAN/conffiles"
 if [ "$include_fleet_sidecars" = true ]; then
     printf '%s\n' \
-        '/etc/teslatlas-hub/command-proxy.env' \
-        '/etc/teslatlas-hub/fleet-telemetry.json' >> "$package_root/DEBIAN/conffiles"
+        '/etc/tesatlas-hub/command-proxy.env' \
+        '/etc/tesatlas-hub/fleet-telemetry.json' >> "$package_root/DEBIAN/conffiles"
 fi
 
 mkdir -p "$(dirname -- "$output")"

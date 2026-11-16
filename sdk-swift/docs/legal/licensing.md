@@ -1,6 +1,6 @@
 # Licensing
 
-Teslatlas Swift SDK is licensed under the [Apache License, Version
+Tesatlas Swift SDK is licensed under the [Apache License, Version
 2.0](../../LICENSE). The complete licence text in the repository root controls.
 This page is explanatory only and does not change that grant.
 

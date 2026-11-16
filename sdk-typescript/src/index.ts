@@ -6,7 +6,7 @@ export type {
 } from "./auth/credential-store.js";
 export {
   ProtocolValidationError,
-  TeslatlasError,
+  TesatlasError,
   TransportError,
   type SafeRequestId,
 } from "./core/errors.js";

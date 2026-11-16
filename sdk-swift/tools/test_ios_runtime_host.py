@@ -18,10 +18,10 @@ SPEC = HOST / "project.yml"
 PROJECT = HOST / "CurrentHubRuntimeHost.xcodeproj"
 SCHEME = PROJECT / "xcshareddata/xcschemes/CurrentHubRuntimeHost.xcscheme"
 PRODUCTS = (
-    "TeslatlasHubSDK",
-    "TeslatlasCommands",
-    "TeslatlasHubV1Compatibility",
-    "TeslatlasCurrentHub",
+    "TesatlasHubSDK",
+    "TesatlasCommands",
+    "TesatlasHubV1Compatibility",
+    "TesatlasCurrentHub",
 )
 
 
@@ -33,10 +33,10 @@ class IOSRuntimeHostTests(unittest.TestCase):
             contents = declaration.read_text(encoding="utf-8")
             self.assertIn(support, contents)
             self.assertNotIn("CurrentHubMatrixWorkerTests.swift", contents)
-        contents = (ROOT / "Tests/TeslatlasCurrentHubTests" / support).read_text()
+        contents = (ROOT / "Tests/TesatlasCurrentHubTests" / support).read_text()
         self.assertNotIn("MatrixSHA256", contents)
         self.assertIn("CurrentHubSHA256.hexDigest(of:", contents)
-        sdk = (ROOT / "Sources/TeslatlasCurrentHub/CurrentHubSHA256.swift").read_text()
+        sdk = (ROOT / "Sources/TesatlasCurrentHub/CurrentHubSHA256.swift").read_text()
         self.assertIn("enum CurrentHubSHA256", sdk)
         self.assertIn("static func hexDigest(of data: Data)", sdk)
 

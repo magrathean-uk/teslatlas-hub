@@ -2,9 +2,9 @@
 
 ## System and scope
 
-Teslatlas Protocol publishes source-neutral schemas, OpenAPI documents, event
+Tesatlas Protocol publishes source-neutral schemas, OpenAPI documents, event
 contracts, profiles, fixtures, and conformance tooling. It does not implement
-the Hub service, SDKs, the Teslatlas App, deployment infrastructure, or a
+the Hub service, SDKs, the Tesatlas App, deployment infrastructure, or a
 hosted endpoint.
 
 Report protocol defects that could cause an implementation to expose vehicle,
@@ -29,7 +29,7 @@ receipt verification; or make unsafe public test data appear valid.
 Follow the [published Magrathean UK security policy](https://raw.githubusercontent.com/magrathean-uk/.github/main/SECURITY.md)
 to report a suspected vulnerability privately. Email
 [contact@magrathean.uk](mailto:contact@magrathean.uk) with the subject
-`SECURITY: teslatlas-protocol`. This is the organisation's existing reporting
+`SECURITY: tesatlas-protocol`. This is the organisation's existing reporting
 route.
 
 Do not open a public issue, discussion, or pull request for a suspected

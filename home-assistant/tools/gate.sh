@@ -3,7 +3,7 @@
 # Usage: tools/gate.sh [--dry-run]
 # Receipt paths in compatibility/hub.json are relative to the workspace root
 # (the parent of the hub's main checkout, found through the git common directory,
-# so it is the same from a git worktree); override with TESLATLAS_WORKSPACE.
+# so it is the same from a git worktree); override with TESATLAS_WORKSPACE.
 set -eu
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
@@ -23,13 +23,13 @@ step() {
 
 compat_check() {
   common=$(git rev-parse --path-format=absolute --git-common-dir)
-  ws=${TESLATLAS_WORKSPACE:-$(dirname "$(dirname "$common")")}
+  ws=${TESATLAS_WORKSPACE:-$(dirname "$(dirname "$common")")}
   python3 -I - "$repo" "$ws" <<'PY'
 import hashlib, json, pathlib, sys
 repo, ws = map(pathlib.Path, sys.argv[1:3])
 data = json.loads((repo / "compatibility/hub.json").read_text(encoding="utf-8"))
 want = data["profile"]["sha256"]
-sums = repo / "custom_components/teslatlas_hub/profile/hub-http-v1" / data["profile"]["revision"] / "SHA256SUMS"
+sums = repo / "custom_components/tesatlas_hub/profile/hub-http-v1" / data["profile"]["revision"] / "SHA256SUMS"
 got = hashlib.sha256(sums.read_bytes()).hexdigest()
 bad = []
 if got != want:

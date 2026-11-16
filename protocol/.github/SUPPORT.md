@@ -6,7 +6,7 @@ it does not establish that a particular Hub, SDK, or installed product
 implements it.
 
 For a reproducible documentation or contract issue, use the
-[repository issue tracker](https://github.com/magrathean-uk/teslatlas-protocol/issues).
+[repository issue tracker](https://github.com/magrathean-uk/tesatlas-protocol/issues).
 Include:
 
 - The source revision and profile family and revision.

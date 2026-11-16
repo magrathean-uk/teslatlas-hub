@@ -42,7 +42,7 @@ history, process arguments, logs, and backups.
 Create a mode-0600 configuration and a private data directory:
 
 ```toml
-data_dir = "/absolute/private/path/teslatlas-hub-data"
+data_dir = "/absolute/private/path/tesatlas-hub-data"
 bind = "127.0.0.1:8080"
 
 [collector]
@@ -57,9 +57,9 @@ enabled = false
 
 ```sh
 chmod 600 /absolute/path/config.toml
-mkdir -p /absolute/private/path/teslatlas-hub-data
-chmod 700 /absolute/private/path/teslatlas-hub-data
-teslatlas-hub --config /absolute/path/config.toml init
+mkdir -p /absolute/private/path/tesatlas-hub-data
+chmod 700 /absolute/private/path/tesatlas-hub-data
+tesatlas-hub --config /absolute/path/config.toml init
 ```
 
 ## 3. Choose the account region
@@ -150,7 +150,7 @@ redirect_form=$(printf %s "$REDIRECT_URI" | jq -sRr @uri)
       region: $region,
       expiresInSeconds: .expires_in
     }
-  ' | teslatlas-hub --config "$CONFIG" setup-fleet --all-vehicles
+  ' | tesatlas-hub --config "$CONFIG" setup-fleet --all-vehicles
 oauth_status=$?
 
 test "$oauth_status" -eq 0
@@ -210,8 +210,8 @@ HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
 SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$HUB_SOURCE_COMMIT")
 export SOURCE_DATE_EPOCH
 git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
-TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" \
-  cargo build --locked --release --bin teslatlas-hub
+TESATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" \
+  cargo build --locked --release --bin tesatlas-hub
 python3 scripts/go-proxy-evidence.py --repo . \
   --verify-dir dist/go-proxy-evidence-amd64
 python3 scripts/fleet-telemetry-evidence.py --repo . \
@@ -222,7 +222,7 @@ python3 scripts/legal-bundle.py \
   --fleet-telemetry-evidence dist/fleet-telemetry-evidence-amd64 \
   --verify-dir dist/dependency-legal
 scripts/build-deb.sh \
-  --binary target/release/teslatlas-hub \
+  --binary target/release/tesatlas-hub \
   --command-proxy-binary dist/tesla-http-proxy-amd64 \
   --fleet-telemetry-binary dist/fleet-telemetry-amd64 \
   --go-proxy-evidence dist/go-proxy-evidence-amd64 \
@@ -231,8 +231,8 @@ scripts/build-deb.sh \
   --version 1.0.0 \
   --architecture amd64 \
   --source-commit "$HUB_SOURCE_COMMIT" \
-  --output dist/teslatlas-hub_1.0.0_amd64.deb
-sudo dpkg -i dist/teslatlas-hub_1.0.0_amd64.deb
+  --output dist/tesatlas-hub_1.0.0_amd64.deb
+sudo dpkg -i dist/tesatlas-hub_1.0.0_amd64.deb
 ```
 
 `fleet-telemetry-evidence/fleet-telemetry-upstream-source.tar.gz` is the exact
@@ -251,26 +251,26 @@ and private bearer before enabling them. The example paths match the packaged
 units:
 
 ```sh
-sudo install -d -o teslatlas -g teslatlas -m 0700 /var/lib/teslatlas-hub
-sudo -u teslatlas -- sh -c \
-  'umask 077; openssl rand -hex 32 > /var/lib/teslatlas-hub/fleet-telemetry-bearer'
+sudo install -d -o tesatlas -g tesatlas -m 0700 /var/lib/tesatlas-hub
+sudo -u tesatlas -- sh -c \
+  'umask 077; openssl rand -hex 32 > /var/lib/tesatlas-hub/fleet-telemetry-bearer'
 
-sudo install -o teslatlas -g teslatlas -m 0600 \
+sudo install -o tesatlas -g tesatlas -m 0600 \
   /private/command-auth-private.pem \
-  /etc/teslatlas-hub/command-auth-private.pem
-sudo install -o teslatlas -g teslatlas -m 0644 \
+  /etc/tesatlas-hub/command-auth-private.pem
+sudo install -o tesatlas -g tesatlas -m 0644 \
   /private/command-proxy-cert.pem \
-  /etc/teslatlas-hub/command-proxy-cert.pem
-sudo install -o teslatlas -g teslatlas -m 0600 \
+  /etc/tesatlas-hub/command-proxy-cert.pem
+sudo install -o tesatlas -g tesatlas -m 0600 \
   /private/command-proxy-tls-key.pem \
-  /etc/teslatlas-hub/command-proxy-tls-key.pem
-sudo install -o teslatlas -g teslatlas -m 0644 \
-  /private/public-receiver-fullchain.pem /etc/teslatlas-hub/tls.crt
-sudo install -o teslatlas -g teslatlas -m 0600 \
-  /private/public-receiver-key.pem /etc/teslatlas-hub/tls.key
-sudo install -o teslatlas -g teslatlas -m 0644 \
+  /etc/tesatlas-hub/command-proxy-tls-key.pem
+sudo install -o tesatlas -g tesatlas -m 0644 \
+  /private/public-receiver-fullchain.pem /etc/tesatlas-hub/tls.crt
+sudo install -o tesatlas -g tesatlas -m 0600 \
+  /private/public-receiver-key.pem /etc/tesatlas-hub/tls.key
+sudo install -o tesatlas -g tesatlas -m 0644 \
   /private/public-receiver-ca.pem \
-  /etc/teslatlas-hub/fleet-telemetry-ca.pem
+  /etc/tesatlas-hub/fleet-telemetry-ca.pem
 ```
 
 The public receiver certificate must match the configured hostname. Validate
@@ -280,7 +280,7 @@ same registered partner domain as the Fleet application; Tesla rejects a
 different domain before any vehicle is configured.
 
 Add the command proxy and telemetry destination to Hub configuration. The
-bearer path must match `teslatlas-fleet-telemetry.service`:
+bearer path must match `tesatlas-fleet-telemetry.service`:
 
 ```toml
 bind = "127.0.0.1:8080"
@@ -288,13 +288,13 @@ bind = "127.0.0.1:8080"
 [collector]
 provider = "fleet"
 fleet_command_proxy_url = "https://127.0.0.1:4445/"
-fleet_command_proxy_root_certificate_path = "/etc/teslatlas-hub/command-proxy-cert.pem"
+fleet_command_proxy_root_certificate_path = "/etc/tesatlas-hub/command-proxy-cert.pem"
 
 [collector.fleet_telemetry]
 hostname = "telemetry.example.com"
 port = 443
-ca_certificate_path = "/etc/teslatlas-hub/fleet-telemetry-ca.pem"
-ingest_token_path = "/var/lib/teslatlas-hub/fleet-telemetry-bearer"
+ca_certificate_path = "/etc/tesatlas-hub/fleet-telemetry-ca.pem"
+ingest_token_path = "/var/lib/tesatlas-hub/fleet-telemetry-bearer"
 ```
 
 Start only the command proxy, then send Hub's fixed signed configuration to
@@ -302,13 +302,13 @@ every enabled Hub vehicle while the resident Hub service is stopped. The
 configuration command takes Hub's single-process data lock:
 
 ```sh
-sudo systemctl enable --now teslatlas-command-proxy.service
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml preflight
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml configure-fleet-telemetry
-sudo systemctl enable --now teslatlas-hub.service
-sudo systemctl enable --now teslatlas-fleet-telemetry.service
+sudo systemctl enable --now tesatlas-command-proxy.service
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml preflight
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml configure-fleet-telemetry
+sudo systemctl enable --now tesatlas-hub.service
+sudo systemctl enable --now tesatlas-fleet-telemetry.service
 ```
 
 The command prints `vehicles_configured`, `vehicles_skipped`,
@@ -341,13 +341,13 @@ invented.
 
 ```sh
 sudo systemctl --no-pager --full status \
-  teslatlas-hub.service \
-  teslatlas-command-proxy.service \
-  teslatlas-fleet-telemetry.service
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml status
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml doctor
+  tesatlas-hub.service \
+  tesatlas-command-proxy.service \
+  tesatlas-fleet-telemetry.service
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml status
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml doctor
 ```
 
 `status` reports Fleet Telemetry mode `native_push_configured`, delivery policy

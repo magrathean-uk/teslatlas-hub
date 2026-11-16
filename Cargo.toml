@@ -1,12 +1,12 @@
 [package]
-name = "teslatlas-hub"
+name = "tesatlas-hub"
 version = "2026.36.2"
 edition = "2024"
 rust-version = "1.98"
 license = "AGPL-3.0-only"
 authors = ["György Bolyki <contact@magrathean.uk>"]
-description = "Self-hosted vehicle telemetry collector and local Teslatlas sync hub"
-repository = "https://github.com/magrathean-uk/teslatlas-hub"
+description = "Self-hosted vehicle telemetry collector and local Tesatlas sync hub"
+repository = "https://github.com/magrathean-uk/tesatlas-hub"
 readme = ".github/README.md"
 
 [workspace]
@@ -14,11 +14,11 @@ members = ["compute"]
 exclude = ["edge"]
 
 [lib]
-name = "teslatlas_hub"
+name = "tesatlas_hub"
 path = "src/lib.rs"
 
 [[bin]]
-name = "teslatlas-hub"
+name = "tesatlas-hub"
 path = "src/application/main.rs"
 
 [[example]]
@@ -38,7 +38,7 @@ credential-relocation-fixture = []
 journey-doubles = []
 
 [dependencies]
-teslatlas-compute = { path = "compute" }
+tesatlas-compute = { path = "compute" }
 getrandom = "0.4.3"
 aes-gcm = { version = "0.11.1", features = ["zeroize"] }
 # Argon2id (RFC 9106) derives the encrypted-backup key from the recovery password.
@@ -97,7 +97,7 @@ zeroize = { version = "1", features = ["derive"] }
 security-framework = { version = "3.7.0", default-features = false }
 
 [dev-dependencies]
-teslatlas-hub = { path = ".", features = ["journey-doubles"] }
+tesatlas-hub = { path = ".", features = ["journey-doubles"] }
 http-body-util = "0.1"
 # The authorizer and update hooks of SQLite (no commit hook), installed by the store in tests only:
 # the zero-write proofs of the collector count the mutations a connection attempts,

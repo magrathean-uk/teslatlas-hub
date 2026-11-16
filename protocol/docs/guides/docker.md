@@ -10,8 +10,8 @@ then runs with `UV_OFFLINE=1`; the local gate cannot fetch packages at runtime.
 Build and run the local, offline Protocol gate from the repository root:
 
 ```sh
-docker build -t teslatlas-protocol-check .
-docker run --rm --network none teslatlas-protocol-check
+docker build -t tesatlas-protocol-check .
+docker run --rm --network none tesatlas-protocol-check
 ```
 
 The development history records a successful Linux ARM64 gate on an older
@@ -47,8 +47,8 @@ paths in `probe.json` must be absolute. The file contains no bearer value.
 {
   "endpoint": "https://host.docker.internal:8443",
   "expected_hub_id": "11111111-1111-4111-8111-111111111111",
-  "ca_path": "/run/teslatlas/ca.pem",
-  "authorization_header_path": "/run/teslatlas/authorization.header",
+  "ca_path": "/run/tesatlas/ca.pem",
+  "authorization_header_path": "/run/tesatlas/authorization.header",
   "vehicle_id": "22222222-2222-4222-8222-222222222222",
   "from_ms": 0,
   "to_ms": 9223372036854775807,
@@ -71,9 +71,9 @@ certificate whose hostname matches the selected URL:
 ```sh
 docker run --rm \
   --user "$(id -u):$(id -g)" \
-  --mount "type=bind,src=$TESLATLAS_PRIVATE_DIR,dst=/run/teslatlas,readonly" \
-  teslatlas-protocol-check ./tools/check-current-hub \
-  --config /run/teslatlas/probe.json
+  --mount "type=bind,src=$TESATLAS_PRIVATE_DIR,dst=/run/tesatlas,readonly" \
+  tesatlas-protocol-check ./tools/check-current-hub \
+  --config /run/tesatlas/probe.json
 ```
 
 The checker only needs writable temporary space inside its disposable

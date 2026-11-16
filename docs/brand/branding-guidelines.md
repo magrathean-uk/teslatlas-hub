@@ -8,15 +8,15 @@ restrict AGPL rights in the code.
 
 Use these forms exactly:
 
-- **Teslatlas** for the product family;
-- **Teslatlas Hub** for this project;
+- **Tesatlas** for the product family;
+- **Tesatlas Hub** for this project;
 - **György Bolyki** for the original creator and lead developer; and
 - **MAGRATHEAN UK LTD** for the publisher and project steward.
 
 ## Descriptive references
 
 A fork or service may truthfully state that it is based on, derived from or
-compatible with Teslatlas Hub when the statement:
+compatible with Tesatlas Hub when the statement:
 
 - is no more prominent than reasonably necessary;
 - identifies material modifications;
@@ -26,20 +26,20 @@ compatible with Teslatlas Hub when the statement:
 
 Normally acceptable:
 
-- “Based on Teslatlas Hub”;
-- “Fork of Teslatlas Hub”; and
-- “Compatible with the Teslatlas Hub protocol”.
+- “Based on Tesatlas Hub”;
+- “Fork of Tesatlas Hub”; and
+- “Compatible with the Tesatlas Hub protocol”.
 
 Permission required:
 
-- “Official Teslatlas Hub” for an unauthorised build;
-- “Teslatlas Hub Pro” as the primary name of a third-party fork;
+- “Official Tesatlas Hub” for an unauthorised build;
+- “Tesatlas Hub Pro” as the primary name of a third-party fork;
 - use of the original logo as a company or app identity; or
 - a claim that Magrathean or György Bolyki supports, audits or warrants the fork.
 
 A modified distribution should state substantially:
 
-> This is a modified, independently distributed version of Teslatlas Hub. It is not produced, endorsed or supported by MAGRATHEAN UK LTD.
+> This is a modified, independently distributed version of Tesatlas Hub. It is not produced, endorsed or supported by MAGRATHEAN UK LTD.
 
 ## Third-party marks
 

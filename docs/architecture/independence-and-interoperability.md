@@ -2,11 +2,11 @@
 
 ## Independent project
 
-Teslatlas Hub is maintained by MAGRATHEAN UK LTD and is not an official
+Tesatlas Hub is maintained by MAGRATHEAN UK LTD and is not an official
 product of Tesla, of any vehicle manufacturer or of any software it can import
 from.
 
-It is built for new Teslatlas deployments and includes optional compatibility for operator-controlled legacy data. Compatibility is not the project's brand identity.
+It is built for new Tesatlas deployments and includes optional compatibility for operator-controlled legacy data. Compatibility is not the project's brand identity.
 
 ## What interoperability permits
 
@@ -52,7 +52,7 @@ claim support from its maintainers.
 
 ## Proprietary client
 
-The proprietary Teslatlas app may communicate with the Hub through a stable public protocol. It must not copy or link GNU AGPL code unless Magrathean has a separate licence covering every relevant right.
+The proprietary Tesatlas app may communicate with the Hub through a stable public protocol. It must not copy or link GNU AGPL code unless Magrathean has a separate licence covering every relevant right.
 
 Shared protocol facts should be maintained in a neutral specification. Shared source code must have a documented dual-licensing basis.
 

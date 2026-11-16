@@ -26,8 +26,8 @@ import zipfile
 from go_toolchain import select_configured_go, select_go
 
 
-SCHEMA = "teslatlas.fleet-telemetry-evidence/v1"
-LEGAL_LOCK_SCHEMA = "teslatlas.fleet-telemetry-legal-lock/v1"
+SCHEMA = "tesatlas.fleet-telemetry-evidence/v1"
+LEGAL_LOCK_SCHEMA = "tesatlas.fleet-telemetry-legal-lock/v1"
 BRIDGE_LOCK_NAME = "fleet-telemetry-bridge-lock.json"
 LEGAL_LOCK_NAME = "fleet-telemetry-legal-lock.json"
 MANIFEST_NAME = "fleet-telemetry-component-manifest.json"
@@ -288,7 +288,7 @@ def validate_bridge_lock(value: object) -> dict[str, Any]:
         or re.fullmatch(r"[0-9a-f]{40}", upstream["commit"]) is None
         or not isinstance(upstream["archive_url"], str)
         or not upstream["archive_url"].startswith("https://codeload.github.com/teslamotors/fleet-telemetry/")
-        or overlay["patch"] != "0001-teslatlas-http-dispatcher.patch"
+        or overlay["patch"] != "0001-tesatlas-http-dispatcher.patch"
         or bridge["endpoint"] != "http://127.0.0.1:8080/v1/internal/fleet-telemetry"
         or toolchain != {"go_version": "go1.27.4", "cgo_enabled": False}
         or lock["targets"]
@@ -881,13 +881,13 @@ def spdx_document(legal_bytes: bytes, legal: dict[str, Any]) -> dict[str, Any]:
         "spdxVersion": "SPDX-2.3",
         "dataLicense": "CC0-1.0",
         "SPDXID": "SPDXRef-DOCUMENT",
-        "name": "teslatlas-fleet-telemetry-go-components",
+        "name": "tesatlas-fleet-telemetry-go-components",
         "documentNamespace": (
-            "https://teslatlas.eu/spdx/fleet-telemetry/" + sha256_bytes(legal_bytes)
+            "https://tesatlas.eu/spdx/fleet-telemetry/" + sha256_bytes(legal_bytes)
         ),
         "creationInfo": {
             "created": "1970-01-01T00:00:00Z",
-            "creators": ["Tool: teslatlas-fleet-telemetry-evidence"],
+            "creators": ["Tool: tesatlas-fleet-telemetry-evidence"],
         },
         "documentDescribes": ["SPDXRef-FleetTelemetry"],
         "packages": packages,
@@ -1156,7 +1156,7 @@ def generate(
 ) -> None:
     bridge_path = repo / "packaging" / "fleet-telemetry-bridge" / BRIDGE_LOCK_NAME
     legal_path = repo / "packaging" / "fleet-telemetry-bridge" / LEGAL_LOCK_NAME
-    patch_path = repo / "packaging" / "fleet-telemetry-bridge" / "0001-teslatlas-http-dispatcher.patch"
+    patch_path = repo / "packaging" / "fleet-telemetry-bridge" / "0001-tesatlas-http-dispatcher.patch"
     module_graph_directory = repo / "packaging" / "fleet-telemetry-bridge" / "module-graph"
     bridge_bytes = regular_bytes(bridge_path, "Fleet Telemetry bridge lock", MAX_LOCK_BYTES)
     legal_bytes = regular_bytes(legal_path, "Fleet Telemetry legal lock", MAX_LOCK_BYTES)
@@ -1199,7 +1199,7 @@ def generate(
     manifest_data = json_bytes(
         manifest(bridge_bytes, legal_bytes, legal, binary, target, components)
     )
-    stage = Path(tempfile.mkdtemp(prefix="teslatlas-fleet-telemetry-evidence-", dir=output.parent))
+    stage = Path(tempfile.mkdtemp(prefix="tesatlas-fleet-telemetry-evidence-", dir=output.parent))
     try:
         for name, data in components.items():
             write_file(stage / name, data)
@@ -1258,10 +1258,10 @@ def main() -> int:
     if args.source_archive is not None:
         source_path = Path(os.path.abspath(args.source_archive))
     else:
-        lab = os.environ.get("TESLATLAS_LAB")
+        lab = os.environ.get("TESATLAS_LAB")
         if not lab:
             raise GateError(
-                "TESLATLAS_LAB is required when --source-archive is not provided"
+                "TESATLAS_LAB is required when --source-archive is not provided"
             )
         source_path = (
             Path(os.path.abspath(lab))

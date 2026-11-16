@@ -111,10 +111,10 @@ def fixture(path: Path) -> None:
             "image-inspect.json": json.dumps(
                 [{"Id": IMAGE_ID, "Os": "linux", "Architecture": "arm64", "Config": {"Env": ["PATH=/usr/bin"]}}]
             ).encode(),
-            "binary-sha256.txt": b"3" * 64 + b"  /usr/local/bin/teslatlas-hub\n",
+            "binary-sha256.txt": b"3" * 64 + b"  /usr/local/bin/tesatlas-hub\n",
             "database-sha256.txt": b"4" * 64 + b"  hub.sqlite\n",
             "source-output.txt": (
-                f"https://github.com/magrathean-uk/teslatlas-hub/tree/{COMMIT}\n"
+                f"https://github.com/magrathean-uk/tesatlas-hub/tree/{COMMIT}\n"
             ).encode(),
             "compose-rendered.json": json.dumps(
                 {

@@ -47,7 +47,7 @@ impl Harness {
         }
         drop(HubStore::initialize(&path.join("data")).expect("synthetic store"));
         let run = uuid::Uuid::new_v4().simple().to_string();
-        let label = format!("fixture.teslatlas-relocation.{run}");
+        let label = format!("fixture.tesatlas-relocation.{run}");
         fs::write(path.join(".fixture-run"), format!("{run}\n")).expect("run marker");
         fs::write(
             path.join("hub.toml"),
@@ -68,7 +68,7 @@ impl Harness {
         )
         .expect("synthetic plist");
         let context = serde_json::json!({
-            "contract": "teslatlas-hub credential-relocation-fixture", "contract_version": 1,
+            "contract": "tesatlas-hub credential-relocation-fixture", "contract_version": 1,
             "contract_digest": "607c465b60da6019ae61e93c794d61e12aaa0e2cab762b283004ee1ff9f363ed",
             "run_id": run, "executable_kind": "fixture", "synthetic_root": path,
             "data_dir": path.join("data"), "config_path": path.join("hub.toml"), "session_dir": path.join("session"),
@@ -257,18 +257,18 @@ fn fixture_paths_cannot_escape_synthetic_root() {
 #[cfg(feature = "credential-relocation-fixture")]
 #[test]
 fn fixture_sign_out_uses_recording_service_backend() {
-    use teslatlas_hub::auth::credential_sign_in as credentials;
+    use tesatlas_hub::auth::credential_sign_in as credentials;
     let harness = Harness::new();
     let data = harness.path("data_dir");
     let owner = credentials::seed_owner_pair_for_test(&data, "access-0001", "refresh-0001", None)
         .expect("owner seed");
     let fleet = credentials::seed_fleet_pair_for_test(
         &data,
-        &teslatlas_hub::fleet_credentials::FleetSetupCredentials::new(
+        &tesatlas_hub::fleet_credentials::FleetSetupCredentials::new(
             "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.sig".into(),
             "fleet-refresh-0001".into(),
             "client-0001".into(),
-            teslatlas_hub::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica,
+            tesatlas_hub::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica,
             3600,
         )
         .expect("fleet pair"),
@@ -309,7 +309,7 @@ fn fixture_sign_out_uses_recording_service_backend() {
 #[cfg(feature = "credential-relocation-fixture")]
 #[test]
 fn fixture_service_queries_have_no_system_fallback() {
-    use teslatlas_hub::platform::{
+    use tesatlas_hub::platform::{
         r78_lifecycle::{ServiceBudgets, ServiceEffects},
         r78_recording::{
             FixtureBackendGuard, RecordingBackend, RecordingState, SyntheticServiceIdentity,
@@ -378,14 +378,14 @@ fn fixture_rejects_owner_service_identity() {
     for field in ["label", "domain", "plist_path"] {
         let mut harness = Harness::new();
         harness.context["service_identity"][field] = match field {
-            "label" => "com.teslatlas.hub".into(),
+            "label" => "com.tesatlas.hub".into(),
             "domain" => format!("gui/{}", rustix::process::geteuid().as_raw()).into(),
             _ => std::env::var_os("HOME")
                 .map(PathBuf::from)
                 .expect("home for refusal only")
                 .join("Library")
                 .join("LaunchAgents")
-                .join("com.teslatlas.hub.plist")
+                .join("com.tesatlas.hub.plist")
                 .to_string_lossy()
                 .into_owned()
                 .into(),
@@ -417,7 +417,7 @@ fn fixture_rejects_unapproved_child_or_command() {
         assert_eq!(harness.refuse(&command), "fixture_command_refused");
         assert!(!harness.path("trace_path").exists());
     }
-    let error = teslatlas_hub::platform::r78_service::sleeping_helper_for_test(
+    let error = tesatlas_hub::platform::r78_service::sleeping_helper_for_test(
         Instant::now() + Duration::from_secs(1),
     )
     .expect_err("feature disables all helper children");
@@ -427,7 +427,7 @@ fn fixture_rejects_unapproved_child_or_command() {
 #[cfg(feature = "credential-relocation-fixture")]
 #[test]
 fn fixture_fault_mode_retains_service_isolation() {
-    use teslatlas_hub::auth::credential_sign_in as credentials;
+    use tesatlas_hub::auth::credential_sign_in as credentials;
     let mut harness = Harness::new();
     let data = harness.path("data_dir");
     credentials::seed_owner_pair_for_test(&data, "access-0001", "refresh-0001", None)

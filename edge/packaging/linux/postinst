@@ -1,21 +1,21 @@
 #!/bin/sh
 set -eu
 
-service=teslatlas-edge.service
-receiver_service=teslatlas-fleet-telemetry.service
-state_file=${TESLATLAS_EDGE_MAINTAINER_STATE_FILE:-/run/teslatlas-edge-maintainer.state}
-backup_dir=${TESLATLAS_EDGE_UPGRADE_BACKUP_DIR:-/run/teslatlas-edge-package-upgrade}
-config_dir=/etc/teslatlas-edge
-state_dir=/var/lib/teslatlas-edge
+service=tesatlas-edge.service
+receiver_service=tesatlas-fleet-telemetry.service
+state_file=${TESATLAS_EDGE_MAINTAINER_STATE_FILE:-/run/tesatlas-edge-maintainer.state}
+backup_dir=${TESATLAS_EDGE_UPGRADE_BACKUP_DIR:-/run/tesatlas-edge-package-upgrade}
+config_dir=/etc/tesatlas-edge
+state_dir=/var/lib/tesatlas-edge
 
-install -d -o root -g teslatlas-edge -m 0750 "$config_dir"
-install -d -o teslatlas-edge -g teslatlas-edge -m 0700 "$state_dir"
+install -d -o root -g tesatlas-edge -m 0750 "$config_dir"
+install -d -o tesatlas-edge -g tesatlas-edge -m 0700 "$state_dir"
 if [ -f "$config_dir/config.toml" ] && [ ! -L "$config_dir/config.toml" ]; then
-    chown root:teslatlas-edge "$config_dir/config.toml"
+    chown root:tesatlas-edge "$config_dir/config.toml"
     chmod 0640 "$config_dir/config.toml"
 fi
 if [ -f "$config_dir/fleet-telemetry.json" ] && [ ! -L "$config_dir/fleet-telemetry.json" ]; then
-    chown root:teslatlas-edge "$config_dir/fleet-telemetry.json"
+    chown root:tesatlas-edge "$config_dir/fleet-telemetry.json"
     chmod 0640 "$config_dir/fleet-telemetry.json"
 fi
 
@@ -27,7 +27,7 @@ if [ -f "$state_file" ] && [ ! -L "$state_file" ]; then
     IFS=' ' read -r edge_present edge_active edge_enabled receiver_present receiver_active receiver_enabled < "$state_file"
     for value in "$edge_present" "$edge_active" "$edge_enabled" \
         "$receiver_present" "$receiver_active" "$receiver_enabled"; do
-        case "$value" in 0|1) ;; *) echo "invalid Teslatlas Edge upgrade state" >&2; exit 1 ;; esac
+        case "$value" in 0|1) ;; *) echo "invalid Tesatlas Edge upgrade state" >&2; exit 1 ;; esac
     done
     set_enabled() {
         selected=$1

@@ -9,8 +9,8 @@ use std::sync::Arc;
 use axum::body::{Body, to_bytes};
 use http::{Request, StatusCode};
 use tempfile::TempDir;
-use teslatlas_edge::admission::{AdmissionService, Clock, ReceiverBearer};
-use teslatlas_edge::spool::{Spool, SpoolConfig, SpoolKey};
+use tesatlas_edge::admission::{AdmissionService, Clock, ReceiverBearer};
+use tesatlas_edge::spool::{Spool, SpoolConfig, SpoolKey};
 use tower::ServiceExt;
 
 use support::{T0, VIN, receiver_envelope};
@@ -93,7 +93,7 @@ async fn receiver_requires_bearer_and_rejects_malformed_or_oversized_input() {
     assert_eq!(
         router
             .oneshot(post(
-                vec![b' '; teslatlas_edge::protocol::MAX_RECEIVER_BODY_BYTES + 1],
+                vec![b' '; tesatlas_edge::protocol::MAX_RECEIVER_BODY_BYTES + 1],
                 Some("receiver-secret-123")
             ))
             .await
@@ -256,12 +256,12 @@ async fn metrics_expose_only_bounded_aggregate_values() {
     let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
     let text = std::str::from_utf8(&body).unwrap();
 
-    assert!(text.contains("teslatlas_edge_spool_records 1"));
-    assert!(text.contains("teslatlas_edge_receiver_admitted_total 1"));
-    assert!(text.contains("# TYPE teslatlas_edge_spool_records gauge"));
-    assert!(text.contains("# TYPE teslatlas_edge_receiver_admitted_total counter"));
-    assert!(text.contains("# TYPE teslatlas_edge_spool_expired_records_total counter"));
-    assert!(text.contains("teslatlas_edge_spool_gap_notices 0"));
+    assert!(text.contains("tesatlas_edge_spool_records 1"));
+    assert!(text.contains("tesatlas_edge_receiver_admitted_total 1"));
+    assert!(text.contains("# TYPE tesatlas_edge_spool_records gauge"));
+    assert!(text.contains("# TYPE tesatlas_edge_receiver_admitted_total counter"));
+    assert!(text.contains("# TYPE tesatlas_edge_spool_expired_records_total counter"));
+    assert!(text.contains("tesatlas_edge_spool_gap_notices 0"));
     for private in [VIN, "tx-private-id", secret, "Soc", "createdAt"] {
         assert!(!text.contains(private), "metrics leaked {private}");
     }

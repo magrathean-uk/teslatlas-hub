@@ -1,0 +1,6 @@
+[Unit]
+Description=Stop Tesatlas Hub companions after terminal Hub failure
+Conflicts=tesatlas-command-proxy.service tesatlas-fleet-telemetry.service
+After=tesatlas-command-proxy.service tesatlas-fleet-telemetry.service
+StopWhenUnneeded=yes
+RefuseManualStart=yes

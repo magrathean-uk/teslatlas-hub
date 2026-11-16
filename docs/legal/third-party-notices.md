@@ -41,11 +41,11 @@ release notice bundle.
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
 
-## Teslatlas Compute
+## Tesatlas Compute
 
 Source: the `compute/` directory of this repository (workspace member
-`teslatlas-compute`), imported with its history from
-https://github.com/magrathean-uk/teslatlas-compute on 2026-10-08
+`tesatlas-compute`), imported with its history from
+https://github.com/magrathean-uk/tesatlas-compute on 2026-10-08
 
 Locked revision: the Hub commit itself; `Cargo.lock` records the path dependency
 
@@ -53,7 +53,7 @@ Licence: Apache License 2.0
 
 Hub links this library into its executable. The library's `LICENSE` and
 `NOTICE` apply to it and are carried in the generated release notices. The
-section "Teslatlas Compute" of `docs/legal/source-availability.md` explains how
+section "Tesatlas Compute" of `docs/legal/source-availability.md` explains how
 it forms part of the Corresponding Source.
 
 ## Dependencies
@@ -102,7 +102,7 @@ Reviewed revision: `d64c73ab65e7c5fb5fc12b35fe507e2c6054227b`
 Licence: Apache License 2.0
 
 The macOS service package and optional Debian Fleet package include a separately
-executed receiver built from the pinned upstream source with a Teslatlas patch. The patch adds a strict
+executed receiver built from the pinned upstream source with a Tesatlas patch. The patch adds a strict
 loopback HTTP dispatcher: decoded vehicle and connectivity records are sent to
 Hub with a private bearer, and reliable vehicle-record acknowledgement waits
 for Hub's successful commit. The build replaces the upstream `go.mod` and
@@ -119,7 +119,7 @@ TLS private key, vehicle credential, Fleet token, or loopback bearer is bundled.
 
 ### Optional terrain data
 
-Teslatlas Hub does not bundle terrain tiles. When terrain enrichment is enabled,
+Tesatlas Hub does not bundle terrain tiles. When terrain enrichment is enabled,
 a cache miss first retrieves a `skadi` HGT tile from the
 [Mapzen Terrain Tiles dataset on AWS](https://registry.opendata.aws/terrain-tiles/)
 and may fall back to an SRTMGL1 HGT tile hosted by

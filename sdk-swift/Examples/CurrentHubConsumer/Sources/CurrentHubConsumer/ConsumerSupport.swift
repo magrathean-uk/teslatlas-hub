@@ -1,5 +1,5 @@
 import Foundation
-import TeslatlasCurrentHub
+import TesatlasCurrentHub
 
 #if canImport(Darwin)
 import Darwin

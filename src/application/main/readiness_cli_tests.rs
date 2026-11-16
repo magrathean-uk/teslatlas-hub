@@ -10,7 +10,7 @@
 use std::{fs, os::unix::fs::PermissionsExt, path::Path, time::Duration};
 
 use rusqlite::{Connection, params};
-use teslatlas_hub::{
+use tesatlas_hub::{
     config::HubConfig,
     db::{HubStore, },
     fleet_api::FleetRegion,
@@ -136,7 +136,7 @@ fn auth_row(
 /// The started refresh receipt, input fence and binding of an unresolved token
 /// refresh, as `begin_*_refresh` writes them.
 fn unresolved_refresh(store: &HubStore, transport: &str, generation: Uuid) {
-    teslatlas_hub::auth::credential_sign_in::begin_refresh_for_test(store.database_path().parent().expect("data directory"), transport != "legacy_auth", generation).expect("real fenced attempt");
+    tesatlas_hub::auth::credential_sign_in::begin_refresh_for_test(store.database_path().parent().expect("data directory"), transport != "legacy_auth", generation).expect("real fenced attempt");
 }
 
 fn refresh_image(store: &HubStore) -> [u8; 32] {
@@ -183,13 +183,13 @@ fn legacy_pair(
     schedule: Option<(i64, i64)>,
 ) -> Uuid {
     assert!(store.database_path().parent() == Some(directory), "fixture store path");
-    let generation = teslatlas_hub::auth::credential_sign_in::seed_owner_pair_for_test(directory, access, refresh, schedule).expect("real entry");
-    assert!(teslatlas_hub::auth::credential_sign_in::record_provider_admission_for_test(directory).expect("C5 integrity record"));
+    let generation = tesatlas_hub::auth::credential_sign_in::seed_owner_pair_for_test(directory, access, refresh, schedule).expect("real entry");
+    assert!(tesatlas_hub::auth::credential_sign_in::record_provider_admission_for_test(directory).expect("C5 integrity record"));
     generation
 }
 
 fn fleet_pair(directory: &Path, store: &HubStore) -> Uuid {
-    teslatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(directory)
+    tesatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(directory)
         .expect("cursor key");
     let credentials = FleetSetupCredentials::new(
         SCOPED_ACCESS.to_owned(),
@@ -200,7 +200,7 @@ fn fleet_pair(directory: &Path, store: &HubStore) -> Uuid {
     )
     .expect("fleet credentials");
     assert!(store.database_path().parent() == Some(directory), "fixture store path");
-    teslatlas_hub::auth::credential_sign_in::seed_fleet_pair_for_test(directory, &credentials).expect("Fleet entry")
+    tesatlas_hub::auth::credential_sign_in::seed_fleet_pair_for_test(directory, &credentials).expect("Fleet entry")
 }
 
 fn jwt(exp: i64) -> String {
@@ -214,7 +214,7 @@ fn jwt(exp: i64) -> String {
 
 /// An imported, enabled car so a collector can start.
 fn seed_car(store: &HubStore) {
-    use teslatlas_hub::{
+    use tesatlas_hub::{
         hub_pack::ProjectionCarSettings,
         protocol::CursorKey,
         source_db_import::{SourceDbImportRequest, SourceDbImportScope, publish_history},
@@ -815,7 +815,7 @@ fn cadence_invalid_keeps_otherwise_eligible_serve_supervised() {
 
 #[tokio::test]
 async fn cadence_serve_wait_hands_over_cursor_before_server_start() {
-    use teslatlas_hub::{
+    use tesatlas_hub::{
         hub_user_process::AdmittedUserHub,
         legacy_owner_credentials::load_or_create_cursor_key,
         protocol::{CursorClaims, HUB_PROJECTION_SCHEMA_V3, OpaqueCursor, PROTOCOL_V1},
@@ -846,7 +846,7 @@ async fn cadence_serve_wait_hands_over_cursor_before_server_start() {
     let supervisor = tokio::spawn(crate::run_macos_serve_supervisor(
         true,
         move |ready, shutdown| async move {
-            teslatlas_hub::collector::run_supervised_for_admitted_user(
+            tesatlas_hub::collector::run_supervised_for_admitted_user(
                 &collector_store,
                 &collector_config,
                 admission,
@@ -939,7 +939,7 @@ async fn cadence_serve_wait_hands_over_cursor_before_server_start() {
         )
         .expect("stop gaps");
     assert_eq!(stops, 1);
-    window.close(teslatlas_hub::collection::window::CloseReason::OperatorClose);
+    window.close(tesatlas_hub::collection::window::CloseReason::OperatorClose);
     window.finish_close().expect("the window closes");
 }
 
@@ -948,9 +948,9 @@ async fn cadence_serve_wait_hands_over_cursor_before_server_start() {
 fn open_process_wide_window(
     scratch: &Path,
     length: i64,
-) -> teslatlas_hub::collection::window::WindowController {
+) -> tesatlas_hub::collection::window::WindowController {
     use std::sync::Arc;
-    use teslatlas_hub::{
+    use tesatlas_hub::{
         collection::window::{
             IssueRequest, Issuer, ManualProbe, MemoryAnchor, NoHighWater, Phase, SystemClock,
             WindowClock, WindowConfig, WindowController,
@@ -1007,7 +1007,7 @@ fn open_process_wide_window(
 
 #[tokio::test]
 async fn cadence_observe_refuses_before_handoff_and_cannot_finish_as_a_wait() {
-    use teslatlas_hub::hub_user_process::AdmittedUserHub;
+    use tesatlas_hub::hub_user_process::AdmittedUserHub;
     let (temporary, store) = private_hub();
     seed_car(&store);
     legacy_pair(temporary.path(), &store, "access", "refresh", None);
@@ -1035,7 +1035,7 @@ async fn cadence_observe_refuses_before_handoff_and_cannot_finish_as_a_wait() {
         crate::run_observe_orchestration(
             store.clone(),
             config,
-            teslatlas_hub::protocol::Sha256Digest::of_bytes(b"observe digest"),
+            tesatlas_hub::protocol::Sha256Digest::of_bytes(b"observe digest"),
             admission,
             async {
                 tokio::time::sleep(Duration::from_secs(600)).await;

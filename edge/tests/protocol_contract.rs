@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use serde_json::{Value, json};
-use teslatlas_edge::protocol::{MAX_RECEIVER_BODY_BYTES, ProtocolError, ReceiverEnvelope};
+use tesatlas_edge::protocol::{MAX_RECEIVER_BODY_BYTES, ProtocolError, ReceiverEnvelope};
 
 const VIN: &str = "5YJ3E1EA7KF000001";
 const T0: i64 = 1_800_000_000_000;

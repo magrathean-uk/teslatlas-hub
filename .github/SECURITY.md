@@ -2,7 +2,7 @@
 
 ## Scope
 
-Teslatlas Hub is self-hosted software for vehicle telemetry collection, local
+Tesatlas Hub is self-hosted software for vehicle telemetry collection, local
 storage, paired-device sync, and optional provider integrations. This policy
 covers vulnerabilities in this repository and its released artefacts.
 
@@ -47,10 +47,10 @@ control failure remains in scope.
 
 Only test systems and accounts you are authorised to use. Do not test Tesla,
 Apple, GitHub, the software you import from, a vehicle, another person's
-system, or another provider merely because Teslatlas Hub can interoperate with
+system, or another provider merely because Tesatlas Hub can interoperate with
 it. Avoid actions that could affect vehicle safety, credentials, personal data,
 availability, or third-party services.
 
 Account support, deployment help, and requests to recover data are not
 vulnerability reports. A weakness in a third-party service is outside this
-repository unless it is caused by Teslatlas Hub code or packaging.
+repository unless it is caused by Tesatlas Hub code or packaging.

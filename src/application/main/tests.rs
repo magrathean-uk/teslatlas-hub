@@ -48,15 +48,15 @@ use super::{
     source_check_failure_details, source_db_version_confirmation, validate_history_only_config,
     validate_streaming_setting, write_migration_progress_event,
 };
-use teslatlas_hub::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
+use tesatlas_hub::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
 #[cfg(target_os = "macos")]
-use teslatlas_hub::protocol::{
+use tesatlas_hub::protocol::{
     CursorClaims, CursorKey, HUB_PROJECTION_SCHEMA_V3, OpaqueCursor, PROTOCOL_V1,
 };
 #[cfg(target_os = "macos")]
-use teslatlas_hub::source_db_progress::{SourceDbMigrationPhase, SourceDbMigrationProgressEvent};
+use tesatlas_hub::source_db_progress::{SourceDbMigrationPhase, SourceDbMigrationProgressEvent};
 #[cfg(target_os = "macos")]
-use teslatlas_hub::{
+use tesatlas_hub::{
     source_db_reader::SourceDbReaderError, source_db_schema::SchemaCompatibilityError,
 };
 use uuid::Uuid;
@@ -101,13 +101,13 @@ fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
     store
         .upsert_geofences(
             observed.vehicle_id,
-            &[teslatlas_hub::source_db_projection::SourceDbGeofence {
+            &[tesatlas_hub::source_db_projection::SourceDbGeofence {
                 id: 1,
                 name: "Home".into(),
                 latitude: Some(51.0),
                 longitude: Some(-0.1),
                 radius_m: Some(150.0),
-                billing_type: Some(teslatlas_hub::hub_pack::GeofenceBillingType::PerKwh),
+                billing_type: Some(tesatlas_hub::hub_pack::GeofenceBillingType::PerKwh),
                 cost_per_unit: None,
                 session_fee: None,
             }],
@@ -193,17 +193,17 @@ fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
 #[test]
 fn legal_aliases_and_source_command_parse_without_configuration() {
     for name in ["legal", "licence", "license"] {
-        let cli = Cli::try_parse_from(["teslatlas-hub", name]).expect("legal CLI alias");
+        let cli = Cli::try_parse_from(["tesatlas-hub", name]).expect("legal CLI alias");
         assert!(matches!(cli.command, Command::Legal));
     }
-    let source = Cli::try_parse_from(["teslatlas-hub", "source"]).expect("source CLI");
+    let source = Cli::try_parse_from(["tesatlas-hub", "source"]).expect("source CLI");
     assert!(matches!(source.command, Command::Source));
 
     let healthcheck = Cli::try_parse_from([
-        "teslatlas-hub",
+        "tesatlas-hub",
         "healthcheck",
         "--ca-file",
-        "/etc/teslatlas-hub/tls/ca.pem",
+        "/etc/tesatlas-hub/tls/ca.pem",
         "--server-name",
         "hub.example.invalid",
     ])
@@ -214,7 +214,7 @@ fn legal_aliases_and_source_command_parse_without_configuration() {
             ca_file,
             server_name,
         }
-            if ca_file == *"/etc/teslatlas-hub/tls/ca.pem"
+            if ca_file == *"/etc/tesatlas-hub/tls/ca.pem"
                 && server_name == "hub.example.invalid"
     ));
 }
@@ -222,9 +222,9 @@ fn legal_aliases_and_source_command_parse_without_configuration() {
 #[cfg(unix)]
 #[test]
 fn container_healthcheck_does_not_open_hub_state() {
-    assert!(!teslatlas_hub::runtime::operator::admission::requires_user_hub_admission(
+    assert!(!tesatlas_hub::runtime::operator::admission::requires_user_hub_admission(
         &Command::Healthcheck {
-            ca_file: PathBuf::from("/etc/teslatlas-hub/tls/ca.pem"),
+            ca_file: PathBuf::from("/etc/tesatlas-hub/tls/ca.pem"),
             server_name: "hub.example.invalid".to_owned(),
         }
     ));
@@ -254,7 +254,7 @@ fn supervisor_cursor_proof(cursor_key: &CursorKey) -> String {
 fn macos_command_proxy_arguments_use_private_data_paths() {
     let spec = MacCommandProxySpec {
         executable: PathBuf::from(
-            "/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy",
+            "/Library/Application Support/Tesatlas Hub/bin/tesla-http-proxy",
         ),
         host: "127.0.0.1".to_owned(),
         port: 4443,
@@ -455,7 +455,7 @@ fn source_check_failures_are_redacted_and_actionable() {
 #[cfg(target_os = "macos")]
 #[test]
 fn source_check_reports_an_exceeded_read_budget_plainly() {
-    use teslatlas_hub::source_db_reader::SourceBudgetLimit;
+    use tesatlas_hub::source_db_reader::SourceBudgetLimit;
 
     for limit in [
         SourceBudgetLimit::Rows,
@@ -504,7 +504,7 @@ fn source_check_requires_honest_version_confirmation() {
 #[test]
 fn onboarding_migration_cli_is_explicit_and_noninteractive() {
     let check = Cli::try_parse_from([
-        "teslatlas-hub",
+        "tesatlas-hub",
         "source-check",
         "--source",
         "postgresql://reader@localhost/sourcedb",
@@ -519,11 +519,11 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
         check.command,
         Command::SourceCheck { car_id: 7, .. }
     ));
-    assert!(!teslatlas_hub::runtime::operator::admission::requires_user_hub_admission(&check.command));
+    assert!(!tesatlas_hub::runtime::operator::admission::requires_user_hub_admission(&check.command));
 
     assert!(
         Cli::try_parse_from([
-            "teslatlas-hub",
+            "tesatlas-hub",
             "migrate",
             "--source",
             "postgresql://reader@localhost/sourcedb",
@@ -539,7 +539,7 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
     );
 
     let migration = Cli::try_parse_from([
-        "teslatlas-hub",
+        "tesatlas-hub",
         "migrate",
         "--source",
         "postgresql://reader@localhost/sourcedb",
@@ -565,7 +565,7 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
 #[test]
 fn history_only_cli_requires_online_capture_and_excludes_tesla_credentials() {
     let base = [
-        "teslatlas-hub",
+        "tesatlas-hub",
         "migrate",
         "--source",
         "postgresql://reader@localhost/sourcedb",
@@ -604,7 +604,7 @@ fn history_only_cli_requires_online_capture_and_excludes_tesla_credentials() {
     // that is gone (M02-T10).
     assert!(
         Cli::try_parse_from([
-            "teslatlas-hub",
+            "tesatlas-hub",
             "source-check",
             "--source",
             "postgresql://reader@localhost/sourcedb",
@@ -637,7 +637,7 @@ async fn source_check_invalid_source_does_not_create_hub_target() {
     let temporary = tempfile::tempdir().expect("temporary directory");
     let config = temporary.path().join("absent/config.toml");
     let cli = Cli::try_parse_from([
-        "teslatlas-hub",
+        "tesatlas-hub",
         "--config",
         config.to_str().expect("UTF-8 config path"),
         "source-check",
@@ -690,11 +690,11 @@ async fn migration_without_version_confirmation_does_not_create_hub_target() {
 #[cfg(unix)]
 #[test]
 fn bootstrap_and_explicit_vehicle_commands_parse() {
-    let bootstrap = Cli::try_parse_from(["teslatlas-hub", "bootstrap"]).expect("bootstrap CLI");
+    let bootstrap = Cli::try_parse_from(["tesatlas-hub", "bootstrap"]).expect("bootstrap CLI");
     assert!(matches!(bootstrap.command, Command::Bootstrap));
-    assert!(Cli::try_parse_from(["teslatlas-hub", "control", "wake"]).is_err());
+    assert!(Cli::try_parse_from(["tesatlas-hub", "control", "wake"]).is_err());
     let wake = Cli::try_parse_from([
-        "teslatlas-hub",
+        "tesatlas-hub",
         "control",
         "--vehicle-id",
         "00000000-0000-0000-0000-000000000001",
@@ -710,13 +710,13 @@ fn bootstrap_and_explicit_vehicle_commands_parse() {
         }
     ));
     assert!(
-        Cli::try_parse_from(["teslatlas-hub", "control", "climate-start", "--confirm"]).is_ok()
+        Cli::try_parse_from(["tesatlas-hub", "control", "climate-start", "--confirm"]).is_ok()
     );
 }
 
 #[test]
 fn paired_device_controls_parse_without_vehicle_selection() {
-    let list = Cli::try_parse_from(["teslatlas-hub", "control", "paired-devices"])
+    let list = Cli::try_parse_from(["tesatlas-hub", "control", "paired-devices"])
         .expect("paired-device list CLI");
     assert!(matches!(
         list.command,
@@ -726,7 +726,7 @@ fn paired_device_controls_parse_without_vehicle_selection() {
         }
     ));
     let revoke = Cli::try_parse_from([
-        "teslatlas-hub",
+        "tesatlas-hub",
         "control",
         "revoke-device",
         "00000000-0000-0000-0000-000000000001",
@@ -945,19 +945,19 @@ impl Drop for MacServeDropWitness {
 
 #[cfg(target_os = "macos")]
 const MACOS_SUPERVISOR_SIGTERM_CHILD_ENV: &str =
-    "TESLATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_CHILD";
+    "TESATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_CHILD";
 #[cfg(target_os = "macos")]
 const MACOS_SUPERVISOR_SIGTERM_CHILD_BIND_ENV: &str =
-    "TESLATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_BIND";
+    "TESATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_BIND";
 #[cfg(target_os = "macos")]
 const MACOS_SUPERVISOR_SIGTERM_CHILD_RECEIPT_ENV: &str =
-    "TESLATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_RECEIPT";
+    "TESATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_RECEIPT";
 #[cfg(target_os = "macos")]
 const MACOS_SUPERVISOR_SIGTERM_CHILD_FIXTURE_ENV: &str =
-    "TESLATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_FIXTURE";
+    "TESATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_FIXTURE";
 #[cfg(target_os = "macos")]
 const MACOS_SUPERVISOR_SIGTERM_CHILD_RUN_ENV: &str =
-    "TESLATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_RUN";
+    "TESATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_RUN";
 #[cfg(target_os = "macos")]
 const MACOS_SUPERVISOR_SIGTERM_CHILD_TEST: &str = "tests::macos_supervisor_sigterm_child";
 #[cfg(target_os = "macos")]
@@ -1677,7 +1677,7 @@ async fn doctor_does_not_create_or_initialize_a_missing_data_directory() {
 #[cfg(target_os = "macos")]
 #[tokio::test]
 async fn doctor_reports_inventory_and_does_not_delete_tokens() {
-    use teslatlas_hub::auth::credential_sign_in as credentials;
+    use tesatlas_hub::auth::credential_sign_in as credentials;
     let (temporary, store) = v2_credential_pair_fixture(true);
     assert!(credentials::record_provider_admission_for_test(temporary.path()).expect("C5 integrity record"));
     let config = temporary.path().join("config.toml");
@@ -1787,7 +1787,7 @@ async fn serve_fails_before_initialising_state_on_an_unsupported_platform() {
 #[test]
 fn observation_commands_parse_their_machine_readable_inputs() {
     let watermark =
-        Cli::try_parse_from(["teslatlas-hub", "observation-watermark", "--car-id", "17"])
+        Cli::try_parse_from(["tesatlas-hub", "observation-watermark", "--car-id", "17"])
             .expect("watermark CLI");
     assert!(matches!(
         watermark.command,
@@ -1795,7 +1795,7 @@ fn observation_commands_parse_their_machine_readable_inputs() {
     ));
 
     let verify = Cli::try_parse_from([
-        "teslatlas-hub",
+        "tesatlas-hub",
         "verify-observation",
         "--car-id",
         "17",
@@ -1815,7 +1815,7 @@ fn observation_commands_parse_their_machine_readable_inputs() {
 #[test]
 fn native_control_commands_parse_bounded_values() {
     let settings = Cli::try_parse_from([
-        "teslatlas-hub",
+        "tesatlas-hub",
         "control",
         "settings",
         "--enabled",
@@ -1837,12 +1837,12 @@ fn native_control_commands_parse_bounded_values() {
     ));
 
     assert!(
-        Cli::try_parse_from(["teslatlas-hub", "control", "export-gpx", "--drive-id", "0",])
+        Cli::try_parse_from(["tesatlas-hub", "control", "export-gpx", "--drive-id", "0",])
             .is_err()
     );
 
     let sign_out =
-        Cli::try_parse_from(["teslatlas-hub", "control", "sign-out"]).expect("sign-out CLI");
+        Cli::try_parse_from(["tesatlas-hub", "control", "sign-out"]).expect("sign-out CLI");
     assert!(matches!(
         sign_out.command,
         Command::Control {
@@ -1855,7 +1855,7 @@ fn native_control_commands_parse_bounded_values() {
 #[cfg(target_os = "macos")]
 #[test]
 fn observe_command_requires_positive_duration() {
-    let cli = Cli::try_parse_from(["teslatlas-hub", "observe", "--duration-seconds", "3600"])
+    let cli = Cli::try_parse_from(["tesatlas-hub", "observe", "--duration-seconds", "3600"])
         .expect("observe CLI");
     assert!(matches!(
         cli.command,
@@ -1863,22 +1863,22 @@ fn observe_command_requires_positive_duration() {
             duration_seconds: 3600
         }
     ));
-    assert!(Cli::try_parse_from(["teslatlas-hub", "observe", "--duration-seconds", "0",]).is_err());
+    assert!(Cli::try_parse_from(["tesatlas-hub", "observe", "--duration-seconds", "0",]).is_err());
 }
 
 #[cfg(target_os = "macos")]
 #[test]
 fn setup_command_takes_only_a_positive_optional_vehicle() {
-    let cli = Cli::try_parse_from(["teslatlas-hub", "setup", "--vehicle-id", "70"]).expect("setup CLI");
+    let cli = Cli::try_parse_from(["tesatlas-hub", "setup", "--vehicle-id", "70"]).expect("setup CLI");
     assert!(matches!(cli.command, Command::Setup { vehicle_id: Some(70), all_vehicles: false }));
     assert!(matches!(
-        Cli::try_parse_from(["teslatlas-hub", "setup"]).expect("setup CLI").command,
+        Cli::try_parse_from(["tesatlas-hub", "setup"]).expect("setup CLI").command,
         Command::Setup { vehicle_id: None, all_vehicles: false }
     ));
-    assert!(Cli::try_parse_from(["teslatlas-hub", "setup", "--vehicle-id", "0"]).is_err());
-    assert!(Cli::try_parse_from(["teslatlas-hub", "setup", "--all-vehicles", "--vehicle-id", "70"]).is_err());
+    assert!(Cli::try_parse_from(["tesatlas-hub", "setup", "--vehicle-id", "0"]).is_err());
+    assert!(Cli::try_parse_from(["tesatlas-hub", "setup", "--all-vehicles", "--vehicle-id", "70"]).is_err());
     for removed in [["--access-token-file", "access"], ["--refresh-token-file", "refresh"], ["--tokens-stdin", "x"], ["--sign-in", "x"]] {
-        let mut args = vec!["teslatlas-hub", "setup"];
+        let mut args = vec!["tesatlas-hub", "setup"];
         args.extend(removed);
         assert!(Cli::try_parse_from(args).is_err(), "{removed:?}");
     }
@@ -1887,22 +1887,22 @@ fn setup_command_takes_only_a_positive_optional_vehicle() {
 #[cfg(target_os = "macos")]
 #[test]
 fn fleet_setup_takes_no_input_and_is_parked() {
-    assert!(matches!(Cli::try_parse_from(["teslatlas-hub", "setup-fleet"]).expect("parked verb").command, Command::SetupFleet));
+    assert!(matches!(Cli::try_parse_from(["tesatlas-hub", "setup-fleet"]).expect("parked verb").command, Command::SetupFleet));
     for args in [vec!["setup-fleet", "--vehicle-id", "70"], vec!["setup-fleet", "--all-vehicles"], vec!["setup-fleet", "--sign-in"]] {
-        let mut all = vec!["teslatlas-hub"];
+        let mut all = vec!["tesatlas-hub"];
         all.extend(args.clone());
         assert!(Cli::try_parse_from(all).is_err(), "{args:?}");
     }
     assert_eq!(
-        teslatlas_hub::runtime::operator::admission::route(&Command::SetupFleet),
-        teslatlas_hub::runtime::operator::admission::Route::Refused("provider_parked")
+        tesatlas_hub::runtime::operator::admission::route(&Command::SetupFleet),
+        tesatlas_hub::runtime::operator::admission::Route::Refused("provider_parked")
     );
 }
 
 #[cfg(target_os = "macos")]
 #[test]
 fn fleet_rejects_enabling_legacy_streaming() {
-    use teslatlas_hub::config::CollectorProvider;
+    use tesatlas_hub::config::CollectorProvider;
 
     assert!(validate_streaming_setting(CollectorProvider::Fleet, Some(true)).is_err());
     assert!(validate_streaming_setting(CollectorProvider::Fleet, Some(false)).is_ok());
@@ -1912,7 +1912,7 @@ fn fleet_rejects_enabling_legacy_streaming() {
 #[cfg(target_os = "macos")]
 #[test]
 fn sign_out_clears_both_providers_but_preserves_cursor_key() {
-    use teslatlas_hub::auth::credential_sign_in as credentials;
+    use tesatlas_hub::auth::credential_sign_in as credentials;
     let (temporary, store) = v2_credential_pair_fixture(true);
     let cursor = super::load_or_create_cursor_key(temporary.path()).expect("cursor");
     let cursor_proof = supervisor_cursor_proof(&cursor);
@@ -1930,7 +1930,7 @@ fn sign_out_clears_both_providers_but_preserves_cursor_key() {
 #[cfg(target_os = "macos")]
 #[test]
 fn sign_out_attempts_legacy_removal_after_fleet_key_failure() {
-    use teslatlas_hub::auth::credential_sign_in as credentials;
+    use tesatlas_hub::auth::credential_sign_in as credentials;
     let (temporary, store) = v2_credential_pair_fixture(true);
     // Per-slot key files are gone. A Fleet-only clear failure must leave the
     // other clear committed, in the required Owner-then-Fleet order.
@@ -1949,7 +1949,7 @@ fn sign_out_attempts_legacy_removal_after_fleet_key_failure() {
 #[cfg(target_os = "macos")]
 #[test]
 fn source_credential_disabled_setup_and_migrate_token_inputs_change_nothing() {
-    use teslatlas_hub::auth::credential_sign_in as credentials;
+    use tesatlas_hub::auth::credential_sign_in as credentials;
     let (temporary, store) = v2_credential_pair_fixture(false);
     let before = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("before");
     for kind in [credentials::OwnerEntryKind::Direct, credentials::OwnerEntryKind::Provider, credentials::OwnerEntryKind::SourceToken] {
@@ -1959,7 +1959,7 @@ fn source_credential_disabled_setup_and_migrate_token_inputs_change_nothing() {
     }
     // The command tree has no token input at all.
     for args in [vec!["setup", "--tokens-stdin"], vec!["setup-fleet", "--sign-in"], vec!["setup", "--access-token-file", "a", "--refresh-token-file", "r"]] {
-        let mut all = vec!["teslatlas-hub"];
+        let mut all = vec!["tesatlas-hub"];
         all.extend(args);
         assert!(Cli::try_parse_from(all).is_err());
     }
@@ -1981,7 +1981,7 @@ fn service_commands_parse_without_live_store_admission() {
         ("stop", "stop"),
         ("restart", "restart"),
     ] {
-        let cli = Cli::try_parse_from(["teslatlas-hub", "service", name]).expect("service CLI");
+        let cli = Cli::try_parse_from(["tesatlas-hub", "service", name]).expect("service CLI");
         let Command::Service { command } = cli.command else {
             panic!("service command")
         };
@@ -1998,7 +1998,7 @@ fn service_commands_parse_without_live_store_admission() {
 #[cfg(target_os = "macos")]
 #[test]
 fn long_lived_and_sensitive_commands_require_the_instance_lock() {
-    use teslatlas_hub::runtime::operator::admission::requires_user_hub_admission as command_requires_user_hub_admission;
+    use tesatlas_hub::runtime::operator::admission::requires_user_hub_admission as command_requires_user_hub_admission;
     assert!(command_requires_user_hub_admission(&Command::Init));
     assert!(command_requires_user_hub_admission(&Command::Serve));
     assert!(command_requires_user_hub_admission(&Command::Observe {
@@ -2065,7 +2065,7 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
 #[test]
 fn source_run_serve_preflight_cli_requires_an_explicit_known_mode() {
     let cli = Cli::try_parse_from([
-        "teslatlas-hub",
+        "tesatlas-hub",
         "--config",
         "/private/tmp/source-run.toml",
         "serve-preflight",
@@ -2081,19 +2081,19 @@ fn source_run_serve_preflight_cli_requires_an_explicit_known_mode() {
         }
     ));
     assert!(
-        Cli::try_parse_from(["teslatlas-hub", "serve-preflight", "--mode", "edge"]).is_err(),
+        Cli::try_parse_from(["tesatlas-hub", "serve-preflight", "--mode", "edge"]).is_err(),
         "the retired Edge mode is refused"
     );
     assert!(
-        Cli::try_parse_from(["teslatlas-hub", "serve-preflight"]).is_err(),
+        Cli::try_parse_from(["tesatlas-hub", "serve-preflight"]).is_err(),
         "mode is mandatory"
     );
     assert!(
-        Cli::try_parse_from(["teslatlas-hub", "serve-preflight", "--mode", "production",]).is_err(),
+        Cli::try_parse_from(["tesatlas-hub", "serve-preflight", "--mode", "production",]).is_err(),
         "production is not a source-run mode"
     );
     let selected =
-        Cli::try_parse_from(["teslatlas-hub", "serve-preflight", "--mode", "private-lan"])
+        Cli::try_parse_from(["tesatlas-hub", "serve-preflight", "--mode", "private-lan"])
             .expect("explicit private-LAN preflight mode");
     assert!(matches!(
         selected.command,
@@ -2103,7 +2103,7 @@ fn source_run_serve_preflight_cli_requires_an_explicit_known_mode() {
         }
     ));
     let history = Cli::try_parse_from([
-        "teslatlas-hub",
+        "tesatlas-hub",
         "serve-preflight",
         "--mode",
         "standalone",
@@ -2230,7 +2230,7 @@ async fn pairing_certificate_key_and_qr_failures_leave_no_invitation() {
             certificate_path: &missing,
             private_key_path: &private_key,
             created_at_ms: 1_000,
-            scope: teslatlas_hub::db::PairingScope::AllVehicles,
+            scope: tesatlas_hub::db::PairingScope::AllVehicles,
         },
         &mut *output,
     )
@@ -2260,7 +2260,7 @@ async fn pairing_certificate_key_and_qr_failures_leave_no_invitation() {
             certificate_path: &mismatched_certificate,
             private_key_path: &mismatched_key,
             created_at_ms: 1_000,
-            scope: teslatlas_hub::db::PairingScope::AllVehicles,
+            scope: tesatlas_hub::db::PairingScope::AllVehicles,
         },
         &mut NeverWriter,
     )
@@ -2286,7 +2286,7 @@ async fn pairing_certificate_key_and_qr_failures_leave_no_invitation() {
                 certificate_path: &certificate,
                 private_key_path: &private_key,
                 created_at_ms: 1_000,
-                scope: teslatlas_hub::db::PairingScope::AllVehicles,
+                scope: tesatlas_hub::db::PairingScope::AllVehicles,
             },
             &mut *output,
         )
@@ -2315,7 +2315,7 @@ async fn pairing_flush_failure_revokes_and_success_persists_once() {
             certificate_path: &certificate,
             private_key_path: &private_key,
             created_at_ms: 500,
-            scope: teslatlas_hub::db::PairingScope::AllVehicles,
+            scope: tesatlas_hub::db::PairingScope::AllVehicles,
         },
         &mut write_failure,
     )
@@ -2340,7 +2340,7 @@ async fn pairing_flush_failure_revokes_and_success_persists_once() {
             certificate_path: &certificate,
             private_key_path: &private_key,
             created_at_ms: 1_000,
-            scope: teslatlas_hub::db::PairingScope::AllVehicles,
+            scope: tesatlas_hub::db::PairingScope::AllVehicles,
         },
         &mut broken,
     )
@@ -2365,7 +2365,7 @@ async fn pairing_flush_failure_revokes_and_success_persists_once() {
             certificate_path: &certificate,
             private_key_path: &private_key,
             created_at_ms: 2_000,
-            scope: teslatlas_hub::db::PairingScope::AllVehicles,
+            scope: tesatlas_hub::db::PairingScope::AllVehicles,
         },
         &mut *output,
     )
@@ -2401,7 +2401,7 @@ fn pairing_committed_then_error_is_revoked_before_any_output() {
         &marker,
         || {
             store.persist_pairing("ambiguous terminal", &invitation)?;
-            Err(teslatlas_hub::db::StoreError::PairingRejected)
+            Err(tesatlas_hub::db::StoreError::PairingRejected)
         },
         || store.revoke_pairing(invitation.pairing_id),
     )
@@ -2420,8 +2420,8 @@ fn pairing_persist_and_revoke_failure_is_typed_and_redacted() {
     let error = persist_and_present_pairing(
         &mut NeverWriter,
         &marker,
-        || Err(teslatlas_hub::db::StoreError::PairingRejected),
-        || Err(teslatlas_hub::db::StoreError::PairingRejected),
+        || Err(tesatlas_hub::db::StoreError::PairingRejected),
+        || Err(tesatlas_hub::db::StoreError::PairingRejected),
     )
     .expect_err("persistence and cleanup both fail");
     assert!(matches!(
@@ -2442,7 +2442,7 @@ fn pairing_presentation_and_revoke_failure_is_typed_and_redacted() {
         &mut writer,
         &marker,
         || Ok(()),
-        || Err(teslatlas_hub::db::StoreError::PairingRejected),
+        || Err(tesatlas_hub::db::StoreError::PairingRejected),
     )
     .expect_err("presentation and cleanup fail");
     assert!(matches!(
@@ -2721,7 +2721,7 @@ mod lan_tls_setup {
         let key = rcgen::KeyPair::from_pem(&key_pem).expect("PEM key");
         assert_eq!(key.algorithm(), &rcgen::PKCS_ECDSA_P256_SHA256);
         assert_eq!(tls.public_url, "https://office-mac.local:8443/");
-        teslatlas_hub::server::validate_tls_identity(tls).expect("Serve admits the identity");
+        tesatlas_hub::server::validate_tls_identity(tls).expect("Serve admits the identity");
         assert_eq!(config.collector.interval_seconds, 60, "other settings are kept");
         assert_eq!(mode(&config_path), 0o600);
 
@@ -2946,7 +2946,7 @@ mod lan_tls_setup {
     #[test]
     fn serving_check_waits_between_one_and_150_seconds() {
         let parse = |wait: &str| {
-            super::super::Cli::try_parse_from(["teslatlas-hub", "serving-check", "--wait-seconds", wait])
+            super::super::Cli::try_parse_from(["tesatlas-hub", "serving-check", "--wait-seconds", wait])
         };
         for wait in ["1", "45", "150"] {
             let cli = parse(wait).expect("accepted wait");
@@ -2958,7 +2958,7 @@ mod lan_tls_setup {
         for wait in ["0", "151", "-1"] {
             assert!(parse(wait).is_err(), "{wait}");
         }
-        let default = super::super::Cli::try_parse_from(["teslatlas-hub", "serving-check"]).expect("default");
+        let default = super::super::Cli::try_parse_from(["tesatlas-hub", "serving-check"]).expect("default");
         assert!(matches!(default.command, super::super::Command::ServingCheck { wait_seconds: 30 }));
     }
 
@@ -2977,7 +2977,7 @@ mod n1_cli_report_tests;
 
 #[cfg(target_os = "macos")]
 fn v2_credential_pair_fixture(owner: bool) -> (tempfile::TempDir, HubStore) {
-    use teslatlas_hub::auth::credential_sign_in as credentials;
+    use tesatlas_hub::auth::credential_sign_in as credentials;
     let root = tempfile::tempdir().expect("temporary Hub");
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).expect("private Hub");
     let store = HubStore::initialize(root.path()).expect("store");

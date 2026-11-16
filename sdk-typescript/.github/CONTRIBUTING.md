@@ -1,6 +1,6 @@
 # Contributing
 
-This repository contains the browser and Node.js bindings for Teslatlas. Keep changes focused on the public client, transport behaviour, protocol validation, examples, or package tooling. Hub implementation and application UI belong in their own repositories.
+This repository contains the browser and Node.js bindings for Tesatlas. Keep changes focused on the public client, transport behaviour, protocol validation, examples, or package tooling. Hub implementation and application UI belong in their own repositories.
 
 ## Development
 

@@ -12,9 +12,9 @@ command -v iconutil >/dev/null 2>&1 || {
 }
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-source_iconset="$root/macos/TeslatlasHubApp/Artwork/AppIcon.iconset"
-app_icon="$root/macos/TeslatlasHubApp/TeslatlasHubApp/Resources/AppIcon.icns"
-documentation_icon="$root/docs/assets/teslatlas-hub-icon.png"
+source_iconset="$root/macos/TesatlasHubApp/Artwork/AppIcon.iconset"
+app_icon="$root/macos/TesatlasHubApp/TesatlasHubApp/Resources/AppIcon.icns"
+documentation_icon="$root/docs/assets/tesatlas-hub-icon.png"
 
 [ -d "$source_iconset" ] && [ ! -L "$source_iconset" ] || {
     echo 'build-app-icon: canonical iconset is missing or unsafe' >&2
@@ -32,7 +32,7 @@ for required in \
     }
 done
 
-stage=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-app-icon.XXXXXX")
+stage=$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-app-icon.XXXXXX")
 trap 'find "$stage" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
 iconutil -c icns -o "$stage/AppIcon.icns" "$source_iconset"
 install -m 0644 "$stage/AppIcon.icns" "$app_icon"

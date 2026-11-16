@@ -1,4 +1,4 @@
-# Configure Teslatlas Hub
+# Configure Tesatlas Hub
 
 Hub reads one TOML file, rejects unknown fields, requires absolute paths, and
 caps the file at 1 MiB.
@@ -6,7 +6,7 @@ caps the file at 1 MiB.
 ## Minimal local configuration
 
 ```toml
-data_dir = "/var/lib/teslatlas-hub"
+data_dir = "/var/lib/tesatlas-hub"
 bind = "127.0.0.1:8080"
 
 [geocoder]
@@ -26,12 +26,12 @@ Telemetry ingress uses its own bearer check.
 A non-loopback bind requires TLS:
 
 ```toml
-data_dir = "/var/lib/teslatlas-hub"
+data_dir = "/var/lib/tesatlas-hub"
 bind = "0.0.0.0:8443"
 
 [tls]
-certificate_path = "/etc/teslatlas-hub/tls/server.pem"
-private_key_path = "/etc/teslatlas-hub/tls/server-key.pem"
+certificate_path = "/etc/tesatlas-hub/tls/server.pem"
+private_key_path = "/etc/tesatlas-hub/tls/server-key.pem"
 public_url = "https://hub.example.net/"
 ```
 
@@ -506,9 +506,9 @@ bypasses the collector's own policy (the cap, a refusal that still stands, a fen
 refresh):
 
 ```sh
-teslatlas-hub collector retry                 # clear refusals, waits and pauses; check the account once
-teslatlas-hub collector resume <vehicle UUID> # clear one car's pause
-teslatlas-hub collector gaps acknowledge      # mark alert gaps in collection as seen
+tesatlas-hub collector retry                 # clear refusals, waits and pauses; check the account once
+tesatlas-hub collector resume <vehicle UUID> # clear one car's pause
+tesatlas-hub collector gaps acknowledge      # mark alert gaps in collection as seen
 ```
 
 Each prints one JSON line:
@@ -528,19 +528,19 @@ and are not undone by a collector retry.
 Fleet mode uses Fleet API credentials and can use native Fleet Telemetry push:
 
 The example below is for the packaged Debian services. Its command proxy is
-fixed to loopback port `4445` by `/etc/teslatlas-hub/command-proxy.env`:
+fixed to loopback port `4445` by `/etc/tesatlas-hub/command-proxy.env`:
 
 ```toml
 [collector]
 provider = "fleet"
 fleet_command_proxy_url = "https://127.0.0.1:4445/"
-fleet_command_proxy_root_certificate_path = "/etc/teslatlas-hub/command-proxy-cert.pem"
+fleet_command_proxy_root_certificate_path = "/etc/tesatlas-hub/command-proxy-cert.pem"
 
 [collector.fleet_telemetry]
 hostname = "telemetry.example.net"
 port = 443
-ca_certificate_path = "/etc/teslatlas-hub/fleet-telemetry-ca.pem"
-ingest_token_path = "/var/lib/teslatlas-hub/fleet-telemetry-bearer"
+ca_certificate_path = "/etc/tesatlas-hub/fleet-telemetry-ca.pem"
+ingest_token_path = "/var/lib/tesatlas-hub/fleet-telemetry-bearer"
 ```
 
 The macOS bundled command proxy uses `https://127.0.0.1:4443/`; keep the
@@ -646,7 +646,7 @@ free-space and cache limits remain mandatory:
 ```toml
 [terrain]
 enabled = true
-cache_dir = "/var/lib/teslatlas-hub/cache/terrain"
+cache_dir = "/var/lib/tesatlas-hub/cache/terrain"
 min_free_bytes = 134217728
 max_cache_bytes = 536870912
 connect_timeout_seconds = 15
@@ -698,10 +698,10 @@ Cached tiles remain local until removed under the operator's retention policy.
 Stop the service before changing credentials or paths, then run:
 
 ```sh
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml doctor
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml preflight
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml doctor
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml preflight
 ```
 
 These are Debian package commands. On macOS, use the app or the absolute binary

@@ -204,7 +204,7 @@
           "$ref": "#/$defs/sha256"
         },
         "manifest_domain": {
-          "const": "teslatlas_hub"
+          "const": "tesatlas_hub"
         },
         "config_entry_loaded": {
           "const": true
@@ -216,57 +216,57 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "custom_components.teslatlas_hub",
-            "custom_components.teslatlas_hub.client",
-            "custom_components.teslatlas_hub.config_flow",
-            "custom_components.teslatlas_hub.const",
-            "custom_components.teslatlas_hub.coordinator",
-            "custom_components.teslatlas_hub.credentials",
-            "custom_components.teslatlas_hub.current_hub_client",
-            "custom_components.teslatlas_hub.entity",
-            "custom_components.teslatlas_hub.models",
-            "custom_components.teslatlas_hub.sensor"
+            "custom_components.tesatlas_hub",
+            "custom_components.tesatlas_hub.client",
+            "custom_components.tesatlas_hub.config_flow",
+            "custom_components.tesatlas_hub.const",
+            "custom_components.tesatlas_hub.coordinator",
+            "custom_components.tesatlas_hub.credentials",
+            "custom_components.tesatlas_hub.current_hub_client",
+            "custom_components.tesatlas_hub.entity",
+            "custom_components.tesatlas_hub.models",
+            "custom_components.tesatlas_hub.sensor"
           ],
           "properties": {
-            "custom_components.teslatlas_hub": {
+            "custom_components.tesatlas_hub": {
               "type": "string",
               "pattern": "^[A-Za-z0-9_./-]+\\.py$"
             },
-            "custom_components.teslatlas_hub.client": {
+            "custom_components.tesatlas_hub.client": {
               "type": "string",
               "pattern": "^[A-Za-z0-9_./-]+\\.py$"
             },
-            "custom_components.teslatlas_hub.config_flow": {
+            "custom_components.tesatlas_hub.config_flow": {
               "type": "string",
               "pattern": "^[A-Za-z0-9_./-]+\\.py$"
             },
-            "custom_components.teslatlas_hub.const": {
+            "custom_components.tesatlas_hub.const": {
               "type": "string",
               "pattern": "^[A-Za-z0-9_./-]+\\.py$"
             },
-            "custom_components.teslatlas_hub.coordinator": {
+            "custom_components.tesatlas_hub.coordinator": {
               "type": "string",
               "pattern": "^[A-Za-z0-9_./-]+\\.py$"
             },
-            "custom_components.teslatlas_hub.credentials": {
+            "custom_components.tesatlas_hub.credentials": {
               "const": "credentials.py"
             },
-            "custom_components.teslatlas_hub.diagnostics": {
+            "custom_components.tesatlas_hub.diagnostics": {
               "const": "diagnostics.py"
             },
-            "custom_components.teslatlas_hub.current_hub_client": {
+            "custom_components.tesatlas_hub.current_hub_client": {
               "type": "string",
               "pattern": "^[A-Za-z0-9_./-]+\\.py$"
             },
-            "custom_components.teslatlas_hub.entity": {
+            "custom_components.tesatlas_hub.entity": {
               "type": "string",
               "pattern": "^[A-Za-z0-9_./-]+\\.py$"
             },
-            "custom_components.teslatlas_hub.models": {
+            "custom_components.tesatlas_hub.models": {
               "type": "string",
               "pattern": "^[A-Za-z0-9_./-]+\\.py$"
             },
-            "custom_components.teslatlas_hub.sensor": {
+            "custom_components.tesatlas_hub.sensor": {
               "type": "string",
               "pattern": "^[A-Za-z0-9_./-]+\\.py$"
             }

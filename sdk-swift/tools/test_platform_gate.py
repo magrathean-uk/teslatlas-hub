@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PlatformGateTests(unittest.TestCase):
-    @unittest.skipUnless(os.environ.get("TESLATLAS_PLATFORM_GATE_HISTORICAL_VERIFY") == "1",
+    @unittest.skipUnless(os.environ.get("TESATLAS_PLATFORM_GATE_HISTORICAL_VERIFY") == "1",
                          "historical Git/native verification is an explicit acceptance lane")
     def test_repository_contract_and_accepted_source_identity(self):
         result = platform_gate.verify_repository(ROOT)
@@ -78,14 +78,14 @@ class PlatformGateTests(unittest.TestCase):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn("ENV HOME=/home/swiftuser", dockerfile)
         self.assertIn(
-            "COPY --chown=swiftuser:swiftuser teslatlas-sdk-swift/", dockerfile
+            "COPY --chown=swiftuser:swiftuser tesatlas-sdk-swift/", dockerfile
         )
         self.assertIn(
             "COPY --chown=swiftuser:swiftuser external-four-library-consumer/",
             dockerfile,
         )
         self.assertIn(
-            "RUN chmod -R a-w /workspace/teslatlas-sdk-swift "
+            "RUN chmod -R a-w /workspace/tesatlas-sdk-swift "
             "/workspace/external-four-library-consumer",
             dockerfile,
         )
@@ -105,7 +105,7 @@ class PlatformGateTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(platform_gate.PlatformGateError, "all four"):
             platform_gate._require_linux_consumer_output(
-                "TeslatlasHubSDK,TeslatlasCommands\n"
+                "TesatlasHubSDK,TesatlasCommands\n"
             )
 
     @mock.patch("platform_gate.platform.mac_ver", return_value=("27.0", ("", "", ""), ""))

@@ -44,38 +44,38 @@ for candidate in "$binary" "$receiver_binary"; do
     esac
 done
 version_output=$("$binary" --version 2>&1) || { echo 'Edge binary version query failed' >&2; exit 65; }
-[ "$version_output" = "teslatlas-edge $version" ] || { echo 'Edge binary version mismatch' >&2; exit 65; }
+[ "$version_output" = "tesatlas-edge $version" ] || { echo 'Edge binary version mismatch' >&2; exit 65; }
 printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || { echo 'invalid version' >&2; exit 65; }
 [ ! -e "$output" ] && [ ! -L "$output" ] || { echo 'output already exists' >&2; exit 65; }
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-stage=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-edge-pkg.XXXXXX")
+stage=$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-edge-pkg.XXXXXX")
 trap 'find -x "$stage" -depth -delete' EXIT HUP INT TERM
 core_root="$stage/core-root"
 receiver_root="$stage/receiver-root"
 install -d \
-    "$core_root/usr/local/libexec/teslatlas-edge" \
-    "$core_root/Library/Application Support/Teslatlas Edge/launchagents" \
-    "$receiver_root/usr/local/libexec/teslatlas-edge" \
-    "$receiver_root/Library/Application Support/Teslatlas Edge/launchagents"
-install -m 0755 "$binary" "$core_root/usr/local/libexec/teslatlas-edge/teslatlas-edge"
+    "$core_root/usr/local/libexec/tesatlas-edge" \
+    "$core_root/Library/Application Support/Tesatlas Edge/launchagents" \
+    "$receiver_root/usr/local/libexec/tesatlas-edge" \
+    "$receiver_root/Library/Application Support/Tesatlas Edge/launchagents"
+install -m 0755 "$binary" "$core_root/usr/local/libexec/tesatlas-edge/tesatlas-edge"
 install -m 0755 "$root/scripts/run-with-spool-format-guard.sh" \
-    "$core_root/usr/local/libexec/teslatlas-edge/run-with-spool-format-guard.sh"
-install -m 0755 "$root/packaging/macos/scripts/teslatlas-edge-service.sh" \
-    "$core_root/usr/local/libexec/teslatlas-edge/teslatlas-edge-service.sh"
-install -m 0755 "$root/packaging/macos/scripts/uninstall-teslatlas-edge.sh" \
-    "$core_root/usr/local/libexec/teslatlas-edge/uninstall-teslatlas-edge.sh"
-install -m 0644 "$root/packaging/macos/uk.co.magrathean.teslatlas-edge.plist" \
-    "$core_root/Library/Application Support/Teslatlas Edge/launchagents/uk.co.magrathean.teslatlas-edge.plist"
+    "$core_root/usr/local/libexec/tesatlas-edge/run-with-spool-format-guard.sh"
+install -m 0755 "$root/packaging/macos/scripts/tesatlas-edge-service.sh" \
+    "$core_root/usr/local/libexec/tesatlas-edge/tesatlas-edge-service.sh"
+install -m 0755 "$root/packaging/macos/scripts/uninstall-tesatlas-edge.sh" \
+    "$core_root/usr/local/libexec/tesatlas-edge/uninstall-tesatlas-edge.sh"
+install -m 0644 "$root/packaging/macos/uk.co.magrathean.tesatlas-edge.plist" \
+    "$core_root/Library/Application Support/Tesatlas Edge/launchagents/uk.co.magrathean.tesatlas-edge.plist"
 install -m 0755 "$receiver_binary" \
-    "$receiver_root/usr/local/libexec/teslatlas-edge/teslatlas-fleet-telemetry"
-install -m 0644 "$root/packaging/macos/uk.co.magrathean.teslatlas-fleet-telemetry.plist" \
-    "$receiver_root/Library/Application Support/Teslatlas Edge/launchagents/uk.co.magrathean.teslatlas-fleet-telemetry.plist"
+    "$receiver_root/usr/local/libexec/tesatlas-edge/tesatlas-fleet-telemetry"
+install -m 0644 "$root/packaging/macos/uk.co.magrathean.tesatlas-fleet-telemetry.plist" \
+    "$receiver_root/Library/Application Support/Tesatlas Edge/launchagents/uk.co.magrathean.tesatlas-fleet-telemetry.plist"
 
-pkgbuild --root "$core_root" --identifier uk.co.magrathean.teslatlas.edge.core \
-    --version "$version" --ownership recommended "$stage/teslatlas-edge.core.pkg"
-pkgbuild --root "$receiver_root" --identifier uk.co.magrathean.teslatlas.edge.receiver \
-    --version "$version" --ownership recommended "$stage/teslatlas-edge.receiver.pkg"
+pkgbuild --root "$core_root" --identifier uk.co.magrathean.tesatlas.edge.core \
+    --version "$version" --ownership recommended "$stage/tesatlas-edge.core.pkg"
+pkgbuild --root "$receiver_root" --identifier uk.co.magrathean.tesatlas.edge.receiver \
+    --version "$version" --ownership recommended "$stage/tesatlas-edge.receiver.pkg"
 sed "s/@VERSION@/$version/g" "$root/packaging/macos/Distribution.xml" > "$stage/Distribution.xml"
 mkdir -p "$(dirname -- "$output")"
 productbuild --distribution "$stage/Distribution.xml" \

@@ -997,7 +997,7 @@ async fn p3bf4_an_archive_a_live_instance_owns_is_not_reclaimed() {
 
 /// The directory the helper process of the cross-process control writes into. Unset in an
 /// ordinary run, where the helper below does nothing.
-const LIVE_WRITER_DIRECTORY: &str = "TESLATLAS_P3BF5_LIVE_WRITER_DIRECTORY";
+const LIVE_WRITER_DIRECTORY: &str = "TESATLAS_P3BF5_LIVE_WRITER_DIRECTORY";
 
 /// Not a test of its own: the live writer of the cross-process control, run by the test
 /// binary itself as a second process (R-P3bF5-1). It makes the three kinds of temporary

@@ -190,7 +190,7 @@ async fn hub_sync_14_serves_immediate_physical_delta_and_keeps_13_rebase() {
     assert_eq!(pack.status(), StatusCode::OK);
     assert_eq!(
         pack.headers()[header::CONTENT_TYPE],
-        "application/vnd.teslatlas.physical-delta+sqlite+zstd;version=1"
+        "application/vnd.tesatlas.physical-delta+sqlite+zstd;version=1"
     );
     let bytes = pack.into_body().collect().await.unwrap().to_bytes();
     assert_eq!(Sha256Digest::of_bytes(&bytes), digest);

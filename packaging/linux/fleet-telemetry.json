@@ -4,19 +4,19 @@
   "status_port": 0,
   "log_level": "info",
   "json_log_enable": true,
-  "namespace": "teslatlas",
-  "teslatlas": {
+  "namespace": "tesatlas",
+  "tesatlas": {
     "timeout_ms": 2000
   },
   "reliable_ack_sources": {
-    "V": "teslatlas"
+    "V": "tesatlas"
   },
   "records": {
-    "V": ["teslatlas"],
-    "connectivity": ["teslatlas"]
+    "V": ["tesatlas"],
+    "connectivity": ["tesatlas"]
   },
   "tls": {
-    "server_cert": "/etc/teslatlas-hub/tls.crt",
-    "server_key": "/etc/teslatlas-hub/tls.key"
+    "server_cert": "/etc/tesatlas-hub/tls.crt",
+    "server_key": "/etc/tesatlas-hub/tls.key"
   }
 }

@@ -1,6 +1,6 @@
 # Current-Hub HTTP profile
 
-This guide covers the public HTTP surface implemented by a current Teslatlas
+This guide covers the public HTTP surface implemented by a current Tesatlas
 Hub. Run the shell blocks in one session, in order, with the private directory
 and validated endpoint produced by the earlier blocks. A Hub built from the
 current source names `hub-http-v1@1.3.0` in its discovery document and is held to
@@ -212,7 +212,7 @@ an unknown code as a generic failure of its status. Known codes: `invalid_query`
 `invalid_time_range`, `invalid_limit`, `invalid_cursor`, `vehicle_not_found`,
 `service_unavailable`, `drive_not_found`, `charge_not_found`. Unsupported: vehicle
 commands, SSE, metadata CRUD, snapshot revisions and the protocol-version header; the root
-`teslatlas-v1` family is not served.
+`tesatlas-v1` family is not served.
 
 **Conformance.** The offline checks need no Hub and never prove anything about one:
 
@@ -339,11 +339,11 @@ schema alone accepts compatible 1.x identities, so the block also checks `profil
 ~~~sh
 set -eu
 umask 077
-private_dir="$(mktemp -d /tmp/teslatlas-current-hub.XXXXXX)"
+private_dir="$(mktemp -d /tmp/tesatlas-current-hub.XXXXXX)"
 chmod 700 "$private_dir"
 export private_dir
 hub_endpoint="$HUB_ENDPOINT"
-test -n "$TESLATLAS_HUB_CA"
+test -n "$TESATLAS_HUB_CA"
 HUB_ENDPOINT="$hub_endpoint" python3 - <<'PY'
 import os
 from urllib.parse import urlsplit
@@ -354,22 +354,22 @@ if (url.scheme != "https" or url.username or url.password or url.query
     raise SystemExit("Hub endpoint must be a bare HTTPS origin")
 PY
 curl --silent --show-error --config /dev/null \
-  --noproxy '*' --cacert "$TESLATLAS_HUB_CA" --connect-timeout 5 --max-time 30 \
+  --noproxy '*' --cacert "$TESATLAS_HUB_CA" --connect-timeout 5 --max-time 30 \
   --max-filesize 1048576 \
   --dump-header "$private_dir/discovery.headers" \
   --output "$private_dir/discovery.json" \
   "$hub_endpoint/.well-known/teslatlas-hub"
-TESLATLAS_DISCOVERY="$private_dir/discovery.json" \
-TESLATLAS_DISCOVERY_HEADERS="$private_dir/discovery.headers" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0" \
+TESATLAS_DISCOVERY="$private_dir/discovery.json" \
+TESATLAS_DISCOVERY_HEADERS="$private_dir/discovery.headers" \
+TESATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0" \
 python3 - <<'PY'
 import json
 import os
 from pathlib import Path
 from jsonschema import Draft202012Validator, FormatChecker
 
-profile = Path(os.environ["TESLATLAS_PROFILE"])
-header_lines = Path(os.environ["TESLATLAS_DISCOVERY_HEADERS"]).read_text(encoding="iso-8859-1").splitlines()
+profile = Path(os.environ["TESATLAS_PROFILE"])
+header_lines = Path(os.environ["TESATLAS_DISCOVERY_HEADERS"]).read_text(encoding="iso-8859-1").splitlines()
 if not header_lines or len(header_lines[0].split()) < 2 or int(header_lines[0].split()[1]) != 200:
     raise SystemExit("discovery request did not return HTTP 200")
 headers = {}
@@ -379,7 +379,7 @@ for line in header_lines[1:]:
         headers[key.strip().lower()] = item.strip()
 if headers.get("content-type", "").split(";", 1)[0].strip() != "application/json":
     raise SystemExit("discovery response has an invalid content type")
-raw = Path(os.environ["TESLATLAS_DISCOVERY"]).read_bytes()
+raw = Path(os.environ["TESATLAS_DISCOVERY"]).read_bytes()
 if len(raw) > 1048576:
     raise SystemExit("discovery response exceeds the profile byte limit")
 value = json.loads(raw)
@@ -406,10 +406,10 @@ write its JSON result to a private file:
 set -eu
 umask 077
 if [ -z "${private_dir:-}" ]; then
-  private_dir="$(mktemp -d /tmp/teslatlas-current-hub.XXXXXX)"
+  private_dir="$(mktemp -d /tmp/tesatlas-current-hub.XXXXXX)"
   chmod 700 "$private_dir"
 fi
-teslatlas-hub --config "$PRIVATE_CONFIG" pair --json >"$private_dir/invitation.json"
+tesatlas-hub --config "$PRIVATE_CONFIG" pair --json >"$private_dir/invitation.json"
 chmod 600 "$private_dir/invitation.json"
 ~~~
 
@@ -430,16 +430,16 @@ compare that DER digest before sending the secret. Never use `-k`.
 Here is a complete HTTPS example using Python's standard-library transport and
 the profile's JSON Schema dependency. It takes only private file paths and a
 nonsecret device-name environment variable as inputs. The claim response is
-written to a mode-600 file and is not printed. `TESLATLAS_HUB_CA` must name a
+written to a mode-600 file and is not printed. `TESATLAS_HUB_CA` must name a
 CA file supplied by the owner; the endpoint hostname must be covered by that
 certificate.
 
 ~~~sh
-TESLATLAS_HUB_CA="$private_dir/ca.pem" \
-TESLATLAS_INVITATION="$private_dir/invitation.json" \
-TESLATLAS_CLAIM_RESPONSE="$private_dir/claim.json" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0" \
-TESLATLAS_DEVICE_NAME="My current-Hub client" \
+TESATLAS_HUB_CA="$private_dir/ca.pem" \
+TESATLAS_INVITATION="$private_dir/invitation.json" \
+TESATLAS_CLAIM_RESPONSE="$private_dir/claim.json" \
+TESATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0" \
+TESATLAS_DEVICE_NAME="My current-Hub client" \
 python3 - <<'PY'
 import hashlib
 import json
@@ -457,13 +457,13 @@ def fail(message):
     raise SystemExit(message)
 
 
-invitation_bytes = Path(os.environ["TESLATLAS_INVITATION"]).read_bytes()
+invitation_bytes = Path(os.environ["TESATLAS_INVITATION"]).read_bytes()
 try:
     invitation = hub_http_13.strict_json(invitation_bytes)
 except (UnicodeError, ValueError):
     fail("invitation is not strict JSON")
 if hub_http_13.validate_raw(
-    os.environ["TESLATLAS_PROFILE"], "invitation", 200,
+    os.environ["TESATLAS_PROFILE"], "invitation", 200,
     {"content-type": "application/json"}, invitation_bytes,
 ):
     fail("invitation does not match auth.schema.json")
@@ -486,11 +486,11 @@ expected = {
     "secret": [invitation["secret"]],
     "tls_pin": [invitation["tlsPin"]],
 }
-if (uri.scheme != "teslatlas-hub" or uri.netloc != "pair" or uri.path
+if (uri.scheme != "tesatlas-hub" or uri.netloc != "pair" or uri.path
         or uri.fragment or parse_qs(uri.query, strict_parsing=True) != expected):
     fail("pairingUri does not match the invitation fields")
 
-context = ssl.create_default_context(cafile=os.environ["TESLATLAS_HUB_CA"])
+context = ssl.create_default_context(cafile=os.environ["TESATLAS_HUB_CA"])
 connection = HTTPSConnection(endpoint.hostname, endpoint.port or 443, context=context, timeout=15)
 connection.connect()
 leaf_der = connection.sock.getpeercert(binary_form=True)
@@ -499,7 +499,7 @@ if hashlib.sha256(leaf_der).hexdigest() != invitation["tlsPin"]:
     fail("connected TLS leaf does not match tlsPin")
 
 claim = json.dumps(
-    {"secret": invitation["secret"], "device_name": os.environ["TESLATLAS_DEVICE_NAME"]},
+    {"secret": invitation["secret"], "device_name": os.environ["TESATLAS_DEVICE_NAME"]},
     ensure_ascii=False,
     separators=(",", ":"),
 ).encode("utf-8")
@@ -524,11 +524,11 @@ try:
     value = hub_http_13.strict_json(body)
 except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
     fail("claim response is not valid JSON")
-schema = json.loads((Path(os.environ["TESLATLAS_PROFILE"]) / "auth.schema.json").read_bytes())
+schema = json.loads((Path(os.environ["TESATLAS_PROFILE"]) / "auth.schema.json").read_bytes())
 schema = {**schema, "$ref": "#/$defs/claim"}
 if list(Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(value)):
     fail("claim response does not match auth.schema.json")
-result_path = Path(os.environ["TESLATLAS_CLAIM_RESPONSE"])
+result_path = Path(os.environ["TESATLAS_CLAIM_RESPONSE"])
 result_path.write_bytes(body)
 result_path.chmod(0o600)
 PY
@@ -553,32 +553,32 @@ arguments or history:
 ~~~sh
 set -eu
 umask 077
-TESLATLAS_CLAIM_RESPONSE="$private_dir/claim.json" \
-TESLATLAS_AUTH_HEADER="$private_dir/authorization.header" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0" \
+TESATLAS_CLAIM_RESPONSE="$private_dir/claim.json" \
+TESATLAS_AUTH_HEADER="$private_dir/authorization.header" \
+TESATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0" \
 python3 - <<'PY'
 import os
 from pathlib import Path
 from conformance import hub_http_13
 
-claim_bytes = Path(os.environ["TESLATLAS_CLAIM_RESPONSE"]).read_bytes()
+claim_bytes = Path(os.environ["TESATLAS_CLAIM_RESPONSE"]).read_bytes()
 claim = hub_http_13.strict_json(claim_bytes)
 if hub_http_13.validate_raw(
-    os.environ["TESLATLAS_PROFILE"], "claim", 200,
+    os.environ["TESATLAS_PROFILE"], "claim", 200,
     {"content-type": "application/json"}, claim_bytes,
 ):
     raise SystemExit("claim response does not match auth.schema.json")
 token = claim["access_token"]
 if not isinstance(token, str) or len(token) != 64:
     raise SystemExit("claim response has an invalid bearer")
-path = Path(os.environ["TESLATLAS_AUTH_HEADER"])
+path = Path(os.environ["TESATLAS_AUTH_HEADER"])
 path.write_text("Authorization: Bearer " + token + "\n", encoding="ascii")
 path.chmod(0o600)
 PY
 
 validate_resource() {
   RESOURCE_BODY="$1" RESOURCE_HEADERS="$2" RESOURCE_KIND="$3" \
-  TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0" python3 - <<'PY'
+  TESATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0" python3 - <<'PY'
 import os
 from pathlib import Path
 from conformance import hub_http_13
@@ -594,22 +594,22 @@ for line in header_lines[1:]:
         key, value = line.split(":", 1)
         headers[key.strip()] = value.strip()
 if status != 200 or hub_http_13.validate_raw(
-    os.environ["TESLATLAS_PROFILE"], os.environ["RESOURCE_KIND"], status,
+    os.environ["TESATLAS_PROFILE"], os.environ["RESOURCE_KIND"], status,
     headers, body_path.read_bytes()
 ):
     raise SystemExit("resource response does not match hub-http-v1@1.3.0")
 PY
 }
 
-endpoint="$(TESLATLAS_INVITATION="$private_dir/invitation.json" python3 - <<'PY'
+endpoint="$(TESATLAS_INVITATION="$private_dir/invitation.json" python3 - <<'PY'
 import os
 from pathlib import Path
 from conformance import hub_http_13
-print(hub_http_13.strict_json(Path(os.environ["TESLATLAS_INVITATION"]).read_bytes())["endpoint"].rstrip("/"))
+print(hub_http_13.strict_json(Path(os.environ["TESATLAS_INVITATION"]).read_bytes())["endpoint"].rstrip("/"))
 PY
 )"
 curl --silent --show-error --get \
-  --config /dev/null --noproxy '*' --cacert "$TESLATLAS_HUB_CA" \
+  --config /dev/null --noproxy '*' --cacert "$TESATLAS_HUB_CA" \
   --connect-timeout 5 --max-time 30 --max-filesize 1048576 \
   --header @"$private_dir/authorization.header" \
   --dump-header "$private_dir/vehicles.headers" \
@@ -627,7 +627,7 @@ set -eu
 umask 077
 vehicle_id='11111111-1111-4111-8111-111111111111'
 curl --silent --show-error \
-  --config /dev/null --noproxy '*' --cacert "$TESLATLAS_HUB_CA" \
+  --config /dev/null --noproxy '*' --cacert "$TESATLAS_HUB_CA" \
   --connect-timeout 5 --max-time 30 --max-filesize 1048576 \
   --header @"$private_dir/authorization.header" \
   --dump-header "$private_dir/current.headers" \
@@ -671,7 +671,7 @@ while [ "$page" -lt "$max_pages" ]; do
   headers="$private_dir/drives-$page.headers"
   if [ -s "$cursor_file" ]; then
     curl --silent --show-error --get \
-      --config /dev/null --noproxy '*' --cacert "$TESLATLAS_HUB_CA" \
+      --config /dev/null --noproxy '*' --cacert "$TESATLAS_HUB_CA" \
       --connect-timeout 5 --max-time 30 --max-filesize 1048576 \
       --header @"$private_dir/authorization.header" \
       --data-urlencode "from_ms=$from_ms" \
@@ -683,7 +683,7 @@ while [ "$page" -lt "$max_pages" ]; do
       "$endpoint/v1/vehicles/$vehicle_id/drives"
   else
     curl --silent --show-error --get \
-      --config /dev/null --noproxy '*' --cacert "$TESLATLAS_HUB_CA" \
+      --config /dev/null --noproxy '*' --cacert "$TESATLAS_HUB_CA" \
       --connect-timeout 5 --max-time 30 --max-filesize 1048576 \
       --header @"$private_dir/authorization.header" \
       --data-urlencode "from_ms=$from_ms" \
@@ -696,7 +696,7 @@ while [ "$page" -lt "$max_pages" ]; do
   DRIVE_PAGE="$output" DRIVE_HEADERS="$headers" CURSOR_FILE="$cursor_file" \
   SEEN_CURSORS="$seen_cursors" \
   NEXT_CURSOR_FILE="$private_dir/next.cursor" \
-  TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0" python3 - <<'PY'
+  TESATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0" python3 - <<'PY'
 import json
 import os
 from pathlib import Path
@@ -713,7 +713,7 @@ for line in header_lines[1:]:
         key, value = line.split(":", 1)
         headers[key.strip()] = value.strip()
 problems = hub_http_13.validate_raw(
-    os.environ["TESLATLAS_PROFILE"], "drives", status, headers, body_path.read_bytes()
+    os.environ["TESATLAS_PROFILE"], "drives", status, headers, body_path.read_bytes()
 )
 if problems:
     raise SystemExit("drive response does not match hub-http-v1@1.3.0")
@@ -758,7 +758,7 @@ else:
     raise SystemExit("first drive page has no ETag")
 PY
 curl --silent --show-error --get \
-  --config /dev/null --noproxy '*' --cacert "$TESLATLAS_HUB_CA" \
+  --config /dev/null --noproxy '*' --cacert "$TESATLAS_HUB_CA" \
   --connect-timeout 5 --max-time 30 --max-filesize 1048576 \
   --header @"$private_dir/authorization.header" \
   --header @"$private_dir/drives.if-none-match" \
@@ -770,7 +770,7 @@ curl --silent --show-error --get \
   "$endpoint/v1/vehicles/$vehicle_id/drives"
 DRIVE_PAGE="$private_dir/drives-conditional.json" \
 DRIVE_HEADERS="$private_dir/drives-conditional.headers" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0" python3 - <<'PY'
+TESATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0" python3 - <<'PY'
 import os
 from pathlib import Path
 from conformance import hub_http_13
@@ -786,7 +786,7 @@ for line in lines[1:]:
         key, value = line.split(":", 1)
         headers[key.strip()] = value.strip()
 if status != 304 or hub_http_13.validate_raw(
-    os.environ["TESLATLAS_PROFILE"], "drives", status, headers, body
+    os.environ["TESATLAS_PROFILE"], "drives", status, headers, body
 ):
     raise SystemExit("conditional drive response does not match the 304 profile")
 PY
@@ -823,7 +823,7 @@ remain `device_id`, `access_token`, and `expires_at_ms`.
 set -eu
 umask 077
 curl --silent --show-error --request POST \
-  --config /dev/null --noproxy '*' --cacert "$TESLATLAS_HUB_CA" \
+  --config /dev/null --noproxy '*' --cacert "$TESATLAS_HUB_CA" \
   --connect-timeout 5 --max-time 30 --max-filesize 1048576 \
   --header @"$private_dir/authorization.header" \
   --dump-header "$private_dir/rotated-claim.headers" \
@@ -835,7 +835,7 @@ chmod 600 "$private_dir/authorization.old"
 ROTATED_CLAIM="$private_dir/rotated-claim.json" \
 ROTATED_HEADERS="$private_dir/rotated-claim.headers" \
 AUTH_HEADER="$private_dir/authorization.header" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0" python3 - <<'PY'
+TESATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.3.0" python3 - <<'PY'
 import os
 from pathlib import Path
 from conformance import hub_http_13
@@ -852,7 +852,7 @@ for line in header_lines[1:]:
         headers[key.strip()] = value.strip()
 body = body_path.read_bytes()
 if status != 200 or hub_http_13.validate_raw(
-    os.environ["TESLATLAS_PROFILE"], "rotate", status, headers, body
+    os.environ["TESATLAS_PROFILE"], "rotate", status, headers, body
 ):
     raise SystemExit("rotation response does not match auth.schema.json")
 value = hub_http_13.strict_json(body)
@@ -876,7 +876,7 @@ os.replace(temporary, destination)
 PY
 
 curl --silent --show-error --get \
-  --config /dev/null --noproxy '*' --cacert "$TESLATLAS_HUB_CA" \
+  --config /dev/null --noproxy '*' --cacert "$TESATLAS_HUB_CA" \
   --connect-timeout 5 --max-time 30 --max-filesize 1048576 \
   --header @"$private_dir/authorization.old" \
   --dump-header "$private_dir/old-bearer.headers" \
@@ -907,7 +907,7 @@ timed out still requires a fresh owner invitation before another attempt.
 
 The current-Hub profile intentionally has no public SSE/events endpoint,
 command submission, metadata CRUD or snapshot revision.
-Do not send protocol-version headers such as `Teslatlas-Protocol-Version` and do
+Do not send protocol-version headers such as `Tesatlas-Protocol-Version` and do
 not infer unsupported routes from discovery. The sync appendix documents pack
 delivery checks separately from these HTTP query semantics. A schema 2.2
 no-op that is unavailable returns an unsigned, empty `406` with

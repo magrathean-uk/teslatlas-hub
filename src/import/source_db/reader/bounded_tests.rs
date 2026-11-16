@@ -803,7 +803,7 @@ fn the_postgres_entry_points_call_the_shared_admission_and_cancel_code() {
 // ---- live proof against a real server -------------------------------------
 //
 // Ignored like the other PostgreSQL-gated tests. Point
-// TESLATLAS_HUB_BOUNDED_READ_TEST_POSTGRES_URL at a throwaway server (any
+// TESATLAS_HUB_BOUNDED_READ_TEST_POSTGRES_URL at a throwaway server (any
 // database; the tests only read generated series) and run with --ignored.
 //
 // A test that proves a bound must stay small and fast when that bound is
@@ -821,7 +821,7 @@ fn the_postgres_entry_points_call_the_shared_admission_and_cancel_code() {
 // seconds a test waits for it to go quiet, yet it cannot produce more than the
 // series holds.
 
-const LIVE_URL_ENV: &str = "TESLATLAS_HUB_BOUNDED_READ_TEST_POSTGRES_URL";
+const LIVE_URL_ENV: &str = "TESATLAS_HUB_BOUNDED_READ_TEST_POSTGRES_URL";
 const LIVE_INT8: &[Type] = &[Type::INT8];
 const LIVE_COPY_COLUMNS: &[Type] = &[Type::INT8, Type::TEXT, Type::TEXT];
 const LIVE_ROW_BUDGET: usize = 10;
@@ -953,7 +953,7 @@ async fn assert_backend_stops_producing(observer: &Client, pid: i32) {
 }
 
 #[tokio::test]
-#[ignore = "needs PostgreSQL: set TESLATLAS_HUB_BOUNDED_READ_TEST_POSTGRES_URL (run with --ignored)"]
+#[ignore = "needs PostgreSQL: set TESATLAS_HUB_BOUNDED_READ_TEST_POSTGRES_URL (run with --ignored)"]
 async fn live_a_query_over_its_row_budget_stops_the_server_and_leaves_the_connection_usable() {
     within_live_limit(async {
         let client = live_client().await;
@@ -981,7 +981,7 @@ async fn live_a_query_over_its_row_budget_stops_the_server_and_leaves_the_connec
 }
 
 #[tokio::test]
-#[ignore = "needs PostgreSQL: set TESLATLAS_HUB_BOUNDED_READ_TEST_POSTGRES_URL (run with --ignored)"]
+#[ignore = "needs PostgreSQL: set TESATLAS_HUB_BOUNDED_READ_TEST_POSTGRES_URL (run with --ignored)"]
 async fn live_a_copy_over_its_row_budget_stops_the_server() {
     within_live_limit(async {
         let client = live_client().await;
@@ -1027,7 +1027,7 @@ async fn live_a_copy_over_its_row_budget_stops_the_server() {
 }
 
 #[tokio::test]
-#[ignore = "needs PostgreSQL: set TESLATLAS_HUB_BOUNDED_READ_TEST_POSTGRES_URL (run with --ignored)"]
+#[ignore = "needs PostgreSQL: set TESATLAS_HUB_BOUNDED_READ_TEST_POSTGRES_URL (run with --ignored)"]
 async fn live_rows_inside_every_budget_are_returned_and_each_budget_is_enforced() {
     within_live_limit(async {
         let client = live_client().await;

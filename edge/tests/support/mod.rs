@@ -3,7 +3,7 @@
 pub mod hub_double;
 
 use serde_json::json;
-use teslatlas_edge::protocol::ReceiverEnvelope;
+use tesatlas_edge::protocol::ReceiverEnvelope;
 
 pub const VIN: &str = "5YJ3E1EA7KF000001";
 pub const T0: i64 = 1_800_000_000_000;

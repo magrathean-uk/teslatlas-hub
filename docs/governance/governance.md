@@ -1,7 +1,7 @@
 # Governance
 
-MAGRATHEAN UK LTD (**Magrathean**) owns Teslatlas Hub and publishes its
-official releases. György Bolyki, who created Teslatlas, is the Hub's
+MAGRATHEAN UK LTD (**Magrathean**) owns Tesatlas Hub and publishes its
+official releases. György Bolyki, who created Tesatlas, is the Hub's
 maintainer.
 
 ## The maintainer
@@ -31,7 +31,7 @@ Where goals conflict, the maintainer weighs them in this order:
 ## Ownership
 
 György Bolyki made every commit up to 27 September 2026, and assigned all
-rights in Teslatlas to Magrathean by an assignment agreement dated
+rights in Tesatlas to Magrathean by an assignment agreement dated
 27 September 2026. Those commits carry no sign-off line. None is needed for the
 owner's own work, and published history is not rewritten.
 

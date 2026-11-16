@@ -2,13 +2,13 @@
 
 ## Entry points
 
-Use `@teslatlas/sdk/node` for `createHubClient`. The root `@teslatlas/sdk` entry
+Use `@tesatlas/sdk/node` for `createHubClient`. The root `@tesatlas/sdk` entry
 point intentionally has no factory; it exports public types, safe errors, opaque
 constructors, and caller-owned interfaces. There is no browser entry point.
 
 ```ts
-import { createHubClient } from "@teslatlas/sdk/node";
-import { asStrongEntityTag } from "@teslatlas/sdk";
+import { createHubClient } from "@tesatlas/sdk/node";
+import { asStrongEntityTag } from "@tesatlas/sdk";
 
 const client = createHubClient({
   endpoint: "https://hub.example.invalid",

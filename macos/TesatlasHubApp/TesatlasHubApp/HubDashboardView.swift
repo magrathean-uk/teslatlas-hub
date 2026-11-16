@@ -1,0 +1,584 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+import AppKit
+
+enum HubServiceTransition: Equatable {
+    case starting
+    case stopping
+    case restarting
+    case removing
+    case deleting
+
+    var title: String {
+        switch self {
+        case .starting: return HubL10n.text("hub.HubDashboardView.12.1336", fallback: "Starting Hub…")
+        case .stopping: return HubL10n.text("hub.HubDashboardView.13.1337", fallback: "Stopping Hub…")
+        case .restarting: return HubL10n.text("hub.HubDashboardView.14.1338", fallback: "Restarting Hub…")
+        case .removing: return HubL10n.text("hub.service.removing.title", fallback: "Removing background service…")
+        case .deleting: return HubL10n.text("hub.service.deleting.title", fallback: "Deleting Hub and data…")
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .starting: return HubL10n.text("hub.HubDashboardView.20.1339", fallback: "Preparing vehicle data collection.")
+        case .stopping: return HubL10n.text("hub.HubDashboardView.21.1340", fallback: "Finishing current work and stopping safely.")
+        case .restarting: return HubL10n.text("hub.HubDashboardView.22.1341", fallback: "Restarting the background service.")
+        case .removing: return HubL10n.text("hub.service.removing.subtitle", fallback: "Stopping the background service, then removing it.")
+        case .deleting: return HubL10n.text("hub.service.deleting.subtitle", fallback: "Stopping the background service, then deleting the Hub's files.")
+        }
+    }
+
+    var service: String {
+        switch self {
+        case .starting: return HubL10n.text("hub.HubDashboardView.28.1342", fallback: "Starting…")
+        case .stopping: return HubL10n.text("hub.HubDashboardView.29.1343", fallback: "Stopping…")
+        case .restarting: return HubL10n.text("hub.HubDashboardView.30.1344", fallback: "Restarting…")
+        case .removing: return HubL10n.text("hub.service.removing.service", fallback: "Removing…")
+        case .deleting: return HubL10n.text("hub.service.deleting.service", fallback: "Deleting…")
+        }
+    }
+
+    var completionAnnouncement: String {
+        switch self {
+        case .starting: return HubL10n.text("hub.HubDashboardView.36.1345", fallback: "Hub started.")
+        case .stopping: return HubL10n.text("hub.HubDashboardView.37.1346", fallback: "Hub stopped.")
+        case .restarting: return HubL10n.text("hub.HubDashboardView.38.1347", fallback: "Hub restarted.")
+        case .removing: return HubL10n.text("hub.service.removing.done", fallback: "Background service removed.")
+        case .deleting: return HubL10n.text("hub.service.deleting.done", fallback: "Hub and data deleted.")
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .starting: return "play.circle"
+        case .stopping: return "pause.circle"
+        case .restarting: return "arrow.clockwise.circle"
+        case .removing: return "minus.circle"
+        case .deleting: return "trash.circle"
+        }
+    }
+}
+
+struct HubDashboardActions {
+    let start: () -> Void
+    let stop: () -> Void
+    let restart: () -> Void
+    let setup: () -> Void
+    let diagnostics: () -> Void
+    let vehicle: HubVehicleCardActions
+    let serviceDetails: () -> Void
+    let dataFolder: () -> Void
+}
+
+private final class HubDashboardStatusTile: NSView {
+    var tone: HubStatusTone = .neutral {
+        didSet { updateLayer() }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 14
+        layer?.cornerCurve = .continuous
+        updateLayer()
+    }
+
+    override func updateLayer() {
+        layer?.backgroundColor = tone.color.withAlphaComponent(0.12).cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateLayer()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}
+
+final class HubDashboardView: HubSurfaceView {
+    private let actions: HubDashboardActions
+    private let hero = NSStackView()
+    private let heroTile = HubDashboardStatusTile()
+    private let heroTitle = NSTextField(labelWithString: "")
+    private let heroSubtitle = NSTextField(wrappingLabelWithString: "")
+    private let heroSymbol = NSImageView()
+    private let heroProgress = NSProgressIndicator()
+    private let startStopButton = HubActionButton(title: HubL10n.text("hub.HubDashboardView.96.1352", fallback: "Stop Hub…"), target: nil, action: nil)
+    private let restartButton = HubActionButton(title: HubL10n.text("hub.HubDashboardView.97.1353", fallback: "Restart Hub"), target: nil, action: nil)
+    private let setupButton = HubActionButton(title: HubL10n.text("hub.HubDashboardView.98.1354", fallback: "Set Up Hub"), target: nil, action: nil)
+    private let diagnosticsButton = HubActionButton(title: HubL10n.text("hub.HubDashboardView.99.1355", fallback: "Run Diagnostics"), target: nil, action: nil)
+    private let vehicleCard: HubVehicleCardView
+    private let serviceRow = HubStatusRowView(symbol: "gearshape", title: HubL10n.text("hub.HubDashboardView.101.1357", fallback: "Hub service"),
+                                              detail: "")
+    private let accountRow = HubStatusRowView(symbol: "person.crop.circle", title: HubL10n.text("hub.HubController.1162.479", fallback: "Tesla account"),
+                                              detail: "")
+    private let databaseRow = HubStatusRowView(symbol: "cylinder", title: HubL10n.text("hub.HubDashboardView.105.1361", fallback: "Local database"),
+                                               detail: "")
+    private let vehicleSummaryStack = NSStackView()
+    private let activityStack = NSStackView()
+    private let versionLabel = NSTextField(labelWithString: "")
+    private var renderedVehicles: [HubControlVehicle]?
+    private var renderedStatusUnavailable = false
+    private var renderedActivity: [String]?
+    private var selectedVehicleID: UUID?
+    private var interactionsEnabled = true
+    private var vehicleControlsEnabled = true
+    private var startStopAction: StartStopAction = .stop
+
+    private enum StartStopAction { case start, stop }
+
+    var defaultButton: NSButton? {
+        if !setupButton.isHidden { return setupButton }
+        if !diagnosticsButton.isHidden { return diagnosticsButton }
+        if startStopAction == .start { return startStopButton }
+        return nil
+    }
+
+    init(actions: HubDashboardActions) {
+        self.actions = actions
+        vehicleCard = HubVehicleCardView(actions: actions.vehicle)
+        super.init(fill: .background)
+        buildHero()
+
+        let statusCard = HubCardView()
+        statusCard.identifier = NSUserInterfaceItemIdentifier("hub.dashboard.status-card")
+        let statusStack = NSStackView(views: [serviceRow, separator(), accountRow, separator(), databaseRow])
+        statusStack.orientation = .vertical
+        statusStack.spacing = 0
+        statusStack.translatesAutoresizingMaskIntoConstraints = false
+        statusCard.addSubview(statusStack)
+        NSLayoutConstraint.activate([
+            statusStack.leadingAnchor.constraint(equalTo: statusCard.leadingAnchor),
+            statusStack.trailingAnchor.constraint(equalTo: statusCard.trailingAnchor),
+            statusStack.topAnchor.constraint(equalTo: statusCard.topAnchor),
+            statusStack.bottomAnchor.constraint(equalTo: statusCard.bottomAnchor)
+        ])
+
+        let vehiclesHeading = NSTextField(labelWithString: HubL10n.text("hub.AppDelegate.110.36", fallback: "Vehicles"))
+        vehiclesHeading.font = .systemFont(ofSize: 14, weight: .medium)
+        vehiclesHeading.textColor = .secondaryLabelColor
+        let vehiclesCard = HubCardView()
+        vehicleSummaryStack.orientation = .vertical
+        vehicleSummaryStack.spacing = 0
+        vehicleSummaryStack.translatesAutoresizingMaskIntoConstraints = false
+        vehiclesCard.addSubview(vehicleSummaryStack)
+        NSLayoutConstraint.activate([
+            vehicleSummaryStack.leadingAnchor.constraint(equalTo: vehiclesCard.leadingAnchor),
+            vehicleSummaryStack.trailingAnchor.constraint(equalTo: vehiclesCard.trailingAnchor),
+            vehicleSummaryStack.topAnchor.constraint(equalTo: vehiclesCard.topAnchor),
+            vehicleSummaryStack.bottomAnchor.constraint(equalTo: vehiclesCard.bottomAnchor)
+        ])
+        let vehiclesSection = NSStackView(views: [vehiclesHeading, vehiclesCard])
+        vehiclesSection.orientation = .vertical
+        vehiclesSection.alignment = .leading
+        vehiclesSection.spacing = 7
+
+        let activityHeadingIcon = NSImageView(image: NSImage(systemSymbolName: "waveform.path.ecg",
+                                                              accessibilityDescription: nil) ?? NSImage())
+        activityHeadingIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 10, weight: .regular)
+        activityHeadingIcon.contentTintColor = HubPalette.mutedForeground
+        let activityTitle = NSTextField(labelWithString: HubL10n.text("hub.HubDashboardView.166.1366", fallback: "Recent activity"))
+        activityTitle.font = HubTypography.emphasis
+        activityTitle.textColor = HubPalette.mutedForeground
+        let activityHeading = NSStackView(views: [activityTitle])
+        activityHeading.alignment = .centerY
+        activityHeading.spacing = 6
+
+        let activityCard = HubCardView()
+        activityCard.identifier = NSUserInterfaceItemIdentifier("hub.dashboard.activity-card")
+        activityStack.orientation = .vertical
+        activityStack.spacing = 0
+        activityStack.translatesAutoresizingMaskIntoConstraints = false
+        activityCard.addSubview(activityStack)
+        NSLayoutConstraint.activate([
+            activityStack.leadingAnchor.constraint(equalTo: activityCard.leadingAnchor),
+            activityStack.trailingAnchor.constraint(equalTo: activityCard.trailingAnchor),
+            activityStack.topAnchor.constraint(equalTo: activityCard.topAnchor),
+            activityStack.bottomAnchor.constraint(equalTo: activityCard.bottomAnchor)
+        ])
+        let activitySection = NSStackView(views: [activityHeading, activityCard])
+        activitySection.orientation = .vertical
+        activitySection.alignment = .leading
+        activitySection.spacing = 7
+
+        let details = flatButton(title: HubL10n.text("hub.AppDelegate.132.43", fallback: "Service Details"), symbol: nil,
+                                 action: #selector(serviceDetailsPressed))
+        let folder = flatButton(title: HubL10n.text("hub.HubDashboardView.192.1369", fallback: "Data Folder"), symbol: "folder",
+                                action: #selector(dataFolderPressed))
+        versionLabel.font = .systemFont(ofSize: 11.5)
+        versionLabel.textColor = HubPalette.mutedForeground
+        let privacyIcon = NSImageView(image: NSImage(systemSymbolName: "lock",
+                                                      accessibilityDescription: nil) ?? NSImage())
+        privacyIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
+        privacyIcon.contentTintColor = HubPalette.mutedForeground
+        privacyIcon.widthAnchor.constraint(equalToConstant: 16).isActive = true
+        let privacy = NSTextField(labelWithString: HubL10n.text("hub.HubDashboardView.201.1372", fallback: "Your data stays on this Mac."))
+        privacy.font = .systemFont(ofSize: 11.5)
+        privacy.textColor = HubPalette.mutedForeground
+        let footerLine = separator()
+        let footerRow = NSStackView(views: [privacyIcon, privacy, NSView(), details, folder, versionLabel])
+        footerRow.alignment = .centerY
+        footerRow.spacing = 8
+        let footer = NSStackView(views: [footerLine, footerRow])
+        footer.orientation = .vertical
+        footer.spacing = 10
+
+        let content = NSStackView(views: [hero, statusCard, vehiclesSection, activitySection,
+                                          NSView(), footer])
+        content.orientation = .vertical
+        content.alignment = .leading
+        content.spacing = HubMetrics.sectionSpacing
+        content.translatesAutoresizingMaskIntoConstraints = false
+
+        let document = HubFlippedSurfaceView(fill: .background)
+        document.translatesAutoresizingMaskIntoConstraints = false
+        document.addSubview(content)
+        let scroll = NSScrollView()
+        scroll.identifier = NSUserInterfaceItemIdentifier("hub.dashboard.scroll")
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        scroll.documentView = document
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(scroll)
+        NSLayoutConstraint.activate([
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
+            document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            document.heightAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.heightAnchor),
+            content.centerXAnchor.constraint(equalTo: document.centerXAnchor),
+            content.leadingAnchor.constraint(greaterThanOrEqualTo: document.leadingAnchor,
+                                             constant: HubMetrics.pageInset),
+            content.trailingAnchor.constraint(lessThanOrEqualTo: document.trailingAnchor,
+                                              constant: -HubMetrics.pageInset),
+            content.widthAnchor.constraint(equalToConstant: HubMetrics.contentWidth),
+            content.topAnchor.constraint(equalTo: document.topAnchor, constant: HubMetrics.pageTopInset),
+            content.bottomAnchor.constraint(equalTo: document.bottomAnchor,
+                                              constant: -HubMetrics.pageInset),
+            hero.widthAnchor.constraint(equalTo: content.widthAnchor),
+            statusCard.widthAnchor.constraint(equalTo: content.widthAnchor),
+            vehiclesSection.widthAnchor.constraint(equalTo: content.widthAnchor),
+            vehiclesCard.widthAnchor.constraint(equalTo: vehiclesSection.widthAnchor),
+            activitySection.widthAnchor.constraint(equalTo: content.widthAnchor),
+            activityCard.widthAnchor.constraint(equalTo: activitySection.widthAnchor),
+            footer.widthAnchor.constraint(equalTo: content.widthAnchor),
+            footerLine.widthAnchor.constraint(equalTo: footer.widthAnchor),
+            footerRow.widthAnchor.constraint(equalTo: footer.widthAnchor)
+        ])
+    }
+
+    func apply(snapshot: HubSnapshot,
+               transition: HubServiceTransition?,
+               activity: [HubActivity]) {
+        let title = transition?.title ?? (snapshot.checkingStatus ? "Checking Hub" : snapshot.statusTitle)
+        if !heroTitle.stringValue.isEmpty, heroTitle.stringValue != title { HubMotion.transition(hero) }
+        heroTitle.stringValue = title
+        heroSubtitle.stringValue = transition?.subtitle ?? (snapshot.checkingStatus ? "Waiting for the initial Hub status report." : subtitle(for: snapshot))
+        heroSymbol.image = NSImage(systemSymbolName: transition?.symbol ?? symbol(for: snapshot),
+                                   accessibilityDescription: nil)
+        let tone: HubStatusTone = snapshot.checkingStatus ? .neutral : tone(for: snapshot)
+        heroTile.tone = tone
+        heroSymbol.contentTintColor = tone.color
+        let waiting = transition != nil || snapshot.checkingStatus
+        heroSymbol.isHidden = waiting
+        heroProgress.isHidden = !waiting
+        if waiting { heroProgress.startAnimation(nil) } else { heroProgress.stopAnimation(nil) }
+
+        serviceRow.value = transition?.service ?? compactServiceValue(snapshot)
+        serviceRow.statusTone = tone
+        accountRow.value = snapshot.accountDisplay
+        databaseRow.value = snapshot.database
+        versionLabel.stringValue = HubL10n.format("hub.HubDashboardView.279.1374", fallback: "Tesatlas Hub %1$@", arguments: [String(describing: HubRelease.bundledVersion)])
+
+        let availableIDs = Set(snapshot.controlVehicles.map(\.id))
+        if let selectedVehicleID, !availableIDs.contains(selectedVehicleID) {
+            self.selectedVehicleID = nil
+        }
+        if selectedVehicleID == nil {
+            selectedVehicleID = snapshot.controlVehicleID ?? snapshot.controlVehicles.first?.id
+        }
+        let selectedVehicle = snapshot.controlVehicles.first { $0.id == selectedVehicleID }
+        let controlsEnabled = vehicleControlsEnabled && interactionsEnabled && transition == nil
+            && snapshot.health == .running && snapshot.accountState == .connected
+        vehicleCard.apply(vehicle: selectedVehicle,
+                          allVehicles: snapshot.controlVehicles,
+                          provider: snapshot.provider,
+                          enabled: controlsEnabled,
+                          emptyTitle: snapshot.vehicleName,
+                          emptyStatus: snapshot.vehicle)
+        renderVehicles(snapshot.controlVehicles, statusUnavailable: snapshot.statusUnavailable)
+        updateHeroActions(snapshot: snapshot, transition: transition)
+        render(activity: activity.isEmpty ? snapshot.activity : activity)
+    }
+
+    func setInteractionsEnabled(_ enabled: Bool) { interactionsEnabled = enabled }
+    func setVehicleControlsEnabled(_ enabled: Bool) { vehicleControlsEnabled = enabled }
+    func selectVehicle(id: UUID) { selectedVehicleID = id }
+
+    private func buildHero() {
+        hero.identifier = NSUserInterfaceItemIdentifier("hub.dashboard.hero")
+        hero.orientation = .horizontal
+        hero.alignment = .centerY
+        hero.spacing = 14
+
+        heroTile.translatesAutoresizingMaskIntoConstraints = false
+        heroTile.widthAnchor.constraint(equalToConstant: 48).isActive = true
+        heroTile.heightAnchor.constraint(equalToConstant: 48).isActive = true
+        heroSymbol.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 22, weight: .medium)
+        heroSymbol.identifier = NSUserInterfaceItemIdentifier("hub.dashboard.hero-symbol")
+        heroSymbol.setAccessibilityElement(false)
+        heroSymbol.translatesAutoresizingMaskIntoConstraints = false
+        heroProgress.style = .spinning
+        heroProgress.controlSize = .small
+        heroProgress.isDisplayedWhenStopped = false
+        heroProgress.translatesAutoresizingMaskIntoConstraints = false
+        heroTile.addSubview(heroSymbol)
+        heroTile.addSubview(heroProgress)
+        NSLayoutConstraint.activate([
+            heroSymbol.centerXAnchor.constraint(equalTo: heroTile.centerXAnchor),
+            heroSymbol.centerYAnchor.constraint(equalTo: heroTile.centerYAnchor),
+            heroProgress.centerXAnchor.constraint(equalTo: heroTile.centerXAnchor),
+            heroProgress.centerYAnchor.constraint(equalTo: heroTile.centerYAnchor)
+        ])
+
+        heroTitle.font = HubTypography.heading
+        heroTitle.textColor = HubPalette.foreground
+        heroSubtitle.font = .systemFont(ofSize: 13)
+        heroSubtitle.textColor = HubPalette.mutedForeground
+        heroSubtitle.maximumNumberOfLines = 2
+        let copy = NSStackView(views: [heroTitle, heroSubtitle])
+        copy.orientation = .vertical
+        copy.alignment = .leading
+        copy.spacing = 2
+
+        startStopButton.target = self
+        startStopButton.action = #selector(startStopPressed)
+        restartButton.target = self
+        restartButton.action = #selector(restartPressed)
+        setupButton.target = self
+        setupButton.action = #selector(setupPressed)
+        diagnosticsButton.target = self
+        diagnosticsButton.action = #selector(diagnosticsPressed)
+        [startStopButton, restartButton, setupButton, diagnosticsButton].forEach {
+            $0.hubFont = HubTypography.action
+            $0.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
+        }
+        let controls = NSStackView(views: [startStopButton, restartButton,
+                                           diagnosticsButton, setupButton])
+        controls.alignment = .centerY
+        controls.spacing = 8
+
+        hero.addArrangedSubview(heroTile)
+        hero.addArrangedSubview(copy)
+        hero.addArrangedSubview(NSView())
+        hero.addArrangedSubview(controls)
+    }
+
+    private func updateHeroActions(snapshot: HubSnapshot, transition: HubServiceTransition?) {
+        let enabled = interactionsEnabled && transition == nil
+        startStopButton.isHidden = snapshot.health == .running || snapshot.health == .needsInstall
+        restartButton.isHidden = snapshot.health == .running || snapshot.health == .needsInstall
+        diagnosticsButton.isHidden = snapshot.health == .running || snapshot.health == .needsInstall
+        setupButton.isHidden = snapshot.health != .needsInstall
+        [startStopButton, restartButton, diagnosticsButton, setupButton].forEach { $0.isEnabled = enabled }
+
+        if snapshot.health == .stopped {
+            startStopAction = .start
+            startStopButton.title = HubL10n.text("hub.HubDashboardView.119.1362", fallback: "Start Hub")
+            startStopButton.hubStyle = .primary
+            startStopButton.keyEquivalent = "\r"
+        } else {
+            startStopAction = .stop
+            startStopButton.title = HubL10n.text("hub.HubDashboardView.96.1352", fallback: "Stop Hub…")
+            startStopButton.hubStyle = .flatDanger
+            startStopButton.keyEquivalent = ""
+        }
+        restartButton.hubStyle = snapshot.health == .degraded ? .primary : .neutral
+        diagnosticsButton.hubStyle = .neutral
+        setupButton.hubStyle = .primary
+        setupButton.keyEquivalent = snapshot.health == .needsInstall ? "\r" : ""
+        diagnosticsButton.keyEquivalent = snapshot.health == .degraded ? "\r" : ""
+    }
+
+    private func render(activity: [HubActivity]) {
+        let signature = activity.map { $0.message + "|" + $0.age }
+        guard renderedActivity != signature else { return }
+        if renderedActivity != nil { HubMotion.transition(activityStack) }
+        renderedActivity = signature
+        activityStack.arrangedSubviews.forEach {
+            activityStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        let entries = activity.isEmpty
+            ? [HubActivity(message: HubL10n.text("hub.HubDashboardView.399.1383", fallback: "No recent app actions. See Logs for collector activity."), age: "", color: HubPalette.mutedForeground)]
+            : Array(activity.prefix(3))
+        for (index, entry) in entries.enumerated() {
+            if index > 0 {
+                let line = separator()
+                activityStack.addArrangedSubview(line)
+                line.widthAnchor.constraint(equalTo: activityStack.widthAnchor).isActive = true
+            }
+            let message = NSTextField(labelWithString: entry.message)
+            message.font = .systemFont(ofSize: 12)
+            message.textColor = activity.isEmpty ? HubPalette.mutedForeground : HubPalette.foreground
+            let age = NSTextField(labelWithString: entry.age)
+            age.font = .systemFont(ofSize: 11.5)
+            age.textColor = HubPalette.mutedForeground
+            let row = NSStackView(views: [message, NSView(), age])
+            row.alignment = .centerY
+            row.edgeInsets = NSEdgeInsets(top: 9, left: 14, bottom: 9, right: 14)
+            activityStack.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: activityStack.widthAnchor).isActive = true
+        }
+    }
+
+    private func renderVehicles(_ vehicles: [HubControlVehicle], statusUnavailable: Bool) {
+        guard renderedVehicles != vehicles || renderedStatusUnavailable != statusUnavailable else { return }
+        if renderedVehicles != nil { HubMotion.transition(vehicleSummaryStack) }
+        renderedVehicles = vehicles
+        renderedStatusUnavailable = statusUnavailable
+        vehicleSummaryStack.arrangedSubviews.forEach {
+            vehicleSummaryStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        let entries = vehicles.isEmpty
+            ? [HubControlVehicle(id: UUID(), displayName: statusUnavailable ? "Vehicle status unavailable" : HubL10n.text("hub.HubDashboardView.430.1384", fallback: "No vehicles yet"),
+                                 status: statusUnavailable ? "Hub has not returned a status report." : HubL10n.text("hub.HubDashboardView.431.1385", fallback: "Connect a Tesla account to see vehicles here."))]
+            : vehicles
+        for (index, vehicle) in entries.enumerated() {
+            if index > 0 {
+                let line = separator()
+                vehicleSummaryStack.addArrangedSubview(line)
+                line.widthAnchor.constraint(equalTo: vehicleSummaryStack.widthAnchor).isActive = true
+            }
+            let iconTile = HubIconTileView(symbol: "car.side",
+                                           accessibilityDescription: vehicle.displayName)
+            let name = NSTextField(labelWithString: vehicle.displayName)
+            name.font = .systemFont(ofSize: 14, weight: .medium)
+            let status = NSTextField(labelWithString: vehicle.status)
+            status.font = .systemFont(ofSize: 12)
+            status.textColor = .secondaryLabelColor
+            status.lineBreakMode = .byTruncatingTail
+            let copy = NSStackView(views: [name, status])
+            copy.orientation = .vertical
+            copy.alignment = .leading
+            copy.spacing = 1
+            let chevron = NSImageView(image: NSImage(systemSymbolName: "chevron.right",
+                                                      accessibilityDescription: nil) ?? NSImage())
+            chevron.contentTintColor = .tertiaryLabelColor
+            let row = NSStackView(views: [iconTile, copy, NSView(), chevron])
+            row.alignment = .centerY
+            row.spacing = 12
+            row.edgeInsets = NSEdgeInsets(top: 10, left: HubMetrics.rowHorizontalInset,
+                                         bottom: 10, right: HubMetrics.rowHorizontalInset)
+            row.heightAnchor.constraint(equalToConstant: HubMetrics.rowHeight).isActive = true
+            let holder = NSView()
+            row.translatesAutoresizingMaskIntoConstraints = false
+            holder.addSubview(row)
+            NSLayoutConstraint.activate([
+                row.leadingAnchor.constraint(equalTo: holder.leadingAnchor),
+                row.trailingAnchor.constraint(equalTo: holder.trailingAnchor),
+                row.topAnchor.constraint(equalTo: holder.topAnchor),
+                row.bottomAnchor.constraint(equalTo: holder.bottomAnchor)
+            ])
+            if !vehicles.isEmpty {
+                let button = HubActionButton(title: "", target: self, action: #selector(openVehicle(_:)))
+                button.hubStyle = .flat
+                button.tag = index
+                button.setAccessibilityLabel(vehicle.displayName)
+                button.setAccessibilityHelp(vehicle.status)
+                button.translatesAutoresizingMaskIntoConstraints = false
+                holder.addSubview(button)
+                NSLayoutConstraint.activate([
+                    button.leadingAnchor.constraint(equalTo: holder.leadingAnchor),
+                    button.trailingAnchor.constraint(equalTo: holder.trailingAnchor),
+                    button.topAnchor.constraint(equalTo: holder.topAnchor),
+                    button.bottomAnchor.constraint(equalTo: holder.bottomAnchor)
+                ])
+            } else { chevron.isHidden = true }
+            vehicleSummaryStack.addArrangedSubview(holder)
+            holder.widthAnchor.constraint(equalTo: vehicleSummaryStack.widthAnchor).isActive = true
+        }
+    }
+
+    @objc private func openVehicle(_ sender: NSButton) {
+        guard interactionsEnabled, let vehicles = renderedVehicles, vehicles.indices.contains(sender.tag) else { return }
+        actions.vehicle.select(vehicles[sender.tag].id)
+    }
+
+    private func flatButton(title: String, symbol: String?, action: Selector) -> HubActionButton {
+        let button = HubActionButton(title: title, target: self, action: action)
+        button.hubStyle = .flat
+        button.hubFont = HubTypography.action
+        button.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: title) }
+        button.imagePosition = symbol == nil ? .noImage : .imageLeading
+        button.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
+        return button
+    }
+
+    private func separator() -> NSView {
+        HubModalChrome.divider()
+    }
+
+    private func compactServiceValue(_ snapshot: HubSnapshot) -> String {
+        snapshot.health == .running && snapshot.betweenWindows == nil ? HubL10n.text("hub.ServiceDetailsWindowController.114.2185", fallback: "Active") : snapshot.service
+    }
+
+    private func subtitle(for snapshot: HubSnapshot) -> String {
+        if let idle = snapshot.betweenWindows { return idle.subtitle() }
+        return subtitle(for: snapshot.health)
+    }
+
+    private func symbol(for snapshot: HubSnapshot) -> String {
+        snapshot.betweenWindows == nil ? symbol(for: snapshot.health) : "moon.zzz"
+    }
+
+    private func tone(for snapshot: HubSnapshot) -> HubStatusTone {
+        if snapshot.betweenWindows != nil { return .neutral }
+        return snapshot.needsCollectionAttention ? tone(for: .degraded) : tone(for: snapshot.health)
+    }
+
+    private func subtitle(for health: HubHealth) -> String {
+        switch health {
+        case .running: return HubL10n.text("hub.HubDashboardView.514.1389", fallback: "Hub runs in the background. You can close this window.")
+        case .stopped: return HubL10n.text("hub.HubDashboardView.515.1390", fallback: "Vehicle data is not being collected.")
+        case .needsInstall: return HubL10n.text("hub.HubDashboardView.516.1391", fallback: "Choose how Hub connects to Tesla.")
+        case .degraded: return HubL10n.text("hub.HubDashboardView.517.1392", fallback: "Open diagnostics for details.")
+        }
+    }
+
+    private func symbol(for health: HubHealth) -> String {
+        switch health {
+        case .running: return "checkmark.shield"
+        case .stopped: return "pause.circle"
+        case .needsInstall: return "wrench.and.screwdriver"
+        case .degraded: return "exclamationmark.triangle"
+        }
+    }
+
+    private func tone(for health: HubHealth) -> HubStatusTone {
+        switch health {
+        case .running: return .success
+        case .stopped: return .warning
+        case .needsInstall: return .neutral
+        case .degraded: return .danger
+        }
+    }
+
+    @objc private func startStopPressed() {
+        startStopAction == .start ? actions.start() : actions.stop()
+    }
+    @objc private func restartPressed() { actions.restart() }
+    @objc private func setupPressed() { actions.setup() }
+    @objc private func diagnosticsPressed() { actions.diagnostics() }
+    @objc private func serviceDetailsPressed() { actions.serviceDetails() }
+    @objc private func dataFolderPressed() { actions.dataFolder() }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}

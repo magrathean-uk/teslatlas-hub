@@ -1,4 +1,4 @@
-# Teslatlas Hub 2026.36.1
+# Tesatlas Hub 2026.36.1
 
 Historical artifact record: GitHub releases and their downloads were withdrawn
 on 5 September 2026. The source tag remains available. For current fixes,
@@ -10,13 +10,13 @@ The first Hub calendar release uses `YEAR.WEEK.REVISION`, with source tag
 ## Distribution and limits
 
 - macOS: Apple silicon, macOS 13 or later. The combined app/service installer
-  is `TeslatlasHub-2026.36.1-arm64.pkg`. The app is ad-hoc signed; the combined
+  is `TesatlasHub-2026.36.1-arm64.pkg`. The app is ad-hoc signed; the combined
   installer is unsigned and unnotarised. Use the combined installer for both
   installation and upgrades. In-app service installation, reinstallation, and
   update are unavailable in this distribution because the embedded installer
   requires official-release metadata and Gatekeeper trust.
-- Debian 13: `teslatlas-hub_2026.36.1_arm64.deb` and
-  `teslatlas-hub_2026.36.1_amd64.deb` contain the Hub core for legacy collection.
+- Debian 13: `tesatlas-hub_2026.36.1_arm64.deb` and
+  `tesatlas-hub_2026.36.1_amd64.deb` contain the Hub core for legacy collection.
   They do **not** include the Fleet command proxy or Fleet Telemetry receiver.
   Do not use these packages as a complete Fleet installation or to replace an
   existing Fleet deployment without a separately verified companion plan.

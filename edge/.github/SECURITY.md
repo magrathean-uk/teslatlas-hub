@@ -1,11 +1,11 @@
 # Security Policy
 
-The trust boundaries, invariants and reporting route for Teslatlas Edge.
+The trust boundaries, invariants and reporting route for Tesatlas Edge.
 
 ## System and scope
 
-Teslatlas Edge is an optional, user-operated ingress between the Tesla Fleet
-Telemetry receiver sidecar and a home Teslatlas Hub. It accepts decoded
+Tesatlas Edge is an optional, user-operated ingress between the Tesla Fleet
+Telemetry receiver sidecar and a home Tesatlas Hub. It accepts decoded
 telemetry envelopes from the sidecar on loopback, stores them in an encrypted
 bounded spool, and makes batches available to the configured Hub.
 
@@ -21,7 +21,7 @@ Edge reach or expose one of those excluded surfaces remains in scope.
 Use the existing email route in the [Magrathean UK organization security
 policy](https://raw.githubusercontent.com/magrathean-uk/.github/main/SECURITY.md):
 [contact@magrathean.uk](mailto:contact@magrathean.uk), with the subject
-`SECURITY: teslatlas-edge`.
+`SECURITY: tesatlas-edge`.
 
 Do not disclose suspected vulnerabilities in a public issue, discussion or pull
 request. Include the affected version or commit, deployment context, required

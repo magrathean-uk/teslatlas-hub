@@ -381,7 +381,7 @@ fn t79_provider_selection_and_access_token_only() {
 
 #[test]
 fn t80_a_configuration_without_a_region_leaves_the_region_unset() {
-    let text = "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n";
+    let text = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n";
     let (config, _) = HubConfig::from_exact_bytes(text.as_bytes()).unwrap();
     assert_eq!(config.collector.stream_region, None);
     let endpoint = AuthEndpointConfig::from_config(&config, false);
@@ -396,7 +396,7 @@ fn t80_a_configuration_without_a_region_leaves_the_region_unset() {
 #[test]
 fn the_endpoint_configuration_is_built_once_from_the_hub_configuration() {
     let parse = |extra: &str| {
-        let text = format!("data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n{extra}");
+        let text = format!("data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n{extra}");
         HubConfig::from_exact_bytes(text.as_bytes()).unwrap().0
     };
     // The default Owner API host is Tesla mode, a region key is the owner's.
@@ -720,7 +720,7 @@ fn t69_selection_and_construction_expose_no_secret() {
         format!("{:?}", auth.endpoint_source()),
     ];
     let hub_text = format!(
-        "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n[collector.legacy_auth]\nenabled = true\ntoken_url = '{token_url}'\n"
+        "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n[collector.legacy_auth]\nenabled = true\ntoken_url = '{token_url}'\n"
     );
     let (hub, _) = HubConfig::from_exact_bytes(hub_text.as_bytes()).unwrap();
     rendered.push(format!("{hub:?}"));

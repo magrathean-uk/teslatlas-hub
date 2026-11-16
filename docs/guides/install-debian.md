@@ -1,6 +1,6 @@
 # Install on Debian
 
-Teslatlas Hub targets Debian 13 on amd64 and ARM64. First
+Tesatlas Hub targets Debian 13 on amd64 and ARM64. First
 [build a local package](build-from-source.md); no prebuilt releases are provided.
 The current `2026.36.2` core-only package contains core/Legacy collection
 without Fleet command-proxy or Fleet Telemetry companions. It is not a
@@ -23,19 +23,19 @@ dpkg --print-architecture
 ## Install
 
 ```sh
-sudo dpkg -i "teslatlas-hub_2026.36.2_$(dpkg --print-architecture).deb"
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml bootstrap
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml doctor
+sudo dpkg -i "tesatlas-hub_2026.36.2_$(dpkg --print-architecture).deb"
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml bootstrap
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml doctor
 ```
 
 The package creates:
 
-- service account `teslatlas`;
-- configuration `/etc/teslatlas-hub/config.toml`;
-- data directory `/var/lib/teslatlas-hub`;
-- hardened `teslatlas-hub.service`;
+- service account `tesatlas`;
+- configuration `/etc/tesatlas-hub/config.toml`;
+- data directory `/var/lib/tesatlas-hub`;
+- hardened `tesatlas-hub.service`;
 - optional disabled Fleet command-proxy and Telemetry units when included.
 
 ## Configure credentials
@@ -43,10 +43,10 @@ The package creates:
 For legacy tokens, create owner-readable token files outside source control:
 
 ```sh
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml setup \
-  --access-token-file /etc/teslatlas-hub/private/access-token \
-  --refresh-token-file /etc/teslatlas-hub/private/refresh-token \
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml setup \
+  --access-token-file /etc/tesatlas-hub/private/access-token \
+  --refresh-token-file /etc/tesatlas-hub/private/refresh-token \
   --all-vehicles
 ```
 
@@ -57,21 +57,21 @@ core-only package built by the command above.
 ## Start and inspect
 
 ```sh
-sudo systemctl enable --now teslatlas-hub.service
-sudo systemctl status teslatlas-hub.service --no-pager
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml status
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml doctor
+sudo systemctl enable --now tesatlas-hub.service
+sudo systemctl status tesatlas-hub.service --no-pager
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml status
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml doctor
 ```
 
 Service controls are also available through:
 
 ```sh
-sudo /usr/bin/teslatlas-hub service status
-sudo /usr/bin/teslatlas-hub service start
-sudo /usr/bin/teslatlas-hub service stop
-sudo /usr/bin/teslatlas-hub service restart
+sudo /usr/bin/tesatlas-hub service status
+sudo /usr/bin/tesatlas-hub service start
+sudo /usr/bin/tesatlas-hub service stop
+sudo /usr/bin/tesatlas-hub service restart
 ```
 
 On Linux, these controls report systemd's `ActiveState`; `running` means the unit
@@ -84,23 +84,23 @@ or bearer credentials over the packaged default's plain loopback HTTP listener.
 
 ## Paths and sandboxing
 
-Keep `data_dir = "/var/lib/teslatlas-hub"` for the packaged unit. TLS keys and
-certificates belong below `/etc/teslatlas-hub`; `ProtectHome=true` prevents the
+Keep `data_dir = "/var/lib/tesatlas-hub"` for the packaged unit. TLS keys and
+certificates belong below `/etc/tesatlas-hub`; `ProtectHome=true` prevents the
 service from reading `/home`, `/root`, or `/run/user`.
 
 To add another writable data path, create it as the service user and add an
 administrator-owned systemd override:
 
 ```sh
-sudo install -d -o teslatlas -g teslatlas -m 0700 /srv/teslatlas-hub
-sudo systemctl edit teslatlas-hub.service
+sudo install -d -o tesatlas -g tesatlas -m 0700 /srv/tesatlas-hub
+sudo systemctl edit tesatlas-hub.service
 ```
 
 Add:
 
 ```ini
 [Service]
-ReadWritePaths=/srv/teslatlas-hub
+ReadWritePaths=/srv/tesatlas-hub
 ```
 
 Then run `sudo systemctl daemon-reload`. Do not remove the existing writable
@@ -109,8 +109,8 @@ path while data remains there.
 ## Logs and removal
 
 ```sh
-sudo journalctl -u teslatlas-hub -n 200 --no-pager
-sudo dpkg -r teslatlas-hub
+sudo journalctl -u tesatlas-hub -n 200 --no-pager
+sudo dpkg -r tesatlas-hub
 ```
 
 Package removal stops and disables the service but preserves the service user,

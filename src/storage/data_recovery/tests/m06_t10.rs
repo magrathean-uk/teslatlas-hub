@@ -32,7 +32,7 @@ const OLD_CEILING: usize = 4_096;
 /// schema 2.2 pack and its no-op body the bundle holds 5,003 members.
 const SYNTHETIC_PACKS: usize = 5_000;
 /// Tells the child test to do the run; without it the child returns at once.
-const CHILD_ENV: &str = "TESLATLAS_HUB_M06_T10_CHILD_PACKS";
+const CHILD_ENV: &str = "TESATLAS_HUB_M06_T10_CHILD_PACKS";
 /// A generous ceiling for the whole test process: far below the Hub's 1 GiB
 /// peak, and far above what a run holding no per-member state needs.
 const PEAK_FOOTPRINT_LIMIT_BYTES: u64 = 256 * 1024 * 1024;

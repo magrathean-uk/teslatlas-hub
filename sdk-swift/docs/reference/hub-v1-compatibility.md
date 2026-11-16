@@ -2,9 +2,9 @@
 
 ## Contract boundary
 
-`TeslatlasHubV1Compatibility` is an independent SwiftPM product for the wire
-surface exposed by unchanged Teslatlas Hub v1.0.0. It neither imports nor wraps
-`TeslatlasHubSDK`, and it does not reinterpret Hub v1.0.0 as public protocol
+`TesatlasHubV1Compatibility` is an independent SwiftPM product for the wire
+surface exposed by unchanged Tesatlas Hub v1.0.0. It neither imports nor wraps
+`TesatlasHubSDK`, and it does not reinterpret Hub v1.0.0 as public protocol
 profile 1.0, 1.1, or 1.2.
 
 The public operations are exactly:
@@ -22,7 +22,7 @@ packs, positions, states, and updates remain absent.
 
 ## Binding authority and provenance
 
-At implementation time, `teslatlas-protocol` commit
+At implementation time, `tesatlas-protocol` commit
 `79ced4c7fdc79520ad31d72a0280bf5f3f19f407` had no released deployed-Hub
 v1.0.0 binding. Its compatibility profiles describe public protocol profiles,
 not the deployed Hub release.
@@ -32,7 +32,7 @@ The local compatibility binding was derived from that immutable Hub release boun
 - Hub tag: `v1.0.0`
 - annotated tag object: `4b45708a00f14f76306f6cb37375eb0c538643d7`
 - dereferenced Hub commit: `a5e6c5c4f86776da96c9946f7e45b2080c571f86`
-- bundled binding: `Sources/TeslatlasHubV1Compatibility/Binding/deployed-hub-v1.0.0.json`
+- bundled binding: `Sources/TesatlasHubV1Compatibility/Binding/deployed-hub-v1.0.0.json`
 - binding SHA-256: `78aca4b6014625420efb66fbe35f6ea10d72a7f596210dac80964c33e0f04f65`
 
 The binding records the exact Git blob identities used to audit discovery,
@@ -42,7 +42,7 @@ resource SHA-256 and all critical constants before any network request. No Hub
 Rust implementation is included in this package.
 
 This local binding is compatibility evidence, not a protocol release. The
-remaining governance action is for `teslatlas-protocol` to publish a separately
+remaining governance action is for `tesatlas-protocol` to publish a separately
 named deployed-Hub v1.0.0 binding. Any later replacement must be compared
 field-for-field, route-for-route, and fixture-for-fixture before changing this
 module.
@@ -96,7 +96,7 @@ typed API errors. Unknown codes and response fields fail closed.
 ## Proof separation
 
 Deterministic fixture proof lives under
-`Tests/TeslatlasHubV1CompatibilityTests/Fixtures`. `FIXTURE-SHA256.json` pins
+`Tests/TesatlasHubV1CompatibilityTests/Fixtures`. `FIXTURE-SHA256.json` pins
 every fixture byte, while `AUTHORITY` records that this is offline evidence
 only. Fixture tests cover the exact normal responses, pagination, one stable
 error, invalid fields, identity changes, capability failures, origin failures,
@@ -106,9 +106,9 @@ redirect rejection, and bearer redaction.
 three environment variables are supplied:
 
 ```text
-TESLATLAS_HUB_V1_DISCOVERY_URL
-TESLATLAS_HUB_V1_EXPECTED_HUB_ID
-TESLATLAS_HUB_V1_BEARER
+TESATLAS_HUB_V1_DISCOVERY_URL
+TESATLAS_HUB_V1_EXPECTED_HUB_ID
+TESATLAS_HUB_V1_BEARER
 ```
 
 The live test performs only discovery, vehicles, current state, and at most two

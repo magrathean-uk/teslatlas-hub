@@ -10,7 +10,7 @@ PROXY_BUILD="$ROOT/scripts/build-tesla-command-proxy.sh"
 FLEET_BUILD="$ROOT/scripts/build-fleet-telemetry-bridge.sh"
 GO_EVIDENCE="$ROOT/scripts/go-proxy-evidence.py"
 FLEET_EVIDENCE="$ROOT/scripts/fleet-telemetry-evidence.py"
-TMP=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/teslatlas-go-selection.XXXXXX")
+TMP=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/tesatlas-go-selection.XXXXXX")
 
 cleanup() {
     /bin/chmod -R u+w "$TMP" 2>/dev/null || true
@@ -61,7 +61,7 @@ make_fake_go "$ambient_go" go1.27.2 "$ambient_log" "$module_cache"
 
 selected=$(
     PATH="$(/usr/bin/dirname "$ambient_go"):/usr/bin:/bin" \
-        TESLATLAS_GO="$selected_go" \
+        TESATLAS_GO="$selected_go" \
         /usr/bin/python3 "$HELPER" --expected-version go1.27.4
 ) || fail "absolute override was rejected"
 [ "$selected" = "$selected_go" ] || fail "override path was not preserved"
@@ -71,7 +71,7 @@ selected=$(
 : >"$selected_log"
 parent_selected=$(
     PATH="$(/usr/bin/dirname "$ambient_go"):/usr/bin:/bin" \
-        TESLATLAS_GO="$selected_go" \
+        TESATLAS_GO="$selected_go" \
         "$APP_BUILD" --check-go-toolchain-chain
 ) || fail "macOS parent rejected the explicit Go toolchain"
 expected_parent_selection=$(/usr/bin/printf '%s\n' \
@@ -87,7 +87,7 @@ expected_parent_selection=$(/usr/bin/printf '%s\n' \
 [ ! -e "$ambient_log" ] || fail "macOS parent fell back to ambient Go"
 
 : >"$selected_log"
-if TESLATLAS_GO="$selected_go" "$PROXY_BUILD" \
+if TESATLAS_GO="$selected_go" "$PROXY_BUILD" \
     --target linux-amd64 --output "$TMP/proxy" >"$TMP/proxy.out" 2>&1; then
     fail "proxy fixture unexpectedly completed"
 fi
@@ -97,7 +97,7 @@ fi
     || fail "proxy builder did not use the explicit Go"
 
 : >"$selected_log"
-if TESLATLAS_GO="$selected_go" "$FLEET_BUILD" \
+if TESATLAS_GO="$selected_go" "$FLEET_BUILD" \
     --target linux-amd64 --output "$TMP/missing/fleet" >"$TMP/fleet.out" 2>&1; then
     fail "Fleet fixture unexpectedly completed"
 fi
@@ -107,7 +107,7 @@ fi
 
 : >"$selected_log"
 PATH="$(/usr/bin/dirname "$ambient_go"):/usr/bin:/bin" \
-    TESLATLAS_GO="$selected_go" /usr/bin/python3 - \
+    TESATLAS_GO="$selected_go" /usr/bin/python3 - \
     "$ROOT/scripts" "$GO_EVIDENCE" "$selected_go" <<'PY'
 import importlib.util
 import pathlib
@@ -128,7 +128,7 @@ PY
 
 : >"$selected_log"
 PATH="$(/usr/bin/dirname "$ambient_go"):/usr/bin:/bin" \
-    TESLATLAS_GO="$selected_go" /usr/bin/env -u GOMODCACHE \
+    TESATLAS_GO="$selected_go" /usr/bin/env -u GOMODCACHE \
     /usr/bin/python3 - \
     "$ROOT/scripts" "$FLEET_EVIDENCE" "$module_cache" <<'PY'
 import importlib.util
@@ -153,7 +153,7 @@ evidence_fallback_go="$TMP/evidence-fallback/bin/go"
 make_fake_go "$evidence_wrong_go" go1.27.1 "$evidence_wrong_log" "$module_cache"
 make_fake_go "$evidence_fallback_go" go1.27.4 "$evidence_fallback_log" "$module_cache"
 if PATH="$(/usr/bin/dirname "$evidence_fallback_go"):/usr/bin:/bin" \
-    GOMODCACHE="$module_cache" TESLATLAS_GO="$evidence_wrong_go" \
+    GOMODCACHE="$module_cache" TESATLAS_GO="$evidence_wrong_go" \
     /usr/bin/python3 "$FLEET_EVIDENCE" --repo "$ROOT" \
     --receiver-binary "$TMP/missing-receiver" \
     --output-dir "$TMP/inherited-cache-output" >"$TMP/inherited-cache.out" 2>&1; then
@@ -169,21 +169,21 @@ fi
 /bin/rm -f "$evidence_fallback_log"
 missing_override="$TMP/missing explicit/go"
 if PATH="$(/usr/bin/dirname "$evidence_fallback_go"):/usr/bin:/bin" \
-    TESLATLAS_GO="$missing_override" \
+    TESATLAS_GO="$missing_override" \
     /usr/bin/python3 "$FLEET_EVIDENCE" --repo "$ROOT" \
     --receiver-binary "$TMP/missing-receiver" --module-cache "$module_cache" \
     --output-dir "$TMP/explicit-cache-output" >"$TMP/explicit-cache.out" 2>&1; then
     fail "Fleet evidence accepted an invalid override with --module-cache"
 fi
-/usr/bin/grep -Fq "TESLATLAS_GO does not exist: $missing_override" \
+/usr/bin/grep -Fq "TESATLAS_GO does not exist: $missing_override" \
     "$TMP/explicit-cache.out" \
     || fail "--module-cache bypassed explicit Go validation"
 [ ! -e "$evidence_fallback_log" ] \
     || fail "explicit-cache invalid override silently fell back to ambient Go"
 
 /bin/mkdir -p "$TMP/empty-bin"
-if PATH="$TMP/empty-bin" /usr/bin/env -u GOMODCACHE -u TESLATLAS_GO \
-    TESLATLAS_LAB="$TMP/lab" \
+if PATH="$TMP/empty-bin" /usr/bin/env -u GOMODCACHE -u TESATLAS_GO \
+    TESATLAS_LAB="$TMP/lab" \
     /usr/bin/python3 "$FLEET_EVIDENCE" --repo "$ROOT" \
     --receiver-binary "$TMP/missing-receiver" --module-cache "$module_cache" \
     --output-dir "$TMP/no-go-explicit-cache-output" \
@@ -198,7 +198,7 @@ default_log="$TMP/default.log"
 default_go="$TMP/default/bin/go"
 make_fake_go "$default_go" go1.27.4 "$default_log" "$module_cache"
 default_selected=$(PATH="$(/usr/bin/dirname "$default_go"):/usr/bin:/bin" \
-    /usr/bin/env -u TESLATLAS_GO \
+    /usr/bin/env -u TESATLAS_GO \
     /usr/bin/python3 "$HELPER" --expected-version go1.27.4) \
     || fail "default PATH selection was rejected"
 default_expected=$(/usr/bin/python3 -c \
@@ -212,7 +212,7 @@ fallback_go="$TMP/fallback/bin/go"
 make_fake_go "$wrong_go" go1.27.1 "$wrong_log" "$module_cache"
 make_fake_go "$fallback_go" go1.27.4 "$fallback_log" "$module_cache"
 if PATH="$(/usr/bin/dirname "$fallback_go"):/usr/bin:/bin" \
-    TESLATLAS_GO="$wrong_go" \
+    TESATLAS_GO="$wrong_go" \
     /usr/bin/python3 "$HELPER" --expected-version go1.27.4 \
     >"$TMP/wrong.out" 2>&1; then
     fail "wrong-version explicit Go was accepted"
@@ -230,7 +230,7 @@ malformed_go=$(/usr/bin/printf '%s\n' "$TMP/malformed" go)
 for invalid_go in '' relative/go "$malformed_go" "$TMP/missing/go" "$non_executable"; do
     /bin/rm -f "$fallback_log"
     if PATH="$(/usr/bin/dirname "$fallback_go"):/usr/bin:/bin" \
-        TESLATLAS_GO="$invalid_go" \
+        TESATLAS_GO="$invalid_go" \
         /usr/bin/python3 "$HELPER" --expected-version go1.27.4 \
         >"$TMP/invalid.out" 2>&1; then
         fail "invalid explicit Go was accepted: $invalid_go"

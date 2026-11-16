@@ -1,5 +1,5 @@
 {
-  "schema": "teslatlas.tesla-proxy-lock/v3",
+  "schema": "tesatlas.tesla-proxy-lock/v3",
   "package": "github.com/teslamotors/vehicle-command/cmd/tesla-http-proxy",
   "subjects": {
     "darwin-arm64": {

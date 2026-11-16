@@ -1,9 +1,9 @@
-# Teslatlas Hub v1.0.0-beta.1
+# Tesatlas Hub v1.0.0-beta.1
 
 Released 2026-08-30.
 
 This is the first public beta of the independent, self-hosted telemetry
-collector and local Teslatlas sync hub.
+collector and local Tesatlas sync hub.
 
 ## Highlights
 
@@ -62,7 +62,7 @@ requires all of them.
 
 The version-bound release page is the Corresponding Source landing page. The
 complete source offer is the pair
-`teslatlas-hub-v1.0.0-beta.1-source.tar.gz` (tagged workspace) and
-`teslatlas-hub-v1.0.0-beta.1-evidence.tar.gz` (locked Rust sources, Go/Fleet
+`tesatlas-hub-v1.0.0-beta.1-source.tar.gz` (tagged workspace) and
+`tesatlas-hub-v1.0.0-beta.1-evidence.tar.gz` (locked Rust sources, Go/Fleet
 sources and overlays, build inputs, inventories, and source manifests). Neither
 asset alone is described as complete Corresponding Source.

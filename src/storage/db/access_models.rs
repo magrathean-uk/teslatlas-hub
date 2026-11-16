@@ -189,7 +189,7 @@ impl PairingSecret {
 ///
 /// ```compile_fail
 /// fn requires_clone<T: Clone>() {}
-/// requires_clone::<teslatlas_hub::db::DeviceAccessToken>();
+/// requires_clone::<tesatlas_hub::db::DeviceAccessToken>();
 /// ```
 #[derive(PartialEq, Eq, zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
 pub struct DeviceAccessToken(String);

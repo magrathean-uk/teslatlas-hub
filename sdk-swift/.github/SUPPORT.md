@@ -1,18 +1,18 @@
 # Support
 
-Where to get help with teslatlas-sdk-swift, and what to include in a report.
+Where to get help with tesatlas-sdk-swift, and what to include in a report.
 
 Identify the product before investigating a problem:
 
 | Product | Contract to check |
 | --- | --- |
-| `TeslatlasHubSDK` and `TeslatlasCommands` | Public protocol profiles through 1.2.0 |
-| `TeslatlasHubV1Compatibility` | Exact historical Hub v1.0.0 binding |
-| `TeslatlasCurrentHub` | Bundled `hub-http-v1@1.0.0` profile and admitted Hub product version |
+| `TesatlasHubSDK` and `TesatlasCommands` | Public protocol profiles through 1.2.0 |
+| `TesatlasHubV1Compatibility` | Exact historical Hub v1.0.0 binding |
+| `TesatlasCurrentHub` | Bundled `hub-http-v1@1.0.0` profile and admitted Hub product version |
 
 A server may expose more routes than the selected client contract. Check [current Hub](../docs/reference/current-hub.md), [historical compatibility](../docs/reference/hub-v1-compatibility.md) and [versioning](../docs/reference/product-versioning.md) before changing validation to accept a response.
 
-For non-sensitive bugs and questions, use the [repository issues](https://github.com/magrathean-uk/teslatlas-sdk-swift/issues).
+For non-sensitive bugs and questions, use the [repository issues](https://github.com/magrathean-uk/tesatlas-sdk-swift/issues).
 
 ## Prepare a useful report
 

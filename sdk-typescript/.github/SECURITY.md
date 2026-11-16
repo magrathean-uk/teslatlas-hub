@@ -1,6 +1,6 @@
 # Security Policy
 
-Report a security issue in the Teslatlas TypeScript SDK privately, using the route below.
+Report a security issue in the Tesatlas TypeScript SDK privately, using the route below.
 
 ## System and scope
 
@@ -40,7 +40,7 @@ credentials or vehicle data.
 
 ## Reporting
 
-Use the private email route in the [Magrathean UK organization security policy](https://github.com/magrathean-uk/.github/blob/main/SECURITY.md): [contact@magrathean.uk](mailto:contact@magrathean.uk), with subject `SECURITY: teslatlas-sdk-typescript`.
+Use the private email route in the [Magrathean UK organization security policy](https://github.com/magrathean-uk/.github/blob/main/SECURITY.md): [contact@magrathean.uk](mailto:contact@magrathean.uk), with subject `SECURITY: tesatlas-sdk-typescript`.
 
 Do not report a suspected vulnerability in a public issue, discussion, or pull request. Provide a minimal, redacted reproduction with the affected version or commit, required permissions, and impact. Do not send live credentials, private keys, vehicle data, or production extracts. Follow the linked organization policy for research scope and disclosure handling.
 

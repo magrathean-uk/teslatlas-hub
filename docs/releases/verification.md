@@ -15,24 +15,24 @@ export SOURCE_DATE_EPOCH
 git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
 cargo fetch --locked
 HUB_SOURCE_ROOT=$(pwd -P)
-TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" \
-  RUSTFLAGS="--remap-path-prefix=${HUB_SOURCE_ROOT}=/usr/src/teslatlas-hub" \
-  cargo build --locked --release --bin teslatlas-hub
+TESATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" \
+  RUSTFLAGS="--remap-path-prefix=${HUB_SOURCE_ROOT}=/usr/src/tesatlas-hub" \
+  cargo build --locked --release --bin tesatlas-hub
 python3 scripts/legal-bundle.py --repo . --output-dir dist/dependency-legal
 scripts/build-deb.sh \
-  --binary target/release/teslatlas-hub \
+  --binary target/release/tesatlas-hub \
   --legal-bundle dist/dependency-legal \
   --version 2026.36.2 \
   --architecture "$(dpkg --print-architecture)" \
   --source-commit "$HUB_SOURCE_COMMIT" \
-  --output "dist/teslatlas-hub_2026.36.2_$(dpkg --print-architecture).deb"
-sha256sum "dist/teslatlas-hub_2026.36.2_$(dpkg --print-architecture).deb"
+  --output "dist/tesatlas-hub_2026.36.2_$(dpkg --print-architecture).deb"
+sha256sum "dist/tesatlas-hub_2026.36.2_$(dpkg --print-architecture).deb"
 dpkg-deb --field \
-  "dist/teslatlas-hub_2026.36.2_$(dpkg --print-architecture).deb" \
+  "dist/tesatlas-hub_2026.36.2_$(dpkg --print-architecture).deb" \
   Package Version Architecture Depends
 ```
 
-The Debian metadata must report package `teslatlas-hub`, version
+The Debian metadata must report package `tesatlas-hub`, version
 `2026.36.2-1`, and the selected architecture. The core-only package omits Fleet
 sidecars. Its product-version source route does not replace the separately
 recorded exact source commit and source-export checksum.
@@ -47,10 +47,10 @@ and checksum:
 ```sh
 mkdir -p dist
 ./scripts/build-container-image.sh \
-  --tag teslatlas-hub:2026.36.2-arm64 \
-  --output dist/teslatlas-hub_2026.36.2_linux-arm64.docker.tar \
-  | tee dist/teslatlas-hub_2026.36.2_linux-arm64.json
-sha256sum dist/teslatlas-hub_2026.36.2_linux-arm64.docker.tar
+  --tag tesatlas-hub:2026.36.2-arm64 \
+  --output dist/tesatlas-hub_2026.36.2_linux-arm64.docker.tar \
+  | tee dist/tesatlas-hub_2026.36.2_linux-arm64.json
+sha256sum dist/tesatlas-hub_2026.36.2_linux-arm64.docker.tar
 ```
 
 The JSON must bind the selected 40-hex source commit, its Unix commit epoch,
@@ -80,16 +80,16 @@ Inspect the selected package:
 
 ```sh
 # macOS
-pkgutil --check-signature TeslatlasHub-2026.36.1-arm64.pkg
-pkgutil --payload-files TeslatlasHub-2026.36.1-arm64.pkg
+pkgutil --check-signature TesatlasHub-2026.36.1-arm64.pkg
+pkgutil --payload-files TesatlasHub-2026.36.1-arm64.pkg
 
 # Debian (run on the target architecture)
-dpkg-deb --field "teslatlas-hub_2026.36.1_$(dpkg --print-architecture).deb" \
+dpkg-deb --field "tesatlas-hub_2026.36.1_$(dpkg --print-architecture).deb" \
   Package Version Architecture
-dpkg-deb --contents "teslatlas-hub_2026.36.1_$(dpkg --print-architecture).deb"
+dpkg-deb --contents "tesatlas-hub_2026.36.1_$(dpkg --print-architecture).deb"
 ```
 
-The Debian metadata must report package `teslatlas-hub`, version
+The Debian metadata must report package `tesatlas-hub`, version
 `2026.36.1-1`, and the selected architecture. These Debian packages omit Fleet
 companions. The macOS package includes the app and service components. Its
 installer is unsigned and unnotarised; the app uses ad-hoc signing. Neither is
@@ -104,8 +104,8 @@ the matching immutable `v2026.36.1` tree. Preserve the legal bundle.
 To inspect the corresponding source:
 
 ```sh
-git clone https://github.com/magrathean-uk/teslatlas-hub.git teslatlas-hub-2026.36.1
-cd teslatlas-hub-2026.36.1
+git clone https://github.com/magrathean-uk/tesatlas-hub.git tesatlas-hub-2026.36.1
+cd tesatlas-hub-2026.36.1
 git fetch --tags origin
 git show --no-patch --format=fuller v2026.36.1
 git rev-parse 'v2026.36.1^{commit}'
@@ -118,15 +118,15 @@ explicitly supplied and verified.
 
 ## Historical v1.0.0 verification
 
-Teslatlas Hub v1.0.0 is a source-tag release. It has no GitHub Release page or
+Tesatlas Hub v1.0.0 is a source-tag release. It has no GitHub Release page or
 downloadable GitHub release assets.
 
 ## Verify the source tag
 
 ```sh
 set -eu
-git clone https://github.com/magrathean-uk/teslatlas-hub.git teslatlas-hub-v1
-cd teslatlas-hub-v1
+git clone https://github.com/magrathean-uk/tesatlas-hub.git tesatlas-hub-v1
+cd tesatlas-hub-v1
 git fetch --tags origin
 test "$(git cat-file -t v1.0.0)" = tag
 git show --no-patch --format=fuller v1.0.0
@@ -135,7 +135,7 @@ test -z "$(git status --porcelain=v1 --untracked-files=all)"
 test "$(sed -nE 's/^version = "([^"]+)"$/\1/p' Cargo.toml | head -n 1)" = 1.0.0
 ```
 
-The annotated tag should name Teslatlas Hub v1.0.0 and its tagger should match
+The annotated tag should name Tesatlas Hub v1.0.0 and its tagger should match
 the project identity documented in `CITATION.cff`.
 
 ## Verify a local macOS build
@@ -154,20 +154,20 @@ that an app artifact has been built or inspected.
 ## Verify a local Debian build
 
 ```sh
-dpkg-deb --field dist/teslatlas-hub_1.0.0_amd64.deb \
+dpkg-deb --field dist/tesatlas-hub_1.0.0_amd64.deb \
   Package Version Architecture
-dpkg-deb --contents dist/teslatlas-hub_1.0.0_amd64.deb
+dpkg-deb --contents dist/tesatlas-hub_1.0.0_amd64.deb
 ```
 
-The package must report `teslatlas-hub`, version `1.0.0-1`, and the architecture
+The package must report `tesatlas-hub`, version `1.0.0-1`, and the architecture
 of its Hub and sidecar binaries. Repeat with the ARM64 package on ARM64.
 
 ## Verify source and notices
 
 ```sh
-./target/release/teslatlas-hub legal
-./target/release/teslatlas-hub licence
-./target/release/teslatlas-hub source
+./target/release/tesatlas-hub legal
+./target/release/tesatlas-hub licence
+./target/release/tesatlas-hub source
 python3 scripts/verify-repository-layout.py
 ```
 

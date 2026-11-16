@@ -1386,7 +1386,7 @@ fn seam_physical_route_import_after_windows_interrupted_rebind_leaves_the_window
     }
 }
 
-const REBIND_KILL_CHILD: &str = "TESLATLAS_M03_T24_REBIND_KILL_CHILD";
+const REBIND_KILL_CHILD: &str = "TESATLAS_M03_T24_REBIND_KILL_CHILD";
 
 /// The points at which the hard-interruption test kills the rebind: the
 /// rehearsal transaction open, the frozen prior copied, the seam staged,

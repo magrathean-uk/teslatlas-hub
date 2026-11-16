@@ -48,7 +48,7 @@ use reader::{
 use report::charge_gate_report;
 
 /// The directory the runner reads (C2 R75 (b)).
-const HISTORICAL_DIR_VAR: &str = "TESLATLAS_G2_10_HISTORICAL_DIR";
+const HISTORICAL_DIR_VAR: &str = "TESATLAS_G2_10_HISTORICAL_DIR";
 
 fn open_export(dir: &Path, file: &str) -> Result<Option<BufReader<fs::File>>, GateReadError> {
     let path = dir.join(file);
@@ -141,11 +141,11 @@ fn run_historical_gates(dir: &Path) -> Result<Vec<PathBuf>, GateReadError> {
 }
 
 /// Manual run of the historical gates (C2 R75 (b)): reads the export directory
-/// named by `TESLATLAS_G2_10_HISTORICAL_DIR` and writes one report per car
+/// named by `TESATLAS_G2_10_HISTORICAL_DIR` and writes one report per car
 /// beside it. Ignored: run by hand, under the heavy-build lock and the memory
 /// guard, never in a mutation run (resource decision 2026-10-11).
 #[test]
-#[ignore = "manual: reads the export in TESLATLAS_G2_10_HISTORICAL_DIR; run by hand under the heavy-build lock and the memory guard, never in a mutation run"]
+#[ignore = "manual: reads the export in TESATLAS_G2_10_HISTORICAL_DIR; run by hand under the heavy-build lock and the memory guard, never in a mutation run"]
 fn g2_10_historical_charge_gates() {
     let dir = std::env::var_os(HISTORICAL_DIR_VAR)
         .map(PathBuf::from)

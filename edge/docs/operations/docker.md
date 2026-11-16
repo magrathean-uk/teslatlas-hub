@@ -17,10 +17,10 @@ an owner-only regular file owned by that identity.
 ## Prepare a private installation
 
 Use a new or explicitly reviewed directory outside the repository. The example
-uses `/srv/teslatlas-edge` and keeps each role's mounts separate:
+uses `/srv/tesatlas-edge` and keeps each role's mounts separate:
 
 ```sh
-export EDGE_RUNTIME_DIR=/srv/teslatlas-edge
+export EDGE_RUNTIME_DIR=/srv/tesatlas-edge
 sudo install -d -m 0700 -o 10001 -g 10001 \
   "$EDGE_RUNTIME_DIR/state" \
   "$EDGE_RUNTIME_DIR/receiver-secret" \
@@ -61,16 +61,16 @@ The final mount table is:
 
 | Host input | Edge container | Receiver container |
 | --- | --- | --- |
-| `state/` | `/var/lib/teslatlas-edge` read/write | absent |
-| `receiver-secret/` | `/run/teslatlas-edge-receiver` read/write | same path read-only |
-| `config/config.toml` | `/etc/teslatlas-edge/config.toml` read-only | absent |
-| `config/fleet-telemetry.json` | absent | `/etc/teslatlas-edge/fleet-telemetry.json` read-only |
-| `hub-tls/` | `/run/teslatlas-edge-hub-tls` read-only | absent |
-| `vehicle-tls/` | absent | `/run/teslatlas-edge-vehicle-tls` read-only |
+| `state/` | `/var/lib/tesatlas-edge` read/write | absent |
+| `receiver-secret/` | `/run/tesatlas-edge-receiver` read/write | same path read-only |
+| `config/config.toml` | `/etc/tesatlas-edge/config.toml` read-only | absent |
+| `config/fleet-telemetry.json` | absent | `/etc/tesatlas-edge/fleet-telemetry.json` read-only |
+| `hub-tls/` | `/run/tesatlas-edge-hub-tls` read-only | absent |
+| `vehicle-tls/` | absent | `/run/tesatlas-edge-vehicle-tls` read-only |
 
 The receiver environment points to
-`/run/teslatlas-edge-receiver/receiver-token`. Its JSON uses
-`/run/teslatlas-edge-vehicle-tls/vehicle-tls.crt` and `.key`, and listens on
+`/run/tesatlas-edge-receiver/receiver-token`. Its JSON uses
+`/run/tesatlas-edge-vehicle-tls/vehicle-tls.crt` and `.key`, and listens on
 8444 inside the shared network namespace. Host raw TCP 443 is mapped directly
 to that port; Edge Hub TLS is published on the selected private or tunnel
 address at 8443. The host binding defaults to loopback; set `EDGE_HUB_BIND`
@@ -85,10 +85,10 @@ inputs. `init` refuses to overwrite an existing secret.
 
 ```sh
 docker compose build edge
-docker compose run --rm --no-deps --entrypoint /usr/bin/teslatlas-edge \
-  edge --config /etc/teslatlas-edge/config.toml init
-docker compose run --rm --no-deps --entrypoint /usr/bin/teslatlas-edge \
-  edge --config /etc/teslatlas-edge/config.toml doctor
+docker compose run --rm --no-deps --entrypoint /usr/bin/tesatlas-edge \
+  edge --config /etc/tesatlas-edge/config.toml init
+docker compose run --rm --no-deps --entrypoint /usr/bin/tesatlas-edge \
+  edge --config /etc/tesatlas-edge/config.toml doctor
 docker compose up --build -d
 docker compose exec -T edge curl --fail --silent --show-error \
   http://127.0.0.1:8080/healthz
@@ -109,12 +109,12 @@ values, shell history or task output.
 umask 077
 edge_enrolment_file=$(mktemp)
 docker run --rm --log-driver=none --user 10001:10001 \
-  --entrypoint /usr/bin/teslatlas-edge \
-  --mount "type=bind,src=$EDGE_RUNTIME_DIR/state,dst=/var/lib/teslatlas-edge" \
-  --mount "type=bind,src=$EDGE_RUNTIME_DIR/receiver-secret,dst=/run/teslatlas-edge-receiver" \
-  --mount "type=bind,src=$EDGE_RUNTIME_DIR/config/config.toml,dst=/etc/teslatlas-edge/config.toml,readonly" \
-  --mount "type=bind,src=$EDGE_RUNTIME_DIR/hub-tls,dst=/run/teslatlas-edge-hub-tls,readonly" \
-  teslatlas-edge:local --config /etc/teslatlas-edge/config.toml \
+  --entrypoint /usr/bin/tesatlas-edge \
+  --mount "type=bind,src=$EDGE_RUNTIME_DIR/state,dst=/var/lib/tesatlas-edge" \
+  --mount "type=bind,src=$EDGE_RUNTIME_DIR/receiver-secret,dst=/run/tesatlas-edge-receiver" \
+  --mount "type=bind,src=$EDGE_RUNTIME_DIR/config/config.toml,dst=/etc/tesatlas-edge/config.toml,readonly" \
+  --mount "type=bind,src=$EDGE_RUNTIME_DIR/hub-tls,dst=/run/tesatlas-edge-hub-tls,readonly" \
+  tesatlas-edge:local --config /etc/tesatlas-edge/config.toml \
   credential enrol home-hub --ttl-seconds 7776000 > "$edge_enrolment_file"
 chmod 600 "$edge_enrolment_file"
 ```
@@ -133,8 +133,8 @@ bridge cache it at startup:
 
 ```sh
 docker compose stop receiver edge
-docker compose run --rm --no-deps --entrypoint /usr/bin/teslatlas-edge \
-  edge --config /etc/teslatlas-edge/config.toml receiver-token rotate \
+docker compose run --rm --no-deps --entrypoint /usr/bin/tesatlas-edge \
+  edge --config /etc/tesatlas-edge/config.toml receiver-token rotate \
   > "$EDGE_RUNTIME_DIR/receiver-token-rotation.json"
 chmod 600 "$EDGE_RUNTIME_DIR/receiver-token-rotation.json"
 docker compose up -d edge receiver

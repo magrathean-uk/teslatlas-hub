@@ -1,23 +1,23 @@
 #!/bin/sh
 set -eu
 
-service=teslatlas-edge.service
-receiver_service=teslatlas-fleet-telemetry.service
-state_file=${TESLATLAS_EDGE_MAINTAINER_STATE_FILE:-/run/teslatlas-edge-maintainer.state}
-backup_dir=${TESLATLAS_EDGE_UPGRADE_BACKUP_DIR:-/run/teslatlas-edge-package-upgrade}
-binary=/usr/bin/teslatlas-edge
-receiver_binary=/usr/lib/teslatlas-edge/fleet-telemetry
-guard=/usr/lib/teslatlas-edge/run-with-spool-format-guard.sh
-unit=/lib/systemd/system/teslatlas-edge.service
-receiver_unit=/lib/systemd/system/teslatlas-fleet-telemetry.service
+service=tesatlas-edge.service
+receiver_service=tesatlas-fleet-telemetry.service
+state_file=${TESATLAS_EDGE_MAINTAINER_STATE_FILE:-/run/tesatlas-edge-maintainer.state}
+backup_dir=${TESATLAS_EDGE_UPGRADE_BACKUP_DIR:-/run/tesatlas-edge-package-upgrade}
+binary=/usr/bin/tesatlas-edge
+receiver_binary=/usr/lib/tesatlas-edge/fleet-telemetry
+guard=/usr/lib/tesatlas-edge/run-with-spool-format-guard.sh
+unit=/lib/systemd/system/tesatlas-edge.service
+receiver_unit=/lib/systemd/system/tesatlas-fleet-telemetry.service
 
 ensure_account() {
-    if ! getent group teslatlas-edge >/dev/null 2>&1; then
-        addgroup --system teslatlas-edge
+    if ! getent group tesatlas-edge >/dev/null 2>&1; then
+        addgroup --system tesatlas-edge
     fi
-    if ! getent passwd teslatlas-edge >/dev/null 2>&1; then
-        adduser --system --ingroup teslatlas-edge --home /var/lib/teslatlas-edge \
-            --no-create-home --shell /usr/sbin/nologin teslatlas-edge
+    if ! getent passwd tesatlas-edge >/dev/null 2>&1; then
+        adduser --system --ingroup tesatlas-edge --home /var/lib/tesatlas-edge \
+            --no-create-home --shell /usr/sbin/nologin tesatlas-edge
     fi
 }
 
@@ -26,7 +26,7 @@ safe_backup() {
     destination=$2
     mode=$3
     [ -f "$source" ] && [ ! -L "$source" ] || {
-        echo "existing Teslatlas Edge payload is missing or unsafe: $source" >&2
+        echo "existing Tesatlas Edge payload is missing or unsafe: $source" >&2
         exit 1
     }
     install -o root -g root -m "$mode" "$source" "$backup_dir/$destination"
@@ -56,20 +56,20 @@ ensure_account
 [ "${1:-}" = upgrade ] || exit 0
 
 [ ! -e "$backup_dir" ] && [ ! -L "$backup_dir" ] || {
-    echo "Teslatlas Edge upgrade backup already exists: $backup_dir" >&2
+    echo "Tesatlas Edge upgrade backup already exists: $backup_dir" >&2
     exit 1
 }
 [ ! -e "$state_file" ] && [ ! -L "$state_file" ] || {
-    echo "Teslatlas Edge maintainer state already exists: $state_file" >&2
+    echo "Tesatlas Edge maintainer state already exists: $state_file" >&2
     exit 1
 }
 [ -f "$binary" ] || exit 0
 install -d -o root -g root -m 0700 "$backup_dir"
-safe_backup "$binary" teslatlas-edge 0755
+safe_backup "$binary" tesatlas-edge 0755
 safe_backup "$receiver_binary" fleet-telemetry 0755
 safe_backup "$guard" run-with-spool-format-guard.sh 0755
-safe_backup "$unit" teslatlas-edge.service 0644
-safe_backup "$receiver_unit" teslatlas-fleet-telemetry.service 0644
+safe_backup "$unit" tesatlas-edge.service 0644
+safe_backup "$receiver_unit" tesatlas-fleet-telemetry.service 0644
 
 if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
     edge_state=$(service_state "$service")
@@ -78,8 +78,8 @@ if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
     stop_if_active "$receiver_service"
     stop_if_active "$service"
 else
-    rm -f "$backup_dir/teslatlas-edge.service" "$backup_dir/teslatlas-fleet-telemetry.service"
-    rm -f "$backup_dir/teslatlas-edge" "$backup_dir/fleet-telemetry" \
+    rm -f "$backup_dir/tesatlas-edge.service" "$backup_dir/tesatlas-fleet-telemetry.service"
+    rm -f "$backup_dir/tesatlas-edge" "$backup_dir/fleet-telemetry" \
         "$backup_dir/run-with-spool-format-guard.sh"
     find "$backup_dir" -depth -delete
 fi

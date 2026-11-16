@@ -24,12 +24,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.teslatlas_hub.client import (
+from custom_components.tesatlas_hub.client import (
     HubAuthenticationError,
     HubPairingError,
     create_client,
 )
-from custom_components.teslatlas_hub.const import (
+from custom_components.tesatlas_hub.const import (
     CONF_ACCESS_TOKEN,
     CONF_DEVICE_ID,
     CONF_DEVICE_NAME,
@@ -42,15 +42,15 @@ from custom_components.teslatlas_hub.const import (
     CONF_USE_TLS,
     DOMAIN,
 )
-from custom_components.teslatlas_hub.current_hub_client import (
+from custom_components.tesatlas_hub.current_hub_client import (
     PROFILE_ID,
     PROFILE_SHA256,
     CurrentHubClient,
 )
-from custom_components.teslatlas_hub.models import HubEndpoint, VehicleState
+from custom_components.tesatlas_hub.models import HubEndpoint, VehicleState
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("TESLATLAS_HA_LIVE") != "1",
+    os.environ.get("TESATLAS_HA_LIVE") != "1",
     reason="requires an explicitly prepared private current-Hub fixture",
 )
 
@@ -114,7 +114,7 @@ def _observe_runtime(integration_root: Path, original_files: dict[str, bytes]) -
     current_files = _integration_files(integration_root)
     if current_files != original_files:
         raise AssertionError("integration source changed during the run")
-    package = "custom_components.teslatlas_hub"
+    package = "custom_components.tesatlas_hub"
     required = {
         package,
         *(
@@ -167,7 +167,7 @@ def _observe_runtime(integration_root: Path, original_files: dict[str, bytes]) -
     assert manifest["domain"] == DOMAIN
     source_manifest = hashlib.sha256(
         "".join(
-            f"custom_components/teslatlas_hub/{relative} "
+            f"custom_components/tesatlas_hub/{relative} "
             f"{hashlib.sha256(raw).hexdigest()}\n"
             for relative, raw in current_files.items()
         ).encode()
@@ -276,17 +276,17 @@ async def test_installed_config_entry_polls_and_unloads_real_hub(
 ) -> None:
     """Prove actual flow, pairing, entity updates, reauth, and clean unload."""
     del socket_enabled
-    ready_path, ready = _private_json("TESLATLAS_HA_LIVE_READY")
-    _invitation_path, invitation = _private_json("TESLATLAS_HA_LIVE_INVITATION")
-    scenario_path, scenario = _private_json("TESLATLAS_HA_LIVE_SCENARIO")
-    receipt_path = Path(os.environ["TESLATLAS_HA_LIVE_RECEIPT"])
-    continue_path = Path(os.environ["TESLATLAS_HA_LIVE_CONTINUE"])
-    initial_path = Path(os.environ["TESLATLAS_HA_LIVE_INITIAL"])
-    reauth_invitation_path = Path(os.environ["TESLATLAS_HA_LIVE_REAUTH_INVITATION"])
-    reauth_ready_path = Path(os.environ["TESLATLAS_HA_LIVE_REAUTH_READY"])
-    reauth_request_path = Path(os.environ["TESLATLAS_HA_LIVE_REAUTH_REQUEST"])
-    reauth_continue_path = Path(os.environ["TESLATLAS_HA_LIVE_REAUTH_CONTINUE"])
-    integration_root = Path(__file__).parents[2] / "custom_components" / "teslatlas_hub"
+    ready_path, ready = _private_json("TESATLAS_HA_LIVE_READY")
+    _invitation_path, invitation = _private_json("TESATLAS_HA_LIVE_INVITATION")
+    scenario_path, scenario = _private_json("TESATLAS_HA_LIVE_SCENARIO")
+    receipt_path = Path(os.environ["TESATLAS_HA_LIVE_RECEIPT"])
+    continue_path = Path(os.environ["TESATLAS_HA_LIVE_CONTINUE"])
+    initial_path = Path(os.environ["TESATLAS_HA_LIVE_INITIAL"])
+    reauth_invitation_path = Path(os.environ["TESATLAS_HA_LIVE_REAUTH_INVITATION"])
+    reauth_ready_path = Path(os.environ["TESATLAS_HA_LIVE_REAUTH_READY"])
+    reauth_request_path = Path(os.environ["TESATLAS_HA_LIVE_REAUTH_REQUEST"])
+    reauth_continue_path = Path(os.environ["TESATLAS_HA_LIVE_REAUTH_CONTINUE"])
+    integration_root = Path(__file__).parents[2] / "custom_components" / "tesatlas_hub"
     original_files = await hass.async_add_executor_job(
         _integration_files, integration_root
     )
@@ -317,7 +317,7 @@ async def test_installed_config_entry_polls_and_unloads_real_hub(
     assert invitation["endpoint"] == ready["endpoint"]
     endpoint = urlsplit(invitation["endpoint"])
 
-    system_ca = os.environ.get("TESLATLAS_HA_SYSTEM_CA")
+    system_ca = os.environ.get("TESATLAS_HA_SYSTEM_CA")
     assert system_ca and await hass.async_add_executor_job(os.path.isfile, system_ca)
     assert os.environ.get("REQUESTS_CA_BUNDLE") == os.environ.get("SSL_CERT_FILE")
     untrusted = ssl.create_default_context(cafile=system_ca)
@@ -408,9 +408,9 @@ async def test_installed_config_entry_polls_and_unloads_real_hub(
         ):
             await asyncio.sleep(0.1)
     _reauth_path, reauth_invitation = _private_json(
-        "TESLATLAS_HA_LIVE_REAUTH_INVITATION"
+        "TESATLAS_HA_LIVE_REAUTH_INVITATION"
     )
-    _reauth_ready_path, reauth_ready = _private_json("TESLATLAS_HA_LIVE_REAUTH_READY")
+    _reauth_ready_path, reauth_ready = _private_json("TESATLAS_HA_LIVE_REAUTH_READY")
     assert _reauth_path == reauth_invitation_path
     assert _reauth_ready_path == reauth_ready_path
     assert reauth_ready["status"] == "ready"

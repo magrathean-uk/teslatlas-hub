@@ -1,4 +1,4 @@
-# Teslatlas TypeScript client
+# Tesatlas TypeScript client
 
 Node.js client for the Hub read API. Follow `../../AGENTS.md` and
 `../../docs/development/MASTER_PLAN.md`; the plan wins on process, model, scope and commit
@@ -6,7 +6,7 @@ policy. Only the Hub client (`src/hub`) is retained; the rich client, SSE, vehic
 commands, the vendored Protocol copy, the lock and sync scripts and the two
 bearer-serving browser helpers are deleted under plan group G2-2. Types are then
 generated from the in-repo contract. No browser client in v7. The package is not
-published in v7. The retained code moves into the `magrathean-uk/teslatlas-hub`
+published in v7. The retained code moves into the `magrathean-uk/tesatlas-hub`
 workspace as the `sdk-typescript/` package, keeping its Apache-2.0 licence, after an
 Authorisations row.
 
@@ -40,5 +40,5 @@ Follow the [Hub clean-development policy](../AGENTS.md#clean-development-mandato
 The Hub root `../.clean-development.json` (schema v2) governs this package, including
 the git-ignored `dist/` and `node_modules/` directories. Cargo output stays in the
 Hub's git-ignored `target/`; caches and scratch follow `~/dev/machine/env.zsh`.
-Use the Hub runner shown above; the Hub's macOS app goes under `$TESLATLAS_LAB/build/hub/dist` and its Xcode
-staging under `$TESLATLAS_DERIVED_DATA`.
+Use the Hub runner shown above; the Hub's macOS app goes under `$TESATLAS_LAB/build/hub/dist` and its Xcode
+staging under `$TESATLAS_DERIVED_DATA`.

@@ -122,7 +122,7 @@ TIMEOUT_FORM = 'empty handler time-budget expiry'
 
 # Cursor construction facts (public wire layout; the key is never published).
 CURSOR_KIND = {'drives': 1, 'charges': 2, 'positions': 3, 'charge_samples': 4}
-CURSOR_DOMAIN = b'teslatlas-hub/public-query-cursor/v1\x00'
+CURSOR_DOMAIN = b'tesatlas-hub/public-query-cursor/v1\x00'
 EXAMPLE_CURSOR_KEY = bytes(range(32))  # synthetic key used only for the example cursors
 
 
@@ -386,7 +386,7 @@ def build_profile():
             'payload': {'bytes': 58, 'layout': cursor_layout},
             'tag': {'bytes': 32, 'algorithm': 'HMAC-SHA256', 'key': 'the Hub installation cursor key',
                     'message': 'domain prefix followed by the payload',
-                    'domain_prefix': 'teslatlas-hub/public-query-cursor/v1 followed by one NUL byte',
+                    'domain_prefix': 'tesatlas-hub/public-query-cursor/v1 followed by one NUL byte',
                     'example_key_hex': EXAMPLE_CURSOR_KEY.hex(),
                     'example_key_use': 'Example cursors only; no Hub uses this key.'},
             'binding': ['Hub installation cursor key', 'cursor kind', 'vehicle UUID', 'scope id', 'exact from_ms', 'exact to_ms'],
@@ -443,7 +443,7 @@ def build_profile():
             'vehicles_list': 'granted vehicles only',
             'pack': 'The owning vehicle is resolved before streaming; an ungranted digest is an empty 404 indistinguishable from an unknown digest.'},
         'pairing': {
-            'invitation_command': 'teslatlas-hub --config PRIVATE_CONFIG pair --json', 'claim_fields': ['secret', 'device_name'], 'path_field': 'pairingId',
+            'invitation_command': 'tesatlas-hub --config PRIVATE_CONFIG pair --json', 'claim_fields': ['secret', 'device_name'], 'path_field': 'pairingId',
             'device_name': {
                 'rule': 'device_name is 1 to 128 UTF-8 bytes and has no control character (U+0000 to U+001F, U+007F to U+009F). The schema states the character limit (maxLength 128) and the control-character rule, but a character count cannot state the byte limit: a name of at most 128 characters can still be over 128 bytes, and is refused all the same.',
                 'refused': {'status': 422, 'body': 'bounded text/plain',
@@ -466,7 +466,7 @@ def build_profile():
         'error_codes': ERROR_CODES,
         'unsupported': {'commands': 'no public vehicle command route', 'sse': 'no public event stream or epoch', 'metadata': 'no public metadata CRUD',
                         'revisions': 'no public current or drive snapshot revision', 'protocol_version_header': 'not emitted or required',
-                        'rich_protocol_versions': 'the root teslatlas-v1 family is not served'},
+                        'rich_protocol_versions': 'the root tesatlas-v1 family is not served'},
         'limits': {'ordinary_request_body_bytes': 4096, 'changes_since_request_body_bytes': 8192, 'changes_since_defined_by': 'hub-sync-v1',
                    'in_flight_requests': 32, 'handler_timeout_seconds': 15, 'json_page_bytes': MAX_PAGE_BYTES,
                    'handler_timeout_response': {
@@ -588,7 +588,7 @@ def build_openapi():
             operation['responses'][str(status)] = response
         paths.setdefault(path, {})[route['method'].lower()] = operation
     return {'openapi': '3.1.0',
-            'info': {'title': 'Teslatlas Hub public HTTP profile hub-http-v1', 'version': VERSION, 'description': TIMEOUT_RULE + ' ' + ORIGIN_RULE,
+            'info': {'title': 'Tesatlas Hub public HTTP profile hub-http-v1', 'version': VERSION, 'description': TIMEOUT_RULE + ' ' + ORIGIN_RULE,
                      'license': {'name': 'Apache-2.0', 'identifier': 'Apache-2.0'}},
             'paths': paths,
             'components': {'securitySchemes': {'pairedBearer': {'type': 'http', 'scheme': 'bearer', 'description': 'Bearer issued by claim or rotate.'}}}}

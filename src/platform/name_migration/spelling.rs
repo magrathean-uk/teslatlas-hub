@@ -18,7 +18,7 @@ const FORMS: [(&str, &str); 3] = [
 
 /// The product's name as this build spells it; the scripted rename changes it,
 /// and with it [`renamed`].
-pub const PRODUCT_NAME: &str = "Teslatlas Hub";
+pub const PRODUCT_NAME: &str = "Tesatlas Hub";
 
 /// Whether this build carries the current spelling, so an installation of the
 /// earlier spelling may exist. Before the swap it is false and every

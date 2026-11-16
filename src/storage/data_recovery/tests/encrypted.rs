@@ -652,7 +652,7 @@ fn data_recovery_corruption_is_detected_and_nothing_is_published() {
         ("empty", Vec::new()),
         (
             "not_an_archive",
-            b"this is not a teslatlas archive at all, only text".repeat(4),
+            b"this is not a tesatlas archive at all, only text".repeat(4),
         ),
     ];
     for (name, bytes) in cases {

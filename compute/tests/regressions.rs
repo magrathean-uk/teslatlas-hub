@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use teslatlas_compute::{
+use tesatlas_compute::{
     ALGORITHM_VERSION, Diagnostics, Drive, Error, Progress, ProgressStage, RawMapPosition,
     TILE_GEOMETRY_VERSION, TileOutput, generate_tile_payload_v1,
     generate_tile_payload_v1_from_pages, generate_tile_payload_v1_from_pages_with_rdp_limit,

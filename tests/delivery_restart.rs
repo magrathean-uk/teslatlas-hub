@@ -29,7 +29,7 @@ use std::{
 
 use rusqlite::params;
 use serde_json::{Value, json};
-use teslatlas_hub::db::{
+use tesatlas_hub::db::{
     HubStore, ObservationInput, SourceDescriptor, SourceRecord, StoreError, VehicleDescriptor,
     VehicleRecord,
 };
@@ -126,7 +126,7 @@ fn deliver(
     store: &HubStore,
     identity: &Identity,
     (observed_at_ms, payload): &(i64, Value),
-) -> Result<teslatlas_hub::db::OwnerObservationResult, StoreError> {
+) -> Result<tesatlas_hub::db::OwnerObservationResult, StoreError> {
     store.accept_owner_observation_and_lifecycle(
         &input(identity, *observed_at_ms, payload),
         *observed_at_ms,
@@ -177,7 +177,7 @@ fn hub_dir(root: &Path) -> PathBuf {
 }
 
 /// What an uninterrupted store holds after the whole drive, for comparison.
-fn reference_history(sequence: &[(i64, Value)]) -> teslatlas_hub::db::MaterialisedHistory {
+fn reference_history(sequence: &[(i64, Value)]) -> tesatlas_hub::db::MaterialisedHistory {
     let root = private_root();
     let store = HubStore::initialize(hub_dir(root.path())).expect("reference store");
     let identity = identify(&store);

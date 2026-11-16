@@ -18,7 +18,7 @@ import tempfile
 from types import ModuleType
 
 
-SCHEMA = "teslatlas.dependency-legal-bundle/v1"
+SCHEMA = "tesatlas.dependency-legal-bundle/v1"
 BASE_FILES = (
     "RUST_THIRD_PARTY_NOTICES.generated.md",
     "rust-dependency-inventory.json",
@@ -108,7 +108,7 @@ def real_directory(path: Path, label: str) -> Path:
 def load_release_module(repo: Path) -> ModuleType:
     helper = repo / "scripts" / "release-evidence.py"
     regular_bytes(helper, "release evidence helper", 2 * 1024 * 1024)
-    spec = importlib.util.spec_from_file_location("teslatlas_release_evidence", helper)
+    spec = importlib.util.spec_from_file_location("tesatlas_release_evidence", helper)
     if spec is None or spec.loader is None:
         raise GateError("cannot load release evidence helper")
     module = importlib.util.module_from_spec(spec)
@@ -264,7 +264,7 @@ def generate(
     parent = real_directory(output.parent, "dependency legal bundle output parent")
     output = parent / output.name
     components = expected_components(repo, go_evidence, fleet_evidence)
-    stage = Path(tempfile.mkdtemp(prefix=".teslatlas-legal-bundle.", dir=parent))
+    stage = Path(tempfile.mkdtemp(prefix=".tesatlas-legal-bundle.", dir=parent))
     try:
         for name, data in sorted(components.items()):
             write_new(stage / name, data)

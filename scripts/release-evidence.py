@@ -14,7 +14,7 @@ import stat
 import subprocess
 
 
-SCHEMA = "teslatlas.release-evidence/v1"
+SCHEMA = "tesatlas.release-evidence/v1"
 MAX_LEGAL_FILE_BYTES = 16 * 1024 * 1024
 MAX_CARGO_LOCK_BYTES = 32 * 1024 * 1024
 
@@ -586,7 +586,7 @@ def sbom_and_notices(metadata: dict, repo: Path) -> tuple[dict, dict, str]:
             "licenseDeclared": license_expression,
             "copyrightText": copyright_evidence,
             "filesAnalyzed": False,
-            "annotations": [{"annotationType": "OTHER", "annotator": "Tool: teslatlas-release-evidence",
+            "annotations": [{"annotationType": "OTHER", "annotator": "Tool: tesatlas-release-evidence",
                               "annotationDate": "1970-01-01T00:00:00Z",
                               "comment": f"license-text-sha256={text_hash}"}],
         }
@@ -621,7 +621,7 @@ def sbom_and_notices(metadata: dict, repo: Path) -> tuple[dict, dict, str]:
     if root_package_id is None:
         root_package_id = next((item for item in workspace_members if item in ids), None)
     if root_package_id is None:
-        root_package_id = next((package["id"] for package in packages if package.get("name") == "teslatlas-hub"), None)
+        root_package_id = next((package["id"] for package in packages if package.get("name") == "tesatlas-hub"), None)
     if root_package_id is None:
         raise GateError("cargo metadata has no workspace root package")
     root_id = ids[root_package_id]
@@ -640,8 +640,8 @@ def sbom_and_notices(metadata: dict, repo: Path) -> tuple[dict, dict, str]:
     relationships.sort(key=lambda item: (item["spdxElementId"], item["relatedSpdxElement"]))
     spdx = {
         "spdxVersion": "SPDX-2.3", "dataLicense": "CC0-1.0", "SPDXID": "SPDXRef-DOCUMENT",
-        "name": "Teslatlas Hub dependency SBOM", "documentNamespace": "urn:teslatlas:sbom",
-        "creationInfo": {"created": "1970-01-01T00:00:00Z", "creators": ["Tool: teslatlas-release-evidence"]},
+        "name": "Tesatlas Hub dependency SBOM", "documentNamespace": "urn:teslatlas:sbom",
+        "creationInfo": {"created": "1970-01-01T00:00:00Z", "creators": ["Tool: tesatlas-release-evidence"]},
         "packages": spdx_packages, "relationships": relationships,
     }
     notice_lines = [

@@ -1,0 +1,76 @@
+name: TesatlasHubApp
+
+options:
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: NO
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGN_IDENTITY: ""
+    MARKETING_VERSION: "2026.36.2"
+    TESATLAS_HUB_VERSION: "$(MARKETING_VERSION)"
+    TESATLAS_HUB_SOURCE_COMMIT: "UNBOUND"
+    CURRENT_PROJECT_VERSION: "20260905.1"
+    # The embedded Hub service binary (Resources/tesatlas-hub) owns the backup
+    # password's Keychain item; scripts/build-macos-app.sh signs it with this
+    # stable identity so a rebuilt or updated binary keeps reading it (M06-T17).
+    TESATLAS_HUB_SERVICE_SIGNING_IDENTITY: "Apple Development: Created via API"
+    TESATLAS_HUB_SERVICE_SIGNING_TEAM: NPSQV9WYS5
+    TESATLAS_HUB_SERVICE_IDENTIFIER: uk.magrathean.teslatlas.hub.service
+
+targets:
+  TesatlasHubApp:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: TesatlasHubApp
+    info:
+      path: TesatlasHubApp/Info.plist
+      properties:
+        CFBundleIconFile: AppIcon
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSHumanReadableCopyright: "Copyright © 2026 MAGRATHEAN UK LTD. AGPL-3.0-only."
+        TesatlasHubVersion: "$(TESATLAS_HUB_VERSION)"
+        TesatlasHubSourceCommit: "$(TESATLAS_HUB_SOURCE_COMMIT)"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: eu.tesatlas.hub.app
+        PRODUCT_NAME: Tesatlas Hub
+        INFOPLIST_KEY_CFBundleIconFile: AppIcon
+        INFOPLIST_KEY_CFBundleDisplayName: Tesatlas Hub
+        INFOPLIST_KEY_LSMinimumSystemVersion: "13.0"
+  TesatlasHubAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: TesatlasHubAppTests
+    dependencies:
+      - target: TesatlasHubApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: eu.tesatlas.hub.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSPrincipalClass: HubTestBundleMain
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Tesatlas Hub.app/Contents/MacOS/Tesatlas Hub"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  TesatlasHubApp:
+    build:
+      targets:
+        TesatlasHubApp: all
+        TesatlasHubAppTests: [test]
+    test:
+      gatherCoverageData: false
+      targets:
+        - name: TesatlasHubAppTests

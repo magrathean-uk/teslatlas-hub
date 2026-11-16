@@ -1,6 +1,6 @@
 # Public protocol binding
 
-The HTTP adapter uses the embedded `hub-http-v1@1.3.0` profile. Its [SHA256SUMS file](../../custom_components/teslatlas_hub/profile/hub-http-v1/1.3.0/SHA256SUMS) has SHA-256:
+The HTTP adapter uses the embedded `hub-http-v1@1.3.0` profile. Its [SHA256SUMS file](../../custom_components/tesatlas_hub/profile/hub-http-v1/1.3.0/SHA256SUMS) has SHA-256:
 
 ```text
 28957c2dfcca9efeefc7d7fee230ef769ee3c73833e60e0b0769d93bcf8b7221

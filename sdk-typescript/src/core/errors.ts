@@ -12,18 +12,18 @@ export type SafeRequestId = string & {
   readonly [safeRequestIdBrand]: true;
 };
 
-interface TeslatlasErrorOptions<TCode extends string> {
+interface TesatlasErrorOptions<TCode extends string> {
   readonly code: TCode;
   readonly status?: number;
   readonly requestId?: SafeRequestId;
 }
 
-export class TeslatlasError<TCode extends string = string> extends Error {
+export class TesatlasError<TCode extends string = string> extends Error {
   readonly code: TCode;
   readonly status?: number;
   readonly requestId?: SafeRequestId;
 
-  protected constructor(message: string, options: TeslatlasErrorOptions<TCode>) {
+  protected constructor(message: string, options: TesatlasErrorOptions<TCode>) {
     super(message);
     this.name = new.target.name;
     this.code = options.code;
@@ -36,7 +36,7 @@ export class TeslatlasError<TCode extends string = string> extends Error {
   }
 }
 
-export class InvalidProtocolErrorCodeError extends TeslatlasError<"invalid_protocol_error_code"> {
+export class InvalidProtocolErrorCodeError extends TesatlasError<"invalid_protocol_error_code"> {
   constructor() {
     super("Protocol error code must be non-empty and contain no control characters", {
       code: "invalid_protocol_error_code",
@@ -51,7 +51,7 @@ export function asProtocolErrorCode(value: string): ProtocolErrorCode {
   return value as ProtocolErrorCode;
 }
 
-export class InvalidSafeRequestIdError extends TeslatlasError<"invalid_safe_request_id"> {
+export class InvalidSafeRequestIdError extends TesatlasError<"invalid_safe_request_id"> {
   constructor() {
     super("Request ID must be 1 to 256 characters and contain no control characters", {
       code: "invalid_safe_request_id",
@@ -76,9 +76,9 @@ export interface ProtocolErrorOptions {
   readonly requestId?: SafeRequestId;
 }
 
-export class ProtocolError extends TeslatlasError<ProtocolErrorCode> {
+export class ProtocolError extends TesatlasError<ProtocolErrorCode> {
   constructor(options: ProtocolErrorOptions) {
-    super("Teslatlas protocol request failed", {
+    super("Tesatlas protocol request failed", {
       code: options.code,
       status: options.status,
       ...(options.requestId === undefined ? {} : { requestId: options.requestId }),
@@ -86,33 +86,33 @@ export class ProtocolError extends TeslatlasError<ProtocolErrorCode> {
   }
 }
 
-export class IncompatibleProtocolError extends TeslatlasError<"incompatible_protocol"> {
+export class IncompatibleProtocolError extends TesatlasError<"incompatible_protocol"> {
   constructor() {
-    super("Teslatlas protocol versions are incompatible", {
+    super("Tesatlas protocol versions are incompatible", {
       code: "incompatible_protocol",
     });
   }
 }
 
-export class MissingCapabilityError extends TeslatlasError<"missing_capability"> {
+export class MissingCapabilityError extends TesatlasError<"missing_capability"> {
   readonly capability: CapabilityId;
 
   constructor(capability: CapabilityId) {
-    super("Teslatlas capability is unavailable", { code: "missing_capability" });
+    super("Tesatlas capability is unavailable", { code: "missing_capability" });
     this.capability = capability;
   }
 }
 
-export class ProtocolValidationError extends TeslatlasError<"protocol_validation"> {
+export class ProtocolValidationError extends TesatlasError<"protocol_validation"> {
   readonly validator: string;
 
   constructor(validator: string) {
-    super("Teslatlas protocol response is invalid", { code: "protocol_validation" });
+    super("Tesatlas protocol response is invalid", { code: "protocol_validation" });
     this.validator = validator;
   }
 }
 
-export class ProtocolHttpError extends TeslatlasError<ProtocolErrorCode> {
+export class ProtocolHttpError extends TesatlasError<ProtocolErrorCode> {
   readonly retryable: boolean;
   readonly retryAfterSeconds?: number;
 
@@ -122,7 +122,7 @@ export class ProtocolHttpError extends TeslatlasError<ProtocolErrorCode> {
       readonly retryAfterSeconds?: number;
     },
   ) {
-    super("Teslatlas protocol request failed", {
+    super("Tesatlas protocol request failed", {
       code: options.code,
       status: options.status,
       ...(options.requestId === undefined ? {} : { requestId: options.requestId }),
@@ -134,9 +134,9 @@ export class ProtocolHttpError extends TeslatlasError<ProtocolErrorCode> {
   }
 }
 
-export class ReplayGapError extends TeslatlasError<"event_replay_expired"> {
+export class ReplayGapError extends TesatlasError<"event_replay_expired"> {
   constructor(status: number, requestId?: SafeRequestId) {
-    super("Teslatlas event replay point expired", {
+    super("Tesatlas event replay point expired", {
       code: "event_replay_expired",
       status,
       ...(requestId === undefined ? {} : { requestId }),
@@ -144,17 +144,17 @@ export class ReplayGapError extends TeslatlasError<"event_replay_expired"> {
   }
 }
 
-export class CommandUncertainError extends TeslatlasError<"command_uncertain"> {
+export class CommandUncertainError extends TesatlasError<"command_uncertain"> {
   constructor() {
-    super("Teslatlas command submission outcome is uncertain", {
+    super("Tesatlas command submission outcome is uncertain", {
       code: "command_uncertain",
     });
   }
 }
 
-export class TransportError extends TeslatlasError<"transport_error"> {
+export class TransportError extends TesatlasError<"transport_error"> {
   constructor() {
-    super("Teslatlas transport request failed", { code: "transport_error" });
+    super("Tesatlas transport request failed", { code: "transport_error" });
   }
 }
 

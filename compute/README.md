@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/magrathean-uk/magrathean-uk/main/assets/icons/teslatlas.png" width="96" height="96" alt="">
+  <img src="https://raw.githubusercontent.com/magrathean-uk/magrathean-uk/main/assets/icons/tesatlas.png" width="96" height="96" alt="">
 </p>
 
-<h1 align="center">Teslatlas Compute</h1>
+<h1 align="center">Tesatlas Compute</h1>
 
-<p align="center">The dependency-free shared Rust kernel for deterministic Teslatlas map computation.</p>
+<p align="center">The dependency-free shared Rust kernel for deterministic Tesatlas map computation.</p>
 
 <p align="center">
   <a href="LICENSE">Licence</a>
@@ -12,18 +12,18 @@
 
 ## Overview
 
-`teslatlas-compute` is the dependency-free shared Rust kernel for deterministic
-Teslatlas map computation. Its first public API converts typed drives or bounded
+`tesatlas-compute` is the dependency-free shared Rust kernel for deterministic
+Tesatlas map computation. Its first public API converts typed drives or bounded
 canonical position-page v1 bytes into canonical tile-publication v1 bytes.
 
-The initial implementation is extracted from the Teslatlas App CPU fallback at
+The initial implementation is extracted from the Tesatlas App CPU fallback at
 App commit `569ac74867947616632ecb64bb65fb97ab565cb5`. It preserves the App's
 z2-z13 LOD parameters, Web Mercator projection, discontinuity handling,
 antimeridian split, tile crossing, weighted 200,000-segment tile budget, signed
 segment ordering, and little-endian payload formats.
 
 The exported tile geometry identity is `raster-v9-rounded-tile-px`, matching
-the prepared-artefact contract in Teslatlas Protocol commit
+the prepared-artefact contract in Tesatlas Protocol commit
 `4b5d3c1ee71ae5edb734416baeb836dba1c485f4`.
 
 `ALGORITHM_VERSION` is the explicit semantic identity `0.1.1`, independent of
@@ -109,7 +109,7 @@ From the workspace root:
 
 ```sh
 scripts/dev/with-heavy-build-lock.sh \
-  scripts/dev/run.sh hub cargo test --locked -p teslatlas-compute --all-targets
+  scripts/dev/run.sh hub cargo test --locked -p tesatlas-compute --all-targets
 ```
 
 Cargo output stays in the Hub checkout's git-ignored `target/`, declared in
@@ -118,7 +118,7 @@ Cargo output stays in the Hub checkout's git-ignored `target/`, declared in
 
 ## Licence
 
-Teslatlas Compute is licensed under the Apache License 2.0. See
+Tesatlas Compute is licensed under the Apache License 2.0. See
 [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 <sub>© 2026 MAGRATHEAN UK LTD · [Legal](https://github.com/magrathean-uk/.github/blob/main/LEGAL.md)</sub>

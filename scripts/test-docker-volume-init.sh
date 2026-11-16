@@ -9,7 +9,7 @@ if [ "$(uname -s)" = Darwin ] &&
 fi
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-temporary=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-volume-init-test.XXXXXX")
+temporary=$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-volume-init-test.XXXXXX")
 trap 'find "$temporary" -depth -delete' EXIT HUP INT TERM
 volume_probe="$temporary/volume"
 protected_target="$temporary/protected-target"
@@ -19,11 +19,11 @@ mkdir "$volume_probe"
 
 # Execute the shipped algorithm without privilege using its explicit test-only
 # path. Only its exact empty regular sentinel is idempotent.
-TESLATLAS_HUB_VOLUME_INIT_TEST_ONLY=1 "$root/packaging/docker/initialize-volume.sh" \
+TESATLAS_HUB_VOLUME_INIT_TEST_ONLY=1 "$root/packaging/docker/initialize-volume.sh" \
     --test-only "$volume_probe" "$(id -u)" "$(id -g)"
-TESLATLAS_HUB_VOLUME_INIT_TEST_ONLY=1 "$root/packaging/docker/initialize-volume.sh" \
+TESATLAS_HUB_VOLUME_INIT_TEST_ONLY=1 "$root/packaging/docker/initialize-volume.sh" \
     --test-only "$volume_probe" "$(id -u)" "$(id -g)"
-python3 - "$volume_probe/.teslatlas-volume-initialized" "$(id -u)" "$(id -g)" <<'PY'
+python3 - "$volume_probe/.tesatlas-volume-initialized" "$(id -u)" "$(id -g)" <<'PY'
 import os
 import stat
 import sys
@@ -39,63 +39,63 @@ assert status.st_nlink == 1
 PY
 
 # A symlink must fail without following it or changing its target.
-rm "$volume_probe/.teslatlas-volume-initialized"
+rm "$volume_probe/.tesatlas-volume-initialized"
 printf '%s\n' 'must-not-change' > "$protected_target"
-ln -s "$protected_target" "$volume_probe/.teslatlas-volume-initialized"
-if TESLATLAS_HUB_VOLUME_INIT_TEST_ONLY=1 "$root/packaging/docker/initialize-volume.sh" \
+ln -s "$protected_target" "$volume_probe/.tesatlas-volume-initialized"
+if TESATLAS_HUB_VOLUME_INIT_TEST_ONLY=1 "$root/packaging/docker/initialize-volume.sh" \
     --test-only "$volume_probe" "$(id -u)" "$(id -g)" >/dev/null 2>&1; then
     printf '%s\n' 'initializer accepted a sentinel symlink' >&2
     exit 1
 fi
 test "$(cat "$protected_target")" = 'must-not-change'
-test -L "$volume_probe/.teslatlas-volume-initialized"
+test -L "$volume_probe/.tesatlas-volume-initialized"
 
 # A metadata-compatible hard link is not the unique sentinel and must fail
 # without changing the linked target.
-rm "$volume_probe/.teslatlas-volume-initialized"
+rm "$volume_probe/.tesatlas-volume-initialized"
 : > "$protected_hardlink"
 chmod 0600 "$protected_hardlink"
-ln "$protected_hardlink" "$volume_probe/.teslatlas-volume-initialized"
-if TESLATLAS_HUB_VOLUME_INIT_TEST_ONLY=1 "$root/packaging/docker/initialize-volume.sh" \
+ln "$protected_hardlink" "$volume_probe/.tesatlas-volume-initialized"
+if TESATLAS_HUB_VOLUME_INIT_TEST_ONLY=1 "$root/packaging/docker/initialize-volume.sh" \
     --test-only "$volume_probe" "$(id -u)" "$(id -g)" >/dev/null 2>&1; then
     printf '%s\n' 'initializer accepted a multiply linked regular sentinel' >&2
     exit 1
 fi
 test ! -s "$protected_hardlink"
-test -f "$volume_probe/.teslatlas-volume-initialized"
+test -f "$volume_probe/.tesatlas-volume-initialized"
 
 # A wrong regular file must also fail without truncation or normalization.
-rm "$volume_probe/.teslatlas-volume-initialized"
-printf '%s\n' 'wrong-regular-entry' > "$volume_probe/.teslatlas-volume-initialized"
-if TESLATLAS_HUB_VOLUME_INIT_TEST_ONLY=1 "$root/packaging/docker/initialize-volume.sh" \
+rm "$volume_probe/.tesatlas-volume-initialized"
+printf '%s\n' 'wrong-regular-entry' > "$volume_probe/.tesatlas-volume-initialized"
+if TESATLAS_HUB_VOLUME_INIT_TEST_ONLY=1 "$root/packaging/docker/initialize-volume.sh" \
     --test-only "$volume_probe" "$(id -u)" "$(id -g)" >/dev/null 2>&1; then
     printf '%s\n' 'initializer accepted a non-empty regular sentinel' >&2
     exit 1
 fi
-test "$(cat "$volume_probe/.teslatlas-volume-initialized")" = 'wrong-regular-entry'
+test "$(cat "$volume_probe/.tesatlas-volume-initialized")" = 'wrong-regular-entry'
 
-rm "$volume_probe/.teslatlas-volume-initialized"
-mkdir "$volume_probe/.teslatlas-volume-initialized"
-if TESLATLAS_HUB_VOLUME_INIT_TEST_ONLY=1 "$root/packaging/docker/initialize-volume.sh" \
+rm "$volume_probe/.tesatlas-volume-initialized"
+mkdir "$volume_probe/.tesatlas-volume-initialized"
+if TESATLAS_HUB_VOLUME_INIT_TEST_ONLY=1 "$root/packaging/docker/initialize-volume.sh" \
     --test-only "$volume_probe" "$(id -u)" "$(id -g)" >/dev/null 2>&1; then
     printf '%s\n' 'initializer accepted a sentinel directory' >&2
     exit 1
 fi
-test -d "$volume_probe/.teslatlas-volume-initialized"
+test -d "$volume_probe/.tesatlas-volume-initialized"
 
 # Deterministically create a destination symlink after the temporary inode is
 # fully prepared but immediately before atomic publication. The hard link must
 # fail without following or replacing the raced entry.
-rm -r "$volume_probe/.teslatlas-volume-initialized"
+rm -r "$volume_probe/.tesatlas-volume-initialized"
 printf '%s\n' 'race-target-must-not-change' > "$race_target"
-if TESLATLAS_HUB_VOLUME_INIT_TEST_ONLY=1 \
-    TESLATLAS_HUB_VOLUME_INIT_TEST_RACE_TARGET="$race_target" \
+if TESATLAS_HUB_VOLUME_INIT_TEST_ONLY=1 \
+    TESATLAS_HUB_VOLUME_INIT_TEST_RACE_TARGET="$race_target" \
     "$root/packaging/docker/initialize-volume.sh" \
     --test-only "$volume_probe" "$(id -u)" "$(id -g)" >/dev/null 2>&1; then
     printf '%s\n' 'initializer replaced a sentinel created at publication' >&2
     exit 1
 fi
 test "$(cat "$race_target")" = 'race-target-must-not-change'
-test -L "$volume_probe/.teslatlas-volume-initialized"
+test -L "$volume_probe/.tesatlas-volume-initialized"
 
 printf '%s\n' 'docker volume initializer adversarial checks passed'

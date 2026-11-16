@@ -397,7 +397,7 @@
     {
       "id": "swift-raw-v1",
       "schema": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/swift-raw-v1.schema.json",
+        "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-sdk-swift/tools/swift-raw-v1.schema.json",
         "sha256": "bd2d525a52e31651aac5357256c57243ebefdbde0fc191fb63d2ce822393bac7"
       }
     }
@@ -477,7 +477,7 @@
     }
   ],
   "validator": {
-    "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/matrix_contract.py",
+    "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-sdk-swift/tools/matrix_contract.py",
     "sha256": "fc102b7853e83c9269b6477abaf59ca1df5f438e1fd151bac5c3bd4144f3aef5"
   }
 }

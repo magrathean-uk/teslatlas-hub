@@ -14,8 +14,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.teslatlas_hub.client import HubConnectionError
-from custom_components.teslatlas_hub.const import (
+from custom_components.tesatlas_hub.client import HubConnectionError
+from custom_components.tesatlas_hub.const import (
     CONF_ACCESS_TOKEN,
     CONF_DEVICE_ID,
     CONF_HUB_ID,
@@ -24,7 +24,7 @@ from custom_components.teslatlas_hub.const import (
     CONF_USE_TLS,
     DOMAIN,
 )
-from custom_components.teslatlas_hub.coordinator import TeslatlasDataCoordinator
+from custom_components.tesatlas_hub.coordinator import TesatlasDataCoordinator
 from tests.helpers import (
     FIXTURE_ACCESS_TOKEN,
     FIXTURE_DEVICE_ID,
@@ -68,7 +68,7 @@ async def test_initial_refresh_starts_thirty_second_polling(
     hass: HomeAssistant,
 ) -> None:
     client = FixtureHubClient()
-    coordinator = TeslatlasDataCoordinator(hass, _entry(hass), client)
+    coordinator = TesatlasDataCoordinator(hass, _entry(hass), client)
     await coordinator.async_config_entry_first_refresh()
 
     assert client.snapshot_calls == 1
@@ -86,7 +86,7 @@ async def test_due_bearer_rotation_persists_before_switching_client(
     entry = _entry(hass)
     _set_expiry(hass, entry, now + timedelta(days=7))
     client = FixtureHubClient()
-    coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
+    coordinator = TesatlasDataCoordinator(hass, entry, client, now=lambda: now)
 
     original_update = hass.config_entries.async_update_entry
 
@@ -115,7 +115,7 @@ async def test_rotation_failure_keeps_existing_credential(
     _set_expiry(hass, entry, now + timedelta(days=6))
     client = FixtureHubClient()
     client.rotation_error = HubConnectionError("lost response")
-    coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
+    coordinator = TesatlasDataCoordinator(hass, entry, client, now=lambda: now)
 
     with pytest.raises(UpdateFailed, match="lost response"):
         await coordinator._async_update_data()
@@ -133,7 +133,7 @@ async def test_rotation_rejects_another_paired_device(
     _set_expiry(hass, entry, now + timedelta(days=6))
     client = FixtureHubClient()
     client.rotated_device_id = "another-device"
-    coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
+    coordinator = TesatlasDataCoordinator(hass, entry, client, now=lambda: now)
 
     with pytest.raises(ConfigEntryAuthFailed, match="authentication expired"):
         await coordinator._async_update_data()
@@ -151,7 +151,7 @@ async def test_rotation_rejects_out_of_range_expiry_before_persisting(
     _set_expiry(hass, entry, now + timedelta(days=6))
     client = FixtureHubClient()
     client.rotation_expires_at_ms = 10**100
-    coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
+    coordinator = TesatlasDataCoordinator(hass, entry, client, now=lambda: now)
 
     with pytest.raises(UpdateFailed, match="signed64"):
         await coordinator._async_update_data()
@@ -170,7 +170,7 @@ async def test_rotation_rejects_expired_issued_credential_before_persistence(
     _set_expiry(hass, entry, now + timedelta(days=6))
     client = FixtureHubClient()
     client.rotation_expires_at_ms = expiry
-    coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
+    coordinator = TesatlasDataCoordinator(hass, entry, client, now=lambda: now)
 
     with pytest.raises(UpdateFailed, match="future"):
         await coordinator._async_update_data()
@@ -187,7 +187,7 @@ async def test_rotation_rejects_control_character_token_before_persistence(
     _set_expiry(hass, entry, now + timedelta(days=6))
     client = FixtureHubClient()
     client.rotated_access_token = "a" * 62 + "\r\n"
-    coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
+    coordinator = TesatlasDataCoordinator(hass, entry, client, now=lambda: now)
 
     with pytest.raises(UpdateFailed, match="access_token"):
         await coordinator._async_update_data()
@@ -204,7 +204,7 @@ async def test_signed64_maximum_expiry_schedules_without_datetime_conversion(
         entry, data={**entry.data, CONF_TOKEN_EXPIRES_AT_MS: 2**63 - 1}
     )
     client = FixtureHubClient()
-    coordinator = TeslatlasDataCoordinator(hass, entry, client)
+    coordinator = TesatlasDataCoordinator(hass, entry, client)
     await coordinator._async_update_data()
     assert client.rotation_calls == 0
     assert client.snapshot_calls == 1
@@ -219,7 +219,7 @@ async def test_rotated_signed64_maximum_expiry_is_persisted_without_narrowing(
     _set_expiry(hass, entry, now + timedelta(days=6))
     client = FixtureHubClient()
     client.rotation_expires_at_ms = 2**63 - 1
-    coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
+    coordinator = TesatlasDataCoordinator(hass, entry, client, now=lambda: now)
     await coordinator._async_update_data()
     assert entry.data[CONF_TOKEN_EXPIRES_AT_MS] == 2**63 - 1
     assert client.bearer_updates == [(FIXTURE_ROTATED_ACCESS_TOKEN, 2**63 - 1)]
@@ -230,7 +230,7 @@ async def test_cancelled_shutdown_waiter_rejoins_client_cleanup(
     hass: HomeAssistant,
 ) -> None:
     client = FixtureHubClient()
-    coordinator = TeslatlasDataCoordinator(hass, _entry(hass), client)
+    coordinator = TesatlasDataCoordinator(hass, _entry(hass), client)
     cleanup_started = asyncio.Event()
     finish_cleanup = asyncio.Event()
     original_close = client.async_close
@@ -264,7 +264,7 @@ async def test_due_rotation_is_not_attempted_concurrently(
     entry = _entry(hass)
     _set_expiry(hass, entry, now + timedelta(days=6))
     client = FixtureHubClient()
-    coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
+    coordinator = TesatlasDataCoordinator(hass, entry, client, now=lambda: now)
     rotation_started = asyncio.Event()
     finish_rotation = asyncio.Event()
     original_rotate = client.async_rotate
@@ -291,7 +291,7 @@ async def test_outage_backoff_recovers_to_default_interval(
     hass: HomeAssistant,
 ) -> None:
     client = FixtureHubClient()
-    coordinator = TeslatlasDataCoordinator(hass, _entry(hass), client)
+    coordinator = TesatlasDataCoordinator(hass, _entry(hass), client)
     client.snapshot_error = HubConnectionError("offline")
 
     with pytest.raises(UpdateFailed):
@@ -312,7 +312,7 @@ async def test_outage_backoff_reaches_and_caps_at_five_minutes(
 ) -> None:
     """Keep transient polling backoff bounded at the declared five-minute cap."""
     client = FixtureHubClient()
-    coordinator = TeslatlasDataCoordinator(hass, _entry(hass), client)
+    coordinator = TesatlasDataCoordinator(hass, _entry(hass), client)
     client.snapshot_error = HubConnectionError("offline")
 
     for expected_seconds in (30, 60, 120, 300, 300):
@@ -331,7 +331,7 @@ async def test_identity_change_is_authentication_failure_before_publish(
         initial_snapshot(),
         info=replace(initial_snapshot().info, hub_id="other-hub"),
     )
-    coordinator = TeslatlasDataCoordinator(hass, _entry(hass), client)
+    coordinator = TesatlasDataCoordinator(hass, _entry(hass), client)
 
     with pytest.raises(ConfigEntryAuthFailed, match="identity"):
         await coordinator._async_update_data()
@@ -342,7 +342,7 @@ async def test_vehicle_removal_replaces_prior_mapping(
     hass: HomeAssistant,
 ) -> None:
     client = FixtureHubClient()
-    coordinator = TeslatlasDataCoordinator(hass, _entry(hass), client)
+    coordinator = TesatlasDataCoordinator(hass, _entry(hass), client)
     await coordinator.async_config_entry_first_refresh()
     without_beta = initial_snapshot().create(
         info=initial_snapshot().info,

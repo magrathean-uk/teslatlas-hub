@@ -443,7 +443,7 @@ fn collection_window_operator_import_admission_follows_the_window() {
 }
 
 fn parsed(arguments: &[&str]) -> Result<Command, String> {
-    let mut all = vec!["teslatlas-hub"];
+    let mut all = vec!["tesatlas-hub"];
     all.extend_from_slice(arguments);
     Cli::try_parse_from(all)
         .map(|cli| cli.command)
@@ -992,8 +992,8 @@ async fn collection_window_operator_recovery_state_restores_keys_before_any_is_c
 #[test]
 fn refused_credential_purge_is_forwarded_lists_without_confirmation_and_waits_for_the_window() {
     for (arguments, confirm) in [
-        (&["teslatlas-hub", "purge-refused-credentials"][..], false),
-        (&["teslatlas-hub", "purge-refused-credentials", "--confirm"][..], true),
+        (&["tesatlas-hub", "purge-refused-credentials"][..], false),
+        (&["tesatlas-hub", "purge-refused-credentials", "--confirm"][..], true),
     ] {
         let cli = Cli::try_parse_from(arguments.iter().copied()).expect("parses");
         assert!(
@@ -1003,7 +1003,7 @@ fn refused_credential_purge_is_forwarded_lists_without_confirmation_and_waits_fo
         assert_eq!(admission::route(&cli.command), Route::Service, "forwarded to the service");
         assert!(!admission::requires_user_hub_admission(&cli.command), "never takes the lifetime lock");
     }
-    assert!(Cli::try_parse_from(["teslatlas-hub", "purge-refused-credentials", "--yes"]).is_err());
+    assert!(Cli::try_parse_from(["tesatlas-hub", "purge-refused-credentials", "--yes"]).is_err());
 
     let rig = Rig::new();
     std::fs::create_dir_all(rig.data()).expect("data dir");
@@ -1043,7 +1043,7 @@ const EARLIER_CHECK_VERB: &str = crate::runtime::legacy_names::DEPRECATED_VERB_S
 
 fn check_arguments(command: &str, flag: &str) -> Vec<String> {
     let mut arguments = [
-        "teslatlas-hub",
+        "tesatlas-hub",
         command,
         "--source",
         "postgresql://reader@source.example/sourcedb",
@@ -1080,7 +1080,7 @@ fn deprecated_alias_schema_flag_works_warns_and_is_hidden() {
         assert_eq!(warnings.lines().count(), 1, "{warnings}");
         assert!(warnings.contains("--accept-schema-evidence"));
         assert!(warnings.contains("a later version"));
-        let help = Cli::try_parse_from(["teslatlas-hub", command, "--help"])
+        let help = Cli::try_parse_from(["tesatlas-hub", command, "--help"])
             .unwrap_err()
             .to_string();
         assert!(help.contains("--accept-schema-evidence"));
@@ -1127,10 +1127,10 @@ fn deprecated_alias_check_verb_works_warns_once_and_is_hidden() {
     )
     .expect("current name parses");
     assert!(warnings.is_empty());
-    let help = Cli::try_parse_from(["teslatlas-hub", "--help"]).unwrap_err().to_string();
+    let help = Cli::try_parse_from(["tesatlas-hub", "--help"]).unwrap_err().to_string();
     assert!(help.contains("source-check"));
     assert!(!help.contains(EARLIER_CHECK_VERB), "{help}");
-    let command_help = Cli::try_parse_from(["teslatlas-hub", "source-check", "--help"])
+    let command_help = Cli::try_parse_from(["tesatlas-hub", "source-check", "--help"])
         .unwrap_err()
         .to_string();
     assert!(!command_help.contains(EARLIER_CHECK_VERB), "{command_help}");

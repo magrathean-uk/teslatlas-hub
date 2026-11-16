@@ -1,6 +1,6 @@
-<h1 align="center">Teslatlas Protocol</h1>
+<h1 align="center">Tesatlas Protocol</h1>
 
-<p align="center">Public, source-neutral protocol contracts for Teslatlas Hub clients and integrations.</p>
+<p align="center">Public, source-neutral protocol contracts for Tesatlas Hub clients and integrations.</p>
 
 <p align="center">
   <a href="docs/legal/licensing.md">Licence</a> ·
@@ -9,11 +9,11 @@
 
 ## Overview
 
-This repository owns the stable public boundary between Teslatlas Hub and
-Teslatlas, public SDKs, open reference clients, Home Assistant, user-operated
+This repository owns the stable public boundary between Tesatlas Hub and
+Tesatlas, public SDKs, open reference clients, Home Assistant, user-operated
 telemetry receivers, and future third-party integrations. The protocol is
 implementable from this repository alone: a client does not need Hub Rust or
-proprietary Teslatlas source.
+proprietary Tesatlas source.
 
 It carries three distinct contract families with different identities:
 
@@ -44,7 +44,7 @@ It carries three distinct contract families with different identities:
 
 These are protocol profiles, not claims about a deployed Hub or SDK release.
 This repository contains no Hub implementation, generated SDK, or proprietary
-Teslatlas source.
+Tesatlas source.
 
 ## Contract discipline
 
@@ -126,7 +126,7 @@ runs locally.
 
 ## Licence
 
-Teslatlas Protocol is licensed under the Apache License 2.0. See
+Tesatlas Protocol is licensed under the Apache License 2.0. See
 [LICENSE](LICENSE) and [NOTICE](NOTICE). Third-party dependency notices are in
 [`docs/legal/third-party-notices.md`](docs/legal/third-party-notices.md); the
 project/dependency licensing boundary is explained in the

@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-import TeslatlasCurrentHub
+import TesatlasCurrentHub
 @testable import CurrentHubConsumer
 
 #if canImport(FoundationNetworking)

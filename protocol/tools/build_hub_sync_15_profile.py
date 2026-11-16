@@ -428,7 +428,7 @@ def build_files(inherited):
     request_refs = [{"$ref": "changes-since-request.schema.json#/$defs/request"},
                     {"$ref": "../1.4.0/changes-since-request.schema.json#/$defs/request"}]
     files["openapi.json"] = {
-        "openapi": "3.1.0", "info": {"title": "Teslatlas PhysicalV3 live overlay extension", "version": "1.5.0"},
+        "openapi": "3.1.0", "info": {"title": "Tesatlas PhysicalV3 live overlay extension", "version": "1.5.0"},
         "paths": {
             "/v1/vehicles/{vehicle_id}/sync/changes-since": {"post": {
                 "operationId": "changesSincePhysicalV15", "parameters": [uuid_parameter],

@@ -8,16 +8,16 @@
 python3 tools/source_handoff.py exercise
 ```
 
-The command stages the package under the required basename `teslatlas-sdk-swift`, verifies the file manifest, asks SwiftPM to parse the package and builds a separate consumer importing all four libraries. It does not run that consumer. The temporary package, consumer and build scratch are removed on exit, including failure.
+The command stages the package under the required basename `tesatlas-sdk-swift`, verifies the file manifest, asks SwiftPM to parse the package and builds a separate consumer importing all four libraries. It does not run that consumer. The temporary package, consumer and build scratch are removed on exit, including failure.
 
 ## Retained handoff
 
 Choose an absent output directory outside the checkout:
 
 ```sh
-python3 tools/source_handoff.py prepare --output /tmp/teslatlas-sdk-review-handoff
-python3 tools/source_handoff.py verify --handoff /tmp/teslatlas-sdk-review-handoff
-python3 tools/source_handoff.py smoke --handoff /tmp/teslatlas-sdk-review-handoff
+python3 tools/source_handoff.py prepare --output /tmp/tesatlas-sdk-review-handoff
+python3 tools/source_handoff.py verify --handoff /tmp/tesatlas-sdk-review-handoff
+python3 tools/source_handoff.py smoke --handoff /tmp/tesatlas-sdk-review-handoff
 ```
 
 `prepare` refuses an existing path. The result contains `source-handoff.json`, the package directory and a sibling `external-four-library-consumer`. `smoke` builds that separate consumer with external scratch, removes known SwiftPM metadata it generated and verifies the handoff again.

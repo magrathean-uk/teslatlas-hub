@@ -13,7 +13,7 @@
   },
   "local_state": {
     "build_outputs": "ROUTED_BY_CLEAN_DEVELOPMENT",
-    "lab_binary": "~/dev/lab/teslatlas-v7/bin (built with the removed Homebrew toolchain; rebuild through run.sh before use)",
+    "lab_binary": "~/dev/lab/tesatlas-v7/bin (built with the removed Homebrew toolchain; rebuild through run.sh before use)",
     "runtime": "NONE"
   },
   "evidence_boundary": "All receipts under docs/development/archive/ are provenance only. Fresh receipts are required for every Phase 2+ claim.",

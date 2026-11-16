@@ -13,10 +13,10 @@ use ed25519_dalek::{Signature, VerifyingKey};
 use http_body_util::BodyExt;
 use serde_json::Value;
 #[cfg(feature = "interop-fixture")]
-use teslatlas_hub::db::VehicleDescriptor;
+use tesatlas_hub::db::VehicleDescriptor;
 #[cfg(feature = "interop-fixture")]
-use teslatlas_hub::protocol::Sha256Digest;
-use teslatlas_hub::{
+use tesatlas_hub::protocol::Sha256Digest;
+use tesatlas_hub::{
     db::HubStore,
     server::{paired_router, paired_router_at},
 };
@@ -34,22 +34,22 @@ fn standard_fixtures_publish_matching_schema_22_pairs_and_keep_query_rows() {
         };
         let store = HubStore::initialize(root.join("hub")).unwrap();
         let key =
-            teslatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
+            tesatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
                 .unwrap();
 
         for vehicle_id in prepared.vehicle_ids {
             let (manifest_bytes, noop_bytes) =
-                teslatlas_hub::updates_delivery::schema_22_signed_artifacts(
+                tesatlas_hub::updates_delivery::schema_22_signed_artifacts(
                     &store, vehicle_id, &key,
                 )
                 .unwrap();
-            let manifest: teslatlas_hub::protocol::SyncManifest =
+            let manifest: tesatlas_hub::protocol::SyncManifest =
                 serde_json::from_slice(&manifest_bytes).unwrap();
-            let noop: teslatlas_hub::updates_delivery::SignedNoOpState =
+            let noop: tesatlas_hub::updates_delivery::SignedNoOpState =
                 serde_json::from_slice(&noop_bytes).unwrap();
             assert_eq!(
                 manifest.schema,
-                teslatlas_hub::protocol::HUB_PROJECTION_SCHEMA_V3
+                tesatlas_hub::protocol::HUB_PROJECTION_SCHEMA_V3
             );
             assert_eq!(noop.projection_schema, "2.2");
             assert_eq!(noop.vehicle_id, vehicle_id);
@@ -101,7 +101,7 @@ async fn physical_v3_fixture_rotates_and_completes_the_retained_rebase_journey()
     assert_eq!(initial.chunk_count, 513);
     assert!(!initial.collector_enabled);
     let store = HubStore::initialize(root.join("hub")).unwrap();
-    let key = teslatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
+    let key = tesatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
         .unwrap();
     let app = paired_router(store, &key);
     let invitation: Value =
@@ -315,9 +315,9 @@ fn dynamic_fixture_exposure_repairs_registered_but_unpublished_vehicle() {
     assert_eq!(repaired.status, "repaired");
     assert_eq!(repaired.vehicle_id, vehicle_id);
     let reopened = HubStore::initialize(root.join("hub")).unwrap();
-    let key = teslatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
+    let key = tesatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
         .unwrap();
-    teslatlas_hub::updates_delivery::schema_22_signed_artifacts(&reopened, vehicle_id, &key)
+    tesatlas_hub::updates_delivery::schema_22_signed_artifacts(&reopened, vehicle_id, &key)
         .unwrap();
     assert_eq!(reopened.published_vehicles().unwrap().len(), 3);
     assert_eq!(
@@ -338,17 +338,17 @@ async fn dynamic_fixture_vehicle_retires_and_returns_with_stable_signed_state() 
         exposed.vehicle_id.to_string(),
         "33333333-3333-4333-8333-333333333333"
     );
-    let key = teslatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
+    let key = tesatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
         .unwrap();
     let store = HubStore::initialize(root.join("hub")).unwrap();
     assert_eq!(store.published_vehicles().unwrap().len(), 3);
-    let signed_before = teslatlas_hub::updates_delivery::schema_22_signed_artifacts(
+    let signed_before = tesatlas_hub::updates_delivery::schema_22_signed_artifacts(
         &store,
         exposed.vehicle_id,
         &key,
     )
     .unwrap();
-    let manifest: teslatlas_hub::protocol::SyncManifest =
+    let manifest: tesatlas_hub::protocol::SyncManifest =
         serde_json::from_slice(&signed_before.0).unwrap();
     let digest = manifest.chunks[0].sha256;
 
@@ -400,7 +400,7 @@ async fn dynamic_fixture_vehicle_retires_and_returns_with_stable_signed_state() 
     assert!(!restarted.vehicle_is_active(exposed.vehicle_id).unwrap());
     assert_eq!(restarted.published_vehicles().unwrap().len(), 2);
     assert_eq!(
-        teslatlas_hub::updates_delivery::schema_22_signed_artifacts(
+        tesatlas_hub::updates_delivery::schema_22_signed_artifacts(
             &restarted,
             exposed.vehicle_id,
             &key,
@@ -495,7 +495,7 @@ async fn dynamic_fixture_vehicle_retires_and_returns_with_stable_signed_state() 
     assert!(restarted.vehicle_is_active(exposed.vehicle_id).unwrap());
     assert_eq!(restarted.published_vehicles().unwrap().len(), 3);
     assert_eq!(
-        teslatlas_hub::updates_delivery::schema_22_signed_artifacts(
+        tesatlas_hub::updates_delivery::schema_22_signed_artifacts(
             &restarted,
             exposed.vehicle_id,
             &key,
@@ -533,7 +533,7 @@ async fn dynamic_fixture_vehicle_retires_and_returns_with_stable_signed_state() 
 #[test]
 fn standard_fixture_is_admitted_for_fixture_source_run_not_production() {
     use std::ffi::OsStr;
-    use teslatlas_hub::{
+    use tesatlas_hub::{
         config::HubConfig,
         macos_launch_agent::{self, DevelopmentServeMode},
     };
@@ -596,13 +596,13 @@ fn standard_fixture_is_admitted_for_fixture_source_run_not_production() {
 #[cfg(target_os = "macos")]
 #[test]
 fn only_a_fixture_source_run_reads_the_seeded_summary_clock() {
-    use teslatlas_hub::macos_launch_agent::{DevelopmentServeMode, fixture_summary_now_ms};
+    use tesatlas_hub::macos_launch_agent::{DevelopmentServeMode, fixture_summary_now_ms};
 
     let parent = tempfile::tempdir().unwrap();
     let root = parent.path().join("isolated");
     seed::prepare(&root, 18443).unwrap();
     let data_dir = root.join("hub");
-    let marker = data_dir.join(teslatlas_hub::server::FIXTURE_SUMMARY_CLOCK_FILE);
+    let marker = data_dir.join(tesatlas_hub::server::FIXTURE_SUMMARY_CLOCK_FILE);
     assert_eq!(
         std::fs::read_to_string(&marker).unwrap(),
         format!("{}\n", seed::LATER_OBSERVED_AT_MS)
@@ -627,7 +627,7 @@ async fn fixture_has_two_vehicles_and_three_exact_drive_pages() {
     let root = parent.path().join("isolated");
     let prepared = seed::prepare(&root, 18443).unwrap();
     let store = HubStore::initialize(root.join("hub")).unwrap();
-    let key = teslatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
+    let key = tesatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
         .unwrap();
     // C6 R28 (c) measures class T freshness from the Hub's clock and the seeded
     // observations are fixed past times. The seed records the time its values
@@ -635,8 +635,8 @@ async fn fixture_has_two_vehicles_and_three_exact_drive_pages() {
     // (macOS) serves at it, so this router is pinned exactly as that Serve is.
     // Off macOS there is no source run; the pin is the seed's own constant.
     #[cfg(target_os = "macos")]
-    let pin = teslatlas_hub::macos_launch_agent::fixture_summary_now_ms(
-        Some(teslatlas_hub::macos_launch_agent::DevelopmentServeMode::Fixture),
+    let pin = tesatlas_hub::macos_launch_agent::fixture_summary_now_ms(
+        Some(tesatlas_hub::macos_launch_agent::DevelopmentServeMode::Fixture),
         &root.join("hub"),
     )
     .unwrap()
@@ -647,7 +647,7 @@ async fn fixture_has_two_vehicles_and_three_exact_drive_pages() {
     assert_eq!(
         std::fs::read_to_string(
             root.join("hub")
-                .join(teslatlas_hub::server::FIXTURE_SUMMARY_CLOCK_FILE)
+                .join(tesatlas_hub::server::FIXTURE_SUMMARY_CLOCK_FILE)
         )
         .unwrap(),
         format!("{pin}\n")
@@ -775,7 +775,7 @@ async fn viewer_r1_fixture_has_exact_twenty_five_twenty_five_one_drive_pages() {
     let root = parent.path().join("viewer-r1");
     let prepared = seed::prepare_viewer_r1(&root, 18444).unwrap();
     let store = HubStore::initialize(root.join("hub")).unwrap();
-    let key = teslatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
+    let key = tesatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
         .unwrap();
     let app = paired_router(store, &key);
     let invitation: Value =
@@ -845,7 +845,7 @@ fn fixture_can_bind_a_selected_source_identity() {
     let store = HubStore::initialize(root.join("hub")).unwrap();
     let source = store
         .register_source(
-            &teslatlas_hub::db::SourceDescriptor::new("owner_api_compat", "local_installation_v1"),
+            &tesatlas_hub::db::SourceDescriptor::new("owner_api_compat", "local_installation_v1"),
             1_788_566_400_000,
         )
         .unwrap();

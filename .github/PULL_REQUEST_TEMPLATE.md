@@ -21,7 +21,7 @@ For changes to stored data or installation, explain rollback or recovery.
       revision and licence.
 - [ ] Any employer, client or confidentiality restriction is described below.
 - [ ] No credentials, private telemetry or personal data are included.
-- [ ] No code from the proprietary Teslatlas app is included.
+- [ ] No code from the proprietary Tesatlas app is included.
 - [ ] No new automation or publication is added without the owner's request.
 
 Sources, revisions and licences:

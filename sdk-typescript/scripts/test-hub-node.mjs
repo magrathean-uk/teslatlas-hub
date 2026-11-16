@@ -3,11 +3,11 @@ import { pathToFileURL } from "node:url";
 import { collectDrivePages } from "./drive-pagination.mjs";
 import { verifyPackedSdk } from "./hub-acceptance-evidence.mjs";
 
-const descriptorPath = required("TESLATLAS_HUB_HTTP_CONFIG");
+const descriptorPath = required("TESATLAS_HUB_HTTP_CONFIG");
 const packedSdk = await verifyPackedSdk({
-  packageRoot: required("TESLATLAS_HUB_SDK_PACKAGE_ROOT"),
-  tarballPath: required("TESLATLAS_HUB_SDK_TARBALL"),
-  expectedTarballSha256: required("TESLATLAS_HUB_SDK_TARBALL_SHA256"),
+  packageRoot: required("TESATLAS_HUB_SDK_PACKAGE_ROOT"),
+  tarballPath: required("TESATLAS_HUB_SDK_TARBALL"),
+  expectedTarballSha256: required("TESATLAS_HUB_SDK_TARBALL_SHA256"),
   entryKind: "node",
 });
 const descriptor = JSON.parse(await readFile(descriptorPath, "utf8"));
@@ -15,14 +15,14 @@ const invitation = JSON.parse(await readFile(descriptor.invitation_path, "utf8")
 const driveLimit = integerOption(
   descriptor.drive_limit ??
     descriptor.driveLimit ??
-    process.env.TESLATLAS_HUB_DRIVE_PAGE_LIMIT ??
+    process.env.TESATLAS_HUB_DRIVE_PAGE_LIMIT ??
     2,
   "drive page limit",
 );
 const expectedDriveCount = optionalInteger(
   descriptor.expected_drive_count ??
     descriptor.expectedDriveCount ??
-    process.env.TESLATLAS_HUB_EXPECTED_DRIVE_COUNT,
+    process.env.TESATLAS_HUB_EXPECTED_DRIVE_COUNT,
   "expected drive count",
 );
 const { createHubClient } = await import(pathToFileURL(packedSdk.entry).href);
@@ -96,15 +96,15 @@ const receipt = {
   defaultFetch: true,
   packedSdk: packedSdk.witness,
 };
-if (process.env.TESLATLAS_HUB_CREDENTIAL_OUT) {
-  await writeFile(process.env.TESLATLAS_HUB_CREDENTIAL_OUT, `${JSON.stringify(credential)}\n`, {
+if (process.env.TESATLAS_HUB_CREDENTIAL_OUT) {
+  await writeFile(process.env.TESATLAS_HUB_CREDENTIAL_OUT, `${JSON.stringify(credential)}\n`, {
     mode: 0o600,
     flag: "wx",
   });
-  await chmod(process.env.TESLATLAS_HUB_CREDENTIAL_OUT, 0o600);
+  await chmod(process.env.TESATLAS_HUB_CREDENTIAL_OUT, 0o600);
 }
-if (process.env.TESLATLAS_HUB_RECEIPT) {
-  await writeFile(process.env.TESLATLAS_HUB_RECEIPT, `${JSON.stringify(receipt, null, 2)}\n`, {
+if (process.env.TESATLAS_HUB_RECEIPT) {
+  await writeFile(process.env.TESATLAS_HUB_RECEIPT, `${JSON.stringify(receipt, null, 2)}\n`, {
     mode: 0o600,
     flag: "wx",
   });

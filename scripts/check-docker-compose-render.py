@@ -19,7 +19,7 @@ assert dependency.get("condition") == "service_completed_successfully"
 assert dependency.get("required", True) is True
 assert initializer.get("profiles") in (None, [])
 assert initializer["entrypoint"] == [
-    "/usr/local/libexec/teslatlas-hub-initialize-volume"
+    "/usr/local/libexec/tesatlas-hub-initialize-volume"
 ]
 assert initializer.get("command") in (None, [])
 assert initializer["user"] == "0:0"

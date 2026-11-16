@@ -1036,7 +1036,7 @@ impl CredentialVault {
 }
 
 /// The command that lists and removes refused credentials (M02-T11).
-pub(crate) const REFUSED_CREDENTIAL_PURGE_COMMAND: &str = "teslatlas-hub purge-refused-credentials";
+pub(crate) const REFUSED_CREDENTIAL_PURGE_COMMAND: &str = "tesatlas-hub purge-refused-credentials";
 /// The pre-upgrade key files Phase B removes once the conversion is durable
 /// (R49's removal list in `credential_migration`), named for the listing.
 const PRE_UPGRADE_KEY_FILES: [&str; 7] = [

@@ -57,7 +57,7 @@ impl RecordingBackend {
             || !run_id
                 .bytes()
                 .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-            || identity.label != format!("fixture.teslatlas-relocation.{run_id}")
+            || identity.label != format!("fixture.tesatlas-relocation.{run_id}")
             || identity.domain != format!("fixture/{run_id}")
             || state
                 .pid

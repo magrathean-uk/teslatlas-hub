@@ -1,6 +1,6 @@
 # Run Hub with Docker Compose
 
-Teslatlas Hub can be built locally from this repository and run as a non-root
+Tesatlas Hub can be built locally from this repository and run as a non-root
 Compose service. This is a source-build workflow; the project does not publish
 an image registry or prebuilt image. Native macOS and Debian service installs
 remain separate workflows.
@@ -52,30 +52,30 @@ Build from the locked Rust source, initialise the store while the service is
 stopped, then start the foreground Hub process:
 
 ```sh
-export TESLATLAS_HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
-export SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$TESLATLAS_HUB_SOURCE_COMMIT")
-export TESLATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid # replace with the DNS name in server.pem and public_url
+export TESATLAS_HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
+export SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$TESATLAS_HUB_SOURCE_COMMIT")
+export TESATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid # replace with the DNS name in server.pem and public_url
 test -z "$(git status --short)"
 test "$(git config --get remote.origin.url)" = \
-  https://github.com/magrathean-uk/teslatlas-hub.git
+  https://github.com/magrathean-uk/tesatlas-hub.git
 test -z "$(git replace -l)"
 test ! -e "$(git rev-parse --git-path info/grafts)"
 ! git config --get-regexp '^url\..*\.insteadof$'
 OFFICIAL_MAIN=$(git ls-remote \
-  https://github.com/magrathean-uk/teslatlas-hub.git refs/heads/main | awk '{print $1}')
+  https://github.com/magrathean-uk/tesatlas-hub.git refs/heads/main | awk '{print $1}')
 git cat-file -e "${OFFICIAL_MAIN}^{commit}"
 GIT_NO_REPLACE_OBJECTS=1 git merge-base --is-ancestor \
-  "$TESLATLAS_HUB_SOURCE_COMMIT" "$OFFICIAL_MAIN"
+  "$TESATLAS_HUB_SOURCE_COMMIT" "$OFFICIAL_MAIN"
 docker compose build hub
 test "$(docker compose run --rm hub source)" = \
-  "https://github.com/magrathean-uk/teslatlas-hub/tree/$TESLATLAS_HUB_SOURCE_COMMIT"
+  "https://github.com/magrathean-uk/tesatlas-hub/tree/$TESATLAS_HUB_SOURCE_COMMIT"
 ./packaging/docker/prepare-volumes.sh
-docker compose run --rm hub --config /etc/teslatlas-hub/config.toml bootstrap
+docker compose run --rm hub --config /etc/tesatlas-hub/config.toml bootstrap
 # Keep the token JSON on a private pipe; `--tokens-stdin` is the bounded setup input.
 printf '%s\n' '{"accessToken":"<access-token>","refreshToken":"<refresh-token>"}' \
-  | docker compose run --rm -T hub --config /etc/teslatlas-hub/config.toml setup --tokens-stdin
+  | docker compose run --rm -T hub --config /etc/tesatlas-hub/config.toml setup --tokens-stdin
 docker compose up -d hub
-docker compose exec hub teslatlas-hub --config /etc/teslatlas-hub/config.toml status
+docker compose exec hub tesatlas-hub --config /etc/tesatlas-hub/config.toml status
 docker compose logs --tail 100 hub
 ```
 
@@ -91,9 +91,9 @@ artifact wrapper—not this live Compose context—for distribution evidence.
 
 The one-shot volume initializer runs only after the image exists. It drops all
 capabilities and adds back only `CHOWN`, `FOWNER`, and `DAC_OVERRIDE`, changes
-only `/var/lib/teslatlas-hub` in the named volume, and fails unless the result
+only `/var/lib/tesatlas-hub` in the named volume, and fails unless the result
 is exactly UID/GID `10001:10001` with mode `0700`. It atomically publishes an
-empty regular `.teslatlas-volume-initialized` sentinel with UID/GID
+empty regular `.tesatlas-volume-initialized` sentinel with UID/GID
 `10001:10001` and mode `0600`, so Docker does not treat the volume as empty and
 replace those root-directory permissions from the image on the next mount. A
 pre-existing symlink, non-regular entry, non-empty file, or wrong sentinel
@@ -124,8 +124,8 @@ missing BuildKit, or a legacy fallback fails closed.
 ```sh
 mkdir -p dist
 ./scripts/build-container-image.sh \
-  --tag teslatlas-hub:2026.36.2-arm64 \
-  --output dist/teslatlas-hub_2026.36.2_linux-arm64.docker.tar
+  --tag tesatlas-hub:2026.36.2-arm64 \
+  --output dist/tesatlas-hub_2026.36.2_linux-arm64.docker.tar
 ```
 
 The final validator requires the observed hybrid archive shape: exact
@@ -159,9 +159,9 @@ both the printed image ID and complete archive SHA-256 to match byte-for-byte.
 Load and exercise only the verified archive:
 
 ```sh
-cmp first/teslatlas-hub.docker.tar second/teslatlas-hub.docker.tar
-sha256sum first/teslatlas-hub.docker.tar second/teslatlas-hub.docker.tar
-docker image load --input first/teslatlas-hub.docker.tar
+cmp first/tesatlas-hub.docker.tar second/tesatlas-hub.docker.tar
+sha256sum first/tesatlas-hub.docker.tar second/tesatlas-hub.docker.tar
+docker image load --input first/tesatlas-hub.docker.tar
 ```
 
 Only matching bytes establish reproducibility for the recorded toolchain and
@@ -186,7 +186,7 @@ actual serving conditions and may remain unavailable while setup or collection
 is incomplete. Neither endpoint proves that a vehicle recently sent telemetry.
 The health probe is an exec-form invocation of this image's Hub binary. It
 requires the absolute mounted CA path, disables redirects, trusts only that PEM
-bundle, and requires `TESLATLAS_HUB_TLS_SERVER_NAME` to be the lowercase DNS
+bundle, and requires `TESATLAS_HUB_TLS_SERVER_NAME` to be the lowercase DNS
 name present in `server.pem` and the configured `public_url`. The client
 resolves only that validation name to `127.0.0.1:8443` for the private probe,
 bounds the response, and requires `status=ok` plus the same Hub product version.
@@ -197,7 +197,7 @@ Stop the service before commands that take the exclusive data-store lock:
 
 ```sh
 docker compose stop hub
-docker compose run --rm hub --config /etc/teslatlas-hub/config.toml verify-backup --source /backup/generation
+docker compose run --rm hub --config /etc/tesatlas-hub/config.toml verify-backup --source /backup/generation
 docker compose start hub
 ```
 
@@ -227,7 +227,7 @@ byte count and SHA-256 plus an aggregate manifest hash:
 python3 scripts/finalize-container-runtime-evidence.py prepare \
   --input /absolute/redacted-pre-cleanup \
   --output /absolute/retained-evidence-bundle \
-  --source-commit "$TESLATLAS_HUB_SOURCE_COMMIT"
+  --source-commit "$TESATLAS_HUB_SOURCE_COMMIT"
 jq -e '.state == "READY_FOR_CLEANUP"' \
   /absolute/retained-evidence-bundle/manifest.json
 ```

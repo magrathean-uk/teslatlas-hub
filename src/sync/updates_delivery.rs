@@ -2101,22 +2101,22 @@ pub struct ReceiptIdentityHashes {
 fn shipping_hub_binary_path() -> Result<PathBuf, UpdatesDeliveryError> {
     let mut candidates = Vec::new();
     if let Ok(executable) = std::env::current_exe()
-        && executable.file_name().and_then(|name| name.to_str()) == Some("teslatlas-hub")
+        && executable.file_name().and_then(|name| name.to_str()) == Some("tesatlas-hub")
     {
         candidates.push(executable);
     }
     if let Some(target_dir) = canonical_cargo_target_dir(std::env::var_os("CARGO_TARGET_DIR"))? {
-        candidates.push(target_dir.join("release/teslatlas-hub"));
+        candidates.push(target_dir.join("release/tesatlas-hub"));
     }
     if let Ok(source_root) = shipping_source_root() {
-        candidates.push(source_root.join("target/release/teslatlas-hub"));
+        candidates.push(source_root.join("target/release/tesatlas-hub"));
     }
     candidates
         .into_iter()
         .find(|path| path.is_file())
         .ok_or_else(|| {
             reject(
-                "release teslatlas-hub binary is missing; build it with RUSTFLAGS='-D warnings' cargo build --locked --release --bin teslatlas-hub",
+                "release tesatlas-hub binary is missing; build it with RUSTFLAGS='-D warnings' cargo build --locked --release --bin tesatlas-hub",
             )
         })
 }
@@ -2137,19 +2137,19 @@ fn canonical_cargo_target_dir(
 }
 
 fn shipping_source_root() -> Result<PathBuf, UpdatesDeliveryError> {
-    let Some(source_root) = crate::platform::name_migration::env::var_os("TESLATLAS_HUB_SOURCE_ROOT") else {
+    let Some(source_root) = crate::platform::name_migration::env::var_os("TESATLAS_HUB_SOURCE_ROOT") else {
         return Err(reject(
-            "Hub source root is unavailable; set TESLATLAS_HUB_SOURCE_ROOT to the absolute source checkout path",
+            "Hub source root is unavailable; set TESATLAS_HUB_SOURCE_ROOT to the absolute source checkout path",
         ));
     };
     let source_root = PathBuf::from(source_root);
     if !source_root.is_absolute() {
-        return Err(reject("TESLATLAS_HUB_SOURCE_ROOT must be an absolute path"));
+        return Err(reject("TESATLAS_HUB_SOURCE_ROOT must be an absolute path"));
     }
     let source_root = fs::canonicalize(source_root).map_err(|error| reject(error.to_string()))?;
     if !source_root.join("packaging/config.toml").is_file() {
         return Err(reject(
-            "TESLATLAS_HUB_SOURCE_ROOT does not contain the shipping packaging inputs",
+            "TESATLAS_HUB_SOURCE_ROOT does not contain the shipping packaging inputs",
         ));
     }
     Ok(source_root)

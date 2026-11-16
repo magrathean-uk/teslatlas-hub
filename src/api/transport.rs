@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Streaming writer for immutable Teslatlas SQLite transport packs.
+//! Streaming writer for immutable Tesatlas SQLite transport packs.
 //!
 //! A transport pack is deliberately a small SQLite database rather than a
 //! serialised Hub database.  It contains only the projected source rows that

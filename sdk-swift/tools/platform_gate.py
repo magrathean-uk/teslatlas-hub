@@ -162,7 +162,7 @@ def _require_markers(path: Path, markers: list[str], label: str) -> str:
 def _prepare_accepted_handoff(
     root: Path, handoff: Path, contract: dict[str, Any]
 ) -> dict[str, Any]:
-    with tempfile.TemporaryDirectory(prefix="teslatlas-accepted-source-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="tesatlas-accepted-source-") as temporary:
         snapshot = Path(temporary) / source_handoff.CANONICAL_ROOT
         snapshot.mkdir()
         for directory in source_handoff.SOURCE_DIRECTORIES:
@@ -245,7 +245,7 @@ def _prepare_ios_host(root: Path, scratch: Path, contract: dict[str, Any]) -> No
 
 
 def _verify_source_identity(root: Path, contract: dict[str, Any]) -> None:
-    with tempfile.TemporaryDirectory(prefix="teslatlas-platform-gate-source-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="tesatlas-platform-gate-source-") as temporary:
         handoff = Path(temporary) / "handoff"
         manifest = _prepare_accepted_handoff(root, handoff, contract)
         source = manifest["source_package"]
@@ -273,7 +273,7 @@ def _verify_source_identity(root: Path, contract: dict[str, Any]) -> None:
             "external consumer manifest",
         )
         dependencies = dumped.get("dependencies") if isinstance(dumped, dict) else None
-        if not isinstance(dependencies, list) or "teslatlas-sdk-swift" not in str(dependencies):
+        if not isinstance(dependencies, list) or "tesatlas-sdk-swift" not in str(dependencies):
             raise PlatformGateError("external consumer is not bound to canonical handoff package")
 
 
@@ -316,9 +316,9 @@ def verify_repository(root: Path = ROOT) -> dict[str, Any]:
         [
             f"FROM --platform={LINUX_PLATFORM} {LINUX_TAG}@{LINUX_ARM64_DIGEST}",
             f"Parent OCI index: {LINUX_INDEX_DIGEST}",
-            "COPY --chown=swiftuser:swiftuser teslatlas-sdk-swift/",
+            "COPY --chown=swiftuser:swiftuser tesatlas-sdk-swift/",
             "COPY --chown=swiftuser:swiftuser external-four-library-consumer/",
-            "RUN chmod -R a-w /workspace/teslatlas-sdk-swift /workspace/external-four-library-consumer",
+            "RUN chmod -R a-w /workspace/tesatlas-sdk-swift /workspace/external-four-library-consumer",
             "ENV HOME=/home/swiftuser",
             'CMD ["swift", "run",',
         ],
@@ -373,7 +373,7 @@ def command_for(gate: str, root: Path = ROOT, scratch: Path | None = None) -> li
             "--platform",
             LINUX_PLATFORM,
             "--tag",
-            "teslatlas-swift-platform-gate:local-arm64",
+            "tesatlas-swift-platform-gate:local-arm64",
             "--file",
             str(root / "Dockerfile"),
             context,
@@ -462,7 +462,7 @@ def run_gate(gate: str, root: Path = ROOT) -> dict[str, Any]:
     verify_repository(root)
     if gate == "macos14":
         _require_native_darwin(contract["macos14"]["required_major"])
-        with tempfile.TemporaryDirectory(prefix="teslatlas-macos14-gate-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="tesatlas-macos14-gate-") as temporary:
             scratch = Path(temporary)
             _prepare_accepted_handoff(root, scratch / "handoff", contract)
             prepared_consumer = scratch / "handoff" / source_handoff.CONSUMER_ROOT
@@ -486,7 +486,7 @@ def run_gate(gate: str, root: Path = ROOT) -> dict[str, Any]:
             contract["ios17"]["runtime_version"],
             contract["ios17"]["simulator_name"],
         )
-        with tempfile.TemporaryDirectory(prefix="teslatlas-ios17-gate-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="tesatlas-ios17-gate-") as temporary:
             scratch = Path(temporary)
             _prepare_accepted_handoff(root, scratch / "handoff", contract)
             _prepare_ios_host(root, scratch, contract)
@@ -510,8 +510,8 @@ def run_gate(gate: str, root: Path = ROOT) -> dict[str, Any]:
         }:
             raise PlatformGateError("Docker Engine must itself be native Linux ARM64")
         ownership = uuid.uuid4().hex
-        image = "teslatlas-swift-platform-gate:local-arm64-" + ownership
-        container = "teslatlas-swift-gate-" + ownership
+        image = "tesatlas-swift-platform-gate:local-arm64-" + ownership
+        container = "tesatlas-swift-gate-" + ownership
         existing = owned_command.run(
             ["docker", "image", "inspect", image],
             timeout=owned_command.INSPECTION_SECONDS,
@@ -520,7 +520,7 @@ def run_gate(gate: str, root: Path = ROOT) -> dict[str, Any]:
             raise PlatformGateError(f"owned Linux gate image tag already exists: {image}")
         result: dict[str, Any] | None = None
         try:
-            with tempfile.TemporaryDirectory(prefix="teslatlas-linux-arm64-gate-") as temporary:
+            with tempfile.TemporaryDirectory(prefix="tesatlas-linux-arm64-gate-") as temporary:
                 handoff = Path(temporary) / "handoff"
                 _prepare_accepted_handoff(root, handoff, contract)
                 build_command = command_for(gate, root, handoff)

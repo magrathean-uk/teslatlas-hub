@@ -7,7 +7,7 @@
 use std::{fs, os::unix::fs::PermissionsExt};
 
 use serde_json::{Value, json};
-use teslatlas_hub::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
+use tesatlas_hub::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
 use uuid::Uuid;
 
 use crate::{CurrentVehicleStatusFields, current_vehicle_status_fields};
@@ -100,13 +100,13 @@ fn c6_st_s32_status() {
     store
         .upsert_geofences(
             parked,
-            &[teslatlas_hub::source_db_projection::SourceDbGeofence {
+            &[tesatlas_hub::source_db_projection::SourceDbGeofence {
                 id: 1,
                 name: "Home".into(),
                 latitude: Some(10.123457),
                 longitude: Some(20.765432),
                 radius_m: Some(100.0),
-                billing_type: Some(teslatlas_hub::hub_pack::GeofenceBillingType::PerKwh),
+                billing_type: Some(tesatlas_hub::hub_pack::GeofenceBillingType::PerKwh),
                 cost_per_unit: None,
                 session_fee: None,
             }],

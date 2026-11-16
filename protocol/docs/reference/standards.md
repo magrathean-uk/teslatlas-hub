@@ -1,8 +1,8 @@
 # Normative references
 
-Teslatlas requirements use the following primary specifications. If this
+Tesatlas requirements use the following primary specifications. If this
 repository narrows a permitted standards behaviour, the narrower public
-contract applies to Teslatlas implementations. Explicit compatibility departures
+contract applies to Tesatlas implementations. Explicit compatibility departures
 below are separate policies and do not establish standards conformance.
 
 The table describes the contracts this package keeps: the current-Hub HTTP
@@ -11,7 +11,7 @@ profile `hub-http-v1@1.3.0` with its retained predecessor `1.2.0`, the Hub sync 
 routes, errors and limits: [`current-hub.md`](current-hub.md) for the HTTP
 profile and [`hub-sync.md`](hub-sync.md) for the sync profiles.
 
-| Area | Specification | Teslatlas use |
+| Area | Specification | Tesatlas use |
 | --- | --- | --- |
 | Requirement words | [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119.html) and [RFC 8174](https://www.rfc-editor.org/rfc/rfc8174.html) | uppercase normative terms in prose contracts |
 | Well-known discovery | [RFC 8615](https://www.rfc-editor.org/rfc/rfc8615.html) | `/.well-known/teslatlas-hub` shape and deployment considerations |
@@ -56,7 +56,7 @@ atomic commit, replay or crash acceptance.
 
 ## Project policies
 
-These rules are Teslatlas contract choices, not requirements imposed by the
+These rules are Tesatlas contract choices, not requirements imposed by the
 standards above:
 
 - epoch-millisecond timestamps where a profile names a millisecond member, for
@@ -67,7 +67,7 @@ standards above:
   only as a new profile, a stable route or field is removed only by a new major
   profile, and a profile retired from this package is deleted from it.
 
-The `teslatlas-hub` well-known suffix is defined here for private and
+The `tesatlas-hub` well-known suffix is defined here for private and
 development use. This repository does not claim an IANA registration.
 
 ## Pagination background
@@ -75,5 +75,5 @@ development use. This repository does not claim an IANA registration.
 [RFC 8977](https://www.rfc-editor.org/rfc/rfc8977.html) defines RDAP sorting and
 paging; [RFC 9865](https://www.rfc-editor.org/rfc/rfc9865.html) defines SCIM
 cursor pagination. They provide background for cursor-based designs, not
-Teslatlas wire requirements. Teslatlas cursor fields, binding, and errors are
+Tesatlas wire requirements. Tesatlas cursor fields, binding, and errors are
 defined by its own profiles.

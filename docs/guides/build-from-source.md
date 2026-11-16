@@ -11,8 +11,8 @@ Use rustup and a C toolchain suitable for the host. Fetch the repository and run
 commands from its root:
 
 ```sh
-git clone https://github.com/magrathean-uk/teslatlas-hub.git
-cd teslatlas-hub
+git clone https://github.com/magrathean-uk/tesatlas-hub.git
+cd tesatlas-hub
 cargo check --locked
 cargo test --locked --lib TEST_FILTER
 cargo fmt --all -- --check
@@ -20,7 +20,7 @@ cargo clippy --locked --all-targets -- -D warnings
 ```
 
 Replace `TEST_FILTER` with the affected test name. Run broader tests when a
-change affects shared behaviour. The maintained Teslatlas workspace has its own
+change affects shared behaviour. The maintained Tesatlas workspace has its own
 runner and heavy-build coordination; use those existing controls when working
 there instead of these standalone commands. The workspace pins Rust 1.98.1.
 
@@ -28,9 +28,9 @@ On macOS, the Docker packaging checks (`scripts/test-docker-packaging.sh` and
 `scripts/test-docker-volume-init.sh`) require GNU coreutils (`gstat`, `gln`):
 install it with `brew install coreutils`.
 
-## Teslatlas Compute
+## Tesatlas Compute
 
-Hub uses the Teslatlas Compute library (`teslatlas-compute`, Apache-2.0) from
+Hub uses the Tesatlas Compute library (`tesatlas-compute`, Apache-2.0) from
 the `compute/` directory of this repository, a Cargo workspace member and path
 dependency. The source includes the bounded paged-generation API and algorithm
 identity 0.1.1, while its package version remains 0.1.0. No sibling checkout or
@@ -43,8 +43,8 @@ do not establish package, installed, live or platform acceptance.
 ## Source identity
 
 An ordinary development build has no distributable source identity. Without
-`TESLATLAS_HUB_SOURCE_COMMIT`, discovery identifies the source repository but
-`teslatlas-hub source` fails. Do not present that binary as a source-bound release.
+`TESATLAS_HUB_SOURCE_COMMIT`, discovery identifies the source repository but
+`tesatlas-hub source` fails. Do not present that binary as a source-bound release.
 
 ## Bind distributable builds to source
 
@@ -82,7 +82,7 @@ Do not hard-code a cache path or set Cargo's target directory around the runner.
 
 `scripts/tesla-proxy-lock.json` records the Go 1.27.4 command-proxy subjects
 and the reviewed build host: the selected Go executable and its binary, Xcode
-27.2 (27B52), its Apple Clang toolchain and the macOS 27.2 SDK (26B118). `TESLATLAS_GO` may
+27.2 (27B52), its Apple Clang toolchain and the macOS 27.2 SDK (26B118). `TESATLAS_GO` may
 select only a Go executable recorded there; another Go 1.27.4 installation is
 insufficient. The lock covers the proxy component only. It does not establish a
 working app or installed Hub.
@@ -95,13 +95,13 @@ app build and ordinary-user install or upgrade acceptance remain required.
 Within the maintained workspace, the entry point is:
 
 ```sh
-TESLATLAS_GO=/absolute/reviewed/path/to/go \
-  TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" \
+TESATLAS_GO=/absolute/reviewed/path/to/go \
+  TESATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" \
   ../scripts/dev/run.sh hub ./scripts/build-macos-app.sh
 ```
 
-The script prints one app path on success, under `$TESLATLAS_LAB/build/hub/dist`.
-Xcode staging goes under the runner's `$TESLATLAS_DERIVED_DATA` (from
+The script prints one app path on success, under `$TESATLAS_LAB/build/hub/dist`.
+Xcode staging goes under the runner's `$TESATLAS_DERIVED_DATA` (from
 `$XCODE_DERIVED_DATA_PATH`); it is removed after a successful build and kept after
 a failure for diagnosis. Inspect the printed path instead of assuming a location
 under the source checkout. Mac builds are not
@@ -109,7 +109,7 @@ automatically Developer ID signed or notarised. Do not disable macOS security
 controls to install one. Copy the validated app to `/Applications` or
 `~/Applications`, then follow
 [Mac setup](install-macos.md). The
-[source-run control app](../../macos/TeslatlasHubApp/DEVELOPMENT.md) describes
+[source-run control app](../../macos/TesatlasHubApp/DEVELOPMENT.md) describes
 unsigned development mode separately.
 
 ## Mac to Debian ARM64 development build
@@ -131,7 +131,7 @@ tree, and invoke Cargo directly through the managed runner:
 source ~/dev/machine/env.zsh
 scripts/dev/with-heavy-build-lock.sh scripts/dev/run.sh hub \
   cargo zigbuild --locked --release --target aarch64-unknown-linux-gnu.2.28 \
-  --bin teslatlas-hub --message-format json-render-diagnostics
+  --bin tesatlas-hub --message-format json-render-diagnostics
 scripts/dev/with-heavy-build-lock.sh scripts/dev/run.sh hub \
   cargo zigbuild --locked --release --target aarch64-unknown-linux-gnu.2.28 \
   --test tls_import_e2e --message-format json-render-diagnostics
@@ -144,7 +144,7 @@ files to the Debian guest. On the guest, select the copied CLI explicitly and ru
 the copied test harness directly:
 
 ```sh
-TESLATLAS_HUB_SMOKE_BINARY=/absolute/path/to/teslatlas-hub \
+TESATLAS_HUB_SMOKE_BINARY=/absolute/path/to/tesatlas-hub \
   /absolute/path/to/tls_import_e2e-TEST_ARTIFACT --test-threads=1
 ```
 
@@ -183,18 +183,18 @@ HUB_BUILD=/absolute/path/to/new-hub-build
 HUB_SOURCE_ROOT=$(pwd -P)
 mkdir -p "$HUB_BUILD"
 cargo fetch --locked
-TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" \
-  RUSTFLAGS="--remap-path-prefix=${HUB_SOURCE_ROOT}=/usr/src/teslatlas-hub" \
-  cargo build --locked --release --bin teslatlas-hub --target-dir "$HUB_BUILD/target"
+TESATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" \
+  RUSTFLAGS="--remap-path-prefix=${HUB_SOURCE_ROOT}=/usr/src/tesatlas-hub" \
+  cargo build --locked --release --bin tesatlas-hub --target-dir "$HUB_BUILD/target"
 python3 scripts/legal-bundle.py --repo . --output-dir "$HUB_BUILD/dependency-legal"
-HUB_VERSION=$("$HUB_BUILD/target/release/teslatlas-hub" --version | awk '{print $2}')
+HUB_VERSION=$("$HUB_BUILD/target/release/tesatlas-hub" --version | awk '{print $2}')
 HUB_ARCH=$(dpkg --print-architecture)
 scripts/build-deb.sh \
-  --binary "$HUB_BUILD/target/release/teslatlas-hub" \
+  --binary "$HUB_BUILD/target/release/tesatlas-hub" \
   --legal-bundle "$HUB_BUILD/dependency-legal" \
   --version "$HUB_VERSION" --architecture "$HUB_ARCH" \
   --source-commit "$HUB_SOURCE_COMMIT" \
-  --output "$HUB_BUILD/teslatlas-hub_${HUB_VERSION}_${HUB_ARCH}.deb"
+  --output "$HUB_BUILD/tesatlas-hub_${HUB_VERSION}_${HUB_ARCH}.deb"
 ```
 
 `cargo fetch --locked` supplies all locked dependency metadata for the offline

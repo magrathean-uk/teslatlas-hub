@@ -10,8 +10,8 @@ use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
 use clap::{ArgAction, CommandFactory, error::ErrorKind};
 use rusqlite::params;
-use teslatlas_hub::db::{HubStore, SourceDescriptor, VehicleDescriptor};
-use teslatlas_hub::location::{
+use tesatlas_hub::db::{HubStore, SourceDescriptor, VehicleDescriptor};
+use tesatlas_hub::location::{
     DEFAULT_GEOFENCE_RADIUS_METRES, FIRST_HUB_GEOFENCE_ID, MAX_GEOFENCE_COST_PER_UNIT,
     MAX_GEOFENCE_RADIUS_METRES, MAX_GEOFENCE_SESSION_FEE, MIN_SAVED_GEOFENCE_RADIUS_METRES,
 };
@@ -52,7 +52,7 @@ impl<T, E: std::fmt::Debug> LabelledResult<T, E> for Result<T, E> {
 }
 
 fn parse(arguments: &[&str]) -> Result<Cli, clap::Error> {
-    let mut all = vec!["teslatlas-hub", "control"];
+    let mut all = vec!["tesatlas-hub", "control"];
     all.extend_from_slice(arguments);
     Cli::try_parse_from(all)
 }
@@ -688,7 +688,7 @@ async fn c8_t34_control_end_to_end() {
     // C8 T34 (f): the same edit through the configuration and the control entry
     // point (C8 R37) reaches the store with the typed id.
     let cli = Cli::try_parse_from([
-        "teslatlas-hub",
+        "tesatlas-hub",
         "--config",
         edited.config.to_str().expect("UTF-8 path"),
         "control",
@@ -840,7 +840,7 @@ async fn c8_t36_rejection_exit() {
     for (option, value, message) in refusals {
         for edit in [false, true] {
             let mut arguments = vec![
-                "teslatlas-hub",
+                "tesatlas-hub",
                 "--config",
                 config,
                 "control",
@@ -880,7 +880,7 @@ async fn c8_t36_rejection_exit() {
             assert_eq!(report_outcome(Err(error), &mut stderr), 1);
             assert_eq!(
                 String::from_utf8(stderr).expect("UTF-8"),
-                format!("teslatlas-hub: {message}\n"),
+                format!("tesatlas-hub: {message}\n"),
                 "{option} {value} edit {edit}"
             );
             assert_eq!(

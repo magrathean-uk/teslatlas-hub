@@ -13,7 +13,7 @@ import stat
 from typing import Any
 
 
-SCHEMA = "teslatlas.candidate-source-manifest/v1"
+SCHEMA = "tesatlas.candidate-source-manifest/v1"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 MODE_RE = re.compile(r"^0[0-7]{3}$")
 

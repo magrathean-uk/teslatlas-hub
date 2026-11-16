@@ -4,7 +4,7 @@ Wire version 1 remains compatible for record-only queues. Wire version 2 adds
 stable retry identity, monotonic sequence, and durable gap acknowledgement.
 
 The source-neutral public bundle is `edge-delivery-v2@2.0.0` in the sibling
-`teslatlas-protocol/profiles/edge-delivery-v2/2.0.0` repository path. Its
+`tesatlas-protocol/profiles/edge-delivery-v2/2.0.0` repository path. Its
 `SHA256SUMS` file has SHA-256
 `e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224`.
 The bundle freezes schemas, OpenAPI, stable and legacy IDs, merged sequence
@@ -31,9 +31,9 @@ Create, rotate, and revoke the bearer locally:
 
 ```bash
 # On a native Linux installation, run these as the Edge service identity.
-sudo -u teslatlas-edge /usr/bin/teslatlas-edge --config /etc/teslatlas-edge/config.toml credential enrol home-hub
-sudo -u teslatlas-edge /usr/bin/teslatlas-edge --config /etc/teslatlas-edge/config.toml credential rotate 123e4567-e89b-12d3-a456-426614174000 --overlap-seconds 300
-sudo -u teslatlas-edge /usr/bin/teslatlas-edge --config /etc/teslatlas-edge/config.toml credential revoke 123e4567-e89b-12d3-a456-426614174000
+sudo -u tesatlas-edge /usr/bin/tesatlas-edge --config /etc/tesatlas-edge/config.toml credential enrol home-hub
+sudo -u tesatlas-edge /usr/bin/tesatlas-edge --config /etc/tesatlas-edge/config.toml credential rotate 123e4567-e89b-12d3-a456-426614174000 --overlap-seconds 300
+sudo -u tesatlas-edge /usr/bin/tesatlas-edge --config /etc/tesatlas-edge/config.toml credential revoke 123e4567-e89b-12d3-a456-426614174000
 ```
 
 The enrol and rotate commands print the new bearer once. Edge stores only its
@@ -94,7 +94,7 @@ Edge computes:
 
 ```text
 lower_hex(SHA-256(
-  UTF-8("teslatlas-edge-record-v1\0") ||
+  UTF-8("tesatlas-edge-record-v1\0") ||
   JCS(receiver_envelope)
 ))
 ```
@@ -112,7 +112,7 @@ implementation that reproduces them must too. Changing it needs a separately
 versioned identity migration.
 
 `batch_id` is lowercase SHA-256 hex over the ordered record IDs with the domain
-`teslatlas-edge-batch-v1\0` and a zero byte after every ID. Hub should treat it
+`tesatlas-edge-batch-v1\0` and a zero byte after every ID. Hub should treat it
 as an opaque batch correlation value, not a record identity.
 
 ## Acknowledge committed records
@@ -236,7 +236,7 @@ The v2 batch ID binds that merged order:
 
 ```text
 lower_hex(SHA-256(
-  UTF-8("teslatlas-edge-batch-v2\0") ||
+  UTF-8("tesatlas-edge-batch-v2\0") ||
   for each merged item by spool_seq:
     kind_byte("r" for record, "g" for gap) ||
     spool_seq_as_u64_big_endian ||
@@ -248,7 +248,7 @@ The v2 stable record ID is:
 
 ```text
 lower_hex(SHA-256(
-  UTF-8("teslatlas-edge-record-v2\0") ||
+  UTF-8("tesatlas-edge-record-v2\0") ||
   JCS({
     version: 2,
     vin,

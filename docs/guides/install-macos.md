@@ -1,6 +1,6 @@
 # Mac setup and everyday use
 
-Teslatlas Hub targets Apple-silicon Macs running macOS 13 or later. This guide
+Tesatlas Hub targets Apple-silicon Macs running macOS 13 or later. This guide
 describes the installation and control flow; verify it against your exact
 source-built artifact before relying on a deployment.
 
@@ -11,7 +11,7 @@ installation, follow [Upgrade and rollback](../releases/upgrade.md).
 
 ## Install
 
-1. Copy the validated **Teslatlas Hub.app** to `/Applications` or
+1. Copy the validated **Tesatlas Hub.app** to `/Applications` or
    `~/Applications`. Keep it on the Mac's local disk; an external volume or
    an App Translocation location cannot host the per-user agent.
 2. Open the app from that location.
@@ -111,7 +111,7 @@ review any confirmation; do not send commands merely to test the interface.
 
 - **Command-W** or the window's red close control closes that window. Closing
   the last app window exits the control app, not the background service.
-- **Command-Q** or **Quit Teslatlas Hub** quits the control app. An active
+- **Command-Q** or **Quit Tesatlas Hub** quits the control app. An active
   protected setup/import operation may need to finish first; the app explains
   this instead of interrupting the operation.
 - **Stop Hub…** stops the service and pauses collection. **Restart Hub**
@@ -125,7 +125,7 @@ see [Pair your client](getting-started.md#pair-your-client).
 
 ## How the service is installed
 
-The app writes `~/Library/LaunchAgents/com.teslatlas.hub.plist` for the signed-in
+The app writes `~/Library/LaunchAgents/com.tesatlas.hub.plist` for the signed-in
 user. The agent runs the Hub binary embedded in the app with the private
 per-user configuration. Start validates that configuration before enabling and
 loading the agent. A failed preflight keeps Hub stopped.
@@ -172,26 +172,26 @@ If bootout reports that the job is already absent, continue; resolve other
 errors before removing its plist:
 
 ```sh
-launchctl bootout gui/$(id -u)/com.teslatlas.hub
-launchctl enable gui/$(id -u)/com.teslatlas.hub
-rm "$HOME/Library/LaunchAgents/com.teslatlas.hub.plist"
+launchctl bootout gui/$(id -u)/com.tesatlas.hub
+launchctl enable gui/$(id -u)/com.tesatlas.hub
+rm "$HOME/Library/LaunchAgents/com.tesatlas.hub.plist"
 ```
 
 Terminal-only data removal follows agent removal: after checking backups,
 exports, links and mount points, remove only
-`~/Library/Application Support/Teslatlas Hub` and
-`~/Library/Logs/Teslatlas Hub`. Move the app to the Trash last.
+`~/Library/Application Support/Tesatlas Hub` and
+`~/Library/Logs/Tesatlas Hub`. Move the app to the Trash last.
 
 ### Installer-era administrator cleanup
 
 The app replaces the old per-user agent but leaves its root-owned payload
 alone. After every local user has removed or replaced their old agent, an
-administrator can remove `/Library/Application Support/Teslatlas Hub` and the
-old `/private/var/tmp/com.teslatlas.hub-upgrade-<uid>` directory for each
+administrator can remove `/Library/Application Support/Tesatlas Hub` and the
+old `/private/var/tmp/com.tesatlas.hub-upgrade-<uid>` directory for each
 identified user. Check each exact target before removal; the per-user Hub data
 under `~/Library` is separate. Forget the two old receipts with
-`sudo pkgutil --forget com.teslatlas.hub.service` and
-`sudo pkgutil --forget com.teslatlas.hub.app`.
+`sudo pkgutil --forget com.tesatlas.hub.service` and
+`sudo pkgutil --forget com.tesatlas.hub.app`.
 
 ## Build from source
 

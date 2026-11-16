@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/magrathean-uk/magrathean-uk/main/assets/icons/teslatlas.png" width="96" height="96" alt="">
+  <img src="https://raw.githubusercontent.com/magrathean-uk/magrathean-uk/main/assets/icons/tesatlas.png" width="96" height="96" alt="">
 </p>
 
-<h1 align="center">Teslatlas TypeScript SDK</h1>
+<h1 align="center">Tesatlas TypeScript SDK</h1>
 
 <p align="center">A private, protocol-derived Hub client for Node.js.</p>
 
@@ -13,7 +13,7 @@
 
 ## Overview
 
-The Teslatlas TypeScript SDK is a private, protocol-derived client for the Teslatlas Hub read API on Node.js. It talks to one fixed Hub endpoint through typed methods and validates every JSON discovery, resource, pairing, and error response against validators generated from the in-repository `hub-http-v1@1.3.0` contract before returning it to the caller. There is no browser client.
+The Tesatlas TypeScript SDK is a private, protocol-derived client for the Tesatlas Hub read API on Node.js. It talks to one fixed Hub endpoint through typed methods and validates every JSON discovery, resource, pairing, and error response against validators generated from the in-repository `hub-http-v1@1.3.0` contract before returning it to the caller. There is no browser client.
 
 The package is private and is not a registry release. The package manifest identifies version `2026.36.2`, Apache-2.0 licensing, and an evidence-only runtime policy. Local fixtures and unit checks demonstrate SDK behavior against checked-in inputs. They do not establish the behavior of a live Hub or a production deployment.
 
@@ -22,7 +22,7 @@ The package is private and is not a registry release. The package manifest ident
 Create a client from the Node entry point:
 
 ```ts
-import { createHubClient } from "@teslatlas/sdk/node";
+import { createHubClient } from "@tesatlas/sdk/node";
 
 const client = createHubClient({
   endpoint: "https://hub.example.invalid",
@@ -34,7 +34,7 @@ const discovery = await client.discover();
 const vehicles = await client.vehicles();
 ```
 
-The root `@teslatlas/sdk` entry point exports public types, errors, opaque value constructors, and caller-owned interfaces. It has no factory: only `@teslatlas/sdk/node` carries a claim transport that can enforce the invitation pin.
+The root `@tesatlas/sdk` entry point exports public types, errors, opaque value constructors, and caller-owned interfaces. It has no factory: only `@tesatlas/sdk/node` carries a claim transport that can enforce the invitation pin.
 
 The example endpoint and Hub UUID are placeholders, and the credential store is caller-owned. The [API reference](docs/api.md) lists the methods. The [compatibility guide](docs/compatibility.md) describes the profile, result, error, ETag, and pagination behavior.
 
@@ -50,7 +50,7 @@ Credentials remain caller-owned. Do not put authorization values or invitations 
 
 Use the Node `26.10.0` and npm `12.1.0` toolchain named by `package.json`. The manifest declares no broader runtime floor because the current evidence policy does not accept one. The accepted runtime evidence still names Node `26.7.0` and npm `11.19.0`; it covers the new versions only after a focused run records them.
 
-Follow `.github/CONTRIBUTING.md` in the [source repository](https://github.com/magrathean-uk/teslatlas-sdk-typescript) and applicable workspace instructions before running package commands. A build replaces the checkout's `dist/` directory. With the pinned toolchain, the local verification sequence is:
+Follow `.github/CONTRIBUTING.md` in the [source repository](https://github.com/magrathean-uk/tesatlas-sdk-typescript) and applicable workspace instructions before running package commands. A build replaces the checkout's `dist/` directory. With the pinned toolchain, the local verification sequence is:
 
 ```bash
 npm ci
@@ -79,7 +79,7 @@ Types and validators are generated from `../protocol/profiles/hub-http-v1/1.3.0`
 - [Product versioning](docs/product-versioning.md)
 - [Apache-2.0 licence](LICENSE)
 
-Repository-only guides are available in the [source repository](https://github.com/magrathean-uk/teslatlas-sdk-typescript): `.github/CONTRIBUTING.md`, `.github/SUPPORT.md`, `.github/SECURITY.md`, and `docs/legal/licensing.md`. They are not bundled in the npm archive.
+Repository-only guides are available in the [source repository](https://github.com/magrathean-uk/tesatlas-sdk-typescript): `.github/CONTRIBUTING.md`, `.github/SUPPORT.md`, `.github/SECURITY.md`, and `docs/legal/licensing.md`. They are not bundled in the npm archive.
 
 ## Licence
 

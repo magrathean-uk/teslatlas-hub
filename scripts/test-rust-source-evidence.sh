@@ -13,7 +13,7 @@ fi
 
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
 HELPER="$ROOT/scripts/rust-source-evidence.py"
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-rust-source-evidence.XXXXXX")
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-rust-source-evidence.XXXXXX")
 
 if [ -x /usr/bin/python3 ]; then
   PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 - "$HELPER" <<'PY'

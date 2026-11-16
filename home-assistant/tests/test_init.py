@@ -15,22 +15,22 @@ from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.teslatlas_hub import async_setup_entry
-from custom_components.teslatlas_hub.client import (
+from custom_components.tesatlas_hub import async_setup_entry
+from custom_components.tesatlas_hub.client import (
     HubAuthenticationError,
     HubConnectionError,
     ProtocolContractUnavailable,
 )
-from custom_components.teslatlas_hub.const import (
+from custom_components.tesatlas_hub.const import (
     CONF_ACCESS_TOKEN,
     CONF_HUB_ID,
     CONF_PORT,
     CONF_USE_TLS,
     DOMAIN,
 )
-from custom_components.teslatlas_hub.coordinator import TeslatlasDataCoordinator
-from custom_components.teslatlas_hub.current_hub_client import CurrentHubClient
-from custom_components.teslatlas_hub.models import HubEndpoint
+from custom_components.tesatlas_hub.coordinator import TesatlasDataCoordinator
+from custom_components.tesatlas_hub.current_hub_client import CurrentHubClient
+from custom_components.tesatlas_hub.models import HubEndpoint
 from tests.helpers import FIXTURE_ACCESS_TOKEN, FixtureHubClient
 
 
@@ -62,7 +62,7 @@ async def test_setup_loads_polling_coordinator_and_unloads_cleanly(
 
     with (
         patch(
-            "custom_components.teslatlas_hub.create_client",
+            "custom_components.tesatlas_hub.create_client",
             return_value=client,
         ) as factory,
         patch.object(hass.config_entries, "async_forward_entry_setups", forward),
@@ -97,7 +97,7 @@ async def test_reload_replaces_client_and_closes_previous_runtime(
     second_client = FixtureHubClient()
 
     with patch(
-        "custom_components.teslatlas_hub.create_client",
+        "custom_components.tesatlas_hub.create_client",
         side_effect=(first_client, second_client),
     ) as factory:
         assert await hass.config_entries.async_setup(entry.entry_id) is True
@@ -195,7 +195,7 @@ async def test_reload_cancels_blocked_production_poll_before_new_client_starts(
     entry.add_to_hass(hass)
 
     with patch(
-        "custom_components.teslatlas_hub.create_client",
+        "custom_components.tesatlas_hub.create_client",
         side_effect=(old_client, new_client),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id) is True
@@ -233,7 +233,7 @@ async def test_setup_retries_transient_or_pending_protocol_failure(
     client.snapshot_error = error
 
     with patch(
-        "custom_components.teslatlas_hub.create_client",
+        "custom_components.tesatlas_hub.create_client",
         return_value=client,
     ):
         assert await hass.config_entries.async_setup(entry.entry_id) is False
@@ -251,7 +251,7 @@ async def test_setup_authentication_failure_starts_reauth(
     client.snapshot_error = HubAuthenticationError("expired")
 
     with patch(
-        "custom_components.teslatlas_hub.create_client",
+        "custom_components.tesatlas_hub.create_client",
         return_value=client,
     ):
         assert await hass.config_entries.async_setup(entry.entry_id) is False
@@ -273,11 +273,11 @@ async def test_cancelled_setup_closes_client(
     client = FixtureHubClient()
     with (
         patch(
-            "custom_components.teslatlas_hub.create_client",
+            "custom_components.tesatlas_hub.create_client",
             return_value=client,
         ),
         patch.object(
-            TeslatlasDataCoordinator,
+            TesatlasDataCoordinator,
             "async_config_entry_first_refresh",
             new=AsyncMock(side_effect=asyncio.CancelledError),
         ),
@@ -300,7 +300,7 @@ async def test_incomplete_stored_entry_fails_with_controlled_setup_error(
     )
     entry.add_to_hass(hass)
     with (
-        patch("custom_components.teslatlas_hub.create_client") as factory,
+        patch("custom_components.tesatlas_hub.create_client") as factory,
         pytest.raises(ConfigEntryError, match="missing required"),
     ):
         await async_setup_entry(hass, entry)

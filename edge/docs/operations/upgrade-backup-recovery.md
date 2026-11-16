@@ -13,23 +13,23 @@ both TLS identities. Losing the spool key makes pending records unrecoverable.
 Stop the Tesla receiver first so no new record can arrive, then stop Edge:
 
 ```bash
-sudo systemctl stop teslatlas-fleet-telemetry.service
-sudo systemctl stop teslatlas-edge.service
-systemctl is-active teslatlas-edge.service teslatlas-fleet-telemetry.service
+sudo systemctl stop tesatlas-fleet-telemetry.service
+sudo systemctl stop tesatlas-edge.service
+systemctl is-active tesatlas-edge.service tesatlas-fleet-telemetry.service
 ```
 
 Confirm both report `inactive`. With `umask 077`, copy these paths into a new
 encrypted backup destination:
 
 ```text
-/etc/teslatlas-edge/config.toml
-/etc/teslatlas-edge/fleet-telemetry.json
-/etc/teslatlas-edge/*.crt
-/etc/teslatlas-edge/*.key
-/var/lib/teslatlas-edge/receiver-token
-/var/lib/teslatlas-edge/spool-key
-/var/lib/teslatlas-edge/hub-credentials.json
-/var/lib/teslatlas-edge/spool/
+/etc/tesatlas-edge/config.toml
+/etc/tesatlas-edge/fleet-telemetry.json
+/etc/tesatlas-edge/*.crt
+/etc/tesatlas-edge/*.key
+/var/lib/tesatlas-edge/receiver-token
+/var/lib/tesatlas-edge/spool-key
+/var/lib/tesatlas-edge/hub-credentials.json
+/var/lib/tesatlas-edge/spool/
 ```
 
 Record file counts and SHA-256 digests inside the encrypted destination. Test
@@ -38,11 +38,11 @@ before restarting services. Keep the spool key and encrypted backup access
 credential in separate security domains.
 
 On macOS, boot out both launch agents before copying
-`/Users/Shared/TeslatlasEdge`:
+`/Users/Shared/TesatlasEdge`:
 
 ```bash
-launchctl bootout "gui/$UID/uk.co.magrathean.teslatlas-fleet-telemetry"
-launchctl bootout "gui/$UID/uk.co.magrathean.teslatlas-edge"
+launchctl bootout "gui/$UID/uk.co.magrathean.tesatlas-fleet-telemetry"
+launchctl bootout "gui/$UID/uk.co.magrathean.tesatlas-edge"
 ```
 
 ## Upgrade without losing pending records
@@ -54,8 +54,8 @@ launchctl bootout "gui/$UID/uk.co.magrathean.teslatlas-edge"
    the supplied service managers allow ten seconds for the drain and final
    spool sync.
 5. Install both binaries atomically from the same tested build.
-6. Run `sudo -u teslatlas-edge /usr/bin/teslatlas-edge --config
-   /etc/teslatlas-edge/config.toml doctor`.
+6. Run `sudo -u tesatlas-edge /usr/bin/tesatlas-edge --config
+   /etc/tesatlas-edge/config.toml doctor`.
 7. Start Edge, verify readiness, then start the sidecar.
 8. Confirm intended listeners and prove one test record in a separate staging
    installation; never inject invented telemetry into a live user's Hub.

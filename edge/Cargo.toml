@@ -1,17 +1,17 @@
 [package]
-name = "teslatlas-edge"
+name = "tesatlas-edge"
 version = "2026.36.2"
 edition = "2024"
 rust-version = "1.98"
 license = "AGPL-3.0-only"
-description = "User-operated Fleet Telemetry ingress for Teslatlas Hub"
+description = "User-operated Fleet Telemetry ingress for Tesatlas Hub"
 
 [lib]
-name = "teslatlas_edge"
+name = "tesatlas_edge"
 path = "src/lib.rs"
 
 [[bin]]
-name = "teslatlas-edge"
+name = "tesatlas-edge"
 path = "src/main.rs"
 
 [dependencies]

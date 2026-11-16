@@ -5,7 +5,7 @@ fn collector_can_start(
     store: &HubStore,
     config: &HubConfig,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let credentials = teslatlas_hub::auth::credential_sign_in::credential_status(store, &config.data_dir, current_epoch_ms()?)?;
+    let credentials = tesatlas_hub::auth::credential_sign_in::credential_status(store, &config.data_dir, current_epoch_ms()?)?;
     // Only a pair admitted at load (the Hub's own login) can start collection.
     let slot = match config.collector.provider {
         CollectorProvider::Legacy => &credentials.legacy_credentials,
@@ -24,11 +24,11 @@ fn default_config_path() -> PathBuf {
         return PathBuf::from(home)
             .join("Library")
             .join("Application Support")
-            .join("Teslatlas Hub")
+            .join("Tesatlas Hub")
             .join("config.toml");
     }
     #[cfg(target_os = "linux")]
-    return PathBuf::from("/etc/teslatlas-hub/config.toml");
+    return PathBuf::from("/etc/tesatlas-hub/config.toml");
     #[cfg(not(target_os = "linux"))]
     PathBuf::from("config.toml")
 }
@@ -68,7 +68,7 @@ const MAX_MIGRATION_POSTGRES_PASSWORD_BYTES: usize = 4 * 1024;
 const MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES: usize = MAX_MIGRATION_POSTGRES_PASSWORD_BYTES + 2;
 #[cfg(all(unix, test))]
 const MAX_MIGRATION_TOKEN_BYTES: usize =
-    teslatlas_hub::source_token_envelope::MAX_TOKEN_PLAINTEXT_BYTES;
+    tesatlas_hub::source_token_envelope::MAX_TOKEN_PLAINTEXT_BYTES;
 #[cfg(all(unix, test))]
 const MAX_MIGRATION_TOKEN_FILE_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES + 2;
 #[cfg(unix)]
@@ -84,7 +84,7 @@ fn migration_stop_confirmed(answer: &str) -> bool {
 fn macos_migration_start_request() -> serde_json::Value {
     serde_json::json!({
         "serviceStartRequested": true,
-        "next": "open Teslatlas Hub.app and choose Start Hub",
+        "next": "open Tesatlas Hub.app and choose Start Hub",
     })
 }
 
@@ -159,7 +159,7 @@ async fn run_macos_migration_prepared(
         || prepared_key.take().is_some()
         || replace_credentials
     {
-        return Err(teslatlas_hub::auth::credential_sign_in::source_credential_disabled().into());
+        return Err(tesatlas_hub::auth::credential_sign_in::source_credential_disabled().into());
     }
     if history_only && (!online_snapshot || preserve_existing_credentials) {
         return Err(
@@ -170,7 +170,7 @@ async fn run_macos_migration_prepared(
     let config = HubConfig::load(config_path)?;
     let import_source_key =
         migration_source_key(source_key, config.import_source.source_key.as_deref());
-    teslatlas_hub::config::validate_import_source_key(import_source_key)?;
+    tesatlas_hub::config::validate_import_source_key(import_source_key)?;
     if history_only {
         validate_history_only_config(&config)?;
     }
@@ -191,8 +191,8 @@ async fn run_macos_migration_prepared(
     limits.parallel_copy_lanes = profile.parallel_copy_lanes;
     if history_only {
         let store = HubStore::initialize(&config.data_dir)?;
-        let _entry = teslatlas_hub::open_credential_vault_for_entry(store.clone(), std::sync::Arc::clone(admission), &config.data_dir)
-            .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)?;
+        let _entry = tesatlas_hub::open_credential_vault_for_entry(store.clone(), std::sync::Arc::clone(admission), &config.data_dir)
+            .map_err(tesatlas_hub::auth::credential_sign_in::credential_entry_error)?;
         let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
         store.check_import_source_key(import_source_key, new_import_source)?;
         let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
@@ -237,8 +237,8 @@ async fn run_macos_migration_prepared(
         return Ok(false);
     }
     let store = HubStore::initialize(&config.data_dir)?;
-    let _entry = teslatlas_hub::open_credential_vault_for_entry(store.clone(), std::sync::Arc::clone(admission), &config.data_dir)
-        .map_err(teslatlas_hub::auth::credential_sign_in::credential_entry_error)?;
+    let _entry = tesatlas_hub::open_credential_vault_for_entry(store.clone(), std::sync::Arc::clone(admission), &config.data_dir)
+        .map_err(tesatlas_hub::auth::credential_sign_in::credential_entry_error)?;
     let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
     store.check_import_source_key(import_source_key, new_import_source)?;
     let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
@@ -312,7 +312,7 @@ async fn run_macos_migration_prepared(
     );
     progress.advance_finalizing(1, 2);
 
-    let fleet_still_present = teslatlas_hub::auth::credential_sign_in::credential_status(&store, &config.data_dir, current_epoch_ms()?)?.fleet_credentials.present;
+    let fleet_still_present = tesatlas_hub::auth::credential_sign_in::credential_status(&store, &config.data_dir, current_epoch_ms()?)?.fleet_credentials.present;
     progress.advance_finalizing(3, 4);
     tracing::info!(
         selected_car_id = car_id,
@@ -357,7 +357,7 @@ async fn run_macos_migration_prepared(
         return Ok(false);
     }
 
-    print!("Start Teslatlas Hub now? [y/N] ");
+    print!("Start Tesatlas Hub now? [y/N] ");
     std::io::stdout().flush()?;
     let mut answer = String::new();
     std::io::stdin().read_line(&mut answer)?;
@@ -383,7 +383,7 @@ async fn import_direct_migration_snapshot(
     car_id: i64,
     source_key: &str,
     new_import_source: bool,
-    limits: teslatlas_hub::source_db_reader::SourceDbReadLimits,
+    limits: tesatlas_hub::source_db_reader::SourceDbReadLimits,
     scope: MigrationCaptureScope,
     progress: SourceDbMigrationProgressReporter,
 ) -> Result<SourceDbImportReport, Box<dyn std::error::Error>> {
@@ -443,7 +443,7 @@ fn migration_progress_reporter(online_snapshot: bool) -> SourceDbMigrationProgre
     let phase = std::sync::Mutex::new(None);
     let started = Instant::now();
     SourceDbMigrationProgressReporter::new(move |event: SourceDbMigrationProgressEvent| {
-        use teslatlas_hub::runtime::development_event_log as dev;
+        use tesatlas_hub::runtime::development_event_log as dev;
         let mut previous = phase
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -645,5 +645,5 @@ fn safe_migration_secret_metadata(metadata: &fs::Metadata) -> bool {
 fn migration_source_key<'a>(explicit: Option<&'a str>, configured: Option<&'a str>) -> &'a str {
     explicit
         .or(configured)
-        .unwrap_or(teslatlas_hub::db::DEFAULT_IMPORT_SOURCE_KEY)
+        .unwrap_or(tesatlas_hub::db::DEFAULT_IMPORT_SOURCE_KEY)
 }

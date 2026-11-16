@@ -1,5 +1,5 @@
 import Foundation
-import TeslatlasCurrentHub
+import TesatlasCurrentHub
 
 struct ConsumerSemanticVehicle: Sendable {
   let current: CurrentHubCurrentState

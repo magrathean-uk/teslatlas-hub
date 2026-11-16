@@ -1,6 +1,6 @@
 # Architecture
 
-Teslatlas Hub is one Rust process with a local SQLite catalogue, immutable
+Tesatlas Hub is one Rust process with a local SQLite catalogue, immutable
 compressed projection packs, supervised provider collection, and bounded HTTP
 sync delivery.
 
@@ -17,7 +17,7 @@ flowchart TB
     subgraph Host
       R[Supervised Fleet receiver]
       P[Loopback command proxy]
-      H[Resident Teslatlas Hub]
+      H[Resident Tesatlas Hub]
       DB[(Catalogue + current state)]
       PK[(Immutable packs)]
     end
@@ -29,7 +29,7 @@ flowchart TB
     H --> PK
     DB --> H
     PK --> H
-    H -->|paired sync| C[Teslatlas client]
+    H -->|paired sync| C[Tesatlas client]
 ```
 
 ## Ownership boundaries

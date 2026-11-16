@@ -34,7 +34,7 @@ scripts/build-deb.sh \
   --receiver-binary "$EDGE_RECEIVER_BINARY" \
   --version 2026.36.2 \
   --architecture arm64 \
-  --output "$EDGE_PACKAGE_DIR/teslatlas-edge_2026.36.2_arm64.deb"
+  --output "$EDGE_PACKAGE_DIR/tesatlas-edge_2026.36.2_arm64.deb"
 ```
 
 For macOS, the product builder creates visible, independently selectable core
@@ -46,19 +46,19 @@ scripts/build-macos-pkg.sh \
   --binary "$EDGE_BINARY" \
   --receiver-binary "$EDGE_RECEIVER_BINARY" \
   --version 2026.36.2 \
-  --output "$EDGE_PACKAGE_DIR/TeslatlasEdge-2026.36.2.pkg"
+  --output "$EDGE_PACKAGE_DIR/TesatlasEdge-2026.36.2.pkg"
 ```
 
 The macOS package does not start either LaunchAgent automatically. Use the
-installed `teslatlas-edge-service.sh edge|receiver start|stop|status` helper
+installed `tesatlas-edge-service.sh edge|receiver start|stop|status` helper
 after providing the fixed state/config/TLS paths. The uninstaller preserves
-`/Users/Shared/TeslatlasEdge` unless `--delete-data` is explicitly supplied.
+`/Users/Shared/TesatlasEdge` unless `--delete-data` is explicitly supplied.
 
 ## Build the two binaries
 
 ```bash
-git clone https://github.com/magrathean-uk/teslatlas-edge.git
-cd teslatlas-edge
+git clone https://github.com/magrathean-uk/tesatlas-edge.git
+cd tesatlas-edge
 # Configure an external Cargo target directory as described in .github/CONTRIBUTING.md.
 cargo build --locked --release
 scripts/test-fleet-telemetry-bridge.sh
@@ -81,21 +81,21 @@ identity because its private receiver bearer must be owner-only; systemd makes
 the spool key and Hub credentials inaccessible to the sidecar process.
 
 ```bash
-sudo useradd --system --home /var/lib/teslatlas-edge --shell /usr/sbin/nologin teslatlas-edge
-sudo install -d -o root -g teslatlas-edge -m 0750 /etc/teslatlas-edge
-sudo install -d -o teslatlas-edge -g teslatlas-edge -m 0700 /var/lib/teslatlas-edge
-sudo install -d -o root -g root -m 0755 /usr/lib/teslatlas-edge
-sudo install -o root -g root -m 0755 "$EDGE_BINARY" /usr/bin/teslatlas-edge
-sudo install -o root -g root -m 0755 "$EDGE_RECEIVER_BINARY" /usr/lib/teslatlas-edge/fleet-telemetry
-sudo install -o root -g root -m 0755 scripts/run-with-spool-format-guard.sh /usr/lib/teslatlas-edge/
-sudo install -o root -g teslatlas-edge -m 0640 packaging/config.toml.example /etc/teslatlas-edge/config.toml
-sudo install -o root -g teslatlas-edge -m 0640 packaging/fleet-telemetry.json.example /etc/teslatlas-edge/fleet-telemetry.json
+sudo useradd --system --home /var/lib/tesatlas-edge --shell /usr/sbin/nologin tesatlas-edge
+sudo install -d -o root -g tesatlas-edge -m 0750 /etc/tesatlas-edge
+sudo install -d -o tesatlas-edge -g tesatlas-edge -m 0700 /var/lib/tesatlas-edge
+sudo install -d -o root -g root -m 0755 /usr/lib/tesatlas-edge
+sudo install -o root -g root -m 0755 "$EDGE_BINARY" /usr/bin/tesatlas-edge
+sudo install -o root -g root -m 0755 "$EDGE_RECEIVER_BINARY" /usr/lib/tesatlas-edge/fleet-telemetry
+sudo install -o root -g root -m 0755 scripts/run-with-spool-format-guard.sh /usr/lib/tesatlas-edge/
+sudo install -o root -g tesatlas-edge -m 0640 packaging/config.toml.example /etc/tesatlas-edge/config.toml
+sudo install -o root -g tesatlas-edge -m 0640 packaging/fleet-telemetry.json.example /etc/tesatlas-edge/fleet-telemetry.json
 ```
 
 Install three Hub-link TLS files and three vehicle-receiver TLS files:
 
 - `hub-server.crt`: Edge server certificate presented to Hub, mode 0644.
-- `hub-server.key`: matching private key, owner `teslatlas-edge`, mode 0600.
+- `hub-server.key`: matching private key, owner `tesatlas-edge`, mode 0600.
 - `hub-client-ca.crt`: CA used only to authenticate Hub clients, mode 0644.
 - `vehicle-tls.crt`: public Tesla receiver certificate, mode 0644.
 - `vehicle-tls.key`: matching Tesla receiver private key, mode 0600.
@@ -109,21 +109,21 @@ client CA. Do not reuse the vehicle key as the Hub listener key. Then initialize
 Edge-owned secrets:
 
 ```bash
-sudo -u teslatlas-edge /usr/bin/teslatlas-edge \
-  --config /etc/teslatlas-edge/config.toml init
-sudo -u teslatlas-edge /usr/bin/teslatlas-edge \
-  --config /etc/teslatlas-edge/config.toml doctor
+sudo -u tesatlas-edge /usr/bin/tesatlas-edge \
+  --config /etc/tesatlas-edge/config.toml init
+sudo -u tesatlas-edge /usr/bin/tesatlas-edge \
+  --config /etc/tesatlas-edge/config.toml doctor
 ```
 
 Install and verify the service units:
 
 ```bash
-sudo install -o root -g root -m 0644 packaging/linux/teslatlas-edge.service /etc/systemd/system/
-sudo install -o root -g root -m 0644 packaging/linux/teslatlas-fleet-telemetry.service /etc/systemd/system/
-sudo systemd-analyze verify /etc/systemd/system/teslatlas-edge.service /etc/systemd/system/teslatlas-fleet-telemetry.service
+sudo install -o root -g root -m 0644 packaging/linux/tesatlas-edge.service /etc/systemd/system/
+sudo install -o root -g root -m 0644 packaging/linux/tesatlas-fleet-telemetry.service /etc/systemd/system/
+sudo systemd-analyze verify /etc/systemd/system/tesatlas-edge.service /etc/systemd/system/tesatlas-fleet-telemetry.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now teslatlas-edge.service teslatlas-fleet-telemetry.service
-systemctl is-active teslatlas-edge.service teslatlas-fleet-telemetry.service
+sudo systemctl enable --now tesatlas-edge.service tesatlas-fleet-telemetry.service
+systemctl is-active tesatlas-edge.service tesatlas-fleet-telemetry.service
 ```
 
 If binding the sidecar directly to port 443, the supplied unit grants only
@@ -137,22 +137,22 @@ non-privileged sidecar port. Restrict TCP 8443 to the home Hub address or VPN.
 > Use Linux for a production boundary until separate macOS service identities
 > or an equivalent sandbox are implemented and independently verified.
 
-Use `/Users/Shared/TeslatlasEdge` as the mode-0700 state directory and adjust
+Use `/Users/Shared/TesatlasEdge` as the mode-0700 state directory and adjust
 the copied config paths accordingly. Install binaries and launch agents:
 
 ```bash
-sudo install -d -m 0755 /usr/local/libexec/teslatlas-edge
-sudo install -m 0755 "$EDGE_BINARY" /usr/local/libexec/teslatlas-edge/
-sudo install -m 0755 "$EDGE_RECEIVER_BINARY" /usr/local/libexec/teslatlas-edge/
-sudo install -m 0755 scripts/run-with-spool-format-guard.sh /usr/local/libexec/teslatlas-edge/
-sudo install -m 0755 packaging/macos/scripts/teslatlas-edge-service.sh /usr/local/libexec/teslatlas-edge/
-sudo install -m 0755 packaging/macos/scripts/uninstall-teslatlas-edge.sh /usr/local/libexec/teslatlas-edge/
-sudo install -d -o "$USER" -g staff -m 0700 /Users/Shared/TeslatlasEdge
-install -m 0600 packaging/config.toml.example /Users/Shared/TeslatlasEdge/config.toml
-install -m 0600 packaging/fleet-telemetry.json.example /Users/Shared/TeslatlasEdge/fleet-telemetry.json
+sudo install -d -m 0755 /usr/local/libexec/tesatlas-edge
+sudo install -m 0755 "$EDGE_BINARY" /usr/local/libexec/tesatlas-edge/
+sudo install -m 0755 "$EDGE_RECEIVER_BINARY" /usr/local/libexec/tesatlas-edge/
+sudo install -m 0755 scripts/run-with-spool-format-guard.sh /usr/local/libexec/tesatlas-edge/
+sudo install -m 0755 packaging/macos/scripts/tesatlas-edge-service.sh /usr/local/libexec/tesatlas-edge/
+sudo install -m 0755 packaging/macos/scripts/uninstall-tesatlas-edge.sh /usr/local/libexec/tesatlas-edge/
+sudo install -d -o "$USER" -g staff -m 0700 /Users/Shared/TesatlasEdge
+install -m 0600 packaging/config.toml.example /Users/Shared/TesatlasEdge/config.toml
+install -m 0600 packaging/fleet-telemetry.json.example /Users/Shared/TesatlasEdge/fleet-telemetry.json
 ```
 
-Set all paths in both configs to `/Users/Shared/TeslatlasEdge`, install the six
+Set all paths in both configs to `/Users/Shared/TesatlasEdge`, install the six
 TLS files described above, and run:
 
 Set `hub_bind` to the exact private address of this Mac (for example, the
@@ -174,17 +174,17 @@ also rejects the option when `hub_bind` is non-loopback. Do not carry this
 development-only setting into an installed or remote-Hub configuration.
 
 ```bash
-/usr/local/libexec/teslatlas-edge/teslatlas-edge \
-  --config /Users/Shared/TeslatlasEdge/config.toml init
-/usr/local/libexec/teslatlas-edge/teslatlas-edge \
-  --config /Users/Shared/TeslatlasEdge/config.toml doctor
-sudo install -d -m 0755 '/Library/Application Support/Teslatlas Edge/launchagents'
-sudo install -m 0644 packaging/macos/uk.co.magrathean.teslatlas-edge.plist \
-  '/Library/Application Support/Teslatlas Edge/launchagents/'
-sudo install -m 0644 packaging/macos/uk.co.magrathean.teslatlas-fleet-telemetry.plist \
-  '/Library/Application Support/Teslatlas Edge/launchagents/'
-/usr/local/libexec/teslatlas-edge/teslatlas-edge-service.sh edge start
-/usr/local/libexec/teslatlas-edge/teslatlas-edge-service.sh receiver start
+/usr/local/libexec/tesatlas-edge/tesatlas-edge \
+  --config /Users/Shared/TesatlasEdge/config.toml init
+/usr/local/libexec/tesatlas-edge/tesatlas-edge \
+  --config /Users/Shared/TesatlasEdge/config.toml doctor
+sudo install -d -m 0755 '/Library/Application Support/Tesatlas Edge/launchagents'
+sudo install -m 0644 packaging/macos/uk.co.magrathean.tesatlas-edge.plist \
+  '/Library/Application Support/Tesatlas Edge/launchagents/'
+sudo install -m 0644 packaging/macos/uk.co.magrathean.tesatlas-fleet-telemetry.plist \
+  '/Library/Application Support/Tesatlas Edge/launchagents/'
+/usr/local/libexec/tesatlas-edge/tesatlas-edge-service.sh edge start
+/usr/local/libexec/tesatlas-edge/tesatlas-edge-service.sh receiver start
 ```
 
 LaunchAgents cannot bind privileged port 443. Configure the receiver for 8444
@@ -194,8 +194,8 @@ Edge Hub listener remains 8443. Do not use HTTP reverse proxying.
 ## Enrol the home Hub
 
 ```bash
-sudo -u teslatlas-edge /usr/bin/teslatlas-edge \
-  --config /etc/teslatlas-edge/config.toml \
+sudo -u tesatlas-edge /usr/bin/tesatlas-edge \
+  --config /etc/tesatlas-edge/config.toml \
   credential enrol home-hub --ttl-seconds 7776000
 ```
 
@@ -217,10 +217,10 @@ seconds for the complete process stop; an unresponsive filesystem can still
 outlast application cancellation.
 
 ```bash
-sudo systemctl stop teslatlas-fleet-telemetry.service teslatlas-edge.service
-sudo -u teslatlas-edge teslatlas-edge \
-  --config /etc/teslatlas-edge/config.toml receiver-token rotate
-sudo systemctl start teslatlas-edge.service teslatlas-fleet-telemetry.service
+sudo systemctl stop tesatlas-fleet-telemetry.service tesatlas-edge.service
+sudo -u tesatlas-edge tesatlas-edge \
+  --config /etc/tesatlas-edge/config.toml receiver-token rotate
+sudo systemctl start tesatlas-edge.service tesatlas-fleet-telemetry.service
 ```
 
 The command prints the new value once for audit/recovery handling. Do not place

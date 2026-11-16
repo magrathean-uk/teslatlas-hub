@@ -33,14 +33,14 @@ When standard input is not a terminal, the commands read the password from it
 instead, for example from a protected password file:
 
 ```sh
-sudo systemctl stop teslatlas-hub.service
-sudo install -d -o teslatlas -g teslatlas -m 0700 \
-  /srv/teslatlas-hub-backups
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml backup \
-  --destination /srv/teslatlas-hub-backups
-sudo -u teslatlas -- /usr/bin/teslatlas-hub verify-backup \
-  --source /srv/teslatlas-hub-backups/teslatlas-hub-backup-<time>-<generation>.tlbk
+sudo systemctl stop tesatlas-hub.service
+sudo install -d -o tesatlas -g tesatlas -m 0700 \
+  /srv/tesatlas-hub-backups
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml backup \
+  --destination /srv/tesatlas-hub-backups
+sudo -u tesatlas -- /usr/bin/tesatlas-hub verify-backup \
+  --source /srv/tesatlas-hub-backups/teslatlas-hub-backup-<time>-<generation>.tlbk
 ```
 
 Standard input is read in one of two modes:
@@ -60,9 +60,9 @@ Standard input is read in one of two modes:
   the file:
 
 ```sh
-{ printf '#pw-file\n'; sudo -u teslatlas cat /etc/teslatlas-hub/backup-password; } | \
-  sudo -u teslatlas -- /usr/bin/teslatlas-hub verify-backup \
-  --source /srv/teslatlas-hub-backups/teslatlas-hub-backup-<time>-<generation>.tlbk
+{ printf '#pw-file\n'; sudo -u tesatlas cat /etc/tesatlas-hub/backup-password; } | \
+  sudo -u tesatlas -- /usr/bin/tesatlas-hub verify-backup \
+  --source /srv/tesatlas-hub-backups/teslatlas-hub-backup-<time>-<generation>.tlbk
 ```
 
 `verify-backup` authenticates and reads the whole bundle without writing
@@ -156,10 +156,10 @@ fallback to the other:
 How each source behaves:
 
 - Mac: the item is a generic password in the owner's login keychain, service
-  `uk.magrathean.teslatlas.hub.backup`, account the `backup.password_file`
+  `uk.magrathean.tesatlas.hub.backup`, account the `backup.password_file`
   path or `unattended-backup` (no file is written there). The bundled service
   binary creates and owns it: the app runs
-  `teslatlas-hub backup-password store --account <account>` and writes the
+  `tesatlas-hub backup-password store --account <account>` and writes the
   password on its standard input, never as an argument (one final line end
   is dropped; every other byte is the password's own). The item
   therefore trusts the service binary only; the LaunchAgent (the same binary)
@@ -200,9 +200,9 @@ How each source behaves:
   does not read the file.
 - Signing: a Hub update keeps reading the item without a prompt only when the
   service binary is signed with the same Apple Development identity (the team
-  and identifier that `macos/TeslatlasHubApp/project.yml` names);
+  and identifier that `macos/TesatlasHubApp/project.yml` names);
   `scripts/build-macos-app.sh` signs the embedded binary that way, with the
-  identity `macos/TeslatlasHubApp/project.yml` names. An unsigned or ad-hoc
+  identity `macos/TesatlasHubApp/project.yml` names. An unsigned or ad-hoc
   signed build is refused (`backup_password_unavailable`) until the password
   is saved again from that build.
 - Linux and Docker (`password_source = "file"`): `backup.password_file` names
@@ -219,14 +219,14 @@ Create a private export directory, then create a random raw 32-byte key in a
 mode-0600 file and export a separately encrypted credential bundle:
 
 ```sh
-sudo install -d -o teslatlas -g teslatlas -m 0700 \
-  /srv/teslatlas-hub-recovery
-sudo -u teslatlas -- sh -c \
-  'umask 077; openssl rand 32 > /srv/teslatlas-hub-recovery/teslatlas-recovery.key'
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml export-recovery-credentials \
-  --destination /srv/teslatlas-hub-recovery/teslatlas-credentials.tthcr \
-  --recovery-key-file /srv/teslatlas-hub-recovery/teslatlas-recovery.key
+sudo install -d -o tesatlas -g tesatlas -m 0700 \
+  /srv/tesatlas-hub-recovery
+sudo -u tesatlas -- sh -c \
+  'umask 077; openssl rand 32 > /srv/tesatlas-hub-recovery/tesatlas-recovery.key'
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/config.toml export-recovery-credentials \
+  --destination /srv/tesatlas-hub-recovery/tesatlas-credentials.tthcr \
+  --recovery-key-file /srv/tesatlas-hub-recovery/tesatlas-recovery.key
 ```
 
 Store the data backup, encrypted credential export, and raw recovery key in
@@ -238,9 +238,9 @@ and verify that systemd kept it active. Inspect its recent log before treating
 collection as resumed:
 
 ```sh
-sudo systemctl start teslatlas-hub.service
-sudo systemctl is-active --quiet teslatlas-hub.service
-sudo journalctl -u teslatlas-hub.service -n 50 --no-pager
+sudo systemctl start tesatlas-hub.service
+sudo systemctl is-active --quiet tesatlas-hub.service
+sudo journalctl -u tesatlas-hub.service -n 50 --no-pager
 ```
 
 ## Restore
@@ -250,12 +250,12 @@ not exist yet. The command asks for the recovery password as `backup` does; a
 wrong password is refused before anything is written:
 
 ```sh
-sudo systemctl stop teslatlas-hub.service
-sudo install -d -o teslatlas -g teslatlas -m 0700 \
-  /srv/teslatlas-hub-restore
-sudo -u teslatlas -- /usr/bin/teslatlas-hub restore-data \
-  --source /srv/teslatlas-hub-backups/teslatlas-hub-backup-<time>-<generation>.tlbk \
-  --destination /srv/teslatlas-hub-restore/hub-data
+sudo systemctl stop tesatlas-hub.service
+sudo install -d -o tesatlas -g tesatlas -m 0700 \
+  /srv/tesatlas-hub-restore
+sudo -u tesatlas -- /usr/bin/tesatlas-hub restore-data \
+  --source /srv/tesatlas-hub-backups/teslatlas-hub-backup-<time>-<generation>.tlbk \
+  --destination /srv/tesatlas-hub-restore/hub-data
 ```
 
 Fleet request counts and reservations come from the backup, as the restore report explains in `fleetRequestCountsNotice`. A backup from earlier in the same UTC calendar month omits requests billed after it was made, so total spending can exceed the intended local monthly cap. A backup from before request counting was introduced contains no saved counts. Restore does not force a new cap stop. Before restarting Fleet polling, account for requests already billed when setting `monthly_cap_cents` for the rest of the month. Tesla's billing remains authoritative. A preserved collector lease is converted into a collection gap in the copied catalogue; the restored Hub's first collector start closes that gap.
@@ -270,17 +270,17 @@ sign in again before the readiness check below.
 Copy the packaged configuration to a separate recovery file. The shell's
 no-clobber option makes this fail if the recovery file already exists; the
 installed configuration remains unchanged. Edit only the recovery copy and set
-its `data_dir` to `/srv/teslatlas-hub-restore/hub-data`:
+its `data_dir` to `/srv/tesatlas-hub-restore/hub-data`:
 
 ```sh
 sudo sh -c '
   set -euC
   umask 027
-  cat /etc/teslatlas-hub/config.toml \
-    > /etc/teslatlas-hub/recovery-config.toml
-  chown root:teslatlas /etc/teslatlas-hub/recovery-config.toml
+  cat /etc/tesatlas-hub/config.toml \
+    > /etc/tesatlas-hub/recovery-config.toml
+  chown root:tesatlas /etc/tesatlas-hub/recovery-config.toml
 '
-sudoedit /etc/teslatlas-hub/recovery-config.toml
+sudoedit /etc/tesatlas-hub/recovery-config.toml
 ```
 
 The restore needs no credential export from the old host. When the backup
@@ -323,27 +323,27 @@ signature `key_id`, changes with the cursor key. `restore-recovery-credentials`
 is not part of this procedure; it refuses to write into a restored directory
 that already has a `secrets` directory.
 
-The packaged unit reads `/etc/teslatlas-hub/config.toml` and can write only
-under `/var/lib/teslatlas-hub`. Add a separate no-clobber systemd drop-in that
+The packaged unit reads `/etc/tesatlas-hub/config.toml` and can write only
+under `/var/lib/tesatlas-hub`. Add a separate no-clobber systemd drop-in that
 starts the Hub with the recovery configuration and grants write access to the
 restored data directory. This leaves the packaged unit and original data path
 unchanged:
 
 ```sh
 sudo install -d -o root -g root -m 0755 \
-  /etc/systemd/system/teslatlas-hub.service.d
+  /etc/systemd/system/tesatlas-hub.service.d
 sudo sh -c '
   set -euC
   umask 022
-  cat > /etc/systemd/system/teslatlas-hub.service.d/90-recovery.conf
+  cat > /etc/systemd/system/tesatlas-hub.service.d/90-recovery.conf
 ' <<'EOF'
 [Service]
 ExecStart=
-ExecStart=/usr/bin/teslatlas-hub --config /etc/teslatlas-hub/recovery-config.toml serve
-ReadWritePaths=/srv/teslatlas-hub-restore/hub-data
+ExecStart=/usr/bin/tesatlas-hub --config /etc/tesatlas-hub/recovery-config.toml serve
+ReadWritePaths=/srv/tesatlas-hub-restore/hub-data
 EOF
 sudo systemctl daemon-reload
-sudo systemctl cat teslatlas-hub.service
+sudo systemctl cat tesatlas-hub.service
 ```
 
 Confirm that `systemctl cat` shows both recovery overrides, then start the
@@ -352,11 +352,11 @@ must report `"ready": true` before recovery is treated as complete (after signin
 if the backup is older than the last token renewal):
 
 ```sh
-sudo systemctl start teslatlas-hub.service
-sudo systemctl is-active --quiet teslatlas-hub.service
-sudo journalctl -u teslatlas-hub.service -n 50 --no-pager
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/recovery-config.toml status
+sudo systemctl start tesatlas-hub.service
+sudo systemctl is-active --quiet tesatlas-hub.service
+sudo journalctl -u tesatlas-hub.service -n 50 --no-pager
+sudo -u tesatlas -- /usr/bin/tesatlas-hub \
+  --config /etc/tesatlas-hub/recovery-config.toml status
 ```
 
 Pair devices again and prove a fresh observation before declaring recovery

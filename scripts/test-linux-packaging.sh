@@ -3,7 +3,7 @@
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-test_root=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-hub-package-test.XXXXXX")
+test_root=$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-hub-package-test.XXXXXX")
 trap 'find "$test_root" -depth -delete' EXIT HUP INT TERM
 maintainer_bin="$test_root/maintainer-bin"
 elf_bin="$test_root/elf-bin"
@@ -13,45 +13,45 @@ hub_status_log="$test_root/hub-status.log"
 maintainer_state="$test_root/maintainer.state"
 upgrade_backup="$test_root/upgrade-backup"
 config_file="$test_root/config.toml"
-installed_binary="$test_root/teslatlas-hub"
-installed_unit="$test_root/teslatlas-hub.service"
-installed_terminal_failure_target="$test_root/teslatlas-hub-terminal-failure.target"
+installed_binary="$test_root/tesatlas-hub"
+installed_unit="$test_root/tesatlas-hub.service"
+installed_terminal_failure_target="$test_root/tesatlas-hub-terminal-failure.target"
 installed_proxy="$test_root/tesla-http-proxy"
 installed_fleet="$test_root/fleet-telemetry"
-installed_proxy_unit="$test_root/teslatlas-command-proxy.service"
-installed_fleet_unit="$test_root/teslatlas-fleet-telemetry.service"
+installed_proxy_unit="$test_root/tesatlas-command-proxy.service"
+installed_fleet_unit="$test_root/tesatlas-fleet-telemetry.service"
 installed_proxy_config="$test_root/command-proxy.env"
 installed_fleet_config="$test_root/fleet-telemetry.json"
 schema_upgraded="$test_root/schema-upgraded"
 captured_control="$test_root/control"
 mkdir -p "$maintainer_bin" "$elf_bin" "$systemd_dir"
-export TESLATLAS_HUB_MAINTAINER_STATE_FILE="$maintainer_state"
-export TESLATLAS_HUB_HEALTH_ATTEMPTS=2
-export TESLATLAS_HUB_HEALTH_DELAY_SECONDS=0
-export TESLATLAS_HUB_HEALTH_TIMEOUT_SECONDS=1
-export TESLATLAS_HUB_RUNUSER="$maintainer_bin/runuser"
-export TESLATLAS_HUB_TIMEOUT="$maintainer_bin/timeout"
-export TESLATLAS_HUB_UPGRADE_BACKUP_DIR="$upgrade_backup"
-export TESLATLAS_HUB_CONFIG="$config_file"
-export TESLATLAS_HUB_BINARY="$installed_binary"
-export TESLATLAS_HUB_UNIT_FILE="$installed_unit"
-export TESLATLAS_HUB_TERMINAL_FAILURE_TARGET_FILE="$installed_terminal_failure_target"
-export TESLATLAS_COMMAND_PROXY_BINARY="$installed_proxy"
-export TESLATLAS_FLEET_TELEMETRY_BINARY="$installed_fleet"
-export TESLATLAS_COMMAND_PROXY_UNIT_FILE="$installed_proxy_unit"
-export TESLATLAS_FLEET_TELEMETRY_UNIT_FILE="$installed_fleet_unit"
-export TESLATLAS_COMMAND_PROXY_CONFIG="$installed_proxy_config"
-export TESLATLAS_FLEET_TELEMETRY_CONFIG="$installed_fleet_config"
+export TESATLAS_HUB_MAINTAINER_STATE_FILE="$maintainer_state"
+export TESATLAS_HUB_HEALTH_ATTEMPTS=2
+export TESATLAS_HUB_HEALTH_DELAY_SECONDS=0
+export TESATLAS_HUB_HEALTH_TIMEOUT_SECONDS=1
+export TESATLAS_HUB_RUNUSER="$maintainer_bin/runuser"
+export TESATLAS_HUB_TIMEOUT="$maintainer_bin/timeout"
+export TESATLAS_HUB_UPGRADE_BACKUP_DIR="$upgrade_backup"
+export TESATLAS_HUB_CONFIG="$config_file"
+export TESATLAS_HUB_BINARY="$installed_binary"
+export TESATLAS_HUB_UNIT_FILE="$installed_unit"
+export TESATLAS_HUB_TERMINAL_FAILURE_TARGET_FILE="$installed_terminal_failure_target"
+export TESATLAS_COMMAND_PROXY_BINARY="$installed_proxy"
+export TESATLAS_FLEET_TELEMETRY_BINARY="$installed_fleet"
+export TESATLAS_COMMAND_PROXY_UNIT_FILE="$installed_proxy_unit"
+export TESATLAS_FLEET_TELEMETRY_UNIT_FILE="$installed_fleet_unit"
+export TESATLAS_COMMAND_PROXY_CONFIG="$installed_proxy_config"
+export TESATLAS_FLEET_TELEMETRY_CONFIG="$installed_fleet_config"
 export HUB_SCHEMA_UPGRADED_FILE="$schema_upgraded"
 
-grep -Fqx 'StateDirectoryMode=0700' "$root/packaging/linux/teslatlas-hub.service" || {
+grep -Fqx 'StateDirectoryMode=0700' "$root/packaging/linux/tesatlas-hub.service" || {
     echo 'test-linux-packaging: systemd state directory is not private' >&2
     exit 1
 }
 for unit in \
-    "$root/packaging/linux/teslatlas-hub.service" \
-    "$root/packaging/linux/teslatlas-command-proxy.service" \
-    "$root/packaging/linux/teslatlas-fleet-telemetry.service"; do
+    "$root/packaging/linux/tesatlas-hub.service" \
+    "$root/packaging/linux/tesatlas-command-proxy.service" \
+    "$root/packaging/linux/tesatlas-fleet-telemetry.service"; do
     grep -Fqx 'StartLimitIntervalSec=300' "$unit" \
         || { echo "test-linux-packaging: missing service restart interval limit: $unit" >&2; exit 1; }
     grep -Fqx 'StartLimitBurst=5' "$unit" \
@@ -71,7 +71,7 @@ for setting in \
     'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6' \
     'RestrictSUIDSGID=true' \
     'SystemCallArchitectures=native'; do
-    grep -Fqx "$setting" "$root/packaging/linux/teslatlas-hub.service" \
+    grep -Fqx "$setting" "$root/packaging/linux/tesatlas-hub.service" \
         || { echo "test-linux-packaging: missing Hub hardening: $setting" >&2; exit 1; }
 done
 fail() {
@@ -94,46 +94,46 @@ test_sha256() {
     fi
 }
 
-grep -Fqx 'Before=teslatlas-hub.service' \
-    "$root/packaging/linux/teslatlas-command-proxy.service" \
+grep -Fqx 'Before=tesatlas-hub.service' \
+    "$root/packaging/linux/tesatlas-command-proxy.service" \
     || fail 'command proxy is not ordered before Hub'
 grep -Fq 'ExecStartPost=/bin/bash -ec' \
-    "$root/packaging/linux/teslatlas-command-proxy.service" \
+    "$root/packaging/linux/tesatlas-command-proxy.service" \
     || fail 'command proxy has no bounded listener readiness gate'
 grep -Fq '$${TESLA_HTTP_PROXY_HOST}' \
-    "$root/packaging/linux/teslatlas-command-proxy.service" \
+    "$root/packaging/linux/tesatlas-command-proxy.service" \
     || fail 'command proxy readiness does not use configured host'
 grep -Fq '$${TESLA_HTTP_PROXY_PORT}' \
-    "$root/packaging/linux/teslatlas-command-proxy.service" \
+    "$root/packaging/linux/tesatlas-command-proxy.service" \
     || fail 'command proxy readiness does not use configured port'
-grep -Fqx 'TimeoutStartSec=20' "$root/packaging/linux/teslatlas-command-proxy.service" \
+grep -Fqx 'TimeoutStartSec=20' "$root/packaging/linux/tesatlas-command-proxy.service" \
     || fail 'command proxy readiness is not time bounded'
-grep -Fqx 'Wants=network-online.target teslatlas-command-proxy.service teslatlas-fleet-telemetry.service' \
-    "$root/packaging/linux/teslatlas-hub.service" \
+grep -Fqx 'Wants=network-online.target tesatlas-command-proxy.service tesatlas-fleet-telemetry.service' \
+    "$root/packaging/linux/tesatlas-hub.service" \
     || fail 'Hub does not pull in configured sidecars'
-grep -Fqx 'OnFailure=teslatlas-hub-terminal-failure.target' \
-    "$root/packaging/linux/teslatlas-hub.service" \
+grep -Fqx 'OnFailure=tesatlas-hub-terminal-failure.target' \
+    "$root/packaging/linux/tesatlas-hub.service" \
     || fail 'Hub does not stop companions after restart exhaustion'
-grep -Fqx 'Restart=always' "$root/packaging/linux/teslatlas-hub.service" \
+grep -Fqx 'Restart=always' "$root/packaging/linux/tesatlas-hub.service" \
     || fail 'Hub does not self-heal after an unexpected clean exit'
-grep -Fqx 'RestartMode=direct' "$root/packaging/linux/teslatlas-hub.service" \
+grep -Fqx 'RestartMode=direct' "$root/packaging/linux/tesatlas-hub.service" \
     || fail 'Hub transient restarts incorrectly notify companion units'
-for sidecar_unit in "$root/packaging/linux/teslatlas-command-proxy.service" \
-    "$root/packaging/linux/teslatlas-fleet-telemetry.service"; do
-    grep -Fqx 'PartOf=teslatlas-hub.service' "$sidecar_unit" \
+for sidecar_unit in "$root/packaging/linux/tesatlas-command-proxy.service" \
+    "$root/packaging/linux/tesatlas-fleet-telemetry.service"; do
+    grep -Fqx 'PartOf=tesatlas-hub.service' "$sidecar_unit" \
         || fail "sidecar does not follow Hub stop/restart: $sidecar_unit"
-    if grep -Fqx 'BindsTo=teslatlas-hub.service' "$sidecar_unit"; then
+    if grep -Fqx 'BindsTo=tesatlas-hub.service' "$sidecar_unit"; then
         fail "sidecar cannot run independently during Fleet setup: $sidecar_unit"
     fi
 done
-grep -Fqx 'Conflicts=teslatlas-command-proxy.service teslatlas-fleet-telemetry.service' \
-    "$root/packaging/linux/teslatlas-hub-terminal-failure.target" \
+grep -Fqx 'Conflicts=tesatlas-command-proxy.service tesatlas-fleet-telemetry.service' \
+    "$root/packaging/linux/tesatlas-hub-terminal-failure.target" \
     || fail 'terminal failure target does not stop both companions'
 grep -Fqx 'StopWhenUnneeded=yes' \
-    "$root/packaging/linux/teslatlas-hub-terminal-failure.target" \
+    "$root/packaging/linux/tesatlas-hub-terminal-failure.target" \
     || fail 'terminal failure target can block later recovery'
 grep -Fqx 'RefuseManualStart=yes' \
-    "$root/packaging/linux/teslatlas-hub-terminal-failure.target" \
+    "$root/packaging/linux/tesatlas-hub-terminal-failure.target" \
     || fail 'terminal failure target accepts unsafe manual activation'
 grep -Fqx 'TESLA_HTTP_PROXY_PORT=4445' "$root/packaging/linux/command-proxy.env" \
     || fail 'packaged command proxy port is not 4445'
@@ -189,19 +189,19 @@ printf '%s\n' \
     'printf "%s\\n" "$*" >> "$SYSTEMCTL_LOG"' \
     'service_name=${3:-${2:-}}' \
     'case "$service_name" in' \
-    '  teslatlas-hub.service)' \
+    '  tesatlas-hub.service)' \
     '    present=${SYSTEMCTL_HUB_PRESENT:-1}' \
     '    active=${SYSTEMCTL_HUB_ACTIVE:-${SYSTEMCTL_ACTIVE:-0}}' \
     '    enabled=${SYSTEMCTL_HUB_ENABLED:-${SYSTEMCTL_ENABLED:-0}}' \
     '    failed=${SYSTEMCTL_HUB_FAILED:-0}' \
     '    ;;' \
-    '  teslatlas-command-proxy.service)' \
+    '  tesatlas-command-proxy.service)' \
     '    present=${SYSTEMCTL_PROXY_PRESENT:-0}' \
     '    active=${SYSTEMCTL_PROXY_ACTIVE:-0}' \
     '    enabled=${SYSTEMCTL_PROXY_ENABLED:-0}' \
     '    failed=${SYSTEMCTL_PROXY_FAILED:-0}' \
     '    ;;' \
-    '  teslatlas-fleet-telemetry.service)' \
+    '  tesatlas-fleet-telemetry.service)' \
     '    present=${SYSTEMCTL_TELEMETRY_PRESENT:-0}' \
     '    active=${SYSTEMCTL_TELEMETRY_ACTIVE:-0}' \
     '    enabled=${SYSTEMCTL_TELEMETRY_ENABLED:-0}' \
@@ -212,7 +212,7 @@ printf '%s\n' \
     'case "$1" in' \
     '  cat) [ "$present" = 1 ] ;;' \
     '  is-active)' \
-    '    if [ "${SYSTEMCTL_FAIL_AFTER_START:-0}" = 1 ] && grep -Fq "start teslatlas-hub.service" "$SYSTEMCTL_LOG"; then exit 1; fi' \
+    '    if [ "${SYSTEMCTL_FAIL_AFTER_START:-0}" = 1 ] && grep -Fq "start tesatlas-hub.service" "$SYSTEMCTL_LOG"; then exit 1; fi' \
     '    [ "$active" = 1 ]' \
     '    ;;' \
     '  is-enabled) [ "$enabled" = 1 ] ;;' \
@@ -231,20 +231,20 @@ for script in preinst postinst prerm postrm; do
     chmod 0755 "$test_root/$script"
 done
 
-printf '%s\n' 'data_dir = "/var/lib/teslatlas-hub"' > "$config_file"
+printf '%s\n' 'data_dir = "/var/lib/tesatlas-hub"' > "$config_file"
 
 : > "$systemctl_log"
 PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" SYSTEMCTL_ACTIVE=0 \
     sh "$test_root/postinst" configure ''
 require_log 'daemon-reload'
-if grep -Fqx 'restart teslatlas-hub.service' "$systemctl_log"; then
+if grep -Fqx 'restart tesatlas-hub.service' "$systemctl_log"; then
     fail 'inactive initial install restarted service'
 fi
 grep -Fqx '[geocoder]' "$config_file" || fail 'minimal config did not disable geocoder explicitly'
 grep -Fqx '[terrain]' "$config_file" || fail 'minimal config did not disable terrain explicitly'
 
 printf '%s\n' \
-    'data_dir = "/srv/teslatlas-custom"' \
+    'data_dir = "/srv/tesatlas-custom"' \
     '[geocoder]' \
     'provider = "offline"' \
     '[terrain]' \
@@ -272,13 +272,13 @@ if PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
     SYSTEMCTL_PROXY_PRESENT=1 SYSTEMCTL_PROXY_ACTIVE=1 SYSTEMCTL_PROXY_ENABLED=1 \
     SYSTEMCTL_TELEMETRY_PRESENT=1 SYSTEMCTL_TELEMETRY_ACTIVE=1 \
     SYSTEMCTL_TELEMETRY_ENABLED=1 \
-    SYSTEMCTL_FAIL_STOP_SERVICE=teslatlas-command-proxy.service \
+    SYSTEMCTL_FAIL_STOP_SERVICE=tesatlas-command-proxy.service \
     sh "$test_root/preinst" upgrade 1.0.0; then
     fail 'failed service stop was accepted during upgrade preparation'
 fi
-require_log 'start teslatlas-command-proxy.service'
-require_log 'start teslatlas-hub.service'
-require_log 'start teslatlas-fleet-telemetry.service'
+require_log 'start tesatlas-command-proxy.service'
+require_log 'start tesatlas-hub.service'
+require_log 'start tesatlas-fleet-telemetry.service'
 [ ! -e "$maintainer_state" ] || fail 'recovered preinst failure retained service state'
 [ ! -e "$upgrade_backup" ] || fail 'recovered preinst failure retained payload backup'
 
@@ -290,15 +290,15 @@ PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
     sh "$test_root/preinst" upgrade 1.0.0
 [ "$(cat "$maintainer_state")" = '1 1 1 0 0 0 0 0 0' ] \
     || fail 'upgrade did not retain the run intent of an enabled failed Hub'
-require_log 'is-failed --quiet teslatlas-hub.service'
-require_log 'stop teslatlas-hub.service'
+require_log 'is-failed --quiet tesatlas-hub.service'
+require_log 'stop tesatlas-hub.service'
 printf '%s\n' recovered-binary > "$installed_binary"
 printf '%s\n' recovered-unit > "$installed_unit"
 PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" HUB_STATUS_LOG="$hub_status_log" \
     SYSTEMCTL_ACTIVE=1 SYSTEMCTL_ENABLED=1 SYSTEMCTL_START_LIMIT_HIT=1 HUB_READY=1 \
     sh "$test_root/postinst" configure 1.0.0
-require_log 'reset-failed teslatlas-hub.service'
-require_log 'start teslatlas-hub.service'
+require_log 'reset-failed tesatlas-hub.service'
+require_log 'start tesatlas-hub.service'
 [ ! -e "$upgrade_backup" ] || fail 'failed-service recovery retained old payload'
 
 : > "$systemctl_log"
@@ -320,9 +320,9 @@ PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
     sh "$test_root/preinst" upgrade 1.0.0
 [ "$(cat "$maintainer_state")" = '1 1 1 1 1 1 1 1 1' ] \
     || fail 'upgrade did not preserve Hub and sidecar state'
-require_log 'stop teslatlas-fleet-telemetry.service'
-require_log 'stop teslatlas-hub.service'
-require_log 'stop teslatlas-command-proxy.service'
+require_log 'stop tesatlas-fleet-telemetry.service'
+require_log 'stop tesatlas-hub.service'
+require_log 'stop tesatlas-command-proxy.service'
 printf '%s\n' new-binary > "$installed_binary"
 printf '%s\n' new-unit > "$installed_unit"
 PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" HUB_STATUS_LOG="$hub_status_log" \
@@ -332,13 +332,13 @@ PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" HUB_STATUS_LOG="$hub
     SYSTEMCTL_TELEMETRY_PRESENT=1 SYSTEMCTL_TELEMETRY_ACTIVE=1 \
     sh "$test_root/postinst" configure 1.0.0
 require_log 'daemon-reload'
-require_log 'reset-failed teslatlas-command-proxy.service'
-require_log 'start teslatlas-command-proxy.service'
-require_log 'reset-failed teslatlas-hub.service'
-require_log 'start teslatlas-hub.service'
-require_log 'reset-failed teslatlas-fleet-telemetry.service'
-require_log 'start teslatlas-fleet-telemetry.service'
-grep -Fqx -- "-u teslatlas -- $installed_binary --config $config_file status" \
+require_log 'reset-failed tesatlas-command-proxy.service'
+require_log 'start tesatlas-command-proxy.service'
+require_log 'reset-failed tesatlas-hub.service'
+require_log 'start tesatlas-hub.service'
+require_log 'reset-failed tesatlas-fleet-telemetry.service'
+require_log 'start tesatlas-fleet-telemetry.service'
+grep -Fqx -- "-u tesatlas -- $installed_binary --config $config_file status" \
     "$hub_status_log" || fail 'upgrade did not query Hub readiness as the service user'
 [ ! -e "$upgrade_backup" ] || fail 'successful upgrade retained old payload'
 
@@ -425,7 +425,7 @@ printf '%s\n' migrated-binary > "$installed_binary"
 printf '%s\n' migrated-unit > "$installed_unit"
 rm -f "$schema_upgraded"
 printf '%s\n' \
-    'data_dir = "/srv/teslatlas-custom"' \
+    'data_dir = "/srv/tesatlas-custom"' \
     '[geocoder]' \
     'enabled = false' \
     '[terrain]' \
@@ -434,7 +434,7 @@ PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" HUB_STATUS_LOG="$hub
     SYSTEMCTL_ACTIVE=1 SYSTEMCTL_ENABLED=1 HUB_SCHEMA_UPGRADE=1 HUB_READY=1 \
     sh "$test_root/postinst" configure 1.0.0
 grep -Fq ' bootstrap' "$hub_status_log" || fail 'schema-changing upgrade did not run bounded bootstrap'
-grep -Fqx -- "-u teslatlas -- $installed_binary --config $config_file bootstrap" \
+grep -Fqx -- "-u tesatlas -- $installed_binary --config $config_file bootstrap" \
     "$hub_status_log" || fail 'custom data_dir upgrade did not cross the bootstrap boundary'
 grep -Fqx migrated-binary "$installed_binary" || fail 'successful schema upgrade restored old binary'
 [ ! -e "$upgrade_backup" ] || fail 'successful schema upgrade retained old payload'
@@ -459,7 +459,7 @@ grep -Fq ' doctor' "$hub_status_log" \
 grep -Fqx unconfigured-binary "$installed_binary" \
     || fail 'unconfigured upgrade restored the old binary'
 [ ! -e "$upgrade_backup" ] || fail 'unconfigured upgrade retained old payload'
-require_log 'stop teslatlas-hub.service'
+require_log 'stop tesatlas-hub.service'
 
 : > "$systemctl_log"
 : > "$hub_status_log"
@@ -474,7 +474,7 @@ PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" HUB_STATUS_LOG="$hub
     SYSTEMCTL_ACTIVE=1 SYSTEMCTL_ENABLED=1 HUB_PREFLIGHT_READY=1 \
     HUB_UNCONFIGURED=1 HUB_DOCTOR_READY=0 \
     sh "$test_root/postinst" configure 1.0.0
-require_log 'start teslatlas-hub.service'
+require_log 'start tesatlas-hub.service'
 grep -Fqx unconfigured-active-binary "$installed_binary" \
     || fail 'active unconfigured upgrade restored the old binary'
 [ ! -e "$upgrade_backup" ] || fail 'active unconfigured upgrade retained old payload'
@@ -496,12 +496,12 @@ fi
 grep -Fqx migration-failed-binary "$installed_binary" \
     || fail 'failed schema migration restored incompatible old binary'
 [ ! -e "$upgrade_backup" ] || fail 'failed schema migration retained old payload backup'
-require_log 'stop teslatlas-hub.service'
+require_log 'stop tesatlas-hub.service'
 
 : > "$systemctl_log"
 mkdir -p "$upgrade_backup"
-printf '%s\n' old-binary > "$upgrade_backup/teslatlas-hub"
-printf '%s\n' old-unit > "$upgrade_backup/teslatlas-hub.service"
+printf '%s\n' old-binary > "$upgrade_backup/tesatlas-hub"
+printf '%s\n' old-unit > "$upgrade_backup/tesatlas-hub.service"
 : > "$upgrade_backup/forward-only"
 printf '%s\n' '1 1' > "$maintainer_state"
 printf '%s\n' forward-only-new > "$installed_binary"
@@ -511,7 +511,7 @@ grep -Fqx forward-only-new "$installed_binary" \
     || fail 'dpkg failed-upgrade restored old payload after migration boundary'
 [ ! -e "$upgrade_backup" ] || fail 'dpkg failed-upgrade retained forward-only backup'
 [ ! -e "$maintainer_state" ] || fail 'dpkg failed-upgrade retained forward-only state'
-require_log 'stop teslatlas-hub.service'
+require_log 'stop tesatlas-hub.service'
 
 : > "$systemctl_log"
 : > "$hub_status_log"
@@ -538,18 +538,18 @@ PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
     SYSTEMCTL_TELEMETRY_PRESENT=1 SYSTEMCTL_TELEMETRY_ACTIVE=1 \
     SYSTEMCTL_TELEMETRY_ENABLED=1 \
     sh "$test_root/prerm" remove
-require_log 'is-active --quiet teslatlas-hub.service'
-require_log 'is-enabled --quiet teslatlas-hub.service'
-require_log 'is-active --quiet teslatlas-command-proxy.service'
-require_log 'is-enabled --quiet teslatlas-command-proxy.service'
-require_log 'is-active --quiet teslatlas-fleet-telemetry.service'
-require_log 'is-enabled --quiet teslatlas-fleet-telemetry.service'
-require_log 'stop teslatlas-fleet-telemetry.service'
-require_log 'disable teslatlas-fleet-telemetry.service'
-require_log 'stop teslatlas-hub.service'
-require_log 'disable teslatlas-hub.service'
-require_log 'stop teslatlas-command-proxy.service'
-require_log 'disable teslatlas-command-proxy.service'
+require_log 'is-active --quiet tesatlas-hub.service'
+require_log 'is-enabled --quiet tesatlas-hub.service'
+require_log 'is-active --quiet tesatlas-command-proxy.service'
+require_log 'is-enabled --quiet tesatlas-command-proxy.service'
+require_log 'is-active --quiet tesatlas-fleet-telemetry.service'
+require_log 'is-enabled --quiet tesatlas-fleet-telemetry.service'
+require_log 'stop tesatlas-fleet-telemetry.service'
+require_log 'disable tesatlas-fleet-telemetry.service'
+require_log 'stop tesatlas-hub.service'
+require_log 'disable tesatlas-hub.service'
+require_log 'stop tesatlas-command-proxy.service'
+require_log 'disable tesatlas-command-proxy.service'
 [ "$(cat "$maintainer_state")" = '1 1 1 1 1 1 1 1 1' ] \
     || fail 'remove did not preserve active/enabled Hub and sidecar state'
 
@@ -560,12 +560,12 @@ PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
     SYSTEMCTL_TELEMETRY_PRESENT=1 SYSTEMCTL_TELEMETRY_ACTIVE=1 \
     sh "$test_root/postinst" abort-remove
 require_log 'daemon-reload'
-require_log 'enable teslatlas-hub.service'
-require_log 'enable teslatlas-command-proxy.service'
-require_log 'enable teslatlas-fleet-telemetry.service'
-require_log 'start teslatlas-command-proxy.service'
-require_log 'start teslatlas-hub.service'
-require_log 'start teslatlas-fleet-telemetry.service'
+require_log 'enable tesatlas-hub.service'
+require_log 'enable tesatlas-command-proxy.service'
+require_log 'enable tesatlas-fleet-telemetry.service'
+require_log 'start tesatlas-command-proxy.service'
+require_log 'start tesatlas-hub.service'
+require_log 'start tesatlas-fleet-telemetry.service'
 [ ! -e "$maintainer_state" ] || fail 'successful abort-remove retained rollback state'
 
 printf '%s\n' '1 1 1 1 1 1 1 1 1' > "$maintainer_state"
@@ -576,7 +576,7 @@ if PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
     sh "$test_root/postinst" abort-remove; then
     fail 'inactive command proxy passed bounded sidecar restore health checks'
 fi
-[ "$(grep -Fc 'is-active --quiet teslatlas-command-proxy.service' "$systemctl_log")" -eq 2 ] \
+[ "$(grep -Fc 'is-active --quiet tesatlas-command-proxy.service' "$systemctl_log")" -eq 2 ] \
     || fail 'command proxy restore health check was not bounded'
 [ -f "$maintainer_state" ] || fail 'failed sidecar restore discarded rollback state'
 rm -f "$maintainer_state"
@@ -591,8 +591,8 @@ PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
 : > "$systemctl_log"
 PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
     sh "$test_root/postinst" abort-deconfigure
-require_log 'enable teslatlas-hub.service'
-require_log 'stop teslatlas-hub.service'
+require_log 'enable tesatlas-hub.service'
+require_log 'stop tesatlas-hub.service'
 [ ! -e "$maintainer_state" ] || fail 'successful abort-deconfigure retained rollback state'
 
 : > "$systemctl_log"
@@ -606,8 +606,8 @@ PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
 PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
     SYSTEMCTL_ACTIVE=1 SYSTEMCTL_ENABLED=0 \
     sh "$test_root/postrm" abort-upgrade
-require_log 'disable teslatlas-hub.service'
-require_log 'start teslatlas-hub.service'
+require_log 'disable tesatlas-hub.service'
+require_log 'start tesatlas-hub.service'
 [ ! -e "$maintainer_state" ] || fail 'successful abort-upgrade retained rollback state'
 
 : > "$systemctl_log"
@@ -633,10 +633,10 @@ for action in remove purge; do
     PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
         sh "$test_root/postrm" "$action"
     require_log 'daemon-reload'
-    require_log 'stop teslatlas-fleet-telemetry.service'
-    require_log 'stop teslatlas-hub.service'
-    require_log 'stop teslatlas-command-proxy.service'
-    if grep -Fqx 'disable teslatlas-hub.service' "$systemctl_log"; then
+    require_log 'stop tesatlas-fleet-telemetry.service'
+    require_log 'stop tesatlas-hub.service'
+    require_log 'stop tesatlas-command-proxy.service'
+    if grep -Fqx 'disable tesatlas-hub.service' "$systemctl_log"; then
         fail "$action tried to disable an already removed unit"
     fi
     [ ! -e "$maintainer_state" ] || fail "$action retained rollback state"
@@ -722,39 +722,39 @@ printf '%s\n' \
     '[ "$1" = --build ] && shift' \
     '[ -f "$1/DEBIAN/preinst" ]' \
     '[ -f "$1/DEBIAN/postrm" ]' \
-    'cmp "$EXPECTED_TERMINAL_FAILURE_TARGET" "$1/lib/systemd/system/teslatlas-hub-terminal-failure.target"' \
-    'cmp "$EXPECTED_LICENSE" "$1/usr/share/doc/teslatlas-hub/copyright"' \
-    'cmp "$EXPECTED_NOTICE" "$1/usr/share/doc/teslatlas-hub/NOTICE"' \
-    'cmp "$EXPECTED_THIRD_PARTY_NOTICES" "$1/usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md"' \
-    'cmp "$EXPECTED_PROVENANCE" "$1/usr/share/doc/teslatlas-hub/PROVENANCE.md"' \
-    'cmp "$EXPECTED_ADDITIONAL_TERMS" "$1/usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md"' \
-    'cmp "$EXPECTED_SOURCE_AVAILABILITY" "$1/usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md"' \
-    'cmp "$EXPECTED_RELEASE_VERIFICATION" "$1/usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md"' \
+    'cmp "$EXPECTED_TERMINAL_FAILURE_TARGET" "$1/lib/systemd/system/tesatlas-hub-terminal-failure.target"' \
+    'cmp "$EXPECTED_LICENSE" "$1/usr/share/doc/tesatlas-hub/copyright"' \
+    'cmp "$EXPECTED_NOTICE" "$1/usr/share/doc/tesatlas-hub/NOTICE"' \
+    'cmp "$EXPECTED_THIRD_PARTY_NOTICES" "$1/usr/share/doc/tesatlas-hub/THIRD_PARTY_NOTICES.md"' \
+    'cmp "$EXPECTED_PROVENANCE" "$1/usr/share/doc/tesatlas-hub/PROVENANCE.md"' \
+    'cmp "$EXPECTED_ADDITIONAL_TERMS" "$1/usr/share/doc/tesatlas-hub/ADDITIONAL_TERMS.md"' \
+    'cmp "$EXPECTED_SOURCE_AVAILABILITY" "$1/usr/share/doc/tesatlas-hub/SOURCE_AVAILABILITY.md"' \
+    'cmp "$EXPECTED_RELEASE_VERIFICATION" "$1/usr/share/doc/tesatlas-hub/RELEASE_VERIFICATION.md"' \
     'for legal_component in "$EXPECTED_LEGAL_BUNDLE"/*; do' \
-    '  cmp "$legal_component" "$1/usr/share/doc/teslatlas-hub/dependency-legal/$(basename "$legal_component")"' \
+    '  cmp "$legal_component" "$1/usr/share/doc/tesatlas-hub/dependency-legal/$(basename "$legal_component")"' \
     'done' \
     'if [ "${EXPECT_SIDECARS:-0}" = 1 ]; then' \
-    '  cmp "$EXPECTED_PROXY" "$1/usr/lib/teslatlas-hub/tesla-http-proxy"' \
-    '  cmp "$EXPECTED_FLEET" "$1/usr/lib/teslatlas-hub/fleet-telemetry"' \
-    '  grep -Fqx "$EXPECTED_PROXY_SHA  tesla-http-proxy" "$1/usr/share/doc/teslatlas-hub/SIDECAR_SHA256SUMS"' \
-    '  grep -Fqx "$EXPECTED_FLEET_SHA  fleet-telemetry" "$1/usr/share/doc/teslatlas-hub/SIDECAR_SHA256SUMS"' \
-    '  cmp "$EXPECTED_SIDECAR_LOCK" "$1/usr/share/doc/teslatlas-hub/SIDECAR_BUILD_LOCK"' \
-    '  grep -Fqx "ExecStart=/usr/lib/teslatlas-hub/tesla-http-proxy" "$1/lib/systemd/system/teslatlas-command-proxy.service"' \
-    '  grep -Fqx "ExecStart=/usr/lib/teslatlas-hub/fleet-telemetry -config=/etc/teslatlas-hub/fleet-telemetry.json" "$1/lib/systemd/system/teslatlas-fleet-telemetry.service"' \
-    '  grep -Fqx "CapabilityBoundingSet=CAP_NET_BIND_SERVICE" "$1/lib/systemd/system/teslatlas-fleet-telemetry.service"' \
-    '  grep -Fqx "NoNewPrivileges=true" "$1/lib/systemd/system/teslatlas-command-proxy.service"' \
-    '  grep -Fqx "NoNewPrivileges=true" "$1/lib/systemd/system/teslatlas-fleet-telemetry.service"' \
-    '  grep -Fqx "/etc/teslatlas-hub/command-proxy.env" "$1/DEBIAN/conffiles"' \
-    '  grep -Fqx "/etc/teslatlas-hub/fleet-telemetry.json" "$1/DEBIAN/conffiles"' \
-    '  grep -Fq '"'"'"V": ["teslatlas"]'"'"' "$1/etc/teslatlas-hub/fleet-telemetry.json"' \
-    '  grep -Fq '"'"'"connectivity": ["teslatlas"]'"'"' "$1/etc/teslatlas-hub/fleet-telemetry.json"' \
-    '  grep -Fq '"'"'"V": "teslatlas"'"'"' "$1/etc/teslatlas-hub/fleet-telemetry.json"' \
-    '  ! grep -Eq '"'"'"(alerts|errors)"[[:space:]]*:'"'"' "$1/etc/teslatlas-hub/fleet-telemetry.json"' \
-    '  [ ! -e "$1/etc/systemd/system/multi-user.target.wants/teslatlas-command-proxy.service" ]' \
-    '  [ ! -e "$1/etc/systemd/system/multi-user.target.wants/teslatlas-fleet-telemetry.service" ]' \
+    '  cmp "$EXPECTED_PROXY" "$1/usr/lib/tesatlas-hub/tesla-http-proxy"' \
+    '  cmp "$EXPECTED_FLEET" "$1/usr/lib/tesatlas-hub/fleet-telemetry"' \
+    '  grep -Fqx "$EXPECTED_PROXY_SHA  tesla-http-proxy" "$1/usr/share/doc/tesatlas-hub/SIDECAR_SHA256SUMS"' \
+    '  grep -Fqx "$EXPECTED_FLEET_SHA  fleet-telemetry" "$1/usr/share/doc/tesatlas-hub/SIDECAR_SHA256SUMS"' \
+    '  cmp "$EXPECTED_SIDECAR_LOCK" "$1/usr/share/doc/tesatlas-hub/SIDECAR_BUILD_LOCK"' \
+    '  grep -Fqx "ExecStart=/usr/lib/tesatlas-hub/tesla-http-proxy" "$1/lib/systemd/system/tesatlas-command-proxy.service"' \
+    '  grep -Fqx "ExecStart=/usr/lib/tesatlas-hub/fleet-telemetry -config=/etc/tesatlas-hub/fleet-telemetry.json" "$1/lib/systemd/system/tesatlas-fleet-telemetry.service"' \
+    '  grep -Fqx "CapabilityBoundingSet=CAP_NET_BIND_SERVICE" "$1/lib/systemd/system/tesatlas-fleet-telemetry.service"' \
+    '  grep -Fqx "NoNewPrivileges=true" "$1/lib/systemd/system/tesatlas-command-proxy.service"' \
+    '  grep -Fqx "NoNewPrivileges=true" "$1/lib/systemd/system/tesatlas-fleet-telemetry.service"' \
+    '  grep -Fqx "/etc/tesatlas-hub/command-proxy.env" "$1/DEBIAN/conffiles"' \
+    '  grep -Fqx "/etc/tesatlas-hub/fleet-telemetry.json" "$1/DEBIAN/conffiles"' \
+    '  grep -Fq '"'"'"V": ["tesatlas"]'"'"' "$1/etc/tesatlas-hub/fleet-telemetry.json"' \
+    '  grep -Fq '"'"'"connectivity": ["tesatlas"]'"'"' "$1/etc/tesatlas-hub/fleet-telemetry.json"' \
+    '  grep -Fq '"'"'"V": "tesatlas"'"'"' "$1/etc/tesatlas-hub/fleet-telemetry.json"' \
+    '  ! grep -Eq '"'"'"(alerts|errors)"[[:space:]]*:'"'"' "$1/etc/tesatlas-hub/fleet-telemetry.json"' \
+    '  [ ! -e "$1/etc/systemd/system/multi-user.target.wants/tesatlas-command-proxy.service" ]' \
+    '  [ ! -e "$1/etc/systemd/system/multi-user.target.wants/tesatlas-fleet-telemetry.service" ]' \
     'else' \
-    '  [ ! -e "$1/usr/lib/teslatlas-hub/tesla-http-proxy" ]' \
-    '  [ ! -e "$1/usr/lib/teslatlas-hub/fleet-telemetry" ]' \
+    '  [ ! -e "$1/usr/lib/tesatlas-hub/tesla-http-proxy" ]' \
+    '  [ ! -e "$1/usr/lib/tesatlas-hub/fleet-telemetry" ]' \
     'fi' \
     'cp "$1/DEBIAN/control" "$CAPTURED_CONTROL"' \
     ': > "$2"' > "$elf_bin/dpkg-deb"
@@ -762,8 +762,8 @@ chmod 0755 "$elf_bin/dpkg-deb"
 printf '%s\n' \
     '#!/bin/sh' \
     'case "${1:-}" in' \
-    '  --version) printf "%s\n" "teslatlas-hub ${FAKE_HUB_VERSION:-1.0.0}" ;;' \
-    '  source) printf "%s/tree/%s\n" "https://github.com/magrathean-uk/teslatlas-hub" "${FAKE_HUB_SOURCE_COMMIT}" ;;' \
+    '  --version) printf "%s\n" "tesatlas-hub ${FAKE_HUB_VERSION:-1.0.0}" ;;' \
+    '  source) printf "%s/tree/%s\n" "https://github.com/magrathean-uk/tesatlas-hub" "${FAKE_HUB_SOURCE_COMMIT}" ;;' \
     '  *) exit 99 ;;' \
     'esac' \
     '[ "${FAKE_HUB_EXTRA_NEWLINE:-0}" != 1 ] || printf "\n"' \
@@ -814,7 +814,7 @@ done
 package_proxy_sha=$(test_sha256 "$test_root/fake-command-proxy")
 package_fleet_sha=$(test_sha256 "$test_root/fake-fleet-telemetry")
 printf '%s\n' \
-    '# teslatlas-linux-sidecars/v1' \
+    '# tesatlas-linux-sidecars/v1' \
     '# architecture tesla-http-proxy-sha256 fleet-telemetry-sha256' \
     "amd64 $package_proxy_sha $package_fleet_sha" \
     "arm64 $package_proxy_sha $package_fleet_sha" \
@@ -905,7 +905,7 @@ run_package() {
             EXPECTED_ADDITIONAL_TERMS="$root/docs/legal/additional-terms.md" \
             EXPECTED_SOURCE_AVAILABILITY="$root/docs/legal/source-availability.md" \
             EXPECTED_RELEASE_VERIFICATION="$root/docs/releases/verification.md" \
-            EXPECTED_TERMINAL_FAILURE_TARGET="$root/packaging/linux/teslatlas-hub-terminal-failure.target" \
+            EXPECTED_TERMINAL_FAILURE_TARGET="$root/packaging/linux/tesatlas-hub-terminal-failure.target" \
             EXPECTED_LEGAL_BUNDLE="$([ "$package_sidecars" = 1 ] && printf %s "$legal_bundle_sidecar" || printf %s "$legal_bundle_base")" \
             EXPECTED_PROXY="$test_root/fake-command-proxy" \
             EXPECTED_FLEET="$test_root/fake-fleet-telemetry" \

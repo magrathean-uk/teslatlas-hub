@@ -1,0 +1,867 @@
+"hub.AppDelegate.103.34" = "表示";
+"hub.AppDelegate.106.35" = "概要";
+"hub.AppDelegate.110.36" = "車両";
+"hub.AppDelegate.114.37" = "アクティビティ";
+"hub.AppDelegate.118.38" = "設定";
+"hub.AppDelegate.12.1" = "Hubが処理を完了するまでお待ちください。";
+"hub.AppDelegate.123.39" = "診断";
+"hub.AppDelegate.128.41" = "アクティビティとログ";
+"hub.AppDelegate.13.2" = "セットアップ、サービス、車両、診断の処理が完了してから終了してください。アプリを終了してもバックグラウンドのHubサービスは停止しません。";
+"hub.AppDelegate.132.43" = "サービスの詳細";
+"hub.AppDelegate.139.45" = "ウインドウ";
+"hub.AppDelegate.14.3" = "OK";
+"hub.AppDelegate.145.46" = "閉じる";
+"hub.AppDelegate.147.48" = "最小化";
+"hub.AppDelegate.148.50" = "拡大／縮小";
+"hub.AppDelegate.151.51" = "ヘルプ";
+"hub.AppDelegate.154.52" = "Tesatlas Hubヘルプ";
+"hub.AppDelegate.227.53" = "ローカルHub開発の設定が拒否されました。";
+"hub.AppDelegate.229.54" = "終了";
+"hub.AppDelegate.332.71" = "「概要」ではHubの状態を一目で確認できます。「車両」には状態と操作コマンドが表示されます。「アクティビティ」には最近のイベントがまとまり、「設定」には接続、診断、インポート、サービスの詳細があります。";
+"hub.AppDelegate.344.73" = "Tesatlas Hub v%1$@";
+"hub.AppDelegate.347.75" = "ライセンスを表示";
+"hub.AppDelegate.349.76" = "対応するソースコード";
+"hub.AppDelegate.44.5" = "Tesatlas Hubについて";
+"hub.AppDelegate.48.6" = "法的情報とライセンス…";
+"hub.AppDelegate.55.7" = "対応するソースコード…";
+"hub.AppDelegate.62.8" = "Tesatlas Hubを隠す";
+"hub.AppDelegate.65.10" = "ほかを隠す";
+"hub.AppDelegate.69.12" = "すべてを表示";
+"hub.AppDelegate.73.13" = "Tesatlas Hubを終了";
+"hub.AppDelegate.79.15" = "編集";
+"hub.AppDelegate.82.16" = "取り消す";
+"hub.AppDelegate.83.19" = "やり直す";
+"hub.AppDelegate.86.22" = "カット";
+"hub.AppDelegate.87.24" = "コピー";
+"hub.AppDelegate.88.26" = "ペースト";
+"hub.AppDelegate.89.28" = "削除";
+"hub.AppDelegate.91.29" = "すべてを選択";
+"hub.AppDelegate.94.31" = "ファイル";
+"hub.AppDelegate.97.32" = "履歴をインポート…";
+"hub.DevelopmentHubRuntime.109.98" = "ローカル開発モードは有効になっていません。4つの開発用パスをすべて設定したうえで、%1$@=1を指定してください。";
+"hub.DevelopmentHubRuntime.115.99" = "%1$@は空でない絶対パスである必要があります。";
+"hub.DevelopmentHubRuntime.119.100" = "%1$@に相対パスの構成要素を含めることはできません。";
+"hub.DevelopmentHubRuntime.128.101" = "%1$@はfixture、standalone、edgeのいずれかである必要があります。";
+"hub.DevelopmentHubRuntime.172.102" = "開発ログディレクトリを安全に開けませんでした：%1$@";
+"hub.DevelopmentHubRuntime.18.82" = "履歴専用の制御ファイルが安全でないか、利用できません。";
+"hub.DevelopmentHubRuntime.182.103" = "準備中に開発ログディレクトリが変更されました：%1$@";
+"hub.DevelopmentHubRuntime.202.106" = "開発ログを安全に開けませんでした：%1$@";
+"hub.DevelopmentHubRuntime.213.107" = "開発ログは現在のユーザーが所有する通常ファイルで、ハードリンク数が1である必要があります：%1$@";
+"hub.DevelopmentHubRuntime.219.108" = "開発ログのアクセス権はサポートされていません：%1$@";
+"hub.DevelopmentHubRuntime.224.109" = "開発ログのアクセス権を修復できませんでした：%1$@";
+"hub.DevelopmentHubRuntime.236.110" = "準備中に開発ログの識別情報が変更されました：%1$@";
+"hub.DevelopmentHubRuntime.248.111" = "開発用サービスは現在のユーザーに属している必要があります。";
+"hub.DevelopmentHubRuntime.256.112" = "開発用サービスの識別情報に安全でないパスが含まれています。";
+"hub.DevelopmentHubRuntime.262.116" = "開発用サービスのラベルが安全ではありません。";
+"hub.DevelopmentHubRuntime.28.83" = "履歴専用の制御ファイルは、所有者のみがアクセスできる通常ファイルである必要があります。";
+"hub.DevelopmentHubRuntime.281.117" = "開発用パスを利用できません：%1$@";
+"hub.DevelopmentHubRuntime.284.118" = "開発用パスは現在のユーザーが所有していません：%1$@";
+"hub.DevelopmentHubRuntime.292.119" = "開発用バイナリは、グループやその他のユーザーが書き込みできない通常の実行ファイルである必要があります：%1$@";
+"hub.DevelopmentHubRuntime.298.120" = "開発用ファイルは通常ファイルで、所有者のみがアクセスできる必要があります：%1$@";
+"hub.DevelopmentHubRuntime.304.121" = "開発用ディレクトリは所有者が所有し、所有者のみがアクセスできる必要があります：%1$@";
+"hub.DevelopmentHubRuntime.323.123" = "開発用パスにシンボリックリンクを含めることはできません：%1$@";
+"hub.DevelopmentHubRuntime.327.124" = "開発用パスの親がディレクトリではありません：%1$@";
+"hub.DevelopmentHubRuntime.330.125" = "開発用パスの親の所有者が想定と異なります：%1$@";
+"hub.DevelopmentHubRuntime.333.126" = "開発用パスの親はグループまたはその他のユーザーが書き込み可能です：%1$@";
+"hub.DevelopmentHubRuntime.39.84" = "履歴専用の制御ファイルを読み取れませんでした。";
+"hub.DevelopmentHubRuntime.44.85" = "履歴専用の制御ファイルの内容が想定と異なります。";
+"hub.DevelopmentHubRuntime.472.142" = "不明なサービス操作です。";
+"hub.DevelopmentHubRuntime.58.86" = "履歴専用の制御ファイルを保存できませんでした。";
+"hub.DevelopmentHubRuntime.692.174" = "開発用Hubの停止が完了しませんでした。";
+"hub.DevelopmentHubRuntime.713.175" = "準備完了の確認期限を過ぎました。";
+"hub.DevelopmentHubRuntime.730.177" = "管理対象のLaunchAgentは読み込まれていますが、想定したバイナリと設定で動作していません。";
+"hub.DevelopmentHubRuntime.737.178" = "状態確認を行う前に、準備完了の確認期限を過ぎました。";
+"hub.DevelopmentHubRuntime.751.181" = "開発用HubがPID %1$@で実行中です。";
+"hub.DevelopmentHubRuntime.757.182" = "想定したプロセスは、2回の準備確認のあいだ安定して動作しませんでした。";
+"hub.DevelopmentHubRuntime.766.183" = "想定したプロセスから無効な状態応答が返されました：%1$@";
+"hub.DevelopmentHubRuntime.774.184" = "想定したプロセスの状態確認に失敗しました：%1$@";
+"hub.DevelopmentHubRuntime.784.185" = "管理対象のLaunchAgentが実行されていません：%1$@";
+"hub.DevelopmentHubRuntime.852.187" = "%1$@。起動に失敗した開発用LaunchAgentをアンロードできませんでした：%2$@";
+"hub.DevelopmentHubRuntime.857.188" = "%1$@で開発用Hubの準備が完了しませんでした。%2$@";
+"hub.DiagnosticsWindowController.149.220" = "画面に表示、コピー、保存されるレポートでは、認証情報と非公開の識別子を伏せています。共有する前に内容を確認してください。";
+"hub.DiagnosticsWindowController.189.224" = "診断を実行して、情報を伏せたレポートを作成してください。";
+"hub.DiagnosticsWindowController.192.225" = "診断レポートはまだ作成されていません。";
+"hub.DiagnosticsWindowController.20.203" = "情報を伏せた未加工レポートを表示";
+"hub.DiagnosticsWindowController.21.204" = "もう一度実行";
+"hub.DiagnosticsWindowController.210.227" = "チェックを実行中…";
+"hub.DiagnosticsWindowController.22.205" = "レポートをコピー";
+"hub.DiagnosticsWindowController.227.230" = "構造化されたチェック結果が返されませんでした。";
+"hub.DiagnosticsWindowController.23.206" = "レポートを保存…";
+"hub.DiagnosticsWindowController.246.232" = "完了したチェック結果を見るには、診断を実行してください。";
+"hub.DiagnosticsWindowController.283.236" = "追加情報はありません。";
+"hub.DiagnosticsWindowController.311.237" = "情報を伏せた未加工レポートを非表示";
+"hub.DiagnosticsWindowController.321.239" = "情報を伏せたレポートをコピーしました。";
+"hub.DiagnosticsWindowController.335.241" = "情報を伏せたレポートを保存しました。";
+"hub.DiagnosticsWindowController.371.242" = "環境診断";
+"hub.DiagnosticsWindowController.371.243" = "実行環境とアクセス権に問題はありません";
+"hub.DiagnosticsWindowController.372.244" = "事前チェック";
+"hub.DiagnosticsWindowController.372.245" = "設定は有効です";
+"hub.DiagnosticsWindowController.373.246" = "サービスの状態";
+"hub.DiagnosticsWindowController.373.247" = "稼働中";
+"hub.DiagnosticsWindowController.374.248" = "データベース";
+"hub.DiagnosticsWindowController.374.249" = "整合性チェックに合格しました";
+"hub.DiagnosticsWindowController.375.250" = "認証情報";
+"hub.DiagnosticsWindowController.375.251" = "Fleetトークンは有効です";
+"hub.DiagnosticsWindowController.376.252" = "接続";
+"hub.DiagnosticsWindowController.376.253" = "Tesla Fleetエンドポイントに到達しました";
+"hub.DiagnosticsWindowController.377.254" = "最近のログ";
+"hub.DiagnosticsWindowController.377.255" = "過去1時間にエラーはありません";
+"hub.DiagnosticsWindowController.70.212" = "Hub、データベース、接続を確認します。";
+"hub.HubController.100.306" = "Hubは稼働中です";
+"hub.HubController.101.307" = "Hubは停止しています";
+"hub.HubController.102.308" = "セットアップが必要です";
+"hub.HubController.103.309" = "対応が必要です";
+"hub.HubController.1151.476" = "Hubサービスの停止が完了しませんでした。";
+"hub.HubController.1161.477" = "サービス";
+"hub.HubController.1161.478" = "LaunchAgentがインストールされ、応答しています";
+"hub.HubController.1162.479" = "Teslaアカウント";
+"hub.HubController.1162.480" = "認証情報は保存済みで有効です";
+"hub.HubController.1163.481" = "車両";
+"hub.HubController.1163.482" = "到達可能な車両は1台です";
+"hub.HubController.1164.484" = "SQLiteスキーマのリビジョンは42です";
+"hub.HubController.1165.486" = "事前チェックに合格しました";
+"hub.HubController.1166.487" = "ログ";
+"hub.HubController.1486.555" = "サインアウトする前に、移行元アプリケーションからの移行の引き継ぎを完了するかキャンセルしてください。";
+"hub.HubController.1504.567" = "切断処理が正常に完了しませんでした。Hubの状態を更新しました。アカウントがまだ接続中か確認してください。%1$@";
+"hub.HubController.1522.568" = "互換性をチェックする前に、確認済みの移行元データベースのスキーマを承認してください。";
+"hub.HubController.1523.569" = "互換性をチェックする前に、移行元アプリケーションが4.4.0以降であることを確認してください。";
+"hub.HubController.1532.570" = "127.0.0.1または::1上のローカルPostgreSQLソースを選択してください。";
+"hub.HubController.1536.571" = "移行元の車両IDは正の数である必要があります。";
+"hub.HubController.1539.572" = "保護されたPostgreSQLパスワードファイルを選択してください。";
+"hub.HubController.1552.580" = "移行元アプリケーションの互換性チェックから有効なレポートが返されませんでした。";
+"hub.HubController.1562.581" = "移行元データベースを確認できませんでした。サーバー接続を確認して、もう一度お試しください。";
+"hub.HubController.1585.586" = "インポートする前に、移行元アプリケーションが4.4.0以降であることを確認してください。";
+"hub.HubController.1591.587" = "サインインには、開いているデータ収集ウィンドウが必要です。ウィンドウを開いてから、もう一度サインインしてください。";
+"hub.HubController.1718.615" = "移行元アプリケーションのインポートから有効な完了レポートが返されませんでした。Hubは停止したままです。";
+"hub.HubController.1742.624" = "インポートは完了しましたが、安全な引き継ぎ条件を記録できませんでした：%1$@。Hubは停止したままです。";
+"hub.HubController.1846.655" = "PostgreSQLソースから直接インポートする前に、移行元アプリケーションが4.4.0以降であることを確認してください。";
+"hub.HubController.1865.658" = "PostgreSQLソースには、postgresまたはpostgresqlのスキーム、ホスト、データベース名が必要です。";
+"hub.HubController.1869.659" = "PostgreSQLソースにパスワードを含めないでください。パスワードファイル欄を使用してください。";
+"hub.HubController.1966.689" = "Fleetの設定に失敗しました：%1$@ Hub設定の復旧にも失敗しました：%2$@";
+"hub.HubController.2051.701" = "Fleetの設定に失敗しました：%1$@ Hubの再起動にも失敗しました：%2$@";
+"hub.HubController.2096.708" = "Fleet認証情報が不足しているか、無効です。";
+"hub.HubController.2107.714" = "Fleet認証情報をエンコードできませんでした。";
+"hub.HubController.2200.747" = "Teslaの設定に失敗しました：%1$@ Hub設定の復旧にも失敗しました：%2$@";
+"hub.HubController.2268.756" = "%1$@：%2$@ Hub設定の復旧にも失敗しました：%3$@";
+"hub.HubController.2282.759" = "%1$@：%2$@ Hubの再起動にも失敗しました：%3$@";
+"hub.HubController.2292.760" = "Teslaの設定に失敗しました";
+"hub.HubController.2341.768" = "Teslaログイン認証情報をエンコードできませんでした。";
+"hub.HubController.2346.772" = "Tesla車両IDは正の数である必要があります。";
+"hub.HubController.2374.779" = "Teslaのプロバイダー切り替え結果は未確認です。Hubは停止したままです。再試行する前に診断を実行してください。%1$@";
+"hub.HubController.2385.784" = "移行元アプリケーションでTeslaに再度サインインしてから、インポートを再試行してください。";
+"hub.HubController.2389.785" = "移行元アプリケーションのインポートに失敗しました。インポートを再試行してください。";
+"hub.HubController.2457.838" = "Hubを起動する前に、移行元アプリケーションの引き継ぎを完了してください。";
+"hub.HubController.2479.850" = "Hubを再起動する前に、移行元アプリケーションの引き継ぎを完了してください。";
+"hub.HubController.250.318" = "オーナーとしてサインイン";
+"hub.HubController.2503.863" = "Hubはすでに起動処理中です。";
+"hub.HubController.251.319" = "Fleet API";
+"hub.HubController.2519.869" = "Hubを起動する前に、移行チェックを完了してください。";
+"hub.HubController.2610.896" = "Hubを起動できませんでした：%1$@ コレクターの一時停止状態を復元できませんでした：%2$@";
+"hub.HubController.2678.902" = "起動期限までにHubの準備が完了しませんでした。";
+"hub.HubController.2689.905" = "Hubの準備状態を読み取れませんでした。";
+"hub.HubController.2698.907" = "Hubの準備状態が無効です。";
+"hub.HubController.2717.908" = "Hubの準備状態に有効なコレクターレンタルが含まれていません。";
+"hub.HubController.2798.927" = "移行の引き継ぎゲートを解除できなかったため、Hubを停止しました：%1$@";
+"hub.HubController.2832.942" = "Hubの準備が完了せず、停止しました。移行の引き継ぎは保留中です。";
+"hub.HubController.2834.943" = "Hubの起動に失敗したため停止しましたが、コレクターの一時停止状態を復元できませんでした。移行元アプリケーションを無効のままにして、もう一度お試しください。";
+"hub.HubController.2836.944" = "Hubの準備が完了せず、停止したことも確認できませんでした。移行元アプリケーションを無効のままにし、Hubを停止してから、もう一度お試しください。";
+"hub.HubController.2905.957" = "Hub";
+"hub.HubController.2905.958" = "履歴の確認のため停止中";
+"hub.HubController.2906.959" = "署名済み履歴";
+"hub.HubController.2906.960" = "公開済みで準備完了";
+"hub.HubController.2906.961" = "準備未完了";
+"hub.HubController.2907.962" = "データ収集";
+"hub.HubController.2907.963" = "無効";
+"hub.HubController.2907.964" = "ローカルHubの設定を確認してください";
+"hub.HubController.2908.966" = "未接続です。履歴はオフラインで利用できます";
+"hub.HubController.2932.967" = "インストール済みで安全に停止しています";
+"hub.HubController.2943.972" = "稼働準備チェックに合格しました。完全な整合性チェックは「診断」で実行できます。";
+"hub.HubController.2944.973" = "Hubはまだ準備できていません。少し待ってから、もう一度実行してください。";
+"hub.HubController.2953.976" = "ログはまだありません";
+"hub.HubController.2953.977" = "停止中のサービスログはありません";
+"hub.HubController.2954.978" = "利用不可";
+"hub.HubController.2954.979" = "読み取り可能";
+"hub.HubController.3010.1006" = "失敗";
+"hub.HubController.3026.1019" = "車両コマンドを送信する前に、Hubを稼働させてください。";
+"hub.HubController.3032.1027" = "車両コマンドを送信する前に、Teslaに接続してください。";
+"hub.HubController.3040.1034" = "車両操作にはTesla Fleet APIが必要です。";
+"hub.HubController.3047.1041" = "コマンドを送信する前に、車両を選択してください。";
+"hub.HubController.3053.1048" = "選択した車両は設定されていません。";
+"hub.HubController.314.326" = "車両を起こす";
+"hub.HubController.315.327" = "空調を開始";
+"hub.HubController.316.328" = "空調を停止";
+"hub.HubController.317.329" = "ドアをロック";
+"hub.HubController.318.330" = "ドアをロック解除";
+"hub.HubController.319.331" = "ライトを点滅";
+"hub.HubController.320.332" = "クラクションを鳴らす";
+"hub.HubController.326.333" = "車両がスリープから復帰したことを確認してください。";
+"hub.HubController.327.334" = "空調の状態が変わったことを車両で確認してください。";
+"hub.HubController.328.335" = "ドアの状態が変わったことを車両で確認してください。";
+"hub.HubController.329.336" = "ライト点滅コマンドが受け付けられました。";
+"hub.HubController.330.337" = "クラクションを鳴らすコマンドが受け付けられました。";
+"hub.HubController.3323.1158" = "履歴専用Hubの設定または公開済み履歴の準備ができていません。データ収集を無効のままにして、もう一度検証してください。";
+"hub.HubController.342.338" = "最新";
+"hub.HubController.343.339" = "キャッシュ済み";
+"hub.HubController.3430.1177" = "Hub設定が通常ファイルではありません。";
+"hub.HubController.344.340" = "不明";
+"hub.HubController.3441.1179" = "Hub設定のサイズが大きすぎます。";
+"hub.HubController.3452.1180" = "Hub設定を読み取れませんでした。";
+"hub.HubController.3460.1182" = "Hub設定はUTF-8テキストである必要があります。";
+"hub.HubController.3527.1187" = "置き換えられた設定パスの削除を、Hub設定の復旧処理が拒否しました。";
+"hub.HubController.3543.1188" = "移行の安全マーカーが残っているため、Hubを停止したままにしてください。";
+"hub.HubController.3544.1189" = "設定を修復するまで、Hubを停止したままにしてください。";
+"hub.HubController.3546.1190" = "移行元アプリケーションのインポートに失敗しました：%1$@ 設定の復旧にも失敗しました：%2$@ %3$@";
+"hub.HubController.3752.1247" = "最終観測：%1$@";
+"hub.HubController.3754.1249" = "観測データはまだありません";
+"hub.HubController.3787.1262" = "正常 · %1$@ MB";
+"hub.HubController.3789.1265" = "インストール済み・稼働中";
+"hub.HubController.3789.1266" = "インストール済み・対応が必要";
+"hub.HubController.3807.1275" = "履歴を利用できます・Tesla未接続";
+"hub.HubController.3846.1290" = "インストール済み・停止中";
+"hub.HubController.3849.1291" = "インストール済み・サービス状態を取得できません";
+"hub.HubController.3858.1293" = "インストール済み・バージョン不一致";
+"hub.HubController.3877.1301" = "開発用Hubは稼働中";
+"hub.HubController.3878.1303" = "開発用Hubは停止中";
+"hub.HubController.3879.1305" = "開発用Hub・対応が必要";
+"hub.HubController.3880.1307" = "開発用Hub・サービス状態を取得できません";
+"hub.HubController.3881.1309" = "開発用Hub・バージョン不一致";
+"hub.HubController.3882.1310" = "インストール済み・状態を取得できません";
+"hub.HubController.3882.1311" = "開発用Hub・状態を取得できません";
+"hub.HubController.389.342" = "%1$@・%2$@";
+"hub.HubController.3905.1332" = "たった今";
+"hub.HubController.393.343" = "未設定";
+"hub.HubController.394.344" = "セットアップまたはインポート待ち";
+"hub.HubController.441.368" = "未インストール";
+"hub.HubController.445.371" = "設定済みの車両はありません";
+"hub.HubController.452.374" = "Hubの設定もインストールも完了していません。";
+"hub.HubController.467.375" = "プレビューモードは読み取り専用です。プロセスの起動、インストーラーの実行、launchctlの操作は行っていません。";
+"hub.HubController.469.376" = "埋め込みリソースが見つかりません：%1$@";
+"hub.HubController.477.378" = "Hubコマンドがタイムアウトしました。";
+"hub.HubController.775.379" = "Hubコマンドの出力が終了しませんでした。";
+"hub.HubController.781.380" = "Hubコマンドの出力を読み取れませんでした。";
+"hub.HubController.791.381" = "Hubコマンドに失敗しました。";
+"hub.HubController.connected_state" = "接続済み";
+"hub.HubDashboardView.101.1357" = "Hubサービス";
+"hub.HubDashboardView.105.1361" = "ローカルデータベース";
+"hub.HubDashboardView.119.1362" = "Hubを起動";
+"hub.HubDashboardView.12.1336" = "Hubを起動中…";
+"hub.HubDashboardView.13.1337" = "Hubを停止中…";
+"hub.HubDashboardView.14.1338" = "Hubを再起動中…";
+"hub.HubDashboardView.166.1366" = "最近のアクティビティ";
+"hub.HubDashboardView.192.1369" = "データフォルダ";
+"hub.HubDashboardView.20.1339" = "車両データの収集を準備しています。";
+"hub.HubDashboardView.201.1372" = "データはこのMac内にとどまります。";
+"hub.HubDashboardView.21.1340" = "現在の処理を完了して、安全に停止しています。";
+"hub.HubDashboardView.22.1341" = "バックグラウンドサービスを再起動しています。";
+"hub.HubDashboardView.279.1374" = "Tesatlas Hub %1$@";
+"hub.HubDashboardView.28.1342" = "起動中…";
+"hub.HubDashboardView.29.1343" = "停止中…";
+"hub.HubDashboardView.30.1344" = "再起動中…";
+"hub.HubDashboardView.36.1345" = "Hubを起動しました。";
+"hub.HubDashboardView.37.1346" = "Hubを停止しました。";
+"hub.HubDashboardView.38.1347" = "Hubを再起動しました。";
+"hub.HubDashboardView.399.1383" = "最近のアプリ操作はありません。データ収集の動作は「ログ」を確認してください。";
+"hub.HubDashboardView.430.1384" = "車両はまだありません";
+"hub.HubDashboardView.431.1385" = "ここに車両を表示するには、Teslaアカウントを接続してください。";
+"hub.HubDashboardView.514.1389" = "Hubはバックグラウンドで動作します。このウインドウは閉じてもかまいません。";
+"hub.HubDashboardView.515.1390" = "車両データは収集されていません。";
+"hub.HubDashboardView.516.1391" = "HubからTeslaへの接続方法を選択してください。";
+"hub.HubDashboardView.517.1392" = "詳しくは診断を開いてください。";
+"hub.HubDashboardView.96.1352" = "Hubを停止…";
+"hub.HubDashboardView.97.1353" = "Hubを再起動";
+"hub.HubDashboardView.98.1354" = "Hubをセットアップ";
+"hub.HubDashboardView.99.1355" = "診断を実行";
+"hub.HubDiagnosticsPresentation.51.1418" = "詳細表示に構造化レポートがあります。";
+"hub.HubDiagnosticsPresentation.58.1427" = "%1$@：%2$@";
+"hub.HubDiagnosticsPresentation.81.1444" = "サービスの一時停止";
+"hub.HubDiagnosticsPresentation.82.1446" = "サービス状態の確認";
+"hub.HubDiagnosticsPresentation.83.1448" = "サービスの再開";
+"hub.HubDiagnosticsPresentation.84.1450" = "サポート用メタデータ";
+"hub.HubDiagnosticsPresentation.boolean_no" = "いいえ";
+"hub.HubDiagnosticsPresentation.boolean_yes" = "はい";
+"hub.HubDiagnosticsPresentation.compatible_label" = "互換";
+"hub.HubDiagnosticsPresentation.message_label" = "メッセージ";
+"hub.HubDiagnosticsPresentation.preflight_label" = "事前チェック";
+"hub.HubDiagnosticsPresentation.ready_label" = "準備完了";
+"hub.HubDiagnosticsPresentation.status_label" = "状態";
+"hub.HubNavigationBar.346.1478" = "このMac上のHubの最近のイベント。";
+"hub.HubNavigationBar.349.1479" = "アクティビティを検索";
+"hub.HubNavigationBar.354.1480" = "ログを開く…";
+"hub.HubNavigationBar.378.1483" = "最近";
+"hub.HubNavigationBar.385.1485" = "機微な値はログから伏せられています。";
+"hub.HubNavigationBar.418.1488" = "最近のアクティビティはありません";
+"hub.HubNavigationBar.418.1489" = "一致するイベントはありません";
+"hub.HubNavigationBar.419.1490" = "イベントは発生するとここに表示されます。";
+"hub.HubNavigationBar.419.1491" = "別の検索語をお試しください。";
+"hub.HubNavigationBar.454.1496" = "このHubと接続を管理します。";
+"hub.HubNavigationBar.463.1502" = "履歴をインポート";
+"hub.HubNavigationBar.464.1503" = "既存の車両履歴をインポートします。";
+"hub.HubNavigationBar.467.1505" = "接続とデータ";
+"hub.HubNavigationBar.469.1507" = "バックグラウンドサービス";
+"hub.HubNavigationBar.473.1510" = "システムの状態とログを確認します。";
+"hub.HubNavigationBar.475.1511" = "このMac";
+"hub.HubNavigationBar.481.1516" = "バージョン%1$@";
+"hub.HubNavigationBar.53.1462" = "%1$@を表示";
+"hub.HubNavigationBar.appearance_label" = "外観";
+"hub.HubNavigationBar.navigation_label" = "ナビゲーション";
+"hub.HubNavigationBar.setup_label" = "セットアップ";
+"hub.HubPresentationState.69.1522" = "Hubのセットアップと起動が完了しました";
+"hub.HubPresentationState.70.1523" = "履歴をインポートしました";
+"hub.HubPresentationState.71.1524" = "Hubサービスを起動しました";
+"hub.HubPresentationState.72.1525" = "Hubサービスを停止しました";
+"hub.HubPresentationState.73.1526" = "Hubサービスを再起動しました";
+"hub.HubPresentationState.74.1527" = "現在は%1$@を使用中";
+"hub.HubPresentationState.75.1528" = "Teslaアカウントを切断しました";
+"hub.HubPresentationState.77.1529" = "%2$@に対する%1$@コマンドが受け付けられました";
+"hub.HubUtilityWindow.107.1609" = "Tesatlas Hub";
+"hub.HubUtilityWindow.24.1603" = "戻る";
+"hub.HubVehicleViews.102.1640" = "車内空調を開始または停止";
+"hub.HubVehicleViews.103.1642" = "車両をロックまたはロック解除";
+"hub.HubVehicleViews.104.1643" = "車両を起こす、ライトを点滅させる、またはクラクションを鳴らす";
+"hub.HubVehicleViews.106.1645" = "その他のコマンド";
+"hub.HubVehicleViews.128.1647" = "車両操作";
+"hub.HubVehicleViews.205.1653" = "不明";
+"hub.HubVehicleViews.28.1622" = "保存済みテレメトリが最新、キャッシュ済み、または不明のいずれかを示します";
+"hub.HubVehicleViews.31.1623" = "HubがFleet Telemetry経由で接続している場合に車両コマンドを利用できます。";
+"hub.HubVehicleViews.376.1673" = "設定済みの車両はありません";
+"hub.HubVehicleViews.410.1679" = "コマンドは送信前に必ず確認を求めます。";
+"hub.HubVehicleViews.469.1683" = "設定済みの車両";
+"hub.HubVehicleViews.500.1685" = "ここに車両を表示するには、Teslaアカウントを接続してHubを起動してください。";
+"hub.HubVehicleViews.access_group" = "アクセス";
+"hub.HubVehicleViews.battery_label" = "バッテリー";
+"hub.HubVehicleViews.climate_group" = "空調";
+"hub.HubVehicleViews.location_label" = "場所";
+"hub.HubVehicleViews.state_label" = "状態";
+"hub.HubVehicleViews.telemetry_label" = "テレメトリ";
+"hub.ImportSheetController.110.1702" = "選択…";
+"hub.ImportSheetController.111.1704" = "インポート";
+"hub.ImportSheetController.112.1706" = "キャンセル";
+"hub.ImportSheetController.148.1709" = "すべての項目を入力してください";
+"hub.ImportSheetController.149.1710" = "ソース、車両ID、パスワードファイルが必要です。";
+"hub.ImportSheetController.156.1711" = "移行元アプリケーションのバージョンを確認";
+"hub.ImportSheetController.17.1690" = "このデータベースが移行元アプリケーション 4.4.0以降のものであることを確認します";
+"hub.ImportSheetController.26.1691" = "履歴をインポート";
+"hub.ImportSheetController.49.1693" = "移行元のPostgreSQLデータベースからTesatlas Hubにデータをコピーします。";
+"hub.ImportSheetController.64.1694" = "PostgreSQLソース";
+"hub.ImportSheetController.65.1695" = "車両ID";
+"hub.ImportSheetController.69.1697" = "パスワードファイル";
+"hub.ImportSheetController.7.1687" = "Hubは移行元アプリケーションを停止したりデータを変更したりせずに、移行元データベースを読み取ります。インポート後はHubの案内に従い、移行元アプリケーションでTeslaへのアクセスを自分で無効にしてください。";
+"hub.ImportSheetController.73.1699" = "Hubが実行されていません。Hubを起動し、データ収集ウィンドウを開いてから、サインインしてください。";
+"hub.ImportSheetController.9.1688" = "インポート前に移行元アプリケーションをバックアップし、バージョン4.4.0以降に更新して、一度起動し、データベースの移行が完了するまで待ってください。データベースへ直接接続しても、実行中のアプリのバージョンは確認できません。";
+"hub.LogsWindowController.113.1730" = "その他のログ操作";
+"hub.LogsWindowController.123.1732" = "表示、コピー、保存されるログでは、認証情報と非公開の識別子を伏せています。共有する前に内容を確認してください。";
+"hub.LogsWindowController.17.1712" = "ログを読み込み中…";
+"hub.LogsWindowController.175.1743" = "ファイルはたった今読み取りました・ログの記録時刻は過去の可能性があります";
+"hub.LogsWindowController.18.1713" = "ログ操作";
+"hub.LogsWindowController.19.1714" = "その他";
+"hub.LogsWindowController.20.1715" = "更新";
+"hub.LogsWindowController.208.1750" = "診断を実行中…";
+"hub.LogsWindowController.211.1753" = "データベース、認証情報、接続、サービスをチェックしています…";
+"hub.LogsWindowController.23.1718" = "保存…";
+"hub.LogsWindowController.235.1757" = "伏せ字処理済みのログをコピーしました";
+"hub.LogsWindowController.250.1759" = "伏せ字処理済みのログを保存しました";
+"hub.LogsWindowController.286.1764" = "診断で問題が見つかりました";
+"hub.LogsWindowController.286.1765" = "診断が完了しました";
+"hub.LogsWindowController.49.1721" = "プレビュー用サンプル";
+"hub.LogsWindowController.70.1725" = "伏せ字処理済みのHubとアプリケーションのログを確認します。";
+"hub.MainWindowController.1152.1840" = "Fleet APIを使用";
+"hub.MainWindowController.1153.1841" = "オーナーとしてのサインインを使用";
+"hub.MainWindowController.1154.1842" = "履歴をインポート…";
+"hub.MainWindowController.1156.1843" = "Teslaを切断…";
+"hub.MainWindowController.1158.1844" = "Teslaアカウントを接続…";
+"hub.MainWindowController.1428.1846" = "HubからTeslaを切断しますか？";
+"hub.MainWindowController.1429.1847" = "Hubを停止し、保存済みのFleetおよびオーナーとしてのサインインの認証情報を削除します。収集済みデータはこのMac内に残ります。";
+"hub.MainWindowController.1431.1849" = "切断";
+"hub.MainWindowController.15.1766" = "車両";
+"hub.MainWindowController.22.1768" = "Hubを停止";
+"hub.MainWindowController.23.1769" = "再起動";
+"hub.MainWindowController.26.1772" = "Teslaに接続";
+"hub.MainWindowController.27.1773" = "インポート";
+"hub.MainWindowController.441.1792" = "Teslaを管理";
+"hub.MainWindowController.710.1816" = "車両データの収集を停止しますか？";
+"hub.MainWindowController.711.1817" = "Hubの動作が停止します。既存の履歴はそのまま保たれ、いつでもHubを再起動できます。";
+"hub.MainWindowController.800.1821" = "「%1$@」に失敗しました：%2$@";
+"hub.MainWindowController.849.1824" = "Hubの%1$@処理が完了しませんでした。現在の状態を表示しています。詳しくは診断を開いてください。";
+"hub.MainWindowController.894.1825" = "「%2$@」に対して「%1$@」を実行しますか？";
+"hub.MainWindowController.895.1826" = "Tesatlas Hubはこのコマンドを1回送信します。";
+"hub.MainWindowController.913.1830" = "コマンドの結果を確認できません";
+"hub.MainWindowController.914.1831" = "車両を確認してください。このアプリのセッション中はコマンドを再送しないでください。";
+"hub.MainWindowController.960.1835" = "コマンドが受け付けられました";
+"hub.OnboardingWindowController.1016.2012" = "車両履歴をHubにコピーしています。";
+"hub.OnboardingWindowController.1070.2015" = "• %1$@";
+"hub.OnboardingWindowController.1082.2016" = "別のキーを選択…";
+"hub.OnboardingWindowController.1085.2017" = "パスワードを使用";
+"hub.OnboardingWindowController.1088.2018" = "SSHキーを使用";
+"hub.OnboardingWindowController.1091.2019" = "ログを開く";
+"hub.OnboardingWindowController.1096.2020" = "詳細をコピー";
+"hub.OnboardingWindowController.1165.2025" = "合格";
+"hub.OnboardingWindowController.1165.2026" = "失敗";
+"hub.OnboardingWindowController.1198.2028" = "データ収集は無効のままで、このHubはインポートした履歴のみを提供することを理解しました";
+"hub.OnboardingWindowController.1199.2029" = "重複リクエストを防ぐため、移行元アプリケーションでTeslaへのアクセスを無効にしました";
+"hub.OnboardingWindowController.1250.2034" = "Hubのセットアップを実行中です";
+"hub.OnboardingWindowController.1251.2035" = "ログを表示";
+"hub.OnboardingWindowController.1323.2037" = "接続中…";
+"hub.OnboardingWindowController.1324.2038" = "移行元アプリケーションに安全に接続しています";
+"hub.OnboardingWindowController.1354.2041" = "開始";
+"hub.OnboardingWindowController.1355.2042" = "Fleetをセットアップ";
+"hub.OnboardingWindowController.1359.2044" = "履歴をインポート";
+"hub.OnboardingWindowController.1359.2045" = "スナップショットを確認";
+"hub.OnboardingWindowController.1362.2046" = "データをインポート";
+"hub.OnboardingWindowController.1362.2047" = "サーバーに接続";
+"hub.OnboardingWindowController.1471.2059" = "FleetのクライアントID、トークン、リージョン、有効期限をすべて入力してください。";
+"hub.OnboardingWindowController.1631.2105" = "移行元アプリケーションのサーバー、SSHユーザー、ポートを入力してください。";
+"hub.OnboardingWindowController.168.1852" = "続ける";
+"hub.OnboardingWindowController.1691.2113" = "スキーマの確認だけでは、移行元アプリケーションのリリースを特定できません。実行中のサーバーがリリース4.4.0以降であることを確認してから、続けてください。";
+"hub.OnboardingWindowController.1740.2131" = "インポートする前に移行元アプリケーションのサーバーへ接続してください。";
+"hub.OnboardingWindowController.1750.2137" = "サーバー設定が変更されました。インポートする前に移行元アプリケーションのサーバーへ再接続してください。";
+"hub.OnboardingWindowController.1820.2143" = "1つ以上のチェックで対応が必要です。";
+"hub.OnboardingWindowController.195.1856" = "Dockerへのアクセスにパスワードなしのsudoを使用";
+"hub.OnboardingWindowController.1980.2147" = "SSHキーを選択";
+"hub.OnboardingWindowController.1981.2148" = "キーを選択";
+"hub.OnboardingWindowController.200.1857" = "ローカルPostgreSQLスナップショットを使用（履歴専用）";
+"hub.OnboardingWindowController.203.1858" = "このサーバーで移行元アプリケーション 4.4.0以降が実行されていることを確認します";
+"hub.OnboardingWindowController.252.1859" = "前回のインポートは完了しませんでした。移行元アプリケーションを確認して、インポートをもう一度実行してください。";
+"hub.OnboardingWindowController.292.1862" = "インポートの準備ができました。";
+"hub.OnboardingWindowController.298.1866" = "移行元アプリケーションへの接続に失敗しました";
+"hub.OnboardingWindowController.299.1867" = "このアカウントにはDockerへのアクセス権がありません。";
+"hub.OnboardingWindowController.300.1868" = "サーバーアカウントとDockerへのアクセス権を確認して、もう一度お試しください。";
+"hub.OnboardingWindowController.304.1870" = "データをインポート中…";
+"hub.OnboardingWindowController.437.1892" = "ヨーロッパ・中東・アフリカ";
+"hub.OnboardingWindowController.438.1893" = "北米・アジア太平洋";
+"hub.OnboardingWindowController.441.1895" = "SSHキー";
+"hub.OnboardingWindowController.446.1897" = "このユーザーには移行元データベースの読み取りにsudoが必要です";
+"hub.OnboardingWindowController.474.1900" = "アクセストークン";
+"hub.OnboardingWindowController.475.1901" = "パスワードを含めないローカルPostgreSQL URL";
+"hub.OnboardingWindowController.477.1903" = "所有者のみがアクセスできるPostgreSQLパスワードファイル";
+"hub.OnboardingWindowController.481.1904" = "リフレッシュトークン";
+"hub.OnboardingWindowController.482.1905" = "TeslaアプリケーションのクライアントID";
+"hub.OnboardingWindowController.486.1909" = "省略可 — SSHエージェントまたはデフォルトのキーを使用";
+"hub.OnboardingWindowController.487.1910" = "SSHパスワード";
+"hub.OnboardingWindowController.558.1914" = "Hubをセットアップ中…";
+"hub.OnboardingWindowController.573.1916" = "接続を保存してHubを準備しています。";
+"hub.OnboardingWindowController.588.1917" = "Tesatlas Hubへようこそ";
+"hub.OnboardingWindowController.589.1918" = "どの方法で開始しますか？";
+"hub.OnboardingWindowController.590.1919" = "Hubの接続方法を選択";
+"hub.OnboardingWindowController.591.1920" = "Fleet Telemetryをセットアップ";
+"hub.OnboardingWindowController.592.1921" = "Teslaでサインイン";
+"hub.OnboardingWindowController.593.1922" = "履歴をインポート…";
+"hub.OnboardingWindowController.594.1923" = "Hubを確認中";
+"hub.OnboardingWindowController.595.1924" = "移行が完了しました";
+"hub.OnboardingWindowController.595.1925" = "Tesatlas Hubの準備ができました";
+"hub.OnboardingWindowController.602.1926" = "このMac上で非公開に稼働する、あなた専用のTeslaテレメトリー収集サービスです。";
+"hub.OnboardingWindowController.604.1927" = "新しいHubをセットアップするか、移行元アプリケーションから履歴を移行してください。";
+"hub.OnboardingWindowController.606.1928" = "はじめに、Teslaのオーナーアカウントでサインインしてください。ご希望であればFleet Telemetryも利用できます。";
+"hub.OnboardingWindowController.608.1929" = "Tesla Fleetアプリケーションを作成し、その認証情報を下に貼り付けてください。";
+"hub.OnboardingWindowController.612.1931" = "車両履歴をインポートするには、移行元アプリケーションのサーバーに接続してください。";
+"hub.OnboardingWindowController.614.1932" = "すべてが正しく設定されていることを確認しています。";
+"hub.OnboardingWindowController.617.1933" = "車両履歴がHubにインポートされました。";
+"hub.OnboardingWindowController.618.1934" = "Hubのセットアップが完了し、車両データの収集を開始できる状態です。";
+"hub.OnboardingWindowController.687.1943" = "Teslaに接続";
+"hub.OnboardingWindowController.688.1944" = "バックグラウンドで車両データを収集します。";
+"hub.OnboardingWindowController.689.1946" = "履歴をここに保存";
+"hub.OnboardingWindowController.690.1947" = "データをこのMacにローカル保存します。";
+"hub.OnboardingWindowController.691.1949" = "既存の履歴を移行";
+"hub.OnboardingWindowController.692.1950" = "準備ができたら移行元アプリケーションからインポートしてください。";
+"hub.OnboardingWindowController.736.1952" = "新規インストール";
+"hub.OnboardingWindowController.737.1953" = "新しいデータベースで開始します。";
+"hub.OnboardingWindowController.741.1955" = "既存の車両履歴を移行します。";
+"hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
+"hub.OnboardingWindowController.752.1958" = "オーナーとしてサインイン";
+"hub.OnboardingWindowController.753.1959" = "Teslaでサインインしてください。Hubは独自のログインを保持します。";
+"hub.OnboardingWindowController.760.1960" = "Tesla Fleetアプリを作成";
+"hub.OnboardingWindowController.771.1964" = "クライアントID";
+"hub.OnboardingWindowController.774.1967" = "有効期限";
+"hub.OnboardingWindowController.776.1968" = "認証情報はこのMac上で暗号化されます";
+"hub.OnboardingWindowController.790.1972" = "サインインはまだ利用できません。このHubにはOwner APIのサインイン値がありません。何も変更されていません。";
+"hub.OnboardingWindowController.822.1978" = "ポート";
+"hub.OnboardingWindowController.832.1980" = "SSHユーザー";
+"hub.OnboardingWindowController.836.1982" = "キーを選択…";
+"hub.OnboardingWindowController.888.1990" = "履歴専用です。HubはTesla認証情報を確認もインポートもしません。データ収集は停止したままです。データベーススキーマは確認できますが、移行元アプリケーションのバージョンは不明のままです。";
+"hub.OnboardingWindowController.891.1991" = "ローカルPostgreSQLソース";
+"hub.OnboardingWindowController.915.1997" = "移行元アプリケーション %1$@";
+"hub.OnboardingWindowController.927.2001" = "確認中…";
+"hub.OnboardingWindowController.935.2004" = "サーバーを変更";
+"hub.OnboardingWindowController.983.2008" = "%1$@に接続しました";
+"hub.OnboardingWindowController.985.2009" = "インポート可能な移行元データベースが見つかりました。";
+"hub.OnboardingWindowController.authentication_label" = "認証";
+"hub.OnboardingWindowController.busy_checking_compatibility" = "互換性を確認中…";
+"hub.OnboardingWindowController.china_region" = "中国";
+"hub.OnboardingWindowController.password_label" = "パスワード";
+"hub.OnboardingWindowController.region_label" = "リージョン";
+"hub.OnboardingWindowController.seconds_unit" = "秒";
+"hub.OnboardingWindowController.server_label" = "サーバー";
+"hub.ServiceDetailsWindowController.104.2180" = "サービスの詳細";
+"hub.ServiceDetailsWindowController.105.2181" = "ローカルHubサービスの状態を確認し、管理します。";
+"hub.ServiceDetailsWindowController.113.2182" = "バージョン";
+"hub.ServiceDetailsWindowController.114.2184" = "サービス";
+"hub.ServiceDetailsWindowController.114.2185" = "稼働中";
+"hub.ServiceDetailsWindowController.115.2186" = "プロバイダー";
+"hub.ServiceDetailsWindowController.118.2190" = "データフォルダ";
+"hub.ServiceDetailsWindowController.121.2191" = "利用できません";
+"hub.ServiceDetailsWindowController.177.2193" = "サービス操作";
+"hub.ServiceDetailsWindowController.38.2169" = "Hubとデータを削除…";
+"hub.ServiceDetailsWindowController.456.2214" = "バックグラウンドのデータ収集サービスは停止しています。収集を再開するには起動してください。";
+"hub.ServiceDetailsWindowController.463.2218" = "バックグラウンドのデータ収集サービスはこのMacで稼働中です。";
+"hub.ServiceDetailsWindowController.471.2222" = "Hubに対応が必要です。診断を確認してから再起動してください。";
+"hub.ServiceDetailsWindowController.479.2226" = "サービス操作を使う前にHubをセットアップしてください。";
+"hub.ServiceDetailsWindowController.490.2228" = "Hubのデータを完全に削除しますか？";
+"hub.ServiceDetailsWindowController.491.2229" = "Hubのデータベースと設定を削除します。この操作は取り消せません。";
+"hub.TeslaAuthWindowController.296.2280" = "Teslaアカウントに接続";
+"hub.TeslaAuthWindowController.30.2235" = "Teslaのログインがキャンセルされました。";
+"hub.TeslaAuthWindowController.31.2236" = "Teslaログイン用の安全なstateを生成できませんでした。";
+"hub.TeslaAuthWindowController.32.2237" = "Tesla認証URLを作成できませんでした。";
+"hub.TeslaAuthWindowController.33.2238" = "Teslaから返されたログインコールバックが不完全です。";
+"hub.TeslaAuthWindowController.34.2239" = "Teslaログインのstateが一致しません。ログインをやり直してください。";
+"hub.TeslaAuthWindowController.35.2240" = "Teslaから無効な発行者情報が返されました。";
+"hub.TeslaAuthWindowController.358.html_progress" = "Teslaの安全なログインを完了しています…";
+"hub.SourceServerImporter.34.2284" = "コード：%1$@";
+"hub.SourceServerImporter.428.2461" = "移行元アプリケーションのサーバーから不完全なセットアップ情報が返されました。";
+"hub.SourceServerImporter.691.2530" = "サーバーの詳細を確認してください";
+"hub.SourceServerImporter.692.2531" = "有効なサーバー、SSHユーザー、ポートを入力してください。";
+"hub.SourceServerImporter.693.2532" = "サーバー名、IPアドレス、SSH設定のエイリアスを使用できます。";
+"hub.SourceServerImporter.695.2534" = "使用可能な秘密鍵を選択してください";
+"hub.SourceServerImporter.696.2535" = "選択したSSHキーをHubで安全に使用できませんでした。";
+"hub.SourceServerImporter.697.2536" = "このMacユーザーが所有する秘密鍵を選択してください。";
+"hub.SourceServerImporter.697.2537" = ".pubファイルは選択しないでください。";
+"hub.SourceServerImporter.699.2539" = "SSHパスワードを入力してください";
+"hub.SourceServerImporter.700.2540" = "パスワード認証が選択されていますが、パスワードが入力されていません。";
+"hub.SourceServerImporter.701.2541" = "サーバーアカウントのパスワードを入力するか、SSH設定、エージェント、またはキー認証を使用してください。";
+"hub.SourceServerImporter.703.2544" = "SSH認証に失敗しました";
+"hub.SourceServerImporter.704.2545" = "選択したアカウントまたは認証方法がサーバーに受け付けられませんでした。";
+"hub.SourceServerImporter.706.2546" = "キー欄を空のままにすると、~/.ssh/config、ssh-agent、標準のキーが使われます。";
+"hub.SourceServerImporter.707.2547" = "ターミナルで使用できる秘密鍵を選択するか、「パスワード」に切り替えてください。";
+"hub.SourceServerImporter.708.2548" = "アカウントのパスワードを確認するか、SSH設定、エージェント、またはキー認証に切り替えてください。";
+"hub.SourceServerImporter.710.2550" = "サーバーIDの確認が必要です";
+"hub.SourceServerImporter.711.2551" = "OpenSSHがサーバーIDを拒否しました。";
+"hub.SourceServerImporter.712.2552" = "信頼できる経路でサーバーのフィンガープリントを確認してから、~/.ssh/known_hostsのエントリーを追加または更新してください。";
+"hub.SourceServerImporter.714.2554" = "SSH接続が拒否されました";
+"hub.SourceServerImporter.715.2555" = "サーバーには到達できますが、このSSH接続は受け付けられていません。";
+"hub.SourceServerImporter.716.2556" = "SSHが稼働中で、ポートが正しいことを確認してください。";
+"hub.SourceServerImporter.718.2558" = "サーバーが見つかりません";
+"hub.SourceServerImporter.719.2559" = "サーバー名を解決できませんでした。";
+"hub.SourceServerImporter.720.2560" = "サーバーアドレス、SSH設定のエイリアス、DNS、VPNを確認してください。";
+"hub.SourceServerImporter.722.2562" = "サーバーに到達できません";
+"hub.SourceServerImporter.723.2563" = "このMacから移行元アプリケーションのサーバーへの経路がありません。";
+"hub.SourceServerImporter.724.2564" = "ネットワーク、VPN、ファイアウォールを確認してください。";
+"hub.SourceServerImporter.726.2567" = "SSH接続がタイムアウトしました";
+"hub.SourceServerImporter.727.2568" = "移行元アプリケーションのサーバーが時間内に応答しませんでした。";
+"hub.SourceServerImporter.728.2569" = "アドレス、ポート、ネットワーク、VPN、ファイアウォールを確認してください。";
+"hub.SourceServerImporter.730.2571" = "SSH接続が閉じられました";
+"hub.SourceServerImporter.731.2572" = "サーバーが接続を閉じました。";
+"hub.SourceServerImporter.732.2573" = "サーバーのSSHログとアカウントポリシーを確認してください。";
+"hub.SourceServerImporter.734.2575" = "SSH転送が無効です";
+"hub.SourceServerImporter.735.2576" = "Hubは接続しましたが、サーバーが保護されたデータベーストンネルを拒否しました。";
+"hub.SourceServerImporter.736.2577" = "このSSHアカウントでTCP転送を許可してください。";
+"hub.SourceServerImporter.738.2580" = "データベーストンネルに失敗しました";
+"hub.SourceServerImporter.739.2581" = "Hubは接続しましたが、保護されたデータベーストンネルの準備が完了しませんでした。";
+"hub.SourceServerImporter.740.2582" = "もう一度試してから、「ログ」を開いて安全な理由コードを確認してください。";
+"hub.SourceServerImporter.742.2584" = "ローカルトンネルのポートを利用できません";
+"hub.SourceServerImporter.743.2585" = "Hubはローカルデータベーストンネル用のポートを確保できませんでした。";
+"hub.SourceServerImporter.744.2586" = "もう一度お試しください。";
+"hub.SourceServerImporter.746.2588" = "先に移行元アプリケーションを更新してください";
+"hub.SourceServerImporter.747.2589" = "ガイド付き移行には移行元アプリケーション 4.4.0以降が必要です。";
+"hub.SourceServerImporter.748.2590" = "移行元アプリケーションをバックアップして更新し、データベースの移行が完了してから、もう一度接続してください。";
+"hub.SourceServerImporter.763.2594" = "移行元アプリケーションが実行されていないか、コンテナが見つかりません。";
+"hub.SourceServerImporter.764.2596" = "移行元アプリケーションのDocker Composeプロジェクトを特定できませんでした。";
+"hub.SourceServerImporter.765.2598" = "移行元アプリケーションのデータベースコンテナが実行されていないか、見つかりません。";
+"hub.SourceServerImporter.766.2600" = "移行元アプリケーションのデータベースまたは暗号化認証情報が不足しています。";
+"hub.SourceServerImporter.767.2602" = "移行元アプリケーションのデータベースネットワークを安全に特定できませんでした。";
+"hub.SourceServerImporter.768.2604" = "現在、ガイド付きインポートには車両が1台の移行元データベースが必要です。";
+"hub.SourceServerImporter.769.2606" = "インポートできる車両が移行元アプリケーションにありません。";
+"hub.SourceServerImporter.770.2608" = "複数の移行元アプリケーションのインスタンスが実行中です。";
+"hub.SourceServerImporter.771.2610" = "移行元アプリケーションのプロジェクトに複数のデータベースコンテナがあります。";
+"hub.SourceServerImporter.772.2612" = "このアカウントではパスワードなしのsudoでDockerを実行できません。";
+"hub.SourceServerImporter.773.2614" = "このアカウントにはsudoでDockerを実行する権限がありません。";
+"hub.SourceServerImporter.775.2618" = "移行元アプリケーションのサーバーにDockerが見つかりません。";
+"hub.SourceServerImporter.776.2620" = "Dockerはインストールされていますが、利用できません。";
+"hub.SourceServerImporter.778.2623" = "HubはSSH経由で移行元アプリケーションを読み取れませんでした。";
+"hub.SourceServerImporter.785.2625" = "SSHサーバーでデータベース転送が許可されていません。このアカウントでTCP転送を有効にしてください。";
+"hub.SourceServerImporter.787.2627" = "データベーストンネルの接続中にSSH認証に失敗しました。";
+"hub.SourceServerImporter.789.2629" = "SSHホストIDの確認に失敗しました。このサーバーをSSHのknown-hostsファイルで確認または更新してください。";
+"hub.SourceServerImporter.791.2631" = "SSHサーバーが接続を拒否しました。SSHが稼働中で、ポートが正しいことを確認してください。";
+"hub.SourceServerImporter.793.2633" = "SSHサーバー名を解決できませんでした。サーバーアドレスとネットワークを確認してください。";
+"hub.SourceServerImporter.795.2635" = "このMacからSSHサーバーに到達できません。ネットワーク、VPN、ファイアウォールを確認してください。";
+"hub.SourceServerImporter.797.2637" = "SSH接続がタイムアウトしました。サーバーアドレス、ポート、ネットワーク、ファイアウォールを確認してください。";
+"hub.SourceServerImporter.799.2639" = "データベーストンネルを開いている間にSSHサーバーが接続を閉じました。";
+"hub.SourceServerImporter.801.2641" = "ローカルデータベーストンネルのポートを利用できませんでした。もう一度お試しください。";
+"hub.SourceServerImporter.803.2642" = "保護された移行元データベーストンネルを開けませんでした。";
+"hub.SourceServerImporter.824.2658" = "複数の移行元アプリケーションのインスタンスが実行中です。インポート対象ではないインスタンスを停止してから、もう一度お試しください。";
+"hub.SourceServerImporter.826.2660" = "選択した移行元アプリケーションのプロジェクトに複数のデータベースコンテナがあります。重複するコンテナを停止してから、もう一度お試しください。";
+"hub.SourceServerImporter.828.2662" = "このアカウントではパスワードなしのsudoでDockerを実行できません。Dockerアクセスを許可するか、パスワードなしsudoを無効にし、Dockerに直接アクセスできるアカウントを使用してください。";
+"hub.SourceServerImporter.830.2664" = "このアカウントにはsudoでDockerを実行する権限がありません。Dockerアクセスを許可するか、別のサーバーアカウントを使用してください。";
+"hub.SourceServerImporter.832.2666" = "このアカウントにはDockerへのアクセス権がありません。Dockerへの直接アクセスを許可するか、Docker用のパスワードなしsudoを許可してください。";
+"hub.SourceServerImporter.834.2668" = "移行元アプリケーションのサーバーにDockerが見つかりません。サーバーとアカウントのPATHを確認してください。";
+"hub.SourceServerImporter.836.2670" = "Dockerはインストールされていますが、利用できません。Dockerサービスが稼働中か確認してください。";
+"hub.SourceServerImporter.838.2672" = "ガイド付き移行には移行元アプリケーション 4.4.0以降が必要です。移行元アプリケーションを更新してから、もう一度お試しください。";
+"hub.SourceServerImporter.840.2674" = "SSHで接続または認証できませんでした。サーバー、ポート、アカウント、選択した認証方法を確認してください。";
+"hub.SourceServerImporter.842.2676" = "SSH認証に失敗しました。アカウントと選択した認証方法を確認してください。";
+"hub.SourceServerImporter.854.2688" = "SSHサーバーが接続を閉じました。サーバーログとSSHポリシーを確認してください。";
+"hub.SourceServerImporter.856.2690" = "SSH接続がタイムアウトしました。サーバーアドレス、ポート、ネットワークを確認してください。";
+"hub.SourceServerImporter.858.2691" = "SSH経由で移行元アプリケーションを読み取れませんでした。認証とDockerアクセスを確認してください。";
+
+"hub.import.intro" = "以前使用していた車両データソフトウェアの PostgreSQL データベースから履歴をインポートします（移行元データベース）。Hub は最初にデータベースを確認し、このリリースでインポートできるかを知らせます。インポートでは移行元データベースを読み取るだけで、変更しません。";
+
+"hub.import.recognised" = "Hub はこのデータベースを認識しています（スキーマセット %1$@）。";
+
+"hub.import.notRecognised" = "Hub はこのデータベースのスキーマを認識できないため、インポートできません。確認事項は移行ガイドをご覧ください。";
+
+"hub.import.ackExplain" = "スキーマを確認しても、このデータベースを書き込んだ移行元アプリケーションのリリースは特定できません。同じスキーマを使うリリースが複数あります。";
+
+"hub.import.ackRelease" = "移行元アプリケーションがリリース 4.4.0 以降であり、インポート中に更新されないことを確認します。";
+
+"hub.backup.title" = "バックアップ";
+
+"hub.backup.detail" = "Hubの履歴の暗号化されたコピーです。復旧用パスワードは、このMac上の所有者だけが読めるファイルに保存されます。";
+
+"hub.backup.backUpNow" = "今すぐバックアップ";
+
+"hub.backup.onSchedule" = "スケジュールに従ってバックアップ";
+
+"hub.backup.saveSchedule" = "スケジュールを保存";
+
+"hub.backup.panelPrompt" = "選択";
+
+"hub.backup.panelMessage" = "Hubのデータフォルダの外にある、暗号化されたHubバックアップ用のフォルダを選択してください。";
+
+"hub.backup.savedNote" = "保存しました。スケジュールはHubの再起動後に適用されます。";
+
+"hub.backup.noFolder" = "フォルダが選択されていません";
+
+"hub.backup.passwordPlaceholder" = "復旧用パスワード（%1$@文字以上）";
+
+"hub.backup.passwordSaved" = "保存しました。置き換えるには新しいパスワードを入力してください";
+
+"hub.backup.intervalHour" = "1時間ごと";
+
+"hub.backup.intervalDay" = "毎日";
+
+"hub.backup.intervalTwoDays" = "2日ごと";
+
+"hub.backup.intervalWeek" = "毎週";
+
+"hub.backup.intervalHours" = "%1$@時間ごと";
+
+"hub.backup.schedule" = "スケジュール";
+
+"hub.backup.keep" = "保持数";
+
+"hub.backup.keepSuffix" = "件のバックアップ";
+
+"hub.backup.folder" = "フォルダ";
+
+"hub.backup.passwordLabel" = "復旧用パスワード";
+
+"hub.backup.problem.passwordShort" = "復旧用パスワードは%1$@文字以上にしてください。";
+
+"hub.backup.problem.interval" = "間隔は1〜8784時間の範囲で指定してください。";
+
+"hub.backup.problem.keep" = "保持するバックアップの数は1〜1000の範囲で指定してください。";
+
+"hub.backup.problem.chooseFolder" = "バックアップ用のフォルダを選択してください。";
+
+"hub.backup.problem.folderInside" = "Hubのデータフォルダの外にあるバックアップ用フォルダを選択してください。";
+
+"hub.backup.problem.needsBoth" = "スケジュールバックアップには、バックアップ用フォルダと復旧用パスワードが必要です。";
+
+"hub.backup.lastGoodNone" = "まだありません";
+
+"hub.backup.nextOff" = "スケジュールバックアップはオフです";
+
+"hub.backup.nextNotScheduled" = "未スケジュール: フォルダとパスワードを選択してください";
+
+"hub.backup.nextPaused" = "認証情報の復旧を待っています";
+
+"hub.collection.notReported" = "報告なし";
+
+"hub.backup.blocked" = "拒否された認証情報がバックアップを妨げています。purge-refused-credentialsを実行して消去してください。";
+
+"hub.backup.lastFailedMessage" = "前回の試行は失敗しました: %1$@";
+
+"hub.backup.lastFailedCode" = "前回の試行は失敗しました（%1$@）";
+
+"hub.backup.row.lastGood" = "前回成功したバックアップ";
+
+"hub.backup.row.next" = "次のバックアップ";
+
+"hub.backup.row.running" = "バックアップを実行中です";
+
+"hub.backup.row.lastAttempt" = "前回の試行";
+
+"hub.backup.run.running" = "バックアップ中…";
+
+"hub.backup.run.stillRunning" = "バックアップはHubサービスで実行中です。";
+
+"hub.backup.run.finishedGeneration" = "バックアップが完了しました: %1$@";
+
+"hub.backup.run.finished" = "バックアップが完了しました";
+
+"hub.backup.run.failed" = "バックアップに失敗しました: %1$@";
+
+"hub.backup.maint.unreadable" = "Hubの応答を読み取れませんでした。";
+
+"hub.backup.maint.unwritable" = "復旧用パスワードを保存できませんでした。";
+
+"hub.backup.maint.configMissing" = "バックアップを変更する前にHubを設定してください。";
+
+"hub.devices.title" = "ペアリング済みデバイス";
+
+"hub.devices.detail" = "このHubを読み取るスマートフォンとアプリ、およびそれぞれが読み取れる車。";
+
+"hub.devices.revokeTitle" = "「%1$@」を取り消しますか?";
+
+"hub.devices.revokeInfo" = "このデバイスはHubからの読み取りをすぐに停止します。再び使うには、もう一度ペアリングしてください。";
+
+"hub.devices.revoke" = "取り消す";
+
+"hub.devices.revokeEllipsis" = "取り消す…";
+
+"hub.devices.revokeAccessibility" = "「%1$@」を取り消す";
+
+"hub.devices.revokedDone" = "「%1$@」を取り消しました。";
+
+"hub.devices.none" = "ペアリング済みのデバイスはありません。";
+
+"hub.devices.cars" = "車: %1$@";
+
+"hub.devices.noCars" = "車なし";
+
+"hub.devices.carFallback" = "車 %1$@";
+
+"hub.devices.unnamed" = "名前のないデバイス";
+
+"hub.devices.stateRevoked" = "取り消し日時: %1$@";
+
+"hub.devices.stateExpired" = "有効期限切れ: %1$@";
+
+"hub.devices.stateLastSeen" = "最終確認: %1$@";
+
+"hub.devices.stateNeverSeen" = "まだ確認されていません";
+
+"hub.collection.loginOwn" = "Hub自身のログインでサインイン済み";
+
+"hub.collection.loginSignedOut" = "サインアウト済み";
+
+"hub.collection.loginNotOwn" = "保存されているログインはHub自身のものではありません";
+
+"hub.collection.credValidUntil" = "%1$@まで有効";
+
+"hub.collection.credValid" = "有効";
+
+"hub.collection.credRelogin" = "再ログインが必要: 次に開くウィンドウでもう一度サインインしてください";
+
+"hub.collection.credOwnerRefused" = "Owner APIが拒否されました: Teslaがこのログインを拒否しました";
+
+"hub.collection.credRefused" = "拒否されました（%1$@）";
+
+"hub.collection.credExposure" = "漏えいの疑い: 次に開くウィンドウでもう一度サインインしてください";
+
+"hub.collection.credAttention" = "確認が必要（%1$@）";
+
+"hub.collection.credNotSignedIn" = "サインインしていません";
+
+"hub.collection.windowOpenUntil" = "%1$@まで開いています";
+
+"hub.collection.windowOpen" = "開いています";
+
+"hub.collection.windowPending" = "保留中";
+
+"hub.collection.windowPendingFrom" = "%1$@から保留中";
+
+"hub.collection.windowPendingUntil" = "%1$@まで保留中";
+
+"hub.collection.windowPendingFromUntil" = "%1$@から%2$@まで保留中";
+
+"hub.collection.windowClosingExpiry" = "終了中（期限 %1$@）";
+
+"hub.collection.windowClosing" = "終了中";
+
+"hub.collection.windowClosedReason" = "終了済み（%1$@）";
+
+"hub.collection.windowClosed" = "終了済み";
+
+"hub.collection.windowUntrusted" = "終了済み（信頼できる発行元がありません）";
+
+"hub.collection.windowFaulted" = "終了済み（ウィンドウの状態に新しい信頼ドキュメントが必要です）";
+
+"hub.collection.windowRecovery" = "終了済み（認証情報の復旧を待っています: restore-recovery-credentialsを実行してください）";
+
+"hub.collection.windowUnauthenticated" = "不明: コントロールチャンネルがこのHubのものではありません";
+
+"hub.collection.windowNotRunning" = "不明: Hubが実行されていません";
+
+"hub.collection.reasonExpired" = "期限切れ";
+
+"hub.collection.reasonOperator" = "オペレーターが終了";
+
+"hub.collection.reasonRelogin" = "再ログインが必要";
+
+"hub.collection.reasonOwnerRefused" = "Owner APIが拒否";
+
+"hub.collection.reasonClock" = "時計の確認に失敗";
+
+"hub.collection.reasonReboot" = "Macが再起動した";
+
+"hub.collection.reasonUnverifiable" = "状態を確認できなかった";
+
+"hub.collection.reasonClaimLost" = "収集の権利を失った";
+
+"hub.collection.fleet" = "保留中: 利用できるFleet操作はありません";
+
+"hub.collection.signInUnavailable" = "このHubではサインインを利用できません";
+
+"hub.collection.labelLogin" = "Teslaログイン";
+
+"hub.collection.labelCredential" = "認証情報の状態";
+
+"hub.collection.labelWindow" = "データ収集ウィンドウ";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "サインイン";
+
+"hub.signIn.recoveryPending" = "Hubは認証情報の復旧を待っています。このHubのデータは鍵なしで復元されました。restore-recovery-credentialsを実行してから、サインインしてください。何も変更されていません。";
+
+"hub.signIn.serviceUnauthenticated" = "Hubのコントロールチャンネルで応答しているプロセスはこのHubではないため、何も送信されませんでした。Hubを再起動してから、もう一度サインインしてください。";
+
+"hub.signIn.busy" = "Hubは他のリクエストの処理中です。何も変更されていません。しばらくしてからもう一度サインインしてください。";
+
+"hub.signIn.discovery.notListed" = "サインインしましたが、Teslaはこのアカウントに車を一台も表示しませんでした。車がこのTeslaアカウントのものであることを確認してから、もう一度車を検索してください。";
+
+"hub.signIn.discovery.selectionRequired" = "サインインしましたが、Teslaが複数の車を表示しており、Hubはどの車から収集するかを知る必要があります。もう一度車を検索してください。";
+
+"hub.signIn.discovery.selectionInvalid" = "サインインしましたが、選択した車はこのTeslaアカウントにありません。もう一度車を検索してください。";
+
+"hub.signIn.discovery.answerInvalid" = "サインインしましたが、HubはTeslaの車のリストを読み取れませんでした。もう一度車を検索してください。";
+
+"hub.signIn.discovery.refused" = "サインインしましたが、Teslaが車のリストを拒否しました。もう一度車を検索するか、Teslaでもう一度サインインしてください。";
+
+"hub.signIn.discovery.windowClosed" = "サインインしましたが、Hubが車を見つける前にデータ収集ウィンドウが閉じました。ウィンドウを開いてから、もう一度車を検索してください。";
+
+"hub.signIn.discovery.providerParked" = "サインインしましたが、このHubは別のプロバイダで収集しているため、このサインインでは車を検索できません。";
+
+"hub.signIn.discovery.settingsInvalid" = "サインインしましたが、このHubのOwner APIのアドレスがTeslaのものではないため、Hubは車を要求しませんでした。アドレスを修正してから、Teslaでもう一度サインインしてください。";
+
+"hub.signIn.discovery.general" = "サインインしましたが、Hubは車を見つけられませんでした。もう一度車を検索するか、Teslaでもう一度サインインしてください。";
+
+"hub.signIn.discovery.retry" = "車をもう一度検索";
+
+"hub.signIn.discovery.expired" = "このサインインは再開できなくなりました。Teslaでもう一度サインインしてください。";
+
+"hub.signIn.discovery.configured" = "設定済みの車：%d";
+
+"hub.signIn.reportInvalid" = "Hubはサインインを確認できませんでした。Teslaでもう一度サインインしてください。";
+
+"hub.signIn.unconfirmed" = "Hubが時間内にサインインを確認できませんでしたが、保存されている可能性があります。もう一度サインインする前に、Hubのステータスを確認してください。";
+
+"hub.signIn.startWithdrawFailed" = "Hubは起動せず、未完了の起動の削除にも失敗しました: %1$@ 「Teslaに接続」を押して削除を完了してください。";
+
+"hub.signIn.idle.title" = "HubはこのMacでセットアップ済みで、実行中です";
+"hub.signIn.idle.detail" = "Teslaサインインは、データ収集ウィンドウが開いている間だけ利用できます。ウィンドウが開いたらお知らせします。このウィンドウを閉じても、Hubは実行され続けます。";
+"hub.signIn.pageSubtitle" = "データ収集ウィンドウが開いている間に、Teslaでサインインしてください。";
+"hub.signIn.privacy" = "TeslaのパスワードはTeslaにのみ送信されます。Hubは独自のログインを保持し、このMac上で暗号化します。";
+"hub.signIn.fleetDetail" = "Teslaの公式ストリーミングAPIです。ご自身のFleet APIアプリを使用します。";
+"hub.signIn.done" = "完了";
+
+"hub.signIn.windowFaulted" = "Hubのデータ収集ウィンドウは、開く前に新しい信頼ドキュメントが必要なため、Teslaサインインは利用できません。何も変更されていません。";
+"hub.signIn.windowStatusInvalid" = "データ収集ウィンドウに関するHubの応答を読み取れなかったため、Teslaサインインは利用できません。何も変更されていません。しばらくしてからもう一度お試しください。";
+"hub.setup.closeKeepsRunning" = "このウィンドウを閉じても、Hubは実行され続けます。";

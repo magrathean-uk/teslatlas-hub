@@ -11,7 +11,7 @@ Magrathean keeps signed copies private and never publishes them.
 ## 1. Contributions
 
 **Contribution** means any code, documentation, test, design or other material
-that you submit to Magrathean for Teslatlas Hub and that Magrathean accepts.
+that you submit to Magrathean for Tesatlas Hub and that Magrathean accepts.
 
 ## 2. Assignment
 
@@ -47,7 +47,7 @@ project's Git history and release notes.
 
 ## 5. Patents
 
-You grant Magrathean, and every recipient of Teslatlas Hub, a perpetual,
+You grant Magrathean, and every recipient of Tesatlas Hub, a perpetual,
 worldwide, royalty-free, irrevocable licence under any patent you control that
 a Contribution, as you submitted it, necessarily infringes.
 

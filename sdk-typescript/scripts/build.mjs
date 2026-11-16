@@ -40,9 +40,9 @@ if (outputArgument >= 0) {
   ) {
     throw new Error("Explicit output must be below the managed build root");
   }
-  const ownerPath = `${distributionDirectory}.teslatlas-sdk-owner.json`;
+  const ownerPath = `${distributionDirectory}.tesatlas-sdk-owner.json`;
   const owner = JSON.stringify({
-    product: "@teslatlas/sdk",
+    product: "@tesatlas/sdk",
     sourceRoot: repositoryRoot,
     outputRoot: distributionDirectory,
   });

@@ -4,13 +4,13 @@ set -eu
 
 # Preserve the workspace-selected external Go executable across the builder's
 # sanitized PATH. This keeps its module cache on the managed external root.
-TESLATLAS_GO=${TESLATLAS_GO:-$(command -v go)}
-export TESLATLAS_GO
+TESATLAS_GO=${TESATLAS_GO:-$(command -v go)}
+export TESATLAS_GO
 
 ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
 HELPER="$ROOT/scripts/go-proxy-evidence.py"
 LOCK="$ROOT/scripts/tesla-proxy-lock.json"
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-go-proxy-evidence-test.XXXXXX")
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/tesatlas-go-proxy-evidence-test.XXXXXX")
 cleanup() {
     chmod -R u+w "$TMP" 2>/dev/null || true
     find "$TMP" -depth -delete 2>/dev/null || true
@@ -59,7 +59,7 @@ finally:
 assert len(attempts) == 2
 assert not cleanup_race.exists()
 
-assert lock["schema"] == "teslatlas.tesla-proxy-lock/v3"
+assert lock["schema"] == "tesatlas.tesla-proxy-lock/v3"
 policy = module.validate_lock(copy.deepcopy(lock))["build_host"]
 assert len(policy["go"]) == 1
 assert policy["go"] == sorted(
@@ -271,7 +271,7 @@ reviewed_go = {
 }
 
 manifest = json.loads((evidence / "go-component-manifest.json").read_text())
-assert manifest["schema"] == "teslatlas.go-proxy-evidence/v2"
+assert manifest["schema"] == "tesatlas.go-proxy-evidence/v2"
 assert manifest["target"] == "darwin-arm64"
 assert manifest["source_module_count"] == 21
 assert manifest["runtime_dependency_count"] == 18
@@ -374,7 +374,7 @@ for offset in (1, 5):
     manifest = json.loads((evidence / "go-component-manifest.json").read_text())
     receipt = json.loads((evidence / "go-build-receipt.json").read_text())
     digest = hashlib.sha256(binary.read_bytes()).hexdigest()
-    assert manifest["schema"] == "teslatlas.go-proxy-evidence/v2"
+    assert manifest["schema"] == "tesatlas.go-proxy-evidence/v2"
     assert manifest["target"] == target
     assert manifest["subject"]["sha256"] == digest
     assert manifest["subject"]["size"] == binary.stat().st_size

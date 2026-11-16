@@ -39,7 +39,7 @@ LAUNCHER_INTERFACE = MappingProxyType({
     "remaining_cell_ms": "remaining_cell_ms(actor_id)",
     "controller_observations": "controller_observations(session_id)",
     "linux_worker_contract": MappingProxyType({
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/swift-linux-worker-contract-v1.json",
+        "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-sdk-swift/tools/swift-linux-worker-contract-v1.json",
         "sha256": "d3f7a0ab940d18388694d89896fb1bf9974cacaa21d26faeda77a43a53bac764",
     }),
     "outcome_keys": (

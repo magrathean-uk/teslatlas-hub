@@ -94,7 +94,7 @@ pub trait ServiceEffects {
 ///
 /// ```
 /// use std::sync::Arc;
-/// use teslatlas_hub::platform::r78_lifecycle::ScopedAdmission;
+/// use tesatlas_hub::platform::r78_lifecycle::ScopedAdmission;
 /// fn accepts(_: ScopedAdmission<'_, Arc<()>>) {}
 /// let _ = accepts;
 /// ```
@@ -103,7 +103,7 @@ pub trait ServiceEffects {
 ///
 /// ```compile_fail
 /// use std::sync::Arc;
-/// use teslatlas_hub::platform::r78_lifecycle::ScopedAdmission;
+/// use tesatlas_hub::platform::r78_lifecycle::ScopedAdmission;
 /// fn duplicate(token: ScopedAdmission<'_, Arc<()>>) {
 ///     let _copy = token.clone();
 /// }
@@ -113,7 +113,7 @@ pub trait ServiceEffects {
 ///
 /// ```compile_fail
 /// use std::sync::Arc;
-/// use teslatlas_hub::platform::r78_lifecycle::ScopedAdmission;
+/// use tesatlas_hub::platform::r78_lifecycle::ScopedAdmission;
 /// fn extract(token: ScopedAdmission<'_, Arc<()>>) {
 ///     let _copy = token._admission.clone();
 /// }
@@ -122,7 +122,7 @@ pub trait ServiceEffects {
 /// A callback cannot retain the scoped token after the work returns:
 ///
 /// ```compile_fail
-/// use teslatlas_hub::platform::r78_lifecycle::{
+/// use tesatlas_hub::platform::r78_lifecycle::{
 ///     ServiceBudgets, ServiceEffects, with_transient_pause,
 /// };
 /// fn retain<E: ServiceEffects>(effects: &mut E) {

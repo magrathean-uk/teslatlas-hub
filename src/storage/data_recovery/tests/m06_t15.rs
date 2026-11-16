@@ -184,7 +184,7 @@ fn this_module_test(name: &str) -> String {
 
 // REV-CX-M06-T10 finding 1 ---------------------------------------------------
 
-const SELECTION_CHILD: &str = "TESLATLAS_M06_T15_SELECTION_CHILD";
+const SELECTION_CHILD: &str = "TESATLAS_M06_T15_SELECTION_CHILD";
 /// Retained catalogue history: lineage manifest rows the selection skips,
 /// each padded (JSON whitespace) to one MiB.
 const HISTORY_ROWS: usize = 96;

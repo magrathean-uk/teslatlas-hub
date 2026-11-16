@@ -12,23 +12,23 @@ let package = Package(
     .executableTarget(
       name: "FourLibraryContractConsumer",
       dependencies: [
-        .product(name: "TeslatlasHubSDK", package: "teslatlas-sdk-swift"),
-        .product(name: "TeslatlasCommands", package: "teslatlas-sdk-swift"),
-        .product(name: "TeslatlasHubV1Compatibility", package: "teslatlas-sdk-swift"),
-        .product(name: "TeslatlasCurrentHub", package: "teslatlas-sdk-swift"),
+        .product(name: "TesatlasHubSDK", package: "tesatlas-sdk-swift"),
+        .product(name: "TesatlasCommands", package: "tesatlas-sdk-swift"),
+        .product(name: "TesatlasHubV1Compatibility", package: "tesatlas-sdk-swift"),
+        .product(name: "TesatlasCurrentHub", package: "tesatlas-sdk-swift"),
       ]
     ),
     .executableTarget(
       name: "CurrentHubConsumer",
       dependencies: [
-        .product(name: "TeslatlasCurrentHub", package: "teslatlas-sdk-swift")
+        .product(name: "TesatlasCurrentHub", package: "tesatlas-sdk-swift")
       ]
     ),
     .testTarget(
       name: "CurrentHubConsumerTests",
       dependencies: [
         "CurrentHubConsumer",
-        .product(name: "TeslatlasCurrentHub", package: "teslatlas-sdk-swift")
+        .product(name: "TesatlasCurrentHub", package: "tesatlas-sdk-swift")
       ]
     )
   ]

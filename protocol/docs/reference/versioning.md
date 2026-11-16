@@ -3,7 +3,7 @@
 This document defines how the retained contracts identify and version
 themselves: the current-Hub HTTP profile `hub-http-v1@1.3.0` (with its retained predecessor `1.2.0`) and the Hub sync
 profiles `hub-sync-v1@1.3.0` through `1.5.0`. The earlier `hub-http-v1` `1.0.0`
-and `1.1.0` profiles, the earlier sync profiles and the root `teslatlas-v1`
+and `1.1.0` profiles, the earlier sync profiles and the root `tesatlas-v1`
 contract with its version-negotiation headers were retired and are no longer in
 this package. See [`current-hub.md`](current-hub.md) and
 [`hub-sync.md`](hub-sync.md).
@@ -22,7 +22,7 @@ The advertised `profile` member is the profile identity, for example
 to the Hub's product version: the `version` member is the product version and
 is not a wire revision.
 
-`teslatlas-hub` is the protocol's well-known suffix. It is not represented as
+`tesatlas-hub` is the protocol's well-known suffix. It is not represented as
 an IANA registration by this repository. General Internet deployment must
 complete the RFC 8615 registration process; private and development deployments
 use this specification as the suffix definition.

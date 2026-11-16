@@ -26,9 +26,9 @@ mod fixture_clock;
 pub use fixture_clock::fixture_summary_now_ms;
 
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]
-pub(crate) const LABEL: &str = "com.teslatlas.hub";
+pub(crate) const LABEL: &str = "com.tesatlas.hub";
 #[cfg(not(feature = "credential-relocation-fixture"))]
-const PLIST_NAME: &str = "com.teslatlas.hub.plist";
+const PLIST_NAME: &str = "com.tesatlas.hub.plist";
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 const SERVICE_UNLOAD_ATTEMPTS: usize = 100;
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]
@@ -36,8 +36,8 @@ const SERVICE_READY_ATTEMPTS: usize = 50;
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 const SERVICE_READY_STABLE_OBSERVATIONS: usize = 10;
 const LOCK_RELEASE_ATTEMPTS: usize = 100;
-pub const DEVELOPMENT_SERVE_ENV: &str = "TESLATLAS_HUB_DEVELOPMENT";
-pub const DEVELOPMENT_SERVE_MODE_ENV: &str = "TESLATLAS_HUB_DEVELOPMENT_MODE";
+pub const DEVELOPMENT_SERVE_ENV: &str = "TESATLAS_HUB_DEVELOPMENT";
+pub const DEVELOPMENT_SERVE_MODE_ENV: &str = "TESATLAS_HUB_DEVELOPMENT_MODE";
 #[cfg(all(not(test), not(feature = "credential-relocation-fixture")))]
 const SERVICE_UNLOAD_DELAY: Duration = Duration::from_millis(100);
 #[cfg(test)]
@@ -1024,7 +1024,7 @@ fn expected_launchctl_absence(action: &str, status: Option<i32>, detail: &str) -
 
 const INHERITED_LOG_COMPACT_ABOVE: u64 = 1 << 20;
 const INHERITED_LOG_KEEP: u64 = 512 << 10;
-pub(crate) const INHERITED_LOG_DIRECTORY: &str = "Library/Logs/Teslatlas Hub";
+pub(crate) const INHERITED_LOG_DIRECTORY: &str = "Library/Logs/Tesatlas Hub";
 const INHERITED_STDOUT_LOG: &str = "hub.out.log";
 const INHERITED_STDERR_LOG: &str = "hub.err.log";
 

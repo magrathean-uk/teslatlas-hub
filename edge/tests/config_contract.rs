@@ -6,7 +6,7 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt, symlink};
 use tempfile::TempDir;
-use teslatlas_edge::config::{ConfigError, EdgeConfig, initialize, rotate_receiver_token};
+use tesatlas_edge::config::{ConfigError, EdgeConfig, initialize, rotate_receiver_token};
 
 fn private_file(path: &std::path::Path, bytes: &[u8]) {
     let mut options = OpenOptions::new();

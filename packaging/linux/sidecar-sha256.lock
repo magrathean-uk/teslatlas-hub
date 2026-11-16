@@ -1,4 +1,4 @@
-# teslatlas-linux-sidecars/v1
+# tesatlas-linux-sidecars/v1
 # architecture tesla-http-proxy-sha256 fleet-telemetry-sha256
 amd64 d30779983e5d0ca5c68450032dd22fcc07421e6e13a183d46f1aa758a23b48bd 65822d4a5aa2947019c79771c831aab979493dc93631b8512ad269af30b07dd3
 arm64 75bfa13c73ee97855021f4148ed0168d426e4957f5d0907b1dbbcfee4601e2a5 ee7ffdd613a3bf72ecd091a3572d724e79f8f7d5d34de04992de54f228f534ce

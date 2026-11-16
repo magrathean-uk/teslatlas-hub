@@ -1,6 +1,6 @@
-# Contributing to Teslatlas Edge
+# Contributing to Tesatlas Edge
 
-How to build, validate and propose a change to Teslatlas Edge.
+How to build, validate and propose a change to Tesatlas Edge.
 
 Keep changes focused on optional telemetry ingress. Read the relevant
 [architecture](../docs/architecture/overview.md) and

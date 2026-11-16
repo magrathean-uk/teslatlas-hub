@@ -5,7 +5,7 @@
 //! The Hub's own login, its code exchange and the refresh of its own pair use
 //! these values and no others. They match what the Mac app's sign-in window
 //! sends to Tesla's authorisation page (`TeslaOAuthFlow` in
-//! `macos/TeslatlasHubApp/TeslatlasHubApp/TeslaAuthWindowController.swift`); a
+//! `macos/TesatlasHubApp/TesatlasHubApp/TeslaAuthWindowController.swift`); a
 //! test reads that file and fails if the two ever differ. The values are
 //! public: the client has no secret, and the code is bound to the owner's
 //! browser session by PKCE (RFC 7636, S256).

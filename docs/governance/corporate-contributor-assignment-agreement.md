@@ -11,7 +11,7 @@ Magrathean keeps signed copies private and never publishes them.
 ## 1. Contributions
 
 **Contribution** means any code, documentation, test, design or other material
-that an Authorised Contributor submits to Magrathean for Teslatlas Hub on the
+that an Authorised Contributor submits to Magrathean for Tesatlas Hub on the
 Organisation's behalf and that Magrathean accepts.
 
 **Authorised Contributor** means an employee or contractor of the Organisation
@@ -52,7 +52,7 @@ authors of the Contributions in the project's Git history and release notes.
 
 ## 5. Patents
 
-The Organisation grants Magrathean, and every recipient of Teslatlas Hub, a
+The Organisation grants Magrathean, and every recipient of Tesatlas Hub, a
 perpetual, worldwide, royalty-free, irrevocable licence under any patent the
 Organisation controls that a Contribution, as submitted, necessarily
 infringes.

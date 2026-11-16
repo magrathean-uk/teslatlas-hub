@@ -1,14 +1,14 @@
 # Import your existing history
 
-Teslatlas Hub can import vehicle history from another program's PostgreSQL
+Tesatlas Hub can import vehicle history from another program's PostgreSQL
 database, which this guide calls the source database. Hub does not go by that
 program's name: it reads the database's schema and compares it with the schema
 sets this release recognises. Run the check first
-(`teslatlas-hub source-check`, or Import History in the Mac app). It only reads
+(`tesatlas-hub source-check`, or Import History in the Mac app). It only reads
 the database, and it tells you whether Hub recognises it before anything is
 imported.
 
-Teslatlas Hub is developed independently of the software it imports from.
+Tesatlas Hub is developed independently of the software it imports from.
 
 ## Which databases Hub recognises
 

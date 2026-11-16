@@ -1,6 +1,6 @@
 # Licensing
 
-Teslatlas Protocol is licensed under the Apache License, Version 2.0.
+Tesatlas Protocol is licensed under the Apache License, Version 2.0.
 
 The controlling licence text is the unmodified Apache License 2.0 in the
 repository root [`LICENSE`](../../LICENSE). Copyright and attribution are
@@ -10,8 +10,8 @@ for the licensing, trade mark and contribution terms that apply across
 Magrathean repositories.
 
 The protocol contains source-neutral schemas, specifications, fixtures, and
-independently authored examples. It does not include Teslatlas Hub
-implementation or proprietary Teslatlas product source. Do not copy material
+independently authored examples. It does not include Tesatlas Hub
+implementation or proprietary Tesatlas product source. Do not copy material
 from those projects into this repository without confirming the relevant
 rights and licence terms.
 

@@ -7,13 +7,13 @@ use std::sync::Arc;
 use axum::body::{Body, to_bytes};
 use http::{Request, StatusCode};
 use tempfile::TempDir;
-use teslatlas_edge::admission::Clock;
-use teslatlas_edge::credentials::CredentialStore;
-use teslatlas_edge::delivery::DeliveryService;
-use teslatlas_edge::protocol::{
+use tesatlas_edge::admission::Clock;
+use tesatlas_edge::credentials::CredentialStore;
+use tesatlas_edge::delivery::DeliveryService;
+use tesatlas_edge::protocol::{
     HubAckResultV1, HubAckResultV2, HubAckV1, HubAckV2, HubBatchV1, HubBatchV2,
 };
-use teslatlas_edge::spool::{Spool, SpoolConfig, SpoolKey};
+use tesatlas_edge::spool::{Spool, SpoolConfig, SpoolKey};
 use tower::ServiceExt;
 
 use support::{T0, receiver_envelope};

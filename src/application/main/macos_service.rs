@@ -637,7 +637,7 @@ struct ServiceCollectorSlotInner {
     store: HubStore,
     config: HubConfig,
     admission: std::sync::Arc<AdmittedUserHub>,
-    recovery: std::sync::Arc<teslatlas_hub::runtime::operator::authority::RecoveryGate>,
+    recovery: std::sync::Arc<tesatlas_hub::runtime::operator::authority::RecoveryGate>,
     running: Option<ServiceCollectorRun>,
 }
 
@@ -657,7 +657,7 @@ impl ServiceCollectorSlot {
         store: HubStore,
         config: HubConfig,
         admission: std::sync::Arc<AdmittedUserHub>,
-        recovery: std::sync::Arc<teslatlas_hub::runtime::operator::authority::RecoveryGate>,
+        recovery: std::sync::Arc<tesatlas_hub::runtime::operator::authority::RecoveryGate>,
     ) -> Self {
         Self {
             inner: std::sync::Arc::new(std::sync::Mutex::new(ServiceCollectorSlotInner {
@@ -695,7 +695,7 @@ impl ServiceCollectorSlotInner {
 }
 
 #[cfg(unix)]
-impl teslatlas_hub::collection::window::CollectorSlot for ServiceCollectorSlot {
+impl tesatlas_hub::collection::window::CollectorSlot for ServiceCollectorSlot {
     fn start(&mut self, deadline_wall: i64) -> Result<(), String> {
         let mut inner = self.lock();
         if inner.running() {
@@ -704,7 +704,7 @@ impl teslatlas_hub::collection::window::CollectorSlot for ServiceCollectorSlot {
         // Nothing that could create or use a key starts before the
         // credential recovery the service waits for (review finding 2).
         if inner.recovery.pending() {
-            return Err(teslatlas_hub::runtime::operator::authority::CREDENTIAL_RECOVERY_PENDING.to_owned());
+            return Err(tesatlas_hub::runtime::operator::authority::CREDENTIAL_RECOVERY_PENDING.to_owned());
         }
         // Collection starts only with an admitted own login, a configured car
         // and a positive cadence; inside the window the supervisor retries.

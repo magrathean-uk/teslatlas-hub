@@ -2396,11 +2396,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "teslatlas-compute"
+name = "tesatlas-compute"
 version = "0.1.0"
 
 [[package]]
-name = "teslatlas-hub"
+name = "tesatlas-hub"
 version = "2026.36.2"
 dependencies = [
  "aes-gcm",
@@ -2429,8 +2429,8 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
- "teslatlas-compute",
- "teslatlas-hub",
+ "tesatlas-compute",
+ "tesatlas-hub",
  "thiserror",
  "time",
  "tokio",

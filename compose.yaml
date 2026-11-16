@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-name: teslatlas-hub
+name: tesatlas-hub
 
 services:
   hub:
@@ -7,13 +7,13 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        TESLATLAS_HUB_SOURCE_COMMIT: ${TESLATLAS_HUB_SOURCE_COMMIT:?set TESLATLAS_HUB_SOURCE_COMMIT to the exact pushed 40-hex Hub commit}
+        TESATLAS_HUB_SOURCE_COMMIT: ${TESATLAS_HUB_SOURCE_COMMIT:?set TESATLAS_HUB_SOURCE_COMMIT to the exact pushed 40-hex Hub commit}
         SOURCE_DATE_EPOCH: ${SOURCE_DATE_EPOCH:?set SOURCE_DATE_EPOCH to the exact pushed Hub commit timestamp}
-    image: teslatlas-hub:local
+    image: tesatlas-hub:local
     depends_on:
       volume-init:
         condition: service_completed_successfully
-    command: ["--config", "/etc/teslatlas-hub/config.toml", "serve"]
+    command: ["--config", "/etc/tesatlas-hub/config.toml", "serve"]
     user: "10001:10001"
     read_only: true
     cap_drop: ["ALL"]
@@ -23,18 +23,18 @@ services:
     ports:
       - "127.0.0.1:8443:8443"
     volumes:
-      - hub-data:/var/lib/teslatlas-hub
-      - ./config.toml:/etc/teslatlas-hub/config.toml:ro
-      - ./tls:/etc/teslatlas-hub/tls:ro
+      - hub-data:/var/lib/tesatlas-hub
+      - ./config.toml:/etc/tesatlas-hub/config.toml:ro
+      - ./tls:/etc/tesatlas-hub/tls:ro
     healthcheck:
       test:
         - CMD
-        - /usr/local/bin/teslatlas-hub
+        - /usr/local/bin/tesatlas-hub
         - healthcheck
         - --ca-file
-        - /etc/teslatlas-hub/tls/ca.pem
+        - /etc/tesatlas-hub/tls/ca.pem
         - --server-name
-        - ${TESLATLAS_HUB_TLS_SERVER_NAME:?set TESLATLAS_HUB_TLS_SERVER_NAME to the DNS name in the Hub TLS certificate and public_url}
+        - ${TESATLAS_HUB_TLS_SERVER_NAME:?set TESATLAS_HUB_TLS_SERVER_NAME to the DNS name in the Hub TLS certificate and public_url}
       interval: 30s
       timeout: 5s
       retries: 3
@@ -43,8 +43,8 @@ services:
     restart: unless-stopped
 
   volume-init:
-    image: teslatlas-hub:local
-    entrypoint: ["/usr/local/libexec/teslatlas-hub-initialize-volume"]
+    image: tesatlas-hub:local
+    entrypoint: ["/usr/local/libexec/tesatlas-hub-initialize-volume"]
     command: []
     user: "0:0"
     read_only: true
@@ -52,9 +52,9 @@ services:
     cap_add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
     security_opt: ["no-new-privileges:true"]
     volumes:
-      - hub-data:/var/lib/teslatlas-hub
+      - hub-data:/var/lib/tesatlas-hub
     restart: "no"
 
 volumes:
   hub-data:
-    name: teslatlas-hub-data
+    name: tesatlas-hub-data

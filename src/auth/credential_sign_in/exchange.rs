@@ -96,7 +96,7 @@ impl OwnerSignIn {
 }
 
 /// The same product token as the refresh request (R11).
-const EXCHANGE_USER_AGENT: &str = concat!("Teslatlas-Hub/", env!("CARGO_PKG_VERSION"));
+const EXCHANGE_USER_AGENT: &str = concat!("Tesatlas-Hub/", env!("CARGO_PKG_VERSION"));
 
 fn failure(error: SignInError) -> CredentialCommandError { CredentialStoreError::SignIn(error).into() }
 

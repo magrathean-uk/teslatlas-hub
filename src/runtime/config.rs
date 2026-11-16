@@ -367,10 +367,10 @@ impl TerrainConfig {
         }
         #[cfg(target_os = "macos")]
         if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join("Library/Caches/TeslatlasHub/terrain");
+            return PathBuf::from(home).join("Library/Caches/TesatlasHub/terrain");
         }
         if let Ok(cache) = std::env::var("XDG_CACHE_HOME") {
-            return PathBuf::from(cache).join("teslatlas-hub/terrain");
+            return PathBuf::from(cache).join("tesatlas-hub/terrain");
         }
         data_dir.join("cache/terrain")
     }

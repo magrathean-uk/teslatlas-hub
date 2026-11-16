@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "kind": "teslatlas-home-assistant-hub-admission-handoff",
+  "kind": "tesatlas-home-assistant-hub-admission-handoff",
   "generated_at": "2026-09-08",
   "scope": "HA-owned source/provenance handoff only; no installed host, Docker runtime, real Hub, UI, scheduler, replacement, live transport, publication, or registry mutation",
   "checkout": {
-    "repository": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant",
+    "repository": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant",
     "head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
     "working_tree": "dirty; all 40 paths classified below; unrelated edits preserved",
     "working_tree_classification": {
@@ -14,13 +14,13 @@
         "AGENTS.md",
         "README.md",
         "compatibility/hub.json",
-        "custom_components/teslatlas_hub/__init__.py",
-        "custom_components/teslatlas_hub/config_flow.py",
-        "custom_components/teslatlas_hub/current_hub_client.py",
-        "custom_components/teslatlas_hub/diagnostics.py",
-        "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/SHA256SUMS",
-        "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/openapi.json",
-        "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/profile.json",
+        "custom_components/tesatlas_hub/__init__.py",
+        "custom_components/tesatlas_hub/config_flow.py",
+        "custom_components/tesatlas_hub/current_hub_client.py",
+        "custom_components/tesatlas_hub/diagnostics.py",
+        "custom_components/tesatlas_hub/profile/hub-http-v1/1.0.0/SHA256SUMS",
+        "custom_components/tesatlas_hub/profile/hub-http-v1/1.0.0/openapi.json",
+        "custom_components/tesatlas_hub/profile/hub-http-v1/1.0.0/profile.json",
         "docs/product-versioning.md",
         "docs/protocol-readiness.md",
         "hacs.json",
@@ -88,65 +88,65 @@
       }
     ],
     "source_manifest": {
-      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/docs/ha-admission-source-manifest-2026-09-08.json",
+      "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/docs/ha-admission-source-manifest-2026-09-08.json",
       "sha256": "e74a955374003be9820a450174715412b4a9c1d504b47eb33d1f93e6b2173832",
       "file_count": 10
     },
     "source_manifest_refresh": {
-      "supersedes_path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/current-source-manifest.json",
+      "supersedes_path": "/Users/bolyki/.codex/artifacts/tesatlas-interop/2026-09-08-ha-current-review/current-source-manifest.json",
       "supersedes_sha256": "bff35f1342e4bb262dd9e06599695139df53631f613d38d48bcd698185eeb7c7",
-      "changed_file": "teslatlas-home-assistant/tests/test_matrix_live.py",
+      "changed_file": "tesatlas-home-assistant/tests/test_matrix_live.py",
       "previous_file_sha256": "67f84f10d13e614883ac8821c37354c71d605d53e65f2c5e591e533e3b7253a4",
       "current_file_sha256": "5935c634766b397162fccfa74348a535bbcb8b70c69bb66223bd9e69f5cce108",
       "unchanged_file_count": 9,
-      "verification_root": "/Users/bolyki/dev/source/teslatlas-service"
+      "verification_root": "/Users/bolyki/dev/source/tesatlas-service"
     },
     "contract_files": {
       "manifest": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/matrix-contract.json",
+        "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/tools/matrix-contract.json",
         "sha256": "6b3f8a19bba579790bd554a589a82f273facdbdf5515feba2c83b9eda2091820"
       },
       "validator": {
-        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/matrix_contract.py",
+        "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/tools/matrix_contract.py",
         "sha256": "aa0c27880a59855e110a8a43c540c1e6127e449b63e1f834140c8c681014185f"
       },
       "raw_schemas": [
         {
           "id": "ha-runtime-v1",
-          "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-runtime-v1.schema.json",
+          "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/tools/ha-runtime-v1.schema.json",
           "sha256": "a49e3212ac07a64c8f27de6baa06418013f4ef0f5a3515436973c9969095f31c"
         },
         {
           "id": "ha-initial-v1",
-          "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-initial-v1.schema.json",
+          "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/tools/ha-initial-v1.schema.json",
           "sha256": "5e3525d5523e4162320bfdc2cdd6fc13f0203187d3fe2e141b9cdfe33f37f8e6"
         },
         {
           "id": "ha-client-v1",
-          "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-client-v1.schema.json",
+          "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/tools/ha-client-v1.schema.json",
           "sha256": "dcf05f837e37fc6541d8d6d0e3c5ce068a0b0eb662d8e6b00cb723171b9b3b92"
         },
         {
           "id": "ha-flow-v1",
-          "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-flow-v1.schema.json",
+          "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/tools/ha-flow-v1.schema.json",
           "sha256": "dd4bd1c39e00e35b11550c20a5f660489cfcd93c15269e3b44799101e84ea189"
         }
       ]
     }
   },
   "component_identity": {
-    "manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/current-component-manifest.json",
+    "manifest": "/Users/bolyki/.codex/artifacts/tesatlas-interop/2026-09-08-ha-current-review/current-component-manifest.json",
     "manifest_sha256": "0a4ec2d743a3f181423c24bbf7c6d9d7e0feef5dc0f0fc3e5d3d69150945e896",
     "member_count": 31,
     "integration_manifest": {
-      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/custom_components/teslatlas_hub/manifest.json",
+      "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/custom_components/tesatlas_hub/manifest.json",
       "sha256": "61e4a3143a392fe681908d1edff9db52a25ce5ac4bbd12e327ab36bcd9140449",
-      "domain": "teslatlas_hub",
+      "domain": "tesatlas_hub",
       "version": "2026.36.2",
       "iot_class": "local_poll"
     },
     "profile": {
-      "sha256s_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/SHA256SUMS",
+      "sha256s_path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/custom_components/tesatlas_hub/profile/hub-http-v1/1.0.0/SHA256SUMS",
       "sha256s_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
       "profile_json_sha256": "5b939b06ffb9354cc5227734b85a3f2d7edf46d509dcdda603bccd961b839d71",
       "member_count": 17,
@@ -172,7 +172,7 @@
         "status": "refreshed current canonical snapshot; sibling source gate remains Hub-owned"
       },
       "protocol_checkout_observation": {
-        "repository": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-protocol",
+        "repository": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-protocol",
         "head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
         "working_tree": "dirty; observed read-only and not changed by HA",
         "sha256s_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
@@ -240,17 +240,17 @@
     ]
   },
   "reauth_cleanup": {
-    "source": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/custom_components/teslatlas_hub/config_flow.py",
+    "source": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/custom_components/tesatlas_hub/config_flow.py",
     "cleanup": "async_step_reauth_confirm closes its owned client in finally, including cancellation",
     "verified_test": "tests/test_config_flow.py::test_cancelled_reauth_closes_owned_client",
     "result": "passed"
   },
   "launcher_and_cleanup": {
-    "provenance_binding": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/provenance-launcher-binding.json",
+    "provenance_binding": "/Users/bolyki/.codex/artifacts/tesatlas-interop/2026-09-08-ha-current-review/provenance-launcher-binding.json",
     "provenance_binding_sha256": "33cda376023bfff2b1f2361abc52bc110bdd21387b15a712c2d7dafebc49415e",
-    "launcher": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/matrix_live.py",
+    "launcher": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/tools/matrix_live.py",
     "launcher_sha256": "cb9dfad5ffe5c86ec2c33f5160bbdd81593262f9f9985ace01d83463f9645b55",
-    "wire": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/matrix_wire.py",
+    "wire": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/tools/matrix_wire.py",
     "wire_sha256": "cd7f4a620f5aaab46bd4e311f7e350063d5f6db39da72e5b0e8129f46e8d1085",
     "initial_barrier": {
       "ready": "ready-000001.json",
@@ -281,15 +281,15 @@
     "manifest_recheck": "current 10-file source manifest, 31-file component manifest and 17 profile member hashes match exactly"
   },
   "docker_boundary": {
-    "compose": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/compose.yaml",
+    "compose": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/compose.yaml",
     "compose_sha256": "120382da9b70c0971791bf343d3a8ff2a7c79c244f65a087f12467f89c5994ea",
-    "docs": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/docs/docker.md",
+    "docs": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/docs/docker.md",
     "docs_sha256": "4c49b7c17a608d9c0243d4b736fa38fed1af3bb74e7240699b5f802ae2e89a32",
     "daemon": "unavailable; no /var/run/docker.sock",
     "runtime_acceptance": false
   },
   "azure_debian_v1_evidence_contract": {
-    "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/docs/azure-debian-v1-evidence-contract-2026-09-08.md",
+    "path": "/Users/bolyki/dev/source/tesatlas-service/tesatlas-home-assistant/docs/azure-debian-v1-evidence-contract-2026-09-08.md",
     "sha256": "d961735405846612aebfcb1711661f4b9d015a3e0996f4195a36bfbd36d0a448",
     "status": "prepared final-bootstrap contract; owner supplies fresh disposable Azure Debian ARM64 and x86_64 VMs only after all development/integration and Mac plus VPS verification complete",
     "identity_lock": {

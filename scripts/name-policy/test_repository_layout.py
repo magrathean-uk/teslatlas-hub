@@ -46,7 +46,7 @@ class LayoutTests(unittest.TestCase):
                 files.append(dict(path=path.relative_to(self.root).as_posix(), sha256=hashlib.sha256(payload).hexdigest(),
                                   bytes=len(payload), mode=f'{stat.S_IMODE(path.stat().st_mode):04o}'))
         manifest = Path(self.temp.name) / 'candidate.json'
-        manifest.write_text(json.dumps(dict(schema='teslatlas.candidate-source-manifest/v1', files=files)))
+        manifest.write_text(json.dumps(dict(schema='tesatlas.candidate-source-manifest/v1', files=files)))
         result = subprocess.run([sys.executable, '-B', str(VERIFIER), '--repo', str(self.root), '--candidate-manifest', str(manifest)],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.assertEqual(result.returncode == 0, expected, result.stdout + result.stderr)

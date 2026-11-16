@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use std::{cell::RefCell, rc::Rc, sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}}};
-use teslatlas_hub::{CredentialVaultEntry, auth::credential_sign_in::{self as sign_in, CredentialCommandError, SignInAttempt, SignInSettings}, platform::r78_lifecycle::{Completion, ReadinessBounds, ServiceBudgets, ServiceEffects, ServiceFailure}};
+use tesatlas_hub::{CredentialVaultEntry, auth::credential_sign_in::{self as sign_in, CredentialCommandError, SignInAttempt, SignInSettings}, platform::r78_lifecycle::{Completion, ReadinessBounds, ServiceBudgets, ServiceEffects, ServiceFailure}};
 use zeroize::Zeroizing;
 
 static SIGN_IN_LOG: std::sync::OnceLock<Arc<Mutex<Zeroizing<Vec<u8>>>>> = std::sync::OnceLock::new();
@@ -175,7 +175,7 @@ fn ct100_h_preconditions() {
         Ok(())
     });
     assert!(!projection(root.path()).legacy_credentials.present);
-    let refusal = sign_in::owner_sign_in_precondition(teslatlas_hub::config::CollectorMode::Provider).unwrap_err();
+    let refusal = sign_in::owner_sign_in_precondition(tesatlas_hub::config::CollectorMode::Provider).unwrap_err();
     assert_eq!((refusal.class, refusal.key), ("configuration_precondition", "provider_mode_sign_in_unavailable"));
     // The command that paused the service around this attempt is gone
     // (M02-T10): sign-in is forwarded to the running service, which holds the

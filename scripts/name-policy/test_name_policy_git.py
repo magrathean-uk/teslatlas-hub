@@ -36,7 +36,7 @@ class GitHistoryTests(unittest.TestCase):
                 shutil.copyfile(ROOT / name, destination)
             data = root / 'scripts/name-policy'
             data.mkdir()
-            allow = {'schema': 'teslatlas.name-policy-allow/v1', 'entries': [],
+            allow = {'schema': 'tesatlas.name-policy-allow/v1', 'entries': [],
                      'extra_patterns_b64': [], 'references': {prefix: [
                          'scripts/verify-name-policy.py', 'scripts/name-policy/allow.json'
                      ] for prefix in gate.REQUIRED_REFERENCES}}

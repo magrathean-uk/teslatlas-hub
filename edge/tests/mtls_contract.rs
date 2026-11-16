@@ -11,11 +11,11 @@ use rcgen::{
 };
 use reqwest::{Certificate as ClientRoot, Identity};
 use tempfile::TempDir;
-use teslatlas_edge::admission::Clock;
-use teslatlas_edge::credentials::CredentialStore;
-use teslatlas_edge::delivery::DeliveryService;
-use teslatlas_edge::spool::{Spool, SpoolConfig, SpoolKey};
-use teslatlas_edge::tls::mtls_server_config_from_pem;
+use tesatlas_edge::admission::Clock;
+use tesatlas_edge::credentials::CredentialStore;
+use tesatlas_edge::delivery::DeliveryService;
+use tesatlas_edge::spool::{Spool, SpoolConfig, SpoolKey};
+use tesatlas_edge::tls::mtls_server_config_from_pem;
 
 const T0: i64 = 1_800_000_000_000;
 

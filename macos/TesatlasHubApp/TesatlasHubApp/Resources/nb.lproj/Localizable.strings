@@ -1,0 +1,867 @@
+"hub.AppDelegate.103.34" = "Vis";
+"hub.AppDelegate.106.35" = "Oversikt";
+"hub.AppDelegate.110.36" = "Kjøretøy";
+"hub.AppDelegate.114.37" = "Aktivitet";
+"hub.AppDelegate.118.38" = "Innstillinger";
+"hub.AppDelegate.12.1" = "Hub fullfører en pågående operasjon";
+"hub.AppDelegate.123.39" = "Diagnostikk";
+"hub.AppDelegate.128.41" = "Aktivitet og logger";
+"hub.AppDelegate.13.2" = "Vent til den pågående handlingen for oppsett, tjenesten, kjøretøyet eller diagnostikken er ferdig, og avslutt deretter appen. Når du avslutter appen, stopper ikke Hub-tjenesten i bakgrunnen.";
+"hub.AppDelegate.132.43" = "Tjenestedetaljer";
+"hub.AppDelegate.139.45" = "Vindu";
+"hub.AppDelegate.14.3" = "OK";
+"hub.AppDelegate.145.46" = "Lukk";
+"hub.AppDelegate.147.48" = "Minimer";
+"hub.AppDelegate.148.50" = "Zoom";
+"hub.AppDelegate.151.51" = "Hjelp";
+"hub.AppDelegate.154.52" = "Hjelp for Tesatlas Hub";
+"hub.AppDelegate.227.53" = "Den lokale konfigurasjonen for Hub-utvikling ble avvist";
+"hub.AppDelegate.229.54" = "Avslutt";
+"hub.AppDelegate.332.71" = "Oversikt viser raskt status for Hub. Kjøretøy inneholder status og kommandoer. Aktivitet samler nylige hendelser, og Innstillinger inneholder tilkoblinger, diagnostikk, importer og tjenestedetaljer.";
+"hub.AppDelegate.344.73" = "Tesatlas Hub v%1$@";
+"hub.AppDelegate.347.75" = "Vis lisens";
+"hub.AppDelegate.349.76" = "Tilhørende kildekode";
+"hub.AppDelegate.44.5" = "Om Tesatlas Hub";
+"hub.AppDelegate.48.6" = "Juridisk informasjon og lisens…";
+"hub.AppDelegate.55.7" = "Tilhørende kildekode…";
+"hub.AppDelegate.62.8" = "Skjul Tesatlas Hub";
+"hub.AppDelegate.65.10" = "Skjul andre";
+"hub.AppDelegate.69.12" = "Vis alle";
+"hub.AppDelegate.73.13" = "Avslutt Tesatlas Hub";
+"hub.AppDelegate.79.15" = "Rediger";
+"hub.AppDelegate.82.16" = "Angre";
+"hub.AppDelegate.83.19" = "Gjør om";
+"hub.AppDelegate.86.22" = "Klipp ut";
+"hub.AppDelegate.87.24" = "Kopier";
+"hub.AppDelegate.88.26" = "Lim inn";
+"hub.AppDelegate.89.28" = "Slett";
+"hub.AppDelegate.91.29" = "Velg alle";
+"hub.AppDelegate.94.31" = "Arkiv";
+"hub.AppDelegate.97.32" = "Importer historikk…";
+"hub.DevelopmentHubRuntime.109.98" = "Lokal utviklingsmodus var ikke aktivert. Sett %1$@=1 sammen med alle fire utviklingsstiene.";
+"hub.DevelopmentHubRuntime.115.99" = "%1$@ må være en ikke-tom absolutt sti.";
+"hub.DevelopmentHubRuntime.119.100" = "%1$@ må ikke inneholde relative stikomponenter.";
+"hub.DevelopmentHubRuntime.128.101" = "%1$@ må være fixture, standalone eller edge.";
+"hub.DevelopmentHubRuntime.172.102" = "Utviklingsloggmappen kan ikke åpnes på en sikker måte: %1$@";
+"hub.DevelopmentHubRuntime.18.82" = "Kontrollfilen for bare historikk er usikker eller utilgjengelig.";
+"hub.DevelopmentHubRuntime.182.103" = "Utviklingsloggmappen ble endret under klargjøringen: %1$@";
+"hub.DevelopmentHubRuntime.202.106" = "Utviklingsloggen kan ikke åpnes på en sikker måte: %1$@";
+"hub.DevelopmentHubRuntime.213.107" = "Utviklingsloggen må være en vanlig fil med én hardlenke som eies av gjeldende bruker: %1$@";
+"hub.DevelopmentHubRuntime.219.108" = "Utviklingsloggen har tillatelser som ikke støttes: %1$@";
+"hub.DevelopmentHubRuntime.224.109" = "Tillatelsene for utviklingsloggen kunne ikke repareres: %1$@";
+"hub.DevelopmentHubRuntime.236.110" = "Identiteten til utviklingsloggen ble endret under klargjøringen: %1$@";
+"hub.DevelopmentHubRuntime.248.111" = "Utviklingstjenesten må eies av gjeldende bruker.";
+"hub.DevelopmentHubRuntime.256.112" = "Tjenesteidentiteten for utvikling inneholder en usikker sti.";
+"hub.DevelopmentHubRuntime.262.116" = "Utrygg etikett for utviklingstjenesten.";
+"hub.DevelopmentHubRuntime.28.83" = "Kontrollfilen for bare historikk må være en vanlig fil som bare eieren har tilgang til.";
+"hub.DevelopmentHubRuntime.281.117" = "Utviklingsstien er utilgjengelig: %1$@";
+"hub.DevelopmentHubRuntime.284.118" = "Utviklingsstien eies ikke av gjeldende bruker: %1$@";
+"hub.DevelopmentHubRuntime.292.119" = "Utviklingsprogrammet må være en vanlig, kjørbar fil som gruppen eller andre ikke kan skrive til: %1$@";
+"hub.DevelopmentHubRuntime.298.120" = "Utviklingsfilen må være en vanlig fil som bare eieren har tilgang til: %1$@";
+"hub.DevelopmentHubRuntime.304.121" = "Utviklingsmappen må eies av gjeldende bruker og bare være tilgjengelig for eieren: %1$@";
+"hub.DevelopmentHubRuntime.323.123" = "Utviklingsstiene må ikke inneholde symbolske lenker: %1$@";
+"hub.DevelopmentHubRuntime.327.124" = "Foreldremappen for utviklingsstien er ikke en mappe: %1$@";
+"hub.DevelopmentHubRuntime.330.125" = "Foreldremappen for utviklingsstien har en uventet eier: %1$@";
+"hub.DevelopmentHubRuntime.333.126" = "Foreldremappen for utviklingsstien kan skrives til av gruppen eller andre: %1$@";
+"hub.DevelopmentHubRuntime.39.84" = "Kontrollfilen for bare historikk kunne ikke leses.";
+"hub.DevelopmentHubRuntime.44.85" = "Kontrollfilen for bare historikk har uventet innhold.";
+"hub.DevelopmentHubRuntime.472.142" = "Ukjent tjenestehandling.";
+"hub.DevelopmentHubRuntime.58.86" = "Kontrollfilen for bare historikk ble ikke lagret.";
+"hub.DevelopmentHubRuntime.692.174" = "Hub for utvikling stanset ikke helt.";
+"hub.DevelopmentHubRuntime.713.175" = "Tidsfristen for oppstartskontrollen gikk ut.";
+"hub.DevelopmentHubRuntime.730.177" = "Hubens LaunchAgent er lastet inn, men kjører ikke forventet binærfil og konfigurasjon.";
+"hub.DevelopmentHubRuntime.737.178" = "Tidsfristen gikk ut før statussjekken.";
+"hub.DevelopmentHubRuntime.751.181" = "Hub for utvikling kjører med PID %1$@.";
+"hub.DevelopmentHubRuntime.757.182" = "Den tiltenkte prosessen har ikke vært stabil gjennom to oppstartskontroller.";
+"hub.DevelopmentHubRuntime.766.183" = "Prosessen ga et ugyldig svar på statussjekken: %1$@";
+"hub.DevelopmentHubRuntime.774.184" = "Statuskontrollen for den tiltenkte prosessen mislyktes: %1$@";
+"hub.DevelopmentHubRuntime.784.185" = "Hubens LaunchAgent kjører ikke: %1$@";
+"hub.DevelopmentHubRuntime.852.187" = "%1$@ Den mislykkede LaunchAgent-en for utvikling kunne ikke lastes ut: %2$@";
+"hub.DevelopmentHubRuntime.857.188" = "Hub for utvikling ble ikke klar under tjenesten %1$@. %2$@";
+"hub.DiagnosticsWindowController.149.220" = "Rapporter som vises, kopieres eller lagres, sladder legitimasjon og private identifikatorer. Kontroller rapporten før du deler den.";
+"hub.DiagnosticsWindowController.189.224" = "Kjør diagnostikk for å samle inn en sladdet rapport.";
+"hub.DiagnosticsWindowController.192.225" = "Ingen diagnostikkrapport er kjørt.";
+"hub.DiagnosticsWindowController.20.203" = "Vis sladdet rårapport";
+"hub.DiagnosticsWindowController.21.204" = "Kjør på nytt";
+"hub.DiagnosticsWindowController.210.227" = "Kontroller kjøres…";
+"hub.DiagnosticsWindowController.22.205" = "Kopier rapport";
+"hub.DiagnosticsWindowController.227.230" = "Ingen strukturerte kontroller ble returnert.";
+"hub.DiagnosticsWindowController.23.206" = "Lagre rapport…";
+"hub.DiagnosticsWindowController.246.232" = "Kjør diagnostikk for å vise fullførte kontroller.";
+"hub.DiagnosticsWindowController.283.236" = "Ingen flere detaljer.";
+"hub.DiagnosticsWindowController.311.237" = "Skjul sladdet rårapport";
+"hub.DiagnosticsWindowController.321.239" = "Sladdet rapport kopiert.";
+"hub.DiagnosticsWindowController.335.241" = "Sladdet rapport lagret.";
+"hub.DiagnosticsWindowController.371.242" = "Miljødiagnostikk";
+"hub.DiagnosticsWindowController.371.243" = "Kjøremiljø og tillatelser er i orden.";
+"hub.DiagnosticsWindowController.372.244" = "Forhåndskontroll";
+"hub.DiagnosticsWindowController.372.245" = "Konfigurasjonen er gyldig";
+"hub.DiagnosticsWindowController.373.246" = "Tjenestestatus";
+"hub.DiagnosticsWindowController.373.247" = "Kjører";
+"hub.DiagnosticsWindowController.374.248" = "Database";
+"hub.DiagnosticsWindowController.374.249" = "Integritetskontrollen bestod";
+"hub.DiagnosticsWindowController.375.250" = "Legitimasjon";
+"hub.DiagnosticsWindowController.375.251" = "Fleet-tokenet er gyldig";
+"hub.DiagnosticsWindowController.376.252" = "Tilkobling";
+"hub.DiagnosticsWindowController.376.253" = "Tilkobling til Tesla Fleet-endepunktet ble opprettet";
+"hub.DiagnosticsWindowController.377.254" = "Nylige logger";
+"hub.DiagnosticsWindowController.377.255" = "Ingen feil den siste timen";
+"hub.DiagnosticsWindowController.70.212" = "Kontroller Hub, databasen og tilkoblingene.";
+"hub.HubController.100.306" = "Hub kjører";
+"hub.HubController.101.307" = "Hub er stanset";
+"hub.HubController.102.308" = "Oppsett kreves";
+"hub.HubController.103.309" = "Krever oppmerksomhet";
+"hub.HubController.1151.476" = "Hub-tjenesten ble ikke helt stanset.";
+"hub.HubController.1161.477" = "Tjeneste";
+"hub.HubController.1161.478" = "LaunchAgent er installert og svarer";
+"hub.HubController.1162.479" = "Tesla-konto";
+"hub.HubController.1162.480" = "Legitimasjonen er lagret og gyldig";
+"hub.HubController.1163.481" = "Kjøretøy";
+"hub.HubController.1163.482" = "1 kjøretøy tilgjengelig";
+"hub.HubController.1164.484" = "SQLite-skjema på revisjon 42";
+"hub.HubController.1165.486" = "Forhåndskontrollene bestod";
+"hub.HubController.1166.487" = "Logger";
+"hub.HubController.1486.555" = "Fullfør eller avbryt overleveringen for kildeprogrammigreringen før du logger ut.";
+"hub.HubController.1504.567" = "Frakoblingen ble ikke fullført som den skulle. Hub-statusen er oppdatert. Kontroller om kontoen fortsatt er tilkoblet. %1$@";
+"hub.HubController.1522.568" = "Bekreft at du har gjennomgått skjemaet for kildedatabasen før du kontrollerer kompatibiliteten.";
+"hub.HubController.1523.569" = "Bekreft at kildeprogrammet er versjon 4.4.0 eller nyere før du kontrollerer kompatibiliteten.";
+"hub.HubController.1532.570" = "Velg en lokal PostgreSQL-kilde på 127.0.0.1 eller ::1.";
+"hub.HubController.1536.571" = "Bil-ID-en i kildeprogrammet må være et positivt tall.";
+"hub.HubController.1539.572" = "Velg den beskyttede PostgreSQL-passordfilen.";
+"hub.HubController.1552.580" = "Kompatibilitetskontrollen for kildeprogrammet returnerte ingen gyldig rapport.";
+"hub.HubController.1562.581" = "Kunne ikke bekrefte kildedatabasen. Kontroller servertilkoblingen og prøv igjen.";
+"hub.HubController.1585.586" = "Bekreft at kildeprogrammet er versjon 4.4.0 eller nyere før import.";
+"hub.HubController.1591.587" = "Pålogging krever et åpent innsamlingsvindu. Åpne et vindu, og logg inn på nytt.";
+"hub.HubController.1718.615" = "Kildeprogramimporten returnerte ingen gyldig fullføringsrapport. Hub forblir stanset.";
+"hub.HubController.1742.624" = "Importen ble fullført, men Hub kunne ikke registrere kontrollpunktet for sikker overlevering: %1$@. Hub forblir stanset.";
+"hub.HubController.1846.655" = "Bekreft at kildeprogrammet er versjon 4.4.0 eller nyere før du importerer fra en direkte PostgreSQL-kilde.";
+"hub.HubController.1865.658" = "PostgreSQL-kilden må inneholde URL-skjemaet postgres eller postgresql, en vert og et databasenavn.";
+"hub.HubController.1869.659" = "PostgreSQL-kilden må ikke inneholde et passord. Bruk feltet for passordfil.";
+"hub.HubController.1966.689" = "Fleet-oppsettet mislyktes: %1$@. Gjenoppretting av Hub-konfigurasjonen mislyktes også: %2$@";
+"hub.HubController.2051.701" = "Fleet-oppsettet mislyktes: %1$@. Omstart av Hub mislyktes også: %2$@";
+"hub.HubController.2096.708" = "Fleet-legitimasjonen er ufullstendig eller ugyldig.";
+"hub.HubController.2107.714" = "Fleet-legitimasjonen kunne ikke kodes.";
+"hub.HubController.2200.747" = "Tesla-oppsettet mislyktes: %1$@. Gjenoppretting av Hub-konfigurasjonen mislyktes også: %2$@";
+"hub.HubController.2268.756" = "%1$@: %2$@. Gjenoppretting av Hub-konfigurasjonen mislyktes også: %3$@";
+"hub.HubController.2282.759" = "%1$@: %2$@. Omstart av Hub mislyktes også: %3$@";
+"hub.HubController.2292.760" = "Tesla-oppsettet mislyktes";
+"hub.HubController.2341.768" = "Tesla-innloggingslegitimasjonen kunne ikke kodes.";
+"hub.HubController.2346.772" = "Tesla-kjøretøy-ID-en må være et positivt tall.";
+"hub.HubController.2374.779" = "Utfallet av byttet av Tesla-leverandør må bekreftes. Hub forblir stanset; kjør diagnostikk før du prøver igjen. %1$@";
+"hub.HubController.2385.784" = "Logg inn på Tesla igjen i kildeprogrammet, og prøv deretter importen på nytt.";
+"hub.HubController.2389.785" = "Kildeprogramimporten mislyktes. Prøv importen på nytt.";
+"hub.HubController.2457.838" = "Fullfør kildeprogramoverleveringen før du starter Hub.";
+"hub.HubController.2479.850" = "Fullfør kildeprogramoverleveringen før du starter Hub på nytt.";
+"hub.HubController.250.318" = "Eierpålogging";
+"hub.HubController.2503.863" = "Oppstart av Hub pågår allerede.";
+"hub.HubController.251.319" = "Fleet API";
+"hub.HubController.2519.869" = "Fullfør migreringskontrollene før du starter Hub.";
+"hub.HubController.2610.896" = "Hub startet ikke: %1$@. Pausen i datainnsamlingen kunne ikke gjenopprettes: %2$@";
+"hub.HubController.2678.902" = "Hub ble ikke klar før oppstartsfristen gikk ut.";
+"hub.HubController.2689.905" = "Status for Hub-klargjøring kunne ikke leses.";
+"hub.HubController.2698.907" = "Status for Hub-klargjøring var ugyldig.";
+"hub.HubController.2717.908" = "Status for Hub-klargjøring manglet en gyldig lease for datainnsamlingen.";
+"hub.HubController.2798.927" = "Hub ble stanset fordi kontrollpunktet for migreringsoverlevering ikke kunne fjernes: %1$@";
+"hub.HubController.2832.942" = "Hub ble ikke klar og ble stanset. Migreringsoverleveringen venter fortsatt.";
+"hub.HubController.2834.943" = "Hub ble stanset etter at oppstarten mislyktes, men pausen i datainnsamlingen kunne ikke gjenopprettes. La kildeprogrammet være deaktivert, og prøv igjen.";
+"hub.HubController.2836.944" = "Hub ble ikke klar, og det kunne ikke bekreftes at den var stanset. La kildeprogrammet være deaktivert, stans Hub, og prøv igjen.";
+"hub.HubController.2905.957" = "Hub";
+"hub.HubController.2905.958" = "Stanset for historikkverifisering";
+"hub.HubController.2906.959" = "Signert historikk";
+"hub.HubController.2906.960" = "Publisert og klar";
+"hub.HubController.2906.961" = "Ikke klar";
+"hub.HubController.2907.962" = "Datainnsamling";
+"hub.HubController.2907.963" = "Deaktivert";
+"hub.HubController.2907.964" = "Kontroller den lokale Hub-konfigurasjonen";
+"hub.HubController.2908.966" = "Ikke tilkoblet; historikken er tilgjengelig frakoblet";
+"hub.HubController.2932.967" = "Installert og trygt stanset";
+"hub.HubController.2943.972" = "Kontrollen av om Hub er klar, bestod; full integritetskontroll er tilgjengelig i Diagnostikk.";
+"hub.HubController.2944.973" = "Hub er ikke klar ennå. Vent litt, og kjør deretter på nytt.";
+"hub.HubController.2953.976" = "Ingen logger ennå";
+"hub.HubController.2953.977" = "Ingen tjenestelogger mens tjenesten er stanset";
+"hub.HubController.2954.978" = "Utilgjengelig";
+"hub.HubController.2954.979" = "Lesbar";
+"hub.HubController.3010.1006" = "Mislyktes";
+"hub.HubController.3026.1019" = "Hub må kjøre før du sender en kommando til kjøretøyet.";
+"hub.HubController.3032.1027" = "Koble til Tesla før du sender en kommando til kjøretøyet.";
+"hub.HubController.3040.1034" = "Kjøretøykontroller krever Tesla Fleet-API.";
+"hub.HubController.3047.1041" = "Velg et kjøretøy før du sender en kommando.";
+"hub.HubController.3053.1048" = "Det valgte kjøretøyet er ikke lenger konfigurert.";
+"hub.HubController.314.326" = "Vekk kjøretøyet";
+"hub.HubController.315.327" = "Start klimaanlegget";
+"hub.HubController.316.328" = "Stopp klimaanlegget";
+"hub.HubController.317.329" = "Lås dørene";
+"hub.HubController.318.330" = "Lås opp dørene";
+"hub.HubController.319.331" = "Blink med lysene";
+"hub.HubController.320.332" = "Tut med hornet";
+"hub.HubController.326.333" = "Kontroller kjøretøyet for å bekrefte at det våknet.";
+"hub.HubController.327.334" = "Kontroller kjøretøyet for å bekrefte at klimaanlegget ble endret.";
+"hub.HubController.328.335" = "Kontroller kjøretøyet for å bekrefte at dørene ble endret.";
+"hub.HubController.329.336" = "Kommandoen om å blinke med lysene ble godtatt.";
+"hub.HubController.330.337" = "Kommandoen om å tute med hornet ble godtatt.";
+"hub.HubController.3323.1158" = "Konfigurasjonen for Hub med bare historikk eller den publiserte historikken er ikke klar. Hold datainnsamlingen deaktivert, og kjør verifiseringen på nytt.";
+"hub.HubController.342.338" = "Gjeldende";
+"hub.HubController.343.339" = "Hurtigbufret";
+"hub.HubController.3430.1177" = "Hub-konfigurasjonen er ikke en vanlig fil.";
+"hub.HubController.344.340" = "Ukjent";
+"hub.HubController.3441.1179" = "Hub-konfigurasjonen er for stor.";
+"hub.HubController.3452.1180" = "Hub-konfigurasjonen kunne ikke leses.";
+"hub.HubController.3460.1182" = "Hub-konfigurasjonen må være UTF-8-tekst.";
+"hub.HubController.3527.1187" = "Gjenoppretting av Hub-konfigurasjonen nektet å fjerne en erstattet konfigurasjonsbane.";
+"hub.HubController.3543.1188" = "Sikkerhetsmarkøren for migreringen er fortsatt til stede, og Hub må forbli stanset.";
+"hub.HubController.3544.1189" = "Hub må forbli stanset til konfigurasjonen er reparert.";
+"hub.HubController.3546.1190" = "Kildeprogramimporten mislyktes: %1$@. Gjenoppretting av konfigurasjonen mislyktes også: %2$@. %3$@";
+"hub.HubController.3752.1247" = "Sist registrert %1$@";
+"hub.HubController.3754.1249" = "Ingen registreringer ennå";
+"hub.HubController.3787.1262" = "I orden · %1$@ MB";
+"hub.HubController.3789.1265" = "Installert og kjører";
+"hub.HubController.3789.1266" = "Installert · krever oppmerksomhet";
+"hub.HubController.3807.1275" = "Historikk tilgjengelig · Tesla er ikke tilkoblet";
+"hub.HubController.3846.1290" = "Installert, men stanset";
+"hub.HubController.3849.1291" = "Installert · tjenestestatus er utilgjengelig";
+"hub.HubController.3858.1293" = "Installert · versjonen samsvarer ikke";
+"hub.HubController.3877.1301" = "Hub for utvikling kjører";
+"hub.HubController.3878.1303" = "Hub for utvikling er stanset";
+"hub.HubController.3879.1305" = "Hub for utvikling · krever oppmerksomhet";
+"hub.HubController.3880.1307" = "Hub for utvikling · tjenestestatus er utilgjengelig";
+"hub.HubController.3881.1309" = "Hub for utvikling · versjonen samsvarer ikke";
+"hub.HubController.3882.1310" = "Installert · status er utilgjengelig";
+"hub.HubController.3882.1311" = "Hub for utvikling · status er utilgjengelig";
+"hub.HubController.389.342" = "%1$@ · %2$@";
+"hub.HubController.3905.1332" = "Akkurat nå";
+"hub.HubController.393.343" = "Ikke konfigurert";
+"hub.HubController.394.344" = "Venter på oppsett eller import";
+"hub.HubController.441.368" = "Ikke installert";
+"hub.HubController.445.371" = "Ingen konfigurert bil";
+"hub.HubController.452.374" = "Hub er ikke konfigurert eller installert.";
+"hub.HubController.467.375" = "Forhåndsvisningsmodus er skrivebeskyttet. Ingen prosess, installasjonsprogram eller launchctl-handling ble kjørt.";
+"hub.HubController.469.376" = "Innebygd ressurs mangler: %1$@";
+"hub.HubController.477.378" = "Tidsfristen for Hub-kommandoen gikk ut.";
+"hub.HubController.775.379" = "Utdataene fra Hub-kommandoen ble ikke lukket.";
+"hub.HubController.781.380" = "Utdataene fra Hub-kommandoen kunne ikke leses.";
+"hub.HubController.791.381" = "Hub-kommandoen mislyktes.";
+"hub.HubController.connected_state" = "Tilkoblet";
+"hub.HubDashboardView.101.1357" = "Hub-tjeneste";
+"hub.HubDashboardView.105.1361" = "Lokal database";
+"hub.HubDashboardView.119.1362" = "Start Hub";
+"hub.HubDashboardView.12.1336" = "Starter Hub…";
+"hub.HubDashboardView.13.1337" = "Stopper Hub…";
+"hub.HubDashboardView.14.1338" = "Starter Hub på nytt…";
+"hub.HubDashboardView.166.1366" = "Nylig aktivitet";
+"hub.HubDashboardView.192.1369" = "Datamappe";
+"hub.HubDashboardView.20.1339" = "Klargjør datainnsamling fra kjøretøyet.";
+"hub.HubDashboardView.201.1372" = "Dataene dine blir værende på denne Macen.";
+"hub.HubDashboardView.21.1340" = "Fullfører pågående arbeid og stanser på en trygg måte.";
+"hub.HubDashboardView.22.1341" = "Starter bakgrunnstjenesten på nytt.";
+"hub.HubDashboardView.279.1374" = "Tesatlas Hub %1$@";
+"hub.HubDashboardView.28.1342" = "Starter…";
+"hub.HubDashboardView.29.1343" = "Stopper…";
+"hub.HubDashboardView.30.1344" = "Starter på nytt…";
+"hub.HubDashboardView.36.1345" = "Hub startet.";
+"hub.HubDashboardView.37.1346" = "Hub stanset.";
+"hub.HubDashboardView.38.1347" = "Hub startet på nytt.";
+"hub.HubDashboardView.399.1383" = "Ingen nylige handlinger i appen. Se Logger for aktivitet i datainnsamlingen.";
+"hub.HubDashboardView.430.1384" = "Ingen kjøretøy ennå";
+"hub.HubDashboardView.431.1385" = "Koble til en Tesla-konto for å se kjøretøyene her.";
+"hub.HubDashboardView.514.1389" = "Hub kjører i bakgrunnen. Du kan lukke dette vinduet.";
+"hub.HubDashboardView.515.1390" = "Kjøretøydata samles ikke inn.";
+"hub.HubDashboardView.516.1391" = "Velg hvordan Hub skal koble til Tesla.";
+"hub.HubDashboardView.517.1392" = "Åpne Diagnostikk for å se detaljer.";
+"hub.HubDashboardView.96.1352" = "Stopp Hub…";
+"hub.HubDashboardView.97.1353" = "Start Hub på nytt";
+"hub.HubDashboardView.98.1354" = "Konfigurer Hub";
+"hub.HubDashboardView.99.1355" = "Kjør diagnostikk";
+"hub.HubDiagnosticsPresentation.51.1418" = "Strukturert rapport er tilgjengelig under rådetaljer.";
+"hub.HubDiagnosticsPresentation.58.1427" = "%1$@: %2$@";
+"hub.HubDiagnosticsPresentation.81.1444" = "Tjenestepause";
+"hub.HubDiagnosticsPresentation.82.1446" = "Kontroll av tjenestestatus";
+"hub.HubDiagnosticsPresentation.83.1448" = "Gjenopptakelse av tjeneste";
+"hub.HubDiagnosticsPresentation.84.1450" = "Metadata for brukerstøtte";
+"hub.HubDiagnosticsPresentation.boolean_no" = "nei";
+"hub.HubDiagnosticsPresentation.boolean_yes" = "ja";
+"hub.HubDiagnosticsPresentation.compatible_label" = "Kompatibel";
+"hub.HubDiagnosticsPresentation.message_label" = "Melding";
+"hub.HubDiagnosticsPresentation.preflight_label" = "Forhåndskontroll";
+"hub.HubDiagnosticsPresentation.ready_label" = "Klar";
+"hub.HubDiagnosticsPresentation.status_label" = "Status";
+"hub.HubNavigationBar.346.1478" = "Nylige Hub-hendelser på denne Macen.";
+"hub.HubNavigationBar.349.1479" = "Søk i aktivitet";
+"hub.HubNavigationBar.354.1480" = "Åpne logger…";
+"hub.HubNavigationBar.378.1483" = "Nylige";
+"hub.HubNavigationBar.385.1485" = "Følsomme verdier sladdes i loggene.";
+"hub.HubNavigationBar.418.1488" = "Ingen nylig aktivitet";
+"hub.HubNavigationBar.418.1489" = "Ingen samsvarende hendelser";
+"hub.HubNavigationBar.419.1490" = "Hendelser vises her etter hvert som de skjer.";
+"hub.HubNavigationBar.419.1491" = "Prøv et annet søk.";
+"hub.HubNavigationBar.454.1496" = "Administrer denne Hub-installasjonen og tilkoblingene.";
+"hub.HubNavigationBar.463.1502" = "Importer historikk";
+"hub.HubNavigationBar.464.1503" = "Importer eksisterende kildeprogramdata.";
+"hub.HubNavigationBar.467.1505" = "Tilkoblinger og data";
+"hub.HubNavigationBar.469.1507" = "Bakgrunnstjeneste";
+"hub.HubNavigationBar.473.1510" = "Kontroller systemstatus og logger.";
+"hub.HubNavigationBar.475.1511" = "Denne Macen";
+"hub.HubNavigationBar.481.1516" = "Versjon %1$@";
+"hub.HubNavigationBar.53.1462" = "Vis %1$@";
+"hub.HubNavigationBar.appearance_label" = "Utseende";
+"hub.HubNavigationBar.navigation_label" = "Navigasjon";
+"hub.HubNavigationBar.setup_label" = "Oppsett";
+"hub.HubPresentationState.69.1522" = "Hub er konfigurert og startet";
+"hub.HubPresentationState.70.1523" = "Kildeprogramhistorikk importert";
+"hub.HubPresentationState.71.1524" = "Hub-tjeneste startet";
+"hub.HubPresentationState.72.1525" = "Hub-tjeneste stanset";
+"hub.HubPresentationState.73.1526" = "Hub-tjeneste startet på nytt";
+"hub.HubPresentationState.74.1527" = "Nå brukes %1$@";
+"hub.HubPresentationState.75.1528" = "Tesla-konto frakoblet";
+"hub.HubPresentationState.77.1529" = "Kommandoen «%1$@» ble godtatt for %2$@";
+"hub.HubUtilityWindow.107.1609" = "Tesatlas Hub";
+"hub.HubUtilityWindow.24.1603" = "Tilbake";
+"hub.HubVehicleViews.102.1640" = "Start eller stopp klimaanlegget i kupeen.";
+"hub.HubVehicleViews.103.1642" = "Lås eller lås opp kjøretøyet.";
+"hub.HubVehicleViews.104.1643" = "Vekk bilen, blink med lysene eller tut med hornet.";
+"hub.HubVehicleViews.106.1645" = "Andre kommandoer";
+"hub.HubVehicleViews.128.1647" = "Kjøretøykontroller";
+"hub.HubVehicleViews.205.1653" = "Ukjent";
+"hub.HubVehicleViews.28.1622" = "Om lagrede telemetridata er gjeldende, hurtigbufrede eller ukjente";
+"hub.HubVehicleViews.31.1623" = "Kjøretøykommandoer er tilgjengelige når Hub er koblet til via Fleet Telemetry.";
+"hub.HubVehicleViews.376.1673" = "Ingen konfigurerte kjøretøy";
+"hub.HubVehicleViews.410.1679" = "Du må alltid bekrefte kommandoer før de sendes.";
+"hub.HubVehicleViews.469.1683" = "Kjøretøyene du har konfigurert.";
+"hub.HubVehicleViews.500.1685" = "Koble til en Tesla-konto og start Hub for å se kjøretøyene her.";
+"hub.HubVehicleViews.access_group" = "Tilgang";
+"hub.HubVehicleViews.battery_label" = "Batteri";
+"hub.HubVehicleViews.climate_group" = "Klima";
+"hub.HubVehicleViews.location_label" = "Plassering";
+"hub.HubVehicleViews.state_label" = "Tilstand";
+"hub.HubVehicleViews.telemetry_label" = "Telemetri";
+"hub.ImportSheetController.110.1702" = "Velg…";
+"hub.ImportSheetController.111.1704" = "Importer";
+"hub.ImportSheetController.112.1706" = "Avbryt";
+"hub.ImportSheetController.148.1709" = "Fyll ut alle feltene";
+"hub.ImportSheetController.149.1710" = "Kilde, bil-ID og passordfil er obligatoriske.";
+"hub.ImportSheetController.156.1711" = "Bekreft kildeprogramversjon";
+"hub.ImportSheetController.17.1690" = "Jeg bekrefter at denne databasen tilhører versjon 4.4.0 eller nyere av kildeprogrammet";
+"hub.ImportSheetController.26.1691" = "Importer historikk";
+"hub.ImportSheetController.49.1693" = "Kopier data fra PostgreSQL-kildedatabasen til Tesatlas Hub.";
+"hub.ImportSheetController.64.1694" = "PostgreSQL-kilde";
+"hub.ImportSheetController.65.1695" = "Bil-ID";
+"hub.ImportSheetController.69.1697" = "Passordfil";
+"hub.ImportSheetController.7.1687" = "Hub leser kildedatabasen uten å stoppe eller endre kildeprogrammet. Etter importen gir Hub beskjed om når du selv skal deaktivere Tesla-tilgangen i kildeprogrammet.";
+"hub.ImportSheetController.73.1699" = "Hub kjører ikke. Start Hub, åpne et innsamlingsvindu, og logg inn.";
+"hub.ImportSheetController.9.1688" = "Før import: Ta sikkerhetskopi av kildeprogrammet, oppdater til versjon 4.4.0 eller nyere, start det én gang, og vent til databasemigreringene er fullført. En direkte databasetilkobling kan ikke bekrefte hvilken appversjon som kjører.";
+"hub.LogsWindowController.113.1730" = "Flere logghandlinger";
+"hub.LogsWindowController.123.1732" = "Loggene som vises, kopieres eller lagres, sladder legitimasjon og private identifikatorer. Gå gjennom dem før du deler.";
+"hub.LogsWindowController.17.1712" = "Laster logger…";
+"hub.LogsWindowController.175.1743" = "Loggfiler lest nettopp · oppføringene kan være historiske";
+"hub.LogsWindowController.18.1713" = "Logghandlinger";
+"hub.LogsWindowController.19.1714" = "Mer";
+"hub.LogsWindowController.20.1715" = "Oppdater";
+"hub.LogsWindowController.208.1750" = "Kjører diagnostikk…";
+"hub.LogsWindowController.211.1753" = "Kjører kontroller av databasen, legitimasjonen, tilkoblingen og tjenesten…";
+"hub.LogsWindowController.23.1718" = "Lagre…";
+"hub.LogsWindowController.235.1757" = "Sladdede logger er kopiert.";
+"hub.LogsWindowController.250.1759" = "Sladdede logger er lagret.";
+"hub.LogsWindowController.286.1764" = "Diagnostikken fant problemer";
+"hub.LogsWindowController.286.1765" = "Diagnostikken er fullført";
+"hub.LogsWindowController.49.1721" = "Forhåndsvisningsdata";
+"hub.LogsWindowController.70.1725" = "Gå gjennom sladdede Hub- og app-logger.";
+"hub.MainWindowController.1152.1840" = "Bruk Fleet API";
+"hub.MainWindowController.1153.1841" = "Bruk eierpålogging";
+"hub.MainWindowController.1154.1842" = "Importer historikk…";
+"hub.MainWindowController.1156.1843" = "Koble fra Tesla…";
+"hub.MainWindowController.1158.1844" = "Koble til Tesla-konto…";
+"hub.MainWindowController.1428.1846" = "Koble Tesla fra Hub?";
+"hub.MainWindowController.1429.1847" = "Hub stanses, og den lagrede legitimasjonen for Fleet og eierpålogging fjernes. Dataene som er samlet inn, blir værende på denne Macen.";
+"hub.MainWindowController.1431.1849" = "Koble fra";
+"hub.MainWindowController.15.1766" = "Kjøretøy";
+"hub.MainWindowController.22.1768" = "Stopp Hub";
+"hub.MainWindowController.23.1769" = "Start på nytt";
+"hub.MainWindowController.26.1772" = "Koble til Tesla";
+"hub.MainWindowController.27.1773" = "Importer";
+"hub.MainWindowController.441.1792" = "Administrer Tesla";
+"hub.MainWindowController.710.1816" = "Stoppe datainnsamlingen fra kjøretøyet?";
+"hub.MainWindowController.711.1817" = "Hub blir stanset. Den eksisterende historikken er trygg, og du kan starte Hub igjen når som helst.";
+"hub.MainWindowController.800.1821" = "%1$@ mislyktes: %2$@";
+"hub.MainWindowController.849.1824" = "Hub fullførte ikke handlingen %1$@. Gjeldende status vises; åpne Diagnostikk for detaljer.";
+"hub.MainWindowController.894.1825" = "%1$@ for %2$@?";
+"hub.MainWindowController.895.1826" = "Tesatlas Hub sender denne kommandoen én gang.";
+"hub.MainWindowController.913.1830" = "Utfallet av kommandoen er ukjent";
+"hub.MainWindowController.914.1831" = "Kontroller kjøretøyet. Ikke send kommandoen på nytt fra denne appøkten.";
+"hub.MainWindowController.960.1835" = "Kommando godtatt";
+"hub.OnboardingWindowController.1016.2012" = "Kopierer kildeprogramhistorikken til Hub.";
+"hub.OnboardingWindowController.1070.2015" = "• %1$@";
+"hub.OnboardingWindowController.1082.2016" = "Velg en annen nøkkel…";
+"hub.OnboardingWindowController.1085.2017" = "Bruk passord";
+"hub.OnboardingWindowController.1088.2018" = "Bruk SSH-nøkkel";
+"hub.OnboardingWindowController.1091.2019" = "Åpne logger";
+"hub.OnboardingWindowController.1096.2020" = "Kopier detaljer";
+"hub.OnboardingWindowController.1165.2025" = "Bestått";
+"hub.OnboardingWindowController.1165.2026" = "Mislyktes";
+"hub.OnboardingWindowController.1198.2028" = "Jeg forstår at datainnsamlingen forblir deaktivert, og at denne Hub-en bare viser importert historikk";
+"hub.OnboardingWindowController.1199.2029" = "Jeg har deaktivert Tesla-tilgangen i kildeprogrammet for å unngå doble forespørsler";
+"hub.OnboardingWindowController.1250.2034" = "Hub-oppsettet pågår";
+"hub.OnboardingWindowController.1251.2035" = "Vis logger";
+"hub.OnboardingWindowController.1323.2037" = "Kobler til…";
+"hub.OnboardingWindowController.1324.2038" = "Kobler sikkert til kildeprogrammet";
+"hub.OnboardingWindowController.1354.2041" = "Kom i gang";
+"hub.OnboardingWindowController.1355.2042" = "Konfigurer Fleet";
+"hub.OnboardingWindowController.1359.2044" = "Importer historikk";
+"hub.OnboardingWindowController.1359.2045" = "Kontroller øyeblikksbildet";
+"hub.OnboardingWindowController.1362.2046" = "Importer data";
+"hub.OnboardingWindowController.1362.2047" = "Koble til server";
+"hub.OnboardingWindowController.1471.2059" = "Fyll ut klient-ID, token, region og utløpstid for Fleet.";
+"hub.OnboardingWindowController.1631.2105" = "Skriv inn kildeprogramserveren, SSH-brukeren og porten.";
+"hub.OnboardingWindowController.168.1852" = "Fortsett";
+"hub.OnboardingWindowController.1691.2113" = "En skjemakontroll kan ikke fastslå kildeprogrammets versjon. Bekreft at serveren som kjører, bruker versjon 4.4.0 eller nyere, og fortsett deretter.";
+"hub.OnboardingWindowController.1740.2131" = "Koble til kildeprogramserveren før du importerer.";
+"hub.OnboardingWindowController.1750.2137" = "Serverinnstillingene er endret. Koble til kildeprogramserveren på nytt før du importerer.";
+"hub.OnboardingWindowController.1820.2143" = "Én eller flere kontroller krever oppmerksomhet.";
+"hub.OnboardingWindowController.195.1856" = "Bruk passordløs sudo for tilgang til Docker";
+"hub.OnboardingWindowController.1980.2147" = "Velg SSH-nøkkel";
+"hub.OnboardingWindowController.1981.2148" = "Velg nøkkel";
+"hub.OnboardingWindowController.200.1857" = "Bruk et lokalt øyeblikksbilde av PostgreSQL-databasen (bare historikk)";
+"hub.OnboardingWindowController.203.1858" = "Jeg bekrefter at denne serveren kjører kildeprogrammet versjon 4.4.0 eller nyere";
+"hub.OnboardingWindowController.252.1859" = "Forrige import ble ikke fullført. Kontroller kildeprogrammet og kjør importen på nytt.";
+"hub.OnboardingWindowController.292.1862" = "Klar til import.";
+"hub.OnboardingWindowController.298.1866" = "Tilkobling til kildeprogrammet mislyktes";
+"hub.OnboardingWindowController.299.1867" = "Denne kontoen har ikke tilgang til Docker.";
+"hub.OnboardingWindowController.300.1868" = "Kontroller serverkontoen og Docker-tilgangen, og prøv igjen.";
+"hub.OnboardingWindowController.304.1870" = "Importerer data…";
+"hub.OnboardingWindowController.437.1892" = "Europa, Midtøsten og Afrika";
+"hub.OnboardingWindowController.438.1893" = "Nord-Amerika og Asia-Stillehavsregionen";
+"hub.OnboardingWindowController.441.1895" = "SSH-nøkkel";
+"hub.OnboardingWindowController.446.1897" = "Denne brukeren trenger sudo for å lese kildedatabasen";
+"hub.OnboardingWindowController.474.1900" = "Tilgangstoken";
+"hub.OnboardingWindowController.475.1901" = "Lokal PostgreSQL-URL uten passord";
+"hub.OnboardingWindowController.477.1903" = "PostgreSQL-passordfil med tilgang bare for eieren";
+"hub.OnboardingWindowController.481.1904" = "Fornyelsestoken";
+"hub.OnboardingWindowController.482.1905" = "Klient-ID for Tesla-appen";
+"hub.OnboardingWindowController.486.1909" = "Valgfritt – bruker SSH-agenten eller standardnøkler";
+"hub.OnboardingWindowController.487.1910" = "SSH-passord";
+"hub.OnboardingWindowController.558.1914" = "Konfigurerer Hub…";
+"hub.OnboardingWindowController.573.1916" = "Lagrer tilkoblingen og klargjør Hub.";
+"hub.OnboardingWindowController.588.1917" = "Velkommen til Tesatlas Hub";
+"hub.OnboardingWindowController.589.1918" = "Hvordan vil du starte?";
+"hub.OnboardingWindowController.590.1919" = "Velg hvordan Hub skal koble til";
+"hub.OnboardingWindowController.591.1920" = "Konfigurer Fleet Telemetry";
+"hub.OnboardingWindowController.592.1921" = "Logg inn med Tesla";
+"hub.OnboardingWindowController.593.1922" = "Importer historikk…";
+"hub.OnboardingWindowController.594.1923" = "Kontrollerer Hub";
+"hub.OnboardingWindowController.595.1924" = "Migreringen er fullført";
+"hub.OnboardingWindowController.595.1925" = "Tesatlas Hub er klar";
+"hub.OnboardingWindowController.602.1926" = "Din egen Tesla-telemetriinnsamler kjører privat på denne Macen.";
+"hub.OnboardingWindowController.604.1927" = "Konfigurer en ny Hub, eller flytt over historikken din fra kildeprogrammet.";
+"hub.OnboardingWindowController.606.1928" = "Logg inn med Tesla-eierkontoen din for å komme i gang. Fleet Telemetry er tilgjengelig hvis du foretrekker det.";
+"hub.OnboardingWindowController.608.1929" = "Opprett en Tesla Fleet-app, og lim deretter inn legitimasjonen nedenfor.";
+"hub.OnboardingWindowController.612.1931" = "Koble til kildeprogramserveren for å importere kjøretøyhistorikken derfra.";
+"hub.OnboardingWindowController.614.1932" = "Kontrollerer at alt er koblet riktig sammen.";
+"hub.OnboardingWindowController.617.1933" = "Kildeprogramhistorikken din er importert til Hub.";
+"hub.OnboardingWindowController.618.1934" = "Hub er konfigurert og klar til å starte datainnsamling fra kjøretøyet.";
+"hub.OnboardingWindowController.687.1943" = "Koble til Teslaen din";
+"hub.OnboardingWindowController.688.1944" = "Samle inn kjøretøydata i bakgrunnen.";
+"hub.OnboardingWindowController.689.1946" = "Ta vare på historikken din her";
+"hub.OnboardingWindowController.690.1947" = "Lagre data lokalt på denne Macen.";
+"hub.OnboardingWindowController.691.1949" = "Ta med deg den eksisterende historikken";
+"hub.OnboardingWindowController.692.1950" = "Importer fra kildeprogrammet når du er klar.";
+"hub.OnboardingWindowController.736.1952" = "Ny installasjon";
+"hub.OnboardingWindowController.737.1953" = "Start med en ny database.";
+"hub.OnboardingWindowController.741.1955" = "Ta med den eksisterende kjøretøyhistorikken.";
+"hub.OnboardingWindowController.748.1956" = "Fleet Telemetry";
+"hub.OnboardingWindowController.752.1958" = "Eierpålogging";
+"hub.OnboardingWindowController.753.1959" = "Logg inn med Tesla. Hub beholder sin egen pålogging.";
+"hub.OnboardingWindowController.760.1960" = "Opprett Tesla Fleet-app";
+"hub.OnboardingWindowController.771.1964" = "Klient-ID";
+"hub.OnboardingWindowController.774.1967" = "Utløper om";
+"hub.OnboardingWindowController.776.1968" = "Legitimasjonen krypteres på denne Macen";
+"hub.OnboardingWindowController.790.1972" = "Pålogging er ikke tilgjengelig ennå: denne Hub-en har ingen Owner API-påloggingsverdier. Ingenting ble endret.";
+"hub.OnboardingWindowController.822.1978" = "Port";
+"hub.OnboardingWindowController.832.1980" = "SSH-bruker";
+"hub.OnboardingWindowController.836.1982" = "Velg nøkkel…";
+"hub.OnboardingWindowController.888.1990" = "Bare historikk. Hub undersøker eller importerer ikke Tesla-legitimasjon. Datainnsamlingen forblir deaktivert. Databaseskjemaet kan kontrolleres; versjonen av kildeprogrammet forblir ukjent.";
+"hub.OnboardingWindowController.891.1991" = "Lokal PostgreSQL-kilde";
+"hub.OnboardingWindowController.915.1997" = "Kildeprogrammet %1$@";
+"hub.OnboardingWindowController.927.2001" = "Kontrollerer…";
+"hub.OnboardingWindowController.935.2004" = "Endre server";
+"hub.OnboardingWindowController.983.2008" = "Koblet til %1$@";
+"hub.OnboardingWindowController.985.2009" = "Fant en kildedatabase som er klar til import.";
+"hub.OnboardingWindowController.authentication_label" = "Autentisering";
+"hub.OnboardingWindowController.busy_checking_compatibility" = "Kontrollerer kompatibilitet…";
+"hub.OnboardingWindowController.china_region" = "Kina";
+"hub.OnboardingWindowController.password_label" = "Passord";
+"hub.OnboardingWindowController.region_label" = "Region";
+"hub.OnboardingWindowController.seconds_unit" = "sekunder";
+"hub.OnboardingWindowController.server_label" = "Server";
+"hub.ServiceDetailsWindowController.104.2180" = "Tjenestedetaljer";
+"hub.ServiceDetailsWindowController.105.2181" = "Se gjennom og administrer den lokale Hub-tjenesten.";
+"hub.ServiceDetailsWindowController.113.2182" = "Versjon";
+"hub.ServiceDetailsWindowController.114.2184" = "Tjeneste";
+"hub.ServiceDetailsWindowController.114.2185" = "Aktiv";
+"hub.ServiceDetailsWindowController.115.2186" = "Leverandør";
+"hub.ServiceDetailsWindowController.118.2190" = "Datamappe";
+"hub.ServiceDetailsWindowController.121.2191" = "Ikke tilgjengelig";
+"hub.ServiceDetailsWindowController.177.2193" = "Tjenestekontroller";
+"hub.ServiceDetailsWindowController.38.2169" = "Slett Hub og data…";
+"hub.ServiceDetailsWindowController.456.2214" = "Datainnsamleren i bakgrunnen er stanset. Start den for å gjenoppta innsamlingen.";
+"hub.ServiceDetailsWindowController.463.2218" = "Datainnsamleren i bakgrunnen kjører på denne Macen.";
+"hub.ServiceDetailsWindowController.471.2222" = "Hub krever oppmerksomhet. Start den på nytt etter at du har gått gjennom diagnostikken.";
+"hub.ServiceDetailsWindowController.479.2226" = "Konfigurer Hub før du bruker tjenestekontrollene.";
+"hub.ServiceDetailsWindowController.490.2228" = "Slette Hub-data permanent?";
+"hub.ServiceDetailsWindowController.491.2229" = "Dette fjerner Hub-databasen og -konfigurasjonen. Dette kan ikke angres.";
+"hub.TeslaAuthWindowController.296.2280" = "Koble til Tesla-konto";
+"hub.TeslaAuthWindowController.30.2235" = "Tesla-innloggingen ble avbrutt.";
+"hub.TeslaAuthWindowController.31.2236" = "Sikker Tesla-innloggingstilstand kunne ikke genereres.";
+"hub.TeslaAuthWindowController.32.2237" = "Tesla-autorisasjonsadressen kunne ikke opprettes.";
+"hub.TeslaAuthWindowController.33.2238" = "Tesla returnerte et ufullstendig innloggingssvar.";
+"hub.TeslaAuthWindowController.34.2239" = "Tesla-innloggingstilstanden samsvarte ikke. Start innloggingen på nytt.";
+"hub.TeslaAuthWindowController.35.2240" = "Tesla returnerte en ugyldig utsteder for kontoen.";
+"hub.TeslaAuthWindowController.358.html_progress" = "Fullfører sikker Tesla-innlogging…";
+"hub.SourceServerImporter.34.2284" = "Kode: %1$@";
+"hub.SourceServerImporter.428.2461" = "Kildeprogramserveren returnerte ufullstendige oppsettdetaljer.";
+"hub.SourceServerImporter.691.2530" = "Kontroller serverdetaljene";
+"hub.SourceServerImporter.692.2531" = "Skriv inn en gyldig server, SSH-bruker og port.";
+"hub.SourceServerImporter.693.2532" = "Servernavn, IP-adresse eller SSH-konfigurasjonsalias godtas.";
+"hub.SourceServerImporter.695.2534" = "Velg en brukbar privatnøkkel";
+"hub.SourceServerImporter.696.2535" = "Hub kunne ikke bruke den valgte SSH-nøkkelen på en sikker måte.";
+"hub.SourceServerImporter.697.2536" = "Velg en privatnøkkel som eies av brukeren av denne Macen.";
+"hub.SourceServerImporter.697.2537" = "Ikke velg .pub-filen.";
+"hub.SourceServerImporter.699.2539" = "Skriv inn SSH-passordet";
+"hub.SourceServerImporter.700.2540" = "Passordautentisering er valgt, men passordet er ikke fylt inn.";
+"hub.SourceServerImporter.701.2541" = "Skriv inn passordet for serverkontoen, eller bruk SSH-konfigurasjon, agent eller nøkkelautentisering.";
+"hub.SourceServerImporter.703.2544" = "SSH-autentisering mislyktes";
+"hub.SourceServerImporter.704.2545" = "Serveren godtok ikke den valgte kontoen eller autentiseringsmetoden.";
+"hub.SourceServerImporter.706.2546" = "La nøkkelfeltet stå tomt for å bruke ~/.ssh/config, ssh-agent og standardnøkler.";
+"hub.SourceServerImporter.707.2547" = "Velg privatnøkkelen som fungerer i Terminal, eller bytt til Passord.";
+"hub.SourceServerImporter.708.2548" = "Kontroller kontopassordet, eller bytt til SSH-konfigurasjon, agent eller nøkkel.";
+"hub.SourceServerImporter.710.2550" = "Serveridentiteten må bekreftes";
+"hub.SourceServerImporter.711.2551" = "OpenSSH avviste serveridentiteten.";
+"hub.SourceServerImporter.712.2552" = "Bekreft serverens fingeravtrykk via en betrodd kanal, og legg deretter til eller oppdater oppføringen i ~/.ssh/known_hosts.";
+"hub.SourceServerImporter.714.2554" = "SSH-tilkoblingen ble avvist";
+"hub.SourceServerImporter.715.2555" = "Serveren er tilgjengelig, men godtar ikke denne SSH-tilkoblingen.";
+"hub.SourceServerImporter.716.2556" = "Kontroller at SSH kjører, og at porten er riktig.";
+"hub.SourceServerImporter.718.2558" = "Serveren ble ikke funnet";
+"hub.SourceServerImporter.719.2559" = "Servernavnet kunne ikke slås opp.";
+"hub.SourceServerImporter.720.2560" = "Kontroller serveradressen, SSH-konfigurasjonsaliaset, DNS og VPN-et.";
+"hub.SourceServerImporter.722.2562" = "Serveren er utilgjengelig";
+"hub.SourceServerImporter.723.2563" = "Denne Macen har ingen nettverksrute til kildeprogramserveren.";
+"hub.SourceServerImporter.724.2564" = "Kontroller nettverket, VPN-et og brannmuren.";
+"hub.SourceServerImporter.726.2567" = "Tidsfristen for SSH-tilkoblingen gikk ut";
+"hub.SourceServerImporter.727.2568" = "Kildeprogramserveren svarte ikke i tide.";
+"hub.SourceServerImporter.728.2569" = "Kontroller adressen, porten, nettverket, VPN-et og brannmuren.";
+"hub.SourceServerImporter.730.2571" = "SSH-tilkoblingen ble lukket";
+"hub.SourceServerImporter.731.2572" = "Serveren lukket tilkoblingen.";
+"hub.SourceServerImporter.732.2573" = "Kontroller serverens SSH-logger og kontopolicy.";
+"hub.SourceServerImporter.734.2575" = "SSH-videresending er deaktivert";
+"hub.SourceServerImporter.735.2576" = "Hub koblet til, men serveren avslo den beskyttede databasetunnelen.";
+"hub.SourceServerImporter.736.2577" = "Tillat TCP-videresending for denne SSH-kontoen.";
+"hub.SourceServerImporter.738.2580" = "Databasetunnelen mislyktes";
+"hub.SourceServerImporter.739.2581" = "Hub fikk kontakt, men den beskyttede databasetunnelen ble ikke klar.";
+"hub.SourceServerImporter.740.2582" = "Prøv igjen, og åpne deretter Logger for den ikke-sensitive årsakskoden.";
+"hub.SourceServerImporter.742.2584" = "Lokal tunnelport er utilgjengelig";
+"hub.SourceServerImporter.743.2585" = "Hub kunne ikke reservere en lokal port for databasetunnelen.";
+"hub.SourceServerImporter.744.2586" = "Prøv igjen.";
+"hub.SourceServerImporter.746.2588" = "Oppdater kildeprogrammet først";
+"hub.SourceServerImporter.747.2589" = "Veiledet migrering krever kildeprogrammet 4.4.0 eller nyere.";
+"hub.SourceServerImporter.748.2590" = "Ta sikkerhetskopi av kildeprogrammet, oppdater det, vent til databasemigreringene er fullført, og koble deretter til på nytt.";
+"hub.SourceServerImporter.763.2594" = "Kildeprogrammet kjører ikke, eller containeren ble ikke funnet.";
+"hub.SourceServerImporter.764.2596" = "Kildeprogramprosjektet i Docker Compose kunne ikke identifiseres.";
+"hub.SourceServerImporter.765.2598" = "Kildedatabasecontaineren kjører ikke eller ble ikke funnet.";
+"hub.SourceServerImporter.766.2600" = "Legitimasjonen for kildedatabasen eller krypteringen er ufullstendig.";
+"hub.SourceServerImporter.767.2602" = "Nettverket til kildedatabasen kunne ikke identifiseres på en sikker måte.";
+"hub.SourceServerImporter.768.2604" = "Veiledet import krever for øyeblikket en kildedatabase med ett kjøretøy.";
+"hub.SourceServerImporter.769.2606" = "Kildeprogrammet har ingen kjøretøy som kan importeres.";
+"hub.SourceServerImporter.770.2608" = "Flere enn én kildeprograminstans kjører.";
+"hub.SourceServerImporter.771.2610" = "Kildeprogramprosjektet har mer enn én databasecontainer.";
+"hub.SourceServerImporter.772.2612" = "Denne kontoen kan ikke kjøre Docker med passordløs sudo.";
+"hub.SourceServerImporter.773.2614" = "Denne kontoen har ikke tillatelse til å kjøre Docker med sudo.";
+"hub.SourceServerImporter.775.2618" = "Fant ikke Docker på kildeprogramserveren.";
+"hub.SourceServerImporter.776.2620" = "Docker er installert, men utilgjengelig.";
+"hub.SourceServerImporter.778.2623" = "Hub kunne ikke lese data fra kildeprogrammet via SSH.";
+"hub.SourceServerImporter.785.2625" = "SSH-serveren tillater ikke portvideresending til databasen. Aktiver TCP-videresending for denne kontoen.";
+"hub.SourceServerImporter.787.2627" = "SSH-autentisering mislyktes under åpning av databasetunnelen.";
+"hub.SourceServerImporter.789.2629" = "Verifisering av SSH-vertsidentiteten mislyktes. Bekreft eller oppdater denne serveren i SSH-filen known_hosts.";
+"hub.SourceServerImporter.791.2631" = "SSH-serveren avviste tilkoblingen. Kontroller at SSH kjører, og at porten er riktig.";
+"hub.SourceServerImporter.793.2633" = "SSH-servernavnet kunne ikke slås opp. Kontroller serveradressen og nettverket.";
+"hub.SourceServerImporter.795.2635" = "SSH-serveren er utilgjengelig fra denne Macen. Kontroller nettverket, VPN-et og brannmuren.";
+"hub.SourceServerImporter.797.2637" = "Tidsfristen for SSH-tilkoblingen gikk ut. Kontroller serveradressen, porten, nettverket og brannmuren.";
+"hub.SourceServerImporter.799.2639" = "SSH-serveren lukket tilkoblingen mens databasetunnelen ble åpnet.";
+"hub.SourceServerImporter.801.2641" = "En lokal port for databasetunnelen var utilgjengelig. Prøv igjen.";
+"hub.SourceServerImporter.803.2642" = "Kunne ikke åpne den beskyttede kildedatabasetunnelen.";
+"hub.SourceServerImporter.824.2658" = "Flere enn én kildeprograminstans kjører. Stopp instansen du ikke vil importere fra, og prøv igjen.";
+"hub.SourceServerImporter.826.2660" = "Det valgte kildeprogramprosjektet har mer enn én databasecontainer. Stopp den dupliserte containeren, og prøv igjen.";
+"hub.SourceServerImporter.828.2662" = "Denne kontoen kan ikke kjøre Docker med passordløs sudo. Gi kontoen Docker-tilgang, eller slå av passordløs sudo og bruk en konto som har direkte tilgang til Docker.";
+"hub.SourceServerImporter.830.2664" = "Denne kontoen har ikke tillatelse til å kjøre Docker med sudo. Gi kontoen Docker-tilgang, eller bruk en annen serverkonto.";
+"hub.SourceServerImporter.832.2666" = "Denne kontoen har ikke tilgang til Docker. Gi den direkte tilgang til Docker, eller tillat passordløs sudo for Docker.";
+"hub.SourceServerImporter.834.2668" = "Fant ikke Docker på kildeprogramserveren. Kontroller PATH for serveren og kontoen.";
+"hub.SourceServerImporter.836.2670" = "Docker er installert, men utilgjengelig. Kontroller at Docker-tjenesten kjører.";
+"hub.SourceServerImporter.838.2672" = "Veiledet migrering krever kildeprogrammet 4.4.0 eller nyere. Oppdater kildeprogrammet, og prøv igjen.";
+"hub.SourceServerImporter.840.2674" = "SSH kunne ikke koble til eller autentisere. Kontroller serveren, porten, kontoen og den valgte autentiseringsmetoden.";
+"hub.SourceServerImporter.842.2676" = "SSH-autentisering mislyktes. Kontroller kontoen og den valgte autentiseringsmetoden.";
+"hub.SourceServerImporter.854.2688" = "SSH-serveren lukket tilkoblingen. Kontroller serverloggene og SSH-policyen.";
+"hub.SourceServerImporter.856.2690" = "Tidsfristen for SSH-tilkoblingen gikk ut. Kontroller serveradressen, porten og nettverket.";
+"hub.SourceServerImporter.858.2691" = "Kunne ikke lese data fra kildeprogrammet via SSH. Kontroller autentiseringen og Docker-tilgangen.";
+
+"hub.import.intro" = "Importer historikken fra PostgreSQL-databasen til kjøretøydataprogramvaren du brukte før (kildedatabasen). Hub kontrollerer databasen først og forteller deg om denne versjonen kan importere den. Importen leser bare kildedatabasen; den endrer den aldri.";
+
+"hub.import.recognised" = "Hub kjenner igjen denne databasen (skjemasett %1$@).";
+
+"hub.import.notRecognised" = "Hub kjenner ikke igjen skjemaet i denne databasen og kan derfor ikke importere den. Migreringsveiledningen forklarer hva du bør kontrollere.";
+
+"hub.import.ackExplain" = "En skjemakontroll kan ikke vise hvilken versjon av kildeprogrammet som opprettet databasen: flere versjoner deler det samme skjemaet.";
+
+"hub.import.ackRelease" = "Jeg bekrefter at kildeprogrammet er versjon 4.4.0 eller nyere og ikke blir oppdatert under importen.";
+
+"hub.backup.title" = "Sikkerhetskopier";
+
+"hub.backup.detail" = "Krypterte kopier av Hubens historikk. Gjenopprettingspassordet ligger i en fil på denne Macen som bare eieren kan lese.";
+
+"hub.backup.backUpNow" = "Ta sikkerhetskopi nå";
+
+"hub.backup.onSchedule" = "Ta sikkerhetskopi etter en tidsplan";
+
+"hub.backup.saveSchedule" = "Lagre tidsplan";
+
+"hub.backup.panelPrompt" = "Velg";
+
+"hub.backup.panelMessage" = "Velg en mappe for krypterte Hub-sikkerhetskopier utenfor Hubens datamappe.";
+
+"hub.backup.savedNote" = "Lagret. Tidsplanen gjelder når Hub starter på nytt.";
+
+"hub.backup.noFolder" = "Ingen mappe valgt";
+
+"hub.backup.passwordPlaceholder" = "Gjenopprettingspassord (minst %1$@ tegn)";
+
+"hub.backup.passwordSaved" = "Lagret. Skriv et nytt for å erstatte det";
+
+"hub.backup.intervalHour" = "Hver time";
+
+"hub.backup.intervalDay" = "Hver dag";
+
+"hub.backup.intervalTwoDays" = "Annenhver dag";
+
+"hub.backup.intervalWeek" = "Hver uke";
+
+"hub.backup.intervalHours" = "Hver %1$@. time";
+
+"hub.backup.schedule" = "Tidsplan";
+
+"hub.backup.keep" = "Behold";
+
+"hub.backup.keepSuffix" = "sikkerhetskopier";
+
+"hub.backup.folder" = "Mappe";
+
+"hub.backup.passwordLabel" = "Gjenopprettingspassord";
+
+"hub.backup.problem.passwordShort" = "Gjenopprettingspassordet må være på minst %1$@ tegn.";
+
+"hub.backup.problem.interval" = "Intervallet må være mellom 1 og 8784 timer.";
+
+"hub.backup.problem.keep" = "Antall sikkerhetskopier som beholdes, må være mellom 1 og 1000.";
+
+"hub.backup.problem.chooseFolder" = "Velg en mappe for sikkerhetskopier.";
+
+"hub.backup.problem.folderInside" = "Velg en mappe for sikkerhetskopier utenfor Hubens datamappe.";
+
+"hub.backup.problem.needsBoth" = "Planlagte sikkerhetskopier trenger en mappe for sikkerhetskopier og et gjenopprettingspassord.";
+
+"hub.backup.lastGoodNone" = "Ingen ennå";
+
+"hub.backup.nextOff" = "Planlagte sikkerhetskopier er av";
+
+"hub.backup.nextNotScheduled" = "Ikke planlagt: velg en mappe og et passord";
+
+"hub.backup.nextPaused" = "Venter på gjenoppretting av påloggingsopplysninger";
+
+"hub.collection.notReported" = "Ikke rapportert";
+
+"hub.backup.blocked" = "Avviste påloggingsopplysninger blokkerer sikkerhetskopier. Kjør purge-refused-credentials for å fjerne dem.";
+
+"hub.backup.lastFailedMessage" = "Siste forsøk mislyktes: %1$@";
+
+"hub.backup.lastFailedCode" = "Siste forsøk mislyktes (%1$@)";
+
+"hub.backup.row.lastGood" = "Siste vellykkede sikkerhetskopi";
+
+"hub.backup.row.next" = "Neste sikkerhetskopi";
+
+"hub.backup.row.running" = "En sikkerhetskopi pågår nå";
+
+"hub.backup.row.lastAttempt" = "Siste forsøk";
+
+"hub.backup.run.running" = "Tar sikkerhetskopi …";
+
+"hub.backup.run.stillRunning" = "Sikkerhetskopien pågår fortsatt i Hub-tjenesten.";
+
+"hub.backup.run.finishedGeneration" = "Sikkerhetskopi fullført: %1$@";
+
+"hub.backup.run.finished" = "Sikkerhetskopi fullført";
+
+"hub.backup.run.failed" = "Sikkerhetskopieringen mislyktes: %1$@";
+
+"hub.backup.maint.unreadable" = "Svaret fra Hub kunne ikke leses.";
+
+"hub.backup.maint.unwritable" = "Gjenopprettingspassordet kunne ikke lagres.";
+
+"hub.backup.maint.configMissing" = "Sett opp Hub før du endrer sikkerhetskopier.";
+
+"hub.devices.title" = "Sammenkoblede enheter";
+
+"hub.devices.detail" = "Telefoner og apper som leser denne Hub, med bilene hver av dem kan lese.";
+
+"hub.devices.revokeTitle" = "Tilbakekall %1$@?";
+
+"hub.devices.revokeInfo" = "Denne enheten slutter straks å lese fra Hub. Koble den til på nytt for å bruke den igjen.";
+
+"hub.devices.revoke" = "Tilbakekall";
+
+"hub.devices.revokeEllipsis" = "Tilbakekall …";
+
+"hub.devices.revokeAccessibility" = "Tilbakekall %1$@";
+
+"hub.devices.revokedDone" = "%1$@ ble tilbakekalt.";
+
+"hub.devices.none" = "Ingen sammenkoblede enheter.";
+
+"hub.devices.cars" = "Biler: %1$@";
+
+"hub.devices.noCars" = "Ingen biler";
+
+"hub.devices.carFallback" = "Bil %1$@";
+
+"hub.devices.unnamed" = "Enhet uten navn";
+
+"hub.devices.stateRevoked" = "Tilbakekalt %1$@";
+
+"hub.devices.stateExpired" = "Utløpt %1$@";
+
+"hub.devices.stateLastSeen" = "Sist sett %1$@";
+
+"hub.devices.stateNeverSeen" = "Ikke sett ennå";
+
+"hub.collection.loginOwn" = "Logget inn med Hubens egen innlogging";
+
+"hub.collection.loginSignedOut" = "Logget ut";
+
+"hub.collection.loginNotOwn" = "Den lagrede innloggingen er ikke Hubens egen";
+
+"hub.collection.credValidUntil" = "Gyldig til %1$@";
+
+"hub.collection.credValid" = "Gyldig";
+
+"hub.collection.credRelogin" = "Ny innlogging trengs: logg inn på nytt i neste åpne vindu";
+
+"hub.collection.credOwnerRefused" = "Owner API avvist: Tesla avviste denne innloggingen";
+
+"hub.collection.credRefused" = "Avvist (%1$@)";
+
+"hub.collection.credExposure" = "Mistanke om eksponering: logg inn på nytt i neste åpne vindu";
+
+"hub.collection.credAttention" = "Trenger oppmerksomhet (%1$@)";
+
+"hub.collection.credNotSignedIn" = "Ikke logget inn";
+
+"hub.collection.windowOpenUntil" = "Åpent til %1$@";
+
+"hub.collection.windowOpen" = "Åpent";
+
+"hub.collection.windowPending" = "Venter";
+
+"hub.collection.windowPendingFrom" = "Venter fra %1$@";
+
+"hub.collection.windowPendingUntil" = "Venter til %1$@";
+
+"hub.collection.windowPendingFromUntil" = "Venter fra %1$@ til %2$@";
+
+"hub.collection.windowClosingExpiry" = "Lukkes (utløper %1$@)";
+
+"hub.collection.windowClosing" = "Lukkes";
+
+"hub.collection.windowClosedReason" = "Lukket (%1$@)";
+
+"hub.collection.windowClosed" = "Lukket";
+
+"hub.collection.windowUntrusted" = "Lukket (ingen pålitelig utsteder)";
+
+"hub.collection.windowFaulted" = "Lukket (vindustilstanden trenger et nytt tillitsdokument)";
+
+"hub.collection.windowRecovery" = "Lukket (venter på gjenoppretting av påloggingsopplysninger: kjør restore-recovery-credentials)";
+
+"hub.collection.windowUnauthenticated" = "Ukjent: kontrollkanalen tilhører ikke denne Hub";
+
+"hub.collection.windowNotRunning" = "Ukjent: Hub kjører ikke";
+
+"hub.collection.reasonExpired" = "utløpt";
+
+"hub.collection.reasonOperator" = "lukket av operatøren";
+
+"hub.collection.reasonRelogin" = "ny innlogging trengs";
+
+"hub.collection.reasonOwnerRefused" = "Owner API avvist";
+
+"hub.collection.reasonClock" = "klokkekontrollen mislyktes";
+
+"hub.collection.reasonReboot" = "Macen ble startet på nytt";
+
+"hub.collection.reasonUnverifiable" = "tilstanden kunne ikke bekreftes";
+
+"hub.collection.reasonClaimLost" = "innsamlingskravet er mistet";
+
+"hub.collection.fleet" = "Parkert: ingen Fleet-handling er tilgjengelig";
+
+"hub.collection.signInUnavailable" = "Innlogging er ikke tilgjengelig på denne Hub";
+
+"hub.collection.labelLogin" = "Tesla-innlogging";
+
+"hub.collection.labelCredential" = "Status for påloggingsopplysninger";
+
+"hub.collection.labelWindow" = "Innsamlingsvindu";
+
+"hub.collection.labelFleet" = "Fleet";
+
+"hub.collection.labelSignIn" = "Innlogging";
+
+"hub.signIn.recoveryPending" = "Hub venter på gjenoppretting av påloggingsopplysningene sine: Dataene til denne Hub ble gjenopprettet uten nøklene. Kjør restore-recovery-credentials, og logg deretter inn. Ingenting ble endret.";
+
+"hub.signIn.serviceUnauthenticated" = "Prosessen som svarer på Hubens kontrollkanal, er ikke denne Hub, så ingenting ble sendt. Start Hub på nytt, og logg deretter inn igjen.";
+
+"hub.signIn.busy" = "Hub er opptatt med andre forespørsler. Ingenting ble endret; logg inn igjen om et øyeblikk.";
+
+"hub.signIn.discovery.notListed" = "Du er logget inn, men Tesla oppførte ingen bil på denne kontoen. Kontroller at bilen tilhører denne Tesla-kontoen, og prøv deretter å finne biler på nytt.";
+
+"hub.signIn.discovery.selectionRequired" = "Du er logget inn, men Tesla oppfører mer enn én bil, og Hub må vite hvilken den skal samle inn fra. Prøv å finne biler på nytt.";
+
+"hub.signIn.discovery.selectionInvalid" = "Du er logget inn, men den valgte bilen finnes ikke på denne Tesla-kontoen. Prøv å finne biler på nytt.";
+
+"hub.signIn.discovery.answerInvalid" = "Du er logget inn, men Hub kunne ikke lese Teslas liste over biler. Prøv å finne biler på nytt.";
+
+"hub.signIn.discovery.refused" = "Du er logget inn, men Tesla avviste listen over biler. Prøv å finne biler på nytt, eller logg inn med Tesla igjen.";
+
+"hub.signIn.discovery.windowClosed" = "Du er logget inn, men innsamlingsvinduet ble lukket før Hub rakk å finne bilene dine. Åpne et vindu, og prøv deretter å finne biler på nytt.";
+
+"hub.signIn.discovery.providerParked" = "Du er logget inn, men denne Hub samler inn med en annen leverandør, så den kan ikke finne biler med denne påloggingen.";
+
+"hub.signIn.discovery.settingsInvalid" = "Du er logget inn, men Owner API-adressen til denne Hub er ikke Teslas, så Hub ba ikke om bilene dine. Rett opp adressen, og logg deretter inn med Tesla igjen.";
+
+"hub.signIn.discovery.general" = "Du er logget inn, men Hub kunne ikke finne bilene dine. Prøv å finne biler på nytt, eller logg inn med Tesla igjen.";
+
+"hub.signIn.discovery.retry" = "Prøv å finne biler på nytt";
+
+"hub.signIn.discovery.expired" = "Denne påloggingen kan ikke lenger gjenopptas. Logg inn med Tesla igjen.";
+
+"hub.signIn.discovery.configured" = "Konfigurerte biler: %d";
+
+"hub.signIn.reportInvalid" = "Hub kunne ikke bekrefte påloggingen. Logg inn med Tesla igjen.";
+
+"hub.signIn.unconfirmed" = "Hub bekreftet ikke påloggingen i tide, men den kan være lagret. Sjekk statusen til Hub før du logger inn igjen.";
+
+"hub.signIn.startWithdrawFailed" = "Hub startet ikke, og fjerningen av den ufullførte oppstarten mislyktes: %1$@ Klikk på «Koble til Tesla» for å fullføre fjerningen.";
+
+"hub.signIn.idle.title" = "Hub er satt opp og kjører på denne Macen";
+"hub.signIn.idle.detail" = "Pålogging hos Tesla åpnes bare mens et innsamlingsvindu er åpent, og du får beskjed når et åpnes. Hvis du lukker dette vinduet, fortsetter Hub å kjøre.";
+"hub.signIn.pageSubtitle" = "Logg inn med Tesla mens et innsamlingsvindu er åpent.";
+"hub.signIn.privacy" = "Tesla-passordet ditt går bare til Tesla. Hub har sin egen pålogging, kryptert på denne Macen.";
+"hub.signIn.fleetDetail" = "Teslas offisielle strømme-API, med din egen Fleet API-app.";
+"hub.signIn.done" = "Ferdig";
+
+"hub.signIn.windowFaulted" = "Hubs innsamlingsvindu trenger et nytt tillitsdokument før det kan åpnes, så Tesla-pålogging er ikke tilgjengelig. Ingenting ble endret.";
+"hub.signIn.windowStatusInvalid" = "Hubs svar om innsamlingsvinduet kunne ikke leses, så Tesla-pålogging er ikke tilgjengelig. Ingenting ble endret; prøv igjen om litt.";
+"hub.setup.closeKeepsRunning" = "Når du lukker dette vinduet, fortsetter Hub å kjøre.";

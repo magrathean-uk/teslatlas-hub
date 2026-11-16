@@ -507,7 +507,7 @@ def _validate_invitation(profile, raw, strict):
             return ['body violates invitation schema']
         uri = urllib.parse.urlsplit(value['pairingUri'])
         expected = {'pairing_id': [value['pairingId']], 'secret': [value['secret']], 'endpoint': [value['endpoint']], 'tls_pin': [value['tlsPin']]}
-        if uri.scheme != 'teslatlas-hub' or uri.netloc != 'pair' or uri.path or uri.fragment or urllib.parse.parse_qs(uri.query, strict_parsing=True) != expected:
+        if uri.scheme != 'tesatlas-hub' or uri.netloc != 'pair' or uri.path or uri.fragment or urllib.parse.parse_qs(uri.query, strict_parsing=True) != expected:
             return ['invitation URI does not match its fields']
     except (ContractError, KeyError, TypeError, ValueError):
         return ['invalid JSON response']

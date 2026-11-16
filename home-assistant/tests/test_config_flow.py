@@ -17,7 +17,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.teslatlas_hub.client import (
+from custom_components.tesatlas_hub.client import (
     HubAuthenticationError,
     HubConnectionError,
     HubIdentityError,
@@ -25,11 +25,11 @@ from custom_components.teslatlas_hub.client import (
     ProtocolContractUnavailable,
     create_client,
 )
-from custom_components.teslatlas_hub.config_flow import (
+from custom_components.tesatlas_hub.config_flow import (
     APPROVE_NEW_TLS_PIN,
-    TeslatlasHubConfigFlow,
+    TesatlasHubConfigFlow,
 )
-from custom_components.teslatlas_hub.const import (
+from custom_components.tesatlas_hub.const import (
     CONF_ACCESS_TOKEN,
     CONF_DEVICE_ID,
     CONF_DEVICE_NAME,
@@ -144,7 +144,7 @@ async def test_manager_removed_reauth_cannot_commit_late_response(
         return client
 
     with (
-        patch("custom_components.teslatlas_hub.config_flow.create_client", new=capture),
+        patch("custom_components.tesatlas_hub.config_flow.create_client", new=capture),
         patch.object(hass.config_entries, "async_reload", AsyncMock()) as reload,
     ):
         first = await hass.config_entries.flow.async_init(
@@ -220,7 +220,7 @@ async def test_terminal_auth_returns_editable_invitation_and_accepts_new_claim(
             if failure == "expired":
                 await asyncio.wait_for(_started.wait(), 5)
                 with patch(
-                    "custom_components.teslatlas_hub.config_flow.datetime"
+                    "custom_components.tesatlas_hub.config_flow.datetime"
                 ) as clock:
                     clock.now.return_value = datetime(2034, 1, 1, tzinfo=UTC)
                     _release.set()
@@ -293,7 +293,7 @@ async def test_superseded_reauth_claim_keeps_newer_candidate_retryable(hass, old
     entry = _entry(hass)
     original = dict(entry.data)
     with (
-        patch("custom_components.teslatlas_hub.config_flow.create_client", new=create),
+        patch("custom_components.tesatlas_hub.config_flow.create_client", new=create),
         patch.object(hass.config_entries, "async_reload", AsyncMock()) as reload,
     ):
         first = await hass.config_entries.flow.async_init(
@@ -376,7 +376,7 @@ def replacement_factory(hass: HomeAssistant):
         return client
 
     with (
-        patch("custom_components.teslatlas_hub.config_flow.create_client", new=create),
+        patch("custom_components.tesatlas_hub.config_flow.create_client", new=create),
         patch.object(hass.config_entries, "async_reload", AsyncMock(return_value=True)),
     ):
         yield clients, calls, controls
@@ -482,7 +482,7 @@ async def test_pin_replacement_requires_explicit_boolean_approval(
 
 @pytest.mark.parametrize("step", ["reconfigure_pair", "reconfigure_validate"])
 async def test_replacement_direct_steps_have_controlled_guards(hass, step) -> None:
-    flow = TeslatlasHubConfigFlow()
+    flow = TesatlasHubConfigFlow()
     flow.hass = hass
     result = await getattr(flow, "async_step_" + step)(PAIRING_INPUT)
     assert result["reason"] == "replacement_not_approved"
@@ -721,7 +721,7 @@ async def test_replacement_token_expiring_during_retry_returns_to_pairing(
     )
     assert result["step_id"] == "reconfigure_validate"
     with patch(
-        "custom_components.teslatlas_hub.config_flow.epoch_milliseconds",
+        "custom_components.tesatlas_hub.config_flow.epoch_milliseconds",
         return_value=FIXTURE_EXPIRES_AT_MS,
     ):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
@@ -746,7 +746,7 @@ async def test_replacement_token_expiring_during_read_is_not_persisted(
     original = dict(entry.data)
     result = await _approve_replacement(hass, await _start_replacement(hass, entry))
     with patch(
-        "custom_components.teslatlas_hub.config_flow.epoch_milliseconds",
+        "custom_components.tesatlas_hub.config_flow.epoch_milliseconds",
         side_effect=[FIXTURE_EXPIRES_AT_MS - 1, FIXTURE_EXPIRES_AT_MS],
     ):
         result = await hass.config_entries.flow.async_configure(
@@ -877,7 +877,7 @@ def fixture_client() -> FixtureHubClient:
 @pytest.fixture
 def client_factory(fixture_client: FixtureHubClient):
     with patch(
-        "custom_components.teslatlas_hub.config_flow.create_client",
+        "custom_components.tesatlas_hub.config_flow.create_client",
         return_value=fixture_client,
     ) as factory:
         yield factory
@@ -1237,7 +1237,7 @@ async def test_cancelled_reconfigure_closes_probed_client(
         data=entry.data,
     )
     with patch(
-        "custom_components.teslatlas_hub.config_flow.TeslatlasHubConfigFlow.async_set_unique_id",
+        "custom_components.tesatlas_hub.config_flow.TesatlasHubConfigFlow.async_set_unique_id",
         new=blocked_unique_id,
     ):
         configure = asyncio.create_task(

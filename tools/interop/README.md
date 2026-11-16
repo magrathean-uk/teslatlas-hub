@@ -12,7 +12,7 @@ commands from the Hub root. Build the binary and harness using the existing
 workspace runner, or the standalone command below outside that workspace:
 
 ```sh
-cargo build --locked --bin teslatlas-hub --example interop_fixture --features interop-fixture
+cargo build --locked --bin tesatlas-hub --example interop_fixture --features interop-fixture
 ```
 
 Create an owner-only (`0600`) JSON config in a private directory. Replace these
@@ -21,7 +21,7 @@ paths and the digest with your actual binaries and exported profile;
 
 ```json
 {
-  "binary": "/absolute/build/teslatlas-hub",
+  "binary": "/absolute/build/tesatlas-hub",
   "seed_binary": "/absolute/build/examples/interop_fixture",
   "output_dir": "/private/new-fixture",
   "lifetime_seconds": 3600,
