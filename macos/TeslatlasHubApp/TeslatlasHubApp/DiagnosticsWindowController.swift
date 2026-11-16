@@ -27,11 +27,16 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
     private(set) var operationInProgress = false
     private var lifecycleObservation: HubLifecycleAuthority.Observation?
 
+    /// Copy writes here; tests pass a uniquely named board, never the general one.
+    private let pasteboard: NSPasteboard
+
     init(controller: HubController,
          onDismiss: @escaping () -> Void = {},
          embedded: Bool = false,
          onOperationStateChanged: @escaping (Bool) -> Void = { _ in },
-         savePanelPresenter: @escaping SavePanelPresenter = DiagnosticsWindowController.presentSavePanel) {
+         savePanelPresenter: @escaping SavePanelPresenter = DiagnosticsWindowController.presentSavePanel,
+         pasteboard: NSPasteboard = .general) {
+        self.pasteboard = pasteboard
         self.controller = controller
         self.onDismiss = onDismiss
         self.onOperationStateChanged = onOperationStateChanged
@@ -332,8 +337,8 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
     @objc private func copyPressed() {
         guard !controller.previewMode else { return }
         guard let latestReport else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(latestReport, forType: .string)
+        pasteboard.clearContents()
+        pasteboard.setString(latestReport, forType: .string)
         statusDetail.stringValue = HubL10n.text("hub.DiagnosticsWindowController.321.239", fallback: "Redacted report copied.")
     }
 

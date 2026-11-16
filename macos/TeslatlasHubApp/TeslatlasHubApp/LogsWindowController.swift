@@ -27,10 +27,15 @@ final class LogsWindowController: NSWindowController {
     private weak var embeddedPage: NSView?
     private var embeddedBody: NSView?
 
+    /// Copy writes here; tests pass a uniquely named board, never the general one.
+    private let pasteboard: NSPasteboard
+
     init(controller: HubController,
          appLog: HubAppLogging = HubAppLog.shared,
          savePanelPresenter: @escaping SavePanelPresenter = LogsWindowController.presentSavePanel,
-         embedded: Bool = false) {
+         embedded: Bool = false,
+         pasteboard: NSPasteboard = .general) {
+        self.pasteboard = pasteboard
         self.controller = controller
         self.appLog = appLog
         self.savePanelPresenter = savePanelPresenter
@@ -242,8 +247,8 @@ final class LogsWindowController: NSWindowController {
     @objc private func copyPressed() {
         guard !controller.previewMode else { return }
         guard !latestText.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(Self.shareableText(latestText), forType: .string)
+        pasteboard.clearContents()
+        pasteboard.setString(Self.shareableText(latestText), forType: .string)
         statusLabel.stringValue = HubL10n.text("hub.LogsWindowController.235.1757", fallback: "Redacted logs copied")
     }
 
