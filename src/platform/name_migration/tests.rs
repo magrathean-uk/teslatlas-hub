@@ -12,7 +12,7 @@ use std::{
 };
 
 use super::folders::FolderOutcome;
-use super::hand_over::{self, Launchd, Layout, NOTE, Note, Status};
+use super::hand_over::{self, HOST_CLAIM_LOCK, Launchd, Layout, NOTE, Note, Status};
 
 const CURRENT_LABEL: &str = "com.tesatlas.hub";
 const EARLIER_LABEL: &str = "com.teslatlas.hub"; // rename:keep
@@ -20,6 +20,7 @@ const CURRENT_FOLDER: &str = "Tesatlas Hub";
 const EARLIER_FOLDER: &str = "Teslatlas Hub"; // rename:keep
 const DOMAIN: &str = "gui/501";
 const NO_LOCKS: &[&str] = &[];
+const CLAIM_LOCKS: &[&str] = &[HOST_CLAIM_LOCK];
 
 #[derive(Default)]
 struct FakeLaunchd {
@@ -27,14 +28,20 @@ struct FakeLaunchd {
     disabled: HashSet<String>,
     /// A bootout that never finishes.
     stuck: bool,
+    /// A bootstrap that fails (a transient launchd error).
+    bootstrap_fails: bool,
     calls: Vec<String>,
+    /// Every question asked of launchd, changes or not.
+    queries: usize,
 }
 
 impl Launchd for FakeLaunchd {
     fn loaded(&mut self, service: &str) -> io::Result<bool> {
+        self.queries += 1;
         Ok(self.loaded.contains(service))
     }
     fn disabled(&mut self, _domain: &str, label: &str) -> io::Result<bool> {
+        self.queries += 1;
         Ok(self.disabled.contains(&format!("{DOMAIN}/{label}")))
     }
     fn bootout(&mut self, service: &str) -> io::Result<()> {
@@ -47,6 +54,9 @@ impl Launchd for FakeLaunchd {
     fn bootstrap(&mut self, _domain: &str, plist: &Path) -> io::Result<()> {
         let label = plist.file_stem().unwrap().to_str().unwrap();
         self.calls.push(format!("bootstrap {label}"));
+        if self.bootstrap_fails {
+            return Err(io::Error::other("Bootstrap failed: 5: Input/output error"));
+        }
         self.loaded.insert(format!("{DOMAIN}/{label}"));
         Ok(())
     }
@@ -70,7 +80,10 @@ impl Home {
             domain: DOMAIN.to_owned(),
             label: CURRENT_LABEL.to_owned(),
             data_folder: CURRENT_FOLDER.to_owned(),
-            other_folders: vec![("logs", PathBuf::from("Library/Logs").join(CURRENT_FOLDER), NO_LOCKS)],
+            other_folders: vec![
+                ("window", PathBuf::from("Library/Application Support").join(format!("{CURRENT_FOLDER} Window")), CLAIM_LOCKS),
+                ("logs", PathBuf::from("Library/Logs").join(CURRENT_FOLDER), NO_LOCKS),
+            ],
         };
         fs::create_dir_all(dir.path().join("Library/LaunchAgents")).unwrap();
         fs::create_dir_all(dir.path().join("Library/Application Support")).unwrap();
@@ -85,6 +98,16 @@ impl Home {
     fn current(&self) -> PathBuf {
         self.support(CURRENT_FOLDER)
     }
+    fn window(&self, folder: &str) -> PathBuf {
+        self.support(&format!("{folder} Window"))
+    }
+    /// The earlier window claim, held by a process until the file is dropped.
+    fn hold_earlier_claim(&self) -> fs::File {
+        let claim = self.window(EARLIER_FOLDER).join(HOST_CLAIM_LOCK);
+        let holder = fs::File::open(claim).unwrap();
+        rustix::fs::flock(&holder, rustix::fs::FlockOperation::NonBlockingLockExclusive).unwrap();
+        holder
+    }
     fn plist(&self, label: &str) -> PathBuf {
         self.layout.home.join("Library/LaunchAgents").join(format!("{label}.plist"))
     }
@@ -95,6 +118,8 @@ impl Home {
         fs::write(earlier.join("data/hub.sqlite"), "catalogue").unwrap();
         fs::write(earlier.join("data/.hub-instance.lock"), "").unwrap();
         fs::write(earlier.join("config.toml"), format!("data_dir = \"{}/data\"\n", earlier.display())).unwrap();
+        fs::create_dir_all(self.window(EARLIER_FOLDER)).unwrap();
+        fs::write(self.window(EARLIER_FOLDER).join(HOST_CLAIM_LOCK), "").unwrap();
         fs::create_dir_all(self.layout.home.join("Library/Logs").join(EARLIER_FOLDER)).unwrap();
         fs::write(self.layout.home.join("Library/Logs").join(EARLIER_FOLDER).join("hub.err.log"), "log").unwrap();
         fs::write(self.plist(EARLIER_LABEL), "earlier agent").unwrap();
@@ -135,6 +160,7 @@ fn a_running_earlier_hub_is_handed_over_whole_and_a_second_launch_does_nothing()
         format!("data_dir = \"{}/data\"\n", home.current().display())
     );
     assert!(home.layout.home.join("Library/Logs").join(CURRENT_FOLDER).join("hub.err.log").exists());
+    assert!(home.window(CURRENT_FOLDER).join(HOST_CLAIM_LOCK).exists() && !home.window(EARLIER_FOLDER).exists());
     assert!(!launchd.loaded.contains(&service(EARLIER_LABEL)));
     assert!(launchd.disabled.contains(&service(EARLIER_LABEL)), "a login cannot load it again");
     assert!(!launchd.disabled.contains(&service(CURRENT_LABEL)));
@@ -323,6 +349,186 @@ fn before_the_rename_nothing_is_touched() {
     assert_eq!(hand_over::complete(&layout, true, || panic!("must not start")).status, Status::Inert);
     assert!(launchd.calls.is_empty());
     assert!(home.earlier().join("data/hub.sqlite").exists());
+}
+
+/// REV-CX-M08-T12A finding 2: a restart that fails after a deferral keeps the
+/// note, reports the failure, and the next attempt (or launch) still starts
+/// the Hub once the data moves.
+#[test]
+fn a_failed_restart_after_a_deferral_keeps_the_intent_to_run_the_service() {
+    let home = Home::new();
+    home.seed_earlier();
+    let holder = fs::File::open(home.earlier().join("data/.hub-instance.lock")).unwrap();
+    rustix::fs::flock(&holder, rustix::fs::FlockOperation::NonBlockingLockExclusive).unwrap();
+    let mut launchd = Home::running_earlier();
+    launchd.bootstrap_fails = true;
+
+    let report = hand_over::prepare(&home.layout, &mut launchd);
+    assert_eq!(report.status, Status::Failed, "{report:?}");
+    assert!(report.detail.as_deref().unwrap().contains("could not be started again"), "{report:?}");
+    assert!(!launchd.loaded.contains(&service(EARLIER_LABEL)));
+    assert_eq!(note_in(&home.earlier()).map(|note| note.service_was_loaded), Some(true), "the intent is kept");
+
+    // Try Again while the folder is still busy: the restart is tried again and now works.
+    launchd.bootstrap_fails = false;
+    assert_eq!(hand_over::prepare(&home.layout, &mut launchd).status, Status::Deferred);
+    assert!(launchd.loaded.contains(&service(EARLIER_LABEL)));
+    assert!(note_in(&home.earlier()).is_none(), "the earlier state is back, so the note goes");
+
+    // The owner quit after a failed restart instead; the next launch still starts the Hub.
+    launchd.bootstrap_fails = true;
+    assert_eq!(hand_over::prepare(&home.layout, &mut launchd).status, Status::Failed);
+    drop(holder);
+    let mut next_launch = FakeLaunchd::default();
+    let report = hand_over::prepare(&home.layout, &mut next_launch);
+    assert_eq!(report.status, Status::Prepared, "{report:?}");
+    assert!(report.install && report.start, "the earlier service was running when the hand-over began");
+    home.app_installs_current_agent();
+    let mut started = false;
+    let done = hand_over::complete(&home.layout, report.start, || {
+        started = true;
+        Ok(())
+    });
+    assert_eq!(done.status, Status::Done);
+    assert!(started);
+}
+
+/// REV-CX-M08-T12A finding 3: a current installation keeps its own service
+/// state when an earlier one is found beside it, stopped or running.
+#[test]
+fn a_current_installation_keeps_its_own_service_state() {
+    for (earlier_running, current_running) in [(false, true), (true, false)] {
+        let home = Home::new();
+        home.seed_earlier();
+        fs::create_dir_all(home.current().join("data")).unwrap();
+        fs::write(home.current().join("data/hub.sqlite"), "current catalogue").unwrap();
+        home.app_installs_current_agent();
+        let mut launchd = FakeLaunchd::default();
+        if earlier_running {
+            launchd.loaded.insert(service(EARLIER_LABEL));
+        } else {
+            launchd.disabled.insert(service(EARLIER_LABEL));
+        }
+        if current_running {
+            launchd.loaded.insert(service(CURRENT_LABEL));
+        } else {
+            launchd.disabled.insert(service(CURRENT_LABEL));
+        }
+
+        let report = hand_over::prepare(&home.layout, &mut launchd);
+        assert_eq!(report.status, Status::Prepared, "{report:?}");
+        assert_eq!(report.data, Some(FolderOutcome::BothKept));
+        assert!(report.install && !report.start, "nothing is started for the current Hub");
+        assert_eq!(note_in(&home.current()).map(|note| note.current_was_installed), Some(true));
+        assert!(!launchd.loaded.contains(&service(EARLIER_LABEL)), "two services never run");
+        assert!(launchd.disabled.contains(&service(EARLIER_LABEL)));
+        assert!(!launchd.calls.contains(&format!("disable {}", service(CURRENT_LABEL))));
+        // Interrupted before the app finished: the next run still keeps the current state.
+        assert!(!hand_over::prepare(&home.layout, &mut launchd).start);
+        assert_eq!(hand_over::complete(&home.layout, false, || panic!("must not start")).status, Status::Done);
+        assert_eq!(launchd.loaded.contains(&service(CURRENT_LABEL)), current_running);
+        assert_eq!(launchd.disabled.contains(&service(CURRENT_LABEL)), !current_running);
+        assert!(!home.plist(EARLIER_LABEL).exists());
+        assert_eq!(fs::read_to_string(home.current().join("data/hub.sqlite")).unwrap(), "current catalogue");
+    }
+}
+
+/// REV-CX-M08-T12A finding 4: a window claim still held under the earlier
+/// name defers the whole hand-over before anything moves or starts.
+#[test]
+fn a_window_claim_held_under_the_earlier_name_defers_everything() {
+    let home = Home::new();
+    home.seed_earlier();
+    let holder = home.hold_earlier_claim();
+    let mut launchd = Home::running_earlier();
+
+    let report = hand_over::prepare(&home.layout, &mut launchd);
+    assert_eq!(report.status, Status::Deferred, "{report:?}");
+    assert!(!report.install && !report.start);
+    assert!(report.detail.as_deref().unwrap().contains("window claim"), "{report:?}");
+    assert!(home.earlier().join("data/hub.sqlite").exists() && !home.current().exists());
+    assert!(home.window(EARLIER_FOLDER).join(HOST_CLAIM_LOCK).exists() && !home.window(CURRENT_FOLDER).exists());
+    assert!(launchd.loaded.contains(&service(EARLIER_LABEL)), "the earlier service runs again");
+
+    // Both claim folders exist (the current one left by an earlier run): the
+    // held earlier claim still defers.
+    fs::create_dir_all(home.window(CURRENT_FOLDER)).unwrap();
+    fs::write(home.window(CURRENT_FOLDER).join(HOST_CLAIM_LOCK), "").unwrap();
+    assert_eq!(hand_over::prepare(&home.layout, &mut launchd).status, Status::Deferred);
+
+    drop(holder);
+    let report = hand_over::prepare(&home.layout, &mut launchd);
+    assert_eq!(report.status, Status::Prepared, "{report:?}");
+    assert!(report.folders.contains(&("window".to_owned(), "both_kept".to_owned())), "{report:?}");
+    assert!(report.start);
+}
+
+/// A claim taken under the earlier name after the data moved (the app died in
+/// between): nothing starts until it is free, and the note is kept.
+#[test]
+fn a_window_claim_taken_after_the_data_moved_holds_the_start_back() {
+    let home = Home::new();
+    home.seed_earlier();
+    let mut launchd = Home::running_earlier();
+    assert_eq!(hand_over::prepare(&home.layout, &mut launchd).status, Status::Prepared);
+    fs::create_dir_all(home.window(EARLIER_FOLDER)).unwrap();
+    fs::write(home.window(EARLIER_FOLDER).join(HOST_CLAIM_LOCK), "").unwrap();
+    let holder = home.hold_earlier_claim();
+    let report = hand_over::prepare(&home.layout, &mut launchd);
+    assert_eq!(report.status, Status::Deferred);
+    assert!(!report.install && !report.start);
+    assert!(note_in(&home.current()).is_some());
+    drop(holder);
+    let report = hand_over::prepare(&home.layout, &mut launchd);
+    assert!(report.install && report.start, "{report:?}");
+}
+
+/// REV-CX-M08-T12A finding 8: with this build's own names (before the swap)
+/// an installed Hub is not touched: no folder, configuration or launchd step.
+#[test]
+fn the_current_build_takes_no_migration_step() {
+    if super::spelling::renamed() {
+        return; // after the swap the hand-over tests above apply
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let layout = Layout::production(dir.path().to_path_buf(), DOMAIN.to_owned());
+    let root = layout.data_root();
+    fs::create_dir_all(root.join("data")).unwrap();
+    fs::write(root.join("data/hub.sqlite"), "catalogue").unwrap();
+    let config = format!("data_dir = \"{}/data\"\n", root.display());
+    fs::write(root.join("config.toml"), &config).unwrap();
+    let agents = dir.path().join("Library/LaunchAgents");
+    fs::create_dir_all(&agents).unwrap();
+    fs::write(agents.join(format!("{}.plist", hand_over::LAUNCH_AGENT_LABEL)), "agent").unwrap();
+    let mut launchd = FakeLaunchd::default();
+    launchd.loaded.insert(format!("{DOMAIN}/{}", hand_over::LAUNCH_AGENT_LABEL));
+    let before = listing(dir.path());
+
+    assert_eq!(hand_over::prepare(&layout, &mut launchd).status, Status::Inert);
+    assert_eq!(hand_over::complete(&layout, true, || panic!("must not start")).status, Status::Inert);
+    assert_eq!(
+        super::config_paths::prepare_config_path(&root.join("config.toml")).unwrap(),
+        super::config_paths::ConfigOutcome::Current
+    );
+    assert_eq!((launchd.queries, launchd.calls.len()), (0, 0), "launchd is not even asked");
+    assert_eq!(listing(dir.path()), before);
+    assert_eq!(fs::read_to_string(root.join("config.toml")).unwrap(), config);
+}
+
+fn listing(root: &Path) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(folder) = pending.pop() {
+        for entry in fs::read_dir(&folder).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path.clone());
+            }
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    paths
 }
 
 #[test]

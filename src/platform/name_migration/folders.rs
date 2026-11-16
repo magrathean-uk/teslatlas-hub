@@ -12,7 +12,8 @@
 //! A process may still be using the earlier folder: each lock file it holds
 //! there (the Hub lifetime lock, the host claim) is tried without blocking and
 //! kept locked across the rename, so a busy folder is deferred, never moved
-//! from under its owner.
+//! from under its owner. The locks are tried first, so a held one defers the
+//! step also when both folders exist.
 
 use std::{
     io,
@@ -78,12 +79,14 @@ pub fn move_folder(plan: &FolderMove) -> io::Result<FolderOutcome> {
     if !earlier.file_type().is_dir() {
         return Ok(FolderOutcome::NotAFolder);
     }
-    if exists(&plan.current)? && !remove_if_empty_folder(&plan.current)? {
-        return Ok(FolderOutcome::BothKept);
-    }
+    // A held lock defers the step even when both folders exist: its holder
+    // still works under the earlier name (a window claim is a host-wide fence).
     let Some(_held) = hold_locks(&plan.earlier, &plan.locks)? else {
         return Ok(FolderOutcome::Deferred);
     };
+    if exists(&plan.current)? && !remove_if_empty_folder(&plan.current)? {
+        return Ok(FolderOutcome::BothKept);
+    }
     match renameat_with(CWD, &plan.earlier, CWD, &plan.current, RenameFlags::NOREPLACE) {
         Ok(()) => {}
         Err(Errno::EXIST | Errno::NOTEMPTY) => return Ok(FolderOutcome::BothKept),
@@ -217,6 +220,20 @@ mod tests {
         assert!(!plan.current.exists());
         drop(holder);
         assert_eq!(move_folder(&plan).unwrap(), FolderOutcome::Moved);
+    }
+
+    #[test]
+    fn a_held_lock_defers_even_when_both_folders_exist() {
+        let root = tempfile::tempdir().unwrap();
+        let plan = plan(root.path());
+        seed_earlier(&plan);
+        fs::create_dir_all(&plan.current).unwrap();
+        fs::write(plan.current.join("config.toml"), "current").unwrap();
+        let holder = fs::File::open(plan.earlier.join("data/.hub-instance.lock")).unwrap();
+        flock(&holder, FlockOperation::NonBlockingLockExclusive).unwrap();
+        assert_eq!(move_folder(&plan).unwrap(), FolderOutcome::Deferred);
+        drop(holder);
+        assert_eq!(move_folder(&plan).unwrap(), FolderOutcome::BothKept);
     }
 
     #[test]
