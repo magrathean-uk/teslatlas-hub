@@ -16,6 +16,41 @@ const FORMS: [(&str, &str); 3] = [
     ("TESATLAS", "TESLATLAS"), // rename:keep
 ];
 
+/// The product's name as this build spells it; the scripted rename changes it,
+/// and with it [`renamed`].
+pub const PRODUCT_NAME: &str = "Teslatlas Hub";
+
+/// Whether this build carries the current spelling, so an installation of the
+/// earlier spelling may exist. Before the swap it is false and every
+/// migration, fallback and wire alias is inert: the Hub behaves exactly as it
+/// did before part A.
+pub fn renamed() -> bool {
+    #[cfg(test)]
+    if let Some(forced) = FORCED.with(std::cell::Cell::get) {
+        return forced;
+    }
+    earlier(PRODUCT_NAME).is_some()
+}
+
+#[cfg(test)]
+thread_local! {
+    static FORCED: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+/// Tests only: [`renamed`] answers `true` on this thread until the guard drops,
+/// so the swapped behaviour can be exercised before the swap.
+#[cfg(test)]
+pub(crate) fn assume_renamed() -> impl Drop {
+    struct Restore;
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            FORCED.with(|forced| forced.set(None));
+        }
+    }
+    FORCED.with(|forced| forced.set(Some(true)));
+    Restore
+}
+
 /// The name as it was spelled before the rename, or `None` when `name` does
 /// not carry the current spelling (nothing was renamed, so nothing to find).
 pub fn earlier(name: &str) -> Option<String> {
@@ -66,6 +101,17 @@ mod tests {
         assert_eq!(earlier("unattended-backup"), None);
         let before_the_rename = "Teslatlas Hub"; // rename:keep
         assert_eq!(earlier(before_the_rename), None);
+    }
+
+    #[test]
+    fn this_build_is_renamed_only_after_the_swap() {
+        let before_the_swap = PRODUCT_NAME == "Teslatlas Hub"; // rename:keep
+        assert_eq!(renamed(), !before_the_swap);
+        {
+            let _renamed = assume_renamed();
+            assert!(renamed());
+        }
+        assert_eq!(renamed(), !before_the_swap);
     }
 
     #[test]

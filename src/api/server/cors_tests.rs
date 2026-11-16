@@ -619,3 +619,54 @@ async fn cors_native_tls_listener_uses_configuration_and_accepts_its_own_origin(
     task.abort();
     assert!(task.await.unwrap_err().is_cancelled());
 }
+
+/// The rename's wire aliases (DEC-160, REV-CX-M08-T12A findings 7 and 8):
+/// before the swap the router answers exactly as it did; after it a browser
+/// preflight may name a sync header in either spelling and the discovery
+/// path answers in both.
+#[tokio::test]
+async fn cors_rename_aliases_reach_the_router_only_after_the_swap() {
+    use crate::platform::name_migration::{spelling, wire};
+    async fn preflight(app: &Router, headers: &str) -> Response {
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("OPTIONS")
+                    .uri("/v1/vehicles/test/sync/manifest")
+                    .header("Origin", "https://client.example")
+                    .header("Access-Control-Request-Method", "GET")
+                    .header("Access-Control-Request-Headers", headers)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+    async fn discovery(app: &Router) -> StatusCode {
+        app.clone()
+            .oneshot(Request::builder().uri(wire::DISCOVERY_PATH_CURRENT).body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status()
+    }
+    let renamed_headers = "x-tesatlas-supported-schemas, x-tesatlas-sync-capability, x-tesatlas-sync-profile";
+    let earlier_headers = "x-teslatlas-supported-schemas, x-teslatlas-sync-capability, x-teslatlas-sync-profile"; // rename:keep
+    if !spelling::renamed() {
+        let (_root, app) = app();
+        assert_eq!(preflight(&app, renamed_headers).await.status(), StatusCode::FORBIDDEN);
+        assert_eq!(preflight(&app, earlier_headers).await.status(), StatusCode::NO_CONTENT);
+        assert_eq!(discovery(&app).await, StatusCode::NOT_FOUND);
+    }
+    let _renamed = spelling::assume_renamed();
+    let (_root, app) = app();
+    for headers in [renamed_headers, earlier_headers, "x-teslatlas-sync-profile, x-tesatlas-sync-profile"] { // rename:keep
+        let response = preflight(&app, headers).await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT, "{headers}");
+        let allowed = response.headers().get("access-control-allow-headers").unwrap().to_str().unwrap();
+        for name in headers.split(", ") {
+            assert!(allowed.split(", ").any(|listed| listed == name), "{name} in {allowed}");
+        }
+    }
+    assert_eq!(preflight(&app, "x-tesatlas-range").await.status(), StatusCode::FORBIDDEN);
+    assert_eq!(discovery(&app).await, StatusCode::OK);
+}

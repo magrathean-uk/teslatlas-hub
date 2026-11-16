@@ -201,10 +201,7 @@ pub(super) async fn apply(
                 || headers.split(',').any(|name| {
                     let name = name.trim();
                     name.is_empty()
-                        || !route
-                            .request_headers
-                            .split(", ")
-                            .any(|allowed| name.eq_ignore_ascii_case(allowed))
+                        || !crate::platform::name_migration::wire::header_allowed(name, route.request_headers)
                 })
             {
                 return deny(true);
@@ -217,7 +214,7 @@ pub(super) async fn apply(
         );
         response.headers_mut().insert(
             header::ACCESS_CONTROL_ALLOW_HEADERS,
-            HeaderValue::from_static(route.request_headers),
+            crate::platform::name_migration::wire::allow_headers(route.request_headers),
         );
         response
             .headers_mut()

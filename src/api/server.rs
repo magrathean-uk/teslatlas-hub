@@ -901,7 +901,7 @@ fn router_for_state(state: AppState, cors: CorsPolicy) -> Router {
         .route("/healthz", get(health))
         .route("/readyz", get(ready))
         .route("/.well-known/teslatlas-hub", get(capabilities))
-        .route(crate::platform::name_migration::wire::other_discovery_path("/.well-known/teslatlas-hub").expect("discovery path"), get(capabilities))
+        .merge(crate::platform::name_migration::wire::discovery_alias("/.well-known/teslatlas-hub", get(capabilities)))
         .route("/v1/pairings/{pairing_id}/claim", post(claim_pairing))
         .route("/v1/device/rotate", post(rotate_device))
         .route("/v1/device/revoke", post(device_revoke::revoke_device))
