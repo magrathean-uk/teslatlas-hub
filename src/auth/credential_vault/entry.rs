@@ -8,6 +8,13 @@ impl CredentialVaultEntry {
     pub(crate) fn purge_refused_credentials(&self) -> Result<RefusedCredentialReport, CredentialStoreError> {
         self.vault.purge_refused_credentials()
     }
+    /// The `take-over-source-token` verb's write (DEC-172): the migration
+    /// source's pair into the empty Owner API slot as origin `source_token`,
+    /// refreshed by the Hub. Refusals keep their codes (`slot_occupied`,
+    /// `refresh_token_spent`, `fresh_sign_in_required`, ...); nothing is sent.
+    pub fn store_source_takeover(&self, tokens: &crate::credentials::OwnerTokens) -> Result<Uuid, CredentialVaultEntryError> {
+        self.vault.store_source_takeover(tokens).map_err(|error| CredentialVaultEntryError { error })
+    }
     #[cfg(test)]
     pub(crate) fn for_test(vault: Arc<CredentialVault>) -> Self { Self { vault } }
 

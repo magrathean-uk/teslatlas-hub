@@ -443,6 +443,11 @@ fn admit_import_command(
     Ok(Some(operator::admission::admit_import(Some(&config.data_dir), &home)?))
 }
 
+/// `take-over-source-token` (DEC-172): see the module.
+#[cfg(unix)]
+#[path = "source_takeover.rs"]
+mod source_takeover;
+
 /// Test doubles of the fresh-install journey (M02-T21, DEC-116): test builds
 /// only, see the module.
 #[cfg(all(unix, feature = "journey-doubles"))]
@@ -999,6 +1004,15 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }.into());
     }
 
+    #[cfg(unix)]
+    if let Command::TakeOverSourceToken {
+        accept_source_stopped: false,
+        ..
+    } = &cli.command
+    {
+        return Err("take-over-source-token requires --accept-source-stopped: the source application stays stopped once the Hub holds its login".into());
+    }
+
     // Import and data restore are admitted only with the window Closed; the
     // admission is held until the command ends.
     let _import_admission = if route == Route::Import {
@@ -1006,6 +1020,16 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         None
     };
+
+    // The source-token take-over (DEC-172) runs under the import admission
+    // above and takes the data-directory lifetime lock itself, so it is
+    // refused while the Hub service runs.
+    #[cfg(unix)]
+    if let Command::TakeOverSourceToken { source, .. } = &cli.command {
+        let report = source_takeover::run_take_over(&config_path, source).await?;
+        println!("{}", serde_json::to_string(&report)?);
+        return Ok(());
+    }
 
     #[cfg(target_os = "macos")]
     if let Command::ServePreflight { mode, history_only } = &cli.command {
@@ -1699,8 +1723,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             observe_result?;
         }
         #[cfg(unix)]
-        Command::Migrate { .. } => {
-            unreachable!("migration returns before opening common Hub state")
+        Command::Migrate { .. } | Command::TakeOverSourceToken { .. } => {
+            unreachable!("migration and the source-token take-over return before opening common Hub state")
         }
         Command::Pair {
             label,

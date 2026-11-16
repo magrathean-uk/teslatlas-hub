@@ -204,7 +204,6 @@ impl CredentialEntry {
     /// The taken-over Owner API login of the migration source (DEC-172): the
     /// source's pair, refreshed from now on by the Hub alone, due for refresh
     /// at once (see [`source_takeover_schedule`]).
-    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: reached from the take-over-source-token verb (M09)."))]
     pub(super) fn source_takeover(tokens: &crate::credentials::OwnerTokens, now_s: i64) -> Result<Self, CredentialStoreError> {
         let mut entry = Self::build(Zeroizing::new(tokens.access_token().to_owned()), Zeroizing::new(tokens.refresh_token().to_owned()), CredentialOrigin::SourceToken)?;
         entry.owner = RefreshOwner::Hub;
@@ -227,7 +226,6 @@ impl CredentialEntry {
 /// expired, expires within the minimum stored span or carries no `exp` is
 /// clamped to `now + MIN_STORED_SPAN_SECONDS`, so the refresh comes first and
 /// the row keeps the `expires_at > next_refresh_at > 0` CHECK.
-#[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: reached from the take-over-source-token verb (M09)."))]
 pub(super) fn source_takeover_schedule(access: &str, now_s: i64) -> (i64, i64) {
     let next_refresh_at = now_s.max(1);
     let floor = next_refresh_at.saturating_add(crate::legacy_auth::schedule::MIN_STORED_SPAN_SECONDS);

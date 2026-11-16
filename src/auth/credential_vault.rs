@@ -831,7 +831,6 @@ impl CredentialVault {
     /// refresh token (`refresh_token_spent`) and, beside an opaque legacy
     /// fence, `fresh_sign_in_required`; the write gate checks them again in
     /// the pair's transaction.
-    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: the take-over-source-token verb (M09) is its caller."))]
     pub(crate) fn store_source_takeover(&self, tokens: &crate::credentials::OwnerTokens) -> Result<Uuid, CredentialStoreError> {
         let entry = CredentialEntry::source_takeover(tokens, self.now_ms()?.div_euclid(1000))?;
         let mut state = self.lock()?; state.writable(true)?; Self::slot_writable(&mut state, entry.slot)?;
