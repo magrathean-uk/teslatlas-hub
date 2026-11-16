@@ -227,7 +227,7 @@ fn physical_row_digest(
     columns: usize,
 ) -> Result<[u8; 32], ProjectionPackError> {
     let mut hash = Sha256::new();
-    hash.update(b"teslatlas-physical-v3-typed-row/v1\0");
+    hash.update(b"teslatlas-physical-v3-typed-row/v1\0"); // rename:keep
     hash.update((table.len() as u16).to_be_bytes());
     hash.update(table.as_bytes());
     hash.update((columns as u16).to_be_bytes());

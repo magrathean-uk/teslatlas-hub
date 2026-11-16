@@ -14,7 +14,7 @@
 // the same `T2` back, and nobody else can mint authority out of the grace row.
 
 /// HKDF salt of the grace key. A change would strand every sealed successor.
-const GRACE_SUCCESSOR_SALT: &[u8] = b"teslatlas-hub grace successor v1";
+const GRACE_SUCCESSOR_SALT: &[u8] = b"teslatlas-hub grace successor v1"; // rename:keep
 const SEALED_NONCE_BYTES: usize = 12;
 const SEALED_TAG_BYTES: usize = 16;
 

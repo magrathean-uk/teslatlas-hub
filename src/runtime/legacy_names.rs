@@ -2,28 +2,28 @@
 
 //! Exact historical format identifiers. Their bytes are part of stored digests.
 
-pub const CAR_IDENTITY_V1: &str = "teslatlas-hub/teslamate-car-identity/v1\n";
+pub const CAR_IDENTITY_V1: &str = "teslatlas-hub/teslamate-car-identity/v1\n"; // rename:keep
 pub const DIRECT_LOGICAL_PROJECTION_V1: &str =
-    "teslatlas-hub/teslamate-direct-logical-projection/v1";
+    "teslatlas-hub/teslamate-direct-logical-projection/v1"; // rename:keep
 pub const DIRECT_SNAPSHOT_WITH_GEOFENCES_V1: &str =
-    "teslatlas-hub/teslamate-direct-snapshot-with-geofences/v1";
+    "teslatlas-hub/teslamate-direct-snapshot-with-geofences/v1"; // rename:keep
 pub const DIRECT_SOURCE_EVIDENCE_BINDING_V1: &str =
-    "teslatlas-hub/teslamate-direct-source-evidence-binding/v1";
-pub const DRIVE_ODOMETER_EVIDENCE_V1: &str = "teslatlas-hub/teslamate-drive-odometer-evidence/v1";
-pub const LOGICAL_SNAPSHOT_V1: &str = "teslatlas-hub/teslamate-logical-snapshot/v1";
-pub const LOGICAL_STATES_V1: &str = "teslatlas-hub/teslamate-logical-states/v1";
-pub const LOGICAL_UPDATES_V1: &str = "teslatlas-hub/teslamate-logical-updates/v1";
+    "teslatlas-hub/teslamate-direct-source-evidence-binding/v1"; // rename:keep
+pub const DRIVE_ODOMETER_EVIDENCE_V1: &str = "teslatlas-hub/teslamate-drive-odometer-evidence/v1"; // rename:keep
+pub const LOGICAL_SNAPSHOT_V1: &str = "teslatlas-hub/teslamate-logical-snapshot/v1"; // rename:keep
+pub const LOGICAL_STATES_V1: &str = "teslatlas-hub/teslamate-logical-states/v1"; // rename:keep
+pub const LOGICAL_UPDATES_V1: &str = "teslatlas-hub/teslamate-logical-updates/v1"; // rename:keep
 pub const PROJECTION_STATE_SEALED_TRANSFER_V1: &str =
-    "teslatlas-hub/teslamate-projection-state/sealed-transfer/v1";
-pub const PROJECTION_STATE_V1: &str = "teslatlas-hub/teslamate-projection-state/v1";
-pub const SOURCE_EVIDENCE_V1: &str = "teslatlas-hub/teslamate-source-evidence/v1";
+    "teslatlas-hub/teslamate-projection-state/sealed-transfer/v1"; // rename:keep
+pub const PROJECTION_STATE_V1: &str = "teslatlas-hub/teslamate-projection-state/v1"; // rename:keep
+pub const SOURCE_EVIDENCE_V1: &str = "teslatlas-hub/teslamate-source-evidence/v1"; // rename:keep
 pub const SOURCE_HISTORY_V2_STANDALONE_POSITIONS: &str =
-    "teslatlas-hub/teslamate-source-history/v2-standalone-positions";
+    "teslatlas-hub/teslamate-source-history/v2-standalone-positions"; // rename:keep
 pub const STAGED_SOURCE_EVIDENCE_BINDING_V1: &str =
-    "teslatlas-hub/teslamate-staged-source-evidence-binding/v1";
-pub const STAGE_LOGICAL_CONTENT_V1: &str = "teslatlas-hub/teslamate-stage/logical-content/v1\0";
-pub const STATE_TEXT_EVIDENCE_V1: &str = "teslatlas-hub/teslamate-state-text-evidence/v1";
-pub const V4_UPDATES_RECEIPT_V1: &str = "teslatlas-teslamate-v4-updates-receipt-v1";
+    "teslatlas-hub/teslamate-staged-source-evidence-binding/v1"; // rename:keep
+pub const STAGE_LOGICAL_CONTENT_V1: &str = "teslatlas-hub/teslamate-stage/logical-content/v1\0"; // rename:keep
+pub const STATE_TEXT_EVIDENCE_V1: &str = "teslatlas-hub/teslamate-state-text-evidence/v1"; // rename:keep
+pub const V4_UPDATES_RECEIPT_V1: &str = "teslatlas-teslamate-v4-updates-receipt-v1"; // rename:keep
 
 /// Earlier operator-facing names that stay accepted as hidden, deprecated
 /// aliases until G2-9 (M05-T05). Each maps to a command or key that still

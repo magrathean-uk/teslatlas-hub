@@ -316,7 +316,7 @@ fn publish_sealed_physical_v3_stage_inner(
 
 fn physical_v3_snapshot_id(stage_digest: Sha256Digest, binding: &ProjectionBinding) -> Uuid {
     let mut digest = Sha256::new();
-    digest.update(b"teslatlas-hub/hub-sync-v1/1.3.0/physical-v3-snapshot/v1\0");
+    digest.update(b"teslatlas-hub/hub-sync-v1/1.3.0/physical-v3-snapshot/v1\0"); // rename:keep
     digest.update(stage_digest.as_bytes());
     digest.update(binding.installation_id.as_bytes());
     digest.update(binding.account_id.as_bytes());

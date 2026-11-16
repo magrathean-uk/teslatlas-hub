@@ -229,6 +229,6 @@ pub(crate) fn own_login_grant_secret() -> Result<Zeroizing<[u8; 32]>, Credential
 #[cfg(any(test, debug_assertions))]
 pub(crate) fn own_login_binding(secret: &Zeroizing<[u8; 32]>) -> [u8; 32] {
     use sha2::{Digest, Sha256};
-    let mut hash = Sha256::new(); hash.update(b"teslatlas-hub/sign-in-binding/v1\0"); hash.update(secret.as_slice());
+    let mut hash = Sha256::new(); hash.update(b"teslatlas-hub/sign-in-binding/v1\0"); hash.update(secret.as_slice()); // rename:keep
     hash.finalize_reset().into()
 }

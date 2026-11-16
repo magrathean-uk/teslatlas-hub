@@ -57,7 +57,7 @@ pub fn decrypt_legacy_owner_tokens(
 pub(crate) fn legacy_refresh_credential_generation(tokens: &OwnerTokens) -> uuid::Uuid {
     let refresh = tokens.refresh_token().as_bytes();
     let mut digest = Sha256::new();
-    digest.update(b"teslatlas-hub:legacy-refresh-generation:v1\0");
+    digest.update(b"teslatlas-hub:legacy-refresh-generation:v1\0"); // rename:keep
     digest.update((refresh.len() as u64).to_le_bytes());
     digest.update(refresh);
     let bytes: [u8; 32] = digest.finalize().into();
@@ -79,7 +79,7 @@ pub(crate) fn legacy_refresh_credential_generation(tokens: &OwnerTokens) -> uuid
 pub(crate) fn legacy_access_token_digest(access_token: &str) -> uuid::Uuid {
     let access = crate::legacy_auth::trim_token_whitespace(access_token).as_bytes();
     let mut digest = Sha256::new();
-    digest.update(b"teslatlas-hub:legacy-access-rejected:v1\0");
+    digest.update(b"teslatlas-hub:legacy-access-rejected:v1\0"); // rename:keep
     digest.update((access.len() as u64).to_le_bytes());
     digest.update(access);
     let bytes: [u8; 32] = digest.finalize().into();

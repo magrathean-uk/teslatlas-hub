@@ -37,7 +37,7 @@ use super::{DataRecoveryError, PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE, invali
 
 /// The private folder of one scratch volume in the user's temporary
 /// directory: the image, the lock and the mount record.
-const SCRATCH_PREFIX: &str = "teslatlas-hub-backup-scratch-";
+const SCRATCH_PREFIX: &str = "teslatlas-hub-backup-scratch-"; // rename:keep
 const VOLUME_PREFIX: &str = "TeslatlasHubBackupScratch-";
 const IMAGE_NAME: &str = "scratch.sparseimage";
 const LOCK_NAME: &str = "lock";

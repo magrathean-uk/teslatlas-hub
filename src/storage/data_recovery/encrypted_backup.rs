@@ -133,9 +133,9 @@ use uuid::Uuid;
 mod restore_staging;
 mod retention;
 
-const ARCHIVE_PREFIX: &str = "teslatlas-hub-backup-";
+const ARCHIVE_PREFIX: &str = "teslatlas-hub-backup-"; // rename:keep
 const ARCHIVE_SUFFIX: &str = ".tlbk";
-const PARTIAL_PREFIX: &str = ".teslatlas-hub-backup-";
+const PARTIAL_PREFIX: &str = ".teslatlas-hub-backup-"; // rename:keep
 const PARTIAL_SUFFIX: &str = ".partial";
 const MANIFEST_RECORD: &str = "manifest.json";
 /// The manifest record, and every member record of a bundle before v5.

@@ -3,22 +3,22 @@
 //! Canonical source database `updates` logical-row stream and three-layer receipt.
 //!
 //! Counts, bounds, and SHA-256 are derived from the same
-//! `teslatlas-updates-logical-row-v1` bytes. Null/unknown values stay tagged
+//! `teslatlas-updates-logical-row-v1` bytes. Null/unknown values stay tagged // rename:keep
 //! and are never coerced to zero or empty.
 
 use sha2::{Digest, Sha256};
 
 use crate::source_db_projection::SourceDbUpdatePhysicalV2_2 as UpdateRow;
 
-pub const LOGICAL_STREAM_HEADER: &[u8] = b"teslatlas-updates-logical-row-v1\n";
-pub const LOGICAL_STREAM_SCHEMA: &str = "teslatlas-updates-logical-row-v1";
+pub const LOGICAL_STREAM_HEADER: &[u8] = b"teslatlas-updates-logical-row-v1\n"; // rename:keep
+pub const LOGICAL_STREAM_SCHEMA: &str = "teslatlas-updates-logical-row-v1"; // rename:keep
 pub const PINNED_SOURCE_DB_REVISION: &str = "7054517c10475f39f480edeae8f90c6f717985a3";
 pub const PINNED_CANONICAL_SHA256: &str =
     "0c74cec3c0a5fb956d53600b5cb9bad76479e3234f011a415e47d3b0f4bdabf4";
 pub const PINNED_CANONICAL_BYTES: usize = 218;
 pub const PINNED_SELECTED_CAR_ID: i16 = -32768;
 pub const UPDATES_FIELD_COUNT: u64 = 5;
-pub const APP_SCHEMA_VERSION: &str = "teslatlas-app-car-updates-physical-v25";
+pub const APP_SCHEMA_VERSION: &str = "teslatlas-app-car-updates-physical-v25"; // rename:keep
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogicalUpdatesStream {
@@ -114,7 +114,7 @@ pub fn decode_updates_logical_stream(
 ) -> Result<LogicalUpdatesStream, UpdatesLogicalError> {
     if !bytes.starts_with(LOGICAL_STREAM_HEADER) {
         return Err(reject(
-            "logical stream header is not teslatlas-updates-logical-row-v1",
+            "logical stream header is not teslatlas-updates-logical-row-v1", // rename:keep
         ));
     }
     let mut cursor = LOGICAL_STREAM_HEADER.len();

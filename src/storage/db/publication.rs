@@ -129,7 +129,7 @@ impl HubStore {
             .map_err(StoreError::Query)?;
         let operation_id = Uuid::new_v4();
         let mut digest = Sha256::new();
-        digest.update(b"teslatlas-hub/catalogue-commit-receipt/v1\0");
+        digest.update(b"teslatlas-hub/catalogue-commit-receipt/v1\0"); // rename:keep
         digest.update(domain.as_bytes());
         digest.update([0]);
         digest.update(vehicle_id.as_bytes());

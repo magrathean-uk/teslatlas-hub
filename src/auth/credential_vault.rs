@@ -849,7 +849,7 @@ impl CredentialVault {
         let mut grant_secret = Zeroizing::new([0u8; 32]); let mut nonce = Zeroizing::new([0u8; 32]);
         getrandom::fill(grant_secret.as_mut()).map_err(|_| CredentialStoreError::Key(CredentialKeyError::EntropyUnavailable))?;
         getrandom::fill(nonce.as_mut()).map_err(|_| CredentialStoreError::Key(CredentialKeyError::EntropyUnavailable))?;
-        let mut hash = Sha256::new(); hash.update(b"teslatlas-hub/sign-in-binding/v1\0"); hash.update(grant_secret.as_slice());
+        let mut hash = Sha256::new(); hash.update(b"teslatlas-hub/sign-in-binding/v1\0"); hash.update(grant_secret.as_slice()); // rename:keep
         let binding: [u8; 32] = hash.finalize_reset().into();
         let now = self.now_ms()?;
         let expires_at_ms = now.checked_add(600_000).ok_or(CredentialStoreError::SignIn(SignInError::Expired))?;

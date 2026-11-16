@@ -525,7 +525,7 @@ pub fn coverage_intervals_for_vehicle(
 pub fn coverage_digest(intervals: &[(i64, i64)]) -> String {
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
-    hash.update(b"teslatlas-hub collection coverage v1\n");
+    hash.update(b"teslatlas-hub collection coverage v1\n"); // rename:keep
     for (start, end) in intervals {
         hash.update(format!("{start} {end}\n"));
     }

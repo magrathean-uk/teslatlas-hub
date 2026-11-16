@@ -84,7 +84,7 @@ fn changes_request(key: &CursorKey, head: &PendingPhysicalV3Admission, physical:
             "vehicle_id": head.vehicle_id, "generation": head.manifest.generation,
             "selected_car_id": head.selected_car_id,
         });
-        body["accepted_changed_set_formats"] = json!(["teslatlas-physical-v3-delta-v1"]);
+        body["accepted_changed_set_formats"] = json!(["teslatlas-physical-v3-delta-v1"]); // rename:keep
     }
     body
 }

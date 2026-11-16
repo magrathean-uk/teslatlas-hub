@@ -1682,7 +1682,7 @@ pub(crate) fn physical_v3_admission_from_manifest(
     let manifest_json = serde_json::to_vec(manifest).map_err(StoreError::SerializeManifest)?;
     let manifest_sha256 = Sha256Digest::of_bytes(&manifest_json);
     let mut chunks = Sha256::new();
-    chunks.update(b"teslatlas-hub/hub-sync-v1/1.3.0/physical-chunks/v1\0");
+    chunks.update(b"teslatlas-hub/hub-sync-v1/1.3.0/physical-chunks/v1\0"); // rename:keep
     chunks.update(
         u32::try_from(manifest.chunks.len())
             .map_err(|_| StoreError::PhysicalV3AdmissionInvalid)?
@@ -1694,7 +1694,7 @@ pub(crate) fn physical_v3_admission_from_manifest(
     }
     let ordered_chunks_sha256 = Sha256Digest::from_bytes(chunks.finalize().into());
     let mut receipt = Sha256::new();
-    receipt.update(b"teslatlas-hub/hub-sync-v1/1.3.0/physical-receipt/v1\0");
+    receipt.update(b"teslatlas-hub/hub-sync-v1/1.3.0/physical-receipt/v1\0"); // rename:keep
     receipt.update(manifest.installation_id.as_bytes());
     receipt.update(manifest.account_id.as_bytes());
     receipt.update(manifest.vehicle_id.as_bytes());

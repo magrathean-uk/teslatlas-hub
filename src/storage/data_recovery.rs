@@ -51,19 +51,19 @@ use crate::{
     updates_delivery::{SignedNoOpState, validate_schema_22_pair},
 };
 
-const BACKUP_KIND: &str = "teslatlas-hub-data-backup-v4";
+const BACKUP_KIND: &str = "teslatlas-hub-data-backup-v4"; // rename:keep
 /// The streamed encrypted bundle (M06-T10): its manifest lists no member.
-const STREAMED_BACKUP_KIND: &str = "teslatlas-hub-data-backup-v5";
+const STREAMED_BACKUP_KIND: &str = "teslatlas-hub-data-backup-v5"; // rename:keep
 /// The streamed plaintext directory (M06-T15): its manifest names only the
 /// catalogue member and declares the member count and bytes.
-const STREAMED_DIRECTORY_KIND: &str = "teslatlas-hub-data-backup-directory-v5";
-const STREAMED_DIRECTORY_COMPLETION_KIND: &str = "teslatlas-hub-data-backup-complete-v5";
+const STREAMED_DIRECTORY_KIND: &str = "teslatlas-hub-data-backup-directory-v5"; // rename:keep
+const STREAMED_DIRECTORY_COMPLETION_KIND: &str = "teslatlas-hub-data-backup-complete-v5"; // rename:keep
 const STREAMED_DIRECTORY_MANIFEST_NAME: &str = "backup-v5.json";
-const COMPLETION_KIND: &str = "teslatlas-hub-data-backup-complete-v4";
+const COMPLETION_KIND: &str = "teslatlas-hub-data-backup-complete-v4"; // rename:keep
 const BACKUP_SCOPE: &str = "hub_data_without_pairing_or_keys";
 const MANIFEST_NAME: &str = "backup-v4.json";
-const LEGACY_BACKUP_KIND: &str = "teslatlas-hub-data-backup-v3";
-const LEGACY_COMPLETION_KIND: &str = "teslatlas-hub-data-backup-complete-v3";
+const LEGACY_BACKUP_KIND: &str = "teslatlas-hub-data-backup-v3"; // rename:keep
+const LEGACY_COMPLETION_KIND: &str = "teslatlas-hub-data-backup-complete-v3"; // rename:keep
 const LEGACY_BACKUP_SCOPE: &str = "hub_data_and_pairing_without_keys";
 const LEGACY_MANIFEST_NAME: &str = "backup-v3.json";
 const COMPLETION_NAME: &str = "BACKUP_COMPLETE";

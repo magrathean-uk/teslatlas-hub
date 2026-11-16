@@ -26,8 +26,8 @@ pub(crate) const MAX_TOKEN_ENVELOPE_BYTES: usize =
 pub(crate) const ENVELOPE_KEY_BYTES: usize = 32;
 pub(crate) const KEY_ID_BYTES: usize = 8;
 pub(crate) const FINGERPRINT_BYTES: usize = 32;
-const ENVELOPE_KEY_INFO: &[u8; 48] = b"teslatlas-hub/credential-envelope/v1/aes-256-gcm";
-const FINGERPRINT_LABEL: &[u8; 36] = b"teslatlas-hub/refresh-fingerprint/v1";
+const ENVELOPE_KEY_INFO: &[u8; 48] = b"teslatlas-hub/credential-envelope/v1/aes-256-gcm"; // rename:keep
+const FINGERPRINT_LABEL: &[u8; 36] = b"teslatlas-hub/refresh-fingerprint/v1"; // rename:keep
 
 // Section 3.1's fixed wire layout; ends are the next field's offset.
 const HEADER_MAGIC_OFFSET: usize = 0;

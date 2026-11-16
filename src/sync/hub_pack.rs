@@ -95,7 +95,7 @@ const THP2_2_UPDATES_SLICE_SHA256: &str =
     "1026cbe3f8599d42557154860e9d3c18ba9ab56d43b33d60a3323a460ed31e34";
 #[cfg(test)]
 const THP2_2_GLOBAL_SETTINGS_SLICE_CONTRACT: &str = concat!(
-    "teslatlas-thp2.2-settings-v1\n",
+    "teslatlas-thp2.2-settings-v1\n", // rename:keep
     "id:bigint:not_null\n",
     "unit_of_length:unit_of_length:not_null\n",
     "unit_of_temperature:unit_of_temperature:not_null\n",
@@ -110,7 +110,7 @@ const THP2_2_GLOBAL_SETTINGS_SLICE_CONTRACT: &str = concat!(
 );
 #[cfg(test)]
 const THP2_2_CAR_SETTINGS_SLICE_CONTRACT: &str = concat!(
-    "teslatlas-thp2.2-car-settings-v1\n",
+    "teslatlas-thp2.2-car-settings-v1\n", // rename:keep
     "id:bigint:not_null\n",
     "suspend_min:integer:not_null\n",
     "suspend_after_idle_min:integer:not_null\n",
@@ -122,7 +122,7 @@ const THP2_2_CAR_SETTINGS_SLICE_CONTRACT: &str = concat!(
 );
 #[cfg(test)]
 const THP2_2_CARS_SLICE_CONTRACT: &str = concat!(
-    "teslatlas-thp2.2-cars-v1\n",
+    "teslatlas-thp2.2-cars-v1\n", // rename:keep
     "id:smallint:not_null\n",
     "eid:bigint:not_null\n",
     "vid:bigint:not_null\n",
@@ -142,7 +142,7 @@ const THP2_2_CARS_SLICE_CONTRACT: &str = concat!(
 );
 #[cfg(test)]
 const THP2_2_STATES_SLICE_CONTRACT: &str = concat!(
-    "teslatlas-thp2.2-states-v1\n",
+    "teslatlas-thp2.2-states-v1\n", // rename:keep
     "id:integer:not_null\n",
     "car_id:smallint:not_null\n",
     "state:states_status:not_null\n",
@@ -151,7 +151,7 @@ const THP2_2_STATES_SLICE_CONTRACT: &str = concat!(
 );
 #[cfg(test)]
 const THP2_2_UPDATES_SLICE_CONTRACT: &str = concat!(
-    "teslatlas-thp2.2-updates-v1\n",
+    "teslatlas-thp2.2-updates-v1\n", // rename:keep
     "id:integer:not_null\n",
     "car_id:smallint:not_null\n",
     "start_date:timestamp without time zone:not_null:postgres_timestamp_binary_i64_us_since_2000\n",
@@ -215,7 +215,7 @@ const THP2_2_CHARGES_SLICE_SHA256: &str =
     "c8075db09941a15c2deeda010b2e001b78a3e5f9b4cded547f123fbbf5ab79da";
 #[cfg(test)]
 const THP2_2_DRIVES_SLICE_CONTRACT: &str = concat!(
-    "teslatlas-thp2.2-drives-v1\n",
+    "teslatlas-thp2.2-drives-v1\n", // rename:keep
     "id:integer:not_null\n",
     "car_id:smallint:not_null\n",
     "start_date:timestamp without time zone:not_null:postgres_timestamp_binary_i64_us_since_2000\n",
@@ -244,7 +244,7 @@ const THP2_2_DRIVES_SLICE_CONTRACT: &str = concat!(
 );
 #[cfg(test)]
 const THP2_2_POSITIONS_SLICE_CONTRACT: &str = concat!(
-    "teslatlas-thp2.2-positions-v1\n",
+    "teslatlas-thp2.2-positions-v1\n", // rename:keep
     "id:integer:not_null\n",
     "car_id:smallint:not_null\n",
     "drive_id:integer:nullable\n",
@@ -278,7 +278,7 @@ const THP2_2_POSITIONS_SLICE_CONTRACT: &str = concat!(
 );
 #[cfg(test)]
 const THP2_2_CHARGING_PROCESSES_SLICE_CONTRACT: &str = concat!(
-    "teslatlas-thp2.2-charging-processes-v1\n",
+    "teslatlas-thp2.2-charging-processes-v1\n", // rename:keep
     "id:integer:not_null\n",
     "car_id:smallint:not_null\n",
     "position_id:integer:not_null\n",
@@ -300,7 +300,7 @@ const THP2_2_CHARGING_PROCESSES_SLICE_CONTRACT: &str = concat!(
 );
 #[cfg(test)]
 const THP2_2_CHARGES_SLICE_CONTRACT: &str = concat!(
-    "teslatlas-thp2.2-charges-v1\n",
+    "teslatlas-thp2.2-charges-v1\n", // rename:keep
     "id:integer:not_null\n",
     "charging_process_id:integer:not_null\n",
     "date:timestamp without time zone:not_null:postgres_timestamp_binary_i64_us_since_2000\n",
@@ -519,7 +519,7 @@ const THP2_2_ADDRESS_SLICE_SHA256: &str =
     "7a8595ee2ee7c76f0573b2c3bac24f2551c708b1893af5734cbd6d770d6b1834";
 #[cfg(test)]
 const THP2_2_ADDRESS_SLICE_CONTRACT: &str = concat!(
-    "teslatlas-thp2.2-addresses-v1\n",
+    "teslatlas-thp2.2-addresses-v1\n", // rename:keep
     "id:integer:not_null\n",
     "display_name:character varying(512):nullable\n",
     "latitude:numeric(8,6):nullable:finite_scaled_i64_or_nan:e6\n",
@@ -569,7 +569,7 @@ const THP2_2_GEOFENCE_SLICE_SHA256: &str =
     "c64f07b35c76d248d3538a741d26d1d4293ee97cc01e5097f2e86f08f82e0981";
 #[cfg(test)]
 const THP2_2_GEOFENCE_SLICE_CONTRACT: &str = concat!(
-    "teslatlas-thp2.2-geofences-v1\n",
+    "teslatlas-thp2.2-geofences-v1\n", // rename:keep
     "id:integer:not_null\n",
     "name:character varying(255):not_null\n",
     "latitude:numeric(8,6):not_null:finite_scaled_i64_or_nan:e6\n",

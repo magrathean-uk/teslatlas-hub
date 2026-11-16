@@ -60,9 +60,9 @@ const CURSOR_MAGIC: &[u8; 4] = b"TSPC";
 const CURSOR_FORMAT_VERSION: u8 = 1;
 const CURSOR_PAYLOAD_BYTES: usize = 77;
 const CURSOR_TAG_BYTES: usize = 32;
-const MANIFEST_SIGNING_SEED_DOMAIN: &[u8] = b"teslatlas-hub/manifest-ed25519-signing-seed/v1";
-const FLEET_CREDENTIAL_ENCRYPTION_DOMAIN: &[u8] = b"teslatlas-hub/fleet-credential-encryption/v1";
-const PUBLIC_QUERY_CURSOR_DOMAIN: &[u8] = b"teslatlas-hub/public-query-cursor/v1\0";
+const MANIFEST_SIGNING_SEED_DOMAIN: &[u8] = b"teslatlas-hub/manifest-ed25519-signing-seed/v1"; // rename:keep
+const FLEET_CREDENTIAL_ENCRYPTION_DOMAIN: &[u8] = b"teslatlas-hub/fleet-credential-encryption/v1"; // rename:keep
+const PUBLIC_QUERY_CURSOR_DOMAIN: &[u8] = b"teslatlas-hub/public-query-cursor/v1\0"; // rename:keep
 
 /// Version of the manifest and cursor envelope, not the Hub binary version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

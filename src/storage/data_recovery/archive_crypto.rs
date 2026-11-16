@@ -94,8 +94,8 @@ const MAX_KDF_LANES: u32 = 8;
 
 pub(super) const MIN_PASSWORD_CHARS: usize = 12;
 
-const KEY_LABEL: &[u8] = b"teslatlas-hub-backup-v2 encryption key";
-const CHECK_LABEL: &[u8] = b"teslatlas-hub-backup-v2 key check";
+const KEY_LABEL: &[u8] = b"teslatlas-hub-backup-v2 encryption key"; // rename:keep
+const CHECK_LABEL: &[u8] = b"teslatlas-hub-backup-v2 key check"; // rename:keep
 
 fn kdf_params_in_range(params: KdfParams) -> bool {
     (MIN_KDF_MEMORY_KIB..=MAX_KDF_MEMORY_KIB).contains(&params.memory_kib)

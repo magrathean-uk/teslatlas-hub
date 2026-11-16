@@ -37,7 +37,7 @@ use crate::{
 };
 
 type PreparedResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
-const ID_DOMAIN: &str = "teslatlas-prepared-map-month-id-v1";
+const ID_DOMAIN: &str = "teslatlas-prepared-map-month-id-v1"; // rename:keep
 const STYLE: &str = "route-stroke-v8-opaque";
 const MAX_SCRATCH_POSITIONS: u64 = 1_000_000;
 const MAX_MONTH_BYTES: usize = 8 * 1024 * 1024;
@@ -374,7 +374,7 @@ fn write_sqlite(
                                                ?9,?10,?11,?12,?13,?14,?15,?16)",
         params![
             1,
-            "teslatlas-prepared-v1",
+            "teslatlas-prepared-v1", // rename:keep
             1,
             "map_months",
             STYLE,
@@ -672,11 +672,11 @@ fn signed_receipt(
             "compressed_bytes": compressed_bytes,
             "media_type": "application/vnd.teslatlas.prepared+sqlite+zstd;version=1",
             "object_name": format!("{digest}.sqlite.zst"),
-            "payload": "teslatlas-prepared-v1",
+            "payload": "teslatlas-prepared-v1", // rename:keep
             "sha256": digest,
             "uncompressed_bytes": uncompressed_bytes,
         },
-        "payload": "teslatlas-prepared-v1",
+        "payload": "teslatlas-prepared-v1", // rename:keep
         "scope": "map_months",
         "source": {
             "input_manifest_id": admission.snapshot_id.to_string(),
@@ -793,7 +793,7 @@ fn current_semantic_receipt(
         || document["artifact_schema_version"].as_u64() != Some(1)
         || document["artifact_type"].as_str() != Some("map_months")
         || document["scope"].as_str() != Some("map_months")
-        || document["payload"].as_str() != Some("teslatlas-prepared-v1")
+        || document["payload"].as_str() != Some("teslatlas-prepared-v1") // rename:keep
         || document["vehicle_id"].as_str() != Some(cached.vehicle.as_str())
         || document["source"]["input_manifest_id"].as_str() != Some(cached.manifest.as_str())
         || document["source"]["input_receipt_id"].as_str() != Some(cached.source_receipt.as_str())

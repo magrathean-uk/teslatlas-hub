@@ -573,7 +573,7 @@ fn flush_chunk(
     let snapshot = accumulator.take_snapshot()?;
     let pack_id = Uuid::new_v5(
         &snapshot_id,
-        format!("teslatlas-hub/schema-2.2/chunk/{ordinal}").as_bytes(),
+        format!("teslatlas-hub/schema-2.2/chunk/{ordinal}").as_bytes(), // rename:keep
     );
     let request = ProjectionPackRequestV2_2 {
         pack_id,

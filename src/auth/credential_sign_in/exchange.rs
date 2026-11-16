@@ -134,7 +134,7 @@ static USED_CODES: Mutex<VecDeque<[u8; 32]>> = Mutex::new(VecDeque::new());
 
 fn code_digest(code: &str) -> [u8; 32] {
     let mut hash = Sha256::new();
-    hash.update(b"teslatlas-hub/owner-code/v1\0");
+    hash.update(b"teslatlas-hub/owner-code/v1\0"); // rename:keep
     hash.update(code.as_bytes());
     hash.finalize().into()
 }
@@ -159,7 +159,7 @@ static STORED_SIGN_INS: Mutex<VecDeque<([u8; 32], uuid::Uuid, i64)>> = Mutex::ne
 
 fn material_digest(code: &str, code_verifier: &str) -> [u8; 32] {
     let mut hash = Sha256::new();
-    hash.update(b"teslatlas-hub/owner-sign-in/v1\0");
+    hash.update(b"teslatlas-hub/owner-sign-in/v1\0"); // rename:keep
     hash.update(code.as_bytes());
     hash.update(b"\0");
     hash.update(code_verifier.as_bytes());
