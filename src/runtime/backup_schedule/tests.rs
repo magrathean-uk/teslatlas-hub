@@ -742,11 +742,11 @@ fn backup_schedule_the_keychain_password_runs_the_backup_and_an_unreadable_item_
 fn backup_schedule_the_service_reads_a_disposable_keychain_without_a_prompt() {
     use keychain::{KEYCHAIN_SERVICE, KeychainFailure, PasswordKeychain, SystemKeychain, classify};
     use security_framework::os::macos::keychain::CreateOptions;
-    // DEC-156 and the incident of 14 November: Keychain calls run only in the
-    // lab guest (`TESLATLAS_HUB_KEYCHAIN_GUEST=1`), never on the owner's Mac;
-    // there the injected stores above cover the same rules.
+    // DEC-156: this test makes real Keychain calls, so it is skipped unless
+    // `TESLATLAS_HUB_KEYCHAIN_GUEST=1` is set, which marks a disposable-keychain
+    // environment; elsewhere the injected stores above cover the same rules.
     if std::env::var_os("TESLATLAS_HUB_KEYCHAIN_GUEST").is_none() {
-        eprintln!("skipped here: runs in the lab guest only (TESLATLAS_HUB_KEYCHAIN_GUEST=1)");
+        eprintln!("skipped here: needs TESLATLAS_HUB_KEYCHAIN_GUEST=1 (a disposable-keychain environment)");
         return;
     }
     // A disposable keychain in a private folder under the temp folder; the
