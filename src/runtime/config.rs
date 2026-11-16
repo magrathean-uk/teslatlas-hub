@@ -111,8 +111,9 @@ pub struct BackupConfig {
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum BackupPasswordSource {
-    /// The Mac Keychain item the app writes, readable without a prompt only
-    /// by the app and its bundled service. macOS only; refused elsewhere.
+    /// The Mac Keychain item the bundled service binary creates and owns,
+    /// readable without a prompt only by that binary; the app and other
+    /// programs are refused. macOS only; refused elsewhere.
     Keychain,
     /// The owned mode-0600 file `backup.password_file` names, refused when
     /// any other account may read it: on Linux a `systemd-creds` or

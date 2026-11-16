@@ -14,7 +14,9 @@ protocol HubMaintenanceBackend: AnyObject {
     func loadBackupSchedule() -> Result<HubBackupSchedule, Error>
     /// Writes the `[backup]` section. With a password, first saves it in the Keychain item
     /// and only then names `password_source = "keychain"` (M06-T12, M06-T17); without one,
-    /// the configured source and path stay as they are. The service applies the schedule
+    /// a configured keychain or file source and the path stay as they are, but a configuration
+    /// with no `password_source` is read as the Keychain: an earlier password file moves in and
+    /// `password_source = "keychain"` is written. The service applies the schedule
     /// when it restarts and reads the password at each run.
     func saveBackupSchedule(_ schedule: HubBackupSchedule, password: String?) -> Result<HubBackupSchedule, Error>
     func readBackupStatus(completion: @escaping (Result<HubBackupStatus, Error>) -> Void)

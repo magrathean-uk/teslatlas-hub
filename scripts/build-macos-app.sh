@@ -456,6 +456,7 @@ require_macos_13_or_earlier "$app_binary"
 # subjects bound to the clean-build evidence.
 sign_service_binary "$resources/teslatlas-hub"
 for evidence_bound_binary in \
+    "$resources/tesla-http-proxy" \
     "$resources/fleet-telemetry"; do
     /usr/bin/codesign --verify --strict "$evidence_bound_binary" \
         || die "embedded release binary lacks its build-time ad-hoc signature"

@@ -138,7 +138,10 @@ fallback to the other:
   `unattended-backup`. When the owner types a recovery password in the Mac
   app, the app saves it and only then writes `password_source = "keychain"`
   (keeping a configured account, otherwise its own path). Saving without a
-  new password leaves the configured source and path as they are.
+  new password leaves a configured `"keychain"` or `"file"` source and its path
+  as they are; a configuration with no `password_source` is read as the
+  Keychain, so that save moves an earlier password file into the item and writes
+  `password_source = "keychain"`, keeping the path.
 - `"file"`: the file `backup.password_file` names, which is then required
   (Linux and Docker, see below). The Mac app never moves or rewrites a
   configured file source unless the owner types a new password, which switches
@@ -196,8 +199,8 @@ How each source behaves:
   path. Until the move the service says the password is waiting to move and
   does not read the file.
 - Signing: a Hub update keeps reading the item without a prompt only when the
-  service binary is signed with the same Apple Development identity (team
-  `NPSQV9WYS5`, identifier `uk.magrathean.teslatlas.hub.service`);
+  service binary is signed with the same Apple Development identity (the team
+  and identifier that `macos/TeslatlasHubApp/project.yml` names);
   `scripts/build-macos-app.sh` signs the embedded binary that way, with the
   identity `macos/TeslatlasHubApp/project.yml` names. An unsigned or ad-hoc
   signed build is refused (`backup_password_unavailable`) until the password
