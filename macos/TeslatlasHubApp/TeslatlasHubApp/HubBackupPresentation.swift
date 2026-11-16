@@ -328,6 +328,9 @@ enum HubBackupRunState: Equatable {
     /// backup), or a scheduled run holds the slot; the service is still working.
     case stillRunning
     case finished(generation: String?)
+    /// The service's run ended without a recorded outcome of its own (for example the
+    /// service restarted during it): the backup is not known to have finished.
+    case unconfirmed
     case blocked(message: String)
     case failed(message: String)
 
@@ -340,6 +343,7 @@ enum HubBackupRunState: Equatable {
         case .stillRunning: return HubL10n.text("hub.backup.run.stillRunning", fallback: "The backup is still running in the Hub service.")
         case let .finished(generation?): return HubL10n.format("hub.backup.run.finishedGeneration", fallback: "Backup finished: %1$@", arguments: [generation])
         case .finished(nil): return HubL10n.text("hub.backup.run.finished", fallback: "Backup finished")
+        case .unconfirmed: return HubL10n.text("hub.backup.run.unconfirmed", fallback: "The backup was interrupted or its result is unknown. The last good backup is unchanged.")
         case let .blocked(message): return message
         case let .failed(message): return HubL10n.format("hub.backup.run.failed", fallback: "Backup failed: %1$@", arguments: [message])
         }
@@ -367,6 +371,53 @@ enum HubBackupRunState: Equatable {
             default: return .failed(message: refusal.message.isEmpty ? refusal.code : refusal.message)
             }
         }
+    }
+}
+
+/// Which service run the Backups section waits for, so that only that run's own
+/// recorded outcome ends the wait. The service stamps an attempt with the time it
+/// started and records it only when the run returns; after a restart during a run,
+/// `backup-status` still shows the previous attempt.
+struct HubBackupRunWatch: Equatable {
+    /// When the app asked for a run: an attempt stamped at or after it is that run.
+    var requestedAt: Date?
+    /// Whether a running status was seen while waiting.
+    private(set) var sawRunning = false
+    /// The latest attempt reported while that run was going on: a later one is its outcome.
+    private(set) var attemptBeforeRun: Date?
+
+    init(requestedAt: Date? = nil) {
+        self.requestedAt = requestedAt
+    }
+
+    /// Notes a status read while waiting.
+    mutating func observe(_ status: HubBackupStatus) {
+        guard status.running, !sawRunning else { return }
+        sawRunning = true
+        attemptBeforeRun = status.lastAttempt
+    }
+
+    /// Whether an attempt stamped at `attempt` belongs to the run waited for.
+    func owns(_ attempt: Date?) -> Bool {
+        guard let attempt else { return false }
+        if let requestedAt, attempt >= requestedAt { return true }
+        guard sawRunning else { return false }
+        return attemptBeforeRun.map { attempt > $0 } ?? true
+    }
+
+    /// How the run ended, as a status read once it no longer runs shows it. Success
+    /// needs that run's own successful attempt and generation; a missing or older
+    /// outcome is unconfirmed, never finished.
+    func endState(of status: HubBackupStatus) -> HubBackupRunState {
+        if let blocked = status.blockedText { return .blocked(message: blocked) }
+        guard owns(status.lastAttempt) else { return .unconfirmed }
+        if let code = status.lastFailureCode {
+            return .failed(message: status.lastFailureMessage ?? code)
+        }
+        guard status.lastSuccess == status.lastAttempt, let generation = status.lastGeneration else {
+            return .unconfirmed
+        }
+        return .finished(generation: generation)
     }
 }
 

@@ -87,8 +87,10 @@ final class BackupSettingsView: NSView {
                 self.show(status: status)
                 // A scheduled run, or one this window no longer waits for, is shown as running.
                 if status.running, !self.runState.isBusy {
+                    var watch = HubBackupRunWatch()
+                    watch.observe(status)
                     self.setRunState(.stillRunning)
-                    self.pollUntilFinished(startedAt: nil)
+                    self.pollUntilFinished(watch)
                 }
             case let .failure(error):
                 self.status = nil
@@ -110,7 +112,7 @@ final class BackupSettingsView: NSView {
             guard let self else { return }
             if outcome == .stillRunning {
                 self.setRunState(.stillRunning)
-                self.pollUntilFinished(startedAt: started)
+                self.pollUntilFinished(HubBackupRunWatch(requestedAt: started))
             } else {
                 self.setRunState(outcome)
                 self.refreshStatus()
@@ -118,8 +120,9 @@ final class BackupSettingsView: NSView {
         }
     }
 
-    /// Asks `backup-status` until the service's run has ended, then shows how it ended.
-    private func pollUntilFinished(startedAt: Date?) {
+    /// Asks `backup-status` until the service's run has ended, then shows how it ended:
+    /// finished only with that run's own recorded success.
+    private func pollUntilFinished(_ watch: HubBackupRunWatch) {
         pollGeneration += 1
         let generation = pollGeneration
         schedule(pollInterval) { [weak self] in
@@ -128,26 +131,19 @@ final class BackupSettingsView: NSView {
                 guard let self, generation == self.pollGeneration else { return }
                 switch result {
                 case let .success(status) where status.running:
+                    var watch = watch
+                    watch.observe(status)
                     self.show(status: status)
-                    self.pollUntilFinished(startedAt: startedAt)
+                    self.pollUntilFinished(watch)
                 case let .success(status):
                     self.show(status: status)
-                    self.setRunState(Self.endState(of: status, since: startedAt))
+                    self.setRunState(watch.endState(of: status))
                 case .failure:
                     // The service may be restarting; keep showing the run and ask again.
-                    self.pollUntilFinished(startedAt: startedAt)
+                    self.pollUntilFinished(watch)
                 }
             }
         }
-    }
-
-    static func endState(of status: HubBackupStatus, since start: Date?) -> HubBackupRunState {
-        if let blocked = status.blockedText { return .blocked(message: blocked) }
-        let attemptIsThisRun = status.lastAttempt.map { attempt in start.map { attempt >= $0 } ?? true } ?? false
-        if let code = status.lastFailureCode, attemptIsThisRun {
-            return .failed(message: status.lastFailureMessage ?? code)
-        }
-        return .finished(generation: status.lastGeneration)
     }
 
     private func setRunState(_ state: HubBackupRunState) {
@@ -163,7 +159,7 @@ final class BackupSettingsView: NSView {
         }
         progressLabel.textColor = {
             switch state {
-            case .failed, .blocked: return HubPalette.danger
+            case .failed, .blocked, .unconfirmed: return HubPalette.danger
             default: return HubPalette.mutedForeground
             }
         }()
