@@ -236,11 +236,7 @@ impl BackupExclusion for FailedExclusion {
     fn ensure_excluded(&self, _: &Path) -> Result<ExclusionState, CredentialKeyError> { Err(CredentialKeyError::BackupExclusionFailed) }
 }
 
-fn prepare_rotation(data: &Path) {
-    let secrets = private_directory::open_validated(&data.join("secrets"), false).expect("secrets");
-    let keys = credential_keys::load_keyring(&secrets).expect("keyring").expect("present");
-    credential_keys::begin_rotation(&secrets, &FixtureExclusion, &keys, 1_800_086_400).expect("rotation publication");
-}
+fn prepare_rotation(data: &Path) { fixtures::begin_fixture_rotation(data) }
 
 #[test]
 fn ct020_rotation_crash_points() {
@@ -1062,4 +1058,131 @@ fn refused_credential_purge_status_doctor_and_backup_name_the_command_until_the_
     assert!(crate::runtime::operator::purge::hint(&store).expect("hint").is_none(), "nothing to name after the purge");
     let waiting = crate::data_recovery::DataRecoveryError::Store(StoreError::BackupWaitsForCredentialCleanup);
     assert!(crate::data_recovery::refused_credential_backup_message(&store, &waiting).is_none(), "no blocked refusal after the purge");
+}
+
+// M04-T09 (REV2-CX-M04-T05 finding 1): the startup fence reaches every later
+// transaction and file change inside the composite steps of a fenced opening. In
+// each case the window ends during a wait (a barrier, a keyring sync) and the
+// opening must not begin the next independent mutation.
+
+/// A startup fence that refuses once the test's window has ended.
+fn startup_window() -> (Arc<std::sync::atomic::AtomicBool>, crate::credentials::LossObserver) {
+    let expired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let observed = Arc::clone(&expired);
+    (expired, Arc::new(move || observed.load(std::sync::atomic::Ordering::SeqCst)))
+}
+/// The wait of the next sync of `path`: the window ends during it, and the sync
+/// then fails when `fails`.
+fn window_ends_in_next_sync(path: &Path, expired: &Arc<std::sync::atomic::AtomicBool>, fails: bool) {
+    let expired = Arc::clone(expired);
+    fixtures::wait_in_next_sync(path, Box::new(move || {
+        expired.store(true, std::sync::atomic::Ordering::SeqCst);
+        fails
+    }));
+}
+fn fenced_open(data: &Path, fence: &crate::credentials::LossObserver) -> Result<Arc<CredentialVault>, CredentialStoreError> {
+    let store = HubStore::initialize(data).expect("store");
+    let admission = fixtures::fixture_admission(&store, data);
+    fixtures::open_runtime_fixture_vault(store, data, admission, Some(fence))
+}
+fn durability(data: &Path) -> Option<crate::db::CredentialDurabilityState> { status(data).durability }
+fn set_format_state(data: &Path, assignments: &str) {
+    rusqlite::Connection::open(data.join("hub.sqlite")).expect("previous process")
+        .execute(&format!("UPDATE credential_format_state SET {assignments} WHERE singleton_id=1"), []).expect("format state fixture");
+}
+fn stopped_by_the_window(result: Result<Arc<CredentialVault>, CredentialStoreError>) {
+    assert!(matches!(result, Err(CredentialStoreError::SensitiveAccessUnavailable)), "{:?}", result.map(|_| ()));
+}
+
+#[test]
+fn credential_startup_fence_probe_barrier_failure_records_nothing_after_the_window() {
+    let _controls = Controls;
+    let (root, _) = seeded(); drop(open(root.path()));
+    assert_eq!(durability(root.path()), Some(crate::db::CredentialDurabilityState::Ok));
+    let (expired, fence) = startup_window();
+    window_ends_in_next_sync(&root.path().join("hub.sqlite"), &expired, true);
+    stopped_by_the_window(fenced_open(root.path(), &fence));
+    assert!(expired.load(std::sync::atomic::Ordering::SeqCst), "the probe reached its barrier");
+    assert_eq!(durability(root.path()), Some(crate::db::CredentialDurabilityState::Ok),
+        "the failed barrier's unavailable record does not begin after the window ended");
+}
+
+#[test]
+fn credential_startup_fence_probe_ok_record_waits_for_the_window() {
+    let _controls = Controls;
+    let (root, _) = seeded(); drop(open(root.path()));
+    set_format_state(root.path(), "durability='unavailable'");
+    let (expired, fence) = startup_window();
+    window_ends_in_next_sync(&root.path().join("hub.sqlite"), &expired, false);
+    stopped_by_the_window(fenced_open(root.path(), &fence));
+    assert!(expired.load(std::sync::atomic::Ordering::SeqCst), "the probe reached its barrier");
+    assert_eq!(durability(root.path()), Some(crate::db::CredentialDurabilityState::Unavailable),
+        "the passed barrier's ok record does not begin after the window ended");
+}
+
+#[test]
+fn credential_startup_fence_keyring_barrier_failure_records_nothing_after_the_window() {
+    let _controls = Controls;
+    let (root, _) = seeded(); drop(open(root.path()));
+    let (expired, fence) = startup_window();
+    window_ends_in_next_sync(&root.path().join("secrets"), &expired, true);
+    stopped_by_the_window(fenced_open(root.path(), &fence));
+    assert!(expired.load(std::sync::atomic::Ordering::SeqCst), "the keyring proof reached its sync");
+    assert_eq!(durability(root.path()), Some(crate::db::CredentialDurabilityState::Ok),
+        "the keyring barrier's unavailable record does not begin after the window ended");
+}
+
+#[test]
+fn credential_startup_fence_phase_b_purge_waits_for_the_window() {
+    let _controls = Controls;
+    let (root, _) = seeded(); drop(open(root.path()));
+    // A converted store whose purge, scrub and file removal are still due: Phase B
+    // repeats the conversion barrier, then would vacuum and commit the purge.
+    set_format_state(root.path(), "completed_at_ms=NULL, purge_required=1, wal_scrubbed=0, old_files_removed=0");
+    let cleanup = |data: &Path| { let state = status(data); (state.completed_at_ms, state.purge_required, state.purge_needed_bytes, state.wal_scrubbed, state.old_files_removed) };
+    let before = cleanup(root.path());
+    let (expired, fence) = startup_window();
+    let catalogue = root.path().join("hub.sqlite");
+    let armed = Arc::clone(&expired);
+    // Armed after the probe, so the wait is Phase B's repeated barrier.
+    OPEN_CONTROL.with(|control| *control.borrow_mut() = Some(Box::new(move |_| window_ends_in_next_sync(&catalogue, &armed, false))));
+    stopped_by_the_window(fenced_open(root.path(), &fence));
+    assert!(expired.load(std::sync::atomic::Ordering::SeqCst), "Phase B reached its barrier");
+    assert_eq!(cleanup(root.path()), before, "no purge, deferral, scrub, removal or completion after the window ended");
+}
+
+#[test]
+fn credential_startup_fence_resumed_rotation_waits_for_the_window() {
+    for reseal_barrier in [false, true] {
+        let _controls = Controls;
+        let (root, input) = seeded(); drop(open(root.path()));
+        prepare_rotation(root.path());
+        let keyring = root.path().join("secrets").join(credential_keys::KEYRING_NAME);
+        let envelopes = |data: &Path| -> (Vec<u8>, Vec<u8>) {
+            rusqlite::Connection::open(data.join("hub.sqlite")).expect("previous process")
+                .query_row("SELECT access_envelope, refresh_envelope FROM credential_pairs WHERE slot='owner_api'", [], |row| Ok((row.get(0)?, row.get(1)?)))
+                .expect("pair envelopes")
+        };
+        let (keyring_before, envelopes_before) = (fs::read(&keyring).expect("rotating keyring"), envelopes(root.path()));
+        let (expired, fence) = startup_window();
+        let catalogue = root.path().join("hub.sqlite");
+        let armed = Arc::clone(&expired);
+        if reseal_barrier {
+            // The barrier after the reseal commit; the keyring's finish follows it.
+            RESEAL_CONTROL.with(|control| *control.borrow_mut() = Some(Box::new(move |_| window_ends_in_next_sync(&catalogue, &armed, false))));
+        } else {
+            // The reservation barrier; the reseal transaction follows it.
+            OPEN_CONTROL.with(|control| *control.borrow_mut() = Some(Box::new(move |_| window_ends_in_next_sync(&catalogue, &armed, false))));
+        }
+        stopped_by_the_window(fenced_open(root.path(), &fence));
+        RESEAL_CONTROL.with(|control| *control.borrow_mut() = None);
+        assert!(expired.load(std::sync::atomic::Ordering::SeqCst), "the rotation reached its barrier");
+        assert_eq!(fs::read(&keyring).expect("keyring"), keyring_before, "the rotation's keyring is not finished after the window ended");
+        if !reseal_barrier {
+            assert_eq!(envelopes(root.path()), envelopes_before, "no reseal begins after the window ended");
+        }
+        // An unfenced open later resumes and finishes the rotation.
+        let vault = open(root.path()); unchanged(&vault, input);
+        assert!(vault.keys.read().expect("keys").as_ref().expect("keyring").keyring().previous.is_none(), "the next open resumes");
+    }
 }

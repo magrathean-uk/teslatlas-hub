@@ -49,6 +49,39 @@ static EXCLUSION_WAITS: Mutex<std::collections::BTreeMap<std::path::PathBuf, Exc
 pub(crate) fn wait_in_next_exclusion(secrets: &Path, wait: ExclusionWait) {
     EXCLUSION_WAITS.lock().expect("exclusion waits").insert(secrets.to_owned(), wait);
 }
+/// The wait of the next durability sync of `path`, in place of the sync's own
+/// (M04-T09): the catalogue path for the credential connection's barrier, the
+/// `secrets/` path for the keyring proof at open. The closure stands in for the
+/// wait and returns whether the sync then fails. Keyed by the path, so parallel
+/// tests do not see each other's.
+#[cfg(test)]
+pub(crate) type SyncWait = Box<dyn FnOnce() -> bool + Send>;
+#[cfg(test)]
+static SYNC_WAITS: Mutex<std::collections::BTreeMap<std::path::PathBuf, SyncWait>> = Mutex::new(std::collections::BTreeMap::new());
+#[cfg(test)]
+pub(crate) fn wait_in_next_sync(path: &Path, wait: SyncWait) {
+    SYNC_WAITS.lock().expect("sync waits").insert(path.to_owned(), wait);
+}
+/// A key rotation a previous process published and did not finish (M04-T09): the
+/// next opening resumes it.
+#[cfg(test)]
+pub(crate) fn begin_fixture_rotation(data: &Path) {
+    let secrets = private_directory::open_validated(&data.join("secrets"), false).expect("secrets");
+    let keys = credential_keys::load_keyring(&secrets).expect("keyring").expect("present");
+    credential_keys::begin_rotation(&secrets, &FixtureExclusion, &keys, 1_800_086_400).expect("rotation publication");
+}
+/// Runs `control` once on this thread, just before the next resumed rotation's
+/// reseal transaction (M04-T09).
+#[cfg(test)]
+pub(crate) fn before_next_reseal(control: Box<dyn FnOnce()>) {
+    RESEAL_CONTROL.with(|slot| *slot.borrow_mut() = Some(Box::new(move |_| control())));
+}
+/// Runs the registered wait of `path`, if any: `true` when the sync then fails.
+#[cfg(test)]
+pub(crate) fn sync_wait(path: &Path) -> bool {
+    let wait = SYNC_WAITS.lock().expect("sync waits").remove(path);
+    wait.is_some_and(|wait| wait())
+}
 #[cfg(test)]
 pub(crate) fn replace_legacy_supplied_pair(store: &HubStore, data: &Path, access: &str, refresh: &str, schedule: Option<(i64,i64)>) -> Result<Uuid,CredentialStoreError> {
     let mut entry = CredentialEntry::own_login_fixture(Zeroizing::new(access.into()),Zeroizing::new(refresh.into()))?;

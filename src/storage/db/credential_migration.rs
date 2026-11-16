@@ -419,12 +419,12 @@ impl CredentialConnection {
         if self.migration_state.barrier_failed {
             return Err(StoreError::CredentialPairInvalid);
         }
-        if let Err(error) = self.credential_durability_barrier() {
+        if let Err(error) = self.credential_durability_sync() {
             self.migration_state.barrier_failed = true;
             self.record_unavailable_after_barrier_failure();
             return Err(error);
         }
-        Ok(())
+        self.startup_fenced()
     }
 
     fn credential_migration_converted(&mut self) -> Result<CredentialFormatState, StoreError> {
