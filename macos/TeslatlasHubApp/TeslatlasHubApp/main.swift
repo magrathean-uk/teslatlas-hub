@@ -7,4 +7,5 @@ let applicationDelegate = AppDelegate()
 application.delegate = applicationDelegate
 application.setActivationPolicy(HubApplicationActivation.launchPolicy())
 HubApplicationActivation.installFocusYield()
+HubRenameMigration.prepareBeforeLaunch()
 application.run()

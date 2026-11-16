@@ -491,6 +491,7 @@
         "macos/TeslatlasHubApp/TeslatlasHubApp/HubOnboardingContainerView.swift",
         "macos/TeslatlasHubApp/TeslatlasHubApp/HubPresentationState.swift",
         "macos/TeslatlasHubApp/TeslatlasHubApp/HubPreviewCatalog.swift",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/HubRenameMigration.swift",
         "macos/TeslatlasHubApp/TeslatlasHubApp/HubTestUI.swift",
         "macos/TeslatlasHubApp/TeslatlasHubApp/HubUtilityWindow.swift",
         "macos/TeslatlasHubApp/TeslatlasHubApp/HubVehicleViews.swift",
