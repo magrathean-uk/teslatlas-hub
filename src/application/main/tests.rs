@@ -2945,7 +2945,6 @@ mod lan_tls_setup {
 
     #[test]
     fn serving_check_waits_between_one_and_150_seconds() {
-        use clap::Parser as _;
         let parse = |wait: &str| {
             super::super::Cli::try_parse_from(["teslatlas-hub", "serving-check", "--wait-seconds", wait])
         };

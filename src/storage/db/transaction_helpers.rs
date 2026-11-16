@@ -418,7 +418,6 @@ fn promote_imported_open_session_in_transaction(
     let watermarks = snapshot_watermark_pairs(&session.watermarks);
     let changed_domains =
         raise_source_watermarks_in_transaction(transaction, source_id, vehicle_id, &watermarks)?;
-    let mut seeded = seeded;
     raise_id_cursors_above_watermarks(transaction, vehicle_id, &mut seeded)?;
     if changed_domains.contains(&WatermarkDomain::Positions) {
         terrain_after_import_boundary_raise_in_transaction(transaction, vehicle_id, updated_at_ms)?;

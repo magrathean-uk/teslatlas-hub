@@ -207,7 +207,7 @@ pub(crate) fn posix_acl_grants_access(value: &[u8]) -> bool {
     if u32::from_le_bytes(*header) != 2 || entries.len() % 8 != 0 {
         return true;
     }
-    entries.chunks_exact(8).any(|entry| {
+    entries.as_chunks::<8>().0.iter().any(|entry| {
         let tag = u16::from_le_bytes([entry[0], entry[1]]);
         let permissions = u16::from_le_bytes([entry[2], entry[3]]);
         !KNOWN_TAGS.contains(&tag) || ((tag == ACL_USER || tag == ACL_GROUP) && permissions != 0)

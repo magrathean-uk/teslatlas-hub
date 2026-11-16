@@ -1092,7 +1092,7 @@ fn import_seam_live_spans_are_bound_to_the_import_base() {
             params![vehicle.as_str()],
         )
         .expect("retire the deltas");
-    assert_eq!(live_spans(&*transaction), 0);
+    assert_eq!(live_spans(&transaction), 0);
     drop(transaction);
     assert_eq!(
         usize::try_from(live_spans(&connection)).expect("count"),

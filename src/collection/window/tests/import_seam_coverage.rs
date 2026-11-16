@@ -35,14 +35,14 @@ pub(super) fn store_with_vehicles(rig: &Rig) -> (HubStore, String, String) {
     // directory; the store wants it private to the user.
     std::fs::create_dir_all(data_dir(rig)).unwrap();
     std::fs::set_permissions(data_dir(rig), std::fs::Permissions::from_mode(0o700)).unwrap();
-    let store = HubStore::initialize(&data_dir(rig)).unwrap();
+    let store = HubStore::initialize(data_dir(rig)).unwrap();
     let source = store
         .register_source(&SourceDescriptor::new("owner_api", "import-seam-coverage"), 1_000)
         .unwrap();
     let register = |tesla_id: i64| {
         store
             .register_vehicle(
-                &VehicleDescriptor::new(source.source_id, &tesla_id.to_string())
+                &VehicleDescriptor::new(source.source_id, tesla_id.to_string())
                     .with_tesla_identity(Some(tesla_id), None),
                 1_000,
             )

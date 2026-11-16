@@ -7,7 +7,6 @@ license = "AGPL-3.0-only"
 authors = ["György Bolyki <contact@magrathean.uk>"]
 description = "Self-hosted vehicle telemetry collector and local Teslatlas sync hub"
 repository = "https://github.com/magrathean-uk/teslatlas-hub"
-homepage = "https://github.com/magrathean-uk/teslatlas-hub"
 readme = ".github/README.md"
 
 [workspace]

@@ -494,7 +494,8 @@ fn backup_schedule_password_file_with_a_foreign_acl_is_refused() {
         assert!(refusal.message.contains(refused_by), "{refusal}");
         assert!(!refusal.message.contains(PASSWORD), "{refusal}");
     } else {
-        assert!(!cfg!(target_os = "macos"), "chmod +a must work on macOS");
+        #[cfg(target_os = "macos")]
+        panic!("chmod +a must work on macOS");
     }
     // A deny-only list grants nothing and is accepted.
     #[cfg(target_os = "macos")]

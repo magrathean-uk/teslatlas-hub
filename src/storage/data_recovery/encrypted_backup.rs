@@ -1857,7 +1857,7 @@ pub fn restore_encrypted_backup(
     if streamed.is_err() && test_hooks::CRASHED.with(|flag| flag.replace(false)) {
         // A killed process removes nothing, and its lock goes with it.
         staging.leave_as_killed();
-        return Err(streamed.err().expect("an error"));
+        return Err(streamed.expect_err("an error"));
     }
     let streamed = streamed?;
     // From here the tree is reached by its path: it must still be the one
