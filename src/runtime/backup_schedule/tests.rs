@@ -1203,7 +1203,8 @@ fn backup_schedule_the_missing_password_source_refusal_names_the_keychain_and_th
 /// inside moves into the Keychain with its exact bytes (as the app frames it
 /// on standard input), the service's runner backs up with it, and the
 /// recovery commands open that backup from the original file's bytes after a
-/// `#pw-file` line.
+/// `#pw-file` line. One that ends in CR or LF is refused on store
+/// (REV2-CX-M06-T17 CR-8), but an item already holding it still works.
 #[test]
 fn backup_password_source_a_legacy_password_with_line_ends_or_nul_migrates_and_recovers() {
     use keychain::{Comparison, compare_password, password_from_input, read_keychain_password, store_password};
@@ -1235,8 +1236,15 @@ fn backup_password_source_a_legacy_password_with_line_ends_or_nul_migrates_and_r
         }
         let sent = password_from_input(&framed[..]).unwrap();
         assert_eq!(sent.as_slice(), original, "case {index}");
-        let memory = Arc::new(MemoryKeychain::default());
-        store_password(memory.as_ref(), account, &sent).expect("the password in use moves");
+        let memory = if matches!(original.last(), Some(b'\r' | b'\n')) {
+            let empty = MemoryKeychain::default();
+            store_password(&empty, account, &sent).expect_err("a final line end is not newly stored");
+            Arc::new(MemoryKeychain::holding(account, original))
+        } else {
+            let memory = Arc::new(MemoryKeychain::default());
+            store_password(memory.as_ref(), account, &sent).expect("the password in use moves");
+            memory
+        };
         assert_eq!(compare_password(memory.as_ref(), account, original).unwrap(), Comparison::Equal);
         assert_eq!(read_keychain_password(memory.as_ref(), account).unwrap().as_bytes(), original);
         let destination = root.path().join(format!("destination-{index}"));
@@ -1256,6 +1264,42 @@ fn backup_password_source_a_legacy_password_with_line_ends_or_nul_migrates_and_r
         assert_eq!(recovered.as_bytes(), original, "case {index}");
         verify_encrypted_backup(&bundle, &recovered).expect("the backup opens with the original bytes");
     }
+}
+
+/// REV2-CX-M06-T17 CR-8: a password whose last byte is CR or LF is refused on
+/// store with a clear message, including the 1,023 x `a` + LF counterexample
+/// that no recovery password file of at most 1 KiB can give back; a legacy
+/// item with a final LF still reads and compares unchanged.
+#[test]
+fn backup_password_source_store_refuses_a_final_line_end_and_a_legacy_item_still_reads() {
+    use keychain::{BACKUP_PASSWORD_INVALID, Comparison, compare_password, password_from_input, read_keychain_password, store_password};
+    let account = "/Hub/backup-password";
+    let mut counterexample = vec![b'a'; 1023];
+    counterexample.push(b'\n');
+    let mut framed = counterexample.clone();
+    framed.push(b'\n');
+    let sent = password_from_input(&framed[..]).expect("the app's framing is read");
+    assert_eq!(sent.as_slice(), counterexample.as_slice());
+    let memory = MemoryKeychain::default();
+    let refusal = store_password(&memory, account, &sent).expect_err("refused");
+    assert_eq!(refusal.code, BACKUP_PASSWORD_INVALID);
+    assert!(refusal.message.contains("line break"), "{refusal}");
+    assert!(memory.items.lock().unwrap().is_empty(), "nothing is written");
+    for ending in [&b"\n"[..], b"\r", b"\r\n"] {
+        let mut password = b"correct horse battery staple".to_vec();
+        password.extend_from_slice(ending);
+        let refusal = store_password(&memory, account, &password).expect_err("refused");
+        assert_eq!(refusal.code, BACKUP_PASSWORD_INVALID);
+        assert!(refusal.message.contains("line break"), "{refusal}");
+    }
+    assert!(memory.items.lock().unwrap().is_empty(), "nothing is written");
+    // A line end inside, or a password of exactly 1 KiB without one, is still stored.
+    store_password(&memory, account, b"correct horse\nbattery staple").expect("stored");
+    store_password(&memory, account, &vec![b'a'; 1024]).expect("stored");
+    // An item already holding a final LF (stored before this rule) reads unchanged.
+    let legacy = MemoryKeychain::holding(account, &counterexample);
+    assert_eq!(read_keychain_password(&legacy, account).unwrap().as_bytes(), counterexample.as_slice());
+    assert_eq!(compare_password(&legacy, account, &counterexample).unwrap(), Comparison::Equal);
 }
 
 /// REV-CX-M06-T17 CR-2: the service's loader reads a basic quoted key with

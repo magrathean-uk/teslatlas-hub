@@ -498,6 +498,16 @@ final class BackupSettingsTests: XCTestCase {
         // A short password changes nothing; a failing Keychain is reported and changes nothing.
         let short = backend.saveBackupSchedule(saved, password: "short")
         XCTAssertEqual(short.failureError as? HubMaintenanceError, .passwordTooShort)
+        // REV2-CX-M06-T17 CR-8: a new password ending in a line break is refused before the
+        // service is asked, and the configuration and item stay as they were.
+        for ending in ["\n", "\r", "\r\n"] {
+            let lineEnd = backend.saveBackupSchedule(saved, password: String(repeating: "a", count: 1023) + ending)
+            XCTAssertEqual(lineEnd.failureError as? HubMaintenanceError, .passwordEndsInLineBreak)
+            XCTAssertEqual(lineEnd.failureError?.localizedDescription,
+                           "The recovery password must not end in a line break. Remove it and save again.")
+        }
+        XCTAssertEqual(store.items, [name.path: Array(password.utf8)])
+        XCTAssertEqual(try String(contentsOf: hub.config, encoding: .utf8), written)
         store.failure = HubMaintenanceError.passwordFileUnwritable
         let refused = backend.saveBackupSchedule(saved, password: "another long password")
         XCTAssertEqual(refused.failureError as? HubMaintenanceError, .passwordFileUnwritable)

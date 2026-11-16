@@ -26,6 +26,8 @@ protocol HubMaintenanceBackend: AnyObject {
 enum HubMaintenanceError: LocalizedError, Equatable {
     case unreadableReport
     case passwordTooShort
+    /// A new password whose last character is a line break (REV2-CX-M06-T17 CR-8).
+    case passwordEndsInLineBreak
     case passwordFileUnwritable
     case configurationMissing
     /// The service did not save or confirm the password; its own words follow.
@@ -43,6 +45,8 @@ enum HubMaintenanceError: LocalizedError, Equatable {
         case .unreadableReport: return HubL10n.text("hub.backup.maint.unreadable", fallback: "The Hub's answer could not be read.")
         case .passwordTooShort:
             return HubL10n.format("hub.backup.problem.passwordShort", fallback: "The recovery password needs at least %1$@ characters.", arguments: [String(describing: HubBackupSchedule.minimumPasswordLength)])
+        case .passwordEndsInLineBreak:
+            return HubL10n.text("hub.backup.problem.passwordLineBreak", fallback: "The recovery password must not end in a line break. Remove it and save again.")
         case .passwordFileUnwritable: return HubL10n.text("hub.backup.maint.unwritable", fallback: "The recovery password could not be saved.")
         case .configurationMissing: return HubL10n.text("hub.backup.maint.configMissing", fallback: "Set up the Hub before changing backups.")
         case let .passwordNotSaved(reason):
@@ -512,6 +516,10 @@ final class HubControllerMaintenance: HubMaintenanceBackend {
             if let password {
                 guard password.count >= HubBackupSchedule.minimumPasswordLength else {
                     throw HubMaintenanceError.passwordTooShort
+                }
+                // The recovery commands could not always be given it back exactly (CR-8).
+                if let last = password.utf8.last, last == UInt8(ascii: "\n") || last == UInt8(ascii: "\r") {
+                    throw HubMaintenanceError.passwordEndsInLineBreak
                 }
                 // A configured Keychain account keeps its item; a file source or none moves
                 // to the app's own account. Typing a password is the owner's explicit switch.

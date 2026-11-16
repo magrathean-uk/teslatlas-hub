@@ -155,9 +155,20 @@ pub fn password_from_input(mut reader: impl std::io::Read) -> Result<Zeroizing<V
     Ok(bytes)
 }
 
+/// Whether a password may be newly saved (REV2-CX-M06-T17 CR-8): an
+/// acceptable password whose last byte is neither CR nor LF. The recovery
+/// password file drops one final line end and holds at most 1 KiB, so a
+/// password ending in a line end may have no file the recovery commands can
+/// read back exactly (1,023 bytes and LF, for one). An item already stored
+/// with a final CR or LF stays readable ([`read_keychain_password`]).
+pub fn password_storable(password: &[u8]) -> bool {
+    password_acceptable(password) && !matches!(password.last(), Some(b'\r' | b'\n'))
+}
+
 /// Saves `password` as the item for `account` and reads it back through this
 /// binary's own access before it counts (`backup-password store`). The
-/// password must be one the recovery commands can take. The item's data
+/// password must be one the recovery commands can take and must not end in
+/// CR or LF ([`password_storable`]). The item's data
 /// changes in place: a failure before the write commits leaves the old
 /// password; a read-back that differs is reported, never hidden.
 pub fn store_password(
@@ -169,6 +180,11 @@ pub fn store_password(
     if !password_acceptable(password) {
         return Err(invalid(
             "the recovery password needs at least 12 characters of UTF-8 text and at most 1 KiB",
+        ));
+    }
+    if !password_storable(password) {
+        return Err(invalid(
+            "the recovery password must not end in a line break (CR or LF); remove it and save again",
         ));
     }
     keychain.write(account, password).map_err(|failure| match failure {
