@@ -1075,9 +1075,13 @@ fn backup_password_source_compare_and_status_answer_through_the_service_access()
 fn backup_schedule_a_short_or_altered_keychain_item_is_unavailable_through_the_runner() {
     use keychain::{BACKUP_PASSWORD_UNAVAILABLE, read_keychain_password};
     let account = "/Hub/backup-password";
-    for value in [&b"elevenchars"[..], b"correct horse\nbattery staple", b"correct horse\0battery staple"] {
+    // A short item is unavailable. Legacy items with CR, LF or NUL stay readable
+    // unchanged (REV-CX-M06-T17 CR-7), so they are not part of this refusal.
+    let held = FakeKeychain::holding(account, b"elevenchars");
+    assert_eq!(read_keychain_password(&held, account).unwrap_err().code, BACKUP_PASSWORD_UNAVAILABLE);
+    for value in [&b"correct horse\nbattery staple"[..], b"correct horse\0battery staple"] {
         let held = FakeKeychain::holding(account, value);
-        assert_eq!(read_keychain_password(&held, account).unwrap_err().code, BACKUP_PASSWORD_UNAVAILABLE);
+        assert_eq!(read_keychain_password(&held, account).expect("legacy item readable").as_bytes(), value);
     }
     let root = crate::private_tempdir().unwrap();
     let store = HubStore::initialize(root.path().join("data")).expect("store");
