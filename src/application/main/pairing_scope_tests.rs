@@ -398,7 +398,7 @@ async fn the_text_output_names_the_scope_and_the_json_output_is_unchanged() {
         text.contains(&format!("Grants: Daily driver, {}.", fixture.unnamed)),
         "{text}"
     );
-    assert!(text.contains("Pairing link: teslatlas-hub://pair?"));
+    assert!(text.contains("Paste this link in Tesatlas:\nteslatlas-hub://pair?"));
     let default_text = fixture
         .present(false, PairingScope::AllVehicles)
         .await

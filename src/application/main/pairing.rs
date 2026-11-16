@@ -548,7 +548,9 @@ fn setup_lan_tls(
 ) -> Result<LanTlsReport, Box<dyn std::error::Error>> {
     use std::os::unix::fs::OpenOptionsExt as _;
     if !valid_lan_host(host) {
-        return Err("--host must be this Mac's lowercase .local name, such as office-mac.local".into());
+        return Err(
+            "--host must be this Mac's lowercase .local name, such as office-mac.local".into(),
+        );
     }
     // One no-follow read: the bytes that are checked are the bytes that are edited.
     let descriptor = open(
@@ -599,7 +601,10 @@ fn setup_lan_tls(
     let private_key_pem = zeroize::Zeroizing::new(key.serialize_pem());
 
     let public_url = format!("https://{host}:{LAN_TLS_PORT}/");
-    table.insert("bind".to_owned(), toml::Value::String(LAN_TLS_BIND.to_owned()));
+    table.insert(
+        "bind".to_owned(),
+        toml::Value::String(LAN_TLS_BIND.to_owned()),
+    );
     let mut tls = toml::Table::new();
     tls.insert(
         "certificate_path".to_owned(),
@@ -609,7 +614,10 @@ fn setup_lan_tls(
         "private_key_path".to_owned(),
         toml::Value::String(private_key_text.to_owned()),
     );
-    tls.insert("public_url".to_owned(), toml::Value::String(public_url.clone()));
+    tls.insert(
+        "public_url".to_owned(),
+        toml::Value::String(public_url.clone()),
+    );
     table.insert("tls".to_owned(), toml::Value::Table(tls));
     let updated = toml::to_string(&table)?;
 
