@@ -4001,7 +4001,7 @@ final class HubController {
         let begin = { [self] (wasLoaded: Bool) in
             // The obligation is durable before the service is touched.
             do {
-                try writeImportRecovery(HubImportRecoveryRecord(phase: "import", serviceWasLoaded: wasLoaded))
+                try writeImportRecovery(newImportRecoveryRecord(serviceWasLoaded: wasLoaded))
                 try Self.writeDurablePrivateFile(Data(importConfig.utf8), to: importConfigPath)
             } catch {
                 try? Self.removeDurably(importConfigPath)
@@ -4094,15 +4094,17 @@ final class HubController {
                                           wasLoaded: Bool,
                                           importRan: Bool = true,
                                           finish: @escaping (Result<Void, Error>) -> Void) {
-        try? writeImportRecovery(HubImportRecoveryRecord(phase: "restart", serviceWasLoaded: wasLoaded))
+        if var record = pendingImportRecovery {
+            record.phase = "restart"
+            try? writeImportRecovery(record)
+        }
         let report: (Error?) -> Void = { [self] restartError in
             if let restartError {
                 HubAppLog.shared.record("import.restart.unconfirmed", category: "history_import",
                                         level: "ERROR",
                                         fields: ["error_code": HubAppLog.errorCode(restartError)])
             } else {
-                try? Self.removeDurably(importConfigPath)
-                try? Self.removeDurably(importRecoveryPath)
+                _ = retireImportRecovery()
             }
             finish(Self.importAfterWindowsOutcome(outcome, restartError: restartError, importRan: importRan))
         }
@@ -4165,18 +4167,35 @@ final class HubController {
             guard let data = String(line).data(using: .utf8),
                   let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
             return root["status"] as? String == "serving"
+                && ["ready", "between_windows"].contains(root["readiness"] as? String ?? "")
         }
     }
 
     // MARK: Import recovery record
 
     /// The durable obligation of an import after windows: written before the service
-    /// is paused, retired only once the Hub is confirmed back as it was.
+    /// is paused, retired only once the Hub is confirmed back as it was, and cancelled
+    /// by an explicit, successful Stop Hub.
     struct HubImportRecoveryRecord: Codable, Equatable {
+        static let currentSchema = 1
+        var schema: Int
         /// `import` until the import has a result, then `restart`; recovery is the same for both.
         var phase: String
         /// The job was loaded at the pause, so it is owed a start.
         var serviceWasLoaded: Bool
+        /// The configuration of the Hub that was paused.
+        var config: String
+        /// This import's identity.
+        var transaction: String
+    }
+
+    /// What launch finds of an earlier import.
+    enum ImportRecoveryState: Equatable {
+        case none
+        case owed(HubImportRecoveryRecord)
+        /// A record that is unreadable, malformed, of another schema or configuration,
+        /// or not an owner-only file of this user: it never starts or stops anything.
+        case untrusted
     }
 
     var importRecoveryPath: URL {
@@ -4189,33 +4208,79 @@ final class HubController {
     }
 
     var hasPendingImportRecovery: Bool {
-        !previewMode && FileManager.default.fileExists(atPath: importRecoveryPath.path)
+        guard !previewMode else { return false }
+        var information = stat()
+        return lstat(importRecoveryPath.path, &information) == 0
+    }
+
+    func newImportRecoveryRecord(serviceWasLoaded: Bool) -> HubImportRecoveryRecord {
+        HubImportRecoveryRecord(schema: HubImportRecoveryRecord.currentSchema, phase: "import",
+                                serviceWasLoaded: serviceWasLoaded, config: configPath.path,
+                                transaction: UUID().uuidString)
     }
 
     private func writeImportRecovery(_ record: HubImportRecoveryRecord) throws {
         try Self.writeDurablePrivateFile(try JSONEncoder().encode(record), to: importRecoveryPath)
     }
 
-    /// The pending record; an unreadable one is read safely as owing a start.
-    var pendingImportRecovery: HubImportRecoveryRecord? {
-        guard hasPendingImportRecovery else { return nil }
-        guard let data = HubAppLog.regularFileData(of: importRecoveryPath, maximumBytes: 4_096),
-              let record = try? JSONDecoder().decode(HubImportRecoveryRecord.self, from: data) else {
-            return HubImportRecoveryRecord(phase: "import", serviceWasLoaded: true)
+    var importRecoveryState: ImportRecoveryState {
+        guard hasPendingImportRecovery else { return .none }
+        guard let data = Self.ownerPrivateFileData(of: importRecoveryPath, maximumBytes: 4_096),
+              let record = try? JSONDecoder().decode(HubImportRecoveryRecord.self, from: data),
+              record.schema == HubImportRecoveryRecord.currentSchema,
+              ["import", "restart"].contains(record.phase),
+              record.config == configPath.path,
+              UUID(uuidString: record.transaction) != nil else {
+            return .untrusted
         }
-        return record
+        return .owed(record)
+    }
+
+    /// The pending record when it can be trusted.
+    var pendingImportRecovery: HubImportRecoveryRecord? {
+        if case let .owed(record) = importRecoveryState { return record }
+        return nil
+    }
+
+    /// Removes the private import copy and the record. False, and logged, when the
+    /// record could not be removed: it is then not reported retired.
+    private func retireImportRecovery(event: String = "import.recovery.retired") -> Bool {
+        try? Self.removeDurably(importConfigPath)
+        do {
+            try Self.removeDurably(importRecoveryPath)
+        } catch {
+            HubAppLog.shared.record("import.recovery.retire_failed", category: "history_import",
+                                    level: "ERROR", fields: ["error_code": HubAppLog.errorCode(error)])
+            return false
+        }
+        HubAppLog.shared.record(event, category: "history_import")
+        return true
     }
 
     /// Launch recovery of an import lost to a crash, force quit or power loss: the
     /// private import copy is removed, a Hub that was loaded is started with the full
-    /// Start (whose checks refuse while an orphaned importer still holds the Hub) and
-    /// confirmed serving, and only then is the record retired. A failure keeps the
-    /// record for the next launch or Start Hub and is shown as a service diagnostic.
+    /// Start and confirmed serving, and only then is the record retired. A failure
+    /// keeps the record for the next launch or Start Hub and is shown as a service
+    /// diagnostic. A record that cannot be trusted starts nothing: it is reported and
+    /// the service is left as it is.
     func recoverInterruptedImport(completion: (() -> Void)? = nil) {
-        guard !previewMode, developmentConfiguration == nil,
-              let record = pendingImportRecovery else {
+        guard !previewMode, developmentConfiguration == nil else {
             completion?()
             return
+        }
+        let record: HubImportRecoveryRecord
+        switch importRecoveryState {
+        case .none:
+            completion?()
+            return
+        case .untrusted:
+            recordServiceDiagnostic(HubActionError.commandFailed(
+                HubL10n.text("hub.importAfterWindows.recoveryUntrusted", fallback: "An earlier import left a recovery record that cannot be trusted, so Hub was left as it is. Choose Start Hub or Stop Hub.")
+            ), event: "import.recovery.untrusted")
+            completion?()
+            return
+        case let .owed(owed):
+            record = owed
         }
         guard let op = admit(.migration, phase: "recovery", refused: { _ in }) else {
             completion?()
@@ -4229,9 +4294,10 @@ final class HubController {
                 recordServiceDiagnostic(HubActionError.commandFailed(
                     HubL10n.format("hub.importAfterWindows.recoveryFailed", fallback: "An earlier import was interrupted and Hub could not be confirmed running again: %1$@ Choose Start Hub.", arguments: [HubActionError.settingQuiescenceAside(error).localizedDescription])
                 ), event: "import.recovery.failed")
-            } else {
-                try? Self.removeDurably(importRecoveryPath)
-                HubAppLog.shared.record("import.recovery.completed", category: "history_import")
+            } else if !retireImportRecovery(event: "import.recovery.completed") {
+                recordServiceDiagnostic(HubActionError.commandFailed(
+                    HubL10n.text("hub.importAfterWindows.recoveryNotRetired", fallback: "Hub is running again after an interrupted import, but the import's recovery record could not be removed.")
+                ), event: "import.recovery.not_retired")
             }
             DispatchQueue.main.async { op.settle { completion?() } }
         }
@@ -4247,8 +4313,51 @@ final class HubController {
     /// import's obligation is met.
     private func retireImportRecoveryAfterConfirmedStart() {
         guard hasPendingImportRecovery else { return }
-        try? Self.removeDurably(importConfigPath)
-        try? Self.removeDurably(importRecoveryPath)
+        _ = retireImportRecovery()
+    }
+
+    /// An explicit, successful Stop Hub supersedes an import's owed restart, so a later
+    /// launch leaves Hub stopped. The error when the record could not be removed.
+    private func cancelImportRestartAfterStop() -> Error? {
+        guard hasPendingImportRecovery else { return nil }
+        guard retireImportRecovery(event: "import.recovery.cancelled_by_stop") else {
+            return HubActionError.commandFailed(
+                HubL10n.text("hub.importAfterWindows.stopNotCancelled", fallback: "Hub stopped, but an earlier import's pending restart could not be cancelled, so Hub may start again when this app reopens.")
+            )
+        }
+        return nil
+    }
+
+    /// The bytes of an owner-only (no group or other access) regular file of this user,
+    /// in a folder of this user that only it can write; nil otherwise.
+    static func ownerPrivateFileData(of url: URL, maximumBytes: Int) -> Data? {
+        var folder = stat()
+        guard lstat(url.deletingLastPathComponent().path, &folder) == 0,
+              folder.st_mode & S_IFMT == S_IFDIR,
+              folder.st_uid == getuid(),
+              folder.st_mode & 0o022 == 0 else { return nil }
+        let descriptor = Darwin.open(url.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        guard descriptor >= 0 else { return nil }
+        defer { Darwin.close(descriptor) }
+        var information = stat()
+        guard fstat(descriptor, &information) == 0,
+              information.st_mode & S_IFMT == S_IFREG,
+              information.st_uid == getuid(),
+              information.st_mode & 0o077 == 0,
+              information.st_size >= 0,
+              information.st_size <= off_t(maximumBytes) else { return nil }
+        var data = Data(count: Int(information.st_size))
+        var offset = 0
+        let complete = data.withUnsafeMutableBytes { buffer -> Bool in
+            while offset < buffer.count {
+                let count = Darwin.read(descriptor, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
+                if count < 0, errno == EINTR { continue }
+                guard count > 0 else { return false }
+                offset += count
+            }
+            return true
+        }
+        return complete ? data : nil
     }
 
     /// Writes `data` owner-only and durably: a new temporary file is created
@@ -5911,7 +6020,13 @@ final class HubController {
     func stopHub(completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard let op = admit(.stop, phase: "stop", completion: completion) else { return }
-        runServiceCommand(op, ["service", "stop"]) { op.finish($0, completion: completion) }
+        runServiceCommand(op, ["service", "stop"]) { [self] result in
+            guard case .success = result, let error = cancelImportRestartAfterStop() else {
+                op.finish(result, completion: completion)
+                return
+            }
+            op.finish(.failure(error), completion: completion)
+        }
     }
 
     func restartHub(completion: @escaping (Result<Void, Error>) -> Void) {

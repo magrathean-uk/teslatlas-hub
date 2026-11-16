@@ -4425,7 +4425,12 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(HubController.collectorIntervalSeconds(in: copy), 0)
         XCTAssertTrue(copy.contains("[collector.legacy_auth]\nenabled = false"))
         XCTAssertEqual(liveDuringImport, original, "the Hub's own configuration is never edited")
-        XCTAssertEqual(recordDuringImport, HubController.HubImportRecoveryRecord(phase: "import", serviceWasLoaded: true))
+        let record = try XCTUnwrap(recordDuringImport)
+        XCTAssertEqual(record.schema, HubController.HubImportRecoveryRecord.currentSchema)
+        XCTAssertEqual(record.phase, "import")
+        XCTAssertTrue(record.serviceWasLoaded)
+        XCTAssertEqual(record.config, home.appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml").path)
+        XCTAssertNotNil(UUID(uuidString: record.transaction))
         XCTAssertEqual(try configContents(in: home), original)
         XCTAssertFalse(FileManager.default.fileExists(atPath: controller.importConfigPath.path))
         XCTAssertFalse(controller.hasPendingImportRecovery, "retired after the confirmed restart")
@@ -4568,7 +4573,7 @@ final class HubControllerTests: XCTestCase {
 
     func testAnInterruptedImportIsRecoveredAtLaunchOnlyOnceTheHubIsConfirmedServing() throws {
         for (label, serving, kept) in [
-            ("confirmed", Result<String, Error>.success(#"{"status":"serving","readiness":"not_ready"}"#), false),
+            ("confirmed", Result<String, Error>.success(#"{"status":"serving","readiness":"between_windows"}"#), false),
             ("not serving", .failure(HubActionError.commandFailed("not serving")), true)
         ] {
             let events = EventRecorder()
@@ -4581,7 +4586,7 @@ final class HubControllerTests: XCTestCase {
                                                     health: .stopped)
             // What a crash during the import leaves: the record and the private copy.
             try HubController.writeDurablePrivateFile(
-                JSONEncoder().encode(HubController.HubImportRecoveryRecord(phase: "import", serviceWasLoaded: true)),
+                JSONEncoder().encode(controller.newImportRecoveryRecord(serviceWasLoaded: true)),
                 to: controller.importRecoveryPath)
             try HubController.writeDurablePrivateFile(Data("interval".utf8), to: controller.importConfigPath)
             let mode = try FileManager.default.attributesOfItem(atPath: controller.importRecoveryPath.path)[.posixPermissions] as? NSNumber
@@ -4605,13 +4610,100 @@ final class HubControllerTests: XCTestCase {
         let controller = afterWindowsController(AfterWindowsRunner(events: events),
                                                 service: ScriptedService(events: events), home: home)
         try HubController.writeDurablePrivateFile(
-            JSONEncoder().encode(HubController.HubImportRecoveryRecord(phase: "restart", serviceWasLoaded: false)),
+            JSONEncoder().encode(controller.newImportRecoveryRecord(serviceWasLoaded: false)),
             to: controller.importRecoveryPath)
         let recovered = expectation(description: "not loaded")
         controller.recoverInterruptedImport { recovered.fulfill() }
         wait(for: [recovered], timeout: 3)
         XCTAssertEqual(events.values, [])
         XCTAssertFalse(controller.hasPendingImportRecovery)
+    }
+
+    func testAnExplicitStopAfterAnUnconfirmedImportRestartKeepsHubStoppedAtTheNextLaunch() throws {
+        let events = EventRecorder()
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeSignedInConfig(in: home)
+        let runner = AfterWindowsRunner(events: events)
+        runner.servingResult = .failure(HubActionError.commandFailed("the Hub service is not serving its configuration on its listener"))
+        let service = ScriptedService(events: events, loadState: .loaded)
+        let controller = afterWindowsController(runner, service: service, home: home)
+        XCTAssertThrowsError(try importAfterWindows(controller).get())
+        XCTAssertNotNil(controller.pendingImportRecovery, "the unconfirmed restart is owed")
+
+        let stopped = expectation(description: "stop")
+        var stopResult: Result<Void, Error>?
+        controller.stopHub { stopResult = $0; stopped.fulfill() }
+        wait(for: [stopped], timeout: 3)
+        XCTAssertNoThrow(try XCTUnwrap(stopResult).get())
+        XCTAssertFalse(controller.hasPendingImportRecovery, "the explicit Stop cancels the owed restart durably")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: controller.importConfigPath.path))
+
+        // The next launch: a new controller over the same files starts nothing.
+        let relaunchEvents = EventRecorder()
+        let relaunched = afterWindowsController(AfterWindowsRunner(events: relaunchEvents),
+                                                service: ScriptedService(events: relaunchEvents), home: home,
+                                                health: .stopped)
+        let recovered = expectation(description: "relaunch")
+        relaunched.recoverInterruptedImport { recovered.fulfill() }
+        wait(for: [recovered], timeout: 3)
+        XCTAssertEqual(relaunchEvents.values, [], "Hub stays stopped")
+    }
+
+    func testAnUntrustedImportRecoveryRecordStartsNothingAndIsReported() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeSignedInConfig(in: home)
+        let probe = afterWindowsController(AfterWindowsRunner(events: EventRecorder()),
+                                           service: ScriptedService(events: EventRecorder()), home: home)
+        var foreign = probe.newImportRecoveryRecord(serviceWasLoaded: true)
+        foreign.config = "/private/other/config.toml"
+        var futureSchema = probe.newImportRecoveryRecord(serviceWasLoaded: true)
+        futureSchema.schema = 2
+        var unknownPhase = probe.newImportRecoveryRecord(serviceWasLoaded: true)
+        unknownPhase.phase = "resume"
+        var noTransaction = probe.newImportRecoveryRecord(serviceWasLoaded: true)
+        noTransaction.transaction = ""
+        let valid = try JSONEncoder().encode(probe.newImportRecoveryRecord(serviceWasLoaded: true))
+        let cases: [(String, Data, mode_t)] = [
+            ("malformed", Data("{\"phase\":\"import\"".utf8), 0o600),
+            ("legacy", Data(#"{"phase":"import","serviceWasLoaded":true}"#.utf8), 0o600),
+            ("foreign configuration", try JSONEncoder().encode(foreign), 0o600),
+            ("another schema", try JSONEncoder().encode(futureSchema), 0o600),
+            ("unknown phase", try JSONEncoder().encode(unknownPhase), 0o600),
+            ("no transaction", try JSONEncoder().encode(noTransaction), 0o600),
+            ("group readable", valid, 0o640)
+        ]
+        for (label, data, mode) in cases {
+            let events = EventRecorder()
+            let controller = afterWindowsController(AfterWindowsRunner(events: events),
+                                                    service: ScriptedService(events: events), home: home,
+                                                    health: .stopped)
+            try HubController.writeDurablePrivateFile(data, to: controller.importRecoveryPath)
+            XCTAssertEqual(chmod(controller.importRecoveryPath.path, mode), 0, label)
+            XCTAssertEqual(controller.importRecoveryState, .untrusted, label)
+            let recovered = expectation(description: label)
+            controller.recoverInterruptedImport { recovered.fulfill() }
+            wait(for: [recovered], timeout: 3)
+            XCTAssertEqual(events.values, [], "\(label): no start and no stop")
+            XCTAssertTrue(controller.hasPendingImportRecovery, "\(label): the record is left for diagnosis")
+            let shown = expectation(description: "\(label) diagnostic")
+            DispatchQueue.main.async { shown.fulfill() }
+            wait(for: [shown], timeout: 1)
+            XCTAssertTrue(controller.diagnostics().contains { $0.contains("cannot be trusted") },
+                          "\(label): \(controller.diagnostics())")
+        }
+    }
+
+    func testOnlyAReadyOrBetweenWindowsServingReportConfirmsTheHub() {
+        XCTAssertTrue(HubController.isServingReport(#"{"status":"serving","readiness":"ready"}"#))
+        XCTAssertTrue(HubController.isServingReport(#"{"status":"serving","readiness":"between_windows"}"#))
+        for output in [#"{"status":"serving","readiness":"published_content_unservable"}"#,
+                       #"{"status":"serving","readiness":"not_ready"}"#,
+                       #"{"status":"serving"}"#,
+                       #"{"status":"stopped","readiness":"ready"}"#] {
+            XCTAssertFalse(HubController.isServingReport(output), output)
+        }
     }
 
     // MARK: M08-T10 Pair a phone (DEC-152)
@@ -6508,7 +6600,7 @@ private final class PairingRunner: HubCommandRunning {
     private let link: String
     var tlsResult: Result<String, Error>
     /// Consumed one per serving check; the last entry repeats.
-    var servingResults: [Result<String, Error>] = [.success(#"{"status":"serving","readiness":"not_ready"}"#)]
+    var servingResults: [Result<String, Error>] = [.success(#"{"status":"serving","readiness":"between_windows"}"#)]
     private(set) var arguments: [[String]] = []
 
     init(events: EventRecorder, link: String, tlsStatus: String = "created") {
