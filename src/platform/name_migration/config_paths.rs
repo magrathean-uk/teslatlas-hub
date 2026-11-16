@@ -4,11 +4,19 @@
 //!
 //! The configuration holds absolute paths (`data_dir`, the TLS files, the
 //! backup password item's account) under the Hub folder. After the folder
-//! moves, each path that starts with the earlier folder is rewritten to start
-//! with the current one. Only whole path prefixes inside quoted TOML strings
-//! change: a sibling such as `<folder> Window` is not touched. The text is
-//! otherwise kept byte for byte (comments and layout included), parsed before
-//! it is used, and replaced atomically (temporary file, `fsync`, `rename`).
+//! moves, every TOML string whose decoded value is the earlier folder or a
+//! path in it is rewritten to name the current folder instead; a sibling such
+//! as `<folder> Window` is not touched. The decoded values decide, so escaped
+//! (`/...`) and multi-line strings are found like plain ones.
+//!
+//! The text is kept byte for byte where the earlier folder is written plainly
+//! inside quotes (comments and layout included). When that edit does not
+//! produce exactly the expected values (an escaped or multi-line path), the
+//! document is written again from its parsed values instead: the values are
+//! all kept, comments and layout are not. Before anything is written, the new
+//! text is parsed again and must hold exactly the expected values, none of
+//! them naming the earlier folder; it then replaces the file atomically
+//! (temporary file, `fsync`, `rename`).
 //!
 //! The rewrite runs only once the earlier folder is gone and the current one
 //! exists, and finds nothing to do on a second run, so a crash between the
@@ -55,14 +63,73 @@ pub fn rewrite_moved_root(config: &Path, earlier_root: &Path, current_root: &Pat
         return Ok(ConfigOutcome::Current);
     };
     let text = fs::read_to_string(config)?;
-    let Some(rewritten) = replace_root(&text, earlier, current) else {
+    // A configuration that does not parse is the loader's to report.
+    let Ok(values) = text.parse::<toml::Table>() else { return Ok(ConfigOutcome::Current) };
+    let mut expected = values.clone();
+    if !move_table(&mut expected, earlier, current) {
         return Ok(ConfigOutcome::Current);
+    }
+    let holds_expected = |candidate: &str| candidate.parse::<toml::Table>().is_ok_and(|parsed| parsed == expected);
+    let rewritten = match replace_root(&text, earlier, current).filter(|candidate| holds_expected(candidate)) {
+        Some(layout_kept) => layout_kept,
+        None => toml::to_string(&expected).map_err(io::Error::other)?,
     };
-    if rewritten.parse::<toml::Table>().is_err() {
-        return Err(io::Error::other("the Hub configuration would not parse after pointing it at the moved folder"));
+    match rewritten.parse::<toml::Table>() {
+        Ok(parsed) if parsed == expected && !names_root(&parsed, earlier) => {}
+        _ => {
+            return Err(io::Error::other(
+                "the Hub configuration could not be pointed at the moved folder; it was left unchanged",
+            ));
+        }
     }
     replace_atomically(config, rewritten.as_bytes(), metadata.mode() & 0o7777)?;
     Ok(ConfigOutcome::Rewritten)
+}
+
+/// Rewrites every string value in `table` that is `earlier` or a path in it;
+/// whether any was.
+fn move_table(table: &mut toml::Table, earlier: &str, current: &str) -> bool {
+    let mut changed = false;
+    for (_, value) in table.iter_mut() {
+        changed |= move_value(value, earlier, current);
+    }
+    changed
+}
+
+fn move_value(value: &mut toml::Value, earlier: &str, current: &str) -> bool {
+    match value {
+        toml::Value::String(text) => match moved(text, earlier, current) {
+            Some(rewritten) => {
+                *text = rewritten;
+                true
+            }
+            None => false,
+        },
+        toml::Value::Array(items) => {
+            items.iter_mut().fold(false, |changed, item| move_value(item, earlier, current) | changed)
+        }
+        toml::Value::Table(table) => move_table(table, earlier, current),
+        _ => false,
+    }
+}
+
+/// `path` under `current` when it is `earlier` or a path in it.
+fn moved(path: &str, earlier: &str, current: &str) -> Option<String> {
+    let rest = path.strip_prefix(earlier)?;
+    (rest.is_empty() || rest.starts_with('/')).then(|| format!("{current}{rest}"))
+}
+
+/// Whether any decoded string in `table` still names `earlier` or a path in it.
+fn names_root(table: &toml::Table, earlier: &str) -> bool {
+    fn names(value: &toml::Value, earlier: &str) -> bool {
+        match value {
+            toml::Value::String(text) => moved(text, earlier, "").is_some(),
+            toml::Value::Array(items) => items.iter().any(|item| names(item, earlier)),
+            toml::Value::Table(table) => names_root(table, earlier),
+            _ => false,
+        }
+    }
+    table.values().any(|value| names(value, earlier))
 }
 
 /// The configuration at `config_path` before anything reads it: when its
@@ -213,15 +280,69 @@ mod tests {
     }
 
     #[test]
-    fn a_rewrite_that_would_not_parse_is_refused_and_the_file_kept() {
+    fn a_current_folder_that_cannot_be_written_plainly_still_gets_exact_values() {
         let root = tempfile::tempdir().unwrap();
         let earlier = root.path().join("Earlier Hub");
         let current = root.path().join("Current \"Hub");
         fs::create_dir_all(&current).unwrap();
         let config = current.join("config.toml");
-        let text = format!("data_dir = \"{}/data\"\n", earlier.display());
+        fs::write(&config, format!("data_dir = \"{}/data\"\n", earlier.display())).unwrap();
+        assert_eq!(rewrite_moved_root(&config, &earlier, &current).unwrap(), ConfigOutcome::Rewritten);
+        let table: toml::Table = fs::read_to_string(&config).unwrap().parse().unwrap();
+        assert_eq!(table["data_dir"].as_str(), Some(format!("{}/data", current.display()).as_str()));
+    }
+
+    /// REV-CX-M08-T12A finding 1: escaped and multi-line strings decode to the
+    /// earlier folder without spelling it plainly; they are found and rewritten.
+    #[test]
+    fn escaped_and_multi_line_paths_are_rewritten_by_their_decoded_value() {
+        let root = tempfile::tempdir().unwrap();
+        let earlier = root.path().join("Earlier Hub");
+        let current = root.path().join("Current Hub");
+        fs::create_dir_all(&current).unwrap();
+        let config = current.join("config.toml");
+        let base = root.path().to_str().unwrap();
+        let escaped = format!("\\u002f{}", &base[1..]);
+        let text = format!(
+            "# a comment\n\
+             data_dir = \"{escaped}/Earlier Hub/data\"\n\
+             [tls]\n\
+             certificate_path = \"\"\"\n{base}/Earlier Hub/tls/hub.pem\"\"\"\n\
+             private_key_path = '''\n{base}/Earlier Hub/tls/hub.key'''\n\
+             [backup]\n\
+             password_file = \"{base}/Earlier\\u0020Hub/backup-password\"\n\
+             destination = \"{base}/Earlier Hub Backup\"\n"
+        );
         fs::write(&config, &text).unwrap();
-        assert!(rewrite_moved_root(&config, &earlier, &current).is_err());
+        let before: toml::Table = text.parse().unwrap();
+        assert_eq!(before["data_dir"].as_str(), Some(format!("{base}/Earlier Hub/data").as_str()));
+        assert!(!text.contains(&format!("\"{base}/Earlier Hub/")), "no path is written plainly after a quote");
+
+        assert_eq!(rewrite_moved_root(&config, &earlier, &current).unwrap(), ConfigOutcome::Rewritten);
+        let after: toml::Table = fs::read_to_string(&config).unwrap().parse().unwrap();
+        let under = |path: &str| Some(format!("{base}/{path}"));
+        assert_eq!(after["data_dir"].as_str().map(str::to_owned), under("Current Hub/data"));
+        assert_eq!(after["tls"]["certificate_path"].as_str().map(str::to_owned), under("Current Hub/tls/hub.pem"));
+        assert_eq!(after["tls"]["private_key_path"].as_str().map(str::to_owned), under("Current Hub/tls/hub.key"));
+        assert_eq!(after["backup"]["password_file"].as_str().map(str::to_owned), under("Current Hub/backup-password"));
+        assert_eq!(after["backup"]["destination"].as_str().map(str::to_owned), under("Earlier Hub Backup"));
+        assert!(!names_root(&after, earlier.to_str().unwrap()));
+        // A second run (or a retry after a crash) finds nothing left to move.
+        let written = fs::read_to_string(&config).unwrap();
+        assert_eq!(rewrite_moved_root(&config, &earlier, &current).unwrap(), ConfigOutcome::Current);
+        assert_eq!(fs::read_to_string(&config).unwrap(), written);
+    }
+
+    #[test]
+    fn a_configuration_that_does_not_parse_is_left_to_the_loader() {
+        let root = tempfile::tempdir().unwrap();
+        let earlier = root.path().join("Earlier Hub");
+        let current = root.path().join("Current Hub");
+        fs::create_dir_all(&current).unwrap();
+        let config = current.join("config.toml");
+        let text = format!("data_dir = \"{}/data\"\nbroken = [\n", earlier.display());
+        fs::write(&config, &text).unwrap();
+        assert_eq!(rewrite_moved_root(&config, &earlier, &current).unwrap(), ConfigOutcome::Current);
         assert_eq!(fs::read_to_string(&config).unwrap(), text);
     }
 
