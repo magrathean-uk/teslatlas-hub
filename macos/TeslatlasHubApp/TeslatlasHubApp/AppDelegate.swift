@@ -287,7 +287,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             "app_build": appBuild,
             "app_version": appVersion
         ])
-        hubController.reconcileLaunchAgent()
+        // An import lost to a crash or force quit is recovered once reconciliation is done.
+        hubController.reconcileLaunchAgent { [weak self] in
+            DispatchQueue.main.async { self?.hubController.recoverInterruptedImport() }
+        }
         let showOnboardingImmediately = hubController.shouldShowOnboardingBeforeInitialRefresh
         showDashboard(makeVisible: !showOnboardingImmediately) { [weak self] snapshot in
             guard let self else { return }

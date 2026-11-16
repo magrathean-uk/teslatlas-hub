@@ -3,6 +3,7 @@
 import AppKit
 import Darwin
 import Foundation
+import SystemConfiguration
 
 enum HubRelease {
     static let fallbackVersion = "2026.36.2"
@@ -403,6 +404,33 @@ struct HubControlVehicle: Equatable {
     }
 }
 
+/// One single-use pairing link from `control pair --json` and when it stops working.
+/// Never logged or written; the description hides the link.
+struct HubPairingInvitation: Equatable, CustomStringConvertible, CustomDebugStringConvertible {
+    static let linkPrefix = "teslatlas-hub://pair?"
+
+    let link: String
+    let expiresAt: Date
+
+    var description: String { "HubPairingInvitation(expiresAt: \(expiresAt))" }
+    var debugDescription: String { description }
+
+    /// The last JSON line that carries a pairing link and its expiry.
+    static func parse(_ output: String) -> HubPairingInvitation? {
+        for line in output.split(whereSeparator: { $0.isNewline }).reversed() {
+            guard let data = String(line).data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let link = root["pairingUri"] as? String,
+                  link.hasPrefix(linkPrefix), link.count <= 4096,
+                  let expiresAtMs = (root["expiresAtMs"] as? NSNumber)?.int64Value,
+                  expiresAtMs > 0 else { continue }
+            return HubPairingInvitation(link: link,
+                                        expiresAt: Date(timeIntervalSince1970: TimeInterval(expiresAtMs) / 1000))
+        }
+        return nil
+    }
+}
+
 struct HubSnapshot {
     enum AccountState {
         case connected, notConfigured, historyOnly, unknown
@@ -468,6 +496,12 @@ struct HubSnapshot {
     var shouldOfferSourceImport: Bool {
         health != .running && accountState == .notConfigured
             && databaseState == .awaitingSetup
+    }
+
+    /// DEC-149: a signed-in Hub with a working database (one that has collected in
+    /// windows) imports history through the history-only path, not first-run setup.
+    var shouldOfferImportAfterWindows: Bool {
+        accountState == .connected && databaseState == .healthy
     }
 
     static let previewRunning = HubSnapshot(
@@ -1256,6 +1290,7 @@ final class EmbeddedHubCommandRunner: HubCommandRunning {
         if arguments.contains("source-check") { return 5 * 60 }
         if arguments.contains("setup") { return 5 * 60 }
         if arguments.contains("control") { return 45 }
+        if arguments.contains("serving-check") { return 75 }
         if arguments.contains("status") || arguments.contains("preflight") { return 30 }
         return HubProcessExecutor.defaultTimeout
     }
@@ -3884,6 +3919,796 @@ final class HubController {
         }
     }
 
+    /// DEC-149: Import History on a Hub that is signed in and has collected in windows.
+    /// The import is the CLI's history-only path, which M03-T23 accepts on such a Hub.
+    /// The Hub's own configuration is never edited: the import runs against a private
+    /// history-only copy of it (every collector and the Legacy login path off). The
+    /// service is paused under the lifecycle's restart custody, `migrate --online-snapshot
+    /// --history-only` runs, and once the importer can no longer write the Hub starts
+    /// again if it was loaded and is confirmed serving its unchanged configuration.
+    /// A durable recovery record, written before anything is paused, makes a run lost
+    /// to a crash or force quit recoverable at the next launch. The Hub's own sign-in
+    /// and the data it collected in its windows are kept; no handover gate is written.
+    func importHistoryAfterWindows(source: String,
+                                   carID: String,
+                                   passwordFile: String,
+                                   acceptSchemaEvidence: Bool,
+                                   progress: @escaping (HubMigrationProgress) -> Void = { _ in },
+                                   completion: @escaping (Result<Void, Error>) -> Void) {
+        HubAppLog.shared.record("import.requested", category: "history_import",
+                                fields: ["capture_mode": "after_windows"])
+        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        guard !hasPendingMigrationHandover else {
+            completion(.failure(HubActionError.commandFailed(
+                HubL10n.text("hub.importAfterWindows.handoverPending", fallback: "Finish the source application handover before importing history again.")
+            )))
+            return
+        }
+        guard !hasPendingImportRecovery else {
+            completion(.failure(HubActionError.commandFailed(
+                HubL10n.text("hub.importAfterWindows.recoveryPending", fallback: "An earlier import did not finish and Hub has not been confirmed running since. Choose Start Hub, then import again.")
+            )))
+            return
+        }
+        let checkArguments: [String]
+        let importConfig: String
+        do {
+            checkArguments = try compatibilityArguments(source: source, carID: carID,
+                                                        passwordFile: passwordFile,
+                                                        acceptSchemaEvidence: acceptSchemaEvidence,
+                                                        historyOnly: true)
+            guard let content = try readConfigIfPresent() else {
+                throw HubActionError.commandFailed(
+                    HubL10n.text("hub.importAfterWindows.notSetUp", fallback: "Set up Hub before importing history.")
+                )
+            }
+            // Built and checked before anything is paused: a configuration this cannot
+            // rewrite safely is refused with the Hub untouched.
+            importConfig = try Self.historyOnlyImportConfig(content)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+        guard let op = admit(.migration, phase: "compatibility", completion: completion) else { return }
+        runCompatibilityCheck(op, arguments: checkArguments, historyOnly: true) { [self] result in
+            switch result {
+            case let .success(report) where report.mayImport:
+                op.phase("import")
+                runImportAfterWindows(op, source: source, carID: carID,
+                                      passwordFile: passwordFile,
+                                      importConfig: importConfig,
+                                      progress: progress,
+                                      completion: { op.finish($0, completion: completion) })
+            case let .success(report):
+                op.finish(.failure(HubActionError.commandFailed(report.message)), completion: completion)
+            case let .failure(error):
+                op.finish(.failure(error), completion: completion)
+            }
+        }
+    }
+
+    private func runImportAfterWindows(_ op: HubLifecycleOperation,
+                                       source: String,
+                                       carID: String,
+                                       passwordFile: String,
+                                       importConfig: String,
+                                       progress: @escaping (HubMigrationProgress) -> Void,
+                                       completion: @escaping (Result<Void, Error>) -> Void) {
+        let finish: (Result<Void, Error>) -> Void = { result in
+            DispatchQueue.main.async { completion(result) }
+        }
+        let installed = isServiceInstalled
+        let begin = { [self] (wasLoaded: Bool) in
+            // The obligation is durable before the service is touched.
+            do {
+                try writeImportRecovery(newImportRecoveryRecord(serviceWasLoaded: wasLoaded))
+                try Self.writeDurablePrivateFile(Data(importConfig.utf8), to: importConfigPath)
+            } catch {
+                try? Self.removeDurably(importConfigPath)
+                try? Self.removeDurably(importRecoveryPath)
+                finish(.failure(error))
+                return
+            }
+            guard installed else {
+                runHistoryOnlyMigrate(op, source: source, carID: carID, passwordFile: passwordFile,
+                                      progress: progress) { [self] outcome in
+                    settleImportAfterWindows(op, outcome: outcome, wasLoaded: false, finish: finish)
+                }
+                return
+            }
+            // A pause, not a Stop: the job stays enabled at login and the lifecycle holds
+            // whether it was loaded, so every exit restarts exactly what was running.
+            op.phase("pause")
+            op.service(["service", "pause"]) { [self] pauseResult in
+                if case let .failure(error) = pauseResult {
+                    settleImportAfterWindows(op, outcome: .failure(error), wasLoaded: wasLoaded,
+                                             importRan: false, finish: finish)
+                    return
+                }
+                runHistoryOnlyMigrate(op, source: source, carID: carID, passwordFile: passwordFile,
+                                      progress: progress) { [self] outcome in
+                    settleImportAfterWindows(op, outcome: outcome, wasLoaded: wasLoaded, finish: finish)
+                }
+            }
+        }
+        guard installed else { begin(false); return }
+        op.phase("state")
+        op.loadedState { state in
+            switch state {
+            case .loaded: begin(true)
+            case .unloaded: begin(false)
+            case let .unknown(error): finish(.failure(error))
+            }
+        }
+    }
+
+    private func runHistoryOnlyMigrate(_ op: HubLifecycleOperation,
+                                       source: String,
+                                       carID: String,
+                                       passwordFile: String,
+                                       progress: @escaping (HubMigrationProgress) -> Void,
+                                       completion: @escaping (Result<Void, Error>) -> Void) {
+        let arguments = ["--config", importConfigPath.path, "migrate",
+                         "--source", source, "--car-id", carID,
+                         "--postgres-password-file", passwordFile,
+                         "--online-snapshot",
+                         "--accept-schema-evidence",
+                         "--history-only"]
+        op.phase("migrate")
+        let progressDelivery = HubMigrationProgressDelivery()
+        HubAppLog.shared.record("import.process.started", category: "history_import",
+                                fields: ["capture_mode": "after_windows"])
+        op.run(arguments, onOutputLine: { line in
+            guard let update = Self.parseMigrationProgress(line) else { return }
+            progressDelivery.deliver(update, to: progress)
+        }) { result in
+            progressDelivery.cancel()
+            switch result {
+            case let .success(output):
+                guard Self.containsOnlineMigrationReport(output) else {
+                    HubAppLog.shared.record("import.process.invalid_report", category: "history_import",
+                                            level: "ERROR")
+                    completion(.failure(HubActionError.commandFailed(
+                        HubL10n.text("hub.importAfterWindows.noReport", fallback: "The import returned no valid completion report.")
+                    )))
+                    return
+                }
+                HubAppLog.shared.record("import.completed", category: "history_import",
+                                        fields: ["capture_mode": "after_windows"])
+                completion(.success(()))
+            case let .failure(error):
+                HubAppLog.shared.record("import.process.failed", category: "history_import",
+                                        level: "ERROR",
+                                        fields: ["error_code": HubAppLog.errorCode(error)])
+                completion(.failure(error))
+            }
+        }
+    }
+
+    /// Every exit of the import: the paused Hub starts again only after the importer
+    /// can no longer write (the owed start waits for the operation's other children),
+    /// a loaded Hub is confirmed serving, and the recovery record is retired only then.
+    /// Both failures are reported when the import and the restart both fail.
+    private func settleImportAfterWindows(_ op: HubLifecycleOperation,
+                                          outcome: Result<Void, Error>,
+                                          wasLoaded: Bool,
+                                          importRan: Bool = true,
+                                          finish: @escaping (Result<Void, Error>) -> Void) {
+        if var record = pendingImportRecovery {
+            record.phase = "restart"
+            try? writeImportRecovery(record)
+        }
+        let report: (Error?) -> Void = { [self] restartError in
+            if let restartError {
+                HubAppLog.shared.record("import.restart.unconfirmed", category: "history_import",
+                                        level: "ERROR",
+                                        fields: ["error_code": HubAppLog.errorCode(restartError)])
+            } else {
+                _ = retireImportRecovery()
+            }
+            finish(Self.importAfterWindowsOutcome(outcome, restartError: restartError, importRan: importRan))
+        }
+        op.phase("start")
+        op.recoverAfterPause { [self] recovery in
+            if case let .failure(error) = recovery {
+                report(error)
+                return
+            }
+            guard wasLoaded else { report(nil); return }
+            confirmServing(op) { report($0) }
+        }
+    }
+
+    /// The result of an import's end: the import's own result, and whether Hub is
+    /// running again. A restart that is not confirmed is never reported as success.
+    static func importAfterWindowsOutcome(_ outcome: Result<Void, Error>,
+                                          restartError: Error?,
+                                          importRan: Bool = true) -> Result<Void, Error> {
+        guard let restartError else { return outcome }
+        let restart = HubActionError.settingQuiescenceAside(restartError).localizedDescription
+        switch outcome {
+        case .success:
+            return .failure(HubActionError.commandFailed(
+                HubL10n.format("hub.importAfterWindows.startFailed", fallback: "History was imported, but Hub is not confirmed running again: %1$@ Choose Start Hub.", arguments: [restart])
+            ))
+        case let .failure(importError):
+            let first = HubActionError.settingQuiescenceAside(importError).localizedDescription
+            return .failure(HubActionError.commandFailed(
+                importRan
+                    ? HubL10n.format("hub.importAfterWindows.bothFailed", fallback: "The import failed: %1$@ Hub is also not confirmed running again: %2$@ Choose Start Hub.", arguments: [first, restart])
+                    : HubL10n.format("hub.importAfterWindows.pauseAndStartFailed", fallback: "Hub could not be paused for the import: %1$@ Hub is not confirmed running again: %2$@ Choose Start Hub.", arguments: [first, restart])
+            ))
+        }
+    }
+
+    /// The installed Hub's process serves the configuration on disk on its listener
+    /// (`serving-check`); valid between collection windows. Nil when confirmed.
+    private func confirmServing(_ op: HubLifecycleOperation, completion: @escaping (Error?) -> Void) {
+        op.phase("confirm")
+        op.run(Self.servingCheckArguments(configPath: configPath)) { result in
+            switch result {
+            case let .success(output) where Self.isServingReport(output):
+                completion(nil)
+            case .success:
+                completion(HubActionError.commandFailed(
+                    HubL10n.text("hub.service.not_serving", fallback: "Hub did not confirm that it is serving its configuration.")))
+            case let .failure(error):
+                completion(error)
+            }
+        }
+    }
+
+    static func servingCheckArguments(configPath: URL, waitSeconds: Int = 45) -> [String] {
+        ["--config", configPath.path, "serving-check", "--wait-seconds", String(waitSeconds)]
+    }
+
+    static func isServingReport(_ output: String) -> Bool {
+        output.split(whereSeparator: { $0.isNewline }).contains { line in
+            guard let data = String(line).data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+            return root["status"] as? String == "serving"
+                && ["ready", "between_windows"].contains(root["readiness"] as? String ?? "")
+        }
+    }
+
+    // MARK: Import recovery record
+
+    /// The durable obligation of an import after windows: written before the service
+    /// is paused, retired only once the Hub is confirmed back as it was, and cancelled
+    /// by an explicit, successful Stop Hub.
+    struct HubImportRecoveryRecord: Codable, Equatable {
+        static let currentSchema = 1
+        var schema: Int
+        /// `import` until the import has a result, then `restart`; recovery is the same for both.
+        var phase: String
+        /// The job was loaded at the pause, so it is owed a start.
+        var serviceWasLoaded: Bool
+        /// The configuration of the Hub that was paused.
+        var config: String
+        /// This import's identity.
+        var transaction: String
+    }
+
+    /// What launch finds of an earlier import.
+    enum ImportRecoveryState: Equatable {
+        case none
+        case owed(HubImportRecoveryRecord)
+        /// A record that is unreadable, malformed, of another schema or configuration,
+        /// or not an owner-only file of this user: it never starts or stops anything.
+        case untrusted
+    }
+
+    var importRecoveryPath: URL {
+        configPath.deletingLastPathComponent().appendingPathComponent(".import-after-windows-pending")
+    }
+
+    /// The private history-only copy of the configuration the importer runs against.
+    var importConfigPath: URL {
+        configPath.deletingLastPathComponent().appendingPathComponent(".import-history-only.toml")
+    }
+
+    var hasPendingImportRecovery: Bool {
+        guard !previewMode else { return false }
+        var information = stat()
+        return lstat(importRecoveryPath.path, &information) == 0
+    }
+
+    func newImportRecoveryRecord(serviceWasLoaded: Bool) -> HubImportRecoveryRecord {
+        HubImportRecoveryRecord(schema: HubImportRecoveryRecord.currentSchema, phase: "import",
+                                serviceWasLoaded: serviceWasLoaded, config: configPath.path,
+                                transaction: UUID().uuidString)
+    }
+
+    private func writeImportRecovery(_ record: HubImportRecoveryRecord) throws {
+        try Self.writeDurablePrivateFile(try JSONEncoder().encode(record), to: importRecoveryPath)
+    }
+
+    var importRecoveryState: ImportRecoveryState {
+        guard hasPendingImportRecovery else { return .none }
+        guard let data = Self.ownerPrivateFileData(of: importRecoveryPath, maximumBytes: 4_096),
+              let record = try? JSONDecoder().decode(HubImportRecoveryRecord.self, from: data),
+              record.schema == HubImportRecoveryRecord.currentSchema,
+              ["import", "restart"].contains(record.phase),
+              record.config == configPath.path,
+              UUID(uuidString: record.transaction) != nil else {
+            return .untrusted
+        }
+        return .owed(record)
+    }
+
+    /// The pending record when it can be trusted.
+    var pendingImportRecovery: HubImportRecoveryRecord? {
+        if case let .owed(record) = importRecoveryState { return record }
+        return nil
+    }
+
+    /// Removes the private import copy and the record. False, and logged, when the
+    /// record could not be removed: it is then not reported retired.
+    private func retireImportRecovery(event: String = "import.recovery.retired") -> Bool {
+        try? Self.removeDurably(importConfigPath)
+        do {
+            try Self.removeDurably(importRecoveryPath)
+        } catch {
+            HubAppLog.shared.record("import.recovery.retire_failed", category: "history_import",
+                                    level: "ERROR", fields: ["error_code": HubAppLog.errorCode(error)])
+            return false
+        }
+        HubAppLog.shared.record(event, category: "history_import")
+        return true
+    }
+
+    /// Launch recovery of an import lost to a crash, force quit or power loss: the
+    /// private import copy is removed, a Hub that was loaded is started with the full
+    /// Start and confirmed serving, and only then is the record retired. A failure
+    /// keeps the record for the next launch or Start Hub and is shown as a service
+    /// diagnostic. A record that cannot be trusted starts nothing: it is reported and
+    /// the service is left as it is.
+    func recoverInterruptedImport(completion: (() -> Void)? = nil) {
+        guard !previewMode, developmentConfiguration == nil else {
+            completion?()
+            return
+        }
+        let record: HubImportRecoveryRecord
+        switch importRecoveryState {
+        case .none:
+            completion?()
+            return
+        case .untrusted:
+            recordServiceDiagnostic(HubActionError.commandFailed(
+                HubL10n.text("hub.importAfterWindows.recoveryUntrusted", fallback: "An earlier import left a recovery record that cannot be trusted, so Hub was left as it is. Choose Start Hub or Stop Hub.")
+            ), event: "import.recovery.untrusted")
+            completion?()
+            return
+        case let .owed(owed):
+            record = owed
+        }
+        guard let op = admit(.migration, phase: "recovery", refused: { _ in }) else {
+            completion?()
+            return
+        }
+        HubAppLog.shared.record("import.recovery.started", category: "history_import",
+                                fields: ["phase": record.phase])
+        try? Self.removeDurably(importConfigPath)
+        let done: (Error?) -> Void = { [self] error in
+            if let error {
+                recordServiceDiagnostic(HubActionError.commandFailed(
+                    HubL10n.format("hub.importAfterWindows.recoveryFailed", fallback: "An earlier import was interrupted and Hub could not be confirmed running again: %1$@ Choose Start Hub.", arguments: [HubActionError.settingQuiescenceAside(error).localizedDescription])
+                ), event: "import.recovery.failed")
+            } else if !retireImportRecovery(event: "import.recovery.completed") {
+                recordServiceDiagnostic(HubActionError.commandFailed(
+                    HubL10n.text("hub.importAfterWindows.recoveryNotRetired", fallback: "Hub is running again after an interrupted import, but the import's recovery record could not be removed.")
+                ), event: "import.recovery.not_retired")
+            }
+            DispatchQueue.main.async { op.settle { completion?() } }
+        }
+        guard record.serviceWasLoaded, isServiceInstalled else { done(nil); return }
+        op.phase("start")
+        op.service(["service", "start"]) { [self] result in
+            if case let .failure(error) = result { done(error); return }
+            confirmServing(op, completion: done)
+        }
+    }
+
+    /// Start Hub, or the launch recovery, confirmed the Hub serving: an interrupted
+    /// import's obligation is met.
+    private func retireImportRecoveryAfterConfirmedStart() {
+        guard hasPendingImportRecovery else { return }
+        _ = retireImportRecovery()
+    }
+
+    /// An explicit, successful Stop Hub supersedes an import's owed restart, so a later
+    /// launch leaves Hub stopped. The error when the record could not be removed.
+    private func cancelImportRestartAfterStop() -> Error? {
+        guard hasPendingImportRecovery else { return nil }
+        guard retireImportRecovery(event: "import.recovery.cancelled_by_stop") else {
+            return HubActionError.commandFailed(
+                HubL10n.text("hub.importAfterWindows.stopNotCancelled", fallback: "Hub stopped, but an earlier import's pending restart could not be cancelled, so Hub may start again when this app reopens.")
+            )
+        }
+        return nil
+    }
+
+    /// The bytes of an owner-only (no group or other access) regular file of this user,
+    /// in a folder of this user that only it can write; nil otherwise.
+    static func ownerPrivateFileData(of url: URL, maximumBytes: Int) -> Data? {
+        var folder = stat()
+        guard lstat(url.deletingLastPathComponent().path, &folder) == 0,
+              folder.st_mode & S_IFMT == S_IFDIR,
+              folder.st_uid == getuid(),
+              folder.st_mode & 0o022 == 0 else { return nil }
+        let descriptor = Darwin.open(url.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        guard descriptor >= 0 else { return nil }
+        defer { Darwin.close(descriptor) }
+        var information = stat()
+        guard fstat(descriptor, &information) == 0,
+              information.st_mode & S_IFMT == S_IFREG,
+              information.st_uid == getuid(),
+              information.st_mode & 0o077 == 0,
+              information.st_size >= 0,
+              information.st_size <= off_t(maximumBytes) else { return nil }
+        var data = Data(count: Int(information.st_size))
+        var offset = 0
+        let complete = data.withUnsafeMutableBytes { buffer -> Bool in
+            while offset < buffer.count {
+                let count = Darwin.read(descriptor, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
+                if count < 0, errno == EINTR { continue }
+                guard count > 0 else { return false }
+                offset += count
+            }
+            return true
+        }
+        return complete ? data : nil
+    }
+
+    /// Writes `data` owner-only and durably: a new temporary file is created
+    /// exclusively, written and synced, renamed over `url`, and the folder is synced.
+    static func writeDurablePrivateFile(_ data: Data, to url: URL) throws {
+        let folder = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let temporary = folder.appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
+        let descriptor = Darwin.open(temporary.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0o600)
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        var failure: Error?
+        data.withUnsafeBytes { buffer in
+            var offset = 0
+            while offset < buffer.count {
+                let count = Darwin.write(descriptor, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
+                if count < 0 {
+                    if errno == EINTR { continue }
+                    failure = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                    return
+                }
+                offset += count
+            }
+        }
+        if failure == nil, fcntl(descriptor, F_FULLFSYNC) != 0, fsync(descriptor) != 0 {
+            failure = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        Darwin.close(descriptor)
+        if failure == nil, Darwin.rename(temporary.path, url.path) != 0 {
+            failure = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        if let failure {
+            Darwin.unlink(temporary.path)
+            throw failure
+        }
+        try syncFolder(folder)
+    }
+
+    /// Removes `url` if present and syncs its folder.
+    static func removeDurably(_ url: URL) throws {
+        if Darwin.unlink(url.path) != 0 {
+            guard errno == ENOENT else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            return
+        }
+        try syncFolder(url.deletingLastPathComponent())
+    }
+
+    private static func syncFolder(_ folder: URL) throws {
+        let descriptor = Darwin.open(folder.path, O_RDONLY | O_CLOEXEC | O_DIRECTORY)
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { Darwin.close(descriptor) }
+        guard fsync(descriptor) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    }
+
+    // MARK: History-only import configuration
+
+    private static var unsupportedImportConfig: Error {
+        HubActionError.commandFailed(
+            HubL10n.text("hub.importAfterWindows.unsupportedConfig", fallback: "Hub's configuration writes collector settings in a form the import cannot rewrite safely. Nothing was changed.")
+        )
+    }
+
+    /// The history-only copy of `content` the importer runs against: collection
+    /// interval 0, `[collector.legacy_auth] enabled = false`, and no
+    /// `[collector.fleet_telemetry]` tables. Table headers are read as TOML key paths
+    /// (quoted and spaced forms included); a collector setting written in a form this
+    /// cannot rewrite without a duplicate definition (dotted keys, inline tables,
+    /// arrays of tables, multi-line strings) is refused before anything runs.
+    static func historyOnlyImportConfig(_ content: String) throws -> String {
+        let tripleBasic = String(repeating: "\"", count: 3)
+        let tripleLiteral = String(repeating: "'", count: 3)
+        guard !content.contains(tripleBasic), !content.contains(tripleLiteral) else { throw unsupportedImportConfig }
+        let collector = ["collector"]
+        let legacy = ["collector", "legacy_auth"]
+        let fleet = ["collector", "fleet_telemetry"]
+        var output: [String] = []
+        var table: [String] = []
+        var dropping = false
+        var collectorHeader: Int?
+        var legacyHeader: Int?
+        var intervalSet = false
+        var legacySet = false
+        var openBrackets = 0
+        for line in content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            if openBrackets > 0 {
+                openBrackets += tomlBracketBalance(line)
+                if !dropping { output.append(line) }
+                continue
+            }
+            if let header = try tomlHeader(line) {
+                if header.isArray, header.path.starts(with: collector) { throw unsupportedImportConfig }
+                table = header.path
+                dropping = header.path.starts(with: fleet)
+                if dropping { continue }
+                output.append(line)
+                if header.path == collector { collectorHeader = output.count - 1 }
+                if header.path == legacy { legacyHeader = output.count - 1 }
+                continue
+            }
+            guard let assignment = try tomlAssignmentKey(line) else {
+                if !dropping { output.append(line) }
+                continue
+            }
+            if dropping {
+                openBrackets = tomlBracketBalance(assignment.value)
+                continue
+            }
+            let full = table + assignment.key
+            let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
+            if table == collector, assignment.key == ["interval_seconds"] {
+                output.append("\(indentation)interval_seconds = 0")
+                intervalSet = true
+            } else if table == legacy, assignment.key == ["enabled"] {
+                output.append("\(indentation)enabled = false")
+                legacySet = true
+            } else if !table.starts(with: legacy),
+                      full == collector + ["interval_seconds"]
+                        || full.starts(with: legacy) || full.starts(with: fleet)
+                        || legacy.starts(with: full) || fleet.starts(with: full) {
+                // A dotted key or inline table reaching a setting this rewrites.
+                throw unsupportedImportConfig
+            } else {
+                output.append(line)
+                openBrackets = tomlBracketBalance(assignment.value)
+            }
+        }
+        while output.last == "" { output.removeLast() }
+        if !intervalSet {
+            if let collectorHeader {
+                output.insert("interval_seconds = 0", at: collectorHeader + 1)
+                if let header = legacyHeader, header > collectorHeader { legacyHeader = header + 1 }
+            } else {
+                output.append(contentsOf: ["", "[collector]", "interval_seconds = 0"])
+            }
+        }
+        if !legacySet {
+            if let legacyHeader {
+                output.insert("enabled = false", at: legacyHeader + 1)
+            } else {
+                output.append(contentsOf: ["", "[collector.legacy_auth]", "enabled = false"])
+            }
+        }
+        return output.joined(separator: "\n") + "\n"
+    }
+
+    /// A TOML table header's key path and whether it is an array of tables; nil for any
+    /// other line. Throws for a header it cannot read.
+    static func tomlHeader(_ line: String) throws -> (path: [String], isArray: Bool)? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("[") else { return nil }
+        let isArray = trimmed.hasPrefix("[[")
+        var rest = Substring(trimmed.dropFirst(isArray ? 2 : 1))
+        let path = try tomlKeyPath(&rest, terminator: "]")
+        rest = rest.dropFirst()
+        if isArray {
+            guard rest.hasPrefix("]") else { throw unsupportedImportConfig }
+            rest = rest.dropFirst()
+        }
+        let tail = rest.trimmingCharacters(in: .whitespaces)
+        guard tail.isEmpty || tail.hasPrefix("#") else { throw unsupportedImportConfig }
+        return (path, isArray)
+    }
+
+    /// The key path and the value text of a `key = value` line; nil for a blank or
+    /// comment line. Throws for a line whose key it cannot read.
+    static func tomlAssignmentKey(_ line: String) throws -> (key: [String], value: String)? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { return nil }
+        var rest = Substring(trimmed)
+        let key = try tomlKeyPath(&rest, terminator: "=")
+        return (key, String(rest.dropFirst()))
+    }
+
+    /// Reads dotted bare, "basic" and 'literal' keys up to `terminator`.
+    private static func tomlKeyPath(_ text: inout Substring, terminator: Character) throws -> [String] {
+        var parts: [String] = []
+        while true {
+            text = text.drop { $0 == " " || $0 == "\t" }
+            guard let first = text.first else { throw unsupportedImportConfig }
+            if first == "\"" || first == "'" {
+                text = text.dropFirst()
+                guard let close = text.firstIndex(of: first) else { throw unsupportedImportConfig }
+                let part = text[..<close]
+                if first == "\"", part.contains("\\") { throw unsupportedImportConfig }
+                parts.append(String(part))
+                text = text[text.index(after: close)...]
+            } else {
+                let bare = text.prefix { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }
+                guard !bare.isEmpty else { throw unsupportedImportConfig }
+                parts.append(String(bare))
+                text = text.dropFirst(bare.count)
+            }
+            text = text.drop { $0 == " " || $0 == "\t" }
+            if text.first == "." { text = text.dropFirst(); continue }
+            guard text.first == terminator else { throw unsupportedImportConfig }
+            return parts
+        }
+    }
+
+    /// Open `[` minus closing `]` outside strings and comments, for multi-line arrays.
+    private static func tomlBracketBalance(_ text: String) -> Int {
+        var balance = 0
+        var quote: Character?
+        var escaped = false
+        for character in text {
+            if let open = quote {
+                if escaped { escaped = false; continue }
+                if open == "\"" && character == "\\" { escaped = true; continue }
+                if character == open { quote = nil }
+                continue
+            }
+            switch character {
+            case "\"", "'": quote = character
+            case "#": return balance
+            case "[": balance += 1
+            case "]": balance -= 1
+            default: break
+            }
+        }
+        return balance
+    }
+
+    // MARK: Pair a phone (DEC-152)
+
+    /// This Mac's Bonjour name; tests replace it.
+    var localHostNameProvider: () -> String? = {
+        SCDynamicStoreCopyLocalHostName(nil) as String?
+    }
+
+    /// `<name>.local` for a Bonjour name the Hub accepts: one label of lowercase
+    /// letters, digits and hyphens. Anything else is nil.
+    static func lanHostName(from localHostName: String?) -> String? {
+        guard let name = localHostName?.lowercased(), !name.isEmpty, name.count <= 63,
+              !name.hasPrefix("-"), !name.hasSuffix("-"),
+              name.unicodeScalars.allSatisfy({ ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "-" })
+        else { return nil }
+        return name + ".local"
+    }
+
+    /// The `status` of a `lan-tls` report: `created` or `existing`.
+    static func lanTLSStatus(from output: String) -> String? {
+        for line in output.split(whereSeparator: { $0.isNewline }).reversed() {
+            guard let data = String(line).data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let status = root["status"] as? String,
+                  status == "created" || status == "existing" else { continue }
+            return status
+        }
+        return nil
+    }
+
+    /// Pair a phone: sets up the LAN TLS identity when none is configured (`lan-tls`,
+    /// then a restart so the Hub listens on it), then asks the running Hub for one
+    /// single-use pairing link. The link is handed to the caller only: it is never
+    /// logged, written or kept by the controller.
+    func pairPhone(completion: @escaping (Result<HubPairingInvitation, Error>) -> Void) {
+        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        guard snapshot.health == .running else {
+            completion(.failure(HubActionError.commandFailed(
+                HubL10n.text("hub.pairing.notRunning", fallback: "Start Hub before pairing a phone.")
+            )))
+            return
+        }
+        guard let host = Self.lanHostName(from: localHostNameProvider()) else {
+            completion(.failure(HubActionError.commandFailed(
+                HubL10n.text("hub.pairing.noLocalName", fallback: "This Mac has no usable local network name. Set one in System Settings, General, Sharing, Local hostname.")
+            )))
+            return
+        }
+        guard let op = admit(.restart, phase: "tls", completion: completion) else { return }
+        HubAppLog.shared.record("pairing.requested", category: "pairing")
+        let finish: (Result<HubPairingInvitation, Error>) -> Void = { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    HubAppLog.shared.record("pairing.link_ready", category: "pairing")
+                case let .failure(error):
+                    HubAppLog.shared.record("pairing.failed", category: "pairing", level: "ERROR",
+                                            fields: ["error_code": HubAppLog.errorCode(error)])
+                }
+                op.finish(result, completion: completion)
+            }
+        }
+        let requestLink = { [self] in
+            op.phase("pair")
+            op.run(["--config", configPath.path, "control", "pair", "--json"]) { result in
+                switch result {
+                case let .success(output):
+                    guard let invitation = HubPairingInvitation.parse(output) else {
+                        finish(.failure(HubActionError.commandFailed(
+                            HubL10n.text("hub.pairing.unreadable", fallback: "Hub did not return a pairing link. Try again.")
+                        )))
+                        return
+                    }
+                    finish(.success(invitation))
+                case let .failure(error):
+                    finish(.failure(error))
+                }
+            }
+        }
+        // The link is requested only from a Hub confirmed serving the configuration on
+        // disk, so its TLS listener is the one the link names. A Hub still serving an
+        // older configuration (an earlier restart failed or was interrupted) is
+        // restarted first, whether this run created the identity or found it.
+        let restartThenLink = { [self] in
+            op.phase("restart")
+            op.service(["service", "restart"]) { [self] restart in
+                if case let .failure(error) = restart {
+                    finish(.failure(HubActionError.commandFailed(
+                        HubL10n.format("hub.pairing.restartFailed", fallback: "The local network identity is set up, but Hub did not restart: %1$@", arguments: [String(describing: HubActionError.settingQuiescenceAside(error).localizedDescription)])
+                    )))
+                    return
+                }
+                confirmServing(op) { error in
+                    if let error {
+                        finish(.failure(HubActionError.commandFailed(
+                            HubL10n.format("hub.pairing.notServing", fallback: "Hub restarted but did not confirm it is serving the local network identity: %1$@", arguments: [String(describing: HubActionError.settingQuiescenceAside(error).localizedDescription)])
+                        )))
+                        return
+                    }
+                    requestLink()
+                }
+            }
+        }
+        op.run(["--config", configPath.path, "lan-tls", "--host", host]) { [self] result in
+            switch result {
+            case let .success(output):
+                switch Self.lanTLSStatus(from: output) {
+                case "existing":
+                    op.phase("confirm")
+                    op.run(Self.servingCheckArguments(configPath: configPath, waitSeconds: 5)) { check in
+                        if case let .success(answer) = check, Self.isServingReport(answer) {
+                            requestLink()
+                        } else {
+                            HubAppLog.shared.record("pairing.listener_stale", category: "pairing")
+                            restartThenLink()
+                        }
+                    }
+                case "created":
+                    HubAppLog.shared.record("pairing.lan_tls_created", category: "pairing")
+                    restartThenLink()
+                default:
+                    finish(.failure(HubActionError.commandFailed(
+                        HubL10n.text("hub.pairing.tlsUnreadable", fallback: "Hub could not report its local network identity.")
+                    )))
+                }
+            case let .failure(error):
+                finish(.failure(error))
+            }
+        }
+    }
+
     /// SSH preparation (R-E1F6-9): admitted before any tunnel or temporary directory
     /// exists. The connection is a registered child; whatever it produces is accounted
     /// for here even if the window that asked has gone. The prepared session is then an
@@ -5168,7 +5993,24 @@ final class HubController {
         verifyHistoryOnlyStartPolicy(op) { [self] result in
             switch result {
             case .success:
-                runServiceCommand(op, ["service", "start"]) { op.finish($0, completion: completion) }
+                let owedByImport = hasPendingImportRecovery
+                runServiceCommand(op, ["service", "start"]) { [self] result in
+                    // An interrupted import's obligation is met only by a Hub confirmed serving.
+                    guard owedByImport, case .success = result else {
+                        op.finish(result, completion: completion)
+                        return
+                    }
+                    confirmServing(op) { [self] error in
+                        DispatchQueue.main.async { [self] in
+                            if let error {
+                                op.finish(.failure(error), completion: completion)
+                                return
+                            }
+                            retireImportRecoveryAfterConfirmedStart()
+                            op.finish(.success(()), completion: completion)
+                        }
+                    }
+                }
             case let .failure(error):
                 op.finish(.failure(error), completion: completion)
             }
@@ -5178,7 +6020,13 @@ final class HubController {
     func stopHub(completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard let op = admit(.stop, phase: "stop", completion: completion) else { return }
-        runServiceCommand(op, ["service", "stop"]) { op.finish($0, completion: completion) }
+        runServiceCommand(op, ["service", "stop"]) { [self] result in
+            guard case .success = result, let error = cancelImportRestartAfterStop() else {
+                op.finish(result, completion: completion)
+                return
+            }
+            op.finish(.failure(error), completion: completion)
+        }
     }
 
     func restartHub(completion: @escaping (Result<Void, Error>) -> Void) {

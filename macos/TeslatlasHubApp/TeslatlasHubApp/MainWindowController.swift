@@ -50,6 +50,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var diagnosticsOperationPending = false
     private var mainToolbar: HubMainToolbar?
     private(set) var detailsWindow: ServiceDetailsWindowController?
+    private(set) var importAfterWindowsSheet: ImportAfterWindowsSheetController?
     private var modalState = HubModalState()
     private var activeModalController: NSWindowController?
     private var logsCloseObserver: NSObjectProtocol?
@@ -395,7 +396,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     var canImportSource: Bool {
-        navigationAvailable && lifecycleIdle && lastPresentedSnapshot.shouldOfferSourceImport
+        navigationAvailable && lifecycleIdle
+            && (lastPresentedSnapshot.shouldOfferSourceImport
+                || (lastPresentedSnapshot.shouldOfferImportAfterWindows && importAfterWindowsSheet == nil))
     }
 
     func selectMainSection(_ section: HubMainSection) {
@@ -1143,8 +1146,34 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func importPressed() {
-        guard lastPresentedSnapshot.shouldOfferSourceImport else { return }
-        showOnboarding(route: .migration)
+        if lastPresentedSnapshot.shouldOfferSourceImport {
+            showOnboarding(route: .migration)
+            return
+        }
+        guard lastPresentedSnapshot.shouldOfferImportAfterWindows else { return }
+        showImportAfterWindows()
+    }
+
+    /// DEC-149: Import History on a signed-in Hub, as a sheet of this window.
+    @discardableResult
+    func showImportAfterWindows() -> ImportAfterWindowsSheetController? {
+        guard importAfterWindowsSheet == nil, lifecycleIdle,
+              let window else { NSSound.beep(); return nil }
+        let sheet = ImportAfterWindowsSheetController(controller: controller) { [weak self] result in
+            guard case .success = result else { return }
+            let alert = NSAlert()
+            alert.messageText = HubL10n.text("hub.ImportSheetController.26.1691", fallback: "Import History")
+            alert.informativeText = ImportAfterWindowsSheetController.importedMessage
+            HubUIPresentation.presentInformation(alert)
+            self?.update()
+        }
+        guard let sheetWindow = sheet.window else { return nil }
+        importAfterWindowsSheet = sheet
+        window.beginSheet(sheetWindow) { [weak self] _ in
+            self?.importAfterWindowsSheet = nil
+            self?.update()
+        }
+        return sheet
     }
 
     func showImport() { importPressed() }

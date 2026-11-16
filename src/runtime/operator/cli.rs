@@ -143,7 +143,7 @@ pub enum ControlCommand {
     /// List paired devices and the vehicles each may read, without exposing bearer material.
     #[command(name = "paired-devices")]
     PairedDevices,
-    /// Display one short-lived, single-use device pairing QR while the Hub is running.
+    /// Print one short-lived, single-use device pairing link while the Hub is running.
     Pair {
         /// Human label shown only to the Hub owner, such as "Bolyki iPhone".
         #[arg(long, default_value = "Teslatlas iPhone")]
@@ -512,7 +512,26 @@ pub enum Command {
         #[arg(long, required = true, alias = "acknowledge-v4-2-compatible-schema")]
         accept_schema_evidence: bool,
     },
-    /// Display one short-lived, single-use device pairing QR.
+    /// Set up a self-signed LAN TLS identity for phone pairing when none is configured:
+    /// P-256, valid 397 days, written to the data folder's `tls/`, and the Hub then
+    /// listens on 0.0.0.0:8443. Restart the Hub afterwards. Does nothing when `[tls]`
+    /// is already configured.
+    #[command(name = "lan-tls")]
+    LanTls {
+        /// This Mac's lowercase Bonjour name, such as "office-mac.local".
+        #[arg(long)]
+        host: String,
+    },
+    /// Confirm that the installed Hub service's process serves the configuration on
+    /// disk on its listener (process, lifetime lock, configuration digest), waiting up
+    /// to --wait-seconds. Valid between collection windows; never contacts Tesla.
+    #[command(name = "serving-check", hide = true)]
+    ServingCheck {
+        /// How long to wait for the service to serve, 1 to 150 seconds.
+        #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..=150))]
+        wait_seconds: u64,
+    },
+    /// Print one short-lived, single-use device pairing link to paste in the App.
     #[command(alias = "create-pairing")]
     Pair {
         /// Human label shown only to the Hub owner, such as "Bolyki iPhone".

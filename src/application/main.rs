@@ -12,7 +12,6 @@ use std::{
 #[cfg(unix)]
 use std::future::Future;
 
-use qrcode::{QrCode, render::unicode::Dense1x2};
 use rustix::fs::{FileType, Mode, OFlags, fcntl_getfl, fcntl_setfl, fstat, open};
 use rustix::process::getuid;
 use sha2::{Digest, Sha256};
