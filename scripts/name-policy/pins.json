@@ -1498,63 +1498,63 @@
       "sha256": "b30e16ee76cd1077db949a4fe36bb8151ea4e827e6cbb914a81480e4187dba9e"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-edge/AGENTS.snapshot.md",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-edge/AGENTS.snapshot.md",
       "sha256": "bfa762e9b842899543304ce850a5d95cb60b673618a8d67ea6c9ba7336ef1e27"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-edge/docs/development/PLAN.md",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-edge/docs/development/PLAN.md",
       "sha256": "99853ea3ef3c233c4edd102137cf6ea94276e0491f3fdb64e7d52b150523c899"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-edge/docs/development/STATUS.json",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-edge/docs/development/STATUS.json",
       "sha256": "d421f8d36c02419ade13d017dc043832edc159e7e5d1511cd2ff1eec2388932a"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-home-assistant/AGENTS.snapshot.md",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/AGENTS.snapshot.md",
       "sha256": "50ab4052d4005f8d100a5a7f1939ae94ea010cb941ea656a9753664d04b9de02"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-home-assistant/docs/development/PLAN.md",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/PLAN.md",
       "sha256": "a2d0d6fb071bfdd393d04c89b5230ae6f8bbf6adfbeb23818e373a87d1588ac8"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-home-assistant/docs/development/STATUS.json",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/STATUS.json",
       "sha256": "bf05e2f773d22d5c9c68bdecc68e5ddffb6b1502ccc0938def10b8c5c7c92013"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/AGENTS.snapshot.md",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/AGENTS.snapshot.md",
       "sha256": "d01513d65927c6bc031e22dc43f85f3b5ce1d18b48d52f0317b20279eea62ea0"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/PLAN.md",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/PLAN.md",
       "sha256": "18fbf692962b419f86784e44b83d0252478bfd459b6f22dee12cf5aa6172f50a"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-protocol/docs/development/STATUS.json",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json",
       "sha256": "03892ffb0700dfafb7d65303dd23c6c9cec2a39c6326742b8bf34800cfc17e1e"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-swift/AGENTS.snapshot.md",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/AGENTS.snapshot.md",
       "sha256": "39adb176b4f4f66ed6f325929844ce5d922630fb0522b2b7c6e0b8ab7801928f"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-swift/docs/development/PLAN.md",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/docs/development/PLAN.md",
       "sha256": "f4e886f4db5b5f46bbd06a859fb469f6431298d5bb706bb7cdac5cf2d27cb7c6"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-swift/docs/development/STATUS.json",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/docs/development/STATUS.json",
       "sha256": "89b4c3071dbc3be5e2a5ab3f74b5fb66c0e4b8913df9225a7bec5f7f793eac16"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/AGENTS.snapshot.md",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/AGENTS.snapshot.md",
       "sha256": "3cabbcd65e7a3a1a2507f28b8f05774417dfe44dd51dda70e4726d23ba0a5125"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/PLAN.md",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/PLAN.md",
       "sha256": "19c62b81bb90aaebcb719142b3886c1c82d1b3d17e02efd45d89b27c9a83f166"
     },
     {
-      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/tesatlas-sdk-typescript/docs/development/STATUS.json",
+      "path": "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json",
       "sha256": "383ea716d70f20cafe43d32c107433546f26622088fc08f8c5f98b8fe0a4061a"
     },
     {
@@ -2104,7 +2104,7 @@
       "sha256": "2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2"
     },
     {
-      "path": "viewer/artifacts/tesatlas-sdk-2026.36.2.tgz",
+      "path": "viewer/artifacts/teslatlas-sdk-2026.36.2.tgz",
       "sha256": "1e62303c17d558002001de0aeccb90e50c3644c76f46ced4e492b2960ec6f4da"
     },
     {

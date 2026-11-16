@@ -23,7 +23,7 @@ A person or organisation deciding why and how deployment data is processed ordin
 Magrathean is responsible for personal data it actually receives for its own purposes, including support, website, security reports, commercial services or hosted infrastructure.
 
 Before submitting diagnostics, support material, security reports, or other
-personal data, read the live [Magrathean privacy notice](https://tesatlas.eu/privacy/).
+personal data, read the live [Magrathean privacy notice](https://teslatlas.eu/privacy/).
 That notice must describe these flows accurately.
 
 ## Optional geocoder-provider disclosure

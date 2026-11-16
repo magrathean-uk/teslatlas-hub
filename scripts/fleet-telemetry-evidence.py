@@ -883,7 +883,7 @@ def spdx_document(legal_bytes: bytes, legal: dict[str, Any]) -> dict[str, Any]:
         "SPDXID": "SPDXRef-DOCUMENT",
         "name": "tesatlas-fleet-telemetry-go-components",
         "documentNamespace": (
-            "https://tesatlas.eu/spdx/fleet-telemetry/" + sha256_bytes(legal_bytes)
+            "https://teslatlas.eu/spdx/fleet-telemetry/" + sha256_bytes(legal_bytes)
         ),
         "creationInfo": {
             "created": "1970-01-01T00:00:00Z",
@@ -1258,7 +1258,7 @@ def main() -> int:
     if args.source_archive is not None:
         source_path = Path(os.path.abspath(args.source_archive))
     else:
-        lab = os.environ.get("TESATLAS_LAB")
+        lab = os.environ.get("TESATLAS_LAB") or os.environ.get("TESLATLAS_LAB")  # rename:keep (earlier name, one release)
         if not lab:
             raise GateError(
                 "TESATLAS_LAB is required when --source-archive is not provided"

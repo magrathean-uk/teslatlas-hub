@@ -42,7 +42,7 @@ PREPARED_SCOPE = "map_months"
 PREPARED_MAP_STYLE = "route-stroke-v8-opaque"
 PREPARED_TILE_GEOMETRY_VERSION = "raster-v9-rounded-tile-px"
 PREPARED_ARTIFACT_SCHEMA_VERSION = 1
-PREPARED_ID_DOMAIN = "tesatlas-prepared-map-month-id-v1"
+PREPARED_ID_DOMAIN = "teslatlas-prepared-map-month-id-v1"
 
 
 def prepared_month_artifact_id(vehicle_id, manifest_id, receipt_id, sequence,
@@ -223,7 +223,7 @@ def build_prepared_sqlite(
     deleted_content=None,
     surplus_record_field=False,
 ):
-    with tempfile.TemporaryDirectory(prefix="tesatlas-prepared-") as directory:
+    with tempfile.TemporaryDirectory(prefix="teslatlas-prepared-") as directory:
         path = Path(directory) / "pack.sqlite"
         connection = sqlite3.connect(path)
         try:
@@ -286,7 +286,7 @@ def build_prepared_sqlite(
                 connection.execute("CREATE TABLE route_payloads (route_id TEXT PRIMARY KEY, payload BLOB NOT NULL) WITHOUT ROWID")
                 connection.execute(
                     "INSERT INTO route_payloads VALUES (?, ?)",
-                    ("route_synthetic_unsupported", sqlite3.Binary(b"tesatlas-synthetic-route-v1")),
+                    ("route_synthetic_unsupported", sqlite3.Binary(b"teslatlas-synthetic-route-v1")),
                 )
             connection.commit()
             if deleted_content == "freed_page":
@@ -1238,7 +1238,7 @@ def bundle():
 
     no_store_header = {"Cache-Control": {"description": "Required cache prohibition.", "schema": {"const": "no-store"}}}
 
-    openapi = {"openapi": "3.1.0", "info": {"title": "Tesatlas changes-since", "version": "1.3.0"},
+    openapi = {"openapi": "3.1.0", "info": {"title": "Teslatlas changes-since", "version": "1.3.0"},
       "paths": {"/v1/vehicles/{vehicle_id}/sync/changes-since": {"post": {"operationId": "changesSince",
         "parameters": [{"name": "vehicle_id", "in": "path", "required": True, "schema": UUID}],
         "requestBody": {"required": True, "x-max-body-bytes": 8192, "content": {"application/json": {"schema": {"$ref": "changes-since-request.schema.json#/$defs/request"}}}},

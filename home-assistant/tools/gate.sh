@@ -23,7 +23,7 @@ step() {
 
 compat_check() {
   common=$(git rev-parse --path-format=absolute --git-common-dir)
-  ws=${TESATLAS_WORKSPACE:-$(dirname "$(dirname "$common")")}
+  ws=${TESATLAS_WORKSPACE:-${TESLATLAS_WORKSPACE:-$(dirname "$(dirname "$common")")}} # rename:keep (earlier name, one release)
   python3 -I - "$repo" "$ws" <<'PY'
 import hashlib, json, pathlib, sys
 repo, ws = map(pathlib.Path, sys.argv[1:3])

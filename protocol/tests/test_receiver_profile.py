@@ -133,7 +133,7 @@ class ReceiverProfileTests(unittest.TestCase):
         self.assertEqual(pin_digest(schema), PIN_SCHEMA)
         self.assertEqual(
             self.schema["$id"],
-            "https://protocol.tesatlas.example/profiles/receiver-v1/1.0.0/"
+            "https://protocol.teslatlas.example/profiles/receiver-v1/1.0.0/"
             "receiver-envelope.schema.json",
         )
         self.assertEqual(self.schema["title"], "Receiver envelope")

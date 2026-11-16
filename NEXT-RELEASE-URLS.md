@@ -13,9 +13,9 @@ this file once every reference is updated and released.
 | `https://nodexapp.eu/<path>` | `https://magrathean.uk/solutions/nodex/<path>` |
 | `https://termexapp.eu/<path>` | `https://magrathean.uk/solutions/termex/<path>` |
 | `https://teslacam.eu/<path>` | `https://magrathean.uk/solutions/tescam/<path>` |
-| `https://tesatlas.eu/<path>` | `https://magrathean.uk/solutions/tesatlas/<path>` (old `/privacy/` and `/terms/` → `/app/privacy/`, `/app/terms/`; donate → `https://magrathean.uk/donate/?product=tesatlas`) |
+| `https://teslatlas.eu/<path>` | `https://magrathean.uk/solutions/teslatlas/<path>` (old `/privacy/` and `/terms/` → `/app/privacy/`, `/app/terms/`; donate → `https://magrathean.uk/donate/?product=teslatlas`) |
 | `https://magrathean.uk/apps/<slug>/` | `https://magrathean.uk/solutions/<slug>/` |
-| Product support e-mail | `contact+<slug>@magrathean.uk` (`auditex`, `codexex`, `nodex`, `termex`, `tescam`, `tesatlas`); `contact+teslacam@` becomes `contact+tescam@` |
+| Product support e-mail | `contact+<slug>@magrathean.uk` (`auditex`, `codexex`, `nodex`, `termex`, `tescam`, `teslatlas`); `contact+teslacam@` becomes `contact+tescam@` |
 
 Also update the App Store Connect marketing, support and privacy URLs for each
 app. Historical records (release-key files, changelogs, archived plans) may keep
@@ -23,9 +23,9 @@ their original URLs when the value is part of the record.
 
 ## References found in this repository
 
-- `CITATION.cff:14` — `url: "https://tesatlas.eu"`
-- `docs/legal/changelog.md:49` — ``tesatlas.eu` release-key page;`
-- `docs/legal/privacy.md:26` — `personal data, read the live [Magrathean privacy notice](https://tesatlas.eu/privacy/).`
-- `docs/maintainers/github-repository-settings.md:19` — `Website: [tesatlas.eu](https://tesatlas.eu).`
-- `scripts/fleet-telemetry-evidence.py:886` — `"https://tesatlas.eu/spdx/fleet-telemetry/" + sha256_bytes(legal_bytes)`
-- `scripts/go-proxy-evidence.py:1394` — `"documentNamespace": f"https://tesatlas.eu/spdx/go-proxy/{lock_sha}",`
+- `CITATION.cff:14` — `url: "https://teslatlas.eu"`
+- `docs/legal/changelog.md:49` — ``teslatlas.eu` release-key page;`
+- `docs/legal/privacy.md:26` — `personal data, read the live [Magrathean privacy notice](https://teslatlas.eu/privacy/).`
+- `docs/maintainers/github-repository-settings.md:19` — `Website: [teslatlas.eu](https://teslatlas.eu).`
+- `scripts/fleet-telemetry-evidence.py:886` — `"https://teslatlas.eu/spdx/fleet-telemetry/" + sha256_bytes(legal_bytes)`
+- `scripts/go-proxy-evidence.py:1394` — `"documentNamespace": f"https://teslatlas.eu/spdx/go-proxy/{lock_sha}",`

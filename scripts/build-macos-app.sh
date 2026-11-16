@@ -2,6 +2,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 set -eu
+# Earlier variable names still work for one release (DEC-160).
+[ -n "${TESATLAS_LAB-}" ] || [ -z "${TESLATLAS_LAB-}" ] || export TESATLAS_LAB="$TESLATLAS_LAB" # rename:keep
+[ -n "${TESATLAS_DERIVED_DATA-}" ] || [ -z "${TESLATLAS_DERIVED_DATA-}" ] || export TESATLAS_DERIVED_DATA="$TESLATLAS_DERIVED_DATA" # rename:keep
+[ -n "${TESATLAS_GO-}" ] || [ -z "${TESLATLAS_GO-}" ] || export TESATLAS_GO="$TESLATLAS_GO" # rename:keep
+[ -n "${TESATLAS_HUB_SOURCE_COMMIT-}" ] || [ -z "${TESLATLAS_HUB_SOURCE_COMMIT-}" ] || export TESATLAS_HUB_SOURCE_COMMIT="$TESLATLAS_HUB_SOURCE_COMMIT" # rename:keep
+[ -n "${TESATLAS_HUB_SERVICE_SIGNING_IDENTITY-}" ] || [ -z "${TESLATLAS_HUB_SERVICE_SIGNING_IDENTITY-}" ] || export TESATLAS_HUB_SERVICE_SIGNING_IDENTITY="$TESLATLAS_HUB_SERVICE_SIGNING_IDENTITY" # rename:keep
 
 umask 022
 

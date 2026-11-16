@@ -16,7 +16,7 @@ A suitable About description is:
 
 > Self-hosted Tesla telemetry collector and local Tesatlas sync hub, written in Rust.
 
-Website: [tesatlas.eu](https://tesatlas.eu).
+Website: [teslatlas.eu](https://teslatlas.eu).
 Suggested topics: `tesla`, `telemetry`, `self-hosted`, `rust`, `sqlite`, `data-import`,
 `macos`, `debian`.
 

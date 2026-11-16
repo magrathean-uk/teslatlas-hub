@@ -2280,9 +2280,9 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
         device_slot,
         verify_digest,
         if delta_pack {
-            "application/vnd.tesatlas.physical-delta+sqlite+zstd;version=1"
+            "application/vnd.teslatlas.physical-delta+sqlite+zstd;version=1"
         } else {
-            "application/vnd.tesatlas.sync-pack"
+            "application/vnd.teslatlas.sync-pack"
         },
     )
     .await
@@ -2468,7 +2468,7 @@ fn no_store_lineage_manifest(
         .header(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))
         .header(
             header::CONTENT_TYPE,
-            HeaderValue::from_static("application/vnd.tesatlas.sync-lineage+json"),
+            HeaderValue::from_static("application/vnd.teslatlas.sync-lineage+json"),
         )
         .header(
             header::ETAG,

@@ -51,7 +51,8 @@ final class DevelopmentEventLogTests: XCTestCase {
         XCTAssertNil(swapError)
     }
     private func canonicalTemporaryDirectory() throws -> URL {
-        guard let lab = ProcessInfo.processInfo.environment["TESATLAS_LAB"] else { throw XCTSkip("external lab is required for the local source-run journal gate") }
+        guard let lab = ProcessInfo.processInfo.environment["TESATLAS_LAB"] ?? ProcessInfo.processInfo.environment["TESLATLAS_LAB"] else { // rename:keep (earlier name, one release)
+            throw XCTSkip("external lab is required for the local source-run journal gate") }
         let temporary = URL(fileURLWithPath: lab, isDirectory: true).appendingPathComponent("tmp", isDirectory: true)
         guard let path = realpath(temporary.path, nil) else { throw POSIXError(.EIO) }
         defer { free(path) }

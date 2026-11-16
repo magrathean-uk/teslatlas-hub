@@ -691,7 +691,7 @@ async fn physical_delta_pack_is_found_only_for_a_device_granted_the_owning_vehic
         .expect("content type");
     assert_eq!(
         content_type,
-        b"application/vnd.tesatlas.physical-delta+sqlite+zstd;version=1"
+        b"application/vnd.teslatlas.physical-delta+sqlite+zstd;version=1"
     );
     assert!(!body.is_empty());
     let ungranted = fetch(digest, other_bearer.clone()).await;

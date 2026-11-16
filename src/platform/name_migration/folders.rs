@@ -145,7 +145,7 @@ fn hold_locks(folder: &Path, locks: &[PathBuf]) -> io::Result<Option<Vec<OwnedFd
 pub fn held_under_current(plan: &FolderMove) -> bool {
     !plan.locks.is_empty()
         && plan.locks.iter().all(|lock| {
-            open(&plan.current.join(lock), OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC, Mode::empty())
+            open(plan.current.join(lock), OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC, Mode::empty())
                 .is_ok_and(|fd| matches!(flock(&fd, FlockOperation::NonBlockingLockExclusive), Err(Errno::WOULDBLOCK)))
         })
 }

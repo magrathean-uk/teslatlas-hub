@@ -181,9 +181,19 @@ impl Issuer {
     }
 
     /// The one canonical ledger directory (ruling R2); the operator verb takes
-    /// no path argument.
+    /// no path argument. Until the owner's records folder moves to the
+    /// current name (DEC-160), a ledger under the earlier folder is used when
+    /// none exists under the current one.
     pub fn canonical_dir(home: &Path) -> PathBuf {
-        home.join("dev/machine/records/tesatlas/hub-evidence/window-issuer")
+        let records = home.join("dev/machine/records");
+        let folder = "tesatlas";
+        let current = records.join(folder);
+        let earlier = crate::platform::name_migration::spelling::earlier(folder).map(|name| records.join(name));
+        match earlier {
+            Some(earlier) if !current.exists() && earlier.exists() => earlier,
+            _ => current,
+        }
+        .join("hub-evidence/window-issuer")
     }
 
     pub fn ledger_path(&self) -> PathBuf {
@@ -500,5 +510,25 @@ impl Issuer {
         )
         .map_err(|_| Refusal::Io)?;
         self.pin(&opened.key_id, &line)
+    }
+}
+
+#[cfg(test)]
+mod canonical_dir_tests {
+    use super::Issuer;
+
+    /// Until the owner's records folder moves (DEC-160), an issuer ledger
+    /// under the earlier folder is used; once the current folder exists it wins.
+    #[test]
+    fn the_ledger_stays_under_the_earlier_records_folder_until_it_moves() {
+        let home = tempfile::tempdir().unwrap();
+        let records = home.path().join("dev/machine/records");
+        let current = records.join("tesatlas/hub-evidence/window-issuer");
+        assert_eq!(Issuer::canonical_dir(home.path()), current);
+        let earlier = records.join("teslatlas"); // rename:keep
+        std::fs::create_dir_all(&earlier).unwrap();
+        assert_eq!(Issuer::canonical_dir(home.path()), earlier.join("hub-evidence/window-issuer"));
+        std::fs::create_dir_all(records.join("tesatlas")).unwrap();
+        assert_eq!(Issuer::canonical_dir(home.path()), current);
     }
 }

@@ -888,7 +888,7 @@
         "viewer/CLAUDE.md",
         "viewer/Dockerfile",
         "viewer/NOTICE",
-        "viewer/artifacts/tesatlas-sdk.json",
+        "viewer/artifacts/teslatlas-sdk.json",
         "viewer/README.md",
         "viewer/compose.yaml",
         "viewer/index.html",
@@ -906,12 +906,12 @@
     {
       "id": "viewer-bundled-sdk-archive",
       "class": "GENERATED",
-      "rationale": "Built npm package archive of the project's own TypeScript SDK (@tesatlas/sdk 2026.36.2), bundled in the imported Viewer package; it embeds package/LICENSE.",
+      "rationale": "Built npm package archive of the project's own TypeScript SDK (@teslatlas/sdk 2026.36.2), bundled in the imported Viewer package; it embeds package/LICENSE.",
       "paths": [
-        "viewer/artifacts/tesatlas-sdk-2026.36.2.tgz"
+        "viewer/artifacts/teslatlas-sdk-2026.36.2.tgz"
       ],
       "exception": {
-        "origin": "Built from the project's own TypeScript SDK (@tesatlas/sdk) as recorded in viewer/artifacts/tesatlas-sdk.json (source commit 2afc5f99ab1a58662570c695618512d4e8e975d8).",
+        "origin": "Built from the project's own TypeScript SDK (@teslatlas/sdk) as recorded in viewer/artifacts/teslatlas-sdk.json (source commit 2afc5f99ab1a58662570c695618512d4e8e975d8).",
         "licensing": "Embeds package/LICENSE, the Apache License 2.0 text. This treatment does not prove chain of title.",
         "release_treatment": "Preserved as imported; not rebuilt or edited here."
       }

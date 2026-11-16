@@ -1391,7 +1391,7 @@ def spdx_document(lock: dict[str, Any], sources: list[dict[str, Any]], lock_sha:
         "dataLicense": "CC0-1.0",
         "SPDXID": "SPDXRef-DOCUMENT",
         "name": "tesatlas-tesla-http-proxy-go-components",
-        "documentNamespace": f"https://tesatlas.eu/spdx/go-proxy/{lock_sha}",
+        "documentNamespace": f"https://teslatlas.eu/spdx/go-proxy/{lock_sha}",
         "creationInfo": {
             "created": "1970-01-01T00:00:00Z",
             "creators": ["Tool: tesatlas-go-proxy-evidence"],

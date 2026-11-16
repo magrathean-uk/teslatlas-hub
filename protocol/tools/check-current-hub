@@ -192,7 +192,7 @@ def _remaining(deadline):
 
 
 def _curl(config, deadline, url, *, authenticated, if_none_match=None):
-    with tempfile.TemporaryDirectory(prefix="tesatlas-probe-") as directory:
+    with tempfile.TemporaryDirectory(prefix="teslatlas-probe-") as directory:
         temporary = Path(directory)
         body_path = temporary / "body"
         # curl may omit --output entirely for a valid bodyless 304.

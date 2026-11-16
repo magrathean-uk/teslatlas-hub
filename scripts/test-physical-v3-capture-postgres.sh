@@ -1,6 +1,8 @@
 #!/bin/zsh
 # SPDX-License-Identifier: AGPL-3.0-only
 set -euo pipefail
+# Earlier variable names still work for one release (DEC-160).
+[ -n "${TESATLAS_LAB-}" ] || [ -z "${TESLATLAS_LAB-}" ] || export TESATLAS_LAB="$TESLATLAS_LAB" # rename:keep
 
 postgres_bin=/opt/homebrew/opt/postgresql@18/bin
 schema_dump=${TESATLAS_TEST_SOURCE_SCHEMA_DUMP:?set TESATLAS_TEST_SOURCE_SCHEMA_DUMP to the private source custom dump}

@@ -21,7 +21,7 @@ import zstandard
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = ROOT / "profiles/hub-sync-v1/1.3.0"
 PROFILE_ID = "hub-sync-v1@1.3.0"
-PREPARED_MONTH_ID_DOMAIN = "tesatlas-prepared-map-month-id-v1"
+PREPARED_MONTH_ID_DOMAIN = "teslatlas-prepared-map-month-id-v1"
 
 
 def prepared_month_artifact_id(receipt, month):
@@ -938,7 +938,7 @@ def validate_prepared_pack(receipt, compressed, vehicle_id, root=PROFILE):
     if len(raw) != pack["uncompressed_bytes"]:
         return ["prepared pack uncompressed size does not match receipt"]
 
-    with tempfile.TemporaryDirectory(prefix="tesatlas-prepared-validate-") as directory:
+    with tempfile.TemporaryDirectory(prefix="teslatlas-prepared-validate-") as directory:
         path = Path(directory) / "pack.sqlite"
         path.write_bytes(raw)
         try:

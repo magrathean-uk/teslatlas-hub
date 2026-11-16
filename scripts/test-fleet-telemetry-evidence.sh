@@ -6,6 +6,9 @@
 # the cached archive is still required. The build steps copy those of
 # scripts/build-fleet-telemetry-bridge.sh and must stay in step with it.
 set -eu
+# Earlier variable names still work for one release (DEC-160).
+[ -n "${TESATLAS_LAB-}" ] || [ -z "${TESLATLAS_LAB-}" ] || export TESATLAS_LAB="$TESLATLAS_LAB" # rename:keep
+[ -n "${TESATLAS_GO-}" ] || [ -z "${TESLATLAS_GO-}" ] || export TESATLAS_GO="$TESLATLAS_GO" # rename:keep
 
 # Keep toolchain selection, receiver compilation and evidence generation offline.
 GOENV=off

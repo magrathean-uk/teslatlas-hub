@@ -956,7 +956,7 @@ function validateInvitation(invitation: HubInvitation, endpoint: URL): void {
     ["tls_pin", invitation.tlsPin],
   ]);
   if (
-    pairingUri.protocol !== "tesatlas-hub:" ||
+    pairingUri.protocol !== "teslatlas-hub:" ||
     pairingUri.hostname !== "pair" ||
     pairingUri.searchParams.size !== expected.size ||
     [...expected].some(([key, value]) => pairingUri.searchParams.get(key) !== value)

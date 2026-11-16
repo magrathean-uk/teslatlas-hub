@@ -11,7 +11,7 @@ abstract: >-
   A self-hosted, multi-vehicle Tesla telemetry collector and local sync hub
   with macOS and Debian packaging sources.
 repository-code: "https://github.com/magrathean-uk/tesatlas-hub"
-url: "https://tesatlas.eu"
+url: "https://teslatlas.eu"
 license: "AGPL-3.0-only"
 keywords:
   - self-hosted

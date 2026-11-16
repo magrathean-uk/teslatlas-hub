@@ -70,7 +70,10 @@ fi
 
 # Workspace that owns the heavy-build lock and the toolchain environment.
 workspace=
-for base in "$root/.." "${TESATLAS_WORKSPACE:-$HOME/dev/source/tesatlas-service}"; do
+# Until the workspace folder and its variable move to the current name
+# (DEC-160), the earlier ones are tried after the current ones.
+earlier_workspace=${TESLATLAS_WORKSPACE:-$HOME/dev/source/teslatlas-service} # rename:keep
+for base in "$root/.." "${TESATLAS_WORKSPACE:-$HOME/dev/source/tesatlas-service}" "$earlier_workspace"; do
     if [ -x "$base/scripts/dev/with-heavy-build-lock.sh" ] && [ -r "$base/scripts/dev/env.sh" ]; then
         workspace=$(CDPATH='' cd -- "$base" && pwd)
         break

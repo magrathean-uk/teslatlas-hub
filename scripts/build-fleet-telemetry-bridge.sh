@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 set -eu
+# Earlier variable names still work for one release (DEC-160).
+[ -n "${TESATLAS_LAB-}" ] || [ -z "${TESLATLAS_LAB-}" ] || export TESATLAS_LAB="$TESLATLAS_LAB" # rename:keep
+[ -n "${TESATLAS_GO-}" ] || [ -z "${TESLATLAS_GO-}" ] || export TESATLAS_GO="$TESLATLAS_GO" # rename:keep
 
 umask 022
 PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin

@@ -14,6 +14,10 @@ import sys
 
 
 SELECTION_ENV = "TESATLAS_GO"
+# The earlier variable name still selects Go for one release (DEC-160).
+EARLIER_SELECTION_ENV = "TESLATLAS_GO"  # rename:keep
+if SELECTION_ENV not in os.environ and EARLIER_SELECTION_ENV in os.environ:
+    os.environ[SELECTION_ENV] = os.environ[EARLIER_SELECTION_ENV]
 
 
 class GoToolchainError(RuntimeError):

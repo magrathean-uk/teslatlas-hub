@@ -523,7 +523,7 @@ async fn explicit_delta_v2_returns_validated_lineage_and_authorized_packs() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         response.headers().get(header::CONTENT_TYPE).unwrap(),
-        "application/vnd.tesatlas.sync-lineage+json"
+        "application/vnd.teslatlas.sync-lineage+json"
     );
     assert_eq!(
         response.headers().get(header::CACHE_CONTROL).unwrap(),
