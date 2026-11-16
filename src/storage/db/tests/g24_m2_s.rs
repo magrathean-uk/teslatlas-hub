@@ -2435,30 +2435,6 @@ fn ct098_store_provenance_negatives() {
         "supplied provenance cannot claim hub_login"
     );
     assert_eq!(data_version(&observer), before);
-    // DEC-172: only the takeover writes `source_token`; a supplied one is
-    // refused by provenance before any slot, spent or fence check.
-    let supplied_source = f.pair_with(
-        CredentialSlot::OwnerApi,
-        2,
-        CredentialOrigin::SourceToken,
-        RefreshOwner::Hub,
-        b"access-0003",
-        b"refresh-0003",
-    );
-    let (observer, before) = f.observe();
-    assert!(
-        matches!(
-            f.conn.replace_credential_pair(
-                &supplied_source,
-                &EntryProvenance::Supplied,
-                &LegacyCandidates(Vec::new()),
-                ReplacePolicy::ReplaceAny
-            ),
-            Err(StoreError::InvalidOrigin)
-        ),
-        "supplied provenance cannot claim source_token"
-    );
-    assert_eq!(data_version(&observer), before);
     f.conn
         .test_connection()
         .execute(
@@ -2972,15 +2948,20 @@ fn source_takeover_write_gate_pairs_provenance_and_origin() {
     fn takeover(f: &mut Fixture, pair: &SealedCredentialPair, policy: ReplacePolicy) -> Result<(), StoreError> {
         f.conn.replace_credential_pair(pair, &EntryProvenance::SourceTakeover, &LegacyCandidates(Vec::new()), policy)
     }
-    fn refused(f: &mut Fixture, pair: &SealedCredentialPair, policy: ReplacePolicy, expected: fn(&StoreError) -> bool, label: &str) {
+    fn refused_as(f: &mut Fixture, pair: &SealedCredentialPair, provenance: &EntryProvenance<'_>, policy: ReplacePolicy, expected: fn(&StoreError) -> bool, label: &str) {
         let (observer, before) = f.observe();
-        let result = takeover(f, pair, policy);
+        let result = f.conn.replace_credential_pair(pair, provenance, &LegacyCandidates(Vec::new()), policy);
         assert!(result.as_ref().is_err_and(expected), "{label}: {result:?}");
         assert_eq!(data_version(&observer), before, "{label}: nothing written");
+    }
+    fn refused(f: &mut Fixture, pair: &SealedCredentialPair, policy: ReplacePolicy, expected: fn(&StoreError) -> bool, label: &str) {
+        refused_as(f, pair, &EntryProvenance::SourceTakeover, policy, expected, label);
     }
     let mut f = Fixture::new();
     let source = f.pair_with(CredentialSlot::OwnerApi, 1, CredentialOrigin::SourceToken, RefreshOwner::Hub, b"access-0001", b"refresh-0001");
     let invalid = |error: &StoreError| matches!(error, StoreError::InvalidOrigin);
+    // Supplied provenance cannot claim source_token, before any slot, spent or fence check.
+    refused_as(&mut f, &source, &EntryProvenance::Supplied, ReplacePolicy::ReplaceAny, invalid, "supplied source_token");
     refused(&mut f, &source, ReplacePolicy::ReplaceAny, invalid, "ReplaceAny");
     let external = f.pair_with(CredentialSlot::OwnerApi, 2, CredentialOrigin::SourceToken, RefreshOwner::External, b"access-0001", b"refresh-0001");
     refused(&mut f, &external, ReplacePolicy::OnlyIfEmpty, invalid, "external owner");
@@ -2995,12 +2976,8 @@ fn source_takeover_write_gate_pairs_provenance_and_origin() {
     // A sign-in grant cannot carry the taken-over origin either.
     let secret = Zeroizing::new([0x5a; 32]);
     let id = f.conn.insert_sign_in_binding(CredentialSlot::OwnerApi, binding(&secret), T0_MS).unwrap();
-    let (observer, before) = f.observe();
-    assert!(matches!(
-        f.conn.replace_credential_pair(&source, &EntryProvenance::HubGrant { sign_in_id: id, grant_secret: &secret }, &LegacyCandidates(Vec::new()), ReplacePolicy::ReplaceAny),
-        Err(StoreError::SignInBindingInvalid)
-    ), "a grant cannot write source_token");
-    assert_eq!(data_version(&observer), before);
+    refused_as(&mut f, &source, &EntryProvenance::HubGrant { sign_in_id: id, grant_secret: &secret }, ReplacePolicy::ReplaceAny,
+        |error| matches!(error, StoreError::SignInBindingInvalid), "a grant cannot write source_token");
     // The admitted case, then the occupied slot.
     takeover(&mut f, &source, ReplacePolicy::OnlyIfEmpty).expect("takeover into the empty Owner slot");
     f.conn.credential_durability_barrier().unwrap();
