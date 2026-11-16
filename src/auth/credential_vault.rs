@@ -94,11 +94,13 @@ impl CredentialStoreError {
 /// a pair from the Hub's own login, or the migration source's login the Hub
 /// has taken over (`source_token`, DEC-172), each refreshed by the Hub. A
 /// `source_token` pair with an external refresh owner, or on the Fleet slot,
-/// stays refused. The Fleet slot admits
-/// nothing: its `fleet_oauth` origin also labels supplied and migrated tokens,
-/// so, as the T01 design parks Fleet, every stored Fleet pair is refused until
-/// an authenticated own-exchange origin distinguishes the Hub's own Fleet
-/// login. Every other origin (a source import, a hand-entered or provider
+/// stays refused. The Fleet slot admits the Hub's own Fleet grant
+/// (`fleet_oauth`, refreshed by the Hub; M09-T08). That label once also marked
+/// supplied and migrated Fleet tokens, so the write gate refuses a supplied
+/// Fleet pair and a one-shot un-park barrier blocks every Fleet pair stored
+/// before the Hub's first own Fleet grant: the store reports a blocked pair
+/// with an external refresh owner, so this check refuses it, and the vault
+/// asks the barrier again before it opens one. Every other origin (a source import, a hand-entered or provider
 /// token) is `source_credential_disabled`; a pair with no recorded origin
 /// (written before origins existed) is `unknown_origin`. This is a header
 /// check on the stored row: it runs before any key is selected or any envelope
@@ -106,9 +108,20 @@ impl CredentialStoreError {
 pub(crate) fn admit_stored_origin(slot: CredentialSlot, origin: Option<CredentialOrigin>, owner: RefreshOwner) -> Result<(), CredentialStoreError> {
     match origin {
         Some(CredentialOrigin::HubLogin | CredentialOrigin::SourceToken) if slot == CredentialSlot::OwnerApi && owner == RefreshOwner::Hub => Ok(()),
+        Some(CredentialOrigin::FleetOauth) if slot == CredentialSlot::FleetApi && owner == RefreshOwner::Hub => Ok(()),
         Some(_) => Err(CredentialStoreError::SourceCredentialDisabled(slot)),
         None => Err(CredentialStoreError::UnknownOrigin(slot)),
     }
+}
+/// [`admit_stored_origin`] for a row read from the credential connection,
+/// which reports the raw refresh owner: a Fleet pair the un-park barrier
+/// blocks is refused as well (M09-T08).
+fn admit_stored_row(connection: &CredentialConnection, row: &SealedCredentialPair) -> Result<(), CredentialStoreError> {
+    admit_stored_origin(row.slot, row.origin, row.refresh_owner)?;
+    if row.slot == CredentialSlot::FleetApi && connection.credential_fleet_pair_blocked(row.generation)? {
+        return Err(CredentialStoreError::SourceCredentialDisabled(row.slot));
+    }
+    Ok(())
 }
 /// The stable refusal code of [`admit_stored_origin`], for projections that
 /// report a stored pair without opening it.
@@ -527,7 +540,7 @@ impl CredentialVault {
             other => other.into(),
         })?;
         #[cfg(test)] self.pause_read("after_snapshot");
-        if let Some(row) = row.as_ref() { admit_stored_origin(row.slot, row.origin, row.refresh_owner)?; }
+        if let Some(row) = row.as_ref() { admit_stored_row(&state.connection, row)?; }
         let keys = self.keys.read().map_err(|_| CredentialStoreError::LockPoisoned)?;
         drop(state);
         row.map(|row| Self::decrypt(&row, keys.as_ref().ok_or(CredentialKeyError::KeyringMissing)?)).transpose()
@@ -604,6 +617,11 @@ impl CredentialVault {
     }
     pub(crate) fn begin_refresh(&self, slot: CredentialSlot, input: Uuid) -> Result<OutboundRequestReceiptId, CredentialStoreError> {
         let mut state = self.lock()?; state.writable(true)?; state.guard_read()?;
+        // A blocked pre-un-park Fleet pair is never refreshed, so it never has
+        // a successor that the barrier would not know (M09-T08).
+        if slot == CredentialSlot::FleetApi && state.connection.credential_fleet_pair_blocked(input)? {
+            return Err(CredentialStoreError::SourceCredentialDisabled(slot));
+        }
         let VaultState { connection, commits_issued, .. } = &mut *state;
         let receipt = connection.begin_credential_refresh_with_commit(slot, input, &mut || *commits_issued += 1)?;
         if let Err(error) = state.barrier() {
@@ -708,7 +726,7 @@ impl CredentialVault {
                 // A row the load would refuse (source, supplied, migrated or
                 // Fleet material) is never decrypted or re-sealed: it is carried
                 // unchanged, and the retired key leaves it unreadable.
-                if admit_stored_origin(row.slot, row.origin, row.refresh_owner).is_err() {
+                if admit_stored_row(&state.connection, &row).is_err() {
                     pairs.push((row, false));
                     continue;
                 }

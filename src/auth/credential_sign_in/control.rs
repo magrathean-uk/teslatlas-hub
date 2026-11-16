@@ -68,7 +68,8 @@ mod tests {
     use crate::{auth::credential_vault::{CredentialEntry, fixtures::open_fixture_vault}, db::{HubStore, ReplacePolicy}};
     use zeroize::Zeroizing;
 
-    // Both slots hold the Hub's own pairs: supplied entry refuses since M02-T02.
+    // Both slots hold the Hub's own pairs: a supplied entry is refused (M02-T02,
+    // and for Fleet M09-T08), so the Fleet pair is the Hub's own Fleet grant.
     fn fixture() -> (tempfile::TempDir, HubStore, CredentialVaultEntry) {
         let root = crate::private_tempdir().expect("fixture directory");
         let store = HubStore::initialize(root.path()).expect("store");
@@ -76,9 +77,7 @@ mod tests {
         let entry = CredentialVaultEntry::for_test(vault);
         let owner = CredentialEntry::own_login_fixture(Zeroizing::new("access-0001".into()), Zeroizing::new("refresh-0001".into())).expect("Owner entry");
         entry.vault().store_supplied_entry(owner, ReplacePolicy::ReplaceAny).expect("Owner barrier");
-        let fleet = CredentialEntry::fleet_supplied(Zeroizing::new("access-0002".into()), Zeroizing::new("refresh-0002".into()),
-            "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet entry");
-        entry.vault().store_supplied_entry(fleet, ReplacePolicy::ReplaceAny).expect("Fleet barrier");
+        crate::auth::credential_vault::fixtures::seed_own_fleet_grant(entry.vault(), "access-0002", "refresh-0002").expect("Fleet barrier");
         (root, store, entry)
     }
 
@@ -109,7 +108,7 @@ mod tests {
         assert_eq!(serde_json::to_value(result).expect("result"), serde_json::json!({"status":"rotated","rows":2,"keyAgeDays":0}));
         let plain = entry.vault().load(CredentialSlot::OwnerApi).expect("read").expect("pair");
         assert_eq!(plain.access.as_str(), "access-0001");
-        // M02-T02: the Fleet row is carried through rotation but refused at load.
-        assert_eq!(entry.vault().load(CredentialSlot::FleetApi).expect_err("Fleet refused").code(), "source_credential_disabled");
+        // M09-T08: the Hub's own Fleet grant is resealed and loads.
+        assert_eq!(entry.vault().load(CredentialSlot::FleetApi).expect("read").expect("pair").access.as_str(), "access-0002");
     }
 }

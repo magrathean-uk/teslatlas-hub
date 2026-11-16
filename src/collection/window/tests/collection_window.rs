@@ -232,11 +232,11 @@ fn collection_window_valid_grant_opens_and_gates() {
         .permit(Provider::Legacy, PermitKind::Request)
         .unwrap();
     assert_eq!(permit.time_left(), Duration::from_secs(3600));
-    assert_eq!(
+    // Fleet is no longer parked (M09-T08): it rides the same window.
+    assert!(
         hub.gate()
             .permit(Provider::Fleet, PermitKind::Request)
-            .unwrap_err(),
-        GateRefusal::ProviderParked
+            .is_ok()
     );
 }
 

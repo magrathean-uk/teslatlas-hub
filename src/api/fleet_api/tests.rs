@@ -1331,10 +1331,10 @@ async fn r06_fleet_auth_client_caps_headers_and_body_at_60_seconds() {
 // ------------------------------------------------- M02-T09: the window's egress gate
 
 mod collection_window_egress {
-    //! Every Fleet send asks the window's egress gate first. Fleet is parked, so
-    //! the gate refuses it before any connection both outside a window
-    //! (`window_closed`) and inside one (`provider_parked`); a send in flight
-    //! therefore never exists, and a retry after the deadline is refused too.
+    //! Every Fleet send asks the window's egress gate first. Outside a window
+    //! the gate refuses it before any connection (`window_closed`); inside one
+    //! it is permitted like a Legacy send (M09-T08), and a retry after the
+    //! deadline is refused.
     //! The double is a loopback server that counts connections and never answers,
     //! so a send that the gate let through would connect and run into the
     //! client's timeout.
@@ -1404,19 +1404,13 @@ mod collection_window_egress {
     }
 
     #[tokio::test]
-    async fn collection_window_egress_fleet_is_parked_so_no_send_is_ever_in_flight() {
+    async fn collection_window_egress_fleet_is_permitted_inside_an_open_window() {
         let server = SilentServer::spawn("http").await;
         let window = TestWindow::open(3_600);
         let _route = window.route(&server.url);
-        assert_eq!(
-            window
-                .gate()
-                .permit(Provider::Fleet, PermitKind::Request)
-                .unwrap_err(),
-            GateRefusal::ProviderParked
-        );
-        assert_refused_before_connecting(&server).await;
-        // The window itself stays open: a Legacy send would be permitted.
+        let permit = egress::ask(&server.url, Provider::Fleet, PermitKind::Request)
+            .expect("Fleet is permitted inside the window");
+        assert_eq!(permit.check(), Ok(()));
         assert!(
             window
                 .gate()
