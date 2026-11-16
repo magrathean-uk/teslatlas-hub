@@ -369,6 +369,10 @@ pub(crate) enum EntryProvenance<'a> {
         sign_in_id: Uuid,
         grant_secret: &'a Zeroizing<[u8; 32]>,
     },
+    /// The one-time takeover of the migration source's Owner API login
+    /// (DEC-172): the only provenance that may write origin `source_token`,
+    /// and only into an empty Owner API slot with the Hub as refresh owner.
+    SourceTakeover,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg_attr(
@@ -908,7 +912,18 @@ impl CredentialConnection {
             if expiry <= now {
                 return Err(StoreError::SignInExpired);
             }
-        } else if pair.origin == Some(CredentialOrigin::HubLogin) {
+        } else if matches!(provenance, EntryProvenance::SourceTakeover) {
+            if pair.origin != Some(CredentialOrigin::SourceToken)
+                || pair.slot != CredentialSlot::OwnerApi
+                || pair.refresh_owner != RefreshOwner::Hub
+                || policy != ReplacePolicy::OnlyIfEmpty
+            {
+                return Err(StoreError::InvalidOrigin);
+            }
+        } else if matches!(
+            pair.origin,
+            Some(CredentialOrigin::HubLogin | CredentialOrigin::SourceToken)
+        ) {
             return Err(StoreError::InvalidOrigin);
         }
         if policy == ReplacePolicy::OnlyIfEmpty
@@ -926,8 +941,10 @@ impl CredentialConnection {
         if credential_token_spent(&tx, pair.refresh_fingerprint.as_ref(), legacy)? {
             return Err(StoreError::RefreshTokenSpent);
         }
-        if matches!(provenance, EntryProvenance::Supplied)
-            && pair.refresh_present
+        if matches!(
+            provenance,
+            EntryProvenance::Supplied | EntryProvenance::SourceTakeover
+        ) && pair.refresh_present
             && credential_has_opaque_fence(&tx).map_err(StoreError::CredentialPairStore)?
         {
             return Err(StoreError::FreshSignInRequired);
