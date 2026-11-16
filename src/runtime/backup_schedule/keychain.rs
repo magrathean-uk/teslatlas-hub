@@ -316,6 +316,14 @@ mod mac {
         }
     }
 
+    /// Runs `step` with the Keychain's user interface turned off, taking the
+    /// same turn as the reads here: a step that would need a dialog is refused.
+    pub(crate) fn with_user_interface_off<T>(step: impl FnOnce() -> T) -> Result<T, KeychainFailure> {
+        let _turn = NO_PROMPT.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _no_prompt = SecKeychain::disable_user_interaction().map_err(|_| KeychainFailure::Unreadable)?;
+        Ok(step())
+    }
+
     pub(crate) fn classify(code: i32) -> KeychainFailure {
         match code {
             ERR_SEC_ITEM_NOT_FOUND | ERR_SEC_NO_SUCH_KEYCHAIN => KeychainFailure::Missing,
@@ -374,6 +382,8 @@ mod mac {
 
 #[cfg(all(target_os = "macos", test))]
 pub(crate) use mac::classify;
+#[cfg(target_os = "macos")]
+pub(crate) use mac::with_user_interface_off;
 
 /// Elsewhere there is no Keychain: the password comes from its file.
 #[cfg(not(target_os = "macos"))]

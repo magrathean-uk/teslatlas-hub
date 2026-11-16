@@ -17,11 +17,17 @@
 //!
 //! The backup password (Security framework, user interface turned off) is
 //! copied on first read and read back before the earlier item is retired.
-//! A window anchor goes through `/usr/bin/security`, which cannot turn the
-//! user interface off, so its load path adds no change at all: a missing
-//! current anchor is read from the earlier item through a bounded step, and
-//! the earlier item is retired only after the next current write reads back,
-//! each step stopped at [`STEP_DEADLINE`].
+//! A window anchor is stored through `/usr/bin/security`, so its items trust
+//! only that tool and the Hub binary cannot read their values itself. Its load
+//! path adds no change at all: a missing current anchor is read from the
+//! earlier item, and the earlier item is retired only after the next current
+//! write reads back. Every added step first asks the Keychain with its user
+//! interface turned off ([`NoPromptItems`]) whether the item exists: a locked
+//! keychain is refused there (unavailable, nothing changes) and an absent item
+//! needs no further call. Only an item shown to exist on an unlocked keychain
+//! is read through `security`, which created it and which its access list
+//! trusts, stopped at [`STEP_DEADLINE`]. The retirement itself runs with the
+//! user interface off; a refusal keeps the earlier item for the next write.
 
 use std::{
     io,
@@ -151,6 +157,96 @@ pub fn bounded_output_within(command: &mut Command, deadline: Duration) -> io::R
             return Err(io::Error::new(io::ErrorKind::TimedOut, "the Keychain step did not finish in time"));
         }
         std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// The Keychain with its user interface turned off: whether an item exists
+/// (its attributes only, never its value) and its removal. Neither can show
+/// a dialog: a locked keychain, or an item whose removal would need one, is
+/// refused as unavailable.
+pub trait NoPromptItems: Send + Sync {
+    fn exists(&self, service: &str, account: &str) -> Result<bool, Refusal>;
+    fn remove(&self, service: &str, account: &str) -> Result<(), Refusal>;
+}
+
+/// The owner's keychain search list through the Security framework.
+pub struct SystemNoPromptItems;
+
+#[cfg(target_os = "macos")]
+impl SystemNoPromptItems {
+    fn query(service: &str, account: &str) -> security_framework::item::ItemSearchOptions {
+        use security_framework::item::{ItemClass, ItemSearchOptions};
+        let mut query = ItemSearchOptions::new();
+        query.class(ItemClass::generic_password()).service(service).account(account);
+        query
+    }
+}
+
+#[cfg(target_os = "macos")]
+const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
+
+#[cfg(target_os = "macos")]
+impl NoPromptItems for SystemNoPromptItems {
+    fn exists(&self, service: &str, account: &str) -> Result<bool, Refusal> {
+        use crate::runtime::backup_schedule::keychain::with_user_interface_off;
+        use security_framework::item::Limit;
+        let found = with_user_interface_off(|| {
+            Self::query(service, account).load_attributes(true).limit(Limit::Max(1)).search()
+        })
+        .map_err(|_| Refusal::AnchorUnavailable)?;
+        match found {
+            Ok(items) => Ok(!items.is_empty()),
+            Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(false),
+            Err(_) => Err(Refusal::AnchorUnavailable),
+        }
+    }
+
+    fn remove(&self, service: &str, account: &str) -> Result<(), Refusal> {
+        use crate::runtime::backup_schedule::keychain::with_user_interface_off;
+        match with_user_interface_off(|| Self::query(service, account).delete()).map_err(|_| Refusal::AnchorUnavailable)? {
+            Ok(()) => Ok(()),
+            Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(()),
+            Err(_) => Err(Refusal::AnchorUnavailable),
+        }
+    }
+}
+
+/// Elsewhere there is no Keychain to hand over.
+#[cfg(not(target_os = "macos"))]
+impl NoPromptItems for SystemNoPromptItems {
+    fn exists(&self, _service: &str, _account: &str) -> Result<bool, Refusal> {
+        Err(Refusal::AnchorUnavailable)
+    }
+    fn remove(&self, _service: &str, _account: &str) -> Result<(), Refusal> {
+        Err(Refusal::AnchorUnavailable)
+    }
+}
+
+/// One service's anchor item for the rename's own steps (DEC-160): reads
+/// are gated by a no-prompt existence check, and retirement runs with the
+/// user interface off. It never writes.
+pub struct AnchorStep<'a> {
+    pub service: &'a str,
+    pub items: &'a dyn NoPromptItems,
+    /// Reads an item shown to exist, through `/usr/bin/security`, bounded.
+    pub read_value: ReadValue<'a>,
+}
+
+/// How an [`AnchorStep`] reads a value once the item is shown to exist.
+pub type ReadValue<'a> = &'a (dyn Fn(&str) -> Result<Option<String>, Refusal> + Sync);
+
+impl AnchorStore for AnchorStep<'_> {
+    fn read(&self, name: &str) -> Result<Option<String>, Refusal> {
+        if !self.items.exists(self.service, name)? {
+            return Ok(None);
+        }
+        (self.read_value)(name)
+    }
+    fn write(&self, _name: &str, _value: &str) -> Result<(), Refusal> {
+        Err(Refusal::AnchorUnavailable)
+    }
+    fn retire(&self, name: &str) -> Result<(), Refusal> {
+        self.items.remove(self.service, name)
     }
 }
 
@@ -451,6 +547,83 @@ mod tests {
         let output = bounded_output_within(&mut quick, Duration::from_secs(5)).unwrap();
         assert!(output.status.success());
         assert_eq!(output.stdout, b"41\n");
+    }
+
+    /// An injected no-prompt Keychain: items by (service, account), and
+    /// whether it refuses (a locked keychain, or a removal needing a dialog).
+    #[derive(Default)]
+    struct NoPrompt {
+        items: Mutex<HashMap<(String, String), String>>,
+        refuses_lookup: Mutex<bool>,
+        refuses_removal: Mutex<bool>,
+    }
+
+    impl NoPromptItems for NoPrompt {
+        fn exists(&self, service: &str, account: &str) -> Result<bool, Refusal> {
+            if *self.refuses_lookup.lock().unwrap() {
+                return Err(Refusal::AnchorUnavailable);
+            }
+            Ok(self.items.lock().unwrap().contains_key(&(service.to_owned(), account.to_owned())))
+        }
+        fn remove(&self, service: &str, account: &str) -> Result<(), Refusal> {
+            if *self.refuses_removal.lock().unwrap() {
+                return Err(Refusal::AnchorUnavailable);
+            }
+            self.items.lock().unwrap().remove(&(service.to_owned(), account.to_owned()));
+            Ok(())
+        }
+    }
+
+    /// REV2-CX-M08-T12A finding 5: every added anchor step goes through the
+    /// Keychain with its user interface off. A refused removal keeps the
+    /// earlier item for the next write; a refused lookup runs no `security`
+    /// read and reports unavailable; an absent item runs no `security` read.
+    #[test]
+    fn anchor_rename_steps_use_the_keychain_with_its_user_interface_off() {
+        const CURRENT: &str = "Tesatlas Hub Window";
+        const EARLIER: &str = "Teslatlas Hub Window"; // rename:keep
+        let keychain = NoPrompt::default();
+        let key = |service: &str| (service.to_owned(), "consumed".to_owned());
+        keychain.items.lock().unwrap().insert(key(EARLIER), "41".to_owned());
+        let current = MemoryAnchor::new();
+        let security_reads = Mutex::new(Vec::<String>::new());
+        let read_value = |service: &'static str| {
+            let (items, reads) = (&keychain.items, &security_reads);
+            move |name: &str| -> Result<Option<String>, Refusal> {
+                reads.lock().unwrap().push(service.to_owned());
+                Ok(items.lock().unwrap().get(&(service.to_owned(), name.to_owned())).cloned())
+            }
+        };
+        let (read_current, read_earlier) = (read_value(CURRENT), read_value(EARLIER));
+        let current_step = AnchorStep { service: CURRENT, items: &keychain, read_value: &read_current };
+        let earlier_step = AnchorStep { service: EARLIER, items: &keychain, read_value: &read_earlier };
+
+        // The removal is refused: the write lands, the earlier item stays.
+        *keychain.refuses_removal.lock().unwrap() = true;
+        let write = |value: &str| {
+            current.write("consumed", value).unwrap();
+            keychain.items.lock().unwrap().insert(key(CURRENT), value.to_owned());
+            write_anchor(&current, &current_step, &earlier_step, "consumed", value)
+        };
+        write("42").unwrap();
+        assert_eq!(keychain.items.lock().unwrap().get(&key(EARLIER)).map(String::as_str), Some("41"));
+        // The next write, with the removal allowed, retires it.
+        *keychain.refuses_removal.lock().unwrap() = false;
+        write("43").unwrap();
+        assert!(!keychain.items.lock().unwrap().contains_key(&key(EARLIER)));
+
+        // A missing current anchor and no earlier item: no `security` read at all.
+        security_reads.lock().unwrap().clear();
+        assert_eq!(read_anchor(&MemoryAnchor::new(), &earlier_step, "consumed").unwrap(), None);
+        assert!(security_reads.lock().unwrap().is_empty());
+        // A locked keychain: unavailable (never missing), still no `security` read.
+        keychain.items.lock().unwrap().insert(key(EARLIER), "41".to_owned());
+        *keychain.refuses_lookup.lock().unwrap() = true;
+        assert_eq!(read_anchor(&MemoryAnchor::new(), &earlier_step, "consumed").err(), Some(Refusal::AnchorUnavailable));
+        assert!(security_reads.lock().unwrap().is_empty());
+        *keychain.refuses_lookup.lock().unwrap() = false;
+        assert_eq!(read_anchor(&MemoryAnchor::new(), &earlier_step, "consumed").unwrap().as_deref(), Some("41"));
+        assert_eq!(*security_reads.lock().unwrap(), vec![EARLIER.to_owned()]);
     }
 
     /// REV-CX-M08-T12A finding 8: before the swap no Keychain store gains a

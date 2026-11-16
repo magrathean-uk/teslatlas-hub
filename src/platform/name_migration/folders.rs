@@ -137,6 +137,19 @@ fn hold_locks(folder: &Path, locks: &[PathBuf]) -> io::Result<Option<Vec<OwnedFd
     Ok(Some(held))
 }
 
+/// Whether every lock of `plan` is held under its current folder too. A Hub
+/// of the current name takes its host claim under both spellings, the earlier
+/// one first (`HostClaim`), so a claim held under both names belongs to a
+/// current Hub, which also guards the earlier name: no earlier Hub can be
+/// collecting. An error or a free lock answers `false`.
+pub fn held_under_current(plan: &FolderMove) -> bool {
+    !plan.locks.is_empty()
+        && plan.locks.iter().all(|lock| {
+            open(&plan.current.join(lock), OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC, Mode::empty())
+                .is_ok_and(|fd| matches!(flock(&fd, FlockOperation::NonBlockingLockExclusive), Err(Errno::WOULDBLOCK)))
+        })
+}
+
 fn sync_parent(path: &Path) -> io::Result<()> {
     let parent = path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or(Path::new("."));
     std::fs::File::open(parent)?.sync_all()

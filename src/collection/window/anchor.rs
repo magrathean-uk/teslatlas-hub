@@ -119,10 +119,6 @@ impl KeychainAnchor {
 }
 
 impl KeychainAnchor {
-    pub(crate) fn delete_args(&self, name: &str) -> Vec<String> {
-        ["delete-generic-password", "-s", &self.service, "-a", name].map(str::to_owned).to_vec()
-    }
-
     /// Runs `security`. A rename step (DEC-160) is `bounded`: its child is
     /// stopped at a deadline, so it never holds a load or a write up.
     fn security(&self, args: Vec<String>, bounded: bool) -> Result<std::process::Output, Refusal> {
@@ -155,18 +151,19 @@ impl KeychainAnchor {
         }
     }
 
-    /// Only the rename step retires an item, always bounded.
-    fn retire_own(&self, name: &str) -> Result<(), Refusal> {
-        match self.security(self.delete_args(name), true)?.status.code() {
-            Some(0) | Some(SECURITY_ITEM_NOT_FOUND) => Ok(()),
-            _ => Err(Refusal::AnchorUnavailable),
-        }
-    }
-
     /// The same item under the service's earlier spelling, after the swap
     /// (DEC-160); `None` before it.
     fn earlier(&self) -> Option<Self> {
         crate::platform::name_migration::keychain::earlier_service(&self.service).map(|service| Self { service })
+    }
+
+    /// Runs `step` with this service's item as a rename step: a no-prompt
+    /// existence check before any bounded `security` read, and retirement
+    /// with the Keychain's user interface off (DEC-160).
+    fn rename_step<T>(&self, step: impl FnOnce(&dyn AnchorStore) -> T) -> T {
+        use crate::platform::name_migration::keychain::{AnchorStep, SystemNoPromptItems};
+        let read_value = |name: &str| self.read_own(name, true);
+        step(&AnchorStep { service: &self.service, items: &SystemNoPromptItems, read_value: &read_value })
     }
 }
 
@@ -182,35 +179,26 @@ impl AnchorStore for OwnItem<'_> {
     }
 }
 
-/// One service name's item for the rename's own steps: every one bounded.
-struct RenameStep<'a>(&'a KeychainAnchor);
-
-impl AnchorStore for RenameStep<'_> {
-    fn read(&self, name: &str) -> Result<Option<String>, Refusal> {
-        self.0.read_own(name, true)
-    }
-    fn write(&self, _name: &str, _value: &str) -> Result<(), Refusal> {
-        Err(Refusal::AnchorUnavailable)
-    }
-    fn retire(&self, name: &str) -> Result<(), Refusal> {
-        self.0.retire_own(name)
-    }
-}
-
 /// Reads and writes the current service's item; after the swap an item still
 /// under the earlier service is read in its place and retired after the next
 /// write (DEC-160).
 impl AnchorStore for KeychainAnchor {
     fn read(&self, name: &str) -> Result<Option<String>, Refusal> {
         match self.earlier() {
-            Some(earlier) => crate::platform::name_migration::keychain::read_anchor(&OwnItem(self), &RenameStep(&earlier), name),
+            Some(earlier) => earlier.rename_step(|earlier_step| {
+                crate::platform::name_migration::keychain::read_anchor(&OwnItem(self), earlier_step, name)
+            }),
             None => self.read_own(name, false),
         }
     }
 
     fn write(&self, name: &str, value: &str) -> Result<(), Refusal> {
         match self.earlier() {
-            Some(earlier) => crate::platform::name_migration::keychain::write_anchor(&OwnItem(self), &RenameStep(self), &RenameStep(&earlier), name, value),
+            Some(earlier) => self.rename_step(|current_step| {
+                earlier.rename_step(|earlier_step| {
+                    crate::platform::name_migration::keychain::write_anchor(&OwnItem(self), current_step, earlier_step, name, value)
+                })
+            }),
             None => self.write_own(name, value),
         }
     }

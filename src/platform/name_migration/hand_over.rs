@@ -405,7 +405,13 @@ fn move_fences(layout: &Layout) -> Result<Vec<(String, String)>, Report> {
     let mut moved = Vec::new();
     for (name, plan, _) in layout.other_moves().into_iter().filter(|(_, _, fence)| *fence) {
         let Some(plan) = plan else { continue };
-        let outcome = folders::move_folder(&plan);
+        let mut outcome = folders::move_folder(&plan);
+        // A current Hub holds its claim under both spellings: a claim held
+        // under the current name too is its own, and the earlier folder (which
+        // it recreates to hold the earlier lock) stays beside the current one.
+        if matches!(outcome, Ok(FolderOutcome::Deferred)) && folders::held_under_current(&plan) {
+            outcome = Ok(FolderOutcome::BothKept);
+        }
         moved.push((name.to_owned(), describe(&outcome)));
         let blocked = match outcome {
             Ok(FolderOutcome::Deferred) => Report {

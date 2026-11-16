@@ -483,6 +483,35 @@ fn a_window_claim_taken_after_the_data_moved_holds_the_start_back() {
     assert!(report.install && report.start, "{report:?}");
 }
 
+/// REV2-CX-M08-T12A finding 4: a running current Hub holds its claim under
+/// both spellings (it recreates the earlier claim folder to do so). An app
+/// start must not take that for an earlier Hub and defer; an earlier Hub
+/// holding only the earlier claim still defers.
+#[test]
+fn a_current_hub_holding_both_claims_does_not_defer_the_app_start() {
+    let _renamed = super::spelling::assume_renamed();
+    let home = Home::new();
+    home.seed_earlier();
+    let mut launchd = Home::running_earlier();
+    assert_eq!(hand_over::prepare(&home.layout, &mut launchd).status, Status::Prepared);
+    home.app_installs_current_agent();
+    assert_eq!(hand_over::complete(&home.layout, true, || Ok(())).status, Status::Done);
+    assert!(!home.window(EARLIER_FOLDER).exists());
+
+    let claim = crate::collection::window::HostClaim::acquire(&home.window(CURRENT_FOLDER).join(HOST_CLAIM_LOCK)).unwrap();
+    assert!(home.window(EARLIER_FOLDER).join(HOST_CLAIM_LOCK).exists());
+    let report = hand_over::prepare(&home.layout, &mut launchd);
+    assert_eq!(report.status, Status::Nothing, "{report:?}");
+    assert!(report.folders.contains(&("window".to_owned(), "both_kept".to_owned())), "{report:?}");
+    drop(claim);
+
+    // Only the earlier claim held (an old binary run by hand): still deferred.
+    let holder = home.hold_earlier_claim();
+    assert_eq!(hand_over::prepare(&home.layout, &mut launchd).status, Status::Deferred);
+    drop(holder);
+    assert_eq!(hand_over::prepare(&home.layout, &mut launchd).status, Status::Nothing);
+}
+
 /// REV-CX-M08-T12A finding 8: with this build's own names (before the swap)
 /// an installed Hub is not touched: no folder, configuration or launchd step.
 #[test]
