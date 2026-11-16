@@ -621,7 +621,7 @@ fn projection_delta_for_mutations_in(
         match entity {
             ProjectionDeltaEntity::Car => {
                 delta.cars.push(load_projection_json(
-                    &connection,
+                    connection,
                     "materialised_cars",
                     "car_json",
                     "car_id",
@@ -633,7 +633,7 @@ fn projection_delta_for_mutations_in(
                     continue;
                 }
                 let car: ProjectionCar = load_projection_json(
-                    &connection,
+                    connection,
                     "materialised_cars",
                     "car_json",
                     "car_id",
@@ -645,21 +645,21 @@ fn projection_delta_for_mutations_in(
                 });
             }
             ProjectionDeltaEntity::Drive => delta.drives.push(load_projection_json(
-                &connection,
+                connection,
                 "materialised_drives",
                 "drive_json",
                 "drive_id",
                 &mutation,
             )?),
             ProjectionDeltaEntity::Position => delta.positions.push(load_projection_json(
-                &connection,
+                connection,
                 "materialised_positions",
                 "position_json",
                 "position_id",
                 &mutation,
             )?),
             ProjectionDeltaEntity::Charge => delta.charges.push(load_projection_json(
-                &connection,
+                connection,
                 "materialised_charges",
                 "charge_json",
                 "charge_id",
@@ -667,7 +667,7 @@ fn projection_delta_for_mutations_in(
             )?),
             ProjectionDeltaEntity::ChargeSample => {
                 delta.charge_samples.push(load_projection_json(
-                    &connection,
+                    connection,
                     "materialised_charge_samples",
                     "sample_json",
                     "sample_id",
@@ -675,14 +675,14 @@ fn projection_delta_for_mutations_in(
                 )?);
             }
             ProjectionDeltaEntity::State => delta.states.push(load_projection_json(
-                &connection,
+                connection,
                 "materialised_states",
                 "state_json",
                 "state_id",
                 &mutation,
             )?),
             ProjectionDeltaEntity::Update => delta.updates.push(load_projection_json(
-                &connection,
+                connection,
                 "materialised_updates",
                 "update_json",
                 "update_id",
