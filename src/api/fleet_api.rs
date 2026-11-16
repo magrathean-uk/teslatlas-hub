@@ -6,6 +6,8 @@
 //! sent only to an explicitly configured loopback instance of Tesla's command
 //! proxy, which owns the vehicle-command signing protocol.
 
+pub mod partner;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,

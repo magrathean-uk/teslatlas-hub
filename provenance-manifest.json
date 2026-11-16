@@ -358,6 +358,7 @@
         "src/auth/credentials.rs",
         "src/auth/crypto.rs",
         "src/auth/fleet_credentials.rs",
+        "src/auth/fleet_keys.rs",
         "src/auth/mod.rs",
         "src/collection/collector.rs",
         "src/collection/current_state.rs",
