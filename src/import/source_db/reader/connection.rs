@@ -6,7 +6,7 @@ pub(crate) struct SourceDbSnapshotSession {
 }
 
 impl SourceDbSnapshotSession {
-    fn new(client: Client, connection_task: tokio::task::JoinHandle<()>) -> Self {
+    pub(crate) fn new(client: Client, connection_task: tokio::task::JoinHandle<()>) -> Self {
         Self {
             client: Some(client),
             connection_task: Some(connection_task),
@@ -147,7 +147,7 @@ impl ExportedSnapshotLease {
     }
 }
 
-async fn connect_source(
+pub(crate) async fn connect_source(
     source: &ReadOnlySource,
     password: &SourceDbPassword,
     limits: SourceDbReadLimits,

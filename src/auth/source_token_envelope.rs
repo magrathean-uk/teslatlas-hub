@@ -44,9 +44,12 @@ pub fn decrypt_legacy_owner_tokens(
     let cipher = cloak_cipher(encryption_key)?;
     let access = Zeroizing::new(decrypt_cloak_value(&cipher, encrypted_access)?);
     let refresh = Zeroizing::new(decrypt_cloak_value(&cipher, encrypted_refresh)?);
-    let access = secret_utf8_copy(&access)?;
-    let refresh = secret_utf8_copy(&refresh)?;
-    OwnerTokens::from_secret_parts(access, refresh)
+    let mut access = secret_utf8_copy(&access)?;
+    let mut refresh = secret_utf8_copy(&refresh)?;
+    OwnerTokens::from_secret_parts(
+        std::mem::take(&mut *access),
+        std::mem::take(&mut *refresh),
+    )
         .map_err(|_| SourceDbTokenError::InvalidPlaintext)
 }
 
@@ -86,9 +89,9 @@ pub(crate) fn legacy_access_token_digest(access_token: &str) -> uuid::Uuid {
     uuid::Uuid::from_bytes(bytes[..16].try_into().expect("fixed digest prefix"))
 }
 
-fn secret_utf8_copy(bytes: &[u8]) -> Result<String, SourceDbTokenError> {
+fn secret_utf8_copy(bytes: &[u8]) -> Result<Zeroizing<String>, SourceDbTokenError> {
     std::str::from_utf8(bytes)
-        .map(str::to_owned)
+        .map(|text| Zeroizing::new(text.to_owned()))
         .map_err(|_| SourceDbTokenError::InvalidPlaintext)
 }
 
