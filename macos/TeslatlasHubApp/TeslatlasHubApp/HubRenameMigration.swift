@@ -7,7 +7,8 @@ import Foundation
 ///
 /// 1. Environment variables still exported under the earlier spelling are also
 ///    set under the current one (a set current name always wins).
-/// 2. The app's settings move from the earlier bundle identifier's domain.
+/// 2. The app's settings are copied once from the earlier bundle identifier's
+///    domain; the earlier domain is kept for this release.
 /// 3. The bundled service binary runs `migrate-names`: it stops the earlier
 ///    LaunchAgent, moves the Hub's folders and points the configuration at
 ///    them. The app then writes the current LaunchAgent with its own writer,
@@ -17,7 +18,7 @@ import Foundation
 /// Every step is idempotent. A step that is deferred or fails changes nothing
 /// the next attempt cannot finish: the owner is offered Try Again or Quit, and
 /// the app never opens on an empty Hub while the earlier data waits. Before the
-/// rename every current name equals its earlier one and nothing here acts.
+/// swap (`isRenamedBuild` is false) none of these steps runs at all.
 enum HubRenameMigration {
     /// The current and earlier spellings in their three written forms.
     static let forms: [(current: String, earlier: String)] = [
@@ -66,30 +67,33 @@ enum HubRenameMigration {
 
     // MARK: - Settings
 
+    /// The key that records, inside the current domain and in the same write
+    /// as the adopted values, that the earlier settings were adopted once.
+    static let adoptedMarker = "HubRenameSettingsAdopted"
+
     /// Settings in the earlier bundle identifier's domain, with each key in the
     /// current spelling, merged under the current domain's own values (which
-    /// win). `nil` when there is nothing to move.
+    /// win). `nil` when there is nothing to adopt, or they were adopted before.
     static func preferencesToAdopt(earlier: [String: Any]?, current: [String: Any]?) -> [String: Any]? {
-        guard let earlier, !earlier.isEmpty else { return nil }
+        guard let earlier, !earlier.isEmpty, current?[adoptedMarker] == nil else { return nil }
         var merged = current ?? [:]
         for (key, value) in earlier {
             let renamed = Self.current(key) ?? key
             if merged[renamed] == nil { merged[renamed] = value }
         }
+        merged[adoptedMarker] = true
         return merged
     }
 
-    /// Moves the settings; the earlier domain is removed only after the merged
-    /// one reads back with every key.
+    /// Copies the settings once. The earlier domain is kept for this release:
+    /// nothing is deleted on a read-back that cannot prove the copy is durable,
+    /// and an interrupted copy (no marker yet) is simply made again.
     static func adoptEarlierPreferences(currentDomain: String,
                                         read: (String) -> [String: Any]?,
-                                        write: ([String: Any], String) -> Void,
-                                        remove: (String) -> Void) {
+                                        write: ([String: Any], String) -> Void) {
         guard let earlierDomain = earlier(currentDomain),
               let merged = preferencesToAdopt(earlier: read(earlierDomain), current: read(currentDomain)) else { return }
         write(merged, currentDomain)
-        guard let saved = read(currentDomain), Set(saved.keys).isSuperset(of: merged.keys) else { return }
-        remove(earlierDomain)
     }
 
     // MARK: - Service hand-over
@@ -114,7 +118,7 @@ enum HubRenameMigration {
         let (status, output) = run([verb])
         let report = try? JSONDecoder().decode(StepReport.self, from: output)
         guard status == 0, let report else {
-            return .retry(status == deferredExitStatus ? deferredMessage : failureDetail(report))
+            return .retry(status == deferredExitStatus ? (report?.detail ?? deferredMessage) : failureDetail(report))
         }
         guard report.install else { return .proceed }
         do {
@@ -142,6 +146,14 @@ enum HubRenameMigration {
 
     // MARK: - Start-up
 
+    /// The product's name as this build spells it; the scripted rename changes it.
+    static let productName = "Teslatlas Hub"
+
+    /// Whether this build carries the current spelling. Before the swap it is
+    /// false and the start-up step changes nothing: no environment variable,
+    /// no settings and no helper run.
+    static var isRenamedBuild: Bool { earlier(productName) != nil }
+
     /// Whether this process is the installed app (not a test host, preview or source run).
     static func appliesTo(environment: [String: String]) -> Bool {
         !HubTestHost.isXCTest(environment: environment)
@@ -152,20 +164,38 @@ enum HubRenameMigration {
             && environment["TESLATLAS_HUB_TEST_MODE"] != "1"
     }
 
+    /// The start-up's effects, injected by tests.
+    struct StartUp {
+        var environment: () -> [String: String]
+        var setEnvironment: (String, String) -> Void
+        var adoptPreferences: () -> Void
+        var handOver: () -> Void
+
+        static var live: StartUp { StartUp(
+            environment: { ProcessInfo.processInfo.environment },
+            setEnvironment: { setenv($0, $1, 0) },
+            adoptPreferences: {
+                guard let domain = Bundle.main.bundleIdentifier else { return }
+                let defaults = UserDefaults.standard
+                HubRenameMigration.adoptEarlierPreferences(currentDomain: domain,
+                                                           read: { defaults.persistentDomain(forName: $0) },
+                                                           write: { defaults.setPersistentDomain($0, forName: $1) })
+            },
+            handOver: { HubRenameMigration.handOverUntilDone() }) }
+    }
+
     /// Runs the hand-over in the installed app; called once from `main.swift`.
-    static func prepareBeforeLaunch() {
-        for (name, value) in environmentAdditions(ProcessInfo.processInfo.environment) {
-            setenv(name, value, 0)
+    static func prepareBeforeLaunch(renamed: Bool = isRenamedBuild, steps: StartUp = .live) {
+        guard renamed else { return }
+        for (name, value) in environmentAdditions(steps.environment()) {
+            steps.setEnvironment(name, value)
         }
-        let environment = ProcessInfo.processInfo.environment
-        guard appliesTo(environment: environment) else { return }
-        if let domain = Bundle.main.bundleIdentifier {
-            let defaults = UserDefaults.standard
-            adoptEarlierPreferences(currentDomain: domain,
-                                    read: { defaults.persistentDomain(forName: $0) },
-                                    write: { defaults.setPersistentDomain($0, forName: $1) },
-                                    remove: { defaults.removePersistentDomain(forName: $0) })
-        }
+        guard appliesTo(environment: steps.environment()) else { return }
+        steps.adoptPreferences()
+        steps.handOver()
+    }
+
+    private static func handOverUntilDone() {
         guard let binary = Bundle.main.url(forResource: "teslatlas-hub", withExtension: nil) else { return }
         let home = HubTestHost.defaultRealHome()
         let writer = HubLaunchAgentWriter(configuration: {

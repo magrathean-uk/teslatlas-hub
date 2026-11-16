@@ -26,40 +26,78 @@ final class HubRenameMigrationTests: XCTestCase {
         XCTAssertEqual(additions, ["TESATLAS_HUB_REDUCE_MOTION": "1"])
     }
 
-    func testSettingsMoveWithRenamedKeysAndTheCurrentValuesWin() {
+    func testSettingsAreCopiedOnceWithRenamedKeysTheCurrentValuesWinAndTheEarlierDomainStays() {
         var domains: [String: [String: Any]] = [
             earlierDomain: ["TeslatlasHubAppearance": "dark", "NSWindow Frame main": "1 2 3 4"], // rename:keep
             "eu.tesatlas.hub.app": ["NSWindow Frame main": "5 6 7 8"],
         ]
         HubRenameMigration.adoptEarlierPreferences(currentDomain: "eu.tesatlas.hub.app",
                                                    read: { domains[$0] },
-                                                   write: { domains[$1] = $0 },
-                                                   remove: { domains[$0] = nil })
+                                                   write: { domains[$1] = $0 })
         let current = domains["eu.tesatlas.hub.app"]
         XCTAssertEqual(current?["TesatlasHubAppearance"] as? String, "dark")
-        XCTAssertEqual(current?["NSWindow Frame main"] as? String, "5 6 7 8")
-        XCTAssertNil(domains[earlierDomain])
-        // A second launch finds nothing to move and changes nothing.
+        XCTAssertEqual(current?["NSWindow Frame main"] as? String, "5 6 7 8", "same key, different value: current wins")
+        XCTAssertEqual(current?[HubRenameMigration.adoptedMarker] as? Bool, true)
+        XCTAssertEqual(domains[earlierDomain]?["NSWindow Frame main"] as? String, "1 2 3 4", "the earlier domain is kept")
+        // A second launch finds the marker and writes nothing, even after the
+        // owner removed an adopted key.
+        domains["eu.tesatlas.hub.app"]?["TesatlasHubAppearance"] = nil
         HubRenameMigration.adoptEarlierPreferences(currentDomain: "eu.tesatlas.hub.app",
                                                    read: { domains[$0] },
-                                                   write: { _, _ in XCTFail("nothing to write") },
-                                                   remove: { _ in XCTFail("nothing to remove") })
+                                                   write: { _, _ in XCTFail("adopted once only") })
     }
 
-    func testSettingsAreKeptWhenTheMergedDomainDoesNotReadBack() {
+    func testAnInterruptedSettingsCopyIsMadeAgainAndNothingIsLost() {
         var domains: [String: [String: Any]] = [earlierDomain: ["TeslatlasHubAppearance": "dark"]] // rename:keep
+        // The write never became durable (the app died first).
         HubRenameMigration.adoptEarlierPreferences(currentDomain: "eu.tesatlas.hub.app",
                                                    read: { domains[$0] },
-                                                   write: { _, _ in },
-                                                   remove: { domains[$0] = nil })
+                                                   write: { _, _ in })
+        XCTAssertNotNil(domains[earlierDomain])
+        HubRenameMigration.adoptEarlierPreferences(currentDomain: "eu.tesatlas.hub.app",
+                                                   read: { domains[$0] },
+                                                   write: { domains[$1] = $0 })
+        XCTAssertEqual(domains["eu.tesatlas.hub.app"]?["TesatlasHubAppearance"] as? String, "dark")
         XCTAssertNotNil(domains[earlierDomain])
     }
 
     func testBeforeTheRenameNoSettingsMove() {
         HubRenameMigration.adoptEarlierPreferences(currentDomain: earlierDomain,
                                                    read: { _ in XCTFail("no read"); return nil },
-                                                   write: { _, _ in XCTFail("no write") },
-                                                   remove: { _ in XCTFail("no remove") })
+                                                   write: { _, _ in XCTFail("no write") })
+    }
+
+    private func recordingStartUp(_ effects: Box) -> HubRenameMigration.StartUp {
+        HubRenameMigration.StartUp(environment: { [earlierVariable] in [earlierVariable: "1", "XCTestConfigurationFilePath": "/x"] },
+                                   setEnvironment: { name, _ in effects.items.append("setenv \(name)") },
+                                   adoptPreferences: { effects.items.append("settings") },
+                                   handOver: { effects.items.append("hand-over") })
+    }
+
+    private final class Box { var items: [String] = [] }
+
+    /// REV-CX-M08-T12A finding 8: this build (before the swap) changes no
+    /// environment variable, copies no settings and runs no helper.
+    func testTheCurrentBuildTakesNoStartUpStep() {
+        let beforeTheSwap = HubRenameMigration.productName == "Teslatlas Hub" // rename:keep
+        XCTAssertEqual(HubRenameMigration.isRenamedBuild, !beforeTheSwap)
+        let effects = Box()
+        HubRenameMigration.prepareBeforeLaunch(renamed: false, steps: recordingStartUp(effects))
+        XCTAssertEqual(effects.items, [])
+        if beforeTheSwap {
+            HubRenameMigration.prepareBeforeLaunch(steps: recordingStartUp(effects))
+            XCTAssertEqual(effects.items, [], "the default follows this build's own name")
+        }
+        // A renamed build in a test host sets the variables only.
+        HubRenameMigration.prepareBeforeLaunch(renamed: true, steps: recordingStartUp(effects))
+        XCTAssertEqual(effects.items, ["setenv TESATLAS_HUB_REDUCE_MOTION"])
+    }
+
+    func testADeferralShowsTheStepsOwnReason() {
+        let outcome = HubRenameMigration.handOver(run: { _ in (75, self.report("deferred", detail: "window claim held")) },
+                                                  installAgent: { XCTFail("not after a deferral") },
+                                                  prepareLogs: {})
+        XCTAssertEqual(outcome, .retry("window claim held"))
     }
 
     private func report(_ status: String, install: Bool = false, start: Bool = false, detail: String? = nil) -> Data {
