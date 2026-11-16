@@ -264,17 +264,10 @@ pub fn unavailable(failure: KeychainFailure, account: &str) -> OperatorRefusal {
 }
 
 /// The service's Keychain: the owner's default keychain search list. After
-/// the rename (DEC-160) an item still under the earlier service name is moved
+/// the swap (DEC-160) an item still under the earlier service name is moved
 /// to the current one on first read (`platform::name_migration::keychain`).
 pub fn system_keychain() -> std::sync::Arc<dyn PasswordKeychain> {
-    let current: std::sync::Arc<dyn PasswordKeychain> = std::sync::Arc::new(SystemKeychain::search_list());
-    match crate::platform::name_migration::spelling::earlier(KEYCHAIN_SERVICE) {
-        Some(earlier) => std::sync::Arc::new(crate::platform::name_migration::keychain::MigratingPasswordKeychain::new(
-            current,
-            std::sync::Arc::new(SystemKeychain::search_list_for(earlier)),
-        )),
-        None => current,
-    }
+    crate::platform::name_migration::keychain::password_store(std::sync::Arc::new(SystemKeychain::search_list()), KEYCHAIN_SERVICE, |earlier| std::sync::Arc::new(SystemKeychain::search_list_for(earlier)))
 }
 
 #[cfg(target_os = "macos")]
