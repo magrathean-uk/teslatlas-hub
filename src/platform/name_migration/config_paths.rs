@@ -46,8 +46,10 @@ pub fn rewrite_moved_root(config: &Path, earlier_root: &Path, current_root: &Pat
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(ConfigOutcome::Missing),
         Err(error) => return Err(error),
     };
+    // A link, a folder or an oversized file is not this step's to change: the
+    // configuration loader reports it as it always has.
     if !metadata.file_type().is_file() || metadata.len() > MAX_CONFIG_BYTES {
-        return Err(io::Error::other("the Hub configuration is not a small regular file"));
+        return Ok(ConfigOutcome::Current);
     }
     let (Some(earlier), Some(current)) = (earlier_root.to_str(), current_root.to_str()) else {
         return Ok(ConfigOutcome::Current);
@@ -221,6 +223,18 @@ mod tests {
         fs::write(&config, &text).unwrap();
         assert!(rewrite_moved_root(&config, &earlier, &current).is_err());
         assert_eq!(fs::read_to_string(&config).unwrap(), text);
+    }
+
+    #[test]
+    fn a_linked_configuration_is_left_to_the_loader() {
+        let root = tempfile::tempdir().unwrap();
+        let (earlier, current, config) = seed(root.path());
+        let real = root.path().join("real.toml");
+        fs::rename(&config, &real).unwrap();
+        std::os::unix::fs::symlink(&real, &config).unwrap();
+        let before = fs::read_to_string(&real).unwrap();
+        assert_eq!(rewrite_moved_root(&config, &earlier, &current).unwrap(), ConfigOutcome::Current);
+        assert_eq!(fs::read_to_string(&real).unwrap(), before);
     }
 
     #[test]
