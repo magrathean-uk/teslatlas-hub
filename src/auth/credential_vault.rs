@@ -91,7 +91,10 @@ impl CredentialStoreError {
     }
 }
 /// Source credentials are disabled (M02-T02). The Owner API slot admits only
-/// a pair from the Hub's own login, refreshed by the Hub. The Fleet slot admits
+/// a pair from the Hub's own login, or the migration source's login the Hub
+/// has taken over (`source_token`, DEC-172), each refreshed by the Hub. A
+/// `source_token` pair with an external refresh owner, or on the Fleet slot,
+/// stays refused. The Fleet slot admits
 /// nothing: its `fleet_oauth` origin also labels supplied and migrated tokens,
 /// so, as the T01 design parks Fleet, every stored Fleet pair is refused until
 /// an authenticated own-exchange origin distinguishes the Hub's own Fleet
@@ -102,7 +105,7 @@ impl CredentialStoreError {
 /// is opened, and no setting, flag, variable or acknowledgement changes it.
 pub(crate) fn admit_stored_origin(slot: CredentialSlot, origin: Option<CredentialOrigin>, owner: RefreshOwner) -> Result<(), CredentialStoreError> {
     match origin {
-        Some(CredentialOrigin::HubLogin) if slot == CredentialSlot::OwnerApi && owner == RefreshOwner::Hub => Ok(()),
+        Some(CredentialOrigin::HubLogin | CredentialOrigin::SourceToken) if slot == CredentialSlot::OwnerApi && owner == RefreshOwner::Hub => Ok(()),
         Some(_) => Err(CredentialStoreError::SourceCredentialDisabled(slot)),
         None => Err(CredentialStoreError::UnknownOrigin(slot)),
     }
@@ -777,6 +780,8 @@ impl CredentialVault {
     /// older Hub could hold, so the load refusal can be exercised.
     #[cfg(any(test, debug_assertions))]
     pub(in crate::auth) fn store_supplied_entry(&self, entry: CredentialEntry, policy: ReplacePolicy) -> Result<Uuid, CredentialStoreError> {
+        // Only the takeover writes origin `source_token` (DEC-172).
+        if entry.origin == CredentialOrigin::SourceToken { return Err(CredentialStoreError::InvalidOrigin); }
         let mut state = self.lock()?; state.writable(true)?; Self::slot_writable(&mut state, entry.slot)?;
         let own_login = entry.origin == CredentialOrigin::HubLogin;
         let binding = if own_login {
@@ -816,6 +821,29 @@ impl CredentialVault {
         let VaultState { connection, commits_issued, .. } = &mut *state;
         connection.replace_credential_pair_with_commit(&row, &provenance, &entry.legacy, policy, &mut || *commits_issued += 1)?;
         #[cfg(debug_assertions)] entry::test_boundary("entry_committed")?;
+        state.barrier()?; Ok(generation)
+    }
+    /// The single writer of the migration source's taken-over Owner API login
+    /// (DEC-172), for the `take-over-source-token` verb only. It writes origin
+    /// `source_token` with the Hub as refresh owner into an empty Owner API
+    /// slot, due for refresh at once, and sends nothing. Refused before any key
+    /// is created or reserved: an occupied slot (`slot_occupied`), a spent
+    /// refresh token (`refresh_token_spent`) and, beside an opaque legacy
+    /// fence, `fresh_sign_in_required`; the write gate checks them again in
+    /// the pair's transaction.
+    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: the take-over-source-token verb (M09) is its caller."))]
+    pub(crate) fn store_source_takeover(&self, tokens: &crate::credentials::OwnerTokens) -> Result<Uuid, CredentialStoreError> {
+        let entry = CredentialEntry::source_takeover(tokens, self.now_ms()?.div_euclid(1000))?;
+        let mut state = self.lock()?; state.writable(true)?; Self::slot_writable(&mut state, entry.slot)?;
+        state.guard_read()?;
+        state.connection.check_supplied_credential_entry(entry.slot, entry.refresh.as_bytes(), &entry.legacy, ReplacePolicy::OnlyIfEmpty)?;
+        let generation = Uuid::new_v4();
+        let mut row = entry.row(generation);
+        let mut keys = self.keys.write().map_err(|_| CredentialStoreError::LockPoisoned)?;
+        self.reserve(&mut state, &mut keys, 2)?;
+        row.seal(keys.as_ref().ok_or(CredentialKeyError::KeyringMissing)?, entry.access.as_bytes(), entry.refresh.as_bytes(), &mut OsNonces)?;
+        let VaultState { connection, commits_issued, .. } = &mut *state;
+        connection.replace_credential_pair_with_commit(&row, &EntryProvenance::SourceTakeover, &entry.legacy, ReplacePolicy::OnlyIfEmpty, &mut || *commits_issued += 1)?;
         state.barrier()?; Ok(generation)
     }
     pub(in crate::auth) fn restore_credentials(&self, source: &Path, recovery_key: &[u8])

@@ -366,6 +366,98 @@ fn source_credential_disabled_vault_refuses_source_and_unknown_origin() {
     assert_eq!(unknown.code(), "unknown_origin");
 }
 
+/// A synthetic JWT-shaped access token with this `exp` (none: no `exp`).
+fn takeover_jwt(exp: Option<i64>) -> String {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    let mut claims = serde_json::json!({"iss": "https://auth.tesla.com/oauth2/v3"});
+    if let Some(exp) = exp { claims["exp"] = exp.into(); }
+    format!("{}.{}.c2ln", URL_SAFE_NO_PAD.encode(br#"{"alg":"none","typ":"JWT"}"#), URL_SAFE_NO_PAD.encode(claims.to_string()))
+}
+fn takeover_tokens(access: &str, refresh: &str) -> crate::credentials::OwnerTokens {
+    crate::credentials::OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned()).expect("synthetic pair")
+}
+fn epoch_now() -> i64 { SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_secs() as i64 }
+
+/// DEC-172 admission matrix: the taken-over origin is admitted only on the
+/// Owner API slot with the Hub as refresh owner; `hub_login` is unchanged.
+#[test]
+fn source_takeover_admission_matrix() {
+    use CredentialOrigin::*;
+    for origin in [None, Some(HubLogin), Some(DirectEntry), Some(ProviderEntry), Some(FleetOauth), Some(SourceToken)] {
+        for slot in [OWNER, CredentialSlot::FleetApi] {
+            for owner in [RefreshOwner::Hub, RefreshOwner::External] {
+                let admitted = matches!(origin, Some(HubLogin | SourceToken)) && slot == OWNER && owner == RefreshOwner::Hub;
+                let expected = if admitted { None } else if origin.is_none() { Some("unknown_origin") } else { Some("source_credential_disabled") };
+                assert_eq!(stored_origin_refusal(slot, origin, owner), expected, "{origin:?} {slot:?} {owner:?}");
+            }
+        }
+    }
+}
+
+/// The single writer stores the pair as `source_token` owned by the Hub, due
+/// for refresh now and expiring at the JWT `exp`; it then loads. A second
+/// takeover is `slot_occupied` and leaves the first pair; a supplied
+/// `source_token` entry is refused before anything is reserved.
+#[test]
+fn source_takeover_writer_stores_a_due_hub_owned_pair() {
+    let root = crate::private_tempdir().expect("root");
+    let vault = open(root.path());
+    let refused = vault.store_supplied_entry(CredentialEntry::source_token(Zeroizing::new("access-0001".into()), Zeroizing::new("refresh-0001".into())).expect("source entry"), ReplacePolicy::OnlyIfEmpty).unwrap_err();
+    assert_eq!(refused.code(), "invalid_origin");
+    assert!(!root.path().join("secrets").join("credential-keys").exists(), "nothing reserved for a supplied source_token");
+    let exp = epoch_now() + 28_800;
+    let before = epoch_now();
+    let generation = vault.store_source_takeover(&takeover_tokens(&takeover_jwt(Some(exp)), "refresh-0001")).expect("takeover");
+    let after = epoch_now();
+    let row = pair(&vault);
+    assert_eq!((row.generation, row.origin, row.refresh_owner, row.expires_at, row.refresh.as_str()), (generation, Some(CredentialOrigin::SourceToken), RefreshOwner::Hub, exp, "refresh-0001"));
+    assert!((before..=after).contains(&row.next_refresh_at), "due for refresh at once");
+    let occupied = vault.store_source_takeover(&takeover_tokens(&takeover_jwt(Some(exp)), "refresh-0002")).unwrap_err();
+    assert_eq!(occupied.code(), "slot_occupied");
+    assert_eq!(pair(&vault).generation, generation, "first pair kept");
+}
+
+/// An expired access token, one expiring within the minimum span or one with
+/// no readable `exp` is clamped so the refresh comes first, and the stored
+/// row keeps `expires_at > next_refresh_at > 0`.
+#[test]
+fn source_takeover_schedule_derives_and_clamps_expiry() {
+    let now = 1_800_000_000;
+    assert_eq!(types::source_takeover_schedule(&takeover_jwt(Some(now + 28_800)), now), (now + 28_800, now));
+    for access in [takeover_jwt(Some(now - 60)), takeover_jwt(Some(now)), takeover_jwt(Some(now + 1)), takeover_jwt(None), "opaque-access".to_owned()] {
+        assert_eq!(types::source_takeover_schedule(&access, now), (now + 2, now), "{access}");
+    }
+    assert_eq!(types::source_takeover_schedule("opaque-access", 0), (3, 1), "next_refresh_at stays positive");
+    let root = crate::private_tempdir().expect("root");
+    let vault = open(root.path());
+    vault.store_source_takeover(&takeover_tokens(&takeover_jwt(Some(1_000)), "refresh-0001")).expect("expired access token stored");
+    let row = pair(&vault);
+    assert!(row.expires_at > row.next_refresh_at && row.next_refresh_at > 0 && row.expires_at - row.next_refresh_at == 2, "clamped: {row:?}");
+}
+
+/// The spent-token check and the opaque-fence rule apply to the takeover,
+/// before any key is created.
+#[test]
+fn source_takeover_refuses_spent_and_opaque_fenced_tokens() {
+    for (statement, code) in [
+        ("INSERT INTO credential_refresh_fences(fingerprint,kind,fenced_at_ms) VALUES(?1,'attempt',0)", "refresh_token_spent"),
+        ("INSERT INTO credential_legacy_fences VALUES('00000000-0000-4000-8000-000000002000','opaque',0)", "fresh_sign_in_required"),
+    ] {
+        let root = crate::private_tempdir().expect("root");
+        let vault = open(root.path());
+        {
+            let state = vault.lock().expect("state");
+            let fingerprint = refresh_fingerprint(b"refresh-0001");
+            if statement.contains("?1") { state.connection.test_connection().execute(statement, [fingerprint.as_slice()]).expect("fence"); }
+            else { state.connection.test_connection().execute(statement, []).expect("fence"); }
+        }
+        let error = vault.store_source_takeover(&takeover_tokens(&takeover_jwt(Some(epoch_now() + 28_800)), "refresh-0001")).unwrap_err();
+        assert_eq!(error.code(), code);
+        assert!(vault.load(OWNER).expect("load").is_none(), "nothing stored");
+        assert!(!root.path().join("secrets").join("credential-keys").exists(), "no keyring created");
+    }
+}
+
 #[test]
 fn ct097_successor_legacy_forms() {
     for suffix in ["\n", "\r\n"] {

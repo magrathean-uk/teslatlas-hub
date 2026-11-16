@@ -567,6 +567,33 @@ pub(in crate::auth) async fn assert_external_refresh_owner_contract() {
     assert!(rig.backend.token_posts().is_empty(), "no handover and no refresh of a source pair");
 }
 
+/// DEC-172: a taken-over pair is refreshed by the Hub under the stub endpoint.
+/// The successor keeps origin `source_token`, the old refresh token is fenced,
+/// and after a sign-out a takeover of that old token is `refresh_token_spent`.
+#[tokio::test]
+async fn source_takeover_refresh_keeps_origin_and_fences_the_old_token() {
+    let rig = new_rig().await;
+    let vault = rig.vault();
+    let taken = OwnerTokens::from_secret_parts(jg(), "refresh-0".into()).expect("synthetic pair");
+    let g0 = vault.store_source_takeover(&taken).expect("takeover");
+    let mut manager = rig.manager();
+    assert!(manager.allows_refresh(), "the Hub owns the refresh");
+    rig.refresh(&mut manager).await.expect("first refresh");
+    let posts = rig.backend.token_posts();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0].refresh.as_deref(), Some("refresh-0"));
+    let successor = rig.vault().load(CredentialSlot::OwnerApi).expect("successor").expect("present");
+    assert_eq!((successor.origin, successor.refresh_owner, successor.access.as_str(), successor.refresh.as_str()),
+        (Some(crate::auth::credential_envelope::CredentialOrigin::SourceToken), RefreshOwner::Hub, "AT1", "refresh-1"));
+    assert_ne!(successor.generation, g0);
+    assert_eq!(rig.fenced_generations().unwrap(), [g0], "the taken-over input is fenced");
+    drop(manager);
+    vault.clear_credential_pair(CredentialSlot::OwnerApi).expect("sign out");
+    assert_eq!(vault.store_source_takeover(&taken).unwrap_err().code(), "refresh_token_spent");
+    assert!(vault.load(CredentialSlot::OwnerApi).expect("load").is_none(), "nothing stored");
+    assert_eq!(rig.backend.token_posts().len(), 1, "the takeover sends nothing");
+}
+
 fn row_of(rig: &Rig) -> (String, Option<String>, Option<i64>, bool) {
     let row = rig.row();
     (row.state, row.reason, row.retry_at, row.collecting)

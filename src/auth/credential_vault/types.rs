@@ -201,6 +201,17 @@ impl CredentialEntry {
         entry.slot = CredentialSlot::FleetApi; entry.client_id = Some(client_id); entry.region = Some(region.storage_code().to_owned());
         entry.expires_at = expires; entry.next_refresh_at = expires - (expires_in / 4).min(1800) as i64; Ok(entry)
     }
+    /// The taken-over Owner API login of the migration source (DEC-172): the
+    /// source's pair, refreshed from now on by the Hub alone, due for refresh
+    /// at once (see [`source_takeover_schedule`]).
+    #[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: reached from the take-over-source-token verb (M09)."))]
+    pub(super) fn source_takeover(tokens: &crate::credentials::OwnerTokens, now_s: i64) -> Result<Self, CredentialStoreError> {
+        let mut entry = Self::build(Zeroizing::new(tokens.access_token().to_owned()), Zeroizing::new(tokens.refresh_token().to_owned()), CredentialOrigin::SourceToken)?;
+        entry.owner = RefreshOwner::Hub;
+        let (expires_at, next_refresh_at) = source_takeover_schedule(&entry.access, now_s);
+        entry.set_schedule(expires_at, next_refresh_at);
+        Ok(entry)
+    }
     pub(super) fn row(&self, generation: Uuid) -> SealedCredentialPair {
         SealedCredentialPair { account_id: 1, slot: self.slot, origin: Some(self.origin), refresh_owner: self.owner,
             generation, access_envelope: Vec::new(), refresh_envelope: Vec::new(), refresh_present: !self.refresh.is_empty(),
@@ -210,6 +221,18 @@ impl CredentialEntry {
     pub(in crate::auth) fn set_schedule(&mut self, expires_at: i64, next_refresh_at: i64) {
         self.expires_at = expires_at; self.next_refresh_at = next_refresh_at;
     }
+}
+/// The schedule of a taken-over pair, in epoch seconds: due for refresh now,
+/// and expiring at the access token's JWT `exp`. An access token that has
+/// expired, expires within the minimum stored span or carries no `exp` is
+/// clamped to `now + MIN_STORED_SPAN_SECONDS`, so the refresh comes first and
+/// the row keeps the `expires_at > next_refresh_at > 0` CHECK.
+#[cfg_attr(not(test), expect(dead_code, reason = "TRANSITIONAL: reached from the take-over-source-token verb (M09)."))]
+pub(super) fn source_takeover_schedule(access: &str, now_s: i64) -> (i64, i64) {
+    let next_refresh_at = now_s.max(1);
+    let floor = next_refresh_at.saturating_add(crate::legacy_auth::schedule::MIN_STORED_SPAN_SECONDS);
+    let exp = crate::legacy_auth::parse_jwt(access).and_then(|claims| claims.exp);
+    (exp.map_or(floor, |exp| exp.max(floor)), next_refresh_at)
 }
 pub(super) fn canonical_text(value: &str) -> Result<Zeroizing<String>, CredentialStoreError> {
     let bytes = canonical_token(value.as_bytes());
