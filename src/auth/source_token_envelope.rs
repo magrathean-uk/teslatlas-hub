@@ -15,7 +15,7 @@
 //! leaves three items open, and this module fixes them as: a 12-byte IV,
 //! associated data `AES256GCM`, and a cipher key that is the SHA-256 of the
 //! exact `ENCRYPTION_KEY` bytes; the plaintext is the bare UTF-8 token text.
-//! This module was written without opening TeslaMate's source. On 16 November
+//! This module was written without opening the source project's code. On 16 November
 //! 2026 the layout, including those three items, authenticated both columns of
 //! a real `private.tokens` row (the ignored test `real_source_row_decrypts`);
 //! AES-GCM refuses any wrong IV length, associated data or key derivation.
