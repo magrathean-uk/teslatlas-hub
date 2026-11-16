@@ -2877,6 +2877,26 @@ mod lan_tls_setup {
     }
 
     #[test]
+    fn serving_check_waits_between_one_and_150_seconds() {
+        use clap::Parser as _;
+        let parse = |wait: &str| {
+            super::super::Cli::try_parse_from(["teslatlas-hub", "serving-check", "--wait-seconds", wait])
+        };
+        for wait in ["1", "45", "150"] {
+            let cli = parse(wait).expect("accepted wait");
+            assert!(matches!(
+                cli.command,
+                super::super::Command::ServingCheck { wait_seconds } if wait_seconds.to_string() == wait
+            ));
+        }
+        for wait in ["0", "151", "-1"] {
+            assert!(parse(wait).is_err(), "{wait}");
+        }
+        let default = super::super::Cli::try_parse_from(["teslatlas-hub", "serving-check"]).expect("default");
+        assert!(matches!(default.command, super::super::Command::ServingCheck { wait_seconds: 30 }));
+    }
+
+    #[test]
     fn launchctl_pid_is_read_only_from_a_running_job() {
         use super::super::launchctl_running_pid;
         assert_eq!(launchctl_running_pid("\tstate = running\n\tpid = 812\n"), Some(812));
