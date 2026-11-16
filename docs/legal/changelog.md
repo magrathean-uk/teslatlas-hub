@@ -4,6 +4,15 @@ This file records material changes to licensing, attribution, provenance, privac
 Historical entries describe what the documents asserted at that time; they are
 not evidence that a private instrument exists or remains sufficient.
 
+## 2026-11-16 - Product name changed to Tesatlas
+
+- Under DEC-160 (owner, 2026-11-15; locked files name-only with the lock
+  regenerated), the product name changed to Tesatlas in `NOTICE`,
+  `docs/legal/additional-terms.md`, `docs/legal/overview.md`,
+  `docs/legal/trademarks.md` and three `docs/governance/` agreements, and
+  `docs/legal/owner-controlled-files.sha256` was regenerated. Only the name
+  changed; no licence, copyright holder or required attribution changes.
+
 ## 2026-11-14 - Go 1.27.4 pin and bridge patch digest recorded
 
 - Provenance text and manifest now name Go 1.27.4 (as the packaging lock does) and

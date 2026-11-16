@@ -1,13 +1,13 @@
-# Owner-controlled legal files (owner, 2026-09-27; lock regenerated 2026-10-26 for the authorised N1 Step14 text swap).
+# Owner-controlled legal files (owner, 2026-09-27; lock regenerated 2026-10-26 for the authorised N1 Step14 text swap and 2026-11-16 for the DEC-160 name-only rename).
 # scripts/verify-repository-layout.py fails if any file below differs from its digest.
 # Change these files, and this lock, only on the owner's explicit instruction.
-a4cecf5416b1a124e8794cd4f9e3fdefbb497df56158e65b2ab88b03d124ee67  NOTICE
+0990d245b75dff128cd978a605d8f0b9b8ab5669e150d4e75403f7daf6af39df  NOTICE
 0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0  LICENSE
 99e6fb34c0a8cf1359ab099f803e57e3a331a0bb5869c3b8cf1bbe51dcbfd443  .github/CONTRIBUTING.md
-479160958f88bd00e0098ff71a56d456562cbeb9321eb88d5f701d13ee2e4efe  docs/legal/additional-terms.md
-2bb40a6aa227c150bac7833cfb35cbb06bc745c287f810c6882f9e7d062f09cf  docs/legal/overview.md
-70016733e3327976979a51ba05ebe339d316687224fc778caabcdbcc64df3120  docs/legal/trademarks.md
-3867f84ee41bfb040fd0d1cb7891ab326510935b04823ececc7295e9e4472e88  docs/governance/governance.md
-15aaea7801b469558e3b9ff124e5d8b7486627898fede542eaedeb12878023a8  docs/governance/individual-contributor-assignment-agreement.md
-de1ece0cda35122302d40c714755b716996d0ff25f6de2595a2ee6121995f0e2  docs/governance/corporate-contributor-assignment-agreement.md
+1be4c220110cac6b45da1911cf411703cbdc48abfc6bd83a6dfa96115cef942a  docs/legal/additional-terms.md
+462effa393cd68c6a7457fb6a67060e658120ead8d509000c7cf6296129ee70f  docs/legal/overview.md
+1de521fda1a8ae9fdc153eed682fd8833fca87b12ea8219e76dad690846c7940  docs/legal/trademarks.md
+f1f0f902ac517338b5ca454b2082b56e257674bf1dc28c7d53e29ffaef9580ce  docs/governance/governance.md
+754639effd5ccbdaa775bc582f3a556eea393628a048f8da11d89123c20c5f46  docs/governance/individual-contributor-assignment-agreement.md
+2b5715badf287546970d46bcf3411a33ed4e5651866998434b16c4e4f0255cd4  docs/governance/corporate-contributor-assignment-agreement.md
 cd2213ccef0e04317f0fc588e15352cf8b92dfdb67933780d4555bda6e6439b3  docs/governance/developer-certificate-of-origin-1.1.md
