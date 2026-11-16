@@ -6,6 +6,19 @@
 //! `private.tokens` bytea values and the exact TeslaMate `ENCRYPTION_KEY`,
 //! verifies the Cloak AES-GCM envelope, then returns a redacted typed pair for
 //! immediate hand-off to a host-encrypted Hub credential.
+//!
+//! Provenance (M09-T01). The envelope framing follows the public ciphertext
+//! format of the Cloak library, documented on its `Cloak.Ciphers.AES.GCM`
+//! page (cloak v1.1.4, <https://cloak.hexdocs.pm/Cloak.Ciphers.AES.GCM.html>):
+//! a key tag as a type, length, value triplet (type 1, length 10, `AES.GCM.V1`),
+//! then the IV, then the 16-byte ciphertag, then the ciphertext. That page
+//! leaves three items open, and this module fixes them as: a 12-byte IV,
+//! associated data `AES256GCM`, and a cipher key that is the SHA-256 of the
+//! exact `ENCRYPTION_KEY` bytes; the plaintext is the bare UTF-8 token text.
+//! This module was written without opening the source project's code. On 16 November
+//! 2026 the layout, including those three items, authenticated both columns of
+//! a real `private.tokens` row (the ignored test `real_source_row_decrypts`);
+//! AES-GCM refuses any wrong IV length, associated data or key derivation.
 
 use aes_gcm::{
     Aes256Gcm, Nonce,
@@ -369,6 +382,79 @@ mod tests {
         assert_ne!(digest, legacy_refresh_credential_generation(&as_refresh));
         // The text itself is not in the digest's form.
         assert!(!digest.to_string().contains("access"));
+    }
+
+    /// M09-T01: the real source row decrypts with this module. Ignored: it needs the
+    /// owner's bundle file, whose PATH (never a value) comes from
+    /// `TESATLAS_SOURCE_TOKEN_PROOF_BUNDLE`; lines `KEY:`, `REFRESH:` and `ACCESS:` hold
+    /// the key text and the hex of the two bytea columns. It prints nothing and its
+    /// assertion messages carry no token, key or claim value. No network use.
+    #[test]
+    #[ignore = "needs the owner's real source token bundle"]
+    fn real_source_row_decrypts() {
+        let path = std::env::var_os("TESATLAS_SOURCE_TOKEN_PROOF_BUNDLE")
+            .expect("TESATLAS_SOURCE_TOKEN_PROOF_BUNDLE names the bundle path");
+        let bundle = Zeroizing::new(std::fs::read_to_string(&path).expect("bundle readable"));
+        let field = |name: &str| -> Zeroizing<String> {
+            let prefix = format!("{name}:");
+            Zeroizing::new(
+                bundle
+                    .lines()
+                    .find_map(|line| line.strip_prefix(prefix.as_str()))
+                    .map(|value| value.trim_end_matches('\r').to_owned())
+                    .unwrap_or_else(|| panic!("bundle has a {name} line")),
+            )
+        };
+        let key = field("KEY");
+        let access = Zeroizing::new(
+            hex::decode(field("ACCESS").trim()).unwrap_or_else(|_| panic!("ACCESS is hex")),
+        );
+        let refresh = Zeroizing::new(
+            hex::decode(field("REFRESH").trim()).unwrap_or_else(|_| panic!("REFRESH is hex")),
+        );
+        assert!(
+            access.len() <= MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES,
+            "access within cap"
+        );
+        assert!(
+            refresh.len() <= MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES,
+            "refresh within cap"
+        );
+
+        let tokens = match decrypt_legacy_owner_tokens(key.as_bytes(), &access, &refresh) {
+            Ok(tokens) => tokens,
+            Err(error) => panic!("real row did not decrypt: {error}"),
+        };
+
+        // Shape only: the access token is a b64token JWT under the pinned global
+        // issuer with an expiry; the refresh token is VSCHAR text.
+        let access_token = tokens.access_token();
+        assert!(
+            crate::auth::legacy_auth::trim_token_whitespace(access_token) == access_token,
+            "access token has no surrounding whitespace"
+        );
+        assert!(
+            access_token
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"-._~+/=".contains(&byte)),
+            "access token fits b64token"
+        );
+        let claims = crate::auth::legacy_auth::parse_jwt(access_token);
+        assert!(claims.is_some(), "access token is a JWT");
+        let claims = claims.expect("checked");
+        assert!(
+            claims.iss.as_deref() == Some("https://auth.tesla.com/oauth2/v3"),
+            "access token issuer is the pinned global issuer"
+        );
+        assert!(claims.exp.is_some(), "access token carries exp");
+        assert!(
+            tokens
+                .refresh_token()
+                .bytes()
+                .all(|byte| (0x20..=0x7e).contains(&byte)),
+            "refresh token is VSCHAR text"
+        );
+        assert!(!tokens.refresh_token().is_empty(), "refresh token present");
     }
 
     #[test]
