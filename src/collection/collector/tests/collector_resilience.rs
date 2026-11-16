@@ -1639,6 +1639,175 @@ async fn collector_resilience_window_expiry_during_probe_barrier_records_nothing
     assert_eq!(tripwire.requests(), 0, "nothing is sent");
 }
 
+/// M04-T09 (REV3-CX-M04-T05): the converted fixture store of the routed expiry
+/// regressions below, with a supplied Owner pair.
+fn routed_expiry_fixture() -> (tempfile::TempDir, HubStore) {
+    crate::crypto::install_default_provider();
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("Hub store");
+    seed_supervised_restart_import(&store);
+    let now = current_epoch_millis().expect("clock").div_euclid(1_000);
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(
+        &store,
+        temporary.path(),
+        "window-access",
+        "window-refresh",
+        Some((now + 28_800, now + 14_400)),
+    )
+    .expect("supplied pair");
+    (temporary, store)
+}
+
+/// One Owner-wire start of `store` under an open 60-second window routed to its
+/// stream endpoint. `arm` receives the window's expiry (its clock passing the end)
+/// and installs the wait during which it happens. The start must end with the
+/// window's code, hand over no cursor key, start nothing and send nothing.
+async fn routed_start_with_window_expiry(
+    store: &HubStore,
+    data: &std::path::Path,
+    arm: impl FnOnce(Arc<dyn Fn() + Send + Sync>),
+) {
+    let tripwire = Tripwire::spawn().await;
+    let window = TestWindow::open(60);
+    let (endpoint, _port) = reserved_stream_endpoint();
+    let endpoint = endpoint.replacen("ws://", "wss://", 1);
+    let _route = window.route(&endpoint);
+    let mut config = supervised_restart_test_config(data);
+    config.collector.stream_endpoint_override = Some(endpoint);
+    let clock = Arc::clone(&window.clock);
+    arm(Arc::new(move || clock.advance(61)));
+    let admission = crate::auth::credential_vault::fixtures::fixture_admission(store, data);
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let client_url = tripwire.url.clone();
+    let result = timeout(
+        SUPERVISED_RESTART_WAIT,
+        run_supervised_with_clients_for_admitted_user(
+            store,
+            &config,
+            admission,
+            ready_tx,
+            move |_| Ok(OwnerApi::for_fake_http(client_url, Duration::from_secs(2))?),
+            |_| -> Result<FleetClients, CollectorError> {
+                panic!("Fleet clients were built by an Owner-wire start")
+            },
+            std::future::pending::<()>(),
+        ),
+    )
+    .await
+    .expect("the start ends by itself");
+    assert!(
+        matches!(result, Err(CollectorError::CollectionWindowClosed("window_closed"))),
+        "{result:?}"
+    );
+    assert!(ready_rx.await.is_err(), "no cursor key is handed over");
+    assert_nothing_started(store, "window ended during vault startup");
+    assert_eq!(tripwire.requests(), 0, "nothing is sent");
+}
+
+/// M04-T09: the routed window ends while the vault's keyring proof waits in its
+/// `secrets/` sync, and the sync then fails. Its `unavailable` record would be a
+/// new transaction after that wait, so it does not begin.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn collector_resilience_window_expiry_during_keyring_barrier_records_nothing() {
+    let (temporary, store) = routed_expiry_fixture();
+    let durability = |store: &HubStore| {
+        store
+            .credential_format_state()
+            .expect("format state")
+            .expect("converted store")
+            .durability
+    };
+    let durability_before = durability(&store);
+    let waited = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let waited_in = Arc::clone(&waited);
+    let secrets = temporary.path().join("secrets");
+    routed_start_with_window_expiry(&store, temporary.path(), move |expire| {
+        crate::auth::credential_vault::fixtures::wait_in_next_sync(
+            &secrets,
+            Box::new(move || {
+                expire();
+                waited_in.store(true, Ordering::SeqCst);
+                true
+            }),
+        );
+    })
+    .await;
+    assert!(waited.load(Ordering::SeqCst), "the keyring proof reached its sync");
+    assert_eq!(durability(&store), durability_before, "no keyring barrier record after the window ended");
+}
+
+/// M04-T09: Phase B removes two neutral key files; the routed window ends right
+/// after the first unlink. The second is an independent file mutation and stays.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn collector_resilience_window_expiry_between_phase_b_removals_keeps_the_next_file() {
+    use std::os::unix::fs::PermissionsExt;
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            crate::auth::credential_migration::seam::reset();
+        }
+    }
+    let _reset = Reset;
+    let (temporary, store) = routed_expiry_fixture();
+    let secrets = temporary.path().join("secrets");
+    let (first, second) = ("pre-upgrade-owner-api.relocated.key", "pre-upgrade-owner-api.key");
+    for name in [first, second] {
+        let path = secrets.join(name);
+        std::fs::write(&path, [7u8; 32]).expect("neutral key file");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("private mode");
+    }
+    let reached = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let reached_in = Arc::clone(&reached);
+    let boundary = format!("after_removal:{first}");
+    routed_start_with_window_expiry(&store, temporary.path(), move |expire| {
+        // Phase B runs on this thread: its boundaries are this thread's seam.
+        crate::auth::credential_migration::seam::with(|state| {
+            state.boundary = Some(Box::new(move |point: &str| {
+                if point == boundary {
+                    expire();
+                    reached_in.store(true, Ordering::SeqCst);
+                }
+                true
+            }));
+        });
+    })
+    .await;
+    assert!(reached.load(Ordering::SeqCst), "Phase B removed the first file");
+    assert!(!secrets.join(first).exists(), "the first removal ran inside the window");
+    assert!(secrets.join(second).exists(), "no removal begins after the window ended");
+}
+
+/// M04-T09: a previous process published a key rotation; the opening resumes it.
+/// The routed window ends in the barrier after the reseal commit, so the keyring
+/// file change that would follow does not begin.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn collector_resilience_window_expiry_during_resumed_rotation_keeps_the_keyring() {
+    let (temporary, store) = routed_expiry_fixture();
+    crate::auth::credential_vault::fixtures::begin_fixture_rotation(temporary.path());
+    let keyring = temporary.path().join("secrets").join("credential-keys");
+    let keyring_before = std::fs::read(&keyring).expect("rotating keyring");
+    let waited = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let waited_in = Arc::clone(&waited);
+    let catalogue = store.database_path().to_owned();
+    routed_start_with_window_expiry(&store, temporary.path(), move |expire| {
+        // The resumed rotation runs on this thread; its reseal control arms the
+        // next catalogue sync, the barrier after the reseal commit.
+        crate::auth::credential_vault::fixtures::before_next_reseal(Box::new(move || {
+            crate::auth::credential_vault::fixtures::wait_in_next_sync(
+                &catalogue,
+                Box::new(move || {
+                    expire();
+                    waited_in.store(true, Ordering::SeqCst);
+                    false
+                }),
+            );
+        }));
+    })
+    .await;
+    assert!(waited.load(Ordering::SeqCst), "the rotation reached its reseal barrier");
+    assert_eq!(std::fs::read(&keyring).expect("keyring"), keyring_before, "the keyring is not finished after the window ended");
+}
+
 /// M04-T08 (REV-CX-M04-T05 finding 2): a tick with an actual snapshot publishes
 /// every scheduled car, here the read car and another, unchanged one. Their
 /// identities, seed cars and settings commit with the tick; after that commit the

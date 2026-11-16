@@ -62,6 +62,20 @@ static SYNC_WAITS: Mutex<std::collections::BTreeMap<std::path::PathBuf, SyncWait
 pub(crate) fn wait_in_next_sync(path: &Path, wait: SyncWait) {
     SYNC_WAITS.lock().expect("sync waits").insert(path.to_owned(), wait);
 }
+/// A key rotation a previous process published and did not finish (M04-T09): the
+/// next opening resumes it.
+#[cfg(test)]
+pub(crate) fn begin_fixture_rotation(data: &Path) {
+    let secrets = private_directory::open_validated(&data.join("secrets"), false).expect("secrets");
+    let keys = credential_keys::load_keyring(&secrets).expect("keyring").expect("present");
+    credential_keys::begin_rotation(&secrets, &FixtureExclusion, &keys, 1_800_086_400).expect("rotation publication");
+}
+/// Runs `control` once on this thread, just before the next resumed rotation's
+/// reseal transaction (M04-T09).
+#[cfg(test)]
+pub(crate) fn before_next_reseal(control: Box<dyn FnOnce()>) {
+    RESEAL_CONTROL.with(|slot| *slot.borrow_mut() = Some(Box::new(move |_| control())));
+}
 /// Runs the registered wait of `path`, if any: `true` when the sync then fails.
 #[cfg(test)]
 pub(crate) fn sync_wait(path: &Path) -> bool {

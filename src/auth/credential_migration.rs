@@ -425,6 +425,9 @@ fn remove_neutral_files(
                     connection.credential_durability_barrier()?;
                     barrier_done = true;
                 }
+                // M04-T09: each unlink is an independent file mutation; the
+                // startup window is consulted again before every one.
+                connection.startup_fenced()?;
                 note_event(&format!("remove:{name}"));
                 context
                     .secrets

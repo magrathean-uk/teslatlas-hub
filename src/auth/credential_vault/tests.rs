@@ -236,11 +236,7 @@ impl BackupExclusion for FailedExclusion {
     fn ensure_excluded(&self, _: &Path) -> Result<ExclusionState, CredentialKeyError> { Err(CredentialKeyError::BackupExclusionFailed) }
 }
 
-fn prepare_rotation(data: &Path) {
-    let secrets = private_directory::open_validated(&data.join("secrets"), false).expect("secrets");
-    let keys = credential_keys::load_keyring(&secrets).expect("keyring").expect("present");
-    credential_keys::begin_rotation(&secrets, &FixtureExclusion, &keys, 1_800_086_400).expect("rotation publication");
-}
+fn prepare_rotation(data: &Path) { fixtures::begin_fixture_rotation(data) }
 
 #[test]
 fn ct020_rotation_crash_points() {
