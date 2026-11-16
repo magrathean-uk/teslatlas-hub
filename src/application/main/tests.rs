@@ -2806,6 +2806,7 @@ mod lan_tls_setup {
                 fs::set_permissions(&other, fs::Permissions::from_mode(0o600)).expect("private");
                 fs::rename(&other, &config_path).expect("replace");
             },
+            Duration::from_secs(30),
         )
         .expect_err("conflict reported");
         assert!(error.to_string().contains("changed"), "{error}");
@@ -2814,6 +2815,49 @@ mod lan_tls_setup {
         assert!(identity_files(&data.join("tls")).is_empty());
         let folder = identity_files(config_path.parent().expect("folder"));
         assert!(folder.iter().all(|name| !name.ends_with(".tmp")), "{folder:?}");
+    }
+
+    #[test]
+    fn lan_tls_overlapping_setups_end_with_a_valid_referenced_identity() {
+        use std::sync::mpsc;
+        let (_root, config_path, data) = hub_fixture();
+        let (reached_tx, reached_rx) = mpsc::channel::<()>();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let setup = |host: &'static str, mut hold: Box<dyn FnMut() + Send>| {
+            let path = config_path.clone();
+            std::thread::spawn(move || {
+                super::super::setup_lan_tls_observed(&path, host, SystemTime::now(), &mut *hold, Duration::from_secs(30))
+                    .map_err(|error| error.to_string())
+            })
+        };
+        // The first setup is held after its identity and staged configuration are validated.
+        let first = setup(HOST, Box::new(move || {
+            reached_tx.send(()).expect("reached");
+            release_rx.recv().expect("released");
+        }));
+        reached_rx.recv_timeout(Duration::from_secs(30)).expect("first setup held");
+        let second = setup("other-mac.local", Box::new(|| {}));
+        // The second neither reaps the held run's marker, key and certificate nor publishes.
+        std::thread::sleep(Duration::from_millis(400));
+        assert!(!second.is_finished(), "the second setup waits for the writer lock");
+        assert_eq!(identity_files(&data.join("tls")).len(), 3);
+        release_tx.send(()).expect("release");
+        let first = first.join().expect("first thread").expect("first setup");
+        let second = second.join().expect("second thread").expect("second setup");
+        assert_eq!((first.status, second.status), ("created", "existing"));
+        assert_eq!(second.public_url, first.public_url);
+        let tls = HubConfig::load(&config_path).expect("config").tls.expect("tls");
+        super::super::server::validate_tls_identity(&tls).expect("a valid referenced key and certificate pair");
+        assert_eq!(identity_files(&data.join("tls")).len(), 2, "only the published key and certificate");
+
+        // A setup that cannot take the lock in time changes nothing.
+        let held = super::super::lock_config_writer(&config_path, Duration::ZERO).expect("lock");
+        let before = fs::read(&config_path).expect("config");
+        let error = super::super::setup_lan_tls_observed(&config_path, HOST, SystemTime::now(), &mut || {}, Duration::from_millis(200))
+            .expect_err("refused while held");
+        assert!(error.to_string().contains("still running"), "{error}");
+        assert_eq!(fs::read(&config_path).expect("config"), before);
+        drop(held);
     }
 
     #[test]
@@ -2860,13 +2904,19 @@ mod lan_tls_setup {
 
     #[test]
     fn serving_answer_names_only_this_process_and_configuration() {
-        use super::super::serving_answer;
+        use super::super::{serving_answer, ServingAnswer};
         let digest = "a".repeat(64);
         let ready = br#"{"status":"ready"}"#;
         let idle = br#"{"status":"not_ready","reason":"collector_absent"}"#;
-        assert_eq!(serving_answer(200, Some("42"), Some(&digest), ready, 42, &digest), Some("ready"));
+        assert_eq!(
+            serving_answer(200, Some("42"), Some(&digest), ready, 42, &digest),
+            Some(ServingAnswer::Serving("ready"))
+        );
         // Between windows the Hub still serves.
-        assert_eq!(serving_answer(503, Some("42"), Some(&digest), idle, 42, &digest), Some("not_ready"));
+        assert_eq!(
+            serving_answer(503, Some("42"), Some(&digest), idle, 42, &digest),
+            Some(ServingAnswer::Serving("between_windows"))
+        );
         // Another process, another configuration or no headers is not this Hub serving.
         assert_eq!(serving_answer(200, Some("43"), Some(&digest), ready, 42, &digest), None);
         assert_eq!(serving_answer(200, Some("42"), Some(&"b".repeat(64)), ready, 42, &digest), None);
@@ -2874,6 +2924,23 @@ mod lan_tls_setup {
         assert_eq!(serving_answer(500, Some("42"), Some(&digest), ready, 42, &digest), None);
         assert_eq!(serving_answer(200, Some("42"), Some(&digest), idle, 42, &digest), None);
         assert_eq!(serving_answer(200, Some("42"), Some(&digest), b"not json", 42, &digest), None);
+    }
+
+    #[test]
+    fn serving_answer_refuses_every_readiness_failure_but_a_closed_window() {
+        use super::super::{serving_answer, ServingAnswer};
+        let digest = "a".repeat(64);
+        let answer = |status, body: &str| serving_answer(status, Some("42"), Some(&digest), body.as_bytes(), 42, &digest);
+        for reason in ["credential_store_error", "catalogue_unavailable", "lifecycle_quarantined",
+                       "published_content_unservable", "collector_stale", "collector_auth_terminal"] {
+            let body = format!(r#"{{"status":"not_ready","reason":"{reason}"}}"#);
+            assert_eq!(answer(503, &body), Some(ServingAnswer::Refused(reason.to_owned())), "{reason}");
+        }
+        // No reason, or one that is not a redacted code, is still a refusal.
+        for body in [r#"{"status":"not_ready"}"#, r#"{"status":"not_ready","reason":"/private/path"}"#] {
+            assert_eq!(answer(503, body), Some(ServingAnswer::Refused("unknown".to_owned())), "{body}");
+        }
+        assert_eq!(answer(200, r#"{"status":"ready","reason":"collector_absent"}"#), None);
     }
 
     #[test]

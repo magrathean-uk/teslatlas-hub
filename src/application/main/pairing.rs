@@ -629,6 +629,60 @@ fn read_admitted_config(path: &Path) -> Result<AdmittedConfigBytes, Box<dyn std:
     })
 }
 
+/// The installation's configuration writer lock, beside the configuration.
+#[cfg(unix)]
+const CONFIG_WRITER_LOCK: &str = ".config-writer.lock";
+/// How long `lan-tls` waits for another setup of the same installation.
+#[cfg(unix)]
+const LAN_TLS_LOCK_WAIT: Duration = Duration::from_secs(30);
+
+/// Takes the installation's exclusive configuration writer lock (`flock` on an
+/// owner-only file beside the configuration), waiting up to `wait`. `lan-tls` holds
+/// it from its first read of the configuration through recovery, identity creation,
+/// the final comparison and publication. The lock ends with its descriptor or its
+/// process, so a pending marker found while it is held belongs to a run that can no
+/// longer publish, and no other setup can replace the configuration after the
+/// comparison.
+#[cfg(unix)]
+fn lock_config_writer(
+    config_path: &Path,
+    wait: Duration,
+) -> Result<rustix::fd::OwnedFd, Box<dyn std::error::Error>> {
+    use rustix::fs::{FlockOperation, flock};
+    let folder = config_path
+        .parent()
+        .filter(|folder| !folder.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let descriptor = open(
+        folder.join(CONFIG_WRITER_LOCK),
+        OFlags::RDWR | OFlags::CREATE | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+        Mode::from_raw_mode(0o600),
+    )
+    .map_err(|_| "the Hub configuration lock cannot be opened")?;
+    let held = fstat(&descriptor).map_err(|_| "the Hub configuration lock cannot be read")?;
+    if !FileType::from_raw_mode(held.st_mode).is_file()
+        || held.st_uid != getuid().as_raw()
+        || (held.st_mode as u32 & 0o077) != 0
+    {
+        return Err("the Hub configuration lock is not a private file of this user".into());
+    }
+    let deadline = Instant::now() + wait;
+    loop {
+        match flock(&descriptor, FlockOperation::NonBlockingLockExclusive) {
+            Ok(()) => return Ok(descriptor),
+            Err(Errno::WOULDBLOCK) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(Errno::WOULDBLOCK) => {
+                return Err(
+                    "another setup of this Hub's configuration is still running; try again".into(),
+                );
+            }
+            Err(_) => return Err("the Hub configuration lock cannot be taken".into()),
+        }
+    }
+}
+
 /// Settles what earlier runs left in `tls/`: a run whose files the configuration
 /// does not name lost before its configuration was published, so its files and
 /// marker go; a run the configuration names only loses its marker. A file without a
@@ -672,7 +726,8 @@ fn recover_lan_tls_runs(
     Ok(())
 }
 
-/// `lan-tls` (DEC-152): when the configuration has no `[tls]`, makes a self-signed
+/// `lan-tls` (DEC-152): under the installation's configuration writer lock
+/// ([`lock_config_writer`]), when the configuration has no `[tls]`, makes a self-signed
 /// P-256 identity for `host` in the data folder's `tls/` (folder 0700, files 0600),
 /// then sets `bind = "0.0.0.0:8443"` and `[tls]` with `https://<host>:8443/`.
 ///
@@ -691,17 +746,19 @@ fn setup_lan_tls(
     host: &str,
     now: SystemTime,
 ) -> Result<LanTlsReport, Box<dyn std::error::Error>> {
-    setup_lan_tls_observed(config_path, host, now, &mut || {})
+    setup_lan_tls_observed(config_path, host, now, &mut || {}, LAN_TLS_LOCK_WAIT)
 }
 
 /// `setup_lan_tls` with `before_replace` run just before the final check of the
-/// configuration file (a test seam for a concurrent writer).
+/// configuration file (a test seam for a concurrent writer), waiting up to
+/// `lock_wait` for the writer lock.
 #[cfg(unix)]
 fn setup_lan_tls_observed(
     config_path: &Path,
     host: &str,
     now: SystemTime,
     before_replace: &mut dyn FnMut(),
+    lock_wait: Duration,
 ) -> Result<LanTlsReport, Box<dyn std::error::Error>> {
     use std::os::unix::fs::OpenOptionsExt as _;
     if !valid_lan_host(host) {
@@ -709,6 +766,8 @@ fn setup_lan_tls_observed(
             "--host must be this Mac's lowercase .local name, such as office-mac.local".into(),
         );
     }
+    // Held to the end of this function, every return included.
+    let _writer = lock_config_writer(config_path, lock_wait)?;
     // One admitted read: the bytes that are checked are the bytes that are edited.
     let admitted = read_admitted_config(config_path)?;
     let (config, _) = HubConfig::from_exact_bytes(&admitted.bytes)?;
@@ -844,8 +903,9 @@ fn setup_lan_tls_observed(
 }
 
 /// What `serving-check` reports: the installed Hub's process serves the
-/// configuration on disk on its configured listener. `readiness` is the process's
-/// own answer; `not_ready` (for example between collection windows) still serves.
+/// configuration on disk on its configured listener. `readiness` is `ready`, or
+/// `between_windows` when the only unmet readiness check is the absent collector of
+/// a closed collection window. Every other `/readyz` reason is a failure.
 #[cfg(any(test, target_os = "macos"))]
 #[derive(Debug, serde::Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -878,9 +938,22 @@ fn launchctl_running_pid(output: &str) -> Option<u32> {
 }
 
 #[cfg(any(test, target_os = "macos"))]
-/// The readiness answer of `pid` serving the configuration `digest`: a 200 `ready`
-/// or a 503 `not_ready` whose native headers name exactly that process and
-/// configuration. Anything else is not that Hub serving that configuration.
+/// The judged `/readyz` answer of the expected process.
+#[derive(Debug, PartialEq, Eq)]
+enum ServingAnswer {
+    /// Serving: `ready`, or `between_windows` (only the collector of a closed window
+    /// is absent; catalogue, lifecycle, published content and credentials are sound).
+    Serving(&'static str),
+    /// The expected process answered but cannot serve: the redacted `/readyz` reason
+    /// (credential store, catalogue, quarantine, unservable content, a stale or
+    /// signed-out collector), or `unknown` when it named none.
+    Refused(String),
+}
+
+#[cfg(any(test, target_os = "macos"))]
+/// The readiness answer of `pid` serving the configuration `digest`: a 200 `ready`,
+/// or a 503 `not_ready` whose reason is judged. `None` when the native headers do not
+/// name exactly that process and configuration, or the answer is malformed.
 fn serving_answer(
     status: u16,
     process_id: Option<&str>,
@@ -888,18 +961,34 @@ fn serving_answer(
     body: &[u8],
     pid: u32,
     digest: &str,
-) -> Option<&'static str> {
+) -> Option<ServingAnswer> {
     #[derive(serde::Deserialize)]
     struct Answer {
         status: String,
+        #[serde(default)]
+        reason: Option<String>,
     }
     if process_id != Some(pid.to_string().as_str()) || config_digest != Some(digest) {
         return None;
     }
     let answer: Answer = serde_json::from_slice(body).ok()?;
-    match (status, answer.status.as_str()) {
-        (200, "ready") => Some("ready"),
-        (503, "not_ready") => Some("not_ready"),
+    match (status, answer.status.as_str(), answer.reason.as_deref()) {
+        (200, "ready", None) => Some(ServingAnswer::Serving("ready")),
+        (503, "not_ready", Some("collector_absent")) => {
+            Some(ServingAnswer::Serving("between_windows"))
+        }
+        (503, "not_ready", reason) => {
+            let reason = reason
+                .filter(|reason| {
+                    !reason.is_empty()
+                        && reason.len() <= 64
+                        && reason
+                            .bytes()
+                            .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+                })
+                .unwrap_or("unknown");
+            Some(ServingAnswer::Refused(reason.to_owned()))
+        }
         _ => None,
     }
 }
@@ -930,7 +1019,7 @@ async fn serving_observation(
     config: &HubConfig,
     digest: &str,
     pid: u32,
-) -> Result<Option<&'static str>, Box<dyn std::error::Error>> {
+) -> Result<Option<ServingAnswer>, Box<dyn std::error::Error>> {
     let address = match config.bind {
         std::net::SocketAddr::V4(bind) if bind.ip().is_unspecified() => {
             std::net::SocketAddr::from(([127, 0, 0, 1], bind.port()))
@@ -1027,6 +1116,7 @@ async fn check_serving(
     let deadline = Instant::now() + wait;
     let mut last: Option<u32> = None;
     let mut consecutive = 0;
+    let mut refused: Option<String>;
     loop {
         let observed = match installed_service_pid()? {
             None => None,
@@ -1044,7 +1134,13 @@ async fn check_serving(
             },
         };
         match observed {
-            Some((pid, readiness)) => {
+            Some((_, ServingAnswer::Refused(reason))) => {
+                consecutive = 0;
+                last = None;
+                refused = Some(reason);
+            }
+            Some((pid, ServingAnswer::Serving(readiness))) => {
+                refused = None;
                 consecutive = if last == Some(pid) {
                     consecutive + 1
                 } else {
@@ -1061,10 +1157,17 @@ async fn check_serving(
             None => {
                 consecutive = 0;
                 last = None;
+                refused = None;
             }
         }
         if Instant::now() + SERVING_POLL >= deadline {
-            return Err("the Hub service is not serving its configuration on its listener".into());
+            return Err(match refused {
+                Some(reason) => {
+                    format!("the Hub service is running but cannot serve its history ({reason})")
+                        .into()
+                }
+                None => "the Hub service is not serving its configuration on its listener".into(),
+            });
         }
         tokio::time::sleep(SERVING_POLL).await;
     }
