@@ -2097,6 +2097,97 @@ typealias HubMigrationConnector = (
     _ completion: @escaping (Result<SourceServerImportSession, Error>) -> Void
 ) -> Void
 
+/// What the stop check needs: the prepared session (its private directory holds the
+/// tunnel's control socket) and the SSH destination it was opened for.
+struct HubSourceStopCheckRequest {
+    let sessionDirectory: URL
+    let destination: String
+    let port: Int
+    let usePasswordlessSudo: Bool
+}
+
+/// The stop check of the migration path (M09-T05), injectable so tests never open SSH.
+typealias HubSourceStopChecker = (
+    _ request: HubSourceStopCheckRequest,
+    _ completion: @escaping (Result<SourceRunState, Error>) -> Void
+) -> Void
+
+/// A refused `take-over-source-token`, by the service's refusal code (never its line).
+struct HubSourceTakeoverRefusal: LocalizedError, Equatable {
+    let code: String
+    let message: String
+    var errorDescription: String? { message }
+
+    /// Codes the M09-T04 contract reports; anything else reads as `takeover_failed`.
+    static let knownCodes = [
+        "source_still_running", "source_token_key_mismatch", "source_token_invalid",
+        "source_token_row_missing", "source_token_rows_ambiguous", "slot_occupied",
+        "fresh_sign_in_required", "refresh_token_spent"
+    ]
+
+    static func from(_ error: Error) -> HubSourceTakeoverRefusal {
+        let text = HubActionError.settingQuiescenceAside(error).localizedDescription
+        let code = knownCodes.first { text.contains($0) } ?? "takeover_failed"
+        return HubSourceTakeoverRefusal(code: code, message: message(code: code))
+    }
+
+    static func message(code: String) -> String {
+        switch code {
+        case "source_still_running":
+            return HubL10n.text("hub.sourceTakeover.refusal.stillRunning", fallback: "The source application is still connected to its database. Stop it and its dashboards, then try again.")
+        case "source_token_key_mismatch":
+            return HubL10n.text("hub.sourceTakeover.refusal.keyMismatch", fallback: "That encryption key does not open the source application's stored login. Enter the key again, or sign in with Tesla instead.")
+        case "source_token_invalid":
+            return HubL10n.text("hub.sourceTakeover.refusal.invalid", fallback: "The source application's stored login is not one Hub can take over. Sign in with Tesla instead.")
+        case "source_token_row_missing", "source_token_rows_ambiguous":
+            return HubL10n.text("hub.sourceTakeover.refusal.rows", fallback: "The source database does not hold exactly one stored login. Sign in with Tesla instead.")
+        case "slot_occupied":
+            return HubL10n.text("hub.sourceTakeover.refusal.slotOccupied", fallback: "Hub already has its own login; sign out first if you want to take over the source application's.")
+        case "fresh_sign_in_required":
+            return HubL10n.text("hub.sourceTakeover.refusal.freshSignIn", fallback: "Hub needs a fresh Tesla sign-in for this data. Sign in with Tesla instead.")
+        case "refresh_token_spent":
+            return HubL10n.text("hub.sourceTakeover.refusal.spent", fallback: "Hub has already used that stored login once. Sign in with Tesla instead.")
+        default:
+            return HubL10n.text("hub.sourceTakeover.refusal.failed", fallback: "Hub could not take over the source application's login. Your history stays imported. Try again, or sign in with Tesla instead.")
+        }
+    }
+}
+
+/// The one report `take-over-source-token` prints on success (M09-T04): it names no token,
+/// fingerprint or key. Only the complete, expected report reads as success.
+enum HubSourceTakeoverReport {
+    static func isComplete(_ output: String) -> Bool {
+        output.split(whereSeparator: \.isNewline).contains { line in
+            guard let data = String(line).data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return false
+            }
+            return root["status"] as? String == "taken_over"
+                && root["origin"] as? String == "source_token"
+                && root["firstRefresh"] as? String == "next_window"
+                && (root["sourceSessionsSeen"] as? NSNumber)?.intValue == 0
+                && root["sourceNeverMutated"] as? Bool == true
+        }
+    }
+}
+
+/// Whether the taken-over login still waits for the Hub's first refresh, from `status`
+/// `legacyCredentials` and the time the app recorded the takeover (seconds). The takeover
+/// writes the pair due at once; the first refresh moves `nextRefreshAt` past that time.
+enum HubSourceTakeoverStatus {
+    static let awaitingFirstRefreshText = HubL10n.text(
+        "hub.sourceTakeover.statusAwaitingRefresh",
+        fallback: "Taken over from the source application; first refresh at the next window")
+
+    static func awaitingFirstRefresh(legacy: [String: Any]?, takenOverAt: Int64) -> Bool {
+        guard let legacy, legacy["present"] as? Bool == true,
+              legacy["origin"] as? String == "source_token",
+              (legacy["storeState"] as? String ?? "ok") == "ok",
+              let next = (legacy["nextRefreshAt"] as? NSNumber)?.int64Value else { return false }
+        return next <= takenOverAt + 60
+    }
+}
+
 /// A window's handle on an active SSH preparation. Cancelling it never abandons the
 /// preparation: the controller closes whatever the connection produces.
 final class HubMigrationPreparation {
@@ -3168,6 +3259,7 @@ final class HubController {
     private let restorationBarrier: HubRestorationBarrier
     private let staleImportCleaner: () -> SourceServerImporter.StaleTemporaryCleanup
     private let migrationConnector: HubMigrationConnector
+    private let sourceStopChecker: HubSourceStopChecker
     /// Background reconciliation requested while another owner held the lifecycle.
     private let deferredLock = NSLock()
     private var deferredReconciles: [(completion: (() -> Void)?, intent: UInt64)] = []
@@ -3250,13 +3342,15 @@ final class HubController {
              SourceServerImporter.connect(host: host, user: user, port: port,
                                              authentication: authentication,
                                              usePasswordlessSudo: sudo, completion: completion)
-         }) {
+         },
+         sourceStopChecker: @escaping HubSourceStopChecker = HubController.sshSourceStopChecker) {
         self.statusLifecycle = statusLifecycle
         self.statusPauseBound = statusPauseBound
         self.observesCollectionWindow = observesCollectionWindow
         self.restorationBarrier = restorationBarrier
         self.staleImportCleaner = staleImportCleaner
         self.migrationConnector = migrationConnector
+        self.sourceStopChecker = sourceStopChecker
         let scene = HubPreviewScene(environmentValue: environment["TESATLAS_HUB_PREVIEW_SCENE"])
         let isPreview = environment["TESATLAS_HUB_UI_PREVIEW"] == "1" || scene != nil
         let previewRoute = isPreview
@@ -4746,6 +4840,180 @@ final class HubController {
             }
         })
         return preparation
+    }
+
+    // MARK: Source stop check and token takeover (M09-T05)
+
+    /// Runs the stop check over the import tunnel's own SSH connection (its control socket):
+    /// no new sign-in to the server and no prompt. Without a live socket it fails, never
+    /// reporting "stopped".
+    static let sshSourceStopChecker: HubSourceStopChecker = { request, completion in
+        guard let socket = SourceStopCheck.controlSocket(inSessionDirectory: request.sessionDirectory) else {
+            completion(.failure(HubActionError.commandFailed(HubL10n.text(
+                "hub.sourceTakeover.stopCheckNoConnection",
+                fallback: "The connection to the source server has closed. Connect to the server again."))))
+            return
+        }
+        let arguments = SourceStopCheck.arguments(controlSocket: socket,
+                                                  destination: request.destination,
+                                                  port: request.port,
+                                                  usePasswordlessSudo: request.usePasswordlessSudo)
+        SourceServerImporter.sshDiscoveryRunner(arguments, SourceStopCheck.script, [:]) { result in
+            completion(result.flatMap { output in Result { try SourceStopCheck.parse(output) } })
+        }
+    }
+
+    /// Checks that the source application's container is stopped, over the existing SSH and
+    /// Docker route of the prepared session. Reads container state and variable names only.
+    /// The completion runs on the main queue.
+    func checkSourceStopped(session: SourceServerImportSession,
+                            host: String,
+                            user: String,
+                            port: Int,
+                            usePasswordlessSudo: Bool,
+                            completion: @escaping (Result<SourceRunState, Error>) -> Void) {
+        let deliver: (Result<SourceRunState, Error>) -> Void = { result in
+            if Thread.isMainThread { completion(result) } else { DispatchQueue.main.async { completion(result) } }
+        }
+        guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
+        guard host.range(of: #"^[A-Za-z0-9._:%-]+$"#, options: .regularExpression) != nil,
+              !host.hasPrefix("-"),
+              user.isEmpty || user.range(of: #"^[A-Za-z_][A-Za-z0-9_-]*$"#, options: .regularExpression) != nil,
+              (1...65535).contains(port) else {
+            deliver(.failure(HubActionError.commandFailed(HubL10n.text(
+                "hub.OnboardingWindowController.1631.2105",
+                fallback: "Enter the source application server, SSH user, and port."))))
+            return
+        }
+        guard let op = admit(.migration, phase: "source-stop-check", completion: deliver) else { return }
+        let request = HubSourceStopCheckRequest(
+            sessionDirectory: session.passwordFile.deletingLastPathComponent(),
+            destination: user.isEmpty ? host : "\(user)@\(host)",
+            port: port,
+            usePasswordlessSudo: usePasswordlessSudo)
+        let checker = sourceStopChecker
+        op.track({ (done: @escaping (Result<SourceRunState, Error>) -> Void) in
+            checker(request, done)
+        }, stale: .failure(HubActionError.commandFailed(
+            HubL10n.text("hub.lifecycle.stale", fallback: "That Hub operation had already finished. Nothing was changed."))),
+        completion: { result in
+            switch result {
+            case let .success(state):
+                HubAppLog.shared.record("source_stop_check.completed", category: "history_import",
+                                        fields: ["source_running": state == .running ? "true" : "false"])
+            case let .failure(error):
+                HubAppLog.shared.record("source_stop_check.failed", category: "history_import",
+                                        level: "WARN", fields: ["error_code": HubAppLog.errorCode(error)])
+            }
+            op.finish(result, completion: deliver)
+        })
+    }
+
+    /// Takes over the source application's stored Tesla login after a successful import
+    /// (`take-over-source-token`, M09-T04). The encryption key and the database password
+    /// travel only on the command's standard input, as one JSON object with exactly
+    /// `postgresPassword` and `encryptionKey`; neither is written, logged or kept here. A
+    /// failure leaves the imported history as it is. The completion runs on the main queue.
+    func takeOverSourceToken(session: SourceServerImportSession,
+                             encryptionKey: String,
+                             completion: @escaping (Result<Void, Error>) -> Void) {
+        let deliver: (Result<Void, Error>) -> Void = { result in
+            if Thread.isMainThread { completion(result) } else { DispatchQueue.main.async { completion(result) } }
+        }
+        guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
+        guard !encryptionKey.isEmpty else {
+            deliver(.failure(HubActionError.commandFailed(HubL10n.text(
+                "hub.sourceTakeover.keyRequired",
+                fallback: "Enter the source application's encryption key."))))
+            return
+        }
+        let standardInput: String
+        do {
+            try Self.validateMigrationSource(session.source)
+            guard let password = HubAppLog.regularFileData(of: session.passwordFile, maximumBytes: 4_096)
+                    .flatMap({ String(data: $0, encoding: .utf8) }), !password.isEmpty else {
+                throw HubActionError.commandFailed(HubL10n.text(
+                    "hub.sourceTakeover.connectionClosed",
+                    fallback: "The connection to the source server has closed. Connect to the server again."))
+            }
+            standardInput = try Self.sourceTakeoverInput(postgresPassword: password, encryptionKey: encryptionKey)
+        } catch {
+            deliver(.failure(error))
+            return
+        }
+        guard let op = admit(.migration, phase: "takeover", completion: deliver) else { return }
+        let arguments = ["--config", configPath.path, "take-over-source-token",
+                         "--source", session.source, "--accept-source-stopped"]
+        HubAppLog.shared.record("source_takeover.started", category: "history_import")
+        op.run(arguments, stdin: standardInput) { [self] result in
+            let outcome: Result<Void, Error>
+            switch result {
+            case let .success(output) where HubSourceTakeoverReport.isComplete(output):
+                do {
+                    try writeSourceTakeoverRecord(takenOverAt: Int64(Date().timeIntervalSince1970))
+                } catch {
+                    // The login is taken over; only the Status line waiting for the first
+                    // refresh is lost.
+                    HubAppLog.shared.record("source_takeover.record_failed", category: "history_import",
+                                            level: "WARN", fields: ["error_code": HubAppLog.errorCode(error)])
+                }
+                HubAppLog.shared.record("source_takeover.completed", category: "history_import")
+                outcome = .success(())
+            case .success:
+                HubAppLog.shared.record("source_takeover.invalid_report", category: "history_import",
+                                        level: "ERROR")
+                outcome = .failure(HubSourceTakeoverRefusal(
+                    code: "takeover_failed", message: HubSourceTakeoverRefusal.message(code: "takeover_failed")))
+            case let .failure(error):
+                let refusal = HubSourceTakeoverRefusal.from(error)
+                HubAppLog.shared.record("source_takeover.failed", category: "history_import",
+                                        level: "ERROR", fields: ["reason": refusal.code])
+                outcome = .failure(HubActionError.keepingQuiescence(of: error, in: refusal))
+            }
+            op.finish(outcome, completion: deliver)
+        }
+    }
+
+    /// The takeover's standard input: exactly `postgresPassword` and `encryptionKey`.
+    static func sourceTakeoverInput(postgresPassword: String, encryptionKey: String) throws -> String {
+        let data = try JSONSerialization.data(
+            withJSONObject: ["postgresPassword": postgresPassword, "encryptionKey": encryptionKey],
+            options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private var sourceTakeoverRecordPath: URL {
+        configPath.deletingLastPathComponent().appendingPathComponent(".source-takeover-first-refresh")
+    }
+
+    /// When this app took over the source login (seconds), while the first refresh is
+    /// outstanding; nil without a readable record. The record holds no secret.
+    var sourceTakeoverRecordedAt: Int64? {
+        guard !previewMode,
+              let data = HubAppLog.regularFileData(of: sourceTakeoverRecordPath, maximumBytes: 1_024),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let value = (root["takenOverAt"] as? NSNumber)?.int64Value, value > 0 else { return nil }
+        return value
+    }
+
+    private func writeSourceTakeoverRecord(takenOverAt: Int64) throws {
+        let folder = configPath.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(withJSONObject: ["takenOverAt": takenOverAt])
+        try data.write(to: sourceTakeoverRecordPath, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)],
+                                              ofItemAtPath: sourceTakeoverRecordPath.path)
+    }
+
+    /// Status after the takeover: the waiting line until `status` shows the first refresh,
+    /// then the record is retired.
+    private func sourceTakeoverAccountText(legacy: [String: Any]?) -> String? {
+        guard let takenOverAt = sourceTakeoverRecordedAt else { return nil }
+        if HubSourceTakeoverStatus.awaitingFirstRefresh(legacy: legacy, takenOverAt: takenOverAt) {
+            return HubSourceTakeoverStatus.awaitingFirstRefreshText
+        }
+        try? FileManager.default.removeItem(at: sourceTakeoverRecordPath)
+        return nil
     }
 
     private func prepareOnlineMigration(_ op: HubLifecycleOperation,
@@ -7558,8 +7826,9 @@ final class HubController {
         } else {
             provider = configuredProvider
         }
+        let takeoverAccount = sourceTakeoverAccountText(legacy: legacy)
         let account = (selectedPresent || legacyPresent || fleetPresent)
-            ? HubL10n.text("hub.HubController.connected_state", fallback: "Connected")
+            ? (takeoverAccount ?? HubL10n.text("hub.HubController.connected_state", fallback: "Connected"))
             : (vehicles.isEmpty ? HubL10n.text("hub.HubController.393.343", fallback: "Not configured") : HubL10n.text("hub.HubController.3807.1275", fallback: "History available · Tesla not connected"))
         let fleetScope = fleet?["scopeStatus"] as? String
         var diagnosticLines = [
