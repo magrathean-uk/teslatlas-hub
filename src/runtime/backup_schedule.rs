@@ -8,9 +8,12 @@
 //! One run at a time: a second request while one runs is refused, never
 //! queued. The schedule survives a restart through a small state file of
 //! times (see [`state`]), so a restart repeats nothing that is not due and
-//! skips nothing that is overdue. The recovery password is read from the
-//! owned file the configuration names at each run ([`password`]); it is never
-//! stored, sent over the channel or logged. A run while refused credentials
+//! skips nothing that is overdue. The recovery password is read at each run
+//! from the one source `backup.password_source` names (M06-T13): the Keychain
+//! item the app wrote on the Mac ([`keychain`], M06-T12), or the owned file
+//! the configuration names ([`password`]); neither falls back to the other. A
+//! manual run may name a file of its own. It is never stored by the service,
+//! sent over the channel or logged. A run while refused credentials
 //! block backups is refused with the refusal that names
 //! `purge-refused-credentials`. Rotation (keep count) is the operation's own:
 //! on a destination that does not enforce ownership it keeps every
@@ -20,6 +23,7 @@
 //! an invalid publication is refused with its own code and records no
 //! success and no generation.
 
+pub mod keychain;
 pub mod password;
 pub mod state;
 
@@ -42,7 +46,10 @@ use crate::{
         refused_credential_backup_message,
     },
     db::HubStore,
-    runtime::{config::BackupConfig, operator::admission::OperatorRefusal},
+    runtime::{
+        config::{BackupConfig, BackupPasswordSource},
+        operator::admission::OperatorRefusal,
+    },
 };
 use state::ScheduleState;
 
@@ -79,7 +86,9 @@ const SHORTEST_WAIT_MS: i64 = 50;
 pub struct BackupSettings {
     pub enabled: bool,
     pub destination: Option<PathBuf>,
-    pub password_file: Option<PathBuf>,
+    /// Where an unattended run reads the password: only the configured
+    /// source. None when the configuration names none.
+    pub password: Option<PasswordSource>,
     pub interval_ms: i64,
     pub keep: Option<NonZeroUsize>,
     pub retry_ms: i64,
@@ -88,24 +97,67 @@ pub struct BackupSettings {
 
 impl BackupSettings {
     pub fn from_config(config: &BackupConfig) -> Self {
+        Self::from_config_on(config, cfg!(target_os = "macos"))
+    }
+
+    /// [`Self::from_config`] on the Mac (`macos`) or elsewhere.
+    pub fn from_config_on(config: &BackupConfig, macos: bool) -> Self {
         let interval_ms = i64::from(config.interval_hours).saturating_mul(MS_PER_HOUR);
         Self {
             enabled: config.enabled,
             destination: config.destination.clone(),
-            password_file: config.password_file.clone(),
+            password: Self::password_on(config, macos),
             interval_ms,
             keep: NonZeroUsize::new(usize::try_from(config.keep).unwrap_or(usize::MAX)),
             retry_ms: RETRY_AFTER_MS.min(interval_ms),
             startup_delay_ms: STARTUP_DELAY_MS.min(interval_ms),
         }
     }
+
+    /// The password source a configuration names. With no
+    /// `password_source` (written before M06-T13) it means what it meant: on
+    /// the Mac the Keychain item whose account is `password_file`, elsewhere
+    /// that file, and nothing without a `password_file`. With `keychain` the
+    /// account is `password_file` or [`keychain::DEFAULT_ACCOUNT`]; with
+    /// `file` it is the file.
+    fn password_on(config: &BackupConfig, macos: bool) -> Option<PasswordSource> {
+        let path = config.password_file.as_deref();
+        match config.password_source_on(macos) {
+            BackupPasswordSource::Keychain => {
+                if config.password_source.is_none() && path.is_none() {
+                    return None;
+                }
+                Some(PasswordSource::Keychain {
+                    account: path.map_or_else(
+                        || keychain::DEFAULT_ACCOUNT.to_owned(),
+                        |path| path.to_string_lossy().into_owned(),
+                    ),
+                })
+            }
+            BackupPasswordSource::File => path.map(|path| PasswordSource::File(path.to_path_buf())),
+        }
+    }
 }
 
-/// One run's inputs. The password stays in its file until the run reads it.
+/// Where a run reads the recovery password.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PasswordSource {
+    /// An owned mode-0600 file: the `file` source, and a manual run's
+    /// `--password-file` everywhere.
+    File(PathBuf),
+    /// The Mac Keychain item the app wrote for this configuration (the
+    /// `keychain` source); its account is the configured
+    /// `backup.password_file` path, which holds no file, or
+    /// [`keychain::DEFAULT_ACCOUNT`] when none is configured.
+    Keychain { account: String },
+}
+
+/// One run's inputs. The password stays in its file or Keychain item until
+/// the run reads it.
 #[derive(Debug, Clone)]
 pub struct BackupJob {
     pub destination: PathBuf,
-    pub password_file: PathBuf,
+    pub password: PasswordSource,
     pub keep: Option<NonZeroUsize>,
     /// Set when the service stops; the run checks it per chunk.
     pub cancel: Arc<AtomicBool>,
@@ -139,17 +191,28 @@ pub fn refusal_from(error: &DataRecoveryError, blocked: Option<&'static str>) ->
 /// Runs the M06-T01 operation against the service's store.
 pub struct StoreBackupRunner {
     store: HubStore,
+    keychain: Arc<dyn keychain::PasswordKeychain>,
 }
 
 impl StoreBackupRunner {
     pub fn new(store: HubStore) -> Self {
-        Self { store }
+        Self::with_keychain(store, keychain::system_keychain())
+    }
+
+    /// The runner with another Keychain (tests).
+    pub fn with_keychain(store: HubStore, keychain: Arc<dyn keychain::PasswordKeychain>) -> Self {
+        Self { store, keychain }
     }
 }
 
 impl BackupRunner for StoreBackupRunner {
     fn run(&self, job: &BackupJob) -> Result<Value, OperatorRefusal> {
-        let password = password::read_password_file(&job.password_file)?;
+        let password = match &job.password {
+            PasswordSource::File(path) => password::read_password_file(path)?,
+            PasswordSource::Keychain { account } => {
+                keychain::read_keychain_password(self.keychain.as_ref(), account)?
+            }
+        };
         let mut request = EncryptedBackupRequest::new(&job.destination, password.as_str());
         request.keep = job.keep;
         request.cancel = Some(Arc::clone(&job.cancel));
@@ -271,7 +334,7 @@ impl Shared {
     fn scheduled_job(&self) -> Option<BackupJob> {
         Some(BackupJob {
             destination: self.settings.destination.clone()?,
-            password_file: self.settings.password_file.clone()?,
+            password: self.settings.password.clone()?,
             keep: self.settings.keep,
             cancel: Arc::clone(&self.cancel),
         })
@@ -391,7 +454,8 @@ impl BackupScheduler {
     }
 
     /// One manual run, the same operation as a scheduled one. `destination`
-    /// and `password_file` default to the configuration's; both must be
+    /// defaults to the configuration's; a `password_file` given here is read as
+    /// a file, otherwise the configured source is used. Both paths must be
     /// absolute. Returns the operation's report, or the refusal.
     pub fn run_now(
         &self,
@@ -408,16 +472,18 @@ impl BackupScheduler {
                     "no backup destination: set backup.destination or pass --destination",
                 )
             })?;
-        let password_file = password_file
-            .map(Path::to_path_buf)
-            .or_else(|| settings.password_file.clone())
+        let password = password_file
+            .map(|path| PasswordSource::File(path.to_path_buf()))
+            .or_else(|| settings.password.clone())
             .ok_or_else(|| {
                 OperatorRefusal::new(
                     BACKUP_NOT_CONFIGURED,
-                    "no backup password file: set backup.password_file or pass --password-file",
+                    "no backup password source: save the recovery password in Teslatlas Hub (Service details, Backups), set backup.password_source (\"keychain\" on the Mac, or \"file\" with backup.password_file), or pass --password-file",
                 )
             })?;
-        if !destination.is_absolute() || !password_file.is_absolute() {
+        let file_is_relative =
+            matches!(&password, PasswordSource::File(path) if !path.is_absolute());
+        if !destination.is_absolute() || file_is_relative {
             return Err(OperatorRefusal::new(
                 BACKUP_PATH_INVALID,
                 "the backup destination and password file are named by absolute paths",
@@ -425,7 +491,7 @@ impl BackupScheduler {
         }
         let job = BackupJob {
             destination,
-            password_file,
+            password,
             keep: settings.keep,
             cancel: Arc::clone(&self.shared.cancel),
         };
@@ -453,7 +519,8 @@ impl BackupScheduler {
         let shared = &self.shared;
         let settings = &shared.settings;
         let state = self.last();
-        let configured = settings.destination.is_some() && settings.password_file.is_some();
+        let configured =
+            settings.destination.is_some() && settings.password.is_some();
         let next_run_ms = (settings.enabled && configured)
             .then(|| next_due_ms(settings, &state, shared.started_ms, now_ms));
         let message = lock(&shared.last_failure_message).clone();

@@ -93,6 +93,11 @@ zip = { version = "9.4.2", default-features = false, features = ["deflate"] }
 zstd = { version = "0.14", features = ["zstdmt"] }
 zeroize = { version = "1", features = ["derive"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# The service reads the unattended backup password from the owner's login keychain
+# (M06-T12, DEC-098). Already in the tree through the TLS root stores; no new package.
+security-framework = { version = "3.7.0", default-features = false }
+
 [dev-dependencies]
 teslatlas-hub = { path = ".", features = ["journey-doubles"] }
 http-body-util = "0.1"

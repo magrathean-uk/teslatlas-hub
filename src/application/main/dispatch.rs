@@ -1157,6 +1157,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", serde_json::to_string(&report)?);
             return Ok(());
         }
+        Command::BackupPassword { action, account } => return run_backup_password(*action, account),
         _ => {}
     }
 
@@ -1716,7 +1717,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         | Command::BackupStatus => {
             unreachable!("credential recovery, the purge and the backup verbs are forwarded to the running service")
         }
-        Command::VerifyBackup { .. } | Command::RestoreData { .. } => {
+        Command::VerifyBackup { .. } | Command::RestoreData { .. } | Command::BackupPassword { .. } => {
             unreachable!("immutable data-recovery commands return before writable Hub state")
         }
     }
@@ -1908,7 +1909,7 @@ mod backup_recovery_repair_tests {
         let report = StoreBackupRunner::new(HubStore::initialize(&hub.data).expect("store"))
             .run(&BackupJob {
                 destination: destination.clone(),
-                password_file,
+                password: teslatlas_hub::runtime::backup_schedule::PasswordSource::File(password_file),
                 keep: None,
                 cancel: Arc::new(AtomicBool::new(false)),
             })

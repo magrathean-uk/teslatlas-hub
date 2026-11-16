@@ -668,7 +668,7 @@ fn data_recovery_m06_t15_cancellation_reaches_the_publication_read_back() {
     let settings = BackupSettings {
         enabled: false,
         destination: Some(hub.destination.clone()),
-        password_file: Some(hub.temporary.path().join("unused-password")),
+        password: Some(crate::runtime::backup_schedule::PasswordSource::File(hub.temporary.path().join("unused-password"))),
         interval_ms: 3_600_000,
         keep: NonZeroUsize::new(1),
         retry_ms: 60_000,

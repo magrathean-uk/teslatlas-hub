@@ -73,8 +73,8 @@ pub struct HubConfig {
 }
 
 /// Scheduled encrypted backups (M06-T03). The recovery password is never
-/// part of the configuration: `password_file` names an owned mode-0600 file
-/// that the service reads at each run and never logs. A change applies when
+/// part of the configuration: `password_source` names where the service reads
+/// it at each run (M06-T13), and it is never logged. A change applies when
 /// the service restarts.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -86,8 +86,16 @@ pub struct BackupConfig {
     /// the Hub data directory.
     #[serde(default)]
     pub destination: Option<PathBuf>,
-    /// Owned mode-0600 file holding the recovery password (at least 12
-    /// characters; one trailing newline is ignored).
+    /// Where the unattended password comes from. Absent (a configuration
+    /// written before M06-T13) means what it meant before: the Keychain on the
+    /// Mac and the file elsewhere, with `password_file` required while
+    /// `enabled` is true (see [`BackupConfig::password_source_on`]).
+    #[serde(default)]
+    pub password_source: Option<BackupPasswordSource>,
+    /// With the `file` source: the owned mode-0600 file holding the recovery
+    /// password (at least 12 characters; one trailing newline is ignored).
+    /// With the Keychain: optional, and only the item's account name (the app
+    /// writes the path it once used for the file); no file is read there.
     #[serde(default)]
     pub password_file: Option<PathBuf>,
     /// Hours between scheduled runs.
@@ -97,6 +105,19 @@ pub struct BackupConfig {
     /// enforce ownership keeps every generation whatever this says.
     #[serde(default = "default_backup_keep")]
     pub keep: u32,
+}
+
+/// Where the service reads the unattended backup password (M06-T13).
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum BackupPasswordSource {
+    /// The Mac Keychain item the app writes, readable without a prompt only
+    /// by the app and its bundled service. macOS only; refused elsewhere.
+    Keychain,
+    /// The owned mode-0600 file `backup.password_file` names, refused when
+    /// any other account may read it: on Linux a `systemd-creds` or
+    /// root-owned 0600 credential, in Docker a mounted secret.
+    File,
 }
 
 pub const MIN_BACKUP_INTERVAL_HOURS: u32 = 1;
@@ -117,6 +138,7 @@ impl Default for BackupConfig {
         Self {
             enabled: false,
             destination: None,
+            password_source: None,
             password_file: None,
             interval_hours: default_backup_interval_hours(),
             keep: default_backup_keep(),
@@ -125,7 +147,29 @@ impl Default for BackupConfig {
 }
 
 impl BackupConfig {
+    /// The password source on this system.
+    pub fn effective_password_source(&self) -> BackupPasswordSource {
+        self.password_source_on(cfg!(target_os = "macos"))
+    }
+
+    /// The password source on the Mac (`macos`) or elsewhere: the configured
+    /// one, or for a configuration that names none, the Keychain on the Mac
+    /// (with `password_file` as the item's account, as M06-T12 read it) and
+    /// the file elsewhere.
+    pub fn password_source_on(&self, macos: bool) -> BackupPasswordSource {
+        self.password_source.unwrap_or(if macos {
+            BackupPasswordSource::Keychain
+        } else {
+            BackupPasswordSource::File
+        })
+    }
+
     pub fn validate(&self, data_dir: &Path) -> Result<(), ConfigError> {
+        self.validate_on(data_dir, cfg!(target_os = "macos"))
+    }
+
+    /// [`Self::validate`] for the Mac (`macos`) or elsewhere.
+    pub fn validate_on(&self, data_dir: &Path, macos: bool) -> Result<(), ConfigError> {
         if !(MIN_BACKUP_INTERVAL_HOURS..=MAX_BACKUP_INTERVAL_HOURS).contains(&self.interval_hours)
         {
             return Err(ConfigError::Invalid(
@@ -152,7 +196,26 @@ impl BackupConfig {
         {
             return Err(ConfigError::Invalid("backup.password_file must be absolute"));
         }
-        if self.enabled && (self.destination.is_none() || self.password_file.is_none()) {
+        match self.password_source {
+            Some(BackupPasswordSource::Keychain) if !macos => {
+                return Err(ConfigError::Invalid(
+                    "backup.password_source = \"keychain\" is available only on macOS; use \"file\" with backup.password_file (a systemd-creds or root-owned 0600 credential, or a mounted secret)",
+                ));
+            }
+            Some(BackupPasswordSource::File) if self.password_file.is_none() => {
+                return Err(ConfigError::Invalid(
+                    "backup.password_file is required when backup.password_source is \"file\"",
+                ));
+            }
+            _ => {}
+        }
+        if self.enabled && self.destination.is_none() {
+            return Err(ConfigError::Invalid(
+                "backup.destination is required while backup.enabled is true",
+            ));
+        }
+        // A configuration that names no source keeps the earlier rule.
+        if self.enabled && self.password_source.is_none() && self.password_file.is_none() {
             return Err(ConfigError::Invalid(
                 "backup.destination and backup.password_file are required while backup.enabled is true",
             ));

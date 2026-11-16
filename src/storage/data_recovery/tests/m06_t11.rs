@@ -213,7 +213,7 @@ fn data_recovery_m06_t11_backup_schedule_records_no_last_good_for_an_invalid_pub
     let settings = BackupSettings {
         enabled: false,
         destination: Some(hub.destination.clone()),
-        password_file: Some(hub.temporary.path().join("unused-password")),
+        password: Some(crate::runtime::backup_schedule::PasswordSource::File(hub.temporary.path().join("unused-password"))),
         interval_ms: 3_600_000,
         keep: NonZeroUsize::new(2),
         retry_ms: 60_000,

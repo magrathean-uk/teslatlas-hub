@@ -610,14 +610,17 @@ pub enum Command {
     },
     /// Run one encrypted backup now, the same operation the service's schedule
     /// runs (forwarded to the running service). The destination and the
-    /// password file default to the `[backup]` configuration; the password
-    /// itself is never an argument. Refused while another backup runs.
+    /// password default to the `[backup]` configuration (its
+    /// `password_source`: the Mac Keychain, or a file); `--password-file`
+    /// overrides the source with an owned file. The password itself is never
+    /// an argument. Refused while another backup runs.
     #[command(name = "backup-now")]
     BackupNow {
         /// Backup folder (default: `backup.destination`).
         #[arg(long)]
         destination: Option<PathBuf>,
-        /// Owned mode-0600 file holding the recovery password (default: `backup.password_file`).
+        /// Owned mode-0600 file holding the recovery password, in place of the
+        /// configured source (default: the source `backup.password_source` names).
         #[arg(long)]
         password_file: Option<PathBuf>,
     },
@@ -626,12 +629,35 @@ pub enum Command {
     /// what blocks backups.
     #[command(name = "backup-status")]
     BackupStatus,
+    /// Keep the unattended backup password in the Mac Keychain (the app runs
+    /// this). `store` reads the password as one line of standard input, saves
+    /// it in place under this binary's own access and reads it back; `compare`
+    /// reads a password the same way and says whether the item holds it;
+    /// `status` says whether the item holds a usable password. The password is
+    /// never an argument and is never printed.
+    #[command(name = "backup-password")]
+    BackupPassword {
+        #[arg(value_enum)]
+        action: BackupPasswordAction,
+        /// The item's account: the configured `backup.password_file` path, or
+        /// `unattended-backup` when the configuration names none.
+        #[arg(long)]
+        account: String,
+    },
     /// Collection windows: status, trust, open and close are forwarded to the
     /// running service; the issuer verbs run on the issuer Mac only.
     Window {
         #[command(subcommand)]
         command: WindowCommand,
     },
+}
+
+/// What `backup-password` does with the Keychain item.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum BackupPasswordAction {
+    Store,
+    Compare,
+    Status,
 }
 
 /// Collection-window verbs (docs/operations/collection-windows.md).

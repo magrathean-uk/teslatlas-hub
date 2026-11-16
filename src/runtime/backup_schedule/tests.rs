@@ -34,11 +34,21 @@ use crate::{
 const PASSWORD: &str = "correct horse battery staple";
 const HOUR: i64 = MS_PER_HOUR;
 
+/// The source a configuration that names `path` and no `password_source`
+/// means on this system: the Keychain item on the Mac, the file elsewhere.
+fn configured(path: &Path) -> PasswordSource {
+    if cfg!(target_os = "macos") {
+        PasswordSource::Keychain { account: path.to_string_lossy().into_owned() }
+    } else {
+        PasswordSource::File(path.to_path_buf())
+    }
+}
+
 fn settings(enabled: bool) -> BackupSettings {
     BackupSettings {
         enabled,
         destination: Some(PathBuf::from("/backup/destination")),
-        password_file: Some(PathBuf::from("/backup/password")),
+        password: Some(configured(Path::new("/backup/password"))),
         interval_ms: 6 * HOUR,
         keep: NonZeroUsize::new(3),
         retry_ms: 15 * 60 * 1000,
@@ -107,7 +117,7 @@ fn backup_schedule_runs_when_due_and_waits_the_interval_after_a_success() {
     assert_eq!(script.count(), 1);
     let job = script.jobs.lock().unwrap()[0].clone();
     assert_eq!(job.destination, PathBuf::from("/backup/destination"));
-    assert_eq!(job.password_file, PathBuf::from("/backup/password"));
+    assert_eq!(job.password, configured(Path::new("/backup/password")));
     assert_eq!(job.keep, NonZeroUsize::new(3));
     // Nothing until a whole interval has passed.
     match schedule.tick(first + 6 * HOUR - 1) {
@@ -262,12 +272,12 @@ fn backup_schedule_manual_trigger_uses_its_paths_refuses_relative_ones_and_needs
         .expect("overrides");
     let job = script.jobs.lock().unwrap()[0].clone();
     assert_eq!(job.destination, PathBuf::from("/elsewhere"));
-    assert_eq!(job.password_file, PathBuf::from("/pw"));
+    assert_eq!(job.password, PasswordSource::File(PathBuf::from("/pw")), "a given file is read as a file");
     let relative = schedule.run_now(Some(Path::new("relative")), None).expect_err("relative");
     assert_eq!(relative.code, BACKUP_PATH_INVALID);
     let mut bare = settings(false);
     bare.destination = None;
-    bare.password_file = None;
+    bare.password = None;
     let schedule = scheduler(bare, script.clone(), dir.path(), 0);
     assert_eq!(schedule.run_now(None, None).expect_err("unconfigured").code, BACKUP_NOT_CONFIGURED);
     assert_eq!(
@@ -448,6 +458,93 @@ fn backup_schedule_password_file_rules_and_nothing_prints_the_password() {
     assert!(!debug.contains(PASSWORD));
 }
 
+/// REV-M06-T06 finding 6: a mode-0600 file whose ACL lets another account
+/// read it was accepted, because only the mode bits were checked.
+#[test]
+fn backup_schedule_password_file_with_a_foreign_acl_is_refused() {
+    let dir = crate::private_tempdir().unwrap();
+    let shared = password_file(dir.path(), "shared", PASSWORD.as_bytes(), 0o600);
+    #[cfg(target_os = "macos")]
+    let granted = std::process::Command::new("/bin/chmod")
+        .arg("+a")
+        .arg("group:everyone allow read")
+        .arg(&shared)
+        .status()
+        .unwrap()
+        .success();
+    #[cfg(not(target_os = "macos"))]
+    let granted = std::process::Command::new("setfacl")
+        .arg("--modify")
+        .arg("user:nobody:r")
+        .arg(&shared)
+        .status()
+        .is_ok_and(|status| status.success());
+    if granted {
+        // macOS keeps the mode bits; Linux shows the recalculated ACL mask in
+        // the group bits (REV-CX-M06-T12 finding 10). Either way the owner
+        // alone holds rw and the grant itself is what is refused.
+        let expected = if cfg!(target_os = "macos") { 0o600 } else { 0o640 };
+        assert_eq!(fs::metadata(&shared).unwrap().permissions().mode() & 0o777, expected);
+        let refusal = password::read_password_file(&shared).expect_err("an ACL grant is refused");
+        assert_eq!(refusal.code, password::PASSWORD_FILE_INVALID);
+        // On Linux the recalculated mask makes the group bits r, so the mode
+        // rule refuses first (REV-CX-M06-T17 CR-5); the ACL rule itself is
+        // exercised with a zero mask in the next test.
+        let refused_by = if cfg!(target_os = "macos") { "access control list" } else { "mode 0600" };
+        assert!(refusal.message.contains(refused_by), "{refusal}");
+        assert!(!refusal.message.contains(PASSWORD), "{refusal}");
+    } else {
+        assert!(!cfg!(target_os = "macos"), "chmod +a must work on macOS");
+    }
+    // A deny-only list grants nothing and is accepted.
+    #[cfg(target_os = "macos")]
+    {
+        let denied = password_file(dir.path(), "denied", PASSWORD.as_bytes(), 0o600);
+        assert!(
+            std::process::Command::new("/bin/chmod")
+                .arg("+a")
+                .arg("group:everyone deny write")
+                .arg(&denied)
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert_eq!(password::read_password_file(&denied).unwrap().as_str(), PASSWORD);
+    }
+}
+
+#[test]
+fn backup_schedule_acl_parsers_refuse_any_grant_and_anything_malformed() {
+    let entry = |tag: u16, permissions: u16, id: u32| {
+        let mut bytes = tag.to_le_bytes().to_vec();
+        bytes.extend_from_slice(&permissions.to_le_bytes());
+        bytes.extend_from_slice(&id.to_le_bytes());
+        bytes
+    };
+    let header = 2_u32.to_le_bytes().to_vec();
+    let base = [header.clone(), entry(0x01, 6, u32::MAX), entry(0x04, 0, u32::MAX), entry(0x20, 0, u32::MAX)].concat();
+    assert!(!password::posix_acl_grants_access(&base));
+    let masked = [base.clone(), entry(0x10, 0, u32::MAX)].concat();
+    assert!(!password::posix_acl_grants_access(&masked));
+    assert!(password::posix_acl_grants_access(&[base.clone(), entry(0x02, 4, 65534)].concat()));
+    assert!(password::posix_acl_grants_access(&[base.clone(), entry(0x08, 2, 20)].concat()));
+    assert!(!password::posix_acl_grants_access(&[base.clone(), entry(0x08, 0, 20)].concat()));
+    assert!(password::posix_acl_grants_access(&[base.clone(), entry(0x40, 0, 0)].concat()));
+    assert!(password::posix_acl_grants_access(&base[..base.len() - 1]));
+    assert!(password::posix_acl_grants_access(&[1_u32.to_le_bytes().to_vec(), base[4..].to_vec()].concat()));
+    assert!(password::posix_acl_grants_access(&[]));
+
+    let plain = "-rw-------  1 owner  staff  12 Nov 12 13:00 /p\n";
+    assert!(!password::macos_acl_listing_grants_access(plain));
+    assert!(password::macos_acl_listing_grants_access(&format!("{plain} 0: group:everyone allow read\n")));
+    assert!(password::macos_acl_listing_grants_access(&format!(
+        "{plain} 0: user:other deny write\n 1: user:other inherited allow write,append\n"
+    )));
+    assert!(!password::macos_acl_listing_grants_access(&format!("{plain} 0: group:everyone deny read\n")));
+    // A file name holding "allow" on the first line is not an entry.
+    assert!(!password::macos_acl_listing_grants_access("-rw-------  1 o  s  1 Nov 12 13:00 /a 0: allow\n"));
+}
+
 #[test]
 fn backup_schedule_real_runner_writes_a_verifiable_generation_and_leaks_no_password() {
     let root = crate::private_tempdir().unwrap();
@@ -461,9 +558,13 @@ fn backup_schedule_real_runner_writes_a_verifiable_generation_and_leaks_no_passw
     fs::create_dir(&state_dir).unwrap();
     let mut live = settings(false);
     live.destination = Some(destination.clone());
-    live.password_file = Some(password.clone());
+    live.password = Some(configured(&password));
     live.keep = NonZeroUsize::new(2);
-    let schedule = scheduler(live, Arc::new(StoreBackupRunner::new(store)), &state_dir, 0);
+    // On the Mac the configured path names the Keychain item (an injected
+    // store here); elsewhere the file itself is read.
+    let keychain = Arc::new(FakeKeychain::holding(&password.to_string_lossy(), PASSWORD.as_bytes()));
+    let runner = StoreBackupRunner::with_keychain(store, keychain);
+    let schedule = scheduler(live, Arc::new(runner), &state_dir, 0);
     let mut paths = Vec::new();
     for _ in 0..3 {
         let report = schedule.run_now(None, None).expect("backup");
@@ -521,4 +622,706 @@ fn backup_schedule_status_reports_the_last_generation_next_run_and_a_block() {
     // Off: no next run.
     let off = scheduler(settings(false), Arc::new(Script::default()), dir.path(), 0);
     assert_eq!(off.status_at(0)["nextRunMs"], Value::Null);
+}
+
+// M06-T12: the unattended password comes from the Mac Keychain.
+
+/// An injected Keychain: one item, or one failure for every read.
+struct FakeKeychain {
+    account: String,
+    answer: Result<Vec<u8>, keychain::KeychainFailure>,
+    reads: AtomicUsize,
+}
+
+impl FakeKeychain {
+    fn holding(account: &str, password: &[u8]) -> Self {
+        Self { account: account.to_owned(), answer: Ok(password.to_vec()), reads: AtomicUsize::new(0) }
+    }
+
+    fn failing(failure: keychain::KeychainFailure) -> Self {
+        Self { account: String::new(), answer: Err(failure), reads: AtomicUsize::new(0) }
+    }
+}
+
+impl keychain::PasswordKeychain for FakeKeychain {
+    fn read(&self, account: &str) -> Result<zeroize::Zeroizing<Vec<u8>>, keychain::KeychainFailure> {
+        self.reads.fetch_add(1, Ordering::SeqCst);
+        match &self.answer {
+            Ok(bytes) if account == self.account => Ok(zeroize::Zeroizing::new(bytes.clone())),
+            Ok(_) => Err(keychain::KeychainFailure::Missing),
+            Err(failure) => Err(*failure),
+        }
+    }
+}
+
+#[test]
+fn backup_schedule_keychain_source_on_the_mac_and_a_file_elsewhere_or_when_given() {
+    let config = parse("[backup]\npassword_file = \"/Users/me/Hub/backup-password\"\n").expect("config");
+    let source = BackupSettings::from_config(&config.backup).password.expect("a source");
+    if cfg!(target_os = "macos") {
+        assert_eq!(source, PasswordSource::Keychain { account: "/Users/me/Hub/backup-password".to_owned() });
+    } else {
+        assert_eq!(source, PasswordSource::File(PathBuf::from("/Users/me/Hub/backup-password")));
+    }
+    // A scheduled run and a manual run without a file use the configured source.
+    let dir = tempfile::tempdir().unwrap();
+    let script = Arc::new(Script::default());
+    let schedule = scheduler(settings(true), script.clone(), dir.path(), 0);
+    assert!(matches!(schedule.tick(10 * 60 * 1000), Tick::Ran(Ok(()))));
+    schedule.run_now(None, None).expect("manual");
+    schedule.run_now(None, Some(Path::new("/given"))).expect("manual with a file");
+    let jobs = script.jobs.lock().unwrap().clone();
+    let configured = configured(Path::new("/backup/password"));
+    assert_eq!(jobs[0].password, configured);
+    assert_eq!(jobs[1].password, configured);
+    assert_eq!(jobs[2].password, PasswordSource::File(PathBuf::from("/given")));
+}
+
+#[test]
+fn backup_schedule_the_keychain_password_runs_the_backup_and_an_unreadable_item_is_unavailable() {
+    use keychain::{BACKUP_PASSWORD_UNAVAILABLE, KeychainFailure, read_keychain_password};
+    let held = FakeKeychain::holding("/Hub/backup-password", PASSWORD.as_bytes());
+    assert_eq!(read_keychain_password(&held, "/Hub/backup-password").unwrap().as_str(), PASSWORD);
+    let dir = tempfile::tempdir().unwrap();
+    let waiting = password_file(dir.path(), "backup-password", PASSWORD.as_bytes(), 0o600);
+    let cases: Vec<(FakeKeychain, &str, &str)> = vec![
+        (FakeKeychain::failing(KeychainFailure::Missing), "/Hub/backup-password", "is not in the Keychain"),
+        (FakeKeychain::failing(KeychainFailure::Missing), waiting.to_str().unwrap(), "waiting to move into the Keychain"),
+        (FakeKeychain::failing(KeychainFailure::Refused), "/Hub/backup-password", "may not read"),
+        (FakeKeychain::failing(KeychainFailure::Unreadable), "/Hub/backup-password", "cannot be read"),
+        (FakeKeychain::holding("/Hub/backup-password", &[0xff, 0xfe]), "/Hub/backup-password", "cannot be read"),
+        (FakeKeychain::holding("/Hub/backup-password", &[b'a'; 2000]), "/Hub/backup-password", "cannot be read"),
+        (FakeKeychain::holding("/Hub/backup-password", b""), "/Hub/backup-password", "cannot be read"),
+    ];
+    for (keychain, account, words) in &cases {
+        let refusal = read_keychain_password(keychain, account).expect_err("refused");
+        assert_eq!(refusal.code, BACKUP_PASSWORD_UNAVAILABLE);
+        assert!(refusal.message.contains(words), "{}", refusal.message);
+        assert!(refusal.message.contains("save the recovery password again"), "{}", refusal.message);
+        assert!(!refusal.message.contains(PASSWORD));
+    }
+    // The waiting file is never read as a fallback.
+    assert!(waiting.exists());
+
+    // Through the service's runner: the run is refused, recorded with its
+    // code and message for the app, and retried at the retry wait.
+    let root = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(root.path().join("data")).expect("store");
+    let destination = root.path().join("destination");
+    fs::create_dir(&destination).unwrap();
+    fs::set_permissions(&destination, fs::Permissions::from_mode(0o700)).unwrap();
+    let state_dir = root.path().join("state");
+    fs::create_dir(&state_dir).unwrap();
+    let mut live = settings(true);
+    live.destination = Some(destination.clone());
+    let refused = Arc::new(FakeKeychain::failing(KeychainFailure::Refused));
+    let runner = StoreBackupRunner::with_keychain(store, refused.clone());
+    let schedule = scheduler(live.clone(), Arc::new(runner), &state_dir, 0);
+    if cfg!(target_os = "macos") {
+        let first = 10 * 60 * 1000;
+        match schedule.tick(first) {
+            Tick::Ran(Err(refusal)) => assert_eq!(refusal.code, BACKUP_PASSWORD_UNAVAILABLE),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(refused.reads.load(Ordering::SeqCst), 1);
+        let status = schedule.status_at(first);
+        assert_eq!(status["lastFailureCode"], BACKUP_PASSWORD_UNAVAILABLE);
+        assert!(status["lastFailureMessage"].as_str().unwrap().contains("save the recovery password again"));
+        assert_eq!(status["nextRunMs"], first + live.retry_ms);
+        assert_eq!(fs::read_dir(&destination).unwrap().count(), 0, "nothing was written");
+    } else {
+        // Elsewhere the configured file is read and the Keychain is never asked.
+        let refusal = schedule.run_now(None, None).expect_err("no such file");
+        assert_eq!(refusal.code, password::PASSWORD_FILE_INVALID);
+        assert_eq!(refused.reads.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn backup_schedule_the_service_reads_a_disposable_keychain_without_a_prompt() {
+    use keychain::{KEYCHAIN_SERVICE, KeychainFailure, PasswordKeychain, SystemKeychain, classify};
+    use security_framework::os::macos::keychain::CreateOptions;
+    // DEC-156 and the incident of 14 November: Keychain calls run only in the
+    // lab guest (`TESLATLAS_HUB_KEYCHAIN_GUEST=1`), never on the owner's Mac;
+    // there the injected stores above cover the same rules.
+    if std::env::var_os("TESLATLAS_HUB_KEYCHAIN_GUEST").is_none() {
+        eprintln!("skipped here: runs in the lab guest only (TESLATLAS_HUB_KEYCHAIN_GUEST=1)");
+        return;
+    }
+    // A disposable keychain in a private folder under the temp folder; the
+    // login keychain is never touched. Its own (random, unprinted) password
+    // unlocks it.
+    let root = crate::private_tempdir().unwrap();
+    assert!(root.path().starts_with(std::env::temp_dir()), "the disposable keychain stays in the temp folder");
+    let unlock = uuid::Uuid::new_v4().to_string();
+    let disposable = CreateOptions::new()
+        .password(&unlock)
+        .prompt_user(false)
+        .create(root.path().join("backup-test.keychain"))
+        .expect("disposable keychain");
+    let account = "/Users/fixture/Library/Application Support/Teslatlas Hub/backup-password";
+    disposable
+        .add_generic_password(KEYCHAIN_SERVICE, account, PASSWORD.as_bytes())
+        .expect("item");
+    let reader = SystemKeychain::only(disposable);
+    assert_eq!(keychain::read_keychain_password(&reader, account).unwrap().as_str(), PASSWORD);
+    assert_eq!(reader.read("/another/hub/backup-password").err(), Some(KeychainFailure::Missing));
+    // M06-T17: the service replaces its own item in place and reads it back.
+    keychain::store_password(&reader, account, b"another long recovery password").expect("replaced");
+    assert_eq!(reader.read(account).unwrap().as_slice(), b"another long recovery password");
+    keychain::store_password(&reader, "/new/hub/backup-password", PASSWORD.as_bytes()).expect("added");
+    assert_eq!(
+        keychain::compare_password(&reader, "/new/hub/backup-password", PASSWORD.as_bytes()).unwrap(),
+        keychain::Comparison::Equal
+    );
+    assert!(
+        security_framework::os::macos::keychain::SecKeychain::user_interaction_allowed().unwrap(),
+        "the read gives the user interface back to the process"
+    );
+    assert_eq!(classify(-25300), KeychainFailure::Missing);
+    assert_eq!(classify(-25308), KeychainFailure::Refused);
+    assert_eq!(classify(-25293), KeychainFailure::Refused);
+    assert_eq!(classify(-50), KeychainFailure::Unreadable);
+}
+
+// M06-T13: `backup.password_source` names where the password comes from.
+
+/// The `[backup]` table alone, validated as on the Mac (`macos`) or elsewhere.
+fn backup_table(table: &str, macos: bool) -> Result<BackupConfig, crate::config::ConfigError> {
+    let config: BackupConfig = toml::from_str(table).expect("a [backup] table");
+    config.validate_on(Path::new("/data/hub"), macos).map(|()| config)
+}
+
+fn invalid_message(result: Result<BackupConfig, crate::config::ConfigError>) -> &'static str {
+    match result {
+        Err(crate::config::ConfigError::Invalid(message)) => message,
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn backup_password_source_each_value_is_accepted_where_valid() {
+    use crate::config::BackupPasswordSource;
+    // The Keychain on the Mac, with no password_file: the default account.
+    let keychain = backup_table(
+        "enabled = true\ndestination = \"/Volumes/Backups/hub\"\npassword_source = \"keychain\"\n",
+        true,
+    )
+    .expect("keychain without a path on the Mac");
+    assert_eq!(keychain.password_source, Some(BackupPasswordSource::Keychain));
+    assert_eq!(
+        BackupSettings::from_config_on(&keychain, true).password,
+        Some(PasswordSource::Keychain { account: keychain::DEFAULT_ACCOUNT.to_owned() })
+    );
+    // With the path the app writes: that path is the item's account.
+    let named = backup_table(
+        "enabled = true\ndestination = \"/b\"\npassword_source = \"keychain\"\npassword_file = \"/Users/me/Hub/backup-password\"\n",
+        true,
+    )
+    .expect("keychain with the app's path");
+    assert_eq!(
+        BackupSettings::from_config_on(&named, true).password,
+        Some(PasswordSource::Keychain { account: "/Users/me/Hub/backup-password".to_owned() })
+    );
+    // A file, on the Mac and elsewhere.
+    for macos in [true, false] {
+        let file = backup_table(
+            "enabled = true\ndestination = \"/b\"\npassword_source = \"file\"\npassword_file = \"/run/credentials/hub/backup-password\"\n",
+            macos,
+        )
+        .expect("file with a path");
+        assert_eq!(file.password_source_on(macos), BackupPasswordSource::File);
+        assert_eq!(
+            BackupSettings::from_config_on(&file, macos).password,
+            Some(PasswordSource::File(PathBuf::from("/run/credentials/hub/backup-password")))
+        );
+    }
+    // Through the service's own loader on this system.
+    let native = if cfg!(target_os = "macos") { "keychain" } else { "file" };
+    let loaded = parse(&format!(
+        "[backup]\nenabled = true\ndestination = \"/b\"\npassword_source = \"{native}\"\npassword_file = \"/p\"\n"
+    ))
+    .expect("the native source loads");
+    assert_eq!(loaded.backup.effective_password_source(), loaded.backup.password_source.unwrap());
+    // Any other value is refused by name.
+    assert!(parse("[backup]\npassword_source = \"environment\"\n").is_err());
+    assert!(parse("[backup]\npassword_source = \"Keychain\"\n").is_err());
+}
+
+#[test]
+fn backup_password_source_keychain_is_refused_off_the_mac() {
+    for table in [
+        "password_source = \"keychain\"\n",
+        "enabled = true\ndestination = \"/b\"\npassword_source = \"keychain\"\npassword_file = \"/p\"\n",
+    ] {
+        let message = invalid_message(backup_table(table, false));
+        assert!(message.contains("only on macOS") && message.contains("\"file\""), "{message}");
+    }
+    let loaded = parse("[backup]\npassword_source = \"keychain\"\n");
+    if cfg!(target_os = "macos") {
+        loaded.expect("the Mac accepts the Keychain");
+    } else {
+        assert!(loaded.is_err(), "the service refuses the Keychain off the Mac");
+    }
+}
+
+#[test]
+fn backup_password_source_file_without_a_path_is_refused() {
+    for macos in [true, false] {
+        for table in [
+            "password_source = \"file\"\n",
+            "enabled = true\ndestination = \"/b\"\npassword_source = \"file\"\n",
+        ] {
+            let message = invalid_message(backup_table(table, macos));
+            assert!(message.contains("backup.password_file is required"), "{message}");
+        }
+        // The path rules stay: an absolute path only.
+        let relative = backup_table("password_source = \"file\"\npassword_file = \"relative\"\n", macos);
+        assert_eq!(invalid_message(relative), "backup.password_file must be absolute");
+    }
+    assert!(parse("[backup]\npassword_source = \"file\"\n").is_err());
+}
+
+#[test]
+fn backup_password_source_an_old_configuration_loads_with_the_same_behaviour() {
+    use crate::config::BackupPasswordSource;
+    let old = "enabled = true\ndestination = \"/Volumes/Backups/hub\"\npassword_file = \"/Users/me/Hub/backup-password\"\n";
+    // The Mac: the Keychain item named by the path (M06-T12); elsewhere: the file.
+    let mac = backup_table(old, true).expect("loads on the Mac");
+    assert_eq!(mac.password_source, None);
+    assert_eq!(mac.password_source_on(true), BackupPasswordSource::Keychain);
+    assert_eq!(
+        BackupSettings::from_config_on(&mac, true).password,
+        Some(PasswordSource::Keychain { account: "/Users/me/Hub/backup-password".to_owned() })
+    );
+    let elsewhere = backup_table(old, false).expect("loads elsewhere");
+    assert_eq!(elsewhere.password_source_on(false), BackupPasswordSource::File);
+    assert_eq!(
+        BackupSettings::from_config_on(&elsewhere, false).password,
+        Some(PasswordSource::File(PathBuf::from("/Users/me/Hub/backup-password")))
+    );
+    // Still required while enabled, with the earlier message, on both.
+    for macos in [true, false] {
+        let message = invalid_message(backup_table("enabled = true\ndestination = \"/b\"\n", macos));
+        assert_eq!(
+            message,
+            "backup.destination and backup.password_file are required while backup.enabled is true"
+        );
+        // Not enabled and no path: no source, so a manual run without a file is refused.
+        let bare = backup_table("destination = \"/b\"\n", macos).expect("loads");
+        assert_eq!(BackupSettings::from_config_on(&bare, macos).password, None);
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let script = Arc::new(Script::default());
+    let bare = parse("[backup]\ndestination = \"/b\"\n").expect("loads");
+    let schedule = scheduler(BackupSettings::from_config(&bare.backup), script.clone(), dir.path(), 0);
+    assert_eq!(schedule.run_now(None, None).expect_err("no source").code, BACKUP_NOT_CONFIGURED);
+    assert_eq!(schedule.status_at(0)["configured"], json!(false));
+    assert_eq!(script.count(), 0);
+    // The service's own loader on this system gives the platform's meaning.
+    let native = parse(&format!("[backup]\n{old}")).expect("an old configuration loads");
+    assert_eq!(
+        BackupSettings::from_config(&native.backup).password,
+        Some(configured(Path::new("/Users/me/Hub/backup-password")))
+    );
+}
+
+#[test]
+fn backup_password_source_the_schedule_reads_the_named_source_only() {
+    use keychain::{BACKUP_PASSWORD_UNAVAILABLE, KeychainFailure};
+    let root = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(root.path().join("data")).expect("store");
+    let destination = root.path().join("destination");
+    fs::create_dir(&destination).unwrap();
+    fs::set_permissions(&destination, fs::Permissions::from_mode(0o700)).unwrap();
+    // A valid password file at the configured path in every case.
+    let file = password_file(root.path(), "backup-password", format!("{PASSWORD}\n").as_bytes(), 0o600);
+    let account = file.to_string_lossy().into_owned();
+    let mut index = 0;
+    let mut run = |source: PasswordSource, keychain: Arc<FakeKeychain>| {
+        index += 1;
+        let state_dir = root.path().join(format!("state-{index}"));
+        fs::create_dir(&state_dir).unwrap();
+        let mut live = settings(true);
+        live.destination = Some(destination.clone());
+        live.password = Some(source);
+        let runner = StoreBackupRunner::with_keychain(store.clone(), keychain);
+        let schedule = scheduler(live, Arc::new(runner), &state_dir, 0);
+        match schedule.tick(10 * 60 * 1000) {
+            Tick::Ran(result) => result.map(|()| schedule.last().last_generation),
+            other => panic!("{other:?}"),
+        }
+    };
+
+    // Keychain: the file beside it is never read, even when the item is missing.
+    let missing = Arc::new(FakeKeychain::failing(KeychainFailure::Missing));
+    let refusal = run(PasswordSource::Keychain { account: account.clone() }, missing.clone())
+        .expect_err("no fallback to the file");
+    assert_eq!(refusal.code, BACKUP_PASSWORD_UNAVAILABLE);
+    assert_eq!(missing.reads.load(Ordering::SeqCst), 1);
+    assert_eq!(fs::read_dir(&destination).unwrap().count(), 0, "nothing was written");
+    let held = Arc::new(FakeKeychain::holding(keychain::DEFAULT_ACCOUNT, PASSWORD.as_bytes()));
+    run(PasswordSource::Keychain { account: keychain::DEFAULT_ACCOUNT.to_owned() }, held.clone())
+        .expect("the Keychain item runs the backup");
+    assert_eq!(held.reads.load(Ordering::SeqCst), 1);
+
+    // File: the Keychain is never asked, even when it holds the password.
+    let unused = Arc::new(FakeKeychain::holding(&account, PASSWORD.as_bytes()));
+    run(PasswordSource::File(file.clone()), unused.clone()).expect("the file runs the backup");
+    let absent = root.path().join("absent-password");
+    let refusal = run(PasswordSource::File(absent), unused.clone()).expect_err("no fallback to the Keychain");
+    assert_eq!(refusal.code, password::PASSWORD_FILE_INVALID);
+    assert_eq!(unused.reads.load(Ordering::SeqCst), 0);
+    assert!(file.exists(), "the file is left as it was");
+}
+
+// M06-T17: the service binary owns the Keychain item (DEC-123 option A).
+
+/// An injected Keychain that writes in place, or fails or alters a write when
+/// told to. Never a real keychain.
+#[derive(Default)]
+struct MemoryKeychain {
+    items: std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>,
+    write_failure: Option<keychain::KeychainFailure>,
+    alter_writes: bool,
+}
+
+impl MemoryKeychain {
+    fn holding(account: &str, password: &[u8]) -> Self {
+        let keychain = Self::default();
+        keychain.items.lock().unwrap().insert(account.to_owned(), password.to_vec());
+        keychain
+    }
+}
+
+impl keychain::PasswordKeychain for MemoryKeychain {
+    fn read(&self, account: &str) -> Result<zeroize::Zeroizing<Vec<u8>>, keychain::KeychainFailure> {
+        self.items.lock().unwrap().get(account).cloned().map(zeroize::Zeroizing::new).ok_or(keychain::KeychainFailure::Missing)
+    }
+
+    fn write(&self, account: &str, password: &[u8]) -> Result<(), keychain::KeychainFailure> {
+        if let Some(failure) = self.write_failure {
+            return Err(failure);
+        }
+        let mut value = password.to_vec();
+        if self.alter_writes {
+            value.push(b'x');
+        }
+        self.items.lock().unwrap().insert(account.to_owned(), value);
+        Ok(())
+    }
+}
+
+/// REV-CX-M06-T12 findings 2 and 3, REV-CX-M06-T08 finding 1 (producer).
+#[test]
+fn backup_password_source_store_replaces_in_place_reads_back_and_keeps_the_old_password() {
+    use keychain::{BACKUP_PASSWORD_INVALID, BACKUP_PASSWORD_UNAVAILABLE, KeychainFailure, read_keychain_password, store_password};
+    let account = "/Hub/backup-password";
+    let memory = MemoryKeychain::default();
+    store_password(&memory, account, PASSWORD.as_bytes()).expect("added");
+    assert_eq!(read_keychain_password(&memory, account).unwrap().as_str(), PASSWORD);
+    store_password(&memory, account, b"another long recovery password").expect("replaced");
+    assert_eq!(read_keychain_password(&memory, account).unwrap().as_str(), "another long recovery password");
+    // A write that fails leaves the stored password as it was.
+    let failing = MemoryKeychain { write_failure: Some(KeychainFailure::Refused), ..MemoryKeychain::holding(account, PASSWORD.as_bytes()) };
+    let refusal = store_password(&failing, account, b"a third long recovery password").expect_err("refused");
+    assert_eq!(refusal.code, BACKUP_PASSWORD_UNAVAILABLE);
+    assert_eq!(read_keychain_password(&failing, account).unwrap().as_str(), PASSWORD);
+    // A read-back that differs is reported, never taken as saved.
+    let altering = MemoryKeychain { alter_writes: true, ..MemoryKeychain::default() };
+    let refusal = store_password(&altering, account, PASSWORD.as_bytes()).expect_err("read-back differs");
+    assert_eq!(refusal.code, BACKUP_PASSWORD_UNAVAILABLE);
+    assert!(refusal.message.contains("different"), "{refusal}");
+    // Only passwords the recovery commands can be given back are stored.
+    let long = vec![b'a'; 1025];
+    for bad in [&b"short"[..], b"short\nline", &[0xff; 20], &long] {
+        let refusal = store_password(&memory, account, bad).expect_err("refused");
+        assert_eq!(refusal.code, BACKUP_PASSWORD_INVALID);
+        assert!(!refusal.message.contains(PASSWORD), "{refusal}");
+    }
+    assert_eq!(read_keychain_password(&memory, account).unwrap().as_str(), "another long recovery password");
+    assert_eq!(store_password(&memory, "", PASSWORD.as_bytes()).unwrap_err().code, BACKUP_PASSWORD_INVALID);
+}
+
+/// REV-CX-M06-T12 finding 5 and REV-CX-M06-T13 finding 4: the app asks the
+/// service whether an item exists and what it holds.
+#[test]
+fn backup_password_source_compare_and_status_answer_through_the_service_access() {
+    use keychain::{BACKUP_PASSWORD_UNAVAILABLE, Comparison, KeychainFailure, compare_password, password_from_input, password_status};
+    let account = "/Hub/backup-password";
+    let memory = MemoryKeychain::holding(account, PASSWORD.as_bytes());
+    assert_eq!(compare_password(&memory, account, PASSWORD.as_bytes()).unwrap(), Comparison::Equal);
+    assert_eq!(compare_password(&memory, account, b"another long recovery password").unwrap(), Comparison::Different);
+    assert_eq!(compare_password(&memory, "/other/backup-password", PASSWORD.as_bytes()).unwrap(), Comparison::Missing);
+    assert!(password_status(&memory, account).unwrap());
+    assert!(!password_status(&memory, "unattended-backup").unwrap());
+    let refused = FakeKeychain::failing(KeychainFailure::Refused);
+    assert_eq!(compare_password(&refused, account, PASSWORD.as_bytes()).unwrap_err().code, BACKUP_PASSWORD_UNAVAILABLE);
+    assert_eq!(password_status(&refused, account).unwrap_err().code, BACKUP_PASSWORD_UNAVAILABLE);
+    let short = MemoryKeychain::holding(account, b"short");
+    assert_eq!(password_status(&short, account).unwrap_err().code, BACKUP_PASSWORD_UNAVAILABLE);
+    // Standard input: one line end dropped, at most 1 KiB, never empty.
+    assert_eq!(password_from_input(&b"recovery-value\n"[..]).unwrap().as_slice(), b"recovery-value");
+    assert_eq!(password_from_input(&b"recovery-value\r\n"[..]).unwrap().as_slice(), b"recovery-value");
+    assert!(password_from_input(&b""[..]).is_err());
+    assert!(password_from_input(&b"\n"[..]).is_err());
+    assert!(password_from_input(&vec![b'a'; 1030][..]).is_err());
+}
+
+/// REV-CX-M06-T12 finding 9 and REV-CX-M06-T08 finding 1: a short or altered
+/// item is `backup_password_unavailable`, also through the service's runner.
+#[test]
+fn backup_schedule_a_short_or_altered_keychain_item_is_unavailable_through_the_runner() {
+    use keychain::{BACKUP_PASSWORD_UNAVAILABLE, read_keychain_password};
+    let account = "/Hub/backup-password";
+    // A short item is unavailable. Legacy items with CR, LF or NUL stay readable
+    // unchanged (REV-CX-M06-T17 CR-7), so they are not part of this refusal.
+    let held = FakeKeychain::holding(account, b"elevenchars");
+    assert_eq!(read_keychain_password(&held, account).unwrap_err().code, BACKUP_PASSWORD_UNAVAILABLE);
+    for value in [&b"correct horse\nbattery staple"[..], b"correct horse\0battery staple"] {
+        let held = FakeKeychain::holding(account, value);
+        assert_eq!(read_keychain_password(&held, account).expect("legacy item readable").as_bytes(), value);
+    }
+    let root = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(root.path().join("data")).expect("store");
+    let destination = root.path().join("destination");
+    fs::create_dir(&destination).unwrap();
+    fs::set_permissions(&destination, fs::Permissions::from_mode(0o700)).unwrap();
+    let state_dir = root.path().join("state");
+    fs::create_dir(&state_dir).unwrap();
+    let mut live = settings(true);
+    live.destination = Some(destination.clone());
+    live.password = Some(PasswordSource::Keychain { account: account.to_owned() });
+    let runner = StoreBackupRunner::with_keychain(store, Arc::new(FakeKeychain::holding(account, b"elevenchars")));
+    let schedule = scheduler(live, Arc::new(runner), &state_dir, 0);
+    let refusal = schedule.run_now(None, None).expect_err("a short item is refused");
+    assert_eq!(refusal.code, BACKUP_PASSWORD_UNAVAILABLE);
+    assert_eq!(fs::read_dir(&destination).unwrap().count(), 0, "nothing was written");
+}
+
+/// REV-CX-M06-T12 finding 8: the ACL listing names the held file, so a clean
+/// file swapped in at the pathname while it runs does not hide the grant.
+#[cfg(target_os = "macos")]
+#[test]
+fn backup_schedule_the_acl_check_inspects_the_opened_file_not_the_pathname() {
+    use password::acl_listing_seam::{self, Stage};
+    let dir = crate::private_tempdir().unwrap();
+    let shared = password_file(dir.path(), "shared", PASSWORD.as_bytes(), 0o600);
+    assert!(
+        std::process::Command::new("/bin/chmod").arg("+a").arg("group:everyone allow read").arg(&shared).status().unwrap().success()
+    );
+    let clean = password_file(dir.path(), "clean", PASSWORD.as_bytes(), 0o600);
+    let aside = dir.path().join("aside");
+    let (named, spare, moved) = (shared.clone(), clean.clone(), aside.clone());
+    acl_listing_seam::set(Some(Box::new(move |stage, _| match stage {
+        Stage::Before => {
+            fs::rename(&named, &moved).unwrap();
+            fs::rename(&spare, &named).unwrap();
+        }
+        Stage::After => {
+            fs::rename(&named, &spare).unwrap();
+            fs::rename(&moved, &named).unwrap();
+        }
+    })));
+    let result = password::read_password_file(&shared);
+    acl_listing_seam::set(None);
+    let refusal = result.expect_err("the held file's grant is seen");
+    assert_eq!(refusal.code, password::PASSWORD_FILE_INVALID);
+    assert!(refusal.message.contains("access control list"), "{refusal}");
+    assert!(shared.exists() && clean.exists() && !aside.exists(), "the seam put both files back");
+}
+
+/// REV-CX-M06-T17 CR-5: on Linux a named grant under an explicit zero mask
+/// leaves mode 0600, so only the descriptor's ACL check can refuse the file.
+#[cfg(target_os = "linux")]
+#[test]
+fn backup_schedule_linux_a_zero_mask_acl_grant_is_refused_by_the_acl_check() {
+    let dir = crate::private_tempdir().unwrap();
+    let shared = password_file(dir.path(), "masked", PASSWORD.as_bytes(), 0o600);
+    let granted = std::process::Command::new("setfacl")
+        .arg("--no-mask")
+        .arg("--modify")
+        .arg("user:nobody:r,mask::---")
+        .arg(&shared)
+        .status()
+        .is_ok_and(|status| status.success());
+    if !granted {
+        eprintln!("setfacl is not available here; the zero-mask file case is not run");
+        return;
+    }
+    assert_eq!(fs::metadata(&shared).unwrap().permissions().mode() & 0o777, 0o600);
+    let refusal = password::read_password_file(&shared).expect_err("the grant is refused");
+    assert_eq!(refusal.code, password::PASSWORD_FILE_INVALID);
+    assert!(refusal.message.contains("access control list"), "{refusal}");
+}
+
+/// REV-CX-M06-T12 finding 10: the Linux parser on an explicit zero mask. A
+/// named entry with permissions counts as a grant even when the mask would
+/// cut it to nothing: the reader fails closed.
+#[test]
+fn backup_schedule_linux_acl_parser_with_an_explicit_zero_mask() {
+    fn entry(tag: u16, permissions: u16, id: u32) -> Vec<u8> {
+        [tag.to_le_bytes().to_vec(), permissions.to_le_bytes().to_vec(), id.to_le_bytes().to_vec()].concat()
+    }
+    let header = 2_u32.to_le_bytes().to_vec();
+    let base = [entry(0x01, 6, u32::MAX), entry(0x04, 0, u32::MAX), entry(0x20, 0, u32::MAX)].concat();
+    let masked = [header.clone(), entry(0x01, 6, u32::MAX), entry(0x02, 4, 65534), entry(0x04, 0, u32::MAX), entry(0x10, 0, u32::MAX), entry(0x20, 0, u32::MAX)].concat();
+    let empty_named = [header.clone(), entry(0x01, 6, u32::MAX), entry(0x02, 0, 65534), entry(0x04, 0, u32::MAX), entry(0x10, 0, u32::MAX), entry(0x20, 0, u32::MAX)].concat();
+    assert!(!password::posix_acl_grants_access(&[header.clone(), base].concat()));
+    assert!(password::posix_acl_grants_access(&masked), "a named grant under a zero mask is still refused");
+    assert!(!password::posix_acl_grants_access(&empty_named));
+}
+
+/// REV-CX-M06-T08 finding 1: an empty password file could never be given back
+/// to the recovery commands; a password already in use keeps working.
+#[test]
+fn backup_schedule_an_empty_password_file_is_refused_and_a_used_one_keeps_working() {
+    let dir = crate::private_tempdir().unwrap();
+    for (name, bytes) in [("empty-line", &b"\n"[..]), ("crlf-only", b"\r\n")] {
+        let file = password_file(dir.path(), name, bytes, 0o600);
+        assert_eq!(password::read_password_file(&file).unwrap_err().code, password::PASSWORD_FILE_INVALID);
+    }
+    let used = password_file(dir.path(), "used", b"short pw\twith tab\n", 0o600);
+    assert_eq!(password::read_password_file(&used).unwrap().as_str(), "short pw\twith tab");
+}
+
+/// REV-CX-M06-T13 finding 5: the missing-source refusal names every source.
+#[test]
+fn backup_schedule_the_missing_password_source_refusal_names_the_keychain_and_the_file() {
+    let dir = crate::private_tempdir().unwrap();
+    let mut unset = settings(true);
+    unset.password = None;
+    unset.destination = Some(dir.path().to_path_buf());
+    let schedule = scheduler(unset, Arc::new(Script::default()), dir.path(), 0);
+    let refusal = schedule.run_now(None, None).expect_err("no source");
+    assert!(refusal.message.contains("password_source"), "{refusal}");
+    assert!(refusal.message.contains("--password-file"), "{refusal}");
+}
+
+/// REV-CX-M06-T17 CR-7: a scheduled password file in use with a CR, LF or NUL
+/// inside moves into the Keychain with its exact bytes (as the app frames it
+/// on standard input), the service's runner backs up with it, and the
+/// recovery commands open that backup from the original file's bytes after a
+/// `#pw-file` line. One that ends in CR or LF is refused on store
+/// (REV2-CX-M06-T17 CR-8), but an item already holding it still works.
+#[test]
+fn backup_password_source_a_legacy_password_with_line_ends_or_nul_migrates_and_recovers() {
+    use keychain::{Comparison, compare_password, password_from_input, read_keychain_password, store_password};
+    let root = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(root.path().join("data")).expect("store");
+    store.create_pairing("Schedule fixture", 1_000, 10_000).expect("pairing");
+    let account = "/Hub/backup-password";
+    let cases: [&[u8]; 5] = [
+        b"correct horse\nbattery staple",
+        b"correct horse\rbattery staple",
+        b"correct horse\0battery staple",
+        b"correct horse battery staple\r",
+        b"correct horse battery staple\n",
+    ];
+    for (index, original) in cases.into_iter().enumerate() {
+        // The file as the scheduled reader took it: one final LF dropped (a
+        // password that ends in CR was written without one).
+        let mut body = original.to_vec();
+        if original.last() != Some(&b'\r') {
+            body.push(b'\n');
+        }
+        let file = password_file(root.path(), &format!("legacy-{index}"), &body, 0o600);
+        let in_use = password::read_password_file(&file).expect("the file was a usable password");
+        assert_eq!(in_use.as_bytes(), original);
+        // The app's framing: one more LF unless the password ends in CR.
+        let mut framed = original.to_vec();
+        if original.last() != Some(&b'\r') {
+            framed.push(b'\n');
+        }
+        let sent = password_from_input(&framed[..]).unwrap();
+        assert_eq!(sent.as_slice(), original, "case {index}");
+        let memory = if matches!(original.last(), Some(b'\r' | b'\n')) {
+            let empty = MemoryKeychain::default();
+            store_password(&empty, account, &sent).expect_err("a final line end is not newly stored");
+            Arc::new(MemoryKeychain::holding(account, original))
+        } else {
+            let memory = Arc::new(MemoryKeychain::default());
+            store_password(memory.as_ref(), account, &sent).expect("the password in use moves");
+            memory
+        };
+        assert_eq!(compare_password(memory.as_ref(), account, original).unwrap(), Comparison::Equal);
+        assert_eq!(read_keychain_password(memory.as_ref(), account).unwrap().as_bytes(), original);
+        let destination = root.path().join(format!("destination-{index}"));
+        fs::create_dir(&destination).unwrap();
+        fs::set_permissions(&destination, fs::Permissions::from_mode(0o700)).unwrap();
+        let state_dir = root.path().join(format!("state-{index}"));
+        fs::create_dir(&state_dir).unwrap();
+        let mut live = settings(false);
+        live.destination = Some(destination);
+        live.password = Some(PasswordSource::Keychain { account: account.to_owned() });
+        let runner = StoreBackupRunner::with_keychain(store.clone(), memory);
+        let report = scheduler(live, Arc::new(runner), &state_dir, 0).run_now(None, None).expect("backup");
+        let bundle = PathBuf::from(report["path"].as_str().unwrap());
+        let mut recovery_input = b"#pw-file\n".to_vec();
+        recovery_input.extend_from_slice(&body);
+        let recovered = data_recovery::recovery_password_from(&recovery_input[..]).expect("recovery input");
+        assert_eq!(recovered.as_bytes(), original, "case {index}");
+        verify_encrypted_backup(&bundle, &recovered).expect("the backup opens with the original bytes");
+    }
+}
+
+/// REV2-CX-M06-T17 CR-8: a password whose last byte is CR or LF is refused on
+/// store with a clear message, including the 1,023 x `a` + LF counterexample
+/// that no recovery password file of at most 1 KiB can give back; a legacy
+/// item with a final LF still reads and compares unchanged.
+#[test]
+fn backup_password_source_store_refuses_a_final_line_end_and_a_legacy_item_still_reads() {
+    use keychain::{BACKUP_PASSWORD_INVALID, Comparison, compare_password, password_from_input, read_keychain_password, store_password};
+    let account = "/Hub/backup-password";
+    let mut counterexample = vec![b'a'; 1023];
+    counterexample.push(b'\n');
+    let mut framed = counterexample.clone();
+    framed.push(b'\n');
+    let sent = password_from_input(&framed[..]).expect("the app's framing is read");
+    assert_eq!(sent.as_slice(), counterexample.as_slice());
+    let memory = MemoryKeychain::default();
+    let refusal = store_password(&memory, account, &sent).expect_err("refused");
+    assert_eq!(refusal.code, BACKUP_PASSWORD_INVALID);
+    assert!(refusal.message.contains("line break"), "{refusal}");
+    assert!(memory.items.lock().unwrap().is_empty(), "nothing is written");
+    for ending in [&b"\n"[..], b"\r", b"\r\n"] {
+        let mut password = b"correct horse battery staple".to_vec();
+        password.extend_from_slice(ending);
+        let refusal = store_password(&memory, account, &password).expect_err("refused");
+        assert_eq!(refusal.code, BACKUP_PASSWORD_INVALID);
+        assert!(refusal.message.contains("line break"), "{refusal}");
+    }
+    assert!(memory.items.lock().unwrap().is_empty(), "nothing is written");
+    // A line end inside, or a password of exactly 1 KiB without one, is still stored.
+    store_password(&memory, account, b"correct horse\nbattery staple").expect("stored");
+    store_password(&memory, account, &vec![b'a'; 1024]).expect("stored");
+    // An item already holding a final LF (stored before this rule) reads unchanged.
+    let legacy = MemoryKeychain::holding(account, &counterexample);
+    assert_eq!(read_keychain_password(&legacy, account).unwrap().as_bytes(), counterexample.as_slice());
+    assert_eq!(compare_password(&legacy, account, &counterexample).unwrap(), Comparison::Equal);
+}
+
+/// REV-CX-M06-T17 CR-2: the service's loader reads a basic quoted key with
+/// escapes as the same key, so the app must too (its tests use this spelling).
+#[test]
+fn backup_password_source_an_escaped_source_key_is_the_same_key() {
+    let table = "enabled = true\ndestination = \"/Volumes/B\"\n\"password\\u005fsource\" = \"file\"\npassword_file = \"/Users/fixture/backup-password\"\n";
+    let backup = backup_table(table, true).expect("loads");
+    let settings = BackupSettings::from_config_on(&backup, true);
+    assert_eq!(settings.password, Some(PasswordSource::File(PathBuf::from("/Users/fixture/backup-password"))));
+}
+
+/// REV-CX-M06-T17 CR-6: an item holding the same bytes as an old file but not
+/// a password the service can use is a refusal, never `equal`, so the app
+/// keeps the file.
+#[test]
+fn backup_password_source_an_equal_but_unusable_item_is_not_equal() {
+    use keychain::{BACKUP_PASSWORD_UNAVAILABLE, compare_password};
+    let account = "/Hub/backup-password";
+    for unusable in [&b"short"[..], &[0xff; 20]] {
+        let memory = MemoryKeychain::holding(account, unusable);
+        let refusal = compare_password(&memory, account, unusable).expect_err("not a usable password");
+        assert_eq!(refusal.code, BACKUP_PASSWORD_UNAVAILABLE);
+    }
 }

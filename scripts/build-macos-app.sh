@@ -28,19 +28,27 @@ maintained_rust_toolchain() {
 
 usage() {
     cat <<'EOF'
-Usage: scripts/build-macos-app.sh [--check-go-toolchain|--check-go-toolchain-chain]
+Usage: scripts/build-macos-app.sh [--check-go-toolchain|--check-go-toolchain-chain|--sign-service-binary PATH]
 
-Builds the local ad-hoc-signed macOS app.
+Builds the local ad-hoc-signed macOS app; its embedded Hub service binary is
+signed with the stable Apple Development identity named in project.yml.
 
 Options:
   --check-go-toolchain        Validate and print the selected Go executable.
   --check-go-toolchain-chain  Validate selection through all downstream tools.
+  --sign-service-binary PATH  Sign one Hub service binary as the app build does, and stop.
 EOF
 }
 
 check_go_toolchain=none
+sign_only=
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --sign-service-binary)
+            [ "$#" -ge 2 ] || die "--sign-service-binary needs a path"
+            sign_only=$2
+            shift 2
+            ;;
         --check-go-toolchain)
             check_go_toolchain=single
             shift
@@ -61,6 +69,43 @@ while [ "$#" -gt 0 ]; do
 done
 
 ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd -P)
+
+# The Hub service binary creates and owns the backup password's Keychain item
+# (M06-T17, DEC-123, DEC-156). It is signed with the stable Apple Development
+# identity, team and identifier that project.yml names, so a rebuilt or
+# updated binary keeps reading that item without a prompt; an ad-hoc build
+# would be refused. Only codesign touches the signing identity here.
+project_setting() {
+    /usr/bin/sed -n "s/^[[:space:]]*$1:[[:space:]]*\"\{0,1\}\([^\"]*\)\"\{0,1\}[[:space:]]*\$/\1/p" \
+        "$ROOT/macos/TeslatlasHubApp/project.yml" | /usr/bin/head -n 1
+}
+
+sign_service_binary() {
+    service_binary=$1
+    service_identity=${TESLATLAS_HUB_SERVICE_SIGNING_IDENTITY:-$(project_setting TESLATLAS_HUB_SERVICE_SIGNING_IDENTITY)}
+    service_team=$(project_setting TESLATLAS_HUB_SERVICE_SIGNING_TEAM)
+    service_identifier=$(project_setting TESLATLAS_HUB_SERVICE_IDENTIFIER)
+    [ -n "$service_identity" ] && [ -n "$service_team" ] && [ -n "$service_identifier" ] \
+        || die "the service signing settings are missing from project.yml"
+    [ -f "$service_binary" ] && [ ! -L "$service_binary" ] \
+        || die "the Hub service binary to sign is missing or unsafe"
+    /usr/bin/codesign --force --sign "$service_identity" --identifier "$service_identifier" \
+        --timestamp=none "$service_binary" >/dev/null \
+        || die "cannot sign the Hub service binary with $service_identity"
+    service_signature=$(/usr/bin/codesign --display --verbose=2 "$service_binary" 2>&1) \
+        || die "cannot read the Hub service signature"
+    printf '%s\n' "$service_signature" | /usr/bin/grep -qx "Identifier=$service_identifier" \
+        && printf '%s\n' "$service_signature" | /usr/bin/grep -qx "TeamIdentifier=$service_team" \
+        || die "the Hub service binary is not signed by team $service_team as $service_identifier"
+    /usr/bin/codesign --verify --strict "$service_binary" \
+        || die "the Hub service signature does not verify"
+}
+
+if [ -n "$sign_only" ]; then
+    sign_service_binary "$sign_only"
+    printf '%s\n' "$sign_only"
+    exit 0
+fi
 GO_TOOLCHAIN_HELPER="$ROOT/scripts/go_toolchain.py"
 [ -f "$GO_TOOLCHAIN_HELPER" ] && [ ! -L "$GO_TOOLCHAIN_HELPER" ] \
     || die "Go toolchain selector is missing or unsafe"
@@ -404,12 +449,13 @@ app_binary="$PRODUCT/Contents/MacOS/Teslatlas Hub"
 is_executable_macho "$app_binary" || die "App binary is not a Mach-O executable"
 require_macos_13_or_earlier "$app_binary"
 
-# Rust and Go already emit valid ad-hoc signatures for these Apple-silicon
-# Mach-O binaries. Preserve their exact evidence-bound bytes here. Re-signing
-# nested resources would change the subjects bound to the clean-build evidence.
+# The Hub service binary is signed with the stable identity (see
+# sign_service_binary); nothing binds its build-time bytes to evidence. Go
+# already emits valid ad-hoc signatures for the two Go binaries: preserve their
+# exact evidence-bound bytes here, since re-signing them would change the
+# subjects bound to the clean-build evidence.
+sign_service_binary "$resources/teslatlas-hub"
 for evidence_bound_binary in \
-    "$resources/teslatlas-hub" \
-    "$resources/tesla-http-proxy" \
     "$resources/fleet-telemetry"; do
     /usr/bin/codesign --verify --strict "$evidence_bound_binary" \
         || die "embedded release binary lacks its build-time ad-hoc signature"

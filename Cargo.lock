@@ -2430,6 +2430,7 @@ dependencies = [
  "rust_decimal",
  "rustix",
  "rustls",
+ "security-framework",
  "serde",
  "serde_jcs",
  "serde_json",
