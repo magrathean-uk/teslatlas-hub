@@ -421,14 +421,16 @@ impl std::fmt::Debug for CredentialPairPresence {
 /// stop, for example because the collection window it runs in has ended.
 pub(crate) type CredentialStartupFence = std::sync::Arc<dyn Fn() -> bool + Send + Sync>;
 /// The credential connection's SQLite handle with the vault's startup fence
-/// (M04-T09). While a fenced vault opening holds a fence, every write transaction,
-/// autocommit write and batch begun on this handle asks it first, so a window that
-/// ended during an earlier wait (a barrier, a key file sync, a backup exclusion)
-/// stops the next independent transaction before it begins: the failure records
-/// after a barrier, Phase B's commits, purge and markers, and a resumed rotation's
-/// reservation and reseal included. Reads are not fenced, and the opening clears
-/// the fence when it ends, so the settlement of a permitted exchange keeps its own
-/// authority.
+/// (M04-T09, M04-T10). While a fenced vault opening holds a fence, IMMEDIATE and
+/// EXCLUSIVE transactions, and `execute` and `execute_batch` called on this wrapper,
+/// ask it first, so a window that ended during an earlier wait (a barrier, a key
+/// file sync, a backup exclusion) stops the next independent mutation before it
+/// begins. An IMMEDIATE or EXCLUSIVE transaction asks it again once BEGIN returns,
+/// because BEGIN itself may wait on another writer's lock; a refusal then rolls the
+/// transaction back before anything is written. Deferred transactions and everything
+/// reached through `Deref` or `DerefMut` are not fenced and must stay read-only. The
+/// opening clears the fence when it ends, so the settlement of a permitted exchange
+/// keeps its own authority.
 struct StartupFencedConnection {
     connection: Connection,
     fence: Option<CredentialStartupFence>,
@@ -438,19 +440,22 @@ impl StartupFencedConnection {
         Self { connection, fence: None }
     }
     fn startup_refusal(&self) -> rusqlite::Result<()> {
-        if self.fence.as_ref().is_some_and(|refused| refused()) {
-            return Err(rusqlite::Error::SqliteFailure(
-                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ABORT),
-                Some("credential startup fence refused the transaction".to_owned()),
-            ));
-        }
-        Ok(())
+        startup_fence_refusal(self.fence.as_ref())
     }
     fn transaction_with_behavior(&mut self, behavior: TransactionBehavior) -> rusqlite::Result<Transaction<'_>> {
-        if !matches!(behavior, TransactionBehavior::Deferred) {
-            self.startup_refusal()?;
+        if matches!(behavior, TransactionBehavior::Deferred) {
+            return self.connection.transaction_with_behavior(behavior);
         }
-        self.connection.transaction_with_behavior(behavior)
+        self.startup_refusal()?;
+        let transaction = self.connection.transaction_with_behavior(behavior)?;
+        // BEGIN may have waited on another writer's lock (up to the busy timeout,
+        // longer across a host sleep); the window may have ended meanwhile.
+        if let Err(refused) = startup_fence_refusal(self.fence.as_ref()) {
+            // Nothing was written yet: roll back and keep the fence's refusal.
+            let _ = transaction.rollback();
+            return Err(refused);
+        }
+        Ok(transaction)
     }
     fn execute<P: rusqlite::Params>(&self, sql: &str, params: P) -> rusqlite::Result<usize> {
         self.startup_refusal()?;
@@ -460,6 +465,15 @@ impl StartupFencedConnection {
         self.startup_refusal()?;
         self.connection.execute_batch(sql)
     }
+}
+fn startup_fence_refusal(fence: Option<&CredentialStartupFence>) -> rusqlite::Result<()> {
+    if fence.is_some_and(|refused| refused()) {
+        return Err(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ABORT),
+            Some("credential startup fence refused the transaction".to_owned()),
+        ));
+    }
+    Ok(())
 }
 impl std::ops::Deref for StartupFencedConnection {
     type Target = Connection;

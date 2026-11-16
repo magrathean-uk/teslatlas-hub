@@ -1186,3 +1186,44 @@ fn credential_startup_fence_resumed_rotation_waits_for_the_window() {
         assert!(vault.keys.read().expect("keys").as_ref().expect("keyring").keyring().previous.is_none(), "the next open resumes");
     }
 }
+
+// M04-T10: BEGIN IMMEDIATE may wait on another writer's lock, and the window can
+// end during that wait; the fence is asked again once BEGIN returns.
+#[test]
+fn credential_startup_fence_refuses_when_the_window_ends_while_begin_waits() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let root = crate::private_tempdir().expect("fixture root");
+    let store = HubStore::initialize(root.path()).expect("store");
+    let mut connection = store.take_credential_connection().expect("credential connection");
+    let key = super::super::credential_envelope::KeyId([7; 8]);
+    let (expired, consulted) = (Arc::new(AtomicBool::new(false)), Arc::new(AtomicUsize::new(0)));
+    let (first_consult, before_begin) = std::sync::mpsc::channel::<()>();
+    let (fence_expired, fence_consulted) = (Arc::clone(&expired), Arc::clone(&consulted));
+    connection.set_startup_fence(Some(Arc::new(move || {
+        let refused = fence_expired.load(Ordering::SeqCst);
+        if fence_consulted.fetch_add(1, Ordering::SeqCst) == 0 { let _ = first_consult.send(()); }
+        refused
+    })));
+    let (held, lock_held) = std::sync::mpsc::channel::<()>();
+    let (catalogue, holder_expired) = (root.path().join("hub.sqlite"), Arc::clone(&expired));
+    let holder = std::thread::spawn(move || {
+        let mut writer = rusqlite::Connection::open(catalogue).expect("other writer");
+        let lock = writer.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).expect("held write lock");
+        held.send(()).expect("lock held");
+        before_begin.recv().expect("the fence passed before BEGIN");
+        // BEGIN IMMEDIATE now waits on this lock; the window ends during the wait.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        holder_expired.store(true, Ordering::SeqCst);
+        lock.commit().expect("release the write lock");
+    });
+    lock_held.recv().expect("lock held");
+    let result = connection.reserve_credential_invocations(key, 2);
+    holder.join().expect("holder");
+    assert!(matches!(&result, Err(StoreError::Begin(rusqlite::Error::SqliteFailure(error, Some(message))))
+        if error.code == rusqlite::ErrorCode::OperationAborted && message.contains("startup fence")), "{result:?}");
+    assert_eq!(consulted.load(Ordering::SeqCst), 2, "the fence is asked before BEGIN and again once it returns");
+    connection.set_startup_fence(None);
+    assert_eq!(connection.credential_reserved_invocations(key).expect("reservations"), 0, "the fenced write did not land");
+    connection.reserve_credential_invocations(key, 2).expect("an unfenced write lands");
+    assert_eq!(connection.credential_reserved_invocations(key).expect("reservations"), 2, "the connection is usable after the refusal");
+}
