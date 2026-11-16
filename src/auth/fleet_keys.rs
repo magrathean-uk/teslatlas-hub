@@ -50,8 +50,13 @@ pub enum FleetKeyError {
 /// a malformed, inaccessible or unsafe key. The existing backup exclusion
 /// covers `fleet-command-key.pem`; no private material enters a report.
 pub fn ensure_command_key(data_dir: &Path) -> Result<CommandPublicKey, FleetKeyError> {
+    // The Hub data directory must already exist. Only secrets may be new,
+    // and its entry must be durable before any public identity is exported.
+    let parent =
+        private_directory::open_validated(data_dir, false).map_err(|_| FleetKeyError::Storage)?;
     let directory = private_directory::open_validated(&data_dir.join("secrets"), true)
         .map_err(|_| FleetKeyError::Storage)?;
+    parent.durable_sync().map_err(|_| FleetKeyError::Storage)?;
     let lock = match directory
         .inspect_entry(LOCK_NAME)
         .map_err(|_| FleetKeyError::Storage)?
@@ -241,5 +246,32 @@ mod tests {
             Err(FleetKeyError::Storage)
         ));
         assert!(std::fs::read_dir(target).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn fleet_partner_key_durably_links_secrets_before_export() {
+        let tmp = crate::private_tempdir().unwrap();
+        let parent = std::fs::metadata(tmp.path()).unwrap();
+        let (result, barriers) =
+            private_directory::with_sync_observations(|| ensure_command_key(tmp.path()));
+        assert!(result.is_ok());
+        assert!(barriers.iter().any(|(_, regular, dev, ino)| !regular
+            && *dev == parent.dev()
+            && *ino == parent.ino()));
+        assert!(matches!(
+            ensure_command_key(&tmp.path().join("missing/data")),
+            Err(FleetKeyError::Storage)
+        ));
+        assert!(!tmp.path().join("missing").exists());
+    }
+
+    #[test]
+    fn fleet_partner_key_durability_failure_exports_nothing_and_can_retry() {
+        let tmp = crate::private_tempdir().unwrap();
+        let (result, _) =
+            private_directory::with_sync_faults(true, || ensure_command_key(tmp.path()));
+        assert!(matches!(result, Err(FleetKeyError::Storage)));
+        assert!(!tmp.path().join("secrets").join(KEY_NAME).exists());
+        assert!(ensure_command_key(tmp.path()).is_ok());
     }
 }
