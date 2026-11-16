@@ -101,7 +101,9 @@ settings in a form it cannot rewrite safely (dotted keys or inline tables). It t
 the Hub (it stays enabled at login), imports, and starts the Hub again if it was running,
 once the importer can no longer write. The import counts as finished only when the Hub's
 process is confirmed serving its configuration again (`teslatlas-hub serving-check`,
-which works between windows and never contacts Tesla). The data the Hub collected in its
+which works between windows and never contacts Tesla). A Hub that answers but reports a
+fault (credential store, catalogue, quarantine or history it cannot serve) is not
+confirmed, and the app shows the reason. The data the Hub collected in its
 windows is kept; history from before it is added beside it. Phones already paired
 download the car's history again once.
 
@@ -111,7 +113,9 @@ download the car's history again once.
 - If the app quits or the Mac loses power during the import, the app finishes the job
   at its next launch: it removes the private copy, starts the Hub if it was running and
   confirms it serving. Until that, or a confirmed **Start Hub**, a new import is
-  refused.
+  refused. A successful **Stop Hub** cancels that pending start, so the Hub stays
+  stopped at the next launch. A recovery record the app cannot trust starts nothing:
+  the app reports it and leaves the Hub as it is.
 
 ## 5. Backups and restore
 
@@ -146,7 +150,9 @@ time.
    `[tls]` table with `https://<name>.local:8443/`, and restarts the Hub. With `[tls]`
    already set it changes nothing. It refuses a configuration file the Hub itself would
    refuse, and reports a change made to that file meanwhile instead of overwriting it;
-   a setup interrupted before it finished is cleaned up by the next one.
+   a setup interrupted before it finished is cleaned up by the next one. Setups never
+   overlap: each holds a lock beside the configuration file (`.config-writer.lock`)
+   from its first read to publication, and a second waits up to 30 seconds for it.
    Before asking for a link the app confirms that the running Hub serves the configured
    identity (`teslatlas-hub serving-check`). If it still serves an older configuration,
    for example after a restart that failed, the app restarts it first.
