@@ -2670,88 +2670,77 @@ fn staged_v21_base_persists_inventory_for_a_changed_history_successor() {
 
 include!("publication_tests.rs");
 
+fn broken_drive_stage(source: &SourceDbHistory, directory: &Path) -> SourceDbStage {
+    let mut stage = SourceDbStage::create(directory, SourceDbStageLimits {
+        max_rows: 64, max_stage_bytes: 512 * 1024, minimum_free_bytes: 0,
+    }).unwrap();
+    for car in &source.cars {
+        stage.insert(SourceDbStageTable::Cars, car.id, car).unwrap();
+    }
+    for drive in &source.drives {
+        stage.insert(SourceDbStageTable::Drives, drive.id, drive).unwrap();
+    }
+    for position in &source.positions {
+        stage.insert(SourceDbStageTable::Positions, position.id, position).unwrap();
+    }
+    stage.seal().unwrap();
+    stage
+}
+
 #[test]
-fn broken_drive_reimport_upgrades_a_legacy_omitted_position_then_skips_retry() {
+fn broken_drive_staged_upgrade_emits_only_recovered_positions_without_rebuilding_base() {
     let temporary = crate::private_tempdir().unwrap();
-    let store = HubStore::initialize(temporary.path()).unwrap();
+    let store = HubStore::initialize(temporary.path().join("hub")).unwrap();
     let cursor_key = CursorKey::from_bytes([71; 32]);
     let request = SourceDbImportRequest {
-        new_import_source: false,
-        source_key: "broken-drive-legacy-upgrade".into(),
-        scope: SourceDbImportScope::Selected(1),
-        imported_at_ms: 1_700_000_000_000,
+        new_import_source: false, source_key: "broken-drive-staged-upgrade".into(),
+        scope: SourceDbImportScope::Selected(1), imported_at_ms: 1_700_000_000_000,
     };
     let mut source = history();
-    let mut fragment = completed_drive(1);
-    fragment.start_date_ms = 1_000;
-    fragment.end_date_ms = None;
-    fragment.distance_km = None;
-    fragment.duration_min = None;
-    fragment.end_km = None;
-    let mut other_open = fragment.clone();
-    other_open.id = 3;
-    source.drives = vec![fragment, completed_drive(2), other_open];
-    source.positions.push(SourceDbPosition {
-        id: 20,
-        car_id: 1,
-        drive_id: Some(1),
-        date_ms: 1_000,
-        latitude: 51.0,
-        longitude: 0.0,
-        elevation: None,
-        speed: None,
-        power: None,
-        odometer: None,
-        ideal_battery_range_km: None,
-        est_battery_range_km: None,
-        rated_battery_range_km: None,
-        battery_level: None,
-        usable_battery_level: None,
-        fan_status: None,
-        driver_temp_setting: None,
-        passenger_temp_setting: None,
-        is_climate_on: None,
-        is_rear_defroster_on: None,
-        is_front_defroster_on: None,
-        outside_temp: None,
-        inside_temp: None,
-        battery_heater: None,
-        battery_heater_on: None,
-        battery_heater_no_power: None,
-        tpms_pressure_fl: None,
-        tpms_pressure_fr: None,
-        tpms_pressure_rl: None,
-        tpms_pressure_rr: None,
-    });
-    let mut legacy_history = source.clone();
-    legacy_history.positions.clear();
-    let prior = publish_history(&store, &cursor_key, &request, &legacy_history).unwrap();
-    let manifest = store
-        .manifest_for_vehicle(prior.vehicle_id)
-        .unwrap()
-        .unwrap();
-    // Recreate the old raw-source fingerprint alongside its omitted-position
-    // pack. The source itself included this position even though the pack did not.
-    let canonical = serde_json::to_vec(&(1_i64, &source)).unwrap();
-    let mut digest = Sha256::new();
-    digest.update(SOURCE_HISTORY_V2_STANDALONE_POSITIONS.as_bytes());
-    digest.update((canonical.len() as u64).to_be_bytes());
-    digest.update(canonical);
-    store
-        .record_snapshot_fingerprint(
-            &manifest,
-            Sha256Digest::from_bytes(digest.finalize().into()),
-        )
-        .unwrap();
-    let upgraded = publish_history(&store, &cursor_key, &request, &source)
-        .expect("legacy import must recover its omitted position");
+    source.drives = vec![completed_drive(10)];
+    for id in [1, 2] {
+        let mut broken = completed_drive(id);
+        broken.start_date_ms = id * 100;
+        broken.end_date_ms = None;
+        broken.distance_km = None;
+        broken.duration_min = None;
+        source.drives.push(broken);
+        source.positions.push(serde_json::from_value(serde_json::json!({
+            "id": 100 + id, "car_id": 1, "drive_id": id,
+            "date_ms": id * 100, "latitude": 51.0, "longitude": 0.0
+        })).unwrap());
+    }
+    // The old policy had the same drive rows but omitted their samples.
+    let mut omitted = source.clone();
+    omitted.positions.clear();
+    let old_stage = broken_drive_stage(&omitted, &temporary.path().join("old"));
+    let prior = publish_staged_history(&store, &cursor_key, &request, &old_stage).unwrap();
+    let prior_lineage = store.lineage_manifest_for_vehicle(prior.vehicle_id).unwrap().unwrap();
+    let new_stage = broken_drive_stage(&source, &temporary.path().join("new"));
+    let upgraded = publish_staged_history(&store, &cursor_key, &request, &new_stage).unwrap();
     assert!(!upgraded.skipped);
     assert_eq!(upgraded.snapshot_id, prior.snapshot_id);
     assert!(upgraded.sequence > prior.sequence);
-    assert_eq!(upgraded.projection.projected_positions, 1);
-    assert_eq!(upgraded.projection.detached_positions, 1);
-    assert_eq!(upgraded.projection.broken_drives, 1);
-    let retry = publish_history(&store, &cursor_key, &request, &source).unwrap();
+    let lineage = store.lineage_manifest_for_vehicle(prior.vehicle_id).unwrap().unwrap();
+    assert_eq!(lineage.base, prior_lineage.base, "the full base is immutable");
+    assert_eq!(lineage.deltas.len(), 1, "one successor only");
+    let delta = &lineage.deltas[0].pack;
+    assert_eq!(delta.row_count, 2, "exactly the two recovered samples");
+    let path = store.pack_for_digest(delta.sha256).unwrap().unwrap().path;
+    let bytes = zstd::stream::decode_all(File::open(path).unwrap()).unwrap();
+    let inspection = temporary.path().join("delta.sqlite");
+    fs::write(&inspection, bytes).unwrap();
+    let connection = rusqlite::Connection::open(inspection).unwrap();
+    let rows = connection.prepare("SELECT id, drive_id FROM positions ORDER BY id").unwrap()
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?)))
+        .unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(rows, vec![(101, None), (102, None)]);
+    for table in ["drives", "cars", "charges", "charge_samples", "states", "updates", "tombstones"] {
+        let count: i64 = connection.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0, "the upgrade must not restate {table}");
+    }
+    let retry = publish_staged_history(&store, &cursor_key, &request, &new_stage).unwrap();
     assert!(retry.skipped);
     assert_eq!(retry.sequence, upgraded.sequence);
+    assert_eq!(store.lineage_manifest_for_vehicle(prior.vehicle_id).unwrap().unwrap(), lineage);
 }
