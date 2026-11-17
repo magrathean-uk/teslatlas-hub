@@ -796,3 +796,37 @@ fn window_resume_system_clock_reading_behind_its_anchor_closes() {
     assert_eq!(hub.status().close_reason, Some(CloseReason::ClockInvalid));
     assert!(permit_refused(&hub));
 }
+
+#[test]
+fn astra_p03_restart_downtime_is_a_coverage_gap() {
+    let rig = Rig::new();
+    let hub = open_hub(&rig, 0, 3600);
+    rig.clock.advance(100);
+    hub.tick().unwrap();
+    drop(hub);
+    rig.clock.advance(600);
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::Resumed(Phase::Open));
+    rig.clock.advance(100);
+    hub.close(CloseReason::OperatorClose);
+    let handback = hub.finish_close().unwrap().unwrap();
+    assert!(handback.gaps.iter().any(|gap| gap.start <= T0 + 100 && gap.end >= T0 + 700),
+        "the handback must not claim coverage while the service was stopped");
+    assert!(handback.coverage_seconds <= 200);
+}
+
+#[test]
+fn astra_p03_restart_after_expiry_excludes_downtime() {
+    let rig = Rig::new();
+    let hub = open_hub(&rig, 0, 3600);
+    rig.clock.advance(100);
+    hub.tick().unwrap();
+    drop(hub);
+    rig.clock.advance(4000);
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::ClosedAtStart(CloseReason::Expired));
+    let handback = hub.status().last_handback.unwrap();
+    assert!(handback.gaps.iter().any(|gap| gap.start <= T0 + 100 && gap.end == T0 + 3600),
+        "the interval after the last running tick must remain available to import");
+    assert!(handback.coverage_seconds <= 100);
+}
