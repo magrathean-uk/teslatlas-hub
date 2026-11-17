@@ -2424,3 +2424,541 @@ async fn b2_a_fleet_restart_lifts_only_the_derived_credential_stop() {
         })
         .await;
 }
+
+
+// ---------------------------------------------------------------------------
+// M04-T11: the intake latency, from the Hub accepting an observation to the
+// return of the commit that made it durable, per collection window.
+// ---------------------------------------------------------------------------
+
+fn latency_ms(figures: &Value, key: &str) -> f64 {
+    figures[key].as_f64().unwrap_or_else(|| panic!("{key} is a number: {figures}"))
+}
+
+/// The status of an open window with grant sequence `seq`.
+fn intake_window(seq: u64) -> crate::collection::window::WindowStatus {
+    crate::collection::window::WindowStatus {
+        trusted: true,
+        faulted: false,
+        phase: crate::collection::window::Phase::Open,
+        close_reason: None,
+        seq: Some(seq),
+        grant_digest: Some(format!("digest-{seq}")),
+        starts_at: Some(1_800_000_000),
+        deadline: Some(1_800_003_600),
+        opened_at: Some(1_800_000_000),
+        closing_at: None,
+        last_handback: None,
+    }
+}
+
+/// A recorder of its own, as a process has one.
+fn intake_recorder() -> &'static IntakeRecorder {
+    Box::leak(Box::new(IntakeRecorder::new()))
+}
+
+/// A run's write guard that records into `recorder` as window `seq`'s, as a run
+/// does once it holds that window.
+fn intake_guard(recorder: &'static IntakeRecorder, seq: u64) -> RunWriteGuard {
+    let guard = RunWriteGuard::from(AdmissionFence::default()).with_intake_recorder(recorder);
+    guard.hold_intake_window(seq);
+    guard
+}
+
+fn record_intake_samples(
+    recorder: &IntakeRecorder,
+    seq: u64,
+    samples: impl IntoIterator<Item = Duration>,
+) {
+    for sample in samples {
+        recorder.record(seq, sample);
+    }
+}
+
+/// The keys of the answer's `intakeLatency` object.
+const INTAKE_ANSWER_KEYS: [&str; 9] = [
+    "count",
+    "grantDigest",
+    "maxMs",
+    "overTargetCount",
+    "p50UpperMs",
+    "p95UpperMs",
+    "p95WithinTarget",
+    "seq",
+    "targetMs",
+];
+
+/// A list the loop accepted at `bed.now()`, as the Owner loop admits it.
+async fn admitted_list(bed: &mut TickBed, vehicles: Vec<Vehicle>) -> TickOutcome {
+    let now = bed.now();
+    bed.scheduler.begin_tick();
+    let candidates = bed.scheduler.accept_discovery(vehicles, now);
+    let received_at_ms = bed.wall();
+    for candidate in &candidates {
+        bed.register(candidate);
+    }
+    let mut batch = TickBatch::default();
+    batch.admit_discoveries(candidates, received_at_ms, now);
+    batch.note_result(now);
+    bed.commit(batch).await
+}
+
+/// Parked fields that carry their own sample time, so a repeat is a duplicate.
+fn timed_parked_fields(timestamp_ms: i64) -> Value {
+    let mut fields = parked_fields();
+    fields["timestamp"] = json!(timestamp_ms);
+    fields
+}
+
+#[test]
+fn intake_latency_reports_upper_bound_percentiles_and_an_exact_target_verdict() {
+    let recorder = intake_recorder();
+    let window = intake_window(1);
+    let empty = recorder.status(&window);
+    let mut keys: Vec<&str> = empty
+        .as_object()
+        .expect("an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(keys, INTAKE_ANSWER_KEYS, "no dropped count: recording is never refused");
+    assert_eq!(empty["count"], 0);
+    assert_eq!(empty["seq"], 1);
+    assert_eq!(empty["grantDigest"], "digest-1");
+    assert_eq!(empty["targetMs"], 250);
+    assert_eq!(empty["overTargetCount"], 0);
+    for key in ["p50UpperMs", "p95UpperMs", "maxMs", "p95WithinTarget"] {
+        assert!(empty[key].is_null(), "{key} is null while the count is zero: {empty}");
+    }
+
+    // 1 ms to 400 ms, one each: the upper bounds sit at most 1/32 above the ranks.
+    record_intake_samples(recorder, 1, (1..=400).map(Duration::from_millis));
+    let figures = recorder.status(&window);
+    assert_eq!(figures["count"], 400);
+    assert_eq!(latency_ms(&figures, "maxMs"), 400.0);
+    for (key, exact) in [("p50UpperMs", 200.0), ("p95UpperMs", 380.0)] {
+        let value = latency_ms(&figures, key);
+        assert!(
+            (exact..=exact * (1.0 + 1.0 / 32.0)).contains(&value),
+            "{key} {value} bounds the {exact} ms rank within 1/32"
+        );
+    }
+    assert_eq!(figures["overTargetCount"], 150);
+    assert_eq!(figures["p95WithinTarget"], false);
+
+    // 95 samples of exactly 250 ms and five of 400 ms: the nearest-rank p95 is
+    // 250 ms. Its bucket's upper bound is above 250 ms; the verdict is exact.
+    let window = intake_window(2);
+    record_intake_samples(recorder, 2, [Duration::from_millis(250); 95]);
+    record_intake_samples(recorder, 2, [Duration::from_millis(400); 5]);
+    let figures = recorder.status(&window);
+    assert_eq!(figures["count"], 100, "window 2 starts over: {figures}");
+    assert!(latency_ms(&figures, "p95UpperMs") > 250.0, "{figures}");
+    assert_eq!(figures["overTargetCount"], 5);
+    assert_eq!(figures["p95WithinTarget"], true, "{figures}");
+
+    // 0.0005 ms over the target in six of 100 samples is a miss: the measured
+    // duration decides, not its whole microseconds.
+    let window = intake_window(3);
+    record_intake_samples(recorder, 3, [Duration::from_millis(5); 94]);
+    record_intake_samples(recorder, 3, [Duration::from_nanos(250_000_500); 6]);
+    let figures = recorder.status(&window);
+    assert_eq!(figures["overTargetCount"], 6, "{figures}");
+    assert_eq!(figures["p95WithinTarget"], false, "{figures}");
+
+    // Exact below 64 microseconds, and the extreme cannot overflow a bucket.
+    let window = intake_window(4);
+    record_intake_samples(recorder, 4, [Duration::from_micros(7), Duration::MAX]);
+    let figures = recorder.status(&window);
+    assert_eq!(figures["count"], 2);
+    assert_eq!(latency_ms(&figures, "p50UpperMs"), 0.007);
+    assert!(latency_ms(&figures, "maxMs") > 1.0e9);
+}
+
+#[test]
+fn intake_latency_bucket_edges_hold_every_value_they_are_given() {
+    let mut previous_top = 0;
+    for micros in (0..4096).chain([1 << 20, (1 << 39) + 12345, INTAKE_VALUE_MAX]) {
+        let index = intake_bucket(micros);
+        assert!(index < INTAKE_LATENCY_BUCKETS, "{micros} has a bucket");
+        let top = intake_bucket_top(index);
+        assert!(top >= micros, "{micros} is at most the top {top} of its bucket");
+        assert!(
+            top - micros <= micros / 32,
+            "{micros} is within 1/32 of the top {top} of its bucket"
+        );
+        assert!(top >= previous_top || micros > 4096, "tops do not go backwards");
+        previous_top = top;
+    }
+    assert_eq!(intake_bucket(u64::MAX), intake_bucket(INTAKE_VALUE_MAX));
+}
+
+/// Record `samples` latencies of `sample` as window `seq`'s on each of `threads`
+/// threads.
+fn intake_recording_threads(
+    recorder: &'static IntakeRecorder,
+    seq: u64,
+    sample: Duration,
+    threads: usize,
+    samples: usize,
+) -> Vec<std::thread::JoinHandle<()>> {
+    (0..threads)
+        .map(|_| {
+            std::thread::spawn(move || {
+                for _ in 0..samples {
+                    recorder.record(seq, sample);
+                }
+            })
+        })
+        .collect()
+}
+
+/// Read window `seq`'s figures until `stop` is set and at least one read found
+/// them, checking each: only latencies of `sample` (the only value window `seq` is
+/// given), and a count that never goes back. Returns the number of reads.
+fn intake_checking_reader(
+    recorder: &'static IntakeRecorder,
+    seq: u64,
+    sample: Duration,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+) -> std::thread::JoinHandle<u64> {
+    std::thread::spawn(move || {
+        let micros = u64::try_from(sample.as_micros()).expect("micros");
+        let over = sample > INTAKE_LATENCY_TARGET;
+        let (mut reads, mut last_count) = (0u64, 0u64);
+        while !stop.load(std::sync::atomic::Ordering::SeqCst) || reads == 0 {
+            let Some(figures) = recorder.figures(seq) else {
+                std::thread::yield_now();
+                continue;
+            };
+            reads += 1;
+            assert!(figures.count >= last_count, "the count of window {seq} went back");
+            last_count = figures.count;
+            let used: Vec<usize> = (0..INTAKE_LATENCY_BUCKETS)
+                .filter(|index| figures.buckets[*index] > 0)
+                .collect();
+            if figures.count > 0 {
+                assert_eq!(used, [intake_bucket(micros)], "window {seq} shows another's sample");
+                assert_eq!(figures.max_micros, micros, "window {seq}'s maximum");
+            }
+            if over {
+                assert!(figures.over_target >= figures.count, "window {seq} over the target");
+            } else {
+                assert_eq!(figures.over_target, 0, "window {seq} over the target");
+            }
+        }
+        reads
+    })
+}
+
+#[test]
+fn intake_latency_recorder_loses_no_count_and_never_mixes_windows_under_concurrent_use() {
+    const THREADS: usize = 4;
+    const SAMPLES: usize = 5_000;
+    let recorder = intake_recorder();
+    let fast = Duration::from_millis(10);
+    let slow = Duration::from_millis(300);
+    let join = |threads: Vec<std::thread::JoinHandle<()>>| {
+        for thread in threads {
+            thread.join().expect("recording thread");
+        }
+    };
+
+    // Window 1: four collector threads record while a reader reads.
+    let stop_first = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let first_reader = intake_checking_reader(recorder, 1, fast, stop_first.clone());
+    join(intake_recording_threads(recorder, 1, fast, THREADS, SAMPLES));
+    stop_first.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(first_reader.join().expect("reader") > 0);
+    let figures = recorder.figures(1).expect("window 1");
+    assert_eq!(figures.count, (THREADS * SAMPLES) as u64, "no sample of window 1 was lost");
+
+    // Window 2 starts while window 1's late runs still record: its figures start
+    // over, hold none of window 1's samples, and lose none of its own.
+    let stop_second = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let second_reader = intake_checking_reader(recorder, 2, slow, stop_second.clone());
+    let mut threads = intake_recording_threads(recorder, 2, slow, THREADS, SAMPLES);
+    threads.extend(intake_recording_threads(recorder, 1, fast, THREADS, SAMPLES));
+    join(threads);
+    stop_second.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(second_reader.join().expect("reader") > 0);
+    let figures = recorder.figures(2).expect("window 2");
+    assert_eq!(figures.count, (THREADS * SAMPLES) as u64, "no sample of window 2 was lost");
+    assert_eq!(figures.over_target, figures.count);
+    assert_eq!(figures.max_micros, 300_000);
+    assert!(recorder.figures(1).is_none(), "window 1's figures are gone");
+}
+
+#[tokio::test]
+async fn intake_latency_runs_from_the_admission_to_the_return_of_the_commit() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam.clone(), async {
+            let recorder = intake_recorder();
+            let window = intake_window(7);
+            let mut bed = TickBed::owner();
+            bed.scheduler.guard_writes_with(intake_guard(recorder, 7));
+            // Every transaction takes 40 ms before its commit returns; work after the
+            // commit takes 500 ms and is not intake.
+            let clock = bed.clock.clone();
+            seam.set_tick_commit_hook(Arc::new(move || {
+                clock.advance_mono(Duration::from_millis(40));
+            }));
+            let clock = bed.clock.clone();
+            seam.set_tick_committed_hook(Arc::new(move || {
+                clock.advance_mono(Duration::from_millis(500));
+            }));
+
+            // A list that delivers two discovery observations: each is measured.
+            let outcome = admitted_list(
+                &mut bed,
+                vec![core_vehicle(1, "online"), core_vehicle(2, "online")],
+            )
+            .await;
+            assert!(matches!(outcome, TickOutcome::Committed { wrote: true, .. }), "{outcome:?}");
+            let figures = recorder.status(&window);
+            assert_eq!(figures["count"], 2, "two discovery observations: {figures}");
+            assert_eq!(latency_ms(&figures, "maxMs"), 40.0);
+            // The same states again change nothing and record nothing.
+            bed.advance(Duration::from_secs(30));
+            admitted_list(
+                &mut bed,
+                vec![core_vehicle(1, "online"), core_vehicle(2, "online")],
+            )
+            .await;
+            assert_eq!(recorder.status(&window)["count"], 2);
+
+            // Two reads accepted 120 ms and 30 ms before their transaction begins.
+            bed.advance(Duration::from_secs(30));
+            let sample_ms = bed.wall() - 1_000;
+            bed.scheduler.begin_tick();
+            let first_admitted = bed.now();
+            let first = bed.read_item(1, timed_parked_fields(sample_ms));
+            bed.clock.advance_mono(Duration::from_millis(90));
+            let second_admitted = bed.now();
+            let second = bed.read_item(2, timed_parked_fields(sample_ms));
+            bed.clock.advance_mono(Duration::from_millis(30));
+            let mut batch = TickBatch::default();
+            batch.admit_snapshot(first, first_admitted);
+            batch.admit_snapshot(second, second_admitted);
+            batch.note_result(first_admitted);
+            let outcome = bed.commit(batch).await;
+            assert!(matches!(outcome, TickOutcome::Committed { wrote: true, .. }), "{outcome:?}");
+            let figures = recorder.status(&window);
+            assert_eq!(figures["count"], 4, "{figures}");
+            assert_eq!(latency_ms(&figures, "maxMs"), 160.0, "120 ms waiting, 40 ms committing");
+
+            // The same reads again, and an older one: duplicates, nothing inserted.
+            bed.advance(Duration::from_secs(30));
+            bed.scheduler.begin_tick();
+            let admitted = bed.now();
+            let repeat = bed.read_item(1, timed_parked_fields(sample_ms));
+            let older = bed.read_item(2, timed_parked_fields(sample_ms - 10_000));
+            bed.clock.advance_mono(Duration::from_millis(400));
+            let mut batch = TickBatch::default();
+            batch.admit_snapshot(repeat, admitted);
+            batch.admit_snapshot(older, admitted);
+            batch.note_result(admitted);
+            let outcome = bed.commit(batch).await;
+            assert!(matches!(outcome, TickOutcome::Committed { wrote: true, .. }), "{outcome:?}");
+            let figures = recorder.status(&window);
+            assert_eq!(figures["count"], 4, "a duplicate is not a new observation: {figures}");
+            assert_eq!(latency_ms(&figures, "maxMs"), 160.0);
+
+            // A read pushed without its acceptance (the Fleet collector's own
+            // pushes) is not measured.
+            bed.advance(Duration::from_secs(30));
+            bed.scheduler.begin_tick();
+            let item = bed.read_item(1, timed_parked_fields(bed.wall() - 500));
+            let mut batch = TickBatch::default();
+            batch.snapshots.push(item);
+            batch.note_result(bed.now());
+            let outcome = bed.commit(batch).await;
+            assert!(matches!(outcome, TickOutcome::Committed { wrote: true, .. }), "{outcome:?}");
+            assert_eq!(recorder.status(&window)["count"], 4);
+
+            // A transaction that fails rolls back: nothing became durable.
+            bed.advance(Duration::from_secs(60));
+            bed.scheduler.begin_tick();
+            let admitted = bed.now();
+            let item = bed.read_item(1, timed_parked_fields(bed.wall() - 400));
+            let mut batch = TickBatch::default();
+            batch.admit_snapshot(item, admitted);
+            batch.note_result(admitted);
+            seam.set_tick_commit_fault(true);
+            let outcome = bed.commit(batch).await;
+            assert!(matches!(outcome, TickOutcome::Failed), "{outcome:?}");
+            seam.set_tick_commit_fault(false);
+            // An empty poll writes nothing and records nothing.
+            let outcome = bed.commit(TickBatch::default()).await;
+            assert!(matches!(outcome, TickOutcome::Idle), "{outcome:?}");
+            let figures = recorder.status(&window);
+            assert_eq!(figures["count"], 4, "{figures}");
+        })
+        .await;
+}
+
+/// Moves the manual clock on every warning: the stream's health report warns
+/// after a commit, and its time must not count.
+struct AdvanceOnWarning(Arc<ManualClock>);
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for AdvanceOnWarning {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _context: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        if *event.metadata().level() == tracing::Level::WARN {
+            self.0.advance_mono(Duration::from_secs(1));
+        }
+    }
+}
+
+#[tokio::test]
+async fn intake_latency_counts_a_stream_frame_from_its_acceptance_to_its_commit() {
+    use tracing_subscriber::layer::SubscriberExt as _;
+
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam.clone(), async {
+            let recorder = intake_recorder();
+            let window = intake_window(9);
+            let mut bed = TickBed::owner();
+            bed.list(vec![core_vehicle(1, "online")]).await;
+            bed.scheduler.guard_writes_with(intake_guard(recorder, 9));
+            // Every frame's commit call takes 40 ms: it is intake, so an end read
+            // before the call would miss it.
+            let clock = bed.clock.clone();
+            seam.set_stream_commit_hook(Arc::new(move || {
+                clock.advance_mono(Duration::from_millis(40));
+            }));
+            let base_ms = bed.wall() - 60_000;
+            let mut cache = HashMap::new();
+
+            // Accepted by the session, then 300 ms in the Hub's queue; its first
+            // commit also registers the stream's context. All of it is intake.
+            let queued_at = bed.now();
+            bed.clock.advance_mono(Duration::from_millis(300));
+            let update = frame(base_ms, Some("P"), Some(0), Some(0));
+            assert!(
+                process_stream_telemetry_with_cache(
+                    &bed.store,
+                    &mut bed.scheduler,
+                    core_id(1),
+                    &update,
+                    queued_at,
+                    &mut cache,
+                )
+                .expect("frame")
+            );
+            let figures = recorder.status(&window);
+            assert_eq!(figures["count"], 1, "{figures}");
+            assert_eq!(latency_ms(&figures, "maxMs"), 340.0, "300 ms queued, 40 ms committing");
+
+            // The same frame again is a duplicate: not a commit.
+            let queued_at = bed.now();
+            assert!(
+                !process_stream_telemetry_with_cache(
+                    &bed.store,
+                    &mut bed.scheduler,
+                    core_id(1),
+                    &update,
+                    queued_at,
+                    &mut cache,
+                )
+                .expect("duplicate")
+            );
+            assert_eq!(recorder.status(&window)["count"], 1);
+
+            // Six seconds of source time later: the health report after the commit
+            // warns of the gap, and the second it takes here is not counted.
+            let queued_at = bed.now();
+            bed.clock.advance_mono(Duration::from_millis(20));
+            let later = frame(base_ms + 6_000, Some("P"), Some(0), Some(0));
+            let subscriber =
+                tracing_subscriber::registry().with(AdvanceOnWarning(bed.clock.clone()));
+            let before_report = bed.now();
+            let stored = tracing::subscriber::with_default(subscriber, || {
+                process_stream_telemetry_with_cache(
+                    &bed.store,
+                    &mut bed.scheduler,
+                    core_id(1),
+                    &later,
+                    queued_at,
+                    &mut cache,
+                )
+            })
+            .expect("later frame");
+            assert!(stored);
+            assert!(
+                bed.now() >= before_report + Duration::from_secs(1),
+                "the health report warned"
+            );
+            let figures = recorder.status(&window);
+            assert_eq!(figures["count"], 2, "{figures}");
+            assert_eq!(latency_ms(&figures, "maxMs"), 340.0, "{figures}");
+            let p50 = latency_ms(&figures, "p50UpperMs");
+            assert!(
+                (60.0..=60.0 * (1.0 + 1.0 / 32.0)).contains(&p50),
+                "p50 {p50} is the 60 ms frame"
+            );
+        })
+        .await;
+}
+
+#[test]
+fn intake_latency_belongs_to_one_window_and_survives_its_retries() {
+    let recorder = intake_recorder();
+    let window_a = intake_window(11);
+
+    // Two runs of window A: a retry keeps the samples of the run before it.
+    let first_run = intake_guard(recorder, 11);
+    first_run.record_intake(Duration::from_millis(10));
+    let retry = intake_guard(recorder, 11);
+    retry.record_intake(Duration::from_millis(20));
+    let figures = recorder.status(&window_a);
+    assert_eq!(figures["count"], 2, "{figures}");
+    assert_eq!(figures["seq"], 11);
+    assert_eq!(latency_ms(&figures, "maxMs"), 20.0);
+    // Never beside another window's identity.
+    let other = recorder.status(&intake_window(12));
+    assert_eq!(other["count"], 0, "{other}");
+    assert_eq!(other["seq"], 12);
+    assert!(other["maxMs"].is_null());
+
+    // A run that does not know its window records nothing.
+    let unknown = RunWriteGuard::from(AdmissionFence::default()).with_intake_recorder(recorder);
+    assert!(!unknown.measures_intake());
+    unknown.record_intake(Duration::from_millis(15));
+    assert_eq!(recorder.status(&window_a)["count"], 2);
+
+    // Window B's first sample starts its figures over; a late sample of window A's
+    // run reaches neither window.
+    let run_b = intake_guard(recorder, 12);
+    run_b.record_intake(Duration::from_millis(40));
+    retry.record_intake(Duration::from_millis(30));
+    let window_b = intake_window(12);
+    let figures = recorder.status(&window_b);
+    assert_eq!(figures["count"], 1, "{figures}");
+    assert_eq!(figures["seq"], 12);
+    assert_eq!(latency_ms(&figures, "maxMs"), 40.0);
+    assert_eq!(recorder.status(&window_a)["count"], 0, "window A's figures are gone");
+
+    // A closed window with no grant names no window and shows nothing.
+    let mut closed = intake_window(12);
+    closed.phase = crate::collection::window::Phase::Closed;
+    closed.seq = None;
+    closed.grant_digest = None;
+    let figures = recorder.status(&closed);
+    assert_eq!(figures["count"], 0);
+    assert!(figures["seq"].is_null() && figures["grantDigest"].is_null());
+
+    // After a restart the process starts empty: the resumed window's run records
+    // as that window's.
+    let restarted = intake_recorder();
+    assert_eq!(restarted.status(&window_b)["count"], 0);
+    intake_guard(restarted, 12).record_intake(Duration::from_millis(50));
+    assert_eq!(restarted.status(&window_b)["count"], 1);
+    assert_eq!(restarted.status(&intake_window(13))["count"], 0);
+}

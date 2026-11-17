@@ -67,10 +67,17 @@ where
     // step, before the credential unit is touched or the store read. The run holds
     // the window from here to its end: every write boundary and every lease renewal
     // re-checks it, and the run ends when it ends (review round 2, finding 2).
+    // The window's grant sequence is read before and after the permit (M04-T11):
+    // equal reads name the window the permit belongs to, whose intake latencies the
+    // run records.
+    let window_seq = intake_window_seq();
     write_guard.window().hold(require_open_collection_window(
         &stream_endpoint,
         crate::fleet_api::egress::Provider::Legacy,
     )?);
+    if let Some(seq) = window_seq.filter(|seq| intake_window_seq() == Some(*seq)) {
+        write_guard.hold_intake_window(seq);
+    }
     let window = write_guard.window().clone();
     // The run's write guard exists before the credential unit and the cursor key (B2
     // fix round, P3b fix 3, R-P3bF3-1): the entry point made it, and it has been
@@ -540,12 +547,11 @@ where
                                     run.scheduler
                                         .apply_control_settings(&configured_vehicles, list_time),
                                 );
-                                run.batch.discoveries.extend(candidates.into_iter().map(
-                                    |vehicle| DiscoveryItem {
-                                        vehicle,
-                                        received_at_ms,
-                                    },
-                                ));
+                                run.batch.admit_discoveries(
+                                    candidates,
+                                    received_at_ms,
+                                    list_time,
+                                );
                                 run.batch.note_result(list_time);
                             }
                             Err(error) => {
@@ -696,12 +702,13 @@ where
                                         let candidates = run
                                             .scheduler
                                             .accept_vehicle_state(vehicle_id, state, now);
-                                        run.batch.discoveries.extend(candidates.into_iter().map(
-                                            |vehicle| DiscoveryItem {
-                                                vehicle,
+                                        if !candidates.is_empty() {
+                                            run.batch.admit_discoveries(
+                                                candidates,
                                                 received_at_ms,
-                                            },
-                                        ));
+                                                clock.mono_now(),
+                                            );
+                                        }
                                     }
                                     (
                                         TickKey::Probe(vehicle_id, _),
@@ -742,11 +749,14 @@ where
                                         revoke_requested_gates(run.scheduler, &gates);
                                         let received_at_ms = clock.wall_now_ms()?;
                                         if let Some(vehicle) = vehicle {
-                                            run.batch.snapshots.push(SnapshotItem {
-                                                vehicle,
-                                                snapshot,
-                                                received_at_ms,
-                                            });
+                                            run.batch.admit_snapshot(
+                                                SnapshotItem {
+                                                    vehicle,
+                                                    snapshot,
+                                                    received_at_ms,
+                                                },
+                                                clock.mono_now(),
+                                            );
                                         }
                                     }
                                     (
@@ -773,11 +783,14 @@ where
                                         revoke_requested_gates(run.scheduler, &gates);
                                         let received_at_ms = clock.wall_now_ms()?;
                                         if let Some(vehicle) = vehicle {
-                                            run.batch.snapshots.push(SnapshotItem {
-                                                vehicle,
-                                                snapshot,
-                                                received_at_ms,
-                                            });
+                                            run.batch.admit_snapshot(
+                                                SnapshotItem {
+                                                    vehicle,
+                                                    snapshot,
+                                                    received_at_ms,
+                                                },
+                                                clock.mono_now(),
+                                            );
                                         }
                                     }
                                     (key, Err(error)) => {
