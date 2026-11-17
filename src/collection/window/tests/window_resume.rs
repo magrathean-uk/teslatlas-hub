@@ -135,6 +135,75 @@ fn window_resume_watermark_rollback_closes_running_and_at_start() {
 }
 
 #[test]
+fn astra_p03_clock_rollback_handback_preserves_verified_coverage() {
+    use super::import_seam_coverage::{coverage_row, data_dir, raw, store_with_vehicles};
+
+    for restart in [false, true] {
+        let rig = Rig::new();
+        let (_store, _, _) = store_with_vehicles(&rig);
+        let hub = open_hub(&rig, 0, 3600);
+        rig.clock.advance(60);
+        assert_eq!(hub.tick().unwrap(), Phase::Open);
+        rig.clock.shift_wall(-3600);
+
+        let handback = if restart {
+            drop(hub);
+            let (hub, outcome) = rig.start_hub();
+            assert_eq!(outcome, ResumeOutcome::ClosedAtStart(CloseReason::ClockInvalid));
+            hub.status().last_handback.unwrap()
+        } else {
+            assert_eq!(hub.tick().unwrap(), Phase::Closing);
+            hub.finish_close().unwrap().unwrap()
+        };
+        assert_eq!(handback.reason, CloseReason::ClockInvalid);
+        assert_eq!(handback.opened_at, Some(T0));
+        assert_eq!(handback.closed_at, T0 + 60, "restart={restart}");
+        assert_eq!(handback.coverage_seconds, 60);
+        let (_, closed_at_ms, _) = coverage_row(&raw(&data_dir(&rig)), handback.seq as i64);
+        assert_eq!(closed_at_ms, Some((T0 + 60) * 1000));
+    }
+}
+
+#[test]
+fn astra_p03_clock_rollback_handback_keeps_pending_gap_and_exchange_grace() {
+    use crate::collection::window::{
+        CredentialCustody, EXCHANGE_GRACE_SECONDS, EXCHANGE_WRITE_MARGIN_SECONDS, Gap,
+    };
+
+    let rig = Rig::new();
+    let hub = Arc::new(open_hub(&rig, 0, 3600));
+    let slot = FakeSlot::default();
+    let mut supervisor = Supervisor::new(hub.clone(), slot.clone())
+        .with_custody(CredentialCustody::new());
+    assert!(supervisor.step().collector_running);
+    let exchange = hub.gate().permit(Provider::Legacy, PermitKind::TokenExchange).unwrap();
+
+    rig.clock.advance(45);
+    {
+        let mut log = slot.log.lock().unwrap();
+        log.running = false;
+        log.fail_starts = 1;
+    }
+    assert!(!supervisor.step().collector_running);
+    rig.clock.advance(15);
+    // The controller records a valid clock reading while the collector is down.
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    rig.clock.shift_wall(-3600);
+    assert_eq!(supervisor.step().phase, Phase::Closing);
+    assert!(!exchange.is_cancelled());
+
+    rig.clock.advance((EXCHANGE_GRACE_SECONDS - EXCHANGE_WRITE_MARGIN_SECONDS) as u64);
+    supervisor.step();
+    assert!(exchange.is_cancelled(), "the coverage boundary must not extend exchange grace");
+    rig.clock.advance(EXCHANGE_WRITE_MARGIN_SECONDS as u64);
+    supervisor.step();
+    let handback = hub.status().last_handback.unwrap();
+    assert_eq!(handback.closed_at, T0 + 60);
+    assert_eq!(handback.gaps, vec![Gap { start: T0 + 45, end: T0 + 60 }]);
+    assert_eq!(handback.coverage_seconds, 45);
+}
+
+#[test]
 fn window_resume_repeated_small_rollbacks_are_caught_by_drift() {
     let rig = Rig::new();
     let hub = open_hub(&rig, 0, 3600);
