@@ -42,11 +42,11 @@ use std::{
 
 use serde::Deserialize;
 use tesatlas_hub::{
+    auth::source_token_row::{SourceTokenRowError, read_source_token_row},
     config::HubConfig,
     credentials::{OwnerTokens, SourceDbPassword},
     db::HubStore,
     hub_user_process::{AdmittedUserHub, UserLifetimeLockError},
-    import::source_db::token_row::{SourceTokenRowError, read_source_token_row},
     source_db_connection::ReadOnlySource,
     source_db_reader::SourceDbReadLimits,
 };
