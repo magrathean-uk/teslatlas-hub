@@ -365,8 +365,8 @@ async fn r27_a_hello_with_code_503_is_busy_and_ends_the_session_with_an_unsubscr
     let store = rig.store.clone().expect("store");
     let mut run = rig.start();
     assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
-    // Busy with no retry-after is the Transport delay: 2 s at u = 0 gives 1 s.
-    assert_eq!(accepted_after(&peer, Instant::now(), 2).await, secs(1));
+    // Ruling 1: Busy keeps its separate 150-second wait at minimum jitter.
+    assert_eq!(accepted_after(&peer, Instant::now(), 2).await, secs(150));
     run.shut_down().await.expect("shutdown");
     assert!(wire_labels(&peer).contains(&UNSUBSCRIBE.to_owned()));
     assert_eq!(
@@ -645,7 +645,7 @@ async fn sc47_a_server_close_ends_the_session_and_the_next_attempt_follows_after
 }
 
 #[tokio::test(start_paused = true)]
-async fn sc47_close_1013_is_busy_and_waits_the_transport_delay() {
+async fn sc47_close_1013_is_busy_and_waits_its_own_slow_delay() {
     let peer = Peer::spawn(|conn| async move {
         let mut ws = conn.ws().await;
         ws.subscribe().await;
@@ -658,8 +658,8 @@ async fn sc47_close_1013_is_busy_and_waits_the_transport_delay() {
     assert_eq!(run.event().await, StreamEvent::Healthy);
     expect_telemetry(&mut run, v1_update(T0)).await;
     assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
-    // Busy with no retry-after is the Transport delay: 2 s at u = 0 gives 1 s.
-    assert_eq!(accepted_after(&peer, Instant::now(), 2).await, secs(1));
+    // Ruling 1: Busy keeps its separate 150-second wait at minimum jitter.
+    assert_eq!(accepted_after(&peer, Instant::now(), 2).await, secs(150));
     run.shut_down().await.expect("shutdown");
 }
 
@@ -989,10 +989,8 @@ async fn sc82_a_repeated_frame_as_the_first_frame_of_a_session_still_proves_the_
     go_error.notify_one();
     assert_eq!(run.event().await, StreamEvent::VehicleOffline);
     let ended = Instant::now();
-    assert_eq!(
-        accepted_after(&peer, ended, 3).await,
-        Duration::from_millis(7_500)
-    );
+    // Ruling 2: accepted duplicate data resets the outage to its first short wait.
+    assert_eq!(accepted_after(&peer, ended, 3).await, Duration::from_secs(1));
     run.shut_down().await.expect("shutdown");
     let outcomes = request_outcomes(&store);
     assert_eq!(
