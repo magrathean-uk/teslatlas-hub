@@ -696,7 +696,7 @@ final class SourceTakeoverFlowTests: XCTestCase {
     }
 
     func testSignInHealthUsesTLSConfigurationAndHealthzOnPrivateAndLoopbackListeners() throws {
-        let fixture = try Fixture(migrationWindow: false)
+        let fixture = try Fixture(migrationWindow: false, validatedPaths: true)
         defer { fixture.tearDown(); SignInHealthURLProtocol.handler = nil }
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.home.path)
         let certificate = fixture.home.appendingPathComponent("certificate.pem")
@@ -706,8 +706,10 @@ final class SourceTakeoverFlowTests: XCTestCase {
                              "-keyout", "/dev/null", "-out", certificate.path]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
+        let generated = expectation(description: "synthetic certificate generated")
+        process.terminationHandler = { _ in generated.fulfill() }
         try process.run()
-        process.waitUntilExit()
+        wait(for: [generated], timeout: 10)
         XCTAssertEqual(process.terminationStatus, 0)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: certificate.path)
         let config = fixture.folder.appendingPathComponent("config.toml")
@@ -727,7 +729,12 @@ final class SourceTakeoverFlowTests: XCTestCase {
             let signIn = try fixture.controller.beginLegacySignIn().get()
             let done = expectation(description: "TLS health allows the route to reach the closed-window check")
             signIn.requireOpenWindow { result in
-                if case .success = result { XCTFail("closed window must refuse sign-in") }
+                switch result {
+                case .success: XCTFail("closed window must refuse sign-in")
+                case let .failure(error):
+                    XCTAssertEqual((error as? HubSignInRefusal)?.code, "window_closed",
+                        "route failed before the window check: \(error.localizedDescription); events \(fixture.events.all)")
+                }
                 done.fulfill()
             }
             wait(for: [done], timeout: 3)
@@ -903,8 +910,8 @@ private final class Fixture {
 
     var folder: URL { home.appendingPathComponent("Library/Application Support/Tesatlas Hub", isDirectory: true) }
 
-    init(takenOverAt: Int64? = nil, migrationWindow: Bool = true) throws {
-        home = HubTestScratch.directory
+    init(takenOverAt: Int64? = nil, migrationWindow: Bool = true, validatedPaths: Bool = false) throws {
+        home = validatedPaths ? HubTestScratch.validatedFixtureRoot("takeover-health") : HubTestScratch.directory
             .appendingPathComponent("tesatlas-hub-takeover-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: home.appendingPathComponent("Library/Application Support/Tesatlas Hub"),
