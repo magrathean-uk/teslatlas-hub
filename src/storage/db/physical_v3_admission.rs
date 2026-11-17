@@ -876,6 +876,63 @@ impl HubStore {
             .transpose()
     }
 
+    /// The recorded inputs of the vehicle's planned physical head
+    /// (M08-T19), if any; one that does not read back is none.
+    pub(crate) fn physical_v3_handback_plan(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<Option<PhysicalV3HandbackPlan>, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        let value: Option<String> = connection
+            .query_row(
+                "SELECT value FROM hub_metadata WHERE key = ?1",
+                params![physical_v3_handback_plan_key(vehicle_id)],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        Ok(value.and_then(|value| serde_json::from_str(&value).ok()))
+    }
+
+    /// Records (or with `None` forgets) the inputs of the vehicle's planned
+    /// physical head (M08-T19).
+    pub(crate) fn record_physical_v3_handback_plan(
+        &self,
+        _publication_gate: &PublicationGate,
+        vehicle_id: Uuid,
+        plan: Option<&PhysicalV3HandbackPlan>,
+    ) -> Result<(), StoreError> {
+        let connection = self.open()?;
+        match plan {
+            Some(plan) => {
+                let value =
+                    serde_json::to_string(plan).map_err(StoreError::SerializeLifecycleRow)?;
+                connection.execute(
+                    "INSERT INTO hub_metadata(key, value) VALUES(?1, ?2)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    params![physical_v3_handback_plan_key(vehicle_id), value],
+                )
+            }
+            None => connection.execute(
+                "DELETE FROM hub_metadata WHERE key = ?1",
+                params![physical_v3_handback_plan_key(vehicle_id)],
+            ),
+        }
+        .map_err(StoreError::Query)?;
+        Ok(())
+    }
+
+    /// The snapshot id of the vehicle's current public physical head, served
+    /// or not, without reading its packs (M08-T19).
+    pub(crate) fn physical_v3_current_snapshot_id(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<Option<Uuid>, StoreError> {
+        Ok(self
+            .unserved_physical_v3_control_admission_for_vehicle(vehicle_id)?
+            .map(|admission| admission.snapshot_id))
+    }
+
     /// The vehicles with a kept physical stage (M03-T22).
     pub(crate) fn physical_v3_kept_vehicles(&self) -> Result<Vec<Uuid>, StoreError> {
         let connection = self.open_read_only_connection()?;
@@ -1548,6 +1605,21 @@ fn physical_v3_seam_coverage_key(vehicle_id: Uuid) -> String {
 /// handback (M03-T22).
 fn physical_v3_kept_key(vehicle_id: Uuid) -> String {
     format!("physical_v3_kept:{vehicle_id}")
+}
+
+fn physical_v3_handback_plan_key(vehicle_id: Uuid) -> String {
+    format!("physical_v3_handback_plan:{vehicle_id}")
+}
+
+/// The inputs a vehicle's planned physical head was a function of
+/// (M08-T19): a handback whose inputs have the same digest plans the same
+/// head, so it serves `snapshot_id` again under the new coverage.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PhysicalV3HandbackPlan {
+    pub(crate) snapshot_id: String,
+    /// The instants the kept stage's source children span, inclusive.
+    pub(crate) span: Option<(i64, i64)>,
+    pub(crate) inputs: String,
 }
 
 /// What is kept for a vehicle's handback (M03-T22): the digests of the raw

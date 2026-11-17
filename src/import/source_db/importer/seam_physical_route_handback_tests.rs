@@ -1630,6 +1630,333 @@ fn seam_physical_route_import_after_windows_killed_rebind_recovers_on_reopening(
     }
 }
 
+/// A closed window `[start, start + 1 h)` handed back, with one Hub
+/// drive and two positions when `drive`, published as live sync.
+fn close_window(fixture: &Fixture, seq: i64, start: i64, drive: bool) {
+    let vehicle = fixture.binding.vehicle_id.to_string();
+    let mut connection = fixture.store.open().expect("catalogue");
+    let transaction = connection.transaction().expect("transaction");
+    transaction
+        .execute(
+            "INSERT INTO collection_coverage(seq, grant_digest, opened_at_ms, closed_at_ms, gaps_json, sealed)
+             VALUES (?1, ?2, ?3, ?4, '[]', 'handback')",
+            params![seq, format!("grant-{seq}"), start, start + HOUR],
+        )
+        .expect("coverage");
+    if drive {
+        let projected = project_vehicle(&successor_history(), CAR).expect("projection");
+        let mut hub_drive = projected.snapshot.drives[0].clone();
+        hub_drive.id = HUB_ID_BASE + 100 + seq;
+        hub_drive.start_date_ms = start + 10 * MINUTE;
+        hub_drive.end_date_ms = start + 20 * MINUTE;
+        let journal = |entity: &str, id: i64, json: &str| {
+            let revision: i64 = transaction
+                .query_row(
+                    "INSERT INTO sync_mutation_sequences(vehicle_id, next_revision) VALUES (?1, 2)
+                     ON CONFLICT(vehicle_id) DO UPDATE SET next_revision = next_revision + 1
+                     RETURNING next_revision - 1",
+                    params![vehicle.as_str()],
+                    |row| row.get(0),
+                )
+                .expect("revision");
+            transaction
+                .execute(
+                    "INSERT INTO sync_mutations(vehicle_id, revision, entity, entity_id, car_id,
+                        operation, payload_json, published, claimed_until_ms)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 'upsert', ?6, 0, 0)",
+                    params![vehicle.as_str(), revision, entity, id, CAR, json],
+                )
+                .expect("mutation");
+        };
+        let json = serde_json::to_string(&hub_drive).expect("drive json");
+        transaction
+            .execute(
+                "INSERT INTO materialised_drives(vehicle_id, drive_id, car_id, drive_json)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![vehicle.as_str(), hub_drive.id, CAR, json],
+            )
+            .expect("Hub drive");
+        journal("drive", hub_drive.id, &json);
+        for (n, at) in [(1, 12 * MINUTE), (2, 18 * MINUTE)] {
+            let id = HUB_ID_BASE + 1_000 + seq * 10 + n;
+            let mut position = crate::lifecycle::imported_position(&source_position(
+                id,
+                Some(hub_drive.id),
+                start + at,
+            ));
+            position.drive_id = Some(hub_drive.id);
+            let json = serde_json::to_string(&position).expect("position json");
+            transaction
+                .execute(
+                    "INSERT INTO materialised_positions(vehicle_id, position_id, drive_id, car_id, position_json)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![vehicle.as_str(), position.id, position.drive_id, CAR, json],
+                )
+                .expect("Hub position");
+            journal("position", position.id, &json);
+        }
+    }
+    transaction.commit().expect("commit");
+    if drive {
+        publish_sync_mutations_ahead_of_packs(
+            &fixture.store,
+            &fixture.gate,
+            &fixture.cursor_key,
+            fixture.binding.vehicle_id,
+        )
+        .expect("live sync of the window");
+    }
+}
+
+fn pack_count(store: &HubStore) -> usize {
+    std::fs::read_dir(store.packs_dir().join("sha256")).map_or(0, |entries| entries.count())
+}
+
+/// M08-T19: a store whose head was planned once by a handback, a closed
+/// window that refuses it, and the counters of full stage and decoded-pack
+/// integrity checks reset.
+fn planned_then_refused(drive: bool) -> (Fixture, tempfile::TempDir, Paired) {
+    let fixture = fixture();
+    let root = crate::private_tempdir().expect("stage root");
+    publish_kept(&fixture, root.path(), "base", &base_with_positions(), None);
+    let env = paired(&fixture);
+    collect(&fixture);
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
+    close_window(&fixture, 2, T + 2 * HOUR, drive);
+    assert_eq!(
+        PhysicalClient::bootstrap(&env, &fixture).err(),
+        Some(axum::http::StatusCode::NOT_ACCEPTABLE),
+        "the window's close refuses the head"
+    );
+    reset_check_counters();
+    (fixture, root, env)
+}
+
+/// The base drive with two source positions inside it and one, without a
+/// drive, three hours before it.
+fn base_with_positions() -> SourceDbHistory {
+    let mut history = base_history();
+    history.positions = vec![
+        source_position(1001, Some(10), T - 5 * HOUR + 2 * MINUTE),
+        source_position(1002, Some(10), T - 5 * HOUR + 8 * MINUTE),
+        source_position(1003, None, T - 8 * HOUR),
+    ];
+    history
+}
+
+/// M08-T19: a window whose coverage meets the instants of the kept stage's
+/// source positions changes what the plan does with them, so its handback
+/// plans in full and publishes the head without the covered position.
+#[test]
+fn handback_coverage_over_source_positions_plans_in_full() {
+    let (fixture, _root, env) = planned_then_refused(false);
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
+    assert_eq!(stage_checks(), 0);
+    let head = current_snapshot(&fixture);
+    {
+        let connection = fixture.store.open().expect("catalogue");
+        connection
+            .execute(
+                "INSERT INTO collection_coverage(seq, grant_digest, opened_at_ms, closed_at_ms, gaps_json, sealed)
+                 VALUES (3, 'grant-3', ?1, ?2, '[]', 'handback')",
+                params![T - 8 * HOUR - MINUTE, T - 8 * HOUR + MINUTE],
+            )
+            .expect("coverage over a source position");
+    }
+    reset_check_counters();
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
+    assert_eq!(stage_checks(), 1, "planned in full");
+    assert_ne!(current_snapshot(&fixture), head);
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("served");
+    assert!(!fresh.mirror.positions.contains_key(&1003), "the covered position goes");
+    assert!(fresh.mirror.positions.contains_key(&1001), "the others stay");
+}
+
+fn reset_check_counters() {
+    crate::source_db_stage::INTEGRITY_CHECKS.with(|checks| checks.set(0));
+    crate::hub_pack::PACK_INTEGRITY_CHECKS.with(|checks| checks.set(0));
+}
+
+fn stage_checks() -> u64 {
+    crate::source_db_stage::INTEGRITY_CHECKS.with(std::cell::Cell::get)
+}
+
+fn pack_checks() -> u64 {
+    crate::hub_pack::PACK_INTEGRITY_CHECKS.with(std::cell::Cell::get)
+}
+
+fn current_snapshot(fixture: &Fixture) -> Uuid {
+    fixture
+        .store
+        .physical_v3_current_snapshot_id(fixture.binding.vehicle_id)
+        .expect("head")
+        .expect("a head")
+}
+
+/// M08-T19: a window that adds no row changes no input of the head's plan:
+/// the handback serves the same head under the new coverage without opening
+/// the kept stage, reading a pack or writing one, and a client reads it.
+#[test]
+fn handback_unchanged_plan_serves_the_head_again_without_planning() {
+    let (fixture, _root, env) = planned_then_refused(false);
+    let head = current_snapshot(&fixture);
+    let packs = pack_count(&fixture.store);
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
+    assert_eq!(stage_checks(), 0, "the kept stage is neither verified nor copied");
+    assert_eq!(pack_checks(), 0, "no pack is decoded");
+    assert_eq!(pack_count(&fixture.store), packs, "no pack is written");
+    assert_eq!(current_snapshot(&fixture), head, "the same head");
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("served under the new coverage");
+    assert!(fresh.mirror.drives.contains_key(&10));
+    assert_eq!(handback(&fixture), HandbackPhysicalOutcome::Current);
+}
+
+/// M08-T19: the store of an earlier build holds no recorded plan inputs,
+/// so its first handback plans in full (verifying the kept stage once) and
+/// records them; the handback after the next empty window is the early one.
+#[test]
+fn handback_without_recorded_inputs_plans_once_in_full_then_early() {
+    let (fixture, _root, env) = planned_then_refused(false);
+    fixture
+        .store
+        .record_physical_v3_handback_plan(&fixture.gate, fixture.binding.vehicle_id, None)
+        .expect("forget the inputs, as a store the earlier build planned");
+    let head = current_snapshot(&fixture);
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
+    assert_eq!(stage_checks(), 1, "the full path verifies the kept stage once");
+    assert_eq!(current_snapshot(&fixture), head);
+    assert!(
+        fixture
+            .store
+            .physical_v3_handback_plan(fixture.binding.vehicle_id)
+            .expect("record")
+            .is_some(),
+        "the full path records the inputs"
+    );
+    PhysicalClient::bootstrap(&env, &fixture).expect("served");
+
+    close_window(&fixture, 3, T + 4 * HOUR, false);
+    reset_check_counters();
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
+    assert_eq!(stage_checks(), 0, "the next handback is the early one");
+    PhysicalClient::bootstrap(&env, &fixture).expect("served");
+}
+
+/// M08-T19: a window with a drive changes the Hub rows the plan writes, so
+/// the handback plans in full: the kept stage is verified once (its copy
+/// and both content digests rely on that check) and no pack of either head
+/// is decoded with a second integrity check. The client reads the drive.
+#[test]
+fn handback_with_a_new_drive_plans_in_full_verifying_once() {
+    let (fixture, _root, env) = planned_then_refused(true);
+    let head = current_snapshot(&fixture);
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
+    assert_eq!(stage_checks(), 1, "one full check of the kept stage");
+    assert_eq!(pack_checks(), 0, "the changed set repeats no pack check");
+    assert_ne!(current_snapshot(&fixture), head);
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("the new head is served");
+    assert!(fresh.mirror.drives.contains_key(&(HUB_ID_BASE + 102)), "the window's drive");
+}
+
+/// M08-T19: a kept stage whose pages SQLite's integrity check refuses, its
+/// rows intact, is still refused by a handback that plans in full; without
+/// the one remaining check its rows would match the record and publish.
+#[test]
+fn handback_refuses_a_damaged_kept_stage() {
+    let (fixture, _root, env) = planned_then_refused(true);
+    let path = kept_stage_path(&fixture.store, fixture.binding.vehicle_id);
+    let connection = Connection::open(&path).expect("kept stage");
+    connection
+        .execute_batch(
+            "PRAGMA writable_schema = ON;
+             DELETE FROM sqlite_schema WHERE name = 'stage_charge_samples_by_process';
+             PRAGMA writable_schema = OFF;",
+        )
+        .expect("orphan an index's pages");
+    drop(connection);
+    let head = current_snapshot(&fixture);
+    match handback(&fixture) {
+        HandbackPhysicalOutcome::Withheld(reason) => {
+            assert!(reason.contains("the kept stage"), "{reason}");
+        }
+        other => panic!("a damaged kept stage was planned: {other:?}"),
+    }
+    assert_eq!(current_snapshot(&fixture), head);
+    assert_eq!(
+        PhysicalClient::bootstrap(&env, &fixture).err(),
+        Some(axum::http::StatusCode::NOT_ACCEPTABLE)
+    );
+}
+
+/// M08-T19: a kept stage whose rows no longer have the recorded content
+/// digest (its SQLite intact, its accounting unchanged) is refused.
+#[test]
+fn handback_refuses_a_kept_stage_that_differs_from_its_record() {
+    let (fixture, _root, env) = planned_then_refused(true);
+    let path = kept_stage_path(&fixture.store, fixture.binding.vehicle_id);
+    let connection = Connection::open(&path).expect("kept stage");
+    let changed = connection
+        .execute(
+            "UPDATE stage_rows SET row_json = json_set(row_json, '$.speed_max', 51)
+              WHERE table_name = 'drives' AND source_id = 10",
+            [],
+        )
+        .expect("change a row");
+    assert_eq!(changed, 1);
+    drop(connection);
+    assert_eq!(
+        handback(&fixture),
+        HandbackPhysicalOutcome::Withheld("the kept stage differs from its record".into())
+    );
+    assert_eq!(
+        PhysicalClient::bootstrap(&env, &fixture).err(),
+        Some(axum::http::StatusCode::NOT_ACCEPTABLE)
+    );
+}
+
+/// M08-T19: a pack of the current head whose bytes changed (same length)
+/// fails the handback's one digest check of that head, and nothing is
+/// published; without it the changed set, which no longer hashes the
+/// prior head's packs again, would fall back to a full replacement.
+#[test]
+fn handback_refuses_a_damaged_pack_of_the_current_head() {
+    let (fixture, _root, env) = planned_then_refused(true);
+    let head = current_snapshot(&fixture);
+    let sha256: String = fixture
+        .store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            "SELECT sha256 FROM pending_physical_v3_packs WHERE snapshot_id = ?1 ORDER BY ordinal LIMIT 1",
+            params![head.to_string()],
+            |row| row.get(0),
+        )
+        .expect("a pack of the head");
+    let path = fixture
+        .store
+        .packs_dir()
+        .join("sha256")
+        .join(format!("{sha256}.sqlite.zst"));
+    let mut bytes = std::fs::read(&path).expect("pack");
+    let middle = bytes.len() / 2;
+    bytes[middle] ^= 0x55;
+    let permissions = std::fs::metadata(&path).expect("pack metadata").permissions();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("writable");
+    }
+    std::fs::write(&path, &bytes).expect("damage the pack");
+    std::fs::set_permissions(&path, permissions).expect("restore permissions");
+    let result =
+        publish_physical_after_handback(&fixture.store, &fixture.cursor_key, &fixture.gate);
+    assert!(result.is_err(), "a damaged pack of the current head is refused: {result:?}");
+    assert_eq!(current_snapshot(&fixture), head, "nothing is published");
+    assert_eq!(
+        PhysicalClient::bootstrap(&env, &fixture).err(),
+        Some(axum::http::StatusCode::NOT_ACCEPTABLE)
+    );
+}
+
 /// M08-T19 lab: the cost of one handback publication on a synthetic
 /// imported history, built from this module's fixtures ([`fixture`],
 /// [`publish_kept`], [`collect`], [`history_stage_unsealed`]). Two
@@ -1723,92 +2050,10 @@ mod m08_t19_lab {
             }
         }
         flush(&mut page);
-        drop(flush);
         stage.seal().expect("seal");
         (OwnedSourceDbStage::new(stage), history)
     }
 
-    /// A closed window `[start, start + 1 h)` handed back, with one Hub
-    /// drive and two positions when `drive`, published as live sync.
-    fn lab_window(fixture: &Fixture, seq: i64, start: i64, drive: bool) {
-        let vehicle = fixture.binding.vehicle_id.to_string();
-        let mut connection = fixture.store.open().expect("catalogue");
-        let transaction = connection.transaction().expect("transaction");
-        transaction
-            .execute(
-                "INSERT INTO collection_coverage(seq, grant_digest, opened_at_ms, closed_at_ms, gaps_json, sealed)
-                 VALUES (?1, ?2, ?3, ?4, '[]', 'handback')",
-                params![seq, format!("grant-{seq}"), start, start + HOUR],
-            )
-            .expect("coverage");
-        if drive {
-            let projected = project_vehicle(&successor_history(), CAR).expect("projection");
-            let mut hub_drive = projected.snapshot.drives[0].clone();
-            hub_drive.id = HUB_ID_BASE + 100 + seq;
-            hub_drive.start_date_ms = start + 10 * MINUTE;
-            hub_drive.end_date_ms = start + 20 * MINUTE;
-            let journal = |entity: &str, id: i64, json: &str| {
-                let revision: i64 = transaction
-                    .query_row(
-                        "INSERT INTO sync_mutation_sequences(vehicle_id, next_revision) VALUES (?1, 2)
-                         ON CONFLICT(vehicle_id) DO UPDATE SET next_revision = next_revision + 1
-                         RETURNING next_revision - 1",
-                        params![vehicle.as_str()],
-                        |row| row.get(0),
-                    )
-                    .expect("revision");
-                transaction
-                    .execute(
-                        "INSERT INTO sync_mutations(vehicle_id, revision, entity, entity_id, car_id,
-                            operation, payload_json, published, claimed_until_ms)
-                         VALUES (?1, ?2, ?3, ?4, ?5, 'upsert', ?6, 0, 0)",
-                        params![vehicle.as_str(), revision, entity, id, CAR, json],
-                    )
-                    .expect("mutation");
-            };
-            let json = serde_json::to_string(&hub_drive).expect("drive json");
-            transaction
-                .execute(
-                    "INSERT INTO materialised_drives(vehicle_id, drive_id, car_id, drive_json)
-                     VALUES (?1, ?2, ?3, ?4)",
-                    params![vehicle.as_str(), hub_drive.id, CAR, json],
-                )
-                .expect("Hub drive");
-            journal("drive", hub_drive.id, &json);
-            for (n, at) in [(1, 12 * MINUTE), (2, 18 * MINUTE)] {
-                let id = HUB_ID_BASE + 1_000 + seq * 10 + n;
-                let mut position = crate::lifecycle::imported_position(&source_position(
-                    id,
-                    Some(hub_drive.id),
-                    start + at,
-                ));
-                position.drive_id = Some(hub_drive.id);
-                let json = serde_json::to_string(&position).expect("position json");
-                transaction
-                    .execute(
-                        "INSERT INTO materialised_positions(vehicle_id, position_id, drive_id, car_id, position_json)
-                         VALUES (?1, ?2, ?3, ?4, ?5)",
-                        params![vehicle.as_str(), position.id, position.drive_id, CAR, json],
-                    )
-                    .expect("Hub position");
-                journal("position", position.id, &json);
-            }
-        }
-        transaction.commit().expect("commit");
-        if drive {
-            publish_sync_mutations_ahead_of_packs(
-                &fixture.store,
-                &fixture.gate,
-                &fixture.cursor_key,
-                fixture.binding.vehicle_id,
-            )
-            .expect("live sync of the window");
-        }
-    }
-
-    fn pack_count(store: &HubStore) -> usize {
-        std::fs::read_dir(store.packs_dir().join("sha256")).map_or(0, |entries| entries.count())
-    }
 
     /// LAB_DIR, LAB_DRIVES, LAB_PER_DRIVE, LAB_SCENARIO (`unchanged` or
     /// `drive`): an import of the history, a first window with drives and
@@ -1842,7 +2087,7 @@ mod m08_t19_lab {
         assert_eq!(first.kind, PhysicalV3PublicationKind::FirstHead);
         collect(&fixture);
         assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
-        lab_window(&fixture, 2, T + 2 * HOUR, drive);
+        close_window(&fixture, 2, T + 2 * HOUR, drive);
         assert_eq!(
             fixture
                 .store
