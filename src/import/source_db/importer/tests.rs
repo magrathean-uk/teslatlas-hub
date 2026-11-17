@@ -2669,3 +2669,87 @@ fn staged_v21_base_persists_inventory_for_a_changed_history_successor() {
 }
 
 include!("publication_tests.rs");
+
+#[test]
+fn broken_drive_reimport_upgrades_a_legacy_omitted_position_then_skips_retry() {
+    let temporary = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(temporary.path()).unwrap();
+    let cursor_key = CursorKey::from_bytes([71; 32]);
+    let request = SourceDbImportRequest {
+        new_import_source: false,
+        source_key: "broken-drive-legacy-upgrade".into(),
+        scope: SourceDbImportScope::Selected(1),
+        imported_at_ms: 1_700_000_000_000,
+    };
+    let mut source = history();
+    let mut fragment = completed_drive(1);
+    fragment.start_date_ms = 1_000;
+    fragment.end_date_ms = None;
+    fragment.distance_km = None;
+    fragment.duration_min = None;
+    fragment.end_km = None;
+    source.drives = vec![fragment, completed_drive(2)];
+    source.positions.push(SourceDbPosition {
+        id: 20,
+        car_id: 1,
+        drive_id: Some(1),
+        date_ms: 1_000,
+        latitude: 51.0,
+        longitude: 0.0,
+        elevation: None,
+        speed: None,
+        power: None,
+        odometer: None,
+        ideal_battery_range_km: None,
+        est_battery_range_km: None,
+        rated_battery_range_km: None,
+        battery_level: None,
+        usable_battery_level: None,
+        fan_status: None,
+        driver_temp_setting: None,
+        passenger_temp_setting: None,
+        is_climate_on: None,
+        is_rear_defroster_on: None,
+        is_front_defroster_on: None,
+        outside_temp: None,
+        inside_temp: None,
+        battery_heater: None,
+        battery_heater_on: None,
+        battery_heater_no_power: None,
+        tpms_pressure_fl: None,
+        tpms_pressure_fr: None,
+        tpms_pressure_rl: None,
+        tpms_pressure_rr: None,
+    });
+    let mut legacy_history = source.clone();
+    legacy_history.positions.clear();
+    let prior = publish_history(&store, &cursor_key, &request, &legacy_history).unwrap();
+    let manifest = store
+        .manifest_for_vehicle(prior.vehicle_id)
+        .unwrap()
+        .unwrap();
+    // Recreate the old raw-source fingerprint alongside its omitted-position
+    // pack. The source itself included this position even though the pack did not.
+    let canonical = serde_json::to_vec(&(1_i64, &source)).unwrap();
+    let mut digest = Sha256::new();
+    digest.update(crate::runtime::legacy_names::SOURCE_HISTORY_V2_STANDALONE_POSITIONS.as_bytes());
+    digest.update((canonical.len() as u64).to_be_bytes());
+    digest.update(canonical);
+    store
+        .record_snapshot_fingerprint(
+            &manifest,
+            Sha256Digest::from_bytes(digest.finalize().into()),
+        )
+        .unwrap();
+    let upgraded = publish_history(&store, &cursor_key, &request, &source)
+        .expect("legacy import must recover its omitted position");
+    assert!(!upgraded.skipped);
+    assert_eq!(upgraded.snapshot_id, prior.snapshot_id);
+    assert!(upgraded.sequence > prior.sequence);
+    assert_eq!(upgraded.projection.projected_positions, 1);
+    assert_eq!(upgraded.projection.detached_positions, 1);
+    assert_eq!(upgraded.projection.broken_drives, 1);
+    let retry = publish_history(&store, &cursor_key, &request, &source).unwrap();
+    assert!(retry.skipped);
+    assert_eq!(retry.sequence, upgraded.sequence);
+}
