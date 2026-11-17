@@ -1829,7 +1829,7 @@ async fn collector_m04_t12_service_ends_are_not_protocol_violations() {
         (
             "vehicle_other",
             StreamEvent::VehicleOffline,
-            "vehicle_unavailable",
+            "unrecognised_error",
         ),
         (
             "client_error",
@@ -1839,7 +1839,7 @@ async fn collector_m04_t12_service_ends_are_not_protocol_violations() {
         (
             "private-payload",
             StreamEvent::TransportUnavailable,
-            "server_error",
+            "unrecognised_error",
         ),
     ] {
         m04_t12_reason_case(
@@ -1853,7 +1853,7 @@ async fn collector_m04_t12_service_ends_are_not_protocol_violations() {
         m04_t12_reason_case(
             vec![Message::text(hello_frame(Some(code), None))],
             StreamEvent::TransportUnavailable,
-            "hello_rejected",
+            if code == 503 { "hello_rejected" } else { "unrecognised_error" },
         )
         .await;
     }
@@ -2118,5 +2118,31 @@ async fn collector_m04_t12_failed_quiet_reconnect_starts_an_outage() {
     assert_eq!(kinds(&mut run, 5).await,
         ["Healthy", "Telemetry", "VehicleOffline", "Healthy", "Telemetry"]);
     assert_eq!(delays(&peer), [secs(1), secs(1)]);
+    run.shut_down().await.expect("shutdown");
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_unknown_error_tokens_and_mixed_reasons_are_visible_at_info() {
+    let capture = LogCapture::start();
+    let peer = plan_peer(vec![
+        Plan::ends(End::Error("unlisted_candidate")),
+        Plan::ends(End::Raw(json!({"msg_type":"data:error"}).to_string())),
+        Plan::data(vec![(0, "[]".into()), (0, u(T0, "1,2")), (0, u("bad", V1))], 0, End::Hold),
+        Plan::data(vec![(0, u(T0, V1))], 0, End::Hold),
+    ]).await;
+    let mut run = Rig::for_peer(&peer, Creds::offline("private-test-token")).start();
+    assert_eq!(kinds(&mut run, 4).await,
+        ["TransportUnavailable", "TransportUnavailable", "ProtocolViolation", "Healthy"]);
+    let text = capture.text();
+    let info: Vec<_> = text.lines().filter(|line| line.contains(" INFO ")).collect();
+    let attempts: Vec<_> = info.iter().filter(|line| line.contains("stream attempt ended")
+        && line.contains("reason_class=\"unrecognised_error\"")).collect();
+    assert_eq!(attempts.len(), 2, "{text}");
+    assert!(attempts[0].contains("error_type=\"unlisted_candidate\""), "{text}");
+    let summary = info.iter().find(|line| line.contains("stream session summary")).expect("INFO summary");
+    for reason in ["invalid_envelope", "column_count", "invalid_timestamp"] {
+        assert!(summary.contains(&format!("\"{reason}\": 1")), "{text}");
+    }
+    assert!(!text.contains("private-test-token"));
     run.shut_down().await.expect("shutdown");
 }
