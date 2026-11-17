@@ -694,7 +694,7 @@ fn collection_window_issuer_failed_publication_keeps_its_reservation() {
 }
 
 #[test]
-fn collection_window_gate_closed_by_default_and_fleet_parked() {
+fn collection_window_gate_closed_by_default_for_both_providers() {
     let clock = Arc::new(ManualClock::new(T0));
     let gate = EgressGate::new(clock);
     for kind in [

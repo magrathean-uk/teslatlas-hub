@@ -441,7 +441,7 @@ async fn fence_rig(status: u16, fleet: bool) -> FenceRig {
         Some((now + 28_800, now)),
     );
     if fleet {
-        crate::auth::credential_vault::fixtures::seed_fleet_supplied_pair(
+        crate::auth::credential_vault::fixtures::seed_own_fleet_pair(
             directory.path(),
             "fence-fleet-access",
             "fence-fleet-refresh",

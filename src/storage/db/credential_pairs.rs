@@ -1972,10 +1972,11 @@ fn credential_fleet_unpark_barrier(tx: &Connection) -> Result<(), StoreError> {
     Ok(())
 }
 
-/// Whether the stored Fleet pair of `generation` is pre-un-park material:
-/// every Fleet pair is until the barrier is recorded, and afterwards the one
-/// the barrier recorded. A blocked pair is never admitted and stays on the
-/// refused-credential purge path.
+/// Whether the stored Fleet pair of `generation` is pre-un-park material.
+/// The barrier is lazy: it is recorded inside the first write of the Hub's
+/// own Fleet grant, not when the store opens, and until then every stored
+/// Fleet pair is blocked; afterwards only the pair it recorded is. A blocked
+/// pair is never admitted and stays on the refused-credential purge path.
 fn credential_fleet_pair_blocked(connection: &Connection, generation: Uuid) -> Result<bool, StoreError> {
     let recorded = connection
         .query_row(

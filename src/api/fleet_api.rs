@@ -2019,7 +2019,7 @@ where
 }
 
 /// Asks the window's egress gate for one Fleet send (M02-T09). A refusal
-/// (`window_closed`, or `provider_parked` while Fleet is parked) means nothing
+/// (`window_closed`: no open window, or its deadline passed) means nothing
 /// was sent and no connection was opened; it is never retried here.
 fn ask_gate(
     request: &reqwest::Request,

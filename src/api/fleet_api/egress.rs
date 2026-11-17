@@ -5,7 +5,7 @@
 //! Legacy token exchanges, Owner API reads, Fleet requests and the streaming
 //! connection all ask here immediately before they send, and here asks the
 //! window's egress gate (`collection::window::gate`), which is the only
-//! authority. A refusal (`window_closed`, `provider_parked`) means nothing is
+//! authority. A refusal (`window_closed`) means nothing is
 //! sent and no connection is opened; the caller never retries it. A permit
 //! bounds its send: the send ends when the time the gate left it runs out and,
 //! for a request or a stream, when the window closes and cancels the permit.

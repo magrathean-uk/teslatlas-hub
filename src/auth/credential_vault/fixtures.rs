@@ -113,11 +113,11 @@ pub(crate) fn seed_legacy_supplied_pair(data: &Path, access: &str, refresh: &str
     seed_entry(data, entry)
 }
 #[cfg(test)]
-/// Seeds a Fleet pair for the refresh fence tests outside `crate::auth`.
-pub(crate) fn seed_fleet_supplied_pair(data: &Path, access: &str, refresh: &str) -> Uuid {
-    let entry = CredentialEntry::fleet_supplied(Zeroizing::new(access.to_owned()), Zeroizing::new(refresh.to_owned()),
-        "client-fixture".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet fixture entry");
-    seed_entry(data, entry)
+/// Seeds the Hub's own Fleet grant for the refresh fence tests outside
+/// `crate::auth` (M09-T08: a supplied Fleet pair is blocked, never refreshed).
+pub(crate) fn seed_own_fleet_pair(data: &Path, access: &str, refresh: &str) -> Uuid {
+    let vault = open_fixture_vault(HubStore::initialize(data).expect("fixture store"), data);
+    seed_own_fleet_grant(&vault, access, refresh).expect("own Fleet grant")
 }
 /// Stores a Fleet pair as the Hub's own Fleet sign-in does (M09-T08): the
 /// only writer of an admitted Fleet pair besides its refresh successor.
