@@ -962,7 +962,8 @@ impl ScheduledVehicle {
         now: Instant,
         wall_ms: i64,
     ) -> Option<Self> {
-        let stream_id = crate::owner_api::StreamVehicleId::try_from_i64(i64::try_from(id.get()).ok()?)?;
+        let stream_id =
+            crate::owner_api::StreamVehicleId::try_from_i64(i64::try_from(id.get()).ok()?)?;
         let mut vehicle = Self::new(
             Vehicle {
                 id,
@@ -2144,12 +2145,25 @@ impl VehicleScheduler {
         if !self.mode.is_owner_wire() || !self.requests_allowed(now) {
             return Vec::new();
         }
+        for vehicle in self.vehicles.values_mut() {
+            if vehicle.stream_state_check_pending
+                && matches!(vehicle.phase, PollPhase::Asleep | PollPhase::Offline)
+            {
+                vehicle.next_check_due = None;
+                vehicle.stream_state_check_pending = false;
+            }
+        }
         let mut due: Vec<(Instant, VehicleId)> = self
             .vehicles
             .iter()
             .filter(|(_, vehicle)| !vehicle.is_inactive())
-            .filter(|(_, vehicle)| !vehicle.stream_state_check_pending
-                || !matches!(vehicle.phase, PollPhase::Asleep | PollPhase::Offline))
+            .filter(|(_, vehicle)| {
+                !vehicle.stream_state_check_pending
+                    || (!matches!(vehicle.phase, PollPhase::Asleep | PollPhase::Offline)
+                        && vehicle.last_stream_state_check.is_none_or(|last| {
+                            now.saturating_duration_since(last) >= Duration::from_secs(60)
+                        }))
+            })
             .filter_map(|(id, vehicle)| {
                 vehicle
                     .next_check_due
@@ -2164,7 +2178,6 @@ impl VehicleScheduler {
                 && vehicle.stream_state_check_pending
             {
                 vehicle.last_stream_state_check = Some(now);
-                vehicle.stream_state_check_pending = false;
             }
         }
         due.into_iter().map(|(_, id)| id).collect()

@@ -809,26 +809,60 @@ fn r30_motion_follows_the_gear_then_the_speed() {
 #[test]
 fn sc48_schedules() {
     let secs = Duration::from_secs;
-    for class in [FailureClass::Transport, FailureClass::Vehicle,
-        FailureClass::Unknown, FailureClass::Protocol] {
-        let waits: Vec<_> = (1..=10).map(|n| nominal_delay(&class, &RetryState {
-            outage_attempt: n, ..RetryState::default()
-        })).collect();
+    for class in [
+        FailureClass::Transport,
+        FailureClass::Vehicle,
+        FailureClass::Unknown,
+        FailureClass::Protocol,
+    ] {
+        let waits: Vec<_> = (1..=10)
+            .map(|n| {
+                nominal_delay(
+                    &class,
+                    &RetryState {
+                        outage_attempt: n,
+                        ..RetryState::default()
+                    },
+                )
+            })
+            .collect();
         assert_eq!(waits, [2, 4, 8, 16, 30, 30, 30, 30, 30, 30].map(secs));
         for elapsed in [300, 600, 3600] {
-            assert_eq!(nominal_delay(&class, &RetryState {
-                outage_elapsed: secs(elapsed), ..RetryState::default()
-            }), secs(300));
+            assert_eq!(
+                nominal_delay(
+                    &class,
+                    &RetryState {
+                        outage_elapsed: secs(elapsed),
+                        ..RetryState::default()
+                    }
+                ),
+                secs(300)
+            );
         }
     }
     for n in [0, 1, 32, u32::MAX] {
-        assert_eq!(nominal_delay(&FailureClass::Busy { retry_after: None },
-            &RetryState { transport_attempt: n, ..RetryState::default() }), secs(300));
+        assert_eq!(
+            nominal_delay(
+                &FailureClass::Busy { retry_after: None },
+                &RetryState {
+                    transport_attempt: n,
+                    ..RetryState::default()
+                }
+            ),
+            secs(300)
+        );
     }
     for n in [1, 2, 7] {
-        assert_eq!(nominal_delay(&FailureClass::Refusal, &RetryState {
-            refusal_streak: n, ..RetryState::default()
-        }), secs(if n == 1 { 5 } else { 300 }));
+        assert_eq!(
+            nominal_delay(
+                &FailureClass::Refusal,
+                &RetryState {
+                    refusal_streak: n,
+                    ..RetryState::default()
+                }
+            ),
+            secs(if n == 1 { 5 } else { 300 })
+        );
     }
 }
 
@@ -900,8 +934,7 @@ fn sc49_jitter() {
             &FailureClass::Refusal,
             &RetryState {
                 refusal_streak: 1,
-        ..RetryState::default()
-                ..RetryState::default()
+                ..RetryState::default()..RetryState::default()
             },
             0.0
         ),
@@ -912,8 +945,7 @@ fn sc49_jitter() {
             &FailureClass::Refusal,
             &RetryState {
                 refusal_streak: 2,
-        ..RetryState::default()
-                ..RetryState::default()
+                ..RetryState::default()..RetryState::default()
             },
             0.0
         ),
@@ -1068,7 +1100,7 @@ fn sc68_counter_functions() {
             transport_attempt: 2,
             vehicle_attempt: 3,
             refusal_streak: 1,
-        ..RetryState::default()
+            ..RetryState::default()
         };
         after.on_session_end(&class);
         assert_eq!(steps(after), (3, 3, 1), "{class:?}");
@@ -1387,4 +1419,16 @@ fn r3_constructors_apply_the_override_rule() {
     let supervisor =
         legacy_supervisor(GLOBAL_STREAM_ENDPOINT.to_owned(), true, events).expect("supervisor");
     assert_eq!(supervisor.tag, "9");
+}
+
+#[test]
+fn m04_t12_delivered_data_resets_a_slow_outage() {
+    let start = tokio::time::Instant::now();
+    let mut state = RetryState::default();
+    state.on_session_end_at(&FailureClass::Protocol, start);
+    state.on_session_end_at(&FailureClass::Vehicle, start + Duration::from_secs(600));
+    assert_eq!(next_delay(&FailureClass::Vehicle, &state, 1.0), Duration::from_secs(300));
+    state.on_first_accepted();
+    state.on_session_end_at(&FailureClass::Unknown, start + Duration::from_secs(601));
+    assert_eq!(next_delay(&FailureClass::Unknown, &state, 1.0), Duration::from_secs(2));
 }

@@ -865,7 +865,11 @@ fn service_end_reason(message: &Message) -> &'static str {
             };
             if members.get("msg_type").and_then(Value::as_str) == Some("control:hello")
                 && members.get("error_type").is_none()
-                && matches!(members.get("code").and_then(Value::as_i64), Some(401 | 403 | 429 | 503)) {
+                && matches!(
+                    members.get("code").and_then(Value::as_i64),
+                    Some(401 | 403 | 429 | 503)
+                )
+            {
                 return "hello_rejected";
             }
             match members.get("error_type").and_then(Value::as_str) {
@@ -882,10 +886,20 @@ fn service_end_reason(message: &Message) -> &'static str {
 fn unrecognised_error_type(text: &str, tag: &str, echo: &EchoGuard) -> Option<String> {
     let members = serde_json::from_str::<Value>(text).ok()?;
     let token = members.get("error_type").and_then(Value::as_str)?;
-    if matches!(token, "vehicle_disconnected" | "vehicle_error" | "client_error") {
+    if matches!(
+        token,
+        "vehicle_disconnected" | "vehicle_error" | "client_error"
+    ) {
         return None;
     }
-    Some(if token == tag { "other" } else { echo.loggable(Some(token)) }.to_owned())
+    Some(
+        if token == tag {
+            "other"
+        } else {
+            echo.loggable(Some(token))
+        }
+        .to_owned(),
+    )
 }
 
 fn socket_end_reason(message: &Option<Result<Message, WebSocketError>>) -> &'static str {
@@ -1065,7 +1079,9 @@ impl TeslaStreamSupervisor {
                         delay_ms = delay.as_millis() as u64,
                         "stream attempt ended"
                     );
-                    if !run.stable_end && let Some(event) = event_for(&class, &run.retry) {
+                    if !run.stable_end
+                        && let Some(event) = event_for(&class, &run.retry)
+                    {
                         match self.emit(event, &mut shutdown).await {
                             Emit::Sent => {}
                             Emit::Shutdown => return Ok(()),
@@ -1301,8 +1317,13 @@ impl TeslaStreamSupervisor {
                                         Message::Binary(bytes) => std::str::from_utf8(bytes).ok(),
                                         _ => None,
                                     };
-                                    *unknown_error_type = text.and_then(|text|
-                                        unrecognised_error_type(text, &self.tag, &EchoGuard::default()));
+                                    *unknown_error_type = text.and_then(|text| {
+                                        unrecognised_error_type(
+                                            text,
+                                            &self.tag,
+                                            &EchoGuard::default(),
+                                        )
+                                    });
                                     return Live::Ended {
                                         class,
                                         close_code: CloseCode::Normal,
@@ -1609,8 +1630,9 @@ impl TeslaStreamSupervisor {
             .read_loop(&mut socket, shutdown, audit, run, &mut state)
             .await;
         run.end_reason = state.end_reason;
-        run.stable_end = state.first_accepted_at
-            .is_some_and(|first| Instant::now().saturating_duration_since(first) > Duration::from_secs(60));
+        run.stable_end = state.first_accepted_at.is_some_and(|first| {
+            Instant::now().saturating_duration_since(first) > Duration::from_secs(60)
+        });
         run.unknown_error_type = state.unknown_error_type.clone();
         self.log_summary(&state, end.class == Some(FailureClass::Protocol));
         self.finish_subscribed(socket, end, shutdown, audit, session, &state)
@@ -1765,7 +1787,11 @@ impl TeslaStreamSupervisor {
             ignored_errors = counts.ignored_errors,
             "stream session summary"
         ); }; }
-        if protocol { emit_summary!(info); } else { emit_summary!(debug); }
+        if protocol {
+            emit_summary!(info);
+        } else {
+            emit_summary!(debug);
+        }
     }
 
     /// The read loop of one session (section 3). Messages are processed one at

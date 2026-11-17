@@ -164,12 +164,8 @@ impl RetryState {
         *self = Self::default();
     }
 
-    /// 60 s after the session's first accepted frame, while it is still open
-    /// (R37). Transport back-off resets only after 60 s (four default ping
-    /// intervals) of a working session, so a path that fails right after its
-    /// first frame keeps backing off instead of retrying at the shortest
-    /// delay. Called by the session's read loop when its stable-session timer
-    /// fires (`SessionClocks::stable_at`).
+    /// The existing stable-session timer also clears the diagnostic Transport
+    /// counter. The outage schedule already reset on the first accepted frame.
     pub(crate) fn on_stable(&mut self) {
         self.transport_attempt = 0;
     }
@@ -186,8 +182,10 @@ fn doubling(base: Duration, cap: Duration, counter: u32) -> Duration {
 /// for a class and the counters after their update (R37).
 pub(crate) fn nominal_delay(class: &FailureClass, state: &RetryState) -> Duration {
     match class {
-        FailureClass::Transport | FailureClass::Unknown
-        | FailureClass::Protocol | FailureClass::Vehicle => {
+        FailureClass::Transport
+        | FailureClass::Unknown
+        | FailureClass::Protocol
+        | FailureClass::Vehicle => {
             if state.outage_elapsed >= FAST_PHASE {
                 SLOW_DELAY
             } else {
@@ -227,8 +225,12 @@ pub(crate) fn next_delay(class: &FailureClass, state: &RetryState, u: f64) -> Du
         FailureClass::Busy {
             retry_after: Some(retry_after),
         } => delay.max((*retry_after).min(RETRY_AFTER_CAP)),
-        FailureClass::Transport | FailureClass::Vehicle
-        | FailureClass::Unknown | FailureClass::Protocol if state.outage_elapsed < FAST_PHASE => {
+        FailureClass::Transport
+        | FailureClass::Vehicle
+        | FailureClass::Unknown
+        | FailureClass::Protocol
+            if state.outage_elapsed < FAST_PHASE =>
+        {
             // Wake at the phase boundary rather than carrying a fast wait into
             // the slow phase. A failure there selects the slow schedule.
             delay.min(FAST_PHASE - state.outage_elapsed)

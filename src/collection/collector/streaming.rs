@@ -1075,12 +1075,17 @@ fn note_stream_unhealthy(
 /// A stream end may ask for one non-waking check per car per minute. Keep the
 /// clock in the scheduler, so a new session or run cannot reset the limit.
 fn schedule_stream_state_check(scheduler: &mut VehicleScheduler, id: VehicleId, now: Instant) {
-    let Some(vehicle) = scheduler.vehicles.get_mut(&id) else { return; };
-    if vehicle.is_inactive() || matches!(vehicle.phase, PollPhase::Asleep | PollPhase::Offline)
-        || vehicle.stream_state_check_pending {
+    let Some(vehicle) = scheduler.vehicles.get_mut(&id) else {
+        return;
+    };
+    if vehicle.is_inactive()
+        || matches!(vehicle.phase, PollPhase::Asleep | PollPhase::Offline)
+        || (vehicle.stream_state_check_pending && vehicle.next_check_due.is_some())
+    {
         return;
     }
-    let due = vehicle.last_stream_state_check
+    let due = vehicle
+        .last_stream_state_check
         .map_or(now, |last| now.max(last + Duration::from_secs(60)));
     vehicle.stream_state_check_pending = true;
     scheduler.schedule_offline_state_fetch(id, due);

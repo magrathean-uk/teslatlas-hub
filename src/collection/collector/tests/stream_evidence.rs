@@ -2768,11 +2768,23 @@ fn m04_t12_vehicle_ends_limit_targeted_checks_over_ten_minutes() {
     for second in 0..600 {
         let now = bed.core.clock.mono_now();
         // Data and stream restarts cannot reset the per-car check clock.
-        if second % 17 == 0 { bed.dispatch(StreamEvent::Healthy); }
+        if second % 17 == 0 {
+            bed.dispatch(StreamEvent::Healthy);
+        }
         bed.dispatch(StreamEvent::VehicleOffline);
-        if !bed.core.scheduler.due_offline_state_vehicles(now).is_empty() {
+        if !bed
+            .core
+            .scheduler
+            .due_offline_state_vehicles(now)
+            .is_empty()
+        {
             checks.push(second);
-            bed.core.scheduler.vehicles.get_mut(&id).unwrap().next_check_due = None;
+            bed.core
+                .scheduler
+                .vehicles
+                .get_mut(&id)
+                .unwrap()
+                .next_check_due = None;
         }
         bed.core.clock.advance(Duration::from_secs(1));
     }
@@ -2782,10 +2794,20 @@ fn m04_t12_vehicle_ends_limit_targeted_checks_over_ten_minutes() {
     bed.core.clock.advance(Duration::from_secs(50));
     let now = bed.core.clock.mono_now();
     assert_eq!(bed.core.scheduler.due_offline_state_vehicles(now), vec![id]);
-    bed.core.scheduler.vehicles.get_mut(&id).unwrap().next_check_due = None;
+    bed.core
+        .scheduler
+        .vehicles
+        .get_mut(&id)
+        .unwrap()
+        .next_check_due = None;
     bed.core.clock.advance(Duration::from_secs(10));
     bed.dispatch(StreamEvent::VehicleOffline);
-    assert!(bed.core.scheduler.due_offline_state_vehicles(bed.core.clock.mono_now()).is_empty());
+    assert!(
+        bed.core
+            .scheduler
+            .due_offline_state_vehicles(bed.core.clock.mono_now())
+            .is_empty()
+    );
 }
 
 #[test]
@@ -2797,11 +2819,21 @@ fn m04_t12_stream_checks_never_target_asleep_or_offline_cars() {
         bed.dispatch(StreamEvent::VehicleOffline);
         assert!(bed.core.scheduler.vehicles[&id].next_check_due.is_none());
         let now = bed.core.clock.mono_now();
-        assert!(bed.core.scheduler.due_offline_state_vehicles(now).is_empty());
+        assert!(
+            bed.core
+                .scheduler
+                .due_offline_state_vehicles(now)
+                .is_empty()
+        );
         // A check queued before the car went to sleep must also stay unsent.
         bed.core.scheduler.vehicles.get_mut(&id).unwrap().phase = PollPhase::Online;
         bed.dispatch(StreamEvent::VehicleOffline);
         bed.core.scheduler.vehicles.get_mut(&id).unwrap().phase = phase;
-        assert!(bed.core.scheduler.due_offline_state_vehicles(now).is_empty());
+        assert!(
+            bed.core
+                .scheduler
+                .due_offline_state_vehicles(now)
+                .is_empty()
+        );
     }
 }
