@@ -5,14 +5,14 @@ All notable released changes are recorded here. From 2026.36.1, Hub follows
 
 ## Unreleased
 
-- TeslaMate migration now takes over its Tesla login after the history import.
-  Stop TeslaMate and its dashboards first and keep TeslaMate stopped. Paste
+- Migration from the source application now takes over its Tesla login after the history import.
+  Stop the source application and its dashboards first and keep the source application stopped. Paste
   its encryption key once; Hub discards the key and stores the validated pair
   encrypted as `source_token`, with Hub as its only refresher. The separate
   `take-over-source-token` verb reads the source database read-only and sends
   nothing to Tesla. First refresh waits for a collection window; cars appear
   once the first window opens, without a new sign-in. The
-  [migration guide](migration.md) covers retries and returning to TeslaMate
+  [migration guide](migration.md) covers retries and returning to the source application
   before or after that refresh. History-only imports remain credential-free.
 
 - Import checks use `source-check` and `--accept-schema-evidence`. Earlier

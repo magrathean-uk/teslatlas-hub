@@ -30,28 +30,28 @@ database, do not import it with this release.
    must be able to access the source application Docker deployment; if it needs sudo,
    select that option in the Mac form. Do not grant broad permissions simply
    to bypass a failed check.
-4. For migration from TeslaMate, stop TeslaMate and its dashboards and leave
-   TeslaMate stopped. Keep PostgreSQL running so Hub can read it. Disable any
-   automatic restart that would bring TeslaMate back. Hub will take over its
+4. For migration, stop the source application and its dashboards and leave
+   it stopped. Keep PostgreSQL running so Hub can read it. Disable any
+   automatic restart that would bring the source application back. Hub will take over its
    Tesla login and become its only refresher. For a new installation without
    migration, choose Fleet or Legacy and sign in instead.
 
 ## Import using the Mac app
 
-1. Stop TeslaMate and its dashboards before importing, and leave TeslaMate
+1. Stop the source application and its dashboards before importing, and leave it
    stopped throughout and afterwards. The Hub does not stop it for you.
 2. Choose **Import History** during setup, or from **Manage Tesla**. Enter
    the server, port and SSH user. For **SSH key**, use **Choose Key…** to
    select the private key, or leave it empty for your SSH agent or default
    keys. Use **Password** only for password authentication.
 3. Choose **Connect to Server**. Read the compatibility result and
-   acknowledgement. The app checks over SSH and Docker that TeslaMate is
+   acknowledgement. The app checks over SSH and Docker that the source application is
    stopped, and checks again immediately before import. If it is running,
    the page asks you to stop it and its dashboards, then choose **Check Again**.
 4. Find the `ENCRYPTION_KEY` value in your TeslaMate deployment configuration,
    such as its Docker Compose environment settings or the environment file
-   those settings reference. TeslaMate's public
-   [Environment Variables documentation](https://docs.teslamate.org/docs/configuration/environment_variables)
+   those settings reference. Its public
+   [TeslaMate Environment Variables documentation](https://docs.teslamate.org/docs/configuration/environment_variables)
    identifies `ENCRYPTION_KEY` as the required key used to encrypt its Tesla
    API tokens. Paste that value once into the secure **Encryption key** field.
    Hub clears the field when take-over starts, passes it on standard input
@@ -59,12 +59,12 @@ database, do not import it with this release.
    password or a token.
 5. Select **Import Data**. History imports first, without reading credentials.
    The next step shows **Taking over the Tesla login…**. Hub reads and decrypts
-   TeslaMate's stored access and refresh pair, checks it, and stores the pair
+   the source application's stored access and refresh pair, checks it, and stores the pair
    encrypted in its own credential vault as origin `source_token`, with the
    Hub as refresh owner. The owner slot must be empty. This step sends nothing
-   to Tesla and changes nothing in TeslaMate's database.
+   to Tesla and changes nothing in the source application's database.
 6. Complete the Hub checks and finish page. Acknowledge that you will keep
-   TeslaMate stopped, then choose **Start Hub**. Hub now holds the login, but
+   the source application stopped, then choose **Start Hub**. Hub now holds the login, but
    its first refresh waits for a collection window. Your cars appear once
    the first collection window opens, without another Tesla sign-in. Check
    the intended cars, imported journeys and charges, diagnostics and subsequent
@@ -79,26 +79,26 @@ field was cleared, so each attempt needs the key again. History stays imported.
 You can choose **Sign in with Tesla Instead** to use the Hub's sign-in page
 after starting it; the sign-in itself needs an open collection window.
 
-A running TeslaMate blocks the app's stop check. The Hub also checks database
+A running source application blocks the app's stop check. The Hub also checks database
 sessions before reading the token row: `source_still_running` means another
 client is connected, which can be a dashboard or another database tool even
-if TeslaMate itself is stopped. Stop those clients and retry. Keep PostgreSQL
+if the source application itself is stopped. Stop those clients and retry. Keep PostgreSQL
 running. `source_token_invalid` means the stored login is not a usable Tesla
 Owner login; sign in with Tesla in the Hub instead. `slot_occupied` means Hub
 already holds a login; sign out first if you intend to replace it by take-over.
 These refusals leave the existing login and the source database untouched.
 
-### Going back to TeslaMate
+### Going back to the source application
 
-- Before the Hub's first refresh: sign out in Hub, then start TeslaMate. Its
+- Before the Hub's first refresh: sign out in Hub, then start the source application. Its
   stored login still works because take-over has not spent its refresh token.
-- After the first refresh: sign out in Hub, start TeslaMate and sign in again
-  through TeslaMate's own sign-in page. Its old stored login no longer works.
+- After the first refresh: sign out in Hub, start the source application and sign in again
+  through the source application's own sign-in page. Its old stored login no longer works.
   Running both on that login can lock you out.
 
-Hub never writes a replacement login into TeslaMate's database and never
+Hub never writes a replacement login into the source application's database and never
 exports a token. If you cannot tell whether the first refresh happened, use
-TeslaMate's own sign-in again after signing out in Hub.
+the source application's own sign-in again after signing out in Hub.
 
 ### Command-line take-over
 
@@ -114,7 +114,7 @@ run prints only:
 {"status":"taken_over","origin":"source_token","firstRefresh":"next_window","sourceSessionsSeen":0,"sourceNeverMutated":true}
 ```
 
-The [security model](../architecture/security-model.md#teslamate-login-take-over)
+The [security model](../architecture/security-model.md#source-login-take-over)
 describes the read-only connection and remaining refusals. The
 [collection-window guide](../operations/collection-windows.md) covers the first
 refresh. For authentication, Docker access or compatibility errors, see

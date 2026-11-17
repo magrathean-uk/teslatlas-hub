@@ -2,18 +2,18 @@
 
 Hub sends Tesla traffic only on the host a signed grant names and only while
 a collection window is open. Its login comes from a Hub sign-in or a migration
-from TeslaMate: TeslaMate must be stopped before take-over and stay stopped,
+from the source application: it must be stopped before take-over and stay stopped,
 and the Hub becomes the only program that refreshes that login. Outside a
 window Hub sends nothing to Tesla (no sign-in exchange, vehicle discovery,
 telemetry configuration or token refresh).
 
 The separate `take-over-source-token` step reads the source database
-read-only, with TeslaMate stopped and stores the login locally, without contacting Tesla. Run it with
+read-only, with the source application stopped, and stores the login locally, without contacting Tesla. Run it with
 the Hub service stopped, the window Closed and its handback recorded. The
 first refresh waits for the next collection window. Your cars appear once the
 first window opens, without another sign-in. Follow the
 [migration guide](../releases/migration.md) for the key, retries and returning
-to TeslaMate. After take-over, leave TeslaMate stopped between windows too.
+to the source application. After take-over, leave the source application stopped between windows too.
 History-only imports remain read-only and do not read credentials.
 
 This guide covers issuing a grant, trusting the issuer, issuer key custody,
@@ -307,7 +307,7 @@ time you want Hub to stop collecting.
 An upgraded Hub keeps the credentials it refuses until you remove them: a
 sign-in stored by an earlier version (the `pre_upgrade` origin), or other
 credential material not admitted by its origin and refresh owner. A login
-admitted through the TeslaMate take-over (`source_token` on `owner_api`,
+admitted through the source application take-over (`source_token` on `owner_api`,
 refresh owner `hub`) is usable and is not refused material. Nothing is deleted
 on upgrade. While such a credential is kept, `status` and `doctor` show a
 `refusedCredentialPurge` entry naming the command, and while a refused

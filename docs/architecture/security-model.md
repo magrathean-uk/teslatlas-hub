@@ -17,13 +17,13 @@
 | Remote sync | TLS plus paired-device bearer authentication. |
 | Pairing | Short-lived, single-use invitation; claim is the only unauthenticated mutation. |
 | Fleet Telemetry ingress | Private bearer on supervised loopback route. |
-| Tesla credentials | Hub uses a login from its own sign-in or takes over TeslaMate's login during migration, with TeslaMate stopped and kept stopped. Hub becomes its only refresher. Only the resident service, inside an open collection window, sends Tesla traffic and refreshes that login; one refresh runs at a time. |
-| Collection window | A grant signed by the Mac's window issuer, naming this host, approved by the owner and ending at a hard expiry. Outside a window Hub sends nothing to Tesla. History-only imports remain available; after take-over TeslaMate stays stopped. See [Collection windows](../operations/collection-windows.md). |
+| Tesla credentials | Hub uses a login from its own sign-in or takes over the source application's login during migration, with the source application stopped and kept stopped. Hub becomes its only refresher. Only the resident service, inside an open collection window, sends Tesla traffic and refreshes that login; one refresh runs at a time. |
+| Collection window | A grant signed by the Mac's window issuer, naming this host, approved by the owner and ending at a hard expiry. Outside a window Hub sends nothing to Tesla. History-only imports remain available; after take-over the source application stays stopped. See [Collection windows](../operations/collection-windows.md). |
 | history import | Read-only PostgreSQL transaction and exact schema admission. |
 | Vehicle command | Explicit action, confirmation, selected vehicle, bounded proxy. |
 | Source release | Immutable annotated tag, exact version, clean tree, provenance classification, and licence material. |
 
-## TeslaMate login take-over
+## Source login take-over
 
 History import remains credential-free. The separate `take-over-source-token`
 verb reads the encrypted `access` and `refresh` values from exactly one row in
@@ -34,7 +34,7 @@ row it checks for other client sessions on that database and refuses if any
 exist, including dashboards. It never writes to the source database or sends
 anything to Tesla.
 
-The Mac app takes TeslaMate's `ENCRYPTION_KEY` in a secure field, clears the
+The Mac app takes the source application's `ENCRYPTION_KEY` in a secure field, clears the
 field as the take-over starts and passes the key and database password to the
 local Hub verb on standard input. The key is used in memory to decrypt the
 pair, then discarded. The Hub never puts the key in a command argument,

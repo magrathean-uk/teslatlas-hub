@@ -6,7 +6,7 @@ This guide explains the four ways Tesatlas Hub can receive data from a Tesla, wh
 
 | Path | What you need | Monthly cost | Data quality | Who sees your data |
 | --- | --- | --- | --- | --- |
-| 1. Legacy (default) | Your Tesla account, signed in to Hub or taken over from stopped TeslaMate | Free | Best resolution (streaming every second while driving) | Tesla and your Hub only |
+| 1. Legacy (default) | Your Tesla account, signed in to Hub or taken over from the stopped source application | Free | Best resolution (streaming every second while driving) | Tesla and your Hub only |
 | 2. Provider | An account with Teslemetry, Tessie or an Owner-API-compatible provider | Provider subscription (see below) | Fleet Telemetry, usually 1 to 60 s intervals; provider polling sometimes | Tesla, the provider and your Hub |
 | 3. Direct Fleet polling | Your own Tesla developer application, a card on file, a web page you control for the key file | Tesla usage charges, about $0.12 per awake hour at a 60 s interval; a $10 monthly allowance covers light use | Snapshots at the interval you choose | Tesla and your Hub only |
 | 4. Self-hosted Fleet Telemetry | Everything in 3 plus a public hostname with a certificate and inbound TCP 443 to your Hub | Tesla streaming charges, roughly $0.007 per awake hour | Fleet Telemetry at the intervals you configure | Tesla and your Hub only |
@@ -38,9 +38,9 @@ The Mac app shows this guide, with screenshots, as the Collection step of its se
 4. Hub shows the vehicles on the account. Pick the ones to record.
 5. Wait for the first observation. Status shows "recording" and the last data time.
 
-**Migrating from TeslaMate.** Use Import History instead of a new sign-in.
-Stop TeslaMate and its dashboards first and leave TeslaMate stopped. After the
-history import, Hub takes over its stored Tesla login using the encryption key
+**Migrating from the source application.** Use Import History instead of a new sign-in.
+Stop the source application and its dashboards first and leave it stopped.
+After the history import, Hub takes over its stored Tesla login using the encryption key
 you paste once. Hub stores the pair encrypted and becomes its only refresher;
 it does not keep the key or change the source database. Take-over sends nothing
 to Tesla. The first refresh waits for a collection window, and your cars appear
@@ -48,7 +48,7 @@ once that first window opens, with no new sign-in. See the
 [migration guide](../releases/migration.md) for key errors, retries and how to
 go back before or after the first refresh.
 
-**What can go wrong.** Tesla may refuse the Owner API in future. Hub reports that as "Owner API refused" (not as a wrong password) and offers the other paths; your history stays. Hub's login is its own and is renewed only inside a window; if it lapses, sign in again in the next window. History-only imports can fill history between windows without reading credentials. After take-over, TeslaMate stays stopped, so it no longer records new history.
+**What can go wrong.** Tesla may refuse the Owner API in future. Hub reports that as "Owner API refused" (not as a wrong password) and offers the other paths; your history stays. Hub's login is its own and is renewed only inside a window; if it lapses, sign in again in the next window. History-only imports can fill history between windows without reading credentials. After take-over, the source application stays stopped, so it no longer records new history.
 
 ## Path 2: Provider (Teslemetry, Tessie or an Owner-API-compatible provider)
 
@@ -82,7 +82,7 @@ go back before or after the first refresh.
 application. Tesatlas does not supply a shared application or relay. Polling
 needs no inbound connection to Hub; the public key file is hosted on a domain
 you control. It is a separate sign-in path for a new installation, rather than
-part of the TeslaMate login take-over.
+part of the source login take-over.
 
 Use the [Fleet guide](fleet-setup.md) for prerequisites and onboarding. The
 Legacy migration procedure here does not configure Fleet registration or
