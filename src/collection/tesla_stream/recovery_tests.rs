@@ -254,7 +254,7 @@ async fn sc40_a_hello_503_is_an_outage_and_two_hello_401s_make_auth_rejected() {
     let mut run = Rig::for_peer(&peer, Creds::offline("tok-1")).start();
     assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
     peer.log.wait_for("accept", 2).await;
-    assert_eq!(delays(&peer), vec![secs(1)]);
+    assert_eq!(delays(&peer), vec![secs(150)]);
     run.shut_down().await.expect("shutdown");
 
     // Hello code 401 in two consecutive sessions: no event after the first, and the
@@ -278,7 +278,7 @@ async fn sc40_a_hello_503_is_an_outage_and_two_hello_401s_make_auth_rejected() {
 // ----------------------------------------------------------------------------- SC50
 
 #[tokio::test(start_paused = true)]
-async fn sc50_the_vehicle_path_waits_15_30_60_120_and_data_starts_it_over() {
+async fn sc50_the_vehicle_path_uses_the_shared_fast_schedule_and_data_resets_it() {
     let vehicle = || Plan::ends(End::Error("vehicle_test_a"));
     let peer = plan_peer(vec![
         vehicle(),
@@ -307,17 +307,12 @@ async fn sc50_the_vehicle_path_waits_15_30_60_120_and_data_starts_it_over() {
         ]
     );
     peer.log.wait_for("accept", 7).await;
-    // M04-T12: nominal 15, 30, 30, 30, 30 s at u = 0 (half); after data
-    // the counter is 0, so the next vehicle end waits 7.5 s again.
+    // All four outage classes share 1, 2, 4, 8, 15 s at minimum jitter.
+    // Delivered data resets the schedule.
     assert_eq!(
         delays(&peer),
         vec![
-            millis(7_500),
-            secs(15),
-            secs(15),
-            secs(15),
-            secs(15),
-            millis(7_500)
+            secs(1), secs(2), secs(4), secs(8), secs(15), secs(1)
         ]
     );
     // Every vehicle session sent the unsubscribe (R9): six sessions ended by the Hub.
@@ -417,7 +412,7 @@ async fn sc53_a_session_stable_for_60_seconds_resets_the_transport_back_off() {
     // nominal 16 s, so 8 s. A 61 s session resets at 60 s, so its end is counter 1: 1 s.
     assert_eq!(
         delays(&peer),
-        vec![secs(1), secs(2), secs(4), secs(8), secs(1)]
+        vec![secs(1), secs(2), secs(4), secs(1), secs(1)]
     );
     assert_min_spacing(&peer);
     run.shut_down().await.expect("shutdown");
@@ -1996,6 +1991,90 @@ async fn collector_m04_t12_busy_never_uses_fast_retries() {
                 assert!((secs(150)..=secs(300)).contains(&delay), "{delay:?}");
             }
             run.shut_down().await.expect("shutdown");
+        }
+    }
+}
+
+/// Repeated sessions last three seconds with no accepted data, as in the drive
+/// receipts. Protocol uses three mixed rejections; other cases exercise the
+/// same clock, including failures that change class between connections.
+async fn m04_t12_replay_outage(seconds: u64, class: usize, jitter: f64) {
+    let started = Instant::now();
+    let peer = Peer::spawn(move |conn| async move {
+        let index = conn.index;
+        let mut ws = conn.ws().await;
+        ws.subscribe().await;
+        if Instant::now() - started < secs(seconds) {
+            let kind = if class == 4 { index % 4 } else { class };
+            if kind == 0 {
+                for frame in ["[]".to_owned(), u(T0, "1,2"), u("bad", V1)] {
+                    idle(&mut ws, secs(1)).await;
+                    ws.send(&frame).await;
+                }
+            } else {
+                idle(&mut ws, secs(3)).await;
+                match kind {
+                    1 => ws.send(&error_frame("vehicle_disconnected", "text")).await,
+                    2 => ws.send(&error_frame("unknown_candidate", "text")).await,
+                    _ => ws.close(1000).await,
+                }
+            }
+            ws.log.mark(format!("end:{index}"));
+        } else {
+            ws.log.mark("recovered");
+            ws.send(&u(T0, V1)).await;
+        }
+        ws.drain().await;
+    }).await;
+    let mut rig = Rig::for_peer(&peer, Creds::offline("tok-1"));
+    rig.jitter = vec![jitter; 128];
+    let mut run = rig.start();
+    loop {
+        if run.event().await == StreamEvent::Healthy { break; }
+    }
+    let first_end = peer.log.entries().into_iter()
+        .find(|(_, label)| label == "end:0").expect("first failed attempt").0;
+    let recovered = peer.log.times("recovered")[0];
+    let end = started + secs(seconds);
+    assert!(recovered >= end);
+    assert!(recovered - end <= secs(if seconds == 60 { 30 } else { 300 }),
+        "class={class} recovery after refusal ends: {:?}", recovered - end);
+    if seconds == 600 {
+        let attempts = peer.log.times("accept");
+        let fast = attempts.iter().filter(|at| **at < first_end + secs(300)).count();
+        let slow = attempts.iter().filter(|at| **at >= first_end + secs(300)
+            && **at < first_end + secs(600)).count();
+        assert!((10..=24).contains(&fast), "class={class} fast attempts={fast}");
+        assert!((1..=3).contains(&slow), "class={class} slow attempts={slow}");
+        // Once the boundary attempt has failed, all waits use the slow range.
+        let ends: Vec<_> = peer.log.entries().into_iter()
+            .filter(|(_, label)| label.starts_with("end:")).collect();
+        for ((at, _), wait) in ends.iter().zip(delays(&peer)) {
+            if *at >= first_end + secs(300) {
+                assert!((secs(150)..=secs(300)).contains(&wait), "{wait:?}");
+            } else {
+                assert!(wait <= secs(30), "{wait:?}");
+            }
+        }
+    }
+    assert!(matches!(run.event().await, StreamEvent::Telemetry { .. }));
+    run.shut_down().await.expect("shutdown");
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_outage_fast_phase_then_slow_phase_and_recovery() {
+    for class in 0..=4 {
+        for jitter in [0.0, 1.0] {
+            m04_t12_replay_outage(600, class, jitter).await;
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_sixty_second_glitch_recovers_within_thirty_seconds() {
+    for class in 0..=4 {
+        for jitter in [0.0, 1.0] {
+            m04_t12_replay_outage(60, class, jitter).await;
         }
     }
 }
