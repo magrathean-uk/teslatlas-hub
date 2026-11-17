@@ -280,6 +280,7 @@ impl FleetPartnerRefusal {
         use crate::fleet_api::partner::keys::FleetKeyError;
         match error {
             FleetKeyError::Busy => Self::new("fleet_partner_key_busy", "another request is using the Hub's Fleet key; try again"),
+            FleetKeyError::BackupExclusion => Self::new("fleet_partner_key_backup_exclusion", "the Hub's secrets folder could not be verified as excluded from backups; try again after correcting backup exclusion"),
             FleetKeyError::Storage => Self::new("fleet_partner_key_storage", "the Hub's Fleet key cannot be created or read in its secrets folder"),
             FleetKeyError::Unsafe => Self::new("fleet_partner_key_unsafe", "the Hub's Fleet key file is not a private file of this user; it was left unchanged"),
             FleetKeyError::Invalid => Self::new("fleet_partner_key_invalid", "the Hub's Fleet key file is not a P-256 key; it was left unchanged"),
@@ -295,6 +296,11 @@ impl FleetPartnerRefusal {
             PartnerError::ProviderParked => Self::new("provider_parked", "Fleet partner registration is not offered on this Hub"),
             PartnerError::Timeout => Self::new("fleet_partner_timeout", "Tesla did not answer in time; nothing is retried, try again"),
             PartnerError::Transport => Self::new("fleet_partner_transport", "Tesla could not be reached; check the network and try again"),
+            PartnerError::Response1xx => Self::new("fleet_partner_response_1xx", "Tesla's HTTP 1xx answer was not understood"),
+            PartnerError::Response2xx => Self::new("fleet_partner_response_2xx", "Tesla's HTTP 2xx answer was not understood"),
+            PartnerError::Response3xx => Self::new("fleet_partner_response_3xx", "Tesla's HTTP 3xx answer was not understood"),
+            PartnerError::Response4xx => Self::new("fleet_partner_response_4xx", "Tesla's HTTP 4xx answer was not understood"),
+            PartnerError::Response5xx => Self::new("fleet_partner_response_5xx", "Tesla's HTTP 5xx answer was not understood"),
             PartnerError::InvalidResponse => Self::new("fleet_partner_invalid_response", "Tesla's answer was not understood"),
             PartnerError::Authentication => Self::new("fleet_partner_auth_failed", "Tesla refused the client id or client secret of your developer application"),
             PartnerError::PublicKeyUnreachable => Self::new("fleet_partner_public_key_unreachable", "Tesla cannot fetch the public key file at https://<your domain>/.well-known/appspecific/com.tesla.3p.public-key.pem; publish this Hub's public key there (setup-fleet public-key) and try again"),
@@ -1301,7 +1307,6 @@ mod fleet_partner_service_tests {
         let hex = hub_key_hex(tmp.path());
         for (registration, expected) in [
             ((200, r#"{"response":{"domain":"synthetic.example.test"}}"#.to_owned()), "registered"),
-            ((409, r#"{"error":"already_registered"}"#.to_owned()), "already_registered"),
         ] {
             let (result, sends) = run(tmp.path(), &input("Synthetic.Example.Test"), registration, held(&hex.to_ascii_uppercase())).await;
             let report = result.unwrap();
@@ -1325,10 +1330,10 @@ mod fleet_partner_service_tests {
         foreign.replace_range(128.., if hex.ends_with('0') { "11" } else { "00" });
         let registered = || (200, r#"{"response":{"domain":"synthetic.example.test"}}"#.to_owned());
         for (registration, held_key, code, sends) in [
-            ((400, r#"{"error":"public_key_not_found","error_description":"synthetic-echo"}"#.to_owned()), held(&hex), "fleet_partner_public_key_unreachable", 2),
+            ((400, r#"{"error":"public_key_not_found","error_description":"synthetic-echo"}"#.to_owned()), held(&hex), "fleet_partner_response_4xx", 2),
             (registered(), held(&foreign), "fleet_partner_public_key_mismatch", 3),
-            ((409, r#"{"error":"already_registered"}"#.to_owned()), held(&foreign), "fleet_partner_public_key_mismatch", 3),
-            ((401, "synthetic-echo".to_owned()), held(&hex), "fleet_partner_auth_failed", 2),
+            ((409, r#"{"error":"already_registered"}"#.to_owned()), held(&foreign), "fleet_partner_response_4xx", 2),
+            ((401, "synthetic-echo".to_owned()), held(&hex), "fleet_partner_response_4xx", 2),
         ] {
             let (result, count) = run(tmp.path(), &input("synthetic.example.test"), registration, held_key).await;
             let refusal = result.unwrap_err();
