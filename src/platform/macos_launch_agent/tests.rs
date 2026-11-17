@@ -1407,7 +1407,7 @@ fn break_unread_table(data: &Path, table: &str) {
 /// M08-T22: a production start decides the awaiting-sign-in admission without the
 /// whole-store check and without opening a pack. Unreadable packs and a damaged page
 /// in a table it never reads leave the production admission unchanged, while the
-/// command-line form (the whole-store check) refuses the same store.
+/// whole-store check fails on the same store.
 #[test]
 fn production_start_admission_reads_neither_the_whole_store_nor_a_pack() {
     let temporary = crate::private_tempdir().expect("temporary directory");
@@ -1418,13 +1418,12 @@ fn production_start_admission_reads_neither_the_whole_store_nor_a_pack() {
     let packs = make_packs_unreadable(&data);
     let store = HubStore::open_read_only(&data).expect("store");
     assert!(store.catalogue_check().is_err(), "the whole-store check opens the packs");
-    assert!(hub_awaits_owner_sign_in(&config).is_err(), "the command-line form keeps the whole-store check");
-    assert!(awaits_owner_sign_in(&config, AdmissionStoreCheck::Bounded).expect("bounded read"), "awaiting");
+    assert!(hub_awaits_owner_sign_in(&config).expect("bounded read"), "awaiting");
     preflight_hub_for_serve(&config, None).expect("served awaiting the sign-in without opening a pack");
 
     break_unread_table(&data, "raw_observations");
     assert!(store.quick_check().is_err(), "the whole-store check sees the damaged page");
-    assert!(awaits_owner_sign_in(&config, AdmissionStoreCheck::Bounded).expect("bounded read"), "awaiting");
+    assert!(hub_awaits_owner_sign_in(&config).expect("bounded read"), "awaiting");
     preflight_hub_for_serve(&config, None).expect("served awaiting the sign-in without the whole-store check");
     drop(store);
     for pack in &packs {
@@ -1432,16 +1431,11 @@ fn production_start_admission_reads_neither_the_whole_store_nor_a_pack() {
     }
 }
 
-/// M08-T22: on a healthy store the bounded production admission and the command-line
-/// whole-store form decide every reviewed state alike.
+/// M08-T22: on a healthy store the bounded admission decides every reviewed state
+/// as the whole-store form it replaced did (that form was removed in M08-T25).
 #[test]
-fn production_start_admission_decides_as_the_whole_store_form() {
-    let same = |config: &HubConfig, label: &str| {
-        let whole = hub_awaits_owner_sign_in(config).map_err(|error| error.to_string());
-        let bounded = awaits_owner_sign_in(config, AdmissionStoreCheck::Bounded).map_err(|error| error.to_string());
-        assert_eq!(bounded, whole, "{label}");
-        whole
-    };
+fn production_start_admission_decides_every_reviewed_state() {
+    let same = |config: &HubConfig, label: &str| hub_awaits_owner_sign_in(config).map_err(|error| format!("{label}: {error}"));
     let temporary = crate::private_tempdir().expect("temporary directory");
     let data = temporary.path().join("data");
     let config = seed_awaiting_hub(&data);
@@ -1618,4 +1612,54 @@ fn start_preflight_answers_every_state_the_app_shows() {
     let mut config = idle_start_config(&empty);
     config.collector.interval_seconds = 300;
     assert_eq!(start(&config), Err("at least one configured vehicle is required".to_owned()), "no configured car");
+}
+
+/// M08-T25: a Hub awaiting the owner's sign-in. Every pack unreadable, then the
+/// root page of `raw_observations` overwritten: the whole-store check fails on
+/// the store, and Start's `preflight` still answers `awaiting_sign_in`.
+#[test]
+fn start_preflight_awaiting_sign_in_reads_neither_the_whole_store_nor_a_pack() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let config = seed_awaiting_hub(&data);
+    let awaiting = start(&config).expect("healthy store");
+    assert_eq!(awaiting["state"], "awaiting_sign_in");
+
+    let packs = make_packs_unreadable(&data);
+    let store = HubStore::open_read_only(&data).expect("store");
+    assert!(store.catalogue_check().is_err(), "the whole-store check opens the packs");
+    assert_eq!(start(&config), Ok(awaiting.clone()), "no pack is opened");
+
+    break_unread_table(&data, "raw_observations");
+    assert!(store.quick_check().is_err(), "the whole-store check sees the damaged page");
+    assert_eq!(start(&config), Ok(awaiting), "no whole-store check");
+    drop(store);
+    for pack in &packs {
+        fs::set_permissions(pack, fs::Permissions::from_mode(0o600)).expect("restore mode");
+    }
+}
+
+/// M08-T25: a Hub with the Hub's own login stored, on the same damaged store:
+/// Start's `preflight` still answers ready.
+#[test]
+fn start_preflight_signed_in_reads_neither_the_whole_store_nor_a_pack() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let config = seed_signed_in_hub(&data);
+    let ready = start(&config).expect("healthy store");
+    assert_eq!(ready["status"], "ready");
+    assert!(ready.get("state").is_none(), "the credentials-present answer");
+
+    let packs = make_packs_unreadable(&data);
+    let store = HubStore::open_read_only(&data).expect("store");
+    assert!(store.catalogue_check().is_err(), "the whole-store check opens the packs");
+    assert_eq!(start(&config), Ok(ready.clone()), "no pack is opened");
+
+    break_unread_table(&data, "raw_observations");
+    assert!(store.quick_check().is_err(), "the whole-store check sees the damaged page");
+    assert_eq!(start(&config), Ok(ready), "no whole-store check");
+    drop(store);
+    for pack in &packs {
+        fs::set_permissions(pack, fs::Permissions::from_mode(0o600)).expect("restore mode");
+    }
 }

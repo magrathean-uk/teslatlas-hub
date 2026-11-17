@@ -136,32 +136,16 @@ pub fn hub_is_never_configured(config: &crate::config::HubConfig) -> io::Result<
 /// exists but cannot be used is refused here with the vault's own refusal,
 /// rather than at the sign-in (M09-T16, N1).
 ///
-/// This is the command-line `preflight`'s form: the catalogue must pass the
-/// whole-store `catalogue_check` (`PRAGMA quick_check` and a hash of every
-/// referenced pack), as every configured Hub's `preflight` did before the
-/// take-over. The production serve admission decides by the same rule on a
-/// read that grows with the number of cars only (M08-T22).
+/// The catalogue is read through `HubStore::readiness_check` (M08-T22): it
+/// opens at a supported schema, its core tables respond and no car is
+/// quarantined; the same readable-catalogue gate `/readyz` applies. With the
+/// configured-car join, the Owner slot's format row and its presence row that
+/// follow, the admission reads a number of rows that grows with the number of
+/// cars, not with the history or the packs; no pack is opened and no
+/// `PRAGMA quick_check` runs. The production serve admission uses it before
+/// the listener opens, and the command-line `preflight` the Mac app's Start
+/// runs (M08-T25).
 pub fn hub_awaits_owner_sign_in(config: &crate::config::HubConfig) -> io::Result<bool> {
-    awaits_owner_sign_in(config, AdmissionStoreCheck::WholeStore)
-}
-
-/// How much of the catalogue the awaiting-sign-in admission reads (M08-T22).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum AdmissionStoreCheck {
-    /// `HubStore::catalogue_check`: the whole store and every referenced pack.
-    WholeStore,
-    /// `HubStore::readiness_check`: the catalogue opens at a supported schema,
-    /// its core tables respond and no car is quarantined; the same
-    /// readable-catalogue gate `/readyz` applies. With the configured-car join,
-    /// the Owner slot's format row and its presence row that follow, the
-    /// admission reads a number of rows that grows with the number of cars,
-    /// not with the history or the packs; no pack is opened and no
-    /// `PRAGMA quick_check` runs. Used at a production start, before the
-    /// listener opens.
-    Bounded,
-}
-
-fn awaits_owner_sign_in(config: &crate::config::HubConfig, check: AdmissionStoreCheck) -> io::Result<bool> {
     if config.collector.provider != crate::config::CollectorProvider::Legacy
         || config.collector.interval_seconds == 0
         || !config.collector.legacy_auth.enabled
@@ -176,11 +160,7 @@ fn awaits_owner_sign_in(config: &crate::config::HubConfig, check: AdmissionStore
     let unavailable =
         |error: &dyn std::fmt::Display| io::Error::new(io::ErrorKind::InvalidData, format!("Hub data is unavailable: {error}"));
     let store = crate::db::HubStore::open_read_only(&config.data_dir).map_err(|error| unavailable(&error))?;
-    match check {
-        AdmissionStoreCheck::WholeStore => store.catalogue_check(),
-        AdmissionStoreCheck::Bounded => store.readiness_check(),
-    }
-    .map_err(|error| unavailable(&error))?;
+    store.readiness_check().map_err(|error| unavailable(&error))?;
     if store.configured_tesla_vehicles().map_err(|error| unavailable(&error))?.is_empty() {
         return Ok(false);
     }
@@ -234,6 +214,16 @@ pub type PreflightCatalogueRead<'a> = &'a mut dyn FnMut(&crate::db::HubStore) ->
 /// `awaiting_sign_in` answer. `read_catalogue` runs the configured Hub's read on
 /// the catalogue. The answer is the JSON line `preflight` prints; a refusal is
 /// the error it reports.
+///
+/// It answers whether the service would start from the production start's
+/// bounded admission (M08-T25), in both branches: a Hub that awaits the owner's
+/// sign-in ([`hub_awaits_owner_sign_in`]) and a configured Hub with a stored
+/// pair (`readiness_check`, the configured cars and the selected pair's
+/// credential rows). No `PRAGMA quick_check` runs and no pack is opened, so the
+/// answer does not grow with the history or the packs. A store that would fail
+/// only `quick_check` or a pack hash is admitted; `doctor`, the app's
+/// diagnostics report (which runs it), backup, restore and repair keep the
+/// whole-store check.
 pub fn start_preflight(
     config: &crate::config::HubConfig,
     read_catalogue: impl FnOnce(PreflightCatalogueRead<'_>) -> Result<(), Box<dyn std::error::Error>>,
@@ -264,27 +254,61 @@ pub fn start_preflight(
         }));
     }
     read_catalogue(&mut |store| {
-        store.catalogue_check()?;
-        let configured = store.configured_tesla_vehicles()?;
-        if configured.is_empty() {
+        store.readiness_check()?;
+        if store.configured_tesla_vehicles()?.is_empty() {
             return Err("at least one configured vehicle is required".into());
         }
-        let report = crate::diagnostics::inspect_hub(store, config)?;
-        let present = match config.collector.provider {
-            crate::config::CollectorProvider::Legacy => report.credentials.legacy.present,
-            crate::config::CollectorProvider::Fleet => report.credentials.fleet.present,
-        };
-        if !present || !report.checks.iter().any(|check| check.name == "selectedProviderCredentials" && check.passed) {
-            let status = crate::auth::credential_sign_in::credential_status(store, &config.data_dir, preflight_epoch_ms()?)?;
-            return Err(crate::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == crate::config::CollectorProvider::Fleet).into());
+        let now_ms = preflight_epoch_ms()?;
+        let status = crate::auth::credential_sign_in::credential_status(store, &config.data_dir, now_ms)?;
+        if selected_credentials_admitted(store, config, &status, now_ms)? {
+            return Ok(());
         }
-        Ok(())
+        Err(crate::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == crate::config::CollectorProvider::Fleet).into())
     })?;
     Ok(serde_json::json!({
         "status": "ready",
         "version": crate::BUILD_VERSION,
         "provider": config.collector.provider,
     }))
+}
+
+/// The `doctor`'s `selectedProviderCredentials` admission of the selected
+/// provider's stored pair (`diagnostics::inspect_hub`), read from the credential
+/// rows only: present and header-readable with a usable key store; for Legacy no
+/// unresolved refresh and no `signed_out` status; for Fleet a sound pair without
+/// an unresolved refresh. A refusal or a configuration fault alone is attention,
+/// not a refusal. Reads that fail are errors, in the doctor's order.
+fn selected_credentials_admitted(
+    store: &crate::db::HubStore,
+    config: &crate::config::HubConfig,
+    status: &crate::auth::credential_sign_in::CredentialStatus,
+    now_ms: i64,
+) -> Result<bool, crate::db::StoreError> {
+    let keyring_usable = status.credential_store.keyring == "ok";
+    match config.collector.provider {
+        crate::config::CollectorProvider::Legacy => {
+            let auth = match store.effective_collector_auth(crate::config::collector_mode(&config.collector), now_ms) {
+                Ok(effective) => effective.map(|effective| effective.row),
+                Err(_) => store.load_collector_auth_row()?,
+            };
+            let unresolved_refresh = crate::auth::legacy_auth::effective::owner_diagnostic_summary(store, now_ms)?.unresolved_refresh
+                || auth.as_ref().is_some_and(|row| row.reason.as_deref() == Some("refresh_outcome_unknown"));
+            let pair = &status.legacy_credentials;
+            Ok(pair.present
+                && pair.store_state == "ok"
+                && keyring_usable
+                && !unresolved_refresh
+                && !auth.as_ref().is_some_and(|row| row.state == "signed_out"))
+        }
+        crate::config::CollectorProvider::Fleet => {
+            let pair = &status.fleet_credentials;
+            Ok(pair.present
+                && pair.store_state == "ok"
+                && keyring_usable
+                && crate::fleet_credentials::inspect_stored_fleet_credentials(store, &config.data_dir)
+                    .is_ok_and(|inspection| !inspection.unresolved_refresh))
+        }
+    }
 }
 
 fn preflight_epoch_ms() -> io::Result<i64> {
@@ -355,7 +379,7 @@ pub fn preflight_hub_for_serve(
         // rule is decided on a read that grows with the number of cars only:
         // no whole-store check and no pack is read before the listener opens
         // (M08-T22).
-        if awaits_owner_sign_in(config, AdmissionStoreCheck::Bounded)? {
+        if hub_awaits_owner_sign_in(config)? {
             tracing::info!(state = "awaiting_sign_in", "no Tesla login is stored: Hub serves for the owner's sign-in with the collector off");
             return Ok(());
         }
