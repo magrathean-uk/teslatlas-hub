@@ -1629,3 +1629,278 @@ fn seam_physical_route_import_after_windows_killed_rebind_recovers_on_reopening(
         assert_eq!(fresh.mirror.positions, lineage.positions, "{step:?}");
     }
 }
+
+/// M08-T19 lab: the cost of one handback publication on a synthetic
+/// imported history, built from this module's fixtures ([`fixture`],
+/// [`publish_kept`], [`collect`], [`history_stage_unsealed`]). Two
+/// processes, so the handback's peak footprint is its own: `build` writes
+/// the store, `measure` (run under `/usr/bin/time -l`) opens it and runs
+/// one handback. Run by hand only; see `.plan/work/M08-T19/measure.md`.
+mod m08_t19_lab {
+    use super::*;
+    use crate::source_db_projection::SourceDbPositionPhysicalV2_2;
+
+    const CURSOR: [u8; 32] = [41; 32];
+
+    fn env_i64(name: &str) -> i64 {
+        std::env::var(name).expect(name).parse().expect(name)
+    }
+
+    fn lab_dir() -> std::path::PathBuf {
+        std::path::PathBuf::from(std::env::var("LAB_DIR").expect("LAB_DIR"))
+    }
+
+    /// The source history: `drives` drives of ten minutes, half an hour
+    /// apart, ending five hours before the first window, each with
+    /// `per_drive` positions; returned as the sealed stage and the history
+    /// of its drives (the projection's source sessions).
+    fn lab_stage(root: &Path, drives: i64, per_drive: i64) -> (OwnedSourceDbStage, SourceDbHistory) {
+        let first = T - 5 * HOUR - drives * 30 * MINUTE;
+        let rows: Vec<_> = (0..drives)
+            .map(|k| {
+                let start = first + k * 30 * MINUTE;
+                source_drive(10_000 + k, start, start + 10 * MINUTE)
+            })
+            .collect();
+        let history = history(rows, vec![]);
+        let mut stage = history_stage_unsealed(
+            root,
+            "lab",
+            &history,
+            crate::source_db_stage::SourceDbStageLimits {
+                max_rows: 5_000_000,
+                max_stage_bytes: 4 * 1024 * 1024 * 1024,
+                minimum_free_bytes: 0,
+            },
+        );
+        let step = (10 * MINUTE) / per_drive.max(1);
+        let mut page = Vec::with_capacity(10_000);
+        let mut flush = |page: &mut Vec<(i64, SourceDbPositionPhysicalV2_2)>| {
+            stage
+                .insert_page(SourceDbStageTable::Positions, page.drain(..))
+                .expect("positions");
+        };
+        for k in 0..drives {
+            let start = first + k * 30 * MINUTE;
+            for j in 0..per_drive {
+                let id = 1_000_000 + k * per_drive + j;
+                let row = SourceDbPositionPhysicalV2_2 {
+                    id: i32::try_from(id).expect("position id"),
+                    car_id: 1,
+                    drive_id: Some(i32::try_from(10_000 + k).expect("drive id")),
+                    date_pg_us: (start + j * step) * 1_000 - PG_EPOCH_US,
+                    latitude_e6: ProjectionFixedNumericV2_2::Finite(47_500_000 + j * 10),
+                    longitude_e6: ProjectionFixedNumericV2_2::Finite(19_000_000 + k * 10),
+                    elevation: Some(120),
+                    speed: Some(50),
+                    power: Some(12),
+                    odometer: None,
+                    ideal_battery_range_km_e2: None,
+                    est_battery_range_km_e2: None,
+                    rated_battery_range_km_e2: None,
+                    battery_level: Some(70),
+                    usable_battery_level: None,
+                    battery_heater: None,
+                    battery_heater_on: None,
+                    battery_heater_no_power: None,
+                    outside_temp_e1: None,
+                    inside_temp_e1: None,
+                    fan_status: None,
+                    driver_temp_setting_e1: None,
+                    passenger_temp_setting_e1: None,
+                    is_climate_on: None,
+                    is_rear_defroster_on: None,
+                    is_front_defroster_on: None,
+                    tpms_pressure_fl_e1: None,
+                    tpms_pressure_fr_e1: None,
+                    tpms_pressure_rl_e1: None,
+                    tpms_pressure_rr_e1: None,
+                };
+                page.push((id, row));
+                if page.len() == 10_000 {
+                    flush(&mut page);
+                }
+            }
+        }
+        flush(&mut page);
+        drop(flush);
+        stage.seal().expect("seal");
+        (OwnedSourceDbStage::new(stage), history)
+    }
+
+    /// A closed window `[start, start + 1 h)` handed back, with one Hub
+    /// drive and two positions when `drive`, published as live sync.
+    fn lab_window(fixture: &Fixture, seq: i64, start: i64, drive: bool) {
+        let vehicle = fixture.binding.vehicle_id.to_string();
+        let mut connection = fixture.store.open().expect("catalogue");
+        let transaction = connection.transaction().expect("transaction");
+        transaction
+            .execute(
+                "INSERT INTO collection_coverage(seq, grant_digest, opened_at_ms, closed_at_ms, gaps_json, sealed)
+                 VALUES (?1, ?2, ?3, ?4, '[]', 'handback')",
+                params![seq, format!("grant-{seq}"), start, start + HOUR],
+            )
+            .expect("coverage");
+        if drive {
+            let projected = project_vehicle(&successor_history(), CAR).expect("projection");
+            let mut hub_drive = projected.snapshot.drives[0].clone();
+            hub_drive.id = HUB_ID_BASE + 100 + seq;
+            hub_drive.start_date_ms = start + 10 * MINUTE;
+            hub_drive.end_date_ms = start + 20 * MINUTE;
+            let journal = |entity: &str, id: i64, json: &str| {
+                let revision: i64 = transaction
+                    .query_row(
+                        "INSERT INTO sync_mutation_sequences(vehicle_id, next_revision) VALUES (?1, 2)
+                         ON CONFLICT(vehicle_id) DO UPDATE SET next_revision = next_revision + 1
+                         RETURNING next_revision - 1",
+                        params![vehicle.as_str()],
+                        |row| row.get(0),
+                    )
+                    .expect("revision");
+                transaction
+                    .execute(
+                        "INSERT INTO sync_mutations(vehicle_id, revision, entity, entity_id, car_id,
+                            operation, payload_json, published, claimed_until_ms)
+                         VALUES (?1, ?2, ?3, ?4, ?5, 'upsert', ?6, 0, 0)",
+                        params![vehicle.as_str(), revision, entity, id, CAR, json],
+                    )
+                    .expect("mutation");
+            };
+            let json = serde_json::to_string(&hub_drive).expect("drive json");
+            transaction
+                .execute(
+                    "INSERT INTO materialised_drives(vehicle_id, drive_id, car_id, drive_json)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![vehicle.as_str(), hub_drive.id, CAR, json],
+                )
+                .expect("Hub drive");
+            journal("drive", hub_drive.id, &json);
+            for (n, at) in [(1, 12 * MINUTE), (2, 18 * MINUTE)] {
+                let id = HUB_ID_BASE + 1_000 + seq * 10 + n;
+                let mut position = crate::lifecycle::imported_position(&source_position(
+                    id,
+                    Some(hub_drive.id),
+                    start + at,
+                ));
+                position.drive_id = Some(hub_drive.id);
+                let json = serde_json::to_string(&position).expect("position json");
+                transaction
+                    .execute(
+                        "INSERT INTO materialised_positions(vehicle_id, position_id, drive_id, car_id, position_json)
+                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                        params![vehicle.as_str(), position.id, position.drive_id, CAR, json],
+                    )
+                    .expect("Hub position");
+                journal("position", position.id, &json);
+            }
+        }
+        transaction.commit().expect("commit");
+        if drive {
+            publish_sync_mutations_ahead_of_packs(
+                &fixture.store,
+                &fixture.gate,
+                &fixture.cursor_key,
+                fixture.binding.vehicle_id,
+            )
+            .expect("live sync of the window");
+        }
+    }
+
+    fn pack_count(store: &HubStore) -> usize {
+        std::fs::read_dir(store.packs_dir().join("sha256")).map_or(0, |entries| entries.count())
+    }
+
+    /// LAB_DIR, LAB_DRIVES, LAB_PER_DRIVE, LAB_SCENARIO (`unchanged` or
+    /// `drive`): an import of the history, a first window with drives and
+    /// its handback (the head is planned), then a second window whose close
+    /// refuses the head. The store is left for `measure`.
+    #[test]
+    #[ignore = "M08-T19 lab measurement, run by hand"]
+    fn m08_t19_lab_build() {
+        let out = lab_dir();
+        let drive = match std::env::var("LAB_SCENARIO").expect("LAB_SCENARIO").as_str() {
+            "unchanged" => false,
+            "drive" => true,
+            other => panic!("LAB_SCENARIO {other}"),
+        };
+        let fixture = fixture();
+        let root = crate::private_tempdir().expect("stage root");
+        let (stage, history) =
+            lab_stage(root.path(), env_i64("LAB_DRIVES"), env_i64("LAB_PER_DRIVE"));
+        let projected = project_vehicle(&history, CAR).expect("projection");
+        let first = publish_physical_route(
+            &fixture.store,
+            &fixture.cursor_key,
+            fixture.binding.clone(),
+            Some(stage),
+            &fixture.gate,
+            None,
+            Some((&projected.snapshot.drives, &projected.snapshot.charges)),
+        )
+        .expect("physical publication")
+        .expect("physical head");
+        assert_eq!(first.kind, PhysicalV3PublicationKind::FirstHead);
+        collect(&fixture);
+        assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
+        lab_window(&fixture, 2, T + 2 * HOUR, drive);
+        assert_eq!(
+            fixture
+                .store
+                .physical_v3_current_head_served(fixture.binding.vehicle_id)
+                .expect("served"),
+            Some(false),
+            "the second window's close refuses the head"
+        );
+        std::fs::create_dir_all(&out).expect("lab dir");
+        std::fs::write(
+            out.join("store"),
+            fixture._temporary.path().to_str().expect("utf-8 path"),
+        )
+        .expect("store path");
+        std::fs::write(out.join("vehicle"), fixture.binding.vehicle_id.to_string()).expect("vehicle");
+        // The store outlives this process for `measure`.
+        std::mem::forget(fixture);
+    }
+
+    /// LAB_DIR from `build`: one handback on the thread the service names,
+    /// with its process CPU time, wall time and packs written.
+    #[test]
+    #[ignore = "M08-T19 lab measurement, run by hand"]
+    fn m08_t19_lab_measure() {
+        use rustix::time::{ClockId, clock_gettime};
+        let out = lab_dir();
+        let store_dir = std::fs::read_to_string(out.join("store")).expect("store path");
+        let store = HubStore::open_existing(Path::new(&store_dir)).expect("store");
+        let cpu = || {
+            let at = clock_gettime(ClockId::ProcessCPUTime);
+            at.tv_sec as f64 + at.tv_nsec as f64 / 1e9
+        };
+        let packs_before = pack_count(&store);
+        let (cpu_before, wall) = (cpu(), std::time::Instant::now());
+        let outcomes = std::thread::Builder::new()
+            .name("hub-handback-publication".to_owned())
+            .spawn(move || {
+                let gate = store.try_acquire_publication_gate().expect("gate");
+                let outcomes = publish_physical_after_handback(
+                    &store,
+                    &CursorKey::from_bytes(CURSOR),
+                    &gate,
+                )
+                .expect("handback publication");
+                (outcomes, store)
+            })
+            .expect("thread")
+            .join()
+            .expect("handback thread");
+        let (cpu_s, wall_s) = (cpu() - cpu_before, wall.elapsed().as_secs_f64());
+        let (outcomes, store) = outcomes;
+        let line = format!(
+            "M08T19 outcome={:?} cpu_s={cpu_s:.2} wall_s={wall_s:.2} packs_written={} served={:?}\n",
+            outcomes.iter().map(|(_, outcome)| outcome).collect::<Vec<_>>(),
+            pack_count(&store).saturating_sub(packs_before),
+            store.physical_v3_current_head_served(outcomes[0].0).expect("served"),
+        );
+        print!("{line}");
+        std::fs::write(out.join("result"), line).expect("result");
+    }
+}
