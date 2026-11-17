@@ -22,6 +22,9 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
+#[cfg(test)]
+use crate::runtime::legacy_names::SOURCE_HISTORY_V2_STANDALONE_POSITIONS;
+
 use crate::{
     credentials::SourceDbPassword,
     db::{

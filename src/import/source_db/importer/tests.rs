@@ -2732,7 +2732,7 @@ fn broken_drive_reimport_upgrades_a_legacy_omitted_position_then_skips_retry() {
     // pack. The source itself included this position even though the pack did not.
     let canonical = serde_json::to_vec(&(1_i64, &source)).unwrap();
     let mut digest = Sha256::new();
-    digest.update(crate::runtime::legacy_names::SOURCE_HISTORY_V2_STANDALONE_POSITIONS.as_bytes());
+    digest.update(SOURCE_HISTORY_V2_STANDALONE_POSITIONS.as_bytes());
     digest.update((canonical.len() as u64).to_be_bytes());
     digest.update(canonical);
     store
