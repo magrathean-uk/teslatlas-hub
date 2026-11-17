@@ -306,7 +306,7 @@ final class SourceTakeoverFlowTests: XCTestCase {
         let signIn = try fixture.controller.beginLegacySignIn().get()
         let checked = expectation(description: "sign-in window checked")
         signIn.requireOpenWindow { result in
-            XCTAssertThrowsError(try result.get())
+            if case .success = result { XCTFail("a closed window must refuse sign-in") }
             checked.fulfill()
         }
         wait(for: [checked], timeout: 3)
@@ -514,8 +514,12 @@ final class SourceTakeoverFlowTests: XCTestCase {
                 sensitiveInput: input, primitives: primitives) { result in
                     XCTAssertTrue(input.isWiped)
                     XCTAssertTrue(input.withBytes { $0.allSatisfy { $0 == 0 } })
-                    if executable == "/bin/cat" { XCTAssertNoThrow(try result.get()) }
-                    else { XCTAssertThrowsError(try result.get()) }
+                    switch result {
+                    case .success:
+                        XCTAssertEqual(executable, "/bin/cat")
+                    case let .failure(error):
+                        XCTAssertNotEqual(executable, "/bin/cat", error.localizedDescription)
+                    }
                     done.fulfill()
                 }
             wait(for: [done], timeout: 5)

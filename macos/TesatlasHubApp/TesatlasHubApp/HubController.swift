@@ -762,7 +762,7 @@ final class HubSensitiveInput {
 
     func wipe() {
         lock.lock(); defer { lock.unlock() }
-        explicit_bzero(storage, count)
+        _ = memset_s(storage, max(1, count), 0, count)
         isWiped = true
     }
 
