@@ -7609,6 +7609,10 @@ final class HubController {
         configPath.deletingLastPathComponent().appendingPathComponent(".teslamate-handover-pending")
     }
 
+    #if DEBUG
+    var migrationHandoverMarkerForTests: URL { migrationHandoverMarker }
+    #endif
+
     private func writeHistoryOnlyControl() throws {
         try HistoryOnlyControl.write(for: configPath)
     }

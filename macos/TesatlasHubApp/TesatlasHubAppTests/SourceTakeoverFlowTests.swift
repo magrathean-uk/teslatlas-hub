@@ -715,7 +715,7 @@ private final class Fixture {
 
     func writeMarker(_ phase: HubMigrationHandoverPhase) throws {
         try Data("{\"phase\":\"\(phase.rawValue)\",\"previousIntervalSeconds\":60,\"previousProvider\":\"legacy\",\"historyOnly\":false}".utf8)
-            .write(to: folder.appendingPathComponent(".teslamate-handover-pending"))
+            .write(to: controller.migrationHandoverMarkerForTests)
     }
 
     func restartWindow() throws {
