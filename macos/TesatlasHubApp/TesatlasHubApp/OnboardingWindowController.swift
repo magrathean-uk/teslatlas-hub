@@ -2487,6 +2487,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 self.closeMigrationSession()
                 self.connectedMigrationIdentity = nil
                 self.sourceStopCheckError = HubActionError.settingQuiescenceAside(error).localizedDescription
+                self.errorMessage = self.sourceStopCheckError
             }
             self.render()
             completion(self.sourceRunState == .stopped)

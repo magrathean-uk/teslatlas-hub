@@ -69,13 +69,19 @@ final class SourceTakeoverFlowTests: XCTestCase {
         try fixture.connectAndAcknowledge()
 
         XCTAssertNil(fixture.window.sourceRunStateForTests)
+        XCTAssertFalse(fixture.window.hasMigrationSessionForTests)
+        XCTAssertEqual(fixture.window.sourceKeyFieldValueForTests, "")
         fixture.window.enterSourceKeyForTests(Self.key)
-        XCTAssertFalse(fixture.window.continueEnabledForTests)
+        XCTAssertEqual(fixture.window.continueTitleForTests, "Connect to Server")
+        XCTAssertTrue(fixture.window.continueEnabledForTests)
         XCTAssertTrue(fixture.labels().contains { $0.contains("could not read whether the source application is stopped") })
 
         fixture.stops.results = [.failure(HubActionError.commandExited(255, "Control socket connect failed"))]
         fixture.window.continueForTests()
+        try fixture.waitUntil { fixture.window.hasMigrationSessionForTests && !fixture.window.isBusyForTests }
+        fixture.window.acknowledgeSourceReleaseForTests()
         try fixture.waitUntil { !fixture.window.isBusyForTests }
+        XCTAssertFalse(fixture.window.hasMigrationSessionForTests)
         XCTAssertFalse(fixture.events.all.contains("migrate"))
         XCTAssertFalse(fixture.events.all.contains("takeover"))
     }
