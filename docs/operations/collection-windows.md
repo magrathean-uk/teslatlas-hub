@@ -80,8 +80,8 @@ sign out in Hub before restarting the source application. See the
   hosts.
 - Hub checks its clock against an NTP server when you request a window and
   every five minutes while it is Pending or Open. A measured offset of more
-  than 30 seconds in either direction prevents opening or closes the window
-  with `clock_invalid`. After a missed probe, Hub retries after 30 seconds. It
+  than 30 seconds in either direction refuses the open with `clock_offset`,
+  or closes an active window with `clock_invalid`. After a missed probe, Hub retries after 30 seconds. It
   closes on the third consecutive miss, or on a miss at least five minutes
   after the first. A measurement within the limit clears the miss count.
   At service restart, Hub requires a measurement within the limit before it
