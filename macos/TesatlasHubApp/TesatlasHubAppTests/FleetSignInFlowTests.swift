@@ -292,6 +292,91 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertEqual(activation.runner.fleetVerbs, ["activate"])
     }
 
+    // MARK: Evidence of consent (B4)
+
+    func testAFleetHubWithAPositiveIntervalAndNoConsentRecordCannotResumeThroughTheRedeemOrDiscovery() throws {
+        for state in [HubFleetSetupState.awaitingSignIn, .awaitingVehicles] {
+            let fixture = try Fixture(state: state, interval: 300)
+            defer { fixture.tearDown() }
+            let window = fixture.window
+            try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+            // The existing preparation set the interval to 0 first, for this installed Fleet Hub.
+            XCTAssertTrue(fixture.configText.contains("interval_seconds = 0"), "\(state): \(fixture.configText)")
+            XCTAssertFalse(fixture.configText.contains("interval_seconds = 300"), "\(state)")
+            XCTAssertEqual(fixture.service.calls, ["service pause", "service start"], "\(state)")
+            XCTAssertEqual(fixture.runner.fleetVerbs, [], "\(state)")
+
+            window.acceptFleetConsentForTests()
+            window.continueForTests()
+            if state == .awaitingSignIn {
+                XCTAssertEqual(window.fleetStepForTests, .signIn)
+                var browser: (flow: FleetOAuthFlow, done: (Result<TeslaAuthCodeGrant, Error>) -> Void)?
+                window.presentFleetSignIn = { flow, done in browser = (flow, done) }
+                window.enterFleetSecretForTests(Self.secret)
+                window.continueForTests()
+                try fixture.waitUntil { browser != nil }
+                let flow = try XCTUnwrap(browser?.flow)
+                browser?.done(Self.grant(flow, url: "\(Self.redirect)?code=\(Self.code)&state=\(flow.state)"))
+            } else {
+                XCTAssertEqual(window.fleetStepForTests, .vehicles)
+                window.continueForTests()
+            }
+            try fixture.waitUntil { window.fleetStepForTests == .start && !window.isBusyForTests }
+            // The login and the car are stored with interval 0: nothing collects before Start Collecting.
+            XCTAssertTrue(fixture.configText.contains("interval_seconds = 0"), "\(state)")
+            XCTAssertNil(fixture.runner.call("activate"), "\(state)")
+        }
+    }
+
+    func testAMatchingConsentRecordKeepsTheIntervalOfASignInAfterASignOut() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, interval: 300, consented: true)
+        defer { fixture.tearDown() }
+        try fixture.waitUntil { fixture.window.fleetStepForTests == .signIn && !fixture.window.isBusyForTests }
+        XCTAssertTrue(fixture.configText.contains("interval_seconds = 300"))
+        XCTAssertEqual(fixture.service.calls, [], "neither paused nor restarted")
+        XCTAssertEqual(fixture.window.continueTitleForTests, "Sign in with Tesla", "consent is not asked again")
+    }
+
+    func testFiguresThatDifferFromTheAcceptedOnesAskForConsentAgain() throws {
+        let fixture = try Fixture(state: .awaitingVehicles, config: "\n[collector.fleet_polling]\nmonthly_cap_cents = 2000\n",
+                                  interval: 300, consented: true)
+        defer { fixture.tearDown() }
+        let window = fixture.window
+        XCTAssertEqual(fixture.controller.fleetConsentRecord?.figures, .serviceDefaults, "accepted at $10.00")
+        XCTAssertFalse(fixture.controller.fleetConsentInEffect)
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        XCTAssertTrue(fixture.configText.contains("interval_seconds = 0"))
+        XCTAssertTrue(fixture.labels().joined().contains("when its requests reach $20.00"))
+        window.continueForTests()
+        XCTAssertEqual(fixture.runner.fleetVerbs, [])
+        window.acceptFleetConsentForTests()
+        window.continueForTests()
+        XCTAssertEqual(window.fleetStepForTests, .vehicles)
+        XCTAssertEqual(fixture.controller.fleetConsentRecord?.figures.monthlyCapCents, 2_000)
+        XCTAssertTrue(fixture.controller.fleetConsentInEffect)
+    }
+
+    func testTheConsentRecordHoldsTheTimeAndTheFiguresAndNoSecret() throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let accepted = Date(timeIntervalSince1970: 1_795_000_000)
+        try fixture.controller.recordFleetConsent(.serviceDefaults, at: accepted)
+        let url = fixture.controller.maintenanceConfigPath.deletingLastPathComponent()
+            .appendingPathComponent("fleet-consent.json")
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        XCTAssertEqual(Set(object.keys), ["acceptedAt", "figures"])
+        XCTAssertEqual(object["acceptedAt"] as? Int, 1_795_000_000)
+        XCTAssertEqual(object["figures"] as? [String: Int], [
+            "drivingSeconds": 30, "chargingSeconds": 120, "updatingSeconds": 300, "onlineSeconds": 120,
+            "stateCheckSeconds": 600, "inventorySeconds": 3_600, "monthlyCapCents": 1_000,
+            "dataRequestsPerDollar": 500, "stateRequestsPerDollar": 500
+        ])
+        XCTAssertEqual(fixture.controller.fleetConsentRecord,
+                       HubFleetConsentRecord(acceptedAt: accepted, figures: .serviceDefaults))
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+    }
+
     // MARK: Consent before anything Tesla bills (B3)
 
     func testNoBeginRedeemDiscoverOrActivateRunsBeforeConsentOnAnyReturn() throws {
@@ -819,7 +904,7 @@ private final class Fixture {
 
     /// A fresh Mac, or a Fleet Hub left in `state` by an earlier run of the app. `config` is
     /// appended to that Hub's configuration.
-    init(state: HubFleetSetupState? = nil, config: String = "", consented: Bool = false) throws {
+    init(state: HubFleetSetupState? = nil, config: String = "", interval: Int = 0, consented: Bool = false) throws {
         home = HubTestScratch.directory.appendingPathComponent("tesatlas-fleet-flow-\(UUID().uuidString)", isDirectory: true)
         let folder = home.appendingPathComponent("Library/Application Support/Tesatlas Hub", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -829,7 +914,7 @@ private final class Fixture {
         let controller = HubController(commandRunner: runner, serviceRunner: service, homeDirectory: home,
                                        serviceInstalledOverride: state != nil)
         if let state {
-            try ("data_dir = \"/tmp/hub\"\n\n[collector]\nprovider = \"fleet\"\ninterval_seconds = 0\n" + config)
+            try ("data_dir = \"/tmp/hub\"\n\n[collector]\nprovider = \"fleet\"\ninterval_seconds = \(interval)\n" + config)
                 .write(to: folder.appendingPathComponent("config.toml"), atomically: true, encoding: .utf8)
             try controller.saveFleetApplication(HubFleetApplication(
                 clientID: "c0ffee00-1111-4222-8333-444455556666", region: .eu,

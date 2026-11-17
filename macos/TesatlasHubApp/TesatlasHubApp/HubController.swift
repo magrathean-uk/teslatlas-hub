@@ -8810,10 +8810,15 @@ extension HubController {
         HubAppLog.shared.record("fleet_setup.consent_recorded", category: "account")
     }
 
-    /// Whether the owner's consent is on record: the only evidence that `begin`, the redeem,
-    /// `discover` and `activate` may run. A Fleet configuration, the provider's name or a
-    /// positive interval is never that evidence.
-    var fleetConsentInEffect: Bool { fleetConsentRecord != nil }
+    /// Whether the owner's consent is on record for the figures now in effect: the only evidence
+    /// that `begin`, the redeem, `discover` and `activate` may run, and that a Fleet Hub may keep
+    /// a positive interval. A Fleet configuration, the provider's name or a positive interval is
+    /// never that evidence; figures that differ from the accepted ones need consent again.
+    var fleetConsentInEffect: Bool {
+        guard let record = fleetConsentRecord,
+              case let .figures(figures) = fleetConsentReading else { return false }
+        return record.figures == figures
+    }
 
     /// The refusal of a billed step (or of `activate`) without the owner's consent on record.
     static var fleetConsentRequired: Error {
@@ -8849,11 +8854,14 @@ extension HubController {
         }
     }
 
-    /// Makes this Hub a Fleet Hub (section 10, steps 1 and 2): the configuration names the Fleet
-    /// provider with `interval_seconds = 0`, so nothing is polled before the owner accepts the
-    /// consent page, and the service runs. An installed Hub is paused, reconfigured and started
-    /// again; a failure runs the typed recovery. A Hub that is already a Fleet Hub keeps its
-    /// interval (a reconnect after a sign-out keeps the consent given earlier) and is not paused.
+    /// Makes this Hub a Fleet Hub that cannot start collecting without the owner's consent
+    /// (section 10, steps 1 and 2), on the details step and on every entry to the Fleet route or
+    /// return in a waiting state. Unless the consent record matches the figures in effect, the
+    /// configuration names the Fleet provider with `interval_seconds = 0`, also for an installed
+    /// service and for a configuration that is already Fleet: an installed Hub is paused,
+    /// reconfigured and started again, and a failure runs the typed recovery. Only a Fleet Hub
+    /// with consent on record (a new sign-in after a sign-out) keeps its interval and is not
+    /// paused; so is a Fleet Hub whose interval is already 0.
     func prepareFleetHub(completion: @escaping (Result<Void, Error>) -> Void) {
         let deliver: (Result<Void, Error>) -> Void = { result in
             if Thread.isMainThread { completion(result) } else { DispatchQueue.main.async { completion(result) } }
@@ -8864,10 +8872,15 @@ extension HubController {
         let originalConfig: String?
         do { originalConfig = try readConfigIfPresent() } catch { op.finish(.failure(error), completion: deliver); return }
         let alreadyFleet = originalConfig.flatMap(Self.collectorProvider(in:)) == "fleet"
-        let interval: Int? = alreadyFleet ? nil : 0
+        let consented = fleetConsentInEffect
+        let keepsInterval = alreadyFleet && consented
+        let interval: Int? = keepsInterval ? nil : 0
+        let unchanged = alreadyFleet
+            && (keepsInterval || originalConfig.flatMap(Self.collectorIntervalSeconds(in:)) == 0)
         HubAppLog.shared.record("fleet_setup.prepare_requested", category: "account", fields: [
             "service_installed": installed ? "true" : "false",
-            "already_fleet": alreadyFleet ? "true" : "false"
+            "already_fleet": alreadyFleet ? "true" : "false",
+            "consent_in_effect": consented ? "true" : "false"
         ])
         let finish: (Result<Void, Error>) -> Void = { [self] result in
             DispatchQueue.main.async { [self] in
@@ -8891,7 +8904,7 @@ extension HubController {
             op.service(["service", "start"]) { finish($0.map { _ in () }) }
             return
         }
-        guard !alreadyFleet else { finish(.success(())); return }
+        guard !unchanged else { finish(.success(())); return }
         op.phase("pause")
         op.service(["service", "pause"]) { [self] pauseResult in
             if case let .failure(error) = pauseResult {

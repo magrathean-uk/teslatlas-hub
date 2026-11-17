@@ -64,30 +64,56 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         XCTAssertFalse(events.values.contains("service:pause"))
     }
 
-    /// A Hub that is already a Fleet Hub keeps its interval (a reconnect keeps the consent given
-    /// earlier) and is neither paused nor restarted.
-    func testAFleetHubKeepsItsIntervalAndIsNotPaused() throws {
+    /// A Fleet configuration or a positive interval is not evidence of consent: without a consent
+    /// record, an installed Fleet Hub is paused, set to `interval_seconds = 0` and started again.
+    func testAFleetHubWithoutAConsentRecordIsPausedAndItsIntervalSetToZero() throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
-        let original = "data_dir = \"/tmp/original\"\n\n[collector]\nprovider = \"fleet\"\ninterval_seconds = 300\n"
-        try FileManager.default.createDirectory(at: configURL(in: home).deletingLastPathComponent(),
-                                                withIntermediateDirectories: true)
-        try original.write(to: configURL(in: home), atomically: true, encoding: .utf8)
+        try writeFleetConfig(in: home, interval: 300)
         let events = FleetRecoveryEvents()
         let controller = HubController(commandRunner: FleetRecoveryRunner(events: events, result: .success("{}")),
                                        serviceRunner: FleetRecoveryService(events: events, state: .loaded),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
+        try prepare(controller)
+        let config = try configContents(in: home)
+        XCTAssertTrue(config.contains("provider = \"fleet\""))
+        XCTAssertTrue(config.contains("interval_seconds = 0"), config)
+        XCTAssertFalse(config.contains("interval_seconds = 300"))
+        XCTAssertEqual(Array(events.values.prefix(2)), ["service:pause", "service:start"])
+    }
 
-        let finished = expectation(description: "prepared")
-        controller.prepareFleetHub { result in
-            guard case .success = result else { return XCTFail("expected success: \(result)") }
-            finished.fulfill()
-        }
-        wait(for: [finished], timeout: 2)
-
+    /// With a consent record that matches the figures in effect (a new sign-in after a sign-out),
+    /// a Fleet Hub keeps its interval and is neither paused nor restarted.
+    func testAFleetHubWithAMatchingConsentRecordKeepsItsIntervalAndIsNotPaused() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let original = try writeFleetConfig(in: home, interval: 300)
+        let events = FleetRecoveryEvents()
+        let controller = HubController(commandRunner: FleetRecoveryRunner(events: events, result: .success("{}")),
+                                       serviceRunner: FleetRecoveryService(events: events, state: .loaded),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        try controller.recordFleetConsent(.serviceDefaults)
+        XCTAssertTrue(controller.fleetConsentInEffect)
+        try prepare(controller)
         XCTAssertEqual(try configContents(in: home), original)
-        XCTAssertFalse(events.values.contains { $0.hasPrefix("service:") })
+        XCTAssertFalse(events.values.contains { $0 == "service:pause" || $0 == "service:start" })
+    }
+
+    /// A Fleet Hub whose interval is already 0 cannot collect: it is not paused.
+    func testAFleetHubWithIntervalZeroAndNoRecordIsNotPaused() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let original = try writeFleetConfig(in: home, interval: 0)
+        let events = FleetRecoveryEvents()
+        let controller = HubController(commandRunner: FleetRecoveryRunner(events: events, result: .success("{}")),
+                                       serviceRunner: FleetRecoveryService(events: events, state: .loaded),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        try prepare(controller)
+        XCTAssertEqual(try configContents(in: home), original)
+        XCTAssertFalse(events.values.contains { $0 == "service:pause" || $0 == "service:start" })
     }
 
     /// A failed pause changes nothing and runs the single typed recovery.
@@ -142,6 +168,24 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
 
         XCTAssertTrue(try configContents(in: home).contains("interval_seconds = 0"))
         XCTAssertEqual(Array(events.values.prefix(3)), ["service:pause", "service:start", "service:recover"])
+    }
+
+    private func prepare(_ controller: HubController) throws {
+        let finished = expectation(description: "prepared")
+        controller.prepareFleetHub { result in
+            guard case .success = result else { return XCTFail("expected success: \(result)") }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+    }
+
+    @discardableResult
+    private func writeFleetConfig(in home: URL, interval: Int) throws -> String {
+        let original = "data_dir = \"/tmp/original\"\n\n[collector]\nprovider = \"fleet\"\ninterval_seconds = \(interval)\n"
+        try FileManager.default.createDirectory(at: configURL(in: home).deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try original.write(to: configURL(in: home), atomically: true, encoding: .utf8)
+        return original
     }
 
     private func temporaryHome() throws -> URL {

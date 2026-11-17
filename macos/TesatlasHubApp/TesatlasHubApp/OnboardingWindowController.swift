@@ -3946,16 +3946,19 @@ extension OnboardingWindowController {
 
     /// Shows a refusal. When the outcome is unknown (the answer was lost), the state is read
     /// again and the page moves to the step it names.
-    private func fleetFailed(_ error: Error) {
+    private func fleetFailed(_ error: Error, readsState: Bool = true) {
         let underlying = HubActionError.settingQuiescenceAside(error)
         showInlineError(error.localizedDescription)
-        if (underlying as? HubFleetRefusal)?.outcomeUnknown == true { refreshFleetSetupState() }
+        if readsState, (underlying as? HubFleetRefusal)?.outcomeUnknown == true { refreshFleetSetupState() }
     }
 
     // MARK: Waiting states
 
-    /// Reads which Fleet state the Hub is in (`preflight`) and shows that step with its next
-    /// action, so a set-up continues from where it stopped, also after a quit.
+    /// On every entry to the Fleet route and every return: first makes sure a Fleet Hub without
+    /// the owner's consent on record cannot start collecting (`prepareFleetHub` sets the interval
+    /// to 0 unless the record matches the figures in effect), then reads which Fleet state the
+    /// Hub is in (`preflight`) and shows that step with its next action, the consent page first
+    /// where consent is missing. So a set-up continues from where it stopped, also after a quit.
     func refreshFleetSetupState() {
         guard state.route == .fleet, !controller.previewMode, controller.hubConfiguredForFleet else {
             fillFleetDetails(from: controller.savedFleetApplication)
@@ -3963,6 +3966,20 @@ extension OnboardingWindowController {
         }
         fleetStateReading &+= 1
         let reading = fleetStateReading
+        setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.prepare", fallback: "Preparing Hub for the Fleet API…"),
+                operation: .fleet)
+        controller.prepareFleetHub { [weak self] prepared in
+            guard let self, reading == self.fleetStateReading, self.state.route == .fleet else { return }
+            self.setBusy(false)
+            if case let .failure(error) = prepared {
+                self.fleetFailed(error, readsState: false)
+                return
+            }
+            self.readFleetSetupState(reading)
+        }
+    }
+
+    private func readFleetSetupState(_ reading: UInt64) {
         controller.readFleetSetupState { [weak self] result in
             guard let self, reading == self.fleetStateReading, self.state.route == .fleet,
                   !self.busy, self.authWindow == nil else { return }
