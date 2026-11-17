@@ -1017,3 +1017,37 @@ fn legacy_hub_refuses_every_vehicle_action_at_the_command_line() {
     assert_refused(&output, "vehicle_commands_not_offered", &["control", "wake", "--confirm"]);
     assert_eq!(hub.endpoint.connections(), 0, "nothing sent");
 }
+
+/// `setup-fleet figures` (M09-T21) is answered from the configuration alone:
+/// no service, no data folder, no input, no connection, nothing written.
+#[test]
+fn setup_fleet_figures_answer_without_the_service_or_a_data_folder() {
+    let hub = Hub::new();
+    hub.seal(true);
+    let legacy = hub.run(&["setup-fleet", "figures"], TOKENS);
+    assert_refused(&legacy, "fleet_provider_not_selected", &["setup-fleet", "figures"]);
+    assert!(stdout(&legacy).is_empty());
+    let config = format!(
+        "data_dir = {:?}\nbind = '127.0.0.1:18443'\n[collector]\nprovider = \"fleet\"\n\
+         interval_seconds = 300\n\n[collector.\"fleet\\u005fpolling\"]\nmonthly_cap_cents = 2000\n\
+         driving_poll_seconds = 60\n",
+        hub.data()
+    );
+    fs::write(hub.path("config.toml"), config).expect("config");
+    let output = hub.run(&["setup-fleet", "figures"], TOKENS);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(stderr(&output).is_empty(), "{}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "{\"provider\":\"fleet\",\"collectionIntervalSeconds\":300,\"pollingSeconds\":{\"driving\":60,\
+         \"charging\":120,\"updating\":300,\"online\":120,\"stateCheck\":600,\"inventory\":3600},\
+         \"requestsPerDollar\":{\"data\":500,\"state\":500},\"monthlyCapCents\":2000}\n"
+    );
+    let extra = hub.run(&["setup-fleet", "figures", "--all-vehicles"], TOKENS);
+    assert_eq!(extra.status.code(), Some(2), "{}", stderr(&extra));
+    fs::remove_file(hub.path("config.toml")).expect("remove config");
+    let missing = hub.run(&["setup-fleet", "figures"], TOKENS);
+    assert_refused(&missing, "config_unreadable", &["setup-fleet", "figures"]);
+    assert!(!hub.data().exists(), "no Hub state was created");
+    assert_eq!(hub.endpoint.connections(), 0);
+}
