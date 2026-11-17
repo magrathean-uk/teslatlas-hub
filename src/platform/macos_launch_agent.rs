@@ -140,7 +140,7 @@ pub fn hub_is_never_configured(config: &crate::config::HubConfig) -> io::Result<
 /// whole-store `catalogue_check` (`PRAGMA quick_check` and a hash of every
 /// referenced pack), as every configured Hub's `preflight` did before the
 /// take-over. The production serve admission decides by the same rule on a
-/// bounded read instead (M08-T22).
+/// read that grows with the number of cars only (M08-T22).
 pub fn hub_awaits_owner_sign_in(config: &crate::config::HubConfig) -> io::Result<bool> {
     awaits_owner_sign_in(config, AdmissionStoreCheck::WholeStore)
 }
@@ -151,10 +151,13 @@ enum AdmissionStoreCheck {
     /// `HubStore::catalogue_check`: the whole store and every referenced pack.
     WholeStore,
     /// `HubStore::readiness_check`: the catalogue opens at a supported schema,
-    /// its core tables respond and no car is quarantined. A bounded number of
-    /// rows, whatever the size of the store and the number of packs; the same
-    /// readable-catalogue gate `/readyz` applies. Used at a production start,
-    /// before the listener opens.
+    /// its core tables respond and no car is quarantined; the same
+    /// readable-catalogue gate `/readyz` applies. With the configured-car join,
+    /// the Owner slot's format row and its presence row that follow, the
+    /// admission reads a number of rows that grows with the number of cars,
+    /// not with the history or the packs; no pack is opened and no
+    /// `PRAGMA quick_check` runs. Used at a production start, before the
+    /// listener opens.
     Bounded,
 }
 
@@ -281,8 +284,9 @@ pub fn preflight_hub_for_serve(
         }
         // A configured Hub without the Hub's own login serves for the
         // owner's sign-in, collecting nothing until then (M09-T16, B2). The
-        // rule is decided on a bounded read: no whole-store check and no pack
-        // is read before the listener opens (M08-T22).
+        // rule is decided on a read that grows with the number of cars only:
+        // no whole-store check and no pack is read before the listener opens
+        // (M08-T22).
         if awaits_owner_sign_in(config, AdmissionStoreCheck::Bounded)? {
             tracing::info!(state = "awaiting_sign_in", "no Tesla login is stored: Hub serves for the owner's sign-in with the collector off");
             return Ok(());

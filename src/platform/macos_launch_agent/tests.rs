@@ -1358,7 +1358,8 @@ fn awaiting_sign_in_refuses_an_existing_unusable_key_store() {
     drop(store);
 }
 
-// M08-T22: the production start's admission reads a bounded number of rows.
+// M08-T22: the production start's admission reads a number of rows that grows
+// with the number of cars, not with the history or the packs.
 
 /// A configured collecting Legacy Hub with imported history and no Owner login.
 fn seed_awaiting_hub(data: &Path) -> HubConfig {
@@ -1386,7 +1387,7 @@ fn make_packs_unreadable(data: &Path) -> Vec<PathBuf> {
 }
 
 /// Overwrites the root page of a table no admission reads, so the whole-store
-/// `PRAGMA quick_check` fails while every bounded read still answers.
+/// `PRAGMA quick_check` fails while every read of the admission still answers.
 fn break_unread_table(data: &Path, table: &str) {
     use std::os::unix::fs::FileExt as _;
     let path = data.join("hub.sqlite");
