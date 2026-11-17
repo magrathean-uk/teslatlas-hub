@@ -1357,3 +1357,132 @@ fn awaiting_sign_in_refuses_an_existing_unusable_key_store() {
     }
     drop(store);
 }
+
+// M08-T22: the production start's admission reads a bounded number of rows.
+
+/// A configured collecting Legacy Hub with imported history and no Owner login.
+fn seed_awaiting_hub(data: &Path) -> HubConfig {
+    let store = seed_selected_car(data);
+    load_or_create_cursor_key(data).expect("cursor key");
+    drop(crate::auth::credential_vault::fixtures::legacy_vault(&store, data));
+    drop(store);
+    let mut config = idle_start_config(data);
+    config.collector.interval_seconds = 300;
+    config
+}
+
+/// Makes every stored pack unreadable: any pack open or hash fails.
+fn make_packs_unreadable(data: &Path) -> Vec<PathBuf> {
+    let packs: Vec<PathBuf> = fs::read_dir(data.join("packs").join("sha256"))
+        .expect("pack folder")
+        .map(|entry| entry.expect("pack entry").path())
+        .filter(|path| path.is_file())
+        .collect();
+    assert!(!packs.is_empty(), "the imported car references packs");
+    for pack in &packs {
+        fs::set_permissions(pack, fs::Permissions::from_mode(0o000)).expect("pack mode");
+    }
+    packs
+}
+
+/// Overwrites the root page of a table no admission reads, so the whole-store
+/// `PRAGMA quick_check` fails while every bounded read still answers.
+fn break_unread_table(data: &Path, table: &str) {
+    use std::os::unix::fs::FileExt as _;
+    let path = data.join("hub.sqlite");
+    let connection = rusqlite::Connection::open(&path).expect("store");
+    connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").expect("checkpoint");
+    let page_size: i64 = connection.query_row("PRAGMA page_size", [], |row| row.get(0)).expect("page size");
+    let root: i64 = connection
+        .query_row("SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ?1", [table], |row| row.get(0))
+        .expect("root page");
+    drop(connection);
+    let (page_size, root) = (u64::try_from(page_size).expect("page size"), u64::try_from(root).expect("root page"));
+    assert!(root > 1, "not the schema page");
+    let file = fs::OpenOptions::new().write(true).open(&path).expect("store file");
+    file.write_all_at(&vec![0xA5_u8; usize::try_from(page_size).expect("page size")], (root - 1) * page_size).expect("broken page");
+}
+
+/// M08-T22: a production start decides the awaiting-sign-in admission without the
+/// whole-store check and without opening a pack. Unreadable packs and a damaged page
+/// in a table it never reads leave the production admission unchanged, while the
+/// command-line form (the whole-store check) refuses the same store.
+#[test]
+fn production_start_admission_reads_neither_the_whole_store_nor_a_pack() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let config = seed_awaiting_hub(&data);
+    assert!(hub_awaits_owner_sign_in(&config).expect("healthy store"), "awaiting on the healthy store");
+
+    let packs = make_packs_unreadable(&data);
+    let store = HubStore::open_read_only(&data).expect("store");
+    assert!(store.catalogue_check().is_err(), "the whole-store check opens the packs");
+    assert!(hub_awaits_owner_sign_in(&config).is_err(), "the command-line form keeps the whole-store check");
+    assert!(awaits_owner_sign_in(&config, AdmissionStoreCheck::Bounded).expect("bounded read"), "awaiting");
+    preflight_hub_for_serve(&config, None).expect("served awaiting the sign-in without opening a pack");
+
+    break_unread_table(&data, "raw_observations");
+    assert!(store.quick_check().is_err(), "the whole-store check sees the damaged page");
+    assert!(awaits_owner_sign_in(&config, AdmissionStoreCheck::Bounded).expect("bounded read"), "awaiting");
+    preflight_hub_for_serve(&config, None).expect("served awaiting the sign-in without the whole-store check");
+    drop(store);
+    for pack in &packs {
+        fs::set_permissions(pack, fs::Permissions::from_mode(0o600)).expect("restore mode");
+    }
+}
+
+/// M08-T22: on a healthy store the bounded production admission and the command-line
+/// whole-store form decide every reviewed state alike.
+#[test]
+fn production_start_admission_decides_as_the_whole_store_form() {
+    let same = |config: &HubConfig, label: &str| {
+        let whole = hub_awaits_owner_sign_in(config).map_err(|error| error.to_string());
+        let bounded = awaits_owner_sign_in(config, AdmissionStoreCheck::Bounded).map_err(|error| error.to_string());
+        assert_eq!(bounded, whole, "{label}");
+        whole
+    };
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let config = seed_awaiting_hub(&data);
+    assert_eq!(same(&config, "awaiting"), Ok(true));
+    let mut other = config.clone();
+    other.collector.legacy_auth.enabled = false;
+    assert_eq!(same(&other, "Legacy refresh disabled"), Ok(false));
+    let mut other = config.clone();
+    other.collector.provider = CollectorProvider::Fleet;
+    assert_eq!(same(&other, "Fleet provider"), Ok(false));
+    assert_eq!(same(&idle_start_config(&data), "collector off"), Ok(false));
+
+    // A quarantined car: refused by both, before any credential is read.
+    let store = HubStore::open_read_only(&data).expect("store");
+    let (vehicle, _, _) = store.configured_tesla_vehicles().expect("cars").into_iter().next().expect("the configured car");
+    let connection = rusqlite::Connection::open(data.join("hub.sqlite")).expect("writable");
+    let quarantine = |value: i64| {
+        connection
+            .execute(
+                "INSERT INTO vehicle_lifecycle_state(vehicle_id, car_id, last_observation_id, open_session_json, quarantined, updated_at_ms)
+                 VALUES (?1, 1, 0, CAST('{}' AS BLOB), ?2, 1)
+                 ON CONFLICT(vehicle_id) DO UPDATE SET quarantined = excluded.quarantined",
+                rusqlite::params![vehicle.to_string(), value],
+            )
+            .expect("lifecycle row")
+    };
+    quarantine(1);
+    assert!(same(&config, "quarantined").is_err(), "quarantined: refused");
+    quarantine(0);
+    assert_eq!(same(&config, "released"), Ok(true));
+    drop(connection);
+
+    // The Hub's own login is stored.
+    let store = HubStore::initialize(&data).expect("writable store");
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store, &data, "access-0001", "refresh-0001", None).expect("own login");
+    assert_eq!(same(&config, "signed in"), Ok(false));
+
+    // No configured car.
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let empty = temporary.path().join("data");
+    HubStore::initialize(&empty).expect("empty store");
+    let mut config = idle_start_config(&empty);
+    config.collector.interval_seconds = 300;
+    assert_eq!(same(&config, "no configured car"), Ok(false));
+}
