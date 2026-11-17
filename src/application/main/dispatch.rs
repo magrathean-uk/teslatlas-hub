@@ -16,7 +16,7 @@ fn current_vehicle_status_fields(
 ) -> Result<CurrentVehicleStatusFields, StoreError> {
     let observations = store.current_observations_for_vehicle(vehicle_id)?;
     let lifecycle = store.load_lifecycle_state(vehicle_id)?;
-    let mut summary = build_current_vehicle_summary(
+    let summary = build_current_vehicle_summary(
         vehicle_id,
         &observations,
         None,
@@ -25,9 +25,6 @@ fn current_vehicle_status_fields(
         now_ms,
         transient_max_age_ms,
     );
-    if let (Some(latitude), Some(longitude)) = (summary.latitude, summary.longitude) {
-        summary.geofence_name = store.geofence_name_at(vehicle_id, latitude, longitude)?;
-    }
     Ok(CurrentVehicleStatusFields {
         // The summary's activity vocabulary is the one C6 R29 defines: it never
         // holds `unavailable`, so no text filter applies.
@@ -35,7 +32,8 @@ fn current_vehicle_status_fields(
             .activity_state
             .map(|state| state.as_str().to_owned()),
         battery_level: summary.battery_level,
-        location_name: summary.geofence_name,
+        // Status is a redacted diagnostic: a geofence label may be an address.
+        location_name: None,
         // Current observations are durable history. They prove cached telemetry,
         // not a live vehicle or provider connection.
         telemetry_status: if summary.observed_at_ms.is_some() {

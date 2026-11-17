@@ -158,7 +158,7 @@ fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
         CurrentVehicleStatusFields {
             activity_state: Some("online".into()),
             battery_level: Some(81),
-            location_name: Some("Home".into()),
+            location_name: None,
             telemetry_status: "cached",
         }
     );
