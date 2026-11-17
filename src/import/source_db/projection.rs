@@ -5,8 +5,9 @@
 //! A PostgreSQL reader will decode only the fixed schema-contract projections
 //! into these source values. This module then makes the lossy boundaries
 //! explicit: only completed drives are included, while standalone positions
-//! remain valid history. Samples of omitted open drives are retained unattached;
-//! an in-progress drive is never fabricated as finished history.
+//! remain valid history. Samples of omitted open drives are retained unattached
+//! unless handed to the lifecycle; an in-progress drive is never fabricated
+//! as finished history.
 
 use std::collections::{HashMap, HashSet};
 
@@ -960,6 +961,8 @@ pub struct ProjectionReport {
     pub broken_drives: u64,
     /// Retained samples whose parent did not project. Included in projected_positions.
     pub detached_positions: u64,
+    /// Source samples owned exclusively by the handed-over lifecycle drive.
+    pub held_open_session_positions: u64,
     pub skipped_unattached_positions: u64,
     pub projected_positions: u64,
     pub projected_charges: u64,
@@ -1019,6 +1022,15 @@ impl BrokenDriveTracker {
             .filter(|&&count| count == 1)
             .count() as u64
     }
+}
+
+/// Match the reader's unique-open-parent policy without guessing between stale rows.
+pub(crate) fn handed_over_drive_id(drives: &[SourceDbDrive], car_id: i64) -> Option<i64> {
+    let mut open = drives
+        .iter()
+        .filter(|d| d.car_id == car_id && d.end_date_ms.is_none());
+    let first = open.next()?;
+    open.next().is_none().then_some(first.id)
 }
 
 impl ProjectionReport {
@@ -1424,6 +1436,7 @@ pub fn project_vehicle(
     let projected_car = project_car(car, latest_firmware(&updates))?;
 
     let mut broken_drives = BrokenDriveTracker::new(&source.drives, selected_car_id);
+    let held_drive_id = handed_over_drive_id(&source.drives, selected_car_id);
     let mut included_drive_ids = HashSet::new();
     let mut drives = Vec::new();
     for drive in source
@@ -1486,6 +1499,10 @@ pub fn project_vehicle(
         .filter(|position| position.car_id == selected_car_id)
     {
         broken_drives.observe(position);
+        if position.drive_id.is_some() && position.drive_id == held_drive_id {
+            report.held_open_session_positions += 1;
+            continue;
+        }
         let included = position
             .drive_id
             .is_none_or(|drive_id| included_drive_ids.contains(&drive_id));

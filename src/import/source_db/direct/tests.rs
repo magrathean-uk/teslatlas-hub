@@ -532,6 +532,7 @@ fn broken_drive_count_gate_accounts_for_subsets_without_double_counting() {
         skipped_open_drives: 2,
         broken_drives: 1,
         detached_positions: 2,
+        held_open_session_positions: 2,
         skipped_unattached_positions: 3,
         projected_positions: 4,
         projected_charges: 5,
@@ -545,7 +546,7 @@ fn broken_drive_count_gate_accounts_for_subsets_without_double_counting() {
             SourceDbCounts {
                 cars: 1,
                 drives: 3,
-                positions: 7,
+                positions: 9,
                 charging_processes: 5,
                 charges: 6,
                 states: 7,
@@ -1055,9 +1056,10 @@ async fn native_complete_corpus_direct_import_projects_every_kind_when_configure
 
     assert!(!result.chunks.is_empty());
     assert_eq!(result.report.completed_drives, 1);
-    assert_eq!(result.report.projected_positions, 3);
+    assert_eq!(result.report.projected_positions, 2);
     assert_eq!(result.report.skipped_unattached_positions, 0);
-    assert_eq!(result.report.detached_positions, 1);
+    assert_eq!(result.report.detached_positions, 0);
+    assert_eq!(result.report.held_open_session_positions, 1);
     assert_eq!(result.report.projected_charges, 1);
     assert_eq!(result.report.projected_charge_samples, 1);
     assert_eq!(result.report.projected_states, 1);

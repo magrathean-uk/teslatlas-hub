@@ -33,8 +33,8 @@ use crate::{
         BrokenDriveTracker, ChargeProjectionFacts, DriveRelations, ProjectionReport,
         SourceDbAddress, SourceDbCar, SourceDbCharge, SourceDbChargingProcess, SourceDbDrive,
         SourceDbGeofence, SourceDbPosition, SourceDbProjectionError, SourceDbState, SourceDbUpdate,
-        project_car, project_charge, project_charge_sample, project_drive, project_position,
-        project_state, project_update,
+        handed_over_drive_id, project_car, project_charge, project_charge_sample, project_drive,
+        project_position, project_state, project_update,
     },
     source_db_stage::{SourceDbStage, SourceDbStageError, SourceDbStageFormat, SourceDbStageTable},
 };
@@ -575,6 +575,7 @@ fn write_position_fragments(
         Ok(())
     })?;
     let mut broken_drives = BrokenDriveTracker::new(&source_drives, car.id);
+    let held_drive_id = handed_over_drive_id(&source_drives, car.id);
     drop(source_drives);
     let projected_drives = Arc::new(projected_drives);
     let mut projection_pool = PositionProjectionPool::new(car.id, projected_drives.clone());
@@ -582,7 +583,7 @@ fn write_position_fragments(
     let mut ordinal = 0_u64;
     let mut after_id = 0_i64;
     loop {
-        let page = stage.page::<SourceDbPosition>(
+        let mut page = stage.page::<SourceDbPosition>(
             SourceDbStageTable::Positions,
             after_id,
             STAGE_PAGE_ROWS,
@@ -591,6 +592,13 @@ fn write_position_fragments(
         for row in &page.rows {
             broken_drives.observe(&row.value);
         }
+        page.rows.retain(|row| {
+            let held = row.value.drive_id.is_some() && row.value.drive_id == held_drive_id;
+            if held {
+                report.held_open_session_positions += 1;
+            }
+            !held
+        });
         let completed = projection_pool.submit(PositionProjectionJob {
             ordinal,
             rows: page.rows,

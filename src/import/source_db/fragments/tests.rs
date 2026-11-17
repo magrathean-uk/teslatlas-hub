@@ -1416,3 +1416,46 @@ fn broken_drive_staged_import_preserves_run_and_terminal_samples_in_valid_packs(
         .into()
     );
 }
+
+#[test]
+fn broken_drive_staged_handover_positions_are_held_by_the_open_session() {
+    let (_template_dir, template) = stage();
+    let (_source_dir, mut source) = mutable_stage();
+    let mut open = template
+        .get::<SourceDbDrive>(SourceDbStageTable::Drives, 10)
+        .unwrap()
+        .unwrap();
+    open.id = 11;
+    open.end_date_ms = None;
+    open.start_position_id = None;
+    open.end_position_id = None;
+    source
+        .insert(SourceDbStageTable::Drives, 11, &open)
+        .unwrap();
+    let mut position = template
+        .get::<SourceDbPosition>(SourceDbStageTable::Positions, 20)
+        .unwrap()
+        .unwrap();
+    position.id = 21;
+    position.drive_id = Some(11);
+    source
+        .insert(SourceDbStageTable::Positions, 21, &position)
+        .unwrap();
+    source.seal().unwrap();
+    let packs = crate::private_tempdir().unwrap();
+    let result = write_staged_full_snapshot_with_limits(
+        &source,
+        &ProjectionPackWriter::new(packs.path()),
+        binding(),
+        Uuid::new_v4(),
+        SequenceRange {
+            from_exclusive: 0,
+            to_inclusive: 1,
+        },
+        SourceDbFragmentLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(result.report.held_open_session_positions, 1);
+    assert_eq!(result.report.detached_positions, 0);
+    assert_eq!(result.report.projected_positions, 1);
+}

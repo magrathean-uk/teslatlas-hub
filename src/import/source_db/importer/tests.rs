@@ -2688,7 +2688,9 @@ fn broken_drive_reimport_upgrades_a_legacy_omitted_position_then_skips_retry() {
     fragment.distance_km = None;
     fragment.duration_min = None;
     fragment.end_km = None;
-    source.drives = vec![fragment, completed_drive(2)];
+    let mut other_open = fragment.clone();
+    other_open.id = 3;
+    source.drives = vec![fragment, completed_drive(2), other_open];
     source.positions.push(SourceDbPosition {
         id: 20,
         car_id: 1,

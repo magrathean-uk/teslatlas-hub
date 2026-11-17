@@ -1258,6 +1258,7 @@ async fn write_from_session(
         &projected_car,
         &projected_drives,
         &mut broken_drives,
+        open_session.drive.as_ref().map(|drive| drive.id),
         capture_mode,
         fragment_limits,
         &mut sink,
@@ -1788,7 +1789,8 @@ fn validate_direct_source_counts(
         source.positions,
         report
             .projected_positions
-            .checked_add(report.skipped_unattached_positions)
+            .checked_add(report.held_open_session_positions)
+            .and_then(|count| count.checked_add(report.skipped_unattached_positions))
             .ok_or(SourceDbDirectError::CountOverflow { table: "positions" })?,
     )?;
     validate_direct_count(
@@ -1929,6 +1931,7 @@ async fn write_positions(
     car: &crate::hub_pack::ProjectionCar,
     drives: &HashMap<i64, ProjectionDrive>,
     broken_drives: &mut BrokenDriveTracker,
+    held_drive_id: Option<i64>,
     capture_mode: DirectCaptureMode,
     limits: SourceDbFragmentLimits,
     sink: &mut PackSink<'_>,
@@ -1999,6 +2002,11 @@ async fn write_positions(
         }
         let position = decode_binary_position(&row)?;
         broken_drives.observe(&position);
+        if position.drive_id.is_some() && position.drive_id == held_drive_id {
+            report.held_open_session_positions =
+                checked_increment(report.held_open_session_positions)?;
+            continue;
+        }
         let Some(drive_id) = position.drive_id else {
             let projected = crate::lifecycle::imported_position(&position);
             append_direct_position(

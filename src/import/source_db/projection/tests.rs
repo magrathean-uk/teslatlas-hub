@@ -752,7 +752,7 @@ fn projects_only_completed_selected_vehicle_history() {
         Some(GeofenceBillingType::PerKwh)
     );
     assert_eq!(projected.snapshot.drives[0].descent, Some(30));
-    assert_eq!(projected.snapshot.positions.len(), 2);
+    assert_eq!(projected.snapshot.positions.len(), 1);
     assert_eq!(projected.snapshot.positions[0].battery_heater, Some(true));
     assert_eq!(
         projected.snapshot.positions[0].battery_heater_on,
@@ -793,9 +793,10 @@ fn projects_only_completed_selected_vehicle_history() {
             completed_drives: 1,
             skipped_open_drives: 1,
             broken_drives: 0,
-            detached_positions: 1,
+            detached_positions: 0,
+            held_open_session_positions: 1,
             skipped_unattached_positions: 0,
-            projected_positions: 2,
+            projected_positions: 1,
             projected_charges: 1,
             projected_charge_samples: 1,
             projected_states: 0,
@@ -951,7 +952,12 @@ fn validates_a_complete_open_session_fixture_and_rejects_cross_car_rows() {
 #[test]
 fn broken_drive_mapped_history_is_accepted_by_the_typed_pack_gate() {
     let temporary = TempDir::new().unwrap();
-    let projected = project_vehicle(&history(), 1).unwrap();
+    let mut source = history();
+    let mut other_open = source.drives[1].clone();
+    other_open.id = 12;
+    source.drives.push(other_open);
+    let projected = project_vehicle(&source, 1).unwrap();
+    assert_eq!(projected.report.detached_positions, 1);
     let request = ProjectionPackRequest {
         pack_id: Uuid::from_u128(1),
         snapshot_id: Uuid::from_u128(2),
@@ -1024,8 +1030,8 @@ fn broken_drive_terminal_candidate_retains_its_sample_without_guessing_an_end() 
     source.charges.clear();
     let projected = project_vehicle(&source, 1).unwrap();
     assert!(projected.snapshot.drives.is_empty());
-    assert_eq!(projected.snapshot.positions.len(), 1);
-    assert_eq!(projected.snapshot.positions[0].drive_id, None);
+    assert!(projected.snapshot.positions.is_empty());
+    assert_eq!(projected.report.held_open_session_positions, 1);
     assert_eq!(projected.report.skipped_open_drives, 1);
     // No later evidence: it may be a just-started drive, not proven abandoned.
     assert_eq!(projected.report.broken_drives, 0);
@@ -1045,7 +1051,8 @@ fn broken_drive_policy_does_not_classify_in_progress_or_completed_short_drives()
     let projected = project_vehicle(&source, 1).unwrap();
     assert_eq!(projected.report.broken_drives, 0);
     assert_eq!(projected.report.completed_drives, 1);
-    assert_eq!(projected.report.projected_positions, 3);
-    assert_eq!(projected.report.detached_positions, 2);
+    assert_eq!(projected.report.projected_positions, 1);
+    assert_eq!(projected.report.detached_positions, 0);
+    assert_eq!(projected.report.held_open_session_positions, 2);
     assert_eq!(projected.snapshot.drives[0].distance_km, None);
 }
