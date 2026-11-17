@@ -8844,6 +8844,16 @@ extension HubController {
         }
         guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
         guard let op = admit(.account, phase: "fleet-prepare", completion: deliver) else { return }
+        let originalConfig: String?
+        do { originalConfig = try readConfigIfPresent() } catch { op.finish(.failure(error), completion: deliver); return }
+        let alreadyFleet = originalConfig.flatMap(Self.collectorProvider(in:)) == "fleet"
+        guard alreadyFleet else {
+            // Another provider or no configuration: the service states no Fleet figure, nothing is
+            // consented, and the configuration becomes Fleet with interval 0.
+            lastFleetFigures = nil
+            prepareFleetHub(op, originalConfig: originalConfig, alreadyFleet: false, consented: false, deliver: deliver)
+            return
+        }
         // The consent record is compared with the service's own statement of the figures (R2).
         op.phase("figures")
         op.run(fleetFiguresArguments) { [self] figuresResult in
@@ -8852,17 +8862,14 @@ extension HubController {
                 noteFleetFigures(reading)
                 var consented = false
                 if case let .figures(figures) = reading { consented = Self.fleetConsent(fleetConsentRecord, covers: figures) }
-                prepareFleetHub(op, consented: consented, deliver: deliver)
+                prepareFleetHub(op, originalConfig: originalConfig, alreadyFleet: true, consented: consented, deliver: deliver)
             }
         }
     }
 
-    private func prepareFleetHub(_ op: HubLifecycleOperation, consented: Bool,
-                                 deliver: @escaping (Result<HubFleetPreparation, Error>) -> Void) {
+    private func prepareFleetHub(_ op: HubLifecycleOperation, originalConfig: String?, alreadyFleet: Bool,
+                                 consented: Bool, deliver: @escaping (Result<HubFleetPreparation, Error>) -> Void) {
         let installed = isServiceInstalled
-        let originalConfig: String?
-        do { originalConfig = try readConfigIfPresent() } catch { op.finish(.failure(error), completion: deliver); return }
-        let alreadyFleet = originalConfig.flatMap(Self.collectorProvider(in:)) == "fleet"
         let keepsInterval = alreadyFleet && consented
         let interval: Int? = keepsInterval ? nil : 0
         let unchanged = alreadyFleet

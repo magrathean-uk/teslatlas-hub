@@ -211,9 +211,10 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         XCTAssertEqual(events.values, ["service:pause", "service:release"])
     }
 
-    /// With a matching consent record a failed pause recovers as before. (A Fleet Hub with a
-    /// matching record is not paused at all; the record here matches before a switch to Fleet.)
-    func testAFailedPauseWithAMatchingConsentRecordRecovers() throws {
+    /// A failed pause of a Hub whose configuration names another provider recovers as before,
+    /// record or not: what restarts is that provider's own collection, not Fleet polling. (A Fleet
+    /// Hub with a matching record is neither paused nor restarted at all; see the test above.)
+    func testAFailedPauseOfAnotherProviderRecoversWithOrWithoutARecord() throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeOriginalConfig(in: home)
@@ -227,7 +228,6 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
                                        initialSnapshot: .previewRunning)
         try controller.recordFleetConsent(.serviceDefaults)
         let error = try prepareFailure(controller)
-        XCTAssertTrue(controller.fleetConsentInEffect)
         XCTAssertFalse(error is HubFleetPreparationLeftStopped)
         XCTAssertEqual(events.values, ["service:pause", "service:recover"])
     }
