@@ -402,8 +402,11 @@ final class SourceTakeoverFlowTests: XCTestCase {
         try fixture.waitUntil { !fixture.window.isBusyForTests }
         XCTAssertEqual(fixture.window.currentRoute, .migration)
         XCTAssertTrue(fixture.window.awaitingTakeoverForTests)
-        XCTAssertEqual(fixture.window.continueTitleForTests, "Connect to Server")
-        fixture.window.connectToSourceForTests(server: "server.local")
+        XCTAssertEqual(fixture.window.continueTitleForTests, "Reconnect to Server")
+        XCTAssertFalse(fixture.window.continueEnabledForTests)
+        XCTAssertTrue(fixture.labels().contains { $0.contains("History is already imported. Reconnect") })
+        try fixture.fillConnectionForm()
+        try fixture.clickContinue()
         try fixture.waitUntil { fixture.window.hasMigrationSessionForTests && !fixture.window.isBusyForTests }
         fixture.window.enterSourceKeyForTests(Self.key)
         fixture.stops.results = [.failure(HubActionError.commandExited(255, "dead session"))]
@@ -411,7 +414,9 @@ final class SourceTakeoverFlowTests: XCTestCase {
         try fixture.waitUntil { !fixture.window.isBusyForTests }
         XCTAssertFalse(fixture.window.hasMigrationSessionForTests)
         XCTAssertEqual(fixture.window.sourceKeyFieldValueForTests, "")
-        fixture.window.connectToSourceForTests(server: "server.local")
+        XCTAssertTrue(fixture.labels().contains { $0.contains("dead session") })
+        try fixture.fillConnectionForm()
+        try fixture.clickContinue()
         try fixture.waitUntil { fixture.window.hasMigrationSessionForTests && !fixture.window.isBusyForTests }
         fixture.window.enterSourceKeyForTests(Self.key)
         fixture.window.continueForTests()
@@ -482,6 +487,12 @@ final class SourceTakeoverFlowTests: XCTestCase {
             case "completed":
                 XCTAssertTrue(text.contains("copy no longer works"))
                 XCTAssertFalse(text.contains("untouched"))
+            case "attempt_recorded":
+                XCTAssertTrue(account.contains("Hub is refreshing the login now"))
+                XCTAssertTrue(text.contains("Keep the source application stopped until the outcome is known"))
+                XCTAssertFalse(text.contains("Sign in again in Hub"))
+                XCTAssertFalse(text.contains("also needs a new sign-in"))
+                XCTAssertFalse(text.contains("first refresh at the next window"))
             default:
                 XCTAssertTrue(text.contains("A refresh may have been sent"))
                 XCTAssertTrue(text.contains("also needs a new sign-in"))
@@ -541,6 +552,212 @@ final class SourceTakeoverFlowTests: XCTestCase {
         XCTAssertEqual(try StopCheckScriptHarness.run(running: "false", discovery: true, duplicateSource: true).status, 27)
     }
 
+    func testPasswordReconnectUsesVisibleFormAndClearsOnFailureSuccessAndClose() throws {
+        let fixture = try Fixture(migrationWindow: false)
+        defer { fixture.tearDown() }
+        try fixture.writeMarker(.awaitingTakeover)
+        try fixture.restartWindow()
+        try fixture.waitUntil { !fixture.window.isBusyForTests }
+        XCTAssertTrue(fixture.labels().contains { $0.contains("History is already imported. Reconnect") })
+        fixture.connectionFailures = [HubActionError.commandExited(255, "Permission denied")]
+        try fixture.fillConnectionForm(password: true)
+        let passwordField = try XCTUnwrap(fixture.view(identifier: "onboarding.source-password") as? NSSecureTextField)
+        try fixture.clickContinue()
+        XCTAssertEqual(passwordField.stringValue, "")
+        try fixture.waitUntil { !fixture.window.isBusyForTests }
+        XCTAssertTrue(fixture.labels().contains("SSH authentication failed"))
+        XCTAssertTrue(fixture.labels().contains("The server did not accept the selected account or authentication method."))
+        XCTAssertNotNil(fixture.view(identifier: "onboarding.source-password"))
+        XCTAssertFalse(fixture.window.continueEnabledForTests)
+        let attempts = fixture.connections
+        fixture.window.continueForTests() // Even a submitted empty form must never reach the connector.
+        XCTAssertEqual(fixture.connections, attempts)
+        XCTAssertTrue(fixture.labels().contains { $0.contains("Enter the SSH password again") })
+        try fixture.fillConnectionForm(password: true)
+        try fixture.clickContinue()
+        try fixture.waitUntil { fixture.window.hasMigrationSessionForTests && !fixture.window.isBusyForTests }
+        XCTAssertEqual(passwordField.stringValue, "")
+        let reconnect = try XCTUnwrap(fixture.view(identifier: "onboarding.takeover-reconnect") as? NSButton)
+        reconnect.performClick(nil)
+        XCTAssertFalse(fixture.window.hasMigrationSessionForTests)
+        try fixture.fillConnectionForm(password: true)
+        let retainedField = try XCTUnwrap(fixture.view(identifier: "onboarding.source-password") as? NSSecureTextField)
+        fixture.window.close()
+        XCTAssertEqual(retainedField.stringValue, "")
+        XCTAssertEqual(fixture.passwordChecks, [true, true])
+        XCTAssertEqual(fixture.events.all.filter { $0 == "stop-check" }.count, 1)
+        XCTAssertFalse(fixture.events.all.contains("migrate"))
+        XCTAssertFalse(try fixture.anyFileUnderHomeContains(Fixture.sshPassword))
+        XCTAssertFalse(try fixture.anyFileUnderHomeContains(Self.key))
+    }
+
+    func testExistingOwnerLoginResumesVerificationFromEitherInterruptedPhase() throws {
+        for phase: HubMigrationHandoverPhase in [.awaitingTakeover, .awaitingSignIn] {
+            let fixture = try Fixture(migrationWindow: false)
+            defer { fixture.tearDown() }
+            try fixture.writeMarker(phase)
+            fixture.runner.durableOrigin = "hub_login"
+            try fixture.restartWindow()
+            try fixture.waitUntil { fixture.window.currentRoute == .verify }
+            XCTAssertEqual(fixture.controller.sourceTakeoverStatus, .otherLogin)
+            XCTAssertFalse(fixture.window.awaitingTakeoverForTests)
+            XCTAssertEqual(fixture.connections, 0)
+            XCTAssertFalse(fixture.events.all.contains("migrate"))
+            XCTAssertFalse(fixture.events.all.contains("takeover"))
+            XCTAssertFalse(fixture.runner.calls.contains { $0.arguments.contains("preflight") })
+            XCTAssertFalse(fixture.service.calls.contains("service start"))
+        }
+    }
+
+    func testOwnerLoginAppearingBeforeDeclineMovesToVerification() throws {
+        let fixture = try Fixture(migrationWindow: false)
+        defer { fixture.tearDown() }
+        try fixture.writeMarker(.awaitingTakeover)
+        try fixture.restartWindow()
+        try fixture.waitUntil { !fixture.window.isBusyForTests }
+        fixture.runner.durableOrigin = "hub_login"
+        let decline = try XCTUnwrap(fixture.view(identifier: "onboarding.takeover-sign-in") as? NSButton)
+        decline.performClick(nil)
+        try fixture.waitUntil { fixture.window.currentRoute == .verify }
+        XCTAssertEqual(fixture.controller.sourceTakeoverStatus, .otherLogin)
+        XCTAssertFalse(fixture.events.all.contains("takeover"))
+    }
+
+    func testStatusSampledBeforeTakeoverCannotOverwriteCommittedOwnership() throws {
+        let fixture = try Fixture(migrationWindow: false)
+        defer { fixture.tearDown() }
+        try fixture.writeMarker(.awaitingTakeover)
+        let session = try Fixture.makeSession()
+        defer { session.close() }
+        fixture.runner.holdNextStatus = true
+        let oldRefresh = expectation(description: "old refresh settled")
+        fixture.controller.refresh { _ in oldRefresh.fulfill() }
+        try fixture.waitUntil { fixture.runner.heldStatus != nil }
+        let takenOver = expectation(description: "take-over reconciled")
+        fixture.controller.takeOverSourceToken(session: session, encryptionKey: Self.key) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            takenOver.fulfill()
+        }
+        wait(for: [takenOver], timeout: 3)
+        XCTAssertEqual(fixture.controller.sourceTakeoverStatus, .takenOver(progress: "none_sent"))
+        XCTAssertEqual(fixture.controller.pendingMigrationHandoverPhase, .awaitingVerification)
+        // No new dashboard refresh was started. Its own latest-request guard therefore
+        // admits this old reply, exercising the shared take-over cache's ordering.
+        let oldReply = try XCTUnwrap(fixture.runner.heldStatus)
+        fixture.runner.heldStatus = nil
+        oldReply()
+        wait(for: [oldRefresh], timeout: 3)
+        XCTAssertEqual(fixture.controller.sourceTakeoverStatus, .takenOver(progress: "none_sent"))
+        // A genuinely later absence is still accepted, for example after sign-out.
+        fixture.runner.durableOrigin = nil
+        _ = try fixture.refreshedAccount()
+        XCTAssertEqual(fixture.controller.sourceTakeoverStatus, .absent)
+    }
+
+    func testOccupiedOwnerSlotDuringTakeoverContinuesToVerification() throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        fixture.runner.takeoverResults = [.failure(HubActionError.commandExited(1, "slot_occupied"))]
+        try fixture.connectAndAcknowledge()
+        fixture.runner.durableOrigin = "hub_login"
+        fixture.window.enterSourceKeyForTests(Self.key)
+        fixture.window.continueForTests()
+        try fixture.waitUntil { fixture.window.currentRoute == .verify }
+        XCTAssertEqual(fixture.controller.sourceTakeoverStatus, .otherLogin)
+        XCTAssertEqual(fixture.events.all.filter { $0 == "migrate" }.count, 1)
+        XCTAssertEqual(fixture.events.all.filter { $0 == "takeover" }.count, 1)
+        XCTAssertEqual(fixture.window.sourceKeyFieldValueForTests, "")
+    }
+
+    func testRepeatedImportedSignInRoutePreservesItsConfiguration() throws {
+        let fixture = try Fixture(migrationWindow: false)
+        defer { fixture.tearDown() }
+        try fixture.writeMarker(.awaitingSignIn)
+        let config = fixture.folder.appendingPathComponent("config.toml")
+        try Data("bind = \"127.0.0.1:8080\"\n# owner setting\n[collector]\nprovider = \"legacy\"\ninterval_seconds = 0\n[collector.legacy_auth]\nenabled = false\n[terrain]\nenabled = false\n".utf8).write(to: config)
+        var first: Data?
+        for _ in 0..<2 {
+            let signIn = try fixture.controller.beginLegacySignIn().get()
+            let done = expectation(description: "closed window refuses sign-in")
+            signIn.requireOpenWindow { result in
+                if case .success = result { XCTFail("closed window must refuse") }
+                done.fulfill()
+            }
+            wait(for: [done], timeout: 3)
+            signIn.cancel()
+            let data = try Data(contentsOf: config)
+            if let first { XCTAssertEqual(data, first) } else { first = data }
+        }
+        XCTAssertEqual(fixture.service.calls.filter { $0 == "service start" }.count, 2)
+        XCTAssertEqual(fixture.runner.calls.filter { $0.arguments.contains("preflight") }.count, 2)
+        XCTAssertEqual(fixture.events.all.filter { $0 == "healthz" }.count, 2)
+        XCTAssertTrue(String(decoding: first!, as: UTF8.self).contains("# owner setting"))
+        XCTAssertTrue(String(decoding: first!, as: UTF8.self).contains("interval_seconds = 60"))
+    }
+
+    func testSignInHealthUsesTLSConfigurationAndHealthzOnPrivateAndLoopbackListeners() throws {
+        let fixture = try Fixture(migrationWindow: false)
+        defer { fixture.tearDown(); SignInHealthURLProtocol.handler = nil }
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.home.path)
+        let certificate = fixture.home.appendingPathComponent("certificate.pem")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
+        process.arguments = ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost",
+                             "-keyout", "/dev/null", "-out", certificate.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: certificate.path)
+        let config = fixture.folder.appendingPathComponent("config.toml")
+        let settings = URLSessionConfiguration.ephemeral
+        settings.protocolClasses = [SignInHealthURLProtocol.self]
+        fixture.healthSettings = settings
+        try fixture.writeMarker(.awaitingSignIn)
+        for host in ["127.0.0.1", "192.168.20.5"] {
+            let content = "bind = '\(host):21446'\n[tls]\npublic_url = 'https://\(host):21446'\ncertificate_path = '\(certificate.path)'\nprivate_key_path = '/deliberately-unread-private-key'\n"
+            try Data(content.utf8).write(to: config)
+            var requests = 0
+            SignInHealthURLProtocol.handler = { request in
+                requests += 1
+                XCTAssertEqual(request.url?.absoluteString, "https://\(host):21446/healthz")
+                return 200
+            }
+            let signIn = try fixture.controller.beginLegacySignIn().get()
+            let done = expectation(description: "TLS health allows the route to reach the closed-window check")
+            signIn.requireOpenWindow { result in
+                if case .success = result { XCTFail("closed window must refuse sign-in") }
+                done.fulfill()
+            }
+            wait(for: [done], timeout: 3)
+            signIn.cancel()
+            XCTAssertEqual(requests, 1)
+            XCTAssertEqual(fixture.runner.calls.filter { $0.arguments.contains("window") }.count,
+                host == "127.0.0.1" ? 1 : 2)
+        }
+        // Plain loopback still works; a failed health request is refused rather than
+        // being confused with success at readiness or an arbitrary HTTP response.
+        try Data("bind = \"127.0.0.1:21447\" # local listener\n".utf8).write(to: config)
+        for response in [200, 503] {
+            SignInHealthURLProtocol.handler = { request in
+                XCTAssertEqual(request.url?.absoluteString, "http://127.0.0.1:21447/healthz")
+                return response
+            }
+            let done = expectation(description: "plain health answer judged")
+            HubController.waitForSignInHealth(configPath: config, sessionConfiguration: settings, timeout: 0.01) { result in
+                switch result {
+                case .success: XCTAssertEqual(response, 200)
+                case .failure: XCTAssertEqual(response, 503)
+                }
+                done.fulfill()
+            }
+            wait(for: [done], timeout: 3)
+        }
+        XCTAssertThrowsError(try HubController.signInHealthEndpoint(Data("bind = '192.168.20.5:21446'\n".utf8)))
+        XCTAssertThrowsError(try HubController.signInHealthEndpoint(Data("[tls]\npublic_url = 'http://192.168.20.5:21446'\ncertificate_path = '/fake.pem'\n".utf8)))
+    }
+
 }
 
 // MARK: - Fixture
@@ -566,6 +783,8 @@ private final class TakeoverRunner: HubCommandRunning {
     var durableOrigin: String?
     var progress = "none_sent"
     var commitEvenOnFailure = false
+    var holdNextStatus = false
+    var heldStatus: (() -> Void)?
 
 
     init(events: Events) { self.events = events }
@@ -592,7 +811,11 @@ private final class TakeoverRunner: HubCommandRunning {
         } else if arguments.contains("window") {
             completion(.success(#"{"phase":"closed","faulted":false}"#))
         } else if arguments.contains("status") {
-            completion(.success(statusOutputs.isEmpty ? Fixture.status(origin: durableOrigin, progress: progress) : statusOutputs.removeFirst()))
+            let sampled = statusOutputs.isEmpty ? Fixture.status(origin: durableOrigin, progress: progress) : statusOutputs.removeFirst()
+            if holdNextStatus {
+                holdNextStatus = false
+                heldStatus = { completion(.success(sampled)) }
+            } else { completion(.success(sampled)) }
         } else {
             completion(.failure(HubActionError.commandFailed("unexpected command")))
         }
@@ -672,6 +895,10 @@ private final class Fixture {
     let service = TakeoverService()
     var controller: HubController!
     var connections = 0
+    var connectionFailures: [Error] = []
+    var passwordChecks: [Bool] = []
+    var healthSettings: URLSessionConfiguration?
+    static let sshPassword = "synthetic-ssh-password-61b4"
     var window: OnboardingWindowController!
 
     var folder: URL { home.appendingPathComponent("Library/Application Support/Tesatlas Hub", isDirectory: true) }
@@ -701,15 +928,25 @@ private final class Fixture {
                                    serviceRunner: service,
                                    homeDirectory: home,
                                    serviceInstalledOverride: false,
-                                   migrationConnector: { [unowned self] _, _, _, _, _, completion in
+                                   migrationConnector: { [unowned self] _, _, _, authentication, _, completion in
                                        self.connections += 1
+                                       if case let .password(value) = authentication {
+                                           self.passwordChecks.append(value == Self.sshPassword)
+                                       }
+                                       if !self.connectionFailures.isEmpty {
+                                           completion(.failure(self.connectionFailures.removeFirst()))
+                                           return
+                                       }
                                        do { completion(.success(try Fixture.makeSession())) }
                                        catch { completion(.failure(error)) }
                                    },
                                    sourceStopChecker: stops.checker,
                                    importedHistoryHealthCheck: { [unowned self] _, completion in
                                        self.events.append("healthz")
-                                       completion(.success(()))
+                                       if let settings = self.healthSettings {
+                                           HubController.waitForSignInHealth(configPath: self.controller.maintenanceConfigPath,
+                                               sessionConfiguration: settings, timeout: 0.2, completion: completion)
+                                       } else { completion(.success(())) }
                                    })
     }
 
@@ -766,6 +1003,39 @@ private final class Fixture {
             }
             RunLoop.main.run(until: Date().addingTimeInterval(0.01))
         }
+    }
+
+    func fillConnectionForm(password: Bool = false) throws {
+        let popup = try XCTUnwrap(view(identifier: "onboarding.migration-authentication") as? NSPopUpButton)
+        XCTAssertFalse(popup.isHiddenOrHasHiddenAncestor)
+        if popup.indexOfSelectedItem != (password ? 1 : 0) {
+            popup.selectItem(at: password ? 1 : 0)
+            XCTAssertTrue(popup.sendAction(popup.action, to: popup.target))
+        }
+        for (identifier, value) in [("onboarding.source-server", "server.local"),
+                                     ("onboarding.source-user", "user"),
+                                     ("onboarding.source-port", "22")] {
+            let field = try XCTUnwrap(view(identifier: identifier) as? NSTextField)
+            XCTAssertFalse(field.isHiddenOrHasHiddenAncestor)
+            XCTAssertNotNil(field.window)
+            field.stringValue = value
+            window.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+        }
+        if password {
+            let field = try XCTUnwrap(view(identifier: "onboarding.source-password") as? NSSecureTextField)
+            XCTAssertFalse(field.isHiddenOrHasHiddenAncestor)
+            XCTAssertEqual(field.stringValue, "", "every reconnect must ask for a fresh password")
+            XCTAssertFalse(window.continueEnabledForTests)
+            field.stringValue = Self.sshPassword
+            window.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+        }
+    }
+
+    func clickContinue() throws {
+        let button = try XCTUnwrap(view(identifier: "onboarding.continue") as? NSButton)
+        XCTAssertFalse(button.isHiddenOrHasHiddenAncestor)
+        XCTAssertTrue(button.isEnabled)
+        button.performClick(nil)
     }
 
     func connectAndAcknowledge() throws {
@@ -933,4 +1203,22 @@ if len(a)==4 and a[:2]==['inspect','-f'] and a[3] in c:
  if t=='{{with index .NetworkSettings.Networks "fake-network"}}{{.IPAddress}}{{end}}':out('172.20.0.9')
 reject()
 """#
+}
+
+/// Delivers a synthetic HTTP response only after the production endpoint and
+/// certificate reader have run. No socket, TLS handshake or Keychain call occurs.
+private final class SignInHealthURLProtocol: URLProtocol {
+    static var handler: ((URLRequest) -> Int)?
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        guard let status = Self.handler?(request), let url = request.url else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL)); return
+        }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: status,
+            httpVersion: "HTTP/1.1", headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data("ok".utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

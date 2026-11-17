@@ -418,9 +418,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 guard let self else { return }
                 self.setBusy(false)
                 if case let .failure(error) = result { self.errorMessage = error.localizedDescription }
-                if self.importedAwaitingTakeover && controller.sourceTakeoverStatus.isTakenOver {
+                if (self.importedAwaitingTakeover || self.takeoverDeclined) && controller.sourceTakeoverStatus.hasLogin {
                     do {
-                        try controller.advanceTakeoverPhase(to: .awaitingVerification)
+                        if self.takeoverDeclined && controller.sourceTakeoverStatus == .otherLogin {
+                            try controller.completeImportedHistorySignIn()
+                            self.state.path = .newInstallation
+                        } else { try controller.advanceTakeoverPhase(to: .awaitingVerification) }
+                        self.takeoverDeclined = false
+                        self.closeMigrationSession()
                         self.importedAwaitingTakeover = false
                         self.state.route = .verify
                         self.render()
@@ -506,6 +511,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     /// a window going away cancels its interest and the controller closes what remains.
     private func closeMigrationSession() {
         sourceEncryptionKey.stringValue = ""
+        migrationSSHPassword.stringValue = ""
         sourceRunState = nil
         sourceStopCheckError = nil
         migrationPreparation?.cancel()
@@ -604,6 +610,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         sourceEncryptionKey.setAccessibilityLabel(HubL10n.text("hub.sourceTakeover.keyLabel", fallback: "Encryption key"))
         migrationUser.delegate = self
         migrationPort.delegate = self
+        migrationSSHPassword.delegate = self
+        migrationServer.identifier = NSUserInterfaceItemIdentifier("onboarding.source-server")
+        migrationUser.identifier = NSUserInterfaceItemIdentifier("onboarding.source-user")
+        migrationPort.identifier = NSUserInterfaceItemIdentifier("onboarding.source-port")
+        migrationSSHPassword.identifier = NSUserInterfaceItemIdentifier("onboarding.source-password")
         fleetClientID.delegate = self
         fleetAccessToken.delegate = self
         fleetRefreshToken.delegate = self
@@ -1197,15 +1208,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
         if compatibility?.mayImport == true {
             views.append(sourceStopRow())
-            if migrationSession == nil {
-                views.append(migrationConnectionBody())
-            } else {
-                views.append(sourceKeyField())
-                let reconnect = HubActionButton(title: HubL10n.text("hub.sourceTakeover.reconnectButton", fallback: "Reconnect to Server"),
-                    target: self, action: #selector(reconnectTakeover))
-                configureFlatButton(reconnect)
-                views.append(reconnect)
-            }
+            views.append(sourceKeyField())
             migrationKeyViews.append(sourceEncryptionKey)
         }
 
@@ -1311,7 +1314,17 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                                     title: title,
                                     message: failure.message,
                                     identifier: "onboarding.takeover-failure"))
-            views.append(sourceKeyField())
+            if migrationSession == nil {
+                views.append(migrationConnectionBody())
+            } else {
+                views.append(sourceKeyField())
+                let reconnect = HubActionButton(title: HubL10n.text("hub.sourceTakeover.reconnectButton", fallback: "Reconnect to Server"),
+                    target: self, action: #selector(reconnectTakeover))
+                reconnect.identifier = NSUserInterfaceItemIdentifier("onboarding.takeover-reconnect")
+                configureFlatButton(reconnect)
+                views.append(reconnect)
+                migrationKeyViews.append(reconnect)
+            }
             let signIn = HubActionButton(title: HubL10n.text("hub.sourceTakeover.signInInstead", fallback: "Sign in with Tesla Instead"),
                                          target: self, action: #selector(declineTakeover))
             signIn.identifier = NSUserInterfaceItemIdentifier("onboarding.takeover-sign-in")
@@ -1680,6 +1693,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         backWidthConstraint?.isActive = false
         backWidthConstraint = backButton.widthAnchor.constraint(equalToConstant: HubMetrics.actionMinimumWidth)
         backWidthConstraint?.isActive = true
+        continueButton.identifier = NSUserInterfaceItemIdentifier("onboarding.continue")
         continueButton.target = self
         continueButton.action = #selector(continuePressed)
         configurePrimaryButton(continueButton)
@@ -1824,7 +1838,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             }
             if importedAwaitingTakeover {
                 return migrationSession == nil
-                    ? HubL10n.text("hub.OnboardingWindowController.1362.2047", fallback: "Connect to Server")
+                    ? HubL10n.text("hub.sourceTakeover.reconnectButton", fallback: "Reconnect to Server")
                     : HubL10n.text("hub.sourceTakeover.retry", fallback: "Retry")
             }
             return isPreviewConnectedMigration || migrationSession != nil
@@ -2276,11 +2290,25 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         let user = migrationUser.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let port = Int(migrationPort.stringValue), (1...65535).contains(port),
               !host.isEmpty, !user.isEmpty else {
+            migrationSSHPassword.stringValue = ""
             HubAppLog.shared.record("compatibility.rejected", category: "history_import",
                                     level: "WARN", fields: ["reason": "missing_server_input"])
             showInlineError(HubL10n.text("hub.OnboardingWindowController.1631.2105", fallback: "Enter the source application server, SSH user, and port."))
             return
         }
+        let passwordAuthentication = migrationAuthentication.indexOfSelectedItem != 0
+        guard !passwordAuthentication || !migrationSSHPassword.stringValue.isEmpty else {
+            showInlineError(HubL10n.text("hub.sourceTakeover.sshPasswordRequired",
+                fallback: "Enter the SSH password again to connect to the source server."))
+            return
+        }
+        let authentication: SourceSSHAuthentication
+        if passwordAuthentication { authentication = .password(migrationSSHPassword.stringValue) }
+        else {
+            let path = migrationIdentityFile.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            authentication = .key(identityFile: path.isEmpty ? nil : URL(fileURLWithPath: path))
+        }
+        migrationSSHPassword.stringValue = ""
         HubAppLog.shared.record("compatibility.started", category: "history_import")
         setBusy(true, operation: .connecting)
         let requestedMigrationIdentity = currentMigrationIdentity
@@ -2290,13 +2318,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         migrationVersionAcknowledgement.state = .off
         closeMigrationSession()
         connectedMigrationIdentity = nil
-        let authentication: SourceSSHAuthentication
-        if migrationAuthentication.indexOfSelectedItem == 0 {
-            let path = migrationIdentityFile.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            authentication = .key(identityFile: path.isEmpty ? nil : URL(fileURLWithPath: path))
-        } else {
-            authentication = .password(migrationSSHPassword.stringValue)
-        }
         migrationPreparation = controller.connectMigrationServer(
             host: host,
             user: user,
@@ -2336,7 +2357,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 self.errorMessage = nil
                 self.migrationDiagnostic = SourceServerImporter.connectionDiagnostic(
                     for: error,
-                    authentication: authentication
+                    authentication: passwordAuthentication ? .password("") : .key(identityFile: nil)
                 )
                 self.render()
             }
@@ -2571,7 +2592,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 return
             }
             do {
-                if self.controller.sourceTakeoverStatus.isTakenOver {
+                if self.controller.sourceTakeoverStatus.hasLogin {
                     try self.controller.advanceTakeoverPhase(to: .awaitingVerification)
                     self.importedAwaitingTakeover = false
                     self.closeMigrationSession()
@@ -2617,6 +2638,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         return !host.isEmpty
             && !user.isEmpty
             && Int(migrationPort.stringValue).map { (1...65535).contains($0) } == true
+            && (migrationAuthentication.indexOfSelectedItem == 0 || !migrationSSHPassword.stringValue.isEmpty)
     }
 
     private var fleetCredentialsValid: Bool {
@@ -2761,7 +2783,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             updateFooter()
             return
         }
-        if field === sourceEncryptionKey {
+        if field === sourceEncryptionKey || field === migrationSSHPassword {
             updateFooter()
             return
         }

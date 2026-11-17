@@ -4,6 +4,42 @@ import AppKit
 import Darwin
 import Foundation
 import SystemConfiguration
+import Security
+
+/// Health-only transport uses the app's existing TLS certificate reader and trust policy.
+private final class HubSignInHealthTrust: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
+    private let host: String
+    private let certificate: SecCertificate?
+
+    init(host: String, certificatePath: URL?) throws {
+        self.host = host
+        if let certificatePath {
+            let data = try DevelopmentHubHTTPSReadiness.protectedData(certificatePath,
+                allowOwnedGroupWritableAncestors: true)
+            guard let pem = String(data: data, encoding: .utf8),
+                  let start = pem.range(of: "-----BEGIN CERTIFICATE-----"),
+                  let end = pem.range(of: "-----END CERTIFICATE-----", range: start.upperBound..<pem.endIndex),
+                  let der = Data(base64Encoded: String(pem[start.upperBound..<end.lowerBound]), options: .ignoreUnknownCharacters),
+                  let certificate = SecCertificateCreateWithData(nil, der as CFData) else { throw POSIXError(.EINVAL) }
+            self.certificate = certificate
+        } else { certificate = nil }
+        super.init()
+    }
+
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let trust = challenge.protectionSpace.serverTrust, let certificate,
+              DevelopmentHubHTTPSReadiness.accepts(trust: trust, certificate: certificate, host: host) else {
+            completionHandler(.cancelAuthenticationChallenge, nil); return
+        }
+        completionHandler(.useCredential, URLCredential(trust: trust))
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
+}
 
 enum HubRelease {
     static let fallbackVersion = "2026.36.2"
@@ -2278,6 +2314,8 @@ enum HubSourceTakeoverStatus: Equatable {
         return false
     }
 
+    var hasLogin: Bool { isTakenOver || self == .otherLogin }
+
     static let awaitingFirstRefreshText = HubL10n.text(
         "hub.sourceTakeover.statusAwaitingRefresh",
         fallback: "Taken over from the source application; first refresh at the next window")
@@ -2288,7 +2326,9 @@ enum HubSourceTakeoverStatus: Equatable {
         case "none_sent": return Self.awaitingFirstRefreshText
         case "completed": return HubL10n.text("hub.sourceTakeover.refreshCompleted",
             fallback: "Hub now holds the login; the source application's copy no longer works")
-        case "attempt_recorded", "sign_in_required": return HubL10n.text("hub.sourceTakeover.refreshUncertain",
+        case "attempt_recorded": return HubL10n.text("hub.sourceTakeover.refreshInProgress",
+            fallback: "Hub is refreshing the login now. Keep the source application stopped until the outcome is known.")
+        case "sign_in_required": return HubL10n.text("hub.sourceTakeover.refreshUncertain",
             fallback: "A refresh may have been sent. Sign in again in Hub; returning to the source application also needs a new sign-in.")
         default: return HubL10n.text("hub.sourceTakeover.refreshUnknown",
             fallback: "Hub holds the taken-over login. Refresh progress is unavailable; keep the source application stopped.")
@@ -3469,7 +3509,7 @@ final class HubController {
             : nil
         previewMode = isPreview
         // Preview fixtures have no stored login and never inspect the owner's vault.
-        if isPreview { sourceTakeoverStatus = .absent }
+        if isPreview { takeoverStatus = .absent }
         previewScene = scene
         onboardingPreviewRoute = previewRoute
         self.developmentConfiguration = developmentConfiguration
@@ -3608,6 +3648,7 @@ final class HubController {
         serviceRunner.loadedState { [weak self] loaded in
             guard let self else { return }
             let installed = self.isServiceInstalled
+            let takeoverReading = self.beginTakeoverStatusReading()
             self.commandRunner.run(arguments: ["--config", self.configPath.path, "status"]) { result in
                 self.readCollectionWindow(after: result, loaded: loaded) { windowRead in
                 let settle: (Bool) -> Void = { liveReady in
@@ -3618,7 +3659,7 @@ final class HubController {
                         }
                         switch result {
                         case let .success(output):
-                            if let status = self.parseStatus(output) {
+                            if let status = self.parseStatus(output, takeoverReading: takeoverReading) {
                                 if let previousCode = self.lastStatusFailureCode {
                                     HubAppLog.shared.record("status.recovered", category: "dashboard",
                                                             fields: ["previous_error_code": previousCode])
@@ -5064,13 +5105,14 @@ final class HubController {
             standardInput.wipe()
             // An unreaped command may still commit. Do not race it with a status read.
             if case let .failure(error) = result, HubActionError.pendingQuiescence(of: error) != nil {
-                sourceTakeoverStatus = .unknown
+                acceptTakeoverStatus(.unknown, reading: beginTakeoverStatusReading())
                 op.finish(.failure(error), completion: deliver)
                 return
             }
+            let reading = beginTakeoverStatusReading()
             op.run(["--config", configPath.path, "status"]) { [self] statusResult in
-                applyTakeoverStatus(statusResult)
-                if sourceTakeoverStatus.isTakenOver {
+                applyTakeoverStatus(statusResult, reading: reading)
+                if sourceTakeoverStatus.hasLogin {
                     do {
                         try advanceTakeoverPhase(to: .awaitingVerification)
                         op.finish(.success(()), completion: deliver)
@@ -5092,21 +5134,45 @@ final class HubController {
         return HubSensitiveInput(&data)
     }
 
-    private(set) var sourceTakeoverStatus: HubSourceTakeoverStatus = .unknown
+    // A refresh may have sampled status before a take-over committed, then finish
+    // after its reconciliation. Order all status reads at launch, across both writers.
+    private let takeoverStatusLock = NSLock()
+    private var takeoverStatus: HubSourceTakeoverStatus = .unknown
+    private var nextTakeoverReading: UInt64 = 0
+    private var acceptedTakeoverReading: UInt64 = 0
 
-    private func applyTakeoverStatus(_ result: Result<String, Error>) {
+    var sourceTakeoverStatus: HubSourceTakeoverStatus {
+        takeoverStatusLock.lock(); defer { takeoverStatusLock.unlock() }
+        return takeoverStatus
+    }
+
+    private func beginTakeoverStatusReading() -> UInt64 {
+        takeoverStatusLock.lock(); defer { takeoverStatusLock.unlock() }
+        nextTakeoverReading &+= 1
+        return nextTakeoverReading
+    }
+
+    private func acceptTakeoverStatus(_ status: HubSourceTakeoverStatus, reading: UInt64) {
+        takeoverStatusLock.lock(); defer { takeoverStatusLock.unlock() }
+        guard reading >= acceptedTakeoverReading else { return }
+        acceptedTakeoverReading = reading
+        takeoverStatus = status
+    }
+
+    private func applyTakeoverStatus(_ result: Result<String, Error>, reading: UInt64) {
         guard case let .success(output) = result,
               let root = try? JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any] else {
-            sourceTakeoverStatus = .unknown
+            acceptTakeoverStatus(.unknown, reading: reading)
             return
         }
-        sourceTakeoverStatus = .read(legacy: root["legacyCredentials"] as? [String: Any])
+        acceptTakeoverStatus(.read(legacy: root["legacyCredentials"] as? [String: Any]), reading: reading)
     }
 
     func reconcileSourceTakeover(completion: @escaping (Result<Void, Error>) -> Void) {
         guard let op = admit(.migration, phase: "takeover-status", completion: completion) else { return }
+        let reading = beginTakeoverStatusReading()
         op.run(["--config", configPath.path, "status"]) { [self] result in
-            applyTakeoverStatus(result)
+            applyTakeoverStatus(result, reading: reading)
             if sourceTakeoverStatus == .unknown {
                 op.finish(.failure(HubActionError.commandFailed(HubL10n.text("hub.sourceTakeover.statusUnavailable",
                     fallback: "Hub could not confirm whether the login was taken over. Keep the source application stopped and check again."))), completion: completion)
@@ -5122,8 +5188,8 @@ final class HubController {
         try writeMigrationHandoverMarker(handover)
     }
 
-    private func sourceTakeoverAccountText(legacy: [String: Any]?) -> String? {
-        sourceTakeoverStatus = .read(legacy: legacy)
+    private func sourceTakeoverAccountText(legacy: [String: Any]?, reading: UInt64) -> String? {
+        acceptTakeoverStatus(.read(legacy: legacy), reading: reading)
         return sourceTakeoverStatus.accountText
     }
 
@@ -5780,42 +5846,44 @@ final class HubController {
             if let header { output.insert("enabled = true", at: header + 1) }
             else { output.append(contentsOf: ["[collector.legacy_auth]", "enabled = true"]) }
         }
-        return output.joined(separator: "\n") + "\n"
+        // Splitting preserves a final newline as an empty line. Do not append a
+        // second one on every retry, or alter any of the owner's other spacing.
+        return output.joined(separator: "\n") + (output.last == "" ? "" : "\n")
     }
 
-    /// This probe uses only the configured loopback health endpoint and never readiness
-    /// (a credential-empty Hub has no collector yet). Tests inject the probe.
+    /// Use the existing HTTPS endpoint parser and certificate trust policy, but healthz
+    /// rather than collector readiness: the imported Hub has no login yet.
     static func waitForSignInHealth(configPath: URL,
+                                    completion: @escaping (Result<Void, Error>) -> Void) {
+        waitForSignInHealth(configPath: configPath, sessionConfiguration: .ephemeral,
+                            timeout: 45, completion: completion)
+    }
+
+    // Transport seam: tests exercise the production parser and request, without a listener.
+    static func waitForSignInHealth(configPath: URL, sessionConfiguration: URLSessionConfiguration,
+                                    timeout: TimeInterval,
                                     completion: @escaping (Result<Void, Error>) -> Void) {
         let failure = HubActionError.commandFailed(HubL10n.text("hub.sourceTakeover.signInHealthFailed",
             fallback: "Hub did not answer its health check. Your history stays imported. Try connecting again."))
-        guard let data = HubAppLog.regularFileData(of: configPath, maximumBytes: 1_048_576),
-              let content = String(data: data, encoding: .utf8) else { completion(.failure(failure)); return }
-        var bind = "127.0.0.1:8080"
-        for line in content.split(whereSeparator: \.isNewline).map(String.init) {
-            if (try? tomlHeader(line)) != nil { break }
-            if let key = try? tomlAssignmentKey(line), key.key == ["bind"] {
-                let raw = key.value.trimmingCharacters(in: .whitespaces)
-                guard raw.hasPrefix("\""), let end = raw.dropFirst().firstIndex(of: "\"") else {
-                    completion(.failure(failure)); return
-                }
-                bind = String(raw[raw.index(after: raw.startIndex)..<end])
-            }
-        }
-        guard let url = URL(string: "http://\(bind)/healthz"),
-              ["127.0.0.1", "[::1]", "::1", "localhost"].contains(url.host ?? ""),
-              url.user == nil, url.password == nil else { completion(.failure(failure)); return }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.connectionProxyDictionary = [:]
-        configuration.httpShouldSetCookies = false
-        configuration.urlCredentialStorage = nil
-        let session = URLSession(configuration: configuration)
-        let deadline = Date().addingTimeInterval(45)
+        let target: (url: URL, certificate: URL?)
+        let delegate: HubSignInHealthTrust
+        do {
+            guard let data = HubAppLog.regularFileData(of: configPath, maximumBytes: 1_048_576) else { throw failure }
+            target = try signInHealthEndpoint(data)
+            delegate = try HubSignInHealthTrust(host: target.url.host!, certificatePath: target.certificate)
+        } catch { completion(.failure(failure)); return }
+        let settings = sessionConfiguration.copy() as! URLSessionConfiguration
+        settings.connectionProxyDictionary = [:]
+        settings.httpShouldSetCookies = false
+        settings.urlCredentialStorage = nil
+        settings.urlCache = nil
+        let session = URLSession(configuration: settings, delegate: delegate, delegateQueue: nil)
+        let deadline = Date().addingTimeInterval(timeout)
         func probe() {
-            var request = URLRequest(url: url)
+            var request = URLRequest(url: target.url)
             request.timeoutInterval = max(0.1, min(2, deadline.timeIntervalSinceNow))
-            session.dataTask(with: request) { _, response, _ in
-                if (response as? HTTPURLResponse)?.statusCode == 200 {
+            session.dataTask(with: request) { _, response, error in
+                if error == nil, (response as? HTTPURLResponse)?.statusCode == 200 {
                     session.invalidateAndCancel()
                     DispatchQueue.main.async { completion(.success(())) }
                 } else if Date() < deadline {
@@ -5827,6 +5895,42 @@ final class HubController {
             }.resume()
         }
         probe()
+    }
+
+    static func signInHealthEndpoint(_ data: Data) throws -> (url: URL, certificate: URL?) {
+        guard let content = String(data: data, encoding: .utf8) else { throw unsupportedImportConfig }
+        var table: [String] = []
+        var hasTLS = false
+        var bind = "127.0.0.1:8080"
+        for line in content.split(whereSeparator: \.isNewline).map(String.init) {
+            if let header = try tomlHeader(line) {
+                table = header.path
+                if table == ["tls"] { hasTLS = true }
+            } else if table.isEmpty, let key = try tomlAssignmentKey(line), key.key == ["bind"] {
+                // The ordinary generated scalar string; unsupported forms fail closed.
+                let raw = key.value.split(separator: "#", maxSplits: 1).first.map(String.init)?
+                    .trimmingCharacters(in: .whitespaces) ?? ""
+                if raw.hasPrefix("'"), raw.hasSuffix("'"), raw.count >= 2 {
+                    bind = String(raw.dropFirst().dropLast())
+                } else {
+                    guard let value = try JSONSerialization.jsonObject(with: Data(raw.utf8), options: .fragmentsAllowed) as? String else {
+                        throw unsupportedImportConfig
+                    }
+                    bind = value
+                }
+            }
+        }
+        if hasTLS {
+            let endpoint = try DevelopmentHubHTTPSReadiness.endpoint(data)
+            var url = URLComponents(url: endpoint.url, resolvingAgainstBaseURL: false)!
+            url.path = "/healthz"
+            guard let healthURL = url.url else { throw unsupportedImportConfig }
+            return (healthURL, endpoint.certificate)
+        }
+        guard let url = URL(string: "http://\(bind)/healthz"),
+              ["127.0.0.1", "[::1]", "::1", "localhost"].contains(url.host ?? ""),
+              url.user == nil, url.password == nil else { throw unsupportedImportConfig }
+        return (url, nil)
     }
 
     /// Own sign-in is already running. Finish its migration handover without another
@@ -8001,7 +8105,7 @@ final class HubController {
         }
     }
 
-    private func parseStatus(_ output: String) -> HubSnapshot? {
+    private func parseStatus(_ output: String, takeoverReading: UInt64) -> HubSnapshot? {
         guard let data = output.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         let database = root["database"] as? [String: Any]
@@ -8068,7 +8172,7 @@ final class HubController {
         } else {
             provider = configuredProvider
         }
-        let takeoverAccount = sourceTakeoverAccountText(legacy: legacy)
+        let takeoverAccount = sourceTakeoverAccountText(legacy: legacy, reading: takeoverReading)
         let account = (selectedPresent || legacyPresent || fleetPresent)
             ? (takeoverAccount ?? HubL10n.text("hub.HubController.connected_state", fallback: "Connected"))
             : (vehicles.isEmpty ? HubL10n.text("hub.HubController.393.343", fallback: "Not configured") : HubL10n.text("hub.HubController.3807.1275", fallback: "History available · Tesla not connected"))
