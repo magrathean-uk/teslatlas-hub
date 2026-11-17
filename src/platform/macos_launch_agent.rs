@@ -665,17 +665,7 @@ pub fn installed_config_path() -> io::Result<PathBuf> {
     }
 }
 
-/// What launchd holds for the current Hub job, against the installed file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoadedJob {
-    /// The job is not loaded.
-    Absent,
-    /// The loaded job runs the program the installed LaunchAgent file names.
-    Installed,
-    /// The loaded job runs another program, or one its description does not
-    /// show: launchd still holds an earlier definition.
-    Stale,
-}
+pub use crate::platform::name_migration::hand_over::LoadedJob;
 
 /// Reads (never changes) what launchd holds for the current Hub job. The
 /// rename hand-over uses it to choose between confirming, restarting and
