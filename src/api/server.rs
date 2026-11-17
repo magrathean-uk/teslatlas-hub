@@ -40,6 +40,10 @@ use super::public_query::{
     PublicCharge, PublicChargeSample, PublicDrive, PublicPage, PublicPosition, bounded_public_page,
 };
 
+#[path = "server/connection_policy.rs"]
+mod connection_policy;
+use connection_policy::configure_http_server;
+
 #[path = "server/browser_cors.rs"]
 mod browser_cors;
 use browser_cors::CorsPolicy;
@@ -1237,11 +1241,11 @@ where
             private_listener.set_nonblocking(true)?;
 
             let public_handle = axum_server::Handle::new();
-            let public_server = axum_server::from_tcp_rustls(public_listener, tls_config)?
+            let public_server = configure_http_server(axum_server::from_tcp_rustls(public_listener, tls_config)?)
                 .handle(public_handle.clone());
             let private_handle = axum_server::Handle::new();
             let private_server =
-                axum_server::from_tcp(private_listener)?.handle(private_handle.clone());
+                configure_http_server(axum_server::from_tcp(private_listener)?).handle(private_handle.clone());
             let public_task = OwnedServer::new(
                 public_handle,
                 tokio::spawn(
@@ -1277,7 +1281,7 @@ where
             let listener = std::net::TcpListener::bind(config.bind)?;
             listener.set_nonblocking(true)?;
             let handle = axum_server::Handle::new();
-            let server = axum_server::from_tcp_rustls(listener, tls_config)?.handle(handle.clone());
+            let server = configure_http_server(axum_server::from_tcp_rustls(listener, tls_config)?).handle(handle.clone());
             let mut server_task = OwnedServer::new(
                 handle,
                 tokio::spawn(
@@ -1310,7 +1314,7 @@ where
         let listener = std::net::TcpListener::bind(config.bind)?;
         listener.set_nonblocking(true)?;
         let handle = axum_server::Handle::new();
-        let server = axum_server::from_tcp(listener)?.handle(handle.clone());
+        let server = configure_http_server(axum_server::from_tcp(listener)?).handle(handle.clone());
         let mut server_task = OwnedServer::new(
             handle,
             tokio::spawn(
