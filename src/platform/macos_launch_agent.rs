@@ -131,7 +131,10 @@ pub fn hub_is_never_configured(config: &crate::config::HubConfig) -> io::Result<
 /// stores the Hub's own login, after which the supervisor starts collection
 /// inside the open window. Any stored pair, a blocked or unconverted slot, a
 /// Fleet provider, a disabled Legacy collector or a catalogue without a
-/// configured car keeps today's admission (`Ok(false)`).
+/// configured car keeps today's admission (`Ok(false)`). A credential key
+/// store that is absent stays admitted (the sign-in creates it); one that
+/// exists but cannot be used is refused here with the vault's own refusal,
+/// rather than at the sign-in (M09-T16, N1).
 pub fn hub_awaits_owner_sign_in(config: &crate::config::HubConfig) -> io::Result<bool> {
     if config.collector.provider != crate::config::CollectorProvider::Legacy
         || config.collector.interval_seconds == 0
@@ -161,7 +164,34 @@ pub fn hub_awaits_owner_sign_in(config: &crate::config::HubConfig) -> io::Result
         .credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::OwnerApi)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "credential presence unavailable"))?
         .is_some();
-    Ok(!present)
+    if present {
+        return Ok(false);
+    }
+    owner_sign_in_keyring_usable(&config.data_dir)?;
+    Ok(true)
+}
+
+/// The key store the sign-in's vault would load: absent is usable (the vault
+/// creates it); an existing directory or key file that the vault would refuse
+/// fails with that refusal's code and owner text. Non-mutating: nothing is
+/// repaired, created or loaded into a key handle.
+fn owner_sign_in_keyring_usable(data_dir: &Path) -> io::Result<()> {
+    use crate::auth::{credential_keys::CredentialKeyError, credential_vault::CredentialStoreError};
+    let refused = |error: CredentialStoreError| {
+        io::Error::new(io::ErrorKind::InvalidData, crate::auth::credential_sign_in::CredentialCommandError::from(error).to_string())
+    };
+    let path = data_dir.join("secrets");
+    let secrets = match crate::platform::private_directory::open_validated_read_only(&path) {
+        Ok(Some(secrets)) => secrets,
+        Ok(None) => return Ok(()),
+        // The vault's writable open makes the Hub's own secrets directory
+        // private again (an ancestor stays refused); its key file is checked
+        // there, at the sign-in.
+        Err(crate::platform::private_directory::PrivateDirectoryError::WritableByOthers(leaf)) if fs::canonicalize(&path).is_ok_and(|own| own == leaf) => return Ok(()),
+        // The vault's own mapping of an unusable secrets directory.
+        Err(_) => return Err(refused(CredentialStoreError::Key(CredentialKeyError::Io { operation: "secrets_directory" }))),
+    };
+    crate::auth::credential_keys::check_keyring(&secrets).map(drop).map_err(|error| refused(error.into()))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -557,8 +587,9 @@ fn provider_credentials_are_usable(
             crate::auth::credential_keys::check_keyring(&secrets)
                 .map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"credential keyring unusable"))?
                 .ok_or_else(||io::Error::new(io::ErrorKind::InvalidData,"credential keyring missing"))?;
-            // A stored sign-out holds only while it names this pair; a proven
-            // replacement (a later sign-in or take-over) is admitted (M09-T16, B4).
+            // A stored sign-out holds while the stored pair is the stopped one or
+            // its refresh successor, or a refresh is unresolved; a pair that does
+            // not descend from it by refresh is admitted (M09-T16, B4).
             if store.owner_sign_out_stop_holds().map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"credential status unavailable"))? {
                 return Err(io::Error::new(io::ErrorKind::InvalidData,"credential sign-in required"));
             }

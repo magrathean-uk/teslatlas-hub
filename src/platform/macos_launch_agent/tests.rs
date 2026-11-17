@@ -1109,7 +1109,7 @@ fn takeover_after_sign_out_passes_production_start_admission() {
     let second = vault.store_source_takeover(&takeover_pair("refresh-second")).expect("second").stored_generation().expect("stored");
     assert_ne!(second, first);
     drop(vault);
-    preflight_hub_for_provider(&data, CollectorProvider::Legacy).expect("a proven replacement is admitted");
+    preflight_hub_for_provider(&data, CollectorProvider::Legacy).expect("a pair not descended from the stopped one is admitted");
     preflight_hub_for_config(&config).expect("the production configuration preflight");
     preflight_hub_for_serve(&config, None).expect("the production serve admission");
     assert_eq!(auth_state(&store), ("signed_out".to_owned(), Some(first)), "the admission writes nothing");
@@ -1208,5 +1208,46 @@ fn awaiting_sign_in_keeps_every_other_refusal() {
     let mut config = idle_start_config(&empty);
     config.collector.interval_seconds = 300;
     refused(&config, "no configured car");
+    drop(store);
+}
+
+/// M09-T16 (N1): an absent key store stays admitted (the sign-in creates it); one that
+/// exists but cannot be used is refused at admission, by the serve and the preflight
+/// route alike, with the refusal the sign-in's vault would give.
+#[test]
+fn awaiting_sign_in_refuses_an_existing_unusable_key_store() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let store = seed_selected_car(&data);
+    load_or_create_cursor_key(&data).expect("cursor key");
+    drop(crate::auth::credential_vault::fixtures::legacy_vault(&store, &data));
+    let mut config = idle_start_config(&data);
+    config.collector.interval_seconds = 300;
+    let keyring = data.join("secrets").join(crate::auth::credential_keys::KEYRING_NAME);
+    if keyring.exists() {
+        fs::remove_file(&keyring).expect("no pair is stored, so the key store may go");
+    }
+    assert!(hub_awaits_owner_sign_in(&config).expect("an absent key store"), "absent: admitted");
+    preflight_hub_for_serve(&config, None).expect("absent: served awaiting the sign-in");
+
+    for (label, mode) in [("malformed", 0o600), ("unreadable", 0o000)] {
+        fs::write(&keyring, [0_u8; 10]).expect("key file");
+        fs::set_permissions(&keyring, fs::Permissions::from_mode(mode)).expect("key file mode");
+        let vault = crate::auth::credential_vault::fixtures::open_admitted_fixture_vault(
+            store.clone(),
+            &data,
+            crate::auth::credential_vault::fixtures::fixture_admission(&store, &data),
+        );
+        let Err(vault_error) = vault else { panic!("{label}: the vault refuses the key store") };
+        let expected = format!("{}: ", vault_error.code());
+        assert!(expected.starts_with("keyring_"), "{label}: {expected}");
+        let error = hub_awaits_owner_sign_in(&config).expect_err(label);
+        assert!(error.to_string().starts_with(&expected), "{label}: {error} (the vault: {expected})");
+        let error = preflight_hub_for_serve(&config, None).expect_err(label);
+        assert!(error.to_string().starts_with(&expected), "{label}: {error}");
+        fs::set_permissions(&keyring, fs::Permissions::from_mode(0o600)).expect("restore mode");
+        fs::remove_file(&keyring).expect("reset");
+    }
     drop(store);
 }
