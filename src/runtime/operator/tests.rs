@@ -284,10 +284,7 @@ fn collection_window_operator_channel_forwards_window_verbs_to_the_service() {
     assert_eq!(status["phase"], "open");
     assert_eq!(status["deadline"], T0 + 3_600);
     assert!(gate.permit(Provider::Legacy, PermitKind::Request).is_ok());
-    assert_eq!(
-        gate.permit(Provider::Fleet, PermitKind::Request).unwrap_err().code(),
-        "provider_parked"
-    );
+    assert!(gate.permit(Provider::Fleet, PermitKind::Request).is_ok());
 
     // Inside the window the bounded code material reaches the backend.
     rig.forward(&OperatorRequest::Setup {
