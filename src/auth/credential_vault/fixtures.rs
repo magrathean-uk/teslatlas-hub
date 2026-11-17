@@ -113,11 +113,22 @@ pub(crate) fn seed_legacy_supplied_pair(data: &Path, access: &str, refresh: &str
     seed_entry(data, entry)
 }
 #[cfg(test)]
-/// Seeds a Fleet pair for the refresh fence tests outside `crate::auth`.
-pub(crate) fn seed_fleet_supplied_pair(data: &Path, access: &str, refresh: &str) -> Uuid {
-    let entry = CredentialEntry::fleet_supplied(Zeroizing::new(access.to_owned()), Zeroizing::new(refresh.to_owned()),
-        "client-fixture".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet fixture entry");
-    seed_entry(data, entry)
+/// Seeds the Hub's own Fleet grant for the refresh fence tests outside
+/// `crate::auth` (M09-T08: a supplied Fleet pair is blocked, never refreshed).
+pub(crate) fn seed_own_fleet_pair(data: &Path, access: &str, refresh: &str) -> Uuid {
+    let vault = open_fixture_vault(HubStore::initialize(data).expect("fixture store"), data);
+    seed_own_fleet_grant(&vault, access, refresh).expect("own Fleet grant")
+}
+/// Stores a Fleet pair as the Hub's own Fleet sign-in does (M09-T08): the
+/// only writer of an admitted Fleet pair besides its refresh successor.
+#[cfg(debug_assertions)]
+pub(crate) fn seed_own_fleet_grant(vault: &CredentialVault, access: &str, refresh: &str) -> Result<Uuid, CredentialStoreError> {
+    let session = vault.begin_sign_in(CredentialSlot::FleetApi)?;
+    let sent_at_s = (session.expires_at_ms - 600_000) / 1000;
+    let grant = RedeemedGrant::from_validated_redemption_at(session, Zeroizing::new(access.to_owned()), Zeroizing::new(refresh.to_owned()), 28_800,
+        Some("client-0001".into()), Some(crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica), sent_at_s)?;
+    vault.store_hub_grant(grant)?;
+    vault.stored_generation(CredentialSlot::FleetApi)?.ok_or(CredentialStoreError::SlotOccupied)
 }
 #[cfg(test)]
 pub(crate) fn seed_entry(data: &Path, entry: CredentialEntry) -> Uuid {
@@ -130,9 +141,10 @@ pub(crate) fn seed_entry(data: &Path, entry: CredentialEntry) -> Uuid {
     let generation = Uuid::new_v4(); let mut row = entry.row(generation);
     connection.reserve_credential_invocations(keys.keyring().current.id, 2).expect("fixture reservation");
     row.seal(&keys, entry.access.as_bytes(), entry.refresh.as_bytes(), &mut OsNonces).expect("fixture seal");
-    // A `source_token` row is written only by the takeover (DEC-172); the
-    // refused rows an older Hub could hold are seeded past the write gate.
-    if entry.origin == CredentialOrigin::SourceToken {
+    // A `source_token` row is written only by the takeover (DEC-172), and a
+    // Fleet row only by the Hub's own grant (M09-T08); the refused rows an
+    // older Hub could hold are seeded past the write gate.
+    if entry.origin == CredentialOrigin::SourceToken || entry.slot == CredentialSlot::FleetApi {
         connection.test_insert_credential_vector(&row).expect("fixture refused pair");
         connection.credential_durability_barrier().expect("fixture pair barrier");
         return generation;
@@ -338,9 +350,7 @@ pub(super) fn seed_pending_for_binary(data: &Path, candidate: u8, fleet: bool, m
         let admission = AdmittedUserHub::admit(data)?;
         let entry = entry::CredentialVaultEntry::open_for_test(store, admission, data, true)
             .map_err(|error| std::io::Error::other(error.code()))?;
-        entry.vault().store_supplied_entry(CredentialEntry::fleet_supplied(Zeroizing::new("access-0099".into()), Zeroizing::new("refresh-0099".into()),
-            "client-0099".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800)
-            .map_err(super::super::credential_sign_in::CredentialCommandError::from)?, ReplacePolicy::ReplaceAny)
+        seed_own_fleet_grant(entry.vault(), "access-0099", "refresh-0099")
             .map_err(super::super::credential_sign_in::CredentialCommandError::from)?;
         drop(entry);
         std::fs::rename(data.join("secrets").join("credential-keys"), data.join("saved-ring"))?;

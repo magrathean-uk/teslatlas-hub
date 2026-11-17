@@ -232,11 +232,11 @@ fn collection_window_valid_grant_opens_and_gates() {
         .permit(Provider::Legacy, PermitKind::Request)
         .unwrap();
     assert_eq!(permit.time_left(), Duration::from_secs(3600));
-    assert_eq!(
+    // Fleet is no longer parked (M09-T08): it rides the same window.
+    assert!(
         hub.gate()
             .permit(Provider::Fleet, PermitKind::Request)
-            .unwrap_err(),
-        GateRefusal::ProviderParked
+            .is_ok()
     );
 }
 
@@ -694,7 +694,7 @@ fn collection_window_issuer_failed_publication_keeps_its_reservation() {
 }
 
 #[test]
-fn collection_window_gate_closed_by_default_and_fleet_parked() {
+fn collection_window_gate_closed_by_default_for_both_providers() {
     let clock = Arc::new(ManualClock::new(T0));
     let gate = EgressGate::new(clock);
     for kind in [

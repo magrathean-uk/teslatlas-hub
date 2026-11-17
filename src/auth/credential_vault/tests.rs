@@ -387,7 +387,8 @@ fn source_takeover_admission_matrix() {
     for origin in [None, Some(HubLogin), Some(DirectEntry), Some(ProviderEntry), Some(FleetOauth), Some(SourceToken)] {
         for slot in [OWNER, CredentialSlot::FleetApi] {
             for owner in [RefreshOwner::Hub, RefreshOwner::External] {
-                let admitted = matches!(origin, Some(HubLogin | SourceToken)) && slot == OWNER && owner == RefreshOwner::Hub;
+                let admitted = owner == RefreshOwner::Hub && (matches!(origin, Some(HubLogin | SourceToken)) && slot == OWNER
+                    || origin == Some(FleetOauth) && slot == CredentialSlot::FleetApi);
                 let expected = if admitted { None } else if origin.is_none() { Some("unknown_origin") } else { Some("source_credential_disabled") };
                 assert_eq!(stored_origin_refusal(slot, origin, owner), expected, "{origin:?} {slot:?} {owner:?}");
             }
@@ -550,6 +551,107 @@ fn source_takeover_refuses_spent_and_opaque_fenced_tokens() {
     }
 }
 
+const FLEET: CredentialSlot = CredentialSlot::FleetApi;
+fn fleet_entry(access: &str, refresh: &str) -> CredentialEntry {
+    CredentialEntry::fleet_supplied(Zeroizing::new(access.to_owned()), Zeroizing::new(refresh.to_owned()), "client-0001".into(),
+        crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet entry")
+}
+fn store_own_fleet_grant(vault: &CredentialVault, access: &str, refresh: &str) -> Uuid {
+    super::fixtures::seed_own_fleet_grant(vault, access, refresh).expect("own Fleet grant")
+}
+fn fleet_barrier_record(data: &Path) -> Option<String> {
+    HubStore::initialize(data).expect("store").open().expect("connection")
+        .query_row("SELECT value FROM hub_metadata WHERE key=?1", [crate::db::FLEET_UNPARK_BARRIER_KEY], |row| row.get(0))
+        .map_or_else(|error| match error { rusqlite::Error::QueryReturnedNoRows => None, other => panic!("barrier record: {other}") }, Some)
+}
+fn fleet_refused_views(data: &Path) -> Vec<RefusedSlotView> {
+    refused_credential_listing(&HubStore::initialize(data).expect("store"), data).expect("listing")
+        .refused_slots.into_iter().filter(|view| view.slot == "fleet_api").collect()
+}
+fn assert_fleet_blocked(vault: &CredentialVault, data: &Path, generation: Uuid) {
+    assert!(matches!(vault.load(FLEET), Err(CredentialStoreError::SourceCredentialDisabled(FLEET))), "blocked Fleet pair refused at load");
+    assert_eq!(vault.stored_generation(FLEET).expect("generation"), Some(generation), "blocked pair kept");
+    let presence = vault.credential_pair_presence(FLEET).expect("presence").expect("present");
+    assert!(presence.header_check.is_ok(), "the blocked pair is intact, not corrupt");
+    assert_eq!(stored_origin_refusal(presence.slot, presence.origin, presence.refresh_owner), Some("source_credential_disabled"));
+    assert_eq!(fleet_refused_views(data), vec![RefusedSlotView { slot: "fleet_api", origin: "fleet_oauth", table: "credential_pairs", refusal: "source_credential_disabled" }], "on the purge path");
+    assert_eq!(vault.begin_refresh(FLEET, generation).unwrap_err().code(), "source_credential_disabled", "never refreshed");
+}
+
+/// A Fleet pair stored before the un-park is blocked: never admitted, never
+/// refreshed, listed and removed by the refused-credential purge. Until the
+/// barrier is recorded every stored Fleet pair is pre-un-park material.
+#[test]
+fn fleet_admission_barrier_blocks_pre_unpark_rows() {
+    let root = crate::private_tempdir().expect("root");
+    let generation = seed_entry(root.path(), fleet_entry("fleet-access-0001", "fleet-refresh-0001"));
+    let vault = open(root.path());
+    assert_eq!(fleet_barrier_record(root.path()), None, "no own Fleet grant yet");
+    assert_fleet_blocked(&vault, root.path(), generation);
+    let report = vault.purge_refused_credentials().expect("purge");
+    assert!(report.refused_slots.iter().any(|view| view.slot == "fleet_api"), "purged: {report:?}");
+    assert_eq!(vault.stored_generation(FLEET).expect("generation"), None, "removed by the purge");
+}
+
+/// The barrier runs once, inside the first own Fleet grant, and records the
+/// pair present then. The own grant replaces it and is admitted; a later
+/// return of the recorded pair (a restore, a raw write) stays blocked, and
+/// later grants leave the record unchanged.
+#[test]
+fn fleet_admission_barrier_records_the_pre_unpark_row_once() {
+    let root = crate::private_tempdir().expect("root");
+    let blocked = seed_entry(root.path(), fleet_entry("fleet-access-0001", "fleet-refresh-0001"));
+    let vault = open(root.path());
+    let sealed = vault.lock().expect("state").connection.load_credential_pair(FLEET).expect("load").expect("pre-un-park pair");
+    let own = store_own_fleet_grant(&vault, "fleet-access-0002", "fleet-refresh-0002");
+    assert_eq!(fleet_barrier_record(root.path()), Some(blocked.to_string()), "pre-un-park generation recorded");
+    let plain = vault.load(FLEET).expect("own Fleet grant admitted").expect("present");
+    assert_eq!((plain.generation, plain.origin, plain.refresh_owner, plain.access.as_str()), (own, Some(CredentialOrigin::FleetOauth), RefreshOwner::Hub, "fleet-access-0002"));
+    assert!(fleet_refused_views(root.path()).is_empty(), "nothing refused");
+    store_own_fleet_grant(&vault, "fleet-access-0003", "fleet-refresh-0003");
+    assert_eq!(fleet_barrier_record(root.path()), Some(blocked.to_string()), "one-shot: the record is never rewritten");
+    // The recorded pair back in the slot, written past the gate.
+    vault.clear_credential_pair(FLEET).expect("clear");
+    vault.lock().expect("state").connection.test_insert_credential_vector(&sealed).expect("restored pre-un-park pair");
+    assert_fleet_blocked(&vault, root.path(), blocked);
+}
+
+/// A fresh store: the first own Fleet grant records the barrier with no
+/// pre-un-park pair, is admitted, and its refresh successor stays admitted.
+#[test]
+fn fleet_admission_own_grant_and_refresh_successor_are_admitted() {
+    let root = crate::private_tempdir().expect("root");
+    let vault = open(root.path());
+    let input = store_own_fleet_grant(&vault, "fleet-access-0001", "fleet-refresh-0001");
+    assert_eq!(fleet_barrier_record(root.path()).as_deref(), Some("none"));
+    let presence = vault.credential_pair_presence(FLEET).expect("presence").expect("present");
+    assert_eq!((presence.refresh_owner, stored_origin_refusal(presence.slot, presence.origin, presence.refresh_owner)), (RefreshOwner::Hub, None));
+    let receipt = vault.begin_refresh(FLEET, input).expect("begin");
+    let output = Uuid::new_v4();
+    vault.persist_refreshed(FLEET, receipt, input, output, "fleet-access-0002", "fleet-refresh-0002", 1_900_028_800, 1_900_027_000).expect("successor");
+    let plain = vault.load(FLEET).expect("successor admitted").expect("present");
+    assert_eq!((plain.generation, plain.origin, plain.refresh_owner, plain.refresh.as_str()), (output, Some(CredentialOrigin::FleetOauth), RefreshOwner::Hub, "fleet-refresh-0002"));
+    assert_eq!(fleet_barrier_record(root.path()).as_deref(), Some("none"), "the successor does not move the barrier");
+}
+
+/// A supplied Fleet pair is refused by the write gate under either policy,
+/// before anything is stored; an own grant stored first is kept.
+#[test]
+fn fleet_admission_supplied_fleet_write_is_refused() {
+    let root = crate::private_tempdir().expect("root");
+    let vault = open(root.path());
+    for policy in [ReplacePolicy::OnlyIfEmpty, ReplacePolicy::ReplaceAny] {
+        let error = vault.store_supplied_entry(fleet_entry("fleet-access-0001", "fleet-refresh-0001"), policy).unwrap_err();
+        assert_eq!(error.code(), "invalid_origin", "{policy:?}");
+    }
+    assert_eq!(vault.stored_generation(FLEET).expect("generation"), None, "nothing stored");
+    assert_eq!(fleet_barrier_record(root.path()), None, "a refused write records no barrier");
+    let own = store_own_fleet_grant(&vault, "fleet-access-0002", "fleet-refresh-0002");
+    let error = vault.store_supplied_entry(fleet_entry("fleet-access-0003", "fleet-refresh-0003"), ReplacePolicy::ReplaceAny).unwrap_err();
+    assert_eq!(error.code(), "invalid_origin");
+    assert_eq!(vault.load(FLEET).expect("load").expect("present").generation, own, "own grant kept");
+}
+
 #[test]
 fn ct097_successor_legacy_forms() {
     for suffix in ["\n", "\r\n"] {
@@ -557,8 +659,10 @@ fn ct097_successor_legacy_forms() {
     }
     for slot in [OWNER, CredentialSlot::FleetApi] { for fenced in [true, false] {
         let root = crate::private_tempdir().expect("slot fixture");
+        // M09-T08: a Fleet input is the Hub's own Fleet grant (a pre-un-park
+        // Fleet pair is never refreshed).
         let input = if slot == OWNER { seed_legacy_supplied_pair(root.path(), "access-0001", "refresh-0001", None) } else {
-            seed_entry(root.path(), CredentialEntry::fleet_supplied(Zeroizing::new("access-0001".into()), Zeroizing::new("refresh-0001".into()), "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet fixture"))
+            store_own_fleet_grant(&open(root.path()), "access-0001", "refresh-0001")
         };
         let generation_for = |access: &[u8], refresh: &[u8]| {
             crate::credentials::OwnerTokens::from_secret_parts(std::str::from_utf8(access).ok()?.to_owned(), std::str::from_utf8(refresh).ok()?.to_owned()).ok()?;
@@ -574,14 +678,8 @@ fn ct097_successor_legacy_forms() {
         let result = with_successor_generation_fixture(candidates.0[0], || vault.persist_refreshed(slot, receipt, input, Uuid::new_v4(), "access-0002", "refresh-0002", 1_800_028_800, 1_800_027_000));
         if fenced {
             assert!(matches!(result, Err(CredentialStoreError::RefreshTokenSpent)), "legacy successor fence");
-            if slot == OWNER {
-                let row = vault.load(slot).expect("retained load").expect("pair");
-                assert!(row.generation == input && row.access.as_str() == "access-0001" && row.refresh.as_str() == "refresh-0001", "CT97 pair retained");
-            } else {
-                // M02-T02: the retained Fleet pair is refused at load.
-                assert!(matches!(vault.load(slot), Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "CT97 Fleet pair refused");
-                assert!(vault.stored_generation(slot).expect("generation") == Some(input), "CT97 Fleet pair retained");
-            }
+            let row = vault.load(slot).expect("retained load").expect("pair");
+            assert!(row.generation == input && row.access.as_str() == "access-0001" && row.refresh.as_str() == "refresh-0001", "CT97 pair retained");
             assert!(vault.has_unresolved_refresh(slot).expect("unresolved"), "input consumed");
             assert!(vault.test_commit_counts().0 == issued + 1, "no completion or closing commit");
         } else { result.expect("leading space is a separate legacy form"); }
@@ -669,16 +767,16 @@ fn ct071_both_slots() {
     // M02-T04: one origin refreshes at a time, so the Fleet refresh cannot begin
     // while the Owner one is unresolved; M02-T02: the Fleet pair is never loaded.
     let (root, owner_input) = seeded();
-    let fleet = CredentialEntry::fleet_supplied(Zeroizing::new("fleet-access-0001".into()), Zeroizing::new("fleet-refresh-0001".into()), "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28800).expect("Fleet entry");
-    let fleet_input = seed_entry(root.path(), fleet);
     let vault = open(root.path());
+    // M09-T08: the Fleet pair is the Hub's own Fleet grant, so it is admitted.
+    let fleet_input = store_own_fleet_grant(&vault, "fleet-access-0001", "fleet-refresh-0001");
     let owner_receipt = vault.begin_refresh(OWNER, owner_input).expect("Owner begin");
     let refused = vault.begin_refresh(CredentialSlot::FleetApi, fleet_input).expect_err("Fleet begin refused while Owner is unresolved");
     assert!(matches!(refused, CredentialStoreError::Store(StoreError::WriteRefused("refresh_fence_other_origin"))), "{refused:?}");
     let output = Uuid::new_v4();
     vault.persist_refreshed(OWNER, owner_receipt, owner_input, output, "access-0002", "refresh-0002", 1_800_028_800, 1_800_027_000).expect("persisted");
     assert!(pair(&vault).generation == output, "Owner successor readable");
-    assert!(matches!(vault.load(CredentialSlot::FleetApi), Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "Fleet pair refused at load");
+    assert_eq!(vault.load(CredentialSlot::FleetApi).expect("Fleet load").expect("pair").generation, fleet_input, "Fleet pair untouched");
     let state = vault.lock().expect("state");
     let counts: (i64, i64) = state.connection.test_connection().query_row("SELECT (SELECT count(*) FROM credential_refresh_fences), (SELECT count(*) FROM outbound_request_receipts WHERE outcome='success')", [], |row| Ok((row.get(0)?, row.get(1)?))).expect("completion evidence");
     assert!(counts == (1, 1), "one spent fence and one success");
@@ -942,8 +1040,8 @@ fn m01_t15_keyring_exposure_column_migrates_in_place() {
 /// Finding 1 (M02-T02 round 3): the raw-token Fleet bridge refuses before the
 /// vault stores anything, and a stored Fleet pair is refused at load. A
 /// supplied row and a row migrated by an older Hub carry the same header
-/// (`fleet_oauth`, Hub-refreshed), so both are refused until an authenticated
-/// own-exchange origin exists.
+/// (`fleet_oauth`, Hub-refreshed) as the Hub's own grant, so the header admits
+/// it (M09-T08) and the un-park barrier is what refuses such a row.
 #[test]
 fn source_credential_disabled_fleet_bridge_and_stored_fleet_rows_are_refused() {
     let root = crate::private_tempdir().expect("root");
@@ -955,14 +1053,13 @@ fn source_credential_disabled_fleet_bridge_and_stored_fleet_rows_are_refused() {
     assert!(matches!(refused, crate::fleet_credentials::FleetCredentialError::Store(StoreError::WriteRefused("source_credential_disabled"))), "{refused:?}");
     assert!(scope.entry().vault().stored_generation(CredentialSlot::FleetApi).expect("generation").is_none(), "the bridge stored nothing");
     scope.release().expect("release");
-    for owner in [RefreshOwner::Hub, RefreshOwner::External] {
-        assert!(matches!(admit_stored_origin(CredentialSlot::FleetApi, Some(CredentialOrigin::FleetOauth), owner),
-            Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "supplied or migrated Fleet header refused");
-    }
+    assert!(admit_stored_origin(CredentialSlot::FleetApi, Some(CredentialOrigin::FleetOauth), RefreshOwner::Hub).is_ok(), "own Fleet header admitted");
+    assert!(matches!(admit_stored_origin(CredentialSlot::FleetApi, Some(CredentialOrigin::FleetOauth), RefreshOwner::External),
+        Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "externally refreshed Fleet header refused");
     seed_entry(root.path(), CredentialEntry::fleet_supplied(Zeroizing::new("fleet-access-0002".into()), Zeroizing::new("fleet-refresh-0002".into()),
         "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet fixture"));
     let vault = open(root.path());
-    assert!(matches!(vault.load(CredentialSlot::FleetApi), Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "stored Fleet pair refused at load");
+    assert!(matches!(vault.load(CredentialSlot::FleetApi), Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "pre-un-park Fleet pair refused at load");
     drop(vault);
     let store = HubStore::initialize(root.path()).expect("store");
     let status = crate::auth::credential_sign_in::credential_status(&store, root.path(), 1_800_000_000_000).expect("status");

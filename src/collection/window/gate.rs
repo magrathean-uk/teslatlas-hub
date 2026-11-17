@@ -53,15 +53,12 @@ pub enum PermitKind {
 pub enum GateRefusal {
     #[error("window_closed")]
     WindowClosed,
-    #[error("provider_parked")]
-    ProviderParked,
 }
 
 impl GateRefusal {
     pub fn code(self) -> &'static str {
         match self {
             Self::WindowClosed => "window_closed",
-            Self::ProviderParked => "provider_parked",
         }
     }
 }
@@ -178,6 +175,8 @@ impl EgressGate {
     }
 
     /// Asks for permission to send. Called immediately before every send.
+    /// Both providers ride the same window: a Fleet send, like a Legacy one,
+    /// needs an open window and stops at its deadline (M09-T08).
     pub fn permit(&self, provider: Provider, kind: PermitKind) -> Result<Permit, GateRefusal> {
         let mut state = self.inner.state.lock().expect("gate lock");
         let window = state.open.ok_or(GateRefusal::WindowClosed)?;
@@ -187,9 +186,6 @@ impl EgressGate {
             state.expiry_observed = Some(wall);
             state.shut();
             return Err(GateRefusal::WindowClosed);
-        }
-        if provider == Provider::Fleet {
-            return Err(GateRefusal::ProviderParked);
         }
         let left_wall = (window.deadline_wall - wall) as u64;
         let left_mono = window.deadline_mono - mono;
@@ -318,4 +314,83 @@ pub fn write_under_authority<T>(live: &dyn Fn() -> bool, write: impl FnOnce() ->
 /// this process.
 pub fn writes_in_progress() -> usize {
     *write_fence()
+}
+
+#[cfg(test)]
+mod fleet_admission_tests {
+    //! M09-T08: the gate no longer parks Fleet; a Fleet send is window-gated
+    //! exactly as a Legacy one.
+
+    use std::sync::atomic::{AtomicI64, AtomicU64};
+
+    use super::*;
+    use crate::collection::window::refusal::Refusal;
+
+    #[derive(Debug, Default)]
+    struct StepClock {
+        wall: AtomicI64,
+        mono: AtomicU64,
+    }
+
+    impl StepClock {
+        fn advance(&self, seconds: u64) {
+            self.wall.fetch_add(seconds as i64, Ordering::SeqCst);
+            self.mono.fetch_add(seconds, Ordering::SeqCst);
+        }
+    }
+
+    impl WindowClock for StepClock {
+        fn wall(&self) -> i64 {
+            self.wall.load(Ordering::SeqCst)
+        }
+        fn mono(&self) -> u64 {
+            self.mono.load(Ordering::SeqCst)
+        }
+        fn mono_boot_scoped(&self) -> bool {
+            true
+        }
+        fn boot_time(&self) -> Result<i64, Refusal> {
+            Ok(0)
+        }
+    }
+
+    fn gate() -> (Arc<StepClock>, EgressGate) {
+        let clock = Arc::new(StepClock::default());
+        clock.advance(1_000);
+        (clock.clone(), EgressGate::new(clock))
+    }
+
+    #[test]
+    fn fleet_admission_window_gating_refuses_fleet_outside_a_window() {
+        let (_, gate) = gate();
+        for kind in [PermitKind::Request, PermitKind::Stream, PermitKind::TokenExchange] {
+            assert_eq!(gate.permit(Provider::Fleet, kind).unwrap_err(), GateRefusal::WindowClosed);
+        }
+    }
+
+    #[test]
+    fn fleet_admission_window_gating_permits_fleet_inside_and_stops_at_the_deadline() {
+        let (clock, gate) = gate();
+        gate.open(1_000 + 600, 1_000 + 600);
+        let permit = gate.permit(Provider::Fleet, PermitKind::Request).expect("Fleet inside the window");
+        assert_eq!(permit.provider(), Provider::Fleet);
+        assert_eq!(permit.time_left(), Duration::from_secs(600));
+        let stream = gate.permit(Provider::Fleet, PermitKind::Stream).expect("Fleet stream inside the window");
+        clock.advance(600);
+        assert_eq!(gate.permit(Provider::Fleet, PermitKind::Request).unwrap_err(), GateRefusal::WindowClosed);
+        assert!(stream.is_cancelled(), "the deadline cancels a held Fleet stream");
+        // Latched: a clock rollback does not reopen the gate.
+        clock.wall.fetch_sub(300, Ordering::SeqCst);
+        assert_eq!(gate.permit(Provider::Fleet, PermitKind::Request).unwrap_err(), GateRefusal::WindowClosed);
+    }
+
+    #[test]
+    fn fleet_admission_window_gating_cuts_fleet_at_close() {
+        let (_, gate) = gate();
+        gate.open(1_000 + 600, 1_000 + 600);
+        let permit = gate.permit(Provider::Fleet, PermitKind::Request).expect("Fleet inside the window");
+        gate.close();
+        assert!(permit.is_cancelled());
+        assert_eq!(gate.permit(Provider::Fleet, PermitKind::Request).unwrap_err(), GateRefusal::WindowClosed);
+    }
 }

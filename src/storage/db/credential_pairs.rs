@@ -678,6 +678,7 @@ impl HubStore {
         let owner = credential_owner(&owner).ok_or(StoreError::CredentialPairInvalid)?;
         let generation =
             Uuid::parse_str(&generation).map_err(|_| StoreError::CredentialPairInvalid)?;
+        let admission_owner = credential_admission_owner(&transaction, slot, generation, owner)?;
         use crate::auth::credential_envelope::check_envelope_length;
         let lengths =
             check_envelope_length(access_len).and_then(|()| check_envelope_length(refresh_len));
@@ -717,7 +718,7 @@ impl HubStore {
         Ok(Some(CredentialPairPresence {
             slot,
             origin,
-            refresh_owner: owner,
+            refresh_owner: admission_owner,
             refresh_present,
             expires_at,
             next_refresh_at,
@@ -802,6 +803,11 @@ impl CredentialConnection {
         if stored_slot != slot.as_str() || !crate::protocol::constant_time_eq(&binding, &credential_sign_in_binding(secret)) { return Err(StoreError::SignInBindingInvalid); }
         if expiry <= now { return Err(StoreError::SignInExpired); }
         Ok(())
+    }
+    /// Whether the stored Fleet pair of `generation` is blocked by the
+    /// un-park barrier (M09-T08); the vault refuses it before any key is read.
+    pub(crate) fn credential_fleet_pair_blocked(&self, generation: Uuid) -> Result<bool, StoreError> {
+        credential_fleet_pair_blocked(&self.connection, generation)
     }
     pub(crate) fn check_supplied_credential_entry(&mut self, slot: CredentialSlot, refresh: &[u8], legacy: &LegacyCandidates, policy: ReplacePolicy) -> Result<(), StoreError> {
         let tx = self.connection.transaction().map_err(StoreError::Begin)?;
@@ -939,7 +945,10 @@ impl CredentialConnection {
         } else if matches!(
             pair.origin,
             Some(CredentialOrigin::HubLogin | CredentialOrigin::SourceToken)
-        ) {
+        ) || pair.slot == CredentialSlot::FleetApi
+        {
+            // The Fleet slot is written only by the Hub's own grant and its
+            // refresh successor (M09-T08): a supplied Fleet pair is refused.
             return Err(StoreError::InvalidOrigin);
         }
         if policy == ReplacePolicy::OnlyIfEmpty
@@ -964,6 +973,9 @@ impl CredentialConnection {
             && credential_has_opaque_fence(&tx).map_err(StoreError::CredentialPairStore)?
         {
             return Err(StoreError::FreshSignInRequired);
+        }
+        if pair.slot == CredentialSlot::FleetApi {
+            credential_fleet_unpark_barrier(&tx)?;
         }
         credential_cancel_slot(&tx, pair.slot, now)?;
         credential_write_pair(&tx, pair, now)?;
@@ -1766,8 +1778,8 @@ pub(crate) struct RefusedCredentialInventory {
 
 /// The refused rows of one read snapshot. A pending slot with a recorded
 /// block holds pre-upgrade source material; a stored pair the load refuses
-/// (any Fleet pair, a source, supplied or unknown-origin Owner pair) is
-/// refused by its header. The admitted own-login Owner pair is never listed.
+/// (a Fleet pair the un-park barrier blocks, a source, supplied or
+/// unknown-origin Owner pair) is refused by its header. The admitted own-login Owner pair is never listed.
 /// The old tables are listed only when removing the rows lets the
 /// conversion drop them.
 fn refused_credential_inventory_on(
@@ -1787,16 +1799,19 @@ fn refused_credential_inventory_on(
         }
         let stored = connection
             .query_row(
-                "SELECT origin, refresh_owner FROM credential_pairs WHERE account_id=1 AND slot=?1",
+                "SELECT origin, refresh_owner, generation FROM credential_pairs WHERE account_id=1 AND slot=?1",
                 [slot.as_str()],
-                |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
+                |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
             )
             .optional()
             .map_err(StoreError::CredentialPairStore)?;
-        if let Some((origin, owner)) = stored {
+        if let Some((origin, owner, generation)) = stored {
             let origin =
                 credential_origin(origin.as_deref()).ok_or(StoreError::CredentialPairInvalid)?;
             let owner = credential_owner(&owner).ok_or(StoreError::CredentialPairInvalid)?;
+            let generation =
+                Uuid::parse_str(&generation).map_err(|_| StoreError::CredentialPairInvalid)?;
+            let owner = credential_admission_owner(connection, slot, generation, owner)?;
             if let Some(refusal) =
                 crate::auth::credential_vault::stored_origin_refusal(slot, origin, owner)
             {
@@ -1945,6 +1960,60 @@ fn credential_schema_version(connection: &Connection) -> Result<i32, StoreError>
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(StoreError::Query)
 }
+/// The `hub_metadata` key of the Fleet un-park barrier (M09-T08). Before the
+/// un-park the `fleet_oauth` origin also labelled supplied and migrated Fleet
+/// tokens, so a Fleet pair stored before it cannot be told from the Hub's own
+/// grant by its header. The barrier runs once, inside the first write of the
+/// Hub's own Fleet grant, and records the generation of the Fleet pair present
+/// then (or `none`). No schema change: the record is one metadata row.
+pub(crate) const FLEET_UNPARK_BARRIER_KEY: &str = "credential_fleet_unpark_barrier";
+const FLEET_UNPARK_BARRIER_NONE: &str = "none";
+
+/// Records the Fleet un-park barrier once: the Fleet pair stored now, if any,
+/// stays blocked for good. Later calls change nothing.
+fn credential_fleet_unpark_barrier(tx: &Connection) -> Result<(), StoreError> {
+    tx.execute(
+        "INSERT INTO hub_metadata(key, value) SELECT ?1, COALESCE(
+            (SELECT generation FROM credential_pairs WHERE account_id=1 AND slot='fleet_api'), ?2)
+         WHERE NOT EXISTS(SELECT 1 FROM hub_metadata WHERE key=?1)",
+        params![FLEET_UNPARK_BARRIER_KEY, FLEET_UNPARK_BARRIER_NONE],
+    )
+    .map_err(StoreError::CredentialPairStore)?;
+    Ok(())
+}
+
+/// Whether the stored Fleet pair of `generation` is pre-un-park material.
+/// The barrier is lazy: it is recorded inside the first write of the Hub's
+/// own Fleet grant, not when the store opens, and until then every stored
+/// Fleet pair is blocked; afterwards only the pair it recorded is. A blocked
+/// pair is never admitted and stays on the refused-credential purge path.
+fn credential_fleet_pair_blocked(connection: &Connection, generation: Uuid) -> Result<bool, StoreError> {
+    let recorded = connection
+        .query_row(
+            "SELECT value FROM hub_metadata WHERE key=?1",
+            [FLEET_UNPARK_BARRIER_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(StoreError::CredentialPairStore)?;
+    Ok(recorded.is_none_or(|value| value == generation.to_string()))
+}
+
+/// The refresh owner the header-only admission sees: a blocked Fleet pair is
+/// not the Hub's own grant, so it reads as externally owned and is refused
+/// `source_credential_disabled` like any other foreign pair.
+fn credential_admission_owner(
+    connection: &Connection,
+    slot: CredentialSlot,
+    generation: Uuid,
+    owner: RefreshOwner,
+) -> Result<RefreshOwner, StoreError> {
+    if slot == CredentialSlot::FleetApi && credential_fleet_pair_blocked(connection, generation)? {
+        return Ok(RefreshOwner::External);
+    }
+    Ok(owner)
+}
+
 fn credential_begin_refusal(reason: BeginRefusal) -> StoreError {
     StoreError::RefreshOutcomeUnknown { reason }
 }
@@ -2410,6 +2479,15 @@ impl CredentialConnection {
 }
 #[cfg(test)]
 impl CredentialConnection {
+    /// Stores a Fleet pair as the Hub's own Fleet grant does (M09-T08): a fresh
+    /// sign-in binding, then the `HubGrant` write with every check and the barrier.
+    pub(crate) fn test_replace_own_fleet_grant(&mut self, pair: &SealedCredentialPair, policy: ReplacePolicy) -> Result<(), StoreError> {
+        let mut secret = Zeroizing::new([0_u8; 32]);
+        secret[..16].copy_from_slice(Uuid::new_v4().as_bytes());
+        let now = self.now_ms()?;
+        let sign_in_id = self.insert_sign_in_binding(CredentialSlot::FleetApi, credential_sign_in_binding(&secret), now)?;
+        self.replace_credential_pair(pair, &EntryProvenance::HubGrant { sign_in_id, grant_secret: &secret }, &LegacyCandidates(Vec::new()), policy)
+    }
     /// Canonical vector fixture only, on a previous-process connection.
     /// TRANSITIONAL: CT19, CT20 and CT22 consume this fixture wrapper.
     pub(crate) fn test_insert_credential_vector(
@@ -2796,6 +2874,10 @@ mod refresh_fence_tests {
     fn seed(connection: &mut CredentialConnection, slot: CredentialSlot, generation: Uuid, refresh: &[u8]) -> Result<(), StoreError> {
         let now = connection.now_ms()? / 1_000;
         let pair = s_test_synthetic_pair(connection, slot, generation, b"fence-access", refresh, now + 28_800, now + 21_600)?;
+        if slot == CredentialSlot::FleetApi {
+            // M09-T08: only the Hub's own grant writes the Fleet slot.
+            return connection.test_replace_own_fleet_grant(&pair, ReplacePolicy::ReplaceAny);
+        }
         connection.replace_credential_pair(&pair, &EntryProvenance::Supplied, &LegacyCandidates(Vec::new()), ReplacePolicy::ReplaceAny)
     }
 

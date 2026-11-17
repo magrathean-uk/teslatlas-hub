@@ -453,9 +453,10 @@ mod authority {
         assert!(gate.is_open(), "the service's controller opened the process-wide gate");
         let permit = gate.permit(Provider::Legacy, PermitKind::Request).expect("permitted inside the window");
         assert!(permit.time_left().as_secs() <= 600);
-        assert_eq!(gate.permit(Provider::Fleet, PermitKind::Request).unwrap_err().code(), "provider_parked");
+        let fleet = gate.permit(Provider::Fleet, PermitKind::Request).expect("Fleet rides the same window (M09-T08)");
         controller.close(CloseReason::OperatorClose);
         assert!(permit.is_cancelled(), "the close cancels permits already granted");
+        assert!(fleet.is_cancelled(), "the close cancels a Fleet permit as well");
         assert_eq!(gate.permit(Provider::Legacy, PermitKind::Request).unwrap_err().code(), "window_closed");
         assert_eq!(controller.status().phase, Phase::Closing);
         controller.finish_close().expect("handback");

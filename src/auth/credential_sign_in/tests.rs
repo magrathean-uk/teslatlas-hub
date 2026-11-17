@@ -106,11 +106,11 @@ fn ct079_keyring_lost_at_runtime() {
 fn ct080_foreign_key_row() {
     let (_root, store, entry) = fixture();
     own(&entry, "access-0001", "refresh-0001").expect("entry");
-    entry.vault().store_supplied_entry(CredentialEntry::fleet_supplied(text("access-0002"), text("refresh-0002"), "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet"), ReplacePolicy::ReplaceAny).expect("Fleet barrier");
+    crate::auth::credential_vault::fixtures::seed_own_fleet_grant(entry.vault(), "access-0002", "refresh-0002").expect("Fleet barrier");
     store.open().expect("fault SQL").execute("UPDATE credential_pairs SET access_envelope=CAST(substr(access_envelope,1,6)||zeroblob(8)||substr(access_envelope,15) AS BLOB) WHERE slot='owner_api'", []).expect("foreign key header");
     assert_eq!(entry.vault().load(OWNER).unwrap_err().code(), "unknown_key");
-    // M02-T02: the independent Fleet slot is refused at load, not by the Owner fault.
-    assert_eq!(entry.vault().load(FLEET).unwrap_err().code(), "source_credential_disabled");
+    // M09-T08: the independent own Fleet grant still loads despite the Owner fault.
+    assert_eq!(entry.vault().load(FLEET).expect("Fleet load").expect("pair").access.as_str(), "access-0002");
 }
 
 #[test]

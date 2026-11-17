@@ -761,12 +761,7 @@ fn attention_is_suppressed_when_collection_is_disabled() {
             AS_T0 + 28_800,
             AS_T0 + 21_600,
         )?;
-        connection.replace_credential_pair(
-            &pair,
-            &EntryProvenance::Supplied,
-            &LegacyCandidates(Vec::new()),
-            ReplacePolicy::ReplaceAny,
-        )
+        connection.test_replace_own_fleet_grant(&pair, ReplacePolicy::ReplaceAny)
     })
         .unwrap();
     s_test_with_credential_connection(&store, |connection| {
