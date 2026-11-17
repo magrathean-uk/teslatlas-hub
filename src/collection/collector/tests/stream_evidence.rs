@@ -2698,3 +2698,196 @@ fn a_held_cars_idle_window_is_no_due_time() {
         Duration::from_secs(30)
     );
 }
+
+
+#[test]
+fn m04_t12_vehicle_disconnect_starts_fallback_without_waiting_for_frame_silence() {
+    let log = DecisionLog::start();
+    let mut bed = StreamBed::new();
+    let id = core_id(1);
+    let now = bed.core.clock.mono_now();
+    bed.dispatch(StreamEvent::Healthy);
+    bed.core
+        .scheduler
+        .vehicle_succeeded(id, PollPhase::Driving, false, now);
+    assert_eq!(
+        bed.core.scheduler.vehicles[&id].next_read_due,
+        Some(now + Duration::from_secs(60))
+    );
+    bed.dispatch(StreamEvent::VehicleOffline);
+    assert!(!bed.core.scheduler.vehicles[&id].stream.connected);
+    assert_eq!(log.lines("INFO", "stream_outage"), 1, "{}", log.contents());
+    assert_eq!(bed.core.scheduler.due_offline_state_vehicles(now), vec![id]);
+    assert_eq!(
+        bed.core.scheduler.vehicles[&id].next_read_due,
+        Some(now + Duration::from_secs(10))
+    );
+    bed.core.clock.advance(Duration::from_secs(9));
+    assert!(
+        bed.core
+            .scheduler
+            .due_vehicles(bed.core.clock.mono_now())
+            .is_empty()
+    );
+    bed.core.clock.advance(Duration::from_secs(1));
+    assert_eq!(
+        bed.core
+            .scheduler
+            .due_vehicles(bed.core.clock.mono_now()),
+        vec![id]
+    );
+    bed.core.scheduler.vehicle_succeeded(
+        id,
+        PollPhase::Driving,
+        false,
+        now + Duration::from_secs(10),
+    );
+    assert!(
+        bed.core.scheduler.vehicles[&id].stream.outage_reported,
+        "a successful REST read cannot repair a stream"
+    );
+    assert_eq!(
+        bed.core.scheduler.vehicles[&id].next_read_due,
+        Some(now + Duration::from_secs(20))
+    );
+    bed.dispatch(StreamEvent::Healthy);
+    assert!(!bed.core.scheduler.vehicles[&id].stream.outage_reported);
+    assert_eq!(
+        log.lines("INFO", "stream_recovered"),
+        1,
+        "{}",
+        log.contents()
+    );
+}
+
+#[test]
+fn m04_t12_vehicle_ends_limit_targeted_checks_over_ten_minutes() {
+    let mut bed = StreamBed::new();
+    let id = core_id(1);
+    let mut checks = Vec::new();
+    for second in 0..600 {
+        let now = bed.core.clock.mono_now();
+        // Data and stream restarts cannot reset the per-car check clock.
+        if second % 17 == 0 {
+            bed.dispatch(StreamEvent::Healthy);
+        }
+        bed.dispatch(StreamEvent::VehicleOffline);
+        if !bed
+            .core
+            .scheduler
+            .due_offline_state_vehicles(now)
+            .is_empty()
+        {
+            checks.push(second);
+            bed.core
+                .scheduler
+                .accept_vehicle_state(id, "online".to_owned(), now);
+            assert!(!bed.core.scheduler.vehicles[&id].stream_state_check_pending);
+        }
+        bed.core.clock.advance(Duration::from_secs(1));
+    }
+    assert_eq!(checks, (0..600).step_by(60).collect::<Vec<_>>());
+    // Delay a pending request, then keep counting from its actual selection.
+    bed.dispatch(StreamEvent::VehicleOffline);
+    bed.core.clock.advance(Duration::from_secs(50));
+    let now = bed.core.clock.mono_now();
+    assert_eq!(bed.core.scheduler.due_offline_state_vehicles(now), vec![id]);
+    bed.core
+        .scheduler
+        .vehicles
+        .get_mut(&id)
+        .unwrap()
+        .next_check_due = None;
+    bed.core.clock.advance(Duration::from_secs(10));
+    bed.dispatch(StreamEvent::VehicleOffline);
+    assert!(
+        bed.core
+            .scheduler
+            .due_offline_state_vehicles(bed.core.clock.mono_now())
+            .is_empty()
+    );
+}
+
+#[test]
+fn m04_t12_stream_checks_never_target_asleep_or_offline_cars() {
+    for phase in [PollPhase::Asleep, PollPhase::Offline] {
+        let mut bed = StreamBed::new();
+        let id = core_id(1);
+        bed.core.scheduler.vehicles.get_mut(&id).unwrap().phase = phase;
+        bed.dispatch(StreamEvent::VehicleOffline);
+        assert!(bed.core.scheduler.vehicles[&id].next_check_due.is_none());
+        let now = bed.core.clock.mono_now();
+        assert!(
+            bed.core
+                .scheduler
+                .due_offline_state_vehicles(now)
+                .is_empty()
+        );
+        // A check queued before the car went to sleep must also stay unsent.
+        bed.core.scheduler.vehicles.get_mut(&id).unwrap().phase = PollPhase::Online;
+        bed.dispatch(StreamEvent::VehicleOffline);
+        bed.core.scheduler.vehicles.get_mut(&id).unwrap().phase = phase;
+        assert!(
+            bed.core
+                .scheduler
+                .due_offline_state_vehicles(now)
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn m04_t12_a_failed_stream_state_check_retries_on_the_scheduler_timer() {
+    let mut bed = StreamBed::new();
+    let id = core_id(1);
+    let first = bed.core.clock.mono_now();
+    bed.dispatch(StreamEvent::VehicleOffline);
+    assert_eq!(
+        bed.core.scheduler.due_offline_state_vehicles(first),
+        vec![id]
+    );
+    bed.core
+        .scheduler
+        .offline_state_failed_for_error(id, &ep_status(503), first);
+    assert!(!bed.core.scheduler.vehicles[&id].stream_state_check_pending);
+    // N1: the completed stream check's ordinary retry is not a new stream
+    // request. Its state interval remains 30 s, independent of the cooldown.
+    bed.core.clock.advance(Duration::from_secs(30));
+    let now = bed.core.clock.mono_now();
+    assert_eq!(bed.core.scheduler.due_offline_state_vehicles(now), vec![id]);
+    assert_eq!(
+        bed.core.scheduler.vehicles[&id].last_stream_state_check,
+        Some(first)
+    );
+}
+
+#[test]
+fn m04_t12_answered_stream_check_cannot_delay_or_cancel_a_408_check() {
+    for phase in [PollPhase::Online, PollPhase::Asleep, PollPhase::Offline] {
+        let mut bed = StreamBed::new();
+        let id = core_id(1);
+        let first = bed.core.clock.mono_now();
+        bed.dispatch(StreamEvent::VehicleOffline);
+        assert_eq!(
+            bed.core.scheduler.due_offline_state_vehicles(first),
+            vec![id]
+        );
+        bed.core
+            .scheduler
+            .accept_vehicle_state(id, "online".to_owned(), first);
+        assert!(!bed.core.scheduler.vehicles[&id].stream_state_check_pending);
+        bed.core.clock.advance(Duration::from_secs(1));
+        let now = bed.core.clock.mono_now();
+        bed.core.scheduler.vehicles.get_mut(&id).unwrap().phase = phase;
+        bed.core
+            .scheduler
+            .vehicle_failed_for_error(id, &ep_status(408), now);
+        assert!(bed.core.scheduler.vehicles[&id].unavailable_check);
+        assert_eq!(bed.core.scheduler.due_offline_state_vehicles(now), vec![id]);
+        // Selecting the independent check cannot restamp the stream's clock.
+        assert_eq!(
+            bed.core.scheduler.vehicles[&id].last_stream_state_check,
+            Some(first)
+        );
+    }
+}

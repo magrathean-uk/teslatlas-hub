@@ -809,61 +809,61 @@ fn r30_motion_follows_the_gear_then_the_speed() {
 #[test]
 fn sc48_schedules() {
     let secs = Duration::from_secs;
-    let transport = |n: u32| {
-        nominal_delay(
-            &FailureClass::Transport,
-            &RetryState {
-                transport_attempt: n,
-                ..RetryState::default()
-            },
-        )
-    };
-    let counters = 1..=10;
-    assert_eq!(
-        counters.map(transport).collect::<Vec<_>>(),
-        [2, 4, 8, 16, 32, 64, 128, 256, 300, 300].map(secs)
-    );
-    let vehicle = |n: u32| {
-        nominal_delay(
-            &FailureClass::Vehicle,
-            &RetryState {
-                vehicle_attempt: n,
-                ..RetryState::default()
-            },
-        )
-    };
-    assert_eq!(
-        (1..=6).map(vehicle).collect::<Vec<_>>(),
-        [15, 30, 60, 120, 120, 120].map(secs)
-    );
-    let refusal = |n: u32| {
-        nominal_delay(
-            &FailureClass::Refusal,
-            &RetryState {
-                refusal_streak: n,
-                ..RetryState::default()
-            },
-        )
-    };
-    assert_eq!([1, 2, 7].map(refusal), [5, 300, 300].map(secs));
-    // Unknown, Protocol and Busy take the Transport schedule (R34).
-    let state = RetryState {
-        transport_attempt: 4,
-        ..RetryState::default()
-    };
     for class in [
+        FailureClass::Transport,
+        FailureClass::Vehicle,
         FailureClass::Unknown,
         FailureClass::Protocol,
-        FailureClass::Busy { retry_after: None },
     ] {
-        assert_eq!(nominal_delay(&class, &state), secs(16));
+        let waits: Vec<_> = (1..=10)
+            .map(|n| {
+                nominal_delay(
+                    &class,
+                    &RetryState {
+                        outage_attempt: n,
+                        ..RetryState::default()
+                    },
+                )
+            })
+            .collect();
+        assert_eq!(waits, [2, 4, 8, 16, 30, 30, 30, 30, 30, 30].map(secs));
+        for elapsed in [300, 600, 3600] {
+            assert_eq!(
+                nominal_delay(
+                    &class,
+                    &RetryState {
+                        outage_elapsed: secs(elapsed),
+                        ..RetryState::default()
+                    }
+                ),
+                secs(300)
+            );
+        }
     }
-    // The saturated counter and a counter of 0 stay inside the schedule.
-    assert_eq!(transport(32), secs(300));
-    assert_eq!(transport(u32::MAX), secs(300));
-    assert_eq!(transport(0), secs(2));
-    assert_eq!(vehicle(0), secs(15));
-    assert_eq!(refusal(0), secs(5));
+    for n in [0, 1, 32, u32::MAX] {
+        assert_eq!(
+            nominal_delay(
+                &FailureClass::Busy { retry_after: None },
+                &RetryState {
+                    transport_attempt: n,
+                    ..RetryState::default()
+                }
+            ),
+            secs(300)
+        );
+    }
+    for n in [1, 2, 7] {
+        assert_eq!(
+            nominal_delay(
+                &FailureClass::Refusal,
+                &RetryState {
+                    refusal_streak: n,
+                    ..RetryState::default()
+                }
+            ),
+            secs(if n == 1 { 5 } else { 300 })
+        );
+    }
 }
 
 #[test]
@@ -901,10 +901,10 @@ fn sc49_jitter() {
     };
     assert_eq!(busy(Some(secs(600))), secs(600));
     assert_eq!(busy(Some(secs(7_200))), secs(3_600));
-    assert_eq!(busy(None), secs(1));
+    assert_eq!(busy(None), secs(150));
     // The floor is applied after jitter: a small retry-after never lowers the delay.
-    assert_eq!(busy(Some(Duration::ZERO)), secs(1));
-    assert_eq!(busy(Some(secs(1))), secs(1));
+    assert_eq!(busy(Some(Duration::ZERO)), secs(150));
+    assert_eq!(busy(Some(secs(1))), secs(150));
     let late = next_delay(
         &FailureClass::Busy {
             retry_after: Some(secs(1)),
@@ -915,6 +915,7 @@ fn sc49_jitter() {
         },
         0.0,
     );
+    // Busy keeps the old 150 s jitter floor.
     assert_eq!(late, secs(150));
     // The other classes jitter their own nominal delay.
     assert_eq!(
@@ -926,7 +927,7 @@ fn sc49_jitter() {
             },
             0.0
         ),
-        Duration::from_millis(7_500)
+        Duration::from_millis(1_000)
     );
     assert_eq!(
         next_delay(
@@ -1099,6 +1100,7 @@ fn sc68_counter_functions() {
             transport_attempt: 2,
             vehicle_attempt: 3,
             refusal_streak: 1,
+            ..RetryState::default()
         };
         after.on_session_end(&class);
         assert_eq!(steps(after), (3, 3, 1), "{class:?}");
@@ -1108,6 +1110,7 @@ fn sc68_counter_functions() {
         transport_attempt: 5,
         vehicle_attempt: 3,
         refusal_streak: 1,
+        ..RetryState::default()
     };
     after.on_session_end(&FailureClass::Vehicle);
     assert_eq!(steps(after), (0, 4, 1));
@@ -1116,25 +1119,21 @@ fn sc68_counter_functions() {
         transport_attempt: 5,
         vehicle_attempt: 3,
         refusal_streak: 1,
+        ..RetryState::default()
     };
     after.on_session_end(&FailureClass::Refusal);
     assert_eq!(steps(after), (0, 3, 2));
-    // The first accepted frame clears the vehicle and refusal counters only.
+    // B2 / R37: only the stable timer resets the counters and outage clock.
     let mut after = RetryState {
         transport_attempt: 5,
         vehicle_attempt: 3,
         refusal_streak: 2,
-    };
-    after.on_first_accepted();
-    assert_eq!(steps(after), (5, 0, 0));
-    // Stability clears the transport counter only.
-    let mut after = RetryState {
-        transport_attempt: 5,
-        vehicle_attempt: 3,
-        refusal_streak: 2,
+        outage_since: Some(tokio::time::Instant::now()),
+        outage_attempt: 7,
+        outage_elapsed: Duration::from_secs(600),
     };
     after.on_stable();
-    assert_eq!(steps(after), (0, 3, 2));
+    assert_eq!(after, RetryState::default());
 
     // 40 consecutive Transport ends saturate at 32, whatever the class.
     for class in [
@@ -1413,4 +1412,22 @@ fn r3_constructors_apply_the_override_rule() {
     let supervisor =
         legacy_supervisor(GLOBAL_STREAM_ENDPOINT.to_owned(), true, events).expect("supervisor");
     assert_eq!(supervisor.tag, "9");
+}
+
+#[test]
+fn m04_t12_stability_resets_a_slow_outage() {
+    let start = tokio::time::Instant::now();
+    let mut state = RetryState::default();
+    state.on_session_end_at(&FailureClass::Protocol, start);
+    state.on_session_end_at(&FailureClass::Vehicle, start + Duration::from_secs(600));
+    assert_eq!(
+        next_delay(&FailureClass::Vehicle, &state, 1.0),
+        Duration::from_secs(300)
+    );
+    state.on_stable();
+    state.on_session_end_at(&FailureClass::Unknown, start + Duration::from_secs(601));
+    assert_eq!(
+        next_delay(&FailureClass::Unknown, &state, 1.0),
+        Duration::from_secs(2)
+    );
 }

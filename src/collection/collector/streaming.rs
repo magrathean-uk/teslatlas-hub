@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+use tracing::Instrument;
+
 pub async fn run_address_enrichment_once(
     store: &HubStore,
     config: &HubConfig,
@@ -284,7 +286,8 @@ fn ensure_vehicle_stream(
             worker_sensitive_access_failure.store(true, Ordering::Release);
         }
         result
-    });
+    }
+    .instrument(tracing::Span::current()));
     streams.push(VehicleStreamRuntime {
         vehicle_id,
         power_gate,
@@ -356,13 +359,12 @@ fn store_queued_stream_frames(
             if frame_writes_fenced(write_fence) {
                 return Err(CollectorError::SensitiveAccessUnavailable);
             }
-            let queue_lag = scheduler.clock.mono_now().saturating_duration_since(queued_at);
             process_stream_telemetry_inner(
                 store,
                 scheduler,
                 vehicle_id,
                 &update,
-                queue_lag,
+                queued_at,
                 projection_car_ids,
                 false,
             )?;
@@ -1069,6 +1071,25 @@ fn note_stream_unhealthy(
     report_stream_outage(scheduler, vehicle_id, source, outage, now);
 }
 
+/// A stream end may ask for one non-waking check per car per minute. Keep the
+/// clock in the scheduler, so a new session or run cannot reset the limit.
+fn schedule_stream_state_check(scheduler: &mut VehicleScheduler, id: VehicleId, now: Instant) {
+    let Some(vehicle) = scheduler.vehicles.get_mut(&id) else {
+        return;
+    };
+    if vehicle.is_inactive()
+        || matches!(vehicle.phase, PollPhase::Asleep | PollPhase::Offline)
+        || (vehicle.stream_state_check_pending && vehicle.next_check_due.is_some())
+    {
+        return;
+    }
+    let due = vehicle
+        .last_stream_state_check
+        .map_or(now, |last| now.max(last + Duration::from_secs(60)));
+    vehicle.stream_state_check_pending = true;
+    scheduler.schedule_offline_state_fetch(id, due);
+}
+
 /// One stream event (C3 R36), the scheduler's side of the stream:
 /// - `Healthy`: the stream is healthy, and the first one after an outage reports
 ///   the recovery; it is not use evidence by itself (the `Telemetry` that follows
@@ -1076,8 +1097,8 @@ fn note_stream_unhealthy(
 /// - `Telemetry`: the stream is healthy, the frame is stored for every car except a
 ///   Disabled or Removed one, and it is judged as evidence (motion, parked power);
 ///   a frame also proves the stream authenticated;
-/// - `VehicleOffline`: the power gate is revoked and a targeted non-waking state
-///   check is due now;
+/// - `VehicleOffline`: the stream is unhealthy, its power gate is revoked and a
+///   targeted non-waking state check is due now;
 /// - `TransportUnavailable`, `ProtocolViolation`, `AuthRejected`: the power gate is
 ///   revoked and the stream is in outage; `AuthRejected` also tells the caller
 ///   through `authentication_rejected`, which goes to the credential unit as
@@ -1109,19 +1130,20 @@ fn process_stream_event(
             *authenticated = true;
             let recovery = scheduler.stream_healthy(vehicle_id, now);
             report_stream_recovery(scheduler, vehicle_id, recovery, now);
-            let queue_lag = now.saturating_duration_since(queued_at);
             process_stream_telemetry_with_cache(
                 store,
                 scheduler,
                 vehicle_id,
                 &update,
-                queue_lag,
+                queued_at,
                 projection_car_ids,
             )?;
         }
         StreamEvent::VehicleOffline => {
-            scheduler.revoke_gate(vehicle_id);
-            scheduler.schedule_offline_state_fetch(vehicle_id, now);
+            // The session has ended even when a targeted state check still
+            // reports the car online. Start driving fallback immediately.
+            note_stream_unhealthy(scheduler, vehicle_id, "vehicle_unavailable", now);
+            schedule_stream_state_check(scheduler, vehicle_id, now);
         }
         StreamEvent::TransportUnavailable => {
             note_stream_unhealthy(scheduler, vehicle_id, "transport_unavailable", now);
@@ -1210,16 +1232,12 @@ async fn drain_stream_events_while_stopping(
             }
             if winding_down {
                 if let StreamEvent::Telemetry { update, queued_at } = event {
-                    let queue_lag = scheduler
-                        .clock
-                        .mono_now()
-                        .saturating_duration_since(queued_at);
                     process_stream_telemetry_inner(
                         store,
                         scheduler,
                         stream.vehicle_id,
                         &update,
-                        queue_lag,
+                        queued_at,
                         projection_car_ids,
                         false,
                     )?;
@@ -1395,6 +1413,10 @@ async fn reconcile_streams(
     .await?;
     for vehicle in scheduler.vehicles() {
         if scheduler.should_start_stream(vehicle.id) {
+            // Carry the existing Hub label into the stream task, never a Tesla id.
+            let span =
+                tracing::info_span!(target: "collector.decision", "legacy_stream", vehicle = %scheduler.hub_label(vehicle.id));
+            let _entered = span.enter();
             ensure_vehicle_stream(
                 store,
                 streams,
@@ -1423,7 +1445,7 @@ fn process_stream_telemetry_with_cache(
     scheduler: &mut VehicleScheduler,
     vehicle_id: VehicleId,
     update: &crate::tesla_stream::StreamUpdate,
-    queue_lag: Duration,
+    queued_at: Instant,
     projection_car_ids: &mut HashMap<VehicleId, StreamContext>,
 ) -> Result<bool, CollectorError> {
     process_stream_telemetry_inner(
@@ -1431,7 +1453,7 @@ fn process_stream_telemetry_with_cache(
         scheduler,
         vehicle_id,
         update,
-        queue_lag,
+        queued_at,
         projection_car_ids,
         true,
     )
@@ -1443,16 +1465,21 @@ fn process_stream_telemetry_with_cache(
 /// healthy (B2 round 3, C4R3-N2): their stream is over, and the scheduler would
 /// otherwise plan the car's next read at the slower stream interval until the next
 /// reconcile.
+///
+/// `queued_at` is when the session accepted the frame, before it waited in the
+/// Hub's queue: its queue lag runs from there, and so does its intake latency
+/// (M04-T11), to the return of the frame's commit.
 fn process_stream_telemetry_inner(
     store: &HubStore,
     scheduler: &mut VehicleScheduler,
     vehicle_id: VehicleId,
     update: &crate::tesla_stream::StreamUpdate,
-    queue_lag: Duration,
+    queued_at: Instant,
     projection_car_ids: &mut HashMap<VehicleId, StreamContext>,
     marks_healthy: bool,
 ) -> Result<bool, CollectorError> {
     let now = scheduler.clock.mono_now();
+    let queue_lag = now.saturating_duration_since(queued_at);
     let persist = if marks_healthy {
         scheduler.should_persist_stream_telemetry(vehicle_id, update.power, now)
     } else {
@@ -1479,11 +1506,16 @@ fn process_stream_telemetry_inner(
     let context = projection_car_ids
         .get_mut(&vehicle_id)
         .expect("stream context is present after insertion");
+    let intake = FrameIntake {
+        accepted_at: queued_at,
+        clock: scheduler.clock.as_ref(),
+        guard: scheduler.write_guard(),
+    };
     let stored = persist_stream_update_with_projection(
         store,
         vehicle_id,
         update,
-        Some((context, queue_lag)),
+        Some((context, queue_lag, intake)),
     )?;
     if stored {
         scheduler.note_observation_stored(vehicle_id, scheduler.wall_or_last());
@@ -1498,6 +1530,28 @@ fn persist_stream_update(
     update: &crate::tesla_stream::StreamUpdate,
 ) -> Result<bool, CollectorError> {
     persist_stream_update_with_projection(store, vehicle_id, update, None)
+}
+
+/// A frame's intake latency (M04-T11): when the Hub accepted it, the clock its
+/// commit is read on and the run that records it.
+struct FrameIntake<'a> {
+    accepted_at: Instant,
+    clock: &'a dyn CollectorClock,
+    guard: Option<&'a RunWriteGuard>,
+}
+
+/// A stream frame's commit: the writer's transaction (in a test, with the time the
+/// test gives it).
+fn commit_stream_frame(
+    writer: &mut StreamObservationWriter,
+    input: &ObservationInput,
+    received_at_ms: i64,
+    car_id: i64,
+) -> Result<StreamObservationResult, StoreError> {
+    let result = writer.accept(input, received_at_ms, car_id);
+    #[cfg(test)]
+    let _ = SUPERVISED_COLLECTOR_TEST_SEAM.try_with(|seam| seam.stream_commit_hook());
+    result
 }
 
 struct StreamContext {
@@ -1584,7 +1638,7 @@ fn persist_stream_update_with_projection(
     store: &HubStore,
     vehicle_id: VehicleId,
     update: &crate::tesla_stream::StreamUpdate,
-    mut context: Option<(&mut StreamContext, Duration)>,
+    mut context: Option<(&mut StreamContext, Duration, FrameIntake<'_>)>,
 ) -> Result<bool, CollectorError> {
     let received_at_ms = current_epoch_millis()?;
     let maximum = received_at_ms.saturating_add(K_SKEW_MS);
@@ -1596,7 +1650,7 @@ fn persist_stream_update_with_projection(
         return Ok(false);
     }
     let (source_id, registered_vehicle_id, pack_car_id) =
-        if let Some((context, _)) = context.as_ref() {
+        if let Some((context, _, _)) = context.as_ref() {
             (
                 context.source_id,
                 context.registered_vehicle_id,
@@ -1624,9 +1678,15 @@ fn persist_stream_update_with_projection(
         observed_at_ms: update.timestamp_ms,
         payload: stream_observation_payload(update),
     };
-    let result = if let Some((context, queue_lag)) = context.as_mut() {
-        let result = context.writer.accept(&input, received_at_ms, pack_car_id)?;
+    let result = if let Some((context, queue_lag, intake)) = context.as_mut() {
+        let result = commit_stream_frame(&mut context.writer, &input, received_at_ms, pack_car_id)?;
+        // The commit has just returned: the intake latency ends here (M04-T11),
+        // before any bookkeeping and the health report below.
+        let committed_at = intake.clock.mono_now();
         if matches!(result, StreamObservationResult::Committed { .. }) {
+            if let Some(guard) = intake.guard {
+                guard.record_intake(committed_at.saturating_duration_since(intake.accepted_at));
+            }
             context.report_ingestion_health(update.timestamp_ms, *queue_lag);
         }
         result

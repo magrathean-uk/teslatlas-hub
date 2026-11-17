@@ -31,7 +31,7 @@ use tokio_tungstenite::{
     tungstenite::{
         Error as WebSocketError, Message,
         client::IntoClientRequest,
-        error::UrlError,
+        error::{ProtocolError, UrlError},
         handshake::client::Request,
         protocol::frame::{CloseFrame, coding::CloseCode},
     },
@@ -62,7 +62,7 @@ use super::{
         terminal_credential_delay,
     },
     stream_socket_config, unsubscribe_frame,
-    wire::{StreamUpdate, parse_data_update_counted, subscribe_frame_zeroizing},
+    wire::{StreamUpdate, parse_data_update_diagnosed, subscribe_frame_zeroizing},
 };
 
 // R52: the WebSocket crate logs each frame it reads and writes at trace level
@@ -376,7 +376,12 @@ enum Emit {
 /// State that lives across the attempts of one run (R44: it starts fresh with
 /// every run).
 struct RunState {
+    /// Fixed local reason of this attempt. Static text cannot carry a peer's
+    /// payload, credential, tag or close reason into the decision log.
+    end_reason: &'static str,
     retry: RetryState,
+    stable_end: bool,
+    unknown_error_type: Option<String>,
     /// The last delivered frame, for duplicate suppression (R26); per run only.
     last_delivered: Option<StreamUpdate>,
     /// The last accepted frame of the run shows motion (0.2): it picks the
@@ -399,11 +404,15 @@ pub(crate) struct FrameCounts {
 
 /// State of one subscribed session.
 struct SessionState {
+    end_reason: &'static str,
     /// The subscribe receipt, open until the session's first answer (8.4).
     subscribe_receipt: Option<OutboundRequestReceiptId>,
     subscribe_open: bool,
     /// An accepted frame (a duplicate included) has arrived in this session.
     accepted_seen: bool,
+    first_accepted_at: Option<Instant>,
+    unknown_error_type: Option<String>,
+    rejected_reasons: std::collections::BTreeMap<&'static str, u32>,
     /// Consecutive rejected frames with no accepted frame between them (R33).
     rejected_streak: u32,
     /// The Ping schedule, the dead-socket and data-silence deadlines and the
@@ -479,7 +488,9 @@ impl SessionEnd {
             FailureClass::Protocol => Self::protocol(false),
             FailureClass::Transport | FailureClass::Unknown => Self {
                 class: Some(class),
-                subscribe_outcome: OutboundRequestOutcome::ProtocolError,
+                // A well-formed service error is an unavailable stream, not
+                // malformed protocol data, including in the audit receipt.
+                subscribe_outcome: OutboundRequestOutcome::TransportError,
                 ..Self::base(EndCause::Unknown)
             },
         }
@@ -834,6 +845,75 @@ pub(super) fn close_failure_class(frame: Option<&CloseFrame>) -> FailureClass {
     }
 }
 
+/// Fixed reason classes only. Unknown peer text is never a diagnostic label.
+fn service_end_reason(message: &Message) -> &'static str {
+    match message {
+        Message::Close(frame) => {
+            if frame.as_ref().is_some_and(|f| f.code == CloseCode::Again) {
+                "server_busy_close"
+            } else {
+                "server_close"
+            }
+        }
+        Message::Text(_) | Message::Binary(_) => {
+            let Ok(Value::Object(members)) = serde_json::from_slice::<Value>(match message {
+                Message::Text(text) => text.as_bytes(),
+                Message::Binary(bytes) => bytes.as_ref(),
+                _ => unreachable!(),
+            }) else {
+                return "invalid_json";
+            };
+            if members.get("msg_type").and_then(Value::as_str) == Some("control:hello")
+                && members.get("error_type").is_none()
+                && matches!(
+                    members.get("code").and_then(Value::as_i64),
+                    Some(401 | 403 | 429 | 503)
+                )
+            {
+                return "hello_rejected";
+            }
+            match members.get("error_type").and_then(Value::as_str) {
+                Some("vehicle_disconnected") => "vehicle_disconnected",
+                Some("vehicle_error") => "vehicle_error",
+                Some("client_error") => "client_error",
+                _ => "unrecognised_error",
+            }
+        }
+        _ => "unrecognised_error",
+    }
+}
+
+fn unrecognised_error_type(text: &str, tag: &str, echo: &EchoGuard) -> Option<String> {
+    let members = serde_json::from_str::<Value>(text).ok()?;
+    let token = members.get("error_type").and_then(Value::as_str)?;
+    if matches!(
+        token,
+        "vehicle_disconnected" | "vehicle_error" | "client_error"
+    ) || token.contains(tag)
+    {
+        return None;
+    }
+    Some(echo.loggable(Some(token)).to_owned())
+}
+
+fn socket_end_reason(message: &Option<Result<Message, WebSocketError>>) -> &'static str {
+    match message {
+        None | Some(Err(WebSocketError::ConnectionClosed | WebSocketError::AlreadyClosed)) => {
+            "end_of_stream"
+        }
+        Some(Err(WebSocketError::Capacity(_))) => "message_too_large",
+        Some(Err(WebSocketError::Utf8(_))) => "invalid_utf8",
+        Some(Err(WebSocketError::Protocol(ProtocolError::ResetWithoutClosingHandshake))) => {
+            "connection_reset"
+        }
+        Some(Err(WebSocketError::Protocol(
+            ProtocolError::SendAfterClosing | ProtocolError::ReceivedAfterClosing,
+        ))) => "connection_closing",
+        Some(Err(WebSocketError::Protocol(_))) => "websocket_protocol",
+        _ => "unrecognised_error",
+    }
+}
+
 /// What one inbound message means to a socket that has no subscription yet
 /// (C4 R6, R27 to R29, R33). Text and UTF-8 Binary messages are decoded alike.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -941,7 +1021,10 @@ impl TeslaStreamSupervisor {
             self.write_guard.clone(),
         )?;
         let mut run = RunState {
+            end_reason: "credential_unavailable",
             retry: RetryState::default(),
+            stable_end: false,
+            unknown_error_type: None,
             last_delivered: None,
             moving: false,
         };
@@ -956,8 +1039,43 @@ impl TeslaStreamSupervisor {
                 Outcome::Failed(class) => {
                     // R37: counters first, then the delay; the event follows the
                     // rows of the ended session (R47).
-                    run.retry.on_session_end(&class);
-                    if let Some(event) = event_for(&class, &run.retry) {
+                    if run.stable_end {
+                        // One quiet reconnect after a working session. Explicit
+                        // back-pressure remains on its own slow schedule.
+                        delay = if matches!(class, FailureClass::Busy { .. }) {
+                            next_delay(&class, &run.retry, self.draw())
+                        } else {
+                            super::policy::jittered(Duration::from_secs(2), self.draw())
+                        };
+                    } else {
+                        run.retry.on_session_end(&class);
+                        delay = next_delay(&class, &run.retry, self.draw());
+                    }
+                    // One payload-free reason for EVERY ended attempt, including
+                    // changes of cause within an outage that C3 summarises once.
+                    // The collector's span supplies its existing Hub car label.
+                    tracing::info!(
+                        target: "collector.decision",
+                        reason_class = run.end_reason,
+                        error_type = run.unknown_error_type.as_deref(),
+                        class = match class {
+                            FailureClass::Transport => "transport",
+                            FailureClass::Busy { .. } => "busy",
+                            FailureClass::Vehicle => "vehicle",
+                            FailureClass::Refusal => "refusal",
+                            FailureClass::Protocol => "protocol",
+                            FailureClass::Unknown => "unknown",
+                        },
+                        transport_attempt = run.retry.transport_attempt,
+                        vehicle_attempt = run.retry.vehicle_attempt,
+                        refusal_streak = run.retry.refusal_streak,
+                        quiet_reconnect = run.stable_end,
+                        delay_ms = delay.as_millis() as u64,
+                        "stream attempt ended"
+                    );
+                    if !run.stable_end
+                        && let Some(event) = event_for(&class, &run.retry)
+                    {
                         match self.emit(event, &mut shutdown).await {
                             Emit::Sent => {}
                             Emit::Shutdown => return Ok(()),
@@ -967,15 +1085,6 @@ impl TeslaStreamSupervisor {
                             Emit::QueueFull => return Err(StreamSupervisorError::EventQueueFull),
                         }
                     }
-                    delay = next_delay(&class, &run.retry, self.draw());
-                    tracing::debug!(
-                        ?class,
-                        transport_attempt = run.retry.transport_attempt,
-                        vehicle_attempt = run.retry.vehicle_attempt,
-                        refusal_streak = run.retry.refusal_streak,
-                        delay_ms = delay.as_millis() as u64,
-                        "stream attempt ended"
-                    );
                 }
             }
         }
@@ -1122,6 +1231,8 @@ impl TeslaStreamSupervisor {
         socket: &mut StreamSocket,
         shutdown: &mut Shutdown,
         clocks: &mut SessionClocks,
+        end_reason: &mut &'static str,
+        unknown_error_type: &mut Option<String>,
         work: impl Future<Output = T>,
     ) -> Live<T> {
         enum Wake<T> {
@@ -1147,11 +1258,13 @@ impl TeslaStreamSupervisor {
                 Wake::Shutdown => return Live::Shutdown,
                 Wake::Done(value) => return Live::Done(value),
                 Wake::Dead => {
+                    *end_reason = "dead_socket";
                     tracing::debug!(host = %self.endpoint_host, "stream socket is dead");
                     return Live::Gone(FailureClass::Transport);
                 }
                 Wake::Ping => {
                     if let Some(end) = self.send_ping(socket, shutdown, clocks).await {
+                        *end_reason = "ping_write_failed";
                         return match end.cause {
                             EndCause::Shutdown => Live::Shutdown,
                             _ => Live::Gone(end.class.unwrap_or(FailureClass::Transport)),
@@ -1160,6 +1273,7 @@ impl TeslaStreamSupervisor {
                 }
                 Wake::Message(message) => {
                     let arrived = Instant::now();
+                    *end_reason = socket_end_reason(&message);
                     match message {
                         None
                         | Some(Err(
@@ -1171,21 +1285,46 @@ impl TeslaStreamSupervisor {
                                 close_code: CloseCode::Size,
                             };
                         }
+                        Some(Err(WebSocketError::Protocol(
+                            ProtocolError::ResetWithoutClosingHandshake
+                            | ProtocolError::SendAfterClosing
+                            | ProtocolError::ReceivedAfterClosing,
+                        ))) => return Live::Gone(FailureClass::Transport),
+                        Some(Err(WebSocketError::Protocol(_) | WebSocketError::Utf8(_))) => {
+                            return Live::Ended {
+                                class: FailureClass::Protocol,
+                                close_code: CloseCode::Protocol,
+                            };
+                        }
                         Some(Err(_)) => return Live::Gone(FailureClass::Transport),
                         Some(Ok(message)) => {
                             clocks.on_inbound(arrived);
+                            *end_reason = service_end_reason(&message);
                             match admitting_step(&message, &self.tag) {
                                 AdmittingStep::Liveness => {}
                                 AdmittingStep::PingInterval(interval) => {
                                     clocks.adopt_ping_interval(arrived, interval);
                                 }
                                 AdmittingStep::Classified(class) => {
+                                    let text = match &message {
+                                        Message::Text(text) => Some(text.as_str()),
+                                        Message::Binary(bytes) => std::str::from_utf8(bytes).ok(),
+                                        _ => None,
+                                    };
+                                    *unknown_error_type = text.and_then(|text| {
+                                        unrecognised_error_type(
+                                            text,
+                                            &self.tag,
+                                            &EchoGuard::default(),
+                                        )
+                                    });
                                     return Live::Ended {
                                         class,
                                         close_code: CloseCode::Normal,
                                     };
                                 }
                                 AdmittingStep::Oversize => {
+                                    *end_reason = "message_too_large";
                                     return Live::Ended {
                                         class: FailureClass::Protocol,
                                         close_code: CloseCode::Size,
@@ -1224,6 +1363,9 @@ impl TeslaStreamSupervisor {
                 return Outcome::Stop(Ok(()));
             }
         }
+        run.stable_end = false;
+        run.unknown_error_type = None;
+        run.end_reason = "credential_unavailable";
         // Step 2: credential before network. Any error here means no network use
         // and no audit row.
         match self.check_credentials(shutdown).await {
@@ -1255,6 +1397,7 @@ impl TeslaStreamSupervisor {
 
         // Step 4: DNS, TCP, TLS and the upgrade within 10 s in total. The
         // access token is not in the URL or in any handshake header (R4).
+        run.end_reason = "connect_failed";
         let connected = until(shutdown, timeout(CONNECT_LIMIT, self.open_socket())).await;
         let mut socket = match connected {
             None => {
@@ -1281,6 +1424,9 @@ impl TeslaStreamSupervisor {
             }
             Some(Ok(Err(error))) => {
                 let (class, status, retry_after) = self.upgrade_failure(&error);
+                if matches!(error, WebSocketError::Http(_)) {
+                    run.end_reason = "upgrade_refused";
+                }
                 return self.connect_failed(
                     audit,
                     session,
@@ -1303,7 +1449,14 @@ impl TeslaStreamSupervisor {
 
         // Step 5: admitting.
         let admitted = self
-            .live_wait(&mut socket, shutdown, &mut clocks, self.admit())
+            .live_wait(
+                &mut socket,
+                shutdown,
+                &mut clocks,
+                &mut run.end_reason,
+                &mut run.unknown_error_type,
+                self.admit(),
+            )
             .await;
         let token = match admitted {
             Live::Done(Admit::Token(token)) => token,
@@ -1344,6 +1497,7 @@ impl TeslaStreamSupervisor {
                 );
             }
             Live::Done(Admit::Failed(failure)) => {
+                run.end_reason = "credential_unavailable";
                 tracing::debug!(?failure, "stream admission failed");
                 // Table 8.1: a lost authority drops the socket; a stopped
                 // credential or any other error closes it without a subscribe.
@@ -1367,6 +1521,7 @@ impl TeslaStreamSupervisor {
         // copies the text into its own buffers (message, frame, masked output)
         // and the TLS layer holds the plaintext while encrypting; neither copy
         // can be wiped from here.
+        run.end_reason = "credential_unavailable";
         let frame = match subscribe_frame_zeroizing(&self.tag, &token) {
             Ok(frame) => frame,
             Err(_) => {
@@ -1414,6 +1569,7 @@ impl TeslaStreamSupervisor {
         // deadline: a peer that is not reading cannot be sent a Ping either, so
         // a stalled write is the dead-socket case (R29, R32).
         let write_deadline = (Instant::now() + WRITE_LIMIT).min(clocks.dead_at());
+        run.end_reason = "subscribe_write_failed";
         let written = until(
             shutdown,
             timeout_at(write_deadline, socket.send(Message::text(text))),
@@ -1450,9 +1606,13 @@ impl TeslaStreamSupervisor {
 
         // Step 7: the read loop, then step 8, the close.
         let mut state = SessionState {
+            end_reason: "socket_error",
             subscribe_receipt,
             subscribe_open: true,
             accepted_seen: false,
+            first_accepted_at: None,
+            unknown_error_type: None,
+            rejected_reasons: Default::default(),
             rejected_streak: 0,
             clocks,
             counts: FrameCounts::default(),
@@ -1463,7 +1623,12 @@ impl TeslaStreamSupervisor {
         let end = self
             .read_loop(&mut socket, shutdown, audit, run, &mut state)
             .await;
-        self.log_summary(&state.counts);
+        run.end_reason = state.end_reason;
+        run.stable_end = state.first_accepted_at.is_some_and(|first| {
+            Instant::now().saturating_duration_since(first) > Duration::from_secs(60)
+        });
+        run.unknown_error_type = state.unknown_error_type.clone();
+        self.log_summary(&state, end.class == Some(FailureClass::Protocol));
         self.finish_subscribed(socket, end, shutdown, audit, session, &state)
             .await
     }
@@ -1594,7 +1759,8 @@ impl TeslaStreamSupervisor {
 
     /// One summary line per session (R52): counts only, never a frame value, a
     /// sample time, the tag or the endpoint's path.
-    fn log_summary(&self, counts: &FrameCounts) {
+    fn log_summary(&self, state: &SessionState, protocol: bool) {
+        let counts = &state.counts;
         #[cfg(test)]
         if let Some(summaries) = &self.seams.summaries {
             summaries
@@ -1602,18 +1768,24 @@ impl TeslaStreamSupervisor {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(*counts);
         }
-        tracing::debug!(
+        macro_rules! emit_summary { ($level:ident) => { tracing::$level!(
             host = %self.endpoint_host,
             region = ?self.region,
             accepted = counts.accepted,
             duplicates = counts.duplicates,
             rejected = counts.rejected,
+            rejected_reasons = ?state.rejected_reasons,
             implausible_time = counts.implausible_time,
             fields_invalid = counts.fields_invalid,
             unknown_messages = counts.unknown_messages,
             ignored_errors = counts.ignored_errors,
             "stream session summary"
-        );
+        ); }; }
+        if protocol {
+            emit_summary!(info);
+        } else {
+            emit_summary!(debug);
+        }
     }
 
     /// The read loop of one session (section 3). Messages are processed one at
@@ -1662,6 +1834,7 @@ impl TeslaStreamSupervisor {
             match wake {
                 Wake::Shutdown => return SessionEnd::shutdown(),
                 Wake::DeadSocket => {
+                    state.end_reason = "dead_socket";
                     // No inbound frame of any kind for three ping intervals (or
                     // one after a host sleep): the socket is not used again, so
                     // no unsubscribe is sent (R29).
@@ -1669,6 +1842,7 @@ impl TeslaStreamSupervisor {
                     return SessionEnd::socket_gone(FailureClass::Transport);
                 }
                 Wake::Silence => {
+                    state.end_reason = "data_silence";
                     tracing::debug!(
                         host = %self.endpoint_host,
                         moving = run.moving,
@@ -1678,12 +1852,13 @@ impl TeslaStreamSupervisor {
                 }
                 Wake::Ping => {
                     if let Some(end) = self.send_ping(socket, shutdown, &mut state.clocks).await {
+                        state.end_reason = "ping_write_failed";
                         return end;
                     }
                 }
                 Wake::Stable => {
                     // R37: 60 s after the first accepted frame, with the session
-                    // still open, transport back-off starts over. It is the last
+                    // still open, the outage and retry schedules reset. It is the last
                     // branch of the wait, so a message, a dead socket, data
                     // silence or a Ping due at the same instant is handled first:
                     // a session that the dead-socket or silence rule ends at
@@ -1693,11 +1868,12 @@ impl TeslaStreamSupervisor {
                     state.clocks.on_stable_applied();
                     tracing::debug!(
                         host = %self.endpoint_host,
-                        "stream session is stable, transport back-off reset"
+                        "stream session is stable, outage and retry schedules reset"
                     );
                 }
                 Wake::Message(message) => {
                     let queued_at = Instant::now();
+                    state.end_reason = socket_end_reason(&message);
                     let message = match message {
                         None
                         | Some(Err(
@@ -1707,6 +1883,21 @@ impl TeslaStreamSupervisor {
                         }
                         Some(Err(WebSocketError::Capacity(_))) => {
                             return SessionEnd::protocol(true);
+                        }
+                        Some(Err(WebSocketError::Protocol(
+                            ProtocolError::ResetWithoutClosingHandshake
+                            | ProtocolError::SendAfterClosing
+                            | ProtocolError::ReceivedAfterClosing,
+                        ))) => return SessionEnd::socket_gone(FailureClass::Transport),
+                        Some(Err(WebSocketError::Protocol(_) | WebSocketError::Utf8(_))) => {
+                            let mut end = SessionEnd::protocol(false);
+                            end.unsubscribe = false;
+                            end.close_code = if state.end_reason == "invalid_utf8" {
+                                CloseCode::Invalid
+                            } else {
+                                CloseCode::Protocol
+                            };
+                            return end;
                         }
                         Some(Err(_)) => return SessionEnd::socket_gone(FailureClass::Transport),
                         Some(Ok(message)) => message,
@@ -1780,12 +1971,13 @@ impl TeslaStreamSupervisor {
             // once; a Pong only feeds liveness (R17).
             Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => return Step::Continue,
             Message::Close(frame) => {
+                state.end_reason = service_end_reason(&message);
                 return Step::End(SessionEnd::socket_gone(close_failure_class(frame.as_ref())));
             }
             Message::Text(text) => text.as_str(),
             Message::Binary(bytes) => match std::str::from_utf8(bytes) {
                 Ok(text) => text,
-                Err(_) => return self.reject(state),
+                Err(_) => return self.reject(state, "invalid_utf8"),
             },
         };
         // R17: a message is a top-level JSON object with a string `msg_type`. serde
@@ -1796,18 +1988,34 @@ impl TeslaStreamSupervisor {
             .trim_start_matches([' ', '\t', '\n', '\r'])
             .starts_with('{')
         {
-            return self.reject(state);
+            return self.reject(state, "invalid_envelope");
         }
-        let Ok(head) = serde_json::from_str::<MessageHead<'_>>(text) else {
-            return self.reject(state);
+        let head = match serde_json::from_str::<MessageHead<'_>>(text) {
+            Ok(head) => head,
+            Err(error) => {
+                return self.reject(
+                    state,
+                    if error.is_syntax() || error.is_eof() {
+                        "invalid_json"
+                    } else {
+                        "invalid_envelope"
+                    },
+                );
+            }
         };
         match head.msg_type.as_ref() {
             "data:update" => {
                 self.handle_update(text, queued_at, shutdown, audit, run, state)
                     .await
             }
-            "data:error" => self.handle_error(text, state),
-            "control:hello" => self.handle_hello(text, queued_at, state),
+            "data:error" => {
+                state.end_reason = service_end_reason(&message);
+                self.handle_error(text, state)
+            }
+            "control:hello" => {
+                state.end_reason = service_end_reason(&message);
+                self.handle_hello(text, queued_at, state)
+            }
             _ => {
                 state.counts.unknown_messages += 1;
                 Step::Continue
@@ -1817,8 +2025,10 @@ impl TeslaStreamSupervisor {
 
     /// A rejected frame is dropped and counted; three in a row, with no accepted
     /// frame between them, end the session (R33).
-    fn reject(&self, state: &mut SessionState) -> Step {
+    fn reject(&self, state: &mut SessionState, reason: &'static str) -> Step {
+        state.end_reason = reason;
         state.counts.rejected += 1;
+        *state.rejected_reasons.entry(reason).or_default() += 1;
         state.rejected_streak += 1;
         if state.rejected_streak >= INVALID_FRAME_STREAK {
             Step::End(SessionEnd::protocol(false))
@@ -1837,8 +2047,9 @@ impl TeslaStreamSupervisor {
         run: &mut RunState,
         state: &mut SessionState,
     ) -> Step {
-        let Ok((mut update, mut fields_invalid)) = parse_data_update_counted(text) else {
-            return self.reject(state);
+        let (mut update, mut fields_invalid) = match parse_data_update_diagnosed(text) {
+            Ok(update) => update,
+            Err((_error, reason)) => return self.reject(state, reason),
         };
         // R24: a gear text that is the session's own token is a reflected
         // credential, not a reading. It is dropped as an invalid field before
@@ -1853,14 +2064,14 @@ impl TeslaStreamSupervisor {
         }
         // R25: another vehicle's data is never attributed to this one.
         if update.tag != self.tag {
-            return self.reject(state);
+            return self.reject(state, "foreign_vehicle");
         }
         // R20a: one far-future time would make every later frame of the vehicle
         // a duplicate in storage.
         let wall_ms = self.wall_clock.now_ms();
         if !plausible_sample_time(update.timestamp_ms, wall_ms) {
             state.counts.implausible_time += 1;
-            return self.reject(state);
+            return self.reject(state, "implausible_timestamp");
         }
         state.rejected_streak = 0;
         // R30: a frame that is not rejected is data, duplicate or not, with
@@ -1884,7 +2095,7 @@ impl TeslaStreamSupervisor {
         }
         if !state.accepted_seen {
             state.accepted_seen = true;
-            run.retry.on_first_accepted();
+            state.first_accepted_at = Some(queued_at);
             state.clocks.on_first_accepted(queued_at);
             if state.subscribe_open {
                 state.subscribe_open = false;
@@ -1948,7 +2159,7 @@ impl TeslaStreamSupervisor {
     /// class of its `error_type` token, never of its text.
     fn handle_error(&self, text: &str, state: &mut SessionState) -> Step {
         let Ok(Value::Object(members)) = serde_json::from_str::<Value>(text) else {
-            return self.reject(state);
+            return self.reject(state, "invalid_json");
         };
         if members
             .get("tag")
@@ -1958,6 +2169,14 @@ impl TeslaStreamSupervisor {
             return Step::Continue;
         }
         let error_type = members.get("error_type").and_then(Value::as_str);
+        state.unknown_error_type = unrecognised_error_type(text, &self.tag, &state.echo);
+        // Even a recognised public error spelling might be this session's
+        // reflected short credential. Do not reproduce it in the reason label.
+        if error_type.is_some_and(|token| {
+            token == self.tag || state.echo.equals(token) || state.echo.reflects(token)
+        }) {
+            state.end_reason = "reflected_error_type";
+        }
         tracing::debug!(
             error_type = self.loggable_error_type(state, error_type),
             "stream error frame"
@@ -1974,7 +2193,7 @@ impl TeslaStreamSupervisor {
     /// JSON type counts as absent.
     fn handle_hello(&self, text: &str, queued_at: Instant, state: &mut SessionState) -> Step {
         let Ok(Value::Object(members)) = serde_json::from_str::<Value>(text) else {
-            return self.reject(state);
+            return self.reject(state, "invalid_json");
         };
         let code = members.get("code").and_then(Value::as_i64);
         let error_type = members.get("error_type").and_then(Value::as_str);
@@ -1989,6 +2208,7 @@ impl TeslaStreamSupervisor {
                 Step::Continue
             }
             Some(class) => {
+                state.unknown_error_type = unrecognised_error_type(text, &self.tag, &state.echo);
                 tracing::debug!(
                     ?class,
                     error_type = self.loggable_error_type(state, error_type),

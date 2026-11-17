@@ -130,6 +130,13 @@ pub(crate) fn seed_entry(data: &Path, entry: CredentialEntry) -> Uuid {
     let generation = Uuid::new_v4(); let mut row = entry.row(generation);
     connection.reserve_credential_invocations(keys.keyring().current.id, 2).expect("fixture reservation");
     row.seal(&keys, entry.access.as_bytes(), entry.refresh.as_bytes(), &mut OsNonces).expect("fixture seal");
+    // A `source_token` row is written only by the takeover (DEC-172); the
+    // refused rows an older Hub could hold are seeded past the write gate.
+    if entry.origin == CredentialOrigin::SourceToken {
+        connection.test_insert_credential_vector(&row).expect("fixture refused pair");
+        connection.credential_durability_barrier().expect("fixture pair barrier");
+        return generation;
+    }
     let binding = (entry.origin == CredentialOrigin::HubLogin).then(|| {
         let secret = own_login_grant_secret().expect("fixture grant secret");
         let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("fixture clock").as_millis() as i64;

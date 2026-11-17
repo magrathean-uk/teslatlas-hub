@@ -1,0 +1,8 @@
+{
+  "producer": "Apple CryptoKit AES.GCM via scripts/make-source-token-vector.swift",
+  "encryptionKey": "synthetic-encryption-key-for-a-test-vector-only",
+  "accessToken": "synthetic-access-token-not-a-tesla-login-0001",
+  "refreshToken": "synthetic-refresh-token-not-a-tesla-login-0001",
+  "accessEnvelopeHex": "010a4145532e47434d2e5631101112131415161718191a1b1df7fb029f6ab77ac84a34bf2e72ef8d6d47a85b177a50be37ff19a60b478898bba76bc459cb7a4f7e390333230ddabe79585c833fceef7932ff5587cc",
+  "refreshEnvelopeHex": "010a4145532e47434d2e5631303132333435363738393a3b6fb45650a711d5ba8e6f00b5acf39c3bcef5e98954ef5af4afe57ff86c538f15d97d33a9064742f44b6c7b9fbdaef921ef5e3aec7746a45c84f046deb48e"
+}

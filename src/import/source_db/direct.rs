@@ -39,21 +39,21 @@ use crate::{
     source_db_parity::{SourceDbEvidenceError, SourceDbEvidenceFingerprint},
     source_db_progress::{SourceDbMigrationPhase, SourceDbMigrationProgressReporter},
     source_db_projection::{
-        ChargeProjectionFacts, DriveRelations, ProjectionReport, SourceDbAddress,
-        SourceDbCarPhysicalV2_2, SourceDbCarSettingsPhysicalV2_2, SourceDbChargingProcess,
-        SourceDbDrive, SourceDbGeofence, SourceDbOpenSession, SourceDbPosition,
-        SourceDbProjectionError, SourceDbSettingsPhysicalV2_2, SourceDbState, SourceDbUpdate,
-        SourceDbUpdatePhysicalV2_2, project_car, project_charge, project_charge_sample,
-        project_drive, project_position, project_state, project_update,
+        BrokenDriveTracker, ChargeProjectionFacts, DriveRelations, ProjectionReport, PositionDetachmentPolicy,
+        SourceDbAddress, SourceDbCarPhysicalV2_2, SourceDbCarSettingsPhysicalV2_2,
+        SourceDbChargingProcess, SourceDbDrive, SourceDbGeofence, SourceDbOpenSession,
+        SourceDbPosition, SourceDbProjectionError, SourceDbSettingsPhysicalV2_2, SourceDbState,
+        SourceDbUpdate, SourceDbUpdatePhysicalV2_2, project_car, project_charge,
+        project_charge_sample, project_drive, project_position, project_state, project_update,
     },
     source_db_reader::{
-        SourceDbReadLimits, SourceDbReaderError, SourceDbSchemaInfo,
-        binary_copy_sql, charge_copy_types, decode_binary_charge, decode_binary_position,
+        SourceDbReadLimits, SourceDbReaderError, SourceDbSchemaInfo, binary_copy_sql,
+        charge_copy_types, decode_binary_charge, decode_binary_position,
         open_exported_snapshot_lease, open_snapshot_capture_lane, position_copy_types,
         query_bounded, read_addresses, read_car_and_car_settings_v2_2, read_cars,
-        read_charging_processes, read_drives, read_geofences,
-        read_open_session, read_open_session_in_client,
-        read_settings_v2_2, read_updates_v2_2, related_positions_binary_copy_sql,
+        read_charging_processes, read_drives, read_geofences, read_open_session,
+        read_open_session_in_client, read_settings_v2_2, read_updates_v2_2,
+        related_positions_binary_copy_sql,
     },
     source_db_schema::SourceTable,
 };
@@ -1235,6 +1235,8 @@ async fn write_from_session(
         "prefetched source database related positions"
     );
 
+    let mut broken_drives = BrokenDriveTracker::new(&drives, selected_car_id);
+    let detachment = PositionDetachmentPolicy::new(&drives, selected_car_id, open_session.drive.as_ref().map(|d| d.id));
     let projected_drives = write_drives(
         selected_car_id,
         drives,
@@ -1256,6 +1258,9 @@ async fn write_from_session(
         &mut retained_rows,
         &projected_car,
         &projected_drives,
+        &mut broken_drives,
+        &detachment,
+        capture_mode,
         fragment_limits,
         &mut sink,
         &mut logical_fingerprint,
@@ -1265,6 +1270,7 @@ async fn write_from_session(
         total_rows,
     )
     .await?;
+    report.broken_drives = broken_drives.count();
     let completed_before_charges = completed_before_positions
         .checked_add(source_counts.positions)
         .ok_or(SourceDbDirectError::DirectRetentionAccountingOverflow)?;
@@ -1769,6 +1775,8 @@ fn validate_direct_source_counts(
     updates_accounted: u64,
 ) -> Result<(), SourceDbDirectError> {
     validate_direct_count("cars", source.cars, 1)?;
+    // broken_drives is already in skipped_open_drives; detached_positions is
+    // already in projected_positions. Neither subset is an extra source row.
     validate_direct_count(
         "drives",
         source.drives,
@@ -1782,7 +1790,8 @@ fn validate_direct_source_counts(
         source.positions,
         report
             .projected_positions
-            .checked_add(report.skipped_unattached_positions)
+            .checked_add(report.held_open_session_positions)
+            .and_then(|count| count.checked_add(report.skipped_unattached_positions))
             .ok_or(SourceDbDirectError::CountOverflow { table: "positions" })?,
     )?;
     validate_direct_count(
@@ -1922,6 +1931,9 @@ async fn write_positions(
     retained_rows: &mut usize,
     car: &crate::hub_pack::ProjectionCar,
     drives: &HashMap<i64, ProjectionDrive>,
+    broken_drives: &mut BrokenDriveTracker,
+    detachment: &PositionDetachmentPolicy,
+    capture_mode: DirectCaptureMode,
     limits: SourceDbFragmentLimits,
     sink: &mut PackSink<'_>,
     logical_fingerprint: &mut DirectProjectionFingerprint,
@@ -1932,6 +1944,7 @@ async fn write_positions(
 ) -> Result<(), SourceDbDirectError> {
     let mut accumulator = direct_position_fragment_accumulator(car, limits, sink)?;
     let mut source_position_rows = 0_u64;
+    let mut expected_detached = 0_u64;
     progress.report(
         SourceDbMigrationPhase::Positions,
         progress_base_rows,
@@ -1990,8 +2003,18 @@ async fn write_positions(
             );
         }
         let position = decode_binary_position(&row)?;
+        broken_drives.observe(&position);
+        if !matches!(capture_mode, DirectCaptureMode::LegacyBridgeCapture) {
+            expected_detached += u64::from(detachment.expects_detachment(&position));
+        }
+        if detachment.holds(&position) {
+            report.held_open_session_positions =
+                checked_increment(report.held_open_session_positions)?;
+            continue;
+        }
         let Some(drive_id) = position.drive_id else {
             let projected = crate::lifecycle::imported_position(&position);
+            detachment.validate(&position, &projected)?;
             append_direct_position(
                 projected,
                 None,
@@ -2003,12 +2026,29 @@ async fn write_positions(
             continue;
         };
         let Some(drive) = drives.get(&drive_id) else {
-            report.skipped_unattached_positions =
-                checked_increment(report.skipped_unattached_positions)?;
+            // The legacy bridge must reproduce the retired pack digest exactly.
+            if matches!(capture_mode, DirectCaptureMode::LegacyBridgeCapture) {
+                report.skipped_unattached_positions =
+                    checked_increment(report.skipped_unattached_positions)?;
+                continue;
+            }
+            let projected = project_position(&position, selected_car_id, false)?
+                .expect("unattached history position projects");
+            detachment.validate(&position, &projected)?;
+            append_direct_position(
+                projected,
+                None,
+                &mut accumulator,
+                sink,
+                logical_fingerprint,
+                report,
+            )?;
+            report.detached_positions = checked_increment(report.detached_positions)?;
             continue;
         };
         let projected = project_position(&position, selected_car_id, true)?
             .expect("completed drive position projects");
+        detachment.validate(&position, &projected)?;
         append_direct_position(
             projected,
             Some(drive),
@@ -2018,6 +2058,7 @@ async fn write_positions(
             report,
         )?;
     }
+    validate_direct_count("detached_positions", expected_detached, report.detached_positions)?;
     if let Some(accumulator) = accumulator.as_mut() {
         accumulator.flush(sink)?;
     }

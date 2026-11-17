@@ -2506,11 +2506,6 @@ fn ct098_store_provenance_negatives() {
         ),
         (
             CredentialSlot::OwnerApi,
-            CredentialOrigin::SourceToken,
-            "refresh-0003",
-        ),
-        (
-            CredentialSlot::OwnerApi,
             CredentialOrigin::ProviderEntry,
             "refresh-0003",
         ),
@@ -2944,6 +2939,62 @@ fn ct024_schema_constraints() {
         None,
         "CT24 controls preserve foreign keys"
     );
+}
+/// DEC-172 write gate: `SourceTakeover` is the only provenance that writes
+/// `source_token`, and it writes nothing else: Owner API slot, Hub refresh
+/// owner, only into an empty slot. The spent and opaque-fence refusals apply.
+#[test]
+fn source_takeover_write_gate_pairs_provenance_and_origin() {
+    fn takeover(f: &mut Fixture, pair: &SealedCredentialPair, policy: ReplacePolicy) -> Result<(), StoreError> {
+        f.conn.replace_credential_pair(pair, &EntryProvenance::SourceTakeover, &LegacyCandidates(Vec::new()), policy)
+    }
+    fn refused_as(f: &mut Fixture, pair: &SealedCredentialPair, provenance: &EntryProvenance<'_>, policy: ReplacePolicy, expected: fn(&StoreError) -> bool, label: &str) {
+        let (observer, before) = f.observe();
+        let result = f.conn.replace_credential_pair(pair, provenance, &LegacyCandidates(Vec::new()), policy);
+        assert!(result.as_ref().is_err_and(expected), "{label}: {result:?}");
+        assert_eq!(data_version(&observer), before, "{label}: nothing written");
+    }
+    fn refused(f: &mut Fixture, pair: &SealedCredentialPair, policy: ReplacePolicy, expected: fn(&StoreError) -> bool, label: &str) {
+        refused_as(f, pair, &EntryProvenance::SourceTakeover, policy, expected, label);
+    }
+    let mut f = Fixture::new();
+    let source = f.pair_with(CredentialSlot::OwnerApi, 1, CredentialOrigin::SourceToken, RefreshOwner::Hub, b"access-0001", b"refresh-0001");
+    let invalid = |error: &StoreError| matches!(error, StoreError::InvalidOrigin);
+    // Supplied provenance cannot claim source_token, before any slot, spent or fence check.
+    refused_as(&mut f, &source, &EntryProvenance::Supplied, ReplacePolicy::ReplaceAny, invalid, "supplied source_token");
+    refused(&mut f, &source, ReplacePolicy::ReplaceAny, invalid, "ReplaceAny");
+    let external = f.pair_with(CredentialSlot::OwnerApi, 2, CredentialOrigin::SourceToken, RefreshOwner::External, b"access-0001", b"refresh-0001");
+    refused(&mut f, &external, ReplacePolicy::OnlyIfEmpty, invalid, "external owner");
+    for (n, origin) in [(3, CredentialOrigin::HubLogin), (4, CredentialOrigin::DirectEntry), (5, CredentialOrigin::ProviderEntry)] {
+        let other = f.pair_with(CredentialSlot::OwnerApi, n, origin, RefreshOwner::Hub, b"access-0001", b"refresh-0001");
+        refused(&mut f, &other, ReplacePolicy::OnlyIfEmpty, invalid, origin.as_str());
+    }
+    let fleet = f.pair(CredentialSlot::FleetApi, 6, "refresh-0006");
+    refused(&mut f, &fleet, ReplacePolicy::OnlyIfEmpty, invalid, "fleet_oauth");
+    let fleet_source = f.pair_with(CredentialSlot::FleetApi, 8, CredentialOrigin::SourceToken, RefreshOwner::Hub, b"access-0008", b"refresh-0008");
+    refused(&mut f, &fleet_source, ReplacePolicy::OnlyIfEmpty, |_| true, "source_token on the Fleet slot");
+    // A sign-in grant cannot carry the taken-over origin either.
+    let secret = Zeroizing::new([0x5a; 32]);
+    let id = f.conn.insert_sign_in_binding(CredentialSlot::OwnerApi, binding(&secret), T0_MS).unwrap();
+    refused_as(&mut f, &source, &EntryProvenance::HubGrant { sign_in_id: id, grant_secret: &secret }, ReplacePolicy::ReplaceAny,
+        |error| matches!(error, StoreError::SignInBindingInvalid), "a grant cannot write source_token");
+    // The admitted case, then the occupied slot.
+    takeover(&mut f, &source, ReplacePolicy::OnlyIfEmpty).expect("takeover into the empty Owner slot");
+    f.conn.credential_durability_barrier().unwrap();
+    let stored = f.conn.load_credential_pair(CredentialSlot::OwnerApi).unwrap().unwrap();
+    assert_eq!((stored.origin, stored.refresh_owner, stored.generation), (Some(CredentialOrigin::SourceToken), RefreshOwner::Hub, generation(1)));
+    let again = f.pair_with(CredentialSlot::OwnerApi, 7, CredentialOrigin::SourceToken, RefreshOwner::Hub, b"access-0007", b"refresh-0007");
+    refused(&mut f, &again, ReplacePolicy::OnlyIfEmpty, |error| matches!(error, StoreError::SlotOccupied), "occupied");
+    // Spent: a fenced refresh token is refused.
+    let mut f = Fixture::new();
+    f.fence("refresh-0001", "attempt");
+    let spent = f.pair_with(CredentialSlot::OwnerApi, 1, CredentialOrigin::SourceToken, RefreshOwner::Hub, b"access-0001", b"refresh-0001");
+    refused(&mut f, &spent, ReplacePolicy::OnlyIfEmpty, |error| matches!(error, StoreError::RefreshTokenSpent), "spent");
+    // Opaque legacy fence: the store cannot prove the token unused.
+    let mut f = Fixture::new();
+    f.conn.test_connection().execute("INSERT INTO credential_legacy_fences VALUES(?1,'opaque',?2)", params![generation(0x2000).to_string(), T0_MS]).unwrap();
+    let fenced = f.pair_with(CredentialSlot::OwnerApi, 1, CredentialOrigin::SourceToken, RefreshOwner::Hub, b"access-0001", b"refresh-0001");
+    refused(&mut f, &fenced, ReplacePolicy::OnlyIfEmpty, |error| matches!(error, StoreError::FreshSignInRequired), "opaque fence");
 }
 #[path = "g24_m2_s/migration_addition.rs"]
 mod migration_addition;

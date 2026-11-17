@@ -1436,6 +1436,7 @@ include!("db/device_grants.rs");
 include!("db/observations_and_lifecycle.rs");
 include!("db/collector_state.rs");
 include!("db/auth_state.rs");
+include!("db/owner_refresh.rs");
 include!("db/readiness.rs");
 include!("db/geofences_and_terrain.rs");
 include!("db/catalogue_models.rs");

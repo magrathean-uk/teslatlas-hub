@@ -20,7 +20,7 @@
 use std::{
     sync::{
         Arc, Mutex, MutexGuard, OnceLock,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -100,6 +100,9 @@ struct GateInner {
     exchanges: Arc<AtomicUsize>,
     /// Every permit not yet dropped, of any kind.
     held: Arc<AtomicUsize>,
+    /// The grant sequence of the window last opened, plus one; zero before any
+    /// (M04-T11: a collector run's intake latencies are that window's).
+    window_seq: AtomicU64,
 }
 
 /// A cloneable handle; clones share one gate.
@@ -167,6 +170,7 @@ impl EgressGate {
                 state: Mutex::new(GateState::default()),
                 exchanges: Arc::new(AtomicUsize::new(0)),
                 held: Arc::new(AtomicUsize::new(0)),
+                window_seq: AtomicU64::new(0),
             }),
         }
     }
@@ -248,8 +252,18 @@ impl EgressGate {
         self.inner.state.lock().expect("gate lock").expiry_observed
     }
 
-    pub(super) fn open(&self, deadline_wall: i64, deadline_mono: u64) {
+    /// The grant sequence of the window the gate was last opened for, read without
+    /// the gate's lock. A permit granted between two equal reads belongs to it:
+    /// sequences only grow.
+    pub fn window_seq(&self) -> Option<u64> {
+        self.inner.window_seq.load(Ordering::SeqCst).checked_sub(1)
+    }
+
+    pub(super) fn open(&self, seq: u64, deadline_wall: i64, deadline_mono: u64) {
         let mut state = self.inner.state.lock().expect("gate lock");
+        self.inner
+            .window_seq
+            .store(seq.saturating_add(1), Ordering::SeqCst);
         state.open = Some(OpenWindow {
             deadline_wall,
             deadline_mono,

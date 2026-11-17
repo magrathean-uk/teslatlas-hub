@@ -220,6 +220,13 @@ impl GuardBed {
         self.trip_at_nth(point, 1);
     }
 
+    /// The boundary armed at `point` was never reached: the work was refused
+    /// before it (M09-T19 ruling 1), so it wrote nothing there.
+    fn assert_untouched(&self, point: &str) {
+        assert!(!self.guard.audit().tripped(), "{point}: the boundary was reached");
+        assert_eq!(self.guard.audit().refused(point), 0, "{point}: the boundary refused nothing");
+    }
+
     /// The armed boundary was reached, it refused (and nothing let a write through
     /// there), and the store has not changed since: no write followed the fence, and
     /// the cleanup of the failure wrote nothing either.
@@ -441,7 +448,7 @@ fn p3bf2_stream_frame(point: &'static str) {
         &mut core.scheduler,
         core_id(1),
         &update,
-        Duration::ZERO,
+        Instant::now(),
         &mut cache,
     );
     refused_with_the_sensitive_failure(point, &result);
@@ -477,7 +484,7 @@ fn p3bf2_a_stream_frame_is_written_while_the_guard_allows() {
         &mut core.scheduler,
         core_id(1),
         &update,
-        Duration::ZERO,
+        Instant::now(),
         &mut cache,
     )
     .expect("the frame");
@@ -505,7 +512,7 @@ fn p3bf2_a_frame_is_refused_when_the_admission_is_gone_and_the_fence_is_clear() 
         &mut core.scheduler,
         core_id(1),
         &update,
-        Duration::ZERO,
+        Instant::now(),
         &mut cache,
     );
     refused_with_the_sensitive_failure("frame-admission", &result);
@@ -1210,17 +1217,13 @@ fn p3bf2_resident_legacy(point: &'static str) {
             Some(&bed.guard),
         )
         .await;
-        match point {
-            "resident-begin" => assert!(
-                matches!(result, Err(ResidentActionExecutionError::Authentication)),
-                "{point}: {result:?}"
-            ),
-            _ => assert!(
-                matches!(result, Err(ResidentActionExecutionError::CompletionRefused)),
-                "{point}: {result:?}"
-            ),
-        }
-        bed.assert_held(point);
+        // M09-T19 ruling 1: the action is refused before its receipt, so the
+        // fence is never reached and nothing is written.
+        assert!(
+            matches!(result, Err(ResidentActionExecutionError::CommandsNotOffered)),
+            "{point}: {result:?}"
+        );
+        bed.assert_untouched(point);
     });
 }
 
@@ -2295,14 +2298,16 @@ async fn p3bf2_owner_resident(
     (receipts, answer, tripped)
 }
 
+/// M09-T19 ruling 1: the running Owner loop's socket refuses the action
+/// before its receipt, fenced or not; the run's guard is never reached.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn p3bf2_the_owner_loop_hands_its_guard_to_the_resident_socket() {
-    let (control, _, _) = p3bf2_owner_resident(false).await;
-    assert!(control > 0, "unfenced, the action writes its audit receipt");
-    let (receipts, answer, tripped) = p3bf2_owner_resident(true).await;
-    assert!(tripped, "the socket consults the run's guard at the receipt");
-    assert_eq!(receipts, 0, "no audit receipt after the fence: {answer:?}");
-    assert!(answer.is_err(), "the action is refused: {answer:?}");
+    for fenced in [false, true] {
+        let (receipts, answer, tripped) = p3bf2_owner_resident(fenced).await;
+        assert!(!tripped, "refused before the receipt's guard");
+        assert_eq!(receipts, 0, "no audit receipt: {answer:?}");
+        assert!(matches!(answer, Err(ResidentVehicleActionError::CommandsNotOffered)), "{answer:?}");
+    }
 }
 
 async fn p3bf2_fleet_resident(
