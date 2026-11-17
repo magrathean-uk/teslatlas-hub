@@ -1697,6 +1697,61 @@ fn start_preflight_idle_with_a_catalogue_reads_neither_the_whole_store_nor_a_pac
     assert_eq!(start(&config), Ok(idle), "idle without the whole-store check");
 }
 
+/// The stored credential states the first round pinned only through the
+/// admission rule, now through Start: a pending and a blocked Owner slot, and
+/// a key store fault with a login present. Each is refused with the doctor's
+/// refusal.
+#[test]
+fn start_preflight_refuses_pending_blocked_and_key_store_faults() {
+    let slot_state = |config: &HubConfig| {
+        let store = HubStore::open_read_only(&config.data_dir).expect("store");
+        crate::auth::credential_sign_in::credential_status(&store, &config.data_dir, preflight_clock_ms().expect("clock"))
+            .expect("status")
+            .legacy_credentials
+            .store_state
+    };
+    let temporary = crate::private_tempdir().expect("temporary directory");
+
+    // A pending Owner slot: the stored pair is not converted yet.
+    let pending = temporary.path().join("pending");
+    let config = {
+        let store = seed_selected_car(&pending);
+        drop(store);
+        crate::CredentialVaultEntry::seed_migration_for_test(&pending, 0, false, false).expect("pending Owner slot");
+        let mut config = idle_start_config(&pending);
+        config.collector.interval_seconds = 300;
+        config
+    };
+    assert!(!hub_awaits_owner_sign_in(&config).expect("readable"), "a pending slot does not await the sign-in");
+    assert!(!doctor_admits(&config));
+    assert_eq!(slot_state(&config), "migration_pending");
+    assert_eq!(start(&config), Err(credential_refusal(&config)), "pending Owner slot");
+
+    // The same slot blocked: its old key is unavailable.
+    rusqlite::Connection::open(pending.join("hub.sqlite"))
+        .expect("writable")
+        .execute("UPDATE credential_format_state SET owner_api_blocked = 'old_key_unavailable' WHERE singleton_id = 1", [])
+        .expect("blocked Owner slot");
+    assert!(!hub_awaits_owner_sign_in(&config).expect("readable"), "a blocked slot does not await the sign-in");
+    assert!(!doctor_admits(&config));
+    assert_eq!(slot_state(&config), "source_credential_disabled");
+    assert_eq!(start(&config), Err(credential_refusal(&config)), "blocked Owner slot");
+
+    // The Hub's own login is stored and its key store is damaged.
+    let signed_in = temporary.path().join("signed-in");
+    let config = seed_signed_in_hub(&signed_in);
+    assert_eq!(start(&config).expect("signed in")["status"], "ready");
+    let keyring = signed_in.join("secrets").join(crate::auth::credential_keys::KEYRING_NAME);
+    fs::write(&keyring, [0_u8; 10]).expect("damaged key file");
+    assert!(!doctor_admits(&config));
+    let store = HubStore::open_read_only(&signed_in).expect("store");
+    let status = crate::auth::credential_sign_in::credential_status(&store, &signed_in, preflight_clock_ms().expect("clock")).expect("status");
+    assert!(status.legacy_credentials.present && status.credential_store.keyring != "ok", "a login with a damaged key store");
+    let refusal = credential_refusal(&config);
+    assert!(refusal.starts_with(&format!("{}: ", status.credential_store.keyring)), "{refusal}");
+    assert_eq!(start(&config), Err(refusal), "key store fault with a login present");
+}
+
 /// A clock before 1970 refuses Start in both branches with the words the
 /// whole-store check gave: "Hub data is unavailable: ..." where the awaiting
 /// rule reads the catalogue (any configured collecting Legacy Hub), and the
