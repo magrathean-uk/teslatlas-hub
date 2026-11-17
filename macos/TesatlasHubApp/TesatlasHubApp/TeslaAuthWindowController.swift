@@ -9,7 +9,7 @@ import WebKit
 
 // OAuth parameters and callback semantics are derived from Tesla Auth v0.15.0
 // (MIT), commit 68da1f850e9cb87ac0e54c608d5a2e90d3ad1608.
-// Modified for Tesatlas Hub on 2026-08-22, 2026-08-25 and 2026-11-11.
+// Modified for Tesatlas Hub on 2026-08-22, 2026-08-25, 2026-11-11 and 2026-11-17.
 
 /// The authorisation material of the Hub's own sign-in. The app never exchanges it and
 /// never sees a token: it hands the code, its PKCE verifier and the redirect URI to
@@ -48,6 +48,14 @@ enum TeslaAuthError: LocalizedError, Equatable {
 enum TeslaCallbackOutcome: Equatable {
     case cancelled
     case code(TeslaAuthCodeGrant)
+}
+
+/// The browser leg of a Tesla sign-in: where the window starts, which navigation is the
+/// callback (cancelled before it loads) and what the callback means.
+protocol TeslaAuthCallbackFlow {
+    var authorizationURL: URL { get }
+    func isCallback(_ url: URL) -> Bool
+    func callback(_ url: URL) throws -> TeslaCallbackOutcome
 }
 
 struct TeslaOAuthFlow {
@@ -130,7 +138,7 @@ struct TeslaOAuthFlow {
             .replacingOccurrences(of: "=", with: "")
     }
 
-    private static func constantTimeEqual(_ left: String, _ right: String) -> Bool {
+    static func constantTimeEqual(_ left: String, _ right: String) -> Bool {
         let left = Array(left.utf8)
         let right = Array(right.utf8)
         var difference = UInt64(left.count ^ right.count)
@@ -143,16 +151,112 @@ struct TeslaOAuthFlow {
     }
 }
 
+extension TeslaOAuthFlow: TeslaAuthCallbackFlow {
+    /// The owner sign-in keeps `tesla://auth/callback`.
+    func isCallback(_ url: URL) -> Bool { Self.isCallback(url) }
+}
+
+/// The Fleet sign-in's browser leg (M09-T12): the authorise address `setup-fleet begin`
+/// returned, and the owner's registered redirect URI, matched exactly (scheme, host, port and
+/// path). That navigation is cancelled before it loads, so no page needs to exist there. There
+/// is no PKCE: the service holds the attempt and its binding, and the app checks `state`.
+struct FleetOAuthFlow: TeslaAuthCallbackFlow, Equatable {
+    let authorizationURL: URL
+    let redirectURI: String
+    let state: String
+
+    init(authorizationURL: URL, redirectURI: String, clientID: String) throws {
+        guard let components = URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false),
+              components.scheme?.lowercased() == "https",
+              ["auth.tesla.com", "auth.tesla.cn"].contains(components.host?.lowercased() ?? ""),
+              components.port == nil, components.user == nil, components.password == nil,
+              components.path == "/oauth2/v3/authorize",
+              Self.redirectComponents(redirectURI) != nil else {
+            throw TeslaAuthError.invalidAuthorizationURL
+        }
+        var query: [String: String] = [:]
+        for item in components.queryItems ?? [] {
+            guard query[item.name] == nil else { throw TeslaAuthError.invalidAuthorizationURL }
+            query[item.name] = item.value
+        }
+        guard query["response_type"] == "code", query["redirect_uri"] == redirectURI,
+              query["client_id"] == clientID,
+              let state = query["state"], state.count >= 16 else {
+            throw TeslaAuthError.invalidAuthorizationURL
+        }
+        self.authorizationURL = authorizationURL
+        self.redirectURI = redirectURI
+        self.state = state
+    }
+
+    private static func redirectComponents(_ redirectURI: String) -> URLComponents? {
+        guard let components = URLComponents(string: redirectURI),
+              ["https", "http"].contains(components.scheme?.lowercased() ?? ""),
+              !(components.host ?? "").isEmpty,
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil else { return nil }
+        return components
+    }
+
+    /// Whether `url` is the registered redirect URI (any query): scheme and host ignore case,
+    /// an absent port is the scheme's default, and the path matches exactly.
+    static func matches(_ url: URL, redirectURI: String) -> Bool {
+        guard let expected = redirectComponents(redirectURI),
+              let actual = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              actual.user == nil, actual.password == nil else { return false }
+        func port(_ components: URLComponents) -> Int? {
+            if let port = components.port { return port }
+            switch components.scheme?.lowercased() {
+            case "https"?: return 443
+            case "http"?: return 80
+            default: return nil
+            }
+        }
+        func path(_ components: URLComponents) -> String {
+            components.percentEncodedPath.isEmpty ? "/" : components.percentEncodedPath
+        }
+        return actual.scheme?.lowercased() == expected.scheme?.lowercased()
+            && actual.host?.lowercased() == expected.host?.lowercased()
+            && port(actual) == port(expected)
+            && path(actual) == path(expected)
+    }
+
+    func isCallback(_ url: URL) -> Bool { Self.matches(url, redirectURI: redirectURI) }
+
+    /// The callback: an abandoned or foreign one (another `state`) is refused before the redeem.
+    func callback(_ url: URL) throws -> TeslaCallbackOutcome {
+        guard isCallback(url), let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw TeslaAuthError.invalidCallback
+        }
+        var query: [String: String] = [:]
+        for item in components.queryItems ?? [] where query[item.name] == nil { query[item.name] = item.value }
+        if let error = query["error"] {
+            if error == "login_cancelled" { return .cancelled }
+            throw HubFleetRefusal.refusal(code: "fleet_access_denied", serviceMessage: "")
+        }
+        guard let code = query["code"], !code.isEmpty,
+              let callbackState = query["state"], !callbackState.isEmpty else {
+            throw TeslaAuthError.invalidCallback
+        }
+        guard TeslaOAuthFlow.constantTimeEqual(callbackState, state) else { throw TeslaAuthError.stateMismatch }
+        // No verifier: the Fleet redeem names the attempt's binding instead.
+        return .code(TeslaAuthCodeGrant(code: code, codeVerifier: "", redirectURI: redirectURI))
+    }
+}
+
 final class TeslaAuthWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate {
-    private let flow: TeslaOAuthFlow
+    private let flow: TeslaAuthCallbackFlow
     private let webView: WKWebView
     private let completion: (Result<TeslaAuthCodeGrant, Error>) -> Void
     private var finished = false
     private var callbackConsumed = false
 
+    /// `flow` defaults to the owner sign-in (`tesla://auth/callback`); the Fleet sign-in passes
+    /// its own, matched to the owner's registered redirect URI.
     init(loadAuthorizationURL: Bool = true,
+         flow: TeslaAuthCallbackFlow? = nil,
          completion: @escaping (Result<TeslaAuthCodeGrant, Error>) -> Void) throws {
-        flow = try TeslaOAuthFlow()
+        self.flow = try flow ?? TeslaOAuthFlow()
         self.completion = completion
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
@@ -168,7 +272,7 @@ final class TeslaAuthWindowController: NSWindowController, NSWindowDelegate, WKN
         window.contentView = webView
         window.center()
         if loadAuthorizationURL {
-            webView.load(URLRequest(url: flow.authorizationURL,
+            webView.load(URLRequest(url: self.flow.authorizationURL,
                                     cachePolicy: .reloadIgnoringLocalAndRemoteCacheData,
                                     timeoutInterval: 30))
         }
@@ -179,7 +283,7 @@ final class TeslaAuthWindowController: NSWindowController, NSWindowDelegate, WKN
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard let url = navigationAction.request.url, TeslaOAuthFlow.isCallback(url) else {
+        guard let url = navigationAction.request.url, flow.isCallback(url) else {
             decisionHandler(.allow)
             return
         }

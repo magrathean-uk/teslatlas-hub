@@ -105,7 +105,7 @@ enum HubDiagnosticsPresentation {
 ///
 /// Every field is read defensively: a missing, renamed or unknown value is shown as
 /// unknown or by its code, never guessed. The app only reads; it holds no token and
-/// offers no Fleet action (Fleet is parked).
+/// offers no Fleet action here (the Fleet set-up is in Connect Tesla, M09-T12).
 struct HubCollectionStatus: Equatable {
     /// The Hub's own Tesla login, from `legacyCredentials`.
     enum Login: Equatable {
@@ -357,7 +357,12 @@ struct HubCollectionStatus: Equatable {
         }
     }
 
-    static var fleetText: String { HubL10n.text("hub.collection.fleet", fallback: "Parked: no Fleet action is available") }
+    /// The Fleet row: what the Fleet API needs, or that this build does not offer it.
+    static var fleetText: String {
+        HubFleetOnboarding.isOffered
+            ? HubL10n.text("hub.fleetSetup.statusOffered", fallback: "Available in Connect Tesla: polling with your own Tesla developer application and a domain")
+            : HubL10n.text("hub.fleetSetup.statusNotOffered", fallback: "Not offered in this version")
+    }
     static var signInUnavailableText: String { HubL10n.text("hub.collection.signInUnavailable", fallback: "Sign-in unavailable on this Hub") }
 
     /// The labelled rows Status shows, in order.

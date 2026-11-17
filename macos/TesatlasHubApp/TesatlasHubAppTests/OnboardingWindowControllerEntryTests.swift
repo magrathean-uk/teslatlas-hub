@@ -93,11 +93,27 @@ extension OnboardingWindowControllerTests {
         return onboarding
     }
 
+    /// M09-T12: the Fleet route's first account step. The prerequisites are ticked and the
+    /// application's details entered (no token field exists); Continue makes this Hub a Fleet
+    /// Hub with collection off (`prepareFleetHub`). Nothing reaches Tesla.
     func submitFleet(_ onboarding: OnboardingWindowController) throws {
-        try field(placeholder: "Tesla application client ID", in: onboarding).stringValue = "client"
-        try field(placeholder: "Access token", in: onboarding).stringValue = "access-token"
-        try field(placeholder: "Refresh token", in: onboarding).stringValue = "refresh-token"
-        press(try primaryButton("Set Up Fleet", in: onboarding))
+        let placeholders = descendantViews(of: onboarding.window?.contentView)
+            .compactMap { ($0 as? NSTextField)?.placeholderString }
+        XCTAssertFalse(placeholders.contains("Access token") || placeholders.contains("Refresh token"),
+                       "the Fleet route has no token field")
+        onboarding.tickFleetPrerequisitesForTests()
+        press(try primaryButton("Continue", in: onboarding))
+        onboarding.enterFleetDetailsForTests(clientID: "client", region: .eu,
+                                             redirectURI: "https://example.com/tesla/callback",
+                                             domain: "example.com")
+        press(try primaryButton("Continue", in: onboarding))
+    }
+
+    /// The Fleet route's account step had its effect: the configuration names the Fleet provider
+    /// with collection off until the consent page.
+    static func fleetPrepared(_ harness: WindowOwnerRig) -> Bool {
+        let config = harness.rig.configText
+        return config.contains("provider = \"fleet\"") && config.contains("interval_seconds = 0")
     }
 
     /// Presses the legacy route's sign-in. The service reports a faulted collection window, so
@@ -185,7 +201,7 @@ extension OnboardingWindowControllerTests {
 
     func testEntryDashboardSetupUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "DashboardSetup", family: .account, options: .init(installed: false),
-                              effect: { $0.runner.count("setup-fleet") >= 1 }) { test, h, _ in
+                              effect: { Self.fleetPrepared($0) }) { test, h, _ in
             h.activate(h.dashboardButton("Set Up Hub"))
             let onboarding = try XCTUnwrap(test.currentOnboarding(h), "Set Up Hub opened onboarding")
             XCTAssertEqual(h.rig.acquisitions(.account), 0, "opening the page reserved nothing")
@@ -196,7 +212,7 @@ extension OnboardingWindowControllerTests {
 
     func testEntryDashboardConnectUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "DashboardConnect", family: .account,
-                              effect: { $0.runner.count("setup-fleet") >= 1 }) { test, h, _ in
+                              effect: { Self.fleetPrepared($0) }) { test, h, _ in
             h.activate(h.window.connectButton)
             let onboarding = try XCTUnwrap(test.currentOnboarding(h), "Connect Tesla opened onboarding")
             XCTAssertEqual(h.rig.acquisitions(.account), 0, "opening the page reserved nothing")
@@ -209,7 +225,7 @@ extension OnboardingWindowControllerTests {
         var options = OwnerRig.Options(loaded: .loaded)
         options.runningStatus = true
         try assertEntry(.init(name: "ManageTesla", family: .account, options: options,
-                              effect: { $0.runner.count("setup-fleet") >= 1 }) { test, h, _ in
+                              effect: { Self.fleetPrepared($0) }) { test, h, _ in
             XCTAssertEqual(h.window.connectButton.title, "Manage Tesla", "a connected account offers the menu")
             let menu = h.window.teslaAccountMenu()
             XCTAssertEqual(menu.items.filter { !$0.isSeparatorItem }.count, 4)
@@ -423,7 +439,7 @@ extension OnboardingWindowControllerTests {
 
     func testEntryAccountUseFleetUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "AccountUseFleet", family: .account, options: connectedOptions(),
-                              effect: { $0.runner.count("setup-fleet") >= 1 }) { test, h, _ in
+                              effect: { Self.fleetPrepared($0) }) { test, h, _ in
             try test.chooseMenuItem("Use Fleet API", h)
             let onboarding = try XCTUnwrap(test.currentOnboarding(h))
             XCTAssertEqual(onboarding.currentRoute, .fleet)
@@ -466,7 +482,7 @@ extension OnboardingWindowControllerTests {
 
     func testEntryFleetFirstRunUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "FleetFirstRun", family: .account, options: .init(installed: false),
-                              effect: { $0.runner.count("setup-fleet") >= 1 }) { test, h, _ in
+                              effect: { Self.fleetPrepared($0) }) { test, h, _ in
             let onboarding = try test.openOnboarding(h, route: .fleet)
             try test.submitFleet(onboarding)
         })
@@ -474,7 +490,7 @@ extension OnboardingWindowControllerTests {
 
     func testEntryFleetReconfigurationUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "FleetReconfiguration", family: .account,
-                              effect: { $0.runner.count("setup-fleet") >= 1 && $0.service.calls.contains("run:pause") }) { test, h, _ in
+                              effect: { Self.fleetPrepared($0) && $0.service.calls.contains("run:pause") }) { test, h, _ in
             let onboarding = try test.openOnboarding(h, route: .fleet)
             try test.submitFleet(onboarding)
         })

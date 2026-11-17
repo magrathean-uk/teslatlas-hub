@@ -2514,7 +2514,7 @@ struct HubOwnerDiscoveryFailure: LocalizedError, Equatable {
         case "window_closed":
             return HubL10n.text("hub.signIn.discovery.windowClosed", fallback: "You are signed in, but the collection window closed before Hub could find your cars. Open a window, then retry finding cars.")
         case "provider_parked":
-            return HubL10n.text("hub.signIn.discovery.providerParked", fallback: "You are signed in, but this Hub collects with another provider, so it cannot find cars with this sign-in.")
+            return HubL10n.text("hub.fleetSetup.ownerProviderParked", fallback: "You are signed in, but this Hub is set up for the Fleet API, so it did not look for cars with the owner sign-in. Continue the Fleet set-up, or choose Use owner sign-in to switch this Hub back.")
         case "discovery_settings_invalid":
             return HubL10n.text("hub.signIn.discovery.settingsInvalid", fallback: "You are signed in, but this Hub's Owner API address is not Tesla's, so Hub did not ask for your cars. Correct the address, then sign in with Tesla again.")
         default:
@@ -5398,6 +5398,10 @@ final class HubController {
         }
     }
 
+    /// The token-paste Fleet set-up (before M09-T12). No screen calls it any more: the service
+    /// refuses every token-named key (`source_credential_disabled`), and the Fleet route uses
+    /// `prepareFleetHub` and the `setup-fleet` verbs below. Kept only for the lifecycle owner
+    /// matrices that still drive it as a pause-setup-start example.
     func configureFleetAccount(credentials: HubFleetSetupCredentials,
                                completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
@@ -8326,5 +8330,646 @@ final class HubController {
         if seconds < 3_600 { return HubL10n.plural("hub.HubController.3906.1333", count: Int(seconds / 60), one: "%d minute ago", other: "%d minutes ago") }
         if seconds < 86_400 { return HubL10n.plural("hub.HubController.3907.1334", count: Int(seconds / 3_600), one: "%d hour ago", other: "%d hours ago") }
         return HubL10n.plural("hub.HubController.3908.1335", count: Int(seconds / 86_400), one: "%d day ago", other: "%d days ago")
+    }
+}
+
+// MARK: - Fleet onboarding (M09-T12)
+
+/// The Fleet set-up state `preflight` names (M09-T19a interface, section 1). The app shows each
+/// waiting state with its next step and continues from it after a quit.
+enum HubFleetSetupState: Equatable {
+    /// The Hub collects with the owner sign-in, or reports a set-up state that is not Fleet's.
+    case notFleet
+    /// A Fleet configuration that was never signed in (no set-up marker yet).
+    case idle
+    case awaitingSignIn
+    case awaitingVehicles
+    case awaitingActivation
+    /// The full admission: a login, a car and a positive interval.
+    case collecting
+
+    /// Reads one `preflight` answer. `configuredFleet` says whether the configuration names the
+    /// Fleet provider (an `idle` answer carries no provider). Nil for an answer it cannot read.
+    static func parse(_ output: String, configuredFleet: Bool) -> HubFleetSetupState? {
+        guard let root = HubFleetJSON.object(in: output), root["status"] as? String == "ready" else { return nil }
+        let fleet = (root["provider"] as? String).map { $0 == "fleet" } ?? configuredFleet
+        switch root["state"] as? String {
+        case "idle"?: return fleet ? .idle : .notFleet
+        case "awaiting_sign_in"?: return fleet ? .awaitingSignIn : .notFleet
+        case "awaiting_vehicles"?: return fleet ? .awaitingVehicles : .notFleet
+        case "awaiting_activation"?: return fleet ? .awaitingActivation : .notFleet
+        case nil: return fleet ? .collecting : .notFleet
+        default: return .notFleet
+        }
+    }
+}
+
+enum HubFleetJSON {
+    /// The one JSON object a Hub command prints on success (the last line that is one).
+    static func object(in output: String) -> [String: Any]? {
+        for line in output.split(whereSeparator: \.isNewline).reversed() {
+            if let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] {
+                return object
+            }
+        }
+        return nil
+    }
+
+    /// An integer field that is a JSON number, not a Boolean.
+    static func integer(_ value: Any?) -> Int? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        let double = number.doubleValue
+        guard double.rounded() == double, abs(double) < 1e15 else { return nil }
+        return number.intValue
+    }
+}
+
+/// The region of the owner's Tesla developer application, as `setup-fleet` names it.
+enum HubFleetRegion: String, CaseIterable, Equatable {
+    case eu
+    case na
+    case cn
+}
+
+/// The owner's Tesla developer application. None of it is secret: it is kept beside the
+/// configuration so a set-up can continue after a quit. The client secret is never part of it.
+struct HubFleetApplication: Equatable {
+    var clientID: String
+    var region: HubFleetRegion
+    var redirectURI: String
+    var domain: String
+    /// `setup-fleet register` succeeded for this client, region and domain.
+    var registered = false
+
+    /// Where the owner publishes the saved public key.
+    var publicKeyAddress: String { "https://\(domain)/.well-known/appspecific/com.tesla.3p.public-key.pem" }
+
+    /// The owner's typed details, checked before anything runs. Values are trimmed; the
+    /// service checks them again.
+    static func validated(clientID: String, region: HubFleetRegion, redirectURI: String,
+                          domain: String) throws -> HubFleetApplication {
+        let clientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let redirectURI = redirectURI.trimmingCharacters(in: .whitespacesAndNewlines)
+        let domain = domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard (1...256).contains(clientID.utf8.count),
+              clientID.unicodeScalars.allSatisfy({ (0x21...0x7E).contains($0.value) && $0 != "\"" && $0 != "\\" }) else {
+            throw HubActionError.commandFailed(HubL10n.text("hub.fleetSetup.invalidClientID",
+                fallback: "Enter the client ID of your Tesla developer application."))
+        }
+        guard redirectURI.utf8.count <= 2_048,
+              redirectURI.unicodeScalars.allSatisfy({ (0x21...0x7E).contains($0.value) && $0 != "\"" && $0 != "\\" }),
+              let components = URLComponents(string: redirectURI),
+              ["https", "http"].contains(components.scheme?.lowercased() ?? ""),
+              !(components.host ?? "").isEmpty,
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil else {
+            throw HubActionError.commandFailed(HubL10n.text("hub.fleetSetup.invalidRedirect",
+                fallback: "Enter the redirect URI exactly as it is registered in your Tesla developer application, with no query or fragment."))
+        }
+        guard domain.range(of: #"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"#,
+                           options: .regularExpression) != nil else {
+            throw HubActionError.commandFailed(HubL10n.text("hub.fleetSetup.invalidDomain",
+                fallback: "Enter the domain only, such as example.com, without https:// or a path."))
+        }
+        return HubFleetApplication(clientID: clientID, region: region, redirectURI: redirectURI, domain: domain)
+    }
+
+    /// A client secret or code Hub can pass on: JSON can carry a double quote, a backslash or a
+    /// control character only escaped, and the service refuses such an input (interface section 11).
+    static func passable(_ value: String) -> Bool {
+        !value.isEmpty && value.utf8.count <= 2_048 && value.unicodeScalars.allSatisfy { scalar in
+            scalar != "\"" && scalar != "\\" && !(0x00...0x1F).contains(scalar.value)
+                && !(0x7F...0x9F).contains(scalar.value)
+        }
+    }
+
+    fileprivate var record: [String: Any] {
+        ["clientId": clientID, "region": region.rawValue, "redirectUri": redirectURI,
+         "domain": domain, "registered": registered]
+    }
+
+    fileprivate init?(record: [String: Any]) {
+        guard let clientID = record["clientId"] as? String,
+              let region = (record["region"] as? String).flatMap(HubFleetRegion.init(rawValue:)),
+              let redirectURI = record["redirectUri"] as? String,
+              let domain = record["domain"] as? String,
+              let checked = try? Self.validated(clientID: clientID, region: region,
+                                                redirectURI: redirectURI, domain: domain) else { return nil }
+        self = checked
+        registered = record["registered"] as? Bool == true
+    }
+
+    init(clientID: String, region: HubFleetRegion, redirectURI: String, domain: String, registered: Bool = false) {
+        self.clientID = clientID
+        self.region = region
+        self.redirectURI = redirectURI
+        self.domain = domain
+        self.registered = registered
+    }
+
+    /// The same application, as far as Tesla's registration is concerned.
+    func sameRegistration(as other: HubFleetApplication) -> Bool {
+        clientID == other.clientID && region == other.region && domain == other.domain
+    }
+}
+
+/// `setup-fleet public-key --output` saved the Hub's public key.
+struct HubFleetPublicKey: Equatable {
+    let path: String
+    let publishAt: String
+}
+
+/// One begun Fleet sign-in: the authorise address and the binding the redeem must name.
+struct HubFleetSignInAttempt: Equatable {
+    let application: HubFleetApplication
+    let flow: FleetOAuthFlow
+    let binding: String
+    let expiresAt: Date
+}
+
+/// What the redeem reports once the Fleet login is stored.
+enum HubFleetSignInOutcome: Equatable {
+    case vehiclesConfigured(Int)
+    /// Signed in, no car configured: `setup-fleet discover` follows, not a new sign-in.
+    case discoveryFailed(code: String, message: String)
+}
+
+/// A refused `setup-fleet` verb, by the service's stable code. A code the app knows has its own
+/// line; any other code is shown with the service's own message.
+struct HubFleetRefusal: LocalizedError, Equatable {
+    let code: String
+    let message: String
+    var errorDescription: String? { message }
+
+    /// The answer was lost or not confirmed: the app reads `preflight` before the next step.
+    var outcomeUnknown: Bool { Self.unknownOutcomeCodes.contains(code) }
+
+    static let unknownOutcomeCodes: Set<String> = [
+        "control_channel_failed", "sign_in_stored_unconfirmed", "fleet_report_invalid", "command_timed_out"
+    ]
+
+    /// The `<code>: <message>` line of a refusal, if the text holds one.
+    static func parse(_ text: String) -> (code: String, message: String)? {
+        for line in text.split(whereSeparator: \.isNewline) {
+            let line = String(line).trimmingCharacters(in: .whitespaces)
+            guard let colon = line.range(of: ": ") else { continue }
+            let code = String(line[..<colon.lowerBound])
+            guard code.range(of: #"^[a-z][a-z0-9_]*$"#, options: .regularExpression) != nil else { continue }
+            let message = String(line[colon.upperBound...]).trimmingCharacters(in: .whitespaces)
+            return (code, message.isEmpty ? code : message)
+        }
+        return nil
+    }
+
+    /// A command failure as the Fleet page shows it. A child that may still run stays tracked.
+    static func from(_ error: Error) -> Error {
+        let underlying = HubActionError.settingQuiescenceAside(error)
+        if underlying is HubFleetRefusal || underlying is HubFleetRefusalPassthrough { return error }
+        if case HubActionError.lifecycleRefused = underlying { return error }
+        if case HubActionError.preview = underlying { return error }
+        if case HubActionError.commandTimedOut = underlying {
+            return HubActionError.keepingQuiescence(of: error, in: refusal(code: "command_timed_out", serviceMessage: ""))
+        }
+        guard let parsed = parse(underlying.localizedDescription) else { return error }
+        return HubActionError.keepingQuiescence(of: error, in: refusal(code: parsed.code, serviceMessage: parsed.message))
+    }
+
+    static func refusal(code: String, serviceMessage: String) -> HubFleetRefusal {
+        HubFleetRefusal(code: code, message: message(code: code) ?? serviceMessage)
+    }
+
+    /// The app's line for a code it knows; nil for any other code.
+    static func message(code: String) -> String? {
+        if code.hasPrefix("fleet_partner_response_") {
+            return HubL10n.text("hub.fleetSetup.refusal.partnerResponse",
+                fallback: "Tesla's answer to the registration was not understood. Try again later.")
+        }
+        switch code {
+        case "service_not_running":
+            return HubL10n.text("hub.fleetSetup.refusal.serviceNotRunning", fallback: "Hub is not running. Start Hub, then try again.")
+        case "control_channel_failed", "command_timed_out", "fleet_report_invalid":
+            return HubL10n.text("hub.fleetSetup.refusal.unconfirmed", fallback: "Hub did not confirm the answer. Hub has checked where the set-up stands; continue from the step shown.")
+        case "window_closed":
+            return HubL10n.text("hub.fleetSetup.refusal.windowClosed", fallback: "This step talks to Tesla, so it needs an open collection window. Try again while a window is open.")
+        case "sign_in_busy":
+            return HubL10n.text("hub.fleetSetup.refusal.busy", fallback: "Another sign-in is in progress. Wait for it to finish, then try again.")
+        case "collector_still_running":
+            return HubL10n.text("hub.fleetSetup.refusal.collectorRunning", fallback: "Hub's collector did not stop in time. Try again.")
+        case "setup_input_invalid", "sign_in_settings_invalid":
+            return HubL10n.text("hub.fleetSetup.refusal.settings", fallback: "Hub refused these details. Check the client ID, region and redirect URI, then try again.")
+        case "sign_in_binding_invalid":
+            return HubL10n.text("hub.fleetSetup.refusal.binding", fallback: "This Tesla sign-in is no longer the current one. Sign in with Tesla again.")
+        case "sign_in_expired":
+            return HubL10n.text("hub.fleetSetup.refusal.expired", fallback: "The Tesla sign-in took longer than 10 minutes. Sign in with Tesla again.")
+        case "sign_in_material_invalid", "sign_in_answer_invalid", "fleet_token_claims_invalid":
+            return HubL10n.text("hub.fleetSetup.refusal.answer", fallback: "Tesla's sign-in could not be used. Sign in with Tesla again.")
+        case "sign_in_code_reused":
+            return HubL10n.text("hub.fleetSetup.refusal.reused", fallback: "That Tesla sign-in was already used. Sign in with Tesla again.")
+        case "sign_in_unavailable":
+            return HubL10n.text("hub.fleetSetup.refusal.unavailable", fallback: "Hub could not reach Tesla's sign-in. Check the network, then try again.")
+        case "sign_in_refused":
+            return HubL10n.text("hub.fleetSetup.refusal.refused", fallback: "Tesla refused the sign-in. Check the client ID, client secret and redirect URI, then sign in again.")
+        case "fleet_scope_missing_vehicle_device_data", "fleet_scope_missing_vehicle_location", "fleet_scopes_missing", "fleet_access_denied":
+            return HubL10n.text("hub.fleetSetup.refusal.scopes", fallback: "Tesla did not grant vehicle information and vehicle location. Sign in with Tesla again and allow both on Tesla's consent page.")
+        case "sign_in_stored_unconfirmed":
+            return HubL10n.text("hub.fleetSetup.refusal.storedUnconfirmed", fallback: "Hub stored the sign-in but could not confirm it on disk. Hub has checked where the set-up stands; continue from the step shown.")
+        case "setup_marker_unavailable":
+            return HubL10n.text("hub.fleetSetup.refusal.marker", fallback: "Hub could not record the set-up in its data folder. Check the Mac's disk, then try again.")
+        case "source_credential_disabled":
+            return HubL10n.text("hub.fleetSetup.refusal.tokenRefused", fallback: "Hub accepts no token here; it signs in with Tesla itself.")
+        case "discovery_pair_unavailable":
+            return HubL10n.text("hub.fleetSetup.refusal.discoveryNoLogin", fallback: "Hub has no Fleet sign-in. Sign in with Tesla first.")
+        case "discovery_refused":
+            return HubL10n.text("hub.fleetSetup.refusal.discoveryRefused", fallback: "Tesla refused the stored sign-in. Sign in with Tesla again, then find your car.")
+        case "discovery_no_vehicles", "discovery_vehicle_not_listed":
+            return HubL10n.text("hub.fleetSetup.refusal.discoveryNone", fallback: "Tesla listed no car for this account. Check that the car belongs to the Tesla account you signed in with, then find your car again.")
+        case "discovery_rate_limited":
+            return HubL10n.text("hub.fleetSetup.refusal.discoveryRateLimited", fallback: "Tesla asked Hub to wait. Find your car again in a few minutes.")
+        case "discovery_unavailable":
+            return HubL10n.text("hub.fleetSetup.refusal.discoveryUnavailable", fallback: "Hub could not reach Tesla to find your car. Try again.")
+        case "fleet_activation_unavailable":
+            return HubL10n.text("hub.fleetSetup.refusal.activationUnavailable", fallback: "This Hub is not set up for the Fleet API, or its configuration cannot be read. Nothing was started.")
+        case "fleet_sign_in_required":
+            return HubL10n.text("hub.fleetSetup.refusal.signInRequired", fallback: "Sign in with Tesla before Hub starts collecting.")
+        case "fleet_vehicles_required":
+            return HubL10n.text("hub.fleetSetup.refusal.vehiclesRequired", fallback: "Find your car before Hub starts collecting.")
+        case "collection_interval_unavailable":
+            return HubL10n.text("hub.fleetSetup.refusal.interval", fallback: "Hub could not write its collection interval. Nothing was started.")
+        case "provider_parked":
+            return HubL10n.text("hub.fleetSetup.refusal.providerParked", fallback: "This Hub is not set up for the Fleet API yet. Go back to the application details and continue from there.")
+        case "fleet_partner_settings_invalid":
+            return HubL10n.text("hub.fleetSetup.refusal.partnerSettings", fallback: "Hub refused these details. Check the client ID, client secret, region and domain, then try again.")
+        case "fleet_partner_auth_failed":
+            return HubL10n.text("hub.fleetSetup.refusal.partnerAuth", fallback: "Tesla refused the client ID or client secret. Check both in your Tesla developer application.")
+        case "fleet_partner_public_key_mismatch":
+            return HubL10n.text("hub.fleetSetup.refusal.keyMismatch", fallback: "Tesla does not find this Hub's public key on your domain. Publish the saved file at the address shown, then register again.")
+        case "fleet_partner_timeout", "fleet_partner_transport", "fleet_partner_unavailable":
+            return HubL10n.text("hub.fleetSetup.refusal.partnerUnreachable", fallback: "Hub could not reach Tesla to register your domain. Try again.")
+        case "fleet_partner_over_limit":
+            return HubL10n.text("hub.fleetSetup.refusal.partnerLimit", fallback: "Tesla's limit for your developer application is reached. Try again later.")
+        case "fleet_public_key_path_protected":
+            return HubL10n.text("hub.fleetSetup.refusal.keyPathProtected", fallback: "Hub does not write into its own folders. Choose another folder, such as Documents.")
+        case "fleet_public_key_unwritable":
+            return HubL10n.text("hub.fleetSetup.refusal.keyPathUnwritable", fallback: "Hub could not write to that folder. Choose another one.")
+        default:
+            return nil
+        }
+    }
+}
+
+/// An error the Fleet page shows as it is (a local check that already has its words).
+struct HubFleetRefusalPassthrough: LocalizedError, Equatable {
+    let message: String
+    var errorDescription: String? { message }
+}
+
+extension HubController {
+    private var fleetApplicationURL: URL {
+        configPath.deletingLastPathComponent().appendingPathComponent("fleet-application.json")
+    }
+
+    /// The owner's application details saved by an earlier Fleet step, if any.
+    var savedFleetApplication: HubFleetApplication? {
+        guard let data = HubAppLog.regularFileData(of: fleetApplicationURL, maximumBytes: 8_192),
+              let record = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return HubFleetApplication(record: record)
+    }
+
+    /// Keeps the application details (never the client secret) owner-only beside the configuration.
+    func saveFleetApplication(_ application: HubFleetApplication) throws {
+        let data = try JSONSerialization.data(withJSONObject: application.record, options: [.sortedKeys])
+        try Self.writeDurablePrivateFile(data, to: fleetApplicationURL)
+    }
+
+    /// Whether this Hub's configuration names the Fleet provider.
+    var hubConfiguredForFleet: Bool { configuredCollectorProvider() == "fleet" }
+
+    /// Reads, without changing anything, which Fleet set-up state the Hub is in (`preflight`).
+    /// The completion runs on the main queue.
+    func readFleetSetupState(completion: @escaping (Result<HubFleetSetupState, Error>) -> Void) {
+        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        let configuredFleet = hubConfiguredForFleet
+        commandRunner.run(arguments: ["--config", configPath.path, "preflight"]) { result in
+            let state: Result<HubFleetSetupState, Error>
+            switch result {
+            case let .success(output):
+                if let parsed = HubFleetSetupState.parse(output, configuredFleet: configuredFleet) {
+                    state = .success(parsed)
+                } else {
+                    state = .failure(HubFleetRefusalPassthrough(message: HubL10n.text("hub.fleetSetup.stateUnreadable",
+                        fallback: "Hub's answer about its set-up could not be read. Try again in a moment.")))
+                }
+            case let .failure(error):
+                state = .failure(HubFleetRefusal.from(error))
+            }
+            DispatchQueue.main.async { completion(state) }
+        }
+    }
+
+    /// Makes this Hub a Fleet Hub (section 10, steps 1 and 2): the configuration names the Fleet
+    /// provider with `interval_seconds = 0`, so nothing is polled before the owner accepts the
+    /// consent page, and the service runs. An installed Hub is paused, reconfigured and started
+    /// again; a failure runs the typed recovery. A Hub that is already a Fleet Hub keeps its
+    /// interval (a reconnect after a sign-out keeps the consent given earlier) and is not paused.
+    func prepareFleetHub(completion: @escaping (Result<Void, Error>) -> Void) {
+        let deliver: (Result<Void, Error>) -> Void = { result in
+            if Thread.isMainThread { completion(result) } else { DispatchQueue.main.async { completion(result) } }
+        }
+        guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
+        guard let op = admit(.account, phase: "fleet-prepare", completion: deliver) else { return }
+        let installed = isServiceInstalled
+        let originalConfig: String?
+        do { originalConfig = try readConfigIfPresent() } catch { op.finish(.failure(error), completion: deliver); return }
+        let alreadyFleet = originalConfig.flatMap(Self.collectorProvider(in:)) == "fleet"
+        let interval: Int? = alreadyFleet ? nil : 0
+        HubAppLog.shared.record("fleet_setup.prepare_requested", category: "account", fields: [
+            "service_installed": installed ? "true" : "false",
+            "already_fleet": alreadyFleet ? "true" : "false"
+        ])
+        let finish: (Result<Void, Error>) -> Void = { [self] result in
+            DispatchQueue.main.async { [self] in
+                switch result {
+                case .success:
+                    HubAppLog.shared.record("fleet_setup.prepared", category: "account")
+                    refresh { _ in op.finish(.success(()), completion: deliver) }
+                case let .failure(error):
+                    HubAppLog.shared.record("fleet_setup.prepare_failed", category: "account", level: "ERROR",
+                                            fields: ["error_code": HubAppLog.errorCode(error)])
+                    op.finish(.failure(error), completion: deliver)
+                }
+            }
+        }
+        guard installed else {
+            do {
+                op.phase("configuration")
+                try ensureConfig(provider: "fleet", collectorIntervalSeconds: interval)
+            } catch { finish(.failure(error)); return }
+            op.phase("start")
+            op.service(["service", "start"]) { finish($0.map { _ in () }) }
+            return
+        }
+        guard !alreadyFleet else { finish(.success(())); return }
+        op.phase("pause")
+        op.service(["service", "pause"]) { [self] pauseResult in
+            if case let .failure(error) = pauseResult {
+                recoverThenFail(op, error, finish: finish)
+                return
+            }
+            do {
+                op.phase("configuration")
+                try ensureConfig(provider: "fleet", collectorIntervalSeconds: interval)
+            } catch {
+                do {
+                    try restoreConfig(originalConfig)
+                    recoverThenFail(op, error, finish: finish)
+                } catch let recoveryError {
+                    recoverThenFail(op, HubActionError.commandFailed(HubL10n.format(
+                        "hub.HubController.1966.689",
+                        fallback: "Fleet setup failed: %1$@ Hub configuration recovery also failed: %2$@",
+                        arguments: [error.localizedDescription, recoveryError.localizedDescription])), finish: finish)
+                }
+                return
+            }
+            op.phase("start")
+            op.service(["service", "start"]) { [self] startResult in
+                switch startResult {
+                case .success: finish(.success(()))
+                case let .failure(error): recoverThenFail(op, error, finish: finish)
+                }
+            }
+        }
+    }
+
+    /// Saves the Hub's public key where the owner chose (`setup-fleet public-key --output`).
+    /// Nothing is sent to Tesla. The completion runs on the main queue.
+    func saveFleetPublicKey(to destination: URL,
+                            completion: @escaping (Result<HubFleetPublicKey, Error>) -> Void) {
+        let deliver = Self.mainQueue(completion)
+        guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
+        guard destination.isFileURL else {
+            deliver(.failure(HubFleetRefusal.refusal(code: "fleet_public_key_unwritable", serviceMessage: "")))
+            return
+        }
+        guard let op = admit(.account, phase: "fleet-public-key", completion: deliver) else { return }
+        op.run(["--config", configPath.path, "setup-fleet", "public-key", "--output", destination.path]) { result in
+            let saved: Result<HubFleetPublicKey, Error> = result.mapError(HubFleetRefusal.from).flatMap { output in
+                guard let root = HubFleetJSON.object(in: output), root["status"] as? String == "public_key_saved",
+                      let path = root["path"] as? String, let publishAt = root["publishAt"] as? String else {
+                    return .failure(HubFleetRefusal.refusal(code: "fleet_report_invalid", serviceMessage: ""))
+                }
+                return .success(HubFleetPublicKey(path: path, publishAt: publishAt))
+            }
+            Self.recordFleetStep("public_key", saved)
+            op.finish(saved, completion: deliver)
+        }
+    }
+
+    /// Registers the owner's domain with Tesla (`setup-fleet register`). The client secret goes
+    /// only to the command's standard input and is wiped after it. The completion runs on the main queue.
+    func registerFleetDomain(_ application: HubFleetApplication, clientSecret: String,
+                             completion: @escaping (Result<HubFleetApplication, Error>) -> Void) {
+        let deliver = Self.mainQueue(completion)
+        guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
+        let input: HubSensitiveInput
+        do { input = try Self.fleetRegisterInput(application, clientSecret: clientSecret) }
+        catch { deliver(.failure(error)); return }
+        guard let op = admit(.account, phase: "fleet-register", completion: deliver) else { input.wipe(); return }
+        op.run(["--config", configPath.path, "setup-fleet", "register"], sensitiveInput: input) { [self] result in
+            input.wipe()
+            let registered: Result<HubFleetApplication, Error> = result.mapError(HubFleetRefusal.from).flatMap { output in
+                guard let root = HubFleetJSON.object(in: output), root["status"] as? String == "partner_registered",
+                      root["registration"] as? String == "registered",
+                      (root["domain"] as? String)?.lowercased() == application.domain else {
+                    return .failure(HubFleetRefusal.refusal(code: "fleet_report_invalid", serviceMessage: ""))
+                }
+                var done = application
+                done.registered = true
+                return .success(done)
+            }
+            if case let .success(done) = registered { try? saveFleetApplication(done) }
+            Self.recordFleetStep("register", registered)
+            op.finish(registered, completion: deliver)
+        }
+    }
+
+    /// Begins a Fleet sign-in (`setup-fleet begin`): the authorise address and the binding of
+    /// this attempt. Nothing is sent to Tesla. The completion runs on the main queue.
+    func beginFleetSignIn(_ application: HubFleetApplication,
+                          completion: @escaping (Result<HubFleetSignInAttempt, Error>) -> Void) {
+        let deliver = Self.mainQueue(completion)
+        guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
+        let input: String
+        do { input = try Self.fleetBeginInput(application) } catch { deliver(.failure(error)); return }
+        guard let op = admit(.account, phase: "fleet-begin", completion: deliver) else { return }
+        op.run(["--config", configPath.path, "setup-fleet", "begin"], stdin: input) { result in
+            let attempt: Result<HubFleetSignInAttempt, Error> = result.mapError(HubFleetRefusal.from).flatMap { output in
+                guard let root = HubFleetJSON.object(in: output), root["status"] as? String == "sign_in_begun",
+                      root["slot"] as? String == "fleet_api",
+                      let address = (root["authorizeUrl"] as? String).flatMap(URL.init(string:)),
+                      let binding = root["binding"] as? String, UUID(uuidString: binding) != nil,
+                      let expiresAt = HubFleetJSON.integer(root["expiresAt"]),
+                      let flow = try? FleetOAuthFlow(authorizationURL: address,
+                                                     redirectURI: application.redirectURI,
+                                                     clientID: application.clientID) else {
+                    return .failure(HubFleetRefusal.refusal(code: "fleet_report_invalid", serviceMessage: ""))
+                }
+                return .success(HubFleetSignInAttempt(application: application, flow: flow, binding: binding,
+                                                      expiresAt: Date(timeIntervalSince1970: TimeInterval(expiresAt))))
+            }
+            Self.recordFleetStep("begin", attempt)
+            op.finish(attempt, completion: deliver)
+        }
+    }
+
+    /// Redeems the code of a begun Fleet sign-in (`setup-fleet --all-vehicles`, six keys with the
+    /// binding). The client secret goes only to standard input and is wiped after it. Collection
+    /// is not switched on here. The completion runs on the main queue.
+    func redeemFleetSignIn(_ attempt: HubFleetSignInAttempt, code: String, clientSecret: String,
+                           now: Date = Date(),
+                           completion: @escaping (Result<HubFleetSignInOutcome, Error>) -> Void) {
+        let deliver = Self.mainQueue(completion)
+        guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
+        guard now < attempt.expiresAt else {
+            deliver(.failure(HubFleetRefusal.refusal(code: "sign_in_expired", serviceMessage: "")))
+            return
+        }
+        let input: HubSensitiveInput
+        do { input = try Self.fleetRedeemInput(attempt, code: code, clientSecret: clientSecret) }
+        catch { deliver(.failure(error)); return }
+        guard let op = admit(.account, phase: "fleet-redeem", completion: deliver) else { input.wipe(); return }
+        op.run(["--config", configPath.path, "setup-fleet", "--all-vehicles"], sensitiveInput: input) { [self] result in
+            input.wipe()
+            let outcome: Result<HubFleetSignInOutcome, Error> = result.mapError(HubFleetRefusal.from).flatMap { output in
+                guard let root = HubFleetJSON.object(in: output), root["status"] as? String == "signed_in",
+                      root["slot"] as? String == "fleet_api" else {
+                    return .failure(HubFleetRefusal.refusal(code: "fleet_report_invalid", serviceMessage: ""))
+                }
+                switch root["vehicleDiscovery"] as? String {
+                case "configured"? where (HubFleetJSON.integer(root["vehiclesConfigured"]) ?? -1) >= 0:
+                    return .success(.vehiclesConfigured(HubFleetJSON.integer(root["vehiclesConfigured"]) ?? 0))
+                case "failed"?:
+                    let code = root["discoveryCode"] as? String ?? "discovery_failed"
+                    let message = HubFleetRefusal.message(code: code) ?? (root["discoveryMessage"] as? String ?? code)
+                    return .success(.discoveryFailed(code: code, message: message))
+                default:
+                    return .failure(HubFleetRefusal.refusal(code: "fleet_report_invalid", serviceMessage: ""))
+                }
+            }
+            DispatchQueue.main.async { [self] in
+                if case let .success(.vehiclesConfigured(count)) = outcome { lastVehiclesConfigured = count }
+                Self.recordFleetStep("redeem", outcome)
+                op.finish(outcome, completion: deliver)
+            }
+        }
+    }
+
+    /// Lists the cars again with the stored Fleet login (`setup-fleet discover --all-vehicles`):
+    /// no new sign-in. The completion runs on the main queue.
+    func discoverFleetVehicles(completion: @escaping (Result<Int, Error>) -> Void) {
+        let deliver = Self.mainQueue(completion)
+        guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
+        guard let op = admit(.account, phase: "fleet-discover", completion: deliver) else { return }
+        op.run(["--config", configPath.path, "setup-fleet", "discover", "--all-vehicles"]) { [self] result in
+            let found: Result<Int, Error> = result.mapError(HubFleetRefusal.from).flatMap { output in
+                guard let root = HubFleetJSON.object(in: output), root["status"] as? String == "vehicles_configured",
+                      let count = HubFleetJSON.integer(root["vehiclesConfigured"]), count >= 0 else {
+                    return .failure(HubFleetRefusal.refusal(code: "fleet_report_invalid", serviceMessage: ""))
+                }
+                return .success(count)
+            }
+            DispatchQueue.main.async { [self] in
+                if case let .success(count) = found { lastVehiclesConfigured = count }
+                Self.recordFleetStep("discover", found)
+                op.finish(found, completion: deliver)
+            }
+        }
+    }
+
+    /// Starts collection once the owner has accepted the consent page (`setup-fleet activate`):
+    /// the only step that sets a positive interval on a first set-up. The completion runs on the
+    /// main queue with the interval the service reports.
+    func activateFleetCollection(completion: @escaping (Result<Int, Error>) -> Void) {
+        let deliver = Self.mainQueue(completion)
+        guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
+        guard let op = admit(.account, phase: "fleet-activate", completion: deliver) else { return }
+        op.run(["--config", configPath.path, "setup-fleet", "activate"]) { [self] result in
+            let activated: Result<Int, Error> = result.mapError(HubFleetRefusal.from).flatMap { output in
+                guard let root = HubFleetJSON.object(in: output), root["status"] as? String == "collection_activated",
+                      let interval = HubFleetJSON.integer(root["collectionIntervalSeconds"]), interval > 0 else {
+                    return .failure(HubFleetRefusal.refusal(code: "fleet_report_invalid", serviceMessage: ""))
+                }
+                return .success(interval)
+            }
+            Self.recordFleetStep("activate", activated)
+            DispatchQueue.main.async { [self] in
+                guard case .success = activated else { op.finish(activated, completion: deliver); return }
+                refresh { _ in op.finish(activated, completion: deliver) }
+            }
+        }
+    }
+
+    // The stdin objects (interface section 11): plain UTF-8 with no escape but `\/`. A value
+    // with a double quote, a backslash or a control character is refused here, never sent.
+
+    static func fleetBeginInput(_ application: HubFleetApplication) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "clientId": application.clientID,
+            "region": application.region.rawValue,
+            "redirectUri": application.redirectURI
+        ], options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    static func fleetRegisterInput(_ application: HubFleetApplication, clientSecret: String) throws -> HubSensitiveInput {
+        guard HubFleetApplication.passable(clientSecret) else { throw unpassableSecret }
+        var data = try JSONSerialization.data(withJSONObject: [
+            "clientId": application.clientID,
+            "clientSecret": clientSecret,
+            "domain": application.domain,
+            "region": application.region.rawValue
+        ], options: [.sortedKeys])
+        return HubSensitiveInput(&data)
+    }
+
+    static func fleetRedeemInput(_ attempt: HubFleetSignInAttempt, code: String,
+                                 clientSecret: String) throws -> HubSensitiveInput {
+        guard HubFleetApplication.passable(clientSecret) else { throw unpassableSecret }
+        guard HubFleetApplication.passable(code) else {
+            throw HubFleetRefusal.refusal(code: "sign_in_material_invalid", serviceMessage: "")
+        }
+        var data = try JSONSerialization.data(withJSONObject: [
+            "code": code,
+            "redirectUri": attempt.application.redirectURI,
+            "clientId": attempt.application.clientID,
+            "clientSecret": clientSecret,
+            "region": attempt.application.region.rawValue,
+            "binding": attempt.binding
+        ], options: [.sortedKeys])
+        return HubSensitiveInput(&data)
+    }
+
+    private static var unpassableSecret: Error {
+        HubFleetRefusalPassthrough(message: HubL10n.text("hub.fleetSetup.secretUnpassable",
+            fallback: "Enter the client secret of your Tesla developer application. A secret with a quote, a backslash or a control character cannot be used."))
+    }
+
+    private static func mainQueue<Value>(_ completion: @escaping (Result<Value, Error>) -> Void)
+        -> (Result<Value, Error>) -> Void {
+        { result in
+            if Thread.isMainThread { completion(result) } else { DispatchQueue.main.async { completion(result) } }
+        }
+    }
+
+    /// Records a Fleet step by its outcome code only: never a secret, code, token, URL or VIN.
+    private static func recordFleetStep<Value>(_ step: String, _ result: Result<Value, Error>) {
+        switch result {
+        case .success:
+            HubAppLog.shared.record("fleet_setup.\(step).completed", category: "account")
+        case let .failure(error):
+            let underlying = HubActionError.settingQuiescenceAside(error)
+            let code = (underlying as? HubFleetRefusal)?.code ?? HubAppLog.errorCode(error)
+            HubAppLog.shared.record("fleet_setup.\(step).failed", category: "account", level: "WARN",
+                                    fields: ["error_code": code])
+        }
     }
 }

@@ -5,112 +5,108 @@ import XCTest
 @testable import Tesatlas_Hub
 
 final class FleetOnboardingRecoveryTests: XCTestCase {
-    private let credentials = HubFleetSetupCredentials(
-        accessToken: "access",
-        refreshToken: "refresh",
-        clientID: "client",
-        region: "europe_middle_east_and_africa",
-        expiresInSeconds: 3600
-    )
+    /// M09-T12 replaces the token-paste set-up: the Fleet route's first account step makes this
+    /// Hub a Fleet Hub with `interval_seconds = 0` (nothing is polled before the consent page)
+    /// under the same pause, configuration, Start and typed recovery as before. No `setup-fleet`
+    /// verb runs here.
 
-    /// C1: the loaded Hub is paused for account work; a failed setup keeps Fleet selected
-    /// (no configuration restore) and the single typed recovery restarts what was loaded.
-    func testInstalledSetupTimeoutKeepsFleetSelectedAndRestartsLoadedHub() throws {
-        let home = try temporaryHome()
-        defer { try? FileManager.default.removeItem(at: home) }
-        let original = try writeOriginalConfig(in: home)
-        let events = FleetRecoveryEvents()
-        let runner = FleetRecoveryRunner(events: events,
-                                         event: "installed-setup",
-                                         result: .failure(HubActionError.commandTimedOut))
-        let controller = HubController(commandRunner: runner,
-                                       serviceRunner: FleetRecoveryService(events: events, state: .loaded),
-                                       homeDirectory: home,
-                                       serviceInstalledOverride: true,
-                                       initialSnapshot: .previewRunning)
-
-        let finished = expectation(description: "setup timeout returned")
-        controller.configureFleetAccount(credentials: credentials) { result in
-            guard case let .failure(error) = result else { return XCTFail("expected setup timeout") }
-            XCTAssertTrue(error.localizedDescription.contains("needs verification"))
-            XCTAssertFalse(error.localizedDescription.contains("remains stopped"),
-                           "the failure must not claim the Hub stays stopped")
-            finished.fulfill()
-        }
-        wait(for: [finished], timeout: 2)
-
-        XCTAssertNotEqual(try configContents(in: home), original)
-        XCTAssertTrue(try configContents(in: home).contains("provider = \"fleet\""))
-        XCTAssertEqual(events.values, ["service:pause", "installed-setup", "service:recover"])
-    }
-
-    func testFreshSetupFailureDoesNotStartService() throws {
-        let home = try temporaryHome()
-        defer { try? FileManager.default.removeItem(at: home) }
-        let events = FleetRecoveryEvents()
-        let runner = FleetRecoveryRunner(events: events,
-                                         event: "embedded-setup",
-                                         result: .failure(HubActionError.commandFailed("setup failed")))
-        let controller = HubController(commandRunner: runner,
-                                       serviceRunner: FleetRecoveryService(events: events, state: .unloaded),
-                                       homeDirectory: home,
-                                       serviceInstalledOverride: false)
-
-        let finished = expectation(description: "fresh setup failure returned")
-        controller.configureFleetAccount(credentials: credentials) { result in
-            guard case .failure = result else { return XCTFail("expected setup failure") }
-            finished.fulfill()
-        }
-        wait(for: [finished], timeout: 2)
-
-        XCTAssertEqual(events.values, ["embedded-setup"])
-        XCTAssertFalse(events.values.contains("service:start"))
-    }
-
-    func testInstalledUnconfiguredSetupCreatesCredentialsBeforeStartPreflight() throws {
+    /// The loaded Hub is paused, switched to Fleet with collection off, then started again.
+    func testInstalledHubIsPausedSwitchedToFleetWithCollectionOffAndStarted() throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeOriginalConfig(in: home)
         let events = FleetRecoveryEvents()
-        let runner = FleetRecoveryRunner(events: events,
-                                         event: "embedded-setup",
-                                         result: .success("configured"))
+        let runner = FleetRecoveryRunner(events: events, result: .success("{}"))
         let controller = HubController(commandRunner: runner,
                                        serviceRunner: FleetRecoveryService(events: events, state: .loaded),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
 
-        let finished = expectation(description: "installed unconfigured setup succeeds")
-        controller.configureFleetAccount(credentials: credentials) { result in
-            guard case .success = result else { return XCTFail("expected setup success") }
+        let finished = expectation(description: "prepared")
+        controller.prepareFleetHub { result in
+            guard case .success = result else { return XCTFail("expected success: \(result)") }
             finished.fulfill()
         }
         wait(for: [finished], timeout: 2)
 
-        XCTAssertTrue(try configContents(in: home).contains("provider = \"fleet\""))
-        // Pause, set up with the embedded program, then the ordinary Start (whose own
-        // writer and preflight come first); the status refresh follows.
-        XCTAssertEqual(Array(events.values.prefix(3)), ["service:pause", "embedded-setup", "service:start"])
+        let config = try configContents(in: home)
+        XCTAssertTrue(config.contains("provider = \"fleet\""))
+        XCTAssertTrue(config.contains("interval_seconds = 0"), config)
+        XCTAssertFalse(config.contains("interval_seconds = 60"))
+        XCTAssertFalse(config.contains("fleet_telemetry") || config.contains("fleet_command_proxy"))
+        XCTAssertEqual(Array(events.values.prefix(2)), ["service:pause", "service:start"])
+        XCTAssertFalse(events.values.contains("setup-fleet"))
         XCTAssertFalse(events.values.contains("service:recover"))
     }
 
-    func testInstalledStopFailureDoesNotChangeConfigAndRecoversOnce() throws {
+    /// A fresh Mac: the Fleet configuration is written and the ordinary Start runs; no pause.
+    func testFreshHubIsConfiguredForFleetAndStarted() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let events = FleetRecoveryEvents()
+        let runner = FleetRecoveryRunner(events: events, result: .success("{}"))
+        let controller = HubController(commandRunner: runner,
+                                       serviceRunner: FleetRecoveryService(events: events, state: .unloaded),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: false)
+
+        let finished = expectation(description: "prepared")
+        controller.prepareFleetHub { result in
+            guard case .success = result else { return XCTFail("expected success: \(result)") }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+
+        let config = try configContents(in: home)
+        XCTAssertTrue(config.contains("provider = \"fleet\""))
+        XCTAssertTrue(config.contains("interval_seconds = 0"), config)
+        XCTAssertEqual(events.values.first, "service:start")
+        XCTAssertFalse(events.values.contains("service:pause"))
+    }
+
+    /// A Hub that is already a Fleet Hub keeps its interval (a reconnect keeps the consent given
+    /// earlier) and is neither paused nor restarted.
+    func testAFleetHubKeepsItsIntervalAndIsNotPaused() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let original = "data_dir = \"/tmp/original\"\n\n[collector]\nprovider = \"fleet\"\ninterval_seconds = 300\n"
+        try FileManager.default.createDirectory(at: configURL(in: home).deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try original.write(to: configURL(in: home), atomically: true, encoding: .utf8)
+        let events = FleetRecoveryEvents()
+        let controller = HubController(commandRunner: FleetRecoveryRunner(events: events, result: .success("{}")),
+                                       serviceRunner: FleetRecoveryService(events: events, state: .loaded),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+
+        let finished = expectation(description: "prepared")
+        controller.prepareFleetHub { result in
+            guard case .success = result else { return XCTFail("expected success: \(result)") }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+
+        XCTAssertEqual(try configContents(in: home), original)
+        XCTAssertFalse(events.values.contains { $0.hasPrefix("service:") })
+    }
+
+    /// A failed pause changes nothing and runs the single typed recovery.
+    func testInstalledPauseFailureDoesNotChangeConfigAndRecoversOnce() throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let original = try writeOriginalConfig(in: home)
         let events = FleetRecoveryEvents()
-        let runner = FleetRecoveryRunner(events: events, result: .success("configured"))
         let service = FleetRecoveryService(events: events,
                                            state: .loaded,
                                            stopResult: .failure(HubActionError.commandFailed("pause failed")))
-        let controller = HubController(commandRunner: runner,
+        let controller = HubController(commandRunner: FleetRecoveryRunner(events: events, result: .success("{}")),
                                        serviceRunner: service,
                                        homeDirectory: home,
                                        serviceInstalledOverride: true,
                                        initialSnapshot: .previewRunning)
 
         let finished = expectation(description: "pause failure returned")
-        controller.configureFleetAccount(credentials: credentials) { result in
+        controller.prepareFleetHub { result in
             guard case let .failure(error) = result else { return XCTFail("expected pause failure") }
             XCTAssertTrue(error.localizedDescription.contains("pause failed"))
             finished.fulfill()
@@ -119,6 +115,33 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
 
         XCTAssertEqual(try configContents(in: home), original)
         XCTAssertEqual(events.values, ["service:pause", "service:recover"])
+    }
+
+    /// A Start that fails after the switch runs the typed recovery; Fleet stays selected with
+    /// collection off, so nothing is polled when the Hub comes back.
+    func testInstalledStartFailureRecoversAndKeepsCollectionOff() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeOriginalConfig(in: home)
+        let events = FleetRecoveryEvents()
+        let service = FleetRecoveryService(events: events, state: .loaded,
+                                           startResult: .failure(HubActionError.commandFailed("start failed")))
+        let controller = HubController(commandRunner: FleetRecoveryRunner(events: events, result: .success("{}")),
+                                       serviceRunner: service,
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
+
+        let finished = expectation(description: "start failure returned")
+        controller.prepareFleetHub { result in
+            guard case let .failure(error) = result else { return XCTFail("expected start failure") }
+            XCTAssertTrue(error.localizedDescription.contains("start failed"))
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+
+        XCTAssertTrue(try configContents(in: home).contains("interval_seconds = 0"))
+        XCTAssertEqual(Array(events.values.prefix(3)), ["service:pause", "service:start", "service:recover"])
     }
 
     private func temporaryHome() throws -> URL {
@@ -190,18 +213,24 @@ private final class FleetRecoveryService: HubServiceControlling {
     private let state: HubServiceLoadState
     private let stopResult: Result<String, Error>
 
+    private let startResult: Result<String, Error>
+
     init(events: FleetRecoveryEvents,
          state: HubServiceLoadState,
-         stopResult: Result<String, Error> = .success("")) {
+         stopResult: Result<String, Error> = .success(""),
+         startResult: Result<String, Error> = .success("")) {
         self.events = events
         self.state = state
         self.stopResult = stopResult
+        self.startResult = startResult
     }
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         events.append("service:\(arguments.last ?? "unknown")")
         if arguments.last == "stop" || arguments.last == "pause" {
             completion(stopResult)
+        } else if arguments.last == "start" {
+            completion(startResult)
         } else {
             completion(.success(""))
         }

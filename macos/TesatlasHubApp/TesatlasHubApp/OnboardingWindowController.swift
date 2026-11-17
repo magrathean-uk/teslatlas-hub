@@ -12,6 +12,35 @@ enum HubOnboardingProvider: Equatable {
     case legacy
 }
 
+/// Whether the Fleet API card is offered (M09-T12). The build-time default stays off until the
+/// Fleet set-up is proven in the lab; tests switch it on. The owner sign-in stays first and the
+/// default whether or not Fleet is offered.
+enum HubFleetOnboarding {
+    static let offeredByDefault = false
+    /// Read by the provider page, the Tesla account menu and Status. Only tests change it.
+    static var isOffered = offeredByDefault
+}
+
+/// The Fleet route's steps, in the order of a first set-up (M09-T19a interface, section 10).
+enum HubFleetStep: Equatable {
+    case prerequisites
+    case details
+    case publicKey
+    case signIn
+    case vehicles
+    case consent
+
+    var previous: HubFleetStep? {
+        switch self {
+        case .prerequisites: return nil
+        case .details: return .prerequisites
+        case .publicKey: return .details
+        case .signIn: return .publicKey
+        case .vehicles, .consent: return .signIn
+        }
+    }
+}
+
 enum HubOnboardingCompletion: Equatable {
     case configured
     case hubStarted
@@ -113,7 +142,7 @@ struct HubOnboardingState: Equatable {
         case .choose:
             route = path == .newInstallation ? .provider : .migration
         case .provider:
-            route = provider == .fleet ? .fleet : .legacy
+            route = provider == .fleet && HubFleetOnboarding.isOffered ? .fleet : .legacy
         case .fleet, .legacy, .migration:
             route = .verify
         case .verify:
@@ -188,6 +217,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     enum BusyOperation {
         case setup, importing, checkingCompatibility, connecting, runningChecks, starting
         case checkingSourceStopped, takingOver
+        case fleet
 
         var message: String {
             switch self {
@@ -199,6 +229,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             case .starting: return HubL10n.text("hub.HubDashboardView.12.1336", fallback: "Starting Hub…")
             case .checkingSourceStopped: return HubL10n.text("hub.sourceTakeover.checkingStopped", fallback: "Checking that the source application is stopped…")
             case .takingOver: return HubL10n.text("hub.sourceTakeover.takingOver", fallback: "Taking over the Tesla login…")
+            case .fleet: return HubL10n.text("hub.fleetSetup.busy", fallback: "Working on the Fleet set-up…")
             }
         }
     }
@@ -243,11 +274,28 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var backWidthConstraint: NSLayoutConstraint?
     private var footerLogsButton: NSButton?
 
+    // Fleet route (M09-T12). The client secret lives only in its secure field: it goes to the
+    // command line on standard input, is cleared as each call starts and whenever its step ends,
+    // and is never written to disk, a log, a preference or the pasteboard.
     private let fleetClientID = NSTextField(string: "")
-    private let fleetAccessToken = NSSecureTextField(string: "")
-    private let fleetRefreshToken = NSSecureTextField(string: "")
-    private let fleetExpiry = NSTextField(string: "3600")
+    private let fleetClientSecret = NSSecureTextField(string: "")
+    private let fleetRedirectURI = NSTextField(string: "")
+    private let fleetDomain = NSTextField(string: "")
     private let fleetRegion = HubFormPopUpButton(frame: .zero)
+    private let fleetChecklist: [NSButton] = (0..<3).map { _ in NSButton(checkboxWithTitle: "", target: nil, action: nil) }
+    private let fleetConsent = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private var fleetStep: HubFleetStep = .prerequisites
+    /// The waiting state's line (what the Hub waits for and the next step), from `preflight`.
+    private var fleetNotice: String?
+    private var fleetPublicKey: HubFleetPublicKey?
+    private var fleetStateReading: UInt64 = 0
+    private var lastRenderedFleetStep: HubFleetStep?
+    /// Test seam: opens the Fleet sign-in's browser leg. Nil opens `TeslaAuthWindowController`.
+    var presentFleetSignIn: ((FleetOAuthFlow, @escaping (Result<TeslaAuthCodeGrant, Error>) -> Void) -> Void)?
+    /// Test seam: asks where to save the public key.
+    var presentFleetKeySavePanel: (NSSavePanel, NSWindow, @escaping (URL?) -> Void) -> Void = { panel, window, completion in
+        panel.beginSheetModal(for: window) { response in completion(response == .OK ? panel.url : nil) }
+    }
 
     private let migrationServer = NSTextField(string: "")
     private let migrationUser = NSTextField(string: "user")
@@ -499,6 +547,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     func windowWillClose(_ notification: Notification) {
         sourceEncryptionKey.stringValue = ""
+        fleetClientSecret.stringValue = ""
+        fleetStateReading &+= 1
         resetMigrationProgress()
         closeMigrationSession()
         discardDiscoveryRetry()
@@ -548,6 +598,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         handoverAcknowledged = false
         importedAwaitingTakeover = false
         takeoverFailure = nil
+        fleetStep = .prerequisites
+        fleetNotice = nil
+        fleetPublicKey = nil
         sourceEncryptionKey.stringValue = ""
         render()
     }
@@ -615,11 +668,29 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         migrationUser.identifier = NSUserInterfaceItemIdentifier("onboarding.source-user")
         migrationPort.identifier = NSUserInterfaceItemIdentifier("onboarding.source-port")
         migrationSSHPassword.identifier = NSUserInterfaceItemIdentifier("onboarding.source-password")
-        fleetClientID.delegate = self
-        fleetAccessToken.delegate = self
-        fleetRefreshToken.delegate = self
-        fleetExpiry.delegate = self
-        for field in [fleetClientID, fleetAccessToken, fleetRefreshToken, fleetExpiry,
+        for field in [fleetClientID, fleetClientSecret, fleetRedirectURI, fleetDomain] {
+            field.delegate = self
+        }
+        fleetClientID.identifier = NSUserInterfaceItemIdentifier("onboarding.fleet.client-id")
+        fleetClientSecret.identifier = NSUserInterfaceItemIdentifier("onboarding.fleet.client-secret")
+        fleetRedirectURI.identifier = NSUserInterfaceItemIdentifier("onboarding.fleet.redirect-uri")
+        fleetDomain.identifier = NSUserInterfaceItemIdentifier("onboarding.fleet.domain")
+        fleetClientSecret.placeholderString = HubL10n.text("hub.fleetSetup.secretPlaceholder", fallback: "Client secret")
+        fleetClientSecret.setAccessibilityLabel(HubL10n.text("hub.fleetSetup.secretLabel", fallback: "Client secret"))
+        fleetRedirectURI.placeholderString = "https://example.com/tesla/callback"
+        fleetDomain.placeholderString = "example.com"
+        for (index, box) in fleetChecklist.enumerated() {
+            box.identifier = NSUserInterfaceItemIdentifier("onboarding.fleet.prerequisite.\(index)")
+            box.target = self
+            box.action = #selector(fleetChecklistChanged)
+            box.controlSize = .regular
+        }
+        fleetConsent.identifier = NSUserInterfaceItemIdentifier("onboarding.fleet.consent-accept")
+        fleetConsent.target = self
+        fleetConsent.action = #selector(fleetChecklistChanged)
+        fleetConsent.controlSize = .regular
+        fleetConsent.setAccessibilityLabel(Self.fleetConsentText)
+        for field in [fleetClientID, fleetClientSecret, fleetRedirectURI, fleetDomain,
                       migrationServer, migrationUser, migrationPort,
                       migrationIdentityFile, migrationSSHPassword, sourceEncryptionKey,
                       migrationSource, migrationCarID, migrationPasswordFile] {
@@ -627,14 +698,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             field.font = HubTypography.body
             field.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
         }
-        fleetAccessToken.placeholderString = HubL10n.text("hub.OnboardingWindowController.474.1900", fallback: "Access token")
         migrationSource.placeholderString = HubL10n.text("hub.OnboardingWindowController.475.1901", fallback: "Password-free local PostgreSQL URL")
         migrationCarID.placeholderString = HubL10n.text("hub.ImportSheetController.65.1695", fallback: "Car ID")
         migrationPasswordFile.placeholderString = HubL10n.text("hub.OnboardingWindowController.477.1903", fallback: "Owner-only PostgreSQL password file")
         migrationSource.delegate = self
         migrationCarID.delegate = self
         migrationPasswordFile.delegate = self
-        fleetRefreshToken.placeholderString = HubL10n.text("hub.OnboardingWindowController.481.1904", fallback: "Refresh token")
         fleetClientID.placeholderString = HubL10n.text("hub.OnboardingWindowController.482.1905", fallback: "Tesla application client ID")
         migrationServer.placeholderString = "server.local"
         migrationIdentityFile.placeholderString = HubL10n.text("hub.OnboardingWindowController.486.1909", fallback: "Optional — uses SSH agent or default keys")
@@ -705,7 +774,18 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
         let entering = state.route == .legacy && lastRenderedRoute != .legacy
         let leaving = state.route != .legacy && lastRenderedRoute == .legacy
+        let enteringFleet = state.route == .fleet && lastRenderedRoute != .fleet
         lastRenderedRoute = state.route
+        // The client secret belongs to the step it was typed on: a step that ends clears it.
+        let fleetPage: HubFleetStep? = state.route == .fleet ? fleetStep : nil
+        if fleetPage != lastRenderedFleetStep {
+            fleetClientSecret.stringValue = ""
+            if fleetPage != .consent { fleetConsent.state = .off }
+        }
+        lastRenderedFleetStep = fleetPage
+        if enteringFleet {
+            DispatchQueue.main.async { [weak self] in self?.refreshFleetSetupState() }
+        }
         if leaving {
             // An answer still outstanding belongs to the visit that just ended.
             windowObservation &+= 1
@@ -751,7 +831,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case .welcome: return HubL10n.text("hub.OnboardingWindowController.588.1917", fallback: "Welcome to Tesatlas Hub")
         case .choose: return HubL10n.text("hub.OnboardingWindowController.589.1918", fallback: "How would you like to start?")
         case .provider: return HubL10n.text("hub.OnboardingWindowController.590.1919", fallback: "Choose how Hub connects")
-        case .fleet: return HubL10n.text("hub.OnboardingWindowController.591.1920", fallback: "Set up Fleet Telemetry")
+        case .fleet: return fleetPageTitle
         case .legacy: return HubL10n.text("hub.OnboardingWindowController.592.1921", fallback: "Sign in with Tesla")
         case .migration: return HubL10n.text("hub.OnboardingWindowController.593.1922", fallback: "Import History…")
         case .verify: return HubL10n.text("hub.OnboardingWindowController.594.1923", fallback: "Checking your Hub")
@@ -768,7 +848,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case .provider:
             return HubL10n.text("hub.OnboardingWindowController.606.1928", fallback: "Sign in with your Tesla owner account to start. Fleet Telemetry is available if you prefer it.")
         case .fleet:
-            return HubL10n.text("hub.OnboardingWindowController.608.1929", fallback: "Create a Tesla Fleet application, then paste its credentials below.")
+            return fleetPageSubtitle
         case .legacy:
             return HubL10n.text("hub.signIn.pageSubtitle", fallback: "Sign in with Tesla while a collection window is open.")
         case .migration:
@@ -913,39 +993,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                                   subtitle: HubL10n.text("hub.OnboardingWindowController.753.1959", fallback: "Sign in with Tesla. Hub keeps its own login."),
                                   selected: state.provider == .legacy,
                                   action: #selector(selectLegacy))
-        let fleet = choiceButton(title: HubL10n.text("hub.OnboardingWindowController.748.1956", fallback: "Fleet Telemetry"),
-                                 subtitle: HubL10n.text("hub.signIn.fleetDetail", fallback: "Tesla's official streaming API, with your own Fleet API app."),
+        guard HubFleetOnboarding.isOffered else { return verticalChoices([legacy]) }
+        let fleet = choiceButton(title: HubL10n.text("hub.fleetSetup.cardTitle", fallback: "Fleet API"),
+                                 subtitle: HubL10n.text("hub.fleetSetup.cardDetail", fallback: "Polling through Tesla's Fleet API. Needs your own Tesla developer application and a domain."),
                                  selected: state.provider == .fleet,
                                  action: #selector(selectFleet))
         return verticalChoices([legacy, fleet])
-    }
-
-    private func fleetBody() -> NSView {
-        let guide = HubActionButton(title: HubL10n.text("hub.OnboardingWindowController.760.1960", fallback: "Create Tesla Fleet App"), target: self, action: #selector(openFleetGuide))
-        configureFlatButton(guide, symbol: "book")
-        fleetExpiry.widthAnchor.constraint(equalToConstant: 120).isActive = true
-        let seconds = NSTextField(labelWithString: HubL10n.text("hub.OnboardingWindowController.seconds_unit", fallback: "seconds"))
-        seconds.font = HubTypography.body
-        seconds.textColor = HubPalette.mutedForeground
-        let expiryControl = NSStackView(views: [fleetExpiry, seconds, spacer()])
-        expiryControl.alignment = .centerY
-        expiryControl.spacing = 12
-        let form = onboardingForm([
-            (HubL10n.text("hub.OnboardingWindowController.region_label", fallback: "Region"), fleetRegion),
-            (HubL10n.text("hub.OnboardingWindowController.771.1964", fallback: "Client ID"), fleetClientID),
-            (HubL10n.text("hub.OnboardingWindowController.474.1900", fallback: "Access token"), fleetAccessToken),
-            (HubL10n.text("hub.OnboardingWindowController.481.1904", fallback: "Refresh token"), fleetRefreshToken),
-            (HubL10n.text("hub.OnboardingWindowController.774.1967", fallback: "Expires in"), expiryControl)
-        ])
-        let note = featureRow(HubL10n.text("hub.OnboardingWindowController.776.1968", fallback: "Credentials are encrypted on this Mac"), "lock.fill")
-        let fields = NSStackView(views: [guide, form, note])
-        fields.orientation = .vertical
-        fields.alignment = .leading
-        fields.spacing = 16
-        for field in fields.arrangedSubviews.dropFirst() {
-            field.widthAnchor.constraint(equalTo: fields.widthAnchor).isActive = true
-        }
-        return withError(fields)
     }
 
     private func legacyBody() -> NSView {
@@ -1761,7 +1814,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         continueButton.image = nil
         switch state.route {
         case .fleet:
-            continueButton.isEnabled = fleetCredentialsValid && !blocked
+            continueButton.isEnabled = fleetContinueEnabled && !blocked
         case .migration:
             if migrationUseLocalHistory.state == .on {
                 continueButton.isEnabled = localHistoryInputsValid && !blocked
@@ -1828,7 +1881,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var continueTitle: String {
         switch state.route {
         case .welcome: return HubL10n.text("hub.OnboardingWindowController.1354.2041", fallback: "Get Started")
-        case .fleet: return HubL10n.text("hub.OnboardingWindowController.1355.2042", fallback: "Set Up Fleet")
+        case .fleet: return fleetContinueTitle
         case .legacy:
             return signInIdle ? HubL10n.text("hub.signIn.done", fallback: "Done")
                 : HubL10n.text("hub.MainWindowController.26.1772", fallback: "Connect Tesla")
@@ -1862,6 +1915,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     @objc private func selectFleet() {
+        guard HubFleetOnboarding.isOffered else { return }
         state.provider = .fleet
         render()
     }
@@ -1879,6 +1933,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         errorMessage = nil
         errorFromWindowCheck = false
         signInIdle = false
+        if state.route == .fleet, let previous = fleetStep.previous {
+            fleetStep = previous
+            fleetNotice = nil
+            render()
+            return
+        }
         state.back()
         render()
     }
@@ -1915,7 +1975,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             errorMessage = nil
             render()
         case .fleet:
-            configureFleet()
+            fleetContinue()
         case .legacy:
             if signInIdle {
                 // Done closes set-up; the service is not touched and keeps running.
@@ -1948,35 +2008,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             }
         case .finish:
             finishOnboarding()
-        }
-    }
-
-    private func configureFleet() {
-        guard let expires = Int64(fleetExpiry.stringValue), expires > 0,
-              !fleetClientID.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !fleetAccessToken.stringValue.isEmpty,
-              !fleetRefreshToken.stringValue.isEmpty else {
-            HubAppLog.shared.record("setup.rejected", category: "account", level: "WARN",
-                                    fields: [
-                                        "provider": "fleet",
-                                        "reason": "incomplete_fields"
-                                    ])
-            showInlineError(HubL10n.text("hub.OnboardingWindowController.1471.2059", fallback: "Complete the Fleet client ID, token, region, and expiry fields."))
-            return
-        }
-        let regions = [
-            "europe_middle_east_and_africa",
-            "north_america_and_asia_pacific",
-            "china"
-        ]
-        let credentials = HubFleetSetupCredentials(accessToken: fleetAccessToken.stringValue,
-                                                   refreshToken: fleetRefreshToken.stringValue,
-                                                   clientID: fleetClientID.stringValue,
-                                                   region: regions[fleetRegion.indexOfSelectedItem],
-                                                   expiresInSeconds: expires)
-        setBusy(true, operation: .setup)
-        controller.configureFleetAccount(credentials: credentials) { [weak self] result in
-            self?.setupFinished(result)
         }
     }
 
@@ -2641,14 +2672,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             && (migrationAuthentication.indexOfSelectedItem == 0 || !migrationSSHPassword.stringValue.isEmpty)
     }
 
-    private var fleetCredentialsValid: Bool {
-        let clientID = fleetClientID.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !clientID.isEmpty
-            && !fleetAccessToken.stringValue.isEmpty
-            && !fleetRefreshToken.stringValue.isEmpty
-            && Int64(fleetExpiry.stringValue).map { $0 > 0 } == true
-    }
-
     private func runVerification() {
         checks = []
         verificationFinished = false
@@ -2778,8 +2801,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField else { return }
-        if field === fleetClientID || field === fleetAccessToken
-            || field === fleetRefreshToken || field === fleetExpiry {
+        if field === fleetClientID || field === fleetClientSecret
+            || field === fleetRedirectURI || field === fleetDomain {
             updateFooter()
             return
         }
@@ -3074,8 +3097,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         var candidates = pageKeyViews
         switch state.route {
         case .fleet:
-            candidates.append(contentsOf: [fleetClientID, fleetAccessToken, fleetRefreshToken,
-                                           fleetExpiry, fleetRegion])
+            candidates.append(contentsOf: fleetKeyViews)
         case .legacy:
             break
         case .migration:
@@ -3230,4 +3252,608 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         fallback.accessibilityDescription = description
         return fallback
     }
+}
+
+// MARK: - Fleet route (M09-T12)
+
+extension OnboardingWindowController {
+    // Polling cadence, price and cap, as the service applies them by default
+    // (src/runtime/config.rs: the Fleet poll intervals, FLEET_PRICING and
+    // DEFAULT_FLEET_MONTHLY_CAP_CENTS). Changing one there is a dated decision; change it here too.
+    static var fleetCadenceText: String {
+        HubL10n.text("hub.fleetSetup.consent.cadence",
+            fallback: "Hub reads a driving car every 30 seconds, a charging or awake car every 2 minutes, and checks a sleeping car every 10 minutes. It lists your cars once an hour. It polls only while a collection window is open.")
+    }
+
+    static var fleetPriceText: String {
+        HubL10n.text("hub.fleetSetup.consent.price",
+            fallback: "Tesla bills your developer account $1 for every 500 vehicle-data requests ($0.002 each).")
+    }
+
+    static var fleetCapText: String {
+        HubL10n.text("hub.fleetSetup.consent.cap",
+            fallback: "Hub stops polling for the month at $10.00, Tesla's monthly discount. With these settings that is reached around day 14 of a month.")
+    }
+
+    static var fleetConsentText: String {
+        HubL10n.text("hub.fleetSetup.consent.accept",
+            fallback: "I accept that Hub polls my car through my Tesla developer application and that Tesla bills these requests to my developer account.")
+    }
+
+    fileprivate var fleetPageTitle: String {
+        switch fleetStep {
+        case .prerequisites: return HubL10n.text("hub.fleetSetup.title.prerequisites", fallback: "Before you set up the Fleet API")
+        case .details: return HubL10n.text("hub.fleetSetup.title.details", fallback: "Your Tesla developer application")
+        case .publicKey: return HubL10n.text("hub.fleetSetup.title.publicKey", fallback: "Publish Hub's public key")
+        case .signIn: return HubL10n.text("hub.fleetSetup.title.signIn", fallback: "Sign in with Tesla")
+        case .vehicles: return HubL10n.text("hub.fleetSetup.title.vehicles", fallback: "Find your car")
+        case .consent: return HubL10n.text("hub.fleetSetup.title.consent", fallback: "Before Hub starts polling")
+        }
+    }
+
+    fileprivate var fleetPageSubtitle: String {
+        switch fleetStep {
+        case .prerequisites: return HubL10n.text("hub.fleetSetup.subtitle.prerequisites", fallback: "The Fleet API needs your own Tesla developer application and a domain you control.")
+        case .details: return HubL10n.text("hub.fleetSetup.subtitle.details", fallback: "Enter the details exactly as they are in your Tesla developer application.")
+        case .publicKey: return HubL10n.text("hub.fleetSetup.subtitle.publicKey", fallback: "Tesla checks this key on your domain before it registers the domain for your application.")
+        case .signIn: return HubL10n.text("hub.fleetSetup.subtitle.signIn", fallback: "Sign in while a collection window is open, and allow vehicle information and location.")
+        case .vehicles: return HubL10n.text("hub.fleetSetup.subtitle.vehicles", fallback: "Hub lists the cars on your Tesla account with the stored sign-in.")
+        case .consent: return HubL10n.text("hub.fleetSetup.subtitle.consent", fallback: "Nothing is polled until you accept.")
+        }
+    }
+
+    fileprivate var fleetContinueTitle: String {
+        switch fleetStep {
+        case .prerequisites, .details:
+            return HubL10n.text("hub.OnboardingWindowController.168.1852", fallback: "Continue")
+        case .publicKey:
+            return controller.savedFleetApplication?.registered == true
+                ? HubL10n.text("hub.OnboardingWindowController.168.1852", fallback: "Continue")
+                : HubL10n.text("hub.fleetSetup.register", fallback: "Register Domain")
+        case .signIn: return HubL10n.text("hub.OnboardingWindowController.592.1921", fallback: "Sign in with Tesla")
+        case .vehicles: return HubL10n.text("hub.fleetSetup.findCar", fallback: "Find My Car")
+        case .consent: return HubL10n.text("hub.fleetSetup.startCollecting", fallback: "Start Collecting")
+        }
+    }
+
+    fileprivate var fleetContinueEnabled: Bool {
+        switch fleetStep {
+        case .prerequisites: return fleetChecklist.allSatisfy { $0.state == .on }
+        case .details:
+            return !fleetClientID.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !fleetRedirectURI.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !fleetDomain.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .publicKey:
+            return controller.savedFleetApplication?.registered == true || !fleetClientSecret.stringValue.isEmpty
+        case .signIn: return !fleetClientSecret.stringValue.isEmpty
+        case .vehicles: return true
+        case .consent: return fleetConsent.state == .on
+        }
+    }
+
+    fileprivate var fleetKeyViews: [NSView] {
+        switch fleetStep {
+        case .prerequisites: return fleetChecklist
+        case .details: return [fleetRegion, fleetClientID, fleetRedirectURI, fleetDomain]
+        case .publicKey:
+            return controller.savedFleetApplication?.registered == true ? [] : [fleetClientSecret]
+        case .signIn: return [fleetClientSecret]
+        case .vehicles: return []
+        case .consent: return [fleetConsent]
+        }
+    }
+
+    private static let fleetRegions: [HubFleetRegion] = [.eu, .na, .cn]
+
+    private var selectedFleetRegion: HubFleetRegion {
+        Self.fleetRegions[max(0, min(Self.fleetRegions.count - 1, fleetRegion.indexOfSelectedItem))]
+    }
+
+    // MARK: Pages
+
+    func fleetBody() -> NSView {
+        var views: [NSView] = []
+        if let fleetNotice {
+            views.append(noticeView(symbol: "info.circle.fill", tone: .neutral, title: nil, message: fleetNotice,
+                                    identifier: "onboarding.fleet.notice"))
+        }
+        switch fleetStep {
+        case .prerequisites: views.append(fleetPrerequisitesBody())
+        case .details: views.append(fleetDetailsBody())
+        case .publicKey: views.append(fleetPublicKeyBody())
+        case .signIn: views.append(fleetSignInBody())
+        case .vehicles: views.append(fleetVehiclesBody())
+        case .consent: views.append(fleetConsentBody())
+        }
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 14
+        stack.identifier = NSUserInterfaceItemIdentifier("onboarding.fleet.\(fleetStepName)")
+        for view in views { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
+        return withError(stack)
+    }
+
+    private var fleetStepName: String {
+        switch fleetStep {
+        case .prerequisites: return "prerequisites"
+        case .details: return "details"
+        case .publicKey: return "public-key"
+        case .signIn: return "sign-in"
+        case .vehicles: return "vehicles"
+        case .consent: return "consent"
+        }
+    }
+
+    private func fleetPrerequisitesBody() -> NSView {
+        let items = [
+            HubL10n.text("hub.fleetSetup.prerequisite.application", fallback: "A Tesla developer application with the authorization-code grant, the vehicle information and vehicle location scopes, a client ID and secret, and a registered redirect URI."),
+            HubL10n.text("hub.fleetSetup.prerequisite.domain", fallback: "A domain you control, where you can publish one file at /.well-known/appspecific/com.tesla.3p.public-key.pem."),
+            HubL10n.text("hub.fleetSetup.prerequisite.billing", fallback: "A payment method and a billing limit on your Tesla developer account: Tesla bills the polling.")
+        ]
+        var rows: [NSView] = []
+        for (box, text) in zip(fleetChecklist, items) {
+            box.setAccessibilityLabel(text)
+            rows.append(wrappingCheckbox(box, title: text))
+        }
+        let guide = HubActionButton(title: HubL10n.text("hub.fleetSetup.openDeveloper", fallback: "Open Tesla Developer"),
+                                    target: self, action: #selector(openFleetGuide))
+        configureFlatButton(guide, symbol: "book")
+        pageKeyViews.append(guide)
+        let stack = NSStackView(views: rows + [guide])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        for row in rows { row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
+        return stack
+    }
+
+    private func fleetDetailsBody() -> NSView {
+        let form = onboardingForm([
+            (HubL10n.text("hub.OnboardingWindowController.region_label", fallback: "Region"), fleetRegion),
+            (HubL10n.text("hub.OnboardingWindowController.771.1964", fallback: "Client ID"), fleetClientID),
+            (HubL10n.text("hub.fleetSetup.redirectLabel", fallback: "Redirect URI"), fleetRedirectURI),
+            (HubL10n.text("hub.fleetSetup.domainLabel", fallback: "Domain"), fleetDomain)
+        ])
+        let note = featureRow(HubL10n.text("hub.fleetSetup.secretNote", fallback: "Hub asks for the client secret only when it talks to Tesla, and never stores it."), "lock.fill")
+        let stack = NSStackView(views: [form, note])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 14
+        for view in stack.arrangedSubviews { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
+        return stack
+    }
+
+    private func fleetSecretField() -> NSView {
+        verticalField(HubL10n.text("hub.fleetSetup.secretLabel", fallback: "Client secret"), fleetClientSecret)
+    }
+
+    private func fleetPublicKeyBody() -> NSView {
+        let application = controller.savedFleetApplication
+        var views: [NSView] = []
+        let save = HubActionButton(title: HubL10n.text("hub.fleetSetup.saveKey", fallback: "Save Public Key…"),
+                                   target: self, action: #selector(saveFleetPublicKeyPressed))
+        save.identifier = NSUserInterfaceItemIdentifier("onboarding.fleet.save-key")
+        configureFlatButton(save, symbol: "square.and.arrow.down")
+        pageKeyViews.append(save)
+        views.append(save)
+        let address = application?.publicKeyAddress ?? "/.well-known/appspecific/com.tesla.3p.public-key.pem"
+        if let fleetPublicKey {
+            views.append(featureRow(HubL10n.format("hub.fleetSetup.keySaved",
+                fallback: "Saved to %1$@. Publish this file at %2$@.",
+                arguments: [fleetPublicKey.path, address]), "checkmark.circle.fill", color: .systemGreen))
+        } else {
+            views.append(featureRow(HubL10n.format("hub.fleetSetup.keyPublish",
+                fallback: "Save the key, then publish the file at %1$@.", arguments: [address]), "globe"))
+        }
+        if application?.registered == true {
+            views.append(featureRow(HubL10n.format("hub.fleetSetup.registered",
+                fallback: "%1$@ is registered with Tesla for this application.",
+                arguments: [application?.domain ?? ""]), "checkmark.seal.fill", color: .systemGreen))
+        } else {
+            views.append(fleetSecretField())
+            views.append(featureRow(HubL10n.text("hub.fleetSetup.registerNote", fallback: "Hub sends the client secret to Tesla for this registration only and does not keep it."), "lock.fill"))
+        }
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        for view in views.dropFirst() { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
+        return stack
+    }
+
+    private func fleetSignInBody() -> NSView {
+        let views: [NSView] = [
+            fleetSecretField(),
+            featureRow(HubL10n.text("hub.fleetSetup.signInNote", fallback: "Hub sends the client secret to Tesla for this sign-in only and does not keep it. Your Tesla password goes only to Tesla."), "lock.fill")
+        ]
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        for view in views { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
+        return stack
+    }
+
+    private func fleetVehiclesBody() -> NSView {
+        featureRow(HubL10n.text("hub.fleetSetup.vehiclesNote", fallback: "Finding your car needs an open collection window. It reads the list of cars only: nothing is sent to a car."), "car.side")
+    }
+
+    private func fleetConsentBody() -> NSView {
+        let rows: [(String, String, String)] = [
+            ("clock", HubL10n.text("hub.fleetSetup.consent.cadenceTitle", fallback: "How often"), Self.fleetCadenceText),
+            ("dollarsign.circle", HubL10n.text("hub.fleetSetup.consent.priceTitle", fallback: "Price"), Self.fleetPriceText),
+            ("gauge", HubL10n.text("hub.fleetSetup.consent.capTitle", fallback: "Monthly cap"), Self.fleetCapText)
+        ]
+        var views: [NSView] = []
+        for (symbol, title, text) in rows {
+            let heading = NSTextField(labelWithString: title)
+            heading.font = HubTypography.emphasis
+            let detail = NSTextField(wrappingLabelWithString: text)
+            detail.font = HubTypography.body
+            detail.maximumNumberOfLines = 0
+            let copy = NSStackView(views: [heading, detail])
+            copy.orientation = .vertical
+            copy.alignment = .leading
+            copy.spacing = 2
+            let icon = HubIconTileView(symbol: symbol, accessibilityDescription: nil)
+            let row = NSStackView(views: [icon, copy])
+            row.alignment = .top
+            row.spacing = 12
+            detail.widthAnchor.constraint(equalTo: copy.widthAnchor).isActive = true
+            views.append(row)
+        }
+        views.append(wrappingCheckbox(fleetConsent, title: Self.fleetConsentText))
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 14
+        stack.identifier = NSUserInterfaceItemIdentifier("onboarding.fleet.consent")
+        for view in views { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
+        return stack
+    }
+
+    // MARK: Actions
+
+    @objc fileprivate func fleetChecklistChanged() { updateFooter() }
+
+    fileprivate func fleetContinue() {
+        switch fleetStep {
+        case .prerequisites:
+            guard fleetContinueEnabled else { return }
+            errorMessage = nil
+            fleetStep = .details
+            fillFleetDetails(from: controller.savedFleetApplication)
+            render()
+        case .details: fleetSaveDetails()
+        case .publicKey:
+            if let application = controller.savedFleetApplication, application.registered {
+                errorMessage = nil
+                fleetStep = .signIn
+                render()
+            } else {
+                fleetRegister()
+            }
+        case .signIn: fleetSignIn()
+        case .vehicles: fleetDiscover()
+        case .consent: fleetActivate()
+        }
+    }
+
+    private func fillFleetDetails(from application: HubFleetApplication?) {
+        guard let application else { return }
+        if fleetClientID.stringValue.isEmpty { fleetClientID.stringValue = application.clientID }
+        if fleetRedirectURI.stringValue.isEmpty { fleetRedirectURI.stringValue = application.redirectURI }
+        if fleetDomain.stringValue.isEmpty { fleetDomain.stringValue = application.domain }
+        if let index = Self.fleetRegions.firstIndex(of: application.region) { fleetRegion.selectItem(at: index) }
+    }
+
+    /// Section 10, steps 1 and 2: the details are kept (never the secret), then the Hub becomes a
+    /// Fleet Hub with collection off and runs.
+    private func fleetSaveDetails() {
+        var application: HubFleetApplication
+        do {
+            application = try HubFleetApplication.validated(clientID: fleetClientID.stringValue,
+                                                            region: selectedFleetRegion,
+                                                            redirectURI: fleetRedirectURI.stringValue,
+                                                            domain: fleetDomain.stringValue)
+        } catch {
+            showInlineError(error.localizedDescription)
+            return
+        }
+        if let saved = controller.savedFleetApplication, saved.sameRegistration(as: application) {
+            application.registered = saved.registered
+        }
+        setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.prepare", fallback: "Preparing Hub for the Fleet API…"),
+                operation: .fleet)
+        controller.prepareFleetHub { [weak self] result in
+            guard let self else { return }
+            self.setBusy(false)
+            switch result {
+            case .success:
+                do { try self.controller.saveFleetApplication(application) } catch {
+                    self.showInlineError(error.localizedDescription)
+                    return
+                }
+                self.errorMessage = nil
+                self.fleetNotice = nil
+                self.fleetStep = application.registered ? .signIn : .publicKey
+                self.render()
+            case let .failure(error):
+                self.fleetFailed(error)
+            }
+        }
+    }
+
+    @objc fileprivate func saveFleetPublicKeyPressed() {
+        guard let window, !interactionBlocked, !filePanelOpen else { return }
+        let panel = NSSavePanel()
+        panel.title = HubL10n.text("hub.fleetSetup.saveKeyTitle", fallback: "Save Public Key")
+        panel.nameFieldStringValue = "com.tesla.3p.public-key.pem"
+        panel.canCreateDirectories = true
+        filePanelOpen = true
+        presentFleetKeySavePanel(panel, window) { [weak self] url in
+            guard let self else { return }
+            self.filePanelOpen = false
+            guard let url else { return }
+            self.setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.key", fallback: "Saving the public key…"),
+                         operation: .fleet)
+            self.controller.saveFleetPublicKey(to: url) { [weak self] result in
+                guard let self else { return }
+                self.setBusy(false)
+                switch result {
+                case let .success(key):
+                    self.fleetPublicKey = key
+                    self.errorMessage = nil
+                    self.render()
+                case let .failure(error):
+                    self.fleetFailed(error)
+                }
+            }
+        }
+    }
+
+    private func fleetRegister() {
+        guard let application = controller.savedFleetApplication else { return fleetDetailsMissing() }
+        let secret = fleetClientSecret.stringValue
+        // Typed once for this call: the field is cleared as it starts.
+        fleetClientSecret.stringValue = ""
+        setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.register", fallback: "Registering your domain with Tesla…"),
+                operation: .fleet)
+        controller.registerFleetDomain(application, clientSecret: secret) { [weak self] result in
+            guard let self else { return }
+            self.setBusy(false)
+            switch result {
+            case .success:
+                self.errorMessage = nil
+                self.fleetStep = .signIn
+                self.render()
+            case let .failure(error):
+                self.fleetFailed(error)
+            }
+        }
+    }
+
+    /// Section 10, step 4: begin, the browser leg on the registered redirect URI with its `state`
+    /// checked, then the redeem with the attempt's binding.
+    private func fleetSignIn() {
+        guard authWindow == nil else {
+            authWindow?.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+        guard let application = controller.savedFleetApplication else { return fleetDetailsMissing() }
+        guard HubFleetApplication.passable(fleetClientSecret.stringValue) else {
+            showInlineError(HubL10n.text("hub.fleetSetup.secretUnpassable",
+                fallback: "Enter the client secret of your Tesla developer application. A secret with a quote, a backslash or a control character cannot be used."))
+            return
+        }
+        setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.begin", fallback: "Preparing the Tesla sign-in…"),
+                operation: .fleet)
+        controller.beginFleetSignIn(application) { [weak self] result in
+            guard let self else { return }
+            self.setBusy(false)
+            switch result {
+            case let .success(attempt): self.openFleetLogin(attempt)
+            case let .failure(error): self.fleetFailed(error)
+            }
+        }
+    }
+
+    private func openFleetLogin(_ attempt: HubFleetSignInAttempt) {
+        HubAppLog.shared.record("authentication.started", category: "account", fields: ["provider": "fleet"])
+        let finished: (Result<TeslaAuthCodeGrant, Error>) -> Void = { [weak self] result in
+            guard let self else { return }
+            self.authWindow = nil
+            self.updateWindowCloseAvailability()
+            self.updateFooter()
+            switch result {
+            case let .success(grant):
+                HubAppLog.shared.record("authentication.completed", category: "account", fields: ["provider": "fleet"])
+                self.fleetRedeem(attempt, code: grant.code)
+            case let .failure(error):
+                if error as? TeslaAuthError == .cancelled {
+                    HubAppLog.shared.record("authentication.cancelled", category: "account", fields: ["provider": "fleet"])
+                    return
+                }
+                HubAppLog.shared.record("authentication.failed", category: "account", level: "WARN",
+                                        fields: ["provider": "fleet", "error_code": HubAppLog.errorCode(error)])
+                self.fleetFailed(error)
+            }
+        }
+        if let presentFleetSignIn {
+            presentFleetSignIn(attempt.flow, finished)
+            return
+        }
+        do {
+            let auth = try TeslaAuthWindowController(flow: attempt.flow, completion: finished)
+            authWindow = auth
+            updateWindowCloseAvailability()
+            updateFooter()
+            auth.showWindow(nil)
+            auth.window?.makeKeyAndOrderFront(nil)
+        } catch {
+            fleetFailed(error)
+        }
+    }
+
+    private func fleetRedeem(_ attempt: HubFleetSignInAttempt, code: String) {
+        let secret = fleetClientSecret.stringValue
+        // Typed once for this sign-in: the field is cleared as the redeem starts.
+        fleetClientSecret.stringValue = ""
+        setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.redeem", fallback: "Signing in with Tesla…"),
+                operation: .fleet)
+        controller.redeemFleetSignIn(attempt, code: code, clientSecret: secret) { [weak self] result in
+            guard let self else { return }
+            self.setBusy(false)
+            switch result {
+            case let .success(.vehiclesConfigured(count)) where count > 0:
+                self.errorMessage = nil
+                self.fleetNotice = nil
+                self.fleetStep = .consent
+                self.render()
+            case .success(.vehiclesConfigured):
+                self.errorMessage = nil
+                self.fleetNotice = HubFleetRefusal.message(code: "discovery_no_vehicles")
+                self.fleetStep = .vehicles
+                self.render()
+            case let .success(.discoveryFailed(_, message)):
+                // Signed in: the next step is finding the car, not a new sign-in.
+                self.errorMessage = nil
+                self.fleetNotice = message
+                self.fleetStep = .vehicles
+                self.render()
+            case let .failure(error):
+                self.fleetFailed(error)
+            }
+        }
+    }
+
+    private func fleetDiscover() {
+        setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.discover", fallback: "Finding your car…"), operation: .fleet)
+        controller.discoverFleetVehicles { [weak self] result in
+            guard let self else { return }
+            self.setBusy(false)
+            switch result {
+            case let .success(count) where count > 0:
+                self.errorMessage = nil
+                self.fleetNotice = nil
+                self.fleetStep = .consent
+                self.render()
+            case .success:
+                self.showInlineError(HubFleetRefusal.message(code: "discovery_no_vehicles") ?? "")
+            case let .failure(error):
+                self.fleetFailed(error)
+            }
+        }
+    }
+
+    /// Section 10, step 6: only an accepted consent page starts collection.
+    private func fleetActivate() {
+        guard fleetConsent.state == .on else { return }
+        HubAppLog.shared.record("fleet_setup.consent_accepted", category: "account")
+        setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.activate", fallback: "Starting collection…"), operation: .fleet)
+        controller.activateFleetCollection { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success:
+                self.fleetConsent.state = .off
+                self.fleetNotice = nil
+                self.setupFinished(.success(()))
+            case let .failure(error):
+                self.setBusy(false)
+                self.fleetFailed(error)
+            }
+        }
+    }
+
+    private func fleetDetailsMissing() {
+        fleetStep = .details
+        showInlineError(HubL10n.text("hub.fleetSetup.detailsMissing",
+            fallback: "Enter your Tesla developer application's details again to continue."))
+    }
+
+    /// Shows a refusal. When the outcome is unknown (the answer was lost), the state is read
+    /// again and the page moves to the step it names.
+    private func fleetFailed(_ error: Error) {
+        let underlying = HubActionError.settingQuiescenceAside(error)
+        showInlineError(error.localizedDescription)
+        if (underlying as? HubFleetRefusal)?.outcomeUnknown == true { refreshFleetSetupState() }
+    }
+
+    // MARK: Waiting states
+
+    /// Reads which Fleet state the Hub is in (`preflight`) and shows that step with its next
+    /// action, so a set-up continues from where it stopped, also after a quit.
+    func refreshFleetSetupState() {
+        guard state.route == .fleet, !controller.previewMode, controller.hubConfiguredForFleet else {
+            fillFleetDetails(from: controller.savedFleetApplication)
+            return
+        }
+        fleetStateReading &+= 1
+        let reading = fleetStateReading
+        controller.readFleetSetupState { [weak self] result in
+            guard let self, reading == self.fleetStateReading, self.state.route == .fleet,
+                  !self.busy, self.authWindow == nil else { return }
+            switch result {
+            case let .success(setupState): self.applyFleetSetupState(setupState)
+            case let .failure(error): self.showInlineError(error.localizedDescription)
+            }
+        }
+    }
+
+    private func applyFleetSetupState(_ setupState: HubFleetSetupState) {
+        let saved = controller.savedFleetApplication
+        fillFleetDetails(from: saved)
+        switch setupState {
+        case .awaitingSignIn:
+            fleetNotice = HubL10n.text("hub.fleetSetup.state.awaitingSignIn",
+                fallback: "Hub is waiting for your Tesla sign-in. Sign in with Tesla to continue.")
+            fleetStep = saved == nil ? .details : .signIn
+        case .awaitingVehicles:
+            fleetNotice = HubL10n.text("hub.fleetSetup.state.awaitingVehicles",
+                fallback: "You are signed in, and Hub has not found your car yet. Find your car to continue.")
+            fleetStep = .vehicles
+        case .awaitingActivation:
+            fleetNotice = HubL10n.text("hub.fleetSetup.state.awaitingActivation",
+                fallback: "You are signed in and your car is found. Hub polls nothing until you accept the terms below.")
+            fleetStep = .consent
+        case .collecting:
+            fleetNotice = HubL10n.text("hub.fleetSetup.state.collecting",
+                fallback: "Hub is collecting through the Fleet API. Sign in again only to change the Tesla account.")
+            fleetStep = saved == nil ? .details : .signIn
+        case .idle:
+            fleetNotice = nil
+            if let saved { fleetStep = saved.registered ? .signIn : .publicKey }
+        case .notFleet:
+            return
+        }
+        render()
+    }
+
+    #if DEBUG
+    var fleetStepForTests: HubFleetStep { fleetStep }
+    var fleetNoticeForTests: String? { fleetNotice }
+    var errorMessageForTests: String? { errorMessage }
+    var fleetSecretForTests: String { fleetClientSecret.stringValue }
+    var fleetPublicKeyForTests: HubFleetPublicKey? { fleetPublicKey }
+    var fleetConsentEnabledForTests: Bool { continueButton.isEnabled }
+    func enterFleetSecretForTests(_ secret: String) {
+        fleetClientSecret.stringValue = secret
+        controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: fleetClientSecret))
+    }
+    func enterFleetDetailsForTests(clientID: String, region: HubFleetRegion, redirectURI: String, domain: String) {
+        fleetClientID.stringValue = clientID
+        fleetRedirectURI.stringValue = redirectURI
+        fleetDomain.stringValue = domain
+        if let index = Self.fleetRegions.firstIndex(of: region) { fleetRegion.selectItem(at: index) }
+        updateFooter()
+    }
+    func tickFleetPrerequisitesForTests() {
+        fleetChecklist.forEach { $0.state = .on }
+        updateFooter()
+    }
+    func acceptFleetConsentForTests() { fleetConsent.state = .on; updateFooter() }
+    func saveFleetPublicKeyForTests() { saveFleetPublicKeyPressed() }
+    func backForTests() { backPressed() }
+    #endif
 }

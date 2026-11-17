@@ -1330,7 +1330,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func connectTeslaPressed() {
-        showOnboarding(route: .provider)
+        // A Fleet Hub whose set-up is unfinished continues on the Fleet route (M09-T12).
+        let fleetHub = HubFleetOnboarding.isOffered && lastPresentedSnapshot.provider == .fleet
+        showOnboarding(route: fleetHub ? .fleet : .provider)
     }
 
     @objc private func manageTeslaPressed(_ sender: NSButton) {
@@ -1342,7 +1344,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func teslaAccountMenu() -> NSMenu {
         let menu = NSMenu(title: HubL10n.text("hub.HubController.1162.479", fallback: "Tesla account"))
         if lastPresentedSnapshot.accountState == .connected {
-            menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1152.1840", fallback: "Use Fleet API"), action: #selector(useFleetPressed)))
+            if HubFleetOnboarding.isOffered {
+                menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1152.1840", fallback: "Use Fleet API"), action: #selector(useFleetPressed)))
+            }
             menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1153.1841", fallback: "Use owner sign-in"), action: #selector(useLegacyPressed)))
             menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1154.1842", fallback: "Import History…"), action: #selector(importHistoryPressed)))
             menu.addItem(.separator())
@@ -1360,7 +1364,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return item
     }
 
-    @objc private func useFleetPressed() { showOnboarding(route: .fleet) }
+    @objc private func useFleetPressed() {
+        guard HubFleetOnboarding.isOffered else { return }
+        showOnboarding(route: .fleet)
+    }
 
     @objc private func useLegacyPressed() { showOnboarding(route: .legacy) }
 

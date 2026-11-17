@@ -645,7 +645,7 @@ extension OnboardingWindowControllerTests {
         let onboarding = try openOnboarding(harness, route: .provider)
 
         let choices = providerChoices(in: onboarding)
-        XCTAssertEqual(choices.map(\.title), ["Owner sign-in", "Fleet Telemetry"],
+        XCTAssertEqual(choices.map(\.title), ["Owner sign-in", "Fleet API"],
                        "the owner sign-in comes first and Fleet stays on the page")
         XCTAssertEqual(choices.map(\.selected), [true, false], "the owner sign-in is the default")
 
@@ -676,7 +676,10 @@ extension OnboardingWindowControllerTests {
                        "choosing Fleet moves the selection")
         press(try primaryButton("Continue", in: onboarding))
         XCTAssertEqual(onboarding.currentRoute, .fleet)
-        XCTAssertNotNil(findButton("Set Up Fleet", in: onboarding), "the Fleet page is unchanged")
+        XCTAssertTrue(descendantViews(of: onboarding.window?.contentView)
+                        .contains { $0.identifier?.rawValue == "onboarding.fleet.prerequisites" },
+                      "the Fleet route starts with its prerequisites")
+        XCTAssertEqual(onboarding.fleetStepForTests, .prerequisites)
     }
 
     func testTheFleetPreviewKeepsFleetSelectedAcrossBackAndContinue() throws {

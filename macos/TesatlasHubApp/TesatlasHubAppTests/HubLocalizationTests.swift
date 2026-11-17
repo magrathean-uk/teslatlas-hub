@@ -18,13 +18,17 @@ final class HubLocalizationTests: XCTestCase {
         }
         let englishKeys = Set(try table(english, "Localizable.strings").keys)
         let pluralKeys = Set(try table(english, "Localizable.stringsdict").keys)
-        XCTAssertEqual(englishKeys.count, 737, "M02-T22 adds six first-start lines and drops four, then three window-state lines")
+        // M09-T12 adds the Fleet set-up lines in English only: every other language falls back to
+        // English for them until they are translated.
+        let englishOnly = englishKeys.filter { $0.hasPrefix("hub.fleetSetup.") }
+        XCTAssertEqual(englishOnly.count, 96)
+        XCTAssertEqual(englishKeys.count, 737 + 96, "M02-T22 adds six first-start lines and drops four, then three window-state lines")
         XCTAssertEqual(pluralKeys.count, 6)
         for language in languages {
             let directory = resources.appendingPathComponent("\(language).lproj")
             let strings = try table(directory, "Localizable.strings")
             let plurals = try table(directory, "Localizable.stringsdict")
-            XCTAssertEqual(Set(strings.keys), englishKeys, language)
+            XCTAssertEqual(Set(strings.keys).subtracting(englishOnly), englishKeys.subtracting(englishOnly), language)
             XCTAssertEqual(Set(plurals.keys), pluralKeys, language)
             XCTAssertTrue(strings.values.allSatisfy {
                 guard let text = $0 as? String else { return false }

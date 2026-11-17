@@ -295,12 +295,20 @@ final class CollectionStatusTests: XCTestCase {
         XCTAssertNil(model(Self.status(), .report(Self.window("open")), signIn: "window_closed").signInRefusal)
     }
 
-    func testFleetIsParkedWithNoAction() {
+    /// M09-T12: the Fleet row follows the build-time switch; Status offers no Fleet action itself.
+    func testTheFleetRowFollowsTheFleetSwitchWithNoAction() {
+        let previous = HubFleetOnboarding.isOffered
+        defer { HubFleetOnboarding.isOffered = previous }
+        XCTAssertFalse(HubFleetOnboarding.offeredByDefault, "the Fleet card stays off in this build")
+        HubFleetOnboarding.isOffered = false
         let value = model(Self.status(), .report(Self.window("open")))
-        XCTAssertEqual(rows(value)["Fleet"], "Parked: no Fleet action is available")
+        XCTAssertEqual(rows(value)["Fleet"], "Not offered in this version")
         let snapshot = { () -> HubSnapshot in var s = HubSnapshot.previewRunning; s.collection = value; return s }()
         let details = ServiceDetailsWindowController.collectionDetails(for: snapshot, date: Self.text)
-        XCTAssertEqual(details.last, HubServiceDetail(label: "Fleet", value: "Parked: no Fleet action is available"))
+        XCTAssertEqual(details.last, HubServiceDetail(label: "Fleet", value: "Not offered in this version"))
+        HubFleetOnboarding.isOffered = true
+        XCTAssertEqual(rows(value)["Fleet"],
+                       "Available in Connect Tesla: polling with your own Tesla developer application and a domain")
     }
 
     // Fields are read defensively: nothing is invented for a missing or renamed field.
@@ -374,7 +382,7 @@ final class CollectionStatusTests: XCTestCase {
         XCTAssertEqual(details.first { $0.label == "Tesla login" }?.value, "Signed in with the Hub's own login")
         XCTAssertEqual(details.first { $0.label == "Collection window" }?.value,
                        "Open until \(HubCollectionStatus.defaultDateText(Date(timeIntervalSince1970: TimeInterval(Self.expiry))))")
-        XCTAssertTrue(snapshot.diagnosticLines.contains("Fleet: Parked: no Fleet action is available"))
+        XCTAssertTrue(snapshot.diagnosticLines.contains("Fleet: \(HubCollectionStatus.fleetText)"))
     }
 
     func testStatusShowsServiceNotRunningWithoutAskingTheWindow() throws {

@@ -7,6 +7,17 @@ import XCTest
 @testable import Tesatlas_Hub
 
 final class OnboardingWindowControllerTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        // M09-T12: the Fleet card is off in this build; these tests exercise it switched on.
+        HubFleetOnboarding.isOffered = true
+    }
+
+    override func tearDown() {
+        HubFleetOnboarding.isOffered = HubFleetOnboarding.offeredByDefault
+        super.tearDown()
+    }
+
     func testLegalNoticeAttributionLineEqualsAdditionalTerms() throws {
         let path = try XCTUnwrap(
             ProcessInfo.processInfo.environment["TESATLAS_HUB_ADDITIONAL_TERMS"],
@@ -1182,6 +1193,10 @@ final class OnboardingWindowControllerTests: XCTestCase {
             previewRoute: "fleet",
             onComplete: { _ in }
         )
+        // M09-T12: the region is on the details step, after the prerequisites.
+        onboarding.tickFleetPrerequisitesForTests()
+        onboarding.continueForTests()
+        XCTAssertEqual(onboarding.fleetStepForTests, .details)
         let root = try XCTUnwrap(onboarding.window?.contentView)
         root.layoutSubtreeIfNeeded()
 
@@ -1824,7 +1839,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
             ]
         }
         let owner = ("Owner sign-in", "Sign in with Tesla. Hub keeps its own login.")
-        let fleet = ("Fleet Telemetry", "Tesla's official streaming API, with your own Fleet API app.")
+        let fleet = ("Fleet API", "Polling through Tesla's Fleet API. Needs your own Tesla developer application and a domain.")
         for (index, (target, other)) in [(fleet, owner), (owner, fleet), (fleet, owner), (owner, fleet)].enumerated() {
             for (label, point) in try points(target.0, subtitle: target.1) {
                 // Put the other row in front, then click the target at this point: first click wins.
@@ -1851,11 +1866,11 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let onboarding = OnboardingWindowController(controller: controller, previewRoute: "provider",
                                                      onComplete: { _ in })
         let root = onboarding.window?.contentView
-        let radios = buttons(in: root).filter { $0.title == "Owner sign-in" || $0.title == "Fleet Telemetry" }
+        let radios = buttons(in: root).filter { $0.title == "Owner sign-in" || $0.title == "Fleet API" }
         XCTAssertEqual(radios.count, 2)
         for radio in radios { XCTAssertEqual(radio.focusRingType, .none, radio.title) }
         let shown = labels(in: root).map(\.stringValue)
-        XCTAssertTrue(shown.contains("Tesla's official streaming API, with your own Fleet API app."))
+        XCTAssertTrue(shown.contains("Polling through Tesla's Fleet API. Needs your own Tesla developer application and a domain."))
         XCTAssertFalse(shown.contains { $0.localizedCaseInsensitiveContains("command") }, "Hub sends none")
     }
 
