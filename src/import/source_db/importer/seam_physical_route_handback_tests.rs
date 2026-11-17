@@ -1927,6 +1927,71 @@ fn handback_without_recorded_inputs_plans_once_in_full_then_early() {
     PhysicalClient::bootstrap(&env, &fixture).expect("served");
 }
 
+/// M08-T19 (S5): a full handback whose optional month preparation fails
+/// records its inputs as unprepared. With the prepared map then missing, the
+/// next empty window's early answer serves the head and runs the
+/// preparation alone (the kept stage copied, planned and checked once, no
+/// pack of the head hashed, nothing published), which records it prepared;
+/// the handback after that is early with no work at all.
+#[test]
+fn handback_early_answer_prepares_a_failed_month_alone() {
+    let (fixture, _root, env) = planned_then_refused(false);
+    let vehicle = fixture.binding.vehicle_id;
+    let head = current_snapshot(&fixture);
+    fixture
+        .store
+        .record_physical_v3_handback_plan(&fixture.gate, vehicle, None)
+        .expect("forget the inputs, so the next handback is a full one");
+    crate::sync::prepared_map::FAIL_NEXT_PREPARATION.with(|fail| fail.set(true));
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
+    let recorded = fixture.store.physical_v3_handback_plan(vehicle).expect("record").expect("inputs");
+    assert!(!recorded.prepared, "the failed preparation is recorded as such");
+    let prepared_months = || -> i64 {
+        fixture
+            .store
+            .open()
+            .expect("catalogue")
+            .query_row(
+                "SELECT COUNT(*) FROM prepared_map_months WHERE vehicle_id = ?1",
+                [vehicle.to_string()],
+                |row| row.get(0),
+            )
+            .expect("prepared months")
+    };
+    fixture
+        .store
+        .open()
+        .expect("catalogue")
+        .execute("DELETE FROM prepared_map_months WHERE vehicle_id = ?1", [vehicle.to_string()])
+        .expect("the prepared map is missing");
+    assert_eq!(prepared_months(), 0);
+
+    close_window(&fixture, 3, T + 4 * HOUR, false);
+    reset_check_counters();
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
+    assert_eq!(current_snapshot(&fixture), head);
+    assert_one_check_of_the_planned_copy(&fixture);
+    let log = crate::hub_pack::verifications();
+    assert!(
+        !log.iter().any(|verification| verification.place.ends_with("pack-digest")
+            || verification.place == "stage-emit"
+            || verification.place == "pack-decode"),
+        "the preparation alone hashes no pack of the head and publishes nothing: {log:#?}"
+    );
+    assert!(prepared_months() > 0, "the month is prepared");
+    assert!(
+        fixture.store.physical_v3_handback_plan(vehicle).expect("record").expect("inputs").prepared,
+        "and recorded so"
+    );
+    PhysicalClient::bootstrap(&env, &fixture).expect("served");
+
+    close_window(&fixture, 4, T + 6 * HOUR, false);
+    reset_check_counters();
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
+    assert_eq!(crate::hub_pack::verifications(), Vec::new(), "early, with nothing to prepare");
+    PhysicalClient::bootstrap(&env, &fixture).expect("served");
+}
+
 /// M08-T19: a window with a drive changes the Hub rows the plan writes, so
 /// the handback plans in full: one integrity check, of the planned copy the
 /// packs are written from, after its last write; each pack the changed set

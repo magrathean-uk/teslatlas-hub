@@ -1634,6 +1634,11 @@ pub(crate) struct PhysicalV3HandbackPlan {
     /// The instants the kept stage's source children span, inclusive.
     pub(crate) span: Option<(i64, i64)>,
     pub(crate) inputs: String,
+    /// Whether the optional prepared month was made for this head with
+    /// these inputs. Without it the early answer serves the head and runs
+    /// the preparation alone (M08-T19).
+    #[serde(default)]
+    pub(crate) prepared: bool,
 }
 
 /// What is kept for a vehicle's handback (M03-T22): the digests of the raw

@@ -216,7 +216,7 @@ fn publish_planned_physical_route(
         )),
         _ => None,
     };
-    let publication = crate::physical_publication::publish_recorded_physical_v3_stage_with_gate_at(
+    let (publication, prepared) = crate::physical_publication::publish_recorded_physical_v3_stage_reporting_month(
         store,
         cursor_key,
         binding,
@@ -230,6 +230,7 @@ fn publish_planned_physical_route(
             snapshot_id: publication.admission.snapshot_id.to_string(),
             span,
             inputs,
+            prepared,
         };
         if let Err(error) =
             store.record_physical_v3_handback_plan(publication_gate, vehicle_id, Some(&recorded))

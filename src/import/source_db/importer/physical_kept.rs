@@ -245,7 +245,20 @@ fn publish_vehicle_after_handback(
     if FAIL_AFTER_HANDBACK_COMMIT.with(|fail| fail.replace(false)) {
         return Err(StoreError::ImportGenerationConflict.into());
     }
-    if serve_unchanged_head(store, publication_gate, vehicle_id, &kept, &source.binding, &run.ahead.packs)? {
+    if let Some(recorded) =
+        serve_unchanged_head(store, publication_gate, vehicle_id, &kept, &source.binding, &run.ahead.packs)?
+    {
+        if !recorded.prepared {
+            prepare_month_of_served_head(
+                store,
+                cursor_key,
+                publication_gate,
+                &kept,
+                &source.binding,
+                &run.ahead.packs,
+                recorded,
+            );
+        }
         return Ok(HandbackPhysicalOutcome::Published(
             crate::physical_publication::PhysicalV3PublicationKind::Unchanged,
         ));
@@ -293,8 +306,9 @@ fn publish_vehicle_after_handback(
 /// make the same stage again, so the same snapshot, and the full path would
 /// end as `Unchanged` after recording the head with the new coverage. This
 /// records it so, without opening, copying or planning the kept stage or
-/// reading a pack, and says so. A head without recorded inputs (a store an
-/// earlier build last planned) is planned in full, which records them.
+/// reading a pack, and returns the record. A head without recorded inputs
+/// (a store an earlier build last planned) is planned in full, which
+/// records them.
 fn serve_unchanged_head(
     store: &HubStore,
     publication_gate: &PublicationGate,
@@ -302,35 +316,35 @@ fn serve_unchanged_head(
     kept: &crate::db::PhysicalV3Kept,
     binding: &ProjectionBinding,
     packs: &crate::import::source_db::seam::SeamPackPlan,
-) -> Result<bool, SourceDbImportError> {
+) -> Result<Option<crate::db::PhysicalV3HandbackPlan>, SourceDbImportError> {
     let Some(recorded) = store.physical_v3_handback_plan(vehicle_id)? else {
-        return Ok(false);
+        return Ok(None);
     };
     // Only a planned head is recorded, and only a planned head may be
     // served again: a vehicle without the seam publishes its raw stage.
     if !store.import_seam_present(vehicle_id)? {
-        return Ok(false);
+        return Ok(None);
     }
     let Some(current) = store.physical_v3_current_snapshot_id(vehicle_id)? else {
-        return Ok(false);
+        return Ok(None);
     };
     if current.to_string() != recorded.snapshot_id {
-        return Ok(false);
+        return Ok(None);
     }
     let stored = match stored_rows_digest(&store.import_seam_stored_rows(vehicle_id)?) {
         Ok(stored) => stored,
-        Err(_) => return Ok(false),
+        Err(_) => return Ok(None),
     };
     let Some(now_ms) = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()
         .and_then(|value| i64::try_from(value.as_millis()).ok())
     else {
-        return Ok(false);
+        return Ok(None);
     };
     let inputs = handback_plan_inputs(&kept.stage, binding, packs, recorded.span, &stored, now_ms);
     if inputs != recorded.inputs {
-        return Ok(false);
+        return Ok(None);
     }
     store.record_physical_v3_seam_planned_with_coverage(
         publication_gate,
@@ -344,7 +358,90 @@ fn serve_unchanged_head(
         "the handback's plan inputs are those of the current 1.4 head; it is served under the \
          new coverage without planning it again"
     );
-    Ok(true)
+    Ok(Some(recorded))
+}
+
+/// The optional prepared month of a head the early answer served, when the
+/// preparation recorded with its inputs had failed (M08-T19): the kept
+/// stage is authenticated, copied and planned as the full path does, its
+/// planned copy checked and confirmed to be the served head's stage, and
+/// only the month is prepared from it; nothing is published and no pack of
+/// the head is read. A failure keeps the record unprepared for the next
+/// handback; the head stays served either way.
+#[allow(clippy::too_many_arguments)]
+fn prepare_month_of_served_head(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    publication_gate: &PublicationGate,
+    kept: &crate::db::PhysicalV3Kept,
+    binding: &ProjectionBinding,
+    packs: &crate::import::source_db::seam::SeamPackPlan,
+    mut recorded: crate::db::PhysicalV3HandbackPlan,
+) {
+    let vehicle_id = binding.vehicle_id;
+    let prepared = (|| -> Result<(), String> {
+        let kept_stage = SourceDbStage::open_sealed_to_copy(kept_stage_path(store, vehicle_id))
+            .map_err(|error| format!("the kept stage: {error}"))?;
+        match kept_stage.sealed_logical_digest() {
+            Ok(digest) if digest.to_string() == kept.stage => {}
+            Ok(_) => return Err("the kept stage differs from its record".into()),
+            Err(error) => return Err(format!("the kept stage: {error}")),
+        }
+        let working = kept_stage
+            .copy_sealed_into(physical_kept_dir(store))
+            .map_err(|error| format!("a copy of the kept stage: {error}"))?;
+        drop(kept_stage);
+        let mut working = crate::source_db_stage::OwnedSourceDbStage::new(working);
+        let result = (|| -> Result<(), String> {
+            plan_physical_stage(store, binding, working.stage_mut(), packs)
+                .map_err(|error| format!("the plan: {error:?}"))?;
+            let digest = working
+                .stage_mut()
+                .sealed_content_digest()
+                .map_err(|error| format!("the planned copy of the kept stage: {error}"))?;
+            let snapshot_id =
+                crate::physical_publication::physical_v3_snapshot_id(digest, binding);
+            if snapshot_id.to_string() != recorded.snapshot_id {
+                return Err("the plan is not the served head's".into());
+            }
+            let admission = store
+                .pending_physical_v3_control_admission_for_vehicle(vehicle_id)
+                .map_err(|error| error.to_string())?
+                .filter(|admission| admission.snapshot_id == snapshot_id)
+                .ok_or_else(|| "the head is not served".to_owned())?;
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|value| i64::try_from(value.as_millis()).ok())
+                .ok_or_else(|| "the clock".to_owned())?;
+            crate::sync::prepared_map::publish_selected_month(
+                store,
+                cursor_key,
+                working.stage_mut(),
+                &admission,
+                now_ms,
+            )
+            .map_err(|error| error.to_string())
+        })();
+        let cleanup = working.take().discard();
+        result?;
+        cleanup.map_err(|error| error.to_string())
+    })();
+    match prepared {
+        Ok(()) => {
+            recorded.prepared = true;
+            if let Err(error) =
+                store.record_physical_v3_handback_plan(publication_gate, vehicle_id, Some(&recorded))
+            {
+                tracing::warn!(%vehicle_id, %error, "the prepared month was not recorded");
+            }
+        }
+        Err(reason) => tracing::warn!(
+            %vehicle_id,
+            %reason,
+            "optional prepared month is unavailable; local map generation remains authoritative"
+        ),
+    }
 }
 
 /// The thread the service runs a handback's publication on.

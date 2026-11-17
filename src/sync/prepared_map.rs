@@ -944,6 +944,12 @@ fn verified_cached_month(
 /// Run after a complete PhysicalV3 admission while the importer still owns the
 /// sealed stage and publication gate. Returning an error leaves history public;
 /// the caller logs it and a later identical import may retry preparation.
+#[cfg(test)]
+thread_local! {
+    /// Fails the next month preparation on this thread (M08-T19 tests).
+    pub(crate) static FAIL_NEXT_PREPARATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 pub(crate) fn publish_selected_month(
     store: &HubStore,
     cursor_key: &CursorKey,
@@ -971,6 +977,10 @@ fn publish_selected_month_with_policy(
     rdp_evaluation_limit: u64,
     sync_directory: &dyn Fn(&Path) -> io::Result<()>,
 ) -> PreparedResult<()> {
+    #[cfg(test)]
+    if FAIL_NEXT_PREPARATION.with(|fail| fail.replace(false)) {
+        return Err(invalid("a test failed this preparation"));
+    }
     let Some(month) = previous_complete_month(now_ms)? else {
         return Ok(());
     };
