@@ -152,7 +152,6 @@ impl HubStore {
             &self.database_path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
                 | OpenFlags::SQLITE_OPEN_URI
-                | OpenFlags::SQLITE_OPEN_NOFOLLOW
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(StoreError::Open)?;
@@ -499,7 +498,6 @@ impl HubStore {
                 uri.as_str(),
                 OpenFlags::SQLITE_OPEN_READ_ONLY
                     | OpenFlags::SQLITE_OPEN_URI
-                    | OpenFlags::SQLITE_OPEN_NOFOLLOW
                     | OpenFlags::SQLITE_OPEN_NO_MUTEX,
             )
             .map_err(StoreError::Open)?
@@ -507,7 +505,6 @@ impl HubStore {
             Connection::open_with_flags(
                 &self.database_path,
                 OpenFlags::SQLITE_OPEN_READ_ONLY
-                    | OpenFlags::SQLITE_OPEN_NOFOLLOW
                     | OpenFlags::SQLITE_OPEN_NO_MUTEX,
             )
             .map_err(StoreError::Open)?
