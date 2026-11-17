@@ -854,7 +854,6 @@ fn sc48_schedules() {
     for class in [
         FailureClass::Unknown,
         FailureClass::Protocol,
-        FailureClass::Busy { retry_after: None },
     ] {
         assert_eq!(nominal_delay(&class, &state), secs(16));
     }
@@ -911,10 +910,10 @@ fn sc49_jitter() {
     };
     assert_eq!(busy(Some(secs(600))), secs(600));
     assert_eq!(busy(Some(secs(7_200))), secs(3_600));
-    assert_eq!(busy(None), secs(1));
+    assert_eq!(busy(None), secs(150));
     // The floor is applied after jitter: a small retry-after never lowers the delay.
-    assert_eq!(busy(Some(Duration::ZERO)), secs(1));
-    assert_eq!(busy(Some(secs(1))), secs(1));
+    assert_eq!(busy(Some(Duration::ZERO)), secs(150));
+    assert_eq!(busy(Some(secs(1))), secs(150));
     let late = next_delay(
         &FailureClass::Busy {
             retry_after: Some(secs(1)),
@@ -925,8 +924,8 @@ fn sc49_jitter() {
         },
         0.0,
     );
-    // M04-T12: the 30 s Busy cap gives 15 s at the minimum jitter draw.
-    assert_eq!(late, secs(15));
+    // Busy keeps the old 150 s jitter floor.
+    assert_eq!(late, secs(150));
     // The other classes jitter their own nominal delay.
     assert_eq!(
         next_delay(

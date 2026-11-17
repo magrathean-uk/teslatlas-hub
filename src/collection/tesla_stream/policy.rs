@@ -184,9 +184,11 @@ fn doubling(base: Duration, cap: Duration, counter: u32) -> Duration {
 /// for a class and the counters after their update (R37).
 pub(crate) fn nominal_delay(class: &FailureClass, state: &RetryState) -> Duration {
     match class {
-        FailureClass::Transport | FailureClass::Busy { .. } | FailureClass::Unknown => {
+        FailureClass::Transport | FailureClass::Unknown => {
             doubling(TRANSPORT_BASE, TRANSPORT_CAP, state.transport_attempt)
         }
+        // Explicit server back-pressure never enters the fast retry schedule.
+        FailureClass::Busy { .. } => PROTOCOL_CAP,
         FailureClass::Protocol => doubling(TRANSPORT_BASE, PROTOCOL_CAP, state.transport_attempt),
         FailureClass::Vehicle => doubling(VEHICLE_BASE, VEHICLE_CAP, state.vehicle_attempt),
         FailureClass::Refusal => {
