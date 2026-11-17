@@ -1672,3 +1672,27 @@ fn start_preflight_signed_in_reads_neither_the_whole_store_nor_a_pack() {
         fs::set_permissions(pack, fs::Permissions::from_mode(0o600)).expect("restore mode");
     }
 }
+
+// M08-T25 repair: Start's `preflight` through the verb's own function, its
+// bounded reads on every branch, and the refusals the service's start has.
+
+/// A Hub never configured whose existing catalogue fails the whole-store check
+/// (the root page of `raw_observations` overwritten): the idle answer comes
+/// from bounded reads only, and the probe sees the old reads.
+#[test]
+fn start_preflight_idle_with_a_catalogue_reads_neither_the_whole_store_nor_a_pack() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    drop(HubStore::initialize(&data).expect("the empty store serve creates"));
+    let config = idle_start_config(&data);
+    let idle = start(&config).expect("idle on the healthy empty store");
+    assert_eq!(idle["state"], "idle");
+
+    break_unread_table(&data, "raw_observations");
+    let store = HubStore::open_read_only(&data).expect("store");
+    assert!(store.catalogue_check().is_err(), "the whole-store check sees the damaged page");
+    assert!(crate::db::read_probe::take().1 > 0, "the probe counts the whole-store check");
+    assert!(HubStore::open_immutable_read_only(&data).is_ok(), "the immutable snapshot opens");
+    assert_eq!(crate::db::read_probe::take().1, 1, "the probe counts the immutable snapshot's hash of the whole file");
+    assert_eq!(start(&config), Ok(idle), "idle without the whole-store check");
+}

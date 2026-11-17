@@ -77,6 +77,12 @@ pub fn preflight_hub_for_config(config: &crate::config::HubConfig) -> io::Result
 /// (it needs a cadence, a car and the Hub's own pair) and nothing is sent to
 /// Tesla. `Ok(false)` is any other state, which keeps today's admission; a
 /// store that cannot be read is an error, never idle.
+///
+/// An existing catalogue is read through `HubStore::readiness_check` (it opens
+/// at a supported schema, its core tables respond and no car is quarantined)
+/// and the configured-car, published-car and credential-presence rows, a read
+/// that grows with the number of cars only: no pack is opened and no
+/// `PRAGMA quick_check` runs (M08-T25).
 pub fn hub_is_never_configured(config: &crate::config::HubConfig) -> io::Result<bool> {
     if config.collector.interval_seconds != 0
         || config.collector.fleet_telemetry.is_some()
@@ -101,7 +107,7 @@ pub fn hub_is_never_configured(config: &crate::config::HubConfig) -> io::Result<
     let unavailable =
         |error: &dyn std::fmt::Display| io::Error::new(io::ErrorKind::InvalidData, format!("Hub data is unavailable: {error}"));
     let store = crate::db::HubStore::open_read_only(&config.data_dir).map_err(|error| unavailable(&error))?;
-    store.catalogue_check().map_err(|error| unavailable(&error))?;
+    store.readiness_check().map_err(|error| unavailable(&error))?;
     if !store.configured_tesla_vehicles().map_err(|error| unavailable(&error))?.is_empty()
         || !store.published_vehicles().map_err(|error| unavailable(&error))?.is_empty()
     {
