@@ -434,6 +434,7 @@ fn open_drive_from_source(row: &SourceDbDrive, positions: &[SourceDbPosition]) -
         last_rated_range_km: None,
         last_odometer: None,
         first_odometer: None,
+        odometer_history: None,
         power_max: row.power_max,
         power_min: row.power_min,
         inside_temp_sum: 0.0,
@@ -698,6 +699,16 @@ fn walk_inherited_is_false(value: &bool) -> bool {
     !*value
 }
 
+/// Bounded evidence for the owner's next-reading rule. An unresolved or
+/// persistent fall makes distance unknown; it is never silently clamped away.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct OdometerHistory {
+    previous: Option<f64>,
+    maximum_before_previous: Option<f64>,
+    pending_fall: Option<f64>,
+    invalid: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OpenDrive {
     pub id: i64,
@@ -728,6 +739,8 @@ pub struct OpenDrive {
     pub last_odometer: Option<f64>,
     #[serde(default)]
     pub first_odometer: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub odometer_history: Option<OdometerHistory>,
     #[serde(default)]
     pub power_max: Option<f64>,
     #[serde(default)]

@@ -224,6 +224,12 @@ impl ElevationWalk {
 }
 
 impl OpenDrive {
+    fn odometer_is_known(&self) -> bool {
+        self.odometer_history
+            .as_ref()
+            .is_none_or(|history| !history.invalid && history.pending_fall.is_none())
+    }
+
     /// A drive with nothing folded yet.
     fn empty(id: i64, car_id: i64, start_date_ms: i64) -> Self {
         Self {
@@ -245,6 +251,7 @@ impl OpenDrive {
             last_rated_range_km: None,
             last_odometer: None,
             first_odometer: None,
+            odometer_history: None,
             power_max: None,
             power_min: None,
             inside_temp_sum: 0.0,
@@ -339,15 +346,38 @@ fn fold_drive_point(
         }
     }
     if let Some(odometer) = point.odometer_km.filter(|value| value.is_finite()) {
+        let mut history = open.odometer_history.take().unwrap_or_default();
+        let previous = history.previous.or(open.last_odometer);
+        let maximum_before = open.last_odometer;
+        if !history.invalid {
+            if let Some(before_fall) = history.pending_fall.take() {
+                // Only the next reading can contradict a single fall. A fall
+                // that persists is retained as uncertainty for this drive.
+                history.invalid = odometer < before_fall;
+            } else if let Some(previous) = previous
+                && odometer < previous
+            {
+                if let Some(before) = history.maximum_before_previous
+                    && previous > before
+                    && odometer >= before
+                {
+                    // The immediately preceding reading jumped and returned.
+                    // Its stored position stays untouched; only the total rolls back.
+                    open.last_odometer = Some(before);
+                } else {
+                    history.pending_fall = Some(previous);
+                }
+            }
+        }
         let first = *open.first_odometer.get_or_insert(odometer);
-        // An odometer cannot decrease, and mixed-source rounding must not
-        // create a negative distance, so "last" is the greatest reading and
-        // never below the first.
         open.last_odometer = Some(
             open.last_odometer
                 .map_or(odometer, |last| last.max(odometer))
                 .max(first),
         );
+        history.previous = Some(odometer);
+        history.maximum_before_previous = maximum_before;
+        open.odometer_history = Some(history);
         open.odometer_coarse |= point.odometer_coarse;
     }
     if let Some(level) = point.battery_level {
@@ -701,7 +731,8 @@ fn finalize_drive(
         .max(open.start_date_ms);
     // R46: odometer-based only; GPS path length is never substituted.
     let distance_km = match (open.first_odometer, open.last_odometer) {
-        (Some(first), Some(last)) if first.is_finite() && last.is_finite() => {
+        (Some(first), Some(last))
+            if first.is_finite() && last.is_finite() && open.odometer_is_known() => {
             Some((last - first).max(0.0))
         }
         _ => None,
@@ -1796,7 +1827,7 @@ fn record_drive_close_references(state: &mut OpenSessionState, open: &OpenDrive)
         battery_level: open.last_soc,
         ideal_range_km: open.end_ideal_range_km,
         rated_range_km: open.last_rated_range_km,
-        odometer_km: open.last_odometer,
+        odometer_km: open.last_odometer.filter(|_| open.odometer_is_known()),
         odometer_coarse: open.odometer_coarse,
         latitude: open.last_latitude.or(open.start_latitude),
         longitude: open.last_longitude.or(open.start_longitude),
