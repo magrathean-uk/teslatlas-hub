@@ -299,9 +299,19 @@ struct TickBatch {
     /// When the oldest result of the batch arrived: the commit logs how long it
     /// waited for the tick's one transaction.
     first_result_at: Option<Instant>,
+    /// When each snapshot admitted through [`TickBatch::admit_snapshot`] was
+    /// admitted; the intake latency of M04-T11 runs from here to the commit.
+    admitted_at: Vec<Instant>,
 }
 
 impl TickBatch {
+    /// Admit a successful read into the batch at `admitted_at` (the first of the
+    /// two clock reads the intake latency costs per observation).
+    fn admit_snapshot(&mut self, item: SnapshotItem, admitted_at: Instant) {
+        self.snapshots.push(item);
+        self.admitted_at.push(admitted_at);
+    }
+
     /// Nothing is waiting for a transaction (C3 R5: a reservation commit made with
     /// an empty batch is a lone one).
     fn is_empty(&self) -> bool {
@@ -1019,7 +1029,10 @@ async fn commit_tick(
             return Ok(TickOutcome::Failed);
         }
     };
-    // Durable now (or, for a list that changed nothing, known to be stored).
+    // Durable now (or, for a list that changed nothing, known to be stored). The
+    // second clock read of the intake latency (M04-T11); it is recorded once the
+    // publication gate is released, so no lock is held longer for it.
+    let committed_at = (wrote && !batch.admitted_at.is_empty()).then(|| scheduler.clock.mono_now());
     for (vehicle, identity) in fresh {
         identities.remember(&vehicle, identity);
     }
@@ -1063,21 +1076,33 @@ async fn commit_tick(
         let _ = decided_at_ms;
     }
     let mut report = output.report;
-    if let Some(report) = report.as_mut()
+    let published = if let Some(report) = report.as_mut()
         && let Some(publication_gate) = publication_gate.as_ref()
     {
         // The identities, cars and settings committed with the tick: the
         // publication is the claim, the packs and the catalogue only (M04-T08).
-        report.snapshots_published = publish_compatibility_snapshots_with_identities(
+        publish_compatibility_snapshots_with_identities(
             commit.store,
             publication_gate,
             commit.cursor_key,
             &identities_published,
             now_ms,
             scheduler.write_guard(),
-        )?;
-    }
+        )
+        .map(|count| report.snapshots_published = count)
+    } else {
+        Ok(())
+    };
     drop(publication_gate);
+    if let Some(committed_at) = committed_at {
+        record_intake_latencies(
+            batch
+                .admitted_at
+                .iter()
+                .map(|admitted_at| committed_at.saturating_duration_since(*admitted_at)),
+        );
+    }
+    published?;
     Ok(TickOutcome::Committed { wrote, report })
 }
 
@@ -1534,6 +1559,152 @@ fn start_collector_run_with_identity(
         account_reset: started.account_reset,
         refusal_reset: started.refusal_reset,
         account_row,
+    })
+}
+
+/// The intake latency (M04-T11): the time from the Legacy collector admitting an
+/// observation (a successful read added to the tick batch, or a stream frame that
+/// passed its plausibility check) to the return of the write transaction that made
+/// it durable. Upstream delivery ends before the admission, so it is excluded. A
+/// batch's observations are all measured at the batch's one commit, from each one's
+/// own admission. A failed transaction drops its batch and records nothing; an
+/// empty poll records nothing.
+///
+/// The figures are in memory only: a count, the maximum and a bounded histogram
+/// (microseconds, at most 1/32 of the value coarse above 63 microseconds), reset when
+/// a collection window's run starts and on restart, and read through the operator
+/// window status answer. They hold no vehicle or observation identifier.
+const INTAKE_LATENCY_LINEAR: u64 = 64;
+const INTAKE_LATENCY_SUB_BITS: u32 = 5;
+const INTAKE_LATENCY_BUCKETS: usize = 64 + (64 - 6) * (1 << INTAKE_LATENCY_SUB_BITS);
+
+#[derive(Debug)]
+struct IntakeLatency {
+    /// Counts the resets of this process: before-and-after reads of the figures can
+    /// tell whether the window changed between them.
+    epoch: u64,
+    count: u64,
+    max_micros: u64,
+    /// Allocated by the first record of a window.
+    buckets: Vec<u64>,
+}
+
+#[cfg(not(test))]
+static INTAKE_LATENCY: std::sync::Mutex<IntakeLatency> = std::sync::Mutex::new(IntakeLatency::new());
+
+// A test's collector runs on its own thread, and tests run in parallel: each one
+// reads the figures of its own thread.
+#[cfg(test)]
+thread_local! {
+    static INTAKE_LATENCY: std::cell::RefCell<IntakeLatency> =
+        const { std::cell::RefCell::new(IntakeLatency::new()) };
+}
+
+fn with_intake_latency<R>(figures: impl FnOnce(&mut IntakeLatency) -> R) -> R {
+    #[cfg(not(test))]
+    {
+        let mut guard = INTAKE_LATENCY
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        figures(&mut guard)
+    }
+    #[cfg(test)]
+    INTAKE_LATENCY.with(|cell| figures(&mut cell.borrow_mut()))
+}
+
+impl IntakeLatency {
+    const fn new() -> Self {
+        Self {
+            epoch: 0,
+            count: 0,
+            max_micros: 0,
+            buckets: Vec::new(),
+        }
+    }
+
+    fn bucket(micros: u64) -> usize {
+        if micros < INTAKE_LATENCY_LINEAR {
+            return micros as usize;
+        }
+        let exponent = 63 - micros.leading_zeros();
+        let shift = exponent - INTAKE_LATENCY_SUB_BITS;
+        let sub = (micros >> shift) & ((1 << INTAKE_LATENCY_SUB_BITS) - 1);
+        64 + ((exponent - 6) as usize) * (1 << INTAKE_LATENCY_SUB_BITS) + sub as usize
+    }
+
+    /// The greatest value the bucket holds.
+    fn bucket_top(index: usize) -> u64 {
+        if index < INTAKE_LATENCY_LINEAR as usize {
+            return index as u64;
+        }
+        let offset = index - 64;
+        let exponent = (offset >> INTAKE_LATENCY_SUB_BITS) as u32 + 6;
+        let sub = (offset & ((1 << INTAKE_LATENCY_SUB_BITS) - 1)) as u64;
+        let shift = exponent - INTAKE_LATENCY_SUB_BITS;
+        let low = ((1u64 << INTAKE_LATENCY_SUB_BITS) + sub) << shift;
+        low + ((1u64 << shift) - 1)
+    }
+
+    /// Nearest-rank quantile in microseconds, never above the observed maximum.
+    fn quantile(&self, numerator: u64, denominator: u64) -> u64 {
+        let rank = (self.count * numerator).div_ceil(denominator).max(1);
+        let mut seen = 0;
+        for (index, bucket) in self.buckets.iter().enumerate() {
+            seen += bucket;
+            if seen >= rank {
+                return Self::bucket_top(index).min(self.max_micros);
+            }
+        }
+        self.max_micros
+    }
+}
+
+/// A new window opens: the figures start again (M04-T11).
+fn reset_intake_latency() {
+    with_intake_latency(|figures| {
+        let epoch = figures.epoch + 1;
+        *figures = IntakeLatency::new();
+        figures.epoch = epoch;
+    });
+}
+
+/// Record the latencies of observations that have just become durable.
+fn record_intake_latencies(durations: impl IntoIterator<Item = Duration>) {
+    with_intake_latency(|figures| {
+        for duration in durations {
+            let micros = u64::try_from(duration.as_micros()).unwrap_or(u64::MAX);
+            if figures.buckets.is_empty() {
+                figures.buckets = vec![0; INTAKE_LATENCY_BUCKETS];
+            }
+            figures.buckets[IntakeLatency::bucket(micros)] += 1;
+            figures.count += 1;
+            figures.max_micros = figures.max_micros.max(micros);
+        }
+    })
+}
+
+/// The figures of the current window for the operator status answer: the count and
+/// the p50, p95 and maximum in milliseconds (`null` while the count is zero), with
+/// the epoch that marks the window.
+pub fn intake_latency_status() -> Value {
+    with_intake_latency(|figures| {
+        let millis = |micros: u64| serde_json::json!(micros as f64 / 1000.0);
+        if figures.count == 0 {
+            return serde_json::json!({
+                "epoch": figures.epoch,
+                "count": 0,
+                "p50Ms": null,
+                "p95Ms": null,
+                "maxMs": null,
+            });
+        }
+        serde_json::json!({
+            "epoch": figures.epoch,
+            "count": figures.count,
+            "p50Ms": millis(figures.quantile(50, 100)),
+            "p95Ms": millis(figures.quantile(95, 100)),
+            "maxMs": millis(figures.max_micros),
+        })
     })
 }
 

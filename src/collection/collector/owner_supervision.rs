@@ -71,6 +71,8 @@ where
         &stream_endpoint,
         crate::fleet_api::egress::Provider::Legacy,
     )?);
+    // A window's run starts: the intake latency figures start again (M04-T11).
+    reset_intake_latency();
     let window = write_guard.window().clone();
     // The run's write guard exists before the credential unit and the cursor key (B2
     // fix round, P3b fix 3, R-P3bF3-1): the entry point made it, and it has been
@@ -742,11 +744,14 @@ where
                                         revoke_requested_gates(run.scheduler, &gates);
                                         let received_at_ms = clock.wall_now_ms()?;
                                         if let Some(vehicle) = vehicle {
-                                            run.batch.snapshots.push(SnapshotItem {
-                                                vehicle,
-                                                snapshot,
-                                                received_at_ms,
-                                            });
+                                            run.batch.admit_snapshot(
+                                                SnapshotItem {
+                                                    vehicle,
+                                                    snapshot,
+                                                    received_at_ms,
+                                                },
+                                                clock.mono_now(),
+                                            );
                                         }
                                     }
                                     (
@@ -773,11 +778,14 @@ where
                                         revoke_requested_gates(run.scheduler, &gates);
                                         let received_at_ms = clock.wall_now_ms()?;
                                         if let Some(vehicle) = vehicle {
-                                            run.batch.snapshots.push(SnapshotItem {
-                                                vehicle,
-                                                snapshot,
-                                                received_at_ms,
-                                            });
+                                            run.batch.admit_snapshot(
+                                                SnapshotItem {
+                                                    vehicle,
+                                                    snapshot,
+                                                    received_at_ms,
+                                                },
+                                                clock.mono_now(),
+                                            );
                                         }
                                     }
                                     (key, Err(error)) => {

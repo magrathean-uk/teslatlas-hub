@@ -1248,3 +1248,19 @@ fn collection_window_operator_channel_refuses_an_unrelated_owner_process() {
         .expect("the Hub's own command still closes the window");
     assert_eq!(status["phase"], "closing");
 }
+
+/// M04-T11: the window status answer carries the intake latency figures, empty
+/// (count zero, no percentiles) until an observation is committed.
+#[test]
+fn intake_latency_is_part_of_the_operator_status_answer() {
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data dir");
+    let _server = rig.serve();
+    let status = rig.forward(&OperatorRequest::WindowStatus).expect("status");
+    let latency = status["intakeLatency"].as_object().expect("intake latency figures");
+    assert_eq!(latency["count"], 0);
+    for key in ["p50Ms", "p95Ms", "maxMs"] {
+        assert!(latency[key].is_null(), "{key} is null while the count is zero");
+    }
+    assert!(latency["epoch"].is_u64());
+}

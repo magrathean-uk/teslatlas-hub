@@ -1595,6 +1595,9 @@ fn persist_stream_update_with_projection(
         );
         return Ok(false);
     }
+    // The frame is admitted: the intake latency (M04-T11) runs from here to the
+    // return of the transaction that makes it durable.
+    let admitted_at = std::time::Instant::now();
     let (source_id, registered_vehicle_id, pack_car_id) =
         if let Some((context, _)) = context.as_ref() {
             (
@@ -1633,6 +1636,9 @@ fn persist_stream_update_with_projection(
     } else {
         store.accept_stream_observation_and_lifecycle(&input, received_at_ms, pack_car_id)?
     };
+    if matches!(result, StreamObservationResult::Committed { .. }) {
+        record_intake_latencies([admitted_at.elapsed()]);
+    }
     #[cfg(test)]
     if matches!(result, StreamObservationResult::Committed { .. }) {
         supervised_test_log(LoopEvent::FrameCommitted {

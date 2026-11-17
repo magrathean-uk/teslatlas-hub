@@ -335,6 +335,7 @@ impl OperatorService {
     fn status(&self) -> Value {
         let mut status = status_json(&self.controller.status());
         status["credentialRecoveryPending"] = json!(self.recovery.pending());
+        status["intakeLatency"] = crate::collection::collector::intake_latency_status();
         status
     }
 

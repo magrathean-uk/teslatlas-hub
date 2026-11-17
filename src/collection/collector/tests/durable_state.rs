@@ -2424,3 +2424,173 @@ async fn b2_a_fleet_restart_lifts_only_the_derived_credential_stop() {
         })
         .await;
 }
+
+// ---------------------------------------------------------------------------
+// M04-T11: the intake latency, from an admitted observation to its durable commit.
+// ---------------------------------------------------------------------------
+
+fn latency_ms(figures: &Value, key: &str) -> f64 {
+    figures[key].as_f64().unwrap_or_else(|| panic!("{key} is a number: {figures}"))
+}
+
+#[test]
+fn intake_latency_histogram_reports_nearest_rank_percentiles_within_its_resolution() {
+    reset_intake_latency();
+    let empty = intake_latency_status();
+    assert_eq!(empty["count"], 0);
+    assert!(empty["p95Ms"].is_null() && empty["p50Ms"].is_null() && empty["maxMs"].is_null());
+    let epoch = empty["epoch"].as_u64().expect("epoch");
+
+    // 1 ms to 400 ms, one each.
+    record_intake_latencies((1..=400).map(Duration::from_millis));
+    let figures = intake_latency_status();
+    assert_eq!(figures["count"], 400);
+    assert_eq!(latency_ms(&figures, "maxMs"), 400.0);
+    for (key, exact) in [("p50Ms", 200.0), ("p95Ms", 380.0)] {
+        let value = latency_ms(&figures, key);
+        assert!(
+            (exact..=exact * 1.04).contains(&value),
+            "{key} {value} is the {exact} ms rank within 4%"
+        );
+    }
+    // The figure distinguishes 250 ms: one sample at 251 ms among fast ones.
+    reset_intake_latency();
+    record_intake_latencies(std::iter::repeat_n(Duration::from_millis(5), 94));
+    record_intake_latencies(std::iter::repeat_n(Duration::from_millis(251), 6));
+    let figures = intake_latency_status();
+    assert!(latency_ms(&figures, "p95Ms") > 250.0, "{figures}");
+    // Exact below 64 microseconds, and the extreme cannot overflow a bucket.
+    reset_intake_latency();
+    record_intake_latencies([Duration::from_micros(7), Duration::MAX]);
+    let figures = intake_latency_status();
+    assert_eq!(figures["count"], 2);
+    assert_eq!(latency_ms(&figures, "p50Ms"), 0.007);
+    assert!(latency_ms(&figures, "maxMs") > 1.0e9);
+    // A reset empties the figures and moves the epoch marker.
+    reset_intake_latency();
+    let reset = intake_latency_status();
+    assert_eq!(reset["count"], 0);
+    assert!(reset["maxMs"].is_null());
+    assert!(reset["epoch"].as_u64().expect("epoch") > epoch);
+}
+
+#[test]
+fn intake_latency_bucket_edges_hold_every_value_they_are_given() {
+    let mut previous_top = 0;
+    for micros in (0..4096).chain([1 << 20, (1 << 40) + 12345, u64::MAX]) {
+        let index = IntakeLatency::bucket(micros);
+        assert!(index < INTAKE_LATENCY_BUCKETS, "{micros} has a bucket");
+        let top = IntakeLatency::bucket_top(index);
+        assert!(top >= micros, "{micros} is at most the top {top} of its bucket");
+        assert!(
+            top - micros <= micros / 32,
+            "{micros} is within 1/32 of the top {top} of its bucket"
+        );
+        assert!(top >= previous_top || micros > 4096, "tops do not go backwards");
+        previous_top = top;
+    }
+}
+
+#[tokio::test]
+async fn intake_latency_runs_from_the_admission_to_the_durable_commit() {
+    reset_intake_latency();
+    let mut bed = TickBed::owner();
+    bed.list(vec![core_vehicle(1, "online"), core_vehicle(2, "online")])
+        .await;
+    assert_eq!(intake_latency_status()["count"], 0, "a list admits no observation");
+
+    // Two reads are admitted 120 ms and 30 ms before the commit.
+    bed.scheduler.begin_tick();
+    let first_admitted = bed.now();
+    let first = bed.read_item(1, parked_fields());
+    bed.advance(Duration::from_millis(90));
+    let second_admitted = bed.now();
+    let second = bed.read_item(2, parked_fields());
+    bed.advance(Duration::from_millis(30));
+    let mut batch = TickBatch::default();
+    batch.admit_snapshot(first, first_admitted);
+    batch.admit_snapshot(second, second_admitted);
+    batch.note_result(first_admitted);
+    let outcome = bed.commit(batch).await;
+    assert!(matches!(outcome, TickOutcome::Committed { wrote: true, .. }), "{outcome:?}");
+
+    let figures = intake_latency_status();
+    assert_eq!(figures["count"], 2);
+    assert_eq!(latency_ms(&figures, "maxMs"), 120.0);
+    let p50 = latency_ms(&figures, "p50Ms");
+    assert!((30.0..=31.0).contains(&p50), "p50 {p50} is the 30 ms observation");
+    assert_eq!(latency_ms(&figures, "p95Ms"), 120.0);
+}
+
+#[tokio::test]
+async fn intake_latency_ignores_empty_polls_unadmitted_results_and_a_failed_commit() {
+    reset_intake_latency();
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam.clone(), async {
+            let mut bed = TickBed::owner();
+            bed.list(vec![core_vehicle(1, "online")]).await;
+
+            // An empty poll writes nothing and records nothing.
+            let outcome = bed.commit(TickBatch::default()).await;
+            assert!(matches!(outcome, TickOutcome::Idle), "{outcome:?}");
+            // A result that was never admitted through the batch (the Fleet
+            // collector's own pushes) is not measured.
+            bed.scheduler.begin_tick();
+            let item = bed.read_item(1, parked_fields());
+            let mut batch = TickBatch::default();
+            batch.snapshots.push(item);
+            batch.note_result(bed.now());
+            bed.advance(Duration::from_millis(80));
+            let outcome = bed.commit(batch).await;
+            assert!(matches!(outcome, TickOutcome::Committed { wrote: true, .. }), "{outcome:?}");
+            assert_eq!(intake_latency_status()["count"], 0);
+
+            // A transaction that fails rolls back: the batch is dropped and nothing
+            // is recorded, because nothing became durable.
+            bed.advance(Duration::from_secs(60));
+            bed.scheduler.begin_tick();
+            let admitted = bed.now();
+            let item = bed.read_item(1, parked_fields());
+            let mut batch = TickBatch::default();
+            batch.admit_snapshot(item, admitted);
+            batch.note_result(admitted);
+            bed.advance(Duration::from_millis(80));
+            seam.set_tick_commit_fault(true);
+            let outcome = bed.commit(batch).await;
+            assert!(matches!(outcome, TickOutcome::Failed), "{outcome:?}");
+            assert_eq!(intake_latency_status()["count"], 0);
+        })
+        .await;
+}
+
+#[test]
+fn intake_latency_covers_a_committed_stream_frame_and_not_a_duplicate() {
+    reset_intake_latency();
+    let temp = crate::private_tempdir().expect("temporary store");
+    let vehicle_id = VehicleId::from_test(9);
+    let timestamp = current_epoch_millis().expect("clock") - 60_000;
+    let update = crate::tesla_stream::StreamUpdate {
+        tag: vehicle_id.to_string(),
+        timestamp_ms: timestamp,
+        speed: Some(20.0),
+        odometer: Some(100.0),
+        soc: Some(80.0),
+        elevation: Some(25.0),
+        est_heading: Some(180),
+        est_lat: Some(51.5),
+        est_lng: Some(-0.1),
+        power: Some(12),
+        shift_state: Some("D".to_owned()),
+        range: Some(200.0),
+        est_range: Some(210.0),
+        heading: Some(180.0),
+    };
+    let store = HubStore::initialize(temp.path()).expect("store");
+    assert!(persist_stream_update(&store, vehicle_id, &update).expect("frame"));
+    assert_eq!(intake_latency_status()["count"], 1);
+    assert!(!persist_stream_update(&store, vehicle_id, &update).expect("duplicate"));
+    assert_eq!(intake_latency_status()["count"], 1, "a duplicate is not a commit");
+    let figures = intake_latency_status();
+    assert!(latency_ms(&figures, "maxMs") < 5_000.0, "{figures}");
+}
