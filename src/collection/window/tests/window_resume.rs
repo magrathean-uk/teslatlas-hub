@@ -502,13 +502,15 @@ fn window_resume_restored_open_snapshot_after_trust_reset_is_refused() {
     drop(open_hub(&rig, 0, 3600));
     rig.anchor.set_fail_reads(true);
     let (hub, outcome) = rig.start_hub();
-    assert_eq!(
-        outcome,
-        ResumeOutcome::ClosedAtStart(CloseReason::StateUnverifiable)
-    );
+    assert_eq!(outcome, ResumeOutcome::Faulted);
     assert!(permit_refused(&hub));
     rig.anchor.set_fail_reads(false);
-    assert!(rig.anchor.read(&anchor_name()).unwrap().is_some());
+    drop(hub);
+    // The close was persisted, but could not confirm its external pin. A
+    // later load completes it once the anchor can be read again.
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::ClosedAtStart(CloseReason::StateUnverifiable));
+    assert!(permit_refused(&hub));
 }
 
 const GRANT_GAP: i64 = crate::collection::window::GRANT_GAP_SECONDS;

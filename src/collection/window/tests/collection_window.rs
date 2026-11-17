@@ -225,7 +225,7 @@ fn collection_window_valid_grant_opens_and_gates() {
             .read(&format!("window-consumption-{HOST}"))
             .unwrap()
             .unwrap(),
-        "1:1"
+        "1:1:open"
     );
     let permit = hub
         .gate()
