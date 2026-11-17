@@ -18,6 +18,12 @@ async fn run_fleet_supervised_with_access<F>(
 where
     F: Future<Output = ()>,
 {
+    // Polling only (M09-T19 ruling 2): a configuration with a telemetry table
+    // (configuration admission refuses one first) ends the run here, before
+    // the first refresh or any other send.
+    if config.collector.fleet_telemetry.is_some() {
+        refuse_fleet_telemetry()?;
+    }
     // The run's write guard exists before the credential manager and the cursor key
     // (B2 fix round, P3b fix 3, R-P3bF3-1): the entry point made it, and it has been
     // consulted at every write since. The renewal revalidates the retained admission
@@ -160,7 +166,7 @@ where
             startup_result?;
             if config.collector.fleet_telemetry.is_some() {
                 // Polling only (M09-T19 ruling 2): the maintenance loop never
-                // starts; configuration admission refuses the table first.
+                // starts; the run was refused at its start already.
                 refuse_fleet_telemetry()?;
                 return run_fleet_telemetry_maintenance_loop(
                     store,

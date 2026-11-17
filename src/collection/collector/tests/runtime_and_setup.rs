@@ -1957,10 +1957,12 @@ async fn m09_t19_the_legacy_service_refuses_every_vehicle_action_inside_an_open_
 /// past admission (built in code, as no file can) still never starts the
 /// telemetry maintenance loop: the supervised Fleet run, with the admitted
 /// own login inside an Open window, ends with the polling-only refusal, and
-/// the configuration send refuses on its own, both with nothing sent.
+/// the configuration send refuses on its own, both with nothing sent. The
+/// login is due for refresh, so a refresh before either refusal would show.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn m09_t19_the_telemetry_maintenance_loop_never_starts() {
     let rig = M09T19FleetRig::new().await;
+    rig.manager.lock().await.mark_refresh_due();
     let mut config = supervised_restart_test_config(rig.temporary.path());
     config.collector.provider = CollectorProvider::Fleet;
     config.collector.fleet_telemetry = Some(crate::config::FleetTelemetryConfig {
@@ -2010,5 +2012,5 @@ async fn m09_t19_the_telemetry_maintenance_loop_never_starts() {
         "{run:?}"
     );
     assert_eq!(rig.others.load(Ordering::SeqCst), 0, "nothing sent to the Fleet API");
-    assert_eq!(rig.tokens.load(Ordering::SeqCst), 1, "no token refresh");
+    assert_eq!(rig.tokens.load(Ordering::SeqCst), 1, "no token refresh, though one was due");
 }
