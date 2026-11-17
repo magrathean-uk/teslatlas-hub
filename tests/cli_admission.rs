@@ -317,15 +317,22 @@ fn fleet_sign_in_configured_hub_refuses_vehicle_commands_as_legacy_does() {
             );
             refusals.push((provider, case.clone(), stderr(&output)));
         }
-        // Every vehicle action is refused the same way; without --confirm the
-        // command line refuses it as a usage error before that.
-        for action in ["wake", "climate-stop", "charge-start", "charge-stop", "lock", "unlock", "flash-lights", "honk-horn"] {
-            let output = hub.run(&["control", action, "--confirm"], b"");
-            assert_eq!(output.status.code(), Some(1), "{provider} {action}");
-            assert!(stderr(&output).contains("vehicle_commands_not_offered"), "{provider} {action}: {}", stderr(&output));
-            let output = hub.run(&["control", action], b"");
-            assert_ne!(output.status.code(), Some(0), "{provider} {action} without --confirm");
-            assert!(stdout(&output).is_empty(), "{provider} {action} without --confirm");
+        // Every vehicle action is refused the same way, with or without
+        // --confirm: the product's refusal, exit 1, not a usage error.
+        for action in ["wake", "climate-start", "climate-stop", "charge-start", "charge-stop", "lock", "unlock", "flash-lights", "honk-horn"] {
+            for confirm in [true, false] {
+                let arguments: &[&str] = if confirm { &["control", action, "--confirm"] } else { &["control", action] };
+                let output = hub.run(arguments, b"");
+                assert_eq!(output.status.code(), Some(1), "{provider} {arguments:?}: {}", stderr(&output));
+                assert!(stdout(&output).is_empty(), "{provider} {arguments:?}");
+                assert!(stderr(&output).contains("vehicle_commands_not_offered"), "{provider} {arguments:?}: {}", stderr(&output));
+            }
+        }
+        for confirm in [true, false] {
+            let arguments: &[&str] = if confirm { &["control", "set-charge-limit", "--percent", "80", "--confirm"] } else { &["control", "set-charge-limit", "--percent", "80"] };
+            let output = hub.run(arguments, b"");
+            assert_eq!(output.status.code(), Some(1), "{provider} {arguments:?}: {}", stderr(&output));
+            assert!(stderr(&output).contains("vehicle_commands_not_offered"), "{provider} {arguments:?}: {}", stderr(&output));
         }
         assert_eq!(hub.endpoint.connections(), 0, "{provider}: nothing sent");
     }

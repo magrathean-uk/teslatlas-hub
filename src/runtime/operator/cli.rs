@@ -192,33 +192,36 @@ pub enum ControlCommand {
     /// Rotate the credential key while the service is stopped.
     #[command(name = "rotate-credential-key")]
     RotateCredentialKey,
+    // The vehicle actions keep `--confirm` for scripts that pass it, but no
+    // longer require it: with or without it, every one ends in the product's
+    // refusal `vehicle_commands_not_offered`, exit 1 (M09-T19 ruling 1).
     /// Explicitly wake the selected car once.
     Wake {
-        #[arg(long, required = true)]
+        #[arg(long)]
         confirm: bool,
     },
     /// Start climate control once.
     #[command(name = "climate-start")]
     ClimateStart {
-        #[arg(long, required = true)]
+        #[arg(long)]
         confirm: bool,
     },
     /// Stop climate control once.
     #[command(name = "climate-stop")]
     ClimateStop {
-        #[arg(long, required = true)]
+        #[arg(long)]
         confirm: bool,
     },
     /// Start charging once.
     #[command(name = "charge-start")]
     ChargeStart {
-        #[arg(long, required = true)]
+        #[arg(long)]
         confirm: bool,
     },
     /// Stop charging once.
     #[command(name = "charge-stop")]
     ChargeStop {
-        #[arg(long, required = true)]
+        #[arg(long)]
         confirm: bool,
     },
     /// Set the charging limit percentage once.
@@ -226,29 +229,29 @@ pub enum ControlCommand {
     SetChargeLimit {
         #[arg(long, value_parser = clap::value_parser!(u8).range(50..=100))]
         percent: u8,
-        #[arg(long, required = true)]
+        #[arg(long)]
         confirm: bool,
     },
     /// Lock the selected car once.
     Lock {
-        #[arg(long, required = true)]
+        #[arg(long)]
         confirm: bool,
     },
     /// Unlock the selected car once.
     Unlock {
-        #[arg(long, required = true)]
+        #[arg(long)]
         confirm: bool,
     },
     /// Flash the selected car's lights once.
     #[command(name = "flash-lights")]
     FlashLights {
-        #[arg(long, required = true)]
+        #[arg(long)]
         confirm: bool,
     },
     /// Honk the selected car's horn once.
     #[command(name = "honk-horn")]
     HonkHorn {
-        #[arg(long, required = true)]
+        #[arg(long)]
         confirm: bool,
     },
     /// List configured geofences.

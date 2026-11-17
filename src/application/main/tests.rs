@@ -695,7 +695,7 @@ async fn migration_without_version_confirmation_does_not_create_hub_target() {
 fn bootstrap_and_explicit_vehicle_commands_parse() {
     let bootstrap = Cli::try_parse_from(["tesatlas-hub", "bootstrap"]).expect("bootstrap CLI");
     assert!(matches!(bootstrap.command, Command::Bootstrap));
-    assert!(Cli::try_parse_from(["tesatlas-hub", "control", "wake"]).is_err());
+    assert!(matches!(Cli::try_parse_from(["tesatlas-hub", "control", "wake"]).expect("parsed, then refused (M09-T19)").command, Command::Control { command: ControlCommand::Wake { confirm: false }, .. }));
     let wake = Cli::try_parse_from([
         "tesatlas-hub",
         "control",

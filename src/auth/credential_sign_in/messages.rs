@@ -62,7 +62,7 @@ pub fn credential_owner_message(
         "fleet_scope_missing_vehicle_device_data" => "Tesla's Fleet sign-in did not grant the vehicle_device_data scope (vehicle information), which collection needs, so the stored login was kept. Allow vehicle information on Tesla's consent page and sign in again.",
         "fleet_scope_missing_vehicle_location" => "Tesla's Fleet sign-in did not grant the vehicle_location scope (vehicle location), which collection needs, so the stored login was kept. Allow vehicle location on Tesla's consent page and sign in again.",
         "fleet_scopes_missing" => "Tesla's Fleet sign-in granted neither the vehicle_device_data scope nor the vehicle_location scope, which collection needs, so the stored login was kept. Allow vehicle information and location on Tesla's consent page and sign in again.",
-        "sign_in_settings_invalid" => "The Fleet sign-in settings were missing, incomplete or too large. Nothing was changed. Check them and start again.",
+        "sign_in_settings_invalid" => "The Fleet sign-in settings were missing, incomplete, too large or written with an escape the Hub does not read. Nothing was changed. Check them and start again.",
         "sign_in_cancelled" => "The sign-in was cancelled before Tesla was asked for tokens. Start it again when you are ready.",
         "sign_in_service_pause_failed" => "The Hub could not pause collection for the sign-in, so the sign-in did not start. If the Hub shows as stopped, choose Start Hub, then try again.",
         "sign_in_code_reused" => "This sign-in code was already used, so Tesla was not asked again. Start the sign-in again.",
@@ -103,7 +103,31 @@ pub struct CredentialCommandError {
     pub(crate) operation: Option<&'static str>,
 }
 
+/// The owner text of a Fleet car-discovery refusal (M09-T19 note 1): where
+/// the Owner API's text says to run setup again, it names the Fleet steps,
+/// `setup-fleet discover` with the stored sign-in or a new sign-in.
+fn fleet_discovery_message(code: &str) -> Option<&'static str> {
+    Some(match code {
+        "discovery_vehicle_not_listed" => "Tesla does not list the chosen car on this account, so no car was configured. The sign-in is stored; run setup-fleet discover again with a listed car.",
+        "discovery_selection_required" => "This Tesla account lists several cars, so no car was configured. The sign-in is stored; run setup-fleet discover again with --vehicle-id for one car or --all-vehicles.",
+        "discovery_answer_invalid" => "Tesla's car list could not be used, so no car was configured. The sign-in is stored; run setup-fleet discover to retry.",
+        "discovery_refused" => "Tesla refused the car list, so no car was configured. The sign-in is stored; run setup-fleet discover to retry, or sign in again with setup-fleet begin if Tesla keeps refusing.",
+        "discovery_rate_limited" => "Tesla asked the Hub to wait before listing the cars, so no car was configured. The sign-in is stored; run setup-fleet discover again later.",
+        "discovery_unavailable" => "The Hub could not reach Tesla to list the cars, so no car was configured. The sign-in is stored; run setup-fleet discover to retry.",
+        "discovery_failed" => "The Hub could not record the chosen cars. The sign-in is stored; run setup-fleet discover to retry.",
+        "discovery_pair_unavailable" => "The Hub holds no usable Fleet sign-in of its own, so the cars were not listed. Sign in again with setup-fleet begin.",
+        "discovery_settings_invalid" => "The Hub is not set up for the Fleet API, so the cars were not listed. Check the configuration.",
+        _ => return None,
+    })
+}
+
 impl CredentialCommandError {
+    /// A Fleet car-discovery refusal, with the Fleet steps in its text.
+    pub(crate) fn fleet_discovery(code: &'static str) -> Self {
+        let mut error = Self::new(code);
+        if let Some(text) = fleet_discovery_message(code) { error.message = Some(text.to_owned()); }
+        error
+    }
     pub fn code(&self) -> &'static str { self.code }
     pub fn pair_stored(&self) -> bool { self.pair_stored }
     pub fn operation(&self) -> Option<&'static str> { self.operation }
@@ -207,6 +231,20 @@ mod tests {
             assert_eq!(command.message, credential_owner_message("sign_in_refused", None, None, Some(expected)));
             if expected == "other" { assert!(!command.to_string().contains(issuer)); }
         }
+    }
+
+    /// M09-T19 note 1: a Fleet discovery refusal names the Fleet steps, not
+    /// the Owner API's setup; the Owner API's own text is unchanged.
+    #[test]
+    fn fleet_discovery_refusals_name_the_fleet_steps() {
+        for code in ["discovery_vehicle_not_listed", "discovery_selection_required", "discovery_answer_invalid", "discovery_refused",
+            "discovery_rate_limited", "discovery_unavailable", "discovery_failed", "discovery_pair_unavailable"] {
+            let text = CredentialCommandError::fleet_discovery(code).to_string();
+            assert!(text.starts_with(&format!("{code}: ")), "{text}");
+            assert!(text.contains("setup-fleet") && !text.contains("run setup again"), "{text}");
+            assert!(CredentialCommandError::new(code).to_string().contains("Sign in again") || CredentialCommandError::new(code).to_string().contains("run setup again"));
+        }
+        assert_eq!(CredentialCommandError::fleet_discovery("window_closed").to_string(), CredentialCommandError::new("window_closed").to_string());
     }
 
     #[test]
