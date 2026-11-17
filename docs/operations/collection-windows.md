@@ -306,7 +306,9 @@ time you want Hub to stop collecting.
      run `window trust TRUST` on the Hub, so no earlier grant can open a
      window.
    Hub's consumption anchor stays in the login keychain, so restoring an older
-   data directory does not make a used grant valid again.
+   data directory does not make a used grant valid again. The anchor also pins
+   a close before its handback is confirmed, so restoring an Open copy cannot
+   undo a completed close. If that pin cannot be saved, the close stays pending.
    When the login keychain is locked while Hub reads an anchor, macOS may ask to unlock it. For the read of an anchor saved by an earlier build, Hub waits five seconds, never stops the system helper, and treats the anchor as unavailable until a later load.
 3. **Confirm the other logger resumed.** In the other logger's database, check
    that the newest position timestamp for each vehicle advances over several
@@ -324,6 +326,9 @@ time you want Hub to stop collecting.
 - If the service restarts while a window is Open or Pending, on the same boot,
   with a sound clock and before the deadline, it resumes until the original
   deadline, retakes the lease and claim, and records a `resumed` entry.
+- An active snapshot whose older consumption anchor did not record whether
+  the grant was open refuses resume. Trust a newer issuer trust document and
+  issue a new grant; an old snapshot cannot establish that it was never closed.
 - After a reboot the window closes with reason `reboot`; a new grant is needed.
 - At or after the deadline it closes once with reason `expired`, timed at the
   deadline.

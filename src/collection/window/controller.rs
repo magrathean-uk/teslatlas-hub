@@ -155,6 +155,7 @@ fn read_probe(result: Result<f64, ProbeFailure>) -> Reading {
 }
 
 fn parse_anchor(value: &str) -> Option<(u64, u64)> {
+    let value = value.strip_suffix(":open").or_else(|| value.strip_suffix(":closed")).unwrap_or(value);
     let (epoch, seq) = value.split_once(':')?;
     Some((epoch.parse().ok()?, seq.parse().ok()?))
 }
@@ -363,7 +364,7 @@ impl WindowController {
         self.store.reset(&record)?;
         let seq = previous.map_or(0, |(_, seq)| seq);
         self.anchor
-            .write(&name, &format!("{}:{seq}", document.trust_epoch))?;
+            .write(&name, &format!("{}:{seq}:closed", document.trust_epoch))?;
         *inner = Inner {
             state: WindowState::closed(),
             trust: Some(record),
@@ -535,7 +536,7 @@ impl WindowController {
         })?;
         if let Err(refusal) = self.anchor.write(
             &self.anchor_name(),
-            &format!("{}:{}", anchor_epoch, body.seq),
+            &format!("{}:{}:open", anchor_epoch, body.seq),
         ) {
             self.seal_orphan(body.seq, &digest, None, wall);
             return Err(refusal);
@@ -860,6 +861,11 @@ impl WindowController {
         inner.state.close_reason = Some(reason);
         inner.state.closing_at = Some(wall);
         self.gate.close();
+        if let Some(grant) = &inner.state.grant {
+            // Record revocation outside every data-directory snapshot. A failed
+            // pin is retried before the handback can report a completed close.
+            let _ = self.pin_closed(&grant.body);
+        }
         // Fail closed: the gate is shut even if the write fails; the restart
         // path completes the close.
         let _ = self.store.write_state(&inner.state);
@@ -906,6 +912,7 @@ impl WindowController {
             .as_ref()
             .map(|grant| grant.body.clone())
             .ok_or(Refusal::StateUnverifiable)?;
+        self.pin_closed(&grant)?;
         let reason = inner
             .state
             .close_reason
@@ -1140,10 +1147,32 @@ impl WindowController {
             return Err(Refusal::AnchorMismatch);
         }
         match anchored_seq.cmp(&seq) {
-            std::cmp::Ordering::Equal => Ok(()),
+            std::cmp::Ordering::Equal if value.ends_with(":open") => Ok(()),
+            std::cmp::Ordering::Equal => Err(Refusal::GrantConsumed),
             std::cmp::Ordering::Greater => Err(Refusal::GrantConsumed),
             std::cmp::Ordering::Less => Err(Refusal::AnchorMismatch),
         }
+    }
+
+    /// Pin the close without ever lowering a newer epoch or consumption. A
+    /// restored Closing snapshot can finish its handback but cannot revoke or
+    /// revive a later grant. Legacy two-field anchors can be closed, but do
+    /// not authorise an active-state resume.
+    fn pin_closed(&self, grant: &super::grant::GrantBody) -> Result<(), Refusal> {
+        let name = self.anchor_name();
+        let value = self.anchor.read(&name)?.ok_or(Refusal::AnchorMissing)?;
+        let pinned = parse_anchor(&value).ok_or(Refusal::AnchorMismatch)?;
+        let expected = (grant.trust_epoch, grant.seq);
+        if pinned > expected {
+            return Ok(());
+        }
+        if pinned != expected {
+            return Err(Refusal::AnchorMismatch);
+        }
+        if value.ends_with(":closed") {
+            return Ok(());
+        }
+        self.anchor.write(&name, &format!("{}:{}:closed", grant.trust_epoch, grant.seq))
     }
 
     fn seal_from_ledger(&self, ledger: &[Line<HubEntry>], wall: i64) {
