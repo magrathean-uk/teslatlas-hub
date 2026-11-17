@@ -925,7 +925,8 @@ fn sc49_jitter() {
         },
         0.0,
     );
-    assert_eq!(late, secs(150));
+    // M04-T12: the 30 s Busy cap gives 15 s at the minimum jitter draw.
+    assert_eq!(late, secs(15));
     // The other classes jitter their own nominal delay.
     assert_eq!(
         next_delay(
