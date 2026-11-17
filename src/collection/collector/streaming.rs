@@ -1072,6 +1072,20 @@ fn note_stream_unhealthy(
     report_stream_outage(scheduler, vehicle_id, source, outage, now);
 }
 
+/// A stream end may ask for one non-waking check per car per minute. Keep the
+/// clock in the scheduler, so a new session or run cannot reset the limit.
+fn schedule_stream_state_check(scheduler: &mut VehicleScheduler, id: VehicleId, now: Instant) {
+    let Some(vehicle) = scheduler.vehicles.get_mut(&id) else { return; };
+    if vehicle.is_inactive() || matches!(vehicle.phase, PollPhase::Asleep | PollPhase::Offline)
+        || vehicle.stream_state_check_pending {
+        return;
+    }
+    let due = vehicle.last_stream_state_check
+        .map_or(now, |last| now.max(last + Duration::from_secs(60)));
+    vehicle.stream_state_check_pending = true;
+    scheduler.schedule_offline_state_fetch(id, due);
+}
+
 /// One stream event (C3 R36), the scheduler's side of the stream:
 /// - `Healthy`: the stream is healthy, and the first one after an outage reports
 ///   the recovery; it is not use evidence by itself (the `Telemetry` that follows
@@ -1126,7 +1140,7 @@ fn process_stream_event(
             // The session has ended even when a targeted state check still
             // reports the car online. Start driving fallback immediately.
             note_stream_unhealthy(scheduler, vehicle_id, "vehicle_unavailable", now);
-            scheduler.schedule_offline_state_fetch(vehicle_id, now);
+            schedule_stream_state_check(scheduler, vehicle_id, now);
         }
         StreamEvent::TransportUnavailable => {
             note_stream_unhealthy(scheduler, vehicle_id, "transport_unavailable", now);

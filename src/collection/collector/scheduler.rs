@@ -833,6 +833,9 @@ struct ScheduledVehicle {
     next_read_due: Option<Instant>,
     /// Owner-wire targeted record check (R36, R46).
     next_check_due: Option<Instant>,
+    /// A stream-triggered check retains its cooldown across stream runs and data.
+    stream_state_check_pending: bool,
+    last_stream_state_check: Option<Instant>,
     /// Pause and service probes (R51, R52).
     next_probe_due: Option<Instant>,
     /// Online only: when the idle window ends and the suspension begins (R31).
@@ -916,6 +919,8 @@ impl ScheduledVehicle {
             reported_state: None,
             next_read_due: None,
             next_check_due: None,
+            stream_state_check_pending: false,
+            last_stream_state_check: None,
             next_probe_due: None,
             suspend_at: None,
             suspended_until: None,
@@ -2143,6 +2148,8 @@ impl VehicleScheduler {
             .vehicles
             .iter()
             .filter(|(_, vehicle)| !vehicle.is_inactive())
+            .filter(|(_, vehicle)| !vehicle.stream_state_check_pending
+                || !matches!(vehicle.phase, PollPhase::Asleep | PollPhase::Offline))
             .filter_map(|(id, vehicle)| {
                 vehicle
                     .next_check_due
@@ -2152,6 +2159,14 @@ impl VehicleScheduler {
             .collect();
         due.sort();
         due.truncate(K_MAX_IN_FLIGHT);
+        for (_, id) in &due {
+            if let Some(vehicle) = self.vehicles.get_mut(id)
+                && vehicle.stream_state_check_pending
+            {
+                vehicle.last_stream_state_check = Some(now);
+                vehicle.stream_state_check_pending = false;
+            }
+        }
         due.into_iter().map(|(_, id)| id).collect()
     }
 
