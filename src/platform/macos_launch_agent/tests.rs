@@ -1356,3 +1356,74 @@ fn fleet_preflight_rejects_a_pair_without_the_recorded_scope_witness() {
     assert!(preflight_hub(&data_dir).is_err());
     assert_eq!(preflight_snapshot(&store, &data_dir), before, "no write");
 }
+
+/// The Fleet configuration with `interval` used by the M09-T11 B3 cases.
+fn m09_t11_fleet_config(data: &Path, interval: u64) -> HubConfig {
+    let mut config = idle_start_config(data);
+    config.collector.provider = CollectorProvider::Fleet;
+    config.collector.interval_seconds = interval;
+    config
+}
+
+/// M09-T11 B3, beside the older-row case above: a Fleet grant without
+/// `vehicle_location` is refused by the sign-in before anything is stored, so
+/// the provider preflight and the full admission refuse, and the admission
+/// reports the sign-in step (`awaiting_sign_in`), the service running with
+/// the collector off. Nothing is written by the preflights.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fleet_admission_refuses_a_grant_without_the_collection_scopes() {
+    const NARROWED: &str = "e30.eyJzY3AiOlsib3BlbmlkIiwidmVoaWNsZV9kZXZpY2VfZGF0YSJdfQ.sig";
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let store = seed_selected_car(&data);
+    load_or_create_cursor_key(&data).expect("cursor key");
+    assert!(
+        !crate::auth::credential_vault::fixtures::fleet_sign_in_answered_with(&store, &data, NARROWED).await,
+        "the narrowed grant is refused"
+    );
+    let config = m09_t11_fleet_config(&data, 300);
+    let before = preflight_snapshot(&store, &data);
+    assert!(preflight_hub_for_provider(&data, CollectorProvider::Fleet).is_err(), "no login is admitted");
+    assert!(preflight_hub_for_config(&config).is_err(), "the full admission refuses");
+    assert_eq!(hub_awaits_fleet_setup(&config).expect("readable"), Some(FleetSetupPending::SignIn), "sign in again");
+    preflight_hub_for_serve(&config, None).expect("served awaiting the sign-in, collector off");
+    assert_eq!(preflight_snapshot(&store, &data), before, "no write");
+}
+
+/// M09-T11 B1 and B3: the Hub's own scoped grant whose refresh comes back
+/// without `vehicle_location`. The successor is refused before the commit, so
+/// the preflight reads the earlier, scoped generation with its unresolved
+/// refresh and admits only the reconnect stop (the collector starts fenced
+/// and sends nothing), while the operational check refuses with the unknown
+/// outcome (sign in again). Nothing is written by the preflights.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fleet_preflight_after_a_narrowed_refresh_admits_only_the_reconnect_stop() {
+    const NARROWED: &str = "e30.eyJzY3AiOlsib3BlbmlkIiwidmVoaWNsZV9kZXZpY2VfZGF0YSJdfQ.sig";
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let store = seed_selected_car(&data);
+    load_or_create_cursor_key(&data).expect("cursor key");
+    m09_t19_fleet_sign_in(&store, &data).await;
+    let config = m09_t11_fleet_config(&data, 300);
+    preflight_hub_for_config(&config).expect("the full admission of the scoped grant");
+    let probe = crate::auth::credential_vault::fixtures::refresh_fleet_pair_answered_with(&store, &data, NARROWED).await;
+    assert!(
+        matches!(probe.first, Err(crate::fleet_credentials::FleetCredentialError::MissingCollectionScopes)),
+        "{:?}",
+        probe.first
+    );
+    assert_eq!(probe.requests, 1);
+    let before = preflight_snapshot(&store, &data);
+    assert!(
+        crate::fleet_credentials::inspect_stored_fleet_credentials(&store, &data)
+            .expect("the earlier grant")
+            .unresolved_refresh
+    );
+    preflight_hub_for_provider(&data, CollectorProvider::Fleet).expect("the reconnect stop is admitted");
+    preflight_hub_for_config(&config).expect("the reconnect stop is admitted");
+    assert!(matches!(
+        crate::auth::credential_vault::fixtures::validate_fixture_fleet_credentials(&store, &data),
+        Err(crate::fleet_credentials::FleetCredentialError::RotationOutcomeUnknown)
+    ));
+    assert_eq!(preflight_snapshot(&store, &data), before, "no write");
+}

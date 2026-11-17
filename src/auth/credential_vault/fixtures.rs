@@ -278,6 +278,33 @@ pub(crate) async fn refresh_fleet_pair_answered_with(store: &HubStore, data: &Pa
     let _ = server.await;
     FleetRefreshProbe { first, second, requests: requests.load(Ordering::SeqCst) }
 }
+/// M09-T11 B3: the Hub's own Fleet sign-in through its real begin and redeem,
+/// against a loopback token double that answers `access`, inside an open
+/// window. Returns whether the sign-in stored a login.
+#[cfg(test)]
+pub(crate) async fn fleet_sign_in_answered_with(store: &HubStore, data: &Path, access: &str) -> bool {
+    crate::crypto::install_default_provider();
+    let body = serde_json::json!({"access_token": access, "refresh_token": "fleet-sign-in-refresh", "expires_in": 28_800, "token_type": "Bearer"}).to_string();
+    let router = axum::Router::new().route("/oauth2/v3/token", axum::routing::post(move || { let body = body.clone(); async move { body } }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("token double");
+    let token = format!("http://{}/oauth2/v3/token", listener.local_addr().expect("address"));
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.expect("token double") });
+    let window = crate::fleet_api::egress::test_support::TestWindow::open(600);
+    let _route = window.route(&token);
+    let vault = open_fixture_vault(store.clone(), data);
+    let entry = crate::CredentialVaultEntry::for_test(Arc::clone(&vault));
+    let begin = serde_json::json!({"clientId": "m09-t11-client", "region": "eu", "redirectUri": "https://owner.example/fleet/callback"}).to_string();
+    let binding = crate::auth::credential_sign_in::begin_fleet_sign_in_with_stub_for_test(&entry, begin.as_bytes(), &token).expect("begin");
+    let redeem = serde_json::json!({"code": format!("m09-t11-{}", Uuid::new_v4()), "redirectUri": "https://owner.example/fleet/callback",
+        "clientId": "m09-t11-client", "clientSecret": "m09-t11-secret", "region": "eu", "binding": binding.id().to_string()}).to_string();
+    let mut held = Some(binding);
+    let stored = crate::auth::credential_sign_in::exchange_fleet_code_with_stub_for_test(&entry, &mut held, redeem.as_bytes(), &token).await.is_ok();
+    drop(entry);
+    drop(vault);
+    server.abort();
+    let _ = server.await;
+    stored
+}
 #[cfg(test)]
 pub(crate) fn open_fixture_vault(store: HubStore, data: &Path) -> Arc<CredentialVault> {
     let registry = Arc::clone(&store.fixture_vault);

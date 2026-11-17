@@ -987,6 +987,32 @@ fn cadence_doctor_retains_credentials_scopes_and_service_failures() {
     assert!(scopes.collector.cadence_error.is_some());
 }
 
+/// M09-T11 B3, beside the older-row case above: a Fleet grant without
+/// `vehicle_location` is refused by the sign-in before anything is stored, so
+/// the doctor finds no login: the scope check and the selected credentials
+/// fail and the collector cannot start.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fleet_doctor_refuses_a_grant_without_the_collection_scopes() {
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    doctor_seed_car(&store);
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    assert!(
+        !crate::auth::credential_vault::fixtures::fleet_sign_in_answered_with(&store, temporary.path(), DOCTOR_UNSCOPED_ACCESS).await,
+        "the narrowed grant is refused"
+    );
+    let config = doctor_config(temporary.path(), DOCTOR_FLEET, "");
+    doctor_fresh_lease(&store);
+    let report = inspect_hub(&store, &config).expect("report");
+    assert_eq!(report.status, "failed");
+    assert!(!report.credentials.fleet.present);
+    assert!(!doctor_check(&report, "fleetCollectionScopes").passed);
+    assert_eq!(doctor_check(&report, "fleetCollectionScopes").detail, "unavailable");
+    assert!(!doctor_check(&report, "selectedProviderCredentials").passed);
+    assert!(!report.credentials.selected_credentials_present);
+    assert!(!report.collector.can_start);
+}
+
 #[test]
 fn cadence_doctor_describes_inactive_settings_without_attention() {
     // Interval zero: collection is not required, so a faulty cadence is
