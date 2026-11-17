@@ -26,6 +26,31 @@ enum HubApplicationActivation {
         effect(true)
     }
 
+    /// Asks LaunchServices to open this running application (M08-T21), unless this
+    /// process is an XCTest host. After a rename hand-over that needed Try Again the
+    /// window server held every window of the app off screen although AppKit had
+    /// ordered them in with the app active and not hidden (lab guest, macOS 27.2):
+    /// `orderFrontRegardless`, `activateIgnoringOtherApps:`, `NSRunningApplication`
+    /// activation and hide then unhide left them off screen, and an open through
+    /// LaunchServices put them on screen at once without any AppKit ordering call.
+    /// LaunchServices routes the open to this instance (no second instance starts).
+    static func openThroughLaunchServices(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundleURL: URL = Bundle.main.bundleURL,
+        effect: (URL) -> Void = { url in
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, error in
+                guard let error else { return }
+                HubAppLog.shared.record("launch.reopen_failed", category: "app",
+                                        fields: ["error": error.localizedDescription])
+            }
+        }
+    ) {
+        guard !HubTestHost.isXCTest(environment: environment) else { return }
+        effect(bundleURL)
+    }
+
     /// Under an XCTest host only: hands activation straight back to the application the
     /// owner was using (hide, then unhide without activating, so the windows stay ordered
     /// in for the tests). LaunchServices activates a test host at every launch before any
