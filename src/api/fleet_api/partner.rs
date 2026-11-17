@@ -21,6 +21,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 const MAX_BODY: usize = 16 * 1024;
 const MAX_SECRET: usize = 16 * 1024;
 const REGISTER_PATH: &str = "/api/1/partner_accounts";
+const PUBLIC_KEY_PATH: &str = "/api/1/partner_accounts/public_key";
 
 /// A one-use client secret, never persisted or included in diagnostics.
 pub struct PartnerCredentials {
@@ -67,6 +68,8 @@ pub enum PartnerError {
     Authentication,
     #[error("fleet_partner_public_key_unreachable")]
     PublicKeyUnreachable,
+    #[error("fleet_partner_public_key_mismatch")]
+    PublicKeyMismatch,
     #[error("fleet_partner_over_limit")]
     OverLimit,
     #[error("fleet_partner_registration_failed")]
@@ -87,6 +90,7 @@ pub struct PartnerApi {
     region: FleetRegion,
     auth_url: Url,
     registration_url: Url,
+    public_key_url: Url,
     #[cfg(test)]
     stub: Option<super::in_process::InProcessTransport>,
 }
@@ -115,17 +119,42 @@ impl PartnerApi {
                 .expect("fixed Fleet URL")
                 .join(REGISTER_PATH)
                 .expect("fixed partner path"),
+            public_key_url: Url::parse(region.base_url())
+                .expect("fixed Fleet URL")
+                .join(PUBLIC_KEY_PATH)
+                .expect("fixed partner key path"),
             #[cfg(test)]
             stub: None,
         })
     }
 
-    /// Obtain a short-lived partner bearer, then register the domain. Both
-    /// sends ask the Fleet gate independently; no retry or token is retained.
+    /// A client whose every send goes to `transport`, at synthetic hosts.
+    #[cfg(test)]
+    pub(crate) fn stubbed_for_test(
+        region: FleetRegion,
+        transport: super::in_process::InProcessTransport,
+    ) -> Self {
+        let mut api = Self::new(region, Duration::from_secs(1)).expect("test client");
+        let id = uuid::Uuid::new_v4().simple().to_string();
+        api.auth_url =
+            Url::parse(&format!("https://auth-{id}.example.test/oauth2/v3/token")).unwrap();
+        api.registration_url =
+            Url::parse(&format!("https://fleet-{id}.example.test{REGISTER_PATH}")).unwrap();
+        api.public_key_url =
+            Url::parse(&format!("https://fleet-{id}.example.test{PUBLIC_KEY_PATH}")).unwrap();
+        api.stub = Some(transport);
+        api
+    }
+
+    /// Obtain a short-lived partner bearer, register the domain, then read
+    /// back the key Tesla holds for it and require it to be `expected`, the
+    /// Hub's own. Every send asks the Fleet gate independently; no retry or
+    /// token is retained.
     pub async fn register(
         &self,
         domain: &str,
         credentials: PartnerCredentials,
+        expected: &keys::CommandPublicKey,
     ) -> Result<Registration, PartnerError> {
         let domain = validate_domain(domain)?;
         // The URL form encoder must own its output. Keep that allocation
@@ -175,7 +204,21 @@ impl PartnerApi {
             .build()
             .map_err(|_| PartnerError::InvalidInput)?;
         let (status, bytes) = self.send(request, PermitKind::Request).await?;
-        registration_result(status, &bytes, &domain)
+        let registration = registration_result(status, &bytes, &domain)?;
+        // Tesla fetched the key file at the domain when it registered it (or
+        // earlier); what it holds now must be this Hub's key.
+        let mut url = self.public_key_url.clone();
+        url.query_pairs_mut().append_pair("domain", &domain);
+        let request = self
+            .client
+            .get(url)
+            .header("accept", "application/json")
+            .bearer_auth(token.expose())
+            .build()
+            .map_err(|_| PartnerError::InvalidInput)?;
+        let (status, bytes) = self.send(request, PermitKind::Request).await?;
+        registered_key_result(status, &bytes, expected)?;
+        Ok(registration)
     }
 
     async fn send(
@@ -233,7 +276,9 @@ struct PartnerToken {
     expires_in: u64,
 }
 
-fn validate_domain(domain: &str) -> Result<String, PartnerError> {
+/// The domain as it is registered: a lowercase host name, no scheme, port,
+/// path, trailing dot or IP address.
+pub fn validate_domain(domain: &str) -> Result<String, PartnerError> {
     if domain.len() > 253
         || !domain.is_ascii()
         || !domain.contains('.')
@@ -276,6 +321,37 @@ async fn read_body(response: Response) -> Result<Zeroizing<Vec<u8>>, PartnerErro
         body.extend_from_slice(&chunk);
     }
     Ok(body)
+}
+
+/// Tesla's answer to the registered key: `{"response":{"public_key":"04.."}}`
+/// with the uncompressed point in hex. A domain with no key is unreachable;
+/// a different key is a mismatch.
+fn registered_key_result(
+    status: u16,
+    bytes: &[u8],
+    expected: &keys::CommandPublicKey,
+) -> Result<(), PartnerError> {
+    match status {
+        200..=299 => {}
+        404 => return Err(PartnerError::PublicKeyUnreachable),
+        401 | 403 => return Err(PartnerError::Authentication),
+        402 | 429 => return Err(PartnerError::OverLimit),
+        _ => return Err(PartnerError::Registration),
+    }
+    let value: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|_| PartnerError::InvalidResponse)?;
+    let held = value
+        .get("response")
+        .and_then(|response| response.get("public_key"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or(PartnerError::InvalidResponse)?;
+    if held.is_empty() || !held.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(PartnerError::InvalidResponse);
+    }
+    if !held.eq_ignore_ascii_case(&expected.public_point_hex()) {
+        return Err(PartnerError::PublicKeyMismatch);
+    }
+    Ok(())
 }
 
 fn registration_result(
@@ -353,6 +429,23 @@ mod tests {
         r#"{"access_token":"synthetic-partner-bearer","token_type":"Bearer","expires_in":3600}"#;
     const REGISTERED: &str = r#"{"response":{"domain":"synthetic.example.test"}}"#;
 
+    /// The synthetic Hub key's point, 0x04 then X and Y.
+    fn point() -> Vec<u8> {
+        let mut point = vec![0x04];
+        point.extend((1..=64).map(|n: u8| n.wrapping_mul(37)));
+        point
+    }
+
+    fn hub_key() -> keys::CommandPublicKey {
+        keys::CommandPublicKey::synthetic_for_test(point())
+    }
+
+    /// Tesla's answer holding `point` for the domain.
+    fn held(point: &[u8]) -> String {
+        let hex: String = point.iter().map(|byte| format!("{byte:02X}")).collect();
+        format!(r#"{{"response":{{"public_key":"{hex}"}}}}"#)
+    }
+
     fn credentials() -> PartnerCredentials {
         PartnerCredentials::new(
             FleetClientId::parse("synthetic-client").unwrap(),
@@ -369,18 +462,7 @@ mod tests {
     }
 
     fn api(transport: InProcessTransport) -> PartnerApi {
-        let mut api = PartnerApi::new(
-            FleetRegion::EuropeMiddleEastAndAfrica,
-            Duration::from_secs(1),
-        )
-        .unwrap();
-        let id = uuid::Uuid::new_v4().simple().to_string();
-        api.auth_url =
-            Url::parse(&format!("https://auth-{id}.example.test/oauth2/v3/token")).unwrap();
-        api.registration_url =
-            Url::parse(&format!("https://fleet-{id}.example.test{REGISTER_PATH}")).unwrap();
-        api.stub = Some(transport);
-        api
+        PartnerApi::stubbed_for_test(FleetRegion::EuropeMiddleEastAndAfrica, transport)
     }
 
     fn scripted(
@@ -391,8 +473,12 @@ mod tests {
     ) -> (PartnerApi, Arc<AtomicUsize>) {
         let calls = Arc::new(AtomicUsize::new(0));
         let count = calls.clone();
-        let bodies = [auth_body.to_owned(), registration_body.to_owned()];
-        let statuses = [auth_status, registration_status];
+        let bodies = [
+            auth_body.to_owned(),
+            registration_body.to_owned(),
+            held(&point()),
+        ];
+        let statuses = [auth_status, registration_status, 200];
         let api = api(InProcessTransport::new(move |_| {
             let n = count.fetch_add(1, Ordering::SeqCst);
             let result = answer(statuses[n], &bodies[n]);
@@ -412,7 +498,9 @@ mod tests {
             let calls = count.clone();
             let mut client = api(InProcessTransport::new(move |request| {
                 let n = calls.fetch_add(1, Ordering::SeqCst);
-                assert_eq!(request.method(), http::Method::POST);
+                if n < 2 {
+                    assert_eq!(request.method(), http::Method::POST);
+                }
                 let response = if n == 0 {
                     assert!(request.uri().path() == "/oauth2/v3/token");
                     assert!(
@@ -429,6 +517,16 @@ mod tests {
                     assert!(form["audience"] == region.base_url().trim_end_matches('/'));
                     assert!(form["scope"] == "openid vehicle_device_data");
                     answer(200, TOKEN)
+                } else if n == 2 {
+                    assert_eq!(request.method(), http::Method::GET);
+                    assert!(request.uri().path() == PUBLIC_KEY_PATH);
+                    assert!(request.uri().query() == Some("domain=synthetic.example.test"));
+                    assert!(
+                        request.headers().get("authorization").unwrap()
+                            == "Bearer synthetic-partner-bearer"
+                    );
+                    assert!(request.body().is_empty());
+                    answer(200, &held(&point()))
                 } else {
                     assert!(request.uri().path() == REGISTER_PATH);
                     assert!(
@@ -448,11 +546,11 @@ mod tests {
             client.region = region;
             assert_eq!(
                 client
-                    .register("SYNTHETIC.EXAMPLE.TEST", credentials())
+                    .register("SYNTHETIC.EXAMPLE.TEST", credentials(), &hub_key())
                     .await,
                 Ok(Registration::Registered)
             );
-            assert_eq!(count.load(Ordering::SeqCst), 2);
+            assert_eq!(count.load(Ordering::SeqCst), 3);
         }
     }
 
@@ -481,13 +579,14 @@ mod tests {
             ),
         ] {
             let (client, count) = scripted(200, TOKEN, status, body);
+            let sends = if expected.is_ok() { 3 } else { 2 };
             assert_eq!(
                 client
-                    .register("synthetic.example.test", credentials())
+                    .register("synthetic.example.test", credentials(), &hub_key())
                     .await,
                 expected
             );
-            assert_eq!(count.load(Ordering::SeqCst), 2);
+            assert_eq!(count.load(Ordering::SeqCst), sends);
         }
     }
 
@@ -529,7 +628,7 @@ mod tests {
         ] {
             let (client, _) = scripted(200, TOKEN, status, body);
             let error = client
-                .register("synthetic.example.test", credentials())
+                .register("synthetic.example.test", credentials(), &hub_key())
                 .await
                 .unwrap_err();
             assert_eq!(error, expected);
@@ -571,7 +670,7 @@ mod tests {
             let (client, count) = scripted(status, body, 200, REGISTERED);
             assert_eq!(
                 client
-                    .register("synthetic.example.test", credentials())
+                    .register("synthetic.example.test", credentials(), &hub_key())
                     .await,
                 Err(expected)
             );
@@ -593,7 +692,7 @@ mod tests {
             "synthetic.example.test.",
         ] {
             assert_eq!(
-                client.register(domain, credentials()).await,
+                client.register(domain, credentials(), &hub_key()).await,
                 Err(PartnerError::InvalidInput)
             );
         }
@@ -626,7 +725,7 @@ mod tests {
             let (client, count) = scripted(200, TOKEN, status, body);
             assert!(
                 client
-                    .register("synthetic.example.test", credentials())
+                    .register("synthetic.example.test", credentials(), &hub_key())
                     .await
                     .is_err()
             );
@@ -641,7 +740,7 @@ mod tests {
             };
             assert_eq!(
                 client
-                    .register("synthetic.example.test", credentials())
+                    .register("synthetic.example.test", credentials(), &hub_key())
                     .await,
                 Err(PartnerError::InvalidResponse)
             );
@@ -656,7 +755,7 @@ mod tests {
         let _route = window.route(client.auth_url.as_str());
         assert_eq!(
             client
-                .register("synthetic.example.test", credentials())
+                .register("synthetic.example.test", credentials(), &hub_key())
                 .await,
             Err(PartnerError::WindowClosed)
         );
@@ -670,7 +769,7 @@ mod tests {
         let _route = window.route(client.registration_url.as_str());
         assert_eq!(
             client
-                .register("synthetic.example.test", credentials())
+                .register("synthetic.example.test", credentials(), &hub_key())
                 .await,
             Err(PartnerError::WindowClosed)
         );
@@ -687,7 +786,7 @@ mod tests {
         }));
         assert_eq!(
             client
-                .register("synthetic.example.test", credentials())
+                .register("synthetic.example.test", credentials(), &hub_key())
                 .await,
             Err(PartnerError::Transport)
         );
@@ -699,15 +798,15 @@ mod tests {
         let client = PartnerApi::new(FleetRegion::China, Duration::from_secs(1)).unwrap();
         assert_eq!(
             client
-                .register("synthetic.example.test", credentials())
+                .register("synthetic.example.test", credentials(), &hub_key())
                 .await,
             Err(PartnerError::Transport)
         );
     }
 
     #[tokio::test(start_paused = true)]
-    async fn fleet_partner_times_out_an_unanswered_auth_or_registration() {
-        for stall_at in [0, 1] {
+    async fn fleet_partner_times_out_an_unanswered_auth_registration_or_key_read() {
+        for stall_at in [0, 1, 2] {
             let count = Arc::new(AtomicUsize::new(0));
             let calls = count.clone();
             let client = api(InProcessTransport::new(move |_| {
@@ -715,18 +814,95 @@ mod tests {
                 async move {
                     if n == stall_at {
                         std::future::pending().await
-                    } else {
+                    } else if n == 0 {
                         answer(200, TOKEN)
+                    } else {
+                        answer(200, REGISTERED)
                     }
                 }
             }));
             assert_eq!(
                 client
-                    .register("synthetic.example.test", credentials())
+                    .register("synthetic.example.test", credentials(), &hub_key())
                     .await,
                 Err(PartnerError::Timeout)
             );
             assert_eq!(count.load(Ordering::SeqCst), stall_at + 1);
         }
+    }
+
+    /// The key Tesla holds for the domain must be the Hub's own: a missing
+    /// key file is unreachable, another key is a mismatch, and the answer is
+    /// never echoed. An already registered domain is checked the same way.
+    #[tokio::test]
+    async fn fleet_partner_requires_the_registered_key_to_be_the_hubs() {
+        const ALREADY: &str = r#"{"error":"already_registered"}"#;
+        let mut other = point();
+        other[64] ^= 1;
+        let echo = || "synthetic-sensitive-echo".to_owned();
+        for (registration, status, body, expected) in [
+            (REGISTERED, 200, held(&point()), Ok(Registration::Registered)),
+            (
+                ALREADY,
+                200,
+                held(&point()).to_ascii_lowercase(),
+                Ok(Registration::AlreadyRegistered),
+            ),
+            (REGISTERED, 200, held(&other), Err(PartnerError::PublicKeyMismatch)),
+            (ALREADY, 200, held(&other), Err(PartnerError::PublicKeyMismatch)),
+            (REGISTERED, 404, echo(), Err(PartnerError::PublicKeyUnreachable)),
+            (
+                REGISTERED,
+                200,
+                r#"{"response":{"public_key":"synthetic-sensitive-echo"}}"#.to_owned(),
+                Err(PartnerError::InvalidResponse),
+            ),
+            (
+                REGISTERED,
+                200,
+                r#"{"response":{}}"#.to_owned(),
+                Err(PartnerError::InvalidResponse),
+            ),
+            (REGISTERED, 401, echo(), Err(PartnerError::Authentication)),
+            (REGISTERED, 500, echo(), Err(PartnerError::Registration)),
+        ] {
+            let count = Arc::new(AtomicUsize::new(0));
+            let calls = count.clone();
+            let registration_status = if registration == REGISTERED { 200 } else { 409 };
+            let client = api(InProcessTransport::new(move |_| {
+                let result = match calls.fetch_add(1, Ordering::SeqCst) {
+                    0 => answer(200, TOKEN),
+                    1 => answer(registration_status, registration),
+                    _ => answer(status, &body),
+                };
+                async { result }
+            }));
+            let result = client
+                .register("synthetic.example.test", credentials(), &hub_key())
+                .await;
+            assert_eq!(result, expected);
+            assert!(!format!("{result:?}").contains("synthetic-sensitive-echo"));
+            assert_eq!(count.load(Ordering::SeqCst), 3);
+        }
+    }
+
+    #[tokio::test]
+    async fn fleet_partner_asks_gate_again_before_the_key_read() {
+        let (mut client, count) = scripted(200, TOKEN, 200, REGISTERED);
+        // The test gate routes by host and port: give the key read its own.
+        client.public_key_url = Url::parse(&format!(
+            "https://key-{}.example.test{PUBLIC_KEY_PATH}",
+            uuid::Uuid::new_v4().simple()
+        ))
+        .unwrap();
+        let window = egress::test_support::TestWindow::closed();
+        let _route = window.route(client.public_key_url.as_str());
+        assert_eq!(
+            client
+                .register("synthetic.example.test", credentials(), &hub_key())
+                .await,
+            Err(PartnerError::WindowClosed)
+        );
+        assert_eq!(count.load(Ordering::SeqCst), 2);
     }
 }

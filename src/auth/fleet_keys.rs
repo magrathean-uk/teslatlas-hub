@@ -18,11 +18,36 @@ const LOCK_NAME: &str = "fleet-command-key.lock";
 const MAX_KEY_BYTES: u64 = 4096;
 
 /// Public export only. The private key never leaves `data_dir/secrets`.
-pub struct CommandPublicKey(String);
+pub struct CommandPublicKey {
+    pem: String,
+    /// The uncompressed P-256 point, as Tesla reports a registered key.
+    point: Vec<u8>,
+}
 
 impl CommandPublicKey {
+    fn of(key: &rcgen::KeyPair) -> Self {
+        Self {
+            pem: key.public_key_pem(),
+            point: key.public_key_raw().to_vec(),
+        }
+    }
+
     pub fn public_pem(&self) -> &str {
-        &self.0
+        &self.pem
+    }
+
+    /// The public point as lowercase hex, the form Tesla's partner
+    /// `public_key` answer uses.
+    pub fn public_point_hex(&self) -> String {
+        self.point.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn synthetic_for_test(point: Vec<u8>) -> Self {
+        Self {
+            pem: String::new(),
+            point,
+        }
     }
 }
 
@@ -106,7 +131,7 @@ fn read_key(file: File) -> Result<CommandPublicKey, FleetKeyError> {
     if key.algorithm() != &rcgen::PKCS_ECDSA_P256_SHA256 {
         return Err(FleetKeyError::Invalid);
     }
-    Ok(CommandPublicKey(key.public_key_pem()))
+    Ok(CommandPublicKey::of(&key))
 }
 
 fn create_key(directory: &PrivateDirectory) -> Result<CommandPublicKey, FleetKeyError> {
@@ -124,7 +149,7 @@ fn create_key(directory: &PrivateDirectory) -> Result<CommandPublicKey, FleetKey
         directory
             .durable_sync()
             .map_err(|_| FleetKeyError::Storage)?;
-        Ok(CommandPublicKey(key.public_key_pem()))
+        Ok(CommandPublicKey::of(&key))
     })();
     if result.is_err() {
         let _ = directory.remove(KEY_NAME);
@@ -154,6 +179,16 @@ mod tests {
         let key = rcgen::KeyPair::from_pem(&pem).expect("parse test private key");
         assert_eq!(key.algorithm(), &rcgen::PKCS_ECDSA_P256_SHA256);
         assert!(key.public_key_pem() == first.public_pem());
+        // The uncompressed point Tesla reports: 0x04, then X and Y.
+        let hex = first.public_point_hex();
+        assert!(hex.len() == 130 && hex.starts_with("04") && hex == second.public_point_hex());
+        assert!(
+            hex == key
+                .public_key_raw()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        );
         assert!(
             crate::storage::data_recovery::CAR_CONTROL_SECRET_FILES
                 .contains(&"fleet-command-key.pem")
