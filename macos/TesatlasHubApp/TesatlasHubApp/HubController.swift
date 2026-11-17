@@ -8417,6 +8417,19 @@ struct HubFleetConsentFigures: Equatable {
     }
 }
 
+/// A failed Fleet preparation that left the Hub stopped (R1): the configuration on disk could
+/// poll without the owner's consent, so nothing started it again. The text is the service's or
+/// the system's own, followed by what the app did; the route offers to try the preparation again.
+struct HubFleetPreparationLeftStopped: LocalizedError {
+    let underlying: Error
+
+    var errorDescription: String? {
+        HubL10n.format("hub.fleetSetup.prepareLeftStopped",
+            fallback: "%1$@ Hub is left stopped, so it does not poll Tesla before you accept the cost. Try the preparation again.",
+            arguments: [underlying.localizedDescription])
+    }
+}
+
 /// What the Fleet preparation found. `serviceStopped`: the installed service is not loaded; the
 /// Fleet route starts it through the app's start action before it continues.
 enum HubFleetPreparation: Equatable {
@@ -8809,10 +8822,25 @@ extension HubController {
             }
             return
         }
+        // R1: a failed preparation runs the typed recovery (which starts the Hub again) only when
+        // the configuration then on disk cannot poll without the owner's consent: a matching
+        // consent record, or a Fleet configuration with `interval_seconds = 0` (another provider
+        // is restarted as before). Otherwise the restart owed by the pause is dropped and the Hub
+        // is left stopped, with the service's or the system's own text and a way to try again.
+        let recoverOrStayStopped: (Error) -> Void = { [self] error in
+            if consented || fleetConfigurationOnDiskCannotPoll() {
+                recoverThenFail(op, error, finish: failed)
+                return
+            }
+            op.releaseRestartRecord()
+            HubAppLog.shared.record("fleet_setup.prepare_left_stopped", category: "account", level: "ERROR",
+                                    fields: ["error_code": HubAppLog.errorCode(error)])
+            finish(.failure(HubFleetPreparationLeftStopped(underlying: error)))
+        }
         op.phase("pause")
         op.service(["service", "pause"]) { [self] pauseResult in
             if case let .failure(error) = pauseResult {
-                recoverThenFail(op, error, finish: failed)
+                recoverOrStayStopped(error)
                 return
             }
             do {
@@ -8821,23 +8849,34 @@ extension HubController {
             } catch {
                 do {
                     try restoreConfig(originalConfig)
-                    recoverThenFail(op, error, finish: failed)
+                    recoverOrStayStopped(error)
                 } catch let recoveryError {
-                    recoverThenFail(op, HubActionError.commandFailed(HubL10n.format(
+                    recoverOrStayStopped(HubActionError.commandFailed(HubL10n.format(
                         "hub.HubController.1966.689",
                         fallback: "Fleet setup failed: %1$@ Hub configuration recovery also failed: %2$@",
-                        arguments: [error.localizedDescription, recoveryError.localizedDescription])), finish: failed)
+                        arguments: [error.localizedDescription, recoveryError.localizedDescription])))
                 }
                 return
             }
             op.phase("start")
-            op.service(["service", "start"]) { [self] startResult in
+            op.service(["service", "start"]) { startResult in
                 switch startResult {
                 case .success: finish(.success(.ready))
-                case let .failure(error): recoverThenFail(op, error, finish: failed)
+                case let .failure(error): recoverOrStayStopped(error)
                 }
             }
         }
+    }
+
+    /// Whether the configuration now on disk cannot poll the Fleet API: no configuration,
+    /// another provider, or a Fleet configuration whose `interval_seconds` is exactly 0. A
+    /// configuration that cannot be read, or a Fleet one without a readable 0, can.
+    private func fleetConfigurationOnDiskCannotPoll() -> Bool {
+        let content: String?
+        do { content = try readConfigIfPresent() } catch { return false }
+        guard let content else { return true }
+        guard Self.collectorProvider(in: content) == "fleet" else { return true }
+        return Self.collectorIntervalSeconds(in: content) == 0
     }
 
     /// Saves the Hub's public key where the owner chose (`setup-fleet public-key --output`).

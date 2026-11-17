@@ -396,6 +396,33 @@ final class FleetSignInFlowTests: XCTestCase {
         }
     }
 
+    /// R1: a failed preparation of an unconsented Fleet Hub with a positive interval leaves Hub
+    /// stopped, shows the service's text and offers only to try the preparation again.
+    func testAFailedPreparationLeavesHubStoppedAndOffersToTryAgain() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, interval: 300, pauseFails: "Fixed text the service wrote for its pause.")
+        defer { fixture.tearDown() }
+        let window = fixture.window
+        try fixture.waitUntil { window.fleetPreparationFailedForTests != nil && !window.isBusyForTests }
+        let shown = try XCTUnwrap(window.fleetPreparationFailedForTests)
+        XCTAssertTrue(shown.hasPrefix("Fixed text the service wrote for its pause."), shown)
+        XCTAssertTrue(shown.contains("Hub is left stopped"), shown)
+        XCTAssertNotNil(fixture.view(identifier: "onboarding.fleet.prepare-failed"))
+        XCTAssertEqual(fixture.service.calls, ["service pause"])
+        XCTAssertEqual(fixture.service.recoveries, 0, "nothing starts Hub with interval 300")
+        XCTAssertTrue(fixture.configText.contains("interval_seconds = 300"))
+        XCTAssertEqual(window.continueTitleForTests, "Try Again")
+        XCTAssertTrue(window.continueEnabledForTests)
+        XCTAssertEqual(fixture.runner.fleetVerbs, [])
+
+        window.continueForTests()
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        XCTAssertNil(window.fleetPreparationFailedForTests)
+        XCTAssertEqual(fixture.service.calls, ["service pause", "service pause", "service start"])
+        XCTAssertEqual(fixture.service.recoveries, 0)
+        XCTAssertTrue(fixture.configText.contains("interval_seconds = 0"))
+        XCTAssertEqual(fixture.runner.fleetVerbs, [])
+    }
+
     func testAMatchingConsentRecordKeepsTheIntervalOfASignInAfterASignOut() throws {
         let fixture = try Fixture(state: .awaitingSignIn, interval: 300, consented: true)
         defer { fixture.tearDown() }
@@ -1173,6 +1200,10 @@ private final class FleetFlowService: HubServiceControlling {
     var loaded: HubServiceLoadState = .loaded
     /// Answers for `service start`, first to last; then success.
     var startResults: [Result<String, Error>] = []
+    /// Answers for `service pause`, first to last; then success.
+    var pauseResults: [Result<String, Error>] = []
+    /// Typed recoveries (a restart after a failed pause site), counted apart from `calls`.
+    private(set) var recoveries = 0
     func loadedState(completion: @escaping (HubServiceLoadState) -> Void) { completion(loaded) }
     func run(arguments: [String], owner: HubLifecycleToken,
              completion: @escaping (Result<String, Error>) -> Void) {
@@ -1181,10 +1212,15 @@ private final class FleetFlowService: HubServiceControlling {
             completion(startResults.removeFirst())
             return
         }
+        if arguments.last == "pause", !pauseResults.isEmpty {
+            completion(pauseResults.removeFirst())
+            return
+        }
         if arguments.last == "start" || arguments.last == "pause" { loaded = arguments.last == "start" ? .loaded : .unloaded }
         completion(.success(""))
     }
     func recoverAfterPause(owner: HubLifecycleToken, completion: @escaping (Result<String, Error>) -> Void) {
+        recoveries += 1
         completion(.success(""))
     }
     func releaseRestartRecord(owner: HubLifecycleToken) {}
@@ -1214,7 +1250,7 @@ private final class Fixture {
     /// A fresh Mac, or a Fleet Hub left in `state` by an earlier run of the app. `config` is
     /// appended to that Hub's configuration.
     init(state: HubFleetSetupState? = nil, config: String = "", interval: Int = 0, consented: Bool = false,
-         registered: Bool = true, serviceStopped: Bool = false) throws {
+         registered: Bool = true, serviceStopped: Bool = false, pauseFails: String? = nil) throws {
         home = HubTestScratch.directory.appendingPathComponent("tesatlas-fleet-flow-\(UUID().uuidString)", isDirectory: true)
         let folder = home.appendingPathComponent("Library/Application Support/Tesatlas Hub", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -1222,6 +1258,7 @@ private final class Fixture {
         let runner = FleetFlowRunner()
         let service = FleetFlowService()
         if serviceStopped { service.loaded = .unloaded }
+        if let pauseFails { service.pauseResults = [.failure(HubActionError.commandFailed(pauseFails))] }
         let controller = HubController(commandRunner: runner, serviceRunner: service, homeDirectory: home,
                                        serviceInstalledOverride: state != nil)
         if let state {

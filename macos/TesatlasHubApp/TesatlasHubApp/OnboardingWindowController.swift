@@ -304,6 +304,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var fleetNotice: String?
     /// `preflight` named a set-up state this app does not know: shown, and no next step offered.
     private var fleetStateUnknown: String?
+    /// The Fleet preparation failed (R1): its text is shown and Continue offers to try it again.
+    private var fleetPreparationFailed: String?
     /// Where an accepted consent page continues: the sign-in on a first set-up, or the step a
     /// waiting state names on a return.
     private var fleetResumeAfterConsent: HubFleetStep = .signIn
@@ -643,6 +645,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         fleetResumeAfterConsent = .signIn
         fleetNotice = nil
         fleetStateUnknown = nil
+        fleetPreparationFailed = nil
         fleetPublicKey = nil
         sourceEncryptionKey.stringValue = ""
         render()
@@ -1978,6 +1981,13 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         errorFromWindowCheck = false
         signInIdle = false
         if state.route == .fleet { endFleetSignIn() }
+        if state.route == .fleet, fleetPreparationFailed != nil {
+            // Back from a failed preparation leaves the route; entering it again prepares again.
+            fleetPreparationFailed = nil
+            state.back()
+            render()
+            return
+        }
         if state.route == .fleet, let previous = fleetStep.previous {
             fleetStep = previous
             fleetNotice = nil
@@ -3395,6 +3405,7 @@ extension OnboardingWindowController {
     }
 
     fileprivate var fleetContinueTitle: String {
+        if fleetPreparationFailed != nil { return HubL10n.text("hub.fleetSetup.tryAgain", fallback: "Try Again") }
         switch fleetStep {
         case .prerequisites, .details:
             return HubL10n.text("hub.OnboardingWindowController.168.1852", fallback: "Continue")
@@ -3410,6 +3421,7 @@ extension OnboardingWindowController {
     }
 
     fileprivate var fleetContinueEnabled: Bool {
+        if fleetPreparationFailed != nil { return true }
         guard fleetStateUnknown == nil else { return false }
         switch fleetStep {
         case .prerequisites: return fleetChecklist.allSatisfy { $0.state == .on }
@@ -3426,6 +3438,7 @@ extension OnboardingWindowController {
     }
 
     fileprivate var fleetKeyViews: [NSView] {
+        if fleetPreparationFailed != nil { return [] }
         switch fleetStep {
         case .prerequisites: return fleetChecklist
         case .details: return [fleetRegion, fleetClientID, fleetRedirectURI, fleetDomain]
@@ -3447,6 +3460,18 @@ extension OnboardingWindowController {
 
     func fleetBody() -> NSView {
         var views: [NSView] = []
+        if let fleetPreparationFailed {
+            // Only the failure and its Try Again are offered until the preparation succeeds.
+            views.append(noticeView(symbol: "exclamationmark.triangle.fill", tone: .warning, title: nil,
+                                    message: fleetPreparationFailed, identifier: "onboarding.fleet.prepare-failed"))
+            let stack = NSStackView(views: views)
+            stack.orientation = .vertical
+            stack.alignment = .leading
+            stack.spacing = 14
+            stack.identifier = NSUserInterfaceItemIdentifier("onboarding.fleet")
+            for view in views { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
+            return stack
+        }
         if let fleetStateUnknown {
             views.append(noticeView(symbol: "exclamationmark.triangle.fill", tone: .warning, title: nil,
                                     message: fleetStateUnknown, identifier: "onboarding.fleet.state-unknown"))
@@ -3671,6 +3696,13 @@ extension OnboardingWindowController {
     fileprivate func fleetContinue() {
         // A step whose Continue is off offers nothing: no command starts from it.
         guard fleetContinueEnabled else { return }
+        if fleetPreparationFailed != nil {
+            fleetPreparationFailed = nil
+            errorMessage = nil
+            render()
+            refreshFleetSetupState()
+            return
+        }
         switch fleetStep {
         case .prerequisites:
             errorMessage = nil
@@ -4089,7 +4121,12 @@ extension OnboardingWindowController {
             self.setBusy(false)
             switch prepared {
             case let .failure(error):
-                self.fleetFailed(error, readsState: false)
+                // The Hub was not prepared: nothing of the route is offered but trying again.
+                self.errorMessage = nil
+                self.fleetPreparationFailed = error.localizedDescription
+                self.render()
+                HubAccessibility.announce("Setup failed: \(error.localizedDescription)",
+                                          from: self.onboardingContainer.map { $0 as Any } ?? self)
             case .success(.serviceStopped):
                 self.fleetStartService { [weak self] in self?.readFleetSetupState(reading) }
             case .success(.ready):
@@ -4155,6 +4192,7 @@ extension OnboardingWindowController {
     var fleetStepForTests: HubFleetStep { fleetStep }
     var fleetNoticeForTests: String? { fleetNotice }
     var fleetStateUnknownForTests: String? { fleetStateUnknown }
+    var fleetPreparationFailedForTests: String? { fleetPreparationFailed }
     var errorMessageForTests: String? { errorMessage }
     var fleetSecretForTests: String { fleetClientSecret.stringValue }
     var fleetSignInPendingForTests: Bool { fleetSignInSecret != nil }

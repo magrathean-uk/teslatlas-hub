@@ -170,6 +170,109 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         XCTAssertEqual(Array(events.values.prefix(3)), ["service:pause", "service:start", "service:recover"])
     }
 
+    /// R1: a Fleet Hub with a positive interval and no consent record is never started again by
+    /// a failed preparation. A failed pause drops the restart it owed and leaves the Hub stopped.
+    func testAFailedPauseOfAnUnconsentedFleetHubWithAPositiveIntervalDoesNotRestart() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let original = try writeFleetConfig(in: home, interval: 300)
+        let events = FleetRecoveryEvents()
+        let service = FleetRecoveryService(events: events, state: .loaded,
+                                           stopResult: .failure(HubActionError.commandFailed("pause failed")))
+        let controller = HubController(commandRunner: FleetRecoveryRunner(events: events, result: .success("{}")),
+                                       serviceRunner: service,
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
+        let error = try prepareFailure(controller)
+        XCTAssertTrue(error is HubFleetPreparationLeftStopped)
+        XCTAssertTrue(error.localizedDescription.hasPrefix("pause failed"), error.localizedDescription)
+        XCTAssertTrue(error.localizedDescription.contains("left stopped"), error.localizedDescription)
+        XCTAssertEqual(try configContents(in: home), original)
+        XCTAssertEqual(events.values, ["service:pause", "service:release"])
+        XCTAssertFalse(events.values.contains { $0 == "service:recover" || $0 == "service:start" })
+    }
+
+    /// R1: a failed write of the configuration restores the positive interval, so the Hub is left
+    /// stopped instead of being started again with it.
+    func testAFailedWriteOfAnUnconsentedFleetHubWithAPositiveIntervalDoesNotRestart() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let original = try writeFleetConfigWhoseWriteFails(in: home, interval: 300)
+        let events = FleetRecoveryEvents()
+        let controller = HubController(commandRunner: FleetRecoveryRunner(events: events, result: .success("{}")),
+                                       serviceRunner: FleetRecoveryService(events: events, state: .loaded),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
+        let error = try prepareFailure(controller)
+        XCTAssertTrue(error is HubFleetPreparationLeftStopped)
+        XCTAssertEqual(try configContents(in: home), original)
+        XCTAssertEqual(events.values, ["service:pause", "service:release"])
+    }
+
+    /// With a matching consent record a failed pause recovers as before. (A Fleet Hub with a
+    /// matching record is not paused at all; the record here matches before a switch to Fleet.)
+    func testAFailedPauseWithAMatchingConsentRecordRecovers() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeOriginalConfig(in: home)
+        let events = FleetRecoveryEvents()
+        let service = FleetRecoveryService(events: events, state: .loaded,
+                                           stopResult: .failure(HubActionError.commandFailed("pause failed")))
+        let controller = HubController(commandRunner: FleetRecoveryRunner(events: events, result: .success("{}")),
+                                       serviceRunner: service,
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
+        try controller.recordFleetConsent(.serviceDefaults)
+        XCTAssertTrue(controller.fleetConsentInEffect)
+        let error = try prepareFailure(controller)
+        XCTAssertFalse(error is HubFleetPreparationLeftStopped)
+        XCTAssertEqual(events.values, ["service:pause", "service:recover"])
+    }
+
+    /// An unconsented Fleet Hub with a positive interval whose interval 0 was written: a failed
+    /// Start recovers as before, with interval 0 on disk.
+    func testAFailedStartWithIntervalZeroOnDiskRecovers() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try writeFleetConfig(in: home, interval: 300)
+        let events = FleetRecoveryEvents()
+        let service = FleetRecoveryService(events: events, state: .loaded,
+                                           startResult: .failure(HubActionError.commandFailed("start failed")))
+        let controller = HubController(commandRunner: FleetRecoveryRunner(events: events, result: .success("{}")),
+                                       serviceRunner: service,
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
+        let error = try prepareFailure(controller)
+        XCTAssertFalse(error is HubFleetPreparationLeftStopped)
+        XCTAssertTrue(try configContents(in: home).contains("interval_seconds = 0"))
+        XCTAssertEqual(Array(events.values.prefix(3)), ["service:pause", "service:start", "service:recover"])
+    }
+
+    private func prepareFailure(_ controller: HubController) throws -> Error {
+        let finished = expectation(description: "preparation failed")
+        var failure: Error?
+        controller.prepareFleetHub { result in
+            if case let .failure(error) = result { failure = error }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+        return try XCTUnwrap(failure, "expected the preparation to fail")
+    }
+
+    /// A Fleet configuration beside a regular file where Hub's data folder belongs: reading the
+    /// configuration works, and the preparation's write fails before the configuration changes.
+    @discardableResult
+    private func writeFleetConfigWhoseWriteFails(in home: URL, interval: Int) throws -> String {
+        let original = try writeFleetConfig(in: home, interval: interval)
+        let folder = configURL(in: home).deletingLastPathComponent()
+        try Data("x".utf8).write(to: folder.appendingPathComponent("data"))
+        return original
+    }
+
     private func prepare(_ controller: HubController) throws {
         let finished = expectation(description: "prepared")
         controller.prepareFleetHub { result in
