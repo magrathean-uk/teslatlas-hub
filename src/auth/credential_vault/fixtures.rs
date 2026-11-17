@@ -123,12 +123,19 @@ pub(crate) fn seed_own_fleet_pair(data: &Path, access: &str, refresh: &str) -> U
 /// only writer of an admitted Fleet pair besides its refresh successor.
 #[cfg(debug_assertions)]
 pub(crate) fn seed_own_fleet_grant(vault: &CredentialVault, access: &str, refresh: &str) -> Result<Uuid, CredentialStoreError> {
-    seed_own_fleet_grant_as(vault, access, refresh, "client-0001", crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800, None)
+    let session = vault.begin_sign_in(CredentialSlot::FleetApi)?;
+    let sent_at_s = (session.expires_at_ms - 600_000) / 1000;
+    let grant = RedeemedGrant::from_validated_redemption_at(session, Zeroizing::new(access.to_owned()), Zeroizing::new(refresh.to_owned()), 28_800,
+        Some("client-0001".into()), Some(crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica), sent_at_s)?;
+    vault.store_hub_grant(grant)?;
+    vault.stored_generation(CredentialSlot::FleetApi)?.ok_or(CredentialStoreError::SlotOccupied)
 }
 /// [`seed_own_fleet_grant`] with the application, region and lifetime of the
 /// grant, sent at `sent_at_s` (the sign-in's own time when `None`), so the
-/// stored schedule is `sent_at_s + expires_in` as for a real exchange.
-#[cfg(debug_assertions)]
+/// stored schedule is `sent_at_s + expires_in` as for a real exchange. Test
+/// builds only (`cfg(test)`, or the test-only `journey-doubles` feature for the
+/// binary's tests), M09-T11 B2: it stores a grant no exchange produced.
+#[cfg(any(test, feature = "journey-doubles"))]
 pub(crate) fn seed_own_fleet_grant_as(vault: &CredentialVault, access: &str, refresh: &str, client_id: &str, region: crate::fleet_api::FleetRegion,
     expires_in: u64, sent_at_s: Option<i64>) -> Result<Uuid, CredentialStoreError> {
     let session = vault.begin_sign_in(CredentialSlot::FleetApi)?;
@@ -140,8 +147,9 @@ pub(crate) fn seed_own_fleet_grant_as(vault: &CredentialVault, access: &str, ref
 }
 /// Stores Fleet set-up credentials as the Hub's own Fleet grant sent at `now`
 /// (M09-T11): the same tokens, application, region and schedule the retired
-/// supplied path wrote, through the only admitted Fleet writer.
-#[cfg(debug_assertions)]
+/// supplied path wrote, through the only admitted Fleet writer. Test builds
+/// only, as [`seed_own_fleet_grant_as`].
+#[cfg(any(test, feature = "journey-doubles"))]
 pub(crate) fn seed_own_fleet_credentials(vault: &CredentialVault, credentials: &crate::fleet_credentials::FleetSetupCredentials, now: SystemTime) -> Result<Uuid, CredentialStoreError> {
     let entry = credentials.credential_entry(now).map_err(|_| CredentialStoreError::InvalidOrigin)?;
     let sent_at_s = i64::try_from(now.duration_since(UNIX_EPOCH).map_err(|_| CredentialStoreError::InvalidOrigin)?.as_secs()).map_err(|_| CredentialStoreError::InvalidOrigin)?;
