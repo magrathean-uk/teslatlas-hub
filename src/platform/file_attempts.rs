@@ -10,7 +10,10 @@
 //!
 //! - the terrain cache root (`PrivateDirectory`): creating, writing (through the cache's
 //!   `write_counted`), syncing (file and directory), renaming and removing an entry, and
-//!   creating (`mkdirat`) or protecting (ACL clear, `fchmod`) a directory it opens;
+//!   creating (`mkdirat`) or protecting (ACL clear, `fchmod`) a directory it opens,
+//!   with a sync of the containing directory after each creation;
+//! - the store's new data-path components: creating each directory, including missing
+//!   ancestors, and syncing its containing directory;
 //! - the pack output (`sync/hub_pack`): the staged files and their SQLite writers, the
 //!   staging and content directories it creates, the final and temporary compressed
 //!   files, the removal of stale staging files with its directory sync, and the sync of
@@ -21,8 +24,8 @@
 //!
 //! Not counted: the resident control socket (the unlink, bind and chmod of its path, and
 //! the removal when it is dropped), the removal of packs by repair, import and the
-//! updates delivery, the publication of the schema-22 pack, the creation and tightening of
-//! the data directories when a store is opened, and credential recovery and the data
+//! updates delivery, the publication of the schema-22 pack, the tightening of
+//! existing data directories when a store is opened, and credential recovery and the data
 //! backup commands. On a platform without extended
 //! ACLs (everything but macOS) the ACL clear is a counted attempt that does nothing. A test
 //! reads the attempts under a directory before and after a boundary; a transient write

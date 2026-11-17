@@ -696,7 +696,7 @@ fn p3bf5_a_directory_sync_that_changes_nothing_moves_the_file_counter() {
 #[test]
 fn p3bf5_creating_and_tightening_a_directory_move_the_file_counter() {
     // Two missing components, each created (mkdirat) and then protected (ACL clear and
-    // fchmod): four attempts, recorded under the paths they were aimed at.
+    // fchmod), with a sync of each containing directory: six attempts.
     let base = tempdir().unwrap();
     let missing = base.path().join("missing").join("cache");
     let before = crate::platform::file_attempts::count_under(base.path());
@@ -704,7 +704,7 @@ fn p3bf5_creating_and_tightening_a_directory_move_the_file_counter() {
     let created = crate::platform::file_attempts::count_under(base.path()) - before;
     assert_eq!(
         created,
-        4,
+        6,
         "{:#?}",
         crate::platform::file_attempts::entries_under(base.path())
     );

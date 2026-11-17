@@ -18,6 +18,7 @@
 //! - Missing components are created one at a time with `mkdirat` and tightened
 //!   to `0700` with `fchmod` on the descriptor that was opened, never by path,
 //!   so nothing is created under an ancestor that failed the rules.
+//!   Each creation syncs its held containing directory before returning.
 //! - On macOS the mode bits are not the whole access rule: an extended ACL can
 //!   grant other users search, add_file or delete_child on a `0700` directory,
 //!   and a directory created below one with inheritable entries starts with
@@ -744,6 +745,11 @@ fn open_or_create(
         Err(Errno::EXIST) => false,
         Err(error) => return Err(io_error(path, error)),
     };
+    if created {
+        let parent_path = path.parent().ok_or(PrivateDirectoryError::InvalidPath)?;
+        crate::platform::file_attempts::note_directory_sync(parent_path);
+        fsync(parent).map_err(|error| io_error(parent_path, error))?;
+    }
     match open_child(parent, name, path)? {
         Some(child) => Ok((child, created)),
         None => Err(io_error(path, io::ErrorKind::NotFound)),
