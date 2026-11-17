@@ -200,7 +200,7 @@ fn fleet_pair(directory: &Path, store: &HubStore) -> Uuid {
     )
     .expect("fleet credentials");
     assert!(store.database_path().parent() == Some(directory), "fixture store path");
-    tesatlas_hub::auth::credential_sign_in::seed_fleet_pair_for_test(directory, &credentials).expect("Fleet entry")
+    tesatlas_hub::auth::credential_sign_in::seed_own_fleet_pair_for_test(directory, &credentials).expect("own Fleet grant")
 }
 
 fn jwt(exp: i64) -> String {
@@ -524,7 +524,6 @@ async fn doctor_cli_attention_succeeds_but_unresolved_refresh_fails() {
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     let (temporary, store) = private_hub();
     seed_car(&store);
@@ -532,6 +531,9 @@ async fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     let collector = "provider = 'fleet'\ninterval_seconds = 300";
     let config_path = write_config(temporary.path(), "config.toml", collector);
     let config = HubConfig::load(&config_path).expect("config");
+    // The fixture begins the refresh under its own collector lease, as the
+    // collector does, so it runs before the witnessed lease is written.
+    unresolved_refresh(&store, "fleet_api", generation);
     lease(
         &store,
         real_now_ms() - 1_000,
@@ -540,7 +542,6 @@ async fn fleet_unresolved_refresh_is_attention_not_service_failure() {
         "active",
     );
     account(&store, "fleet_polling", "collecting");
-    unresolved_refresh(&store, "fleet_api", generation);
     let before = refresh_image(&store);
     store
         .checkpoint_catalogue_for_immutable_read()
@@ -775,18 +776,9 @@ fn cadence_invalid_keeps_otherwise_eligible_serve_supervised() {
         );
         assert!(faulty.collector.cadence_violation().is_some());
         // Eligibility ignores the cadence, so both start a supervised
-        // collector; a stored Fleet row is refused at load (M02-T02 parks
-        // Fleet), so a Fleet Hub is never eligible.
-        assert_eq!(
-            collector_can_start(&store, &faulty).expect("eligibility"),
-            !fleet,
-            "fleet {fleet}"
-        );
-        assert_eq!(
-            collector_can_start(&store, &corrected).expect("eligibility"),
-            !fleet,
-            "fleet {fleet}"
-        );
+        // collector, Fleet (the Hub's own grant) as well as Legacy.
+        assert!(collector_can_start(&store, &faulty).expect("eligibility"), "fleet {fleet}");
+        assert!(collector_can_start(&store, &corrected).expect("eligibility"), "fleet {fleet}");
         // Collection off, no car, and no credentials stay ineligible.
         let off = load(
             temporary.path(),

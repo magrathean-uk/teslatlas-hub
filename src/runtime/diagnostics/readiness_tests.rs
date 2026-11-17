@@ -535,7 +535,6 @@ fn doctor_disabled_collection_suppresses_attention() {
 }
 
 #[test]
-#[ignore = "G-DIAGNOSTIC-FLEET-WITNESS (DEC-068 item 3): the doctor has no recorded Fleet scope and integrity witness yet"]
 fn cs_p1_fleet_diagnostics_ignores_retained_c5() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("store");
@@ -595,7 +594,7 @@ fn cs_p1_fleet_diagnostics_ignores_retained_c5() {
     assert!(!with_key.credentials.legacy.valid_for_collection);
     let connection = store.open().expect("fixture observer");
     let retained_envelope: Vec<u8> = connection.query_row("SELECT access_envelope FROM credential_pairs WHERE slot='owner_api'", [], |row| row.get(0)).expect("retained envelope");
-    connection.execute("UPDATE credential_pairs SET access_envelope=X'010203' WHERE slot='owner_api'", []).expect("damage retained slot");
+    connection.execute("UPDATE credential_pairs SET access_envelope=zeroblob(length(access_envelope)) WHERE slot='owner_api'", []).expect("damage retained slot");
     let without_key = inspect_hub(&store, &fleet_config).expect("report");
     assert_eq!(without_key.status, "ok", "{:?}", doctor_failed_checks(&without_key));
     let mut expected = serde_json::to_value(&with_key.credentials).expect("expected metadata");
@@ -620,7 +619,6 @@ fn cs_p1_fleet_diagnostics_ignores_retained_c5() {
 }
 
 #[test]
-#[ignore = "G-DIAGNOSTIC-FLEET-WITNESS (DEC-068 item 3): the doctor has no recorded Fleet scope and integrity witness yet"]
 fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("store");
@@ -923,11 +921,25 @@ fn cadence_doctor_retains_credentials_scopes_and_service_failures() {
         assert!(doctor_check(&missing, "collectorCadence").passed, "{provider}");
         assert!(missing.collector.cadence_error.is_some(), "{provider}");
     }
-    // Missing Fleet scopes remain a failure beside the cadence.
+    // A Fleet pair without the recorded scope witness (an unscoped pair an
+    // older Hub stored before the Hub's own Fleet grant) remains a failure
+    // beside the cadence.
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("store");
     doctor_seed_car(&store);
-    doctor_fleet_pair(temporary.path(), &store, DOCTOR_UNSCOPED_ACCESS);
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::auth::credential_vault::fixtures::seed_blocked_fleet_setup_credentials(
+        temporary.path(),
+        &crate::fleet_credentials::FleetSetupCredentials::new(
+            DOCTOR_UNSCOPED_ACCESS.to_owned(),
+            "fleet-refresh".to_owned(),
+            "fleet-client".to_owned(),
+            crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica,
+            28_800,
+        )
+        .expect("fleet credentials"),
+        UNIX_EPOCH + std::time::Duration::from_secs(1_000),
+    );
     let config = doctor_config(
         temporary.path(),
         "provider = 'fleet'\ninterval_seconds = 300\noffline_drive_timeout_seconds = 20",
@@ -937,6 +949,7 @@ fn cadence_doctor_retains_credentials_scopes_and_service_failures() {
     let scopes = inspect_hub(&store, &config).expect("report");
     assert_eq!(scopes.status, "failed");
     assert!(!doctor_check(&scopes, "fleetCollectionScopes").passed);
+    assert_eq!(scopes.credentials.fleet.scope_status.as_deref(), Some("unwitnessed"));
     assert!(doctor_check(&scopes, "collectorCadence").passed);
     assert!(scopes.collector.cadence_error.is_some());
 }

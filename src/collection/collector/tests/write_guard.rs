@@ -1302,7 +1302,7 @@ fn p3bf2_resident_fleet(point: &'static str) {
 }
 
 #[test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
+#[ignore = "DEC-187, DEC-194: vehicle commands are not offered; this test drives a Fleet vehicle action"]
 fn p3bf2_a_resident_fleet_action_writes_no_receipt_after_the_fence() {
     for point in ["resident-begin", "resident-cancel", "resident-complete"] {
         p3bf2_resident_fleet(point);
@@ -1563,7 +1563,6 @@ fn p3bf2_fleet_start(trip: Option<(&'static str, usize)>, deny: bool) -> StartOu
 }
 
 #[test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 fn p3bf2_the_fleet_start_writes_nothing_after_the_fence() {
     for point in ["start-lease", "start-run", "iteration-top"] {
         let outcome = p3bf2_fleet_start(Some((point, 1)), false);
@@ -1585,7 +1584,6 @@ fn p3bf2_the_fleet_start_writes_nothing_after_the_fence() {
 }
 
 #[test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 fn p3bf2_the_fleet_start_writes_nothing_when_the_admission_is_gone_and_the_fence_is_clear() {
     let outcome = p3bf2_fleet_start(None, true);
     refused_with_the_sensitive_failure("fleet-start-denied", &outcome.result);
@@ -1999,7 +1997,7 @@ async fn p3bf2_the_running_owner_loop_writes_no_frame_after_the_fence_while_a_li
 // ---- the Fleet Telemetry maintenance loop's iteration ---------------------------------------------------
 
 #[test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
+#[ignore = "DEC-187: Fleet telemetry push is not offered; this test drives the telemetry maintenance loop"]
 fn p3bf2_the_telemetry_maintenance_loop_ends_at_the_fence_though_the_admission_holds() {
     // The loop used to look at the admission only: a fence the supervisor set with the
     // admission intact did not end it. Now its first look is the guard's.
@@ -2337,7 +2335,6 @@ async fn p3bf2_fleet_resident(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn p3bf2_the_fleet_loop_hands_its_guard_to_the_resident_socket() {
     for fenced in [false, true] {
         let (receipts, answer, tripped) = p3bf2_fleet_resident(fenced).await;

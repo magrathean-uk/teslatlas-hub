@@ -76,7 +76,7 @@ pub use manager_fixture::{record_provider_admission_for_test, refresh_owner_mana
 // and test builds, never in a release build (with or without interop-fixture).
 #[cfg(debug_assertions)]
 #[doc(hidden)]
-pub use manager_fixture::{seed_owner_pair_for_test, seed_fleet_pair_for_test};
+pub use manager_fixture::{seed_owner_pair_for_test, seed_fleet_pair_for_test, seed_own_fleet_pair_for_test};
 
 #[cfg(test)]
 #[path = "credential_sign_in/tests.rs"]

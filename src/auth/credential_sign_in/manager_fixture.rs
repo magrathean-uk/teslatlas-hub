@@ -32,6 +32,19 @@ pub fn seed_fleet_pair_for_test(data: &Path, credentials: &crate::fleet_credenti
     Ok(generation)
 }
 
+/// Seeds Fleet set-up credentials as the Hub's own Fleet grant (M09-T11), the
+/// only Fleet pair the vault admits: same tokens, application, region and
+/// schedule from now as the supplied row above.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn seed_own_fleet_pair_for_test(data: &Path, credentials: &crate::fleet_credentials::FleetSetupCredentials) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
+    let scope = super::SignInScope::open_for_test(data, true)?;
+    let generation = super::super::credential_vault::fixtures::seed_own_fleet_credentials(scope.entry().vault(), credentials, SystemTime::now())
+        .map_err(super::CredentialCommandError::from)?;
+    scope.release()?;
+    Ok(generation)
+}
+
 #[doc(hidden)]
 pub fn begin_refresh_for_test(data: &Path, fleet: bool, expected: uuid::Uuid) -> Result<(), Box<dyn std::error::Error>> {
     // A refresh begins only under the live collector lease of the store that
