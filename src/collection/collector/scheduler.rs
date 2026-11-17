@@ -833,6 +833,9 @@ struct ScheduledVehicle {
     next_read_due: Option<Instant>,
     /// Owner-wire targeted record check (R36, R46).
     next_check_due: Option<Instant>,
+    /// A stream-triggered check retains its cooldown across stream runs and data.
+    stream_state_check_pending: bool,
+    last_stream_state_check: Option<Instant>,
     /// Pause and service probes (R51, R52).
     next_probe_due: Option<Instant>,
     /// Online only: when the idle window ends and the suspension begins (R31).
@@ -916,6 +919,8 @@ impl ScheduledVehicle {
             reported_state: None,
             next_read_due: None,
             next_check_due: None,
+            stream_state_check_pending: false,
+            last_stream_state_check: None,
             next_probe_due: None,
             suspend_at: None,
             suspended_until: None,
@@ -957,7 +962,8 @@ impl ScheduledVehicle {
         now: Instant,
         wall_ms: i64,
     ) -> Option<Self> {
-        let stream_id = crate::owner_api::StreamVehicleId::try_from_i64(i64::try_from(id.get()).ok()?)?;
+        let stream_id =
+            crate::owner_api::StreamVehicleId::try_from_i64(i64::try_from(id.get()).ok()?)?;
         let mut vehicle = Self::new(
             Vehicle {
                 id,
@@ -1894,6 +1900,7 @@ impl VehicleScheduler {
             return Vec::new();
         };
         vehicle.next_check_due = None;
+        vehicle.stream_state_check_pending = false;
         Self::note_listed(vehicle, now, wall_ms);
         let revoke = apply_reported_state(&timing, vehicle, &state, now, wall_ms);
         let unavailable_online = Self::settle_unavailable(vehicle, &state);
@@ -2139,10 +2146,32 @@ impl VehicleScheduler {
         if !self.mode.is_owner_wire() || !self.requests_allowed(now) {
             return Vec::new();
         }
+        for vehicle in self.vehicles.values_mut() {
+            if vehicle.stream_state_check_pending
+                && matches!(vehicle.phase, PollPhase::Asleep | PollPhase::Offline)
+            {
+                vehicle.next_check_due = None;
+                vehicle.stream_state_check_pending = false;
+            } else if vehicle.stream_state_check_pending
+                && let (Some(due), Some(last)) = (vehicle.next_check_due, vehicle.last_stream_state_check)
+            {
+                // A failed record may have rescheduled using the ordinary state
+                // interval. Preserve the stream cooldown in its due timer too,
+                // so the scheduler cannot busy-wait on a check it cannot send.
+                vehicle.next_check_due = Some(due.max(last + Duration::from_secs(60)));
+            }
+        }
         let mut due: Vec<(Instant, VehicleId)> = self
             .vehicles
             .iter()
             .filter(|(_, vehicle)| !vehicle.is_inactive())
+            .filter(|(_, vehicle)| {
+                !vehicle.stream_state_check_pending
+                    || (!matches!(vehicle.phase, PollPhase::Asleep | PollPhase::Offline)
+                        && vehicle.last_stream_state_check.is_none_or(|last| {
+                            now.saturating_duration_since(last) >= Duration::from_secs(60)
+                        }))
+            })
             .filter_map(|(id, vehicle)| {
                 vehicle
                     .next_check_due
@@ -2152,6 +2181,13 @@ impl VehicleScheduler {
             .collect();
         due.sort();
         due.truncate(K_MAX_IN_FLIGHT);
+        for (_, id) in &due {
+            if let Some(vehicle) = self.vehicles.get_mut(id)
+                && vehicle.stream_state_check_pending
+            {
+                vehicle.last_stream_state_check = Some(now);
+            }
+        }
         due.into_iter().map(|(_, id)| id).collect()
     }
 
