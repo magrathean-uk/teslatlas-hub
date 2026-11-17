@@ -578,6 +578,55 @@ mod source_takeover {
         (hub, CountingEndpoint::spawn())
     }
 
+    /// M09-T16: a Hub whose history import set up a car, as the guided
+    /// migration's import does before the take-over.
+    fn hub_with_car() -> (Hub, CountingEndpoint) {
+        use tesatlas_hub::{
+            db::HubStore,
+            hub_pack::ProjectionCarSettings,
+            legacy_owner_credentials::load_or_create_cursor_key,
+            source_db_import::{SourceDbImportRequest, SourceDbImportScope, publish_history},
+            source_db_projection::{SourceDbCar, SourceDbHistory},
+        };
+        let (hub, source) = hub_with_store();
+        let store = HubStore::initialize(hub.data()).expect("store");
+        let cursor_key = load_or_create_cursor_key(&hub.data()).expect("cursor key");
+        let history = SourceDbHistory {
+            cars: vec![SourceDbCar {
+                id: 1,
+                eid: 5_300_001,
+                vid: Some(5_400_001),
+                vin: Some("5YJ3E1EA7KF530001".to_owned()),
+                name: Some("Take-over fixture".to_owned()),
+                model: Some("3".to_owned()),
+                trim_badging: None,
+                marketing_name: None,
+                exterior_color: None,
+                wheel_type: None,
+                spoiler_type: None,
+                efficiency_wh_per_km: None,
+                settings: ProjectionCarSettings::default(),
+            }],
+            drives: Vec::new(),
+            positions: Vec::new(),
+            charging_processes: Vec::new(),
+            charges: Vec::new(),
+            addresses: Vec::new(),
+            geofences: Vec::new(),
+            states: Vec::new(),
+            updates: Vec::new(),
+        };
+        let request = SourceDbImportRequest {
+            new_import_source: false,
+            source_key: "takeover-fixture".to_owned(),
+            scope: SourceDbImportScope::Selected(1),
+            imported_at_ms: 1_000,
+        };
+        publish_history(&store, &cursor_key, &request, &history).expect("configured car");
+        drop(store);
+        (hub, source)
+    }
+
     fn source_url(source: &CountingEndpoint) -> String {
         let address = source.address.trim_start_matches("http://");
         format!("postgresql://reader@{address}/sourcedb")
@@ -703,7 +752,7 @@ mod source_takeover {
     /// reach the operator unchanged and store nothing.
     #[test]
     fn source_takeover_reports_once_and_passes_refusal_codes_through() {
-        let (hub, source) = hub_with_store();
+        let (hub, source) = hub_with_car();
         let url = source_url(&source);
         for code in ["source_still_running", "source_token_key_mismatch", "source_token_invalid", "source_token_row_missing"] {
             let refusal = double(&hub, serde_json::json!({"refusal": code}));
@@ -733,7 +782,7 @@ mod source_takeover {
 
         // An upgraded store whose legacy fence is opaque takes no supplied
         // login: `fresh_sign_in_required`, nothing stored.
-        let (fenced, source) = hub_with_store();
+        let (fenced, source) = hub_with_car();
         let connection = rusqlite::Connection::open(fenced.data().join("hub.sqlite")).expect("store");
         connection
             .execute("INSERT INTO credential_legacy_fences VALUES('00000000-0000-4000-8000-000000002000','opaque',0)", [])
@@ -749,7 +798,7 @@ mod source_takeover {
 
         // A refresh token the Hub already spent is refused
         // `refresh_token_spent`, nothing stored.
-        let (spent, source) = hub_with_store();
+        let (spent, source) = hub_with_car();
         let fingerprint = {
             use sha2::Digest as _;
             let mut hash = sha2::Sha256::new();
@@ -777,12 +826,46 @@ mod source_takeover {
         assert_eq!(fenced.endpoint.connections(), 0);
     }
 
+    /// M09-T16: on a Hub with no car set up the take-over is refused
+    /// `history_import_required` (exit 1): the source is not read, the key is
+    /// not used and nothing is written. Once the history import has set up a
+    /// car, the same take-over succeeds unchanged.
+    #[test]
+    fn source_takeover_requires_the_history_import_first() {
+        let (hub, source) = hub_with_store();
+        let url = source_url(&source);
+        let pair = double(&hub, serde_json::json!({"access": access(), "refresh": REFRESH}));
+        for _ in 0..2 {
+            let output = take_over(&hub, &url, &input(), Some(&pair));
+            assert_refused(&output, "history_import_required", &["import the history first"]);
+            assert!(stdout(&output).is_empty());
+            assert_secret_free(&output);
+        }
+        assert!(!hub.data().join("secrets").exists(), "no credential key was created");
+        let output = hub.run(&["status"], b"");
+        assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+        let status: serde_json::Value = serde_json::from_str(stdout(&output).trim()).expect("status JSON");
+        assert_eq!(status["legacyCredentials"]["present"].as_bool(), Some(false), "nothing was stored: {status}");
+        assert_eq!(source.connections(), 0, "the source was never contacted");
+        assert_eq!(hub.endpoint.connections(), 0, "nothing was sent to Tesla");
+
+        let (hub, source) = hub_with_car();
+        let url = source_url(&source);
+        let pair = double(&hub, serde_json::json!({"access": access(), "refresh": REFRESH}));
+        let output = take_over(&hub, &url, &input(), Some(&pair));
+        assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+        assert_eq!(stdout(&output), format!("{REPORT}\n"), "the unchanged report");
+        assert_secret_free(&output);
+        assert_eq!(source.connections(), 0, "the double stood in for the source");
+        assert_eq!(hub.endpoint.connections(), 0, "nothing was sent to Tesla");
+    }
+
     /// M09-T16 (B3): the run ends after the vault commit and before its report, as a
     /// crash would; the next run with the same source row reconciles with exit 0,
     /// `already_taken_over`, writes nothing, and `status` shows the taken-over login.
     #[test]
     fn source_takeover_after_a_crash_past_the_commit_reconciles() {
-        let (hub, source) = hub_with_store();
+        let (hub, source) = hub_with_car();
         let url = source_url(&source);
         let crashing = double(&hub, serde_json::json!({"access": access(), "refresh": REFRESH, "exitAfterCommit": true}));
         let output = take_over(&hub, &url, &input(), Some(&crashing));
