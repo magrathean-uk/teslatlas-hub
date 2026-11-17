@@ -1965,3 +1965,32 @@ fn astra_p07_f05_a_cached_battery_is_not_the_next_reading() {
     assert_eq!(result.delta.charges.len(), 1);
     assert_eq!(result.delta.charges[0].charge_energy_added, Some(10.0));
 }
+
+#[test]
+fn astra_p07_f06_long_charge_duration_fits_the_public_smallint_column() {
+    let result = run(&[
+        cv(1, T0, "Charging", Some(0.0), Some(50), Some(1000.0)),
+        cv(
+            2,
+            T0 + (K_SMALLINT_MAX + 1) * MIN,
+            "Stopped",
+            Some(1.0),
+            Some(51),
+            Some(1000.0),
+        ),
+        cv(
+            3,
+            T0 + (K_SMALLINT_MAX + 2) * MIN,
+            "Disconnected",
+            Some(1.0),
+            Some(51),
+            Some(1000.0),
+        ),
+    ]);
+    assert_eq!(result.delta.charges.len(), 1);
+    assert_eq!(result.delta.charges[0].duration_min, Some(K_SMALLINT_MAX));
+    assert_eq!(
+        result.delta.charges[0].end_date_ms,
+        Some(T0 + (K_SMALLINT_MAX + 2) * MIN)
+    );
+}
