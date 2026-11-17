@@ -12,6 +12,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use tokio::time::Instant;
+
 use crate::{
     collector::K_STREAM_POWER_KW,
     db::StreamSessionTerminalOutcome,
@@ -37,10 +39,9 @@ const SILENCE_MOVING_MIN: Duration = Duration::from_secs(60);
 /// Longest moving data-silence limit and the parked limit `H_park` (R30). A
 /// parked car may legitimately send nothing, so a parked limit equal to the
 /// moving one would reconnect a silent, parked, awake car about once a minute;
-/// 300 s bounds that at 12 reconnects an hour, and a subscription lost during
-/// C3's suspension hides a drive start for at most 5 min. It also equals the
-/// `Transport` cap, so a silent subscription is treated no more patiently than
-/// a failed one.
+/// 300 s bounds that at 12 silence-triggered reconnects an hour, and a
+/// subscription lost during C3's suspension hides a drive start for at most
+/// 5 min. Silence detection is separate from the reconnect wait.
 const SILENCE_PARKED: Duration = Duration::from_secs(300);
 
 /// First `Transport` delay before jitter (R34): a short home-network or server
@@ -48,20 +49,11 @@ const SILENCE_PARKED: Duration = Duration::from_secs(300);
 /// fast.
 const TRANSPORT_BASE: Duration = Duration::from_secs(2);
 
-/// Cap of the `Transport` schedule (R34): during a long server outage each
-/// vehicle makes at most 12 attempts an hour while C3's polling covers the
-/// data, and recovery is noticed within 5 min.
-const TRANSPORT_CAP: Duration = Duration::from_secs(300);
-
-/// First `Vehicle` delay before jitter (R34): the server has answered, so the
-/// path works and fast retries only add load; typical causes (tunnel, garage,
-/// sleep) last tens of seconds or more.
-const VEHICLE_BASE: Duration = Duration::from_secs(15);
-
-/// Cap of the `Vehicle` schedule (R34): a returning car is re-acquired within
-/// 2 min, so a connectivity drop of up to 8 min still falls inside one drive
-/// under `T_gap`.
-const VEHICLE_CAP: Duration = Duration::from_secs(120);
+/// All non-Busy, non-Refusal outages retry quickly for at most five minutes.
+const FAST_CAP: Duration = Duration::from_secs(30);
+const FAST_PHASE: Duration = Duration::from_secs(300);
+/// A prolonged outage or explicit back-pressure waits 150 to 300 s with jitter.
+const SLOW_DELAY: Duration = Duration::from_secs(300);
 
 /// Delay of the first `Refusal` (R34): tests the likely race of a token
 /// rotated by another holder between read and subscribe, with a fresh
@@ -122,10 +114,14 @@ pub(crate) enum FailureClass {
 pub(crate) struct RetryState {
     /// Consecutive `Transport`-schedule ends since the last reset.
     pub(crate) transport_attempt: u32,
-    /// Consecutive `Vehicle` ends since the last accepted frame.
+    /// Consecutive `Vehicle` ends since the last stable session.
     pub(crate) vehicle_attempt: u32,
-    /// Consecutive `Refusal`s since the last accepted frame.
+    /// Consecutive `Refusal`s since the last stable session.
     pub(crate) refusal_streak: u32,
+    /// One clock and counter across Transport, Vehicle, Unknown and Protocol.
+    pub(crate) outage_since: Option<Instant>,
+    pub(crate) outage_attempt: u32,
+    pub(crate) outage_elapsed: Duration,
 }
 
 impl RetryState {
@@ -137,6 +133,15 @@ impl RetryState {
     /// error frame or refusal proves the network path and server work, so
     /// transport back-off restarts for `Vehicle` and `Refusal`.
     pub(crate) fn on_session_end(&mut self, class: &FailureClass) {
+        self.on_session_end_at(class, Instant::now());
+    }
+
+    pub(crate) fn on_session_end_at(&mut self, class: &FailureClass, now: Instant) {
+        if !matches!(class, FailureClass::Busy { .. } | FailureClass::Refusal) {
+            let since = *self.outage_since.get_or_insert(now);
+            self.outage_elapsed = now.saturating_duration_since(since);
+            Self::bump(&mut self.outage_attempt);
+        }
         match class {
             FailureClass::Transport
             | FailureClass::Busy { .. }
@@ -153,21 +158,11 @@ impl RetryState {
         }
     }
 
-    /// The first accepted frame of a session, a duplicate included (R26, R37):
-    /// data proves the car is reachable and the credential accepted.
-    pub(crate) fn on_first_accepted(&mut self) {
-        self.vehicle_attempt = 0;
-        self.refusal_streak = 0;
-    }
-
-    /// 60 s after the session's first accepted frame, while it is still open
-    /// (R37). Transport back-off resets only after 60 s (four default ping
-    /// intervals) of a working session, so a path that fails right after its
-    /// first frame keeps backing off instead of retrying at the shortest
-    /// delay. Called by the session's read loop when its stable-session timer
-    /// fires (`SessionClocks::stable_at`).
+    /// Only a session still working 60 s after its first accepted frame ends
+    /// the outage and resets the retry schedules (R37, M04-T12 B2). Shorter
+    /// sessions, including ones carrying only a duplicate, preserve both.
     pub(crate) fn on_stable(&mut self) {
-        self.transport_attempt = 0;
+        *self = Self::default();
     }
 }
 
@@ -183,12 +178,17 @@ fn doubling(base: Duration, cap: Duration, counter: u32) -> Duration {
 pub(crate) fn nominal_delay(class: &FailureClass, state: &RetryState) -> Duration {
     match class {
         FailureClass::Transport
-        | FailureClass::Busy { .. }
         | FailureClass::Unknown
-        | FailureClass::Protocol => {
-            doubling(TRANSPORT_BASE, TRANSPORT_CAP, state.transport_attempt)
+        | FailureClass::Protocol
+        | FailureClass::Vehicle => {
+            if state.outage_elapsed >= FAST_PHASE {
+                SLOW_DELAY
+            } else {
+                doubling(TRANSPORT_BASE, FAST_CAP, state.outage_attempt)
+            }
         }
-        FailureClass::Vehicle => doubling(VEHICLE_BASE, VEHICLE_CAP, state.vehicle_attempt),
+        // Explicit server back-pressure never enters the fast retry schedule.
+        FailureClass::Busy { .. } => SLOW_DELAY,
         FailureClass::Refusal => {
             if state.refusal_streak <= 1 {
                 REFUSAL_FIRST
@@ -220,6 +220,16 @@ pub(crate) fn next_delay(class: &FailureClass, state: &RetryState, u: f64) -> Du
         FailureClass::Busy {
             retry_after: Some(retry_after),
         } => delay.max((*retry_after).min(RETRY_AFTER_CAP)),
+        FailureClass::Transport
+        | FailureClass::Vehicle
+        | FailureClass::Unknown
+        | FailureClass::Protocol
+            if state.outage_elapsed < FAST_PHASE =>
+        {
+            // Wake at the phase boundary rather than carrying a fast wait into
+            // the slow phase. A failure there selects the slow schedule.
+            delay.min(FAST_PHASE - state.outage_elapsed)
+        }
         _ => delay,
     }
 }
