@@ -788,7 +788,7 @@ fn finalize_charge(
     if end_date_ms < open.start_date_ms {
         return Err(LifecycleError::InvalidTimeline);
     }
-    let duration_min = ((end_date_ms - open.start_date_ms) / 60_000).max(0);
+    let duration_min = ((end_date_ms - open.start_date_ms) / 60_000).clamp(0, K_SMALLINT_MAX);
     let outside_temp_avg = if open.outside_temp_count > 0 {
         Some(open.outside_temp_sum / f64::from(open.outside_temp_count))
     } else {
