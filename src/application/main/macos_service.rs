@@ -312,7 +312,7 @@ fn preserve_active_result_after_stop(
     if is_macos_serve_stop_timeout(&stop_result) {
         stop_result
     } else {
-        primary
+        primary.and(stop_result)
     }
 }
 
@@ -390,13 +390,7 @@ where
         control = &mut control => {
             let stop_result = collector.stop_and_wait().await;
             return match control {
-                MacServeControl::Shutdown => {
-                    if is_macos_serve_stop_timeout(&stop_result) {
-                        stop_result
-                    } else {
-                        Ok(())
-                    }
-                }
+                MacServeControl::Shutdown => stop_result,
                 MacServeControl::AdmissionInvalidated(error) => {
                     if is_macos_serve_stop_timeout(&stop_result) {
                         stop_result
