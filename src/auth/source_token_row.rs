@@ -207,8 +207,10 @@ async fn read_snapshot(
             .map_err(map_decrypt_error)?;
         // Hub refreshes this login as the public owner client. A pinned Tesla
         // issuer alone does not make a different client's refresh token usable.
-        if !crate::legacy_auth::parse_jwt(tokens.access_token())
-            .is_some_and(|claims| claims.owner_client_compatible)
+        if !crate::legacy_auth::parse_jwt(crate::legacy_auth::trim_token_whitespace(
+            tokens.access_token(),
+        ))
+        .is_some_and(|claims| claims.owner_client_compatible)
         {
             return Err(SourceTokenRowError::Invalid);
         }
@@ -485,6 +487,21 @@ mod tests {
         }
         // Existing fixtures omit azp, as older source tokens may do.
         assert!(run(FakeSnapshot::new(vec![valid_row()])).await.0.is_ok());
+        // Surrounding whitespace is admitted by the runtime grammar (R46), so the
+        // client check reads the token trimmed too.
+        let claims = Zeroizing::new(serde_json::json!({
+            "iss": "https://auth.tesla.com/oauth2/v3",
+            "exp": 1_900_000_000,
+            "azp": "ownerapi",
+            "synthetic": true,
+        }).to_string());
+        let access = Zeroizing::new(format!(
+            " e30.{}.synthetic-signature ", URL_SAFE_NO_PAD.encode(claims.as_bytes()),
+        ));
+        let (result, _) = run(FakeSnapshot::new(vec![encrypted_row(
+            access.as_bytes(), SYNTHETIC_REFRESH,
+        )])).await;
+        assert!(result.is_ok(), "a whitespace-padded owner token stays admitted");
     }
 
     #[tokio::test]
