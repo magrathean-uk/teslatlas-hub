@@ -3871,9 +3871,11 @@ extension OnboardingWindowController {
             authWindow?.window?.makeKeyAndOrderFront(nil)
             return
         }
-        // A newer attempt ends the one before it.
+        // The typed secret is taken first (the field is cleared), then a newer attempt ends the
+        // one before it.
+        let taken = takeFleetSecret()
         endFleetSignIn()
-        guard let secret = takeFleetSecret() else { return }
+        guard let secret = taken else { return }
         guard let application = controller.savedFleetApplication else { secret.wipe(); return fleetDetailsMissing() }
         fleetSignInSecret = secret
         setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.begin", fallback: "Preparing the Tesla sign-in…"),
