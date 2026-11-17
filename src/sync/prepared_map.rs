@@ -941,15 +941,15 @@ fn verified_cached_month(
     Ok(verified_immutable_pack(&path, compressed_bytes, digest, MAX_PACK_BYTES).ok())
 }
 
-/// Run after a complete PhysicalV3 admission while the importer still owns the
-/// sealed stage and publication gate. Returning an error leaves history public;
-/// the caller logs it and a later identical import may retry preparation.
 #[cfg(test)]
 thread_local! {
     /// Fails the next month preparation on this thread (M08-T19 tests).
     pub(crate) static FAIL_NEXT_PREPARATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+/// Run after a complete PhysicalV3 admission while the importer still owns the
+/// sealed stage and publication gate. Returning an error leaves history public;
+/// the caller logs it and a later identical import may retry preparation.
 pub(crate) fn publish_selected_month(
     store: &HubStore,
     cursor_key: &CursorKey,

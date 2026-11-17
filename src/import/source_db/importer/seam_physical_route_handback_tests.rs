@@ -2002,9 +2002,8 @@ fn handback_with_a_new_drive_plans_in_full_verifying_once() {
     let (fixture, _root, env) = planned_then_refused(true);
     let head = current_snapshot(&fixture);
     let prior = head_packs(&fixture.store, head);
-    let transitions = delta_transitions(&fixture.store);
     assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
-    assert_eq!(delta_transitions(&fixture.store), transitions + 1, "a changed set is admitted");
+    assert!(current_head_has_a_changed_set(&fixture), "a changed set is admitted");
     assert_one_check_of_the_planned_copy(&fixture);
     assert_ne!(current_snapshot(&fixture), head);
     let target = head_packs(&fixture.store, current_snapshot(&fixture));
@@ -2246,12 +2245,22 @@ fn handback_refuses_a_damaged_pack_of_the_current_head() {
     );
 }
 
-/// Changed sets admitted so far.
-fn delta_transitions(store: &HubStore) -> i64 {
-    store
+/// Whether the vehicle's current head was admitted with a changed set from
+/// its prior head.
+fn current_head_has_a_changed_set(fixture: &Fixture) -> bool {
+    fixture
+        .store
         .open()
         .expect("catalogue")
-        .query_row("SELECT COUNT(*) FROM physical_v3_delta_transitions", [], |row| row.get(0))
+        .query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM physical_v3_delta_transitions AS transition
+                   JOIN pending_physical_v3_admissions AS head
+                     ON head.receipt_id = transition.target_receipt_id
+                  WHERE head.vehicle_id = ?1)",
+            [fixture.binding.vehicle_id.to_string()],
+            |row| row.get(0),
+        )
         .expect("changed sets")
 }
 
@@ -2333,7 +2342,6 @@ fn handback_refuses_a_prior_pack_whose_decoded_bytes_differ_from_its_digest() {
     let view = same_length_variant(&original);
     assert_eq!(view.len(), original.len());
     assert_ne!(view, original);
-    let transitions = delta_transitions(&fixture.store);
     let watched = path.clone();
     crate::hub_pack::PACK_DECODE_VIEW.with(|hook| {
         *hook.borrow_mut() = Some(Box::new(move |at: &Path| (at == watched).then(|| view.clone())));
@@ -2359,9 +2367,8 @@ fn handback_refuses_a_prior_pack_whose_decoded_bytes_differ_from_its_digest() {
         .position(|verification| verification.place == "pack-decode" && verification.object == sha256)
         .expect("the comparison decoded the pack");
     assert!(hashed < refused && !log[refused].ok, "the decode refused the bytes it read: {log:#?}");
-    assert_eq!(
-        delta_transitions(&fixture.store),
-        transitions,
+    assert!(
+        !current_head_has_a_changed_set(&fixture),
         "the changed set read from unauthenticated bytes is refused"
     );
     assert_eq!(std::fs::read(&path).expect("pack"), original, "the file itself is sound");
