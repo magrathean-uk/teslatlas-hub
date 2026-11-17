@@ -1773,16 +1773,98 @@ fn handback_coverage_over_source_positions_plans_in_full() {
 }
 
 fn reset_check_counters() {
-    crate::source_db_stage::INTEGRITY_CHECKS.with(|checks| checks.set(0));
-    crate::hub_pack::PACK_INTEGRITY_CHECKS.with(|checks| checks.set(0));
+    crate::hub_pack::take_verifications();
 }
 
-fn stage_checks() -> u64 {
-    crate::source_db_stage::INTEGRITY_CHECKS.with(std::cell::Cell::get)
+/// Full integrity checks of stages since the last reset.
+fn stage_checks() -> usize {
+    crate::hub_pack::verifications()
+        .iter()
+        .filter(|verification| verification.place == "stage-integrity")
+        .count()
 }
 
-fn pack_checks() -> u64 {
-    crate::hub_pack::PACK_INTEGRITY_CHECKS.with(std::cell::Cell::get)
+/// The content digests of a head's packs, in order.
+fn head_packs(store: &HubStore, snapshot: Uuid) -> Vec<String> {
+    let connection = store.open().expect("catalogue");
+    let mut statement = connection
+        .prepare("SELECT sha256 FROM pending_physical_v3_packs WHERE snapshot_id = ?1 ORDER BY ordinal")
+        .expect("packs");
+    statement
+        .query_map(params![snapshot.to_string()], |row| row.get(0))
+        .expect("packs")
+        .collect::<Result<_, _>>()
+        .expect("packs")
+}
+
+/// M08-T19 (S2): the run made exactly one stage integrity check, of the
+/// planned copy (not the kept stage), after that copy's last write, and a
+/// publication that wrote packs wrote them from that same copy after it.
+fn assert_one_check_of_the_planned_copy(fixture: &Fixture) {
+    let log = crate::hub_pack::verifications();
+    let kept = kept_stage_path(&fixture.store, fixture.binding.vehicle_id).display().to_string();
+    let checks: Vec<usize> = log
+        .iter()
+        .enumerate()
+        .filter(|(_, verification)| verification.place == "stage-integrity")
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(checks.len(), 1, "one stage check: {log:#?}");
+    let at = checks[0];
+    let copy = &log[at].object;
+    assert!(log[at].ok);
+    assert_ne!(copy, &kept, "the kept stage is not the checked one");
+    let last_write = log
+        .iter()
+        .rposition(|verification| verification.place == "stage-write" && &verification.object == copy)
+        .expect("the checked stage is the planned copy");
+    assert!(last_write < at, "checked after its last write: {log:#?}");
+    for (emitted, verification) in log.iter().enumerate() {
+        if verification.place == "stage-emit" {
+            assert_eq!(&verification.object, copy, "packs are written from the checked copy");
+            assert!(at < emitted);
+        }
+    }
+}
+
+/// M08-T19 (S2): the changed set's comparison authenticated every pack of
+/// both heads exactly once, over the bytes it decoded, with no SQLite check
+/// of a decoded pack; its context copy authenticated each target pack it
+/// read once.
+fn assert_each_compared_pack_authenticated_once(prior: &[String], target: &[String]) {
+    let log = crate::hub_pack::verifications();
+    let compare = log
+        .iter()
+        .position(|verification| verification.place == "compare")
+        .expect("a comparison ran");
+    let context = log
+        .iter()
+        .position(|verification| verification.place == "context-copy")
+        .unwrap_or(log.len());
+    let decoded: Vec<&crate::hub_pack::Verification> = log[compare..context]
+        .iter()
+        .filter(|verification| verification.place == "pack-decode")
+        .collect();
+    assert!(decoded.iter().all(|verification| verification.ok));
+    assert!(
+        !log.iter().any(|verification| verification.place == "pack-sqlite-integrity"
+            && verification.object == "scan"),
+        "no decoded pack is SQLite-checked again"
+    );
+    for pack in prior.iter().chain(target) {
+        assert_eq!(
+            decoded.iter().filter(|verification| &verification.object == pack).count(),
+            1,
+            "pack {pack} is authenticated once by the comparison: {log:#?}"
+        );
+    }
+    assert_eq!(decoded.len(), prior.len() + target.len());
+    let mut copied = std::collections::BTreeSet::new();
+    for verification in log[context..].iter().filter(|verification| verification.place == "pack-decode") {
+        assert!(verification.ok);
+        assert!(target.contains(&verification.object), "the context copy reads target packs");
+        assert!(copied.insert(verification.object.clone()), "each read once");
+    }
 }
 
 fn current_snapshot(fixture: &Fixture) -> Uuid {
@@ -1802,8 +1884,11 @@ fn handback_unchanged_plan_serves_the_head_again_without_planning() {
     let head = current_snapshot(&fixture);
     let packs = pack_count(&fixture.store);
     assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
-    assert_eq!(stage_checks(), 0, "the kept stage is neither verified nor copied");
-    assert_eq!(pack_checks(), 0, "no pack is decoded");
+    assert_eq!(
+        crate::hub_pack::verifications(),
+        Vec::new(),
+        "no stage is checked or written and no pack is authenticated, decoded or written"
+    );
     assert_eq!(pack_count(&fixture.store), packs, "no pack is written");
     assert_eq!(current_snapshot(&fixture), head, "the same head");
     let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("served under the new coverage");
@@ -1823,7 +1908,7 @@ fn handback_without_recorded_inputs_plans_once_in_full_then_early() {
         .expect("forget the inputs, as a store the earlier build planned");
     let head = current_snapshot(&fixture);
     assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
-    assert_eq!(stage_checks(), 1, "the full path verifies the kept stage once");
+    assert_one_check_of_the_planned_copy(&fixture);
     assert_eq!(current_snapshot(&fixture), head);
     assert!(
         fixture
@@ -1843,19 +1928,22 @@ fn handback_without_recorded_inputs_plans_once_in_full_then_early() {
 }
 
 /// M08-T19: a window with a drive changes the Hub rows the plan writes, so
-/// the handback plans in full: the kept stage is verified once (its copy
-/// and both content digests rely on that check) and no pack of either head
-/// is decoded with a second integrity check. The client reads the drive.
+/// the handback plans in full: one integrity check, of the planned copy the
+/// packs are written from, after its last write; each pack the changed set
+/// reads is authenticated once, in the read that decodes it, and not
+/// SQLite-checked again. The client reads the drive.
 #[test]
 fn handback_with_a_new_drive_plans_in_full_verifying_once() {
     let (fixture, _root, env) = planned_then_refused(true);
     let head = current_snapshot(&fixture);
+    let prior = head_packs(&fixture.store, head);
     let transitions = delta_transitions(&fixture.store);
     assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
     assert_eq!(delta_transitions(&fixture.store), transitions + 1, "a changed set is admitted");
-    assert_eq!(stage_checks(), 1, "one full check of the kept stage");
-    assert_eq!(pack_checks(), 0, "the changed set repeats no pack check");
+    assert_one_check_of_the_planned_copy(&fixture);
     assert_ne!(current_snapshot(&fixture), head);
+    let target = head_packs(&fixture.store, current_snapshot(&fixture));
+    assert_each_compared_pack_authenticated_once(&prior, &target);
     let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("the new head is served");
     assert!(fresh.mirror.drives.contains_key(&(HUB_ID_BASE + 102)), "the window's drive");
 }
@@ -2035,9 +2123,8 @@ fn handback_refuses_a_kept_stage_that_differs_from_its_record() {
 }
 
 /// M08-T19: a pack of the current head whose bytes changed (same length)
-/// fails the handback's one digest check of that head, and nothing is
-/// published; without it the changed set, which no longer hashes the
-/// prior head's packs again, would fall back to a full replacement.
+/// fails the state lookup's digest check of that head, the last thing the
+/// run does, and nothing is published.
 #[test]
 fn handback_refuses_a_damaged_pack_of_the_current_head() {
     let (fixture, _root, env) = planned_then_refused(true);
@@ -2067,9 +2154,26 @@ fn handback_refuses_a_damaged_pack_of_the_current_head() {
     }
     std::fs::write(&path, &bytes).expect("damage the pack");
     std::fs::set_permissions(&path, permissions).expect("restore permissions");
+    let damaged = sha256.clone();
+    reset_check_counters();
     let result =
         publish_physical_after_handback(&fixture.store, &fixture.cursor_key, &fixture.gate);
-    assert!(result.is_err(), "a damaged pack of the current head is refused: {result:?}");
+    assert!(
+        matches!(result, Err(SourceDbImportError::PhysicalPublication(
+            crate::physical_publication::SourceDbPhysicalPublicationError::Store(
+                crate::db::StoreError::PhysicalV3AdmissionConflict
+            )
+        ))),
+        "a damaged pack of the current head is refused: {result:?}"
+    );
+    // The check this test names refused it, and nothing ran after it: the
+    // last verification is the state lookup's failed digest of that pack.
+    let log = crate::hub_pack::verifications();
+    let failed: Vec<_> = log.iter().filter(|verification| !verification.ok).collect();
+    assert_eq!(failed.len(), 1, "{log:#?}");
+    assert_eq!(failed[0].place, "admission-pack-digest");
+    assert_eq!(failed[0].object, damaged);
+    assert_eq!(log.last(), Some(failed[0]), "nothing is decoded or written after it");
     assert_eq!(current_snapshot(&fixture), head, "nothing is published");
     assert_eq!(
         PhysicalClient::bootstrap(&env, &fixture).err(),
@@ -2169,9 +2273,27 @@ fn handback_refuses_a_prior_pack_whose_decoded_bytes_differ_from_its_digest() {
     crate::hub_pack::PACK_DECODE_VIEW.with(|hook| {
         *hook.borrow_mut() = Some(Box::new(move |at: &Path| (at == watched).then(|| view.clone())));
     });
+    let sha256 = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_suffix(".sqlite.zst"))
+        .expect("pack name")
+        .to_owned();
+    reset_check_counters();
     let outcome = handback(&fixture);
     crate::hub_pack::PACK_DECODE_VIEW.with(|hook| *hook.borrow_mut() = None);
     assert_eq!(outcome, published(PhysicalV3PublicationKind::Rotation));
+    let log = crate::hub_pack::verifications();
+    let hashed = log
+        .iter()
+        .position(|verification| verification.place == "admission-pack-digest" && verification.object == sha256)
+        .expect("the state lookup hashed the path");
+    assert!(log[hashed].ok, "the path hashed correctly");
+    let refused = log
+        .iter()
+        .position(|verification| verification.place == "pack-decode" && verification.object == sha256)
+        .expect("the comparison decoded the pack");
+    assert!(hashed < refused && !log[refused].ok, "the decode refused the bytes it read: {log:#?}");
     assert_eq!(
         delta_transitions(&fixture.store),
         transitions,

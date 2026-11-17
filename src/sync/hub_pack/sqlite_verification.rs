@@ -516,6 +516,8 @@ fn verify_projection_sqlite_2_2(
     let integrity: String = connection
         .query_row("PRAGMA integrity_check", [], |row| row.get(0))
         .map_err(ProjectionPackError::IntegrityCheck)?;
+    #[cfg(test)]
+    record_verification("pack-sqlite-integrity", "verify", integrity == "ok");
     if integrity != "ok" {
         return Err(ProjectionPackError::IntegrityFailure);
     }

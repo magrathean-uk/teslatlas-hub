@@ -543,6 +543,8 @@ fn copy_target_context(
     check: PackCheck,
 ) -> Result<(), PhysicalDeltaPackError> {
     let db = comparison.connection();
+    #[cfg(test)]
+    crate::hub_pack::record_verification("context-copy", "", true);
     for pack in &target.chunks {
         let selected: i64 = db.query_row(
             "SELECT COUNT(*) FROM target_context WHERE pack_ordinal=?1",

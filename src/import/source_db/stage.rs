@@ -43,11 +43,6 @@ const META_FORMAT: &str = "format";
 const MIN_STAGE_BYTES: u64 = 64 * 1024;
 const MAX_PAGE_SIZE: u32 = 10_000;
 
-#[cfg(test)]
-thread_local! {
-    /// Full integrity checks this thread ran on stages (M08-T19 tests).
-    pub(crate) static INTEGRITY_CHECKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
-}
 const MAX_ENCODING_WORKERS: usize = 8;
 const DEFAULT_MINIMUM_FREE_BYTES: u64 = 512 * 1024 * 1024;
 const CHARGE_SAMPLES_PAGE_SQL: &str = "SELECT source_id, row_json
@@ -855,12 +850,16 @@ impl SourceDbStage {
     /// Run SQLite's complete integrity check. This is intentionally not only a
     /// quick check because a sealed migration may be retained for a long time.
     pub fn verify_integrity(&self) -> Result<(), SourceDbStageError> {
-        #[cfg(test)]
-        INTEGRITY_CHECKS.with(|checks| checks.set(checks.get() + 1));
         let mut statement = self.connection.prepare("PRAGMA integrity_check")?;
         let values = statement
             .query_map([], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
+        #[cfg(test)]
+        crate::hub_pack::record_verification(
+            "stage-integrity",
+            self.path.display(),
+            values.len() == 1 && values.first().is_some_and(|value| value == "ok"),
+        );
         if values.len() == 1 && values.first().is_some_and(|value| value == "ok") {
             return Ok(());
         }

@@ -1142,11 +1142,15 @@ impl HubStore {
             if !metadata.file_type().is_file() || metadata.len() != pack.compressed_bytes {
                 return Err(StoreError::PhysicalV3AdmissionConflict);
             }
-            if verify_file_digests
-                && sha256_file_hex(&path).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?
-                    != pack.sha256.to_string()
-            {
-                return Err(StoreError::PhysicalV3AdmissionConflict);
+            if verify_file_digests {
+                let authentic = sha256_file_hex(&path)
+                    .map_err(|_| StoreError::PhysicalV3AdmissionConflict)?
+                    == pack.sha256.to_string();
+                #[cfg(test)]
+                crate::hub_pack::record_verification("admission-pack-digest", pack.sha256, authentic);
+                if !authentic {
+                    return Err(StoreError::PhysicalV3AdmissionConflict);
+                }
             }
         }
         Ok(Some(computed))
@@ -1350,11 +1354,15 @@ impl HubStore {
             if !metadata.file_type().is_file() || metadata.len() != pack.compressed_bytes {
                 return Err(StoreError::PhysicalV3AdmissionConflict);
             }
-            if verify_file_digests
-                && sha256_file_hex(&path).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?
-                    != pack.sha256.to_string()
-            {
-                return Err(StoreError::PhysicalV3AdmissionConflict);
+            if verify_file_digests {
+                let authentic = sha256_file_hex(&path)
+                    .map_err(|_| StoreError::PhysicalV3AdmissionConflict)?
+                    == pack.sha256.to_string();
+                #[cfg(test)]
+                crate::hub_pack::record_verification("retained-pack-digest", pack.sha256, authentic);
+                if !authentic {
+                    return Err(StoreError::PhysicalV3AdmissionConflict);
+                }
             }
         }
         Ok(Some(RetainedPhysicalV3Admission {
@@ -1464,8 +1472,14 @@ fn insert_physical_v3_delta_transition(
             || pack.path != packs_dir.join("sha256").join(format!("{}.sqlite.zst",pack.sha256))
             || fs::metadata(&pack.path).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?.len()
                 != pack.compressed_bytes
-            || sha256_file_hex(&pack.path).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?
-                != pack.sha256.to_string()
+            || {
+                let authentic = sha256_file_hex(&pack.path)
+                    .map_err(|_| StoreError::PhysicalV3AdmissionConflict)?
+                    == pack.sha256.to_string();
+                #[cfg(test)]
+                crate::hub_pack::record_verification("delta-pack-digest", pack.sha256, authentic);
+                !authentic
+            }
         {
             return Err(StoreError::PhysicalV3AdmissionInvalid);
         }

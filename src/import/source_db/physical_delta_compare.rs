@@ -265,6 +265,8 @@ impl PhysicalDeltaComparison {
              CREATE INDEX target_context_pack_order
                ON target_context(pack_ordinal,table_name,id);",
         )?;
+        #[cfg(test)]
+        crate::hub_pack::record_verification("compare", "", true);
         for (side, manifest) in [(0_i64, old), (1_i64, new)] {
             for pack in &manifest.chunks {
                 let path = packs_dir

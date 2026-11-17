@@ -479,6 +479,12 @@ impl TransportPack {
             });
         }
         let actual_digest = source.finish();
+        #[cfg(test)]
+        crate::hub_pack::record_verification(
+            "pack-reader",
+            self.sha256,
+            constant_time_eq(self.sha256.as_bytes(), actual_digest.as_bytes()),
+        );
         if !constant_time_eq(self.sha256.as_bytes(), actual_digest.as_bytes()) {
             return Err(ProtocolError::PackHashMismatch);
         }

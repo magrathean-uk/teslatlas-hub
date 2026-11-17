@@ -246,6 +246,8 @@ fn publish_sealed_physical_v3_stage_inner(
         stage_limits.max_stage_bytes,
         stage_limits.minimum_free_bytes,
     )?;
+    #[cfg(test)]
+    crate::hub_pack::record_verification("stage-emit", stage.path().display(), true);
     let candidate = write_staged_physical_updates_snapshot_v3_with_limits(
         stage,
         &writer,

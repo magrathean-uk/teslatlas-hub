@@ -4,10 +4,50 @@
 
 use rusqlite::types::ValueRef;
 
+/// One verification (or stage write) a test observed on this thread
+/// (M08-T19): where it was made, of what (a pack's digest or a stage's
+/// path) and whether it passed.
+#[cfg(test)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Verification {
+    pub(crate) place: &'static str,
+    pub(crate) object: String,
+    pub(crate) ok: bool,
+}
+
 #[cfg(test)]
 thread_local! {
-    /// Full integrity checks this thread ran on decoded physical packs.
-    pub(crate) static PACK_INTEGRITY_CHECKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static VERIFICATIONS: std::cell::RefCell<Vec<Verification>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Records one verification at a real boundary (M08-T19 tests). The places:
+/// `stage-integrity` (a stage's full SQLite check), `stage-write` (an edit of
+/// a sealed stage committed), `stage-emit` (a publication writes packs from
+/// a stage), `pack-decode` (a pack read authenticated over the bytes it
+/// decodes), `pack-reader` (the protocol's verification of a compressed
+/// pack), `admission-pack-digest`, `retained-pack-digest` and
+/// `delta-pack-digest` (a pack file hashed against the catalogue),
+/// `pack-sqlite-integrity` (a decoded or written pack's SQLite check), and
+/// the markers `compare` and `context-copy` (a changed set's two readers
+/// begin).
+#[cfg(test)]
+pub(crate) fn record_verification(place: &'static str, object: impl ToString, ok: bool) {
+    VERIFICATIONS.with(|log| {
+        log.borrow_mut().push(Verification { place, object: object.to_string(), ok });
+    });
+}
+
+/// The verifications recorded on this thread since the last call.
+#[cfg(test)]
+pub(crate) fn take_verifications() -> Vec<Verification> {
+    VERIFICATIONS.with(|log| std::mem::take(&mut *log.borrow_mut()))
+}
+
+/// The verifications recorded on this thread, kept.
+#[cfg(test)]
+pub(crate) fn verifications() -> Vec<Verification> {
+    VERIFICATIONS.with(|log| log.borrow().clone())
 }
 
 pub(crate) const PHYSICAL_TABLES_2_2: [&str; 11] = [
@@ -92,6 +132,8 @@ fn decode_authenticated(
     io::copy(&mut source, &mut io::sink()).map_err(ProjectionPackError::Decompress)?;
     let authentic = source.bytes == pack.compressed_bytes
         && Sha256Digest::from_bytes(source.hash.finalize().into()) == pack.sha256;
+    #[cfg(test)]
+    record_verification("pack-decode", pack.sha256, authentic);
     if source.bytes != pack.compressed_bytes {
         return Err(ProjectionPackError::Protocol(ProtocolError::CompressedSizeMismatch {
             expected: pack.compressed_bytes,
@@ -411,11 +453,11 @@ fn verify_physical_scan_layout(
     if !integrity {
         return Ok(());
     }
-    #[cfg(test)]
-    PACK_INTEGRITY_CHECKS.with(|checks| checks.set(checks.get() + 1));
     let integrity: String = connection
         .query_row("PRAGMA integrity_check", [], |row| row.get(0))
         .map_err(ProjectionPackError::IntegrityCheck)?;
+    #[cfg(test)]
+    record_verification("pack-sqlite-integrity", "scan", integrity == "ok");
     if integrity != "ok" {
         return Err(ProjectionPackError::IntegrityFailure);
     }
