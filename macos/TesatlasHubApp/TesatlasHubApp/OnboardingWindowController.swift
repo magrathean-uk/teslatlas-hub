@@ -4219,7 +4219,11 @@ extension OnboardingWindowController {
             self.setBusy(false)
             switch prepared {
             case let .failure(error):
-                // The Hub was not prepared: nothing of the route is offered but trying again.
+                guard HubActionError.settingQuiescenceAside(error) is HubFleetPreparationLeftStopped else {
+                    self.fleetFailed(error, readsState: false)
+                    return
+                }
+                // R1: Hub was left stopped; nothing of the route is offered but trying again.
                 self.errorMessage = nil
                 self.fleetPreparationFailed = error.localizedDescription
                 self.render()
