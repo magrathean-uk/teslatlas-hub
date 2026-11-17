@@ -1272,9 +1272,10 @@ fn intake_latency_crosses_the_operator_channel_beside_its_own_window() {
     assert_eq!(closed["intakeLatency"]["count"], 0);
     assert!(closed["intakeLatency"]["seq"].is_null());
 
+    let first_grant = rig.grant(3_600);
     let opened = rig
         .forward(&OperatorRequest::WindowOpen {
-            grant: encoded(&rig.grant(3_600)),
+            grant: encoded(&first_grant),
         })
         .expect("open");
     assert_eq!(opened["intakeLatency"]["count"], 0);
@@ -1301,20 +1302,20 @@ fn intake_latency_crosses_the_operator_channel_beside_its_own_window() {
     assert_eq!(latency["seq"], status["seq"]);
     assert_eq!(latency["grantDigest"], status["grantDigest"]);
 
-    // An open while the window is active is refused and changes nothing.
+    // A refused open (the grant replayed) changes nothing.
     let refused = rig
         .forward(&OperatorRequest::WindowOpen {
-            grant: encoded(&rig.grant(1_800)),
+            grant: encoded(&first_grant),
         })
         .unwrap_err();
-    assert_eq!(refused.code, "window_active");
+    assert_eq!(refused.code, "grant_consumed");
     let status = rig.forward(&OperatorRequest::WindowStatus).expect("status");
     assert_eq!(status["intakeLatency"]["count"], 3);
 
     // The next window starts empty before any run, beside its own identity.
     rig.controller.close(CloseReason::OperatorClose);
     rig.controller.finish_close().expect("closed");
-    rig.clock.advance(60);
+    rig.clock.advance(3_600 + 16 * 60);
     let next = rig
         .forward(&OperatorRequest::WindowOpen {
             grant: encoded(&rig.grant(3_600)),
