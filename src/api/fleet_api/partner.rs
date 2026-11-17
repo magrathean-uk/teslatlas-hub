@@ -192,7 +192,6 @@ impl PartnerApi {
         let permit =
             egress::ask(request.url().as_str(), Provider::Fleet, kind).map_err(|e| match e {
                 egress::GateRefusal::WindowClosed => PartnerError::WindowClosed,
-                egress::GateRefusal::ProviderParked => PartnerError::ProviderParked,
             })?;
         permit
             .bound(async {
