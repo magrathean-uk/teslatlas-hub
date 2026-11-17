@@ -1,6 +1,102 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #[test]
+fn catalogue_path_admission_rejects_substitution_and_weakened_modes() {
+    for fault in [
+        "root_link",
+        "catalogue_link",
+        "root_mode",
+        "catalogue_mode",
+        "-wal",
+        "-shm",
+        "-journal",
+    ] {
+        let temporary = crate::private_tempdir().expect("temporary parent");
+        let data_dir = temporary.path().join("hub");
+        let store = HubStore::initialize(&data_dir).expect("initialise store");
+        store.readiness_check().expect("healthy before substitution");
+        match fault {
+            "root_link" => {
+                let target = temporary.path().join("original-root");
+                fs::rename(&data_dir, &target).expect("move root");
+                std::os::unix::fs::symlink(target, &data_dir).expect("substitute root link");
+            }
+            "catalogue_link" => {
+                let target = temporary.path().join("original.sqlite");
+                fs::rename(store.database_path(), &target).expect("move catalogue");
+                std::os::unix::fs::symlink(target, store.database_path())
+                    .expect("substitute catalogue link");
+            }
+            "root_mode" => {
+                fs::set_permissions(&data_dir, fs::Permissions::from_mode(0o755))
+                    .expect("weaken root");
+            }
+            "catalogue_mode" => {
+                fs::set_permissions(store.database_path(), fs::Permissions::from_mode(0o644))
+                    .expect("weaken catalogue");
+            }
+            suffix => {
+                let target = temporary.path().join("outside-sidecar");
+                fs::write(&target, []).expect("synthetic sidecar target");
+                let sidecar = data_dir.join(format!("hub.sqlite{suffix}"));
+                if sidecar.exists() {
+                    fs::remove_file(&sidecar).expect("remove original sidecar");
+                }
+                std::os::unix::fs::symlink(target, sidecar).expect("substitute sidecar link");
+            }
+        }
+        let rejected = [
+            ("existing handle readiness", store.readiness_check().is_err()),
+            (
+                "service readiness",
+                store.service_readiness_at(false, 1_000).is_err(),
+            ),
+            ("read-only open", HubStore::open_read_only(&data_dir).is_err()),
+            ("control open", HubStore::open_existing(&data_dir).is_err()),
+            (
+                "immutable open",
+                HubStore::open_immutable_read_only(&data_dir).is_err(),
+            ),
+            (
+                "schema preflight",
+                HubStore::preflight_standalone_schema_read_only(&data_dir).is_err(),
+            ),
+            ("existing writer", store.open().is_err()),
+        ];
+        for (reader, rejected) in rejected {
+            assert!(rejected, "{reader} accepted {fault}");
+        }
+    }
+}
+
+#[test]
+fn catalogue_path_admission_readers_preserve_supported_live_file_modes() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("initialise store");
+    let connection = store.open().expect("keep live WAL open");
+    connection
+        .execute(
+            "INSERT INTO hub_metadata(key, value) VALUES ('synthetic_probe', 'synthetic')",
+            [],
+        )
+        .expect("seed live WAL");
+    let paths = [
+        store.database_path().to_path_buf(),
+        temporary.path().join("hub.sqlite-wal"),
+        temporary.path().join("hub.sqlite-shm"),
+    ];
+    for path in &paths {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o640)).expect("supported mode");
+    }
+    let reader = HubStore::open_read_only(temporary.path()).expect("live reader");
+    assert_eq!(reader.installation_id().unwrap(), store.installation_id().unwrap());
+    HubStore::open_existing(temporary.path()).expect("control reader");
+    for path in &paths {
+        assert_eq!(fs::symlink_metadata(path).unwrap().permissions().mode() & 0o777, 0o640);
+    }
+}
+
+#[test]
 fn writable_catalogue_admission_rejects_foreign_and_future_databases_without_mutation() {
     for (application_id, version) in [(0, 0), (123456, 0), (APPLICATION_ID, SCHEMA_VERSION + 1)] {
         let temporary = crate::private_tempdir().expect("temporary database");
