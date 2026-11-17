@@ -324,7 +324,7 @@ mod tests {
     #[test]
     fn source_takeover_input_is_bounded() {
         assert!(read_input(&vec![b' '; INPUT_MAX_BYTES][..]).is_ok());
-        let error = read_input(&vec![b' '; INPUT_MAX_BYTES + 1][..]).err().expect("refused");
+        let error = read_input(&vec![b' '; INPUT_MAX_BYTES + 1][..]).expect_err("refused");
         assert_eq!(error.code, operator::admission::SETUP_INPUT_INVALID);
     }
 
