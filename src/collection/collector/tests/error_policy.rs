@@ -1586,7 +1586,7 @@ async fn ct67_three_fleet_reads_with_an_expired_token_cause_one_refresh_and_no_f
     let sent = bed.wire.data_authorisations.lock().expect("ledger").clone();
     let with_old = sent
         .iter()
-        .filter(|header| header.starts_with("Bearer e30."))
+        .filter(|header| header.as_str() == format!("Bearer {CT67_SCOPED_ACCESS}"))
         .count();
     let with_new = sent
         .iter()
