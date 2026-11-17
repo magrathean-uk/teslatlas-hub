@@ -1850,7 +1850,9 @@ fn handback_without_recorded_inputs_plans_once_in_full_then_early() {
 fn handback_with_a_new_drive_plans_in_full_verifying_once() {
     let (fixture, _root, env) = planned_then_refused(true);
     let head = current_snapshot(&fixture);
+    let transitions = delta_transitions(&fixture.store);
     assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
+    assert_eq!(delta_transitions(&fixture.store), transitions + 1, "a changed set is admitted");
     assert_eq!(stage_checks(), 1, "one full check of the kept stage");
     assert_eq!(pack_checks(), 0, "the changed set repeats no pack check");
     assert_ne!(current_snapshot(&fixture), head);
@@ -2073,6 +2075,112 @@ fn handback_refuses_a_damaged_pack_of_the_current_head() {
         PhysicalClient::bootstrap(&env, &fixture).err(),
         Some(axum::http::StatusCode::NOT_ACCEPTABLE)
     );
+}
+
+/// Changed sets admitted so far.
+fn delta_transitions(store: &HubStore) -> i64 {
+    store
+        .open()
+        .expect("catalogue")
+        .query_row("SELECT COUNT(*) FROM physical_v3_delta_transitions", [], |row| row.get(0))
+        .expect("changed sets")
+}
+
+/// The path and bytes of a pack of `snapshot` that holds a drive.
+fn pack_with_a_drive(fixture: &Fixture, snapshot: Uuid) -> (std::path::PathBuf, Vec<u8>) {
+    let digests: Vec<String> = {
+        let connection = fixture.store.open().expect("catalogue");
+        let mut statement = connection
+            .prepare("SELECT sha256 FROM pending_physical_v3_packs WHERE snapshot_id = ?1 ORDER BY ordinal")
+            .expect("packs");
+        statement
+            .query_map(params![snapshot.to_string()], |row| row.get(0))
+            .expect("packs")
+            .collect::<Result<_, _>>()
+            .expect("packs")
+    };
+    for sha256 in digests {
+        let path = fixture.store.packs_dir().join("sha256").join(format!("{sha256}.sqlite.zst"));
+        let bytes = std::fs::read(&path).expect("pack");
+        let decoded = zstd::stream::decode_all(&bytes[..]).expect("decoded pack");
+        let scratch = crate::private_tempdir().expect("scratch");
+        let file = scratch.path().join("pack.sqlite");
+        std::fs::write(&file, &decoded).expect("decoded pack");
+        let drives: i64 = Connection::open(&file)
+            .expect("pack")
+            .query_row("SELECT COUNT(*) FROM drives", [], |row| row.get(0))
+            .expect("drives");
+        if drives > 0 {
+            return (path, bytes);
+        }
+    }
+    panic!("no pack of the head holds a drive");
+}
+
+/// A valid pack of the same length as `original` whose drives have another
+/// `speed_max`: re-encoded, then padded with a zstd skippable frame.
+fn same_length_variant(original: &[u8]) -> Vec<u8> {
+    let decoded = zstd::stream::decode_all(original).expect("decoded pack");
+    let scratch = crate::private_tempdir().expect("scratch");
+    let file = scratch.path().join("variant.sqlite");
+    std::fs::write(&file, &decoded).expect("decoded pack");
+    let changed = Connection::open(&file)
+        .expect("pack")
+        .execute("UPDATE drives SET speed_max = COALESCE(speed_max, 0) + 7", [])
+        .expect("another speed");
+    assert!(changed > 0);
+    let changed = std::fs::read(&file).expect("changed pack");
+    assert_eq!(changed.len(), decoded.len(), "the decoded length is the manifest's");
+    assert_ne!(changed, decoded);
+    for level in [19, 22, 12, 6, 3, 1] {
+        let mut encoded = zstd::stream::encode_all(&changed[..], level).expect("encoded");
+        if encoded.len() == original.len() {
+            return encoded;
+        }
+        if encoded.len() + 8 <= original.len() {
+            let padding = u32::try_from(original.len() - encoded.len() - 8).expect("padding");
+            encoded.extend_from_slice(&0x184D_2A50_u32.to_le_bytes());
+            encoded.extend_from_slice(&padding.to_le_bytes());
+            encoded.resize(original.len(), 0);
+            assert_eq!(zstd::stream::decode_all(&encoded[..]).expect("valid zstd"), changed);
+            return encoded;
+        }
+    }
+    panic!("no same-length variant of the pack");
+}
+
+/// M08-T19 (B2): the state lookup hashes the prior head's packs from their
+/// files and they pass; then the comparison's read of one of them sees other
+/// bytes (same length, a valid pack whose drives have another speed). The
+/// pack is authenticated over the bytes decoded, so that read is refused: no
+/// changed set is admitted, the signed full replacement is published, and a
+/// fresh client reads the true rows. Without it the changed set would be
+/// built from bytes nobody authenticated.
+#[test]
+fn handback_refuses_a_prior_pack_whose_decoded_bytes_differ_from_its_digest() {
+    let (fixture, _root, env) = planned_then_refused(true);
+    let head = current_snapshot(&fixture);
+    let (path, original) = pack_with_a_drive(&fixture, head);
+    let view = same_length_variant(&original);
+    assert_eq!(view.len(), original.len());
+    assert_ne!(view, original);
+    let transitions = delta_transitions(&fixture.store);
+    let watched = path.clone();
+    crate::hub_pack::PACK_DECODE_VIEW.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move |at: &Path| (at == watched).then(|| view.clone())));
+    });
+    let outcome = handback(&fixture);
+    crate::hub_pack::PACK_DECODE_VIEW.with(|hook| *hook.borrow_mut() = None);
+    assert_eq!(outcome, published(PhysicalV3PublicationKind::Rotation));
+    assert_eq!(
+        delta_transitions(&fixture.store),
+        transitions,
+        "the changed set read from unauthenticated bytes is refused"
+    );
+    assert_eq!(std::fs::read(&path).expect("pack"), original, "the file itself is sound");
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("the full replacement is served");
+    assert!(fresh.mirror.drives.contains_key(&10));
+    assert!(fresh.mirror.drives.contains_key(&(HUB_ID_BASE + 102)), "the window's drive");
 }
 
 /// M08-T19 lab: the cost of one handback publication on a synthetic

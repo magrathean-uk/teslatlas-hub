@@ -220,10 +220,10 @@ pub(crate) fn prepare_changed_set(
     )
 }
 
-/// As [`prepare_changed_set`], for a publication that verified, in this
-/// run, the content digest of every pack of `prior` (its state lookup) and
-/// wrote and verified every pack of `target` (M08-T19): their packs are
-/// decoded without hashing or integrity-checking them again.
+/// As [`prepare_changed_set`], for a publication over the Hub's own heads
+/// (M08-T19): each pack is authenticated in the read that decodes it, and
+/// its decoded SQLite, integrity-checked when the Hub wrote it, is not
+/// integrity-checked again.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prepare_changed_set_of_verified_heads(
     prior: &PendingPhysicalV3Admission,
@@ -243,7 +243,7 @@ pub(crate) fn prepare_changed_set_of_verified_heads(
         packs_dir,
         minimum_free_bytes,
         CHUNK_TARGET_DECODED,
-        PackCheck::DigestVerified,
+        PackCheck::Authenticated,
     )
 }
 

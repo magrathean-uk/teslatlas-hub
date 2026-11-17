@@ -3,7 +3,6 @@
 // Internal, bounded reader for already signed PhysicalV3 full packs.
 
 use rusqlite::types::ValueRef;
-use std::io::Seek;
 
 #[cfg(test)]
 thread_local! {
@@ -36,17 +35,76 @@ pub(crate) struct PhysicalTypedRow {
     pub month_date_pg_us: Option<i64>,
 }
 
-/// How much of a pack's verification a reader repeats (M08-T19).
+#[cfg(test)]
+thread_local! {
+    /// Gives the next decodes of packs other bytes than their files hold
+    /// (M08-T19 tests: a view that differs from the bytes hashed before).
+    pub(crate) static PACK_DECODE_VIEW: std::cell::RefCell<
+        Option<Box<dyn FnMut(&Path) -> Option<Vec<u8>>>>,
+    > = const { std::cell::RefCell::new(None) };
+}
+
+/// How a reader verifies a pack it decodes (M08-T19). In both, the content
+/// digest is computed over the very bytes that are decoded, in the same
+/// read, and compared with the manifest's before any row is used; an
+/// earlier hash of the same path does not stand for them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PackCheck {
-    /// The compressed bytes are hashed against the manifest and the decoded
-    /// SQLite gets a full integrity check.
+    /// The decoded SQLite also gets a full integrity check.
     Full,
-    /// The caller verified this pack's content digest in this run, against
-    /// a manifest of the Hub's own packs, each integrity-checked when it was
-    /// written: the bytes are the checked bytes, so neither is repeated.
-    /// Its length, decoded length, identity and layout are still checked.
-    DigestVerified,
+    /// A pack of the Hub's own heads, integrity-checked when it was written:
+    /// bytes with its digest are those bytes, so the decoded SQLite is not
+    /// integrity-checked again. Length, identity and layout are checked.
+    Authenticated,
+}
+
+/// Counts and hashes the bytes a decoder reads.
+struct DigestingReader<R> {
+    inner: R,
+    hash: Sha256,
+    bytes: u64,
+}
+
+impl<R: Read> Read for DigestingReader<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let read = self.inner.read(buffer)?;
+        self.hash.update(&buffer[..read]);
+        self.bytes += read as u64;
+        Ok(read)
+    }
+}
+
+/// Decodes `source` into `output` and authenticates the bytes decoded: their
+/// length and SHA-256 must be the manifest's, and the decoded length too.
+fn decode_authenticated(
+    pack: &TransportPack,
+    source: impl Read,
+    output: &mut File,
+) -> Result<(), ProjectionPackError> {
+    let limit = pack.compressed_bytes.checked_add(1).ok_or(ProjectionPackError::CapacityOverflow)?;
+    let source = DigestingReader { inner: source.take(limit), hash: Sha256::new(), bytes: 0 };
+    let mut decoder = zstd::stream::read::Decoder::new(source).map_err(ProjectionPackError::Decompress)?;
+    let maximum = pack.uncompressed_bytes.checked_add(1).ok_or(ProjectionPackError::CapacityOverflow)?;
+    let decoded = io::copy(&mut (&mut decoder).take(maximum), output)
+        .map_err(ProjectionPackError::Decompress)?;
+    // The rest of the input, if any, is hashed too: the digest is of all of it.
+    let mut source = decoder.finish().into_inner();
+    io::copy(&mut source, &mut io::sink()).map_err(ProjectionPackError::Decompress)?;
+    let authentic = source.bytes == pack.compressed_bytes
+        && Sha256Digest::from_bytes(source.hash.finalize().into()) == pack.sha256;
+    if source.bytes != pack.compressed_bytes {
+        return Err(ProjectionPackError::Protocol(ProtocolError::CompressedSizeMismatch {
+            expected: pack.compressed_bytes,
+            actual: source.bytes,
+        }));
+    }
+    if !authentic {
+        return Err(ProjectionPackError::Protocol(ProtocolError::PackHashMismatch));
+    }
+    if decoded != pack.uncompressed_bytes {
+        return Err(invalid("physical pack decoded length is invalid"));
+    }
+    Ok(())
 }
 
 pub(crate) struct VerifiedPhysicalPackSqlite {
@@ -67,31 +125,21 @@ pub(crate) fn open_verified_physical_pack_2_2(
     path: &Path,
     check: PackCheck,
 ) -> Result<VerifiedPhysicalPackSqlite, ProjectionPackError> {
-    let mut file = File::open(path).map_err(|source| ProjectionPackError::OpenCompressed {
+    pack.validate(ProtocolLimits::hub_sync_v1_1_3_schema_2_2())
+        .map_err(ProjectionPackError::Protocol)?;
+    let file = File::open(path).map_err(|source| ProjectionPackError::OpenCompressed {
         path: path.to_path_buf(),
         source,
     })?;
-    match check {
-        PackCheck::Full => {
-            pack.verify_reader(&mut file, ProtocolLimits::hub_sync_v1_1_3_schema_2_2())
-                .map_err(ProjectionPackError::Protocol)?;
-            file.rewind().map_err(|source| ProjectionPackError::ReadSource {
-                path: path.to_path_buf(),
-                source,
-            })?;
-        }
-        PackCheck::DigestVerified => {
-            let length = file
-                .metadata()
-                .map_err(|source| ProjectionPackError::ReadSource {
-                    path: path.to_path_buf(),
-                    source,
-                })?
-                .len();
-            if length != pack.compressed_bytes {
-                return Err(invalid("physical pack compressed length is invalid"));
-            }
-        }
+    let length = file
+        .metadata()
+        .map_err(|source| ProjectionPackError::ReadSource {
+            path: path.to_path_buf(),
+            source,
+        })?
+        .len();
+    if length != pack.compressed_bytes {
+        return Err(invalid("physical pack compressed length is invalid"));
     }
     let staging_dir = path
         .parent()
@@ -100,17 +148,18 @@ pub(crate) fn open_verified_physical_pack_2_2(
         .ok_or_else(|| invalid("physical pack has no staging directory"))?;
     ensure_private_staging_directory(&staging_dir)?;
     let sqlite = StagedFile::create(&staging_dir, "physical-scan.sqlite")?;
-    let decoder = zstd::stream::read::Decoder::new(file).map_err(ProjectionPackError::Decompress)?;
-    let maximum = pack.uncompressed_bytes.checked_add(1).ok_or(ProjectionPackError::CapacityOverflow)?;
     let mut output = OpenOptions::new().write(true).truncate(true).open(sqlite.path())
         .map_err(|source| ProjectionPackError::CreateTemporary {
             path: sqlite.path().to_path_buf(), source,
         })?;
-    let decoded = io::copy(&mut decoder.take(maximum), &mut output)
-        .map_err(ProjectionPackError::Decompress)?;
-    if decoded != pack.uncompressed_bytes {
-        return Err(invalid("physical pack decoded length is invalid"));
+    #[cfg(test)]
+    if let Some(view) = PACK_DECODE_VIEW.with(|view| view.borrow_mut().as_mut().and_then(|view| view(path))) {
+        decode_authenticated(pack, io::Cursor::new(view), &mut output)?;
+    } else {
+        decode_authenticated(pack, file, &mut output)?;
     }
+    #[cfg(not(test))]
+    decode_authenticated(pack, file, &mut output)?;
     drop(output);
     verify_projection_sqlite_2_2_publication_identity(sqlite.path(), pack, manifest, binding)?;
     let connection = Connection::open_with_flags(
