@@ -746,8 +746,11 @@ async fn sc59_and_sc60_events_follow_the_facts_in_order_with_their_read_times() 
     assert!(second >= sent[1]);
     assert!(second >= first, "queued_at is non-decreasing");
     assert_eq!(second - first, secs(1), "queued_at is the time of the read");
-    // Nothing more before the next session, which starts after 7.5 s.
-    expect_no_event_for(&mut run, secs(5)).await;
+    // Ruling 2: delivered data resets the outage, so reconnect after 1 s.
+    let ended = Instant::now();
+    expect_no_event_for(&mut run, Duration::from_millis(999)).await;
+    assert_eq!(run.event().await, StreamEvent::Healthy);
+    assert_eq!(Instant::now() - ended, secs(1));
     run.shut_down().await.expect("shutdown");
 }
 
@@ -1168,10 +1171,12 @@ async fn sc86_a_parked_session_waits_300_seconds_for_data() {
     let frame_at = Instant::now();
     // Pings are answered, and the 60 s configured limit does not apply to a parked car.
     expect_no_event_for(&mut run, secs(299)).await;
-    assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
-    assert_eq!(Instant::now() - frame_at, secs(300));
+    // Ruling 4: preserve the 300 s silence boundary, then reconnect quietly.
     peer.log.wait_for("close:", 1).await;
+    assert_eq!(peer.log.times("close:")[0] - frame_at, secs(300));
     assert!(wire_labels(&peer).contains(&UNSUBSCRIBE.to_owned()));
+    assert_eq!(run.event().await, StreamEvent::Healthy);
+    assert_eq!(Instant::now() - frame_at, secs(301));
     run.shut_down().await.expect("shutdown");
 }
 
@@ -1256,8 +1261,11 @@ async fn r30_a_repeated_frame_resets_the_silence_clock_and_a_rejected_one_does_n
     assert_eq!(run.event().await, StreamEvent::Healthy);
     expect_telemetry(&mut run, v1_update(T0)).await;
     let first = Instant::now();
-    assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
-    assert_eq!(Instant::now() - first, secs(110));
+    // Ruling 4: the stable session still ends at +110, without an outage event.
+    peer.log.wait_for("close:", 1).await;
+    assert_eq!(peer.log.times("close:")[0] - first, secs(110));
+    assert_eq!(run.event().await, StreamEvent::Healthy);
+    assert_eq!(Instant::now() - first, secs(111));
     run.shut_down().await.expect("shutdown");
 }
 
@@ -1307,8 +1315,11 @@ async fn r30_a_parked_frame_moves_the_run_back_to_the_parked_limit() {
     run.event().await;
     run.event().await;
     let parked_at = Instant::now();
-    assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
-    assert_eq!(Instant::now() - parked_at, secs(300));
+    // Ruling 4: the parked limit still ends the session, followed by a quiet retry.
+    peer.log.wait_for("close:", 1).await;
+    assert_eq!(peer.log.times("close:")[0] - parked_at, secs(300));
+    assert_eq!(run.event().await, StreamEvent::Healthy);
+    assert_eq!(Instant::now() - parked_at, secs(301));
     run.shut_down().await.expect("shutdown");
 }
 

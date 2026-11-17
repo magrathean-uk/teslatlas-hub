@@ -518,7 +518,8 @@ async fn sc56_a_token_expiring_mid_stream_changes_nothing_until_the_next_attempt
     for step in 1..=24_i64 {
         assert_eq!(telemetry_time(&run.event().await), T0 + step * 5_000);
     }
-    assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
+    // Ruling 4: this stable end is quiet; inspect the first session before retry.
+    peer.log.wait_for("end:0", 1).await;
     assert_eq!(peer.log.count("subscribe-received"), 1);
     assert_eq!(
         issuer.requests.load(Ordering::SeqCst),
@@ -1507,12 +1508,10 @@ async fn sc89_ten_sequential_runs_hold_one_socket_at_a_time_with_their_own_corre
 // ------------------------------------------------------------------ R37, R54 extras
 
 #[tokio::test(start_paused = true)]
-async fn r37_a_session_the_silence_rule_ends_at_exactly_60_seconds_keeps_its_back_off() {
-    // Session 1 ends at once (counter 1). Session 2 delivers one moving frame and then
-    // only answers pings, so data silence ends it 60 s after that frame, at the same
-    // instant its stable timer is due. The end wins the tie: that minute did not work,
-    // so the counter goes on to 2 and the next attempt waits 2 s (nominal 4 s at u = 0).
-    // A stable reset that came first would make it counter 1, and 1 s.
+async fn r37_a_session_ending_at_exactly_60_seconds_restarts_after_delivered_data() {
+    // Ruling 2: session 2 delivers data, resetting the previous outage immediately.
+    // Its silence end at exactly 60 s is not stable under ruling 4 (strictly >60 s),
+    // so it emits an outage event and starts the first 1 s retry, not counter 2.
     let peer = plan_peer(vec![
         Plan::ends(End::Close(1000)),
         Plan::data(vec![(0, u(T0, V1))], 0, End::Hold),
@@ -1533,17 +1532,16 @@ async fn r37_a_session_the_silence_rule_ends_at_exactly_60_seconds_keeps_its_bac
     let frame_at = peer.log.times("accept")[1];
     assert_eq!(ended - frame_at, secs(60));
     peer.log.wait_for("accept", 3).await;
-    assert_eq!(peer.log.times("accept")[2] - ended, secs(2));
+    assert_eq!(peer.log.times("accept")[2] - ended, secs(1));
     run.shut_down().await.expect("shutdown");
 }
 
 #[tokio::test(start_paused = true)]
 async fn r37_a_duplicate_first_frame_also_starts_the_stable_timer() {
-    // Session 1 delivers a frame and the server closes (counter 1, wait 1 s). Session 2
-    // opens with the same frame again, a duplicate that counts as its first accepted
-    // frame (R26, R37), then a new frame at 30 s, and the server closes at 61 s: stable
-    // at 60 s, so the end is counter 1 again and the wait is 1 s (counter 2 would give
-    // 2 s).
+    // Session 1 delivers a frame and closes (wait 1 s). Session 2 starts with a
+    // duplicate, then a new frame at 30 s, and closes at 61 s. Rulings 2 and 4:
+    // the duplicate resets the outage, starts the stable timer, and the stable
+    // end reconnects quietly after 1 s without another unhealthy event.
     let peer = plan_peer(vec![
         Plan::data(vec![(0, u(T0, V1))], 0, End::Close(1000)),
         Plan::data(
@@ -1557,19 +1555,18 @@ async fn r37_a_duplicate_first_frame_also_starts_the_stable_timer() {
     let mut run = Rig::for_peer(&peer, Creds::offline("tok-1")).start();
     peer.log.wait_for("accept", 3).await;
     assert_eq!(delays(&peer), vec![secs(1), secs(1)]);
-    // The duplicate gave Healthy but no Telemetry (session 2): Healthy, Telemetry,
-    // outage, Healthy, Telemetry (the new frame), outage.
+    // The duplicate gives Healthy but no Telemetry; the stable end stays quiet.
     assert_eq!(
-        kinds(&mut run, 6).await,
+        kinds(&mut run, 5).await,
         [
             "Healthy",
             "Telemetry",
             "TransportUnavailable",
             "Healthy",
-            "Telemetry",
-            "TransportUnavailable"
+            "Telemetry"
         ]
     );
+    expect_silence(&mut run, secs(1)).await;
     run.shut_down().await.expect("shutdown");
 }
 
