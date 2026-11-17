@@ -251,5 +251,46 @@ fn write_cursor_only_export(
     publish_private_file(destination, &envelope).expect("publish recovery export");
 }
 
+// The export marker is a stored format: an earlier build wrote exactly these
+// bytes, zero byte included, as header and authenticated data (DEC-169).
+const EARLIER_EXPORT_MARKER: &[u8; 37] = b"TESLATLAS-HUB-CREDENTIAL-RECOVERY-V1\0"; // rename:keep
+
+#[test]
+fn the_export_marker_keeps_the_earlier_bytes() {
+    assert_eq!(FILE_MAGIC, EARLIER_EXPORT_MARKER.as_slice());
+    assert_eq!(FILE_MAGIC.len(), 37);
+    assert_eq!(FILE_MAGIC.last(), Some(&0));
+}
+
+#[test]
+fn an_export_built_with_the_earlier_marker_decodes() {
+    let recovery_key = [7_u8; 32];
+    let installation_id = Uuid::from_u128(0x5eed_0000_0000_4000_8000_0000_0000_0001);
+    let cursor_key = [42_u8; 32];
+    let cipher = recovery_cipher(&recovery_key).expect("recovery cipher");
+    let plaintext =
+        encode_payload(installation_id, None, Some(&cursor_key), None).expect("payload");
+    let nonce_bytes = [9_u8; NONCE_BYTES];
+    let ciphertext = cipher
+        .encrypt(
+            &Nonce::from(nonce_bytes),
+            Payload { msg: plaintext.as_slice(), aad: EARLIER_EXPORT_MARKER.as_slice() },
+        )
+        .expect("encrypt payload");
+    let mut envelope = EARLIER_EXPORT_MARKER.to_vec();
+    envelope.extend_from_slice(&nonce_bytes);
+    envelope.extend_from_slice(&ciphertext);
+
+    let decoded = decode_envelope(&cipher, &envelope).expect("earlier export decodes");
+    assert_eq!(decoded.installation_id, installation_id);
+    assert_eq!(decoded.cursor_key.as_deref().map(Vec::as_slice), Some(cursor_key.as_slice()));
+
+    // The current spelling is not a second format: an envelope carrying it is refused.
+    let mut renamed = envelope.clone();
+    renamed.remove(3);
+    assert!(renamed.starts_with(b"TESATLAS-HUB-CREDENTIAL-RECOVERY-V1\0"));
+    assert!(decode_envelope(&cipher, &renamed).is_err());
+}
+
 #[path = "tests/g24_m2_recovery.rs"]
 pub(in crate::auth) mod g24_m2_recovery;
