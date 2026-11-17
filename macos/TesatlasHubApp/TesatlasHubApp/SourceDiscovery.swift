@@ -49,7 +49,7 @@ EOF_DATABASE_IDS
 candidate_rows=
 while IFS= read -r project_name; do
     [ -n "$project_name" ] || continue
-    src_container_ids=$(docker_run ps --filter "label=com.docker.compose.project=$project_name" --format '{{.ID}}')
+    src_container_ids=$(docker_run ps -a --filter "label=com.docker.compose.project=$project_name" --format '{{.ID}}')
     while IFS= read -r src_container_id; do
         [ -n "$src_container_id" ] || continue
         environment_names=$(docker_run inspect -f '{{range .Config.Env}}{{index (split . "=") 0}}{{println}}{{end}}' "$src_container_id")
@@ -69,7 +69,7 @@ $project_names
 EOF_PROJECT_NAMES
 src_container_count=$(printf '%s\n' "$candidate_rows" | awk 'NF {count += 1} END {print count + 0}')
 [ "$src_container_count" -gt 0 ] || { printf '%s\n' 'No matching source container was found.' >&2; exit 20; }
-[ "$src_container_count" -eq 1 ] || { printf '%s\n' 'Several matching source containers are running.' >&2; exit 27; }
+[ "$src_container_count" -eq 1 ] || { printf '%s\n' 'Several matching source containers were found.' >&2; exit 27; }
 candidate_row=$(printf '%s\n' "$candidate_rows" | sed -n '1p')
 src_container_id=${candidate_row%%|*}
 project_name=${candidate_row#*|}
@@ -160,4 +160,140 @@ printf 'oci_version=%s\n' "$(encode "$src_oci_version")"
         return .tooOld(displayedVersion)
     }
 
+}
+
+/// Whether the source application's own container runs, as the stop check saw it.
+enum SourceRunState: Equatable {
+    case stopped
+    case running
+}
+
+/// The stop check of the migration path (M09-T05): before the import and the token
+/// takeover, the source application must be stopped. It runs over the SSH connection the
+/// import already holds (its control socket) and asks Docker only for container state and
+/// environment variable names: no value is selected, read or returned.
+enum SourceStopCheck {
+    /// Finds the source application containers the same way discovery does (the database
+    /// service's Compose project, then the environment-name shape), but also among stopped
+    /// containers, and prints how many were found and how many still run. A state other
+    /// than exactly `false` counts as running.
+    static let script = #"""
+set -eu
+
+docker_run() {
+    if [ "$(id -u)" -eq 0 ]; then
+        docker "$@"
+    elif [ "${TESATLAS_USE_SUDO:-1}" -eq 1 ]; then
+        sudo -n docker "$@"
+    else
+        docker "$@"
+    fi
+}
+
+database_service_ids=$(docker_run ps --filter label=com.docker.compose.service=\#(SourceDeploymentFacts.databaseService) --format '{{.ID}}')
+[ -n "$database_service_ids" ] || { printf '%s\n' 'Database service container not found.' >&2; exit 22; }
+project_names=
+while IFS= read -r database_service_id; do
+    [ -n "$database_service_id" ] || continue
+    project_name=$(docker_run inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$database_service_id")
+    case "$project_name" in *[!a-z0-9_-]*|[-_]*|'') printf '%s\n' 'Compose project name is invalid.' >&2; exit 21;; esac
+    project_names=$(printf '%s\n%s\n' "$project_names" "$project_name" | awk 'NF && !seen[$0]++')
+done <<EOF_DATABASE_IDS
+$database_service_ids
+EOF_DATABASE_IDS
+found=0
+running=0
+while IFS= read -r project_name; do
+    [ -n "$project_name" ] || continue
+    container_ids=$(docker_run ps -a --filter "label=com.docker.compose.project=$project_name" --format '{{.ID}}')
+    while IFS= read -r container_id; do
+        [ -n "$container_id" ] || continue
+        environment_names=$(docker_run inspect -f '{{range .Config.Env}}{{index (split . "=") 0}}{{println}}{{end}}' "$container_id")
+        candidate=1
+        for required_name in \#(SourceDeploymentFacts.databaseUser) \#(SourceDeploymentFacts.databasePassword) \#(SourceDeploymentFacts.databaseName) \#(SourceDeploymentFacts.sourceShapeMarker); do
+            printf '%s\n' "$environment_names" | grep -Fxq "$required_name" || candidate=0
+        done
+        [ "$candidate" -eq 1 ] || continue
+        found=$((found + 1))
+        state=$(docker_run inspect -f '{{.State.Running}}' "$container_id")
+        [ "$state" = "false" ] || running=$((running + 1))
+    done <<EOF_CONTAINER_IDS
+$container_ids
+EOF_CONTAINER_IDS
+done <<EOF_PROJECT_NAMES
+$project_names
+EOF_PROJECT_NAMES
+printf 'found=%s\n' "$found"
+printf 'running=%s\n' "$running"
+"""#
+
+    /// Reads the answer: exactly one `found` and one `running` count. No source container,
+    /// a malformed or repeated line, or more running than found is a failure, never "stopped".
+    static func parse(_ output: String) throws -> SourceRunState {
+        var counts: [String: Int] = [:]
+        for line in output.split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2 else { continue }
+            let name = String(parts[0])
+            guard name == "found" || name == "running" else { continue }
+            guard counts[name] == nil,
+                  parts[1].allSatisfy(\.isASCII), parts[1].allSatisfy(\.isNumber),
+                  let value = Int(parts[1]) else { throw unreadable }
+            counts[name] = value
+        }
+        guard let found = counts["found"], let running = counts["running"], running <= found else {
+            throw unreadable
+        }
+        guard found > 0 else {
+            throw HubActionError.commandFailed(HubL10n.text(
+                "hub.sourceTakeover.stopCheckNotFound",
+                fallback: "Hub could not find the source application's container on the server, so it cannot confirm that it is stopped."))
+        }
+        return running == 0 ? .stopped : .running
+    }
+
+    private static var unreadable: Error {
+        HubActionError.commandFailed(HubL10n.text(
+            "hub.sourceTakeover.stopCheckUnreadable",
+            fallback: "Hub could not read whether the source application is stopped. Check the server connection, then check again."))
+    }
+
+    /// A control socket in the import tunnel's private directory, if any.
+    /// Ownership and socket type are checked here; liveness is not established.
+    static func controlSocket(inSessionDirectory directory: URL) -> URL? {
+        for name in ["c2", "c1", "c0"] {
+            let candidate = directory.appendingPathComponent(name, isDirectory: false)
+            var info = stat()
+            guard lstat(candidate.path, &info) == 0,
+                  info.st_mode & S_IFMT == S_IFSOCK,
+                  info.st_uid == getuid() else { continue }
+            return candidate
+        }
+        return nil
+    }
+
+    /// Prefer the tunnel's control socket without prompting (BatchMode). If the master
+    /// is gone, OpenSSH can try configured keys or its agent in batch mode. ForwardAgent
+    /// only prevents forwarding; host keys stay strictly checked.
+    static func arguments(controlSocket: URL,
+                          destination: String,
+                          port: Int,
+                          usePasswordlessSudo: Bool) -> [String] {
+        [
+            "-o", "ControlMaster=no",
+            "-o", "ControlPath=\(controlSocket.path)",
+            "-o", "ControlPersist=no",
+            "-o", "BatchMode=yes",
+            "-o", "ForwardAgent=no",
+            "-o", "ConnectTimeout=12",
+            "-o", "PermitLocalCommand=no",
+            "-o", "RemoteCommand=none",
+            "-o", "RequestTTY=no",
+            "-o", "StdinNull=no",
+            "-o", "StrictHostKeyChecking=yes",
+            "-p", String(port),
+            destination,
+            "env", "TESATLAS_USE_SUDO=\(usePasswordlessSudo ? 1 : 0)", "sh", "-s"
+        ]
+    }
 }

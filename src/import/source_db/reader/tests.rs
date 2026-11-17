@@ -1596,13 +1596,17 @@ fn sealed_stage_round_trips_the_small_snapshot_reader_contract() {
 }
 
 /// Source credentials are disabled: no reader, capture, importer or pack
-/// source under `src/import/source_db` names the source's credential relation
-/// or keeps a credential-capture path. The needles are assembled at run time
+/// source under `src/import` names the source's credential relation, keeps a
+/// credential-capture path or refers to the take-over's token reader module
+/// under `src/auth`, which lives outside the import so that no import file
+/// needs an exception. The needles are assembled at run time
 /// so this file does not match itself.
 #[test]
 fn source_credential_disabled_import_never_names_source_credential_relations() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/import/source_db");
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = manifest.join("src/import");
     let relation = ["tok", "ens"].concat();
+    let reader_module = ["source_tok", "en_row"].concat();
     let needles = [
         format!("private.{relation}"),
         format!("private\".\"{relation}\""),
@@ -1611,7 +1615,14 @@ fn source_credential_disabled_import_never_names_source_credential_relations() {
         ["legacy_", "token"].concat(),
         ["token", "ciphertext"].concat(),
         ["encryption", "_key"].concat(),
+        ["tok", "en_row"].concat(),
     ];
+    // The take-over's reader is the one module that names the relation; it
+    // must stay outside the scanned tree, or this scan would stop covering it.
+    let reader = manifest.join(format!("src/auth/{reader_module}.rs"));
+    let reader_text = std::fs::read_to_string(&reader).expect("take-over token reader");
+    assert!(reader_text.contains(&format!("private.{relation}")), "the reader moved or changed");
+    assert!(!reader.starts_with(&root));
     let mut stack = vec![root];
     let mut scanned = 0;
     while let Some(path) = stack.pop() {

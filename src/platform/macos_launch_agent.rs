@@ -122,6 +122,78 @@ pub fn hub_is_never_configured(config: &crate::config::HubConfig) -> io::Result<
     Ok(true)
 }
 
+/// Whether this Hub awaits the owner's own Tesla sign-in (M09-T16, B2): a
+/// configured collecting Legacy Hub (for example one with imported history
+/// whose source login was not taken over, or one that was signed out) whose
+/// converted credential store holds no Owner API pair. Production admits it
+/// with the collector off: the API, the operator channel and the window
+/// supervisor run, nothing is sent to Tesla, and the existing owner sign-in
+/// stores the Hub's own login, after which the supervisor starts collection
+/// inside the open window. Any stored pair, a blocked or unconverted slot, a
+/// Fleet provider, a disabled Legacy collector or a catalogue without a
+/// configured car keeps today's admission (`Ok(false)`). A credential key
+/// store that is absent stays admitted (the sign-in creates it); one that
+/// exists but cannot be used is refused here with the vault's own refusal,
+/// rather than at the sign-in (M09-T16, N1).
+pub fn hub_awaits_owner_sign_in(config: &crate::config::HubConfig) -> io::Result<bool> {
+    if config.collector.provider != crate::config::CollectorProvider::Legacy
+        || config.collector.interval_seconds == 0
+        || !config.collector.legacy_auth.enabled
+    {
+        return Ok(false);
+    }
+    match fs::symlink_metadata(config.data_dir.join("hub.sqlite")) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+        Ok(_) => {}
+    }
+    let unavailable =
+        |error: &dyn std::fmt::Display| io::Error::new(io::ErrorKind::InvalidData, format!("Hub data is unavailable: {error}"));
+    let store = crate::db::HubStore::open_read_only(&config.data_dir).map_err(|error| unavailable(&error))?;
+    store.catalogue_check().map_err(|error| unavailable(&error))?;
+    if store.configured_tesla_vehicles().map_err(|error| unavailable(&error))?.is_empty() {
+        return Ok(false);
+    }
+    let Some(format) = store.credential_format_state().map_err(|error| unavailable(&error))? else {
+        return Ok(false);
+    };
+    if format.owner_api_state == crate::db::CredentialSlotFormatState::Pending || format.owner_api_blocked.is_some() {
+        return Ok(false);
+    }
+    let present = store
+        .credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::OwnerApi)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "credential presence unavailable"))?
+        .is_some();
+    if present {
+        return Ok(false);
+    }
+    owner_sign_in_keyring_usable(&config.data_dir)?;
+    Ok(true)
+}
+
+/// The key store the sign-in's vault would load: absent is usable (the vault
+/// creates it); an existing directory or key file that the vault would refuse
+/// fails with that refusal's code and owner text. Non-mutating: nothing is
+/// repaired, created or loaded into a key handle.
+fn owner_sign_in_keyring_usable(data_dir: &Path) -> io::Result<()> {
+    use crate::auth::{credential_keys::CredentialKeyError, credential_vault::CredentialStoreError};
+    let refused = |error: CredentialStoreError| {
+        io::Error::new(io::ErrorKind::InvalidData, crate::auth::credential_sign_in::CredentialCommandError::from(error).to_string())
+    };
+    let path = data_dir.join("secrets");
+    let secrets = match crate::platform::private_directory::open_validated_read_only(&path) {
+        Ok(Some(secrets)) => secrets,
+        Ok(None) => return Ok(()),
+        // The vault's writable open makes the Hub's own secrets directory
+        // private again (an ancestor stays refused); its key file is checked
+        // there, at the sign-in.
+        Err(crate::platform::private_directory::PrivateDirectoryError::WritableByOthers(leaf)) if fs::canonicalize(&path).is_ok_and(|own| own == leaf) => return Ok(()),
+        // The vault's own mapping of an unusable secrets directory.
+        Err(_) => return Err(refused(CredentialStoreError::Key(CredentialKeyError::Io { operation: "secrets_directory" }))),
+    };
+    crate::auth::credential_keys::check_keyring(&secrets).map(drop).map_err(|error| refused(error.into()))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DevelopmentServeMode {
     Fixture,
@@ -178,6 +250,12 @@ pub fn preflight_hub_for_serve(
         // other production state keeps the full admission below.
         if hub_is_never_configured(config)? {
             tracing::info!(state = "idle", "nothing is configured: Hub serves idle with every collector path off");
+            return Ok(());
+        }
+        // A configured Hub without the Hub's own login serves for the
+        // owner's sign-in, collecting nothing until then (M09-T16, B2).
+        if hub_awaits_owner_sign_in(config)? {
+            tracing::info!(state = "awaiting_sign_in", "no Tesla login is stored: Hub serves for the owner's sign-in with the collector off");
             return Ok(());
         }
         return preflight_hub_for_config(config);
@@ -509,7 +587,10 @@ fn provider_credentials_are_usable(
             crate::auth::credential_keys::check_keyring(&secrets)
                 .map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"credential keyring unusable"))?
                 .ok_or_else(||io::Error::new(io::ErrorKind::InvalidData,"credential keyring missing"))?;
-            if store.load_collector_auth_row().map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"credential status unavailable"))?.is_some_and(|row|row.state=="signed_out") {
+            // A stored sign-out holds while the stored pair is the stopped one or
+            // its refresh successor, or a refresh is unresolved; a pair that does
+            // not descend from it by refresh is admitted (M09-T16, B4).
+            if store.owner_sign_out_stop_holds().map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"credential status unavailable"))? {
                 return Err(io::Error::new(io::ErrorKind::InvalidData,"credential sign-in required"));
             }
         }
