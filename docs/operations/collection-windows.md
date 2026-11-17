@@ -78,9 +78,14 @@ sign out in Hub before restarting the source application. See the
   collector lease and a per-host claim all apply, and the issuer refuses
   overlapping grants for any host, with a gap of at least 15 minutes between
   hosts.
-- Hub checks its clock against an NTP server (not a Tesla endpoint) when a
-  window opens and every five minutes inside it, and closes if the offset
-  exceeds 30 seconds or cannot be measured.
+- Hub checks its clock against an NTP server when you request a window and
+  every five minutes while it is Pending or Open. A measured offset of more
+  than 30 seconds in either direction prevents opening or closes the window
+  with `clock_invalid`. After a missed probe, Hub retries after 30 seconds. It
+  closes on the third consecutive miss, or on a miss at least five minutes
+  after the first. A measurement within the limit clears the miss count.
+  At service restart, Hub requires a measurement within the limit before it
+  resumes a window.
 - On close Hub writes a handback record: grant id, opened and closed times,
   reason, coverage (the open interval minus recorded gaps) and per-table
   high-water marks for drives, charges and positions. The same write closes a
