@@ -106,11 +106,8 @@ impl Home {
         self.support(&format!("{folder} Window"))
     }
     /// The earlier window claim, held by a process until the file is dropped.
-    fn hold_earlier_claim(&self) -> fs::File {
-        let claim = self.window(EARLIER_FOLDER).join(HOST_CLAIM_LOCK);
-        let holder = fs::File::open(claim).unwrap();
-        rustix::fs::flock(&holder, rustix::fs::FlockOperation::NonBlockingLockExclusive).unwrap();
-        holder
+    fn hold_earlier_claim(&self) -> LockHolder {
+        LockHolder::hold(&self.window(EARLIER_FOLDER).join(HOST_CLAIM_LOCK))
     }
     fn plist(&self, label: &str) -> PathBuf {
         self.layout.home.join("Library/LaunchAgents").join(format!("{label}.plist"))
@@ -255,8 +252,7 @@ fn complete_refuses_before_the_current_agent_is_installed() {
 fn a_busy_earlier_folder_is_deferred_and_the_earlier_service_runs_again() {
     let home = Home::new();
     home.seed_earlier();
-    let holder = fs::File::open(home.earlier().join("data/.hub-instance.lock")).unwrap();
-    rustix::fs::flock(&holder, rustix::fs::FlockOperation::NonBlockingLockExclusive).unwrap();
+    let holder = LockHolder::hold(&home.earlier().join("data/.hub-instance.lock"));
     let mut launchd = Home::running_earlier();
 
     let report = hand_over::prepare(&home.layout, &mut launchd);
@@ -362,8 +358,7 @@ fn before_the_rename_nothing_is_touched() {
 fn a_failed_restart_after_a_deferral_keeps_the_intent_to_run_the_service() {
     let home = Home::new();
     home.seed_earlier();
-    let holder = fs::File::open(home.earlier().join("data/.hub-instance.lock")).unwrap();
-    rustix::fs::flock(&holder, rustix::fs::FlockOperation::NonBlockingLockExclusive).unwrap();
+    let holder = LockHolder::hold(&home.earlier().join("data/.hub-instance.lock"));
     let mut launchd = Home::running_earlier();
     launchd.bootstrap_fails = true;
 
@@ -603,6 +598,40 @@ fn fake_hub(home: &Home, answer: &str) -> PathBuf {
     .unwrap();
     fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
     program
+}
+
+/// Another process holding a lock file, as a running Hub does. The lock is
+/// held in a helper process, not in this one: a child that a concurrent test
+/// spawns here would share an in-process lock until its `exec` closed it, and
+/// a check right after the release could still find it held. Dropping the
+/// holder ends the helper and waits for it, so the lock is free afterwards.
+struct LockHolder(std::process::Child);
+
+impl LockHolder {
+    fn hold(path: &Path) -> Self {
+        use std::io::BufRead;
+        let mut child = std::process::Command::new("/usr/bin/perl")
+            .args([
+                "-e",
+                r#"use Fcntl qw(:flock); open(my $f, "<", $ARGV[0]) or die; flock($f, LOCK_EX | LOCK_NB) or die "busy"; $| = 1; print "locked\n"; <STDIN>;"#,
+            ])
+            .arg(path)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut line = String::new();
+        std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+        assert_eq!(line, "locked\n", "the helper holds {}", path.display());
+        Self(child)
+    }
+}
+
+impl Drop for LockHolder {
+    fn drop(&mut self) {
+        drop(self.0.stdin.take());
+        let _ = self.0.wait();
+    }
 }
 
 const SERVING_BETWEEN_WINDOWS: &str = r#"echo '{"status":"serving","readiness":"between_windows"}'"#;
