@@ -2,6 +2,7 @@
 
 use super::*;
 use super::fixtures::{FixtureExclusion, seed_entry, seed_legacy_supplied_pair, open_fixture_vault};
+use super::entry::SourceTakeoverOutcome;
 
 include!("tests/admitted.rs");
 include!("tests/power.rs");
@@ -364,6 +365,189 @@ fn source_credential_disabled_vault_refuses_source_and_unknown_origin() {
     let unknown = admit_stored_origin(OWNER, None, RefreshOwner::Hub).expect_err("unknown origin refused");
     assert!(matches!(unknown, CredentialStoreError::UnknownOrigin(OWNER)), "unknown origin refused");
     assert_eq!(unknown.code(), "unknown_origin");
+}
+
+/// A synthetic JWT-shaped access token with this `exp` (none: no `exp`).
+fn takeover_jwt(exp: Option<i64>) -> String {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    let mut claims = serde_json::json!({"iss": "https://auth.tesla.com/oauth2/v3"});
+    if let Some(exp) = exp { claims["exp"] = exp.into(); }
+    format!("{}.{}.c2ln", URL_SAFE_NO_PAD.encode(br#"{"alg":"none","typ":"JWT"}"#), URL_SAFE_NO_PAD.encode(claims.to_string()))
+}
+fn takeover_tokens(access: &str, refresh: &str) -> crate::credentials::OwnerTokens {
+    crate::credentials::OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned()).expect("synthetic pair")
+}
+fn epoch_now() -> i64 { SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_secs() as i64 }
+
+/// DEC-172 admission matrix: the taken-over origin is admitted only on the
+/// Owner API slot with the Hub as refresh owner; `hub_login` is unchanged.
+#[test]
+fn source_takeover_admission_matrix() {
+    use CredentialOrigin::*;
+    for origin in [None, Some(HubLogin), Some(DirectEntry), Some(ProviderEntry), Some(FleetOauth), Some(SourceToken)] {
+        for slot in [OWNER, CredentialSlot::FleetApi] {
+            for owner in [RefreshOwner::Hub, RefreshOwner::External] {
+                let admitted = matches!(origin, Some(HubLogin | SourceToken)) && slot == OWNER && owner == RefreshOwner::Hub;
+                let expected = if admitted { None } else if origin.is_none() { Some("unknown_origin") } else { Some("source_credential_disabled") };
+                assert_eq!(stored_origin_refusal(slot, origin, owner), expected, "{origin:?} {slot:?} {owner:?}");
+            }
+        }
+    }
+}
+
+/// The single writer stores the pair as `source_token` owned by the Hub, due
+/// for refresh now and expiring at the JWT `exp`; it then loads. A second
+/// takeover is `slot_occupied` and leaves the first pair; a supplied
+/// `source_token` entry is refused before anything is reserved.
+#[test]
+fn source_takeover_writer_stores_a_due_hub_owned_pair() {
+    let root = crate::private_tempdir().expect("root");
+    let vault = open(root.path());
+    let refused = vault.store_supplied_entry(CredentialEntry::source_token(Zeroizing::new("access-0001".into()), Zeroizing::new("refresh-0001".into())).expect("source entry"), ReplacePolicy::OnlyIfEmpty).unwrap_err();
+    assert_eq!(refused.code(), "invalid_origin");
+    assert!(!root.path().join("secrets").join("credential-keys").exists(), "nothing reserved for a supplied source_token");
+    let exp = epoch_now() + 28_800;
+    let before = epoch_now();
+    let generation = vault.store_source_takeover(&takeover_tokens(&takeover_jwt(Some(exp)), "refresh-0001")).expect("takeover").stored_generation().expect("stored");
+    let after = epoch_now();
+    let row = pair(&vault);
+    assert_eq!((row.generation, row.origin, row.refresh_owner, row.expires_at, row.refresh.as_str()), (generation, Some(CredentialOrigin::SourceToken), RefreshOwner::Hub, exp, "refresh-0001"));
+    assert!((before..=after).contains(&row.next_refresh_at), "due for refresh at once");
+    let occupied = vault.store_source_takeover(&takeover_tokens(&takeover_jwt(Some(exp)), "refresh-0002")).unwrap_err();
+    assert_eq!(occupied.code(), "slot_occupied");
+    assert_eq!(pair(&vault).generation, generation, "first pair kept");
+}
+
+/// M09-T16 (B3): a second take-over of the same source login, or of the login the Hub has
+/// since refreshed from it, writes nothing and says so; any other login in the slot stays
+/// `slot_occupied`, including a different source login after a sign-out.
+#[test]
+fn source_takeover_recognises_the_same_login_and_its_refreshed_successor() {
+    let root = crate::private_tempdir().expect("root");
+    let vault = open(root.path());
+    let source = takeover_tokens(&takeover_jwt(Some(epoch_now() + 28_800)), "refresh-0001");
+    let generation = vault.store_source_takeover(&source).expect("first").stored_generation().expect("stored");
+    let reserved = vault.lock().expect("state").commits_issued;
+    assert_eq!(vault.store_source_takeover(&source).expect("again"), SourceTakeoverOutcome::AlreadyStored);
+    assert_eq!(vault.lock().expect("state").commits_issued, reserved, "nothing written");
+    assert_eq!(pair(&vault).generation, generation, "pair kept");
+    let other = takeover_tokens(&takeover_jwt(Some(epoch_now() + 28_800)), "refresh-0009");
+    assert_eq!(vault.store_source_takeover(&other).unwrap_err().code(), "slot_occupied");
+
+    // The Hub refreshed the taken-over pair: the source row still holds the old login,
+    // and the slot holds its successor.
+    let receipt = vault.begin_refresh(OWNER, generation).expect("begin");
+    let output = Uuid::new_v4();
+    vault.persist_refreshed(OWNER, receipt, generation, output, "access-0002", "refresh-0002", 1_800_028_800, 1_800_027_000).expect("successor");
+    assert_eq!(vault.store_source_takeover(&source).expect("after refresh"), SourceTakeoverOutcome::AlreadyStored);
+    assert_eq!(pair(&vault).generation, output, "successor kept");
+
+    // Sign-out, then a different source login: the old one is another lineage.
+    vault.clear_credential_pair(OWNER).expect("sign out");
+    vault.store_source_takeover(&other).expect("different login").stored_generation().expect("stored");
+    assert_eq!(vault.store_source_takeover(&source).unwrap_err().code(), "slot_occupied");
+}
+
+/// M09-T16 (B5): `legacyCredentials.refreshProgress` from durable facts only: null with
+/// no login, then `none_sent`, `attempt_recorded`, `sign_in_required` (a send closed
+/// without a successor, or an auth stop naming the pair) and `completed`.
+#[test]
+fn source_takeover_refresh_progress_follows_the_durable_facts() {
+    fn progress(root: &Path) -> Option<Option<&'static str>> {
+        let store = HubStore::open_read_only(root).expect("store");
+        crate::auth::credential_sign_in::credential_status(&store, root, epoch_now() * 1000).expect("status").legacy_credentials.refresh_progress
+    }
+    fn stop(vault: &CredentialVault, state: &str, generation: Uuid) {
+        let guard = vault.lock().expect("state");
+        guard.connection.test_connection().execute("DELETE FROM collector_auth_state", []).expect("clear");
+        guard.connection.test_connection().execute(
+            "INSERT INTO collector_auth_state(singleton_id, state, reason, collecting, retry_at, stopped_generation, stopped_mode, fuse_consecutive, fuse_generation, fuse_last_rejection_at, fuse_pause_until, clock_skew, updated_at_ms) VALUES (1, ?1, 'refresh_outcome_unknown', 0, NULL, ?2, NULL, 0, NULL, NULL, NULL, 0, 1)",
+            rusqlite::params![state, generation.to_string()]).expect("stop row");
+    }
+    let source = || takeover_tokens(&takeover_jwt(Some(epoch_now() + 28_800)), "refresh-0001");
+    let root = crate::private_tempdir().expect("root");
+    let vault = open(root.path());
+    assert_eq!(progress(root.path()), Some(None), "null without a login");
+    let json = serde_json::to_value(crate::auth::credential_sign_in::credential_status(&HubStore::open_read_only(root.path()).expect("store"), root.path(), 0).expect("status")).expect("json");
+    assert!(json["legacyCredentials"]["refreshProgress"].is_null() && json["legacyCredentials"].get("refreshProgress").is_some());
+    assert!(json["fleetCredentials"].get("refreshProgress").is_none(), "Owner API slot only");
+
+    let generation = vault.store_source_takeover(&source()).expect("takeover").stored_generation().expect("stored");
+    assert_eq!(progress(root.path()), Some(Some("none_sent")));
+    // A send that was released (never consumed) is not a send.
+    let receipt = vault.begin_refresh(OWNER, generation).expect("begin");
+    vault.close_refresh(receipt, generation, OutboundRequestOutcome::TransportError, None, None, true).expect("released");
+    assert_eq!(progress(root.path()), Some(Some("none_sent")), "released send");
+    let receipt = vault.begin_refresh(OWNER, generation).expect("begin");
+    assert_eq!(progress(root.path()), Some(Some("attempt_recorded")));
+    // The answer was lost: the token stays fenced and no successor exists.
+    vault.close_refresh(receipt, generation, OutboundRequestOutcome::Timeout, None, None, false).expect("closed");
+    assert_eq!(progress(root.path()), Some(Some("sign_in_required")));
+
+    // An auth stop naming the pair is a stop; one naming another generation is not.
+    let root = crate::private_tempdir().expect("root");
+    let vault = open(root.path());
+    let generation = vault.store_source_takeover(&source()).expect("takeover").stored_generation().expect("stored");
+    stop(&vault, "signed_out", Uuid::new_v4());
+    assert_eq!(progress(root.path()), Some(Some("none_sent")), "a stop of another pair");
+    for state in ["sign_in_required", "signed_out"] {
+        stop(&vault, state, generation);
+        assert_eq!(progress(root.path()), Some(Some("sign_in_required")), "{state}");
+    }
+
+    // A completed refresh: the stored pair is the Hub's successor.
+    let root = crate::private_tempdir().expect("root");
+    let vault = open(root.path());
+    let generation = vault.store_source_takeover(&source()).expect("takeover").stored_generation().expect("stored");
+    let receipt = vault.begin_refresh(OWNER, generation).expect("begin");
+    let output = Uuid::new_v4();
+    vault.persist_refreshed(OWNER, receipt, generation, output, "access-0002", "refresh-0002", 1_800_028_800, 1_800_027_000).expect("successor");
+    assert_eq!(progress(root.path()), Some(Some("completed")));
+    let receipt = vault.begin_refresh(OWNER, output).expect("begin successor refresh");
+    assert_eq!(progress(root.path()), Some(Some("attempt_recorded")), "a send of the successor");
+    vault.close_refresh(receipt, output, OutboundRequestOutcome::AuthenticationRejected, Some(401), None, false).expect("rejected");
+    assert_eq!(progress(root.path()), Some(Some("sign_in_required")), "the successor was rejected");
+}
+
+/// An expired access token, one expiring within the minimum span or one with
+/// no readable `exp` is clamped so the refresh comes first, and the stored
+/// row keeps `expires_at > next_refresh_at > 0`.
+#[test]
+fn source_takeover_schedule_derives_and_clamps_expiry() {
+    let now = 1_800_000_000;
+    assert_eq!(types::source_takeover_schedule(&takeover_jwt(Some(now + 28_800)), now), (now + 28_800, now));
+    for access in [takeover_jwt(Some(now - 60)), takeover_jwt(Some(now)), takeover_jwt(Some(now + 1)), takeover_jwt(None), "opaque-access".to_owned()] {
+        assert_eq!(types::source_takeover_schedule(&access, now), (now + 2, now), "{access}");
+    }
+    assert_eq!(types::source_takeover_schedule("opaque-access", 0), (3, 1), "next_refresh_at stays positive");
+    let root = crate::private_tempdir().expect("root");
+    let vault = open(root.path());
+    vault.store_source_takeover(&takeover_tokens(&takeover_jwt(Some(1_000)), "refresh-0001")).expect("expired access token stored");
+    let row = pair(&vault);
+    assert!(row.expires_at > row.next_refresh_at && row.next_refresh_at > 0 && row.expires_at - row.next_refresh_at == 2, "clamped: {row:?}");
+}
+
+/// The spent-token check and the opaque-fence rule apply to the takeover,
+/// before any key is created.
+#[test]
+fn source_takeover_refuses_spent_and_opaque_fenced_tokens() {
+    for (statement, code) in [
+        ("INSERT INTO credential_refresh_fences(fingerprint,kind,fenced_at_ms) VALUES(?1,'attempt',0)", "refresh_token_spent"),
+        ("INSERT INTO credential_legacy_fences VALUES('00000000-0000-4000-8000-000000002000','opaque',0)", "fresh_sign_in_required"),
+    ] {
+        let root = crate::private_tempdir().expect("root");
+        let vault = open(root.path());
+        {
+            let state = vault.lock().expect("state");
+            let fingerprint = refresh_fingerprint(b"refresh-0001");
+            if statement.contains("?1") { state.connection.test_connection().execute(statement, [fingerprint.as_slice()]).expect("fence"); }
+            else { state.connection.test_connection().execute(statement, []).expect("fence"); }
+        }
+        let error = vault.store_source_takeover(&takeover_tokens(&takeover_jwt(Some(epoch_now() + 28_800)), "refresh-0001")).unwrap_err();
+        assert_eq!(error.code(), code);
+        assert!(vault.load(OWNER).expect("load").is_none(), "nothing stored");
+        assert!(!root.path().join("secrets").join("credential-keys").exists(), "no keyring created");
+    }
 }
 
 #[test]

@@ -266,6 +266,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func applicationDidFinishLaunching(_ notification: Notification) {
         HubApplicationActivation.yieldFocus()
         guard !HubUIPresentation.isSilentTestHost else { return }
+        launchGate.launch { [weak self] in self?.completeLaunch() }
+    }
+
+    /// Holds the launch work while the rename hand-over runs before launch
+    /// (`main.swift`).
+    let launchGate = HubRenameMigration.LaunchGate()
+
+    /// After a rename hand-over that needed Try Again: the window a normal
+    /// launch shows, at the front.
+    func presentLaunchWindow() {
+        guard hubController != nil else { return }
+        if mainWindowController?.activeModalKind == .onboarding {
+            mainWindowController?.showFirstRunOnboarding()
+        } else {
+            showDashboard()
+        }
+        HubApplicationActivation.activate()
+    }
+
+    private func completeLaunch() {
         do {
             hubController = try HubController.applicationController()
         } catch {

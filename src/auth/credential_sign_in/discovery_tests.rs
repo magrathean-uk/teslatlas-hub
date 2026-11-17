@@ -367,3 +367,54 @@ async fn owner_discovery_repeat_setup_resumes_without_a_second_login() {
     assert_eq!(refused.code(), SIGN_IN_CODE_REUSED);
     assert_eq!(issuer.accepted(), 1);
 }
+
+/// A synthetic access token with Tesla's issuer, as the take-over reads one.
+fn takeover_access() -> String {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    let claims = serde_json::json!({"iss": "https://auth.tesla.com/oauth2/v3", "exp": 1_900_000_000});
+    format!("{}.{}.c3ludGhldGlj", URL_SAFE_NO_PAD.encode(br#"{"alg":"none","typ":"JWT"}"#), URL_SAFE_NO_PAD.encode(claims.to_string()))
+}
+
+/// DEC-172: a login taken over from the migration source is discovery's own
+/// pair exactly as the Hub's own sign-in is (the owner slot, the Hub as
+/// refresher): one list carrying its access token configures the chosen car
+/// and leaves the pair as it was. Every other stored origin, including a
+/// `source_token` row refreshed elsewhere, is still refused before any
+/// connection.
+#[tokio::test]
+async fn source_takeover_discovery_uses_the_taken_over_pair_and_refuses_other_origins() {
+    let window = TestWindow::open(600);
+    let stub = Stub::spawn(Reply::Json(200, two_cars())).await;
+    let _route = window.route(&stub.url);
+
+    let hub = hub();
+    let access = takeover_access();
+    let tokens = crate::credentials::OwnerTokens::from_secret_parts(access.clone(), REFRESH.to_owned()).expect("synthetic pair");
+    let generation = hub.entry.vault().store_source_takeover(&tokens).expect("taken over").stored_generation().expect("stored");
+    let configured = hub.discover(&stub, OwnerCarSelection::Vehicle(7001)).await.expect("listed car configured");
+    assert_eq!((configured.vehicles_configured, stub.accepted(), hub.cars()), (1, 1, 1));
+    assert_eq!(hub.pair_generation(), Some(generation), "discovery never refreshes the taken-over pair");
+    let requests = stub.requests.lock().expect("requests").clone();
+    assert_eq!(requests.len(), 1);
+    let head = requests[0].to_ascii_lowercase();
+    assert!(head.starts_with("get /api/1/products "), "only the products list is requested");
+    assert!(head.contains(&format!("authorization: bearer {}", access.to_ascii_lowercase())), "the taken-over access token");
+
+    let refused = [
+        ("direct_entry", CredentialEntry::direct_entry(Zeroizing::new(access.clone()), Zeroizing::new(REFRESH.to_owned()))),
+        ("provider_entry", CredentialEntry::provider_entry(Zeroizing::new(access.clone()), Some(Zeroizing::new(REFRESH.to_owned())))),
+        ("source_token_refreshed_elsewhere", CredentialEntry::source_token(Zeroizing::new(access.clone()), Zeroizing::new(REFRESH.to_owned()))),
+    ];
+    for (case, entry) in refused {
+        let entry = entry.expect("fixture entry");
+        let root = crate::private_tempdir().expect("synthetic root");
+        crate::auth::credential_vault::fixtures::seed_entry(root.path(), entry);
+        let store = HubStore::initialize(root.path()).expect("store");
+        let entry = CredentialVaultEntry::for_test(open_fixture_vault(store.clone(), root.path()));
+        let other = Hub { root, store, entry };
+        let error = other.discover(&stub, OwnerCarSelection::Vehicle(7001)).await.unwrap_err();
+        assert_eq!(error.code(), DISCOVERY_PAIR_UNAVAILABLE, "case {case}");
+        assert_eq!(other.cars(), 0, "case {case}: no car configured");
+    }
+    assert_eq!(stub.accepted(), 1, "no other origin reached the list");
+}

@@ -316,6 +316,7 @@
         "tests/fixtures/catalogue-residue.sqlite",
         "tests/fixtures/credential-pre-upgrade-invalid-pair.json",
         "tests/fixtures/credential-pre-upgrade-vectors.json",
+        "tests/fixtures/source-token-envelope-vector.json",
         "tests/fixtures/data-backup/BACKUP_COMPLETE",
         "tests/fixtures/data-backup/backup-v4.json",
         "tests/fixtures/data-backup/data/hub.sqlite",
@@ -450,6 +451,7 @@
         "src/auth/legacy_auth.rs",
         "src/auth/legacy_owner_credentials.rs",
         "src/auth/source_token_envelope.rs",
+        "src/auth/source_token_row.rs",
         "src/collection/fake_tesla.rs",
         "src/collection/source_db_current/current_key_tests.rs"
       ],
@@ -559,6 +561,9 @@
       "id": "project-release-tooling",
       "class": "MAGRATHEAN-ORIGINAL",
       "rationale": "Repository-maintained build, audit, evidence, release, and hermetic test tooling.",
+      "paths": [
+        "scripts/make-source-token-vector.swift"
+      ],
       "globs": [
         "scripts/*.py",
         "scripts/*.sh",

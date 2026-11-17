@@ -10,9 +10,11 @@
 //! the local control channel; with no service running they are refused
 //! `service_not_running` before anything else is read. They never take the
 //! data-directory lifetime lock themselves. Fleet is parked: its verbs are
-//! refused `provider_parked`. Import and data restore are admitted only while
-//! no window is open on this host and the selected Hub's window is Closed
-//! with its handback recorded (design 2.10).
+//! refused `provider_parked`. Import, the source-token take-over and data
+//! restore are admitted only while no window is open on this host and the
+//! selected Hub's window is Closed with its handback recorded (design 2.10);
+//! the take-over also holds the data-directory lifetime lock, so it is
+//! refused while the Hub service runs.
 
 use std::{fmt, os::fd::OwnedFd, path::Path};
 
@@ -117,7 +119,7 @@ pub fn route(command: &Command) -> Route {
             | WindowCommand::Void { .. } => Route::Issuer,
         },
         #[cfg(unix)]
-        Command::Migrate { .. } => Route::Import,
+        Command::Migrate { .. } | Command::TakeOverSourceToken { .. } => Route::Import,
         Command::RestoreData { .. } => Route::Import,
         _ => Route::Local,
     }
@@ -130,7 +132,10 @@ pub fn requires_user_hub_admission(command: &Command) -> bool {
         Command::Init | Command::Serve | Command::Pair { .. } | Command::Repair => true,
         Command::Backup { .. } => true,
         #[cfg(unix)]
-        Command::Bootstrap | Command::Observe { .. } | Command::Migrate { .. } => true,
+        Command::Bootstrap
+        | Command::Observe { .. }
+        | Command::Migrate { .. }
+        | Command::TakeOverSourceToken { .. } => true,
         _ => false,
     }
 }

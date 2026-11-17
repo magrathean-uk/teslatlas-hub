@@ -663,6 +663,9 @@ async fn execute_resident_legacy_vehicle_action_guarded(
     action: LegacyVehicleAction,
     guard: Option<&RunWriteGuard>,
 ) -> Result<LegacyVehicleActionReport, ResidentActionExecutionError> {
+    // No vehicle command is ever sent (M09-T19 ruling 1): refused before
+    // anything below runs.
+    refuse_vehicle_command(action)?;
     // C3 R48, R49 (B2 clarification 3): a standing refusal for the configured
     // mode, or an unreadable account row, rejects a new action before any
     // authentication waits or is prepared. The socket serves only through here;
@@ -876,6 +879,8 @@ fn fleet_command(
 
 #[derive(Debug, Error)]
 enum ResidentActionExecutionError {
+    #[error("{}", VEHICLE_COMMANDS_NOT_OFFERED)]
+    CommandsNotOffered,
     #[error("vehicle command target is not configured")]
     VehicleMissing,
     #[error("vehicle command audit could not start")]
@@ -892,6 +897,17 @@ enum ResidentActionExecutionError {
     CompletionUnknown(StoreError),
     #[error("vehicle command outcome is ambiguous because the run may no longer write")]
     CompletionRefused,
+}
+
+/// The product rule (M09-T19 ruling 1): the Hub sends no vehicle command,
+/// for a Fleet Hub and a Legacy Hub alike. Every vehicle action is refused
+/// here, at the place the running service would execute it, before any
+/// credential is used, any audit receipt starts or anything is sent; the
+/// command line refuses with the same text before it connects.
+pub const VEHICLE_COMMANDS_NOT_OFFERED: &str = "vehicle commands are not offered: the Hub only reads vehicle data and never sends a command to a car";
+
+fn refuse_vehicle_command(_action: LegacyVehicleAction) -> Result<(), ResidentActionExecutionError> {
+    Err(ResidentActionExecutionError::CommandsNotOffered)
 }
 
 fn legacy_action_completion(error: Option<&OwnerApiAuthError>) -> OutboundRequestCompletion {
@@ -1005,6 +1021,7 @@ struct ResidentVehicleActionRequest {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum ResidentVehicleActionFailure {
+    CommandsNotOffered,
     InvalidRequest,
     VehicleMissing,
     AuthenticationRejected,
@@ -1022,6 +1039,8 @@ enum ResidentVehicleActionResponse {
 
 #[derive(Debug, Error)]
 pub enum ResidentVehicleActionError {
+    #[error("{}", VEHICLE_COMMANDS_NOT_OFFERED)]
+    CommandsNotOffered,
     #[error("resident Hub vehicle-control service is unavailable")]
     Unavailable,
     #[error("resident Hub vehicle-control request timed out")]
@@ -1085,6 +1104,7 @@ pub async fn request_resident_vehicle_action(
     match response {
         ResidentVehicleActionResponse::Ok { report } => Ok(report),
         ResidentVehicleActionResponse::Error { code } => Err(match code {
+            ResidentVehicleActionFailure::CommandsNotOffered => ResidentVehicleActionError::CommandsNotOffered,
             ResidentVehicleActionFailure::InvalidRequest => ResidentVehicleActionError::Protocol,
             ResidentVehicleActionFailure::VehicleMissing => {
                 ResidentVehicleActionError::VehicleMissing
@@ -1321,6 +1341,9 @@ fn classify_resident_action_error(
     error: &ResidentActionExecutionError,
 ) -> ResidentVehicleActionFailure {
     match error {
+        ResidentActionExecutionError::CommandsNotOffered => {
+            ResidentVehicleActionFailure::CommandsNotOffered
+        }
         ResidentActionExecutionError::VehicleMissing => {
             ResidentVehicleActionFailure::VehicleMissing
         }

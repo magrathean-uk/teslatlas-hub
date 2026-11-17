@@ -512,6 +512,23 @@ pub enum Command {
         #[arg(long, required = true, alias = "acknowledge-v4-2-compatible-schema")]
         accept_schema_evidence: bool,
     },
+    /// Take over the migration source's stored Tesla login (DEC-172) into the
+    /// Hub's empty Owner API slot, with the Hub as its only refresher. Reads
+    /// one bounded {"postgresPassword","encryptionKey"} JSON object from
+    /// stdin, opens its own read-only source connection, refuses while
+    /// another client is connected to the source database, writes nothing to
+    /// the source and sends nothing to Tesla. Never accepts a token.
+    #[cfg(unix)]
+    #[command(name = "take-over-source-token")]
+    TakeOverSourceToken {
+        /// Password-free PostgreSQL URL of the stopped source database.
+        #[arg(long)]
+        source: String,
+        /// Confirm that the source application is stopped and stays stopped: after the
+        /// Hub's first refresh its stored login no longer works.
+        #[arg(long, required = true)]
+        accept_source_stopped: bool,
+    },
     /// Set up a self-signed LAN TLS identity for phone pairing when none is configured:
     /// P-256, valid 397 days, written to the data folder's `tls/`, and the Hub then
     /// listens on 0.0.0.0:8443. Restart the Hub afterwards. Does nothing when `[tls]`
