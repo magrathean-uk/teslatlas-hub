@@ -2078,3 +2078,45 @@ async fn collector_m04_t12_sixty_second_glitch_recovers_within_thirty_seconds() 
         }
     }
 }
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_stable_vehicle_end_reconnects_quietly_within_two_seconds() {
+    for jitter in [0.0, 1.0] {
+        let capture = LogCapture::start();
+        let mut frames = vec![(0, u(T0, V1))];
+        frames.extend((0..10).map(|_| (30, u(T0, V1))));
+        let peer = plan_peer(vec![
+            Plan::data(frames, 1, End::Error("vehicle_disconnected")),
+            Plan::data(vec![(0, u(T0 + 1, V1))], 0, End::Hold),
+        ]).await;
+        let mut rig = Rig::for_peer(&peer, Creds::offline("tok-1"));
+        rig.jitter = vec![jitter; 8];
+        let mut run = rig.start();
+        assert_eq!(kinds(&mut run, 2).await, ["Healthy", "Telemetry"]);
+        // The next event must be data from the new session. No unhealthy event
+        // reaches C3 to raise an outage, request state or advance fallback.
+        assert_eq!(kinds(&mut run, 2).await, ["Healthy", "Telemetry"]);
+        assert_eq!(delays(&peer).len(), 1);
+        assert!((secs(1)..=secs(2)).contains(&delays(&peer)[0]));
+        let text = capture.text();
+        assert!(text.lines().any(|line| line.contains("stream attempt ended")
+            && line.contains("quiet_reconnect=true")), "{text}");
+        assert!(!text.contains("stream_outage"), "{text}");
+        run.shut_down().await.expect("shutdown");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_failed_quiet_reconnect_starts_an_outage() {
+    let peer = plan_peer(vec![
+        Plan::data(vec![(0, u(T0, V1)), (30, u(T0, V1)), (30, u(T0, V1))],
+            1, End::Error("vehicle_disconnected")),
+        Plan::ends(End::Error("vehicle_disconnected")),
+        Plan::data(vec![(0, u(T0 + 1, V1))], 0, End::Hold),
+    ]).await;
+    let mut run = Rig::for_peer(&peer, Creds::offline("tok-1")).start();
+    assert_eq!(kinds(&mut run, 5).await,
+        ["Healthy", "Telemetry", "VehicleOffline", "Healthy", "Telemetry"]);
+    assert_eq!(delays(&peer), [secs(1), secs(1)]);
+    run.shut_down().await.expect("shutdown");
+}

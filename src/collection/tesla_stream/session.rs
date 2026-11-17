@@ -380,6 +380,7 @@ struct RunState {
     /// payload, credential, tag or close reason into the decision log.
     end_reason: &'static str,
     retry: RetryState,
+    stable_end: bool,
     /// The last delivered frame, for duplicate suppression (R26); per run only.
     last_delivered: Option<StreamUpdate>,
     /// The last accepted frame of the run shows motion (0.2): it picks the
@@ -408,6 +409,7 @@ struct SessionState {
     subscribe_open: bool,
     /// An accepted frame (a duplicate included) has arrived in this session.
     accepted_seen: bool,
+    first_accepted_at: Option<Instant>,
     /// Consecutive rejected frames with no accepted frame between them (R33).
     rejected_streak: u32,
     /// The Ping schedule, the dead-socket and data-silence deadlines and the
@@ -1000,6 +1002,7 @@ impl TeslaStreamSupervisor {
         let mut run = RunState {
             end_reason: "credential_unavailable",
             retry: RetryState::default(),
+            stable_end: false,
             last_delivered: None,
             moving: false,
         };
@@ -1014,8 +1017,18 @@ impl TeslaStreamSupervisor {
                 Outcome::Failed(class) => {
                     // R37: counters first, then the delay; the event follows the
                     // rows of the ended session (R47).
-                    run.retry.on_session_end(&class);
-                    delay = next_delay(&class, &run.retry, self.draw());
+                    if run.stable_end {
+                        // One quiet reconnect after a working session. Explicit
+                        // back-pressure remains on its own slow schedule.
+                        delay = if matches!(class, FailureClass::Busy { .. }) {
+                            next_delay(&class, &run.retry, self.draw())
+                        } else {
+                            super::policy::jittered(Duration::from_secs(2), self.draw())
+                        };
+                    } else {
+                        run.retry.on_session_end(&class);
+                        delay = next_delay(&class, &run.retry, self.draw());
+                    }
                     // One payload-free reason for EVERY ended attempt, including
                     // changes of cause within an outage that C3 summarises once.
                     // The collector's span supplies its existing Hub car label.
@@ -1033,10 +1046,11 @@ impl TeslaStreamSupervisor {
                         transport_attempt = run.retry.transport_attempt,
                         vehicle_attempt = run.retry.vehicle_attempt,
                         refusal_streak = run.retry.refusal_streak,
+                        quiet_reconnect = run.stable_end,
                         delay_ms = delay.as_millis() as u64,
                         "stream attempt ended"
                     );
-                    if let Some(event) = event_for(&class, &run.retry) {
+                    if !run.stable_end && let Some(event) = event_for(&class, &run.retry) {
                         match self.emit(event, &mut shutdown).await {
                             Emit::Sent => {}
                             Emit::Shutdown => return Ok(()),
@@ -1311,6 +1325,7 @@ impl TeslaStreamSupervisor {
                 return Outcome::Stop(Ok(()));
             }
         }
+        run.stable_end = false;
         run.end_reason = "credential_unavailable";
         // Step 2: credential before network. Any error here means no network use
         // and no audit row.
@@ -1555,6 +1570,7 @@ impl TeslaStreamSupervisor {
             subscribe_receipt,
             subscribe_open: true,
             accepted_seen: false,
+            first_accepted_at: None,
             rejected_streak: 0,
             clocks,
             counts: FrameCounts::default(),
@@ -1566,6 +1582,8 @@ impl TeslaStreamSupervisor {
             .read_loop(&mut socket, shutdown, audit, run, &mut state)
             .await;
         run.end_reason = state.end_reason;
+        run.stable_end = state.first_accepted_at
+            .is_some_and(|first| Instant::now().saturating_duration_since(first) > Duration::from_secs(60));
         self.log_summary(&state.counts);
         self.finish_subscribed(socket, end, shutdown, audit, session, &state)
             .await
@@ -2025,6 +2043,7 @@ impl TeslaStreamSupervisor {
         }
         if !state.accepted_seen {
             state.accepted_seen = true;
+            state.first_accepted_at = Some(queued_at);
             run.retry.on_first_accepted();
             state.clocks.on_first_accepted(queued_at);
             if state.subscribe_open {
