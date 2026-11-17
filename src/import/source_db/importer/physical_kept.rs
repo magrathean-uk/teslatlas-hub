@@ -79,7 +79,9 @@ fn keep_physical_source(
         let copy = stage
             .copy_sealed_into(physical_kept_dir(store))
             .map_err(|error| error.to_string())?;
-        let digest = copy.sealed_content_digest();
+        // Its rows are authenticated by this digest at every handback, and
+        // each handback checks the pages of the copy it plans (M08-T19).
+        let digest = copy.sealed_logical_digest();
         let copied = copy.path().to_path_buf();
         drop(copy);
         let digest = match digest {
@@ -248,13 +250,14 @@ fn publish_vehicle_after_handback(
             crate::physical_publication::PhysicalV3PublicationKind::Unchanged,
         ));
     }
-    // The one full check of the kept stage in this handback (M08-T19):
-    // its copy and the content digests after it rely on it.
-    let kept_stage = match SourceDbStage::open_sealed(kept_stage_path(store, vehicle_id)) {
+    // The kept stage is authenticated by its recorded logical digest and
+    // only copied. The run's one full integrity check is of the planned
+    // copy, after its last write, as the publication reads it (M08-T19).
+    let kept_stage = match SourceDbStage::open_sealed_to_copy(kept_stage_path(store, vehicle_id)) {
         Ok(stage) => stage,
         Err(error) => return withheld(format!("the kept stage: {error}")),
     };
-    match kept_stage.sealed_content_digest() {
+    match kept_stage.sealed_logical_digest() {
         Ok(digest) if digest.to_string() == kept.stage => {}
         Ok(_) => return withheld("the kept stage differs from its record".into()),
         Err(error) => return withheld(format!("the kept stage: {error}")),
@@ -273,9 +276,15 @@ fn publish_vehicle_after_handback(
         Some(&run.ahead.packs),
         None,
         Some(&kept.stage),
-    )? {
-        Some(publication) => Ok(HandbackPhysicalOutcome::Published(publication.kind)),
-        None => withheld("the window's plan cannot be held by the physical schema".into()),
+    ) {
+        Ok(Some(publication)) => Ok(HandbackPhysicalOutcome::Published(publication.kind)),
+        Ok(None) => withheld("the window's plan cannot be held by the physical schema".into()),
+        // The planned copy failed its check or could not be read: this
+        // vehicle keeps its refusal, as for a damaged kept stage.
+        Err(SourceDbImportError::PhysicalPublication(
+            crate::physical_publication::SourceDbPhysicalPublicationError::Stage(error),
+        )) => withheld(format!("the planned copy of the kept stage: {error}")),
+        Err(error) => Err(error),
     }
 }
 

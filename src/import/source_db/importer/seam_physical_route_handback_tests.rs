@@ -1888,6 +1888,124 @@ fn handback_refuses_a_damaged_kept_stage() {
     );
 }
 
+/// M08-T19 (B1): the kept stage passes its recorded digest and is copied;
+/// then only the copy's charge-sample index disagrees with its table (source
+/// sample 2101 filed under process 99, its row unchanged). The emission reads
+/// samples through that index, so without a check of the copy the new head
+/// would leave the sample out. The run's one integrity check is of the
+/// planned copy, so the handback is refused and nothing is published.
+#[test]
+fn handback_refuses_a_working_copy_whose_index_disagrees_with_its_table() {
+    let fixture = fixture();
+    let root = crate::private_tempdir().expect("stage root");
+    publish_kept(&fixture, root.path(), "base", &base_history(), None);
+    let history = charge_history(
+        vec![source_process(21, T - 2 * HOUR, T - 2 * HOUR + 20 * MINUTE)],
+        vec![source_sample(2101, 21, T - 2 * HOUR + 5 * MINUTE)],
+    );
+    import_charges(&fixture, root.path(), "before-window", &history, T - HOUR);
+    let env = paired(&fixture);
+    let hub_charge = HUB_ID_BASE + 21;
+    hub_charges(
+        &fixture,
+        (1, T, T + HOUR),
+        &[(hub_charge, T, T + 50 * MINUTE)],
+        &[(HUB_ID_BASE + 21, hub_charge, T + 10 * MINUTE)],
+        &[(HUB_ID_BASE + 2100, T + MINUTE)],
+    );
+    let head = current_snapshot(&fixture);
+    let packs = pack_count(&fixture.store);
+    crate::source_db_stage::AFTER_SEALED_COPY
+        .with(|hook| *hook.borrow_mut() = Some(Box::new(misfile_sample_2101_in_the_index)));
+    match handback(&fixture) {
+        HandbackPhysicalOutcome::Withheld(reason) => {
+            assert!(reason.contains("the planned copy of the kept stage"), "{reason}");
+        }
+        other => panic!("a working copy with a disagreeing index was published: {other:?}"),
+    }
+    assert!(
+        crate::source_db_stage::AFTER_SEALED_COPY.with(|hook| hook.borrow().is_none()),
+        "the damage was made to the copy"
+    );
+    assert_eq!(current_snapshot(&fixture), head, "nothing is published");
+    assert_eq!(pack_count(&fixture.store), packs, "no pack is written");
+    assert_eq!(
+        PhysicalClient::bootstrap(&env, &fixture).err(),
+        Some(axum::http::StatusCode::NOT_ACCEPTABLE)
+    );
+    // The kept stage itself is sound: the next handback publishes the sample.
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("served");
+    assert_eq!(fresh.mirror.samples.get(&2101), Some(&(21, T - 2 * HOUR + 5 * MINUTE)));
+}
+
+/// Gives source sample 2101 the index key of process 99 while its row keeps
+/// process 21: the row is changed with the index, then changed back with the
+/// index hidden from SQLite, so only the index holds the wrong key.
+fn misfile_sample_2101_in_the_index(path: &Path) {
+    const INDEX: &str = "stage_charge_samples_by_process";
+    let connection = Connection::open(path).expect("working copy");
+    let original: String = connection
+        .query_row(
+            "SELECT row_json FROM stage_rows WHERE table_name = 'charges' AND source_id = 2101",
+            [],
+            |row| row.get(0),
+        )
+        .expect("sample 2101");
+    connection
+        .execute(
+            "UPDATE stage_rows SET row_json = json_set(?1, '$.charging_process_id', 99)
+              WHERE table_name = 'charges' AND source_id = 2101",
+            [&original],
+        )
+        .expect("file the sample under process 99");
+    let (root_page, sql): (i64, String) = connection
+        .query_row(
+            "SELECT rootpage, sql FROM sqlite_schema WHERE name = ?1",
+            [INDEX],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("the index");
+    connection
+        .execute_batch(&format!(
+            "PRAGMA writable_schema = ON;
+             DELETE FROM sqlite_schema WHERE name = '{INDEX}';
+             PRAGMA writable_schema = OFF;"
+        ))
+        .expect("hide the index");
+    drop(connection);
+    let connection = Connection::open(path).expect("working copy without the index");
+    connection
+        .execute(
+            "UPDATE stage_rows SET row_json = ?1 WHERE table_name = 'charges' AND source_id = 2101",
+            [&original],
+        )
+        .expect("the row as it was");
+    connection.execute_batch("PRAGMA writable_schema = ON;").expect("writable schema");
+    connection
+        .execute(
+            "INSERT INTO sqlite_schema(type, name, tbl_name, rootpage, sql)
+             VALUES ('index', ?1, 'stage_rows', ?2, ?3)",
+            params![INDEX, root_page, sql],
+        )
+        .expect("the index back");
+    connection.execute_batch("PRAGMA writable_schema = OFF;").expect("schema");
+    drop(connection);
+    let connection = Connection::open(path).expect("working copy");
+    let integrity: String = connection
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .expect("integrity check");
+    assert_ne!(integrity, "ok", "the index disagrees with its table");
+    let row: String = connection
+        .query_row(
+            "SELECT row_json FROM stage_rows WHERE table_name = 'charges' AND source_id = 2101",
+            [],
+            |row| row.get(0),
+        )
+        .expect("sample 2101");
+    assert_eq!(row, original, "the table row is unchanged");
+}
+
 /// M08-T19: a kept stage whose rows no longer have the recorded content
 /// digest (its SQLite intact, its accounting unchanged) is refused.
 #[test]

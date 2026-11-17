@@ -256,11 +256,6 @@ pub struct SourceDbStage {
     directory: PrivateDirectory,
     file_name: OsString,
     file_descriptor: OwnedFd,
-    /// Whether this database passed SQLite's full integrity check in this
-    /// process (M08-T19). Only this connection writes it afterwards, through
-    /// SQLite's own transactions, and a byte copy inherits it; so one check
-    /// per stage per run stands for the content digests and copies after it.
-    integrity_verified: std::cell::Cell<bool>,
 }
 
 /// A capture owned by an in-flight import. Failed or cancelled imports must
@@ -383,7 +378,6 @@ impl SourceDbStage {
             directory: staging_dir,
             file_name,
             file_descriptor,
-            integrity_verified: std::cell::Cell::new(false),
         })
     }
 
@@ -391,12 +385,21 @@ impl SourceDbStage {
     /// callers must resume/rebuild them with a writer, not treat them as a
     /// source-consistent history.
     pub fn open_sealed(path: impl AsRef<Path>) -> Result<Self, SourceDbStageError> {
-        Self::open_sealed_with_hook(path.as_ref(), || {})
+        Self::open_sealed_with_hook(path.as_ref(), || {}, true)
+    }
+
+    /// As [`SourceDbStage::open_sealed`], without SQLite's full integrity
+    /// check, for a stage that is only authenticated by its recorded logical
+    /// digest ([`SourceDbStage::sealed_logical_digest`]) and copied: the
+    /// copy's pages are checked when a publication reads it (M08-T19).
+    pub(crate) fn open_sealed_to_copy(path: impl AsRef<Path>) -> Result<Self, SourceDbStageError> {
+        Self::open_sealed_with_hook(path.as_ref(), || {}, false)
     }
 
     fn open_sealed_with_hook(
         path: &Path,
         before_sqlite_open: impl FnOnce(),
+        integrity: bool,
     ) -> Result<Self, SourceDbStageError> {
         let stage_path = ensure_private_stage_path(path)?;
         let path = stage_path.path.clone();
@@ -419,13 +422,14 @@ impl SourceDbStage {
             directory: stage_path.directory,
             file_name: stage_path.file_name,
             file_descriptor,
-            integrity_verified: std::cell::Cell::new(false),
         };
         let stats = stage.stats()?;
         if stats.state != SourceDbStageState::Sealed {
             return Err(SourceDbStageError::StageNotSealed);
         }
-        stage.verify_integrity()?;
+        if integrity {
+            stage.verify_integrity()?;
+        }
         stage.verify_accounting(stats)?;
         verify_stage_path_identity(
             &stage.directory,
@@ -477,7 +481,6 @@ impl SourceDbStage {
             directory,
             file_name,
             file_descriptor,
-            integrity_verified: _,
         } = self;
         drop(connection);
         let descriptor_identity = validate_private_descriptor(
@@ -541,20 +544,35 @@ impl SourceDbStage {
     }
 
     /// Hash the logical contents of one sealed stage independently of its
-    /// SQLite page layout. Every PhysicalV3 table contributes its name, row
-    /// count, ordered source IDs, and exact persisted JSON bytes, including
-    /// empty tables. Callers bind this digest to the installation/source/
-    /// vehicle identity before deriving a stable publication snapshot ID.
+    /// SQLite page layout, after SQLite's full integrity check of this very
+    /// database. Every PhysicalV3 table contributes its name, row count,
+    /// ordered source IDs, and exact persisted JSON bytes, including empty
+    /// tables. Callers bind this digest to the installation/source/vehicle
+    /// identity before deriving a stable publication snapshot ID; a
+    /// publication takes it after the stage's last write, so the check is of
+    /// the database it reads (M08-T19).
     pub(crate) fn sealed_content_digest(&self) -> Result<Sha256Digest, SourceDbStageError> {
         let stats = self.stats()?;
         if stats.state != SourceDbStageState::Sealed {
             return Err(SourceDbStageError::StageNotSealed);
         }
-        // One full integrity check per stage and run (M08-T19): a stage
-        // opened sealed, sealed here, or made as a copy of either has had it.
-        if !self.integrity_verified.get() {
-            self.verify_integrity()?;
+        self.verify_integrity()?;
+        self.logical_digest(stats)
+    }
+
+    /// The digest of [`SourceDbStage::sealed_content_digest`] without the
+    /// integrity check: it authenticates a kept stage's rows against their
+    /// recorded digest, not its pages. A stage authenticated so is only
+    /// copied; the copy a publication reads gets the check (M08-T19).
+    pub(crate) fn sealed_logical_digest(&self) -> Result<Sha256Digest, SourceDbStageError> {
+        let stats = self.stats()?;
+        if stats.state != SourceDbStageState::Sealed {
+            return Err(SourceDbStageError::StageNotSealed);
         }
+        self.logical_digest(stats)
+    }
+
+    fn logical_digest(&self, stats: SourceDbStageStats) -> Result<Sha256Digest, SourceDbStageError> {
         self.verify_accounting(stats)?;
 
         let mut digest = Sha256::new();
@@ -844,7 +862,6 @@ impl SourceDbStage {
             .query_map([], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
         if values.len() == 1 && values.first().is_some_and(|value| value == "ok") {
-            self.integrity_verified.set(true);
             return Ok(());
         }
         Err(SourceDbStageError::IntegrityCheckFailed(values.join("; ")))
@@ -1806,6 +1823,8 @@ pub(crate) use sealed_edit::StageChildTable;
 // A private copy of a sealed physical stage, kept for a handback (M03-T22).
 #[path = "stage/sealed_copy.rs"]
 mod sealed_copy;
+#[cfg(test)]
+pub(crate) use sealed_copy::AFTER_SEALED_COPY;
 
 #[cfg(test)]
 #[path = "stage/tests.rs"]
