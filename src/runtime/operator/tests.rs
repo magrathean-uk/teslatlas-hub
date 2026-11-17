@@ -249,7 +249,7 @@ fn import_admission_does_not_reconcile_a_store_owned_by_another_process() {
         .expect("private data directory");
     let _owner = crate::hub_user_process::AdmittedUserHub::admit(&rig.data())
         .expect("another operation owns the store");
-    let store = crate::db::HubStore::initialize(&rig.data()).expect("store");
+    let store = crate::db::HubStore::initialize(rig.data()).expect("store");
     let connection = store.open().expect("catalogue");
     connection.execute(
         "INSERT INTO collection_coverage
@@ -272,7 +272,7 @@ fn import_admission_does_not_reconcile_a_newer_store() {
     std::fs::create_dir_all(rig.data()).expect("data directory");
     std::fs::set_permissions(rig.data(), std::fs::Permissions::from_mode(0o700))
         .expect("private data directory");
-    let store = crate::db::HubStore::initialize(&rig.data()).expect("store");
+    let store = crate::db::HubStore::initialize(rig.data()).expect("store");
     let connection = store.open().expect("catalogue");
     connection.execute(
         "INSERT INTO collection_coverage
