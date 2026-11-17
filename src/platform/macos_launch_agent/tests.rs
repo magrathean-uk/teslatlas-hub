@@ -1485,9 +1485,14 @@ fn production_start_admission_decides_every_reviewed_state() {
 // M08-T25: the command-line `preflight` the Mac app's Start runs, its answers
 // for every state the app shows, and its reads.
 
-/// `preflight` as the app's Start runs it, on a read-only catalogue.
+/// `preflight` as the app's Start runs it: the function the command-line verb
+/// runs, with its set-up marker check and its reader. Every call also shows
+/// that it opened no pack and read no whole catalogue (M08-T25 repair).
 fn start(config: &HubConfig) -> Result<serde_json::Value, String> {
-    start_preflight(config, |read| read(&HubStore::open_read_only(&config.data_dir)?)).map_err(|error| error.to_string())
+    crate::db::read_probe::take();
+    let answer = start_preflight(config).map_err(|error| error.to_string());
+    assert_eq!(crate::db::read_probe::take(), (0, 0), "Start opened no pack and read no whole catalogue ({answer:?})");
+    answer
 }
 
 /// Whether the `doctor` admits the selected provider's stored pair: the
@@ -1628,6 +1633,8 @@ fn start_preflight_awaiting_sign_in_reads_neither_the_whole_store_nor_a_pack() {
     let packs = make_packs_unreadable(&data);
     let store = HubStore::open_read_only(&data).expect("store");
     assert!(store.catalogue_check().is_err(), "the whole-store check opens the packs");
+    let (packs_opened, whole_reads) = crate::db::read_probe::take();
+    assert!(packs_opened > 0 && whole_reads > 0, "the probe counts the whole-store check's reads");
     assert_eq!(start(&config), Ok(awaiting.clone()), "no pack is opened");
 
     break_unread_table(&data, "raw_observations");
@@ -1653,6 +1660,8 @@ fn start_preflight_signed_in_reads_neither_the_whole_store_nor_a_pack() {
     let packs = make_packs_unreadable(&data);
     let store = HubStore::open_read_only(&data).expect("store");
     assert!(store.catalogue_check().is_err(), "the whole-store check opens the packs");
+    let (packs_opened, whole_reads) = crate::db::read_probe::take();
+    assert!(packs_opened > 0 && whole_reads > 0, "the probe counts the whole-store check's reads");
     assert_eq!(start(&config), Ok(ready.clone()), "no pack is opened");
 
     break_unread_table(&data, "raw_observations");

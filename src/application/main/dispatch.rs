@@ -1262,33 +1262,33 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(unix)]
         Command::Preflight { history_only } => {
             let config = HubConfig::load(&config_path)?;
+            // The Mac app's Start: the whole check, with its set-up marker
+            // check and its reader, is the library's (M08-T25).
+            if !*history_only {
+                let answer = tesatlas_hub::macos_launch_agent::start_preflight(&config)?;
+                println!("{answer}");
+                return Ok(());
+            }
             // A Hub that was set up and lost its catalogue is refused, never
             // idle and never new (M02-T21, DEC-116).
             tesatlas_hub::storage::setup_marker::check_catalogue(&config.data_dir)?;
-            if *history_only {
-                validate_history_only_config(&config)?;
-                let published = run_immutable_diagnostic(&config.data_dir, |store| {
-                    store
-                        .service_readiness_at(false, current_epoch_ms()?)
-                        .map_err(|error| {
-                            format!("published history is not ready: {:?}", error.code)
-                        })?;
-                    let published = store.published_vehicles()?;
-                    if published.is_empty() {
-                        return Err("no signed history is published".into());
-                    }
-                    Ok(published.len())
-                })?;
-                println!(
-                    "{}",
-                    serde_json::json!({"status": "ready", "credentialScope": "history-only", "publishedVehicles": published, "collectorEnabled": false})
-                );
-                return Ok(());
-            }
-            let answer = tesatlas_hub::macos_launch_agent::start_preflight(&config, |read| {
-                run_immutable_diagnostic(&config.data_dir, read)
+            validate_history_only_config(&config)?;
+            let published = run_immutable_diagnostic(&config.data_dir, |store| {
+                store
+                    .service_readiness_at(false, current_epoch_ms()?)
+                    .map_err(|error| {
+                        format!("published history is not ready: {:?}", error.code)
+                    })?;
+                let published = store.published_vehicles()?;
+                if published.is_empty() {
+                    return Err("no signed history is published".into());
+                }
+                Ok(published.len())
             })?;
-            println!("{answer}");
+            println!(
+                "{}",
+                serde_json::json!({"status": "ready", "credentialScope": "history-only", "publishedVehicles": published, "collectorEnabled": false})
+            );
             return Ok(());
         }
         Command::ObservationWatermark { car_id } => {

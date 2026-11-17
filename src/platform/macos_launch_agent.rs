@@ -204,30 +204,28 @@ fn owner_sign_in_keyring_usable(data_dir: &Path) -> io::Result<()> {
     crate::auth::credential_keys::check_keyring(&secrets).map(drop).map_err(|error| refused(error.into()))
 }
 
-/// A read of the catalogue that the caller runs for [`start_preflight`]; the
-/// command-line `preflight` runs it on an immutable snapshot with its retries.
-pub type PreflightCatalogueRead<'a> = &'a mut dyn FnMut(&crate::db::HubStore) -> Result<(), Box<dyn std::error::Error>>;
-
-/// The command-line `preflight` (not `--history-only`): the check the Mac app's
-/// Start runs before it starts the service, with a 30-second limit; the app's
-/// diagnostics report shows it, and the imported-history sign-in requires its
-/// `awaiting_sign_in` answer. `read_catalogue` runs the configured Hub's read on
-/// the catalogue. The answer is the JSON line `preflight` prints; a refusal is
-/// the error it reports.
+/// The command-line `preflight` (not `--history-only`), whole: the check the Mac
+/// app's Start runs before it starts the service, with a 30-second limit; the
+/// app's diagnostics report shows it, and the imported-history sign-in requires
+/// its `awaiting_sign_in` answer. The answer is the JSON line `preflight` prints;
+/// a refusal is the error it reports.
 ///
-/// It answers whether the service would start from the production start's
-/// bounded admission (M08-T25), in both branches: a Hub that awaits the owner's
-/// sign-in ([`hub_awaits_owner_sign_in`]) and a configured Hub with a stored
-/// pair (`readiness_check`, the configured cars and the selected pair's
-/// credential rows). No `PRAGMA quick_check` runs and no pack is opened, so the
-/// answer does not grow with the history or the packs. A store that would fail
-/// only `quick_check` or a pack hash is admitted; `doctor`, the app's
-/// diagnostics report (which runs it), backup, restore and repair keep the
-/// whole-store check.
-pub fn start_preflight(
-    config: &crate::config::HubConfig,
-    read_catalogue: impl FnOnce(PreflightCatalogueRead<'_>) -> Result<(), Box<dyn std::error::Error>>,
-) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+/// It answers one question: would the service start, and would it collect
+/// (M08-T25). It reads what the production start reads before its listener
+/// opens, read-only and bounded by the number of cars and by what interrupted
+/// work left behind, never by the history or the packs: the set-up marker, the
+/// catalogue through the live read-only reader (`HubStore::open_read_only`,
+/// SQLite's own consistent read; no immutable snapshot, so no hash of the whole
+/// file), `readiness_check`, the configured cars and the selected pair's
+/// credential rows, decided as the `doctor` decides
+/// ([`crate::diagnostics::selected_credential_decision`]). No `PRAGMA
+/// quick_check` runs and no pack is opened. Damage that only those find is the
+/// `doctor`'s, the app's diagnostics report's (it runs `doctor`), backup's,
+/// restore's and repair's to report.
+pub fn start_preflight(config: &crate::config::HubConfig) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    // A Hub that was set up and lost its catalogue is refused, never idle and
+    // never new (M02-T21, DEC-116).
+    crate::storage::setup_marker::check_catalogue(&config.data_dir)?;
     // A Hub that was never configured starts idle (M02-T21, DEC-115): the
     // store is neither opened nor created here, and the serve admission
     // applies the same rule. Anything else is checked below.
@@ -253,18 +251,23 @@ pub fn start_preflight(
             "collectorEnabled": false,
         }));
     }
-    read_catalogue(&mut |store| {
-        store.readiness_check()?;
-        if store.configured_tesla_vehicles()?.is_empty() {
-            return Err("at least one configured vehicle is required".into());
-        }
-        let now_ms = preflight_epoch_ms()?;
-        let status = crate::auth::credential_sign_in::credential_status(store, &config.data_dir, now_ms)?;
-        if crate::diagnostics::selected_credential_decision(store, config, &status, now_ms)?.selected_admitted {
-            return Ok(());
-        }
-        Err(crate::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == crate::config::CollectorProvider::Fleet).into())
-    })?;
+    // The catalogue file as the immutable snapshot's open first inspected it,
+    // with its refusals: present, and a regular file.
+    let catalogue = config.data_dir.join("hub.sqlite");
+    let metadata = fs::symlink_metadata(&catalogue).map_err(crate::db::StoreError::InspectCatalogue)?;
+    if !metadata.file_type().is_file() {
+        return Err(crate::db::StoreError::InvalidCataloguePath.into());
+    }
+    let store = crate::db::HubStore::open_read_only(&config.data_dir)?;
+    store.readiness_check()?;
+    let now_ms = preflight_epoch_ms()?;
+    if store.configured_tesla_vehicles()?.is_empty() {
+        return Err("at least one configured vehicle is required".into());
+    }
+    let status = crate::auth::credential_sign_in::credential_status(&store, &config.data_dir, now_ms)?;
+    if !crate::diagnostics::selected_credential_decision(&store, config, &status, now_ms)?.selected_admitted {
+        return Err(crate::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == crate::config::CollectorProvider::Fleet).into());
+    }
     Ok(serde_json::json!({
         "status": "ready",
         "version": crate::BUILD_VERSION,

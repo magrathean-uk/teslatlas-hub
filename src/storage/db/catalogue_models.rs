@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 fn catalogue_quick_check_label(connection: &Connection) -> Result<String, StoreError> {
+    #[cfg(test)]
+    read_probe::whole_store_read();
     let rows: Vec<String> = connection
         .prepare("PRAGMA quick_check")
         .map_err(StoreError::Query)?
