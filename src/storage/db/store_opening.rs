@@ -22,11 +22,41 @@ fn unsupported_schema_message(version: i32) -> String {
     }
 }
 
+/// Create missing data-path components privately and persist each new entry
+/// through its held containing directory before creating the next component.
+fn create_store_directory_all(path: &Path) -> std::io::Result<()> {
+    if path.as_os_str().is_empty() || path.is_dir() {
+        return Ok(());
+    }
+    let parent_path = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    create_store_directory_all(parent_path)?;
+    // Creating the parent can also resolve a trailing `.` or `..`.
+    if path.is_dir() {
+        return Ok(());
+    }
+    let name = path.file_name().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "directory path has no file name")
+    })?;
+    let parent = File::open(parent_path)?;
+    crate::platform::file_attempts::note(path);
+    match mkdirat(&parent, name, Mode::RWXU) {
+        Ok(()) => {
+            crate::platform::file_attempts::note_directory_sync(parent_path);
+            parent.sync_all()
+        }
+        Err(Errno::EXIST) if path.is_dir() => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
 impl HubStore {
     pub fn initialize(data_dir: impl AsRef<Path>) -> Result<Self, StoreError> {
         let data_dir = data_dir.as_ref();
         let data_dir_was_absent = !data_dir.exists();
-        fs::create_dir_all(data_dir).map_err(StoreError::CreateDataDir)?;
+        create_store_directory_all(data_dir).map_err(StoreError::CreateDataDir)?;
         // New roots receive the private one-user mode; existing roots must
         // already satisfy the same owner/mode contract or startup fails closed.
         if data_dir_was_absent {
@@ -75,7 +105,7 @@ impl HubStore {
         ensure_shared_sqlite_catalogue_file_with_repair(&store.database_path, false)?;
         let mut connection = store.open()?;
         let packs_dir_was_absent = !packs_dir.exists();
-        fs::create_dir_all(&packs_dir).map_err(StoreError::CreatePacksDir)?;
+        create_store_directory_all(&packs_dir).map_err(StoreError::CreatePacksDir)?;
         if packs_dir_was_absent {
             fs::set_permissions(
                 &packs_dir,
