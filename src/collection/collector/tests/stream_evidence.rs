@@ -2698,3 +2698,64 @@ fn a_held_cars_idle_window_is_no_due_time() {
         Duration::from_secs(30)
     );
 }
+
+
+#[test]
+fn m04_t12_vehicle_disconnect_starts_fallback_without_waiting_for_frame_silence() {
+    let log = DecisionLog::start();
+    let mut bed = StreamBed::new();
+    let id = core_id(1);
+    let now = bed.core.clock.mono_now();
+    bed.dispatch(StreamEvent::Healthy);
+    bed.core
+        .scheduler
+        .vehicle_succeeded(id, PollPhase::Driving, false, now);
+    assert_eq!(
+        bed.core.scheduler.vehicles[&id].next_read_due,
+        Some(now + Duration::from_secs(60))
+    );
+    bed.dispatch(StreamEvent::VehicleOffline);
+    assert!(!bed.core.scheduler.vehicles[&id].stream.connected);
+    assert_eq!(log.lines("INFO", "stream_outage"), 1, "{}", log.contents());
+    assert_eq!(bed.core.scheduler.due_offline_state_vehicles(now), vec![id]);
+    assert_eq!(
+        bed.core.scheduler.vehicles[&id].next_read_due,
+        Some(now + Duration::from_secs(10))
+    );
+    bed.core.clock.advance(Duration::from_secs(9));
+    assert!(
+        bed.core
+            .scheduler
+            .due_vehicles(bed.core.clock.mono_now())
+            .is_empty()
+    );
+    bed.core.clock.advance(Duration::from_secs(1));
+    assert_eq!(
+        bed.core
+            .scheduler
+            .due_vehicles(bed.core.clock.mono_now()),
+        vec![id]
+    );
+    bed.core.scheduler.vehicle_succeeded(
+        id,
+        PollPhase::Driving,
+        false,
+        now + Duration::from_secs(10),
+    );
+    assert!(
+        bed.core.scheduler.vehicles[&id].stream.outage_reported,
+        "a successful REST read cannot repair a stream"
+    );
+    assert_eq!(
+        bed.core.scheduler.vehicles[&id].next_read_due,
+        Some(now + Duration::from_secs(20))
+    );
+    bed.dispatch(StreamEvent::Healthy);
+    assert!(!bed.core.scheduler.vehicles[&id].stream.outage_reported);
+    assert_eq!(
+        log.lines("INFO", "stream_recovered"),
+        1,
+        "{}",
+        log.contents()
+    );
+}

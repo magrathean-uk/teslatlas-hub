@@ -773,6 +773,7 @@ impl LogCapture {
         let writer = Sink(Arc::clone(&sink));
         let subscriber = tracing_subscriber::fmt()
             .with_max_level(tracing::Level::TRACE)
+            .without_time()
             .with_ansi(false)
             .with_writer(move || writer.clone())
             .finish();
@@ -1450,17 +1451,21 @@ fn sc88_a_frame_delivered_again_after_a_restart_creates_no_stored_observation() 
 
 #[tokio::test]
 async fn sc89_ten_sequential_runs_hold_one_socket_at_a_time_with_their_own_correlation_ids() {
-
-    let fake = crate::collection::loopback_fixture::FakeTeslaSource::spawn_canonical(crate::collection::loopback_fixture::AdvanceMode::Manual)
-        .await
-        .expect("fake Tesla");
+    let fake = crate::collection::loopback_fixture::FakeTeslaSource::spawn_canonical(
+        crate::collection::loopback_fixture::AdvanceMode::Manual,
+    )
+    .await
+    .expect("fake Tesla");
     fake.set_stream_script(crate::collection::loopback_fixture::StreamScript::Normal);
     let directory = crate::private_tempdir().expect("temporary directory");
     let store = crate::db::HubStore::initialize(directory.path()).expect("store");
     let subscribes = || {
         fake.audited_stream_events()
             .iter()
-            .filter(|event| event.event == crate::collection::loopback_fixture::StreamAuditEvent::Subscribe && event.accepted)
+            .filter(|event| {
+                event.event == crate::collection::loopback_fixture::StreamAuditEvent::Subscribe
+                    && event.accepted
+            })
             .count()
     };
     for run_number in 1..=10_usize {
@@ -1616,4 +1621,353 @@ async fn r54_the_rows_of_a_run_that_was_cut_off_stay_started_and_are_never_updat
     let summary = store.stream_audit_summary_since(0).expect("summary");
     assert_eq!(summary.unresolved_sessions, 1);
     assert_eq!(summary.unresolved_attempts, 1);
+}
+
+// M04-T12: normal server disconnects must not accumulate minutes of retry delay.
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_normal_disconnects_recover_within_thirty_seconds() {
+    for jitter in [1.0, 0.0] {
+        for code in [1000, 1013] {
+            let mut plans = vec![Plan::ends(End::Close(code)); 10];
+            plans.push(Plan::data(vec![(0, u(T0, V1))], 0, End::Hold));
+            let peer = plan_peer(plans).await;
+            let mut rig = Rig::for_peer(&peer, Creds::offline("tok-1"));
+            rig.jitter = vec![jitter; 32];
+            let mut run = rig.start();
+            for _ in 0..10 {
+                assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
+            }
+            assert_eq!(run.event().await, StreamEvent::Healthy);
+            let longest = delays(&peer).into_iter().max().expect("retries");
+            assert!(longest <= secs(30), "normal disconnect waited {longest:?}");
+            assert_min_spacing(&peer);
+            run.shut_down().await.expect("shutdown");
+        }
+    }
+}
+
+/// Replay messages at the existing Tesla stub boundary, with a fresh connection
+/// delivering valid data after the first end. No real Tesla endpoint is used.
+async fn m04_t12_reason_case(
+    messages: Vec<tokio_tungstenite::tungstenite::Message>,
+    expected: StreamEvent,
+    reason: &str,
+) {
+    use futures_util::SinkExt;
+    let capture = LogCapture::start();
+    let peer = Peer::spawn(move |conn| {
+        let messages = messages.clone();
+        async move {
+            let index = conn.index;
+            let mut ws = conn.ws().await;
+            ws.subscribe().await;
+            if index == 0 {
+                if messages.is_empty() {
+                    return;
+                } // abrupt transport loss
+                for message in messages {
+                    if ws.inner.send(message).await.is_err() {
+                        break;
+                    }
+                }
+            } else {
+                ws.send(&u(T0, V1)).await;
+            }
+            ws.drain().await;
+        }
+    })
+    .await;
+    let (rig, _dir) = Rig::for_peer(&peer, Creds::offline("private-test-token")).with_store();
+    let store = rig.store.clone().expect("store");
+    let mut run = rig.start();
+    assert_eq!(run.event().await, expected, "{reason}");
+    assert_eq!(run.event().await, StreamEvent::Healthy, "{reason}");
+    run.shut_down().await.expect("shutdown");
+    let subscribe = request_outcomes(&store)
+        .into_iter()
+        .find(|(operation, _)| operation == "stream_subscribe")
+        .expect("subscribe");
+    assert_eq!(
+        subscribe.1 == "protocol_error",
+        expected == StreamEvent::ProtocolViolation,
+        "{reason}"
+    );
+    let text = capture.text();
+    assert!(
+        text.lines()
+            .any(|line| line.contains("stream attempt ended")
+                && line.contains(&format!("reason_class=\"{reason}\""))),
+        "{text}"
+    );
+    for private in ["private-test-token", "private-payload", TAG] {
+        assert!(
+            !text.contains(private),
+            "private value in diagnostics: {text}"
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_protocol_conditions_have_fixed_private_reasons() {
+    use tokio_tungstenite::tungstenite::Message;
+    let malformed = |value: serde_json::Value| Message::text(value.to_string());
+    let cases = vec![
+        (vec![Message::binary(vec![0xff]); 3], "invalid_utf8"),
+        (vec![Message::text("{private-payload"); 3], "invalid_json"),
+        (vec![Message::text("[]"); 3], "invalid_envelope"),
+        (vec![Message::text("{}"); 3], "invalid_envelope"),
+        (
+            vec![Message::text(r#"{"msg_type":7}"#); 3],
+            "invalid_envelope",
+        ),
+        (
+            vec![Message::text(r#"{"msg_type":"data:update","msg_type":"data:update"}"#); 3],
+            "invalid_envelope",
+        ),
+        (
+            vec![malformed(json!({"msg_type":"data:update", "tag":TAG})); 3],
+            "update_envelope",
+        ),
+        (
+            vec![
+                malformed(json!({"msg_type":"data:update", "tag":7, "value":"private-payload"}));
+                3
+            ],
+            "update_envelope",
+        ),
+        (
+            vec![malformed(json!({"msg_type":"data:update", "tag":TAG, "value":7})); 3],
+            "update_envelope",
+        ),
+        (vec![Message::text(u(T0, "1,2")); 3], "column_count"),
+        (
+            vec![Message::text(u("invalid", V1)); 3],
+            "invalid_timestamp",
+        ),
+        (
+            vec![Message::text(u(W + 61_000, V1)); 3],
+            "implausible_timestamp",
+        ),
+        (vec![Message::text(u(1, V1)); 3], "implausible_timestamp"),
+        (
+            vec![
+                malformed(
+                    json!({"msg_type":"data:update", "tag":"9999", "value":format!("{T0},{V1}")})
+                );
+                3
+            ],
+            "foreign_vehicle",
+        ),
+        (
+            vec![Message::text("x".repeat(super::K_MAX_MESSAGE + 1))],
+            "message_too_large",
+        ),
+        (
+            vec![Message::binary(vec![0; super::K_MAX_MESSAGE + 1])],
+            "message_too_large",
+        ),
+    ];
+    for (messages, reason) in cases {
+        m04_t12_reason_case(messages, StreamEvent::ProtocolViolation, reason).await;
+    }
+    // The decisive third rejection can differ from the first two. It is named
+    // exactly, and the rejected-streak rule still applies across conditions.
+    m04_t12_reason_case(
+        vec![
+            Message::text("[]"),
+            Message::text("{}"),
+            Message::text(u("bad", V1)),
+        ],
+        StreamEvent::ProtocolViolation,
+        "invalid_timestamp",
+    )
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_service_ends_are_not_protocol_violations() {
+    use tokio_tungstenite::tungstenite::{
+        Message,
+        protocol::{CloseFrame, frame::coding::CloseCode},
+    };
+    m04_t12_reason_case(
+        Vec::new(),
+        StreamEvent::TransportUnavailable,
+        "connection_reset",
+    )
+    .await;
+    for code in [1000, 1001, 1002, 1008, 1011, 1013] {
+        m04_t12_reason_case(
+            vec![Message::Close(Some(CloseFrame {
+                code: CloseCode::from(code),
+                reason: "private-payload".into(),
+            }))],
+            StreamEvent::TransportUnavailable,
+            if code == 1013 {
+                "server_busy_close"
+            } else {
+                "server_close"
+            },
+        )
+        .await;
+    }
+    m04_t12_reason_case(
+        vec![Message::Close(None)],
+        StreamEvent::TransportUnavailable,
+        "server_close",
+    )
+    .await;
+    for (token, expected, reason) in [
+        (
+            "vehicle_disconnected",
+            StreamEvent::VehicleOffline,
+            "vehicle_disconnected",
+        ),
+        (
+            "vehicle_error",
+            StreamEvent::VehicleOffline,
+            "vehicle_error",
+        ),
+        (
+            "vehicle_other",
+            StreamEvent::VehicleOffline,
+            "vehicle_unavailable",
+        ),
+        (
+            "client_error",
+            StreamEvent::TransportUnavailable,
+            "client_error",
+        ),
+        (
+            "private-payload",
+            StreamEvent::TransportUnavailable,
+            "server_error",
+        ),
+    ] {
+        m04_t12_reason_case(
+            vec![Message::text(error_frame(token, "private-payload"))],
+            expected,
+            reason,
+        )
+        .await;
+    }
+    for code in [400, 503] {
+        m04_t12_reason_case(
+            vec![Message::text(hello_frame(Some(code), None))],
+            StreamEvent::TransportUnavailable,
+            "hello_rejected",
+        )
+        .await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_bad_websocket_frames_are_real_violations() {
+    use tokio_tungstenite::tungstenite::{
+        Message,
+        protocol::frame::{
+            Frame,
+            coding::{Data, OpCode},
+        },
+    };
+    // An unsolicited continuation is an RFC 6455 framing error, not a service
+    // Close or a network disconnection. The stub writes a raw WebSocket frame.
+    m04_t12_reason_case(
+        vec![Message::Frame(Frame::message(
+            vec![1, 2, 3],
+            OpCode::Data(Data::Continue),
+            true,
+        ))],
+        StreamEvent::ProtocolViolation,
+        "websocket_protocol",
+    )
+    .await;
+    // A text frame with invalid UTF-8 is rejected by tungstenite before JSON.
+    m04_t12_reason_case(
+        vec![Message::Frame(Frame::message(
+            vec![0xff],
+            OpCode::Data(Data::Text),
+            true,
+        ))],
+        StreamEvent::ProtocolViolation,
+        "invalid_utf8",
+    )
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_control_idle_and_shutdown_are_not_protocol_failures() {
+    let capture = LogCapture::start();
+    let peer = plan_peer(vec![Plan::data(
+        vec![
+            (0, hello_frame(Some(0), Some(30_000))),
+            (0, hello_frame(Some(200), None)),
+            (
+                0,
+                json!({"msg_type":"control:other","value":"private-payload"}).to_string(),
+            ),
+            (
+                0,
+                json!({"msg_type":"data:error","tag":"9999","value":"private-payload"}).to_string(),
+            ),
+            (0, u(T0, &",".repeat(10))),
+        ],
+        0,
+        End::Hold,
+    )])
+    .await;
+    let mut run = Rig::for_peer(&peer, Creds::offline("private-test-token")).start();
+    assert_eq!(run.event().await, StreamEvent::Healthy);
+    assert!(matches!(run.event().await, StreamEvent::Telemetry { .. }));
+    expect_silence(&mut run, secs(10)).await;
+    run.shut_down().await.expect("orderly shutdown");
+    assert_eq!(peer.log.count("accept"), 1);
+    assert!(!capture.text().contains("stream attempt ended"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_vehicle_and_unknown_errors_have_bounded_retries() {
+    for jitter in [0.0, 1.0] {
+        for error in ["vehicle_disconnected", "vehicle_error", "client_error"] {
+            let mut plans = vec![Plan::ends(End::Error(error)); 10];
+            plans.push(Plan::data(vec![(0, u(T0, V1))], 0, End::Hold));
+            let peer = plan_peer(plans).await;
+            let mut rig = Rig::for_peer(&peer, Creds::offline("tok-1"));
+            rig.jitter = vec![jitter; 32];
+            let mut run = rig.start();
+            for _ in 0..10 {
+                let expected = if error.starts_with("vehicle_") {
+                    StreamEvent::VehicleOffline
+                } else {
+                    StreamEvent::TransportUnavailable
+                };
+                assert_eq!(run.event().await, expected);
+            }
+            assert_eq!(run.event().await, StreamEvent::Healthy);
+            for delay in delays(&peer) {
+                assert!(
+                    delay >= secs(1) && delay <= secs(30),
+                    "{error} waited {delay:?}"
+                );
+            }
+            assert_min_spacing(&peer);
+            run.shut_down().await.expect("shutdown");
+        }
+    }
+}
+
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_reason_labels_do_not_reflect_a_short_credential() {
+    for token in ["client_error", "vehicle_error", "vehicle_disconnected"] {
+        let capture = LogCapture::start();
+        let peer = plan_peer(vec![Plan::ends(End::Error(token)), Plan::hold()]).await;
+        let mut run = Rig::for_peer(&peer, Creds::offline(token)).start();
+        let expected = if token.starts_with("vehicle_") { StreamEvent::VehicleOffline } else { StreamEvent::TransportUnavailable };
+        assert_eq!(run.event().await, expected);
+        run.shut_down().await.expect("shutdown");
+        let text = capture.text();
+        assert!(text.contains("reason_class=\"reflected_error_type\""), "{text}");
+        assert!(!text.contains(token), "credential in diagnostics: {text}");
+    }
 }

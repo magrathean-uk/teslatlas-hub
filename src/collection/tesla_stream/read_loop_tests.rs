@@ -706,7 +706,7 @@ async fn sc52_an_unknown_error_token_ends_the_session_as_unknown() {
             request_outcomes(&store)[..3],
             [
                 ("stream_connect".to_owned(), "success".to_owned()),
-                ("stream_subscribe".to_owned(), "protocol_error".to_owned()),
+                ("stream_subscribe".to_owned(), "transport_error".to_owned()),
                 ("stream_unsubscribe".to_owned(), "success".to_owned()),
             ],
             "{token}"

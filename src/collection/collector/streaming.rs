@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+use tracing::Instrument;
+
 pub async fn run_address_enrichment_once(
     store: &HubStore,
     config: &HubConfig,
@@ -284,7 +286,8 @@ fn ensure_vehicle_stream(
             worker_sensitive_access_failure.store(true, Ordering::Release);
         }
         result
-    });
+    }
+    .instrument(tracing::Span::current()));
     streams.push(VehicleStreamRuntime {
         vehicle_id,
         power_gate,
@@ -1076,8 +1079,8 @@ fn note_stream_unhealthy(
 /// - `Telemetry`: the stream is healthy, the frame is stored for every car except a
 ///   Disabled or Removed one, and it is judged as evidence (motion, parked power);
 ///   a frame also proves the stream authenticated;
-/// - `VehicleOffline`: the power gate is revoked and a targeted non-waking state
-///   check is due now;
+/// - `VehicleOffline`: the stream is unhealthy, its power gate is revoked and a
+///   targeted non-waking state check is due now;
 /// - `TransportUnavailable`, `ProtocolViolation`, `AuthRejected`: the power gate is
 ///   revoked and the stream is in outage; `AuthRejected` also tells the caller
 ///   through `authentication_rejected`, which goes to the credential unit as
@@ -1120,7 +1123,9 @@ fn process_stream_event(
             )?;
         }
         StreamEvent::VehicleOffline => {
-            scheduler.revoke_gate(vehicle_id);
+            // The session has ended even when a targeted state check still
+            // reports the car online. Start driving fallback immediately.
+            note_stream_unhealthy(scheduler, vehicle_id, "vehicle_unavailable", now);
             scheduler.schedule_offline_state_fetch(vehicle_id, now);
         }
         StreamEvent::TransportUnavailable => {
@@ -1395,6 +1400,10 @@ async fn reconcile_streams(
     .await?;
     for vehicle in scheduler.vehicles() {
         if scheduler.should_start_stream(vehicle.id) {
+            // Carry the existing Hub label into the stream task, never a Tesla id.
+            let span =
+                tracing::info_span!(target: "collector.decision", "legacy_stream", vehicle = %scheduler.hub_label(vehicle.id));
+            let _entered = span.enter();
             ensure_vehicle_stream(
                 store,
                 streams,
