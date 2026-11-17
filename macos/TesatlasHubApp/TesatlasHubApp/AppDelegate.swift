@@ -274,15 +274,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     let launchGate = HubRenameMigration.LaunchGate()
 
     /// After a rename hand-over that needed Try Again: the window a normal
-    /// launch shows, at the front.
+    /// launch shows, at the front. AppKit orders it in, but on this launch path
+    /// the window server keeps the app's windows off screen until LaunchServices
+    /// opens the app again (M08-T21), so the app asks for that open itself.
     func presentLaunchWindow() {
         guard hubController != nil else { return }
-        if mainWindowController?.activeModalKind == .onboarding {
-            mainWindowController?.showFirstRunOnboarding()
-        } else {
-            showDashboard()
-        }
-        HubApplicationActivation.activate()
+        Self.presentAfterTryAgain(show: { [self] in
+            if mainWindowController?.activeModalKind == .onboarding {
+                mainWindowController?.showFirstRunOnboarding()
+            } else {
+                showDashboard()
+            }
+        }, activate: { HubApplicationActivation.activate() },
+           openThroughLaunchServices: {
+            HubAppLog.shared.record("launch.window_after_retry", category: "app")
+            HubApplicationActivation.openThroughLaunchServices()
+        })
+    }
+
+    /// The order after a Try Again: the window is ordered in, the app activates,
+    /// then LaunchServices opens the app so the window server shows the window.
+    static func presentAfterTryAgain(show: () -> Void,
+                                     activate: () -> Void,
+                                     openThroughLaunchServices: () -> Void) {
+        show()
+        activate()
+        openThroughLaunchServices()
     }
 
     private func completeLaunch() {

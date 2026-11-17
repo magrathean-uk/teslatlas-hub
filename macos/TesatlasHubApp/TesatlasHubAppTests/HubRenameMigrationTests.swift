@@ -296,6 +296,32 @@ final class HubRenameMigrationTests: XCTestCase {
         XCTAssertEqual(heldEffects, ["launch"])
     }
 
+    /// M08-T21: after a Try Again the window server held the app's windows off
+    /// screen while AppKit reported them visible, the app active and not hidden;
+    /// only an open through LaunchServices showed them. AppKit gives a test no
+    /// view of the window server's hold, so these tests pin the order and the
+    /// request, and the lab guest shows the window.
+    func testAfterTryAgainTheWindowIsShownThenTheAppIsOpenedThroughLaunchServices() {
+        var effects: [String] = []
+        AppDelegate.presentAfterTryAgain(show: { effects.append("show") },
+                                         activate: { effects.append("activate") },
+                                         openThroughLaunchServices: { effects.append("open") })
+        XCTAssertEqual(effects, ["show", "activate", "open"])
+    }
+
+    func testTheOpenThroughLaunchServicesNamesThisAppAndNeverRunsInATestHost() {
+        let bundle = URL(fileURLWithPath: "/Applications/Tesatlas Hub.app", isDirectory: true)
+        var opened: [URL] = []
+        HubApplicationActivation.openThroughLaunchServices(environment: [:], bundleURL: bundle,
+                                                           effect: { opened.append($0) })
+        XCTAssertEqual(opened, [bundle])
+        for key in ["XCTestConfigurationFilePath", "XCTestBundlePath", "XCInjectBundleInto"] {
+            HubApplicationActivation.openThroughLaunchServices(environment: [key: "/x"], bundleURL: bundle,
+                                                               effect: { opened.append($0) })
+        }
+        XCTAssertEqual(opened, [bundle], "a test host never asks LaunchServices to open it")
+    }
+
     func testOnlyTheInstalledAppRunsTheHandOver() {
         XCTAssertFalse(HubRenameMigration.appliesTo(environment: ["XCTestConfigurationFilePath": "/x"]))
         XCTAssertFalse(HubRenameMigration.appliesTo(environment: [DevelopmentHubConfiguration.enableVariable: "1"]))

@@ -26,7 +26,8 @@ import Foundation
 /// 4. The app's launch work waits for the hand-over (`LaunchGate`): the retry
 ///    alert can let AppKit finish launching before `application.run()`. After
 ///    a hand-over that needed Try Again, the app shows the window a normal
-///    launch shows and comes to the front.
+///    launch shows, comes to the front and asks LaunchServices to open it
+///    (the window server otherwise holds its windows off screen, M08-T21).
 ///
 /// Every step is idempotent. A step that is deferred or fails changes nothing
 /// the next attempt cannot finish: the owner is offered Try Again or Quit, and

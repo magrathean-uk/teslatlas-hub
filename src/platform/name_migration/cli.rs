@@ -22,8 +22,10 @@
 //! loaded is loaded from the installed file (it runs at load) and not
 //! restarted after; a loaded job that runs another program than the installed
 //! file names is replaced by the installed definition; a loaded job that
-//! already serves is confirmed without a restart; only a loaded job that is
-//! not serving is restarted. The whole confirmation, from decoding the
+//! already serves is confirmed without a restart; a loaded job that is not
+//! serving is loaded afresh (unloaded, waited for, loaded), never restarted
+//! with `kickstart -k`: launchd holds that restart of a job that failed
+//! recently until its throttle ends (about 51 s in the lab guest). The whole confirmation, from decoding the
 //! installed file on, has one wall-clock limit, [`CONFIRM_LIMIT`]; past it the
 //! step is refused with the note and the earlier LaunchAgent file left as they
 //! are. The limit bounds the wait, not what a helper already started may
@@ -133,10 +135,6 @@ impl CurrentService for SystemCurrentService {
     fn start(&mut self) -> io::Result<()> {
         crate::macos_launch_agent::load_installed()
     }
-
-    fn restart(&mut self) -> io::Result<()> {
-        crate::macos_launch_agent::start_preflighted_installed()
-    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -175,12 +173,12 @@ pub(super) trait CurrentService {
     fn identity(&mut self) -> io::Result<(PathBuf, PathBuf)>;
     /// What launchd holds for the job (read only).
     fn job(&mut self) -> io::Result<LoadedJob>;
-    /// Loads the installed definition in place of a stale one.
+    /// Loads the installed definition afresh: unloads the loaded job, waits
+    /// until it is unloaded, then loads it (it runs at load). For a stale
+    /// definition and for a loaded job that is not serving.
     fn reload(&mut self) -> io::Result<()>;
     /// Loads a job that is not loaded (it runs at load); no restart follows.
     fn start(&mut self) -> io::Result<()>;
-    /// Restarts a loaded job (the existing fail-closed start).
-    fn restart(&mut self) -> io::Result<()>;
 }
 
 #[cfg(any(test, target_os = "macos"))]
@@ -198,10 +196,10 @@ pub(super) fn confirm_installed(
 }
 
 #[cfg(any(test, target_os = "macos"))]
-/// Confirms the current service, restarting it only when it is loaded and not
-/// serving. A job that is not loaded is loaded and not restarted after; a stale
-/// loaded definition is replaced first, so the confirmed service runs the
-/// installed binary. Once `given_up` is set no load, reload or restart is
+/// Confirms the current service, loading it afresh only when it is loaded and
+/// not serving. A job that is not loaded is loaded and not restarted after; a
+/// stale loaded definition is replaced first, so the confirmed service runs the
+/// installed binary. Once `given_up` is set no load or reload is
 /// begun; one already begun, with its own launchd requests, may still finish.
 pub(super) fn confirm_start(
     service: &mut dyn CurrentService,
@@ -217,20 +215,16 @@ pub(super) fn confirm_start(
         }
     };
     match service.job()? {
-        LoadedJob::Stale => {
-            still_wanted()?;
-            service.reload()?;
-        }
         LoadedJob::Installed if confirm_serving(program, config, SERVING_PROBE_SECONDS).is_ok() => {
             return Ok(());
+        }
+        LoadedJob::Stale | LoadedJob::Installed => {
+            still_wanted()?;
+            service.reload()?;
         }
         LoadedJob::Absent => {
             still_wanted()?;
             service.start()?;
-        }
-        LoadedJob::Installed => {
-            still_wanted()?;
-            service.restart()?;
         }
     }
     confirm_serving(program, config, SERVING_WAIT_SECONDS)

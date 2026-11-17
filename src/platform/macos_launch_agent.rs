@@ -686,10 +686,13 @@ pub fn installed_job() -> io::Result<LoadedJob> {
     }
 }
 
-/// Loads the installed definition in place of a stale one: `bootout`, wait
-/// until it is unloaded, then `bootstrap` (the agent runs at load). A
-/// transient stop: nothing is disabled. When the new definition cannot be
-/// loaded after the unload, the error says so ([`RELOAD_LEFT_UNLOADED`]).
+/// Loads the installed definition afresh: `bootout`, wait until it is
+/// unloaded, then `bootstrap` (the agent runs at load). Used in place of a
+/// stale definition, and for a loaded job that is not serving: a fresh load
+/// starts at once, where `kickstart -k` of a job launchd throttles after
+/// failed runs is held until the throttle ends. A transient stop: nothing is
+/// disabled. When the definition cannot be loaded after the unload, the error
+/// says so ([`RELOAD_LEFT_UNLOADED`]).
 pub fn reload_installed() -> io::Result<()> {
     #[cfg(feature = "credential-relocation-fixture")]
     {
@@ -742,10 +745,10 @@ fn load_installed_with_runner(
     Ok(())
 }
 
-/// The refusal when a reload unloaded the job and could not load the new
-/// definition: nothing runs the Hub until the next attempt loads it.
+/// The refusal when a reload unloaded the job and could not load it again:
+/// nothing runs the Hub until the next attempt loads it.
 pub const RELOAD_LEFT_UNLOADED: &str =
-    "the Hub service is not running now: it was stopped to load its new definition, which could not be loaded. Try Again starts it";
+    "the Hub service is not running now: it was stopped to be loaded again, and could not be loaded. Try Again starts it";
 
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn loaded_job(print: Option<&str>, installed_program: &Path) -> LoadedJob {
