@@ -1242,7 +1242,7 @@ fn st77_a_mixed_source_odometer_never_gives_a_negative_distance() {
     assert!((drive.distance_km.unwrap() - expected).abs() < 1e-9);
     assert!(drive.distance_km.unwrap() >= 0.0);
     // The same readings in the opposite order: the lower coarse reading
-    // comes last and is not taken as the last odometer.
+    // persists, so distance is unknown rather than silently clamped.
     let samples = [
         full(1, T0, json!("D"), json!(30), 10.0, Some(1000.456789), None),
         frame(2, T0 + 10 * SEC, Some("D"), Some(30), 10.001, Some(1000.4)),
@@ -1252,8 +1252,8 @@ fn st77_a_mixed_source_odometer_never_gives_a_negative_distance() {
     let drive = &result.delta.drives[0];
     assert_eq!(
         drive.distance_km,
-        Some(0.0),
-        "never below the first reading"
+        None,
+        "a persistent fall is retained as uncertainty"
     );
 }
 
@@ -1885,4 +1885,66 @@ fn st72_plugged_evidence_that_wins_by_time_folds_the_drive_group_and_closes_it()
             .collect::<Vec<_>>(),
         vec![T0 + MIN]
     );
+}
+
+
+#[test]
+fn astra_p07_f02_one_odometer_spike_cannot_inflate_drive_distance() {
+    let result = run(&[
+        driving(1, T0, 10.0, Some(1000.0)),
+        driving(2, T0 + MIN, 10.001, Some(1_000_000.0)),
+        parked(3, T0 + 2 * MIN, 10.002, Some(1001.0)),
+    ]);
+    let distance = result.delta.drives[0].distance_km.unwrap();
+    assert!(close_to(distance, K_MILE_KM), "distance: {distance}");
+}
+
+#[test]
+fn astra_p07_f02_return_after_restart_preserves_the_recorded_spike() {
+    let opened = run(&[
+        driving(1, T0, 10.0, Some(1000.0)),
+        driving(2, T0 + MIN, 10.001, Some(1_000_000.0)),
+    ]);
+    assert!(opened.delta.open_drive_positions.iter().any(|row| {
+        row.odometer == Some(1_000_000.0 * K_MILE_KM)
+    }));
+    let restored = OpenSessionState::decode(&opened.state.encode().unwrap()).unwrap();
+    let closed = step_one(restored, &parked(3, T0 + 2 * MIN, 10.002, Some(1001.0)));
+    assert!(close_to(closed.delta.drives[0].distance_km.unwrap(), K_MILE_KM));
+}
+
+#[test]
+fn astra_p07_f02_persistent_forward_changes_are_not_dropped() {
+    let result = run(&[
+        driving(1, T0, 10.0, Some(1000.0)),
+        driving(2, T0 + MIN, 10.001, Some(1_000_000.0)),
+        parked(3, T0 + 2 * MIN, 10.002, Some(1_000_001.0)),
+    ]);
+    assert!(close_to(result.delta.drives[0].distance_km.unwrap(), 999_001.0 * K_MILE_KM));
+}
+
+#[test]
+fn astra_p07_f02_unresolved_and_persistent_falls_have_unknown_distance() {
+    for end_readings in [vec![900.0], vec![900.0, 901.0]] {
+        let mut samples = vec![
+            driving(1, T0, 10.0, Some(1000.0)),
+            driving(2, T0 + MIN, 10.001, Some(1001.0)),
+        ];
+        for (at, odometer) in end_readings.iter().enumerate() {
+            let id = at as i64 + 3;
+            let time = T0 + (id - 1) * MIN;
+            let latitude = 10.002 + at as f64 * 0.001;
+            samples.push(if at + 1 == end_readings.len() {
+                parked(id, time, latitude, Some(*odometer))
+            } else {
+                driving(id, time, latitude, Some(*odometer))
+            });
+        }
+        let result = run(&samples);
+        assert_eq!(result.delta.drives[0].distance_km, None);
+        assert!(result.delta.open_drive_positions.iter().any(|row| {
+            row.odometer == Some(900.0 * K_MILE_KM)
+        }));
+        assert_eq!(result.state.parked_snapshot.unwrap().odometer_km, None);
+    }
 }
