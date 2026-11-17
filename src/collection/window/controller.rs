@@ -861,11 +861,6 @@ impl WindowController {
         inner.state.close_reason = Some(reason);
         inner.state.closing_at = Some(wall);
         self.gate.close();
-        if let Some(grant) = &inner.state.grant {
-            // Record revocation outside every data-directory snapshot. A failed
-            // pin is retried before the handback can report a completed close.
-            let _ = self.pin_closed(&grant.body);
-        }
         // Fail closed: the gate is shut even if the write fails; the restart
         // path completes the close.
         let _ = self.store.write_state(&inner.state);
