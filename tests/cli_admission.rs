@@ -549,7 +549,9 @@ mod source_takeover {
     const PASSWORD: &str = "synthetic-source-password-0001";
     const KEY: &str = "synthetic-source-encryption-key-0001";
     const REFRESH: &str = "synthetic-source-refresh-0001";
-    const REPORT: &str = r#"{"status":"taken_over","origin":"source_token","firstRefresh":"next_window","sourceSessionsSeen":0,"sourceNeverMutated":true}"#;
+    const REPORT: &str = r#"{"status":"taken_over","origin":"source_token","firstRefresh":"next_window","refreshProgress":"none_sent","sourceSessionsSeen":0,"sourceNeverMutated":true}"#;
+    /// M09-T16 (B3): a run that finds the source row's login already in the slot.
+    const ALREADY: &str = r#"{"status":"already_taken_over","origin":"source_token","firstRefresh":"next_window","refreshProgress":"none_sent","sourceSessionsSeen":0,"sourceNeverMutated":true}"#;
 
     fn input() -> Vec<u8> {
         format!(r#"{{"postgresPassword":"{PASSWORD}","encryptionKey":"{KEY}"}}"#).into_bytes()
@@ -716,8 +718,15 @@ mod source_takeover {
         assert_eq!(stdout(&output), format!("{REPORT}\n"), "exactly one JSON report");
         assert_secret_free(&output);
 
+        // The same login again (a lost report, a retry): exit 0, nothing written.
         let output = take_over(&hub, &url, &input(), Some(&pair));
-        assert_refused(&output, "slot_occupied", &["second take-over"]);
+        assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+        assert_eq!(stdout(&output), format!("{ALREADY}\n"), "exactly one JSON report");
+        assert_secret_free(&output);
+        // A different login in the source row: the slot is occupied.
+        let other = double(&hub, serde_json::json!({"access": access(), "refresh": "synthetic-source-refresh-0002"}));
+        let output = take_over(&hub, &url, &input(), Some(&other));
+        assert_refused(&output, "slot_occupied", &["second take-over of another login"]);
         assert!(stdout(&output).is_empty());
         assert_secret_free(&output);
         assert_eq!(source.connections(), 0, "the double stood in for the source");
@@ -766,5 +775,35 @@ mod source_takeover {
         assert_eq!(spent.endpoint.connections(), 0);
         assert_eq!(hub.endpoint.connections(), 0, "nothing was sent to Tesla");
         assert_eq!(fenced.endpoint.connections(), 0);
+    }
+
+    /// M09-T16 (B3): the run ends after the vault commit and before its report, as a
+    /// crash would; the next run with the same source row reconciles with exit 0,
+    /// `already_taken_over`, writes nothing, and `status` shows the taken-over login.
+    #[test]
+    fn source_takeover_after_a_crash_past_the_commit_reconciles() {
+        let (hub, source) = hub_with_store();
+        let url = source_url(&source);
+        let crashing = double(&hub, serde_json::json!({"access": access(), "refresh": REFRESH, "exitAfterCommit": true}));
+        let output = take_over(&hub, &url, &input(), Some(&crashing));
+        assert_eq!(output.status.code(), Some(86), "{}", stderr(&output));
+        assert!(stdout(&output).is_empty(), "no report");
+        assert_secret_free(&output);
+
+        let pair = double(&hub, serde_json::json!({"access": access(), "refresh": REFRESH}));
+        for _ in 0..2 {
+            let output = take_over(&hub, &url, &input(), Some(&pair));
+            assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+            assert_eq!(stdout(&output), format!("{ALREADY}\n"));
+            assert_secret_free(&output);
+        }
+        let output = hub.run(&["status"], b"");
+        assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+        let status: serde_json::Value = serde_json::from_str(stdout(&output).trim()).expect("status JSON");
+        let legacy = &status["legacyCredentials"];
+        assert_eq!((legacy["present"].as_bool(), legacy["origin"].as_str(), legacy["refreshProgress"].as_str()),
+            (Some(true), Some("source_token"), Some("none_sent")), "{status}");
+        assert_eq!(source.connections(), 0, "the double stood in for the source");
+        assert_eq!(hub.endpoint.connections(), 0, "nothing was sent to Tesla");
     }
 }

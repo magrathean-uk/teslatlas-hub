@@ -588,6 +588,9 @@ async fn source_takeover_refresh_keeps_origin_and_fences_the_old_token() {
     assert_ne!(successor.generation, g0);
     assert_eq!(rig.fenced_generations().unwrap(), [g0], "the taken-over input is fenced");
     drop(manager);
+    // M09-T16 (B3): before the sign-out, taking the same source login over again finds
+    // the Hub's own successor of it and writes nothing.
+    assert_eq!(vault.store_source_takeover(&taken).expect("reconciled"), crate::SourceTakeoverOutcome::AlreadyStored);
     vault.clear_credential_pair(CredentialSlot::OwnerApi).expect("sign out");
     assert_eq!(vault.store_source_takeover(&taken).unwrap_err().code(), "refresh_token_spent");
     assert!(vault.load(CredentialSlot::OwnerApi).expect("load").is_none(), "nothing stored");
