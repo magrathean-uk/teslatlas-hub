@@ -2112,3 +2112,54 @@ mod backup_recovery_repair_tests {
         path.is_dir()
     }
 }
+
+#[cfg(all(test, unix))]
+mod status_privacy_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    use tesatlas_hub::db::{ObservationInput, SourceDescriptor, VehicleDescriptor};
+
+    #[test]
+    fn status_does_not_disclose_the_current_private_geofence() {
+        const PRIVATE_PLACE: &str = "123 Example Street, Synthetic Town";
+        let root = tempfile::tempdir().expect("synthetic Hub");
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).expect("private Hub");
+        let store = HubStore::initialize(root.path()).expect("store");
+        let source = store.register_source(
+            &SourceDescriptor::new("tesla_owner_api", "synthetic-status"), 1_000,
+        ).expect("source");
+        let vehicle = store.register_vehicle(
+            &VehicleDescriptor::new(source.source_id, "synthetic-car"), 1_001,
+        ).expect("vehicle");
+        store.upsert_geofences(vehicle.vehicle_id, &[
+            tesatlas_hub::source_db_projection::SourceDbGeofence {
+                id: 17,
+                name: PRIVATE_PLACE.into(),
+                latitude: Some(0.0),
+                longitude: Some(0.0),
+                radius_m: Some(150.0),
+                billing_type: None,
+                cost_per_unit: None,
+                session_fee: None,
+            },
+        ]).expect("private place");
+        store.accept_owner_observation_and_lifecycle(&ObservationInput {
+            source_id: source.source_id,
+            vehicle_id: vehicle.vehicle_id,
+            observed_at_ms: 2_000,
+            payload: serde_json::json!({
+                "record_type": "owner_api_vehicle_data_v1",
+                "source_vehicle_state": "online",
+                "vehicle_data": {
+                    "drive_state": {"latitude": 0.0, "longitude": 0.0},
+                    "charge_state": {"battery_level": 81}
+                }
+            }),
+        }, 2_001, 1).expect("current observation");
+
+        let status = current_vehicle_status_fields(&store, vehicle.vehicle_id, 2_001, 600_000)
+            .expect("diagnostic fields");
+        assert_eq!(status.location_name, None, "redacted status must not reveal the current address");
+        assert_eq!(status.battery_level, Some(81));
+    }
+}
