@@ -10,8 +10,10 @@ telemetry configuration or token refresh).
 The separate `take-over-source-token` step reads the source database
 read-only, with the source application stopped, and stores the login locally, without contacting Tesla. Run it with
 the Hub service stopped, the window Closed and its handback recorded. The
-first refresh waits for the next collection window. Your cars appear once the
-first window opens, without another sign-in. Follow the
+first refresh waits for the next collection window. The history import must
+run first and sets up the selected car; with no car, take-over refuses with
+`history_import_required` and asks for the import first. No later car discovery
+or new sign-in is needed for take-over. Follow the
 [migration guide](../releases/migration.md) for the key, retries and returning
 to the source application. After take-over, leave the source application stopped between windows too.
 History-only imports remain read-only and do not read credentials.
@@ -29,6 +31,35 @@ holds the window authority. With no service running they are refused with
 network. The issuer verbs (`window issuer-init`, `window issuer-trust`,
 `window issue`, `window void`) and `window host-id` run on the issuer Mac
 without a service.
+
+## Migration and first refresh
+
+The app discovers a source deployment that is already stopped. Its application
+containers must not be running, dashboards and other database clients must be
+disconnected, and automatic restart must not bring them back. Keep PostgreSQL
+running. Closing a web page or pausing collection does not stop the application.
+Keep the source stopped for as long as Hub owns that login.
+
+A repeat take-over for the same login reports `already_taken_over` and writes
+nothing; a different login in the slot is refused. After an app restart or a
+lost connection, setup resumes take-over without importing again. Reconnect
+and repeat the stop check; a server sign-in password is asked for again and
+is not kept.
+
+If take-over fails or is declined, **Sign in with Tesla Instead** starts the
+ordinary sign-in route. With the imported car and no login, Hub runs with
+collection off until sign-in inside an open window, then collects without a
+restart.
+
+The app distinguishes four refresh states. `none_sent` means the source login
+is untouched and the first refresh waits for a window; sign out in Hub before
+returning to the source. `attempt_recorded` means a refresh is in progress:
+keep the source stopped until its outcome is known, and use a new sign-in if
+returning to it. `completed` means Hub holds the login and the source copy no
+longer works. `sign_in_required` asks for a new Hub sign-in and also requires
+a new sign-in if returning to the source. For either of those last two states,
+sign out in Hub before restarting the source application. See the
+[migration guide](../releases/migration.md#going-back-to-the-source-application).
 
 ## How a window works
 
