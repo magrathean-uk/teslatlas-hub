@@ -15,9 +15,10 @@
 //!    kept until that restart has worked, so a failed restart is tried again
 //!    by the next attempt or the next launch.
 //! 2. The app writes the current LaunchAgent property list (its own writer),
-//!    then [`complete`] starts the current service if the earlier one was
-//!    running and waits for it to be ready. Only then is the earlier property
-//!    list removed and the note deleted.
+//!    then, if the earlier service was running, [`complete`] confirms that the
+//!    current one serves its configuration, starting it only when it does not
+//!    (see `cli`). Only then is the earlier property list removed and the note
+//!    deleted.
 //!
 //! Every step is idempotent and resumes from the note after a crash: a run
 //! that finds the note in the current folder repeats steps 1 and 2 from where
@@ -304,8 +305,9 @@ fn prepare_inner(layout: &Layout, launchd: &mut dyn Launchd) -> io::Result<Repor
     Ok(report)
 }
 
-/// Step 2 (see the module notes): `start` starts the current service and
-/// waits until it is ready; the earlier property list is removed only after.
+/// Step 2 (see the module notes): `start` confirms the current service serves
+/// its configuration, starting it when it is not; the earlier property list
+/// and the note are removed only after.
 pub fn complete(
     layout: &Layout,
     start_service: bool,

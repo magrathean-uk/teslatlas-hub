@@ -1064,3 +1064,73 @@ fn idle_start_refuses_a_configured_but_broken_hub() {
     assert!(hub_is_never_configured(&config).is_err(), "damaged store");
     assert!(preflight_hub_for_serve(&config, None).is_err(), "damaged store refused");
 }
+
+/// The rename hand-over reads which program the loaded job runs from
+/// `launchctl print` (layout as printed by macOS: one tab, then `program = `).
+#[test]
+fn the_loaded_jobs_program_is_read_from_its_own_line_only() {
+    let installed = Path::new("/Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub");
+    let print = "gui/501/com.tesatlas.hub = {\n\tactive count = 1\n\tstate = running\n\n\tprogram = /Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub\n\targuments = {\n\t\t/Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub\n\t}\n}\n";
+    assert_eq!(launchctl_print_program(print).as_deref(), Some(installed));
+    assert_eq!(loaded_job(Some(print), installed), LoadedJob::Installed);
+    assert_eq!(loaded_job(None, installed), LoadedJob::Absent);
+    let other = print.replace("program = /Applications/Tesatlas Hub.app", "program = /Users/o/Applications/Tesatlas Hub.app");
+    assert_eq!(loaded_job(Some(other.as_str()), installed), LoadedJob::Stale, "another bundle's binary");
+    // No own line (a nested or relative one does not count): not shown to be
+    // the installed program, so the definition is loaded again.
+    let nested = "gui/501/com.tesatlas.hub = {\n\tendpoints = {\n\t\tprogram = /Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub\n\t}\n}\n";
+    assert_eq!(loaded_job(Some(nested), installed), LoadedJob::Stale);
+    assert_eq!(loaded_job(Some("\tprogram = tesatlas-hub\n"), Path::new("tesatlas-hub")), LoadedJob::Stale);
+}
+
+#[test]
+fn the_installed_files_program_and_configuration_are_both_absolute() {
+    let temporary = crate::private_tempdir().unwrap();
+    let plist = temporary.path().join("installed.plist");
+    let write = |program: &str| {
+        fs::write(&plist, format!("<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>ProgramArguments</key><array><string>{program}</string><string>--config</string><string>/h/Tesatlas Hub/config.toml</string><string>serve</string></array></dict></plist>")).unwrap();
+    };
+    write("/Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub");
+    assert_eq!(
+        installed_arguments_from_plist(&plist).unwrap(),
+        (
+            PathBuf::from("/Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub"),
+            PathBuf::from("/h/Tesatlas Hub/config.toml")
+        )
+    );
+    write("tesatlas-hub");
+    assert!(installed_arguments_from_plist(&plist).is_err(), "a relative program is refused");
+}
+
+#[test]
+fn a_stale_loaded_definition_is_replaced_without_disabling_the_service() {
+    let plist = Path::new("/private/tmp/com.tesatlas.hub.plist");
+    let mut calls: Vec<String> = Vec::new();
+    // bootout, print (still loaded), print (gone), bootstrap, print (loaded).
+    let mut answers = std::collections::VecDeque::from([true, true, false, true, true]);
+    let mut runner = |arguments: &[&OsStr]| {
+        calls.push(arguments.iter().map(|argument| argument.to_string_lossy()).collect::<Vec<_>>().join(" "));
+        answers.pop_front().ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+    reload_installed_with_runner(plist, "gui/501", "gui/501/com.tesatlas.hub", &mut runner).expect("reload");
+    assert_eq!(
+        calls,
+        [
+            "bootout gui/501/com.tesatlas.hub",
+            "print gui/501/com.tesatlas.hub",
+            "print gui/501/com.tesatlas.hub",
+            "bootstrap gui/501 /private/tmp/com.tesatlas.hub.plist",
+            "print gui/501/com.tesatlas.hub",
+        ]
+    );
+
+    // A bootstrap that fails is reported, never followed by another request.
+    let mut calls = 0;
+    let mut answers = std::collections::VecDeque::from([true, false, false]);
+    let mut failing = |_: &[&OsStr]| {
+        calls += 1;
+        answers.pop_front().ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+    assert!(reload_installed_with_runner(plist, "gui/501", "gui/501/com.tesatlas.hub", &mut failing).is_err());
+    assert_eq!(calls, 3);
+}

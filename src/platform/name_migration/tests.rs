@@ -9,10 +9,14 @@ use std::{
     collections::HashSet,
     fs, io,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
+use super::cli::{self, CurrentService};
 use super::folders::FolderOutcome;
-use super::hand_over::{self, HOST_CLAIM_LOCK, Launchd, Layout, NOTE, Note, Status};
+use super::hand_over::{self, HOST_CLAIM_LOCK, Launchd, Layout, NOTE, Note, Report, Status};
+use crate::macos_launch_agent::LoadedJob;
 
 const CURRENT_LABEL: &str = "com.tesatlas.hub";
 const EARLIER_LABEL: &str = "com.teslatlas.hub"; // rename:keep
@@ -603,6 +607,65 @@ fn fake_hub(home: &Home, answer: &str) -> PathBuf {
 
 const SERVING_BETWEEN_WINDOWS: &str = r#"echo '{"status":"serving","readiness":"between_windows"}'"#;
 
+/// launchd's side of the confirmation: what the current job is, and every
+/// request made of it.
+#[derive(Clone)]
+struct FakeService {
+    job: LoadedJob,
+    restart_fails: bool,
+    calls: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl FakeService {
+    fn new(job: LoadedJob) -> Self {
+        Self { job, restart_fails: false, calls: Arc::default() }
+    }
+
+    fn calls(&self) -> Vec<&'static str> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+impl CurrentService for FakeService {
+    fn job(&mut self) -> io::Result<LoadedJob> {
+        Ok(self.job)
+    }
+
+    fn reload(&mut self) -> io::Result<()> {
+        self.calls.lock().unwrap().push("reload");
+        Ok(())
+    }
+
+    fn restart(&mut self) -> io::Result<()> {
+        self.calls.lock().unwrap().push("restart");
+        if self.restart_fails { Err(io::Error::other("launchctl failed")) } else { Ok(()) }
+    }
+}
+
+/// `migrate-names --complete --start`'s confirmation with a stand-in Hub
+/// binary and launchd, bounded by `limit`.
+fn complete_with(home: &Home, hub: &Path, config: &Path, service: &FakeService, limit: Duration) -> Report {
+    let (hub, config, mut service) = (hub.to_owned(), config.to_owned(), service.clone());
+    hand_over::complete(&home.layout, true, move || {
+        cli::within(limit, move |given_up| cli::confirm_start(&mut service, &hub, &config, given_up))
+    })
+}
+
+fn complete(home: &Home, hub: &Path, config: &Path, service: &FakeService) -> Report {
+    complete_with(home, hub, config, service, cli::CONFIRM_LIMIT)
+}
+
+/// The waits each `serving-check` the stand-in ran was given, in order.
+fn checks_run(home: &Home) -> Vec<String> {
+    fs::read_to_string(home.layout.home.join("checks")).unwrap_or_default().lines().map(str::to_owned).collect()
+}
+
+/// A stand-in that records each check's wait, then answers.
+fn recording_hub(home: &Home, answer: &str) -> PathBuf {
+    let checks = home.layout.home.join("checks");
+    fake_hub(home, &format!("echo \"$wait\" >> '{}'\n{answer}", checks.display()))
+}
+
 /// A running earlier Hub moved under the current name, its agent written by the
 /// app: what `migrate-names --complete --start` finds.
 fn prepared_for_start(home: &Home) -> (FakeLaunchd, PathBuf) {
@@ -614,37 +677,92 @@ fn prepared_for_start(home: &Home) -> (FakeLaunchd, PathBuf) {
     (launchd, home.current().join("config.toml"))
 }
 
+fn assert_kept_for_the_next_attempt(home: &Home) {
+    assert!(home.plist(EARLIER_LABEL).exists(), "kept: the start is not confirmed");
+    assert!(note_in(&home.current()).is_some(), "the next attempt resumes");
+}
+
 #[test]
 fn handover_a_hub_with_a_car_between_windows_counts_as_started() {
     let home = Home::new();
     let (_launchd, config) = prepared_for_start(&home);
     // A configured car with no open window: `/readyz` is 503 `collector_absent`,
     // which `serving-check` reports as serving `between_windows`.
-    let hub = fake_hub(&home, SERVING_BETWEEN_WINDOWS);
-    let done = hand_over::complete(&home.layout, true, || super::cli::confirm_serving(&hub, &config));
+    let hub = recording_hub(&home, SERVING_BETWEEN_WINDOWS);
+    let service = FakeService::new(LoadedJob::Absent);
+    let done = complete(&home, &hub, &config, &service);
     assert_eq!(done.status, Status::Done, "{done:?}");
+    assert_eq!(service.calls(), ["restart"], "a job that is not loaded is started");
+    assert_eq!(checks_run(&home), ["45"]);
     assert!(!home.plist(EARLIER_LABEL).exists(), "removed once the start is confirmed");
     assert!(note_in(&home.current()).is_none());
     assert_eq!(fs::read_to_string(home.current().join("data/hub.sqlite")).unwrap(), "catalogue");
 }
 
 #[test]
-fn handover_inside_an_open_window_waits_out_the_collector_restart() {
+fn handover_inside_an_open_window_confirms_the_service_not_the_collector() {
     let home = Home::new();
     let (_launchd, config) = prepared_for_start(&home);
-    // Inside a window the start's restart leaves the collector without its
-    // lease for about 11 s (lab); until it takes the lease again the answer can
-    // be a refusal. The check serves only when its wait covers the restart, and
-    // the hand-over waits for the check to finish.
-    let hub = fake_hub(
-        &home,
-        r#"sleep 1
-if [ "$wait" -ge 11 ]; then echo '{"status":"serving","readiness":"ready"}'
-else echo 'tesatlas-hub: the Hub service is running but cannot serve its history (collector_stale)' >&2; exit 1; fi"#,
-    );
-    let done = hand_over::complete(&home.layout, true, || super::cli::confirm_serving(&hub, &config));
+    // Inside a window the restarted service serves before its collector takes
+    // the lease again; until then the check reports `between_windows`, and the
+    // hand-over is confirmed then. It confirms that the service serves its
+    // configuration; the collector's restart is the service's own (observed
+    // by the guest proof, not here).
+    let hub = recording_hub(&home, SERVING_BETWEEN_WINDOWS);
+    let service = FakeService::new(LoadedJob::Absent);
+    let done = complete(&home, &hub, &config, &service);
     assert_eq!(done.status, Status::Done, "{done:?}");
-    assert!(!home.plist(EARLIER_LABEL).exists());
+    assert_eq!(checks_run(&home), ["45"], "one check, answered at once");
+}
+
+/// The answer `serving-check` gives for a service readiness (as the binary's
+/// `serving_answer` maps `/readyz`, which this library cannot link).
+fn serving_check_output(readiness: Result<(), crate::db::ReadinessFailure>) -> (bool, Vec<u8>, Vec<u8>) {
+    match readiness {
+        Ok(()) => (true, br#"{"status":"serving","readiness":"ready"}"#.to_vec(), Vec::new()),
+        Err(failure) if failure.code == crate::db::ReadinessReasonCode::CollectorAbsent => {
+            (true, br#"{"status":"serving","readiness":"between_windows"}"#.to_vec(), Vec::new())
+        }
+        Err(failure) => (
+            false,
+            Vec::new(),
+            format!("tesatlas-hub: the Hub service is running but cannot serve its history ({})\n", failure.code.code())
+                .into_bytes(),
+        ),
+    }
+}
+
+#[test]
+fn handover_an_open_windows_store_with_no_collector_yet_is_confirmed_as_serving() {
+    use crate::db::{HubStore, ReadinessReasonCode};
+    let temporary = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(temporary.path()).unwrap();
+    let now = |offset_ms: i64| 1_900_000_000_000 + offset_ms;
+    let verdict = |at: i64| {
+        let readiness = store.service_readiness_at(true, at);
+        let (success, stdout, stderr) = serving_check_output(readiness);
+        (readiness.err().map(|failure| failure.code), cli::serving_verdict(success, &stdout, &stderr))
+    };
+    // Inside the window, before the hand-over: the collector holds its lease.
+    let lease = store.acquire_supervised_collector_lease(now(0)).unwrap();
+    assert!(matches!(verdict(now(1_000)), (None, Ok(()))));
+    // The restart: the collector exits in order and removes its lease. The
+    // window's phase is not an input of readiness, so the open window's Hub
+    // gives the between-windows answer, and the hand-over is confirmed before
+    // a collector runs again.
+    store.release_supervised_collector_lease(lease).unwrap();
+    assert!(matches!(verdict(now(2_000)), (Some(ReadinessReasonCode::CollectorAbsent), Ok(()))));
+    // The restarted collector takes the lease again: ready.
+    let _lease = store.acquire_supervised_collector_lease(now(11_000)).unwrap();
+    assert!(matches!(verdict(now(12_000)), (None, Ok(()))));
+    // A collector that stops renewing its lease (it ran past its expiry) is a
+    // fault the hand-over refuses, with the check's own words.
+    let (code, refused) = verdict(now(11_000 + crate::db::SUPERVISED_COLLECTOR_LEASE_MS + 1));
+    assert_eq!(code, Some(ReadinessReasonCode::CollectorStale));
+    assert_eq!(
+        refused.unwrap_err().to_string(),
+        "the Hub service is running but cannot serve its history (collector_stale)"
+    );
 }
 
 #[test]
@@ -657,12 +775,111 @@ fn handover_a_replacement_with_a_real_fault_is_refused_with_its_reason() {
         let home = Home::new();
         let (_launchd, config) = prepared_for_start(&home);
         let hub = fake_hub(&home, &format!("echo 'tesatlas-hub: {reason}' >&2; exit 1"));
-        let failed = hand_over::complete(&home.layout, true, || super::cli::confirm_serving(&hub, &config));
+        let failed = complete(&home, &hub, &config, &FakeService::new(LoadedJob::Absent));
         assert_eq!(failed.status, Status::Failed);
         assert_eq!(failed.detail.as_deref(), Some(format!("the Hub service did not start under its current name: {reason}").as_str()));
-        assert!(home.plist(EARLIER_LABEL).exists(), "kept: the start is not confirmed");
-        assert!(note_in(&home.current()).is_some(), "the next attempt resumes");
+        assert_kept_for_the_next_attempt(&home);
     }
+}
+
+#[test]
+fn handover_an_already_serving_current_job_is_not_restarted() {
+    let home = Home::new();
+    let (_launchd, config) = prepared_for_start(&home);
+    let hub = recording_hub(&home, SERVING_BETWEEN_WINDOWS);
+    let service = FakeService::new(LoadedJob::Installed);
+    let done = complete(&home, &hub, &config, &service);
+    assert_eq!(done.status, Status::Done, "{done:?}");
+    assert_eq!(service.calls(), Vec::<&str>::new(), "no restart: its window and collector carry on");
+    assert_eq!(checks_run(&home), [cli::SERVING_PROBE_SECONDS.to_string()], "the short check only");
+    assert!(!home.plist(EARLIER_LABEL).exists() && note_in(&home.current()).is_none());
+}
+
+#[test]
+fn handover_a_loaded_job_that_is_not_serving_is_restarted_then_confirmed() {
+    let home = Home::new();
+    let (_launchd, config) = prepared_for_start(&home);
+    // Not serving for the short check; serving after the restart.
+    let hub = recording_hub(
+        &home,
+        r#"if [ "$wait" = 2 ]; then echo 'tesatlas-hub: the Hub service is not serving its configuration on its listener' >&2; exit 1; fi
+echo '{"status":"serving","readiness":"ready"}'"#,
+    );
+    let service = FakeService::new(LoadedJob::Installed);
+    let done = complete(&home, &hub, &config, &service);
+    assert_eq!(done.status, Status::Done, "{done:?}");
+    assert_eq!(service.calls(), ["restart"]);
+    assert_eq!(checks_run(&home), ["2", "45"]);
+
+    // The restart keeps its fail-closed refusal: nothing is confirmed or retired.
+    let home = Home::new();
+    let (_launchd, config) = prepared_for_start(&home);
+    let hub = recording_hub(&home, "echo 'tesatlas-hub: not serving' >&2; exit 1");
+    let mut service = FakeService::new(LoadedJob::Installed);
+    service.restart_fails = true;
+    let failed = complete(&home, &hub, &config, &service);
+    assert_eq!(failed.status, Status::Failed);
+    assert_eq!(failed.detail.as_deref(), Some("the Hub service did not start under its current name: launchctl failed"));
+    assert_eq!(checks_run(&home), ["2"], "no check after a refused restart");
+    assert_kept_for_the_next_attempt(&home);
+}
+
+#[test]
+fn handover_a_stale_loaded_definition_is_replaced_before_it_is_confirmed() {
+    let home = Home::new();
+    let (_launchd, config) = prepared_for_start(&home);
+    let hub = recording_hub(&home, SERVING_BETWEEN_WINDOWS);
+    let service = FakeService::new(LoadedJob::Stale);
+    let done = complete(&home, &hub, &config, &service);
+    assert_eq!(done.status, Status::Done, "{done:?}");
+    assert_eq!(service.calls(), ["reload"], "the installed definition is loaded, not restarted twice");
+    assert_eq!(checks_run(&home), ["45"], "even a serving earlier binary is not confirmed");
+}
+
+#[test]
+fn handover_a_check_that_hangs_is_refused_at_the_limit_and_left_to_end_by_itself() {
+    let home = Home::new();
+    let (_launchd, config) = prepared_for_start(&home);
+    let ended = home.layout.home.join("ended");
+    let hub = fake_hub(&home, &format!("sleep 2\ntouch '{}'\n{SERVING_BETWEEN_WINDOWS}", ended.display()));
+    let service = FakeService::new(LoadedJob::Absent);
+    let started = Instant::now();
+    let refused = complete_with(&home, &hub, &config, &service, Duration::from_millis(300));
+    assert!(started.elapsed() < Duration::from_millis(1_500), "the step returns at its limit");
+    assert_eq!(refused.status, Status::Failed);
+    assert_eq!(
+        refused.detail.as_deref(),
+        Some(format!("the Hub service did not start under its current name: {}", cli::NOT_CONFIRMED_IN_TIME).as_str())
+    );
+    assert_kept_for_the_next_attempt(&home);
+    // Neither killed nor signalled: the late check finishes by itself.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !ended.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(ended.exists(), "the late check ran to its end");
+    assert_eq!(service.calls(), ["restart"], "the running service is left as it is");
+}
+
+#[test]
+fn handover_no_launchd_request_starts_after_the_limit() {
+    let home = Home::new();
+    let (_launchd, config) = prepared_for_start(&home);
+    // The short check of a loaded job hangs past the limit, then says it is
+    // not serving: the abandoned attempt must not restart the job afterwards.
+    let ended = home.layout.home.join("ended");
+    let hub = fake_hub(&home, &format!("sleep 1\ntouch '{}'\nexit 1", ended.display()));
+    let service = FakeService::new(LoadedJob::Installed);
+    let refused = complete_with(&home, &hub, &config, &service, Duration::from_millis(200));
+    assert_eq!(refused.status, Status::Failed);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !ended.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(ended.exists());
+    assert_eq!(service.calls(), Vec::<&str>::new());
+    assert_kept_for_the_next_attempt(&home);
 }
 
 #[test]
@@ -691,9 +908,13 @@ fn handover_left_failed_by_the_strict_wait_completes_at_the_next_start_without_m
     );
     assert!(!home.earlier().exists());
     home.app_installs_current_agent();
-    let hub = fake_hub(&home, SERVING_BETWEEN_WINDOWS);
-    let done = hand_over::complete(&home.layout, report.start, || super::cli::confirm_serving(&hub, &config));
+    // The current job is loaded from the installed file and serving between
+    // windows: confirmed without a restart.
+    let hub = recording_hub(&home, SERVING_BETWEEN_WINDOWS);
+    let current = FakeService::new(LoadedJob::Installed);
+    let done = complete(&home, &hub, &config, &current);
     assert_eq!(done.status, Status::Done, "{done:?}");
+    assert_eq!(current.calls(), Vec::<&str>::new(), "not restarted");
     assert!(!home.plist(EARLIER_LABEL).exists());
     assert!(note_in(&home.current()).is_none());
     assert_eq!(fs::read_to_string(home.current().join("data/hub.sqlite")).unwrap(), "catalogue");

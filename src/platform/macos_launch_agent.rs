@@ -555,8 +555,101 @@ pub fn installed_config_path() -> io::Result<PathBuf> {
     }
 }
 
+/// What launchd holds for the current Hub job, against the installed file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoadedJob {
+    /// The job is not loaded.
+    Absent,
+    /// The loaded job runs the program the installed LaunchAgent file names.
+    Installed,
+    /// The loaded job runs another program, or one its description does not
+    /// show: launchd still holds an earlier definition.
+    Stale,
+}
+
+/// Reads (never changes) what launchd holds for the current Hub job. The
+/// rename hand-over uses it to choose between confirming, restarting and
+/// loading the installed definition.
+pub fn installed_job() -> io::Result<LoadedJob> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "the installed Hub job is unavailable in the fixture build",
+        ))
+    }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
+        let (program, _) = installed_arguments_from_plist(&installed_plist()?)?;
+        let (_, service) = service_identifiers();
+        Ok(loaded_job(real_launchctl_print(&service)?.as_deref(), &program))
+    }
+}
+
+/// Loads the installed definition in place of a stale one: `bootout`, wait
+/// until it is unloaded, then `bootstrap` (the agent runs at load). A
+/// transient stop: nothing is disabled.
+pub fn reload_installed() -> io::Result<()> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "the installed Hub job is unavailable in the fixture build",
+        ))
+    }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
+        let plist = installed_plist()?;
+        let (domain, service) = service_identifiers();
+        reload_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
+    }
+}
+
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
+fn loaded_job(print: Option<&str>, installed_program: &Path) -> LoadedJob {
+    match print {
+        None => LoadedJob::Absent,
+        Some(output) if launchctl_print_program(output).as_deref() == Some(installed_program) => {
+            LoadedJob::Installed
+        }
+        Some(_) => LoadedJob::Stale,
+    }
+}
+
+/// The job's own `program = ` line, one tab deep in `launchctl print`.
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
+fn launchctl_print_program(output: &str) -> Option<PathBuf> {
+    output
+        .lines()
+        .find_map(|line| line.strip_prefix("\tprogram = "))
+        .map(|program| PathBuf::from(program.trim_end()))
+        .filter(|program| program.is_absolute())
+}
+
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
+fn reload_installed_with_runner(
+    plist: &Path,
+    domain: &str,
+    service: &str,
+    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+) -> io::Result<()> {
+    let _ = runner(&[OsStr::new("bootout"), OsStr::new(service)])?;
+    wait_for_service_unloaded_with_runner(service, runner)?;
+    run_launchctl(runner, &[OsStr::new("bootstrap"), OsStr::new(domain), plist.as_os_str()])?;
+    if !service_is_loaded_with_runner(service, runner)? {
+        return Err(io::Error::other("Hub LaunchAgent is not loaded after start"));
+    }
+    Ok(())
+}
+
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn configured_config_path_from_plist(plist: &Path) -> io::Result<PathBuf> {
+    installed_arguments_from_plist(plist).map(|(_, config)| config)
+}
+
+/// The installed file's program and `--config` path, both absolute.
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
+fn installed_arguments_from_plist(plist: &Path) -> io::Result<(PathBuf, PathBuf)> {
     if fs::metadata(plist)?.len() > 1024 * 1024 {
         return Err(io::Error::other("installed plist is too large"));
     }
@@ -591,7 +684,15 @@ fn configured_config_path_from_plist(plist: &Path) -> io::Result<PathBuf> {
             "installed plist config path must be absolute",
         ));
     }
-    Ok(config_path.to_path_buf())
+    let program = Path::new(
+        args[0]
+            .as_str()
+            .ok_or_else(|| io::Error::other("installed plist program is absent"))?,
+    );
+    if !program.is_absolute() {
+        return Err(io::Error::other("installed plist program must be absolute"));
+    }
+    Ok((program.to_path_buf(), config_path.to_path_buf()))
 }
 
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]
@@ -1024,6 +1125,27 @@ fn real_service_running_pid(service: &str) -> io::Result<Option<u32>> {
         "launchctl print failed ({}): {detail}",
         output.status
     )))
+}
+
+/// `launchctl print` of `service`: its description, or `None` when it is not loaded.
+#[cfg(not(feature = "credential-relocation-fixture"))]
+fn real_launchctl_print(service: &str) -> io::Result<Option<String>> {
+    refuse_real_launchctl_in_unit_tests()?;
+    let output = Command::new("/bin/launchctl")
+        .arg("print")
+        .arg(service)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()?;
+    if output.status.success() {
+        return Ok(Some(String::from_utf8_lossy(&output.stdout).into_owned()));
+    }
+    let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    if expected_launchctl_absence("print", output.status.code(), &detail) {
+        return Ok(None);
+    }
+    Err(io::Error::other(format!("launchctl print failed ({}): {detail}", output.status)))
 }
 
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]
