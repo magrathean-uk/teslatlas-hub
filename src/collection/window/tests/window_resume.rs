@@ -796,3 +796,55 @@ fn window_resume_system_clock_reading_behind_its_anchor_closes() {
     assert_eq!(hub.status().close_reason, Some(CloseReason::ClockInvalid));
     assert!(permit_refused(&hub));
 }
+
+
+#[test]
+fn astra_p03_closed_window_snapshot_cannot_resume() {
+    let rig = Rig::new();
+    let hub = open_hub(&rig, 0, 3600);
+    let snapshot = rig.tmp.path().join("open-snapshot");
+    copy_dir(&rig.window_dir(), &snapshot);
+    rig.clock.advance(100);
+    hub.close(CloseReason::OperatorClose);
+    hub.finish_close().unwrap();
+    drop(hub);
+    fs::remove_dir_all(rig.window_dir()).unwrap();
+    copy_dir(&snapshot, &rig.window_dir());
+    rig.clock.advance(10);
+    let (hub, _) = rig.start_hub();
+    assert!(permit_refused(&hub), "restoring an Open snapshot must not undo the owner's close");
+    assert_ne!(hub.status().phase, Phase::Open);
+}
+
+#[test]
+fn astra_p03_close_waits_for_the_external_anchor() {
+    let rig = Rig::new();
+    let hub = open_hub(&rig, 0, 3600);
+    rig.anchor.set_fail_writes(true);
+    hub.close(CloseReason::OperatorClose);
+    assert_eq!(hub.finish_close(), Err(Refusal::AnchorUnavailable));
+    assert_eq!(hub.status().phase, Phase::Closing);
+    assert!(permit_refused(&hub));
+    rig.anchor.set_fail_writes(false);
+    assert!(hub.finish_close().unwrap().is_some());
+    assert_eq!(hub.status().phase, Phase::Closed);
+}
+
+#[test]
+fn astra_p03_restored_closing_snapshot_does_not_lower_a_newer_anchor() {
+    let rig = Rig::new();
+    let hub = open_hub(&rig, 0, 3600);
+    hub.close(CloseReason::OperatorClose);
+    let snapshot = rig.tmp.path().join("closing-snapshot");
+    copy_dir(&rig.window_dir(), &snapshot);
+    hub.finish_close().unwrap();
+    let trust = rig.issuer.bump_trust_epoch(&rig.key_path).unwrap();
+    hub.trust(&trust).unwrap();
+    let newer = rig.anchor.read(&anchor_name()).unwrap();
+    drop(hub);
+    fs::remove_dir_all(rig.window_dir()).unwrap();
+    copy_dir(&snapshot, &rig.window_dir());
+    let (hub, _) = rig.start_hub();
+    assert!(permit_refused(&hub));
+    assert_eq!(rig.anchor.read(&anchor_name()).unwrap(), newer);
+}
