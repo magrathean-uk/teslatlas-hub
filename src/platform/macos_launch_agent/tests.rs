@@ -1064,3 +1064,296 @@ fn idle_start_refuses_a_configured_but_broken_hub() {
     assert!(hub_is_never_configured(&config).is_err(), "damaged store");
     assert!(preflight_hub_for_serve(&config, None).is_err(), "damaged store refused");
 }
+
+/// The rename hand-over reads which program the loaded job runs from
+/// `launchctl print` (layout as printed by macOS: one tab, then `program = `).
+#[test]
+fn the_loaded_jobs_program_is_read_from_its_own_line_only() {
+    let installed = Path::new("/Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub");
+    let print = "gui/501/com.tesatlas.hub = {\n\tactive count = 1\n\tstate = running\n\n\tprogram = /Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub\n\targuments = {\n\t\t/Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub\n\t}\n}\n";
+    assert_eq!(launchctl_print_program(print).as_deref(), Some(installed));
+    assert_eq!(loaded_job(Some(print), installed), LoadedJob::Installed);
+    assert_eq!(loaded_job(None, installed), LoadedJob::Absent);
+    let other = print.replace("program = /Applications/Tesatlas Hub.app", "program = /Users/o/Applications/Tesatlas Hub.app");
+    assert_eq!(loaded_job(Some(other.as_str()), installed), LoadedJob::Stale, "another bundle's binary");
+    // No own line (a nested or relative one does not count): not shown to be
+    // the installed program, so the definition is loaded again.
+    let nested = "gui/501/com.tesatlas.hub = {\n\tendpoints = {\n\t\tprogram = /Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub\n\t}\n}\n";
+    assert_eq!(loaded_job(Some(nested), installed), LoadedJob::Stale);
+    assert_eq!(loaded_job(Some("\tprogram = tesatlas-hub\n"), Path::new("tesatlas-hub")), LoadedJob::Stale);
+}
+
+#[test]
+fn the_installed_files_program_and_configuration_are_both_absolute() {
+    let temporary = crate::private_tempdir().unwrap();
+    let plist = temporary.path().join("installed.plist");
+    let write = |program: &str| {
+        fs::write(&plist, format!("<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>ProgramArguments</key><array><string>{program}</string><string>--config</string><string>/h/Tesatlas Hub/config.toml</string><string>serve</string></array></dict></plist>")).unwrap();
+    };
+    write("/Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub");
+    assert_eq!(
+        installed_arguments_from_plist(&plist).unwrap(),
+        (
+            PathBuf::from("/Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub"),
+            PathBuf::from("/h/Tesatlas Hub/config.toml")
+        )
+    );
+    write("tesatlas-hub");
+    assert!(installed_arguments_from_plist(&plist).is_err(), "a relative program is refused");
+}
+
+#[test]
+fn a_stale_loaded_definition_is_replaced_without_disabling_the_service() {
+    let plist = Path::new("/private/tmp/com.tesatlas.hub.plist");
+    let mut calls: Vec<String> = Vec::new();
+    // bootout, print (still loaded), print (gone), bootstrap, print (loaded).
+    let mut answers = std::collections::VecDeque::from([true, true, false, true, true]);
+    let mut runner = |arguments: &[&OsStr]| {
+        calls.push(arguments.iter().map(|argument| argument.to_string_lossy()).collect::<Vec<_>>().join(" "));
+        answers.pop_front().ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+    reload_installed_with_runner(plist, "gui/501", "gui/501/com.tesatlas.hub", &mut runner).expect("reload");
+    assert_eq!(
+        calls,
+        [
+            "bootout gui/501/com.tesatlas.hub",
+            "print gui/501/com.tesatlas.hub",
+            "print gui/501/com.tesatlas.hub",
+            "bootstrap gui/501 /private/tmp/com.tesatlas.hub.plist",
+            "print gui/501/com.tesatlas.hub",
+        ]
+    );
+
+    // A bootstrap that fails is reported, never followed by another request.
+    let mut calls = 0;
+    let mut answers = std::collections::VecDeque::from([true, false, false]);
+    let mut failing = |_: &[&OsStr]| {
+        calls += 1;
+        answers.pop_front().ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+    let refused = reload_installed_with_runner(plist, "gui/501", "gui/501/com.tesatlas.hub", &mut failing).unwrap_err();
+    assert_eq!(calls, 3);
+    // Unloaded and not loaded again: the owner is told so, and what Try Again does.
+    assert_eq!(refused.to_string(), format!("{RELOAD_LEFT_UNLOADED} (launchctl failed)"));
+    assert!(refused.to_string().starts_with("the Hub service is not running now"));
+    assert!(refused.to_string().contains("Try Again starts it"));
+}
+
+#[test]
+fn a_job_that_is_not_loaded_is_loaded_without_a_restart() {
+    let plist = Path::new("/private/tmp/com.tesatlas.hub.plist");
+    let mut calls: Vec<String> = Vec::new();
+    // print (absent), bootstrap, print (loaded).
+    let mut answers = std::collections::VecDeque::from([false, true, true]);
+    let mut runner = |arguments: &[&OsStr]| {
+        calls.push(arguments.iter().map(|argument| argument.to_string_lossy()).collect::<Vec<_>>().join(" "));
+        answers.pop_front().ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+    load_installed_with_runner(plist, "gui/501", "gui/501/com.tesatlas.hub", &mut runner).expect("load");
+    assert_eq!(
+        calls,
+        [
+            "print gui/501/com.tesatlas.hub",
+            "bootstrap gui/501 /private/tmp/com.tesatlas.hub.plist",
+            "print gui/501/com.tesatlas.hub",
+        ]
+    );
+    assert!(calls.iter().all(|call| !call.starts_with("kickstart")), "RunAtLoad starts it; no throttled restart");
+
+    // A bootstrap that is refused is reported, with no further request.
+    let mut calls = 0;
+    let mut answers = std::collections::VecDeque::from([false, false]);
+    let mut failing = |_: &[&OsStr]| {
+        calls += 1;
+        answers.pop_front().ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+    assert!(load_installed_with_runner(plist, "gui/501", "gui/501/com.tesatlas.hub", &mut failing).is_err());
+    assert_eq!(calls, 2);
+}
+
+fn takeover_pair(refresh: &str) -> crate::credentials::OwnerTokens {
+    crate::credentials::OwnerTokens::from_secret_parts("synthetic-access-0001".to_owned(), refresh.to_owned()).expect("synthetic pair")
+}
+
+/// Writes the unit's status row: `state` with `stopped` as its stopped generation.
+fn write_auth_stop(store: &HubStore, state: &str, stopped: Option<uuid::Uuid>) {
+    let connection = store.open().expect("store");
+    connection.execute("DELETE FROM collector_auth_state", []).expect("clear");
+    let reason = if state == "api_refused" { "client" } else { "refresh_outcome_unknown" };
+    connection
+        .execute(
+            "INSERT INTO collector_auth_state(singleton_id, state, reason, collecting, retry_at, stopped_generation, stopped_mode, fuse_consecutive, fuse_generation, fuse_last_rejection_at, fuse_pause_until, clock_skew, updated_at_ms) VALUES (1, ?1, ?2, 0, NULL, ?3, ?4, 0, NULL, NULL, NULL, 0, 1)",
+            rusqlite::params![state, reason, stopped.map(|generation| generation.to_string()), (state == "api_refused").then_some("legacy")],
+        )
+        .expect("status row");
+}
+
+fn auth_state(store: &HubStore) -> (String, Option<uuid::Uuid>) {
+    let row = store.load_collector_auth_row().expect("row").expect("present");
+    (row.state, row.stopped_generation)
+}
+
+/// M09-T16 (B4): a store whose earlier refresh left a `signed_out` stop, then signed out
+/// (cleared) and took over a different unspent pair, passes production start admission.
+/// The stale stop is not rewritten by the admission: the unit lifts it when it starts.
+#[test]
+fn takeover_after_sign_out_passes_production_start_admission() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let store = seed_selected_car(&data);
+    load_or_create_cursor_key(&data).expect("cursor key");
+    let mut config = idle_start_config(&data);
+    config.collector.interval_seconds = 300;
+    let vault = crate::auth::credential_vault::fixtures::legacy_vault(&store, &data);
+    let first = vault.store_source_takeover(&takeover_pair("refresh-first")).expect("first").stored_generation().expect("stored");
+    write_auth_stop(&store, "signed_out", Some(first));
+    let refused = preflight_hub_for_provider(&data, CollectorProvider::Legacy).expect_err("the stop names the stored pair");
+    assert!(refused.to_string().contains("credential sign-in required"), "{refused}");
+    assert!(preflight_hub_for_serve(&config, None).is_err(), "production serve refused too");
+
+    vault.clear_credential_pair(crate::auth::credential_envelope::CredentialSlot::OwnerApi).expect("sign out");
+    let second = vault.store_source_takeover(&takeover_pair("refresh-second")).expect("second").stored_generation().expect("stored");
+    assert_ne!(second, first);
+    drop(vault);
+    preflight_hub_for_provider(&data, CollectorProvider::Legacy).expect("a pair not descended from the stopped one is admitted");
+    preflight_hub_for_config(&config).expect("the production configuration preflight");
+    preflight_hub_for_serve(&config, None).expect("the production serve admission");
+    assert_eq!(auth_state(&store), ("signed_out".to_owned(), Some(first)), "the admission writes nothing");
+}
+
+/// M09-T16 (B4): the stop still holds for the pair it names, for a successor the Hub's own
+/// refresh derived from it and with a refresh unresolved; an
+/// unrelated refusal is neither consulted nor changed.
+#[test]
+fn sign_out_stop_still_holds_unless_the_pair_was_replaced() {
+    let refused = |data: &Path, label: &str| {
+        let error = preflight_hub_for_provider(data, CollectorProvider::Legacy).expect_err(label);
+        assert!(error.to_string().contains("credential sign-in required"), "{label}: {error}");
+    };
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let store = seed_selected_car(&data);
+    load_or_create_cursor_key(&data).expect("cursor key");
+    let vault = crate::auth::credential_vault::fixtures::legacy_vault(&store, &data);
+    let first = vault.store_source_takeover(&takeover_pair("refresh-first")).expect("first").stored_generation().expect("stored");
+    // An unresolved refresh of the stored pair keeps any stop in force.
+    write_auth_stop(&store, "signed_out", Some(uuid::Uuid::new_v4()));
+    preflight_hub_for_provider(&data, CollectorProvider::Legacy).expect("a stop of an unrelated pair");
+    let slot = crate::auth::credential_envelope::CredentialSlot::OwnerApi;
+    let receipt = vault.begin_refresh(slot, first).expect("begin");
+    refused(&data, "refresh unresolved");
+    // The Hub's own refresh completes: the successor descends from the stopped pair.
+    let output = uuid::Uuid::new_v4();
+    vault.persist_refreshed(slot, receipt, first, output, "access-0002", "refresh-0002", 1_800_028_800, 1_800_027_000).expect("successor");
+    write_auth_stop(&store, "signed_out", Some(first));
+    refused(&data, "successor of the stopped pair");
+    write_auth_stop(&store, "signed_out", Some(output));
+    refused(&data, "the stopped pair itself");
+    // An API refusal is not this check's: admitted, and left as it was.
+    write_auth_stop(&store, "api_refused", None);
+    preflight_hub_for_provider(&data, CollectorProvider::Legacy).expect("api_refused is not a sign-out");
+    assert_eq!(auth_state(&store), ("api_refused".to_owned(), None), "the refusal is untouched");
+    drop(vault);
+}
+
+/// M09-T16 (B2): a configured Legacy Hub with imported history and no Owner login is
+/// admitted for production serve awaiting the owner's sign-in (collector off); once the
+/// Hub's own login is stored, the full admission passes and the collector can start.
+#[test]
+fn awaiting_sign_in_admits_imported_history_without_a_login() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let store = seed_selected_car(&data);
+    load_or_create_cursor_key(&data).expect("cursor key");
+    drop(crate::auth::credential_vault::fixtures::legacy_vault(&store, &data));
+    let mut config = idle_start_config(&data);
+    config.collector.interval_seconds = 300;
+    assert!(!hub_is_never_configured(&config).expect("readable"), "not a new Hub");
+    assert!(hub_awaits_owner_sign_in(&config).expect("readable"));
+    assert!(preflight_hub_for_config(&config).is_err(), "the full admission is unchanged");
+    preflight_hub_for_serve(&config, None).expect("served awaiting the sign-in");
+
+    // The owner signs in: the Hub's own login is stored.
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store, &data, "access-0001", "refresh-0001", None).expect("own login");
+    assert!(!hub_awaits_owner_sign_in(&config).expect("readable"), "no longer awaiting");
+    preflight_hub_for_config(&config).expect("the full admission passes");
+    let status = crate::auth::credential_sign_in::credential_status(&store, &data, 0).expect("status");
+    assert!(status.legacy_credentials.present && status.legacy_credentials.store_state == "ok", "the collector's start check holds");
+    assert_eq!(status.legacy_credentials.refresh_progress, Some(Some("none_sent")));
+}
+
+/// M09-T16 (B2): every other state keeps today's admission.
+#[test]
+fn awaiting_sign_in_keeps_every_other_refusal() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let store = seed_selected_car(&data);
+    load_or_create_cursor_key(&data).expect("cursor key");
+    drop(crate::auth::credential_vault::fixtures::legacy_vault(&store, &data));
+    let collecting = || {
+        let mut config = idle_start_config(&data);
+        config.collector.interval_seconds = 300;
+        config
+    };
+    let refused = |config: &HubConfig, label: &str| {
+        assert!(!hub_awaits_owner_sign_in(config).expect("readable"), "{label}: not awaiting");
+        assert!(preflight_hub_for_serve(config, None).is_err(), "{label}: refused");
+    };
+    refused(&idle_start_config(&data), "history-only configuration (collector off)");
+    let mut config = collecting();
+    config.collector.legacy_auth.enabled = false;
+    refused(&config, "Legacy refresh disabled");
+    let mut config = collecting();
+    config.collector.provider = CollectorProvider::Fleet;
+    refused(&config, "Fleet provider");
+
+    // No configured car.
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let empty = temporary.path().join("data");
+    HubStore::initialize(&empty).expect("empty store");
+    let mut config = idle_start_config(&empty);
+    config.collector.interval_seconds = 300;
+    refused(&config, "no configured car");
+    drop(store);
+}
+
+/// M09-T16 (N1): an absent key store stays admitted (the sign-in creates it); one that
+/// exists but cannot be used is refused at admission, by the serve and the preflight
+/// route alike, with the refusal the sign-in's vault would give.
+#[test]
+fn awaiting_sign_in_refuses_an_existing_unusable_key_store() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let store = seed_selected_car(&data);
+    load_or_create_cursor_key(&data).expect("cursor key");
+    drop(crate::auth::credential_vault::fixtures::legacy_vault(&store, &data));
+    let mut config = idle_start_config(&data);
+    config.collector.interval_seconds = 300;
+    let keyring = data.join("secrets").join(crate::auth::credential_keys::KEYRING_NAME);
+    if keyring.exists() {
+        fs::remove_file(&keyring).expect("no pair is stored, so the key store may go");
+    }
+    assert!(hub_awaits_owner_sign_in(&config).expect("an absent key store"), "absent: admitted");
+    preflight_hub_for_serve(&config, None).expect("absent: served awaiting the sign-in");
+
+    for (label, mode) in [("malformed", 0o600), ("unreadable", 0o000)] {
+        fs::write(&keyring, [0_u8; 10]).expect("key file");
+        fs::set_permissions(&keyring, fs::Permissions::from_mode(mode)).expect("key file mode");
+        let vault = crate::auth::credential_vault::fixtures::open_admitted_fixture_vault(
+            store.clone(),
+            &data,
+            crate::auth::credential_vault::fixtures::fixture_admission(&store, &data),
+        );
+        let Err(vault_error) = vault else { panic!("{label}: the vault refuses the key store") };
+        let expected = format!("{}: ", vault_error.code());
+        assert!(expected.starts_with("keyring_"), "{label}: {expected}");
+        let error = hub_awaits_owner_sign_in(&config).expect_err(label);
+        assert!(error.to_string().starts_with(&expected), "{label}: {error} (the vault: {expected})");
+        let error = preflight_hub_for_serve(&config, None).expect_err(label);
+        assert!(error.to_string().starts_with(&expected), "{label}: {error}");
+        fs::set_permissions(&keyring, fs::Permissions::from_mode(0o600)).expect("restore mode");
+        fs::remove_file(&keyring).expect("reset");
+    }
+    drop(store);
+}

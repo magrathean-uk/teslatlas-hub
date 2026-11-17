@@ -5,6 +5,31 @@ All notable released changes are recorded here. From 2026.36.1, Hub follows
 
 ## Unreleased
 
+- Migration takes over the source application's Tesla login after importing
+  history, which sets up the selected car. With no car, `take-over-source-token`
+  refuses with `history_import_required` and asks for the import first.
+  The app discovers already stopped deployments. Stop the application containers,
+  disconnect dashboards and other database clients, disable automatic restart
+  and keep the source stopped; leave PostgreSQL running. Paste the encryption
+  key once; Hub discards it and stores the validated pair encrypted as
+  `source_token`, with Hub as its only refresher.
+  Take-over is read-only and sends nothing to Tesla. Repeating it for the same
+  login reports `already_taken_over` and writes nothing; a different login in
+  the slot is refused. First refresh waits for a collection window. The app
+  distinguishes an untouched login (`none_sent`), a refresh in progress
+  (`attempt_recorded`, keep the source stopped until the outcome is known), a
+  completed refresh (`completed`, Hub holds the login and the source copy no
+  longer works) and a required new sign-in (`sign_in_required`). Only the first
+  state permits returning to the source's stored login after signing out in
+  Hub; the others need a new source sign-in. After an app restart or a dropped
+  connection, take-over resumes without re-importing; reconnect repeats the
+  stop check and asks for a server sign-in password again without keeping it.
+  If take-over fails or is declined, **Sign in with Tesla Instead** starts Hub
+  with collection off, awaiting ordinary sign-in, then collects inside an open
+  window without a restart. The [migration guide](migration.md) covers recovery
+  and returning to the source application. History-only imports remain
+  credential-free.
+
 - Import checks use `source-check` and `--accept-schema-evidence`. Earlier
   command/configuration names are refused with neutral replacement guidance.
   The earlier schema flag remains a hidden deprecated alias and emits one

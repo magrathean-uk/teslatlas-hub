@@ -5,7 +5,7 @@ use super::super::credential_vault::{CredentialStoreError, SignInError};
 pub const REPLACE_IMPORT_WARNING: &str = "Replacing the stored sign-in means that a rollback to the system the token came from will need a fresh sign-in there; after a rollback, sign in there again.";
 
 /// The one refusal text for every source-credential path (M02-T02).
-pub const SOURCE_CREDENTIAL_DISABLED_TEXT: &str = "Source credentials are disabled: the Hub never imports, stores, uses or refreshes another application's sign-in, its tokens or its key, and no option or setting changes that. Sign in with the Hub's own login (in the app, or with setup --sign-in).";
+pub const SOURCE_CREDENTIAL_DISABLED_TEXT: &str = "Source credentials are disabled: apart from the one-time takeover of the migration source's login, the Hub does not import, store, use or refresh another application's sign-in, its tokens or its key, and no option or setting changes that. Sign in with the Hub's own login (in the app, or with setup --sign-in).";
 
 /// Fixed owner copy. Inputs that are not recognised codes are never echoed.
 pub fn credential_owner_message(
@@ -46,7 +46,7 @@ pub fn credential_owner_message(
         "empty_refresh_token" => "The refresh token was empty, so nothing was stored.",
         "token_too_large" => "A token is larger than the Hub accepts, so nothing was stored.",
         "refresh_token_spent" => "This refresh token has already been used, so nothing was stored; sign in again.",
-        "slot_occupied" => "The Hub already holds a sign-in, so the imported token was not stored; import again and choose to replace the stored sign-in to use it instead.",
+        "slot_occupied" => "The Hub already holds a sign-in, so nothing was stored. Sign out first if you want to replace it.",
         "invalid_origin" => "The token input named an origin, which the Hub sets itself, so nothing was stored; remove the origin and try again.",
         "sign_in_state_mismatch" => "The sign-in answer did not belong to this sign-in. Start the sign-in again.",
         "sign_in_refused" => {

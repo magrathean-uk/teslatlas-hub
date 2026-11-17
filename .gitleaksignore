@@ -82,3 +82,4 @@ home-assistant/docs/hub-admission-handoff-2026-09-08.json:generic-api-key:171
 home-assistant/docs/hub-admission-handoff-2026-09-08.json:generic-api-key:180
 home-assistant/docs/hub-admission-handoff-2026-09-08.json:generic-api-key:195
 home-assistant/docs/hub-admission-handoff-2026-10-07.json:generic-api-key:426
+tests/fixtures/source-token-envelope-vector.json:generic-api-key:6

@@ -24,6 +24,7 @@ async fn main() -> ExitCode {
         .with_target(false);
     if matches!(&cli.command,
         Command::Setup { .. } | Command::SetupFleet | Command::Migrate { history_only: false, .. }
+        | Command::TakeOverSourceToken { .. }
         | Command::Control { command: ControlCommand::SignOut, .. }
         | Command::Control { command: ControlCommand::RotateCredentialKey, .. }) {
         logging.with_writer(std::io::stderr).init();
@@ -106,29 +107,28 @@ fn paired_devices_json(store: &HubStore) -> Result<String, Box<dyn std::error::E
     )?)
 }
 
-fn explicit_vehicle_action(
-    command: &ControlCommand,
-) -> Result<Option<LegacyVehicleAction>, Box<dyn std::error::Error>> {
-    let (confirmed, action) = match command {
-        ControlCommand::Wake { confirm } => (*confirm, LegacyVehicleAction::Wake),
-        ControlCommand::ClimateStart { confirm } => (*confirm, LegacyVehicleAction::ClimateStart),
-        ControlCommand::ClimateStop { confirm } => (*confirm, LegacyVehicleAction::ClimateStop),
-        ControlCommand::ChargeStart { confirm } => (*confirm, LegacyVehicleAction::ChargeStart),
-        ControlCommand::ChargeStop { confirm } => (*confirm, LegacyVehicleAction::ChargeStop),
-        ControlCommand::SetChargeLimit { percent, confirm } => {
-            (*confirm, LegacyVehicleAction::SetChargeLimit(*percent))
-        }
-        ControlCommand::Lock { confirm } => (*confirm, LegacyVehicleAction::Lock),
-        ControlCommand::Unlock { confirm } => (*confirm, LegacyVehicleAction::Unlock),
-        ControlCommand::FlashLights { confirm } => (*confirm, LegacyVehicleAction::FlashLights),
-        ControlCommand::HonkHorn { confirm } => (*confirm, LegacyVehicleAction::HonkHorn),
-        _ => return Ok(None),
-    };
-    if !confirmed {
-        return Err("vehicle action requires --confirm".into());
-    }
-    Ok(Some(action))
+/// Whether `command` is a vehicle action (wake, climate, charge, lock and
+/// the rest). No vehicle command is ever sent (M09-T19 ruling 1): every one
+/// is refused, with or without `--confirm`, for a Fleet Hub and a Legacy Hub
+/// alike, before any configuration, catalogue or service is touched.
+fn is_vehicle_action(command: &ControlCommand) -> bool {
+    matches!(
+        command,
+        ControlCommand::Wake { .. }
+            | ControlCommand::ClimateStart { .. }
+            | ControlCommand::ClimateStop { .. }
+            | ControlCommand::ChargeStart { .. }
+            | ControlCommand::ChargeStop { .. }
+            | ControlCommand::SetChargeLimit { .. }
+            | ControlCommand::Lock { .. }
+            | ControlCommand::Unlock { .. }
+            | ControlCommand::FlashLights { .. }
+            | ControlCommand::HonkHorn { .. }
+    )
 }
+
+/// The refusal of a vehicle action: a fixed code and the service's text.
+const VEHICLE_COMMANDS_NOT_OFFERED_CODE: &str = "vehicle_commands_not_offered";
 
 fn validate_streaming_setting(
     provider: CollectorProvider,
@@ -398,6 +398,13 @@ async fn run_control(
     if requested_vehicle_id.is_some() && matches!(command, ControlCommand::Pair { .. }) {
         return Err(CONTROL_PAIR_VEHICLE_ID_USAGE.into());
     }
+    if is_vehicle_action(command) {
+        return Err(format!(
+            "{VEHICLE_COMMANDS_NOT_OFFERED_CODE}: {}",
+            collector::VEHICLE_COMMANDS_NOT_OFFERED
+        )
+        .into());
+    }
     let config = HubConfig::load(config_path)?;
     if matches!(command, ControlCommand::SignOut | ControlCommand::RotateCredentialKey) {
         #[cfg(feature = "credential-relocation-fixture")]
@@ -455,13 +462,6 @@ async fn run_control(
         _ => {}
     }
     let vehicle_id = control_target(&store, requested_vehicle_id)?;
-    if let Some(action) = explicit_vehicle_action(command)? {
-        let report =
-            collector::request_resident_vehicle_action(&config.data_dir, vehicle_id, action)
-                .await?;
-        println!("{}", serde_json::to_string(&report)?);
-        return Ok(());
-    }
     match command {
         ControlCommand::PairedDevices
         | ControlCommand::Pair { .. }
@@ -480,7 +480,7 @@ async fn run_control(
         | ControlCommand::Unlock { .. }
         | ControlCommand::FlashLights { .. }
         | ControlCommand::HonkHorn { .. } => {
-            unreachable!("vehicle actions returned before local controls")
+            unreachable!("vehicle actions are refused before the configuration is read")
         }
         ControlCommand::Settings {
             enabled,

@@ -6,6 +6,19 @@
 //! `private.tokens` bytea values and the exact TeslaMate `ENCRYPTION_KEY`,
 //! verifies the Cloak AES-GCM envelope, then returns a redacted typed pair for
 //! immediate hand-off to a host-encrypted Hub credential.
+//!
+//! Provenance (M09-T01). The envelope framing follows the public ciphertext
+//! format of the Cloak library, documented on its `Cloak.Ciphers.AES.GCM`
+//! page (cloak v1.1.4, <https://cloak.hexdocs.pm/Cloak.Ciphers.AES.GCM.html>):
+//! a key tag as a type, length, value triplet (type 1, length 10, `AES.GCM.V1`),
+//! then the IV, then the 16-byte ciphertag, then the ciphertext. That page
+//! leaves three items open, and this module fixes them as: a 12-byte IV,
+//! associated data `AES256GCM`, and a cipher key that is the SHA-256 of the
+//! exact `ENCRYPTION_KEY` bytes; the plaintext is the bare UTF-8 token text.
+//! This module was written without opening the source project's code. On 16 November
+//! 2026 the layout, including those three items, authenticated both columns of
+//! a real `private.tokens` row (the ignored test `real_source_row_decrypts`);
+//! AES-GCM refuses any wrong IV length, associated data or key derivation.
 
 use aes_gcm::{
     Aes256Gcm, Nonce,
@@ -44,9 +57,12 @@ pub fn decrypt_legacy_owner_tokens(
     let cipher = cloak_cipher(encryption_key)?;
     let access = Zeroizing::new(decrypt_cloak_value(&cipher, encrypted_access)?);
     let refresh = Zeroizing::new(decrypt_cloak_value(&cipher, encrypted_refresh)?);
-    let access = secret_utf8_copy(&access)?;
-    let refresh = secret_utf8_copy(&refresh)?;
-    OwnerTokens::from_secret_parts(access, refresh)
+    let mut access = secret_utf8_copy(&access)?;
+    let mut refresh = secret_utf8_copy(&refresh)?;
+    OwnerTokens::from_secret_parts(
+        std::mem::take(&mut *access),
+        std::mem::take(&mut *refresh),
+    )
         .map_err(|_| SourceDbTokenError::InvalidPlaintext)
 }
 
@@ -86,9 +102,9 @@ pub(crate) fn legacy_access_token_digest(access_token: &str) -> uuid::Uuid {
     uuid::Uuid::from_bytes(bytes[..16].try_into().expect("fixed digest prefix"))
 }
 
-fn secret_utf8_copy(bytes: &[u8]) -> Result<String, SourceDbTokenError> {
+fn secret_utf8_copy(bytes: &[u8]) -> Result<Zeroizing<String>, SourceDbTokenError> {
     std::str::from_utf8(bytes)
-        .map(str::to_owned)
+        .map(|text| Zeroizing::new(text.to_owned()))
         .map_err(|_| SourceDbTokenError::InvalidPlaintext)
 }
 
@@ -225,6 +241,33 @@ mod tests {
     #[test]
     fn test_seal_reproduces_the_independent_access_vector() {
         assert_eq!(seal(ENCRYPTION_KEY, nonce(1), ACCESS_TOKEN), EXTERNAL_CLOAK_ACCESS);
+    }
+
+    /// Review B1 (M09-T16): a fixed pair made by another AES-GCM implementation (Apple
+    /// CryptoKit, `scripts/make-source-token-vector.swift`), with an obviously synthetic key
+    /// and tokens, decrypts with this module's parser unchanged; the wrong key does not.
+    #[test]
+    fn decrypts_the_independently_produced_cryptokit_vector() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/source-token-envelope-vector.json"
+        ))
+        .expect("vector JSON");
+        let text = |name: &str| vector[name].as_str().unwrap_or_else(|| panic!("{name} present")).to_owned();
+        let access = hex::decode(text("accessEnvelopeHex")).expect("access hex");
+        let refresh = hex::decode(text("refreshEnvelopeHex")).expect("refresh hex");
+        let key = text("encryptionKey");
+        assert!(key.starts_with("synthetic-"), "an obviously synthetic key");
+        let tokens = decrypt_legacy_owner_tokens(key.as_bytes(), &access, &refresh)
+            .expect("the independent vector authenticates");
+        assert_eq!(tokens.access_token(), text("accessToken"));
+        assert_eq!(tokens.refresh_token(), text("refreshToken"));
+        // The framing is the documented one: header, IV, tag, then the ciphertext.
+        let header = 2 + CLOAK_TAG.len();
+        assert_eq!(access.len(), header + NONCE_BYTES + AUTH_TAG_BYTES + text("accessToken").len());
+        assert!(matches!(
+            decrypt_legacy_owner_tokens(WRONG_ENCRYPTION_KEY, &access, &refresh),
+            Err(SourceDbTokenError::AuthenticationFailed)
+        ));
     }
 
     #[test]
@@ -366,6 +409,79 @@ mod tests {
         assert_ne!(digest, legacy_refresh_credential_generation(&as_refresh));
         // The text itself is not in the digest's form.
         assert!(!digest.to_string().contains("access"));
+    }
+
+    /// M09-T01: the real source row decrypts with this module. Ignored: it needs the
+    /// owner's bundle file, whose PATH (never a value) comes from
+    /// `TESATLAS_SOURCE_TOKEN_PROOF_BUNDLE`; lines `KEY:`, `REFRESH:` and `ACCESS:` hold
+    /// the key text and the hex of the two bytea columns. It prints nothing and its
+    /// assertion messages carry no token, key or claim value. No network use.
+    #[test]
+    #[ignore = "needs the owner's real source token bundle"]
+    fn real_source_row_decrypts() {
+        let path = std::env::var_os("TESATLAS_SOURCE_TOKEN_PROOF_BUNDLE")
+            .expect("TESATLAS_SOURCE_TOKEN_PROOF_BUNDLE names the bundle path");
+        let bundle = Zeroizing::new(std::fs::read_to_string(&path).expect("bundle readable"));
+        let field = |name: &str| -> Zeroizing<String> {
+            let prefix = format!("{name}:");
+            Zeroizing::new(
+                bundle
+                    .lines()
+                    .find_map(|line| line.strip_prefix(prefix.as_str()))
+                    .map(|value| value.trim_end_matches('\r').to_owned())
+                    .unwrap_or_else(|| panic!("bundle has a {name} line")),
+            )
+        };
+        let key = field("KEY");
+        let access = Zeroizing::new(
+            hex::decode(field("ACCESS").trim()).unwrap_or_else(|_| panic!("ACCESS is hex")),
+        );
+        let refresh = Zeroizing::new(
+            hex::decode(field("REFRESH").trim()).unwrap_or_else(|_| panic!("REFRESH is hex")),
+        );
+        assert!(
+            access.len() <= MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES,
+            "access within cap"
+        );
+        assert!(
+            refresh.len() <= MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES,
+            "refresh within cap"
+        );
+
+        let tokens = match decrypt_legacy_owner_tokens(key.as_bytes(), &access, &refresh) {
+            Ok(tokens) => tokens,
+            Err(error) => panic!("real row did not decrypt: {error}"),
+        };
+
+        // Shape only: the access token is a b64token JWT under the pinned global
+        // issuer with an expiry; the refresh token is VSCHAR text.
+        let access_token = tokens.access_token();
+        assert!(
+            crate::auth::legacy_auth::trim_token_whitespace(access_token) == access_token,
+            "access token has no surrounding whitespace"
+        );
+        assert!(
+            access_token
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"-._~+/=".contains(&byte)),
+            "access token fits b64token"
+        );
+        let claims = crate::auth::legacy_auth::parse_jwt(access_token);
+        assert!(claims.is_some(), "access token is a JWT");
+        let claims = claims.expect("checked");
+        assert!(
+            claims.iss.as_deref() == Some("https://auth.tesla.com/oauth2/v3"),
+            "access token issuer is the pinned global issuer"
+        );
+        assert!(claims.exp.is_some(), "access token carries exp");
+        assert!(
+            tokens
+                .refresh_token()
+                .bytes()
+                .all(|byte| (0x20..=0x7e).contains(&byte)),
+            "refresh token is VSCHAR text"
+        );
+        assert!(!tokens.refresh_token().is_empty(), "refresh token present");
     }
 
     #[test]

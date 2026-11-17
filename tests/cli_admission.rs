@@ -116,12 +116,17 @@ impl Hub {
     }
 
     fn run(&self, arguments: &[&str], stdin: &[u8]) -> Output {
+        self.run_with(arguments, stdin, &[])
+    }
+
+    fn run_with(&self, arguments: &[&str], stdin: &[u8], envs: &[(&str, &Path)]) -> Output {
         let config = self.path("config.toml");
         let mut child = Command::new(BIN)
             .arg("--config")
             .arg(&config)
             .args(arguments)
             .env_clear()
+            .envs(envs.iter().copied())
             .env("HOME", self.path("home"))
             .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
             .env("TMPDIR", self.tmp.path())
@@ -473,6 +478,14 @@ mod authority {
         ];
         let output = hub.run(&migrate, b"");
         assert_refused(&output, "window_active", &migrate);
+        // The source-token take-over is an import too (M09-T04): refused
+        // before its standard input is read or the source is contacted.
+        let takeover = [
+            "take-over-source-token", "--source", "postgresql://reader@127.0.0.1:9/sourcedb",
+            "--accept-source-stopped",
+        ];
+        let output = hub.run(&takeover, TOKENS);
+        assert_refused(&output, "window_active", &takeover);
         let restore = ["restore-data", "--source", &hub.secret("backup"), "--destination", &hub.secret("restored")];
         let output = hub.run(&restore, b"");
         assert_refused(&output, "window_active", &restore);
@@ -526,4 +539,406 @@ fn refused_credential_purge_goes_through_the_service_and_makes_no_connection() {
     }
     assert_eq!(impostor.bytes_received(), 0, "the impostor received nothing");
     assert_eq!(hub.endpoint.connections(), 0, "no network connection");
+}
+
+/// M09-T04 (DEC-172): `take-over-source-token`.
+mod source_takeover {
+    use super::*;
+
+    const DOUBLE_ENV: &str = "TESATLAS_HUB_SOURCE_TAKEOVER_DOUBLE";
+    const PASSWORD: &str = "synthetic-source-password-0001";
+    const KEY: &str = "synthetic-source-encryption-key-0001";
+    const REFRESH: &str = "synthetic-source-refresh-0001";
+    const REPORT: &str = r#"{"status":"taken_over","origin":"source_token","firstRefresh":"next_window","refreshProgress":"none_sent","sourceSessionsSeen":0,"sourceNeverMutated":true}"#;
+    /// M09-T16 (B3): a run that finds the source row's login already in the slot.
+    const ALREADY: &str = r#"{"status":"already_taken_over","origin":"source_token","firstRefresh":"next_window","refreshProgress":"none_sent","sourceSessionsSeen":0,"sourceNeverMutated":true}"#;
+
+    fn input() -> Vec<u8> {
+        format!(r#"{{"postgresPassword":"{PASSWORD}","encryptionKey":"{KEY}"}}"#).into_bytes()
+    }
+
+    /// A synthetic access token with Tesla's issuer, as the reader returns one.
+    fn access() -> String {
+        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+        let claims = serde_json::json!({"iss": "https://auth.tesla.com/oauth2/v3", "exp": 4_000_000_000_i64});
+        format!(
+            "{}.{}.c3ludGhldGlj",
+            URL_SAFE_NO_PAD.encode(br#"{"alg":"none","typ":"JWT"}"#),
+            URL_SAFE_NO_PAD.encode(claims.to_string())
+        )
+    }
+
+    /// A Hub whose data directory holds an initialised store, and a counting
+    /// listener standing in for the source database's host.
+    fn hub_with_store() -> (Hub, CountingEndpoint) {
+        let hub = Hub::new();
+        fs::create_dir(hub.data()).expect("data dir");
+        fs::set_permissions(hub.data(), fs::Permissions::from_mode(0o700)).expect("data mode");
+        drop(tesatlas_hub::db::HubStore::initialize(hub.data()).expect("store"));
+        (hub, CountingEndpoint::spawn())
+    }
+
+    /// M09-T16: a Hub whose history import set up a car, as the guided
+    /// migration's import does before the take-over.
+    fn hub_with_car() -> (Hub, CountingEndpoint) {
+        use tesatlas_hub::{
+            db::HubStore,
+            hub_pack::ProjectionCarSettings,
+            legacy_owner_credentials::load_or_create_cursor_key,
+            source_db_import::{SourceDbImportRequest, SourceDbImportScope, publish_history},
+            source_db_projection::{SourceDbCar, SourceDbHistory},
+        };
+        let (hub, source) = hub_with_store();
+        let store = HubStore::initialize(hub.data()).expect("store");
+        let cursor_key = load_or_create_cursor_key(&hub.data()).expect("cursor key");
+        let history = SourceDbHistory {
+            cars: vec![SourceDbCar {
+                id: 1,
+                eid: 5_300_001,
+                vid: Some(5_400_001),
+                vin: Some("5YJ3E1EA7KF530001".to_owned()),
+                name: Some("Take-over fixture".to_owned()),
+                model: Some("3".to_owned()),
+                trim_badging: None,
+                marketing_name: None,
+                exterior_color: None,
+                wheel_type: None,
+                spoiler_type: None,
+                efficiency_wh_per_km: None,
+                settings: ProjectionCarSettings::default(),
+            }],
+            drives: Vec::new(),
+            positions: Vec::new(),
+            charging_processes: Vec::new(),
+            charges: Vec::new(),
+            addresses: Vec::new(),
+            geofences: Vec::new(),
+            states: Vec::new(),
+            updates: Vec::new(),
+        };
+        let request = SourceDbImportRequest {
+            new_import_source: false,
+            source_key: "takeover-fixture".to_owned(),
+            scope: SourceDbImportScope::Selected(1),
+            imported_at_ms: 1_000,
+        };
+        publish_history(&store, &cursor_key, &request, &history).expect("configured car");
+        drop(store);
+        (hub, source)
+    }
+
+    fn source_url(source: &CountingEndpoint) -> String {
+        let address = source.address.trim_start_matches("http://");
+        format!("postgresql://reader@{address}/sourcedb")
+    }
+
+    /// Writes the reader double: a synthetic pair or a reader refusal.
+    fn double(hub: &Hub, body: serde_json::Value) -> PathBuf {
+        let path = hub.path("source-double.json");
+        fs::write(&path, body.to_string()).expect("double");
+        path
+    }
+
+    fn take_over(hub: &Hub, source: &str, stdin: &[u8], double: Option<&Path>) -> Output {
+        let arguments = ["take-over-source-token", "--source", source, "--accept-source-stopped"];
+        match double {
+            Some(path) => hub.run_with(&arguments, stdin, &[(DOUBLE_ENV, path)]),
+            None => hub.run(&arguments, stdin),
+        }
+    }
+
+    fn assert_secret_free(output: &Output) {
+        let text = format!("{}{}", stdout(output), stderr(output));
+        for secret in [PASSWORD, KEY, REFRESH, access().as_str()] {
+            assert!(!text.contains(secret), "secret material printed: {text}");
+        }
+    }
+
+    #[test]
+    fn source_takeover_parser_requires_the_acceptance_and_takes_no_token_flag() {
+        let hub = Hub::new();
+        hub.seal(true);
+        let key = hub.secret("key");
+        let source = "postgresql://reader@127.0.0.1:9/sourcedb";
+        let required: Vec<Vec<&str>> = vec![
+            vec!["take-over-source-token", "--source", source],
+            vec!["take-over-source-token", "--accept-source-stopped"],
+        ];
+        for case in &required {
+            let output = hub.run(case, &input());
+            let text = stderr(&output);
+            assert_eq!(output.status.code(), Some(2), "{case:?}: {text}");
+            assert!(text.contains("required"), "{case:?}: {text}");
+        }
+        for removed in [
+            "--encryption-key-file", "--access-token-file", "--refresh-token-file",
+            "--postgres-password-file", "--source-token-key-file",
+        ] {
+            let case = ["take-over-source-token", "--source", source, "--accept-source-stopped", removed, &key];
+            let output = hub.run(&case, &input());
+            let text = stderr(&output);
+            assert_eq!(output.status.code(), Some(2), "{case:?}: {text}");
+            assert!(text.contains("unexpected argument"), "{case:?}: {text}");
+        }
+        assert!(!hub.data().exists(), "no Hub state was created");
+        assert_eq!(hub.endpoint.connections(), 0);
+    }
+
+    /// Standard input carries exactly postgresPassword and encryptionKey: a
+    /// key naming a token is refused `source_credential_disabled`, any other
+    /// shape `setup_input_invalid`, before the source is contacted, the store
+    /// is opened or a credential key exists.
+    #[test]
+    fn source_takeover_input_is_refused_before_any_connection() {
+        let (hub, source) = hub_with_store();
+        let url = source_url(&source);
+        let pair = double(&hub, serde_json::json!({"access": access(), "refresh": REFRESH}));
+        let tokens: [&[u8]; 4] = [
+            TOKENS,
+            br#"{"postgresPassword":"p","encryptionKey":"k","refreshToken":"r"}"#,
+            br#"{"postgresPassword":"p","encryptionKey":"k","source_token":"t"}"#,
+            br#"{"postgresPassword":"p","encryptionKey":"k","AccessTOKEN":"a"}"#,
+        ];
+        let invalid: [&[u8]; 9] = [
+            b"",
+            b"[]",
+            br#"{"postgresPassword":"p"}"#,
+            br#"{"postgresPassword":"p","encryptionKey":"k","extra":"x"}"#,
+            br#"{"postgresPassword":"p","encryptionKey":"k","postgresPassword":"q"}"#,
+            br#"{"postgresPassword":"p","encryptionKey":7}"#,
+            br#"{"postgresPassword":"","encryptionKey":"k"}"#,
+            br#"{"postgresPassword":"p","encryptionKey":""}"#,
+            br#"{"postgresPassword":"p","encryptionKey":"k"} trailing"#,
+        ];
+        let oversized = format!(r#"{{"postgresPassword":"p","encryptionKey":"{}"}}"#, "k".repeat(9000));
+        let cases = tokens.iter().map(|input| (*input, "source_credential_disabled"))
+            .chain(invalid.iter().map(|input| (*input, "setup_input_invalid")))
+            .chain([(oversized.as_bytes(), "setup_input_invalid")]);
+        for (stdin, code) in cases {
+            // Even with a reader double named, nothing reaches the reader.
+            for double in [None, Some(pair.as_path())] {
+                let output = take_over(&hub, &url, stdin, double);
+                assert_refused(&output, code, &[&String::from_utf8_lossy(stdin)]);
+                assert!(stdout(&output).is_empty());
+            }
+        }
+        assert_eq!(source.connections(), 0, "the source was never contacted");
+        assert!(!hub.data().join("secrets").exists(), "no credential key was created");
+        assert_eq!(hub.endpoint.connections(), 0);
+    }
+
+    /// While the Hub service holds the data directory's lifetime lock the
+    /// take-over is refused `service_running` before standard input is read.
+    #[test]
+    fn source_takeover_is_refused_while_the_service_runs() {
+        let (hub, source) = hub_with_store();
+        let lock = fs::OpenOptions::new()
+            .read(true).write(true).create(true).truncate(false)
+            .open(hub.data().join(".hub-instance.lock"))
+            .expect("lock file");
+        fs::set_permissions(hub.data().join(".hub-instance.lock"), fs::Permissions::from_mode(0o600)).expect("lock mode");
+        lock.try_lock().expect("held as the service holds it");
+        for stdin in [input(), TOKENS.to_vec()] {
+            let output = take_over(&hub, &source_url(&source), &stdin, None);
+            assert_refused(&output, "service_running", &["take-over-source-token"]);
+        }
+        drop(lock);
+        assert_eq!(source.connections(), 0);
+        assert_eq!(hub.endpoint.connections(), 0);
+    }
+
+    /// A completed take-over prints one JSON report and no secret; a second
+    /// one is `slot_occupied`. The reader's and the vault's refusal codes
+    /// reach the operator unchanged and store nothing.
+    #[test]
+    fn source_takeover_reports_once_and_passes_refusal_codes_through() {
+        let (hub, source) = hub_with_car();
+        let url = source_url(&source);
+        for code in ["source_still_running", "source_token_key_mismatch", "source_token_invalid", "source_token_row_missing"] {
+            let refusal = double(&hub, serde_json::json!({"refusal": code}));
+            let output = take_over(&hub, &url, &input(), Some(&refusal));
+            assert_refused(&output, code, &[code]);
+            assert!(stdout(&output).is_empty(), "{code}: nothing reported");
+            assert_secret_free(&output);
+        }
+        let pair = double(&hub, serde_json::json!({"access": access(), "refresh": REFRESH}));
+        let output = take_over(&hub, &url, &input(), Some(&pair));
+        assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+        assert_eq!(stdout(&output), format!("{REPORT}\n"), "exactly one JSON report");
+        assert_secret_free(&output);
+
+        // The same login again (a lost report, a retry): exit 0, nothing written.
+        let output = take_over(&hub, &url, &input(), Some(&pair));
+        assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+        assert_eq!(stdout(&output), format!("{ALREADY}\n"), "exactly one JSON report");
+        assert_secret_free(&output);
+        // A different login in the source row: the slot is occupied.
+        let other = double(&hub, serde_json::json!({"access": access(), "refresh": "synthetic-source-refresh-0002"}));
+        let output = take_over(&hub, &url, &input(), Some(&other));
+        assert_refused(&output, "slot_occupied", &["second take-over of another login"]);
+        assert!(stdout(&output).is_empty());
+        assert_secret_free(&output);
+        assert_eq!(source.connections(), 0, "the double stood in for the source");
+
+        // An upgraded store whose legacy fence is opaque takes no supplied
+        // login: `fresh_sign_in_required`, nothing stored.
+        let (fenced, source) = hub_with_car();
+        let connection = rusqlite::Connection::open(fenced.data().join("hub.sqlite")).expect("store");
+        connection
+            .execute("INSERT INTO credential_legacy_fences VALUES('00000000-0000-4000-8000-000000002000','opaque',0)", [])
+            .expect("opaque fence");
+        drop(connection);
+        let pair = double(&fenced, serde_json::json!({"access": access(), "refresh": REFRESH}));
+        let output = take_over(&fenced, &source_url(&source), &input(), Some(&pair));
+        assert_refused(&output, "fresh_sign_in_required", &["fenced take-over"]);
+        assert_secret_free(&output);
+        let output = take_over(&fenced, &source_url(&source), &input(), Some(&pair));
+        assert_refused(&output, "fresh_sign_in_required", &["nothing was stored"]);
+        assert_eq!(source.connections(), 0, "the double stood in for the source");
+
+        // A refresh token the Hub already spent is refused
+        // `refresh_token_spent`, nothing stored.
+        let (spent, source) = hub_with_car();
+        let fingerprint = {
+            use sha2::Digest as _;
+            let mut hash = sha2::Sha256::new();
+            hash.update(b"teslatlas-hub/refresh-fingerprint/v1"); // rename:keep
+            hash.update([0]);
+            hash.update(REFRESH.as_bytes());
+            hash.finalize().to_vec()
+        };
+        let connection = rusqlite::Connection::open(spent.data().join("hub.sqlite")).expect("store");
+        connection
+            .execute("INSERT INTO credential_refresh_fences(fingerprint,kind,fenced_at_ms) VALUES(?1,'attempt',0)", [fingerprint])
+            .expect("spent fence");
+        drop(connection);
+        let pair = double(&spent, serde_json::json!({"access": access(), "refresh": REFRESH}));
+        for _ in 0..2 {
+            let output = take_over(&spent, &source_url(&source), &input(), Some(&pair));
+            assert_refused(&output, "refresh_token_spent", &["spent take-over"]);
+            assert!(stdout(&output).is_empty());
+            assert_secret_free(&output);
+        }
+
+        assert_eq!(source.connections(), 0, "the double stood in for the source");
+        assert_eq!(spent.endpoint.connections(), 0);
+        assert_eq!(hub.endpoint.connections(), 0, "nothing was sent to Tesla");
+        assert_eq!(fenced.endpoint.connections(), 0);
+    }
+
+    /// M09-T16: on a Hub with no car set up the take-over is refused
+    /// `history_import_required` (exit 1): the source is not read, the key is
+    /// not used and nothing is written. Once the history import has set up a
+    /// car, the same take-over succeeds unchanged.
+    #[test]
+    fn source_takeover_requires_the_history_import_first() {
+        let (hub, source) = hub_with_store();
+        let url = source_url(&source);
+        let pair = double(&hub, serde_json::json!({"access": access(), "refresh": REFRESH}));
+        for _ in 0..2 {
+            let output = take_over(&hub, &url, &input(), Some(&pair));
+            assert_refused(&output, "history_import_required", &["import the history first"]);
+            assert!(stdout(&output).is_empty());
+            assert_secret_free(&output);
+        }
+        assert!(!hub.data().join("secrets").exists(), "no credential key was created");
+        let output = hub.run(&["status"], b"");
+        assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+        let status: serde_json::Value = serde_json::from_str(stdout(&output).trim()).expect("status JSON");
+        assert_eq!(status["legacyCredentials"]["present"].as_bool(), Some(false), "nothing was stored: {status}");
+        assert_eq!(source.connections(), 0, "the source was never contacted");
+        assert_eq!(hub.endpoint.connections(), 0, "nothing was sent to Tesla");
+
+        let (hub, source) = hub_with_car();
+        let url = source_url(&source);
+        let pair = double(&hub, serde_json::json!({"access": access(), "refresh": REFRESH}));
+        let output = take_over(&hub, &url, &input(), Some(&pair));
+        assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+        assert_eq!(stdout(&output), format!("{REPORT}\n"), "the unchanged report");
+        assert_secret_free(&output);
+        assert_eq!(source.connections(), 0, "the double stood in for the source");
+        assert_eq!(hub.endpoint.connections(), 0, "nothing was sent to Tesla");
+    }
+
+    /// M09-T16 (B3): the run ends after the vault commit and before its report, as a
+    /// crash would; the next run with the same source row reconciles with exit 0,
+    /// `already_taken_over`, writes nothing, and `status` shows the taken-over login.
+    #[test]
+    fn source_takeover_after_a_crash_past_the_commit_reconciles() {
+        let (hub, source) = hub_with_car();
+        let url = source_url(&source);
+        let crashing = double(&hub, serde_json::json!({"access": access(), "refresh": REFRESH, "exitAfterCommit": true}));
+        let output = take_over(&hub, &url, &input(), Some(&crashing));
+        assert_eq!(output.status.code(), Some(86), "{}", stderr(&output));
+        assert!(stdout(&output).is_empty(), "no report");
+        assert_secret_free(&output);
+
+        let pair = double(&hub, serde_json::json!({"access": access(), "refresh": REFRESH}));
+        for _ in 0..2 {
+            let output = take_over(&hub, &url, &input(), Some(&pair));
+            assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+            assert_eq!(stdout(&output), format!("{ALREADY}\n"));
+            assert_secret_free(&output);
+        }
+        let output = hub.run(&["status"], b"");
+        assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+        let status: serde_json::Value = serde_json::from_str(stdout(&output).trim()).expect("status JSON");
+        let legacy = &status["legacyCredentials"];
+        assert_eq!((legacy["present"].as_bool(), legacy["origin"].as_str(), legacy["refreshProgress"].as_str()),
+            (Some(true), Some("source_token"), Some("none_sent")), "{status}");
+        assert_eq!(source.connections(), 0, "the double stood in for the source");
+        assert_eq!(hub.endpoint.connections(), 0, "nothing was sent to Tesla");
+    }
+}
+
+/// M08-T18: a Legacy Hub's command line refuses every vehicle action with the
+/// fixed refusal, before the configuration or catalogue is read and before it
+/// connects to the running service; nothing is sent. Without `--confirm` the
+/// parser refuses it as a usage error before that.
+#[test]
+fn legacy_hub_refuses_every_vehicle_action_at_the_command_line() {
+    let hub = Hub::new();
+    fs::create_dir(hub.data()).expect("data dir");
+    fs::set_permissions(hub.data(), fs::Permissions::from_mode(0o700)).expect("data mode");
+    drop(tesatlas_hub::db::HubStore::initialize(hub.data()).expect("store"));
+    let actions: [&[&str]; 10] = [
+        &["wake"],
+        &["climate-start"],
+        &["climate-stop"],
+        &["charge-start"],
+        &["charge-stop"],
+        &["set-charge-limit", "--percent", "80"],
+        &["lock"],
+        &["unlock"],
+        &["flash-lights"],
+        &["honk-horn"],
+    ];
+    for action in actions {
+        for target in [&[][..], &["--vehicle-id", "00000000-0000-4000-8000-000000000007"][..]] {
+            let mut arguments = vec!["control"];
+            arguments.extend_from_slice(target);
+            arguments.extend_from_slice(action);
+            let mut confirmed = arguments.clone();
+            confirmed.push("--confirm");
+            let output = hub.run(&confirmed, b"");
+            assert_refused(&output, "vehicle_commands_not_offered", &confirmed);
+            assert!(
+                stderr(&output).contains(
+                    "vehicle_commands_not_offered: vehicle commands are not offered: the Hub only reads vehicle data and never sends a command to a car"
+                ),
+                "{confirmed:?}: {}",
+                stderr(&output)
+            );
+            assert!(stdout(&output).is_empty(), "{confirmed:?}: nothing reported");
+            let output = hub.run(&arguments, b"");
+            assert_ne!(output.status.code(), Some(0), "{arguments:?} without --confirm");
+            assert!(stdout(&output).is_empty(), "{arguments:?} without --confirm");
+        }
+    }
+    // Refused before the configuration is read: an unreadable one changes nothing.
+    fs::set_permissions(hub.path("config.toml"), fs::Permissions::from_mode(0o000)).expect("seal config");
+    let output = hub.run(&["control", "wake", "--confirm"], b"");
+    fs::set_permissions(hub.path("config.toml"), fs::Permissions::from_mode(0o600)).expect("config mode");
+    assert_refused(&output, "vehicle_commands_not_offered", &["control", "wake", "--confirm"]);
+    assert_eq!(hub.endpoint.connections(), 0, "nothing sent");
 }

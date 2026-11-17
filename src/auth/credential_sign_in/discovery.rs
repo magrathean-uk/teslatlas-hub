@@ -8,7 +8,8 @@
 //! nothing:
 //! 1. local checks: the Owner provider (Fleet stays parked) and the selection;
 //! 2. the vault's own pair is loaded: only an owner pair of origin
-//!    `hub_login` whose refresh the Hub owns is used, never another pair;
+//!    `hub_login`, or `source_token` taken over from the migration source
+//!    (DEC-172), whose refresh the Hub owns is used, never another pair;
 //! 3. the window's egress gate is asked (`window_closed` unless a window is
 //!    Open), after every local check;
 //! 4. one products list over the Owner API, which asks the gate again for a
@@ -144,14 +145,17 @@ pub(super) async fn discover_with(
 }
 
 /// The Hub's own owner pair, from this vault, as a pair that reads once and
-/// never refreshes. Any other pair, or none, is refused.
+/// never refreshes: its own sign-in (`hub_login`) or the login taken over
+/// from the migration source (`source_token`, DEC-172), each on the owner
+/// slot with the Hub as refresher. Any other pair, or none, is refused.
 fn own_pair(entry: &CredentialVaultEntry, config: &HubConfig) -> Result<LegacyAuth, CredentialCommandError> {
     let unavailable = || CredentialCommandError::new(DISCOVERY_PAIR_UNAVAILABLE);
     let pair = entry.vault().load(CredentialSlot::OwnerApi).map_err(|_| unavailable())?.ok_or_else(unavailable)?;
-    if pair.origin != Some(CredentialOrigin::HubLogin) || pair.refresh_owner != RefreshOwner::Hub || pair.access.is_empty() {
+    let own_origin = matches!(pair.origin, Some(CredentialOrigin::HubLogin | CredentialOrigin::SourceToken));
+    if !own_origin || pair.refresh_owner != RefreshOwner::Hub || pair.access.is_empty() {
         return Err(unavailable());
     }
-    // The own pair came from Tesla's owner token endpoint, so its issuer pin
+    // Both pairs came from Tesla's owner token endpoint, so the issuer pin
     // (and region) is Tesla's, whatever host serves the list in a test.
     let endpoint = AuthEndpointConfig { mode: AuthMode::Tesla, region: config.collector.stream_region, token_url: None, allow_loopback_http: false };
     LegacyAuth::from_access_token(pair.access.as_str(), pair.refresh.as_str(), &endpoint)

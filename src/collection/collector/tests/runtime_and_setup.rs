@@ -434,8 +434,9 @@ async fn resident_control_socket_is_private_bounded_and_service_owned() {
         LegacyVehicleAction::Wake,
     )
     .await
-    .expect_err("unconfigured vehicle rejected locally");
-    assert!(matches!(error, ResidentVehicleActionError::VehicleMissing));
+    .expect_err("every vehicle command is refused locally");
+    // M09-T19 ruling 1: refused before the car is even looked up.
+    assert!(matches!(error, ResidentVehicleActionError::CommandsNotOffered));
 
     task.abort();
     let _ = (&mut task).await;
@@ -1760,4 +1761,56 @@ fn active_streams_bound_collection_sleep_below_queue_capacity() {
     const {
         assert!(STREAM_EVENT_CHANNEL_CAPACITY > MAX_STREAM_EVENTS_PER_DRAIN);
     }
+}
+
+// ---- M09-T19 rulings 1 and 2: no vehicle command, no telemetry --------------------------------
+
+/// Every vehicle action the wire can carry.
+const M09_T19_EVERY_ACTION: [LegacyVehicleAction; 10] = [
+    LegacyVehicleAction::Wake,
+    LegacyVehicleAction::ClimateStart,
+    LegacyVehicleAction::ClimateStop,
+    LegacyVehicleAction::ChargeStart,
+    LegacyVehicleAction::ChargeStop,
+    LegacyVehicleAction::SetChargeLimit(80),
+    LegacyVehicleAction::Lock,
+    LegacyVehicleAction::Unlock,
+    LegacyVehicleAction::FlashLights,
+    LegacyVehicleAction::HonkHorn,
+];
+
+/// M09-T19 ruling 1, Legacy: the service's control socket, with the Hub's
+/// own Owner login inside an Open window, refuses every vehicle action
+/// before any token use, receipt or send.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn m09_t19_the_legacy_service_refuses_every_vehicle_action_inside_an_open_window() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam, async {
+            let rig = ResidentRig::new(crate::legacy_auth::AuthMode::Tesla).await;
+            let window = crate::fleet_api::egress::test_support::TestWindow::open(600);
+            let _route = window.route(rig.token_url.as_str());
+            let receipts = rig.receipts();
+            let socket = ResidentControlSocket::bind(&rig.dir).expect("control socket");
+            let serving = tokio::spawn(socket.serve(
+                rig.store.clone(),
+                rig.client.clone(),
+                Arc::clone(&rig.manager),
+                Arc::clone(&rig.fuse),
+                Arc::clone(&rig.refresh),
+            ));
+            for action in M09_T19_EVERY_ACTION {
+                let error = request_resident_vehicle_action(&rig.dir, rig.hub_vehicle, action)
+                    .await
+                    .expect_err("refused");
+                assert!(matches!(error, ResidentVehicleActionError::CommandsNotOffered), "{action:?}: {error:?}");
+            }
+            serving.abort();
+            let _ = serving.await;
+            assert_eq!(rig.fake.action_requests(), 0, "nothing sent");
+            assert_eq!(rig.fake.token_requests(), 0, "no token refresh");
+            assert_eq!(rig.fake.owner_requests(), 0, "no Owner API request");
+            assert_eq!(rig.receipts(), receipts, "no audit receipt started");
+        })
+        .await;
 }

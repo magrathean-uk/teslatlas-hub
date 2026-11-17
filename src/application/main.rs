@@ -40,7 +40,6 @@ use tesatlas_hub::{
         load_or_create_cursor_key,  
         
     },
-    owner_api::LegacyVehicleAction,
     server,
     source_db_connection::ReadOnlySource,
     source_db_import::{

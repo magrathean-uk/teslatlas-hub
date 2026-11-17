@@ -607,7 +607,7 @@ impl WindowController {
         inner.state.deadline_mono = guard.deadline_mono;
         inner.guard = Some(guard);
         self.store.write_state(&inner.state)?;
-        self.gate.open(grant.expires_at, guard.deadline_mono);
+        self.gate.open(grant.seq, grant.expires_at, guard.deadline_mono);
         Ok(())
     }
 
@@ -1242,7 +1242,7 @@ impl WindowController {
             if resumed.is_err() || self.store.write_state(&inner.state).is_err() {
                 return self.close_at_start(inner, CloseReason::StateUnverifiable, wall);
             }
-            self.gate.open(grant.expires_at, guard.deadline_mono);
+            self.gate.open(grant.seq, grant.expires_at, guard.deadline_mono);
         } else if self.store.write_state(&inner.state).is_err() {
             return self.close_at_start(inner, CloseReason::StateUnverifiable, wall);
         }
