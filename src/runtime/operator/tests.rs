@@ -236,6 +236,56 @@ fn encoded(bytes: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
+#[test]
+fn import_admission_does_not_reconcile_a_store_owned_by_another_process() {
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data directory");
+    std::fs::set_permissions(rig.data(), std::fs::Permissions::from_mode(0o700))
+        .expect("private data directory");
+    let _owner = crate::hub_user_process::AdmittedUserHub::admit(&rig.data())
+        .expect("another operation owns the store");
+    let store = crate::db::HubStore::initialize(&rig.data()).expect("store");
+    let connection = store.open().expect("catalogue");
+    connection.execute(
+        "INSERT INTO collection_coverage
+         (seq, grant_digest, opened_at_ms, closed_at_ms, gaps_json, sealed)
+         VALUES (17, 'synthetic-grant', 1000, NULL, '[]', 'open')",
+        [],
+    ).expect("unfinished coverage owned by the first operation");
+
+    let outcome = rig.admit();
+    let closed: Option<i64> = connection.query_row(
+        "SELECT closed_at_ms FROM collection_coverage WHERE seq = 17", [], |row| row.get(0),
+    ).expect("coverage");
+    assert_eq!(closed, None, "a competing command must not seal the owner's coverage");
+    assert!(outcome.is_err(), "a competing command must refuse before reconciliation");
+}
+
+#[test]
+fn import_admission_does_not_reconcile_a_newer_store() {
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data directory");
+    std::fs::set_permissions(rig.data(), std::fs::Permissions::from_mode(0o700))
+        .expect("private data directory");
+    let store = crate::db::HubStore::initialize(&rig.data()).expect("store");
+    let connection = store.open().expect("catalogue");
+    connection.execute(
+        "INSERT INTO collection_coverage
+         (seq, grant_digest, opened_at_ms, closed_at_ms, gaps_json, sealed)
+         VALUES (17, 'synthetic-grant', 1000, NULL, '[]', 'open')",
+        [],
+    ).expect("unfinished coverage from a newer store");
+    connection.pragma_update(None, "user_version", crate::db::SCHEMA_VERSION + 1)
+        .expect("simulate a newer Hub schema");
+
+    let outcome = rig.admit();
+    let closed: Option<i64> = connection.query_row(
+        "SELECT closed_at_ms FROM collection_coverage WHERE seq = 17", [], |row| row.get(0),
+    ).expect("coverage");
+    assert_eq!(closed, None, "an older command must not seal newer-schema coverage");
+    assert!(outcome.is_err(), "a newer schema must refuse before reconciliation");
+}
+
 fn material() -> SetupMaterial {
     SetupMaterial {
         code: "code-0001".to_owned(),
