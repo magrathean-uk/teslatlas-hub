@@ -182,22 +182,25 @@ impl Issuer {
 
     /// The one canonical ledger directory (ruling R2); the operator verb takes
     /// no path argument. Until the owner's records folder moves to the
-    /// current name (DEC-160), a ledger under the earlier folder is used when
-    /// none exists under the current one.
+    /// current name (DEC-160), the decision is by where the ledger itself is:
+    /// the current ledger when it is present, otherwise the earlier folder's
+    /// ledger when that one is present, otherwise the current location.
     pub fn canonical_dir(home: &Path) -> PathBuf {
+        const LEDGER_DIR: &str = "hub-evidence/window-issuer";
         let records = home.join("dev/machine/records");
         let folder = "tesatlas";
-        let current = records.join(folder);
-        let earlier = crate::platform::name_migration::spelling::earlier(folder).map(|name| records.join(name));
+        let current = records.join(folder).join(LEDGER_DIR);
+        let earlier = crate::platform::name_migration::spelling::earlier(folder)
+            .map(|name| records.join(name).join(LEDGER_DIR));
+        let has_ledger = |dir: &Path| dir.join(LEDGER_FILE).exists();
         match earlier {
-            Some(earlier) if !current.exists() && earlier.exists() => earlier,
+            Some(earlier) if !has_ledger(&current) && has_ledger(&earlier) => earlier,
             _ => current,
         }
-        .join("hub-evidence/window-issuer")
     }
 
     pub fn ledger_path(&self) -> PathBuf {
-        self.dir.join("ledger.jsonl")
+        self.dir.join(LEDGER_FILE)
     }
 
     fn lock_path(&self) -> PathBuf {
@@ -513,22 +516,48 @@ impl Issuer {
     }
 }
 
+/// The issuer ledger's file name inside its directory.
+const LEDGER_FILE: &str = "ledger.jsonl";
+
 #[cfg(test)]
 mod canonical_dir_tests {
     use super::Issuer;
 
-    /// Until the owner's records folder moves (DEC-160), an issuer ledger
-    /// under the earlier folder is used; once the current folder exists it wins.
+    fn put_ledger(dir: &std::path::Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join(super::LEDGER_FILE), b"").unwrap();
+    }
+
+    /// Until the owner's records folder moves (DEC-160), the issuer ledger
+    /// under the earlier folder is used; the current ledger wins once present.
     #[test]
     fn the_ledger_stays_under_the_earlier_records_folder_until_it_moves() {
         let home = tempfile::tempdir().unwrap();
         let records = home.path().join("dev/machine/records");
         let current = records.join("tesatlas/hub-evidence/window-issuer");
         assert_eq!(Issuer::canonical_dir(home.path()), current);
-        let earlier = records.join("teslatlas"); // rename:keep
+        let earlier = records.join("teslatlas/hub-evidence/window-issuer"); // rename:keep
+        // An earlier folder without a ledger decides nothing.
         std::fs::create_dir_all(&earlier).unwrap();
-        assert_eq!(Issuer::canonical_dir(home.path()), earlier.join("hub-evidence/window-issuer"));
-        std::fs::create_dir_all(records.join("tesatlas")).unwrap();
         assert_eq!(Issuer::canonical_dir(home.path()), current);
+        put_ledger(&earlier);
+        assert_eq!(Issuer::canonical_dir(home.path()), earlier);
+        put_ledger(&current);
+        assert_eq!(Issuer::canonical_dir(home.path()), current);
+    }
+
+    /// REV-CX-M08-T12B N2: the decision is by where the ledger is, not by
+    /// whether the current records folder exists. An unrelated file under the
+    /// current records folder, or its empty ledger directory, does not hide
+    /// the only ledger under the earlier folder.
+    #[test]
+    fn an_unrelated_current_records_folder_does_not_hide_the_earlier_ledger() {
+        let home = tempfile::tempdir().unwrap();
+        let records = home.path().join("dev/machine/records");
+        let earlier = records.join("teslatlas/hub-evidence/window-issuer"); // rename:keep
+        put_ledger(&earlier);
+        std::fs::create_dir_all(records.join("tesatlas/hub-evidence/window-issuer")).unwrap();
+        std::fs::write(records.join("tesatlas/notes.md"), b"unrelated").unwrap();
+        assert_eq!(Issuer::canonical_dir(home.path()), earlier);
     }
 }

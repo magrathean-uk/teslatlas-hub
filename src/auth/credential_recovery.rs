@@ -54,7 +54,9 @@ fn restore_floor() -> i32 {
     if let Some(floor) = RESTORE_FLOOR.with(std::cell::Cell::get) { return floor; }
     super::credential_migration::store_floor()
 }
-const FILE_MAGIC: &[u8] = b"TESATLAS-HUB-CREDENTIAL-RECOVERY-V1\0";
+// Stored format (DEC-169): the marker is the header, the authenticated data and
+// the nonce offset of every export ever written, so its bytes never change.
+const FILE_MAGIC: &[u8] = b"TESLATLAS-HUB-CREDENTIAL-RECOVERY-V1\0"; // rename:keep
 const NONCE_BYTES: usize = 12;
 const AUTH_TAG_BYTES: usize = 16;
 const PRIVATE_DIRECTORY_MODE: u32 = 0o700;

@@ -19,7 +19,8 @@ import Foundation
 enum HubDataRemovalMarkers {
     static let backupNames: Set<String> = ["backup-v4.json", "backup-v3.json", "BACKUP_COMPLETE"]
     static let exportedDriveSuffix = ".gpx"
-    static let recoveryMagic: [UInt8] = Array("TESATLAS-HUB-CREDENTIAL-RECOVERY-V1".utf8) + [0]
+    /// The one export format that exists: its marker keeps the earlier bytes for good (DEC-169).
+    static let recoveryMagic: [UInt8] = Array("TESLATLAS-HUB-CREDENTIAL-RECOVERY-V1".utf8) + [0] // rename:keep
     static let recoveryMinimumBytes = 84
     static let recoveryMaximumBytes = 16_532
     static let maximumDepth = 128
@@ -139,7 +140,7 @@ struct HubDataRemovalTargets: Equatable {
         }
         self.home = home
         let identifier = Self.bundleIdentifier
-        roots = [
+        let current = [
             Root(id: "D1", parent: "Application Support", name: "Tesatlas Hub", kind: .folder),
             Root(id: "D2", parent: "Logs", name: "Tesatlas Hub", kind: .folder),
             Root(id: "D3", parent: "Caches", name: identifier, kind: .folder),
@@ -148,6 +149,15 @@ struct HubDataRemovalTargets: Equatable {
             Root(id: "D5", parent: "WebKit", name: identifier, kind: .folder),
             Root(id: "D6", parent: "Saved Application State", name: identifier + ".savedState", kind: .folder)
         ]
+        // After the rename, each target also under the earlier name: an earlier folder the
+        // hand-over kept beside a current one (both kept), or the earlier app's own folders.
+        // They take the same checks and the same step; left behind, the next hand-over would
+        // move the earlier data back in.
+        roots = current.flatMap { root in
+            [root] + (HubRenameMigration.earlier(root.name).map {
+                [Root(id: root.id, parent: root.parent, name: $0, kind: root.kind)]
+            } ?? [])
+        }
     }
 
     var library: URL { home.appendingPathComponent("Library", isDirectory: true) }
@@ -157,6 +167,12 @@ struct HubDataRemovalTargets: Equatable {
     var preferencesDomain: String { Self.bundleIdentifier }
     var preferencesFile: URL {
         library.appendingPathComponent("Preferences/\(Self.bundleIdentifier).plist")
+    }
+    /// The earlier bundle identifier's domain, which the rename copies from once and keeps
+    /// for this release; nil before the rename.
+    var earlierPreferencesDomain: String? { HubRenameMigration.earlier(Self.bundleIdentifier) }
+    var earlierPreferencesFile: URL? {
+        earlierPreferencesDomain.map { library.appendingPathComponent("Preferences/\($0).plist") }
     }
 }
 
@@ -172,6 +188,8 @@ struct HubDataRemovalPlan {
     }
     let entries: [Entry]
     let preferencesPresent: Bool
+    /// The earlier bundle identifier's preferences file is present (after the rename).
+    var earlierPreferencesPresent = false
 }
 
 struct HubDataRemovalKept: Equatable {
@@ -415,23 +433,30 @@ final class HubDataRemover: HubDataRemoving {
             }
             defer { close(descriptor) }
             afterOpeningComponent?(targets.library.appendingPathComponent(root.parent).appendingPathComponent(root.name).path)
-            if root.id == "D1" { try checkConfiguration(hubFolder: descriptor, targets: targets) }
+            if root.id == "D1" {
+                let folder = targets.library.appendingPathComponent(root.parent).appendingPathComponent(root.name)
+                try checkConfiguration(hubFolder: descriptor, folder: folder)
+            }
             if let refusal = scan(descriptor, rootDevice: entry.st_dev,
                                   path: display(targets, root), depth: 0) {
                 throw refusal
             }
         }
         return HubDataRemovalPlan(entries: entries,
-                                  preferencesPresent: preferencesFileExists(library: library.descriptor))
+                                  preferencesPresent: preferencesFileExists(library: library.descriptor),
+                                  earlierPreferencesPresent: targets.earlierPreferencesDomain.map {
+                                      preferencesFileExists(library: library.descriptor, domain: $0)
+                                  } ?? false)
     }
 
     /// Read-only presence of the preferences file; never opens its contents.
-    private func preferencesFileExists(library: Int32) -> Bool {
+    private func preferencesFileExists(library: Int32,
+                                       domain: String = HubDataRemovalTargets.bundleIdentifier) -> Bool {
         let directory = openat(library, "Preferences", O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
         guard directory >= 0 else { return false }
         defer { close(directory) }
         var entry = stat()
-        return fstatat(directory, "\(HubDataRemovalTargets.bundleIdentifier).plist", &entry, AT_SYMLINK_NOFOLLOW) == 0
+        return fstatat(directory, "\(domain).plist", &entry, AT_SYMLINK_NOFOLLOW) == 0
     }
 
     private func validateRoot(_ entry: stat, root: HubDataRemovalTargets.Root,
@@ -460,7 +485,9 @@ final class HubDataRemover: HubDataRemoving {
 
     // MARK: - Configuration (the data_dir comparison)
 
-    private func checkConfiguration(hubFolder: Int32, targets: HubDataRemovalTargets) throws {
+    /// `folder` is the Hub folder being checked (the current one, or the earlier one kept
+    /// beside it): its configuration's `data_dir` must lie inside that same folder.
+    private func checkConfiguration(hubFolder: Int32, folder hubFolderURL: URL) throws {
         let descriptor = openat(hubFolder, "config.toml", O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
         guard descriptor >= 0 else {
             if errno == ENOENT { return }
@@ -486,7 +513,7 @@ final class HubDataRemover: HubDataRemoving {
         guard let value = Self.topLevelDataDir(in: content) else { throw HubDataRemovalRefusal.dataDirUnreadable() }
         guard value.hasPrefix("/") else { throw HubDataRemovalRefusal.dataDirUnreadable() }
         let normalised = HubTestHost.lexicalPath(value)
-        let folder = HubTestHost.lexicalPath(targets.hubFolder.path)
+        let folder = HubTestHost.lexicalPath(hubFolderURL.path)
         guard Self.isInside(normalised, folder: folder) else {
             throw HubDataRemovalRefusal.dataDirOutside(normalised)
         }
@@ -652,6 +679,17 @@ final class HubDataRemover: HubDataRemoving {
         } else {
             warn(&report, Self.settingsNotClearedWarning)
         }
+        // The earlier domain the rename kept: cleared too, or the next start would copy its
+        // settings into the new, empty domain again.
+        if plan.earlierPreferencesPresent, let earlier = targets.earlierPreferencesDomain,
+           let file = targets.earlierPreferencesFile {
+            if clearPreferences(earlier) {
+                if !report.deleted.contains("D8") { report.deleted.append("D8") }
+            } else {
+                report.kept.append(.init(path: display(home: targets.home, file.path),
+                                         reason: HubDataRemovalReason.notCleared.text, settings: true))
+            }
+        }
         return report
     }
 
@@ -676,6 +714,11 @@ final class HubDataRemover: HubDataRemoving {
         }
         if plan.preferencesPresent {
             let path = library.appendingPathComponent("Preferences/\(HubDataRemovalTargets.bundleIdentifier).plist").path
+            report.kept.append(.init(path: display(home: home, path), reason: HubDataRemovalReason.notDeleted.text,
+                                     settings: true))
+        }
+        if plan.earlierPreferencesPresent, let earlier = HubRenameMigration.earlier(HubDataRemovalTargets.bundleIdentifier) {
+            let path = library.appendingPathComponent("Preferences/\(earlier).plist").path
             report.kept.append(.init(path: display(home: home, path), reason: HubDataRemovalReason.notDeleted.text,
                                      settings: true))
         }

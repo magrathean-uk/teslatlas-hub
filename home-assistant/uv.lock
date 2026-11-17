@@ -151,8 +151,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiodns" },
     { name = "aiohttp" },
-    { name = "zeroconf", version = "0.150.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-24-tesatlas-home-assistant-floor'" },
-    { name = "zeroconf", version = "0.151.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-24-tesatlas-home-assistant-dev'" },
+    { name = "zeroconf", version = "0.150.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-23-tesatlas-home-assistant-floor'" },
+    { name = "zeroconf", version = "0.151.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-23-tesatlas-home-assistant-dev'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c1/86/1b94f5669df188f5267e26d48c4cc734b704310e53d695af5f39ee1af67d/aiohttp_asyncmdnsresolver-0.2.0.tar.gz", hash = "sha256:aab2cef7ef8ae45b94abf1fc92aa9f4d70cbef7ac0a3d495a86fb96fce357262", size = 37744, upload-time = "2026-05-20T20:18:27.183Z" }
 wheels = [
@@ -232,8 +232,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "propcache" },
     { name = "pyyaml" },
-    { name = "voluptuous", version = "0.15.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-24-tesatlas-home-assistant-floor'" },
-    { name = "voluptuous", version = "0.16.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-24-tesatlas-home-assistant-dev'" },
+    { name = "voluptuous", version = "0.15.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-23-tesatlas-home-assistant-floor'" },
+    { name = "voluptuous", version = "0.16.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-23-tesatlas-home-assistant-dev'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ec/4b/973067092ee348e331d125acd60c45245f11663373c219650814b43d0025/annotatedyaml-1.0.2.tar.gz", hash = "sha256:f9a49952994ef1952ca17d27bb6478342eb1189d2c28e4c0ddbbb32065471fb0", size = 15366, upload-time = "2025-10-04T14:36:26.655Z" }
 wheels = [
@@ -1935,7 +1935,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
     { name = "envs" },
-    { name = "pyjwt", extra = ["crypto"], marker = "extra == 'group-24-tesatlas-home-assistant-dev' or extra == 'group-24-tesatlas-home-assistant-floor'" },
+    { name = "pyjwt", extra = ["crypto"], marker = "extra == 'group-23-tesatlas-home-assistant-dev' or extra == 'group-23-tesatlas-home-assistant-floor'" },
     { name = "requests" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/26/67/3975cf257fcc04903686ef87d39be386d894a0d8182f43d37e9cbfc9609f/pycognito-2024.5.1.tar.gz", hash = "sha256:e211c66698c2c3dc8680e95107c2b4a922f504c3f7c179c27b8ee1ab0fc23ae4", size = 31182, upload-time = "2024-05-16T10:02:28.766Z" }
@@ -2013,7 +2013,7 @@ name = "pygithub"
 version = "2.9.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyjwt", extra = ["crypto"], marker = "extra == 'group-24-tesatlas-home-assistant-dev' or extra == 'group-24-tesatlas-home-assistant-floor'" },
+    { name = "pyjwt", extra = ["crypto"], marker = "extra == 'group-23-tesatlas-home-assistant-dev' or extra == 'group-23-tesatlas-home-assistant-floor'" },
     { name = "pynacl" },
     { name = "requests" },
     { name = "typing-extensions" },
@@ -2215,8 +2215,8 @@ name = "pytest-cov"
 version = "7.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "coverage", version = "7.15.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-24-tesatlas-home-assistant-floor'" },
-    { name = "coverage", version = "7.15.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-24-tesatlas-home-assistant-dev'" },
+    { name = "coverage", version = "7.15.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-23-tesatlas-home-assistant-floor'" },
+    { name = "coverage", version = "7.15.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-23-tesatlas-home-assistant-dev'" },
     { name = "pluggy" },
     { name = "pytest" },
 ]
@@ -3190,7 +3190,7 @@ name = "zeroconf"
 version = "0.150.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ifaddr", marker = "extra == 'group-24-tesatlas-home-assistant-floor'" },
+    { name = "ifaddr", marker = "extra == 'group-23-tesatlas-home-assistant-floor'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/09/ea/34bb185645ecaa18d34e5883bffea71aa9bffbbb994634884e8b2f3ad0c4/zeroconf-0.150.0.tar.gz", hash = "sha256:a5fe7feab1de6ef5e541e0a3d07e534fd91629b813fc27281593584100f63164", size = 213634, upload-time = "2026-06-22T17:52:37.982Z" }
 wheels = [
@@ -3224,7 +3224,7 @@ name = "zeroconf"
 version = "0.151.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ifaddr", marker = "extra == 'group-24-tesatlas-home-assistant-dev'" },
+    { name = "ifaddr", marker = "extra == 'group-23-tesatlas-home-assistant-dev'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/48/5a/097d33c95850cd9880aaf9dec51c1854f24e03542af47b82afe0e6cf281d/zeroconf-0.151.1.tar.gz", hash = "sha256:2594832108af9a74eeebe87af96666ae24a006cb7eb8ba80073144dca8291610", size = 226627, upload-time = "2026-08-28T23:39:38.296Z" }
 wheels = [

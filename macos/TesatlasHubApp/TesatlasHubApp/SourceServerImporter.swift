@@ -158,7 +158,8 @@ final class SourceServerImportSession {
 
 enum SourceServerImporter {
     private static let temporaryDirectoryPrefix = "th-"
-    private static let legacyTemporaryDirectoryPrefix = "tesatlas-hub-import-"
+    /// Earlier builds' import folders: the clean-up still finds them by their own bytes.
+    private static let legacyTemporaryDirectoryPrefix = "teslatlas-hub-import-" // rename:keep
     private static let temporaryRoot = URL(fileURLWithPath: "/tmp", isDirectory: true)
     private static let maximumTunnelDiagnosticBytes = 64 * 1024
     private static let ssh = URL(fileURLWithPath: "/usr/bin/ssh")

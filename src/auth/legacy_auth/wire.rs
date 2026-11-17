@@ -72,7 +72,7 @@ const REFRESH_SCOPE: &str = crate::auth::credential_sign_in::OWNER_SCOPE;
 
 /// The Hub's own product token and version, in F10's `product/version` form
 /// (R11). A product token cannot contain a space, hence the hyphen.
-pub(crate) const HUB_USER_AGENT: &str = concat!("Tesatlas-Hub/", env!("CARGO_PKG_VERSION"));
+pub(crate) const HUB_USER_AGENT: &str = concat!("Teslatlas-Hub/", env!("CARGO_PKG_VERSION")); // rename:keep
 
 /// The three headers the token request sets, and no others (R11): the Hub's
 /// own `User-Agent`, `Content-Type` for the JSON body, and `Accept` stating the
