@@ -117,7 +117,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
          revealApp: @escaping (URL) -> Void = HubProductionEffects.appReveal(),
          terminateApp: @escaping () -> Void = HubProductionEffects.terminator(),
          olderInstallerPresent: @escaping () -> Bool = {
-             FileManager.default.fileExists(atPath: "/Library/Application Support/Tesatlas Hub")
+             // Only the retired installer, under the earlier name, ever wrote this folder.
+             FileManager.default.fileExists(atPath: "/Library/Application Support/Teslatlas Hub") // rename:keep
          },
          appearancePreference: HubAppearancePreference = HubAppearancePreference(),
          onInitialRefresh: ((HubSnapshot) -> Void)? = nil,
@@ -1764,7 +1765,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             text += "\n\n" + HubL10n.format("hub.service.delete.final_details", fallback: "Details: %1$@.", arguments: [joined])
         }
         if olderInstallerPresent {
-            text += "\n\n" + HubL10n.text("hub.service.delete.final_older", fallback: "Files from an older installer remain in /Library/Application Support/Tesatlas Hub. Removing them needs an administrator; the install guide explains how.")
+            text += "\n\n" + HubL10n.text("hub.service.delete.final_older", fallback: "Files from an older installer remain in /Library/Application Support/Teslatlas Hub. Removing them needs an administrator; the install guide explains how.") // rename:keep
         }
         if report.warnings.contains(HubDataRemovalReport.finalEnableFailedWarning) {
             text += "\n\n" + HubL10n.text("hub.service.delete.final_enable", fallback: "macOS still lists the background service as turned off. This is harmless and clears the next time the Hub is set up.")

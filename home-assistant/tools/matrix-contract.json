@@ -286,7 +286,7 @@
       "id": "ha-runtime-v1",
       "schema": {
         "path": "tools/ha-runtime-v1.schema.json",
-        "sha256": "e873f72e0eb21e7fc3624af61ef42523966fbf3c0ad8a6663b4ab4e7e00e4fe2"
+        "sha256": "90c0d9eb898c53e7052cfc73d8b1bf8d0e42b33202c317bd7e3c10f551ac40ce"
       }
     },
     {
@@ -314,6 +314,6 @@
   "phases": [],
   "validator": {
     "path": "tools/matrix_contract.py",
-    "sha256": "216d5ad60d44cbf4b27fc923490e90c14338df38da8e5718a59851ab12c0255d"
+    "sha256": "a73ba190d8f153b6f541c19ff6f70dbbab55f4034bbf8241eed73786d66f9bfe"
   }
 }

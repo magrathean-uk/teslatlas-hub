@@ -8,6 +8,7 @@
 __pycache__/
 # Private Hub state and sanitized VPS-derived development data.
 /.tesatlas-hub/
+/.teslatlas-hub/
 /.worktrees/
 .DS_Store
 .env

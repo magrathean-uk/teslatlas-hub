@@ -1,4 +1,4 @@
-// Modified by MAGRATHEAN UK LTD for Tesatlas Hub, 2026: replaces the upstream go.mod of
+// Modified by MAGRATHEAN UK LTD for Teslatlas Hub, 2026: replaces the upstream go.mod of
 // github.com/teslamotors/fleet-telemetry v0.9.4 (Apache-2.0); raises the go directive to
 // 1.26.0 and updates the module requirements.
 module github.com/teslamotors/fleet-telemetry
