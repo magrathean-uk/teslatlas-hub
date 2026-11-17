@@ -2153,7 +2153,7 @@ fn recover_completed_gap_charge(
     let Some(pending) = state.pending_gap_charge.take() else {
         return Ok(());
     };
-    if !pending.snapshot.battery_level.is_some_and(|before| level >= before) {
+    if !pending.snapshot.battery_level.is_some_and(|before| level > before) {
         return Ok(());
     }
     let end_ms = pending.sample.timestamp_ms;
