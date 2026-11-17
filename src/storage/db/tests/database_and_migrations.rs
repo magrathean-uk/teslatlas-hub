@@ -1,6 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #[test]
+fn ordinary_catalogue_commits_request_the_device_cache_barrier() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("initialise store");
+    let connection = store.open().expect("ordinary writer");
+    let fullfsync: i64 = connection
+        .pragma_query_value(None, "fullfsync", |row| row.get(0))
+        .expect("commit barrier setting");
+    assert_eq!(
+        fullfsync, 1,
+        "ordinary identity, audit and data commits must request the macOS device-cache barrier"
+    );
+    let synchronous: i64 = connection
+        .pragma_query_value(None, "synchronous", |row| row.get(0))
+        .expect("synchronous setting");
+    assert_eq!(synchronous, 2, "each WAL commit must still be synced");
+    #[cfg(target_os = "macos")]
+    {
+        let checkpoint_fullfsync: i64 = connection
+            .pragma_query_value(None, "checkpoint_fullfsync", |row| row.get(0))
+            .expect("checkpoint barrier setting");
+        assert_eq!(checkpoint_fullfsync, 1);
+    }
+}
+
+#[test]
 fn writable_catalogue_admission_rejects_foreign_and_future_databases_without_mutation() {
     for (application_id, version) in [(0, 0), (123456, 0), (APPLICATION_ID, SCHEMA_VERSION + 1)] {
         let temporary = crate::private_tempdir().expect("temporary database");
