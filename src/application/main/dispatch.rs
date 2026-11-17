@@ -706,8 +706,10 @@ struct HubServiceBackend {
     collector: ServiceCollectorSlot,
     /// The Fleet sign-in `setup-fleet begin` started and `setup-fleet` will
     /// redeem (M09-T09): its binding and the application's public values,
-    /// never the client secret. A new begin replaces it.
-    fleet_sign_in: std::sync::Mutex<Option<tesatlas_hub::auth::credential_sign_in::FleetSignInBinding>>,
+    /// never the client secret. A new begin replaces it; a redeem that sent
+    /// nothing puts it back only if no begin or completed redeem came in
+    /// between (M09-T19 R1).
+    fleet_sign_in: tesatlas_hub::auth::credential_sign_in::FleetSignInSlot,
 }
 
 /// The collection interval the fresh-install setup sets (M02-T21, DEC-116):
@@ -911,29 +913,28 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
     fn fleet_sign_in_begin(&self, input: FleetSignInInput) -> Result<serde_json::Value, OperatorRefusal> {
         use tesatlas_hub::auth::credential_sign_in as sign_in;
         // The earlier sign-in is replaced only once this one holds custody:
-        // a begin refused before then leaves it redeemable.
-        let binding = with_vault_custody(
+        // a begin refused before then leaves it redeemable. The replacement,
+        // its abandonment and the counter's move are one step under the
+        // slot's lock (M09-T19 R1).
+        let report = with_vault_custody(
             &self.custody,
             &*self.kick,
             || open_command_credential_vault(self.store.clone(), std::sync::Arc::clone(&self.admission), &self.data_dir),
             |entry| {
                 let binding = sign_in::begin_fleet_sign_in(entry, input.0.as_bytes())?;
-                let earlier = self.fleet_sign_in.lock().map_err(|_| sign_in::sign_in_unavailable())?.take();
-                if let Some(earlier) = earlier { sign_in::abandon_fleet_sign_in(entry, earlier); }
-                Ok(binding)
+                let report = serde_json::json!({
+                    "status": "sign_in_begun",
+                    "slot": "fleet_api",
+                    "authorizeUrl": binding.authorization_url().as_str(),
+                    "binding": binding.id().to_string(),
+                    "expiresAt": binding.expires_at_s(),
+                });
+                self.fleet_sign_in.publish(entry, binding)?;
+                Ok(report)
             },
         );
         drop(input);
-        let binding = binding?;
-        let report = serde_json::json!({
-            "status": "sign_in_begun",
-            "slot": "fleet_api",
-            "authorizeUrl": binding.authorization_url().as_str(),
-            "binding": binding.id().to_string(),
-            "expiresAt": binding.expires_at_s(),
-        });
-        *self.fleet_sign_in.lock().map_err(|_| fleet_sign_in_unavailable())? = Some(binding);
-        Ok(report)
+        report
     }
 
     /// `setup-fleet public-key` (M09-T18): the Hub's Fleet public key as PEM,
@@ -986,12 +987,12 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
         sign_in::check_fleet_sign_in_input(sign_in::FleetSignInStep::Redeem, input.0.as_bytes()).map_err(setup_refusal)?;
         // The held sign-in is taken out for the redeem and put back unless
         // the redeem used it up (M09-T19 ruling 5): a refusal proven to come
-        // before the send keeps it, so the same code may be tried again.
-        let mut held = self.fleet_sign_in.lock().map_err(|_| fleet_sign_in_unavailable())?.take();
-        if held.is_none() {
+        // before the send keeps it, so the same code may be tried again,
+        // unless a begin or a completed redeem came in between (R1).
+        let Some(mut taken) = self.fleet_sign_in.take().map_err(|_| fleet_sign_in_unavailable())? else {
             return Err(setup_refusal(fleet_binding_invalid()));
-        }
-        let held_attempt = &mut held;
+        };
+        let held_attempt = taken.attempt();
         let report = fleet_setup(
             &self.custody,
             &*self.kick,
@@ -1006,12 +1007,7 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
             |entry| run_owner_exchange(|| fleet_credentials::discover_fleet_cars(
                 entry, &self.store, &self.config, &self.admission, selection)),
         );
-        if let Some(binding) = held
-            && let Ok(mut slot) = self.fleet_sign_in.lock()
-            && slot.is_none()
-        {
-            *slot = Some(binding);
-        }
+        self.fleet_sign_in.settle(taken);
         let report = report?;
         // The Hub's own Fleet login is stored: this Hub is set up. A
         // successful redeem never switches collection on: that is
@@ -2044,7 +2040,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             config_path: config_path.clone(),
                             admitted_idle,
                             collector: collector_slot,
-                            fleet_sign_in: std::sync::Mutex::new(None),
+                            fleet_sign_in: Default::default(),
                         }),
                         supervisor.kicker(),
                         window_trust_authority(authority.host_id())?,

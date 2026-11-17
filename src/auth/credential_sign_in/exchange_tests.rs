@@ -1015,6 +1015,188 @@ async fn fleet_sign_in_redeem_binding_and_unsent_failures_keep_the_attempt() {
     assert_eq!(stub.accepted(), 1);
 }
 
+// M09-T19 B5: the redeem input and Tesla's answers are read without escapes.
+
+/// The test text with each `~` written as a backslash, so the escapes
+/// below read as JSON writes them.
+fn esc(text: &str) -> String { text.replace('~', "\\") }
+
+const ESCAPED_REDIRECT: &str = r#"https:~/~/owner.example~/fleet~/callback"#;
+/// `fleet-secret-value/0001`, written with a `~u` and a `~/` escape.
+const ESCAPED_SECRET: &str = r#"fleet-secret-~u0076alue~/0001"#;
+
+fn escaped_redeem_input(code: &str, binding: &FleetSignInBinding, secret: &str) -> String {
+    esc(&format!(r#"{{"code":"{code}","redirectUri":"{ESCAPED_REDIRECT}","clientId":"{FLEET_CLIENT}","clientSecret":"{secret}","region":"eu","binding":"{}"}}"#, binding.id()))
+}
+
+/// A client secret written with `\u` and `\/` escapes, and a redirect
+/// address written with `\/` as Apple's encoders write it, begin and redeem;
+/// the secret and address sent are the decoded ones. A token answer with
+/// escaped tokens is read correctly. No secret is taken from the parser's
+/// own storage, and every document without escapes is wiped.
+#[test]
+fn fleet_sign_in_escaped_input_and_answer_redeem_without_a_parser_copy() {
+    let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("runtime");
+    let (_root, _store, entry) = fixture();
+    let access = fleet_access(&["openid", "offline_access", "vehicle_device_data", "vehicle_location"]);
+    let answer = serde_json::json!({"access_token": access, "refresh_token": REFRESH, "expires_in": 28800, "token_type": "Bearer"}).to_string()
+        .replacen('.', &esc("~u002e"), 1).replace("exchange-refresh", &esc("exchange-r~u0065fresh"));
+    assert!(answer.contains(&esc("~u002e")) && answer.contains(&esc("~u0065")), "escaped tokens");
+    let stub = runtime.block_on(Stub::spawn(Reply::Json(200, answer)));
+    let window = TestWindow::open(600);
+    let _route = window.route(&stub.url);
+    let url = Url::parse(&stub.url).expect("stub URL");
+    let begin = esc(&format!(r#"{{"clientId":"{FLEET_CLIENT}","region":"eu","redirectUri":"{ESCAPED_REDIRECT}"}}"#));
+    let binding = fleet_begin_at(&entry, begin.as_bytes(), Some(&url)).expect("an escaped redirect begins");
+    let input = escaped_redeem_input("code-fleet-escaped-0001", &binding, ESCAPED_SECRET);
+    assert_eq!(check_fleet_sign_in_input_for_test(super::super::FleetSignInStep::Redeem, &input), None, "the CLI check accepts it");
+    let copied = crate::fleet_api::parser_copied_secrets();
+    let drops = Arc::new(Mutex::new(Vec::new()));
+    let record = Arc::clone(&drops);
+    let signed_in = super::super::observe_sign_in_secret_drops(move |event| record.lock().expect("drops").push(event), || {
+        let mut held = Some(binding);
+        runtime.block_on(fleet_exchange_at(&entry, &mut held, input.as_bytes(), Some(url)))
+    });
+    assert_eq!(signed_in.expect("redeem"), OwnerSignIn::Complete);
+    assert_eq!(crate::fleet_api::parser_copied_secrets(), copied, "no secret decoded outside wiping storage");
+    let drops = drops.lock().expect("drops");
+    let resolved: Vec<_> = drops.iter().filter(|event| event.kind == "escape_free_json").collect();
+    assert!(resolved.len() >= 2, "the input and the answer were resolved: {}", resolved.len());
+    assert!(resolved.iter().all(|event| event.zeroised && event.after == 0), "every resolved document was wiped");
+    let requests = stub.requests.lock().expect("requests");
+    let request = std::str::from_utf8(&requests[0]).expect("request text");
+    let form: std::collections::BTreeMap<String, String> = url::form_urlencoded::parse(request.split_once("\r\n\r\n").expect("body").1.as_bytes()).into_owned().collect();
+    assert_eq!((form["client_secret"].as_str(), form["redirect_uri"].as_str()), ("fleet-secret-value/0001", FLEET_REDIRECT));
+    let pair = entry.vault().load(CredentialSlot::FleetApi).expect("read").expect("own Fleet pair");
+    assert_eq!((pair.access.as_str(), pair.refresh.as_str()), (access.as_str(), REFRESH), "the escaped tokens were read correctly");
+}
+
+/// `\"`, `\\`, `\n`, a lone surrogate, a truncated escape and a backslash
+/// outside a string are each refused `sign_in_settings_invalid` before any
+/// parse: a token-named key beside them is not even read. The CLI check and
+/// the service refuse alike, the attempt is kept and nothing is sent.
+#[tokio::test]
+async fn fleet_sign_in_unresolvable_escapes_are_refused_before_any_parse() {
+    let (_root, _store, entry) = fixture();
+    let stub = Stub::spawn(Reply::Json(200, fleet_valid_answer())).await;
+    let window = TestWindow::open(600);
+    let _route = window.route(&stub.url);
+    let binding = fleet_begin(&entry, &stub).expect("begin");
+    let binding_id = binding.id();
+    let mut held = Some(binding);
+    let held_binding = held.as_ref().expect("held");
+    let mut inputs: Vec<String> = [r#"a~"b"#, "a~~b", "a~nb", "a~uD800b", "a~u00"]
+        .iter().map(|secret| escaped_redeem_input("code-fleet-escape-0001", held_binding, secret)).collect();
+    inputs.push(esc(&format!("~{}", fleet_redeem_input_for("code-fleet-escape-0001", held_binding))));
+    for input in inputs {
+        let with_token_key = input.replacen('{', r#"{"accessToken":"x","#, 1);
+        for line in [&input, &with_token_key] {
+            assert_eq!(check_fleet_sign_in_input_for_test(super::super::FleetSignInStep::Redeem, line), Some("sign_in_settings_invalid"), "{line}");
+            let error = fleet_exchange_at(&entry, &mut held, line.as_bytes(), Some(Url::parse(&stub.url).expect("stub URL"))).await.unwrap_err();
+            assert_eq!(error.code(), "sign_in_settings_invalid", "{line}");
+            assert_fleet_secret_free(&error, "code-fleet-escape-0001");
+            assert_eq!(held.as_ref().map(FleetSignInBinding::id), Some(binding_id), "the attempt is kept");
+        }
+    }
+    assert_eq!(stub.accepted(), 0, "nothing sent");
+}
+
+/// Tesla's `invalid_grant` with `\/` in its description is still the
+/// refusal it was; a refused escape in an error answer is an answer not
+/// understood, as one that does not parse.
+#[tokio::test]
+async fn fleet_sign_in_escaped_error_answer_keeps_its_class() {
+    for (body, code, number) in [
+        (r#"{"error":"invalid_grant","error_description":"see https:\/\/auth.example\/help"}"#, "sign_in_refused", "0001"),
+        (r#"{"error":"invalid_grant","error_description":"a \"quoted\" word"}"#, "sign_in_answer_invalid", "0002"),
+    ] {
+        let (_root, _store, entry) = fixture();
+        let refusing = Stub::spawn(Reply::Json(400, body.to_owned())).await;
+        let window = TestWindow::open(600);
+        let _route = window.route(&refusing.url);
+        let binding = fleet_begin(&entry, &refusing).expect("begin");
+        let code_text = format!("code-fleet-escaped-error-{number}");
+        let error = fleet_redeem(&entry, binding, &fleet_redeem_input(&code_text), &refusing).await.unwrap_err();
+        assert_eq!(error.code(), code, "{body}");
+        if number == "0001" {
+            assert_eq!(error.code(), refused(body.replace(r"\/", "/").as_bytes()).code(), "classified as the same answer without escapes");
+        }
+        assert_eq!(refusing.accepted(), 1);
+    }
+}
+
+/// M09-T19 R1, the reviewer's interleaving through the service's slot: a
+/// redeem of A refused before any send is paused before its restore; begin
+/// B; redeem B succeeds; A's restore resumes. A is gone, and a later redeem
+/// with A's binding is refused without a send. Without anything in between,
+/// the same refusal puts A back; a begin alone in between keeps B.
+#[tokio::test]
+async fn fleet_sign_in_slot_never_revives_a_superseded_attempt() {
+    let (_root, _store, entry) = fixture();
+    let stub = Stub::spawn(Reply::Json(200, fleet_valid_answer())).await;
+    let url = || Some(Url::parse(&stub.url).expect("stub URL"));
+    let window = TestWindow::open(600);
+    let _route = window.route(&stub.url);
+    let slot = FleetSignInSlot::default();
+    let mismatched = |code: &str| serde_json::json!({"code": code, "redirectUri": FLEET_REDIRECT, "clientId": FLEET_CLIENT,
+        "clientSecret": FLEET_SECRET, "region": "eu", "binding": uuid::Uuid::new_v4().to_string()}).to_string();
+    let held_id = |slot: &FleetSignInSlot| {
+        let mut taken = slot.take().expect("slot");
+        let id = taken.as_mut().and_then(|taken| taken.attempt().as_ref().map(FleetSignInBinding::id));
+        if let Some(taken) = taken { slot.settle(taken); }
+        id
+    };
+
+    let a = fleet_begin(&entry, &stub).expect("begin A");
+    let (a_id, a_input) = (a.id(), fleet_redeem_input_for("code-fleet-revive-0001", &a));
+    slot.publish(&entry, a).expect("publish A");
+    // Nothing in between: a refusal before the send puts A back.
+    let mut taken_a = slot.take().expect("slot").expect("A held");
+    let error = fleet_exchange_at(&entry, taken_a.attempt(), mismatched("code-fleet-revive-0002").as_bytes(), url()).await.unwrap_err();
+    assert_eq!(error.code(), SIGN_IN_BINDING_INVALID);
+    slot.settle(taken_a);
+    assert_eq!(held_id(&slot), Some(a_id), "an unsent refusal keeps the attempt");
+
+    // The interleaving: A's refused redeem is paused before its restore.
+    let mut taken_a = slot.take().expect("slot").expect("A held");
+    let error = fleet_exchange_at(&entry, taken_a.attempt(), mismatched("code-fleet-revive-0003").as_bytes(), url()).await.unwrap_err();
+    assert_eq!(error.code(), SIGN_IN_BINDING_INVALID);
+    assert_eq!(taken_a.attempt().as_ref().map(FleetSignInBinding::id), Some(a_id), "A is kept by its paused redeem");
+    // Begin B finds the slot empty; redeem B succeeds.
+    let b = fleet_begin(&entry, &stub).expect("begin B");
+    let b_input = fleet_redeem_input_for("code-fleet-revive-0004", &b);
+    slot.publish(&entry, b).expect("publish B");
+    let mut taken_b = slot.take().expect("slot").expect("B held");
+    assert_eq!(fleet_exchange_at(&entry, taken_b.attempt(), b_input.as_bytes(), url()).await.expect("redeem B"), OwnerSignIn::Complete);
+    assert!(taken_b.attempt().is_none(), "B is used up");
+    slot.settle(taken_b);
+    assert_eq!(stub.accepted(), 1, "B's one exchange");
+    let stored = entry.vault().load(CredentialSlot::FleetApi).expect("read").expect("B's login").generation;
+    // A's restore resumes: A is gone.
+    slot.settle(taken_a);
+    assert!(slot.take().expect("slot").is_none(), "the superseded attempt is not revived");
+    // A later redeem with A's binding finds nothing held: refused, nothing sent.
+    let error = fleet_exchange_at(&entry, &mut None, a_input.as_bytes(), url()).await.unwrap_err();
+    assert_eq!(error.code(), SIGN_IN_BINDING_INVALID);
+    assert_eq!(stub.accepted(), 1, "nothing sent for A");
+    assert_eq!(entry.vault().load(CredentialSlot::FleetApi).expect("read").expect("login").generation, stored, "B's login stays");
+
+    // A begin alone in between: A's paused restore leaves B held.
+    let c = fleet_begin(&entry, &stub).expect("begin C");
+    let c_id = c.id();
+    slot.publish(&entry, c).expect("publish C");
+    let mut taken_c = slot.take().expect("slot").expect("C held");
+    let error = fleet_exchange_at(&entry, taken_c.attempt(), mismatched("code-fleet-revive-0005").as_bytes(), url()).await.unwrap_err();
+    assert_eq!(error.code(), SIGN_IN_BINDING_INVALID);
+    let d = fleet_begin(&entry, &stub).expect("begin D");
+    let d_id = d.id();
+    slot.publish(&entry, d).expect("publish D");
+    slot.settle(taken_c);
+    assert_eq!(held_id(&slot), Some(d_id), "the newer begin stays held");
+    assert_ne!(c_id, d_id);
+    assert_eq!(stub.accepted(), 1);
+}
+
 /// M09-T19 ruling 5: a refused connection is proven to have sent nothing:
 /// the sign-in stays and the code is not recorded as used. The used-code
 /// record is per issuer, application and slot: the same text redeemed for

@@ -168,7 +168,7 @@ impl FleetSetupCredentials {
 ///    recorded.
 ///
 /// Every failure is one of `setup`'s fixed `discovery_*` codes (or
-/// `window_closed`); no token, VIN or name appears in an error or a log.
+/// `window_closed`), with the Fleet steps in its text; no token, VIN or name appears in an error or a log.
 /// Returns how many cars are configured.
 pub async fn discover_fleet_cars(
     entry: &crate::CredentialVaultEntry,
@@ -181,10 +181,10 @@ pub async fn discover_fleet_cars(
     use crate::collection::collector::{OwnerCarSelection, setup_fleet_vehicle, setup_fleet_vehicles};
     use crate::fleet_api::egress::{self, PermitKind, Provider};
     if config.collector.provider != crate::config::CollectorProvider::Fleet {
-        return Err(CredentialCommandError::new("discovery_settings_invalid"));
+        return Err(CredentialCommandError::fleet_discovery("discovery_settings_invalid"));
     }
     if matches!(selection, OwnerCarSelection::Vehicle(id) if id <= 0) {
-        return Err(CredentialCommandError::new("discovery_selection_invalid"));
+        return Err(CredentialCommandError::fleet_discovery("discovery_selection_invalid"));
     }
     let credentials = own_fleet_pair(entry)?;
     // After every local check and before the list: a closed window refuses
@@ -206,7 +206,7 @@ pub async fn discover_fleet_cars(
         Err(error) => {
             let code = fleet_discovery_code(&error, base);
             tracing::warn!(code, "Fleet setup discovery failed");
-            Err(CredentialCommandError::new(code))
+            Err(CredentialCommandError::fleet_discovery(code))
         }
     }
 }
@@ -216,7 +216,7 @@ pub async fn discover_fleet_cars(
 /// client id and region. Any other pair, or none, is refused.
 fn own_fleet_pair(entry: &crate::CredentialVaultEntry) -> Result<FleetSetupCredentials, crate::auth::credential_sign_in::CredentialCommandError> {
     use crate::auth::credential_envelope::CredentialOrigin;
-    let unavailable = || crate::auth::credential_sign_in::CredentialCommandError::new("discovery_pair_unavailable");
+    let unavailable = || crate::auth::credential_sign_in::CredentialCommandError::fleet_discovery("discovery_pair_unavailable");
     let pair = entry.vault().load(CredentialSlot::FleetApi).map_err(|_| unavailable())?.ok_or_else(unavailable)?;
     if pair.origin != Some(CredentialOrigin::FleetOauth) || pair.refresh_owner != RefreshOwner::Hub { return Err(unavailable()); }
     let region = FleetRegion::from_storage_code(pair.region.as_deref().unwrap_or_default()).map_err(|_| unavailable())?;
@@ -273,7 +273,7 @@ impl FleetPartnerRefusal {
     }
 
     fn settings_invalid() -> Self {
-        Self::new("fleet_partner_settings_invalid", "setup-fleet register reads one JSON object with exactly clientId, clientSecret, domain (a host name such as example.com) and region (na, eu or cn)")
+        Self::new("fleet_partner_settings_invalid", "setup-fleet register reads one JSON object with exactly clientId, clientSecret, domain (a host name such as example.com) and region (na, eu or cn), with no escape other than \\/ or \\u")
     }
 
     fn key(error: crate::fleet_api::partner::keys::FleetKeyError) -> Self {
@@ -351,12 +351,16 @@ impl std::fmt::Debug for FleetPartnerSettings {
 /// before forwarding and the service reads it again. A key naming a token,
 /// in any case, is refused `source_credential_disabled` from the keys alone,
 /// before any value is read; any other shape, an unknown region, an invalid
-/// client id, secret or domain is `fleet_partner_settings_invalid`.
+/// client id, secret or domain is `fleet_partner_settings_invalid`, as is an
+/// input whose escapes are refused (M09-T19 B5), before any parse.
 pub fn read_fleet_partner_input(line: &[u8]) -> Result<FleetPartnerSettings, FleetPartnerRefusal> {
     use crate::auth::credential_sign_in::{SOURCE_CREDENTIAL_DISABLED_TEXT, refuse_token_keys};
     use crate::fleet_api::partner::{PartnerCredentials, validate_domain};
-    refuse_token_keys(line).map_err(|error| FleetPartnerRefusal::new(error.code(), SOURCE_CREDENTIAL_DISABLED_TEXT))?;
-    let mut input: PartnerInput = serde_json::from_slice(line).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
+    // Read without escapes (M09-T19 B5): one that cannot be is refused
+    // before any parse.
+    let line = crate::fleet_api::json_without_escapes(line).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
+    refuse_token_keys(&line).map_err(|error| FleetPartnerRefusal::new(error.code(), SOURCE_CREDENTIAL_DISABLED_TEXT))?;
+    let mut input: PartnerInput = serde_json::from_slice(&line).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
     let region = FleetRegion::from_storage_code(input.region.as_str()).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
     let client_id = FleetClientId::parse(input.client_id.as_str()).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
     let domain = validate_domain(input.domain.as_str()).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
@@ -1461,5 +1465,35 @@ mod m09_t19_partner_input {
         assert!(secrets.len() >= inputs.len(), "each input decoded its secret: {}", secrets.len());
         assert!(secrets.iter().all(|event| event.zeroised && event.after == 0), "every decoded secret was wiped");
         assert!(drops.iter().filter(|event| event.kind == "wire_secret").all(|event| event.zeroised), "every decoded value was wiped");
+    }
+
+    /// M09-T19 B5: the registration input is read without escapes. A secret
+    /// written with `~u` and `~/` escapes is accepted, no value is taken from
+    /// the parser's own storage and the resolved input is wiped; `~"`, `~~`,
+    /// `~n`, a lone surrogate, a truncated escape and a backslash outside a
+    /// string are refused before any parse (a token-named key is not read).
+    #[test]
+    fn escaped_registration_input_is_resolved_or_refused_before_any_parse() {
+        let esc = |text: &str| text.replace('~', "\\");
+        let input = |secret: &str| esc(&format!(r#"{{"clientId":"synthetic-client","clientSecret":"{secret}","domain":"synthetic.example.test","region":"eu"}}"#));
+        let escaped = input("synthetic-partner-~u0073ecret~/0001");
+        let copied = crate::fleet_api::parser_copied_secrets();
+        let drops = Arc::new(Mutex::new(Vec::new()));
+        let record = Arc::clone(&drops);
+        crate::auth::credential_sign_in::observe_sign_in_secret_drops(move |event| record.lock().expect("drops").push(event), || {
+            drop(super::read_fleet_partner_input(escaped.as_bytes()).expect("an escaped secret is accepted"));
+        });
+        assert_eq!(crate::fleet_api::parser_copied_secrets(), copied, "no value decoded outside wiping storage");
+        let drops = drops.lock().expect("drops");
+        assert!(drops.iter().any(|event| event.kind == "escape_free_json" && event.before == escaped.len() - 6 && event.zeroised), "the resolved input was wiped");
+        let mut refused: Vec<String> = [r#"a~"b"#, "a~~b", "a~nb", "a~uD800b", "a~u00"].iter().map(|secret| input(secret)).collect();
+        refused.push(esc(&format!("~{}", input("synthetic-partner-secret"))));
+        for line in refused {
+            let with_token_key = line.replacen('{', r#"{"accessToken":"x","#, 1);
+            for line in [&line, &with_token_key] {
+                let refusal = super::read_fleet_partner_input(line.as_bytes()).expect_err(line);
+                assert_eq!(refusal.code, "fleet_partner_settings_invalid", "{line}");
+            }
+        }
     }
 }

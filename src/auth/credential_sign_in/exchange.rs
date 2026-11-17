@@ -265,10 +265,13 @@ async fn send(client: &Client, endpoint: Url, body: reqwest::Body, content_type:
 
 /// The fixed refusal of a non-2xx answer: the issuer's `error` member when it
 /// is one of the allowlisted RFC 6749 codes, else `other`. No text is kept.
+/// It is read without escapes (M09-T19 B5); one refused for its escapes is
+/// an answer not understood, as one that does not parse.
 fn refused(bytes: &[u8]) -> CredentialCommandError {
     #[derive(serde::Deserialize)]
     struct ErrorAnswer { error: Option<String> }
-    let code = serde_json::from_slice::<ErrorAnswer>(bytes).ok().and_then(|answer| answer.error);
+    let Ok(bytes) = crate::fleet_api::json_without_escapes(bytes) else { return failure(SignInError::AnswerInvalid) };
+    let code = serde_json::from_slice::<ErrorAnswer>(&bytes).ok().and_then(|answer| answer.error);
     match code {
         Some(code) => failure(SignInError::Refused(SignInRefusalCode::from_issuer_code(&code))),
         None => failure(SignInError::AnswerInvalid),
@@ -400,6 +403,72 @@ pub const SIGN_IN_BINDING_INVALID: &str = "sign_in_binding_invalid";
 
 /// The refusal of a Fleet redeem with no begun sign-in to finish.
 pub fn fleet_sign_in_not_begun() -> CredentialCommandError { CredentialCommandError::new(SIGN_IN_BINDING_INVALID) }
+
+/// The service's one held Fleet sign-in (M09-T19 R1). Publishing, taking
+/// and restoring an attempt follow one rule that survives an empty slot: a
+/// counter beside the slot, under the same lock, moves at every begin and at
+/// every completed redeem; a taken attempt remembers the counter's value and
+/// may be put back only while the counter still has it. So an attempt taken
+/// by a redeem that sent nothing is never revived once a newer begin, or a
+/// redeem that used its attempt up, has come in between.
+#[derive(Debug, Default)]
+pub struct FleetSignInSlot {
+    state: std::sync::Mutex<FleetSignInSlotState>,
+}
+
+#[derive(Debug, Default)]
+struct FleetSignInSlotState {
+    attempt: Option<FleetSignInBinding>,
+    generation: u64,
+}
+
+/// An attempt taken out of the [`FleetSignInSlot`] for one redeem, with the
+/// counter's value when it was taken. The redeem uses it up by taking it out
+/// of [`TakenFleetSignIn::attempt`].
+#[derive(Debug)]
+pub struct TakenFleetSignIn {
+    attempt: Option<FleetSignInBinding>,
+    generation: u64,
+}
+
+impl TakenFleetSignIn {
+    /// The taken attempt, for [`exchange_fleet_code`]; `None` once used up.
+    pub fn attempt(&mut self) -> &mut Option<FleetSignInBinding> { &mut self.attempt }
+}
+
+impl FleetSignInSlot {
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, FleetSignInSlotState>, CredentialCommandError> {
+        self.state.lock().map_err(|_| super::sign_in_unavailable())
+    }
+
+    /// A begin: `binding` replaces the attempt held, which is abandoned in
+    /// the vault, and the counter moves, all under the slot's lock.
+    pub fn publish(&self, entry: &CredentialVaultEntry, binding: FleetSignInBinding) -> Result<(), CredentialCommandError> {
+        let mut state = self.lock()?;
+        state.generation = state.generation.wrapping_add(1);
+        if let Some(earlier) = state.attempt.replace(binding) { abandon_fleet_sign_in(entry, earlier); }
+        Ok(())
+    }
+
+    /// A redeem takes the held attempt out, or finds none.
+    pub fn take(&self) -> Result<Option<TakenFleetSignIn>, CredentialCommandError> {
+        let mut state = self.lock()?;
+        let generation = state.generation;
+        Ok(state.attempt.take().map(|attempt| TakenFleetSignIn { attempt: Some(attempt), generation }))
+    }
+
+    /// The end of a redeem. An attempt it used up moves the counter; one it
+    /// kept is put back only while the counter is still at the value it was
+    /// taken at (and so the slot is empty), else it is dropped, unusable.
+    pub fn settle(&self, taken: TakenFleetSignIn) {
+        let Ok(mut state) = self.state.lock() else { return };
+        match taken.attempt {
+            None => state.generation = state.generation.wrapping_add(1),
+            Some(attempt) if state.generation == taken.generation && state.attempt.is_none() => state.attempt = Some(attempt),
+            Some(_superseded) => {}
+        }
+    }
+}
 
 /// The first step of a Fleet sign-in with the owner's own Tesla developer
 /// application (M09-T09; design T-B2): the binding the vault recorded and

@@ -44,7 +44,7 @@ pub use exchange::{ANSWER_CAP as OWNER_EXCHANGE_ANSWER_CAP, MAX_OWNER_CODE_BYTES
 #[cfg(debug_assertions)]
 #[doc(hidden)]
 pub use exchange::{exchange_owner_code_with_stub_for_test, sign_in_or_resume_owner_code_with_stub_for_test};
-pub use exchange::{FLEET_SCOPES_MISSING, FLEET_SCOPE_MISSING_VEHICLE_DEVICE_DATA, FLEET_SCOPE_MISSING_VEHICLE_LOCATION, FLEET_TOKEN_CLAIMS_INVALID, FleetSignInBinding, SIGN_IN_BINDING_INVALID, abandon_fleet_sign_in, begin_fleet_sign_in, exchange_fleet_code, fleet_sign_in_not_begun};
+pub use exchange::{FLEET_SCOPES_MISSING, FLEET_SCOPE_MISSING_VEHICLE_DEVICE_DATA, FLEET_SCOPE_MISSING_VEHICLE_LOCATION, FLEET_TOKEN_CLAIMS_INVALID, FleetSignInBinding, FleetSignInSlot, SIGN_IN_BINDING_INVALID, TakenFleetSignIn, abandon_fleet_sign_in, begin_fleet_sign_in, exchange_fleet_code, fleet_sign_in_not_begun};
 #[cfg(debug_assertions)]
 #[doc(hidden)]
 pub use exchange::{begin_fleet_sign_in_with_stub_for_test, exchange_fleet_code_with_stub_for_test};

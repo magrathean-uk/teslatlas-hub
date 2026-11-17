@@ -13,6 +13,12 @@ pub const FLEET_SIGN_IN_SCOPE: &str = "openid offline_access vehicle_device_data
 const ANSWER_CAP: usize = 65_536;
 
 fn failure(error: SignInError) -> CredentialCommandError { CredentialStoreError::SignIn(error).into() }
+
+/// The input without escapes (M09-T19 B5), read by every parse below in its
+/// place; one refused for its escapes is `error`, before any parse.
+fn escape_free(line: &[u8], error: SignInError) -> Result<crate::fleet_api::EscapeFreeJson<'_>, CredentialCommandError> {
+    crate::fleet_api::json_without_escapes(line).map_err(|_| failure(error))
+}
 fn wiped_copy(text: &str) -> Zeroizing<String> { Zeroizing::new(text.to_owned()) }
 
 /// Encodes into the wiping destination without an intermediate form string.
@@ -138,7 +144,8 @@ pub fn refuse_token_keys(line: &[u8]) -> Result<(), CredentialCommandError> {
 
 impl SignInSettings {
     pub fn fleet(line: &[u8]) -> Result<Self, CredentialCommandError> {
-        let values = secret_object(line, &["clientId", "region", "redirectUri", "clientSecret"])
+        let line = escape_free(line, SignInError::SettingsInvalid)?;
+        let values = secret_object(&line, &["clientId", "region", "redirectUri", "clientSecret"])
             .map_err(|_| failure(SignInError::SettingsInvalid))?;
         let [client_id, region, redirect_uri, client_secret]: [WireSecret; 4] = values.try_into().map_err(|_| failure(SignInError::SettingsInvalid))?;
         if client_secret.as_str().is_empty() { return Err(failure(SignInError::SettingsInvalid)); }
@@ -159,8 +166,9 @@ impl SignInSettings {
 
     /// `setup-fleet begin`: exactly `clientId`, `region` and `redirectUri`.
     pub(super) fn fleet_application(line: &[u8]) -> Result<Self, CredentialCommandError> {
-        refuse_token_keys(line)?;
-        let values = secret_object(line, &FLEET_BEGIN_KEYS).map_err(|_| failure(SignInError::SettingsInvalid))?;
+        let line = escape_free(line, SignInError::SettingsInvalid)?;
+        refuse_token_keys(&line)?;
+        let values = secret_object(&line, &FLEET_BEGIN_KEYS).map_err(|_| failure(SignInError::SettingsInvalid))?;
         let [client_id, region, redirect_uri]: [WireSecret; 3] = values.try_into().map_err(|_| failure(SignInError::SettingsInvalid))?;
         Self::fleet_from(&client_id, &region, &redirect_uri, None)
     }
@@ -168,10 +176,12 @@ impl SignInSettings {
     /// The `setup-fleet` redeem: exactly `code`, `redirectUri`, `clientId`,
     /// `clientSecret`, `region` and `binding`. Returns the settings, which
     /// hold the client secret, the authorisation code and the binding its
-    /// begin answered (a UUID).
+    /// begin answered (a UUID). The input is read without escapes (M09-T19
+    /// B5): one that cannot be is `sign_in_settings_invalid` before any parse.
     pub(super) fn fleet_redeem(line: &[u8]) -> Result<(Self, WireSecret, uuid::Uuid), CredentialCommandError> {
-        refuse_token_keys(line)?;
-        let values = secret_object(line, &FLEET_REDEEM_KEYS).map_err(|_| failure(SignInError::SettingsInvalid))?;
+        let line = escape_free(line, SignInError::SettingsInvalid)?;
+        refuse_token_keys(&line)?;
+        let values = secret_object(&line, &FLEET_REDEEM_KEYS).map_err(|_| failure(SignInError::SettingsInvalid))?;
         let [code, redirect_uri, client_id, client_secret, region, binding]: [WireSecret; 6] = values.try_into().map_err(|_| failure(SignInError::SettingsInvalid))?;
         if client_secret.as_str().is_empty() { return Err(failure(SignInError::SettingsInvalid)); }
         let binding = uuid::Uuid::try_parse(binding.as_str()).map_err(|_| failure(SignInError::SettingsInvalid))?;
@@ -287,7 +297,8 @@ impl<'a> SignInAttempt<'a> {
     pub fn authorization_url(&self) -> SecretText { self.settings.authorization_url(&self.session) }
 
     fn redirect_code(&self, line: &[u8]) -> Result<SecretText, CredentialCommandError> {
-        let mut values = secret_object(line, &["redirectUrl"]).map_err(|_| failure(SignInError::AnswerInvalid))?;
+        let line = escape_free(line, SignInError::AnswerInvalid)?;
+        let mut values = secret_object(&line, &["redirectUrl"]).map_err(|_| failure(SignInError::AnswerInvalid))?;
         let address = values.pop().expect("one redirect field");
         let address = address.as_str().split('#').next().unwrap_or_default();
         let (base, query) = address.split_once('?').ok_or_else(|| failure(SignInError::AnswerInvalid))?;
@@ -397,7 +408,9 @@ pub(super) fn token_answer(bytes: &[u8]) -> Result<TokenAnswer, CredentialComman
             Ok(TokenAnswer { access, refresh, expires_in })
         }
     }
-    let mut decoder = serde_json::Deserializer::from_slice(bytes);
+    // The tokens are parsed only from the answer without escapes (B5).
+    let bytes = escape_free(bytes, SignInError::AnswerInvalid)?;
+    let mut decoder = serde_json::Deserializer::from_slice(&bytes);
     let answer = decoder.deserialize_map(Answer).map_err(|_| failure(SignInError::AnswerInvalid))?;
     decoder.end().map_err(|_| failure(SignInError::AnswerInvalid))?;
     Ok(answer)

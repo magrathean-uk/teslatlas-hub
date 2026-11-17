@@ -1530,25 +1530,152 @@ impl<'de> Deserialize<'de> for WireSecret {
                 formatter.write_str("a token string")
             }
 
-            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+            // A string borrowed from the input: the input is the document
+            // without escapes, in wiping storage (M09-T19 B5).
+            fn visit_borrowed_str<E: serde::de::Error>(
+                self,
+                value: &'de str,
+            ) -> Result<Self::Value, E> {
                 let mut text = Zeroizing::new(String::with_capacity(value.len()));
                 text.push_str(value);
                 Ok(WireSecret(text, crate::auth::credential_sign_in::current_secret_observer()))
             }
 
-            fn visit_borrowed_str<E: serde::de::Error>(
-                self,
-                value: &'de str,
-            ) -> Result<Self::Value, E> {
-                self.visit_str(value)
+            // A string the parser copied into its own scratch storage first,
+            // which nothing wipes: every door strips escapes before the
+            // parse, so a test observes that this never happens.
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                #[cfg(test)]
+                PARSER_COPIED_SECRETS.with(|count| count.set(count.get() + 1));
+                let mut text = Zeroizing::new(String::with_capacity(value.len()));
+                text.push_str(value);
+                Ok(WireSecret(text, crate::auth::credential_sign_in::current_secret_observer()))
             }
 
             fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+                #[cfg(test)]
+                PARSER_COPIED_SECRETS.with(|count| count.set(count.get() + 1));
                 Ok(WireSecret(Zeroizing::new(value), crate::auth::credential_sign_in::current_secret_observer()))
             }
         }
         deserializer.deserialize_string(SecretVisitor)
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    static PARSER_COPIED_SECRETS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many secret strings this thread's parses took from the JSON parser's
+/// own scratch storage (an escaped string) rather than from the input.
+#[cfg(test)]
+pub(crate) fn parser_copied_secrets() -> usize { PARSER_COPIED_SECRETS.with(std::cell::Cell::get) }
+
+/// The one refusal of [`json_without_escapes`]. It names nothing of the
+/// input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct JsonEscapeRefused;
+
+/// A JSON document that holds no backslash: the input itself when it had
+/// none, else the input with its escapes resolved, in a wiping buffer.
+pub(crate) enum EscapeFreeJson<'a> {
+    Unchanged(&'a [u8]),
+    Resolved(crate::auth::credential_sign_in::SecretBuffer),
+}
+
+impl std::ops::Deref for EscapeFreeJson<'_> {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        match self {
+            Self::Unchanged(bytes) => bytes,
+            Self::Resolved(buffer) => buffer.as_slice(),
+        }
+    }
+}
+
+/// M09-T19 B5: the JSON parser copies a string that holds an escape into
+/// scratch storage it never wipes, and borrows one without an escape from
+/// its input. So every document that carries a secret (the operator's
+/// redeem and registration inputs, Tesla's token answers) passes through
+/// here before any parse, and the parser reads only the result, from the
+/// slice:
+/// - without a backslash, the document passes unchanged, with no copy;
+/// - inside a string, `\/` becomes `/`, and a `\uXXXX` escape (a surrogate
+///   pair is one character) becomes its UTF-8 bytes, when that character is
+///   not a double quote, a backslash or a control character;
+/// - anything else is refused with [`JsonEscapeRefused`]: any other escape,
+///   a malformed or unpaired one, one that decodes to a double quote, a
+///   backslash or a control character, and a backslash outside a string.
+///
+/// The result is written into one wiping buffer allocated at the input's
+/// length; it is never longer than the input, so the buffer never
+/// reallocates, and a refusal wipes what was written.
+pub(crate) fn json_without_escapes(input: &[u8]) -> Result<EscapeFreeJson<'_>, JsonEscapeRefused> {
+    if !input.contains(&b'\\') {
+        return Ok(EscapeFreeJson::Unchanged(input));
+    }
+    fn hex4(input: &[u8], index: &mut usize) -> Result<u32, JsonEscapeRefused> {
+        let digits = input.get(*index..*index + 4).ok_or(JsonEscapeRefused)?;
+        let mut value = 0u32;
+        for digit in digits {
+            value = value * 16 + char::from(*digit).to_digit(16).ok_or(JsonEscapeRefused)?;
+        }
+        *index += 4;
+        Ok(value)
+    }
+    let mut output = crate::auth::credential_sign_in::SecretBuffer::new("escape_free_json", input.len());
+    let mut in_string = false;
+    let mut index = 0;
+    while let Some(&byte) = input.get(index) {
+        index += 1;
+        match byte {
+            // An escaped quote is refused, so every quote opens or closes.
+            b'"' => {
+                in_string = !in_string;
+                output.push(byte);
+            }
+            b'\\' if in_string => match input.get(index) {
+                Some(b'/') => {
+                    index += 1;
+                    output.push(b'/');
+                }
+                Some(b'u') => {
+                    index += 1;
+                    let first = hex4(input, &mut index)?;
+                    let point = match first {
+                        0xD800..=0xDBFF => {
+                            if input.get(index..index + 2) != Some(b"\\u".as_slice()) {
+                                return Err(JsonEscapeRefused);
+                            }
+                            index += 2;
+                            let second = hex4(input, &mut index)?;
+                            if !(0xDC00..=0xDFFF).contains(&second) {
+                                return Err(JsonEscapeRefused);
+                            }
+                            0x10000 + ((first - 0xD800) << 10) + (second - 0xDC00)
+                        }
+                        0xDC00..=0xDFFF => return Err(JsonEscapeRefused),
+                        point => point,
+                    };
+                    let character = char::from_u32(point).ok_or(JsonEscapeRefused)?;
+                    if character == '"' || character == '\\' || character.is_control() {
+                        return Err(JsonEscapeRefused);
+                    }
+                    let mut encoded = [0u8; 4];
+                    output.extend_from_slice(character.encode_utf8(&mut encoded).as_bytes());
+                    encoded.zeroize();
+                }
+                _ => return Err(JsonEscapeRefused),
+            },
+            b'\\' => return Err(JsonEscapeRefused),
+            _ => output.push(byte),
+        }
+    }
+    if output.contains(&b'\\') {
+        return Err(JsonEscapeRefused);
+    }
+    Ok(EscapeFreeJson::Resolved(output))
 }
 
 #[derive(Zeroize)]
@@ -1750,15 +1877,20 @@ async fn decode_fleet_token_response(
         Ok(())
     }.await;
     if !success {
-        if read.is_ok() {
-            if status == 405 && is_vehicle_in_service_body(&buffer.bytes) {
+        // An answer that is not a success carries no secret; it is read
+        // without escapes all the same, and one refused for its escapes
+        // keeps the class its status gives it (M09-T19 B5).
+        if read.is_ok()
+            && let Ok(body) = json_without_escapes(&buffer.bytes)
+        {
+            if status == 405 && is_vehicle_in_service_body(&body) {
                 return Err(FleetApiError::ProviderHttpStatus {
                     status,
                     error: VEHICLE_IN_SERVICE_CODE.to_owned(),
                     description: None,
                 });
             }
-            if let Some((error, description)) = parse_provider_error(&buffer.bytes)
+            if let Some((error, description)) = parse_provider_error(&body)
                 && (status != 401 || error == MOBILE_ACCESS_DISABLED_CODE)
             {
                 return Err(FleetApiError::ProviderHttpStatus { status, error, description });
@@ -1767,7 +1899,9 @@ async fn decode_fleet_token_response(
         return Err(FleetApiError::HttpStatus(status));
     }
     read?;
-    wire.decode(&buffer.bytes)?;
+    // The tokens are parsed only from the answer without escapes (B5).
+    let body = json_without_escapes(&buffer.bytes).map_err(|_| FleetApiError::InvalidResponse)?;
+    wire.decode(&body)?;
     Ok(wire)
 }
 
@@ -1820,7 +1954,13 @@ pub(crate) async fn assert_fleet_wire_contract() {
         (format!("{valid}x").into_bytes(), 2, false, false),
         (format!("{{\"access_token\":\"{access}\",\"refresh_token\":\"{refresh}\",\"extra\":\"unterminated").into_bytes(), 2, false, false),
         (valid.replace(&access, &format!("\\u0041{}", "A".repeat(63))).into_bytes(), 0, true, false),
+        // M09-T19 B5: an escape that cannot be resolved is refused before
+        // any parse, so no token is decoded at all.
+        (valid.replace(&access, &format!("\\n{}", "A".repeat(63))).into_bytes(), 0, false, false),
+        (valid.replace(&refresh, &format!("\\ud800{}", "B".repeat(63))).into_bytes(), 0, false, false),
     ];
+    // B5: no token is ever taken from the parser's own scratch storage.
+    let copied = parser_copied_secrets();
     for (body, expected_secrets, succeeds, oversized) in bodies {
         FLEET_WIRE_DROPS.with(|events| events.borrow_mut().clear());
         let body = std::sync::Arc::new(std::sync::Mutex::new(Some(body)));
@@ -1875,6 +2015,7 @@ pub(crate) async fn assert_fleet_wire_contract() {
             assert!(events.iter().filter(|(kind, length)| *kind == "secret" && *length == 64).count() == expected_secrets, "decoded secret drops");
         });
     }
+    assert_eq!(parser_copied_secrets(), copied, "no token decoded outside wiping storage");
     let encoded = fleet_refresh_body("a b&", "r+%");
     assert!(
         encoded.bytes.as_slice()
@@ -1897,6 +2038,100 @@ pub(crate) async fn assert_fleet_wire_contract() {
                 .await.err().expect("token error policy");
             assert!(actual == expected, "retained HTTP error policy");
         }
+        // B5: an error answer is read without escapes; `\/` resolves and is
+        // classified as before, a refused escape keeps the status's class.
+        let response = |body: &str| {
+            reqwest::Response::from(http::Response::builder().status(status).body(body.as_bytes().to_vec()).expect("status response"))
+        };
+        let escaped = r#"{"error":"invalid_grant","error_description":"see https:\/\/auth.example\/help"}"#;
+        let expected = decode_json_response::<Value>(response(escaped)).await.expect_err("retained error policy");
+        let actual = decode_fleet_token_response(response(escaped)).await.err().expect("token error policy");
+        assert!(actual == expected, "an escaped description is classified as before");
+        if status == 400 {
+            assert!(matches!(&actual, FleetApiError::ProviderHttpStatus { error, .. } if error == "invalid_grant"), "sign-in required");
+        }
+        let refused = r#"{"error":"invalid_grant","error_description":"a \"quoted\" word"}"#;
+        let actual = decode_fleet_token_response(response(refused)).await.err().expect("token error policy");
+        let class = if status == 429 { matches!(actual, FleetApiError::RateLimited { .. }) } else { actual == FleetApiError::HttpStatus(status) };
+        assert!(class, "a refused escape keeps the class its status gives it");
+    }
+}
+
+#[cfg(test)]
+mod escape_free_json_tests {
+    use super::*;
+
+    /// The test text with each `~` written as a backslash, so the escapes
+    /// below read as JSON writes them.
+    fn esc(text: &str) -> String { text.replace('~', "\\") }
+
+    fn resolved(input: &str) -> Result<String, JsonEscapeRefused> {
+        json_without_escapes(input.as_bytes()).map(|json| String::from_utf8(json.to_vec()).expect("UTF-8"))
+    }
+
+    /// M09-T19 B5: `~/` and the `~u` escapes of ordinary characters resolve
+    /// in one wiping buffer that never grows; a document without a backslash
+    /// passes unchanged, with no copy.
+    #[test]
+    fn fleet_json_without_escapes_resolves_slashes_and_unicode() {
+        let plain = br#"{"clientSecret":"plain-0001"}"#;
+        match json_without_escapes(plain).expect("plain") {
+            EscapeFreeJson::Unchanged(bytes) => assert!(std::ptr::eq(bytes, plain.as_slice())),
+            EscapeFreeJson::Resolved(_) => panic!("a plain document is not copied"),
+        }
+        for (input, output) in [
+            (r#"{"redirectUri":"https:~/~/owner.example~/cb"}"#, r#"{"redirectUri":"https://owner.example/cb"}"#),
+            (r#"{"a":"~u0041~u00e9~u20AC"}"#, "{\"a\":\"A\u{e9}\u{20ac}\"}"),
+            (r#"{"a":"~uD83D~uDE00"}"#, "{\"a\":\"\u{1f600}\"}"),
+            (r#"{"a":"x~/y","b":["~u0062"]}"#, r#"{"a":"x/y","b":["b"]}"#),
+        ] {
+            let input = esc(input);
+            assert_eq!(resolved(&input).as_deref(), Ok(output), "{input}");
+            let EscapeFreeJson::Resolved(buffer) = json_without_escapes(input.as_bytes()).expect("resolved") else { panic!("copied") };
+            assert_eq!(buffer.capacity(), input.len(), "allocated once at the input's length");
+            assert!(!buffer.contains(&b'\\'));
+        }
+    }
+
+    /// Every other escape, a malformed or unpaired one, one that decodes to
+    /// a quote, a backslash or a control character, and a backslash outside
+    /// a string, is the one fixed refusal; the partial result is wiped.
+    #[test]
+    fn fleet_json_without_escapes_refuses_everything_else() {
+        for input in [
+            r#"{"a":"~""}"#, r#"{"a":"~~"}"#, r#"{"a":"~n"}"#, r#"{"a":"~t"}"#, r#"{"a":"~b"}"#, r#"{"a":"~f"}"#, r#"{"a":"~r"}"#,
+            r#"{"a":"~u0022"}"#, r#"{"a":"~u005C"}"#, r#"{"a":"~u0000"}"#, r#"{"a":"~u001f"}"#, r#"{"a":"~u007F"}"#, r#"{"a":"~u0085"}"#,
+            r#"{"a":"~uD83D"}"#, r#"{"a":"~uD83Dx"}"#, r#"{"a":"~uD83D~u0041"}"#, r#"{"a":"~uDE00"}"#,
+            r#"{"a":"~u00"}"#, r#"{"a":"~u00g1"}"#, r#"{"a":"~"#, r#"{"a":"~x41"}"#, r#"{"a":"~U0041"}"#,
+            r#"{~"a":"b"}"#, r#"{"a":"b"}~"#, r#"[~/]"#,
+        ] {
+            let input = esc(input);
+            let drops = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let record = std::sync::Arc::clone(&drops);
+            let refused = crate::auth::credential_sign_in::observe_sign_in_secret_drops(
+                move |event| record.lock().expect("drops").push(event),
+                || json_without_escapes(input.as_bytes()).err(),
+            );
+            assert_eq!(refused, Some(JsonEscapeRefused), "{input}");
+            assert_eq!(format!("{refused:?}"), "Some(JsonEscapeRefused)", "the refusal names nothing of the input");
+            let drops = drops.lock().expect("drops");
+            assert!(drops.iter().all(|event| event.kind == "escape_free_json" && event.zeroised), "{input}: the partial result is wiped");
+        }
+    }
+
+    /// The parser copies an escaped string into its own scratch storage,
+    /// which the observer counts; the same string without escapes is
+    /// borrowed from the input.
+    #[test]
+    fn fleet_json_parser_copies_only_escaped_strings() {
+        let escaped = esc(r#""secret-~u0041""#);
+        let before = parser_copied_secrets();
+        drop(serde_json::from_slice::<WireSecret>(escaped.as_bytes()).expect("escaped"));
+        assert_eq!(parser_copied_secrets(), before + 1, "the observer sees the parser's copy");
+        let clean = json_without_escapes(escaped.as_bytes()).expect("resolved");
+        let secret = serde_json::from_slice::<WireSecret>(&clean).expect("resolved");
+        assert_eq!(secret.as_str(), "secret-A");
+        assert_eq!(parser_copied_secrets(), before + 1, "no copy outside wiping storage");
     }
 }
 
