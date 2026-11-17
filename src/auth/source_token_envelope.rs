@@ -243,6 +243,33 @@ mod tests {
         assert_eq!(seal(ENCRYPTION_KEY, nonce(1), ACCESS_TOKEN), EXTERNAL_CLOAK_ACCESS);
     }
 
+    /// Review B1 (M09-T16): a fixed pair made by another AES-GCM implementation (Apple
+    /// CryptoKit, `scripts/make-source-token-vector.swift`), with an obviously synthetic key
+    /// and tokens, decrypts with this module's parser unchanged; the wrong key does not.
+    #[test]
+    fn decrypts_the_independently_produced_cryptokit_vector() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/source-token-envelope-vector.json"
+        ))
+        .expect("vector JSON");
+        let text = |name: &str| vector[name].as_str().unwrap_or_else(|| panic!("{name} present")).to_owned();
+        let access = hex::decode(text("accessEnvelopeHex")).expect("access hex");
+        let refresh = hex::decode(text("refreshEnvelopeHex")).expect("refresh hex");
+        let key = text("encryptionKey");
+        assert!(key.starts_with("synthetic-"), "an obviously synthetic key");
+        let tokens = decrypt_legacy_owner_tokens(key.as_bytes(), &access, &refresh)
+            .expect("the independent vector authenticates");
+        assert_eq!(tokens.access_token(), text("accessToken"));
+        assert_eq!(tokens.refresh_token(), text("refreshToken"));
+        // The framing is the documented one: header, IV, tag, then the ciphertext.
+        let header = 2 + CLOAK_TAG.len();
+        assert_eq!(access.len(), header + NONCE_BYTES + AUTH_TAG_BYTES + text("accessToken").len());
+        assert!(matches!(
+            decrypt_legacy_owner_tokens(WRONG_ENCRYPTION_KEY, &access, &refresh),
+            Err(SourceDbTokenError::AuthenticationFailed)
+        ));
+    }
+
     #[test]
     fn decrypts_deterministic_cloak_access_refresh_pair_with_exact_key_bytes() {
         let refresh = seal(ENCRYPTION_KEY, nonce(0x21), REFRESH_TOKEN);
