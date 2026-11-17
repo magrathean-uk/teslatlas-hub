@@ -1465,9 +1465,17 @@ mod collection_window_egress {
         let server = SilentServer::spawn("http").await;
         let window = TestWindow::open(600);
         let _route = window.route(&server.url);
-        assert_refused_before_connecting(&server).await;
+        // Inside the window a Fleet send is permitted (M09-T08): it reaches
+        // the silent server and ends at the client's timeout.
+        let (exchanged, read) = fleet_sends(&server).await;
+        assert_ne!(exchanged, FleetApiError::RequestNotSent);
+        assert_ne!(read, FleetApiError::RequestNotSent);
+        assert!(server.connections() > 0, "the in-window sends connected");
         window.advance(600);
-        assert_refused_before_connecting(&server).await;
+        // The retry after the deadline is refused before it connects.
+        let retry = SilentServer::spawn("http").await;
+        let _retry_route = window.route(&retry.url);
+        assert_refused_before_connecting(&retry).await;
         assert_eq!(
             window
                 .gate()

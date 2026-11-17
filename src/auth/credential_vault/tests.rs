@@ -948,8 +948,8 @@ fn m01_t15_keyring_exposure_column_migrates_in_place() {
 /// Finding 1 (M02-T02 round 3): the raw-token Fleet bridge refuses before the
 /// vault stores anything, and a stored Fleet pair is refused at load. A
 /// supplied row and a row migrated by an older Hub carry the same header
-/// (`fleet_oauth`, Hub-refreshed), so both are refused until an authenticated
-/// own-exchange origin exists.
+/// (`fleet_oauth`, Hub-refreshed) as the Hub's own grant, so the header admits
+/// it (M09-T08) and the un-park barrier is what refuses such a row.
 #[test]
 fn source_credential_disabled_fleet_bridge_and_stored_fleet_rows_are_refused() {
     let root = crate::private_tempdir().expect("root");
@@ -961,14 +961,13 @@ fn source_credential_disabled_fleet_bridge_and_stored_fleet_rows_are_refused() {
     assert!(matches!(refused, crate::fleet_credentials::FleetCredentialError::Store(StoreError::WriteRefused("source_credential_disabled"))), "{refused:?}");
     assert!(scope.entry().vault().stored_generation(CredentialSlot::FleetApi).expect("generation").is_none(), "the bridge stored nothing");
     scope.release().expect("release");
-    for owner in [RefreshOwner::Hub, RefreshOwner::External] {
-        assert!(matches!(admit_stored_origin(CredentialSlot::FleetApi, Some(CredentialOrigin::FleetOauth), owner),
-            Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "supplied or migrated Fleet header refused");
-    }
+    assert!(admit_stored_origin(CredentialSlot::FleetApi, Some(CredentialOrigin::FleetOauth), RefreshOwner::Hub).is_ok(), "own Fleet header admitted");
+    assert!(matches!(admit_stored_origin(CredentialSlot::FleetApi, Some(CredentialOrigin::FleetOauth), RefreshOwner::External),
+        Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "externally refreshed Fleet header refused");
     seed_entry(root.path(), CredentialEntry::fleet_supplied(Zeroizing::new("fleet-access-0002".into()), Zeroizing::new("fleet-refresh-0002".into()),
         "client-0001".into(), crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica, 28_800).expect("Fleet fixture"));
     let vault = open(root.path());
-    assert!(matches!(vault.load(CredentialSlot::FleetApi), Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "stored Fleet pair refused at load");
+    assert!(matches!(vault.load(CredentialSlot::FleetApi), Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "pre-un-park Fleet pair refused at load");
     drop(vault);
     let store = HubStore::initialize(root.path()).expect("store");
     let status = crate::auth::credential_sign_in::credential_status(&store, root.path(), 1_800_000_000_000).expect("status");

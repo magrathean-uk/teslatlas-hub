@@ -1785,13 +1785,7 @@ fn refused_credential_inventory_on(
             .query_row(
                 "SELECT origin, refresh_owner, generation FROM credential_pairs WHERE account_id=1 AND slot=?1",
                 [slot.as_str()],
-                |row| {
-                    Ok((
-                        row.get::<_, Option<String>>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                    ))
-                },
+                |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
             )
             .optional()
             .map_err(StoreError::CredentialPairStore)?;
@@ -2469,6 +2463,15 @@ impl CredentialConnection {
 }
 #[cfg(test)]
 impl CredentialConnection {
+    /// Stores a Fleet pair as the Hub's own Fleet grant does (M09-T08): a fresh
+    /// sign-in binding, then the `HubGrant` write with every check and the barrier.
+    pub(crate) fn test_replace_own_fleet_grant(&mut self, pair: &SealedCredentialPair, policy: ReplacePolicy) -> Result<(), StoreError> {
+        let mut secret = Zeroizing::new([0_u8; 32]);
+        secret[..16].copy_from_slice(Uuid::new_v4().as_bytes());
+        let now = self.now_ms()?;
+        let sign_in_id = self.insert_sign_in_binding(CredentialSlot::FleetApi, credential_sign_in_binding(&secret), now)?;
+        self.replace_credential_pair(pair, &EntryProvenance::HubGrant { sign_in_id, grant_secret: &secret }, &LegacyCandidates(Vec::new()), policy)
+    }
     /// Canonical vector fixture only, on a previous-process connection.
     /// TRANSITIONAL: CT19, CT20 and CT22 consume this fixture wrapper.
     pub(crate) fn test_insert_credential_vector(
@@ -2855,6 +2858,10 @@ mod refresh_fence_tests {
     fn seed(connection: &mut CredentialConnection, slot: CredentialSlot, generation: Uuid, refresh: &[u8]) -> Result<(), StoreError> {
         let now = connection.now_ms()? / 1_000;
         let pair = s_test_synthetic_pair(connection, slot, generation, b"fence-access", refresh, now + 28_800, now + 21_600)?;
+        if slot == CredentialSlot::FleetApi {
+            // M09-T08: only the Hub's own grant writes the Fleet slot.
+            return connection.test_replace_own_fleet_grant(&pair, ReplacePolicy::ReplaceAny);
+        }
         connection.replace_credential_pair(&pair, &EntryProvenance::Supplied, &LegacyCandidates(Vec::new()), ReplacePolicy::ReplaceAny)
     }
 

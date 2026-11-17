@@ -41,12 +41,7 @@ fn c5_r3_03_the_credential_commit_connections_ask_for_a_full_flush_on_macos() {
     {
         let input_pair = pair(f0, AS_T0 + 28_800);
         s_test_with_credential_connection(&store, |connection| {
-            connection.replace_credential_pair(
-                &input_pair,
-                &EntryProvenance::Supplied,
-                &LegacyCandidates(Vec::new()),
-                ReplacePolicy::ReplaceAny,
-            )
+            connection.test_replace_own_fleet_grant(&input_pair, ReplacePolicy::ReplaceAny)
         })
     }
         .expect("input pair");

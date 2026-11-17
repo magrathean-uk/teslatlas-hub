@@ -491,12 +491,7 @@ fn as_unresolved_fleet(store: &HubStore) -> Uuid {
         )
         .expect("synthetic Fleet pair");
         connection
-            .replace_credential_pair(
-                &pair,
-                &EntryProvenance::Supplied,
-                &LegacyCandidates(Vec::new()),
-                ReplacePolicy::ReplaceAny,
-            )
+            .test_replace_own_fleet_grant(&pair, ReplacePolicy::ReplaceAny)
             .expect("store Fleet pair");
         connection
             .credential_durability_barrier()
@@ -1639,12 +1634,7 @@ fn the_credential_identity_is_the_generation_of_the_last_external_write() {
             pair.client_id = Some(client.to_string());
             pair.region = Some(region.to_string());
             connection
-                .replace_credential_pair(
-                    &pair,
-                    &EntryProvenance::Supplied,
-                    &LegacyCandidates(Vec::new()),
-                    ReplacePolicy::ReplaceAny,
-                )
+                .test_replace_own_fleet_grant(&pair, ReplacePolicy::ReplaceAny)
                 .expect("identity Fleet external write");
             connection
                 .credential_durability_barrier()

@@ -149,6 +149,8 @@ impl Fixture {
                 &LegacyCandidates(Vec::new()),
                 policy,
             )?;
+        } else if pair.slot == CredentialSlot::FleetApi && pair.origin == Some(CredentialOrigin::FleetOauth) {
+            self.conn.test_replace_own_fleet_grant(pair, policy)?; // M09-T08: only the own grant writes Fleet.
         } else {
             self.conn.replace_credential_pair(
                 pair,
@@ -2524,18 +2526,10 @@ fn ct098_store_provenance_negatives() {
             refresh.as_bytes(),
         );
         let (observer, before) = f.observe();
-        assert!(
-            matches!(
-                f.conn.replace_credential_pair(
-                    &pair,
-                    &EntryProvenance::Supplied,
-                    &LegacyCandidates(Vec::new()),
-                    ReplacePolicy::ReplaceAny
-                ),
-                Err(StoreError::FreshSignInRequired)
-            ),
-            "R77 store continuity recheck is authoritative"
-        );
+        // M09-T08: a supplied Fleet pair is refused by origin first.
+        let result = f.conn.replace_credential_pair(&pair, &EntryProvenance::Supplied, &LegacyCandidates(Vec::new()), ReplacePolicy::ReplaceAny);
+        assert!(matches!((slot, result), (CredentialSlot::OwnerApi, Err(StoreError::FreshSignInRequired)) | (CredentialSlot::FleetApi, Err(StoreError::InvalidOrigin))),
+            "R77 store continuity recheck is authoritative");
         assert_eq!(data_version(&observer), before);
     }
     let live_secret = Zeroizing::new([0x60; 32]);

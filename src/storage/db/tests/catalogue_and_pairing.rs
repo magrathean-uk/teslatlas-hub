@@ -1517,12 +1517,7 @@ fn fleet_refresh_intent_fences_restart_and_commits_successor_atomically() {
             AS_T0 + 28_800,
             AS_T0 + 21_600,
         )?;
-        connection.replace_credential_pair(
-            &pair,
-            &EntryProvenance::Supplied,
-            &LegacyCandidates(Vec::new()),
-            ReplacePolicy::ReplaceAny,
-        )?;
+        connection.test_replace_own_fleet_grant(&pair, ReplacePolicy::ReplaceAny)?;
         let stale =
             connection.begin_credential_refresh(CredentialSlot::FleetApi, Uuid::from_u128(0xF100));
         let intents: i64 = connection
