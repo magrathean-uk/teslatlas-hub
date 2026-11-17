@@ -18,7 +18,7 @@
 //! - Missing components are created one at a time with `mkdirat` and tightened
 //!   to `0700` with `fchmod` on the descriptor that was opened, never by path,
 //!   so nothing is created under an ancestor that failed the rules.
-//!   Each creation syncs its held containing directory before returning.
+//!   Each creation, once tightened, syncs its held containing directory.
 //! - On macOS the mode bits are not the whole access rule: an extended ACL can
 //!   grant other users search, add_file or delete_child on a `0700` directory,
 //!   and a directory created below one with inheritable entries starts with
@@ -212,6 +212,9 @@ fn walk(
         if created && facts.uid == euid {
             protect(&child, &walked)?;
         }
+        if created {
+            sync_created_entry(&directory, &walked)?;
+        }
         directory = child;
     }
     walked.push(leaf);
@@ -226,6 +229,9 @@ fn walk(
         if after.uid != euid || after.mode & PERMISSION_BITS != PRIVATE_MODE {
             return Err(PrivateDirectoryError::WritableByOthers(walked));
         }
+        if created {
+            sync_created_entry(&directory, &walked)?;
+        }
     } else {
         // Already `0700`: only an ACL could still let others in. The clearing of one is
         // a change of the directory's metadata, counted in tests even when none is there.
@@ -238,6 +244,47 @@ fn walk(
         #[cfg(test)]
         mutation_attempts: std::sync::atomic::AtomicUsize::new(0),
     })
+}
+
+/// Persist a directory entry this walk created, once it is protected, through a
+/// durable sync of its held containing directory (P15-F04).
+fn sync_created_entry(parent: &OwnedFd, created: &Path) -> Result<(), PrivateDirectoryError> {
+    let parent_path = created.parent().ok_or(PrivateDirectoryError::InvalidPath)?;
+    crate::platform::file_attempts::note_directory_sync(parent_path);
+    durable_sync_fd(parent.as_fd())
+        .map_err(|error| io_error(parent_path, io::Error::from_raw_os_error(error.errno)))
+}
+
+/// Create every missing component of `path` with mode `0700`, persisting each new
+/// entry through a durable sync of its held containing directory before the next
+/// component is created (P15-F04). Existing components are left as they are.
+pub(crate) fn create_directory_all_durably(path: &Path) -> io::Result<()> {
+    if path.as_os_str().is_empty() || path.is_dir() {
+        return Ok(());
+    }
+    let parent_path = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    create_directory_all_durably(parent_path)?;
+    // Creating the parent can also resolve a trailing `.` or `..`.
+    if path.is_dir() {
+        return Ok(());
+    }
+    let name = path.file_name().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "directory path has no file name")
+    })?;
+    let parent = File::open(parent_path)?;
+    crate::platform::file_attempts::note(path);
+    match mkdirat(&parent, name, Mode::RWXU) {
+        Ok(()) => {
+            crate::platform::file_attempts::note_directory_sync(parent_path);
+            durable_sync_fd(parent.as_fd())
+                .map_err(|error| io::Error::from_raw_os_error(error.errno))
+        }
+        Err(Errno::EXIST) if path.is_dir() => Ok(()),
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// A single entry classified without following a symbolic link (C10 R16).
@@ -745,11 +792,6 @@ fn open_or_create(
         Err(Errno::EXIST) => false,
         Err(error) => return Err(io_error(path, error)),
     };
-    if created {
-        let parent_path = path.parent().ok_or(PrivateDirectoryError::InvalidPath)?;
-        crate::platform::file_attempts::note_directory_sync(parent_path);
-        fsync(parent).map_err(|error| io_error(parent_path, error))?;
-    }
     match open_child(parent, name, path)? {
         Some(child) => Ok((child, created)),
         None => Err(io_error(path, io::ErrorKind::NotFound)),

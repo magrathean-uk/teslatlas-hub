@@ -294,6 +294,35 @@ fn directory_parent_persistence_store_ancestors() {
 }
 
 #[test]
+fn directory_parent_persistence_admitted_root() {
+    // Production admits the data directory (taking the lifetime lock, which
+    // creates the root) before the store is initialised.
+    let temporary = crate::private_tempdir().expect("temporary parent");
+    let data_dir = temporary.path().join("first/second/hub");
+    let parents = [
+        temporary.path().to_path_buf(),
+        temporary.path().join("first"),
+        temporary.path().join("first/second"),
+    ];
+    let before = parents
+        .each_ref()
+        .map(|path| crate::platform::file_attempts::directory_syncs_at(path));
+
+    let admitted = crate::hub_user_process::AdmittedUserHub::admit(&data_dir)
+        .expect("admit a missing nested root");
+    for (parent, before) in parents.iter().zip(before) {
+        assert!(
+            crate::platform::file_attempts::directory_syncs_at(parent) > before,
+            "the lifetime lock persists every new ancestor of the data directory"
+        );
+    }
+    let store = HubStore::initialize(&data_dir).expect("initialise the admitted root");
+    store.quick_check().expect("healthy catalogue");
+    drop(store);
+    drop(admitted);
+}
+
+#[test]
 fn inventory_counts_physical_pack_and_staging_bytes_once() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store initializes");
