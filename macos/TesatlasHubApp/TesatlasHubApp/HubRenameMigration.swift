@@ -13,7 +13,20 @@ import Foundation
 ///    LaunchAgent, moves the Hub's folders and points the configuration at
 ///    them. The app then writes the current LaunchAgent with its own writer,
 ///    and `migrate-names --complete` starts it (when the earlier one was
-///    running) before the earlier property list is removed.
+///    running) before the earlier property list is removed. A current service
+///    already serving is not restarted, and one that was not loaded is loaded
+///    (it runs at load) without a restart after. The start counts once the
+///    binary's `serving-check` confirms the service serves its configuration
+///    (between collection windows included); the binary stops waiting and
+///    refuses the step after one minute. This runs before the app finishes
+///    launching, so the owner sees no window until it ends. The app waits for
+///    each run at most `StepRunner.limit`; a run still going then is left alone
+///    and the owner is offered Try Again or Quit, and a Try Again while it still
+///    runs starts nothing and says the move is still in progress.
+/// 4. The app's launch work waits for the hand-over (`LaunchGate`): the retry
+///    alert can let AppKit finish launching before `application.run()`. After
+///    a hand-over that needed Try Again, the app shows the window a normal
+///    launch shows and comes to the front.
 ///
 /// Every step is idempotent. A step that is deferred or fails changes nothing
 /// the next attempt cannot finish: the owner is offered Try Again or Quit, and
@@ -111,11 +124,13 @@ enum HubRenameMigration {
     }
 
     /// One attempt of step 3. `run` runs the bundled binary with the given
-    /// arguments and returns its exit status and standard output.
-    static func handOver(run: ([String]) -> (Int32, Data),
+    /// arguments and returns its exit status and standard output, or nil when
+    /// that run (or an earlier one) is still going.
+    static func handOver(run: ([String]) -> (Int32, Data)?,
                          installAgent: () throws -> Void,
                          prepareLogs: () throws -> Void) -> Outcome {
-        let (status, output) = run([verb])
+        guard let prepared = run([verb]) else { return .retry(inProgressMessage) }
+        let (status, output) = prepared
         let report = try? JSONDecoder().decode(StepReport.self, from: output)
         guard status == 0, let report else {
             return .retry(status == deferredExitStatus ? (report?.detail ?? deferredMessage) : failureDetail(report))
@@ -127,7 +142,10 @@ enum HubRenameMigration {
         } catch {
             return .retry(error.localizedDescription)
         }
-        let (completed, completion) = run([verb, "--complete"] + (report.start ? ["--start"] : []))
+        guard let completing = run([verb, "--complete"] + (report.start ? ["--start"] : [])) else {
+            return .retry(inProgressMessage)
+        }
+        let (completed, completion) = completing
         guard completed == 0 else {
             return .retry(failureDetail(try? JSONDecoder().decode(StepReport.self, from: completion)))
         }
@@ -137,6 +155,11 @@ enum HubRenameMigration {
     private static var deferredMessage: String {
         HubL10n.text("hub.rename.deferred",
                      fallback: "The Hub's data is still in use by its earlier service. Wait a moment, then try again.")
+    }
+
+    static var inProgressMessage: String {
+        HubL10n.text("hub.rename.inProgress",
+                     fallback: "The Hub's move to its new name is still in progress. Wait a moment, then try again.")
     }
 
     private static func failureDetail(_ report: StepReport?) -> String {
@@ -169,7 +192,8 @@ enum HubRenameMigration {
         var environment: () -> [String: String]
         var setEnvironment: (String, String) -> Void
         var adoptPreferences: () -> Void
-        var handOver: () -> Void
+        /// True when the hand-over completed after a Try Again.
+        var handOver: () -> Bool
 
         static var live: StartUp { StartUp(
             environment: { ProcessInfo.processInfo.environment },
@@ -185,47 +209,151 @@ enum HubRenameMigration {
     }
 
     /// Runs the hand-over in the installed app; called once from `main.swift`.
-    static func prepareBeforeLaunch(renamed: Bool = isRenamedBuild, steps: StartUp = .live) {
-        guard renamed else { return }
+    /// True when it completed after a Try Again.
+    @discardableResult
+    static func prepareBeforeLaunch(renamed: Bool = isRenamedBuild, steps: StartUp = .live) -> Bool {
+        guard renamed else { return false }
         for (name, value) in environmentAdditions(steps.environment()) {
             steps.setEnvironment(name, value)
         }
-        guard appliesTo(environment: steps.environment()) else { return }
+        guard appliesTo(environment: steps.environment()) else { return false }
         steps.adoptPreferences()
-        steps.handOver()
+        return steps.handOver()
     }
 
-    private static func handOverUntilDone() {
-        guard let binary = Bundle.main.url(forResource: "tesatlas-hub", withExtension: nil) else { return }
+    private static func handOverUntilDone() -> Bool {
+        guard let binary = Bundle.main.url(forResource: "tesatlas-hub", withExtension: nil) else { return false }
         let home = HubTestHost.defaultRealHome()
         let writer = HubLaunchAgentWriter(configuration: {
             try HubLaunchAgentConfiguration.production(bundle: .main, home: home)
         })
-        while true {
-            let outcome = handOver(run: { runBinary(binary, $0) },
-                                   installAgent: { _ = try writer.ensureInstalled(requireConfig: false) },
-                                   prepareLogs: { try writer.prepareLogsForBootstrap() })
-            guard case let .retry(detail) = outcome else { return }
+        let runner = StepRunner(executable: binary)
+        let retried = attemptUntilDone({
+            handOver(run: { runner.run($0) },
+                     installAgent: { _ = try writer.ensureInstalled(requireConfig: false) },
+                     prepareLogs: { try writer.prepareLogsForBootstrap() })
+        }, offerRetry: { detail in
             HubAppLog.shared.record("rename.handover.retry", category: "app", fields: ["detail": detail])
-            guard offerRetry(detail) else { exit(0) }
+            return offerRetry(detail)
+        })
+        guard let retried else { exit(0) }
+        return retried
+    }
+
+    /// Attempts until one proceeds. True when a Try Again was needed, false
+    /// when the first attempt proceeded, nil when the owner chose Quit.
+    static func attemptUntilDone(_ attempt: () -> Outcome, offerRetry: (String) -> Bool) -> Bool? {
+        var retried = false
+        while true {
+            guard case let .retry(detail) = attempt() else { return retried }
+            guard offerRetry(detail) else { return nil }
+            retried = true
         }
     }
 
-    private static func runBinary(_ binary: URL, _ arguments: [String]) -> (Int32, Data) {
-        let process = Process()
-        process.executableURL = binary
-        process.arguments = arguments
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return (1, Data())
+    /// Holds the app's launch work while the hand-over runs before launch.
+    /// The retry alert's modal loop can let AppKit finish launching before
+    /// `application.run()`; that launch work is held until the hand-over has
+    /// ended, so the app reads no Hub path while the data moves. After a
+    /// hand-over that needed Try Again, `present` shows the window a normal
+    /// launch shows (the main window, or the welcome for a Hub with no
+    /// account) and brings the app to the front, once the launch work has run.
+    /// Used from the main thread only.
+    final class LaunchGate {
+        private var holding = false
+        private var held: (() -> Void)?
+        private var presentAfterLaunch: (() -> Void)?
+
+        /// From `main.swift`, before the hand-over.
+        func hold() { holding = true }
+
+        /// From `applicationDidFinishLaunching`: runs `work` now, or once the
+        /// hand-over has ended.
+        func launch(_ work: @escaping () -> Void) {
+            guard !holding else { held = work; return }
+            work()
+            if let present = presentAfterLaunch {
+                presentAfterLaunch = nil
+                present()
+            }
         }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return (process.terminationStatus, data)
+
+        /// From `main.swift`, after the hand-over. Launch work held meanwhile
+        /// runs through `schedule` (the main queue, once the application runs),
+        /// followed by `present` after a Try Again; launch work still to come
+        /// is followed by `present` then.
+        func release(afterRetry: Bool,
+                     present: @escaping () -> Void,
+                     schedule: (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) {
+            holding = false
+            guard let work = held else {
+                if afterRetry { presentAfterLaunch = present }
+                return
+            }
+            held = nil
+            schedule {
+                work()
+                if afterRetry { present() }
+            }
+        }
+    }
+
+    /// Runs the bundled binary's steps one at a time and waits for each at most
+    /// `limit`. A step still running then is left alone (never terminated or
+    /// signalled) and the run answers nil; while it still runs, a further run
+    /// starts nothing and answers nil too. Used from the main thread only.
+    final class StepRunner {
+        /// Longer than the binary's own one-minute bound on its confirmation.
+        static let limit: TimeInterval = 75
+
+        private let executable: URL
+        private let leadingArguments: [String]
+        private let limit: TimeInterval
+        private var running: Process?
+
+        init(executable: URL, leadingArguments: [String] = [], limit: TimeInterval = StepRunner.limit) {
+            self.executable = executable
+            self.leadingArguments = leadingArguments
+            self.limit = limit
+        }
+
+        func run(_ arguments: [String]) -> (Int32, Data)? {
+            if let running, running.isRunning { return nil }
+            running = nil
+            let process = Process()
+            process.executableURL = executable
+            process.arguments = leadingArguments + arguments
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = FileHandle.nullDevice
+            let ended = DispatchSemaphore(value: 0)
+            process.terminationHandler = { _ in ended.signal() }
+            let collected = Collected()
+            let drained = DispatchSemaphore(value: 0)
+            do {
+                try process.run()
+            } catch {
+                return (1, Data())
+            }
+            running = process
+            let reader = output.fileHandleForReading
+            DispatchQueue.global(qos: .userInitiated).async {
+                collected.data = reader.readDataToEndOfFile()
+                drained.signal()
+            }
+            let deadline = DispatchTime.now() + limit
+            guard ended.wait(timeout: deadline) == .success else { return nil }
+            running = nil
+            guard drained.wait(timeout: max(deadline, .now() + 1)) == .success else {
+                return (process.terminationStatus, Data())
+            }
+            return (process.terminationStatus, collected.data)
+        }
+
+        /// The output a reader thread hands back once it has all of it.
+        private final class Collected: @unchecked Sendable {
+            var data = Data()
+        }
     }
 
     private static func offerRetry(_ detail: String) -> Bool {

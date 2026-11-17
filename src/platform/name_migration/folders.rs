@@ -181,10 +181,10 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let plan = plan(root.path());
         seed_earlier(&plan);
-        assert_eq!(move_folder(&plan).unwrap(), FolderOutcome::Moved);
+        assert_eq!(once_released(&plan), FolderOutcome::Moved);
         assert!(!plan.earlier.exists());
         assert_eq!(fs::read_to_string(plan.current.join("data/hub.sqlite")).unwrap(), "catalogue");
-        assert_eq!(move_folder(&plan).unwrap(), FolderOutcome::AlreadyMoved);
+        assert_eq!(once_released(&plan), FolderOutcome::AlreadyMoved);
         assert_eq!(fs::read_to_string(plan.current.join("data/hub.sqlite")).unwrap(), "catalogue");
     }
 
@@ -192,7 +192,7 @@ mod tests {
     fn nothing_to_move_and_unchanged_names_are_no_ops() {
         let root = tempfile::tempdir().unwrap();
         let plan = plan(root.path());
-        assert_eq!(move_folder(&plan).unwrap(), FolderOutcome::Absent);
+        assert_eq!(once_released(&plan), FolderOutcome::Absent);
         let same = FolderMove { earlier: plan.current.clone(), current: plan.current.clone(), locks: vec![] };
         assert_eq!(move_folder(&same).unwrap(), FolderOutcome::Unchanged);
         assert!(!plan.current.exists());
@@ -205,10 +205,10 @@ mod tests {
         seed_earlier(&plan);
         fs::create_dir_all(&plan.current).unwrap();
         fs::write(plan.current.join("config.toml"), "current").unwrap();
-        assert_eq!(move_folder(&plan).unwrap(), FolderOutcome::BothKept);
+        assert_eq!(once_released(&plan), FolderOutcome::BothKept);
         assert_eq!(fs::read_to_string(plan.current.join("config.toml")).unwrap(), "current");
         assert_eq!(fs::read_to_string(plan.earlier.join("data/hub.sqlite")).unwrap(), "catalogue");
-        assert_eq!(move_folder(&plan).unwrap(), FolderOutcome::BothKept);
+        assert_eq!(once_released(&plan), FolderOutcome::BothKept);
     }
 
     #[test]
@@ -217,7 +217,7 @@ mod tests {
         let plan = plan(root.path());
         seed_earlier(&plan);
         fs::create_dir_all(&plan.current).unwrap();
-        assert_eq!(move_folder(&plan).unwrap(), FolderOutcome::Moved);
+        assert_eq!(once_released(&plan), FolderOutcome::Moved);
         assert_eq!(fs::read_to_string(plan.current.join("data/hub.sqlite")).unwrap(), "catalogue");
     }
 
@@ -232,7 +232,7 @@ mod tests {
         assert!(plan.earlier.join("data/hub.sqlite").exists());
         assert!(!plan.current.exists());
         drop(holder);
-        assert_eq!(move_folder(&plan).unwrap(), FolderOutcome::Moved);
+        assert_eq!(once_released(&plan), FolderOutcome::Moved);
     }
 
     #[test]
@@ -246,7 +246,22 @@ mod tests {
         flock(&holder, FlockOperation::NonBlockingLockExclusive).unwrap();
         assert_eq!(move_folder(&plan).unwrap(), FolderOutcome::Deferred);
         drop(holder);
-        assert_eq!(move_folder(&plan).unwrap(), FolderOutcome::BothKept);
+        assert_eq!(once_released(&plan), FolderOutcome::BothKept);
+    }
+
+    /// The move once no lock is held. A child that another test spawns in
+    /// this process may share a lock file this test (or an earlier move)
+    /// opened, for a moment before its `exec` closes it, so the move is
+    /// tried again while it defers, as the app's Try Again would (bounded).
+    fn once_released(plan: &FolderMove) -> FolderOutcome {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let outcome = move_folder(plan).unwrap();
+            if outcome != FolderOutcome::Deferred || std::time::Instant::now() >= deadline {
+                return outcome;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
     }
 
     #[test]
@@ -255,7 +270,7 @@ mod tests {
         let plan = plan(root.path());
         fs::create_dir_all(root.path().join("elsewhere")).unwrap();
         std::os::unix::fs::symlink(root.path().join("elsewhere"), &plan.earlier).unwrap();
-        assert_eq!(move_folder(&plan).unwrap(), FolderOutcome::NotAFolder);
+        assert_eq!(once_released(&plan), FolderOutcome::NotAFolder);
         assert!(!plan.current.exists());
     }
 
