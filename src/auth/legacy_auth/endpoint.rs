@@ -325,8 +325,8 @@ fn host_is_loopback_ip(url: &Url) -> bool {
     }
 }
 
-/// The claims this unit reads from a JWT access token (C5 R3). Nothing else of
-/// the payload is kept.
+/// The issuer, expiry and owner-client compatibility read from a JWT access
+/// token. Nothing else of the payload is kept.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct JwtClaims {
     /// `iss`, only when it is a JSON string.
@@ -334,9 +334,12 @@ pub(crate) struct JwtClaims {
     /// `exp` in epoch seconds, only when it lies in `[0, MAX_EXP_SECONDS]`
     /// after its fractional part is dropped.
     pub exp: Option<i64>,
+    /// An explicit authorised party must name the public owner client when a
+    /// source login is taken over. Older tokens may omit the claim.
+    pub owner_client_compatible: bool,
 }
 
-/// Recognise a JWT and read `iss` and `exp` (C5 R3). `None` means the token is
+/// Recognise a JWT and read `iss`, `exp` and owner-client compatibility. `None` means the token is
 /// opaque for this unit: not exactly three `.`-separated segments, an empty or
 /// padded or non-base64url header or payload, or one that is not a JSON
 /// object. The signature is not verified.
@@ -358,6 +361,9 @@ pub(crate) fn parse_jwt(token: &str) -> Option<JwtClaims> {
     Some(JwtClaims {
         iss: claims.get("iss").and_then(Value::as_str).map(str::to_owned),
         exp: claims.get("exp").and_then(exp_seconds),
+        owner_client_compatible: claims.get("azp").is_none_or(|client| {
+            client.as_str() == Some(crate::auth::credential_sign_in::OWNER_CLIENT_ID)
+        }),
     })
 }
 
