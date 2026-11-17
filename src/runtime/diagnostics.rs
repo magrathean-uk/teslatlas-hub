@@ -430,11 +430,15 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
     // The recorded Fleet scope witness (G-DIAGNOSTIC-FLEET-WITNESS, M09-T11),
     // read without a key or a decryption: the stored pair's clear origin
     // header. Only the Hub's own Fleet grant (`fleet_oauth`, refreshed by the
-    // Hub, past the un-park barrier) is admitted, and the sign-in stores a
-    // grant only after its claims carry vehicle information and location
-    // (M09-T19 ruling 6); the header is written in the pair's own transaction
-    // and replaced with it. Any other stored pair has no witness. Command
-    // scopes are not recorded and are never needed.
+    // Hub, past the un-park barrier) is admitted. The witness is true by
+    // construction, for every generation of that pair: the Hub's writers of
+    // it check the access token's claims for vehicle information and location
+    // before their commit, the Fleet sign-in before it stores a grant
+    // (`exchange.rs`, M09-T19 ruling 6) and the refresh before it stores a
+    // successor (M09-T11 B1: a narrowed successor is never stored and leaves
+    // the reconnect stop). The header is written in the pair's own
+    // transaction and replaced with it. Any other stored pair has no witness.
+    // Command scopes are not recorded and are never needed.
     let fleet_scope_witnessed = fleet_tokens.present
         && store
             .credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::FleetApi)

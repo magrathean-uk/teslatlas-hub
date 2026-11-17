@@ -1470,7 +1470,7 @@ async fn ct67_data_handler(
         .lock()
         .expect("ledger")
         .push(authorisation.clone());
-    if authorisation == "Bearer fleet-next-access"
+    if authorisation == "Bearer e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access"
         && !wire.reject_every_token.load(Ordering::SeqCst)
     {
         (
@@ -1487,7 +1487,7 @@ async fn ct67_token_handler(State(wire): State<FleetWire>) -> axum::response::Re
     wire.token_requests.fetch_add(1, Ordering::SeqCst);
     (
         StatusCode::OK,
-        r#"{"access_token":"fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
+        r#"{"access_token":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
     )
         .into_response()
 }
@@ -1590,7 +1590,7 @@ async fn ct67_three_fleet_reads_with_an_expired_token_cause_one_refresh_and_no_f
         .count();
     let with_new = sent
         .iter()
-        .filter(|header| *header == "Bearer fleet-next-access")
+        .filter(|header| *header == "Bearer e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access")
         .count();
     // The first read meets the expired token once and is resent once; the other
     // two wait for the manager's mutex and go out with the new token, so they

@@ -8,7 +8,7 @@ const SCRUB_LEGACY_ACCESS: &str = "old-access-secret";
 const SCRUB_LEGACY_REFRESH: &str = "old-refresh-secret";
 const SCRUB_FLEET_ACCESS: &str = "scrub-fleet-access-token";
 const SCRUB_FLEET_REFRESH: &str = "scrub-fleet-refresh-token";
-const SCRUB_FLEET_NEXT_ACCESS: &str = "scrub-fleet-next-access-token";
+const SCRUB_FLEET_NEXT_ACCESS: &str = "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.scrub-fleet-next-access-token";
 const SCRUB_FLEET_NEXT_REFRESH: &str = "scrub-fleet-next-refresh-token";
 const SCRUB_VIN: &str = "5YJ3E1EA7KF000001";
 /// What the collector stores for a vehicle with no provider display name.

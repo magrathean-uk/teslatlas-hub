@@ -132,7 +132,7 @@ async fn late_token(State(wire): State<LateWire>) -> axum::response::Response {
             .expect("a failing answer"),
         LateAnswer::Rotated => (
             StatusCode::OK,
-            r#"{"access_token":"late-access-2","refresh_token":"late-refresh-2","expires_in":28800,"token_type":"Bearer"}"#,
+            r#"{"access_token":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.late-access-2","refresh_token":"late-refresh-2","expires_in":28800,"token_type":"Bearer"}"#,
         )
             .into_response(),
     }

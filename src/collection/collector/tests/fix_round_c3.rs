@@ -430,7 +430,7 @@ async fn r06_shutdown_waits_for_a_started_fleet_exchange_to_store_its_successor(
             (
                 StatusCode::OK,
                 [("content-type", "application/json")],
-                r#"{"access_token":"fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
+                r#"{"access_token":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
             )
         }),
     );
@@ -552,7 +552,7 @@ impl SettlementBed {
     async fn start_exchange(&self, hold: impl Future<Output = ()> + Send + 'static) {
         let scripted = crate::fleet_credentials::ScriptedExchange {
             refreshed: crate::fleet_api::FleetRefreshedTokens {
-                access_token: crate::fleet_api::FleetAccessToken::new("fleet-next-access")
+                access_token: crate::fleet_api::FleetAccessToken::new("e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access")
                     .expect("access token"),
                 refresh_token: crate::fleet_api::FleetRefreshToken::new("fleet-next-refresh")
                     .expect("refresh token"),

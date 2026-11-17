@@ -198,7 +198,7 @@ async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
                 (
                     StatusCode::OK,
                     [("content-type", "application/json")],
-                    r#"{"access_token":"fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
+                    r#"{"access_token":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
                 )
             }
         }),
@@ -220,7 +220,7 @@ async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
         .await
         .expect("due refresh succeeds");
     assert_eq!(*requests.lock().expect("request ledger"), vec![true]);
-    assert!(manager.access_token().expose() == "fleet-next-access");
+    assert!(manager.access_token().expose() == "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access");
 
     let rotated = fleet_snapshot(&store)
         .expect("rotated Fleet row")
@@ -232,7 +232,7 @@ async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
     assert_ne!(rotated.0.as_slice(), initial_access_ciphertext.as_slice());
     assert_ne!(rotated.1.as_slice(), initial_refresh_ciphertext.as_slice());
     let successor = manager.vault.load(CredentialSlot::FleetApi).expect("proved successor").expect("pair");
-    assert!(successor.access.as_str() == "fleet-next-access" && successor.refresh.as_str() == "fleet-next-refresh", "successor opens through vault");
+    assert!(successor.access.as_str() == "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access" && successor.refresh.as_str() == "fleet-next-refresh", "successor opens through vault");
 
     let receipt =(store
         .open()
@@ -286,7 +286,7 @@ async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
     );
     let restarted_manager =
         FleetAuthManager::from_store(restarted, temporary.path()).expect("restart loads successor");
-    assert!(restarted_manager.access_token().expose() == "fleet-next-access");
+    assert!(restarted_manager.access_token().expose() == "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access");
     assert_eq!(restarted_manager.credential_generation, output_generation);
 
     server.abort();
@@ -398,6 +398,70 @@ async fn post_send_refresh_error_remains_fenced_after_restart() {
     let _ = server.await;
 }
 
+/// M09-T11 B1: a refreshed pair meets the check a new grant meets before it
+/// replaces a login. A successor without both collection scopes, or with
+/// claims the collector cannot read, is refused before the encryption and the
+/// commit: the earlier own-grant pair, its ciphertext and its generation stay,
+/// the receipt stays started and fenced as after Tesla's refusal of a sent
+/// request (`post_send_refresh_error_remains_fenced_after_restart`), nothing
+/// is sent again, and every later use asks the owner to sign in again.
+#[tokio::test]
+async fn a_narrowed_refresh_is_refused_before_the_commit_and_fences_the_earlier_pair() {
+    use crate::auth::credential_vault::fixtures::{open_fixture_vault, refresh_fleet_pair_answered_with, seed_fleet_setup_credentials, validate_fixture_fleet_credentials};
+    for (label, narrowed, claims_unreadable) in [
+        ("openid only", "e30.eyJzY3AiOlsib3BlbmlkIl19.sig", false),
+        ("no location", "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSJdfQ.sig", false),
+        ("no vehicle data", "e30.eyJzY3AiOlsidmVoaWNsZV9sb2NhdGlvbiJdfQ.sig", false),
+        ("unreadable claims", "fleet-opaque-successor", true),
+    ] {
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+        let credentials = FleetSetupCredentials::new(TEST_SCOPED_ACCESS.to_owned(), "fleet-old-refresh".to_owned(),
+            "fleet-client".to_owned(), FleetRegion::EuropeMiddleEastAndAfrica, 3_600).expect("setup credentials");
+        seed_fleet_setup_credentials(&store, temporary.path(), &credentials, SystemTime::now()).expect("the Hub's own grant");
+        validate_fixture_fleet_credentials(&store, temporary.path()).expect("a scoped own grant");
+        let before = fleet_snapshot(&store).expect("Fleet row").expect("Fleet pair");
+
+        let probe = refresh_fleet_pair_answered_with(&store, temporary.path(), narrowed).await;
+        if claims_unreadable {
+            assert!(matches!(probe.first, Err(FleetCredentialError::InvalidAccessTokenClaims)), "{label}: {:?}", probe.first);
+        } else {
+            assert!(matches!(probe.first, Err(FleetCredentialError::MissingCollectionScopes)), "{label}: {:?}", probe.first);
+        }
+        assert!(matches!(probe.second, Err(FleetCredentialError::RotationOutcomeUnknown)), "{label}: the manager is terminal");
+        assert_eq!(probe.requests, 1, "{label}: one request, the input is never sent again");
+
+        // Nothing was committed: the earlier pair is the stored pair.
+        let after = fleet_snapshot(&store).expect("Fleet row").expect("Fleet pair");
+        assert_eq!(after.4, before.4, "{label}: generation");
+        assert_eq!(after.0.as_slice(), before.0.as_slice(), "{label}: access ciphertext");
+        assert_eq!(after.1.as_slice(), before.1.as_slice(), "{label}: refresh ciphertext");
+        let receipt = store.open().expect("catalogue").query_row(
+            "SELECT r.outcome, r.completed_at_ms IS NULL, b.output_generation IS NULL
+               FROM outbound_request_receipts AS r JOIN credential_refresh_attempts AS b ON b.receipt_id = r.id
+              WHERE r.transport = 'fleet_api' AND r.operation = 'token_refresh' ORDER BY r.id DESC LIMIT 1",
+            [], |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?, row.get::<_, bool>(2)?)),
+        ).expect("refresh receipt");
+        assert_eq!(receipt, ("started".to_owned(), true, true), "{label}: the receipt stays unresolved");
+        assert!(store.unresolved_fleet_refresh_status().expect("refresh state"), "{label}");
+
+        // Afterwards: the operational check and a plain load refuse with the
+        // unknown outcome (replace credentials: sign in again), and the
+        // collector's supervised start admits only the fenced manager, the
+        // reconnect stop that sends nothing.
+        assert!(matches!(validate_fixture_fleet_credentials(&store, temporary.path()), Err(FleetCredentialError::RotationOutcomeUnknown)), "{label}");
+        assert!(matches!(FleetAuthManager::from_store(store.clone(), temporary.path()), Err(FleetCredentialError::RotationOutcomeUnknown)), "{label}");
+        let vault = open_fixture_vault(store.clone(), temporary.path());
+        let stored = vault.load(CredentialSlot::FleetApi).expect("readable").expect("pair");
+        assert!(stored.access.as_str() == TEST_SCOPED_ACCESS && stored.refresh.as_str() == "fleet-old-refresh", "{label}: the narrowed successor was never stored");
+        let admission = vault.test_admission();
+        let fenced = FleetAuthManager::from_store_for_supervised_start(vault, temporary.path(), admission, None)
+            .unwrap_or_else(|error| panic!("{label}: the reconnect stop: {error:?}"));
+        assert!(fenced.is_input_fenced(), "{label}");
+    }
+}
+
 #[test]
 fn only_definitively_unconsumed_refresh_failures_are_retryable() {
     assert_eq!(
@@ -481,7 +545,7 @@ async fn invalidated_admission_blocks_due_refresh_before_transport() {
                 (
                     StatusCode::OK,
                     [("content-type", "application/json")],
-                    r#"{"access_token":"next","refresh_token":"next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
+                    r#"{"access_token":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.next","refresh_token":"next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
                 )
             }
         }),
@@ -561,7 +625,7 @@ async fn a_started_refresh_is_stored_when_its_caller_is_dropped() {
             (
                 StatusCode::OK,
                 [("content-type", "application/json")],
-                r#"{"access_token":"fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
+                r#"{"access_token":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
             )
         }),
     );
@@ -596,7 +660,7 @@ async fn a_started_refresh_is_stored_when_its_caller_is_dropped() {
         .finish_exchange()
         .await
         .expect("the exchange finishes");
-    assert!(manager.access_token().expose() == "fleet-next-access");
+    assert!(manager.access_token().expose() == "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access");
     assert!(
         !store.unresolved_fleet_refresh_status().expect("resolved"),
         "the successor is written and the attempt closed"
@@ -662,7 +726,7 @@ impl GatedAuth {
                     (
                         StatusCode::OK,
                         [("content-type", "application/json")],
-                        r#"{"access_token":"fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
+                        r#"{"access_token":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
                     )
                 }
             }),
@@ -1046,7 +1110,7 @@ async fn nb_detached_exchange_persists_with_admission_intact() {
         .expect("the exchange finishes");
 
     assert_eq!(encryption.load(std::sync::atomic::Ordering::SeqCst), 1);
-    assert!(manager.access_token().expose() == "fleet-next-access");
+    assert!(manager.access_token().expose() == "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access");
     let after = fleet_ledger(&store).expect("pair");
     assert_ne!(after.generation, input.generation);
     assert_ne!(after.access, input.access);

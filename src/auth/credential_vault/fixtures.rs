@@ -241,6 +241,43 @@ pub(crate) fn validate_fixture_fleet_credentials(store: &HubStore, data: &Path) 
     let vault = open_fixture_vault(store.clone(), data);
     crate::fleet_credentials::validate_stored_fleet_credentials(&crate::CredentialVaultEntry::for_test(vault), data)
 }
+/// The outcome of [`refresh_fleet_pair_answered_with`]: the first refresh, a
+/// second attempt on the same manager, and the token requests the double saw.
+#[cfg(test)]
+pub(crate) struct FleetRefreshProbe {
+    pub(crate) first: Result<(), crate::fleet_credentials::FleetCredentialError>,
+    pub(crate) second: Result<(), crate::fleet_credentials::FleetCredentialError>,
+    pub(crate) requests: usize,
+}
+/// M09-T11 B1: refreshes the stored Fleet pair through the collector's manager
+/// against a loopback token double that answers `access` with a new refresh
+/// token, then tries once more on the same manager. The manager's vault is
+/// released before it returns.
+#[cfg(test)]
+pub(crate) async fn refresh_fleet_pair_answered_with(store: &HubStore, data: &Path, access: &str) -> FleetRefreshProbe {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let requests = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&requests);
+    let body = serde_json::json!({"access_token": access, "refresh_token": "fleet-narrowed-refresh", "expires_in": 28_800, "token_type": "Bearer"}).to_string();
+    let router = axum::Router::new().route("/oauth2/v3/token", axum::routing::post(move || {
+        let (counted, body) = (Arc::clone(&counted), body.clone());
+        async move {
+            counted.fetch_add(1, Ordering::SeqCst);
+            ([("content-type", "application/json")], body)
+        }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("token double");
+    let endpoint = url::Url::parse(&format!("http://{}/oauth2/v3/token", listener.local_addr().expect("address"))).expect("token URL");
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.expect("token double") });
+    let api = crate::fleet_api::FleetAuthApi::for_fake_http(endpoint, std::time::Duration::from_secs(2)).expect("token client");
+    let mut manager = crate::fleet_credentials::FleetAuthManager::from_store(store.clone(), data).expect("Fleet manager");
+    let first = manager.refresh_now(&api, SystemTime::now()).await;
+    let second = manager.refresh_now(&api, SystemTime::now()).await;
+    drop(manager);
+    server.abort();
+    let _ = server.await;
+    FleetRefreshProbe { first, second, requests: requests.load(Ordering::SeqCst) }
+}
 #[cfg(test)]
 pub(crate) fn open_fixture_vault(store: HubStore, data: &Path) -> Arc<CredentialVault> {
     let registry = Arc::clone(&store.fixture_vault);

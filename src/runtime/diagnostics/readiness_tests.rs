@@ -675,6 +675,39 @@ fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     }
 }
 
+/// M09-T11 B1: the Hub's own grant whose refresh comes back without
+/// `vehicle_location`. The successor is refused before the commit, so the
+/// stored generation is still the earlier grant (whose scopes were checked
+/// when it was stored) and its witness stays true; the refresh receipt stays
+/// unresolved, so the doctor reports the reconnect stop (sign in again),
+/// collection is not valid and the collector cannot start.
+#[tokio::test]
+async fn a_narrowed_fleet_refresh_leaves_the_doctor_reporting_the_reconnect_stop() {
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    doctor_seed_car(&store);
+    let generation = doctor_fleet_pair(temporary.path(), &store, DOCTOR_SCOPED_ACCESS);
+    let config = doctor_config(temporary.path(), DOCTOR_FLEET, "");
+    doctor_fresh_lease(&store);
+    let ready = inspect_hub(&store, &config).expect("report");
+    assert!(ready.credentials.fleet.valid_for_collection && ready.collector.can_start, "{:?}", doctor_failed_checks(&ready));
+
+    let probe = crate::auth::credential_vault::fixtures::refresh_fleet_pair_answered_with(&store, temporary.path(), DOCTOR_UNSCOPED_ACCESS).await;
+    assert!(matches!(probe.first, Err(crate::fleet_credentials::FleetCredentialError::MissingCollectionScopes)), "{:?}", probe.first);
+    assert_eq!(probe.requests, 1);
+
+    let report = inspect_hub(&store, &config).expect("report");
+    assert_eq!(report.collector.collection_attention.as_deref(), Some("collector_fleet_refresh_outcome_unknown"));
+    assert!(!report.credentials.fleet.valid_for_collection);
+    assert!(!report.credentials.selected_credentials_present);
+    assert!(!report.collector.can_start);
+    assert_eq!(report.credentials.fleet.scope_status.as_deref(), Some("ready"), "the stored generation is the scoped grant");
+    let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), temporary.path());
+    let slot = crate::auth::credential_envelope::CredentialSlot::FleetApi;
+    assert_eq!(vault.stored_generation(slot).expect("generation"), Some(generation), "nothing was committed");
+    assert!(vault.has_unresolved_refresh(slot).expect("receipt"));
+}
+
 #[test]
 fn fleet_unknown_refresh_does_not_mask_independent_credential_failures() {
     let temporary = crate::private_tempdir().expect("temporary Hub");

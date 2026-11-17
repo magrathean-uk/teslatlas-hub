@@ -1239,7 +1239,7 @@ struct FleetFake {
     /// The status a read answers with (200 unless a test changes it).
     read_status: Arc<std::sync::atomic::AtomicU16>,
     /// Requests answer 401 unless they carry the token the refresh endpoint hands
-    /// out (`fleet-next-access`), as when the stored access token has expired.
+    /// out (`e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access`), as when the stored access token has expired.
     token_expired: Arc<std::sync::atomic::AtomicBool>,
     /// Every request answers 401, whatever token it carries: the credential itself
     /// is refused (C3 R47, CT67c, CT74).
@@ -1355,7 +1355,7 @@ fn fleet_fake_unauthorised(fake: &FleetFake, headers: &HeaderMap) -> bool {
         .push(authorisation.clone());
     fake.reject_every_token.load(Ordering::SeqCst)
         || (fake.token_expired.load(Ordering::SeqCst)
-            && authorisation != "Bearer fleet-next-access")
+            && authorisation != "Bearer e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access")
 }
 
 async fn fleet_fake_token(State(fake): State<FleetFake>) -> axum::response::Response {
@@ -1379,7 +1379,7 @@ async fn fleet_fake_token(State(fake): State<FleetFake>) -> axum::response::Resp
     (
         StatusCode::OK,
         format!(
-            r#"{{"access_token":"fleet-next-access","refresh_token":"{refresh}","expires_in":28800,"token_type":"Bearer"}}"#
+            r#"{{"access_token":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access","refresh_token":"{refresh}","expires_in":28800,"token_type":"Bearer"}}"#
         ),
     )
         .into_response()
@@ -2659,7 +2659,7 @@ async fn ct67b_a_resend_the_reservation_does_not_cover_stays_due_without_a_wait_
             );
             let log = bed.fake.authorisations.lock().expect("log").clone();
             assert!(log[0].starts_with("Bearer e30."), "the first list carried token A");
-            assert!(log[1..].iter().all(|header| header == "Bearer fleet-next-access"), "{log:?}");
+            assert!(log[1..].iter().all(|header| header == "Bearer e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access"), "{log:?}");
             assert_eq!(bed.fake.token_requests.load(Ordering::SeqCst), 1, "no second refresh");
             assert_eq!(
                 bed.scheduler.account.reservation_commits, 2,
