@@ -22,6 +22,24 @@ fn unsupported_schema_message(version: i32) -> String {
     }
 }
 
+/// Admit paths before SQLite can open the catalogue or its coordination files.
+/// Readers never repair modes, and retained handles must recheck the root.
+fn admit_catalogue_paths(database_path: &Path) -> Result<(), StoreError> {
+    let data_dir = database_path
+        .parent()
+        .ok_or_else(|| StoreError::UnsafeSharedSqlite(database_path.to_path_buf()))?;
+    validate_private_store_directory(data_dir)
+        .map_err(|()| StoreError::UnsafeDataDir(data_dir.to_path_buf()))?;
+    let metadata = fs::symlink_metadata(database_path).map_err(StoreError::InspectSharedSqlite)?;
+    admit_shared_sqlite_file(
+        database_path,
+        &metadata,
+        shared_sqlite_group_id(database_path)?,
+        false,
+    )?;
+    admit_shared_sqlite_sidecars(database_path, false)
+}
+
 impl HubStore {
     pub fn initialize(data_dir: impl AsRef<Path>) -> Result<Self, StoreError> {
         let data_dir = data_dir.as_ref();
@@ -129,19 +147,12 @@ impl HubStore {
     pub fn open(&self) -> Result<Connection, StoreError> {
         #[cfg(test)]
         StoreInstrumentation::bump(&self.instrumentation.writable_opens);
-        let metadata =
-            fs::symlink_metadata(&self.database_path).map_err(StoreError::InspectSharedSqlite)?;
-        admit_shared_sqlite_file(
-            &self.database_path,
-            &metadata,
-            shared_sqlite_group_id(&self.database_path)?,
-            false,
-        )?;
-        admit_shared_sqlite_sidecars(&self.database_path, false)?;
+        admit_catalogue_paths(&self.database_path)?;
         let connection = Connection::open_with_flags(
             &self.database_path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
                 | OpenFlags::SQLITE_OPEN_URI
+                | OpenFlags::SQLITE_OPEN_NOFOLLOW
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(StoreError::Open)?;
@@ -412,6 +423,7 @@ impl HubStore {
         standalone_migration_candidate: bool,
     ) -> Result<Self, StoreError> {
         let database_path = data_dir.join("hub.sqlite");
+        admit_catalogue_paths(&database_path)?;
         let immutable_snapshot = if immutable {
             Some(immutable_catalogue_fingerprint(&database_path)?)
         } else {
@@ -474,6 +486,7 @@ impl HubStore {
     fn open_read_only_connection(&self) -> Result<Connection, StoreError> {
         #[cfg(test)]
         StoreInstrumentation::bump(&self.instrumentation.read_only_opens);
+        admit_catalogue_paths(&self.database_path)?;
         let connection = if self.immutable_snapshot.is_some() {
             let canonical = self
                 .database_path
@@ -486,13 +499,16 @@ impl HubStore {
                 uri.as_str(),
                 OpenFlags::SQLITE_OPEN_READ_ONLY
                     | OpenFlags::SQLITE_OPEN_URI
+                    | OpenFlags::SQLITE_OPEN_NOFOLLOW
                     | OpenFlags::SQLITE_OPEN_NO_MUTEX,
             )
             .map_err(StoreError::Open)?
         } else {
             Connection::open_with_flags(
                 &self.database_path,
-                OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                OpenFlags::SQLITE_OPEN_READ_ONLY
+                    | OpenFlags::SQLITE_OPEN_NOFOLLOW
+                    | OpenFlags::SQLITE_OPEN_NO_MUTEX,
             )
             .map_err(StoreError::Open)?
         };
