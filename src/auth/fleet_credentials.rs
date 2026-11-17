@@ -382,8 +382,8 @@ pub fn fleet_public_key_pem(data_dir: &Path) -> Result<String, FleetPartnerRefus
 ///    asking the window's egress gate (`window_closed` outside a window);
 /// 4. the key Tesla then holds for the domain must be the Hub's.
 ///
-/// A domain already registered is success. The client secret is wiped when
-/// the token request ends and is never stored.
+/// The client secret is wiped when the token request ends and is never
+/// stored.
 pub async fn register_fleet_partner(data_dir: &Path, line: &[u8]) -> Result<serde_json::Value, FleetPartnerRefusal> {
     register_fleet_partner_with(data_dir, line, |region| {
         crate::fleet_api::partner::PartnerApi::new(region, PARTNER_SEND_TIMEOUT)
@@ -396,12 +396,12 @@ async fn register_fleet_partner_with(
     line: &[u8],
     client: impl FnOnce(FleetRegion) -> Result<crate::fleet_api::partner::PartnerApi, crate::fleet_api::partner::PartnerError>,
 ) -> Result<serde_json::Value, FleetPartnerRefusal> {
-    use crate::fleet_api::partner::Registration;
     let settings = read_fleet_partner_input(line)?;
     let key = crate::fleet_api::partner::keys::ensure_command_key(data_dir).map_err(FleetPartnerRefusal::key)?;
     let FleetPartnerSettings { region, domain, credentials } = settings;
     let api = client(region).map_err(FleetPartnerRefusal::partner)?;
-    let registration = api.register(&domain, credentials, &key).await.map_err(|error| {
+    // Success only once Tesla echoed the domain and holds the Hub's key.
+    api.register(&domain, credentials, &key).await.map_err(|error| {
         let refusal = FleetPartnerRefusal::partner(error);
         tracing::warn!(code = refusal.code, "Fleet partner registration refused");
         refusal
@@ -409,10 +409,7 @@ async fn register_fleet_partner_with(
     tracing::info!("Fleet partner domain registered");
     Ok(serde_json::json!({
         "status": "partner_registered",
-        "registration": match registration {
-            Registration::Registered => "registered",
-            Registration::AlreadyRegistered => "already_registered",
-        },
+        "registration": "registered",
         "domain": domain,
         "region": region.storage_code(),
     }))
