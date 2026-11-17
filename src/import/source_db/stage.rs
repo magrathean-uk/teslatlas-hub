@@ -42,6 +42,12 @@ const META_MINIMUM_FREE_BYTES: &str = "minimum_free_bytes";
 const META_FORMAT: &str = "format";
 const MIN_STAGE_BYTES: u64 = 64 * 1024;
 const MAX_PAGE_SIZE: u32 = 10_000;
+
+#[cfg(test)]
+thread_local! {
+    /// Full integrity checks this thread ran on stages (M08-T19 tests).
+    pub(crate) static INTEGRITY_CHECKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
 const MAX_ENCODING_WORKERS: usize = 8;
 const DEFAULT_MINIMUM_FREE_BYTES: u64 = 512 * 1024 * 1024;
 const CHARGE_SAMPLES_PAGE_SQL: &str = "SELECT source_id, row_json
@@ -250,6 +256,11 @@ pub struct SourceDbStage {
     directory: PrivateDirectory,
     file_name: OsString,
     file_descriptor: OwnedFd,
+    /// Whether this database passed SQLite's full integrity check in this
+    /// process (M08-T19). Only this connection writes it afterwards, through
+    /// SQLite's own transactions, and a byte copy inherits it; so one check
+    /// per stage per run stands for the content digests and copies after it.
+    integrity_verified: std::cell::Cell<bool>,
 }
 
 /// A capture owned by an in-flight import. Failed or cancelled imports must
@@ -372,6 +383,7 @@ impl SourceDbStage {
             directory: staging_dir,
             file_name,
             file_descriptor,
+            integrity_verified: std::cell::Cell::new(false),
         })
     }
 
@@ -407,6 +419,7 @@ impl SourceDbStage {
             directory: stage_path.directory,
             file_name: stage_path.file_name,
             file_descriptor,
+            integrity_verified: std::cell::Cell::new(false),
         };
         let stats = stage.stats()?;
         if stats.state != SourceDbStageState::Sealed {
@@ -464,6 +477,7 @@ impl SourceDbStage {
             directory,
             file_name,
             file_descriptor,
+            integrity_verified: _,
         } = self;
         drop(connection);
         let descriptor_identity = validate_private_descriptor(
@@ -536,7 +550,11 @@ impl SourceDbStage {
         if stats.state != SourceDbStageState::Sealed {
             return Err(SourceDbStageError::StageNotSealed);
         }
-        self.verify_integrity()?;
+        // One full integrity check per stage and run (M08-T19): a stage
+        // opened sealed, sealed here or copied from either has had it.
+        if !self.integrity_verified.get() {
+            self.verify_integrity()?;
+        }
         self.verify_accounting(stats)?;
 
         let mut digest = Sha256::new();
@@ -819,11 +837,14 @@ impl SourceDbStage {
     /// Run SQLite's complete integrity check. This is intentionally not only a
     /// quick check because a sealed migration may be retained for a long time.
     pub fn verify_integrity(&self) -> Result<(), SourceDbStageError> {
+        #[cfg(test)]
+        INTEGRITY_CHECKS.with(|checks| checks.set(checks.get() + 1));
         let mut statement = self.connection.prepare("PRAGMA integrity_check")?;
         let values = statement
             .query_map([], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
         if values.len() == 1 && values.first().is_some_and(|value| value == "ok") {
+            self.integrity_verified.set(true);
             return Ok(());
         }
         Err(SourceDbStageError::IntegrityCheckFailed(values.join("; ")))

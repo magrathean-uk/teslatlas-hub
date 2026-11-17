@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use crate::protocol::{CursorKey, ProtocolLimits, SyncManifest};
 use crate::sync::hub_pack::{
-    PhysicalTypedRow, ProjectionBinding, ProjectionPackError, available_bytes,
+    PackCheck, PhysicalTypedRow, ProjectionBinding, ProjectionPackError, available_bytes,
     ensure_private_staging_directory, scan_verified_physical_pack_2_2,
 };
 
@@ -182,6 +182,8 @@ impl PhysicalDeltaComparison {
     /// `max_scratch_bytes` is an enforced SQLite page ceiling, not an estimate.
     /// Free-space admission also reserves one maximum decoded pack and the
     /// caller's existing minimum-free floor before any old/new pack scan.
+    /// `check` says how much of each pack's verification is repeated.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn compare(
         old: &SyncManifest,
         new: &SyncManifest,
@@ -190,6 +192,7 @@ impl PhysicalDeltaComparison {
         packs_dir: &Path,
         max_scratch_bytes: u64,
         minimum_free_bytes: u64,
+        check: PackCheck,
     ) -> Result<Self, PhysicalCompareError> {
         let limits = ProtocolLimits::hub_sync_v1_1_3_schema_2_2();
         for manifest in [old, new] {
@@ -269,7 +272,7 @@ impl PhysicalDeltaComparison {
                     .join(format!("{}.sqlite.zst", pack.sha256));
                 let transaction = connection.transaction()?;
                 let mut inserter = PreparedInserter::new(&transaction)?;
-                scan_verified_physical_pack_2_2(pack, manifest, binding, &path, |row| {
+                scan_verified_physical_pack_2_2(pack, manifest, binding, &path, check, |row| {
                     inserter.insert(side, i64::from(pack.ordinal), row)
                 })?;
                 drop(inserter);

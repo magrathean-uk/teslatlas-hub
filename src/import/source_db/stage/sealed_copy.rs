@@ -27,6 +27,8 @@ impl SourceDbStage {
     /// `<imports_dir>/.staging`, byte for byte, and opens the copy writable
     /// and still sealed, so [`SourceDbStage::edit_sealed`] can plan it. The
     /// copy needs the stage's own byte limit free on the target filesystem.
+    /// The copy of a stage verified in this run is not checked again; the
+    /// copy of an unverified one is (M08-T19).
     pub(crate) fn copy_sealed_into(
         &self,
         imports_dir: impl AsRef<Path>,
@@ -115,6 +117,8 @@ impl SourceDbStage {
                 directory: staging_dir,
                 file_name,
                 file_descriptor,
+                // A byte copy of a verified stage is that stage (M08-T19).
+                integrity_verified: std::cell::Cell::new(self.integrity_verified.get()),
             })
         })();
         let copy = match opened {
@@ -129,7 +133,9 @@ impl SourceDbStage {
             if copied.state != SourceDbStageState::Sealed {
                 return Err(SourceDbStageError::StageNotSealed);
             }
-            copy.verify_integrity()?;
+            if !copy.integrity_verified.get() {
+                copy.verify_integrity()?;
+            }
             copy.verify_accounting(copied)
         })();
         match checked {

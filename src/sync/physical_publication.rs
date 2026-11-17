@@ -274,7 +274,7 @@ fn publish_sealed_physical_v3_stage_inner(
                 candidate.binding.selected_car_id,
             ) {
                 Ok(target) => {
-                    match crate::import::source_db::physical_delta_pack::prepare_changed_set(
+                    match crate::import::source_db::physical_delta_pack::prepare_changed_set_of_verified_heads(
                         &prior,
                         &target,
                         &candidate.binding,

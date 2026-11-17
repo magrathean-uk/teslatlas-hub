@@ -5,6 +5,12 @@
 use rusqlite::types::ValueRef;
 use std::io::Seek;
 
+#[cfg(test)]
+thread_local! {
+    /// Full integrity checks this thread ran on decoded physical packs.
+    pub(crate) static PACK_INTEGRITY_CHECKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 pub(crate) const PHYSICAL_TABLES_2_2: [&str; 11] = [
     "global_settings",
     "car_settings",
@@ -30,6 +36,19 @@ pub(crate) struct PhysicalTypedRow {
     pub month_date_pg_us: Option<i64>,
 }
 
+/// How much of a pack's verification a reader repeats (M08-T19).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PackCheck {
+    /// The compressed bytes are hashed against the manifest and the decoded
+    /// SQLite gets a full integrity check.
+    Full,
+    /// The caller verified this pack's content digest in this run, against
+    /// a manifest of the Hub's own packs, each integrity-checked when it was
+    /// written: the bytes are the checked bytes, so neither is repeated.
+    /// Its length, decoded length, identity and layout are still checked.
+    DigestVerified,
+}
+
 pub(crate) struct VerifiedPhysicalPackSqlite {
     connection: Connection,
     _staging: StagedFile,
@@ -46,17 +65,34 @@ pub(crate) fn open_verified_physical_pack_2_2(
     manifest: &SyncManifest,
     binding: &ProjectionBinding,
     path: &Path,
+    check: PackCheck,
 ) -> Result<VerifiedPhysicalPackSqlite, ProjectionPackError> {
     let mut file = File::open(path).map_err(|source| ProjectionPackError::OpenCompressed {
         path: path.to_path_buf(),
         source,
     })?;
-    pack.verify_reader(&mut file, ProtocolLimits::hub_sync_v1_1_3_schema_2_2())
-        .map_err(ProjectionPackError::Protocol)?;
-    file.rewind().map_err(|source| ProjectionPackError::ReadSource {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    match check {
+        PackCheck::Full => {
+            pack.verify_reader(&mut file, ProtocolLimits::hub_sync_v1_1_3_schema_2_2())
+                .map_err(ProjectionPackError::Protocol)?;
+            file.rewind().map_err(|source| ProjectionPackError::ReadSource {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        }
+        PackCheck::DigestVerified => {
+            let length = file
+                .metadata()
+                .map_err(|source| ProjectionPackError::ReadSource {
+                    path: path.to_path_buf(),
+                    source,
+                })?
+                .len();
+            if length != pack.compressed_bytes {
+                return Err(invalid("physical pack compressed length is invalid"));
+            }
+        }
+    }
     let staging_dir = path
         .parent()
         .and_then(Path::parent)
@@ -83,7 +119,7 @@ pub(crate) fn open_verified_physical_pack_2_2(
     ).map_err(ProjectionPackError::OpenSqlite)?;
     connection.execute_batch("PRAGMA trusted_schema = OFF; PRAGMA query_only = ON;")
         .map_err(ProjectionPackError::ConfigureSqlite)?;
-    verify_physical_scan_layout(&connection)?;
+    verify_physical_scan_layout(&connection, check == PackCheck::Full)?;
     Ok(VerifiedPhysicalPackSqlite { connection, _staging: sqlite })
 }
 
@@ -94,9 +130,10 @@ pub(crate) fn scan_verified_physical_pack_2_2(
     manifest: &SyncManifest,
     binding: &ProjectionBinding,
     path: &Path,
+    check: PackCheck,
     mut visit: impl FnMut(PhysicalTypedRow) -> Result<(), ProjectionPackError>,
 ) -> Result<(), ProjectionPackError> {
-    let verified = open_verified_physical_pack_2_2(pack, manifest, binding, path)?;
+    let verified = open_verified_physical_pack_2_2(pack, manifest, binding, path, check)?;
     let connection = verified.connection();
     let mut total = 0_u64;
     for table in PHYSICAL_TABLES_2_2 {
@@ -260,7 +297,10 @@ fn physical_row_digest(
     Ok(hash.finalize().into())
 }
 
-fn verify_physical_scan_layout(connection: &Connection) -> Result<(), ProjectionPackError> {
+fn verify_physical_scan_layout(
+    connection: &Connection,
+    integrity: bool,
+) -> Result<(), ProjectionPackError> {
     let app_id: u32 = connection
         .query_row("PRAGMA application_id", [], |row| row.get(0))
         .map_err(ProjectionPackError::IntegrityCheck)?;
@@ -319,6 +359,11 @@ fn verify_physical_scan_layout(connection: &Connection) -> Result<(), Projection
     ] {
         verify_projection_table_ddl(connection, table, ddl)?;
     }
+    if !integrity {
+        return Ok(());
+    }
+    #[cfg(test)]
+    PACK_INTEGRITY_CHECKS.with(|checks| checks.set(checks.get() + 1));
     let integrity: String = connection
         .query_row("PRAGMA integrity_check", [], |row| row.get(0))
         .map_err(ProjectionPackError::IntegrityCheck)?;

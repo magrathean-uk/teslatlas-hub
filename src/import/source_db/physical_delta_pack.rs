@@ -18,7 +18,7 @@ use super::physical_delta_compare::{PhysicalCompareError, PhysicalDeltaCompariso
 use crate::{
     db::PendingPhysicalV3Admission,
     hub_pack::{
-        PHYSICAL_TABLES_2_2, ProjectionBinding, ProjectionPackError, available_bytes,
+        PHYSICAL_TABLES_2_2, PackCheck, ProjectionBinding, ProjectionPackError, available_bytes,
         ensure_private_staging_directory, open_verified_physical_pack_2_2,
     },
     manifest_signing::ManifestSigning,
@@ -196,6 +196,7 @@ fn rotate_if_full(
     Ok(())
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prepare_changed_set(
     prior: &PendingPhysicalV3Admission,
@@ -215,6 +216,34 @@ pub(crate) fn prepare_changed_set(
         packs_dir,
         minimum_free_bytes,
         CHUNK_TARGET_DECODED,
+        PackCheck::Full,
+    )
+}
+
+/// As [`prepare_changed_set`], for a publication that verified, in this
+/// run, the content digest of every pack of `prior` (its state lookup) and
+/// wrote and verified every pack of `target` (M08-T19): their packs are
+/// decoded without hashing or integrity-checking them again.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prepare_changed_set_of_verified_heads(
+    prior: &PendingPhysicalV3Admission,
+    target: &PendingPhysicalV3Admission,
+    binding: &ProjectionBinding,
+    cursor_key: &CursorKey,
+    target_raw_sha256: Sha256Digest,
+    packs_dir: &Path,
+    minimum_free_bytes: u64,
+) -> Result<StagedPhysicalDelta, PhysicalDeltaPackError> {
+    prepare_changed_set_with_chunk_target(
+        prior,
+        target,
+        binding,
+        cursor_key,
+        target_raw_sha256,
+        packs_dir,
+        minimum_free_bytes,
+        CHUNK_TARGET_DECODED,
+        PackCheck::DigestVerified,
     )
 }
 
@@ -228,6 +257,7 @@ pub(crate) fn prepare_changed_set_with_chunk_target(
     packs_dir: &Path,
     minimum_free_bytes: u64,
     chunk_target_decoded: u64,
+    check: PackCheck,
 ) -> Result<StagedPhysicalDelta, PhysicalDeltaPackError> {
     if !(4096..=MAX_DECODED).contains(&chunk_target_decoded) {
         return Err(PhysicalDeltaPackError::Capacity);
@@ -243,6 +273,7 @@ pub(crate) fn prepare_changed_set_with_chunk_target(
         packs_dir,
         SCRATCH_LIMIT,
         minimum_free_bytes,
+        check,
     )?;
     comparison.prepare_wire_scope()?;
     let db = comparison.connection();
@@ -416,6 +447,7 @@ pub(crate) fn prepare_changed_set_with_chunk_target(
         &mut packs,
         chunk_target_decoded,
         minimum_free_bytes,
+        check,
     )?;
     if output.evidence_rows > 0 {
         if packs.0.len() >= MAX_PACKS {
@@ -508,6 +540,7 @@ fn copy_target_context(
     packs: &mut CreatedPacks,
     chunk_target_decoded: u64,
     minimum_free_bytes: u64,
+    check: PackCheck,
 ) -> Result<(), PhysicalDeltaPackError> {
     let db = comparison.connection();
     for pack in &target.chunks {
@@ -522,7 +555,7 @@ fn copy_target_context(
         let path = packs_dir
             .join("sha256")
             .join(format!("{}.sqlite.zst", pack.sha256));
-        let verified = open_verified_physical_pack_2_2(pack, target, binding, &path)?;
+        let verified = open_verified_physical_pack_2_2(pack, target, binding, &path, check)?;
         for table in PHYSICAL_TABLES_2_2 {
             let mut context = db.prepare(
                 "SELECT id,EXISTS(SELECT 1 FROM changed_raw c
