@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-#[cfg(target_os = "macos")]
 use std::path::PathBuf;
 use std::{
     fs,
