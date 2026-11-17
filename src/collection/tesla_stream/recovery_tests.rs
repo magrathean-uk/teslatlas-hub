@@ -2146,3 +2146,18 @@ async fn collector_m04_t12_unknown_error_tokens_and_mixed_reasons_are_visible_at
     assert!(!text.contains("private-test-token"));
     run.shut_down().await.expect("shutdown");
 }
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_unknown_error_does_not_claim_second_listener_detection() {
+    let capture = LogCapture::start();
+    let peer = plan_peer(vec![Plan::ends(End::Error("second_listener"))]).await;
+    let mut run = Rig::for_peer(&peer, Creds::offline("private-test-token")).start();
+    assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
+    let text = capture.text();
+    let ended = text.lines().find(|line| line.contains(" INFO ")
+        && line.contains("stream attempt ended")).expect("ended attempt at INFO");
+    assert!(ended.contains("reason_class=\"unrecognised_error\""), "{text}");
+    assert!(ended.contains("error_type=\"second_listener\""), "{text}");
+    assert!(ended.contains("class=\"unknown\""), "{text}");
+    run.shut_down().await.expect("shutdown");
+}
