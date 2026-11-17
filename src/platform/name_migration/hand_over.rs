@@ -28,6 +28,20 @@
 //! retired, and nothing is disabled or started for the current one. Before
 //! the rename the earlier and current names are the same and nothing here runs.
 
+/// What launchd holds for the current Hub job, against the installed file.
+/// Defined here, not in the macOS-only launch agent module, so that the
+/// hand-over and its tests also build where that module does not exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoadedJob {
+    /// The job is not loaded.
+    Absent,
+    /// The loaded job runs the program the installed LaunchAgent file names.
+    Installed,
+    /// The loaded job runs another program, or one its description does not
+    /// show: launchd still holds an earlier definition.
+    Stale,
+}
+
 use std::{
     fs, io,
     path::{Path, PathBuf},

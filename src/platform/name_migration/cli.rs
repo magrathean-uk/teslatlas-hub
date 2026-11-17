@@ -48,7 +48,7 @@ use std::{
 };
 
 #[cfg(any(test, target_os = "macos"))]
-use crate::macos_launch_agent::LoadedJob;
+use super::hand_over::LoadedJob;
 
 use super::hand_over::{self, Layout, Report, Status};
 
