@@ -2502,7 +2502,6 @@ impl CredentialConnection {
         tx.commit().map_err(StoreError::CredentialPairStore)
     }
 
-
     /// CT21's connection-local SQLite refusal, lifted before recovery.
     pub(crate) fn set_test_query_only(&mut self, enabled: bool) -> Result<(), StoreError> {
         self.connection.pragma_update(None, "query_only", enabled)
@@ -2856,21 +2855,18 @@ fn s_test_synthetic_pair(
 mod refresh_fence_tests {
     use super::*;
     use crate::hub_user_process::AdmittedUserHub;
-
     fn fenced_store() -> (tempfile::TempDir, HubStore) {
         let directory = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(directory.path()).expect("store");
         store.test_enforce_refresh_fence();
         (directory, store)
     }
-
     /// The process lock: this process's data-dir admission, bound as the vault binds it.
     fn admit(directory: &Path, connection: &mut CredentialConnection) -> Arc<AdmittedUserHub> {
         let admission = AdmittedUserHub::admit(directory).expect("process lock");
         connection.bind_vault_admission(admission.take_credential_vault().expect("vault admission"));
         admission
     }
-
     fn seed(connection: &mut CredentialConnection, slot: CredentialSlot, generation: Uuid, refresh: &[u8]) -> Result<(), StoreError> {
         let now = connection.now_ms()? / 1_000;
         let pair = s_test_synthetic_pair(connection, slot, generation, b"fence-access", refresh, now + 28_800, now + 21_600)?;
@@ -2880,15 +2876,12 @@ mod refresh_fence_tests {
         }
         connection.replace_credential_pair(&pair, &EntryProvenance::Supplied, &LegacyCandidates(Vec::new()), ReplacePolicy::ReplaceAny)
     }
-
     fn attempts(connection: &CredentialConnection) -> i64 {
         connection.connection.query_row("SELECT count(*) FROM credential_refresh_attempts", [], |row| row.get(0)).expect("attempt count")
     }
-
     fn now_ms() -> i64 {
         outbound_request_clock_ms().expect("clock")
     }
-
     #[test]
     fn refresh_fence_begin_needs_the_live_lease_of_this_store() {
         let (directory, store) = fenced_store();
@@ -2897,7 +2890,6 @@ mod refresh_fence_tests {
         let input = Uuid::new_v4();
         seed(&mut connection, CredentialSlot::OwnerApi, input, b"fence-refresh-lease").expect("pair");
         let lease_lost = |result: Result<OutboundRequestReceiptId, StoreError>| matches!(result, Err(StoreError::SupervisedCollectorLeaseLost));
-
         assert!(lease_lost(connection.begin_credential_refresh(CredentialSlot::OwnerApi, input)), "no lease, no refresh");
         // Another handle's lease is another process's collector, not this store's.
         let other = HubStore::initialize(directory.path()).expect("second handle");
@@ -2908,7 +2900,6 @@ mod refresh_fence_tests {
         let _stale = store.acquire_supervised_collector_lease(now_ms() - 86_400_000).expect("expired lease");
         assert!(lease_lost(connection.begin_credential_refresh(CredentialSlot::OwnerApi, input)), "an expired lease does not admit");
         assert_eq!(attempts(&connection), 0, "a refused begin writes no attempt");
-
         // A clone of the store shares the capability; its live lease admits one begin.
         let lease = store.clone().acquire_supervised_collector_lease(now_ms()).expect("live lease");
         let receipt = connection.begin_credential_refresh(CredentialSlot::OwnerApi, input).expect("begin under the live lease");
