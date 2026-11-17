@@ -14,14 +14,19 @@ import Foundation
 ///    them. The app then writes the current LaunchAgent with its own writer,
 ///    and `migrate-names --complete` starts it (when the earlier one was
 ///    running) before the earlier property list is removed. A current service
-///    already serving is not restarted. The start counts once the binary's
-///    `serving-check` confirms the service serves its configuration (between
-///    collection windows included); the binary refuses the step after one
-///    minute. This runs before the app finishes launching, so the owner sees no
-///    window until it ends. The app waits for each run at most
-///    `StepRunner.limit`; a run still going then is left alone and the owner is
-///    offered Try Again or Quit, and a Try Again while it still runs starts
-///    nothing and says the move is still in progress.
+///    already serving is not restarted, and one that was not loaded is loaded
+///    (it runs at load) without a restart after. The start counts once the
+///    binary's `serving-check` confirms the service serves its configuration
+///    (between collection windows included); the binary stops waiting and
+///    refuses the step after one minute. This runs before the app finishes
+///    launching, so the owner sees no window until it ends. The app waits for
+///    each run at most `StepRunner.limit`; a run still going then is left alone
+///    and the owner is offered Try Again or Quit, and a Try Again while it still
+///    runs starts nothing and says the move is still in progress.
+/// 4. The app's launch work waits for the hand-over (`LaunchGate`): the retry
+///    alert can let AppKit finish launching before `application.run()`. After
+///    a hand-over that needed Try Again, the app shows the window a normal
+///    launch shows and comes to the front.
 ///
 /// Every step is idempotent. A step that is deferred or fails changes nothing
 /// the next attempt cannot finish: the owner is offered Try Again or Quit, and
@@ -187,7 +192,8 @@ enum HubRenameMigration {
         var environment: () -> [String: String]
         var setEnvironment: (String, String) -> Void
         var adoptPreferences: () -> Void
-        var handOver: () -> Void
+        /// True when the hand-over completed after a Try Again.
+        var handOver: () -> Bool
 
         static var live: StartUp { StartUp(
             environment: { ProcessInfo.processInfo.environment },
@@ -203,30 +209,92 @@ enum HubRenameMigration {
     }
 
     /// Runs the hand-over in the installed app; called once from `main.swift`.
-    static func prepareBeforeLaunch(renamed: Bool = isRenamedBuild, steps: StartUp = .live) {
-        guard renamed else { return }
+    /// True when it completed after a Try Again.
+    @discardableResult
+    static func prepareBeforeLaunch(renamed: Bool = isRenamedBuild, steps: StartUp = .live) -> Bool {
+        guard renamed else { return false }
         for (name, value) in environmentAdditions(steps.environment()) {
             steps.setEnvironment(name, value)
         }
-        guard appliesTo(environment: steps.environment()) else { return }
+        guard appliesTo(environment: steps.environment()) else { return false }
         steps.adoptPreferences()
-        steps.handOver()
+        return steps.handOver()
     }
 
-    private static func handOverUntilDone() {
-        guard let binary = Bundle.main.url(forResource: "tesatlas-hub", withExtension: nil) else { return }
+    private static func handOverUntilDone() -> Bool {
+        guard let binary = Bundle.main.url(forResource: "tesatlas-hub", withExtension: nil) else { return false }
         let home = HubTestHost.defaultRealHome()
         let writer = HubLaunchAgentWriter(configuration: {
             try HubLaunchAgentConfiguration.production(bundle: .main, home: home)
         })
         let runner = StepRunner(executable: binary)
-        while true {
-            let outcome = handOver(run: { runner.run($0) },
-                                   installAgent: { _ = try writer.ensureInstalled(requireConfig: false) },
-                                   prepareLogs: { try writer.prepareLogsForBootstrap() })
-            guard case let .retry(detail) = outcome else { return }
+        let retried = attemptUntilDone({
+            handOver(run: { runner.run($0) },
+                     installAgent: { _ = try writer.ensureInstalled(requireConfig: false) },
+                     prepareLogs: { try writer.prepareLogsForBootstrap() })
+        }, offerRetry: { detail in
             HubAppLog.shared.record("rename.handover.retry", category: "app", fields: ["detail": detail])
-            guard offerRetry(detail) else { exit(0) }
+            return offerRetry(detail)
+        })
+        guard let retried else { exit(0) }
+        return retried
+    }
+
+    /// Attempts until one proceeds. True when a Try Again was needed, false
+    /// when the first attempt proceeded, nil when the owner chose Quit.
+    static func attemptUntilDone(_ attempt: () -> Outcome, offerRetry: (String) -> Bool) -> Bool? {
+        var retried = false
+        while true {
+            guard case let .retry(detail) = attempt() else { return retried }
+            guard offerRetry(detail) else { return nil }
+            retried = true
+        }
+    }
+
+    /// Holds the app's launch work while the hand-over runs before launch.
+    /// The retry alert's modal loop can let AppKit finish launching before
+    /// `application.run()`; that launch work is held until the hand-over has
+    /// ended, so the app reads no Hub path while the data moves. After a
+    /// hand-over that needed Try Again, `present` shows the window a normal
+    /// launch shows (the main window, or the welcome for a Hub with no
+    /// account) and brings the app to the front, once the launch work has run.
+    /// Used from the main thread only.
+    final class LaunchGate {
+        private var holding = false
+        private var held: (() -> Void)?
+        private var presentAfterLaunch: (() -> Void)?
+
+        /// From `main.swift`, before the hand-over.
+        func hold() { holding = true }
+
+        /// From `applicationDidFinishLaunching`: runs `work` now, or once the
+        /// hand-over has ended.
+        func launch(_ work: @escaping () -> Void) {
+            guard !holding else { held = work; return }
+            work()
+            if let present = presentAfterLaunch {
+                presentAfterLaunch = nil
+                present()
+            }
+        }
+
+        /// From `main.swift`, after the hand-over. Launch work held meanwhile
+        /// runs through `schedule` (the main queue, once the application runs),
+        /// followed by `present` after a Try Again; launch work still to come
+        /// is followed by `present` then.
+        func release(afterRetry: Bool,
+                     present: @escaping () -> Void,
+                     schedule: (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) {
+            holding = false
+            guard let work = held else {
+                if afterRetry { presentAfterLaunch = present }
+                return
+            }
+            held = nil
+            schedule {
+                work()
+                if afterRetry { present() }
+            }
         }
     }
 

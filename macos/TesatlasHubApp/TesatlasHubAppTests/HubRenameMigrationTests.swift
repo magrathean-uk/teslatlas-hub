@@ -71,7 +71,7 @@ final class HubRenameMigrationTests: XCTestCase {
         HubRenameMigration.StartUp(environment: { [earlierVariable] in [earlierVariable: "1", "XCTestConfigurationFilePath": "/x"] },
                                    setEnvironment: { name, _ in effects.items.append("setenv \(name)") },
                                    adoptPreferences: { effects.items.append("settings") },
-                                   handOver: { effects.items.append("hand-over") })
+                                   handOver: { effects.items.append("hand-over"); return false })
     }
 
     private final class Box { var items: [String] = [] }
@@ -233,6 +233,67 @@ final class HubRenameMigrationTests: XCTestCase {
         let next = try XCTUnwrap(runner.run(["migrate-names"]), "once it has ended, Try Again runs again")
         XCTAssertEqual(next.0, 0)
         XCTAssertEqual(try JSONDecoder().decode(HubRenameMigration.StepReport.self, from: next.1).status, "inert")
+    }
+
+    /// REV2-CX-M08-T16 B2: a hand-over that completes after Try Again says so,
+    /// so the app goes on to show its window; Quit is told apart.
+    func testAHandOverThatCompletesAfterTryAgainSaysItNeededOne() {
+        var attempts: [HubRenameMigration.Outcome] = [.retry("the Hub service did not confirm in time"), .proceed]
+        var offered: [String] = []
+        let retried = HubRenameMigration.attemptUntilDone({ attempts.removeFirst() },
+                                                          offerRetry: { offered.append($0); return true })
+        XCTAssertEqual(retried, true)
+        XCTAssertEqual(offered, ["the Hub service did not confirm in time"])
+        XCTAssertEqual(HubRenameMigration.attemptUntilDone({ .proceed }, offerRetry: { _ in XCTFail("no alert"); return false }), false)
+        var tries = 0
+        XCTAssertNil(HubRenameMigration.attemptUntilDone({ tries += 1; return .retry("x") }, offerRetry: { _ in false }))
+        XCTAssertEqual(tries, 1, "Quit attempts nothing more")
+    }
+
+    /// The retry alert let AppKit finish launching: the launch work waits for
+    /// the hand-over, then runs, then the window comes to the front.
+    func testLaunchWorkHeldDuringTheHandOverRunsAfterItAndTheWindowComesForward() {
+        let gate = HubRenameMigration.LaunchGate()
+        var effects: [String] = []
+        var scheduled: [() -> Void] = []
+        gate.hold()
+        gate.launch { effects.append("launch") }
+        XCTAssertEqual(effects, [], "no Hub path is read while the data moves")
+        gate.release(afterRetry: true, present: { effects.append("present") }, schedule: { scheduled.append($0) })
+        XCTAssertEqual(effects, [], "once the application runs")
+        scheduled.forEach { $0() }
+        XCTAssertEqual(effects, ["launch", "present"])
+    }
+
+    /// AppKit finishes launching only in `application.run()`: the window
+    /// comes to the front right after that launch work.
+    func testAfterTryAgainTheWindowComesForwardAfterALaterLaunch() {
+        let gate = HubRenameMigration.LaunchGate()
+        var effects: [String] = []
+        gate.hold()
+        gate.release(afterRetry: true, present: { effects.append("present") }, schedule: { _ in XCTFail("nothing held") })
+        XCTAssertEqual(effects, [])
+        gate.launch { effects.append("launch") }
+        XCTAssertEqual(effects, ["launch", "present"])
+        gate.launch { effects.append("again") }
+        XCTAssertEqual(effects, ["launch", "present", "again"], "presented once")
+    }
+
+    /// Without a Try Again the launch is as before: nothing extra is shown.
+    func testWithoutTryAgainTheLaunchIsUnchanged() {
+        let gate = HubRenameMigration.LaunchGate()
+        var effects: [String] = []
+        gate.hold()
+        gate.release(afterRetry: false, present: { effects.append("present") }, schedule: { $0() })
+        gate.launch { effects.append("launch") }
+        XCTAssertEqual(effects, ["launch"])
+
+        let held = HubRenameMigration.LaunchGate()
+        var heldEffects: [String] = []
+        held.hold()
+        held.launch { heldEffects.append("launch") }
+        held.release(afterRetry: false, present: { heldEffects.append("present") }, schedule: { $0() })
+        XCTAssertEqual(heldEffects, ["launch"])
     }
 
     func testOnlyTheInstalledAppRunsTheHandOver() {
