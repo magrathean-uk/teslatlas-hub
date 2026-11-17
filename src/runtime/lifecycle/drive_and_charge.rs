@@ -2117,6 +2117,64 @@ fn drive_open_step(
     Ok(())
 }
 
+/// Recover one already completed charge when the very next battery reading
+/// contradicts its rejected level. The later reading corroborates detection;
+/// it neither extends the old end nor supplies a battery level at that end.
+fn recover_completed_gap_charge(
+    state: &mut OpenSessionState,
+    observation: &Observation<'_>,
+    delta: &mut LifecycleDelta,
+) -> Result<(), LifecycleError> {
+    if state.open_drive.is_some()
+        || state.open_charge.is_some()
+        || state.service_mode == Some(true)
+        || observation.reach == Some(Reach::Asleep)
+        || observation.event() == Some(HubEventKind::Handback)
+        || !delta.drives.is_empty()
+        || !delta.charges.is_empty()
+    {
+        state.pending_gap_charge = None;
+        return Ok(());
+    }
+    let Some(level) = observation.parsed.battery_level.filter(|_| observation.fresh.battery) else {
+        return Ok(());
+    };
+    let Some(pending) = state.pending_gap_charge.take() else {
+        return Ok(());
+    };
+    if !pending.snapshot.battery_level.is_some_and(|before| level >= before) {
+        return Ok(());
+    }
+    let end_ms = pending.sample.timestamp_ms;
+    let start_ms = pending.snapshot.at_ms.unwrap_or(end_ms).min(end_ms);
+    let id = allocate_charge_id(state)?;
+    let mut open = OpenCharge::empty(id, observation.car_id, start_ms);
+    open.start_battery_level = pending.snapshot.battery_level;
+    open.start_ideal_range_km = pending.snapshot.ideal_range_km;
+    open.start_rated_range_km = pending.snapshot.rated_range_km;
+    if let Some((latitude, longitude)) = pending.coordinates {
+        open.start_latitude = Some(latitude);
+        open.start_longitude = Some(longitude);
+    }
+    open.last_odometer_km = pending.odometer_km;
+    open.last_odometer_coarse = Some(pending.odometer_coarse);
+    open.first_energy_added = Some(charge_energy_baseline(
+        Some(&pending.snapshot),
+        pending.sample.charge_energy_added_kwh,
+        pending.odometer_km,
+    ));
+    let mut sample = pending.sample;
+    sample.id = allocate_charge_sample_id(state)?;
+    sample.charge_process_id = id;
+    let mut display = sample.clone();
+    display.battery_level = None;
+    observe_charge_aggregate(&mut open, &display);
+    observe_charge_sample(&mut open, &sample);
+    delta.open_charge_samples.push(sample);
+    state.open_charge = Some(open);
+    close_open_charge(state, delta, end_ms, pending.unplugged)
+}
+
 /// Step 6, charge open (C1 R61) and after-gap charge (R70, R9).
 ///
 /// With no open charge and no open drive after the closes, and the car not in
@@ -2145,6 +2203,7 @@ fn charge_open_step(
     observation: &Observation<'_>,
     delta: &mut LifecycleDelta,
 ) -> Result<(), LifecycleError> {
+    recover_completed_gap_charge(state, observation, delta)?;
     if state.open_charge.is_some()
         || state.open_drive.is_some()
         || state.service_mode == Some(true)
@@ -2183,6 +2242,26 @@ fn charge_open_step(
                 return Ok(());
             };
             let Some(after_gap) = after_gap_charge(snapshot, parsed, observation.charge) else {
+                // Retain one rejected completed sample. Only its very next
+                // fresh battery reading may contradict the fall; persistent
+                // changes are never removed from derived history.
+                if state.pending_gap_charge.is_none()
+                    && observation.charge.is_end()
+                    && unmoved
+                    && after_gap_counter_changed(snapshot, parsed)
+                    && matches!((parsed.battery_level, snapshot.battery_level),
+                        (Some(now), Some(before)) if now < before)
+                    && snapshot.at_ms.is_some()
+                {
+                    state.pending_gap_charge = Some(PendingGapCharge {
+                        snapshot: snapshot.clone(),
+                        sample: charge_sample_from(0, 0, parsed),
+                        coordinates,
+                        odometer_km: parsed.odometer,
+                        odometer_coarse: parsed.kind != SourceKind::Full,
+                        unplugged: observation.charge == ChargeEvidence::Disconnected,
+                    });
+                }
                 return Ok(());
             };
             // The snapshot's time can lead the charge group's time by the
